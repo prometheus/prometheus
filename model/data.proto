@@ -1,0 +1,86 @@
+package generated;
+
+message LabelPairDDO {
+  optional int64 version = 1 [default = 1];
+
+  optional string name = 2;
+  optional string value = 3;
+}
+
+message MetricDDO {
+  optional int64 version = 1 [default = 1];
+
+  repeated LabelPairDDO label_pair = 2;
+}
+
+message FingerprintCollectionDDO {
+  optional int64 version = 1 [default = 1];
+
+  repeated FingerprintDDO member = 2;
+}
+
+message LabelPairCollectionDDO {
+  optional int64 version = 1 [default = 1];
+
+  repeated LabelPairDDO member = 2;
+}
+
+message LabelNameDDO {
+  optional int64 version = 1 [default = 1];
+
+  optional string name = 2;
+}
+
+message FingerprintDDO {
+  optional int64 version = 1 [default = 1];
+
+  // bytes
+  optional string signature = 2;
+}
+
+message WatermarkDDO {
+  optional int64 version = 1 [default = 1];
+
+  optional int64 timestamp = 2;
+}
+
+message SampleKeyDDO {
+  optional int64 version = 1 [default = 1];
+
+  optional FingerprintDDO fingerprint = 2;
+  optional bytes timestamp = 3;
+}
+
+message SampleValueDDO {
+  optional int64 version = 1 [default = 1];
+
+  optional float value = 2;
+}
+
+
+// TOO OLD
+
+message MembershipIndexValueDDO {
+}
+
+
+message LabelNameAndValueIndexDDO {
+  optional string name = 1;
+  optional string value = 2;
+}
+
+message LabelNameValuesDDO {
+  repeated string value = 1;
+}
+
+message LabelNameAndValueToMetricDDO {
+  repeated string metric = 1;
+}
+
+message MetricToWindowDDO {
+  repeated int64 window = 1;
+}
+
+message WindowSampleDDO {
+  repeated float value = 1;
+}
