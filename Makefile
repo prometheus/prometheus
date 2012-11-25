@@ -1,4 +1,4 @@
-TEST_ARTIFACTS = prometheus
+TEST_ARTIFACTS = prometheus search_index
 
 all: test
 
@@ -19,5 +19,11 @@ clean:
 
 format:
 	find . -iname '*.go' | grep -v generated | xargs -n1 gofmt -w
+
+search_index:
+	godoc -index -write_index -index_files='search_index'
+
+documentation: search_index
+	godoc -http=:6060 -index -index_files='search_index'
 
 .PHONY: build clean format test
