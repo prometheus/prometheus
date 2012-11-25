@@ -1,8 +1,12 @@
 package main
 
+import (
+	"github.com/matttproud/prometheus/coding"
+)
+
 type MembershipIndex interface {
-	Has(key Encoder) (bool, error)
-	Put(key Encoder) error
-	Drop(key Encoder) error
+	Has(key coding.Encoder) (bool, error)
+	Put(key coding.Encoder) error
+	Drop(key coding.Encoder) error
 	Close() error
 }

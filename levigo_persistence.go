@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/jmhodges/levigo"
+	"github.com/matttproud/prometheus/coding"
 	"io"
 )
 
@@ -85,7 +86,7 @@ func (l *LevigoPersistence) Close() error {
 	return nil
 }
 
-func (l *LevigoPersistence) Get(value Encoder) ([]byte, error) {
+func (l *LevigoPersistence) Get(value coding.Encoder) ([]byte, error) {
 	var key []byte
 	var keyError error
 
@@ -96,7 +97,7 @@ func (l *LevigoPersistence) Get(value Encoder) ([]byte, error) {
 	return nil, keyError
 }
 
-func (l *LevigoPersistence) Has(value Encoder) (bool, error) {
+func (l *LevigoPersistence) Has(value coding.Encoder) (bool, error) {
 	if value, getError := l.Get(value); getError != nil {
 		return false, getError
 	} else if value == nil {
@@ -106,7 +107,7 @@ func (l *LevigoPersistence) Has(value Encoder) (bool, error) {
 	return true, nil
 }
 
-func (l *LevigoPersistence) Drop(value Encoder) error {
+func (l *LevigoPersistence) Drop(value coding.Encoder) error {
 	var key []byte
 	var keyError error
 
@@ -122,7 +123,7 @@ func (l *LevigoPersistence) Drop(value Encoder) error {
 	return keyError
 }
 
-func (l *LevigoPersistence) Put(key Encoder, value Encoder) error {
+func (l *LevigoPersistence) Put(key, value coding.Encoder) error {
 	var keyEncoded []byte
 	var keyError error
 

@@ -1,40 +1,41 @@
 package main
 
 import (
+	"github.com/matttproud/prometheus/coding"
 	data "github.com/matttproud/prometheus/model/generated"
 )
 
+var (
+	existenceValue = coding.NewProtocolBufferEncoder(&data.MembershipIndexValueDDO{})
+)
+
 type LevigoMembershipIndex struct {
-	persistence    *LevigoPersistence
-	existenceValue Encoder
+	persistence *LevigoPersistence
 }
 
 func (l *LevigoMembershipIndex) Close() error {
 	return l.persistence.Close()
 }
 
-func (l *LevigoMembershipIndex) Has(key Encoder) (bool, error) {
+func (l *LevigoMembershipIndex) Has(key coding.Encoder) (bool, error) {
 	return l.persistence.Has(key)
 }
 
-func (l *LevigoMembershipIndex) Drop(key Encoder) error {
+func (l *LevigoMembershipIndex) Drop(key coding.Encoder) error {
 	return l.persistence.Drop(key)
 }
 
-func (l *LevigoMembershipIndex) Put(key Encoder) error {
-	return l.persistence.Put(key, l.existenceValue)
+func (l *LevigoMembershipIndex) Put(key coding.Encoder) error {
+	return l.persistence.Put(key, existenceValue)
 }
 
 func NewLevigoMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (*LevigoMembershipIndex, error) {
 	var levigoPersistence *LevigoPersistence
 	var levigoPersistenceError error
 
-	existenceValue := NewProtocolBufferEncoder(&data.MembershipIndexValueDDO{})
-
 	if levigoPersistence, levigoPersistenceError = NewLevigoPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded); levigoPersistenceError == nil {
 		levigoMembershipIndex := &LevigoMembershipIndex{
-			persistence:    levigoPersistence,
-			existenceValue: existenceValue,
+			persistence: levigoPersistence,
 		}
 		return levigoMembershipIndex, nil
 	}

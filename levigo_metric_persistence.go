@@ -4,6 +4,7 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 	"errors"
 	"fmt"
+	"github.com/matttproud/prometheus/coding"
 	"github.com/matttproud/prometheus/coding/indexable"
 	data "github.com/matttproud/prometheus/model/generated"
 	"github.com/matttproud/prometheus/utility"
@@ -254,12 +255,12 @@ func fingerprintDDOFromByteArray(fingerprint []byte) *data.FingerprintDDO {
 }
 
 func (l *LevigoMetricPersistence) hasIndexMetric(ddo *data.MetricDDO) (bool, error) {
-	ddoKey := NewProtocolBufferEncoder(ddo)
+	ddoKey := coding.NewProtocolBufferEncoder(ddo)
 	return l.metricMembershipIndex.Has(ddoKey)
 }
 
 func (l *LevigoMetricPersistence) indexMetric(ddo *data.MetricDDO) error {
-	ddoKey := NewProtocolBufferEncoder(ddo)
+	ddoKey := coding.NewProtocolBufferEncoder(ddo)
 	return l.metricMembershipIndex.Put(ddoKey)
 }
 
@@ -277,17 +278,17 @@ func fingerprintDDOForMessage(message proto.Message) (*data.FingerprintDDO, erro
 }
 
 func (l *LevigoMetricPersistence) HasLabelPair(ddo *data.LabelPairDDO) (bool, error) {
-	ddoKey := NewProtocolBufferEncoder(ddo)
+	ddoKey := coding.NewProtocolBufferEncoder(ddo)
 	return l.labelPairFingerprints.Has(ddoKey)
 }
 
 func (l *LevigoMetricPersistence) HasLabelName(ddo *data.LabelNameDDO) (bool, error) {
-	ddoKey := NewProtocolBufferEncoder(ddo)
+	ddoKey := coding.NewProtocolBufferEncoder(ddo)
 	return l.labelNameFingerprints.Has(ddoKey)
 }
 
 func (l *LevigoMetricPersistence) GetLabelPairFingerprints(ddo *data.LabelPairDDO) (*data.FingerprintCollectionDDO, error) {
-	ddoKey := NewProtocolBufferEncoder(ddo)
+	ddoKey := coding.NewProtocolBufferEncoder(ddo)
 	if get, getError := l.labelPairFingerprints.Get(ddoKey); getError == nil {
 		value := &data.FingerprintCollectionDDO{}
 		if unmarshalError := proto.Unmarshal(get, value); unmarshalError == nil {
@@ -302,7 +303,7 @@ func (l *LevigoMetricPersistence) GetLabelPairFingerprints(ddo *data.LabelPairDD
 }
 
 func (l *LevigoMetricPersistence) GetLabelNameFingerprints(ddo *data.LabelNameDDO) (*data.FingerprintCollectionDDO, error) {
-	ddoKey := NewProtocolBufferEncoder(ddo)
+	ddoKey := coding.NewProtocolBufferEncoder(ddo)
 	if get, getError := l.labelNameFingerprints.Get(ddoKey); getError == nil {
 		value := &data.FingerprintCollectionDDO{}
 		if unmarshalError := proto.Unmarshal(get, value); unmarshalError == nil {
@@ -318,14 +319,14 @@ func (l *LevigoMetricPersistence) GetLabelNameFingerprints(ddo *data.LabelNameDD
 }
 
 func (l *LevigoMetricPersistence) setLabelPairFingerprints(labelPair *data.LabelPairDDO, fingerprints *data.FingerprintCollectionDDO) error {
-	labelPairEncoded := NewProtocolBufferEncoder(labelPair)
-	fingerprintsEncoded := NewProtocolBufferEncoder(fingerprints)
+	labelPairEncoded := coding.NewProtocolBufferEncoder(labelPair)
+	fingerprintsEncoded := coding.NewProtocolBufferEncoder(fingerprints)
 	return l.labelPairFingerprints.Put(labelPairEncoded, fingerprintsEncoded)
 }
 
 func (l *LevigoMetricPersistence) setLabelNameFingerprints(labelName *data.LabelNameDDO, fingerprints *data.FingerprintCollectionDDO) error {
-	labelNameEncoded := NewProtocolBufferEncoder(labelName)
-	fingerprintsEncoded := NewProtocolBufferEncoder(fingerprints)
+	labelNameEncoded := coding.NewProtocolBufferEncoder(labelName)
+	fingerprintsEncoded := coding.NewProtocolBufferEncoder(fingerprints)
 	return l.labelNameFingerprints.Put(labelNameEncoded, fingerprintsEncoded)
 }
 
@@ -384,8 +385,8 @@ func (l *LevigoMetricPersistence) appendFingerprints(ddo *data.MetricDDO) error 
 		labelPairCollectionDDO := &data.LabelPairCollectionDDO{
 			Member: ddo.LabelPair,
 		}
-		fingerprintKey := NewProtocolBufferEncoder(fingerprintDDO)
-		labelPairCollectionDDOEncoder := NewProtocolBufferEncoder(labelPairCollectionDDO)
+		fingerprintKey := coding.NewProtocolBufferEncoder(fingerprintDDO)
+		labelPairCollectionDDOEncoder := coding.NewProtocolBufferEncoder(labelPairCollectionDDO)
 
 		if putError := l.fingerprintLabelPairs.Put(fingerprintKey, labelPairCollectionDDOEncoder); putError == nil {
 			labelCount := len(ddo.LabelPair)
@@ -463,8 +464,8 @@ func (l *LevigoMetricPersistence) AppendSample(sample *Sample) error {
 			Value: proto.Float32(float32(sample.Value)),
 		}
 
-		sampleKeyEncoded := NewProtocolBufferEncoder(sampleKeyDDO)
-		sampleValueEncoded := NewProtocolBufferEncoder(sampleValueDDO)
+		sampleKeyEncoded := coding.NewProtocolBufferEncoder(sampleKeyDDO)
+		sampleValueEncoded := coding.NewProtocolBufferEncoder(sampleValueDDO)
 
 		if putError := l.fingerprintSamples.Put(sampleKeyEncoded, sampleValueEncoded); putError != nil {
 			log.Printf("Could not append metric sample: %q\n", putError)
@@ -544,7 +545,7 @@ func (l *LevigoMetricPersistence) GetMetrics() ([]LabelPairs, error) {
 						log.Printf("!Has: %q\n", member.Signature)
 						fingerprints.Add(*member.Signature)
 						log.Printf("fingerprints %q\n", fingerprints)
-						fingerprintEncoded := NewProtocolBufferEncoder(member)
+						fingerprintEncoded := coding.NewProtocolBufferEncoder(member)
 						if labelPairCollectionRaw, labelPairCollectionRawError := l.fingerprintLabelPairs.Get(fingerprintEncoded); labelPairCollectionRawError == nil {
 							log.Printf("labelPairCollectionRaw: %q\n", labelPairCollectionRaw)
 
@@ -592,7 +593,7 @@ func (l *LevigoMetricPersistence) GetWatermarksForMetric(metric Metric) (*Interv
 				Timestamp:   indexable.EarliestTime,
 			}
 
-			if encode, encodeErr := NewProtocolBufferEncoder(start).Encode(); encodeErr == nil {
+			if encode, encodeErr := coding.NewProtocolBufferEncoder(start).Encode(); encodeErr == nil {
 				iterator.Seek(encode)
 
 				if iterator.Valid() {
@@ -668,7 +669,7 @@ func (l *LevigoMetricPersistence) GetSamplesForMetric(metric Metric, interval In
 
 			emission := make([]Samples, 0)
 
-			if encode, encodeErr := NewProtocolBufferEncoder(start).Encode(); encodeErr == nil {
+			if encode, encodeErr := coding.NewProtocolBufferEncoder(start).Encode(); encodeErr == nil {
 				iterator.Seek(encode)
 
 				for iterator = iterator; iterator.Valid(); iterator.Next() {
