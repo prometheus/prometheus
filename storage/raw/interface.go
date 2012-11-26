@@ -1,4 +1,4 @@
-package main
+package raw
 
 import (
 	"github.com/matttproud/prometheus/coding"

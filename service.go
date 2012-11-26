@@ -2,18 +2,20 @@ package main
 
 import (
 	"code.google.com/p/gorest"
+	"github.com/matttproud/prometheus/model"
+	"github.com/matttproud/prometheus/storage/metric/leveldb"
 )
 
 type MetricsService struct {
 	gorest.RestService `root:"/" consumes:"application/json" produces:"application/json"`
 
-	persistence *LevigoMetricPersistence
+	persistence *leveldb.LevigoMetricPersistence
 
 	listLabels     gorest.EndPoint `method:"GET" path:"/labels/" output:"[]string"`
-	listLabelPairs gorest.EndPoint `method:"GET" path:"/label-pairs/" output:"[]LabelPairs"`
-	listMetrics    gorest.EndPoint `method:"GET" path:"/metrics/" output:"[]LabelPairs"`
+	listLabelPairs gorest.EndPoint `method:"GET" path:"/label-pairs/" output:"[]model.LabelPairs"`
+	listMetrics    gorest.EndPoint `method:"GET" path:"/metrics/" output:"[]model.LabelPairs"`
 
-	appendSample gorest.EndPoint `method:"POST" path:"/metrics/" postdata:"Sample"`
+	appendSample gorest.EndPoint `method:"POST" path:"/metrics/" postdata:"model.Sample"`
 }
 
 func (m MetricsService) ListLabels() []string {
@@ -26,7 +28,7 @@ func (m MetricsService) ListLabels() []string {
 	return labels
 }
 
-func (m MetricsService) ListLabelPairs() []LabelPairs {
+func (m MetricsService) ListLabelPairs() []model.LabelPairs {
 	labelPairs, labelPairsError := m.persistence.GetLabelPairs()
 
 	if labelPairsError != nil {
@@ -36,7 +38,7 @@ func (m MetricsService) ListLabelPairs() []LabelPairs {
 	return labelPairs
 }
 
-func (m MetricsService) ListMetrics() []LabelPairs {
+func (m MetricsService) ListMetrics() []model.LabelPairs {
 	metrics, metricsError := m.persistence.GetMetrics()
 
 	if metricsError != nil {
@@ -46,7 +48,7 @@ func (m MetricsService) ListMetrics() []LabelPairs {
 	return metrics
 }
 
-func (m MetricsService) AppendSample(s Sample) {
+func (m MetricsService) AppendSample(s model.Sample) {
 	responseBuilder := m.ResponseBuilder()
 	if appendError := m.persistence.AppendSample(&s); appendError == nil {
 		responseBuilder.SetResponseCode(200)

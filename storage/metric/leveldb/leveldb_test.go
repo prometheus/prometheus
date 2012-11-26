@@ -1,8 +1,9 @@
-package main
+package leveldb
 
 import (
 	"code.google.com/p/goprotobuf/proto"
 	"fmt"
+	"github.com/matttproud/prometheus/model"
 	data "github.com/matttproud/prometheus/model/generated"
 	"io/ioutil"
 	"math"
@@ -168,10 +169,10 @@ func TestAppendSampleAsPureSparseAppend(t *testing.T) {
 	}()
 
 	appendSample := func(x int) bool {
-		sample := &Sample{
-			Value:     SampleValue(float32(x)),
+		sample := &model.Sample{
+			Value:     model.SampleValue(float32(x)),
 			Timestamp: time.Unix(int64(x), int64(x)),
-			Labels:    LabelPairs{string(x): string(x)},
+			Labels:    model.LabelPairs{string(x): string(x)},
 		}
 
 		appendErr := persistence.AppendSample(sample)
@@ -200,10 +201,10 @@ func TestAppendSampleAsSparseAppendWithReads(t *testing.T) {
 	}()
 
 	appendSample := func(x int) bool {
-		sample := &Sample{
-			Value:     SampleValue(float32(x)),
+		sample := &model.Sample{
+			Value:     model.SampleValue(float32(x)),
 			Timestamp: time.Unix(int64(x), int64(x)),
-			Labels:    LabelPairs{string(x): string(x)},
+			Labels:    model.LabelPairs{string(x): string(x)},
 		}
 
 		appendErr := persistence.AppendSample(sample)
@@ -293,10 +294,10 @@ func TestAppendSampleAsPureSingleEntityAppend(t *testing.T) {
 	}()
 
 	appendSample := func(x int) bool {
-		sample := &Sample{
-			Value:     SampleValue(float32(x)),
+		sample := &model.Sample{
+			Value:     model.SampleValue(float32(x)),
 			Timestamp: time.Unix(int64(x), 0),
-			Labels:    LabelPairs{"name": "my_metric"},
+			Labels:    model.LabelPairs{"name": "my_metric"},
 		}
 
 		appendErr := persistence.AppendSample(sample)
@@ -338,8 +339,8 @@ func TestStochastic(t *testing.T) {
 		metricNewestSample := make(map[int]int64)
 
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
-			sample := &Sample{
-				Labels: LabelPairs{},
+			sample := &model.Sample{
+				Labels: model.LabelPairs{},
 			}
 
 			sample.Labels["name"] = fmt.Sprintf("metric_index_%d", metricIndex)
@@ -381,7 +382,7 @@ func TestStochastic(t *testing.T) {
 
 			for sampleIndex := 0; sampleIndex < numberOfSamples; sampleIndex++ {
 				sample.Timestamp = time.Unix(nextTimestamp(), 0)
-				sample.Value = SampleValue(sampleIndex)
+				sample.Value = model.SampleValue(sampleIndex)
 
 				appendErr := persistence.AppendSample(sample)
 
@@ -504,7 +505,7 @@ func TestStochastic(t *testing.T) {
 				}
 			}
 
-			metric := make(Metric)
+			metric := make(model.Metric)
 
 			metric["name"] = fmt.Sprintf("metric_index_%d", metricIndex)
 
@@ -565,7 +566,7 @@ func TestStochastic(t *testing.T) {
 					end = second
 				}
 
-				interval := Interval{
+				interval := model.Interval{
 					OldestInclusive: time.Unix(begin, 0),
 					NewestInclusive: time.Unix(end, 0),
 				}

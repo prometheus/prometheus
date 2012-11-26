@@ -1,8 +1,9 @@
-package main
+package leveldb
 
 import (
 	"github.com/matttproud/prometheus/coding"
 	data "github.com/matttproud/prometheus/model/generated"
+	"github.com/matttproud/prometheus/storage/raw/leveldb"
 )
 
 var (
@@ -10,7 +11,7 @@ var (
 )
 
 type LevigoMembershipIndex struct {
-	persistence *LevigoPersistence
+	persistence *leveldb.LevigoPersistence
 }
 
 func (l *LevigoMembershipIndex) Close() error {
@@ -30,10 +31,10 @@ func (l *LevigoMembershipIndex) Put(key coding.Encoder) error {
 }
 
 func NewLevigoMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (*LevigoMembershipIndex, error) {
-	var levigoPersistence *LevigoPersistence
+	var levigoPersistence *leveldb.LevigoPersistence
 	var levigoPersistenceError error
 
-	if levigoPersistence, levigoPersistenceError = NewLevigoPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded); levigoPersistenceError == nil {
+	if levigoPersistence, levigoPersistenceError = leveldb.NewLevigoPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded); levigoPersistenceError == nil {
 		levigoMembershipIndex := &LevigoMembershipIndex{
 			persistence: levigoPersistence,
 		}

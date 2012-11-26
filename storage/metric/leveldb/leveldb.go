@@ -1,4 +1,4 @@
-package main
+package leveldb
 
 import (
 	"code.google.com/p/goprotobuf/proto"
@@ -6,30 +6,34 @@ import (
 	"fmt"
 	"github.com/matttproud/prometheus/coding"
 	"github.com/matttproud/prometheus/coding/indexable"
+	"github.com/matttproud/prometheus/model"
 	data "github.com/matttproud/prometheus/model/generated"
+	index "github.com/matttproud/prometheus/storage/raw/index/leveldb"
+	storage "github.com/matttproud/prometheus/storage/raw/leveldb"
 	"github.com/matttproud/prometheus/utility"
+	"io"
 	"log"
 	"sort"
 )
 
-type pendingArchival map[int64]float64
-
 type LevigoMetricPersistence struct {
-	fingerprintHighWaterMarks *LevigoPersistence
-	fingerprintLabelPairs     *LevigoPersistence
-	fingerprintLowWaterMarks  *LevigoPersistence
-	fingerprintSamples        *LevigoPersistence
-	labelNameFingerprints     *LevigoPersistence
-	labelPairFingerprints     *LevigoPersistence
-	metricMembershipIndex     *LevigoMembershipIndex
+	fingerprintHighWaterMarks *storage.LevigoPersistence
+	fingerprintLabelPairs     *storage.LevigoPersistence
+	fingerprintLowWaterMarks  *storage.LevigoPersistence
+	fingerprintSamples        *storage.LevigoPersistence
+	labelNameFingerprints     *storage.LevigoPersistence
+	labelPairFingerprints     *storage.LevigoPersistence
+	metricMembershipIndex     *index.LevigoMembershipIndex
 }
+
+type levigoOpener func()
 
 func (l *LevigoMetricPersistence) Close() error {
 	log.Printf("Closing LevigoPersistence storage containers...")
 
 	var persistences = []struct {
 		name   string
-		closer LevigoCloser
+		closer io.Closer
 	}{
 		{
 			"Fingerprint High-Water Marks",
@@ -94,8 +98,6 @@ func (l *LevigoMetricPersistence) Close() error {
 	return nil
 }
 
-type levigoOpener func()
-
 func NewLevigoMetricPersistence(baseDirectory string) (*LevigoMetricPersistence, error) {
 	log.Printf("Opening LevigoPersistence storage containers...")
 
@@ -111,7 +113,7 @@ func NewLevigoMetricPersistence(baseDirectory string) (*LevigoMetricPersistence,
 			"High-Water Marks by Fingerprint",
 			func() {
 				var anomaly error
-				emission.fingerprintHighWaterMarks, anomaly = NewLevigoPersistence(baseDirectory+"/high_water_marks_by_fingerprint", 1000000, 10)
+				emission.fingerprintHighWaterMarks, anomaly = storage.NewLevigoPersistence(baseDirectory+"/high_water_marks_by_fingerprint", 1000000, 10)
 				errorChannel <- anomaly
 			},
 		},
@@ -119,7 +121,7 @@ func NewLevigoMetricPersistence(baseDirectory string) (*LevigoMetricPersistence,
 			"Label Names and Value Pairs by Fingerprint",
 			func() {
 				var anomaly error
-				emission.fingerprintLabelPairs, anomaly = NewLevigoPersistence(baseDirectory+"/label_name_and_value_pairs_by_fingerprint", 1000000, 10)
+				emission.fingerprintLabelPairs, anomaly = storage.NewLevigoPersistence(baseDirectory+"/label_name_and_value_pairs_by_fingerprint", 1000000, 10)
 				errorChannel <- anomaly
 			},
 		},
@@ -127,7 +129,7 @@ func NewLevigoMetricPersistence(baseDirectory string) (*LevigoMetricPersistence,
 			"Low-Water Marks by Fingerprint",
 			func() {
 				var anomaly error
-				emission.fingerprintLowWaterMarks, anomaly = NewLevigoPersistence(baseDirectory+"/low_water_marks_by_fingerprint", 1000000, 10)
+				emission.fingerprintLowWaterMarks, anomaly = storage.NewLevigoPersistence(baseDirectory+"/low_water_marks_by_fingerprint", 1000000, 10)
 				errorChannel <- anomaly
 			},
 		},
@@ -135,7 +137,7 @@ func NewLevigoMetricPersistence(baseDirectory string) (*LevigoMetricPersistence,
 			"Samples by Fingerprint",
 			func() {
 				var anomaly error
-				emission.fingerprintSamples, anomaly = NewLevigoPersistence(baseDirectory+"/samples_by_fingerprint", 1000000, 10)
+				emission.fingerprintSamples, anomaly = storage.NewLevigoPersistence(baseDirectory+"/samples_by_fingerprint", 1000000, 10)
 				errorChannel <- anomaly
 			},
 		},
@@ -143,7 +145,7 @@ func NewLevigoMetricPersistence(baseDirectory string) (*LevigoMetricPersistence,
 			"Fingerprints by Label Name",
 			func() {
 				var anomaly error
-				emission.labelNameFingerprints, anomaly = NewLevigoPersistence(baseDirectory+"/fingerprints_by_label_name", 1000000, 10)
+				emission.labelNameFingerprints, anomaly = storage.NewLevigoPersistence(baseDirectory+"/fingerprints_by_label_name", 1000000, 10)
 				errorChannel <- anomaly
 			},
 		},
@@ -151,7 +153,7 @@ func NewLevigoMetricPersistence(baseDirectory string) (*LevigoMetricPersistence,
 			"Fingerprints by Label Name and Value Pair",
 			func() {
 				var anomaly error
-				emission.labelPairFingerprints, anomaly = NewLevigoPersistence(baseDirectory+"/fingerprints_by_label_name_and_value_pair", 1000000, 10)
+				emission.labelPairFingerprints, anomaly = storage.NewLevigoPersistence(baseDirectory+"/fingerprints_by_label_name_and_value_pair", 1000000, 10)
 				errorChannel <- anomaly
 			},
 		},
@@ -159,7 +161,7 @@ func NewLevigoMetricPersistence(baseDirectory string) (*LevigoMetricPersistence,
 			"Metric Membership Index",
 			func() {
 				var anomaly error
-				emission.metricMembershipIndex, anomaly = NewLevigoMembershipIndex(baseDirectory+"/metric_membership_index", 1000000, 10)
+				emission.metricMembershipIndex, anomaly = index.NewLevigoMembershipIndex(baseDirectory+"/metric_membership_index", 1000000, 10)
 				errorChannel <- anomaly
 			},
 		},
@@ -190,7 +192,7 @@ func NewLevigoMetricPersistence(baseDirectory string) (*LevigoMetricPersistence,
 	return emission, nil
 }
 
-func ddoFromSample(sample *Sample) *data.MetricDDO {
+func ddoFromSample(sample *model.Sample) *data.MetricDDO {
 	labelNames := make([]string, 0, len(sample.Labels))
 
 	for labelName, _ := range sample.Labels {
@@ -218,7 +220,7 @@ func ddoFromSample(sample *Sample) *data.MetricDDO {
 	return metricDDO
 }
 
-func ddoFromMetric(metric Metric) *data.MetricDDO {
+func ddoFromMetric(metric model.Metric) *data.MetricDDO {
 	labelNames := make([]string, 0, len(metric))
 
 	for labelName, _ := range metric {
@@ -266,7 +268,7 @@ func (l *LevigoMetricPersistence) indexMetric(ddo *data.MetricDDO) error {
 
 func fingerprintDDOForMessage(message proto.Message) (*data.FingerprintDDO, error) {
 	if messageByteArray, marshalError := proto.Marshal(message); marshalError == nil {
-		fingerprint := FingerprintFromByteArray(messageByteArray)
+		fingerprint := model.FingerprintFromByteArray(messageByteArray)
 		return &data.FingerprintDDO{
 			Signature: proto.String(string(fingerprint)),
 		}, nil
@@ -431,7 +433,7 @@ func (l *LevigoMetricPersistence) appendFingerprints(ddo *data.MetricDDO) error 
 	return errors.New("Unknown error in appending label pairs to fingerprint.")
 }
 
-func (l *LevigoMetricPersistence) AppendSample(sample *Sample) error {
+func (l *LevigoMetricPersistence) AppendSample(sample *model.Sample) error {
 	fmt.Printf("Sample: %q\n", sample)
 
 	metricDDO := ddoFromSample(sample)
@@ -501,14 +503,14 @@ func (l *LevigoMetricPersistence) GetLabelNames() ([]string, error) {
 	return nil, errors.New("Unknown error encountered when querying label names.")
 }
 
-func (l *LevigoMetricPersistence) GetLabelPairs() ([]LabelPairs, error) {
+func (l *LevigoMetricPersistence) GetLabelPairs() ([]model.LabelPairs, error) {
 	if getAll, getAllError := l.labelPairFingerprints.GetAll(); getAllError == nil {
-		result := make([]LabelPairs, 0, len(getAll))
+		result := make([]model.LabelPairs, 0, len(getAll))
 		labelPairDDO := &data.LabelPairDDO{}
 
 		for _, pair := range getAll {
 			if unmarshalError := proto.Unmarshal(pair.Left, labelPairDDO); unmarshalError == nil {
-				item := LabelPairs{
+				item := model.LabelPairs{
 					*labelPairDDO.Name: *labelPairDDO.Value,
 				}
 				result = append(result, item)
@@ -526,12 +528,12 @@ func (l *LevigoMetricPersistence) GetLabelPairs() ([]LabelPairs, error) {
 	return nil, errors.New("Unknown error encountered when querying label pairs.")
 }
 
-func (l *LevigoMetricPersistence) GetMetrics() ([]LabelPairs, error) {
+func (l *LevigoMetricPersistence) GetMetrics() ([]model.LabelPairs, error) {
 	log.Printf("GetMetrics()\n")
 
 	if getAll, getAllError := l.labelPairFingerprints.GetAll(); getAllError == nil {
 		log.Printf("getAll: %q\n", getAll)
-		result := make([]LabelPairs, 0)
+		result := make([]model.LabelPairs, 0)
 		fingerprintCollection := &data.FingerprintCollectionDDO{}
 
 		fingerprints := make(utility.Set)
@@ -552,7 +554,7 @@ func (l *LevigoMetricPersistence) GetMetrics() ([]LabelPairs, error) {
 							labelPairCollectionDDO := &data.LabelPairCollectionDDO{}
 
 							if labelPairCollectionDDOMarshalError := proto.Unmarshal(labelPairCollectionRaw, labelPairCollectionDDO); labelPairCollectionDDOMarshalError == nil {
-								intermediate := make(LabelPairs, 0)
+								intermediate := make(model.LabelPairs, 0)
 
 								for _, member := range labelPairCollectionDDO.Member {
 									intermediate[*member.Name] = *member.Value
@@ -581,7 +583,7 @@ func (l *LevigoMetricPersistence) GetMetrics() ([]LabelPairs, error) {
 	return nil, errors.New("Unknown error encountered when querying metrics.")
 }
 
-func (l *LevigoMetricPersistence) GetWatermarksForMetric(metric Metric) (*Interval, int, error) {
+func (l *LevigoMetricPersistence) GetWatermarksForMetric(metric model.Metric) (*model.Interval, int, error) {
 	metricDDO := ddoFromMetric(metric)
 
 	if fingerprintDDO, fingerprintDDOErr := fingerprintDDOForMessage(metricDDO); fingerprintDDOErr == nil {
@@ -602,7 +604,7 @@ func (l *LevigoMetricPersistence) GetWatermarksForMetric(metric Metric) (*Interv
 						var foundEntries int = 0
 
 						if *fingerprintDDO.Signature == *found.Fingerprint.Signature {
-							emission := &Interval{
+							emission := &model.Interval{
 								OldestInclusive: indexable.DecodeTime(found.Timestamp),
 								NewestInclusive: indexable.DecodeTime(found.Timestamp),
 							}
@@ -622,7 +624,7 @@ func (l *LevigoMetricPersistence) GetWatermarksForMetric(metric Metric) (*Interv
 							}
 							return emission, foundEntries, nil
 						} else {
-							return &Interval{}, -6, nil
+							return &model.Interval{}, -6, nil
 						}
 					} else {
 						log.Printf("Could not de-serialize start key: %q\n", unmarshalErr)
@@ -655,7 +657,7 @@ func (l *LevigoMetricPersistence) GetWatermarksForMetric(metric Metric) (*Interv
 
 // TODO(mtp): Holes in the data!
 
-func (l *LevigoMetricPersistence) GetSamplesForMetric(metric Metric, interval Interval) ([]Samples, error) {
+func (l *LevigoMetricPersistence) GetSamplesForMetric(metric model.Metric, interval model.Interval) ([]model.Samples, error) {
 	metricDDO := ddoFromMetric(metric)
 
 	if fingerprintDDO, fingerprintDDOErr := fingerprintDDOForMessage(metricDDO); fingerprintDDOErr == nil {
@@ -667,7 +669,7 @@ func (l *LevigoMetricPersistence) GetSamplesForMetric(metric Metric, interval In
 				Timestamp:   indexable.EncodeTime(interval.OldestInclusive),
 			}
 
-			emission := make([]Samples, 0)
+			emission := make([]model.Samples, 0)
 
 			if encode, encodeErr := coding.NewProtocolBufferEncoder(start).Encode(); encodeErr == nil {
 				iterator.Seek(encode)
@@ -680,8 +682,8 @@ func (l *LevigoMetricPersistence) GetSamplesForMetric(metric Metric, interval In
 							if *fingerprintDDO.Signature == *key.Fingerprint.Signature {
 								// Wart
 								if indexable.DecodeTime(key.Timestamp).Unix() <= interval.NewestInclusive.Unix() {
-									emission = append(emission, Samples{
-										Value:     SampleValue(*value.Value),
+									emission = append(emission, model.Samples{
+										Value:     model.SampleValue(*value.Value),
 										Timestamp: indexable.DecodeTime(key.Timestamp),
 									})
 								} else {

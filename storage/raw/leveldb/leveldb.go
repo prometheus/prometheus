@@ -1,14 +1,11 @@
-package main
+package leveldb
 
 import (
 	"github.com/jmhodges/levigo"
 	"github.com/matttproud/prometheus/coding"
+	"github.com/matttproud/prometheus/storage/raw"
 	"io"
 )
-
-type LevigoCloser interface {
-	Close() error
-}
 
 type LevigoPersistence struct {
 	cache        *levigo.Cache
@@ -17,6 +14,13 @@ type LevigoPersistence struct {
 	storage      *levigo.DB
 	readOptions  *levigo.ReadOptions
 	writeOptions *levigo.WriteOptions
+}
+
+type iteratorCloser struct {
+	iterator    *levigo.Iterator
+	readOptions *levigo.ReadOptions
+	snapshot    *levigo.Snapshot
+	storage     *levigo.DB
 }
 
 func NewLevigoPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (*LevigoPersistence, error) {
@@ -87,14 +91,13 @@ func (l *LevigoPersistence) Close() error {
 }
 
 func (l *LevigoPersistence) Get(value coding.Encoder) ([]byte, error) {
-	var key []byte
-	var keyError error
-
-	if key, keyError = value.Encode(); keyError == nil {
+	if key, keyError := value.Encode(); keyError == nil {
 		return l.storage.Get(l.readOptions, key)
+	} else {
+		return nil, keyError
 	}
 
-	return nil, keyError
+	panic("unreachable")
 }
 
 func (l *LevigoPersistence) Has(value coding.Encoder) (bool, error) {
@@ -108,26 +111,20 @@ func (l *LevigoPersistence) Has(value coding.Encoder) (bool, error) {
 }
 
 func (l *LevigoPersistence) Drop(value coding.Encoder) error {
-	var key []byte
-	var keyError error
-
-	if key, keyError = value.Encode(); keyError == nil {
+	if key, keyError := value.Encode(); keyError == nil {
 
 		if deleteError := l.storage.Delete(l.writeOptions, key); deleteError != nil {
 			return deleteError
 		}
-
-		return nil
+	} else {
+		return keyError
 	}
 
-	return keyError
+	return nil
 }
 
 func (l *LevigoPersistence) Put(key, value coding.Encoder) error {
-	var keyEncoded []byte
-	var keyError error
-
-	if keyEncoded, keyError = key.Encode(); keyError == nil {
+	if keyEncoded, keyError := key.Encode(); keyError == nil {
 		if valueEncoded, valueError := value.Encode(); valueError == nil {
 
 			if putError := l.storage.Put(l.writeOptions, keyEncoded, valueEncoded); putError != nil {
@@ -136,14 +133,14 @@ func (l *LevigoPersistence) Put(key, value coding.Encoder) error {
 		} else {
 			return valueError
 		}
-
-		return nil
+	} else {
+		return keyError
 	}
 
-	return keyError
+	return nil
 }
 
-func (l *LevigoPersistence) GetAll() ([]Pair, error) {
+func (l *LevigoPersistence) GetAll() ([]raw.Pair, error) {
 	snapshot := l.storage.NewSnapshot()
 	defer l.storage.ReleaseSnapshot(snapshot)
 	readOptions := levigo.NewReadOptions()
@@ -154,10 +151,10 @@ func (l *LevigoPersistence) GetAll() ([]Pair, error) {
 	defer iterator.Close()
 	iterator.SeekToFirst()
 
-	result := make([]Pair, 0)
+	result := make([]raw.Pair, 0)
 
 	for iterator := iterator; iterator.Valid(); iterator.Next() {
-		result = append(result, Pair{Left: iterator.Key(), Right: iterator.Value()})
+		result = append(result, raw.Pair{Left: iterator.Key(), Right: iterator.Value()})
 	}
 
 	iteratorError := iterator.GetError()
@@ -167,13 +164,6 @@ func (l *LevigoPersistence) GetAll() ([]Pair, error) {
 	}
 
 	return result, nil
-}
-
-type iteratorCloser struct {
-	iterator    *levigo.Iterator
-	readOptions *levigo.ReadOptions
-	snapshot    *levigo.Snapshot
-	storage     *levigo.DB
 }
 
 func (i *iteratorCloser) Close() error {

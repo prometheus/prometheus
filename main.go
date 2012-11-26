@@ -2,11 +2,12 @@ package main
 
 import (
 	"code.google.com/p/gorest"
+	"github.com/matttproud/prometheus/storage/metric/leveldb"
 	"net/http"
 )
 
 func main() {
-	m, _ := NewLevigoMetricPersistence("/tmp/metrics")
+	m, _ := leveldb.NewLevigoMetricPersistence("/tmp/metrics")
 	s := &MetricsService{
 		persistence: m,
 	}
