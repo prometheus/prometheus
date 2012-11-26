@@ -20,3 +20,8 @@ Initial Hurdles
 Milestones
 ==========
 1.  In-memory archive, basic rule language, simple computation engine, and naive exposition system.
+
+
+License
+=======
+Apache License 2.0
