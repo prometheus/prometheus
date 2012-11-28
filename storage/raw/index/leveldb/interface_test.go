@@ -11,24 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package leveldb
 
 import (
-	"github.com/matttproud/prometheus/model"
+	"github.com/matttproud/prometheus/storage/raw/index"
+	"testing"
 )
 
-type MetricPersistence interface {
-	Close() error
-
-	AppendSample(sample *model.Sample) error
-
-	GetLabelNames() ([]string, error)
-	GetLabelPairs() ([]model.LabelPairs, error)
-	GetMetrics() ([]model.LabelPairs, error)
-
-	GetMetricFingerprintsForLabelPairs(labelSets []*model.LabelPairs) ([]*model.Fingerprint, error)
-	GetFingerprintLabelPairs(fingerprint model.Fingerprint) (model.LabelPairs, error)
-
-	RecordLabelNameFingerprint(sample *model.Sample) error
-	RecordFingerprintWatermark(sample *model.Sample) error
+func TestInterfaceAdherence(t *testing.T) {
+	var _ index.MembershipIndex = &LevigoMembershipIndex{}
 }
