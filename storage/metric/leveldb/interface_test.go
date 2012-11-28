@@ -19,5 +19,5 @@ import (
 )
 
 func TestInterfaceAdherence(t *testing.T) {
-	var _ metric.MetricPersistence = &LevigoMetricPersistence{}
+	var _ metric.MetricPersistence = &LevelDBMetricPersistence{}
 }

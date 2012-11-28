@@ -19,5 +19,5 @@ import (
 )
 
 func TestInterfaceAdherence(t *testing.T) {
-	var _ index.MembershipIndex = &LevigoMembershipIndex{}
+	var _ index.MembershipIndex = &LevelDBMembershipIndex{}
 }

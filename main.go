@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	m, _ := leveldb.NewLevigoMetricPersistence("/tmp/metrics")
+	m, _ := leveldb.NewLevelDBMetricPersistence("/tmp/metrics")
 	s := &MetricsService{
 		persistence: m,
 	}

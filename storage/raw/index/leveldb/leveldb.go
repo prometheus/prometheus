@@ -23,36 +23,36 @@ var (
 	existenceValue = coding.NewProtocolBufferEncoder(&data.MembershipIndexValueDDO{})
 )
 
-type LevigoMembershipIndex struct {
-	persistence *leveldb.LevigoPersistence
+type LevelDBMembershipIndex struct {
+	persistence *leveldb.LevelDBPersistence
 }
 
-func (l *LevigoMembershipIndex) Close() error {
+func (l *LevelDBMembershipIndex) Close() error {
 	return l.persistence.Close()
 }
 
-func (l *LevigoMembershipIndex) Has(key coding.Encoder) (bool, error) {
+func (l *LevelDBMembershipIndex) Has(key coding.Encoder) (bool, error) {
 	return l.persistence.Has(key)
 }
 
-func (l *LevigoMembershipIndex) Drop(key coding.Encoder) error {
+func (l *LevelDBMembershipIndex) Drop(key coding.Encoder) error {
 	return l.persistence.Drop(key)
 }
 
-func (l *LevigoMembershipIndex) Put(key coding.Encoder) error {
+func (l *LevelDBMembershipIndex) Put(key coding.Encoder) error {
 	return l.persistence.Put(key, existenceValue)
 }
 
-func NewLevigoMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (*LevigoMembershipIndex, error) {
-	var levigoPersistence *leveldb.LevigoPersistence
-	var levigoPersistenceError error
+func NewLevelDBMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (*LevelDBMembershipIndex, error) {
+	var leveldbPersistence *leveldb.LevelDBPersistence
+	var persistenceError error
 
-	if levigoPersistence, levigoPersistenceError = leveldb.NewLevigoPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded); levigoPersistenceError == nil {
-		levigoMembershipIndex := &LevigoMembershipIndex{
-			persistence: levigoPersistence,
+	if leveldbPersistence, persistenceError = leveldb.NewLevelDBPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded); persistenceError == nil {
+		leveldbMembershipIndex := &LevelDBMembershipIndex{
+			persistence: leveldbPersistence,
 		}
-		return levigoMembershipIndex, nil
+		return leveldbMembershipIndex, nil
 	}
 
-	return nil, levigoPersistenceError
+	return nil, persistenceError
 }

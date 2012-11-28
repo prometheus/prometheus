@@ -28,7 +28,7 @@ import (
 )
 
 func TestBasicLifecycle(t *testing.T) {
-	temporaryDirectory, temporaryDirectoryErr := ioutil.TempDir("", "levigo_metric_persistence_test")
+	temporaryDirectory, temporaryDirectoryErr := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 	if temporaryDirectoryErr != nil {
 		t.Errorf("Could not create test directory: %q\n", temporaryDirectoryErr)
@@ -41,26 +41,26 @@ func TestBasicLifecycle(t *testing.T) {
 		}
 	}()
 
-	persistence, openErr := NewLevigoMetricPersistence(temporaryDirectory)
+	persistence, openErr := NewLevelDBMetricPersistence(temporaryDirectory)
 
 	if openErr != nil {
-		t.Errorf("Could not create Levigo Metric Persistence: %q\n", openErr)
+		t.Errorf("Could not create LevelDB Metric Persistence: %q\n", openErr)
 	}
 
 	if persistence == nil {
-		t.Errorf("Received nil Levigo Metric Persistence.\n")
+		t.Errorf("Received nil LevelDB Metric Persistence.\n")
 		return
 	}
 
 	closeErr := persistence.Close()
 
 	if closeErr != nil {
-		t.Errorf("Could not close Levigo Metric Persistence: %q\n", closeErr)
+		t.Errorf("Could not close LevelDB Metric Persistence: %q\n", closeErr)
 	}
 }
 
 func TestReadEmpty(t *testing.T) {
-	temporaryDirectory, _ := ioutil.TempDir("", "levigo_metric_persistence_test")
+	temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 	defer func() {
 		if removeAllErr := os.RemoveAll(temporaryDirectory); removeAllErr != nil {
@@ -68,7 +68,7 @@ func TestReadEmpty(t *testing.T) {
 		}
 	}()
 
-	persistence, _ := NewLevigoMetricPersistence(temporaryDirectory)
+	persistence, _ := NewLevelDBMetricPersistence(temporaryDirectory)
 
 	defer func() {
 		persistence.Close()
@@ -167,7 +167,7 @@ func TestReadEmpty(t *testing.T) {
 }
 
 func TestAppendSampleAsPureSparseAppend(t *testing.T) {
-	temporaryDirectory, _ := ioutil.TempDir("", "levigo_metric_persistence_test")
+	temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 	defer func() {
 		if removeAllErr := os.RemoveAll(temporaryDirectory); removeAllErr != nil {
@@ -175,7 +175,7 @@ func TestAppendSampleAsPureSparseAppend(t *testing.T) {
 		}
 	}()
 
-	persistence, _ := NewLevigoMetricPersistence(temporaryDirectory)
+	persistence, _ := NewLevelDBMetricPersistence(temporaryDirectory)
 
 	defer func() {
 		persistence.Close()
@@ -199,7 +199,7 @@ func TestAppendSampleAsPureSparseAppend(t *testing.T) {
 }
 
 func TestAppendSampleAsSparseAppendWithReads(t *testing.T) {
-	temporaryDirectory, _ := ioutil.TempDir("", "levigo_metric_persistence_test")
+	temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 	defer func() {
 		if removeAllErr := os.RemoveAll(temporaryDirectory); removeAllErr != nil {
@@ -207,7 +207,7 @@ func TestAppendSampleAsSparseAppendWithReads(t *testing.T) {
 		}
 	}()
 
-	persistence, _ := NewLevigoMetricPersistence(temporaryDirectory)
+	persistence, _ := NewLevelDBMetricPersistence(temporaryDirectory)
 
 	defer func() {
 		persistence.Close()
@@ -292,7 +292,7 @@ func TestAppendSampleAsSparseAppendWithReads(t *testing.T) {
 }
 
 func TestAppendSampleAsPureSingleEntityAppend(t *testing.T) {
-	temporaryDirectory, _ := ioutil.TempDir("", "levigo_metric_persistence_test")
+	temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 	defer func() {
 		if removeAllErr := os.RemoveAll(temporaryDirectory); removeAllErr != nil {
@@ -300,7 +300,7 @@ func TestAppendSampleAsPureSingleEntityAppend(t *testing.T) {
 		}
 	}()
 
-	persistence, _ := NewLevigoMetricPersistence(temporaryDirectory)
+	persistence, _ := NewLevelDBMetricPersistence(temporaryDirectory)
 
 	defer func() {
 		persistence.Close()
@@ -333,7 +333,7 @@ func TestStochastic(t *testing.T) {
 		numberOfSamples := random.Intn(1024) + 2
 		numberOfRangeScans := random.Intn(3)
 
-		temporaryDirectory, _ := ioutil.TempDir("", "levigo_metric_persistence_test")
+		temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 		defer func() {
 			if removeAllErr := os.RemoveAll(temporaryDirectory); removeAllErr != nil {
@@ -341,7 +341,7 @@ func TestStochastic(t *testing.T) {
 			}
 		}()
 
-		persistence, _ := NewLevigoMetricPersistence(temporaryDirectory)
+		persistence, _ := NewLevelDBMetricPersistence(temporaryDirectory)
 
 		defer func() {
 			persistence.Close()

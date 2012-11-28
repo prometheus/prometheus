@@ -22,7 +22,7 @@ import (
 type MetricsService struct {
 	gorest.RestService `root:"/" consumes:"application/json" produces:"application/json"`
 
-	persistence *leveldb.LevigoMetricPersistence
+	persistence *leveldb.LevelDBMetricPersistence
 
 	listLabels     gorest.EndPoint `method:"GET" path:"/labels/" output:"[]string"`
 	listLabelPairs gorest.EndPoint `method:"GET" path:"/label-pairs/" output:"[]model.LabelPairs"`
