@@ -29,6 +29,5 @@ type MetricPersistence interface {
 	GetMetricFingerprintsForLabelPairs(labelSets []*model.LabelPairs) ([]*model.Fingerprint, error)
 	GetFingerprintLabelPairs(fingerprint model.Fingerprint) (model.LabelPairs, error)
 
-	RecordLabelNameFingerprint(sample *model.Sample) error
 	RecordFingerprintWatermark(sample *model.Sample) error
 }

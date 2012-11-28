@@ -1,0 +1,9 @@
+language: go
+
+before_script:
+- gvm install go1.0.3 || true
+- gvm use go1.0.3 || true
+
+script:
+ - make -f Makefile.TRAVIS
+
