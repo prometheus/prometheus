@@ -539,27 +539,19 @@ func (l *LevelDBMetricPersistence) GetLabelPairs() ([]model.LabelPairs, error) {
 }
 
 func (l *LevelDBMetricPersistence) GetMetrics() ([]model.LabelPairs, error) {
-	log.Printf("GetMetrics()\n")
-
 	if getAll, getAllError := l.labelPairFingerprints.GetAll(); getAllError == nil {
-		log.Printf("getAll: %q\n", getAll)
 		result := make([]model.LabelPairs, 0)
 		fingerprintCollection := &data.FingerprintCollectionDDO{}
 
 		fingerprints := make(utility.Set)
 
 		for _, pair := range getAll {
-			log.Printf("pair: %q\n", pair)
 			if unmarshalError := proto.Unmarshal(pair.Right, fingerprintCollection); unmarshalError == nil {
 				for _, member := range fingerprintCollection.Member {
-					log.Printf("member: %q\n", member)
 					if !fingerprints.Has(*member.Signature) {
-						log.Printf("!Has: %q\n", member.Signature)
 						fingerprints.Add(*member.Signature)
-						log.Printf("fingerprints %q\n", fingerprints)
 						fingerprintEncoded := coding.NewProtocolBufferEncoder(member)
 						if labelPairCollectionRaw, labelPairCollectionRawError := l.fingerprintLabelPairs.Get(fingerprintEncoded); labelPairCollectionRawError == nil {
-							log.Printf("labelPairCollectionRaw: %q\n", labelPairCollectionRaw)
 
 							labelPairCollectionDDO := &data.LabelPairCollectionDDO{}
 
@@ -569,8 +561,6 @@ func (l *LevelDBMetricPersistence) GetMetrics() ([]model.LabelPairs, error) {
 								for _, member := range labelPairCollectionDDO.Member {
 									intermediate[*member.Name] = *member.Value
 								}
-
-								log.Printf("intermediate: %q\n", intermediate)
 
 								result = append(result, intermediate)
 							} else {
@@ -725,4 +715,16 @@ func (l *LevelDBMetricPersistence) GetSamplesForMetric(metric model.Metric, inte
 	}
 
 	return nil, errors.New("Unknown error occurred while querying metric watermarks.")
+}
+
+func (l *LevelDBMetricPersistence) GetFingerprintLabelPairs(f model.Fingerprint) (model.LabelPairs, error) {
+	panic("NOT IMPLEMENTED")
+}
+
+func (l *LevelDBMetricPersistence) GetMetricFingerprintsForLabelPairs(p []*model.LabelPairs) ([]*model.Fingerprint, error) {
+	panic("NOT IMPLEMENTED")
+}
+
+func (l *LevelDBMetricPersistence) RecordFingerprintWatermark(s *model.Sample) error {
+	panic("NOT IMPLEMENTED")
 }

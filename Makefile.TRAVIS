@@ -1,0 +1,144 @@
+# Copyright 2012 Prometheus Team
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+OVERLAY_ROOT := ${HOME}/overlay_root
+
+export PATH := $(PATH):$(OVERLAY_ROOT)/bin
+export LD_LIBRARY_PATH := $(LD_LIBRARY_PATH):$(OVERLAY_ROOT)/lib
+export CFLAGS := $(CFLAGS) -I$(OVERLAY_ROOT)/include
+export CXXFLAGS := $(CXXFLAGS) -I$(OVERLAY_ROOT)/include
+export CPPFLAGS := $(CPPFLAGS) -I$(OVERLAY_ROOT)/include
+export LDFLAGS := $(LDFLAGS) -L$(OVERLAY_ROOT)/lib
+export CGO_CFLAGS := $(CFLAGS)
+export CGO_LDFLAGS := $(LDFLAGS)
+
+GO_GET := go get -v -x
+APT_GET_INSTALL := sudo apt-get install -y
+WGET := wget -c
+
+all: test
+
+preparation: preparation-stamp
+
+preparation-stamp: build-dependencies
+	touch $@
+
+build-dependencies: build-dependencies-stamp
+
+build-dependencies-stamp: bison cc mercurial protoc goprotobuf go leveldb levigo gorest
+	touch $@
+
+bison: bison-stamp
+
+bison-stamp:
+	[ -x "$$(which bison)" ] || $(APT_GET_INSTALL) bison
+
+cc: cc-stamp
+
+cc-stamp:
+	[ -x "$$(which cc)" ] || $(APT_GET_INSTALL) build-essential
+	touch $@
+
+go: go-stamp
+
+go-stamp: bison
+	gvm install go1.0.3 || true
+	gvm use go1.0.3 || true
+	[ -x "$$(which go)" ]
+	touch $@
+
+mercurial: mercurial-stamp
+
+mercurial-stamp:
+	[ -x "$$(which hg)" ] || $(APT_GET_INSTALL) mercurial
+	touch $@
+
+wget: wget-stamp
+
+wget-stamp:
+	[ -x "$$(which wget)" ] || $(APT_GET_INSTALL) wget
+	touch $@
+
+protobuf-2.4.1.tar.bz2: wget
+	$(WGET) http://protobuf.googlecode.com/files/$@
+
+protoc: protoc-stamp
+
+protoc-stamp: cc protobuf-2.4.1.tar.bz2
+	([ ! -x "$$(which protoc)" ] && tar xjvf protobuf-2.4.1.tar.bz2) || true
+	([ ! -x "$$(which protoc)" ] && cd protobuf-2.4.1 && ./configure --prefix="$(OVERLAY_ROOT)") || true
+	([ ! -x "$$(which protoc)" ] && $(MAKE) -C protobuf-2.4.1) || true
+	([ ! -x "$$(which protoc)" ] && $(MAKE) -C protobuf-2.4.1 install) || true
+	[ -x "$$(which protoc)" ]
+	touch $@
+
+goprotobuf: goprotobuf-stamp
+
+goprotobuf-stamp: go protoc source
+	$(GO_GET) code.google.com/p/goprotobuf/proto
+	$(GO_GET) code.google.com/p/goprotobuf/protoc-gen-go
+	touch $@
+
+leveldb: leveldb-stamp
+
+leveldb-stamp: cc rsync leveldb-1.7.0.tar.gz
+	tar xzvf leveldb-1.7.0.tar.gz
+	$(MAKE) -C leveldb-1.7.0
+	rsync -av "leveldb-1.7.0/include/" "$(OVERLAY_ROOT)/include/"
+	rsync -av "leveldb-1.7.0/"*.so* "$(OVERLAY_ROOT)/lib/"
+	touch $@
+
+leveldb-1.7.0.tar.gz: wget
+	$(WGET) http://leveldb.googlecode.com/files/leveldb-1.7.0.tar.gz
+
+levigo: levigo-stamp
+
+levigo-stamp: leveldb go source
+	$(GO_GET) github.com/jmhodges/levigo
+	touch $@
+
+rsync: rsync-stamp
+
+rsync-stamp:
+	[ -x "$$(which rsync)" ] || $(APT_GET_INSTALL) rsync
+
+test: test-stamp
+
+test-stamp: preparation source
+	cd ${GOPATH}/src/github.com/matttproud
+	$(MAKE) test
+	touch $@
+
+source: source-stamp
+
+source-stamp:
+	-mkdir -vp ${GOPATH}/src/github.com/matttproud
+	ln -sf $${PWD} ${GOPATH}/src/github.com/matttproud/prometheus
+	touch $@
+
+
+gorest: gorest-stamp
+
+gorest-stamp: go source
+	$(GO_GET) code.google.com/p/gorest
+	touch $@
+
+clean:
+	-rm *-stamp
+	-rm protobuf-2.4.1.tar.bz2
+	-rm -rf "$(OVERLAY_ROOT)"
+	-rm -rf leveldb-1.7.0
+	-rm -rf protobuf-2.4.1
+
+
+.PHONY: all preparation build-dependencies mercurial clean cc wget protoc goprotobuf bison go leveldb rsync levigo test gorest source
