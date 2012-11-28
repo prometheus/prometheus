@@ -19,5 +19,5 @@ import (
 )
 
 func TestInterfaceAdherence(t *testing.T) {
-	var _ raw.Persistence = &LevigoPersistence{}
+	var _ raw.Persistence = &LevelDBPersistence{}
 }
