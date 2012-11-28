@@ -28,7 +28,6 @@ clean:
 	$(MAKE) -C model clean
 	-find . -type f -iname '*~' -exec rm '{}' ';'
 	-find . -type f -iname '*#' -exec rm '{}' ';'
-	-find . -type f -iname '.*' -exec rm '{}' ';'
 
 format:
 	find . -iname '*.go' | grep -v generated | xargs -n1 gofmt -w
