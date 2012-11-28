@@ -27,6 +27,10 @@ import (
 	"time"
 )
 
+const (
+	stochasticMaximumVariance = 64
+)
+
 func TestBasicLifecycle(t *testing.T) {
 	temporaryDirectory, temporaryDirectoryErr := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
@@ -325,13 +329,15 @@ func TestAppendSampleAsPureSingleEntityAppend(t *testing.T) {
 
 func TestStochastic(t *testing.T) {
 	stochastic := func(x int) bool {
+		s := time.Now()
 		seed := rand.NewSource(int64(x))
 		random := rand.New(seed)
-		numberOfMetrics := random.Intn(5) + 1
-		numberOfSharedLabels := random.Intn(5)
-		numberOfUnsharedLabels := random.Intn(5)
-		numberOfSamples := random.Intn(1024) + 2
-		numberOfRangeScans := random.Intn(3)
+
+		numberOfMetrics := random.Intn(stochasticMaximumVariance) + 1
+		numberOfSharedLabels := random.Intn(stochasticMaximumVariance)
+		numberOfUnsharedLabels := random.Intn(stochasticMaximumVariance)
+		numberOfSamples := random.Intn(stochasticMaximumVariance) + 2
+		numberOfRangeScans := random.Intn(stochasticMaximumVariance)
 
 		temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
@@ -544,10 +550,6 @@ func TestStochastic(t *testing.T) {
 				return false
 			}
 
-			minimum := metricEarliestSample[metricIndex]
-			maximum := metricNewestSample[metricIndex]
-			spread := maximum - minimum
-
 			for i := 0; i < numberOfRangeScans; i++ {
 				timestamps := metricTimestamps[metricIndex]
 
@@ -555,34 +557,48 @@ func TestStochastic(t *testing.T) {
 				var second int64 = 0
 
 				for {
-					first = minimum + random.Int63n(spread)
-					if _, has := timestamps[first]; has {
-						break
+					firstCandidate := random.Int63n(int64(len(timestamps)))
+					secondCandidate := random.Int63n(int64(len(timestamps)))
+
+					smallest := int64(-1)
+					largest := int64(-1)
+
+					if firstCandidate == secondCandidate {
+						continue
+					} else if firstCandidate > secondCandidate {
+						largest = firstCandidate
+						smallest = secondCandidate
+					} else {
+						largest = secondCandidate
+						smallest = firstCandidate
 					}
+
+					j := int64(0)
+					for i := range timestamps {
+						if j == smallest {
+							first = i
+						} else if j == largest {
+							second = i
+							break
+						}
+						j++
+					}
+
+					break
 				}
 
-				for {
-					second = minimum + random.Int63n(spread)
-					if _, has := timestamps[second]; has && second != first {
-						break
-					}
-				}
+				begin := first
+				end := second
 
-				var begin int64 = 0
-				var end int64 = 0
-
-				if first > second {
-					begin = second
-					end = first
-				} else {
-					begin = first
-					end = second
+				if second < first {
+					begin, end = second, first
 				}
 
 				interval := model.Interval{
 					OldestInclusive: time.Unix(begin, 0),
 					NewestInclusive: time.Unix(end, 0),
 				}
+
 				rangeValues, rangeErr := persistence.GetSamplesForMetric(metric, interval)
 
 				if rangeErr != nil {
@@ -594,6 +610,8 @@ func TestStochastic(t *testing.T) {
 				}
 			}
 		}
+
+		fmt.Printf("Duration %q\n", time.Now().Sub(s))
 
 		return true
 	}

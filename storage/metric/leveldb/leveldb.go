@@ -16,7 +16,6 @@ package leveldb
 import (
 	"code.google.com/p/goprotobuf/proto"
 	"errors"
-	"fmt"
 	"github.com/matttproud/prometheus/coding"
 	"github.com/matttproud/prometheus/coding/indexable"
 	"github.com/matttproud/prometheus/model"
@@ -447,8 +446,6 @@ func (l *LevelDBMetricPersistence) appendFingerprints(ddo *data.MetricDDO) error
 }
 
 func (l *LevelDBMetricPersistence) AppendSample(sample *model.Sample) error {
-	fmt.Printf("Sample: %q\n", sample)
-
 	metricDDO := ddoFromSample(sample)
 
 	if indexHas, indexHasError := l.hasIndexMetric(metricDDO); indexHasError == nil {
@@ -628,7 +625,6 @@ func (l *LevelDBMetricPersistence) GetWatermarksForMetric(metric model.Metric) (
 										return emission, foundEntries, nil
 									}
 									foundEntries++
-									log.Printf("b foundEntries++ %d\n", foundEntries)
 									emission.NewestInclusive = indexable.DecodeTime(found.Timestamp)
 								} else {
 									log.Printf("Could not de-serialize subsequent key: %q\n", subsequentUnmarshalErr)
