@@ -25,7 +25,6 @@ import (
 	"github.com/matttproud/prometheus/utility"
 	"io"
 	"log"
-	"sort"
 )
 
 type LevelDBMetricPersistence struct {
@@ -83,18 +82,20 @@ func (l *LevelDBMetricPersistence) Close() error {
 		name := persistence.name
 		closer := persistence.closer
 
-		if closer != nil {
-			log.Printf("Closing LevelDBPersistence storage container: %s\n", name)
-			closingError := closer.Close()
+		go func(name string, closer io.Closer) {
+			if closer != nil {
+				log.Printf("Closing LevelDBPersistence storage container: %s\n", name)
+				closingError := closer.Close()
 
-			if closingError != nil {
-				log.Printf("Could not close a LevelDBPersistence storage container; inconsistencies are possible: %q\n", closingError)
+				if closingError != nil {
+					log.Printf("Could not close a LevelDBPersistence storage container; inconsistencies are possible: %q\n", closingError)
+				}
+
+				errorChannel <- closingError
+			} else {
+				errorChannel <- nil
 			}
-
-			errorChannel <- closingError
-		} else {
-			errorChannel <- nil
-		}
+		}(name, closer)
 	}
 
 	for i := 0; i < cap(errorChannel); i++ {
@@ -124,57 +125,57 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 		{
 			"High-Water Marks by Fingerprint",
 			func() {
-				var anomaly error
-				emission.fingerprintHighWaterMarks, anomaly = storage.NewLevelDBPersistence(baseDirectory+"/high_water_marks_by_fingerprint", 1000000, 10)
-				errorChannel <- anomaly
+				var err error
+				emission.fingerprintHighWaterMarks, err = storage.NewLevelDBPersistence(baseDirectory+"/high_water_marks_by_fingerprint", 1000000, 10)
+				errorChannel <- err
 			},
 		},
 		{
 			"Label Names and Value Pairs by Fingerprint",
 			func() {
-				var anomaly error
-				emission.fingerprintLabelPairs, anomaly = storage.NewLevelDBPersistence(baseDirectory+"/label_name_and_value_pairs_by_fingerprint", 1000000, 10)
-				errorChannel <- anomaly
+				var err error
+				emission.fingerprintLabelPairs, err = storage.NewLevelDBPersistence(baseDirectory+"/label_name_and_value_pairs_by_fingerprint", 1000000, 10)
+				errorChannel <- err
 			},
 		},
 		{
 			"Low-Water Marks by Fingerprint",
 			func() {
-				var anomaly error
-				emission.fingerprintLowWaterMarks, anomaly = storage.NewLevelDBPersistence(baseDirectory+"/low_water_marks_by_fingerprint", 1000000, 10)
-				errorChannel <- anomaly
+				var err error
+				emission.fingerprintLowWaterMarks, err = storage.NewLevelDBPersistence(baseDirectory+"/low_water_marks_by_fingerprint", 1000000, 10)
+				errorChannel <- err
 			},
 		},
 		{
 			"Samples by Fingerprint",
 			func() {
-				var anomaly error
-				emission.fingerprintSamples, anomaly = storage.NewLevelDBPersistence(baseDirectory+"/samples_by_fingerprint", 1000000, 10)
-				errorChannel <- anomaly
+				var err error
+				emission.fingerprintSamples, err = storage.NewLevelDBPersistence(baseDirectory+"/samples_by_fingerprint", 1000000, 10)
+				errorChannel <- err
 			},
 		},
 		{
 			"Fingerprints by Label Name",
 			func() {
-				var anomaly error
-				emission.labelNameFingerprints, anomaly = storage.NewLevelDBPersistence(baseDirectory+"/fingerprints_by_label_name", 1000000, 10)
-				errorChannel <- anomaly
+				var err error
+				emission.labelNameFingerprints, err = storage.NewLevelDBPersistence(baseDirectory+"/fingerprints_by_label_name", 1000000, 10)
+				errorChannel <- err
 			},
 		},
 		{
 			"Fingerprints by Label Name and Value Pair",
 			func() {
-				var anomaly error
-				emission.labelPairFingerprints, anomaly = storage.NewLevelDBPersistence(baseDirectory+"/fingerprints_by_label_name_and_value_pair", 1000000, 10)
-				errorChannel <- anomaly
+				var err error
+				emission.labelPairFingerprints, err = storage.NewLevelDBPersistence(baseDirectory+"/fingerprints_by_label_name_and_value_pair", 1000000, 10)
+				errorChannel <- err
 			},
 		},
 		{
 			"Metric Membership Index",
 			func() {
-				var anomaly error
-				emission.metricMembershipIndex, anomaly = index.NewLevelDBMembershipIndex(baseDirectory+"/metric_membership_index", 1000000, 10)
-				errorChannel <- anomaly
+				var err error
+				emission.metricMembershipIndex, err = index.NewLevelDBMembershipIndex(baseDirectory+"/metric_membership_index", 1000000, 10)
+				errorChannel <- err
 			},
 		},
 	}
@@ -192,7 +193,6 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 		openingError := <-errorChannel
 
 		if openingError != nil {
-
 			log.Printf("Could not open a LevelDBPersistence storage container: %q\n", openingError)
 
 			return nil, openingError
@@ -202,70 +202,6 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 	log.Printf("Successfully opened all LevelDBPersistence storage containers.\n")
 
 	return emission, nil
-}
-
-func ddoFromSample(sample *model.Sample) *data.MetricDDO {
-	labelNames := make([]string, 0, len(sample.Labels))
-
-	for labelName, _ := range sample.Labels {
-		labelNames = append(labelNames, string(labelName))
-	}
-
-	sort.Strings(labelNames)
-
-	labelPairs := make([]*data.LabelPairDDO, 0, len(sample.Labels))
-
-	for _, labelName := range labelNames {
-		labelValue := sample.Labels[labelName]
-		labelPair := &data.LabelPairDDO{
-			Name:  proto.String(string(labelName)),
-			Value: proto.String(string(labelValue)),
-		}
-
-		labelPairs = append(labelPairs, labelPair)
-	}
-
-	metricDDO := &data.MetricDDO{
-		LabelPair: labelPairs,
-	}
-
-	return metricDDO
-}
-
-func ddoFromMetric(metric model.Metric) *data.MetricDDO {
-	labelNames := make([]string, 0, len(metric))
-
-	for labelName, _ := range metric {
-		labelNames = append(labelNames, string(labelName))
-	}
-
-	sort.Strings(labelNames)
-
-	labelPairs := make([]*data.LabelPairDDO, 0, len(metric))
-
-	for _, labelName := range labelNames {
-		labelValue := metric[labelName]
-		labelPair := &data.LabelPairDDO{
-			Name:  proto.String(string(labelName)),
-			Value: proto.String(string(labelValue)),
-		}
-
-		labelPairs = append(labelPairs, labelPair)
-	}
-
-	metricDDO := &data.MetricDDO{
-		LabelPair: labelPairs,
-	}
-
-	return metricDDO
-}
-
-func fingerprintDDOFromByteArray(fingerprint []byte) *data.FingerprintDDO {
-	fingerprintDDO := &data.FingerprintDDO{
-		Signature: proto.String(string(fingerprint)),
-	}
-
-	return fingerprintDDO
 }
 
 func (l *LevelDBMetricPersistence) hasIndexMetric(ddo *data.MetricDDO) (bool, error) {
@@ -280,7 +216,7 @@ func (l *LevelDBMetricPersistence) indexMetric(ddo *data.MetricDDO) error {
 
 func fingerprintDDOForMessage(message proto.Message) (*data.FingerprintDDO, error) {
 	if messageByteArray, marshalError := proto.Marshal(message); marshalError == nil {
-		fingerprint := model.FingerprintFromByteArray(messageByteArray)
+		fingerprint := model.BytesToFingerprint(messageByteArray)
 		return &data.FingerprintDDO{
 			Signature: proto.String(string(fingerprint)),
 		}, nil
@@ -446,7 +382,7 @@ func (l *LevelDBMetricPersistence) appendFingerprints(ddo *data.MetricDDO) error
 }
 
 func (l *LevelDBMetricPersistence) AppendSample(sample *model.Sample) error {
-	metricDDO := ddoFromSample(sample)
+	metricDDO := model.SampleToMetricDDO(sample)
 
 	if indexHas, indexHasError := l.hasIndexMetric(metricDDO); indexHasError == nil {
 		if !indexHas {
@@ -584,7 +520,7 @@ func (l *LevelDBMetricPersistence) GetMetrics() ([]model.LabelPairs, error) {
 }
 
 func (l *LevelDBMetricPersistence) GetWatermarksForMetric(metric model.Metric) (*model.Interval, int, error) {
-	metricDDO := ddoFromMetric(metric)
+	metricDDO := model.MetricToMetricDDO(&metric)
 
 	if fingerprintDDO, fingerprintDDOErr := fingerprintDDOForMessage(metricDDO); fingerprintDDOErr == nil {
 		if iterator, closer, iteratorErr := l.fingerprintSamples.GetIterator(); iteratorErr == nil {
@@ -654,10 +590,8 @@ func (l *LevelDBMetricPersistence) GetWatermarksForMetric(metric model.Metric) (
 	return nil, -1, errors.New("Unknown error occurred while querying metric watermarks.")
 }
 
-// TODO(mtp): Holes in the data!
-
 func (l *LevelDBMetricPersistence) GetSamplesForMetric(metric model.Metric, interval model.Interval) ([]model.Samples, error) {
-	metricDDO := ddoFromMetric(metric)
+	metricDDO := model.MetricToMetricDDO(&metric)
 
 	if fingerprintDDO, fingerprintDDOErr := fingerprintDDOForMessage(metricDDO); fingerprintDDOErr == nil {
 		if iterator, closer, iteratorErr := l.fingerprintSamples.GetIterator(); iteratorErr == nil {
