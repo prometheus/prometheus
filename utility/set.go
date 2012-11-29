@@ -26,7 +26,7 @@ func (s Set) Remove(v interface{}) {
 func (s Set) Elements() []interface{} {
 	result := make([]interface{}, 0, len(s))
 
-	for k, _ := range s {
+	for k := range s {
 		result = append(result, k)
 	}
 
@@ -42,7 +42,7 @@ func (s Set) Has(v interface{}) bool {
 func (s Set) Intersection(o Set) Set {
 	result := make(Set)
 
-	for k, _ := range s {
+	for k := range s {
 		if o.Has(k) {
 			result[k] = true
 		}

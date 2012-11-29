@@ -14,9 +14,6 @@
 package model
 
 import (
-	"crypto/md5"
-	"encoding/hex"
-	"io"
 	"time"
 )
 
@@ -41,16 +38,4 @@ type Samples struct {
 type Interval struct {
 	OldestInclusive time.Time
 	NewestInclusive time.Time
-}
-
-func FingerprintFromString(value string) Fingerprint {
-	hash := md5.New()
-	io.WriteString(hash, value)
-	return Fingerprint(hex.EncodeToString(hash.Sum([]byte{})))
-}
-
-func FingerprintFromByteArray(value []byte) Fingerprint {
-	hash := md5.New()
-	hash.Write(value)
-	return Fingerprint(hex.EncodeToString(hash.Sum([]byte{})))
 }
