@@ -21,7 +21,6 @@ test: build
 build:
 	$(MAKE) -C model
 	go build ./...
-	go build .
 
 clean:
 	rm -rf $(TEST_ARTIFACTS)
@@ -40,3 +39,4 @@ documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
 .PHONY: build clean format test
+
