@@ -25,8 +25,9 @@ export CXXFLAGS := $(CXXFLAGS) -I$(OVERLAY_ROOT)/include
 export CPPFLAGS := $(CPPFLAGS) -I$(OVERLAY_ROOT)/include
 export LDFLAGS := $(LDFLAGS) -L$(OVERLAY_ROOT)/lib
 export CGO_CFLAGS := $(CFLAGS)
+export CGO_LDFLAGS := $(LDFLAGS)
 
-GO_GET := go get -v -x
+GO_GET := go get -u -v -x
 APT_GET_INSTALL := sudo apt-get install -y
 WGET := wget -c
 
@@ -105,7 +106,9 @@ leveldb-stamp: cc rsync leveldb-$(LEVELDB_VERSION).tar.gz overlay
 	tar xzvf leveldb-$(LEVELDB_VERSION).tar.gz
 	$(MAKE) -C leveldb-$(LEVELDB_VERSION)
 	rsync -av "leveldb-$(LEVELDB_VERSION)/include/" "$(OVERLAY_ROOT)/include/"
-	rsync -av "leveldb-$(LEVELDB_VERSION)/"*.so* "$(OVERLAY_ROOT)/lib/"
+	-rsync -av "leveldb-$(LEVELDB_VERSION)/"*.*so* "$(OVERLAY_ROOT)/lib/"
+	-rsync -av "leveldb-$(LEVELDB_VERSION)/"*.*dylib* "$(OVERLAY_ROOT)/lib/"
+	rsync -av "leveldb-$(LEVELDB_VERSION)/"*.a "$(OVERLAY_ROOT)/lib/"
 	touch $@
 
 leveldb-$(LEVELDB_VERSION).tar.gz: wget
@@ -153,3 +156,4 @@ clean:
 
 
 .PHONY: all bison build-dependencies cc clean go goprotobuf gorest leveldb levigo mercurial overlay preparation protoc rsync source test wget
+
