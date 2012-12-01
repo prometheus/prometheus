@@ -11,20 +11,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO_VERSION := 1.0.3
-LEVELDB_VERSION := 1.7.0
-PROTOCOL_BUFFERS_VERSION := 2.4.1
-
 OVERLAY_ROOT := ${HOME}/overlay_root
 
 export PATH := $(PATH):$(OVERLAY_ROOT)/bin
 export LD_LIBRARY_PATH := $(LD_LIBRARY_PATH):$(OVERLAY_ROOT)/lib
-
 export CFLAGS := $(CFLAGS) -I$(OVERLAY_ROOT)/include
 export CXXFLAGS := $(CXXFLAGS) -I$(OVERLAY_ROOT)/include
 export CPPFLAGS := $(CPPFLAGS) -I$(OVERLAY_ROOT)/include
 export LDFLAGS := $(LDFLAGS) -L$(OVERLAY_ROOT)/lib
 export CGO_CFLAGS := $(CFLAGS)
+export CGO_LDFLAGS := $(LDFLAGS)
 
 GO_GET := go get -v -x
 APT_GET_INSTALL := sudo apt-get install -y
@@ -42,12 +38,6 @@ build-dependencies: build-dependencies-stamp
 build-dependencies-stamp: bison cc mercurial protoc goprotobuf go leveldb levigo gorest
 	touch $@
 
-overlay: overlay-stamp
-
-overlay-stamp:
-	[ -d "$(OVERLAY_ROOT)" ] || mkdir -vp $(OVERLAY_ROOT)
-	touch $@
-
 bison: bison-stamp
 
 bison-stamp:
@@ -62,8 +52,8 @@ cc-stamp:
 go: go-stamp
 
 go-stamp: bison
-	gvm install go$(GO_VERSION) || true
-	gvm use go$(GO_VERSION) || true
+	gvm install go1.0.3 || true
+	gvm use go1.0.3 || true
 	[ -x "$$(which go)" ]
 	touch $@
 
@@ -79,16 +69,16 @@ wget-stamp:
 	[ -x "$$(which wget)" ] || $(APT_GET_INSTALL) wget
 	touch $@
 
-protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2: wget
+protobuf-2.4.1.tar.bz2: wget
 	$(WGET) http://protobuf.googlecode.com/files/$@
 
 protoc: protoc-stamp
 
-protoc-stamp: cc protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2 overlay
-	([ ! -x "$$(which protoc)" ] && tar xjvf protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2) || true
-	([ ! -x "$$(which protoc)" ] && cd protobuf-$(PROTOCOL_BUFFERS_VERSION) && ./configure --prefix="$(OVERLAY_ROOT)") || true
-	([ ! -x "$$(which protoc)" ] && $(MAKE) -C protobuf-$(PROTOCOL_BUFFERS_VERSION)) || true
-	([ ! -x "$$(which protoc)" ] && $(MAKE) -C protobuf-$(PROTOCOL_BUFFERS_VERSION) install) || true
+protoc-stamp: cc protobuf-2.4.1.tar.bz2
+	([ ! -x "$$(which protoc)" ] && tar xjvf protobuf-2.4.1.tar.bz2) || true
+	([ ! -x "$$(which protoc)" ] && cd protobuf-2.4.1 && ./configure --prefix="$(OVERLAY_ROOT)") || true
+	([ ! -x "$$(which protoc)" ] && $(MAKE) -C protobuf-2.4.1) || true
+	([ ! -x "$$(which protoc)" ] && $(MAKE) -C protobuf-2.4.1 install) || true
 	[ -x "$$(which protoc)" ]
 	touch $@
 
@@ -101,15 +91,15 @@ goprotobuf-stamp: go protoc source
 
 leveldb: leveldb-stamp
 
-leveldb-stamp: cc rsync leveldb-$(LEVELDB_VERSION).tar.gz overlay
-	tar xzvf leveldb-$(LEVELDB_VERSION).tar.gz
-	$(MAKE) -C leveldb-$(LEVELDB_VERSION)
-	rsync -av "leveldb-$(LEVELDB_VERSION)/include/" "$(OVERLAY_ROOT)/include/"
-	rsync -av "leveldb-$(LEVELDB_VERSION)/"*.so* "$(OVERLAY_ROOT)/lib/"
+leveldb-stamp: cc rsync leveldb-1.7.0.tar.gz
+	tar xzvf leveldb-1.7.0.tar.gz
+	$(MAKE) -C leveldb-1.7.0
+	rsync -av "leveldb-1.7.0/include/" "$(OVERLAY_ROOT)/include/"
+	rsync -av "leveldb-1.7.0/"*.so* "$(OVERLAY_ROOT)/lib/"
 	touch $@
 
-leveldb-$(LEVELDB_VERSION).tar.gz: wget
-	$(WGET) http://leveldb.googlecode.com/files/leveldb-$(LEVELDB_VERSION).tar.gz
+leveldb-1.7.0.tar.gz: wget
+	$(WGET) http://leveldb.googlecode.com/files/leveldb-1.7.0.tar.gz
 
 levigo: levigo-stamp
 
@@ -145,11 +135,10 @@ gorest-stamp: go source
 
 clean:
 	-rm *-stamp
+	-rm protobuf-2.4.1.tar.bz2
 	-rm -rf "$(OVERLAY_ROOT)"
-	-rm -rf leveldb-$(LEVELDB_VERSION)
-	-rm -rf protobuf-$(PROTOCOL_BUFFERS_VERSION)
-	-rm leveldb-$(LEVELDB_VERSION).tar.gz
-	-rm protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2
+	-rm -rf leveldb-1.7.0
+	-rm -rf protobuf-2.4.1
 
 
-.PHONY: all bison build-dependencies cc clean go goprotobuf gorest leveldb levigo mercurial overlay preparation protoc rsync source test wget
+.PHONY: all preparation build-dependencies mercurial clean cc wget protoc goprotobuf bison go leveldb rsync levigo test gorest source
