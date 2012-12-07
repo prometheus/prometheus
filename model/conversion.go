@@ -22,7 +22,7 @@ import (
 	"sort"
 )
 
-func SampleToMetricDDO(s *Sample) *data.MetricDDO {
+func SampleToMetricDTO(s *Sample) *data.Metric {
 	labelLength := len(s.Labels)
 	labelNames := make([]string, 0, labelLength)
 
@@ -32,24 +32,24 @@ func SampleToMetricDDO(s *Sample) *data.MetricDDO {
 
 	sort.Strings(labelNames)
 
-	labelPairs := make([]*data.LabelPairDDO, 0, labelLength)
+	labelSets := make([]*data.LabelPair, 0, labelLength)
 
 	for _, labelName := range labelNames {
-		labelValue := s.Labels[labelName]
-		labelPair := &data.LabelPairDDO{
+		labelValue := s.Labels[LabelName(labelName)]
+		labelPair := &data.LabelPair{
 			Name:  proto.String(string(labelName)),
 			Value: proto.String(string(labelValue)),
 		}
 
-		labelPairs = append(labelPairs, labelPair)
+		labelSets = append(labelSets, labelPair)
 	}
 
-	return &data.MetricDDO{
-		LabelPair: labelPairs,
+	return &data.Metric{
+		LabelPair: labelSets,
 	}
 }
 
-func MetricToMetricDDO(m *Metric) *data.MetricDDO {
+func MetricToDTO(m *Metric) *data.Metric {
 	metricLength := len(*m)
 	labelNames := make([]string, 0, metricLength)
 
@@ -59,26 +59,21 @@ func MetricToMetricDDO(m *Metric) *data.MetricDDO {
 
 	sort.Strings(labelNames)
 
-	labelPairs := make([]*data.LabelPairDDO, 0, metricLength)
+	labelSets := make([]*data.LabelPair, 0, metricLength)
 
 	for _, labelName := range labelNames {
-		labelValue := (*m)[labelName]
-		labelPair := &data.LabelPairDDO{
+		l := LabelName(labelName)
+		labelValue := (*m)[l]
+		labelPair := &data.LabelPair{
 			Name:  proto.String(string(labelName)),
 			Value: proto.String(string(labelValue)),
 		}
 
-		labelPairs = append(labelPairs, labelPair)
+		labelSets = append(labelSets, labelPair)
 	}
 
-	return &data.MetricDDO{
-		LabelPair: labelPairs,
-	}
-}
-
-func BytesToFingerprintDDO(b []byte) *data.FingerprintDDO {
-	return &data.FingerprintDDO{
-		Signature: proto.String(string(b)),
+	return &data.Metric{
+		LabelPair: labelSets,
 	}
 }
 
@@ -92,4 +87,42 @@ func BytesToFingerprint(v []byte) Fingerprint {
 	hash := md5.New()
 	hash.Write(v)
 	return Fingerprint(hex.EncodeToString(hash.Sum([]byte{})))
+}
+
+func LabelSetToDTOs(s *LabelSet) []*data.LabelPair {
+	metricLength := len(*s)
+	labelNames := make([]string, 0, metricLength)
+
+	for labelName := range *s {
+		labelNames = append(labelNames, string(labelName))
+	}
+
+	sort.Strings(labelNames)
+
+	labelSets := make([]*data.LabelPair, 0, metricLength)
+
+	for _, labelName := range labelNames {
+		l := LabelName(labelName)
+		labelValue := (*s)[l]
+		labelPair := &data.LabelPair{
+			Name:  proto.String(string(labelName)),
+			Value: proto.String(string(labelValue)),
+		}
+
+		labelSets = append(labelSets, labelPair)
+	}
+
+	return labelSets
+}
+
+func LabelSetToDTO(s *LabelSet) *data.LabelSet {
+	return &data.LabelSet{
+		Member: LabelSetToDTOs(s),
+	}
+}
+
+func LabelNameToDTO(l *LabelName) *data.LabelName {
+	return &data.LabelName{
+		Name: proto.String(string(*l)),
+	}
 }

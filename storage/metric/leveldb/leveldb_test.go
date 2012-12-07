@@ -82,12 +82,12 @@ func TestReadEmpty(t *testing.T) {
 		name := string(x)
 		value := string(x)
 
-		ddo := &data.LabelPairDDO{
+		dto := &data.LabelPair{
 			Name:  proto.String(name),
 			Value: proto.String(value),
 		}
 
-		has, hasErr := persistence.HasLabelPair(ddo)
+		has, hasErr := persistence.HasLabelPair(dto)
 
 		if hasErr != nil {
 			return false
@@ -102,11 +102,11 @@ func TestReadEmpty(t *testing.T) {
 	hasLabelName := func(x int) bool {
 		name := string(x)
 
-		ddo := &data.LabelNameDDO{
+		dto := &data.LabelName{
 			Name: proto.String(name),
 		}
 
-		has, hasErr := persistence.HasLabelName(ddo)
+		has, hasErr := persistence.HasLabelName(dto)
 
 		if hasErr != nil {
 			return false
@@ -123,12 +123,12 @@ func TestReadEmpty(t *testing.T) {
 		name := string(x)
 		value := string(x)
 
-		ddo := &data.LabelPairDDO{
+		dto := &data.LabelPair{
 			Name:  proto.String(name),
 			Value: proto.String(value),
 		}
 
-		fingerprints, fingerprintsErr := persistence.GetLabelPairFingerprints(ddo)
+		fingerprints, fingerprintsErr := persistence.getFingerprintsForLabelSet(dto)
 
 		if fingerprintsErr != nil {
 			return false
@@ -148,11 +148,11 @@ func TestReadEmpty(t *testing.T) {
 	getLabelNameFingerprints := func(x int) bool {
 		name := string(x)
 
-		ddo := &data.LabelNameDDO{
+		dto := &data.LabelName{
 			Name: proto.String(name),
 		}
 
-		fingerprints, fingerprintsErr := persistence.GetLabelNameFingerprints(ddo)
+		fingerprints, fingerprintsErr := persistence.GetLabelNameFingerprints(dto)
 
 		if fingerprintsErr != nil {
 			return false
@@ -186,10 +186,14 @@ func TestAppendSampleAsPureSparseAppend(t *testing.T) {
 	}()
 
 	appendSample := func(x int) bool {
+		v := model.SampleValue(x)
+		t := time.Unix(int64(x), int64(x))
+		l := model.LabelSet{model.LabelName(x): model.LabelValue(x)}
+
 		sample := &model.Sample{
-			Value:     model.SampleValue(float32(x)),
-			Timestamp: time.Unix(int64(x), int64(x)),
-			Labels:    model.LabelPairs{string(x): string(x)},
+			Value:     v,
+			Timestamp: t,
+			Labels:    l,
 		}
 
 		appendErr := persistence.AppendSample(sample)
@@ -218,10 +222,14 @@ func TestAppendSampleAsSparseAppendWithReads(t *testing.T) {
 	}()
 
 	appendSample := func(x int) bool {
+		v := model.SampleValue(x)
+		t := time.Unix(int64(x), int64(x))
+		l := model.LabelSet{model.LabelName(x): model.LabelValue(x)}
+
 		sample := &model.Sample{
-			Value:     model.SampleValue(float32(x)),
-			Timestamp: time.Unix(int64(x), int64(x)),
-			Labels:    model.LabelPairs{string(x): string(x)},
+			Value:     v,
+			Timestamp: t,
+			Labels:    l,
 		}
 
 		appendErr := persistence.AppendSample(sample)
@@ -230,11 +238,11 @@ func TestAppendSampleAsSparseAppendWithReads(t *testing.T) {
 			return false
 		}
 
-		labelNameDDO := &data.LabelNameDDO{
+		labelNameDTO := &data.LabelName{
 			Name: proto.String(string(x)),
 		}
 
-		hasLabelName, hasLabelNameErr := persistence.HasLabelName(labelNameDDO)
+		hasLabelName, hasLabelNameErr := persistence.HasLabelName(labelNameDTO)
 
 		if hasLabelNameErr != nil {
 			return false
@@ -244,12 +252,12 @@ func TestAppendSampleAsSparseAppendWithReads(t *testing.T) {
 			return false
 		}
 
-		labelPairDDO := &data.LabelPairDDO{
+		labelPairDTO := &data.LabelPair{
 			Name:  proto.String(string(x)),
 			Value: proto.String(string(x)),
 		}
 
-		hasLabelPair, hasLabelPairErr := persistence.HasLabelPair(labelPairDDO)
+		hasLabelPair, hasLabelPairErr := persistence.HasLabelPair(labelPairDTO)
 
 		if hasLabelPairErr != nil {
 			return false
@@ -259,7 +267,7 @@ func TestAppendSampleAsSparseAppendWithReads(t *testing.T) {
 			return false
 		}
 
-		labelNameFingerprints, labelNameFingerprintsErr := persistence.GetLabelNameFingerprints(labelNameDDO)
+		labelNameFingerprints, labelNameFingerprintsErr := persistence.GetLabelNameFingerprints(labelNameDTO)
 
 		if labelNameFingerprintsErr != nil {
 			return false
@@ -273,7 +281,7 @@ func TestAppendSampleAsSparseAppendWithReads(t *testing.T) {
 			return false
 		}
 
-		labelPairFingerprints, labelPairFingerprintsErr := persistence.GetLabelPairFingerprints(labelPairDDO)
+		labelPairFingerprints, labelPairFingerprintsErr := persistence.getFingerprintsForLabelSet(labelPairDTO)
 
 		if labelPairFingerprintsErr != nil {
 			return false
@@ -314,7 +322,7 @@ func TestAppendSampleAsPureSingleEntityAppend(t *testing.T) {
 		sample := &model.Sample{
 			Value:     model.SampleValue(float32(x)),
 			Timestamp: time.Unix(int64(x), 0),
-			Labels:    model.LabelPairs{"name": "my_metric"},
+			Labels:    model.LabelSet{"name": "my_metric"},
 		}
 
 		appendErr := persistence.AppendSample(sample)
@@ -359,17 +367,24 @@ func TestStochastic(t *testing.T) {
 
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
 			sample := &model.Sample{
-				Labels: model.LabelPairs{},
+				Labels: model.LabelSet{},
 			}
 
-			sample.Labels["name"] = fmt.Sprintf("metric_index_%d", metricIndex)
+			v := model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
+			sample.Labels["name"] = v
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
-				sample.Labels[fmt.Sprintf("shared_label_%d", sharedLabelIndex)] = fmt.Sprintf("label_%d", sharedLabelIndex)
+				l := model.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
+				v := model.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex))
+
+				sample.Labels[l] = v
 			}
 
 			for unsharedLabelIndex := 0; unsharedLabelIndex < numberOfUnsharedLabels; unsharedLabelIndex++ {
-				sample.Labels[fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex)] = fmt.Sprintf("private_label_%d", unsharedLabelIndex)
+				l := model.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
+				v := model.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
+
+				sample.Labels[l] = v
 			}
 
 			timestamps := make(map[int64]bool)
@@ -414,7 +429,7 @@ func TestStochastic(t *testing.T) {
 			metricNewestSample[metricIndex] = newestSample
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
-				labelPair := &data.LabelPairDDO{
+				labelPair := &data.LabelPair{
 					Name:  proto.String(fmt.Sprintf("shared_label_%d", sharedLabelIndex)),
 					Value: proto.String(fmt.Sprintf("label_%d", sharedLabelIndex)),
 				}
@@ -429,7 +444,7 @@ func TestStochastic(t *testing.T) {
 					return false
 				}
 
-				labelName := &data.LabelNameDDO{
+				labelName := &data.LabelName{
 					Name: proto.String(fmt.Sprintf("shared_label_%d", sharedLabelIndex)),
 				}
 
@@ -446,7 +461,7 @@ func TestStochastic(t *testing.T) {
 		}
 
 		for sharedIndex := 0; sharedIndex < numberOfSharedLabels; sharedIndex++ {
-			labelName := &data.LabelNameDDO{
+			labelName := &data.LabelName{
 				Name: proto.String(fmt.Sprintf("shared_label_%d", sharedIndex)),
 			}
 			fingerprints, fingerprintsErr := persistence.GetLabelNameFingerprints(labelName)
@@ -466,7 +481,7 @@ func TestStochastic(t *testing.T) {
 
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
 			for unsharedLabelIndex := 0; unsharedLabelIndex < numberOfUnsharedLabels; unsharedLabelIndex++ {
-				labelPair := &data.LabelPairDDO{
+				labelPair := &data.LabelPair{
 					Name:  proto.String(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex)),
 					Value: proto.String(fmt.Sprintf("private_label_%d", unsharedLabelIndex)),
 				}
@@ -481,7 +496,7 @@ func TestStochastic(t *testing.T) {
 					return false
 				}
 
-				labelPairFingerprints, labelPairFingerprintsErr := persistence.GetLabelPairFingerprints(labelPair)
+				labelPairFingerprints, labelPairFingerprintsErr := persistence.getFingerprintsForLabelSet(labelPair)
 
 				if labelPairFingerprintsErr != nil {
 					return false
@@ -495,7 +510,7 @@ func TestStochastic(t *testing.T) {
 					return false
 				}
 
-				labelName := &data.LabelNameDDO{
+				labelName := &data.LabelName{
 					Name: proto.String(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex)),
 				}
 
@@ -526,28 +541,20 @@ func TestStochastic(t *testing.T) {
 
 			metric := make(model.Metric)
 
-			metric["name"] = fmt.Sprintf("metric_index_%d", metricIndex)
+			metric["name"] = model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
 
 			for i := 0; i < numberOfSharedLabels; i++ {
-				metric[fmt.Sprintf("shared_label_%d", i)] = fmt.Sprintf("label_%d", i)
+				l := model.LabelName(fmt.Sprintf("shared_label_%d", i))
+				v := model.LabelValue(fmt.Sprintf("label_%d", i))
+
+				metric[l] = v
 			}
 
 			for i := 0; i < numberOfUnsharedLabels; i++ {
-				metric[fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, i)] = fmt.Sprintf("private_label_%d", i)
-			}
+				l := model.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, i))
+				v := model.LabelValue(fmt.Sprintf("private_label_%d", i))
 
-			watermarks, count, watermarksErr := persistence.GetWatermarksForMetric(metric)
-
-			if watermarksErr != nil {
-				return false
-			}
-
-			if watermarks == nil {
-				return false
-			}
-
-			if count != numberOfSamples {
-				return false
+				metric[l] = v
 			}
 
 			for i := 0; i < numberOfRangeScans; i++ {
@@ -618,5 +625,171 @@ func TestStochastic(t *testing.T) {
 
 	if stochasticError := quick.Check(stochastic, nil); stochasticError != nil {
 		t.Error(stochasticError)
+	}
+}
+
+func TestGetFingerprintsForLabelSet(t *testing.T) {
+	temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
+
+	defer func() {
+		if removeAllErr := os.RemoveAll(temporaryDirectory); removeAllErr != nil {
+			t.Errorf("Could not remove temporary directory: %q\n", removeAllErr)
+		}
+	}()
+
+	persistence, _ := NewLevelDBMetricPersistence(temporaryDirectory)
+
+	defer func() {
+		persistence.Close()
+	}()
+
+	appendErr := persistence.AppendSample(&model.Sample{
+		Value:     model.SampleValue(0),
+		Timestamp: time.Unix(0, 0),
+		Labels: model.LabelSet{
+			"name":         "my_metric",
+			"request_type": "your_mom",
+		},
+	})
+
+	if appendErr != nil {
+		t.Error(appendErr)
+	}
+
+	appendErr = persistence.AppendSample(&model.Sample{
+		Value:     model.SampleValue(0),
+		Timestamp: time.Unix(int64(0), 0),
+		Labels: model.LabelSet{
+			"name":         "my_metric",
+			"request_type": "your_dad",
+		},
+	})
+
+	if appendErr != nil {
+		t.Error(appendErr)
+	}
+
+	result, getErr := persistence.GetFingerprintsForLabelSet(&(model.LabelSet{
+		model.LabelName("name"): model.LabelValue("my_metric"),
+	}))
+
+	if getErr != nil {
+		t.Error(getErr)
+	}
+
+	if len(result) != 2 {
+		t.Errorf("Expected two elements.")
+	}
+
+	result, getErr = persistence.GetFingerprintsForLabelSet(&(model.LabelSet{
+		model.LabelName("request_type"): model.LabelValue("your_mom"),
+	}))
+
+	if getErr != nil {
+		t.Error(getErr)
+	}
+
+	if len(result) != 1 {
+		t.Errorf("Expected one element.")
+	}
+
+	result, getErr = persistence.GetFingerprintsForLabelSet(&(model.LabelSet{
+		model.LabelName("request_type"): model.LabelValue("your_dad"),
+	}))
+
+	if getErr != nil {
+		t.Error(getErr)
+	}
+
+	if len(result) != 1 {
+		t.Errorf("Expected one element.")
+	}
+}
+
+func TestGetFingerprintsForLabelName(t *testing.T) {
+	temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
+
+	defer func() {
+		if removeAllErr := os.RemoveAll(temporaryDirectory); removeAllErr != nil {
+			t.Errorf("Could not remove temporary directory: %q\n", removeAllErr)
+		}
+	}()
+
+	persistence, _ := NewLevelDBMetricPersistence(temporaryDirectory)
+
+	defer func() {
+		persistence.Close()
+	}()
+
+	appendErr := persistence.AppendSample(&model.Sample{
+		Value:     model.SampleValue(0),
+		Timestamp: time.Unix(0, 0),
+		Labels: model.LabelSet{
+			"name":         "my_metric",
+			"request_type": "your_mom",
+			"language":     "english",
+		},
+	})
+
+	if appendErr != nil {
+		t.Error(appendErr)
+	}
+
+	appendErr = persistence.AppendSample(&model.Sample{
+		Value:     model.SampleValue(0),
+		Timestamp: time.Unix(int64(0), 0),
+		Labels: model.LabelSet{
+			"name":         "my_metric",
+			"request_type": "your_dad",
+			"sprache":      "deutsch",
+		},
+	})
+
+	if appendErr != nil {
+		t.Error(appendErr)
+	}
+
+	b := model.LabelName("name")
+	result, getErr := persistence.GetFingerprintsForLabelName(&b)
+
+	if getErr != nil {
+		t.Error(getErr)
+	}
+
+	if len(result) != 2 {
+		t.Errorf("Expected two elements.")
+	}
+
+	b = model.LabelName("request_type")
+	result, getErr = persistence.GetFingerprintsForLabelName(&b)
+
+	if getErr != nil {
+		t.Error(getErr)
+	}
+
+	if len(result) != 2 {
+		t.Errorf("Expected two elements.")
+	}
+
+	b = model.LabelName("language")
+	result, getErr = persistence.GetFingerprintsForLabelName(&b)
+
+	if getErr != nil {
+		t.Error(getErr)
+	}
+
+	if len(result) != 1 {
+		t.Errorf("Expected one element.")
+	}
+
+	b = model.LabelName("sprache")
+	result, getErr = persistence.GetFingerprintsForLabelName(&b)
+
+	if getErr != nil {
+		t.Error(getErr)
+	}
+
+	if len(result) != 1 {
+		t.Errorf("Expected one element.")
 	}
 }

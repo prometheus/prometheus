@@ -32,7 +32,7 @@ type MetricsService struct {
 }
 
 func (m MetricsService) ListLabels() []string {
-	labels, labelsError := m.persistence.GetLabelNames()
+	labels, labelsError := m.persistence.GetAllLabelNames()
 
 	if labelsError != nil {
 		m.ResponseBuilder().SetResponseCode(500)
@@ -41,18 +41,18 @@ func (m MetricsService) ListLabels() []string {
 	return labels
 }
 
-func (m MetricsService) ListLabelPairs() []model.LabelPairs {
-	labelPairs, labelPairsError := m.persistence.GetLabelPairs()
+func (m MetricsService) ListLabelPairs() []model.LabelSet {
+	labelSets, labelPairsError := m.persistence.GetAllLabelPairs()
 
 	if labelPairsError != nil {
 		m.ResponseBuilder().SetResponseCode(500)
 	}
 
-	return labelPairs
+	return labelSets
 }
 
-func (m MetricsService) ListMetrics() []model.LabelPairs {
-	metrics, metricsError := m.persistence.GetMetrics()
+func (m MetricsService) ListMetrics() []model.LabelSet {
+	metrics, metricsError := m.persistence.GetAllMetrics()
 
 	if metricsError != nil {
 		m.ResponseBuilder().SetResponseCode(500)

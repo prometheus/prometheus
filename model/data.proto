@@ -11,89 +11,58 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package generated;
+package dto;
 
-message LabelPairDDO {
+message LabelPair {
   optional int64 version = 1 [default = 1];
 
   optional string name = 2;
   optional string value = 3;
 }
 
-message MetricDDO {
-  optional int64 version = 1 [default = 1];
-
-  repeated LabelPairDDO label_pair = 2;
-}
-
-message FingerprintCollectionDDO {
-  optional int64 version = 1 [default = 1];
-
-  repeated FingerprintDDO member = 2;
-}
-
-message LabelPairCollectionDDO {
-  optional int64 version = 1 [default = 1];
-
-  repeated LabelPairDDO member = 2;
-}
-
-message LabelNameDDO {
+message LabelName {
   optional int64 version = 1 [default = 1];
 
   optional string name = 2;
 }
 
-message FingerprintDDO {
+message Metric {
   optional int64 version = 1 [default = 1];
 
-  // bytes
+  repeated LabelPair label_pair = 2;
+}
+
+message Fingerprint {
+  optional int64 version = 1 [default = 1];
+
   optional string signature = 2;
 }
 
-message WatermarkDDO {
+message FingerprintCollection {
   optional int64 version = 1 [default = 1];
 
-  optional int64 timestamp = 2;
+  repeated Fingerprint member = 2;
 }
 
-message SampleKeyDDO {
+message LabelSet {
   optional int64 version = 1 [default = 1];
 
-  optional FingerprintDDO fingerprint = 2;
+  repeated LabelPair member = 2;
+}
+
+message SampleKey {
+  optional int64 version = 1 [default = 1];
+
+  optional Fingerprint fingerprint = 2;
   optional bytes timestamp = 3;
 }
 
-message SampleValueDDO {
+message SampleValue {
   optional int64 version = 1 [default = 1];
 
   optional float value = 2;
 }
 
-
-// TOO OLD
-
-message MembershipIndexValueDDO {
-}
-
-
-message LabelNameAndValueIndexDDO {
-  optional string name = 1;
-  optional string value = 2;
-}
-
-message LabelNameValuesDDO {
-  repeated string value = 1;
-}
-
-message LabelNameAndValueToMetricDDO {
-  repeated string metric = 1;
-}
-
-message MetricToWindowDDO {
-  repeated int64 window = 1;
-}
-
-message WindowSampleDDO {
-  repeated float value = 1;
+message MembershipIndexValue {
+  optional int64 version = 1 [default = 1];
 }
