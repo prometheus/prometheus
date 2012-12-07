@@ -17,15 +17,36 @@ import (
 	"time"
 )
 
+// A Fingerprint is a simplified representation of an entity---e.g., a hash of
+// an entire Metric.
 type Fingerprint string
 
-type LabelPairs map[string]string
-type Metric map[string]string
+// A LabelName is a key for a LabelSet or Metric.  It has a value associated
+// therewith.
+type LabelName string
 
+// A LabelValue is an associated value for a LabelName.
+type LabelValue string
+
+// A LabelSet is a collection of LabelName and LabelValue pairs.  The LabelSet
+// may be fully-qualified down to the point where it may resolve to a single
+// Metric in the data store or not.  All operations that occur within the realm
+// of a LabelSet can emit a vector of Metric entities to which the LabelSet may
+// match.
+type LabelSet map[LabelName]LabelValue
+
+// A Metric is similar to a LabelSet, but the key difference is that a Metric is
+// a singleton and refers to one and only one stream of samples.
+type Metric map[LabelName]LabelValue
+
+// A SampleValue is a representation of a value for a given sample at a given
+// time.  It is presently float32 due to that being the representation that
+// Protocol Buffers provide of floats in Go.  This is a smell and should be
+// remedied down the road.
 type SampleValue float32
 
 type Sample struct {
-	Labels    LabelPairs
+	Labels    LabelSet
 	Value     SampleValue
 	Timestamp time.Time
 }

@@ -17,17 +17,31 @@ import (
 	"github.com/matttproud/prometheus/model"
 )
 
+// MetricPersistence is a system for storing metric samples in a persistence
+// layer.
 type MetricPersistence interface {
+	// A storage system may rely on external resources and thusly should be
+	// closed when finished.
 	Close() error
 
+	// Record a new sample in the storage layer.
 	AppendSample(sample *model.Sample) error
 
-	GetLabelNames() ([]string, error)
-	GetLabelPairs() ([]model.LabelPairs, error)
-	GetMetrics() ([]model.LabelPairs, error)
+	// Get all of the metric fingerprints that are associated with the provided
+	// label set.
+	GetFingerprintsForLabelSet(labelSet *model.LabelSet) ([]*model.Fingerprint, error)
+	GetFingerprintsForLabelName(labelName *model.LabelName) ([]*model.Fingerprint, error)
 
-	GetMetricFingerprintsForLabelPairs(labelSets []*model.LabelPairs) ([]*model.Fingerprint, error)
-	GetFingerprintLabelPairs(fingerprint model.Fingerprint) (model.LabelPairs, error)
+	GetAllLabelNames() ([]string, error)
+	GetAllLabelPairs() ([]model.LabelSet, error)
+	GetAllMetrics() ([]model.LabelSet, error)
 
-	RecordFingerprintWatermark(sample *model.Sample) error
+	// // BEGIN QUERY PRIMITIVES
+	//
+	// GetMetricForFingerprint()
+	// GetMetricWatermarks(metrics ...) (watermarks ...)
+	// GetMetricValuesForIntervals(metric, interval) (values ...)
+	// GetMetricValueLast()
+	// // END QUERY PRIMITIVES
+
 }
