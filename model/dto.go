@@ -17,12 +17,13 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 	"crypto/md5"
 	"encoding/hex"
-	data "github.com/matttproud/prometheus/model/generated"
+	"errors"
+	dto "github.com/matttproud/prometheus/model/generated"
 	"io"
 	"sort"
 )
 
-func SampleToMetricDTO(s *Sample) *data.Metric {
+func SampleToMetricDTO(s *Sample) *dto.Metric {
 	labelLength := len(s.Labels)
 	labelNames := make([]string, 0, labelLength)
 
@@ -32,11 +33,11 @@ func SampleToMetricDTO(s *Sample) *data.Metric {
 
 	sort.Strings(labelNames)
 
-	labelSets := make([]*data.LabelPair, 0, labelLength)
+	labelSets := make([]*dto.LabelPair, 0, labelLength)
 
 	for _, labelName := range labelNames {
 		labelValue := s.Labels[LabelName(labelName)]
-		labelPair := &data.LabelPair{
+		labelPair := &dto.LabelPair{
 			Name:  proto.String(string(labelName)),
 			Value: proto.String(string(labelValue)),
 		}
@@ -44,12 +45,12 @@ func SampleToMetricDTO(s *Sample) *data.Metric {
 		labelSets = append(labelSets, labelPair)
 	}
 
-	return &data.Metric{
+	return &dto.Metric{
 		LabelPair: labelSets,
 	}
 }
 
-func MetricToDTO(m *Metric) *data.Metric {
+func MetricToDTO(m *Metric) *dto.Metric {
 	metricLength := len(*m)
 	labelNames := make([]string, 0, metricLength)
 
@@ -59,12 +60,12 @@ func MetricToDTO(m *Metric) *data.Metric {
 
 	sort.Strings(labelNames)
 
-	labelSets := make([]*data.LabelPair, 0, metricLength)
+	labelSets := make([]*dto.LabelPair, 0, metricLength)
 
 	for _, labelName := range labelNames {
 		l := LabelName(labelName)
 		labelValue := (*m)[l]
-		labelPair := &data.LabelPair{
+		labelPair := &dto.LabelPair{
 			Name:  proto.String(string(labelName)),
 			Value: proto.String(string(labelValue)),
 		}
@@ -72,7 +73,7 @@ func MetricToDTO(m *Metric) *data.Metric {
 		labelSets = append(labelSets, labelPair)
 	}
 
-	return &data.Metric{
+	return &dto.Metric{
 		LabelPair: labelSets,
 	}
 }
@@ -89,7 +90,7 @@ func BytesToFingerprint(v []byte) Fingerprint {
 	return Fingerprint(hex.EncodeToString(hash.Sum([]byte{})))
 }
 
-func LabelSetToDTOs(s *LabelSet) []*data.LabelPair {
+func LabelSetToDTOs(s *LabelSet) []*dto.LabelPair {
 	metricLength := len(*s)
 	labelNames := make([]string, 0, metricLength)
 
@@ -99,12 +100,12 @@ func LabelSetToDTOs(s *LabelSet) []*data.LabelPair {
 
 	sort.Strings(labelNames)
 
-	labelSets := make([]*data.LabelPair, 0, metricLength)
+	labelSets := make([]*dto.LabelPair, 0, metricLength)
 
 	for _, labelName := range labelNames {
 		l := LabelName(labelName)
 		labelValue := (*s)[l]
-		labelPair := &data.LabelPair{
+		labelPair := &dto.LabelPair{
 			Name:  proto.String(string(labelName)),
 			Value: proto.String(string(labelValue)),
 		}
@@ -115,14 +116,33 @@ func LabelSetToDTOs(s *LabelSet) []*data.LabelPair {
 	return labelSets
 }
 
-func LabelSetToDTO(s *LabelSet) *data.LabelSet {
-	return &data.LabelSet{
+func LabelSetToDTO(s *LabelSet) *dto.LabelSet {
+	return &dto.LabelSet{
 		Member: LabelSetToDTOs(s),
 	}
 }
 
-func LabelNameToDTO(l *LabelName) *data.LabelName {
-	return &data.LabelName{
+func LabelNameToDTO(l *LabelName) *dto.LabelName {
+	return &dto.LabelName{
 		Name: proto.String(string(*l)),
 	}
+}
+
+func FingerprintToDTO(f *Fingerprint) *dto.Fingerprint {
+	return &dto.Fingerprint{
+		Signature: proto.String(string(*f)),
+	}
+}
+
+func MessageToFingerprintDTO(message proto.Message) (*dto.Fingerprint, error) {
+	if messageByteArray, marshalError := proto.Marshal(message); marshalError == nil {
+		fingerprint := BytesToFingerprint(messageByteArray)
+		return &dto.Fingerprint{
+			Signature: proto.String(string(fingerprint)),
+		}, nil
+	} else {
+		return nil, marshalError
+	}
+
+	return nil, errors.New("Unknown error in generating FingerprintDTO from message.")
 }
