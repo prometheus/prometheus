@@ -213,12 +213,12 @@ var testAppendSampleAsPureSparseAppend = func(t tester) {
 	appendSample := func(x int) bool {
 		v := model.SampleValue(x)
 		t := time.Unix(int64(x), int64(x))
-		l := model.LabelSet{model.LabelName(x): model.LabelValue(x)}
+		l := model.Metric{model.LabelName(x): model.LabelValue(x)}
 
 		sample := &model.Sample{
 			Value:     v,
 			Timestamp: t,
-			Labels:    l,
+			Metric:    l,
 		}
 
 		appendErr := persistence.AppendSample(sample)
@@ -259,12 +259,12 @@ var testAppendSampleAsSparseAppendWithReads func(t tester) = func(t tester) {
 	appendSample := func(x int) bool {
 		v := model.SampleValue(x)
 		t := time.Unix(int64(x), int64(x))
-		l := model.LabelSet{model.LabelName(x): model.LabelValue(x)}
+		l := model.Metric{model.LabelName(x): model.LabelValue(x)}
 
 		sample := &model.Sample{
 			Value:     v,
 			Timestamp: t,
-			Labels:    l,
+			Metric:    l,
 		}
 
 		appendErr := persistence.AppendSample(sample)
@@ -367,7 +367,7 @@ func TestAppendSampleAsPureSingleEntityAppend(t *testing.T) {
 		sample := &model.Sample{
 			Value:     model.SampleValue(float32(x)),
 			Timestamp: time.Unix(int64(x), 0),
-			Labels:    model.LabelSet{"name": "my_metric"},
+			Metric:    model.Metric{"name": "my_metric"},
 		}
 
 		appendErr := persistence.AppendSample(sample)
@@ -412,24 +412,24 @@ func TestStochastic(t *testing.T) {
 
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
 			sample := &model.Sample{
-				Labels: model.LabelSet{},
+				Metric: model.Metric{},
 			}
 
 			v := model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
-			sample.Labels["name"] = v
+			sample.Metric["name"] = v
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
 				l := model.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
 				v := model.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex))
 
-				sample.Labels[l] = v
+				sample.Metric[l] = v
 			}
 
 			for unsharedLabelIndex := 0; unsharedLabelIndex < numberOfUnsharedLabels; unsharedLabelIndex++ {
 				l := model.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
 				v := model.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
 
-				sample.Labels[l] = v
+				sample.Metric[l] = v
 			}
 
 			timestamps := make(map[int64]bool)
@@ -691,7 +691,7 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 	appendErr := persistence.AppendSample(&model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(0, 0),
-		Labels: model.LabelSet{
+		Metric: model.Metric{
 			"name":         "my_metric",
 			"request_type": "your_mom",
 		},
@@ -704,7 +704,7 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 	appendErr = persistence.AppendSample(&model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(int64(0), 0),
-		Labels: model.LabelSet{
+		Metric: model.Metric{
 			"name":         "my_metric",
 			"request_type": "your_dad",
 		},
@@ -769,7 +769,7 @@ func TestGetFingerprintsForLabelName(t *testing.T) {
 	appendErr := persistence.AppendSample(&model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(0, 0),
-		Labels: model.LabelSet{
+		Metric: model.Metric{
 			"name":         "my_metric",
 			"request_type": "your_mom",
 			"language":     "english",
@@ -783,7 +783,7 @@ func TestGetFingerprintsForLabelName(t *testing.T) {
 	appendErr = persistence.AppendSample(&model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(int64(0), 0),
-		Labels: model.LabelSet{
+		Metric: model.Metric{
 			"name":         "my_metric",
 			"request_type": "your_dad",
 			"sprache":      "deutsch",
@@ -857,7 +857,7 @@ func TestGetMetricForFingerprint(t *testing.T) {
 	appendErr := persistence.AppendSample(&model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(0, 0),
-		Labels: model.LabelSet{
+		Metric: model.Metric{
 			"request_type": "your_mom",
 		},
 	})
@@ -869,7 +869,7 @@ func TestGetMetricForFingerprint(t *testing.T) {
 	appendErr = persistence.AppendSample(&model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(int64(0), 0),
-		Labels: model.LabelSet{
+		Metric: model.Metric{
 			"request_type": "your_dad",
 			"one-off":      "value",
 		},
