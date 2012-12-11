@@ -43,8 +43,6 @@ type MetricPersistence interface {
 
 	// // BEGIN QUERY PRIMITIVES
 	//
-	// GetMetricForFingerprint()
-	// GetMetricWatermarks(metrics ...) (watermarks ...)
 	// GetMetricValuesForIntervals(metric, interval) (values ...)
 	// GetMetricValueLast()
 	// // END QUERY PRIMITIVES

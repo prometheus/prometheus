@@ -40,7 +40,7 @@ preparation-stamp: build-dependencies
 
 build-dependencies: build-dependencies-stamp
 
-build-dependencies-stamp: bison cc mercurial protoc goprotobuf go leveldb levigo gorest
+build-dependencies-stamp: bison cc mercurial protoc goprotobuf go leveldb levigo
 	touch $@
 
 overlay: overlay-stamp
@@ -139,13 +139,6 @@ source-stamp:
 	ln -sf $${PWD} ${GOPATH}/src/github.com/matttproud/prometheus
 	touch $@
 
-
-gorest: gorest-stamp
-
-gorest-stamp: go source
-	$(GO_GET) code.google.com/p/gorest
-	touch $@
-
 clean:
 	-rm *-stamp
 	-rm -rf "$(OVERLAY_ROOT)"
@@ -155,5 +148,4 @@ clean:
 	-rm protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2
 
 
-.PHONY: all bison build-dependencies cc clean go goprotobuf gorest leveldb levigo mercurial overlay preparation protoc rsync source test wget
-
+.PHONY: all bison build-dependencies cc clean go goprotobuf leveldb levigo mercurial overlay preparation protoc rsync source test wget

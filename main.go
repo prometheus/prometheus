@@ -14,17 +14,22 @@
 package main
 
 import (
-	"code.google.com/p/gorest"
 	"github.com/matttproud/prometheus/storage/metric/leveldb"
-	"net/http"
+	"log"
+	"os"
 )
 
 func main() {
-	m, _ := leveldb.NewLevelDBMetricPersistence("/tmp/metrics")
-	s := &MetricsService{
-		persistence: m,
+	m, err := leveldb.NewLevelDBMetricPersistence("/tmp/metrics")
+	if err != nil {
+		log.Print(err)
+		os.Exit(1)
 	}
-	gorest.RegisterService(s)
-	http.Handle("/", gorest.Handle())
-	http.ListenAndServe(":8787", nil)
+
+	defer func() {
+		m.Close()
+	}()
+
+	for {
+	}
 }

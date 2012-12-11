@@ -46,7 +46,7 @@ type Metric map[LabelName]LabelValue
 type SampleValue float32
 
 type Sample struct {
-	Labels    LabelSet
+	Metric    Metric
 	Value     SampleValue
 	Timestamp time.Time
 }
