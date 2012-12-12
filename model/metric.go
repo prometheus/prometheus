@@ -51,12 +51,24 @@ type Sample struct {
 	Timestamp time.Time
 }
 
-type Samples struct {
+type SamplePair struct {
 	Value     SampleValue
 	Timestamp time.Time
+}
+
+type SampleSet struct {
+	Metric Metric
+	Values []SamplePair
 }
 
 type Interval struct {
 	OldestInclusive time.Time
 	NewestInclusive time.Time
+}
+
+// PENDING DELETION BELOW THIS LINE
+
+type Samples struct {
+	Value     SampleValue
+	Timestamp time.Time
 }
