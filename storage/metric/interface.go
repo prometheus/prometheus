@@ -37,14 +37,14 @@ type MetricPersistence interface {
 
 	GetMetricForFingerprint(f *model.Fingerprint) (*model.Metric, error)
 
+	GetFirstValue(m *model.Metric) (*model.Sample, error)
+	GetCurrentValue(m *model.Metric) (*model.Sample, error)
+	GetBoundaryValues(m *model.Metric, i *model.Interval) (*model.SampleSet, error)
+	GetRangeValues(m *model.Metric, i *model.Interval) (*model.SampleSet, error)
+
+	// DIAGNOSTIC FUNCTIONS PENDING DELETION BELOW HERE
+
 	GetAllLabelNames() ([]string, error)
 	GetAllLabelPairs() ([]model.LabelSet, error)
 	GetAllMetrics() ([]model.LabelSet, error)
-
-	// // BEGIN QUERY PRIMITIVES
-	//
-	// GetMetricValuesForIntervals(metric, interval) (values ...)
-	// GetMetricValueLast()
-	// // END QUERY PRIMITIVES
-
 }
