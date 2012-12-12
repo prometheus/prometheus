@@ -20,7 +20,9 @@ import (
 	"github.com/matttproud/prometheus/coding/indexable"
 	"github.com/matttproud/prometheus/model"
 	dto "github.com/matttproud/prometheus/model/generated"
+	"github.com/matttproud/prometheus/storage/metric"
 	"log"
+	"time"
 )
 
 func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (bool, error) {
@@ -197,4 +199,20 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint)
 	}
 
 	panic("unreachable")
+}
+
+func (l *LevelDBMetricPersistence) GetBoundaryValues(m *model.Metric, i *model.Interval, s *metric.StalenessPolicy) (*model.Sample, *model.Sample, error) {
+	panic("not implemented")
+}
+
+func (l *LevelDBMetricPersistence) GetFirstValue(m *model.Metric) (*model.Sample, error) {
+	panic("not implemented")
+}
+
+func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time, s *metric.StalenessPolicy) (*model.Sample, error) {
+	panic("not implemented")
+}
+
+func (l *LevelDBMetricPersistence) GetRangeValues(m *model.Metric, i *model.Interval, s *metric.StalenessPolicy) (*model.SampleSet, error) {
+	panic("not implemented")
 }

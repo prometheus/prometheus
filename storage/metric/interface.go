@@ -15,7 +15,13 @@ package metric
 
 import (
 	"github.com/matttproud/prometheus/model"
+	"time"
 )
+
+type StalenessPolicy struct {
+	AllowStale            bool
+	InterpolationInterval time.Duration
+}
 
 // MetricPersistence is a system for storing metric samples in a persistence
 // layer.
@@ -37,10 +43,10 @@ type MetricPersistence interface {
 
 	GetMetricForFingerprint(f *model.Fingerprint) (*model.Metric, error)
 
-	GetFirstValue(m *model.Metric) (*model.Sample, error)
-	GetCurrentValue(m *model.Metric) (*model.Sample, error)
-	GetBoundaryValues(m *model.Metric, i *model.Interval) (*model.SampleSet, error)
-	GetRangeValues(m *model.Metric, i *model.Interval) (*model.SampleSet, error)
+	GetFirstValue(*model.Metric) (*model.Sample, error)
+	GetValueAtTime(*model.Metric, *time.Time, *StalenessPolicy) (*model.Sample, error)
+	GetBoundaryValues(*model.Metric, *model.Interval, *StalenessPolicy) (*model.Sample, *model.Sample, error)
+	GetRangeValues(*model.Metric, *model.Interval, *StalenessPolicy) (*model.SampleSet, error)
 
 	// DIAGNOSTIC FUNCTIONS PENDING DELETION BELOW HERE
 
