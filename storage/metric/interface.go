@@ -19,8 +19,8 @@ import (
 )
 
 type StalenessPolicy struct {
-	AllowStale            bool
-	InterpolationInterval time.Duration
+	AllowStale       bool
+	MaximumStaleness time.Duration
 }
 
 // MetricPersistence is a system for storing metric samples in a persistence
