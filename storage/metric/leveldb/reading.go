@@ -14,6 +14,7 @@
 package leveldb
 
 import (
+	"bytes"
 	"code.google.com/p/goprotobuf/proto"
 	"errors"
 	"github.com/matttproud/prometheus/coding"
@@ -209,8 +210,224 @@ func (l *LevelDBMetricPersistence) GetFirstValue(m *model.Metric) (*model.Sample
 	panic("not implemented")
 }
 
-func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time, s *metric.StalenessPolicy) (*model.Sample, error) {
-	panic("not implemented")
+func interpolate(x1, x2 time.Time, y1, y2 float32, e time.Time) float32 {
+	yDelta := y2 - y1
+	xDelta := x2.Sub(x1)
+
+	dDt := yDelta / float32(xDelta)
+	offset := float32(e.Sub(x1))
+
+	return y1 + (offset * dDt)
+}
+
+type iterator interface {
+	Close()
+	Key() []byte
+	Next()
+	Prev()
+	Seek([]byte)
+	SeekToFirst()
+	SeekToLast()
+	Valid() bool
+	Value() []byte
+}
+
+func isKeyInsideRecordedInterval(k *dto.SampleKey, i iterator) (b bool, err error) {
+	byteKey, err := coding.NewProtocolBufferEncoder(k).Encode()
+	if err != nil {
+		return
+	}
+
+	i.Seek(byteKey)
+	if !i.Valid() {
+		return
+	}
+
+	var (
+		retrievedKey *dto.SampleKey = &dto.SampleKey{}
+	)
+
+	err = proto.Unmarshal(i.Key(), retrievedKey)
+	if err != nil {
+		return
+	}
+
+	if *retrievedKey.Fingerprint.Signature != *k.Fingerprint.Signature {
+		return
+	}
+
+	if bytes.Equal(retrievedKey.Timestamp, k.Timestamp) {
+		return true, nil
+	}
+
+	i.Prev()
+	if !i.Valid() {
+		return
+	}
+
+	err = proto.Unmarshal(i.Key(), retrievedKey)
+	if err != nil {
+		return
+	}
+
+	b = *retrievedKey.Fingerprint.Signature == *k.Fingerprint.Signature
+
+	return
+}
+
+func doesKeyHavePrecursor(k *dto.SampleKey, i iterator) (b bool, err error) {
+	byteKey, err := coding.NewProtocolBufferEncoder(k).Encode()
+	if err != nil {
+		return
+	}
+
+	i.Seek(byteKey)
+
+	if !i.Valid() {
+		i.SeekToFirst()
+	}
+
+	var (
+		retrievedKey *dto.SampleKey = &dto.SampleKey{}
+	)
+
+	err = proto.Unmarshal(i.Key(), retrievedKey)
+	if err != nil {
+		return
+	}
+
+	signaturesEqual := *retrievedKey.Fingerprint.Signature == *k.Fingerprint.Signature
+	if !signaturesEqual {
+		return
+	}
+
+	keyTime := indexable.DecodeTime(k.Timestamp)
+	retrievedTime := indexable.DecodeTime(retrievedKey.Timestamp)
+
+	return retrievedTime.Before(keyTime), nil
+}
+
+func doesKeyHaveSuccessor(k *dto.SampleKey, i iterator) (b bool, err error) {
+	byteKey, err := coding.NewProtocolBufferEncoder(k).Encode()
+	if err != nil {
+		return
+	}
+
+	i.Seek(byteKey)
+
+	if !i.Valid() {
+		i.SeekToLast()
+	}
+
+	var (
+		retrievedKey *dto.SampleKey = &dto.SampleKey{}
+	)
+
+	err = proto.Unmarshal(i.Key(), retrievedKey)
+	if err != nil {
+		return
+	}
+
+	signaturesEqual := *retrievedKey.Fingerprint.Signature == *k.Fingerprint.Signature
+	if !signaturesEqual {
+		return
+	}
+
+	keyTime := indexable.DecodeTime(k.Timestamp)
+	retrievedTime := indexable.DecodeTime(retrievedKey.Timestamp)
+
+	return retrievedTime.After(keyTime), nil
+}
+
+func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time, s *metric.StalenessPolicy) (sample *model.Sample, err error) {
+	d := model.MetricToDTO(m)
+
+	f, err := model.MessageToFingerprintDTO(d)
+	if err != nil {
+		return
+	}
+
+	// Candidate for Refactoring
+	k := &dto.SampleKey{
+		Fingerprint: f,
+		Timestamp:   indexable.EncodeTime(*t),
+	}
+
+	e, err := coding.NewProtocolBufferEncoder(k).Encode()
+	if err != nil {
+		return
+	}
+
+	iterator, closer, err := l.metricSamples.GetIterator()
+	if err != nil {
+		return
+	}
+	defer closer.Close()
+
+	iterator.Seek(e)
+
+	var (
+		firstKey   *dto.SampleKey   = &dto.SampleKey{}
+		firstValue *dto.SampleValue = nil
+	)
+
+	within, err := isKeyInsideRecordedInterval(k, iterator)
+	if err != nil || !within {
+		return
+	}
+
+	for iterator = iterator; iterator.Valid(); iterator.Prev() {
+		err := proto.Unmarshal(iterator.Key(), firstKey)
+		if err != nil {
+			return nil, err
+		}
+
+		if *firstKey.Fingerprint.Signature == *k.Fingerprint.Signature {
+			firstValue = &dto.SampleValue{}
+			err := proto.Unmarshal(iterator.Value(), firstValue)
+			if err != nil {
+				return nil, err
+			}
+
+			if indexable.DecodeTime(firstKey.Timestamp).Equal(indexable.DecodeTime(k.Timestamp)) {
+				return model.SampleFromDTO(m, t, firstValue), nil
+			}
+			break
+		}
+	}
+
+	var (
+		secondKey   *dto.SampleKey   = &dto.SampleKey{}
+		secondValue *dto.SampleValue = nil
+	)
+
+	iterator.Next()
+	if !iterator.Valid() {
+		return
+	}
+
+	err = proto.Unmarshal(iterator.Key(), secondKey)
+	if err != nil {
+
+		return
+	}
+
+	if *secondKey.Fingerprint.Signature == *k.Fingerprint.Signature {
+		secondValue = &dto.SampleValue{}
+		err = proto.Unmarshal(iterator.Value(), secondValue)
+		if err != nil {
+			return
+		}
+	}
+
+	firstTime := indexable.DecodeTime(firstKey.Timestamp)
+	secondTime := indexable.DecodeTime(secondKey.Timestamp)
+	interpolated := interpolate(firstTime, secondTime, *firstValue.Value, *secondValue.Value, *t)
+	emission := &dto.SampleValue{
+		Value: &interpolated,
+	}
+
+	return model.SampleFromDTO(m, t, emission), nil
 }
 
 func (l *LevelDBMetricPersistence) GetRangeValues(m *model.Metric, i *model.Interval, s *metric.StalenessPolicy) (*model.SampleSet, error) {
