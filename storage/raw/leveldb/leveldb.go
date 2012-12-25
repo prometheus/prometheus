@@ -36,7 +36,7 @@ type iteratorCloser struct {
 	storage     *levigo.DB
 }
 
-func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (*LevelDBPersistence, error) {
+func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (p *LevelDBPersistence, err error) {
 	options := levigo.NewOptions()
 	options.SetCreateIfMissing(true)
 	options.SetParanoidChecks(true)
@@ -47,13 +47,16 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 	filterPolicy := levigo.NewBloomFilter(bitsPerBloomFilterEncoded)
 	options.SetFilterPolicy(filterPolicy)
 
-	storage, openErr := levigo.Open(storageRoot, options)
+	storage, err := levigo.Open(storageRoot, options)
+	if err != nil {
+		return
+	}
 
 	readOptions := levigo.NewReadOptions()
 	writeOptions := levigo.NewWriteOptions()
 	writeOptions.SetSync(true)
 
-	emission := &LevelDBPersistence{
+	p = &LevelDBPersistence{
 		cache:        cache,
 		filterPolicy: filterPolicy,
 		options:      options,
@@ -62,13 +65,17 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 		writeOptions: writeOptions,
 	}
 
-	return emission, openErr
+	return
 }
 
-func (l *LevelDBPersistence) Close() error {
-	if l.storage != nil {
-		l.storage.Close()
-	}
+func (l *LevelDBPersistence) Close() (err error) {
+	// These are deferred to take advantage of forced closing in case of stack
+	// unwinding due to anomalies.
+	defer func() {
+		if l.storage != nil {
+			l.storage.Close()
+		}
+	}()
 
 	defer func() {
 		if l.filterPolicy != nil {
@@ -100,60 +107,57 @@ func (l *LevelDBPersistence) Close() error {
 		}
 	}()
 
-	return nil
+	return
 }
 
-func (l *LevelDBPersistence) Get(value coding.Encoder) ([]byte, error) {
-	if key, keyError := value.Encode(); keyError == nil {
-		return l.storage.Get(l.readOptions, key)
-	} else {
-		return nil, keyError
+func (l *LevelDBPersistence) Get(value coding.Encoder) (b []byte, err error) {
+	key, err := value.Encode()
+	if err != nil {
+		return
 	}
 
-	panic("unreachable")
+	return l.storage.Get(l.readOptions, key)
 }
 
-func (l *LevelDBPersistence) Has(value coding.Encoder) (bool, error) {
-	if value, getError := l.Get(value); getError != nil {
-		return false, getError
-	} else if value == nil {
-		return false, nil
+func (l *LevelDBPersistence) Has(value coding.Encoder) (h bool, err error) {
+	raw, err := l.Get(value)
+	if err != nil {
+		return
 	}
 
-	return true, nil
+	h = raw != nil
+
+	return
 }
 
-func (l *LevelDBPersistence) Drop(value coding.Encoder) error {
-	if key, keyError := value.Encode(); keyError == nil {
-
-		if deleteError := l.storage.Delete(l.writeOptions, key); deleteError != nil {
-			return deleteError
-		}
-	} else {
-		return keyError
+func (l *LevelDBPersistence) Drop(value coding.Encoder) (err error) {
+	key, err := value.Encode()
+	if err != nil {
+		return
 	}
 
-	return nil
+	err = l.storage.Delete(l.writeOptions, key)
+
+	return
 }
 
-func (l *LevelDBPersistence) Put(key, value coding.Encoder) error {
-	if keyEncoded, keyError := key.Encode(); keyError == nil {
-		if valueEncoded, valueError := value.Encode(); valueError == nil {
-
-			if putError := l.storage.Put(l.writeOptions, keyEncoded, valueEncoded); putError != nil {
-				return putError
-			}
-		} else {
-			return valueError
-		}
-	} else {
-		return keyError
+func (l *LevelDBPersistence) Put(key, value coding.Encoder) (err error) {
+	keyEncoded, err := key.Encode()
+	if err != nil {
+		return
 	}
 
-	return nil
+	valueEncoded, err := value.Encode()
+	if err != nil {
+		return
+	}
+
+	err = l.storage.Put(l.writeOptions, keyEncoded, valueEncoded)
+
+	return
 }
 
-func (l *LevelDBPersistence) GetAll() ([]raw.Pair, error) {
+func (l *LevelDBPersistence) GetAll() (pairs []raw.Pair, err error) {
 	snapshot := l.storage.NewSnapshot()
 	defer l.storage.ReleaseSnapshot(snapshot)
 	readOptions := levigo.NewReadOptions()
@@ -164,22 +168,19 @@ func (l *LevelDBPersistence) GetAll() ([]raw.Pair, error) {
 	defer iterator.Close()
 	iterator.SeekToFirst()
 
-	result := make([]raw.Pair, 0)
-
 	for iterator := iterator; iterator.Valid(); iterator.Next() {
-		result = append(result, raw.Pair{Left: iterator.Key(), Right: iterator.Value()})
+		pairs = append(pairs, raw.Pair{Left: iterator.Key(), Right: iterator.Value()})
+
+		err = iterator.GetError()
+		if err != nil {
+			return
+		}
 	}
 
-	iteratorError := iterator.GetError()
-
-	if iteratorError != nil {
-		return nil, iteratorError
-	}
-
-	return result, nil
+	return
 }
 
-func (i *iteratorCloser) Close() error {
+func (i *iteratorCloser) Close() (err error) {
 	defer func() {
 		if i.storage != nil {
 			if i.snapshot != nil {
@@ -200,21 +201,21 @@ func (i *iteratorCloser) Close() error {
 		}
 	}()
 
-	return nil
+	return
 }
 
-func (l *LevelDBPersistence) GetIterator() (*levigo.Iterator, io.Closer, error) {
+func (l *LevelDBPersistence) GetIterator() (i *levigo.Iterator, c io.Closer, err error) {
 	snapshot := l.storage.NewSnapshot()
 	readOptions := levigo.NewReadOptions()
 	readOptions.SetSnapshot(snapshot)
-	iterator := l.storage.NewIterator(readOptions)
+	i = l.storage.NewIterator(readOptions)
 
-	closer := &iteratorCloser{
-		iterator:    iterator,
+	c = &iteratorCloser{
+		iterator:    i,
 		readOptions: readOptions,
 		snapshot:    snapshot,
 		storage:     l.storage,
 	}
 
-	return iterator, closer, nil
+	return
 }

@@ -15,13 +15,23 @@ package leveldb
 
 import (
 	"code.google.com/p/goprotobuf/proto"
-	"errors"
+	registry "github.com/matttproud/golang_instrumentation"
+	"github.com/matttproud/golang_instrumentation/metrics"
 	"github.com/matttproud/prometheus/coding"
 	"github.com/matttproud/prometheus/coding/indexable"
 	"github.com/matttproud/prometheus/model"
 	dto "github.com/matttproud/prometheus/model/generated"
-	"log"
 )
+
+var (
+	appendSuccessCount = &metrics.CounterMetric{}
+	appendFailureCount = &metrics.CounterMetric{}
+)
+
+func init() {
+	registry.Register("sample_append_success_count_total", appendSuccessCount)
+	registry.Register("sample_append_failure_count_total", appendFailureCount)
+}
 
 func (l *LevelDBMetricPersistence) setLabelPairFingerprints(labelPair *dto.LabelPair, fingerprints *dto.FingerprintCollection) error {
 	labelPairEncoded := coding.NewProtocolBufferEncoder(labelPair)
@@ -35,146 +45,148 @@ func (l *LevelDBMetricPersistence) setLabelNameFingerprints(labelName *dto.Label
 	return l.labelNameToFingerprints.Put(labelNameEncoded, fingerprintsEncoded)
 }
 
-func (l *LevelDBMetricPersistence) appendLabelPairFingerprint(labelPair *dto.LabelPair, fingerprint *dto.Fingerprint) error {
-	if has, hasError := l.HasLabelPair(labelPair); hasError == nil {
-		var fingerprints *dto.FingerprintCollection
-		if has {
-			if existing, existingError := l.getFingerprintsForLabelSet(labelPair); existingError == nil {
-				fingerprints = existing
-			} else {
-				return existingError
-			}
-		} else {
-			fingerprints = &dto.FingerprintCollection{}
-		}
-
-		fingerprints.Member = append(fingerprints.Member, fingerprint)
-
-		return l.setLabelPairFingerprints(labelPair, fingerprints)
-	} else {
-		return hasError
+func (l *LevelDBMetricPersistence) appendLabelPairFingerprint(labelPair *dto.LabelPair, fingerprint *dto.Fingerprint) (err error) {
+	has, err := l.HasLabelPair(labelPair)
+	if err != nil {
+		return
 	}
 
-	return errors.New("Unknown error when appending fingerprint to label name and value pair.")
+	var fingerprints *dto.FingerprintCollection
+	if has {
+		fingerprints, err = l.getFingerprintsForLabelSet(labelPair)
+		if err != nil {
+			return
+		}
+	} else {
+		fingerprints = &dto.FingerprintCollection{}
+	}
+
+	fingerprints.Member = append(fingerprints.Member, fingerprint)
+
+	return l.setLabelPairFingerprints(labelPair, fingerprints)
 }
 
-func (l *LevelDBMetricPersistence) appendLabelNameFingerprint(labelPair *dto.LabelPair, fingerprint *dto.Fingerprint) error {
+func (l *LevelDBMetricPersistence) appendLabelNameFingerprint(labelPair *dto.LabelPair, fingerprint *dto.Fingerprint) (err error) {
 	labelName := &dto.LabelName{
 		Name: labelPair.Name,
 	}
 
-	if has, hasError := l.HasLabelName(labelName); hasError == nil {
-		var fingerprints *dto.FingerprintCollection
-		if has {
-			if existing, existingError := l.GetLabelNameFingerprints(labelName); existingError == nil {
-				fingerprints = existing
-			} else {
-				return existingError
-			}
-		} else {
-			fingerprints = &dto.FingerprintCollection{}
-		}
-
-		fingerprints.Member = append(fingerprints.Member, fingerprint)
-
-		return l.setLabelNameFingerprints(labelName, fingerprints)
-	} else {
-		return hasError
+	has, err := l.HasLabelName(labelName)
+	if err != nil {
+		return
 	}
 
-	return errors.New("Unknown error when appending fingerprint to label name and value pair.")
-}
-
-func (l *LevelDBMetricPersistence) appendFingerprints(m *dto.Metric) error {
-	if fingerprintDTO, fingerprintDTOError := model.MessageToFingerprintDTO(m); fingerprintDTOError == nil {
-		fingerprintKey := coding.NewProtocolBufferEncoder(fingerprintDTO)
-		metricDTOEncoder := coding.NewProtocolBufferEncoder(m)
-
-		if putError := l.fingerprintToMetrics.Put(fingerprintKey, metricDTOEncoder); putError == nil {
-			labelCount := len(m.LabelPair)
-			labelPairErrors := make(chan error, labelCount)
-			labelNameErrors := make(chan error, labelCount)
-
-			for _, labelPair := range m.LabelPair {
-				go func(labelPair *dto.LabelPair) {
-					labelNameErrors <- l.appendLabelNameFingerprint(labelPair, fingerprintDTO)
-				}(labelPair)
-
-				go func(labelPair *dto.LabelPair) {
-					labelPairErrors <- l.appendLabelPairFingerprint(labelPair, fingerprintDTO)
-				}(labelPair)
-			}
-
-			for i := 0; i < cap(labelPairErrors); i++ {
-				appendError := <-labelPairErrors
-
-				if appendError != nil {
-					return appendError
-				}
-			}
-
-			for i := 0; i < cap(labelNameErrors); i++ {
-				appendError := <-labelNameErrors
-
-				if appendError != nil {
-					return appendError
-				}
-			}
-
-			return nil
-
-		} else {
-			return putError
+	var fingerprints *dto.FingerprintCollection
+	if has {
+		fingerprints, err = l.GetLabelNameFingerprints(labelName)
+		if err != nil {
+			return
 		}
 	} else {
-		return fingerprintDTOError
+		fingerprints = &dto.FingerprintCollection{}
 	}
 
-	return errors.New("Unknown error in appending label pairs to fingerprint.")
+	fingerprints.Member = append(fingerprints.Member, fingerprint)
+
+	return l.setLabelNameFingerprints(labelName, fingerprints)
 }
 
-func (l *LevelDBMetricPersistence) AppendSample(sample *model.Sample) error {
+func (l *LevelDBMetricPersistence) appendFingerprints(m *dto.Metric) (err error) {
+	fingerprintDTO, err := model.MessageToFingerprintDTO(m)
+	if err != nil {
+		return
+	}
+
+	fingerprintKey := coding.NewProtocolBufferEncoder(fingerprintDTO)
+	metricDTOEncoder := coding.NewProtocolBufferEncoder(m)
+
+	err = l.fingerprintToMetrics.Put(fingerprintKey, metricDTOEncoder)
+	if err != nil {
+		return
+	}
+
+	labelCount := len(m.LabelPair)
+	labelPairErrors := make(chan error, labelCount)
+	labelNameErrors := make(chan error, labelCount)
+
+	for _, labelPair := range m.LabelPair {
+		go func(labelPair *dto.LabelPair) {
+			labelNameErrors <- l.appendLabelNameFingerprint(labelPair, fingerprintDTO)
+		}(labelPair)
+
+		go func(labelPair *dto.LabelPair) {
+			labelPairErrors <- l.appendLabelPairFingerprint(labelPair, fingerprintDTO)
+		}(labelPair)
+	}
+
+	for i := 0; i < cap(labelPairErrors); i++ {
+		err = <-labelPairErrors
+
+		if err != nil {
+			return
+		}
+	}
+
+	for i := 0; i < cap(labelNameErrors); i++ {
+		err = <-labelNameErrors
+
+		if err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+func (l *LevelDBMetricPersistence) AppendSample(sample *model.Sample) (err error) {
+	defer func() {
+		var m *metrics.CounterMetric = appendSuccessCount
+
+		if err != nil {
+			m = appendFailureCount
+		}
+
+		m.Increment()
+	}()
+
 	metricDTO := model.SampleToMetricDTO(sample)
 
-	if indexHas, indexHasError := l.hasIndexMetric(metricDTO); indexHasError == nil {
-		if !indexHas {
-			if indexPutError := l.indexMetric(metricDTO); indexPutError == nil {
-				if appendError := l.appendFingerprints(metricDTO); appendError != nil {
-					log.Printf("Could not set metric fingerprint to label pairs mapping: %q\n", appendError)
-					return appendError
-				}
-			} else {
-				log.Printf("Could not add metric to membership index: %q\n", indexPutError)
-				return indexPutError
-			}
-		}
-	} else {
-		log.Printf("Could not query membership index for metric: %q\n", indexHasError)
-		return indexHasError
+	indexHas, err := l.hasIndexMetric(metricDTO)
+	if err != nil {
+		return
 	}
 
-	if fingerprintDTO, fingerprintDTOErr := model.MessageToFingerprintDTO(metricDTO); fingerprintDTOErr == nil {
-
-		sampleKeyDTO := &dto.SampleKey{
-			Fingerprint: fingerprintDTO,
-			Timestamp:   indexable.EncodeTime(sample.Timestamp),
+	if !indexHas {
+		err = l.indexMetric(metricDTO)
+		if err != nil {
+			return
 		}
 
-		sampleValueDTO := &dto.SampleValue{
-			Value: proto.Float32(float32(sample.Value)),
+		err = l.appendFingerprints(metricDTO)
+		if err != nil {
+			return
 		}
-
-		sampleKeyEncoded := coding.NewProtocolBufferEncoder(sampleKeyDTO)
-		sampleValueEncoded := coding.NewProtocolBufferEncoder(sampleValueDTO)
-
-		if putError := l.metricSamples.Put(sampleKeyEncoded, sampleValueEncoded); putError != nil {
-			log.Printf("Could not append metric sample: %q\n", putError)
-			return putError
-		}
-	} else {
-		log.Printf("Could not encode metric fingerprint: %q\n", fingerprintDTOErr)
-		return fingerprintDTOErr
 	}
 
-	return nil
+	fingerprintDTO, err := model.MessageToFingerprintDTO(metricDTO)
+	if err != nil {
+		return
+	}
+
+	sampleKeyDTO := &dto.SampleKey{
+		Fingerprint: fingerprintDTO,
+		Timestamp:   indexable.EncodeTime(sample.Timestamp),
+	}
+	sampleValueDTO := &dto.SampleValue{
+		Value: proto.Float32(float32(sample.Value)),
+	}
+	sampleKeyEncoded := coding.NewProtocolBufferEncoder(sampleKeyDTO)
+	sampleValueEncoded := coding.NewProtocolBufferEncoder(sampleValueDTO)
+
+	err = l.metricSamples.Put(sampleKeyEncoded, sampleValueEncoded)
+	if err != nil {
+		return
+	}
+
+	return
 }

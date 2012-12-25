@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"github.com/matttproud/prometheus/model"
 	dto "github.com/matttproud/prometheus/model/generated"
+	"github.com/matttproud/prometheus/utility/test"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -31,12 +32,7 @@ const (
 	stochasticMaximumVariance = 64
 )
 
-type tester interface {
-	Errorf(format string, args ...interface{})
-	Error(args ...interface{})
-}
-
-var testBasicLifecycle func(t tester) = func(t tester) {
+var testBasicLifecycle func(t test.Tester) = func(t test.Tester) {
 	temporaryDirectory, temporaryDirectoryErr := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 	if temporaryDirectoryErr != nil {
@@ -78,7 +74,7 @@ func BenchmarkBasicLifecycle(b *testing.B) {
 	}
 }
 
-var testReadEmpty func(t tester) = func(t tester) {
+var testReadEmpty func(t test.Tester) = func(t test.Tester) {
 	temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 	defer func() {
@@ -195,7 +191,7 @@ func BenchmarkReadEmpty(b *testing.B) {
 	}
 }
 
-var testAppendSampleAsPureSparseAppend = func(t tester) {
+var testAppendSampleAsPureSparseAppend = func(t test.Tester) {
 	temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 	defer func() {
@@ -241,7 +237,7 @@ func BenchmarkAppendSampleAsPureSparseAppend(b *testing.B) {
 	}
 }
 
-var testAppendSampleAsSparseAppendWithReads func(t tester) = func(t tester) {
+var testAppendSampleAsSparseAppendWithReads func(t test.Tester) = func(t test.Tester) {
 	temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
 
 	defer func() {
