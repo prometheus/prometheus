@@ -19,6 +19,7 @@ import (
 	"github.com/matttproud/prometheus/storage/metric/leveldb"
 	"log"
 	"os"
+	"time"
 )
 
 func main() {
@@ -32,21 +33,22 @@ func main() {
 		m.Close()
 	}()
 
+	results := make(chan retrieval.Result, 4096)
+
 	t := &retrieval.Target{
-		Address: "http://localhost:8080/metrics.json",
+		Address:  "http://localhost:8080/metrics.json",
+		Deadline: time.Second * 5,
+		Interval: time.Second * 3,
 	}
 
-	for i := 0; i < 100000; i++ {
-		c, err := t.Scrape()
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
+	manager := retrieval.NewTargetManager(results, 1)
+	manager.Add(t)
 
-		for _, s := range c {
+	for {
+		result := <-results
+		fmt.Printf("result -> %s\n", result)
+		for _, s := range result.Samples {
 			m.AppendSample(&s)
 		}
-
-		fmt.Printf("Finished %d\n", i)
 	}
 }
