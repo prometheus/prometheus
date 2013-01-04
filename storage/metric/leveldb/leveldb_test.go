@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	stochasticMaximumVariance = 64
+	stochasticMaximumVariance = 8
 )
 
 var testBasicLifecycle func(t test.Tester) = func(t test.Tester) {
