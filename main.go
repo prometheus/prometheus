@@ -14,10 +14,11 @@
 package main
 
 import (
-	"fmt"
+	"github.com/matttproud/golang_instrumentation"
 	"github.com/matttproud/prometheus/retrieval"
 	"github.com/matttproud/prometheus/storage/metric/leveldb"
 	"log"
+	"net/http"
 	"os"
 	"time"
 )
@@ -44,9 +45,14 @@ func main() {
 	manager := retrieval.NewTargetManager(results, 1)
 	manager.Add(t)
 
+	go func() {
+		exporter := registry.DefaultRegistry.YieldExporter()
+		http.Handle("/metrics.json", exporter)
+		http.ListenAndServe(":9090", nil)
+	}()
+
 	for {
 		result := <-results
-		fmt.Printf("result -> %s\n", result)
 		for _, s := range result.Samples {
 			m.AppendSample(&s)
 		}
