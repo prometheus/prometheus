@@ -1,38 +1,92 @@
 package retrieval
 
 import (
-	"encoding/json"
-	"github.com/matttproud/prometheus/model"
-	"io/ioutil"
-	"net/http"
-	"strconv"
+	"container/heap"
+	"log"
 	"time"
 )
 
-type TargetPool []*Target
+type TargetPool struct {
+	done    chan bool
+	targets []*Target
+	manager TargetManager
+}
+
+func NewTargetPool(m TargetManager) (p TargetPool) {
+	p.manager = m
+
+	return
+}
 
 func (p TargetPool) Len() int {
-	return len(p)
+	return len(p.targets)
 }
 
 func (p TargetPool) Less(i, j int) bool {
-	return p[i].scheduledFor.Before(p[j].scheduledFor)
+	return p.targets[i].scheduledFor.Before(p.targets[j].scheduledFor)
 }
 
 func (p *TargetPool) Pop() interface{} {
-	oldPool := *p
+	oldPool := p.targets
 	futureLength := p.Len() - 1
 	element := oldPool[futureLength]
 	futurePool := oldPool[0:futureLength]
-	*p = futurePool
+	p.targets = futurePool
 
 	return element
 }
 
 func (p *TargetPool) Push(element interface{}) {
-	*p = append(*p, element.(*Target))
+	p.targets = append(p.targets, element.(*Target))
 }
 
 func (p TargetPool) Swap(i, j int) {
-	p[i], p[j] = p[j], p[i]
+	p.targets[i], p.targets[j] = p.targets[j], p.targets[i]
+}
+
+func (p *TargetPool) Run(results chan Result, interval time.Duration) {
+	ticker := time.Tick(interval)
+
+	for {
+		select {
+		case <-ticker:
+			p.runIteration(results)
+		case <-p.done:
+			log.Printf("TargetPool exiting...")
+			break
+		}
+	}
+}
+
+func (p TargetPool) Stop() {
+	p.done <- true
+}
+
+func (p *TargetPool) runSingle(results chan Result, t *Target) {
+	p.manager.acquire()
+	defer p.manager.release()
+
+	t.Scrape(results)
+}
+
+func (p *TargetPool) runIteration(results chan Result) {
+	for i := 0; i < p.Len(); i++ {
+		target := heap.Pop(p).(*Target)
+		if target == nil {
+			break
+		}
+
+		now := time.Now()
+
+		if target.scheduledFor.After(now) {
+			heap.Push(p, target)
+
+			break
+		}
+
+		go func() {
+			p.runSingle(results, target)
+			heap.Push(p, target)
+		}()
+	}
 }
