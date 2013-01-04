@@ -21,6 +21,7 @@ import (
 	"github.com/matttproud/prometheus/coding/indexable"
 	"github.com/matttproud/prometheus/model"
 	dto "github.com/matttproud/prometheus/model/generated"
+	"time"
 )
 
 var (
@@ -149,44 +150,54 @@ func (l *LevelDBMetricPersistence) AppendSample(sample *model.Sample) (err error
 		m.Increment()
 	}()
 
-	metricDTO := model.SampleToMetricDTO(sample)
+	operation := func() {
+		metricDTO := model.SampleToMetricDTO(sample)
 
-	indexHas, err := l.hasIndexMetric(metricDTO)
-	if err != nil {
-		return
-	}
-
-	if !indexHas {
-		err = l.indexMetric(metricDTO)
+		indexHas, err := l.hasIndexMetric(metricDTO)
 		if err != nil {
 			return
 		}
 
-		err = l.appendFingerprints(metricDTO)
+		if !indexHas {
+			err = l.indexMetric(metricDTO)
+			if err != nil {
+				return
+			}
+
+			err = l.appendFingerprints(metricDTO)
+			if err != nil {
+				return
+			}
+		}
+
+		fingerprintDTO, err := model.MessageToFingerprintDTO(metricDTO)
+		if err != nil {
+			return
+		}
+
+		sampleKeyDTO := &dto.SampleKey{
+			Fingerprint: fingerprintDTO,
+			Timestamp:   indexable.EncodeTime(sample.Timestamp),
+		}
+		sampleValueDTO := &dto.SampleValue{
+			Value: proto.Float32(float32(sample.Value)),
+		}
+		sampleKeyEncoded := coding.NewProtocolBufferEncoder(sampleKeyDTO)
+		sampleValueEncoded := coding.NewProtocolBufferEncoder(sampleValueDTO)
+
+		err = l.metricSamples.Put(sampleKeyEncoded, sampleValueEncoded)
 		if err != nil {
 			return
 		}
 	}
 
-	fingerprintDTO, err := model.MessageToFingerprintDTO(metricDTO)
-	if err != nil {
-		return
+	// XXX: Problematic with panics.
+	accumulator := func(d time.Duration) {
+		ms := float64(d) / float64(time.Microsecond)
+		appendLatency.Add(ms)
 	}
 
-	sampleKeyDTO := &dto.SampleKey{
-		Fingerprint: fingerprintDTO,
-		Timestamp:   indexable.EncodeTime(sample.Timestamp),
-	}
-	sampleValueDTO := &dto.SampleValue{
-		Value: proto.Float32(float32(sample.Value)),
-	}
-	sampleKeyEncoded := coding.NewProtocolBufferEncoder(sampleKeyDTO)
-	sampleValueEncoded := coding.NewProtocolBufferEncoder(sampleValueDTO)
-
-	err = l.metricSamples.Put(sampleKeyEncoded, sampleValueEncoded)
-	if err != nil {
-		return
-	}
+	metrics.InstrumentCall(operation, accumulator)
 
 	return
 }
