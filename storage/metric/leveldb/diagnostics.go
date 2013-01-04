@@ -17,9 +17,11 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 	"errors"
 	"github.com/matttproud/prometheus/coding"
+	"github.com/matttproud/prometheus/coding/indexable"
 	"github.com/matttproud/prometheus/model"
 	dto "github.com/matttproud/prometheus/model/generated"
 	"github.com/matttproud/prometheus/utility"
+	"log"
 )
 
 func (l *LevelDBMetricPersistence) GetAllLabelNames() ([]string, error) {
@@ -114,4 +116,67 @@ func (l *LevelDBMetricPersistence) GetAllMetrics() ([]model.LabelSet, error) {
 	}
 
 	return nil, errors.New("Unknown error encountered when querying metrics.")
+}
+
+func (l *LevelDBMetricPersistence) GetSamplesForMetric(metric model.Metric, interval model.Interval) ([]model.Samples, error) {
+	metricDTO := model.MetricToDTO(&metric)
+
+	if fingerprintDTO, fingerprintDTOErr := model.MessageToFingerprintDTO(metricDTO); fingerprintDTOErr == nil {
+		if iterator, closer, iteratorErr := l.metricSamples.GetIterator(); iteratorErr == nil {
+			defer closer.Close()
+
+			start := &dto.SampleKey{
+				Fingerprint: fingerprintDTO,
+				Timestamp:   indexable.EncodeTime(interval.OldestInclusive),
+			}
+
+			emission := make([]model.Samples, 0)
+
+			if encode, encodeErr := coding.NewProtocolBufferEncoder(start).Encode(); encodeErr == nil {
+				iterator.Seek(encode)
+
+				predicate := keyIsAtMostOld(interval.NewestInclusive)
+
+				for iterator = iterator; iterator.Valid(); iterator.Next() {
+					key := &dto.SampleKey{}
+					value := &dto.SampleValue{}
+					if keyUnmarshalErr := proto.Unmarshal(iterator.Key(), key); keyUnmarshalErr == nil {
+						if valueUnmarshalErr := proto.Unmarshal(iterator.Value(), value); valueUnmarshalErr == nil {
+							if fingerprintsEqual(fingerprintDTO, key.Fingerprint) {
+								// Wart
+								if predicate(key) {
+									emission = append(emission, model.Samples{
+										Value:     model.SampleValue(*value.Value),
+										Timestamp: indexable.DecodeTime(key.Timestamp),
+									})
+								} else {
+									break
+								}
+							} else {
+								break
+							}
+						} else {
+							return nil, valueUnmarshalErr
+						}
+					} else {
+						return nil, keyUnmarshalErr
+					}
+				}
+
+				return emission, nil
+
+			} else {
+				log.Printf("Could not encode the start key: %q\n", encodeErr)
+				return nil, encodeErr
+			}
+		} else {
+			log.Printf("Could not acquire iterator: %q\n", iteratorErr)
+			return nil, iteratorErr
+		}
+	} else {
+		log.Printf("Could not create fingerprint for the metric: %q\n", fingerprintDTOErr)
+		return nil, fingerprintDTOErr
+	}
+
+	panic("unreachable")
 }

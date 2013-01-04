@@ -43,16 +43,16 @@ func (l *LevelDBMembershipIndex) Put(key coding.Encoder) error {
 	return l.persistence.Put(key, existenceValue)
 }
 
-func NewLevelDBMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (*LevelDBMembershipIndex, error) {
-	var leveldbPersistence *leveldb.LevelDBPersistence
-	var persistenceError error
+func NewLevelDBMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (i *LevelDBMembershipIndex, err error) {
 
-	if leveldbPersistence, persistenceError = leveldb.NewLevelDBPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded); persistenceError == nil {
-		leveldbMembershipIndex := &LevelDBMembershipIndex{
-			persistence: leveldbPersistence,
-		}
-		return leveldbMembershipIndex, nil
+	leveldbPersistence, err := leveldb.NewLevelDBPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded)
+	if err != nil {
+		return
 	}
 
-	return nil, persistenceError
+	i = &LevelDBMembershipIndex{
+		persistence: leveldbPersistence,
+	}
+
+	return
 }

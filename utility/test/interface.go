@@ -11,42 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package test
 
-import (
-	"fmt"
-	"github.com/matttproud/prometheus/retrieval"
-	"github.com/matttproud/prometheus/storage/metric/leveldb"
-	"log"
-	"os"
-)
-
-func main() {
-	m, err := leveldb.NewLevelDBMetricPersistence("/tmp/metrics")
-	if err != nil {
-		log.Print(err)
-		os.Exit(1)
-	}
-
-	defer func() {
-		m.Close()
-	}()
-
-	t := &retrieval.Target{
-		Address: "http://localhost:8080/metrics.json",
-	}
-
-	for i := 0; i < 100000; i++ {
-		c, err := t.Scrape()
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-
-		for _, s := range c {
-			m.AppendSample(&s)
-		}
-
-		fmt.Printf("Finished %d\n", i)
-	}
+type Tester interface {
+	Error(args ...interface{})
+	Errorf(format string, args ...interface{})
+	Fatal(args ...interface{})
+	Fatalf(format string, args ...interface{})
 }
