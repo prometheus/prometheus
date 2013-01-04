@@ -30,8 +30,8 @@ type Target struct {
 	unreachableCount int
 	state            TargetState
 
-	Address   string
-	Frequency time.Duration
+	Address  string
+	Interval time.Duration
 }
 
 // KEPT FOR LEGACY COMPATIBILITY; PENDING REFACTOR
