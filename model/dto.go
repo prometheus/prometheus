@@ -21,6 +21,7 @@ import (
 	dto "github.com/matttproud/prometheus/model/generated"
 	"io"
 	"sort"
+	"time"
 )
 
 func SampleToMetricDTO(s *Sample) *dto.Metric {
@@ -145,4 +146,15 @@ func MessageToFingerprintDTO(message proto.Message) (*dto.Fingerprint, error) {
 	}
 
 	return nil, errors.New("Unknown error in generating FingerprintDTO from message.")
+}
+
+func SampleFromDTO(m *Metric, t *time.Time, v *dto.SampleValue) *Sample {
+	s := &Sample{
+		Value:     SampleValue(*v.Value),
+		Timestamp: *t,
+	}
+
+	s.Metric = *m
+
+	return s
 }

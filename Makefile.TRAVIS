@@ -40,7 +40,7 @@ preparation-stamp: build-dependencies
 
 build-dependencies: build-dependencies-stamp
 
-build-dependencies-stamp: bison cc mercurial protoc goprotobuf go leveldb levigo
+build-dependencies-stamp: bison cc mercurial protoc goprotobuf go instrumentation leveldb levigo
 	touch $@
 
 overlay: overlay-stamp
@@ -100,6 +100,12 @@ goprotobuf-stamp: go protoc source
 	$(GO_GET) code.google.com/p/goprotobuf/protoc-gen-go
 	touch $@
 
+instrumentation: instrumentation-stamp
+
+instrumentation-stamp: go source
+	$(GO_GET) github.com/matttproud/golang_instrumentation
+	touch $@
+
 leveldb: leveldb-stamp
 
 leveldb-stamp: cc rsync leveldb-$(LEVELDB_VERSION).tar.gz overlay
@@ -148,4 +154,4 @@ clean:
 	-rm protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2
 
 
-.PHONY: all bison build-dependencies cc clean go goprotobuf leveldb levigo mercurial overlay preparation protoc rsync source test wget
+.PHONY: all bison build-dependencies cc clean go goprotobuf instrumentation leveldb levigo mercurial overlay preparation protoc rsync source test wget
