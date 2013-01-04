@@ -10,10 +10,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package retrieval
 
 import (
+	"encoding/json"
+	"fmt"
+	"github.com/matttproud/prometheus/model"
+	"io/ioutil"
+	"log"
+	"math"
+	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -25,96 +32,126 @@ const (
 	UNREACHABLE
 )
 
+const (
+	MAXIMUM_BACKOFF = time.Minute * 30
+)
+
 type Target struct {
 	scheduledFor     time.Time
 	unreachableCount int
 	state            TargetState
 
 	Address  string
+	Deadline time.Duration
+
+	// XXX: Move this to a field with the target manager initialization instead of here.
 	Interval time.Duration
 }
 
-// KEPT FOR LEGACY COMPATIBILITY; PENDING REFACTOR
+type Result struct {
+	Err     error
+	Samples []model.Sample
+	Target  Target
+}
 
-func (t *Target) Scrape() (samples []model.Sample, err error) {
-	defer func() {
-		if err != nil {
-			t.state = ALIVE
+func (t *Target) reschedule(s TargetState) {
+	currentState := t.state
+
+	switch currentState {
+	case UNKNOWN, UNREACHABLE:
+		switch s {
+		case ALIVE:
+			t.unreachableCount = 0
+		case UNREACHABLE:
+			backoff := MAXIMUM_BACKOFF
+			exponential := time.Duration(math.Pow(2, float64(t.unreachableCount))) * time.Second
+			if backoff > exponential {
+				backoff = exponential
+			}
+
+			t.scheduledFor = time.Now().Add(backoff)
+			t.unreachableCount++
+
+			log.Printf("%s unavailable %s times deferred for %s.", t, t.unreachableCount, backoff)
+		default:
 		}
+	case ALIVE:
+		switch s {
+		case UNREACHABLE:
+			t.unreachableCount++
+		}
+	default:
+	}
+
+	if s != currentState {
+		log.Printf("%s transitioning from %s to %s.", t, currentState, s)
+	}
+
+	t.state = s
+}
+
+func (t *Target) Scrape(results chan Result) (err error) {
+	result := Result{}
+
+	defer func() {
+		futureState := t.state
+
+		switch err {
+		case nil:
+			futureState = ALIVE
+		default:
+			futureState = UNREACHABLE
+		}
+
+		t.reschedule(futureState)
+
+		result.Err = err
+		results <- result
 	}()
 
-	ti := time.Now()
-	resp, err := http.Get(t.Address)
-	if err != nil {
-		return
-	}
+	done := make(chan bool)
 
-	defer resp.Body.Close()
-
-	raw, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-
-	intermediate := make(map[string]interface{})
-	err = json.Unmarshal(raw, &intermediate)
-	if err != nil {
-		return
-	}
-
-	baseLabels := map[string]string{"instance": t.Address}
-
-	for name, v := range intermediate {
-		asMap, ok := v.(map[string]interface{})
-
-		if !ok {
-			continue
+	go func() {
+		ti := time.Now()
+		resp, err := http.Get(t.Address)
+		if err != nil {
+			return
 		}
 
-		switch asMap["type"] {
-		case "counter":
-			m := model.Metric{}
-			m["name"] = model.LabelValue(name)
-			asFloat, ok := asMap["value"].(float64)
+		defer resp.Body.Close()
+
+		raw, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return
+		}
+
+		intermediate := make(map[string]interface{})
+		err = json.Unmarshal(raw, &intermediate)
+		if err != nil {
+			return
+		}
+
+		baseLabels := map[string]string{"instance": t.Address}
+
+		for name, v := range intermediate {
+			asMap, ok := v.(map[string]interface{})
+
 			if !ok {
 				continue
 			}
 
-			s := model.Sample{
-				Metric:    m,
-				Value:     model.SampleValue(asFloat),
-				Timestamp: ti,
-			}
-
-			for baseK, baseV := range baseLabels {
-				m[model.LabelName(baseK)] = model.LabelValue(baseV)
-			}
-
-			samples = append(samples, s)
-		case "histogram":
-			values, ok := asMap["value"].(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			for p, pValue := range values {
-				asString, ok := pValue.(string)
+			switch asMap["type"] {
+			case "counter":
+				m := model.Metric{}
+				m["name"] = model.LabelValue(name)
+				asFloat, ok := asMap["value"].(float64)
 				if !ok {
 					continue
 				}
 
-				float, err := strconv.ParseFloat(asString, 64)
-				if err != nil {
-					continue
-				}
-
-				m := model.Metric{}
-				m["name"] = model.LabelValue(name)
-				m["percentile"] = model.LabelValue(p)
-
 				s := model.Sample{
 					Metric:    m,
-					Value:     model.SampleValue(float),
+					Value:     model.SampleValue(asFloat),
 					Timestamp: ti,
 				}
 
@@ -122,9 +159,51 @@ func (t *Target) Scrape() (samples []model.Sample, err error) {
 					m[model.LabelName(baseK)] = model.LabelValue(baseV)
 				}
 
-				samples = append(samples, s)
+				result.Samples = append(result.Samples, s)
+			case "histogram":
+				values, ok := asMap["value"].(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				for p, pValue := range values {
+					asString, ok := pValue.(string)
+					if !ok {
+						continue
+					}
+
+					float, err := strconv.ParseFloat(asString, 64)
+					if err != nil {
+						continue
+					}
+
+					m := model.Metric{}
+					m["name"] = model.LabelValue(name)
+					m["percentile"] = model.LabelValue(p)
+
+					s := model.Sample{
+						Metric:    m,
+						Value:     model.SampleValue(float),
+						Timestamp: ti,
+					}
+
+					for baseK, baseV := range baseLabels {
+						m[model.LabelName(baseK)] = model.LabelValue(baseV)
+					}
+
+					result.Samples = append(result.Samples, s)
+				}
 			}
 		}
+
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		break
+	case <-time.After(t.Deadline):
+		err = fmt.Errorf("Target %s exceeded %s deadline.", t, t.Deadline)
 	}
 
 	return
