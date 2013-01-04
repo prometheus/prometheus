@@ -14,6 +14,7 @@
 package model
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -44,6 +45,10 @@ type Metric map[LabelName]LabelValue
 // Protocol Buffers provide of floats in Go.  This is a smell and should be
 // remedied down the road.
 type SampleValue float32
+
+func (s SampleValue) String() string {
+	return fmt.Sprintf("%f", s)
+}
 
 type Sample struct {
 	Metric    Metric
