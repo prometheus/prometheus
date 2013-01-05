@@ -15,6 +15,7 @@ package retrieval
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/matttproud/golang_instrumentation/metrics"
 	"github.com/matttproud/prometheus/model"
 	"io/ioutil"
 	"log"
@@ -62,6 +63,7 @@ func (t *Target) reschedule(s TargetState) {
 		switch s {
 		case ALIVE:
 			t.unreachableCount = 0
+			targetsHealthy.Increment()
 		case UNREACHABLE:
 			backoff := MAXIMUM_BACKOFF
 			exponential := time.Duration(math.Pow(2, float64(t.unreachableCount))) * time.Second
@@ -71,7 +73,6 @@ func (t *Target) reschedule(s TargetState) {
 
 			t.scheduledFor = time.Now().Add(backoff)
 			t.unreachableCount++
-
 			log.Printf("%s unavailable %s times deferred for %s.", t, t.unreachableCount, backoff)
 		default:
 		}
@@ -79,6 +80,7 @@ func (t *Target) reschedule(s TargetState) {
 		switch s {
 		case UNREACHABLE:
 			t.unreachableCount++
+			targetsUnhealthy.Increment()
 		}
 	default:
 	}
@@ -111,7 +113,7 @@ func (t *Target) Scrape(results chan Result) (err error) {
 
 	done := make(chan bool)
 
-	go func() {
+	request := func() {
 		ti := time.Now()
 		resp, err := http.Get(t.Address)
 		if err != nil {
@@ -197,7 +199,18 @@ func (t *Target) Scrape(results chan Result) (err error) {
 		}
 
 		done <- true
-	}()
+	}
+
+	accumulator := func(d time.Duration) {
+		ms := float64(d) / float64(time.Millisecond)
+		if err == nil {
+			scrapeLatencyHealthy.Add(ms)
+		} else {
+			scrapeLatencyUnhealthy.Add(ms)
+		}
+	}
+
+	go metrics.InstrumentCall(request, accumulator)
 
 	select {
 	case <-done:
