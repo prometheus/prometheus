@@ -14,7 +14,6 @@
 package leveldb
 
 import (
-	"bytes"
 	"code.google.com/p/goprotobuf/proto"
 	registry "github.com/matttproud/golang_instrumentation"
 	"github.com/matttproud/golang_instrumentation/metrics"
@@ -305,111 +304,6 @@ type iterator interface {
 	Value() []byte
 }
 
-func isKeyInsideRecordedInterval(k *dto.SampleKey, i iterator) (b bool, err error) {
-	byteKey, err := coding.NewProtocolBufferEncoder(k).Encode()
-	if err != nil {
-		return
-	}
-
-	i.Seek(byteKey)
-	if !i.Valid() {
-		return
-	}
-
-	var (
-		retrievedKey *dto.SampleKey
-	)
-
-	retrievedKey, err = extractSampleKey(i)
-	if err != nil {
-		return
-	}
-
-	if !fingerprintsEqual(retrievedKey.Fingerprint, k.Fingerprint) {
-		return
-	}
-
-	if bytes.Equal(retrievedKey.Timestamp, k.Timestamp) {
-		return true, nil
-	}
-
-	i.Prev()
-	if !i.Valid() {
-		return
-	}
-
-	retrievedKey, err = extractSampleKey(i)
-	if err != nil {
-		return
-	}
-
-	b = fingerprintsEqual(retrievedKey.Fingerprint, k.Fingerprint)
-
-	return
-}
-
-func doesKeyHavePrecursor(k *dto.SampleKey, i iterator) (b bool, err error) {
-	byteKey, err := coding.NewProtocolBufferEncoder(k).Encode()
-	if err != nil {
-		return
-	}
-
-	i.Seek(byteKey)
-
-	if !i.Valid() {
-		i.SeekToFirst()
-	}
-
-	var (
-		retrievedKey *dto.SampleKey
-	)
-
-	retrievedKey, err = extractSampleKey(i)
-	if err != nil {
-		return
-	}
-
-	if !fingerprintsEqual(retrievedKey.Fingerprint, k.Fingerprint) {
-		return
-	}
-
-	keyTime := indexable.DecodeTime(k.Timestamp)
-	retrievedTime := indexable.DecodeTime(retrievedKey.Timestamp)
-
-	return retrievedTime.Before(keyTime), nil
-}
-
-func doesKeyHaveSuccessor(k *dto.SampleKey, i iterator) (b bool, err error) {
-	byteKey, err := coding.NewProtocolBufferEncoder(k).Encode()
-	if err != nil {
-		return
-	}
-
-	i.Seek(byteKey)
-
-	if !i.Valid() {
-		i.SeekToLast()
-	}
-
-	var (
-		retrievedKey *dto.SampleKey
-	)
-
-	retrievedKey, err = extractSampleKey(i)
-	if err != nil {
-		return
-	}
-
-	if !fingerprintsEqual(retrievedKey.Fingerprint, k.Fingerprint) {
-		return
-	}
-
-	keyTime := indexable.DecodeTime(k.Timestamp)
-	retrievedTime := indexable.DecodeTime(retrievedKey.Timestamp)
-
-	return retrievedTime.After(keyTime), nil
-}
-
 func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time, s *metric.StalenessPolicy) (sample *model.Sample, err error) {
 	d := model.MetricToDTO(m)
 
@@ -433,13 +327,33 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 	if err != nil {
 		return
 	}
+
 	defer closer.Close()
 
 	iterator.Seek(e)
-
-	within, err := isKeyInsideRecordedInterval(k, iterator)
-	if err != nil || !within {
-		return
+	if !iterator.Valid() {
+		/*
+		 * Two cases for this:
+		 * 1.) Corruption in LevelDB.
+		 * 2.) Key seek after AND outside known range.
+		 *
+		 * Once a LevelDB iterator goes invalid, it cannot be recovered; thusly,
+		 * we need to create a new in order to check if the last value in the
+		 * database is sufficient for our purposes.  This is, in all reality, a
+		 * corner case but one that could bring down the system.
+		 */
+		iterator, closer, err = l.metricSamples.GetIterator()
+		if err != nil {
+			return
+		}
+		defer closer.Close()
+		iterator.SeekToLast()
+		if !iterator.Valid() {
+			/*
+			 * For whatever reason, the LevelDB cannot be recovered.
+			 */
+			return
+		}
 	}
 
 	var (
@@ -452,59 +366,125 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 		return
 	}
 
-	if fingerprintsEqual(firstKey.Fingerprint, k.Fingerprint) {
-		firstValue, err = extractSampleValue(iterator)
-
-		if err != nil {
-			return nil, err
-		}
-
-		foundTimestamp := indexable.DecodeTime(firstKey.Timestamp)
-		targetTimestamp := indexable.DecodeTime(k.Timestamp)
-
-		if foundTimestamp.Equal(targetTimestamp) {
-			return model.SampleFromDTO(m, t, firstValue), nil
-		}
-	} else {
+	if !fingerprintsEqual(firstKey.Fingerprint, k.Fingerprint) {
 		return
 	}
 
-	var (
-		secondKey   *dto.SampleKey
-		secondValue *dto.SampleValue
-	)
+	firstTime := indexable.DecodeTime(firstKey.Timestamp)
+	if t.Before(firstTime) {
+		iterator.Prev()
+		if !iterator.Valid() {
+			/*
+			 * Two cases for this:
+			 * 1.) Corruption in LevelDB.
+			 * 2.) Key seek before AND outside known range.
+			 *
+			 * This is an explicit validation to ensure that if no previous values for
+			 * the series are found, the query aborts.
+			 */
+			return
+		}
+
+		var (
+			alternativeKey   *dto.SampleKey
+			alternativeValue *dto.SampleValue
+		)
+
+		alternativeKey, err = extractSampleKey(iterator)
+		if err != nil {
+			return
+		}
+
+		if fingerprintsEqual(alternativeKey.Fingerprint, k.Fingerprint) {
+			/*
+			 * At this point, we found a previous value in the same series in the
+			 * database.  LevelDB originally seeked to the subsequent element given
+			 * the key, but we need to consider this adjacency instead.
+			 */
+			alternativeTime := indexable.DecodeTime(alternativeKey.Timestamp)
+
+			firstKey = alternativeKey
+			firstValue = alternativeValue
+			firstTime = alternativeTime
+		}
+	}
+
+	firstDelta := firstTime.Sub(*t)
+	if firstDelta < 0 {
+		firstDelta *= -1
+	}
+	if firstDelta > s.DeltaAllowance {
+		return
+	}
+
+	firstValue, err = extractSampleValue(iterator)
+	if err != nil {
+		return
+	}
+
+	sample = model.SampleFromDTO(m, t, firstValue)
+
+	if firstDelta == time.Duration(0) {
+		return
+	}
 
 	iterator.Next()
 	if !iterator.Valid() {
+		/*
+		 * Two cases for this:
+		 * 1.) Corruption in LevelDB.
+		 * 2.) Key seek after AND outside known range.
+		 *
+		 * This means that there are no more values left in the storage; and if this
+		 * point is reached, we know that the one that has been found is within the
+		 * allowed staleness limits.
+		 */
 		return
 	}
+
+	var secondKey *dto.SampleKey
 
 	secondKey, err = extractSampleKey(iterator)
 	if err != nil {
 		return
 	}
 
-	if fingerprintsEqual(secondKey.Fingerprint, k.Fingerprint) {
-		secondValue, err = extractSampleValue(iterator)
-		if err != nil {
-			return
-		}
+	if !fingerprintsEqual(secondKey.Fingerprint, k.Fingerprint) {
+		return
 	} else {
+		/*
+		 * At this point, current entry in the database has the same key as the
+		 * previous.  For this reason, the validation logic will expect that the
+		 * distance between the two points shall not exceed the staleness policy
+		 * allowed limit to reduce interpolation errors.
+		 *
+		 * For this reason, the sample is reset in case of other subsequent
+		 * validation behaviors.
+		 */
+		sample = nil
+	}
+
+	secondTime := indexable.DecodeTime(secondKey.Timestamp)
+
+	totalDelta := secondTime.Sub(firstTime)
+	if totalDelta > s.DeltaAllowance {
 		return
 	}
 
-	firstTime := indexable.DecodeTime(firstKey.Timestamp)
-	secondTime := indexable.DecodeTime(secondKey.Timestamp)
-	currentDelta := secondTime.Sub(firstTime)
+	var secondValue *dto.SampleValue
 
-	if currentDelta <= s.DeltaAllowance {
-		interpolated := interpolate(firstTime, secondTime, *firstValue.Value, *secondValue.Value, *t)
-		emission := &dto.SampleValue{
-			Value: &interpolated,
-		}
-
-		return model.SampleFromDTO(m, t, emission), nil
+	secondValue, err = extractSampleValue(iterator)
+	if err != nil {
+		return
 	}
+
+	interpolated := interpolate(firstTime, secondTime, *firstValue.Value, *secondValue.Value, *t)
+
+	sampleValue := &dto.SampleValue{
+		Value: &interpolated,
+	}
+
+	sample = model.SampleFromDTO(m, t, sampleValue)
 
 	return
 }
