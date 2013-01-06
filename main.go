@@ -20,6 +20,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"time"
 )
 
@@ -30,9 +31,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	defer func() {
+	go func() {
+		notifier := make(chan os.Signal)
+		signal.Notify(notifier, os.Interrupt)
+		<-notifier
 		m.Close()
+		os.Exit(0)
 	}()
+
+	defer m.Close()
 
 	results := make(chan retrieval.Result, 4096)
 
