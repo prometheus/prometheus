@@ -14,18 +14,28 @@
 package main
 
 import (
+	"fmt"
 	"github.com/matttproud/golang_instrumentation"
+	"github.com/matttproud/prometheus/config"
 	"github.com/matttproud/prometheus/retrieval"
+	"github.com/matttproud/prometheus/rules"
+	"github.com/matttproud/prometheus/rules/ast"
 	"github.com/matttproud/prometheus/storage/metric/leveldb"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"time"
 )
 
 func main() {
-	m, err := leveldb.NewLevelDBMetricPersistence("/tmp/metrics")
+	configFile := "prometheus.conf"
+	conf, err := config.LoadFromFile(configFile)
+	if err != nil {
+		log.Fatal(fmt.Sprintf("Error loading configuration from %s: %v",
+			configFile, err))
+	}
+
+	persistence, err := leveldb.NewLevelDBMetricPersistence("/tmp/metrics")
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
@@ -35,22 +45,25 @@ func main() {
 		notifier := make(chan os.Signal)
 		signal.Notify(notifier, os.Interrupt)
 		<-notifier
-		m.Close()
+		persistence.Close()
 		os.Exit(0)
 	}()
 
-	defer m.Close()
+	defer persistence.Close()
 
-	results := make(chan retrieval.Result, 4096)
+	scrapeResults := make(chan retrieval.Result, 4096)
 
-	t := &retrieval.Target{
-		Address:  "http://localhost:8080/metrics.json",
-		Deadline: time.Second * 5,
-		Interval: time.Second * 3,
+	targetManager := retrieval.NewTargetManager(scrapeResults, 1)
+	targetManager.AddTargetsFromConfig(conf)
+
+	ruleResults := make(chan *rules.Result, 4096)
+
+	ast.SetPersistence(persistence)
+	ruleManager := rules.NewRuleManager(ruleResults, conf.Global.EvaluationInterval)
+	err = ruleManager.AddRulesFromConfig(conf)
+	if err != nil {
+		log.Fatal(fmt.Sprintf("Error loading rule files: %v", err))
 	}
-
-	manager := retrieval.NewTargetManager(results, 1)
-	manager.Add(t)
 
 	go func() {
 		exporter := registry.DefaultRegistry.YieldExporter()
@@ -59,9 +72,17 @@ func main() {
 	}()
 
 	for {
-		result := <-results
-		for _, s := range result.Samples {
-			m.AppendSample(&s)
+		select {
+		case scrapeResult := <-scrapeResults:
+			fmt.Printf("scrapeResult -> %s\n", scrapeResult)
+			for _, sample := range scrapeResult.Samples {
+				persistence.AppendSample(&sample)
+			}
+		case ruleResult := <-ruleResults:
+			fmt.Printf("ruleResult -> %s\n", ruleResult)
+			for _, sample := range ruleResult.Samples {
+				persistence.AppendSample(sample)
+			}
 		}
 	}
 }
