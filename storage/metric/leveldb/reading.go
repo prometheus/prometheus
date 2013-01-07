@@ -366,12 +366,36 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 		return
 	}
 
+	peekAhead := false
+
 	if !fingerprintsEqual(firstKey.Fingerprint, k.Fingerprint) {
-		return
+		/*
+		 * This allows us to grab values for metrics if our request time is after
+		 * the last recorded time subject to the staleness policy due to the nuances
+		 * of LevelDB storage:
+		 *
+		 * # Assumptions:
+		 * - K0 < K1 in terms of sorting.
+		 * - T0 < T1 in terms of sorting.
+		 *
+		 * # Data
+		 *
+		 * K0-T0
+		 * K0-T1
+		 * K0-T2
+		 * K1-T0
+		 * K1-T1
+		 *
+		 * # Scenario
+		 * K0-T3, which does not exist, is requested.  LevelDB will thusly seek to
+		 * K1-T1, when K0-T2 exists as a perfectly good candidate to check subject
+		 * to the provided staleness policy and such.
+		 */
+		peekAhead = true
 	}
 
 	firstTime := indexable.DecodeTime(firstKey.Timestamp)
-	if t.Before(firstTime) {
+	if t.Before(firstTime) || peekAhead {
 		iterator.Prev()
 		if !iterator.Valid() {
 			/*
@@ -395,18 +419,20 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 			return
 		}
 
-		if fingerprintsEqual(alternativeKey.Fingerprint, k.Fingerprint) {
-			/*
-			 * At this point, we found a previous value in the same series in the
-			 * database.  LevelDB originally seeked to the subsequent element given
-			 * the key, but we need to consider this adjacency instead.
-			 */
-			alternativeTime := indexable.DecodeTime(alternativeKey.Timestamp)
-
-			firstKey = alternativeKey
-			firstValue = alternativeValue
-			firstTime = alternativeTime
+		if !fingerprintsEqual(alternativeKey.Fingerprint, k.Fingerprint) {
+			return
 		}
+
+		/*
+		 * At this point, we found a previous value in the same series in the
+		 * database.  LevelDB originally seeked to the subsequent element given
+		 * the key, but we need to consider this adjacency instead.
+		 */
+		alternativeTime := indexable.DecodeTime(alternativeKey.Timestamp)
+
+		firstKey = alternativeKey
+		firstValue = alternativeValue
+		firstTime = alternativeTime
 	}
 
 	firstDelta := firstTime.Sub(*t)
