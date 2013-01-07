@@ -30,7 +30,7 @@ clean:
 	-find . -type f -iname '.#*' -exec rm '{}' ';'
 
 format:
-	find . -iname '*.go' | grep -v generated | xargs -n1 gofmt -w -s=true
+	find . -iname '*.go' | egrep -v "generated|\.(l|y)\.go" | xargs -n1 gofmt -w -s=true
 
 search_index:
 	godoc -index -write_index -index_files='search_index'

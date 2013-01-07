@@ -42,8 +42,9 @@ type Target struct {
 	unreachableCount int
 	state            TargetState
 
-	Address  string
-	Deadline time.Duration
+	Address    string
+	Deadline   time.Duration
+	BaseLabels model.LabelSet
 
 	// XXX: Move this to a field with the target manager initialization instead of here.
 	Interval time.Duration
