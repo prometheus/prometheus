@@ -15,6 +15,8 @@ package retrieval
 
 import (
 	"container/heap"
+	"github.com/matttproud/prometheus/config"
+	"github.com/matttproud/prometheus/model"
 	"log"
 	"time"
 )
@@ -24,6 +26,7 @@ type TargetManager interface {
 	release()
 	Add(t *Target)
 	Remove(t *Target)
+	AddTargetsFromConfig(config *config.Config)
 }
 
 type targetManager struct {
@@ -63,4 +66,32 @@ func (m targetManager) Add(t *Target) {
 
 func (m targetManager) Remove(t *Target) {
 	panic("not implemented")
+}
+
+func (m targetManager) AddTargetsFromConfig(config *config.Config) {
+	for _, job := range config.Jobs {
+		for _, configTargets := range job.Targets {
+			baseLabels := model.LabelSet{
+				model.LabelName("job"): model.LabelValue(job.Name),
+			}
+			for label, value := range configTargets.Labels {
+				baseLabels[label] = value
+			}
+
+			interval := job.ScrapeInterval
+			if interval == 0 {
+				interval = config.Global.ScrapeInterval
+			}
+
+			for _, endpoint := range configTargets.Endpoints {
+				target := &Target{
+					Address:    endpoint,
+					BaseLabels: baseLabels,
+					Deadline:   time.Second * 5,
+					Interval:   interval,
+				}
+				m.Add(target)
+			}
+		}
+	}
 }
