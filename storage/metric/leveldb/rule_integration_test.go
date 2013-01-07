@@ -14,6 +14,7 @@
 package leveldb
 
 import (
+	"fmt"
 	"github.com/matttproud/prometheus/model"
 	"github.com/matttproud/prometheus/storage/metric"
 	"github.com/matttproud/prometheus/utility/test"
@@ -120,13 +121,23 @@ var testGetValueAtTime = func(t test.Tester) {
 					},
 				},
 				{
-					name: "before with staleness policy",
+					name: "before within staleness policy",
 					input: input{
 						year:      1984,
 						month:     3,
 						day:       29,
 						hour:      0,
 						staleness: time.Duration(365*24) * time.Hour,
+					},
+				},
+				{
+					name: "before outside staleness policy",
+					input: input{
+						year:      1984,
+						month:     3,
+						day:       29,
+						hour:      0,
+						staleness: time.Duration(1) * time.Hour,
 					},
 				},
 				{
@@ -140,13 +151,26 @@ var testGetValueAtTime = func(t test.Tester) {
 					},
 				},
 				{
-					name: "after with staleness policy",
+					name: "after within staleness policy",
 					input: input{
 						year:      1984,
 						month:     3,
 						day:       31,
 						hour:      0,
 						staleness: time.Duration(365*24) * time.Hour,
+					},
+					output: &output{
+						value: 0,
+					},
+				},
+				{
+					name: "after outside staleness policy",
+					input: input{
+						year:      1984,
+						month:     4,
+						day:       7,
+						hour:      0,
+						staleness: time.Duration(7*24) * time.Hour,
 					},
 				},
 			},
@@ -250,6 +274,19 @@ var testGetValueAtTime = func(t test.Tester) {
 						day:       28,
 						hour:      12,
 						staleness: time.Duration(365*24) * time.Hour,
+					},
+					output: &output{
+						value: 1,
+					},
+				},
+				{
+					name: "after second without staleness policy",
+					input: input{
+						year:      1985,
+						month:     9,
+						day:       28,
+						hour:      12,
+						staleness: time.Duration(0),
 					},
 				},
 				{
@@ -412,13 +449,36 @@ var testGetValueAtTime = func(t test.Tester) {
 					},
 				},
 				{
-					name: "after third with staleness policy",
+					name: "after third within staleness policy",
 					input: input{
 						year:      1986,
 						month:     9,
 						day:       28,
 						hour:      12,
 						staleness: time.Duration(365*24) * time.Hour,
+					},
+					output: &output{
+						value: 2,
+					},
+				},
+				{
+					name: "after third outside staleness policy",
+					input: input{
+						year:      1986,
+						month:     9,
+						day:       28,
+						hour:      12,
+						staleness: time.Duration(1*24) * time.Hour,
+					},
+				},
+				{
+					name: "after third without staleness policy",
+					input: input{
+						year:      1986,
+						month:     9,
+						day:       28,
+						hour:      12,
+						staleness: time.Duration(0),
 					},
 				},
 				{
@@ -494,7 +554,8 @@ var testGetValueAtTime = func(t test.Tester) {
 	for i, context := range contexts {
 		// Wrapping in function to enable garbage collection of resources.
 		func() {
-			temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
+			name := fmt.Sprintf("test_get_value_at_time_%d", i)
+			temporaryDirectory, _ := ioutil.TempDir("", name)
 
 			defer func() {
 				if err := os.RemoveAll(temporaryDirectory); err != nil {
@@ -663,17 +724,59 @@ var testGetBoundaryValues = func(t test.Tester) {
 					},
 				},
 				{
-					name: "non-existent interval with staleness policy",
+					name: "non-existent interval after within staleness policy",
 					input: input{
 						openYear:  1984,
 						openMonth: 3,
-						openDay:   30,
+						openDay:   31,
 						openHour:  0,
 						endYear:   1985,
 						endMonth:  3,
 						endDay:    30,
 						endHour:   0,
+						staleness: time.Duration(4380) * time.Hour,
+					},
+				},
+				{
+					name: "non-existent interval after without staleness policy",
+					input: input{
+						openYear:  1984,
+						openMonth: 3,
+						openDay:   31,
+						openHour:  0,
+						endYear:   1985,
+						endMonth:  3,
+						endDay:    30,
+						endHour:   0,
+						staleness: time.Duration(0),
+					},
+				},
+				{
+					name: "non-existent interval before with staleness policy",
+					input: input{
+						openYear:  1983,
+						openMonth: 3,
+						openDay:   30,
+						openHour:  0,
+						endYear:   1984,
+						endMonth:  3,
+						endDay:    29,
+						endHour:   0,
 						staleness: time.Duration(365*24) * time.Hour,
+					},
+				},
+				{
+					name: "non-existent interval before without staleness policy",
+					input: input{
+						openYear:  1983,
+						openMonth: 3,
+						openDay:   30,
+						openHour:  0,
+						endYear:   1984,
+						endMonth:  3,
+						endDay:    29,
+						endHour:   0,
+						staleness: time.Duration(0),
 					},
 				},
 				{
@@ -856,7 +959,7 @@ var testGetBoundaryValues = func(t test.Tester) {
 						endMonth:  6,
 						endDay:    29,
 						endHour:   6,
-						staleness: time.Duration(178*24) * time.Hour,
+						staleness: time.Duration(2190) * time.Hour,
 					},
 				},
 				{
@@ -884,7 +987,7 @@ var testGetBoundaryValues = func(t test.Tester) {
 						endMonth:  6,
 						endDay:    29,
 						endHour:   6,
-						staleness: time.Duration(178*24) * time.Hour,
+						staleness: time.Duration(1) * time.Hour,
 					},
 				},
 				{
@@ -900,6 +1003,10 @@ var testGetBoundaryValues = func(t test.Tester) {
 						endHour:   6,
 						staleness: time.Duration(356*24) * time.Hour,
 					},
+					output: &output{
+						open: 0,
+						end:  1,
+					},
 				},
 			},
 		},
@@ -908,7 +1015,8 @@ var testGetBoundaryValues = func(t test.Tester) {
 	for i, context := range contexts {
 		// Wrapping in function to enable garbage collection of resources.
 		func() {
-			temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
+			name := fmt.Sprintf("test_get_boundary_values_%d", i)
+			temporaryDirectory, _ := ioutil.TempDir("", name)
 
 			defer func() {
 				if err := os.RemoveAll(temporaryDirectory); err != nil {
@@ -942,7 +1050,7 @@ var testGetBoundaryValues = func(t test.Tester) {
 				input := behavior.input
 				open := time.Date(input.openYear, input.openMonth, input.openDay, input.openHour, 0, 0, 0, time.UTC)
 				end := time.Date(input.endYear, input.endMonth, input.endDay, input.endHour, 0, 0, 0, time.UTC)
-				i := model.Interval{
+				interval := model.Interval{
 					OldestInclusive: open,
 					NewestInclusive: end,
 				}
@@ -950,30 +1058,30 @@ var testGetBoundaryValues = func(t test.Tester) {
 					DeltaAllowance: input.staleness,
 				}
 
-				openValue, endValue, err := persistence.GetBoundaryValues(&m, &i, &p)
+				openValue, endValue, err := persistence.GetBoundaryValues(&m, &interval, &p)
 				if err != nil {
 					t.Errorf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}
 
 				if behavior.output == nil {
 					if openValue != nil {
-						t.Errorf("%d.%d(%s). Expected nil but got: %q\n", i, j, behavior.name, openValue)
+						t.Errorf("%d.%d(%s). Expected open to be nil but got: %q\n", i, j, behavior.name, openValue)
 					}
 					if endValue != nil {
-						t.Errorf("%d.%d(%s). Expected nil but got: %q\n", i, j, behavior.name, endValue)
+						t.Errorf("%d.%d(%s). Expected end to be nil but got: %q\n", i, j, behavior.name, endValue)
 					}
 				} else {
 					if openValue == nil {
-						t.Errorf("%d.%d(%s). Expected %s but got nil\n", i, j, behavior.name, behavior.output)
+						t.Errorf("%d.%d(%s). Expected open to be %s but got nil\n", i, j, behavior.name, behavior.output)
 					}
 					if endValue == nil {
-						t.Errorf("%d.%d(%s). Expected %s but got nil\n", i, j, behavior.name, behavior.output)
+						t.Errorf("%d.%d(%s). Expected end to be %s but got nil\n", i, j, behavior.name, behavior.output)
 					}
 					if openValue.Value != behavior.output.open {
-						t.Errorf("%d.%d(%s). Expected %s but got %s\n", i, j, behavior.name, behavior.output.open, openValue.Value)
+						t.Errorf("%d.%d(%s). Expected open to be %s but got %s\n", i, j, behavior.name, behavior.output.open, openValue.Value)
 					}
 					if endValue.Value != behavior.output.end {
-						t.Errorf("%d.%d(%s). Expected %s but got %s\n", i, j, behavior.name, behavior.output.end, endValue.Value)
+						t.Errorf("%d.%d(%s). Expected end to be %s but got %s\n", i, j, behavior.name, behavior.output.end, endValue.Value)
 					}
 				}
 			}
@@ -1501,7 +1609,8 @@ var testGetRangeValues = func(t test.Tester) {
 	for i, context := range contexts {
 		// Wrapping in function to enable garbage collection of resources.
 		func() {
-			temporaryDirectory, _ := ioutil.TempDir("", "leveldb_metric_persistence_test")
+			name := fmt.Sprintf("test_get_range_values_%d", i)
+			temporaryDirectory, _ := ioutil.TempDir("", name)
 
 			defer func() {
 				if err := os.RemoveAll(temporaryDirectory); err != nil {
