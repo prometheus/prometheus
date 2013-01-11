@@ -16,6 +16,12 @@
         labelSet model.LabelSet
 }
 
+/* We simulate multiple start symbols for closely-related grammars via dummy tokens. See
+   http://www.gnu.org/software/bison/manual/html_node/Multiple-start_002dsymbols.html
+   Reason: we want to be able to parse lists of named rules as well as single expressions.
+   */
+%token START_RULES START_EXPRESSION
+
 %token <str> IDENTIFIER STRING
 %token <num> NUMBER
 %token PERMANENT GROUP_OP
@@ -31,18 +37,26 @@
 %left CMP_OP
 %left ADDITIVE_OP
 %left MULT_OP
-%start rules_stat_list
+%start start
 
 %%
+start              : START_RULES rules_stat_list
+                   | START_EXPRESSION saved_rule_expr
+                   ;
+
 rules_stat_list    : /* empty */
                    | rules_stat_list rules_stat
+                   ;
+
+saved_rule_expr    : rule_expr
+                     { yylex.(*RulesLexer).parsedExpr = $1 }
                    ;
 
 rules_stat         : qualifier IDENTIFIER rule_labels '=' rule_expr
                      {
                        rule, err := CreateRule($2, $3, $5, $1)
                        if err != nil { yylex.Error(err.Error()); return 1 }
-                       addRule(rule)
+                       yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
                      }
                    ;
 
@@ -84,6 +98,12 @@ rule_expr          : '(' rule_expr ')'
                      {
                        var err error
                        $$, err = NewFunctionCall($1, []ast.Node{})
+                       if err != nil { yylex.Error(err.Error()); return 1 }
+                     }
+		   | rule_expr '[' STRING ']'
+                     {
+                       var err error
+                       $$, err = NewMatrix($1, $3)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
                    | AGGR_OP '(' rule_expr ')' grouping_opts
@@ -136,12 +156,6 @@ func_arg_list      : func_arg
 
 func_arg           : rule_expr
                      { $$ = $1 }
-		   | rule_expr '[' STRING ']'
-                     {
-                       var err error
-                       $$, err = NewMatrix($1, $3)
-                       if err != nil { yylex.Error(err.Error()); return 1 }
-                     }
                    | STRING
                      { $$ = ast.NewStringLiteral($1) }
                    ;

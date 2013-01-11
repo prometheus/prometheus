@@ -78,7 +78,7 @@ func (m *ruleManager) runIteration(results chan *Result) {
 
 func (m *ruleManager) AddRulesFromConfig(config *config.Config) error {
 	for _, ruleFile := range config.Global.RuleFiles {
-		newRules, err := LoadFromFile(ruleFile)
+		newRules, err := LoadRulesFromFile(ruleFile)
 		if err != nil {
 			return err
 		}
