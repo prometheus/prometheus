@@ -40,7 +40,7 @@ preparation-stamp: build-dependencies
 
 build-dependencies: build-dependencies-stamp
 
-build-dependencies-stamp: bison cc mercurial protoc goprotobuf go instrumentation leveldb levigo
+build-dependencies-stamp: bison cc mercurial protoc goprotobuf gorest go instrumentation leveldb levigo
 	touch $@
 
 overlay: overlay-stamp
@@ -91,6 +91,12 @@ protoc-stamp: cc protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2 overlay
 	([ ! -x "$$(which protoc)" ] && $(MAKE) -C protobuf-$(PROTOCOL_BUFFERS_VERSION)) || true
 	([ ! -x "$$(which protoc)" ] && $(MAKE) -C protobuf-$(PROTOCOL_BUFFERS_VERSION) install) || true
 	[ -x "$$(which protoc)" ]
+	touch $@
+
+gorest: gorest-stamp
+
+gorest-stamp: go source
+	$(GO_GET) code.google.com/p/gorest
 	touch $@
 
 goprotobuf: goprotobuf-stamp
@@ -154,4 +160,4 @@ clean:
 	-rm protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2
 
 
-.PHONY: all bison build-dependencies cc clean go goprotobuf instrumentation leveldb levigo mercurial overlay preparation protoc rsync source test wget
+.PHONY: all bison build-dependencies cc clean go goprotobuf gorest instrumentation leveldb levigo mercurial overlay preparation protoc rsync source test wget
