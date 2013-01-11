@@ -110,11 +110,10 @@ func NewMatrix(vector ast.Node, intervalStr string) (ast.MatrixNode, error) {
 	default:
 		return nil, rulesError("Intervals are currently only supported for vector literals.")
 	}
-	duration, err := stringToDuration(intervalStr)
+	interval, err := stringToDuration(intervalStr)
 	if err != nil {
 		return nil, err
 	}
-	interval := time.Duration(duration) * time.Second
 	vectorLiteral := vector.(*ast.VectorLiteral)
 	return ast.NewMatrixLiteral(vectorLiteral, interval), nil
 }
