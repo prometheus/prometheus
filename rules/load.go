@@ -3,6 +3,7 @@ package rules
 import (
 	"errors"
 	"fmt"
+        "github.com/matttproud/prometheus/rules/ast"
 	"io"
 	"os"
 	"strings"
@@ -14,20 +15,28 @@ import (
 var yylval *yySymType   // For storing extra token information, like the contents of a string.
 var yyline int          // Line number within the current file or buffer.
 var yypos int           // Character position within the current line.
-var parsedRules []*Rule // Parsed rules.
 
 type RulesLexer struct {
-	errors []string
-}
-
-func addRule(rule *Rule) {
-	parsedRules = append(parsedRules, rule)
+	errors []string     // Errors encountered during parsing.
+        startToken int      // Dummy token to simulate multiple start symbols (see below).
+        parsedRules []*Rule // Parsed full rules.
+        parsedExpr ast.Node // Parsed single expression.
 }
 
 func (lexer *RulesLexer) Lex(lval *yySymType) int {
 	yylval = lval
-	token_type := yylex()
-	return token_type
+
+        // We simulate multiple start symbols for closely-related grammars via dummy tokens. See
+        // http://www.gnu.org/software/bison/manual/html_node/Multiple-start_002dsymbols.html
+        // Reason: we want to be able to parse lists of named rules as well as single expressions.
+        if lexer.startToken != 0 {
+                startToken := lexer.startToken
+                lexer.startToken = 0
+                return startToken
+        }
+
+	tokenType := yylex()
+	return tokenType
 }
 
 func (lexer *RulesLexer) Error(errorStr string) {
@@ -35,13 +44,20 @@ func (lexer *RulesLexer) Error(errorStr string) {
 	lexer.errors = append(lexer.errors, err)
 }
 
-func LoadFromReader(rulesReader io.Reader) ([]*Rule, error) {
+func LoadFromReader(rulesReader io.Reader, singleExpr bool) (interface{}, error) {
 	yyin = rulesReader
 	yypos = 1
 	yyline = 1
 
-	parsedRules = []*Rule{}
-	lexer := &RulesLexer{}
+	lexer := &RulesLexer{
+                parsedRules: []*Rule{},
+                startToken: START_RULES,
+        }
+
+        if singleExpr {
+                lexer.startToken = START_EXPRESSION
+        }
+
 	ret := yyParse(lexer)
 	if ret != 0 && len(lexer.errors) == 0 {
 		lexer.Error("Unknown parser error")
@@ -49,21 +65,55 @@ func LoadFromReader(rulesReader io.Reader) ([]*Rule, error) {
 
 	if len(lexer.errors) > 0 {
 		err := errors.New(strings.Join(lexer.errors, "\n"))
-		return []*Rule{}, err
+		return nil, err
 	}
 
-	return parsedRules, nil
+        if singleExpr{
+                return lexer.parsedExpr, nil
+        } else {
+                return lexer.parsedRules, nil
+        }
+        panic("")
 }
 
-func LoadFromString(rulesString string) ([]*Rule, error) {
+func LoadRulesFromReader(rulesReader io.Reader) ([]*Rule, error) {
+        expr, err := LoadFromReader(rulesReader, false)
+        if err != nil {
+                return nil, err
+        }
+        return expr.([]*Rule), err
+}
+
+func LoadRulesFromString(rulesString string) ([]*Rule, error) {
 	rulesReader := strings.NewReader(rulesString)
-	return LoadFromReader(rulesReader)
+	return LoadRulesFromReader(rulesReader)
 }
 
-func LoadFromFile(fileName string) ([]*Rule, error) {
+func LoadRulesFromFile(fileName string) ([]*Rule, error) {
 	rulesReader, err := os.Open(fileName)
 	if err != nil {
 		return []*Rule{}, err
 	}
-	return LoadFromReader(rulesReader)
+	return LoadRulesFromReader(rulesReader)
+}
+
+func LoadExprFromReader(exprReader io.Reader) (ast.Node, error) {
+        expr, err := LoadFromReader(exprReader, true)
+        if err != nil {
+                return nil, err
+        }
+        return expr.(ast.Node), err
+}
+
+func LoadExprFromString(exprString string) (ast.Node, error) {
+	exprReader := strings.NewReader(exprString)
+	return LoadExprFromReader(exprReader)
+}
+
+func LoadExprFromFile(fileName string) (ast.Node, error) {
+	exprReader, err := os.Open(fileName)
+	if err != nil {
+		return nil, err
+	}
+	return LoadExprFromReader(exprReader)
 }
