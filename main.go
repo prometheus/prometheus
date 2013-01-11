@@ -14,7 +14,9 @@
 package main
 
 import (
+        "code.google.com/p/gorest"
 	"fmt"
+	"github.com/matttproud/prometheus/api"
 	"github.com/matttproud/golang_instrumentation"
 	"github.com/matttproud/prometheus/config"
 	"github.com/matttproud/prometheus/retrieval"
@@ -66,20 +68,24 @@ func main() {
 	}
 
 	go func() {
+                gorest.RegisterService(new(api.MetricsService))
 		exporter := registry.DefaultRegistry.YieldExporter()
+
+                http.Handle("/", gorest.Handle())
 		http.Handle("/metrics.json", exporter)
+                http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 		http.ListenAndServe(":9090", nil)
 	}()
 
 	for {
 		select {
 		case scrapeResult := <-scrapeResults:
-			fmt.Printf("scrapeResult -> %s\n", scrapeResult)
+			//fmt.Printf("scrapeResult -> %s\n", scrapeResult)
 			for _, sample := range scrapeResult.Samples {
 				persistence.AppendSample(&sample)
 			}
 		case ruleResult := <-ruleResults:
-			fmt.Printf("ruleResult -> %s\n", ruleResult)
+			//fmt.Printf("ruleResult -> %s\n", ruleResult)
 			for _, sample := range ruleResult.Samples {
 				persistence.AppendSample(sample)
 			}
