@@ -2,9 +2,17 @@ package ast
 
 import (
 	"fmt"
+        "encoding/json"
 	"sort"
 	"strings"
 	"time"
+)
+
+type OutputFormat int
+
+const (
+        TEXT OutputFormat = iota
+        JSON
 )
 
 func binOpTypeToString(opType BinOpType) string {
@@ -32,6 +40,16 @@ func aggrTypeToString(aggrType AggrType) string {
 		MAX: "MAX",
 	}
 	return aggrTypeMap[aggrType]
+}
+
+func exprTypeToString(exprType ExprType) string {
+	exprTypeMap := map[ExprType]string{
+		SCALAR: "scalar",
+		VECTOR: "vector",
+		MATRIX: "matrix",
+		STRING: "string",
+	}
+	return exprTypeMap[exprType]
 }
 
 func durationToString(duration time.Duration) string {
@@ -79,6 +97,96 @@ func (vector Vector) ToString() string {
 	}
 	sort.Strings(metricStrings)
 	return strings.Join(metricStrings, "\n")
+}
+
+func (matrix Matrix) ToString() string {
+	metricStrings := []string{}
+	for _, sampleSet := range matrix {
+		metricName, ok := sampleSet.Metric["name"]
+		if !ok {
+			panic("Tried to print matrix without metric name")
+		}
+		labelStrings := []string{}
+		for label, value := range sampleSet.Metric {
+			if label != "name" {
+				labelStrings = append(labelStrings, fmt.Sprintf("%v='%v'", label, value))
+			}
+		}
+		sort.Strings(labelStrings)
+                valueStrings := []string{}
+                for _, value := range sampleSet.Values {
+                        valueStrings = append(valueStrings,
+                                              fmt.Sprintf("\n%v @[%v]", value.Value, value.Timestamp))
+                }
+		metricStrings = append(metricStrings,
+			fmt.Sprintf("%v{%v} => %v",
+				metricName,
+				strings.Join(labelStrings, ","),
+				strings.Join(valueStrings, ", ")))
+	}
+	sort.Strings(metricStrings)
+	return strings.Join(metricStrings, "\n")
+}
+
+func errorToJSON(err error) string {
+        errorStruct := struct {
+                Type string
+                Error string
+        }{
+                Type: "error",
+                Error: err.Error(),
+        }
+
+        errorJSON, err := json.MarshalIndent(errorStruct, "", "\t")
+        if err != nil {
+                return ""
+        }
+        return string(errorJSON)
+}
+
+func typedValueToJSON(data interface{}, typeStr string) string {
+        dataStruct := struct {
+                Type string
+                Value interface{}
+        }{
+                Type: typeStr,
+                Value: data,
+        }
+        dataJSON, err := json.MarshalIndent(dataStruct, "", "\t")
+        if err != nil {
+                return errorToJSON(err)
+        }
+        return string(dataJSON)
+}
+
+func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
+        switch node.Type() {
+        case SCALAR:
+                scalar := node.(ScalarNode).Eval(timestamp)
+                switch format {
+                case TEXT: return fmt.Sprintf("scalar: %v", scalar)
+                case JSON: return typedValueToJSON(scalar, "scalar")
+                }
+        case VECTOR:
+                vector := node.(VectorNode).Eval(timestamp)
+                switch format {
+                case TEXT: return vector.ToString()
+                case JSON: return typedValueToJSON(vector, "vector")
+                }
+        case MATRIX:
+                matrix := node.(MatrixNode).Eval(timestamp)
+                switch format {
+                case TEXT: return matrix.ToString()
+                case JSON: return typedValueToJSON(matrix, "matrix")
+                }
+        case STRING:
+                str := node.(StringNode).Eval(timestamp)
+                switch format {
+                case TEXT: return str
+                case JSON: return typedValueToJSON(str, "string")
+                }
+        }
+        panic("Switch didn't cover all node types")
 }
 
 func (node *VectorLiteral) ToString() string {
