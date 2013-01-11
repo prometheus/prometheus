@@ -540,13 +540,17 @@ func NewFunctionCall(function *Function, args []Node) (Node, error) {
 
 func nodesHaveTypes(nodes []Node, exprTypes []ExprType) bool {
 	for _, node := range nodes {
+                correctType := false
 		for _, exprType := range exprTypes {
 			if node.Type() == exprType {
-				return true
+				correctType = true
 			}
 		}
+                if !correctType {
+                        return false
+                }
 	}
-	return false
+	return true
 }
 
 func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
