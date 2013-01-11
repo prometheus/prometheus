@@ -458,7 +458,11 @@ func (node *VectorArithExpr) Eval(timestamp *time.Time) Vector {
 }
 
 func (node *MatrixLiteral) Eval(timestamp *time.Time) Matrix {
-	values, err := persistence.GetRangeValues(node.labels, &model.Interval{}, &stalenessPolicy)
+	interval := &model.Interval{
+		OldestInclusive: timestamp.Add(-node.interval),
+		NewestInclusive: *timestamp,
+	}
+	values, err := persistence.GetRangeValues(node.labels, interval, &stalenessPolicy)
 	if err != nil {
 		log.Printf("Unable to get values for vector interval")
 		return Matrix{}
