@@ -419,7 +419,7 @@ func labelsEqual(labels1, labels2 model.Metric) bool {
 		return false
 	}
 	for label, value := range labels1 {
-		if labels2[label] != value {
+		if labels2[label] != value && label != "name" {
 			return false
 		}
 	}
