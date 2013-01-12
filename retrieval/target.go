@@ -18,8 +18,6 @@ import (
 	"github.com/matttproud/golang_instrumentation/metrics"
 	"github.com/matttproud/prometheus/model"
 	"io/ioutil"
-	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -33,14 +31,13 @@ const (
 	UNREACHABLE
 )
 
-const (
-	MAXIMUM_BACKOFF = time.Minute * 30
-)
+type healthReporter interface {
+	State() TargetState
+}
 
 type Target struct {
-	scheduledFor     time.Time
-	unreachableCount int
-	state            TargetState
+	scheduler scheduler
+	state     TargetState
 
 	Address    string
 	Deadline   time.Duration
@@ -50,50 +47,29 @@ type Target struct {
 	Interval time.Duration
 }
 
+func NewTarget(address string, interval, deadline time.Duration, baseLabels model.LabelSet) *Target {
+	target := &Target{
+		Address:    address,
+		Deadline:   deadline,
+		Interval:   interval,
+		BaseLabels: baseLabels,
+	}
+
+	scheduler := &healthScheduler{
+		target: target,
+	}
+	target.scheduler = scheduler
+
+	return target
+}
+
 type Result struct {
 	Err     error
 	Samples []model.Sample
 	Target  Target
 }
 
-func (t *Target) reschedule(s TargetState) {
-	currentState := t.state
-
-	switch currentState {
-	case UNKNOWN, UNREACHABLE:
-		switch s {
-		case ALIVE:
-			t.unreachableCount = 0
-			targetsHealthy.Increment()
-		case UNREACHABLE:
-			backoff := MAXIMUM_BACKOFF
-			exponential := time.Duration(math.Pow(2, float64(t.unreachableCount))) * time.Second
-			if backoff > exponential {
-				backoff = exponential
-			}
-
-			t.scheduledFor = time.Now().Add(backoff)
-			t.unreachableCount++
-			log.Printf("%s unavailable %s times deferred for %s.", t, t.unreachableCount, backoff)
-		default:
-		}
-	case ALIVE:
-		switch s {
-		case UNREACHABLE:
-			t.unreachableCount++
-			targetsUnhealthy.Increment()
-		}
-	default:
-	}
-
-	if s != currentState {
-		log.Printf("%s transitioning from %s to %s.", t, currentState, s)
-	}
-
-	t.state = s
-}
-
-func (t *Target) Scrape(results chan Result) (err error) {
+func (t *Target) Scrape(earliest time.Time, results chan Result) (err error) {
 	result := Result{}
 
 	defer func() {
@@ -106,7 +82,7 @@ func (t *Target) Scrape(results chan Result) (err error) {
 			futureState = UNREACHABLE
 		}
 
-		t.reschedule(futureState)
+		t.scheduler.Reschedule(earliest, futureState)
 
 		result.Err = err
 		results <- result
@@ -221,4 +197,12 @@ func (t *Target) Scrape(results chan Result) (err error) {
 	}
 
 	return
+}
+
+func (t Target) State() TargetState {
+	return t.state
+}
+
+func (t Target) scheduledFor() time.Time {
+	return t.scheduler.ScheduledFor()
 }

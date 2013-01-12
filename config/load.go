@@ -35,8 +35,8 @@ func LoadFromReader(configReader io.Reader) (*Config, error) {
 	yyin = configReader
 	yypos = 1
 	yyline = 1
-        yydata = ""
-        yytext = ""
+	yydata = ""
+	yytext = ""
 
 	lexer := &ConfigLexer{}
 	yyParse(lexer)
@@ -56,7 +56,7 @@ func LoadFromString(configString string) (*Config, error) {
 
 func LoadFromFile(fileName string) (*Config, error) {
 	configReader, err := os.Open(fileName)
-        defer configReader.Close()
+	defer configReader.Close()
 	if err != nil {
 		return &Config{}, err
 	}
