@@ -48,9 +48,10 @@ func LoadFromReader(rulesReader io.Reader, singleExpr bool) (interface{}, error)
 	yyin = rulesReader
 	yypos = 1
 	yyline = 1
+        yydata = ""
+        yytext = ""
 
 	lexer := &RulesLexer{
-                parsedRules: []*Rule{},
                 startToken: START_RULES,
         }
 
@@ -91,6 +92,7 @@ func LoadRulesFromString(rulesString string) ([]*Rule, error) {
 
 func LoadRulesFromFile(fileName string) ([]*Rule, error) {
 	rulesReader, err := os.Open(fileName)
+        defer rulesReader.Close()
 	if err != nil {
 		return []*Rule{}, err
 	}
@@ -112,6 +114,7 @@ func LoadExprFromString(exprString string) (ast.Node, error) {
 
 func LoadExprFromFile(fileName string) (ast.Node, error) {
 	exprReader, err := os.Open(fileName)
+        defer exprReader.Close()
 	if err != nil {
 		return nil, err
 	}
