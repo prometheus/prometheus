@@ -540,15 +540,15 @@ func NewFunctionCall(function *Function, args []Node) (Node, error) {
 
 func nodesHaveTypes(nodes []Node, exprTypes []ExprType) bool {
 	for _, node := range nodes {
-                correctType := false
+		correctType := false
 		for _, exprType := range exprTypes {
 			if node.Type() == exprType {
 				correctType = true
 			}
 		}
-                if !correctType {
-                        return false
-                }
+		if !correctType {
+			return false
+		}
 	}
 	return true
 }
