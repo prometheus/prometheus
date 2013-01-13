@@ -15,6 +15,7 @@ package model
 
 import (
 	"time"
+        "fmt"
 )
 
 // A Fingerprint is a simplified representation of an entity---e.g., a hash of
@@ -44,6 +45,14 @@ type Metric map[LabelName]LabelValue
 // Protocol Buffers provide of floats in Go.  This is a smell and should be
 // remedied down the road.
 type SampleValue float32
+
+func (v SampleValue) MarshalJSON() ([]byte, error) {
+        return []byte(fmt.Sprintf("\"%f\"", v)), nil
+}
+
+func (s SamplePair) MarshalJSON() ([]byte, error) {
+        return []byte(fmt.Sprintf("{\"Value\": \"%f\", \"Timestamp\": %d}", s.Value, s.Timestamp.Unix())), nil
+}
 
 type Sample struct {
 	Metric    Metric
