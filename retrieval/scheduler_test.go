@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"github.com/matttproud/prometheus/utility/test"
 	"testing"
 	"time"
 )
@@ -44,7 +45,7 @@ func (t *fakeTimeProvider) Now() (time time.Time) {
 	return
 }
 
-func TestHealthScheduler(t *testing.T) {
+func testHealthScheduler(t test.Tester) {
 	now := time.Now()
 	var scenarios = []struct {
 		futureHealthState []TargetState
@@ -107,5 +108,15 @@ func TestHealthScheduler(t *testing.T) {
 				t.Errorf("%d.%d. Expected to be scheduled to %s, got %s", i, j, scenario.expectedSchedule[j], nextSchedule)
 			}
 		}
+	}
+}
+
+func TestHealthScheduler(t *testing.T) {
+	testHealthScheduler(t)
+}
+
+func BenchmarkHealthScheduler(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testHealthScheduler(b)
 	}
 }

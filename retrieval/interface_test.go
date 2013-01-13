@@ -18,6 +18,9 @@ import (
 )
 
 func TestInterfaces(t *testing.T) {
-	var _ scheduler = &healthScheduler{}
-	var _ healthReporter = Target{}
+	var (
+		_ Target         = &target{}
+		_ healthReporter = target{}
+		_ scheduler      = &healthScheduler{}
+	)
 }
