@@ -24,8 +24,8 @@ import (
 type TargetManager interface {
 	acquire()
 	release()
-	Add(t *Target)
-	Remove(t *Target)
+	Add(t Target)
+	Remove(t Target)
 	AddTargetsFromConfig(config *config.Config)
 }
 
@@ -51,20 +51,20 @@ func (m targetManager) release() {
 	<-m.requestAllowance
 }
 
-func (m targetManager) Add(t *Target) {
-	targetPool, ok := m.pools[t.Interval]
+func (m targetManager) Add(t Target) {
+	targetPool, ok := m.pools[t.Interval()]
 
 	if !ok {
 		targetPool.manager = m
-		log.Printf("Pool %s does not exist; creating and starting...", t.Interval)
-		go targetPool.Run(m.results, t.Interval)
+		log.Printf("Pool %s does not exist; creating and starting...", t.Interval())
+		go targetPool.Run(m.results, t.Interval())
 	}
 
 	heap.Push(&targetPool, t)
-	m.pools[t.Interval] = targetPool
+	m.pools[t.Interval()] = targetPool
 }
 
-func (m targetManager) Remove(t *Target) {
+func (m targetManager) Remove(t Target) {
 	panic("not implemented")
 }
 
