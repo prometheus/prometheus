@@ -22,6 +22,7 @@ import (
 	"github.com/matttproud/prometheus/model"
 	dto "github.com/matttproud/prometheus/model/generated"
 	"github.com/matttproud/prometheus/storage/metric"
+	"github.com/matttproud/prometheus/utility"
 	"time"
 )
 
@@ -170,7 +171,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet *model.La
 		m.Increment()
 	}()
 
-	fps = make([]*model.Fingerprint, 0, 0)
+	sets := []utility.Set{}
 
 	for _, labelSetDTO := range model.LabelSetToDTOs(labelSet) {
 		f, err := l.labelSetToFingerprints.Get(coding.NewProtocolBufferEncoder(labelSetDTO))
@@ -184,10 +185,29 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet *model.La
 			return fps, err
 		}
 
+		set := utility.Set{}
+
 		for _, m := range unmarshaled.Member {
 			fp := model.Fingerprint(*m.Signature)
-			fps = append(fps, &fp)
+			set.Add(fp)
 		}
+
+		sets = append(sets, set)
+	}
+
+	numberOfSets := len(sets)
+	if numberOfSets == 0 {
+		return
+	}
+
+	base := sets[0]
+	for i := 1; i < numberOfSets; i++ {
+		base = base.Intersection(sets[i])
+	}
+	fps = []*model.Fingerprint{}
+	for _, e := range base.Elements() {
+		fingerprint := e.(model.Fingerprint)
+		fps = append(fps, &fingerprint)
 	}
 
 	return
