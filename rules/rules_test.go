@@ -107,14 +107,14 @@ var expressionTests = []struct {
 	}, {
 		expr: "rate(http_requests['25m'])",
 		output: []string{
-                        "http_requests{group='canary',instance='0',job='api-server'} => 150 @[%v]",
-                        "http_requests{group='canary',instance='0',job='app-server'} => 350 @[%v]",
-                        "http_requests{group='canary',instance='1',job='api-server'} => 200 @[%v]",
-                        "http_requests{group='canary',instance='1',job='app-server'} => 400 @[%v]",
-                        "http_requests{group='production',instance='0',job='api-server'} => 50 @[%v]",
-                        "http_requests{group='production',instance='0',job='app-server'} => 250 @[%v]",
-                        "http_requests{group='production',instance='1',job='api-server'} => 100 @[%v]",
-                        "http_requests{group='production',instance='1',job='app-server'} => 300 @[%v]",
+			"http_requests{group='canary',instance='0',job='api-server'} => 150 @[%v]",
+			"http_requests{group='canary',instance='0',job='app-server'} => 350 @[%v]",
+			"http_requests{group='canary',instance='1',job='api-server'} => 200 @[%v]",
+			"http_requests{group='canary',instance='1',job='app-server'} => 400 @[%v]",
+			"http_requests{group='production',instance='0',job='api-server'} => 50 @[%v]",
+			"http_requests{group='production',instance='0',job='app-server'} => 250 @[%v]",
+			"http_requests{group='production',instance='1',job='api-server'} => 100 @[%v]",
+			"http_requests{group='production',instance='1',job='app-server'} => 300 @[%v]",
 		},
 		// Invalid expressions that should fail to parse.
 	}, {
