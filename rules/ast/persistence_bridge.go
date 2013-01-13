@@ -37,13 +37,13 @@ func (p *PersistenceBridge) getMetricsWithLabels(labels model.LabelSet) ([]*mode
 		if err != nil {
 			return nil, err
 		}
-                metrics = append(metrics, metric)
+		metrics = append(metrics, metric)
 	}
 	return metrics, nil
 }
 
 func (p *PersistenceBridge) GetValueAtTime(labels model.LabelSet, timestamp *time.Time, stalenessPolicy *metric.StalenessPolicy) ([]*model.Sample, error) {
-        metrics, err := p.getMetricsWithLabels(labels)
+	metrics, err := p.getMetricsWithLabels(labels)
 	if err != nil {
 		return nil, err
 	}
@@ -62,14 +62,14 @@ func (p *PersistenceBridge) GetValueAtTime(labels model.LabelSet, timestamp *tim
 }
 
 func (p *PersistenceBridge) GetBoundaryValues(labels model.LabelSet, interval *model.Interval, stalenessPolicy *metric.StalenessPolicy) ([]*model.SampleSet, error) {
-        metrics, err := p.getMetricsWithLabels(labels)
+	metrics, err := p.getMetricsWithLabels(labels)
 	if err != nil {
 		return nil, err
 	}
 
 	sampleSets := []*model.SampleSet{}
 	for _, metric := range metrics {
-                // TODO: change to GetBoundaryValues() once it has the right return type.
+		// TODO: change to GetBoundaryValues() once it has the right return type.
 		sampleSet, err := p.persistence.GetRangeValues(metric, interval, stalenessPolicy)
 		if err != nil {
 			return nil, err
@@ -78,15 +78,15 @@ func (p *PersistenceBridge) GetBoundaryValues(labels model.LabelSet, interval *m
 			continue
 		}
 
-                // TODO remove when persistence return value is fixed.
-                sampleSet.Metric = *metric
+		// TODO remove when persistence return value is fixed.
+		sampleSet.Metric = *metric
 		sampleSets = append(sampleSets, sampleSet)
 	}
 	return sampleSets, nil
 }
 
 func (p *PersistenceBridge) GetRangeValues(labels model.LabelSet, interval *model.Interval, stalenessPolicy *metric.StalenessPolicy) ([]*model.SampleSet, error) {
-        metrics, err := p.getMetricsWithLabels(labels)
+	metrics, err := p.getMetricsWithLabels(labels)
 	if err != nil {
 		return nil, err
 	}
@@ -101,8 +101,8 @@ func (p *PersistenceBridge) GetRangeValues(labels model.LabelSet, interval *mode
 			continue
 		}
 
-                // TODO remove when persistence return value is fixed.
-                sampleSet.Metric = *metric
+		// TODO remove when persistence return value is fixed.
+		sampleSet.Metric = *metric
 		sampleSets = append(sampleSets, sampleSet)
 	}
 	return sampleSets, nil

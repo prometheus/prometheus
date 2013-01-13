@@ -14,10 +14,10 @@
 package main
 
 import (
-        "code.google.com/p/gorest"
+	"code.google.com/p/gorest"
 	"fmt"
-	"github.com/matttproud/prometheus/api"
 	"github.com/matttproud/golang_instrumentation"
+	"github.com/matttproud/prometheus/api"
 	"github.com/matttproud/prometheus/config"
 	"github.com/matttproud/prometheus/retrieval"
 	"github.com/matttproud/prometheus/rules"
@@ -68,12 +68,12 @@ func main() {
 	}
 
 	go func() {
-                gorest.RegisterService(new(api.MetricsService))
+		gorest.RegisterService(new(api.MetricsService))
 		exporter := registry.DefaultRegistry.YieldExporter()
 
-                http.Handle("/", gorest.Handle())
+		http.Handle("/", gorest.Handle())
 		http.Handle("/metrics.json", exporter)
-                http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+		http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 		http.ListenAndServe(":9090", nil)
 	}()
 
