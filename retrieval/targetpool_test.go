@@ -19,6 +19,15 @@ import (
 	"time"
 )
 
+type literalScheduler time.Time
+
+func (s literalScheduler) ScheduledFor() time.Time {
+	return time.Time(s)
+}
+
+func (s literalScheduler) Reschedule(earliest time.Time, future TargetState) {
+}
+
 func TestTargetPool(t *testing.T) {
 	type expectation struct {
 		size int
@@ -105,8 +114,8 @@ func TestTargetPool(t *testing.T) {
 
 		for _, input := range scenario.inputs {
 			target := Target{
-				Address:      input.address,
-				scheduledFor: input.scheduledFor,
+				Address:   input.address,
+				scheduler: literalScheduler(input.scheduledFor),
 			}
 
 			heap.Push(&pool, &target)

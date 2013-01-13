@@ -23,7 +23,7 @@ func (p TargetPool) Len() int {
 }
 
 func (p TargetPool) Less(i, j int) bool {
-	return p.targets[i].scheduledFor.Before(p.targets[j].scheduledFor)
+	return p.targets[i].scheduledFor().Before(p.targets[j].scheduledFor())
 }
 
 func (p *TargetPool) Pop() interface{} {
@@ -62,11 +62,11 @@ func (p TargetPool) Stop() {
 	p.done <- true
 }
 
-func (p *TargetPool) runSingle(results chan Result, t *Target) {
+func (p *TargetPool) runSingle(earliest time.Time, results chan Result, t *Target) {
 	p.manager.acquire()
 	defer p.manager.release()
 
-	t.Scrape(results)
+	t.Scrape(earliest, results)
 }
 
 func (p *TargetPool) runIteration(results chan Result) {
@@ -78,14 +78,14 @@ func (p *TargetPool) runIteration(results chan Result) {
 
 		now := time.Now()
 
-		if target.scheduledFor.After(now) {
+		if target.scheduledFor().After(now) {
 			heap.Push(p, target)
 
 			break
 		}
 
 		go func() {
-			p.runSingle(results, target)
+			p.runSingle(now, results, target)
 			heap.Push(p, target)
 		}()
 	}
