@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Prometheus Expression Browser</title>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.8.15/jquery-ui.min.js"></script>
+
+
+    <link type="text/css" rel="stylesheet" href="http://code.shutterstock.com/rickshaw/rickshaw.min.css">
+    <script src="http://code.shutterstock.com/rickshaw/vendor/d3.min.js"></script>
+    <script src="http://code.shutterstock.com/rickshaw/vendor/d3.layout.min.js"></script>
+    <script src="http://code.shutterstock.com/rickshaw/rickshaw.min.js"></script>
+    <script src="js/rickshaw.js"></script>
+
+    <style>
+    #chart_container {
+            position: relative;
+            font-family: Arial, Helvetica, sans-serif;
+    }
+    #chart {
+            position: relative;
+            left: 40px;
+    }
+    #y_axis {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 40px;
+    }
+    #legend {
+            display: inline-block;
+            vertical-align: top;
+            margin: 0 0 0 10px;
+    }
+    </style>
+  </head>
+
+  <body>
+    <form action="/api/query_range" method="GET" id="queryForm">
+      Expression: <input type="text" name="expr" id="expr" size="100"><br>
+      Range: <input type="number" name="range" id="range" value="60">
+      End: <input type="number" name="end" id="end">
+      Resolution (s): <input type="text" name="step" step="5">
+      <input type="submit" value="Graph" id="graph_submit">
+      <img src="img/ajax-loader.gif" id="spinner">
+      <div id="load_time"></div>
+    </form>
+    <div id="chart_container">
+      <div id="y_axis"></div>
+      <div id="chart"></div>
+      <div id="legend"></div>
+    </div>
+  </body>
+</html>

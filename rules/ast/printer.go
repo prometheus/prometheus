@@ -85,6 +85,7 @@ func (vector Vector) ToString() string {
 		labelStrings := []string{}
 		for label, value := range sample.Metric {
 			if label != "name" {
+                                // TODO escape special chars in label values here and elsewhere.
 				labelStrings = append(labelStrings, fmt.Sprintf("%v='%v'", label, value))
 			}
 		}
@@ -144,7 +145,7 @@ func errorToJSON(err error) string {
 	return string(errorJSON)
 }
 
-func typedValueToJSON(data interface{}, typeStr string) string {
+func TypedValueToJSON(data interface{}, typeStr string) string {
 	dataStruct := struct {
 		Type  string
 		Value interface{}
@@ -167,7 +168,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 		case TEXT:
 			return fmt.Sprintf("scalar: %v", scalar)
 		case JSON:
-			return typedValueToJSON(scalar, "scalar")
+			return TypedValueToJSON(scalar, "scalar")
 		}
 	case VECTOR:
 		vector := node.(VectorNode).Eval(timestamp)
@@ -175,7 +176,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 		case TEXT:
 			return vector.ToString()
 		case JSON:
-			return typedValueToJSON(vector, "vector")
+			return TypedValueToJSON(vector, "vector")
 		}
 	case MATRIX:
 		matrix := node.(MatrixNode).Eval(timestamp)
@@ -183,7 +184,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 		case TEXT:
 			return matrix.ToString()
 		case JSON:
-			return typedValueToJSON(matrix, "matrix")
+			return TypedValueToJSON(matrix, "matrix")
 		}
 	case STRING:
 		str := node.(StringNode).Eval(timestamp)
@@ -191,7 +192,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 		case TEXT:
 			return str
 		case JSON:
-			return typedValueToJSON(str, "string")
+			return TypedValueToJSON(str, "string")
 		}
 	}
 	panic("Switch didn't cover all node types")

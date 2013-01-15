@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Prometheus Expression Browser</title>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+    <script src="js/exprBrowser.js"></script>
+  </head>
+
+  <body>
+    <form action="/api/query" method="GET" id="queryForm">
+      <input type="text" name="expr" size="100">
+      <input type="checkbox" name="json" id="json" value="JSON"><label for="json">JSON</label>
+      <input type="submit" value="Evaluate">
+    </form>
+    <hr>
+    <pre>
+      <div id="result"></div>
+    </pre>
+  </body>
+</html>
