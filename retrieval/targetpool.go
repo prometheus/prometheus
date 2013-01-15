@@ -8,14 +8,14 @@ import (
 
 type TargetPool struct {
 	done    chan bool
-	targets []*target
+	targets []Target
 	manager TargetManager
 }
 
-func NewTargetPool(m TargetManager) (p TargetPool) {
-	p.manager = m
-
-	return
+func NewTargetPool(m TargetManager) (p *TargetPool) {
+	return &TargetPool{
+		manager: m,
+	}
 }
 
 func (p TargetPool) Len() int {
@@ -37,7 +37,7 @@ func (p *TargetPool) Pop() interface{} {
 }
 
 func (p *TargetPool) Push(element interface{}) {
-	p.targets = append(p.targets, element.(*target))
+	p.targets = append(p.targets, element.(Target))
 }
 
 func (p TargetPool) Swap(i, j int) {
@@ -62,7 +62,7 @@ func (p TargetPool) Stop() {
 	p.done <- true
 }
 
-func (p *TargetPool) runSingle(earliest time.Time, results chan Result, t *target) {
+func (p *TargetPool) runSingle(earliest time.Time, results chan Result, t Target) {
 	p.manager.acquire()
 	defer p.manager.release()
 
@@ -71,7 +71,7 @@ func (p *TargetPool) runSingle(earliest time.Time, results chan Result, t *targe
 
 func (p *TargetPool) runIteration(results chan Result) {
 	for i := 0; i < p.Len(); i++ {
-		target := heap.Pop(p).(*target)
+		target := heap.Pop(p).(Target)
 		if target == nil {
 			break
 		}
