@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"container/heap"
+	"github.com/matttproud/prometheus/utility/test"
 	"testing"
 	"time"
 )
@@ -28,7 +29,7 @@ func (s literalScheduler) ScheduledFor() time.Time {
 func (s literalScheduler) Reschedule(earliest time.Time, future TargetState) {
 }
 
-func TestTargetPool(t *testing.T) {
+func testTargetPool(t test.Tester) {
 	type expectation struct {
 		size int
 	}
@@ -113,25 +114,54 @@ func TestTargetPool(t *testing.T) {
 		pool := TargetPool{}
 
 		for _, input := range scenario.inputs {
-			target := Target{
-				Address:   input.address,
+			target := target{
+				address:   input.address,
 				scheduler: literalScheduler(input.scheduledFor),
 			}
 
 			heap.Push(&pool, &target)
 		}
 
+		targets := []Target{}
+
 		if pool.Len() != len(scenario.outputs) {
 			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), pool.Len())
 		} else {
 			for j, output := range scenario.outputs {
-				target := heap.Pop(&pool).(*Target)
+				target := heap.Pop(&pool).(Target)
 
-				if target.Address != output.address {
-					t.Errorf("%s %d.%d. expected Target address to be %s but was %s", scenario.name, i, j, output.address, target.Address)
+				if target.Address() != output.address {
+					t.Errorf("%s %d.%d. expected Target address to be %s but was %s", scenario.name, i, j, output.address, target.Address())
 
 				}
+				targets = append(targets, target)
+			}
+
+			if pool.Len() != 0 {
+				t.Errorf("%s %d. expected pool to be empty, had %d", scenario.name, i, pool.Len())
+			}
+
+			if len(targets) != len(scenario.outputs) {
+				t.Errorf("%s %d. expected to receive %d elements, got %d", scenario.name, i, len(scenario.outputs), len(targets))
+			}
+
+			for _, target := range targets {
+				heap.Push(&pool, target)
+			}
+
+			if pool.Len() != len(scenario.outputs) {
+				t.Errorf("%s %d. expected to repopulated with %d elements, got %d", scenario.name, i, len(scenario.outputs), pool.Len())
 			}
 		}
+	}
+}
+
+func TestTargetPool(t *testing.T) {
+	testTargetPool(t)
+}
+
+func BenchmarkTargetPool(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testTargetPool(b)
 	}
 }
