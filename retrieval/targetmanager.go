@@ -31,36 +31,36 @@ type TargetManager interface {
 
 type targetManager struct {
 	requestAllowance chan bool
-	pools            map[time.Duration]TargetPool
+	pools            map[time.Duration]*TargetPool
 	results          chan Result
 }
 
 func NewTargetManager(results chan Result, requestAllowance int) TargetManager {
-	return targetManager{
+	return &targetManager{
 		requestAllowance: make(chan bool, requestAllowance),
 		results:          results,
-		pools:            make(map[time.Duration]TargetPool),
+		pools:            make(map[time.Duration]*TargetPool),
 	}
 }
 
-func (m targetManager) acquire() {
+func (m *targetManager) acquire() {
 	m.requestAllowance <- true
 }
 
-func (m targetManager) release() {
+func (m *targetManager) release() {
 	<-m.requestAllowance
 }
 
-func (m targetManager) Add(t Target) {
+func (m *targetManager) Add(t Target) {
 	targetPool, ok := m.pools[t.Interval()]
 
 	if !ok {
-		targetPool.manager = m
+		targetPool = NewTargetPool(m)
 		log.Printf("Pool %s does not exist; creating and starting...", t.Interval())
 		go targetPool.Run(m.results, t.Interval())
 	}
 
-	heap.Push(&targetPool, t)
+	heap.Push(targetPool, t)
 	m.pools[t.Interval()] = targetPool
 }
 
@@ -68,7 +68,7 @@ func (m targetManager) Remove(t Target) {
 	panic("not implemented")
 }
 
-func (m targetManager) AddTargetsFromConfig(config *config.Config) {
+func (m *targetManager) AddTargetsFromConfig(config *config.Config) {
 	for _, job := range config.Jobs {
 		for _, configTargets := range job.Targets {
 			baseLabels := model.LabelSet{
