@@ -1,55 +1,53 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Prometheus Expression Browser</title>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
     <script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.8.15/jquery-ui.min.js"></script>
-
+    <link type="text/css" rel="stylesheet" href="css/prometheus.css">
 
     <link type="text/css" rel="stylesheet" href="http://code.shutterstock.com/rickshaw/rickshaw.min.css">
     <script src="http://code.shutterstock.com/rickshaw/vendor/d3.min.js"></script>
     <script src="http://code.shutterstock.com/rickshaw/vendor/d3.layout.min.js"></script>
     <script src="http://code.shutterstock.com/rickshaw/rickshaw.min.js"></script>
     <script src="js/rickshaw.js"></script>
-
-    <style>
-    #chart_container {
-            position: relative;
-            font-family: Arial, Helvetica, sans-serif;
-    }
-    #chart {
-            position: relative;
-            left: 40px;
-    }
-    #y_axis {
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            width: 40px;
-    }
-    #legend {
-            display: inline-block;
-            vertical-align: top;
-            margin: 0 0 0 10px;
-    }
-    </style>
   </head>
 
   <body>
-    <form action="/api/query_range" method="GET" id="queryForm">
-      Expression: <input type="text" name="expr" id="expr" size="100"><br>
-      Range: <input type="number" name="range" id="range" value="60">
-      End: <input type="number" name="end" id="end">
-      Resolution (s): <input type="text" name="step" step="5">
-      <input type="submit" value="Graph" id="graph_submit">
-      <img src="img/ajax-loader.gif" id="spinner">
-      <div id="load_time"></div>
-    </form>
-    <div id="chart_container">
-      <div id="y_axis"></div>
-      <div id="chart"></div>
-      <div id="legend"></div>
+    <div class="grouping-box">
+      <form action="/api/query_range" method="GET" id="query_form">
+        <label for="expr">Expression:</label>
+        <input type="text" name="expr" id="expr" size="80"><br>
+
+        <label for="range">Range:</label>
+        <input type="button" value="-" id="dec_range">
+        <input type="text" name="range_input" id="range_input" size="5" value="1h">
+        <input type="hidden" name="range" id="range">
+        <input type="button" value="+" id="inc_range">
+
+        <label for="end">End:</label>
+        <input type="text" name="end" id="end">
+
+        <label for="step_input">Resolution (s):</label>
+        <input type="text" name="step_input" id="step_input" value="" size="4">
+        <input type="hidden" name="step" id="step">
+
+        <input type="checkbox" name="stacked" id="stacked" value="1">
+        <label for="stacked">Stacked</label>
+
+        <input type="submit" value="Graph" id="graph_submit">
+
+        <img src="img/ajax-loader.gif" id="spinner" alt="ajax-spinner">
+
+        <div id="eval_stats"></div>
+      </form>
+    </div>
+    <div class="grouping-box">
+      <div id="chart_container">
+        <div id="chart"></div>
+        <div id="legend"></div>
+      </div>
     </div>
   </body>
 </html>
