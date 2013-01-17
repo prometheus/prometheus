@@ -16,7 +16,7 @@ func rulesError(error string, v ...interface{}) error {
 
 // TODO move to common place, currently duplicated in config/
 func stringToDuration(durationStr string) (time.Duration, error) {
-	durationRE := regexp.MustCompile("([0-9]+)([ydhms]+)")
+	durationRE := regexp.MustCompile("^([0-9]+)([ywdhms]+)$")
 	matches := durationRE.FindStringSubmatch(durationStr)
 	if len(matches) != 3 {
 		return 0, rulesError("Not a valid duration string: '%v'", durationStr)
@@ -26,6 +26,8 @@ func stringToDuration(durationStr string) (time.Duration, error) {
 	switch unit {
 	case "y":
 		value *= 60 * 60 * 24 * 365
+	case "w":
+		value *= 60 * 60 * 24
 	case "d":
 		value *= 60 * 60 * 24
 	case "h":

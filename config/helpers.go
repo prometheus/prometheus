@@ -55,7 +55,7 @@ func PopJob() {
 }
 
 func stringToDuration(durationStr string) time.Duration {
-	durationRE := regexp.MustCompile("([0-9]+)([ydhms]+)")
+	durationRE := regexp.MustCompile("^([0-9]+)([ywdhms]+)$")
 	matches := durationRE.FindStringSubmatch(durationStr)
 	if len(matches) != 3 {
 		configError("Not a valid duration string: '%v'", durationStr)
@@ -65,6 +65,8 @@ func stringToDuration(durationStr string) time.Duration {
 	switch unit {
 	case "y":
 		value *= 60 * 60 * 24 * 365
+	case "w":
+		value *= 60 * 60 * 24 * 7
 	case "d":
 		value *= 60 * 60 * 24
 	case "h":
