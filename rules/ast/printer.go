@@ -85,7 +85,7 @@ func (vector Vector) ToString() string {
 		labelStrings := []string{}
 		for label, value := range sample.Metric {
 			if label != "name" {
-                                // TODO escape special chars in label values here and elsewhere.
+				// TODO escape special chars in label values here and elsewhere.
 				labelStrings = append(labelStrings, fmt.Sprintf("%v='%v'", label, value))
 			}
 		}

@@ -14,8 +14,8 @@
 package model
 
 import (
+	"fmt"
 	"time"
-        "fmt"
 )
 
 // A Fingerprint is a simplified representation of an entity---e.g., a hash of
@@ -47,11 +47,11 @@ type Metric map[LabelName]LabelValue
 type SampleValue float32
 
 func (v SampleValue) MarshalJSON() ([]byte, error) {
-        return []byte(fmt.Sprintf("\"%f\"", v)), nil
+	return []byte(fmt.Sprintf("\"%f\"", v)), nil
 }
 
 func (s SamplePair) MarshalJSON() ([]byte, error) {
-        return []byte(fmt.Sprintf("{\"Value\": \"%f\", \"Timestamp\": %d}", s.Value, s.Timestamp.Unix())), nil
+	return []byte(fmt.Sprintf("{\"Value\": \"%f\", \"Timestamp\": %d}", s.Value, s.Timestamp.Unix())), nil
 }
 
 type Sample struct {

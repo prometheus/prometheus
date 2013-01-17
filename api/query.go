@@ -4,7 +4,7 @@ import (
 	"code.google.com/p/gorest"
 	"github.com/matttproud/prometheus/rules"
 	"github.com/matttproud/prometheus/rules/ast"
-        "sort"
+	"sort"
 	"time"
 )
 
@@ -34,33 +34,33 @@ func (serv MetricsService) QueryRange(Expr string, End int64, Range int64, Step 
 	if err != nil {
 		return err.Error()
 	}
-        if exprNode.Type() != ast.VECTOR {
-                return "Expression does not evaluate to vector type" // TODO return errors correctly everywhere
-        }
+	if exprNode.Type() != ast.VECTOR {
+		return "Expression does not evaluate to vector type" // TODO return errors correctly everywhere
+	}
 	rb := serv.ResponseBuilder()
-        rb.SetContentType(gorest.Application_Json)
+	rb.SetContentType(gorest.Application_Json)
 
-        if End == 0 {
-                End = time.Now().Unix()
-        }
+	if End == 0 {
+		End = time.Now().Unix()
+	}
 
-        if Step < 1 {
-                Step = 1
-        }
+	if Step < 1 {
+		Step = 1
+	}
 
-        if End - Range < 0 {
-                Range = End
-        }
+	if End-Range < 0 {
+		Range = End
+	}
 
-        // Align the start to step "tick" boundary.
-        End -= End % Step
+	// Align the start to step "tick" boundary.
+	End -= End % Step
 
-        matrix := ast.EvalVectorRange(
-                exprNode.(ast.VectorNode),
-                time.Unix(End - Range, 0),
-                time.Unix(End, 0),
-                time.Duration(Step) * time.Second)
+	matrix := ast.EvalVectorRange(
+		exprNode.(ast.VectorNode),
+		time.Unix(End-Range, 0),
+		time.Unix(End, 0),
+		time.Duration(Step)*time.Second)
 
-        sort.Sort(matrix)
-        return ast.TypedValueToJSON(matrix, "matrix")
+	sort.Sort(matrix)
+	return ast.TypedValueToJSON(matrix, "matrix")
 }

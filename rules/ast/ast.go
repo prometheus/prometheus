@@ -2,11 +2,11 @@ package ast
 
 import (
 	"errors"
-        "fmt"
+	"fmt"
 	"github.com/matttproud/prometheus/model"
 	"log"
 	"math"
-        "sort"
+	"sort"
 	"strings"
 	"time"
 )
@@ -219,41 +219,41 @@ func (node *VectorAggregation) labelsToGroupingKey(labels model.Metric) string {
 }
 
 func labelsToKey(labels model.Metric) string {
-        keyParts := []string{}
-        for label, value := range labels {
-                keyParts = append(keyParts, fmt.Sprintf("%v='%v'", label, value))
-        }
-        sort.Strings(keyParts)
-        return strings.Join(keyParts, ",") // TODO not safe when label value contains comma.
+	keyParts := []string{}
+	for label, value := range labels {
+		keyParts = append(keyParts, fmt.Sprintf("%v='%v'", label, value))
+	}
+	sort.Strings(keyParts)
+	return strings.Join(keyParts, ",") // TODO not safe when label value contains comma.
 }
 
 func EvalVectorRange(node VectorNode, start time.Time, end time.Time, step time.Duration) Matrix {
-        // TODO implement watchdog timer for long-running queries.
-        sampleSets := map[string]*model.SampleSet{}
-        for t := start; t.Before(end); t = t.Add(step) {
-                vector := node.Eval(&t)
-                for _, sample := range vector {
-                        samplePair := model.SamplePair{
-                                Value: sample.Value,
-                                Timestamp: sample.Timestamp,
-                        }
-                        groupingKey := labelsToKey(sample.Metric)
-                        if sampleSets[groupingKey] == nil {
-                                sampleSets[groupingKey] = &model.SampleSet{
-                                        Metric: sample.Metric,
-                                        Values: []model.SamplePair{samplePair},
-                                }
-                        } else {
-                                sampleSets[groupingKey].Values = append(sampleSets[groupingKey].Values, samplePair)
-                        }
-                }
-        }
+	// TODO implement watchdog timer for long-running queries.
+	sampleSets := map[string]*model.SampleSet{}
+	for t := start; t.Before(end); t = t.Add(step) {
+		vector := node.Eval(&t)
+		for _, sample := range vector {
+			samplePair := model.SamplePair{
+				Value:     sample.Value,
+				Timestamp: sample.Timestamp,
+			}
+			groupingKey := labelsToKey(sample.Metric)
+			if sampleSets[groupingKey] == nil {
+				sampleSets[groupingKey] = &model.SampleSet{
+					Metric: sample.Metric,
+					Values: []model.SamplePair{samplePair},
+				}
+			} else {
+				sampleSets[groupingKey].Values = append(sampleSets[groupingKey].Values, samplePair)
+			}
+		}
+	}
 
-        matrix := Matrix{}
-        for _, sampleSet := range sampleSets {
-                matrix = append(matrix, sampleSet)
-        }
-        return matrix
+	matrix := Matrix{}
+	for _, sampleSet := range sampleSets {
+		matrix = append(matrix, sampleSet)
+	}
+	return matrix
 }
 
 func labelIntersection(metric1, metric2 model.Metric) model.Metric {
@@ -526,17 +526,16 @@ func (node *MatrixLiteral) EvalBoundaries(timestamp *time.Time) Matrix {
 }
 
 func (matrix Matrix) Len() int {
-        return len(matrix)
+	return len(matrix)
 }
 
 func (matrix Matrix) Less(i, j int) bool {
-        return labelsToKey(matrix[i].Metric) < labelsToKey(matrix[j].Metric)
+	return labelsToKey(matrix[i].Metric) < labelsToKey(matrix[j].Metric)
 }
 
 func (matrix Matrix) Swap(i, j int) {
-        matrix[i], matrix[j] = matrix[j], matrix[i]
+	matrix[i], matrix[j] = matrix[j], matrix[i]
 }
-
 
 func (node *StringLiteral) Eval(timestamp *time.Time) string {
 	return node.str
