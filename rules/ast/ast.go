@@ -450,6 +450,8 @@ func evalVectorBinop(opType BinOpType,
 		}
 	case AND:
 		return lhs, true
+	case OR:
+		return lhs, true // TODO: implement OR
 	}
 	panic("Not all enum values enumerated in switch")
 }
