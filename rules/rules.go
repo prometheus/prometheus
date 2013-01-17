@@ -27,7 +27,7 @@ func (rule *Rule) Eval(timestamp *time.Time) ast.Vector {
 
 	// Override the metric name and labels.
 	for _, sample := range vector {
-		sample.Metric["metric"] = model.LabelValue(rule.name)
+		sample.Metric["name"] = model.LabelValue(rule.name)
 		for label, value := range rule.labels {
 			if value == "" {
 				delete(sample.Metric, label)
