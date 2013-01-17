@@ -1,0 +1,51 @@
+body {
+  margin: 0;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  color: #333333;
+  background-color: #eee;
+}
+
+#chart_container {
+        font-family: Arial, Helvetica, sans-serif;
+}
+
+#chart {
+        position: relative;
+        width: 80%;
+}
+
+svg {
+  border: 1px solid #aaa;
+  margin-bottom: 5px;
+}
+
+#legend {
+        display: inline-block;
+        vertical-align: top;
+        margin: 0 0 0 0px;
+        background-
+}
+
+input:not([type=submit]):not([type=file]):not([type=button]) {
+  border: 1px solid #aaa;
+  -webkit-border-radius: 3px;
+     -moz-border-radius: 3px;
+          border-radius: 3px;
+}
+
+input:focus {
+        border:solid 2px #73A6FF;
+}
+
+.grouping-box {
+  position: relative;
+  padding: 5px;
+  margin: 2px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  -webkit-border-radius: 4px;
+     -moz-border-radius: 4px;
+          border-radius: 4px;
+}
