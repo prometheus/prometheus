@@ -32,5 +32,5 @@ var (
 )
 
 func init() {
-	registry.Register("sample_append_disk_latency_microseconds", appendLatency)
+	registry.Register("sample_append_disk_latency_microseconds", "Latency for sample appends to disk in microseconds", map[string]string{}, appendLatency)
 }

@@ -34,8 +34,8 @@ var (
 )
 
 func init() {
-	registry.Register("targets_healthy_total", targetsHealthy)
-	registry.Register("targets_unhealthy_total", targetsUnhealthy)
-	registry.Register("targets_healthy_scrape_latency_ms", scrapeLatencyHealthy)
-	registry.Register("targets_unhealthy_scrape_latency_ms", scrapeLatencyUnhealthy)
+	registry.Register("targets_healthy_total", "Total number of healthy scrape targets", map[string]string{}, targetsHealthy)
+	registry.Register("targets_unhealthy_total", "Total number of unhealthy scrape targets", map[string]string{}, targetsUnhealthy)
+	registry.Register("targets_healthy_scrape_latency_ms", "Scrape latency for healthy targets in milliseconds", map[string]string{}, scrapeLatencyHealthy)
+	registry.Register("targets_unhealthy_scrape_latency_ms", "Scrape latency for unhealthy targets in milliseconds", map[string]string{}, scrapeLatencyUnhealthy)
 }
