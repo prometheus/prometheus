@@ -40,17 +40,17 @@ var (
 )
 
 func init() {
-	registry.Register("get_label_name_fingerprints_success_count_total", getLabelNameFingerprintsSuccessCount)
-	registry.Register("get_label_name_fingerprints_failure_count_total", getLabelNameFingerprintsFailureCount)
+	registry.Register("get_label_name_fingerprints_success_count_total", "Successfully fetched label name fingerprints", map[string]string{}, getLabelNameFingerprintsSuccessCount)
+	registry.Register("get_label_name_fingerprints_failure_count_total", "Failures while fetching label name fingerprints", map[string]string{}, getLabelNameFingerprintsFailureCount)
 
-	registry.Register("get_fingerprints_for_label_set_success_count_total", getFingerprintsForLabelSetSuccessCount)
-	registry.Register("get_fingerprints_for_label_set_failure_count_total", getFingerprintsForLabelSetFailureCount)
-	registry.Register("get_fingerprints_for_label_name_success_count_total", getFingerprintsForLabelNameSuccessCount)
-	registry.Register("get_fingerprints_for_label_name_failure_count_total", getFingerprintsForLabelNameFailureCount)
-	registry.Register("get_metric_for_fingerprint_success_count_total", getMetricForFingerprintSuccessCount)
-	registry.Register("get_metric_for_fingerprint_failure_count_total", getMetricForFingerprintFailureCount)
-	registry.Register("get_boundary_values_success_count_total", getBoundaryValuesSuccessCount)
-	registry.Register("get_boundary_values_failure_count_total", getBoundaryValuesFailureCount)
+	registry.Register("get_fingerprints_for_label_set_success_count_total", "Successfully fetched label set fingerprints", map[string]string{}, getFingerprintsForLabelSetSuccessCount)
+	registry.Register("get_fingerprints_for_label_set_failure_count_total", "Failures while fetching label set fingerprints", map[string]string{}, getFingerprintsForLabelSetFailureCount)
+	registry.Register("get_fingerprints_for_label_name_success_count_total", "Successfully fetched label name fingerprints", map[string]string{}, getFingerprintsForLabelNameSuccessCount)
+	registry.Register("get_fingerprints_for_label_name_failure_count_total", "Failures while fetching label name fingerprints", map[string]string{}, getFingerprintsForLabelNameFailureCount)
+	registry.Register("get_metric_for_fingerprint_success_count_total", "Successfully fetched metrics by fingerprint", map[string]string{}, getMetricForFingerprintSuccessCount)
+	registry.Register("get_metric_for_fingerprint_failure_count_total", "Failures while fetching metrics by fingerprint", map[string]string{}, getMetricForFingerprintFailureCount)
+	registry.Register("get_boundary_values_success_count_total", "Successfully fetched metric boundary values", map[string]string{}, getBoundaryValuesSuccessCount)
+	registry.Register("get_boundary_values_failure_count_total", "Failures while fetching boundary values", map[string]string{}, getBoundaryValuesFailureCount)
 }
 
 func extractSampleKey(i iterator) (k *dto.SampleKey, err error) {

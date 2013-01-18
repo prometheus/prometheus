@@ -30,8 +30,8 @@ var (
 )
 
 func init() {
-	registry.Register("sample_append_success_count_total", appendSuccessCount)
-	registry.Register("sample_append_failure_count_total", appendFailureCount)
+	registry.Register("sample_append_success_count_total", "Total successfully appended samples", map[string]string{}, appendSuccessCount)
+	registry.Register("sample_append_failure_count_total", "Total sample append failures", map[string]string{}, appendFailureCount)
 }
 
 func (l *LevelDBMetricPersistence) setLabelPairFingerprints(labelPair *dto.LabelPair, fingerprints *dto.FingerprintCollection) error {
