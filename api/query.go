@@ -2,6 +2,7 @@ package api
 
 import (
 	"code.google.com/p/gorest"
+	"errors"
 	"github.com/matttproud/prometheus/rules"
 	"github.com/matttproud/prometheus/rules/ast"
 	"sort"
@@ -11,7 +12,7 @@ import (
 func (serv MetricsService) Query(Expr string, Json string) (result string) {
 	exprNode, err := rules.LoadExprFromString(Expr)
 	if err != nil {
-		return err.Error()
+		return ast.ErrorToJSON(err)
 	}
 
 	timestamp := time.Now()
@@ -32,10 +33,10 @@ func (serv MetricsService) Query(Expr string, Json string) (result string) {
 func (serv MetricsService) QueryRange(Expr string, End int64, Range int64, Step int64) string {
 	exprNode, err := rules.LoadExprFromString(Expr)
 	if err != nil {
-		return err.Error()
+		return ast.ErrorToJSON(err)
 	}
 	if exprNode.Type() != ast.VECTOR {
-		return "Expression does not evaluate to vector type" // TODO return errors correctly everywhere
+		return ast.ErrorToJSON(errors.New("Expression does not evaluate to vector type"))
 	}
 	rb := serv.ResponseBuilder()
 	rb.SetContentType(gorest.Application_Json)

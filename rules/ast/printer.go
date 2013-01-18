@@ -129,7 +129,7 @@ func (matrix Matrix) ToString() string {
 	return strings.Join(metricStrings, "\n")
 }
 
-func errorToJSON(err error) string {
+func ErrorToJSON(err error) string {
 	errorStruct := struct {
 		Type  string
 		Error string
@@ -155,7 +155,7 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 	}
 	dataJSON, err := json.MarshalIndent(dataStruct, "", "\t")
 	if err != nil {
-		return errorToJSON(err)
+		return ErrorToJSON(err)
 	}
 	return string(dataJSON)
 }
