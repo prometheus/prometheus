@@ -98,7 +98,16 @@ func deltaImpl(timestamp *time.Time, args []Node) interface{} {
 // === rate(node *MatrixNode) ===
 func rateImpl(timestamp *time.Time, args []Node) interface{} {
 	args = append(args, &ScalarLiteral{value: 1})
-	return deltaImpl(timestamp, args)
+	vector := deltaImpl(timestamp, args).(Vector)
+
+	// TODO: could be other type of MatrixNode in the future (right now, only
+	// MatrixLiteral exists). Find a better way of getting the duration of a
+	// matrix, such as looking at the samples themselves.
+	interval := args[0].(*MatrixLiteral).interval
+	for _, sample := range vector {
+		sample.Value /= model.SampleValue(interval / time.Second)
+	}
+	return vector
 }
 
 // === sampleVectorImpl() ===
