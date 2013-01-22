@@ -132,10 +132,10 @@ func (matrix Matrix) ToString() string {
 func ErrorToJSON(err error) string {
 	errorStruct := struct {
 		Type  string
-		Error string
+		Value string
 	}{
 		Type:  "error",
-		Error: err.Error(),
+		Value: err.Error(),
 	}
 
 	errorJSON, err := json.MarshalIndent(errorStruct, "", "\t")

@@ -84,6 +84,10 @@ function submitQuery() {
       dataType: "json",
       data: form.serialize(),
       success: function(json, textStatus) {
+        if (json.Type == "error") {
+          alert(json.Value);
+          return;
+        }
         data = transformData(json);
         if (data.length == 0) {
           alert("No datapoints found.");
