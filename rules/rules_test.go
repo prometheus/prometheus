@@ -105,7 +105,7 @@ var expressionTests = []struct {
 			"http_requests{job='app-server'} => 5200 @[%v]",
 		},
 	}, {
-		expr: "rate(http_requests['25m'])",
+		expr: "delta(http_requests[25m], 1)",
 		output: []string{
 			"http_requests{group='canary',instance='0',job='api-server'} => 150 @[%v]",
 			"http_requests{group='canary',instance='0',job='app-server'} => 350 @[%v]",
@@ -121,7 +121,10 @@ var expressionTests = []struct {
 		expr:       "",
 		shouldFail: true,
 	}, {
-		expr:       "http_requests[1m]",
+		expr:       "1 - http_requests",
+		shouldFail: true,
+	}, {
+		expr:       "http_requests['1m']",
 		shouldFail: true,
 	},
 }

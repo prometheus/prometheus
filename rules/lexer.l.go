@@ -397,6 +397,20 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 		return yyactionreturn{MULT_OP, yyRT_USER_RETURN}
 	}
 	return yyactionreturn{0, yyRT_FALLTHROUGH}
+}}, {regexp.MustCompile("([0-9])+([smhdwy])"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r != "yyREJECT" {
+				panic(r)
+			}
+			yyar.returnType = yyRT_REJECT
+		}
+	}()
+	{
+		yylval.str = yytext
+		return yyactionreturn{DURATION, yyRT_USER_RETURN}
+	}
+	return yyactionreturn{0, yyRT_FALLTHROUGH}
 }}, {regexp.MustCompile("([a-zA-Z_:])(([a-zA-Z_:])|([0-9]))+"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
 	defer func() {
 		if r := recover(); r != nil {

@@ -9,6 +9,7 @@ import (
 
 D                       [0-9]
 L                       [a-zA-Z_:]
+U                       [smhdwy]
 
 %x S_COMMENTS
 
@@ -30,6 +31,7 @@ AVG|SUM|MAX|MIN          { yylval.str = yytext; return AGGR_OP }
 [+\-]                    { yylval.str = yytext; return ADDITIVE_OP }
 [*/%]                    { yylval.str = yytext; return MULT_OP }
 
+{D}+{U}                  { yylval.str = yytext; return DURATION }
 {L}({L}|{D})+            { yylval.str = yytext; return IDENTIFIER }
 
 \-?{D}+(\.{D}*)?         { num, err := strconv.ParseFloat(yytext, 32);

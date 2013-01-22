@@ -22,7 +22,7 @@
    */
 %token START_RULES START_EXPRESSION
 
-%token <str> IDENTIFIER STRING
+%token <str> IDENTIFIER STRING DURATION
 %token <num> NUMBER
 %token PERMANENT GROUP_OP
 %token <str> AGGR_OP CMP_OP ADDITIVE_OP MULT_OP
@@ -100,7 +100,7 @@ rule_expr          : '(' rule_expr ')'
                        $$, err = NewFunctionCall($1, []ast.Node{})
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
-		   | rule_expr '[' STRING ']'
+                   | rule_expr '[' DURATION ']'
                      {
                        var err error
                        $$, err = NewMatrix($1, $3)
@@ -112,7 +112,7 @@ rule_expr          : '(' rule_expr ')'
                        $$, err = NewVectorAggregation($1, $3, $5)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
-		   /* Yacc can only attach associativity to terminals, so we
+                   /* Yacc can only attach associativity to terminals, so we
                     * have to list all operators here. */
                    | rule_expr ADDITIVE_OP rule_expr
                      {
