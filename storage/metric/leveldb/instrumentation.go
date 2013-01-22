@@ -14,9 +14,9 @@
 package leveldb
 
 import (
-	"github.com/matttproud/golang_instrumentation"
-	"github.com/matttproud/golang_instrumentation/maths"
-	"github.com/matttproud/golang_instrumentation/metrics"
+	"github.com/prometheus/client_golang"
+	"github.com/prometheus/client_golang/maths"
+	"github.com/prometheus/client_golang/metrics"
 	"time"
 )
 

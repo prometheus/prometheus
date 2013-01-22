@@ -13,14 +13,16 @@
 package retrieval
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/matttproud/golang_instrumentation/metrics"
 	"github.com/matttproud/prometheus/model"
-	"io/ioutil"
+	"github.com/matttproud/prometheus/retrieval/format"
+	"github.com/prometheus/client_golang/metrics"
 	"net/http"
-	"strconv"
 	"time"
+)
+
+const (
+	instance = "instance"
 )
 
 // The state of the given Target.
@@ -64,7 +66,7 @@ type Target interface {
 	// alluded to in the scheduledFor function, to use this as it wants to.  The
 	// current use case is to create a common batching time for scraping multiple
 	// Targets in the future through the TargetPool.
-	Scrape(earliest time.Time, results chan Result) error
+	Scrape(earliest time.Time, results chan format.Result) error
 	// Fulfill the healthReporter interface.
 	State() TargetState
 	// Report the soonest time at which this Target may be scheduled for
@@ -115,15 +117,7 @@ func NewTarget(address string, interval, deadline time.Duration, baseLabels mode
 	return target
 }
 
-type Result struct {
-	Err     error
-	Samples []model.Sample
-	Target  Target
-}
-
-func (t *target) Scrape(earliest time.Time, results chan Result) (err error) {
-	result := Result{}
-
+func (t *target) Scrape(earliest time.Time, results chan format.Result) (err error) {
 	defer func() {
 		futureState := t.state
 
@@ -135,15 +129,15 @@ func (t *target) Scrape(earliest time.Time, results chan Result) (err error) {
 		}
 
 		t.scheduler.Reschedule(earliest, futureState)
-
-		result.Err = err
-		results <- result
 	}()
 
 	done := make(chan bool)
 
 	request := func() {
-		ti := time.Now()
+		defer func() {
+			done <- true
+		}()
+
 		resp, err := http.Get(t.Address())
 		if err != nil {
 			return
@@ -151,86 +145,22 @@ func (t *target) Scrape(earliest time.Time, results chan Result) (err error) {
 
 		defer resp.Body.Close()
 
-		raw, err := ioutil.ReadAll(resp.Body)
+		processor, err := format.DefaultRegistry.ProcessorForRequestHeader(resp.Header)
 		if err != nil {
 			return
 		}
 
-		intermediate := make(map[string]interface{})
-		err = json.Unmarshal(raw, &intermediate)
+		// XXX: This is a wart; we need to handle this more gracefully down the
+		//      road, especially once we have service discovery support.
+		baseLabels := model.LabelSet{instance: model.LabelValue(t.Address())}
+		for baseLabel, baseValue := range t.BaseLabels {
+			baseLabels[baseLabel] = baseValue
+		}
+
+		err = processor.Process(resp.Body, baseLabels, results)
 		if err != nil {
 			return
 		}
-
-		baseLabels := model.LabelSet{"instance": model.LabelValue(t.Address())}
-		for baseK, baseV := range t.BaseLabels {
-			baseLabels[baseK] = baseV
-		}
-
-		for name, v := range intermediate {
-			asMap, ok := v.(map[string]interface{})
-
-			if !ok {
-				continue
-			}
-
-			switch asMap["type"] {
-			case "counter":
-				m := model.Metric{}
-				m["name"] = model.LabelValue(name)
-				asFloat, ok := asMap["value"].(float64)
-				if !ok {
-					continue
-				}
-
-				s := model.Sample{
-					Metric:    m,
-					Value:     model.SampleValue(asFloat),
-					Timestamp: ti,
-				}
-
-				for baseK, baseV := range baseLabels {
-					m[baseK] = baseV
-				}
-
-				result.Samples = append(result.Samples, s)
-			case "histogram":
-				values, ok := asMap["value"].(map[string]interface{})
-				if !ok {
-					continue
-				}
-
-				for p, pValue := range values {
-					asString, ok := pValue.(string)
-					if !ok {
-						continue
-					}
-
-					float, err := strconv.ParseFloat(asString, 64)
-					if err != nil {
-						continue
-					}
-
-					m := model.Metric{}
-					m["name"] = model.LabelValue(name)
-					m["percentile"] = model.LabelValue(p)
-
-					s := model.Sample{
-						Metric:    m,
-						Value:     model.SampleValue(float),
-						Timestamp: ti,
-					}
-
-					for baseK, baseV := range baseLabels {
-						m[baseK] = baseV
-					}
-
-					result.Samples = append(result.Samples, s)
-				}
-			}
-		}
-
-		done <- true
 	}
 
 	accumulator := func(d time.Duration) {
