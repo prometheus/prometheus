@@ -15,7 +15,7 @@ package main
 
 import (
 	"code.google.com/p/gorest"
-	"fmt"
+	"flag"
 	"github.com/matttproud/golang_instrumentation"
 	"github.com/matttproud/prometheus/api"
 	"github.com/matttproud/prometheus/config"
@@ -29,15 +29,20 @@ import (
 	"os/signal"
 )
 
+// Commandline flags.
+var (
+	configFile         = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
+	metricsStoragePath = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
+)
+
 func main() {
-	configFile := "prometheus.conf"
-	conf, err := config.LoadFromFile(configFile)
+	flag.Parse()
+	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
-		log.Fatal(fmt.Sprintf("Error loading configuration from %s: %v",
-			configFile, err))
+		log.Fatalf("Error loading configuration from %s: %v", configFile, err)
 	}
 
-	persistence, err := leveldb.NewLevelDBMetricPersistence("/tmp/metrics")
+	persistence, err := leveldb.NewLevelDBMetricPersistence(*metricsStoragePath)
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
@@ -64,7 +69,7 @@ func main() {
 	ruleManager := rules.NewRuleManager(ruleResults, conf.Global.EvaluationInterval)
 	err = ruleManager.AddRulesFromConfig(conf)
 	if err != nil {
-		log.Fatal(fmt.Sprintf("Error loading rule files: %v", err))
+		log.Fatalf("Error loading rule files: %v", err)
 	}
 
 	go func() {
