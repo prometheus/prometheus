@@ -162,7 +162,10 @@ func (t *target) Scrape(earliest time.Time, results chan Result) (err error) {
 			return
 		}
 
-		baseLabels := map[string]string{"instance": t.Address()}
+		baseLabels := model.LabelSet{"instance": model.LabelValue(t.Address())}
+		for baseK, baseV := range t.BaseLabels {
+			baseLabels[baseK] = baseV
+		}
 
 		for name, v := range intermediate {
 			asMap, ok := v.(map[string]interface{})
@@ -187,7 +190,7 @@ func (t *target) Scrape(earliest time.Time, results chan Result) (err error) {
 				}
 
 				for baseK, baseV := range baseLabels {
-					m[model.LabelName(baseK)] = model.LabelValue(baseV)
+					m[baseK] = baseV
 				}
 
 				result.Samples = append(result.Samples, s)
@@ -219,7 +222,7 @@ func (t *target) Scrape(earliest time.Time, results chan Result) (err error) {
 					}
 
 					for baseK, baseV := range baseLabels {
-						m[model.LabelName(baseK)] = model.LabelValue(baseV)
+						m[baseK] = baseV
 					}
 
 					result.Samples = append(result.Samples, s)
