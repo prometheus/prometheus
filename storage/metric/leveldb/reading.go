@@ -15,8 +15,6 @@ package leveldb
 
 import (
 	"code.google.com/p/goprotobuf/proto"
-	registry "github.com/matttproud/golang_instrumentation"
-	"github.com/matttproud/golang_instrumentation/metrics"
 	"github.com/matttproud/prometheus/coding"
 	"github.com/matttproud/prometheus/coding/indexable"
 	"github.com/matttproud/prometheus/model"
@@ -25,33 +23,6 @@ import (
 	"github.com/matttproud/prometheus/utility"
 	"time"
 )
-
-var (
-	getLabelNameFingerprintsSuccessCount    = &metrics.CounterMetric{}
-	getLabelNameFingerprintsFailureCount    = &metrics.CounterMetric{}
-	getFingerprintsForLabelSetSuccessCount  = &metrics.CounterMetric{}
-	getFingerprintsForLabelSetFailureCount  = &metrics.CounterMetric{}
-	getFingerprintsForLabelNameSuccessCount = &metrics.CounterMetric{}
-	getFingerprintsForLabelNameFailureCount = &metrics.CounterMetric{}
-	getMetricForFingerprintSuccessCount     = &metrics.CounterMetric{}
-	getMetricForFingerprintFailureCount     = &metrics.CounterMetric{}
-	getBoundaryValuesSuccessCount           = &metrics.CounterMetric{}
-	getBoundaryValuesFailureCount           = &metrics.CounterMetric{}
-)
-
-func init() {
-	registry.Register("get_label_name_fingerprints_success_count_total", "Successfully fetched label name fingerprints", map[string]string{}, getLabelNameFingerprintsSuccessCount)
-	registry.Register("get_label_name_fingerprints_failure_count_total", "Failures while fetching label name fingerprints", map[string]string{}, getLabelNameFingerprintsFailureCount)
-
-	registry.Register("get_fingerprints_for_label_set_success_count_total", "Successfully fetched label set fingerprints", map[string]string{}, getFingerprintsForLabelSetSuccessCount)
-	registry.Register("get_fingerprints_for_label_set_failure_count_total", "Failures while fetching label set fingerprints", map[string]string{}, getFingerprintsForLabelSetFailureCount)
-	registry.Register("get_fingerprints_for_label_name_success_count_total", "Successfully fetched label name fingerprints", map[string]string{}, getFingerprintsForLabelNameSuccessCount)
-	registry.Register("get_fingerprints_for_label_name_failure_count_total", "Failures while fetching label name fingerprints", map[string]string{}, getFingerprintsForLabelNameFailureCount)
-	registry.Register("get_metric_for_fingerprint_success_count_total", "Successfully fetched metrics by fingerprint", map[string]string{}, getMetricForFingerprintSuccessCount)
-	registry.Register("get_metric_for_fingerprint_failure_count_total", "Failures while fetching metrics by fingerprint", map[string]string{}, getMetricForFingerprintFailureCount)
-	registry.Register("get_boundary_values_success_count_total", "Successfully fetched metric boundary values", map[string]string{}, getBoundaryValuesSuccessCount)
-	registry.Register("get_boundary_values_failure_count_total", "Failures while fetching boundary values", map[string]string{}, getBoundaryValuesFailureCount)
-}
 
 func extractSampleKey(i iterator) (k *dto.SampleKey, err error) {
 	k = &dto.SampleKey{}
@@ -105,27 +76,75 @@ func keyIsAtMostOld(t time.Time) sampleKeyPredicate {
 	}
 }
 
-func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (bool, error) {
+func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (value bool, err error) {
+	begin := time.Now()
+
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: hasIndexMetric, result: success}, map[string]string{operation: hasIndexMetric, result: failure})
+	}()
+
 	dtoKey := coding.NewProtocolBufferEncoder(dto)
-	return l.metricMembershipIndex.Has(dtoKey)
+	value, err = l.metricMembershipIndex.Has(dtoKey)
+
+	return
 }
 
-func (l *LevelDBMetricPersistence) indexMetric(dto *dto.Metric) error {
+func (l *LevelDBMetricPersistence) indexMetric(dto *dto.Metric) (err error) {
+	begin := time.Now()
+
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: indexMetric, result: success}, map[string]string{operation: indexMetric, result: failure})
+	}()
+
 	dtoKey := coding.NewProtocolBufferEncoder(dto)
-	return l.metricMembershipIndex.Put(dtoKey)
+	err = l.metricMembershipIndex.Put(dtoKey)
+
+	return
 }
 
-func (l *LevelDBMetricPersistence) HasLabelPair(dto *dto.LabelPair) (bool, error) {
+func (l *LevelDBMetricPersistence) HasLabelPair(dto *dto.LabelPair) (value bool, err error) {
+	begin := time.Now()
+
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: hasLabelPair, result: success}, map[string]string{operation: hasLabelPair, result: failure})
+	}()
+
 	dtoKey := coding.NewProtocolBufferEncoder(dto)
-	return l.labelSetToFingerprints.Has(dtoKey)
+	value, err = l.labelSetToFingerprints.Has(dtoKey)
+
+	return
 }
 
-func (l *LevelDBMetricPersistence) HasLabelName(dto *dto.LabelName) (bool, error) {
+func (l *LevelDBMetricPersistence) HasLabelName(dto *dto.LabelName) (value bool, err error) {
+	begin := time.Now()
+
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: hasLabelName, result: success}, map[string]string{operation: hasLabelName, result: failure})
+	}()
+
 	dtoKey := coding.NewProtocolBufferEncoder(dto)
-	return l.labelNameToFingerprints.Has(dtoKey)
+	value, err = l.labelNameToFingerprints.Has(dtoKey)
+
+	return
 }
 
 func (l *LevelDBMetricPersistence) getFingerprintsForLabelSet(p *dto.LabelPair) (c *dto.FingerprintCollection, err error) {
+	begin := time.Now()
+
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getFingerprintsForLabelSet, result: success}, map[string]string{operation: getFingerprintsForLabelSet, result: failure})
+	}()
+
 	dtoKey := coding.NewProtocolBufferEncoder(p)
 	get, err := l.labelSetToFingerprints.Get(dtoKey)
 	if err != nil {
@@ -140,13 +159,12 @@ func (l *LevelDBMetricPersistence) getFingerprintsForLabelSet(p *dto.LabelPair) 
 
 // XXX: Delete me and replace with GetFingerprintsForLabelName.
 func (l *LevelDBMetricPersistence) GetLabelNameFingerprints(n *dto.LabelName) (c *dto.FingerprintCollection, err error) {
-	defer func() {
-		m := getLabelNameFingerprintsSuccessCount
-		if err != nil {
-			m = getLabelNameFingerprintsFailureCount
-		}
+	begin := time.Now()
 
-		m.Increment()
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getLabelNameFingerprints, result: success}, map[string]string{operation: getLabelNameFingerprints, result: failure})
 	}()
 
 	dtoKey := coding.NewProtocolBufferEncoder(n)
@@ -162,13 +180,12 @@ func (l *LevelDBMetricPersistence) GetLabelNameFingerprints(n *dto.LabelName) (c
 }
 
 func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet *model.LabelSet) (fps []*model.Fingerprint, err error) {
-	defer func() {
-		m := getFingerprintsForLabelSetSuccessCount
-		if err != nil {
-			m = getFingerprintsForLabelSetFailureCount
-		}
+	begin := time.Now()
 
-		m.Increment()
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getFingerprintsForLabelSet, result: success}, map[string]string{operation: getFingerprintsForLabelSet, result: failure})
 	}()
 
 	sets := []utility.Set{}
@@ -214,13 +231,12 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet *model.La
 }
 
 func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName *model.LabelName) (fps []*model.Fingerprint, err error) {
-	defer func() {
-		m := getFingerprintsForLabelNameSuccessCount
-		if err != nil {
-			m = getFingerprintsForLabelNameFailureCount
-		}
+	begin := time.Now()
 
-		m.Increment()
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getFingerprintsForLabelName, result: success}, map[string]string{operation: getFingerprintsForLabelName, result: failure})
 	}()
 
 	fps = make([]*model.Fingerprint, 0, 0)
@@ -246,13 +262,12 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName *model.
 }
 
 func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint) (m *model.Metric, err error) {
-	defer func() {
-		m := getMetricForFingerprintSuccessCount
-		if err != nil {
-			m = getMetricForFingerprintFailureCount
-		}
+	begin := time.Now()
 
-		m.Increment()
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
 	}()
 
 	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBufferEncoder(model.FingerprintToDTO(f)))
@@ -275,13 +290,12 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint)
 }
 
 func (l *LevelDBMetricPersistence) GetBoundaryValues(m *model.Metric, i *model.Interval, s *metric.StalenessPolicy) (open *model.Sample, end *model.Sample, err error) {
-	defer func() {
-		m := getBoundaryValuesSuccessCount
-		if err != nil {
-			m = getBoundaryValuesFailureCount
-		}
+	begin := time.Now()
 
-		m.Increment()
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getBoundaryValues, result: success}, map[string]string{operation: getBoundaryValues, result: failure})
 	}()
 
 	// XXX: Maybe we will want to emit incomplete sets?
@@ -325,6 +339,14 @@ type iterator interface {
 }
 
 func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time, s *metric.StalenessPolicy) (sample *model.Sample, err error) {
+	begin := time.Now()
+
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getValueAtTime, result: success}, map[string]string{operation: getValueAtTime, result: failure})
+	}()
+
 	d := model.MetricToDTO(m)
 
 	f, err := model.MessageToFingerprintDTO(d)
@@ -536,6 +558,14 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 }
 
 func (l *LevelDBMetricPersistence) GetRangeValues(m *model.Metric, i *model.Interval, s *metric.StalenessPolicy) (v *model.SampleSet, err error) {
+	begin := time.Now()
+
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
+	}()
+
 	d := model.MetricToDTO(m)
 
 	f, err := model.MessageToFingerprintDTO(d)
