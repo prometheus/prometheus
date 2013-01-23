@@ -235,11 +235,13 @@ func (t *target) Scrape(earliest time.Time, results chan Result) (err error) {
 
 	accumulator := func(d time.Duration) {
 		ms := float64(d) / float64(time.Millisecond)
-		if err == nil {
-			scrapeLatencyHealthy.Add(ms)
-		} else {
-			scrapeLatencyUnhealthy.Add(ms)
+		labels := map[string]string{address: t.Address(), outcome: success}
+		if err != nil {
+			labels[outcome] = failure
 		}
+
+		targetOperationLatencies.Add(labels, ms)
+		targetOperations.Increment(labels)
 	}
 
 	go metrics.InstrumentCall(request, accumulator)

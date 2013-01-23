@@ -19,23 +19,29 @@ import (
 	"github.com/matttproud/golang_instrumentation/metrics"
 )
 
+const (
+	address     = "instance"
+	alive       = "alive"
+	failure     = "failure"
+	outcome     = "outcome"
+	state       = "state"
+	success     = "success"
+	unreachable = "unreachable"
+)
+
 var (
 	networkLatencyHistogram = &metrics.HistogramSpecification{
 		Starts:                metrics.LogarithmicSizedBucketsFor(0, 1000),
-		BucketMaker:           metrics.AccumulatingBucketBuilder(metrics.EvictAndReplaceWith(10, maths.Average), 100),
+		BucketBuilder:         metrics.AccumulatingBucketBuilder(metrics.EvictAndReplaceWith(10, maths.Average), 100),
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
 	}
 
-	targetsHealthy   = &metrics.CounterMetric{}
-	targetsUnhealthy = &metrics.CounterMetric{}
+	targetOperationLatencies = metrics.NewHistogram(networkLatencyHistogram)
 
-	scrapeLatencyHealthy   = metrics.CreateHistogram(networkLatencyHistogram)
-	scrapeLatencyUnhealthy = metrics.CreateHistogram(networkLatencyHistogram)
+	targetOperations = metrics.NewCounter()
 )
 
 func init() {
-	registry.Register("targets_healthy_total", "Total number of healthy scrape targets", map[string]string{}, targetsHealthy)
-	registry.Register("targets_unhealthy_total", "Total number of unhealthy scrape targets", map[string]string{}, targetsUnhealthy)
-	registry.Register("targets_healthy_scrape_latency_ms", "Scrape latency for healthy targets in milliseconds", map[string]string{}, scrapeLatencyHealthy)
-	registry.Register("targets_unhealthy_scrape_latency_ms", "Scrape latency for unhealthy targets in milliseconds", map[string]string{}, scrapeLatencyUnhealthy)
+	registry.Register("prometheus_target_operations_total", "The total numbers of operations of the various targets that are being monitored.", registry.NilLabels, targetOperations)
+	registry.Register("prometheus_target_operation_latency_ms", "The latencies for various target operations.", registry.NilLabels, targetOperationLatencies)
 }
