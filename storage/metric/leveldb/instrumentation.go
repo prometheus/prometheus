@@ -17,20 +17,56 @@ import (
 	"github.com/matttproud/golang_instrumentation"
 	"github.com/matttproud/golang_instrumentation/maths"
 	"github.com/matttproud/golang_instrumentation/metrics"
+	"time"
+)
+
+const (
+	operation = "operation"
+	success   = "success"
+	failure   = "failure"
+	result    = "result"
+
+	appendFingerprints          = "append_fingerprints"
+	appendLabelNameFingerprint  = "append_label_name_fingerprint"
+	appendLabelPairFingerprint  = "append_label_pair_fingerprint"
+	appendSample                = "append_sample"
+	getBoundaryValues           = "get_boundary_values"
+	getFingerprintsForLabelName = "get_fingerprints_for_label_name"
+	getFingerprintsForLabelSet  = "get_fingerprints_for_labelset"
+	getLabelNameFingerprints    = "get_label_name_fingerprints"
+	getMetricForFingerprint     = "get_metric_for_fingerprint"
+	getRangeValues              = "get_range_values"
+	getValueAtTime              = "get_value_at_time"
+	hasIndexMetric              = "has_index_metric"
+	hasLabelName                = "has_label_name"
+	hasLabelPair                = "has_label_pair"
+	indexMetric                 = "index_metric"
+	setLabelNameFingerprints    = "set_label_name_fingerprints"
+	setLabelPairFingerprints    = "set_label_pair_fingerprints"
 )
 
 var (
 	diskLatencyHistogram = &metrics.HistogramSpecification{
 		Starts:                metrics.LogarithmicSizedBucketsFor(0, 5000),
-		BucketMaker:           metrics.AccumulatingBucketBuilder(metrics.EvictAndReplaceWith(10, maths.Average), 100),
+		BucketBuilder:         metrics.AccumulatingBucketBuilder(metrics.EvictAndReplaceWith(10, maths.Average), 100),
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
 	}
 
-	targetsHealthy = &metrics.CounterMetric{}
-
-	appendLatency = metrics.CreateHistogram(diskLatencyHistogram)
+	storageOperations = metrics.NewCounter()
+	storageLatency    = metrics.NewHistogram(diskLatencyHistogram)
 )
 
+func recordOutcome(counter metrics.Counter, latency metrics.Histogram, duration time.Duration, err error, success, failure map[string]string) {
+	labels := success
+	if err != nil {
+		labels = failure
+	}
+
+	counter.Increment(labels)
+	latency.Add(labels, float64(duration/time.Microsecond))
+}
+
 func init() {
-	registry.Register("sample_append_disk_latency_microseconds", "Latency for sample appends to disk in microseconds", map[string]string{}, appendLatency)
+	registry.Register("prometheus_metric_disk_operations_total", "Total number of metric-related disk operations.", registry.NilLabels, storageOperations)
+	registry.Register("prometheus_metric_disk_latency_microseconds", "Latency for metric disk operations in microseconds.", registry.NilLabels, storageLatency)
 }
