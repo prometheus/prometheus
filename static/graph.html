@@ -11,43 +11,57 @@
     <script src="http://code.shutterstock.com/rickshaw/vendor/d3.min.js"></script>
     <script src="http://code.shutterstock.com/rickshaw/vendor/d3.layout.min.js"></script>
     <script src="http://code.shutterstock.com/rickshaw/rickshaw.min.js"></script>
-    <script src="js/rickshaw.js"></script>
+
+    <!-- copy all these JSen to our own location -->
+    <script src="https://raw.github.com/wycats/handlebars.js/1.0.rc.2/dist/handlebars.js"></script>
+
+    <script src="js/graph.js"></script>
+
+    <script id="graph_template" type="text/x-handlebars-template">
+      <div id="graph_wrapper{{id}}">
+        <div class="grouping_box">
+          <form action="/api/query_range" method="GET" class="query_form">
+            <label for="expr{{id}}">Expression:</label>
+            <input type="text" name="expr" id="expr{{id}}" size="80" value="{{expr}}"><br>
+
+            <label for="range_input{{id}}">Range:</label>
+            <input type="button" value="-" name="dec_range">
+            <input type="text" name="range_input" id="range_input{{id}}" size="5" value="{{range_input}}">
+            <input type="hidden" name="range">
+            <input type="button" value="+" name="inc_range">
+
+            <label for="end{{id}}">End:</label>
+            <input type="button" value="<<" name="dec_end">
+            <input type="text" name="end" id="end{{id}}" value="{{end}}">
+            <input type="button" value=">>" name="inc_end">
+
+            <label for="step_input{{id}}">Resolution (s):</label>
+            <input type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="4">
+            <input type="hidden" name="step">
+
+            <input type="checkbox" name="stacked" id="stacked{{id}}" {{stacked_checked}}>
+            <label for="stacked{{id}}">Stacked</label>
+
+            <input type="submit" value="Graph" name="submit">
+
+            <img src="img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
+
+            <div class="eval_stats"></div>
+          </form>
+        </div>
+        <div class="grouping_box">
+          <div class="graph_container">
+            <div class="graph"></div>
+            <div class="legend"></div>
+          </div>
+        </div>
+      </div>
+    </script>
   </head>
 
   <body>
-    <div class="grouping-box">
-      <form action="/api/query_range" method="GET" id="query_form">
-        <label for="expr">Expression:</label>
-        <input type="text" name="expr" id="expr" size="80"><br>
-
-        <label for="range">Range:</label>
-        <input type="button" value="-" id="dec_range">
-        <input type="text" name="range_input" id="range_input" size="5" value="1h">
-        <input type="hidden" name="range" id="range">
-        <input type="button" value="+" id="inc_range">
-
-        <label for="end">End:</label>
-        <input type="text" name="end" id="end">
-
-        <label for="step_input">Resolution (s):</label>
-        <input type="text" name="step_input" id="step_input" value="" size="4">
-        <input type="hidden" name="step" id="step">
-
-        <input type="checkbox" name="stacked" id="stacked" value="1">
-        <label for="stacked">Stacked</label>
-
-        <input type="submit" value="Graph" id="graph_submit">
-
-        <img src="img/ajax-loader.gif" id="spinner" alt="ajax-spinner">
-
-        <div id="eval_stats"></div>
-      </form>
+    <div id="graph_container">
     </div>
-    <div class="grouping-box">
-      <div id="chart_container">
-        <div id="chart"></div>
-        <div id="legend"></div>
-      </div>
-    </div>
+    <div><input type="button" value="Add Graph" id="add_graph"></div>
   </body>
 </html>
