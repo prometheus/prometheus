@@ -39,7 +39,7 @@ func main() {
 	flag.Parse()
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
-		log.Fatalf("Error loading configuration from %s: %v", configFile, err)
+		log.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
 	persistence, err := leveldb.NewLevelDBMetricPersistence(*metricsStoragePath)
