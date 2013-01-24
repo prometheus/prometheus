@@ -13,6 +13,12 @@ Bedecke deinen Himmel, Zeus!  A new kid is in town.
   6. GoRest, a RESTful style web-services framework: (http://code.google.com/p/gorest/).
   7. Prometheus Client, Prometheus in Prometheus (https://github.com/matttproud/golang_instrumentation).
 
+## Getting started
+
+For basic help how to get started:
+
+  * [Getting started on Mac OSX](guides/getting-started-osx.md)
+
 
 ## Initial Hurdles
 

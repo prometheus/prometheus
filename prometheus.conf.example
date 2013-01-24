@@ -1,0 +1,24 @@
+global {
+  scrape_interval = "1s"
+  evaluation_interval = "1s"
+  labels {
+    monitor = "test"
+  }
+  rule_files = [
+    "prometheus.rules"
+  ]
+}
+
+job {
+  name = "prometheus"
+  scrape_interval = "5s"
+
+  targets {
+    endpoints = [
+      "http://localhost:9090/metrics.json"
+    ]
+    labels {
+      group = "canary"
+    }
+  }
+}
