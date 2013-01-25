@@ -56,9 +56,10 @@ func LoadFromString(configString string) (*Config, error) {
 
 func LoadFromFile(fileName string) (*Config, error) {
 	configReader, err := os.Open(fileName)
-	defer configReader.Close()
 	if err != nil {
 		return &Config{}, err
 	}
+	defer configReader.Close()
+
 	return LoadFromReader(configReader)
 }
