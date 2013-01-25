@@ -20,6 +20,7 @@ import (
 	"github.com/matttproud/prometheus/api"
 	"github.com/matttproud/prometheus/config"
 	"github.com/matttproud/prometheus/retrieval"
+	"github.com/matttproud/prometheus/retrieval/format"
 	"github.com/matttproud/prometheus/rules"
 	"github.com/matttproud/prometheus/rules/ast"
 	"github.com/matttproud/prometheus/storage/metric/leveldb"
@@ -58,7 +59,7 @@ func main() {
 
 	defer persistence.Close()
 
-	scrapeResults := make(chan retrieval.Result, 4096)
+	scrapeResults := make(chan format.Result, 4096)
 
 	targetManager := retrieval.NewTargetManager(scrapeResults, 1)
 	targetManager.AddTargetsFromConfig(conf)
@@ -85,12 +86,10 @@ func main() {
 	for {
 		select {
 		case scrapeResult := <-scrapeResults:
-			//fmt.Printf("scrapeResult -> %s\n", scrapeResult)
-			for _, sample := range scrapeResult.Samples {
-				persistence.AppendSample(&sample)
+			if scrapeResult.Err == nil {
+				persistence.AppendSample(&scrapeResult.Sample)
 			}
 		case ruleResult := <-ruleResults:
-			//fmt.Printf("ruleResult -> %s\n", ruleResult)
 			for _, sample := range ruleResult.Samples {
 				persistence.AppendSample(sample)
 			}

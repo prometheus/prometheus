@@ -17,7 +17,6 @@ import (
 	"github.com/matttproud/golang_instrumentation/metrics"
 	"github.com/matttproud/prometheus/model"
 	"github.com/matttproud/prometheus/retrieval/format"
-	"io/ioutil"
 	"net/http"
 	"time"
 )
@@ -115,8 +114,6 @@ func NewTarget(address string, interval, deadline time.Duration, baseLabels mode
 }
 
 func (t *target) Scrape(earliest time.Time, results chan format.Result) (err error) {
-	result := Result{}
-
 	defer func() {
 		futureState := t.state
 
@@ -133,7 +130,6 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 	done := make(chan bool)
 
 	request := func() {
-		ti := time.Now()
 		resp, err := http.Get(t.Address())
 		if err != nil {
 			return
@@ -141,12 +137,7 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 
 		defer resp.Body.Close()
 
-		raw, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return
-		}
-
-		processor, err := format.DefaultRegistry.ProcessForRequest(resp.Header)
+		processor, err := format.DefaultRegistry.ProcessorForRequestHeader(resp.Header)
 		if err != nil {
 			return
 		}
