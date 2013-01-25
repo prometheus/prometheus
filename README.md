@@ -17,7 +17,7 @@ Bedecke deinen Himmel, Zeus!  A new kid is in town.
 
 For basic help how to get started:
 
-  * [Getting started on Mac OSX](guides/getting-started-osx.md)
+  * [Getting started on Mac OSX](prometheus/guides/getting-started-osx.md)
 
 
 ## Initial Hurdles
