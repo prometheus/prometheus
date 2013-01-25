@@ -85,7 +85,7 @@ func (m *targetManager) AddTargetsFromConfig(config *config.Config) {
 			}
 
 			for _, endpoint := range configTargets.Endpoints {
-				target := NewTarget(endpoint, time.Second*5, interval, baseLabels)
+				target := NewTarget(endpoint, interval, time.Second*5, baseLabels)
 				m.Add(target)
 			}
 		}
