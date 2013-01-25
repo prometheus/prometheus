@@ -114,9 +114,9 @@ func LoadExprFromString(exprString string) (ast.Node, error) {
 
 func LoadExprFromFile(fileName string) (ast.Node, error) {
 	exprReader, err := os.Open(fileName)
-	defer exprReader.Close()
 	if err != nil {
 		return nil, err
 	}
+	defer exprReader.Close()
 	return LoadExprFromReader(exprReader)
 }
