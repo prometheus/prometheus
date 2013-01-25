@@ -56,7 +56,7 @@ type entity001 []struct {
 	} `json:"metric"`
 }
 
-func (p *processor001) Process(stream io.ReadCloser, results chan Result) (err error) {
+func (p *processor001) Process(stream io.ReadCloser, baseLabels model.LabelSet, results chan Result) (err error) {
 	// TODO(matt): Replace with plain-jane JSON unmarshalling.
 	defer stream.Close()
 
@@ -79,6 +79,10 @@ func (p *processor001) Process(stream io.ReadCloser, results chan Result) (err e
 	for _, entity := range entities {
 		for _, value := range entity.Metric.Value {
 			metric := model.Metric{}
+			for label, labelValue := range baseLabels {
+				metric[label] = labelValue
+			}
+
 			for label, labelValue := range entity.BaseLabels {
 				metric[model.LabelName(label)] = model.LabelValue(labelValue)
 			}

@@ -21,6 +21,10 @@ import (
 	"time"
 )
 
+const (
+	instance = "instance"
+)
+
 // The state of the given Target.
 type TargetState int
 
@@ -142,7 +146,14 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 			return
 		}
 
-		err = processor.Process(resp.Body, results)
+		// XXX: This is a wart; we need to handle this more gracefully down the
+		//      road, especially once we have service discovery support.
+		baseLabels := model.LabelSet{instance: model.LabelValue(t.Address())}
+		for baseLabel, baseValue := range t.BaseLabels {
+			baseLabels[baseLabel] = baseValue
+		}
+
+		err = processor.Process(resp.Body, baseLabels, results)
 		if err != nil {
 			return
 		}

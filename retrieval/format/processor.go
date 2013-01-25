@@ -14,6 +14,7 @@
 package format
 
 import (
+	"github.com/matttproud/prometheus/model"
 	"io"
 )
 
@@ -22,5 +23,5 @@ import (
 // to the results channel.
 type Processor interface {
 	// Process performs the work on the input and closes the incoming stream.
-	Process(stream io.ReadCloser, results chan Result) (err error)
+	Process(stream io.ReadCloser, baseLabels model.LabelSet, results chan Result) (err error)
 }

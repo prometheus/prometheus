@@ -15,6 +15,7 @@ package format
 
 import (
 	"fmt"
+	"github.com/matttproud/prometheus/model"
 	"github.com/matttproud/prometheus/utility/test"
 	"io/ioutil"
 	"strings"
@@ -42,7 +43,7 @@ func testProcessor001Process(t test.Tester) {
 			close(c)
 		}(inputChannel)
 		reader := strings.NewReader(scenario.in)
-		err := Processor001.Process(ioutil.NopCloser(reader), inputChannel)
+		err := Processor001.Process(ioutil.NopCloser(reader), model.LabelSet{}, inputChannel)
 
 		if scenario.err != nil && err != nil {
 			if scenario.err.Error() != err.Error() {
