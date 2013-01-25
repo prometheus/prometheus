@@ -316,7 +316,7 @@ func (node *VectorAggregation) Eval(timestamp *time.Time) Vector {
 }
 
 func (node *VectorLiteral) Eval(timestamp *time.Time) Vector {
-	values, err := persistence.GetValueAtTime(node.labels, timestamp, &stalenessPolicy)
+	values, err := persistenceAdapter.GetValueAtTime(node.labels, timestamp)
 	if err != nil {
 		log.Printf("Unable to get vector values")
 		return Vector{}
@@ -504,7 +504,7 @@ func (node *MatrixLiteral) Eval(timestamp *time.Time) Matrix {
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: *timestamp,
 	}
-	values, err := persistence.GetRangeValues(node.labels, interval, &stalenessPolicy)
+	values, err := persistenceAdapter.GetRangeValues(node.labels, interval)
 	if err != nil {
 		log.Printf("Unable to get values for vector interval")
 		return Matrix{}
@@ -517,7 +517,7 @@ func (node *MatrixLiteral) EvalBoundaries(timestamp *time.Time) Matrix {
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: *timestamp,
 	}
-	values, err := persistence.GetBoundaryValues(node.labels, interval, &stalenessPolicy)
+	values, err := persistenceAdapter.GetBoundaryValues(node.labels, interval)
 	if err != nil {
 		log.Printf("Unable to get boundary values for vector interval")
 		return Matrix{}
