@@ -17,6 +17,7 @@ import (
 	"container/heap"
 	"github.com/matttproud/prometheus/config"
 	"github.com/matttproud/prometheus/model"
+	"github.com/matttproud/prometheus/retrieval/format"
 	"log"
 	"time"
 )
@@ -32,10 +33,10 @@ type TargetManager interface {
 type targetManager struct {
 	requestAllowance chan bool
 	pools            map[time.Duration]*TargetPool
-	results          chan Result
+	results          chan format.Result
 }
 
-func NewTargetManager(results chan Result, requestAllowance int) TargetManager {
+func NewTargetManager(results chan format.Result, requestAllowance int) TargetManager {
 	return &targetManager{
 		requestAllowance: make(chan bool, requestAllowance),
 		results:          results,
@@ -84,7 +85,7 @@ func (m *targetManager) AddTargetsFromConfig(config *config.Config) {
 			}
 
 			for _, endpoint := range configTargets.Endpoints {
-				target := NewTarget(endpoint, time.Second*5, interval, baseLabels)
+				target := NewTarget(endpoint, interval, time.Second*5, baseLabels)
 				m.Add(target)
 			}
 		}

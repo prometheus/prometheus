@@ -11,15 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+package format
 
 import (
-	"testing"
+	"github.com/matttproud/prometheus/model"
 )
 
-func TestLoadFromFile(t *testing.T) {
-	_, err := LoadFromFile("file-does-not-exist.conf")
-	if err == nil {
-		t.Error(err)
-	}
+// Result encapsulates the outcome from processing a given sample from a
+// source.
+type Result struct {
+	Err    error
+	Sample model.Sample
 }

@@ -11,15 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+package format
 
 import (
 	"testing"
 )
 
-func TestLoadFromFile(t *testing.T) {
-	_, err := LoadFromFile("file-does-not-exist.conf")
-	if err == nil {
-		t.Error(err)
-	}
+func TestInterface(t *testing.T) {
+	var _ Registry = &registry{}
 }

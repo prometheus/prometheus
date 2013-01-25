@@ -11,15 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+package format
 
 import (
-	"testing"
+	"github.com/matttproud/prometheus/model"
+	"io"
 )
 
-func TestLoadFromFile(t *testing.T) {
-	_, err := LoadFromFile("file-does-not-exist.conf")
-	if err == nil {
-		t.Error(err)
-	}
+// Processor is responsible for decoding the actual message responses from
+// stream into a format that can be consumed with the end result written
+// to the results channel.
+type Processor interface {
+	// Process performs the work on the input and closes the incoming stream.
+	Process(stream io.ReadCloser, baseLabels model.LabelSet, results chan Result) (err error)
 }
