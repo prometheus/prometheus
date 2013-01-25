@@ -65,7 +65,7 @@ func main() {
 
 	ruleResults := make(chan *rules.Result, 4096)
 
-	ast.SetPersistence(persistence)
+	ast.SetPersistence(persistence, nil)
 	ruleManager := rules.NewRuleManager(ruleResults, conf.Global.EvaluationInterval)
 	err = ruleManager.AddRulesFromConfig(conf)
 	if err != nil {

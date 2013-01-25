@@ -173,7 +173,7 @@ func TestExpressions(t *testing.T) {
 	}()
 
 	storeMatrix(persistence, testMatrix)
-	ast.SetPersistence(persistence)
+	ast.SetPersistence(persistence, nil)
 
 	for _, exprTest := range expressionTests {
 		expectedLines := annotateWithTime(exprTest.output)
