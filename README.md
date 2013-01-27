@@ -2,10 +2,20 @@
 
 Bedecke deinen Himmel, Zeus!  A new kid is in town.
 
+Prometheus is a generic time series collection and computation server that is
+useful in the following fields:
+
+1. Industrial Experimentation / Real-Time Behavioral Validation / Software Release Qualification
+2. Econometric and Natural Sciences
+3. Operational Concerns and Monitoring
+
+The system is designed to collect telemetry from named targets on given
+intervals, evaluate rule expressions, display the results, and trigger an
+action if some condition is observed to be true.
 
 ## Prerequisites
 
-  1. Go 1.0.X.
+  1. Go 1.0.X. [GVM](https://github.com/moovweb/gvm) is highly recommended as well.
   2. LevelDB: (https://code.google.com/p/leveldb/).
   3. Protocol Buffers Compiler: (http://code.google.com/p/protobuf/).
   4. goprotobuf: the code generator and runtime library: (http://code.google.com/p/goprotobuf/).
@@ -17,19 +27,8 @@ Bedecke deinen Himmel, Zeus!  A new kid is in town.
 
 For basic help how to get started:
 
+  * For Linux users, please consult the Travis CI configuration in _.travis.yml_.
   * [Getting started on Mac OSX](guides/getting-started-osx.md)
-
-
-## Initial Hurdles
-
-  1. A bit of this grew organically without an easy way of binding it all together.  The tests will pass but slowly.  They were not optimized for speed but end-to-end coverage of the whole storage model.  This is something immediate to fix.
-  2. Protocol Buffer generator for Go changed emitted output API.  This will need to be fixed before other contributors can participate.
-
-
-## Milestones
-
-  1. In-memory archive, basic rule language, simple computation engine, and naive exposition system.
-
 
 ## License
 
