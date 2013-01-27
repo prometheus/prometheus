@@ -3,7 +3,7 @@ package ast
 import (
 	"errors"
 	"fmt"
-	"github.com/matttproud/prometheus/model"
+	"github.com/prometheus/prometheus/model"
 	"time"
 )
 

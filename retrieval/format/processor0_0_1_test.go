@@ -16,8 +16,8 @@ package format
 import (
 	"container/list"
 	"fmt"
-	"github.com/matttproud/prometheus/model"
-	"github.com/matttproud/prometheus/utility/test"
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/utility/test"
 	"io/ioutil"
 	"strings"
 	"testing"

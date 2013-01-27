@@ -15,7 +15,7 @@ package retrieval
 
 import (
 	"container/heap"
-	"github.com/matttproud/prometheus/utility/test"
+	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
 )

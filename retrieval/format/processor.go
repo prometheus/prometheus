@@ -14,7 +14,7 @@
 package format
 
 import (
-	"github.com/matttproud/prometheus/model"
+	"github.com/prometheus/prometheus/model"
 	"io"
 )
 

@@ -2,8 +2,8 @@ package rules
 
 import (
 	"fmt"
-	"github.com/matttproud/prometheus/model"
-	"github.com/matttproud/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/rules/ast"
 	"time"
 )
 

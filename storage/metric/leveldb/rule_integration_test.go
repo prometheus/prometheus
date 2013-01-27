@@ -15,9 +15,9 @@ package leveldb
 
 import (
 	"fmt"
-	"github.com/matttproud/prometheus/model"
-	"github.com/matttproud/prometheus/storage/metric"
-	"github.com/matttproud/prometheus/utility/test"
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/utility/test"
 	"io/ioutil"
 	"os"
 	"testing"

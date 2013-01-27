@@ -14,9 +14,9 @@
 package leveldb
 
 import (
-	"github.com/matttproud/prometheus/coding"
-	dto "github.com/matttproud/prometheus/model/generated"
-	"github.com/matttproud/prometheus/storage/raw/leveldb"
+	"github.com/prometheus/prometheus/coding"
+	dto "github.com/prometheus/prometheus/model/generated"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
 var (

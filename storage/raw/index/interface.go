@@ -14,7 +14,7 @@
 package index
 
 import (
-	"github.com/matttproud/prometheus/coding"
+	"github.com/prometheus/prometheus/coding"
 )
 
 type MembershipIndex interface {

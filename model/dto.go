@@ -18,7 +18,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
-	dto "github.com/matttproud/prometheus/model/generated"
+	dto "github.com/prometheus/prometheus/model/generated"
 	"io"
 	"sort"
 	"time"
