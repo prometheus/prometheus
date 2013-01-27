@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"github.com/matttproud/prometheus/retrieval/format"
 	"github.com/matttproud/prometheus/utility/test"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func (t fakeTarget) Interval() time.Duration {
 	return t.interval
 }
 
-func (t *fakeTarget) Scrape(e time.Time, r chan Result) error {
+func (t *fakeTarget) Scrape(e time.Time, r chan format.Result) error {
 	t.scrapeCount++
 
 	return nil
@@ -52,7 +53,7 @@ func (t *fakeTarget) scheduledFor() (time time.Time) {
 }
 
 func testTargetManager(t test.Tester) {
-	results := make(chan Result, 5)
+	results := make(chan format.Result, 5)
 	targetManager := NewTargetManager(results, 3)
 
 	target1GroupA := &fakeTarget{
