@@ -2,7 +2,7 @@ package config
 
 import (
 	"fmt"
-	"github.com/matttproud/prometheus/model"
+	"github.com/prometheus/prometheus/model"
 	"strings"
 )
 

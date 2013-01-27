@@ -15,10 +15,10 @@ package leveldb
 
 import (
 	"code.google.com/p/goprotobuf/proto"
-	"github.com/matttproud/prometheus/coding"
-	"github.com/matttproud/prometheus/coding/indexable"
-	"github.com/matttproud/prometheus/model"
-	dto "github.com/matttproud/prometheus/model/generated"
+	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/coding/indexable"
+	"github.com/prometheus/prometheus/model"
+	dto "github.com/prometheus/prometheus/model/generated"
 	"time"
 )
 

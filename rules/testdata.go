@@ -1,9 +1,9 @@
 package rules
 
 import (
-	"github.com/matttproud/prometheus/model"
-	"github.com/matttproud/prometheus/rules/ast"
-	"github.com/matttproud/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/storage/metric"
 	"time"
 )
 

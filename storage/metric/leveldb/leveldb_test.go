@@ -16,9 +16,9 @@ package leveldb
 import (
 	"code.google.com/p/goprotobuf/proto"
 	"fmt"
-	"github.com/matttproud/prometheus/model"
-	dto "github.com/matttproud/prometheus/model/generated"
-	"github.com/matttproud/prometheus/utility/test"
+	"github.com/prometheus/prometheus/model"
+	dto "github.com/prometheus/prometheus/model/generated"
+	"github.com/prometheus/prometheus/utility/test"
 	"io/ioutil"
 	"math"
 	"math/rand"

@@ -14,8 +14,8 @@
 package leveldb
 
 import (
-	index "github.com/matttproud/prometheus/storage/raw/index/leveldb"
-	storage "github.com/matttproud/prometheus/storage/raw/leveldb"
+	index "github.com/prometheus/prometheus/storage/raw/index/leveldb"
+	storage "github.com/prometheus/prometheus/storage/raw/leveldb"
 	"io"
 	"log"
 )
