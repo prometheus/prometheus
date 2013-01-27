@@ -3,7 +3,7 @@ package rules
 import (
 	"errors"
 	"fmt"
-	"github.com/matttproud/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/rules/ast"
 	"io"
 	"os"
 	"strings"

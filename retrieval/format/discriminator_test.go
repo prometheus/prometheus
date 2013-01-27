@@ -15,7 +15,7 @@ package format
 
 import (
 	"fmt"
-	"github.com/matttproud/prometheus/utility/test"
+	"github.com/prometheus/prometheus/utility/test"
 	"net/http"
 	"testing"
 )

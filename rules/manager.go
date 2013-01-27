@@ -14,8 +14,8 @@
 package rules
 
 import (
-	"github.com/matttproud/prometheus/config"
-	"github.com/matttproud/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/rules/ast"
 	"log"
 	"time"
 )

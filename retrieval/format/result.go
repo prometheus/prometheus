@@ -14,7 +14,7 @@
 package format
 
 import (
-	"github.com/matttproud/prometheus/model"
+	"github.com/prometheus/prometheus/model"
 )
 
 // Result encapsulates the outcome from processing a given sample from a

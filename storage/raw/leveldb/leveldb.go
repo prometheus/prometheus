@@ -15,8 +15,8 @@ package leveldb
 
 import (
 	"github.com/jmhodges/levigo"
-	"github.com/matttproud/prometheus/coding"
-	"github.com/matttproud/prometheus/storage/raw"
+	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/storage/raw"
 	"io"
 )
 

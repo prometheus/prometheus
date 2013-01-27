@@ -16,7 +16,7 @@ package format
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/matttproud/prometheus/model"
+	"github.com/prometheus/prometheus/model"
 	"io"
 	"io/ioutil"
 	"time"

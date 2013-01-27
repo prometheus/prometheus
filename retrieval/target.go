@@ -14,9 +14,9 @@ package retrieval
 
 import (
 	"fmt"
-	"github.com/matttproud/prometheus/model"
-	"github.com/matttproud/prometheus/retrieval/format"
 	"github.com/prometheus/client_golang/metrics"
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/retrieval/format"
 	"net/http"
 	"time"
 )

@@ -14,8 +14,8 @@
 package retrieval
 
 import (
-	"github.com/matttproud/prometheus/retrieval/format"
-	"github.com/matttproud/prometheus/utility/test"
+	"github.com/prometheus/prometheus/retrieval/format"
+	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
 )

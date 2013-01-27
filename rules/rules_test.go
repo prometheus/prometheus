@@ -2,8 +2,8 @@ package rules
 
 import (
 	"fmt"
-	"github.com/matttproud/prometheus/rules/ast"
-	"github.com/matttproud/prometheus/storage/metric/leveldb"
+	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/storage/metric/leveldb"
 	"io/ioutil"
 	"os"
 	"strings"
