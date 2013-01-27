@@ -109,7 +109,7 @@ goprotobuf-stamp: go protoc source
 instrumentation: instrumentation-stamp
 
 instrumentation-stamp: go source
-	$(GO_GET) github.com/matttproud/golang_instrumentation
+	$(GO_GET) github.com/prometheus/client_golang
 	touch $@
 
 leveldb: leveldb-stamp

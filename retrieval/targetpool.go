@@ -2,6 +2,7 @@ package retrieval
 
 import (
 	"container/heap"
+	"github.com/matttproud/prometheus/retrieval/format"
 	"log"
 	"time"
 )
@@ -44,7 +45,7 @@ func (p TargetPool) Swap(i, j int) {
 	p.targets[i], p.targets[j] = p.targets[j], p.targets[i]
 }
 
-func (p *TargetPool) Run(results chan Result, interval time.Duration) {
+func (p *TargetPool) Run(results chan format.Result, interval time.Duration) {
 	ticker := time.Tick(interval)
 
 	for {
@@ -62,14 +63,14 @@ func (p TargetPool) Stop() {
 	p.done <- true
 }
 
-func (p *TargetPool) runSingle(earliest time.Time, results chan Result, t Target) {
+func (p *TargetPool) runSingle(earliest time.Time, results chan format.Result, t Target) {
 	p.manager.acquire()
 	defer p.manager.release()
 
 	t.Scrape(earliest, results)
 }
 
-func (p *TargetPool) runIteration(results chan Result) {
+func (p *TargetPool) runIteration(results chan format.Result) {
 	for i := 0; i < p.Len(); i++ {
 		target := heap.Pop(p).(Target)
 		if target == nil {
