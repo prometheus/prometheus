@@ -15,9 +15,9 @@ package retrieval
 
 import (
 	"container/heap"
-	"github.com/matttproud/prometheus/config"
-	"github.com/matttproud/prometheus/model"
-	"github.com/matttproud/prometheus/retrieval/format"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/retrieval/format"
 	"log"
 	"time"
 )

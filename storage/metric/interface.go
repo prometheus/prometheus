@@ -14,7 +14,7 @@
 package metric
 
 import (
-	"github.com/matttproud/prometheus/model"
+	"github.com/prometheus/prometheus/model"
 	"time"
 )
 

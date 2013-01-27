@@ -14,7 +14,7 @@
 package leveldb
 
 import (
-	"github.com/matttproud/prometheus/storage/raw"
+	"github.com/prometheus/prometheus/storage/raw"
 	"testing"
 )
 

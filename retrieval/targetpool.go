@@ -2,7 +2,7 @@ package retrieval
 
 import (
 	"container/heap"
-	"github.com/matttproud/prometheus/retrieval/format"
+	"github.com/prometheus/prometheus/retrieval/format"
 	"log"
 	"time"
 )

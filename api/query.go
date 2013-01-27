@@ -3,8 +3,8 @@ package api
 import (
 	"code.google.com/p/gorest"
 	"errors"
-	"github.com/matttproud/prometheus/rules"
-	"github.com/matttproud/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/rules/ast"
 	"sort"
 	"time"
 )

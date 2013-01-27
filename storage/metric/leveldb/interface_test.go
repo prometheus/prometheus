@@ -14,7 +14,7 @@
 package leveldb
 
 import (
-	"github.com/matttproud/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/metric"
 	"testing"
 )
 
