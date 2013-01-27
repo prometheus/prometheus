@@ -32,11 +32,14 @@ clean:
 format:
 	find . -iname '*.go' | egrep -v "generated|\.(l|y)\.go" | xargs -n1 gofmt -w -s=true
 
+advice:
+	go tool vet -v .
+
 search_index:
 	godoc -index -write_index -index_files='search_index'
 
 documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
-.PHONY: build clean format test
+.PHONY: advice build clean documentation format search_index test
 
