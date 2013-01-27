@@ -14,10 +14,15 @@
 package leveldb
 
 import (
+	"flag"
 	"github.com/jmhodges/levigo"
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage/raw"
 	"io"
+)
+
+var (
+	leveldbFlushOnMutate = flag.Bool("leveldbFlushOnMutate", true, "Whether LevelDB should flush every operation to disk upon mutation before returning (bool).")
 )
 
 type LevelDBPersistence struct {
@@ -54,8 +59,7 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 
 	readOptions := levigo.NewReadOptions()
 	writeOptions := levigo.NewWriteOptions()
-	writeOptions.SetSync(true)
-
+	writeOptions.SetSync(*leveldbFlushOnMutate)
 	p = &LevelDBPersistence{
 		cache:        cache,
 		filterPolicy: filterPolicy,
