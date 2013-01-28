@@ -7,10 +7,14 @@ import (
 	"time"
 )
 
+const (
+	intervalKey = "interval"
+)
+
 type TargetPool struct {
 	done    chan bool
-	targets []Target
 	manager TargetManager
+	targets []Target
 }
 
 func NewTargetPool(m TargetManager) (p *TargetPool) {
@@ -51,7 +55,7 @@ func (p *TargetPool) Run(results chan format.Result, interval time.Duration) {
 	for {
 		select {
 		case <-ticker:
-			p.runIteration(results)
+			p.runIteration(results, interval)
 		case <-p.done:
 			log.Printf("TargetPool exiting...")
 			break
@@ -70,8 +74,13 @@ func (p *TargetPool) runSingle(earliest time.Time, results chan format.Result, t
 	t.Scrape(earliest, results)
 }
 
-func (p *TargetPool) runIteration(results chan format.Result) {
-	for i := 0; i < p.Len(); i++ {
+func (p *TargetPool) runIteration(results chan format.Result, interval time.Duration) {
+	begin := time.Now()
+
+	targetCount := p.Len()
+	finished := make(chan bool, targetCount)
+
+	for i := 0; i < targetCount; i++ {
 		target := heap.Pop(p).(Target)
 		if target == nil {
 			break
@@ -88,6 +97,16 @@ func (p *TargetPool) runIteration(results chan format.Result) {
 		go func() {
 			p.runSingle(now, results, target)
 			heap.Push(p, target)
+			finished <- true
 		}()
 	}
+
+	for i := 0; i < targetCount; i++ {
+		<-finished
+	}
+
+	close(finished)
+
+	duration := float64(time.Now().Sub(begin) / time.Millisecond)
+	retrievalDurations.Add(map[string]string{intervalKey: interval.String()}, duration)
 }
