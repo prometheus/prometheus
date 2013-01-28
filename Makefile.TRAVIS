@@ -140,15 +140,15 @@ rsync-stamp:
 test: test-stamp
 
 test-stamp: preparation source
-	cd ${GOPATH}/src/github.com/matttproud
+	cd ${GOPATH}/src/github.com/prometheus
 	$(MAKE) test
 	touch $@
 
 source: source-stamp
 
 source-stamp:
-	-mkdir -vp ${GOPATH}/src/github.com/matttproud
-	ln -sf $${PWD} ${GOPATH}/src/github.com/matttproud/prometheus
+	-mkdir -vp ${GOPATH}/src/github.com/prometheus
+	ln -sf $${PWD} ${GOPATH}/src/github.com/prometheus/prometheus
 	touch $@
 
 clean:
