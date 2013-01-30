@@ -38,7 +38,10 @@ var (
 
 	targetOperationLatencies = metrics.NewHistogram(networkLatencyHistogram)
 
-	// TODO: Include durations partitioned by target pool intervals.
+	retrievalDurations = metrics.NewHistogram(&metrics.HistogramSpecification{
+		Starts:                metrics.LogarithmicSizedBucketsFor(0, 10000),
+		BucketBuilder:         metrics.AccumulatingBucketBuilder(metrics.EvictAndReplaceWith(10, maths.Average), 100),
+		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99}})
 
 	targetOperations = metrics.NewCounter()
 )
@@ -46,4 +49,5 @@ var (
 func init() {
 	registry.Register("prometheus_target_operations_total", "The total numbers of operations of the various targets that are being monitored.", registry.NilLabels, targetOperations)
 	registry.Register("prometheus_target_operation_latency_ms", "The latencies for various target operations.", registry.NilLabels, targetOperationLatencies)
+	registry.Register("prometheus_targetpool_duration_ms", "The durations for each TargetPool to retrieve state from all included entities.", registry.NilLabels, retrievalDurations)
 }
