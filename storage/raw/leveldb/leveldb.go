@@ -184,6 +184,29 @@ func (l *LevelDBPersistence) GetAll() (pairs []raw.Pair, err error) {
 	return
 }
 
+func (l *LevelDBPersistence) ForAll(fn raw.EachFunc) (err error) {
+	snapshot := l.storage.NewSnapshot()
+	defer l.storage.ReleaseSnapshot(snapshot)
+	readOptions := levigo.NewReadOptions()
+	defer readOptions.Close()
+
+	readOptions.SetSnapshot(snapshot)
+	iterator := l.storage.NewIterator(readOptions)
+	defer iterator.Close()
+	iterator.SeekToFirst()
+
+	for iterator := iterator; iterator.Valid(); iterator.Next() {
+		fn(&raw.Pair{Left: iterator.Key(), Right: iterator.Value()})
+
+		err = iterator.GetError()
+		if err != nil {
+			return
+		}
+	}
+
+	return
+}
+
 func (i *iteratorCloser) Close() (err error) {
 	defer func() {
 		if i.storage != nil {

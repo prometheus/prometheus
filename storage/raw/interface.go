@@ -22,10 +22,13 @@ type Pair struct {
 	Right []byte
 }
 
+type EachFunc func(pair *Pair)
+
 type Persistence interface {
 	Has(key coding.Encoder) (bool, error)
 	Get(key coding.Encoder) ([]byte, error)
 	GetAll() ([]Pair, error)
+	ForAll(fn EachFunc) error
 	Drop(key coding.Encoder) error
 	Put(key, value coding.Encoder) error
 	Close() error

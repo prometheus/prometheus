@@ -2,6 +2,7 @@ package api
 
 import (
 	"code.google.com/p/gorest"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 type MetricsService struct {
@@ -9,4 +10,13 @@ type MetricsService struct {
 
 	query      gorest.EndPoint `method:"GET" path:"/query?{expr:string}&{json:string}" output:"string"`
 	queryRange gorest.EndPoint `method:"GET" path:"/query_range?{expr:string}&{end:int64}&{range:int64}&{step:int64}" output:"string"`
+	metrics    gorest.EndPoint `method:"GET" path:"/metrics" output:"string"`
+
+	persistence metric.MetricPersistence
+}
+
+func NewMetricsService(p metric.MetricPersistence) *MetricsService {
+	return &MetricsService{
+		persistence: p,
+	}
 }
