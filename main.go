@@ -48,8 +48,7 @@ func main() {
 
 	persistence, err := leveldb.NewLevelDBMetricPersistence(*metricsStoragePath)
 	if err != nil {
-		log.Print(err)
-		os.Exit(1)
+		log.Fatalf("Error opening storage: %v", err)
 	}
 
 	go func() {
@@ -78,7 +77,7 @@ func main() {
 	}
 
 	go func() {
-		gorest.RegisterService(new(api.MetricsService))
+		gorest.RegisterService(api.NewMetricsService(persistence))
 		exporter := registry.DefaultRegistry.YieldExporter()
 
 		http.Handle("/", gorest.Handle())

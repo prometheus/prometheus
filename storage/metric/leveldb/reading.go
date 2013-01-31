@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/utility"
 	"time"
 )
@@ -624,5 +625,29 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m *model.Metric, i *model.Inte
 		})
 	}
 
+	return
+}
+
+func (l *LevelDBMetricPersistence) GetAllMetricNames() (metricNames []string, err error) {
+	metricNameMap := map[string]bool{}
+
+	err = l.labelSetToFingerprints.ForAll(func(pair *raw.Pair) {
+		unmarshaled := &dto.LabelPair{}
+		err = proto.Unmarshal(pair.Left, unmarshaled)
+		if err != nil {
+			return
+		}
+
+		if *unmarshaled.Name == "name" {
+			metricNameMap[*unmarshaled.Value] = true
+		}
+	})
+	if err != nil {
+		return
+	}
+
+	for labelName := range metricNameMap {
+		metricNames = append(metricNames, labelName)
+	}
 	return
 }

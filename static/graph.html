@@ -22,7 +22,12 @@
         <div class="grouping_box">
           <form action="/api/query_range" method="GET" class="query_form">
             <label for="expr{{id}}">Expression:</label>
-            <input type="text" name="expr" id="expr{{id}}" size="80" value="{{expr}}"><br>
+            <input type="text" name="expr" id="expr{{id}}" size="80" value="{{expr}}">
+            <select name="insert_metric">
+                <option value="">- Insert Metric -</option>
+            </select>
+
+            <br>
 
             <label for="range_input{{id}}">Range:</label>
             <input type="button" value="-" name="dec_range">
