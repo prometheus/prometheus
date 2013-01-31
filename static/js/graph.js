@@ -327,6 +327,9 @@ function init() {
   });
 
   var options = parseGraphOptionsFromUrl();
+  if (options.length == 0) {
+    options.push({});
+  }
   for (var i = 0; i < options.length; i++) {
     addGraph(options[i]);
   }
