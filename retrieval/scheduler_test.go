@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"github.com/prometheus/prometheus/utility"
 	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
@@ -28,19 +29,6 @@ func (h fakeHealthReporter) State() (state TargetState) {
 	state = h.stateQueue[h.index]
 
 	h.index++
-
-	return
-}
-
-type fakeTimeProvider struct {
-	index     int
-	timeQueue []time.Time
-}
-
-func (t *fakeTimeProvider) Now() (time time.Time) {
-	time = t.timeQueue[t.index]
-
-	t.index++
 
 	return
 }
@@ -77,10 +65,7 @@ func testHealthScheduler(t test.Tester) {
 	}
 
 	for i, scenario := range scenarios {
-		provider := &fakeTimeProvider{}
-		for _, time := range scenario.preloadedTimes {
-			provider.timeQueue = append(provider.timeQueue, time)
-		}
+		provider := test.NewInstantProvider(scenario.preloadedTimes)
 
 		reporter := fakeHealthReporter{}
 		for _, state := range scenario.futureHealthState {
@@ -90,12 +75,12 @@ func testHealthScheduler(t test.Tester) {
 			t.Fatalf("%d. times and health reports and next time lengths were not equal.", i)
 		}
 
-		timer := timer{
-			provider: provider,
+		time := utility.Time{
+			Provider: provider,
 		}
 
 		scheduler := healthScheduler{
-			timer:        timer,
+			time:         time,
 			target:       reporter,
 			scheduledFor: now,
 		}

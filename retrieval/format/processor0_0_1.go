@@ -17,9 +17,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/utility"
 	"io"
 	"io/ioutil"
-	"time"
 )
 
 const (
@@ -41,6 +41,7 @@ var (
 
 // processor001 is responsible for handling API version 0.0.1.
 type processor001 struct {
+	time utility.Time
 }
 
 // entity001 represents a the JSON structure that 0.0.1 uses.
@@ -72,8 +73,7 @@ func (p *processor001) Process(stream io.ReadCloser, baseLabels model.LabelSet, 
 		return
 	}
 
-	// Swap this to the testable timer.
-	now := time.Now()
+	now := p.time.Now()
 
 	// TODO(matt): This outer loop is a great basis for parallelization.
 	for _, entity := range entities {

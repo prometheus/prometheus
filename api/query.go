@@ -15,7 +15,7 @@ func (serv MetricsService) Query(Expr string, Json string) (result string) {
 		return ast.ErrorToJSON(err)
 	}
 
-	timestamp := time.Now()
+	timestamp := serv.time.Now()
 
 	rb := serv.ResponseBuilder()
 	var format ast.OutputFormat
@@ -42,7 +42,7 @@ func (serv MetricsService) QueryRange(Expr string, End int64, Range int64, Step 
 	rb.SetContentType(gorest.Application_Json)
 
 	if End == 0 {
-		End = time.Now().Unix()
+		End = serv.time.Now().Unix()
 	}
 
 	if Step < 1 {

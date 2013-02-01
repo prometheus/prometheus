@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"github.com/prometheus/prometheus/utility"
 	"math"
 	"time"
 )
@@ -26,32 +27,6 @@ const (
 	// The maximum allowed backoff time.
 	MAXIMUM_BACKOFF_VALUE = 30 * time.Minute
 )
-
-// A basic interface only useful in testing contexts for dispensing the time
-// in a controlled manner.
-type instantProvider interface {
-	// The current instant.
-	Now() time.Time
-}
-
-// timer is a simple means for fluently wrapping around standard Go timekeeping
-// mechanisms to enhance testability without compromising code readability.
-//
-// A timer is sufficient for use on bare initialization.  A provider should be
-// set only for test contexts.  When not provided, a timer emits the current
-// system time.
-type timer struct {
-	// The underlying means through which time is provided, if supplied.
-	provider instantProvider
-}
-
-// Emit the current instant.
-func (t timer) Now() time.Time {
-	if t.provider == nil {
-		return time.Now()
-	}
-	return t.provider.Now()
-}
 
 // scheduler is an interface that various scheduling strategies must fulfill
 // in order to set the scheduling order for a target.
@@ -83,7 +58,7 @@ type scheduler interface {
 type healthScheduler struct {
 	scheduledFor     time.Time
 	target           healthReporter
-	timer            timer
+	time             utility.Time
 	unreachableCount int
 }
 
@@ -138,6 +113,6 @@ func (s *healthScheduler) Reschedule(e time.Time, f TargetState) {
 			backoff = exponential
 		}
 
-		s.scheduledFor = s.timer.Now().Add(backoff)
+		s.scheduledFor = s.time.Now().Add(backoff)
 	}
 }
