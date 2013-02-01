@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-TEST_ARTIFACTS = prometheus search_index
+TEST_ARTIFACTS = prometheus prometheus.build search_index
 
 all: test
 
@@ -21,6 +21,7 @@ test: build
 build:
 	$(MAKE) -C model
 	go build ./...
+	go build -o prometheus.build
 
 clean:
 	rm -rf $(TEST_ARTIFACTS)
