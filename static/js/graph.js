@@ -263,9 +263,9 @@ Prometheus.Graph.prototype.showGraph = function() {
 Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
   var self = this;
   if (self.data.length == 0) { return; }
+  self.legend.empty();
   if (self.rickshawGraph == null || reloadGraph) {
     self.graph.empty();
-    self.legend.empty();
     self.showGraph();
   } else {
     self.rickshawGraph.configure({
