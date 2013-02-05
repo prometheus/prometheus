@@ -244,7 +244,8 @@ Prometheus.Graph.prototype.showGraph = function() {
   var self = this;
   self.rickshawGraph = new Rickshaw.Graph({
     element: self.graph[0],
-    height: 800,
+    height: Math.max($(window).height() - 200, 100),
+    width: Math.max($(window).width() - 200, 200),
     renderer: (self.stacked.is(":checked") ? "stack" : "line"),
     interpolation: "linear",
     series: self.data
