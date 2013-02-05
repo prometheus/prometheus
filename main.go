@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage/metric/leveldb"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 )
