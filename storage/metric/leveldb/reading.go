@@ -15,10 +15,12 @@ package leveldb
 
 import (
 	"code.google.com/p/goprotobuf/proto"
+	"errors"
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 	"time"
@@ -624,5 +626,60 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m *model.Metric, i *model.Inte
 		})
 	}
 
+	return
+}
+
+type MetricKeyDecoder struct{}
+
+func (d *MetricKeyDecoder) DecodeKey(in interface{}) (out interface{}, err error) {
+	unmarshaled := &dto.LabelPair{}
+	err = proto.Unmarshal(in.([]byte), unmarshaled)
+	if err != nil {
+		return
+	}
+	return unmarshaled, nil
+}
+
+func (d *MetricKeyDecoder) DecodeValue(in interface{}) (out interface{}, err error) {
+	return
+}
+
+type AcceptAllFilter struct{}
+
+func (f *AcceptAllFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
+	return storage.ACCEPT
+}
+
+type CollectMetricNamesOp struct {
+	MetricNameMap map[string]bool
+}
+
+func (op *CollectMetricNamesOp) Operate(key, value interface{}) (err *storage.OperatorError) {
+	unmarshaled, ok := key.(*dto.LabelPair)
+	if !ok {
+		return &storage.OperatorError{
+			error:       errors.New("Key is not of correct type"),
+			Continuable: true,
+		}
+	}
+	if *unmarshaled.Name == "name" {
+		op.MetricNameMap[*unmarshaled.Value] = true
+	}
+	return
+}
+
+func (l *LevelDBMetricPersistence) GetAllMetricNames() (metricNames []string, err error) {
+	metricNamesOp := &CollectMetricNamesOp{
+		MetricNameMap: map[string]bool{},
+	}
+
+	_, err = l.labelSetToFingerprints.ForEach(&MetricKeyDecoder{}, &AcceptAllFilter{}, metricNamesOp)
+	if err != nil {
+		return
+	}
+
+	for labelName := range metricNamesOp.MetricNameMap {
+		metricNames = append(metricNames, labelName)
+	}
 	return
 }
