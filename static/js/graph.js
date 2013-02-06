@@ -69,6 +69,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.expr = graphWrapper.find("input[name=expr]");
   self.rangeInput = self.queryForm.find("input[name=range_input]");
   self.stacked = self.queryForm.find("input[name=stacked]");
+  self.insertMetric = self.queryForm.find("select[name=insert_metric]");
 
   self.graph = graphWrapper.find(".graph");
   self.legend = graphWrapper.find(".legend");
@@ -81,18 +82,40 @@ Prometheus.Graph.prototype.initialize = function() {
 
   self.queryForm.find("input[name=inc_range]").click(function() { self.increaseRange(); });
   self.queryForm.find("input[name=dec_range]").click(function() { self.decreaseRange(); });
+  self.insertMetric.change(function() {
+      self.expr.val(self.expr.val() + self.insertMetric.val());
+  });
   self.expr.focus(); // TODO: move to external Graph method.
+
+  self.populateInsertableMetrics();
 
   if (self.expr.val()) {
     self.submitQuery();
   }
 };
 
+Prometheus.Graph.prototype.populateInsertableMetrics = function() {
+  var self = this;
+  $.ajax({
+      method: "GET",
+      url: "/api/metrics",
+      dataType: "json",
+      success: function(json, textStatus) {
+        for (var i = 0; i < json.length; i++) {
+          self.insertMetric[0].options.add(new Option(json[i], json[i]));
+        }
+      },
+      error: function() {
+        alert("Error loading available metrics!");
+      },
+  });
+};
+
 Prometheus.Graph.prototype.onChange = function(handler) {
   this.changeHandler = handler;
 };
 
-Prometheus.Graph.prototype.getOptions = function(handler) {
+Prometheus.Graph.prototype.getOptions = function() {
   var self = this;
   var options = {};
 
@@ -306,8 +329,6 @@ function storeGraphOptionsInUrl(options) {
   var allGraphsOptions = [];
   for (var i = 0; i < graphs.length; i++) {
     allGraphsOptions.push(graphs[i].getOptions());
-    console.log(graphs[i].id);
-    console.log(graphs[i].getOptions());
   }
   var optionsJSON = JSON.stringify(allGraphsOptions);
   window.location.hash = encodeURIComponent(optionsJSON);
