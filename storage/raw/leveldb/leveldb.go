@@ -17,6 +17,7 @@ import (
 	"flag"
 	"github.com/jmhodges/levigo"
 	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"io"
 )
@@ -228,5 +229,46 @@ func (l *LevelDBPersistence) GetIterator() (i *levigo.Iterator, c io.Closer, err
 		storage:     l.storage,
 	}
 
+	return
+}
+
+func (l *LevelDBPersistence) ForEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error) {
+	iterator, closer, err := l.GetIterator()
+	if err != nil {
+		return
+	}
+	defer closer.Close()
+
+	for iterator.SeekToFirst(); iterator.Valid(); iterator.Next() {
+		err = iterator.GetError()
+		if err != nil {
+			return
+		}
+
+		decodedKey, decodeErr := decoder.DecodeKey(iterator.Key())
+		if decodeErr != nil {
+			continue
+		}
+		decodedValue, decodeErr := decoder.DecodeValue(iterator.Value())
+		if decodeErr != nil {
+			continue
+		}
+
+		switch filter.Filter(decodedKey, decodedValue) {
+		case storage.STOP:
+			return
+		case storage.SKIP:
+			continue
+		case storage.ACCEPT:
+			opErr := operator.Operate(decodedKey, decodedValue)
+			if opErr != nil {
+				if opErr.Continuable {
+					continue
+				}
+				break
+			}
+		}
+	}
+	scannedEntireCorpus = true
 	return
 }
