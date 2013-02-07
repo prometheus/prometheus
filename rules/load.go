@@ -92,10 +92,10 @@ func LoadRulesFromString(rulesString string) ([]*Rule, error) {
 
 func LoadRulesFromFile(fileName string) ([]*Rule, error) {
 	rulesReader, err := os.Open(fileName)
-	defer rulesReader.Close()
 	if err != nil {
 		return []*Rule{}, err
 	}
+	defer rulesReader.Close()
 	return LoadRulesFromReader(rulesReader)
 }
 
