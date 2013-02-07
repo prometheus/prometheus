@@ -216,13 +216,13 @@ func yylex() int {
 
 	return 0
 }
-var S_GLOBAL yystartcondition = 1024
-var S_JOB yystartcondition = 1026
-var S_GLOBAL_LABELS yystartcondition = 1025
-var S_TARGET_LABELS yystartcondition = 1028
-var S_COMMENTS yystartcondition = 1029
 var S_TARGETS yystartcondition = 1027
-var yystartconditionexclmap = map[yystartcondition]bool{S_GLOBAL: false, S_JOB: false, S_GLOBAL_LABELS: false, S_TARGET_LABELS: false, S_COMMENTS: true, S_TARGETS: false, }
+var S_GLOBAL_LABELS yystartcondition = 1025
+var S_JOB yystartcondition = 1026
+var S_TARGET_LABELS yystartcondition = 1028
+var S_GLOBAL yystartcondition = 1024
+var S_COMMENTS yystartcondition = 1029
+var yystartconditionexclmap = map[yystartcondition]bool{S_COMMENTS: true, S_TARGETS: false, S_GLOBAL_LABELS: false, S_JOB: false, S_TARGET_LABELS: false, S_GLOBAL: false, }
 var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
 	defer func() {
 		if r := recover(); r != nil {
