@@ -15,8 +15,8 @@
         package rules
 
         import "fmt"
-        import "github.com/matttproud/prometheus/model"
-        import "github.com/matttproud/prometheus/rules/ast"
+        import "github.com/prometheus/prometheus/model"
+        import "github.com/prometheus/prometheus/rules/ast"
 %}
 
 %union {
