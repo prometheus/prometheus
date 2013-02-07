@@ -7,6 +7,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
 	"log"
+	"net/http"
 	"sort"
 	"time"
 )
@@ -74,14 +75,14 @@ func (serv MetricsService) Metrics() string {
 	rb.SetContentType(gorest.Application_Json)
 	if err != nil {
 		log.Printf("Error loading metric names: %v", err)
-		rb.SetResponseCode(500)
+		rb.SetResponseCode(http.StatusInternalServerError)
 		return err.Error()
 	}
 	sort.Strings(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
 		log.Printf("Error marshalling metric names: %v", err)
-		rb.SetResponseCode(500)
+		rb.SetResponseCode(http.StatusInternalServerError)
 		return err.Error()
 	}
 	return string(resultBytes)

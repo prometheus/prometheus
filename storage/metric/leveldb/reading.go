@@ -1,4 +1,4 @@
-// Copyright 2012 Prometheus Team
+// Copyright 2013 Prometheus Team
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,7 +15,6 @@ package leveldb
 
 import (
 	"code.google.com/p/goprotobuf/proto"
-	"errors"
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
@@ -644,42 +643,34 @@ func (d *MetricKeyDecoder) DecodeValue(in interface{}) (out interface{}, err err
 	return
 }
 
-type AcceptAllFilter struct{}
+type MetricNamesFilter struct{}
 
-func (f *AcceptAllFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
-	return storage.ACCEPT
+func (f *MetricNamesFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
+	unmarshaled, ok := key.(*dto.LabelPair)
+	if ok && *unmarshaled.Name == "name" {
+		return storage.ACCEPT
+	}
+	return storage.SKIP
 }
 
 type CollectMetricNamesOp struct {
-	MetricNameMap map[string]bool
+	metricNames []string
 }
 
 func (op *CollectMetricNamesOp) Operate(key, value interface{}) (err *storage.OperatorError) {
-	unmarshaled, ok := key.(*dto.LabelPair)
-	if !ok {
-		return &storage.OperatorError{
-			error:       errors.New("Key is not of correct type"),
-			Continuable: true,
-		}
-	}
-	if *unmarshaled.Name == "name" {
-		op.MetricNameMap[*unmarshaled.Value] = true
-	}
+	unmarshaled := key.(*dto.LabelPair)
+	op.metricNames = append(op.metricNames, *unmarshaled.Value)
 	return
 }
 
 func (l *LevelDBMetricPersistence) GetAllMetricNames() (metricNames []string, err error) {
-	metricNamesOp := &CollectMetricNamesOp{
-		MetricNameMap: map[string]bool{},
-	}
+	metricNamesOp := &CollectMetricNamesOp{}
 
-	_, err = l.labelSetToFingerprints.ForEach(&MetricKeyDecoder{}, &AcceptAllFilter{}, metricNamesOp)
+	_, err = l.labelSetToFingerprints.ForEach(&MetricKeyDecoder{}, &MetricNamesFilter{}, metricNamesOp)
 	if err != nil {
 		return
 	}
 
-	for labelName := range metricNamesOp.MetricNameMap {
-		metricNames = append(metricNames, labelName)
-	}
+	metricNames = metricNamesOp.metricNames
 	return
 }
