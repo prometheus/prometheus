@@ -15,7 +15,7 @@
         package config
 
         import "fmt"
-        import "github.com/matttproud/prometheus/model"
+        import "github.com/prometheus/prometheus/model"
 %}
 
 %union {
