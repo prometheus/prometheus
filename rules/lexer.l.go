@@ -10,7 +10,7 @@ import (
 	"sort"
 )
 import (
-"github.com/prometheus/prometheus/model"
+"github.com/matttproud/prometheus/model"
 "strconv"
 )
 

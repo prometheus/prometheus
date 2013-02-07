@@ -1,11 +1,11 @@
 
-//line parser.y:2
+//line parser.y:15
         package config
 
         import "fmt"
-        import "github.com/prometheus/prometheus/model"
+        import "github.com/matttproud/prometheus/model"
 
-//line parser.y:8
+//line parser.y:21
 type yySymType struct {
 	yys int
         num model.SampleValue
@@ -39,7 +39,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyMaxDepth = 200
 
-//line parser.y:102
+//line parser.y:115
 
 
 //line yacctab:1
@@ -359,61 +359,61 @@ yydefault:
 	switch yynt {
 
 	case 4:
-		//line parser.y:32
+		//line parser.y:45
 		{ PopJob() }
 	case 7:
-		//line parser.y:40
+		//line parser.y:53
 		{ parsedConfig.Global.SetOption(yyS[yypt-2].str, yyS[yypt-0].str) }
 	case 8:
-		//line parser.y:42
+		//line parser.y:55
 		{ parsedConfig.Global.SetLabels(yyS[yypt-0].labelSet) }
 	case 9:
-		//line parser.y:44
+		//line parser.y:57
 		{ parsedConfig.Global.AddRuleFiles(yyS[yypt-0].stringSlice) }
 	case 10:
-		//line parser.y:48
+		//line parser.y:61
 		{ yyVAL.labelSet = yyS[yypt-1].labelSet }
 	case 11:
-		//line parser.y:50
+		//line parser.y:63
 		{ yyVAL.labelSet = model.LabelSet{} }
 	case 12:
-		//line parser.y:54
+		//line parser.y:67
 		{ yyVAL.labelSet = yyS[yypt-0].labelSet }
 	case 13:
-		//line parser.y:56
+		//line parser.y:69
 		{ for k, v := range yyS[yypt-0].labelSet { yyVAL.labelSet[k] = v } }
 	case 14:
-		//line parser.y:60
+		//line parser.y:73
 		{ yyVAL.labelSet = model.LabelSet{ model.LabelName(yyS[yypt-2].str): model.LabelValue(yyS[yypt-0].str) } }
 	case 15:
-		//line parser.y:64
+		//line parser.y:77
 		{ yyVAL.stringSlice = yyS[yypt-0].stringSlice }
 	case 18:
-		//line parser.y:72
+		//line parser.y:85
 		{ PushJobOption(yyS[yypt-2].str, yyS[yypt-0].str) }
 	case 19:
-		//line parser.y:74
+		//line parser.y:87
 		{ PushJobTargets() }
 	case 22:
-		//line parser.y:82
+		//line parser.y:95
 		{ PushTargetEndpoints(yyS[yypt-0].stringSlice) }
 	case 23:
-		//line parser.y:84
+		//line parser.y:97
 		{ PushTargetLabels(yyS[yypt-0].labelSet) }
 	case 24:
-		//line parser.y:88
+		//line parser.y:101
 		{ yyVAL.stringSlice = yyS[yypt-0].stringSlice }
 	case 25:
-		//line parser.y:92
+		//line parser.y:105
 		{ yyVAL.stringSlice = yyS[yypt-1].stringSlice }
 	case 26:
-		//line parser.y:94
+		//line parser.y:107
 		{ yyVAL.stringSlice = []string{} }
 	case 27:
-		//line parser.y:98
+		//line parser.y:111
 		{ yyVAL.stringSlice = []string{yyS[yypt-0].str} }
 	case 28:
-		//line parser.y:100
+		//line parser.y:113
 		{ yyVAL.stringSlice = append(yyVAL.stringSlice, yyS[yypt-0].str) }
 	}
 	goto yystack /* stack new state and value */
