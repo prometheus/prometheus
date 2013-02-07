@@ -2,9 +2,11 @@ package api
 
 import (
 	"code.google.com/p/gorest"
+	"encoding/json"
 	"errors"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
+	"log"
 	"sort"
 	"time"
 )
@@ -64,4 +66,23 @@ func (serv MetricsService) QueryRange(Expr string, End int64, Range int64, Step 
 
 	sort.Sort(matrix)
 	return ast.TypedValueToJSON(matrix, "matrix")
+}
+
+func (serv MetricsService) Metrics() string {
+	metricNames, err := serv.persistence.GetAllMetricNames()
+	rb := serv.ResponseBuilder()
+	rb.SetContentType(gorest.Application_Json)
+	if err != nil {
+		log.Printf("Error loading metric names: %v", err)
+		rb.SetResponseCode(500)
+		return err.Error()
+	}
+	sort.Strings(metricNames)
+	resultBytes, err := json.Marshal(metricNames)
+	if err != nil {
+		log.Printf("Error marshalling metric names: %v", err)
+		rb.SetResponseCode(500)
+		return err.Error()
+	}
+	return string(resultBytes)
 }

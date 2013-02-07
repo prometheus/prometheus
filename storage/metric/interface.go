@@ -46,6 +46,8 @@ type MetricPersistence interface {
 	GetBoundaryValues(*model.Metric, *model.Interval, *StalenessPolicy) (*model.Sample, *model.Sample, error)
 	GetRangeValues(*model.Metric, *model.Interval, *StalenessPolicy) (*model.SampleSet, error)
 
+	GetAllMetricNames() ([]string, error)
+
 	// DIAGNOSTIC FUNCTIONS PENDING DELETION BELOW HERE
 
 	GetAllLabelNames() ([]string, error)
