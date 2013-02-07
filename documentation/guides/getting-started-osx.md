@@ -39,14 +39,14 @@ brew install leveldb protobuf
 go get code.google.com/p/goprotobuf/{proto,protoc-gen-go}
 go get github.com/jmhodges/levigo
 go get code.google.com/p/gorest
-go get github.com/matttproud/{prometheus,golang_instrumentation}
+go get github.com/prometheus/{prometheus,client_golang}
 ```
 
 
 ## Build
 
 ```bash
-cd ${GOPATH}/src/github.com/matttproud/prometheus
+cd ${GOPATH}/src/github.com/prometheus/prometheus
 make build
 ```
 

@@ -15,7 +15,7 @@
 package rules
 
 import (
-        "github.com/matttproud/prometheus/model"
+        "github.com/prometheus/prometheus/model"
         "strconv"
 )
 %}
