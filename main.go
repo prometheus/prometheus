@@ -22,12 +22,11 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/storage/metric/leveldb"
-	"github.com/prometheus/prometheus/storage/metric/memory"
 	"github.com/prometheus/prometheus/web"
 	"log"
 	"os"
 	"os/signal"
+	"time"
 )
 
 // Commandline flags.
@@ -49,9 +48,9 @@ func main() {
 
 	var persistence metric.MetricPersistence
 	if *memoryArena {
-		persistence = memory.NewMemorySeriesStorage()
+		persistence = metric.NewMemorySeriesStorage()
 	} else {
-		persistence, err = leveldb.NewLevelDBMetricPersistence(*metricsStoragePath)
+		persistence, err = metric.NewLevelDBMetricPersistence(*metricsStoragePath)
 		if err != nil {
 			log.Fatalf("Error opening storage: %v", err)
 		}
@@ -91,16 +90,23 @@ func main() {
 
 	web.StartServing(appState)
 
+	ts := metric.NewTieredStorage(5000, 5000, 100, time.Second*30, time.Second*1, time.Second*20)
+	go ts.Serve()
+	go ts.Expose()
+
 	for {
 		select {
 		case scrapeResult := <-scrapeResults:
 			if scrapeResult.Err == nil {
 				persistence.AppendSample(scrapeResult.Sample)
+				ts.AppendSample(scrapeResult.Sample)
 			}
+
 		case ruleResult := <-ruleResults:
 			for _, sample := range ruleResult.Samples {
 				// XXX: Wart
 				persistence.AppendSample(*sample)
+				ts.AppendSample(*sample)
 			}
 		}
 	}

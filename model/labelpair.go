@@ -11,13 +11,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package model
 
 import (
-	"github.com/prometheus/prometheus/storage/metric"
-	"testing"
+	"sort"
 )
 
-func TestInterfaceAdherence(t *testing.T) {
-	var _ metric.MetricPersistence = &LevelDBMetricPersistence{}
+type LabelPair struct {
+	Name  LabelName
+	Value LabelValue
+}
+
+type LabelPairs []LabelPair
+
+func (l LabelPairs) Len() int {
+	return len(l)
+}
+
+func (l LabelPairs) Less(i, j int) (less bool) {
+	less = sort.StringsAreSorted([]string{
+		string(l[i].Name),
+		string(l[j].Name),
+	})
+	if !less {
+		return
+	}
+
+	less = sort.StringsAreSorted([]string{
+		string(l[i].Value),
+		string(l[j].Value),
+	})
+
+	return
+}
+
+func (l LabelPairs) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
 }

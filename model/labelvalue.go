@@ -11,21 +11,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package model
 
 import (
-	"github.com/prometheus/prometheus/storage/metric"
-	"testing"
+	"sort"
 )
 
-var testGetFingerprintsForLabelSetUsesAndForLabelMatching = buildTestPersistence("get_fingerprints_for_labelset_uses_and_for_label_matching", metric.GetFingerprintsForLabelSetUsesAndForLabelMatchingTests)
+// A LabelValue is an associated value for a LabelName.
+type LabelValue string
 
-func TestGetFingerprintsForLabelSetUsesAndForLabelMatching(t *testing.T) {
-	testGetFingerprintsForLabelSetUsesAndForLabelMatching(t)
+type LabelValues []LabelValue
+
+func (l LabelValues) Len() int {
+	return len(l)
 }
 
-func BenchmarkGetFingerprintsForLabelSetUsesAndForLabelMatching(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testGetFingerprintsForLabelSetUsesAndForLabelMatching(b)
-	}
+func (l LabelValues) Less(i, j int) bool {
+	return sort.StringsAreSorted([]string{string(l[i]), string(l[j])})
+}
+
+func (l LabelValues) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
 }

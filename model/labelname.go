@@ -11,17 +11,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package model
 
 import (
-	index "github.com/prometheus/prometheus/storage/raw/index/leveldb"
-	storage "github.com/prometheus/prometheus/storage/raw/leveldb"
+	"sort"
 )
 
-type LevelDBMetricPersistence struct {
-	fingerprintToMetrics    *storage.LevelDBPersistence
-	metricSamples           *storage.LevelDBPersistence
-	labelNameToFingerprints *storage.LevelDBPersistence
-	labelSetToFingerprints  *storage.LevelDBPersistence
-	metricMembershipIndex   *index.LevelDBMembershipIndex
+// A LabelName is a key for a LabelSet or Metric.  It has a value associated
+// therewith.
+type LabelName string
+
+type LabelNames []LabelName
+
+func (l LabelNames) Len() int {
+	return len(l)
+}
+
+func (l LabelNames) Less(i, j int) bool {
+	return sort.StringsAreSorted([]string{
+		string(l[i]),
+		string(l[j]),
+	})
+}
+
+func (l LabelNames) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
 }

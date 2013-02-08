@@ -17,8 +17,10 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
+	"io/ioutil"
 	"math"
 	"math/rand"
+	"testing"
 	"testing/quick"
 	"time"
 )
@@ -429,5 +431,173 @@ func StochasticTests(persistenceMaker func() MetricPersistence, t test.Tester) {
 
 	if err := quick.Check(stochastic, nil); err != nil {
 		t.Error(err)
+	}
+}
+
+// Test Definitions Follow
+
+var testLevelDBBasicLifecycle = buildLevelDBTestPersistence("basic_lifecycle", BasicLifecycleTests)
+
+func TestLevelDBBasicLifecycle(t *testing.T) {
+	testLevelDBBasicLifecycle(t)
+}
+
+func BenchmarkLevelDBBasicLifecycle(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBBasicLifecycle(b)
+	}
+}
+
+var testLevelDBReadEmpty = buildLevelDBTestPersistence("read_empty", ReadEmptyTests)
+
+func TestLevelDBReadEmpty(t *testing.T) {
+	testLevelDBReadEmpty(t)
+}
+
+func BenchmarkLevelDBReadEmpty(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBReadEmpty(b)
+	}
+}
+
+var testLevelDBAppendSampleAsPureSparseAppend = buildLevelDBTestPersistence("append_sample_as_pure_sparse_append", AppendSampleAsPureSparseAppendTests)
+
+func TestLevelDBAppendSampleAsPureSparseAppend(t *testing.T) {
+	testLevelDBAppendSampleAsPureSparseAppend(t)
+}
+
+func BenchmarkLevelDBAppendSampleAsPureSparseAppend(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBAppendSampleAsPureSparseAppend(b)
+	}
+}
+
+var testLevelDBAppendSampleAsSparseAppendWithReads = buildLevelDBTestPersistence("append_sample_as_sparse_append_with_reads", AppendSampleAsSparseAppendWithReadsTests)
+
+func TestLevelDBAppendSampleAsSparseAppendWithReads(t *testing.T) {
+	testLevelDBAppendSampleAsSparseAppendWithReads(t)
+}
+
+func BenchmarkLevelDBAppendSampleAsSparseAppendWithReads(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBAppendSampleAsSparseAppendWithReads(b)
+	}
+}
+
+var testLevelDBAppendSampleAsPureSingleEntityAppend = buildLevelDBTestPersistence("append_sample_as_pure_single_entity_append", AppendSampleAsPureSingleEntityAppendTests)
+
+func TestLevelDBAppendSampleAsPureSingleEntityAppend(t *testing.T) {
+	testLevelDBAppendSampleAsPureSingleEntityAppend(t)
+}
+
+func BenchmarkLevelDBAppendSampleAsPureSingleEntityAppend(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBAppendSampleAsPureSingleEntityAppend(b)
+	}
+}
+
+func testLevelDBStochastic(t test.Tester) {
+	persistenceMaker := func() MetricPersistence {
+		temporaryDirectory, err := ioutil.TempDir("", "test_leveldb_stochastic")
+		if err != nil {
+			t.Errorf("Could not create test directory: %q\n", err)
+		}
+
+		p, err := NewLevelDBMetricPersistence(temporaryDirectory)
+		if err != nil {
+			t.Errorf("Could not start up LevelDB: %q\n", err)
+		}
+
+		return p
+	}
+
+	StochasticTests(persistenceMaker, t)
+}
+
+func TestLevelDBStochastic(t *testing.T) {
+	testLevelDBStochastic(t)
+}
+
+func BenchmarkLevelDBStochastic(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBStochastic(b)
+	}
+}
+
+var testMemoryBasicLifecycle = buildMemoryTestPersistence(BasicLifecycleTests)
+
+func TestMemoryBasicLifecycle(t *testing.T) {
+	testMemoryBasicLifecycle(t)
+}
+
+func BenchmarkMemoryBasicLifecycle(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryBasicLifecycle(b)
+	}
+}
+
+var testMemoryReadEmpty = buildMemoryTestPersistence(ReadEmptyTests)
+
+func TestMemoryReadEmpty(t *testing.T) {
+	testMemoryReadEmpty(t)
+}
+
+func BenchmarkMemoryReadEmpty(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryReadEmpty(b)
+	}
+}
+
+var testMemoryAppendSampleAsPureSparseAppend = buildMemoryTestPersistence(AppendSampleAsPureSparseAppendTests)
+
+func TestMemoryAppendSampleAsPureSparseAppend(t *testing.T) {
+	testMemoryAppendSampleAsPureSparseAppend(t)
+}
+
+func BenchmarkMemoryAppendSampleAsPureSparseAppend(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryAppendSampleAsPureSparseAppend(b)
+	}
+}
+
+var testMemoryAppendSampleAsSparseAppendWithReads = buildMemoryTestPersistence(AppendSampleAsSparseAppendWithReadsTests)
+
+func TestMemoryAppendSampleAsSparseAppendWithReads(t *testing.T) {
+	testMemoryAppendSampleAsSparseAppendWithReads(t)
+}
+
+func BenchmarkMemoryAppendSampleAsSparseAppendWithReads(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryAppendSampleAsSparseAppendWithReads(b)
+	}
+}
+
+var testMemoryAppendSampleAsPureSingleEntityAppend = buildMemoryTestPersistence(AppendSampleAsPureSingleEntityAppendTests)
+
+func TestMemoryAppendSampleAsPureSingleEntityAppend(t *testing.T) {
+	testMemoryAppendSampleAsPureSingleEntityAppend(t)
+}
+
+func BenchmarkMemoryAppendSampleAsPureSingleEntityAppend(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryAppendSampleAsPureSingleEntityAppend(b)
+	}
+}
+
+func testMemoryStochastic(t test.Tester) {
+	persistenceMaker := func() MetricPersistence {
+		return NewMemorySeriesStorage()
+	}
+
+	StochasticTests(persistenceMaker, t)
+}
+
+func TestMemoryStochastic(t *testing.T) {
+	testMemoryStochastic(t)
+}
+
+func BenchmarkMemoryStochastic(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryStochastic(b)
 	}
 }

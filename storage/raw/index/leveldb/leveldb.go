@@ -56,3 +56,7 @@ func NewLevelDBMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFi
 
 	return
 }
+
+func (l *LevelDBMembershipIndex) Commit(batch leveldb.Batch) error {
+	return l.persistence.Commit(batch)
+}

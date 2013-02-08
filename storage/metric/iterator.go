@@ -11,13 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memory
+package metric
 
-import (
-	"github.com/prometheus/prometheus/storage/metric"
-	"testing"
-)
+type Iterator interface {
+	Seek(key interface{}) (ok bool)
+	Next() (ok bool)
+	Previous() (ok bool)
+	Key() interface{}
+	Value() interface{}
+}
 
-func TestInterfaceAdherence(t *testing.T) {
-	var _ metric.MetricPersistence = NewMemorySeriesStorage()
+type IteratorManager interface {
+	Iterator() Iterator
 }

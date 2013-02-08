@@ -14,55 +14,43 @@
 package dto;
 
 message LabelPair {
-  optional int64 version = 1 [default = 1];
-
-  optional string name = 2;
-  optional string value = 3;
+  optional string name = 1;
+  optional string value = 2;
 }
 
 message LabelName {
-  optional int64 version = 1 [default = 1];
-
-  optional string name = 2;
+  optional string name = 1;
 }
 
 message Metric {
-  optional int64 version = 1 [default = 1];
-
-  repeated LabelPair label_pair = 2;
+  repeated LabelPair label_pair = 1;
 }
 
 message Fingerprint {
-  optional int64 version = 1 [default = 1];
-
-  optional string signature = 2;
+  optional string signature = 1;
 }
 
 message FingerprintCollection {
-  optional int64 version = 1 [default = 1];
-
-  repeated Fingerprint member = 2;
+  repeated Fingerprint member = 1;
 }
 
 message LabelSet {
-  optional int64 version = 1 [default = 1];
-
-  repeated LabelPair member = 2;
+  repeated LabelPair member = 1;
 }
 
 message SampleKey {
-  optional int64 version = 1 [default = 1];
-
-  optional Fingerprint fingerprint = 2;
-  optional bytes timestamp = 3;
+  optional Fingerprint fingerprint = 1;
+  optional bytes timestamp = 2;
+  optional int64 last_timestamp = 3;
 }
 
-message SampleValue {
-  optional int64 version = 1 [default = 1];
-
-  optional float value = 2;
+message SampleValueSeries {
+  message Value {
+    optional int64 timestamp = 1;
+    optional float value = 2;
+  }
+  repeated Value value = 1;
 }
 
 message MembershipIndexValue {
-  optional int64 version = 1 [default = 1];
 }

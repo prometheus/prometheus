@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package metric
 
 import (
 	"github.com/prometheus/client_golang"
@@ -30,6 +30,7 @@ const (
 	appendLabelNameFingerprint  = "append_label_name_fingerprint"
 	appendLabelPairFingerprint  = "append_label_pair_fingerprint"
 	appendSample                = "append_sample"
+	appendSamples               = "append_samples"
 	getBoundaryValues           = "get_boundary_values"
 	getFingerprintsForLabelName = "get_fingerprints_for_label_name"
 	getFingerprintsForLabelSet  = "get_fingerprints_for_labelset"

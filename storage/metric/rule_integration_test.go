@@ -17,6 +17,8 @@ import (
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
 	"io"
+	"io/ioutil"
+	"testing"
 	"time"
 )
 
@@ -569,7 +571,7 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, io.Closer),
 			}
 
 			for _, value := range context.values {
-				appendSample(p, model.Sample{
+				testAppendSample(p, model.Sample{
 					Value:     model.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
@@ -1014,7 +1016,7 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, io.Close
 			}
 
 			for _, value := range context.values {
-				appendSample(p, model.Sample{
+				testAppendSample(p, model.Sample{
 					Value:     model.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
@@ -1371,7 +1373,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, io.Closer),
 			}
 
 			for _, value := range context.values {
-				appendSample(p, model.Sample{
+				testAppendSample(p, model.Sample{
 					Value:     model.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
@@ -1432,5 +1434,108 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, io.Closer),
 				}
 			}
 		}()
+	}
+}
+
+// Test Definitions Follow
+
+func testLevelDBGetValueAtTime(t test.Tester) {
+	persistenceMaker := buildLevelDBTestPersistencesMaker("get_value_at_time", t)
+	GetValueAtTimeTests(persistenceMaker, t)
+}
+
+func TestLevelDBGetValueAtTime(t *testing.T) {
+	testLevelDBGetValueAtTime(t)
+}
+
+func BenchmarkLevelDBGetValueAtTime(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBGetValueAtTime(b)
+	}
+}
+
+func testLevelDBGetBoundaryValues(t test.Tester) {
+	persistenceMaker := buildLevelDBTestPersistencesMaker("get_boundary_values", t)
+
+	GetBoundaryValuesTests(persistenceMaker, t)
+}
+
+func TestLevelDBGetBoundaryValues(t *testing.T) {
+	testLevelDBGetBoundaryValues(t)
+}
+
+func BenchmarkLevelDBGetBoundaryValues(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBGetBoundaryValues(b)
+	}
+}
+
+func testLevelDBGetRangeValues(t test.Tester) {
+	persistenceMaker := buildLevelDBTestPersistencesMaker("get_range_values", t)
+
+	GetRangeValuesTests(persistenceMaker, t)
+}
+
+func TestLevelDBGetRangeValues(t *testing.T) {
+	testLevelDBGetRangeValues(t)
+}
+
+func BenchmarkLevelDBGetRangeValues(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBGetRangeValues(b)
+	}
+}
+
+func testMemoryGetValueAtTime(t test.Tester) {
+	persistenceMaker := func() (MetricPersistence, io.Closer) {
+		return NewMemorySeriesStorage(), ioutil.NopCloser(nil)
+	}
+
+	GetValueAtTimeTests(persistenceMaker, t)
+}
+
+func TestMemoryGetValueAtTime(t *testing.T) {
+	testMemoryGetValueAtTime(t)
+}
+
+func BenchmarkMemoryGetValueAtTime(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryGetValueAtTime(b)
+	}
+}
+
+func testMemoryGetBoundaryValues(t test.Tester) {
+	persistenceMaker := func() (MetricPersistence, io.Closer) {
+		return NewMemorySeriesStorage(), ioutil.NopCloser(nil)
+	}
+
+	GetBoundaryValuesTests(persistenceMaker, t)
+}
+
+func TestMemoryGetBoundaryValues(t *testing.T) {
+	testMemoryGetBoundaryValues(t)
+}
+
+func BenchmarkMemoryGetBoundaryValues(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryGetBoundaryValues(b)
+	}
+}
+
+func testMemoryGetRangeValues(t test.Tester) {
+	persistenceMaker := func() (MetricPersistence, io.Closer) {
+		return NewMemorySeriesStorage(), ioutil.NopCloser(nil)
+	}
+
+	GetRangeValuesTests(persistenceMaker, t)
+}
+
+func TestMemoryGetRangeValues(t *testing.T) {
+	testMemoryGetRangeValues(t)
+}
+
+func BenchmarkMemoryGetRangeValues(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryGetRangeValues(b)
 	}
 }

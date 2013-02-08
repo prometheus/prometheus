@@ -11,21 +11,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memory
+package model
 
 import (
-	"github.com/prometheus/prometheus/storage/metric"
-	"testing"
+	"sort"
+	"time"
 )
 
-var testGetFingerprintsForLabelSetUsesAndForLabelMatching = buildTestPersistence(metric.GetFingerprintsForLabelSetUsesAndForLabelMatchingTests)
-
-func TestGetFingerprintsForLabelSetUsesAndForLabelMatching(t *testing.T) {
-	testGetFingerprintsForLabelSetUsesAndForLabelMatching(t)
+type Sample struct {
+	Metric    Metric
+	Value     SampleValue
+	Timestamp time.Time
 }
 
-func BenchmarkGetFingerprintsForLabelSetUsesAndLabelMatching(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testGetFingerprintsForLabelSetUsesAndForLabelMatching(b)
+type Samples []Sample
+
+func (s Samples) Len() int {
+	return len(s)
+}
+
+func (s Samples) Less(i, j int) (less bool) {
+	fingerprints := Fingerprints{
+		NewFingerprintFromMetric(s[i].Metric),
+		NewFingerprintFromMetric(s[j].Metric),
 	}
+
+	less = sort.IsSorted(fingerprints)
+	if !less {
+		return
+	}
+
+	less = s[i].Timestamp.Before(s[j].Timestamp)
+
+	return
+}
+
+func (s Samples) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
 }

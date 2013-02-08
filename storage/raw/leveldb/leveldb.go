@@ -28,6 +28,7 @@ var (
 	leveldbUseParanoidChecks = flag.Bool("leveldbUseParanoidChecks", true, "Whether LevelDB uses expensive checks (bool).")
 )
 
+// LevelDBPersistence is an disk-backed sorted key-value store.
 type LevelDBPersistence struct {
 	cache        *levigo.Cache
 	filterPolicy *levigo.FilterPolicy
@@ -37,6 +38,8 @@ type LevelDBPersistence struct {
 	writeOptions *levigo.WriteOptions
 }
 
+// LevelDB iterators have a number of resources that need to be closed.
+// iteratorCloser encapsulates the various ones.
 type iteratorCloser struct {
 	iterator    *levigo.Iterator
 	readOptions *levigo.ReadOptions
@@ -169,6 +172,10 @@ func (l *LevelDBPersistence) Put(key, value coding.Encoder) (err error) {
 	return
 }
 
+func (l *LevelDBPersistence) Commit(b Batch) (err error) {
+	return l.storage.Write(l.writeOptions, b.(batch).batch)
+}
+
 func (l *LevelDBPersistence) GetAll() (pairs []raw.Pair, err error) {
 	snapshot := l.storage.NewSnapshot()
 	defer l.storage.ReleaseSnapshot(snapshot)
@@ -271,4 +278,48 @@ func (l *LevelDBPersistence) ForEach(decoder storage.RecordDecoder, filter stora
 	}
 	scannedEntireCorpus = true
 	return
+}
+
+// Batch encapsulates a list of mutations to occur to the datastore.  It must
+// be closed once done.
+type Batch interface {
+	Delete(coding.Encoder)
+	Put(coding.Encoder, coding.Encoder)
+	Close()
+}
+
+func NewBatch() Batch {
+	return batch{
+		batch: levigo.NewWriteBatch(),
+	}
+}
+
+type batch struct {
+	batch *levigo.WriteBatch
+}
+
+func (b batch) Delete(key coding.Encoder) {
+	keyEncoded, err := key.Encode()
+	if err != nil {
+		panic(err)
+	}
+
+	b.batch.Delete(keyEncoded)
+}
+
+func (b batch) Put(key, value coding.Encoder) {
+	keyEncoded, err := key.Encode()
+	if err != nil {
+		panic(err)
+	}
+	valueEncoded, err := value.Encode()
+	if err != nil {
+		panic(err)
+	}
+
+	b.batch.Put(keyEncoded, valueEncoded)
+}
+
+func (b batch) Close() {
+	b.batch.Close()
 }
