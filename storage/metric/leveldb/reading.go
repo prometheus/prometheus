@@ -348,12 +348,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getValueAtTime, result: success}, map[string]string{operation: getValueAtTime, result: failure})
 	}()
 
-	d := model.MetricToDTO(m)
-
-	f, err := model.MessageToFingerprintDTO(d)
-	if err != nil {
-		return
-	}
+	f := m.Fingerprint().ToDTO()
 
 	// Candidate for Refactoring
 	k := &dto.SampleKey{
@@ -566,13 +561,7 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m *model.Metric, i *model.Inte
 
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
 	}()
-
-	d := model.MetricToDTO(m)
-
-	f, err := model.MessageToFingerprintDTO(d)
-	if err != nil {
-		return
-	}
+	f := m.Fingerprint().ToDTO()
 
 	k := &dto.SampleKey{
 		Fingerprint: f,

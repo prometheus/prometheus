@@ -50,7 +50,7 @@ type LabelSet map[LabelName]LabelValue
 type Metric map[LabelName]LabelValue
 
 // Fingerprint generates a fingerprint for this given Metric.
-func (m Metric) Fingerprint() string {
+func (m Metric) Fingerprint() Fingerprint {
 	labelLength := len(m)
 	labelNames := make([]string, 0, labelLength)
 
@@ -70,7 +70,7 @@ func (m Metric) Fingerprint() string {
 	}
 	summer.Write(buffer.Bytes())
 
-	return hex.EncodeToString(summer.Sum(nil))
+	return Fingerprint(hex.EncodeToString(summer.Sum(nil)))
 }
 
 // A SampleValue is a representation of a value for a given sample at a given

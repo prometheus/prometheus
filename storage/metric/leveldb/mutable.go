@@ -121,7 +121,7 @@ func (l *LevelDBMetricPersistence) appendLabelNameFingerprint(labelPair *dto.Lab
 	return
 }
 
-func (l *LevelDBMetricPersistence) appendFingerprints(m *dto.Metric) (err error) {
+func (l *LevelDBMetricPersistence) appendFingerprints(sample model.Sample) (err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -130,24 +130,22 @@ func (l *LevelDBMetricPersistence) appendFingerprints(m *dto.Metric) (err error)
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: appendFingerprints, result: success}, map[string]string{operation: appendFingerprints, result: failure})
 	}()
 
-	fingerprintDTO, err := model.MessageToFingerprintDTO(m)
-	if err != nil {
-		return
-	}
+	fingerprintDTO := sample.Metric.Fingerprint().ToDTO()
 
 	fingerprintKey := coding.NewProtocolBufferEncoder(fingerprintDTO)
-	metricDTOEncoder := coding.NewProtocolBufferEncoder(m)
+	metricDTO := model.SampleToMetricDTO(&sample)
+	metricDTOEncoder := coding.NewProtocolBufferEncoder(metricDTO)
 
 	err = l.fingerprintToMetrics.Put(fingerprintKey, metricDTOEncoder)
 	if err != nil {
 		return
 	}
 
-	labelCount := len(m.LabelPair)
+	labelCount := len(metricDTO.LabelPair)
 	labelPairErrors := make(chan error, labelCount)
 	labelNameErrors := make(chan error, labelCount)
 
-	for _, labelPair := range m.LabelPair {
+	for _, labelPair := range metricDTO.LabelPair {
 		go func(labelPair *dto.LabelPair) {
 			labelNameErrors <- l.appendLabelNameFingerprint(labelPair, fingerprintDTO)
 		}(labelPair)
@@ -191,22 +189,21 @@ func (l *LevelDBMetricPersistence) AppendSample(sample *model.Sample) (err error
 		return
 	}
 
+	fingerprint := sample.Metric.Fingerprint()
+
 	if !indexHas {
 		err = l.indexMetric(metricDTO)
 		if err != nil {
 			return
 		}
 
-		err = l.appendFingerprints(metricDTO)
+		err = l.appendFingerprints(*sample)
 		if err != nil {
 			return
 		}
 	}
 
-	fingerprintDTO, err := model.MessageToFingerprintDTO(metricDTO)
-	if err != nil {
-		return
-	}
+	fingerprintDTO := fingerprint.ToDTO()
 
 	sampleKeyDTO := &dto.SampleKey{
 		Fingerprint: fingerprintDTO,
