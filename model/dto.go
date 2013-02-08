@@ -17,9 +17,7 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 	"crypto/md5"
 	"encoding/hex"
-	"errors"
 	dto "github.com/prometheus/prometheus/model/generated"
-	"io"
 	"sort"
 	"time"
 )
@@ -79,12 +77,6 @@ func MetricToDTO(m *Metric) *dto.Metric {
 	}
 }
 
-func StringToFingerprint(v string) Fingerprint {
-	hash := md5.New()
-	io.WriteString(hash, v)
-	return Fingerprint(hex.EncodeToString(hash.Sum([]byte{})))
-}
-
 func BytesToFingerprint(v []byte) Fingerprint {
 	hash := md5.New()
 	hash.Write(v)
@@ -135,19 +127,6 @@ func FingerprintToDTO(f *Fingerprint) *dto.Fingerprint {
 	}
 }
 
-func MessageToFingerprintDTO(message proto.Message) (*dto.Fingerprint, error) {
-	if messageByteArray, marshalError := proto.Marshal(message); marshalError == nil {
-		fingerprint := BytesToFingerprint(messageByteArray)
-		return &dto.Fingerprint{
-			Signature: proto.String(string(fingerprint)),
-		}, nil
-	} else {
-		return nil, marshalError
-	}
-
-	return nil, errors.New("Unknown error in generating FingerprintDTO from message.")
-}
-
 func SampleFromDTO(m *Metric, t *time.Time, v *dto.SampleValue) *Sample {
 	s := &Sample{
 		Value:     SampleValue(*v.Value),
@@ -157,4 +136,10 @@ func SampleFromDTO(m *Metric, t *time.Time, v *dto.SampleValue) *Sample {
 	s.Metric = *m
 
 	return s
+}
+
+func (f Fingerprint) ToDTO() *dto.Fingerprint {
+	return &dto.Fingerprint{
+		Signature: proto.String(string(f)),
+	}
 }
