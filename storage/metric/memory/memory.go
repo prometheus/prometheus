@@ -251,6 +251,11 @@ func (s *memorySeriesStorage) GetRangeValues(m model.Metric, i model.Interval) (
 }
 
 func (s *memorySeriesStorage) Close() (err error) {
+	// This can probably be simplified:
+	//
+	// s.fingerPrintToSeries = map[model.Fingerprint]*stream{}
+	// s.labelPairToFingerprints = map[string]model.Fingerprints{}
+	// s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
 	for fingerprint := range s.fingerprintToSeries {
 		delete(s.fingerprintToSeries, fingerprint)
 	}
