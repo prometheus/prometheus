@@ -11,21 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package metric
 
 import (
-	"github.com/prometheus/prometheus/storage/metric"
-	"testing"
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/utility/test"
 )
 
-var testGetFingerprintsForLabelSetUsesAndForLabelMatching = buildTestPersistence("get_fingerprints_for_labelset_uses_and_for_label_matching", metric.GetFingerprintsForLabelSetUsesAndForLabelMatchingTests)
-
-func TestGetFingerprintsForLabelSetUsesAndForLabelMatching(t *testing.T) {
-	testGetFingerprintsForLabelSetUsesAndForLabelMatching(t)
-}
-
-func BenchmarkGetFingerprintsForLabelSetUsesAndForLabelMatching(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testGetFingerprintsForLabelSetUsesAndForLabelMatching(b)
+func appendSample(p MetricPersistence, s model.Sample, t test.Tester) {
+	err := p.AppendSample(s)
+	if err != nil {
+		t.Fatal(err)
 	}
 }

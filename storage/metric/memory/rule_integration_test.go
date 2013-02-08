@@ -11,16 +11,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package memory
 
 import (
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
+	"io"
+	"io/ioutil"
 	"testing"
 )
 
 func testGetValueAtTime(t test.Tester) {
-	persistenceMaker := buildTestPersistencesMaker("get_value_at_time", t)
+	persistenceMaker := func() (metric.MetricPersistence, io.Closer) {
+		return NewMemorySeriesStorage(), ioutil.NopCloser(nil)
+	}
+
 	metric.GetValueAtTimeTests(persistenceMaker, t)
 }
 
@@ -35,7 +40,9 @@ func BenchmarkGetValueAtTime(b *testing.B) {
 }
 
 func testGetBoundaryValues(t test.Tester) {
-	persistenceMaker := buildTestPersistencesMaker("get_boundary_values", t)
+	persistenceMaker := func() (metric.MetricPersistence, io.Closer) {
+		return NewMemorySeriesStorage(), ioutil.NopCloser(nil)
+	}
 
 	metric.GetBoundaryValuesTests(persistenceMaker, t)
 }
@@ -51,7 +58,9 @@ func BenchmarkGetBoundaryValues(b *testing.B) {
 }
 
 func testGetRangeValues(t test.Tester) {
-	persistenceMaker := buildTestPersistencesMaker("get_range_values", t)
+	persistenceMaker := func() (metric.MetricPersistence, io.Closer) {
+		return NewMemorySeriesStorage(), ioutil.NopCloser(nil)
+	}
 
 	metric.GetRangeValuesTests(persistenceMaker, t)
 }

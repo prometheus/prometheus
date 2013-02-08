@@ -14,7 +14,6 @@
 package model
 
 import (
-	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -24,7 +23,7 @@ import (
 
 const (
 	// XXX: Re-evaluate down the road.
-	reservedDelimiter = '"'
+	reservedDelimiter = `"`
 )
 
 // A Fingerprint is a simplified representation of an entity---e.g., a hash of
@@ -49,6 +48,20 @@ type LabelSet map[LabelName]LabelValue
 // a singleton and refers to one and only one stream of samples.
 type Metric map[LabelName]LabelValue
 
+type Fingerprints []Fingerprint
+
+func (f Fingerprints) Len() int {
+	return len(f)
+}
+
+func (f Fingerprints) Less(i, j int) bool {
+	return sort.StringsAreSorted([]string{string(f[i]), string(f[j])})
+}
+
+func (f Fingerprints) Swap(i, j int) {
+	f[i], f[j] = f[j], f[i]
+}
+
 // Fingerprint generates a fingerprint for this given Metric.
 func (m Metric) Fingerprint() Fingerprint {
 	labelLength := len(m)
@@ -62,13 +75,11 @@ func (m Metric) Fingerprint() Fingerprint {
 
 	summer := md5.New()
 
-	buffer := bytes.Buffer{}
 	for _, labelName := range labelNames {
-		buffer.WriteString(labelName)
-		buffer.WriteRune(reservedDelimiter)
-		buffer.WriteString(string(m[LabelName(labelName)]))
+		summer.Write([]byte(labelName))
+		summer.Write([]byte(reservedDelimiter))
+		summer.Write([]byte(m[LabelName(labelName)]))
 	}
-	summer.Write(buffer.Bytes())
 
 	return Fingerprint(hex.EncodeToString(summer.Sum(nil)))
 }
@@ -98,9 +109,23 @@ type SamplePair struct {
 	Timestamp time.Time
 }
 
+type Values []SamplePair
+
+func (v Values) Len() int {
+	return len(v)
+}
+
+func (v Values) Less(i, j int) bool {
+	return v[i].Timestamp.Before(v[j].Timestamp)
+}
+
+func (v Values) Swap(i, j int) {
+	v[i], v[j] = v[j], v[i]
+}
+
 type SampleSet struct {
 	Metric Metric
-	Values []SamplePair
+	Values Values
 }
 
 type Interval struct {

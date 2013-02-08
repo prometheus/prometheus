@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
+	"sort"
 	"time"
 )
 
@@ -62,18 +63,14 @@ func fingerprintsEqual(l *dto.Fingerprint, r *dto.Fingerprint) bool {
 type sampleKeyPredicate func(k *dto.SampleKey) bool
 
 func keyIsOlderThan(t time.Time) sampleKeyPredicate {
-	unix := t.Unix()
-
 	return func(k *dto.SampleKey) bool {
-		return indexable.DecodeTime(k.Timestamp).Unix() > unix
+		return indexable.DecodeTime(k.Timestamp).After(t)
 	}
 }
 
 func keyIsAtMostOld(t time.Time) sampleKeyPredicate {
-	unix := t.Unix()
-
 	return func(k *dto.SampleKey) bool {
-		return indexable.DecodeTime(k.Timestamp).Unix() <= unix
+		return !indexable.DecodeTime(k.Timestamp).After(t)
 	}
 }
 
@@ -180,7 +177,7 @@ func (l *LevelDBMetricPersistence) GetLabelNameFingerprints(n *dto.LabelName) (c
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fps []model.Fingerprint, err error) {
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fps model.Fingerprints, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -230,7 +227,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.LabelName) (fps []model.Fingerprint, err error) {
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.LabelName) (fps model.Fingerprints, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -259,7 +256,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) (m model.Metric, err error) {
+func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -279,11 +276,15 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 		return
 	}
 
-	m = model.Metric{}
+	metric := model.Metric{}
 
 	for _, v := range unmarshaled.LabelPair {
-		m[model.LabelName(*v.Name)] = model.LabelValue(*v.Value)
+		metric[model.LabelName(*v.Name)] = model.LabelValue(*v.Value)
 	}
+
+	// Explicit address passing here shaves immense amounts of time off of the
+	// code flow due to less tight-loop dereferencing.
+	m = &metric
 
 	return
 }
@@ -551,7 +552,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interval, s metric.StalenessPolicy) (v *model.SampleSet, err error) {
+func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interval) (v *model.SampleSet, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -612,6 +613,12 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interv
 		})
 	}
 
+	// XXX: We should not explicitly sort here but rather rely on the datastore.
+	//      This adds appreciable overhead.
+	if v != nil {
+		sort.Sort(v.Values)
+	}
+
 	return
 }
 
@@ -623,7 +630,10 @@ func (d *MetricKeyDecoder) DecodeKey(in interface{}) (out interface{}, err error
 	if err != nil {
 		return
 	}
-	return unmarshaled, nil
+
+	out = unmarshaled
+
+	return
 }
 
 func (d *MetricKeyDecoder) DecodeValue(in interface{}) (out interface{}, err error) {

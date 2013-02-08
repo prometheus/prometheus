@@ -21,7 +21,9 @@ import (
 	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/metric/leveldb"
+	"github.com/prometheus/prometheus/storage/metric/memory"
 	"github.com/prometheus/prometheus/web"
 	"log"
 	"os"
@@ -35,6 +37,7 @@ var (
 	scrapeResultsQueueCapacity   = flag.Int("scrapeResultsQueueCapacity", 4096, "The size of the scrape results queue.")
 	ruleResultsQueueCapacity     = flag.Int("ruleResultsQueueCapacity", 4096, "The size of the rule results queue.")
 	concurrentRetrievalAllowance = flag.Int("concurrentRetrievalAllowance", 15, "The number of concurrent metrics retrieval requests allowed.")
+	memoryArena                  = flag.Bool("experimental.useMemoryArena", false, "Use in-memory timeseries arena.")
 )
 
 func main() {
@@ -44,9 +47,14 @@ func main() {
 		log.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	persistence, err := leveldb.NewLevelDBMetricPersistence(*metricsStoragePath)
-	if err != nil {
-		log.Fatalf("Error opening storage: %v", err)
+	var persistence metric.MetricPersistence
+	if *memoryArena {
+		persistence = memory.NewMemorySeriesStorage()
+	} else {
+		persistence, err = leveldb.NewLevelDBMetricPersistence(*metricsStoragePath)
+		if err != nil {
+			log.Fatalf("Error opening storage: %v", err)
+		}
 	}
 
 	go func() {
