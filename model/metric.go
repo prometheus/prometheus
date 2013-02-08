@@ -14,8 +14,17 @@
 package model
 
 import (
+	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"time"
+)
+
+const (
+	// XXX: Re-evaluate down the road.
+	reservedDelimiter = '"'
 )
 
 // A Fingerprint is a simplified representation of an entity---e.g., a hash of
@@ -39,6 +48,30 @@ type LabelSet map[LabelName]LabelValue
 // A Metric is similar to a LabelSet, but the key difference is that a Metric is
 // a singleton and refers to one and only one stream of samples.
 type Metric map[LabelName]LabelValue
+
+// Fingerprint generates a fingerprint for this given Metric.
+func (m Metric) Fingerprint() string {
+	labelLength := len(m)
+	labelNames := make([]string, 0, labelLength)
+
+	for labelName := range m {
+		labelNames = append(labelNames, string(labelName))
+	}
+
+	sort.Strings(labelNames)
+
+	summer := md5.New()
+
+	buffer := bytes.Buffer{}
+	for _, labelName := range labelNames {
+		buffer.WriteString(labelName)
+		buffer.WriteRune(reservedDelimiter)
+		buffer.WriteString(string(m[LabelName(labelName)]))
+	}
+	summer.Write(buffer.Bytes())
+
+	return hex.EncodeToString(summer.Sum(nil))
+}
 
 // A SampleValue is a representation of a value for a given sample at a given
 // time.  It is presently float32 due to that being the representation that
