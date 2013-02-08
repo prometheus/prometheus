@@ -29,7 +29,7 @@ action if some condition is observed to be true.
 For basic help how to get started:
 
   * For Linux users, please consult the Travis CI configuration in _.travis.yml_.
-  * [Getting started on Mac OSX](guides/getting-started-osx.md)
+  * [Getting started on Mac OSX](documentation/guides/getting-started-osx.md)
 
 ## License
 
