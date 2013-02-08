@@ -21,7 +21,7 @@ import (
 func testMetric(t test.Tester) {
 	var scenarios = []struct {
 		input  map[string]string
-		output string
+		output Fingerprint
 	}{
 		{
 			input:  map[string]string{},
@@ -57,5 +57,7 @@ func TestMetric(t *testing.T) {
 }
 
 func BenchmarkMetric(b *testing.B) {
-	testMetric(b)
+	for i := 0; i < b.N; i++ {
+		testMetric(b)
+	}
 }
