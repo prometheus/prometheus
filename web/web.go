@@ -15,11 +15,17 @@ package web
 
 import (
 	"code.google.com/p/gorest"
+	"flag"
 	"github.com/prometheus/client_golang"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/web/api"
 	"net/http"
 	_ "net/http/pprof"
+)
+
+// Commandline flags.
+var (
+	listenAddress = flag.String("listenAddress", ":9090", "Address to listen on for web interface.")
 )
 
 func StartServing(persistence metric.MetricPersistence) {
@@ -30,5 +36,5 @@ func StartServing(persistence metric.MetricPersistence) {
 	http.Handle("/metrics.json", exporter)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 
-	go http.ListenAndServe(":9090", nil)
+	go http.ListenAndServe(*listenAddress, nil)
 }
