@@ -14,19 +14,15 @@
 package main
 
 import (
-	"code.google.com/p/gorest"
 	"flag"
-	"github.com/prometheus/client_golang"
-	"github.com/prometheus/prometheus/api"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric/leveldb"
+	"github.com/prometheus/prometheus/web"
 	"log"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 )
@@ -77,15 +73,7 @@ func main() {
 		log.Fatalf("Error loading rule files: %v", err)
 	}
 
-	go func() {
-		gorest.RegisterService(api.NewMetricsService(persistence))
-		exporter := registry.DefaultRegistry.YieldExporter()
-
-		http.Handle("/", gorest.Handle())
-		http.Handle("/metrics.json", exporter)
-		http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-		http.ListenAndServe(":9090", nil)
-	}()
+	web.StartServing(persistence)
 
 	for {
 		select {
