@@ -25,7 +25,7 @@ func testMetric(t test.Tester) {
 	}{
 		{
 			input:  map[string]string{},
-			output: "d41d8cd98f00b204e9800998ecf8427e",
+			output: "cbf29ce484222325",
 		},
 		{
 			input: map[string]string{
@@ -33,7 +33,7 @@ func testMetric(t test.Tester) {
 				"occupation":   "robot",
 				"manufacturer": "westinghouse",
 			},
-			output: "18596f03fce001153495d903b8b577c0",
+			output: "4e1ee4bb22c04a42",
 		},
 	}
 

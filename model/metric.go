@@ -14,17 +14,16 @@
 package model
 
 import (
-	"bytes"
-	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"time"
 )
 
 const (
 	// XXX: Re-evaluate down the road.
-	reservedDelimiter = '"'
+	reservedDelimiter = `"`
 )
 
 // A Fingerprint is a simplified representation of an entity---e.g., a hash of
@@ -60,15 +59,13 @@ func (m Metric) Fingerprint() Fingerprint {
 
 	sort.Strings(labelNames)
 
-	summer := md5.New()
+	summer := fnv.New64a()
 
-	buffer := bytes.Buffer{}
 	for _, labelName := range labelNames {
-		buffer.WriteString(labelName)
-		buffer.WriteRune(reservedDelimiter)
-		buffer.WriteString(string(m[LabelName(labelName)]))
+		summer.Write([]byte(labelName))
+		summer.Write([]byte(reservedDelimiter))
+		summer.Write([]byte(m[LabelName(labelName)]))
 	}
-	summer.Write(buffer.Bytes())
 
 	return Fingerprint(hex.EncodeToString(summer.Sum(nil)))
 }
