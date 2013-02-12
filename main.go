@@ -15,6 +15,7 @@ package main
 
 import (
 	"flag"
+	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/retrieval/format"
@@ -73,7 +74,14 @@ func main() {
 		log.Fatalf("Error loading rule files: %v", err)
 	}
 
-	web.StartServing(persistence)
+	appState := &appstate.ApplicationState{
+		Config:        conf,
+		RuleManager:   ruleManager,
+		Persistence:   persistence,
+		TargetManager: targetManager,
+	}
+
+	web.StartServing(appState)
 
 	for {
 		select {

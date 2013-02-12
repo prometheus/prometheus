@@ -1,30 +1,9 @@
 body {
-  margin: 0;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 14px;
   line-height: 20px;
   color: #333333;
   background-color: #eee;
-}
-
-.graph_container {
-        font-family: Arial, Helvetica, sans-serif;
-}
-
-.graph {
-        position: relative;
-}
-
-svg {
-  border: 1px solid #aaa;
-  margin-bottom: 5px;
-}
-
-.legend {
-        display: inline-block;
-        vertical-align: top;
-        margin: 0 0 0 0px;
-        background-
 }
 
 input:not([type=submit]):not([type=file]):not([type=button]) {

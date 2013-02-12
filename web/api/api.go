@@ -17,8 +17,8 @@ type MetricsService struct {
 	time        utility.Time
 }
 
-func NewMetricsService(p metric.MetricPersistence) *MetricsService {
+func NewMetricsService(persistence metric.MetricPersistence) *MetricsService {
 	return &MetricsService{
-		persistence: p,
+		persistence: persistence,
 	}
 }
