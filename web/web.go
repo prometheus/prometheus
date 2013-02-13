@@ -30,10 +30,9 @@ var (
 
 func StartServing(persistence metric.MetricPersistence) {
 	gorest.RegisterService(api.NewMetricsService(persistence))
-	exporter := registry.DefaultRegistry.YieldExporter()
 
 	http.Handle("/", gorest.Handle())
-	http.Handle("/metrics.json", exporter)
+	http.Handle("/metrics.json", registry.DefaultHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 
 	go http.ListenAndServe(*listenAddress, nil)
