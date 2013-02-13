@@ -174,7 +174,7 @@ func (l *LevelDBMetricPersistence) appendFingerprints(sample model.Sample) (err 
 	return
 }
 
-func (l *LevelDBMetricPersistence) AppendSample(sample *model.Sample) (err error) {
+func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error) {
 	begin := time.Now()
 	defer func() {
 		duration := time.Now().Sub(begin)
@@ -182,7 +182,7 @@ func (l *LevelDBMetricPersistence) AppendSample(sample *model.Sample) (err error
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: appendSample, result: failure})
 	}()
 
-	metricDTO := model.SampleToMetricDTO(sample)
+	metricDTO := model.SampleToMetricDTO(&sample)
 
 	indexHas, err := l.hasIndexMetric(metricDTO)
 	if err != nil {
@@ -197,7 +197,7 @@ func (l *LevelDBMetricPersistence) AppendSample(sample *model.Sample) (err error
 			return
 		}
 
-		err = l.appendFingerprints(*sample)
+		err = l.appendFingerprints(sample)
 		if err != nil {
 			return
 		}

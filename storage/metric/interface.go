@@ -30,7 +30,7 @@ type MetricPersistence interface {
 	Close() error
 
 	// Record a new sample in the storage layer.
-	AppendSample(sample *model.Sample) error
+	AppendSample(sample model.Sample) error
 
 	// Get all of the metric fingerprints that are associated with the provided
 	// label set.

@@ -211,7 +211,7 @@ var testAppendSampleAsPureSparseAppend = func(t test.Tester) {
 		t := time.Unix(int64(x), int64(x))
 		l := model.Metric{model.LabelName(x): model.LabelValue(x)}
 
-		sample := &model.Sample{
+		sample := model.Sample{
 			Value:     v,
 			Timestamp: t,
 			Metric:    l,
@@ -257,7 +257,7 @@ var testAppendSampleAsSparseAppendWithReads func(t test.Tester) = func(t test.Te
 		t := time.Unix(int64(x), int64(x))
 		l := model.Metric{model.LabelName(x): model.LabelValue(x)}
 
-		sample := &model.Sample{
+		sample := model.Sample{
 			Value:     v,
 			Timestamp: t,
 			Metric:    l,
@@ -360,7 +360,7 @@ func TestAppendSampleAsPureSingleEntityAppend(t *testing.T) {
 	}()
 
 	appendSample := func(x int) bool {
-		sample := &model.Sample{
+		sample := model.Sample{
 			Value:     model.SampleValue(float32(x)),
 			Timestamp: time.Unix(int64(x), 0),
 			Metric:    model.Metric{"name": "my_metric"},
@@ -407,7 +407,7 @@ func TestStochastic(t *testing.T) {
 		metricNewestSample := make(map[int]int64)
 
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
-			sample := &model.Sample{
+			sample := model.Sample{
 				Metric: model.Metric{},
 			}
 
@@ -684,7 +684,7 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 		persistence.Close()
 	}()
 
-	appendErr := persistence.AppendSample(&model.Sample{
+	appendErr := persistence.AppendSample(model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(0, 0),
 		Metric: model.Metric{
@@ -697,7 +697,7 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 		t.Error(appendErr)
 	}
 
-	appendErr = persistence.AppendSample(&model.Sample{
+	appendErr = persistence.AppendSample(model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(int64(0), 0),
 		Metric: model.Metric{
@@ -762,7 +762,7 @@ func TestGetFingerprintsForLabelName(t *testing.T) {
 		persistence.Close()
 	}()
 
-	appendErr := persistence.AppendSample(&model.Sample{
+	appendErr := persistence.AppendSample(model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(0, 0),
 		Metric: model.Metric{
@@ -776,7 +776,7 @@ func TestGetFingerprintsForLabelName(t *testing.T) {
 		t.Error(appendErr)
 	}
 
-	appendErr = persistence.AppendSample(&model.Sample{
+	appendErr = persistence.AppendSample(model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(int64(0), 0),
 		Metric: model.Metric{
@@ -850,7 +850,7 @@ func TestGetMetricForFingerprint(t *testing.T) {
 		persistence.Close()
 	}()
 
-	appendErr := persistence.AppendSample(&model.Sample{
+	appendErr := persistence.AppendSample(model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(0, 0),
 		Metric: model.Metric{
@@ -862,7 +862,7 @@ func TestGetMetricForFingerprint(t *testing.T) {
 		t.Error(appendErr)
 	}
 
-	appendErr = persistence.AppendSample(&model.Sample{
+	appendErr = persistence.AppendSample(model.Sample{
 		Value:     model.SampleValue(0),
 		Timestamp: time.Unix(int64(0), 0),
 		Metric: model.Metric{

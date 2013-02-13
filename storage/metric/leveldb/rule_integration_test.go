@@ -574,7 +574,7 @@ var testGetValueAtTime = func(t test.Tester) {
 			}
 
 			for j, value := range context.values {
-				err := persistence.AppendSample(&model.Sample{
+				err := persistence.AppendSample(model.Sample{
 					Value:     model.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
@@ -1035,7 +1035,7 @@ var testGetBoundaryValues = func(t test.Tester) {
 			}
 
 			for j, value := range context.values {
-				err := persistence.AppendSample(&model.Sample{
+				err := persistence.AppendSample(model.Sample{
 					Value:     model.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
@@ -1629,7 +1629,7 @@ var testGetRangeValues = func(t test.Tester) {
 			}
 
 			for j, value := range context.values {
-				err := persistence.AppendSample(&model.Sample{
+				err := persistence.AppendSample(model.Sample{
 					Value:     model.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
