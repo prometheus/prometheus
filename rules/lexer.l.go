@@ -436,8 +436,8 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 	}()
 	{
 		num, err := strconv.ParseFloat(yytext, 32)
-		if err != nil {
-			rulesError("Invalid float %v", yytext)
+		if err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax {
+			panic("Invalid float")
 		}
 		yylval.num = model.SampleValue(num)
 		return yyactionreturn{NUMBER, yyRT_USER_RETURN}

@@ -16,6 +16,7 @@ package config
 import (
 	"fmt"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/utility"
 	"strings"
 )
 
@@ -47,8 +48,8 @@ func labelsToString(indent int, labels model.LabelSet) string {
 
 func (global *GlobalConfig) ToString(indent int) string {
 	str := indentStr(indent, "global {\n")
-	str += indentStr(indent+1, "scrape_interval = \"%vs\"\n", global.ScrapeInterval)
-	str += indentStr(indent+1, "evaluation_interval = \"%vs\"\n", global.EvaluationInterval)
+	str += indentStr(indent+1, "scrape_interval = \"%s\"\n", utility.DurationToString(global.ScrapeInterval))
+	str += indentStr(indent+1, "evaluation_interval = \"%s\"\n", utility.DurationToString(global.EvaluationInterval))
 	str += labelsToString(indent+1, global.Labels)
 	str += indentStr(indent, "}\n")
 	str += indentStr(indent+1, "rule_files = [\n")
@@ -61,9 +62,8 @@ func (global *GlobalConfig) ToString(indent int) string {
 
 func (job *JobConfig) ToString(indent int) string {
 	str := indentStr(indent, "job {\n")
-	str += indentStr(indent+1, "job {\n")
 	str += indentStr(indent+1, "name = \"%v\"\n", job.Name)
-	str += indentStr(indent+1, "scrape_interval = \"%vs\"\n", job.ScrapeInterval)
+	str += indentStr(indent+1, "scrape_interval = \"%s\"\n", utility.DurationToString(job.ScrapeInterval))
 	for _, targets := range job.Targets {
 		str += indentStr(indent+1, "targets {\n")
 		str += indentStr(indent+2, "endpoints = [\n")

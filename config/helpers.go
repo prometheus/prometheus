@@ -17,9 +17,6 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"log"
-	"regexp"
-	"strconv"
-	"time"
 )
 
 // Unfortunately, more global variables that are needed for parsing.
@@ -30,7 +27,9 @@ var tmpTargetLabels = model.LabelSet{}
 
 func configError(error string, v ...interface{}) {
 	message := fmt.Sprintf(error, v...)
-	log.Fatal(fmt.Sprintf("Line %v, char %v: %s", yyline, yypos, message))
+	// TODO: Don't just die here. Pass errors back all the way to the caller
+	// instead.
+	log.Fatalf("Line %v, char %v: %s", yyline, yypos, message)
 }
 
 func PushJobOption(option string, value string) {
@@ -65,27 +64,4 @@ func PopJob() {
 	}
 	tmpJobOptions = map[string]string{}
 	tmpJobTargets = []Targets{}
-}
-
-func stringToDuration(durationStr string) time.Duration {
-	durationRE := regexp.MustCompile("^([0-9]+)([ywdhms]+)$")
-	matches := durationRE.FindStringSubmatch(durationStr)
-	if len(matches) != 3 {
-		configError("Not a valid duration string: '%v'", durationStr)
-	}
-	value, _ := strconv.Atoi(matches[1])
-	unit := matches[2]
-	switch unit {
-	case "y":
-		value *= 60 * 60 * 24 * 365
-	case "w":
-		value *= 60 * 60 * 24 * 7
-	case "d":
-		value *= 60 * 60 * 24
-	case "h":
-		value *= 60 * 60
-	case "m":
-		value *= 60
-	}
-	return time.Duration(value) * time.Second
 }
