@@ -290,7 +290,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetBoundaryValues(m *model.Metric, i *model.Interval, s *metric.StalenessPolicy) (open *model.Sample, end *model.Sample, err error) {
+func (l *LevelDBMetricPersistence) GetBoundaryValues(m model.Metric, i model.Interval, s metric.StalenessPolicy) (open *model.Sample, end *model.Sample, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -300,14 +300,14 @@ func (l *LevelDBMetricPersistence) GetBoundaryValues(m *model.Metric, i *model.I
 	}()
 
 	// XXX: Maybe we will want to emit incomplete sets?
-	open, err = l.GetValueAtTime(*m, i.OldestInclusive, *s)
+	open, err = l.GetValueAtTime(m, i.OldestInclusive, s)
 	if err != nil {
 		return
 	} else if open == nil {
 		return
 	}
 
-	end, err = l.GetValueAtTime(*m, i.NewestInclusive, *s)
+	end, err = l.GetValueAtTime(m, i.NewestInclusive, s)
 	if err != nil {
 		return
 	} else if end == nil {

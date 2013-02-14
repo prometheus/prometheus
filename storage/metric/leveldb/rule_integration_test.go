@@ -1058,7 +1058,7 @@ var testGetBoundaryValues = func(t test.Tester) {
 					DeltaAllowance: input.staleness,
 				}
 
-				openValue, endValue, err := persistence.GetBoundaryValues(&m, &interval, &p)
+				openValue, endValue, err := persistence.GetBoundaryValues(m, interval, p)
 				if err != nil {
 					t.Errorf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}
