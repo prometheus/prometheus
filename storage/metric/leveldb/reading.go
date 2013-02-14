@@ -180,7 +180,7 @@ func (l *LevelDBMetricPersistence) GetLabelNameFingerprints(n *dto.LabelName) (c
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fps []*model.Fingerprint, err error) {
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fps []model.Fingerprint, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -222,10 +222,10 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 	for i := 1; i < numberOfSets; i++ {
 		base = base.Intersection(sets[i])
 	}
-	fps = []*model.Fingerprint{}
+	fps = []model.Fingerprint{}
 	for _, e := range base.Elements() {
 		fingerprint := e.(model.Fingerprint)
-		fps = append(fps, &fingerprint)
+		fps = append(fps, fingerprint)
 	}
 
 	return

@@ -37,7 +37,7 @@ func (p *PersistenceAdapter) getMetricsWithLabels(labels model.LabelSet) ([]*mod
 	}
 	metrics := []*model.Metric{}
 	for _, fingerprint := range fingerprints {
-		metric, err := p.persistence.GetMetricForFingerprint(*fingerprint)
+		metric, err := p.persistence.GetMetricForFingerprint(fingerprint)
 		if err != nil {
 			return nil, err
 		}
