@@ -592,7 +592,7 @@ var testGetValueAtTime = func(t test.Tester) {
 					DeltaAllowance: input.staleness,
 				}
 
-				actual, err := persistence.GetValueAtTime(&m, &time, &p)
+				actual, err := persistence.GetValueAtTime(m, time, p)
 				if err != nil {
 					t.Errorf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}
@@ -1058,7 +1058,7 @@ var testGetBoundaryValues = func(t test.Tester) {
 					DeltaAllowance: input.staleness,
 				}
 
-				openValue, endValue, err := persistence.GetBoundaryValues(&m, &interval, &p)
+				openValue, endValue, err := persistence.GetBoundaryValues(m, interval, p)
 				if err != nil {
 					t.Errorf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}
@@ -1652,7 +1652,7 @@ var testGetRangeValues = func(t test.Tester) {
 					DeltaAllowance: input.staleness,
 				}
 
-				values, err := persistence.GetRangeValues(&m, &i, &p)
+				values, err := persistence.GetRangeValues(m, i, p)
 				if err != nil {
 					t.Errorf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}
