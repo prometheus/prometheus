@@ -887,7 +887,7 @@ func TestGetMetricForFingerprint(t *testing.T) {
 		t.Errorf("Expected one element.")
 	}
 
-	v, e := persistence.GetMetricForFingerprint(result[0])
+	v, e := persistence.GetMetricForFingerprint(*result[0])
 	if e != nil {
 		t.Error(e)
 	}
@@ -912,7 +912,7 @@ func TestGetMetricForFingerprint(t *testing.T) {
 		t.Errorf("Expected one element.")
 	}
 
-	v, e = persistence.GetMetricForFingerprint(result[0])
+	v, e = persistence.GetMetricForFingerprint(*result[0])
 
 	if e != nil {
 		t.Error(e)

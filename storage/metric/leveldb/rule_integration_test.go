@@ -592,7 +592,7 @@ var testGetValueAtTime = func(t test.Tester) {
 					DeltaAllowance: input.staleness,
 				}
 
-				actual, err := persistence.GetValueAtTime(&m, &time, &p)
+				actual, err := persistence.GetValueAtTime(m, time, p)
 				if err != nil {
 					t.Errorf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}

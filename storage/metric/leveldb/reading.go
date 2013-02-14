@@ -262,7 +262,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint) (m *model.Metric, err error) {
+func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -271,7 +271,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint)
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
 	}()
 
-	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBufferEncoder(model.FingerprintToDTO(f)))
+	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBufferEncoder(model.FingerprintToDTO(&f)))
 	if err != nil {
 		return
 	}
@@ -300,14 +300,14 @@ func (l *LevelDBMetricPersistence) GetBoundaryValues(m *model.Metric, i *model.I
 	}()
 
 	// XXX: Maybe we will want to emit incomplete sets?
-	open, err = l.GetValueAtTime(m, &i.OldestInclusive, s)
+	open, err = l.GetValueAtTime(*m, i.OldestInclusive, *s)
 	if err != nil {
 		return
 	} else if open == nil {
 		return
 	}
 
-	end, err = l.GetValueAtTime(m, &i.NewestInclusive, s)
+	end, err = l.GetValueAtTime(*m, i.NewestInclusive, *s)
 	if err != nil {
 		return
 	} else if end == nil {
@@ -339,7 +339,7 @@ type iterator interface {
 	Value() []byte
 }
 
-func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time, s *metric.StalenessPolicy) (sample *model.Sample, err error) {
+func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s metric.StalenessPolicy) (sample *model.Sample, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -353,7 +353,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 	// Candidate for Refactoring
 	k := &dto.SampleKey{
 		Fingerprint: f,
-		Timestamp:   indexable.EncodeTime(*t),
+		Timestamp:   indexable.EncodeTime(t),
 	}
 
 	e, err := coding.NewProtocolBufferEncoder(k).Encode()
@@ -473,7 +473,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 		firstTime = alternativeTime
 	}
 
-	firstDelta := firstTime.Sub(*t)
+	firstDelta := firstTime.Sub(t)
 	if firstDelta < 0 {
 		firstDelta *= -1
 	}
@@ -486,7 +486,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 		return
 	}
 
-	sample = model.SampleFromDTO(m, t, firstValue)
+	sample = model.SampleFromDTO(&m, &t, firstValue)
 
 	if firstDelta == time.Duration(0) {
 		return
@@ -542,13 +542,13 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m *model.Metric, t *time.Time,
 		return
 	}
 
-	interpolated := interpolate(firstTime, secondTime, *firstValue.Value, *secondValue.Value, *t)
+	interpolated := interpolate(firstTime, secondTime, *firstValue.Value, *secondValue.Value, t)
 
 	sampleValue := &dto.SampleValue{
 		Value: &interpolated,
 	}
 
-	sample = model.SampleFromDTO(m, t, sampleValue)
+	sample = model.SampleFromDTO(&m, &t, sampleValue)
 
 	return
 }

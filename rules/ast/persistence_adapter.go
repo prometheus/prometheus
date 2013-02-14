@@ -37,7 +37,7 @@ func (p *PersistenceAdapter) getMetricsWithLabels(labels model.LabelSet) ([]*mod
 	}
 	metrics := []*model.Metric{}
 	for _, fingerprint := range fingerprints {
-		metric, err := p.persistence.GetMetricForFingerprint(fingerprint)
+		metric, err := p.persistence.GetMetricForFingerprint(*fingerprint)
 		if err != nil {
 			return nil, err
 		}
@@ -53,7 +53,7 @@ func (p *PersistenceAdapter) GetValueAtTime(labels model.LabelSet, timestamp *ti
 	}
 	samples := []*model.Sample{}
 	for _, metric := range metrics {
-		sample, err := p.persistence.GetValueAtTime(metric, timestamp, p.stalenessPolicy)
+		sample, err := p.persistence.GetValueAtTime(*metric, *timestamp, *p.stalenessPolicy)
 		if err != nil {
 			return nil, err
 		}

@@ -30,19 +30,19 @@ type MetricPersistence interface {
 	Close() error
 
 	// Record a new sample in the storage layer.
-	AppendSample(sample model.Sample) error
+	AppendSample(model.Sample) error
 
 	// Get all of the metric fingerprints that are associated with the provided
 	// label set.
-	GetFingerprintsForLabelSet(labelSet model.LabelSet) ([]*model.Fingerprint, error)
+	GetFingerprintsForLabelSet(model.LabelSet) ([]*model.Fingerprint, error)
 
 	// Get all of the metric fingerprints that are associated for a given label
 	// name.
-	GetFingerprintsForLabelName(labelName model.LabelName) ([]*model.Fingerprint, error)
+	GetFingerprintsForLabelName(model.LabelName) ([]*model.Fingerprint, error)
 
-	GetMetricForFingerprint(f *model.Fingerprint) (*model.Metric, error)
+	GetMetricForFingerprint(model.Fingerprint) (*model.Metric, error)
 
-	GetValueAtTime(*model.Metric, *time.Time, *StalenessPolicy) (*model.Sample, error)
+	GetValueAtTime(model.Metric, time.Time, StalenessPolicy) (*model.Sample, error)
 	GetBoundaryValues(*model.Metric, *model.Interval, *StalenessPolicy) (*model.Sample, *model.Sample, error)
 	GetRangeValues(*model.Metric, *model.Interval, *StalenessPolicy) (*model.SampleSet, error)
 
