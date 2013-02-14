@@ -31,7 +31,7 @@ type PersistenceAdapter struct {
 var persistenceAdapter *PersistenceAdapter = nil
 
 func (p *PersistenceAdapter) getMetricsWithLabels(labels model.LabelSet) ([]*model.Metric, error) {
-	fingerprints, err := p.persistence.GetFingerprintsForLabelSet(&labels)
+	fingerprints, err := p.persistence.GetFingerprintsForLabelSet(labels)
 	if err != nil {
 		return nil, err
 	}
