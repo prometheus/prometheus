@@ -65,7 +65,7 @@ func TestGetFingerprintsForLabelSetUsesAnd(t *testing.T) {
 		"percentile": "0.010000",
 	}
 
-	fingerprints, err := persistence.GetFingerprintsForLabelSet(&labelSet)
+	fingerprints, err := persistence.GetFingerprintsForLabelSet(labelSet)
 	if err != nil {
 		t.Errorf("could not get labels: %s", err)
 	}

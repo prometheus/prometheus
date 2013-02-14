@@ -710,9 +710,9 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 		t.Error(appendErr)
 	}
 
-	result, getErr := persistence.GetFingerprintsForLabelSet(&(model.LabelSet{
+	result, getErr := persistence.GetFingerprintsForLabelSet(model.LabelSet{
 		model.LabelName("name"): model.LabelValue("my_metric"),
-	}))
+	})
 
 	if getErr != nil {
 		t.Error(getErr)
@@ -722,9 +722,9 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 		t.Errorf("Expected two elements.")
 	}
 
-	result, getErr = persistence.GetFingerprintsForLabelSet(&(model.LabelSet{
+	result, getErr = persistence.GetFingerprintsForLabelSet(model.LabelSet{
 		model.LabelName("request_type"): model.LabelValue("your_mom"),
-	}))
+	})
 
 	if getErr != nil {
 		t.Error(getErr)
@@ -734,9 +734,9 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 		t.Errorf("Expected one element.")
 	}
 
-	result, getErr = persistence.GetFingerprintsForLabelSet(&(model.LabelSet{
+	result, getErr = persistence.GetFingerprintsForLabelSet(model.LabelSet{
 		model.LabelName("request_type"): model.LabelValue("your_dad"),
-	}))
+	})
 
 	if getErr != nil {
 		t.Error(getErr)
@@ -875,9 +875,9 @@ func TestGetMetricForFingerprint(t *testing.T) {
 		t.Error(appendErr)
 	}
 
-	result, getErr := persistence.GetFingerprintsForLabelSet(&(model.LabelSet{
+	result, getErr := persistence.GetFingerprintsForLabelSet(model.LabelSet{
 		model.LabelName("request_type"): model.LabelValue("your_mom"),
-	}))
+	})
 
 	if getErr != nil {
 		t.Error(getErr)
@@ -900,9 +900,9 @@ func TestGetMetricForFingerprint(t *testing.T) {
 		t.Errorf("Expected metric to match.")
 	}
 
-	result, getErr = persistence.GetFingerprintsForLabelSet(&(model.LabelSet{
+	result, getErr = persistence.GetFingerprintsForLabelSet(model.LabelSet{
 		model.LabelName("request_type"): model.LabelValue("your_dad"),
-	}))
+	})
 
 	if getErr != nil {
 		t.Error(getErr)
