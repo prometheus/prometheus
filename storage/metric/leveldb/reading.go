@@ -231,7 +231,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName *model.LabelName) (fps []*model.Fingerprint, err error) {
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.LabelName) (fps []*model.Fingerprint, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -242,7 +242,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName *model.
 
 	fps = make([]*model.Fingerprint, 0, 0)
 
-	raw, err := l.labelNameToFingerprints.Get(coding.NewProtocolBufferEncoder(model.LabelNameToDTO(labelName)))
+	raw, err := l.labelNameToFingerprints.Get(coding.NewProtocolBufferEncoder(model.LabelNameToDTO(&labelName)))
 	if err != nil {
 		return
 	}

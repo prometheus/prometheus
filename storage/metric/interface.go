@@ -38,7 +38,7 @@ type MetricPersistence interface {
 
 	// Get all of the metric fingerprints that are associated for a given label
 	// name.
-	GetFingerprintsForLabelName(labelName *model.LabelName) ([]*model.Fingerprint, error)
+	GetFingerprintsForLabelName(labelName model.LabelName) ([]*model.Fingerprint, error)
 
 	GetMetricForFingerprint(f *model.Fingerprint) (*model.Metric, error)
 
