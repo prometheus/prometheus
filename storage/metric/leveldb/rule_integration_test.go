@@ -1652,7 +1652,7 @@ var testGetRangeValues = func(t test.Tester) {
 					DeltaAllowance: input.staleness,
 				}
 
-				values, err := persistence.GetRangeValues(&m, &i, &p)
+				values, err := persistence.GetRangeValues(m, i, p)
 				if err != nil {
 					t.Errorf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}

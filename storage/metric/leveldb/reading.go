@@ -553,7 +553,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetRangeValues(m *model.Metric, i *model.Interval, s *metric.StalenessPolicy) (v *model.SampleSet, err error) {
+func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interval, s metric.StalenessPolicy) (v *model.SampleSet, err error) {
 	begin := time.Now()
 
 	defer func() {

@@ -74,7 +74,7 @@ func (p *PersistenceAdapter) GetBoundaryValues(labels model.LabelSet, interval *
 	sampleSets := []*model.SampleSet{}
 	for _, metric := range metrics {
 		// TODO: change to GetBoundaryValues() once it has the right return type.
-		sampleSet, err := p.persistence.GetRangeValues(metric, interval, p.stalenessPolicy)
+		sampleSet, err := p.persistence.GetRangeValues(*metric, *interval, *p.stalenessPolicy)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +97,7 @@ func (p *PersistenceAdapter) GetRangeValues(labels model.LabelSet, interval *mod
 
 	sampleSets := []*model.SampleSet{}
 	for _, metric := range metrics {
-		sampleSet, err := p.persistence.GetRangeValues(metric, interval, p.stalenessPolicy)
+		sampleSet, err := p.persistence.GetRangeValues(*metric, *interval, *p.stalenessPolicy)
 		if err != nil {
 			return nil, err
 		}
