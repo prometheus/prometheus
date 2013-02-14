@@ -180,7 +180,7 @@ func (l *LevelDBMetricPersistence) GetLabelNameFingerprints(n *dto.LabelName) (c
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fps []*model.Fingerprint, err error) {
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fps []model.Fingerprint, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -222,16 +222,15 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 	for i := 1; i < numberOfSets; i++ {
 		base = base.Intersection(sets[i])
 	}
-	fps = []*model.Fingerprint{}
 	for _, e := range base.Elements() {
 		fingerprint := e.(model.Fingerprint)
-		fps = append(fps, &fingerprint)
+		fps = append(fps, fingerprint)
 	}
 
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.LabelName) (fps []*model.Fingerprint, err error) {
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.LabelName) (fps []model.Fingerprint, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -239,8 +238,6 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getFingerprintsForLabelName, result: success}, map[string]string{operation: getFingerprintsForLabelName, result: failure})
 	}()
-
-	fps = make([]*model.Fingerprint, 0, 0)
 
 	raw, err := l.labelNameToFingerprints.Get(coding.NewProtocolBufferEncoder(model.LabelNameToDTO(&labelName)))
 	if err != nil {
@@ -256,7 +253,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 
 	for _, m := range unmarshaled.Member {
 		fp := model.Fingerprint(*m.Signature)
-		fps = append(fps, &fp)
+		fps = append(fps, fp)
 	}
 
 	return
