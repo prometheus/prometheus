@@ -76,8 +76,8 @@ func main() {
 
 	appState := &appstate.ApplicationState{
 		Config:        conf,
-		RuleManager:   ruleManager,
 		Persistence:   persistence,
+		RuleManager:   ruleManager,
 		TargetManager: targetManager,
 	}
 

@@ -20,9 +20,12 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
+// ApplicationState is an encapsulation of all relevant Prometheus application
+// runtime state. It enables simpler passing of this state to components that
+// require it.
 type ApplicationState struct {
 	Config        *config.Config
-	RuleManager   rules.RuleManager
 	Persistence   metric.MetricPersistence
+	RuleManager   rules.RuleManager
 	TargetManager retrieval.TargetManager
 }

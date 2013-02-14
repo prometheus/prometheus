@@ -20,9 +20,9 @@ import (
 )
 
 type PrometheusStatus struct {
-	Status  string
 	Config  string
 	Rules   string
+	Status  string
 	Targets string
 }
 
@@ -32,9 +32,9 @@ type StatusHandler struct {
 
 func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status := &PrometheusStatus{
-		Status:  "TODO: add status information here",
 		Config:  h.appState.Config.ToString(0),
 		Rules:   "TODO: list rules here",
+		Status:  "TODO: add status information here",
 		Targets: "TODO: list targets here",
 	}
 	t, _ := template.ParseFiles("web/templates/status.html")

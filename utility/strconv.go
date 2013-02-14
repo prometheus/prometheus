@@ -67,6 +67,8 @@ func StringToDuration(durationStr string) (duration time.Duration, err error) {
 		duration *= 60
 	case "s":
 		duration *= 1
+	default:
+		panic("Invalid time unit in duration string.")
 	}
 	return
 }
