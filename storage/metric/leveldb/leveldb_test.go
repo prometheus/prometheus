@@ -892,11 +892,11 @@ func TestGetMetricForFingerprint(t *testing.T) {
 		t.Error(e)
 	}
 
-	if len(*v) != 1 {
+	if len(v) != 1 {
 		t.Errorf("Expected one-dimensional metric.")
 	}
 
-	if (*v)["request_type"] != "your_mom" {
+	if v["request_type"] != "your_mom" {
 		t.Errorf("Expected metric to match.")
 	}
 
@@ -918,15 +918,15 @@ func TestGetMetricForFingerprint(t *testing.T) {
 		t.Error(e)
 	}
 
-	if len(*v) != 2 {
+	if len(v) != 2 {
 		t.Errorf("Expected one-dimensional metric.")
 	}
 
-	if (*v)["request_type"] != "your_dad" {
+	if v["request_type"] != "your_dad" {
 		t.Errorf("Expected metric to match.")
 	}
 
-	if (*v)["one-off"] != "value" {
+	if v["one-off"] != "value" {
 		t.Errorf("Expected metric to match.")
 	}
 }

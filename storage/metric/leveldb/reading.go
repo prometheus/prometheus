@@ -259,7 +259,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
+func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) (m model.Metric, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -279,9 +279,10 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 		return
 	}
 
-	m = &model.Metric{}
+	m = model.Metric{}
+
 	for _, v := range unmarshaled.LabelPair {
-		(*m)[model.LabelName(*v.Name)] = model.LabelValue(*v.Value)
+		m[model.LabelName(*v.Name)] = model.LabelValue(*v.Value)
 	}
 
 	return
