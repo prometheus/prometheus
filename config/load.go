@@ -27,7 +27,7 @@ import (
 var yylval *yySymType    // For storing extra token information, like the contents of a string.
 var yyline int           // Line number within the current file or buffer.
 var yypos int            // Character position within the current line.
-var parsedConfig = New() // Temporary variable for storing the parsed configuration.
+var parsedConfig *Config // Temporary variable for storing the parsed configuration.
 
 type ConfigLexer struct {
 	errors []string
@@ -45,6 +45,7 @@ func (lexer *ConfigLexer) Error(errorStr string) {
 }
 
 func LoadFromReader(configReader io.Reader) (*Config, error) {
+	parsedConfig = New()
 	yyin = configReader
 	yypos = 1
 	yyline = 1
