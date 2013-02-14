@@ -40,7 +40,7 @@ type MetricPersistence interface {
 	// name.
 	GetFingerprintsForLabelName(model.LabelName) ([]model.Fingerprint, error)
 
-	GetMetricForFingerprint(model.Fingerprint) (*model.Metric, error)
+	GetMetricForFingerprint(model.Fingerprint) (model.Metric, error)
 
 	GetValueAtTime(model.Metric, time.Time, StalenessPolicy) (*model.Sample, error)
 	GetBoundaryValues(model.Metric, model.Interval, StalenessPolicy) (*model.Sample, *model.Sample, error)

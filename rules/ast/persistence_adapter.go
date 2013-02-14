@@ -30,20 +30,20 @@ type PersistenceAdapter struct {
 // AST-global persistence to use.
 var persistenceAdapter *PersistenceAdapter = nil
 
-func (p *PersistenceAdapter) getMetricsWithLabels(labels model.LabelSet) ([]*model.Metric, error) {
+func (p *PersistenceAdapter) getMetricsWithLabels(labels model.LabelSet) (metrics []model.Metric, err error) {
 	fingerprints, err := p.persistence.GetFingerprintsForLabelSet(labels)
 	if err != nil {
-		return nil, err
+		return
 	}
-	metrics := []*model.Metric{}
 	for _, fingerprint := range fingerprints {
 		metric, err := p.persistence.GetMetricForFingerprint(fingerprint)
 		if err != nil {
-			return nil, err
+			return metrics, err
 		}
 		metrics = append(metrics, metric)
 	}
-	return metrics, nil
+
+	return
 }
 
 func (p *PersistenceAdapter) GetValueAtTime(labels model.LabelSet, timestamp *time.Time) ([]*model.Sample, error) {
@@ -53,7 +53,7 @@ func (p *PersistenceAdapter) GetValueAtTime(labels model.LabelSet, timestamp *ti
 	}
 	samples := []*model.Sample{}
 	for _, metric := range metrics {
-		sample, err := p.persistence.GetValueAtTime(*metric, *timestamp, *p.stalenessPolicy)
+		sample, err := p.persistence.GetValueAtTime(metric, *timestamp, *p.stalenessPolicy)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +74,7 @@ func (p *PersistenceAdapter) GetBoundaryValues(labels model.LabelSet, interval *
 	sampleSets := []*model.SampleSet{}
 	for _, metric := range metrics {
 		// TODO: change to GetBoundaryValues() once it has the right return type.
-		sampleSet, err := p.persistence.GetRangeValues(*metric, *interval, *p.stalenessPolicy)
+		sampleSet, err := p.persistence.GetRangeValues(metric, *interval, *p.stalenessPolicy)
 		if err != nil {
 			return nil, err
 		}
@@ -83,7 +83,7 @@ func (p *PersistenceAdapter) GetBoundaryValues(labels model.LabelSet, interval *
 		}
 
 		// TODO remove when persistence return value is fixed.
-		sampleSet.Metric = *metric
+		sampleSet.Metric = metric
 		sampleSets = append(sampleSets, sampleSet)
 	}
 	return sampleSets, nil
@@ -97,7 +97,7 @@ func (p *PersistenceAdapter) GetRangeValues(labels model.LabelSet, interval *mod
 
 	sampleSets := []*model.SampleSet{}
 	for _, metric := range metrics {
-		sampleSet, err := p.persistence.GetRangeValues(*metric, *interval, *p.stalenessPolicy)
+		sampleSet, err := p.persistence.GetRangeValues(metric, *interval, *p.stalenessPolicy)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +106,7 @@ func (p *PersistenceAdapter) GetRangeValues(labels model.LabelSet, interval *mod
 		}
 
 		// TODO remove when persistence return value is fixed.
-		sampleSet.Metric = *metric
+		sampleSet.Metric = metric
 		sampleSets = append(sampleSets, sampleSet)
 	}
 	return sampleSets, nil
