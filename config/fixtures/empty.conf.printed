@@ -1,0 +1,8 @@
+global {
+	scrape_interval = "0y"
+	evaluation_interval = "0y"
+	rule_files = [
+
+	]
+}
+

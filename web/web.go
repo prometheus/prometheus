@@ -17,7 +17,7 @@ import (
 	"code.google.com/p/gorest"
 	"flag"
 	"github.com/prometheus/client_golang"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/web/api"
 	"net/http"
 	_ "net/http/pprof"
@@ -28,11 +28,13 @@ var (
 	listenAddress = flag.String("listenAddress", ":9090", "Address to listen on for web interface.")
 )
 
-func StartServing(persistence metric.MetricPersistence) {
-	gorest.RegisterService(api.NewMetricsService(persistence))
+func StartServing(appState *appstate.ApplicationState) {
+	gorest.RegisterService(api.NewMetricsService(appState.Persistence))
+	exporter := registry.DefaultRegistry.YieldExporter()
 
-	http.Handle("/", gorest.Handle())
-	http.Handle("/metrics.json", registry.DefaultHandler)
+	http.Handle("/status", &StatusHandler{appState: appState})
+	http.Handle("/api/", gorest.Handle())
+	http.Handle("/metrics.json", exporter)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 
 	go http.ListenAndServe(*listenAddress, nil)

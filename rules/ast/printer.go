@@ -16,6 +16,7 @@ package ast
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/prometheus/utility"
 	"sort"
 	"strings"
 	"time"
@@ -63,29 +64,6 @@ func exprTypeToString(exprType ExprType) string {
 		STRING: "string",
 	}
 	return exprTypeMap[exprType]
-}
-
-func durationToString(duration time.Duration) string {
-	seconds := int64(duration / time.Second)
-	factors := map[string]int64{
-		"y": 60 * 60 * 24 * 365,
-		"d": 60 * 60 * 24,
-		"h": 60 * 60,
-		"m": 60,
-		"s": 1,
-	}
-	unit := "s"
-	switch int64(0) {
-	case seconds % factors["y"]:
-		unit = "y"
-	case seconds % factors["d"]:
-		unit = "d"
-	case seconds % factors["h"]:
-		unit = "h"
-	case seconds % factors["m"]:
-		unit = "m"
-	}
-	return fmt.Sprintf("%v%v", seconds/factors[unit], unit)
 }
 
 func (vector Vector) ToString() string {
@@ -228,7 +206,7 @@ func (node *VectorLiteral) ToString() string {
 
 func (node *MatrixLiteral) ToString() string {
 	vectorString := (&VectorLiteral{labels: node.labels}).ToString()
-	intervalString := fmt.Sprintf("['%v']", durationToString(node.interval))
+	intervalString := fmt.Sprintf("['%v']", utility.DurationToString(node.interval))
 	return vectorString + intervalString
 }
 
