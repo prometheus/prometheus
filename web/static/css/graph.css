@@ -1,0 +1,23 @@
+body {
+  margin: 0;
+}
+
+.graph_container {
+        font-family: Arial, Helvetica, sans-serif;
+}
+
+.graph {
+        position: relative;
+}
+
+svg {
+  border: 1px solid #aaa;
+  margin-bottom: 5px;
+}
+
+.legend {
+        display: inline-block;
+        vertical-align: top;
+        margin: 0 0 0 0px;
+        background-
+}

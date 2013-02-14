@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/utility"
 	"time"
 )
 
@@ -55,7 +56,7 @@ func (config *Config) AddJob(options map[string]string, targets []Targets) error
 		return errors.New("Missing job name")
 	}
 	if len(targets) == 0 {
-		return errors.New(fmt.Sprintf("No targets configured for job '%v'", name))
+		return fmt.Errorf("No targets configured for job '%v'", name)
 	}
 	job := &JobConfig{
 		Targets: tmpJobTargets,
@@ -69,18 +70,18 @@ func (config *Config) AddJob(options map[string]string, targets []Targets) error
 	return nil
 }
 
-func (config *GlobalConfig) SetOption(option string, value string) error {
+func (config *GlobalConfig) SetOption(option string, value string) (err error) {
 	switch option {
 	case "scrape_interval":
-		config.ScrapeInterval = stringToDuration(value)
+		config.ScrapeInterval, err = utility.StringToDuration(value)
 		return nil
 	case "evaluation_interval":
-		config.EvaluationInterval = stringToDuration(value)
-		return nil
+		config.EvaluationInterval, err = utility.StringToDuration(value)
+		return err
 	default:
-		return errors.New(fmt.Sprintf("Unrecognized global configuration option '%v'", option))
+		err = fmt.Errorf("Unrecognized global configuration option '%v'", option)
 	}
-	return nil
+	return
 }
 
 func (config *GlobalConfig) SetLabels(labels model.LabelSet) {
@@ -95,18 +96,16 @@ func (config *GlobalConfig) AddRuleFiles(ruleFiles []string) {
 	}
 }
 
-func (job *JobConfig) SetOption(option string, value string) error {
+func (job *JobConfig) SetOption(option string, value string) (err error) {
 	switch option {
 	case "name":
 		job.Name = value
-		return nil
 	case "scrape_interval":
-		job.ScrapeInterval = stringToDuration(value)
-		return nil
+		job.ScrapeInterval, err = utility.StringToDuration(value)
 	default:
-		return errors.New(fmt.Sprintf("Unrecognized job configuration option '%v'", option))
+		err = fmt.Errorf("Unrecognized job configuration option '%v'", option)
 	}
-	return nil
+	return
 }
 
 func (job *JobConfig) AddTargets(endpoints []string, labels model.LabelSet) {

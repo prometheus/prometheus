@@ -48,7 +48,9 @@ AVG|SUM|MAX|MIN          { yylval.str = yytext; return AGGR_OP }
 {L}({L}|{D})+            { yylval.str = yytext; return IDENTIFIER }
 
 \-?{D}+(\.{D}*)?         { num, err := strconv.ParseFloat(yytext, 32);
-                           if (err != nil) { rulesError("Invalid float %v", yytext) }
+                           if (err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax) {
+                             panic("Invalid float")
+                           }
                            yylval.num = model.SampleValue(num)
                            return NUMBER }
 

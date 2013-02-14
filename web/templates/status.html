@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Prometheus Status</title>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+    <link type="text/css" rel="stylesheet" href="static/css/prometheus.css">
+  </head>
+
+  <body>
+		<h2>Status</h2>
+		<div class="grouping_box">
+{{.Status}}
+		</div>
+
+		<h2>Configuration</h2>
+		<div class="grouping_box">
+		<pre>
+{{.Config}}
+		</pre>
+		</div>
+
+    <h2>Rules</h2>
+		<div class="grouping_box">
+{{.Rules}}
+		</div>
+
+		<h2>Targets</h2>
+		<div class="grouping_box">
+{{.Targets}}
+		</div>
+  </body>
+</html>

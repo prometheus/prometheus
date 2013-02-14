@@ -1,0 +1,49 @@
+global {
+	scrape_interval = "30s"
+	evaluation_interval = "30s"
+	labels {
+		monitor = "test"
+	}
+	rule_files = [
+		"prometheus.rules"
+	]
+}
+
+job {
+	name = "prometheus"
+	scrape_interval = "15s"
+	targets {
+		endpoints = [
+			"http://localhost:9090/metrics.json"
+		]
+		labels {
+			group = "canary"
+		}
+	}
+}
+
+job {
+	name = "random"
+	scrape_interval = "30s"
+	targets {
+		endpoints = [
+			"http://random.com:8080/metrics.json",
+			"http://random.com:8081/metrics.json",
+			"http://random.com:8082/metrics.json",
+			"http://random.com:8083/metrics.json",
+			"http://random.com:8084/metrics.json"
+		]
+		labels {
+			group = "production"
+		}
+	}
+	targets {
+		endpoints = [
+			"http://random.com:8085/metrics.json",
+			"http://random.com:8086/metrics.json"
+		]
+		labels {
+			group = "canary"
+		}
+	}
+}
