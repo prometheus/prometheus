@@ -79,11 +79,12 @@ func main() {
 		select {
 		case scrapeResult := <-scrapeResults:
 			if scrapeResult.Err == nil {
-				persistence.AppendSample(&scrapeResult.Sample)
+				persistence.AppendSample(scrapeResult.Sample)
 			}
 		case ruleResult := <-ruleResults:
 			for _, sample := range ruleResult.Samples {
-				persistence.AppendSample(sample)
+				// XXX: Wart
+				persistence.AppendSample(*sample)
 			}
 		}
 	}

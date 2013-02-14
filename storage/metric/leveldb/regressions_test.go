@@ -49,7 +49,7 @@ func TestGetFingerprintsForLabelSetUsesAnd(t *testing.T) {
 			m[model.LabelName(k)] = model.LabelValue(v)
 		}
 
-		err := persistence.AppendSample(&model.Sample{
+		err := persistence.AppendSample(model.Sample{
 			Value:     model.SampleValue(0.0),
 			Timestamp: time.Now(),
 			Metric:    m,
