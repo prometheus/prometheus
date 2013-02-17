@@ -30,16 +30,16 @@ var configTests = []struct {
 	errContains string
 }{
 	{
-		inputFile:   "minimal.conf",
+		inputFile:   "minimal.conf.input",
 		printedFile: "minimal.conf.printed",
 	}, {
-		inputFile:   "sample.conf",
+		inputFile:   "sample.conf.input",
 		printedFile: "sample.conf.printed",
 	}, {
 		// TODO: Options that are not provided should be set to sane defaults or
 		// create errors during config loading (as appropriate). Right now, these
 		// options remain at their zero-values, which is probably not what we want.
-		inputFile:   "empty.conf",
+		inputFile:   "empty.conf.input",
 		printedFile: "empty.conf.printed",
 	},
 	// TODO: To enable testing of bad configs, we first need to change config
@@ -47,7 +47,7 @@ var configTests = []struct {
 	// configuration error should be passed back all the way to the caller.
 	//
 	//{
-	//	inputFile: "bad_job_option.conf",
+	//	inputFile: "bad_job_option.conf.input",
 	//	shouldFail: true,
 	//	errContains: "Missing job name",
 	//},
