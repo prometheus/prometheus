@@ -53,3 +53,15 @@ func BenchmarkGetMetricForFingerprint(b *testing.B) {
 		testGetMetricForFingerprint(b)
 	}
 }
+
+var testAppendRepeatingValues = buildTestPersistence(metric.AppendRepeatingValuesTests)
+
+func TestAppendRepeatingValues(t *testing.T) {
+	testAppendRepeatingValues(t)
+}
+
+func BenchmarkAppendRepeatingValues(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testAppendRepeatingValues(b)
+	}
+}
