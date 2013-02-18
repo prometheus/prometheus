@@ -34,8 +34,6 @@ var (
 type leveldbOpener func()
 
 func (l *LevelDBMetricPersistence) Close() error {
-	log.Printf("Closing LevelDBPersistence storage containers...")
-
 	var persistences = []struct {
 		name   string
 		closer io.Closer
@@ -70,7 +68,6 @@ func (l *LevelDBMetricPersistence) Close() error {
 
 		go func(name string, closer io.Closer) {
 			if closer != nil {
-				log.Printf("Closing LevelDBPersistence storage container: %s\n", name)
 				closingError := closer.Close()
 
 				if closingError != nil {
@@ -92,14 +89,10 @@ func (l *LevelDBMetricPersistence) Close() error {
 		}
 	}
 
-	log.Printf("Successfully closed all LevelDBPersistence storage containers.")
-
 	return nil
 }
 
 func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetricPersistence, err error) {
-	log.Printf("Opening LevelDBPersistence storage containers...")
-
 	errorChannel := make(chan error, 5)
 
 	emission := &LevelDBMetricPersistence{}
@@ -151,11 +144,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 	}
 
 	for _, subsystem := range subsystemOpeners {
-		name := subsystem.name
 		opener := subsystem.opener
-
-		log.Printf("Opening LevelDBPersistence storage container: %s\n", name)
-
 		go opener()
 	}
 
@@ -168,9 +157,6 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 			return
 		}
 	}
-
-	log.Printf("Successfully opened all LevelDBPersistence storage containers.\n")
-
 	persistence = emission
 
 	return

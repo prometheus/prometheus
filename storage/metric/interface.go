@@ -34,17 +34,17 @@ type MetricPersistence interface {
 
 	// Get all of the metric fingerprints that are associated with the provided
 	// label set.
-	GetFingerprintsForLabelSet(model.LabelSet) ([]model.Fingerprint, error)
+	GetFingerprintsForLabelSet(model.LabelSet) (model.Fingerprints, error)
 
 	// Get all of the metric fingerprints that are associated for a given label
 	// name.
-	GetFingerprintsForLabelName(model.LabelName) ([]model.Fingerprint, error)
+	GetFingerprintsForLabelName(model.LabelName) (model.Fingerprints, error)
 
-	GetMetricForFingerprint(model.Fingerprint) (model.Metric, error)
+	GetMetricForFingerprint(model.Fingerprint) (*model.Metric, error)
 
 	GetValueAtTime(model.Metric, time.Time, StalenessPolicy) (*model.Sample, error)
 	GetBoundaryValues(model.Metric, model.Interval, StalenessPolicy) (*model.Sample, *model.Sample, error)
-	GetRangeValues(model.Metric, model.Interval, StalenessPolicy) (*model.SampleSet, error)
+	GetRangeValues(model.Metric, model.Interval) (*model.SampleSet, error)
 
 	GetAllMetricNames() ([]string, error)
 
