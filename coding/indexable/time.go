@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	EarliestTime = EncodeTime(time.Unix(0, 0))
+	EarliestTime = EncodeTime(time.Time{})
 )
 
 func EncodeTimeInto(dst []byte, t time.Time) {
