@@ -33,8 +33,8 @@ func extractSampleKey(i iterator) (k *dto.SampleKey, err error) {
 	return
 }
 
-func extractSampleValue(i iterator) (v *dto.SampleValue, err error) {
-	v = &dto.SampleValue{}
+func extractSampleValue(i iterator) (v *dto.SampleValueSeries, err error) {
+	v = &dto.SampleValueSeries{}
 	err = proto.Unmarshal(i.Value(), v)
 
 	return
@@ -395,7 +395,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 
 	var (
 		firstKey   *dto.SampleKey
-		firstValue *dto.SampleValue
+		firstValue *dto.SampleValueSeries
 	)
 
 	firstKey, err = extractSampleKey(iterator)
@@ -448,7 +448,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 
 		var (
 			alternativeKey   *dto.SampleKey
-			alternativeValue *dto.SampleValue
+			alternativeValue *dto.SampleValueSeries
 		)
 
 		alternativeKey, err = extractSampleKey(iterator)
@@ -534,7 +534,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 		return
 	}
 
-	var secondValue *dto.SampleValue
+	var secondValue *dto.SampleValueSeries
 
 	secondValue, err = extractSampleValue(iterator)
 	if err != nil {
@@ -543,7 +543,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 
 	interpolated := interpolate(firstTime, secondTime, *firstValue.Value, *secondValue.Value, t)
 
-	sampleValue := &dto.SampleValue{
+	sampleValue := &dto.SampleValueSeries{
 		Value: &interpolated,
 	}
 
