@@ -137,7 +137,7 @@ func (l *LevelDBMetricPersistence) GetSamplesForMetric(metric model.Metric, inte
 
 			for iterator = iterator; iterator.Valid(); iterator.Next() {
 				key := &dto.SampleKey{}
-				value := &dto.SampleValue{}
+				value := &dto.SampleValueSeries{}
 				if keyUnmarshalErr := proto.Unmarshal(iterator.Key(), key); keyUnmarshalErr == nil {
 					if valueUnmarshalErr := proto.Unmarshal(iterator.Value(), value); valueUnmarshalErr == nil {
 						if fingerprintsEqual(fingerprintDTO, key.Fingerprint) {
