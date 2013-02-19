@@ -144,7 +144,7 @@ func (l *LevelDBMetricPersistence) GetSamplesForMetric(metric model.Metric, inte
 							// Wart
 							if predicate(key) {
 								emission = append(emission, model.Samples{
-									Value:     model.SampleValue(*value.Value),
+									Value:     model.SampleValue(*value.Value[0].Value),
 									Timestamp: indexable.DecodeTime(key.Timestamp),
 								})
 							} else {
