@@ -541,11 +541,13 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 		return
 	}
 
-	interpolated := interpolate(firstTime, secondTime, *firstValue.Value, *secondValue.Value, t)
+	fValue := *firstValue.Value[0].Value
+	sValue := *secondValue.Value[0].Value
 
-	sampleValue := &dto.SampleValueSeries{
-		Value: &interpolated,
-	}
+	interpolated := interpolate(firstTime, secondTime, fValue, sValue, t)
+
+	sampleValue := &dto.SampleValueSeries{}
+	sampleValue.Value = append(sampleValue.Value, &dto.SampleValueSeries_Value{Value: &interpolated})
 
 	sample = model.SampleFromDTO(&m, &t, sampleValue)
 
@@ -608,7 +610,7 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interv
 		}
 
 		v.Values = append(v.Values, model.SamplePair{
-			Value:     model.SampleValue(*retrievedValue.Value),
+			Value:     model.SampleValue(*retrievedValue.Value[0].Value),
 			Timestamp: indexable.DecodeTime(retrievedKey.Timestamp),
 		})
 	}

@@ -41,10 +41,15 @@ message LabelSet {
 message SampleKey {
   optional Fingerprint fingerprint = 1;
   optional bytes timestamp = 2;
+  // optional int64 last_timestamp = 3;
 }
 
 message SampleValueSeries {
-  optional float value = 1;
+  message Value {
+    // optional int64 timestamp = 1;
+    optional float value = 1;
+  }
+  repeated Value value = 1;
 }
 
 message MembershipIndexValue {
