@@ -122,7 +122,7 @@ func (l *LevelDBMetricPersistence) GetSamplesForMetric(metric model.Metric, inte
 	if iterator, closer, iteratorErr := l.metricSamples.GetIterator(); iteratorErr == nil {
 		defer closer.Close()
 
-		fingerprintDTO := metric.Fingerprint().ToDTO()
+		fingerprintDTO := model.NewFingerprintFromMetric(metric).ToDTO()
 		start := &dto.SampleKey{
 			Fingerprint: fingerprintDTO,
 			Timestamp:   indexable.EncodeTime(interval.OldestInclusive),

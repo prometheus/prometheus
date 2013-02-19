@@ -203,7 +203,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 		set := utility.Set{}
 
 		for _, m := range unmarshaled.Member {
-			fp := model.Fingerprint(*m.Signature)
+			fp := model.NewFingerprintFromRowKey(*m.Signature)
 			set.Add(fp)
 		}
 
@@ -249,7 +249,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	}
 
 	for _, m := range unmarshaled.Member {
-		fp := model.Fingerprint(*m.Signature)
+		fp := model.NewFingerprintFromRowKey(*m.Signature)
 		fps = append(fps, fp)
 	}
 
@@ -265,7 +265,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
 	}()
 
-	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBufferEncoder(model.FingerprintToDTO(&f)))
+	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBufferEncoder(model.FingerprintToDTO(f)))
 	if err != nil {
 		return
 	}
@@ -347,7 +347,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getValueAtTime, result: success}, map[string]string{operation: getValueAtTime, result: failure})
 	}()
 
-	f := m.Fingerprint().ToDTO()
+	f := model.NewFingerprintFromMetric(m).ToDTO()
 
 	// Candidate for Refactoring
 	k := &dto.SampleKey{
@@ -562,7 +562,7 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interv
 
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
 	}()
-	f := m.Fingerprint().ToDTO()
+	f := model.NewFingerprintFromMetric(m).ToDTO()
 
 	k := &dto.SampleKey{
 		Fingerprint: f,

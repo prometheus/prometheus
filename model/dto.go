@@ -15,8 +15,6 @@ package model
 
 import (
 	"code.google.com/p/goprotobuf/proto"
-	"crypto/md5"
-	"encoding/hex"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"sort"
 	"time"
@@ -77,12 +75,6 @@ func MetricToDTO(m *Metric) *dto.Metric {
 	}
 }
 
-func BytesToFingerprint(v []byte) Fingerprint {
-	hash := md5.New()
-	hash.Write(v)
-	return Fingerprint(hex.EncodeToString(hash.Sum([]byte{})))
-}
-
 func LabelSetToDTOs(s *LabelSet) []*dto.LabelPair {
 	metricLength := len(*s)
 	labelNames := make([]string, 0, metricLength)
@@ -121,9 +113,9 @@ func LabelNameToDTO(l *LabelName) *dto.LabelName {
 	}
 }
 
-func FingerprintToDTO(f *Fingerprint) *dto.Fingerprint {
+func FingerprintToDTO(f Fingerprint) *dto.Fingerprint {
 	return &dto.Fingerprint{
-		Signature: proto.String(string(*f)),
+		Signature: proto.String(f.ToRowKey()),
 	}
 }
 
@@ -136,10 +128,4 @@ func SampleFromDTO(m *Metric, t *time.Time, v *dto.SampleValueSeries) *Sample {
 	s.Metric = *m
 
 	return s
-}
-
-func (f Fingerprint) ToDTO() *dto.Fingerprint {
-	return &dto.Fingerprint{
-		Signature: proto.String(string(f)),
-	}
 }

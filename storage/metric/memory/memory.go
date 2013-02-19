@@ -60,7 +60,7 @@ type memorySeriesStorage struct {
 
 func (s *memorySeriesStorage) AppendSample(sample model.Sample) (err error) {
 	metric := sample.Metric
-	fingerprint := metric.Fingerprint()
+	fingerprint := model.NewFingerprintFromMetric(metric)
 	series, ok := s.fingerprintToSeries[fingerprint]
 
 	if !ok {
@@ -147,7 +147,7 @@ func interpolate(x1, x2 time.Time, y1, y2 float32, e time.Time) model.SampleValu
 }
 
 func (s *memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p metric.StalenessPolicy) (sample *model.Sample, err error) {
-	fingerprint := m.Fingerprint()
+	fingerprint := model.NewFingerprintFromMetric(m)
 	series, ok := s.fingerprintToSeries[fingerprint]
 	if !ok {
 		return
@@ -225,7 +225,7 @@ func (s *memorySeriesStorage) GetBoundaryValues(m model.Metric, i model.Interval
 }
 
 func (s *memorySeriesStorage) GetRangeValues(m model.Metric, i model.Interval) (samples *model.SampleSet, err error) {
-	fingerprint := m.Fingerprint()
+	fingerprint := model.NewFingerprintFromMetric(m)
 	series, ok := s.fingerprintToSeries[fingerprint]
 	if !ok {
 		return
