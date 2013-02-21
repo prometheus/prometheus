@@ -90,7 +90,11 @@ func (p *TargetPool) runIteration(results chan format.Result, interval time.Dura
 
 		if target.scheduledFor().After(now) {
 			heap.Push(p, target)
-
+			// None of the remaining targets are ready to be scheduled. Signal that
+			// we're done processing them in this scrape iteration.
+			for j := i; j < targetCount; j++ {
+				finished <- true
+			}
 			break
 		}
 
@@ -107,6 +111,6 @@ func (p *TargetPool) runIteration(results chan format.Result, interval time.Dura
 
 	close(finished)
 
-	duration := float64(time.Now().Sub(begin) / time.Millisecond)
+	duration := float64(time.Since(begin) / time.Millisecond)
 	retrievalDurations.Add(map[string]string{intervalKey: interval.String()}, duration)
 }
