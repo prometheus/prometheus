@@ -226,3 +226,58 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected metric to match.")
 	}
 }
+
+func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
+	metric := model.Metric{
+		"controller": "foo",
+		"name":       "errors_total",
+		"operation":  "bar",
+	}
+
+	increments := 10
+	repetitions := 500
+
+	for i := 0; i < increments; i++ {
+		for j := 0; j < repetitions; j++ {
+			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
+			appendSample(p, model.Sample{
+				Value:     model.SampleValue(i),
+				Timestamp: time,
+				Metric:    metric,
+			}, t)
+		}
+	}
+
+	labelSet := model.LabelSet{
+		"controller": "foo",
+		"name":       "errors_total",
+		"operation":  "bar",
+	}
+
+	for i := 0; i < increments; i++ {
+		for j := 0; j < repetitions; j++ {
+			fingerprints, err := p.GetFingerprintsForLabelSet(labelSet)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(fingerprints) != 1 {
+				t.Fatalf("expected %d fingerprints, got %d", 1, len(fingerprints))
+			}
+
+			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
+			sample, err := p.GetValueAtTime(metric, time, StalenessPolicy{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sample == nil {
+				t.Fatal("expected non-nil sample.")
+			}
+
+			expected := model.SampleValue(i)
+
+			if sample.Value != expected {
+				t.Fatalf("expected %d value, got %d", expected, sample.Value)
+			}
+		}
+	}
+}

@@ -127,9 +127,9 @@ func FingerprintToDTO(f *Fingerprint) *dto.Fingerprint {
 	}
 }
 
-func SampleFromDTO(m *Metric, t *time.Time, v *dto.SampleValue) *Sample {
+func SampleFromDTO(m *Metric, t *time.Time, v *dto.SampleValueSeries) *Sample {
 	s := &Sample{
-		Value:     SampleValue(*v.Value),
+		Value:     SampleValue(*v.Value[0].Value),
 		Timestamp: *t,
 	}
 

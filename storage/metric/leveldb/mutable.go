@@ -209,9 +209,10 @@ func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error)
 		Fingerprint: fingerprintDTO,
 		Timestamp:   indexable.EncodeTime(sample.Timestamp),
 	}
-	sampleValueDTO := &dto.SampleValue{
+	sampleValueDTO := &dto.SampleValueSeries{}
+	sampleValueDTO.Value = append(sampleValueDTO.Value, &dto.SampleValueSeries_Value{
 		Value: proto.Float32(float32(sample.Value)),
-	}
+	})
 	sampleKeyEncoded := coding.NewProtocolBufferEncoder(sampleKeyDTO)
 	sampleValueEncoded := coding.NewProtocolBufferEncoder(sampleValueDTO)
 
