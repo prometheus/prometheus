@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"container/heap"
+	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
@@ -45,8 +46,8 @@ func testTargetPool(t test.Tester) {
 
 	var scenarios = []struct {
 		name    string
-		outputs []output
 		inputs  []input
+		outputs []output
 	}{
 		{
 			name:    "empty",
@@ -158,6 +159,28 @@ func testTargetPool(t test.Tester) {
 
 func TestTargetPool(t *testing.T) {
 	testTargetPool(t)
+}
+
+func TestTargetPoolIterationWithUnhealthyTargetsFinishes(t *testing.T) {
+	pool := TargetPool{}
+	target := &target{
+		address:   "http://example.com/metrics.json",
+		scheduler: literalScheduler(time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)),
+	}
+	pool.Push(target)
+
+	done := make(chan bool)
+	go func() {
+		pool.runIteration(make(chan format.Result), time.Duration(0))
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		break
+	case <-time.After(time.Duration(1) * time.Second):
+		t.Fatalf("Targetpool iteration is stuck")
+	}
 }
 
 func BenchmarkTargetPool(b *testing.B) {
