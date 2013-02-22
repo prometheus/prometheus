@@ -11,13 +11,28 @@ import (
 )
 
 const (
+	// Used as a separator in the format string for generating the internal label
+	// value pair set fingerprints.
 	reservedDelimiter = `"`
 )
+
+// Models a given sample entry stored in the in-memory arena.
+type value interface {
+	// Gets the given value.
+	get() model.SampleValue
+}
+
+// Models a single sample value.  It presumes that there is either no subsequent
+// value seen or that any subsequent values are of a different value.
+type singletonValue model.SampleValue
+
+func (v singletonValue) get() model.SampleValue {
+	return model.SampleValue(v)
+}
 
 type skipListTime time.Time
 
 func (t skipListTime) LessThan(o skiplist.Ordered) bool {
-	//	return time.Time(t).Before(time.Time(o.(skipListTime)))
 	return time.Time(o.(skipListTime)).Before(time.Time(t))
 }
 
@@ -27,7 +42,7 @@ type stream struct {
 }
 
 func (s *stream) add(sample model.Sample) {
-	s.values.Set(skipListTime(sample.Timestamp), sample.Value)
+	s.values.Set(skipListTime(sample.Timestamp), singletonValue(sample.Value))
 }
 
 func newStream(metric model.Metric) *stream {
@@ -45,7 +60,7 @@ type memorySeriesStorage struct {
 
 func (s *memorySeriesStorage) AppendSample(sample model.Sample) (err error) {
 	metric := sample.Metric
-	fingerprint := metric.Fingerprint()
+	fingerprint := model.NewFingerprintFromMetric(metric)
 	series, ok := s.fingerprintToSeries[fingerprint]
 
 	if !ok {
@@ -132,7 +147,7 @@ func interpolate(x1, x2 time.Time, y1, y2 float32, e time.Time) model.SampleValu
 }
 
 func (s *memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p metric.StalenessPolicy) (sample *model.Sample, err error) {
-	fingerprint := m.Fingerprint()
+	fingerprint := model.NewFingerprintFromMetric(m)
 	series, ok := s.fingerprintToSeries[fingerprint]
 	if !ok {
 		return
@@ -145,9 +160,10 @@ func (s *memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p metr
 
 	foundTime := time.Time(iterator.Key().(skipListTime))
 	if foundTime.Equal(t) {
+		value := iterator.Value().(value)
 		sample = &model.Sample{
 			Metric:    m,
-			Value:     iterator.Value().(model.SampleValue),
+			Value:     value.get(),
 			Timestamp: t,
 		}
 
@@ -159,12 +175,12 @@ func (s *memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p metr
 	}
 
 	secondTime := foundTime
-	secondValue := iterator.Value().(model.SampleValue)
+	secondValue := iterator.Value().(value).get()
 
 	if !iterator.Previous() {
 		sample = &model.Sample{
 			Metric:    m,
-			Value:     iterator.Value().(model.SampleValue),
+			Value:     iterator.Value().(value).get(),
 			Timestamp: t,
 		}
 		return
@@ -179,7 +195,7 @@ func (s *memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p metr
 		return
 	}
 
-	firstValue := iterator.Value().(model.SampleValue)
+	firstValue := iterator.Value().(value).get()
 
 	sample = &model.Sample{
 		Metric:    m,
@@ -209,7 +225,7 @@ func (s *memorySeriesStorage) GetBoundaryValues(m model.Metric, i model.Interval
 }
 
 func (s *memorySeriesStorage) GetRangeValues(m model.Metric, i model.Interval) (samples *model.SampleSet, err error) {
-	fingerprint := m.Fingerprint()
+	fingerprint := model.NewFingerprintFromMetric(m)
 	series, ok := s.fingerprintToSeries[fingerprint]
 	if !ok {
 		return
@@ -232,7 +248,7 @@ func (s *memorySeriesStorage) GetRangeValues(m model.Metric, i model.Interval) (
 
 		samples.Values = append(samples.Values,
 			model.SamplePair{
-				Value:     model.SampleValue(iterator.Value().(model.SampleValue)),
+				Value:     iterator.Value().(value).get(),
 				Timestamp: timestamp,
 			})
 
@@ -251,6 +267,11 @@ func (s *memorySeriesStorage) GetRangeValues(m model.Metric, i model.Interval) (
 }
 
 func (s *memorySeriesStorage) Close() (err error) {
+	// This can probably be simplified:
+	//
+	// s.fingerPrintToSeries = map[model.Fingerprint]*stream{}
+	// s.labelPairToFingerprints = map[string]model.Fingerprints{}
+	// s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
 	for fingerprint := range s.fingerprintToSeries {
 		delete(s.fingerprintToSeries, fingerprint)
 	}

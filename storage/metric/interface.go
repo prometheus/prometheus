@@ -18,16 +18,16 @@ import (
 	"time"
 )
 
-type StalenessPolicy struct {
-	DeltaAllowance time.Duration
-}
-
 // MetricPersistence is a system for storing metric samples in a persistence
 // layer.
 type MetricPersistence interface {
 	// A storage system may rely on external resources and thusly should be
 	// closed when finished.
 	Close() error
+
+	// Commit all pending operations, if any, since some of the storage components
+	// queue work on channels and operate on it in bulk.
+	// Flush() error
 
 	// Record a new sample in the storage layer.
 	AppendSample(model.Sample) error
@@ -48,9 +48,39 @@ type MetricPersistence interface {
 
 	GetAllMetricNames() ([]string, error)
 
+	// Requests the storage stack to build a materialized View of the values
+	// contained therein.
+	// MakeView(builder ViewRequestBuilder, deadline time.Duration) (View, error)
+
 	// DIAGNOSTIC FUNCTIONS PENDING DELETION BELOW HERE
 
 	GetAllLabelNames() ([]string, error)
 	GetAllLabelPairs() ([]model.LabelSet, error)
 	GetAllMetrics() ([]model.LabelSet, error)
+}
+
+// Represents the summation of all datastore queries that shall be performed to
+// extract values.  Each operation mutates the state of the builder.
+type ViewRequestBuilder interface {
+	GetMetricAtTime(fingerprint model.Fingerprint, time time.Time)
+	GetMetricAtInterval(fingerprint model.Fingerprint, from, until time.Time, interval time.Duration)
+	GetMetricRange(fingerprint model.Fingerprint, from, until time.Time)
+}
+
+// Describes the lenience limits for querying the materialized View.
+type StalenessPolicy struct {
+	// Describes the inclusive limit at which individual points if requested will
+	// be matched and subject to interpolation.
+	DeltaAllowance time.Duration
+}
+
+// View provides view of the values in the datastore subject to the request of a
+// preloading operation.
+type View interface {
+	GetValueAtTime(model.Metric, time.Time, StalenessPolicy) (*model.Sample, error)
+	GetBoundaryValues(model.Metric, model.Interval, StalenessPolicy) (*model.Sample, *model.Sample, error)
+	GetRangeValues(model.Metric, model.Interval) (*model.SampleSet, error)
+
+	// Destroy this view.
+	Close()
 }

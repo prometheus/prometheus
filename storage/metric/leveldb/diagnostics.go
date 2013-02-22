@@ -122,7 +122,7 @@ func (l *LevelDBMetricPersistence) GetSamplesForMetric(metric model.Metric, inte
 	if iterator, closer, iteratorErr := l.metricSamples.GetIterator(); iteratorErr == nil {
 		defer closer.Close()
 
-		fingerprintDTO := metric.Fingerprint().ToDTO()
+		fingerprintDTO := model.NewFingerprintFromMetric(metric).ToDTO()
 		start := &dto.SampleKey{
 			Fingerprint: fingerprintDTO,
 			Timestamp:   indexable.EncodeTime(interval.OldestInclusive),
@@ -137,14 +137,14 @@ func (l *LevelDBMetricPersistence) GetSamplesForMetric(metric model.Metric, inte
 
 			for iterator = iterator; iterator.Valid(); iterator.Next() {
 				key := &dto.SampleKey{}
-				value := &dto.SampleValue{}
+				value := &dto.SampleValueSeries{}
 				if keyUnmarshalErr := proto.Unmarshal(iterator.Key(), key); keyUnmarshalErr == nil {
 					if valueUnmarshalErr := proto.Unmarshal(iterator.Value(), value); valueUnmarshalErr == nil {
 						if fingerprintsEqual(fingerprintDTO, key.Fingerprint) {
 							// Wart
 							if predicate(key) {
 								emission = append(emission, model.Samples{
-									Value:     model.SampleValue(*value.Value),
+									Value:     model.SampleValue(*value.Value[0].Value),
 									Timestamp: indexable.DecodeTime(key.Timestamp),
 								})
 							} else {

@@ -33,8 +33,8 @@ func extractSampleKey(i iterator) (k *dto.SampleKey, err error) {
 	return
 }
 
-func extractSampleValue(i iterator) (v *dto.SampleValue, err error) {
-	v = &dto.SampleValue{}
+func extractSampleValue(i iterator) (v *dto.SampleValueSeries, err error) {
+	v = &dto.SampleValueSeries{}
 	err = proto.Unmarshal(i.Value(), v)
 
 	return
@@ -203,7 +203,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 		set := utility.Set{}
 
 		for _, m := range unmarshaled.Member {
-			fp := model.Fingerprint(*m.Signature)
+			fp := model.NewFingerprintFromRowKey(*m.Signature)
 			set.Add(fp)
 		}
 
@@ -249,7 +249,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	}
 
 	for _, m := range unmarshaled.Member {
-		fp := model.Fingerprint(*m.Signature)
+		fp := model.NewFingerprintFromRowKey(*m.Signature)
 		fps = append(fps, fp)
 	}
 
@@ -265,7 +265,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
 	}()
 
-	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBufferEncoder(model.FingerprintToDTO(&f)))
+	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBufferEncoder(model.FingerprintToDTO(f)))
 	if err != nil {
 		return
 	}
@@ -347,7 +347,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getValueAtTime, result: success}, map[string]string{operation: getValueAtTime, result: failure})
 	}()
 
-	f := m.Fingerprint().ToDTO()
+	f := model.NewFingerprintFromMetric(m).ToDTO()
 
 	// Candidate for Refactoring
 	k := &dto.SampleKey{
@@ -395,7 +395,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 
 	var (
 		firstKey   *dto.SampleKey
-		firstValue *dto.SampleValue
+		firstValue *dto.SampleValueSeries
 	)
 
 	firstKey, err = extractSampleKey(iterator)
@@ -448,7 +448,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 
 		var (
 			alternativeKey   *dto.SampleKey
-			alternativeValue *dto.SampleValue
+			alternativeValue *dto.SampleValueSeries
 		)
 
 		alternativeKey, err = extractSampleKey(iterator)
@@ -534,18 +534,20 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 		return
 	}
 
-	var secondValue *dto.SampleValue
+	var secondValue *dto.SampleValueSeries
 
 	secondValue, err = extractSampleValue(iterator)
 	if err != nil {
 		return
 	}
 
-	interpolated := interpolate(firstTime, secondTime, *firstValue.Value, *secondValue.Value, t)
+	fValue := *firstValue.Value[0].Value
+	sValue := *secondValue.Value[0].Value
 
-	sampleValue := &dto.SampleValue{
-		Value: &interpolated,
-	}
+	interpolated := interpolate(firstTime, secondTime, fValue, sValue, t)
+
+	sampleValue := &dto.SampleValueSeries{}
+	sampleValue.Value = append(sampleValue.Value, &dto.SampleValueSeries_Value{Value: &interpolated})
 
 	sample = model.SampleFromDTO(&m, &t, sampleValue)
 
@@ -560,7 +562,7 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interv
 
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
 	}()
-	f := m.Fingerprint().ToDTO()
+	f := model.NewFingerprintFromMetric(m).ToDTO()
 
 	k := &dto.SampleKey{
 		Fingerprint: f,
@@ -608,7 +610,7 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interv
 		}
 
 		v.Values = append(v.Values, model.SamplePair{
-			Value:     model.SampleValue(*retrievedValue.Value),
+			Value:     model.SampleValue(*retrievedValue.Value[0].Value),
 			Timestamp: indexable.DecodeTime(retrievedKey.Timestamp),
 		})
 	}

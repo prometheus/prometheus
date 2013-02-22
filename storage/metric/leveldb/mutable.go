@@ -130,7 +130,7 @@ func (l *LevelDBMetricPersistence) appendFingerprints(sample model.Sample) (err 
 		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: appendFingerprints, result: success}, map[string]string{operation: appendFingerprints, result: failure})
 	}()
 
-	fingerprintDTO := sample.Metric.Fingerprint().ToDTO()
+	fingerprintDTO := model.NewFingerprintFromMetric(sample.Metric).ToDTO()
 
 	fingerprintKey := coding.NewProtocolBufferEncoder(fingerprintDTO)
 	metricDTO := model.SampleToMetricDTO(&sample)
@@ -189,7 +189,7 @@ func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error)
 		return
 	}
 
-	fingerprint := sample.Metric.Fingerprint()
+	fingerprint := model.NewFingerprintFromMetric(sample.Metric)
 
 	if !indexHas {
 		err = l.indexMetric(metricDTO)
@@ -209,9 +209,10 @@ func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error)
 		Fingerprint: fingerprintDTO,
 		Timestamp:   indexable.EncodeTime(sample.Timestamp),
 	}
-	sampleValueDTO := &dto.SampleValue{
+	sampleValueDTO := &dto.SampleValueSeries{}
+	sampleValueDTO.Value = append(sampleValueDTO.Value, &dto.SampleValueSeries_Value{
 		Value: proto.Float32(float32(sample.Value)),
-	}
+	})
 	sampleKeyEncoded := coding.NewProtocolBufferEncoder(sampleKeyDTO)
 	sampleValueEncoded := coding.NewProtocolBufferEncoder(sampleValueDTO)
 
