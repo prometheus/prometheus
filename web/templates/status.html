@@ -26,8 +26,20 @@
 		</div>
 
 		<h2>Targets</h2>
-		<div class="grouping_box">
-{{.Targets}}
+    <div class="grouping_box">
+      <ul>
+        {{range $job, $pool := .TargetPools}}
+          <li>{{$job}}
+            <ul>
+              {{range $pool.Targets}}
+                <li>
+                <a href="{{.Address}}">{{.Address}}</a> (State: {{.State}}, Base labels: {{.BaseLabels}})
+                </li>
+              {{end}}
+            </ul>
+          </li>
+        {{end}}
+      </ul>
 		</div>
   </body>
 </html>

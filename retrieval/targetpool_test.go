@@ -14,9 +14,9 @@
 package retrieval
 
 import (
-	"container/heap"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/utility/test"
+	"sort"
 	"testing"
 	"time"
 )
@@ -111,34 +111,20 @@ func testTargetPool(t test.Tester) {
 				scheduler: literalScheduler(input.scheduledFor),
 			}
 
-			heap.Push(&pool, &target)
+			pool.addTarget(&target)
 		}
-
-		targets := []Target{}
+		sort.Sort(pool)
 
 		if pool.Len() != len(scenario.outputs) {
 			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), pool.Len())
 		} else {
 			for j, output := range scenario.outputs {
-				target := heap.Pop(&pool).(Target)
+				target := pool.targets[j]
 
 				if target.Address() != output.address {
 					t.Errorf("%s %d.%d. expected Target address to be %s but was %s", scenario.name, i, j, output.address, target.Address())
 
 				}
-				targets = append(targets, target)
-			}
-
-			if pool.Len() != 0 {
-				t.Errorf("%s %d. expected pool to be empty, had %d", scenario.name, i, pool.Len())
-			}
-
-			if len(targets) != len(scenario.outputs) {
-				t.Errorf("%s %d. expected to receive %d elements, got %d", scenario.name, i, len(scenario.outputs), len(targets))
-			}
-
-			for _, target := range targets {
-				heap.Push(&pool, target)
 			}
 
 			if pool.Len() != len(scenario.outputs) {
@@ -158,7 +144,7 @@ func TestTargetPoolIterationWithUnhealthyTargetsFinishes(t *testing.T) {
 		address:   "http://example.com/metrics.json",
 		scheduler: literalScheduler(time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)),
 	}
-	pool.Push(target)
+	pool.addTarget(target)
 
 	done := make(chan bool)
 	go func() {
@@ -171,6 +157,49 @@ func TestTargetPoolIterationWithUnhealthyTargetsFinishes(t *testing.T) {
 		break
 	case <-time.After(time.Duration(1) * time.Second):
 		t.Fatalf("Targetpool iteration is stuck")
+	}
+}
+
+func TestTargetPoolReplaceTargets(t *testing.T) {
+	pool := TargetPool{}
+	oldTarget1 := &target{
+		address:   "http://example1.com/metrics.json",
+		scheduler: literalScheduler(time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)),
+		state:     UNREACHABLE,
+	}
+	oldTarget2 := &target{
+		address:   "http://example2.com/metrics.json",
+		scheduler: literalScheduler(time.Date(7500, 1, 1, 0, 0, 0, 0, time.UTC)),
+		state:     UNREACHABLE,
+	}
+	newTarget1 := &target{
+		address:   "http://example1.com/metrics.json",
+		scheduler: literalScheduler(time.Date(5000, 1, 1, 0, 0, 0, 0, time.UTC)),
+		state:     ALIVE,
+	}
+	newTarget2 := &target{
+		address:   "http://example3.com/metrics.json",
+		scheduler: literalScheduler(time.Date(2500, 1, 1, 0, 0, 0, 0, time.UTC)),
+		state:     ALIVE,
+	}
+
+	pool.addTarget(oldTarget1)
+	pool.addTarget(oldTarget2)
+
+	pool.replaceTargets([]Target{newTarget1, newTarget2})
+	sort.Sort(pool)
+
+	if pool.Len() != 2 {
+		t.Errorf("Expected 2 elements in pool, had %d", pool.Len())
+	}
+
+	target1 := pool.targets[0].(*target)
+	if target1.state != newTarget1.state {
+		t.Errorf("Wrong first target returned from pool, expected %v, got %v", newTarget2, target1)
+	}
+	target2 := pool.targets[1].(*target)
+	if target2.state != oldTarget1.state {
+		t.Errorf("Wrong second target returned from pool, expected %v, got %v", oldTarget1, target2)
 	}
 }
 
