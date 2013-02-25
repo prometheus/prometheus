@@ -129,6 +129,7 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 		}
 
 		t.scheduler.Reschedule(earliest, futureState)
+		t.state = futureState
 	}()
 
 	done := make(chan bool)
