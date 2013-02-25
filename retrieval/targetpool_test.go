@@ -21,15 +21,6 @@ import (
 	"time"
 )
 
-type literalScheduler time.Time
-
-func (s literalScheduler) ScheduledFor() time.Time {
-	return time.Time(s)
-}
-
-func (s literalScheduler) Reschedule(earliest time.Time, future TargetState) {
-}
-
 func testTargetPool(t test.Tester) {
 	type expectation struct {
 		size int
