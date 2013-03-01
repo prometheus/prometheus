@@ -32,7 +32,8 @@ import (
 )
 
 var (
-	_ = fmt.Sprintf("")
+	maximumChunkSize = 200
+	sortConcurrency  = 2
 )
 
 type LevelDBMetricPersistence struct {
@@ -189,7 +190,7 @@ func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error)
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: appendSample, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: appendSample, result: failure})
 	}()
 
 	err = l.AppendSamples(model.Samples{sample})
@@ -197,17 +198,16 @@ func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error)
 	return
 }
 
-const (
-	maximumChunkSize = 200
-	sortConcurrency  = 2
-)
-
 func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err error) {
+	c := len(samples)
+	if c > 1 {
+		fmt.Printf("Appending %d samples...", c)
+	}
 	begin := time.Now()
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: appendSamples, result: success}, map[string]string{operation: appendSample, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: appendSamples, result: success}, map[string]string{operation: appendSamples, result: failure})
 	}()
 
 	// Group the samples by fingerprint.
@@ -474,6 +474,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 				Fingerprint:   fingerprint.ToDTO(),
 				Timestamp:     indexable.EncodeTime(chunk[0].Timestamp),
 				LastTimestamp: proto.Int64(chunk[take-1].Timestamp.Unix()),
+				SampleCount:   proto.Uint32(uint32(take)),
 			}
 
 			value := &dto.SampleValueSeries{}
@@ -497,7 +498,11 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 
 func extractSampleKey(i iterator) (k *dto.SampleKey, err error) {
 	k = &dto.SampleKey{}
-	err = proto.Unmarshal(i.Key(), k)
+	rawKey := i.Key()
+	if rawKey == nil {
+		panic("illegal condition; got nil key...")
+	}
+	err = proto.Unmarshal(rawKey, k)
 
 	return
 }
@@ -549,7 +554,7 @@ func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (value bool, 
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: hasIndexMetric, result: success}, map[string]string{operation: hasIndexMetric, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: hasIndexMetric, result: success}, map[string]string{operation: hasIndexMetric, result: failure})
 	}()
 
 	dtoKey := coding.NewProtocolBufferEncoder(dto)
@@ -564,7 +569,7 @@ func (l *LevelDBMetricPersistence) HasLabelPair(dto *dto.LabelPair) (value bool,
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: hasLabelPair, result: success}, map[string]string{operation: hasLabelPair, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: hasLabelPair, result: success}, map[string]string{operation: hasLabelPair, result: failure})
 	}()
 
 	dtoKey := coding.NewProtocolBufferEncoder(dto)
@@ -579,7 +584,7 @@ func (l *LevelDBMetricPersistence) HasLabelName(dto *dto.LabelName) (value bool,
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: hasLabelName, result: success}, map[string]string{operation: hasLabelName, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: hasLabelName, result: success}, map[string]string{operation: hasLabelName, result: failure})
 	}()
 
 	dtoKey := coding.NewProtocolBufferEncoder(dto)
@@ -594,7 +599,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getFingerprintsForLabelSet, result: success}, map[string]string{operation: getFingerprintsForLabelSet, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelSet, result: success}, map[string]string{operation: getFingerprintsForLabelSet, result: failure})
 	}()
 
 	sets := []utility.Set{}
@@ -644,7 +649,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getFingerprintsForLabelName, result: success}, map[string]string{operation: getFingerprintsForLabelName, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelName, result: success}, map[string]string{operation: getFingerprintsForLabelName, result: failure})
 	}()
 
 	raw, err := l.labelNameToFingerprints.Get(coding.NewProtocolBufferEncoder(model.LabelNameToDTO(&labelName)))
@@ -673,7 +678,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
 	}()
 
 	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBufferEncoder(model.FingerprintToDTO(f)))
@@ -706,7 +711,7 @@ func (l *LevelDBMetricPersistence) GetBoundaryValues(m model.Metric, i model.Int
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getBoundaryValues, result: success}, map[string]string{operation: getBoundaryValues, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: getBoundaryValues, result: success}, map[string]string{operation: getBoundaryValues, result: failure})
 	}()
 
 	// XXX: Maybe we will want to emit incomplete sets?
@@ -755,7 +760,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getValueAtTime, result: success}, map[string]string{operation: getValueAtTime, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: getValueAtTime, result: success}, map[string]string{operation: getValueAtTime, result: failure})
 	}()
 
 	f := model.NewFingerprintFromMetric(m).ToDTO()
@@ -971,7 +976,7 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interv
 	defer func() {
 		duration := time.Now().Sub(begin)
 
-		recordOutcome(storageOperations, storageLatency, duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
 	}()
 	f := model.NewFingerprintFromMetric(m).ToDTO()
 

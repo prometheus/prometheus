@@ -15,8 +15,10 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/rules"
@@ -31,6 +33,8 @@ import (
 
 // Commandline flags.
 var (
+	_ = fmt.Sprintf("")
+
 	configFile                   = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
 	metricsStoragePath           = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
 	scrapeResultsQueueCapacity   = flag.Int("scrapeResultsQueueCapacity", 4096, "The size of the scrape results queue.")
@@ -92,20 +96,39 @@ func main() {
 
 	ts := metric.NewTieredStorage(5000, 5000, 100, time.Second*30, time.Second*1, time.Second*20)
 	go ts.Serve()
-	go ts.Expose()
+
+	go func() {
+		ticker := time.Tick(time.Second)
+		for i := 0; i < 5; i++ {
+			<-ticker
+			if i%10 == 0 {
+				fmt.Printf(".")
+			}
+		}
+		fmt.Println()
+		//f := model.NewFingerprintFromRowKey("9776005627788788740-g-131-0")
+		f := model.NewFingerprintFromRowKey("09923616460706181007-g-131-0")
+		v := metric.NewViewRequestBuilder()
+		v.GetMetricAtTime(f, time.Now().Add(-30*time.Second))
+
+		view, err := ts.MakeView(v, time.Minute)
+		fmt.Println(view, err)
+	}()
 
 	for {
 		select {
 		case scrapeResult := <-scrapeResults:
 			if scrapeResult.Err == nil {
-				persistence.AppendSample(scrapeResult.Sample)
+				//				f := model.NewFingerprintFromMetric(scrapeResult.Sample.Metric)
+				//				fmt.Println(f)
+				//				persistence.AppendSample(scrapeResult.Sample)
 				ts.AppendSample(scrapeResult.Sample)
 			}
 
 		case ruleResult := <-ruleResults:
 			for _, sample := range ruleResult.Samples {
 				// XXX: Wart
-				persistence.AppendSample(*sample)
+				//				persistence.AppendSample(*sample)
 				ts.AppendSample(*sample)
 			}
 		}

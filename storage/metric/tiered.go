@@ -15,7 +15,10 @@ package metric
 
 import (
 	"fmt"
+	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
+	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage"
 	"sync"
 	"time"
@@ -26,7 +29,9 @@ import (
 type tieredStorage struct {
 	appendToDiskQueue   chan model.Sample
 	appendToMemoryQueue chan model.Sample
+	diskFrontier        *diskFrontier
 	diskStorage         *LevelDBMetricPersistence
+	draining            chan bool
 	flushMemoryInterval time.Duration
 	memoryArena         memorySeriesStorage
 	memoryTTL           time.Duration
@@ -42,11 +47,17 @@ type viewJob struct {
 	err     chan error
 }
 
+// Provides a unified means for batch appending values into the datastore along
+// with querying for values in an efficient way.
 type Storage interface {
-	AppendSample(model.Sample)
-	MakeView(ViewRequestBuilder, time.Duration) (View, error)
+	// Enqueues a Sample for storage.
+	AppendSample(model.Sample) error
+	// Enqueus a ViewRequestBuilder for materialization, subject to a timeout.
+	MakeView(request ViewRequestBuilder, timeout time.Duration) (View, error)
+	// Starts serving requests.
 	Serve()
-	Expose()
+	// Stops the storage subsystem, flushing all pending operations.
+	Drain()
 }
 
 func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, writeMemoryInterval, memoryTTL time.Duration) Storage {
@@ -59,6 +70,7 @@ func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueu
 		appendToDiskQueue:   make(chan model.Sample, appendToDiskQueueDepth),
 		appendToMemoryQueue: make(chan model.Sample, appendToMemoryQueueDepth),
 		diskStorage:         diskStorage,
+		draining:            make(chan bool),
 		flushMemoryInterval: flushMemoryInterval,
 		memoryArena:         NewMemorySeriesStorage(),
 		memoryTTL:           memoryTTL,
@@ -67,11 +79,26 @@ func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueu
 	}
 }
 
-func (t *tieredStorage) AppendSample(s model.Sample) {
+func (t *tieredStorage) AppendSample(s model.Sample) (err error) {
+	if len(t.draining) > 0 {
+		return fmt.Errorf("Storage is in the process of draining.")
+	}
+
 	t.appendToMemoryQueue <- s
+
+	return
+}
+
+func (t *tieredStorage) Drain() {
+	t.draining <- true
 }
 
 func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (view View, err error) {
+	if len(t.draining) > 0 {
+		err = fmt.Errorf("Storage is in the process of draining.")
+		return
+	}
+
 	result := make(chan View)
 	errChan := make(chan error)
 	t.viewQueue <- viewJob{
@@ -92,39 +119,28 @@ func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 	return
 }
 
-func (t *tieredStorage) Expose() {
-	ticker := time.Tick(5 * time.Second)
-	f := model.NewFingerprintFromRowKey("05232115763668508641-g-97-d")
-	for {
-		<-ticker
+func (t *tieredStorage) rebuildDiskFrontier() (err error) {
+	begin := time.Now()
+	defer func() {
+		duration := time.Now().Sub(begin)
 
-		var (
-			first  = time.Now()
-			second = first.Add(1 * time.Minute)
-			third  = first.Add(2 * time.Minute)
-		)
+		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: rebuildDiskFrontier, result: failure})
+	}()
 
-		vrb := NewViewRequestBuilder()
-		fmt.Printf("vrb -> %s\n", vrb)
-		vrb.GetMetricRange(f, first, second)
-		vrb.GetMetricRange(f, first, third)
-		js := vrb.ScanJobs()
-		consume(js[0])
-		// fmt.Printf("js -> %s\n", js)
-		// js.Represent(t.diskStorage, t.memoryArena)
-		// 		i, c, _ := t.diskStorage.metricSamples.GetIterator()
-		// 		start := time.Now()
-		// 		f, _ := newDiskFrontier(i)
-		// 		fmt.Printf("df -> %s\n", time.Since(start))
-		// 		fmt.Printf("df -- -> %s\n", f)
-		// 		start = time.Now()
-		// //		sf, _ := newSeriesFrontier(model.NewFingerprintFromRowKey("05232115763668508641-g-97-d"), *f, i)
-		// //		sf, _ := newSeriesFrontier(model.NewFingerprintFromRowKey("16879485108969112708-g-184-s"), *f, i)
-		// 		sf, _ := newSeriesFrontier(model.NewFingerprintFromRowKey("08437776163162606855-g-169-s"), *f, i)
-		// 		fmt.Printf("sf -> %s\n", time.Since(start))
-		// 		fmt.Printf("sf -- -> %s\n", sf)
-		// 		c.Close()
+	i, closer, err := t.diskStorage.metricSamples.GetIterator()
+	if closer != nil {
+		defer closer.Close()
 	}
+	if err != nil {
+		panic(err)
+	}
+
+	t.diskFrontier, err = newDiskFrontier(i)
+	if err != nil {
+		panic(err)
+	}
+
+	return
 }
 
 func (t *tieredStorage) Serve() {
@@ -132,6 +148,7 @@ func (t *tieredStorage) Serve() {
 		flushMemoryTicker = time.Tick(t.flushMemoryInterval)
 		writeMemoryTicker = time.Tick(t.writeMemoryInterval)
 	)
+
 	for {
 		select {
 		case <-writeMemoryTicker:
@@ -140,11 +157,21 @@ func (t *tieredStorage) Serve() {
 			t.flushMemory()
 		case viewRequest := <-t.viewQueue:
 			t.renderView(viewRequest)
+		case <-t.draining:
+			t.flush()
+			return
 		}
 	}
 }
 
 func (t *tieredStorage) writeMemory() {
+	begin := time.Now()
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(duration, nil, map[string]string{operation: appendSample, result: success}, map[string]string{operation: writeMemory, result: failure})
+	}()
+
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
@@ -228,7 +255,7 @@ func (f *memoryToDiskFlusher) ForStream(stream stream) (decoder storage.RecordDe
 		flusher: f,
 	}
 
-	fmt.Printf("fingerprint -> %s\n", model.NewFingerprintFromMetric(stream.metric).ToRowKey())
+	//	fmt.Printf("fingerprint -> %s\n", model.NewFingerprintFromMetric(stream.metric).ToRowKey())
 
 	return visitor, visitor, visitor
 }
@@ -239,17 +266,21 @@ func (f *memoryToDiskFlusher) Flush() {
 	for i := 0; i < length; i++ {
 		samples = append(samples, <-f.toDiskQueue)
 	}
-	fmt.Printf("%d samples to write\n", length)
 	f.disk.AppendSamples(samples)
 }
 
 func (f memoryToDiskFlusher) Close() {
-	fmt.Println("memory flusher close")
 	f.Flush()
 }
 
 // Persist a whole bunch of samples to the datastore.
 func (t *tieredStorage) flushMemory() {
+	begin := time.Now()
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(duration, nil, map[string]string{operation: appendSample, result: success}, map[string]string{operation: flushMemory, result: failure})
+	}()
 
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
@@ -261,57 +292,160 @@ func (t *tieredStorage) flushMemory() {
 	}
 	defer flusher.Close()
 
-	v := time.Now()
 	t.memoryArena.ForEachSample(flusher)
-	fmt.Printf("Done flushing memory in %s", time.Since(v))
 
 	return
 }
 
 func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
+	begin := time.Now()
+	defer func() {
+		duration := time.Now().Sub(begin)
+
+		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: renderView, result: failure})
+	}()
+
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	return
-}
-
-
-func consume(s scanJob) {
 	var (
-		standingOperations = ops{}
-		lastTime           = time.Time{}
+		scans = viewJob.builder.ScanJobs()
+		// 	standingOperations = ops{}
+		// 	lastTime           = time.Time{}
 	)
 
-	for {
-		if len(s.operations) == 0 {
-			if len(standingOperations) > 0 {
-				var (
-					intervals = collectIntervals(standingOperations)
-					ranges    = collectRanges(standingOperations)
-				)
+	// Rebuilding of the frontier should happen on a conditional basis if a
+	// (fingerprint, timestamp) tuple is outside of the current frontier.
+	err = t.rebuildDiskFrontier()
+	if err != nil {
+		panic(err)
+	}
 
-				if len(intervals) > 0 {
-				}
+	iterator, closer, err := t.diskStorage.metricSamples.GetIterator()
+	if closer != nil {
+		defer closer.Close()
+	}
+	if err != nil {
+		panic(err)
+	}
 
-				if len(ranges) > 0 {
-					if len(ranges) > 0 {
+	for _, scanJob := range scans {
+		// XXX: Memoize the last retrieval for forward scans.
+		var (
+			standingOperations ops
+		)
 
+		fmt.Printf("Starting scan of %s...\n", scanJob)
+		// If the fingerprint is outside of the known frontier for the disk, the
+		// disk won't be queried at this time.
+		if !(t.diskFrontier == nil || scanJob.fingerprint.Less(t.diskFrontier.firstFingerprint) || t.diskFrontier.lastFingerprint.Less(scanJob.fingerprint)) {
+			fmt.Printf("Using diskFrontier %s\n", t.diskFrontier)
+			seriesFrontier, err := newSeriesFrontier(scanJob.fingerprint, *t.diskFrontier, iterator)
+			fmt.Printf("Using seriesFrontier %s\n", seriesFrontier)
+			if err != nil {
+				panic(err)
+			}
+
+			if seriesFrontier != nil {
+				for _, operation := range scanJob.operations {
+					scanJob.operations = scanJob.operations[1:len(scanJob.operations)]
+
+					// if operation.StartsAt().Before(seriesFrontier.firstSupertime) {
+					// 	fmt.Printf("operation %s occurs before %s; discarding...\n", operation, seriesFrontier.firstSupertime)
+					// 	continue
+					// }
+
+					// if seriesFrontier.lastTime.Before(operation.StartsAt()) {
+					// 	fmt.Printf("operation %s occurs after %s; discarding...\n", operation, seriesFrontier.lastTime)
+					// 	continue
+					// }
+
+					var (
+						targetKey = &dto.SampleKey{}
+						foundKey  = &dto.SampleKey{}
+					)
+
+					targetKey.Fingerprint = scanJob.fingerprint.ToDTO()
+					targetKey.Timestamp = indexable.EncodeTime(operation.StartsAt())
+
+					fmt.Println("target (unencoded) ->", targetKey)
+					rawKey, _ := coding.NewProtocolBufferEncoder(targetKey).Encode()
+
+					iterator.Seek(rawKey)
+
+					foundKey, err = extractSampleKey(iterator)
+					if err != nil {
+						panic(err)
+					}
+
+					fmt.Printf("startAt -> %s\n", operation.StartsAt())
+					fmt.Println("target ->", rawKey)
+					fmt.Println("found ->", iterator.Key())
+					fst := indexable.DecodeTime(foundKey.Timestamp)
+					lst := time.Unix(*foundKey.LastTimestamp, 0)
+					fmt.Printf("(%s, %s)\n", fst, lst)
+					fmt.Println(rawKey)
+					fmt.Println(foundKey)
+
+					if !((operation.StartsAt().Before(fst)) || lst.Before(operation.StartsAt())) {
+						fmt.Printf("operation %s occurs inside of %s...\n", operation, foundKey)
+					} else {
+						for i := 0; i < 3; i++ {
+							iterator.Next()
+
+							fmt.Println(i)
+							foundKey, err = extractSampleKey(iterator)
+							if err != nil {
+								panic(err)
+							}
+
+							fst = indexable.DecodeTime(foundKey.Timestamp)
+							lst = time.Unix(*foundKey.LastTimestamp, 0)
+							fmt.Println("found ->", iterator.Key())
+							fmt.Printf("(%s, %s)\n", fst, lst)
+							fmt.Println(foundKey)
+						}
+
+						standingOperations = append(standingOperations, operation)
 					}
 				}
-				break
 			}
 		}
 
-		operation := s.operations[0]
-		if operation.StartsAt().Equal(lastTime) {
-			standingOperations = append(standingOperations, operation)
-		} else {
-			standingOperations = ops{operation}
-			lastTime = operation.StartsAt()
-		}
-
-		s.operations = s.operations[1:len(s.operations)]
 	}
+
+	// for {
+	// 	if len(s.operations) == 0 {
+	// 		if len(standingOperations) > 0 {
+	// 			var (
+	// 				intervals = collectIntervals(standingOperations)
+	// 				ranges    = collectRanges(standingOperations)
+	// 			)
+
+	// 			if len(intervals) > 0 {
+	// 			}
+
+	// 			if len(ranges) > 0 {
+	// 				if len(ranges) > 0 {
+
+	// 				}
+	// 			}
+	// 			break
+	// 		}
+	// 	}
+
+	// 	operation := s.operations[0]
+	// 	if operation.StartsAt().Equal(lastTime) {
+	// 		standingOperations = append(standingOperations, operation)
+	// 	} else {
+	// 		standingOperations = ops{operation}
+	// 		lastTime = operation.StartsAt()
+	// 	}
+
+	// 	s.operations = s.operations[1:len(s.operations)]
+	// }
+
+	return
 }
 
 func (s scanJobs) Represent(d *LevelDBMetricPersistence, m memorySeriesStorage) (storage *memorySeriesStorage, err error) {

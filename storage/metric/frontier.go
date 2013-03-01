@@ -39,17 +39,13 @@ func (f *diskFrontier) String() string {
 }
 
 func newDiskFrontier(i iterator) (d *diskFrontier, err error) {
-	if err != nil {
-		return
-	}
-
 	i.SeekToLast()
 	if i.Key() == nil {
 		return
 	}
 	lastKey, err := extractSampleKey(i)
 	if err != nil {
-		return
+		panic(err)
 	}
 
 	i.SeekToFirst()
@@ -58,7 +54,7 @@ func newDiskFrontier(i iterator) (d *diskFrontier, err error) {
 		return
 	}
 	if err != nil {
-		return
+		panic(err)
 	}
 
 	d = &diskFrontier{}
@@ -107,7 +103,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i iterator) (s *seri
 
 	raw, err := coding.NewProtocolBufferEncoder(key).Encode()
 	if err != nil {
-		return
+		panic(err)
 	}
 	i.Seek(raw)
 
@@ -117,7 +113,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i iterator) (s *seri
 
 	retrievedKey, err := extractSampleKey(i)
 	if err != nil {
-		return
+		panic(err)
 	}
 
 	retrievedFingerprint := model.NewFingerprintFromRowKey(*retrievedKey.Fingerprint.Signature)
@@ -133,7 +129,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i iterator) (s *seri
 
 		retrievedKey, err = extractSampleKey(i)
 		if err != nil {
-			return
+			panic(err)
 		}
 		retrievedFingerprint := model.NewFingerprintFromRowKey(*retrievedKey.Fingerprint.Signature)
 		// If the previous key does not match, we know that the requested
@@ -152,14 +148,14 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i iterator) (s *seri
 
 	raw, err = coding.NewProtocolBufferEncoder(key).Encode()
 	if err != nil {
-		return
+		panic(err)
 	}
 
 	i.Seek(raw)
 
 	retrievedKey, err = extractSampleKey(i)
 	if err != nil {
-		return
+		panic(err)
 	}
 
 	retrievedFingerprint = model.NewFingerprintFromRowKey(*retrievedKey.Fingerprint.Signature)

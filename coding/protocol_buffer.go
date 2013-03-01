@@ -21,8 +21,15 @@ type ProtocolBufferEncoder struct {
 	message proto.Message
 }
 
-func (p *ProtocolBufferEncoder) Encode() ([]byte, error) {
-	return proto.Marshal(p.message)
+func (p *ProtocolBufferEncoder) Encode() (raw []byte, err error) {
+	raw, err = proto.Marshal(p.message)
+
+	// XXX: Adjust legacy users of this to not check for error.
+	if err != nil {
+		panic(err)
+	}
+
+	return
 }
 
 func NewProtocolBufferEncoder(message proto.Message) *ProtocolBufferEncoder {

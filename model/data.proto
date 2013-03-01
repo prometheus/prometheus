@@ -39,15 +39,16 @@ message LabelSet {
 }
 
 message SampleKey {
-  optional Fingerprint fingerprint = 1;
-  optional bytes timestamp = 2;
-  optional int64 last_timestamp = 3;
+  optional Fingerprint fingerprint    = 1;
+  optional bytes       timestamp      = 2;
+  optional int64       last_timestamp = 3;
+  optional uint32      sample_count   = 4;
 }
 
 message SampleValueSeries {
   message Value {
     optional int64 timestamp = 1;
-    optional float value = 2;
+    optional float value     = 2;
   }
   repeated Value value = 1;
 }
