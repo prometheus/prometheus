@@ -14,7 +14,6 @@
 package retrieval
 
 import (
-	"container/heap"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval/format"
@@ -25,14 +24,16 @@ import (
 type TargetManager interface {
 	acquire()
 	release()
-	Add(t Target)
+	AddTarget(job *config.JobConfig, t Target, defaultScrapeInterval time.Duration)
+	ReplaceTargets(job *config.JobConfig, newTargets []Target, defaultScrapeInterval time.Duration)
 	Remove(t Target)
 	AddTargetsFromConfig(config *config.Config)
+	Pools() map[string]*TargetPool
 }
 
 type targetManager struct {
 	requestAllowance chan bool
-	pools            map[time.Duration]*TargetPool
+	poolsByJob       map[string]*TargetPool
 	results          chan format.Result
 }
 
@@ -40,7 +41,7 @@ func NewTargetManager(results chan format.Result, requestAllowance int) TargetMa
 	return &targetManager{
 		requestAllowance: make(chan bool, requestAllowance),
 		results:          results,
-		pools:            make(map[time.Duration]*TargetPool),
+		poolsByJob:       make(map[string]*TargetPool),
 	}
 }
 
@@ -52,17 +53,32 @@ func (m *targetManager) release() {
 	<-m.requestAllowance
 }
 
-func (m *targetManager) Add(t Target) {
-	targetPool, ok := m.pools[t.Interval()]
+func (m *targetManager) TargetPoolForJob(job *config.JobConfig, defaultScrapeInterval time.Duration) (targetPool *TargetPool) {
+	targetPool, ok := m.poolsByJob[job.Name]
 
 	if !ok {
 		targetPool = NewTargetPool(m)
-		log.Printf("Pool %s does not exist; creating and starting...", t.Interval())
-		go targetPool.Run(m.results, t.Interval())
-	}
+		log.Printf("Pool for job %s does not exist; creating and starting...", job.Name)
 
-	heap.Push(targetPool, t)
-	m.pools[t.Interval()] = targetPool
+		interval := job.ScrapeInterval
+		if interval == 0 {
+			interval = defaultScrapeInterval
+		}
+		m.poolsByJob[job.Name] = targetPool
+		go targetPool.Run(m.results, interval)
+	}
+	return
+}
+
+func (m *targetManager) AddTarget(job *config.JobConfig, t Target, defaultScrapeInterval time.Duration) {
+	targetPool := m.TargetPoolForJob(job, defaultScrapeInterval)
+	targetPool.AddTarget(t)
+	m.poolsByJob[job.Name] = targetPool
+}
+
+func (m *targetManager) ReplaceTargets(job *config.JobConfig, newTargets []Target, defaultScrapeInterval time.Duration) {
+	targetPool := m.TargetPoolForJob(job, defaultScrapeInterval)
+	targetPool.replaceTargets(newTargets)
 }
 
 func (m targetManager) Remove(t Target) {
@@ -79,15 +95,15 @@ func (m *targetManager) AddTargetsFromConfig(config *config.Config) {
 				baseLabels[label] = value
 			}
 
-			interval := job.ScrapeInterval
-			if interval == 0 {
-				interval = config.Global.ScrapeInterval
-			}
-
 			for _, endpoint := range configTargets.Endpoints {
-				target := NewTarget(endpoint, interval, time.Second*5, baseLabels)
-				m.Add(target)
+				target := NewTarget(endpoint, time.Second*5, baseLabels)
+				m.AddTarget(&job, target, config.Global.ScrapeInterval)
 			}
 		}
 	}
+}
+
+// XXX: Not really thread-safe. Only used in /status page for now.
+func (m *targetManager) Pools() map[string]*TargetPool {
+	return m.poolsByJob
 }

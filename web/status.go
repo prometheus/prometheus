@@ -15,15 +15,16 @@ package web
 
 import (
 	"github.com/prometheus/prometheus/appstate"
+	"github.com/prometheus/prometheus/retrieval"
 	"html/template"
 	"net/http"
 )
 
 type PrometheusStatus struct {
-	Config  string
-	Rules   string
-	Status  string
-	Targets string
+	Config      string
+	Rules       string
+	Status      string
+	TargetPools map[string]*retrieval.TargetPool
 }
 
 type StatusHandler struct {
@@ -32,10 +33,10 @@ type StatusHandler struct {
 
 func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status := &PrometheusStatus{
-		Config:  h.appState.Config.ToString(0),
-		Rules:   "TODO: list rules here",
-		Status:  "TODO: add status information here",
-		Targets: "TODO: list targets here",
+		Config:      h.appState.Config.ToString(0),
+		Rules:       "TODO: list rules here",
+		Status:      "TODO: add status information here",
+		TargetPools: h.appState.TargetManager.Pools(),
 	}
 	t, _ := template.ParseFiles("web/templates/status.html")
 	t.Execute(w, status)
