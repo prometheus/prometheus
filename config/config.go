@@ -58,7 +58,7 @@ func (config *Config) AddJob(options map[string]string, targets []Targets) error
 	if len(targets) == 0 {
 		return fmt.Errorf("No targets configured for job '%v'", name)
 	}
-	job := &JobConfig{
+	job := JobConfig{
 		Targets: tmpJobTargets,
 	}
 	for option, value := range options {
@@ -66,8 +66,18 @@ func (config *Config) AddJob(options map[string]string, targets []Targets) error
 			return err
 		}
 	}
-	config.Jobs = append(config.Jobs, *job)
+	config.Jobs = append(config.Jobs, job)
 	return nil
+}
+
+func (config *Config) GetJobByName(name string) (jobConfig *JobConfig) {
+	for _, job := range config.Jobs {
+		if job.Name == name {
+			jobConfig = &job
+			break
+		}
+	}
+	return
 }
 
 func (config *GlobalConfig) SetOption(option string, value string) (err error) {

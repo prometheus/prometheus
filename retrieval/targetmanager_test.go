@@ -14,6 +14,8 @@
 package retrieval
 
 import (
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/utility/test"
 	"testing"
@@ -29,6 +31,10 @@ type fakeTarget struct {
 
 func (t fakeTarget) Address() string {
 	return "fake"
+}
+
+func (t fakeTarget) BaseLabels() model.LabelSet {
+	return model.LabelSet{}
 }
 
 func (t fakeTarget) Interval() time.Duration {
@@ -52,9 +58,17 @@ func (t *fakeTarget) scheduledFor() (time time.Time) {
 	return
 }
 
+func (t *fakeTarget) Merge(newTarget Target) {}
+
 func testTargetManager(t test.Tester) {
 	results := make(chan format.Result, 5)
 	targetManager := NewTargetManager(results, 3)
+	testJob1 := &config.JobConfig{
+		Name: "test_job1",
+	}
+	testJob2 := &config.JobConfig{
+		Name: "test_job2",
+	}
 
 	target1GroupA := &fakeTarget{
 		schedules: []time.Time{time.Now()},
@@ -65,16 +79,15 @@ func testTargetManager(t test.Tester) {
 		interval:  time.Minute,
 	}
 
-	targetManager.Add(target1GroupA)
-	targetManager.Add(target2GroupA)
+	targetManager.AddTarget(testJob1, target1GroupA, 0)
+	targetManager.AddTarget(testJob1, target2GroupA, 0)
 
 	target1GroupB := &fakeTarget{
 		schedules: []time.Time{time.Now()},
 		interval:  time.Minute * 2,
 	}
 
-	targetManager.Add(target1GroupB)
-
+	targetManager.AddTarget(testJob2, target1GroupB, 0)
 }
 
 func TestTargetManager(t *testing.T) {

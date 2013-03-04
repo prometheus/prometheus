@@ -79,8 +79,12 @@ type Target interface {
 	// points in this interface, this one is the best candidate to change given
 	// the ways to express the endpoint.
 	Address() string
-	// How frequently queries occur.
-	Interval() time.Duration
+	// Return the target's base labels.
+	BaseLabels() model.LabelSet
+	// Merge a new externally supplied target definition (e.g. with changed base
+	// labels) into an old target definition for the same endpoint. Preserve
+	// remaining information - like health state - from the old target.
+	Merge(newTarget Target)
 }
 
 // target is a Target that refers to a singular HTTP or HTTPS endpoint.
@@ -94,19 +98,15 @@ type target struct {
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
 	Deadline time.Duration
 	// Any base labels that are added to this target and its metrics.
-	BaseLabels model.LabelSet
-
-	// XXX: Move this to a field with the target manager initialization instead of here.
-	interval time.Duration
+	baseLabels model.LabelSet
 }
 
 // Furnish a reasonably configured target for querying.
-func NewTarget(address string, interval, deadline time.Duration, baseLabels model.LabelSet) Target {
+func NewTarget(address string, deadline time.Duration, baseLabels model.LabelSet) Target {
 	target := &target{
 		address:    address,
 		Deadline:   deadline,
-		interval:   interval,
-		BaseLabels: baseLabels,
+		baseLabels: baseLabels,
 	}
 
 	scheduler := &healthScheduler{
@@ -155,7 +155,7 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 		// XXX: This is a wart; we need to handle this more gracefully down the
 		//      road, especially once we have service discovery support.
 		baseLabels := model.LabelSet{instance: model.LabelValue(t.Address())}
-		for baseLabel, baseValue := range t.BaseLabels {
+		for baseLabel, baseValue := range t.baseLabels {
 			baseLabels[baseLabel] = baseValue
 		}
 
@@ -200,6 +200,16 @@ func (t target) Address() string {
 	return t.address
 }
 
-func (t target) Interval() time.Duration {
-	return t.interval
+func (t target) BaseLabels() model.LabelSet {
+	return t.baseLabels
+}
+
+// Merge a new externally supplied target definition (e.g. with changed base
+// labels) into an old target definition for the same endpoint. Preserve
+// remaining information - like health state - from the old target.
+func (t *target) Merge(newTarget Target) {
+	if t.Address() != newTarget.Address() {
+		panic("targets don't refer to the same endpoint")
+	}
+	t.baseLabels = newTarget.BaseLabels()
 }
