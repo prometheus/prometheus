@@ -28,6 +28,7 @@ import (
 	"io"
 	"log"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -223,25 +224,25 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 	}
 
 	// Begin the sorting of grouped samples.
-
-	sortingSemaphore := make(chan bool, sortConcurrency)
-	doneSorting := make(chan bool, len(fingerprintToSamples))
+	var (
+		sortingSemaphore = make(chan bool, sortConcurrency)
+		doneSorting      = sync.WaitGroup{}
+	)
 	for i := 0; i < sortConcurrency; i++ {
 		sortingSemaphore <- true
 	}
 
 	for _, samples := range fingerprintToSamples {
+		doneSorting.Add(1)
 		go func(samples model.Samples) {
 			<-sortingSemaphore
 			sort.Sort(samples)
 			sortingSemaphore <- true
-			doneSorting <- true
+			doneSorting.Done()
 		}(samples)
 	}
 
-	for i := 0; i < len(fingerprintToSamples); i++ {
-		<-doneSorting
-	}
+	doneSorting.Wait()
 
 	var (
 		absentFingerprints = map[model.Fingerprint]model.Samples{}

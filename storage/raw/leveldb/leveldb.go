@@ -28,7 +28,7 @@ var (
 	leveldbUseParanoidChecks = flag.Bool("leveldbUseParanoidChecks", true, "Whether LevelDB uses expensive checks (bool).")
 )
 
-// LevelDBPersistence is an disk-backed sorted key-value store.
+// LevelDBPersistence is a disk-backed sorted key-value store.
 type LevelDBPersistence struct {
 	cache        *levigo.Cache
 	filterPolicy *levigo.FilterPolicy

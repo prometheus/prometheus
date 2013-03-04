@@ -99,7 +99,7 @@ func main() {
 
 	go func() {
 		ticker := time.Tick(time.Second)
-		for i := 0; i < 5; i++ {
+		for i := 0; i < 120; i++ {
 			<-ticker
 			if i%10 == 0 {
 				fmt.Printf(".")
@@ -109,7 +109,7 @@ func main() {
 		//f := model.NewFingerprintFromRowKey("9776005627788788740-g-131-0")
 		f := model.NewFingerprintFromRowKey("09923616460706181007-g-131-0")
 		v := metric.NewViewRequestBuilder()
-		v.GetMetricAtTime(f, time.Now().Add(-30*time.Second))
+		v.GetMetricAtTime(f, time.Now().Add(-120*time.Second))
 
 		view, err := ts.MakeView(v, time.Minute)
 		fmt.Println(view, err)
