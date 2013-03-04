@@ -22,7 +22,7 @@ action if some condition is observed to be true.
   5. Levigo, a Go-wrapper around LevelDB's C library: (https://github.com/jmhodges/levigo).
   6. GoRest, a RESTful style web-services framework: (http://code.google.com/p/gorest/).
   7. Prometheus Client, Prometheus in Prometheus (https://github.com/prometheus/client_golang).
-  8. Snappy, a compression library for LevelDB and Levigo (code.google.com/p/snappy/).
+  8. Snappy, a compression library for LevelDB and Levigo (http://code.google.com/p/snappy/).
 
 ## Getting started
 
