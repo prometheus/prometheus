@@ -124,7 +124,6 @@ func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 }
 
 func (t *tieredStorage) rebuildDiskFrontier() (err error) {
-	fmt.Println("a1")
 	begin := time.Now()
 	defer func() {
 		duration := time.Now().Sub(begin)
@@ -354,11 +353,11 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 		//			standingOperations ops
 		)
 
-		fmt.Printf("Starting scan of %s...\n", scanJob)
+		//		fmt.Printf("Starting scan of %s...\n", scanJob)
 		if !(t.diskFrontier == nil || scanJob.fingerprint.Less(t.diskFrontier.firstFingerprint) || t.diskFrontier.lastFingerprint.Less(scanJob.fingerprint)) {
-			fmt.Printf("Using diskFrontier %s\n", t.diskFrontier)
+			//			fmt.Printf("Using diskFrontier %s\n", t.diskFrontier)
 			seriesFrontier, err := newSeriesFrontier(scanJob.fingerprint, *t.diskFrontier, iterator)
-			fmt.Printf("Using seriesFrontier %s\n", seriesFrontier)
+			//			fmt.Printf("Using seriesFrontier %s\n", seriesFrontier)
 			if err != nil {
 				panic(err)
 			}
@@ -372,14 +371,14 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 
 				for _, operation := range scanJob.operations {
 					if seriesFrontier.lastTime.Before(operation.StartsAt()) {
-						fmt.Printf("operation %s occurs after %s; aborting...\n", operation, seriesFrontier.lastTime)
+						//						fmt.Printf("operation %s occurs after %s; aborting...\n", operation, seriesFrontier.lastTime)
 						break
 					}
 
 					scanJob.operations = scanJob.operations[1:len(scanJob.operations)]
 
 					if operation.StartsAt().Before(seriesFrontier.firstSupertime) {
-						fmt.Printf("operation %s occurs before %s; discarding...\n", operation, seriesFrontier.firstSupertime)
+						//						fmt.Printf("operation %s occurs before %s; discarding...\n", operation, seriesFrontier.firstSupertime)
 						continue
 					}
 
@@ -388,6 +387,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 
 					rawKey, _ := coding.NewProtocolBufferEncoder(targetKey).Encode()
 
+					// XXX: Use frontiers to manage out of range queries.
 					iterator.Seek(rawKey)
 
 					foundKey, err = extractSampleKey(iterator)
@@ -401,13 +401,11 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 					)
 
 					if !((operation.StartsAt().Before(fst)) || lst.Before(operation.StartsAt())) {
-						fmt.Printf("operation %s occurs inside of %s...\n", operation, foundKey)
+						//						fmt.Printf("operation %s occurs inside of %s...\n", operation, foundKey)
 						foundValue, err = extractSampleValue(iterator)
 						if err != nil {
 							panic(err)
 						}
-
-						fmt.Printf("f -> %s\n", foundValue)
 					} else if operation.StartsAt().Before(fst) {
 						fmt.Printf("operation %s may occur in next entity; fast forwarding...\n", operation)
 						panic("oops")
@@ -423,14 +421,20 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 						index = sort.Search(elementCount, searcher)
 					)
 
-					foundValue.Value = foundValue.Value[index:elementCount]
+					if index != elementCount {
+						if index > 0 {
+							index--
+						}
 
+						foundValue.Value = foundValue.Value[index:elementCount]
+					}
 					switch operation.(type) {
 					case getValuesAtTimeOp:
 						if len(foundValue.Value) > 0 {
 							view.appendSample(scanJob.fingerprint, time.Unix(*foundValue.Value[0].Timestamp, 0), model.SampleValue(*foundValue.Value[0].Value))
 						}
 						if len(foundValue.Value) > 1 {
+							view.appendSample(scanJob.fingerprint, time.Unix(*foundValue.Value[1].Timestamp, 0), model.SampleValue(*foundValue.Value[1].Value))
 						}
 					default:
 						panic("unhandled")

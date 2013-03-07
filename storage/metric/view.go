@@ -148,13 +148,13 @@ func (v view) GetValueAtTime(f model.Fingerprint, t time.Time) (s []model.Sample
 
 	s = append(s, model.SamplePair{
 		Timestamp: time.Time(iterator.Key().(skipListTime)),
-		Value:     iterator.Value().(model.SampleValue),
+		Value:     iterator.Value().(value).get(),
 	})
 
-	if iterator.Next() {
+	if iterator.Previous() {
 		s = append(s, model.SamplePair{
 			Timestamp: time.Time(iterator.Key().(skipListTime)),
-			Value:     iterator.Value().(model.SampleValue),
+			Value:     iterator.Value().(value).get(),
 		})
 	}
 

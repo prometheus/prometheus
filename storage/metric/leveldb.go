@@ -498,6 +498,10 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 }
 
 func extractSampleKey(i iterator) (k *dto.SampleKey, err error) {
+	if i == nil {
+		panic("nil iterator")
+	}
+
 	k = &dto.SampleKey{}
 	rawKey := i.Key()
 	if rawKey == nil {
@@ -509,6 +513,10 @@ func extractSampleKey(i iterator) (k *dto.SampleKey, err error) {
 }
 
 func extractSampleValue(i iterator) (v *dto.SampleValueSeries, err error) {
+	if i == nil {
+		panic("nil iterator")
+	}
+
 	v = &dto.SampleValueSeries{}
 	err = proto.Unmarshal(i.Value(), v)
 
