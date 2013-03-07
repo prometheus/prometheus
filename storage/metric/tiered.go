@@ -202,9 +202,10 @@ func (t *tieredStorage) Flush() {
 
 // Write all pending appends.
 func (t *tieredStorage) flush() (err error) {
+	// Trim and old values to reduce iterative write costs.
+	t.flushMemory()
 	t.writeMemory()
 	t.flushMemory()
-
 	return
 }
 
@@ -283,7 +284,11 @@ func (f *memoryToDiskFlusher) Flush() {
 	for i := 0; i < length; i++ {
 		samples = append(samples, <-f.toDiskQueue)
 	}
+	start := time.Now()
 	f.disk.AppendSamples(samples)
+	if false {
+		fmt.Printf("Took %s to append...\n", time.Since(start))
+	}
 }
 
 func (f memoryToDiskFlusher) Close() {
@@ -382,8 +387,13 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 						continue
 					}
 
+					if seriesFrontier.lastSupertime.Before(operation.StartsAt()) && !seriesFrontier.lastTime.Before(operation.StartsAt()) {
+						targetKey.Timestamp = indexable.EncodeTime(seriesFrontier.lastSupertime)
+					} else {
+						targetKey.Timestamp = indexable.EncodeTime(operation.StartsAt())
+					}
+
 					targetKey.Fingerprint = scanJob.fingerprint.ToDTO()
-					targetKey.Timestamp = indexable.EncodeTime(operation.StartsAt())
 
 					rawKey, _ := coding.NewProtocolBufferEncoder(targetKey).Encode()
 

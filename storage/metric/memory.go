@@ -62,7 +62,6 @@ func (s stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilt
 	if s.values.Len() == 0 {
 		return
 	}
-
 	iterator := s.values.SeekToLast()
 
 	defer iterator.Close()
@@ -91,7 +90,6 @@ func (s stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilt
 				break
 			}
 		}
-
 		if !iterator.Previous() {
 			break
 		}

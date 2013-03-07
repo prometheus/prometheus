@@ -16,7 +16,6 @@ package metric
 import (
 	"code.google.com/p/goprotobuf/proto"
 	"flag"
-	"fmt"
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
@@ -200,10 +199,6 @@ func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error)
 }
 
 func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err error) {
-	c := len(samples)
-	if c > 1 {
-		fmt.Printf("Appending %d samples...", c)
-	}
 	begin := time.Now()
 	defer func() {
 		duration := time.Now().Sub(begin)
@@ -243,6 +238,58 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 	}
 
 	doneSorting.Wait()
+
+	var (
+		doneCommitting = sync.WaitGroup{}
+	)
+
+	go func() {
+		doneCommitting.Add(1)
+		samplesBatch := leveldb.NewBatch()
+		defer samplesBatch.Close()
+		defer doneCommitting.Done()
+
+		for fingerprint, group := range fingerprintToSamples {
+			for {
+				lengthOfGroup := len(group)
+
+				if lengthOfGroup == 0 {
+					break
+				}
+
+				take := maximumChunkSize
+				if lengthOfGroup < take {
+					take = lengthOfGroup
+				}
+
+				chunk := group[0:take]
+				group = group[take:lengthOfGroup]
+
+				key := &dto.SampleKey{
+					Fingerprint:   fingerprint.ToDTO(),
+					Timestamp:     indexable.EncodeTime(chunk[0].Timestamp),
+					LastTimestamp: proto.Int64(chunk[take-1].Timestamp.Unix()),
+					SampleCount:   proto.Uint32(uint32(take)),
+				}
+
+				value := &dto.SampleValueSeries{}
+				for _, sample := range chunk {
+					value.Value = append(value.Value, &dto.SampleValueSeries_Value{
+						Timestamp: proto.Int64(sample.Timestamp.Unix()),
+						Value:     proto.Float32(float32(sample.Value)),
+					})
+				}
+
+				samplesBatch.Put(coding.NewProtocolBufferEncoder(key), coding.NewProtocolBufferEncoder(value))
+			}
+		}
+
+		err = l.metricSamples.Commit(samplesBatch)
+
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	var (
 		absentFingerprints = map[model.Fingerprint]model.Samples{}
@@ -454,48 +501,8 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 		}
 	}
 
-	samplesBatch := leveldb.NewBatch()
-	defer samplesBatch.Close()
+	doneCommitting.Wait()
 
-	for fingerprint, group := range fingerprintToSamples {
-		for {
-			lengthOfGroup := len(group)
-
-			if lengthOfGroup == 0 {
-				break
-			}
-
-			take := maximumChunkSize
-			if lengthOfGroup < take {
-				take = lengthOfGroup
-			}
-
-			chunk := group[0:take]
-			group = group[take:lengthOfGroup]
-
-			key := &dto.SampleKey{
-				Fingerprint:   fingerprint.ToDTO(),
-				Timestamp:     indexable.EncodeTime(chunk[0].Timestamp),
-				LastTimestamp: proto.Int64(chunk[take-1].Timestamp.Unix()),
-				SampleCount:   proto.Uint32(uint32(take)),
-			}
-
-			value := &dto.SampleValueSeries{}
-			for _, sample := range chunk {
-				value.Value = append(value.Value, &dto.SampleValueSeries_Value{
-					Timestamp: proto.Int64(sample.Timestamp.Unix()),
-					Value:     proto.Float32(float32(sample.Value)),
-				})
-			}
-
-			samplesBatch.Put(coding.NewProtocolBufferEncoder(key), coding.NewProtocolBufferEncoder(value))
-		}
-	}
-
-	err = l.metricSamples.Commit(samplesBatch)
-	if err != nil {
-		panic(err)
-	}
 	return
 }
 

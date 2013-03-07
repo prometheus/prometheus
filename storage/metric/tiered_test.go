@@ -14,6 +14,7 @@
 package metric
 
 import (
+	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
 	"io/ioutil"
@@ -21,6 +22,24 @@ import (
 	"testing"
 	"time"
 )
+
+func sampleIncrement(from, to time.Time, interval time.Duration, m model.Metric) (v []model.Sample) {
+	var (
+		i model.SampleValue = 0
+	)
+
+	for from.Before(to) {
+		v = append(v, model.Sample{
+			Metric:    m,
+			Value:     i,
+			Timestamp: from,
+		})
+
+		from = from.Add(interval)
+	}
+
+	return
+}
 
 func testMakeView(t test.Tester) {
 	type in struct {
@@ -104,28 +123,132 @@ func testMakeView(t test.Tester) {
 					},
 				},
 			},
+			{
+				data: []model.Sample{
+					{
+						Metric:    metric,
+						Value:     0,
+						Timestamp: instant,
+					},
+					{
+						Metric:    metric,
+						Value:     1,
+						Timestamp: instant.Add(time.Second),
+					},
+					{
+						Metric:    metric,
+						Value:     2,
+						Timestamp: instant.Add(time.Second * 2),
+					},
+				},
+				in: in{
+					atTime: []getValuesAtTimeOp{
+						{
+							time: instant.Add(time.Second),
+						},
+					},
+				},
+				out: out{
+					atTime: [][]model.SamplePair{
+						{
+							{
+								Timestamp: instant.Add(time.Second),
+								Value:     1,
+							},
+							{
+								Timestamp: instant.Add(time.Second * 2),
+								Value:     2,
+							},
+						},
+					},
+				},
+			},
+			{
+				data: []model.Sample{
+					{
+						Metric:    metric,
+						Value:     0,
+						Timestamp: instant,
+					},
+					{
+						Metric:    metric,
+						Value:     1,
+						Timestamp: instant.Add(time.Second * 2),
+					},
+					{
+						Metric:    metric,
+						Value:     2,
+						Timestamp: instant.Add(time.Second * 4),
+					},
+				},
+				in: in{
+					atTime: []getValuesAtTimeOp{
+						{
+							time: instant.Add(time.Second),
+						},
+					},
+				},
+				out: out{
+					atTime: [][]model.SamplePair{
+						{
+							{
+								Timestamp: instant,
+								Value:     0,
+							},
+							{
+								Timestamp: instant.Add(time.Second * 2),
+								Value:     1,
+							},
+						},
+					},
+				},
+			},
+			{
+				data: []model.Sample{
+					{
+						Metric:    metric,
+						Value:     0,
+						Timestamp: instant,
+					},
+					{
+						Metric:    metric,
+						Value:     1,
+						Timestamp: instant.Add(time.Second * 2),
+					},
+					{
+						Metric:    metric,
+						Value:     2,
+						Timestamp: instant.Add(time.Second * 4),
+					},
+				},
+				in: in{
+					atTime: []getValuesAtTimeOp{
+						{
+							time: instant.Add(time.Second * 3),
+						},
+					},
+				},
+				out: out{
+					atTime: [][]model.SamplePair{
+						{
+							{
+								Timestamp: instant.Add(time.Second * 2),
+								Value:     1,
+							},
+							{
+								Timestamp: instant.Add(time.Second * 4),
+								Value:     2,
+							},
+						},
+					},
+				},
+			},
 			// {
-			// 	data: []model.Sample{
-			// 		{
-			// 			Metric:    metric,
-			// 			Value:     0,
-			// 			Timestamp: instant,
-			// 		},
-			// 		{
-			// 			Metric:    metric,
-			// 			Value:     1,
-			// 			Timestamp: instant.Add(time.Second),
-			// 		},
-			// 		{
-			// 			Metric:    metric,
-			// 			Value:     2,
-			// 			Timestamp: instant.Add(time.Second * 2),
-			// 		},
-			// 	},
+			// 	data: sampleIncrement(instant, instant.Add(14*24*time.Hour), time.Second, metric),
 			// 	in: in{
 			// 		atTime: []getValuesAtTimeOp{
 			// 			{
-			// 				time: instant.Add(time.Second),
+			// 				time: instant.Add(time.Second * 3),
 			// 			},
 			// 		},
 			// 	},
@@ -133,11 +256,11 @@ func testMakeView(t test.Tester) {
 			// 		atTime: [][]model.SamplePair{
 			// 			{
 			// 				{
-			// 					Timestamp: instant.Add(time.Second),
+			// 					Timestamp: instant.Add(time.Second * 2),
 			// 					Value:     1,
 			// 				},
 			// 				{
-			// 					Timestamp: instant.Add(time.Second * 2),
+			// 					Timestamp: instant.Add(time.Second * 4),
 			// 					Value:     2,
 			// 				},
 			// 			},
@@ -150,7 +273,7 @@ func testMakeView(t test.Tester) {
 	for i, scenario := range scenarios {
 		var (
 			temporary, _ = ioutil.TempDir("", "test_make_view")
-			tiered       = NewTieredStorage(100, 100, 100, time.Second, time.Second, 0*time.Second, temporary)
+			tiered       = NewTieredStorage(5000000, 250, 1000, 5*time.Second, 15*time.Second, 0*time.Second, temporary)
 		)
 
 		if tiered == nil {
@@ -171,7 +294,9 @@ func testMakeView(t test.Tester) {
 			}
 		}
 
+		start := time.Now()
 		tiered.Flush()
+		fmt.Printf("Took %s to flush %d items...\n", time.Since(start), len(scenario.data))
 
 		requestBuilder := NewViewRequestBuilder()
 
