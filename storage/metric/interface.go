@@ -69,9 +69,9 @@ type StalenessPolicy struct {
 // View provides view of the values in the datastore subject to the request of a
 // preloading operation.
 type View interface {
-	GetValueAtTime(model.Metric, time.Time, StalenessPolicy) (*model.Sample, error)
-	GetBoundaryValues(model.Metric, model.Interval, StalenessPolicy) (*model.Sample, *model.Sample, error)
-	GetRangeValues(model.Metric, model.Interval) (*model.SampleSet, error)
+	GetValueAtTime(model.Fingerprint, time.Time) []model.SamplePair
+	GetBoundaryValues(model.Fingerprint, model.Interval) []model.SamplePair
+	GetRangeValues(model.Fingerprint, model.Interval) []model.SamplePair
 
 	// Destroy this view.
 	Close()

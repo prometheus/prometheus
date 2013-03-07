@@ -60,6 +60,7 @@ var (
 	storageOperations         = metrics.NewCounter()
 	storageOperationDurations = metrics.NewCounter()
 	storageLatency            = metrics.NewHistogram(diskLatencyHistogram)
+	queueSizes                = metrics.NewGauge()
 )
 
 func recordOutcome(duration time.Duration, err error, success, failure map[string]string) {
@@ -78,4 +79,5 @@ func init() {
 	registry.Register("prometheus_metric_disk_operations_total", "Total number of metric-related disk operations.", registry.NilLabels, storageOperations)
 	registry.Register("prometheus_metric_disk_latency_microseconds", "Latency for metric disk operations in microseconds.", registry.NilLabels, storageLatency)
 	registry.Register("prometheus_storage_operation_time_total_microseconds", "The total time spent performing a given storage operation.", registry.NilLabels, storageOperationDurations)
+	registry.Register("prometheus_storage_queue_sizes_total", "The various sizes and capacities of the storage queues.", registry.NilLabels, queueSizes)
 }

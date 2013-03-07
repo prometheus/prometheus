@@ -14,7 +14,6 @@
 package model
 
 import (
-	"sort"
 	"time"
 )
 
@@ -31,19 +30,15 @@ func (s Samples) Len() int {
 }
 
 func (s Samples) Less(i, j int) (less bool) {
-	fingerprints := Fingerprints{
-		NewFingerprintFromMetric(s[i].Metric),
-		NewFingerprintFromMetric(s[j].Metric),
+	if NewFingerprintFromMetric(s[i].Metric).Less(NewFingerprintFromMetric(s[j].Metric)) {
+		return true
 	}
 
-	less = sort.IsSorted(fingerprints)
-	if !less {
-		return
+	if s[i].Timestamp.Before(s[j].Timestamp) {
+		return true
 	}
 
-	less = s[i].Timestamp.Before(s[j].Timestamp)
-
-	return
+	return false
 }
 
 func (s Samples) Swap(i, j int) {

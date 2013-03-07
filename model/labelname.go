@@ -13,10 +13,6 @@
 
 package model
 
-import (
-	"sort"
-)
-
 // A LabelName is a key for a LabelSet or Metric.  It has a value associated
 // therewith.
 type LabelName string
@@ -28,10 +24,7 @@ func (l LabelNames) Len() int {
 }
 
 func (l LabelNames) Less(i, j int) bool {
-	return sort.StringsAreSorted([]string{
-		string(l[i]),
-		string(l[j]),
-	})
+	return l[i] < l[j]
 }
 
 func (l LabelNames) Swap(i, j int) {

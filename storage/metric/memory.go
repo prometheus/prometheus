@@ -54,19 +54,20 @@ type stream struct {
 	values *skiplist.SkipList
 }
 
-func (s stream) add(sample model.Sample) {
-	s.values.Set(skipListTime(sample.Timestamp), singletonValue(sample.Value))
+func (s stream) add(timestamp time.Time, value model.SampleValue) {
+	s.values.Set(skipListTime(timestamp), singletonValue(value))
 }
 
 func (s stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error) {
-	iterator := s.values.SeekToLast()
-	if iterator == nil {
-		panic("nil iterator")
+	if s.values.Len() == 0 {
+		return
 	}
+
+	iterator := s.values.SeekToLast()
 
 	defer iterator.Close()
 
-	for iterator.Previous() {
+	for !(iterator.Key() == nil || iterator.Value() == nil) {
 		decodedKey, decodeErr := decoder.DecodeKey(iterator.Key())
 		if decodeErr != nil {
 			continue
@@ -89,6 +90,10 @@ func (s stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilt
 				}
 				break
 			}
+		}
+
+		if !iterator.Previous() {
+			break
 		}
 	}
 	scannedEntireCorpus = true
@@ -117,9 +122,11 @@ func (s memorySeriesStorage) AppendSamples(samples model.Samples) (err error) {
 }
 
 func (s memorySeriesStorage) AppendSample(sample model.Sample) (err error) {
-	metric := sample.Metric
-	fingerprint := model.NewFingerprintFromMetric(metric)
-	series, ok := s.fingerprintToSeries[fingerprint]
+	var (
+		metric      = sample.Metric
+		fingerprint = model.NewFingerprintFromMetric(metric)
+		series, ok  = s.fingerprintToSeries[fingerprint]
+	)
 
 	if !ok {
 		series = newStream(metric)
@@ -138,7 +145,7 @@ func (s memorySeriesStorage) AppendSample(sample model.Sample) (err error) {
 		}
 	}
 
-	series.add(sample)
+	series.add(sample.Timestamp, sample.Value)
 
 	return
 }

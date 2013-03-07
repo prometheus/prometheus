@@ -13,10 +13,6 @@
 
 package model
 
-import (
-	"sort"
-)
-
 type LabelPair struct {
 	Name  LabelName
 	Value LabelValue
@@ -29,20 +25,15 @@ func (l LabelPairs) Len() int {
 }
 
 func (l LabelPairs) Less(i, j int) (less bool) {
-	less = sort.StringsAreSorted([]string{
-		string(l[i].Name),
-		string(l[j].Name),
-	})
-	if !less {
-		return
+	if l[i].Name < l[j].Name {
+		return true
 	}
 
-	less = sort.StringsAreSorted([]string{
-		string(l[i].Value),
-		string(l[j].Value),
-	})
+	if l[i].Value < l[j].Value {
+		return true
+	}
 
-	return
+	return false
 }
 
 func (l LabelPairs) Swap(i, j int) {

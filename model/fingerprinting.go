@@ -90,10 +90,10 @@ func NewFingerprintFromMetric(metric Metric) (f Fingerprint) {
 		labelValueLength := len(labelValue)
 		labelMatterLength += labelNameLength + labelValueLength
 
-		switch i {
-		case 0:
+		if i == 0 {
 			firstCharacterOfFirstLabelName = labelName[0:1]
-		case labelLength - 1:
+		}
+		if i == labelLength-1 {
 			lastCharacterOfLastLabelValue = string(labelValue[labelValueLength-2 : labelValueLength-1])
 		}
 
@@ -146,25 +146,21 @@ func (f fingerprint) LastCharacterOfLastLabelValue() string {
 	return f.lastCharacterOfLastLabelValue
 }
 
-func (f fingerprint) Less(o Fingerprint) (before bool) {
-	before = f.Hash() <= o.Hash()
-	if !before {
-		return
+func (f fingerprint) Less(o Fingerprint) bool {
+	if f.Hash() < o.Hash() {
+		return true
+	}
+	if f.FirstCharacterOfFirstLabelName() < o.FirstCharacterOfFirstLabelName() {
+		return true
+	}
+	if f.LabelMatterLength() < o.LabelMatterLength() {
+		return true
+	}
+	if f.LastCharacterOfLastLabelValue() < o.LastCharacterOfLastLabelValue() {
+		return true
 	}
 
-	before = sort.StringsAreSorted([]string{f.FirstCharacterOfFirstLabelName(), o.FirstCharacterOfFirstLabelName()})
-	if !before {
-		return
-	}
-
-	before = f.LabelMatterLength() <= o.LabelMatterLength()
-	if !before {
-		return
-	}
-
-	before = sort.StringsAreSorted([]string{f.LastCharacterOfLastLabelValue(), o.LastCharacterOfLastLabelValue()})
-
-	return
+	return false
 }
 
 func (f fingerprint) Equal(o Fingerprint) (equal bool) {

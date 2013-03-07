@@ -14,12 +14,16 @@
 package metric
 
 import (
+	"fmt"
 	"github.com/prometheus/prometheus/model"
+	"github.com/ryszard/goskiplist/skiplist"
 	"sort"
 	"time"
 )
 
 var (
+	_ = fmt.Sprintf("")
+
 	// firstSupertime is the smallest valid supertime that may be seeked to.
 	firstSupertime = []byte{0, 0, 0, 0, 0, 0, 0, 0}
 	// lastSupertime is the largest valid supertime that may be seeked to.
@@ -98,4 +102,89 @@ func (v viewRequestBuilder) ScanJobs() (j scanJobs) {
 	sort.Sort(j)
 
 	return
+}
+
+type view struct {
+	fingerprintToSeries map[model.Fingerprint]viewStream
+}
+
+func (v view) appendSample(fingerprint model.Fingerprint, timestamp time.Time, value model.SampleValue) {
+	var (
+		series, ok = v.fingerprintToSeries[fingerprint]
+	)
+
+	if !ok {
+		series = newViewStream()
+		v.fingerprintToSeries[fingerprint] = series
+	}
+
+	series.add(timestamp, value)
+}
+
+func (v view) Close() {
+	v.fingerprintToSeries = make(map[model.Fingerprint]viewStream)
+}
+
+func (v view) GetValueAtTime(f model.Fingerprint, t time.Time) (s []model.SamplePair) {
+	var (
+		series, ok = v.fingerprintToSeries[f]
+	)
+	if !ok {
+		return
+	}
+
+	var (
+		iterator = series.values.Seek(skipListTime(t))
+	)
+	if iterator == nil {
+		return
+	}
+
+	defer iterator.Close()
+
+	if iterator.Key() == nil || iterator.Value() == nil {
+		return
+	}
+
+	s = append(s, model.SamplePair{
+		Timestamp: time.Time(iterator.Key().(skipListTime)),
+		Value:     iterator.Value().(model.SampleValue),
+	})
+
+	if iterator.Next() {
+		s = append(s, model.SamplePair{
+			Timestamp: time.Time(iterator.Key().(skipListTime)),
+			Value:     iterator.Value().(model.SampleValue),
+		})
+	}
+
+	return
+}
+
+func (v view) GetBoundaryValues(f model.Fingerprint, i model.Interval) (s []model.SamplePair) {
+	return
+}
+
+func (v view) GetRangeValues(f model.Fingerprint, i model.Interval) (s []model.SamplePair) {
+	return
+}
+
+func newView() view {
+	return view{
+		fingerprintToSeries: make(map[model.Fingerprint]viewStream),
+	}
+}
+
+type viewStream struct {
+	values *skiplist.SkipList
+}
+
+func (s viewStream) add(timestamp time.Time, value model.SampleValue) {
+	s.values.Set(skipListTime(timestamp), singletonValue(value))
+}
+
+func newViewStream() viewStream {
+	return viewStream{
+		values: skiplist.New(),
+	}
 }
