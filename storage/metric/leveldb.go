@@ -281,18 +281,19 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 				fingerprintSet, ok := labelNameFingerprints[labelName]
 				if !ok {
 					fingerprintSet = utility.Set{}
+
+					fingerprints, err := l.GetFingerprintsForLabelName(labelName)
+					if err != nil {
+						panic(err)
+						doneBuildingLabelNameIndex <- err
+						return
+					}
+
+					for _, fingerprint := range fingerprints {
+						fingerprintSet.Add(fingerprint)
+					}
 				}
 
-				fingerprints, err := l.GetFingerprintsForLabelName(labelName)
-				if err != nil {
-					panic(err)
-					doneBuildingLabelNameIndex <- err
-					return
-				}
-
-				for _, fingerprint := range fingerprints {
-					fingerprintSet.Add(fingerprint)
-				}
 				fingerprintSet.Add(fingerprint)
 				labelNameFingerprints[labelName] = fingerprintSet
 			}
@@ -344,20 +345,21 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 				fingerprintSet, ok := labelPairFingerprints[labelPair]
 				if !ok {
 					fingerprintSet = utility.Set{}
+
+					fingerprints, err := l.GetFingerprintsForLabelSet(model.LabelSet{
+						labelName: labelValue,
+					})
+					if err != nil {
+						panic(err)
+						doneBuildingLabelPairIndex <- err
+						return
+					}
+
+					for _, fingerprint := range fingerprints {
+						fingerprintSet.Add(fingerprint)
+					}
 				}
 
-				fingerprints, err := l.GetFingerprintsForLabelSet(model.LabelSet{
-					labelName: labelValue,
-				})
-				if err != nil {
-					panic(err)
-					doneBuildingLabelPairIndex <- err
-					return
-				}
-
-				for _, fingerprint := range fingerprints {
-					fingerprintSet.Add(fingerprint)
-				}
 				fingerprintSet.Add(fingerprint)
 				labelPairFingerprints[labelPair] = fingerprintSet
 			}
