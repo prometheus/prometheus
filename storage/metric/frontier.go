@@ -38,6 +38,10 @@ func (f *diskFrontier) String() string {
 	return fmt.Sprintf("diskFrontier from %s at %s to %s at %s", f.firstFingerprint.ToRowKey(), f.firstSupertime, f.lastFingerprint.ToRowKey(), f.lastSupertime)
 }
 
+func (f *diskFrontier) ContainsFingerprint(fingerprint model.Fingerprint) bool {
+	return fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint)
+}
+
 func newDiskFrontier(i iterator) (d *diskFrontier, err error) {
 	i.SeekToLast()
 	if i.Key() == nil {

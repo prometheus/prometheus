@@ -365,7 +365,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 		)
 
 		//		fmt.Printf("Starting scan of %s...\n", scanJob)
-		if !(t.diskFrontier == nil || scanJob.fingerprint.Less(t.diskFrontier.firstFingerprint) || t.diskFrontier.lastFingerprint.Less(scanJob.fingerprint)) {
+		if t.diskFrontier != nil || t.diskFrontier.ContainsFingerprint(scanJob.fingerprint) {
 			//			fmt.Printf("Using diskFrontier %s\n", t.diskFrontier)
 			seriesFrontier, err := newSeriesFrontier(scanJob.fingerprint, *t.diskFrontier, iterator)
 			//			fmt.Printf("Using seriesFrontier %s\n", seriesFrontier)
