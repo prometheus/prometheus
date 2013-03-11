@@ -188,7 +188,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error) {
 	begin := time.Now()
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: appendSample, result: failure})
 	}()
@@ -201,7 +201,7 @@ func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error)
 func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err error) {
 	begin := time.Now()
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: appendSamples, result: success}, map[string]string{operation: appendSamples, result: failure})
 	}()
@@ -303,7 +303,6 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 		indexHas, err := l.hasIndexMetric(metricDTO)
 		if err != nil {
 			panic(err)
-			continue
 		}
 		if !indexHas {
 			absentFingerprints[fingerprint] = samples
@@ -570,7 +569,7 @@ func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (value bool, 
 	begin := time.Now()
 
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: hasIndexMetric, result: success}, map[string]string{operation: hasIndexMetric, result: failure})
 	}()
@@ -585,7 +584,7 @@ func (l *LevelDBMetricPersistence) HasLabelPair(dto *dto.LabelPair) (value bool,
 	begin := time.Now()
 
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: hasLabelPair, result: success}, map[string]string{operation: hasLabelPair, result: failure})
 	}()
@@ -600,7 +599,7 @@ func (l *LevelDBMetricPersistence) HasLabelName(dto *dto.LabelName) (value bool,
 	begin := time.Now()
 
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: hasLabelName, result: success}, map[string]string{operation: hasLabelName, result: failure})
 	}()
@@ -615,7 +614,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 	begin := time.Now()
 
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelSet, result: success}, map[string]string{operation: getFingerprintsForLabelSet, result: failure})
 	}()
@@ -665,7 +664,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	begin := time.Now()
 
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelName, result: success}, map[string]string{operation: getFingerprintsForLabelName, result: failure})
 	}()
@@ -694,7 +693,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 	begin := time.Now()
 
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
 	}()
@@ -727,7 +726,7 @@ func (l *LevelDBMetricPersistence) GetBoundaryValues(m model.Metric, i model.Int
 	begin := time.Now()
 
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: getBoundaryValues, result: success}, map[string]string{operation: getBoundaryValues, result: failure})
 	}()
@@ -776,7 +775,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 	begin := time.Now()
 
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: getValueAtTime, result: success}, map[string]string{operation: getValueAtTime, result: failure})
 	}()
@@ -992,7 +991,7 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interv
 	begin := time.Now()
 
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
 	}()

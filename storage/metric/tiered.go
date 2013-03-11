@@ -60,6 +60,7 @@ type Storage interface {
 	// Stops the storage subsystem, flushing all pending operations.
 	Drain()
 	Flush()
+	Close()
 }
 
 func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, writeMemoryInterval, memoryTTL time.Duration, root string) Storage {
@@ -126,7 +127,7 @@ func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 func (t *tieredStorage) rebuildDiskFrontier() (err error) {
 	begin := time.Now()
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: rebuildDiskFrontier, result: failure})
 	}()
@@ -181,7 +182,7 @@ func (t *tieredStorage) reportQueues() {
 func (t *tieredStorage) writeMemory() {
 	begin := time.Now()
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, nil, map[string]string{operation: appendSample, result: success}, map[string]string{operation: writeMemory, result: failure})
 	}()
@@ -200,9 +201,14 @@ func (t *tieredStorage) Flush() {
 	t.flush()
 }
 
+func (t *tieredStorage) Close() {
+	t.Drain()
+	t.diskStorage.Close()
+}
+
 // Write all pending appends.
 func (t *tieredStorage) flush() (err error) {
-	// Trim and old values to reduce iterative write costs.
+	// Trim any old values to reduce iterative write costs.
 	t.flushMemory()
 	t.writeMemory()
 	t.flushMemory()
@@ -299,7 +305,7 @@ func (f memoryToDiskFlusher) Close() {
 func (t *tieredStorage) flushMemory() {
 	begin := time.Now()
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, nil, map[string]string{operation: appendSample, result: success}, map[string]string{operation: flushMemory, result: failure})
 	}()
@@ -322,7 +328,7 @@ func (t *tieredStorage) flushMemory() {
 func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 	begin := time.Now()
 	defer func() {
-		duration := time.Now().Sub(begin)
+		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: renderView, result: failure})
 	}()

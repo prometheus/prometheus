@@ -69,11 +69,11 @@ func (s stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilt
 	for !(iterator.Key() == nil || iterator.Value() == nil) {
 		decodedKey, decodeErr := decoder.DecodeKey(iterator.Key())
 		if decodeErr != nil {
-			continue
+			panic(decodeErr)
 		}
 		decodedValue, decodeErr := decoder.DecodeValue(iterator.Value())
 		if decodeErr != nil {
-			continue
+			panic(decodeErr)
 		}
 
 		switch filter.Filter(decodedKey, decodedValue) {
