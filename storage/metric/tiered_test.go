@@ -23,10 +23,8 @@ import (
 	"time"
 )
 
-func sampleIncrement(from, to time.Time, interval time.Duration, m model.Metric) (v []model.Sample) {
-	var (
-		i model.SampleValue = 0
-	)
+func buildSamples(from, to time.Time, interval time.Duration, m model.Metric) (v []model.Sample) {
+	i := model.SampleValue(0)
 
 	for from.Before(to) {
 		v = append(v, model.Sample{
@@ -36,6 +34,7 @@ func sampleIncrement(from, to time.Time, interval time.Duration, m model.Metric)
 		})
 
 		from = from.Add(interval)
+		i++
 	}
 
 	return
@@ -54,7 +53,7 @@ func testMakeView(t test.Tester) {
 		alongRange [][]model.SamplePair
 	}
 	var (
-		instant     = time.Date(1984, 3, 30, 0, 0, 0, 0, time.UTC)
+		instant     = time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local)
 		metric      = model.Metric{"name": "request_count"}
 		fingerprint = model.NewFingerprintFromMetric(metric)
 		scenarios   = []struct {
@@ -243,37 +242,37 @@ func testMakeView(t test.Tester) {
 					},
 				},
 			},
-			// {
-			// 	data: sampleIncrement(instant, instant.Add(14*24*time.Hour), time.Second, metric),
-			// 	in: in{
-			// 		atTime: []getValuesAtTimeOp{
-			// 			{
-			// 				time: instant.Add(time.Second * 3),
-			// 			},
-			// 		},
-			// 	},
-			// 	out: out{
-			// 		atTime: [][]model.SamplePair{
-			// 			{
-			// 				{
-			// 					Timestamp: instant.Add(time.Second * 2),
-			// 					Value:     1,
-			// 				},
-			// 				{
-			// 					Timestamp: instant.Add(time.Second * 4),
-			// 					Value:     2,
-			// 				},
-			// 			},
-			// 		},
-			// 	},
-			// },
+			{
+				data: buildSamples(instant, instant.Add(400*time.Second), time.Second, metric),
+				in: in{
+					atTime: []getValuesAtTimeOp{
+						{
+							time: instant.Add(time.Second * 100),
+						},
+					},
+				},
+				out: out{
+					atTime: [][]model.SamplePair{
+						{
+							{
+								Timestamp: instant.Add(time.Second * 100),
+								Value:     100,
+							},
+							{
+								Timestamp: instant.Add(time.Second * 100),
+								Value:     101,
+							},
+						},
+					},
+				},
+			},
 		}
 	)
 
 	for i, scenario := range scenarios {
 		var (
 			temporary, _ = ioutil.TempDir("", "test_make_view")
-			tiered       = NewTieredStorage(5000000, 250, 1000, 5*time.Second, 15*time.Second, 0*time.Second, temporary)
+			tiered       = NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, temporary)
 		)
 
 		if tiered == nil {
@@ -327,10 +326,10 @@ func testMakeView(t test.Tester) {
 
 			for k, value := range scenario.out.atTime[j] {
 				if value.Value != actual[k].Value {
-					t.Fatalf("%d.%d.%d expected %d value, got %d", i, j, k, value.Value, actual[j].Value)
+					t.Fatalf("%d.%d.%d expected %v value, got %v", i, j, k, value.Value, actual[k].Value)
 				}
 				if !value.Timestamp.Equal(actual[k].Timestamp) {
-					t.Fatalf("%d.%d.%d expected %s timestamp, got %s", i, j, k, value.Timestamp, actual[j].Timestamp)
+					t.Fatalf("%d.%d.%d expected %s timestamp, got %s", i, j, k, value.Timestamp, actual[k].Timestamp)
 				}
 			}
 		}
