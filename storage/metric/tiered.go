@@ -383,6 +383,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 				for _, operation := range scanJob.operations {
 					if seriesFrontier.lastTime.Before(operation.StartsAt()) {
 						//						fmt.Printf("operation %s occurs after %s; aborting...\n", operation, seriesFrontier.lastTime)
+						// XXXXXX
 						break
 					}
 
@@ -390,9 +391,13 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 
 					if operation.StartsAt().Before(seriesFrontier.firstSupertime) {
 						//						fmt.Printf("operation %s occurs before %s; discarding...\n", operation, seriesFrontier.firstSupertime)
+						// XXXXXX
 						continue
 					}
 
+					// If the operation starts in the last supertime block, but before
+					// the end of a series, set the seek time to be within the key space
+					// so as not to invalidate the iterator.
 					if seriesFrontier.lastSupertime.Before(operation.StartsAt()) && !seriesFrontier.lastTime.Before(operation.StartsAt()) {
 						targetKey.Timestamp = indexable.EncodeTime(seriesFrontier.lastSupertime)
 					} else {
@@ -403,7 +408,6 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 
 					rawKey, _ := coding.NewProtocolBufferEncoder(targetKey).Encode()
 
-					// XXX: Use frontiers to manage out of range queries.
 					iterator.Seek(rawKey)
 
 					foundKey, err = extractSampleKey(iterator)
@@ -412,21 +416,27 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 					}
 
 					var (
-						fst = indexable.DecodeTime(foundKey.Timestamp)
-						lst = time.Unix(*foundKey.LastTimestamp, 0)
+						firstTime = indexable.DecodeTime(foundKey.Timestamp)
+						lastTime  = time.Unix(*foundKey.LastTimestamp, 0)
 					)
 
-					if !((operation.StartsAt().Before(fst)) || lst.Before(operation.StartsAt())) {
-						//						fmt.Printf("operation %s occurs inside of %s...\n", operation, foundKey)
-						foundValue, err = extractSampleValue(iterator)
-						if err != nil {
-							panic(err)
-						}
-					} else if operation.StartsAt().Before(fst) {
-						fmt.Printf("operation %s may occur in next entity; fast forwarding...\n", operation)
+					if operation.StartsAt().Before(firstTime) {
+						// Imagine the following supertime blocks with last time ranges:
+						//
+						// Block 1: ft 1000 - lt 1009 <data>
+						// Block 1: ft 1010 - lt 1019 <data>
+						//
+						// If an operation started at time 1005, we would first seek to the
+						// block with supertime 1010, then need to rewind by one block by
+						// virtue of LevelDB iterator seek behavior.
+						fmt.Printf("operation %s may occur in next entity; rewinding...\n", operation)
+						iterator.Previous()
 						panic("oops")
-					} else {
-						panic("illegal state")
+					}
+					// fmt.Printf("operation %s occurs inside of %s...\n", operation, foundKey)
+					foundValue, err = extractSampleValue(iterator)
+					if err != nil {
+						panic(err)
 					}
 
 					var (
