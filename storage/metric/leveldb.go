@@ -32,8 +32,9 @@ import (
 )
 
 var (
-	maximumChunkSize = 200
-	sortConcurrency  = 2
+	leveldbChunkSize = flag.Int("leveldbChunkSize", 200, "Maximum number of samples stored under one key.")
+
+	sortConcurrency = 2
 )
 
 type LevelDBMetricPersistence struct {
@@ -257,7 +258,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 					break
 				}
 
-				take := maximumChunkSize
+				take := *leveldbChunkSize
 				if lengthOfGroup < take {
 					take = lengthOfGroup
 				}
