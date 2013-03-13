@@ -55,7 +55,7 @@ func NewViewRequestBuilder() viewRequestBuilder {
 // match or the one or two values adjacent thereto.
 func (v viewRequestBuilder) GetMetricAtTime(fingerprint model.Fingerprint, time time.Time) {
 	ops := v.operations[fingerprint]
-	ops = append(ops, getValuesAtTimeOp{
+	ops = append(ops, &getValuesAtTimeOp{
 		time: time,
 	})
 	v.operations[fingerprint] = ops
@@ -66,7 +66,7 @@ func (v viewRequestBuilder) GetMetricAtTime(fingerprint model.Fingerprint, time 
 // for each point.
 func (v viewRequestBuilder) GetMetricAtInterval(fingerprint model.Fingerprint, from, through time.Time, interval time.Duration) {
 	ops := v.operations[fingerprint]
-	ops = append(ops, getValuesAtIntervalOp{
+	ops = append(ops, &getValuesAtIntervalOp{
 		from:     from,
 		through:  through,
 		interval: interval,
@@ -78,7 +78,7 @@ func (v viewRequestBuilder) GetMetricAtInterval(fingerprint model.Fingerprint, f
 // From through Through.
 func (v viewRequestBuilder) GetMetricRange(fingerprint model.Fingerprint, from, through time.Time) {
 	ops := v.operations[fingerprint]
-	ops = append(ops, getValuesAlongRangeOp{
+	ops = append(ops, &getValuesAlongRangeOp{
 		from:    from,
 		through: through,
 	})

@@ -15,6 +15,7 @@ package metric
 
 import (
 	"fmt"
+	"github.com/prometheus/prometheus/model"
 	"math"
 	"sort"
 	"time"
@@ -24,6 +25,11 @@ import (
 type op interface {
 	// The time at which this operation starts.
 	StartsAt() time.Time
+	// Extract samples from stream of values and advance operation time.
+	ExtractSamples(in []model.SamplePair) (out []model.SamplePair)
+	// Get current operation time or nil if no subsequent work associated with
+	// this operator remains.
+	CurrentTime() *time.Time
 }
 
 // Provides a sortable collection of operations.
@@ -43,7 +49,8 @@ func (o ops) Swap(i, j int) {
 
 // Encapsulates getting values at or adjacent to a specific time.
 type getValuesAtTimeOp struct {
-	time time.Time
+	time     time.Time
+	consumed bool
 }
 
 func (o getValuesAtTimeOp) String() string {
@@ -52,6 +59,33 @@ func (o getValuesAtTimeOp) String() string {
 
 func (g getValuesAtTimeOp) StartsAt() time.Time {
 	return g.time
+}
+
+func (g *getValuesAtTimeOp) ExtractSamples(in []model.SamplePair) (out []model.SamplePair) {
+	extractValuesAroundTime(g.time, in, out)
+	g.consumed = true
+	return
+}
+
+func extractValuesAroundTime(t time.Time, in []model.SamplePair, out []model.SamplePair) {
+	i := sort.Search(len(in), func(i int) bool {
+		return in[i].Timestamp.After(t)
+	})
+	if i == len(in) {
+		panic("Searched past end of input")
+	}
+	if i == 0 {
+		out = append(out, in[0:1]...)
+	} else {
+		out = append(out, in[i-1:i+1]...)
+	}
+}
+
+func (g getValuesAtTimeOp) CurrentTime() (currentTime *time.Time) {
+	if !g.consumed {
+		currentTime = &g.time
+	}
+	return
 }
 
 // Encapsulates getting values at a given interval over a duration.
@@ -73,6 +107,28 @@ func (g getValuesAtIntervalOp) Through() time.Time {
 	return g.through
 }
 
+func (g *getValuesAtIntervalOp) ExtractSamples(in []model.SamplePair) (out []model.SamplePair) {
+	lastChunkTime := in[len(in)-1].Timestamp
+	for {
+		if g.from.After(lastChunkTime) {
+			break
+		}
+		if g.from.After(g.through) {
+			break
+		}
+		extractValuesAroundTime(g.from, in, out)
+		g.from = g.from.Add(g.interval)
+	}
+	return
+}
+
+func (g getValuesAtIntervalOp) CurrentTime() (currentTime *time.Time) {
+	if g.from.After(g.through) {
+		return
+	}
+	return &g.from
+}
+
 type getValuesAlongRangeOp struct {
 	from    time.Time
 	through time.Time
@@ -90,8 +146,21 @@ func (g getValuesAlongRangeOp) Through() time.Time {
 	return g.through
 }
 
+func (g *getValuesAlongRangeOp) ExtractSamples(in []model.SamplePair) (out []model.SamplePair) {
+	lastChunkTime := in[len(in)-1].Timestamp
+	g.from = lastChunkTime.Add(time.Duration(1))
+	return in
+}
+
+func (g getValuesAlongRangeOp) CurrentTime() (currentTime *time.Time) {
+	if g.from.After(g.through) {
+		return
+	}
+	return &g.from
+}
+
 // Provides a collection of getMetricRangeOperation.
-type getMetricRangeOperations []getValuesAlongRangeOp
+type getMetricRangeOperations []*getValuesAlongRangeOp
 
 func (s getMetricRangeOperations) Len() int {
 	return len(s)
@@ -136,7 +205,7 @@ func (o durationOperators) Swap(i, j int) {
 }
 
 // Contains getValuesAtIntervalOp operations.
-type getValuesAtIntervalOps []getValuesAtIntervalOp
+type getValuesAtIntervalOps []*getValuesAtIntervalOp
 
 func (s getValuesAtIntervalOps) Len() int {
 	return len(s)
@@ -177,7 +246,7 @@ func collectIntervals(ops ops) (intervals map[time.Duration]getValuesAtIntervalO
 
 	for _, operation := range ops {
 		switch t := operation.(type) {
-		case getValuesAtIntervalOp:
+		case *getValuesAtIntervalOp:
 			operations, _ := intervals[t.interval]
 
 			operations = append(operations, t)
@@ -196,7 +265,7 @@ func collectIntervals(ops ops) (intervals map[time.Duration]getValuesAtIntervalO
 func collectRanges(ops ops) (ranges getMetricRangeOperations) {
 	for _, operation := range ops {
 		switch t := operation.(type) {
-		case getValuesAlongRangeOp:
+		case *getValuesAlongRangeOp:
 			ranges = append(ranges, t)
 		}
 	}
@@ -223,13 +292,13 @@ func optimizeForward(pending ops) (out ops) {
 	pending = pending[1:len(pending)]
 
 	switch t := firstOperation.(type) {
-	case getValuesAtTimeOp:
+	case *getValuesAtTimeOp:
 		out = ops{firstOperation}
 		tail := optimizeForward(pending)
 
 		return append(out, tail...)
 
-	case getValuesAtIntervalOp:
+	case *getValuesAtIntervalOp:
 		// If the last value was a scan at a given frequency along an interval,
 		// several optimizations may exist.
 		for _, peekOperation := range pending {
@@ -239,11 +308,11 @@ func optimizeForward(pending ops) (out ops) {
 
 			// If the type is not a range request, we can't do anything.
 			switch next := peekOperation.(type) {
-			case getValuesAlongRangeOp:
+			case *getValuesAlongRangeOp:
 				if !next.Through().After(t.Through()) {
 					var (
-						before = getValuesAtIntervalOp(t)
-						after  = getValuesAtIntervalOp(t)
+						before = getValuesAtIntervalOp(*t)
+						after  = getValuesAtIntervalOp(*t)
 					)
 
 					before.through = next.from
@@ -263,7 +332,7 @@ func optimizeForward(pending ops) (out ops) {
 						}
 					}
 
-					pending = append(ops{before, after}, pending...)
+					pending = append(ops{&before, &after}, pending...)
 					sort.Sort(pending)
 
 					return optimizeForward(pending)
@@ -271,7 +340,7 @@ func optimizeForward(pending ops) (out ops) {
 			}
 		}
 
-	case getValuesAlongRangeOp:
+	case *getValuesAlongRangeOp:
 		for _, peekOperation := range pending {
 			if peekOperation.StartsAt().After(t.Through()) {
 				break
@@ -279,10 +348,10 @@ func optimizeForward(pending ops) (out ops) {
 
 			switch next := peekOperation.(type) {
 			// All values at a specific time may be elided into the range query.
-			case getValuesAtTimeOp:
+			case *getValuesAtTimeOp:
 				pending = pending[1:len(pending)]
 				continue
-			case getValuesAlongRangeOp:
+			case *getValuesAlongRangeOp:
 				// Range queries should be concatenated if they overlap.
 				pending = pending[1:len(pending)]
 
@@ -298,7 +367,7 @@ func optimizeForward(pending ops) (out ops) {
 
 					return optimizeForward(pending)
 				}
-			case getValuesAtIntervalOp:
+			case *getValuesAtIntervalOp:
 				pending = pending[1:len(pending)]
 
 				if next.through.After(t.Through()) {
@@ -317,9 +386,12 @@ func optimizeForward(pending ops) (out ops) {
 						}
 					}
 				}
+			default:
+				panic("unknown operation type")
 			}
 		}
-
+	default:
+		panic("unknown operation type")
 	}
 
 	// Strictly needed?
@@ -394,7 +466,7 @@ func optimizeTimeGroup(group ops) (out ops) {
 	} else if !containsRange && containsInterval {
 		intervalOperations := getValuesAtIntervalOps{}
 		for _, o := range greediestIntervals {
-			intervalOperations = append(intervalOperations, o.(getValuesAtIntervalOp))
+			intervalOperations = append(intervalOperations, o.(*getValuesAtIntervalOp))
 		}
 
 		sort.Sort(frequencySorter{intervalOperations})
@@ -412,7 +484,7 @@ func optimizeTimeGroup(group ops) (out ops) {
 			// The range operation does not exceed interval.  Leave a snippet of
 			// interval.
 			var (
-				truncated            = op.(getValuesAtIntervalOp)
+				truncated            = op.(*getValuesAtIntervalOp)
 				newIntervalOperation getValuesAtIntervalOp
 				// Refactor
 				remainingSlice    = greediestRange.Through().Sub(greediestRange.StartsAt()) / time.Second
@@ -425,7 +497,7 @@ func optimizeTimeGroup(group ops) (out ops) {
 			newIntervalOperation.through = truncated.Through()
 			// Added back to the pending because additional curation could be
 			// necessary.
-			out = append(out, newIntervalOperation)
+			out = append(out, &newIntervalOperation)
 		}
 	} else {
 		// Operation is OK as-is.
