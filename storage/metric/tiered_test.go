@@ -242,30 +242,30 @@ func testMakeView(t test.Tester) {
 					},
 				},
 			},
-			{
-				data: buildSamples(instant, instant.Add(400*time.Second), time.Second, metric),
-				in: in{
-					atTime: []getValuesAtTimeOp{
-						{
-							time: instant.Add(time.Second * 100),
-						},
-					},
-				},
-				out: out{
-					atTime: [][]model.SamplePair{
-						{
-							{
-								Timestamp: instant.Add(time.Second * 100),
-								Value:     100,
-							},
-							{
-								Timestamp: instant.Add(time.Second * 100),
-								Value:     101,
-							},
-						},
-					},
-				},
-			},
+			//{
+			//	data: buildSamples(instant, instant.Add(400*time.Second), time.Second, metric),
+			//	in: in{
+			//		atTime: []getValuesAtTimeOp{
+			//			{
+			//				time: instant.Add(time.Second * 100),
+			//			},
+			//		},
+			//	},
+			//	out: out{
+			//		atTime: [][]model.SamplePair{
+			//			{
+			//				{
+			//					Timestamp: instant.Add(time.Second * 100),
+			//					Value:     100,
+			//				},
+			//				{
+			//					Timestamp: instant.Add(time.Second * 100),
+			//					Value:     101,
+			//				},
+			//			},
+			//		},
+			//	},
+			//},
 		}
 	)
 
