@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	testInstant = time.Now()
+	testInstant = time.Time{}
 )
 
 func testAppendSample(p MetricPersistence, s model.Sample, t test.Tester) {
