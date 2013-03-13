@@ -62,23 +62,28 @@ func (g getValuesAtTimeOp) StartsAt() time.Time {
 }
 
 func (g *getValuesAtTimeOp) ExtractSamples(in []model.SamplePair) (out []model.SamplePair) {
-	extractValuesAroundTime(g.time, in, out)
+	if len(in) == 0 {
+		return
+	}
+	out = extractValuesAroundTime(g.time, in)
 	g.consumed = true
 	return
 }
 
-func extractValuesAroundTime(t time.Time, in []model.SamplePair, out []model.SamplePair) {
+func extractValuesAroundTime(t time.Time, in []model.SamplePair) (out []model.SamplePair) {
 	i := sort.Search(len(in), func(i int) bool {
-		return in[i].Timestamp.After(t)
+		return in[i].Timestamp.After(t) || in[i].Timestamp.Equal(t)
 	})
-	if i == len(in) {
-		panic("Searched past end of input")
-	}
-	if i == 0 {
+	fmt.Printf("I: %d\n", i)
+	switch i {
+	case len(in):
+		out = in[len(in)-1:]
+	case 0:
 		out = append(out, in[0:1]...)
-	} else {
+	default:
 		out = append(out, in[i-1:i+1]...)
 	}
+	return
 }
 
 func (g getValuesAtTimeOp) CurrentTime() (currentTime *time.Time) {
@@ -108,16 +113,19 @@ func (g getValuesAtIntervalOp) Through() time.Time {
 }
 
 func (g *getValuesAtIntervalOp) ExtractSamples(in []model.SamplePair) (out []model.SamplePair) {
+	if len(in) == 0 {
+		return
+	}
 	lastChunkTime := in[len(in)-1].Timestamp
 	for {
+		out = extractValuesAroundTime(g.from, in)
+		g.from = g.from.Add(g.interval)
 		if g.from.After(lastChunkTime) {
 			break
 		}
 		if g.from.After(g.through) {
 			break
 		}
-		extractValuesAroundTime(g.from, in, out)
-		g.from = g.from.Add(g.interval)
 	}
 	return
 }
@@ -147,6 +155,9 @@ func (g getValuesAlongRangeOp) Through() time.Time {
 }
 
 func (g *getValuesAlongRangeOp) ExtractSamples(in []model.SamplePair) (out []model.SamplePair) {
+	if len(in) == 0 {
+		return
+	}
 	lastChunkTime := in[len(in)-1].Timestamp
 	g.from = lastChunkTime.Add(time.Duration(1))
 	return in

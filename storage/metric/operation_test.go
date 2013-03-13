@@ -14,6 +14,7 @@
 package metric
 
 import (
+	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
 	"sort"
 	"testing"
@@ -1074,5 +1075,405 @@ func TestOptimize(t *testing.T) {
 func BenchmarkOptimize(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		testOptimize(b)
+	}
+}
+
+func TestGetValuesAtTimeOp(t *testing.T) {
+	var scenarios = []struct {
+		op  getValuesAtTimeOp
+		in  []model.SamplePair
+		out []model.SamplePair
+	}{
+		// No values.
+		{
+			op: getValuesAtTimeOp{
+				time: testInstant,
+			},
+		},
+		// Operator time before single value.
+		{
+			op: getValuesAtTimeOp{
+				time: testInstant,
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator time exactly at single value.
+		{
+			op: getValuesAtTimeOp{
+				time: testInstant.Add(1 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator time after single value.
+		{
+			op: getValuesAtTimeOp{
+				time: testInstant.Add(2 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator time before two values.
+		{
+			op: getValuesAtTimeOp{
+				time: testInstant,
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator time at first of two values.
+		{
+			op: getValuesAtTimeOp{
+				time: testInstant.Add(1 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator time between first and second of two values.
+		{
+			op: getValuesAtTimeOp{
+				time: testInstant.Add(90 * time.Second),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator time at second of two values.
+		{
+			op: getValuesAtTimeOp{
+				time: testInstant.Add(2 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator time after second of two values.
+		{
+			op: getValuesAtTimeOp{
+				time: testInstant.Add(3 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+	}
+	for i, scenario := range scenarios {
+		actual := scenario.op.ExtractSamples(scenario.in)
+		if len(actual) != len(scenario.out) {
+			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), scenario.op)
+			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
+		}
+		for j, out := range scenario.out {
+			if out != actual[j] {
+				t.Fatal("%d. expected output %v, got %v", i, scenario.out, actual)
+			}
+		}
+	}
+}
+
+func TestGetValuesAtIntervalOp(t *testing.T) {
+	var scenarios = []struct {
+		op  getValuesAtIntervalOp
+		in  []model.SamplePair
+		out []model.SamplePair
+	}{
+		// No values.
+		{
+			op: getValuesAtIntervalOp{
+				from:     testInstant,
+				through:  testInstant.Add(1 * time.Minute),
+				interval: 30 * time.Second,
+			},
+		},
+		// Entire operator range before first value.
+		{
+			op: getValuesAtIntervalOp{
+				from:     testInstant,
+				through:  testInstant.Add(1 * time.Minute),
+				interval: 30 * time.Second,
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator range starts before first value, ends within available values.
+		{
+			op: getValuesAtIntervalOp{
+				from:     testInstant,
+				through:  testInstant.Add(2 * time.Minute),
+				interval: 30 * time.Second,
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Entire operator range is within available values.
+		{
+			op: getValuesAtIntervalOp{
+				from:     testInstant.Add(1 * time.Minute),
+				through:  testInstant.Add(2 * time.Minute),
+				interval: 30 * time.Second,
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant,
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator range begins before first value, ends after last.
+		{
+			op: getValuesAtIntervalOp{
+				from:     testInstant,
+				through:  testInstant.Add(3 * time.Minute),
+				interval: 30 * time.Second,
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator range begins within available values, ends after the last value.
+		{
+			op: getValuesAtIntervalOp{
+				from:     testInstant.Add(2 * time.Minute),
+				through:  testInstant.Add(4 * time.Minute),
+				interval: 30 * time.Second,
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant,
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Entire operator range after the last available value.
+		{
+			op: getValuesAtIntervalOp{
+				from:     testInstant.Add(2 * time.Minute),
+				through:  testInstant.Add(3 * time.Minute),
+				interval: 30 * time.Second,
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant,
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+	}
+	for i, scenario := range scenarios {
+		actual := scenario.op.ExtractSamples(scenario.in)
+		if len(actual) != len(scenario.out) {
+			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), scenario.op)
+			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
+		}
+		for j, out := range scenario.out {
+			if out != actual[j] {
+				t.Fatal("%d. expected output %v, got %v", i, scenario.out, actual)
+			}
+		}
 	}
 }
