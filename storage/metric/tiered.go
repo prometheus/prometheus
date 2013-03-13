@@ -415,10 +415,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 						panic(err)
 					}
 
-					var (
-						firstTime = indexable.DecodeTime(foundKey.Timestamp)
-						lastTime  = time.Unix(*foundKey.LastTimestamp, 0)
-					)
+					firstTime := indexable.DecodeTime(foundKey.Timestamp)
 
 					if operation.StartsAt().Before(firstTime) {
 						// Imagine the following supertime blocks with last time ranges:
@@ -430,7 +427,8 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 						// block with supertime 1010, then need to rewind by one block by
 						// virtue of LevelDB iterator seek behavior.
 						fmt.Printf("operation %s may occur in next entity; rewinding...\n", operation)
-						iterator.Previous()
+						// XXXXXX
+						//iterator.Previous()
 						panic("oops")
 					}
 					// fmt.Printf("operation %s occurs inside of %s...\n", operation, foundKey)
@@ -455,7 +453,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) (err error) {
 						foundValue.Value = foundValue.Value[index:elementCount]
 					}
 					switch operation.(type) {
-					case getValuesAtTimeOp:
+					case *getValuesAtTimeOp:
 						if len(foundValue.Value) > 0 {
 							view.appendSample(scanJob.fingerprint, time.Unix(*foundValue.Value[0].Timestamp, 0), model.SampleValue(*foundValue.Value[0].Value))
 						}
