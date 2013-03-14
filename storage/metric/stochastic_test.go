@@ -156,7 +156,7 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 			return
 		}
 		if len(fingerprints) != 1 {
-			t.Error("expected fingerprint count of %d, got %d", 1, len(fingerprints))
+			t.Errorf("expected fingerprint count of %d, got %d", 1, len(fingerprints))
 			return
 		}
 
