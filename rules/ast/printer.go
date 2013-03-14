@@ -66,7 +66,7 @@ func exprTypeToString(exprType ExprType) string {
 	return exprTypeMap[exprType]
 }
 
-func (vector Vector) ToString() string {
+func (vector Vector) String() string {
 	metricStrings := []string{}
 	for _, sample := range vector {
 		metricName, ok := sample.Metric["name"]
@@ -91,7 +91,7 @@ func (vector Vector) ToString() string {
 	return strings.Join(metricStrings, "\n")
 }
 
-func (matrix Matrix) ToString() string {
+func (matrix Matrix) String() string {
 	metricStrings := []string{}
 	for _, sampleSet := range matrix {
 		metricName, ok := sampleSet.Metric["name"]
@@ -165,7 +165,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 		vector := node.(VectorNode).Eval(timestamp)
 		switch format {
 		case TEXT:
-			return vector.ToString()
+			return vector.String()
 		case JSON:
 			return TypedValueToJSON(vector, "vector")
 		}
@@ -173,7 +173,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 		matrix := node.(MatrixNode).Eval(timestamp)
 		switch format {
 		case TEXT:
-			return matrix.ToString()
+			return matrix.String()
 		case JSON:
 			return TypedValueToJSON(matrix, "matrix")
 		}
@@ -189,7 +189,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 	panic("Switch didn't cover all node types")
 }
 
-func (node *VectorLiteral) ToString() string {
+func (node *VectorLiteral) String() string {
 	metricName, ok := node.labels["name"]
 	if !ok {
 		panic("Tried to print vector without metric name")
@@ -204,8 +204,8 @@ func (node *VectorLiteral) ToString() string {
 	return fmt.Sprintf("%v{%v}", metricName, strings.Join(labelStrings, ","))
 }
 
-func (node *MatrixLiteral) ToString() string {
-	vectorString := (&VectorLiteral{labels: node.labels}).ToString()
+func (node *MatrixLiteral) String() string {
+	vectorString := (&VectorLiteral{labels: node.labels}).String()
 	intervalString := fmt.Sprintf("['%v']", utility.DurationToString(node.interval))
 	return vectorString + intervalString
 }
@@ -241,7 +241,7 @@ func (node *ScalarArithExpr) NodeTreeToDotGraph() string {
 }
 
 func (node *VectorLiteral) NodeTreeToDotGraph() string {
-	return fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.ToString())
+	return fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.String())
 }
 
 func (node *VectorFunctionCall) NodeTreeToDotGraph() string {
@@ -275,11 +275,11 @@ func (node *VectorArithExpr) NodeTreeToDotGraph() string {
 }
 
 func (node *MatrixLiteral) NodeTreeToDotGraph() string {
-	return fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.ToString())
+	return fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.String())
 }
 
 func (node *StringLiteral) NodeTreeToDotGraph() string {
-	return fmt.Sprintf("%#p[label=\"'%v'\"];\n", node.str)
+	return fmt.Sprintf("%#p[label=\"'%v'\"];\n", node.str, node.str)
 }
 
 func (node *StringFunctionCall) NodeTreeToDotGraph() string {
