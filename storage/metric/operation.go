@@ -175,7 +175,7 @@ func (g *getValuesAlongRangeOp) ExtractSamples(in []model.SamplePair) (out []mod
 		return
 	}
 
-	lastSampleTime := in[lastIdx - 1].Timestamp
+	lastSampleTime := in[lastIdx-1].Timestamp
 	g.from = lastSampleTime.Add(time.Duration(1))
 	return in[firstIdx:lastIdx]
 }

@@ -1487,15 +1487,15 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// No values.
 		{
 			op: getValuesAlongRangeOp{
-				from:     testInstant,
-				through:  testInstant.Add(1 * time.Minute),
+				from:    testInstant,
+				through: testInstant.Add(1 * time.Minute),
 			},
 		},
 		// Entire operator range before first value.
 		{
 			op: getValuesAlongRangeOp{
-				from:     testInstant,
-				through:  testInstant.Add(1 * time.Minute),
+				from:    testInstant,
+				through: testInstant.Add(1 * time.Minute),
 			},
 			in: []model.SamplePair{
 				{
@@ -1512,8 +1512,8 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Operator range starts before first value, ends within available values.
 		{
 			op: getValuesAlongRangeOp{
-				from:     testInstant,
-				through:  testInstant.Add(2 * time.Minute),
+				from:    testInstant,
+				through: testInstant.Add(2 * time.Minute),
 			},
 			in: []model.SamplePair{
 				{
@@ -1535,8 +1535,8 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Entire operator range is within available values.
 		{
 			op: getValuesAlongRangeOp{
-				from:     testInstant.Add(1 * time.Minute),
-				through:  testInstant.Add(2 * time.Minute),
+				from:    testInstant.Add(1 * time.Minute),
+				through: testInstant.Add(2 * time.Minute),
 			},
 			in: []model.SamplePair{
 				{
@@ -1562,8 +1562,8 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Operator range begins before first value, ends after last.
 		{
 			op: getValuesAlongRangeOp{
-				from:     testInstant,
-				through:  testInstant.Add(3 * time.Minute),
+				from:    testInstant,
+				through: testInstant.Add(3 * time.Minute),
 			},
 			in: []model.SamplePair{
 				{
@@ -1589,8 +1589,8 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Operator range begins within available values, ends after the last value.
 		{
 			op: getValuesAlongRangeOp{
-				from:     testInstant.Add(2 * time.Minute),
-				through:  testInstant.Add(4 * time.Minute),
+				from:    testInstant.Add(2 * time.Minute),
+				through: testInstant.Add(4 * time.Minute),
 			},
 			in: []model.SamplePair{
 				{
@@ -1624,8 +1624,8 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Entire operator range after the last available value.
 		{
 			op: getValuesAlongRangeOp{
-				from:     testInstant.Add(2 * time.Minute),
-				through:  testInstant.Add(3 * time.Minute),
+				from:    testInstant.Add(2 * time.Minute),
+				through: testInstant.Add(3 * time.Minute),
 			},
 			in: []model.SamplePair{
 				{
