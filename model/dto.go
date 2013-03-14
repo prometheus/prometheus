@@ -47,11 +47,11 @@ func SampleToMetricDTO(s *Sample) *dto.Metric {
 	}
 }
 
-func MetricToDTO(m *Metric) *dto.Metric {
-	metricLength := len(*m)
+func MetricToDTO(m Metric) *dto.Metric {
+	metricLength := len(m)
 	labelNames := make([]string, 0, metricLength)
 
-	for labelName := range *m {
+	for labelName := range m {
 		labelNames = append(labelNames, string(labelName))
 	}
 
@@ -61,7 +61,7 @@ func MetricToDTO(m *Metric) *dto.Metric {
 
 	for _, labelName := range labelNames {
 		l := LabelName(labelName)
-		labelValue := (*m)[l]
+		labelValue := m[l]
 		labelPair := &dto.LabelPair{
 			Name:  proto.String(string(labelName)),
 			Value: proto.String(string(labelValue)),
