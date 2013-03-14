@@ -43,6 +43,7 @@ const (
 	hasLabelName                = "has_label_name"
 	hasLabelPair                = "has_label_pair"
 	indexMetric                 = "index_metric"
+	indexSamples                = "index_samples"
 	rebuildDiskFrontier         = "rebuild_disk_frontier"
 	renderView                  = "render_view"
 	setLabelNameFingerprints    = "set_label_name_fingerprints"
