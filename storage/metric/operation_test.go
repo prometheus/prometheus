@@ -1477,3 +1477,179 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		}
 	}
 }
+
+func TestGetValuesAlongRangeOp(t *testing.T) {
+	var scenarios = []struct {
+		op  getValuesAlongRangeOp
+		in  []model.SamplePair
+		out []model.SamplePair
+	}{
+		// No values.
+		{
+			op: getValuesAlongRangeOp{
+				from:     testInstant,
+				through:  testInstant.Add(1 * time.Minute),
+			},
+		},
+		// Entire operator range before first value.
+		{
+			op: getValuesAlongRangeOp{
+				from:     testInstant,
+				through:  testInstant.Add(1 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{},
+		},
+		// Operator range starts before first value, ends within available values.
+		{
+			op: getValuesAlongRangeOp{
+				from:     testInstant,
+				through:  testInstant.Add(2 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Entire operator range is within available values.
+		{
+			op: getValuesAlongRangeOp{
+				from:     testInstant.Add(1 * time.Minute),
+				through:  testInstant.Add(2 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant,
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator range begins before first value, ends after last.
+		{
+			op: getValuesAlongRangeOp{
+				from:     testInstant,
+				through:  testInstant.Add(3 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Operator range begins within available values, ends after the last value.
+		{
+			op: getValuesAlongRangeOp{
+				from:     testInstant.Add(2 * time.Minute),
+				through:  testInstant.Add(4 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant,
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
+		// Entire operator range after the last available value.
+		{
+			op: getValuesAlongRangeOp{
+				from:     testInstant.Add(2 * time.Minute),
+				through:  testInstant.Add(3 * time.Minute),
+			},
+			in: []model.SamplePair{
+				{
+					Timestamp: testInstant,
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: []model.SamplePair{},
+		},
+	}
+	for i, scenario := range scenarios {
+		actual := scenario.op.ExtractSamples(scenario.in)
+		if len(actual) != len(scenario.out) {
+			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), scenario.op)
+			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
+		}
+		for j, out := range scenario.out {
+			if out != actual[j] {
+				t.Fatal("%d. expected output %v, got %v", i, scenario.out, actual)
+			}
+		}
+	}
+}

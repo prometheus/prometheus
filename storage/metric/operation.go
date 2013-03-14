@@ -72,7 +72,7 @@ func (g *getValuesAtTimeOp) ExtractSamples(in []model.SamplePair) (out []model.S
 
 func extractValuesAroundTime(t time.Time, in []model.SamplePair) (out []model.SamplePair) {
 	i := sort.Search(len(in), func(i int) bool {
-		return in[i].Timestamp.After(t) || in[i].Timestamp.Equal(t)
+		return !in[i].Timestamp.Before(t)
 	})
 	fmt.Printf("I: %d\n", i)
 	switch i {
@@ -158,9 +158,26 @@ func (g *getValuesAlongRangeOp) ExtractSamples(in []model.SamplePair) (out []mod
 	if len(in) == 0 {
 		return
 	}
-	lastChunkTime := in[len(in)-1].Timestamp
-	g.from = lastChunkTime.Add(time.Duration(1))
-	return in
+	// Find the first sample where time >= g.from.
+	firstIdx := sort.Search(len(in), func(i int) bool {
+		return !in[i].Timestamp.Before(g.from)
+	})
+	if firstIdx == len(in) {
+		// No samples at or after operator start time.
+		return
+	}
+
+	// Find the first sample where time > g.through.
+	lastIdx := sort.Search(len(in), func(i int) bool {
+		return in[i].Timestamp.After(g.through)
+	})
+	if lastIdx == firstIdx {
+		return
+	}
+
+	lastSampleTime := in[lastIdx - 1].Timestamp
+	g.from = lastSampleTime.Add(time.Duration(1))
+	return in[firstIdx:lastIdx]
 }
 
 func (g getValuesAlongRangeOp) CurrentTime() (currentTime *time.Time) {
