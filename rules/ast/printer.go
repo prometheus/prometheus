@@ -279,7 +279,7 @@ func (node *MatrixLiteral) NodeTreeToDotGraph() string {
 }
 
 func (node *StringLiteral) NodeTreeToDotGraph() string {
-	return fmt.Sprintf("%#p[label=\"'%v'\"];\n", node.str, node.str)
+	return fmt.Sprintf("%#p[label=\"'%v'\"];\n", node, node.str)
 }
 
 func (node *StringFunctionCall) NodeTreeToDotGraph() string {
