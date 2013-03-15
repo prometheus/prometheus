@@ -476,6 +476,8 @@ func optimizeForward(pending ops) (out ops) {
 	return append(ops{firstOperation}, tail...)
 }
 
+// selectQueriesForTime chooses all subsequent operations from the slice that
+// have the same start time as the provided time and emits them.
 func selectQueriesForTime(time time.Time, queries ops) (out ops) {
 	if len(queries) == 0 {
 		return
@@ -491,36 +493,47 @@ func selectQueriesForTime(time time.Time, queries ops) (out ops) {
 	return append(out, tail...)
 }
 
+// selectGreediestRange scans through the various getValuesAlongRangeOp
+// operations and emits the one that is the greediest.
+func selectGreediestRange(in ops) (o durationOperator) {
+	if len(in) == 0 {
+		return
+	}
+
+	sort.Sort(greedinessSort{in})
+
+	o = in[0].(*getValuesAlongRangeOp)
+
+	return
+}
+
+// selectGreediestIntervals scans through the various getValuesAtIntervalOp
+// operations and emits a map of the greediest operation keyed by its start
+// time.
+func selectGreediestIntervals(in map[time.Duration]ops) (out map[time.Duration]durationOperator) {
+	if len(in) == 0 {
+		return
+	}
+
+	out = make(map[time.Duration]durationOperator)
+
+	for i, ops := range in {
+		sort.Sort(greedinessSort{ops})
+
+		out[i] = ops[0].(*getValuesAtIntervalOp)
+	}
+
+	return
+}
+
 // Flattens queries that occur at the same time according to duration and level
 // of greed.
 func optimizeTimeGroup(group ops) (out ops) {
 	var (
-		rangeOperations    = collectRanges(group)
-		intervalOperations = collectIntervals(group)
-
-		greediestRange     durationOperator
-		greediestIntervals map[time.Duration]durationOperator
-	)
-
-	if len(rangeOperations) > 0 {
-		sort.Sort(greedinessSort{rangeOperations})
-
-		greediestRange = rangeOperations[0].(*getValuesAlongRangeOp)
-	}
-
-	if len(intervalOperations) > 0 {
-		greediestIntervals = make(map[time.Duration]durationOperator)
-
-		for i, ops := range intervalOperations {
-			sort.Sort(greedinessSort{ops})
-
-			greediestIntervals[i] = ops[0].(*getValuesAtIntervalOp)
-		}
-	}
-
-	var (
-		containsRange    = greediestRange != nil
-		containsInterval = len(greediestIntervals) > 0
+		greediestRange     = selectGreediestRange(collectRanges(group))
+		greediestIntervals = selectGreediestIntervals(collectIntervals(group))
+		containsRange      = greediestRange != nil
+		containsInterval   = len(greediestIntervals) > 0
 	)
 
 	if containsRange && !containsInterval {
