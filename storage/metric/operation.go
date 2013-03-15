@@ -70,11 +70,15 @@ func (g *getValuesAtTimeOp) ExtractSamples(in []model.SamplePair) (out []model.S
 	return
 }
 
+// extractValuesAroundTime searches for the provided time in the list of
+// available samples and emits a slice containing the data points that
+// are adjacent to it.
+//
+// An assumption of this is that the provided samples are already sorted!
 func extractValuesAroundTime(t time.Time, in []model.SamplePair) (out []model.SamplePair) {
 	i := sort.Search(len(in), func(i int) bool {
 		return !in[i].Timestamp.Before(t)
 	})
-	fmt.Printf("I: %d\n", i)
 	switch i {
 	case len(in):
 		out = in[len(in)-1:]
@@ -268,7 +272,9 @@ func (s frequencySorter) Less(i, j int) bool {
 	return l.interval < r.interval
 }
 
-// Selects and returns all operations that are getValuesAtIntervalOps operations.
+// Selects and returns all operations that are getValuesAtIntervalOp operations
+// in a map whereby the operation interval is the key and the value are the
+// operations sorted by respective level of greediness.
 func collectIntervals(ops ops) (intervals map[time.Duration]getValuesAtIntervalOps) {
 	intervals = make(map[time.Duration]getValuesAtIntervalOps)
 
