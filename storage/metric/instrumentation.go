@@ -43,6 +43,8 @@ const (
 	hasIndexMetric              = "has_index_metric"
 	hasLabelName                = "has_label_name"
 	hasLabelPair                = "has_label_pair"
+	indexLabelNames             = "index_label_names"
+	indexLabelPairs             = "index_label_pairs"
 	indexMetric                 = "index_metric"
 	indexMetrics                = "index_metrics"
 	rebuildDiskFrontier         = "rebuild_disk_frontier"
