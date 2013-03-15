@@ -43,6 +43,7 @@ const (
 	hasIndexMetric              = "has_index_metric"
 	hasLabelName                = "has_label_name"
 	hasLabelPair                = "has_label_pair"
+	indexFingerprints           = "index_fingerprints"
 	indexLabelNames             = "index_label_names"
 	indexLabelPairs             = "index_label_pairs"
 	indexMetric                 = "index_metric"
