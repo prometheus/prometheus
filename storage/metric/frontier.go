@@ -39,7 +39,7 @@ func (f *diskFrontier) String() string {
 }
 
 func (f *diskFrontier) ContainsFingerprint(fingerprint model.Fingerprint) bool {
-	return fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint)
+	return !(fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint))
 }
 
 func newDiskFrontier(i iterator) (d *diskFrontier, err error) {
