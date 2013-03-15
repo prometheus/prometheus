@@ -539,7 +539,7 @@ func optimizeTimeGroup(group ops) (out ops) {
 	} else if containsRange && containsInterval {
 		out = append(out, greediestRange)
 		for _, op := range greediestIntervals {
-			if !op.Through().After(greediestRange.Through()) {
+			if !op.GreedierThan(greediestRange) {
 				continue
 			}
 
