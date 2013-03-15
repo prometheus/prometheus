@@ -326,7 +326,7 @@ func testOptimizeTimeGroups(t test.Tester) {
 
 	for i, scenario := range scenarios {
 		// The compaction system assumes that values are sorted on input.
-		sort.Sort(scenario.in)
+		sort.Sort(startsAtSort{scenario.in})
 
 		out = optimizeTimeGroups(scenario.in)
 
@@ -523,7 +523,7 @@ func testOptimizeForward(t test.Tester) {
 
 	for i, scenario := range scenarios {
 		// The compaction system assumes that values are sorted on input.
-		sort.Sort(scenario.in)
+		sort.Sort(startsAtSort{scenario.in})
 
 		out = optimizeForward(scenario.in)
 
@@ -1012,7 +1012,7 @@ func testOptimize(t test.Tester) {
 
 	for i, scenario := range scenarios {
 		// The compaction system assumes that values are sorted on input.
-		sort.Sort(scenario.in)
+		sort.Sort(startsAtSort{scenario.in})
 
 		out = optimize(scenario.in)
 

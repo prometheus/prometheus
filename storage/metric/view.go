@@ -89,7 +89,7 @@ func (v viewRequestBuilder) GetMetricRange(fingerprint model.Fingerprint, from, 
 // effectively resets the ViewRequestBuilder back to a pristine state.
 func (v viewRequestBuilder) ScanJobs() (j scanJobs) {
 	for fingerprint, operations := range v.operations {
-		sort.Sort(operations)
+		sort.Sort(startsAtSort{operations})
 
 		j = append(j, scanJob{
 			fingerprint: fingerprint,
