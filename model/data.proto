@@ -55,3 +55,7 @@ message SampleValueSeries {
 
 message MembershipIndexValue {
 }
+
+message MetricHighWatermark {
+  optional int64 timestamp = 1;
+}
