@@ -334,10 +334,6 @@ func collectIntervals(o ops) (intervals map[time.Duration]ops) {
 		}
 	}
 
-	for _, operations := range intervals {
-		sort.Sort(greedinessSort{operations})
-	}
-
 	return
 }
 
@@ -387,7 +383,7 @@ func optimizeForward(pending ops) (out ops) {
 			// If the type is not a range request, we can't do anything.
 			switch next := peekOperation.(type) {
 			case *getValuesAlongRangeOp:
-				if !next.Through().After(t.Through()) {
+				if !next.GreedierThan(t) {
 					var (
 						before = getValuesAtIntervalOp(*t)
 						after  = getValuesAtIntervalOp(*t)
@@ -433,7 +429,7 @@ func optimizeForward(pending ops) (out ops) {
 				// Range queries should be concatenated if they overlap.
 				pending = pending[1:len(pending)]
 
-				if next.Through().After(t.Through()) {
+				if next.GreedierThan(t) {
 					t.through = next.through
 
 					var (
@@ -448,7 +444,7 @@ func optimizeForward(pending ops) (out ops) {
 			case *getValuesAtIntervalOp:
 				pending = pending[1:len(pending)]
 
-				if next.through.After(t.Through()) {
+				if next.GreedierThan(t) {
 					var (
 						t = next.from
 					)
