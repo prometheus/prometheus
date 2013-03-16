@@ -44,7 +44,7 @@ func (f *diskFrontier) ContainsFingerprint(fingerprint model.Fingerprint) bool {
 
 func newDiskFrontier(i iterator) (d *diskFrontier, err error) {
 	i.SeekToLast()
-	if i.Key() == nil {
+	if !i.Valid() || i.Key() == nil {
 		return
 	}
 	lastKey, err := extractSampleKey(i)
