@@ -555,6 +555,45 @@ func rewriteForGreediestRange(greediestRange durationOperator) ops {
 	return ops{greediestRange}
 }
 
+// rewriteForGreediestInterval rewrites teh current pending interval operations
+// such that the interval operation with the smallest collection period is
+// invoked first, for it will skip around the soonest of any of the remaining
+// other operators.
+//
+// Between two interval operations O1 and O2, they both start at the same time;
+// however, O2's period is shorter than O1, meaning it will sample far more
+// frequently from the underlying time series.  Thusly, O2 should start before
+// O1.
+//
+// O1---->|---->|
+// T1          T5
+//
+// O2->|->|->|->|
+// T1          T5
+//
+// The rewriter presently does not scan and compact for common divisors in the
+// periods, though this may be nice to have.  For instance, if O1 has a period
+// of 2 and O2 has a period of 4, O2 would be dropped for O1 would implicitly
+// cover its period.
+func rewriteForGreediestInterval(greediestIntervals map[time.Duration]durationOperator) ops {
+	var (
+		memo getValuesAtIntervalOps
+		out  ops
+	)
+
+	for _, o := range greediestIntervals {
+		memo = append(memo, o.(*getValuesAtIntervalOp))
+	}
+
+	sort.Sort(frequencySorter{memo})
+
+	for _, o := range memo {
+		out = append(out, o)
+	}
+
+	return out
+}
+
 // Flattens queries that occur at the same time according to duration and level
 // of greed.
 func optimizeTimeGroup(group ops) (out ops) {
@@ -565,20 +604,12 @@ func optimizeTimeGroup(group ops) (out ops) {
 		containsInterval   = len(greediestIntervals) > 0
 	)
 
-	if containsRange && !containsInterval {
+	switch {
+	case containsRange && !containsInterval:
 		out = rewriteForGreediestRange(greediestRange)
-	} else if !containsRange && containsInterval {
-		intervalOperations := getValuesAtIntervalOps{}
-		for _, o := range greediestIntervals {
-			intervalOperations = append(intervalOperations, o.(*getValuesAtIntervalOp))
-		}
-
-		sort.Sort(frequencySorter{intervalOperations})
-
-		for _, o := range intervalOperations {
-			out = append(out, o)
-		}
-	} else if containsRange && containsInterval {
+	case !containsRange && containsInterval:
+		out = rewriteForGreediestInterval(greediestIntervals)
+	case containsRange && containsInterval:
 		out = append(out, greediestRange)
 		for _, op := range greediestIntervals {
 			if !op.GreedierThan(greediestRange) {
@@ -603,11 +634,10 @@ func optimizeTimeGroup(group ops) (out ops) {
 			// necessary.
 			out = append(out, &newIntervalOperation)
 		}
-	} else {
+	default:
 		// Operation is OK as-is.
 		out = append(out, group[0])
 	}
-
 	return
 }
 
