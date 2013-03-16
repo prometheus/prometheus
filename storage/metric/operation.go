@@ -536,6 +536,25 @@ func selectGreediestIntervals(in map[time.Duration]ops) (out map[time.Duration]d
 	return
 }
 
+// rewriteForGreediestRange rewrites the current pending operation such that the
+// greediest range operation takes precedence over all other operators in this
+// time group.
+//
+// Between two range operations O1 and O2, they both start at the same time;
+// however, O2 extends for a longer duration than O1.  Thusly, O1 should be
+// deleted with O2.
+//
+// O1------>|
+// T1      T4
+//
+// O2------------>|
+// T1            T7
+//
+// Thusly O1 can be squashed into O2 without having side-effects.
+func rewriteForGreediestRange(greediestRange durationOperator) ops {
+	return ops{greediestRange}
+}
+
 // Flattens queries that occur at the same time according to duration and level
 // of greed.
 func optimizeTimeGroup(group ops) (out ops) {
@@ -547,7 +566,7 @@ func optimizeTimeGroup(group ops) (out ops) {
 	)
 
 	if containsRange && !containsInterval {
-		out = append(out, greediestRange)
+		out = rewriteForGreediestRange(greediestRange)
 	} else if !containsRange && containsInterval {
 		intervalOperations := getValuesAtIntervalOps{}
 		for _, o := range greediestIntervals {
