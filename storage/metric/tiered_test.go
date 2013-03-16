@@ -61,6 +61,20 @@ func testMakeView(t test.Tester) {
 			in   in
 			out  out
 		}{
+			// No sample, but query asks for one.
+			{
+				in: in{
+					atTime: []getValuesAtTimeOp{
+						{
+							time: instant,
+						},
+					},
+				},
+				out: out{
+					atTime: [][]model.SamplePair{{}},
+				},
+			},
+			// Single sample, query asks for exact sample time.
 			{
 				data: []model.Sample{
 					{
@@ -87,6 +101,66 @@ func testMakeView(t test.Tester) {
 					},
 				},
 			},
+			// Single sample, query time before the sample.
+			{
+				data: []model.Sample{
+					{
+						Metric:    metric,
+						Value:     0,
+						Timestamp: instant.Add(time.Second),
+					},
+					{
+						Metric:    metric,
+						Value:     1,
+						Timestamp: instant.Add(time.Second * 2),
+					},
+				},
+				in: in{
+					atTime: []getValuesAtTimeOp{
+						{
+							time: instant,
+						},
+					},
+				},
+				out: out{
+					atTime: [][]model.SamplePair{
+						{
+							{
+								Timestamp: instant.Add(time.Second),
+								Value:     0,
+							},
+						},
+					},
+				},
+			},
+			// Single sample, query time after the sample.
+			{
+				data: []model.Sample{
+					{
+						Metric:    metric,
+						Value:     0,
+						Timestamp: instant,
+					},
+				},
+				in: in{
+					atTime: []getValuesAtTimeOp{
+						{
+							time: instant.Add(time.Second),
+						},
+					},
+				},
+				out: out{
+					atTime: [][]model.SamplePair{
+						{
+							{
+								Timestamp: instant,
+								Value:     0,
+							},
+						},
+					},
+				},
+			},
+			// Two samples, query asks for first sample time.
 			{
 				data: []model.Sample{
 					{
@@ -114,14 +188,11 @@ func testMakeView(t test.Tester) {
 								Timestamp: instant,
 								Value:     0,
 							},
-							{
-								Timestamp: instant.Add(time.Second),
-								Value:     1,
-							},
 						},
 					},
 				},
 			},
+			// Three samples, query asks for second sample time.
 			{
 				data: []model.Sample{
 					{
@@ -154,14 +225,11 @@ func testMakeView(t test.Tester) {
 								Timestamp: instant.Add(time.Second),
 								Value:     1,
 							},
-							{
-								Timestamp: instant.Add(time.Second * 2),
-								Value:     2,
-							},
 						},
 					},
 				},
 			},
+			// Three samples, query asks for time between first and second samples.
 			{
 				data: []model.Sample{
 					{
@@ -202,6 +270,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 			},
+			// Three samples, query asks for time between second and third samples.
 			{
 				data: []model.Sample{
 					{
@@ -242,30 +311,31 @@ func testMakeView(t test.Tester) {
 					},
 				},
 			},
-			//{
-			//	data: buildSamples(instant, instant.Add(400*time.Second), time.Second, metric),
-			//	in: in{
-			//		atTime: []getValuesAtTimeOp{
-			//			{
-			//				time: instant.Add(time.Second * 100),
-			//			},
-			//		},
-			//	},
-			//	out: out{
-			//		atTime: [][]model.SamplePair{
-			//			{
-			//				{
-			//					Timestamp: instant.Add(time.Second * 100),
-			//					Value:     100,
-			//				},
-			//				{
-			//					Timestamp: instant.Add(time.Second * 100),
-			//					Value:     101,
-			//				},
-			//			},
-			//		},
-			//	},
-			//},
+			// Two chunks of samples, query asks for values from first chunk.
+			{
+				data: buildSamples(instant, instant.Add(time.Duration(*leveldbChunkSize*2)*time.Second), time.Second, metric),
+				in: in{
+					atTime: []getValuesAtTimeOp{
+						{
+							time: instant.Add(time.Second*time.Duration(*leveldbChunkSize/2) + 1),
+						},
+					},
+				},
+				out: out{
+					atTime: [][]model.SamplePair{
+						{
+							{
+								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize/2)),
+								Value:     100,
+							},
+							{
+								Timestamp: instant.Add(time.Second * (time.Duration(*leveldbChunkSize/2) + 1)),
+								Value:     101,
+							},
+						},
+					},
+				},
+			},
 		}
 	)
 
