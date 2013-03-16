@@ -421,7 +421,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 			// Op 2:        [ X X C . . .]
 			//
 			// Op 2 now has an earlier current time than Op 1.
-			sort.Sort(standingOps)
+			sort.Sort(startsAtSort{standingOps})
 		}
 	}
 
