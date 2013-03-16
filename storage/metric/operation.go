@@ -104,13 +104,23 @@ func extractValuesAroundTime(t time.Time, in []model.SamplePair) (out []model.Sa
 	i := sort.Search(len(in), func(i int) bool {
 		return !in[i].Timestamp.Before(t)
 	})
-	switch i {
-	case len(in):
+	if i == len(in) {
+		// Target time is past the end, return only the last sample.
 		out = in[len(in)-1:]
-	case 0:
-		out = append(out, in[0:1]...)
-	default:
-		out = append(out, in[i-1:i+1]...)
+	} else {
+		if in[i].Timestamp.Equal(t) && len(in) > i+1 {
+			// We hit exactly the current sample time. Very unlikely in practice.
+			// Return only the current sample.
+			out = append(out, in[i])
+		} else {
+			if i == 0 {
+				// We hit before the first sample time. Return only the first sample.
+				out = append(out, in[0:1]...)
+			} else {
+				// We hit between two samples. Return both surrounding samples.
+				out = append(out, in[i-1:i+1]...)
+			}
+		}
 	}
 	return
 }
