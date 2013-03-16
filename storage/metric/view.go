@@ -126,18 +126,22 @@ func (v view) Close() {
 }
 
 func (v view) GetValueAtTime(f model.Fingerprint, t time.Time) (s []model.SamplePair) {
-	var (
-		series, ok = v.fingerprintToSeries[f]
-	)
+	series, ok := v.fingerprintToSeries[f]
 	if !ok {
 		return
 	}
 
-	var (
-		iterator = series.values.Seek(skipListTime(t))
-	)
+	iterator := series.values.Seek(skipListTime(t))
 	if iterator == nil {
-		return
+		// If the iterator is nil, it means we seeked past the end of the series,
+		// so we seek to the last value instead. Due to the reverse ordering
+		// defined on skipListTime, this corresponds to the sample with the
+		// earliest timestamp.
+		iterator = series.values.SeekToLast()
+		if iterator == nil {
+			// The list is empty.
+			return
+		}
 	}
 
 	defer iterator.Close()
