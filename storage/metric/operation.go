@@ -594,8 +594,68 @@ func rewriteForGreediestInterval(greediestIntervals map[time.Duration]durationOp
 	return out
 }
 
+// rewriteForRangeAndInterval examines the existence of a range operation and a
+// set of interval operations that start at the same time and deletes all
+// interval operations that start and finish before the range operation
+// completes and rewrites all interval operations that continue longer than
+// the range operation to start at the next best increment after the range.
+//
+// Assume that we have a range operator O1 and two interval operations O2 and
+// O3.  O2 and O3 have the same period (i.e., sampling interval), but O2
+// terminates before O1 and O3 continue beyond O1.
+//
+// O1------------>|
+// T1------------T7
+//
+// O2-->|-->|-->|
+// T1----------T6
+//
+// O3-->|-->|-->|-->|-->|
+// T1------------------T10
+//
+// This scenario will be rewritten such that O2 is deleted and O3 is truncated
+// from T1 through T7, and O3's new starting time is at T7 and runs through T10:
+//
+// O1------------>|
+// T1------------T7
+//
+//               O2>|-->|
+//               T7---T10
+//
+// All rewritten interval operators will respect their original start time
+// multipliers.
+func rewriteForRangeAndInterval(greediestRange durationOperator, greediestIntervals map[time.Duration]durationOperator) (out ops) {
+	out = append(out, greediestRange)
+	for _, op := range greediestIntervals {
+		if !op.GreedierThan(greediestRange) {
+			continue
+		}
+
+		// The range operation does not exceed interval.  Leave a snippet of
+		// interval.
+		var (
+			truncated            = op.(*getValuesAtIntervalOp)
+			newIntervalOperation getValuesAtIntervalOp
+			// Refactor
+			remainingSlice    = greediestRange.Through().Sub(greediestRange.StartsAt()) / time.Second
+			nextIntervalPoint = time.Duration(math.Ceil(float64(remainingSlice)/float64(truncated.interval)) * float64(truncated.interval/time.Second))
+			nextStart         = greediestRange.Through().Add(nextIntervalPoint)
+		)
+
+		newIntervalOperation.from = nextStart
+		newIntervalOperation.interval = truncated.interval
+		newIntervalOperation.through = truncated.Through()
+		// Added back to the pending because additional curation could be
+		// necessary.
+		out = append(out, &newIntervalOperation)
+	}
+
+	return
+}
+
 // Flattens queries that occur at the same time according to duration and level
-// of greed.
+// of greed.  Consult the various rewriter functions for their respective modes
+// of operation.
 func optimizeTimeGroup(group ops) (out ops) {
 	var (
 		greediestRange     = selectGreediestRange(collectRanges(group))
@@ -610,30 +670,7 @@ func optimizeTimeGroup(group ops) (out ops) {
 	case !containsRange && containsInterval:
 		out = rewriteForGreediestInterval(greediestIntervals)
 	case containsRange && containsInterval:
-		out = append(out, greediestRange)
-		for _, op := range greediestIntervals {
-			if !op.GreedierThan(greediestRange) {
-				continue
-			}
-
-			// The range operation does not exceed interval.  Leave a snippet of
-			// interval.
-			var (
-				truncated            = op.(*getValuesAtIntervalOp)
-				newIntervalOperation getValuesAtIntervalOp
-				// Refactor
-				remainingSlice    = greediestRange.Through().Sub(greediestRange.StartsAt()) / time.Second
-				nextIntervalPoint = time.Duration(math.Ceil(float64(remainingSlice)/float64(truncated.interval)) * float64(truncated.interval/time.Second))
-				nextStart         = greediestRange.Through().Add(nextIntervalPoint)
-			)
-
-			newIntervalOperation.from = nextStart
-			newIntervalOperation.interval = truncated.interval
-			newIntervalOperation.through = truncated.Through()
-			// Added back to the pending because additional curation could be
-			// necessary.
-			out = append(out, &newIntervalOperation)
-		}
+		out = rewriteForRangeAndInterval(greediestRange, greediestIntervals)
 	default:
 		// Operation is OK as-is.
 		out = append(out, group[0])
@@ -649,8 +686,11 @@ func optimizeTimeGroups(pending ops) (out ops) {
 
 	sort.Sort(startsAtSort{pending})
 
-	nextOperation := pending[0]
-	groupedQueries := selectQueriesForTime(nextOperation.StartsAt(), pending)
+	var (
+		nextOperation  = pending[0]
+		groupedQueries = selectQueriesForTime(nextOperation.StartsAt(), pending)
+	)
+
 	out = optimizeTimeGroup(groupedQueries)
 	pending = pending[len(groupedQueries):len(pending)]
 
