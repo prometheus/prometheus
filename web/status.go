@@ -16,7 +16,9 @@ package web
 import (
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/web/blob"
 	"html/template"
+	"log"
 	"net/http"
 )
 
@@ -38,6 +40,11 @@ func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Status:      "TODO: add status information here",
 		TargetPools: h.appState.TargetManager.Pools(),
 	}
-	t, _ := template.ParseFiles("web/templates/status.html")
+	template_file, err := blob.GetFile("templates", "status.html")
+	if err != nil {
+		log.Fatalf("Could not read template: %s", err)
+	}
+
+	t, _ := template.New("status").Parse(string(template_file))
 	t.Execute(w, status)
 }

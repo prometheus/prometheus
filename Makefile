@@ -19,11 +19,13 @@ test: build
 	go test ./...
 
 build:
+	./utility/embed-static.sh web/static web/templates > web/blob/files.go
 	$(MAKE) -C model
 	go build ./...
 	go build -o prometheus.build
 
 clean:
+	rm -rf web/static/blob/files.go
 	rm -rf $(TEST_ARTIFACTS)
 	$(MAKE) -C model clean
 	-find . -type f -iname '*~' -exec rm '{}' ';'
