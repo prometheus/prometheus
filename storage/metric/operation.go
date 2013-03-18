@@ -404,14 +404,11 @@ func optimizeForward(pending ops) (out ops) {
 						from = next.from
 					)
 
-					for {
+					for !from.After(next.through) {
 						from = from.Add(t.interval)
-
-						if from.After(next.through) {
-							after.from = from
-							break
-						}
 					}
+
+					after.from = from
 
 					pending = append(ops{&before, &after}, pending...)
 					sort.Sort(startsAtSort{pending})
@@ -451,17 +448,15 @@ func optimizeForward(pending ops) (out ops) {
 
 				if next.GreedierThan(t) {
 					var (
-						t = next.from
+						nextStart = next.from
 					)
-					for {
-						t = t.Add(next.interval)
 
-						if t.After(next.through) {
-							next.from = t
-
-							tail = append(ops{next}, pending...)
-						}
+					for !nextStart.After(next.through) {
+						nextStart = nextStart.Add(next.interval)
 					}
+
+					next.from = nextStart
+					tail = append(ops{next}, pending...)
 				}
 			default:
 				panic("unknown operation type")
