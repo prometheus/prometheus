@@ -30,21 +30,23 @@ type PersistenceAdapter struct {
 // AST-global persistence to use.
 var persistenceAdapter *PersistenceAdapter = nil
 
-func (p *PersistenceAdapter) getMetricsWithLabels(labels model.LabelSet) (metrics []model.Metric, err error) {
+func (p *PersistenceAdapter) getMetricsWithLabels(labels model.LabelSet) (fingerprintToMetric map[model.Fingerprint]model.Metric, err error) {
 	fingerprints, err := p.persistence.GetFingerprintsForLabelSet(labels)
 	if err != nil {
 		return
 	}
+	fingerprintToMetric = make(map[model.Fingerprint]model.Metric)
 	for _, fingerprint := range fingerprints {
-		metric, err := p.persistence.GetMetricForFingerprint(fingerprint)
+		var metric *model.Metric // Don't shadow err.
+		metric, err = p.persistence.GetMetricForFingerprint(fingerprint)
 		if err != nil {
-			return metrics, err
+			return
 		}
 		if metric == nil {
 			continue
 		}
 
-		metrics = append(metrics, *metric)
+		fingerprintToMetric[fingerprint] = *metric
 	}
 
 	return
@@ -56,8 +58,8 @@ func (p *PersistenceAdapter) GetValueAtTime(labels model.LabelSet, timestamp *ti
 		return nil, err
 	}
 	samples := []*model.Sample{}
-	for _, metric := range metrics {
-		sample, err := p.persistence.GetValueAtTime(metric, *timestamp, *p.stalenessPolicy)
+	for fingerprint := range metrics {
+		sample, err := p.persistence.GetValueAtTime(fingerprint, *timestamp, *p.stalenessPolicy)
 		if err != nil {
 			return nil, err
 		}
@@ -76,9 +78,9 @@ func (p *PersistenceAdapter) GetBoundaryValues(labels model.LabelSet, interval *
 	}
 
 	sampleSets := []*model.SampleSet{}
-	for _, metric := range metrics {
+	for fingerprint, metric := range metrics {
 		// TODO: change to GetBoundaryValues() once it has the right return type.
-		sampleSet, err := p.persistence.GetRangeValues(metric, *interval)
+		sampleSet, err := p.persistence.GetRangeValues(fingerprint, *interval)
 		if err != nil {
 			return nil, err
 		}
@@ -100,8 +102,8 @@ func (p *PersistenceAdapter) GetRangeValues(labels model.LabelSet, interval *mod
 	}
 
 	sampleSets := []*model.SampleSet{}
-	for _, metric := range metrics {
-		sampleSet, err := p.persistence.GetRangeValues(metric, *interval)
+	for fingerprint, metric := range metrics {
+		sampleSet, err := p.persistence.GetRangeValues(fingerprint, *interval)
 		if err != nil {
 			return nil, err
 		}

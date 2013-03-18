@@ -900,7 +900,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetBoundaryValues(m model.Metric, i model.Interval, s StalenessPolicy) (open *model.Sample, end *model.Sample, err error) {
+func (l *LevelDBMetricPersistence) GetBoundaryValues(fp model.Fingerprint, i model.Interval, s StalenessPolicy) (open *model.Sample, end *model.Sample, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -910,14 +910,14 @@ func (l *LevelDBMetricPersistence) GetBoundaryValues(m model.Metric, i model.Int
 	}()
 
 	// XXX: Maybe we will want to emit incomplete sets?
-	open, err = l.GetValueAtTime(m, i.OldestInclusive, s)
+	open, err = l.GetValueAtTime(fp, i.OldestInclusive, s)
 	if err != nil {
 		return
 	} else if open == nil {
 		return
 	}
 
-	end, err = l.GetValueAtTime(m, i.NewestInclusive, s)
+	end, err = l.GetValueAtTime(fp, i.NewestInclusive, s)
 	if err != nil {
 		return
 	} else if end == nil {
@@ -949,7 +949,7 @@ type iterator interface {
 	Value() []byte
 }
 
-func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s StalenessPolicy) (sample *model.Sample, err error) {
+func (l *LevelDBMetricPersistence) GetValueAtTime(fp model.Fingerprint, t time.Time, s StalenessPolicy) (sample *model.Sample, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -958,11 +958,15 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 		recordOutcome(duration, err, map[string]string{operation: getValueAtTime, result: success}, map[string]string{operation: getValueAtTime, result: failure})
 	}()
 
-	f := model.NewFingerprintFromMetric(m).ToDTO()
+	// TODO: memoize/cache this or change the return type to metric.SamplePair.
+	m, err := l.GetMetricForFingerprint(fp)
+	if err != nil {
+		return
+	}
 
 	// Candidate for Refactoring
 	k := &dto.SampleKey{
-		Fingerprint: f,
+		Fingerprint: fp.ToDTO(),
 		Timestamp:   indexable.EncodeTime(t),
 	}
 
@@ -1096,7 +1100,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 		return
 	}
 
-	sample = model.SampleFromDTO(&m, &t, firstValue)
+	sample = model.SampleFromDTO(m, &t, firstValue)
 
 	if firstDelta == time.Duration(0) {
 		return
@@ -1160,12 +1164,12 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(m model.Metric, t time.Time, s
 	sampleValue := &dto.SampleValueSeries{}
 	sampleValue.Value = append(sampleValue.Value, &dto.SampleValueSeries_Value{Value: &interpolated})
 
-	sample = model.SampleFromDTO(&m, &t, sampleValue)
+	sample = model.SampleFromDTO(m, &t, sampleValue)
 
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interval) (v *model.SampleSet, err error) {
+func (l *LevelDBMetricPersistence) GetRangeValues(fp model.Fingerprint, i model.Interval) (v *model.SampleSet, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -1173,10 +1177,9 @@ func (l *LevelDBMetricPersistence) GetRangeValues(m model.Metric, i model.Interv
 
 		recordOutcome(duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
 	}()
-	f := model.NewFingerprintFromMetric(m).ToDTO()
 
 	k := &dto.SampleKey{
-		Fingerprint: f,
+		Fingerprint: fp.ToDTO(),
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
 	}
 

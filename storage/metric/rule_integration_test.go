@@ -585,7 +585,7 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, io.Closer),
 					DeltaAllowance: input.staleness,
 				}
 
-				actual, err := p.GetValueAtTime(m, time, sp)
+				actual, err := p.GetValueAtTime(model.NewFingerprintFromMetric(m), time, sp)
 				if err != nil {
 					t.Fatalf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}
@@ -1035,7 +1035,7 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, io.Close
 					DeltaAllowance: input.staleness,
 				}
 
-				openValue, endValue, err := p.GetBoundaryValues(m, interval, po)
+				openValue, endValue, err := p.GetBoundaryValues(model.NewFingerprintFromMetric(m), interval, po)
 				if err != nil {
 					t.Fatalf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}
@@ -1389,7 +1389,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, io.Closer),
 					NewestInclusive: end,
 				}
 
-				values, err := p.GetRangeValues(m, in)
+				values, err := p.GetRangeValues(model.NewFingerprintFromMetric(m), in)
 				if err != nil {
 					t.Fatalf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
 				}

@@ -209,9 +209,8 @@ func interpolateSample(x1, x2 time.Time, y1, y2 float32, e time.Time) model.Samp
 	return model.SampleValue(y1 + (offset * dDt))
 }
 
-func (s memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p StalenessPolicy) (sample *model.Sample, err error) {
-	fingerprint := model.NewFingerprintFromMetric(m)
-	series, ok := s.fingerprintToSeries[fingerprint]
+func (s memorySeriesStorage) GetValueAtTime(fp model.Fingerprint, t time.Time, p StalenessPolicy) (sample *model.Sample, err error) {
+	series, ok := s.fingerprintToSeries[fp]
 	if !ok {
 		return
 	}
@@ -225,7 +224,7 @@ func (s memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p Stale
 	if foundTime.Equal(t) {
 		value := iterator.Value().(value)
 		sample = &model.Sample{
-			Metric:    m,
+			Metric:    series.metric,
 			Value:     value.get(),
 			Timestamp: t,
 		}
@@ -242,7 +241,7 @@ func (s memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p Stale
 
 	if !iterator.Previous() {
 		sample = &model.Sample{
-			Metric:    m,
+			Metric:    series.metric,
 			Value:     iterator.Value().(value).get(),
 			Timestamp: t,
 		}
@@ -261,7 +260,7 @@ func (s memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p Stale
 	firstValue := iterator.Value().(value).get()
 
 	sample = &model.Sample{
-		Metric:    m,
+		Metric:    series.metric,
 		Value:     interpolateSample(firstTime, secondTime, float32(firstValue), float32(secondValue), t),
 		Timestamp: t,
 	}
@@ -269,15 +268,15 @@ func (s memorySeriesStorage) GetValueAtTime(m model.Metric, t time.Time, p Stale
 	return
 }
 
-func (s memorySeriesStorage) GetBoundaryValues(m model.Metric, i model.Interval, p StalenessPolicy) (first *model.Sample, second *model.Sample, err error) {
-	first, err = s.GetValueAtTime(m, i.OldestInclusive, p)
+func (s memorySeriesStorage) GetBoundaryValues(fp model.Fingerprint, i model.Interval, p StalenessPolicy) (first *model.Sample, second *model.Sample, err error) {
+	first, err = s.GetValueAtTime(fp, i.OldestInclusive, p)
 	if err != nil {
 		return
 	} else if first == nil {
 		return
 	}
 
-	second, err = s.GetValueAtTime(m, i.NewestInclusive, p)
+	second, err = s.GetValueAtTime(fp, i.NewestInclusive, p)
 	if err != nil {
 		return
 	} else if second == nil {
@@ -287,15 +286,14 @@ func (s memorySeriesStorage) GetBoundaryValues(m model.Metric, i model.Interval,
 	return
 }
 
-func (s memorySeriesStorage) GetRangeValues(m model.Metric, i model.Interval) (samples *model.SampleSet, err error) {
-	fingerprint := model.NewFingerprintFromMetric(m)
-	series, ok := s.fingerprintToSeries[fingerprint]
+func (s memorySeriesStorage) GetRangeValues(fp model.Fingerprint, i model.Interval) (samples *model.SampleSet, err error) {
+	series, ok := s.fingerprintToSeries[fp]
 	if !ok {
 		return
 	}
 
 	samples = &model.SampleSet{
-		Metric: m,
+		Metric: series.metric,
 	}
 
 	iterator := series.values.Seek(skipListTime(i.NewestInclusive))

@@ -271,7 +271,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 			}
 
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			sample, err := p.GetValueAtTime(metric, time, StalenessPolicy{})
+			sample, err := p.GetValueAtTime(fingerprints[0], time, StalenessPolicy{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -334,7 +334,7 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 			}
 
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			sample, err := p.GetValueAtTime(metric, time, StalenessPolicy{})
+			sample, err := p.GetValueAtTime(fingerprints[0], time, StalenessPolicy{})
 			if err != nil {
 				t.Fatal(err)
 			}

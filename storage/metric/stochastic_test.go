@@ -413,7 +413,7 @@ func StochasticTests(persistenceMaker func() MetricPersistence, t test.Tester) {
 					NewestInclusive: time.Unix(end, 0),
 				}
 
-				samples, err := p.GetRangeValues(metric, interval)
+				samples, err := p.GetRangeValues(model.NewFingerprintFromMetric(metric), interval)
 				if err != nil {
 					t.Error(err)
 					return
