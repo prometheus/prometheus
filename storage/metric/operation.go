@@ -370,18 +370,15 @@ func optimizeForward(pending ops) (out ops) {
 	}
 
 	var (
-		firstOperation = pending[0]
+		head op = pending[0]
+		tail ops
 	)
 
 	pending = pending[1:len(pending)]
 
-	switch t := firstOperation.(type) {
+	switch t := head.(type) {
 	case *getValuesAtTimeOp:
-		out = ops{firstOperation}
-		tail := optimizeForward(pending)
-
-		return append(out, tail...)
-
+		out = ops{head}
 	case *getValuesAtIntervalOp:
 		// If the last value was a scan at a given frequency along an interval,
 		// several optimizations may exist.
@@ -448,8 +445,6 @@ func optimizeForward(pending ops) (out ops) {
 					)
 
 					pending = append(head, tail...)
-
-					return optimizeForward(pending)
 				}
 			case *getValuesAtIntervalOp:
 				pending = pending[1:len(pending)]
@@ -464,9 +459,7 @@ func optimizeForward(pending ops) (out ops) {
 						if t.After(next.through) {
 							next.from = t
 
-							pending = append(ops{next}, pending...)
-
-							return optimizeForward(pending)
+							tail = append(ops{next}, pending...)
 						}
 					}
 				}
@@ -481,9 +474,9 @@ func optimizeForward(pending ops) (out ops) {
 	// Strictly needed?
 	sort.Sort(startsAtSort{pending})
 
-	tail := optimizeForward(pending)
+	tail = optimizeForward(pending)
 
-	return append(ops{firstOperation}, tail...)
+	return append(ops{head}, tail...)
 }
 
 // selectQueriesForTime chooses all subsequent operations from the slice that
