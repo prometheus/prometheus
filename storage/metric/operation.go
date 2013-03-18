@@ -438,10 +438,9 @@ func optimizeForward(pending ops) (out ops) {
 
 					var (
 						head = ops{t}
-						tail = pending
 					)
 
-					pending = append(head, tail...)
+					pending = append(head, pending...)
 				}
 			case *getValuesAtIntervalOp:
 				pending = pending[1:len(pending)]
