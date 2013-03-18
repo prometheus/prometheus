@@ -1220,7 +1220,14 @@ func (l *LevelDBMetricPersistence) GetRangeValues(fp model.Fingerprint, i model.
 		}
 
 		if v == nil {
-			v = &model.SampleSet{}
+			// TODO: memoize/cache this or change the return type to metric.SamplePair.
+			m, err := l.GetMetricForFingerprint(fp)
+			if err != nil {
+				return v, err
+			}
+			v = &model.SampleSet{
+				Metric: *m,
+			}
 		}
 
 		v.Values = append(v.Values, model.SamplePair{
