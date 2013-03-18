@@ -378,6 +378,11 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 		for len(standingOps) > 0 {
 			// Load data value chunk(s) around the first standing op's current time.
 			highWatermark := *standingOps[0].CurrentTime()
+			// XXX: For earnest performance gains analagous to the benchmarking we
+			//      performed, chunk should only be reloaded if it no longer contains
+			//      the values we're looking for.
+			//
+			//      To better understand this, look at https://github.com/prometheus/prometheus/blob/benchmark/leveldb/iterator-seek-characteristics/leveldb.go#L239 and note the behavior around retrievedValue.
 			chunk := t.loadChunkAroundTime(iterator, seriesFrontier, scanJob.fingerprint, highWatermark)
 			lastChunkTime := chunk[len(chunk)-1].Timestamp
 			if lastChunkTime.After(highWatermark) {
@@ -512,119 +517,3 @@ func (t *tieredStorage) loadChunkAroundTime(iterator *levigo.Iterator, frontier 
 
 	return
 }
-
-func (s scanJobs) Represent(d *LevelDBMetricPersistence, m memorySeriesStorage) (storage *memorySeriesStorage, err error) {
-
-	if len(s) == 0 {
-		return
-	}
-
-	iterator, closer, err := d.metricSamples.GetIterator()
-	if err != nil {
-		panic(err)
-		return
-	}
-	defer closer.Close()
-
-	diskFrontier, err := newDiskFrontier(iterator)
-	if err != nil {
-		panic(err)
-		return
-	}
-	if diskFrontier == nil {
-		panic("diskfrontier == nil")
-	}
-
-	for _, job := range s {
-		if len(job.operations) == 0 {
-			panic("len(job.operations) == 0 should never occur")
-		}
-
-		// Determine if the metric is in the known keyspace.  This is used as a
-		// high-level heuristic before comparing the timestamps.
-		var (
-			fingerprint          = job.fingerprint
-			absentDiskKeyspace   = fingerprint.Less(diskFrontier.firstFingerprint) || diskFrontier.lastFingerprint.Less(fingerprint)
-			absentMemoryKeyspace = false
-		)
-
-		if _, ok := m.fingerprintToSeries[fingerprint]; !ok {
-			absentMemoryKeyspace = true
-		}
-
-		var (
-			firstSupertime time.Time
-			lastSupertime  time.Time
-		)
-
-		var (
-			_ = absentMemoryKeyspace
-			_ = firstSupertime
-			_ = lastSupertime
-		)
-
-		// If the key is present in the disk keyspace, we should find out the maximum
-		// seek points ahead of time.  In the LevelDB case, this will save us from
-		// having to dispose of and recreate the iterator.
-		if !absentDiskKeyspace {
-			seriesFrontier, err := newSeriesFrontier(fingerprint, *diskFrontier, iterator)
-			if err != nil {
-				panic(err)
-				return nil, err
-			}
-
-			if seriesFrontier == nil {
-				panic("ouch")
-			}
-		}
-	}
-	return
-}
-
-// 	var (
-// 		memoryLowWaterMark  time.Time
-// 		memoryHighWaterMark time.Time
-// 	)
-
-// 	if !absentMemoryKeyspace {
-// 	}
-// 	// if firstDiskFingerprint.Equal(job.fingerprint) {
-// 	// 	for _, operation := range job.operations {
-// 	// 		if o, ok := operation.(getMetricAtTimeOperation); ok {
-// 	// 			if o.StartTime().Before(firstDiskSuperTime) {
-// 	// 			}
-// 	// 		}
-
-// 	// 		if o, ok := operation.(GetMetricAtInterval); ok {
-// 	// 		}
-// 	// 	}
-// 	// }
-// }
-// // // Compare the metrics on the basis of the keys.
-// // firstSampleInRange = sort.IsSorted(model.Fingerprints{firstDiskFingerprint, s[0].fingerprint})
-// // lastSampleInRange = sort.IsSorted(model.Fingerprints{s[s.Len()-1].fingerprint, lastDiskFingerprint})
-
-// // if firstSampleInRange && firstDiskFingerprint.Equal(s[0].fingerprint) {
-// // 	firstSampleInRange = !indexable.DecodeTime(firstKey.Timestamp).After(s.operations[0].StartTime())
-// // }
-// // if lastSampleInRange && lastDiskFingerprint.Equal(s[s.Len()-1].fingerprint) {
-// // 	lastSampleInRange = !s.operations[s.Len()-1].StartTime().After(indexable.DecodeTime(lastKey.Timestamp))
-// // }
-
-// // for _, job := range s {
-// // 	operations := job.operations
-// // 	numberOfOperations := len(operations)
-// // 	for j := 0; j < numberOfOperations; j++ {
-// // 		operationTime := operations[j].StartTime()
-// // 		group, skipAhead := collectOperationsForTime(operationTime, operations[j:numberOfOperations])
-// // 		ranges := collectRanges(group)
-// // 		intervals := collectIntervals(group)
-
-// // 		fmt.Printf("ranges -> %s\n", ranges)
-// // 		if len(ranges) > 0 {
-// // 			fmt.Printf("d -> %s\n", peekForLongestRange(ranges, ranges[0].through))
-// // 		}
-
-// // 		j += skipAhead
-// // 	}
-// // }
