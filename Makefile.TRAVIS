@@ -41,7 +41,7 @@ preparation-stamp: build-dependencies
 
 build-dependencies: build-dependencies-stamp
 
-build-dependencies-stamp: bison cc mercurial protoc goprotobuf gorest go instrumentation leveldb levigo
+build-dependencies-stamp: bison cc mercurial protoc goprotobuf gorest go instrumentation leveldb levigo skiplist
 	touch $@
 
 overlay: overlay-stamp
@@ -131,6 +131,12 @@ levigo: levigo-stamp
 
 levigo-stamp: leveldb go snappy source
 	$(GO_GET) github.com/jmhodges/levigo
+	touch $@
+
+skiplist: skiplist-stamp
+
+skiplist-stamp: go source
+	$(GO_GET) github.com/ryszard/goskiplist
 	touch $@
 
 rsync: rsync-stamp
