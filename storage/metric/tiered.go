@@ -416,7 +416,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 
 			// Sort ops by start time again, since they might be slightly off now.
 			// For example, consider a current chunk of values and two interval ops
-			// with different interval lengthsr. Their states after the cycle above
+			// with different interval lengths. Their states after the cycle above
 			// could be:
 			//
 			// (C = current op time)
