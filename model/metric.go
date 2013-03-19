@@ -102,6 +102,24 @@ func (v Values) Swap(i, j int) {
 	v[i], v[j] = v[j], v[i]
 }
 
+// InsideInterval indicates whether a given range of sorted values could contain
+// a value for a given time.
+func (v Values) InsideInterval(t time.Time) (s bool) {
+	if v.Len() == 0 {
+		return
+	}
+
+	if t.Before(v[0]).Timestamp {
+		return
+	}
+
+	if !v[v.Len()-1].Timestamp.Before(t) {
+		return
+	}
+
+	return true
+}
+
 type SampleSet struct {
 	Metric Metric
 	Values Values
