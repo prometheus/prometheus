@@ -10,7 +10,7 @@ import (
 
 const (
 	TemplateFiles = "templates"
-	StaticFiles = "static"
+	StaticFiles   = "static"
 )
 
 func GetFile(bucket string, name string) ([]byte, error) {
@@ -43,6 +43,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", types[StaticFiles][name])
+	w.Header().Set("Content-Type", http.DetectContentType(file))
 	w.Write(file)
 }
