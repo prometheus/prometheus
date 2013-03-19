@@ -10,10 +10,10 @@ cat <<EOF > $type_file
 var types = map [string] map [string] string {
 EOF
 
-
+CDIR=`pwd`
 for dir in $@
 do
-  pushd "$dir" > /dev/null
+  cd "$dir"
   echo -e "\t\"`basename $dir`\": {"
   echo -e "\t\"`basename $dir`\": {" >> $type_file
 
@@ -30,7 +30,7 @@ do
   done
   echo -e "\t}," >> $type_file
   echo -e "\t},"
-  popd > /dev/null
+  cd $CDIR
 done
 echo '}'
 cat $type_file
