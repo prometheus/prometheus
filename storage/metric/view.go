@@ -125,7 +125,7 @@ func (v view) Close() {
 	v.fingerprintToSeries = make(map[model.Fingerprint]viewStream)
 }
 
-func (v view) GetValueAtTime(f model.Fingerprint, t time.Time) (s []model.SamplePair) {
+func (v view) GetValueAtTime(f model.Fingerprint, t time.Time) (samples []model.SamplePair) {
 	series, ok := v.fingerprintToSeries[f]
 	if !ok {
 		return
@@ -150,13 +150,13 @@ func (v view) GetValueAtTime(f model.Fingerprint, t time.Time) (s []model.Sample
 		return
 	}
 
-	s = append(s, model.SamplePair{
+	samples = append(samples, model.SamplePair{
 		Timestamp: time.Time(iterator.Key().(skipListTime)),
 		Value:     iterator.Value().(value).get(),
 	})
 
 	if iterator.Previous() {
-		s = append(s, model.SamplePair{
+		samples = append(samples, model.SamplePair{
 			Timestamp: time.Time(iterator.Key().(skipListTime)),
 			Value:     iterator.Value().(value).get(),
 		})
@@ -165,11 +165,39 @@ func (v view) GetValueAtTime(f model.Fingerprint, t time.Time) (s []model.Sample
 	return
 }
 
-func (v view) GetBoundaryValues(f model.Fingerprint, i model.Interval) (s []model.SamplePair) {
+func (v view) GetBoundaryValues(f model.Fingerprint, i model.Interval) (first []model.SamplePair, second []model.SamplePair) {
+	first = v.GetValueAtTime(f, i.OldestInclusive)
+	second = v.GetValueAtTime(f, i.NewestInclusive)
 	return
 }
 
-func (v view) GetRangeValues(f model.Fingerprint, i model.Interval) (s []model.SamplePair) {
+func (v view) GetRangeValues(f model.Fingerprint, i model.Interval) (samples []model.SamplePair) {
+	series, ok := v.fingerprintToSeries[f]
+	if !ok {
+		return
+	}
+
+	iterator := series.values.Seek(skipListTime(i.NewestInclusive))
+	if iterator == nil {
+		return
+	}
+
+	for {
+		timestamp := time.Time(iterator.Key().(skipListTime))
+		if timestamp.Before(i.OldestInclusive) {
+			break
+		}
+
+		samples = append(samples, model.SamplePair{
+				Value:     iterator.Value().(value).get(),
+				Timestamp: timestamp,
+			})
+
+		if !iterator.Next() {
+			break
+		}
+	}
+
 	return
 }
 

@@ -70,7 +70,7 @@ type StalenessPolicy struct {
 // preloading operation.
 type View interface {
 	GetValueAtTime(model.Fingerprint, time.Time) []model.SamplePair
-	GetBoundaryValues(model.Fingerprint, model.Interval) []model.SamplePair
+	GetBoundaryValues(model.Fingerprint, model.Interval) (first []model.SamplePair, second []model.SamplePair)
 	GetRangeValues(model.Fingerprint, model.Interval) []model.SamplePair
 
 	// Destroy this view.
