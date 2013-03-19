@@ -136,7 +136,7 @@ levigo-stamp: leveldb go snappy source
 skiplist: skiplist-stamp
 
 skiplist-stamp: go source
-	$(GO_GET) github.com/ryszard/goskiplist
+	$(GO_GET) github.com/ryszard/goskiplist/skiplist
 	touch $@
 
 rsync: rsync-stamp
