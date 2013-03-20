@@ -20,7 +20,6 @@ test: build
 
 build:
 	./utility/embed-static.sh web/static web/templates | gofmt > web/blob/files.go
-	cat web/blob/files.go
 	$(MAKE) -C model
 	go build ./...
 	go build -o prometheus.build
