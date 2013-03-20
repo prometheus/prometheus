@@ -20,3 +20,4 @@
 [568a].out
 _cgo_*
 core
+web/blob/files.go

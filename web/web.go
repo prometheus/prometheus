@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang"
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/web/api"
+	"github.com/prometheus/prometheus/web/blob"
 	"net/http"
 	_ "net/http/pprof"
 )
@@ -35,7 +36,7 @@ func StartServing(appState *appstate.ApplicationState) {
 	http.Handle("/status", &StatusHandler{appState: appState})
 	http.Handle("/api/", gorest.Handle())
 	http.Handle("/metrics.json", exporter)
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	http.Handle("/static/", http.StripPrefix("/static/", new(blob.Handler)))
 
 	go http.ListenAndServe(*listenAddress, nil)
 }

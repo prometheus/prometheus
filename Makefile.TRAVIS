@@ -41,7 +41,7 @@ preparation-stamp: build-dependencies
 
 build-dependencies: build-dependencies-stamp
 
-build-dependencies-stamp: bison cc mercurial protoc goprotobuf gorest go instrumentation leveldb levigo skiplist
+build-dependencies-stamp: bison cc mercurial protoc goprotobuf gorest go instrumentation leveldb levigo skiplist vim-common
 	touch $@
 
 overlay: overlay-stamp
@@ -144,6 +144,12 @@ rsync: rsync-stamp
 rsync-stamp:
 	[ -x "$$(which rsync)" ] || $(APT_GET_INSTALL) rsync
 
+vim-common: vim-common-stamp
+
+vim-common-stamp:
+	$(APT_GET_INSTALL) vim-common
+	touch $@ 
+
 test: test-stamp
 
 test-stamp: preparation source
@@ -183,4 +189,4 @@ clean:
 	-rm snappy-$(SNAPPY_VERSION).tar.gz
 
 
-.PHONY: all bison build-dependencies cc clean go goprotobuf gorest instrumentation leveldb levigo mercurial overlay preparation protoc rsync snappy source test wget
+.PHONY: all bison build-dependencies cc clean go goprotobuf gorest instrumentation leveldb levigo mercurial overlay preparation protoc rsync snappy source test wget vim-common
