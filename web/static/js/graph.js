@@ -321,8 +321,8 @@ Prometheus.Graph.prototype.showGraph = function() {
   var self = this;
   self.rickshawGraph = new Rickshaw.Graph({
     element: self.graph[0],
-    height: Math.max($(window).height() - 200, 100),
-    width: Math.max($(window).width() - 200, 200),
+    height: Math.max(self.graph.innerHeight(), 100),
+    width: Math.max(self.graph.innerWidth(), 200),
     renderer: (self.stacked.is(":checked") ? "stack" : "line"),
     interpolation: "linear",
     series: self.data
@@ -370,6 +370,14 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
 
   self.changeHandler();
 };
+Prometheus.Graph.prototype.resizeGraph = function() {
+  var self = this;
+  self.rickshawGraph.configure({
+    height: Math.max(self.graph.innerHeight(), 100),
+    width: Math.max(self.graph.innerWidth(), 200),
+  });
+  self.rickshawGraph.render();
+};
 
 function parseGraphOptionsFromUrl() {
   var hashOptions = window.location.hash.slice(1);
@@ -394,6 +402,9 @@ function addGraph(options) {
   graphs.push(graph);
   graph.onChange(function() {
     storeGraphOptionsInUrl();
+  });
+  $(window).resize(function() {
+    graph.resizeGraph();
   });
 }
 

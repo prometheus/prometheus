@@ -23,3 +23,22 @@ input:not([type=submit]):not([type=file]):not([type=button]) {
      -moz-border-radius: 4px;
           border-radius: 4px;
 }
+
+.graph {
+  min-height: 400px;
+  overflow-x: hidden;
+}
+
+div.legend {
+  display: block;
+}
+
+form {
+  display: inline-block;
+}
+
+.eval_stats {
+  display: inline;
+  vertical-align: top;
+}
+
