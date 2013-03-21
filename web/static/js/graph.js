@@ -76,9 +76,14 @@ Prometheus.Graph.prototype.initialize = function() {
   self.spinner = graphWrapper.find(".spinner");
   self.evalStats = graphWrapper.find(".eval_stats");
 
-  self.endDate = graphWrapper.find("input[name=end]");
-  self.endDate.appendDtpicker();
-  self.endDate.val("")
+  self.endDate = graphWrapper.find("input[name=end_input]");
+  console.log(self.options)
+  if (self.options["end_input"]) {
+    self.endDate.appendDtpicker({"current": self.options["end_input"]})
+  } else {
+    self.endDate.appendDtpicker();
+    self.endDate.val("")
+  }
   self.endDate.change(function() { self.submitQuery() });
 
   self.stacked.change(function() { self.updateGraph(); });
@@ -131,7 +136,7 @@ Prometheus.Graph.prototype.getOptions = function() {
   var optionInputs = [
     "expr",
     "range_input",
-    "end",
+    "end_input",
     "step_input",
     "stacked"
   ];
@@ -189,6 +194,7 @@ Prometheus.Graph.prototype.decreaseRange = function() {
 };
 
 Prometheus.Graph.prototype.getEndDate = function() {
+  var self = this
   if (!self.endDate || !self.endDate.val()) {
     return null; 
   }
@@ -196,6 +202,7 @@ Prometheus.Graph.prototype.getEndDate = function() {
 };
 
 Prometheus.Graph.prototype.getOrSetEndDate = function() {
+  var self = this
   var date = self.getEndDate();
   if (date) {
     return date
@@ -239,7 +246,6 @@ Prometheus.Graph.prototype.submitQuery = function() {
 
   var data = self.queryForm.serialize();
   var endDate = self.getEndDate()
-  
   if (endDate) {
     data = data + "&end=" + endDate/1000
   }
