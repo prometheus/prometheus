@@ -207,10 +207,10 @@ Prometheus.Graph.prototype.getOrSetEndDate = function() {
 
 Prometheus.Graph.prototype.setEndDate = function(date) {
   var self = this;
-  date_s = date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate() + ' ' +
+  dateString = date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate() + ' ' +
             date.getHours() + ':' + date.getMinutes()
   self.endDate.val("")
-  self.endDate.appendDtpicker({"current": date_s})
+  self.endDate.appendDtpicker({"current": dateString})
   self.submitQuery();
 };
 
