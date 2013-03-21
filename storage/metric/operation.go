@@ -431,16 +431,12 @@ func optimizeForward(pending ops) (out ops) {
 				continue
 			case *getValuesAlongRangeOp:
 				// Range queries should be concatenated if they overlap.
-				pending = pending[1:len(pending)]
-
 				if next.GreedierThan(t) {
-					t.through = next.through
+					next.from = t.from
 
-					var (
-						head = ops{t}
-					)
-
-					pending = append(head, pending...)
+					return optimizeForward(pending)
+				} else {
+					pending = pending[1:len(pending)]
 				}
 			case *getValuesAtIntervalOp:
 				pending = pending[1:len(pending)]

@@ -321,6 +321,46 @@ func testOptimizeTimeGroups(t test.Tester) {
 					},
 				},
 			},
+			// Regression Validation 1: Multiple Overlapping Interval Requests
+			//                          This one specific case expects no mutation.
+			{
+				in: ops{
+					&getValuesAlongRangeOp{
+						from:    testInstant,
+						through: testInstant.Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(15 * time.Second),
+						through: testInstant.Add(15 * time.Second).Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(30 * time.Second),
+						through: testInstant.Add(30 * time.Second).Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(45 * time.Second),
+						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+					},
+				},
+				out: ops{
+					&getValuesAlongRangeOp{
+						from:    testInstant,
+						through: testInstant.Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(15 * time.Second),
+						through: testInstant.Add(15 * time.Second).Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(30 * time.Second),
+						through: testInstant.Add(30 * time.Second).Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(45 * time.Second),
+						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+					},
+				},
+			},
 		}
 	)
 
@@ -515,6 +555,34 @@ func testOptimizeForward(t test.Tester) {
 					},
 					&getValuesAtTimeOp{
 						time: testInstant.Add(6 * time.Minute).Add(30 * time.Second),
+					},
+				},
+			},
+			// Regression Validation 1: Multiple Overlapping Interval Requests
+			//                          We expect to find compaction.
+			{
+				in: ops{
+					&getValuesAlongRangeOp{
+						from:    testInstant,
+						through: testInstant.Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(15 * time.Second),
+						through: testInstant.Add(15 * time.Second).Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(30 * time.Second),
+						through: testInstant.Add(30 * time.Second).Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(45 * time.Second),
+						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+					},
+				},
+				out: ops{
+					&getValuesAlongRangeOp{
+						from:    testInstant,
+						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
 					},
 				},
 			},
@@ -1004,6 +1072,34 @@ func testOptimize(t test.Tester) {
 					},
 					&getValuesAtTimeOp{
 						time: testInstant.Add(6 * time.Minute).Add(30 * time.Second),
+					},
+				},
+			},
+			// Regression Validation 1: Multiple Overlapping Interval Requests
+			//                          We expect to find compaction.
+			{
+				in: ops{
+					&getValuesAlongRangeOp{
+						from:    testInstant,
+						through: testInstant.Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(15 * time.Second),
+						through: testInstant.Add(15 * time.Second).Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(30 * time.Second),
+						through: testInstant.Add(30 * time.Second).Add(5 * time.Minute),
+					},
+					&getValuesAlongRangeOp{
+						from:    testInstant.Add(45 * time.Second),
+						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+					},
+				},
+				out: ops{
+					&getValuesAlongRangeOp{
+						from:    testInstant,
+						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
 					},
 				},
 			},
