@@ -222,13 +222,13 @@ Prometheus.Graph.prototype.setEndDate = function(date) {
 
 Prometheus.Graph.prototype.increaseEnd = function() {
   var self = this;
-  self.setEndDate(new Date(self.getOrSetEndDate() + self.parseRange(self.rangeInput.val()) * 1000))
+  self.setEndDate(new Date(self.getOrSetEndDate() + self.parseRange(self.rangeInput.val()) * 1000/2 )) // increase by 1/2 range & convert ms in s
   self.submitQuery();
 };
 
 Prometheus.Graph.prototype.decreaseEnd = function() {
   var self = this;
-  self.setEndDate(new Date(self.getOrSetEndDate() - self.parseRange(self.rangeInput.val()) * 1000))
+  self.setEndDate(new Date(self.getOrSetEndDate() - self.parseRange(self.rangeInput.val()) * 1000/2 ))
   self.submitQuery();
 };
 
