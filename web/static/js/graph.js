@@ -76,12 +76,21 @@ Prometheus.Graph.prototype.initialize = function() {
   self.spinner = graphWrapper.find(".spinner");
   self.evalStats = graphWrapper.find(".eval_stats");
 
+  self.endDate = graphWrapper.find("input[name=end]");
+  self.endDate.appendDtpicker();
+  self.endDate.val("")
+  self.endDate.change(function() { self.submitQuery() });
+
   self.stacked.change(function() { self.updateGraph(); });
   self.queryForm.submit(function() { self.submitQuery(); return false; });
   self.spinner.hide();
 
   self.queryForm.find("input[name=inc_range]").click(function() { self.increaseRange(); });
   self.queryForm.find("input[name=dec_range]").click(function() { self.decreaseRange(); });
+
+  self.queryForm.find("input[name=inc_end]").click(function() { self.increaseEnd(); });
+  self.queryForm.find("input[name=dec_end]").click(function() { self.decreaseEnd(); });
+
   self.insertMetric.change(function() {
       self.expr.val(self.expr.val() + self.insertMetric.val());
   });
@@ -179,6 +188,42 @@ Prometheus.Graph.prototype.decreaseRange = function() {
   }
 };
 
+Prometheus.Graph.prototype.getEndDate = function() {
+  if (!self.endDate || !self.endDate.val()) {
+    return null; 
+  }
+  return new Date(self.endDate.val()).getTime()
+};
+
+Prometheus.Graph.prototype.getOrSetEndDate = function() {
+  var date = self.getEndDate();
+  if (date) {
+    return date
+  }
+  date = new Date()
+  self.setEndDate(date)
+  return date
+}
+
+Prometheus.Graph.prototype.setEndDate = function(date) {
+  var self = this;
+  date_s = date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate() + ' ' +
+            date.getHours() + ':' + date.getMinutes()
+  self.endDate.val("")
+  self.endDate.appendDtpicker({"current": date_s})
+  self.submitQuery();
+};
+
+Prometheus.Graph.prototype.increaseEnd = function() {
+  var self = this;
+  self.setEndDate(new Date(self.getOrSetEndDate() + self.parseRange(self.rangeInput.val()) * 1000))
+};
+
+Prometheus.Graph.prototype.decreaseEnd = function() {
+  var self = this;
+  self.setEndDate(new Date(self.getOrSetEndDate() - self.parseRange(self.rangeInput.val()) * 1000))
+};
+
 Prometheus.Graph.prototype.submitQuery = function() {
   var self = this;
 
@@ -192,11 +237,17 @@ Prometheus.Graph.prototype.submitQuery = function() {
   var resolution = self.queryForm.find("input[name=step_input]").val() || Math.max(Math.floor(rangeSeconds / 250), 1);
   self.queryForm.find("input[name=step]").val(resolution);
 
+  var data = self.queryForm.serialize();
+  var endDate = self.getEndDate()
+  
+  if (endDate) {
+    data = data + "&end=" + endDate/1000
+  }
   $.ajax({
       method: self.queryForm.attr("method"),
       url: self.queryForm.attr("action"),
       dataType: "json",
-      data: self.queryForm.serialize(),
+      data: data,
       success: function(json, textStatus) {
         if (json.Type == "error") {
           alert(json.Value);
