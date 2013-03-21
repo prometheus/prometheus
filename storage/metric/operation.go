@@ -215,7 +215,10 @@ func (g *getValuesAlongRangeOp) ExtractSamples(in []model.SamplePair) (out []mod
 		return !in[i].Timestamp.Before(g.from)
 	})
 	if firstIdx == len(in) {
-		// No samples at or after operator start time.
+		// No samples at or after operator start time. This can only happen if we
+		// try applying the operator to a time after the last recorded sample. In
+		// this case, we're finished.
+		g.from = g.through.Add(1)
 		return
 	}
 
@@ -228,7 +231,10 @@ func (g *getValuesAlongRangeOp) ExtractSamples(in []model.SamplePair) (out []mod
 	}
 
 	lastSampleTime := in[lastIdx-1].Timestamp
-	g.from = lastSampleTime.Add(time.Duration(1))
+	// Sample times are stored with a maximum time resolution of one second, so
+	// we have to add exactly that to target the next chunk on the next op
+	// iteration.
+	g.from = lastSampleTime.Add(time.Second)
 	return in[firstIdx:lastIdx]
 }
 
