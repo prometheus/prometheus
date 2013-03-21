@@ -189,9 +189,9 @@ func (v view) GetRangeValues(f model.Fingerprint, i model.Interval) (samples []m
 		}
 
 		samples = append(samples, model.SamplePair{
-				Value:     iterator.Value().(value).get(),
-				Timestamp: timestamp,
-			})
+			Value:     iterator.Value().(value).get(),
+			Timestamp: timestamp,
+		})
 
 		if !iterator.Next() {
 			break
