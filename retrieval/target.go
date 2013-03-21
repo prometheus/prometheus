@@ -28,6 +28,19 @@ const (
 // The state of the given Target.
 type TargetState int
 
+func (t TargetState) String() string {
+	switch t {
+	case UNKNOWN:
+		return "UNKNOWN"
+	case ALIVE:
+		return "ALIVE"
+	case UNREACHABLE:
+		return "UNREACHABLE"
+	}
+
+	panic("unknown state")
+}
+
 const (
 	// The Target has not been seen; we know nothing about it, except that it is
 	// on our docket for examination.
