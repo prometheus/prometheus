@@ -243,17 +243,14 @@ Prometheus.Graph.prototype.submitQuery = function() {
   self.queryForm.find("input[name=range]").val(rangeSeconds);
   var resolution = self.queryForm.find("input[name=step_input]").val() || Math.max(Math.floor(rangeSeconds / 250), 1);
   self.queryForm.find("input[name=step]").val(resolution);
+  var endDate = self.getEndDate() / 1000;
+  self.queryForm.find("input[name=end]").val(endDate);
 
-  var data = self.queryForm.serialize();
-  var endDate = self.getEndDate()
-  if (endDate) {
-    data = data + "&end=" + endDate/1000
-  }
   $.ajax({
       method: self.queryForm.attr("method"),
       url: self.queryForm.attr("action"),
       dataType: "json",
-      data: data,
+      data: self.queryForm.serialize(),
       success: function(json, textStatus) {
         if (json.Type == "error") {
           alert(json.Value);
