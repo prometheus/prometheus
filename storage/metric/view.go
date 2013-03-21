@@ -14,7 +14,6 @@
 package metric
 
 import (
-	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/ryszard/goskiplist/skiplist"
 	"sort"
@@ -22,8 +21,6 @@ import (
 )
 
 var (
-	_ = fmt.Sprintf("")
-
 	// firstSupertime is the smallest valid supertime that may be seeked to.
 	firstSupertime = []byte{0, 0, 0, 0, 0, 0, 0, 0}
 	// lastSupertime is the largest valid supertime that may be seeked to.
@@ -177,23 +174,33 @@ func (v view) GetRangeValues(f model.Fingerprint, i model.Interval) (samples []m
 		return
 	}
 
-	iterator := series.values.Seek(skipListTime(i.NewestInclusive))
+	iterator := series.values.Seek(skipListTime(i.OldestInclusive))
 	if iterator == nil {
-		return
+		// If the iterator is nil, it means we seeked past the end of the series,
+		// so we seek to the last value instead. Due to the reverse ordering
+		// defined on skipListTime, this corresponds to the sample with the
+		// earliest timestamp.
+		iterator = series.values.SeekToLast()
+		if iterator == nil {
+			// The list is empty.
+			return
+		}
 	}
 
 	for {
 		timestamp := time.Time(iterator.Key().(skipListTime))
-		if timestamp.Before(i.OldestInclusive) {
+		if timestamp.After(i.NewestInclusive) {
 			break
 		}
 
-		samples = append(samples, model.SamplePair{
-			Value:     iterator.Value().(value).get(),
-			Timestamp: timestamp,
-		})
+		if !timestamp.Before(i.OldestInclusive) {
+			samples = append(samples, model.SamplePair{
+				Value:     iterator.Value().(value).get(),
+				Timestamp: timestamp,
+			})
+		}
 
-		if !iterator.Next() {
+		if !iterator.Previous() {
 			break
 		}
 	}
