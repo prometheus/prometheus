@@ -76,12 +76,25 @@ Prometheus.Graph.prototype.initialize = function() {
   self.spinner = graphWrapper.find(".spinner");
   self.evalStats = graphWrapper.find(".eval_stats");
 
+  self.endDate = graphWrapper.find("input[name=end_input]");
+  if (self.options["end_input"]) {
+    self.endDate.appendDtpicker({"current": self.options["end_input"]});
+  } else {
+    self.endDate.appendDtpicker();
+    self.endDate.val("");
+  }
+  self.endDate.change(function() { self.submitQuery() });
+
   self.stacked.change(function() { self.updateGraph(); });
   self.queryForm.submit(function() { self.submitQuery(); return false; });
   self.spinner.hide();
 
   self.queryForm.find("input[name=inc_range]").click(function() { self.increaseRange(); });
   self.queryForm.find("input[name=dec_range]").click(function() { self.decreaseRange(); });
+
+  self.queryForm.find("input[name=inc_end]").click(function() { self.increaseEnd(); });
+  self.queryForm.find("input[name=dec_end]").click(function() { self.decreaseEnd(); });
+
   self.insertMetric.change(function() {
       self.expr.val(self.expr.val() + self.insertMetric.val());
   });
@@ -122,7 +135,7 @@ Prometheus.Graph.prototype.getOptions = function() {
   var optionInputs = [
     "expr",
     "range_input",
-    "end",
+    "end_input",
     "step_input",
     "stacked"
   ];
@@ -179,6 +192,45 @@ Prometheus.Graph.prototype.decreaseRange = function() {
   }
 };
 
+Prometheus.Graph.prototype.getEndDate = function() {
+  var self = this;
+  if (!self.endDate || !self.endDate.val()) {
+    return null; 
+  }
+  return new Date(self.endDate.val()).getTime();
+};
+
+Prometheus.Graph.prototype.getOrSetEndDate = function() {
+  var self = this;
+  var date = self.getEndDate();
+  if (date) {
+    return date;
+  }
+  date = new Date();
+  self.setEndDate(date);
+  return date;
+}
+
+Prometheus.Graph.prototype.setEndDate = function(date) {
+  var self = this;
+  dateString = date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate() + ' ' +
+               date.getHours() + ':' + date.getMinutes();
+  self.endDate.val("");
+  self.endDate.appendDtpicker({"current": dateString});
+};
+
+Prometheus.Graph.prototype.increaseEnd = function() {
+  var self = this;
+  self.setEndDate(new Date(self.getOrSetEndDate() + self.parseRange(self.rangeInput.val()) * 1000/2 )) // increase by 1/2 range & convert ms in s
+  self.submitQuery();
+};
+
+Prometheus.Graph.prototype.decreaseEnd = function() {
+  var self = this;
+  self.setEndDate(new Date(self.getOrSetEndDate() - self.parseRange(self.rangeInput.val()) * 1000/2 ))
+  self.submitQuery();
+};
+
 Prometheus.Graph.prototype.submitQuery = function() {
   var self = this;
 
@@ -191,6 +243,8 @@ Prometheus.Graph.prototype.submitQuery = function() {
   self.queryForm.find("input[name=range]").val(rangeSeconds);
   var resolution = self.queryForm.find("input[name=step_input]").val() || Math.max(Math.floor(rangeSeconds / 250), 1);
   self.queryForm.find("input[name=step]").val(resolution);
+  var endDate = self.getEndDate() / 1000;
+  self.queryForm.find("input[name=end]").val(endDate);
 
   $.ajax({
       method: self.queryForm.attr("method"),
@@ -236,7 +290,7 @@ Prometheus.Graph.prototype.parseValue = function(value) {
   if (value == "NaN" || value == "Inf" || value == "-Inf") {
     return 0; // TODO: what should we really do here?
   } else {
-    return parseFloat(value)
+    return parseFloat(value);
   }
 };
 
