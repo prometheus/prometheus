@@ -152,9 +152,14 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 }
 
 func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
+	viewAdapter, err := viewAdapterForInstantQuery(node, *timestamp)
+	if err != nil {
+		panic(err)
+	}
+
 	switch node.Type() {
 	case SCALAR:
-		scalar := node.(ScalarNode).Eval(timestamp)
+		scalar := node.(ScalarNode).Eval(timestamp, viewAdapter)
 		switch format {
 		case TEXT:
 			return fmt.Sprintf("scalar: %v", scalar)
@@ -162,7 +167,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 			return TypedValueToJSON(scalar, "scalar")
 		}
 	case VECTOR:
-		vector := node.(VectorNode).Eval(timestamp)
+		vector := node.(VectorNode).Eval(timestamp, viewAdapter)
 		switch format {
 		case TEXT:
 			return vector.String()
@@ -170,7 +175,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 			return TypedValueToJSON(vector, "vector")
 		}
 	case MATRIX:
-		matrix := node.(MatrixNode).Eval(timestamp)
+		matrix := node.(MatrixNode).Eval(timestamp, viewAdapter)
 		switch format {
 		case TEXT:
 			return matrix.String()
@@ -178,7 +183,7 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 			return TypedValueToJSON(matrix, "matrix")
 		}
 	case STRING:
-		str := node.(StringNode).Eval(timestamp)
+		str := node.(StringNode).Eval(timestamp, viewAdapter)
 		switch format {
 		case TEXT:
 			return str

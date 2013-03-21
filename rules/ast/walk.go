@@ -11,21 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package appstate
+package ast
 
-import (
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage/metric"
-)
+type Visitor interface {
+	Visit(node Node)
+}
 
-// ApplicationState is an encapsulation of all relevant Prometheus application
-// runtime state. It enables simpler passing of this state to components that
-// require it.
-type ApplicationState struct {
-	Config        *config.Config
-	RuleManager   rules.RuleManager
-	Storage       metric.Storage
-	TargetManager retrieval.TargetManager
+// Walk() does a depth-first traversal of the AST, calling visitor.Visit() for
+// each encountered node in the tree.
+func Walk(visitor Visitor, node Node) {
+	visitor.Visit(node)
+	for _, childNode := range node.Children() {
+		Walk(visitor, childNode)
+	}
 }

@@ -30,8 +30,8 @@ type Rule struct {
 
 func (rule *Rule) Name() string { return rule.name }
 
-func (rule *Rule) EvalRaw(timestamp *time.Time) ast.Vector {
-	return rule.vector.Eval(timestamp)
+func (rule *Rule) EvalRaw(timestamp *time.Time) (vector ast.Vector) {
+	return ast.EvalVectorInstant(rule.vector, *timestamp)
 }
 
 func (rule *Rule) Eval(timestamp *time.Time) ast.Vector {

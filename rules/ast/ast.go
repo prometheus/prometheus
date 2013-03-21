@@ -90,29 +90,30 @@ const (
 type Node interface {
 	Type() ExprType
 	NodeTreeToDotGraph() string
+	Children() []Node
 }
 
 // All node types implement one of the following interfaces. The name of the
 // interface represents the type returned to the parent node.
 type ScalarNode interface {
 	Node
-	Eval(timestamp *time.Time) model.SampleValue
+	Eval(timestamp *time.Time, view *viewAdapter) model.SampleValue
 }
 
 type VectorNode interface {
 	Node
-	Eval(timestamp *time.Time) Vector
+	Eval(timestamp *time.Time, view *viewAdapter) Vector
 }
 
 type MatrixNode interface {
 	Node
-	Eval(timestamp *time.Time) Matrix
-	EvalBoundaries(timestamp *time.Time) Matrix
+	Eval(timestamp *time.Time, view *viewAdapter) Matrix
+	EvalBoundaries(timestamp *time.Time, view *viewAdapter) Matrix
 }
 
 type StringNode interface {
 	Node
-	Eval(timestamp *time.Time) string
+	Eval(timestamp *time.Time, view *viewAdapter) string
 }
 
 // ----------------------------------------------------------------------------
@@ -198,6 +199,7 @@ type (
 // ----------------------------------------------------------------------------
 // Implementations.
 
+// Node.Type() methods.
 func (node ScalarLiteral) Type() ExprType      { return SCALAR }
 func (node ScalarFunctionCall) Type() ExprType { return SCALAR }
 func (node ScalarArithExpr) Type() ExprType    { return SCALAR }
@@ -209,18 +211,30 @@ func (node MatrixLiteral) Type() ExprType      { return MATRIX }
 func (node StringLiteral) Type() ExprType      { return STRING }
 func (node StringFunctionCall) Type() ExprType { return STRING }
 
-func (node *ScalarLiteral) Eval(timestamp *time.Time) model.SampleValue {
+// Node.Children() methods.
+func (node ScalarLiteral) Children() []Node      { return []Node{} }
+func (node ScalarFunctionCall) Children() []Node { return node.args }
+func (node ScalarArithExpr) Children() []Node    { return []Node{node.lhs, node.rhs} }
+func (node VectorLiteral) Children() []Node      { return []Node{} }
+func (node VectorFunctionCall) Children() []Node { return node.args }
+func (node VectorAggregation) Children() []Node  { return []Node{node.vector} }
+func (node VectorArithExpr) Children() []Node    { return []Node{node.lhs, node.rhs} }
+func (node MatrixLiteral) Children() []Node      { return []Node{} }
+func (node StringLiteral) Children() []Node      { return []Node{} }
+func (node StringFunctionCall) Children() []Node { return node.args }
+
+func (node *ScalarLiteral) Eval(timestamp *time.Time, view *viewAdapter) model.SampleValue {
 	return node.value
 }
 
-func (node *ScalarArithExpr) Eval(timestamp *time.Time) model.SampleValue {
-	lhs := node.lhs.Eval(timestamp)
-	rhs := node.rhs.Eval(timestamp)
+func (node *ScalarArithExpr) Eval(timestamp *time.Time, view *viewAdapter) model.SampleValue {
+	lhs := node.lhs.Eval(timestamp, view)
+	rhs := node.rhs.Eval(timestamp, view)
 	return evalScalarBinop(node.opType, lhs, rhs)
 }
 
-func (node *ScalarFunctionCall) Eval(timestamp *time.Time) model.SampleValue {
-	return node.function.callFn(timestamp, node.args).(model.SampleValue)
+func (node *ScalarFunctionCall) Eval(timestamp *time.Time, view *viewAdapter) model.SampleValue {
+	return node.function.callFn(timestamp, view, node.args).(model.SampleValue)
 }
 
 func (node *VectorAggregation) labelsToGroupingKey(labels model.Metric) string {
@@ -240,11 +254,25 @@ func labelsToKey(labels model.Metric) string {
 	return strings.Join(keyParts, ",") // TODO not safe when label value contains comma.
 }
 
-func EvalVectorRange(node VectorNode, start time.Time, end time.Time, step time.Duration) Matrix {
+func EvalVectorInstant(node VectorNode, timestamp time.Time) (vector Vector) {
+	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp)
+	if err != nil {
+		// TODO: propagate errors.
+		return
+	}
+	return node.Eval(&timestamp, viewAdapter)
+}
+
+func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration) (matrix Matrix, err error) {
+	viewAdapter, err := viewAdapterForRangeQuery(node, start, end, interval)
+	if err != nil {
+		// TODO: propagate errors.
+		return
+	}
 	// TODO implement watchdog timer for long-running queries.
 	sampleSets := map[string]*model.SampleSet{}
-	for t := start; t.Before(end); t = t.Add(step) {
-		vector := node.Eval(&t)
+	for t := start; t.Before(end); t = t.Add(interval) {
+		vector := node.Eval(&t, viewAdapter)
 		for _, sample := range vector {
 			samplePair := model.SamplePair{
 				Value:     sample.Value,
@@ -262,11 +290,10 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, step time.
 		}
 	}
 
-	matrix := Matrix{}
 	for _, sampleSet := range sampleSets {
 		matrix = append(matrix, sampleSet)
 	}
-	return matrix
+	return
 }
 
 func labelIntersection(metric1, metric2 model.Metric) model.Metric {
@@ -295,8 +322,8 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[stri
 	return vector
 }
 
-func (node *VectorAggregation) Eval(timestamp *time.Time) Vector {
-	vector := node.vector.Eval(timestamp)
+func (node *VectorAggregation) Eval(timestamp *time.Time, view *viewAdapter) Vector {
+	vector := node.vector.Eval(timestamp, view)
 	result := map[string]*groupedAggregation{}
 	for _, sample := range vector {
 		groupingKey := node.labelsToGroupingKey(sample.Metric)
@@ -328,8 +355,8 @@ func (node *VectorAggregation) Eval(timestamp *time.Time) Vector {
 	return node.groupedAggregationsToVector(result, timestamp)
 }
 
-func (node *VectorLiteral) Eval(timestamp *time.Time) Vector {
-	values, err := persistenceAdapter.GetValueAtTime(node.labels, timestamp)
+func (node *VectorLiteral) Eval(timestamp *time.Time, view *viewAdapter) Vector {
+	values, err := view.GetValueAtTime(node.labels, timestamp)
 	if err != nil {
 		log.Printf("Unable to get vector values")
 		return Vector{}
@@ -337,8 +364,8 @@ func (node *VectorLiteral) Eval(timestamp *time.Time) Vector {
 	return values
 }
 
-func (node *VectorFunctionCall) Eval(timestamp *time.Time) Vector {
-	return node.function.callFn(timestamp, node.args).(Vector)
+func (node *VectorFunctionCall) Eval(timestamp *time.Time, view *viewAdapter) Vector {
+	return node.function.callFn(timestamp, view, node.args).(Vector)
 }
 
 func evalScalarBinop(opType BinOpType,
@@ -481,11 +508,11 @@ func labelsEqual(labels1, labels2 model.Metric) bool {
 	return true
 }
 
-func (node *VectorArithExpr) Eval(timestamp *time.Time) Vector {
-	lhs := node.lhs.Eval(timestamp)
+func (node *VectorArithExpr) Eval(timestamp *time.Time, view *viewAdapter) Vector {
+	lhs := node.lhs.Eval(timestamp, view)
 	result := Vector{}
 	if node.rhs.Type() == SCALAR {
-		rhs := node.rhs.(ScalarNode).Eval(timestamp)
+		rhs := node.rhs.(ScalarNode).Eval(timestamp, view)
 		for _, lhsSample := range lhs {
 			value, keep := evalVectorBinop(node.opType, lhsSample.Value, rhs)
 			if keep {
@@ -495,7 +522,7 @@ func (node *VectorArithExpr) Eval(timestamp *time.Time) Vector {
 		}
 		return result
 	} else if node.rhs.Type() == VECTOR {
-		rhs := node.rhs.(VectorNode).Eval(timestamp)
+		rhs := node.rhs.(VectorNode).Eval(timestamp, view)
 		for _, lhsSample := range lhs {
 			for _, rhsSample := range rhs {
 				if labelsEqual(lhsSample.Metric, rhsSample.Metric) {
@@ -512,12 +539,12 @@ func (node *VectorArithExpr) Eval(timestamp *time.Time) Vector {
 	panic("Invalid vector arithmetic expression operands")
 }
 
-func (node *MatrixLiteral) Eval(timestamp *time.Time) Matrix {
+func (node *MatrixLiteral) Eval(timestamp *time.Time, view *viewAdapter) Matrix {
 	interval := &model.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: *timestamp,
 	}
-	values, err := persistenceAdapter.GetRangeValues(node.labels, interval)
+	values, err := view.GetRangeValues(node.labels, interval)
 	if err != nil {
 		log.Printf("Unable to get values for vector interval")
 		return Matrix{}
@@ -525,12 +552,12 @@ func (node *MatrixLiteral) Eval(timestamp *time.Time) Matrix {
 	return values
 }
 
-func (node *MatrixLiteral) EvalBoundaries(timestamp *time.Time) Matrix {
+func (node *MatrixLiteral) EvalBoundaries(timestamp *time.Time, view *viewAdapter) Matrix {
 	interval := &model.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: *timestamp,
 	}
-	values, err := persistenceAdapter.GetBoundaryValues(node.labels, interval)
+	values, err := view.GetBoundaryValues(node.labels, interval)
 	if err != nil {
 		log.Printf("Unable to get boundary values for vector interval")
 		return Matrix{}
@@ -550,12 +577,12 @@ func (matrix Matrix) Swap(i, j int) {
 	matrix[i], matrix[j] = matrix[j], matrix[i]
 }
 
-func (node *StringLiteral) Eval(timestamp *time.Time) string {
+func (node *StringLiteral) Eval(timestamp *time.Time, view *viewAdapter) string {
 	return node.str
 }
 
-func (node *StringFunctionCall) Eval(timestamp *time.Time) string {
-	return node.function.callFn(timestamp, node.args).(string)
+func (node *StringFunctionCall) Eval(timestamp *time.Time, view *viewAdapter) string {
+	return node.function.callFn(timestamp, view, node.args).(string)
 }
 
 // ----------------------------------------------------------------------------

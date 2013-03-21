@@ -24,7 +24,7 @@ type Function struct {
 	name       string
 	argTypes   []ExprType
 	returnType ExprType
-	callFn     func(timestamp *time.Time, args []Node) interface{}
+	callFn     func(timestamp *time.Time, view *viewAdapter, args []Node) interface{}
 }
 
 func (function *Function) CheckArgTypes(args []Node) error {
@@ -63,19 +63,19 @@ func (function *Function) CheckArgTypes(args []Node) error {
 }
 
 // === time() ===
-func timeImpl(timestamp *time.Time, args []Node) interface{} {
+func timeImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
 	return model.SampleValue(time.Now().Unix())
 }
 
 // === count(vector VectorNode) ===
-func countImpl(timestamp *time.Time, args []Node) interface{} {
-	return model.SampleValue(len(args[0].(VectorNode).Eval(timestamp)))
+func countImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
+	return model.SampleValue(len(args[0].(VectorNode).Eval(timestamp, view)))
 }
 
 // === delta(matrix MatrixNode, isCounter ScalarNode) ===
-func deltaImpl(timestamp *time.Time, args []Node) interface{} {
+func deltaImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
-	isCounter := int(args[1].(ScalarNode).Eval(timestamp))
+	isCounter := int(args[1].(ScalarNode).Eval(timestamp, view))
 	resultVector := Vector{}
 
 	// If we treat these metrics as counters, we need to fetch all values
@@ -83,9 +83,9 @@ func deltaImpl(timestamp *time.Time, args []Node) interface{} {
 	// I.e. if a counter resets, we want to ignore that reset.
 	var matrixValue Matrix
 	if isCounter > 0 {
-		matrixValue = matrixNode.Eval(timestamp)
+		matrixValue = matrixNode.Eval(timestamp, view)
 	} else {
-		matrixValue = matrixNode.EvalBoundaries(timestamp)
+		matrixValue = matrixNode.EvalBoundaries(timestamp, view)
 	}
 	for _, samples := range matrixValue {
 		counterCorrection := model.SampleValue(0)
@@ -109,9 +109,9 @@ func deltaImpl(timestamp *time.Time, args []Node) interface{} {
 }
 
 // === rate(node *MatrixNode) ===
-func rateImpl(timestamp *time.Time, args []Node) interface{} {
+func rateImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
 	args = append(args, &ScalarLiteral{value: 1})
-	vector := deltaImpl(timestamp, args).(Vector)
+	vector := deltaImpl(timestamp, view, args).(Vector)
 
 	// TODO: could be other type of MatrixNode in the future (right now, only
 	// MatrixLiteral exists). Find a better way of getting the duration of a
@@ -124,7 +124,7 @@ func rateImpl(timestamp *time.Time, args []Node) interface{} {
 }
 
 // === sampleVectorImpl() ===
-func sampleVectorImpl(timestamp *time.Time, args []Node) interface{} {
+func sampleVectorImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
 	return Vector{
 		&model.Sample{
 			Metric: model.Metric{

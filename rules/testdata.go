@@ -51,10 +51,10 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 	return vector
 }
 
-func storeMatrix(persistence metric.MetricPersistence, matrix ast.Matrix) error {
+func storeMatrix(storage metric.Storage, matrix ast.Matrix) error {
 	for _, sampleSet := range matrix {
 		for _, sample := range sampleSet.Values {
-			err := persistence.AppendSample(model.Sample{
+			err := storage.AppendSample(model.Sample{
 				Metric:    sampleSet.Metric,
 				Value:     sample.Value,
 				Timestamp: sample.Timestamp,

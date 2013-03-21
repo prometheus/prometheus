@@ -72,18 +72,21 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 	// Align the start to step "tick" boundary.
 	end -= end % step
 
-	matrix := ast.EvalVectorRange(
+	matrix, err := ast.EvalVectorRange(
 		exprNode.(ast.VectorNode),
 		time.Unix(end-duration, 0),
 		time.Unix(end, 0),
 		time.Duration(step)*time.Second)
+	if err != nil {
+		return ast.ErrorToJSON(err)
+	}
 
 	sort.Sort(matrix)
 	return ast.TypedValueToJSON(matrix, "matrix")
 }
 
 func (serv MetricsService) Metrics() string {
-	metricNames, err := serv.appState.Persistence.GetAllMetricNames()
+	metricNames, err := serv.appState.Storage.GetAllMetricNames()
 	rb := serv.ResponseBuilder()
 	rb.SetContentType(gorest.Application_Json)
 	if err != nil {
