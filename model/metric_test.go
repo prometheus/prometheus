@@ -21,11 +21,13 @@ import (
 func testMetric(t test.Tester) {
 	var scenarios = []struct {
 		input  map[string]string
-		output Fingerprint
+		hash   uint64
+		rowkey string
 	}{
 		{
 			input:  map[string]string{},
-			output: "d41d8cd98f00b204e9800998ecf8427e",
+			rowkey: "02676020557754725067--0-",
+			hash:   2676020557754725067,
 		},
 		{
 			input: map[string]string{
@@ -33,7 +35,8 @@ func testMetric(t test.Tester) {
 				"occupation":   "robot",
 				"manufacturer": "westinghouse",
 			},
-			output: "18596f03fce001153495d903b8b577c0",
+			rowkey: "04776841610193542734-f-56-o",
+			hash:   4776841610193542734,
 		},
 	}
 
@@ -43,11 +46,17 @@ func testMetric(t test.Tester) {
 			metric[LabelName(key)] = LabelValue(value)
 		}
 
-		expected := scenario.output
-		actual := metric.Fingerprint()
+		expectedRowKey := scenario.rowkey
+		expectedHash := scenario.hash
+		fingerprint := NewFingerprintFromMetric(metric)
+		actualRowKey := fingerprint.ToRowKey()
+		actualHash := fingerprint.Hash()
 
-		if expected != actual {
-			t.Errorf("%d. expected %s, got %s", i, expected, actual)
+		if expectedRowKey != actualRowKey {
+			t.Errorf("%d. expected %s, got %s", i, expectedRowKey, actualRowKey)
+		}
+		if actualHash != expectedHash {
+			t.Errorf("%d. expected %d, got %d", i, expectedHash, actualHash)
 		}
 	}
 }

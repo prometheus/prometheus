@@ -16,7 +16,7 @@ package rules
 import (
 	"fmt"
 	"github.com/prometheus/prometheus/rules/ast"
-	"github.com/prometheus/prometheus/storage/metric/leveldb"
+	"github.com/prometheus/prometheus/storage/metric"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -172,7 +172,7 @@ func TestExpressions(t *testing.T) {
 			t.Errorf("Could not remove temporary directory: %q\n", err)
 		}
 	}()
-	persistence, err := leveldb.NewLevelDBMetricPersistence(temporaryDirectory)
+	persistence, err := metric.NewLevelDBMetricPersistence(temporaryDirectory)
 	if err != nil {
 		t.Errorf("Could not create LevelDB Metric Persistence: %q\n", err)
 		return
