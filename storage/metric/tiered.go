@@ -62,6 +62,11 @@ type Storage interface {
 	Drain()
 	Flush()
 	Close()
+
+	// MetricPersistence proxy methods.
+	GetAllMetricNames() ([]string, error)
+	GetFingerprintsForLabelSet(model.LabelSet) (model.Fingerprints, error)
+	GetMetricForFingerprint(model.Fingerprint) (m *model.Metric, err error)
 }
 
 func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, writeMemoryInterval, memoryTTL time.Duration, root string) Storage {
@@ -519,4 +524,19 @@ func (t *tieredStorage) loadChunkAroundTime(iterator *levigo.Iterator, frontier 
 	}
 
 	return
+}
+
+func (t *tieredStorage) GetAllMetricNames() ([]string, error) {
+	// TODO: handle memory persistence as well.
+	return t.diskStorage.GetAllMetricNames()
+}
+
+func (t *tieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (model.Fingerprints, error) {
+	// TODO: handle memory persistence as well.
+	return t.diskStorage.GetFingerprintsForLabelSet(labelSet)
+}
+
+func (t *tieredStorage) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
+	// TODO: handle memory persistence as well.
+	return t.diskStorage.GetMetricForFingerprint(f)
 }
