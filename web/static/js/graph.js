@@ -77,12 +77,11 @@ Prometheus.Graph.prototype.initialize = function() {
   self.evalStats = graphWrapper.find(".eval_stats");
 
   self.endDate = graphWrapper.find("input[name=end_input]");
-  console.log(self.options)
   if (self.options["end_input"]) {
-    self.endDate.appendDtpicker({"current": self.options["end_input"]})
+    self.endDate.appendDtpicker({"current": self.options["end_input"]});
   } else {
     self.endDate.appendDtpicker();
-    self.endDate.val("")
+    self.endDate.val("");
   }
   self.endDate.change(function() { self.submitQuery() });
 
@@ -194,30 +193,30 @@ Prometheus.Graph.prototype.decreaseRange = function() {
 };
 
 Prometheus.Graph.prototype.getEndDate = function() {
-  var self = this
+  var self = this;
   if (!self.endDate || !self.endDate.val()) {
     return null; 
   }
-  return new Date(self.endDate.val()).getTime()
+  return new Date(self.endDate.val()).getTime();
 };
 
 Prometheus.Graph.prototype.getOrSetEndDate = function() {
-  var self = this
+  var self = this;
   var date = self.getEndDate();
   if (date) {
-    return date
+    return date;
   }
-  date = new Date()
-  self.setEndDate(date)
-  return date
+  date = new Date();
+  self.setEndDate(date);
+  return date;
 }
 
 Prometheus.Graph.prototype.setEndDate = function(date) {
   var self = this;
   dateString = date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate() + ' ' +
-            date.getHours() + ':' + date.getMinutes()
-  self.endDate.val("")
-  self.endDate.appendDtpicker({"current": dateString})
+               date.getHours() + ':' + date.getMinutes();
+  self.endDate.val("");
+  self.endDate.appendDtpicker({"current": dateString});
 };
 
 Prometheus.Graph.prototype.increaseEnd = function() {
@@ -291,7 +290,7 @@ Prometheus.Graph.prototype.parseValue = function(value) {
   if (value == "NaN" || value == "Inf" || value == "-Inf") {
     return 0; // TODO: what should we really do here?
   } else {
-    return parseFloat(value)
+    return parseFloat(value);
   }
 };
 
