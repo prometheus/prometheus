@@ -218,17 +218,18 @@ Prometheus.Graph.prototype.setEndDate = function(date) {
             date.getHours() + ':' + date.getMinutes()
   self.endDate.val("")
   self.endDate.appendDtpicker({"current": dateString})
-  self.submitQuery();
 };
 
 Prometheus.Graph.prototype.increaseEnd = function() {
   var self = this;
   self.setEndDate(new Date(self.getOrSetEndDate() + self.parseRange(self.rangeInput.val()) * 1000))
+  self.submitQuery();
 };
 
 Prometheus.Graph.prototype.decreaseEnd = function() {
   var self = this;
   self.setEndDate(new Date(self.getOrSetEndDate() - self.parseRange(self.rangeInput.val()) * 1000))
+  self.submitQuery();
 };
 
 Prometheus.Graph.prototype.submitQuery = function() {
