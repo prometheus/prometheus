@@ -14,6 +14,7 @@
 package model
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -43,6 +44,53 @@ type LabelValue string
 // of a LabelSet can emit a vector of Metric entities to which the LabelSet may
 // match.
 type LabelSet map[LabelName]LabelValue
+
+func (l LabelSet) String() string {
+	var (
+		buffer     bytes.Buffer
+		labels     LabelNames
+		labelCount int = len(l)
+	)
+
+	for name := range l {
+		labels = append(labels, name)
+	}
+
+	sort.Sort(labels)
+
+	fmt.Fprintf(&buffer, "{")
+	for i := 0; i < labelCount; i++ {
+		var (
+			label = labels[i]
+			value = l[label]
+		)
+
+		switch i {
+		case labelCount - 1:
+			fmt.Fprintf(&buffer, "%s=%s", label, value)
+		default:
+			fmt.Fprintf(&buffer, "%s=%s, ", label, value)
+		}
+	}
+
+	fmt.Fprintf(&buffer, "}")
+
+	return buffer.String()
+}
+
+type LabelNames []LabelName
+
+func (l LabelNames) Len() int {
+	return len(l)
+}
+
+func (l LabelNames) Less(i, j int) bool {
+	return l[i] < l[j]
+}
+
+func (l LabelNames) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
+}
 
 // A Metric is similar to a LabelSet, but the key difference is that a Metric is
 // a singleton and refers to one and only one stream of samples.
