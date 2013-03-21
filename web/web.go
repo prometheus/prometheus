@@ -27,7 +27,7 @@ import (
 // Commandline flags.
 var (
 	listenAddress = flag.String("listenAddress", ":9090", "Address to listen on for web interface.")
-	localAssets   = flag.Bool("localAssets", false, "Read assets/templates from file instead of binary.")
+	useLocalAssets   = flag.Bool("localAssets", false, "Read assets/templates from file instead of binary.")
 )
 
 func StartServing(appState *appstate.ApplicationState) {
@@ -37,7 +37,7 @@ func StartServing(appState *appstate.ApplicationState) {
 	http.Handle("/status", &StatusHandler{appState: appState})
 	http.Handle("/api/", gorest.Handle())
 	http.Handle("/metrics.json", exporter)
-	if *localAssets {
+	if *useLocalAssets {
 		http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	} else {
 		http.Handle("/static/", http.StripPrefix("/static/", new(blob.Handler)))

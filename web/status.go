@@ -42,7 +42,7 @@ func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var t *template.Template
-	if *localAssets {
+	if *useLocalAssets {
 		t, _ = template.ParseFiles("web/templates/status.html")
 	} else {
 		templateFile, err := blob.GetFile(blob.TemplateFiles, "status.html")
