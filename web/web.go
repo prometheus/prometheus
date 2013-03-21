@@ -26,8 +26,8 @@ import (
 
 // Commandline flags.
 var (
-	listenAddress = flag.String("listenAddress", ":9090", "Address to listen on for web interface.")
-	useLocalAssets   = flag.Bool("localAssets", false, "Read assets/templates from file instead of binary.")
+	listenAddress  = flag.String("listenAddress", ":9090", "Address to listen on for web interface.")
+	useLocalAssets = flag.Bool("localAssets", false, "Read assets/templates from file instead of binary.")
 )
 
 func StartServing(appState *appstate.ApplicationState) {

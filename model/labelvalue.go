@@ -11,13 +11,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memory
+package model
 
 import (
-	"github.com/prometheus/prometheus/storage/metric"
-	"testing"
+	"sort"
 )
 
-func TestInterfaceAdherence(t *testing.T) {
-	var _ metric.MetricPersistence = NewMemorySeriesStorage()
+// A LabelValue is an associated value for a LabelName.
+type LabelValue string
+
+type LabelValues []LabelValue
+
+func (l LabelValues) Len() int {
+	return len(l)
+}
+
+func (l LabelValues) Less(i, j int) bool {
+	return sort.StringsAreSorted([]string{string(l[i]), string(l[j])})
+}
+
+func (l LabelValues) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
 }

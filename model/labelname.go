@@ -11,21 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memory
+package model
 
-import (
-	"github.com/prometheus/prometheus/storage/metric"
-	"testing"
-)
+// A LabelName is a key for a LabelSet or Metric.  It has a value associated
+// therewith.
+type LabelName string
 
-var testGetFingerprintsForLabelSetUsesAndForLabelMatching = buildTestPersistence(metric.GetFingerprintsForLabelSetUsesAndForLabelMatchingTests)
+type LabelNames []LabelName
 
-func TestGetFingerprintsForLabelSetUsesAndForLabelMatching(t *testing.T) {
-	testGetFingerprintsForLabelSetUsesAndForLabelMatching(t)
+func (l LabelNames) Len() int {
+	return len(l)
 }
 
-func BenchmarkGetFingerprintsForLabelSetUsesAndLabelMatching(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testGetFingerprintsForLabelSetUsesAndForLabelMatching(b)
-	}
+func (l LabelNames) Less(i, j int) bool {
+	return l[i] < l[j]
+}
+
+func (l LabelNames) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
 }

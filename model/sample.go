@@ -11,21 +11,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package model
 
 import (
-	"github.com/prometheus/prometheus/storage/metric"
-	"testing"
+	"time"
 )
 
-var testGetFingerprintsForLabelSetUsesAndForLabelMatching = buildTestPersistence("get_fingerprints_for_labelset_uses_and_for_label_matching", metric.GetFingerprintsForLabelSetUsesAndForLabelMatchingTests)
-
-func TestGetFingerprintsForLabelSetUsesAndForLabelMatching(t *testing.T) {
-	testGetFingerprintsForLabelSetUsesAndForLabelMatching(t)
+type Sample struct {
+	Metric    Metric
+	Value     SampleValue
+	Timestamp time.Time
 }
 
-func BenchmarkGetFingerprintsForLabelSetUsesAndForLabelMatching(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testGetFingerprintsForLabelSetUsesAndForLabelMatching(b)
+type Samples []Sample
+
+func (s Samples) Len() int {
+	return len(s)
+}
+
+func (s Samples) Less(i, j int) (less bool) {
+	if NewFingerprintFromMetric(s[i].Metric).Less(NewFingerprintFromMetric(s[j].Metric)) {
+		return true
 	}
+
+	if s[i].Timestamp.Before(s[j].Timestamp) {
+		return true
+	}
+
+	return false
+}
+
+func (s Samples) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
 }

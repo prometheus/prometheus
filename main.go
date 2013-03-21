@@ -15,23 +15,26 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/config"
+	//	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/storage/metric/leveldb"
-	"github.com/prometheus/prometheus/storage/metric/memory"
 	"github.com/prometheus/prometheus/web"
 	"log"
 	"os"
 	"os/signal"
+	"time"
 )
 
 // Commandline flags.
 var (
+	_ = fmt.Sprintf("")
+
 	configFile                   = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
 	metricsStoragePath           = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
 	scrapeResultsQueueCapacity   = flag.Int("scrapeResultsQueueCapacity", 4096, "The size of the scrape results queue.")
@@ -47,25 +50,32 @@ func main() {
 		log.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	var persistence metric.MetricPersistence
+	var (
+		persistence metric.MetricPersistence
+		ts          metric.Storage
+	)
+
 	if *memoryArena {
-		persistence = memory.NewMemorySeriesStorage()
+		persistence = metric.NewMemorySeriesStorage()
 	} else {
-		persistence, err = leveldb.NewLevelDBMetricPersistence(*metricsStoragePath)
-		if err != nil {
-			log.Fatalf("Error opening storage: %v", err)
-		}
+		ts = metric.NewTieredStorage(5000, 5000, 100, time.Second*30, time.Second*1, time.Second*20, *metricsStoragePath)
+		go ts.Serve()
+
+		//		persistence, err = metric.NewLevelDBMetricPersistence(*metricsStoragePath)
+		// if err != nil {
+		// 	log.Fatalf("Error opening storage: %v", err)
+		// }
 	}
 
 	go func() {
 		notifier := make(chan os.Signal)
 		signal.Notify(notifier, os.Interrupt)
 		<-notifier
-		persistence.Close()
+		//		persistence.Close()
 		os.Exit(0)
 	}()
 
-	defer persistence.Close()
+	//	defer persistence.Close()
 
 	// Queue depth will need to be exposed
 	scrapeResults := make(chan format.Result, *scrapeResultsQueueCapacity)
@@ -91,16 +101,39 @@ func main() {
 
 	web.StartServing(appState)
 
+	// go func() {
+	// 	ticker := time.Tick(time.Second)
+	// 	for i := 0; i < 120; i++ {
+	// 		<-ticker
+	// 		if i%10 == 0 {
+	// 			fmt.Printf(".")
+	// 		}
+	// 	}
+	// 	fmt.Println()
+	// 	//f := model.NewFingerprintFromRowKey("9776005627788788740-g-131-0")
+	// 	f := model.NewFingerprintFromRowKey("09923616460706181007-g-131-0")
+	// 	v := metric.NewViewRequestBuilder()
+	// 	v.GetMetricAtTime(f, time.Now().Add(-120*time.Second))
+
+	// 	view, err := ts.MakeView(v, time.Minute)
+	// 	fmt.Println(view, err)
+	// }()
+
 	for {
 		select {
 		case scrapeResult := <-scrapeResults:
 			if scrapeResult.Err == nil {
-				persistence.AppendSample(scrapeResult.Sample)
+				//				f := model.NewFingerprintFromMetric(scrapeResult.Sample.Metric)
+				//				fmt.Println(f)
+				//				persistence.AppendSample(scrapeResult.Sample)
+				ts.AppendSample(scrapeResult.Sample)
 			}
+
 		case ruleResult := <-ruleResults:
 			for _, sample := range ruleResult.Samples {
 				// XXX: Wart
-				persistence.AppendSample(*sample)
+				//				persistence.AppendSample(*sample)
+				ts.AppendSample(*sample)
 			}
 		}
 	}

@@ -36,7 +36,7 @@ format:
 	find . -iname '*.go' | egrep -v "generated|\.(l|y)\.go" | xargs -n1 gofmt -w -s=true
 
 advice:
-	go tool vet -v .
+	go tool vet .
 
 search_index:
 	godoc -index -write_index -index_files='search_index'

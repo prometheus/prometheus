@@ -11,29 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package coding
+package metric
 
 import (
-	"code.google.com/p/goprotobuf/proto"
+	"testing"
 )
 
-type ProtocolBufferEncoder struct {
-	message proto.Message
-}
-
-func (p *ProtocolBufferEncoder) Encode() (raw []byte, err error) {
-	raw, err = proto.Marshal(p.message)
-
-	// XXX: Adjust legacy users of this to not check for error.
-	if err != nil {
-		panic(err)
-	}
-
-	return
-}
-
-func NewProtocolBufferEncoder(message proto.Message) *ProtocolBufferEncoder {
-	return &ProtocolBufferEncoder{
-		message: message,
-	}
+func TestInterfaceAdherence(t *testing.T) {
+	var _ MetricPersistence = &LevelDBMetricPersistence{}
+	var _ MetricPersistence = NewMemorySeriesStorage()
 }

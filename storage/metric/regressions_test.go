@@ -16,6 +16,7 @@ package metric
 import (
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
+	"testing"
 	"time"
 )
 
@@ -35,7 +36,7 @@ func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence,
 			m[model.LabelName(k)] = model.LabelValue(v)
 		}
 
-		appendSample(p, model.Sample{
+		testAppendSample(p, model.Sample{
 			Value:     model.SampleValue(0.0),
 			Timestamp: time.Now(),
 			Metric:    m,
@@ -54,5 +55,31 @@ func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence,
 
 	if len(fingerprints) != 1 {
 		t.Errorf("did not get a single metric as is expected, got %s", fingerprints)
+	}
+}
+
+// Test Definitions Below
+
+var testLevelDBGetFingerprintsForLabelSetUsesAndForLabelMatching = buildLevelDBTestPersistence("get_fingerprints_for_labelset_uses_and_for_label_matching", GetFingerprintsForLabelSetUsesAndForLabelMatchingTests)
+
+func TestLevelDBGetFingerprintsForLabelSetUsesAndForLabelMatching(t *testing.T) {
+	testLevelDBGetFingerprintsForLabelSetUsesAndForLabelMatching(t)
+}
+
+func BenchmarkLevelDBGetFingerprintsForLabelSetUsesAndForLabelMatching(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLevelDBGetFingerprintsForLabelSetUsesAndForLabelMatching(b)
+	}
+}
+
+var testMemoryGetFingerprintsForLabelSetUsesAndForLabelMatching = buildMemoryTestPersistence(GetFingerprintsForLabelSetUsesAndForLabelMatchingTests)
+
+func TestMemoryGetFingerprintsForLabelSetUsesAndForLabelMatching(t *testing.T) {
+	testMemoryGetFingerprintsForLabelSetUsesAndForLabelMatching(t)
+}
+
+func BenchmarkMemoryGetFingerprintsForLabelSetUsesAndLabelMatching(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMemoryGetFingerprintsForLabelSetUsesAndForLabelMatching(b)
 	}
 }

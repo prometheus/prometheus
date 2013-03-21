@@ -41,7 +41,7 @@ preparation-stamp: build-dependencies
 
 build-dependencies: build-dependencies-stamp
 
-build-dependencies-stamp: bison cc mercurial protoc goprotobuf gorest go instrumentation leveldb levigo skiplist vim-common
+build-dependencies-stamp: bison cc mercurial protoc goprotobuf gorest goskiplist go instrumentation leveldb levigo
 	touch $@
 
 overlay: overlay-stamp

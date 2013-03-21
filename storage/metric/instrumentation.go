@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package metric
 
 import (
 	"github.com/prometheus/client_golang"
@@ -30,6 +30,9 @@ const (
 	appendLabelNameFingerprint  = "append_label_name_fingerprint"
 	appendLabelPairFingerprint  = "append_label_pair_fingerprint"
 	appendSample                = "append_sample"
+	appendSamples               = "append_samples"
+	findUnindexedMetrics        = "find_unindexed_metrics"
+	flushMemory                 = "flush_memory"
 	getBoundaryValues           = "get_boundary_values"
 	getFingerprintsForLabelName = "get_fingerprints_for_label_name"
 	getFingerprintsForLabelSet  = "get_fingerprints_for_labelset"
@@ -40,9 +43,17 @@ const (
 	hasIndexMetric              = "has_index_metric"
 	hasLabelName                = "has_label_name"
 	hasLabelPair                = "has_label_pair"
+	indexFingerprints           = "index_fingerprints"
+	indexLabelNames             = "index_label_names"
+	indexLabelPairs             = "index_label_pairs"
 	indexMetric                 = "index_metric"
+	indexMetrics                = "index_metrics"
+	rebuildDiskFrontier         = "rebuild_disk_frontier"
+	refreshHighWatermarks       = "refresh_high_watermarks"
+	renderView                  = "render_view"
 	setLabelNameFingerprints    = "set_label_name_fingerprints"
 	setLabelPairFingerprints    = "set_label_pair_fingerprints"
+	writeMemory                 = "write_memory"
 )
 
 var (
@@ -52,21 +63,27 @@ var (
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
 	}
 
-	storageOperations = metrics.NewCounter()
-	storageLatency    = metrics.NewHistogram(diskLatencyHistogram)
+	storageOperations         = metrics.NewCounter()
+	storageOperationDurations = metrics.NewCounter()
+	storageLatency            = metrics.NewHistogram(diskLatencyHistogram)
+	queueSizes                = metrics.NewGauge()
 )
 
-func recordOutcome(counter metrics.Counter, latency metrics.Histogram, duration time.Duration, err error, success, failure map[string]string) {
+func recordOutcome(duration time.Duration, err error, success, failure map[string]string) {
 	labels := success
 	if err != nil {
 		labels = failure
 	}
 
-	counter.Increment(labels)
-	latency.Add(labels, float64(duration/time.Microsecond))
+	storageOperations.Increment(labels)
+	asFloat := float64(duration / time.Microsecond)
+	storageLatency.Add(labels, asFloat)
+	storageOperationDurations.IncrementBy(labels, asFloat)
 }
 
 func init() {
 	registry.Register("prometheus_metric_disk_operations_total", "Total number of metric-related disk operations.", registry.NilLabels, storageOperations)
 	registry.Register("prometheus_metric_disk_latency_microseconds", "Latency for metric disk operations in microseconds.", registry.NilLabels, storageLatency)
+	registry.Register("prometheus_storage_operation_time_total_microseconds", "The total time spent performing a given storage operation.", registry.NilLabels, storageOperationDurations)
+	registry.Register("prometheus_storage_queue_sizes_total", "The various sizes and capacities of the storage queues.", registry.NilLabels, queueSizes)
 }

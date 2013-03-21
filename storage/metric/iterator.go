@@ -11,17 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package metric
 
-import (
-	index "github.com/prometheus/prometheus/storage/raw/index/leveldb"
-	storage "github.com/prometheus/prometheus/storage/raw/leveldb"
-)
+type Iterator interface {
+	Seek(key interface{}) (ok bool)
+	Next() (ok bool)
+	Previous() (ok bool)
+	Key() interface{}
+	Value() interface{}
+}
 
-type LevelDBMetricPersistence struct {
-	fingerprintToMetrics    *storage.LevelDBPersistence
-	metricSamples           *storage.LevelDBPersistence
-	labelNameToFingerprints *storage.LevelDBPersistence
-	labelSetToFingerprints  *storage.LevelDBPersistence
-	metricMembershipIndex   *index.LevelDBMembershipIndex
+type IteratorManager interface {
+	Iterator() Iterator
 }

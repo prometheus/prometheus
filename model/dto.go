@@ -15,8 +15,6 @@ package model
 
 import (
 	"code.google.com/p/goprotobuf/proto"
-	"crypto/md5"
-	"encoding/hex"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"sort"
 	"time"
@@ -49,11 +47,11 @@ func SampleToMetricDTO(s *Sample) *dto.Metric {
 	}
 }
 
-func MetricToDTO(m *Metric) *dto.Metric {
-	metricLength := len(*m)
+func MetricToDTO(m Metric) *dto.Metric {
+	metricLength := len(m)
 	labelNames := make([]string, 0, metricLength)
 
-	for labelName := range *m {
+	for labelName := range m {
 		labelNames = append(labelNames, string(labelName))
 	}
 
@@ -63,7 +61,7 @@ func MetricToDTO(m *Metric) *dto.Metric {
 
 	for _, labelName := range labelNames {
 		l := LabelName(labelName)
-		labelValue := (*m)[l]
+		labelValue := m[l]
 		labelPair := &dto.LabelPair{
 			Name:  proto.String(string(labelName)),
 			Value: proto.String(string(labelValue)),
@@ -75,12 +73,6 @@ func MetricToDTO(m *Metric) *dto.Metric {
 	return &dto.Metric{
 		LabelPair: labelSets,
 	}
-}
-
-func BytesToFingerprint(v []byte) Fingerprint {
-	hash := md5.New()
-	hash.Write(v)
-	return Fingerprint(hex.EncodeToString(hash.Sum([]byte{})))
 }
 
 func LabelSetToDTOs(s *LabelSet) []*dto.LabelPair {
@@ -121,25 +113,19 @@ func LabelNameToDTO(l *LabelName) *dto.LabelName {
 	}
 }
 
-func FingerprintToDTO(f *Fingerprint) *dto.Fingerprint {
+func FingerprintToDTO(f Fingerprint) *dto.Fingerprint {
 	return &dto.Fingerprint{
-		Signature: proto.String(string(*f)),
+		Signature: proto.String(f.ToRowKey()),
 	}
 }
 
-func SampleFromDTO(m *Metric, t *time.Time, v *dto.SampleValue) *Sample {
+func SampleFromDTO(m *Metric, t *time.Time, v *dto.SampleValueSeries) *Sample {
 	s := &Sample{
-		Value:     SampleValue(*v.Value),
+		Value:     SampleValue(*v.Value[0].Value),
 		Timestamp: *t,
 	}
 
 	s.Metric = *m
 
 	return s
-}
-
-func (f Fingerprint) ToDTO() *dto.Fingerprint {
-	return &dto.Fingerprint{
-		Signature: proto.String(string(f)),
-	}
 }
