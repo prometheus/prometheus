@@ -40,11 +40,18 @@ func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Status:      "TODO: add status information here",
 		TargetPools: h.appState.TargetManager.Pools(),
 	}
-	templateFile, err := blob.GetFile(blob.TemplateFiles, "status.html")
-	if err != nil {
-		log.Fatalf("Could not read template: %s", err)
+
+	var t *template.Template
+	if *useLocalAssets {
+		t, _ = template.ParseFiles("web/templates/status.html")
+	} else {
+		templateFile, err := blob.GetFile(blob.TemplateFiles, "status.html")
+		if err != nil {
+			log.Fatalf("Could not read template: %s", err)
+		}
+
+		t, _ = template.New("status").Parse(string(templateFile))
 	}
 
-	t, _ := template.New("status").Parse(string(templateFile))
 	t.Execute(w, status)
 }
