@@ -227,6 +227,7 @@ func (g *getValuesAlongRangeOp) ExtractSamples(in []model.SamplePair) (out []mod
 		return in[i].Timestamp.After(g.through)
 	})
 	if lastIdx == firstIdx {
+		g.from = g.through.Add(1)
 		return
 	}
 
