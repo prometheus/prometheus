@@ -6,12 +6,18 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 )
 
 const (
 	TemplateFiles = "templates"
 	StaticFiles   = "static"
 )
+
+var mimeMap = map[string]string{
+	"css": "text/css",
+	"js":  "text/javascript",
+}
 
 func GetFile(bucket string, name string) ([]byte, error) {
 	reader := bytes.NewReader(files[bucket][name])
@@ -43,6 +49,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", http.DetectContentType(file))
+	contentType := http.DetectContentType(file)
+	if strings.Contains(contentType, "text/plain") || strings.Contains(contentType, "application/octet-stream") {
+		parts := strings.Split(name, ".")
+		contentType = mimeMap[parts[len(parts)-1]]
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Write(file)
 }
