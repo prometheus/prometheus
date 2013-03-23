@@ -19,15 +19,15 @@ test: build
 	go test ./...
 
 build:
-	./utility/embed-static.sh web/static web/templates | gofmt > web/blob/files.go
 	$(MAKE) -C model
+	$(MAKE) -C web
 	go build ./...
 	go build -o prometheus.build
 
 clean:
-	rm -rf web/static/blob/files.go
-	rm -rf $(TEST_ARTIFACTS)
 	$(MAKE) -C model clean
+	$(MAKE) -C web clean
+	rm -rf $(TEST_ARTIFACTS)
 	-find . -type f -iname '*~' -exec rm '{}' ';'
 	-find . -type f -iname '*#' -exec rm '{}' ';'
 	-find . -type f -iname '.#*' -exec rm '{}' ';'
@@ -45,4 +45,3 @@ documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
 .PHONY: advice build clean documentation format search_index test
-
