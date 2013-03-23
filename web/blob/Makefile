@@ -11,20 +11,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-TEST_ARTIFACTS = data.proto-stamp
+all:
 
-export PATH := $(PATH):/Users/mtp/Development/go/bin
-
-all: data.proto
-
-data.proto: data.proto-stamp
-
-data.proto-stamp:
-	protoc --go_out=generated/ data.proto
-	touch $@
+files.go:
+	../../../embed-static.sh ../static ../templates | gofmt $@
 
 clean:
-	rm -rf generated/*
-	-rm -f $(TEST_ARTIFACTS)
+	-rm  files.go
 
-.PHONY: data.proto
+.PHONY: clean

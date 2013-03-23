@@ -11,20 +11,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-TEST_ARTIFACTS = data.proto-stamp
+all: blob
 
-export PATH := $(PATH):/Users/mtp/Development/go/bin
-
-all: data.proto
-
-data.proto: data.proto-stamp
-
-data.proto-stamp:
-	protoc --go_out=generated/ data.proto
-	touch $@
+blob:
+	$(MAKE) -C blob
 
 clean:
-	rm -rf generated/*
-	-rm -f $(TEST_ARTIFACTS)
+	$(MAKE) -C blob clean
 
-.PHONY: data.proto
+.PHONY: clean
