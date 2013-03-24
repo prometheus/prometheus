@@ -20,7 +20,3 @@ type Iterator interface {
 	Key() interface{}
 	Value() interface{}
 }
-
-type IteratorManager interface {
-	Iterator() Iterator
-}

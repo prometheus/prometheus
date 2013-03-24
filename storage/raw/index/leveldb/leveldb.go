@@ -16,6 +16,7 @@ package leveldb
 import (
 	"github.com/prometheus/prometheus/coding"
 	dto "github.com/prometheus/prometheus/model/generated"
+	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
@@ -57,6 +58,6 @@ func NewLevelDBMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFi
 	return
 }
 
-func (l *LevelDBMembershipIndex) Commit(batch leveldb.Batch) error {
+func (l *LevelDBMembershipIndex) Commit(batch raw.Batch) error {
 	return l.persistence.Commit(batch)
 }
