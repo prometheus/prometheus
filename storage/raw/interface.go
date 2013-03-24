@@ -16,6 +16,7 @@ package raw
 import (
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
+	"io"
 )
 
 type Pair struct {
@@ -25,13 +26,20 @@ type Pair struct {
 
 type EachFunc func(pair *Pair)
 
+// Persistence models a key-value store for bytes that supports various
+// additional operations.
 type Persistence interface {
-	Has(key coding.Encoder) (bool, error)
-	Get(key coding.Encoder) ([]byte, error)
-	Drop(key coding.Encoder) error
-	Put(key, value coding.Encoder) error
-	Close() error
+	io.Closer
 
+	// Has informs the user whether a given key exists in the database.
+	Has(key coding.Encoder) (bool, error)
+	// Get retrieves the key from the database if it exists or returns nil if
+	// it is absent.
+	Get(key coding.Encoder) ([]byte, error)
+	// Drop removes the key from the database.
+	Drop(key coding.Encoder) error
+	// Put sets the key to a given value.
+	Put(key, value coding.Encoder) error
 	// ForEach is responsible for iterating through all records in the database
 	// until one of the following conditions are met:
 	//
@@ -41,7 +49,20 @@ type Persistence interface {
 	//
 	// Decoding errors for an entity cause that entity to be skipped.
 	ForEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error)
-
+	// Commit applies the Batch operations to the database.
+	Commit(Batch) error
 	// Pending removal.
 	GetAll() ([]Pair, error)
+}
+
+// Batch models a pool of mutations for the database that can be committed
+// en masse.  The interface implies no protocol around the atomicity of
+// effectuation.
+type Batch interface {
+	io.Closer
+
+	// Put follows the same protocol as Persistence.Put.
+	Put(key, value coding.Encoder)
+	// Drop follows the same protocol as Persistence.Drop.
+	Drop(key coding.Encoder)
 }
