@@ -172,8 +172,17 @@ func (l *LevelDBPersistence) Put(key, value coding.Encoder) (err error) {
 	return
 }
 
-func (l *LevelDBPersistence) Commit(b Batch) (err error) {
-	return l.storage.Write(l.writeOptions, b.(batch).batch)
+func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
+	// XXX: This is a wart to clean up later.  Ideally, after doing extensive
+	//      tests, we could create a Batch struct that journals pending
+	//      operations which the given Persistence implementation could convert
+	//      to its specific commit requirements.
+	batch, ok := b.(batch)
+	if !ok {
+		panic("leveldb.batch expected")
+	}
+
+	return l.storage.Write(l.writeOptions, batch.batch)
 }
 
 func (l *LevelDBPersistence) GetAll() (pairs []raw.Pair, err error) {
@@ -229,6 +238,8 @@ func (l *LevelDBPersistence) GetIterator() (i *levigo.Iterator, c io.Closer, err
 	readOptions.SetSnapshot(snapshot)
 	i = l.storage.NewIterator(readOptions)
 
+	// TODO: Kill the return of an additional io.Closer and just use a decorated
+	// iterator interface.
 	c = &iteratorCloser{
 		iterator:    i,
 		readOptions: readOptions,
@@ -278,48 +289,4 @@ func (l *LevelDBPersistence) ForEach(decoder storage.RecordDecoder, filter stora
 	}
 	scannedEntireCorpus = true
 	return
-}
-
-// Batch encapsulates a list of mutations to occur to the datastore.  It must
-// be closed once done.
-type Batch interface {
-	Delete(coding.Encoder)
-	Put(coding.Encoder, coding.Encoder)
-	Close()
-}
-
-func NewBatch() Batch {
-	return batch{
-		batch: levigo.NewWriteBatch(),
-	}
-}
-
-type batch struct {
-	batch *levigo.WriteBatch
-}
-
-func (b batch) Delete(key coding.Encoder) {
-	keyEncoded, err := key.Encode()
-	if err != nil {
-		panic(err)
-	}
-
-	b.batch.Delete(keyEncoded)
-}
-
-func (b batch) Put(key, value coding.Encoder) {
-	keyEncoded, err := key.Encode()
-	if err != nil {
-		panic(err)
-	}
-	valueEncoded, err := value.Encode()
-	if err != nil {
-		panic(err)
-	}
-
-	b.batch.Put(keyEncoded, valueEncoded)
-}
-
-func (b batch) Close() {
-	b.batch.Close()
 }
