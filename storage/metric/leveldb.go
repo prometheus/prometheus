@@ -683,7 +683,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 	return
 }
 
-func extractSampleKey(i iterator) (k *dto.SampleKey, err error) {
+func extractSampleKey(i leveldb.Iterator) (k *dto.SampleKey, err error) {
 	if i == nil {
 		panic("nil iterator")
 	}
@@ -698,7 +698,7 @@ func extractSampleKey(i iterator) (k *dto.SampleKey, err error) {
 	return
 }
 
-func extractSampleValues(i iterator) (v *dto.SampleValueSeries, err error) {
+func extractSampleValues(i leveldb.Iterator) (v *dto.SampleValueSeries, err error) {
 	if i == nil {
 		panic("nil iterator")
 	}
@@ -937,18 +937,6 @@ func interpolate(x1, x2 time.Time, y1, y2 float32, e time.Time) float32 {
 	return y1 + (offset * dDt)
 }
 
-type iterator interface {
-	Close()
-	Key() []byte
-	Next()
-	Prev()
-	Seek([]byte)
-	SeekToFirst()
-	SeekToLast()
-	Valid() bool
-	Value() []byte
-}
-
 func (l *LevelDBMetricPersistence) GetValueAtTime(fp model.Fingerprint, t time.Time, s StalenessPolicy) (sample *model.Sample, err error) {
 	begin := time.Now()
 
@@ -975,15 +963,10 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(fp model.Fingerprint, t time.T
 		return
 	}
 
-	iterator, closer, err := l.metricSamples.GetIterator()
-	if err != nil {
-		return
-	}
+	iterator := l.metricSamples.NewIterator(true)
+	defer iterator.Close()
 
-	defer closer.Close()
-
-	iterator.Seek(e)
-	if !iterator.Valid() {
+	if !iterator.Seek(e) {
 		/*
 		 * Two cases for this:
 		 * 1.) Corruption in LevelDB.
@@ -994,13 +977,10 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(fp model.Fingerprint, t time.T
 		 * database is sufficient for our purposes.  This is, in all reality, a
 		 * corner case but one that could bring down the system.
 		 */
-		iterator, closer, err = l.metricSamples.GetIterator()
-		if err != nil {
-			return
-		}
-		defer closer.Close()
-		iterator.SeekToLast()
-		if !iterator.Valid() {
+		iterator = l.metricSamples.NewIterator(true)
+		defer iterator.Close()
+
+		if !iterator.SeekToLast() {
 			/*
 			 * For whatever reason, the LevelDB cannot be recovered.
 			 */
@@ -1048,8 +1028,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(fp model.Fingerprint, t time.T
 
 	firstTime := indexable.DecodeTime(firstKey.Timestamp)
 	if t.Before(firstTime) || peekAhead {
-		iterator.Prev()
-		if !iterator.Valid() {
+		if !iterator.Previous() {
 			/*
 			 * Two cases for this:
 			 * 1.) Corruption in LevelDB.
@@ -1106,8 +1085,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(fp model.Fingerprint, t time.T
 		return
 	}
 
-	iterator.Next()
-	if !iterator.Valid() {
+	if !iterator.Next() {
 		/*
 		 * Two cases for this:
 		 * 1.) Corruption in LevelDB.
@@ -1188,17 +1166,12 @@ func (l *LevelDBMetricPersistence) GetRangeValues(fp model.Fingerprint, i model.
 		return
 	}
 
-	iterator, closer, err := l.metricSamples.GetIterator()
-	if err != nil {
-		return
-	}
-	defer closer.Close()
-
-	iterator.Seek(e)
+	iterator := l.metricSamples.NewIterator(true)
+	defer iterator.Close()
 
 	predicate := keyIsOlderThan(i.NewestInclusive)
 
-	for ; iterator.Valid(); iterator.Next() {
+	for valid := iterator.Seek(e); valid; valid = iterator.Next() {
 		retrievedKey := &dto.SampleKey{}
 
 		retrievedKey, err = extractSampleKey(iterator)

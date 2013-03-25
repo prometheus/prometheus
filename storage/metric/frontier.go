@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"time"
 )
 
@@ -42,9 +43,9 @@ func (f *diskFrontier) ContainsFingerprint(fingerprint model.Fingerprint) bool {
 	return !(fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint))
 }
 
-func newDiskFrontier(i iterator) (d *diskFrontier, err error) {
-	i.SeekToLast()
-	if !i.Valid() || i.Key() == nil {
+func newDiskFrontier(i leveldb.Iterator) (d *diskFrontier, err error) {
+
+	if !i.SeekToLast() || i.Key() == nil {
 		return
 	}
 	lastKey, err := extractSampleKey(i)
@@ -85,7 +86,7 @@ func (f seriesFrontier) String() string {
 // newSeriesFrontier furnishes a populated diskFrontier for a given
 // fingerprint.  A nil diskFrontier will be returned if the series cannot
 // be found in the store.
-func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i iterator) (s *seriesFrontier, err error) {
+func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) (s *seriesFrontier, err error) {
 	var (
 		lowerSeek = firstSupertime
 		upperSeek = lastSupertime
@@ -129,7 +130,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i iterator) (s *seri
 	//
 	//
 	if !retrievedFingerprint.Equal(f) {
-		i.Prev()
+		i.Previous()
 
 		retrievedKey, err = extractSampleKey(i)
 		if err != nil {
