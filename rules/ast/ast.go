@@ -257,16 +257,18 @@ func labelsToKey(labels model.Metric) string {
 func EvalVectorInstant(node VectorNode, timestamp time.Time) (vector Vector) {
 	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp)
 	if err != nil {
-		// TODO: propagate errors.
 		return
 	}
 	return node.Eval(&timestamp, viewAdapter)
 }
 
 func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration) (matrix Matrix, err error) {
+	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
+	// null in JSON.
+	matrix = Matrix{}
+
 	viewAdapter, err := viewAdapterForRangeQuery(node, start, end, interval)
 	if err != nil {
-		// TODO: propagate errors.
 		return
 	}
 	// TODO implement watchdog timer for long-running queries.
