@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
-	"io"
 )
 
 var (
@@ -38,13 +37,94 @@ type LevelDBPersistence struct {
 	writeOptions *levigo.WriteOptions
 }
 
-// LevelDB iterators have a number of resources that need to be closed.
-// iteratorCloser encapsulates the various ones.
-type iteratorCloser struct {
-	iterator    *levigo.Iterator
+// levigoIterator wraps the LevelDB resources in a convenient manner for uniform
+// resource access and closing through the raw.Iterator protocol.
+type levigoIterator struct {
+	// iterator is the receiver of most proxied operation calls.
+	iterator *levigo.Iterator
+	// readOptions is only set if the iterator is a snapshot of an underlying
+	// database.  This signals that it needs to be explicitly reaped upon the
+	// end of this iterator's life.
 	readOptions *levigo.ReadOptions
-	snapshot    *levigo.Snapshot
-	storage     *levigo.DB
+	// snapshot is only set if the iterator is a snapshot of an underlying
+	// database.  This signals that it needs to be explicitly reaped upon the
+	// end of this this iterator's life.
+	snapshot *levigo.Snapshot
+	// storage is only set if the iterator is a snapshot of an underlying
+	// database.  This signals that it needs to be explicitly reaped upon the
+	// end of this this iterator's life.  The snapshot must be freed in the
+	// context of an actual database.
+	storage *levigo.DB
+	// closed indicates whether the iterator has been closed before.
+	closed bool
+}
+
+func (i *levigoIterator) Close() (err error) {
+	if i.closed {
+		return
+	}
+
+	if i.iterator != nil {
+		i.iterator.Close()
+	}
+	if i.readOptions != nil {
+		i.readOptions.Close()
+	}
+	if i.snapshot != nil {
+		i.storage.ReleaseSnapshot(i.snapshot)
+	}
+
+	// Explicitly dereference the pointers to prevent cycles, however unlikely.
+	i.iterator = nil
+	i.readOptions = nil
+	i.snapshot = nil
+	i.storage = nil
+
+	i.closed = true
+
+	return
+}
+
+func (i levigoIterator) Seek(key []byte) (ok bool) {
+	i.iterator.Seek(key)
+
+	return i.iterator.Valid()
+}
+
+func (i levigoIterator) SeekToFirst() (ok bool) {
+	i.iterator.SeekToFirst()
+
+	return i.iterator.Valid()
+}
+
+func (i levigoIterator) SeekToLast() (ok bool) {
+	i.iterator.SeekToLast()
+
+	return i.iterator.Valid()
+}
+
+func (i levigoIterator) Next() (ok bool) {
+	i.iterator.Next()
+
+	return i.iterator.Valid()
+}
+
+func (i levigoIterator) Previous() (ok bool) {
+	i.iterator.Prev()
+
+	return i.iterator.Valid()
+}
+
+func (i levigoIterator) Key() (key []byte) {
+	return i.iterator.Key()
+}
+
+func (i levigoIterator) Value() (value []byte) {
+	return i.iterator.Value()
+}
+
+func (i levigoIterator) GetError() (err error) {
+	return i.iterator.GetError()
 }
 
 func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (p *LevelDBPersistence, err error) {
@@ -68,8 +148,11 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 		return
 	}
 
-	readOptions := levigo.NewReadOptions()
-	writeOptions := levigo.NewWriteOptions()
+	var (
+		readOptions  = levigo.NewReadOptions()
+		writeOptions = levigo.NewWriteOptions()
+	)
+
 	writeOptions.SetSync(*leveldbFlushOnMutate)
 	p = &LevelDBPersistence{
 		cache:        cache,
@@ -185,56 +268,53 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 	return l.storage.Write(l.writeOptions, batch.batch)
 }
 
-func (i *iteratorCloser) Close() (err error) {
-	defer func() {
-		if i.storage != nil {
-			if i.snapshot != nil {
-				i.storage.ReleaseSnapshot(i.snapshot)
-			}
-		}
-	}()
+// NewIterator creates a new levigoIterator, which follows the Iterator
+// interface.
+//
+// Important notes:
+//
+// For each of the iterator methods that have a return signature of (ok bool),
+// if ok == false, the iterator may not be used any further and must be closed.
+// Further work with the database requires the creation of a new iterator.  This
+// is due to LevelDB and Levigo design.  Please refer to Jeff and Sanjay's notes
+// in the LevelDB documentation for this behavior's rationale.
+//
+// The returned iterator must explicitly be closed; otherwise non-managed memory
+// will be leaked.
+//
+// The iterator is optionally snapshotable.
+func (l *LevelDBPersistence) NewIterator(snapshotted bool) levigoIterator {
+	var (
+		snapshot    *levigo.Snapshot
+		readOptions *levigo.ReadOptions
+		iterator    *levigo.Iterator
+	)
 
-	defer func() {
-		if i.iterator != nil {
-			i.iterator.Close()
-		}
-	}()
+	if snapshotted {
+		snapshot = l.storage.NewSnapshot()
+		readOptions = levigo.NewReadOptions()
+		readOptions.SetSnapshot(snapshot)
+		iterator = l.storage.NewIterator(readOptions)
+	} else {
+		iterator = l.storage.NewIterator(l.readOptions)
+	}
 
-	defer func() {
-		if i.readOptions != nil {
-			i.readOptions.Close()
-		}
-	}()
-
-	return
-}
-
-func (l *LevelDBPersistence) GetIterator() (i *levigo.Iterator, c io.Closer, err error) {
-	snapshot := l.storage.NewSnapshot()
-	readOptions := levigo.NewReadOptions()
-	readOptions.SetSnapshot(snapshot)
-	i = l.storage.NewIterator(readOptions)
-
-	// TODO: Kill the return of an additional io.Closer and just use a decorated
-	// iterator interface.
-	c = &iteratorCloser{
-		iterator:    i,
+	return levigoIterator{
+		iterator:    iterator,
 		readOptions: readOptions,
 		snapshot:    snapshot,
 		storage:     l.storage,
 	}
-
-	return
 }
 
 func (l *LevelDBPersistence) ForEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error) {
-	iterator, closer, err := l.GetIterator()
-	if err != nil {
-		return
-	}
-	defer closer.Close()
+	var (
+		iterator = l.NewIterator(true)
+		valid    bool
+	)
+	defer iterator.Close()
 
-	for iterator.SeekToFirst(); iterator.Valid(); iterator.Next() {
+	for valid = iterator.SeekToFirst(); valid; valid = iterator.Next() {
 		err = iterator.GetError()
 		if err != nil {
 			return
