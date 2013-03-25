@@ -125,9 +125,12 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
       url: "/api/metrics",
       dataType: "json",
       success: function(json, textStatus) {
+        var availableMetrics = []
         for (var i = 0; i < json.length; i++) {
           self.insertMetric[0].options.add(new Option(json[i], json[i]));
+          availableMetrics.push(json[i])
         }
+        self.expr.autocomplete({source: availableMetrics})
       },
       error: function() {
         alert("Error loading available metrics!");
