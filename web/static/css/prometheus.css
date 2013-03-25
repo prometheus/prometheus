@@ -4,6 +4,8 @@ body {
   line-height: 20px;
   color: #333333;
   background-color: #eee;
+  margin: 0px;
+  padding: 0px;
 }
 
 input:not([type=submit]):not([type=file]):not([type=button]) {
@@ -24,6 +26,15 @@ input:not([type=submit]):not([type=file]):not([type=button]) {
           border-radius: 4px;
 }
 
+.grouping_box .head, .eval_stats {
+  display: inline-block;
+  vertical-align: top;
+}
+
+.grouping_box .head .opts {
+  float: right;
+}
+
 .graph {
   min-height: 400px;
   overflow-x: hidden;
@@ -31,14 +42,20 @@ input:not([type=submit]):not([type=file]):not([type=button]) {
 
 div.legend {
   display: block;
+  overflow: scroll;
 }
 
-form {
-  display: inline-block;
+input {
+  margin: 0;
+  border: 1px solid black;
 }
 
-.eval_stats {
-  display: inline;
-  vertical-align: top;
+select {
+  z-index: 10;
+  width: 150px;
 }
 
+input[name=end_input], input[name=range_input] {
+  margin-left: -4px;
+  margin-right: -4px;
+}

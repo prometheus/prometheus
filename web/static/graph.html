@@ -20,6 +20,8 @@
     <script src="http://code.shutterstock.com/rickshaw/rickshaw.min.js"></script>
 
     <script src="vendor/js/handlebars.js"></script>
+    <script src="vendor/js/jquery.selection.js"></script>
+    <script src="vendor/js/jquery.hotkeys.js"></script>
 
     <script src="js/graph.js"></script>
 
@@ -27,38 +29,37 @@
       <div id="graph_wrapper{{id}}">
         <div class="grouping_box">
           <form action="/api/query_range" method="GET" class="query_form">
-            <label for="expr{{id}}">Expression:</label>
-            <input type="text" name="expr" id="expr{{id}}" size="80" value="{{expr}}">
-            <select name="insert_metric">
-                <option value="">- Insert Metric -</option>
-            </select>
-
-            <br>
-
-            <label for="range_input{{id}}">Range:</label>
-            <input type="button" value="-" name="dec_range">
-            <input type="text" name="range_input" id="range_input{{id}}" size="5" value="{{range_input}}">
-            <input type="hidden" name="range">
-            <input type="button" value="+" name="inc_range">
-
-            <label for="end{{id}}">End:</label>
-            <input type="button" value="<<" name="dec_end">
-            <input type="text" name="end_input" id="end{{id}}" value="{{end}}">
-            <input type="button" value=">>" name="inc_end">
-            <input type="hidden" name="end">
-
-            <label for="step_input{{id}}">Resolution (s):</label>
-            <input type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="4">
-            <input type="hidden" name="step">
-
-            <input type="checkbox" name="stacked" id="stacked{{id}}" {{stacked_checked}}>
-            <label for="stacked{{id}}">Stacked</label>
-
-            <input type="submit" value="Graph" name="submit">
-
+            <div class="head">
+              <div class="expr">
+                <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" size="80" value="{{expr}}">
+                <select name="insert_metric">
+                    <option value="">- Insert Metric -</option>
+                </select>
+              </div>
+              <div class="config">
+                <label for="range_input{{id}}">Range:</label>
+                <input type="button" value="-" name="dec_range">
+                <input type="text" name="range_input" id="range_input{{id}}" size="2" value="{{range_input}}">
+                <input type="hidden" name="range">
+                <input type="button" value="+" name="inc_range">
+    
+                <input type="button" value="&larr;" name="dec_end">
+                <input placeholder="Until" type="text" name="end_input" id="end{{id}}" size="16" value="{{end}}">
+                <input type="button" value="&rarr;" name="inc_end">
+                <input type="hidden" name="end">
+    
+                <input placeholder="Resolution (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="10">
+                <input type="hidden" name="step">
+                <span class="opts">
+                  <input type="checkbox" name="stacked" id="stacked{{id}}" {{stacked_checked}}>
+                  <label for="stacked{{id}}">Stacked</label>
+                  <input type="submit" value="Graph" name="submit">
+                </span>
+              </div>
+            </div>
+            <div class="eval_stats"></div>
           </form>
           <img src="img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
-          <div class="eval_stats"></div>
         </div>
         <div class="grouping_box">
           <div class="graph_container">
