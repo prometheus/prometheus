@@ -348,8 +348,20 @@ func (s memorySeriesStorage) Close() (err error) {
 	return
 }
 
-func (s memorySeriesStorage) GetAllMetricNames() ([]string, error) {
-	panic("not implemented")
+func (s memorySeriesStorage) GetAllMetricNames() (metrics []string, err error) {
+	metricSet := map[string]bool{}
+	for _, series := range s.fingerprintToSeries {
+		if metricName, ok := series.metric["name"]; !ok {
+			err = fmt.Errorf("Found timeseries without metric name label: %v", series.metric)
+		} else {
+			metricSet[string(metricName)] = true
+		}
+	}
+	for metricName := range metricSet {
+		metrics = append(metrics, metricName)
+	}
+	sort.Strings(metrics)
+	return
 }
 
 func (s memorySeriesStorage) ForEachSample(builder IteratorsForFingerprintBuilder) (err error) {
