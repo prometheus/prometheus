@@ -19,13 +19,6 @@ import (
 	"io"
 )
 
-type Pair struct {
-	Left  []byte
-	Right []byte
-}
-
-type EachFunc func(pair *Pair)
-
 // Persistence models a key-value store for bytes that supports various
 // additional operations.
 type Persistence interface {
@@ -51,8 +44,6 @@ type Persistence interface {
 	ForEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error)
 	// Commit applies the Batch operations to the database.
 	Commit(Batch) error
-	// Pending removal.
-	GetAll() ([]Pair, error)
 }
 
 // Batch models a pool of mutations for the database that can be committed
