@@ -15,12 +15,12 @@ package metric
 
 import (
 	"fmt"
-	"github.com/jmhodges/levigo"
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"sort"
 	"sync"
 	"time"
@@ -139,13 +139,10 @@ func (t *tieredStorage) rebuildDiskFrontier() (err error) {
 
 		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: rebuildDiskFrontier, result: failure})
 	}()
-	i, closer, err := t.diskStorage.metricSamples.GetIterator()
-	if closer != nil {
-		defer closer.Close()
-	}
-	if err != nil {
-		panic(err)
-	}
+
+	i := t.diskStorage.metricSamples.NewIterator(true)
+	defer i.Close()
+
 	t.diskFrontier, err = newDiskFrontier(i)
 	if err != nil {
 		panic(err)
@@ -365,13 +362,8 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 	}
 
 	// Get a single iterator that will be used for all data extraction below.
-	iterator, closer, err := t.diskStorage.metricSamples.GetIterator()
-	if closer != nil {
-		defer closer.Close()
-	}
-	if err != nil {
-		panic(err)
-	}
+	iterator := t.diskStorage.metricSamples.NewIterator(true)
+	defer iterator.Close()
 
 	for _, scanJob := range scans {
 		seriesFrontier, err := newSeriesFrontier(scanJob.fingerprint, *t.diskFrontier, iterator)
@@ -442,7 +434,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 	return
 }
 
-func (t *tieredStorage) loadChunkAroundTime(iterator *levigo.Iterator, frontier *seriesFrontier, fingerprint model.Fingerprint, ts time.Time) (chunk []model.SamplePair) {
+func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint model.Fingerprint, ts time.Time) (chunk []model.SamplePair) {
 	var (
 		targetKey = &dto.SampleKey{
 			Fingerprint: fingerprint.ToDTO(),
@@ -481,7 +473,7 @@ func (t *tieredStorage) loadChunkAroundTime(iterator *levigo.Iterator, frontier 
 	rewound := false
 	firstTime := indexable.DecodeTime(foundKey.Timestamp)
 	if ts.Before(firstTime) && !frontier.firstSupertime.After(ts) {
-		iterator.Prev()
+		iterator.Previous()
 		rewound = true
 	}
 
