@@ -71,6 +71,14 @@ Prometheus.Graph.prototype.initialize = function() {
   self.stacked = self.queryForm.find("input[name=stacked]");
   self.insertMetric = self.queryForm.find("select[name=insert_metric]");
 
+  // Return moves focus back to expr instead of submitting.
+  self.insertMetric.bind('keydown', 'return', function(e) {
+    self.expr.focus();
+    self.expr.val(self.expr.val());
+
+    return e.preventDefault();
+  })
+
   self.graph = graphWrapper.find(".graph");
   self.legend = graphWrapper.find(".legend");
   self.spinner = graphWrapper.find(".spinner");
@@ -96,8 +104,11 @@ Prometheus.Graph.prototype.initialize = function() {
   self.queryForm.find("input[name=dec_end]").click(function() { self.decreaseEnd(); });
 
   self.insertMetric.change(function() {
-      self.expr.val(self.expr.val() + self.insertMetric.val());
+    self.expr.selection('replace', {text: self.insertMetric.val(), mode: 'before'})
+    self.insertMetric.focus(); // refocusing
   });
+  self.insertMetric.click(function() { self.expr.focus() })
+
   self.expr.focus(); // TODO: move to external Graph method.
 
   self.populateInsertableMetrics();
