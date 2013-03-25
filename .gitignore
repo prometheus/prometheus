@@ -20,4 +20,9 @@
 [568a].out
 _cgo_*
 core
-web/blob/files.go
+
+*-stamp
+leveldb-1.7.0*
+protobuf-2.4.1*
+snappy-1.0.5*
+prometheus.build

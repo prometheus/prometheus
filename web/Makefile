@@ -11,20 +11,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MAKE_ARTIFACTS = generated-stamp
+all: blob
 
-export PATH := $(PATH):/Users/mtp/Development/go/bin
-
-all: generated
-
-generated: generated-stamp
-
-generated-stamp: data.proto
-	protoc --go_out=generated/ data.proto
-	touch $@
+blob:
+	$(MAKE) -C blob
 
 clean:
-	rm -rf generated/*
-	-rm -f $(MAKE_ARTIFACTS)
+	$(MAKE) -C blob clean
 
-.PHONY: generated
+.PHONY: blob clean
