@@ -11,20 +11,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MAKE_ARTIFACTS = generated-stamp
+all: files.go
 
-export PATH := $(PATH):/Users/mtp/Development/go/bin
-
-all: generated
-
-generated: generated-stamp
-
-generated-stamp: data.proto
-	protoc --go_out=generated/ data.proto
-	touch $@
+files.go:
+	../../utility/embed-static.sh ../static ../templates | gofmt > $@
 
 clean:
-	rm -rf generated/*
-	-rm -f $(MAKE_ARTIFACTS)
+	-rm  files.go
 
-.PHONY: generated
+.PHONY: clean

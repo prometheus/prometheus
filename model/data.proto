@@ -59,3 +59,34 @@ message MembershipIndexValue {
 message MetricHighWatermark {
   optional int64 timestamp = 1;
 }
+
+// CurationKey models the state of curation for a given metric fingerprint and
+// its associated samples.  The time series database only knows about compaction
+// and resampling behaviors that are explicitly defined to it in its runtime
+// configuration, meaning it never scans on-disk tables for CurationKey
+// policies; rather, it looks up via the CurationKey tuple to find out what the
+// effectuation state for a given metric fingerprint is.
+//
+// For instance, how far along as a rule for (Fingerprint A, Samples Older Than
+// B, and Grouped Together in Size of C) has been effectuated on-disk.
+message CurationKey {
+  // fingerprint identifies the fingerprint for the given policy.
+  optional Fingerprint fingerprint        = 1;
+  // older_than represents in seconds relative to when curation cycle starts
+  // into the past when the curator should stop operating on a given metric
+  // fingerprint's samples:
+  //
+  // [Oldest Sample Time, time.Now().Sub(time.Second * older_than))
+  optional int64       older_than         = 2;
+  // minimum_group_size identifies how minimally samples should be grouped
+  // together to write a new SampleValueSeries chunk.
+  optional uint32      minimum_group_size = 3;
+}
+
+// CurationValue models the progress for a given CurationKey.
+message CurationValue {
+  // last_completion_timestamp represents the seconds since the epoch UTC at
+  // which the curator last completed its duty cycle for a given metric
+  // fingerprint.
+  optional int64 last_completion_timestamp = 1;
+}
