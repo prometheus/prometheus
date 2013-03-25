@@ -23,6 +23,32 @@ import (
 	"time"
 )
 
+type testTieredStorageCloser struct {
+	storage Storage
+	dirName string
+}
+
+func (t *testTieredStorageCloser) Close() {
+	t.storage.Close()
+	os.RemoveAll(t.dirName)
+}
+
+func newTestTieredStorage(t test.Tester) (storage Storage, closer *testTieredStorageCloser) {
+	tempDir, _ := ioutil.TempDir("", "test_tiered_storage")
+	storage = NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, tempDir)
+
+	if storage == nil {
+		t.Fatalf("%d. storage == nil")
+	}
+
+	go storage.Serve()
+	closer = &testTieredStorageCloser{
+		storage: storage,
+		dirName: tempDir,
+	}
+	return
+}
+
 func buildSamples(from, to time.Time, interval time.Duration, m model.Metric) (v []model.Sample) {
 	i := model.SampleValue(0)
 
@@ -340,21 +366,8 @@ func testMakeView(t test.Tester) {
 	)
 
 	for i, scenario := range scenarios {
-		var (
-			temporary, _ = ioutil.TempDir("", "test_make_view")
-			tiered       = NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, temporary)
-		)
-
-		if tiered == nil {
-			t.Fatalf("%d. tiered == nil", i)
-		}
-
-		go tiered.Serve()
-		defer tiered.Drain()
-
-		defer func() {
-			os.RemoveAll(temporary)
-		}()
+		tiered, closer := newTestTieredStorage(t)
+		defer closer.Close()
 
 		for j, datum := range scenario.data {
 			err := tiered.AppendSample(datum)
@@ -415,5 +428,100 @@ func TestMakeView(t *testing.T) {
 func BenchmarkMakeView(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		testMakeView(b)
+	}
+}
+
+func TestGetAllMetricNames(t *testing.T) {
+	type in struct {
+		metricName     string
+		appendToMemory bool
+		appendToDisk   bool
+	}
+
+	scenarios := []struct {
+		in  []in
+		out []string
+	}{
+		{
+		// Empty case.
+		}, {
+			in: []in{
+				{
+					metricName:     "request_count",
+					appendToMemory: false,
+					appendToDisk:   true,
+				},
+			},
+			out: []string{
+				"request_count",
+			},
+		}, {
+			in: []in{
+				{
+					metricName:     "request_count",
+					appendToMemory: true,
+					appendToDisk:   false,
+				},
+				{
+					metricName:     "start_time",
+					appendToMemory: false,
+					appendToDisk:   true,
+				},
+			},
+			out: []string{
+				"request_count",
+				"start_time",
+			},
+		}, {
+			in: []in{
+				{
+					metricName:     "request_count",
+					appendToMemory: true,
+					appendToDisk:   true,
+				},
+				{
+					metricName:     "start_time",
+					appendToMemory: true,
+					appendToDisk:   true,
+				},
+			},
+			out: []string{
+				"request_count",
+				"start_time",
+			},
+		},
+	}
+
+	for i, scenario := range scenarios {
+		tiered, closer := newTestTieredStorage(t)
+		defer closer.Close()
+		for j, metric := range scenario.in {
+			sample := model.Sample{
+				Metric: model.Metric{"name": model.LabelValue(metric.metricName)},
+			}
+			if metric.appendToMemory {
+				if err := tiered.(*tieredStorage).memoryArena.AppendSample(sample); err != nil {
+					t.Fatalf("%d.%d. failed to add fixture data: %s", i, j, err)
+				}
+			}
+			if metric.appendToDisk {
+				if err := tiered.(*tieredStorage).diskStorage.AppendSample(sample); err != nil {
+					t.Fatalf("%d.%d. failed to add fixture data: %s", i, j, err)
+				}
+			}
+		}
+		metricNames, err := tiered.GetAllMetricNames()
+		if err != nil {
+			t.Fatalf("%d. Error getting metric names: %s", i, err)
+		}
+		if len(metricNames) != len(scenario.out) {
+			t.Fatalf("%d. Expected metric count %d, got %d", i, len(scenario.out), len(metricNames))
+		}
+
+		for j, expected := range scenario.out {
+			if expected != metricNames[j] {
+				t.Fatalf("%d.%d. Expected metric %s, got %s", i, j, expected, metricNames[j])
+			}
+		}
 	}
 }

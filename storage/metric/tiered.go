@@ -518,17 +518,55 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 	return
 }
 
-func (t *tieredStorage) GetAllMetricNames() ([]string, error) {
-	// TODO: handle memory persistence as well.
-	return t.diskStorage.GetAllMetricNames()
+func (t *tieredStorage) GetAllMetricNames() (metrics []string, err error) {
+	diskMetrics, err := t.diskStorage.GetAllMetricNames()
+	if err != nil {
+		return
+	}
+	memoryMetrics, err := t.memoryArena.GetAllMetricNames()
+	if err != nil {
+		return
+	}
+
+	metricSet := map[string]bool{}
+	for _, metricName := range append(diskMetrics, memoryMetrics...) {
+		metricSet[metricName] = true
+	}
+	for metricName := range metricSet {
+		metrics = append(metrics, metricName)
+	}
+	sort.Strings(metrics)
+
+	return
 }
 
-func (t *tieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (model.Fingerprints, error) {
-	// TODO: handle memory persistence as well.
-	return t.diskStorage.GetFingerprintsForLabelSet(labelSet)
+func (t *tieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fingerprints model.Fingerprints, err error) {
+	memFingerprints, err := t.memoryArena.GetFingerprintsForLabelSet(labelSet)
+	if err != nil {
+		return
+	}
+	diskFingerprints, err := t.memoryArena.GetFingerprintsForLabelSet(labelSet)
+	if err != nil {
+		return
+	}
+	fingerprintSet := map[model.Fingerprint]bool{}
+	for _, fingerprint := range append(memFingerprints, diskFingerprints...) {
+		fingerprintSet[fingerprint] = true
+	}
+	for fingerprint := range fingerprintSet {
+		fingerprints = append(fingerprints, fingerprint)
+	}
+
+	return
 }
 
 func (t *tieredStorage) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
-	// TODO: handle memory persistence as well.
-	return t.diskStorage.GetMetricForFingerprint(f)
+	m, err = t.memoryArena.GetMetricForFingerprint(f)
+	if err != nil {
+		return
+	}
+	if m == nil {
+		m, err = t.diskStorage.GetMetricForFingerprint(f)
+	}
+	return
 }
