@@ -185,29 +185,6 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 	return l.storage.Write(l.writeOptions, batch.batch)
 }
 
-func (l *LevelDBPersistence) GetAll() (pairs []raw.Pair, err error) {
-	snapshot := l.storage.NewSnapshot()
-	defer l.storage.ReleaseSnapshot(snapshot)
-	readOptions := levigo.NewReadOptions()
-	defer readOptions.Close()
-
-	readOptions.SetSnapshot(snapshot)
-	iterator := l.storage.NewIterator(readOptions)
-	defer iterator.Close()
-	iterator.SeekToFirst()
-
-	for iterator := iterator; iterator.Valid(); iterator.Next() {
-		pairs = append(pairs, raw.Pair{Left: iterator.Key(), Right: iterator.Value()})
-
-		err = iterator.GetError()
-		if err != nil {
-			return
-		}
-	}
-
-	return
-}
-
 func (i *iteratorCloser) Close() (err error) {
 	defer func() {
 		if i.storage != nil {
