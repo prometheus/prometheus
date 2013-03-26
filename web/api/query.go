@@ -86,7 +86,7 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 }
 
 func (serv MetricsService) Metrics() string {
-	metricNames, err := serv.appState.Storage.GetAllMetricNames()
+	metricNames, err := serv.appState.Storage.GetAllValuesForLabel("name")
 	rb := serv.ResponseBuilder()
 	rb.SetContentType(gorest.Application_Json)
 	if err != nil {
@@ -94,7 +94,7 @@ func (serv MetricsService) Metrics() string {
 		rb.SetResponseCode(http.StatusInternalServerError)
 		return err.Error()
 	}
-	sort.Strings(metricNames)
+	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
 		log.Printf("Error marshalling metric names: %v", err)

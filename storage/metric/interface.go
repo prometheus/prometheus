@@ -44,6 +44,7 @@ type MetricPersistence interface {
 	// name.
 	GetFingerprintsForLabelName(model.LabelName) (model.Fingerprints, error)
 
+	// Get the metric associated with the provided fingerprint.
 	GetMetricForFingerprint(model.Fingerprint) (*model.Metric, error)
 
 	GetValueAtTime(model.Fingerprint, time.Time, StalenessPolicy) (*model.Sample, error)
@@ -52,7 +53,8 @@ type MetricPersistence interface {
 
 	ForEachSample(IteratorsForFingerprintBuilder) (err error)
 
-	GetAllMetricNames() ([]string, error)
+	// Get all label values that are associated with a given label name.
+	GetAllValuesForLabel(model.LabelName) (model.LabelValues, error)
 
 	// Requests the storage stack to build a materialized View of the values
 	// contained therein.

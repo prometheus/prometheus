@@ -348,8 +348,17 @@ func (s memorySeriesStorage) Close() (err error) {
 	return
 }
 
-func (s memorySeriesStorage) GetAllMetricNames() ([]string, error) {
-	panic("not implemented")
+func (s memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
+	valueSet := map[model.LabelValue]bool{}
+	for _, series := range s.fingerprintToSeries {
+		if value, ok := series.metric[labelName]; ok {
+			if !valueSet[value] {
+				values = append(values, value)
+				valueSet[value] = true
+			}
+		}
+	}
+	return
 }
 
 func (s memorySeriesStorage) ForEachSample(builder IteratorsForFingerprintBuilder) (err error) {
