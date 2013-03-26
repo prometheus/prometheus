@@ -8,6 +8,8 @@ body {
 
 .graph {
         position: relative;
+        min-height: 400px;
+        overflow-x: hidden;
 }
 
 svg {
@@ -19,5 +21,4 @@ svg {
         display: inline-block;
         vertical-align: top;
         margin: 0 0 0 0px;
-        background-
 }
