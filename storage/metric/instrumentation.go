@@ -63,6 +63,8 @@ var (
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
 	}
 
+	curationDuration          = metrics.NewCounter()
+	curationDurations         = metrics.NewHistogram(diskLatencyHistogram)
 	storageOperations         = metrics.NewCounter()
 	storageOperationDurations = metrics.NewCounter()
 	storageLatency            = metrics.NewHistogram(diskLatencyHistogram)

@@ -14,7 +14,6 @@
 package metric
 
 import (
-	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
 	"sort"
@@ -380,9 +379,7 @@ func testMakeView(t test.Tester) {
 			}
 		}
 
-		start := time.Now()
 		tiered.Flush()
-		fmt.Printf("Took %s to flush %d items...\n", time.Since(start), len(scenario.data))
 
 		requestBuilder := NewViewRequestBuilder()
 

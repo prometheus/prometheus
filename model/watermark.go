@@ -14,6 +14,7 @@
 package model
 
 import (
+	"code.google.com/p/goprotobuf/proto"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"time"
 )
@@ -24,10 +25,25 @@ type Watermark struct {
 	time.Time
 }
 
+// ToMetricHighWatermarkDTO builds a MetricHighWatermark DTO out of a given
+// Watermark.
+func (w Watermark) ToMetricHighWatermarkDTO() *dto.MetricHighWatermark {
+	return &dto.MetricHighWatermark{
+		Timestamp: proto.Int64(w.Time.Unix()),
+	}
+}
+
 // NewWatermarkFromHighWatermarkDTO builds Watermark from the provided
 // dto.MetricHighWatermark object.
 func NewWatermarkFromHighWatermarkDTO(d *dto.MetricHighWatermark) Watermark {
 	return Watermark{
 		time.Unix(*d.Timestamp, 0),
+	}
+}
+
+// NewWatermarkFromTime builds a new Watermark for the provided time.
+func NewWatermarkFromTime(t time.Time) Watermark {
+	return Watermark{
+		t,
 	}
 }
