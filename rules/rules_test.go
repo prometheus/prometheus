@@ -17,8 +17,7 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric"
-	"io/ioutil"
-	"os"
+	"github.com/prometheus/prometheus/utility/test"
 	"strings"
 	"testing"
 	"time"
@@ -213,19 +212,10 @@ func vectorComparisonString(expected []string, actual []string) string {
 }
 
 func TestExpressions(t *testing.T) {
-	temporaryDirectory, err := ioutil.TempDir("", "rule_expression_tests")
-	if err != nil {
-		t.Errorf("Could not create temporary directory: %q\n", err)
-		return
-	}
-	tieredStorage := metric.NewTieredStorage(5000, 5000, 100, time.Second*30, time.Second*1, time.Second*20, temporaryDirectory)
+	temporaryDirectory := test.NewTemporaryDirectory("rule_expression_tests", t)
+	defer temporaryDirectory.Close()
+	tieredStorage := metric.NewTieredStorage(5000, 5000, 100, time.Second*30, time.Second*1, time.Second*20, temporaryDirectory.Path())
 	go tieredStorage.Serve()
-	defer func() {
-		tieredStorage.Close()
-		if err = os.RemoveAll(temporaryDirectory); err != nil {
-			t.Errorf("Could not remove temporary directory: %q\n", err)
-		}
-	}()
 
 	ast.SetStorage(tieredStorage)
 

@@ -17,26 +17,25 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
-	"io/ioutil"
-	"os"
 	"sort"
 	"testing"
 	"time"
 )
 
 type testTieredStorageCloser struct {
-	storage Storage
-	dirName string
+	storage   Storage
+	directory test.Closer
 }
 
-func (t *testTieredStorageCloser) Close() {
+func (t testTieredStorageCloser) Close() {
 	t.storage.Close()
-	os.RemoveAll(t.dirName)
+	t.directory.Close()
 }
 
-func newTestTieredStorage(t test.Tester) (storage Storage, closer *testTieredStorageCloser) {
-	tempDir, _ := ioutil.TempDir("", "test_tiered_storage")
-	storage = NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, tempDir)
+func newTestTieredStorage(t test.Tester) (storage Storage, closer test.Closer) {
+	var directory test.TemporaryDirectory
+	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
+	storage = NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
 
 	if storage == nil {
 		t.Fatalf("%d. storage == nil")
@@ -44,8 +43,8 @@ func newTestTieredStorage(t test.Tester) (storage Storage, closer *testTieredSto
 
 	go storage.Serve()
 	closer = &testTieredStorageCloser{
-		storage: storage,
-		dirName: tempDir,
+		storage:   storage,
+		directory: directory,
 	}
 	return
 }
