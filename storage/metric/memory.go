@@ -352,13 +352,12 @@ func (s memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (va
 	valueSet := map[model.LabelValue]bool{}
 	for _, series := range s.fingerprintToSeries {
 		if value, ok := series.metric[labelName]; ok {
-			valueSet[value] = true
+			if !valueSet[value] {
+				values = append(values, value)
+				valueSet[value] = true
+			}
 		}
 	}
-	for value := range valueSet {
-		values = append(values, value)
-	}
-	sort.Sort(values)
 	return
 }
 

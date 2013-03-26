@@ -1221,13 +1221,16 @@ func (l *LevelDBMetricPersistence) GetRangeValues(fp model.Fingerprint, i model.
 type MetricKeyDecoder struct{}
 
 func (d *MetricKeyDecoder) DecodeKey(in interface{}) (out interface{}, err error) {
-	unmarshaled := &dto.LabelPair{}
-	err = proto.Unmarshal(in.([]byte), unmarshaled)
+	unmarshaled := dto.LabelPair{}
+	err = proto.Unmarshal(in.([]byte), &unmarshaled)
 	if err != nil {
 		return
 	}
 
-	out = unmarshaled
+	out = model.LabelPair{
+		Name:  model.LabelName(*unmarshaled.Name),
+		Value: model.LabelValue(*unmarshaled.Value),
+	}
 
 	return
 }
@@ -1240,9 +1243,9 @@ type LabelNameFilter struct {
 	labelName model.LabelName
 }
 
-func (f *LabelNameFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
-	unmarshaled, ok := key.(*dto.LabelPair)
-	if ok && model.LabelName(*unmarshaled.Name) == f.labelName {
+func (f LabelNameFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
+	labelPair, ok := key.(model.LabelPair)
+	if ok && labelPair.Name == f.labelName {
 		return storage.ACCEPT
 	}
 	return storage.SKIP
@@ -1253,8 +1256,8 @@ type CollectLabelValuesOp struct {
 }
 
 func (op *CollectLabelValuesOp) Operate(key, value interface{}) (err *storage.OperatorError) {
-	unmarshaled := key.(*dto.LabelPair)
-	op.labelValues = append(op.labelValues, model.LabelValue(*unmarshaled.Value))
+	labelPair := key.(model.LabelPair)
+	op.labelValues = append(op.labelValues, model.LabelValue(labelPair.Value))
 	return
 }
 

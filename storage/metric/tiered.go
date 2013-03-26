@@ -63,9 +63,12 @@ type Storage interface {
 	Flush()
 	Close()
 
-	// MetricPersistence proxy methods.
+	// Get all label values that are associated with the provided label name.
 	GetAllValuesForLabel(model.LabelName) (model.LabelValues, error)
+	// Get all of the metric fingerprints that are associated with the provided
+	// label set.
 	GetFingerprintsForLabelSet(model.LabelSet) (model.Fingerprints, error)
+	// Get the metric associated with the provided fingerprint.
 	GetMetricForFingerprint(model.Fingerprint) (m *model.Metric, err error)
 }
 
@@ -530,12 +533,11 @@ func (t *tieredStorage) GetAllValuesForLabel(labelName model.LabelName) (values 
 
 	valueSet := map[model.LabelValue]bool{}
 	for _, value := range append(diskValues, memoryValues...) {
-		valueSet[value] = true
+		if !valueSet[value] {
+			values = append(values, value)
+			valueSet[value] = true
+		}
 	}
-	for value := range valueSet {
-		values = append(values, value)
-	}
-	sort.Sort(values)
 
 	return
 }

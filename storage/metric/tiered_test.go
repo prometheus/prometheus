@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 	"io/ioutil"
 	"os"
+	"sort"
 	"testing"
 	"time"
 )
@@ -518,6 +519,7 @@ func TestGetAllValuesForLabel(t *testing.T) {
 			t.Fatalf("%d. Expected metric count %d, got %d", i, len(scenario.out), len(metricNames))
 		}
 
+		sort.Sort(metricNames)
 		for j, expected := range scenario.out {
 			if expected != string(metricNames[j]) {
 				t.Fatalf("%d.%d. Expected metric %s, got %s", i, j, expected, metricNames[j])
