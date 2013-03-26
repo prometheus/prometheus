@@ -1221,13 +1221,16 @@ func (l *LevelDBMetricPersistence) GetRangeValues(fp model.Fingerprint, i model.
 type MetricKeyDecoder struct{}
 
 func (d *MetricKeyDecoder) DecodeKey(in interface{}) (out interface{}, err error) {
-	unmarshaled := &dto.LabelPair{}
-	err = proto.Unmarshal(in.([]byte), unmarshaled)
+	unmarshaled := dto.LabelPair{}
+	err = proto.Unmarshal(in.([]byte), &unmarshaled)
 	if err != nil {
 		return
 	}
 
-	out = unmarshaled
+	out = model.LabelPair{
+		Name:  model.LabelName(*unmarshaled.Name),
+		Value: model.LabelValue(*unmarshaled.Value),
+	}
 
 	return
 }
@@ -1236,35 +1239,40 @@ func (d *MetricKeyDecoder) DecodeValue(in interface{}) (out interface{}, err err
 	return
 }
 
-type MetricNamesFilter struct{}
+type LabelNameFilter struct {
+	labelName model.LabelName
+}
 
-func (f *MetricNamesFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
-	unmarshaled, ok := key.(*dto.LabelPair)
-	if ok && *unmarshaled.Name == "name" {
+func (f LabelNameFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
+	labelPair, ok := key.(model.LabelPair)
+	if ok && labelPair.Name == f.labelName {
 		return storage.ACCEPT
 	}
 	return storage.SKIP
 }
 
-type CollectMetricNamesOp struct {
-	metricNames []string
+type CollectLabelValuesOp struct {
+	labelValues []model.LabelValue
 }
 
-func (op *CollectMetricNamesOp) Operate(key, value interface{}) (err *storage.OperatorError) {
-	unmarshaled := key.(*dto.LabelPair)
-	op.metricNames = append(op.metricNames, *unmarshaled.Value)
+func (op *CollectLabelValuesOp) Operate(key, value interface{}) (err *storage.OperatorError) {
+	labelPair := key.(model.LabelPair)
+	op.labelValues = append(op.labelValues, model.LabelValue(labelPair.Value))
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetAllMetricNames() (metricNames []string, err error) {
-	metricNamesOp := &CollectMetricNamesOp{}
+func (l *LevelDBMetricPersistence) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
+	filter := &LabelNameFilter{
+		labelName: labelName,
+	}
+	labelValuesOp := &CollectLabelValuesOp{}
 
-	_, err = l.labelSetToFingerprints.ForEach(&MetricKeyDecoder{}, &MetricNamesFilter{}, metricNamesOp)
+	_, err = l.labelSetToFingerprints.ForEach(&MetricKeyDecoder{}, filter, labelValuesOp)
 	if err != nil {
 		return
 	}
 
-	metricNames = metricNamesOp.metricNames
+	values = labelValuesOp.labelValues
 	return
 }
 
