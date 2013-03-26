@@ -348,19 +348,17 @@ func (s memorySeriesStorage) Close() (err error) {
 	return
 }
 
-func (s memorySeriesStorage) GetAllMetricNames() (metrics []string, err error) {
-	metricSet := map[string]bool{}
+func (s memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
+	valueSet := map[model.LabelValue]bool{}
 	for _, series := range s.fingerprintToSeries {
-		if metricName, ok := series.metric["name"]; !ok {
-			err = fmt.Errorf("Found timeseries without metric name label: %v", series.metric)
-		} else {
-			metricSet[string(metricName)] = true
+		if value, ok := series.metric[labelName]; ok {
+			valueSet[value] = true
 		}
 	}
-	for metricName := range metricSet {
-		metrics = append(metrics, metricName)
+	for value := range valueSet {
+		values = append(values, value)
 	}
-	sort.Strings(metrics)
+	sort.Sort(values)
 	return
 }
 

@@ -64,7 +64,7 @@ type Storage interface {
 	Close()
 
 	// MetricPersistence proxy methods.
-	GetAllMetricNames() ([]string, error)
+	GetAllValuesForLabel(model.LabelName) (model.LabelValues, error)
 	GetFingerprintsForLabelSet(model.LabelSet) (model.Fingerprints, error)
 	GetMetricForFingerprint(model.Fingerprint) (m *model.Metric, err error)
 }
@@ -518,24 +518,24 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 	return
 }
 
-func (t *tieredStorage) GetAllMetricNames() (metrics []string, err error) {
-	diskMetrics, err := t.diskStorage.GetAllMetricNames()
+func (t *tieredStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
+	diskValues, err := t.diskStorage.GetAllValuesForLabel(labelName)
 	if err != nil {
 		return
 	}
-	memoryMetrics, err := t.memoryArena.GetAllMetricNames()
+	memoryValues, err := t.memoryArena.GetAllValuesForLabel(labelName)
 	if err != nil {
 		return
 	}
 
-	metricSet := map[string]bool{}
-	for _, metricName := range append(diskMetrics, memoryMetrics...) {
-		metricSet[metricName] = true
+	valueSet := map[model.LabelValue]bool{}
+	for _, value := range append(diskValues, memoryValues...) {
+		valueSet[value] = true
 	}
-	for metricName := range metricSet {
-		metrics = append(metrics, metricName)
+	for value := range valueSet {
+		values = append(values, value)
 	}
-	sort.Strings(metrics)
+	sort.Sort(values)
 
 	return
 }

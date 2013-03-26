@@ -52,7 +52,7 @@ type MetricPersistence interface {
 
 	ForEachSample(IteratorsForFingerprintBuilder) (err error)
 
-	GetAllMetricNames() ([]string, error)
+	GetAllValuesForLabel(model.LabelName) (model.LabelValues, error)
 
 	// Requests the storage stack to build a materialized View of the values
 	// contained therein.

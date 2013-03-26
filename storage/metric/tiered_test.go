@@ -431,7 +431,7 @@ func BenchmarkMakeView(b *testing.B) {
 	}
 }
 
-func TestGetAllMetricNames(t *testing.T) {
+func TestGetAllValuesForLabel(t *testing.T) {
 	type in struct {
 		metricName     string
 		appendToMemory bool
@@ -510,7 +510,7 @@ func TestGetAllMetricNames(t *testing.T) {
 				}
 			}
 		}
-		metricNames, err := tiered.GetAllMetricNames()
+		metricNames, err := tiered.GetAllValuesForLabel("name")
 		if err != nil {
 			t.Fatalf("%d. Error getting metric names: %s", i, err)
 		}
@@ -519,7 +519,7 @@ func TestGetAllMetricNames(t *testing.T) {
 		}
 
 		for j, expected := range scenario.out {
-			if expected != metricNames[j] {
+			if expected != string(metricNames[j]) {
 				t.Fatalf("%d.%d. Expected metric %s, got %s", i, j, expected, metricNames[j])
 			}
 		}
