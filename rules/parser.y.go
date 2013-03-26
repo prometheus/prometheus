@@ -419,7 +419,7 @@ yydefault:
 		{ yyVAL.ruleNode = yyS[yypt-1].ruleNode }
 	case 16:
 		//line parser.y:103
-		{ yyS[yypt-0].labelSet["name"] = model.LabelValue(yyS[yypt-1].str); yyVAL.ruleNode = ast.NewVectorLiteral(yyS[yypt-0].labelSet) }
+		{ yyS[yypt-0].labelSet[model.MetricNameLabel] = model.LabelValue(yyS[yypt-1].str); yyVAL.ruleNode = ast.NewVectorLiteral(yyS[yypt-0].labelSet) }
 	case 17:
 		//line parser.y:105
 		{

@@ -21,12 +21,12 @@ import (
 )
 
 func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence, t test.Tester) {
-	metrics := []map[string]string{
-		{"name": "request_metrics_latency_equal_tallying_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
-		{"name": "requests_metrics_latency_equal_accumulating_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
-		{"name": "requests_metrics_latency_logarithmic_accumulating_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
-		{"name": "requests_metrics_latency_logarithmic_tallying_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
-		{"name": "targets_healthy_scrape_latency_ms", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
+	metrics := []model.LabelSet{
+		{model.MetricNameLabel: "request_metrics_latency_equal_tallying_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
+		{model.MetricNameLabel: "requests_metrics_latency_equal_accumulating_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
+		{model.MetricNameLabel: "requests_metrics_latency_logarithmic_accumulating_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
+		{model.MetricNameLabel: "requests_metrics_latency_logarithmic_tallying_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
+		{model.MetricNameLabel: "targets_healthy_scrape_latency_ms", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
 	}
 
 	for _, metric := range metrics {
@@ -44,8 +44,8 @@ func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence,
 	}
 
 	labelSet := model.LabelSet{
-		"name":       "targets_healthy_scrape_latency_ms",
-		"percentile": "0.010000",
+		model.MetricNameLabel: "targets_healthy_scrape_latency_ms",
+		"percentile":          "0.010000",
 	}
 
 	fingerprints, err := p.GetFingerprintsForLabelSet(labelSet)

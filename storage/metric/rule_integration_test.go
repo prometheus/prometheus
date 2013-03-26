@@ -567,7 +567,7 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, io.Closer),
 			}()
 
 			m := model.Metric{
-				"name": "age_in_years",
+				model.MetricNameLabel: "age_in_years",
 			}
 
 			for _, value := range context.values {
@@ -1012,7 +1012,7 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, io.Close
 			}()
 
 			m := model.Metric{
-				"name": "age_in_years",
+				model.MetricNameLabel: "age_in_years",
 			}
 
 			for _, value := range context.values {
@@ -1369,7 +1369,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, io.Closer),
 			}()
 
 			m := model.Metric{
-				"name": "age_in_years",
+				model.MetricNameLabel: "age_in_years",
 			}
 
 			for _, value := range context.values {

@@ -16,6 +16,7 @@ package ast
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility"
 	"sort"
 	"strings"
@@ -69,13 +70,13 @@ func exprTypeToString(exprType ExprType) string {
 func (vector Vector) String() string {
 	metricStrings := []string{}
 	for _, sample := range vector {
-		metricName, ok := sample.Metric["name"]
+		metricName, ok := sample.Metric[model.MetricNameLabel]
 		if !ok {
 			panic("Tried to print vector without metric name")
 		}
 		labelStrings := []string{}
 		for label, value := range sample.Metric {
-			if label != "name" {
+			if label != model.MetricNameLabel {
 				// TODO escape special chars in label values here and elsewhere.
 				labelStrings = append(labelStrings, fmt.Sprintf("%v='%v'", label, value))
 			}
@@ -94,13 +95,13 @@ func (vector Vector) String() string {
 func (matrix Matrix) String() string {
 	metricStrings := []string{}
 	for _, sampleSet := range matrix {
-		metricName, ok := sampleSet.Metric["name"]
+		metricName, ok := sampleSet.Metric[model.MetricNameLabel]
 		if !ok {
 			panic("Tried to print matrix without metric name")
 		}
 		labelStrings := []string{}
 		for label, value := range sampleSet.Metric {
-			if label != "name" {
+			if label != model.MetricNameLabel {
 				labelStrings = append(labelStrings, fmt.Sprintf("%v='%v'", label, value))
 			}
 		}
@@ -195,13 +196,13 @@ func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
 }
 
 func (node *VectorLiteral) String() string {
-	metricName, ok := node.labels["name"]
+	metricName, ok := node.labels[model.MetricNameLabel]
 	if !ok {
 		panic("Tried to print vector without metric name")
 	}
 	labelStrings := []string{}
 	for label, value := range node.labels {
-		if label != "name" {
+		if label != model.MetricNameLabel {
 			labelStrings = append(labelStrings, fmt.Sprintf("%v='%v'", label, value))
 		}
 	}
