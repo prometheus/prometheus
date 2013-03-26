@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"testing"
@@ -186,9 +185,10 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	}
 }
 
-func StochasticTests(persistenceMaker func() MetricPersistence, t test.Tester) {
+func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
 	stochastic := func(x int) (success bool) {
-		p := persistenceMaker()
+		p, closer := persistenceMaker()
+		defer closer.Close()
 		defer func() {
 			err := p.Close()
 			if err != nil {
@@ -497,18 +497,15 @@ func BenchmarkLevelDBAppendSampleAsPureSingleEntityAppend(b *testing.B) {
 }
 
 func testLevelDBStochastic(t test.Tester) {
-	persistenceMaker := func() MetricPersistence {
-		temporaryDirectory, err := ioutil.TempDir("", "test_leveldb_stochastic")
-		if err != nil {
-			t.Errorf("Could not create test directory: %q\n", err)
-		}
+	persistenceMaker := func() (MetricPersistence, test.Closer) {
+		temporaryDirectory := test.NewTemporaryDirectory("test_leveldb_stochastic", t)
 
-		p, err := NewLevelDBMetricPersistence(temporaryDirectory)
+		p, err := NewLevelDBMetricPersistence(temporaryDirectory.Path())
 		if err != nil {
 			t.Errorf("Could not start up LevelDB: %q\n", err)
 		}
 
-		return p
+		return p, temporaryDirectory
 	}
 
 	StochasticTests(persistenceMaker, t)
@@ -585,8 +582,8 @@ func BenchmarkMemoryAppendSampleAsPureSingleEntityAppend(b *testing.B) {
 }
 
 func testMemoryStochastic(t test.Tester) {
-	persistenceMaker := func() MetricPersistence {
-		return NewMemorySeriesStorage()
+	persistenceMaker := func() (MetricPersistence, test.Closer) {
+		return NewMemorySeriesStorage(), test.NilCloser
 	}
 
 	StochasticTests(persistenceMaker, t)
