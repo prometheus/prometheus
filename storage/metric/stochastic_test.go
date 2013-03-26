@@ -173,7 +173,7 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 		sample := model.Sample{
 			Value:     model.SampleValue(x),
 			Timestamp: time.Unix(int64(x), 0),
-			Metric:    model.Metric{"name": "my_metric"},
+			Metric:    model.Metric{model.MetricNameLabel: "my_metric"},
 		}
 
 		err := p.AppendSample(sample)
@@ -215,7 +215,7 @@ func StochasticTests(persistenceMaker func() MetricPersistence, t test.Tester) {
 			}
 
 			v := model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
-			sample.Metric["name"] = v
+			sample.Metric[model.MetricNameLabel] = v
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
 				l := model.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
@@ -348,7 +348,7 @@ func StochasticTests(persistenceMaker func() MetricPersistence, t test.Tester) {
 			}
 
 			metric := model.Metric{}
-			metric["name"] = model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
+			metric[model.MetricNameLabel] = model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
 
 			for i := 0; i < numberOfSharedLabels; i++ {
 				l := model.LabelName(fmt.Sprintf("shared_label_%d", i))

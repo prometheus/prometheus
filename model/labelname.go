@@ -13,6 +13,9 @@
 
 package model
 
+// The label name used to indicate the metric name of a timeseries.
+const MetricNameLabel = LabelName("name")
+
 // A LabelName is a key for a LabelSet or Metric.  It has a value associated
 // therewith.
 type LabelName string
