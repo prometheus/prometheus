@@ -17,9 +17,6 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
-	"io"
-	"io/ioutil"
-	"os"
 	"time"
 )
 
@@ -34,52 +31,25 @@ func testAppendSample(p MetricPersistence, s model.Sample, t test.Tester) {
 	}
 }
 
-type purger struct {
-	path string
-}
+func buildLevelDBTestPersistencesMaker(name string, t test.Tester) func() (MetricPersistence, test.Closer) {
+	return func() (MetricPersistence, test.Closer) {
+		temporaryDirectory := test.NewTemporaryDirectory("get_value_at_time", t)
 
-func (p purger) Close() error {
-	return os.RemoveAll(p.path)
-}
-
-func buildLevelDBTestPersistencesMaker(name string, t test.Tester) func() (MetricPersistence, io.Closer) {
-	return func() (MetricPersistence, io.Closer) {
-		temporaryDirectory, err := ioutil.TempDir("", "get_value_at_time")
-		if err != nil {
-			t.Errorf("Could not create test directory: %q\n", err)
-		}
-
-		p, err := NewLevelDBMetricPersistence(temporaryDirectory)
+		p, err := NewLevelDBMetricPersistence(temporaryDirectory.Path())
 		if err != nil {
 			t.Errorf("Could not start up LevelDB: %q\n", err)
 		}
 
-		purger := purger{
-			path: temporaryDirectory,
-		}
-
-		return p, purger
+		return p, temporaryDirectory
 	}
-
 }
 
 func buildLevelDBTestPersistence(name string, f func(p MetricPersistence, t test.Tester)) func(t test.Tester) {
 	return func(t test.Tester) {
-		temporaryDirectory, err := ioutil.TempDir("", fmt.Sprintf("test_leveldb_%s", name))
+		temporaryDirectory := test.NewTemporaryDirectory(fmt.Sprintf("test_leveldb_%s", name), t)
+		defer temporaryDirectory.Close()
 
-		if err != nil {
-			t.Errorf("Could not create test directory: %q\n", err)
-			return
-		}
-
-		defer func() {
-			err := os.RemoveAll(temporaryDirectory)
-			if err != nil {
-				t.Errorf("Could not remove temporary directory: %q\n", err)
-			}
-		}()
-
-		p, err := NewLevelDBMetricPersistence(temporaryDirectory)
+		p, err := NewLevelDBMetricPersistence(temporaryDirectory.Path())
 		if err != nil {
 			t.Errorf("Could not create LevelDB Metric Persistence: %q\n", err)
 		}

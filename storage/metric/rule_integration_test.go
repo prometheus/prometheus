@@ -16,13 +16,11 @@ package metric
 import (
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
-	"io"
-	"io/ioutil"
 	"testing"
 	"time"
 )
 
-func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, io.Closer), t test.Tester) {
+func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
 	type value struct {
 		year  int
 		month time.Month
@@ -555,14 +553,10 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, io.Closer),
 			p, closer := persistenceMaker()
 
 			defer func() {
+				defer closer.Close()
 				err := p.Close()
 				if err != nil {
 					t.Fatalf("Encountered anomaly closing persistence: %q\n", err)
-				}
-
-				err = closer.Close()
-				if err != nil {
-					t.Fatalf("Encountered anomaly purging persistence: %q\n", err)
 				}
 			}()
 
@@ -609,7 +603,7 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, io.Closer),
 	}
 }
 
-func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, io.Closer), t test.Tester) {
+func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
 	type value struct {
 		year  int
 		month time.Month
@@ -1001,13 +995,10 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, io.Close
 			p, closer := persistenceMaker()
 
 			defer func() {
+				defer closer.Close()
 				err := p.Close()
 				if err != nil {
 					t.Fatalf("Encountered anomaly closing persistence: %q\n", err)
-				}
-				err = closer.Close()
-				if err != nil {
-					t.Fatalf("Encountered anomaly purging persistence: %q\n", err)
 				}
 			}()
 
@@ -1067,7 +1058,7 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, io.Close
 	}
 }
 
-func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, io.Closer), t test.Tester) {
+func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
 	type value struct {
 		year  int
 		month time.Month
@@ -1358,13 +1349,10 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, io.Closer),
 			p, closer := persistenceMaker()
 
 			defer func() {
+				defer closer.Close()
 				err := p.Close()
 				if err != nil {
 					t.Fatalf("Encountered anomaly closing persistence: %q\n", err)
-				}
-				err = closer.Close()
-				if err != nil {
-					t.Fatalf("Encountered anomaly purging persistence: %q\n", err)
 				}
 			}()
 
@@ -1487,8 +1475,8 @@ func BenchmarkLevelDBGetRangeValues(b *testing.B) {
 }
 
 func testMemoryGetValueAtTime(t test.Tester) {
-	persistenceMaker := func() (MetricPersistence, io.Closer) {
-		return NewMemorySeriesStorage(), ioutil.NopCloser(nil)
+	persistenceMaker := func() (MetricPersistence, test.Closer) {
+		return NewMemorySeriesStorage(), test.NilCloser
 	}
 
 	GetValueAtTimeTests(persistenceMaker, t)
@@ -1505,8 +1493,8 @@ func BenchmarkMemoryGetValueAtTime(b *testing.B) {
 }
 
 func testMemoryGetBoundaryValues(t test.Tester) {
-	persistenceMaker := func() (MetricPersistence, io.Closer) {
-		return NewMemorySeriesStorage(), ioutil.NopCloser(nil)
+	persistenceMaker := func() (MetricPersistence, test.Closer) {
+		return NewMemorySeriesStorage(), test.NilCloser
 	}
 
 	GetBoundaryValuesTests(persistenceMaker, t)
@@ -1523,8 +1511,8 @@ func BenchmarkMemoryGetBoundaryValues(b *testing.B) {
 }
 
 func testMemoryGetRangeValues(t test.Tester) {
-	persistenceMaker := func() (MetricPersistence, io.Closer) {
-		return NewMemorySeriesStorage(), ioutil.NopCloser(nil)
+	persistenceMaker := func() (MetricPersistence, test.Closer) {
+		return NewMemorySeriesStorage(), test.NilCloser
 	}
 
 	GetRangeValuesTests(persistenceMaker, t)
