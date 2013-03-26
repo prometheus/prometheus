@@ -120,6 +120,10 @@ type fingerprint struct {
 	lastCharacterOfLastLabelValue  string
 }
 
+func (f fingerprint) String() string {
+	return f.ToRowKey()
+}
+
 func (f fingerprint) ToRowKey() string {
 	return strings.Join([]string{fmt.Sprintf("%020d", f.hash), f.firstCharacterOfFirstLabelName, fmt.Sprint(f.labelMatterLength), f.lastCharacterOfLastLabelValue}, rowKeyDelimiter)
 }

@@ -64,7 +64,8 @@ func (c curator) run() (err error) {
 	var (
 		decoder watermarkDecoder
 		filter  = watermarkFilter{
-			stop: c.stop,
+			stop:          c.stop,
+			curationState: c.curationState,
 		}
 		operator = watermarkOperator{
 			olderThan:     c.cutOff,

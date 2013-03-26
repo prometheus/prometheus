@@ -177,10 +177,10 @@ type (
 type (
 	// Matrix literal, i.e. metric name plus labelset and timerange.
 	MatrixLiteral struct {
-		labels   model.LabelSet
+		labels model.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
 		fingerprints model.Fingerprints
-		interval time.Duration
+		interval     time.Duration
 	}
 )
 
