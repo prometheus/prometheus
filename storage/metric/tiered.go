@@ -46,6 +46,7 @@ type tieredStorage struct {
 type viewJob struct {
 	builder ViewRequestBuilder
 	output  chan View
+	abort   chan bool
 	err     chan error
 }
 
@@ -115,11 +116,18 @@ func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 		return
 	}
 
-	result := make(chan View)
+	// The result channel needs a one-element buffer in case we have timed out in
+	// MakeView, but the view rendering still completes afterwards and writes to
+	// the channel.
+	result := make(chan View, 1)
+	// The abort channel needs a one-element buffer in case the view rendering
+	// has already exited and doesn't consume from the channel anymore.
+	abortChan := make(chan bool, 1)
 	errChan := make(chan error)
 	t.viewQueue <- viewJob{
 		builder: builder,
 		output:  result,
+		abort:   abortChan,
 		err:     errChan,
 	}
 
@@ -129,6 +137,7 @@ func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 	case err = <-errChan:
 		return
 	case <-time.After(deadline):
+		abortChan <- true
 		err = fmt.Errorf("MakeView timed out after %s.", deadline)
 	}
 
@@ -379,6 +388,11 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 
 		standingOps := scanJob.operations
 		for len(standingOps) > 0 {
+			// Abort the view rendering if the caller (MakeView) has timed out.
+			if len(viewJob.abort) > 0 {
+				return
+			}
+
 			// Load data value chunk(s) around the first standing op's current time.
 			highWatermark := *standingOps[0].CurrentTime()
 			// XXX: For earnest performance gains analagous to the benchmarking we
