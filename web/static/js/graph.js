@@ -384,6 +384,7 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
 
   self.changeHandler();
 };
+
 Prometheus.Graph.prototype.resizeGraph = function() {
   var self = this;
   self.rickshawGraph.configure({

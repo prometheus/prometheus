@@ -35,19 +35,9 @@ input:not([type=submit]):not([type=file]):not([type=button]) {
   float: right;
 }
 
-.graph {
-  min-height: 400px;
-  overflow-x: hidden;
-}
-
-div.legend {
-  display: block;
-  overflow: scroll;
-}
-
 input {
   margin: 0;
-  border: 1px solid black;
+  border: 1px solid gray;
 }
 
 select {
