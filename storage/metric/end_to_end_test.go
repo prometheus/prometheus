@@ -25,8 +25,8 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: model.Metric{
-			"name":         "my_metric",
-			"request_type": "your_mom",
+			model.MetricNameLabel: "my_metric",
+			"request_type":        "your_mom",
 		},
 	}, t)
 
@@ -34,13 +34,13 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: model.Metric{
-			"name":         "my_metric",
-			"request_type": "your_dad",
+			model.MetricNameLabel: "my_metric",
+			"request_type":        "your_dad",
 		},
 	}, t)
 
 	result, err := p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.LabelName("name"): model.LabelValue("my_metric"),
+		model.MetricNameLabel: model.LabelValue("my_metric"),
 	})
 
 	if err != nil {
@@ -81,9 +81,9 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: model.Metric{
-			"name":         "my_metric",
-			"request_type": "your_mom",
-			"language":     "english",
+			model.MetricNameLabel: "my_metric",
+			"request_type":        "your_mom",
+			"language":            "english",
 		},
 	}, t)
 
@@ -91,13 +91,13 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: model.Metric{
-			"name":         "my_metric",
-			"request_type": "your_dad",
-			"sprache":      "deutsch",
+			model.MetricNameLabel: "my_metric",
+			"request_type":        "your_dad",
+			"sprache":             "deutsch",
 		},
 	}, t)
 
-	b := model.LabelName("name")
+	b := model.MetricNameLabel
 	result, err := p.GetFingerprintsForLabelName(b)
 
 	if err != nil {
@@ -230,9 +230,9 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 
 func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 	metric := model.Metric{
-		"controller": "foo",
-		"name":       "errors_total",
-		"operation":  "bar",
+		model.MetricNameLabel: "errors_total",
+		"controller":          "foo",
+		"operation":           "bar",
 	}
 
 	increments := 10
@@ -255,9 +255,9 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 	}
 
 	labelSet := model.LabelSet{
-		"controller": "foo",
-		"name":       "errors_total",
-		"operation":  "bar",
+		model.MetricNameLabel: "errors_total",
+		"controller":          "foo",
+		"operation":           "bar",
 	}
 
 	for i := 0; i < increments; i++ {
@@ -290,9 +290,9 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 
 func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 	metric := model.Metric{
-		"controller": "foo",
-		"name":       "errors_total",
-		"operation":  "bar",
+		model.MetricNameLabel: "errors_total",
+		"controller":          "foo",
+		"operation":           "bar",
 	}
 
 	increments := 10
@@ -318,9 +318,9 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 	}
 
 	labelSet := model.LabelSet{
-		"controller": "foo",
-		"name":       "errors_total",
-		"operation":  "bar",
+		model.MetricNameLabel: "errors_total",
+		"controller":          "foo",
+		"operation":           "bar",
 	}
 
 	for i := 0; i < increments; i++ {

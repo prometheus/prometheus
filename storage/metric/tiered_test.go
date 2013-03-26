@@ -81,7 +81,7 @@ func testMakeView(t test.Tester) {
 	}
 	var (
 		instant     = time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local)
-		metric      = model.Metric{"name": "request_count"}
+		metric      = model.Metric{model.MetricNameLabel: "request_count"}
 		fingerprint = model.NewFingerprintFromMetric(metric)
 		scenarios   = []struct {
 			data []model.Sample
@@ -498,7 +498,7 @@ func TestGetAllValuesForLabel(t *testing.T) {
 		defer closer.Close()
 		for j, metric := range scenario.in {
 			sample := model.Sample{
-				Metric: model.Metric{"name": model.LabelValue(metric.metricName)},
+				Metric: model.Metric{model.MetricNameLabel: model.LabelValue(metric.metricName)},
 			}
 			if metric.appendToMemory {
 				if err := tiered.(*tieredStorage).memoryArena.AppendSample(sample); err != nil {
@@ -511,7 +511,7 @@ func TestGetAllValuesForLabel(t *testing.T) {
 				}
 			}
 		}
-		metricNames, err := tiered.GetAllValuesForLabel("name")
+		metricNames, err := tiered.GetAllValuesForLabel(model.MetricNameLabel)
 		if err != nil {
 			t.Fatalf("%d. Error getting metric names: %s", i, err)
 		}

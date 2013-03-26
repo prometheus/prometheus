@@ -100,7 +100,7 @@ label_assign       : IDENTIFIER '=' STRING
 rule_expr          : '(' rule_expr ')'
                      { $$ = $2 }
                    | IDENTIFIER rule_labels
-                     { $2["name"] = model.LabelValue($1); $$ = ast.NewVectorLiteral($2) }
+                     { $2[model.MetricNameLabel] = model.LabelValue($1); $$ = ast.NewVectorLiteral($2) }
                    | IDENTIFIER '(' func_arg_list ')'
                      {
                        var err error

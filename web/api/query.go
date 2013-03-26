@@ -17,6 +17,7 @@ import (
 	"code.google.com/p/gorest"
 	"encoding/json"
 	"errors"
+	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
 	"log"
@@ -86,7 +87,7 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 }
 
 func (serv MetricsService) Metrics() string {
-	metricNames, err := serv.appState.Storage.GetAllValuesForLabel("name")
+	metricNames, err := serv.appState.Storage.GetAllValuesForLabel(model.MetricNameLabel)
 	rb := serv.ResponseBuilder()
 	rb.SetContentType(gorest.Application_Json)
 	if err != nil {

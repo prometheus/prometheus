@@ -37,125 +37,125 @@ func testProcessor001Process(t test.Tester) {
 			out: []Result{
 				{
 					Sample: model.Sample{
-						Metric: model.Metric{"service": "zed", "name": "rpc_calls_total"},
+						Metric: model.Metric{"service": "zed", model.MetricNameLabel: "rpc_calls_total"},
 						Value:  25,
 					},
 				},
 				{
 					Sample: model.Sample{
-						Metric: model.Metric{"service": "bar", "name": "rpc_calls_total"},
-						Value:  25,
-					},
-				},
-				{
-					Sample: model.Sample{
-
-						Metric: model.Metric{"service": "foo", "name": "rpc_calls_total"},
+						Metric: model.Metric{"service": "bar", model.MetricNameLabel: "rpc_calls_total"},
 						Value:  25,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.010000", "name": "rpc_latency_microseconds", "service": "zed"},
+						Metric: model.Metric{"service": "foo", model.MetricNameLabel: "rpc_calls_total"},
+						Value:  25,
+					},
+				},
+				{
+					Sample: model.Sample{
+
+						Metric: model.Metric{"percentile": "0.010000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "zed"},
 						Value:  0.04598141,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.010000", "name": "rpc_latency_microseconds", "service": "bar"},
+						Metric: model.Metric{"percentile": "0.010000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "bar"},
 						Value:  78.485634,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.010000", "name": "rpc_latency_microseconds", "service": "foo"},
+						Metric: model.Metric{"percentile": "0.010000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "foo"},
 						Value:  15.890724674774395,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.050000", "name": "rpc_latency_microseconds", "service": "zed"},
+						Metric: model.Metric{"percentile": "0.050000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "zed"},
 						Value:  0.04598141,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.050000", "name": "rpc_latency_microseconds", "service": "bar"},
+						Metric: model.Metric{"percentile": "0.050000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "bar"},
 						Value:  78.485634,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.050000", "name": "rpc_latency_microseconds", "service": "foo"},
+						Metric: model.Metric{"percentile": "0.050000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "foo"},
 						Value:  15.890724674774395,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.500000", "name": "rpc_latency_microseconds", "service": "zed"},
+						Metric: model.Metric{"percentile": "0.500000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "zed"},
 						Value:  0.61204565,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.500000", "name": "rpc_latency_microseconds", "service": "bar"},
+						Metric: model.Metric{"percentile": "0.500000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "bar"},
 						Value:  97.317986,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.500000", "name": "rpc_latency_microseconds", "service": "foo"},
+						Metric: model.Metric{"percentile": "0.500000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "foo"},
 						Value:  84.63044,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.900000", "name": "rpc_latency_microseconds", "service": "zed"},
+						Metric: model.Metric{"percentile": "0.900000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "zed"},
 						Value:  1.3559151,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.900000", "name": "rpc_latency_microseconds", "service": "bar"},
+						Metric: model.Metric{"percentile": "0.900000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "bar"},
 						Value:  109.89202,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.900000", "name": "rpc_latency_microseconds", "service": "foo"},
+						Metric: model.Metric{"percentile": "0.900000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "foo"},
 						Value:  160.21101,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.990000", "name": "rpc_latency_microseconds", "service": "zed"},
+						Metric: model.Metric{"percentile": "0.990000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "zed"},
 						Value:  1.7727332,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.990000", "name": "rpc_latency_microseconds", "service": "bar"},
+						Metric: model.Metric{"percentile": "0.990000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "bar"},
 						Value:  109.99626,
 					},
 				},
 				{
 					Sample: model.Sample{
 
-						Metric: model.Metric{"percentile": "0.990000", "name": "rpc_latency_microseconds", "service": "foo"},
+						Metric: model.Metric{"percentile": "0.990000", model.MetricNameLabel: "rpc_latency_microseconds", "service": "foo"},
 						Value:  172.49829,
 					},
 				},
