@@ -71,6 +71,14 @@ Prometheus.Graph.prototype.initialize = function() {
   self.stacked = self.queryForm.find("input[name=stacked]");
   self.insertMetric = self.queryForm.find("select[name=insert_metric]");
 
+  // Return moves focus back to expr instead of submitting.
+  self.insertMetric.bind('keydown', 'return', function(e) {
+    self.expr.focus();
+    self.expr.val(self.expr.val());
+
+    return e.preventDefault();
+  })
+
   self.graph = graphWrapper.find(".graph");
   self.legend = graphWrapper.find(".legend");
   self.spinner = graphWrapper.find(".spinner");
@@ -96,8 +104,11 @@ Prometheus.Graph.prototype.initialize = function() {
   self.queryForm.find("input[name=dec_end]").click(function() { self.decreaseEnd(); });
 
   self.insertMetric.change(function() {
-      self.expr.val(self.expr.val() + self.insertMetric.val());
+    self.expr.selection('replace', {text: self.insertMetric.val(), mode: 'before'})
+    self.insertMetric.focus(); // refocusing
   });
+  self.insertMetric.click(function() { self.expr.focus() })
+
   self.expr.focus(); // TODO: move to external Graph method.
 
   self.populateInsertableMetrics();
@@ -114,9 +125,12 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
       url: "/api/metrics",
       dataType: "json",
       success: function(json, textStatus) {
+        var availableMetrics = []
         for (var i = 0; i < json.length; i++) {
           self.insertMetric[0].options.add(new Option(json[i], json[i]));
+          availableMetrics.push(json[i])
         }
+        self.expr.autocomplete({source: availableMetrics})
       },
       error: function() {
         alert("Error loading available metrics!");
@@ -321,8 +335,8 @@ Prometheus.Graph.prototype.showGraph = function() {
   var self = this;
   self.rickshawGraph = new Rickshaw.Graph({
     element: self.graph[0],
-    height: Math.max($(window).height() - 200, 100),
-    width: Math.max($(window).width() - 200, 200),
+    height: Math.max(self.graph.innerHeight(), 100),
+    width: Math.max(self.graph.innerWidth(), 200),
     renderer: (self.stacked.is(":checked") ? "stack" : "line"),
     interpolation: "linear",
     series: self.data
@@ -371,6 +385,15 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
   self.changeHandler();
 };
 
+Prometheus.Graph.prototype.resizeGraph = function() {
+  var self = this;
+  self.rickshawGraph.configure({
+    height: Math.max(self.graph.innerHeight(), 100),
+    width: Math.max(self.graph.innerWidth(), 200),
+  });
+  self.rickshawGraph.render();
+};
+
 function parseGraphOptionsFromUrl() {
   var hashOptions = window.location.hash.slice(1);
   if (!hashOptions) {
@@ -394,6 +417,9 @@ function addGraph(options) {
   graphs.push(graph);
   graph.onChange(function() {
     storeGraphOptionsInUrl();
+  });
+  $(window).resize(function() {
+    graph.resizeGraph();
   });
 }
 
