@@ -562,7 +562,7 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 			key                   = &dto.Fingerprint{}
 			value                 = &dto.MetricHighWatermark{}
 			raw                   []byte
-			oldestSampleTimestamp = samples[len(samples)-1].Timestamp
+			newestSampleTimestamp = samples[len(samples)-1].Timestamp
 			keyEncoded            = coding.NewProtocolBufferEncoder(key)
 		)
 
@@ -580,11 +580,11 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 				continue
 			}
 
-			if oldestSampleTimestamp.Before(time.Unix(*value.Timestamp, 0)) {
+			if newestSampleTimestamp.Before(time.Unix(*value.Timestamp, 0)) {
 				continue
 			}
 		}
-		value.Timestamp = proto.Int64(oldestSampleTimestamp.Unix())
+		value.Timestamp = proto.Int64(newestSampleTimestamp.Unix())
 		batch.Put(keyEncoded, coding.NewProtocolBufferEncoder(value))
 		mutationCount++
 	}
