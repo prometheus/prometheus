@@ -57,12 +57,7 @@ func (v *viewAdapter) chooseClosestSample(samples []model.SamplePair, timestamp 
 	return
 }
 
-func (v *viewAdapter) GetValueAtTime(labels model.LabelSet, timestamp *time.Time) (samples []*model.Sample, err error) {
-	fingerprints, err := queryStorage.GetFingerprintsForLabelSet(labels)
-	if err != nil {
-		return
-	}
-
+func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp *time.Time) (samples []*model.Sample, err error) {
 	for _, fingerprint := range fingerprints {
 		sampleCandidates := v.view.GetValueAtTime(fingerprint, *timestamp)
 		samplePair := v.chooseClosestSample(sampleCandidates, timestamp)
@@ -81,12 +76,7 @@ func (v *viewAdapter) GetValueAtTime(labels model.LabelSet, timestamp *time.Time
 	return
 }
 
-func (v *viewAdapter) GetBoundaryValues(labels model.LabelSet, interval *model.Interval) (sampleSets []*model.SampleSet, err error) {
-	fingerprints, err := queryStorage.GetFingerprintsForLabelSet(labels)
-	if err != nil {
-		return
-	}
-
+func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []*model.SampleSet, err error) {
 	for _, fingerprint := range fingerprints {
 		// TODO: change to GetBoundaryValues() once it has the right return type.
 		samplePairs := v.view.GetRangeValues(fingerprint, *interval)
@@ -109,12 +99,7 @@ func (v *viewAdapter) GetBoundaryValues(labels model.LabelSet, interval *model.I
 	return sampleSets, nil
 }
 
-func (v *viewAdapter) GetRangeValues(labels model.LabelSet, interval *model.Interval) (sampleSets []*model.SampleSet, err error) {
-	fingerprints, err := queryStorage.GetFingerprintsForLabelSet(labels)
-	if err != nil {
-		return
-	}
-
+func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []*model.SampleSet, err error) {
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetRangeValues(fingerprint, *interval)
 		if samplePairs == nil {
