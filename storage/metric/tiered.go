@@ -562,7 +562,7 @@ func (t *tieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fin
 	if err != nil {
 		return
 	}
-	diskFingerprints, err := t.memoryArena.GetFingerprintsForLabelSet(labelSet)
+	diskFingerprints, err := t.diskStorage.GetFingerprintsForLabelSet(labelSet)
 	if err != nil {
 		return
 	}
