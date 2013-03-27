@@ -73,13 +73,13 @@ type Storage interface {
 	GetMetricForFingerprint(model.Fingerprint) (m *model.Metric, err error)
 }
 
-func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, writeMemoryInterval, memoryTTL time.Duration, root string) Storage {
+func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, writeMemoryInterval, memoryTTL time.Duration, root string) (storage Storage, err error) {
 	diskStorage, err := NewLevelDBMetricPersistence(root)
 	if err != nil {
-		panic(err)
+		return
 	}
 
-	return &tieredStorage{
+	storage = &tieredStorage{
 		appendToDiskQueue:   make(chan model.Sample, appendToDiskQueueDepth),
 		appendToMemoryQueue: make(chan model.Sample, appendToMemoryQueueDepth),
 		diskStorage:         diskStorage,
@@ -90,6 +90,7 @@ func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueu
 		viewQueue:           make(chan viewJob, viewQueueDepth),
 		writeMemoryInterval: writeMemoryInterval,
 	}
+	return
 }
 
 func (t *tieredStorage) AppendSample(s model.Sample) (err error) {
