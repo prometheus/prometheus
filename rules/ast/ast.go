@@ -146,6 +146,8 @@ type (
 	// Vector literal, i.e. metric name plus labelset.
 	VectorLiteral struct {
 		labels model.LabelSet
+		// Fingerprints are populated from labels at query analysis time.
+		fingerprints model.Fingerprints
 	}
 
 	// A function of vector return type.
@@ -176,6 +178,8 @@ type (
 	// Matrix literal, i.e. metric name plus labelset and timerange.
 	MatrixLiteral struct {
 		labels   model.LabelSet
+		// Fingerprints are populated from labels at query analysis time.
+		fingerprints model.Fingerprints
 		interval time.Duration
 	}
 )
@@ -358,7 +362,7 @@ func (node *VectorAggregation) Eval(timestamp *time.Time, view *viewAdapter) Vec
 }
 
 func (node *VectorLiteral) Eval(timestamp *time.Time, view *viewAdapter) Vector {
-	values, err := view.GetValueAtTime(node.labels, timestamp)
+	values, err := view.GetValueAtTime(node.fingerprints, timestamp)
 	if err != nil {
 		log.Printf("Unable to get vector values")
 		return Vector{}
@@ -546,7 +550,7 @@ func (node *MatrixLiteral) Eval(timestamp *time.Time, view *viewAdapter) Matrix 
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: *timestamp,
 	}
-	values, err := view.GetRangeValues(node.labels, interval)
+	values, err := view.GetRangeValues(node.fingerprints, interval)
 	if err != nil {
 		log.Printf("Unable to get values for vector interval")
 		return Matrix{}
@@ -559,7 +563,7 @@ func (node *MatrixLiteral) EvalBoundaries(timestamp *time.Time, view *viewAdapte
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: *timestamp,
 	}
-	values, err := view.GetBoundaryValues(node.labels, interval)
+	values, err := view.GetBoundaryValues(node.fingerprints, interval)
 	if err != nil {
 		log.Printf("Unable to get boundary values for vector interval")
 		return Matrix{}
