@@ -530,3 +530,64 @@ func TestGetAllValuesForLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestGetFingerprintsForLabelSet(t *testing.T) {
+	tiered, closer := newTestTieredStorage(t)
+	defer closer.Close()
+	memorySample := model.Sample{
+		Metric: model.Metric{model.MetricNameLabel: "http_requests", "method": "/foo"},
+	}
+	diskSample := model.Sample{
+		Metric: model.Metric{model.MetricNameLabel: "http_requests", "method": "/bar"},
+	}
+	if err := tiered.(*tieredStorage).memoryArena.AppendSample(memorySample); err != nil {
+		t.Fatalf("Failed to add fixture data: %s", err)
+	}
+	if err := tiered.(*tieredStorage).diskStorage.AppendSample(diskSample); err != nil {
+		t.Fatalf("Failed to add fixture data: %s", err)
+	}
+	tiered.Flush()
+
+	scenarios := []struct {
+		labels  model.LabelSet
+		fpCount int
+	}{
+		{
+			labels: model.LabelSet{},
+			fpCount: 0,
+		},{
+			labels: model.LabelSet{
+				model.MetricNameLabel: "http_requests",
+			},
+			fpCount: 2,
+		}, {
+			labels: model.LabelSet{
+				model.MetricNameLabel: "http_requests",
+				"method": "/foo",
+			},
+			fpCount: 1,
+		}, {
+			labels: model.LabelSet{
+				model.MetricNameLabel: "http_requests",
+				"method": "/bar",
+			},
+			fpCount: 1,
+		}, {
+			labels: model.LabelSet{
+				model.MetricNameLabel: "http_requests",
+				"method": "/baz",
+			},
+			fpCount: 0,
+		},
+	}
+
+	for i, scenario := range scenarios {
+		fingerprints, err := tiered.GetFingerprintsForLabelSet(scenario.labels)
+		if err != nil {
+			t.Fatalf("%d. Error getting metric names: %s", i, err)
+		}
+		if len(fingerprints) != scenario.fpCount {
+			t.Fatalf("%d. Expected metric count %d, got %d", i, scenario.fpCount, len(fingerprints))
+		}
+	}
+}
