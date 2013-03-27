@@ -48,7 +48,10 @@ func main() {
 		log.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	ts := metric.NewTieredStorage(5000, 5000, 100, time.Second*30, time.Second*1, time.Second*20, *metricsStoragePath)
+	ts, err := metric.NewTieredStorage(5000, 5000, 100, time.Second*30, time.Second*1, time.Second*20, *metricsStoragePath)
+	if err != nil {
+		log.Fatalf("Error opening storage: %s", err)
+	}
 	go ts.Serve()
 	go func() {
 		notifier := make(chan os.Signal)

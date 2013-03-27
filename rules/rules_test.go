@@ -214,7 +214,10 @@ func vectorComparisonString(expected []string, actual []string) string {
 func TestExpressions(t *testing.T) {
 	temporaryDirectory := test.NewTemporaryDirectory("rule_expression_tests", t)
 	defer temporaryDirectory.Close()
-	tieredStorage := metric.NewTieredStorage(5000, 5000, 100, time.Second*30, time.Second*1, time.Second*20, temporaryDirectory.Path())
+	tieredStorage, err := metric.NewTieredStorage(5000, 5000, 100, time.Second*30, time.Second*1, time.Second*20, temporaryDirectory.Path())
+	if err != nil {
+		t.Fatalf("Error opening storage: %s", err)
+	}
 	go tieredStorage.Serve()
 
 	ast.SetStorage(tieredStorage)

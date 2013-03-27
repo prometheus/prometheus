@@ -35,10 +35,14 @@ func (t testTieredStorageCloser) Close() {
 func newTestTieredStorage(t test.Tester) (storage Storage, closer test.Closer) {
 	var directory test.TemporaryDirectory
 	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
-	storage = NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
+	storage, err := NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
+
+	if err != nil {
+		t.Fatalf("Error creating storage: %s", err)
+	}
 
 	if storage == nil {
-		t.Fatalf("%d. storage == nil")
+		t.Fatalf("storage == nil")
 	}
 
 	go storage.Serve()
