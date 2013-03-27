@@ -20,6 +20,8 @@ import (
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/web/api"
 	"github.com/prometheus/prometheus/web/blob"
+	"html/template"
+	"log"
 	"net/http"
 	_ "net/http/pprof"
 )
@@ -44,4 +46,37 @@ func StartServing(appState *appstate.ApplicationState) {
 	}
 
 	go http.ListenAndServe(*listenAddress, nil)
+}
+
+func getTemplate(name string) (t *template.Template, err error) {
+	if *useLocalAssets {
+		return template.ParseFiles("web/templates/_base.html", "web/templates/"+name+".html")
+	}
+
+	t = template.New("_base")
+
+	file, err := blob.GetFile(blob.TemplateFiles, "_base.html")
+	if err != nil {
+		log.Printf("Could not read base template: %s", err)
+		return nil, err
+	}
+	t.Parse(string(file))
+
+	file, err = blob.GetFile(blob.TemplateFiles, name+".html")
+	if err != nil {
+		log.Printf("Could not read %s template: %s", name, err)
+		return nil, err
+	}
+	t.Parse(string(file))
+
+	return
+}
+
+func executeTemplate(w http.ResponseWriter, name string, data interface{}) {
+	tpl, err := getTemplate(name)
+	if err != nil {
+		log.Printf("Errror preparing layout template: %s", err)
+		return
+	}
+	tpl.Execute(w, data)
 }
