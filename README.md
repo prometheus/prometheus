@@ -33,6 +33,10 @@ For basic help how to get started:
   * [Getting started on Mac OSX](documentation/guides/getting-started-osx.md)
   * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers).
 
+## Testing
+
+[![Build Status](https://travis-ci.org/prometheus/prometheus.png)](https://travis-ci.org/prometheus/prometheus)
+
 ## License
 
 Apache License 2.0
