@@ -27,8 +27,8 @@ import (
 // ----------------------------------------------------------------------------
 // Raw data value types.
 
-type Vector []*model.Sample
-type Matrix []*model.SampleSet
+type Vector model.Samples
+type Matrix []model.SampleSet
 
 type groupedAggregation struct {
 	labels     model.Metric
@@ -97,23 +97,23 @@ type Node interface {
 // interface represents the type returned to the parent node.
 type ScalarNode interface {
 	Node
-	Eval(timestamp *time.Time, view *viewAdapter) model.SampleValue
+	Eval(timestamp time.Time, view *viewAdapter) model.SampleValue
 }
 
 type VectorNode interface {
 	Node
-	Eval(timestamp *time.Time, view *viewAdapter) Vector
+	Eval(timestamp time.Time, view *viewAdapter) Vector
 }
 
 type MatrixNode interface {
 	Node
-	Eval(timestamp *time.Time, view *viewAdapter) Matrix
-	EvalBoundaries(timestamp *time.Time, view *viewAdapter) Matrix
+	Eval(timestamp time.Time, view *viewAdapter) Matrix
+	EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix
 }
 
 type StringNode interface {
 	Node
-	Eval(timestamp *time.Time, view *viewAdapter) string
+	Eval(timestamp time.Time, view *viewAdapter) string
 }
 
 // ----------------------------------------------------------------------------
@@ -227,17 +227,17 @@ func (node MatrixLiteral) Children() []Node      { return []Node{} }
 func (node StringLiteral) Children() []Node      { return []Node{} }
 func (node StringFunctionCall) Children() []Node { return node.args }
 
-func (node *ScalarLiteral) Eval(timestamp *time.Time, view *viewAdapter) model.SampleValue {
+func (node *ScalarLiteral) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
 	return node.value
 }
 
-func (node *ScalarArithExpr) Eval(timestamp *time.Time, view *viewAdapter) model.SampleValue {
+func (node *ScalarArithExpr) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
 	lhs := node.lhs.Eval(timestamp, view)
 	rhs := node.rhs.Eval(timestamp, view)
 	return evalScalarBinop(node.opType, lhs, rhs)
 }
 
-func (node *ScalarFunctionCall) Eval(timestamp *time.Time, view *viewAdapter) model.SampleValue {
+func (node *ScalarFunctionCall) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
 	return node.function.callFn(timestamp, view, node.args).(model.SampleValue)
 }
 
@@ -263,7 +263,7 @@ func EvalVectorInstant(node VectorNode, timestamp time.Time) (vector Vector) {
 	if err != nil {
 		return
 	}
-	return node.Eval(&timestamp, viewAdapter)
+	return node.Eval(timestamp, viewAdapter)
 }
 
 func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration) (matrix Matrix, err error) {
@@ -278,7 +278,7 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 	// TODO implement watchdog timer for long-running queries.
 	sampleSets := map[string]*model.SampleSet{}
 	for t := start; t.Before(end); t = t.Add(interval) {
-		vector := node.Eval(&t, viewAdapter)
+		vector := node.Eval(t, viewAdapter)
 		for _, sample := range vector {
 			samplePair := model.SamplePair{
 				Value:     sample.Value,
@@ -297,7 +297,7 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 	}
 
 	for _, sampleSet := range sampleSets {
-		matrix = append(matrix, sampleSet)
+		matrix = append(matrix, *sampleSet)
 	}
 	return
 }
@@ -312,23 +312,23 @@ func labelIntersection(metric1, metric2 model.Metric) model.Metric {
 	return intersection
 }
 
-func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[string]*groupedAggregation, timestamp *time.Time) Vector {
+func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[string]*groupedAggregation, timestamp time.Time) Vector {
 	vector := Vector{}
 	for _, aggregation := range aggregations {
 		if node.aggrType == AVG {
 			aggregation.value = aggregation.value / model.SampleValue(aggregation.groupCount)
 		}
-		sample := &model.Sample{
+		sample := model.Sample{
 			Metric:    aggregation.labels,
 			Value:     aggregation.value,
-			Timestamp: *timestamp,
+			Timestamp: timestamp,
 		}
 		vector = append(vector, sample)
 	}
 	return vector
 }
 
-func (node *VectorAggregation) Eval(timestamp *time.Time, view *viewAdapter) Vector {
+func (node *VectorAggregation) Eval(timestamp time.Time, view *viewAdapter) Vector {
 	vector := node.vector.Eval(timestamp, view)
 	result := map[string]*groupedAggregation{}
 	for _, sample := range vector {
@@ -361,7 +361,7 @@ func (node *VectorAggregation) Eval(timestamp *time.Time, view *viewAdapter) Vec
 	return node.groupedAggregationsToVector(result, timestamp)
 }
 
-func (node *VectorLiteral) Eval(timestamp *time.Time, view *viewAdapter) Vector {
+func (node *VectorLiteral) Eval(timestamp time.Time, view *viewAdapter) Vector {
 	values, err := view.GetValueAtTime(node.fingerprints, timestamp)
 	if err != nil {
 		log.Printf("Unable to get vector values")
@@ -370,7 +370,7 @@ func (node *VectorLiteral) Eval(timestamp *time.Time, view *viewAdapter) Vector 
 	return values
 }
 
-func (node *VectorFunctionCall) Eval(timestamp *time.Time, view *viewAdapter) Vector {
+func (node *VectorFunctionCall) Eval(timestamp time.Time, view *viewAdapter) Vector {
 	return node.function.callFn(timestamp, view, node.args).(Vector)
 }
 
@@ -514,7 +514,7 @@ func labelsEqual(labels1, labels2 model.Metric) bool {
 	return true
 }
 
-func (node *VectorArithExpr) Eval(timestamp *time.Time, view *viewAdapter) Vector {
+func (node *VectorArithExpr) Eval(timestamp time.Time, view *viewAdapter) Vector {
 	lhs := node.lhs.Eval(timestamp, view)
 	result := Vector{}
 	if node.rhs.Type() == SCALAR {
@@ -545,10 +545,10 @@ func (node *VectorArithExpr) Eval(timestamp *time.Time, view *viewAdapter) Vecto
 	panic("Invalid vector arithmetic expression operands")
 }
 
-func (node *MatrixLiteral) Eval(timestamp *time.Time, view *viewAdapter) Matrix {
+func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 	interval := &model.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
-		NewestInclusive: *timestamp,
+		NewestInclusive: timestamp,
 	}
 	values, err := view.GetRangeValues(node.fingerprints, interval)
 	if err != nil {
@@ -558,10 +558,10 @@ func (node *MatrixLiteral) Eval(timestamp *time.Time, view *viewAdapter) Matrix 
 	return values
 }
 
-func (node *MatrixLiteral) EvalBoundaries(timestamp *time.Time, view *viewAdapter) Matrix {
+func (node *MatrixLiteral) EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix {
 	interval := &model.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
-		NewestInclusive: *timestamp,
+		NewestInclusive: timestamp,
 	}
 	values, err := view.GetBoundaryValues(node.fingerprints, interval)
 	if err != nil {
@@ -583,11 +583,11 @@ func (matrix Matrix) Swap(i, j int) {
 	matrix[i], matrix[j] = matrix[j], matrix[i]
 }
 
-func (node *StringLiteral) Eval(timestamp *time.Time, view *viewAdapter) string {
+func (node *StringLiteral) Eval(timestamp time.Time, view *viewAdapter) string {
 	return node.str
 }
 
-func (node *StringFunctionCall) Eval(timestamp *time.Time, view *viewAdapter) string {
+func (node *StringFunctionCall) Eval(timestamp time.Time, view *viewAdapter) string {
 	return node.function.callFn(timestamp, view, node.args).(string)
 }
 

@@ -24,7 +24,7 @@ type Function struct {
 	name       string
 	argTypes   []ExprType
 	returnType ExprType
-	callFn     func(timestamp *time.Time, view *viewAdapter, args []Node) interface{}
+	callFn     func(timestamp time.Time, view *viewAdapter, args []Node) interface{}
 }
 
 func (function *Function) CheckArgTypes(args []Node) error {
@@ -63,17 +63,17 @@ func (function *Function) CheckArgTypes(args []Node) error {
 }
 
 // === time() ===
-func timeImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
+func timeImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return model.SampleValue(time.Now().Unix())
 }
 
 // === count(vector VectorNode) ===
-func countImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
+func countImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return model.SampleValue(len(args[0].(VectorNode).Eval(timestamp, view)))
 }
 
 // === delta(matrix MatrixNode, isCounter ScalarNode) ===
-func deltaImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
+func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
 	isCounter := int(args[1].(ScalarNode).Eval(timestamp, view))
 	resultVector := Vector{}
@@ -98,10 +98,10 @@ func deltaImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{}
 			lastValue = currentValue
 		}
 		resultValue := lastValue - samples.Values[0].Value + counterCorrection
-		resultSample := &model.Sample{
+		resultSample := model.Sample{
 			Metric:    samples.Metric,
 			Value:     resultValue,
-			Timestamp: *timestamp,
+			Timestamp: timestamp,
 		}
 		resultVector = append(resultVector, resultSample)
 	}
@@ -109,7 +109,7 @@ func deltaImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{}
 }
 
 // === rate(node *MatrixNode) ===
-func rateImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
+func rateImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	args = append(args, &ScalarLiteral{value: 1})
 	vector := deltaImpl(timestamp, view, args).(Vector)
 
@@ -124,36 +124,36 @@ func rateImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} 
 }
 
 // === sampleVectorImpl() ===
-func sampleVectorImpl(timestamp *time.Time, view *viewAdapter, args []Node) interface{} {
+func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return Vector{
-		&model.Sample{
+		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
 				"job":                 "api-server",
 				"instance":            "0",
 			},
 			Value:     10,
-			Timestamp: *timestamp,
+			Timestamp: timestamp,
 		},
-		&model.Sample{
+		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
 				"job":                 "api-server",
 				"instance":            "1",
 			},
 			Value:     20,
-			Timestamp: *timestamp,
+			Timestamp: timestamp,
 		},
-		&model.Sample{
+		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
 				"job":                 "api-server",
 				"instance":            "2",
 			},
 			Value:     30,
-			Timestamp: *timestamp,
+			Timestamp: timestamp,
 		},
-		&model.Sample{
+		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
 				"job":                 "api-server",
@@ -161,9 +161,9 @@ func sampleVectorImpl(timestamp *time.Time, view *viewAdapter, args []Node) inte
 				"group":               "canary",
 			},
 			Value:     40,
-			Timestamp: *timestamp,
+			Timestamp: timestamp,
 		},
-		&model.Sample{
+		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
 				"job":                 "api-server",
@@ -171,9 +171,9 @@ func sampleVectorImpl(timestamp *time.Time, view *viewAdapter, args []Node) inte
 				"group":               "canary",
 			},
 			Value:     40,
-			Timestamp: *timestamp,
+			Timestamp: timestamp,
 		},
-		&model.Sample{
+		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
 				"job":                 "api-server",
@@ -181,9 +181,9 @@ func sampleVectorImpl(timestamp *time.Time, view *viewAdapter, args []Node) inte
 				"group":               "mytest",
 			},
 			Value:     40,
-			Timestamp: *timestamp,
+			Timestamp: timestamp,
 		},
-		&model.Sample{
+		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
 				"job":                 "api-server",
@@ -191,7 +191,7 @@ func sampleVectorImpl(timestamp *time.Time, view *viewAdapter, args []Node) inte
 				"group":               "mytest",
 			},
 			Value:     40,
-			Timestamp: *timestamp,
+			Timestamp: timestamp,
 		},
 	}
 }

@@ -44,7 +44,7 @@ func (serv MetricsService) Query(expr string, formatJson string) (result string)
 		rb.SetContentType(gorest.Text_Plain)
 	}
 
-	return ast.EvalToString(exprNode, &timestamp, format)
+	return ast.EvalToString(exprNode, timestamp, format)
 }
 
 func (serv MetricsService) QueryRange(expr string, end int64, duration int64, step int64) string {
