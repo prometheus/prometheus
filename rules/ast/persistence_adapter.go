@@ -50,11 +50,11 @@ func interpolateSamples(first, second *model.SamplePair, timestamp time.Time) *m
 // surrounding a given target time. If samples are found both before and after
 // the target time, the sample value is interpolated between these. Otherwise,
 // the single closest sample is returned verbatim.
-func (v *viewAdapter) chooseClosestSample(samples []model.SamplePair, timestamp *time.Time) (sample *model.SamplePair) {
+func (v *viewAdapter) chooseClosestSample(samples []model.SamplePair, timestamp time.Time) (sample *model.SamplePair) {
 	var closestBefore *model.SamplePair
 	var closestAfter *model.SamplePair
 	for _, candidate := range samples {
-		delta := candidate.Timestamp.Sub(*timestamp)
+		delta := candidate.Timestamp.Sub(timestamp)
 		// Samples before target time.
 		if delta < 0 {
 			// Ignore samples outside of staleness policy window.
@@ -86,7 +86,7 @@ func (v *viewAdapter) chooseClosestSample(samples []model.SamplePair, timestamp 
 
 	switch {
 	case closestBefore != nil && closestAfter != nil:
-		sample = interpolateSamples(closestBefore, closestAfter, *timestamp)
+		sample = interpolateSamples(closestBefore, closestAfter, timestamp)
 	case closestBefore != nil:
 		sample = closestBefore
 	default:
@@ -96,26 +96,26 @@ func (v *viewAdapter) chooseClosestSample(samples []model.SamplePair, timestamp 
 	return
 }
 
-func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp *time.Time) (samples []*model.Sample, err error) {
+func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp time.Time) (samples Vector, err error) {
 	for _, fingerprint := range fingerprints {
-		sampleCandidates := v.view.GetValueAtTime(fingerprint, *timestamp)
+		sampleCandidates := v.view.GetValueAtTime(fingerprint, timestamp)
 		samplePair := v.chooseClosestSample(sampleCandidates, timestamp)
 		m, err := queryStorage.GetMetricForFingerprint(fingerprint)
 		if err != nil {
 			continue
 		}
 		if samplePair != nil {
-			samples = append(samples, &model.Sample{
+			samples = append(samples, model.Sample{
 				Metric:    *m,
 				Value:     samplePair.Value,
-				Timestamp: *timestamp,
+				Timestamp: timestamp,
 			})
 		}
 	}
 	return
 }
 
-func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []*model.SampleSet, err error) {
+func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
 	for _, fingerprint := range fingerprints {
 		// TODO: change to GetBoundaryValues() once it has the right return type.
 		samplePairs := v.view.GetRangeValues(fingerprint, *interval)
@@ -129,7 +129,7 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interva
 			continue
 		}
 
-		sampleSet := &model.SampleSet{
+		sampleSet := model.SampleSet{
 			Metric: *m,
 			Values: samplePairs,
 		}
@@ -138,7 +138,7 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interva
 	return sampleSets, nil
 }
 
-func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []*model.SampleSet, err error) {
+func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetRangeValues(fingerprint, *interval)
 		if samplePairs == nil {
@@ -151,7 +151,7 @@ func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *
 			continue
 		}
 
-		sampleSet := &model.SampleSet{
+		sampleSet := model.SampleSet{
 			Metric: *m,
 			Values: samplePairs,
 		}
