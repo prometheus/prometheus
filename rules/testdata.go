@@ -42,7 +42,7 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 	vector := ast.Vector{}
 	for _, sampleSet := range matrix {
 		lastSample := sampleSet.Values[len(sampleSet.Values)-1]
-		vector = append(vector, &model.Sample{
+		vector = append(vector, model.Sample{
 			Metric:    sampleSet.Metric,
 			Value:     lastSample.Value,
 			Timestamp: lastSample.Timestamp,

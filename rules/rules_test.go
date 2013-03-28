@@ -241,7 +241,7 @@ func TestExpressions(t *testing.T) {
 				t.Errorf("Test should fail, but didn't")
 			}
 			failed := false
-			resultStr := ast.EvalToString(testExpr, &testEvalTime, ast.TEXT)
+			resultStr := ast.EvalToString(testExpr, testEvalTime, ast.TEXT)
 			resultLines := strings.Split(resultStr, "\n")
 
 			if len(exprTest.output) != len(resultLines) {

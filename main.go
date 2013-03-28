@@ -95,7 +95,7 @@ func main() {
 
 		case ruleResult := <-ruleResults:
 			for _, sample := range ruleResult.Samples {
-				ts.AppendSample(*sample)
+				ts.AppendSample(sample)
 			}
 		}
 	}
