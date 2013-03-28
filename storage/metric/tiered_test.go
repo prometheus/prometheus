@@ -550,9 +550,9 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 		fpCount int
 	}{
 		{
-			labels: model.LabelSet{},
+			labels:  model.LabelSet{},
 			fpCount: 0,
-		},{
+		}, {
 			labels: model.LabelSet{
 				model.MetricNameLabel: "http_requests",
 			},
@@ -560,19 +560,19 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 		}, {
 			labels: model.LabelSet{
 				model.MetricNameLabel: "http_requests",
-				"method": "/foo",
+				"method":              "/foo",
 			},
 			fpCount: 1,
 		}, {
 			labels: model.LabelSet{
 				model.MetricNameLabel: "http_requests",
-				"method": "/bar",
+				"method":              "/bar",
 			},
 			fpCount: 1,
 		}, {
 			labels: model.LabelSet{
 				model.MetricNameLabel: "http_requests",
-				"method": "/baz",
+				"method":              "/baz",
 			},
 			fpCount: 0,
 		},
