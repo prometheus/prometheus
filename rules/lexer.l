@@ -45,7 +45,7 @@ AVG|SUM|MAX|MIN          { yylval.str = yytext; return AGGR_OP }
 [*/%]                    { yylval.str = yytext; return MULT_OP }
 
 {D}+{U}                  { yylval.str = yytext; return DURATION }
-{L}({L}|{D})+            { yylval.str = yytext; return IDENTIFIER }
+{L}({L}|{D})*            { yylval.str = yytext; return IDENTIFIER }
 
 \-?{D}+(\.{D}*)?         { num, err := strconv.ParseFloat(yytext, 32);
                            if (err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax) {
