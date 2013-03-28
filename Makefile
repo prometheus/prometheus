@@ -16,7 +16,7 @@ TEST_ARTIFACTS = prometheus prometheus.build search_index
 all: test
 
 test: build
-	go test ./...
+	go test ./... $(GO_TEST_FLAGS)
 
 build:
 	$(MAKE) -C model
