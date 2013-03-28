@@ -24,12 +24,14 @@ action if some condition is observed to be true.
   7. Prometheus Client, Prometheus in Prometheus (https://github.com/prometheus/client_golang).
   8. Snappy, a compression library for LevelDB and Levigo (http://code.google.com/p/snappy/).
 
-## Getting started
+## Getting Started
 
 For basic help how to get started:
 
-  * For Linux users, please consult the Travis CI configuration in _.travis.yml_.
+  * The source code is periodically indexed: [Prometheus Core](http://godoc.org/github.com/prometheus/prometheus).
+  * For Linux users, please consult the Travis CI configuration in _.travis.yml_ and _Makefile.TRAVIS_.
   * [Getting started on Mac OSX](documentation/guides/getting-started-osx.md)
+  * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers).
 
 ## License
 
