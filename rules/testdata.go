@@ -140,6 +140,14 @@ var testMatrix = ast.Matrix{
 		},
 		Values: getTestValueStream(0, 800, 80),
 	},
+	// Single-letter metric and label names.
+	{
+		Metric: model.Metric{
+			model.MetricNameLabel: "x",
+			"y":                   "testvalue",
+		},
+		Values: getTestValueStream(0, 100, 10),
+	},
 }
 
 var testVector = getTestVectorFromTestMatrix(testMatrix)

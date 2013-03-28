@@ -179,6 +179,13 @@ var expressionTests = []struct {
 		},
 		fullRanges:     8,
 		intervalRanges: 0,
+	}, {
+		expr: "x{y='testvalue'}",
+		output: []string{
+			"x{y='testvalue'} => 100 @[%v]",
+		},
+		fullRanges:     0,
+		intervalRanges: 1,
 		// Invalid expressions that should fail to parse.
 	}, {
 		expr:       "",
