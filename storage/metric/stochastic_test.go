@@ -189,12 +189,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 	stochastic := func(x int) (success bool) {
 		p, closer := persistenceMaker()
 		defer closer.Close()
-		defer func() {
-			err := p.Close()
-			if err != nil {
-				t.Error(err)
-			}
-		}()
+		defer p.Close()
 
 		seed := rand.NewSource(int64(x))
 		random := rand.New(seed)

@@ -16,14 +16,14 @@ package raw
 import (
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
-	"io"
 )
 
 // Persistence models a key-value store for bytes that supports various
 // additional operations.
 type Persistence interface {
-	io.Closer
-
+	// Close reaps all of the underlying system resources associated with this
+	// persistence.
+	Close()
 	// Has informs the user whether a given key exists in the database.
 	Has(key coding.Encoder) (bool, error)
 	// Get retrieves the key from the database if it exists or returns nil if
@@ -50,8 +50,9 @@ type Persistence interface {
 // en masse.  The interface implies no protocol around the atomicity of
 // effectuation.
 type Batch interface {
-	io.Closer
-
+	// Close reaps all of the underlying system resources associated with this
+	// batch mutation.
+	Close()
 	// Put follows the same protocol as Persistence.Put.
 	Put(key, value coding.Encoder)
 	// Drop follows the same protocol as Persistence.Drop.

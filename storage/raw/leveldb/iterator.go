@@ -38,4 +38,5 @@ type Iterator interface {
 	SeekToFirst() (ok bool)
 	SeekToLast() (ok bool)
 	Value() []byte
+	Close()
 }
