@@ -1,15 +1,8 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Prometheus Expression Browser</title>
-    <link type="text/css" rel="stylesheet" href="css/prometheus.css">
-    <link type="text/css" rel="stylesheet" href="css/graph.css">
-    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+{{define "head"}}
     <script src="js/exprBrowser.js"></script>
-  </head>
+{{end}}
 
-  <body>
+{{define "content"}}
     <div class="grouping_box">
       <form action="/api/query" method="GET" id="queryForm">
         <label for="expr">Expression:</label>
@@ -23,5 +16,4 @@
         <div id="result"></div>
       </pre>
     </div>
-  </body>
-</html>
+{{end}}

@@ -36,7 +36,10 @@ func StartServing(appState *appstate.ApplicationState) {
 	gorest.RegisterService(api.NewMetricsService(appState))
 	exporter := registry.DefaultRegistry.YieldExporter()
 
-	http.Handle("/status", &StatusHandler{appState: appState})
+	http.Handle("/", &StatusHandler{appState: appState})
+	http.HandleFunc("/graph", graphHandler)
+	http.HandleFunc("/console", consoleHandler)
+
 	http.Handle("/api/", gorest.Handle())
 	http.Handle("/metrics.json", exporter)
 	if *useLocalAssets {

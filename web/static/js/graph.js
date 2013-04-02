@@ -20,6 +20,7 @@
 
 var Prometheus = Prometheus || {};
 var graphs = [];
+var graphTemplate;
 
 Prometheus.Graph = function(element, options) {
   this.el = element;
@@ -57,9 +58,8 @@ Prometheus.Graph.prototype.initialize = function() {
   self.options['stacked_checked'] = self.options['stacked'] ? "checked" : "";
 
   // Draw graph controls and container from Handlebars template.
-  var source = $("#graph_template").html();
-  var template = Handlebars.compile(source);
-  var graphHtml = template(self.options);
+
+  var graphHtml = graphTemplate(self.options);
   self.el.append(graphHtml);
 
   // Get references to all the interesting elements in the graph container and
@@ -428,15 +428,22 @@ function init() {
     cache: false
   });
 
-  var options = parseGraphOptionsFromUrl();
-  if (options.length == 0) {
-    options.push({});
-  }
-  for (var i = 0; i < options.length; i++) {
-    addGraph(options[i]);
-  }
-
-  $("#add_graph").click(function() { addGraph({}); });
+  $.ajax({ 
+    url: "/static/js/graph_template.handlebar",  
+    success: function(data) {
+      console.log("got template")
+      console.log(data)
+      graphTemplate = Handlebars.compile(data);
+      var options = parseGraphOptionsFromUrl();
+      if (options.length == 0) {
+        options.push({});
+      }
+      for (var i = 0; i < options.length; i++) {
+        addGraph(options[i]);
+      }
+      $("#add_graph").click(function() { addGraph({}); });
+    }  
+  })
 }
 
 $(init);
