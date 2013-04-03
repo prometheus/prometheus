@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	fixture "github.com/prometheus/prometheus/storage/raw/leveldb/test"
 	"testing"
 	"time"
@@ -478,14 +479,32 @@ func TestCurator(t *testing.T) {
 	)
 
 	for _, scenario := range scenarios {
-		var (
-			curatorDirectory   = fixture.NewPreparer(t).Prepare("curator", fixture.NewCassetteFactory(scenario.context.curationStates))
-			watermarkDirectory = fixture.NewPreparer(t).Prepare("watermark", fixture.NewCassetteFactory(scenario.context.watermarkStates))
-			sampleDirectory    = fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.context.sampleGroups))
-		)
+		curatorDirectory := fixture.NewPreparer(t).Prepare("curator", fixture.NewCassetteFactory(scenario.context.curationStates))
 		defer curatorDirectory.Close()
+
+		watermarkDirectory := fixture.NewPreparer(t).Prepare("watermark", fixture.NewCassetteFactory(scenario.context.watermarkStates))
 		defer watermarkDirectory.Close()
+
+		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.context.sampleGroups))
 		defer sampleDirectory.Close()
+
+		curatorState, err := leveldb.NewLevelDBPersistence(curatorDirectory.Path(), 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer curatorState.Close()
+
+		watermarkState, err := leveldb.NewLevelDBPersistence(watermarkDirectory.Path(), 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer watermarkState.Close()
+
+		samples, err := leveldb.NewLevelDBPersistence(sampleDirectory.Path(), 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer samples.Close()
 
 	}
 }
