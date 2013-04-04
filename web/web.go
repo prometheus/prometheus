@@ -77,7 +77,7 @@ func getTemplate(name string) (t *template.Template, err error) {
 func executeTemplate(w http.ResponseWriter, name string, data interface{}) {
 	tpl, err := getTemplate(name)
 	if err != nil {
-		log.Printf("Errror preparing layout template: %s", err)
+		log.Printf("Error preparing layout template: %s", err)
 		return
 	}
 	tpl.Execute(w, data)
