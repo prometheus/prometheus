@@ -431,8 +431,6 @@ function init() {
   $.ajax({ 
     url: "/static/js/graph_template.handlebar",  
     success: function(data) {
-      console.log("got template")
-      console.log(data)
       graphTemplate = Handlebars.compile(data);
       var options = parseGraphOptionsFromUrl();
       if (options.length == 0) {
