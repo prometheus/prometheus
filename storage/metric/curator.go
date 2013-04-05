@@ -37,8 +37,9 @@ type curator struct {
 	// watermarks is the on-disk store that is scanned for high watermarks for
 	// given metrics.
 	watermarks raw.Persistence
-	// cutOff represents the most recent time up to which values will be curated.
-	cutOff time.Time
+	// recencyThreshold represents the most recent time up to which values will be
+	// curated.
+	recencyThreshold time.Duration
 	// groupingQuantity represents the number of samples below which encountered
 	// samples will be dismembered and reaggregated into larger groups.
 	groupingQuantity uint32
@@ -48,9 +49,9 @@ type curator struct {
 }
 
 // newCurator builds a new curator for the given LevelDB databases.
-func newCurator(cutOff time.Time, groupingQuantity uint32, curationState, samples, watermarks raw.Persistence) curator {
+func newCurator(recencyThreshold time.Duration, groupingQuantity uint32, curationState, samples, watermarks raw.Persistence) curator {
 	return curator{
-		cutOff:           cutOff,
+		recencyThreshold: recencyThreshold,
 		stop:             make(chan bool),
 		samples:          samples,
 		curationState:    curationState,
@@ -60,19 +61,19 @@ func newCurator(cutOff time.Time, groupingQuantity uint32, curationState, sample
 }
 
 // run facilitates the curation lifecycle.
-func (c curator) run() (err error) {
-	var (
-		decoder watermarkDecoder
-		filter  = watermarkFilter{
-			stop:          c.stop,
-			curationState: c.curationState,
-		}
-		operator = watermarkOperator{
-			olderThan:     c.cutOff,
-			groupSize:     c.groupingQuantity,
-			curationState: c.curationState,
-		}
-	)
+func (c curator) run(instant time.Time) (err error) {
+	decoder := watermarkDecoder{}
+	filter := watermarkFilter{
+		stop:             c.stop,
+		curationState:    c.curationState,
+		groupSize:        c.groupingQuantity,
+		recencyThreshold: c.recencyThreshold,
+	}
+	operator := watermarkOperator{
+		olderThan:     instant.Add(-1 * c.recencyThreshold),
+		groupSize:     c.groupingQuantity,
+		curationState: c.curationState,
+	}
 
 	_, err = c.watermarks.ForEach(decoder, filter, operator)
 
@@ -126,24 +127,28 @@ func (w watermarkDecoder) DecodeValue(in interface{}) (out interface{}, err erro
 // watermarkFilter determines whether to include or exclude candidate
 // values from the curation process by virtue of how old the high watermark is.
 type watermarkFilter struct {
-	// curationState is the table of CurationKey to CurationValues that remark on
+	// curationState is the table of CurationKey to CurationValues that rema
 	// far along the curation process has gone for a given metric fingerprint.
 	curationState raw.Persistence
 	// stop, when non-empty, instructs the filter to stop operation.
 	stop chan bool
+	// groupSize refers to the target groupSize from the curator.
+	groupSize uint32
+	// recencyThreshold refers to the target recencyThreshold from the curator.
+	recencyThreshold time.Duration
 }
 
 func (w watermarkFilter) Filter(key, value interface{}) (result storage.FilterResult) {
-	var (
-		fingerprint      = key.(model.Fingerprint)
-		watermark        = value.(model.Watermark)
-		curationKey      = fingerprint.ToDTO()
-		rawCurationValue []byte
-		err              error
-		curationValue    = &dto.CurationValue{}
-	)
+	fingerprint := key.(model.Fingerprint)
+	watermark := value.(model.Watermark)
+	curationKey := &dto.CurationKey{
+		Fingerprint:      fingerprint.ToDTO(),
+		MinimumGroupSize: proto.Uint32(w.groupSize),
+		OlderThan:        proto.Int64(int64(w.recencyThreshold)),
+	}
+	curationValue := &dto.CurationValue{}
 
-	rawCurationValue, err = w.curationState.Get(coding.NewProtocolBufferEncoder(curationKey))
+	rawCurationValue, err := w.curationState.Get(coding.NewProtocolBuffer(curationKey))
 	if err != nil {
 		panic(err)
 	}
@@ -229,7 +234,7 @@ func (w watermarkOperator) hasBeenCurated(f model.Fingerprint) (curated bool, er
 		MinimumGroupSize: proto.Uint32(w.groupSize),
 	}
 
-	curated, err = w.curationState.Has(coding.NewProtocolBufferEncoder(curationKey))
+	curated, err = w.curationState.Has(coding.NewProtocolBuffer(curationKey))
 
 	return
 }
@@ -247,7 +252,7 @@ func (w watermarkOperator) curationConsistent(f model.Fingerprint, watermark mod
 		}
 	)
 
-	rawValue, err = w.curationState.Get(coding.NewProtocolBufferEncoder(curationKey))
+	rawValue, err = w.curationState.Get(coding.NewProtocolBuffer(curationKey))
 	if err != nil {
 		return
 	}

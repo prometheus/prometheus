@@ -27,10 +27,10 @@ import (
 
 type (
 	curationState struct {
-		fingerprint string
-		groupSize   int
-		olderThan   time.Duration
-		lastCurated time.Time
+		fingerprint      string
+		groupSize        int
+		recencyThreshold time.Duration
+		lastCurated      time.Time
 	}
 
 	watermarkState struct {
@@ -48,21 +48,23 @@ type (
 		values      []sample
 	}
 
-	context struct {
-		curationStates  fixture.Pairs
-		watermarkStates fixture.Pairs
-		sampleGroups    fixture.Pairs
+	in struct {
+		curationStates   fixture.Pairs
+		watermarkStates  fixture.Pairs
+		sampleGroups     fixture.Pairs
+		recencyThreshold time.Duration
+		groupSize        uint32
 	}
 )
 
 func (c curationState) Get() (key, value coding.Encoder) {
-	key = coding.NewProtocolBufferEncoder(&dto.CurationKey{
+	key = coding.NewProtocolBuffer(&dto.CurationKey{
 		Fingerprint:      model.NewFingerprintFromRowKey(c.fingerprint).ToDTO(),
 		MinimumGroupSize: proto.Uint32(uint32(c.groupSize)),
-		OlderThan:        proto.Int64(int64(c.olderThan)),
+		OlderThan:        proto.Int64(int64(c.recencyThreshold)),
 	})
 
-	value = coding.NewProtocolBufferEncoder(&dto.CurationValue{
+	value = coding.NewProtocolBuffer(&dto.CurationValue{
 		LastCompletionTimestamp: proto.Int64(c.lastCurated.Unix()),
 	})
 
@@ -70,13 +72,13 @@ func (c curationState) Get() (key, value coding.Encoder) {
 }
 
 func (w watermarkState) Get() (key, value coding.Encoder) {
-	key = coding.NewProtocolBufferEncoder(model.NewFingerprintFromRowKey(w.fingerprint).ToDTO())
-	value = coding.NewProtocolBufferEncoder(model.NewWatermarkFromTime(w.lastAppended).ToMetricHighWatermarkDTO())
+	key = coding.NewProtocolBuffer(model.NewFingerprintFromRowKey(w.fingerprint).ToDTO())
+	value = coding.NewProtocolBuffer(model.NewWatermarkFromTime(w.lastAppended).ToMetricHighWatermarkDTO())
 	return
 }
 
 func (s sampleGroup) Get() (key, value coding.Encoder) {
-	key = coding.NewProtocolBufferEncoder(&dto.SampleKey{
+	key = coding.NewProtocolBuffer(&dto.SampleKey{
 		Fingerprint:   model.NewFingerprintFromRowKey(s.fingerprint).ToDTO(),
 		Timestamp:     indexable.EncodeTime(s.values[0].time),
 		LastTimestamp: proto.Int64(s.values[len(s.values)-1].time.Unix()),
@@ -92,7 +94,7 @@ func (s sampleGroup) Get() (key, value coding.Encoder) {
 		})
 	}
 
-	value = coding.NewProtocolBufferEncoder(series)
+	value = coding.NewProtocolBuffer(series)
 
 	return
 }
@@ -100,22 +102,31 @@ func (s sampleGroup) Get() (key, value coding.Encoder) {
 func TestCurator(t *testing.T) {
 	var (
 		scenarios = []struct {
-			context context
+			in in
 		}{
 			{
-				context: context{
+				in: in{
+					recencyThreshold: 1 * time.Hour,
+					groupSize:        5,
 					curationStates: fixture.Pairs{
 						curationState{
-							fingerprint: "0001-A-1-Z",
-							groupSize:   5,
-							olderThan:   1 * time.Hour,
-							lastCurated: testInstant.Add(-1 * 30 * time.Minute),
+							fingerprint:      "0001-A-1-Z",
+							groupSize:        5,
+							recencyThreshold: 1 * time.Hour,
+							lastCurated:      testInstant.Add(-1 * 30 * time.Minute),
 						},
 						curationState{
-							fingerprint: "0002-A-2-Z",
-							groupSize:   5,
-							olderThan:   1 * time.Hour,
-							lastCurated: testInstant.Add(-1 * 90 * time.Minute),
+							fingerprint:      "0002-A-2-Z",
+							groupSize:        5,
+							recencyThreshold: 1 * time.Hour,
+							lastCurated:      testInstant.Add(-1 * 90 * time.Minute),
+						},
+						// This rule should effectively be ignored.
+						curationState{
+							fingerprint:      "0002-A-2-Z",
+							groupSize:        2,
+							recencyThreshold: 30 * time.Minute,
+							lastCurated:      testInstant.Add(-1 * 90 * time.Minute),
 						},
 					},
 					watermarkStates: fixture.Pairs{
@@ -124,7 +135,7 @@ func TestCurator(t *testing.T) {
 							lastAppended: testInstant.Add(-1 * 15 * time.Minute),
 						},
 						watermarkState{
-							fingerprint:  "0002-A-1-Z",
+							fingerprint:  "0002-A-2-Z",
 							lastAppended: testInstant.Add(-1 * 15 * time.Minute),
 						},
 					},
@@ -479,26 +490,26 @@ func TestCurator(t *testing.T) {
 	)
 
 	for _, scenario := range scenarios {
-		curatorDirectory := fixture.NewPreparer(t).Prepare("curator", fixture.NewCassetteFactory(scenario.context.curationStates))
+		curatorDirectory := fixture.NewPreparer(t).Prepare("curator", fixture.NewCassetteFactory(scenario.in.curationStates))
 		defer curatorDirectory.Close()
 
-		watermarkDirectory := fixture.NewPreparer(t).Prepare("watermark", fixture.NewCassetteFactory(scenario.context.watermarkStates))
+		watermarkDirectory := fixture.NewPreparer(t).Prepare("watermark", fixture.NewCassetteFactory(scenario.in.watermarkStates))
 		defer watermarkDirectory.Close()
 
-		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.context.sampleGroups))
+		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.in.sampleGroups))
 		defer sampleDirectory.Close()
 
-		curatorState, err := leveldb.NewLevelDBPersistence(curatorDirectory.Path(), 0, 0)
+		curatorStates, err := leveldb.NewLevelDBPersistence(curatorDirectory.Path(), 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer curatorState.Close()
+		defer curatorStates.Close()
 
-		watermarkState, err := leveldb.NewLevelDBPersistence(watermarkDirectory.Path(), 0, 0)
+		watermarkStates, err := leveldb.NewLevelDBPersistence(watermarkDirectory.Path(), 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer watermarkState.Close()
+		defer watermarkStates.Close()
 
 		samples, err := leveldb.NewLevelDBPersistence(sampleDirectory.Path(), 0, 0)
 		if err != nil {
@@ -506,5 +517,7 @@ func TestCurator(t *testing.T) {
 		}
 		defer samples.Close()
 
+		c := newCurator(scenario.in.recencyThreshold, scenario.in.groupSize, curatorStates, samples, watermarkStates)
+		c.run(testInstant)
 	}
 }
