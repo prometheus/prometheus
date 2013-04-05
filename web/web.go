@@ -17,6 +17,7 @@ import (
 	"code.google.com/p/gorest"
 	"flag"
 	"github.com/prometheus/client_golang"
+	"github.com/prometheus/client_golang/exp"
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/web/api"
 	"github.com/prometheus/prometheus/web/blob"
@@ -35,19 +36,19 @@ var (
 func StartServing(appState *appstate.ApplicationState) {
 	gorest.RegisterService(api.NewMetricsService(appState))
 
-	http.Handle("/", &StatusHandler{appState: appState})
-	http.HandleFunc("/graph", graphHandler)
-	http.HandleFunc("/console", consoleHandler)
+	exp.Handle("/", &StatusHandler{appState: appState})
+	exp.HandleFunc("/graph", graphHandler)
+	exp.HandleFunc("/console", consoleHandler)
 
-	http.Handle("/api/", gorest.Handle())
-	http.Handle("/metrics.json", registry.DefaultRegistry.Handler())
+	exp.Handle("/api/", gorest.Handle())
+	exp.Handle("/metrics.json", registry.DefaultHandler)
 	if *useLocalAssets {
-		http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+		exp.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	} else {
-		http.Handle("/static/", http.StripPrefix("/static/", new(blob.Handler)))
+		exp.Handle("/static/", http.StripPrefix("/static/", new(blob.Handler)))
 	}
 
-	go http.ListenAndServe(*listenAddress, nil)
+	go http.ListenAndServe(*listenAddress, exp.DefaultCoarseMux)
 }
 
 func getTemplate(name string) (t *template.Template, err error) {
