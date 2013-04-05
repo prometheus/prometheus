@@ -152,8 +152,8 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 	return string(dataJSON)
 }
 
-func EvalToString(node Node, timestamp *time.Time, format OutputFormat) string {
-	viewAdapter, err := viewAdapterForInstantQuery(node, *timestamp)
+func EvalToString(node Node, timestamp time.Time, format OutputFormat) string {
+	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp)
 	if err != nil {
 		panic(err)
 	}

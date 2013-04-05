@@ -66,6 +66,7 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 			log.Printf("Error getting fingerprints for labelset %v: %v", n.labels, err)
 			return
 		}
+		n.fingerprints = fingerprints
 		for _, fingerprint := range fingerprints {
 			if !analyzer.IntervalRanges[fingerprint] {
 				analyzer.IntervalRanges[fingerprint] = true
@@ -77,6 +78,7 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 			log.Printf("Error getting fingerprints for labelset %v: %v", n.labels, err)
 			return
 		}
+		n.fingerprints = fingerprints
 		for _, fingerprint := range fingerprints {
 			interval := n.interval
 			// If an interval has already been recorded for this fingerprint, merge

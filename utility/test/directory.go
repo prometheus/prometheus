@@ -28,31 +28,33 @@ const (
 	NilCloser = nilCloser(true)
 )
 
-type Closer interface {
-	// Close reaps the underlying directory and its children.  The directory
-	// could be deleted by its users already.
-	Close()
-}
+type (
+	Closer interface {
+		// Close reaps the underlying directory and its children.  The directory
+		// could be deleted by its users already.
+		Close()
+	}
 
-type nilCloser bool
+	nilCloser bool
+
+	// TemporaryDirectory models a closeable path for transient POSIX disk
+	// activities.
+	TemporaryDirectory interface {
+		Closer
+
+		// Path returns the underlying path for access.
+		Path() string
+	}
+
+	// temporaryDirectory is kept as a private type due to private fields and
+	// their interactions.
+	temporaryDirectory struct {
+		path   string
+		tester Tester
+	}
+)
 
 func (c nilCloser) Close() {
-}
-
-// TemporaryDirectory models a closeable path for transient POSIX disk
-// activities.
-type TemporaryDirectory interface {
-	Closer
-
-	// Path returns the underlying path for access.
-	Path() string
-}
-
-// temporaryDirectory is kept as a private type due to private fields and their
-// interactions.
-type temporaryDirectory struct {
-	path   string
-	tester Tester
 }
 
 func (t temporaryDirectory) Close() {

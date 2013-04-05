@@ -16,12 +16,14 @@ TEST_ARTIFACTS = prometheus prometheus.build search_index
 all: test
 
 test: build
-	go test ./...
+	go test ./... $(GO_TEST_FLAGS)
 
 build:
 	$(MAKE) -C model
 	$(MAKE) -C web
 	go build ./...
+
+binary: build
 	go build -o prometheus.build
 
 clean:
@@ -44,4 +46,4 @@ search_index:
 documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
-.PHONY: advice build clean documentation format search_index test
+.PHONY: advice binary build clean documentation format search_index test

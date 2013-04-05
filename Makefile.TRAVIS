@@ -28,6 +28,8 @@ export LDFLAGS := $(LDFLAGS) -L$(OVERLAY_ROOT)/lib
 export CGO_CFLAGS := $(CFLAGS) -lsnappy
 export CGO_LDFLAGS := $(LDFLAGS)
 
+export GO_TEST_FLAGS := "-v"
+
 GO_GET := go get -u -v -x
 APT_GET_INSTALL := sudo apt-get install -y
 WGET := wget -c

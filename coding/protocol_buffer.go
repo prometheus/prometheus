@@ -15,13 +15,14 @@ package coding
 
 import (
 	"code.google.com/p/goprotobuf/proto"
+	"fmt"
 )
 
-type ProtocolBufferEncoder struct {
+type ProtocolBuffer struct {
 	message proto.Message
 }
 
-func (p *ProtocolBufferEncoder) Encode() (raw []byte, err error) {
+func (p ProtocolBuffer) Encode() (raw []byte, err error) {
 	raw, err = proto.Marshal(p.message)
 
 	// XXX: Adjust legacy users of this to not check for error.
@@ -32,8 +33,12 @@ func (p *ProtocolBufferEncoder) Encode() (raw []byte, err error) {
 	return
 }
 
-func NewProtocolBufferEncoder(message proto.Message) *ProtocolBufferEncoder {
-	return &ProtocolBufferEncoder{
+func (p ProtocolBuffer) String() string {
+	return fmt.Sprintf("ProtocolBufferEncoder of %s", p.message)
+}
+
+func NewProtocolBuffer(message proto.Message) *ProtocolBuffer {
+	return &ProtocolBuffer{
 		message: message,
 	}
 }

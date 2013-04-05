@@ -42,7 +42,7 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 	vector := ast.Vector{}
 	for _, sampleSet := range matrix {
 		lastSample := sampleSet.Values[len(sampleSet.Values)-1]
-		vector = append(vector, &model.Sample{
+		vector = append(vector, model.Sample{
 			Metric:    sampleSet.Metric,
 			Value:     lastSample.Value,
 			Timestamp: lastSample.Timestamp,
@@ -139,6 +139,14 @@ var testMatrix = ast.Matrix{
 			"group":               "canary",
 		},
 		Values: getTestValueStream(0, 800, 80),
+	},
+	// Single-letter metric and label names.
+	{
+		Metric: model.Metric{
+			model.MetricNameLabel: "x",
+			"y":                   "testvalue",
+		},
+		Values: getTestValueStream(0, 100, 10),
 	},
 }
 

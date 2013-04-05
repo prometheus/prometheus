@@ -179,6 +179,13 @@ var expressionTests = []struct {
 		},
 		fullRanges:     8,
 		intervalRanges: 0,
+	}, {
+		expr: "x{y='testvalue'}",
+		output: []string{
+			"x{y='testvalue'} => 100 @[%v]",
+		},
+		fullRanges:     0,
+		intervalRanges: 1,
 		// Invalid expressions that should fail to parse.
 	}, {
 		expr:       "",
@@ -241,7 +248,7 @@ func TestExpressions(t *testing.T) {
 				t.Errorf("Test should fail, but didn't")
 			}
 			failed := false
-			resultStr := ast.EvalToString(testExpr, &testEvalTime, ast.TEXT)
+			resultStr := ast.EvalToString(testExpr, testEvalTime, ast.TEXT)
 			resultLines := strings.Split(resultStr, "\n")
 
 			if len(exprTest.output) != len(resultLines) {
