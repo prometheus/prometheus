@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Prometheus</title>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+    <link type="text/css" rel="stylesheet" href="/static/css/prometheus.css">
+    {{template "head" .}}
+  </head>
+
+  <body>
+    <div id="navigation">
+      <a href="/console">Console</a>
+      <a href="/graph">Graph</a>
+      <a href="/">Status</a>
+    </div>
+    {{template "content" .}}
+  </body>
+</html>

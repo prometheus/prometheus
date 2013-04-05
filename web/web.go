@@ -16,10 +16,14 @@ package web
 import (
 	"code.google.com/p/gorest"
 	"flag"
+	"fmt"
 	"github.com/prometheus/client_golang"
+	"github.com/prometheus/client_golang/exp"
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/web/api"
 	"github.com/prometheus/prometheus/web/blob"
+	"html/template"
+	"log"
 	"net/http"
 	_ "net/http/pprof"
 )
@@ -33,14 +37,50 @@ var (
 func StartServing(appState *appstate.ApplicationState) {
 	gorest.RegisterService(api.NewMetricsService(appState))
 
-	http.Handle("/status", &StatusHandler{appState: appState})
-	http.Handle("/api/", gorest.Handle())
-	http.Handle("/metrics.json", registry.DefaultHandler)
+	exp.Handle("/", &StatusHandler{appState: appState})
+	exp.HandleFunc("/graph", graphHandler)
+	exp.HandleFunc("/console", consoleHandler)
+
+	exp.Handle("/api/", gorest.Handle())
+	exp.Handle("/metrics.json", registry.DefaultHandler)
 	if *useLocalAssets {
-		http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+		exp.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	} else {
-		http.Handle("/static/", http.StripPrefix("/static/", new(blob.Handler)))
+		exp.Handle("/static/", http.StripPrefix("/static/", new(blob.Handler)))
 	}
 
-	go http.ListenAndServe(*listenAddress, nil)
+	go http.ListenAndServe(*listenAddress, exp.DefaultCoarseMux)
+}
+
+func getTemplate(name string) (t *template.Template, err error) {
+	if *useLocalAssets {
+		return template.ParseFiles("web/templates/_base.html", fmt.Sprintf("web/templates/%s.html", name))
+	}
+
+	t = template.New("_base")
+
+	file, err := blob.GetFile(blob.TemplateFiles, "_base.html")
+	if err != nil {
+		log.Printf("Could not read base template: %s", err)
+		return nil, err
+	}
+	t.Parse(string(file))
+
+	file, err = blob.GetFile(blob.TemplateFiles, name+".html")
+	if err != nil {
+		log.Printf("Could not read %s template: %s", name, err)
+		return nil, err
+	}
+	t.Parse(string(file))
+
+	return
+}
+
+func executeTemplate(w http.ResponseWriter, name string, data interface{}) {
+	tpl, err := getTemplate(name)
+	if err != nil {
+		log.Printf("Error preparing layout template: %s", err)
+		return
+	}
+	tpl.Execute(w, data)
 }
