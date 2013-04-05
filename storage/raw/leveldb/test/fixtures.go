@@ -15,7 +15,6 @@ package test
 
 import (
 	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility/test"
 )
@@ -64,13 +63,7 @@ type (
 
 func (p preparer) Prepare(n string, f FixtureFactory) (t test.TemporaryDirectory) {
 	t = test.NewTemporaryDirectory(n, p.tester)
-
-	var (
-		persistence raw.Persistence
-		err         error
-	)
-
-	persistence, err = leveldb.NewLevelDBPersistence(t.Path(), cacheCapacity, bitsPerBloomFilterEncoded)
+	persistence, err := leveldb.NewLevelDBPersistence(t.Path(), cacheCapacity, bitsPerBloomFilterEncoded)
 	if err != nil {
 		defer t.Close()
 		p.tester.Fatal(err)
@@ -83,12 +76,7 @@ func (p preparer) Prepare(n string, f FixtureFactory) (t test.TemporaryDirectory
 	}()
 
 	for f.HasNext() {
-		var (
-			key   coding.Encoder
-			value coding.Encoder
-		)
-
-		key, value = f.Next()
+		key, value := f.Next()
 
 		err = persistence.Put(key, value)
 		if err != nil {

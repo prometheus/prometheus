@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	existenceValue = coding.NewProtocolBufferEncoder(&dto.MembershipIndexValue{})
+	existenceValue = coding.NewProtocolBuffer(&dto.MembershipIndexValue{})
 )
 
 type LevelDBMembershipIndex struct {
