@@ -51,7 +51,7 @@ func newDiskFrontier(i leveldb.Iterator) (d *diskFrontier, err error) {
 
 	lastKey, err := extractSampleKey(i)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintln(err, i.Key(), i.Value()))
 	}
 
 	if !i.SeekToFirst() || i.Key() == nil {
@@ -90,10 +90,8 @@ func (f seriesFrontier) String() string {
 // fingerprint.  A nil diskFrontier will be returned if the series cannot
 // be found in the store.
 func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) (s *seriesFrontier, err error) {
-	var (
-		lowerSeek = firstSupertime
-		upperSeek = lastSupertime
-	)
+	lowerSeek := firstSupertime
+	upperSeek := lastSupertime
 
 	// If the diskFrontier for this iterator says that the candidate fingerprint
 	// is outside of its seeking domain, there is no way that a seriesFrontier
@@ -178,5 +176,46 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 
 	s.firstSupertime = retrievedKey.FirstTimestamp
 
+	return
+}
+
+// Contains indicates whether a given time value is within the recorded
+// interval.
+func (s seriesFrontier) Contains(t time.Time) bool {
+	return !(t.Before(s.firstSupertime) || t.After(s.lastTime))
+}
+
+// InSafeSeekRange indicates whether the time is within the recorded time range
+// and is safely seekable such that a seek does not result in an iterator point
+// after the last value of the series or outside of the entire store.
+func (s seriesFrontier) InSafeSeekRange(t time.Time) (safe bool) {
+	if !s.Contains(t) {
+		return
+	}
+
+	if s.lastSupertime.Before(t) {
+		return
+	}
+
+	return true
+}
+
+func (s seriesFrontier) After(t time.Time) bool {
+	return s.firstSupertime.After(t)
+}
+
+// optimalStartTime indicates what the best start time for a curation operation
+// should be given the curation remark.
+func (s seriesFrontier) optimalStartTime(remark *model.CurationRemark) (t time.Time) {
+	switch {
+	case remark == nil:
+		t = s.firstSupertime
+	case s.After(remark.LastCompletionTimestamp):
+		t = s.firstSupertime
+	case !s.InSafeSeekRange(remark.LastCompletionTimestamp):
+		t = s.lastSupertime
+	default:
+		t = remark.LastCompletionTimestamp
+	}
 	return
 }

@@ -15,6 +15,7 @@ package model
 
 import (
 	"code.google.com/p/goprotobuf/proto"
+	"fmt"
 	"github.com/prometheus/prometheus/coding/indexable"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"time"
@@ -65,6 +66,10 @@ func (s SampleKey) ToPartialDTO(out *dto.SampleKey) {
 	}
 
 	return
+}
+
+func (s SampleKey) String() string {
+	return fmt.Sprintf("SampleKey for %s at %s to %s with %d values.", s.Fingerprint, s.FirstTimestamp, s.LastTimestamp, s.SampleCount)
 }
 
 // NewSampleKeyFromDTO builds a new SampleKey from a provided data-transfer

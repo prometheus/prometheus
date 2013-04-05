@@ -65,6 +65,14 @@ message MetricHighWatermark {
   optional int64 timestamp = 1;
 }
 
+// CompactionProcessorDefinition models a curation process across the sample
+// corpus that ensures that sparse samples.
+message CompactionProcessorDefinition {
+  // minimum_group_size identifies how minimally samples should be grouped
+  // together to write a new SampleValueSeries chunk.
+  optional uint32 minimum_group_size = 1;
+}
+
 // CurationKey models the state of curation for a given metric fingerprint and
 // its associated samples.  The time series database only knows about compaction
 // and resampling behaviors that are explicitly defined to it in its runtime
@@ -73,19 +81,38 @@ message MetricHighWatermark {
 // effectuation state for a given metric fingerprint is.
 //
 // For instance, how far along as a rule for (Fingerprint A, Samples Older Than
-// B, and Grouped Together in Size of C) has been effectuated on-disk.
+// B, and Curation Processor) has been effectuated on-disk.
 message CurationKey {
   // fingerprint identifies the fingerprint for the given policy.
-  optional Fingerprint fingerprint        = 1;
-  // older_than represents in seconds relative to when curation cycle starts
-  // into the past when the curator should stop operating on a given metric
-  // fingerprint's samples:
+  optional Fingerprint fingerprint                 = 1;
+
+  // processor_message_type_name identifies the underlying message type that
+  // was used to encode processor_message_raw.
+  optional string      processor_message_type_name = 2;
+
+  // processor_message_raw identifies the serialized ProcessorSignature for this
+  // operation.
+  optional bytes       processor_message_raw       = 3;
+
+  // ignore_younger_than represents in seconds relative to when the curation
+  // cycle start when the curator should stop operating.  For instance, if
+  // the curation cycle starts at time T and the curation remark dictates that
+  // the curation should starts processing samples at time S, the curator should
+  // work from S until ignore_younger_than seconds before T:
   //
-  // [Oldest Sample Time, time.Now().Sub(time.Second * older_than))
-  optional int64       older_than         = 2;
-  // minimum_group_size identifies how minimally samples should be grouped
-  // together to write a new SampleValueSeries chunk.
-  optional uint32      minimum_group_size = 3;
+  // PAST                        NOW               FUTURE
+  //
+  // S--------------->|----------T
+  //                  |---IYT----|
+  //
+  // [Curation Resumption Time (S), T - IYT)
+  optional int64       ignore_younger_than         = 4;
+
+  // This could be populated by decoding the generated descriptor file into a
+  // FileDescriptorSet message and extracting the type definition for the given
+  // message schema that describes processor_message_type_name.
+  //
+  // optional google.protobuf.DescriptorProto processor_message_type_descriptor_raw = 5;
 }
 
 // CurationValue models the progress for a given CurationKey.

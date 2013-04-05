@@ -34,6 +34,19 @@ const (
 	ACCEPT
 )
 
+func (f FilterResult) String() string {
+	switch f {
+	case STOP:
+		return "STOP"
+	case SKIP:
+		return "SKIP"
+	case ACCEPT:
+		return "ACCEPT"
+	}
+
+	panic("unknown")
+}
+
 type OperatorErrorType int
 
 type OperatorError struct {

@@ -22,7 +22,7 @@ include ../Makefile.INCLUDE
 generated: generated-stamp
 
 generated-stamp: data.proto
-	protoc  --proto_path=$(PREFIX)/include:. --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
+	protoc --proto_path=$(PREFIX)/include:. --include_imports --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
 	touch $@
 
 clean:
