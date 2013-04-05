@@ -339,7 +339,7 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint
 			value.Member = append(value.Member, fingerprint.ToDTO())
 		}
 
-		batch.Put(coding.NewProtocolBufferEncoder(key), coding.NewProtocolBufferEncoder(value))
+		batch.Put(coding.NewProtocolBuffer(key), coding.NewProtocolBuffer(value))
 	}
 
 	err = l.labelNameToFingerprints.Commit(batch)
@@ -414,7 +414,7 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint
 			value.Member = append(value.Member, fingerprint.ToDTO())
 		}
 
-		batch.Put(coding.NewProtocolBufferEncoder(key), coding.NewProtocolBufferEncoder(value))
+		batch.Put(coding.NewProtocolBuffer(key), coding.NewProtocolBuffer(value))
 	}
 
 	err = l.labelSetToFingerprints.Commit(batch)
@@ -442,8 +442,8 @@ func (l *LevelDBMetricPersistence) indexFingerprints(metrics map[model.Fingerpri
 	defer batch.Close()
 
 	for fingerprint, metric := range metrics {
-		key := coding.NewProtocolBufferEncoder(fingerprint.ToDTO())
-		value := coding.NewProtocolBufferEncoder(model.MetricToDTO(metric))
+		key := coding.NewProtocolBuffer(fingerprint.ToDTO())
+		value := coding.NewProtocolBuffer(model.MetricToDTO(metric))
 		batch.Put(key, value)
 	}
 
@@ -528,7 +528,7 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerpri
 
 		// WART: We should probably encode simple fingerprints.
 		for _, metric := range absentMetrics {
-			key := coding.NewProtocolBufferEncoder(model.MetricToDTO(metric))
+			key := coding.NewProtocolBuffer(model.MetricToDTO(metric))
 			batch.Put(key, key)
 		}
 
@@ -563,7 +563,7 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 			value                 = &dto.MetricHighWatermark{}
 			raw                   []byte
 			newestSampleTimestamp = samples[len(samples)-1].Timestamp
-			keyEncoded            = coding.NewProtocolBufferEncoder(key)
+			keyEncoded            = coding.NewProtocolBuffer(key)
 		)
 
 		key.Signature = proto.String(fingerprint.ToRowKey())
@@ -585,7 +585,7 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 			}
 		}
 		value.Timestamp = proto.Int64(newestSampleTimestamp.Unix())
-		batch.Put(keyEncoded, coding.NewProtocolBufferEncoder(value))
+		batch.Put(keyEncoded, coding.NewProtocolBuffer(value))
 		mutationCount++
 	}
 
@@ -661,7 +661,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 				})
 			}
 
-			samplesBatch.Put(coding.NewProtocolBufferEncoder(key), coding.NewProtocolBufferEncoder(value))
+			samplesBatch.Put(coding.NewProtocolBuffer(key), coding.NewProtocolBuffer(value))
 		}
 	}
 
@@ -752,7 +752,7 @@ func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (value bool, 
 		recordOutcome(duration, err, map[string]string{operation: hasIndexMetric, result: success}, map[string]string{operation: hasIndexMetric, result: failure})
 	}()
 
-	dtoKey := coding.NewProtocolBufferEncoder(dto)
+	dtoKey := coding.NewProtocolBuffer(dto)
 	value, err = l.metricMembershipIndex.Has(dtoKey)
 
 	return
@@ -767,7 +767,7 @@ func (l *LevelDBMetricPersistence) HasLabelPair(dto *dto.LabelPair) (value bool,
 		recordOutcome(duration, err, map[string]string{operation: hasLabelPair, result: success}, map[string]string{operation: hasLabelPair, result: failure})
 	}()
 
-	dtoKey := coding.NewProtocolBufferEncoder(dto)
+	dtoKey := coding.NewProtocolBuffer(dto)
 	value, err = l.labelSetToFingerprints.Has(dtoKey)
 
 	return
@@ -782,7 +782,7 @@ func (l *LevelDBMetricPersistence) HasLabelName(dto *dto.LabelName) (value bool,
 		recordOutcome(duration, err, map[string]string{operation: hasLabelName, result: success}, map[string]string{operation: hasLabelName, result: failure})
 	}()
 
-	dtoKey := coding.NewProtocolBufferEncoder(dto)
+	dtoKey := coding.NewProtocolBuffer(dto)
 	value, err = l.labelNameToFingerprints.Has(dtoKey)
 
 	return
@@ -800,7 +800,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 	sets := []utility.Set{}
 
 	for _, labelSetDTO := range model.LabelSetToDTOs(&labelSet) {
-		f, err := l.labelSetToFingerprints.Get(coding.NewProtocolBufferEncoder(labelSetDTO))
+		f, err := l.labelSetToFingerprints.Get(coding.NewProtocolBuffer(labelSetDTO))
 		if err != nil {
 			return fps, err
 		}
@@ -847,7 +847,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelName, result: success}, map[string]string{operation: getFingerprintsForLabelName, result: failure})
 	}()
 
-	raw, err := l.labelNameToFingerprints.Get(coding.NewProtocolBufferEncoder(model.LabelNameToDTO(&labelName)))
+	raw, err := l.labelNameToFingerprints.Get(coding.NewProtocolBuffer(model.LabelNameToDTO(&labelName)))
 	if err != nil {
 		return
 	}
@@ -876,7 +876,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 		recordOutcome(duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
 	}()
 
-	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBufferEncoder(model.FingerprintToDTO(f)))
+	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBuffer(model.FingerprintToDTO(f)))
 	if err != nil {
 		return
 	}
@@ -958,7 +958,7 @@ func (l *LevelDBMetricPersistence) GetValueAtTime(fp model.Fingerprint, t time.T
 		Timestamp:   indexable.EncodeTime(t),
 	}
 
-	e, err := coding.NewProtocolBufferEncoder(k).Encode()
+	e, err := coding.NewProtocolBuffer(k).Encode()
 	if err != nil {
 		return
 	}
@@ -1161,7 +1161,7 @@ func (l *LevelDBMetricPersistence) GetRangeValues(fp model.Fingerprint, i model.
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
 	}
 
-	e, err := coding.NewProtocolBufferEncoder(k).Encode()
+	e, err := coding.NewProtocolBuffer(k).Encode()
 	if err != nil {
 		return
 	}

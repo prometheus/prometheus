@@ -106,7 +106,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		Timestamp:   upperSeek,
 	}
 
-	raw, err := coding.NewProtocolBufferEncoder(key).Encode()
+	raw, err := coding.NewProtocolBuffer(key).Encode()
 	if err != nil {
 		panic(err)
 	}
@@ -151,7 +151,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 
 	key.Timestamp = lowerSeek
 
-	raw, err = coding.NewProtocolBufferEncoder(key).Encode()
+	raw, err = coding.NewProtocolBuffer(key).Encode()
 	if err != nil {
 		panic(err)
 	}
