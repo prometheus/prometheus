@@ -2,8 +2,8 @@ body {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 14px;
   line-height: 20px;
-  color: #333333;
-  background-color: #eee;
+  color: #333;
+  background-color: #f2f2f2;
   margin: 0px;
   padding: 0px;
 }
@@ -49,3 +49,15 @@ input[name=end_input], input[name=range_input] {
   margin-left: -4px;
   margin-right: -4px;
 }
+
+#navigation {
+  font-size: 20pt;
+  background-color: #333;
+  color: #F2F2F2;
+  line-height: 120%;
+}
+
+#navigation a { padding-right: 1em; text-decoration: none }
+#navigation a:visited { color: #F2F2F2 }
+#navigation a:active { color: #F60 }
+#navigation a:hover { color: #06C }
