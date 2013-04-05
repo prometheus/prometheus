@@ -16,6 +16,7 @@ package web
 import (
 	"code.google.com/p/gorest"
 	"flag"
+	"fmt"
 	"github.com/prometheus/client_golang"
 	"github.com/prometheus/client_golang/exp"
 	"github.com/prometheus/prometheus/appstate"
@@ -53,7 +54,7 @@ func StartServing(appState *appstate.ApplicationState) {
 
 func getTemplate(name string) (t *template.Template, err error) {
 	if *useLocalAssets {
-		return template.ParseFiles("web/templates/_base.html", "web/templates/"+name+".html")
+		return template.ParseFiles("web/templates/_base.html", fmt.Sprintf("web/templates/%s.html", name))
 	}
 
 	t = template.New("_base")
