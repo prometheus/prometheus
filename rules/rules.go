@@ -30,13 +30,16 @@ type Rule struct {
 
 func (rule *Rule) Name() string { return rule.name }
 
-func (rule *Rule) EvalRaw(timestamp *time.Time) (vector ast.Vector) {
+func (rule *Rule) EvalRaw(timestamp *time.Time) (vector ast.Vector, err error) {
 	return ast.EvalVectorInstant(rule.vector, *timestamp)
 }
 
-func (rule *Rule) Eval(timestamp *time.Time) ast.Vector {
+func (rule *Rule) Eval(timestamp *time.Time) (vector ast.Vector, err error) {
 	// Get the raw value of the rule expression.
-	vector := rule.EvalRaw(timestamp)
+	vector, err = rule.EvalRaw(timestamp)
+	if err != nil {
+		return
+	}
 
 	// Override the metric name and labels.
 	for _, sample := range vector {
@@ -49,7 +52,7 @@ func (rule *Rule) Eval(timestamp *time.Time) ast.Vector {
 			}
 		}
 	}
-	return vector
+	return
 }
 
 func (rule *Rule) RuleToDotGraph() string {
