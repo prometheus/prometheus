@@ -94,7 +94,7 @@ func NewFingerprintFromMetric(metric Metric) (f Fingerprint) {
 			firstCharacterOfFirstLabelName = labelName[0:1]
 		}
 		if i == labelLength-1 {
-			lastCharacterOfLastLabelValue = string(labelValue[labelValueLength-2 : labelValueLength-1])
+			lastCharacterOfLastLabelValue = string(labelValue[labelValueLength-1 : labelValueLength])
 		}
 
 		summer.Write([]byte(labelName))
