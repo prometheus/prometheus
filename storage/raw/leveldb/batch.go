@@ -50,8 +50,6 @@ func (b batch) Put(key, value coding.Encoder) {
 	b.batch.Put(keyEncoded, valueEncoded)
 }
 
-func (b batch) Close() (err error) {
+func (b batch) Close() {
 	b.batch.Close()
-
-	return
 }

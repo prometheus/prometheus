@@ -24,7 +24,7 @@ import (
 type MetricPersistence interface {
 	// A storage system may rely on external resources and thusly should be
 	// closed when finished.
-	Close() error
+	Close()
 
 	// Commit all pending operations, if any, since some of the storage components
 	// queue work on channels and operate on it in bulk.

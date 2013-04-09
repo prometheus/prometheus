@@ -28,8 +28,8 @@ type LevelDBMembershipIndex struct {
 	persistence *leveldb.LevelDBPersistence
 }
 
-func (l *LevelDBMembershipIndex) Close() error {
-	return l.persistence.Close()
+func (l *LevelDBMembershipIndex) Close() {
+	l.persistence.Close()
 }
 
 func (l *LevelDBMembershipIndex) Has(key coding.Encoder) (bool, error) {

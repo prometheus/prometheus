@@ -15,10 +15,12 @@ package leveldb
 
 import (
 	"flag"
+	"fmt"
 	"github.com/jmhodges/levigo"
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
+	"time"
 )
 
 var (
@@ -57,9 +59,34 @@ type levigoIterator struct {
 	storage *levigo.DB
 	// closed indicates whether the iterator has been closed before.
 	closed bool
+	// valid indicates whether the iterator may be used.  If a LevelDB iterator
+	// ever becomes invalid, it must be disposed of and cannot be reused.
+	valid bool
+	// creationTime provides the time at which the iterator was made.
+	creationTime time.Time
 }
 
-func (i *levigoIterator) Close() (err error) {
+func (i levigoIterator) String() string {
+	var (
+		valid       = "valid"
+		open        = "open"
+		snapshotted = "snapshotted"
+	)
+
+	if i.closed {
+		open = "closed"
+	}
+	if !i.valid {
+		valid = "invalid"
+	}
+	if i.snapshot == nil {
+		snapshotted = "unsnapshotted"
+	}
+
+	return fmt.Sprintf("levigoIterator created at %s that is %s and %s and %s", i.creationTime, open, valid, snapshotted)
+}
+
+func (i *levigoIterator) Close() {
 	if i.closed {
 		return
 	}
@@ -81,38 +108,49 @@ func (i *levigoIterator) Close() (err error) {
 	i.storage = nil
 
 	i.closed = true
+	i.valid = false
 
 	return
 }
 
-func (i levigoIterator) Seek(key []byte) (ok bool) {
+func (i *levigoIterator) Seek(key []byte) bool {
 	i.iterator.Seek(key)
 
-	return i.iterator.Valid()
+	i.valid = i.iterator.Valid()
+
+	return i.valid
 }
 
-func (i levigoIterator) SeekToFirst() (ok bool) {
+func (i *levigoIterator) SeekToFirst() bool {
 	i.iterator.SeekToFirst()
 
-	return i.iterator.Valid()
+	i.valid = i.iterator.Valid()
+
+	return i.valid
 }
 
-func (i levigoIterator) SeekToLast() (ok bool) {
+func (i *levigoIterator) SeekToLast() bool {
 	i.iterator.SeekToLast()
 
-	return i.iterator.Valid()
+	i.valid = i.iterator.Valid()
+
+	return i.valid
 }
 
-func (i levigoIterator) Next() (ok bool) {
+func (i *levigoIterator) Next() bool {
 	i.iterator.Next()
 
-	return i.iterator.Valid()
+	i.valid = i.iterator.Valid()
+
+	return i.valid
 }
 
-func (i levigoIterator) Previous() (ok bool) {
+func (i *levigoIterator) Previous() bool {
 	i.iterator.Prev()
 
-	return i.iterator.Valid()
+	i.valid = i.iterator.Valid()
+
+	return i.valid
 }
 
 func (i levigoIterator) Key() (key []byte) {
@@ -166,7 +204,7 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 	return
 }
 
-func (l *LevelDBPersistence) Close() (err error) {
+func (l *LevelDBPersistence) Close() {
 	// These are deferred to take advantage of forced closing in case of stack
 	// unwinding due to anomalies.
 	defer func() {
@@ -283,7 +321,7 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 // will be leaked.
 //
 // The iterator is optionally snapshotable.
-func (l *LevelDBPersistence) NewIterator(snapshotted bool) levigoIterator {
+func (l *LevelDBPersistence) NewIterator(snapshotted bool) Iterator {
 	var (
 		snapshot    *levigo.Snapshot
 		readOptions *levigo.ReadOptions
@@ -299,11 +337,12 @@ func (l *LevelDBPersistence) NewIterator(snapshotted bool) levigoIterator {
 		iterator = l.storage.NewIterator(l.readOptions)
 	}
 
-	return levigoIterator{
-		iterator:    iterator,
-		readOptions: readOptions,
-		snapshot:    snapshot,
-		storage:     l.storage,
+	return &levigoIterator{
+		creationTime: time.Now(),
+		iterator:     iterator,
+		readOptions:  readOptions,
+		snapshot:     snapshot,
+		storage:      l.storage,
 	}
 }
 

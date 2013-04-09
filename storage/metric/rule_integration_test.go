@@ -552,13 +552,8 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 		func() {
 			p, closer := persistenceMaker()
 
-			defer func() {
-				defer closer.Close()
-				err := p.Close()
-				if err != nil {
-					t.Fatalf("Encountered anomaly closing persistence: %q\n", err)
-				}
-			}()
+			defer closer.Close()
+			defer p.Close()
 
 			m := model.Metric{
 				model.MetricNameLabel: "age_in_years",
@@ -994,13 +989,8 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 		func() {
 			p, closer := persistenceMaker()
 
-			defer func() {
-				defer closer.Close()
-				err := p.Close()
-				if err != nil {
-					t.Fatalf("Encountered anomaly closing persistence: %q\n", err)
-				}
-			}()
+			defer closer.Close()
+			defer p.Close()
 
 			m := model.Metric{
 				model.MetricNameLabel: "age_in_years",
@@ -1348,13 +1338,8 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 		func() {
 			p, closer := persistenceMaker()
 
-			defer func() {
-				defer closer.Close()
-				err := p.Close()
-				if err != nil {
-					t.Fatalf("Encountered anomaly closing persistence: %q\n", err)
-				}
-			}()
+			defer closer.Close()
+			defer p.Close()
 
 			m := model.Metric{
 				model.MetricNameLabel: "age_in_years",
