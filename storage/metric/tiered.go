@@ -145,16 +145,13 @@ func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 	return
 }
 
-func (t *tieredStorage) rebuildDiskFrontier() (err error) {
+func (t *tieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
 	begin := time.Now()
 	defer func() {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: rebuildDiskFrontier, result: failure})
 	}()
-
-	i := t.diskStorage.metricSamples.NewIterator(true)
-	defer i.Close()
 
 	t.diskFrontier, err = newDiskFrontier(i)
 	if err != nil {
@@ -298,8 +295,6 @@ func (f *memoryToDiskFlusher) ForStream(stream stream) (decoder storage.RecordDe
 		flusher: f,
 	}
 
-	//	fmt.Printf("fingerprint -> %s\n", model.NewFingerprintFromMetric(stream.metric).ToRowKey())
-
 	return visitor, visitor, visitor
 }
 
@@ -309,11 +304,7 @@ func (f *memoryToDiskFlusher) Flush() {
 	for i := 0; i < length; i++ {
 		samples = append(samples, <-f.toDiskQueue)
 	}
-	start := time.Now()
 	f.disk.AppendSamples(samples)
-	if false {
-		fmt.Printf("Took %s to append...\n", time.Since(start))
-	}
 }
 
 func (f memoryToDiskFlusher) Close() {
@@ -360,11 +351,14 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 	var (
 		scans = viewJob.builder.ScanJobs()
 		view  = newView()
+		// Get a single iterator that will be used for all data extraction below.
+		iterator = t.diskStorage.metricSamples.NewIterator(true)
 	)
+	defer iterator.Close()
 
 	// Rebuilding of the frontier should happen on a conditional basis if a
 	// (fingerprint, timestamp) tuple is outside of the current frontier.
-	err = t.rebuildDiskFrontier()
+	err = t.rebuildDiskFrontier(iterator)
 	if err != nil {
 		panic(err)
 	}
@@ -373,10 +367,6 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 		viewJob.output <- view
 		return
 	}
-
-	// Get a single iterator that will be used for all data extraction below.
-	iterator := t.diskStorage.metricSamples.NewIterator(true)
-	defer iterator.Close()
 
 	for _, scanJob := range scans {
 		seriesFrontier, err := newSeriesFrontier(scanJob.fingerprint, *t.diskFrontier, iterator)

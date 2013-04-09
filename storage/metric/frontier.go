@@ -35,11 +35,11 @@ type diskFrontier struct {
 	lastSupertime    time.Time
 }
 
-func (f *diskFrontier) String() string {
+func (f diskFrontier) String() string {
 	return fmt.Sprintf("diskFrontier from %s at %s to %s at %s", f.firstFingerprint.ToRowKey(), f.firstSupertime, f.lastFingerprint.ToRowKey(), f.lastSupertime)
 }
 
-func (f *diskFrontier) ContainsFingerprint(fingerprint model.Fingerprint) bool {
+func (f diskFrontier) ContainsFingerprint(fingerprint model.Fingerprint) bool {
 	return !(fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint))
 }
 
@@ -48,12 +48,15 @@ func newDiskFrontier(i leveldb.Iterator) (d *diskFrontier, err error) {
 	if !i.SeekToLast() || i.Key() == nil {
 		return
 	}
+
 	lastKey, err := extractSampleKey(i)
 	if err != nil {
 		panic(err)
 	}
 
-	i.SeekToFirst()
+	if !i.SeekToFirst() || i.Key() == nil {
+		return
+	}
 	firstKey, err := extractSampleKey(i)
 	if i.Key() == nil {
 		return
@@ -91,6 +94,13 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		lowerSeek = firstSupertime
 		upperSeek = lastSupertime
 	)
+
+	// If the diskFrontier for this iterator says that the candidate fingerprint
+	// is outside of its seeking domain, there is no way that a seriesFrontier
+	// could be materialized.  Simply bail.
+	if !d.ContainsFingerprint(f) {
+		return
+	}
 
 	// If we are either the first or the last key in the database, we need to use
 	// pessimistic boundary frontiers.

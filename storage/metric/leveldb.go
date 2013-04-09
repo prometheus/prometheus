@@ -24,7 +24,6 @@ import (
 	index "github.com/prometheus/prometheus/storage/raw/index/leveldb"
 	leveldb "github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
-	"io"
 	"log"
 	"sort"
 	"sync"
@@ -58,68 +57,31 @@ var (
 )
 
 type leveldbOpener func()
+type leveldbCloser interface {
+	Close()
+}
 
-func (l *LevelDBMetricPersistence) Close() error {
-	var persistences = []struct {
-		name   string
-		closer io.Closer
-	}{
-		{
-			"Fingerprint to Label Name and Value Pairs",
-			l.fingerprintToMetrics,
-		},
-		{
-			"Fingerprint High Watermarks",
-			l.metricHighWatermarks,
-		},
-		{
-			"Fingerprint Samples",
-			l.metricSamples,
-		},
-		{
-			"Label Name to Fingerprints",
-			l.labelNameToFingerprints,
-		},
-		{
-			"Label Name and Value Pairs to Fingerprints",
-			l.labelSetToFingerprints,
-		},
-		{
-			"Metric Membership Index",
-			l.metricMembershipIndex,
-		},
+func (l *LevelDBMetricPersistence) Close() {
+	var persistences = []leveldbCloser{
+		l.fingerprintToMetrics,
+		l.metricHighWatermarks,
+		l.metricSamples,
+		l.labelNameToFingerprints,
+		l.labelSetToFingerprints,
+		l.metricMembershipIndex,
 	}
 
-	errorChannel := make(chan error, len(persistences))
+	closerGroup := sync.WaitGroup{}
 
-	for _, persistence := range persistences {
-		name := persistence.name
-		closer := persistence.closer
-
-		go func(name string, closer io.Closer) {
-			if closer != nil {
-				closingError := closer.Close()
-
-				if closingError != nil {
-					log.Printf("Could not close a LevelDBPersistence storage container; inconsistencies are possible: %q\n", closingError)
-				}
-
-				errorChannel <- closingError
-			} else {
-				errorChannel <- nil
-			}
-		}(name, closer)
+	for _, closer := range persistences {
+		closerGroup.Add(1)
+		go func(closer leveldbCloser) {
+			closer.Close()
+			closerGroup.Done()
+		}(closer)
 	}
 
-	for i := 0; i < cap(errorChannel); i++ {
-		closingError := <-errorChannel
-
-		if closingError != nil {
-			return closingError
-		}
-	}
-
-	return nil
+	closerGroup.Wait()
 }
 
 func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetricPersistence, err error) {

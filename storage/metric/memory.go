@@ -327,7 +327,7 @@ func (s memorySeriesStorage) GetRangeValues(fp model.Fingerprint, i model.Interv
 	return
 }
 
-func (s memorySeriesStorage) Close() (err error) {
+func (s memorySeriesStorage) Close() {
 	// This can probably be simplified:
 	//
 	// s.fingerPrintToSeries = map[model.Fingerprint]*stream{}
@@ -344,8 +344,6 @@ func (s memorySeriesStorage) Close() (err error) {
 	for labelName := range s.labelNameToFingerprints {
 		delete(s.labelNameToFingerprints, labelName)
 	}
-
-	return
 }
 
 func (s memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {

@@ -68,12 +68,8 @@ func (p preparer) Prepare(n string, f FixtureFactory) (t test.TemporaryDirectory
 		defer t.Close()
 		p.tester.Fatal(err)
 	}
-	defer func() {
-		err = persistence.Close()
-		if err != nil {
-			p.tester.Fatal(err)
-		}
-	}()
+
+	defer persistence.Close()
 
 	for f.HasNext() {
 		key, value := f.Next()

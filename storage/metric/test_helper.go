@@ -56,12 +56,7 @@ func buildLevelDBTestPersistence(name string, f func(p MetricPersistence, t test
 			t.Errorf("Could not create LevelDB Metric Persistence: %q\n", err)
 		}
 
-		defer func() {
-			err := p.Close()
-			if err != nil {
-				t.Errorf("Anomaly while closing database: %q\n", err)
-			}
-		}()
+		defer p.Close()
 
 		f(p, t)
 	}
@@ -72,12 +67,7 @@ func buildMemoryTestPersistence(f func(p MetricPersistence, t test.Tester)) func
 
 		p := NewMemorySeriesStorage()
 
-		defer func() {
-			err := p.Close()
-			if err != nil {
-				t.Errorf("Anomaly while closing database: %q\n", err)
-			}
-		}()
+		defer p.Close()
 
 		f(p, t)
 	}
