@@ -1,0 +1,10 @@
+# 3rd party libraries
+web/static/vendor/jqueryui/ jqueryui-1.9.1
+web/static/vendor/rickshaw/ https://github.com/shutterstock/rickshaw/commit/af35a7e7381b23f4438bc416ed604ea98bf39925
+web/static/vendor/jquery-simple-datetimepicker/ 1.1.1
+
+web/static/vendor/js/jquery.min.js  jquery-1.8.3
+web/static/vendor/js/handlebars.js  1.0.rc.2 
+web/static/vendor/js/jquery.selection.js  https://github.com/madapaja/jquery.selection/commit/90736ca5c97e603af0c0c1c823cb340860926077
+web/static/vendor/js/jquery.hotkeys.js  https://github.com/jeresig/jquery.hotkeys/commit/0033d9082ce28b476ad09b26a5fd77befe1fbd42
+

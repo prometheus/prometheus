@@ -3,6 +3,7 @@ package blob
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -20,7 +21,11 @@ var mimeMap = map[string]string{
 }
 
 func GetFile(bucket string, name string) ([]byte, error) {
-	reader := bytes.NewReader(files[bucket][name])
+	blob, ok := files[bucket][name]
+	if !ok {
+		return nil, fmt.Errorf("Could not find %s/%s. Missing/updated files.go?", bucket, name)
+	}
+	reader := bytes.NewReader(blob)
 	gz, err := gzip.NewReader(reader)
 	if err != nil {
 		return nil, err
@@ -36,7 +41,7 @@ func GetFile(bucket string, name string) ([]byte, error) {
 type Handler struct{}
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.String()
+	name := r.URL.Path
 	if name == "" {
 		name = "index.html"
 	}

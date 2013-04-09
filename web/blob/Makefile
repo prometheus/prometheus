@@ -13,7 +13,7 @@
 
 all: files.go
 
-files.go:
+files.go: $(shell find ../templates/ ../static/ -type f)
 	../../utility/embed-static.sh ../static ../templates | gofmt > $@
 
 clean:
