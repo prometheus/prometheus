@@ -35,8 +35,15 @@ func testMetric(t test.Tester) {
 				"occupation":   "robot",
 				"manufacturer": "westinghouse",
 			},
-			rowkey: "04776841610193542734-f-56-o",
+			rowkey: "04776841610193542734-f-56-t",
 			hash:   4776841610193542734,
+		},
+		{
+			input: map[string]string{
+				"x": "y",
+			},
+			rowkey: "01306929544689993150-x-2-y",
+			hash:   1306929544689993150,
 		},
 	}
 
