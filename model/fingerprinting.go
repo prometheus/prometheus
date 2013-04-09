@@ -41,6 +41,7 @@ type Fingerprint interface {
 	ToDTO() *dto.Fingerprint
 	Less(Fingerprint) bool
 	Equal(Fingerprint) bool
+	String() string
 }
 
 // Builds a Fingerprint from a row key.
@@ -94,7 +95,7 @@ func NewFingerprintFromMetric(metric Metric) (f Fingerprint) {
 			firstCharacterOfFirstLabelName = labelName[0:1]
 		}
 		if i == labelLength-1 {
-			lastCharacterOfLastLabelValue = string(labelValue[labelValueLength-2 : labelValueLength-1])
+			lastCharacterOfLastLabelValue = string(labelValue[labelValueLength-1 : labelValueLength])
 		}
 
 		summer.Write([]byte(labelName))
@@ -151,20 +152,7 @@ func (f fingerprint) LastCharacterOfLastLabelValue() string {
 }
 
 func (f fingerprint) Less(o Fingerprint) bool {
-	if f.Hash() < o.Hash() {
-		return true
-	}
-	if f.FirstCharacterOfFirstLabelName() < o.FirstCharacterOfFirstLabelName() {
-		return true
-	}
-	if f.LabelMatterLength() < o.LabelMatterLength() {
-		return true
-	}
-	if f.LastCharacterOfLastLabelValue() < o.LastCharacterOfLastLabelValue() {
-		return true
-	}
-
-	return false
+	return f.String() < o.String()
 }
 
 func (f fingerprint) Equal(o Fingerprint) (equal bool) {
