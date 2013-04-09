@@ -12,6 +12,7 @@ import (
 import (
 "github.com/prometheus/prometheus/model"
 "strconv"
+"strings"
 )
 
 var yyin io.Reader = os.Stdin
@@ -338,6 +339,20 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 	}()
 	{
 		yylval.str = yytext
+		return yyactionreturn{AGGR_OP, yyRT_USER_RETURN}
+	}
+	return yyactionreturn{0, yyRT_FALLTHROUGH}
+}}, {regexp.MustCompile("avg|sum|max|min"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r != "yyREJECT" {
+				panic(r)
+			}
+			yyar.returnType = yyRT_REJECT
+		}
+	}()
+	{
+		yylval.str = strings.ToUpper(yytext)
 		return yyactionreturn{AGGR_OP, yyRT_USER_RETURN}
 	}
 	return yyactionreturn{0, yyRT_FALLTHROUGH}

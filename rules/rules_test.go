@@ -210,20 +210,29 @@ var expressionTests = []struct {
 		fullRanges:     0,
 		intervalRanges: 8,
 	}, {
+		// Single-letter label names and values.
 		expr: "x{y='testvalue'}",
 		output: []string{
 			"x{y='testvalue'} => 100 @[%v]",
 		},
 		fullRanges:     0,
 		intervalRanges: 1,
-		// Invalid expressions that should fail to parse.
 	}, {
+		// Lower-cased aggregation operators should work too.
+		expr:           "sum(http_requests) + min(http_requests) + max(http_requests) + avg(http_requests)",
+		output:         []string{"http_requests{} => 4950 @[%v]"},
+		fullRanges:     0,
+		intervalRanges: 8,
+	}, {
+		// Empty expressions shouldn't parse.
 		expr:       "",
 		shouldFail: true,
 	}, {
+		// Subtracting a vector from a scalar is not supported.
 		expr:       "1 - http_requests",
 		shouldFail: true,
 	}, {
+		// Interval durations can't be in quotes.
 		expr:       "http_requests['1m']",
 		shouldFail: true,
 	},
