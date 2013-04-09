@@ -31,7 +31,7 @@
               </div>
               <div class="eval_stats"></div>
             </form>
-            <img src="img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
+            <img src="/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
           </div>
           <div class="grouping_box">
             <div class="graph_container">

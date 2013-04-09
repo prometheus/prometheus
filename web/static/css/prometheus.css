@@ -57,7 +57,12 @@ input[name=end_input], input[name=range_input] {
   line-height: 120%;
 }
 
-#navigation a { padding-right: 1em; text-decoration: none }
+#navigation a {
+  color: #F2F2F2;
+  padding-right: 1em;
+  text-decoration: none;
+}
+
 #navigation a:visited { color: #F2F2F2 }
 #navigation a:active { color: #F60 }
 #navigation a:hover { color: #06C }
