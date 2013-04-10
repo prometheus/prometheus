@@ -20,14 +20,16 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 )
 
-// NOTE: This parser is non-reentrant due to its dependence on global state.
-
 // GoLex sadly needs these global variables for storing temporary token/parsing information.
-var yylval *yySymType // For storing extra token information, like the contents of a string.
-var yyline int        // Line number within the current file or buffer.
-var yypos int         // Character position within the current line.
+var (
+	yylval     *yySymType // For storing extra token information, like the contents of a string.
+	yyline     int        // Line number within the current file or buffer.
+	yypos      int        // Character position within the current line.
+	parseMutex sync.Mutex // Mutex protecting the parsing-related global state defined above.
+)
 
 type RulesLexer struct {
 	errors      []string // Errors encountered during parsing.
@@ -58,6 +60,9 @@ func (lexer *RulesLexer) Error(errorStr string) {
 }
 
 func LoadFromReader(rulesReader io.Reader, singleExpr bool) (interface{}, error) {
+	parseMutex.Lock()
+	defer parseMutex.Unlock()
+
 	yyin = rulesReader
 	yypos = 1
 	yyline = 1
