@@ -25,12 +25,12 @@ import (
 
 var testEvalTime = testStartTime.Add(testDuration5m * 10)
 
-// Expected output needs to be alphabetically sorted (labels within one line
-// must be sorted and lines between each other must be sorted too).
+// Labels in expected output need to be alphabetically sorted.
 var expressionTests = []struct {
 	expr           string
 	output         []string
 	shouldFail     bool
+	checkOrder     bool
 	fullRanges     int
 	intervalRanges int
 }{
@@ -180,6 +180,36 @@ var expressionTests = []struct {
 		fullRanges:     8,
 		intervalRanges: 0,
 	}, {
+		expr: "sort(http_requests)",
+		output: []string{
+			"http_requests{group='production',instance='0',job='api-server'} => 100 @[%v]",
+			"http_requests{group='production',instance='1',job='api-server'} => 200 @[%v]",
+			"http_requests{group='canary',instance='0',job='api-server'} => 300 @[%v]",
+			"http_requests{group='canary',instance='1',job='api-server'} => 400 @[%v]",
+			"http_requests{group='production',instance='0',job='app-server'} => 500 @[%v]",
+			"http_requests{group='production',instance='1',job='app-server'} => 600 @[%v]",
+			"http_requests{group='canary',instance='0',job='app-server'} => 700 @[%v]",
+			"http_requests{group='canary',instance='1',job='app-server'} => 800 @[%v]",
+		},
+		checkOrder:     true,
+		fullRanges:     0,
+		intervalRanges: 8,
+	}, {
+		expr: "sort_desc(http_requests)",
+		output: []string{
+			"http_requests{group='canary',instance='1',job='app-server'} => 800 @[%v]",
+			"http_requests{group='canary',instance='0',job='app-server'} => 700 @[%v]",
+			"http_requests{group='production',instance='1',job='app-server'} => 600 @[%v]",
+			"http_requests{group='production',instance='0',job='app-server'} => 500 @[%v]",
+			"http_requests{group='canary',instance='1',job='api-server'} => 400 @[%v]",
+			"http_requests{group='canary',instance='0',job='api-server'} => 300 @[%v]",
+			"http_requests{group='production',instance='1',job='api-server'} => 200 @[%v]",
+			"http_requests{group='production',instance='0',job='api-server'} => 100 @[%v]",
+		},
+		checkOrder:     true,
+		fullRanges:     0,
+		intervalRanges: 8,
+	}, {
 		expr: "x{y='testvalue'}",
 		output: []string{
 			"x{y='testvalue'} => 100 @[%v]",
@@ -232,7 +262,7 @@ func TestExpressions(t *testing.T) {
 	storeMatrix(tieredStorage, testMatrix)
 	tieredStorage.Flush()
 
-	for _, exprTest := range expressionTests {
+	for i, exprTest := range expressionTests {
 		expectedLines := annotateWithTime(exprTest.output)
 
 		testExpr, err := LoadExprFromString(exprTest.expr)
@@ -241,47 +271,56 @@ func TestExpressions(t *testing.T) {
 			if exprTest.shouldFail {
 				continue
 			}
-			t.Errorf("Error during parsing: %v", err)
-			t.Errorf("Expression: %v", exprTest.expr)
+			t.Errorf("%d Error during parsing: %v", i, err)
+			t.Errorf("%d Expression: %v", i, exprTest.expr)
 		} else {
 			if exprTest.shouldFail {
-				t.Errorf("Test should fail, but didn't")
+				t.Errorf("%d Test should fail, but didn't", i)
 			}
 			failed := false
 			resultStr := ast.EvalToString(testExpr, testEvalTime, ast.TEXT)
 			resultLines := strings.Split(resultStr, "\n")
 
 			if len(exprTest.output) != len(resultLines) {
-				t.Errorf("Number of samples in expected and actual output don't match")
+				t.Errorf("%d Number of samples in expected and actual output don't match", i)
 				failed = true
 			}
-			for _, expectedSample := range expectedLines {
-				found := false
-				for _, actualSample := range resultLines {
-					if actualSample == expectedSample {
-						found = true
+
+			if exprTest.checkOrder {
+				for j, expectedSample := range expectedLines {
+					if resultLines[j] != expectedSample {
+						t.Errorf("%d.%d Expected sample '%v', got '%v'", i, j, resultLines[j], expectedSample)
+						failed = true
 					}
 				}
-				if !found {
-					t.Errorf("Couldn't find expected sample in output: '%v'",
-						expectedSample)
-					failed = true
+			} else {
+				for j, expectedSample := range expectedLines {
+					found := false
+					for _, actualSample := range resultLines {
+						if actualSample == expectedSample {
+							found = true
+						}
+					}
+					if !found {
+						t.Errorf("%d.%d Couldn't find expected sample in output: '%v'", i, j, expectedSample)
+						failed = true
+					}
 				}
 			}
 
 			analyzer := ast.NewQueryAnalyzer()
 			analyzer.AnalyzeQueries(testExpr)
 			if exprTest.fullRanges != len(analyzer.FullRanges) {
-				t.Errorf("Count of full ranges didn't match: %v vs %v", exprTest.fullRanges, len(analyzer.FullRanges))
+				t.Errorf("%d Count of full ranges didn't match: %v vs %v", i, exprTest.fullRanges, len(analyzer.FullRanges))
 				failed = true
 			}
 			if exprTest.intervalRanges != len(analyzer.IntervalRanges) {
-				t.Errorf("Count of stepped ranges didn't match: %v vs %v", exprTest.intervalRanges, len(analyzer.IntervalRanges))
+				t.Errorf("%d Count of interval ranges didn't match: %v vs %v", i, exprTest.intervalRanges, len(analyzer.IntervalRanges))
 				failed = true
 			}
 
 			if failed {
-				t.Errorf("Expression: %v\n%v", exprTest.expr, vectorComparisonString(expectedLines, resultLines))
+				t.Errorf("%d Expression: %v\n%v", i, exprTest.expr, vectorComparisonString(expectedLines, resultLines))
 			}
 		}
 	}
