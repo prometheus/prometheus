@@ -17,6 +17,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/utility"
+	"sort"
 	"time"
 )
 
@@ -62,17 +64,17 @@ func (function *Function) CheckArgTypes(args []Node) error {
 	return nil
 }
 
-// === time() ===
+// === time() model.SampleValue ===
 func timeImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return model.SampleValue(time.Now().Unix())
 }
 
-// === count(vector VectorNode) ===
+// === count(vector VectorNode) model.SampleValue ===
 func countImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return model.SampleValue(len(args[0].(VectorNode).Eval(timestamp, view)))
 }
 
-// === delta(matrix MatrixNode, isCounter ScalarNode) ===
+// === delta(matrix MatrixNode, isCounter ScalarNode) Vector ===
 func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
 	isCounter := int(args[1].(ScalarNode).Eval(timestamp, view))
@@ -108,7 +110,7 @@ func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} 
 	return resultVector
 }
 
-// === rate(node *MatrixNode) ===
+// === rate(node *MatrixNode) Vector ===
 func rateImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	args = append(args, &ScalarLiteral{value: 1})
 	vector := deltaImpl(timestamp, view, args).(Vector)
@@ -123,7 +125,43 @@ func rateImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return vector
 }
 
-// === sampleVectorImpl() ===
+type vectorByValueSorter struct {
+	vector Vector
+}
+
+func (sorter vectorByValueSorter) Len() int {
+	return len(sorter.vector)
+}
+
+func (sorter vectorByValueSorter) Less(i, j int) (less bool) {
+	return sorter.vector[i].Value < sorter.vector[j].Value
+}
+
+func (sorter vectorByValueSorter) Swap(i, j int) {
+	sorter.vector[i], sorter.vector[j] = sorter.vector[j], sorter.vector[i]
+}
+
+// === sort(node *VectorNode) Vector ===
+func sortImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
+	byValueSorter := vectorByValueSorter{
+		vector: args[0].(VectorNode).Eval(timestamp, view),
+	}
+	sort.Sort(byValueSorter)
+	return byValueSorter.vector
+}
+
+// === sortDesc(node *VectorNode) Vector ===
+func sortDescImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
+	descByValueSorter := utility.ReverseSorter{
+		vectorByValueSorter{
+			vector: args[0].(VectorNode).Eval(timestamp, view),
+		},
+	}
+	sort.Sort(descByValueSorter)
+	return descByValueSorter.Interface.(vectorByValueSorter).vector
+}
+
+// === sampleVectorImpl() Vector ===
 func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return Vector{
 		model.Sample{
@@ -197,12 +235,6 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 }
 
 var functions = map[string]*Function{
-	"time": {
-		name:       "time",
-		argTypes:   []ExprType{},
-		returnType: SCALAR,
-		callFn:     timeImpl,
-	},
 	"count": {
 		name:       "count",
 		argTypes:   []ExprType{VECTOR},
@@ -226,6 +258,24 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{},
 		returnType: VECTOR,
 		callFn:     sampleVectorImpl,
+	},
+	"sort": {
+		name:       "sort",
+		argTypes:   []ExprType{VECTOR},
+		returnType: VECTOR,
+		callFn:     sortImpl,
+	},
+	"sort_desc": {
+		name:       "sort_desc",
+		argTypes:   []ExprType{VECTOR},
+		returnType: VECTOR,
+		callFn:     sortDescImpl,
+	},
+	"time": {
+		name:       "time",
+		argTypes:   []ExprType{},
+		returnType: SCALAR,
+		callFn:     timeImpl,
 	},
 }
 
