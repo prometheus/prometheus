@@ -94,8 +94,10 @@ func main() {
 			}
 
 		case ruleResult := <-ruleResults:
-			for _, sample := range ruleResult.Samples {
-				ts.AppendSample(sample)
+			if ruleResult.Err == nil {
+				for _, sample := range ruleResult.Samples {
+					ts.AppendSample(sample)
+				}
 			}
 		}
 	}

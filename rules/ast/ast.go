@@ -258,12 +258,13 @@ func labelsToKey(labels model.Metric) string {
 	return strings.Join(keyParts, ",") // TODO not safe when label value contains comma.
 }
 
-func EvalVectorInstant(node VectorNode, timestamp time.Time) (vector Vector) {
+func EvalVectorInstant(node VectorNode, timestamp time.Time) (vector Vector, err error) {
 	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp)
 	if err != nil {
 		return
 	}
-	return node.Eval(timestamp, viewAdapter)
+	vector = node.Eval(timestamp, viewAdapter)
+	return
 }
 
 func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration) (matrix Matrix, err error) {
