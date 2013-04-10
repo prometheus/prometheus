@@ -88,7 +88,6 @@ func (vector Vector) String() string {
 				strings.Join(labelStrings, ","),
 				sample.Value, sample.Timestamp))
 	}
-	sort.Strings(metricStrings)
 	return strings.Join(metricStrings, "\n")
 }
 
