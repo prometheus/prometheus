@@ -106,7 +106,7 @@ func NewFingerprintFromMetric(metric Metric) (f Fingerprint) {
 	return fingerprint{
 		firstCharacterOfFirstLabelName: firstCharacterOfFirstLabelName,
 		hash:                           binary.LittleEndian.Uint64(summer.Sum(nil)),
-		labelMatterLength:              uint(labelMatterLength),
+		labelMatterLength:              uint(labelMatterLength % 10),
 		lastCharacterOfLastLabelValue:  lastCharacterOfLastLabelValue,
 	}
 }
