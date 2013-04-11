@@ -38,11 +38,14 @@ message LabelSet {
   repeated LabelPair member = 1;
 }
 
+// The default LevelDB comparator sorts not only lexicographically, but also by
+// key length (which takes precedence). Thus, no variable-length fields may be
+// introduced into the key definition below.
 message SampleKey {
   optional Fingerprint fingerprint    = 1;
   optional bytes       timestamp      = 2;
-  optional int64       last_timestamp = 3;
-  optional uint32      sample_count   = 4;
+  optional sfixed64    last_timestamp = 3;
+  optional fixed32     sample_count   = 4;
 }
 
 message SampleValueSeries {

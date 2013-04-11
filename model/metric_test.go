@@ -35,7 +35,7 @@ func testMetric(t test.Tester) {
 				"occupation":   "robot",
 				"manufacturer": "westinghouse",
 			},
-			rowkey: "04776841610193542734-f-56-t",
+			rowkey: "04776841610193542734-f-6-t",
 			hash:   4776841610193542734,
 		},
 		{
