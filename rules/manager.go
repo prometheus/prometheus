@@ -68,9 +68,10 @@ func (m *ruleManager) runIteration(results chan *Result) {
 	now := time.Now()
 	for _, rule := range m.rules {
 		go func() {
-			vector := rule.Eval(&now)
+			vector, err := rule.Eval(&now)
 			m.results <- &Result{
 				Samples: vector,
+				Err:     err,
 			}
 		}()
 	}
