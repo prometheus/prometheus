@@ -17,6 +17,7 @@ package rules
 import (
         "github.com/prometheus/prometheus/model"
         "strconv"
+        "strings"
 )
 %}
 
@@ -39,6 +40,7 @@ U                       [smhdwy]
 permanent                { return PERMANENT }
 BY                       { return GROUP_OP }
 AVG|SUM|MAX|MIN          { yylval.str = yytext; return AGGR_OP }
+avg|sum|max|min          { yylval.str = strings.ToUpper(yytext); return AGGR_OP }
 \<|>|AND|OR              { yylval.str = yytext; return CMP_OP }
 ==|!=|>=|<=              { yylval.str = yytext; return CMP_OP }
 [+\-]                    { yylval.str = yytext; return ADDITIVE_OP }
