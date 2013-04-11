@@ -390,6 +390,11 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
     graph: self.rickshawGraph
   });
 
+  var highlighter = new Rickshaw.Graph.Behavior.Series.Highlight( {
+    graph: self.rickshawGraph,
+    legend: legend
+  });
+
   var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({
     graph: self.rickshawGraph,
     legend: legend
