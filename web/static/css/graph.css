@@ -9,7 +9,6 @@ body {
 .graph {
         position: relative;
         min-height: 400px;
-        overflow-x: hidden;
 }
 
 svg {
@@ -22,3 +21,21 @@ svg {
         vertical-align: top;
         margin: 0 0 0 0px;
 }
+
+.graph .detail .item.active {
+  line-height: 1.4em;
+  padding: 0.5em;
+}
+
+.graph .detail .item.active .labels {
+  font-size: 11px;
+  line-height: 11px;
+}
+
+.graph .detail .item .detail_swatch {
+  float: right;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 2px 2px 0 8px;
+ }

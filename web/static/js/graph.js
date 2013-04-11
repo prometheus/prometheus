@@ -318,6 +318,7 @@ Prometheus.Graph.prototype.transformData = function(json) {
   var data = json.Value.map(function(ts) {
     return {
       name: self.metricToTsName(ts.Metric),
+      labels: ts.Metric,
       data: ts.Values.map(function(value) {
         return {
           x: value.Timestamp,
@@ -369,7 +370,19 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
   }
 
   var hoverDetail = new Rickshaw.Graph.HoverDetail({
-    graph: self.rickshawGraph
+    graph: self.rickshawGraph,
+    formatter: function(series, x, y) {
+      var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
+      var content = swatch + series.labels["name"] + ": <strong>" + parseInt(y) + '</strong><br>';
+      var labelStrings = []
+      for (label in series.labels) {
+        if (label != "name") {
+          labelStrings.push("<strong>"+label + "</strong>: " + series.labels[label]);
+        }
+      }
+      var labels = "<div class='labels'>"+ labelStrings.join("<br>") + "</div>";
+      return content + labels;
+    }
   });
 
   var legend = new Rickshaw.Graph.Legend({
