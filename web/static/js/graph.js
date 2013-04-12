@@ -380,9 +380,9 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
     },
     onRender: function() {
       var width = this.graph.width;
-      var element = jQuery(this.element);
+      var element = $(this.element);
 
-      jQuery(".x_label", element).each(function() {
+      $(".x_label", element).each(function() {
         if ($(this).outerWidth() + element.offset().left > width) {
           $(this).addClass("flipped");
         } else {
@@ -390,7 +390,7 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
         }
       })
 
-      jQuery(".item", element).each(function() {
+      $(".item", element).each(function() {
         if ($(this).outerWidth() + element.offset().left > width) {
           $(this).addClass("flipped");
         } else {
@@ -457,7 +457,7 @@ function addGraph(options) {
 }
 
 function init() {
-  jQuery.ajaxSetup({
+  $.ajaxSetup({
     cache: false
   });
 
