@@ -377,7 +377,19 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
       var content = swatch + series.labels["name"] + ": <strong>" + y + '</strong><br>';
       return content + self.renderLabels(series.labels);
-    }
+    },
+    onRender: function() {
+      var width = this.graph.width;
+      var element = jQuery(this.element);
+
+      jQuery(".item", element).each(function() {
+        if ($(this).outerWidth() + element.offset().left > width) {
+          $(this).addClass("flipped")
+        } else {
+          $(this).removeClass("flipped")
+        }
+      })
+    },
   });
 
   var legend = new Rickshaw.Graph.Legend({

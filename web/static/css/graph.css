@@ -22,6 +22,17 @@ svg {
         margin: 0 0 0 0px;
 }
 
+.graph .detail .item.flipped {
+  right: 10px;
+}
+
+.graph .detail .item.flipped:before {
+  content: "\25b8";
+  left: auto;
+  right: 1px;
+  font-size: 0.8em;
+}
+
 .graph .detail .item.active {
   line-height: 1.4em;
   padding: 0.5em;
