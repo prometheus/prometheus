@@ -27,7 +27,7 @@ svg {
   padding: 0.5em;
 }
 
-.graph .detail .item.active .labels {
+.labels {
   font-size: 11px;
   line-height: 11px;
 }
@@ -38,4 +38,14 @@ svg {
   width: 10px;
   height: 10px;
   margin: 2px 2px 0 8px;
+ }
+
+ .legend.rickshaw_legend {
+   width: auto;
+ }
+
+ .legend.rickshaw_legend .line {
+   padding-bottom: 10px;
+   clear: none;
+   float: left;
  }

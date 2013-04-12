@@ -288,16 +288,18 @@ Prometheus.Graph.prototype.submitQuery = function() {
   });
 };
 
-Prometheus.Graph.prototype.metricToTsName = function(labels) {
-  var tsName = labels["name"] + "{";
+Prometheus.Graph.prototype.renderLabels = function(labels) {
   var labelStrings = [];
   for (label in labels) {
     if (label != "name") {
-      labelStrings.push(label + "='" + labels[label] + "'");
+      labelStrings.push("<strong>"+label + "</strong>: " + labels[label]);
     }
   }
-  tsName += labelStrings.join(",") + "}";
-  return tsName;
+  return labels = "<div class='labels'>"+ labelStrings.join("<br>") + "</div>";
+}
+
+Prometheus.Graph.prototype.metricToTsName = function(labels) {
+  return labels["name"] + "<br>" + this.renderLabels(labels);
 };
 
 Prometheus.Graph.prototype.parseValue = function(value) {
@@ -373,21 +375,14 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
     graph: self.rickshawGraph,
     formatter: function(series, x, y) {
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
-      var content = swatch + series.labels["name"] + ": <strong>" + parseInt(y) + '</strong><br>';
-      var labelStrings = []
-      for (label in series.labels) {
-        if (label != "name") {
-          labelStrings.push("<strong>"+label + "</strong>: " + series.labels[label]);
-        }
-      }
-      var labels = "<div class='labels'>"+ labelStrings.join("<br>") + "</div>";
-      return content + labels;
+      var content = swatch + series.labels["name"] + ": <strong>" + y + '</strong><br>';
+      return content + self.renderLabels(series.labels);
     }
   });
 
   var legend = new Rickshaw.Graph.Legend({
     element: self.legend[0],
-    graph: self.rickshawGraph
+    graph: self.rickshawGraph,
   });
 
   var highlighter = new Rickshaw.Graph.Behavior.Series.Highlight( {
