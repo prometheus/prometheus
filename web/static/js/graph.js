@@ -292,10 +292,10 @@ Prometheus.Graph.prototype.renderLabels = function(labels) {
   var labelStrings = [];
   for (label in labels) {
     if (label != "name") {
-      labelStrings.push("<strong>"+label + "</strong>: " + labels[label]);
+      labelStrings.push("<strong>" + label + "</strong>: " + labels[label]);
     }
   }
-  return labels = "<div class='labels'>"+ labelStrings.join("<br>") + "</div>";
+  return labels = "<div class='labels'>" + labelStrings.join("<br>") + "</div>";
 }
 
 Prometheus.Graph.prototype.metricToTsName = function(labels) {
@@ -384,17 +384,17 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
 
       jQuery(".x_label", element).each(function() {
         if ($(this).outerWidth() + element.offset().left > width) {
-          $(this).addClass("flipped")
+          $(this).addClass("flipped");
         } else {
-          $(this).removeClass("flipped")
+          $(this).removeClass("flipped");
         }
       })
 
       jQuery(".item", element).each(function() {
         if ($(this).outerWidth() + element.offset().left > width) {
-          $(this).addClass("flipped")
+          $(this).addClass("flipped");
         } else {
-          $(this).removeClass("flipped")
+          $(this).removeClass("flipped");
         }
       })
     },
