@@ -22,6 +22,10 @@ svg {
         margin: 0 0 0 0px;
 }
 
+.graph .detail .x_label.flipped {
+  right: 0;
+}
+
 .graph .detail .item.flipped {
   right: 10px;
 }

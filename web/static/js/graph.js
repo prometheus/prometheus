@@ -382,6 +382,14 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
       var width = this.graph.width;
       var element = jQuery(this.element);
 
+      jQuery(".x_label", element).each(function() {
+        if ($(this).outerWidth() + element.offset().left > width) {
+          $(this).addClass("flipped")
+        } else {
+          $(this).removeClass("flipped")
+        }
+      })
+
       jQuery(".item", element).each(function() {
         if ($(this).outerWidth() + element.offset().left > width) {
           $(this).addClass("flipped")
