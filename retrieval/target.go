@@ -17,12 +17,19 @@ import (
 	"github.com/prometheus/client_golang/metrics"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval/format"
+	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
 const (
 	instance = "instance"
+)
+
+var (
+	localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
 )
 
 // The state of the given Target.
@@ -92,6 +99,9 @@ type Target interface {
 	// points in this interface, this one is the best candidate to change given
 	// the ways to express the endpoint.
 	Address() string
+	// The address as seen from other hosts. References to localhost are resolved
+	// to the address of the prometheus server.
+	GlobalAddress() string
 	// Return the target's base labels.
 	BaseLabels() model.LabelSet
 	// Merge a new externally supplied target definition (e.g. with changed base
@@ -211,6 +221,19 @@ func (t target) scheduledFor() time.Time {
 
 func (t target) Address() string {
 	return t.address
+}
+
+func (t target) GlobalAddress() string {
+	address := t.address
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Printf("Couldn't get hostname: %s, returning target.Address()")
+		return address
+	}
+	for _, localhostRepresentation := range localhostRepresentations {
+		address = strings.Replace(address, localhostRepresentation, fmt.Sprintf("http://%s", hostname), -1)
+	}
+	return address
 }
 
 func (t target) BaseLabels() model.LabelSet {
