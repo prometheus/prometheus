@@ -26,6 +26,13 @@ import (
 	"time"
 )
 
+func (serv MetricsService) setAccessControlHeaders(rb *gorest.ResponseBuilder) {
+	rb.AddHeader("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin")
+	rb.AddHeader("Access-Control-Allow-Methods", "GET")
+	rb.AddHeader("Access-Control-Allow-Origin", "*")
+	rb.AddHeader("Access-Control-Expose-Headers", "Date")
+}
+
 func (serv MetricsService) Query(expr string, formatJson string) (result string) {
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
@@ -35,6 +42,7 @@ func (serv MetricsService) Query(expr string, formatJson string) (result string)
 	timestamp := serv.time.Now()
 
 	rb := serv.ResponseBuilder()
+	serv.setAccessControlHeaders(rb)
 	var format ast.OutputFormat
 	if formatJson != "" {
 		format = ast.JSON
@@ -56,6 +64,7 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 		return ast.ErrorToJSON(errors.New("Expression does not evaluate to vector type"))
 	}
 	rb := serv.ResponseBuilder()
+	serv.setAccessControlHeaders(rb)
 	rb.SetContentType(gorest.Application_Json)
 
 	if end == 0 {
@@ -89,6 +98,7 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 func (serv MetricsService) Metrics() string {
 	metricNames, err := serv.appState.Storage.GetAllValuesForLabel(model.MetricNameLabel)
 	rb := serv.ResponseBuilder()
+	serv.setAccessControlHeaders(rb)
 	rb.SetContentType(gorest.Application_Json)
 	if err != nil {
 		log.Printf("Error loading metric names: %v", err)
