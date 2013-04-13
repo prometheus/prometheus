@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testProcessor001Process(t test.Tester) {
@@ -172,7 +173,7 @@ func testProcessor001Process(t test.Tester) {
 
 		reader := strings.NewReader(scenario.in)
 
-		err := Processor001.Process(ioutil.NopCloser(reader), model.LabelSet{}, inputChannel)
+		err := Processor001.Process(ioutil.NopCloser(reader), time.Now(), model.LabelSet{}, inputChannel)
 		if !test.ErrorEqual(scenario.err, err) {
 			t.Errorf("%d. expected err of %s, got %s", i, scenario.err, err)
 			continue

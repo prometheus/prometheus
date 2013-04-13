@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/utility"
 	"io"
 	"io/ioutil"
+	"time"
 )
 
 const (
@@ -57,7 +58,7 @@ type entity001 []struct {
 	} `json:"metric"`
 }
 
-func (p *processor001) Process(stream io.ReadCloser, baseLabels model.LabelSet, results chan Result) (err error) {
+func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLabels model.LabelSet, results chan Result) (err error) {
 	// TODO(matt): Replace with plain-jane JSON unmarshalling.
 	defer stream.Close()
 
@@ -72,8 +73,6 @@ func (p *processor001) Process(stream io.ReadCloser, baseLabels model.LabelSet, 
 	if err != nil {
 		return
 	}
-
-	now := p.time.Now()
 
 	// TODO(matt): This outer loop is a great basis for parallelization.
 	for _, entity := range entities {
@@ -101,7 +100,7 @@ func (p *processor001) Process(stream io.ReadCloser, baseLabels model.LabelSet, 
 
 				sample := model.Sample{
 					Metric:    metric,
-					Timestamp: now,
+					Timestamp: timestamp,
 					Value:     model.SampleValue(sampleValue),
 				}
 
@@ -136,7 +135,7 @@ func (p *processor001) Process(stream io.ReadCloser, baseLabels model.LabelSet, 
 
 					sample := model.Sample{
 						Metric:    childMetric,
-						Timestamp: now,
+						Timestamp: timestamp,
 						Value:     model.SampleValue(individualValue),
 					}
 
