@@ -162,6 +162,8 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 			done <- true
 		}()
 
+		now := time.Now()
+
 		var resp *http.Response // Don't shadow "err" from the enclosing function.
 		resp, err = http.Get(t.Address())
 		if err != nil {
@@ -182,7 +184,7 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 			baseLabels[baseLabel] = baseValue
 		}
 
-		err = processor.Process(resp.Body, baseLabels, results)
+		err = processor.Process(resp.Body, now, baseLabels, results)
 		if err != nil {
 			return
 		}
