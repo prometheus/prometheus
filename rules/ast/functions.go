@@ -100,6 +100,24 @@ func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} 
 			lastValue = currentValue
 		}
 		resultValue := lastValue - samples.Values[0].Value + counterCorrection
+
+		targetInterval := args[0].(*MatrixLiteral).interval
+		sampledInterval := samples.Values[len(samples.Values)-1].Timestamp.Sub(samples.Values[0].Timestamp)
+		if sampledInterval == 0 {
+			// Only found one sample. Cannot compute a rate from this.
+			continue
+		}
+		// Correct for differences in target vs. actual delta interval.
+		//
+		// Above, we didn't actually calculate the delta for the specified target
+		// interval, but for an interval between the first and last found samples
+		// under the target interval, which will usually have less time between
+		// them. Depending on how many samples are found under a target interval,
+		// the delta results are distorted and temporal aliasing occurs (ugly
+		// bumps). This effect is corrected for below.
+		intervalCorrection := model.SampleValue(targetInterval) / model.SampleValue(sampledInterval)
+		resultValue *= intervalCorrection
+
 		resultSample := model.Sample{
 			Metric:    samples.Metric,
 			Value:     resultValue,
