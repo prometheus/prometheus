@@ -137,8 +137,8 @@ func rateImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	// MatrixLiteral exists). Find a better way of getting the duration of a
 	// matrix, such as looking at the samples themselves.
 	interval := args[0].(*MatrixLiteral).interval
-	for _, sample := range vector {
-		sample.Value /= model.SampleValue(interval / time.Second)
+	for i, _ := range vector {
+		vector[i].Value /= model.SampleValue(interval / time.Second)
 	}
 	return vector
 }
