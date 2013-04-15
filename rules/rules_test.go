@@ -227,6 +227,12 @@ var expressionTests = []struct {
 		fullRanges:     0,
 		intervalRanges: 8,
 	}, {
+		// Deltas should be adjusted for target interval vs. samples under target interval.
+		expr:           "delta(http_requests{group='canary',instance='1',job='app-server'}[18m], 1)",
+		output:         []string{"http_requests{group='canary',instance='1',job='app-server'} => 288 @[%v]"},
+		fullRanges:     1,
+		intervalRanges: 0,
+	}, {
 		// Empty expressions shouldn't parse.
 		expr:       "",
 		shouldFail: true,
