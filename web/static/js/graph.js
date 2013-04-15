@@ -288,14 +288,24 @@ Prometheus.Graph.prototype.submitQuery = function() {
   });
 };
 
-Prometheus.Graph.prototype.metricToTsName = function(labels) {
-  var tsName = labels["name"] + "{";
+Prometheus.Graph.prototype.renderLabels = function(labels) {
   var labelStrings = [];
   for (label in labels) {
     if (label != "name") {
-      labelStrings.push(label + "='" + labels[label] + "'");
+      labelStrings.push("<strong>" + label + "</strong>: " + labels[label]);
     }
   }
+  return labels = "<div class='labels'>" + labelStrings.join("<br>") + "</div>";
+}
+
+Prometheus.Graph.prototype.metricToTsName = function(labels) {
+  var tsName = labels["name"] + "{";
+  var labelStrings = [];
+   for (label in labels) {
+     if (label != "name") {
+      labelStrings.push(label + "='" + labels[label] + "'");
+     }
+   }
   tsName += labelStrings.join(",") + "}";
   return tsName;
 };
@@ -318,6 +328,7 @@ Prometheus.Graph.prototype.transformData = function(json) {
   var data = json.Value.map(function(ts) {
     return {
       name: self.metricToTsName(ts.Metric),
+      labels: ts.Metric,
       data: ts.Values.map(function(value) {
         return {
           x: value.Timestamp,
@@ -369,12 +380,42 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
   }
 
   var hoverDetail = new Rickshaw.Graph.HoverDetail({
-    graph: self.rickshawGraph
+    graph: self.rickshawGraph,
+    formatter: function(series, x, y) {
+      var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
+      var content = swatch + series.labels["name"] + ": <strong>" + y + '</strong><br>';
+      return content + self.renderLabels(series.labels);
+    },
+    onRender: function() {
+      var width = this.graph.width;
+      var element = $(this.element);
+
+      $(".x_label", element).each(function() {
+        if ($(this).outerWidth() + element.offset().left > width) {
+          $(this).addClass("flipped");
+        } else {
+          $(this).removeClass("flipped");
+        }
+      })
+
+      $(".item", element).each(function() {
+        if ($(this).outerWidth() + element.offset().left > width) {
+          $(this).addClass("flipped");
+        } else {
+          $(this).removeClass("flipped");
+        }
+      })
+    },
   });
 
   var legend = new Rickshaw.Graph.Legend({
     element: self.legend[0],
-    graph: self.rickshawGraph
+    graph: self.rickshawGraph,
+  });
+
+  var highlighter = new Rickshaw.Graph.Behavior.Series.Highlight( {
+    graph: self.rickshawGraph,
+    legend: legend
   });
 
   var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({
@@ -424,7 +465,7 @@ function addGraph(options) {
 }
 
 function init() {
-  jQuery.ajaxSetup({
+  $.ajaxSetup({
     cache: false
   });
 
