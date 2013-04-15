@@ -71,7 +71,7 @@ var testMatrix = ast.Matrix{
 	{
 		Metric: model.Metric{
 			model.MetricNameLabel: "http_requests",
-			"job":                 "api-server",
+			model.JobLabel:        "api-server",
 			"instance":            "0",
 			"group":               "production",
 		},
@@ -80,7 +80,7 @@ var testMatrix = ast.Matrix{
 	{
 		Metric: model.Metric{
 			model.MetricNameLabel: "http_requests",
-			"job":                 "api-server",
+			model.JobLabel:        "api-server",
 			"instance":            "1",
 			"group":               "production",
 		},
@@ -89,7 +89,7 @@ var testMatrix = ast.Matrix{
 	{
 		Metric: model.Metric{
 			model.MetricNameLabel: "http_requests",
-			"job":                 "api-server",
+			model.JobLabel:        "api-server",
 			"instance":            "0",
 			"group":               "canary",
 		},
@@ -98,7 +98,7 @@ var testMatrix = ast.Matrix{
 	{
 		Metric: model.Metric{
 			model.MetricNameLabel: "http_requests",
-			"job":                 "api-server",
+			model.JobLabel:        "api-server",
 			"instance":            "1",
 			"group":               "canary",
 		},
@@ -107,7 +107,7 @@ var testMatrix = ast.Matrix{
 	{
 		Metric: model.Metric{
 			model.MetricNameLabel: "http_requests",
-			"job":                 "app-server",
+			model.JobLabel:        "app-server",
 			"instance":            "0",
 			"group":               "production",
 		},
@@ -116,7 +116,7 @@ var testMatrix = ast.Matrix{
 	{
 		Metric: model.Metric{
 			model.MetricNameLabel: "http_requests",
-			"job":                 "app-server",
+			model.JobLabel:        "app-server",
 			"instance":            "1",
 			"group":               "production",
 		},
@@ -125,7 +125,7 @@ var testMatrix = ast.Matrix{
 	{
 		Metric: model.Metric{
 			model.MetricNameLabel: "http_requests",
-			"job":                 "app-server",
+			model.JobLabel:        "app-server",
 			"instance":            "0",
 			"group":               "canary",
 		},
@@ -134,7 +134,7 @@ var testMatrix = ast.Matrix{
 	{
 		Metric: model.Metric{
 			model.MetricNameLabel: "http_requests",
-			"job":                 "app-server",
+			model.JobLabel:        "app-server",
 			"instance":            "1",
 			"group":               "canary",
 		},
