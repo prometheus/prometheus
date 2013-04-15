@@ -299,7 +299,15 @@ Prometheus.Graph.prototype.renderLabels = function(labels) {
 }
 
 Prometheus.Graph.prototype.metricToTsName = function(labels) {
-  return labels["name"] + "<br>" + this.renderLabels(labels);
+  var tsName = labels["name"] + "{";
+  var labelStrings = [];
+   for (label in labels) {
+     if (label != "name") {
+      labelStrings.push(label + "='" + labels[label] + "'");
+     }
+   }
+  tsName += labelStrings.join(",") + "}";
+  return tsName;
 };
 
 Prometheus.Graph.prototype.parseValue = function(value) {
