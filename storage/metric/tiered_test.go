@@ -370,7 +370,6 @@ func testMakeView(t test.Tester) {
 
 	for i, scenario := range scenarios {
 		tiered, closer := newTestTieredStorage(t)
-		defer closer.Close()
 
 		for j, datum := range scenario.data {
 			err := tiered.AppendSample(datum)
@@ -418,7 +417,7 @@ func testMakeView(t test.Tester) {
 			}
 		}
 
-		tiered.Drain()
+		closer.Close()
 	}
 }
 

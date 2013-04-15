@@ -179,7 +179,7 @@ func (t *tieredStorage) Serve() {
 		case drainingDone := <-t.draining:
 			t.flush()
 			drainingDone <- true
-			break
+			return
 		}
 	}
 }
