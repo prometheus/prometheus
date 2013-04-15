@@ -17,7 +17,7 @@ function submitQuery() {
 }
 
 function bindHandlers() {
-  jQuery.ajaxSetup({
+  $.ajaxSetup({
       cache: false
   });
   $("#queryForm").submit(submitQuery);
