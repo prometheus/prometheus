@@ -167,7 +167,7 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
-				"job":                 "api-server",
+				model.JobLabel:        "api-server",
 				"instance":            "0",
 			},
 			Value:     10,
@@ -176,7 +176,7 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
-				"job":                 "api-server",
+				model.JobLabel:        "api-server",
 				"instance":            "1",
 			},
 			Value:     20,
@@ -185,7 +185,7 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
-				"job":                 "api-server",
+				model.JobLabel:        "api-server",
 				"instance":            "2",
 			},
 			Value:     30,
@@ -194,7 +194,7 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
-				"job":                 "api-server",
+				model.JobLabel:        "api-server",
 				"instance":            "3",
 				"group":               "canary",
 			},
@@ -204,7 +204,7 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
-				"job":                 "api-server",
+				model.JobLabel:        "api-server",
 				"instance":            "2",
 				"group":               "canary",
 			},
@@ -214,7 +214,7 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
-				"job":                 "api-server",
+				model.JobLabel:        "api-server",
 				"instance":            "3",
 				"group":               "mytest",
 			},
@@ -224,7 +224,7 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 		model.Sample{
 			Metric: model.Metric{
 				model.MetricNameLabel: "http_requests",
-				"job":                 "api-server",
+				model.JobLabel:        "api-server",
 				"instance":            "3",
 				"group":               "mytest",
 			},

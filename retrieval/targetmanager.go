@@ -89,7 +89,7 @@ func (m *targetManager) AddTargetsFromConfig(config *config.Config) {
 	for _, job := range config.Jobs {
 		for _, configTargets := range job.Targets {
 			baseLabels := model.LabelSet{
-				model.LabelName("job"): model.LabelValue(job.Name),
+				model.JobLabel: model.LabelValue(job.Name),
 			}
 			for label, value := range configTargets.Labels {
 				baseLabels[label] = value
