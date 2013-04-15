@@ -219,8 +219,11 @@ var expressionTests = []struct {
 		intervalRanges: 1,
 	}, {
 		// Lower-cased aggregation operators should work too.
-		expr:           "sum(http_requests) + min(http_requests) + max(http_requests) + avg(http_requests)",
-		output:         []string{"http_requests{} => 4950 @[%v]"},
+		expr:           "sum(http_requests) by (job) + min(http_requests) by (job) + max(http_requests) by (job) + avg(http_requests) by (job)",
+		output:					[]string{
+			"http_requests{job='app-server'} => 4550 @[%v]",
+			"http_requests{job='api-server'} => 1750 @[%v]",
+		},
 		fullRanges:     0,
 		intervalRanges: 8,
 	}, {
