@@ -166,9 +166,17 @@ func (t *tieredStorage) Serve() {
 		writeMemoryTicker = time.Tick(t.writeMemoryInterval)
 	)
 
-	for {
-		t.reportQueues()
+	go func() {
+		reportTicker := time.Tick(time.Second)
 
+		for {
+			<-reportTicker
+
+			t.reportQueues()
+		}
+	}()
+
+	for {
 		select {
 		case <-writeMemoryTicker:
 			t.writeMemory()
