@@ -24,10 +24,6 @@ import (
 	"time"
 )
 
-const (
-	instance = "instance"
-)
-
 var (
 	localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
 )
@@ -140,14 +136,42 @@ func NewTarget(address string, deadline time.Duration, baseLabels model.LabelSet
 	return target
 }
 
+func (t *target) recordScrapeHealth(results chan format.Result, timestamp time.Time, healthy bool) {
+	metric := model.Metric{}
+	for label, value := range t.baseLabels {
+		metric[label] = value
+	}
+	metric[model.MetricNameLabel] = model.ScrapeHealthMetricName
+
+	healthValue := model.SampleValue(0)
+	if healthy {
+		healthValue = model.SampleValue(1)
+	}
+
+	sample := model.Sample{
+		Metric:    metric,
+		Timestamp: timestamp,
+		Value:     healthValue,
+	}
+
+	results <- format.Result{
+		Err:    nil,
+		Sample: sample,
+	}
+}
+
 func (t *target) Scrape(earliest time.Time, results chan format.Result) (err error) {
+	now := time.Now()
+
 	defer func() {
 		futureState := t.state
 
 		switch err {
 		case nil:
+			t.recordScrapeHealth(results, now, true)
 			futureState = ALIVE
 		default:
+			t.recordScrapeHealth(results, now, false)
 			futureState = UNREACHABLE
 		}
 
@@ -161,8 +185,6 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 		defer func() {
 			done <- true
 		}()
-
-		now := time.Now()
 
 		var resp *http.Response // Don't shadow "err" from the enclosing function.
 		resp, err = http.Get(t.Address())
@@ -179,7 +201,7 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 
 		// XXX: This is a wart; we need to handle this more gracefully down the
 		//      road, especially once we have service discovery support.
-		baseLabels := model.LabelSet{instance: model.LabelValue(t.Address())}
+		baseLabels := model.LabelSet{model.InstanceLabel: model.LabelValue(t.Address())}
 		for baseLabel, baseValue := range t.baseLabels {
 			baseLabels[baseLabel] = baseValue
 		}
