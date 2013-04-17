@@ -45,7 +45,7 @@ cc-implementation-Linux-stamp:
 	[ -x "$$(which cc)" ] || $(APT_GET_INSTALL) build-essential
 	touch $@
 
-dependencies-stamp: cache-stamp go-stamp goprotobuf-stamp gorest-stamp goskiplist-stamp instrumentation-stamp levigo-stamp
+dependencies-stamp: cache-stamp go-stamp goprotobuf-stamp gorest-stamp goskiplist-stamp instrumentation-stamp levigo-stamp protobuf-c-stamp
 	touch $@
 
 go-stamp: gvm-stamp
@@ -63,6 +63,13 @@ gorest-stamp: go-stamp
 
 goskiplist-stamp: go-stamp
 	$(GO_GET) github.com/ryszard/goskiplist/skiplist $(THIRD_PARTY_BUILD_OUTPUT)
+	touch $@
+
+gperftools-stamp: cache-stamp cache/gperftools-$(GPERFTOOLS_VERSION).tar.gz cc-stamp stack-unwind-support-stamp
+	tar xzvf cache/gperftools-$(GPERFTOOLS_VERSION).tar.gz -C dirty $(THIRD_PARTY_BUILD_OUTPUT)
+	cd dirty/gperftools-$(GPERFTOOLS_VERSION) && ./configure --prefix=$(PREFIX) $(THIRD_PARTY_BUILD_OUTPUT)
+	make -C dirty/gperftools-$(GPERFTOOLS_VERSION) $(THIRD_PARTY_BUILD_OUTPUT)
+	make -C dirty/gperftools-$(GPERFTOOLS_VERSION) install $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
 gvm-stamp: bison-stamp cc-stamp mercurial-stamp
@@ -93,19 +100,19 @@ instrumentation-stamp: go-stamp
 	$(GO_GET) github.com/prometheus/client_golang $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
-leveldb-stamp: cache-stamp cache/leveldb-$(LEVELDB_VERSION).tar.gz cc-stamp rsync-stamp snappy-stamp
+leveldb-stamp: cache-stamp cache/leveldb-$(LEVELDB_VERSION).tar.gz cc-stamp gperftools-stamp rsync-stamp snappy-stamp
 	tar xzvf cache/leveldb-$(LEVELDB_VERSION).tar.gz -C dirty $(THIRD_PARTY_BUILD_OUTPUT)
-	cd dirty/leveldb-$(LEVELDB_VERSION) && CFLAGS="$(CFLAGS) -lsnappy" CXXFLAGS="$(CXXFLAGS) -lsnappy $(LDFLAGS)" LDFLAGS="-lsnappy $(LDFLAGS)" bash -x ./build_detect_platform build_config.mk ./
+	cd dirty/leveldb-$(LEVELDB_VERSION) && CFLAGS="$(CFLAGS) -lsnappy $(LDFLAGS)" CXXFLAGS="$(CXXFLAGS) -lsnappy $(LDFLAGS)" LDFLAGS="-lsnappy $(LDFLAGS)" bash -x ./build_detect_platform build_config.mk ./
 	# The test that LevelDB uses to test for Snappy is naive and
 	# does not respect LDFLAGS.  :-(
-	CFLAGS="$(CFLAGS) -lsnappy" CXXFLAGS="$(CXXFLAGS) -lsnappy $(LDFLAGS)" LDFLAGS="-lsnappy $(LDFLAGS)" $(MAKE) -C dirty/leveldb-$(LEVELDB_VERSION) $(THIRD_PARTY_BUILD_OUTPUT)
+	CFLAGS="$(CFLAGS) -lsnappy $(LDFLAGS)" CXXFLAGS="$(CXXFLAGS) -lsnappy $(LDFLAGS)" LDFLAGS="-lsnappy $(LDFLAGS)" $(MAKE) -C dirty/leveldb-$(LEVELDB_VERSION) $(THIRD_PARTY_BUILD_OUTPUT)
 	rsync -av "dirty/leveldb-$(LEVELDB_VERSION)/include/" "$(PREFIX)/include/" $(THIRD_PARTY_BUILD_OUTPUT)
 	-[ "$(UNAME)" = "Linux" ] && { rsync -av "dirty/leveldb-$(LEVELDB_VERSION)/"*.*so* "$(PREFIX)/lib/" ; } $(THIRD_PARTY_BUILD_OUTPUT) $(THIRD_PARTY_BUILD_OUTPUT)
 	-[ "$(UNAME)" = "Darwin" ] && { rsync -av "dirty/leveldb-$(LEVELDB_VERSION)/"*.*dylib* "$(PREFIX)/lib/" ; } $(THIRD_PARTY_BUILD_OUTPUT)
 	rsync -av "dirty/leveldb-$(LEVELDB_VERSION)/"*.a "$(PREFIX)/lib/" $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
-levigo-stamp: cc-stamp go-stamp leveldb-stamp snappy-stamp
+levigo-stamp: cc-stamp gperftools-stamp go-stamp leveldb-stamp snappy-stamp
 	CGO_CFLAGS="-I$(PREFIX)/include" CGO_LDFLAGS="-L$(PREFIX)/lib" $(GO_GET) github.com/jmhodges/levigo $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
@@ -130,6 +137,14 @@ noop-target-stamp:
 	echo "Not doing anything."
 	touch $@
 
+protobuf-c-stamp: cache-stamp cache/protobuf-c-$(PROTOBUF_C_VERSION).tar.gz cc-stamp
+	tar xzvf cache/protobuf-c-$(PROTOBUF_C_VERSION).tar.gz -C dirty $(THIRD_PARTY_BUILD_OUTPUT)
+	cd dirty/protobuf-c-$(PROTOBUF_C_VERSION) && ./configure --prefix="$(PREFIX)" $(THIRD_PARTY_BUILD_OUTPUT)
+	$(MAKE) -C dirty/protobuf-c-$(PROTOBUF_C_VERSION) $(THIRD_PARTY_BUILD_OUTPUT)
+	$(MAKE) -C dirty/protobuf-c-$(PROTOBUF_C_VERSION) install $(THIRD_PARTY_BUILD_OUTPUT)
+	[ -x "$$(which protoc-c)" ] || { echo "protoc-c not found." ; false ; }
+	touch $@
+
 protoc-stamp: cache-stamp cache/protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2 cc-stamp
 	tar xjvf cache/protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2 -C dirty $(THIRD_PARTY_BUILD_OUTPUT)
 	cd dirty/protobuf-$(PROTOCOL_BUFFERS_VERSION) && ./configure --prefix="$(PREFIX)" $(THIRD_PARTY_BUILD_OUTPUT)
@@ -149,7 +164,7 @@ rsync-stamp: rsync-implementation-$(UNAME)-stamp
 	[ -x "$$(which rsync)" ] || { echo "rsync not found." ; false ; }
 	touch $@
 
-snappy-stamp: cache-stamp cache/snappy-$(SNAPPY_VERSION).tar.gz cc-stamp
+snappy-stamp: cache-stamp cache/snappy-$(SNAPPY_VERSION).tar.gz cc-stamp gperftools-stamp
 	tar xzvf cache/snappy-$(SNAPPY_VERSION).tar.gz -C dirty $(THIRD_PARTY_BUILD_OUTPUT)
 	cd dirty/snappy-$(SNAPPY_VERSION) && ./configure --prefix="$(PREFIX)" $(THIRD_PARTY_BUILD_OUTPUT)
 	$(MAKE) -C dirty/snappy-$(SNAPPY_VERSION) $(THIRD_PARTY_BUILD_OUTPUT)

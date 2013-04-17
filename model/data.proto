@@ -27,7 +27,10 @@ message Metric {
 }
 
 message Fingerprint {
-  optional string signature = 1;
+  optional uint64 hash = 1;
+  optional string first = 2;
+  optional uint32 modulus = 3;
+  optional string last = 4;
 }
 
 message FingerprintCollection {
@@ -43,9 +46,9 @@ message LabelSet {
 // introduced into the key definition below.
 message SampleKey {
   optional Fingerprint fingerprint    = 1;
-  optional bytes       timestamp      = 2;
-  optional sfixed64    last_timestamp = 3;
-  optional fixed32     sample_count   = 4;
+  optional int64       timestamp      = 2;
+  optional int64       last_timestamp = 3;
+  optional uint32      sample_count   = 4;
 }
 
 message SampleValueSeries {

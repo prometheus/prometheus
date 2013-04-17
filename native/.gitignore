@@ -1,0 +1,5 @@
+test_suite
+*.a
+*.o
+*.c
+*.h

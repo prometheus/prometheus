@@ -103,7 +103,7 @@ func (w watermarkDecoder) DecodeKey(in interface{}) (out interface{}, err error)
 		panic(err)
 	}
 
-	out = model.NewFingerprintFromRowKey(*key.Signature)
+	out = model.NewFingerprintFromDTO(key)
 
 	return
 }

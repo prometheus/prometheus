@@ -16,9 +16,9 @@ package metric
 import (
 	"code.google.com/p/goprotobuf/proto"
 	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
+	"github.com/prometheus/prometheus/native"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	fixture "github.com/prometheus/prometheus/storage/raw/leveldb/test"
 	"testing"
@@ -80,7 +80,7 @@ func (w watermarkState) Get() (key, value coding.Encoder) {
 func (s sampleGroup) Get() (key, value coding.Encoder) {
 	key = coding.NewProtocolBuffer(&dto.SampleKey{
 		Fingerprint:   model.NewFingerprintFromRowKey(s.fingerprint).ToDTO(),
-		Timestamp:     indexable.EncodeTime(s.values[0].time),
+		Timestamp:     proto.Int64(s.values[0].time.Unix()),
 		LastTimestamp: proto.Int64(s.values[len(s.values)-1].time.Unix()),
 		SampleCount:   proto.Uint32(uint32(len(s.values))),
 	})
@@ -490,28 +490,28 @@ func TestCurator(t *testing.T) {
 	)
 
 	for _, scenario := range scenarios {
-		curatorDirectory := fixture.NewPreparer(t).Prepare("curator", fixture.NewCassetteFactory(scenario.in.curationStates))
+		curatorDirectory := fixture.NewPreparer(t).Prepare("curator", fixture.NewCassetteFactory(scenario.in.curationStates), nil)
 		defer curatorDirectory.Close()
 
-		watermarkDirectory := fixture.NewPreparer(t).Prepare("watermark", fixture.NewCassetteFactory(scenario.in.watermarkStates))
+		watermarkDirectory := fixture.NewPreparer(t).Prepare("watermark", fixture.NewCassetteFactory(scenario.in.watermarkStates), nil)
 		defer watermarkDirectory.Close()
 
-		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.in.sampleGroups))
+		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.in.sampleGroups), native.NewSampleKeyComparator())
 		defer sampleDirectory.Close()
 
-		curatorStates, err := leveldb.NewLevelDBPersistence(curatorDirectory.Path(), 0, 0)
+		curatorStates, err := leveldb.NewLevelDBPersistence(curatorDirectory.Path(), 0, 0, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer curatorStates.Close()
 
-		watermarkStates, err := leveldb.NewLevelDBPersistence(watermarkDirectory.Path(), 0, 0)
+		watermarkStates, err := leveldb.NewLevelDBPersistence(watermarkDirectory.Path(), 0, 0, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer watermarkStates.Close()
 
-		samples, err := leveldb.NewLevelDBPersistence(sampleDirectory.Path(), 0, 0)
+		samples, err := leveldb.NewLevelDBPersistence(sampleDirectory.Path(), 0, 0, native.NewSampleKeyComparator())
 		if err != nil {
 			t.Fatal(err)
 		}

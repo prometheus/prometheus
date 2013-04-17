@@ -17,13 +17,19 @@ include ../../Makefile.INCLUDE
 
 all: populate
 
-populate: leveldb-$(LEVELDB_VERSION).tar.gz protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2 snappy-$(SNAPPY_VERSION).tar.gz
+populate: gperftools-$(GPERFTOOLS_VERSION).tar.gz leveldb-$(LEVELDB_VERSION).tar.gz protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2 protobuf-c-$(PROTOBUF_C_VERSION).tar.gz snappy-$(SNAPPY_VERSION).tar.gz
+
+gperftools-$(GPERFTOOLS_VERSION).tar.gz: wget-stamp
+	$(WGET) https://gperftools.googlecode.com/files/gperftools-$(GPERFTOOLS_VERSION).tar.gz
 
 leveldb-$(LEVELDB_VERSION).tar.gz: wget-stamp
 	$(WGET) http://leveldb.googlecode.com/files/leveldb-$(LEVELDB_VERSION).tar.gz
 
 protobuf-$(PROTOCOL_BUFFERS_VERSION).tar.bz2: wget-stamp
 	$(WGET) http://protobuf.googlecode.com/files/$@
+
+protobuf-c-$(PROTOBUF_C_VERSION).tar.gz: wget-stamp
+	$(WGET) https://protobuf-c.googlecode.com/files/$@
 
 snappy-$(SNAPPY_VERSION).tar.gz: wget-stamp
 	$(WGET) http://snappy.googlecode.com/files/snappy-$(SNAPPY_VERSION).tar.gz

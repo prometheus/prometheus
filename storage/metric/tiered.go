@@ -14,9 +14,9 @@
 package metric
 
 import (
+	"code.google.com/p/goprotobuf/proto"
 	"fmt"
 	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage"
@@ -461,9 +461,9 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 
 	// Limit the target key to be within the series' keyspace.
 	if ts.After(frontier.lastSupertime) {
-		targetKey.Timestamp = indexable.EncodeTime(frontier.lastSupertime)
+		targetKey.Timestamp = proto.Int64(frontier.lastSupertime.Unix())
 	} else {
-		targetKey.Timestamp = indexable.EncodeTime(ts)
+		targetKey.Timestamp = proto.Int64(ts.Unix())
 	}
 
 	// Try seeking to target key.
@@ -487,7 +487,7 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 	//
 	// Only do the rewind if there is another chunk before this one.
 	rewound := false
-	firstTime := indexable.DecodeTime(foundKey.Timestamp)
+	firstTime := time.Unix(*foundKey.Timestamp, 0)
 	if ts.Before(firstTime) && !frontier.firstSupertime.After(ts) {
 		iterator.Previous()
 		rewound = true

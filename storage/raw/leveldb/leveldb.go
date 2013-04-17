@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"github.com/jmhodges/levigo"
 	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/native"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"time"
@@ -37,6 +38,7 @@ type LevelDBPersistence struct {
 	storage      *levigo.DB
 	readOptions  *levigo.ReadOptions
 	writeOptions *levigo.WriteOptions
+	comparator   native.Comparator
 }
 
 // levigoIterator wraps the LevelDB resources in a convenient manner for uniform
@@ -165,8 +167,13 @@ func (i levigoIterator) GetError() (err error) {
 	return i.iterator.GetError()
 }
 
-func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (p *LevelDBPersistence, err error) {
+// NewLevelDBPersistence furnishes a new LevelDB storage unit.  An optional
+// custom comparator may be provided.
+func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int, comparator native.Comparator) (p *LevelDBPersistence, err error) {
 	options := levigo.NewOptions()
+	if comparator != nil {
+		options.SetComparator(comparator.Comparator())
+	}
 	options.SetCreateIfMissing(true)
 	options.SetParanoidChecks(*leveldbUseParanoidChecks)
 	compression := levigo.NoCompression
@@ -194,6 +201,7 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 	writeOptions.SetSync(*leveldbFlushOnMutate)
 	p = &LevelDBPersistence{
 		cache:        cache,
+		comparator:   comparator,
 		filterPolicy: filterPolicy,
 		options:      options,
 		readOptions:  readOptions,
@@ -240,6 +248,12 @@ func (l *LevelDBPersistence) Close() {
 	defer func() {
 		if l.writeOptions != nil {
 			l.writeOptions.Close()
+		}
+	}()
+
+	defer func() {
+		if l.comparator != nil {
+			l.comparator.Close()
 		}
 	}()
 

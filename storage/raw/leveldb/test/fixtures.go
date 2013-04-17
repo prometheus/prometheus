@@ -15,6 +15,7 @@ package test
 
 import (
 	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/native"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility/test"
 )
@@ -39,7 +40,7 @@ type (
 	Preparer interface {
 		// Prepare furnishes the database and returns its path along with any
 		// encountered anomalies.
-		Prepare(namespace string, f FixtureFactory) test.TemporaryDirectory
+		Prepare(namespace string, f FixtureFactory, c native.Comparator) test.TemporaryDirectory
 	}
 
 	FixtureFactory interface {
@@ -61,9 +62,9 @@ type (
 	}
 )
 
-func (p preparer) Prepare(n string, f FixtureFactory) (t test.TemporaryDirectory) {
+func (p preparer) Prepare(n string, f FixtureFactory, c native.Comparator) (t test.TemporaryDirectory) {
 	t = test.NewTemporaryDirectory(n, p.tester)
-	persistence, err := leveldb.NewLevelDBPersistence(t.Path(), cacheCapacity, bitsPerBloomFilterEncoded)
+	persistence, err := leveldb.NewLevelDBPersistence(t.Path(), cacheCapacity, bitsPerBloomFilterEncoded, c)
 	if err != nil {
 		defer t.Close()
 		p.tester.Fatal(err)
