@@ -25,7 +25,7 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 		state:     UNKNOWN,
 		address:   "bad schema",
 	}
-	testTarget.Scrape(time.Time{}, make(chan format.Result))
+	testTarget.Scrape(time.Time{}, make(chan format.Result, 2))
 	if testTarget.state != UNREACHABLE {
 		t.Errorf("Expected target state %v, actual: %v", UNREACHABLE, testTarget.state)
 	}
