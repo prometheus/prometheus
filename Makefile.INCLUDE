@@ -1,0 +1,54 @@
+# Copyright 2013 Prometheus Team
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+.SUFFIXES:
+
+# Set this to "false" to provide verbose builds of third-party components,
+# namely C and C++ dependencies.
+export SILENCE_THIRD_PARTY_BUILDS := true
+
+ifeq ($(SILENCE_THIRD_PARTY_BUILDS), true)
+export THIRD_PARTY_BUILD_OUTPUT := >/dev/null 2>&1
+else
+export THIRD_PARTY_BUILD_OUTPUT :=
+endif
+
+GO_VERSION := 1.0.3
+LEVELDB_VERSION := 1.7.0
+PROTOCOL_BUFFERS_VERSION := 2.4.1
+SNAPPY_VERSION := 1.0.5
+
+UNAME := $(shell uname)
+FIRST_GOPATH := $(shell echo $${GOPATH} | awk -F':' '{ print $$1 }')
+FULL_GOPATH := $(FIRST_GOPATH)/src/github.com/prometheus/prometheus
+FULL_GOPATH_BASE := $(FIRST_GOPATH)/src/github.com/prometheus
+
+export PREFIX=$(PWD)/build/root
+
+export PATH := $(PREFIX)/bin:$(GOPATH)/bin:$(PATH)
+export LD_LIBRARY_PATH := $(PREFIX)/lib:$(LD_LIBRARY_PATH)
+
+export CFLAGS := $(CFLAGS) -I$(PREFIX)/include
+export CXXFLAGS := $(CXXFLAGS) -I$(PREFIX)/include
+export CPPFLAGS := $(CPPFLAGS) -I$(PREFIX)/include
+export LDFLAGS := $(LDFLAGS) -L$(PREFIX)/lib
+export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
+
+export GO_TEST_FLAGS := "-v"
+
+GO_GET := go get -u -v -x
+APT_GET_INSTALL := sudo apt-get install -y
+BREW_INSTALL := brew install
+# By default, wget sets the creation time to match the server's, which throws
+# off Make.  :-(
+WGET := wget --no-use-server-timestamps -c
