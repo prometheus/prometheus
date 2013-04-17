@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/rules/ast"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -66,15 +67,19 @@ func (m *ruleManager) Stop() {
 
 func (m *ruleManager) runIteration(results chan *Result) {
 	now := time.Now()
+	wg := sync.WaitGroup{}
 	for _, rule := range m.rules {
-		go func() {
+		wg.Add(1)
+		go func(rule *Rule) {
 			vector, err := rule.Eval(&now)
 			m.results <- &Result{
 				Samples: vector,
 				Err:     err,
 			}
-		}()
+			wg.Done()
+		}(rule)
 	}
+	wg.Wait()
 }
 
 func (m *ruleManager) AddRulesFromConfig(config *config.Config) error {
