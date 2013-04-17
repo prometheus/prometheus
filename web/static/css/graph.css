@@ -3,12 +3,12 @@ body {
 }
 
 .graph_container {
-        font-family: Arial, Helvetica, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 .graph {
-        position: relative;
-        min-height: 400px;
+  position: relative;
+  min-height: 400px;
 }
 
 svg {
@@ -17,9 +17,9 @@ svg {
 }
 
 .legend {
-        display: inline-block;
-        vertical-align: top;
-        margin: 0 0 0 0px;
+  display: inline-block;
+  vertical-align: top;
+  margin: 0 0 0 0px;
 }
 
 .graph .detail .x_label.flipped {
@@ -54,3 +54,11 @@ svg {
   height: 10px;
   margin: 2px 2px 0 8px;
  }
+
+.refresh_interval {
+  width: 102px
+}
+
+input[title=*]:hover:after {
+  content: attr(title);
+}
