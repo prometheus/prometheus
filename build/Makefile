@@ -95,9 +95,10 @@ instrumentation-stamp: go-stamp
 
 leveldb-stamp: cache-stamp cache/leveldb-$(LEVELDB_VERSION).tar.gz cc-stamp rsync-stamp snappy-stamp
 	tar xzvf cache/leveldb-$(LEVELDB_VERSION).tar.gz -C dirty $(THIRD_PARTY_BUILD_OUTPUT)
+	cd dirty/leveldb-$(LEVELDB_VERSION) && CFLAGS="$(CFLAGS) -lsnappy" CXXFLAGS="$(CXXFLAGS) -lsnappy $(LDFLAGS)" LDFLAGS="-lsnappy $(LDFLAGS)" bash -x ./build_detect_platform build_config.mk ./
 	# The test that LevelDB uses to test for Snappy is naive and
 	# does not respect LDFLAGS.  :-(
-	CXXFLAGS="$(CXXFLAGS) -lsnappy $(LDFLAGS)" LDFLAGS="-lsnappy $(LDFLAGS)" $(MAKE) -C dirty/leveldb-$(LEVELDB_VERSION) $(THIRD_PARTY_BUILD_OUTPUT)
+	CFLAGS="$(CFLAGS) -lsnappy" CXXFLAGS="$(CXXFLAGS) -lsnappy $(LDFLAGS)" LDFLAGS="-lsnappy $(LDFLAGS)" $(MAKE) -C dirty/leveldb-$(LEVELDB_VERSION) $(THIRD_PARTY_BUILD_OUTPUT)
 	rsync -av "dirty/leveldb-$(LEVELDB_VERSION)/include/" "$(PREFIX)/include/" $(THIRD_PARTY_BUILD_OUTPUT)
 	-[ "$(UNAME)" = "Linux" ] && { rsync -av "dirty/leveldb-$(LEVELDB_VERSION)/"*.*so* "$(PREFIX)/lib/" ; } $(THIRD_PARTY_BUILD_OUTPUT) $(THIRD_PARTY_BUILD_OUTPUT)
 	-[ "$(UNAME)" = "Darwin" ] && { rsync -av "dirty/leveldb-$(LEVELDB_VERSION)/"*.*dylib* "$(PREFIX)/lib/" ; } $(THIRD_PARTY_BUILD_OUTPUT)
