@@ -46,7 +46,7 @@ func (l *LevelDBMembershipIndex) Put(key coding.Encoder) error {
 
 func NewLevelDBMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (i *LevelDBMembershipIndex, err error) {
 
-	leveldbPersistence, err := leveldb.NewLevelDBPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded)
+	leveldbPersistence, err := leveldb.NewLevelDBPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded, nil)
 	if err != nil {
 		return
 	}

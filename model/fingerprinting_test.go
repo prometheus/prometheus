@@ -22,37 +22,37 @@ func TestFingerprintComparison(t *testing.T) {
 		{
 			hash: 0,
 			firstCharacterOfFirstLabelName: "b",
-			labelMatterLength:              1,
+			labelMatterLengthModulus:       1,
 			lastCharacterOfLastLabelValue:  "b",
 		},
 		{
 			hash: 1,
 			firstCharacterOfFirstLabelName: "a",
-			labelMatterLength:              0,
+			labelMatterLengthModulus:       0,
 			lastCharacterOfLastLabelValue:  "a",
 		},
 		{
 			hash: 1,
 			firstCharacterOfFirstLabelName: "a",
-			labelMatterLength:              1000,
+			labelMatterLengthModulus:       1000,
 			lastCharacterOfLastLabelValue:  "b",
 		},
 		{
 			hash: 1,
 			firstCharacterOfFirstLabelName: "b",
-			labelMatterLength:              0,
+			labelMatterLengthModulus:       0,
 			lastCharacterOfLastLabelValue:  "a",
 		},
 		{
 			hash: 1,
 			firstCharacterOfFirstLabelName: "b",
-			labelMatterLength:              1,
+			labelMatterLengthModulus:       1,
 			lastCharacterOfLastLabelValue:  "a",
 		},
 		{
 			hash: 1,
 			firstCharacterOfFirstLabelName: "b",
-			labelMatterLength:              1,
+			labelMatterLengthModulus:       1,
 			lastCharacterOfLastLabelValue:  "b",
 		},
 	}

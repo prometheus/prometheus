@@ -26,6 +26,8 @@ will take care of the following things for you in most cases:
   7. GoRest, a RESTful style web-services framework: [http://code.google.com/p/gorest/](http://code.google.com/p/gorest/).
   8. Prometheus Client, Prometheus in Prometheus [https://github.com/prometheus/client_golang](https://github.com/prometheus/client_golang).
   9. Snappy, a compression library for LevelDB and Levigo [http://code.google.com/p/snappy/](http://code.google.com/p/snappy/).
+ 10. Protocol Buffers C Generator: [https://code.google.com/p/protobuf-c](https://code.google.com/p/protobuf-c).
+ 11. TCMalloc and Friends: [https://code.google.com/p/gperftools/](https://code.google.com/p/gperftools/).
 
 ## Getting Started
 

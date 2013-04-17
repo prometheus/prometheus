@@ -25,12 +25,13 @@ advice:
 binary: build
 	go build -o prometheus.build
 
-build: preparation model web
+build: preparation model native web
 	go build .
 
 clean:
 	$(MAKE) -C build clean
 	$(MAKE) -C model clean
+	$(MAKE) -C native clean
 	$(MAKE) -C web clean
 	rm -rf $(TEST_ARTIFACTS)
 	-find . -type f -iname '*~' -exec rm '{}' ';'
@@ -45,6 +46,9 @@ format:
 
 model: preparation
 	$(MAKE) -C model
+
+native: preparation model
+	$(MAKE) -C native
 
 package: binary
 	cp prometheus.build build/package/prometheus
@@ -66,6 +70,7 @@ source_path:
 	[ -d "$(FULL_GOPATH)" ]
 
 test: build
+	$(MAKE) -C native test
 	go test ./appstate/... $(GO_TEST_FLAGS)
 	go test ./coding/... $(GO_TEST_FLAGS)
 	go test ./config/... $(GO_TEST_FLAGS)
@@ -79,4 +84,4 @@ test: build
 web: preparation
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean documentation format model package preparation run search_index source_path test
+.PHONY: advice binary build clean documentation format model native package preparation run search_index source_path test

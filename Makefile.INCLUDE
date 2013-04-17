@@ -27,6 +27,8 @@ GO_VERSION := 1.0.3
 LEVELDB_VERSION := 1.7.0
 PROTOCOL_BUFFERS_VERSION := 2.4.1
 SNAPPY_VERSION := 1.0.5
+GPERFTOOLS_VERSION := 2.0
+PROTOBUF_C_VERSION := 0.15
 
 UNAME := $(shell uname)
 FIRST_GOPATH := $(shell echo $${GOPATH} | awk -F':' '{ print $$1 }')
@@ -38,9 +40,9 @@ export PREFIX=$(PWD)/build/root
 export PATH := $(PREFIX)/bin:$(GOPATH)/bin:$(PATH)
 export LD_LIBRARY_PATH := $(PREFIX)/lib:$(LD_LIBRARY_PATH)
 
-export CFLAGS := $(CFLAGS) -I$(PREFIX)/include
-export CXXFLAGS := $(CXXFLAGS) -I$(PREFIX)/include
-export CPPFLAGS := $(CPPFLAGS) -I$(PREFIX)/include
+export CFLAGS := $(CFLAGS) -DNDEBUG -O2 -fno-omit-frame-pointer -I$(PREFIX)/include
+export CXXFLAGS := $(CXXFLAGS) -DNDEBUG -O2 -fno-omit-frame-pointer -I$(PREFIX)/include
+export CPPFLAGS := $(CPPFLAGS) -DNDEBUG -O2 -fno-omit-frame-pointer -I$(PREFIX)/include
 export LDFLAGS := $(LDFLAGS) -L$(PREFIX)/lib
 export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 

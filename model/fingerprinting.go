@@ -14,7 +14,6 @@
 package model
 
 import (
-	"code.google.com/p/goprotobuf/proto"
 	"encoding/binary"
 	"fmt"
 	dto "github.com/prometheus/prometheus/model/generated"
@@ -36,7 +35,7 @@ type Fingerprint interface {
 	ToRowKey() string
 	Hash() uint64
 	FirstCharacterOfFirstLabelName() string
-	LabelMatterLength() uint
+	LabelMatterLengthModulus() uint
 	LastCharacterOfLastLabelValue() string
 	ToDTO() *dto.Fingerprint
 	Less(Fingerprint) bool
@@ -51,7 +50,7 @@ func NewFingerprintFromRowKey(rowKey string) (f Fingerprint) {
 	if err != nil {
 		panic(err)
 	}
-	labelMatterLength, err := strconv.ParseUint(components[2], 10, 0)
+	labelMatterLengthModulus, err := strconv.ParseUint(components[2], 10, 0)
 	if err != nil {
 		panic(err)
 	}
@@ -59,14 +58,19 @@ func NewFingerprintFromRowKey(rowKey string) (f Fingerprint) {
 	return fingerprint{
 		hash: hash,
 		firstCharacterOfFirstLabelName: components[1],
-		labelMatterLength:              uint(labelMatterLength),
+		labelMatterLengthModulus:       uint(labelMatterLengthModulus),
 		lastCharacterOfLastLabelValue:  components[3],
 	}
 }
 
 // Builds a Fingerprint from a datastore entry.
 func NewFingerprintFromDTO(f *dto.Fingerprint) Fingerprint {
-	return NewFingerprintFromRowKey(*f.Signature)
+	return fingerprint{
+		hash: *f.Hash,
+		firstCharacterOfFirstLabelName: *f.First,
+		labelMatterLengthModulus:       uint(*f.Modulus),
+		lastCharacterOfLastLabelValue:  *f.Last,
+	}
 }
 
 // Decomposes a Metric into a Fingerprint.
@@ -106,8 +110,8 @@ func NewFingerprintFromMetric(metric Metric) (f Fingerprint) {
 	return fingerprint{
 		firstCharacterOfFirstLabelName: firstCharacterOfFirstLabelName,
 		hash:                           binary.LittleEndian.Uint64(summer.Sum(nil)),
-		labelMatterLength:              uint(labelMatterLength % 10),
-		lastCharacterOfLastLabelValue:  lastCharacterOfLastLabelValue,
+		labelMatterLengthModulus:      uint(labelMatterLength % 10),
+		lastCharacterOfLastLabelValue: lastCharacterOfLastLabelValue,
 	}
 }
 
@@ -117,7 +121,7 @@ type fingerprint struct {
 	// 64-bit is used.
 	hash                           uint64
 	firstCharacterOfFirstLabelName string
-	labelMatterLength              uint
+	labelMatterLengthModulus       uint
 	lastCharacterOfLastLabelValue  string
 }
 
@@ -126,13 +130,11 @@ func (f fingerprint) String() string {
 }
 
 func (f fingerprint) ToRowKey() string {
-	return strings.Join([]string{fmt.Sprintf("%020d", f.hash), f.firstCharacterOfFirstLabelName, fmt.Sprint(f.labelMatterLength), f.lastCharacterOfLastLabelValue}, rowKeyDelimiter)
+	return strings.Join([]string{fmt.Sprintf("%020d", f.hash), f.firstCharacterOfFirstLabelName, fmt.Sprint(f.labelMatterLengthModulus), f.lastCharacterOfLastLabelValue}, rowKeyDelimiter)
 }
 
 func (f fingerprint) ToDTO() *dto.Fingerprint {
-	return &dto.Fingerprint{
-		Signature: proto.String(f.ToRowKey()),
-	}
+	return FingerprintToDTO(f)
 }
 
 func (f fingerprint) Hash() uint64 {
@@ -143,8 +145,8 @@ func (f fingerprint) FirstCharacterOfFirstLabelName() string {
 	return f.firstCharacterOfFirstLabelName
 }
 
-func (f fingerprint) LabelMatterLength() uint {
-	return f.labelMatterLength
+func (f fingerprint) LabelMatterLengthModulus() uint {
+	return f.labelMatterLengthModulus
 }
 
 func (f fingerprint) LastCharacterOfLastLabelValue() string {
@@ -166,7 +168,7 @@ func (f fingerprint) Equal(o Fingerprint) (equal bool) {
 		return
 	}
 
-	equal = f.LabelMatterLength() == o.LabelMatterLength()
+	equal = f.LabelMatterLengthModulus() == o.LabelMatterLengthModulus()
 	if !equal {
 		return
 	}

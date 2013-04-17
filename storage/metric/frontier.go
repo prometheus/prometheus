@@ -14,9 +14,9 @@
 package metric
 
 import (
+	"code.google.com/p/goprotobuf/proto"
 	"fmt"
 	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
@@ -67,10 +67,10 @@ func newDiskFrontier(i leveldb.Iterator) (d *diskFrontier, err error) {
 
 	d = &diskFrontier{}
 
-	d.firstFingerprint = model.NewFingerprintFromRowKey(*firstKey.Fingerprint.Signature)
-	d.firstSupertime = indexable.DecodeTime(firstKey.Timestamp)
-	d.lastFingerprint = model.NewFingerprintFromRowKey(*lastKey.Fingerprint.Signature)
-	d.lastSupertime = indexable.DecodeTime(lastKey.Timestamp)
+	d.firstFingerprint = model.NewFingerprintFromDTO(firstKey.Fingerprint)
+	d.firstSupertime = time.Unix(*firstKey.Timestamp, 0)
+	d.lastFingerprint = model.NewFingerprintFromDTO(lastKey.Fingerprint)
+	d.lastSupertime = time.Unix(*lastKey.Timestamp, 0)
 
 	return
 }
@@ -105,15 +105,15 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 	// If we are either the first or the last key in the database, we need to use
 	// pessimistic boundary frontiers.
 	if f.Equal(d.firstFingerprint) {
-		lowerSeek = indexable.EncodeTime(d.firstSupertime)
+		lowerSeek = d.firstSupertime.Unix()
 	}
 	if f.Equal(d.lastFingerprint) {
-		upperSeek = indexable.EncodeTime(d.lastSupertime)
+		upperSeek = d.lastSupertime.Unix()
 	}
 
 	key := &dto.SampleKey{
 		Fingerprint: f.ToDTO(),
-		Timestamp:   upperSeek,
+		Timestamp:   proto.Int64(upperSeek),
 	}
 
 	raw, err := coding.NewProtocolBuffer(key).Encode()
@@ -131,7 +131,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		panic(err)
 	}
 
-	retrievedFingerprint := model.NewFingerprintFromRowKey(*retrievedKey.Fingerprint.Signature)
+	retrievedFingerprint := model.NewFingerprintFromDTO(retrievedKey.Fingerprint)
 
 	// The returned fingerprint may not match if the original seek key lives
 	// outside of a metric's frontier.  This is probable, for we are seeking to
@@ -146,7 +146,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		if err != nil {
 			panic(err)
 		}
-		retrievedFingerprint := model.NewFingerprintFromRowKey(*retrievedKey.Fingerprint.Signature)
+		retrievedFingerprint := model.NewFingerprintFromDTO(retrievedKey.Fingerprint)
 		// If the previous key does not match, we know that the requested
 		// fingerprint does not live in the database.
 		if !retrievedFingerprint.Equal(f) {
@@ -155,11 +155,11 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 	}
 
 	s = &seriesFrontier{
-		lastSupertime: indexable.DecodeTime(retrievedKey.Timestamp),
+		lastSupertime: time.Unix(*retrievedKey.Timestamp, 0),
 		lastTime:      time.Unix(*retrievedKey.LastTimestamp, 0),
 	}
 
-	key.Timestamp = lowerSeek
+	key.Timestamp = proto.Int64(lowerSeek)
 
 	raw, err = coding.NewProtocolBuffer(key).Encode()
 	if err != nil {
@@ -173,9 +173,9 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		panic(err)
 	}
 
-	retrievedFingerprint = model.NewFingerprintFromRowKey(*retrievedKey.Fingerprint.Signature)
+	retrievedFingerprint = model.NewFingerprintFromDTO(retrievedKey.Fingerprint)
 
-	s.firstSupertime = indexable.DecodeTime(retrievedKey.Timestamp)
+	s.firstSupertime = time.Unix(*retrievedKey.Timestamp, 0)
 
 	return
 }

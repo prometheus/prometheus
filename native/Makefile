@@ -11,19 +11,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MAKE_ARTIFACTS = generated-stamp
+include ../Makefile.INCLUDE
 
-all: generated
+MAKE_ARTIFACTS := data.pb-c.c data.pb-c.h
 
-generated: generated-stamp
+all: test
 
-generated-stamp: data.proto
-	protoc --go_out=generated/ data.proto
-	protoc-c --c_out=../native/ data.proto
-	touch $@
+build:
+	CGO_CFLAGS="$(CFLAGS)" CGO_LDFLAGS="$(LDFLAGS)" go build .
+
+test: build data.pb-c.c data.pb-c.h
+	CGO_CFLAGS="$(CFLAGS)" CGO_LDFLAGS="$(LDFLAGS)" go test .
+
+data.pb-c.c:
+	echo "Run make in model"
+	false
+
+data.pb-c.h:
+	echo "Run make in model"
+	false
 
 clean:
-	rm -rf generated/*
-	-rm -f $(MAKE_ARTIFACTS)
+	rm -rf $(MAKE_ARTIFACTS)
 
-.PHONY: generated
+.PHONY: build clean test

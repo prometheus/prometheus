@@ -115,7 +115,10 @@ func LabelNameToDTO(l *LabelName) *dto.LabelName {
 
 func FingerprintToDTO(f Fingerprint) *dto.Fingerprint {
 	return &dto.Fingerprint{
-		Signature: proto.String(f.ToRowKey()),
+		Hash:    proto.Uint64(f.Hash()),
+		First:   proto.String(f.FirstCharacterOfFirstLabelName()),
+		Modulus: proto.Uint32(uint32(f.LabelMatterLengthModulus())),
+		Last:    proto.String(f.LastCharacterOfLastLabelValue()),
 	}
 }
 
