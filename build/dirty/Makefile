@@ -11,18 +11,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MAKE_ARTIFACTS = generated-stamp
+.SUFFIXES:
 
-all: generated
+include ../../Makefile.INCLUDE
 
-generated: generated-stamp
-
-generated-stamp: data.proto
-	protoc --go_out=generated/ data.proto
-	touch $@
+all:
 
 clean:
-	rm -rf generated/*
-	-rm -f $(MAKE_ARTIFACTS)
-
-.PHONY: generated
+	rm -rf *
+	git checkout .

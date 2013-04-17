@@ -5,5 +5,4 @@ before_script:
 - gvm use go1.0.3 || true
 
 script:
- - make -f Makefile.TRAVIS
-
+ - make
