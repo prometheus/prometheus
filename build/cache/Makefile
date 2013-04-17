@@ -29,11 +29,11 @@ snappy-$(SNAPPY_VERSION).tar.gz: wget-stamp
 	$(WGET) http://snappy.googlecode.com/files/snappy-$(SNAPPY_VERSION).tar.gz
 
 wget-implementation-Darwin-stamp:
-	[ -x "$$(which wget)" ] || $(BREW_INSTALL) wget-stamp
+	[ -x "$$(which wget)" ] || $(BREW_INSTALL) wget
 	touch $@
 
 wget-implementation-Linux-stamp:
-	[ -x "$$(which wget)" ] || $(APT_GET_INSTALL) wget-stamp
+	[ -x "$$(which wget)" ] || $(APT_GET_INSTALL) wget
 	touch $@
 
 wget-stamp: wget-implementation-$(UNAME)-stamp
