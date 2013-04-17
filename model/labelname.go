@@ -13,11 +13,16 @@
 
 package model
 
-// The label name used to indicate the metric name of a timeseries.
-const MetricNameLabel = LabelName("name")
-
-// The label name used to indicate the job from which a timeseries was scraped.
-const JobLabel = LabelName("job")
+const (
+	// The label name indicating the metric name of a timeseries.
+	MetricNameLabel = LabelName("name")
+	// The label name indicating the job from which a timeseries was scraped.
+	JobLabel = LabelName("job")
+	// The label name indicating the instance from which a timeseries was scraped.
+	InstanceLabel = LabelName("instance")
+	// The metric name for the synthetic health variable.
+	ScrapeHealthMetricName = LabelValue("up")
+)
 
 // A LabelName is a key for a LabelSet or Metric.  It has a value associated
 // therewith.
