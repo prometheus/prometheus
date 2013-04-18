@@ -15,7 +15,6 @@ package metric
 
 import (
 	"github.com/prometheus/prometheus/model"
-	"github.com/ryszard/goskiplist/skiplist"
 	"sort"
 	"time"
 )
@@ -102,128 +101,13 @@ func (v viewRequestBuilder) ScanJobs() (j scanJobs) {
 }
 
 type view struct {
-	fingerprintToSeries map[model.Fingerprint]viewStream
+	memorySeriesStorage
 }
 
 func (v view) appendSample(fingerprint model.Fingerprint, timestamp time.Time, value model.SampleValue) {
-	var (
-		series, ok = v.fingerprintToSeries[fingerprint]
-	)
-
-	if !ok {
-		series = newViewStream()
-		v.fingerprintToSeries[fingerprint] = series
-	}
-
-	series.add(timestamp, value)
-}
-
-func (v view) Close() {
-	v.fingerprintToSeries = make(map[model.Fingerprint]viewStream)
-}
-
-func (v view) GetValueAtTime(f model.Fingerprint, t time.Time) (samples []model.SamplePair) {
-	series, ok := v.fingerprintToSeries[f]
-	if !ok {
-		return
-	}
-
-	iterator := series.values.Seek(skipListTime(t))
-	if iterator == nil {
-		// If the iterator is nil, it means we seeked past the end of the series,
-		// so we seek to the last value instead. Due to the reverse ordering
-		// defined on skipListTime, this corresponds to the sample with the
-		// earliest timestamp.
-		iterator = series.values.SeekToLast()
-		if iterator == nil {
-			// The list is empty.
-			return
-		}
-	}
-
-	defer iterator.Close()
-
-	if iterator.Key() == nil || iterator.Value() == nil {
-		return
-	}
-
-	samples = append(samples, model.SamplePair{
-		Timestamp: time.Time(iterator.Key().(skipListTime)),
-		Value:     iterator.Value().(value).get(),
-	})
-
-	if iterator.Previous() {
-		samples = append(samples, model.SamplePair{
-			Timestamp: time.Time(iterator.Key().(skipListTime)),
-			Value:     iterator.Value().(value).get(),
-		})
-	}
-
-	return
-}
-
-func (v view) GetBoundaryValues(f model.Fingerprint, i model.Interval) (first []model.SamplePair, second []model.SamplePair) {
-	first = v.GetValueAtTime(f, i.OldestInclusive)
-	second = v.GetValueAtTime(f, i.NewestInclusive)
-	return
-}
-
-func (v view) GetRangeValues(f model.Fingerprint, i model.Interval) (samples []model.SamplePair) {
-	series, ok := v.fingerprintToSeries[f]
-	if !ok {
-		return
-	}
-
-	iterator := series.values.Seek(skipListTime(i.OldestInclusive))
-	if iterator == nil {
-		// If the iterator is nil, it means we seeked past the end of the series,
-		// so we seek to the last value instead. Due to the reverse ordering
-		// defined on skipListTime, this corresponds to the sample with the
-		// earliest timestamp.
-		iterator = series.values.SeekToLast()
-		if iterator == nil {
-			// The list is empty.
-			return
-		}
-	}
-
-	for {
-		timestamp := time.Time(iterator.Key().(skipListTime))
-		if timestamp.After(i.NewestInclusive) {
-			break
-		}
-
-		if !timestamp.Before(i.OldestInclusive) {
-			samples = append(samples, model.SamplePair{
-				Value:     iterator.Value().(value).get(),
-				Timestamp: timestamp,
-			})
-		}
-
-		if !iterator.Previous() {
-			break
-		}
-	}
-
-	return
+	v.appendSampleWithoutIndexing(fingerprint, timestamp, value)
 }
 
 func newView() view {
-	return view{
-		fingerprintToSeries: make(map[model.Fingerprint]viewStream),
-	}
-}
-
-type viewStream struct {
-	values *skiplist.SkipList
-}
-
-func (s viewStream) add(timestamp time.Time, value model.SampleValue) {
-	s.values.Set(skipListTime(timestamp), singletonValue(value))
-}
-
-func newViewStream() viewStream {
-	return viewStream{
-		values: skiplist.New(),
-	}
+	return view{NewMemorySeriesStorage()}
 }

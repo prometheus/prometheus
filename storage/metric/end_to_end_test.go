@@ -271,18 +271,17 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 			}
 
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			sample, err := p.GetValueAtTime(fingerprints[0], time, StalenessPolicy{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if sample == nil {
-				t.Fatal("expected non-nil sample.")
+			samples := p.GetValueAtTime(fingerprints[0], time)
+			if len(samples) == 0 {
+				t.Fatal("expected at least one sample.")
 			}
 
 			expected := model.SampleValue(i)
 
-			if sample.Value != expected {
-				t.Fatalf("expected %d value, got %d", expected, sample.Value)
+			for _, sample := range samples {
+				if sample.Value != expected {
+					t.Fatalf("expected %d value, got %d", expected, sample.Value)
+				}
 			}
 		}
 	}
@@ -334,18 +333,17 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 			}
 
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			sample, err := p.GetValueAtTime(fingerprints[0], time, StalenessPolicy{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if sample == nil {
-				t.Fatal("expected non-nil sample.")
+			samples := p.GetValueAtTime(fingerprints[0], time)
+			if len(samples) == 0 {
+				t.Fatal("expected at least one sample.")
 			}
 
 			expected := model.SampleValue(i)
 
-			if sample.Value != expected {
-				t.Fatalf("expected %d value, got %d", expected, sample.Value)
+			for _, sample := range samples {
+				if sample.Value != expected {
+					t.Fatalf("expected %d value, got %d", expected, sample.Value)
+				}
 			}
 		}
 	}

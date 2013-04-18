@@ -54,7 +54,7 @@ func testBuilder(t test.Tester) {
 		in  in
 		out out
 	}{
-		// // Ensure that the fingerprint is sorted in proper order.
+		// Ensure that the fingerprint is sorted in proper order.
 		{
 			in: in{
 				atTimes: []atTime{
