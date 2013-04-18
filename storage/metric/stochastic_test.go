@@ -188,7 +188,7 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	}
 }
 
-func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i model.Interval) (samples []model.SamplePair, err error) {
+func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i model.Interval) (samples model.Values, err error) {
 	begin := time.Now()
 
 	defer func() {
@@ -465,7 +465,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 					NewestInclusive: time.Unix(end, 0),
 				}
 
-				samples := []model.SamplePair{}
+				samples := model.Values{}
 				fp := model.NewFingerprintFromMetric(metric)
 				switch persistence := p.(type) {
 				case *LevelDBMetricPersistence:

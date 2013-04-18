@@ -25,7 +25,7 @@ var testStartTime = time.Time{}
 
 func getTestValueStream(startVal model.SampleValue,
 	endVal model.SampleValue,
-	stepVal model.SampleValue) (resultValues []model.SamplePair) {
+	stepVal model.SampleValue) (resultValues model.Values) {
 	currentTime := testStartTime
 	for currentVal := startVal; currentVal <= endVal; currentVal += stepVal {
 		sample := model.SamplePair{

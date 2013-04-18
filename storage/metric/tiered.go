@@ -370,19 +370,14 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 	if err != nil {
 		panic(err)
 	}
-	if t.diskFrontier == nil {
-		// Storage still empty, return an empty view.
-		viewJob.output <- view
-		return
-	}
 
 	for _, scanJob := range scans {
-		seriesFrontier, err := newSeriesFrontier(scanJob.fingerprint, *t.diskFrontier, iterator)
-		if err != nil {
-			panic(err)
-		}
-		if seriesFrontier == nil {
-			continue
+		var seriesFrontier *seriesFrontier = nil
+		if t.diskFrontier != nil {
+			seriesFrontier, err = newSeriesFrontier(scanJob.fingerprint, *t.diskFrontier, iterator)
+			if err != nil {
+				panic(err)
+			}
 		}
 
 		standingOps := scanJob.operations
@@ -393,25 +388,47 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 			}
 
 			// Load data value chunk(s) around the first standing op's current time.
-			highWatermark := *standingOps[0].CurrentTime()
-			// XXX: For earnest performance gains analagous to the benchmarking we
-			//      performed, chunk should only be reloaded if it no longer contains
-			//      the values we're looking for.
-			//
-			//      To better understand this, look at https://github.com/prometheus/prometheus/blob/benchmark/leveldb/iterator-seek-characteristics/leveldb.go#L239 and note the behavior around retrievedValue.
-			chunk := t.loadChunkAroundTime(iterator, seriesFrontier, scanJob.fingerprint, highWatermark)
+			targetTime := *standingOps[0].CurrentTime()
+
+			chunk := model.Values{}
+			memValues := t.memoryArena.GetValueAtTime(scanJob.fingerprint, targetTime)
+			// If we aimed before the oldest value in memory, load more data from disk.
+			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && seriesFrontier != nil {
+				// XXX: For earnest performance gains analagous to the benchmarking we
+				//      performed, chunk should only be reloaded if it no longer contains
+				//      the values we're looking for.
+				//
+				//      To better understand this, look at https://github.com/prometheus/prometheus/blob/benchmark/leveldb/iterator-seek-characteristics/leveldb.go#L239 and note the behavior around retrievedValue.
+				diskValues := t.loadChunkAroundTime(iterator, seriesFrontier, scanJob.fingerprint, targetTime)
+
+				// If we aimed past the newest value on disk, combine it with the next value from memory.
+				if len(memValues) > 0 && diskValues.LastTimeBefore(targetTime) {
+					latestDiskValue := diskValues[len(diskValues)-1 : len(diskValues)]
+					chunk = append(latestDiskValue, memValues...)
+				} else {
+					chunk = diskValues
+				}
+			} else {
+				chunk = memValues
+			}
+
+			// There's no data at all for this fingerprint, so stop processing ops for it.
+			if len(chunk) == 0 {
+				break
+			}
+
 			lastChunkTime := chunk[len(chunk)-1].Timestamp
-			if lastChunkTime.After(highWatermark) {
-				highWatermark = lastChunkTime
+			if lastChunkTime.After(targetTime) {
+				targetTime = lastChunkTime
 			}
 
 			// For each op, extract all needed data from the current chunk.
-			out := []model.SamplePair{}
+			out := model.Values{}
 			for _, op := range standingOps {
-				if op.CurrentTime().After(highWatermark) {
+				if op.CurrentTime().After(targetTime) {
 					break
 				}
-				for op.CurrentTime() != nil && !op.CurrentTime().After(highWatermark) {
+				for op.CurrentTime() != nil && !op.CurrentTime().After(targetTime) {
 					out = op.ExtractSamples(chunk)
 				}
 			}
@@ -450,7 +467,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 	return
 }
 
-func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint model.Fingerprint, ts time.Time) (chunk []model.SamplePair) {
+func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint model.Fingerprint, ts time.Time) (chunk model.Values) {
 	var (
 		targetKey = &dto.SampleKey{
 			Fingerprint: fingerprint.ToDTO(),

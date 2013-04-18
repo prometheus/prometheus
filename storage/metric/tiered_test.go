@@ -69,7 +69,7 @@ func buildSamples(from, to time.Time, interval time.Duration, m model.Metric) (v
 	return
 }
 
-func testMakeView(t test.Tester) {
+func testMakeView(t test.Tester, flushToDisk bool) {
 	type in struct {
 		atTime     []getValuesAtTimeOp
 		atInterval []getValuesAtIntervalOp
@@ -77,9 +77,9 @@ func testMakeView(t test.Tester) {
 	}
 
 	type out struct {
-		atTime     [][]model.SamplePair
-		atInterval [][]model.SamplePair
-		alongRange [][]model.SamplePair
+		atTime     []model.Values
+		atInterval []model.Values
+		alongRange []model.Values
 	}
 	var (
 		instant     = time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local)
@@ -100,7 +100,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 				out: out{
-					atTime: [][]model.SamplePair{{}},
+					atTime: []model.Values{{}},
 				},
 			},
 			// Single sample, query asks for exact sample time.
@@ -120,7 +120,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 				out: out{
-					atTime: [][]model.SamplePair{
+					atTime: []model.Values{
 						{
 							{
 								Timestamp: instant,
@@ -152,7 +152,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 				out: out{
-					atTime: [][]model.SamplePair{
+					atTime: []model.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second),
@@ -179,7 +179,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 				out: out{
-					atTime: [][]model.SamplePair{
+					atTime: []model.Values{
 						{
 							{
 								Timestamp: instant,
@@ -211,7 +211,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 				out: out{
-					atTime: [][]model.SamplePair{
+					atTime: []model.Values{
 						{
 							{
 								Timestamp: instant,
@@ -248,7 +248,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 				out: out{
-					atTime: [][]model.SamplePair{
+					atTime: []model.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second),
@@ -285,7 +285,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 				out: out{
-					atTime: [][]model.SamplePair{
+					atTime: []model.Values{
 						{
 							{
 								Timestamp: instant,
@@ -326,7 +326,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 				out: out{
-					atTime: [][]model.SamplePair{
+					atTime: []model.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second * 2),
@@ -351,7 +351,7 @@ func testMakeView(t test.Tester) {
 					},
 				},
 				out: out{
-					atTime: [][]model.SamplePair{
+					atTime: []model.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize/2)),
@@ -378,7 +378,11 @@ func testMakeView(t test.Tester) {
 			}
 		}
 
-		tiered.Flush()
+		if flushToDisk {
+			tiered.Flush()
+		} else {
+			tiered.(*tieredStorage).writeMemory()
+		}
 
 		requestBuilder := NewViewRequestBuilder()
 
@@ -421,13 +425,23 @@ func testMakeView(t test.Tester) {
 	}
 }
 
-func TestMakeView(t *testing.T) {
-	testMakeView(t)
+func TestMakeViewFlush(t *testing.T) {
+	testMakeView(t, true)
 }
 
-func BenchmarkMakeView(b *testing.B) {
+func BenchmarkMakeViewFlush(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testMakeView(b)
+		testMakeView(b, true)
+	}
+}
+
+func TestMakeViewNoFlush(t *testing.T) {
+	testMakeView(t, false)
+}
+
+func BenchmarkMakeViewNoFlush(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testMakeView(b, false)
 	}
 }
 

@@ -57,7 +57,7 @@ func interpolateSamples(first, second *model.SamplePair, timestamp time.Time) *m
 // surrounding a given target time. If samples are found both before and after
 // the target time, the sample value is interpolated between these. Otherwise,
 // the single closest sample is returned verbatim.
-func (v *viewAdapter) chooseClosestSample(samples []model.SamplePair, timestamp time.Time) (sample *model.SamplePair) {
+func (v *viewAdapter) chooseClosestSample(samples model.Values, timestamp time.Time) (sample *model.SamplePair) {
 	var closestBefore *model.SamplePair
 	var closestAfter *model.SamplePair
 	for _, candidate := range samples {
