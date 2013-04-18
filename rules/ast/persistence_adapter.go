@@ -26,9 +26,16 @@ var defaultStalenessDelta = flag.Int("defaultStalenessDelta", 300, "Default stal
 // (i.e. metric->fingerprint lookups).
 var queryStorage metric.Storage = nil
 
+// Describes the lenience limits to apply to values from the materialized view.
+type StalenessPolicy struct {
+	// Describes the inclusive limit at which individual points if requested will
+	// be matched and subject to interpolation.
+	DeltaAllowance time.Duration
+}
+
 type viewAdapter struct {
 	view            metric.View
-	stalenessPolicy *metric.StalenessPolicy
+	stalenessPolicy StalenessPolicy
 }
 
 // interpolateSamples interpolates a value at a target time between two
@@ -165,12 +172,12 @@ func SetStorage(storage metric.Storage) {
 }
 
 func NewViewAdapter(view metric.View) *viewAdapter {
-	stalenessPolicy := metric.StalenessPolicy{
+	stalenessPolicy := StalenessPolicy{
 		DeltaAllowance: time.Duration(*defaultStalenessDelta) * time.Second,
 	}
 
 	return &viewAdapter{
 		view:            view,
-		stalenessPolicy: &stalenessPolicy,
+		stalenessPolicy: stalenessPolicy,
 	}
 }

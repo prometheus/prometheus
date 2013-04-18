@@ -30,21 +30,18 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 	}
 
 	type input struct {
-		year      int
-		month     time.Month
-		day       int
-		hour      int
-		staleness time.Duration
+		year  int
+		month time.Month
+		day   int
+		hour  int
 	}
 
-	type output struct {
-		value model.SampleValue
-	}
+	type output []model.SampleValue
 
 	type behavior struct {
 		name   string
 		input  input
-		output *output
+		output output
 	}
 
 	var contexts = []struct {
@@ -59,11 +56,10 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 				{
 					name: "random target",
 					input: input{
-						year:      1984,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(0),
+						year:  1984,
+						month: 3,
+						day:   30,
+						hour:  0,
 					},
 				},
 			},
@@ -81,92 +77,39 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			},
 			behaviors: []behavior{
 				{
-					name: "exact without staleness policy",
+					name: "exact",
 					input: input{
-						year:      1984,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(0),
+						year:  1984,
+						month: 3,
+						day:   30,
+						hour:  0,
 					},
-					output: &output{
-						value: 0,
+					output: output{
+						0,
 					},
 				},
 				{
-					name: "exact with staleness policy",
+					name: "before",
 					input: input{
-						year:      1984,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(365*24) * time.Hour,
+						year:  1984,
+						month: 3,
+						day:   29,
+						hour:  0,
 					},
-					output: &output{
-						value: 0,
+					output: output{
+						0,
 					},
 				},
 				{
-					name: "before without staleness policy",
+					name: "after",
 					input: input{
-						year:      1984,
-						month:     3,
-						day:       29,
-						hour:      0,
-						staleness: time.Duration(0),
+						year:  1984,
+						month: 3,
+						day:   31,
+						hour:  0,
 					},
-				},
-				{
-					name: "before within staleness policy",
-					input: input{
-						year:      1984,
-						month:     3,
-						day:       29,
-						hour:      0,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-				},
-				{
-					name: "before outside staleness policy",
-					input: input{
-						year:      1984,
-						month:     3,
-						day:       29,
-						hour:      0,
-						staleness: time.Duration(1) * time.Hour,
-					},
-				},
-				{
-					name: "after without staleness policy",
-					input: input{
-						year:      1984,
-						month:     3,
-						day:       31,
-						hour:      0,
-						staleness: time.Duration(0),
-					},
-				},
-				{
-					name: "after within staleness policy",
-					input: input{
-						year:      1984,
-						month:     3,
-						day:       31,
-						hour:      0,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-					output: &output{
-						value: 0,
-					},
-				},
-				{
-					name: "after outside staleness policy",
-					input: input{
-						year:      1984,
-						month:     4,
-						day:       7,
-						hour:      0,
-						staleness: time.Duration(7*24) * time.Hour,
+					output: output{
+						0,
 					},
 				},
 			},
@@ -191,131 +134,64 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			},
 			behaviors: []behavior{
 				{
-					name: "exact first without staleness policy",
+					name: "exact first",
 					input: input{
-						year:      1984,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(0),
+						year:  1984,
+						month: 3,
+						day:   30,
+						hour:  0,
 					},
-					output: &output{
-						value: 0,
+					output: output{
+						0,
 					},
 				},
 				{
-					name: "exact first with staleness policy",
+					name: "exact second",
 					input: input{
-						year:      1984,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(365*24) * time.Hour,
+						year:  1985,
+						month: 3,
+						day:   30,
+						hour:  0,
 					},
-					output: &output{
-						value: 0,
+					output: output{
+						1,
 					},
 				},
 				{
-					name: "exact second without staleness policy",
+					name: "before first",
 					input: input{
-						year:      1985,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(0),
+						year:  1983,
+						month: 9,
+						day:   29,
+						hour:  12,
 					},
-					output: &output{
-						value: 1,
+					output: output{
+						0,
 					},
 				},
 				{
-					name: "exact second with staleness policy",
+					name: "after second",
 					input: input{
-						year:      1985,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(365*24) * time.Hour,
+						year:  1985,
+						month: 9,
+						day:   28,
+						hour:  12,
 					},
-					output: &output{
-						value: 1,
+					output: output{
+						1,
 					},
 				},
 				{
-					name: "before first without staleness policy",
+					name: "middle",
 					input: input{
-						year:      1983,
-						month:     9,
-						day:       29,
-						hour:      12,
-						staleness: time.Duration(0),
+						year:  1984,
+						month: 9,
+						day:   28,
+						hour:  12,
 					},
-				},
-				{
-					name: "before first with staleness policy",
-					input: input{
-						year:      1983,
-						month:     9,
-						day:       29,
-						hour:      12,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-				},
-				{
-					name: "after second with staleness policy",
-					input: input{
-						year:      1985,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-					output: &output{
-						value: 1,
-					},
-				},
-				{
-					name: "after second without staleness policy",
-					input: input{
-						year:      1985,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(0),
-					},
-				},
-				{
-					name: "middle without staleness policy",
-					input: input{
-						year:      1984,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(0),
-					},
-				},
-				{
-					name: "middle with insufficient staleness policy",
-					input: input{
-						year:      1984,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(364*24) * time.Hour,
-					},
-				},
-				{
-					name: "middle with sufficient staleness policy",
-					input: input{
-						year:      1984,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-					output: &output{
-						value: 0.5,
+					output: output{
+						0,
+						1,
 					},
 				},
 			},
@@ -347,200 +223,89 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			},
 			behaviors: []behavior{
 				{
-					name: "exact first without staleness policy",
+					name: "exact first",
 					input: input{
-						year:      1984,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(0),
+						year:  1984,
+						month: 3,
+						day:   30,
+						hour:  0,
 					},
-					output: &output{
-						value: 0,
+					output: output{
+						0,
 					},
 				},
 				{
-					name: "exact first with staleness policy",
+					name: "exact second",
 					input: input{
-						year:      1984,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(365*24) * time.Hour,
+						year:  1985,
+						month: 3,
+						day:   30,
+						hour:  0,
 					},
-					output: &output{
-						value: 0,
+					output: output{
+						1,
 					},
 				},
 				{
-					name: "exact second without staleness policy",
+					name: "exact third",
 					input: input{
-						year:      1985,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(0),
+						year:  1986,
+						month: 3,
+						day:   30,
+						hour:  0,
 					},
-					output: &output{
-						value: 1,
+					output: output{
+						2,
 					},
 				},
 				{
-					name: "exact second with staleness policy",
+					name: "before first",
 					input: input{
-						year:      1985,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(365*24) * time.Hour,
+						year:  1983,
+						month: 9,
+						day:   29,
+						hour:  12,
 					},
-					output: &output{
-						value: 1,
+					output: output{
+						0,
 					},
 				},
 				{
-					name: "exact third without staleness policy",
+					name: "after third",
 					input: input{
-						year:      1986,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(0),
+						year:  1986,
+						month: 9,
+						day:   28,
+						hour:  12,
 					},
-					output: &output{
-						value: 2,
+					output: output{
+						2,
 					},
 				},
 				{
-					name: "exact third with staleness policy",
+					name: "first middle",
 					input: input{
-						year:      1986,
-						month:     3,
-						day:       30,
-						hour:      0,
-						staleness: time.Duration(365*24) * time.Hour,
+						year:  1984,
+						month: 9,
+						day:   28,
+						hour:  12,
 					},
-					output: &output{
-						value: 2,
+					output: output{
+						0,
+						1,
 					},
 				},
 				{
-					name: "before first without staleness policy",
+					name: "second middle",
 					input: input{
-						year:      1983,
-						month:     9,
-						day:       29,
-						hour:      12,
-						staleness: time.Duration(0),
+						year:  1985,
+						month: 9,
+						day:   28,
+						hour:  12,
 					},
-				},
-				{
-					name: "before first with staleness policy",
-					input: input{
-						year:      1983,
-						month:     9,
-						day:       29,
-						hour:      12,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-				},
-				{
-					name: "after third within staleness policy",
-					input: input{
-						year:      1986,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-					output: &output{
-						value: 2,
-					},
-				},
-				{
-					name: "after third outside staleness policy",
-					input: input{
-						year:      1986,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(1*24) * time.Hour,
-					},
-				},
-				{
-					name: "after third without staleness policy",
-					input: input{
-						year:      1986,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(0),
-					},
-				},
-				{
-					name: "first middle without staleness policy",
-					input: input{
-						year:      1984,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(0),
-					},
-				},
-				{
-					name: "first middle with insufficient staleness policy",
-					input: input{
-						year:      1984,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(364*24) * time.Hour,
-					},
-				},
-				{
-					name: "first middle with sufficient staleness policy",
-					input: input{
-						year:      1984,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-					output: &output{
-						value: 0.5,
-					},
-				},
-				{
-					name: "second middle without staleness policy",
-					input: input{
-						year:      1985,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(0),
-					},
-				},
-				{
-					name: "second middle with insufficient staleness policy",
-					input: input{
-						year:      1985,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(364*24) * time.Hour,
-					},
-				},
-				{
-					name: "second middle with sufficient staleness policy",
-					input: input{
-						year:      1985,
-						month:     9,
-						day:       28,
-						hour:      12,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-					output: &output{
-						value: 1.5,
+					output: output{
+						1,
+						2,
 					},
 				},
 			},
@@ -570,27 +335,16 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			for j, behavior := range context.behaviors {
 				input := behavior.input
 				time := time.Date(input.year, input.month, input.day, input.hour, 0, 0, 0, time.UTC)
-				sp := StalenessPolicy{
-					DeltaAllowance: input.staleness,
+
+				actual := p.GetValueAtTime(model.NewFingerprintFromMetric(m), time)
+
+				if len(behavior.output) != len(actual) {
+					t.Fatalf("%d.%d(%s). Expected %d samples but got: %v\n", i, j, behavior.name, len(behavior.output), actual)
 				}
+				for k, samplePair := range actual {
+					if samplePair.Value != behavior.output[k] {
+						t.Fatalf("%d.%d.%d(%s). Expected %s but got %s\n", i, j, k, behavior.name, behavior.output[k], samplePair)
 
-				actual, err := p.GetValueAtTime(model.NewFingerprintFromMetric(m), time, sp)
-				if err != nil {
-					t.Fatalf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
-				}
-
-				if behavior.output == nil {
-					if actual != nil {
-						t.Fatalf("%d.%d(%s). Expected nil but got: %q\n", i, j, behavior.name, actual)
-					}
-				} else {
-					if actual == nil {
-						t.Fatalf("%d.%d(%s). Expected %s but got nil\n", i, j, behavior.name, behavior.output)
-					} else {
-						if actual.Value != behavior.output.value {
-							t.Fatalf("%d.%d(%s). Expected %s but got %s\n", i, j, behavior.name, behavior.output, actual)
-
-						}
 					}
 				}
 			}
@@ -616,18 +370,17 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 		endMonth  time.Month
 		endDay    int
 		endHour   int
-		staleness time.Duration
 	}
 
 	type output struct {
-		open model.SampleValue
-		end  model.SampleValue
+		open []model.SampleValue
+		end  []model.SampleValue
 	}
 
 	type behavior struct {
 		name   string
 		input  input
-		output *output
+		output output
 	}
 
 	var contexts = []struct {
@@ -640,7 +393,7 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 			values: []value{},
 			behaviors: []behavior{
 				{
-					name: "non-existent interval without staleness policy",
+					name: "non-existent interval",
 					input: input{
 						openYear:  1984,
 						openMonth: 3,
@@ -650,21 +403,6 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  3,
 						endDay:    30,
 						endHour:   0,
-						staleness: time.Duration(0),
-					},
-				},
-				{
-					name: "non-existent interval with staleness policy",
-					input: input{
-						openYear:  1984,
-						openMonth: 3,
-						openDay:   30,
-						openHour:  0,
-						endYear:   1985,
-						endMonth:  3,
-						endDay:    30,
-						endHour:   0,
-						staleness: time.Duration(365*24) * time.Hour,
 					},
 				},
 			},
@@ -682,7 +420,7 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 			},
 			behaviors: []behavior{
 				{
-					name: "on start but missing end without staleness policy",
+					name: "on start but missing end",
 					input: input{
 						openYear:  1984,
 						openMonth: 3,
@@ -692,25 +430,14 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  3,
 						endDay:    30,
 						endHour:   0,
-						staleness: time.Duration(0),
+					},
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{0},
 					},
 				},
 				{
-					name: "non-existent interval after within staleness policy",
-					input: input{
-						openYear:  1984,
-						openMonth: 3,
-						openDay:   31,
-						openHour:  0,
-						endYear:   1985,
-						endMonth:  3,
-						endDay:    30,
-						endHour:   0,
-						staleness: time.Duration(4380) * time.Hour,
-					},
-				},
-				{
-					name: "non-existent interval after without staleness policy",
+					name: "non-existent interval after",
 					input: input{
 						openYear:  1984,
 						openMonth: 3,
@@ -720,11 +447,14 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  3,
 						endDay:    30,
 						endHour:   0,
-						staleness: time.Duration(0),
+					},
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{0},
 					},
 				},
 				{
-					name: "non-existent interval before with staleness policy",
+					name: "non-existent interval before",
 					input: input{
 						openYear:  1983,
 						openMonth: 3,
@@ -734,25 +464,14 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  3,
 						endDay:    29,
 						endHour:   0,
-						staleness: time.Duration(365*24) * time.Hour,
+					},
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{0},
 					},
 				},
 				{
-					name: "non-existent interval before without staleness policy",
-					input: input{
-						openYear:  1983,
-						openMonth: 3,
-						openDay:   30,
-						openHour:  0,
-						endYear:   1984,
-						endMonth:  3,
-						endDay:    29,
-						endHour:   0,
-						staleness: time.Duration(0),
-					},
-				},
-				{
-					name: "on end but not start without staleness policy",
+					name: "on end but not start",
 					input: input{
 						openYear:  1983,
 						openMonth: 3,
@@ -762,25 +481,14 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  3,
 						endDay:    30,
 						endHour:   0,
-						staleness: time.Duration(0),
+					},
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{0},
 					},
 				},
 				{
-					name: "on end but not start without staleness policy",
-					input: input{
-						openYear:  1983,
-						openMonth: 3,
-						openDay:   30,
-						openHour:  0,
-						endYear:   1984,
-						endMonth:  3,
-						endDay:    30,
-						endHour:   0,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-				},
-				{
-					name: "before point without staleness policy",
+					name: "before point",
 					input: input{
 						openYear:  1982,
 						openMonth: 3,
@@ -790,25 +498,14 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  3,
 						endDay:    30,
 						endHour:   0,
-						staleness: time.Duration(0),
+					},
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{0},
 					},
 				},
 				{
-					name: "before point with staleness policy",
-					input: input{
-						openYear:  1982,
-						openMonth: 3,
-						openDay:   30,
-						openHour:  0,
-						endYear:   1983,
-						endMonth:  3,
-						endDay:    30,
-						endHour:   0,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-				},
-				{
-					name: "after point without staleness policy",
+					name: "after point",
 					input: input{
 						openYear:  1985,
 						openMonth: 3,
@@ -818,25 +515,14 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  3,
 						endDay:    30,
 						endHour:   0,
-						staleness: time.Duration(0),
+					},
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{0},
 					},
 				},
 				{
-					name: "after point with staleness policy",
-					input: input{
-						openYear:  1985,
-						openMonth: 3,
-						openDay:   30,
-						openHour:  0,
-						endYear:   1986,
-						endMonth:  3,
-						endDay:    30,
-						endHour:   0,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-				},
-				{
-					name: "spanning point without staleness policy",
+					name: "spanning point",
 					input: input{
 						openYear:  1983,
 						openMonth: 9,
@@ -846,21 +532,10 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  9,
 						endDay:    28,
 						endHour:   12,
-						staleness: time.Duration(0),
 					},
-				},
-				{
-					name: "spanning point with staleness policy",
-					input: input{
-						openYear:  1983,
-						openMonth: 9,
-						openDay:   29,
-						openHour:  12,
-						endYear:   1984,
-						endMonth:  9,
-						endDay:    28,
-						endHour:   12,
-						staleness: time.Duration(365*24) * time.Hour,
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{0},
 					},
 				},
 			},
@@ -885,7 +560,7 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 			},
 			behaviors: []behavior{
 				{
-					name: "on points without staleness policy",
+					name: "on points",
 					input: input{
 						openYear:  1984,
 						openMonth: 3,
@@ -895,33 +570,14 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  3,
 						endDay:    30,
 						endHour:   0,
-						staleness: time.Duration(0),
 					},
-					output: &output{
-						open: 0,
-						end:  1,
-					},
-				},
-				{
-					name: "on points with staleness policy",
-					input: input{
-						openYear:  1984,
-						openMonth: 3,
-						openDay:   30,
-						openHour:  0,
-						endYear:   1985,
-						endMonth:  3,
-						endDay:    30,
-						endHour:   0,
-						staleness: time.Duration(365*24) * time.Hour,
-					},
-					output: &output{
-						open: 0,
-						end:  1,
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{1},
 					},
 				},
 				{
-					name: "on first before second outside of staleness",
+					name: "on first before second",
 					input: input{
 						openYear:  1984,
 						openMonth: 3,
@@ -931,25 +587,14 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  6,
 						endDay:    29,
 						endHour:   6,
-						staleness: time.Duration(2190) * time.Hour,
+					},
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{0, 1},
 					},
 				},
 				{
-					name: "on first before second within staleness",
-					input: input{
-						openYear:  1984,
-						openMonth: 3,
-						openDay:   30,
-						openHour:  0,
-						endYear:   1984,
-						endMonth:  6,
-						endDay:    29,
-						endHour:   6,
-						staleness: time.Duration(356*24) * time.Hour,
-					},
-				},
-				{
-					name: "on first after second outside of staleness",
+					name: "on first after second",
 					input: input{
 						openYear:  1984,
 						openMonth: 3,
@@ -959,25 +604,10 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 						endMonth:  6,
 						endDay:    29,
 						endHour:   6,
-						staleness: time.Duration(1) * time.Hour,
 					},
-				},
-				{
-					name: "on first after second within staleness",
-					input: input{
-						openYear:  1984,
-						openMonth: 3,
-						openDay:   30,
-						openHour:  0,
-						endYear:   1985,
-						endMonth:  6,
-						endDay:    29,
-						endHour:   6,
-						staleness: time.Duration(356*24) * time.Hour,
-					},
-					output: &output{
-						open: 0,
-						end:  1,
+					output: output{
+						open: []model.SampleValue{0},
+						end:  []model.SampleValue{1},
 					},
 				},
 			},
@@ -1012,35 +642,23 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 					OldestInclusive: open,
 					NewestInclusive: end,
 				}
-				po := StalenessPolicy{
-					DeltaAllowance: input.staleness,
+				openValues, endValues := p.GetBoundaryValues(model.NewFingerprintFromMetric(m), interval)
+				if len(behavior.output.open) != len(openValues) {
+					t.Fatalf("%d.%d(%s). Expected %d open values but got: %q\n", i, j, behavior.name, len(behavior.output.open), openValues)
+				}
+				if len(behavior.output.end) != len(endValues) {
+					t.Fatalf("%d.%d(%s). Expected %d open values but got: %q\n", i, j, behavior.name, len(behavior.output.open), openValues)
 				}
 
-				openValue, endValue, err := p.GetBoundaryValues(model.NewFingerprintFromMetric(m), interval, po)
-				if err != nil {
-					t.Fatalf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
+				for k, samplePair := range openValues {
+					if samplePair.Value != behavior.output.open[k] {
+						t.Fatalf("%d.%d.%d(%s). Expected open to be %v but got %v\n", i, j, k, behavior.name, behavior.output.open[k], samplePair.Value)
+					}
 				}
 
-				if behavior.output == nil {
-					if openValue != nil {
-						t.Fatalf("%d.%d(%s). Expected open to be nil but got: %q\n", i, j, behavior.name, openValue)
-					}
-					if endValue != nil {
-						t.Fatalf("%d.%d(%s). Expected end to be nil but got: %q\n", i, j, behavior.name, endValue)
-					}
-				} else {
-					if openValue == nil {
-						t.Fatalf("%d.%d(%s). Expected open to be %s but got nil\n", i, j, behavior.name, behavior.output)
-					}
-					if endValue == nil {
-						t.Fatalf("%d.%d(%s). Expected end to be %s but got nil\n", i, j, behavior.name, behavior.output)
-					}
-					if openValue.Value != behavior.output.open {
-						t.Fatalf("%d.%d(%s). Expected open to be %s but got %s\n", i, j, behavior.name, behavior.output.open, openValue.Value)
-					}
-
-					if endValue.Value != behavior.output.end {
-						t.Fatalf("%d.%d(%s). Expected end to be %s but got %s\n", i, j, behavior.name, behavior.output.end, endValue.Value)
+				for k, samplePair := range endValues {
+					if samplePair.Value != behavior.output.end[k] {
+						t.Fatalf("%d.%d.%d(%s). Expected end to be %v but got %v\n", i, j, k, behavior.name, behavior.output.end[k], samplePair.Value)
 					}
 				}
 			}
@@ -1362,10 +980,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 					NewestInclusive: end,
 				}
 
-				values, err := p.GetRangeValues(model.NewFingerprintFromMetric(m), in)
-				if err != nil {
-					t.Fatalf("%d.%d(%s). Could not query for value: %q\n", i, j, behavior.name, err)
-				}
+				values := p.GetRangeValues(model.NewFingerprintFromMetric(m), in)
 
 				if values == nil && len(behavior.output) != 0 {
 					t.Fatalf("%d.%d(%s). Expected %s but got: %s\n", i, j, behavior.name, behavior.output, values)
@@ -1376,11 +991,11 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 						t.Fatalf("%d.%d(%s). Expected nil values but got: %s\n", i, j, behavior.name, values)
 					}
 				} else {
-					if len(behavior.output) != len(values.Values) {
-						t.Fatalf("%d.%d(%s). Expected length %d but got: %d\n", i, j, behavior.name, len(behavior.output), len(values.Values))
+					if len(behavior.output) != len(values) {
+						t.Fatalf("%d.%d(%s). Expected length %d but got: %d\n", i, j, behavior.name, len(behavior.output), len(values))
 					}
 
-					for k, actual := range values.Values {
+					for k, actual := range values {
 						expected := behavior.output[k]
 
 						if actual.Value != model.SampleValue(expected.value) {
@@ -1411,53 +1026,6 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 }
 
 // Test Definitions Follow
-
-func testLevelDBGetValueAtTime(t test.Tester) {
-	persistenceMaker := buildLevelDBTestPersistencesMaker("get_value_at_time", t)
-	GetValueAtTimeTests(persistenceMaker, t)
-}
-
-func TestLevelDBGetValueAtTime(t *testing.T) {
-	testLevelDBGetValueAtTime(t)
-}
-
-func BenchmarkLevelDBGetValueAtTime(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testLevelDBGetValueAtTime(b)
-	}
-}
-
-func testLevelDBGetBoundaryValues(t test.Tester) {
-	persistenceMaker := buildLevelDBTestPersistencesMaker("get_boundary_values", t)
-
-	GetBoundaryValuesTests(persistenceMaker, t)
-}
-
-func TestLevelDBGetBoundaryValues(t *testing.T) {
-	testLevelDBGetBoundaryValues(t)
-}
-
-func BenchmarkLevelDBGetBoundaryValues(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testLevelDBGetBoundaryValues(b)
-	}
-}
-
-func testLevelDBGetRangeValues(t test.Tester) {
-	persistenceMaker := buildLevelDBTestPersistencesMaker("get_range_values", t)
-
-	GetRangeValuesTests(persistenceMaker, t)
-}
-
-func TestLevelDBGetRangeValues(t *testing.T) {
-	testLevelDBGetRangeValues(t)
-}
-
-func BenchmarkLevelDBGetRangeValues(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testLevelDBGetRangeValues(b)
-	}
-}
 
 func testMemoryGetValueAtTime(t test.Tester) {
 	persistenceMaker := func() (MetricPersistence, test.Closer) {
