@@ -15,7 +15,10 @@ package metric
 
 import (
 	"fmt"
+	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
+	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/utility/test"
 	"math"
 	"math/rand"
@@ -183,6 +186,60 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	if err := quick.Check(appendSample, nil); err != nil {
 		t.Error(err)
 	}
+}
+
+func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i model.Interval) (samples []model.SamplePair, err error) {
+	begin := time.Now()
+
+	defer func() {
+		duration := time.Since(begin)
+
+		recordOutcome(duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
+	}()
+
+	k := &dto.SampleKey{
+		Fingerprint: fp.ToDTO(),
+		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
+	}
+
+	e, err := coding.NewProtocolBuffer(k).Encode()
+	if err != nil {
+		return
+	}
+
+	iterator := l.metricSamples.NewIterator(true)
+	defer iterator.Close()
+
+	predicate := keyIsOlderThan(i.NewestInclusive)
+
+	for valid := iterator.Seek(e); valid; valid = iterator.Next() {
+		retrievedKey := &dto.SampleKey{}
+
+		retrievedKey, err = extractSampleKey(iterator)
+		if err != nil {
+			return
+		}
+
+		if predicate(retrievedKey) {
+			break
+		}
+
+		if !fingerprintsEqual(retrievedKey.Fingerprint, k.Fingerprint) {
+			break
+		}
+
+		retrievedValue, err := extractSampleValues(iterator)
+		if err != nil {
+			return nil, err
+		}
+
+		samples = append(samples, model.SamplePair{
+			Value:     model.SampleValue(*retrievedValue.Value[0].Value),
+			Timestamp: indexable.DecodeTime(retrievedKey.Timestamp),
+		})
+	}
+
+	return
 }
 
 func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
@@ -408,14 +465,22 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 					NewestInclusive: time.Unix(end, 0),
 				}
 
-				samples, err := p.GetRangeValues(model.NewFingerprintFromMetric(metric), interval)
-				if err != nil {
-					t.Error(err)
-					return
+				samples := []model.SamplePair{}
+				fp := model.NewFingerprintFromMetric(metric)
+				switch persistence := p.(type) {
+				case *LevelDBMetricPersistence:
+					var err error
+					samples, err = levelDBGetRangeValues(persistence, fp, interval)
+					if err != nil {
+						t.Fatal(err)
+						return
+					}
+				default:
+					samples = p.GetRangeValues(fp, interval)
 				}
 
-				if len(samples.Values) < 2 {
-					t.Errorf("expected sample count less than %d, got %d", 2, len(samples.Values))
+				if len(samples) < 2 {
+					t.Errorf("expected sample count less than %d, got %d", 2, len(samples))
 					return
 				}
 			}

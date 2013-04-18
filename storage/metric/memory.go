@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/utility"
 	"github.com/ryszard/goskiplist/skiplist"
-	"sort"
 	"time"
 )
 
@@ -148,6 +147,19 @@ func (s memorySeriesStorage) AppendSample(sample model.Sample) (err error) {
 	return
 }
 
+// Append raw sample, bypassing indexing. Only used to add data to views, which
+// don't need to lookup by metric.
+func (s memorySeriesStorage) appendSampleWithoutIndexing(f model.Fingerprint, timestamp time.Time, value model.SampleValue) {
+	series, ok := s.fingerprintToSeries[f]
+
+	if !ok {
+		series = newStream(model.Metric{})
+		s.fingerprintToSeries[f] = series
+	}
+
+	series.add(timestamp, value)
+}
+
 func (s memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fingerprints model.Fingerprints, err error) {
 
 	sets := []utility.Set{}
@@ -198,152 +210,99 @@ func (s memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (metri
 	return
 }
 
-// XXX: Terrible wart.
-func interpolateSample(x1, x2 time.Time, y1, y2 float32, e time.Time) model.SampleValue {
-	yDelta := y2 - y1
-	xDelta := x2.Sub(x1)
-
-	dDt := yDelta / float32(xDelta)
-	offset := float32(e.Sub(x1))
-
-	return model.SampleValue(y1 + (offset * dDt))
-}
-
-func (s memorySeriesStorage) GetValueAtTime(fp model.Fingerprint, t time.Time, p StalenessPolicy) (sample *model.Sample, err error) {
-	series, ok := s.fingerprintToSeries[fp]
+func (s memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (samples []model.SamplePair) {
+	series, ok := s.fingerprintToSeries[f]
 	if !ok {
 		return
 	}
 
 	iterator := series.values.Seek(skipListTime(t))
 	if iterator == nil {
+		// If the iterator is nil, it means we seeked past the end of the series,
+		// so we seek to the last value instead. Due to the reverse ordering
+		// defined on skipListTime, this corresponds to the sample with the
+		// earliest timestamp.
+		iterator = series.values.SeekToLast()
+		if iterator == nil {
+			// The list is empty.
+			return
+		}
+	}
+
+	defer iterator.Close()
+
+	if iterator.Key() == nil || iterator.Value() == nil {
 		return
 	}
 
 	foundTime := time.Time(iterator.Key().(skipListTime))
-	if foundTime.Equal(t) {
-		value := iterator.Value().(value)
-		sample = &model.Sample{
-			Metric:    series.metric,
-			Value:     value.get(),
-			Timestamp: t,
-		}
+	samples = append(samples, model.SamplePair{
+		Timestamp: foundTime,
+		Value:     iterator.Value().(value).get(),
+	})
 
-		return
-	}
-
-	if t.Sub(foundTime) > p.DeltaAllowance {
-		return
-	}
-
-	secondTime := foundTime
-	secondValue := iterator.Value().(value).get()
-
-	if !iterator.Previous() {
-		sample = &model.Sample{
-			Metric:    series.metric,
+	if foundTime.Before(t) && iterator.Previous() {
+		samples = append(samples, model.SamplePair{
+			Timestamp: time.Time(iterator.Key().(skipListTime)),
 			Value:     iterator.Value().(value).get(),
-			Timestamp: t,
-		}
-		return
-	}
-
-	firstTime := time.Time(iterator.Key().(skipListTime))
-	if t.Sub(firstTime) > p.DeltaAllowance {
-		return
-	}
-
-	if firstTime.Sub(secondTime) > p.DeltaAllowance {
-		return
-	}
-
-	firstValue := iterator.Value().(value).get()
-
-	sample = &model.Sample{
-		Metric:    series.metric,
-		Value:     interpolateSample(firstTime, secondTime, float32(firstValue), float32(secondValue), t),
-		Timestamp: t,
+		})
 	}
 
 	return
 }
 
-func (s memorySeriesStorage) GetBoundaryValues(fp model.Fingerprint, i model.Interval, p StalenessPolicy) (first *model.Sample, second *model.Sample, err error) {
-	first, err = s.GetValueAtTime(fp, i.OldestInclusive, p)
-	if err != nil {
-		return
-	} else if first == nil {
-		return
-	}
-
-	second, err = s.GetValueAtTime(fp, i.NewestInclusive, p)
-	if err != nil {
-		return
-	} else if second == nil {
-		first = nil
-	}
-
+func (s memorySeriesStorage) GetBoundaryValues(f model.Fingerprint, i model.Interval) (first []model.SamplePair, second []model.SamplePair) {
+	first = s.GetValueAtTime(f, i.OldestInclusive)
+	second = s.GetValueAtTime(f, i.NewestInclusive)
 	return
 }
 
-func (s memorySeriesStorage) GetRangeValues(fp model.Fingerprint, i model.Interval) (samples *model.SampleSet, err error) {
-	series, ok := s.fingerprintToSeries[fp]
+func (s memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interval) (samples []model.SamplePair) {
+	series, ok := s.fingerprintToSeries[f]
 	if !ok {
 		return
 	}
 
-	samples = &model.SampleSet{
-		Metric: series.metric,
+	iterator := series.values.Seek(skipListTime(i.OldestInclusive))
+	if iterator == nil {
+		// If the iterator is nil, it means we seeked past the end of the series,
+		// so we seek to the last value instead. Due to the reverse ordering
+		// defined on skipListTime, this corresponds to the sample with the
+		// earliest timestamp.
+		iterator = series.values.SeekToLast()
+		if iterator == nil {
+			// The list is empty.
+			return
+		}
 	}
 
-	iterator := series.values.Seek(skipListTime(i.NewestInclusive))
-	if iterator == nil {
-		return
-	}
+	defer iterator.Close()
 
 	for {
 		timestamp := time.Time(iterator.Key().(skipListTime))
-		if timestamp.Before(i.OldestInclusive) {
+		if timestamp.After(i.NewestInclusive) {
 			break
 		}
 
-		samples.Values = append(samples.Values,
-			model.SamplePair{
+		if !timestamp.Before(i.OldestInclusive) {
+			samples = append(samples, model.SamplePair{
 				Value:     iterator.Value().(value).get(),
 				Timestamp: timestamp,
 			})
+		}
 
-		if !iterator.Next() {
+		if !iterator.Previous() {
 			break
 		}
-	}
-
-	// XXX: We should not explicitly sort here but rather rely on the datastore.
-	//      This adds appreciable overhead.
-	if samples != nil {
-		sort.Sort(samples.Values)
 	}
 
 	return
 }
 
 func (s memorySeriesStorage) Close() {
-	// This can probably be simplified:
-	//
-	// s.fingerPrintToSeries = map[model.Fingerprint]*stream{}
-	// s.labelPairToFingerprints = map[string]model.Fingerprints{}
-	// s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
-	for fingerprint := range s.fingerprintToSeries {
-		delete(s.fingerprintToSeries, fingerprint)
-	}
-
-	for labelPair := range s.labelPairToFingerprints {
-		delete(s.labelPairToFingerprints, labelPair)
-	}
-
-	for labelName := range s.labelNameToFingerprints {
-		delete(s.labelNameToFingerprints, labelName)
-	}
+	s.fingerprintToSeries = map[model.Fingerprint]stream{}
+	s.labelPairToFingerprints = map[string]model.Fingerprints{}
+	s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
 }
 
 func (s memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {

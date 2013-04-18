@@ -47,9 +47,9 @@ type MetricPersistence interface {
 	// Get the metric associated with the provided fingerprint.
 	GetMetricForFingerprint(model.Fingerprint) (*model.Metric, error)
 
-	GetValueAtTime(model.Fingerprint, time.Time, StalenessPolicy) (*model.Sample, error)
-	GetBoundaryValues(model.Fingerprint, model.Interval, StalenessPolicy) (*model.Sample, *model.Sample, error)
-	GetRangeValues(model.Fingerprint, model.Interval) (*model.SampleSet, error)
+	GetValueAtTime(model.Fingerprint, time.Time) []model.SamplePair
+	GetBoundaryValues(model.Fingerprint, model.Interval) (first []model.SamplePair, second []model.SamplePair)
+	GetRangeValues(model.Fingerprint, model.Interval) []model.SamplePair
 
 	ForEachSample(IteratorsForFingerprintBuilder) (err error)
 
@@ -59,13 +59,6 @@ type MetricPersistence interface {
 	// Requests the storage stack to build a materialized View of the values
 	// contained therein.
 	// MakeView(builder ViewRequestBuilder, deadline time.Duration) (View, error)
-}
-
-// Describes the lenience limits for querying the materialized View.
-type StalenessPolicy struct {
-	// Describes the inclusive limit at which individual points if requested will
-	// be matched and subject to interpolation.
-	DeltaAllowance time.Duration
 }
 
 // View provides view of the values in the datastore subject to the request of a
