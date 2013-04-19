@@ -251,7 +251,7 @@ func (t target) GlobalAddress() string {
 	address := t.address
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.Printf("Couldn't get hostname: %s, returning target.Address()")
+		log.Printf("Couldn't get hostname: %s, returning target.Address()", err)
 		return address
 	}
 	for _, localhostRepresentation := range localhostRepresentations {
