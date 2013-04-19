@@ -289,7 +289,7 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 			if sampleSets[groupingKey] == nil {
 				sampleSets[groupingKey] = &model.SampleSet{
 					Metric: sample.Metric,
-					Values: []model.SamplePair{samplePair},
+					Values: model.Values{samplePair},
 				}
 			} else {
 				sampleSets[groupingKey].Values = append(sampleSets[groupingKey].Values, samplePair)
