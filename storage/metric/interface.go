@@ -47,9 +47,9 @@ type MetricPersistence interface {
 	// Get the metric associated with the provided fingerprint.
 	GetMetricForFingerprint(model.Fingerprint) (*model.Metric, error)
 
-	GetValueAtTime(model.Fingerprint, time.Time) []model.SamplePair
-	GetBoundaryValues(model.Fingerprint, model.Interval) (first []model.SamplePair, second []model.SamplePair)
-	GetRangeValues(model.Fingerprint, model.Interval) []model.SamplePair
+	GetValueAtTime(model.Fingerprint, time.Time) model.Values
+	GetBoundaryValues(model.Fingerprint, model.Interval) (first model.Values, second model.Values)
+	GetRangeValues(model.Fingerprint, model.Interval) model.Values
 
 	ForEachSample(IteratorsForFingerprintBuilder) (err error)
 
@@ -64,9 +64,9 @@ type MetricPersistence interface {
 // View provides view of the values in the datastore subject to the request of a
 // preloading operation.
 type View interface {
-	GetValueAtTime(model.Fingerprint, time.Time) []model.SamplePair
-	GetBoundaryValues(model.Fingerprint, model.Interval) (first []model.SamplePair, second []model.SamplePair)
-	GetRangeValues(model.Fingerprint, model.Interval) []model.SamplePair
+	GetValueAtTime(model.Fingerprint, time.Time) model.Values
+	GetBoundaryValues(model.Fingerprint, model.Interval) (first model.Values, second model.Values)
+	GetRangeValues(model.Fingerprint, model.Interval) model.Values
 
 	// Destroy this view.
 	Close()

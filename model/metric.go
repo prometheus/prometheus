@@ -102,6 +102,18 @@ func (v Values) Swap(i, j int) {
 	v[i], v[j] = v[j], v[i]
 }
 
+// FirstTimeAfter indicates whether the first sample of a set is after a given
+// timestamp.
+func (v Values) FirstTimeAfter(t time.Time) bool {
+	return v[0].Timestamp.After(t)
+}
+
+// LastTimeBefore indicates whether the last sample of a set is before a given
+// timestamp.
+func (v Values) LastTimeBefore(t time.Time) bool {
+	return v[len(v)-1].Timestamp.Before(t)
+}
+
 // InsideInterval indicates whether a given range of sorted values could contain
 // a value for a given time.
 func (v Values) InsideInterval(t time.Time) (s bool) {

@@ -210,7 +210,7 @@ func (s memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (metri
 	return
 }
 
-func (s memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (samples []model.SamplePair) {
+func (s memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (samples model.Values) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
 		return
@@ -251,13 +251,13 @@ func (s memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (s
 	return
 }
 
-func (s memorySeriesStorage) GetBoundaryValues(f model.Fingerprint, i model.Interval) (first []model.SamplePair, second []model.SamplePair) {
+func (s memorySeriesStorage) GetBoundaryValues(f model.Fingerprint, i model.Interval) (first model.Values, second model.Values) {
 	first = s.GetValueAtTime(f, i.OldestInclusive)
 	second = s.GetValueAtTime(f, i.NewestInclusive)
 	return
 }
 
-func (s memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interval) (samples []model.SamplePair) {
+func (s memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interval) (samples model.Values) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
 		return
