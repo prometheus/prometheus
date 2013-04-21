@@ -472,7 +472,7 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 		targetKey = &dto.SampleKey{
 			Fingerprint: fingerprint.ToDTO(),
 		}
-		foundKey   = &dto.SampleKey{}
+		foundKey   model.SampleKey
 		foundValue *dto.SampleValueSeries
 	)
 
@@ -504,7 +504,7 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 	//
 	// Only do the rewind if there is another chunk before this one.
 	rewound := false
-	firstTime := indexable.DecodeTime(foundKey.Timestamp)
+	firstTime := foundKey.FirstTimestamp
 	if ts.Before(firstTime) && !frontier.firstSupertime.After(ts) {
 		iterator.Previous()
 		rewound = true
@@ -522,7 +522,7 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 		if err != nil {
 			panic(err)
 		}
-		currentChunkLastTime := time.Unix(*foundKey.LastTimestamp, 0)
+		currentChunkLastTime := foundKey.LastTimestamp
 
 		if ts.After(currentChunkLastTime) {
 			sampleCount := len(foundValue.Value)

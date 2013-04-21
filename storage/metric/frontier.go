@@ -67,10 +67,10 @@ func newDiskFrontier(i leveldb.Iterator) (d *diskFrontier, err error) {
 
 	d = &diskFrontier{}
 
-	d.firstFingerprint = model.NewFingerprintFromRowKey(*firstKey.Fingerprint.Signature)
-	d.firstSupertime = indexable.DecodeTime(firstKey.Timestamp)
-	d.lastFingerprint = model.NewFingerprintFromRowKey(*lastKey.Fingerprint.Signature)
-	d.lastSupertime = indexable.DecodeTime(lastKey.Timestamp)
+	d.firstFingerprint = firstKey.Fingerprint
+	d.firstSupertime = firstKey.FirstTimestamp
+	d.lastFingerprint = lastKey.Fingerprint
+	d.lastSupertime = lastKey.FirstTimestamp
 
 	return
 }
@@ -111,6 +111,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		upperSeek = indexable.EncodeTime(d.lastSupertime)
 	}
 
+	// TODO: Convert this to SampleKey.ToPartialDTO.
 	key := &dto.SampleKey{
 		Fingerprint: f.ToDTO(),
 		Timestamp:   upperSeek,
@@ -131,7 +132,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		panic(err)
 	}
 
-	retrievedFingerprint := model.NewFingerprintFromRowKey(*retrievedKey.Fingerprint.Signature)
+	retrievedFingerprint := retrievedKey.Fingerprint
 
 	// The returned fingerprint may not match if the original seek key lives
 	// outside of a metric's frontier.  This is probable, for we are seeking to
@@ -146,7 +147,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		if err != nil {
 			panic(err)
 		}
-		retrievedFingerprint := model.NewFingerprintFromRowKey(*retrievedKey.Fingerprint.Signature)
+		retrievedFingerprint := retrievedKey.Fingerprint
 		// If the previous key does not match, we know that the requested
 		// fingerprint does not live in the database.
 		if !retrievedFingerprint.Equal(f) {
@@ -155,8 +156,8 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 	}
 
 	s = &seriesFrontier{
-		lastSupertime: indexable.DecodeTime(retrievedKey.Timestamp),
-		lastTime:      time.Unix(*retrievedKey.LastTimestamp, 0),
+		lastSupertime: retrievedKey.FirstTimestamp,
+		lastTime:      retrievedKey.LastTimestamp,
 	}
 
 	key.Timestamp = lowerSeek
@@ -173,9 +174,9 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		panic(err)
 	}
 
-	retrievedFingerprint = model.NewFingerprintFromRowKey(*retrievedKey.Fingerprint.Signature)
+	retrievedFingerprint = retrievedKey.Fingerprint
 
-	s.firstSupertime = indexable.DecodeTime(retrievedKey.Timestamp)
+	s.firstSupertime = retrievedKey.FirstTimestamp
 
 	return
 }

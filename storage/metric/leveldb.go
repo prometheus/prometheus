@@ -17,7 +17,6 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 	"flag"
 	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage"
@@ -608,12 +607,12 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 			chunk := group[0:take]
 			group = group[take:lengthOfGroup]
 
-			key := &dto.SampleKey{
-				Fingerprint:   fingerprint.ToDTO(),
-				Timestamp:     indexable.EncodeTime(chunk[0].Timestamp),
-				LastTimestamp: proto.Int64(chunk[take-1].Timestamp.Unix()),
-				SampleCount:   proto.Uint32(uint32(take)),
-			}
+			key := model.SampleKey{
+				Fingerprint:    fingerprint,
+				FirstTimestamp: chunk[0].Timestamp,
+				LastTimestamp:  chunk[take-1].Timestamp,
+				SampleCount:    uint32(take),
+			}.ToDTO()
 
 			value := &dto.SampleValueSeries{}
 			for _, sample := range chunk {
@@ -645,26 +644,19 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 	return
 }
 
-func extractSampleKey(i leveldb.Iterator) (k *dto.SampleKey, err error) {
-	if i == nil {
-		panic("nil iterator")
+func extractSampleKey(i leveldb.Iterator) (key model.SampleKey, err error) {
+	k := &dto.SampleKey{}
+	err = proto.Unmarshal(i.Key(), k)
+	if err != nil {
+		return
 	}
 
-	k = &dto.SampleKey{}
-	rawKey := i.Key()
-	if rawKey == nil {
-		panic("illegal condition; got nil key...")
-	}
-	err = proto.Unmarshal(rawKey, k)
+	key = model.NewSampleKeyFromDTO(k)
 
 	return
 }
 
 func extractSampleValues(i leveldb.Iterator) (v *dto.SampleValueSeries, err error) {
-	if i == nil {
-		panic("nil iterator")
-	}
-
 	v = &dto.SampleValueSeries{}
 	err = proto.Unmarshal(i.Value(), v)
 
@@ -689,20 +681,6 @@ func fingerprintsEqual(l *dto.Fingerprint, r *dto.Fingerprint) bool {
 	}
 
 	return false
-}
-
-type sampleKeyPredicate func(k *dto.SampleKey) bool
-
-func keyIsOlderThan(t time.Time) sampleKeyPredicate {
-	return func(k *dto.SampleKey) bool {
-		return indexable.DecodeTime(k.Timestamp).After(t)
-	}
-}
-
-func keyIsAtMostOld(t time.Time) sampleKeyPredicate {
-	return func(k *dto.SampleKey) bool {
-		return !indexable.DecodeTime(k.Timestamp).After(t)
-	}
 }
 
 func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (value bool, err error) {
