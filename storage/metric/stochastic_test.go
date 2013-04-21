@@ -233,10 +233,12 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i 
 			return nil, err
 		}
 
-		samples = append(samples, model.SamplePair{
-			Value:     model.SampleValue(*retrievedValue.Value[0].Value),
-			Timestamp: indexable.DecodeTime(retrievedKey.Timestamp),
-		})
+		for _, value := range retrievedValue.Value {
+			samples = append(samples, model.SamplePair{
+				Value:     model.SampleValue(*value.Value),
+				Timestamp: time.Unix(*value.Timestamp, 0),
+			})
+		}
 	}
 
 	return

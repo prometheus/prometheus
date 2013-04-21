@@ -40,7 +40,7 @@ type (
 
 	sample struct {
 		time  time.Time
-		value float32
+		value float64
 	}
 
 	sampleGroup struct {
@@ -90,7 +90,7 @@ func (s sampleGroup) Get() (key, value coding.Encoder) {
 	for _, value := range s.values {
 		series.Value = append(series.Value, &dto.SampleValueSeries_Value{
 			Timestamp: proto.Int64(value.time.Unix()),
-			Value:     proto.Float32(float32(value.value)),
+			Value:     proto.Float64(value.value),
 		})
 	}
 

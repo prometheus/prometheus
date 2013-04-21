@@ -619,7 +619,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 			for _, sample := range chunk {
 				value.Value = append(value.Value, &dto.SampleValueSeries_Value{
 					Timestamp: proto.Int64(sample.Timestamp.Unix()),
-					Value:     proto.Float32(float32(sample.Value)),
+					Value:     sample.Value.ToDTO(),
 				})
 			}
 
