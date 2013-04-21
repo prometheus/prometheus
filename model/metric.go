@@ -15,6 +15,7 @@ package model
 
 import (
 	"bytes"
+	"code.google.com/p/goprotobuf/proto"
 	"fmt"
 	"sort"
 	"time"
@@ -70,10 +71,12 @@ func (l LabelSet) String() string {
 type Metric map[LabelName]LabelValue
 
 // A SampleValue is a representation of a value for a given sample at a given
-// time.  It is presently float32 due to that being the representation that
-// Protocol Buffers provide of floats in Go.  This is a smell and should be
-// remedied down the road.
-type SampleValue float32
+// time.
+type SampleValue float64
+
+func (s SampleValue) ToDTO() *float64 {
+	return proto.Float64(float64(s))
+}
 
 func (v SampleValue) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%f\"", v)), nil

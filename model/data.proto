@@ -50,8 +50,8 @@ message SampleKey {
 
 message SampleValueSeries {
   message Value {
-    optional int64 timestamp = 1;
-    optional float value     = 2;
+    optional int64  timestamp = 1;
+    optional double value     = 2;
   }
   repeated Value value = 1;
 }

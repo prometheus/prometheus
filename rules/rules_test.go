@@ -235,7 +235,7 @@ var expressionTests = []struct {
 	}, {
 		// Rates should transform per-interval deltas to per-second rates.
 		expr:           "rate(http_requests{group='canary',instance='1',job='app-server'}[10m])",
-		output:         []string{"http_requests{group='canary',instance='1',job='app-server'} => 0.26666668 @[%v]"},
+		output:         []string{"http_requests{group='canary',instance='1',job='app-server'} => 0.26666666666666666 @[%v]"},
 		fullRanges:     1,
 		intervalRanges: 0,
 	}, {
