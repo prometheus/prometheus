@@ -26,7 +26,7 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 		month time.Month
 		day   int
 		hour  int
-		value float64
+		value model.SampleValue
 	}
 
 	type input struct {
@@ -358,7 +358,7 @@ func GetBoundaryValuesTests(persistenceMaker func() (MetricPersistence, test.Clo
 		month time.Month
 		day   int
 		hour  int
-		value float64
+		value model.SampleValue
 	}
 
 	type input struct {
@@ -672,7 +672,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 		month time.Month
 		day   int
 		hour  int
-		value float64
+		value model.SampleValue
 	}
 
 	type input struct {
