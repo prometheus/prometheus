@@ -189,14 +189,6 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 }
 
 func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i model.Interval) (samples model.Values, err error) {
-	begin := time.Now()
-
-	defer func() {
-		duration := time.Since(begin)
-
-		recordOutcome(duration, err, map[string]string{operation: getRangeValues, result: success}, map[string]string{operation: getRangeValues, result: failure})
-	}()
-
 	k := &dto.SampleKey{
 		Fingerprint: fp.ToDTO(),
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
@@ -210,21 +202,17 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i 
 	iterator := l.metricSamples.NewIterator(true)
 	defer iterator.Close()
 
-	predicate := keyIsOlderThan(i.NewestInclusive)
-
 	for valid := iterator.Seek(e); valid; valid = iterator.Next() {
-		retrievedKey := &dto.SampleKey{}
-
-		retrievedKey, err = extractSampleKey(iterator)
+		retrievedKey, err := extractSampleKey(iterator)
 		if err != nil {
-			return
+			return samples, err
 		}
 
-		if predicate(retrievedKey) {
+		if retrievedKey.FirstTimestamp.After(i.NewestInclusive) {
 			break
 		}
 
-		if !fingerprintsEqual(retrievedKey.Fingerprint, k.Fingerprint) {
+		if !retrievedKey.Fingerprint.Equal(fp) {
 			break
 		}
 
