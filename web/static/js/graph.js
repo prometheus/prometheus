@@ -22,6 +22,8 @@ var Prometheus = Prometheus || {};
 var graphs = [];
 var graphTemplate;
 
+var SECOND = 1000;
+
 Prometheus.Graph = function(element, options) {
   this.el = element;
   this.options = options;
@@ -70,6 +72,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.rangeInput = self.queryForm.find("input[name=range_input]");
   self.stacked = self.queryForm.find("input[name=stacked]");
   self.insertMetric = self.queryForm.find("select[name=insert_metric]");
+  self.refreshInterval = self.queryForm.find("select[name=refresh]");
 
   // Return moves focus back to expr instead of submitting.
   self.insertMetric.bind('keydown', 'return', function(e) {
@@ -92,6 +95,7 @@ Prometheus.Graph.prototype.initialize = function() {
     self.endDate.val("");
   }
   self.endDate.change(function() { self.submitQuery() });
+  self.refreshInterval.change(function() { self.updateRefresh() })
 
   self.stacked.change(function() { self.updateGraph(); });
   self.queryForm.submit(function() { self.submitQuery(); return false; });
@@ -167,9 +171,10 @@ Prometheus.Graph.prototype.getOptions = function() {
   return options;
 };
 
-Prometheus.Graph.prototype.parseRange = function(rangeText) {
+Prometheus.Graph.prototype.parseDuration = function(rangeText) {
   var rangeRE = new RegExp("^([0-9]+)([ywdhms]+)$");
   var matches = rangeText.match(rangeRE);
+  if (!matches) { return };
   if (matches.length != 3) {
     return 60;
   }
@@ -180,9 +185,9 @@ Prometheus.Graph.prototype.parseRange = function(rangeText) {
 
 Prometheus.Graph.prototype.increaseRange = function() {
   var self = this;
-  var rangeSeconds = self.parseRange(self.rangeInput.val());
+  var rangeSeconds = self.parseDuration(self.rangeInput.val());
   for (var i = 0; i < Prometheus.Graph.stepValues.length; i++) {
-    if (rangeSeconds < self.parseRange(Prometheus.Graph.stepValues[i])) {
+    if (rangeSeconds < self.parseDuration(Prometheus.Graph.stepValues[i])) {
       self.rangeInput.val(Prometheus.Graph.stepValues[i]);
       if (self.expr.val()) {
         self.submitQuery();
@@ -194,9 +199,9 @@ Prometheus.Graph.prototype.increaseRange = function() {
 
 Prometheus.Graph.prototype.decreaseRange = function() {
   var self = this;
-  var rangeSeconds = self.parseRange(self.rangeInput.val());
+  var rangeSeconds = self.parseDuration(self.rangeInput.val());
   for (var i = Prometheus.Graph.stepValues.length - 1; i >= 0; i--) {
-    if (rangeSeconds > self.parseRange(Prometheus.Graph.stepValues[i])) {
+    if (rangeSeconds > self.parseDuration(Prometheus.Graph.stepValues[i])) {
       self.rangeInput.val(Prometheus.Graph.stepValues[i]);
       if (self.expr.val()) {
         self.submitQuery();
@@ -235,13 +240,13 @@ Prometheus.Graph.prototype.setEndDate = function(date) {
 
 Prometheus.Graph.prototype.increaseEnd = function() {
   var self = this;
-  self.setEndDate(new Date(self.getOrSetEndDate() + self.parseRange(self.rangeInput.val()) * 1000/2 )) // increase by 1/2 range & convert ms in s
+  self.setEndDate(new Date(self.getOrSetEndDate() + self.parseDuration(self.rangeInput.val()) * 1000/2 )) // increase by 1/2 range & convert ms in s
   self.submitQuery();
 };
 
 Prometheus.Graph.prototype.decreaseEnd = function() {
   var self = this;
-  self.setEndDate(new Date(self.getOrSetEndDate() - self.parseRange(self.rangeInput.val()) * 1000/2 ))
+  self.setEndDate(new Date(self.getOrSetEndDate() - self.parseDuration(self.rangeInput.val()) * 1000/2 ))
   self.submitQuery();
 };
 
@@ -253,14 +258,17 @@ Prometheus.Graph.prototype.submitQuery = function() {
 
   var startTime = new Date().getTime();
 
-  var rangeSeconds = self.parseRange(self.rangeInput.val());
+  var rangeSeconds = self.parseDuration(self.rangeInput.val());
   self.queryForm.find("input[name=range]").val(rangeSeconds);
   var resolution = self.queryForm.find("input[name=step_input]").val() || Math.max(Math.floor(rangeSeconds / 250), 1);
   self.queryForm.find("input[name=step]").val(resolution);
   var endDate = self.getEndDate() / 1000;
   self.queryForm.find("input[name=end]").val(endDate);
 
-  $.ajax({
+  if (self.queryXhr) {
+    self.queryXhr.abort()
+  }
+  self.queryXhr = $.ajax({
       method: self.queryForm.attr("method"),
       url: self.queryForm.attr("action"),
       dataType: "json",
@@ -287,6 +295,22 @@ Prometheus.Graph.prototype.submitQuery = function() {
       }
   });
 };
+
+Prometheus.Graph.prototype.updateRefresh = function() {
+  var self = this;
+
+  if (self.timeoutID) {
+    window.clearTimeout(self.timeoutID)
+  }
+
+  interval = self.parseDuration(self.refreshInterval.val());
+  if (!interval) { return };
+
+  self.timeoutID = window.setTimeout(function() {
+    self.submitQuery()
+    self.updateRefresh()
+  }, interval * SECOND)
+}
 
 Prometheus.Graph.prototype.renderLabels = function(labels) {
   var labelStrings = [];
@@ -481,7 +505,7 @@ function init() {
         addGraph(options[i]);
       }
       $("#add_graph").click(function() { addGraph({}); });
-    }  
+    } 
   })
 }
 
