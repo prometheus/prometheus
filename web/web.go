@@ -25,7 +25,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	_ "net/http/pprof"
+	"net/http/pprof"
 )
 
 // Commandline flags.
@@ -36,6 +36,13 @@ var (
 
 func StartServing(appState *appstate.ApplicationState) {
 	gorest.RegisterService(api.NewMetricsService(appState))
+
+	// TODO(julius): This will need to be rewritten once the exp package provides
+	// the coarse mux behaviors via a wrapper function.
+	exp.Handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
+	exp.Handle("/debug/pprof/cmdline", http.HandlerFunc(pprof.Cmdline))
+	exp.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
+	exp.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 
 	exp.Handle("/", &StatusHandler{appState: appState})
 	exp.HandleFunc("/graph", graphHandler)
