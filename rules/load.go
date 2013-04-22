@@ -34,7 +34,7 @@ var (
 type RulesLexer struct {
 	errors      []string // Errors encountered during parsing.
 	startToken  int      // Dummy token to simulate multiple start symbols (see below).
-	parsedRules []*Rule  // Parsed full rules.
+	parsedRules []Rule   // Parsed full rules.
 	parsedExpr  ast.Node // Parsed single expression.
 }
 
@@ -95,23 +95,23 @@ func LoadFromReader(rulesReader io.Reader, singleExpr bool) (interface{}, error)
 	panic("")
 }
 
-func LoadRulesFromReader(rulesReader io.Reader) ([]*Rule, error) {
+func LoadRulesFromReader(rulesReader io.Reader) ([]Rule, error) {
 	expr, err := LoadFromReader(rulesReader, false)
 	if err != nil {
 		return nil, err
 	}
-	return expr.([]*Rule), err
+	return expr.([]Rule), err
 }
 
-func LoadRulesFromString(rulesString string) ([]*Rule, error) {
+func LoadRulesFromString(rulesString string) ([]Rule, error) {
 	rulesReader := strings.NewReader(rulesString)
 	return LoadRulesFromReader(rulesReader)
 }
 
-func LoadRulesFromFile(fileName string) ([]*Rule, error) {
+func LoadRulesFromFile(fileName string) ([]Rule, error) {
 	rulesReader, err := os.Open(fileName)
 	if err != nil {
-		return []*Rule{}, err
+		return []Rule{}, err
 	}
 	defer rulesReader.Close()
 	return LoadRulesFromReader(rulesReader)

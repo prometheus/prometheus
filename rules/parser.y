@@ -39,12 +39,14 @@
 %token <num> NUMBER
 %token PERMANENT GROUP_OP
 %token <str> AGGR_OP CMP_OP ADDITIVE_OP MULT_OP
+%token ALERT IF FOR WITH
 
 %type <ruleNodeSlice> func_arg_list
 %type <labelNameSlice> label_list grouping_opts
 %type <labelSet> label_assign label_assign_list rule_labels
 %type <ruleNode> rule_expr func_arg
 %type <boolean> qualifier
+%type <str> for_duration
 
 %right '='
 %left CMP_OP
@@ -67,10 +69,22 @@ saved_rule_expr    : rule_expr
 
 rules_stat         : qualifier IDENTIFIER rule_labels '=' rule_expr
                      {
-                       rule, err := CreateRule($2, $3, $5, $1)
+                       rule, err := CreateRecordingRule($2, $3, $5, $1)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                        yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
                      }
+                   | ALERT IDENTIFIER IF rule_expr for_duration WITH rule_labels
+                     {
+                       rule, err := CreateAlertingRule($2, $4, $5, $7)
+                       if err != nil { yylex.Error(err.Error()); return 1 }
+                       yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
+                     }
+                   ;
+
+for_duration       : /* empty */
+                     { $$ = "0s" }
+                   | FOR DURATION
+                     { $$ = $2 }
                    ;
 
 qualifier          : /* empty */

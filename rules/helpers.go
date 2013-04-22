@@ -20,11 +20,22 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
-func CreateRule(name string, labels model.LabelSet, root ast.Node, permanent bool) (*Rule, error) {
-	if root.Type() != ast.VECTOR {
-		return nil, fmt.Errorf("Rule %v does not evaluate to vector type", name)
+func CreateRecordingRule(name string, labels model.LabelSet, expr ast.Node, permanent bool) (*RecordingRule, error) {
+	if _, ok := expr.(ast.VectorNode); !ok {
+		return nil, fmt.Errorf("Recording rule expression %v does not evaluate to vector type", expr)
 	}
-	return NewRule(name, labels, root.(ast.VectorNode), permanent), nil
+	return NewRecordingRule(name, labels, expr.(ast.VectorNode), permanent), nil
+}
+
+func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labels model.LabelSet) (*AlertingRule, error) {
+	if _, ok := expr.(ast.VectorNode); !ok {
+		return nil, fmt.Errorf("Alert rule expression %v does not evaluate to vector type", expr)
+	}
+	holdDuration, err := utility.StringToDuration(holdDurationStr)
+	if err != nil {
+		return nil, err
+	}
+	return NewAlertingRule(name, expr.(ast.VectorNode), holdDuration, labels), nil
 }
 
 func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {
@@ -40,7 +51,7 @@ func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {
 }
 
 func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy []model.LabelName) (*ast.VectorAggregation, error) {
-	if vector.Type() != ast.VECTOR {
+	if _, ok := vector.(ast.VectorNode); !ok {
 		return nil, fmt.Errorf("Operand of %v aggregation must be of vector type", aggrTypeStr)
 	}
 	var aggrTypes = map[string]ast.AggrType{
