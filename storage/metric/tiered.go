@@ -472,8 +472,8 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 		targetKey = &dto.SampleKey{
 			Fingerprint: fingerprint.ToDTO(),
 		}
-		foundKey   model.SampleKey
-		foundValue *dto.SampleValueSeries
+		foundKey    model.SampleKey
+		foundValues model.Values
 	)
 
 	// Limit the target key to be within the series' keyspace.
@@ -510,9 +510,9 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 		rewound = true
 	}
 
-	foundValue, err = extractSampleValues(iterator)
+	foundValues, err = extractSampleValues(iterator)
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	// If we rewound, but the target time is still past the current block, return
@@ -520,33 +520,25 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 	if rewound {
 		foundKey, err = extractSampleKey(iterator)
 		if err != nil {
-			panic(err)
+			return
 		}
 		currentChunkLastTime := foundKey.LastTimestamp
 
 		if ts.After(currentChunkLastTime) {
-			sampleCount := len(foundValue.Value)
-			chunk = append(chunk, model.SamplePair{
-				Timestamp: time.Unix(*foundValue.Value[sampleCount-1].Timestamp, 0),
-				Value:     model.SampleValue(*foundValue.Value[sampleCount-1].Value),
-			})
+			sampleCount := len(foundValues)
+			chunk = append(chunk, foundValues[sampleCount-1])
 			// We know there's a next block since we have rewound from it.
 			iterator.Next()
 
-			foundValue, err = extractSampleValues(iterator)
+			foundValues, err = extractSampleValues(iterator)
 			if err != nil {
-				panic(err)
+				return
 			}
 		}
 	}
 
 	// Now append all the samples of the currently seeked block to the output.
-	for _, sample := range foundValue.Value {
-		chunk = append(chunk, model.SamplePair{
-			Timestamp: time.Unix(*sample.Timestamp, 0),
-			Value:     model.SampleValue(*sample.Value),
-		})
-	}
+	chunk = append(chunk, foundValues...)
 
 	return
 }
