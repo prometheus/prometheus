@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"code.google.com/p/goprotobuf/proto"
 	"fmt"
+	dto "github.com/prometheus/prometheus/model/generated"
 	"sort"
 	"time"
 )
@@ -133,6 +134,17 @@ func (v Values) InsideInterval(t time.Time) (s bool) {
 	}
 
 	return true
+}
+
+func NewValuesFromDTO(dto *dto.SampleValueSeries) (v Values) {
+	for _, value := range dto.Value {
+		v = append(v, SamplePair{
+			Timestamp: time.Unix(*value.Timestamp, 0),
+			Value:     SampleValue(*value.Value),
+		})
+	}
+
+	return
 }
 
 type SampleSet struct {

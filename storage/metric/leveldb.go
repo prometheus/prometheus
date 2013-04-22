@@ -656,9 +656,14 @@ func extractSampleKey(i leveldb.Iterator) (key model.SampleKey, err error) {
 	return
 }
 
-func extractSampleValues(i leveldb.Iterator) (v *dto.SampleValueSeries, err error) {
-	v = &dto.SampleValueSeries{}
+func extractSampleValues(i leveldb.Iterator) (values model.Values, err error) {
+	v := &dto.SampleValueSeries{}
 	err = proto.Unmarshal(i.Value(), v)
+	if err != nil {
+		return
+	}
+
+	values = model.NewValuesFromDTO(v)
 
 	return
 }

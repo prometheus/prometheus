@@ -216,17 +216,11 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i 
 			break
 		}
 
-		retrievedValue, err := extractSampleValues(iterator)
+		retrievedValues, err := extractSampleValues(iterator)
 		if err != nil {
 			return nil, err
 		}
-
-		for _, value := range retrievedValue.Value {
-			samples = append(samples, model.SamplePair{
-				Value:     model.SampleValue(*value.Value),
-				Timestamp: time.Unix(*value.Timestamp, 0),
-			})
-		}
+		samples = append(samples, retrievedValues...)
 	}
 
 	return
@@ -463,15 +457,15 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 					samples, err = levelDBGetRangeValues(persistence, fp, interval)
 					if err != nil {
 						t.Fatal(err)
-						return
+					}
+					if len(samples) < 2 {
+						t.Fatalf("expected sample count greater than %d, got %d", 2, len(samples))
 					}
 				default:
 					samples = p.GetRangeValues(fp, interval)
-				}
-
-				if len(samples) < 2 {
-					t.Errorf("expected sample count less than %d, got %d", 2, len(samples))
-					return
+					if len(samples) < 2 {
+						t.Fatalf("expected sample count greater than %d, got %d", 2, len(samples))
+					}
 				}
 			}
 		}
