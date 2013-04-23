@@ -31,7 +31,7 @@ type RuleManager interface {
 }
 
 type ruleManager struct {
-	rules    []*Rule
+	rules    []Rule
 	results  chan *Result
 	done     chan bool
 	interval time.Duration
@@ -40,7 +40,8 @@ type ruleManager struct {
 func NewRuleManager(results chan *Result, interval time.Duration) RuleManager {
 	manager := &ruleManager{
 		results:  results,
-		rules:    []*Rule{},
+		rules:    []Rule{},
+		done:     make(chan bool),
 		interval: interval,
 	}
 	go manager.run(results)
@@ -70,7 +71,7 @@ func (m *ruleManager) runIteration(results chan *Result) {
 	wg := sync.WaitGroup{}
 	for _, rule := range m.rules {
 		wg.Add(1)
-		go func(rule *Rule) {
+		go func(rule Rule) {
 			vector, err := rule.Eval(&now)
 			m.results <- &Result{
 				Samples: vector,

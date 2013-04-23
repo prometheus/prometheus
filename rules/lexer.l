@@ -37,11 +37,16 @@ U                       [smhdwy]
 
 \/\/[^\r\n]*\n           { /* gobble up one-line comments */ }
 
-permanent                { return PERMANENT }
+ALERT|alert              { return ALERT }
+IF|if                    { return IF }
+FOR|for                  { return FOR }
+WITH|with                { return WITH }
+
+PERMANENT|permanent      { return PERMANENT }
 BY|by                    { return GROUP_OP }
 AVG|SUM|MAX|MIN          { yylval.str = yytext; return AGGR_OP }
 avg|sum|max|min          { yylval.str = strings.ToUpper(yytext); return AGGR_OP }
-\<|>|AND|OR              { yylval.str = yytext; return CMP_OP }
+\<|>|AND|OR|and|or       { yylval.str = strings.ToUpper(yytext); return CMP_OP }
 ==|!=|>=|<=              { yylval.str = yytext; return CMP_OP }
 [+\-]                    { yylval.str = yytext; return ADDITIVE_OP }
 [*/%]                    { yylval.str = yytext; return MULT_OP }
@@ -49,7 +54,7 @@ avg|sum|max|min          { yylval.str = strings.ToUpper(yytext); return AGGR_OP 
 {D}+{U}                  { yylval.str = yytext; return DURATION }
 {L}({L}|{D})*            { yylval.str = yytext; return IDENTIFIER }
 
-\-?{D}+(\.{D}*)?         { num, err := strconv.ParseFloat(yytext, 32);
+\-?{D}+(\.{D}*)?         { num, err := strconv.ParseFloat(yytext, 64);
                            if (err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax) {
                              panic("Invalid float")
                            }
