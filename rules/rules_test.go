@@ -18,12 +18,16 @@ import (
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
+	"path"
 	"strings"
 	"testing"
 	"time"
 )
 
-var testEvalTime = testStartTime.Add(testDuration5m * 10)
+var (
+	testEvalTime = testStartTime.Add(testDuration5m * 10)
+	fixturesPath = "fixtures"
+)
 
 // Labels in expected output need to be alphabetically sorted.
 var expressionTests = []struct {
@@ -346,6 +350,73 @@ func TestExpressions(t *testing.T) {
 			if failed {
 				t.Errorf("%d Expression: %v\n%v", i, exprTest.expr, vectorComparisonString(expectedLines, resultLines))
 			}
+		}
+	}
+}
+
+var ruleTests = []struct {
+	inputFile         string
+	shouldFail        bool
+	errContains       string
+	numRecordingRules int
+	numAlertingRules  int
+}{
+	{
+		inputFile:         "empty.rules",
+		numRecordingRules: 0,
+		numAlertingRules:  0,
+	}, {
+		inputFile:         "mixed.rules",
+		numRecordingRules: 2,
+		numAlertingRules:  2,
+	},
+	{
+		inputFile:   "syntax_error.rules",
+		shouldFail:  true,
+		errContains: "Error parsing rules at line 3",
+	},
+	{
+		inputFile:   "non_vector.rules",
+		shouldFail:  true,
+		errContains: "does not evaluate to vector type",
+	},
+}
+
+func TestRules(t *testing.T) {
+	for i, ruleTest := range ruleTests {
+		testRules, err := LoadRulesFromFile(path.Join(fixturesPath, ruleTest.inputFile))
+
+		if err != nil {
+			if !ruleTest.shouldFail {
+				t.Fatalf("%d. Error parsing rules file %v: %v", i, ruleTest.inputFile, err)
+			} else {
+				if !strings.Contains(err.Error(), ruleTest.errContains) {
+					t.Fatalf("%d. Expected error containing '%v', got: %v", i, ruleTest.errContains, err)
+				}
+			}
+		} else {
+			numRecordingRules := 0
+			numAlertingRules := 0
+
+			for j, rule := range testRules {
+				switch rule.(type) {
+				case *RecordingRule:
+					numRecordingRules++
+				case *AlertingRule:
+					numAlertingRules++
+				default:
+					t.Fatalf("%d.%d. Unknown rule type!", i, j)
+				}
+			}
+
+			if numRecordingRules != ruleTest.numRecordingRules {
+				t.Fatalf("%d. Expected %d recording rules, got %d", i, ruleTest.numRecordingRules, numRecordingRules)
+			}
+			if numAlertingRules != ruleTest.numAlertingRules {
+				t.Fatalf("%d. Expected %d alerting rules, got %d", i, ruleTest.numAlertingRules, numAlertingRules)
+			}
+
+			// TODO(julius): add more complex checks on the parsed rules here.
 		}
 	}
 }

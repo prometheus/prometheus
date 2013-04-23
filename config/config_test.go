@@ -54,30 +54,30 @@ var configTests = []struct {
 }
 
 func TestConfigs(t *testing.T) {
-	for _, configTest := range configTests {
+	for i, configTest := range configTests {
 		testConfig, err := LoadFromFile(path.Join(fixturesPath, configTest.inputFile))
 
 		if err != nil {
 			if !configTest.shouldFail {
-				t.Errorf("Error parsing config %v: %v", configTest.inputFile, err)
+				t.Fatalf("%d. Error parsing config %v: %v", i, configTest.inputFile, err)
 			} else {
 				if !strings.Contains(err.Error(), configTest.errContains) {
-					t.Errorf("Expected error containing '%v', got: %v", configTest.errContains, err)
+					t.Fatalf("%d. Expected error containing '%v', got: %v", i, configTest.errContains, err)
 				}
 			}
 		} else {
 			printedConfig, err := ioutil.ReadFile(path.Join(fixturesPath, configTest.printedFile))
 			if err != nil {
-				t.Errorf("Error reading config %v: %v", configTest.inputFile, err)
+				t.Fatalf("%d. Error reading config %v: %v", i, configTest.inputFile, err)
 				continue
 			}
 			expected := string(printedConfig)
 			actual := testConfig.ToString(0)
 
 			if actual != expected {
-				t.Errorf("%v: printed config doesn't match expected output", configTest.inputFile)
+				t.Errorf("%d. %v: printed config doesn't match expected output", i, configTest.inputFile)
 				t.Errorf("Expected:\n%v\n\nActual:\n%v\n", expected, actual)
-				t.Errorf("Writing expected and actual printed configs to /tmp for diffing (see test source for paths)")
+				t.Fatalf("Writing expected and actual printed configs to /tmp for diffing (see test source for paths)")
 				ioutil.WriteFile(fmt.Sprintf("/tmp/%s.expected", configTest.printedFile), []byte(expected), 0600)
 				ioutil.WriteFile(fmt.Sprintf("/tmp/%s.actual", configTest.printedFile), []byte(actual), 0600)
 			}

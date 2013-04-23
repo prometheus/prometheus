@@ -302,7 +302,59 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 	{
 	}
 	return yyactionreturn{0, yyRT_FALLTHROUGH}
-}}, {regexp.MustCompile("permanent"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+}}, {regexp.MustCompile("ALERT|alert"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r != "yyREJECT" {
+				panic(r)
+			}
+			yyar.returnType = yyRT_REJECT
+		}
+	}()
+	{
+		return yyactionreturn{ALERT, yyRT_USER_RETURN}
+	}
+	return yyactionreturn{0, yyRT_FALLTHROUGH}
+}}, {regexp.MustCompile("IF|if"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r != "yyREJECT" {
+				panic(r)
+			}
+			yyar.returnType = yyRT_REJECT
+		}
+	}()
+	{
+		return yyactionreturn{IF, yyRT_USER_RETURN}
+	}
+	return yyactionreturn{0, yyRT_FALLTHROUGH}
+}}, {regexp.MustCompile("FOR|for"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r != "yyREJECT" {
+				panic(r)
+			}
+			yyar.returnType = yyRT_REJECT
+		}
+	}()
+	{
+		return yyactionreturn{FOR, yyRT_USER_RETURN}
+	}
+	return yyactionreturn{0, yyRT_FALLTHROUGH}
+}}, {regexp.MustCompile("WITH|with"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r != "yyREJECT" {
+				panic(r)
+			}
+			yyar.returnType = yyRT_REJECT
+		}
+	}()
+	{
+		return yyactionreturn{WITH, yyRT_USER_RETURN}
+	}
+	return yyactionreturn{0, yyRT_FALLTHROUGH}
+}}, {regexp.MustCompile("PERMANENT|permanent"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
 	defer func() {
 		if r := recover(); r != nil {
 			if r != "yyREJECT" {
@@ -356,7 +408,7 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 		return yyactionreturn{AGGR_OP, yyRT_USER_RETURN}
 	}
 	return yyactionreturn{0, yyRT_FALLTHROUGH}
-}}, {regexp.MustCompile("\\<|>|AND|OR"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+}}, {regexp.MustCompile("\\<|>|AND|OR|and|or"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
 	defer func() {
 		if r := recover(); r != nil {
 			if r != "yyREJECT" {
@@ -366,7 +418,7 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 		}
 	}()
 	{
-		yylval.str = yytext
+		yylval.str = strings.ToUpper(yytext)
 		return yyactionreturn{CMP_OP, yyRT_USER_RETURN}
 	}
 	return yyactionreturn{0, yyRT_FALLTHROUGH}
@@ -450,7 +502,7 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 		}
 	}()
 	{
-		num, err := strconv.ParseFloat(yytext, 32)
+		num, err := strconv.ParseFloat(yytext, 64)
 		if err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax {
 			panic("Invalid float")
 		}

@@ -8,7 +8,6 @@
 *.orig
 *.pyc
 *.rej
-*.rules
 *.so
 *~
 .*.swp
