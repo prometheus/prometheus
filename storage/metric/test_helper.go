@@ -23,7 +23,7 @@ import (
 var (
 	// ``hg clone https://code.google.com/p/go ; cd go ; hg log | tail -n 20``
 	usEastern, _ = time.LoadLocation("US/Eastern")
-	testInstant  = time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern)
+	testInstant  = time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern).In(time.UTC)
 )
 
 func testAppendSample(p MetricPersistence, s model.Sample, t test.Tester) {
