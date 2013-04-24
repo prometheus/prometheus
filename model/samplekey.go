@@ -73,7 +73,7 @@ func NewSampleKeyFromDTO(dto *dto.SampleKey) SampleKey {
 	return SampleKey{
 		Fingerprint:    NewFingerprintFromDTO(dto.Fingerprint),
 		FirstTimestamp: indexable.DecodeTime(dto.Timestamp),
-		LastTimestamp:  time.Unix(*dto.LastTimestamp, 0),
+		LastTimestamp:  time.Unix(*dto.LastTimestamp, 0).UTC(),
 		SampleCount:    *dto.SampleCount,
 	}
 }

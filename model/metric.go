@@ -139,7 +139,7 @@ func (v Values) InsideInterval(t time.Time) (s bool) {
 func NewValuesFromDTO(dto *dto.SampleValueSeries) (v Values) {
 	for _, value := range dto.Value {
 		v = append(v, SamplePair{
-			Timestamp: time.Unix(*value.Timestamp, 0),
+			Timestamp: time.Unix(*value.Timestamp, 0).UTC(),
 			Value:     SampleValue(*value.Value),
 		})
 	}

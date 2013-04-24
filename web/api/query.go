@@ -84,8 +84,8 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 
 	matrix, err := ast.EvalVectorRange(
 		exprNode.(ast.VectorNode),
-		time.Unix(end-duration, 0),
-		time.Unix(end, 0),
+		time.Unix(end-duration, 0).UTC(),
+		time.Unix(end, 0).UTC(),
 		time.Duration(step)*time.Second)
 	if err != nil {
 		return ast.ErrorToJSON(err)

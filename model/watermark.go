@@ -37,7 +37,7 @@ func (w Watermark) ToMetricHighWatermarkDTO() *dto.MetricHighWatermark {
 // dto.MetricHighWatermark object.
 func NewWatermarkFromHighWatermarkDTO(d *dto.MetricHighWatermark) Watermark {
 	return Watermark{
-		time.Unix(*d.Timestamp, 0),
+		time.Unix(*d.Timestamp, 0).UTC(),
 	}
 }
 
