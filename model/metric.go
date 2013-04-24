@@ -96,15 +96,8 @@ type SamplePair struct {
 	Timestamp time.Time
 }
 
-func (s SamplePair) Equal(o SamplePair) (equal bool) {
-	switch {
-	case !s.Value.Equal(o.Value):
-		return
-	case !s.Timestamp.Equal(o.Timestamp):
-		return
-	}
-
-	return true
+func (s SamplePair) Equal(o SamplePair) bool {
+	return s.Value.Equal(o.Value) && s.Timestamp.Equal(o.Timestamp)
 }
 
 type Values []SamplePair
@@ -158,7 +151,7 @@ func (v Values) TruncateBefore(t time.Time) (values Values) {
 	index := sort.Search(len(v), func(i int) bool {
 		timestamp := v[i].Timestamp
 
-		return timestamp.After(t) || timestamp.Equal(t)
+		return !timestamp.Before(t)
 	})
 
 	switch index {

@@ -417,12 +417,12 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 				break
 			}
 
+			chunk = chunk.TruncateBefore(targetTime)
+
 			lastChunkTime := chunk[len(chunk)-1].Timestamp
 			if lastChunkTime.After(targetTime) {
 				targetTime = lastChunkTime
 			}
-
-			chunk = chunk.TruncateBefore(targetTime)
 
 			// For each op, extract all needed data from the current chunk.
 			out := model.Values{}
