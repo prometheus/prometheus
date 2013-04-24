@@ -11,14 +11,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+all: generated
+
+SUFFIXES:
+
 MAKE_ARTIFACTS = generated-stamp
 
-all: generated
+include ../Makefile.INCLUDE
 
 generated: generated-stamp
 
 generated-stamp: data.proto
-	protoc --go_out=generated/ data.proto
+	protoc  --proto_path=$(PREFIX)/include:. --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
 	touch $@
 
 clean:
