@@ -13,10 +13,16 @@
 
 all: blob
 
-blob:
+blob: static/generated/protocol_buffer.descriptor
 	$(MAKE) -C blob
 
 clean:
 	$(MAKE) -C blob clean
+
+static/generated:
+	mkdir -vp static/generated
+
+static/generated/protocol_buffer.descriptor: static/generated ../model/generated/descriptor.blob
+	cp ../model/generated/descriptor.blob -f $@
 
 .PHONY: blob clean

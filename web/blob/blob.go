@@ -16,8 +16,9 @@ const (
 )
 
 var mimeMap = map[string]string{
-	"css": "text/css",
-	"js":  "text/javascript",
+	"css":        "text/css",
+	"js":         "text/javascript",
+	"descriptor": "application/vnd.google.protobuf;proto=google.protobuf.FileDescriptorSet",
 }
 
 func GetFile(bucket string, name string) ([]byte, error) {

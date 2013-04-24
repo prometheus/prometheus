@@ -1,4 +1,2 @@
-*.cc
-*.go
-*.h
-*.o
+data.pb.go
+descriptor.blob
