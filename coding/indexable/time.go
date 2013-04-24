@@ -18,14 +18,14 @@ import (
 	"time"
 )
 
-var (
-	EarliestTime = EncodeTime(time.Time{})
-)
-
+// EncodeTimeInto writes the provided time into the specified buffer subject
+// to the LevelDB big endian key sort order requirement.
 func EncodeTimeInto(dst []byte, t time.Time) {
 	binary.BigEndian.PutUint64(dst, uint64(t.Unix()))
 }
 
+// EncodeTime converts the provided time into a byte buffer subject to the
+// LevelDB big endian key sort order requirement.
 func EncodeTime(t time.Time) []byte {
 	buffer := make([]byte, 8)
 
@@ -34,6 +34,8 @@ func EncodeTime(t time.Time) []byte {
 	return buffer
 }
 
+// DecodeTime deserializes a big endian byte array into a Unix time in UTC,
+// omitting granularity precision less than a second.
 func DecodeTime(src []byte) time.Time {
-	return time.Unix(int64(binary.BigEndian.Uint64(src)), 0)
+	return time.Unix(int64(binary.BigEndian.Uint64(src)), 0).UTC()
 }
