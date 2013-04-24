@@ -16,6 +16,7 @@ package model
 import (
 	"github.com/prometheus/prometheus/utility/test"
 	"testing"
+	"time"
 )
 
 func testMetric(t test.Tester) {
@@ -76,4 +77,163 @@ func BenchmarkMetric(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		testMetric(b)
 	}
+}
+
+func testValues(t test.Tester) {
+	type in struct {
+		values Values
+		time   time.Time
+	}
+	instant := time.Now()
+	var scenarios = []struct {
+		in  in
+		out Values
+	}{
+		{
+			in: in{
+				time: instant,
+				values: Values{
+					{
+						Value:     0,
+						Timestamp: instant,
+					},
+					{
+						Value:     1,
+						Timestamp: instant.Add(time.Second),
+					},
+					{
+						Value:     2,
+						Timestamp: instant.Add(2 * time.Second),
+					},
+					{
+						Value:     3,
+						Timestamp: instant.Add(3 * time.Second),
+					},
+					{
+						Value:     4,
+						Timestamp: instant.Add(4 * time.Second),
+					},
+				},
+			},
+			out: Values{
+				{
+					Value:     0,
+					Timestamp: instant,
+				},
+				{
+					Value:     1,
+					Timestamp: instant.Add(time.Second),
+				},
+				{
+					Value:     2,
+					Timestamp: instant.Add(2 * time.Second),
+				},
+				{
+					Value:     3,
+					Timestamp: instant.Add(3 * time.Second),
+				},
+				{
+					Value:     4,
+					Timestamp: instant.Add(4 * time.Second),
+				},
+			},
+		},
+		{
+			in: in{
+				time: instant.Add(2 * time.Second),
+				values: Values{
+					{
+						Value:     0,
+						Timestamp: instant,
+					},
+					{
+						Value:     1,
+						Timestamp: instant.Add(time.Second),
+					},
+					{
+						Value:     2,
+						Timestamp: instant.Add(2 * time.Second),
+					},
+					{
+						Value:     3,
+						Timestamp: instant.Add(3 * time.Second),
+					},
+					{
+						Value:     4,
+						Timestamp: instant.Add(4 * time.Second),
+					},
+				},
+			},
+			out: Values{
+				{
+					Value:     1,
+					Timestamp: instant.Add(time.Second),
+				},
+				{
+					Value:     2,
+					Timestamp: instant.Add(2 * time.Second),
+				},
+				{
+					Value:     3,
+					Timestamp: instant.Add(3 * time.Second),
+				},
+				{
+					Value:     4,
+					Timestamp: instant.Add(4 * time.Second),
+				},
+			},
+		},
+		{
+			in: in{
+				time: instant.Add(5 * time.Second),
+				values: Values{
+					{
+						Value:     0,
+						Timestamp: instant,
+					},
+					{
+						Value:     1,
+						Timestamp: instant.Add(time.Second),
+					},
+					{
+						Value:     2,
+						Timestamp: instant.Add(2 * time.Second),
+					},
+					{
+						Value:     3,
+						Timestamp: instant.Add(3 * time.Second),
+					},
+					{
+						Value:     4,
+						Timestamp: instant.Add(4 * time.Second),
+					},
+				},
+			},
+			out: Values{
+				// Preserve the last value in case it needs to be used for the next set.
+				{
+					Value:     4,
+					Timestamp: instant.Add(4 * time.Second),
+				},
+			},
+		},
+	}
+
+	for i, scenario := range scenarios {
+		actual := scenario.in.values.TruncateBefore(scenario.in.time)
+
+		if len(actual) != len(scenario.out) {
+			t.Fatalf("%d. expected length of %d, got %d", i, len(scenario.out), len(actual))
+		}
+
+		for j, actualValue := range actual {
+			if !actualValue.Equal(scenario.out[j]) {
+				t.Fatalf("%d.%d. expected %s, got %s", i, j, scenario.out[j], actualValue)
+			}
+		}
+	}
+}
+
+func TestValues(t *testing.T) {
+	testValues(t)
 }
