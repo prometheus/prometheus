@@ -75,6 +75,10 @@ type Metric map[LabelName]LabelValue
 // time.
 type SampleValue float64
 
+func (s SampleValue) Equal(o SampleValue) bool {
+	return s == o
+}
+
 func (s SampleValue) ToDTO() *float64 {
 	return proto.Float64(float64(s))
 }
@@ -90,6 +94,10 @@ func (s SamplePair) MarshalJSON() ([]byte, error) {
 type SamplePair struct {
 	Value     SampleValue
 	Timestamp time.Time
+}
+
+func (s SamplePair) Equal(o SamplePair) bool {
+	return s.Value.Equal(o.Value) && s.Timestamp.Equal(o.Timestamp)
 }
 
 type Values []SamplePair
@@ -134,6 +142,28 @@ func (v Values) InsideInterval(t time.Time) (s bool) {
 	}
 
 	return true
+}
+
+// TruncateBefore returns a subslice of the original such that extraneous
+// samples in the collection that occur before the provided time are
+// dropped.  The original slice is not mutated.
+func (v Values) TruncateBefore(t time.Time) (values Values) {
+	index := sort.Search(len(v), func(i int) bool {
+		timestamp := v[i].Timestamp
+
+		return !timestamp.Before(t)
+	})
+
+	switch index {
+	case 0:
+		values = v
+	case len(v):
+		values = v[len(v)-1:]
+	default:
+		values = v[index-1:]
+	}
+
+	return
 }
 
 func NewValuesFromDTO(dto *dto.SampleValueSeries) (v Values) {

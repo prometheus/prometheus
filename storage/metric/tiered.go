@@ -417,6 +417,8 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 				break
 			}
 
+			chunk = chunk.TruncateBefore(targetTime)
+
 			lastChunkTime := chunk[len(chunk)-1].Timestamp
 			if lastChunkTime.After(targetTime) {
 				targetTime = lastChunkTime
@@ -428,6 +430,9 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 				if op.CurrentTime().After(targetTime) {
 					break
 				}
+
+				chunk = chunk.TruncateBefore(*(op.CurrentTime()))
+
 				for op.CurrentTime() != nil && !op.CurrentTime().After(targetTime) {
 					out = op.ExtractSamples(chunk)
 				}
