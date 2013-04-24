@@ -72,7 +72,7 @@ func (m *ruleManager) runIteration(results chan *Result) {
 	for _, rule := range m.rules {
 		wg.Add(1)
 		go func(rule Rule) {
-			vector, err := rule.Eval(&now)
+			vector, err := rule.Eval(now)
 			m.results <- &Result{
 				Samples: vector,
 				Err:     err,

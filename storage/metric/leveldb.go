@@ -75,7 +75,9 @@ func (l *LevelDBMetricPersistence) Close() {
 	for _, closer := range persistences {
 		closerGroup.Add(1)
 		go func(closer leveldbCloser) {
-			closer.Close()
+			if closer != nil {
+				closer.Close()
+			}
 			closerGroup.Done()
 		}(closer)
 	}

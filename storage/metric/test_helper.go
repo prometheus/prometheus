@@ -72,3 +72,39 @@ func buildMemoryTestPersistence(f func(p MetricPersistence, t test.Tester)) func
 		f(p, t)
 	}
 }
+
+type testTieredStorageCloser struct {
+	storage   Storage
+	directory test.Closer
+}
+
+func (t testTieredStorageCloser) Close() {
+	t.storage.Close()
+	t.directory.Close()
+}
+
+func NewTestTieredStorage(t test.Tester) (storage Storage, closer test.Closer) {
+	var directory test.TemporaryDirectory
+	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
+	storage, err := NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
+
+	if err != nil {
+		if storage != nil {
+			storage.Close()
+		}
+		directory.Close()
+		t.Fatalf("Error creating storage: %s", err)
+	}
+
+	if storage == nil {
+		directory.Close()
+		t.Fatalf("storage == nil")
+	}
+
+	go storage.Serve()
+	closer = &testTieredStorageCloser{
+		storage:   storage,
+		directory: directory,
+	}
+	return
+}
