@@ -15,14 +15,8 @@ all: files.go
 
 SUFFIXES:
 
-generated:
-	mkdir -vp generated
-
-generated/protocol_buffer.descriptor: generated ../../model/generated/descriptor.blob
-	cp ../../model/generated/descriptor.blob -f $@
-
-files.go: $(shell find ../templates/ ../static/ -type f) generated/protocol_buffer.descriptor
-	../../utility/embed-static.sh ../static ../templates ./generated | gofmt > $@
+files.go: $(shell find ../templates/ ../static/ -type f)
+	../../utility/embed-static.sh ../static ../templates | gofmt > $@
 
 clean:
 	-rm  files.go
