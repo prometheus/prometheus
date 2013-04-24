@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dto;
+package io.prometheus;
+
+import "google/protobuf/descriptor.proto";
 
 message LabelPair {
   optional string name = 1;

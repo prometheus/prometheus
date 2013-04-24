@@ -76,7 +76,7 @@ test: build
 	go test ./utility/... $(GO_TEST_FLAGS)
 	go test ./web/... $(GO_TEST_FLAGS)
 
-web: preparation
+web: preparation model
 	$(MAKE) -C web
 
 .PHONY: advice binary build clean documentation format model package preparation run search_index source_path test
