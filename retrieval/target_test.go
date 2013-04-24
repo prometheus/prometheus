@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"testing"
 	"time"
@@ -28,5 +29,37 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget.Scrape(time.Time{}, make(chan format.Result, 2))
 	if testTarget.state != UNREACHABLE {
 		t.Errorf("Expected target state %v, actual: %v", UNREACHABLE, testTarget.state)
+	}
+}
+
+func TestTargetRecordScrapeHealth(t *testing.T) {
+	testTarget := target{
+		scheduler:  literalScheduler{},
+		address:    "http://example.url",
+		baseLabels: model.LabelSet{model.JobLabel: "testjob"},
+	}
+
+	now := time.Now()
+	results := make(chan format.Result)
+	go testTarget.recordScrapeHealth(results, now, true)
+
+	result := <-results
+	actual := result.Sample
+	expected := model.Sample{
+		Metric: model.Metric{
+			model.MetricNameLabel: model.ScrapeHealthMetricName,
+			model.InstanceLabel:   "http://example.url",
+			model.JobLabel:        "testjob",
+		},
+		Timestamp: now,
+		Value:     1,
+	}
+
+	if result.Err != nil {
+		t.Fatalf("Got unexpected error: %v", result.Err)
+	}
+
+	if !actual.Equal(expected) {
+		t.Fatalf("Expected and actual samples not equal. Expected: %v, actual: %v", expected, actual)
 	}
 }
