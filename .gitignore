@@ -11,11 +11,11 @@
 *.so
 *~
 .*.swp
-._*
 .DS_Store
-.git
-.gitignore
+._*
 .nfs.*
+/.git
+/.gitignore
 [568a].out
 _cgo_*
 core
