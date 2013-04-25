@@ -164,15 +164,20 @@ func (t *tieredStorage) Serve() {
 	var (
 		flushMemoryTicker = time.Tick(t.flushMemoryInterval)
 		writeMemoryTicker = time.Tick(t.writeMemoryInterval)
+		stopReport        = make(chan bool)
 	)
+	defer func() { close(stopReport) }()
 
 	go func() {
 		reportTicker := time.Tick(time.Second)
 
 		for {
-			<-reportTicker
-
-			t.reportQueues()
+			select {
+			case <-reportTicker:
+				t.reportQueues()
+			case <-stopReport:
+				return
+			}
 		}
 	}()
 
