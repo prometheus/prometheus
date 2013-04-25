@@ -19,7 +19,7 @@ include Makefile.INCLUDE
 
 REV        := $(shell git rev-parse --short HEAD)
 BRANCH     := $(shell git rev-parse --abbrev-ref HEAD)
-HOSTNAME   := $(shell hostname)
+HOSTNAME   := $(shell hostname -f)
 BUILD_DATE := $(shell date)
 BUILDFLAGS := -ldflags \
 	      " -X main.buildVersion $(REV)\
