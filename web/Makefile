@@ -23,6 +23,6 @@ static/generated:
 	mkdir -vp static/generated
 
 static/generated/protocol_buffer.descriptor: static/generated ../model/generated/descriptor.blob
-	cp ../model/generated/descriptor.blob -f $@
+	cp -f ../model/generated/descriptor.blob $@
 
 .PHONY: blob clean
