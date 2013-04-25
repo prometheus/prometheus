@@ -47,8 +47,9 @@ var (
 func main() {
 	flag.Parse()
 
+	versionInfoTmpl.Execute(os.Stdout, BuildInfo)
+
 	if *printVersion {
-		versionInfoTmpl.Execute(os.Stdout, BuildInfo)
 		os.Exit(0)
 	}
 
