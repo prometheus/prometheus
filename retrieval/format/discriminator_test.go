@@ -31,12 +31,12 @@ func testDiscriminatorHttpHeader(t test.Tester) {
 			err:    fmt.Errorf("Received illegal and nil header."),
 		},
 		{
-			input:  map[string]string{"X-Prometheus-API-Version": "0.0.0"},
+			input:  map[string]string{"Content-Type": "application/json; protocol=prometheus_telemetry; version=0.0.0"},
 			output: nil,
 			err:    fmt.Errorf("Unrecognized API version 0.0.0"),
 		},
 		{
-			input:  map[string]string{"X-Prometheus-API-Version": "0.0.1"},
+			input:  map[string]string{"Content-Type": "application/json; protocol=prometheus_telemetry; version=0.0.1"},
 			output: Processor001,
 			err:    nil,
 		},
