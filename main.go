@@ -91,6 +91,7 @@ func main() {
 		RuleManager:   ruleManager,
 		Storage:       ts,
 		TargetManager: targetManager,
+		BuildInfo:     BuildInfo,
 	}
 
 	web.StartServing(appState)

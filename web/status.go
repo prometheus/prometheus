@@ -24,6 +24,7 @@ type PrometheusStatus struct {
 	Rules       string
 	Status      string
 	TargetPools map[string]*retrieval.TargetPool
+	BuildInfo   map[string]string
 }
 
 type StatusHandler struct {
@@ -36,6 +37,7 @@ func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Rules:       "TODO: list rules here",
 		Status:      "TODO: add status information here",
 		TargetPools: h.appState.TargetManager.Pools(),
+		BuildInfo:   h.appState.BuildInfo,
 	}
 	executeTemplate(w, "status", status)
 }
