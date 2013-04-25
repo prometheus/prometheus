@@ -15,6 +15,7 @@ package format
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
 )
 
@@ -39,7 +40,25 @@ func (r *registry) ProcessorForRequestHeader(header http.Header) (processor Proc
 		return
 	}
 
-	prometheusApiVersion := header.Get("X-Prometheus-API-Version")
+	mediatype, params, err := mime.ParseMediaType(header.Get("Content-Type"))
+
+	if err != nil {
+		err = fmt.Errorf("Invalid Content-Type header %q: %s", header.Get("Content-Type"), err)
+		return
+	}
+
+	if mediatype != "application/json" {
+		err = fmt.Errorf("Unsupported media type %q, expected %q", mediatype, "application/json")
+		return
+	}
+
+	var prometheusApiVersion string
+
+	if params["schema"] == "prometheus/telemetry" && params["version"] != "" {
+		prometheusApiVersion = params["version"]
+	} else {
+		prometheusApiVersion = header.Get("X-Prometheus-API-Version")
+	}
 
 	switch prometheusApiVersion {
 	case "0.0.1":
