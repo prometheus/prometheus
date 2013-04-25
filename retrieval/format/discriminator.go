@@ -61,6 +61,9 @@ func (r *registry) ProcessorForRequestHeader(header http.Header) (processor Proc
 	}
 
 	switch prometheusApiVersion {
+	case "0.0.2":
+		processor = Processor002
+		return
 	case "0.0.1":
 		processor = Processor001
 		return
