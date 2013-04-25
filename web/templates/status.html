@@ -38,12 +38,28 @@
     <h2>Build Info</h2>
     <div class="grouping_box">
       <table>
-        {{range $key, $value := .BuildInfo}}
-        <tr>
-          <th scope="row">{{$key}}</th>
-          <td>{{$value}}</td>
-        </tr>
-        {{end}}
+        <tbody>
+          {{range $key, $value := .BuildInfo}}
+          <tr>
+            <th scope="row">{{$key}}</th>
+            <td>{{$value}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Startup Flags</h2>
+    <div class="grouping_box">
+      <table>
+        <tbody>
+          {{range $key, $value := .Flags}}
+          <tr>
+            <th scope="row">{{$key}}</th>
+            <td>{{$value}}</td>
+          </tr>
+          {{end}}
+        </tbody>
       </table>
     </div>
 {{end}}

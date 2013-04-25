@@ -14,6 +14,7 @@
 package web
 
 import (
+	"flag"
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/retrieval"
 	"net/http"
@@ -25,6 +26,7 @@ type PrometheusStatus struct {
 	Status      string
 	TargetPools map[string]*retrieval.TargetPool
 	BuildInfo   map[string]string
+	Flags       map[string]string
 }
 
 type StatusHandler struct {
@@ -32,12 +34,19 @@ type StatusHandler struct {
 }
 
 func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	flags := map[string]string{}
+
+	flag.VisitAll(func(f *flag.Flag) {
+		flags[f.Name] = f.Value.String()
+	})
+
 	status := &PrometheusStatus{
 		Config:      h.appState.Config.ToString(0),
 		Rules:       "TODO: list rules here",
 		Status:      "TODO: add status information here",
 		TargetPools: h.appState.TargetManager.Pools(),
 		BuildInfo:   h.appState.BuildInfo,
+		Flags:       flags,
 	}
 	executeTemplate(w, "status", status)
 }
