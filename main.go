@@ -34,6 +34,7 @@ import (
 var (
 	_ = fmt.Sprintf("")
 
+	printVersion                 = flag.Bool("version", false, "print version information")
 	configFile                   = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
 	metricsStoragePath           = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
 	scrapeResultsQueueCapacity   = flag.Int("scrapeResultsQueueCapacity", 4096, "The size of the scrape results queue.")
@@ -45,6 +46,12 @@ var (
 
 func main() {
 	flag.Parse()
+
+	if *printVersion {
+		versionInfoTmpl.Execute(os.Stdout, BuildInfo)
+		os.Exit(0)
+	}
+
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
 		log.Fatalf("Error loading configuration from %s: %v", *configFile, err)
