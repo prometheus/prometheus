@@ -164,14 +164,12 @@ func (t *tieredStorage) Serve() {
 	var (
 		flushMemoryTicker = time.Tick(t.flushMemoryInterval)
 		writeMemoryTicker = time.Tick(t.writeMemoryInterval)
+		reportTicker      = time.NewTicker(time.Second)
 	)
+	defer reportTicker.Stop()
 
 	go func() {
-		reportTicker := time.Tick(time.Second)
-
-		for {
-			<-reportTicker
-
+		for _ = range reportTicker.C {
 			t.reportQueues()
 		}
 	}()

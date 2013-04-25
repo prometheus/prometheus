@@ -508,7 +508,6 @@ func TestGetAllValuesForLabel(t *testing.T) {
 
 	for i, scenario := range scenarios {
 		tiered, closer := newTestTieredStorage(t)
-		defer closer.Close()
 		for j, metric := range scenario.in {
 			sample := model.Sample{
 				Metric: model.Metric{model.MetricNameLabel: model.LabelValue(metric.metricName)},
@@ -525,6 +524,7 @@ func TestGetAllValuesForLabel(t *testing.T) {
 			}
 		}
 		metricNames, err := tiered.GetAllValuesForLabel(model.MetricNameLabel)
+		closer.Close()
 		if err != nil {
 			t.Fatalf("%d. Error getting metric names: %s", i, err)
 		}
