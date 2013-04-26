@@ -55,13 +55,12 @@ func (rule RecordingRule) Eval(timestamp time.Time) (vector ast.Vector, err erro
 	return
 }
 
-// RuleToDotGraph returns a Graphviz dot graph of the recording rule.
-func (rule RecordingRule) RuleToDotGraph() string {
-	graph := "digraph \"Rules\" {\n"
-	graph += fmt.Sprintf("%#p[shape=\"box\",label=\"%v = \"];\n", rule, rule.name)
-	graph += fmt.Sprintf("%#p -> %#p;\n", &rule, rule.vector)
-	graph += rule.vector.NodeTreeToDotGraph()
-	graph += "}\n"
+func (rule RecordingRule) ToDotGraph() string {
+	graph := fmt.Sprintf(`digraph "Rules" {
+	  %#p[shape="box",label="%s = "];
+		%#p -> %#p;
+		%s
+	}`, &rule, rule.name, &rule, rule.vector, rule.vector.NodeTreeToDotGraph())
 	return graph
 }
 

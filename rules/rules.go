@@ -28,4 +28,6 @@ type Rule interface {
 	EvalRaw(timestamp time.Time) (vector ast.Vector, err error)
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(timestamp time.Time) (vector ast.Vector, err error)
+	// ToDotGraph returns a Graphviz dot graph of the rule.
+	ToDotGraph() string
 }
