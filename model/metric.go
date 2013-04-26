@@ -67,6 +67,14 @@ func (l LabelSet) String() string {
 	return buffer.String()
 }
 
+func (l LabelSet) ToMetric() (metric Metric) {
+	metric = Metric{}
+	for label, value := range l {
+		metric[label] = value
+	}
+	return
+}
+
 // A Metric is similar to a LabelSet, but the key difference is that a Metric is
 // a singleton and refers to one and only one stream of samples.
 type Metric map[LabelName]LabelValue
