@@ -142,6 +142,7 @@ func (t *target) recordScrapeHealth(results chan format.Result, timestamp time.T
 		metric[label] = value
 	}
 	metric[model.MetricNameLabel] = model.ScrapeHealthMetricName
+	metric[model.InstanceLabel] = model.LabelValue(t.Address())
 
 	healthValue := model.SampleValue(0)
 	if healthy {
