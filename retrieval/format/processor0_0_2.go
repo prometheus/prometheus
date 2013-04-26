@@ -17,139 +17,97 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/utility"
 	"io"
-	"io/ioutil"
 	"time"
 )
 
-const (
-	baseLabels002 = "baseLabels"
-	counter002    = "counter"
-	docstring002  = "docstring"
-	gauge002      = "gauge"
-	histogram002  = "histogram"
-	labels002     = "labels"
-	metric002     = "metric"
-	type002       = "type"
-	value002      = "value"
-	percentile002 = "percentile"
-)
+// Processor for telemetry schema version 0.0.2.
+var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time, baseLabels model.LabelSet, results chan Result) error {
+	// container for telemetry data
+	var entities []struct {
+		BaseLabels map[string]string `json:"baseLabels"`
+		Docstring  string            `json:"docstring"`
+		Metric     struct {
+			Type   string          `json:"type"`
+			Values json.RawMessage `json:"value"`
+		} `json:"metric"`
+	}
 
-var (
-	Processor002 Processor = &processor002{}
-)
+	// concrete type for histogram values
+	type histogram struct {
+		Labels map[string]string            `json:"labels"`
+		Values map[string]model.SampleValue `json:"value"`
+	}
 
-// processor002 is responsible for handling API version 0.0.2.
-type processor002 struct {
-	time utility.Time
-}
+	// concrete type for counter and gauge values
+	type counter struct {
+		Labels map[string]string `json:"labels"`
+		Value  model.SampleValue `json:"value"`
+	}
 
-// entity002 represents a the JSON structure that 0.0.2 uses.
-type entity002 []struct {
-	BaseLabels map[string]string `json:"baseLabels"`
-	Docstring  string            `json:"docstring"`
-	Metric     struct {
-		MetricType string `json:"type"`
-		Value      []struct {
-			Labels map[string]string `json:"labels"`
-			Value  interface{}       `json:"value"`
-		} `json:"value"`
-	} `json:"metric"`
-}
-
-func (p *processor002) Process(stream io.ReadCloser, timestamp time.Time, baseLabels model.LabelSet, results chan Result) (err error) {
-	// TODO(matt): Replace with plain-jane JSON unmarshalling.
 	defer stream.Close()
 
-	buffer, err := ioutil.ReadAll(stream)
-	if err != nil {
-		return
+	if err := json.NewDecoder(stream).Decode(&entities); err != nil {
+		return err
 	}
 
-	entities := entity002{}
-
-	err = json.Unmarshal(buffer, &entities)
-	if err != nil {
-		return
-	}
-
-	// TODO(matt): This outer loop is a great basis for parallelization.
 	for _, entity := range entities {
-		for _, value := range entity.Metric.Value {
-			metric := model.Metric{}
-			for label, labelValue := range baseLabels {
-				metric[label] = labelValue
-			}
+		entityLabels := baseLabels.Merge(LabelSet(entity.BaseLabels))
 
-			for label, labelValue := range entity.BaseLabels {
-				metric[model.LabelName(label)] = model.LabelValue(labelValue)
-			}
+		switch entity.Metric.Type {
+		case "counter", "gauge":
+			var values []counter
 
-			for label, labelValue := range value.Labels {
-				metric[model.LabelName(label)] = model.LabelValue(labelValue)
-			}
-
-			switch entity.Metric.MetricType {
-			case gauge002, counter002:
-				sampleValue, ok := value.Value.(float64)
-				if !ok {
-					err = fmt.Errorf("Could not convert value from %s %s to float64.", entity, value)
-					continue
+			if err := json.Unmarshal(entity.Metric.Values, &values); err != nil {
+				results <- Result{
+					Err: fmt.Errorf("Could not extract %s value: %s", entity.Metric.Type, err),
 				}
+				continue
+			}
 
-				sample := model.Sample{
-					Metric:    metric,
-					Timestamp: timestamp,
-					Value:     model.SampleValue(sampleValue),
-				}
+			for _, counter := range values {
+				labels := entityLabels.Merge(LabelSet(counter.Labels))
 
 				results <- Result{
-					Err:    err,
-					Sample: sample,
-				}
-
-				break
-
-			case histogram002:
-				sampleValue, ok := value.Value.(map[string]interface{})
-				if !ok {
-					err = fmt.Errorf("Could not convert value from %q to a map[string]interface{}.", value.Value)
-					continue
-				}
-
-				for percentile, percentileValue := range sampleValue {
-					individualValue, ok := percentileValue.(float64)
-					if !ok {
-						err = fmt.Errorf("Could not convert value from %q to a float64.", percentileValue)
-						continue
-					}
-
-					childMetric := make(map[model.LabelName]model.LabelValue, len(metric)+1)
-
-					for k, v := range metric {
-						childMetric[k] = v
-					}
-
-					childMetric[model.LabelName(percentile002)] = model.LabelValue(percentile)
-
-					sample := model.Sample{
-						Metric:    childMetric,
+					Sample: model.Sample{
+						Metric:    model.Metric(labels),
 						Timestamp: timestamp,
-						Value:     model.SampleValue(individualValue),
-					}
+						Value:     counter.Value,
+					},
+				}
+			}
+
+		case "histogram":
+			var values []histogram
+
+			if err := json.Unmarshal(entity.Metric.Values, &values); err != nil {
+				results <- Result{
+					Err: fmt.Errorf("Could not extract %s value: %s", entity.Metric.Type, err),
+				}
+				continue
+			}
+
+			for _, histogram := range values {
+				for percentile, value := range histogram.Values {
+					labels := entityLabels.Merge(LabelSet(histogram.Labels))
+					labels[model.LabelName("percentile")] = model.LabelValue(percentile)
 
 					results <- Result{
-						Err:    err,
-						Sample: sample,
+						Sample: model.Sample{
+							Metric:    model.Metric(labels),
+							Timestamp: timestamp,
+							Value:     value,
+						},
 					}
 				}
+			}
 
-				break
-			default:
+		default:
+			results <- Result{
+				Err: fmt.Errorf("Unknown metric type %q", entity.Metric.Type),
 			}
 		}
 	}
 
-	return
+	return nil
 }
