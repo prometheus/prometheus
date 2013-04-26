@@ -56,6 +56,7 @@ func StartServing(appState *appstate.ApplicationState) {
 		exp.Handle("/static/", http.StripPrefix("/static/", new(blob.Handler)))
 	}
 
+	log.Printf("listening on %s", *listenAddress)
 	go http.ListenAndServe(*listenAddress, exp.DefaultCoarseMux)
 }
 

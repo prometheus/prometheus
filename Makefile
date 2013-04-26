@@ -17,16 +17,30 @@ TEST_ARTIFACTS = prometheus prometheus.build search_index
 
 include Makefile.INCLUDE
 
+REV        := $(shell git rev-parse --short HEAD)
+BRANCH     := $(shell git rev-parse --abbrev-ref HEAD)
+HOSTNAME   := $(shell hostname -f)
+BUILD_DATE := $(shell date +%Y%m%d-%H:%M:%S)
+BUILDFLAGS := -ldflags \
+	      " -X main.buildVersion $(REV)\
+		-X main.buildBranch $(BRANCH)\
+		-X main.buildUser $(USER)@$(HOSTNAME)\
+		-X main.buildDate $(BUILD_DATE)\
+		-X main.goVersion $(GO_VERSION)\
+		-X main.leveldbVersion $(LEVELDB_VERSION)\
+		-X main.protobufVersion $(PROTOCOL_BUFFERS_VERSION)\
+		-X main.snappyVersion $(SNAPPY_VERSION)"
+
 all: test
 
 advice:
 	go tool vet .
 
 binary: build
-	go build -o prometheus.build
+	go build $(BUILDFLAGS) -o prometheus.build
 
 build: preparation model web
-	go build .
+	go build $(BUILDFLAGS) .
 
 clean:
 	$(MAKE) -C build clean

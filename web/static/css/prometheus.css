@@ -35,6 +35,10 @@ input:not([type=submit]):not([type=file]):not([type=button]) {
   float: right;
 }
 
+table tbody th {
+  text-align: left;
+}
+
 input {
   margin: 0;
   border: 1px solid gray;

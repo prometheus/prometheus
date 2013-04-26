@@ -2,23 +2,23 @@
 
 {{define "content"}}
     <h2>Status</h2>
-		<div class="grouping_box">
+    <div class="grouping_box">
 {{.Status}}
-		</div>
+    </div>
 
-		<h2>Configuration</h2>
-		<div class="grouping_box">
-		<pre>
+    <h2>Configuration</h2>
+    <div class="grouping_box">
+    <pre>
 {{.Config}}
-		</pre>
-		</div>
+    </pre>
+    </div>
 
     <h2>Rules</h2>
-		<div class="grouping_box">
+    <div class="grouping_box">
 {{.Rules}}
-		</div>
+    </div>
 
-		<h2>Targets</h2>
+    <h2>Targets</h2>
     <div class="grouping_box">
       <ul>
         {{range $job, $pool := .TargetPools}}
@@ -33,5 +33,33 @@
           </li>
         {{end}}
       </ul>
-		</div>
+    </div>
+
+    <h2>Build Info</h2>
+    <div class="grouping_box">
+      <table>
+        <tbody>
+          {{range $key, $value := .BuildInfo}}
+          <tr>
+            <th scope="row">{{$key}}</th>
+            <td>{{$value}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Startup Flags</h2>
+    <div class="grouping_box">
+      <table>
+        <tbody>
+          {{range $key, $value := .Flags}}
+          <tr>
+            <th scope="row">{{$key}}</th>
+            <td>{{$value}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
 {{end}}
