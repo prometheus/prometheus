@@ -25,8 +25,8 @@ import (
 var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time, baseLabels model.LabelSet, results chan Result) error {
 	// container for telemetry data
 	var entities []struct {
-		BaseLabels model.LabelSet `json:"baseLabels"`
-		Docstring  string         `json:"docstring"`
+		BaseLabels map[string]string `json:"baseLabels"`
+		Docstring  string            `json:"docstring"`
 		Metric     struct {
 			Type   string          `json:"type"`
 			Values json.RawMessage `json:"value"`
@@ -35,13 +35,13 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 
 	// concrete type for histogram values
 	type histogram struct {
-		Labels model.LabelSet               `json:"labels"`
+		Labels map[string]string            `json:"labels"`
 		Values map[string]model.SampleValue `json:"value"`
 	}
 
 	// concrete type for counter and gauge values
 	type counter struct {
-		Labels model.LabelSet    `json:"labels"`
+		Labels map[string]string `json:"labels"`
 		Value  model.SampleValue `json:"value"`
 	}
 
@@ -52,7 +52,7 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 	}
 
 	for _, entity := range entities {
-		entityLabels := baseLabels.Merge(entity.BaseLabels)
+		entityLabels := baseLabels.Merge(LabelSet(entity.BaseLabels))
 
 		switch entity.Metric.Type {
 		case "counter", "gauge":
@@ -66,7 +66,7 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 			}
 
 			for _, counter := range values {
-				labels := entityLabels.Merge(counter.Labels)
+				labels := entityLabels.Merge(LabelSet(counter.Labels))
 
 				results <- Result{
 					Sample: model.Sample{
@@ -89,7 +89,7 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 
 			for _, histogram := range values {
 				for percentile, value := range histogram.Values {
-					labels := entityLabels.Merge(histogram.Labels)
+					labels := entityLabels.Merge(LabelSet(histogram.Labels))
 					labels[model.LabelName("percentile")] = model.LabelValue(percentile)
 
 					results <- Result{

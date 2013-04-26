@@ -33,3 +33,17 @@ type ProcessorFunc func(io.ReadCloser, time.Time, model.LabelSet, chan Result) e
 func (f ProcessorFunc) Process(stream io.ReadCloser, timestamp time.Time, baseLabels model.LabelSet, results chan Result) error {
 	return f(stream, timestamp, baseLabels, results)
 }
+
+// Helper function to convert map[string]string into model.LabelSet.
+//
+// NOTE: This should be deleted when support for go 1.0.3 is removed; 1.1 is
+//       smart enough to unmarshal JSON objects into model.LabelSet directly.
+func LabelSet(labels map[string]string) model.LabelSet {
+	labelset := make(model.LabelSet, len(labels))
+
+	for k, v := range labels {
+		labelset[model.LabelName(k)] = model.LabelValue(v)
+	}
+
+	return labelset
+}
