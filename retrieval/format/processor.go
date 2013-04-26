@@ -26,3 +26,10 @@ type Processor interface {
 	// Process performs the work on the input and closes the incoming stream.
 	Process(stream io.ReadCloser, timestamp time.Time, baseLabels model.LabelSet, results chan Result) (err error)
 }
+
+// The ProcessorFunc type allows the use of ordinary functions for processors.
+type ProcessorFunc func(io.ReadCloser, time.Time, model.LabelSet, chan Result) error
+
+func (f ProcessorFunc) Process(stream io.ReadCloser, timestamp time.Time, baseLabels model.LabelSet, results chan Result) error {
+	return f(stream, timestamp, baseLabels, results)
+}
