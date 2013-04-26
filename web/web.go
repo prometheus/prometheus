@@ -49,7 +49,6 @@ func StartServing(appState *appstate.ApplicationState) {
 
 	exp.Handle("/", statusHandler)
 	exp.HandleFunc("/graph", graphHandler)
-	exp.HandleFunc("/console", consoleHandler)
 
 	exp.Handle("/api/", gorest.Handle())
 	exp.Handle("/metrics.json", prometheus.DefaultHandler)

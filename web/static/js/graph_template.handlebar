@@ -1,17 +1,28 @@
         <div id="graph_wrapper{{id}}">
-          <div class="grouping_box">
-            <form action="/api/query_range" method="GET" class="query_form">
+          <form action="/api/query_range" method="GET" class="query_form">
+            <div class="grouping_box">
               <div class="head">
                 <div class="expr">
                   <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" size="80" value="{{expr}}">
                   <select name="insert_metric">
                       <option value="">- Insert Metric -</option>
                   </select>
+                  <input type="submit" value="Graph" name="submit">
                 </div>
+              </div>
+              <div class="eval_stats"></div>
+              <img src="/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
+            </div>
+            <div class="grouping_box tabs">
+              <ul>
+                <li><a href="#graph{{id}}">Graph</a></li>
+                <li><a href="#console{{id}}">Console</a></li>
+              </ul>
+              <div id="graph{{id}}" class="graph_container reload">
                 <div class="config">
                   <label for="range_input{{id}}">Range:</label>
                   <input type="button" value="-" name="dec_range">
-                  <input title="Time range of graph" type="text" name="range_input" id="range_input{{id}}" size="2" value="{{range_input}}"  >
+                  <input title="Time range of graph" type="text" name="range_input" id="range_input{{id}}" size="3" value="{{range_input}}"  >
                   <input type="button" value="+" name="inc_range">
                   <input type="hidden" name="range">
       
@@ -34,18 +45,13 @@
                   <span class="opts">
                     <input type="checkbox" name="stacked" id="stacked{{id}}" {{stacked_checked}}>
                     <label for="stacked{{id}}">Stacked</label>
-                    <input type="submit" value="Graph" name="submit">
                   </span>
                 </div>
+
+                <div class="graph"></div>
+                <div class="legend"></div>
               </div>
-              <div class="eval_stats"></div>
-            </form>
-            <img src="/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
-          </div>
-          <div class="grouping_box">
-            <div class="graph_container">
-              <div class="graph"></div>
-              <div class="legend"></div>
+              <div id="console{{id}}" class="console reload"></div>
             </div>
-          </div>
+          </form>
         </div>
