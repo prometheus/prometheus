@@ -23,6 +23,20 @@ type Sample struct {
 	Timestamp time.Time
 }
 
+func (s Sample) Equal(sample Sample) bool {
+	if !NewFingerprintFromMetric(s.Metric).Equal(NewFingerprintFromMetric(sample.Metric)) {
+		return false
+	}
+	if !s.Timestamp.Equal(sample.Timestamp) {
+		return false
+	}
+	if !s.Value.Equal(sample.Value) {
+		return false
+	}
+
+	return true
+}
+
 type Samples []Sample
 
 func (s Samples) Len() int {
