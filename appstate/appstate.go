@@ -28,4 +28,5 @@ type ApplicationState struct {
 	RuleManager   rules.RuleManager
 	Storage       metric.Storage
 	TargetManager retrieval.TargetManager
+	BuildInfo     map[string]string
 }
