@@ -16,6 +16,8 @@ package retrieval
 import (
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval/format"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -61,5 +63,47 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 
 	if !actual.Equal(expected) {
 		t.Fatalf("Expected and actual samples not equal. Expected: %v, actual: %v", expected, actual)
+	}
+}
+
+func TestTargetScrapeTimeout(t *testing.T) {
+	signal := make(chan bool, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-signal
+		w.Header().Set("X-Prometheus-API-Version", "0.0.1")
+		w.Write([]byte(`[]`))
+	}))
+
+	defer server.Close()
+
+	testTarget := NewTarget(server.URL, 10*time.Millisecond, model.LabelSet{})
+	results := make(chan format.Result, 1024)
+
+	// scrape once without timeout
+	signal <- true
+	if err := testTarget.Scrape(time.Now(), results); err != nil {
+		t.Fatal(err)
+	}
+
+	// let the deadline lapse
+	time.Sleep(15*time.Millisecond)
+
+	// now scrape again
+	signal <- true
+	if err := testTarget.Scrape(time.Now(), results); err != nil {
+		t.Fatal(err)
+	}
+
+	// now timeout
+	if err := testTarget.Scrape(time.Now(), results); err == nil {
+		t.Fatal("expected scrape to timeout")
+	} else {
+		signal <- true // let handler continue
+	}
+
+	// now scrape again without timeout
+	signal <- true
+	if err := testTarget.Scrape(time.Now(), results); err != nil {
+		t.Fatal(err)
 	}
 }
