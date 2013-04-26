@@ -21,37 +21,6 @@ import (
 	"time"
 )
 
-type testTieredStorageCloser struct {
-	storage   Storage
-	directory test.Closer
-}
-
-func (t testTieredStorageCloser) Close() {
-	t.storage.Close()
-	t.directory.Close()
-}
-
-func newTestTieredStorage(t test.Tester) (storage Storage, closer test.Closer) {
-	var directory test.TemporaryDirectory
-	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
-	storage, err := NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
-
-	if err != nil {
-		t.Fatalf("Error creating storage: %s", err)
-	}
-
-	if storage == nil {
-		t.Fatalf("storage == nil")
-	}
-
-	go storage.Serve()
-	closer = &testTieredStorageCloser{
-		storage:   storage,
-		directory: directory,
-	}
-	return
-}
-
 func buildSamples(from, to time.Time, interval time.Duration, m model.Metric) (v []model.Sample) {
 	i := model.SampleValue(0)
 
@@ -369,7 +338,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 	)
 
 	for i, scenario := range scenarios {
-		tiered, closer := newTestTieredStorage(t)
+		tiered, closer := NewTestTieredStorage(t)
 
 		for j, datum := range scenario.data {
 			err := tiered.AppendSample(datum)
@@ -507,7 +476,7 @@ func TestGetAllValuesForLabel(t *testing.T) {
 	}
 
 	for i, scenario := range scenarios {
-		tiered, closer := newTestTieredStorage(t)
+		tiered, closer := NewTestTieredStorage(t)
 		for j, metric := range scenario.in {
 			sample := model.Sample{
 				Metric: model.Metric{model.MetricNameLabel: model.LabelValue(metric.metricName)},
@@ -542,7 +511,7 @@ func TestGetAllValuesForLabel(t *testing.T) {
 }
 
 func TestGetFingerprintsForLabelSet(t *testing.T) {
-	tiered, closer := newTestTieredStorage(t)
+	tiered, closer := NewTestTieredStorage(t)
 	defer closer.Close()
 	memorySample := model.Sample{
 		Metric: model.Metric{model.MetricNameLabel: "http_requests", "method": "/foo"},

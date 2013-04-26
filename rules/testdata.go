@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-var testDuration5m = time.Duration(5) * time.Minute
+var testSampleInterval = time.Duration(5) * time.Minute
 var testStartTime = time.Time{}
 
 func getTestValueStream(startVal model.SampleValue,
@@ -33,7 +33,7 @@ func getTestValueStream(startVal model.SampleValue,
 			Timestamp: currentTime,
 		}
 		resultValues = append(resultValues, sample)
-		currentTime = currentTime.Add(testDuration5m)
+		currentTime = currentTime.Add(testSampleInterval)
 	}
 	return resultValues
 }
