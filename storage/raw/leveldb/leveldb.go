@@ -298,7 +298,7 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 	//      tests, we could create a Batch struct that journals pending
 	//      operations which the given Persistence implementation could convert
 	//      to its specific commit requirements.
-	batch, ok := b.(batch)
+	batch, ok := b.(*batch)
 	if !ok {
 		panic("leveldb.batch expected")
 	}

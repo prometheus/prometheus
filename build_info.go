@@ -29,6 +29,8 @@ var (
 	snappyVersion   string
 )
 
+// BuildInfo encapsulates compile-time metadata about Prometheus made available
+// via go tool ld such that this can be reported on-demand.
 var BuildInfo = map[string]string{
 	"version":          buildVersion,
 	"branch":           buildBranch,
