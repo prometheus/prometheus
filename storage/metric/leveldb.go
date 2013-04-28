@@ -164,12 +164,11 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 }
 
 func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error) {
-	begin := time.Now()
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: appendSample, result: failure})
-	}()
+	}(time.Now())
 
 	err = l.AppendSamples(model.Samples{sample})
 
@@ -220,23 +219,20 @@ func groupByFingerprint(samples model.Samples) map[model.Fingerprint]model.Sampl
 // in the keyspace and returns a map of Fingerprint-Metric pairs that are
 // absent.
 func (l *LevelDBMetricPersistence) findUnindexedMetrics(candidates map[model.Fingerprint]model.Metric) (unindexed map[model.Fingerprint]model.Metric, err error) {
-	begin := time.Now()
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: findUnindexedMetrics, result: success}, map[string]string{operation: findUnindexedMetrics, result: failure})
-	}()
+	}(time.Now())
 
 	unindexed = make(map[model.Fingerprint]model.Metric)
 
 	// Determine which metrics are unknown in the database.
 	for fingerprint, metric := range candidates {
-		var (
-			dto           = model.MetricToDTO(metric)
-			indexHas, err = l.hasIndexMetric(dto)
-		)
+		dto := model.MetricToDTO(metric)
+		indexHas, err := l.hasIndexMetric(dto)
 		if err != nil {
-			panic(err)
+			return unindexed, err
 		}
 		if !indexHas {
 			unindexed[fingerprint] = metric
@@ -252,12 +248,11 @@ func (l *LevelDBMetricPersistence) findUnindexedMetrics(candidates map[model.Fin
 //
 // This operation is idempotent.
 func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint]model.Metric) (err error) {
-	begin := time.Now()
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: indexLabelNames, result: success}, map[string]string{operation: indexLabelNames, result: failure})
-	}()
+	}(time.Now())
 
 	labelNameFingerprints := map[model.LabelName]utility.Set{}
 
@@ -269,7 +264,6 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint
 
 				fingerprints, err := l.GetFingerprintsForLabelName(labelName)
 				if err != nil {
-					panic(err)
 					return err
 				}
 
@@ -307,7 +301,6 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint
 
 	err = l.labelNameToFingerprints.Commit(batch)
 	if err != nil {
-		panic(err)
 		return
 	}
 
@@ -320,12 +313,11 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint
 //
 // This operation is idempotent.
 func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint]model.Metric) (err error) {
-	begin := time.Now()
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: indexLabelPairs, result: success}, map[string]string{operation: indexLabelPairs, result: failure})
-	}()
+	}(time.Now())
 
 	labelPairFingerprints := map[model.LabelPair]utility.Set{}
 
@@ -343,7 +335,6 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint
 					labelName: labelValue,
 				})
 				if err != nil {
-					panic(err)
 					return err
 				}
 
@@ -382,7 +373,6 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint
 
 	err = l.labelSetToFingerprints.Commit(batch)
 	if err != nil {
-		panic(err)
 		return
 	}
 
@@ -394,12 +384,11 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint
 //
 // This operation is idempotent.
 func (l *LevelDBMetricPersistence) indexFingerprints(metrics map[model.Fingerprint]model.Metric) (err error) {
-	begin := time.Now()
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: indexFingerprints, result: success}, map[string]string{operation: indexFingerprints, result: failure})
-	}()
+	}(time.Now())
 
 	batch := leveldb.NewBatch()
 	defer batch.Close()
@@ -412,7 +401,7 @@ func (l *LevelDBMetricPersistence) indexFingerprints(metrics map[model.Fingerpri
 
 	err = l.fingerprintToMetrics.Commit(batch)
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	return
@@ -422,12 +411,11 @@ func (l *LevelDBMetricPersistence) indexFingerprints(metrics map[model.Fingerpri
 // that are unknown to the storage stack, and then proceeds to update all
 // affected indices.
 func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerprint]model.Metric) (err error) {
-	begin := time.Now()
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: indexMetrics, result: success}, map[string]string{operation: indexMetrics, result: failure})
-	}()
+	}(time.Now())
 
 	var (
 		absentMetrics map[model.Fingerprint]model.Metric
@@ -435,7 +423,7 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerpri
 
 	absentMetrics, err = l.findUnindexedMetrics(fingerprints)
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	if len(absentMetrics) == 0 {
@@ -444,11 +432,9 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerpri
 
 	// TODO: For the missing fingerprints, determine what label names and pairs
 	// are absent and act accordingly and append fingerprints.
-	var (
-		doneBuildingLabelNameIndex   = make(chan error)
-		doneBuildingLabelPairIndex   = make(chan error)
-		doneBuildingFingerprintIndex = make(chan error)
-	)
+	doneBuildingLabelNameIndex := make(chan error)
+	doneBuildingLabelPairIndex := make(chan error)
+	doneBuildingFingerprintIndex := make(chan error)
 
 	go func() {
 		doneBuildingLabelNameIndex <- l.indexLabelNames(absentMetrics)
@@ -462,22 +448,17 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerpri
 		doneBuildingFingerprintIndex <- l.indexFingerprints(absentMetrics)
 	}()
 
-	makeTopLevelIndex := true
-
 	err = <-doneBuildingLabelNameIndex
 	if err != nil {
-		panic(err)
-		makeTopLevelIndex = false
+		return
 	}
 	err = <-doneBuildingLabelPairIndex
 	if err != nil {
-		panic(err)
-		makeTopLevelIndex = false
+		return
 	}
 	err = <-doneBuildingFingerprintIndex
 	if err != nil {
-		panic(err)
-		makeTopLevelIndex = false
+		return
 	}
 
 	// If any of the preceding operations failed, we will have inconsistent
@@ -485,62 +466,51 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerpri
 	// its state is used to determine whether to bulk update the other indices.
 	// Given that those operations are idempotent, it is OK to repeat them;
 	// however, it will consume considerable amounts of time.
-	if makeTopLevelIndex {
-		batch := leveldb.NewBatch()
-		defer batch.Close()
+	batch := leveldb.NewBatch()
+	defer batch.Close()
 
-		// WART: We should probably encode simple fingerprints.
-		for _, metric := range absentMetrics {
-			key := coding.NewProtocolBuffer(model.MetricToDTO(metric))
-			batch.Put(key, key)
-		}
+	// WART: We should probably encode simple fingerprints.
+	for _, metric := range absentMetrics {
+		key := coding.NewProtocolBuffer(model.MetricToDTO(metric))
+		batch.Put(key, key)
+	}
 
-		err := l.metricMembershipIndex.Commit(batch)
-		if err != nil {
-			panic(err)
-			// Not critical.
-			log.Println(err)
-		}
+	err = l.metricMembershipIndex.Commit(batch)
+	if err != nil {
+		return err
 	}
 
 	return
 }
 
 func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Fingerprint]model.Samples) (err error) {
-	begin := time.Now()
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: refreshHighWatermarks, result: success}, map[string]string{operation: refreshHighWatermarks, result: failure})
-	}()
+	}(time.Now())
 
 	batch := leveldb.NewBatch()
 	defer batch.Close()
 
-	var (
-		mutationCount = 0
-	)
+	mutationCount := 0
 	for fingerprint, samples := range groups {
-		var (
-			key                   = &dto.Fingerprint{}
-			value                 = &dto.MetricHighWatermark{}
-			raw                   []byte
-			newestSampleTimestamp = samples[len(samples)-1].Timestamp
-			keyEncoded            = coding.NewProtocolBuffer(key)
-		)
+		key := &dto.Fingerprint{}
+		value := &dto.MetricHighWatermark{}
+		raw := []byte{}
+		newestSampleTimestamp := samples[len(samples)-1].Timestamp
+		keyEncoded := coding.NewProtocolBuffer(key)
 
 		key.Signature = proto.String(fingerprint.ToRowKey())
 		raw, err = l.metricHighWatermarks.Get(keyEncoded)
 		if err != nil {
-			panic(err)
 			return
 		}
 
 		if raw != nil {
 			err = proto.Unmarshal(raw, value)
 			if err != nil {
-				panic(err)
-				continue
+				return
 			}
 
 			if newestSampleTimestamp.Before(time.Unix(*value.Timestamp, 0)) {
@@ -554,19 +524,18 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 
 	err = l.metricHighWatermarks.Commit(batch)
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	return
 }
 
 func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err error) {
-	begin := time.Now()
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: appendSamples, result: success}, map[string]string{operation: appendSamples, result: failure})
-	}()
+	}(time.Now())
 
 	var (
 		fingerprintToSamples = groupByFingerprint(samples)
@@ -630,17 +599,17 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 
 	err = l.metricSamples.Commit(samplesBatch)
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	err = <-indexErrChan
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	err = <-watermarkErrChan
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	return
@@ -691,13 +660,11 @@ func fingerprintsEqual(l *dto.Fingerprint, r *dto.Fingerprint) bool {
 }
 
 func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (value bool, err error) {
-	begin := time.Now()
-
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: hasIndexMetric, result: success}, map[string]string{operation: hasIndexMetric, result: failure})
-	}()
+	}(time.Now())
 
 	dtoKey := coding.NewProtocolBuffer(dto)
 	value, err = l.metricMembershipIndex.Has(dtoKey)
@@ -706,13 +673,11 @@ func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (value bool, 
 }
 
 func (l *LevelDBMetricPersistence) HasLabelPair(dto *dto.LabelPair) (value bool, err error) {
-	begin := time.Now()
-
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: hasLabelPair, result: success}, map[string]string{operation: hasLabelPair, result: failure})
-	}()
+	}(time.Now())
 
 	dtoKey := coding.NewProtocolBuffer(dto)
 	value, err = l.labelSetToFingerprints.Has(dtoKey)
@@ -721,13 +686,11 @@ func (l *LevelDBMetricPersistence) HasLabelPair(dto *dto.LabelPair) (value bool,
 }
 
 func (l *LevelDBMetricPersistence) HasLabelName(dto *dto.LabelName) (value bool, err error) {
-	begin := time.Now()
-
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: hasLabelName, result: success}, map[string]string{operation: hasLabelName, result: failure})
-	}()
+	}(time.Now())
 
 	dtoKey := coding.NewProtocolBuffer(dto)
 	value, err = l.labelNameToFingerprints.Has(dtoKey)
@@ -736,13 +699,11 @@ func (l *LevelDBMetricPersistence) HasLabelName(dto *dto.LabelName) (value bool,
 }
 
 func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fps model.Fingerprints, err error) {
-	begin := time.Now()
-
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelSet, result: success}, map[string]string{operation: getFingerprintsForLabelSet, result: failure})
-	}()
+	}(time.Now())
 
 	sets := []utility.Set{}
 
@@ -786,13 +747,11 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 }
 
 func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.LabelName) (fps model.Fingerprints, err error) {
-	begin := time.Now()
-
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelName, result: success}, map[string]string{operation: getFingerprintsForLabelName, result: failure})
-	}()
+	}(time.Now())
 
 	raw, err := l.labelNameToFingerprints.Get(coding.NewProtocolBuffer(model.LabelNameToDTO(&labelName)))
 	if err != nil {
@@ -815,13 +774,11 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 }
 
 func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
-	begin := time.Now()
-
-	defer func() {
+	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
-	}()
+	}(time.Now())
 
 	raw, err := l.fingerprintToMetrics.Get(coding.NewProtocolBuffer(model.FingerprintToDTO(f)))
 	if err != nil {

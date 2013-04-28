@@ -41,11 +41,11 @@ const (
 // alert is used to track active (pending/firing) alerts over time.
 type alert struct {
 	// The name of the alert.
-	name        string
+	name string
 	// The vector element labelset triggering this alert.
-	metric      model.Metric
+	metric model.Metric
 	// The state of the alert (PENDING or FIRING).
-	state       alertState
+	state alertState
 	// The time when the alert first transitioned into PENDING state.
 	activeSince time.Time
 }
@@ -71,14 +71,14 @@ func (a alert) sample(timestamp time.Time, value model.SampleValue) model.Sample
 // An alerting rule generates alerts from its vector expression.
 type AlertingRule struct {
 	// The name of the alert.
-	name         string
-  // The vector expression from which to generate alerts.
-	vector       ast.VectorNode
+	name string
+	// The vector expression from which to generate alerts.
+	vector ast.VectorNode
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from PENDING to FIRING state.
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
-	labels       model.LabelSet
+	labels model.LabelSet
 	// A map of alerts which are currently active (PENDING or FIRING), keyed by
 	// the fingerprint of the labelset they correspond to.
 	activeAlerts map[model.Fingerprint]*alert

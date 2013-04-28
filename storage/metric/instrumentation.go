@@ -54,6 +54,9 @@ const (
 	setLabelNameFingerprints    = "set_label_name_fingerprints"
 	setLabelPairFingerprints    = "set_label_pair_fingerprints"
 	writeMemory                 = "write_memory"
+
+	cutOff        = "recency_threshold"
+	processorName = "processor"
 )
 
 var (
@@ -65,6 +68,7 @@ var (
 
 	curationDuration          = metrics.NewCounter()
 	curationDurations         = metrics.NewHistogram(diskLatencyHistogram)
+	curationFilterOperations  = metrics.NewCounter()
 	storageOperations         = metrics.NewCounter()
 	storageOperationDurations = metrics.NewCounter()
 	storageLatency            = metrics.NewHistogram(diskLatencyHistogram)
@@ -88,4 +92,5 @@ func init() {
 	registry.Register("prometheus_metric_disk_latency_microseconds", "Latency for metric disk operations in microseconds.", registry.NilLabels, storageLatency)
 	registry.Register("prometheus_storage_operation_time_total_microseconds", "The total time spent performing a given storage operation.", registry.NilLabels, storageOperationDurations)
 	registry.Register("prometheus_storage_queue_sizes_total", "The various sizes and capacities of the storage queues.", registry.NilLabels, queueSizes)
+	registry.Register("curation_filter_operations_total", "The number of curation filter operations completed.", registry.NilLabels, curationFilterOperations)
 }

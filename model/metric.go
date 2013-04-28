@@ -92,7 +92,11 @@ func (s SampleValue) ToDTO() *float64 {
 }
 
 func (v SampleValue) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("\"%f\"", v)), nil
+	return []byte(fmt.Sprintf(`"%f"`, v)), nil
+}
+
+func (v SampleValue) String() string {
+	return fmt.Sprint(float64(v))
 }
 
 func (s SamplePair) MarshalJSON() ([]byte, error) {
@@ -106,6 +110,19 @@ type SamplePair struct {
 
 func (s SamplePair) Equal(o SamplePair) bool {
 	return s.Value.Equal(o.Value) && s.Timestamp.Equal(o.Timestamp)
+}
+
+func (s SamplePair) ToDTO() (out *dto.SampleValueSeries_Value) {
+	out = &dto.SampleValueSeries_Value{
+		Timestamp: proto.Int64(s.Timestamp.Unix()),
+		Value:     s.Value.ToDTO(),
+	}
+
+	return
+}
+
+func (s SamplePair) String() string {
+	return fmt.Sprintf("SamplePair at %s of %s", s.Timestamp, s.Value)
 }
 
 type Values []SamplePair
@@ -172,6 +189,40 @@ func (v Values) TruncateBefore(t time.Time) (values Values) {
 	}
 
 	return
+}
+
+func (v Values) ToDTO() (out *dto.SampleValueSeries) {
+	out = &dto.SampleValueSeries{}
+
+	for _, value := range v {
+		out.Value = append(out.Value, value.ToDTO())
+	}
+
+	return
+}
+
+func (v Values) ToSampleKey(f Fingerprint) SampleKey {
+	return SampleKey{
+		Fingerprint:    f,
+		FirstTimestamp: v[0].Timestamp,
+		LastTimestamp:  v[len(v)-1].Timestamp,
+		SampleCount:    uint32(len(v)),
+	}
+}
+
+func (v Values) String() string {
+	buffer := bytes.Buffer{}
+
+	fmt.Fprintf(&buffer, "[")
+	for i, value := range v {
+		fmt.Fprintf(&buffer, "%d. %s", i, value)
+		if i != len(v)-1 {
+			fmt.Fprintf(&buffer, "\n")
+		}
+	}
+	fmt.Fprintf(&buffer, "]")
+
+	return buffer.String()
 }
 
 func NewValuesFromDTO(dto *dto.SampleValueSeries) (v Values) {

@@ -14,30 +14,34 @@
 package leveldb
 
 import (
+	"fmt"
 	"github.com/jmhodges/levigo"
 	"github.com/prometheus/prometheus/coding"
 )
 
 type batch struct {
 	batch *levigo.WriteBatch
+	drops uint32
+	puts  uint32
 }
 
-func NewBatch() batch {
-	return batch{
+func NewBatch() *batch {
+	return &batch{
 		batch: levigo.NewWriteBatch(),
 	}
 }
 
-func (b batch) Drop(key coding.Encoder) {
+func (b *batch) Drop(key coding.Encoder) {
 	keyEncoded, err := key.Encode()
 	if err != nil {
 		panic(err)
 	}
+	b.drops++
 
 	b.batch.Delete(keyEncoded)
 }
 
-func (b batch) Put(key, value coding.Encoder) {
+func (b *batch) Put(key, value coding.Encoder) {
 	keyEncoded, err := key.Encode()
 	if err != nil {
 		panic(err)
@@ -46,10 +50,15 @@ func (b batch) Put(key, value coding.Encoder) {
 	if err != nil {
 		panic(err)
 	}
+	b.puts++
 
 	b.batch.Put(keyEncoded, valueEncoded)
 }
 
 func (b batch) Close() {
 	b.batch.Close()
+}
+
+func (b batch) String() string {
+	return fmt.Sprintf("LevelDB batch with %d puts and %d drops.", b.puts, b.drops)
 }
