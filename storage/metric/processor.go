@@ -45,7 +45,7 @@ type processor interface {
 }
 
 // compactionProcessor combines sparse values in the database together such
-// that at least MinimumGroupSize is fulfilled from the
+// that at least MinimumGroupSize-sized chunks are grouped together.
 type compactionProcessor struct {
 	// MaximumMutationPoolBatch represents approximately the largest pending
 	// batch of mutation operations for the database before pausing to
