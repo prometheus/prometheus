@@ -35,6 +35,30 @@
       </ul>
     </div>
 
+    <h2>Curation</h2>
+    <div class="grouping_box">
+      <table>
+        <tr>
+          <th>Active</th>
+          <td>{{.Curation.Active}}</td>
+        </tr>
+        <tr>
+          <th>Processor Name</th>
+          <td>{{.Curation.Name}}</td>
+        </tr>
+        <tr>
+          <th>Recency Limit</th>
+          <td>{{.Curation.Limit}}</td>
+        </tr>
+        {{if .Curation.Fingerprint}}
+        <tr>
+          <th>Current Fingerprint</th>
+          <td>{{.Curation.Fingerprint}}</td>
+        </tr>
+        {{end}}
+      </table>
+    </div>
+
     <h2>Build Info</h2>
     <div class="grouping_box">
       <table>

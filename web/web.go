@@ -44,7 +44,10 @@ func StartServing(appState *appstate.ApplicationState) {
 	exp.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
 	exp.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 
-	exp.Handle("/", &StatusHandler{appState: appState})
+	statusHandler := &StatusHandler{appState: appState}
+	go statusHandler.Run()
+
+	exp.Handle("/", statusHandler)
 	exp.HandleFunc("/graph", graphHandler)
 	exp.HandleFunc("/console", consoleHandler)
 
@@ -90,5 +93,8 @@ func executeTemplate(w http.ResponseWriter, name string, data interface{}) {
 		log.Printf("Error preparing layout template: %s", err)
 		return
 	}
-	tpl.Execute(w, data)
+	err = tpl.Execute(w, data)
+	if err != nil {
+		log.Printf("Error executing template: %s", err)
+	}
 }

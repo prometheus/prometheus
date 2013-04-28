@@ -845,8 +845,11 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		}
 		defer samples.Close()
 
+		updates := make(chan CurationState, 100)
+		defer close(updates)
+
 		c := newCurator()
-		err = c.run(scenario.in.ignoreYoungerThan, testInstant, scenario.in.processor, curatorStates, samples, watermarkStates)
+		err = c.run(scenario.in.ignoreYoungerThan, testInstant, scenario.in.processor, curatorStates, samples, watermarkStates, updates)
 		if err != nil {
 			t.Fatal(err)
 		}
