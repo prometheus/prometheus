@@ -14,9 +14,7 @@
 package retrieval
 
 import (
-	"github.com/prometheus/client_golang"
-	"github.com/prometheus/client_golang/maths"
-	"github.com/prometheus/client_golang/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -30,24 +28,24 @@ const (
 )
 
 var (
-	networkLatencyHistogram = &metrics.HistogramSpecification{
-		Starts:                metrics.LogarithmicSizedBucketsFor(0, 1000),
-		BucketBuilder:         metrics.AccumulatingBucketBuilder(metrics.EvictAndReplaceWith(10, maths.Average), 100),
+	networkLatencyHistogram = &prometheus.HistogramSpecification{
+		Starts:                prometheus.LogarithmicSizedBucketsFor(0, 1000),
+		BucketBuilder:         prometheus.AccumulatingBucketBuilder(prometheus.EvictAndReplaceWith(10, prometheus.AverageReducer), 100),
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
 	}
 
-	targetOperationLatencies = metrics.NewHistogram(networkLatencyHistogram)
+	targetOperationLatencies = prometheus.NewHistogram(networkLatencyHistogram)
 
-	retrievalDurations = metrics.NewHistogram(&metrics.HistogramSpecification{
-		Starts:                metrics.LogarithmicSizedBucketsFor(0, 10000),
-		BucketBuilder:         metrics.AccumulatingBucketBuilder(metrics.EvictAndReplaceWith(10, maths.Average), 100),
+	retrievalDurations = prometheus.NewHistogram(&prometheus.HistogramSpecification{
+		Starts:                prometheus.LogarithmicSizedBucketsFor(0, 10000),
+		BucketBuilder:         prometheus.AccumulatingBucketBuilder(prometheus.EvictAndReplaceWith(10, prometheus.AverageReducer), 100),
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99}})
 
-	targetOperations = metrics.NewCounter()
+	targetOperations = prometheus.NewCounter()
 )
 
 func init() {
-	registry.Register("prometheus_target_operations_total", "The total numbers of operations of the various targets that are being monitored.", registry.NilLabels, targetOperations)
-	registry.Register("prometheus_target_operation_latency_ms", "The latencies for various target operations.", registry.NilLabels, targetOperationLatencies)
-	registry.Register("prometheus_targetpool_duration_ms", "The durations for each TargetPool to retrieve state from all included entities.", registry.NilLabels, retrievalDurations)
+	prometheus.Register("prometheus_target_operations_total", "The total numbers of operations of the various targets that are being monitored.", prometheus.NilLabels, targetOperations)
+	prometheus.Register("prometheus_target_operation_latency_ms", "The latencies for various target operations.", prometheus.NilLabels, targetOperationLatencies)
+	prometheus.Register("prometheus_targetpool_duration_ms", "The durations for each TargetPool to retrieve state from all included entities.", prometheus.NilLabels, retrievalDurations)
 }
