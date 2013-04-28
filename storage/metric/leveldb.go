@@ -16,6 +16,7 @@ package metric
 import (
 	"code.google.com/p/goprotobuf/proto"
 	"flag"
+	"fmt"
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
@@ -36,6 +37,7 @@ var (
 )
 
 type LevelDBMetricPersistence struct {
+	curationRemarks         *leveldb.LevelDBPersistence
 	fingerprintToMetrics    *leveldb.LevelDBPersistence
 	labelNameToFingerprints *leveldb.LevelDBPersistence
 	labelSetToFingerprints  *leveldb.LevelDBPersistence
@@ -47,12 +49,13 @@ type LevelDBMetricPersistence struct {
 var (
 	// These flag values are back of the envelope, though they seem sensible.
 	// Please re-evaluate based on your own needs.
+	curationRemarksCacheSize         = flag.Int("curationRemarksCacheSize", 50*1024*1024, "The size for the curation remarks cache (bytes).")
 	fingerprintsToLabelPairCacheSize = flag.Int("fingerprintsToLabelPairCacheSizeBytes", 100*1024*1024, "The size for the fingerprint to label pair index (bytes).")
 	highWatermarkCacheSize           = flag.Int("highWatermarksByFingerprintSizeBytes", 50*1024*1024, "The size for the metric high watermarks (bytes).")
-	samplesByFingerprintCacheSize    = flag.Int("samplesByFingerprintCacheSizeBytes", 500*1024*1024, "The size for the samples database (bytes).")
 	labelNameToFingerprintsCacheSize = flag.Int("labelNameToFingerprintsCacheSizeBytes", 100*1024*1024, "The size for the label name to metric fingerprint index (bytes).")
 	labelPairToFingerprintsCacheSize = flag.Int("labelPairToFingerprintsCacheSizeBytes", 100*1024*1024, "The size for the label pair to metric fingerprint index (bytes).")
 	metricMembershipIndexCacheSize   = flag.Int("metricMembershipCacheSizeBytes", 50*1024*1024, "The size for the metric membership index (bytes).")
+	samplesByFingerprintCacheSize    = flag.Int("samplesByFingerprintCacheSizeBytes", 500*1024*1024, "The size for the samples database (bytes).")
 )
 
 type leveldbOpener func()
@@ -62,12 +65,13 @@ type leveldbCloser interface {
 
 func (l *LevelDBMetricPersistence) Close() {
 	var persistences = []leveldbCloser{
+		l.curationRemarks,
 		l.fingerprintToMetrics,
-		l.metricHighWatermarks,
-		l.metricSamples,
 		l.labelNameToFingerprints,
 		l.labelSetToFingerprints,
+		l.metricHighWatermarks,
 		l.metricMembershipIndex,
+		l.metricSamples,
 	}
 
 	closerGroup := sync.WaitGroup{}
@@ -85,8 +89,8 @@ func (l *LevelDBMetricPersistence) Close() {
 	closerGroup.Wait()
 }
 
-func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetricPersistence, err error) {
-	errorChannel := make(chan error, 6)
+func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistence, error) {
+	workers := utility.NewUncertaintyGroup(7)
 
 	emission := &LevelDBMetricPersistence{}
 
@@ -99,7 +103,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 			func() {
 				var err error
 				emission.fingerprintToMetrics, err = leveldb.NewLevelDBPersistence(baseDirectory+"/label_name_and_value_pairs_by_fingerprint", *fingerprintsToLabelPairCacheSize, 10)
-				errorChannel <- err
+				workers.MayFail(err)
 			},
 		},
 		{
@@ -107,7 +111,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 			func() {
 				var err error
 				emission.metricSamples, err = leveldb.NewLevelDBPersistence(baseDirectory+"/samples_by_fingerprint", *samplesByFingerprintCacheSize, 10)
-				errorChannel <- err
+				workers.MayFail(err)
 			},
 		},
 		{
@@ -115,7 +119,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 			func() {
 				var err error
 				emission.metricHighWatermarks, err = leveldb.NewLevelDBPersistence(baseDirectory+"/high_watermarks_by_fingerprint", *highWatermarkCacheSize, 10)
-				errorChannel <- err
+				workers.MayFail(err)
 			},
 		},
 		{
@@ -123,7 +127,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 			func() {
 				var err error
 				emission.labelNameToFingerprints, err = leveldb.NewLevelDBPersistence(baseDirectory+"/fingerprints_by_label_name", *labelNameToFingerprintsCacheSize, 10)
-				errorChannel <- err
+				workers.MayFail(err)
 			},
 		},
 		{
@@ -131,7 +135,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 			func() {
 				var err error
 				emission.labelSetToFingerprints, err = leveldb.NewLevelDBPersistence(baseDirectory+"/fingerprints_by_label_name_and_value_pair", *labelPairToFingerprintsCacheSize, 10)
-				errorChannel <- err
+				workers.MayFail(err)
 			},
 		},
 		{
@@ -139,7 +143,15 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 			func() {
 				var err error
 				emission.metricMembershipIndex, err = index.NewLevelDBMembershipIndex(baseDirectory+"/metric_membership_index", *metricMembershipIndexCacheSize, 10)
-				errorChannel <- err
+				workers.MayFail(err)
+			},
+		},
+		{
+			"Sample Curation Remarks",
+			func() {
+				var err error
+				emission.curationRemarks, err = leveldb.NewLevelDBPersistence(baseDirectory+"/curation_remarks", *curationRemarksCacheSize, 10)
+				workers.MayFail(err)
 			},
 		},
 	}
@@ -149,18 +161,15 @@ func NewLevelDBMetricPersistence(baseDirectory string) (persistence *LevelDBMetr
 		go opener()
 	}
 
-	for i := 0; i < cap(errorChannel); i++ {
-		err = <-errorChannel
-
-		if err != nil {
-			log.Printf("Could not open a LevelDBPersistence storage container: %q\n", err)
-
-			return
+	if !workers.Wait() {
+		for _, err := range workers.Errors() {
+			log.Printf("Could not open storage due to %s", err)
 		}
-	}
-	persistence = emission
 
-	return
+		return nil, fmt.Errorf("Unable to open metric persistence.")
+	}
+
+	return emission, nil
 }
 
 func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error) {
@@ -432,33 +441,22 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerpri
 
 	// TODO: For the missing fingerprints, determine what label names and pairs
 	// are absent and act accordingly and append fingerprints.
-	doneBuildingLabelNameIndex := make(chan error)
-	doneBuildingLabelPairIndex := make(chan error)
-	doneBuildingFingerprintIndex := make(chan error)
+	workers := utility.NewUncertaintyGroup(3)
 
 	go func() {
-		doneBuildingLabelNameIndex <- l.indexLabelNames(absentMetrics)
+		workers.MayFail(l.indexLabelNames(absentMetrics))
 	}()
 
 	go func() {
-		doneBuildingLabelPairIndex <- l.indexLabelPairs(absentMetrics)
+		workers.MayFail(l.indexLabelPairs(absentMetrics))
 	}()
 
 	go func() {
-		doneBuildingFingerprintIndex <- l.indexFingerprints(absentMetrics)
+		workers.MayFail(l.indexFingerprints(absentMetrics))
 	}()
 
-	err = <-doneBuildingLabelNameIndex
-	if err != nil {
-		return
-	}
-	err = <-doneBuildingLabelPairIndex
-	if err != nil {
-		return
-	}
-	err = <-doneBuildingFingerprintIndex
-	if err != nil {
-		return
+	if !workers.Wait() {
+		return fmt.Errorf("Could not index due to %s", workers.Errors())
 	}
 
 	// If any of the preceding operations failed, we will have inconsistent
@@ -477,7 +475,8 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerpri
 
 	err = l.metricMembershipIndex.Commit(batch)
 	if err != nil {
-		return err
+		// Not critical but undesirable.
+		log.Println(err)
 	}
 
 	return
