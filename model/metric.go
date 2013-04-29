@@ -34,6 +34,22 @@ const (
 // match.
 type LabelSet map[LabelName]LabelValue
 
+// Helper function to non-destructively merge two label sets.
+func (l LabelSet) Merge(other LabelSet) LabelSet {
+	result := make(LabelSet, len(l))
+
+	for k, v := range l {
+		result[k] = v
+	}
+
+	for k, v := range other {
+		result[k] = v
+	}
+
+	return result
+}
+
+
 func (l LabelSet) String() string {
 	var (
 		buffer     bytes.Buffer
