@@ -86,7 +86,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	}
 
 	// let the deadline lapse
-	time.Sleep(15*time.Millisecond)
+	time.Sleep(15 * time.Millisecond)
 
 	// now scrape again
 	signal <- true

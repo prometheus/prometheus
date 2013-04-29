@@ -49,7 +49,6 @@ func (l LabelSet) Merge(other LabelSet) LabelSet {
 	return result
 }
 
-
 func (l LabelSet) String() string {
 	var (
 		buffer     bytes.Buffer
