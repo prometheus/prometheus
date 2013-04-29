@@ -17,6 +17,7 @@ import (
 	"flag"
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/storage/metric"
 	"net/http"
 )
 
@@ -27,20 +28,22 @@ type PrometheusStatus struct {
 	TargetPools map[string]*retrieval.TargetPool
 	BuildInfo   map[string]string
 	Flags       map[string]string
+	Curation    metric.CurationState
 }
 
 type StatusHandler struct {
-	appState *appstate.ApplicationState
+	appState         *appstate.ApplicationState
+	PrometheusStatus *PrometheusStatus
 }
 
-func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *StatusHandler) Run() {
 	flags := map[string]string{}
 
 	flag.VisitAll(func(f *flag.Flag) {
 		flags[f.Name] = f.Value.String()
 	})
 
-	status := &PrometheusStatus{
+	h.PrometheusStatus = &PrometheusStatus{
 		Config:      h.appState.Config.ToString(0),
 		Rules:       "TODO: list rules here",
 		Status:      "TODO: add status information here",
@@ -48,5 +51,13 @@ func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		BuildInfo:   h.appState.BuildInfo,
 		Flags:       flags,
 	}
-	executeTemplate(w, "status", status)
+
+	// Law of Demeter :-(
+	for state := range h.appState.CurationState {
+		h.PrometheusStatus.Curation = state
+	}
+}
+
+func (h StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	executeTemplate(w, "status", h.PrometheusStatus)
 }
