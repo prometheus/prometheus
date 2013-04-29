@@ -30,7 +30,7 @@ const (
 	JSON
 )
 
-func binOpTypeToString(opType BinOpType) string {
+func (opType BinOpType) String() string {
 	opTypeMap := map[BinOpType]string{
 		ADD: "+",
 		SUB: "-",
@@ -47,7 +47,7 @@ func binOpTypeToString(opType BinOpType) string {
 	return opTypeMap[opType]
 }
 
-func aggrTypeToString(aggrType AggrType) string {
+func (aggrType AggrType) String() string {
 	aggrTypeMap := map[AggrType]string{
 		SUM: "SUM",
 		AVG: "AVG",
@@ -57,7 +57,7 @@ func aggrTypeToString(aggrType AggrType) string {
 	return aggrTypeMap[aggrType]
 }
 
-func exprTypeToString(exprType ExprType) string {
+func (exprType ExprType) String() string {
 	exprTypeMap := map[ExprType]string{
 		SCALAR: "scalar",
 		VECTOR: "vector",
@@ -78,12 +78,12 @@ func (vector Vector) String() string {
 		for label, value := range sample.Metric {
 			if label != model.MetricNameLabel {
 				// TODO escape special chars in label values here and elsewhere.
-				labelStrings = append(labelStrings, fmt.Sprintf("%v='%v'", label, value))
+				labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
 			}
 		}
 		sort.Strings(labelStrings)
 		metricStrings = append(metricStrings,
-			fmt.Sprintf("%v{%v} => %v @[%v]",
+			fmt.Sprintf("%s{%s} => %v @[%v]",
 				metricName,
 				strings.Join(labelStrings, ","),
 				sample.Value, sample.Timestamp))
@@ -101,7 +101,7 @@ func (matrix Matrix) String() string {
 		labelStrings := []string{}
 		for label, value := range sampleSet.Metric {
 			if label != model.MetricNameLabel {
-				labelStrings = append(labelStrings, fmt.Sprintf("%v='%v'", label, value))
+				labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
 			}
 		}
 		sort.Strings(labelStrings)
@@ -111,7 +111,7 @@ func (matrix Matrix) String() string {
 				fmt.Sprintf("\n%v @[%v]", value.Value, value.Timestamp))
 		}
 		metricStrings = append(metricStrings,
-			fmt.Sprintf("%v{%v} => %v",
+			fmt.Sprintf("%s{%s} => %s",
 				metricName,
 				strings.Join(labelStrings, ","),
 				strings.Join(valueStrings, ", ")))
@@ -202,16 +202,16 @@ func (node *VectorLiteral) String() string {
 	labelStrings := []string{}
 	for label, value := range node.labels {
 		if label != model.MetricNameLabel {
-			labelStrings = append(labelStrings, fmt.Sprintf("%v='%v'", label, value))
+			labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
 		}
 	}
 	sort.Strings(labelStrings)
-	return fmt.Sprintf("%v{%v}", metricName, strings.Join(labelStrings, ","))
+	return fmt.Sprintf("%s{%s}", metricName, strings.Join(labelStrings, ","))
 }
 
 func (node *MatrixLiteral) String() string {
 	vectorString := (&VectorLiteral{labels: node.labels}).String()
-	intervalString := fmt.Sprintf("['%v']", utility.DurationToString(node.interval))
+	intervalString := fmt.Sprintf("['%s']", utility.DurationToString(node.interval))
 	return vectorString + intervalString
 }
 
@@ -231,26 +231,28 @@ func functionArgsToDotGraph(node Node, args []Node) string {
 }
 
 func (node *ScalarFunctionCall) NodeTreeToDotGraph() string {
-	graph := fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.function.name)
+	graph := fmt.Sprintf("%#p[label=\"%s\"];\n", node, node.function.name)
 	graph += functionArgsToDotGraph(node, node.args)
 	return graph
 }
 
 func (node *ScalarArithExpr) NodeTreeToDotGraph() string {
-	graph := fmt.Sprintf("%#p[label=\"%v\"];\n", node, binOpTypeToString(node.opType))
-	graph += fmt.Sprintf("%#p -> %#p;\n", node, node.lhs)
-	graph += fmt.Sprintf("%#p -> %#p;\n", node, node.rhs)
-	graph += node.lhs.NodeTreeToDotGraph()
-	graph += node.rhs.NodeTreeToDotGraph()
+	graph := fmt.Sprintf(`
+		%#p[label="%s"];
+		%#p -> %#p;
+		%#p -> %#p;
+		%s
+		%s
+	}`, node, node.opType, node, node.lhs, node, node.rhs, node.lhs.NodeTreeToDotGraph(), node.rhs.NodeTreeToDotGraph())
 	return graph
 }
 
 func (node *VectorLiteral) NodeTreeToDotGraph() string {
-	return fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.String())
+	return fmt.Sprintf("%#p[label=\"%s\"];\n", node, node)
 }
 
 func (node *VectorFunctionCall) NodeTreeToDotGraph() string {
-	graph := fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.function.name)
+	graph := fmt.Sprintf("%#p[label=\"%s\"];\n", node, node.function.name)
 	graph += functionArgsToDotGraph(node, node.args)
 	return graph
 }
@@ -261,9 +263,9 @@ func (node *VectorAggregation) NodeTreeToDotGraph() string {
 		groupByStrings = append(groupByStrings, string(label))
 	}
 
-	graph := fmt.Sprintf("%#p[label=\"%v BY (%v)\"]\n",
+	graph := fmt.Sprintf("%#p[label=\"%s BY (%s)\"]\n",
 		node,
-		aggrTypeToString(node.aggrType),
+		node.aggrType,
 		strings.Join(groupByStrings, ", "))
 	graph += fmt.Sprintf("%#p -> %#p;\n", node, node.vector)
 	graph += node.vector.NodeTreeToDotGraph()
@@ -271,24 +273,26 @@ func (node *VectorAggregation) NodeTreeToDotGraph() string {
 }
 
 func (node *VectorArithExpr) NodeTreeToDotGraph() string {
-	graph := fmt.Sprintf("%#p[label=\"%v\"];\n", node, binOpTypeToString(node.opType))
-	graph += fmt.Sprintf("%#p -> %#p;\n", node, node.lhs)
-	graph += fmt.Sprintf("%#p -> %#p;\n", node, node.rhs)
-	graph += node.lhs.NodeTreeToDotGraph()
-	graph += node.rhs.NodeTreeToDotGraph()
+	graph := fmt.Sprintf(`
+		%#p[label="%s"];
+		%#p -> %#p;
+		%#p -> %#p;
+		%s
+		%s
+	`, node, node.opType, node, node.lhs, node, node.rhs, node.lhs.NodeTreeToDotGraph(), node.rhs.NodeTreeToDotGraph())
 	return graph
 }
 
 func (node *MatrixLiteral) NodeTreeToDotGraph() string {
-	return fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.String())
+	return fmt.Sprintf("%#p[label=\"%s\"];\n", node, node)
 }
 
 func (node *StringLiteral) NodeTreeToDotGraph() string {
-	return fmt.Sprintf("%#p[label=\"'%v'\"];\n", node, node.str)
+	return fmt.Sprintf("%#p[label=\"'%s'\"];\n", node, node.str)
 }
 
 func (node *StringFunctionCall) NodeTreeToDotGraph() string {
-	graph := fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.function.name)
+	graph := fmt.Sprintf("%#p[label=\"%s\"];\n", node, node.function.name)
 	graph += functionArgsToDotGraph(node, node.args)
 	return graph
 }

@@ -14,6 +14,7 @@
 package rules
 
 import (
+	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/utility"
@@ -129,6 +130,15 @@ func (rule AlertingRule) Eval(timestamp time.Time) (vector ast.Vector, err error
 		vector = append(vector, activeAlert.sample(timestamp, 1))
 	}
 	return
+}
+
+func (rule AlertingRule) ToDotGraph() string {
+	graph := fmt.Sprintf(`digraph "Rules" {
+	  %#p[shape="box",label="ALERT %s IF FOR %s"];
+		%#p -> %#p;
+		%s
+	}`, &rule, rule.name, utility.DurationToString(rule.holdDuration), &rule, rule.vector, rule.vector.NodeTreeToDotGraph())
+	return graph
 }
 
 // Construct a new AlertingRule.
