@@ -14,7 +14,6 @@ package retrieval
 
 import (
 	"fmt"
-	"github.com/prometheus/client_golang/metrics"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"log"
@@ -182,7 +181,18 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 
 	done := make(chan bool)
 
-	request := func() {
+	go func(start time.Time) {
+		defer func() {
+			ms := float64(time.Since(start)) / float64(time.Millisecond)
+			labels := map[string]string{address: t.Address(), outcome: success}
+			if err != nil {
+				labels[outcome] = failure
+			}
+
+			targetOperationLatencies.Add(labels, ms)
+			targetOperations.Increment(labels)
+		}()
+
 		defer func() {
 			done <- true
 		}()
@@ -211,20 +221,7 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 		if err != nil {
 			return
 		}
-	}
-
-	accumulator := func(d time.Duration) {
-		ms := float64(d) / float64(time.Millisecond)
-		labels := map[string]string{address: t.Address(), outcome: success}
-		if err != nil {
-			labels[outcome] = failure
-		}
-
-		targetOperationLatencies.Add(labels, ms)
-		targetOperations.Increment(labels)
-	}
-
-	go metrics.InstrumentCall(request, accumulator)
+	}(time.Now())
 
 	select {
 	case <-done:

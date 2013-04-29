@@ -14,9 +14,7 @@
 package metric
 
 import (
-	"github.com/prometheus/client_golang"
-	"github.com/prometheus/client_golang/maths"
-	"github.com/prometheus/client_golang/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 	"time"
 )
 
@@ -60,19 +58,19 @@ const (
 )
 
 var (
-	diskLatencyHistogram = &metrics.HistogramSpecification{
-		Starts:                metrics.LogarithmicSizedBucketsFor(0, 5000),
-		BucketBuilder:         metrics.AccumulatingBucketBuilder(metrics.EvictAndReplaceWith(10, maths.Average), 100),
+	diskLatencyHistogram = &prometheus.HistogramSpecification{
+		Starts:                prometheus.LogarithmicSizedBucketsFor(0, 5000),
+		BucketBuilder:         prometheus.AccumulatingBucketBuilder(prometheus.EvictAndReplaceWith(10, prometheus.AverageReducer), 100),
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
 	}
 
-	curationDuration          = metrics.NewCounter()
-	curationDurations         = metrics.NewHistogram(diskLatencyHistogram)
-	curationFilterOperations  = metrics.NewCounter()
-	storageOperations         = metrics.NewCounter()
-	storageOperationDurations = metrics.NewCounter()
-	storageLatency            = metrics.NewHistogram(diskLatencyHistogram)
-	queueSizes                = metrics.NewGauge()
+	curationDuration          = prometheus.NewCounter()
+	curationDurations         = prometheus.NewHistogram(diskLatencyHistogram)
+	curationFilterOperations  = prometheus.NewCounter()
+	storageOperations         = prometheus.NewCounter()
+	storageOperationDurations = prometheus.NewCounter()
+	storageLatency            = prometheus.NewHistogram(diskLatencyHistogram)
+	queueSizes                = prometheus.NewGauge()
 )
 
 func recordOutcome(duration time.Duration, err error, success, failure map[string]string) {
@@ -88,9 +86,9 @@ func recordOutcome(duration time.Duration, err error, success, failure map[strin
 }
 
 func init() {
-	registry.Register("prometheus_metric_disk_operations_total", "Total number of metric-related disk operations.", registry.NilLabels, storageOperations)
-	registry.Register("prometheus_metric_disk_latency_microseconds", "Latency for metric disk operations in microseconds.", registry.NilLabels, storageLatency)
-	registry.Register("prometheus_storage_operation_time_total_microseconds", "The total time spent performing a given storage operation.", registry.NilLabels, storageOperationDurations)
-	registry.Register("prometheus_storage_queue_sizes_total", "The various sizes and capacities of the storage queues.", registry.NilLabels, queueSizes)
-	registry.Register("curation_filter_operations_total", "The number of curation filter operations completed.", registry.NilLabels, curationFilterOperations)
+	prometheus.Register("prometheus_metric_disk_operations_total", "Total number of metric-related disk operations.", prometheus.NilLabels, storageOperations)
+	prometheus.Register("prometheus_metric_disk_latency_microseconds", "Latency for metric disk operations in microseconds.", prometheus.NilLabels, storageLatency)
+	prometheus.Register("prometheus_storage_operation_time_total_microseconds", "The total time spent performing a given storage operation.", prometheus.NilLabels, storageOperationDurations)
+	prometheus.Register("prometheus_storage_queue_sizes_total", "The various sizes and capacities of the storage queues.", prometheus.NilLabels, queueSizes)
+	prometheus.Register("curation_filter_operations_total", "The number of curation filter operations completed.", prometheus.NilLabels, curationFilterOperations)
 }
