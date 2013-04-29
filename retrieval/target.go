@@ -117,6 +117,7 @@ type target struct {
 	Deadline time.Duration
 	// Any base labels that are added to this target and its metrics.
 	baseLabels model.LabelSet
+	client     http.Client
 }
 
 // Furnish a reasonably configured target for querying.
@@ -125,6 +126,7 @@ func NewTarget(address string, deadline time.Duration, baseLabels model.LabelSet
 		address:    address,
 		Deadline:   deadline,
 		baseLabels: baseLabels,
+		client:     NewDeadlineClient(deadline),
 	}
 
 	scheduler := &healthScheduler{
@@ -162,75 +164,53 @@ func (t *target) recordScrapeHealth(results chan format.Result, timestamp time.T
 
 func (t *target) Scrape(earliest time.Time, results chan format.Result) (err error) {
 	now := time.Now()
+	futureState := t.state
 
-	defer func() {
-		futureState := t.state
-
-		switch err {
-		case nil:
-			t.recordScrapeHealth(results, now, true)
-			futureState = ALIVE
-		default:
-			t.recordScrapeHealth(results, now, false)
-			futureState = UNREACHABLE
-		}
-
-		t.scheduler.Reschedule(earliest, futureState)
-		t.state = futureState
-	}()
-
-	done := make(chan bool)
-
-	go func(start time.Time) {
-		defer func() {
-			ms := float64(time.Since(start)) / float64(time.Millisecond)
-			labels := map[string]string{address: t.Address(), outcome: success}
-			if err != nil {
-				labels[outcome] = failure
-			}
-
-			targetOperationLatencies.Add(labels, ms)
-			targetOperations.Increment(labels)
-		}()
-
-		defer func() {
-			done <- true
-		}()
-
-		var resp *http.Response // Don't shadow "err" from the enclosing function.
-		resp, err = http.Get(t.Address())
-		if err != nil {
-			return
-		}
-
-		defer resp.Body.Close()
-
-		processor, err := format.DefaultRegistry.ProcessorForRequestHeader(resp.Header)
-		if err != nil {
-			return
-		}
-
-		// XXX: This is a wart; we need to handle this more gracefully down the
-		//      road, especially once we have service discovery support.
-		baseLabels := model.LabelSet{model.InstanceLabel: model.LabelValue(t.Address())}
-		for baseLabel, baseValue := range t.baseLabels {
-			baseLabels[baseLabel] = baseValue
-		}
-
-		err = processor.Process(resp.Body, now, baseLabels, results)
-		if err != nil {
-			return
-		}
-	}(time.Now())
-
-	select {
-	case <-done:
-		break
-	case <-time.After(t.Deadline):
-		err = fmt.Errorf("Target %s exceeded %s deadline.", t, t.Deadline)
+	if err = t.scrape(now, results); err != nil {
+		t.recordScrapeHealth(results, now, false)
+		futureState = UNREACHABLE
+	} else {
+		t.recordScrapeHealth(results, now, true)
+		futureState = ALIVE
 	}
 
+	t.scheduler.Reschedule(earliest, futureState)
+	t.state = futureState
+
 	return
+}
+
+func (t *target) scrape(timestamp time.Time, results chan format.Result) (err error) {
+	defer func(start time.Time) {
+		ms := float64(time.Since(start)) / float64(time.Millisecond)
+		labels := map[string]string{address: t.Address(), outcome: success}
+		if err != nil {
+			labels[outcome] = failure
+		}
+
+		targetOperationLatencies.Add(labels, ms)
+		targetOperations.Increment(labels)
+	}(time.Now())
+
+	resp, err := t.client.Get(t.Address())
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	processor, err := format.DefaultRegistry.ProcessorForRequestHeader(resp.Header)
+	if err != nil {
+		return
+	}
+
+	// XXX: This is a wart; we need to handle this more gracefully down the
+	//      road, especially once we have service discovery support.
+	baseLabels := model.LabelSet{model.InstanceLabel: model.LabelValue(t.Address())}
+	for baseLabel, baseValue := range t.baseLabels {
+		baseLabels[baseLabel] = baseValue
+	}
+
+	return processor.Process(resp.Body, timestamp, baseLabels, results)
 }
 
 func (t target) State() TargetState {
