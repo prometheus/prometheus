@@ -29,4 +29,5 @@ type ApplicationState struct {
 	Storage       metric.Storage
 	TargetManager retrieval.TargetManager
 	BuildInfo     map[string]string
+	CurationState chan metric.CurationState
 }

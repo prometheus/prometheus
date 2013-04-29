@@ -15,7 +15,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
@@ -32,8 +31,6 @@ import (
 
 // Commandline flags.
 var (
-	_ = fmt.Sprintf("")
-
 	printVersion                 = flag.Bool("version", false, "print version information")
 	configFile                   = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
 	metricsStoragePath           = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
@@ -117,11 +114,12 @@ func main() {
 	}
 
 	appState := &appstate.ApplicationState{
+		BuildInfo:     BuildInfo,
 		Config:        conf,
+		CurationState: make(chan metric.CurationState),
 		RuleManager:   ruleManager,
 		Storage:       ts,
 		TargetManager: targetManager,
-		BuildInfo:     BuildInfo,
 	}
 
 	web.StartServing(appState)
