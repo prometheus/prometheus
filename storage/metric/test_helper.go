@@ -26,6 +26,10 @@ var (
 	testInstant  = time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern).In(time.UTC)
 )
 
+const (
+	appendQueueSize = 1000
+)
+
 func testAppendSample(p MetricPersistence, s model.Sample, t test.Tester) {
 	err := p.AppendSample(s)
 	if err != nil {
@@ -86,7 +90,7 @@ func (t testTieredStorageCloser) Close() {
 func NewTestTieredStorage(t test.Tester) (storage Storage, closer test.Closer) {
 	var directory test.TemporaryDirectory
 	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
-	storage, err := NewTieredStorage(5000000, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
+	storage, err := NewTieredStorage(appendQueueSize, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
 
 	if err != nil {
 		if storage != nil {
