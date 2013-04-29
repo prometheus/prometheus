@@ -70,7 +70,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	signal := make(chan bool, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-signal
-		w.Header().Set("X-Prometheus-API-Version", "0.0.1")
+		w.Header().Set("Content-Type", `application/json; schema="prometheus/telemetry"; version=0.0.2`)
 		w.Write([]byte(`[]`))
 	}))
 
