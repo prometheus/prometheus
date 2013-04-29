@@ -21,6 +21,7 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -93,7 +94,7 @@ func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueu
 	return
 }
 
-func (t *tieredStorage) AppendSample(s model.Sample) (err error) {
+func (t tieredStorage) AppendSample(s model.Sample) (err error) {
 	if len(t.draining) > 0 {
 		return fmt.Errorf("Storage is in the process of draining.")
 	}
@@ -103,12 +104,14 @@ func (t *tieredStorage) AppendSample(s model.Sample) (err error) {
 	return
 }
 
-func (t *tieredStorage) Drain() {
+func (t tieredStorage) Drain() {
+	log.Println("Starting drain...")
 	drainingDone := make(chan bool)
 	if len(t.draining) == 0 {
 		t.draining <- drainingDone
 	}
 	<-drainingDone
+	log.Println("Done.")
 }
 
 func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (view View, err error) {
@@ -155,17 +158,17 @@ func (t *tieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
 
 	t.diskFrontier, err = newDiskFrontier(i)
 	if err != nil {
-		panic(err)
+		return
 	}
 	return
 }
 
 func (t *tieredStorage) Serve() {
-	var (
-		flushMemoryTicker = time.Tick(t.flushMemoryInterval)
-		writeMemoryTicker = time.Tick(t.writeMemoryInterval)
-		reportTicker      = time.NewTicker(time.Second)
-	)
+	flushMemoryTicker := time.NewTicker(t.flushMemoryInterval)
+	defer flushMemoryTicker.Stop()
+	writeMemoryTicker := time.NewTicker(t.writeMemoryInterval)
+	defer writeMemoryTicker.Stop()
+	reportTicker := time.NewTicker(time.Second)
 	defer reportTicker.Stop()
 
 	go func() {
@@ -176,9 +179,9 @@ func (t *tieredStorage) Serve() {
 
 	for {
 		select {
-		case <-writeMemoryTicker:
+		case <-writeMemoryTicker.C:
 			t.writeMemory()
-		case <-flushMemoryTicker:
+		case <-flushMemoryTicker.C:
 			t.flushMemory()
 		case viewRequest := <-t.viewQueue:
 			t.renderView(viewRequest)
@@ -219,17 +222,24 @@ func (t *tieredStorage) writeMemory() {
 	}
 }
 
-func (t *tieredStorage) Flush() {
+func (t tieredStorage) Flush() {
 	t.flush()
 }
 
-func (t *tieredStorage) Close() {
+func (t tieredStorage) Close() {
+	log.Println("Closing tiered storage...")
 	t.Drain()
 	t.diskStorage.Close()
+	t.memoryArena.Close()
+
+	close(t.appendToDiskQueue)
+	close(t.appendToMemoryQueue)
+	close(t.viewQueue)
+	log.Println("Done.")
 }
 
 // Write all pending appends.
-func (t *tieredStorage) flush() (err error) {
+func (t tieredStorage) flush() (err error) {
 	// Trim any old values to reduce iterative write costs.
 	t.flushMemory()
 	t.writeMemory()

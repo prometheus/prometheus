@@ -44,7 +44,34 @@ var (
 	memoryAppendQueueCapacity    = flag.Int("queue.memoryAppendCapacity", 1000000, "The size of the queue for items that are pending writing to memory.")
 )
 
+type prometheus struct {
+	storage metric.Storage
+	// TODO: Refactor channels to work with arrays of results for better chunking.
+	scrapeResults chan format.Result
+	ruleResults   chan *rules.Result
+}
+
+func (p prometheus) interruptHandler() {
+	notifier := make(chan os.Signal)
+	signal.Notify(notifier, os.Interrupt)
+
+	<-notifier
+
+	log.Println("Received SIGINT; Exiting Gracefully...")
+	p.close()
+	os.Exit(0)
+}
+
+func (p prometheus) close() {
+	p.storage.Close()
+	close(p.scrapeResults)
+	close(p.ruleResults)
+}
+
 func main() {
+	// TODO(all): Future additions to main should be, where applicable, glumped
+	// into the prometheus struct above---at least where the scoping of the entire
+	// server is concerned.
 	flag.Parse()
 
 	versionInfoTmpl.Execute(os.Stdout, BuildInfo)
@@ -62,22 +89,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error opening storage: %s", err)
 	}
+
+	scrapeResults := make(chan format.Result, *scrapeResultsQueueCapacity)
+	ruleResults := make(chan *rules.Result, *ruleResultsQueueCapacity)
+
+	prometheus := prometheus{
+		storage:       ts,
+		scrapeResults: scrapeResults,
+		ruleResults:   ruleResults,
+	}
+	defer prometheus.close()
+
 	go ts.Serve()
-	go func() {
-		notifier := make(chan os.Signal)
-		signal.Notify(notifier, os.Interrupt)
-		<-notifier
-		ts.Close()
-		os.Exit(0)
-	}()
+	go prometheus.interruptHandler()
 
 	// Queue depth will need to be exposed
-	scrapeResults := make(chan format.Result, *scrapeResultsQueueCapacity)
 
 	targetManager := retrieval.NewTargetManager(scrapeResults, *concurrentRetrievalAllowance)
 	targetManager.AddTargetsFromConfig(conf)
-
-	ruleResults := make(chan *rules.Result, *ruleResultsQueueCapacity)
 
 	ast.SetStorage(ts)
 
@@ -97,6 +126,7 @@ func main() {
 
 	web.StartServing(appState)
 
+	// TODO(all): Migrate this into prometheus.serve().
 	for {
 		select {
 		case scrapeResult := <-scrapeResults:
