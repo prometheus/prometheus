@@ -15,7 +15,7 @@ package rules
 
 import (
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/model"
 	"log"
 	"sync"
 	"time"
@@ -23,7 +23,7 @@ import (
 
 type Result struct {
 	Err     error // TODO propagate errors from rule evaluation.
-	Samples ast.Vector
+	Samples model.Samples
 }
 
 type RuleManager interface {
@@ -73,8 +73,12 @@ func (m *ruleManager) runIteration(results chan *Result) {
 		wg.Add(1)
 		go func(rule Rule) {
 			vector, err := rule.Eval(now)
+			samples := model.Samples{}
+			for _, sample := range vector {
+				samples = append(samples, sample)
+			}
 			m.results <- &Result{
-				Samples: vector,
+				Samples: samples,
 				Err:     err,
 			}
 			wg.Done()

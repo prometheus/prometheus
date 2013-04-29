@@ -51,20 +51,19 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 	return vector
 }
 
-func storeMatrix(storage metric.Storage, matrix ast.Matrix) error {
+func storeMatrix(storage metric.Storage, matrix ast.Matrix) (err error) {
+	pendingSamples := model.Samples{}
 	for _, sampleSet := range matrix {
 		for _, sample := range sampleSet.Values {
-			err := storage.AppendSample(model.Sample{
+			pendingSamples = append(pendingSamples, model.Sample{
 				Metric:    sampleSet.Metric,
 				Value:     sample.Value,
 				Timestamp: sample.Timestamp,
 			})
-			if err != nil {
-				return err
-			}
 		}
 	}
-	return nil
+	err = storage.AppendSamples(pendingSamples)
+	return
 }
 
 var testMatrix = ast.Matrix{

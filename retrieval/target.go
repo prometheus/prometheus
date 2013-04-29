@@ -157,8 +157,8 @@ func (t *target) recordScrapeHealth(results chan format.Result, timestamp time.T
 	}
 
 	results <- format.Result{
-		Err:    nil,
-		Sample: sample,
+		Err:     nil,
+		Samples: model.Samples{sample},
 	}
 }
 
