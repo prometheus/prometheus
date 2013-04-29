@@ -340,11 +340,9 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 	for i, scenario := range scenarios {
 		tiered, closer := NewTestTieredStorage(t)
 
-		for j, datum := range scenario.data {
-			err := tiered.AppendSample(datum)
-			if err != nil {
-				t.Fatalf("%d.%d. failed to add fixture data: %s", i, j, err)
-			}
+		err := tiered.AppendSamples(scenario.data)
+		if err != nil {
+			t.Fatalf("%d. failed to add fixture data: %s", i, err)
 		}
 
 		if flushToDisk {

@@ -129,14 +129,12 @@ func main() {
 		select {
 		case scrapeResult := <-scrapeResults:
 			if scrapeResult.Err == nil {
-				ts.AppendSample(scrapeResult.Sample)
+				ts.AppendSamples(scrapeResult.Samples)
 			}
 
 		case ruleResult := <-ruleResults:
 			if ruleResult.Err == nil {
-				for _, sample := range ruleResult.Samples {
-					ts.AppendSample(sample)
-				}
+				ts.AppendSamples(ruleResult.Samples)
 			}
 		}
 	}

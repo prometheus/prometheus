@@ -17,9 +17,8 @@ import (
 	"github.com/prometheus/prometheus/model"
 )
 
-// Result encapsulates the outcome from processing a given sample from a
-// source.
+// Result encapsulates the outcome from processing samples from a source.
 type Result struct {
-	Err    error
-	Sample model.Sample
+	Err     error
+	Samples model.Samples
 }

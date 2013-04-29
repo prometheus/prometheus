@@ -51,6 +51,7 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 		return err
 	}
 
+	pendingSamples := model.Samples{}
 	for _, entity := range entities {
 		entityLabels := baseLabels.Merge(LabelSet(entity.BaseLabels))
 
@@ -68,13 +69,11 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 			for _, counter := range values {
 				labels := entityLabels.Merge(LabelSet(counter.Labels))
 
-				results <- Result{
-					Sample: model.Sample{
-						Metric:    model.Metric(labels),
-						Timestamp: timestamp,
-						Value:     counter.Value,
-					},
-				}
+				pendingSamples = append(pendingSamples, model.Sample{
+					Metric:    model.Metric(labels),
+					Timestamp: timestamp,
+					Value:     counter.Value,
+				})
 			}
 
 		case "histogram":
@@ -92,13 +91,11 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 					labels := entityLabels.Merge(LabelSet(histogram.Labels))
 					labels[model.LabelName("percentile")] = model.LabelValue(percentile)
 
-					results <- Result{
-						Sample: model.Sample{
-							Metric:    model.Metric(labels),
-							Timestamp: timestamp,
-							Value:     value,
-						},
-					}
+					pendingSamples = append(pendingSamples, model.Sample{
+						Metric:    model.Metric(labels),
+						Timestamp: timestamp,
+						Value:     value,
+					})
 				}
 			}
 
@@ -107,6 +104,10 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 				Err: fmt.Errorf("Unknown metric type %q", entity.Metric.Type),
 			}
 		}
+	}
+
+	if len(pendingSamples) > 0 {
+		results <- Result{Samples: pendingSamples}
 	}
 
 	return nil
