@@ -46,7 +46,12 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	go testTarget.recordScrapeHealth(results, now, true)
 
 	result := <-results
-	actual := result.Sample
+
+	if len(result.Samples) != 1 {
+		t.Fatalf("Expected one sample, got %d", len(result.Samples))
+	}
+
+	actual := result.Samples[0]
 	expected := model.Sample{
 		Metric: model.Metric{
 			model.MetricNameLabel: model.ScrapeHealthMetricName,

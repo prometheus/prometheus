@@ -30,8 +30,8 @@ import (
 // tieredStorage both persists samples and generates materialized views for
 // queries.
 type tieredStorage struct {
-	appendToDiskQueue   chan model.Sample
-	appendToMemoryQueue chan model.Sample
+	appendToDiskQueue   chan model.Samples
+	appendToMemoryQueue chan model.Samples
 	diskFrontier        *diskFrontier
 	diskStorage         *LevelDBMetricPersistence
 	draining            chan chan bool
@@ -54,8 +54,8 @@ type viewJob struct {
 // Provides a unified means for batch appending values into the datastore along
 // with querying for values in an efficient way.
 type Storage interface {
-	// Enqueues a Sample for storage.
-	AppendSample(model.Sample) error
+	// Enqueues Samples for storage.
+	AppendSamples(model.Samples) error
 	// Enqueus a ViewRequestBuilder for materialization, subject to a timeout.
 	MakeView(request ViewRequestBuilder, timeout time.Duration) (View, error)
 	// Starts serving requests.
@@ -81,8 +81,8 @@ func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueu
 	}
 
 	storage = &tieredStorage{
-		appendToDiskQueue:   make(chan model.Sample, appendToDiskQueueDepth),
-		appendToMemoryQueue: make(chan model.Sample, appendToMemoryQueueDepth),
+		appendToDiskQueue:   make(chan model.Samples, appendToDiskQueueDepth),
+		appendToMemoryQueue: make(chan model.Samples, appendToMemoryQueueDepth),
 		diskStorage:         diskStorage,
 		draining:            make(chan chan bool),
 		flushMemoryInterval: flushMemoryInterval,
@@ -94,7 +94,7 @@ func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueu
 	return
 }
 
-func (t tieredStorage) AppendSample(s model.Sample) (err error) {
+func (t tieredStorage) AppendSamples(s model.Samples) (err error) {
 	if len(t.draining) > 0 {
 		return fmt.Errorf("Storage is in the process of draining.")
 	}
@@ -218,7 +218,7 @@ func (t *tieredStorage) writeMemory() {
 	pendingLength := len(t.appendToMemoryQueue)
 
 	for i := 0; i < pendingLength; i++ {
-		t.memoryArena.AppendSample(<-t.appendToMemoryQueue)
+		t.memoryArena.AppendSamples(<-t.appendToMemoryQueue)
 	}
 }
 
@@ -248,7 +248,7 @@ func (t tieredStorage) flush() (err error) {
 }
 
 type memoryToDiskFlusher struct {
-	toDiskQueue    chan model.Sample
+	toDiskQueue    chan model.Samples
 	disk           MetricPersistence
 	olderThan      time.Time
 	valuesAccepted int
@@ -294,10 +294,12 @@ func (f memoryToDiskFlusherVisitor) Operate(key, value interface{}) (err *storag
 		f.flusher.Flush()
 	}
 
-	f.flusher.toDiskQueue <- model.Sample{
-		Metric:    f.stream.metric,
-		Timestamp: recordTime,
-		Value:     recordValue,
+	f.flusher.toDiskQueue <- model.Samples{
+		model.Sample{
+			Metric:    f.stream.metric,
+			Timestamp: recordTime,
+			Value:     recordValue,
+		},
 	}
 
 	f.stream.values.Delete(skipListTime(recordTime))
@@ -318,7 +320,7 @@ func (f *memoryToDiskFlusher) Flush() {
 	length := len(f.toDiskQueue)
 	samples := model.Samples{}
 	for i := 0; i < length; i++ {
-		samples = append(samples, <-f.toDiskQueue)
+		samples = append(samples, <-f.toDiskQueue...)
 	}
 	f.disk.AppendSamples(samples)
 }

@@ -75,6 +75,7 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 	}
 
 	// TODO(matt): This outer loop is a great basis for parallelization.
+	pendingSamples := model.Samples{}
 	for _, entity := range entities {
 		for _, value := range entity.Metric.Value {
 			metric := model.Metric{}
@@ -95,19 +96,15 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 				sampleValue, ok := value.Value.(float64)
 				if !ok {
 					err = fmt.Errorf("Could not convert value from %s %s to float64.", entity, value)
+					results <- Result{Err: err}
 					continue
 				}
 
-				sample := model.Sample{
+				pendingSamples = append(pendingSamples, model.Sample{
 					Metric:    metric,
 					Timestamp: timestamp,
 					Value:     model.SampleValue(sampleValue),
-				}
-
-				results <- Result{
-					Err:    err,
-					Sample: sample,
-				}
+				})
 
 				break
 
@@ -115,6 +112,7 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 				sampleValue, ok := value.Value.(map[string]interface{})
 				if !ok {
 					err = fmt.Errorf("Could not convert value from %q to a map[string]interface{}.", value.Value)
+					results <- Result{Err: err}
 					continue
 				}
 
@@ -122,6 +120,7 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 					individualValue, ok := percentileValue.(float64)
 					if !ok {
 						err = fmt.Errorf("Could not convert value from %q to a float64.", percentileValue)
+						results <- Result{Err: err}
 						continue
 					}
 
@@ -133,22 +132,20 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 
 					childMetric[model.LabelName(percentile001)] = model.LabelValue(percentile)
 
-					sample := model.Sample{
+					pendingSamples = append(pendingSamples, model.Sample{
 						Metric:    childMetric,
 						Timestamp: timestamp,
 						Value:     model.SampleValue(individualValue),
-					}
-
-					results <- Result{
-						Err:    err,
-						Sample: sample,
-					}
+					})
 				}
 
 				break
 			default:
 			}
 		}
+	}
+	if len(pendingSamples) > 0 {
+		results <- Result{Samples: pendingSamples}
 	}
 
 	return
