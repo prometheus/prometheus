@@ -90,7 +90,8 @@ gvm-stamp: bison-stamp cc-stamp mercurial-stamp
 	touch $@
 
 instrumentation-stamp: go-stamp
-	$(GO_GET) github.com/prometheus/client_golang $(THIRD_PARTY_BUILD_OUTPUT)
+	$(GO_GET) github.com/prometheus/client_golang/prometheus $(THIRD_PARTY_BUILD_OUTPUT)
+	$(GO_GET) github.com/prometheus/client_golang/prometheus/exp $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
 leveldb-stamp: cache-stamp cache/leveldb-$(LEVELDB_VERSION).tar.gz cc-stamp rsync-stamp snappy-stamp
