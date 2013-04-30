@@ -39,17 +39,21 @@ advice:
 binary: build
 	go build $(BUILDFLAGS) -o prometheus.build
 
-build: preparation model web
+build: preparation config model web
 	go build $(BUILDFLAGS) .
 
 clean:
 	$(MAKE) -C build clean
+	$(MAKE) -C config clean
 	$(MAKE) -C model clean
 	$(MAKE) -C web clean
 	rm -rf $(TEST_ARTIFACTS)
 	-find . -type f -iname '*~' -exec rm '{}' ';'
 	-find . -type f -iname '*#' -exec rm '{}' ';'
 	-find . -type f -iname '.#*' -exec rm '{}' ';'
+
+config: preparation
+	$(MAKE) -C config
 
 documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
@@ -90,7 +94,7 @@ test: build
 	go test ./utility/... $(GO_TEST_FLAGS)
 	go test ./web/... $(GO_TEST_FLAGS)
 
-web: preparation model
+web: preparation config model
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean documentation format model package preparation run search_index source_path test
+.PHONY: advice binary build clean config documentation format model package preparation run search_index source_path test

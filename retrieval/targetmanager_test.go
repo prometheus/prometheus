@@ -14,7 +14,9 @@
 package retrieval
 
 import (
+	"code.google.com/p/goprotobuf/proto"
 	"github.com/prometheus/prometheus/config"
+	pb "github.com/prometheus/prometheus/config/generated"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/utility/test"
@@ -67,11 +69,17 @@ func (t *fakeTarget) Merge(newTarget Target) {}
 func testTargetManager(t test.Tester) {
 	results := make(chan format.Result, 5)
 	targetManager := NewTargetManager(results, 3)
-	testJob1 := &config.JobConfig{
-		Name: "test_job1",
+	testJob1 := config.JobConfig{
+		JobConfig: pb.JobConfig{
+			Name:           proto.String("test_job1"),
+			ScrapeInterval: proto.String("1m"),
+		},
 	}
-	testJob2 := &config.JobConfig{
-		Name: "test_job2",
+	testJob2 := config.JobConfig{
+		JobConfig: pb.JobConfig{
+			Name:           proto.String("test_job2"),
+			ScrapeInterval: proto.String("1m"),
+		},
 	}
 
 	target1GroupA := &fakeTarget{

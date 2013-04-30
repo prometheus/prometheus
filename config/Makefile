@@ -11,13 +11,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-all: parser.y.go lexer.l.go
+all: generated
 
-parser.y.go: parser.y
-	go tool yacc -o parser.y.go -v "" parser.y
+SUFFIXES:
 
-lexer.l.go: parser.y.go lexer.l
-	golex lexer.l
+MAKE_ARTIFACTS = generated-stamp
+
+include ../Makefile.INCLUDE
+
+generated: generated-stamp
+
+generated-stamp: config.proto
+	protoc --proto_path=$(PREFIX)/include:. --go_out=generated/ config.proto
+	touch $@
 
 clean:
-	rm lexer.l.go parser.y.go
+	rm -rf generated/*
+	-rm -f $(MAKE_ARTIFACTS)
+
+.PHONY: generated

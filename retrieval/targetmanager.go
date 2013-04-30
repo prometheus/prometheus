@@ -24,10 +24,10 @@ import (
 type TargetManager interface {
 	acquire()
 	release()
-	AddTarget(job *config.JobConfig, t Target, defaultScrapeInterval time.Duration)
-	ReplaceTargets(job *config.JobConfig, newTargets []Target, defaultScrapeInterval time.Duration)
+	AddTarget(job config.JobConfig, t Target, defaultScrapeInterval time.Duration)
+	ReplaceTargets(job config.JobConfig, newTargets []Target, defaultScrapeInterval time.Duration)
 	Remove(t Target)
-	AddTargetsFromConfig(config *config.Config)
+	AddTargetsFromConfig(config config.Config)
 	Pools() map[string]*TargetPool
 }
 
@@ -53,30 +53,27 @@ func (m *targetManager) release() {
 	<-m.requestAllowance
 }
 
-func (m *targetManager) TargetPoolForJob(job *config.JobConfig, defaultScrapeInterval time.Duration) (targetPool *TargetPool) {
-	targetPool, ok := m.poolsByJob[job.Name]
+func (m *targetManager) TargetPoolForJob(job config.JobConfig, defaultScrapeInterval time.Duration) (targetPool *TargetPool) {
+	targetPool, ok := m.poolsByJob[job.GetName()]
 
 	if !ok {
 		targetPool = NewTargetPool(m)
-		log.Printf("Pool for job %s does not exist; creating and starting...", job.Name)
+		log.Printf("Pool for job %s does not exist; creating and starting...", job.GetName())
 
-		interval := job.ScrapeInterval
-		if interval == 0 {
-			interval = defaultScrapeInterval
-		}
-		m.poolsByJob[job.Name] = targetPool
+		interval := job.ScrapeInterval()
+		m.poolsByJob[job.GetName()] = targetPool
 		go targetPool.Run(m.results, interval)
 	}
 	return
 }
 
-func (m *targetManager) AddTarget(job *config.JobConfig, t Target, defaultScrapeInterval time.Duration) {
+func (m *targetManager) AddTarget(job config.JobConfig, t Target, defaultScrapeInterval time.Duration) {
 	targetPool := m.TargetPoolForJob(job, defaultScrapeInterval)
 	targetPool.AddTarget(t)
-	m.poolsByJob[job.Name] = targetPool
+	m.poolsByJob[job.GetName()] = targetPool
 }
 
-func (m *targetManager) ReplaceTargets(job *config.JobConfig, newTargets []Target, defaultScrapeInterval time.Duration) {
+func (m *targetManager) ReplaceTargets(job config.JobConfig, newTargets []Target, defaultScrapeInterval time.Duration) {
 	targetPool := m.TargetPoolForJob(job, defaultScrapeInterval)
 	targetPool.replaceTargets(newTargets)
 }
@@ -85,19 +82,21 @@ func (m targetManager) Remove(t Target) {
 	panic("not implemented")
 }
 
-func (m *targetManager) AddTargetsFromConfig(config *config.Config) {
-	for _, job := range config.Jobs {
-		for _, configTargets := range job.Targets {
+func (m *targetManager) AddTargetsFromConfig(config config.Config) {
+	for _, job := range config.Jobs() {
+		for _, targetGroup := range job.TargetGroup {
 			baseLabels := model.LabelSet{
-				model.JobLabel: model.LabelValue(job.Name),
+				model.JobLabel: model.LabelValue(job.GetName()),
 			}
-			for label, value := range configTargets.Labels {
-				baseLabels[label] = value
+			if targetGroup.Labels != nil {
+				for _, label := range targetGroup.Labels.Label {
+					baseLabels[model.LabelName(label.GetName())] = model.LabelValue(label.GetValue())
+				}
 			}
 
-			for _, endpoint := range configTargets.Endpoints {
+			for _, endpoint := range targetGroup.Target {
 				target := NewTarget(endpoint, time.Second*5, baseLabels)
-				m.AddTarget(&job, target, config.Global.ScrapeInterval)
+				m.AddTarget(job, target, config.ScrapeInterval())
 			}
 		}
 	}
