@@ -44,7 +44,7 @@ func (h *StatusHandler) Run() {
 	})
 
 	h.PrometheusStatus = &PrometheusStatus{
-		Config:      h.appState.Config.ToString(0),
+		Config:      h.appState.Config.String(),
 		Rules:       "TODO: list rules here",
 		Status:      "TODO: add status information here",
 		TargetPools: h.appState.TargetManager.Pools(),

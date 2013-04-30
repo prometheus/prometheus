@@ -34,7 +34,7 @@ func (serv MetricsService) SetTargets(targetGroups []TargetGroup, jobName string
 		for _, targetGroup := range targetGroups {
 			// Do mandatory map type conversion due to Go shortcomings.
 			baseLabels := model.LabelSet{
-				model.JobLabel: model.LabelValue(job.Name),
+				model.JobLabel: model.LabelValue(job.GetName()),
 			}
 			for label, value := range targetGroup.BaseLabels {
 				baseLabels[model.LabelName(label)] = model.LabelValue(value)
@@ -45,6 +45,6 @@ func (serv MetricsService) SetTargets(targetGroups []TargetGroup, jobName string
 				newTargets = append(newTargets, newTarget)
 			}
 		}
-		serv.appState.TargetManager.ReplaceTargets(job, newTargets, serv.appState.Config.Global.ScrapeInterval)
+		serv.appState.TargetManager.ReplaceTargets(*job, newTargets, serv.appState.Config.ScrapeInterval())
 	}
 }
