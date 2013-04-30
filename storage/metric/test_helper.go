@@ -27,7 +27,7 @@ var (
 )
 
 const (
-	appendQueueSize = 1000
+	appendQueueSize = 100
 )
 
 func testAppendSample(p MetricPersistence, s model.Sample, t test.Tester) {
