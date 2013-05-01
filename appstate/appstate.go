@@ -24,7 +24,7 @@ import (
 // runtime state. It enables simpler passing of this state to components that
 // require it.
 type ApplicationState struct {
-	Config        *config.Config
+	Config        config.Config
 	RuleManager   rules.RuleManager
 	Storage       metric.Storage
 	TargetManager retrieval.TargetManager

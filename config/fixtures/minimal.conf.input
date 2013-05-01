@@ -1,21 +1,20 @@
-global {
-	scrape_interval = "30s"
-	evaluation_interval = "30s"
-	labels {
-		monitor = "test"
-	}
-	rule_files = [
-		"prometheus.rules"
-	]
-}
+global <
+	scrape_interval: "30s"
+	evaluation_interval: "30s"
+	labels: <
+    label: <
+      name: "monitor"
+      value: "test"
+    >
+	>
+	rule_file: "prometheus.rules"
+>
 
-job {
-	name = "prometheus"
-	scrape_interval = "15s"
+job: <
+	name: "prometheus"
+	scrape_interval: "15s"
 
-	targets {
-		endpoints = [
-			"http://localhost:9090/metrics.json"
-		]
-	}
-}
+	target_group: <
+		target: "http://localhost:9090/metrics.json"
+  >
+>

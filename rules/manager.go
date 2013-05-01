@@ -27,7 +27,7 @@ type Result struct {
 }
 
 type RuleManager interface {
-	AddRulesFromConfig(config *config.Config) error
+	AddRulesFromConfig(config config.Config) error
 }
 
 type ruleManager struct {
@@ -87,8 +87,8 @@ func (m *ruleManager) runIteration(results chan *Result) {
 	wg.Wait()
 }
 
-func (m *ruleManager) AddRulesFromConfig(config *config.Config) error {
-	for _, ruleFile := range config.Global.RuleFiles {
+func (m *ruleManager) AddRulesFromConfig(config config.Config) error {
+	for _, ruleFile := range config.Global.RuleFile {
 		newRules, err := LoadRulesFromFile(ruleFile)
 		if err != nil {
 			return err

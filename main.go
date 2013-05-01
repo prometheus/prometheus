@@ -107,7 +107,7 @@ func main() {
 
 	ast.SetStorage(ts)
 
-	ruleManager := rules.NewRuleManager(ruleResults, conf.Global.EvaluationInterval)
+	ruleManager := rules.NewRuleManager(ruleResults, conf.EvaluationInterval())
 	err = ruleManager.AddRulesFromConfig(conf)
 	if err != nil {
 		log.Fatalf("Error loading rule files: %v", err)

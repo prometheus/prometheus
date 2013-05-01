@@ -14,114 +14,119 @@
 package config
 
 import (
-	"errors"
+	"code.google.com/p/goprotobuf/proto"
 	"fmt"
-	"github.com/prometheus/prometheus/model"
+	pb "github.com/prometheus/prometheus/config/generated"
 	"github.com/prometheus/prometheus/utility"
+	"regexp"
 	"time"
 )
 
+var jobNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_-]*$")
+var labelNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+// Config encapsulates the configuration of a Prometheus instance. It wraps the
+// raw configuration protocol buffer to be able to add custom methods to it.
 type Config struct {
-	Global *GlobalConfig
-	Jobs   []JobConfig
+	// The protobuf containing the actual configuration values.
+	pb.PrometheusConfig
 }
 
-type GlobalConfig struct {
-	ScrapeInterval     time.Duration
-	EvaluationInterval time.Duration
-	Labels             model.LabelSet
-	RuleFiles          []string
+// String returns an ASCII serialization of the loaded configuration protobuf.
+func (c Config) String() string {
+	return proto.MarshalTextString(&c.PrometheusConfig)
 }
 
-type JobConfig struct {
-	Name           string
-	ScrapeInterval time.Duration
-	Targets        []Targets
-}
-
-type Targets struct {
-	Endpoints []string
-	Labels    model.LabelSet
-}
-
-func New() *Config {
-	return &Config{
-		Global: &GlobalConfig{Labels: model.LabelSet{}},
+// validateLabels validates whether label names have the correct format.
+func (c Config) validateLabels(labels *pb.LabelPairs) error {
+	if labels == nil {
+		return nil
 	}
-}
-
-func (config *Config) AddJob(options map[string]string, targets []Targets) error {
-	name, ok := options["name"]
-	if !ok {
-		return errors.New("Missing job name")
-	}
-	if len(targets) == 0 {
-		return fmt.Errorf("No targets configured for job '%v'", name)
-	}
-	job := JobConfig{
-		Targets: tmpJobTargets,
-	}
-	for option, value := range options {
-		if err := job.SetOption(option, value); err != nil {
-			return err
+	for _, label := range labels.Label {
+		if !labelNameRE.MatchString(label.GetName()) {
+			return fmt.Errorf("Invalid label name '%s'", label.GetName())
 		}
 	}
-	config.Jobs = append(config.Jobs, job)
 	return nil
 }
 
-func (config *Config) GetJobByName(name string) (jobConfig *JobConfig) {
-	for _, job := range config.Jobs {
-		if job.Name == name {
-			jobConfig = &job
+// Validate checks an entire parsed Config for the validity of its fields.
+func (c Config) Validate() error {
+	// Check the global configuration section for validity.
+	global := c.Global
+	if _, err := utility.StringToDuration(global.GetScrapeInterval()); err != nil {
+		return fmt.Errorf("Invalid global scrape interval: %s", err)
+	}
+	if _, err := utility.StringToDuration(global.GetEvaluationInterval()); err != nil {
+		return fmt.Errorf("Invalid rule evaluation interval: %s", err)
+	}
+	if err := c.validateLabels(global.Labels); err != nil {
+		return fmt.Errorf("Invalid global labels: %s", err)
+	}
+
+	// Check each job configuration for validity.
+	for _, job := range c.Job {
+		if !jobNameRE.MatchString(job.GetName()) {
+			return fmt.Errorf("Invalid job name '%s'", job.GetName())
+		}
+		if _, err := utility.StringToDuration(job.GetScrapeInterval()); err != nil {
+			return fmt.Errorf("Invalid scrape interval for job '%s': %s", job.GetName(), err)
+		}
+		for _, targetGroup := range job.TargetGroup {
+			if err := c.validateLabels(targetGroup.Labels); err != nil {
+				return fmt.Errorf("Invalid labels for job '%s': %s", job.GetName(), err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetJobByName finds a job by its name in a Config object.
+func (c Config) GetJobByName(name string) (jobConfig *JobConfig) {
+	for _, job := range c.Job {
+		if job.GetName() == name {
+			jobConfig = &JobConfig{*job}
 			break
 		}
 	}
 	return
 }
 
-func (config *GlobalConfig) SetOption(option string, value string) (err error) {
-	switch option {
-	case "scrape_interval":
-		config.ScrapeInterval, err = utility.StringToDuration(value)
-		return nil
-	case "evaluation_interval":
-		config.EvaluationInterval, err = utility.StringToDuration(value)
-		return err
-	default:
-		err = fmt.Errorf("Unrecognized global configuration option '%v'", option)
+// Jobs returns all the jobs in a Config object.
+func (c Config) Jobs() (jobs []JobConfig) {
+	for _, job := range c.Job {
+		jobs = append(jobs, JobConfig{*job})
 	}
 	return
 }
 
-func (config *GlobalConfig) SetLabels(labels model.LabelSet) {
-	for k, v := range labels {
-		config.Labels[k] = v
+// stringToDuration converts a string to a duration and dies on invalid format.
+func stringToDuration(intervalStr string) time.Duration {
+	duration, err := utility.StringToDuration(intervalStr)
+	if err != nil {
+		panic(err)
 	}
+	return duration
 }
 
-func (config *GlobalConfig) AddRuleFiles(ruleFiles []string) {
-	for _, ruleFile := range ruleFiles {
-		config.RuleFiles = append(config.RuleFiles, ruleFile)
-	}
+// ScrapeInterval gets the default scrape interval for a Config.
+func (c Config) ScrapeInterval() time.Duration {
+	return stringToDuration(c.Global.GetScrapeInterval())
 }
 
-func (job *JobConfig) SetOption(option string, value string) (err error) {
-	switch option {
-	case "name":
-		job.Name = value
-	case "scrape_interval":
-		job.ScrapeInterval, err = utility.StringToDuration(value)
-	default:
-		err = fmt.Errorf("Unrecognized job configuration option '%v'", option)
-	}
-	return
+// EvaluationInterval gets the default evaluation interval for a Config.
+func (c Config) EvaluationInterval() time.Duration {
+	return stringToDuration(c.Global.GetEvaluationInterval())
 }
 
-func (job *JobConfig) AddTargets(endpoints []string, labels model.LabelSet) {
-	targets := Targets{
-		Endpoints: endpoints,
-		Labels:    labels,
-	}
-	job.Targets = append(job.Targets, targets)
+// JobConfig encapsulates the configuration of a single job. It wraps the raw
+// job protocol buffer to be able to add custom methods to it.
+type JobConfig struct {
+	pb.JobConfig
+}
+
+// EvaluationInterval gets the scrape interval for a job.
+func (c JobConfig) ScrapeInterval() time.Duration {
+	return stringToDuration(c.GetScrapeInterval())
 }
