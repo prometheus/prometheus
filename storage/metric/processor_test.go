@@ -852,7 +852,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		defer close(stop)
 
 		c := Curator{
-			stop: stop,
+			Stop: stop,
 		}
 
 		err = c.Run(scenario.in.ignoreYoungerThan, testInstant, scenario.in.processor, curatorStates, samples, watermarkStates, updates)

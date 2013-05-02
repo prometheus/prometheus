@@ -370,7 +370,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 		scans = viewJob.builder.ScanJobs()
 		view  = newView()
 		// Get a single iterator that will be used for all data extraction below.
-		iterator = t.diskStorage.metricSamples.NewIterator(true)
+		iterator = t.diskStorage.MetricSamples.NewIterator(true)
 	)
 	defer iterator.Close()
 

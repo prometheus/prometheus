@@ -60,10 +60,10 @@ type watermarkFilter struct {
 // stored samples on-disk.  This is useful to compact sparse sample values into
 // single sample entities to reduce keyspace load on the datastore.
 type Curator struct {
-	// stop functions as a channel that when empty allows the curator to operate.
+	// Stop functions as a channel that when empty allows the curator to operate.
 	// The moment a value is ingested inside of it, the curator goes into drain
 	// mode.
-	stop chan bool
+	Stop chan bool
 }
 
 // watermarkDecoder converts (dto.Fingerprint, dto.MetricHighWatermark) doubles
@@ -142,7 +142,7 @@ func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, process
 		ignoreYoungerThan: ignoreYoungerThan,
 		processor:         processor,
 		status:            status,
-		stop:              c.stop,
+		stop:              c.Stop,
 		stopAt:            instant.Add(-1 * ignoreYoungerThan),
 	}
 
@@ -167,8 +167,8 @@ func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, process
 // drain instructs the curator to stop at the next convenient moment as to not
 // introduce data inconsistencies.
 func (c Curator) Drain() {
-	if len(c.stop) == 0 {
-		c.stop <- true
+	if len(c.Stop) == 0 {
+		c.Stop <- true
 	}
 }
 
