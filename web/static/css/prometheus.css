@@ -1,5 +1,5 @@
 body {
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: Arial, sans-serif;
   font-size: 14px;
   line-height: 20px;
   color: #333;
@@ -15,6 +15,10 @@ input:not([type=submit]):not([type=file]):not([type=button]) {
           border-radius: 3px;
 }
 
+h2 {
+  margin-left: 8px;
+}
+
 .grouping_box {
   position: relative;
   padding: 5px;
@@ -24,6 +28,7 @@ input:not([type=submit]):not([type=file]):not([type=button]) {
   -webkit-border-radius: 4px;
      -moz-border-radius: 4px;
           border-radius: 4px;
+  margin: 0px 8px 2px 8px;
 }
 
 .grouping_box .head, .eval_stats {
@@ -55,18 +60,22 @@ input[name=end_input], input[name=range_input] {
 }
 
 #navigation {
-  font-size: 16pt;
   background-color: #333;
-  color: #F2F2F2;
-  line-height: 120%;
+  padding: 3px;
+  font-size: 13px;
+  font-weight: bold;
 }
 
 #navigation a {
-  color: #F2F2F2;
-  padding-right: 1em;
+  color: #bbb;
+  padding: 5px;
   text-decoration: none;
 }
 
-#navigation a:visited { color: #F2F2F2 }
-#navigation a:active { color: #F60 }
-#navigation a:hover { color: #06C }
+#navigation a:visited { color: #bbb }
+#navigation a:active { color: #fff }
+#navigation a:hover { color: #fff }
+
+#add_graph {
+    margin-left: 8px;
+}

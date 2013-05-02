@@ -6,6 +6,10 @@ a { color: black; }
 a:hover { color: gray; }
 a:active { color: black; }
 
+.graph_wrapper {
+  margin-top: 8px;
+}
+
 .graph_container {
   font-family: Arial, Helvetica, sans-serif;
 }

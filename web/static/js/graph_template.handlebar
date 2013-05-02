@@ -1,4 +1,4 @@
-        <div id="graph_wrapper{{id}}">
+        <div id="graph_wrapper{{id}}" class="graph_wrapper">
           <form action="/api/query_range" method="GET" class="query_form">
             <div class="grouping_box">
               <div class="head">
@@ -25,12 +25,12 @@
                   <input title="Time range of graph" type="text" name="range_input" id="range_input{{id}}" size="3" value="{{range_input}}"  >
                   <input type="button" value="+" name="inc_range">
                   <input type="hidden" name="range">
-      
+
                   <input type="button" value="&larr;" name="dec_end">
                   <input title="End time of graph" placeholder="Until" type="text" name="end_input" id="end{{id}}" size="16" value="{{end  }}">
                   <input type="button" value="&rarr;" name="inc_end">
                   <input type="hidden" name="end">
-      
+
                   <input title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
                   <input type="hidden" name="step">
                   <label for="refresh">↻</label>
