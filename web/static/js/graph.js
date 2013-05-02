@@ -275,6 +275,9 @@ Prometheus.Graph.prototype.decreaseEnd = function() {
 
 Prometheus.Graph.prototype.submitQuery = function() {
   var self = this;
+  if (!self.expr.val()) {
+    return
+  }
 
   self.spinner.show();
   self.evalStats.empty();
