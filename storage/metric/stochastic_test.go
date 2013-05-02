@@ -199,7 +199,7 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i 
 		return
 	}
 
-	iterator := l.metricSamples.NewIterator(true)
+	iterator := l.MetricSamples.NewIterator(true)
 	defer iterator.Close()
 
 	for valid := iterator.Seek(e); valid; valid = iterator.Next() {

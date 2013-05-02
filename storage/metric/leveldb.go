@@ -37,13 +37,13 @@ var (
 )
 
 type LevelDBMetricPersistence struct {
-	curationRemarks         *leveldb.LevelDBPersistence
+	CurationRemarks         *leveldb.LevelDBPersistence
 	fingerprintToMetrics    *leveldb.LevelDBPersistence
 	labelNameToFingerprints *leveldb.LevelDBPersistence
 	labelSetToFingerprints  *leveldb.LevelDBPersistence
-	metricHighWatermarks    *leveldb.LevelDBPersistence
+	MetricHighWatermarks    *leveldb.LevelDBPersistence
 	metricMembershipIndex   *index.LevelDBMembershipIndex
-	metricSamples           *leveldb.LevelDBPersistence
+	MetricSamples           *leveldb.LevelDBPersistence
 }
 
 var (
@@ -65,13 +65,13 @@ type leveldbCloser interface {
 
 func (l *LevelDBMetricPersistence) Close() {
 	var persistences = []leveldbCloser{
-		l.curationRemarks,
+		l.CurationRemarks,
 		l.fingerprintToMetrics,
 		l.labelNameToFingerprints,
 		l.labelSetToFingerprints,
-		l.metricHighWatermarks,
+		l.MetricHighWatermarks,
 		l.metricMembershipIndex,
-		l.metricSamples,
+		l.MetricSamples,
 	}
 
 	closerGroup := sync.WaitGroup{}
@@ -110,7 +110,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Samples by Fingerprint",
 			func() {
 				var err error
-				emission.metricSamples, err = leveldb.NewLevelDBPersistence(baseDirectory+"/samples_by_fingerprint", *samplesByFingerprintCacheSize, 10)
+				emission.MetricSamples, err = leveldb.NewLevelDBPersistence(baseDirectory+"/samples_by_fingerprint", *samplesByFingerprintCacheSize, 10)
 				workers.MayFail(err)
 			},
 		},
@@ -118,7 +118,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"High Watermarks by Fingerprint",
 			func() {
 				var err error
-				emission.metricHighWatermarks, err = leveldb.NewLevelDBPersistence(baseDirectory+"/high_watermarks_by_fingerprint", *highWatermarkCacheSize, 10)
+				emission.MetricHighWatermarks, err = leveldb.NewLevelDBPersistence(baseDirectory+"/high_watermarks_by_fingerprint", *highWatermarkCacheSize, 10)
 				workers.MayFail(err)
 			},
 		},
@@ -150,7 +150,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Sample Curation Remarks",
 			func() {
 				var err error
-				emission.curationRemarks, err = leveldb.NewLevelDBPersistence(baseDirectory+"/curation_remarks", *curationRemarksCacheSize, 10)
+				emission.CurationRemarks, err = leveldb.NewLevelDBPersistence(baseDirectory+"/curation_remarks", *curationRemarksCacheSize, 10)
 				workers.MayFail(err)
 			},
 		},
@@ -501,7 +501,7 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 		keyEncoded := coding.NewProtocolBuffer(key)
 
 		key.Signature = proto.String(fingerprint.ToRowKey())
-		raw, err = l.metricHighWatermarks.Get(keyEncoded)
+		raw, err = l.MetricHighWatermarks.Get(keyEncoded)
 		if err != nil {
 			return
 		}
@@ -521,7 +521,7 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 		mutationCount++
 	}
 
-	err = l.metricHighWatermarks.Commit(batch)
+	err = l.MetricHighWatermarks.Commit(batch)
 	if err != nil {
 		return
 	}
@@ -596,7 +596,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 		}
 	}
 
-	err = l.metricSamples.Commit(samplesBatch)
+	err = l.MetricSamples.Commit(samplesBatch)
 	if err != nil {
 		return
 	}
