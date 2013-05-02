@@ -55,7 +55,7 @@ input[name=end_input], input[name=range_input] {
 }
 
 #navigation {
-  font-size: 20pt;
+  font-size: 16pt;
   background-color: #333;
   color: #F2F2F2;
   line-height: 120%;
