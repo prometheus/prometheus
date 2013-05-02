@@ -26,7 +26,7 @@ import (
 type ApplicationState struct {
 	Config        config.Config
 	RuleManager   rules.RuleManager
-	Storage       metric.Storage
+	Storage       metric.TieredStorage
 	TargetManager retrieval.TargetManager
 	BuildInfo     map[string]string
 	CurationState chan metric.CurationState

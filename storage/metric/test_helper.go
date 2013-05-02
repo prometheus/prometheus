@@ -78,7 +78,7 @@ func buildMemoryTestPersistence(f func(p MetricPersistence, t test.Tester)) func
 }
 
 type testTieredStorageCloser struct {
-	storage   Storage
+	storage   *TieredStorage
 	directory test.Closer
 }
 
@@ -87,7 +87,7 @@ func (t testTieredStorageCloser) Close() {
 	t.directory.Close()
 }
 
-func NewTestTieredStorage(t test.Tester) (storage Storage, closer test.Closer) {
+func NewTestTieredStorage(t test.Tester) (storage *TieredStorage, closer test.Closer) {
 	var directory test.TemporaryDirectory
 	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
 	storage, err := NewTieredStorage(appendQueueSize, 2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
