@@ -20,7 +20,3 @@ import (
 func graphHandler(w http.ResponseWriter, r *http.Request) {
 	executeTemplate(w, "graph", nil)
 }
-
-func consoleHandler(w http.ResponseWriter, r *http.Request) {
-	executeTemplate(w, "console", nil)
-}

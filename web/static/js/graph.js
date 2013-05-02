@@ -58,6 +58,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.options['id'] = self.id;
   self.options['range_input'] = self.options['range_input'] || "1h";
   self.options['stacked_checked'] = self.options['stacked'] ? "checked" : "";
+  self.options['tab'] = self.options['tab'] || 0;
 
   // Draw graph controls and container from Handlebars template.
 
@@ -73,6 +74,22 @@ Prometheus.Graph.prototype.initialize = function() {
   self.stacked = self.queryForm.find("input[name=stacked]");
   self.insertMetric = self.queryForm.find("select[name=insert_metric]");
   self.refreshInterval = self.queryForm.find("select[name=refresh]");
+  
+  self.consoleTab = graphWrapper.find(".console");
+  self.graphTab   = graphWrapper.find(".graph_container");
+  self.tabs = graphWrapper.find(".tabs");;
+  self.tab  = $(self.tabs.find("> div")[self.options['tab']]); // active tab
+
+  self.tabs.tabs({
+    active: self.options['tab'],
+    activate: function(e, ui) {
+      storeGraphOptionsInUrl();
+      self.tab = ui.newPanel
+      if (self.tab.hasClass('reload')) { // reload if flagged with class 'reload'
+        self.submitQuery();
+      }
+    }
+  });
 
   // Return moves focus back to expr instead of submitting.
   self.insertMetric.bind('keydown', 'return', function(e) {
@@ -98,7 +115,12 @@ Prometheus.Graph.prototype.initialize = function() {
   self.refreshInterval.change(function() { self.updateRefresh() })
 
   self.stacked.change(function() { self.updateGraph(); });
-  self.queryForm.submit(function() { self.submitQuery(); return false; });
+  self.queryForm.submit(function() {
+    self.consoleTab.addClass('reload');
+    self.graphTab.addClass('reload');
+    self.submitQuery();
+    return false;
+  });
   self.spinner.hide();
 
   self.queryForm.find("input[name=inc_range]").click(function() { self.increaseRange(); });
@@ -168,6 +190,7 @@ Prometheus.Graph.prototype.getOptions = function() {
         }
       }
   });
+  options['tab'] = self.tabs.tabs("option", "active");
   return options;
 };
 
@@ -268,25 +291,28 @@ Prometheus.Graph.prototype.submitQuery = function() {
   if (self.queryXhr) {
     self.queryXhr.abort()
   }
+  var url
+  var data
+  if (self.tab[0] == self.graphTab[0]) {
+    url  = self.queryForm.attr("action")
+    data = self.queryForm.serialize()
+    dataType = "json"
+    success = function(json, textStatus) { self.handleGraphResponse(json, textStatus) }
+  } else {
+    url  = '/api/query'
+    data = self.expr.serialize()
+    dataType = "text"
+    success = function(text, textStatus) { self.handleConsoleResponse(text, textStatus) }
+  }
+
   self.queryXhr = $.ajax({
       method: self.queryForm.attr("method"),
-      url: self.queryForm.attr("action"),
-      dataType: "json",
+      url: url,
+      dataType: dataType,
       data: self.queryForm.serialize(),
-      success: function(json, textStatus) {
-        if (json.Type == "error") {
-          alert(json.Value);
-          return;
-        }
-        self.data = self.transformData(json);
-        if (self.data.length == 0) {
-          alert("No datapoints found.");
-          return;
-        }
-        self.updateGraph(true);
-      },
-      error: function() {
-        alert("Error executing query!");
+      success: success,
+      error: function(xhr, resp) {
+        alert("Error executing query: " + resp);
       },
       complete: function() {
         var duration = new Date().getTime() - startTime;
@@ -453,11 +479,31 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
 Prometheus.Graph.prototype.resizeGraph = function() {
   var self = this;
   self.rickshawGraph.configure({
-    height: Math.max(self.graph.innerHeight(), 100),
     width: Math.max(self.graph.innerWidth(), 200),
   });
   self.rickshawGraph.render();
-};
+}
+
+Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
+  var self = this
+  if (json.Type == "error") {
+    alert(json.Value);
+    return;
+  }
+  self.data = self.transformData(json);
+  if (self.data.length == 0) {
+    alert("No datapoints found.");
+    return;
+  }
+  self.graphTab.removeClass('reload');
+  self.updateGraph(true);
+}
+
+Prometheus.Graph.prototype.handleConsoleResponse = function(text, textStatus) {
+  var self = this;
+  self.consoleTab.removeClass('reload');
+  self.consoleTab.text(text);
+}
 
 function parseGraphOptionsFromUrl() {
   var hashOptions = window.location.hash.slice(1);
@@ -465,10 +511,11 @@ function parseGraphOptionsFromUrl() {
     return [];
   }
   var optionsJSON = decodeURIComponent(window.location.hash.slice(1));
-  return JSON.parse(optionsJSON);
+  options = JSON.parse(optionsJSON);
+  return options;
 }
 
-function storeGraphOptionsInUrl(options) {
+function storeGraphOptionsInUrl() {
   var allGraphsOptions = [];
   for (var i = 0; i < graphs.length; i++) {
     allGraphsOptions.push(graphs[i].getOptions());
@@ -508,5 +555,4 @@ function init() {
     } 
   })
 }
-
 $(init);
