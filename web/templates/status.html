@@ -1,9 +1,18 @@
 {{define "head"}}<!-- nix -->{{end}}
 
 {{define "content"}}
-    <h2>Status</h2>
+    <h2>Build Info</h2>
     <div class="grouping_box">
-{{.Status}}
+      <table>
+        <tbody>
+          {{range $key, $value := .BuildInfo}}
+          <tr>
+            <th scope="row">{{$key}}</th>
+            <td>{{$value}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
     </div>
 
     <h2>Configuration</h2>
@@ -56,20 +65,6 @@
           <td>{{.Curation.Fingerprint}}</td>
         </tr>
         {{end}}
-      </table>
-    </div>
-
-    <h2>Build Info</h2>
-    <div class="grouping_box">
-      <table>
-        <tbody>
-          {{range $key, $value := .BuildInfo}}
-          <tr>
-            <th scope="row">{{$key}}</th>
-            <td>{{$value}}</td>
-          </tr>
-          {{end}}
-        </tbody>
       </table>
     </div>
 
