@@ -29,7 +29,7 @@ type curationState struct {
 	fingerprint       string
 	ignoreYoungerThan time.Duration
 	lastCurated       time.Time
-	processor         processor
+	processor         Processor
 }
 
 type watermarkState struct {
@@ -48,7 +48,7 @@ type in struct {
 	sampleGroups      fixture.Pairs
 	ignoreYoungerThan time.Duration
 	groupSize         uint32
-	processor         processor
+	processor         Processor
 }
 
 type out struct {
@@ -101,7 +101,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 	}{
 		{
 			in: in{
-				processor: &compactionProcessor{
+				processor: &CompactionProcessor{
 					MinimumGroupSize:         5,
 					MaximumMutationPoolBatch: 15,
 				},
@@ -112,7 +112,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint:       "0001-A-1-Z",
 						ignoreYoungerThan: 1 * time.Hour,
 						lastCurated:       testInstant.Add(-1 * 30 * time.Minute),
-						processor: &compactionProcessor{
+						processor: &CompactionProcessor{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
 						},
@@ -121,7 +121,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint:       "0002-A-2-Z",
 						ignoreYoungerThan: 1 * time.Hour,
 						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
-						processor: &compactionProcessor{
+						processor: &CompactionProcessor{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
 						},
@@ -129,7 +129,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					// This rule should effectively be ignored.
 					curationState{
 						fingerprint: "0002-A-2-Z",
-						processor: &compactionProcessor{
+						processor: &CompactionProcessor{
 							MinimumGroupSize:         2,
 							MaximumMutationPoolBatch: 15,
 						},
@@ -531,7 +531,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint:       "0001-A-1-Z",
 						ignoreYoungerThan: time.Hour,
 						lastCurated:       testInstant.Add(-1 * 30 * time.Minute),
-						processor: &compactionProcessor{
+						processor: &CompactionProcessor{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
 						},
@@ -540,7 +540,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint:       "0002-A-2-Z",
 						ignoreYoungerThan: 30 * time.Minute,
 						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
-						processor: &compactionProcessor{
+						processor: &CompactionProcessor{
 							MinimumGroupSize:         2,
 							MaximumMutationPoolBatch: 15,
 						},
@@ -549,7 +549,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint:       "0002-A-2-Z",
 						ignoreYoungerThan: time.Hour,
 						lastCurated:       testInstant.Add(-1 * 60 * time.Minute),
-						processor: &compactionProcessor{
+						processor: &CompactionProcessor{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
 						},
@@ -848,8 +848,14 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		updates := make(chan CurationState, 100)
 		defer close(updates)
 
-		c := newCurator()
-		err = c.run(scenario.in.ignoreYoungerThan, testInstant, scenario.in.processor, curatorStates, samples, watermarkStates, updates)
+		stop := make(chan bool)
+		defer close(stop)
+
+		c := Curator{
+			stop: stop,
+		}
+
+		err = c.Run(scenario.in.ignoreYoungerThan, testInstant, scenario.in.processor, curatorStates, samples, watermarkStates, updates)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -883,7 +889,6 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 
 			curationKey := model.NewCurationKeyFromDTO(curationKeyDto)
 			actualCurationRemark := model.NewCurationRemarkFromDTO(curationValueDto)
-
 			signature, err := expected.processor.Signature()
 			if err != nil {
 				t.Fatal(err)

@@ -26,7 +26,7 @@ import (
 
 // processor models a post-processing agent that performs work given a sample
 // corpus.
-type processor interface {
+type Processor interface {
 	// Name emits the name of this processor's signature encoder.  It must be
 	// fully-qualified in the sense that it could be used via a Protocol Buffer
 	// registry to extract the descriptor to reassemble this message.
@@ -44,9 +44,9 @@ type processor interface {
 	Apply(sampleIterator leveldb.Iterator, samples raw.Persistence, stopAt time.Time, fingerprint model.Fingerprint) (lastCurated time.Time, err error)
 }
 
-// compactionProcessor combines sparse values in the database together such
+// CompactionProcessor combines sparse values in the database together such
 // that at least MinimumGroupSize-sized chunks are grouped together.
-type compactionProcessor struct {
+type CompactionProcessor struct {
 	// MaximumMutationPoolBatch represents approximately the largest pending
 	// batch of mutation operations for the database before pausing to
 	// commit before resumption.
@@ -56,16 +56,16 @@ type compactionProcessor struct {
 	// MinimumGroupSize represents the smallest allowed sample chunk size in the
 	// database.
 	MinimumGroupSize int
-	// signature is the byte representation of the compactionProcessor's settings,
+	// signature is the byte representation of the CompactionProcessor's settings,
 	// used for purely memoization purposes across an instance.
 	signature []byte
 }
 
-func (p compactionProcessor) Name() string {
+func (p CompactionProcessor) Name() string {
 	return "io.prometheus.CompactionProcessorDefinition"
 }
 
-func (p *compactionProcessor) Signature() (out []byte, err error) {
+func (p *CompactionProcessor) Signature() (out []byte, err error) {
 	if len(p.signature) == 0 {
 		out, err = proto.Marshal(&dto.CompactionProcessorDefinition{
 			MinimumGroupSize: proto.Uint32(uint32(p.MinimumGroupSize)),
@@ -79,11 +79,11 @@ func (p *compactionProcessor) Signature() (out []byte, err error) {
 	return
 }
 
-func (p compactionProcessor) String() string {
+func (p CompactionProcessor) String() string {
 	return fmt.Sprintf("compactionProcess for minimum group size %d", p.MinimumGroupSize)
 }
 
-func (p compactionProcessor) Apply(sampleIterator leveldb.Iterator, samples raw.Persistence, stopAt time.Time, fingerprint model.Fingerprint) (lastCurated time.Time, err error) {
+func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samples raw.Persistence, stopAt time.Time, fingerprint model.Fingerprint) (lastCurated time.Time, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {

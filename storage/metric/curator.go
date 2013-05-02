@@ -47,7 +47,7 @@ type watermarkFilter struct {
 	ignoreYoungerThan time.Duration
 	// processor is the post-processor that performs whatever action is desired on
 	// the data that is deemed valid to be worked on.
-	processor processor
+	processor Processor
 	// stop functions as the global stop channel for all future operations.
 	stop chan bool
 	// stopAt is used to determine the elegibility of series for compaction.
@@ -59,7 +59,7 @@ type watermarkFilter struct {
 // curator is responsible for effectuating a given curation policy across the
 // stored samples on-disk.  This is useful to compact sparse sample values into
 // single sample entities to reduce keyspace load on the datastore.
-type curator struct {
+type Curator struct {
 	// stop functions as a channel that when empty allows the curator to operate.
 	// The moment a value is ingested inside of it, the curator goes into drain
 	// mode.
@@ -86,7 +86,7 @@ type watermarkOperator struct {
 	ignoreYoungerThan time.Duration
 	// processor is responsible for executing a given stategy on the
 	// to-be-operated-on series.
-	processor processor
+	processor Processor
 	// sampleIterator is a snapshotted iterator for the time series.
 	sampleIterator leveldb.Iterator
 	// samples
@@ -95,20 +95,13 @@ type watermarkOperator struct {
 	stopAt time.Time
 }
 
-// newCurator builds a new curator for the given LevelDB databases.
-func newCurator() curator {
-	return curator{
-		stop: make(chan bool),
-	}
-}
-
 // run facilitates the curation lifecycle.
 //
 // recencyThreshold represents the most recent time up to which values will be
 // curated.
 // curationState is the on-disk store where the curation remarks are made for
 // how much progress has been made.
-func (c curator) run(ignoreYoungerThan time.Duration, instant time.Time, processor processor, curationState, samples, watermarks *leveldb.LevelDBPersistence, status chan CurationState) (err error) {
+func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState, samples, watermarks *leveldb.LevelDBPersistence, status chan CurationState) (err error) {
 	defer func(t time.Time) {
 		duration := float64(time.Since(t))
 
@@ -173,7 +166,7 @@ func (c curator) run(ignoreYoungerThan time.Duration, instant time.Time, process
 
 // drain instructs the curator to stop at the next convenient moment as to not
 // introduce data inconsistencies.
-func (c curator) drain() {
+func (c Curator) Drain() {
 	if len(c.stop) == 0 {
 		c.stop <- true
 	}
@@ -211,7 +204,7 @@ func (w watermarkFilter) shouldStop() bool {
 	return len(w.stop) != 0
 }
 
-func getCurationRemark(states raw.Persistence, processor processor, ignoreYoungerThan time.Duration, fingerprint model.Fingerprint) (remark *model.CurationRemark, err error) {
+func getCurationRemark(states raw.Persistence, processor Processor, ignoreYoungerThan time.Duration, fingerprint model.Fingerprint) (remark *model.CurationRemark, err error) {
 	rawSignature, err := processor.Signature()
 	if err != nil {
 		return
