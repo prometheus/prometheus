@@ -24,7 +24,9 @@ var defaultStalenessDelta = flag.Int("defaultStalenessDelta", 300, "Default stal
 
 // AST-global storage to use for operations that are not supported by views
 // (i.e. metric->fingerprint lookups).
-var queryStorage metric.Storage = nil
+//
+// BUG(julius): Wrap this into non-global state.
+var queryStorage *metric.TieredStorage
 
 // Describes the lenience limits to apply to values from the materialized view.
 type StalenessPolicy struct {
@@ -167,8 +169,8 @@ func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *
 	return sampleSets, nil
 }
 
-func SetStorage(storage metric.Storage) {
-	queryStorage = storage
+func SetStorage(storage metric.TieredStorage) {
+	queryStorage = &storage
 }
 
 func NewViewAdapter(view metric.View) *viewAdapter {

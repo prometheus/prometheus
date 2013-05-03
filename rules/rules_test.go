@@ -49,10 +49,13 @@ func vectorComparisonString(expected []string, actual []string) string {
 		separator)
 }
 
-func newTestStorage(t test.Tester) (storage metric.Storage, closer test.Closer) {
+func newTestStorage(t test.Tester) (storage *metric.TieredStorage, closer test.Closer) {
 	storage, closer = metric.NewTestTieredStorage(t)
-	ast.SetStorage(storage)
-	storeMatrix(storage, testMatrix)
+	if storage == nil {
+		t.Fatal("storage == nil")
+	}
+	ast.SetStorage(*storage)
+	storeMatrix(*storage, testMatrix)
 	return
 }
 

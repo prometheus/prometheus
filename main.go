@@ -42,7 +42,7 @@ var (
 )
 
 type prometheus struct {
-	storage metric.Storage
+	storage metric.TieredStorage
 	// TODO: Refactor channels to work with arrays of results for better chunking.
 	scrapeResults chan format.Result
 	ruleResults   chan *rules.Result
@@ -86,12 +86,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error opening storage: %s", err)
 	}
+	if ts == nil {
+		log.Fatalln("Nil tiered storage.")
+	}
 
 	scrapeResults := make(chan format.Result, *scrapeResultsQueueCapacity)
 	ruleResults := make(chan *rules.Result, *ruleResultsQueueCapacity)
 
 	prometheus := prometheus{
-		storage:       ts,
+		storage:       *ts,
 		scrapeResults: scrapeResults,
 		ruleResults:   ruleResults,
 	}
@@ -105,7 +108,7 @@ func main() {
 	targetManager := retrieval.NewTargetManager(scrapeResults, *concurrentRetrievalAllowance)
 	targetManager.AddTargetsFromConfig(conf)
 
-	ast.SetStorage(ts)
+	ast.SetStorage(*ts)
 
 	ruleManager := rules.NewRuleManager(ruleResults, conf.EvaluationInterval())
 	err = ruleManager.AddRulesFromConfig(conf)
@@ -118,7 +121,7 @@ func main() {
 		Config:        conf,
 		CurationState: make(chan metric.CurationState),
 		RuleManager:   ruleManager,
-		Storage:       ts,
+		Storage:       *ts,
 		TargetManager: targetManager,
 	}
 
