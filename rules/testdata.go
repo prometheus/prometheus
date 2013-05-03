@@ -51,7 +51,7 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 	return vector
 }
 
-func storeMatrix(storage metric.Storage, matrix ast.Matrix) (err error) {
+func storeMatrix(storage metric.TieredStorage, matrix ast.Matrix) (err error) {
 	pendingSamples := model.Samples{}
 	for _, sampleSet := range matrix {
 		for _, sample := range sampleSet.Values {

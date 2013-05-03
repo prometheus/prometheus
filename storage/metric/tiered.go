@@ -27,9 +27,9 @@ import (
 	"time"
 )
 
-// tieredStorage both persists samples and generates materialized views for
+// TieredStorage both persists samples and generates materialized views for
 // queries.
-type tieredStorage struct {
+type TieredStorage struct {
 	appendToDiskQueue   chan model.Samples
 	appendToMemoryQueue chan model.Samples
 	diskFrontier        *diskFrontier
@@ -51,36 +51,13 @@ type viewJob struct {
 	err     chan error
 }
 
-// Provides a unified means for batch appending values into the datastore along
-// with querying for values in an efficient way.
-type Storage interface {
-	// Enqueues Samples for storage.
-	AppendSamples(model.Samples) error
-	// Enqueus a ViewRequestBuilder for materialization, subject to a timeout.
-	MakeView(request ViewRequestBuilder, timeout time.Duration) (View, error)
-	// Starts serving requests.
-	Serve()
-	// Stops the storage subsystem, flushing all pending operations.
-	Drain()
-	Flush()
-	Close()
-
-	// Get all label values that are associated with the provided label name.
-	GetAllValuesForLabel(model.LabelName) (model.LabelValues, error)
-	// Get all of the metric fingerprints that are associated with the provided
-	// label set.
-	GetFingerprintsForLabelSet(model.LabelSet) (model.Fingerprints, error)
-	// Get the metric associated with the provided fingerprint.
-	GetMetricForFingerprint(model.Fingerprint) (m *model.Metric, err error)
-}
-
-func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, writeMemoryInterval, memoryTTL time.Duration, root string) (storage Storage, err error) {
+func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, writeMemoryInterval, memoryTTL time.Duration, root string) (storage *TieredStorage, err error) {
 	diskStorage, err := NewLevelDBMetricPersistence(root)
 	if err != nil {
 		return
 	}
 
-	storage = &tieredStorage{
+	storage = &TieredStorage{
 		appendToDiskQueue:   make(chan model.Samples, appendToDiskQueueDepth),
 		appendToMemoryQueue: make(chan model.Samples, appendToMemoryQueueDepth),
 		diskStorage:         diskStorage,
@@ -94,7 +71,8 @@ func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueu
 	return
 }
 
-func (t tieredStorage) AppendSamples(s model.Samples) (err error) {
+// Enqueues Samples for storage.
+func (t TieredStorage) AppendSamples(s model.Samples) (err error) {
 	if len(t.draining) > 0 {
 		return fmt.Errorf("Storage is in the process of draining.")
 	}
@@ -104,7 +82,8 @@ func (t tieredStorage) AppendSamples(s model.Samples) (err error) {
 	return
 }
 
-func (t tieredStorage) Drain() {
+// Stops the storage subsystem, flushing all pending operations.
+func (t TieredStorage) Drain() {
 	log.Println("Starting drain...")
 	drainingDone := make(chan bool)
 	if len(t.draining) == 0 {
@@ -114,7 +93,8 @@ func (t tieredStorage) Drain() {
 	log.Println("Done.")
 }
 
-func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (view View, err error) {
+// Enqueus a ViewRequestBuilder for materialization, subject to a timeout.
+func (t TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (view View, err error) {
 	if len(t.draining) > 0 {
 		err = fmt.Errorf("Storage is in the process of draining.")
 		return
@@ -148,7 +128,7 @@ func (t *tieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 	return
 }
 
-func (t *tieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
+func (t *TieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
 	begin := time.Now()
 	defer func() {
 		duration := time.Since(begin)
@@ -163,7 +143,8 @@ func (t *tieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
 	return
 }
 
-func (t *tieredStorage) Serve() {
+// Starts serving requests.
+func (t TieredStorage) Serve() {
 	flushMemoryTicker := time.NewTicker(t.flushMemoryInterval)
 	defer flushMemoryTicker.Stop()
 	writeMemoryTicker := time.NewTicker(t.writeMemoryInterval)
@@ -193,7 +174,7 @@ func (t *tieredStorage) Serve() {
 	}
 }
 
-func (t *tieredStorage) reportQueues() {
+func (t TieredStorage) reportQueues() {
 	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "occupancy"}, float64(len(t.appendToDiskQueue)))
 	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "capacity"}, float64(cap(t.appendToDiskQueue)))
 
@@ -204,7 +185,7 @@ func (t *tieredStorage) reportQueues() {
 	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "capacity"}, float64(cap(t.viewQueue)))
 }
 
-func (t *tieredStorage) writeMemory() {
+func (t *TieredStorage) writeMemory() {
 	begin := time.Now()
 	defer func() {
 		duration := time.Since(begin)
@@ -222,11 +203,11 @@ func (t *tieredStorage) writeMemory() {
 	}
 }
 
-func (t tieredStorage) Flush() {
+func (t TieredStorage) Flush() {
 	t.flush()
 }
 
-func (t tieredStorage) Close() {
+func (t TieredStorage) Close() {
 	log.Println("Closing tiered storage...")
 	t.Drain()
 	t.diskStorage.Close()
@@ -239,7 +220,7 @@ func (t tieredStorage) Close() {
 }
 
 // Write all pending appends.
-func (t tieredStorage) flush() (err error) {
+func (t TieredStorage) flush() (err error) {
 	// Trim any old values to reduce iterative write costs.
 	t.flushMemory()
 	t.writeMemory()
@@ -330,7 +311,7 @@ func (f memoryToDiskFlusher) Close() {
 }
 
 // Persist a whole bunch of samples to the datastore.
-func (t *tieredStorage) flushMemory() {
+func (t *TieredStorage) flushMemory() {
 	begin := time.Now()
 	defer func() {
 		duration := time.Since(begin)
@@ -353,7 +334,7 @@ func (t *tieredStorage) flushMemory() {
 	return
 }
 
-func (t *tieredStorage) renderView(viewJob viewJob) {
+func (t TieredStorage) renderView(viewJob viewJob) {
 	// Telemetry.
 	var err error
 	begin := time.Now()
@@ -482,7 +463,7 @@ func (t *tieredStorage) renderView(viewJob viewJob) {
 	return
 }
 
-func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint model.Fingerprint, ts time.Time) (chunk model.Values) {
+func (t TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint model.Fingerprint, ts time.Time) (chunk model.Values) {
 	var (
 		targetKey = &dto.SampleKey{
 			Fingerprint: fingerprint.ToDTO(),
@@ -558,7 +539,8 @@ func (t *tieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 	return
 }
 
-func (t *tieredStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
+// Get all label values that are associated with the provided label name.
+func (t TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
 	diskValues, err := t.diskStorage.GetAllValuesForLabel(labelName)
 	if err != nil {
 		return
@@ -579,7 +561,9 @@ func (t *tieredStorage) GetAllValuesForLabel(labelName model.LabelName) (values 
 	return
 }
 
-func (t *tieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fingerprints model.Fingerprints, err error) {
+// Get all of the metric fingerprints that are associated with the provided
+// label set.
+func (t TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fingerprints model.Fingerprints, err error) {
 	memFingerprints, err := t.memoryArena.GetFingerprintsForLabelSet(labelSet)
 	if err != nil {
 		return
@@ -599,7 +583,8 @@ func (t *tieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fin
 	return
 }
 
-func (t *tieredStorage) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
+// Get the metric associated with the provided fingerprint.
+func (t TieredStorage) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
 	m, err = t.memoryArena.GetMetricForFingerprint(f)
 	if err != nil {
 		return
