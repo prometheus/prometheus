@@ -538,8 +538,8 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 
 	var (
 		fingerprintToSamples = groupByFingerprint(samples)
-		indexErrChan         = make(chan error)
-		watermarkErrChan     = make(chan error)
+		indexErrChan         = make(chan error, 1)
+		watermarkErrChan     = make(chan error, 1)
 	)
 
 	go func(groups map[model.Fingerprint]model.Samples) {
