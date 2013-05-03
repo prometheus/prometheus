@@ -24,7 +24,6 @@ import (
 type PrometheusStatus struct {
 	Config      string
 	Rules       string
-	Status      string
 	TargetPools map[string]*retrieval.TargetPool
 	BuildInfo   map[string]string
 	Flags       map[string]string
@@ -46,7 +45,6 @@ func (h *StatusHandler) Run() {
 	h.PrometheusStatus = &PrometheusStatus{
 		Config:      h.appState.Config.String(),
 		Rules:       "TODO: list rules here",
-		Status:      "TODO: add status information here",
 		TargetPools: h.appState.TargetManager.Pools(),
 		BuildInfo:   h.appState.BuildInfo,
 		Flags:       flags,
