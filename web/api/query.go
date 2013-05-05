@@ -96,7 +96,7 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 }
 
 func (serv MetricsService) Metrics() string {
-	metricNames, err := serv.appState.Storage.GetAllValuesForLabel(model.MetricNameLabel)
+	metricNames, err := serv.Storage.GetAllValuesForLabel(model.MetricNameLabel)
 	rb := serv.ResponseBuilder()
 	serv.setAccessControlHeaders(rb)
 	rb.SetContentType(gorest.Application_Json)

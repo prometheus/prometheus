@@ -15,27 +15,32 @@ package web
 
 import (
 	"flag"
-	"github.com/prometheus/prometheus/appstate"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage/metric"
 	"net/http"
+	"sync"
 )
 
 type PrometheusStatus struct {
+	BuildInfo   map[string]string
 	Config      string
+	Curation    metric.CurationState
+	Flags       map[string]string
 	Rules       string
 	TargetPools map[string]*retrieval.TargetPool
-	BuildInfo   map[string]string
-	Flags       map[string]string
-	Curation    metric.CurationState
 }
 
 type StatusHandler struct {
-	appState         *appstate.ApplicationState
+	BuildInfo        map[string]string
+	Config           *config.Config
+	CurationState    chan metric.CurationState
 	PrometheusStatus *PrometheusStatus
+	TargetManager    retrieval.TargetManager
+	mutex            sync.Mutex
 }
 
-func (h *StatusHandler) Run() {
+func (h *StatusHandler) ServeRequestsForever() {
 	flags := map[string]string{}
 
 	flag.VisitAll(func(f *flag.Flag) {
@@ -43,19 +48,22 @@ func (h *StatusHandler) Run() {
 	})
 
 	h.PrometheusStatus = &PrometheusStatus{
-		Config:      h.appState.Config.String(),
-		Rules:       "TODO: list rules here",
-		TargetPools: h.appState.TargetManager.Pools(),
-		BuildInfo:   h.appState.BuildInfo,
+		BuildInfo:   h.BuildInfo,
+		Config:      h.Config.String(),
 		Flags:       flags,
+		Rules:       "TODO: list rules here",
+		TargetPools: h.TargetManager.Pools(),
 	}
 
-	// Law of Demeter :-(
-	for state := range h.appState.CurationState {
+	for state := range h.CurationState {
+		h.Lock()
 		h.PrometheusStatus.Curation = state
+		h.Unlock()
 	}
 }
 
-func (h StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.Lock()
+	defer h.Unlock()
 	executeTemplate(w, "status", h.PrometheusStatus)
 }

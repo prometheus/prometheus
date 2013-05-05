@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/exp"
-	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/web/api"
 	"github.com/prometheus/prometheus/web/blob"
 	"html/template"
@@ -34,8 +33,13 @@ var (
 	useLocalAssets = flag.Bool("useLocalAssets", false, "Read assets/templates from file instead of binary.")
 )
 
-func StartServing(appState *appstate.ApplicationState) {
-	gorest.RegisterService(api.NewMetricsService(appState))
+type WebService struct {
+	StatusHandler  *StatusHandler
+	MetricsHandler *api.MetricsService
+}
+
+func (w WebService) ServeForever() error {
+	gorest.RegisterService(w.MetricsHandler)
 
 	// TODO(julius): This will need to be rewritten once the exp package provides
 	// the coarse mux behaviors via a wrapper function.
@@ -44,10 +48,7 @@ func StartServing(appState *appstate.ApplicationState) {
 	exp.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
 	exp.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 
-	statusHandler := &StatusHandler{appState: appState}
-	go statusHandler.Run()
-
-	exp.Handle("/", statusHandler)
+	exp.Handle("/", w.StatusHandler)
 	exp.HandleFunc("/graph", graphHandler)
 
 	exp.Handle("/api/", gorest.Handle())
@@ -59,7 +60,8 @@ func StartServing(appState *appstate.ApplicationState) {
 	}
 
 	log.Printf("listening on %s", *listenAddress)
-	go http.ListenAndServe(*listenAddress, exp.DefaultCoarseMux)
+
+	return http.ListenAndServe(*listenAddress, exp.DefaultCoarseMux)
 }
 
 func getTemplate(name string) (t *template.Template, err error) {

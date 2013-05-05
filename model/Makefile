@@ -29,4 +29,4 @@ clean:
 	rm -rf generated/*
 	-rm -f $(MAKE_ARTIFACTS)
 
-.PHONY: generated
+.PHONY: clean generated

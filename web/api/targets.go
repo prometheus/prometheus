@@ -26,25 +26,31 @@ type TargetGroup struct {
 }
 
 func (serv MetricsService) SetTargets(targetGroups []TargetGroup, jobName string) {
-	if job := serv.appState.Config.GetJobByName(jobName); job == nil {
+	job := serv.Config.GetJobByName(jobName)
+	if job == nil {
 		rb := serv.ResponseBuilder()
 		rb.SetResponseCode(http.StatusNotFound)
-	} else {
-		newTargets := []retrieval.Target{}
-		for _, targetGroup := range targetGroups {
-			// Do mandatory map type conversion due to Go shortcomings.
-			baseLabels := model.LabelSet{
-				model.JobLabel: model.LabelValue(job.GetName()),
-			}
-			for label, value := range targetGroup.BaseLabels {
-				baseLabels[model.LabelName(label)] = model.LabelValue(value)
-			}
-
-			for _, endpoint := range targetGroup.Endpoints {
-				newTarget := retrieval.NewTarget(endpoint, time.Second*5, baseLabels)
-				newTargets = append(newTargets, newTarget)
-			}
-		}
-		serv.appState.TargetManager.ReplaceTargets(*job, newTargets, serv.appState.Config.ScrapeInterval())
+		return
 	}
+
+	newTargets := []retrieval.Target{}
+
+	for _, targetGroup := range targetGroups {
+		// Do mandatory map type conversion due to Go shortcomings.
+		baseLabels := model.LabelSet{
+			model.JobLabel: model.LabelValue(job.GetName()),
+		}
+		for label, value := range targetGroup.BaseLabels {
+			baseLabels[model.LabelName(label)] = model.LabelValue(value)
+		}
+
+		for _, endpoint := range targetGroup.Endpoints {
+			newTarget := retrieval.NewTarget(endpoint, time.Second*5, baseLabels)
+			newTargets = append(newTargets, newTarget)
+		}
+	}
+
+	// BUG(julius): Validate that this ScrapeInterval is in fact the proper one
+	// for the job.
+	serv.TargetManager.ReplaceTargets(*job, newTargets, serv.Config.ScrapeInterval())
 }
