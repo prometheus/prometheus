@@ -27,77 +27,86 @@ import (
 	"time"
 )
 
+type tieredStorageState int
+
+const (
+	running tieredStorageState = iota
+	stopping
+)
+
 // TieredStorage both persists samples and generates materialized views for
 // queries.
 type TieredStorage struct {
-	appendToDiskQueue   chan model.Samples
-	appendToMemoryQueue chan model.Samples
+	AppendToDiskQueue   chan model.Samples
+	AppendToMemoryQueue chan model.Samples
+	DiskStorage         *LevelDBMetricPersistence
+	DrainCondition      *sync.Cond
+	FlushMemoryInterval time.Duration
+	MemoryArena         MemorySeriesStorage
+	MemoryTTL           time.Duration
+	ViewQueue           chan ViewJob
+	WriteMemoryInterval time.Duration
 	diskFrontier        *diskFrontier
-	diskStorage         *LevelDBMetricPersistence
-	draining            chan chan bool
-	flushMemoryInterval time.Duration
-	memoryArena         memorySeriesStorage
-	memoryTTL           time.Duration
-	mutex               sync.Mutex
-	viewQueue           chan viewJob
-	writeMemoryInterval time.Duration
+	drainDone           chan bool
+	state               tieredStorageState
 }
 
-// viewJob encapsulates a request to extract sample values from the datastore.
-type viewJob struct {
+// ViewJob encapsulates a request to extract sample values from the datastore.
+type ViewJob struct {
 	builder ViewRequestBuilder
 	output  chan View
 	abort   chan bool
 	err     chan error
 }
 
-func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, writeMemoryInterval, memoryTTL time.Duration, root string) (storage *TieredStorage, err error) {
+func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, writeMemoryInterval, memoryTTL time.Duration, root string) (*TieredStorage, error) {
+	// BUG(matt): Break this out through standard struct construction.
 	diskStorage, err := NewLevelDBMetricPersistence(root)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	storage = &TieredStorage{
-		appendToDiskQueue:   make(chan model.Samples, appendToDiskQueueDepth),
-		appendToMemoryQueue: make(chan model.Samples, appendToMemoryQueueDepth),
-		diskStorage:         diskStorage,
-		draining:            make(chan chan bool),
-		flushMemoryInterval: flushMemoryInterval,
-		memoryArena:         NewMemorySeriesStorage(),
-		memoryTTL:           memoryTTL,
-		viewQueue:           make(chan viewJob, viewQueueDepth),
-		writeMemoryInterval: writeMemoryInterval,
+		AppendToDiskQueue:   make(chan model.Samples, appendToDiskQueueDepth),
+		AppendToMemoryQueue: make(chan model.Samples, appendToMemoryQueueDepth),
+		DiskStorage:         diskStorage,
+		DrainCondition:      sync.NewCond(&sync.Mutex{}),
+		FlushMemoryInterval: flushMemoryInterval,
+		MemoryArena:         NewMemorySeriesStorage(),
+		MemoryTTL:           memoryTTL,
+		ViewQueue:           make(chan ViewJob, viewQueueDepth),
+		WriteMemoryInterval: writeMemoryInterval,
+		drainDone:           make(chan bool, 1),
 	}
-	return
+
+	return storage, nil
 }
 
 // Enqueues Samples for storage.
-func (t TieredStorage) AppendSamples(s model.Samples) (err error) {
-	if len(t.draining) > 0 {
-		return fmt.Errorf("Storage is in the process of draining.")
+func (t *TieredStorage) AppendSamples(s model.Samples) error {
+	t.DrainCondition.L.Lock()
+	defer t.DrainCondition.L.Unlock()
+	if t.state != running {
+		return fmt.Errorf("is in stopping state")
 	}
 
-	t.appendToMemoryQueue <- s
+	t.AppendToMemoryQueue <- s
 
-	return
+	return nil
 }
 
 // Stops the storage subsystem, flushing all pending operations.
-func (t TieredStorage) Drain() {
-	log.Println("Starting drain...")
-	drainingDone := make(chan bool)
-	if len(t.draining) == 0 {
-		t.draining <- drainingDone
-	}
-	<-drainingDone
-	log.Println("Done.")
+func (t *TieredStorage) Drain() {
+	t.DrainCondition.L.Lock()
+	t.DrainCondition.Broadcast()
+	t.DrainCondition.L.Unlock()
+	<-t.drainDone
 }
 
 // Enqueus a ViewRequestBuilder for materialization, subject to a timeout.
-func (t TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (view View, err error) {
-	if len(t.draining) > 0 {
-		err = fmt.Errorf("Storage is in the process of draining.")
-		return
+func (t TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (View, error) {
+	if t.state != running {
+		return nil, fmt.Errorf("is in stopping state")
 	}
 
 	// The result channel needs a one-element buffer in case we have timed out in
@@ -108,7 +117,7 @@ func (t TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durati
 	// has already exited and doesn't consume from the channel anymore.
 	abortChan := make(chan bool, 1)
 	errChan := make(chan error)
-	t.viewQueue <- viewJob{
+	t.ViewQueue <- ViewJob{
 		builder: builder,
 		output:  result,
 		abort:   abortChan,
@@ -117,15 +126,15 @@ func (t TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durati
 
 	select {
 	case value := <-result:
-		view = value
-	case err = <-errChan:
-		return
+		return value, nil
+	case err := <-errChan:
+		return nil, err
 	case <-time.After(deadline):
 		abortChan <- true
-		err = fmt.Errorf("MakeView timed out after %s.", deadline)
+		return nil, fmt.Errorf("MakeView timed out after %s.", deadline)
 	}
 
-	return
+	panic("unreachable")
 }
 
 func (t *TieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
@@ -138,16 +147,17 @@ func (t *TieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
 
 	t.diskFrontier, err = newDiskFrontier(i)
 	if err != nil {
-		return
+		return err
 	}
-	return
+
+	return nil
 }
 
 // Starts serving requests.
-func (t TieredStorage) Serve() {
-	flushMemoryTicker := time.NewTicker(t.flushMemoryInterval)
+func (t *TieredStorage) Serve() {
+	flushMemoryTicker := time.NewTicker(t.FlushMemoryInterval)
 	defer flushMemoryTicker.Stop()
-	writeMemoryTicker := time.NewTicker(t.writeMemoryInterval)
+	writeMemoryTicker := time.NewTicker(t.WriteMemoryInterval)
 	defer writeMemoryTicker.Stop()
 	reportTicker := time.NewTicker(time.Second)
 	defer reportTicker.Stop()
@@ -158,34 +168,47 @@ func (t TieredStorage) Serve() {
 		}
 	}()
 
+	drain := make(chan bool, 1)
+	defer close(drain)
+
+	go func() {
+		t.DrainCondition.L.Lock()
+		for t.state == running {
+			t.DrainCondition.Wait()
+			t.state = stopping
+		}
+		drain <- true
+		t.DrainCondition.L.Unlock()
+	}()
+
 	for {
 		select {
 		case <-writeMemoryTicker.C:
-			t.writeMemory()
+			t.WriteMemory()
 		case <-flushMemoryTicker.C:
-			t.flushMemory()
-		case viewRequest := <-t.viewQueue:
+			t.FlushMemory()
+		case viewRequest := <-t.ViewQueue:
 			t.renderView(viewRequest)
-		case drainingDone := <-t.draining:
-			t.flush()
-			drainingDone <- true
+		case <-drain:
+			t.Flush()
+			t.drainDone <- true
 			return
 		}
 	}
 }
 
 func (t TieredStorage) reportQueues() {
-	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "occupancy"}, float64(len(t.appendToDiskQueue)))
-	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "capacity"}, float64(cap(t.appendToDiskQueue)))
+	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "occupancy"}, float64(len(t.AppendToDiskQueue)))
+	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "capacity"}, float64(cap(t.AppendToDiskQueue)))
 
-	queueSizes.Set(map[string]string{"queue": "append_to_memory", "facet": "occupancy"}, float64(len(t.appendToMemoryQueue)))
-	queueSizes.Set(map[string]string{"queue": "append_to_memory", "facet": "capacity"}, float64(cap(t.appendToMemoryQueue)))
+	queueSizes.Set(map[string]string{"queue": "append_to_memory", "facet": "occupancy"}, float64(len(t.AppendToMemoryQueue)))
+	queueSizes.Set(map[string]string{"queue": "append_to_memory", "facet": "capacity"}, float64(cap(t.AppendToMemoryQueue)))
 
-	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "occupancy"}, float64(len(t.viewQueue)))
-	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "capacity"}, float64(cap(t.viewQueue)))
+	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "occupancy"}, float64(len(t.ViewQueue)))
+	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "capacity"}, float64(cap(t.ViewQueue)))
 }
 
-func (t *TieredStorage) writeMemory() {
+func (t *TieredStorage) WriteMemory() {
 	begin := time.Now()
 	defer func() {
 		duration := time.Since(begin)
@@ -193,39 +216,37 @@ func (t *TieredStorage) writeMemory() {
 		recordOutcome(duration, nil, map[string]string{operation: appendSample, result: success}, map[string]string{operation: writeMemory, result: failure})
 	}()
 
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
+	t.DrainCondition.L.Lock()
+	defer t.DrainCondition.L.Unlock()
+	t.writeMemory()
+}
 
-	pendingLength := len(t.appendToMemoryQueue)
+func (t *TieredStorage) writeMemory() {
+	pendingLength := len(t.AppendToMemoryQueue)
 
 	for i := 0; i < pendingLength; i++ {
-		t.memoryArena.AppendSamples(<-t.appendToMemoryQueue)
+		t.MemoryArena.AppendSamples(<-t.AppendToMemoryQueue)
 	}
 }
 
-func (t TieredStorage) Flush() {
-	t.flush()
+func (t *TieredStorage) Flush() {
+	t.DrainCondition.L.Lock()
+	defer t.DrainCondition.L.Unlock()
+	t.flushMemory()
+	t.writeMemory()
+	t.flushMemory()
 }
 
 func (t TieredStorage) Close() {
 	log.Println("Closing tiered storage...")
 	t.Drain()
-	t.diskStorage.Close()
-	t.memoryArena.Close()
+	t.DiskStorage.Close()
+	t.MemoryArena.Close()
 
-	close(t.appendToDiskQueue)
-	close(t.appendToMemoryQueue)
-	close(t.viewQueue)
+	close(t.AppendToDiskQueue)
+	close(t.AppendToMemoryQueue)
+	close(t.ViewQueue)
 	log.Println("Done.")
-}
-
-// Write all pending appends.
-func (t TieredStorage) flush() (err error) {
-	// Trim any old values to reduce iterative write costs.
-	t.flushMemory()
-	t.writeMemory()
-	t.flushMemory()
-	return
 }
 
 type memoryToDiskFlusher struct {
@@ -311,7 +332,7 @@ func (f memoryToDiskFlusher) Close() {
 }
 
 // Persist a whole bunch of samples to the datastore.
-func (t *TieredStorage) flushMemory() {
+func (t *TieredStorage) FlushMemory() {
 	begin := time.Now()
 	defer func() {
 		duration := time.Since(begin)
@@ -319,22 +340,25 @@ func (t *TieredStorage) flushMemory() {
 		recordOutcome(duration, nil, map[string]string{operation: appendSample, result: success}, map[string]string{operation: flushMemory, result: failure})
 	}()
 
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
+	t.DrainCondition.L.Lock()
+	defer t.DrainCondition.L.Unlock()
+	t.flushMemory()
+}
 
+func (t *TieredStorage) flushMemory() {
 	flusher := &memoryToDiskFlusher{
-		disk:        t.diskStorage,
-		olderThan:   time.Now().Add(-1 * t.memoryTTL),
-		toDiskQueue: t.appendToDiskQueue,
+		disk:        t.DiskStorage,
+		olderThan:   time.Now().Add(-1 * t.MemoryTTL),
+		toDiskQueue: t.AppendToDiskQueue,
 	}
 	defer flusher.Close()
 
-	t.memoryArena.ForEachSample(flusher)
+	t.MemoryArena.ForEachSample(flusher)
 
 	return
 }
 
-func (t TieredStorage) renderView(viewJob viewJob) {
+func (t *TieredStorage) renderView(viewJob ViewJob) {
 	// Telemetry.
 	var err error
 	begin := time.Now()
@@ -344,15 +368,17 @@ func (t TieredStorage) renderView(viewJob viewJob) {
 		recordOutcome(duration, err, map[string]string{operation: renderView, result: success}, map[string]string{operation: renderView, result: failure})
 	}()
 
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
+	t.DrainCondition.L.Lock()
+	defer t.DrainCondition.L.Unlock()
+	if t.state != running {
+		viewJob.err <- fmt.Errorf("is in stopping state")
+		return
+	}
 
-	var (
-		scans = viewJob.builder.ScanJobs()
-		view  = newView()
-		// Get a single iterator that will be used for all data extraction below.
-		iterator = t.diskStorage.MetricSamples.NewIterator(true)
-	)
+	scans := viewJob.builder.ScanJobs()
+	// Get a single iterator that will be used for all data extraction below.
+	iterator := t.DiskStorage.MetricSamples.NewIterator(true)
+	view := newView()
 	defer iterator.Close()
 
 	// Rebuilding of the frontier should happen on a conditional basis if a
@@ -382,7 +408,7 @@ func (t TieredStorage) renderView(viewJob viewJob) {
 			targetTime := *standingOps[0].CurrentTime()
 
 			chunk := model.Values{}
-			memValues := t.memoryArena.GetValueAtTime(scanJob.fingerprint, targetTime)
+			memValues := t.MemoryArena.GetValueAtTime(scanJob.fingerprint, targetTime)
 			// If we aimed before the oldest value in memory, load more data from disk.
 			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && seriesFrontier != nil {
 				// XXX: For earnest performance gains analagous to the benchmarking we
@@ -541,11 +567,11 @@ func (t TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *
 
 // Get all label values that are associated with the provided label name.
 func (t TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
-	diskValues, err := t.diskStorage.GetAllValuesForLabel(labelName)
+	diskValues, err := t.DiskStorage.GetAllValuesForLabel(labelName)
 	if err != nil {
 		return
 	}
-	memoryValues, err := t.memoryArena.GetAllValuesForLabel(labelName)
+	memoryValues, err := t.MemoryArena.GetAllValuesForLabel(labelName)
 	if err != nil {
 		return
 	}
@@ -564,11 +590,11 @@ func (t TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (values m
 // Get all of the metric fingerprints that are associated with the provided
 // label set.
 func (t TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fingerprints model.Fingerprints, err error) {
-	memFingerprints, err := t.memoryArena.GetFingerprintsForLabelSet(labelSet)
+	memFingerprints, err := t.MemoryArena.GetFingerprintsForLabelSet(labelSet)
 	if err != nil {
 		return
 	}
-	diskFingerprints, err := t.diskStorage.GetFingerprintsForLabelSet(labelSet)
+	diskFingerprints, err := t.DiskStorage.GetFingerprintsForLabelSet(labelSet)
 	if err != nil {
 		return
 	}
@@ -585,12 +611,12 @@ func (t TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fing
 
 // Get the metric associated with the provided fingerprint.
 func (t TieredStorage) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
-	m, err = t.memoryArena.GetMetricForFingerprint(f)
+	m, err = t.MemoryArena.GetMetricForFingerprint(f)
 	if err != nil {
 		return
 	}
 	if m == nil {
-		m, err = t.diskStorage.GetMetricForFingerprint(f)
+		m, err = t.DiskStorage.GetMetricForFingerprint(f)
 	}
 	return
 }
