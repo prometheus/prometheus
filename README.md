@@ -107,6 +107,22 @@ architecture and release identification remarks for us.
 
     $ make test
 
+### Race Detector
+
+Go 1.1 includes a [race
+detector](http://tip.golang.org/doc/articles/race_detector.html) which can be
+enabled at build time. Here's how to use it with prometheus (assumes that
+you've already run a successful build).
+
+To run the tests with race detection:
+
+    $ GORACE="log_path=/tmp/foo" go test -race ./...
+
+To run the server with race detection:
+
+    $ go build -race .
+    $ GORACE="log_path=/tmp/foo" ./prometheus
+
 [![Build Status](https://travis-ci.org/prometheus/prometheus.png)](https://travis-ci.org/prometheus/prometheus)
 
 ## Contributing
