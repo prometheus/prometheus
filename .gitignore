@@ -21,5 +21,11 @@ _cgo_*
 core
 
 *-stamp
-prometheus.build
 prometheus
+
+.#*
+command-line-arguments.test
+*BACKUP*
+*BASE*
+*LOCAL*
+*REMOTE*

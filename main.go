@@ -15,7 +15,6 @@ package main
 
 import (
 	"flag"
-	"github.com/prometheus/prometheus/appstate"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/retrieval/format"
@@ -23,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/web"
+	"github.com/prometheus/prometheus/web/api"
 	"log"
 	"os"
 	"os/signal"
@@ -42,10 +42,10 @@ var (
 )
 
 type prometheus struct {
-	storage metric.TieredStorage
-	// TODO: Refactor channels to work with arrays of results for better chunking.
-	scrapeResults chan format.Result
+	curationState chan metric.CurationState
 	ruleResults   chan *rules.Result
+	storage       metric.TieredStorage
+	scrapeResults chan format.Result
 }
 
 func (p prometheus) interruptHandler() {
@@ -60,9 +60,8 @@ func (p prometheus) interruptHandler() {
 }
 
 func (p prometheus) close() {
+	close(p.curationState)
 	p.storage.Close()
-	close(p.scrapeResults)
-	close(p.ruleResults)
 }
 
 func main() {
@@ -92,21 +91,45 @@ func main() {
 
 	scrapeResults := make(chan format.Result, *scrapeResultsQueueCapacity)
 	ruleResults := make(chan *rules.Result, *ruleResultsQueueCapacity)
+	curationState := make(chan metric.CurationState, 1)
+
+	// Queue depth will need to be exposed
+	targetManager := retrieval.NewTargetManager(scrapeResults, *concurrentRetrievalAllowance)
+	targetManager.AddTargetsFromConfig(conf)
+
+	statusHandler := &web.StatusHandler{
+		BuildInfo:     BuildInfo,
+		Config:        &conf,
+		CurationState: curationState,
+		// Furnish the default status.
+		PrometheusStatus: &web.PrometheusStatus{},
+		TargetManager:    targetManager,
+	}
+
+	// The closing of curationState implicitly closes this routine.
+	go statusHandler.ServeRequestsForever()
+
+	metricsService := &api.MetricsService{
+		Config:        &conf,
+		TargetManager: targetManager,
+		Storage:       ts,
+	}
+
+	webService := &web.WebService{
+		StatusHandler:  statusHandler,
+		MetricsHandler: metricsService,
+	}
 
 	prometheus := prometheus{
-		storage:       *ts,
-		scrapeResults: scrapeResults,
+		curationState: curationState,
 		ruleResults:   ruleResults,
+		scrapeResults: scrapeResults,
+		storage:       *ts,
 	}
 	defer prometheus.close()
 
 	go ts.Serve()
 	go prometheus.interruptHandler()
-
-	// Queue depth will need to be exposed
-
-	targetManager := retrieval.NewTargetManager(scrapeResults, *concurrentRetrievalAllowance)
-	targetManager.AddTargetsFromConfig(conf)
 
 	ast.SetStorage(*ts)
 
@@ -116,16 +139,12 @@ func main() {
 		log.Fatalf("Error loading rule files: %v", err)
 	}
 
-	appState := &appstate.ApplicationState{
-		BuildInfo:     BuildInfo,
-		Config:        conf,
-		CurationState: make(chan metric.CurationState),
-		RuleManager:   ruleManager,
-		Storage:       *ts,
-		TargetManager: targetManager,
-	}
-
-	web.StartServing(appState)
+	go func() {
+		err := webService.ServeForever()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	// TODO(all): Migrate this into prometheus.serve().
 	for {

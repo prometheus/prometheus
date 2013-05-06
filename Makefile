@@ -11,25 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.SUFFIXES:
-
-TEST_ARTIFACTS = prometheus prometheus.build search_index
+TEST_ARTIFACTS = prometheus search_index
 
 include Makefile.INCLUDE
-
-REV        := $(shell git rev-parse --short HEAD)
-BRANCH     := $(shell git rev-parse --abbrev-ref HEAD)
-HOSTNAME   := $(shell hostname -f)
-BUILD_DATE := $(shell date +%Y%m%d-%H:%M:%S)
-BUILDFLAGS := -ldflags \
-	      " -X main.buildVersion $(REV)\
-		-X main.buildBranch $(BRANCH)\
-		-X main.buildUser $(USER)@$(HOSTNAME)\
-		-X main.buildDate $(BUILD_DATE)\
-		-X main.goVersion $(GO_VERSION)\
-		-X main.leveldbVersion $(LEVELDB_VERSION)\
-		-X main.protobufVersion $(PROTOCOL_BUFFERS_VERSION)\
-		-X main.snappyVersion $(SNAPPY_VERSION)"
 
 all: test
 
@@ -37,10 +21,9 @@ advice:
 	go tool vet .
 
 binary: build
-	go build $(BUILDFLAGS) -o prometheus.build
+	go build $(BUILDFLAGS) .
 
 build: preparation config model web
-	go build $(BUILDFLAGS) .
 
 clean:
 	$(MAKE) -C build clean
@@ -72,10 +55,13 @@ preparation: source_path
 	$(MAKE) -C build
 
 run: binary
-	./prometheus.build $(ARGUMENTS)
+	./prometheus $(ARGUMENTS)
 
 search_index:
 	godoc -index -write_index -index_files='search_index'
+
+server: config model preparation
+	$(MAKE) -C server
 
 # source_path is responsible for ensuring that the builder has not done anything
 # stupid like working on Prometheus outside of ${GOPATH}.
@@ -84,15 +70,7 @@ source_path:
 	[ -d "$(FULL_GOPATH)" ]
 
 test: build
-	go test ./appstate/... $(GO_TEST_FLAGS)
-	go test ./coding/... $(GO_TEST_FLAGS)
-	go test ./config/... $(GO_TEST_FLAGS)
-	go test ./model/... $(GO_TEST_FLAGS)
-	go test ./retrieval/... $(GO_TEST_FLAGS)
-	go test ./rules/... $(GO_TEST_FLAGS)
-	go test ./storage/... $(GO_TEST_FLAGS)
-	go test ./utility/... $(GO_TEST_FLAGS)
-	go test ./web/... $(GO_TEST_FLAGS)
+	go test ./... $(GO_TEST_FLAGS)
 
 web: preparation config model
 	$(MAKE) -C web

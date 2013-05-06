@@ -15,7 +15,9 @@ package api
 
 import (
 	"code.google.com/p/gorest"
-	"github.com/prometheus/prometheus/appstate"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -27,13 +29,9 @@ type MetricsService struct {
 	metrics    gorest.EndPoint `method:"GET" path:"/metrics" output:"string"`
 
 	setTargets gorest.EndPoint `method:"PUT" path:"/jobs/{jobName:string}/targets" postdata:"[]TargetGroup"`
+	time       utility.Time
 
-	appState *appstate.ApplicationState
-	time     utility.Time
-}
-
-func NewMetricsService(appState *appstate.ApplicationState) *MetricsService {
-	return &MetricsService{
-		appState: appState,
-	}
+	Config        *config.Config
+	TargetManager retrieval.TargetManager
+	Storage       *metric.TieredStorage
 }
