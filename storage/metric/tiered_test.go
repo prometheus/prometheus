@@ -480,12 +480,12 @@ func TestGetAllValuesForLabel(t *testing.T) {
 				Metric: model.Metric{model.MetricNameLabel: model.LabelValue(metric.metricName)},
 			}
 			if metric.appendToMemory {
-				if err := tiered.memoryArena.AppendSample(sample); err != nil {
+				if err := tiered.MemoryArena.AppendSample(sample); err != nil {
 					t.Fatalf("%d.%d. failed to add fixture data: %s", i, j, err)
 				}
 			}
 			if metric.appendToDisk {
-				if err := tiered.diskStorage.AppendSample(sample); err != nil {
+				if err := tiered.DiskStorage.AppendSample(sample); err != nil {
 					t.Fatalf("%d.%d. failed to add fixture data: %s", i, j, err)
 				}
 			}
@@ -517,10 +517,10 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 	diskSample := model.Sample{
 		Metric: model.Metric{model.MetricNameLabel: "http_requests", "method": "/bar"},
 	}
-	if err := tiered.memoryArena.AppendSample(memorySample); err != nil {
+	if err := tiered.MemoryArena.AppendSample(memorySample); err != nil {
 		t.Fatalf("Failed to add fixture data: %s", err)
 	}
-	if err := tiered.diskStorage.AppendSample(diskSample); err != nil {
+	if err := tiered.DiskStorage.AppendSample(diskSample); err != nil {
 		t.Fatalf("Failed to add fixture data: %s", err)
 	}
 	tiered.Flush()

@@ -101,7 +101,7 @@ func (v viewRequestBuilder) ScanJobs() (j scanJobs) {
 }
 
 type view struct {
-	memorySeriesStorage
+	MemorySeriesStorage
 }
 
 func (v view) appendSample(fingerprint model.Fingerprint, timestamp time.Time, value model.SampleValue) {
@@ -109,5 +109,7 @@ func (v view) appendSample(fingerprint model.Fingerprint, timestamp time.Time, v
 }
 
 func newView() view {
-	return view{NewMemorySeriesStorage()}
+	return view{
+		MemorySeriesStorage: NewMemorySeriesStorage(),
+	}
 }
