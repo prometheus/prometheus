@@ -52,6 +52,7 @@ func (h *StatusHandler) ServeRequestsForever() {
 		Config:      h.Config.String(),
 		Flags:       flags,
 		Rules:       "TODO: list rules here",
+		// BUG: race condition, concurrent map access
 		TargetPools: h.TargetManager.Pools(),
 	}
 
