@@ -11,13 +11,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-all: blob
+all: blob-stamp
 
-blob: static/generated/protocol_buffer.descriptor
+blob-stamp: static/generated/protocol_buffer.descriptor
 	$(MAKE) -C blob
+	touch $@
 
 clean:
 	$(MAKE) -C blob clean
+	-rm -f *-stamp
 
 static/generated:
 	mkdir -vp static/generated
@@ -25,4 +27,4 @@ static/generated:
 static/generated/protocol_buffer.descriptor: static/generated ../model/generated/descriptor.blob
 	cp -f ../model/generated/descriptor.blob $@
 
-.PHONY: blob clean
+.PHONY: clean
