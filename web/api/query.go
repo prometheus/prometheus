@@ -52,7 +52,7 @@ func (serv MetricsService) Query(expr string, formatJson string) (result string)
 		rb.SetContentType(gorest.Text_Plain)
 	}
 
-	return ast.EvalToString(exprNode, timestamp, format)
+	return ast.EvalToString(exprNode, timestamp, format, serv.Storage)
 }
 
 func (serv MetricsService) QueryRange(expr string, end int64, duration int64, step int64) string {
@@ -86,7 +86,8 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 		exprNode.(ast.VectorNode),
 		time.Unix(end-duration, 0).UTC(),
 		time.Unix(end, 0).UTC(),
-		time.Duration(step)*time.Second)
+		time.Duration(step)*time.Second,
+		serv.Storage)
 	if err != nil {
 		return ast.ErrorToJSON(err)
 	}

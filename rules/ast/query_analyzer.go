@@ -35,33 +35,23 @@ type QueryAnalyzer struct {
 	FullRanges FullRangeMap
 	// Interval ranges always implicitly span the whole query interval.
 	IntervalRanges IntervalRangeMap
+	// The underlying storage to which the query will be applied. Needed for
+	// extracting timeseries fingerprint information during query analysis.
+	storage *metric.TieredStorage
 }
 
-func NewQueryAnalyzer() *QueryAnalyzer {
+func NewQueryAnalyzer(storage *metric.TieredStorage) *QueryAnalyzer {
 	return &QueryAnalyzer{
 		FullRanges:     FullRangeMap{},
 		IntervalRanges: IntervalRangeMap{},
+		storage:        storage,
 	}
-}
-
-func minTime(t1, t2 time.Time) time.Time {
-	if t1.Before(t2) {
-		return t1
-	}
-	return t2
-}
-
-func maxTime(t1, t2 time.Time) time.Time {
-	if t1.After(t2) {
-		return t1
-	}
-	return t2
 }
 
 func (analyzer *QueryAnalyzer) Visit(node Node) {
 	switch n := node.(type) {
 	case *VectorLiteral:
-		fingerprints, err := queryStorage.GetFingerprintsForLabelSet(n.labels)
+		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
 		if err != nil {
 			log.Printf("Error getting fingerprints for labelset %v: %v", n.labels, err)
 			return
@@ -73,7 +63,7 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 			}
 		}
 	case *MatrixLiteral:
-		fingerprints, err := queryStorage.GetFingerprintsForLabelSet(n.labels)
+		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
 		if err != nil {
 			log.Printf("Error getting fingerprints for labelset %v: %v", n.labels, err)
 			return
@@ -105,8 +95,8 @@ func (analyzer *QueryAnalyzer) AnalyzeQueries(node Node) {
 	}
 }
 
-func viewAdapterForInstantQuery(node Node, timestamp time.Time) (viewAdapter *viewAdapter, err error) {
-	analyzer := NewQueryAnalyzer()
+func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.TieredStorage) (viewAdapter *viewAdapter, err error) {
+	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)
 	viewBuilder := metric.NewViewRequestBuilder()
 	for fingerprint, rangeDuration := range analyzer.FullRanges {
@@ -115,15 +105,15 @@ func viewAdapterForInstantQuery(node Node, timestamp time.Time) (viewAdapter *vi
 	for fingerprint := range analyzer.IntervalRanges {
 		viewBuilder.GetMetricAtTime(fingerprint, timestamp)
 	}
-	view, err := queryStorage.MakeView(viewBuilder, time.Duration(60)*time.Second)
+	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second)
 	if err == nil {
-		viewAdapter = NewViewAdapter(view)
+		viewAdapter = NewViewAdapter(view, storage)
 	}
 	return
 }
 
-func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interval time.Duration) (viewAdapter *viewAdapter, err error) {
-	analyzer := NewQueryAnalyzer()
+func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage) (viewAdapter *viewAdapter, err error) {
+	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)
 	viewBuilder := metric.NewViewRequestBuilder()
 	for fingerprint, rangeDuration := range analyzer.FullRanges {
@@ -135,9 +125,9 @@ func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interva
 	for fingerprint := range analyzer.IntervalRanges {
 		viewBuilder.GetMetricAtInterval(fingerprint, start, end, interval)
 	}
-	view, err := queryStorage.MakeView(viewBuilder, time.Duration(60)*time.Second)
+	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second)
 	if err == nil {
-		viewAdapter = NewViewAdapter(view)
+		viewAdapter = NewViewAdapter(view, storage)
 	}
 	return
 }

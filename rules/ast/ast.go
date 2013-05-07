@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/storage/metric"
 	"log"
 	"math"
 	"sort"
@@ -258,8 +259,8 @@ func labelsToKey(labels model.Metric) string {
 	return strings.Join(keyParts, ",") // TODO not safe when label value contains comma.
 }
 
-func EvalVectorInstant(node VectorNode, timestamp time.Time) (vector Vector, err error) {
-	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp)
+func EvalVectorInstant(node VectorNode, timestamp time.Time, storage *metric.TieredStorage) (vector Vector, err error) {
+	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage)
 	if err != nil {
 		return
 	}
@@ -267,12 +268,12 @@ func EvalVectorInstant(node VectorNode, timestamp time.Time) (vector Vector, err
 	return
 }
 
-func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration) (matrix Matrix, err error) {
+func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage) (matrix Matrix, err error) {
 	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
 	// null in JSON.
 	matrix = Matrix{}
 
-	viewAdapter, err := viewAdapterForRangeQuery(node, start, end, interval)
+	viewAdapter, err := viewAdapterForRangeQuery(node, start, end, interval, storage)
 	if err != nil {
 		return
 	}

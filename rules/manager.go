@@ -16,6 +16,7 @@ package rules
 import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/storage/metric"
 	"log"
 	"sync"
 	"time"
@@ -35,14 +36,16 @@ type ruleManager struct {
 	results  chan *Result
 	done     chan bool
 	interval time.Duration
+	storage  *metric.TieredStorage
 }
 
-func NewRuleManager(results chan *Result, interval time.Duration) RuleManager {
+func NewRuleManager(results chan *Result, interval time.Duration, storage *metric.TieredStorage) RuleManager {
 	manager := &ruleManager{
 		results:  results,
 		rules:    []Rule{},
 		done:     make(chan bool),
 		interval: interval,
+		storage:  storage,
 	}
 	go manager.run(results)
 	return manager
@@ -72,7 +75,7 @@ func (m *ruleManager) runIteration(results chan *Result) {
 	for _, rule := range m.rules {
 		wg.Add(1)
 		go func(rule Rule) {
-			vector, err := rule.Eval(now)
+			vector, err := rule.Eval(now, m.storage)
 			samples := model.Samples{}
 			for _, sample := range vector {
 				samples = append(samples, sample)

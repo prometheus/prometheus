@@ -22,12 +22,6 @@ import (
 
 var defaultStalenessDelta = flag.Int("defaultStalenessDelta", 300, "Default staleness delta allowance in seconds during expression evaluations.")
 
-// AST-global storage to use for operations that are not supported by views
-// (i.e. metric->fingerprint lookups).
-//
-// BUG(julius): Wrap this into non-global state.
-var queryStorage *metric.TieredStorage
-
 // Describes the lenience limits to apply to values from the materialized view.
 type StalenessPolicy struct {
 	// Describes the inclusive limit at which individual points if requested will
@@ -36,8 +30,15 @@ type StalenessPolicy struct {
 }
 
 type viewAdapter struct {
-	view            metric.View
+	// Policy that dictates when sample values around an evaluation time are to
+	// be interpreted as stale.
 	stalenessPolicy StalenessPolicy
+	// AST-global storage to use for operations that are not supported by views
+	// (i.e. fingerprint->metric lookups).
+	storage *metric.TieredStorage
+	// The materialized view which contains all timeseries data required for
+	// executing a query.
+	view metric.View
 }
 
 // interpolateSamples interpolates a value at a target time between two
@@ -109,7 +110,7 @@ func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp 
 	for _, fingerprint := range fingerprints {
 		sampleCandidates := v.view.GetValueAtTime(fingerprint, timestamp)
 		samplePair := v.chooseClosestSample(sampleCandidates, timestamp)
-		m, err := queryStorage.GetMetricForFingerprint(fingerprint)
+		m, err := v.storage.GetMetricForFingerprint(fingerprint)
 		if err != nil {
 			continue
 		}
@@ -133,7 +134,7 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interva
 		}
 
 		// TODO: memoize/cache this.
-		m, err := queryStorage.GetMetricForFingerprint(fingerprint)
+		m, err := v.storage.GetMetricForFingerprint(fingerprint)
 		if err != nil {
 			continue
 		}
@@ -155,7 +156,7 @@ func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *
 		}
 
 		// TODO: memoize/cache this.
-		m, err := queryStorage.GetMetricForFingerprint(fingerprint)
+		m, err := v.storage.GetMetricForFingerprint(fingerprint)
 		if err != nil {
 			continue
 		}
@@ -169,17 +170,14 @@ func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *
 	return sampleSets, nil
 }
 
-func SetStorage(storage metric.TieredStorage) {
-	queryStorage = &storage
-}
-
-func NewViewAdapter(view metric.View) *viewAdapter {
+func NewViewAdapter(view metric.View, storage *metric.TieredStorage) *viewAdapter {
 	stalenessPolicy := StalenessPolicy{
 		DeltaAllowance: time.Duration(*defaultStalenessDelta) * time.Second,
 	}
 
 	return &viewAdapter{
-		view:            view,
 		stalenessPolicy: stalenessPolicy,
+		storage:         storage,
+		view:            view,
 	}
 }

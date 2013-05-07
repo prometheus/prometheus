@@ -143,7 +143,7 @@ var testMatrix = ast.Matrix{
 	{
 		Metric: model.Metric{
 			model.MetricNameLabel: "x",
-			"y":                   "testvalue",
+			"y": "testvalue",
 		},
 		Values: getTestValueStream(0, 100, 10),
 	},
