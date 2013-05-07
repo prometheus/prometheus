@@ -48,10 +48,11 @@ func (h *StatusHandler) ServeRequestsForever() {
 	})
 
 	h.PrometheusStatus = &PrometheusStatus{
-		BuildInfo:   h.BuildInfo,
-		Config:      h.Config.String(),
-		Flags:       flags,
-		Rules:       "TODO: list rules here",
+		BuildInfo: h.BuildInfo,
+		Config:    h.Config.String(),
+		Flags:     flags,
+		Rules:     "TODO: list rules here",
+		// BUG: race condition, concurrent map access
 		TargetPools: h.TargetManager.Pools(),
 	}
 

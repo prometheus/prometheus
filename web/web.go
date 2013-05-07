@@ -41,6 +41,10 @@ type WebService struct {
 func (w WebService) ServeForever() error {
 	gorest.RegisterService(w.MetricsHandler)
 
+	exp.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "", 404)
+	}))
+
 	// TODO(julius): This will need to be rewritten once the exp package provides
 	// the coarse mux behaviors via a wrapper function.
 	exp.Handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
