@@ -51,6 +51,7 @@
           <th>Active</th>
           <td>{{.Curation.Active}}</td>
         </tr>
+        {{if .Curation.Active}}
         <tr>
           <th>Processor Name</th>
           <td>{{.Curation.Name}}</td>
@@ -59,7 +60,6 @@
           <th>Recency Limit</th>
           <td>{{.Curation.Limit}}</td>
         </tr>
-        {{if .Curation.Fingerprint}}
         <tr>
           <th>Current Fingerprint</th>
           <td>{{.Curation.Fingerprint}}</td>

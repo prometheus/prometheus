@@ -103,7 +103,7 @@ type watermarkOperator struct {
 // how much progress has been made.
 func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState, samples, watermarks *leveldb.LevelDBPersistence, status chan CurationState) (err error) {
 	defer func(t time.Time) {
-		duration := float64(time.Since(t))
+		duration := float64(time.Since(t) / time.Millisecond)
 
 		labels := map[string]string{
 			cutOff:        fmt.Sprint(ignoreYoungerThan),
