@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/web"
 	"github.com/prometheus/prometheus/web/api"
