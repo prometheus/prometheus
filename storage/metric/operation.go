@@ -381,7 +381,7 @@ func optimizeForward(pending ops) (out ops) {
 		tail ops
 	)
 
-	pending = pending[1:len(pending)]
+	pending = pending[1:]
 
 	switch t := head.(type) {
 	case *getValuesAtTimeOp:
@@ -434,7 +434,7 @@ func optimizeForward(pending ops) (out ops) {
 			switch next := peekOperation.(type) {
 			// All values at a specific time may be elided into the range query.
 			case *getValuesAtTimeOp:
-				pending = pending[1:len(pending)]
+				pending = pending[1:]
 				continue
 			case *getValuesAlongRangeOp:
 				// Range queries should be concatenated if they overlap.
@@ -443,10 +443,10 @@ func optimizeForward(pending ops) (out ops) {
 
 					return optimizeForward(pending)
 				} else {
-					pending = pending[1:len(pending)]
+					pending = pending[1:]
 				}
 			case *getValuesAtIntervalOp:
-				pending = pending[1:len(pending)]
+				pending = pending[1:]
 
 				if next.GreedierThan(t) {
 					var (
@@ -488,7 +488,7 @@ func selectQueriesForTime(time time.Time, queries ops) (out ops) {
 	}
 
 	out = append(out, queries[0])
-	tail := selectQueriesForTime(time, queries[1:len(queries)])
+	tail := selectQueriesForTime(time, queries[1:])
 
 	return append(out, tail...)
 }
@@ -682,7 +682,7 @@ func optimizeTimeGroups(pending ops) (out ops) {
 	)
 
 	out = optimizeTimeGroup(groupedQueries)
-	pending = pending[len(groupedQueries):len(pending)]
+	pending = pending[len(groupedQueries):]
 
 	tail := optimizeTimeGroups(pending)
 
