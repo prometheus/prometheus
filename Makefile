@@ -15,7 +15,7 @@ TEST_ARTIFACTS = prometheus search_index
 
 include Makefile.INCLUDE
 
-all: test
+all: binary test
 
 advice:
 	go tool vet .

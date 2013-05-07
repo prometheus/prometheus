@@ -32,12 +32,12 @@ type PrometheusStatus struct {
 }
 
 type StatusHandler struct {
+	sync.Mutex
 	BuildInfo        map[string]string
 	Config           *config.Config
 	CurationState    chan metric.CurationState
 	PrometheusStatus *PrometheusStatus
 	TargetManager    retrieval.TargetManager
-	mutex            sync.Mutex
 }
 
 func (h *StatusHandler) ServeRequestsForever() {
