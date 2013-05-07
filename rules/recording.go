@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/storage/metric"
 	"time"
 )
 
@@ -30,13 +31,13 @@ type RecordingRule struct {
 
 func (rule RecordingRule) Name() string { return rule.name }
 
-func (rule RecordingRule) EvalRaw(timestamp time.Time) (vector ast.Vector, err error) {
-	return ast.EvalVectorInstant(rule.vector, timestamp)
+func (rule RecordingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error) {
+	return ast.EvalVectorInstant(rule.vector, timestamp, storage)
 }
 
-func (rule RecordingRule) Eval(timestamp time.Time) (vector ast.Vector, err error) {
+func (rule RecordingRule) Eval(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error) {
 	// Get the raw value of the rule expression.
-	vector, err = rule.EvalRaw(timestamp)
+	vector, err = rule.EvalRaw(timestamp, storage)
 	if err != nil {
 		return
 	}

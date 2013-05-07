@@ -54,7 +54,6 @@ func newTestStorage(t test.Tester) (storage *metric.TieredStorage, closer test.C
 	if storage == nil {
 		t.Fatal("storage == nil")
 	}
-	ast.SetStorage(*storage)
 	storeMatrix(*storage, testMatrix)
 	return
 }
@@ -308,7 +307,7 @@ func ExpressionTests(t *testing.T) {
 				t.Errorf("%d. Test should fail, but didn't", i)
 			}
 			failed := false
-			resultStr := ast.EvalToString(testExpr, testEvalTime, ast.TEXT)
+			resultStr := ast.EvalToString(testExpr, testEvalTime, ast.TEXT, tieredStorage)
 			resultLines := strings.Split(resultStr, "\n")
 
 			if len(exprTest.output) != len(resultLines) {
@@ -338,7 +337,7 @@ func ExpressionTests(t *testing.T) {
 				}
 			}
 
-			analyzer := ast.NewQueryAnalyzer()
+			analyzer := ast.NewQueryAnalyzer(tieredStorage)
 			analyzer.AnalyzeQueries(testExpr)
 			if exprTest.fullRanges != len(analyzer.FullRanges) {
 				t.Errorf("%d. Count of full ranges didn't match: %v vs %v", i, exprTest.fullRanges, len(analyzer.FullRanges))
@@ -464,7 +463,7 @@ func TestAlertingRule(t *testing.T) {
 
 	for i, expected := range evalOutputs {
 		evalTime := testStartTime.Add(testSampleInterval * time.Duration(i))
-		actual, err := rule.Eval(evalTime)
+		actual, err := rule.Eval(evalTime, tieredStorage)
 		if err != nil {
 			t.Fatalf("Error during alerting rule evaluation: %s", err)
 		}

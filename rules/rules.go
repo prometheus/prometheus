@@ -15,6 +15,7 @@ package rules
 
 import (
 	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/storage/metric"
 	"time"
 )
 
@@ -25,9 +26,9 @@ type Rule interface {
 	Name() string
 	// EvalRaw evaluates the rule's vector expression without triggering any
 	// other actions, like recording or alerting.
-	EvalRaw(timestamp time.Time) (vector ast.Vector, err error)
+	EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error)
 	// Eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(timestamp time.Time) (vector ast.Vector, err error)
+	Eval(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error)
 	// ToDotGraph returns a Graphviz dot graph of the rule.
 	ToDotGraph() string
 }
