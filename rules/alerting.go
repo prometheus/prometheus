@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 	"time"
 )
@@ -87,13 +88,13 @@ type AlertingRule struct {
 
 func (rule AlertingRule) Name() string { return rule.name }
 
-func (rule AlertingRule) EvalRaw(timestamp time.Time) (vector ast.Vector, err error) {
-	return ast.EvalVectorInstant(rule.vector, timestamp)
+func (rule AlertingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error) {
+	return ast.EvalVectorInstant(rule.vector, timestamp, storage)
 }
 
-func (rule AlertingRule) Eval(timestamp time.Time) (vector ast.Vector, err error) {
+func (rule AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error) {
 	// Get the raw value of the rule expression.
-	exprResult, err := rule.EvalRaw(timestamp)
+	exprResult, err := rule.EvalRaw(timestamp, storage)
 	if err != nil {
 		return
 	}

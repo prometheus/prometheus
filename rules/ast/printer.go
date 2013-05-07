@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 	"sort"
 	"strings"
@@ -151,8 +152,8 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 	return string(dataJSON)
 }
 
-func EvalToString(node Node, timestamp time.Time, format OutputFormat) string {
-	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp)
+func EvalToString(node Node, timestamp time.Time, format OutputFormat, storage *metric.TieredStorage) string {
+	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage)
 	if err != nil {
 		panic(err)
 	}

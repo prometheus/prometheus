@@ -131,9 +131,7 @@ func main() {
 	go ts.Serve()
 	go prometheus.interruptHandler()
 
-	ast.SetStorage(*ts)
-
-	ruleManager := rules.NewRuleManager(ruleResults, conf.EvaluationInterval())
+	ruleManager := rules.NewRuleManager(ruleResults, conf.EvaluationInterval(), ts)
 	err = ruleManager.AddRulesFromConfig(conf)
 	if err != nil {
 		log.Fatalf("Error loading rule files: %v", err)
