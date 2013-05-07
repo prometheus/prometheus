@@ -394,7 +394,7 @@ func (t TieredStorage) renderView(viewJob viewJob) {
 
 				// If we aimed past the newest value on disk, combine it with the next value from memory.
 				if len(memValues) > 0 && diskValues.LastTimeBefore(targetTime) {
-					latestDiskValue := diskValues[len(diskValues)-1 : len(diskValues)]
+					latestDiskValue := diskValues[len(diskValues)-1:]
 					chunk = append(latestDiskValue, memValues...)
 				} else {
 					chunk = diskValues
