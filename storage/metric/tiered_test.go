@@ -485,7 +485,7 @@ func TestGetAllValuesForLabel(t *testing.T) {
 				}
 			}
 			if metric.appendToDisk {
-				if err := tiered.diskStorage.AppendSample(sample); err != nil {
+				if err := tiered.DiskStorage.AppendSample(sample); err != nil {
 					t.Fatalf("%d.%d. failed to add fixture data: %s", i, j, err)
 				}
 			}
@@ -520,7 +520,7 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 	if err := tiered.memoryArena.AppendSample(memorySample); err != nil {
 		t.Fatalf("Failed to add fixture data: %s", err)
 	}
-	if err := tiered.diskStorage.AppendSample(diskSample); err != nil {
+	if err := tiered.DiskStorage.AppendSample(diskSample); err != nil {
 		t.Fatalf("Failed to add fixture data: %s", err)
 	}
 	tiered.Flush()

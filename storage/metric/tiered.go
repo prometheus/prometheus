@@ -30,10 +30,12 @@ import (
 // TieredStorage both persists samples and generates materialized views for
 // queries.
 type TieredStorage struct {
+	// BUG(matt): This introduces a Law of Demeter violation.  Ugh.
+	DiskStorage *LevelDBMetricPersistence
+
 	appendToDiskQueue   chan model.Samples
 	appendToMemoryQueue chan model.Samples
 	diskFrontier        *diskFrontier
-	diskStorage         *LevelDBMetricPersistence
 	draining            chan chan bool
 	flushMemoryInterval time.Duration
 	memoryArena         memorySeriesStorage
@@ -60,7 +62,7 @@ func NewTieredStorage(appendToMemoryQueueDepth, appendToDiskQueueDepth, viewQueu
 	storage = &TieredStorage{
 		appendToDiskQueue:   make(chan model.Samples, appendToDiskQueueDepth),
 		appendToMemoryQueue: make(chan model.Samples, appendToMemoryQueueDepth),
-		diskStorage:         diskStorage,
+		DiskStorage:         diskStorage,
 		draining:            make(chan chan bool),
 		flushMemoryInterval: flushMemoryInterval,
 		memoryArena:         NewMemorySeriesStorage(),
@@ -210,7 +212,7 @@ func (t TieredStorage) Flush() {
 func (t TieredStorage) Close() {
 	log.Println("Closing tiered storage...")
 	t.Drain()
-	t.diskStorage.Close()
+	t.DiskStorage.Close()
 	t.memoryArena.Close()
 
 	close(t.appendToDiskQueue)
@@ -323,7 +325,7 @@ func (t *TieredStorage) flushMemory() {
 	defer t.mutex.Unlock()
 
 	flusher := &memoryToDiskFlusher{
-		disk:        t.diskStorage,
+		disk:        t.DiskStorage,
 		olderThan:   time.Now().Add(-1 * t.memoryTTL),
 		toDiskQueue: t.appendToDiskQueue,
 	}
@@ -351,7 +353,7 @@ func (t TieredStorage) renderView(viewJob viewJob) {
 		scans = viewJob.builder.ScanJobs()
 		view  = newView()
 		// Get a single iterator that will be used for all data extraction below.
-		iterator = t.diskStorage.MetricSamples.NewIterator(true)
+		iterator = t.DiskStorage.MetricSamples.NewIterator(true)
 	)
 	defer iterator.Close()
 
@@ -541,7 +543,7 @@ func (t TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *
 
 // Get all label values that are associated with the provided label name.
 func (t TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
-	diskValues, err := t.diskStorage.GetAllValuesForLabel(labelName)
+	diskValues, err := t.DiskStorage.GetAllValuesForLabel(labelName)
 	if err != nil {
 		return
 	}
@@ -568,7 +570,7 @@ func (t TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fing
 	if err != nil {
 		return
 	}
-	diskFingerprints, err := t.diskStorage.GetFingerprintsForLabelSet(labelSet)
+	diskFingerprints, err := t.DiskStorage.GetFingerprintsForLabelSet(labelSet)
 	if err != nil {
 		return
 	}
@@ -590,7 +592,7 @@ func (t TieredStorage) GetMetricForFingerprint(f model.Fingerprint) (m *model.Me
 		return
 	}
 	if m == nil {
-		m, err = t.diskStorage.GetMetricForFingerprint(f)
+		m, err = t.DiskStorage.GetMetricForFingerprint(f)
 	}
 	return
 }
