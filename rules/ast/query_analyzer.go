@@ -132,9 +132,10 @@ func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interva
 	requestBuildTimer := queryStats.GetTimer(stats.ViewRequestBuildTime).Start()
 	viewBuilder := metric.NewViewRequestBuilder()
 	for fingerprint, rangeDuration := range analyzer.FullRanges {
-		// TODO: we should support GetMetricRangeAtInterval() or similar ops in the view builder.
-		for t := start; t.Before(end); t = t.Add(interval) {
-			viewBuilder.GetMetricRange(&fingerprint, t.Add(-rangeDuration), t)
+		if interval < rangeDuration {
+			viewBuilder.GetMetricRange(&fingerprint, start.Add(-rangeDuration), end)
+		} else {
+			viewBuilder.GetMetricRangeAtInterval(&fingerprint, start.Add(-rangeDuration), end, interval, rangeDuration)
 		}
 	}
 	for fingerprint := range analyzer.IntervalRanges {

@@ -471,7 +471,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 				currentChunk = currentChunk.TruncateBefore(*(op.CurrentTime()))
 
-				for op.CurrentTime() != nil && !op.CurrentTime().After(targetTime) {
+				for !op.Consumed() && !op.CurrentTime().After(targetTime) {
 					out = op.ExtractSamples(Values(currentChunk))
 
 					// Append the extracted samples to the materialized view.
@@ -482,7 +482,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			// Throw away standing ops which are finished.
 			filteredOps := ops{}
 			for _, op := range standingOps {
-				if op.CurrentTime() != nil {
+				if !op.Consumed() {
 					filteredOps = append(filteredOps, op)
 				}
 			}
