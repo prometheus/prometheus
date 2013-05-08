@@ -52,9 +52,12 @@ go-stamp: gvm-stamp
 	[ -x "$$(which go)" ] || { echo "go not found." ; false ; }
 	touch $@
 
-goprotobuf-stamp: go-stamp mercurial-stamp protoc-stamp
-	$(GO_GET) code.google.com/p/goprotobuf/proto $(THIRD_PARTY_BUILD_OUTPUT)
+goprotobuf-protoc-gen-go-stamp: protoc-stamp
 	$(GO_GET) code.google.com/p/goprotobuf/protoc-gen-go $(THIRD_PARTY_BUILD_OUTPUT)
+	touch $@
+
+goprotobuf-stamp: go-stamp mercurial-stamp
+	$(GO_GET) code.google.com/p/goprotobuf/proto $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
 gorest-stamp: go-stamp

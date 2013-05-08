@@ -15,18 +15,13 @@ all: generated
 
 SUFFIXES:
 
-MAKE_ARTIFACTS = generated-stamp
-
 include ../Makefile.INCLUDE
 
-generated: generated-stamp
+# In order to build the generated targets in this directory, run the
+# following:
+#
+#     make -C build goprotobuf-protoc-gen-go-stamp
 
-generated-stamp: config.proto
+
+generated/config.pb.go: config.proto
 	protoc --proto_path=$(PREFIX)/include:. --go_out=generated/ config.proto
-	touch $@
-
-clean:
-	rm -rf generated/*
-	-rm -f $(MAKE_ARTIFACTS)
-
-.PHONY: generated
