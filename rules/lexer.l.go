@@ -380,7 +380,7 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 		return yyactionreturn{GROUP_OP, yyRT_USER_RETURN}
 	}
 	return yyactionreturn{0, yyRT_FALLTHROUGH}
-}}, {regexp.MustCompile("AVG|SUM|MAX|MIN"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+}}, {regexp.MustCompile("AVG|SUM|MAX|MIN|COUNT"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
 	defer func() {
 		if r := recover(); r != nil {
 			if r != "yyREJECT" {
@@ -394,7 +394,7 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 		return yyactionreturn{AGGR_OP, yyRT_USER_RETURN}
 	}
 	return yyactionreturn{0, yyRT_FALLTHROUGH}
-}}, {regexp.MustCompile("avg|sum|max|min"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
+}}, {regexp.MustCompile("avg|sum|max|min|count"), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
 	defer func() {
 		if r := recover(); r != nil {
 			if r != "yyREJECT" {
@@ -509,7 +509,6 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 		yylval.num = model.SampleValue(num)
 		return yyactionreturn{NUMBER, yyRT_USER_RETURN}
 	}
-
 	return yyactionreturn{0, yyRT_FALLTHROUGH}
 }}, {regexp.MustCompile("\\\"(\\\\[^\\n]|[^\\\\\"])*\\\""), nil, []yystartcondition{}, false, func() (yyar yyactionreturn) {
 	defer func() {
