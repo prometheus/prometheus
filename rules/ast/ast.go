@@ -82,6 +82,7 @@ const (
 	AVG
 	MIN
 	MAX
+	COUNT
 )
 
 // ----------------------------------------------------------------------------
@@ -317,8 +318,13 @@ func labelIntersection(metric1, metric2 model.Metric) model.Metric {
 func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[string]*groupedAggregation, timestamp time.Time) Vector {
 	vector := Vector{}
 	for _, aggregation := range aggregations {
-		if node.aggrType == AVG {
+		switch node.aggrType {
+		case AVG:
 			aggregation.value = aggregation.value / model.SampleValue(aggregation.groupCount)
+		case COUNT:
+			aggregation.value = model.SampleValue(aggregation.groupCount)
+		default:
+			// For other aggregations, we already have the right value.
 		}
 		sample := model.Sample{
 			Metric:    aggregation.labels,
@@ -351,6 +357,10 @@ func (node *VectorAggregation) Eval(timestamp time.Time, view *viewAdapter) Vect
 				if groupedResult.value > sample.Value {
 					groupedResult.value = sample.Value
 				}
+			case COUNT:
+				groupedResult.groupCount++
+			default:
+				panic("Unknown aggregation type")
 			}
 		} else {
 			result[groupingKey] = &groupedAggregation{
