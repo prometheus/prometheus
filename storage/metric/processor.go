@@ -41,7 +41,7 @@ type Processor interface {
 	//
 	// Upon completion or error, the last time at which the processor finished
 	// shall be emitted in addition to any errors.
-	Apply(sampleIterator leveldb.Iterator, samples raw.Persistence, stopAt time.Time, fingerprint model.Fingerprint) (lastCurated time.Time, err error)
+	Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint model.Fingerprint) (lastCurated time.Time, err error)
 }
 
 // CompactionProcessor combines sparse values in the database together such
@@ -80,10 +80,10 @@ func (p *CompactionProcessor) Signature() (out []byte, err error) {
 }
 
 func (p CompactionProcessor) String() string {
-	return fmt.Sprintf("compactionProcess for minimum group size %d", p.MinimumGroupSize)
+	return fmt.Sprintf("compactionProcessor for minimum group size %d", p.MinimumGroupSize)
 }
 
-func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samples raw.Persistence, stopAt time.Time, fingerprint model.Fingerprint) (lastCurated time.Time, err error) {
+func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint model.Fingerprint) (lastCurated time.Time, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {
@@ -137,7 +137,7 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samples raw.
 		// commit to disk and delete the batch.  A new one will be recreated if
 		// necessary.
 		case pendingMutations >= p.MaximumMutationPoolBatch:
-			err = samples.Commit(pendingBatch)
+			err = samplesPersistence.Commit(pendingBatch)
 			if err != nil {
 				return
 			}
@@ -223,7 +223,136 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samples raw.
 	// This is not deferred due to the off-chance that a pre-existing commit
 	// failed.
 	if pendingBatch != nil && pendingMutations > 0 {
-		err = samples.Commit(pendingBatch)
+		err = samplesPersistence.Commit(pendingBatch)
+		if err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+// DeletionProcessor deletes sample blocks older than a defined value.
+type DeletionProcessor struct {
+	// MaximumMutationPoolBatch represents approximately the largest pending
+	// batch of mutation operations for the database before pausing to
+	// commit before resumption.
+	MaximumMutationPoolBatch int
+	// signature is the byte representation of the DeletionProcessor's settings,
+	// used for purely memoization purposes across an instance.
+	signature []byte
+}
+
+func (p DeletionProcessor) Name() string {
+	return "io.prometheus.DeletionProcessorDefinition"
+}
+
+func (p *DeletionProcessor) Signature() (out []byte, err error) {
+	if len(p.signature) == 0 {
+		out, err = proto.Marshal(&dto.DeletionProcessorDefinition{})
+
+		p.signature = out
+	}
+
+	out = p.signature
+
+	return
+}
+
+func (p DeletionProcessor) String() string {
+	return "deletionProcessor"
+}
+
+func (p DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint model.Fingerprint) (lastCurated time.Time, err error) {
+	var pendingBatch raw.Batch = nil
+
+	defer func() {
+		if pendingBatch != nil {
+			pendingBatch.Close()
+		}
+	}()
+
+	sampleKey, err := extractSampleKey(sampleIterator)
+	if err != nil {
+		return
+	}
+	sampleValues, err := extractSampleValues(sampleIterator)
+	if err != nil {
+		return
+	}
+
+	pendingMutations := 0
+
+	for lastCurated.Before(stopAt) {
+		switch {
+		// Furnish a new pending batch operation if none is available.
+		case pendingBatch == nil:
+			pendingBatch = leveldb.NewBatch()
+
+		// If there are no sample values to extract from the datastore, let's
+		// continue extracting more values to use.  We know that the time.Before()
+		// block would prevent us from going into unsafe territory.
+		case len(sampleValues) == 0:
+			if !sampleIterator.Next() {
+				return lastCurated, fmt.Errorf("Illegal Condition: Invalid Iterator on Continuation")
+			}
+
+			sampleKey, err = extractSampleKey(sampleIterator)
+			if err != nil {
+				return
+			}
+			sampleValues, err = extractSampleValues(sampleIterator)
+			if err != nil {
+				return
+			}
+
+		// If the number of pending mutations exceeds the allowed batch amount,
+		// commit to disk and delete the batch.  A new one will be recreated if
+		// necessary.
+		case pendingMutations >= p.MaximumMutationPoolBatch:
+			err = samplesPersistence.Commit(pendingBatch)
+			if err != nil {
+				return
+			}
+
+			pendingMutations = 0
+
+			pendingBatch.Close()
+			pendingBatch = nil
+
+		case !sampleKey.MayContain(stopAt):
+			key := coding.NewProtocolBuffer(sampleKey.ToDTO())
+			pendingBatch.Drop(key)
+			lastCurated = sampleKey.LastTimestamp
+			sampleValues = model.Values{}
+			pendingMutations++
+
+		case sampleKey.MayContain(stopAt):
+			key := coding.NewProtocolBuffer(sampleKey.ToDTO())
+			pendingBatch.Drop(key)
+			pendingMutations++
+
+			sampleValues = sampleValues.TruncateBefore(stopAt)
+			if len(sampleValues) > 0 {
+				sampleKey = sampleValues.ToSampleKey(fingerprint)
+				lastCurated = sampleKey.FirstTimestamp
+				newKey := coding.NewProtocolBuffer(sampleKey.ToDTO())
+				newValue := coding.NewProtocolBuffer(sampleValues.ToDTO())
+				pendingBatch.Put(newKey, newValue)
+				pendingMutations++
+			} else {
+				lastCurated = sampleKey.LastTimestamp
+			}
+
+		default:
+			err = fmt.Errorf("Unhandled processing case.")
+		}
+	}
+
+	// This is not deferred due to the off-chance that a pre-existing commit
+	// failed.
+	if pendingBatch != nil && pendingMutations > 0 {
+		err = samplesPersistence.Commit(pendingBatch)
 		if err != nil {
 			return
 		}

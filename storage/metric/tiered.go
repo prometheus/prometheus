@@ -27,6 +27,32 @@ import (
 	"time"
 )
 
+type chunk model.Values
+
+// TruncateBefore returns a subslice of the original such that extraneous
+// samples in the collection that occur before the provided time are
+// dropped.  The original slice is not mutated.  It works with the assumption
+// that consumers of these values could want preceding values if none would
+// exist prior to the defined time.
+func (c chunk) TruncateBefore(t time.Time) chunk {
+	index := sort.Search(len(c), func(i int) bool {
+		timestamp := c[i].Timestamp
+
+		return !timestamp.Before(t)
+	})
+
+	switch index {
+	case 0:
+		return c
+	case len(c):
+		return c[len(c)-1:]
+	default:
+		return c[index-1:]
+	}
+
+	panic("unreachable")
+}
+
 // TieredStorage both persists samples and generates materialized views for
 // queries.
 type TieredStorage struct {
@@ -383,7 +409,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			// Load data value chunk(s) around the first standing op's current time.
 			targetTime := *standingOps[0].CurrentTime()
 
-			chunk := model.Values{}
+			currentChunk := chunk{}
 			memValues := t.memoryArena.GetValueAtTime(scanJob.fingerprint, targetTime)
 			// If we aimed before the oldest value in memory, load more data from disk.
 			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && seriesFrontier != nil {
@@ -397,22 +423,22 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 				// If we aimed past the newest value on disk, combine it with the next value from memory.
 				if len(memValues) > 0 && diskValues.LastTimeBefore(targetTime) {
 					latestDiskValue := diskValues[len(diskValues)-1:]
-					chunk = append(latestDiskValue, memValues...)
+					currentChunk = append(chunk(latestDiskValue), chunk(memValues)...)
 				} else {
-					chunk = diskValues
+					currentChunk = chunk(diskValues)
 				}
 			} else {
-				chunk = memValues
+				currentChunk = chunk(memValues)
 			}
 
 			// There's no data at all for this fingerprint, so stop processing ops for it.
-			if len(chunk) == 0 {
+			if len(currentChunk) == 0 {
 				break
 			}
 
-			chunk = chunk.TruncateBefore(targetTime)
+			currentChunk = currentChunk.TruncateBefore(targetTime)
 
-			lastChunkTime := chunk[len(chunk)-1].Timestamp
+			lastChunkTime := currentChunk[len(currentChunk)-1].Timestamp
 			if lastChunkTime.After(targetTime) {
 				targetTime = lastChunkTime
 			}
@@ -424,10 +450,10 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 					break
 				}
 
-				chunk = chunk.TruncateBefore(*(op.CurrentTime()))
+				currentChunk = currentChunk.TruncateBefore(*(op.CurrentTime()))
 
 				for op.CurrentTime() != nil && !op.CurrentTime().After(targetTime) {
-					out = op.ExtractSamples(chunk)
+					out = op.ExtractSamples(model.Values(currentChunk))
 				}
 			}
 
