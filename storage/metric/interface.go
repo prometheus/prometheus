@@ -33,7 +33,7 @@ type MetricPersistence interface {
 	// Record a new sample in the storage layer.
 	AppendSample(model.Sample) error
 
-	// Record a new sample in the storage layer.
+	// Record a group of new samples in the storage layer.
 	AppendSamples(model.Samples) error
 
 	// Get all of the metric fingerprints that are associated with the provided

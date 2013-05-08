@@ -133,7 +133,7 @@ func main() {
 		log.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	ts, err := metric.NewTieredStorage(uint(*memoryAppendQueueCapacity), uint(*diskAppendQueueCapacity), 100, time.Second*30, time.Second*1, time.Second*20, *metricsStoragePath)
+	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, time.Second*30, time.Second*1, time.Second*20, *metricsStoragePath)
 	if err != nil {
 		log.Fatalf("Error opening storage: %s", err)
 	}
