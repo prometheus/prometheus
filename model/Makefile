@@ -11,22 +11,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-all: generated
+all: generated/data.pb.go generated/descriptor.blob
 
 SUFFIXES:
 
-MAKE_ARTIFACTS = generated-stamp
-
 include ../Makefile.INCLUDE
 
-generated: generated-stamp
+# In order to build the generated targets in this directory, run the
+# following:
+#
+#     make -C build goprotobuf-protoc-gen-go-stamp
 
-generated-stamp: data.proto
+generated/data.pb.go: data.proto 
 	protoc --proto_path=$(PREFIX)/include:. --include_imports --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
-	touch $@
 
-clean:
-	rm -rf generated/*
-	-rm -f $(MAKE_ARTIFACTS)
-
-.PHONY: clean generated
+generated/descriptor.blob: data.proto
+	protoc --proto_path=$(PREFIX)/include:. --include_imports --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
