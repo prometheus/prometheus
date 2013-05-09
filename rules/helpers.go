@@ -55,10 +55,11 @@ func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy []model.L
 		return nil, fmt.Errorf("Operand of %v aggregation must be of vector type", aggrTypeStr)
 	}
 	var aggrTypes = map[string]ast.AggrType{
-		"SUM": ast.SUM,
-		"MAX": ast.MAX,
-		"MIN": ast.MIN,
-		"AVG": ast.AVG,
+		"SUM":   ast.SUM,
+		"MAX":   ast.MAX,
+		"MIN":   ast.MIN,
+		"AVG":   ast.AVG,
+		"COUNT": ast.COUNT,
 	}
 	aggrType, ok := aggrTypes[aggrTypeStr]
 	if !ok {

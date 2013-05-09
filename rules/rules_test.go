@@ -58,7 +58,7 @@ func newTestStorage(t test.Tester) (storage *metric.TieredStorage, closer test.C
 	return
 }
 
-func ExpressionTests(t *testing.T) {
+func TestExpressions(t *testing.T) {
 	// Labels in expected output need to be alphabetically sorted.
 	var expressionTests = []struct {
 		expr           string
@@ -78,6 +78,14 @@ func ExpressionTests(t *testing.T) {
 			output: []string{
 				"http_requests{job='api-server'} => 1000 @[%v]",
 				"http_requests{job='app-server'} => 2600 @[%v]",
+			},
+			fullRanges:     0,
+			intervalRanges: 8,
+		}, {
+			expr: "COUNT(http_requests) BY (job)",
+			output: []string{
+				"http_requests{job='api-server'} => 4 @[%v]",
+				"http_requests{job='app-server'} => 4 @[%v]",
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
@@ -116,10 +124,10 @@ func ExpressionTests(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) - count(http_requests)",
+			expr: "SUM(http_requests) BY (job) - COUNT(http_requests) BY (job)",
 			output: []string{
-				"http_requests{job='api-server'} => 992 @[%v]",
-				"http_requests{job='app-server'} => 2592 @[%v]",
+				"http_requests{job='api-server'} => 996 @[%v]",
+				"http_requests{job='app-server'} => 2596 @[%v]",
 			},
 			fullRanges:     0,
 			intervalRanges: 8,

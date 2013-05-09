@@ -69,11 +69,6 @@ func timeImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return model.SampleValue(time.Now().Unix())
 }
 
-// === count(vector VectorNode) model.SampleValue ===
-func countImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
-	return model.SampleValue(len(args[0].(VectorNode).Eval(timestamp, view)))
-}
-
 // === delta(matrix MatrixNode, isCounter ScalarNode) Vector ===
 func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
@@ -253,12 +248,6 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 }
 
 var functions = map[string]*Function{
-	"count": {
-		name:       "count",
-		argTypes:   []ExprType{VECTOR},
-		returnType: SCALAR,
-		callFn:     countImpl,
-	},
 	"delta": {
 		name:       "delta",
 		argTypes:   []ExprType{MATRIX, SCALAR},

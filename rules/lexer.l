@@ -44,8 +44,8 @@ WITH|with                { return WITH }
 
 PERMANENT|permanent      { return PERMANENT }
 BY|by                    { return GROUP_OP }
-AVG|SUM|MAX|MIN          { yylval.str = yytext; return AGGR_OP }
-avg|sum|max|min          { yylval.str = strings.ToUpper(yytext); return AGGR_OP }
+AVG|SUM|MAX|MIN|COUNT    { yylval.str = yytext; return AGGR_OP }
+avg|sum|max|min|count    { yylval.str = strings.ToUpper(yytext); return AGGR_OP }
 \<|>|AND|OR|and|or       { yylval.str = strings.ToUpper(yytext); return CMP_OP }
 ==|!=|>=|<=              { yylval.str = yytext; return CMP_OP }
 [+\-]                    { yylval.str = yytext; return ADDITIVE_OP }
