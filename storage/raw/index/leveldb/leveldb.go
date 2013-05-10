@@ -62,12 +62,14 @@ func (l *LevelDBMembershipIndex) Commit(batch raw.Batch) error {
 	return l.persistence.Commit(batch)
 }
 
-// CompactKeyspace compacts the entire database's keyspace.  An error may be
-// returned if there are difficulties with the underlying database or if it's
-// empty.
+// CompactKeyspace compacts the entire database's keyspace.
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
-func (l *LevelDBMembershipIndex) CompactKeyspace() error {
-	return l.persistence.CompactKeyspace()
+func (l *LevelDBMembershipIndex) CompactKeyspace() {
+	l.persistence.CompactKeyspace()
+}
+
+func (l *LevelDBMembershipIndex) ApproximateSize() (uint64, error) {
+	return l.persistence.ApproximateSize()
 }

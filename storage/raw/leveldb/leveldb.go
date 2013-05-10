@@ -308,18 +308,27 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 	return l.storage.Write(l.writeOptions, batch.batch)
 }
 
-// CompactKeyspace compacts the entire database's keyspace.  An error may be
-// returned if there are difficulties with the underlying database or if it's
-// empty.
+// CompactKeyspace compacts the entire database's keyspace.
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
-func (l *LevelDBPersistence) CompactKeyspace() error {
+func (l *LevelDBPersistence) CompactKeyspace() {
+
+	// Magic values per https://code.google.com/p/leveldb/source/browse/include/leveldb/db.h#131.
+	keyspace := levigo.Range{
+		Start: nil,
+		Limit: nil,
+	}
+
+	l.storage.CompactRange(keyspace)
+}
+
+func (l *LevelDBPersistence) ApproximateSize() (uint64, error) {
 	iterator := l.NewIterator(false)
 	defer iterator.Close()
 
 	if !iterator.SeekToFirst() {
-		return fmt.Errorf("could not seek to first key")
+		return 0, fmt.Errorf("could not seek to first key")
 	}
 
 	keyspace := levigo.Range{}
@@ -327,14 +336,18 @@ func (l *LevelDBPersistence) CompactKeyspace() error {
 	keyspace.Start = iterator.Key()
 
 	if !iterator.SeekToLast() {
-		return fmt.Errorf("could not seek to last key")
+		return 0, fmt.Errorf("could not seek to last key")
 	}
 
 	keyspace.Limit = iterator.Key()
 
-	l.storage.CompactRange(keyspace)
+	sizes := l.storage.GetApproximateSizes([]levigo.Range{keyspace})
+	total := uint64(0)
+	for _, size := range sizes {
+		total += size
+	}
 
-	return nil
+	return total, nil
 }
 
 // NewIterator creates a new levigoIterator, which follows the Iterator
