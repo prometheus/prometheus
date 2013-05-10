@@ -295,5 +295,13 @@ func (m *CurationValue) GetLastCompletionTimestamp() int64 {
 	return 0
 }
 
+type DeletionProcessorDefinition struct {
+	XXX_unrecognized []byte `json:"-"`
+}
+
+func (m *DeletionProcessorDefinition) Reset()         { *m = DeletionProcessorDefinition{} }
+func (m *DeletionProcessorDefinition) String() string { return proto.CompactTextString(m) }
+func (*DeletionProcessorDefinition) ProtoMessage()    {}
+
 func init() {
 }

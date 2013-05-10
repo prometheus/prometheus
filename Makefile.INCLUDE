@@ -37,7 +37,9 @@ FULL_GOPATH_BASE := $(FIRST_GOPATH)/src/github.com/prometheus
 
 export PREFIX=$(PWD)/build/root
 
-export PATH := $(PREFIX)/bin:$(GOPATH)/bin:$(PATH)
+export LOCAL_BINARIES=$(PREFIX)/bin
+
+export PATH := $(LOCAL_BINARIES):$(GOPATH)/bin:$(PATH)
 export LD_LIBRARY_PATH := $(PREFIX)/lib:$(LD_LIBRARY_PATH)
 
 export CFLAGS := $(CFLAGS) -I$(PREFIX)/include
@@ -68,3 +70,5 @@ BUILDFLAGS := -ldflags \
 		-X main.leveldbVersion $(LEVELDB_VERSION)\
 		-X main.protobufVersion $(PROTOCOL_BUFFERS_VERSION)\
 		-X main.snappyVersion $(SNAPPY_VERSION)"
+
+PROTOC := $(LOCAL_BINARIES)/protoc

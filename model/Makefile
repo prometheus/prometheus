@@ -22,8 +22,8 @@ include ../Makefile.INCLUDE
 #
 #     make -C build goprotobuf-protoc-gen-go-stamp
 
-generated/data.pb.go: data.proto 
-	protoc --proto_path=$(PREFIX)/include:. --include_imports --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
+generated/data.pb.go: data.proto
+	$(PROTOC) --proto_path=$(PREFIX)/include:. --include_imports --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
 
 generated/descriptor.blob: data.proto
-	protoc --proto_path=$(PREFIX)/include:. --include_imports --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
+	$(PROTOC) --proto_path=$(PREFIX)/include:. --include_imports --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
