@@ -195,10 +195,12 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 	p = &LevelDBPersistence{
 		cache:        cache,
 		filterPolicy: filterPolicy,
+
 		options:      options,
 		readOptions:  readOptions,
-		storage:      storage,
 		writeOptions: writeOptions,
+
+		storage: storage,
 	}
 
 	return
@@ -304,6 +306,35 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 	}
 
 	return l.storage.Write(l.writeOptions, batch.batch)
+}
+
+// CompactKeyspace compacts the entire database's keyspace.  An error may be
+// returned if there are difficulties with the underlying database or if it's
+// empty.
+//
+// Beware that it would probably be imprudent to run this on a live user-facing
+// server due to latency implications.
+func (l *LevelDBPersistence) CompactKeyspace() error {
+	iterator := l.NewIterator(false)
+	defer iterator.Close()
+
+	if !iterator.SeekToFirst() {
+		return fmt.Errorf("could not seek to first key")
+	}
+
+	keyspace := levigo.Range{}
+
+	keyspace.Start = iterator.Key()
+
+	if !iterator.SeekToLast() {
+		return fmt.Errorf("could not seek to last key")
+	}
+
+	keyspace.Limit = iterator.Key()
+
+	l.storage.CompactRange(keyspace)
+
+	return nil
 }
 
 // NewIterator creates a new levigoIterator, which follows the Iterator

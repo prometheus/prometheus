@@ -23,12 +23,13 @@ advice:
 binary: build
 	go build $(BUILDFLAGS) .
 
-build: preparation config model web
+build: preparation config model tools web
 
 clean:
 	$(MAKE) -C build clean
 	$(MAKE) -C config clean
 	$(MAKE) -C model clean
+	$(MAKE) -C tools clean
 	$(MAKE) -C web clean
 	rm -rf $(TEST_ARTIFACTS)
 	-find . -type f -iname '*~' -exec rm '{}' ';'
@@ -72,7 +73,10 @@ source_path:
 test: build
 	go test ./... $(GO_TEST_FLAGS)
 
+tools:
+	$(MAKE) -C tools
+
 web: preparation config model
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean config documentation format model package preparation run search_index source_path test
+.PHONY: advice binary build clean config documentation format model package preparation run search_index source_path test tools
