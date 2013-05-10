@@ -186,24 +186,15 @@ func (v Values) InsideInterval(t time.Time) (s bool) {
 
 // TruncateBefore returns a subslice of the original such that extraneous
 // samples in the collection that occur before the provided time are
-// dropped.  The original slice is not mutated.
-func (v Values) TruncateBefore(t time.Time) (values Values) {
+// dropped.  The original slice is not mutated
+func (v Values) TruncateBefore(t time.Time) Values {
 	index := sort.Search(len(v), func(i int) bool {
 		timestamp := v[i].Timestamp
 
 		return !timestamp.Before(t)
 	})
 
-	switch index {
-	case 0:
-		values = v
-	case len(v):
-		values = v[len(v)-1:]
-	default:
-		values = v[index-1:]
-	}
-
-	return
+	return v[index:]
 }
 
 func (v Values) ToDTO() (out *dto.SampleValueSeries) {

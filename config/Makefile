@@ -24,4 +24,4 @@ include ../Makefile.INCLUDE
 
 
 generated/config.pb.go: config.proto
-	protoc --proto_path=$(PREFIX)/include:. --go_out=generated/ config.proto
+	 $(PROTOC) --proto_path=$(PREFIX)/include:. --go_out=generated/ config.proto

@@ -122,3 +122,8 @@ message CurationValue {
   // fingerprint.
   optional int64 last_completion_timestamp = 1;
 }
+
+// DeletionProcessorDefinition models a curation process across the sample
+// corpus that deletes old values.
+message DeletionProcessorDefinition {
+}

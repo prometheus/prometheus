@@ -79,7 +79,7 @@ func BenchmarkMetric(b *testing.B) {
 	}
 }
 
-func testValues(t test.Tester) {
+func testTruncateBefore(t test.Tester) {
 	type in struct {
 		values Values
 		time   time.Time
@@ -166,10 +166,6 @@ func testValues(t test.Tester) {
 			},
 			out: Values{
 				{
-					Value:     1,
-					Timestamp: instant.Add(time.Second),
-				},
-				{
 					Value:     2,
 					Timestamp: instant.Add(2 * time.Second),
 				},
@@ -209,13 +205,7 @@ func testValues(t test.Tester) {
 					},
 				},
 			},
-			out: Values{
-				// Preserve the last value in case it needs to be used for the next set.
-				{
-					Value:     4,
-					Timestamp: instant.Add(4 * time.Second),
-				},
-			},
+			out: Values{},
 		},
 	}
 
@@ -234,6 +224,6 @@ func testValues(t test.Tester) {
 	}
 }
 
-func TestValues(t *testing.T) {
-	testValues(t)
+func TestTruncateBefore(t *testing.T) {
+	testTruncateBefore(t)
 }
