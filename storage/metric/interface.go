@@ -47,8 +47,12 @@ type MetricPersistence interface {
 	// Get the metric associated with the provided fingerprint.
 	GetMetricForFingerprint(*model.Fingerprint) (model.Metric, error)
 
+	// Get the two metric values that are immediately adjacent to a given time.
 	GetValueAtTime(*model.Fingerprint, time.Time) model.Values
-	GetBoundaryValues(*model.Fingerprint, model.Interval) (first model.Values, second model.Values)
+	// Get the boundary values of an interval: the first value older than the
+	// interval start, and the first value younger than the interval end.
+	GetBoundaryValues(*model.Fingerprint, model.Interval) model.Values
+	// Get all values contained within a provided interval.
 	GetRangeValues(*model.Fingerprint, model.Interval) model.Values
 	// Get all label values that are associated with a given label name.
 	GetAllValuesForLabel(model.LabelName) (model.LabelValues, error)
@@ -58,11 +62,11 @@ type MetricPersistence interface {
 	// MakeView(builder ViewRequestBuilder, deadline time.Duration) (View, error)
 }
 
-// View provides view of the values in the datastore subject to the request of a
-// preloading operation.
+// View provides a view of the values in the datastore subject to the request
+// of a preloading operation.
 type View interface {
 	GetValueAtTime(*model.Fingerprint, time.Time) model.Values
-	GetBoundaryValues(*model.Fingerprint, model.Interval) (first model.Values, second model.Values)
+	GetBoundaryValues(*model.Fingerprint, model.Interval) model.Values
 	GetRangeValues(*model.Fingerprint, model.Interval) model.Values
 
 	// Destroy this view.

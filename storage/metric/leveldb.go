@@ -793,15 +793,15 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint)
 	return
 }
 
-func (l LevelDBMetricPersistence) GetValueAtTime(f *model.Fingerprint, t time.Time) (samples model.Values) {
+func (l LevelDBMetricPersistence) GetValueAtTime(f *model.Fingerprint, t time.Time) model.Values {
 	panic("Not implemented")
 }
 
-func (l LevelDBMetricPersistence) GetBoundaryValues(f *model.Fingerprint, i model.Interval) (first model.Values, second model.Values) {
+func (l LevelDBMetricPersistence) GetBoundaryValues(f *model.Fingerprint, i model.Interval) model.Values {
 	panic("Not implemented")
 }
 
-func (l *LevelDBMetricPersistence) GetRangeValues(f *model.Fingerprint, i model.Interval) (samples model.Values) {
+func (l *LevelDBMetricPersistence) GetRangeValues(f *model.Fingerprint, i model.Interval) model.Values {
 	panic("Not implemented")
 }
 
