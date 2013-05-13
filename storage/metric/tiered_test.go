@@ -347,8 +347,6 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 
 		if flushToDisk {
 			tiered.Flush()
-		} else {
-			tiered.writeMemory()
 		}
 
 		requestBuilder := NewViewRequestBuilder()
