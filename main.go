@@ -29,6 +29,10 @@ import (
 	"time"
 )
 
+const (
+	deletionBatchSize = 100
+)
+
 // Commandline flags.
 var (
 	printVersion                 = flag.Bool("version", false, "print version information")
@@ -51,13 +55,18 @@ var (
 	headAge = flag.Duration("compact.headAgeInclusiveness", 5*time.Minute, "The relative inclusiveness of head samples.")
 	bodyAge = flag.Duration("compact.bodyAgeInclusiveness", time.Hour, "The relative inclusiveness of body samples.")
 	tailAge = flag.Duration("compact.tailAgeInclusiveness", 24*time.Hour, "The relative inclusiveness of tail samples.")
+
+	deleteInterval = flag.Duration("delete.interval", 10*11*time.Minute, "The amount of time between deletion of old values.")
+
+	deleteAge = flag.Duration("delete.ageMaximum", 10*24*time.Hour, "The relative maximum age for values before they are deleted.")
 )
 
 type prometheus struct {
 	headCompactionTimer      *time.Ticker
 	bodyCompactionTimer      *time.Ticker
 	tailCompactionTimer      *time.Ticker
-	compactionMutex          sync.Mutex
+	deletionTimer            *time.Ticker
+	curationMutex            sync.Mutex
 	curationState            chan metric.CurationState
 	stopBackgroundOperations chan bool
 
@@ -79,12 +88,27 @@ func (p *prometheus) interruptHandler() {
 }
 
 func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
-	p.compactionMutex.Lock()
-	defer p.compactionMutex.Unlock()
+	p.curationMutex.Lock()
+	defer p.curationMutex.Unlock()
 
 	processor := &metric.CompactionProcessor{
 		MaximumMutationPoolBatch: groupSize * 3,
 		MinimumGroupSize:         groupSize,
+	}
+
+	curator := metric.Curator{
+		Stop: p.stopBackgroundOperations,
+	}
+
+	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
+}
+
+func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
+	p.curationMutex.Lock()
+	defer p.curationMutex.Unlock()
+
+	processor := &metric.DeletionProcessor{
+		MaximumMutationPoolBatch: batchSize,
 	}
 
 	curator := metric.Curator{
@@ -104,12 +128,15 @@ func (p *prometheus) close() {
 	if p.tailCompactionTimer != nil {
 		p.tailCompactionTimer.Stop()
 	}
+	if p.deletionTimer != nil {
+		p.deletionTimer.Stop()
+	}
 
 	if len(p.stopBackgroundOperations) == 0 {
 		p.stopBackgroundOperations <- true
 	}
 
-	p.compactionMutex.Lock()
+	p.curationMutex.Lock()
 
 	p.storage.Close()
 	close(p.stopBackgroundOperations)
@@ -148,6 +175,7 @@ func main() {
 	headCompactionTimer := time.NewTicker(*headCompactInterval)
 	bodyCompactionTimer := time.NewTicker(*bodyCompactInterval)
 	tailCompactionTimer := time.NewTicker(*tailCompactInterval)
+	deletionTimer := time.NewTicker(*deleteInterval)
 
 	// Queue depth will need to be exposed
 	targetManager := retrieval.NewTargetManager(scrapeResults, *concurrentRetrievalAllowance)
@@ -177,14 +205,19 @@ func main() {
 	}
 
 	prometheus := prometheus{
-		bodyCompactionTimer:      bodyCompactionTimer,
-		curationState:            curationState,
-		headCompactionTimer:      headCompactionTimer,
-		ruleResults:              ruleResults,
-		scrapeResults:            scrapeResults,
+		bodyCompactionTimer: bodyCompactionTimer,
+		headCompactionTimer: headCompactionTimer,
+		tailCompactionTimer: tailCompactionTimer,
+
+		deletionTimer: deletionTimer,
+
+		curationState: curationState,
+		ruleResults:   ruleResults,
+		scrapeResults: scrapeResults,
+
 		stopBackgroundOperations: make(chan bool, 1),
-		storage:                  ts,
-		tailCompactionTimer:      tailCompactionTimer,
+
+		storage: ts,
 	}
 	defer prometheus.close()
 
@@ -222,6 +255,18 @@ func main() {
 
 			if err != nil {
 				log.Printf("could not compact due to %s", err)
+			}
+			log.Println("Done")
+		}
+	}()
+
+	go func() {
+		for _ = range prometheus.deletionTimer.C {
+			log.Println("Starting deletion of stale values...")
+			err := prometheus.delete(*deleteAge, deletionBatchSize)
+
+			if err != nil {
+				log.Printf("could not delete due to %s", err)
 			}
 			log.Println("Done")
 		}
