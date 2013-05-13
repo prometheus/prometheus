@@ -91,9 +91,6 @@ Executing the following target will start up Prometheus for lazy users:
 ``$(ARGUMENTS)``.  This is useful for quick one-off invocations and smoke
 testing.
 
-### Mac OS X
-We have a handy [Getting started on Mac OS X](documentation/guides/getting-started-osx.md) guide.
-
 ### Problems
 If at any point you run into an error with the ``make`` build system in terms of
 its not properly scaffolding things on a given environment, please file a bug or

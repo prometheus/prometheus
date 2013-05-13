@@ -118,8 +118,11 @@ func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, process
 		curationDurations.Add(labels, duration)
 	}(time.Now())
 	defer func() {
-		status <- CurationState{
+		select {
+		case status <- CurationState{
 			Active: false,
+		}:
+		default:
 		}
 	}()
 
@@ -258,11 +261,14 @@ func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult)
 	}()
 
 	defer func() {
-		w.status <- CurationState{
+		select {
+		case w.status <- CurationState{
 			Active:      true,
 			Name:        w.processor.Name(),
 			Limit:       w.ignoreYoungerThan,
 			Fingerprint: fingerprint,
+		}:
+		default:
 		}
 	}()
 
