@@ -42,8 +42,10 @@ func main() {
 
 	start := time.Now()
 	log.Printf("Starting compaction...")
-	if err := persistences.CompactKeyspaces(); err != nil {
-		log.Fatalf("Abording after %s", time.Since(start))
-	}
+	size, _ := persistences.ApproximateSizes()
+	log.Printf("Original Size: %d", size)
+	persistences.CompactKeyspaces()
 	log.Printf("Finished in %s", time.Since(start))
+	size, _ = persistences.ApproximateSizes()
+	log.Printf("New Size: %d", size)
 }

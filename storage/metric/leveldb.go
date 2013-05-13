@@ -877,34 +877,57 @@ func (l *LevelDBMetricPersistence) ForEachSample(builder IteratorsForFingerprint
 	panic("not implemented")
 }
 
-// CompactKeyspace compacts each database's keyspace serially.  An error may
-// be returned if there are difficulties with the underlying database or if
-// it's empty.
+// CompactKeyspace compacts each database's keyspace serially.
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
-func (l *LevelDBMetricPersistence) CompactKeyspaces() error {
-	if err := l.CurationRemarks.CompactKeyspace(); err != nil {
-		return fmt.Errorf("Could not compact curation remarks: %s", err)
-	}
-	if err := l.fingerprintToMetrics.CompactKeyspace(); err != nil {
-		return fmt.Errorf("Could not compact fingerprint to metric index: %s", err)
-	}
-	if err := l.labelNameToFingerprints.CompactKeyspace(); err != nil {
-		return fmt.Errorf("Could not compact label name to fingerprint index: %s", err)
-	}
-	if err := l.labelSetToFingerprints.CompactKeyspace(); err != nil {
-		return fmt.Errorf("Could not compact label pair to fingerprint index: %s", err)
-	}
-	if err := l.MetricHighWatermarks.CompactKeyspace(); err != nil {
-		return fmt.Errorf("Could not compact metric high watermarks: %s", err)
-	}
-	if err := l.metricMembershipIndex.CompactKeyspace(); err != nil {
-		return fmt.Errorf("Could not compact metric membership index: %s", err)
-	}
-	if err := l.MetricSamples.CompactKeyspace(); err != nil {
-		return fmt.Errorf("Could not compact metric samples database: %s", err)
-	}
+func (l *LevelDBMetricPersistence) CompactKeyspaces() {
+	l.CurationRemarks.CompactKeyspace()
+	l.fingerprintToMetrics.CompactKeyspace()
+	l.labelNameToFingerprints.CompactKeyspace()
+	l.labelSetToFingerprints.CompactKeyspace()
+	l.MetricHighWatermarks.CompactKeyspace()
+	l.metricMembershipIndex.CompactKeyspace()
+	l.MetricSamples.CompactKeyspace()
+}
 
-	return nil
+func (l *LevelDBMetricPersistence) ApproximateSizes() (total uint64, err error) {
+	size := uint64(0)
+
+	if size, err = l.CurationRemarks.ApproximateSize(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, err = l.fingerprintToMetrics.ApproximateSize(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, err = l.labelNameToFingerprints.ApproximateSize(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, err = l.labelSetToFingerprints.ApproximateSize(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, err = l.MetricHighWatermarks.ApproximateSize(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, err = l.metricMembershipIndex.ApproximateSize(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, err = l.MetricSamples.ApproximateSize(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	return total, nil
 }
