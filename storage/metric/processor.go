@@ -203,7 +203,6 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersi
 				lastTouchedTime = sampleValues[len(sampleValues)-1].Timestamp
 			}
 			pendingMutations++
-
 		default:
 			err = fmt.Errorf("Unhandled processing case.")
 		}
