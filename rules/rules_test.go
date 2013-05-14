@@ -64,7 +64,7 @@ func (t testTieredStorageCloser) Close() {
 func NewTestTieredStorage(t test.Tester) (storage *metric.TieredStorage, closer test.Closer) {
 	var directory test.TemporaryDirectory
 	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
-	storage, err := metric.NewTieredStorage(2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
+	storage, err := metric.NewTieredStorage(2500, 1000, 5*time.Second, 0*time.Second, directory.Path())
 
 	if err != nil {
 		if storage != nil {
