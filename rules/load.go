@@ -92,7 +92,6 @@ func LoadFromReader(rulesReader io.Reader, singleExpr bool) (interface{}, error)
 	} else {
 		return lexer.parsedRules, nil
 	}
-	panic("")
 }
 
 func LoadRulesFromReader(rulesReader io.Reader) ([]Rule, error) {

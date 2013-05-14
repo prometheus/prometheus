@@ -49,8 +49,6 @@ func (c chunk) TruncateBefore(t time.Time) chunk {
 	default:
 		return c[index-1:]
 	}
-
-	panic("unreachable")
 }
 
 // TieredStorage both persists samples and generates materialized views for
