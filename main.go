@@ -60,6 +60,9 @@ var (
 	deleteInterval = flag.Duration("delete.interval", 10*11*time.Minute, "The amount of time between deletion of old values.")
 
 	deleteAge = flag.Duration("delete.ageMaximum", 10*24*time.Hour, "The relative maximum age for values before they are deleted.")
+
+	arenaFlushInterval = flag.Duration("arena.flushInterval", 15*time.Minute, "The period at which the in-memory arena is flushed to disk.")
+	arenaTTL           = flag.Duration("arena.ttl", 10*time.Minute, "The relative age of values to purge to disk from memory.")
 )
 
 type prometheus struct {
@@ -187,7 +190,7 @@ func main() {
 		log.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, time.Second*30, time.Second*20, *metricsStoragePath)
+	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, *arenaTTL, *metricsStoragePath)
 	if err != nil {
 		log.Fatalf("Error opening storage: %s", err)
 	}
