@@ -772,7 +772,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
+func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) (m model.Metric, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -790,15 +790,11 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 		return
 	}
 
-	metric := model.Metric{}
+	m = model.Metric{}
 
 	for _, v := range unmarshaled.LabelPair {
-		metric[model.LabelName(*v.Name)] = model.LabelValue(*v.Value)
+		m[model.LabelName(*v.Name)] = model.LabelValue(*v.Value)
 	}
-
-	// Explicit address passing here shaves immense amounts of time off of the
-	// code flow due to less tight-loop dereferencing.
-	m = &metric
 
 	return
 }

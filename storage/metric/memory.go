@@ -199,13 +199,16 @@ func (s memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fin
 	return
 }
 
-func (s memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (metric *model.Metric, err error) {
+func (s memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (metric model.Metric, err error) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
 		return
 	}
 
-	metric = &series.metric
+	metric = model.Metric{}
+	for label, value := range series.metric {
+		metric[label] = value
+	}
 
 	return
 }
