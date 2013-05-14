@@ -18,7 +18,7 @@ action if some condition is observed to be true.
 If you read below in the _Getting Started_ section, the build infrastructure
 will take care of the following things for you in most cases:
 
-  1. Go 1.0.3.
+  1. Go 1.1.
   2. GVM: [https://github.com/moovweb/gvm](https://github.com/moovweb/gvm) is highly recommended as well.
   3. LevelDB: [https://code.google.com/p/leveldb/](https://code.google.com/p/leveldb/).
   4. Protocol Buffers Compiler: [http://code.google.com/p/protobuf/](http://code.google.com/p/protobuf/).
@@ -39,8 +39,8 @@ For basic help how to get started:
 ### Working with GVM
 Starting out, the following workflow is advised:
 
-    $ gvm install go1.0.3
-    $ gvm use go1.0.3
+    $ gvm install go1.1
+    $ gvm use go1.1
     $ gvm pkgset create prometheus
     $ gvm pkgset use prometheus
 
