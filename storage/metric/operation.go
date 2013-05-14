@@ -156,11 +156,16 @@ func (g *getValuesAtIntervalOp) ExtractSamples(in model.Values) (out model.Value
 		return
 	}
 	lastChunkTime := in[len(in)-1].Timestamp
-	for {
-		out = extractValuesAroundTime(g.from, in)
+	for len(in) > 0 {
+		out = append(out, extractValuesAroundTime(g.from, in)...)
+		lastExtractedTime := out[len(out)-1].Timestamp
+		in = in.TruncateBefore(lastExtractedTime.Add(1))
 		g.from = g.from.Add(g.interval)
-		if g.from.After(lastChunkTime) {
+		if lastExtractedTime.Equal(lastChunkTime) {
 			break
+		}
+		for !g.from.After(lastExtractedTime) {
+			g.from = g.from.Add(g.interval)
 		}
 		if g.from.After(g.through) {
 			break
