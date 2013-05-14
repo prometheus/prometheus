@@ -34,8 +34,9 @@ var (
 )
 
 type WebService struct {
-	StatusHandler  *StatusHandler
-	MetricsHandler *api.MetricsService
+	StatusHandler    *StatusHandler
+	DatabasesHandler *DatabasesHandler
+	MetricsHandler   *api.MetricsService
 }
 
 func (w WebService) ServeForever() error {
@@ -53,6 +54,7 @@ func (w WebService) ServeForever() error {
 	exp.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 
 	exp.Handle("/", w.StatusHandler)
+	exp.Handle("/databases", w.DatabasesHandler)
 	exp.HandleFunc("/graph", graphHandler)
 
 	exp.Handle("/api/", gorest.Handle())
