@@ -1,8 +1,8 @@
 language: go
 
 before_script:
-- gvm install go1.0.3 || true
-- gvm use go1.0.3 || true
+- gvm install go1.1 || true
+- gvm use go1.1 || true
 
 script:
  - make

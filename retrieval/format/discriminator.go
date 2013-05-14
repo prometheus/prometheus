@@ -71,6 +71,4 @@ func (r *registry) ProcessorForRequestHeader(header http.Header) (processor Proc
 		err = fmt.Errorf("Unrecognized API version %s", prometheusApiVersion)
 		return
 	}
-
-	return
 }
