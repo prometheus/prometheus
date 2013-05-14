@@ -31,6 +31,8 @@ var (
 
 // LevelDBPersistence is a disk-backed sorted key-value store.
 type LevelDBPersistence struct {
+	path string
+
 	cache        *levigo.Cache
 	filterPolicy *levigo.FilterPolicy
 	options      *levigo.Options
@@ -67,11 +69,9 @@ type levigoIterator struct {
 }
 
 func (i levigoIterator) String() string {
-	var (
-		valid       = "valid"
-		open        = "open"
-		snapshotted = "snapshotted"
-	)
+	valid := "valid"
+	open := "open"
+	snapshotted := "snapshotted"
 
 	if i.closed {
 		open = "closed"
@@ -193,6 +193,8 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 
 	writeOptions.SetSync(*leveldbFlushOnMutate)
 	p = &LevelDBPersistence{
+		path: storageRoot,
+
 		cache:        cache,
 		filterPolicy: filterPolicy,
 

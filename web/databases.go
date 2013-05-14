@@ -14,38 +14,29 @@
 package web
 
 import (
-	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"net/http"
 	"sync"
 )
 
-type PrometheusStatus struct {
-	BuildInfo   map[string]string
-	Config      string
-	Curation    metric.CurationState
-	Flags       map[string]string
-	Rules       string
-	TargetPools map[string]*retrieval.TargetPool
-}
+type DatabasesHandler struct {
+	States []leveldb.DatabaseState
 
-type StatusHandler struct {
-	CurationState    chan metric.CurationState
-	PrometheusStatus *PrometheusStatus
+	Incoming chan []leveldb.DatabaseState
 
 	mutex sync.RWMutex
 }
 
-func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *DatabasesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	select {
-	case curationState := <-h.CurationState:
+	case states := <-h.Incoming:
 		h.mutex.Lock()
 		defer h.mutex.Unlock()
-		h.PrometheusStatus.Curation = curationState
+		h.States = states
 	default:
 		h.mutex.RLock()
 		defer h.mutex.RUnlock()
 	}
 
-	executeTemplate(w, "status", h.PrometheusStatus)
+	executeTemplate(w, "databases", h)
 }

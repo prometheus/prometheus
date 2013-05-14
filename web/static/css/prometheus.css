@@ -79,3 +79,7 @@ input[name=end_input], input[name=range_input] {
 #add_graph {
     margin-left: 8px;
 }
+
+.literal_output td {
+  font-family: monospace;
+}

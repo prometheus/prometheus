@@ -22,7 +22,7 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage"
 	index "github.com/prometheus/prometheus/storage/raw/index/leveldb"
-	leveldb "github.com/prometheus/prometheus/storage/raw/leveldb"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
 	"log"
 	"sort"
@@ -930,4 +930,45 @@ func (l *LevelDBMetricPersistence) ApproximateSizes() (total uint64, err error) 
 	total += size
 
 	return total, nil
+}
+
+func (l *LevelDBMetricPersistence) States() []leveldb.DatabaseState {
+	states := []leveldb.DatabaseState{}
+
+	state := l.CurationRemarks.State()
+	state.Name = "Curation Remarks"
+	state.Type = "Watermark"
+	states = append(states, state)
+
+	state = l.fingerprintToMetrics.State()
+	state.Name = "Fingerprints to Metrics"
+	state.Type = "Index"
+	states = append(states, state)
+
+	state = l.labelNameToFingerprints.State()
+	state.Name = "Label Name to Fingerprints"
+	state.Type = "Inverted Index"
+	states = append(states, state)
+
+	state = l.labelSetToFingerprints.State()
+	state.Name = "Label Pair to Fingerprints"
+	state.Type = "Inverted Index"
+	states = append(states, state)
+
+	state = l.MetricHighWatermarks.State()
+	state.Name = "Metric Last Write"
+	state.Type = "Watermark"
+	states = append(states, state)
+
+	state = l.metricMembershipIndex.State()
+	state.Name = "Metric Membership"
+	state.Type = "Index"
+	states = append(states, state)
+
+	state = l.MetricSamples.State()
+	state.Name = "Samples"
+	state.Type = "Time Series"
+	states = append(states, state)
+
+	return states
 }
