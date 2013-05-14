@@ -49,8 +49,46 @@ func vectorComparisonString(expected []string, actual []string) string {
 		separator)
 }
 
+type testTieredStorageCloser struct {
+	storage   *metric.TieredStorage
+	directory test.Closer
+}
+
+func (t testTieredStorageCloser) Close() {
+	t.storage.Close()
+	t.directory.Close()
+}
+
+// This is copied from storage/metric/helpers_test.go, which is unfortunate but
+// presently required to make things work.
+func NewTestTieredStorage(t test.Tester) (storage *metric.TieredStorage, closer test.Closer) {
+	var directory test.TemporaryDirectory
+	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
+	storage, err := metric.NewTieredStorage(2500, 1000, 5*time.Second, 15*time.Second, 0*time.Second, directory.Path())
+
+	if err != nil {
+		if storage != nil {
+			storage.Close()
+		}
+		directory.Close()
+		t.Fatalf("Error creating storage: %s", err)
+	}
+
+	if storage == nil {
+		directory.Close()
+		t.Fatalf("storage == nil")
+	}
+
+	go storage.Serve()
+	closer = &testTieredStorageCloser{
+		storage:   storage,
+		directory: directory,
+	}
+	return
+}
+
 func newTestStorage(t test.Tester) (storage *metric.TieredStorage, closer test.Closer) {
-	storage, closer = metric.NewTestTieredStorage(t)
+	storage, closer = NewTestTieredStorage(t)
 	if storage == nil {
 		t.Fatal("storage == nil")
 	}
