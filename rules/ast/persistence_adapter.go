@@ -116,7 +116,7 @@ func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp 
 		}
 		if samplePair != nil {
 			samples = append(samples, model.Sample{
-				Metric:    *m,
+				Metric:    m,
 				Value:     samplePair.Value,
 				Timestamp: timestamp,
 			})
@@ -140,7 +140,7 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interva
 		}
 
 		sampleSet := model.SampleSet{
-			Metric: *m,
+			Metric: m,
 			Values: samplePairs,
 		}
 		sampleSets = append(sampleSets, sampleSet)
@@ -162,7 +162,7 @@ func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *
 		}
 
 		sampleSet := model.SampleSet{
-			Metric: *m,
+			Metric: m,
 			Values: samplePairs,
 		}
 		sampleSets = append(sampleSets, sampleSet)

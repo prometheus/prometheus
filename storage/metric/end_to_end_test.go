@@ -172,16 +172,14 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	v, e := p.GetMetricForFingerprint(result[0])
-	if e != nil {
-		t.Error(e)
+	metric, err := p.GetMetricForFingerprint(result[0])
+	if err != nil {
+		t.Error(err)
 	}
 
-	if v == nil {
+	if metric == nil {
 		t.Fatal("Did not expect nil.")
 	}
-
-	metric := *v
 
 	if len(metric) != 1 {
 		t.Errorf("Expected one-dimensional metric.")
@@ -203,20 +201,43 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	v, e = p.GetMetricForFingerprint(result[0])
+	metric, err = p.GetMetricForFingerprint(result[0])
 
-	if v == nil {
+	if metric == nil {
 		t.Fatal("Did not expect nil.")
 	}
 
-	metric = *v
-
-	if e != nil {
-		t.Error(e)
+	if err != nil {
+		t.Error(err)
 	}
 
 	if len(metric) != 2 {
-		t.Errorf("Expected one-dimensional metric.")
+		t.Errorf("Expected two-dimensional metric.")
+	}
+
+	if metric["request_type"] != "your_dad" {
+		t.Errorf("Expected metric to match.")
+	}
+
+	if metric["one-off"] != "value" {
+		t.Errorf("Expected metric to match.")
+	}
+
+	// Verify that mutating a returned metric does not result in the mutated
+	// metric to be returned at the next GetMetricForFingerprint() call.
+	metric["one-off"] = "new value"
+	metric, err = p.GetMetricForFingerprint(result[0])
+
+	if metric == nil {
+		t.Fatal("Did not expect nil.")
+	}
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(metric) != 2 {
+		t.Errorf("Expected two-dimensional metric.")
 	}
 
 	if metric["request_type"] != "your_dad" {

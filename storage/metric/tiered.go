@@ -596,7 +596,7 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fin
 }
 
 // Get the metric associated with the provided fingerprint.
-func (t *TieredStorage) GetMetricForFingerprint(f model.Fingerprint) (m *model.Metric, err error) {
+func (t *TieredStorage) GetMetricForFingerprint(f model.Fingerprint) (m model.Metric, err error) {
 	m, err = t.memoryArena.GetMetricForFingerprint(f)
 	if err != nil {
 		return
