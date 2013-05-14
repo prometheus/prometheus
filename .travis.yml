@@ -1,8 +1,12 @@
+# We use native code; sue me.
+
 language: go
 
+# Detective work is required to ascertain why this is required BOTH in the
+# before_script directive and in the shell library.
 before_script:
-- gvm install go1.1 || true
-- gvm use go1.1 || true
+ - gvm install go1.1 || true
+ - gvm use go1.1 || true
 
 script:
- - make
+ - bash -l ./tests-for-die-in-a-fire-travis.sh

@@ -70,7 +70,6 @@ goskiplist-stamp: go-stamp
 
 gvm-stamp: bison-stamp cc-stamp mercurial-stamp
 	[ -x "$$(which gvm)" ] || { echo "gvm not found; install manually from https://github.com/moovweb/gvm." ; false ; }
-	-gvm install go$(GO_VERSION)
 	#
 	# ********** **********
 	# gvm installed go$(GO_VERSION) if it did not exist already.
