@@ -1559,6 +1559,50 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				},
 			},
 		},
+		// Operator interval skips over several values and ends past the last
+		// available value. This is to verify that we still include the last value
+		// of a series even if we target a time past it and haven't extracted that
+		// value yet as part of a previous interval step (thus the necessity to
+		// skip over values for the test).
+		{
+			op: getValuesAtIntervalOp{
+				from:     testInstant.Add(30 * time.Second),
+				through:  testInstant.Add(4 * time.Minute),
+				interval: 3 * time.Minute,
+			},
+			in: model.Values{
+				{
+					Timestamp: testInstant,
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(2 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+			out: model.Values{
+				{
+					Timestamp: testInstant,
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(1 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(3 * time.Minute),
+					Value:     1,
+				},
+			},
+		},
 	}
 	for i, scenario := range scenarios {
 		actual := scenario.op.ExtractSamples(scenario.in)
