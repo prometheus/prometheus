@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Prometheus</title>
+    <title>Prometheus Time Series Collection and Processing Server</title>
     <script src="/static/vendor/js/jquery.min.js"></script>
     <link type="text/css" rel="stylesheet" href="/static/css/prometheus.css">
     {{template "head" .}}
@@ -10,8 +10,12 @@
 
   <body>
     <div id="navigation">
-      <a href="/graph">Graph</a>
+      <a href="/graph">Graph &amp; Console</a>
       <a href="/">Status</a>
+      <a href="/databases">Databases</a>
+
+      <!-- Help should preferentially be the right-most element. -->
+      <a href="https://github.com/prometheus/prometheus/wiki" target="_blank">Help</a>
     </div>
     {{template "content" .}}
   </body>

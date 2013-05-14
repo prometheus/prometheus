@@ -59,20 +59,27 @@ type TieredStorage struct {
 	// BUG(matt): This introduces a Law of Demeter violation.  Ugh.
 	DiskStorage *LevelDBMetricPersistence
 
-	appendToDiskQueue   chan model.Samples
-	diskFrontier        *diskFrontier
-	draining            chan chan bool
-	flushMemoryInterval time.Duration
+	appendToDiskQueue chan model.Samples
+
+	diskFrontier *diskFrontier
+
 	memoryArena         memorySeriesStorage
 	memoryTTL           time.Duration
+	flushMemoryInterval time.Duration
+	writeMemoryInterval time.Duration
+
 	// This mutex manages any concurrent reads/writes of the memoryArena.
 	memoryMutex sync.RWMutex
 	// This mutex blocks only deletions from the memoryArena. It is held for a
 	// potentially long time for an entire renderView() duration, since we depend
 	// on no samples being removed from memory after grabbing a LevelDB snapshot.
-	memoryDeleteMutex   sync.RWMutex
-	viewQueue           chan viewJob
-	writeMemoryInterval time.Duration
+	memoryDeleteMutex sync.RWMutex
+
+	viewQueue chan viewJob
+
+	draining chan chan bool
+
+	mutex sync.Mutex
 }
 
 // viewJob encapsulates a request to extract sample values from the datastore.
@@ -180,11 +187,13 @@ func (t *TieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
 func (t *TieredStorage) Serve() {
 	flushMemoryTicker := time.NewTicker(t.flushMemoryInterval)
 	defer flushMemoryTicker.Stop()
-	reportTicker := time.NewTicker(time.Second)
-	defer reportTicker.Stop()
+	writeMemoryTicker := time.NewTicker(t.writeMemoryInterval)
+	defer writeMemoryTicker.Stop()
+	queueReportTicker := time.NewTicker(time.Second)
+	defer queueReportTicker.Stop()
 
 	go func() {
-		for _ = range reportTicker.C {
+		for _ = range queueReportTicker.C {
 			t.reportQueues()
 		}
 	}()

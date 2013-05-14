@@ -73,3 +73,7 @@ func (l *LevelDBMembershipIndex) CompactKeyspace() {
 func (l *LevelDBMembershipIndex) ApproximateSize() (uint64, error) {
 	return l.persistence.ApproximateSize()
 }
+
+func (l *LevelDBMembershipIndex) State() leveldb.DatabaseState {
+	return l.persistence.State()
+}
