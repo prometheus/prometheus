@@ -194,10 +194,7 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i 
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
 	}
 
-	e, err := coding.NewProtocolBuffer(k).Encode()
-	if err != nil {
-		return
-	}
+	e := coding.NewProtocolBuffer(k).MustEncode()
 
 	iterator := l.MetricSamples.NewIterator(true)
 	defer iterator.Close()

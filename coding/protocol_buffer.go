@@ -22,15 +22,15 @@ type ProtocolBuffer struct {
 	message proto.Message
 }
 
-func (p ProtocolBuffer) Encode() (raw []byte, err error) {
-	raw, err = proto.Marshal(p.message)
+func (p ProtocolBuffer) MustEncode() []byte {
+	raw, err := proto.Marshal(p.message)
 
 	// XXX: Adjust legacy users of this to not check for error.
 	if err != nil {
 		panic(err)
 	}
 
-	return
+	return raw
 }
 
 func (p ProtocolBuffer) String() string {

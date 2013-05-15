@@ -32,24 +32,15 @@ func NewBatch() *batch {
 }
 
 func (b *batch) Drop(key coding.Encoder) {
-	keyEncoded, err := key.Encode()
-	if err != nil {
-		panic(err)
-	}
+	keyEncoded := key.MustEncode()
 	b.drops++
 
 	b.batch.Delete(keyEncoded)
 }
 
 func (b *batch) Put(key, value coding.Encoder) {
-	keyEncoded, err := key.Encode()
-	if err != nil {
-		panic(err)
-	}
-	valueEncoded, err := value.Encode()
-	if err != nil {
-		panic(err)
-	}
+	keyEncoded := key.MustEncode()
+	valueEncoded := value.MustEncode()
 	b.puts++
 
 	b.batch.Put(keyEncoded, valueEncoded)

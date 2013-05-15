@@ -341,11 +341,7 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		FirstTimestamp: seriesFrontier.optimalStartTime(curationState),
 	}
 
-	prospectiveKey, err := coding.NewProtocolBuffer(startKey.ToDTO()).Encode()
-	if err != nil {
-		// An encoding failure of a key is no reason to stop.
-		return &storage.OperatorError{error: err, Continuable: true}
-	}
+	prospectiveKey := coding.NewProtocolBuffer(startKey.ToDTO()).MustEncode()
 	if !w.sampleIterator.Seek(prospectiveKey) {
 		// LevelDB is picky about the seek ranges.  If an iterator was invalidated,
 		// no work may occur, and the iterator cannot be recovered.
