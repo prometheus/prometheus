@@ -61,7 +61,7 @@ type TieredStorage struct {
 
 	diskFrontier *diskFrontier
 
-	memoryArena         memorySeriesStorage
+	memoryArena         *memorySeriesStorage
 	memoryTTL           time.Duration
 	flushMemoryInterval time.Duration
 

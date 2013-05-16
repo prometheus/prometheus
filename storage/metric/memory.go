@@ -110,20 +110,18 @@ type memorySeriesStorage struct {
 	labelNameToFingerprints map[model.LabelName]model.Fingerprints
 }
 
-func (s memorySeriesStorage) AppendSamples(samples model.Samples) (err error) {
+func (s *memorySeriesStorage) AppendSamples(samples model.Samples) error {
 	for _, sample := range samples {
 		s.AppendSample(sample)
 	}
 
-	return
+	return nil
 }
 
-func (s memorySeriesStorage) AppendSample(sample model.Sample) (err error) {
-	var (
-		metric      = sample.Metric
-		fingerprint = model.NewFingerprintFromMetric(metric)
-		series, ok  = s.fingerprintToSeries[fingerprint]
-	)
+func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
+	metric := sample.Metric
+	fingerprint := model.NewFingerprintFromMetric(metric)
+	series, ok := s.fingerprintToSeries[fingerprint]
 
 	if !ok {
 		series = newStream(metric)
@@ -144,12 +142,12 @@ func (s memorySeriesStorage) AppendSample(sample model.Sample) (err error) {
 
 	series.add(sample.Timestamp, sample.Value)
 
-	return
+	return nil
 }
 
 // Append raw sample, bypassing indexing. Only used to add data to views, which
 // don't need to lookup by metric.
-func (s memorySeriesStorage) appendSampleWithoutIndexing(f model.Fingerprint, timestamp time.Time, value model.SampleValue) {
+func (s *memorySeriesStorage) appendSampleWithoutIndexing(f model.Fingerprint, timestamp time.Time, value model.SampleValue) {
 	series, ok := s.fingerprintToSeries[f]
 
 	if !ok {
@@ -160,7 +158,7 @@ func (s memorySeriesStorage) appendSampleWithoutIndexing(f model.Fingerprint, ti
 	series.add(timestamp, value)
 }
 
-func (s memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fingerprints model.Fingerprints, err error) {
+func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fingerprints model.Fingerprints, err error) {
 
 	sets := []utility.Set{}
 
@@ -191,7 +189,7 @@ func (s memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (finge
 	return
 }
 
-func (s memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fingerprints model.Fingerprints, err error) {
+func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fingerprints model.Fingerprints, err error) {
 	values := s.labelNameToFingerprints[l]
 
 	fingerprints = append(fingerprints, values...)
@@ -199,7 +197,7 @@ func (s memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fin
 	return
 }
 
-func (s memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (metric model.Metric, err error) {
+func (s *memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (metric model.Metric, err error) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
 		return
@@ -213,7 +211,7 @@ func (s memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (metri
 	return
 }
 
-func (s memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (samples model.Values) {
+func (s *memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (samples model.Values) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
 		return
@@ -254,13 +252,13 @@ func (s memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (s
 	return
 }
 
-func (s memorySeriesStorage) GetBoundaryValues(f model.Fingerprint, i model.Interval) (first model.Values, second model.Values) {
+func (s *memorySeriesStorage) GetBoundaryValues(f model.Fingerprint, i model.Interval) (first model.Values, second model.Values) {
 	first = s.GetValueAtTime(f, i.OldestInclusive)
 	second = s.GetValueAtTime(f, i.NewestInclusive)
 	return
 }
 
-func (s memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interval) (samples model.Values) {
+func (s *memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interval) (samples model.Values) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
 		return
@@ -302,13 +300,13 @@ func (s memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interva
 	return
 }
 
-func (s memorySeriesStorage) Close() {
+func (s *memorySeriesStorage) Close() {
 	s.fingerprintToSeries = map[model.Fingerprint]stream{}
 	s.labelPairToFingerprints = map[string]model.Fingerprints{}
 	s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
 }
 
-func (s memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
+func (s *memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
 	valueSet := map[model.LabelValue]bool{}
 	for _, series := range s.fingerprintToSeries {
 		if value, ok := series.metric[labelName]; ok {
@@ -321,7 +319,7 @@ func (s memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (va
 	return
 }
 
-func (s memorySeriesStorage) ForEachSample(builder IteratorsForFingerprintBuilder) (err error) {
+func (s *memorySeriesStorage) ForEachSample(builder IteratorsForFingerprintBuilder) (err error) {
 	for _, stream := range s.fingerprintToSeries {
 		decoder, filter, operator := builder.ForStream(stream)
 
@@ -331,8 +329,8 @@ func (s memorySeriesStorage) ForEachSample(builder IteratorsForFingerprintBuilde
 	return
 }
 
-func NewMemorySeriesStorage() memorySeriesStorage {
-	return memorySeriesStorage{
+func NewMemorySeriesStorage() *memorySeriesStorage {
+	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[model.Fingerprint]stream),
 		labelPairToFingerprints: make(map[string]model.Fingerprints),
 		labelNameToFingerprints: make(map[model.LabelName]model.Fingerprints),
