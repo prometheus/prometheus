@@ -32,7 +32,7 @@ type TargetPool struct {
 	replaceTargetsQueue chan []Target
 }
 
-func NewTargetPool(m TargetManager) (p *TargetPool) {
+func NewTargetPool(m TargetManager) *TargetPool {
 	return &TargetPool{
 		manager:             m,
 		addTargetQueue:      make(chan Target),
@@ -151,7 +151,7 @@ func (p *TargetPool) runIteration(results chan format.Result, interval time.Dura
 	retrievalDurations.Add(map[string]string{intervalKey: interval.String()}, duration)
 }
 
-// XXX: Not really thread-safe. Only used in /status page for now.
+// BUG(all): Not really thread-safe. Only used in /status page for now.
 func (p *TargetPool) Targets() []Target {
 	return p.targets
 }

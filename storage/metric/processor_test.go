@@ -61,14 +61,14 @@ func (c curationState) Get() (key, value coding.Encoder) {
 	if err != nil {
 		panic(err)
 	}
-	key = coding.NewProtocolBuffer(model.CurationKey{
+	key = coding.NewPBEncoder(model.CurationKey{
 		Fingerprint:              model.NewFingerprintFromRowKey(c.fingerprint),
 		ProcessorMessageRaw:      signature,
 		ProcessorMessageTypeName: c.processor.Name(),
 		IgnoreYoungerThan:        c.ignoreYoungerThan,
 	}.ToDTO())
 
-	value = coding.NewProtocolBuffer(model.CurationRemark{
+	value = coding.NewPBEncoder(model.CurationRemark{
 		LastCompletionTimestamp: c.lastCurated,
 	}.ToDTO())
 
@@ -76,20 +76,20 @@ func (c curationState) Get() (key, value coding.Encoder) {
 }
 
 func (w watermarkState) Get() (key, value coding.Encoder) {
-	key = coding.NewProtocolBuffer(model.NewFingerprintFromRowKey(w.fingerprint).ToDTO())
-	value = coding.NewProtocolBuffer(model.NewWatermarkFromTime(w.lastAppended).ToMetricHighWatermarkDTO())
+	key = coding.NewPBEncoder(model.NewFingerprintFromRowKey(w.fingerprint).ToDTO())
+	value = coding.NewPBEncoder(model.NewWatermarkFromTime(w.lastAppended).ToMetricHighWatermarkDTO())
 	return
 }
 
 func (s sampleGroup) Get() (key, value coding.Encoder) {
-	key = coding.NewProtocolBuffer(model.SampleKey{
+	key = coding.NewPBEncoder(model.SampleKey{
 		Fingerprint:    model.NewFingerprintFromRowKey(s.fingerprint),
 		FirstTimestamp: s.values[0].Timestamp,
 		LastTimestamp:  s.values[len(s.values)-1].Timestamp,
 		SampleCount:    uint32(len(s.values)),
 	}.ToDTO())
 
-	value = coding.NewProtocolBuffer(s.values.ToDTO())
+	value = coding.NewPBEncoder(s.values.ToDTO())
 
 	return
 }

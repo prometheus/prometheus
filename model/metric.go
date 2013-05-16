@@ -82,12 +82,12 @@ func (l LabelSet) String() string {
 	return buffer.String()
 }
 
-func (l LabelSet) ToMetric() (metric Metric) {
-	metric = Metric{}
+func (l LabelSet) ToMetric() Metric {
+	metric := Metric{}
 	for label, value := range l {
 		metric[label] = value
 	}
-	return
+	return metric
 }
 
 // A Metric is similar to a LabelSet, but the key difference is that a Metric is
@@ -168,20 +168,17 @@ func (v Values) LastTimeBefore(t time.Time) bool {
 
 // InsideInterval indicates whether a given range of sorted values could contain
 // a value for a given time.
-func (v Values) InsideInterval(t time.Time) (s bool) {
-	if v.Len() == 0 {
-		return
+func (v Values) InsideInterval(t time.Time) bool {
+	switch {
+	case v.Len() == 0:
+		return false
+	case t.Before(v[0].Timestamp):
+		return false
+	case !v[v.Len()-1].Timestamp.Before(t):
+		return false
+	default:
+		return true
 	}
-
-	if t.Before(v[0].Timestamp) {
-		return
-	}
-
-	if !v[v.Len()-1].Timestamp.Before(t) {
-		return
-	}
-
-	return true
 }
 
 // TruncateBefore returns a subslice of the original such that extraneous
@@ -239,7 +236,7 @@ func NewValuesFromDTO(dto *dto.SampleValueSeries) (v Values) {
 		})
 	}
 
-	return
+	return v
 }
 
 type SampleSet struct {

@@ -67,16 +67,16 @@ type CurationKey struct {
 }
 
 // Equal answers whether the two CurationKeys are equivalent.
-func (c CurationKey) Equal(o CurationKey) (equal bool) {
+func (c CurationKey) Equal(o CurationKey) bool {
 	switch {
 	case !c.Fingerprint.Equal(o.Fingerprint):
-		return
+		return false
 	case bytes.Compare(c.ProcessorMessageRaw, o.ProcessorMessageRaw) != 0:
-		return
+		return false
 	case c.ProcessorMessageTypeName != o.ProcessorMessageTypeName:
-		return
+		return false
 	case c.IgnoreYoungerThan != o.IgnoreYoungerThan:
-		return
+		return false
 	}
 
 	return true

@@ -269,14 +269,14 @@ func EvalVectorInstant(node VectorNode, timestamp time.Time, storage *metric.Tie
 	return
 }
 
-func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage) (matrix Matrix, err error) {
+func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage) (Matrix, error) {
 	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
 	// null in JSON.
-	matrix = Matrix{}
+	matrix := Matrix{}
 
 	viewAdapter, err := viewAdapterForRangeQuery(node, start, end, interval, storage)
 	if err != nil {
-		return
+		return nil, err
 	}
 	// TODO implement watchdog timer for long-running queries.
 	sampleSets := map[string]*model.SampleSet{}
@@ -302,7 +302,8 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 	for _, sampleSet := range sampleSets {
 		matrix = append(matrix, *sampleSet)
 	}
-	return
+
+	return matrix, nil
 }
 
 func labelIntersection(metric1, metric2 model.Metric) model.Metric {

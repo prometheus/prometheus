@@ -220,7 +220,7 @@ func getCurationRemark(states raw.Persistence, processor Processor, ignoreYounge
 	}.ToDTO()
 	curationValue := &dto.CurationValue{}
 
-	rawKey := coding.NewProtocolBuffer(curationKey)
+	rawKey := coding.NewPBEncoder(curationKey)
 
 	has, err := states.Has(rawKey)
 	if err != nil {
@@ -341,11 +341,7 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		FirstTimestamp: seriesFrontier.optimalStartTime(curationState),
 	}
 
-	prospectiveKey, err := coding.NewProtocolBuffer(startKey.ToDTO()).Encode()
-	if err != nil {
-		// An encoding failure of a key is no reason to stop.
-		return &storage.OperatorError{error: err, Continuable: true}
-	}
+	prospectiveKey := coding.NewPBEncoder(startKey.ToDTO()).MustEncode()
 	if !w.sampleIterator.Seek(prospectiveKey) {
 		// LevelDB is picky about the seek ranges.  If an iterator was invalidated,
 		// no work may occur, and the iterator cannot be recovered.
@@ -390,7 +386,7 @@ func (w watermarkOperator) refreshCurationRemark(f model.Fingerprint, finished t
 		LastCompletionTimestamp: finished,
 	}.ToDTO()
 
-	err = w.curationState.Put(coding.NewProtocolBuffer(curationKey), coding.NewProtocolBuffer(curationValue))
+	err = w.curationState.Put(coding.NewPBEncoder(curationKey), coding.NewPBEncoder(curationValue))
 
 	return
 }

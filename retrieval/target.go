@@ -177,7 +177,7 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 	t.scheduler.Reschedule(earliest, futureState)
 	t.state = futureState
 
-	return
+	return err
 }
 
 func (t *target) scrape(timestamp time.Time, results chan format.Result) (err error) {
@@ -194,13 +194,13 @@ func (t *target) scrape(timestamp time.Time, results chan format.Result) (err er
 
 	resp, err := t.client.Get(t.Address())
 	if err != nil {
-		return
+		return err
 	}
 	defer resp.Body.Close()
 
 	processor, err := format.DefaultRegistry.ProcessorForRequestHeader(resp.Header)
 	if err != nil {
-		return
+		return err
 	}
 
 	// XXX: This is a wart; we need to handle this more gracefully down the

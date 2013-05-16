@@ -43,16 +43,15 @@ func (s Samples) Len() int {
 	return len(s)
 }
 
-func (s Samples) Less(i, j int) (less bool) {
-	if NewFingerprintFromMetric(s[i].Metric).Less(NewFingerprintFromMetric(s[j].Metric)) {
+func (s Samples) Less(i, j int) bool {
+	switch {
+	case NewFingerprintFromMetric(s[i].Metric).Less(NewFingerprintFromMetric(s[j].Metric)):
 		return true
-	}
-
-	if s[i].Timestamp.Before(s[j].Timestamp) {
+	case s[i].Timestamp.Before(s[j].Timestamp):
 		return true
+	default:
+		return false
 	}
-
-	return false
 }
 
 func (s Samples) Swap(i, j int) {

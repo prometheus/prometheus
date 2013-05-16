@@ -24,7 +24,7 @@ func (l LabelPairs) Len() int {
 	return len(l)
 }
 
-func (l LabelPairs) Less(i, j int) (less bool) {
+func (l LabelPairs) Less(i, j int) bool {
 	if l[i].Name < l[j].Name {
 		return true
 	}

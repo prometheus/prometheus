@@ -251,10 +251,7 @@ func (l *LevelDBPersistence) Close() {
 }
 
 func (l *LevelDBPersistence) Get(value coding.Encoder) (b []byte, err error) {
-	key, err := value.Encode()
-	if err != nil {
-		return
-	}
+	key := value.MustEncode()
 
 	return l.storage.Get(l.readOptions, key)
 }
@@ -271,26 +268,16 @@ func (l *LevelDBPersistence) Has(value coding.Encoder) (h bool, err error) {
 }
 
 func (l *LevelDBPersistence) Drop(value coding.Encoder) (err error) {
-	key, err := value.Encode()
-	if err != nil {
-		return
-	}
-
+	key := value.MustEncode()
 	err = l.storage.Delete(l.writeOptions, key)
 
 	return
 }
 
 func (l *LevelDBPersistence) Put(key, value coding.Encoder) (err error) {
-	keyEncoded, err := key.Encode()
-	if err != nil {
-		return
-	}
+	keyEncoded := key.MustEncode()
 
-	valueEncoded, err := value.Encode()
-	if err != nil {
-		return
-	}
+	valueEncoded := value.MustEncode()
 
 	err = l.storage.Put(l.writeOptions, keyEncoded, valueEncoded)
 
