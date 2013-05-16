@@ -163,10 +163,9 @@ func (p *prometheus) reportDatabaseState() {
 		// (http://tip.golang.org/ref/spec#Method_values) to the web layer
 		// instead of doing this?
 		select {
-		case <-p.databaseStates:
-			// Reset the future database state if nobody consumes it.
 		case p.databaseStates <- p.storage.DiskStorage.States():
-			// Set the database state so someone can consume it if they want.
+			// Set the database state so someone can consume it if they want.  It will
+			// be generated on-demand subject to a given frequency.
 		default:
 			// Don't block.
 		}
