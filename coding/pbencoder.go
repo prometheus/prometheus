@@ -18,14 +18,12 @@ import (
 	"fmt"
 )
 
-type ProtocolBuffer struct {
+type PBEncoder struct {
 	message proto.Message
 }
 
-func (p ProtocolBuffer) MustEncode() []byte {
+func (p PBEncoder) MustEncode() []byte {
 	raw, err := proto.Marshal(p.message)
-
-	// XXX: Adjust legacy users of this to not check for error.
 	if err != nil {
 		panic(err)
 	}
@@ -33,12 +31,13 @@ func (p ProtocolBuffer) MustEncode() []byte {
 	return raw
 }
 
-func (p ProtocolBuffer) String() string {
-	return fmt.Sprintf("ProtocolBufferEncoder of %s", p.message)
+func (p PBEncoder) String() string {
+	return fmt.Sprintf("PBEncoder of %T", p.message)
 }
 
-func NewProtocolBuffer(message proto.Message) *ProtocolBuffer {
-	return &ProtocolBuffer{
-		message: message,
-	}
+// BUG(matt): Replace almost all calls to this with mechanisms that wrap the
+// underlying protocol buffers with business logic types that simply encode
+// themselves.  If all points are done, then we'll no longer need this type.
+func NewPBEncoder(m proto.Message) PBEncoder {
+	return PBEncoder{message: m}
 }

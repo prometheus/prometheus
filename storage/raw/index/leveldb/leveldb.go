@@ -15,13 +15,18 @@ package leveldb
 
 import (
 	"github.com/prometheus/prometheus/coding"
-	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
+type indexValue struct{}
+
+func (i *indexValue) MustEncode() []byte {
+	return []byte{}
+}
+
 var (
-	existenceValue = coding.NewProtocolBuffer(&dto.MembershipIndexValue{})
+	existenceValue = &indexValue{}
 )
 
 type LevelDBMembershipIndex struct {

@@ -45,7 +45,7 @@ type Fingerprint interface {
 }
 
 // Builds a Fingerprint from a row key.
-func NewFingerprintFromRowKey(rowKey string) (f Fingerprint) {
+func NewFingerprintFromRowKey(rowKey string) Fingerprint {
 	components := strings.Split(rowKey, rowKeyDelimiter)
 	hash, err := strconv.ParseUint(components[0], 10, 64)
 	if err != nil {
@@ -70,7 +70,7 @@ func NewFingerprintFromDTO(f *dto.Fingerprint) Fingerprint {
 }
 
 // Decomposes a Metric into a Fingerprint.
-func NewFingerprintFromMetric(metric Metric) (f Fingerprint) {
+func NewFingerprintFromMetric(metric Metric) Fingerprint {
 	labelLength := len(metric)
 	labelNames := make([]string, 0, labelLength)
 
@@ -184,7 +184,7 @@ func (f Fingerprints) Len() int {
 	return len(f)
 }
 
-func (f Fingerprints) Less(i, j int) (less bool) {
+func (f Fingerprints) Less(i, j int) bool {
 	return f[i].Less(f[j])
 }
 

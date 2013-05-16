@@ -153,7 +153,7 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersi
 
 		case len(pendingSamples)+len(sampleValues) < p.MinimumGroupSize:
 			if !keyDropped {
-				key := coding.NewProtocolBuffer(sampleKey.ToDTO())
+				key := coding.NewPBEncoder(sampleKey.ToDTO())
 				pendingBatch.Drop(key)
 				keyDropped = true
 			}
@@ -165,14 +165,14 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersi
 		// If the number of pending writes equals the target group size
 		case len(pendingSamples) == p.MinimumGroupSize:
 			newSampleKey := pendingSamples.ToSampleKey(fingerprint)
-			key := coding.NewProtocolBuffer(newSampleKey.ToDTO())
-			value := coding.NewProtocolBuffer(pendingSamples.ToDTO())
+			key := coding.NewPBEncoder(newSampleKey.ToDTO())
+			value := coding.NewPBEncoder(pendingSamples.ToDTO())
 			pendingBatch.Put(key, value)
 			pendingMutations++
 			lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
 			if len(sampleValues) > 0 {
 				if !keyDropped {
-					key := coding.NewProtocolBuffer(sampleKey.ToDTO())
+					key := coding.NewPBEncoder(sampleKey.ToDTO())
 					pendingBatch.Drop(key)
 					keyDropped = true
 				}
@@ -190,7 +190,7 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersi
 
 		case len(pendingSamples)+len(sampleValues) >= p.MinimumGroupSize:
 			if !keyDropped {
-				key := coding.NewProtocolBuffer(sampleKey.ToDTO())
+				key := coding.NewPBEncoder(sampleKey.ToDTO())
 				pendingBatch.Drop(key)
 				keyDropped = true
 			}
@@ -211,8 +211,8 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersi
 	if len(sampleValues) > 0 || len(pendingSamples) > 0 {
 		pendingSamples = append(sampleValues, pendingSamples...)
 		newSampleKey := pendingSamples.ToSampleKey(fingerprint)
-		key := coding.NewProtocolBuffer(newSampleKey.ToDTO())
-		value := coding.NewProtocolBuffer(pendingSamples.ToDTO())
+		key := coding.NewPBEncoder(newSampleKey.ToDTO())
+		value := coding.NewPBEncoder(pendingSamples.ToDTO())
 		pendingBatch.Put(key, value)
 		pendingSamples = model.Values{}
 		pendingMutations++
@@ -320,14 +320,14 @@ func (p DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersist
 			pendingBatch = nil
 
 		case !sampleKey.MayContain(stopAt):
-			key := coding.NewProtocolBuffer(sampleKey.ToDTO())
+			key := coding.NewPBEncoder(sampleKey.ToDTO())
 			pendingBatch.Drop(key)
 			lastCurated = sampleKey.LastTimestamp
 			sampleValues = model.Values{}
 			pendingMutations++
 
 		case sampleKey.MayContain(stopAt):
-			key := coding.NewProtocolBuffer(sampleKey.ToDTO())
+			key := coding.NewPBEncoder(sampleKey.ToDTO())
 			pendingBatch.Drop(key)
 			pendingMutations++
 
@@ -335,8 +335,8 @@ func (p DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersist
 			if len(sampleValues) > 0 {
 				sampleKey = sampleValues.ToSampleKey(fingerprint)
 				lastCurated = sampleKey.FirstTimestamp
-				newKey := coding.NewProtocolBuffer(sampleKey.ToDTO())
-				newValue := coding.NewProtocolBuffer(sampleValues.ToDTO())
+				newKey := coding.NewPBEncoder(sampleKey.ToDTO())
+				newValue := coding.NewPBEncoder(sampleValues.ToDTO())
 				pendingBatch.Put(newKey, newValue)
 				pendingMutations++
 			} else {

@@ -83,14 +83,13 @@ func (c Config) Validate() error {
 }
 
 // GetJobByName finds a job by its name in a Config object.
-func (c Config) GetJobByName(name string) (jobConfig *JobConfig) {
+func (c Config) GetJobByName(name string) *JobConfig {
 	for _, job := range c.Job {
 		if job.GetName() == name {
-			jobConfig = &JobConfig{*job}
-			break
+			return &JobConfig{*job}
 		}
 	}
-	return
+	return nil
 }
 
 // Jobs returns all the jobs in a Config object.

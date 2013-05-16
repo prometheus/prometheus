@@ -115,7 +115,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 		Timestamp:   upperSeek,
 	}
 
-	raw := coding.NewProtocolBuffer(key).MustEncode()
+	raw := coding.NewPBEncoder(key).MustEncode()
 	i.Seek(raw)
 
 	if i.Key() == nil {
@@ -157,7 +157,7 @@ func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) 
 
 	key.Timestamp = lowerSeek
 
-	raw = coding.NewProtocolBuffer(key).MustEncode()
+	raw = coding.NewPBEncoder(key).MustEncode()
 
 	i.Seek(raw)
 

@@ -146,7 +146,7 @@ func (sorter vectorByValueSorter) Len() int {
 	return len(sorter.vector)
 }
 
-func (sorter vectorByValueSorter) Less(i, j int) (less bool) {
+func (sorter vectorByValueSorter) Less(i, j int) bool {
 	return sorter.vector[i].Value < sorter.vector[j].Value
 }
 

@@ -488,7 +488,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 	}
 
 	// Try seeking to target key.
-	rawKey := coding.NewProtocolBuffer(targetKey).MustEncode()
+	rawKey := coding.NewPBEncoder(targetKey).MustEncode()
 	iterator.Seek(rawKey)
 
 	foundKey, err := extractSampleKey(iterator)

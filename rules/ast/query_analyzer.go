@@ -95,7 +95,7 @@ func (analyzer *QueryAnalyzer) AnalyzeQueries(node Node) {
 	}
 }
 
-func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.TieredStorage) (viewAdapter *viewAdapter, err error) {
+func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.TieredStorage) (*viewAdapter, error) {
 	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)
 	viewBuilder := metric.NewViewRequestBuilder()
@@ -106,13 +106,13 @@ func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.
 		viewBuilder.GetMetricAtTime(fingerprint, timestamp)
 	}
 	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second)
-	if err == nil {
-		viewAdapter = NewViewAdapter(view, storage)
+	if err != nil {
+		return nil, err
 	}
-	return
+	return NewViewAdapter(view, storage), nil
 }
 
-func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage) (viewAdapter *viewAdapter, err error) {
+func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage) (*viewAdapter, error) {
 	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)
 	viewBuilder := metric.NewViewRequestBuilder()
@@ -126,8 +126,8 @@ func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interva
 		viewBuilder.GetMetricAtInterval(fingerprint, start, end, interval)
 	}
 	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second)
-	if err == nil {
-		viewAdapter = NewViewAdapter(view, storage)
+	if err != nil {
+		return nil, err
 	}
-	return
+	return NewViewAdapter(view, storage), nil
 }
