@@ -23,6 +23,8 @@ const (
 	success   = "success"
 	failure   = "failure"
 	result    = "result"
+	ingest    = "ingest"
+	reject    = "reject"
 
 	appendFingerprints          = "append_fingerprints"
 	appendLabelNameFingerprint  = "append_label_name_fingerprint"
@@ -71,6 +73,7 @@ var (
 	storageOperationDurations = prometheus.NewCounter()
 	storageLatency            = prometheus.NewHistogram(diskLatencyHistogram)
 	queueSizes                = prometheus.NewGauge()
+	viewOutcomes              = prometheus.NewCounter()
 )
 
 func recordOutcome(duration time.Duration, err error, success, failure map[string]string) {
@@ -93,4 +96,5 @@ func init() {
 	prometheus.Register("curation_filter_operations_total", "The number of curation filter operations completed.", prometheus.NilLabels, curationFilterOperations)
 	prometheus.Register("curation_duration_ms_total", "The total time spent in curation (ms).", prometheus.NilLabels, curationDuration)
 	prometheus.Register("curation_durations_ms", "Histogram of time spent in curation (ms).", prometheus.NilLabels, curationDurations)
+	prometheus.Register("prometheus_view_render_outcomes_total", "The outcomes for view rendering.", prometheus.NilLabels, viewOutcomes)
 }

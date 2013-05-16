@@ -130,38 +130,46 @@ func (t *TieredStorage) Drain() {
 }
 
 // Enqueues a ViewRequestBuilder for materialization, subject to a timeout.
-func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (view View, err error) {
+func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (View, error) {
 	if len(t.draining) > 0 {
-		err = fmt.Errorf("Storage is in the process of draining.")
-		return
+		return nil, fmt.Errorf("Storage is in the process of draining.")
 	}
 
 	// The result channel needs a one-element buffer in case we have timed out in
 	// MakeView, but the view rendering still completes afterwards and writes to
 	// the channel.
-	result := make(chan View, 1)
+	resultChan := make(chan View, 1)
 	// The abort channel needs a one-element buffer in case the view rendering
 	// has already exited and doesn't consume from the channel anymore.
 	abortChan := make(chan bool, 1)
 	errChan := make(chan error)
-	t.viewQueue <- viewJob{
+
+	job := viewJob{
 		builder: builder,
-		output:  result,
+		output:  resultChan,
 		abort:   abortChan,
 		err:     errChan,
 	}
-
 	select {
-	case value := <-result:
-		view = value
-	case err = <-errChan:
-		return
-	case <-time.After(deadline):
-		abortChan <- true
-		err = fmt.Errorf("MakeView timed out after %s.", deadline)
+	case t.viewQueue <- job:
+		viewOutcomes.Increment(map[string]string{result: ingest})
+	default:
+		// BUG(all): Fix this fundamentally.
+		viewOutcomes.Increment(map[string]string{result: reject})
+		log.Println("Rejecting view rendering request due to pushback.")
+
+		return nil, fmt.Errorf("Storage queue is full.")
 	}
 
-	return
+	select {
+	case value := <-resultChan:
+		return value, nil
+	case err := <-errChan:
+		return nil, err
+	case <-time.After(deadline):
+		abortChan <- true
+		return nil, fmt.Errorf("MakeView timed out after %s.", deadline)
+	}
 }
 
 func (t *TieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
