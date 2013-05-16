@@ -31,15 +31,15 @@ type RecordingRule struct {
 
 func (rule RecordingRule) Name() string { return rule.name }
 
-func (rule RecordingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error) {
+func (rule RecordingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
 	return ast.EvalVectorInstant(rule.vector, timestamp, storage)
 }
 
-func (rule RecordingRule) Eval(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error) {
+func (rule RecordingRule) Eval(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
 	// Get the raw value of the rule expression.
-	vector, err = rule.EvalRaw(timestamp, storage)
+	vector, err := rule.EvalRaw(timestamp, storage)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	// Override the metric name and labels.
@@ -53,7 +53,8 @@ func (rule RecordingRule) Eval(timestamp time.Time, storage *metric.TieredStorag
 			}
 		}
 	}
-	return
+
+	return vector, nil
 }
 
 func (rule RecordingRule) ToDotGraph() string {

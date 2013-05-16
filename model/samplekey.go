@@ -33,15 +33,15 @@ type SampleKey struct {
 // MayContain indicates whether the given SampleKey could potentially contain a
 // value at the provided time.  Even if true is emitted, that does not mean a
 // satisfactory value, in fact, exists.
-func (s SampleKey) MayContain(t time.Time) (could bool) {
+func (s SampleKey) MayContain(t time.Time) bool {
 	switch {
 	case t.Before(s.FirstTimestamp):
-		return
+		return false
 	case t.After(s.LastTimestamp):
-		return
+		return false
+	default:
+		return true
 	}
-
-	return true
 }
 
 // ToDTO converts this SampleKey into a DTO for use in serialization purposes.

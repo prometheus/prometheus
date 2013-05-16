@@ -53,7 +53,7 @@ func (m *targetManager) release() {
 	<-m.requestAllowance
 }
 
-func (m *targetManager) TargetPoolForJob(job config.JobConfig, defaultScrapeInterval time.Duration) (targetPool *TargetPool) {
+func (m *targetManager) TargetPoolForJob(job config.JobConfig, defaultScrapeInterval time.Duration) *TargetPool {
 	targetPool, ok := m.poolsByJob[job.GetName()]
 
 	if !ok {
@@ -62,9 +62,11 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig, defaultScrapeInte
 
 		interval := job.ScrapeInterval()
 		m.poolsByJob[job.GetName()] = targetPool
+		// BUG(all): Investigate whether this auto-goroutine creation is desired.
 		go targetPool.Run(m.results, interval)
 	}
-	return
+
+	return targetPool
 }
 
 func (m *targetManager) AddTarget(job config.JobConfig, t Target, defaultScrapeInterval time.Duration) {

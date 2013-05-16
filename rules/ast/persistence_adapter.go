@@ -60,7 +60,7 @@ func interpolateSamples(first, second *model.SamplePair, timestamp time.Time) *m
 // surrounding a given target time. If samples are found both before and after
 // the target time, the sample value is interpolated between these. Otherwise,
 // the single closest sample is returned verbatim.
-func (v *viewAdapter) chooseClosestSample(samples model.Values, timestamp time.Time) (sample *model.SamplePair) {
+func (v *viewAdapter) chooseClosestSample(samples model.Values, timestamp time.Time) *model.SamplePair {
 	var closestBefore *model.SamplePair
 	var closestAfter *model.SamplePair
 	for _, candidate := range samples {
@@ -96,14 +96,12 @@ func (v *viewAdapter) chooseClosestSample(samples model.Values, timestamp time.T
 
 	switch {
 	case closestBefore != nil && closestAfter != nil:
-		sample = interpolateSamples(closestBefore, closestAfter, timestamp)
+		return interpolateSamples(closestBefore, closestAfter, timestamp)
 	case closestBefore != nil:
-		sample = closestBefore
+		return closestBefore
 	default:
-		sample = closestAfter
+		return closestAfter
 	}
-
-	return
 }
 
 func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp time.Time) (samples Vector, err error) {
@@ -122,7 +120,7 @@ func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp 
 			})
 		}
 	}
-	return
+	return samples, err
 }
 
 func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {

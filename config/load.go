@@ -19,10 +19,10 @@ import (
 	"io/ioutil"
 )
 
-func LoadFromString(configStr string) (config Config, err error) {
+func LoadFromString(configStr string) (Config, error) {
 	configProto := pb.PrometheusConfig{}
-	if err = proto.UnmarshalText(configStr, &configProto); err != nil {
-		return
+	if err := proto.UnmarshalText(configStr, &configProto); err != nil {
+		return Config{}, err
 	}
 	if configProto.Global == nil {
 		configProto.Global = &pb.GlobalConfig{}
@@ -32,17 +32,18 @@ func LoadFromString(configStr string) (config Config, err error) {
 			job.ScrapeInterval = proto.String(configProto.Global.GetScrapeInterval())
 		}
 	}
-	config = Config{configProto}
-	err = config.Validate()
-	return
+
+	config := Config{configProto}
+	err := config.Validate()
+
+	return config, err
 }
 
-func LoadFromFile(fileName string) (config Config, err error) {
+func LoadFromFile(fileName string) (Config, error) {
 	configStr, err := ioutil.ReadFile(fileName)
 	if err != nil {
-		return
+		return Config{}, err
 	}
 
-	config, err = LoadFromString(string(configStr))
-	return
+	return LoadFromString(string(configStr))
 }

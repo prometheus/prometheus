@@ -34,22 +34,19 @@ type Registry interface {
 type registry struct {
 }
 
-func (r *registry) ProcessorForRequestHeader(header http.Header) (processor Processor, err error) {
+func (r *registry) ProcessorForRequestHeader(header http.Header) (Processor, error) {
 	if header == nil {
-		err = fmt.Errorf("Received illegal and nil header.")
-		return
+		return nil, fmt.Errorf("Received illegal and nil header.")
 	}
 
 	mediatype, params, err := mime.ParseMediaType(header.Get("Content-Type"))
 
 	if err != nil {
-		err = fmt.Errorf("Invalid Content-Type header %q: %s", header.Get("Content-Type"), err)
-		return
+		return nil, fmt.Errorf("Invalid Content-Type header %q: %s", header.Get("Content-Type"), err)
 	}
 
 	if mediatype != "application/json" {
-		err = fmt.Errorf("Unsupported media type %q, expected %q", mediatype, "application/json")
-		return
+		return nil, fmt.Errorf("Unsupported media type %q, expected %q", mediatype, "application/json")
 	}
 
 	var prometheusApiVersion string
@@ -62,13 +59,10 @@ func (r *registry) ProcessorForRequestHeader(header http.Header) (processor Proc
 
 	switch prometheusApiVersion {
 	case "0.0.2":
-		processor = Processor002
-		return
+		return Processor002, nil
 	case "0.0.1":
-		processor = Processor001
-		return
+		return Processor001, nil
 	default:
-		err = fmt.Errorf("Unrecognized API version %s", prometheusApiVersion)
-		return
+		return nil, fmt.Errorf("Unrecognized API version %s", prometheusApiVersion)
 	}
 }

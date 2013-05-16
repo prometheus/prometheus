@@ -25,14 +25,15 @@ import (
 // States that active alerts can be in.
 type alertState int
 
-func (s alertState) String() (state string) {
+func (s alertState) String() string {
 	switch s {
 	case PENDING:
-		state = "pending"
+		return "pending"
 	case FIRING:
-		state = "firing"
+		return "firing"
+	default:
+		panic("undefined")
 	}
-	return
 }
 
 const (
@@ -88,15 +89,15 @@ type AlertingRule struct {
 
 func (rule AlertingRule) Name() string { return rule.name }
 
-func (rule AlertingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error) {
+func (rule AlertingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
 	return ast.EvalVectorInstant(rule.vector, timestamp, storage)
 }
 
-func (rule AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorage) (vector ast.Vector, err error) {
+func (rule AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
 	// Get the raw value of the rule expression.
 	exprResult, err := rule.EvalRaw(timestamp, storage)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	// Create pending alerts for any new vector elements in the alert expression.
@@ -115,6 +116,8 @@ func (rule AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorage
 		}
 	}
 
+	vector := ast.Vector{}
+
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, activeAlert := range rule.activeAlerts {
 		if !resultFingerprints.Has(fp) {
@@ -130,7 +133,8 @@ func (rule AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorage
 
 		vector = append(vector, activeAlert.sample(timestamp, 1))
 	}
-	return
+
+	return vector, nil
 }
 
 func (rule AlertingRule) ToDotGraph() string {

@@ -58,20 +58,19 @@ type entity001 []struct {
 	} `json:"metric"`
 }
 
-func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLabels model.LabelSet, results chan Result) (err error) {
+func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLabels model.LabelSet, results chan Result) error {
 	// TODO(matt): Replace with plain-jane JSON unmarshalling.
 	defer stream.Close()
 
 	buffer, err := ioutil.ReadAll(stream)
 	if err != nil {
-		return
+		return err
 	}
 
 	entities := entity001{}
 
-	err = json.Unmarshal(buffer, &entities)
-	if err != nil {
-		return
+	if err = json.Unmarshal(buffer, &entities); err != nil {
+		return err
 	}
 
 	// TODO(matt): This outer loop is a great basis for parallelization.
@@ -140,7 +139,6 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 				}
 
 				break
-			default:
 			}
 		}
 	}
@@ -148,5 +146,5 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 		results <- Result{Samples: pendingSamples}
 	}
 
-	return
+	return nil
 }
