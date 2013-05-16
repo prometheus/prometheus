@@ -14,6 +14,7 @@
 package model
 
 import (
+	"runtime"
 	"testing"
 )
 
@@ -65,4 +66,39 @@ func TestFingerprintComparison(t *testing.T) {
 			t.Errorf("%d expected %s < %s", i, fingerprints[i-1], fingerprints[i])
 		}
 	}
+}
+
+func BenchmarkFingerprinting(b *testing.B) {
+	b.StopTimer()
+	fps := []fingerprint{
+		{
+			hash: 0,
+			firstCharacterOfFirstLabelName: "a",
+			labelMatterLength:              2,
+			lastCharacterOfLastLabelValue:  "z",
+		},
+		{
+			hash: 0,
+			firstCharacterOfFirstLabelName: "a",
+			labelMatterLength:              2,
+			lastCharacterOfLastLabelValue:  "z",
+		},
+	}
+	for i := 0; i < 10; i++ {
+		fps[0].Less(fps[1])
+	}
+	b.Logf("N: %v", b.N)
+	b.StartTimer()
+
+	var pre runtime.MemStats
+	runtime.ReadMemStats(&pre)
+
+	for i := 0; i < b.N; i++ {
+		fps[0].Less(fps[1])
+	}
+
+	var post runtime.MemStats
+	runtime.ReadMemStats(&post)
+
+	b.Logf("allocs: %d items: ", post.TotalAlloc-pre.TotalAlloc)
 }

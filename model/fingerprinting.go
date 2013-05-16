@@ -152,7 +152,37 @@ func (f fingerprint) LastCharacterOfLastLabelValue() string {
 }
 
 func (f fingerprint) Less(o Fingerprint) bool {
-	return f.String() < o.String()
+	// BUG(julius): Deprecate Fingerprint interface and clean this up.
+	fp := o.(fingerprint)
+
+	if f.hash < fp.hash {
+		return true
+	}
+	if f.hash > fp.hash {
+		return false
+	}
+
+	if f.firstCharacterOfFirstLabelName < fp.firstCharacterOfFirstLabelName {
+		return true
+	}
+	if f.firstCharacterOfFirstLabelName > fp.firstCharacterOfFirstLabelName {
+		return false
+	}
+
+	if f.labelMatterLength < fp.labelMatterLength {
+		return true
+	}
+	if f.labelMatterLength > fp.labelMatterLength {
+		return false
+	}
+
+	if f.lastCharacterOfLastLabelValue < fp.lastCharacterOfLastLabelValue {
+		return true
+	}
+	if f.lastCharacterOfLastLabelValue > fp.lastCharacterOfLastLabelValue {
+		return false
+	}
+	return false
 }
 
 func (f fingerprint) Equal(o Fingerprint) (equal bool) {
