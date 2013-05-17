@@ -58,8 +58,8 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 		}
 		n.fingerprints = fingerprints
 		for _, fingerprint := range fingerprints {
-			if !analyzer.IntervalRanges[fingerprint] {
-				analyzer.IntervalRanges[fingerprint] = true
+			if !analyzer.IntervalRanges[*fingerprint] {
+				analyzer.IntervalRanges[*fingerprint] = true
 			}
 		}
 	case *MatrixLiteral:
@@ -73,12 +73,12 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 			interval := n.interval
 			// If an interval has already been recorded for this fingerprint, merge
 			// it with the current interval.
-			if oldInterval, ok := analyzer.FullRanges[fingerprint]; ok {
+			if oldInterval, ok := analyzer.FullRanges[*fingerprint]; ok {
 				if oldInterval > interval {
 					interval = oldInterval
 				}
 			}
-			analyzer.FullRanges[fingerprint] = interval
+			analyzer.FullRanges[*fingerprint] = interval
 		}
 	}
 }

@@ -188,7 +188,7 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	}
 }
 
-func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp model.Fingerprint, i model.Interval) (samples model.Values, err error) {
+func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *model.Fingerprint, i model.Interval) (samples model.Values, err error) {
 	k := &dto.SampleKey{
 		Fingerprint: fp.ToDTO(),
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),

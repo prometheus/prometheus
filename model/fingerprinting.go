@@ -30,22 +30,8 @@ const (
 	rowKeyDelimiter = "-"
 )
 
-// Provides a compact representation of a Metric.
-type Fingerprint interface {
-	// Transforms the fingerprint into a database row key.
-	ToRowKey() string
-	Hash() uint64
-	FirstCharacterOfFirstLabelName() string
-	LabelMatterLength() uint
-	LastCharacterOfLastLabelValue() string
-	ToDTO() *dto.Fingerprint
-	Less(Fingerprint) bool
-	Equal(Fingerprint) bool
-	String() string
-}
-
 // Builds a Fingerprint from a row key.
-func NewFingerprintFromRowKey(rowKey string) Fingerprint {
+func NewFingerprintFromRowKey(rowKey string) *Fingerprint {
 	components := strings.Split(rowKey, rowKeyDelimiter)
 	hash, err := strconv.ParseUint(components[0], 10, 64)
 	if err != nil {
@@ -56,7 +42,7 @@ func NewFingerprintFromRowKey(rowKey string) Fingerprint {
 		panic(err)
 	}
 
-	return fingerprint{
+	return &Fingerprint{
 		hash: hash,
 		firstCharacterOfFirstLabelName: components[1],
 		labelMatterLength:              uint(labelMatterLength),
@@ -65,12 +51,12 @@ func NewFingerprintFromRowKey(rowKey string) Fingerprint {
 }
 
 // Builds a Fingerprint from a datastore entry.
-func NewFingerprintFromDTO(f *dto.Fingerprint) Fingerprint {
+func NewFingerprintFromDTO(f *dto.Fingerprint) *Fingerprint {
 	return NewFingerprintFromRowKey(*f.Signature)
 }
 
 // Decomposes a Metric into a Fingerprint.
-func NewFingerprintFromMetric(metric Metric) Fingerprint {
+func NewFingerprintFromMetric(metric Metric) *Fingerprint {
 	labelLength := len(metric)
 	labelNames := make([]string, 0, labelLength)
 
@@ -103,7 +89,7 @@ func NewFingerprintFromMetric(metric Metric) Fingerprint {
 		summer.Write([]byte(labelValue))
 	}
 
-	return fingerprint{
+	return &Fingerprint{
 		firstCharacterOfFirstLabelName: firstCharacterOfFirstLabelName,
 		hash:                          binary.LittleEndian.Uint64(summer.Sum(nil)),
 		labelMatterLength:             uint(labelMatterLength % 10),
@@ -112,7 +98,7 @@ func NewFingerprintFromMetric(metric Metric) Fingerprint {
 }
 
 // A simplified representation of an entity.
-type fingerprint struct {
+type Fingerprint struct {
 	// A hashed representation of the underyling entity.  For our purposes, FNV-1A
 	// 64-bit is used.
 	hash                           uint64
@@ -121,71 +107,69 @@ type fingerprint struct {
 	lastCharacterOfLastLabelValue  string
 }
 
-func (f fingerprint) String() string {
+func (f *Fingerprint) String() string {
 	return f.ToRowKey()
 }
 
-func (f fingerprint) ToRowKey() string {
+// Transforms the Fingerprint into a database row key.
+func (f *Fingerprint) ToRowKey() string {
 	return strings.Join([]string{fmt.Sprintf("%020d", f.hash), f.firstCharacterOfFirstLabelName, fmt.Sprint(f.labelMatterLength), f.lastCharacterOfLastLabelValue}, rowKeyDelimiter)
 }
 
-func (f fingerprint) ToDTO() *dto.Fingerprint {
+func (f *Fingerprint) ToDTO() *dto.Fingerprint {
 	return &dto.Fingerprint{
 		Signature: proto.String(f.ToRowKey()),
 	}
 }
 
-func (f fingerprint) Hash() uint64 {
+func (f *Fingerprint) Hash() uint64 {
 	return f.hash
 }
 
-func (f fingerprint) FirstCharacterOfFirstLabelName() string {
+func (f *Fingerprint) FirstCharacterOfFirstLabelName() string {
 	return f.firstCharacterOfFirstLabelName
 }
 
-func (f fingerprint) LabelMatterLength() uint {
+func (f *Fingerprint) LabelMatterLength() uint {
 	return f.labelMatterLength
 }
 
-func (f fingerprint) LastCharacterOfLastLabelValue() string {
+func (f *Fingerprint) LastCharacterOfLastLabelValue() string {
 	return f.lastCharacterOfLastLabelValue
 }
 
-func (f fingerprint) Less(o Fingerprint) bool {
-	// BUG(julius): Deprecate Fingerprint interface and clean this up.
-	fp := o.(fingerprint)
-
-	if f.hash < fp.hash {
+func (f *Fingerprint) Less(o *Fingerprint) bool {
+	if f.hash < o.hash {
 		return true
 	}
-	if f.hash > fp.hash {
+	if f.hash > o.hash {
 		return false
 	}
 
-	if f.firstCharacterOfFirstLabelName < fp.firstCharacterOfFirstLabelName {
+	if f.firstCharacterOfFirstLabelName < o.firstCharacterOfFirstLabelName {
 		return true
 	}
-	if f.firstCharacterOfFirstLabelName > fp.firstCharacterOfFirstLabelName {
+	if f.firstCharacterOfFirstLabelName > o.firstCharacterOfFirstLabelName {
 		return false
 	}
 
-	if f.labelMatterLength < fp.labelMatterLength {
+	if f.labelMatterLength < o.labelMatterLength {
 		return true
 	}
-	if f.labelMatterLength > fp.labelMatterLength {
+	if f.labelMatterLength > o.labelMatterLength {
 		return false
 	}
 
-	if f.lastCharacterOfLastLabelValue < fp.lastCharacterOfLastLabelValue {
+	if f.lastCharacterOfLastLabelValue < o.lastCharacterOfLastLabelValue {
 		return true
 	}
-	if f.lastCharacterOfLastLabelValue > fp.lastCharacterOfLastLabelValue {
+	if f.lastCharacterOfLastLabelValue > o.lastCharacterOfLastLabelValue {
 		return false
 	}
 	return false
 }
 
-func (f fingerprint) Equal(o Fingerprint) (equal bool) {
+func (f *Fingerprint) Equal(o *Fingerprint) (equal bool) {
 	equal = f.Hash() == o.Hash()
 	if !equal {
 		return
@@ -208,7 +192,7 @@ func (f fingerprint) Equal(o Fingerprint) (equal bool) {
 
 // Represents a collection of Fingerprint subject to a given natural sorting
 // scheme.
-type Fingerprints []Fingerprint
+type Fingerprints []*Fingerprint
 
 func (f Fingerprints) Len() int {
 	return len(f)

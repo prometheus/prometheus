@@ -24,7 +24,7 @@ import (
 // SampleKey models the business logic around the data-transfer object
 // SampleKey.
 type SampleKey struct {
-	Fingerprint    Fingerprint
+	Fingerprint    *Fingerprint
 	FirstTimestamp time.Time
 	LastTimestamp  time.Time
 	SampleCount    uint32

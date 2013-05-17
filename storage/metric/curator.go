@@ -32,7 +32,7 @@ type CurationState struct {
 	Active      bool
 	Name        string
 	Limit       time.Duration
-	Fingerprint model.Fingerprint
+	Fingerprint *model.Fingerprint
 }
 
 // watermarkFilter determines whether to include or exclude candidate
@@ -206,7 +206,7 @@ func (w watermarkFilter) shouldStop() bool {
 	return len(w.stop) != 0
 }
 
-func getCurationRemark(states raw.Persistence, processor Processor, ignoreYoungerThan time.Duration, fingerprint model.Fingerprint) (remark *model.CurationRemark, err error) {
+func getCurationRemark(states raw.Persistence, processor Processor, ignoreYoungerThan time.Duration, fingerprint *model.Fingerprint) (remark *model.CurationRemark, err error) {
 	rawSignature, err := processor.Signature()
 	if err != nil {
 		return
@@ -247,7 +247,7 @@ func getCurationRemark(states raw.Persistence, processor Processor, ignoreYounge
 }
 
 func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult) {
-	fingerprint := key.(model.Fingerprint)
+	fingerprint := key.(*model.Fingerprint)
 
 	defer func() {
 		labels := map[string]string{
@@ -304,7 +304,7 @@ func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult)
 
 // curationConsistent determines whether the given metric is in a dirty state
 // and needs curation.
-func (w watermarkFilter) curationConsistent(f model.Fingerprint, watermark model.Watermark) (consistent bool, err error) {
+func (w watermarkFilter) curationConsistent(f *model.Fingerprint, watermark model.Watermark) (consistent bool, err error) {
 	curationRemark, err := getCurationRemark(w.curationState, w.processor, w.ignoreYoungerThan, f)
 	if err != nil {
 		return
@@ -317,7 +317,7 @@ func (w watermarkFilter) curationConsistent(f model.Fingerprint, watermark model
 }
 
 func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
-	fingerprint := key.(model.Fingerprint)
+	fingerprint := key.(*model.Fingerprint)
 
 	seriesFrontier, err := newSeriesFrontier(fingerprint, w.diskFrontier, w.sampleIterator)
 	if err != nil || seriesFrontier == nil {
@@ -371,7 +371,7 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 	return
 }
 
-func (w watermarkOperator) refreshCurationRemark(f model.Fingerprint, finished time.Time) (err error) {
+func (w watermarkOperator) refreshCurationRemark(f *model.Fingerprint, finished time.Time) (err error) {
 	signature, err := w.processor.Signature()
 	if err != nil {
 		return

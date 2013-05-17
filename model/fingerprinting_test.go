@@ -19,7 +19,7 @@ import (
 )
 
 func TestFingerprintComparison(t *testing.T) {
-	fingerprints := []fingerprint{
+	fingerprints := []*Fingerprint{
 		{
 			hash: 0,
 			firstCharacterOfFirstLabelName: "b",
@@ -70,7 +70,7 @@ func TestFingerprintComparison(t *testing.T) {
 
 func BenchmarkFingerprinting(b *testing.B) {
 	b.StopTimer()
-	fps := []fingerprint{
+	fps := []*Fingerprint{
 		{
 			hash: 0,
 			firstCharacterOfFirstLabelName: "a",

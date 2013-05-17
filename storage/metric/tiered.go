@@ -471,7 +471,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	return
 }
 
-func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint model.Fingerprint, ts time.Time) (chunk model.Values) {
+func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint *model.Fingerprint, ts time.Time) (chunk model.Values) {
 	var (
 		targetKey = &dto.SampleKey{
 			Fingerprint: fingerprint.ToDTO(),
@@ -582,17 +582,18 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fin
 	}
 	fingerprintSet := map[model.Fingerprint]bool{}
 	for _, fingerprint := range append(memFingerprints, diskFingerprints...) {
-		fingerprintSet[fingerprint] = true
+		fingerprintSet[*fingerprint] = true
 	}
 	for fingerprint := range fingerprintSet {
-		fingerprints = append(fingerprints, fingerprint)
+		fpCopy := fingerprint
+		fingerprints = append(fingerprints, &fpCopy)
 	}
 
 	return
 }
 
 // Get the metric associated with the provided fingerprint.
-func (t *TieredStorage) GetMetricForFingerprint(f model.Fingerprint) (m model.Metric, err error) {
+func (t *TieredStorage) GetMetricForFingerprint(f *model.Fingerprint) (m model.Metric, err error) {
 	m, err = t.memoryArena.GetMetricForFingerprint(f)
 	if err != nil {
 		return
