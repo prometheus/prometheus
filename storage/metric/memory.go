@@ -14,18 +14,11 @@
 package metric
 
 import (
-	"fmt"
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/utility"
 	"github.com/ryszard/goskiplist/skiplist"
 	"time"
-)
-
-const (
-	// Used as a separator in the format string for generating the internal label
-	// value pair set fingerprints.
-	reservedDelimiter = `"`
 )
 
 // Models a given sample entry stored in the in-memory arena.
@@ -53,13 +46,13 @@ type stream struct {
 	values *skiplist.SkipList
 }
 
-func (s stream) add(timestamp time.Time, value model.SampleValue) {
+func (s *stream) add(timestamp time.Time, value model.SampleValue) {
 	s.values.Set(skipListTime(timestamp), singletonValue(value))
 }
 
-func (s stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error) {
+func (s *stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error) {
 	if s.values.Len() == 0 {
-		return
+		return false, nil
 	}
 	iterator := s.values.SeekToLast()
 
@@ -77,7 +70,7 @@ func (s stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilt
 
 		switch filter.Filter(decodedKey, decodedValue) {
 		case storage.STOP:
-			return
+			return false, nil
 		case storage.SKIP:
 			continue
 		case storage.ACCEPT:
@@ -93,20 +86,20 @@ func (s stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilt
 			break
 		}
 	}
-	scannedEntireCorpus = true
-	return
+
+	return true, nil
 }
 
-func newStream(metric model.Metric) stream {
-	return stream{
+func newStream(metric model.Metric) *stream {
+	return &stream{
 		values: skiplist.New(),
 		metric: metric,
 	}
 }
 
 type memorySeriesStorage struct {
-	fingerprintToSeries     map[model.Fingerprint]stream
-	labelPairToFingerprints map[string]model.Fingerprints
+	fingerprintToSeries     map[model.Fingerprint]*stream
+	labelPairToFingerprints map[model.LabelPair]model.Fingerprints
 	labelNameToFingerprints map[model.LabelName]model.Fingerprints
 }
 
@@ -128,8 +121,10 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 		s.fingerprintToSeries[fingerprint] = series
 
 		for k, v := range metric {
-			labelPair := fmt.Sprintf("%s%s%s", k, reservedDelimiter, v)
-
+			labelPair := model.LabelPair{
+				Name:  k,
+				Value: v,
+			}
 			labelPairValues := s.labelPairToFingerprints[labelPair]
 			labelPairValues = append(labelPairValues, fingerprint)
 			s.labelPairToFingerprints[labelPair] = labelPairValues
@@ -163,8 +158,10 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 	sets := []utility.Set{}
 
 	for k, v := range l {
-		signature := fmt.Sprintf("%s%s%s", k, reservedDelimiter, v)
-		values := s.labelPairToFingerprints[signature]
+		values := s.labelPairToFingerprints[model.LabelPair{
+			Name:  k,
+			Value: v,
+		}]
 		set := utility.Set{}
 		for _, fingerprint := range values {
 			set.Add(fingerprint)
@@ -174,7 +171,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 
 	setCount := len(sets)
 	if setCount == 0 {
-		return
+		return fingerprints, nil
 	}
 
 	base := sets[0]
@@ -186,7 +183,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 		fingerprints = append(fingerprints, fingerprint)
 	}
 
-	return
+	return fingerprints, nil
 }
 
 func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fingerprints model.Fingerprints, err error) {
@@ -194,27 +191,27 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fi
 
 	fingerprints = append(fingerprints, values...)
 
-	return
+	return fingerprints, nil
 }
 
-func (s *memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (metric model.Metric, err error) {
+func (s memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (model.Metric, error) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
-		return
+		return nil, nil
 	}
 
-	metric = model.Metric{}
+	metric := model.Metric{}
 	for label, value := range series.metric {
 		metric[label] = value
 	}
 
-	return
+	return metric, nil
 }
 
 func (s *memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (samples model.Values) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
-		return
+		return samples
 	}
 
 	iterator := series.values.Seek(skipListTime(t))
@@ -226,14 +223,14 @@ func (s *memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (
 		iterator = series.values.SeekToLast()
 		if iterator == nil {
 			// The list is empty.
-			return
+			return samples
 		}
 	}
 
 	defer iterator.Close()
 
 	if iterator.Key() == nil || iterator.Value() == nil {
-		return
+		return samples
 	}
 
 	foundTime := time.Time(iterator.Key().(skipListTime))
@@ -249,19 +246,17 @@ func (s *memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (
 		})
 	}
 
-	return
+	return samples
 }
 
-func (s *memorySeriesStorage) GetBoundaryValues(f model.Fingerprint, i model.Interval) (first model.Values, second model.Values) {
-	first = s.GetValueAtTime(f, i.OldestInclusive)
-	second = s.GetValueAtTime(f, i.NewestInclusive)
-	return
+func (s memorySeriesStorage) GetBoundaryValues(f model.Fingerprint, i model.Interval) (model.Values, model.Values) {
+	return s.GetValueAtTime(f, i.OldestInclusive), s.GetValueAtTime(f, i.NewestInclusive)
 }
 
 func (s *memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interval) (samples model.Values) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
-		return
+		return samples
 	}
 
 	iterator := series.values.Seek(skipListTime(i.OldestInclusive))
@@ -273,7 +268,7 @@ func (s *memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interv
 		iterator = series.values.SeekToLast()
 		if iterator == nil {
 			// The list is empty.
-			return
+			return samples
 		}
 	}
 
@@ -297,12 +292,12 @@ func (s *memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interv
 		}
 	}
 
-	return
+	return samples
 }
 
-func (s *memorySeriesStorage) Close() {
-	s.fingerprintToSeries = map[model.Fingerprint]stream{}
-	s.labelPairToFingerprints = map[string]model.Fingerprints{}
+func (s memorySeriesStorage) Close() {
+	s.fingerprintToSeries = map[model.Fingerprint]*stream{}
+	s.labelPairToFingerprints = map[model.LabelPair]model.Fingerprints{}
 	s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
 }
 
@@ -329,10 +324,10 @@ func (s *memorySeriesStorage) ForEachSample(builder IteratorsForFingerprintBuild
 	return
 }
 
-func NewMemorySeriesStorage() *memorySeriesStorage {
-	return &memorySeriesStorage{
-		fingerprintToSeries:     make(map[model.Fingerprint]stream),
-		labelPairToFingerprints: make(map[string]model.Fingerprints),
+func NewMemorySeriesStorage() memorySeriesStorage {
+	return memorySeriesStorage{
+		fingerprintToSeries:     make(map[model.Fingerprint]*stream),
+		labelPairToFingerprints: make(map[model.LabelPair]model.Fingerprints),
 		labelNameToFingerprints: make(map[model.LabelName]model.Fingerprints),
 	}
 }

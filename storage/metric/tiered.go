@@ -239,7 +239,7 @@ type memoryToDiskFlusher struct {
 }
 
 type memoryToDiskFlusherVisitor struct {
-	stream            stream
+	stream            *stream
 	flusher           *memoryToDiskFlusher
 	memoryDeleteMutex *sync.RWMutex
 }
@@ -293,7 +293,7 @@ func (f memoryToDiskFlusherVisitor) Operate(key, value interface{}) (err *storag
 	return
 }
 
-func (f *memoryToDiskFlusher) ForStream(stream stream) (decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) {
+func (f *memoryToDiskFlusher) ForStream(stream *stream) (decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) {
 	visitor := memoryToDiskFlusherVisitor{
 		stream:            stream,
 		flusher:           f,

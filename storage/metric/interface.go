@@ -78,5 +78,5 @@ type Series interface {
 }
 
 type IteratorsForFingerprintBuilder interface {
-	ForStream(stream stream) (storage.RecordDecoder, storage.RecordFilter, storage.RecordOperator)
+	ForStream(stream *stream) (storage.RecordDecoder, storage.RecordFilter, storage.RecordOperator)
 }
