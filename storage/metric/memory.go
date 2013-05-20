@@ -186,7 +186,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 	return fingerprints, nil
 }
 
-func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fingerprints model.Fingerprints, err error) {
+func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fingerprints model.Fingerprints, _ error) {
 	values := s.labelNameToFingerprints[l]
 
 	fingerprints = append(fingerprints, values...)
@@ -194,7 +194,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fi
 	return fingerprints, nil
 }
 
-func (s memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (model.Metric, error) {
+func (s *memorySeriesStorage) GetMetricForFingerprint(f model.Fingerprint) (model.Metric, error) {
 	series, ok := s.fingerprintToSeries[f]
 	if !ok {
 		return nil, nil
@@ -249,7 +249,7 @@ func (s *memorySeriesStorage) GetValueAtTime(f model.Fingerprint, t time.Time) (
 	return samples
 }
 
-func (s memorySeriesStorage) GetBoundaryValues(f model.Fingerprint, i model.Interval) (model.Values, model.Values) {
+func (s *memorySeriesStorage) GetBoundaryValues(f model.Fingerprint, i model.Interval) (model.Values, model.Values) {
 	return s.GetValueAtTime(f, i.OldestInclusive), s.GetValueAtTime(f, i.NewestInclusive)
 }
 
@@ -295,7 +295,7 @@ func (s *memorySeriesStorage) GetRangeValues(f model.Fingerprint, i model.Interv
 	return samples
 }
 
-func (s memorySeriesStorage) Close() {
+func (s *memorySeriesStorage) Close() {
 	s.fingerprintToSeries = map[model.Fingerprint]*stream{}
 	s.labelPairToFingerprints = map[model.LabelPair]model.Fingerprints{}
 	s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
@@ -324,8 +324,8 @@ func (s *memorySeriesStorage) ForEachSample(builder IteratorsForFingerprintBuild
 	return
 }
 
-func NewMemorySeriesStorage() memorySeriesStorage {
-	return memorySeriesStorage{
+func NewMemorySeriesStorage() *memorySeriesStorage {
+	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[model.Fingerprint]*stream),
 		labelPairToFingerprints: make(map[model.LabelPair]model.Fingerprints),
 		labelNameToFingerprints: make(map[model.LabelName]model.Fingerprints),
