@@ -105,8 +105,8 @@ type view struct {
 	*memorySeriesStorage
 }
 
-func (v view) appendSample(fingerprint *model.Fingerprint, timestamp time.Time, value model.SampleValue) {
-	v.memorySeriesStorage.appendSampleWithoutIndexing(fingerprint, timestamp, value)
+func (v view) appendSamples(fingerprint *model.Fingerprint, samples model.Values) {
+	v.memorySeriesStorage.appendSamplesWithoutIndexing(fingerprint, samples)
 }
 
 func newView() view {
