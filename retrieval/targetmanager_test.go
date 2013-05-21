@@ -31,6 +31,10 @@ type fakeTarget struct {
 	scheduleIndex int
 }
 
+func (t fakeTarget) LastError() error {
+	return nil
+}
+
 func (t fakeTarget) Address() string {
 	return "fake"
 }

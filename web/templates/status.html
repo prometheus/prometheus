@@ -36,6 +36,10 @@
               {{range $pool.Targets}}
                 <li>
                 <a href="{{.GlobalAddress}}">{{.Address}}</a> (State: {{.State}}, Base Labels: {{.BaseLabels}})
+                {{if .LastError}}
+                <br/>
+                <span class="error_text"><b>Scrape error:</b> "{{.LastError}}"</span>
+                {{end}}
                 </li>
               {{end}}
             </ul>
