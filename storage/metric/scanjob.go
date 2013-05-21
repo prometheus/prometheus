@@ -21,7 +21,7 @@ import (
 
 // scanJob models a range of queries.
 type scanJob struct {
-	fingerprint model.Fingerprint
+	fingerprint *model.Fingerprint
 	operations  ops
 }
 

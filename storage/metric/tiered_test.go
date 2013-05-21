@@ -53,7 +53,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 	var (
 		instant     = time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local)
 		metric      = model.Metric{model.MetricNameLabel: "request_count"}
-		fingerprint = model.NewFingerprintFromMetric(metric)
+		fingerprint = *model.NewFingerprintFromMetric(metric)
 		scenarios   = []struct {
 			data []model.Sample
 			in   in
@@ -370,7 +370,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 		}
 
 		for j, atTime := range scenario.in.atTime {
-			actual := v.GetValueAtTime(fingerprint, atTime.time)
+			actual := v.GetValueAtTime(&fingerprint, atTime.time)
 
 			if len(actual) != len(scenario.out.atTime[j]) {
 				t.Fatalf("%d.%d. expected %d output, got %d", i, j, len(scenario.out.atTime[j]), len(actual))

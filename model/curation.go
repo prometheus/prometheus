@@ -57,10 +57,10 @@ func NewCurationRemarkFromDTO(d *dto.CurationValue) CurationRemark {
 	}
 }
 
-// CurationKey provides a representation of dto.CurationKey with asociated
+// CurationKey provides a representation of dto.CurationKey with associated
 // business logic methods attached to it to enhance code readability.
 type CurationKey struct {
-	Fingerprint              Fingerprint
+	Fingerprint              *Fingerprint
 	ProcessorMessageRaw      []byte
 	ProcessorMessageTypeName string
 	IgnoreYoungerThan        time.Duration

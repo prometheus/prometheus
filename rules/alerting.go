@@ -103,7 +103,7 @@ func (rule AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorage
 	// Create pending alerts for any new vector elements in the alert expression.
 	resultFingerprints := utility.Set{}
 	for _, sample := range exprResult {
-		fp := model.NewFingerprintFromMetric(sample.Metric)
+		fp := *model.NewFingerprintFromMetric(sample.Metric)
 		resultFingerprints.Add(fp)
 
 		if _, ok := rule.activeAlerts[fp]; !ok {

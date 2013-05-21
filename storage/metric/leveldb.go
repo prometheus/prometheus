@@ -193,7 +193,7 @@ func groupByFingerprint(samples model.Samples) map[model.Fingerprint]model.Sampl
 	)
 
 	for _, sample := range samples {
-		fingerprint := model.NewFingerprintFromMetric(sample.Metric)
+		fingerprint := *model.NewFingerprintFromMetric(sample.Metric)
 		samples := fingerprintToSamples[fingerprint]
 		samples = append(samples, sample)
 		fingerprintToSamples[fingerprint] = samples
@@ -277,7 +277,7 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint
 				}
 
 				for _, fingerprint := range fingerprints {
-					fingerprintSet.Add(fingerprint)
+					fingerprintSet.Add(*fingerprint)
 				}
 			}
 
@@ -291,8 +291,9 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint
 
 	for labelName, fingerprintSet := range labelNameFingerprints {
 		fingerprints := model.Fingerprints{}
-		for fingerprint := range fingerprintSet {
-			fingerprints = append(fingerprints, fingerprint.(model.Fingerprint))
+		for e := range fingerprintSet {
+			fingerprint := e.(model.Fingerprint)
+			fingerprints = append(fingerprints, &fingerprint)
 		}
 
 		sort.Sort(fingerprints)
@@ -348,7 +349,7 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint
 				}
 
 				for _, fingerprint := range fingerprints {
-					fingerprintSet.Add(fingerprint)
+					fingerprintSet.Add(*fingerprint)
 				}
 			}
 
@@ -362,8 +363,9 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint
 
 	for labelPair, fingerprintSet := range labelPairFingerprints {
 		fingerprints := model.Fingerprints{}
-		for fingerprint := range fingerprintSet {
-			fingerprints = append(fingerprints, fingerprint.(model.Fingerprint))
+		for e := range fingerprintSet {
+			fingerprint := e.(model.Fingerprint)
+			fingerprints = append(fingerprints, &fingerprint)
 		}
 
 		sort.Sort(fingerprints)
@@ -578,7 +580,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 			group = group[take:lengthOfGroup]
 
 			key := model.SampleKey{
-				Fingerprint:    fingerprint,
+				Fingerprint:    &fingerprint,
 				FirstTimestamp: chunk[0].Timestamp,
 				LastTimestamp:  chunk[take-1].Timestamp,
 				SampleCount:    uint32(take),
@@ -722,7 +724,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 
 		for _, m := range unmarshaled.Member {
 			fp := model.NewFingerprintFromRowKey(*m.Signature)
-			set.Add(fp)
+			set.Add(*fp)
 		}
 
 		sets = append(sets, set)
@@ -739,7 +741,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 	}
 	for _, e := range base.Elements() {
 		fingerprint := e.(model.Fingerprint)
-		fps = append(fps, fingerprint)
+		fps = append(fps, &fingerprint)
 	}
 
 	return
@@ -772,7 +774,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) (m model.Metric, err error) {
+func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint) (m model.Metric, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -799,15 +801,15 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f model.Fingerprint) 
 	return
 }
 
-func (l LevelDBMetricPersistence) GetValueAtTime(f model.Fingerprint, t time.Time) (samples model.Values) {
+func (l LevelDBMetricPersistence) GetValueAtTime(f *model.Fingerprint, t time.Time) (samples model.Values) {
 	panic("Not implemented")
 }
 
-func (l LevelDBMetricPersistence) GetBoundaryValues(f model.Fingerprint, i model.Interval) (first model.Values, second model.Values) {
+func (l LevelDBMetricPersistence) GetBoundaryValues(f *model.Fingerprint, i model.Interval) (first model.Values, second model.Values) {
 	panic("Not implemented")
 }
 
-func (l *LevelDBMetricPersistence) GetRangeValues(f model.Fingerprint, i model.Interval) (samples model.Values) {
+func (l *LevelDBMetricPersistence) GetRangeValues(f *model.Fingerprint, i model.Interval) (samples model.Values) {
 	panic("Not implemented")
 }
 
