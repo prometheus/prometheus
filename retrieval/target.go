@@ -90,6 +90,8 @@ type Target interface {
 	//
 	// Right now, this is used as the sorting key in TargetPool.
 	scheduledFor() time.Time
+	// Return the last encountered scrape error, if any.
+	LastError() error
 	// The address to which the Target corresponds.  Out of all of the available
 	// points in this interface, this one is the best candidate to change given
 	// the ways to express the endpoint.
@@ -110,14 +112,18 @@ type target struct {
 	// scheduler provides the scheduling strategy that is used to formulate what
 	// is returned in Target.scheduledFor.
 	scheduler scheduler
-	state     TargetState
+	// The current health state of the target.
+	state TargetState
+	// The last encountered scrape error, if any.
+	lastError error
 
 	address string
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
 	Deadline time.Duration
 	// Any base labels that are added to this target and its metrics.
 	baseLabels model.LabelSet
-	client     http.Client
+	// The HTTP client used to scrape the target's endpoint.
+	client http.Client
 }
 
 // Furnish a reasonably configured target for querying.
@@ -176,6 +182,7 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 
 	t.scheduler.Reschedule(earliest, futureState)
 	t.state = futureState
+	t.lastError = err
 
 	return err
 }
@@ -219,6 +226,10 @@ func (t target) State() TargetState {
 
 func (t target) scheduledFor() time.Time {
 	return t.scheduler.ScheduledFor()
+}
+
+func (t target) LastError() error {
+	return t.lastError
 }
 
 func (t target) Address() string {
