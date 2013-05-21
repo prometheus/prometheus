@@ -83,3 +83,9 @@ input[name=end_input], input[name=range_input] {
 .literal_output td {
   font-family: monospace;
 }
+
+.error_text {
+  background-color: #f2dede;
+  border: 1px solid #c0a0a0;
+  padding: 0 2px 0 2px;
+}
