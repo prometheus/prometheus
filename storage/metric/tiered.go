@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
 	dto "github.com/prometheus/prometheus/model/generated"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"log"
 	"sort"
@@ -57,6 +56,7 @@ type TieredStorage struct {
 	// BUG(matt): This introduces a Law of Demeter violation.  Ugh.
 	DiskStorage *LevelDBMetricPersistence
 
+	// BUG(matt): Replace this with a map?
 	appendToDiskQueue chan model.Samples
 
 	diskFrontier *diskFrontier
@@ -64,13 +64,6 @@ type TieredStorage struct {
 	memoryArena         *memorySeriesStorage
 	memoryTTL           time.Duration
 	flushMemoryInterval time.Duration
-
-	// This mutex manages any concurrent reads/writes of the memoryArena.
-	memoryMutex sync.RWMutex
-	// This mutex blocks only deletions from the memoryArena. It is held for a
-	// potentially long time for an entire renderView() duration, since we depend
-	// on no samples being removed from memory after grabbing a LevelDB snapshot.
-	memoryDeleteMutex sync.RWMutex
 
 	viewQueue chan viewJob
 
@@ -111,9 +104,7 @@ func (t *TieredStorage) AppendSamples(samples model.Samples) (err error) {
 		return fmt.Errorf("Storage is in the process of draining.")
 	}
 
-	t.memoryMutex.Lock()
 	t.memoryArena.AppendSamples(samples)
-	t.memoryMutex.Unlock()
 
 	return
 }
@@ -130,10 +121,9 @@ func (t *TieredStorage) Drain() {
 }
 
 // Enqueues a ViewRequestBuilder for materialization, subject to a timeout.
-func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (view View, err error) {
+func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (View, error) {
 	if len(t.draining) > 0 {
-		err = fmt.Errorf("Storage is in the process of draining.")
-		return
+		return nil, fmt.Errorf("Storage is in the process of draining.")
 	}
 
 	// The result channel needs a one-element buffer in case we have timed out in
@@ -152,16 +142,14 @@ func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 	}
 
 	select {
-	case value := <-result:
-		view = value
-	case err = <-errChan:
-		return
+	case view := <-result:
+		return view, nil
+	case err := <-errChan:
+		return nil, err
 	case <-time.After(deadline):
 		abortChan <- true
-		err = fmt.Errorf("MakeView timed out after %s.", deadline)
+		return nil, fmt.Errorf("MakeView timed out after %s.", deadline)
 	}
-
-	return
 }
 
 func (t *TieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
@@ -218,6 +206,39 @@ func (t *TieredStorage) Flush() {
 	t.flushMemory()
 }
 
+func (t *TieredStorage) flushMemory() {
+	t.memoryArena.RLock()
+	defer t.memoryArena.RUnlock()
+
+	cutOff := time.Now().Add(-1 * t.memoryTTL)
+
+	for _, stream := range t.memoryArena.fingerprintToSeries {
+		finder := func(i int) bool {
+			return !cutOff.After(stream.values[i].Timestamp)
+		}
+
+		stream.Lock()
+
+		i := sort.Search(len(stream.values), finder)
+		toArchive := stream.values[i:]
+		toKeep := stream.values[:i]
+		queued := make(model.Samples, 0, len(toArchive))
+
+		for _, value := range toArchive {
+			queued = append(queued, model.Sample{
+				Metric:    stream.metric,
+				Timestamp: value.Timestamp,
+				Value:     value.Value,
+			})
+		}
+
+		t.appendToDiskQueue <- queued
+
+		stream.values = toKeep
+		stream.Unlock()
+	}
+}
+
 func (t *TieredStorage) Close() {
 	log.Println("Closing tiered storage...")
 	t.Drain()
@@ -229,118 +250,6 @@ func (t *TieredStorage) Close() {
 	log.Println("Done.")
 }
 
-type memoryToDiskFlusher struct {
-	toDiskQueue       chan model.Samples
-	disk              MetricPersistence
-	olderThan         time.Time
-	valuesAccepted    int
-	valuesRejected    int
-	memoryDeleteMutex *sync.RWMutex
-}
-
-type memoryToDiskFlusherVisitor struct {
-	stream            *stream
-	flusher           *memoryToDiskFlusher
-	memoryDeleteMutex *sync.RWMutex
-}
-
-func (f memoryToDiskFlusherVisitor) DecodeKey(in interface{}) (out interface{}, err error) {
-	out = time.Time(in.(skipListTime))
-	return
-}
-
-func (f memoryToDiskFlusherVisitor) DecodeValue(in interface{}) (out interface{}, err error) {
-	out = in.(value).get()
-	return
-}
-
-func (f memoryToDiskFlusherVisitor) Filter(key, value interface{}) (filterResult storage.FilterResult) {
-	var (
-		recordTime = key.(time.Time)
-	)
-
-	if recordTime.Before(f.flusher.olderThan) {
-		f.flusher.valuesAccepted++
-
-		return storage.ACCEPT
-	}
-	f.flusher.valuesRejected++
-	return storage.STOP
-}
-
-func (f memoryToDiskFlusherVisitor) Operate(key, value interface{}) (err *storage.OperatorError) {
-	var (
-		recordTime  = key.(time.Time)
-		recordValue = value.(model.SampleValue)
-	)
-
-	if len(f.flusher.toDiskQueue) == cap(f.flusher.toDiskQueue) {
-		f.flusher.Flush()
-	}
-
-	f.flusher.toDiskQueue <- model.Samples{
-		model.Sample{
-			Metric:    f.stream.metric,
-			Timestamp: recordTime,
-			Value:     recordValue,
-		},
-	}
-
-	f.memoryDeleteMutex.Lock()
-	f.stream.values.Delete(skipListTime(recordTime))
-	f.memoryDeleteMutex.Unlock()
-
-	return
-}
-
-func (f *memoryToDiskFlusher) ForStream(stream *stream) (decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) {
-	visitor := memoryToDiskFlusherVisitor{
-		stream:            stream,
-		flusher:           f,
-		memoryDeleteMutex: f.memoryDeleteMutex,
-	}
-
-	return visitor, visitor, visitor
-}
-
-func (f *memoryToDiskFlusher) Flush() {
-	length := len(f.toDiskQueue)
-	samples := model.Samples{}
-	for i := 0; i < length; i++ {
-		samples = append(samples, <-f.toDiskQueue...)
-	}
-	f.disk.AppendSamples(samples)
-}
-
-func (f memoryToDiskFlusher) Close() {
-	f.Flush()
-}
-
-// Persist a whole bunch of samples from memory to the datastore.
-func (t *TieredStorage) flushMemory() {
-	begin := time.Now()
-	defer func() {
-		duration := time.Since(begin)
-
-		recordOutcome(duration, nil, map[string]string{operation: appendSample, result: success}, map[string]string{operation: flushMemory, result: failure})
-	}()
-
-	t.memoryMutex.RLock()
-	defer t.memoryMutex.RUnlock()
-
-	flusher := &memoryToDiskFlusher{
-		disk:              t.DiskStorage,
-		olderThan:         time.Now().Add(-1 * t.memoryTTL),
-		toDiskQueue:       t.appendToDiskQueue,
-		memoryDeleteMutex: &t.memoryDeleteMutex,
-	}
-	defer flusher.Close()
-
-	t.memoryArena.ForEachSample(flusher)
-
-	return
-}
-
 func (t *TieredStorage) renderView(viewJob viewJob) {
 	// Telemetry.
 	var err error
@@ -350,10 +259,6 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 		recordOutcome(duration, err, map[string]string{operation: renderView, result: success}, map[string]string{operation: renderView, result: failure})
 	}()
-
-	// No samples may be deleted from memory while rendering a view.
-	t.memoryDeleteMutex.RLock()
-	defer t.memoryDeleteMutex.RUnlock()
 
 	scans := viewJob.builder.ScanJobs()
 	view := newView()
@@ -378,6 +283,8 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 		}
 
 		standingOps := scanJob.operations
+		memValues := t.memoryArena.CloneSamples(scanJob.fingerprint)
+
 		for len(standingOps) > 0 {
 			// Abort the view rendering if the caller (MakeView) has timed out.
 			if len(viewJob.abort) > 0 {
@@ -388,16 +295,8 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			targetTime := *standingOps[0].CurrentTime()
 
 			currentChunk := chunk{}
-			t.memoryMutex.RLock()
-			memValues := t.memoryArena.GetValueAtTime(scanJob.fingerprint, targetTime)
-			t.memoryMutex.RUnlock()
 			// If we aimed before the oldest value in memory, load more data from disk.
 			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && seriesFrontier != nil {
-				// XXX: For earnest performance gains analagous to the benchmarking we
-				//      performed, chunk should only be reloaded if it no longer contains
-				//      the values we're looking for.
-				//
-				//      To better understand this, look at https://github.com/prometheus/prometheus/blob/benchmark/leveldb/iterator-seek-characteristics/leveldb.go#L239 and note the behavior around retrievedValue.
 				diskValues := t.loadChunkAroundTime(iterator, seriesFrontier, scanJob.fingerprint, targetTime)
 
 				// If we aimed past the newest value on disk, combine it with the next value from memory.

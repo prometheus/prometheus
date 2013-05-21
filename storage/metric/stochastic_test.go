@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 	"math"
 	"math/rand"
+	"sort"
 	"testing"
 	"testing/quick"
 	"time"
@@ -223,6 +224,20 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *model.Fingerprint, i
 	return
 }
 
+type timeslice []time.Time
+
+func (t timeslice) Len() int {
+	return len(t)
+}
+
+func (t timeslice) Swap(i, j int) {
+	t[i], t[j] = t[j], t[i]
+}
+
+func (t timeslice) Less(i, j int) bool {
+	return t[i].Before(t[j])
+}
+
 func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
 	stochastic := func(x int) (success bool) {
 		p, closer := persistenceMaker()
@@ -266,11 +281,9 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 
 			timestamps := map[int64]bool{}
 			metricTimestamps[metricIndex] = timestamps
-			var (
-				newestSample  int64 = math.MinInt64
-				oldestSample  int64 = math.MaxInt64
-				nextTimestamp func() int64
-			)
+			var newestSample int64 = math.MinInt64
+			var oldestSample int64 = math.MaxInt64
+			var nextTimestamp func() int64
 
 			nextTimestamp = func() int64 {
 				var candidate int64
@@ -294,8 +307,15 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				return candidate
 			}
 
+			// BUG(matt): Invariant of the in-memory database assumes this.
+			sortedTimestamps := timeslice{}
 			for sampleIndex := 0; sampleIndex < numberOfSamples; sampleIndex++ {
-				sample.Timestamp = time.Unix(nextTimestamp(), 0)
+				sortedTimestamps = append(sortedTimestamps, time.Unix(nextTimestamp(), 0))
+			}
+			sort.Sort(sortedTimestamps)
+
+			for sampleIndex := 0; sampleIndex < numberOfSamples; sampleIndex++ {
+				sample.Timestamp = sortedTimestamps[sampleIndex]
 				sample.Value = model.SampleValue(sampleIndex)
 
 				err := p.AppendSample(sample)

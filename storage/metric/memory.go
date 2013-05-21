@@ -15,10 +15,16 @@ package metric
 
 import (
 	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/utility"
-	"github.com/ryszard/goskiplist/skiplist"
+	"sort"
+	"sync"
 	"time"
+)
+
+const (
+	// Assuming sample rate of 1 / 15Hz, this allows for one hour's worth of
+	// storage per metric without any major reallocations.
+	initialSeriesArena = 4 * 60
 )
 
 // Models a given sample entry stored in the in-memory arena.
@@ -35,69 +41,94 @@ func (v singletonValue) get() model.SampleValue {
 	return model.SampleValue(v)
 }
 
-type skipListTime time.Time
-
-func (t skipListTime) LessThan(o skiplist.Ordered) bool {
-	return time.Time(o.(skipListTime)).Before(time.Time(t))
-}
-
 type stream struct {
+	sync.RWMutex
+
 	metric model.Metric
-	values *skiplist.SkipList
+	values model.Values
 }
 
 func (s *stream) add(timestamp time.Time, value model.SampleValue) {
-	s.values.Set(skipListTime(timestamp), singletonValue(value))
+	s.Lock()
+	defer s.Unlock()
+
+	s.values = append(s.values, model.SamplePair{
+		Timestamp: timestamp,
+		Value:     value,
+	})
 }
 
-func (s *stream) forEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error) {
-	if s.values.Len() == 0 {
-		return false, nil
+func (s *stream) clone() model.Values {
+	s.RLock()
+	defer s.RUnlock()
+
+	clone := make(model.Values, len(s.values))
+	copy(clone, s.values)
+
+	return clone
+}
+
+func (s *stream) getValueAtTime(t time.Time) model.Values {
+	s.RLock()
+	defer s.RUnlock()
+
+	l := len(s.values)
+	switch l {
+	case 0:
+		return model.Values{}
+	case 1:
+		return model.Values{s.values[0]}
+	default:
+		index := sort.Search(l, func(i int) bool {
+			return !s.values[i].Timestamp.Before(t)
+		})
+
+		if index == 0 {
+			return model.Values{s.values[0]}
+		}
+		if index == l {
+			return model.Values{s.values[l-1]}
+		}
+
+		if s.values[index].Timestamp.Equal(t) {
+			return model.Values{s.values[index]}
+		}
+		return model.Values{s.values[index-1], s.values[index]}
 	}
-	iterator := s.values.SeekToLast()
+}
 
-	defer iterator.Close()
+func (s *stream) getBoundaryValues(i model.Interval) (model.Values, model.Values) {
+	return s.getValueAtTime(i.OldestInclusive), s.getValueAtTime(i.NewestInclusive)
+}
 
-	for !(iterator.Key() == nil || iterator.Value() == nil) {
-		decodedKey, decodeErr := decoder.DecodeKey(iterator.Key())
-		if decodeErr != nil {
-			panic(decodeErr)
-		}
-		decodedValue, decodeErr := decoder.DecodeValue(iterator.Value())
-		if decodeErr != nil {
-			panic(decodeErr)
-		}
+func (s *stream) getRangeValues(in model.Interval) model.Values {
+	s.RLock()
+	defer s.RUnlock()
 
-		switch filter.Filter(decodedKey, decodedValue) {
-		case storage.STOP:
-			return false, nil
-		case storage.SKIP:
-			continue
-		case storage.ACCEPT:
-			opErr := operator.Operate(decodedKey, decodedValue)
-			if opErr != nil {
-				if opErr.Continuable {
-					continue
-				}
-				break
-			}
-		}
-		if !iterator.Previous() {
-			break
-		}
-	}
+	oldest := sort.Search(len(s.values), func(i int) bool {
+		return !s.values[i].Timestamp.Before(in.OldestInclusive)
+	})
 
-	return true, nil
+	newest := sort.Search(len(s.values), func(i int) bool {
+		return s.values[i].Timestamp.After(in.NewestInclusive)
+	})
+
+	result := make(model.Values, newest-oldest)
+	copy(result, s.values[oldest:newest])
+
+	return result
 }
 
 func newStream(metric model.Metric) *stream {
 	return &stream{
-		values: skiplist.New(),
 		metric: metric,
+		values: make(model.Values, 0, initialSeriesArena),
 	}
 }
 
 type memorySeriesStorage struct {
+	sync.RWMutex
+
 	fingerprintToSeries     map[model.Fingerprint]*stream
 	labelPairToFingerprints map[model.LabelPair]model.Fingerprints
 	labelNameToFingerprints map[model.LabelName]model.Fingerprints
@@ -114,10 +145,13 @@ func (s *memorySeriesStorage) AppendSamples(samples model.Samples) error {
 func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 	metric := sample.Metric
 	fingerprint := model.NewFingerprintFromMetric(metric)
+	s.RLock()
 	series, ok := s.fingerprintToSeries[*fingerprint]
+	s.RUnlock()
 
 	if !ok {
 		series = newStream(metric)
+		s.Lock()
 		s.fingerprintToSeries[*fingerprint] = series
 
 		for k, v := range metric {
@@ -143,20 +177,24 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 // Append raw sample, bypassing indexing. Only used to add data to views, which
 // don't need to lookup by metric.
 func (s *memorySeriesStorage) appendSampleWithoutIndexing(f *model.Fingerprint, timestamp time.Time, value model.SampleValue) {
+	s.RLock()
 	series, ok := s.fingerprintToSeries[*f]
+	s.RUnlock()
 
 	if !ok {
 		series = newStream(model.Metric{})
+		s.Lock()
 		s.fingerprintToSeries[*f] = series
+		s.Unlock()
 	}
 
 	series.add(timestamp, value)
 }
 
 func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fingerprints model.Fingerprints, err error) {
-
 	sets := []utility.Set{}
 
+	s.RLock()
 	for k, v := range l {
 		values := s.labelPairToFingerprints[model.LabelPair{
 			Name:  k,
@@ -168,6 +206,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 		}
 		sets = append(sets, set)
 	}
+	s.RUnlock()
 
 	setCount := len(sets)
 	if setCount == 0 {
@@ -186,16 +225,24 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 	return fingerprints, nil
 }
 
-func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (fingerprints model.Fingerprints, _ error) {
-	values := s.labelNameToFingerprints[l]
+func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (model.Fingerprints, error) {
+	s.RLock()
+	values, ok := s.labelNameToFingerprints[l]
+	s.RUnlock()
+	if !ok {
+		return nil, nil
+	}
 
-	fingerprints = append(fingerprints, values...)
+	fingerprints := make(model.Fingerprints, len(values))
+	copy(fingerprints, values)
 
 	return fingerprints, nil
 }
 
 func (s *memorySeriesStorage) GetMetricForFingerprint(f *model.Fingerprint) (model.Metric, error) {
+	s.RLock()
 	series, ok := s.fingerprintToSeries[*f]
+	s.RUnlock()
 	if !ok {
 		return nil, nil
 	}
@@ -208,91 +255,49 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(f *model.Fingerprint) (mod
 	return metric, nil
 }
 
-func (s *memorySeriesStorage) GetValueAtTime(f *model.Fingerprint, t time.Time) (samples model.Values) {
+func (s *memorySeriesStorage) CloneSamples(f *model.Fingerprint) model.Values {
+	s.RLock()
 	series, ok := s.fingerprintToSeries[*f]
+	s.RUnlock()
 	if !ok {
-		return samples
+		return nil
 	}
 
-	iterator := series.values.Seek(skipListTime(t))
-	if iterator == nil {
-		// If the iterator is nil, it means we seeked past the end of the series,
-		// so we seek to the last value instead. Due to the reverse ordering
-		// defined on skipListTime, this corresponds to the sample with the
-		// earliest timestamp.
-		iterator = series.values.SeekToLast()
-		if iterator == nil {
-			// The list is empty.
-			return samples
-		}
+	return series.clone()
+}
+
+func (s *memorySeriesStorage) GetValueAtTime(f *model.Fingerprint, t time.Time) model.Values {
+	s.RLock()
+	series, ok := s.fingerprintToSeries[*f]
+	s.RUnlock()
+	if !ok {
+		return nil
 	}
 
-	defer iterator.Close()
-
-	if iterator.Key() == nil || iterator.Value() == nil {
-		return samples
-	}
-
-	foundTime := time.Time(iterator.Key().(skipListTime))
-	samples = append(samples, model.SamplePair{
-		Timestamp: foundTime,
-		Value:     iterator.Value().(value).get(),
-	})
-
-	if foundTime.Before(t) && iterator.Previous() {
-		samples = append(samples, model.SamplePair{
-			Timestamp: time.Time(iterator.Key().(skipListTime)),
-			Value:     iterator.Value().(value).get(),
-		})
-	}
-
-	return samples
+	return series.getValueAtTime(t)
 }
 
 func (s *memorySeriesStorage) GetBoundaryValues(f *model.Fingerprint, i model.Interval) (model.Values, model.Values) {
-	return s.GetValueAtTime(f, i.OldestInclusive), s.GetValueAtTime(f, i.NewestInclusive)
+	s.RLock()
+	series, ok := s.fingerprintToSeries[*f]
+	s.RUnlock()
+	if !ok {
+		return nil, nil
+	}
+
+	return series.getBoundaryValues(i)
 }
 
-func (s *memorySeriesStorage) GetRangeValues(f *model.Fingerprint, i model.Interval) (samples model.Values) {
+func (s *memorySeriesStorage) GetRangeValues(f *model.Fingerprint, i model.Interval) model.Values {
+	s.RLock()
 	series, ok := s.fingerprintToSeries[*f]
+	s.RUnlock()
+
 	if !ok {
-		return samples
+		return nil
 	}
 
-	iterator := series.values.Seek(skipListTime(i.OldestInclusive))
-	if iterator == nil {
-		// If the iterator is nil, it means we seeked past the end of the series,
-		// so we seek to the last value instead. Due to the reverse ordering
-		// defined on skipListTime, this corresponds to the sample with the
-		// earliest timestamp.
-		iterator = series.values.SeekToLast()
-		if iterator == nil {
-			// The list is empty.
-			return samples
-		}
-	}
-
-	defer iterator.Close()
-
-	for {
-		timestamp := time.Time(iterator.Key().(skipListTime))
-		if timestamp.After(i.NewestInclusive) {
-			break
-		}
-
-		if !timestamp.Before(i.OldestInclusive) {
-			samples = append(samples, model.SamplePair{
-				Value:     iterator.Value().(value).get(),
-				Timestamp: timestamp,
-			})
-		}
-
-		if !iterator.Previous() {
-			break
-		}
-	}
-
-	return samples
+	return series.getRangeValues(i)
 }
 
 func (s *memorySeriesStorage) Close() {
@@ -311,16 +316,6 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (v
 			}
 		}
 	}
-	return
-}
-
-func (s *memorySeriesStorage) ForEachSample(builder IteratorsForFingerprintBuilder) (err error) {
-	for _, stream := range s.fingerprintToSeries {
-		decoder, filter, operator := builder.ForStream(stream)
-
-		stream.forEach(decoder, filter, operator)
-	}
-
 	return
 }
 
