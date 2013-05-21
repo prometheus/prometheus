@@ -74,7 +74,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.stacked = self.queryForm.find("input[name=stacked]");
   self.insertMetric = self.queryForm.find("select[name=insert_metric]");
   self.refreshInterval = self.queryForm.find("select[name=refresh]");
-  
+
   self.consoleTab = graphWrapper.find(".console");
   self.graphTab   = graphWrapper.find(".graph_container");
   self.tabs = graphWrapper.find(".tabs");;
@@ -403,7 +403,8 @@ Prometheus.Graph.prototype.showGraph = function() {
     width: Math.max(self.graph.innerWidth(), 200),
     renderer: (self.stacked.is(":checked") ? "stack" : "line"),
     interpolation: "linear",
-    series: self.data
+    series: self.data,
+    min: "auto",
   });
 
   var xAxis = new Rickshaw.Graph.Axis.Time({ graph: self.rickshawGraph });
@@ -543,8 +544,8 @@ function init() {
     cache: false
   });
 
-  $.ajax({ 
-    url: "/static/js/graph_template.handlebar",  
+  $.ajax({
+    url: "/static/js/graph_template.handlebar",
     success: function(data) {
       graphTemplate = Handlebars.compile(data);
       var options = parseGraphOptionsFromUrl();
@@ -555,7 +556,7 @@ function init() {
         addGraph(options[i]);
       }
       $("#add_graph").click(function() { addGraph({}); });
-    } 
+    }
   })
 }
 $(init);
