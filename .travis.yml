@@ -2,11 +2,17 @@
 
 language: go
 
-# Detective work is required to ascertain why this is required BOTH in the
-# before_script directive and in the shell library.
+# Explicitly stop before_script from doing anything by giving 'em nil work.
 before_script:
- - gvm install go1.1 || true
- - gvm use go1.1 || true
+ - echo "Before Script"
+
+# Explicitly stop install from doing anything by giving 'em nil work.
+install:
+ - echo "Install"
 
 script:
+ - echo "Script"
+ - cd ${TRAVIS_BUILD_DIR}
+ - gvm install go1.1 || true
+ - gvm use go1.1 || true
  - bash -l ./tests-for-die-in-a-fire-travis.sh
