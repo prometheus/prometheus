@@ -87,8 +87,9 @@ func (v viewRequestBuilder) ScanJobs() (j scanJobs) {
 	for fingerprint, operations := range v.operations {
 		sort.Sort(startsAtSort{operations})
 
+		fpCopy := fingerprint
 		j = append(j, scanJob{
-			fingerprint: fingerprint,
+			fingerprint: &fpCopy,
 			operations:  optimize(operations),
 		})
 
@@ -104,7 +105,7 @@ type view struct {
 	*memorySeriesStorage
 }
 
-func (v view) appendSample(fingerprint model.Fingerprint, timestamp time.Time, value model.SampleValue) {
+func (v view) appendSample(fingerprint *model.Fingerprint, timestamp time.Time, value model.SampleValue) {
 	v.memorySeriesStorage.appendSampleWithoutIndexing(fingerprint, timestamp, value)
 }
 

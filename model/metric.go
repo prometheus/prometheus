@@ -204,7 +204,7 @@ func (v Values) ToDTO() (out *dto.SampleValueSeries) {
 	return
 }
 
-func (v Values) ToSampleKey(f Fingerprint) SampleKey {
+func (v Values) ToSampleKey(f *Fingerprint) SampleKey {
 	return SampleKey{
 		Fingerprint:    f,
 		FirstTimestamp: v[0].Timestamp,

@@ -113,7 +113,7 @@ func LabelNameToDTO(l *LabelName) *dto.LabelName {
 	}
 }
 
-func FingerprintToDTO(f Fingerprint) *dto.Fingerprint {
+func FingerprintToDTO(f *Fingerprint) *dto.Fingerprint {
 	return &dto.Fingerprint{
 		Signature: proto.String(f.ToRowKey()),
 	}

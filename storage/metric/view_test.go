@@ -144,17 +144,17 @@ func testBuilder(t test.Tester) {
 		}
 
 		for _, atTime := range scenario.in.atTimes {
-			fingerprint := model.NewFingerprintFromRowKey(atTime.fingerprint)
+			fingerprint := *model.NewFingerprintFromRowKey(atTime.fingerprint)
 			builder.GetMetricAtTime(fingerprint, atTime.time)
 		}
 
 		for _, atInterval := range scenario.in.atIntervals {
-			fingerprint := model.NewFingerprintFromRowKey(atInterval.fingerprint)
+			fingerprint := *model.NewFingerprintFromRowKey(atInterval.fingerprint)
 			builder.GetMetricAtInterval(fingerprint, atInterval.from, atInterval.through, atInterval.interval)
 		}
 
 		for _, atRange := range scenario.in.atRanges {
-			fingerprint := model.NewFingerprintFromRowKey(atRange.fingerprint)
+			fingerprint := *model.NewFingerprintFromRowKey(atRange.fingerprint)
 			builder.GetMetricRange(fingerprint, atRange.from, atRange.through)
 		}
 

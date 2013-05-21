@@ -29,9 +29,9 @@ import (
 // This is used to reduce the burden associated with LevelDB iterator
 // management.
 type diskFrontier struct {
-	firstFingerprint model.Fingerprint
+	firstFingerprint *model.Fingerprint
 	firstSupertime   time.Time
-	lastFingerprint  model.Fingerprint
+	lastFingerprint  *model.Fingerprint
 	lastSupertime    time.Time
 }
 
@@ -39,7 +39,7 @@ func (f diskFrontier) String() string {
 	return fmt.Sprintf("diskFrontier from %s at %s to %s at %s", f.firstFingerprint.ToRowKey(), f.firstSupertime, f.lastFingerprint.ToRowKey(), f.lastSupertime)
 }
 
-func (f diskFrontier) ContainsFingerprint(fingerprint model.Fingerprint) bool {
+func (f diskFrontier) ContainsFingerprint(fingerprint *model.Fingerprint) bool {
 	return !(fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint))
 }
 
@@ -89,7 +89,7 @@ func (f seriesFrontier) String() string {
 // newSeriesFrontier furnishes a populated diskFrontier for a given
 // fingerprint.  A nil diskFrontier will be returned if the series cannot
 // be found in the store.
-func newSeriesFrontier(f model.Fingerprint, d diskFrontier, i leveldb.Iterator) (s *seriesFrontier, err error) {
+func newSeriesFrontier(f *model.Fingerprint, d diskFrontier, i leveldb.Iterator) (s *seriesFrontier, err error) {
 	lowerSeek := firstSupertime
 	upperSeek := lastSupertime
 
