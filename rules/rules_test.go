@@ -319,6 +319,18 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
+			// Counter resets are ignored by delta() if counter == 1.
+			expr:           "delta(testcounter[50m], 1)",
+			output:         []string{"testcounter{} => 90 @[%v]"},
+			fullRanges:     1,
+			intervalRanges: 0,
+		}, {
+			// Counter resets are not ignored by delta() if counter == 0.
+			expr:           "delta(testcounter[50m], 0)",
+			output:         []string{"testcounter{} => 50 @[%v]"},
+			fullRanges:     1,
+			intervalRanges: 0,
+		}, {
 			// Empty expressions shouldn't parse.
 			expr:       "",
 			shouldFail: true,

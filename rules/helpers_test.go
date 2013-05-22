@@ -23,10 +23,8 @@ import (
 var testSampleInterval = time.Duration(5) * time.Minute
 var testStartTime = time.Time{}
 
-func getTestValueStream(startVal model.SampleValue,
-	endVal model.SampleValue,
-	stepVal model.SampleValue) (resultValues model.Values) {
-	currentTime := testStartTime
+func getTestValueStream(startVal model.SampleValue, endVal model.SampleValue, stepVal model.SampleValue, startTime time.Time) (resultValues model.Values) {
+	currentTime := startTime
 	for currentVal := startVal; currentVal <= endVal; currentVal += stepVal {
 		sample := model.SamplePair{
 			Value:     currentVal,
@@ -74,7 +72,7 @@ var testMatrix = ast.Matrix{
 			"instance":            "0",
 			"group":               "production",
 		},
-		Values: getTestValueStream(0, 100, 10),
+		Values: getTestValueStream(0, 100, 10, testStartTime),
 	},
 	{
 		Metric: model.Metric{
@@ -83,7 +81,7 @@ var testMatrix = ast.Matrix{
 			"instance":            "1",
 			"group":               "production",
 		},
-		Values: getTestValueStream(0, 200, 20),
+		Values: getTestValueStream(0, 200, 20, testStartTime),
 	},
 	{
 		Metric: model.Metric{
@@ -92,7 +90,7 @@ var testMatrix = ast.Matrix{
 			"instance":            "0",
 			"group":               "canary",
 		},
-		Values: getTestValueStream(0, 300, 30),
+		Values: getTestValueStream(0, 300, 30, testStartTime),
 	},
 	{
 		Metric: model.Metric{
@@ -101,7 +99,7 @@ var testMatrix = ast.Matrix{
 			"instance":            "1",
 			"group":               "canary",
 		},
-		Values: getTestValueStream(0, 400, 40),
+		Values: getTestValueStream(0, 400, 40, testStartTime),
 	},
 	{
 		Metric: model.Metric{
@@ -110,7 +108,7 @@ var testMatrix = ast.Matrix{
 			"instance":            "0",
 			"group":               "production",
 		},
-		Values: getTestValueStream(0, 500, 50),
+		Values: getTestValueStream(0, 500, 50, testStartTime),
 	},
 	{
 		Metric: model.Metric{
@@ -119,7 +117,7 @@ var testMatrix = ast.Matrix{
 			"instance":            "1",
 			"group":               "production",
 		},
-		Values: getTestValueStream(0, 600, 60),
+		Values: getTestValueStream(0, 600, 60, testStartTime),
 	},
 	{
 		Metric: model.Metric{
@@ -128,7 +126,7 @@ var testMatrix = ast.Matrix{
 			"instance":            "0",
 			"group":               "canary",
 		},
-		Values: getTestValueStream(0, 700, 70),
+		Values: getTestValueStream(0, 700, 70, testStartTime),
 	},
 	{
 		Metric: model.Metric{
@@ -137,7 +135,7 @@ var testMatrix = ast.Matrix{
 			"instance":            "1",
 			"group":               "canary",
 		},
-		Values: getTestValueStream(0, 800, 80),
+		Values: getTestValueStream(0, 800, 80, testStartTime),
 	},
 	// Single-letter metric and label names.
 	{
@@ -145,7 +143,14 @@ var testMatrix = ast.Matrix{
 			model.MetricNameLabel: "x",
 			"y": "testvalue",
 		},
-		Values: getTestValueStream(0, 100, 10),
+		Values: getTestValueStream(0, 100, 10, testStartTime),
+	},
+	// Counter resets.
+	{
+		Metric: model.Metric{
+			model.MetricNameLabel: "testcounter",
+		},
+		Values: append(getTestValueStream(0, 40, 10, testStartTime), getTestValueStream(0, 50, 10, testStartTime.Add(testSampleInterval*5))...),
 	},
 }
 

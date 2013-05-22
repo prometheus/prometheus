@@ -125,8 +125,7 @@ func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp 
 
 func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
 	for _, fingerprint := range fingerprints {
-		// TODO: change to GetBoundaryValues() once it has the right return type.
-		samplePairs := v.view.GetRangeValues(fingerprint, *interval)
+		samplePairs := v.view.GetBoundaryValues(fingerprint, *interval)
 		if samplePairs == nil {
 			continue
 		}
