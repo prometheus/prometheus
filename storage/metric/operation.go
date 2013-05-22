@@ -111,14 +111,14 @@ func extractValuesAroundTime(t time.Time, in model.Values) (out model.Values) {
 		if in[i].Timestamp.Equal(t) && len(in) > i+1 {
 			// We hit exactly the current sample time. Very unlikely in practice.
 			// Return only the current sample.
-			out = append(out, in[i])
+			out = in[i : i+1]
 		} else {
 			if i == 0 {
 				// We hit before the first sample time. Return only the first sample.
-				out = append(out, in[0:1]...)
+				out = in[0:1]
 			} else {
 				// We hit between two samples. Return both surrounding samples.
-				out = append(out, in[i-1:i+1]...)
+				out = in[i-1 : i+1]
 			}
 		}
 	}
@@ -161,11 +161,11 @@ func (g *getValuesAtIntervalOp) ExtractSamples(in model.Values) (out model.Value
 		lastExtractedTime := out[len(out)-1].Timestamp
 		in = in.TruncateBefore(lastExtractedTime.Add(1))
 		g.from = g.from.Add(g.interval)
-		if lastExtractedTime.Equal(lastChunkTime) {
-			break
-		}
 		for !g.from.After(lastExtractedTime) {
 			g.from = g.from.Add(g.interval)
+		}
+		if lastExtractedTime.Equal(lastChunkTime) {
+			break
 		}
 		if g.from.After(g.through) {
 			break

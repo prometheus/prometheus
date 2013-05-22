@@ -348,12 +348,10 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 				for op.CurrentTime() != nil && !op.CurrentTime().After(targetTime) {
 					out = op.ExtractSamples(model.Values(currentChunk))
-				}
-			}
 
-			// Append the extracted samples to the materialized view.
-			for _, sample := range out {
-				view.appendSample(scanJob.fingerprint, sample.Timestamp, sample.Value)
+					// Append the extracted samples to the materialized view.
+					view.appendSamples(scanJob.fingerprint, out)
+				}
 			}
 
 			// Throw away standing ops which are finished.
