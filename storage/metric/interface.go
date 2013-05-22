@@ -50,9 +50,6 @@ type MetricPersistence interface {
 	GetValueAtTime(*model.Fingerprint, time.Time) model.Values
 	GetBoundaryValues(*model.Fingerprint, model.Interval) (first model.Values, second model.Values)
 	GetRangeValues(*model.Fingerprint, model.Interval) model.Values
-
-	ForEachSample(IteratorsForFingerprintBuilder) (err error)
-
 	// Get all label values that are associated with a given label name.
 	GetAllValuesForLabel(model.LabelName) (model.LabelValues, error)
 

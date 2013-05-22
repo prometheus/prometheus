@@ -21,7 +21,7 @@ advice:
 	go tool vet .
 
 binary: build
-	go build $(BUILDFLAGS) .
+	go build -o prometheus $(BUILDFLAGS) .
 
 build: preparation config model tools web
 
