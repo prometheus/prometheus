@@ -24,7 +24,7 @@ import (
 const (
 	// Assuming sample rate of 1 / 15Hz, this allows for one hour's worth of
 	// storage per metric without any major reallocations.
-	initialSeriesArena = 4 * 60
+	initialSeriesArenaSize = 4 * 60
 )
 
 // Models a given sample entry stored in the in-memory arena.
@@ -122,7 +122,7 @@ func (s *stream) getRangeValues(in model.Interval) model.Values {
 func newStream(metric model.Metric) *stream {
 	return &stream{
 		metric: metric,
-		values: make(model.Values, 0, initialSeriesArena),
+		values: make(model.Values, 0, initialSeriesArenaSize),
 	}
 }
 
