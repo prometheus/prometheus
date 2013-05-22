@@ -339,11 +339,11 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 				actual := p.GetValueAtTime(model.NewFingerprintFromMetric(m), time)
 
 				if len(behavior.output) != len(actual) {
-					t.Fatalf("%d.%d(%s). Expected %d samples but got: %v\n", i, j, behavior.name, len(behavior.output), actual)
+					t.Fatalf("%d.%d(%s.%s). Expected %d samples but got: %v\n", i, j, context.name, behavior.name, len(behavior.output), actual)
 				}
 				for k, samplePair := range actual {
 					if samplePair.Value != behavior.output[k] {
-						t.Fatalf("%d.%d.%d(%s). Expected %s but got %s\n", i, j, k, behavior.name, behavior.output[k], samplePair)
+						t.Fatalf("%d.%d.%d(%s.%s). Expected %s but got %s\n", i, j, k, context.name, behavior.name, behavior.output[k], samplePair)
 
 					}
 				}

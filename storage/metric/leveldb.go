@@ -863,10 +863,6 @@ func (l *LevelDBMetricPersistence) GetAllValuesForLabel(labelName model.LabelNam
 	return
 }
 
-func (l *LevelDBMetricPersistence) ForEachSample(builder IteratorsForFingerprintBuilder) (err error) {
-	panic("not implemented")
-}
-
 // CompactKeyspace compacts each database's keyspace serially.
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
