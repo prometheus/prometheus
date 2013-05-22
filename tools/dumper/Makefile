@@ -11,19 +11,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-all: dumper pruner
+MAKE_ARTIFACTS = dumper
+
+all: dumper
 
 SUFFIXES:
 
-include ../Makefile.INCLUDE
+include ../../Makefile.INCLUDE
 
-dumper:
-	$(MAKE) -C dumper
-
-pruner:
-	$(MAKE) -C pruner
+dumper: $(shell find . -iname '*.go')
+	go build -o dumper .
 
 clean:
-	$(MAKE) -C dumper pruner clean
+	rm -rf $(MAKE_ARTIFACTS)
 
-.PHONY: clean dumper pruner
+.PHONY: clean
