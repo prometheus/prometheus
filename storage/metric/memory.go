@@ -52,6 +52,8 @@ func (s *stream) add(timestamp time.Time, value model.SampleValue) {
 	s.Lock()
 	defer s.Unlock()
 
+	// BUG(all): https://github.com/prometheus/prometheus/pull/265/files#r4336435.
+
 	s.values = append(s.values, model.SamplePair{
 		Timestamp: timestamp,
 		Value:     value,
@@ -61,6 +63,8 @@ func (s *stream) add(timestamp time.Time, value model.SampleValue) {
 func (s *stream) clone() model.Values {
 	s.RLock()
 	defer s.RUnlock()
+
+	// BUG(all): Examine COW technique.
 
 	clone := make(model.Values, len(s.values))
 	copy(clone, s.values)
@@ -72,6 +76,7 @@ func (s *stream) getValueAtTime(t time.Time) model.Values {
 	s.RLock()
 	defer s.RUnlock()
 
+	// BUG(all): May be avenues for simplification.
 	l := len(s.values)
 	switch l {
 	case 0:
