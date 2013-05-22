@@ -43,26 +43,21 @@ func (f diskFrontier) ContainsFingerprint(fingerprint *model.Fingerprint) bool {
 	return !(fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint))
 }
 
-func newDiskFrontier(i leveldb.Iterator) (d *diskFrontier, err error) {
-
+func newDiskFrontier(i leveldb.Iterator) (d *diskFrontier, present bool, err error) {
 	if !i.SeekToLast() || i.Key() == nil {
-		return
+		return nil, false, nil
 	}
-
 	lastKey, err := extractSampleKey(i)
 	if err != nil {
-		panic(fmt.Sprintln(err, i.Key(), i.Value()))
+		return nil, false, err
 	}
 
 	if !i.SeekToFirst() || i.Key() == nil {
-		return
+		return nil, false, nil
 	}
 	firstKey, err := extractSampleKey(i)
-	if i.Key() == nil {
-		return
-	}
 	if err != nil {
-		panic(err)
+		return nil, false, err
 	}
 
 	d = &diskFrontier{}
@@ -72,7 +67,7 @@ func newDiskFrontier(i leveldb.Iterator) (d *diskFrontier, err error) {
 	d.lastFingerprint = lastKey.Fingerprint
 	d.lastSupertime = lastKey.FirstTimestamp
 
-	return
+	return d, true, nil
 }
 
 // seriesFrontier represents the valid seek frontier for a given series.
@@ -87,9 +82,8 @@ func (f seriesFrontier) String() string {
 }
 
 // newSeriesFrontier furnishes a populated diskFrontier for a given
-// fingerprint.  A nil diskFrontier will be returned if the series cannot
-// be found in the store.
-func newSeriesFrontier(f *model.Fingerprint, d diskFrontier, i leveldb.Iterator) (s *seriesFrontier, err error) {
+// fingerprint.  If the series is absent, present will be false.
+func newSeriesFrontier(f *model.Fingerprint, d *diskFrontier, i leveldb.Iterator) (s *seriesFrontier, present bool, err error) {
 	lowerSeek := firstSupertime
 	upperSeek := lastSupertime
 
@@ -97,7 +91,7 @@ func newSeriesFrontier(f *model.Fingerprint, d diskFrontier, i leveldb.Iterator)
 	// is outside of its seeking domain, there is no way that a seriesFrontier
 	// could be materialized.  Simply bail.
 	if !d.ContainsFingerprint(f) {
-		return
+		return nil, false, nil
 	}
 
 	// If we are either the first or the last key in the database, we need to use
@@ -119,7 +113,7 @@ func newSeriesFrontier(f *model.Fingerprint, d diskFrontier, i leveldb.Iterator)
 	i.Seek(raw)
 
 	if i.Key() == nil {
-		return
+		return nil, false, fmt.Errorf("illegal condition: empty key")
 	}
 
 	retrievedKey, err := extractSampleKey(i)
@@ -146,7 +140,7 @@ func newSeriesFrontier(f *model.Fingerprint, d diskFrontier, i leveldb.Iterator)
 		// If the previous key does not match, we know that the requested
 		// fingerprint does not live in the database.
 		if !retrievedFingerprint.Equal(f) {
-			return
+			return nil, false, nil
 		}
 	}
 
@@ -170,7 +164,7 @@ func newSeriesFrontier(f *model.Fingerprint, d diskFrontier, i leveldb.Iterator)
 
 	s.firstSupertime = retrievedKey.FirstTimestamp
 
-	return
+	return s, true, nil
 }
 
 // Contains indicates whether a given time value is within the recorded
