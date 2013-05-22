@@ -102,8 +102,27 @@ func (s *stream) getValueAtTime(t time.Time) model.Values {
 	}
 }
 
-func (s *stream) getBoundaryValues(i model.Interval) (model.Values, model.Values) {
-	return s.getValueAtTime(i.OldestInclusive), s.getValueAtTime(i.NewestInclusive)
+func (s *stream) getBoundaryValues(in model.Interval) model.Values {
+	s.RLock()
+	defer s.RUnlock()
+
+	oldest := sort.Search(len(s.values), func(i int) bool {
+		return !s.values[i].Timestamp.Before(in.OldestInclusive)
+	})
+
+	newest := sort.Search(len(s.values), func(i int) bool {
+		return s.values[i].Timestamp.After(in.NewestInclusive)
+	})
+
+	resultRange := s.values[oldest:newest]
+	switch len(resultRange) {
+	case 0:
+		return model.Values{}
+	case 1:
+		return model.Values{resultRange[0]}
+	default:
+		return model.Values{resultRange[0], resultRange[len(resultRange)-1]}
+	}
 }
 
 func (s *stream) getRangeValues(in model.Interval) model.Values {
@@ -286,12 +305,12 @@ func (s *memorySeriesStorage) GetValueAtTime(f *model.Fingerprint, t time.Time) 
 	return series.getValueAtTime(t)
 }
 
-func (s *memorySeriesStorage) GetBoundaryValues(f *model.Fingerprint, i model.Interval) (model.Values, model.Values) {
+func (s *memorySeriesStorage) GetBoundaryValues(f *model.Fingerprint, i model.Interval) model.Values {
 	s.RLock()
 	series, ok := s.fingerprintToSeries[*f]
 	s.RUnlock()
 	if !ok {
-		return nil, nil
+		return nil
 	}
 
 	return series.getBoundaryValues(i)
