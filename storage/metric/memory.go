@@ -172,6 +172,8 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 			labelNameValues = append(labelNameValues, fingerprint)
 			s.labelNameToFingerprints[k] = labelNameValues
 		}
+
+		s.Unlock()
 	}
 
 	series.add(sample.Timestamp, sample.Value)
