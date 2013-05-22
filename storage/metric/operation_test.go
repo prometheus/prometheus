@@ -1610,6 +1610,16 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), scenario.op)
 			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
 		}
+
+		if len(scenario.in) < 1 {
+			continue
+		}
+		opTime := scenario.op.CurrentTime()
+		lastExtractedTime := scenario.out[len(scenario.out)-1].Timestamp
+		if opTime != nil && opTime.Before(lastExtractedTime) {
+			t.Fatalf("%d. expected op.CurrentTime() to be nil or after current chunk, %v, %v", i, scenario.op.CurrentTime(), scenario.out)
+		}
+
 		for j, out := range scenario.out {
 			if out != actual[j] {
 				t.Fatalf("%d. expected output %v, got %v", i, scenario.out, actual)
