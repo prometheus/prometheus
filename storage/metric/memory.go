@@ -234,8 +234,8 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 
 func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (model.Fingerprints, error) {
 	s.RLock()
+	defer s.RUnlock()
 	values, ok := s.labelNameToFingerprints[l]
-	s.RUnlock()
 	if !ok {
 		return nil, nil
 	}
