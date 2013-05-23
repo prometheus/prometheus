@@ -49,7 +49,7 @@ model: preparation
 	$(MAKE) -C model
 
 package: binary
-	cp prometheus.build build/package/prometheus
+	cp prometheus build/package/prometheus
 	rsync -av build/root/lib/ build/package/lib/
 
 preparation: source_path
