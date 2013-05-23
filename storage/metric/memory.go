@@ -200,23 +200,21 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 	return nil
 }
 
-// Append raw samples, bypassing indexing. Only used to add data to views,
-// which don't need to lookup by metric.
-func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *model.Fingerprint, samples model.Values) {
+// Append raw sample, bypassing indexing. Only used to add data to views, which
+// don't need to lookup by metric.
+func (s *memorySeriesStorage) appendSampleWithoutIndexing(f *model.Fingerprint, timestamp time.Time, value model.SampleValue) {
 	s.RLock()
-	series, ok := s.fingerprintToSeries[*fingerprint]
+	series, ok := s.fingerprintToSeries[*f]
 	s.RUnlock()
 
 	if !ok {
 		series = newStream(model.Metric{})
 		s.Lock()
-		s.fingerprintToSeries[*fingerprint] = series
+		s.fingerprintToSeries[*f] = series
 		s.Unlock()
 	}
 
-	for _, sample := range samples {
-		series.add(sample.Timestamp, sample.Value)
-	}
+	series.add(timestamp, value)
 }
 
 func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fingerprints model.Fingerprints, err error) {
