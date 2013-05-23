@@ -31,6 +31,7 @@ import (
 var (
 	listenAddress  = flag.String("listenAddress", ":9090", "Address to listen on for web interface.")
 	useLocalAssets = flag.Bool("useLocalAssets", false, "Read assets/templates from file instead of binary.")
+	userAssetsPath = flag.String("userAssets", "", "Path to static asset directory, available at /user")
 )
 
 type WebService struct {
@@ -63,6 +64,10 @@ func (w WebService) ServeForever() error {
 		exp.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	} else {
 		exp.Handle("/static/", http.StripPrefix("/static/", new(blob.Handler)))
+	}
+
+	if *userAssetsPath != "" {
+		exp.Handle("/user/", http.StripPrefix("/user/", http.FileServer(http.Dir(*userAssetsPath))))
 	}
 
 	log.Printf("listening on %s", *listenAddress)
