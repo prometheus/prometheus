@@ -37,11 +37,6 @@ type groupedAggregation struct {
 	groupCount int
 }
 
-type labelValuePair struct {
-	label model.LabelName
-	value model.LabelValue
-}
-
 // ----------------------------------------------------------------------------
 // Enums.
 

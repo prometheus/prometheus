@@ -47,17 +47,21 @@ func NewRuleManager(results chan *Result, interval time.Duration, storage *metri
 		interval: interval,
 		storage:  storage,
 	}
+	// BUG(julius): Extract this so that the caller manages concurrency.
 	go manager.run(results)
 	return manager
 }
 
 func (m *ruleManager) run(results chan *Result) {
-	ticker := time.Tick(m.interval)
+	ticker := time.NewTicker(m.interval)
+	defer ticker.Stop()
 
 	for {
 		select {
-		case <-ticker:
+		case <-ticker.C:
+			start := time.Now()
 			m.runIteration(results)
+			evalDurations.Add(map[string]string{intervalKey: m.interval.String()}, float64(time.Since(start)/time.Millisecond))
 		case <-m.done:
 			log.Printf("RuleManager exiting...")
 			break
@@ -66,27 +70,31 @@ func (m *ruleManager) run(results chan *Result) {
 }
 
 func (m *ruleManager) Stop() {
-	m.done <- true
+	select {
+	case m.done <- true:
+	default:
+	}
 }
 
 func (m *ruleManager) runIteration(results chan *Result) {
 	now := time.Now()
 	wg := sync.WaitGroup{}
+
 	for _, rule := range m.rules {
 		wg.Add(1)
+		// BUG(julius): Look at fixing thundering herd.
 		go func(rule Rule) {
+			defer wg.Done()
 			vector, err := rule.Eval(now, m.storage)
-			samples := model.Samples{}
-			for _, sample := range vector {
-				samples = append(samples, sample)
-			}
+			samples := make(model.Samples, len(vector))
+			copy(samples, vector)
 			m.results <- &Result{
 				Samples: samples,
 				Err:     err,
 			}
-			wg.Done()
 		}(rule)
 	}
+
 	wg.Wait()
 }
 
