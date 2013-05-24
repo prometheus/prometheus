@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 	"net/http"
 	"sync"
+	"time"
 )
 
 type PrometheusStatus struct {
@@ -27,6 +28,8 @@ type PrometheusStatus struct {
 	Flags       map[string]string
 	Rules       string
 	TargetPools map[string]*retrieval.TargetPool
+
+	Birth time.Time
 }
 
 type StatusHandler struct {
