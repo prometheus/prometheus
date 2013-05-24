@@ -224,6 +224,7 @@ func main() {
 			Config:      conf.String(),
 			TargetPools: targetManager.Pools(),
 			Flags:       flags,
+			Birth:       time.Now(),
 		},
 		CurationState: curationState,
 	}

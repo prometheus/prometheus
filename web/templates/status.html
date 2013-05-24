@@ -1,7 +1,18 @@
 {{define "head"}}<!-- nix -->{{end}}
 
 {{define "content"}}
-    <h2>Build Info</h2>
+    <h2>Runtime Information</h2>
+    <div class="grouping_box">
+      <table>
+        <tbody>
+          <tr>
+            <th>Uptime</th>
+            <td>{{.Birth}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <h2>Build Information</h2>
     <div class="grouping_box">
       <table>
         <tbody>
