@@ -85,6 +85,12 @@ func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} 
 		matrixValue = matrixNode.EvalBoundaries(timestamp, view)
 	}
 	for _, samples := range matrixValue {
+		// No sense in trying to compute a delta without at least two points. Drop
+		// this vector element.
+		if len(samples.Values) < 2 {
+			continue
+		}
+
 		counterCorrection := model.SampleValue(0)
 		lastValue := model.SampleValue(0)
 		for _, sample := range samples.Values {
