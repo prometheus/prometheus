@@ -72,14 +72,14 @@ func timeImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 // === delta(matrix MatrixNode, isCounter ScalarNode) Vector ===
 func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
-	isCounter := int(args[1].(ScalarNode).Eval(timestamp, view))
+	isCounter := args[1].(ScalarNode).Eval(timestamp, view) > 0
 	resultVector := Vector{}
 
 	// If we treat these metrics as counters, we need to fetch all values
 	// in the interval to find breaks in the timeseries' monotonicity.
 	// I.e. if a counter resets, we want to ignore that reset.
 	var matrixValue Matrix
-	if isCounter > 0 {
+	if isCounter {
 		matrixValue = matrixNode.Eval(timestamp, view)
 	} else {
 		matrixValue = matrixNode.EvalBoundaries(timestamp, view)
@@ -95,7 +95,7 @@ func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} 
 		lastValue := model.SampleValue(0)
 		for _, sample := range samples.Values {
 			currentValue := sample.Value
-			if currentValue < lastValue {
+			if isCounter && currentValue < lastValue {
 				counterCorrection += lastValue - currentValue
 			}
 			lastValue = currentValue
