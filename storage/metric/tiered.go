@@ -215,14 +215,14 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 
 	for _, stream := range t.memoryArena.fingerprintToSeries {
 		finder := func(i int) bool {
-			return !cutOff.After(stream.values[i].Timestamp)
+			return stream.values[i].Timestamp.After(cutOff)
 		}
 
 		stream.Lock()
 
 		i := sort.Search(len(stream.values), finder)
-		toArchive := stream.values[i:]
-		toKeep := stream.values[:i]
+		toArchive := stream.values[:i]
+		toKeep := stream.values[i:]
 		queued := make(model.Samples, 0, len(toArchive))
 
 		for _, value := range toArchive {
