@@ -319,15 +319,27 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
-			// Counter resets are ignored by delta() if counter == 1.
-			expr:           "delta(testcounter[50m], 1)",
-			output:         []string{"testcounter{} => 90 @[%v]"},
+			// Counter resets in middle of range are ignored by delta() if counter == 1.
+			expr:           "delta(testcounter_reset_middle[50m], 1)",
+			output:         []string{"testcounter_reset_middle{} => 90 @[%v]"},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
-			// Counter resets are not ignored by delta() if counter == 0.
-			expr:           "delta(testcounter[50m], 0)",
-			output:         []string{"testcounter{} => 50 @[%v]"},
+			// Counter resets in middle of range are not ignored by delta() if counter == 0.
+			expr:           "delta(testcounter_reset_middle[50m], 0)",
+			output:         []string{"testcounter_reset_middle{} => 50 @[%v]"},
+			fullRanges:     1,
+			intervalRanges: 0,
+		}, {
+			// Counter resets at end of range are ignored by delta() if counter == 1.
+			expr:           "delta(testcounter_reset_end[5m], 1)",
+			output:         []string{"testcounter_reset_end{} => 0 @[%v]"},
+			fullRanges:     1,
+			intervalRanges: 0,
+		}, {
+			// Counter resets at end of range are not ignored by delta() if counter == 0.
+			expr:           "delta(testcounter_reset_end[5m], 0)",
+			output:         []string{"testcounter_reset_end{} => -90 @[%v]"},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {

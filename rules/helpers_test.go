@@ -145,12 +145,19 @@ var testMatrix = ast.Matrix{
 		},
 		Values: getTestValueStream(0, 100, 10, testStartTime),
 	},
-	// Counter resets.
+	// Counter reset in the middle of range.
 	{
 		Metric: model.Metric{
-			model.MetricNameLabel: "testcounter",
+			model.MetricNameLabel: "testcounter_reset_middle",
 		},
 		Values: append(getTestValueStream(0, 40, 10, testStartTime), getTestValueStream(0, 50, 10, testStartTime.Add(testSampleInterval*5))...),
+	},
+	// Counter reset at the end of range.
+	{
+		Metric: model.Metric{
+			model.MetricNameLabel: "testcounter_reset_end",
+		},
+		Values: append(getTestValueStream(0, 90, 10, testStartTime), getTestValueStream(0, 0, 10, testStartTime.Add(testSampleInterval*10))...),
 	},
 }
 
