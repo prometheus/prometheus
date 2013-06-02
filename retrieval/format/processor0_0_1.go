@@ -77,18 +77,8 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 	pendingSamples := model.Samples{}
 	for _, entity := range entities {
 		for _, value := range entity.Metric.Value {
-			metric := model.Metric{}
-			for label, labelValue := range baseLabels {
-				metric[label] = labelValue
-			}
-
-			for label, labelValue := range entity.BaseLabels {
-				metric[model.LabelName(label)] = model.LabelValue(labelValue)
-			}
-
-			for label, labelValue := range value.Labels {
-				metric[model.LabelName(label)] = model.LabelValue(labelValue)
-			}
+			entityLabels := LabelSet(entity.BaseLabels).Merge(LabelSet(value.Labels))
+			labels := mergeTargetLabels(entityLabels, baseLabels)
 
 			switch entity.Metric.MetricType {
 			case gauge001, counter001:
@@ -100,7 +90,7 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 				}
 
 				pendingSamples = append(pendingSamples, model.Sample{
-					Metric:    metric,
+					Metric:    model.Metric(labels),
 					Timestamp: timestamp,
 					Value:     model.SampleValue(sampleValue),
 				})
@@ -123,16 +113,16 @@ func (p *processor001) Process(stream io.ReadCloser, timestamp time.Time, baseLa
 						continue
 					}
 
-					childMetric := make(map[model.LabelName]model.LabelValue, len(metric)+1)
+					childMetric := make(map[model.LabelName]model.LabelValue, len(labels)+1)
 
-					for k, v := range metric {
+					for k, v := range labels {
 						childMetric[k] = v
 					}
 
 					childMetric[model.LabelName(percentile001)] = model.LabelValue(percentile)
 
 					pendingSamples = append(pendingSamples, model.Sample{
-						Metric:    childMetric,
+						Metric:    model.Metric(childMetric),
 						Timestamp: timestamp,
 						Value:     model.SampleValue(individualValue),
 					})

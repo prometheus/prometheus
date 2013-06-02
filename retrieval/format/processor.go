@@ -47,3 +47,24 @@ func LabelSet(labels map[string]string) model.LabelSet {
 
 	return labelset
 }
+
+// Helper function to merge a target's base labels ontop of the labels of an
+// exported sample. If a label is already defined in the exported sample, we
+// assume that we are scraping an intermediate exporter and attach
+// "exporter_"-prefixes to Prometheus' own base labels.
+func mergeTargetLabels(entityLabels, targetLabels model.LabelSet) model.LabelSet {
+	result := model.LabelSet{}
+
+	for label, value := range entityLabels {
+		result[label] = value
+	}
+
+	for label, labelValue := range targetLabels {
+		if _, exists := result[label]; exists {
+			result[model.ExporterLabelPrefix+label] = labelValue
+		} else {
+			result[label] = labelValue
+		}
+	}
+	return result
+}
