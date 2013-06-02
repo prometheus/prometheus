@@ -53,8 +53,6 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 
 	pendingSamples := model.Samples{}
 	for _, entity := range entities {
-		entityLabels := baseLabels.Merge(LabelSet(entity.BaseLabels))
-
 		switch entity.Metric.Type {
 		case "counter", "gauge":
 			var values []counter
@@ -67,7 +65,8 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 			}
 
 			for _, counter := range values {
-				labels := entityLabels.Merge(LabelSet(counter.Labels))
+				entityLabels := LabelSet(entity.BaseLabels).Merge(LabelSet(counter.Labels))
+				labels := mergeTargetLabels(entityLabels, baseLabels)
 
 				pendingSamples = append(pendingSamples, model.Sample{
 					Metric:    model.Metric(labels),
@@ -88,8 +87,9 @@ var Processor002 ProcessorFunc = func(stream io.ReadCloser, timestamp time.Time,
 
 			for _, histogram := range values {
 				for percentile, value := range histogram.Values {
-					labels := entityLabels.Merge(LabelSet(histogram.Labels))
-					labels[model.LabelName("percentile")] = model.LabelValue(percentile)
+					entityLabels := LabelSet(entity.BaseLabels).Merge(LabelSet(histogram.Labels))
+					entityLabels[model.LabelName("percentile")] = model.LabelValue(percentile)
+					labels := mergeTargetLabels(entityLabels, baseLabels)
 
 					pendingSamples = append(pendingSamples, model.Sample{
 						Metric:    model.Metric(labels),

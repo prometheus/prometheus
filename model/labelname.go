@@ -20,6 +20,9 @@ const (
 	JobLabel = LabelName("job")
 	// The label name indicating the instance from which a timeseries was scraped.
 	InstanceLabel = LabelName("instance")
+	// The label name prefix to prepend if a synthetic label is already present
+	// in the exported metrics.
+	ExporterLabelPrefix = LabelName("exporter_")
 	// The metric name for the synthetic health variable.
 	ScrapeHealthMetricName = LabelValue("up")
 	// The metric name for synthetic alert timeseries.
