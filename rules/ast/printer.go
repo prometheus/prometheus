@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 	"sort"
@@ -153,15 +154,19 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 	return string(dataJSON)
 }
 
-func EvalToString(node Node, timestamp time.Time, format OutputFormat, storage *metric.TieredStorage) string {
-	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage)
+func EvalToString(node Node, timestamp time.Time, format OutputFormat, storage *metric.TieredStorage, queryStats *stats.TimerGroup) string {
+	viewTimer := queryStats.GetTimer(stats.TotalViewBuildingTime).Start()
+	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
+	viewTimer.Stop()
 	if err != nil {
 		panic(err)
 	}
 
+	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
 	switch node.Type() {
 	case SCALAR:
 		scalar := node.(ScalarNode).Eval(timestamp, viewAdapter)
+		evalTimer.Stop()
 		switch format {
 		case TEXT:
 			return fmt.Sprintf("scalar: %v", scalar)
@@ -170,6 +175,7 @@ func EvalToString(node Node, timestamp time.Time, format OutputFormat, storage *
 		}
 	case VECTOR:
 		vector := node.(VectorNode).Eval(timestamp, viewAdapter)
+		evalTimer.Stop()
 		switch format {
 		case TEXT:
 			return vector.String()
@@ -178,6 +184,7 @@ func EvalToString(node Node, timestamp time.Time, format OutputFormat, storage *
 		}
 	case MATRIX:
 		matrix := node.(MatrixNode).Eval(timestamp, viewAdapter)
+		evalTimer.Stop()
 		switch format {
 		case TEXT:
 			return matrix.String()
@@ -186,6 +193,7 @@ func EvalToString(node Node, timestamp time.Time, format OutputFormat, storage *
 		}
 	case STRING:
 		str := node.(StringNode).Eval(timestamp, viewAdapter)
+		evalTimer.Stop()
 		switch format {
 		case TEXT:
 			return str
