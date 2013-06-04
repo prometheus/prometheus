@@ -265,11 +265,11 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 	var iterator leveldb.Iterator = nil
 	var diskFrontier *diskFrontier = nil
-	var seriesPresent = true
 	var diskPresent = true
 
 	for _, scanJob := range scans {
 		var seriesFrontier *seriesFrontier = nil
+		var seriesPresent = true
 
 		standingOps := scanJob.operations
 		memValues := t.memoryArena.CloneSamples(scanJob.fingerprint)
