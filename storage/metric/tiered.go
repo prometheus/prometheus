@@ -15,15 +15,17 @@ package metric
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/coding/indexable"
-	"github.com/prometheus/prometheus/model"
-	dto "github.com/prometheus/prometheus/model/generated"
-	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"log"
 	"sort"
 	"sync"
 	"time"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
+	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/coding/indexable"
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
 type chunk model.Values
@@ -57,8 +59,6 @@ type TieredStorage struct {
 	DiskStorage *LevelDBMetricPersistence
 
 	appendToDiskQueue chan model.Samples
-
-	diskFrontier *diskFrontier
 
 	memoryArena         *memorySeriesStorage
 	memoryTTL           time.Duration
@@ -149,21 +149,6 @@ func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 		abortChan <- true
 		return nil, fmt.Errorf("MakeView timed out after %s.", deadline)
 	}
-}
-
-func (t *TieredStorage) rebuildDiskFrontier(i leveldb.Iterator) (err error) {
-	begin := time.Now()
-	defer func() {
-		duration := time.Since(begin)
-
-		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: rebuildDiskFrontier, result: failure})
-	}()
-
-	t.diskFrontier, err = newDiskFrontier(i)
-	if err != nil {
-		return
-	}
-	return
 }
 
 // Starts serving requests.
@@ -277,25 +262,14 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 	scans := viewJob.builder.ScanJobs()
 	view := newView()
-	// Get a single iterator that will be used for all data extraction below.
-	iterator := t.DiskStorage.MetricSamples.NewIterator(true)
-	defer iterator.Close()
 
-	// Rebuilding of the frontier should happen on a conditional basis if a
-	// (fingerprint, timestamp) tuple is outside of the current frontier.
-	err = t.rebuildDiskFrontier(iterator)
-	if err != nil {
-		panic(err)
-	}
+	var iterator leveldb.Iterator = nil
+	var diskFrontier *diskFrontier = nil
+	var diskPresent = true
 
 	for _, scanJob := range scans {
 		var seriesFrontier *seriesFrontier = nil
-		if t.diskFrontier != nil {
-			seriesFrontier, err = newSeriesFrontier(scanJob.fingerprint, *t.diskFrontier, iterator)
-			if err != nil {
-				panic(err)
-			}
-		}
+		var seriesPresent = true
 
 		standingOps := scanJob.operations
 		memValues := t.memoryArena.CloneSamples(scanJob.fingerprint)
@@ -311,15 +285,44 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 			currentChunk := chunk{}
 			// If we aimed before the oldest value in memory, load more data from disk.
-			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && seriesFrontier != nil {
-				diskValues := t.loadChunkAroundTime(iterator, seriesFrontier, scanJob.fingerprint, targetTime)
+			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && diskPresent && seriesPresent {
+				// Conditionalize disk access.
+				if diskFrontier == nil && diskPresent {
+					if iterator == nil {
+						// Get a single iterator that will be used for all data extraction
+						// below.
+						iterator = t.DiskStorage.MetricSamples.NewIterator(true)
+						defer iterator.Close()
+					}
 
-				// If we aimed past the newest value on disk, combine it with the next value from memory.
-				if len(memValues) > 0 && diskValues.LastTimeBefore(targetTime) {
-					latestDiskValue := diskValues[len(diskValues)-1:]
-					currentChunk = append(chunk(latestDiskValue), chunk(memValues)...)
+					diskFrontier, diskPresent, err = newDiskFrontier(iterator)
+					if err != nil {
+						panic(err)
+					}
+					if !diskPresent {
+						seriesPresent = false
+					}
+				}
+
+				if seriesFrontier == nil && diskPresent {
+					seriesFrontier, seriesPresent, err = newSeriesFrontier(scanJob.fingerprint, diskFrontier, iterator)
+					if err != nil {
+						panic(err)
+					}
+				}
+
+				if diskPresent && seriesPresent {
+					diskValues := t.loadChunkAroundTime(iterator, seriesFrontier, scanJob.fingerprint, targetTime)
+
+					// If we aimed past the newest value on disk, combine it with the next value from memory.
+					if len(memValues) > 0 && diskValues.LastTimeBefore(targetTime) {
+						latestDiskValue := diskValues[len(diskValues)-1:]
+						currentChunk = append(chunk(latestDiskValue), chunk(memValues)...)
+					} else {
+						currentChunk = chunk(diskValues)
+					}
 				} else {
-					currentChunk = chunk(diskValues)
+					currentChunk = chunk(memValues)
 				}
 			} else {
 				currentChunk = chunk(memValues)

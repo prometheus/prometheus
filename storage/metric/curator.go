@@ -81,7 +81,7 @@ type watermarkOperator struct {
 	curationState raw.Persistence
 	// diskFrontier models the available seekable ranges for the provided
 	// sampleIterator.
-	diskFrontier diskFrontier
+	diskFrontier *diskFrontier
 	// ignoreYoungerThan is passed into the curation remark for the given series.
 	ignoreYoungerThan time.Duration
 	// processor is responsible for executing a given stategy on the
@@ -128,11 +128,11 @@ func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, process
 	iterator := samples.NewIterator(true)
 	defer iterator.Close()
 
-	diskFrontier, err := newDiskFrontier(iterator)
+	diskFrontier, present, err := newDiskFrontier(iterator)
 	if err != nil {
 		return
 	}
-	if diskFrontier == nil {
+	if !present {
 		// No sample database exists; no work to do!
 		return
 	}
@@ -153,7 +153,7 @@ func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, process
 	// begun for a given series.
 	operator := watermarkOperator{
 		curationState:     curationState,
-		diskFrontier:      *diskFrontier,
+		diskFrontier:      diskFrontier,
 		processor:         processor,
 		ignoreYoungerThan: ignoreYoungerThan,
 		sampleIterator:    iterator,
@@ -319,8 +319,8 @@ func (w watermarkFilter) curationConsistent(f *model.Fingerprint, watermark mode
 func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
 	fingerprint := key.(*model.Fingerprint)
 
-	seriesFrontier, err := newSeriesFrontier(fingerprint, w.diskFrontier, w.sampleIterator)
-	if err != nil || seriesFrontier == nil {
+	seriesFrontier, present, err := newSeriesFrontier(fingerprint, w.diskFrontier, w.sampleIterator)
+	if err != nil || !present {
 		// An anomaly with the series frontier is severe in the sense that some sort
 		// of an illegal state condition exists in the storage layer, which would
 		// probably signify an illegal disk frontier.
