@@ -26,7 +26,7 @@ const (
 	intervalKey = "interval"
 
 	targetAddQueueSize     = 100
-	targetReplaceQueueSize = 100
+	targetReplaceQueueSize = 1
 )
 
 type TargetPool struct {
@@ -82,7 +82,16 @@ func (p *TargetPool) addTarget(target Target) {
 }
 
 func (p *TargetPool) ReplaceTargets(newTargets []Target) {
-	p.replaceTargetsQueue <- newTargets
+	p.Lock()
+	defer p.Unlock()
+
+	// If there is anything remaining in the queue for effectuation, clear it out,
+	// because the last mutation should win.
+	select {
+	case <-p.replaceTargetsQueue:
+	default:
+		p.replaceTargetsQueue <- newTargets
+	}
 }
 
 func (p *TargetPool) replaceTargets(newTargets []Target) {
