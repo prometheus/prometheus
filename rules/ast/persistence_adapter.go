@@ -16,6 +16,7 @@ package ast
 import (
 	"flag"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
 	"time"
 )
@@ -39,6 +40,8 @@ type viewAdapter struct {
 	// The materialized view which contains all timeseries data required for
 	// executing a query.
 	view metric.View
+	// The TimerGroup object in which to capture query timing statistics.
+	stats *stats.TimerGroup
 }
 
 // interpolateSamples interpolates a value at a target time between two
@@ -105,6 +108,7 @@ func (v *viewAdapter) chooseClosestSample(samples model.Values, timestamp time.T
 }
 
 func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp time.Time) (samples Vector, err error) {
+	timer := v.stats.GetTimer(stats.GetValueAtTimeTime).Start()
 	for _, fingerprint := range fingerprints {
 		sampleCandidates := v.view.GetValueAtTime(fingerprint, timestamp)
 		samplePair := v.chooseClosestSample(sampleCandidates, timestamp)
@@ -120,10 +124,12 @@ func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp 
 			})
 		}
 	}
+	timer.Stop()
 	return samples, err
 }
 
 func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
+	timer := v.stats.GetTimer(stats.GetBoundaryValuesTime).Start()
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetBoundaryValues(fingerprint, *interval)
 		if len(samplePairs) == 0 {
@@ -142,10 +148,12 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interva
 		}
 		sampleSets = append(sampleSets, sampleSet)
 	}
+	timer.Stop()
 	return sampleSets, nil
 }
 
 func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
+	timer := v.stats.GetTimer(stats.GetRangeValuesTime).Start()
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetRangeValues(fingerprint, *interval)
 		if len(samplePairs) == 0 {
@@ -164,10 +172,11 @@ func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *
 		}
 		sampleSets = append(sampleSets, sampleSet)
 	}
+	timer.Stop()
 	return sampleSets, nil
 }
 
-func NewViewAdapter(view metric.View, storage *metric.TieredStorage) *viewAdapter {
+func NewViewAdapter(view metric.View, storage *metric.TieredStorage, queryStats *stats.TimerGroup) *viewAdapter {
 	stalenessPolicy := StalenessPolicy{
 		DeltaAllowance: time.Duration(*defaultStalenessDelta) * time.Second,
 	}
@@ -176,5 +185,6 @@ func NewViewAdapter(view metric.View, storage *metric.TieredStorage) *viewAdapte
 		stalenessPolicy: stalenessPolicy,
 		storage:         storage,
 		view:            view,
+		stats:           queryStats,
 	}
 }

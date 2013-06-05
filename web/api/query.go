@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/stats"
 	"log"
 	"net/http"
 	"sort"
@@ -33,7 +34,7 @@ func (serv MetricsService) setAccessControlHeaders(rb *gorest.ResponseBuilder) {
 	rb.AddHeader("Access-Control-Expose-Headers", "Date")
 }
 
-func (serv MetricsService) Query(expr string, formatJson string) (result string) {
+func (serv MetricsService) Query(expr string, formatJson string) string {
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
 		return ast.ErrorToJSON(err)
@@ -52,7 +53,10 @@ func (serv MetricsService) Query(expr string, formatJson string) (result string)
 		rb.SetContentType(gorest.Text_Plain)
 	}
 
-	return ast.EvalToString(exprNode, timestamp, format, serv.Storage)
+	queryStats := stats.NewTimerGroup()
+	result := ast.EvalToString(exprNode, timestamp, format, serv.Storage, queryStats)
+	log.Printf("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
+	return result
 }
 
 func (serv MetricsService) QueryRange(expr string, end int64, duration int64, step int64) string {
@@ -82,18 +86,31 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 	// Align the start to step "tick" boundary.
 	end -= end % step
 
+	queryStats := stats.NewTimerGroup()
+
+	evalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
 	matrix, err := ast.EvalVectorRange(
 		exprNode.(ast.VectorNode),
 		time.Unix(end-duration, 0).UTC(),
 		time.Unix(end, 0).UTC(),
 		time.Duration(step)*time.Second,
-		serv.Storage)
+		serv.Storage,
+		queryStats)
 	if err != nil {
 		return ast.ErrorToJSON(err)
 	}
+	evalTimer.Stop()
 
+	sortTimer := queryStats.GetTimer(stats.ResultSortTime).Start()
 	sort.Sort(matrix)
-	return ast.TypedValueToJSON(matrix, "matrix")
+	sortTimer.Stop()
+
+	jsonTimer := queryStats.GetTimer(stats.JsonEncodeTime).Start()
+	result := ast.TypedValueToJSON(matrix, "matrix")
+	jsonTimer.Stop()
+
+	log.Printf("Range query: %s\nQuery stats:\n%s\n", expr, queryStats)
+	return result
 }
 
 func (serv MetricsService) Metrics() string {

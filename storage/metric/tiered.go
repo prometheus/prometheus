@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
@@ -77,6 +78,7 @@ type viewJob struct {
 	output  chan View
 	abort   chan bool
 	err     chan error
+	stats   *stats.TimerGroup
 }
 
 func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, memoryTTL time.Duration, root string) (storage *TieredStorage, err error) {
@@ -120,7 +122,7 @@ func (t *TieredStorage) Drain() {
 }
 
 // Enqueues a ViewRequestBuilder for materialization, subject to a timeout.
-func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration) (View, error) {
+func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration, queryStats *stats.TimerGroup) (View, error) {
 	if len(t.draining) > 0 {
 		return nil, fmt.Errorf("Storage is in the process of draining.")
 	}
@@ -133,11 +135,13 @@ func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 	// has already exited and doesn't consume from the channel anymore.
 	abortChan := make(chan bool, 1)
 	errChan := make(chan error)
+	queryStats.GetTimer(stats.ViewQueueTime).Start()
 	t.viewQueue <- viewJob{
 		builder: builder,
 		output:  result,
 		abort:   abortChan,
 		err:     errChan,
+		stats:   queryStats,
 	}
 
 	select {
@@ -169,6 +173,7 @@ func (t *TieredStorage) Serve() {
 		case <-flushMemoryTicker.C:
 			t.flushMemory(t.memoryTTL)
 		case viewRequest := <-t.viewQueue:
+			viewRequest.stats.GetTimer(stats.ViewQueueTime).Stop()
 			t.renderView(viewRequest)
 		case drainingDone := <-t.draining:
 			t.Flush()
@@ -260,13 +265,16 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 		recordOutcome(duration, err, map[string]string{operation: renderView, result: success}, map[string]string{operation: renderView, result: failure})
 	}()
 
+	scanJobsTimer := viewJob.stats.GetTimer(stats.ViewScanJobsTime).Start()
 	scans := viewJob.builder.ScanJobs()
+	scanJobsTimer.Stop()
 	view := newView()
 
 	var iterator leveldb.Iterator = nil
 	var diskFrontier *diskFrontier = nil
 	var diskPresent = true
 
+	extractionTimer := viewJob.stats.GetTimer(stats.ViewDataExtractionTime).Start()
 	for _, scanJob := range scans {
 		var seriesFrontier *seriesFrontier = nil
 		var seriesPresent = true
@@ -286,6 +294,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			currentChunk := chunk{}
 			// If we aimed before the oldest value in memory, load more data from disk.
 			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && diskPresent && seriesPresent {
+				diskPrepareTimer := viewJob.stats.GetTimer(stats.ViewDiskPreparationTime).Start()
 				// Conditionalize disk access.
 				if diskFrontier == nil && diskPresent {
 					if iterator == nil {
@@ -310,9 +319,12 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 						panic(err)
 					}
 				}
+				diskPrepareTimer.Stop()
 
 				if diskPresent && seriesPresent {
+					diskTimer := viewJob.stats.GetTimer(stats.ViewDiskExtractionTime).Start()
 					diskValues := t.loadChunkAroundTime(iterator, seriesFrontier, scanJob.fingerprint, targetTime)
+					diskTimer.Stop()
 
 					// If we aimed past the newest value on disk, combine it with the next value from memory.
 					if len(memValues) > 0 && diskValues.LastTimeBefore(targetTime) {
@@ -381,6 +393,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			sort.Sort(startsAtSort{standingOps})
 		}
 	}
+	extractionTimer.Stop()
 
 	viewJob.output <- view
 	return
