@@ -325,6 +325,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error loading rule files: %v", err)
 	}
+	go ruleManager.Run()
 
 	go func() {
 		err := webService.ServeForever()
