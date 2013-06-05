@@ -15,6 +15,7 @@ package metric
 
 import (
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/utility/test"
 	"sort"
 	"testing"
@@ -363,7 +364,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			requestBuilder.GetMetricRange(fingerprint, alongRange.from, alongRange.through)
 		}
 
-		v, err := tiered.MakeView(requestBuilder, time.Second*5)
+		v, err := tiered.MakeView(requestBuilder, time.Second*5, stats.NewTimerGroup())
 
 		if err != nil {
 			t.Fatalf("%d. failed due to %s", i, err)

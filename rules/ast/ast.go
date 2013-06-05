@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
 	"log"
 	"math"
@@ -255,8 +256,8 @@ func labelsToKey(labels model.Metric) string {
 	return strings.Join(keyParts, ",") // TODO not safe when label value contains comma.
 }
 
-func EvalVectorInstant(node VectorNode, timestamp time.Time, storage *metric.TieredStorage) (vector Vector, err error) {
-	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage)
+func EvalVectorInstant(node VectorNode, timestamp time.Time, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (vector Vector, err error) {
+	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
 	if err != nil {
 		return
 	}
@@ -264,16 +265,20 @@ func EvalVectorInstant(node VectorNode, timestamp time.Time, storage *metric.Tie
 	return
 }
 
-func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage) (Matrix, error) {
+func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (Matrix, error) {
 	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
 	// null in JSON.
 	matrix := Matrix{}
 
-	viewAdapter, err := viewAdapterForRangeQuery(node, start, end, interval, storage)
+	viewTimer := queryStats.GetTimer(stats.TotalViewBuildingTime).Start()
+	viewAdapter, err := viewAdapterForRangeQuery(node, start, end, interval, storage, queryStats)
+	viewTimer.Stop()
 	if err != nil {
 		return nil, err
 	}
+
 	// TODO implement watchdog timer for long-running queries.
+	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
 	sampleSets := map[string]*model.SampleSet{}
 	for t := start; t.Before(end); t = t.Add(interval) {
 		vector := node.Eval(t, viewAdapter)
@@ -293,10 +298,13 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 			}
 		}
 	}
+	evalTimer.Stop()
 
+	appendTimer := queryStats.GetTimer(stats.ResultAppendTime).Start()
 	for _, sampleSet := range sampleSets {
 		matrix = append(matrix, *sampleSet)
 	}
+	appendTimer.Stop()
 
 	return matrix, nil
 }

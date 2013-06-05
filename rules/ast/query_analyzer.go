@@ -15,6 +15,7 @@ package ast
 
 import (
 	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
 	"log"
 	"time"
@@ -95,9 +96,13 @@ func (analyzer *QueryAnalyzer) AnalyzeQueries(node Node) {
 	}
 }
 
-func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.TieredStorage) (*viewAdapter, error) {
+func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (*viewAdapter, error) {
+	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)
+	analyzeTimer.Stop()
+
+	requestBuildTimer := queryStats.GetTimer(stats.ViewRequestBuildTime).Start()
 	viewBuilder := metric.NewViewRequestBuilder()
 	for fingerprint, rangeDuration := range analyzer.FullRanges {
 		viewBuilder.GetMetricRange(fingerprint, timestamp.Add(-rangeDuration), timestamp)
@@ -105,16 +110,24 @@ func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.
 	for fingerprint := range analyzer.IntervalRanges {
 		viewBuilder.GetMetricAtTime(fingerprint, timestamp)
 	}
-	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second)
+	requestBuildTimer.Stop()
+
+	buildTimer := queryStats.GetTimer(stats.InnerViewBuildingTime).Start()
+	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second, queryStats)
+	buildTimer.Stop()
 	if err != nil {
 		return nil, err
 	}
-	return NewViewAdapter(view, storage), nil
+	return NewViewAdapter(view, storage, queryStats), nil
 }
 
-func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage) (*viewAdapter, error) {
+func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (*viewAdapter, error) {
+	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)
+	analyzeTimer.Stop()
+
+	requestBuildTimer := queryStats.GetTimer(stats.ViewRequestBuildTime).Start()
 	viewBuilder := metric.NewViewRequestBuilder()
 	for fingerprint, rangeDuration := range analyzer.FullRanges {
 		// TODO: we should support GetMetricRangeAtInterval() or similar ops in the view builder.
@@ -125,9 +138,13 @@ func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interva
 	for fingerprint := range analyzer.IntervalRanges {
 		viewBuilder.GetMetricAtInterval(fingerprint, start, end, interval)
 	}
-	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second)
+	requestBuildTimer.Stop()
+
+	buildTimer := queryStats.GetTimer(stats.InnerViewBuildingTime).Start()
+	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second, queryStats)
+	buildTimer.Stop()
 	if err != nil {
 		return nil, err
 	}
-	return NewViewAdapter(view, storage), nil
+	return NewViewAdapter(view, storage, queryStats), nil
 }
