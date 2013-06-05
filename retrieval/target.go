@@ -262,3 +262,17 @@ func (t *target) Merge(newTarget Target) {
 	}
 	t.baseLabels = newTarget.BaseLabels()
 }
+
+type targets []Target
+
+func (t targets) Len() int {
+	return len(t)
+}
+
+func (t targets) Less(i, j int) bool {
+	return t[i].scheduledFor().Before(t[j].scheduledFor())
+}
+
+func (t targets) Swap(i, j int) {
+	t[i], t[j] = t[j], t[i]
+}

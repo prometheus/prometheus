@@ -14,11 +14,12 @@
 package retrieval
 
 import (
-	"github.com/prometheus/prometheus/retrieval/format"
-	"github.com/prometheus/prometheus/utility/test"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/retrieval/format"
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 func testTargetPool(t test.Tester) {
@@ -113,10 +114,10 @@ func testTargetPool(t test.Tester) {
 
 			pool.addTarget(&target)
 		}
-		sort.Sort(pool)
+		sort.Sort(pool.targets)
 
-		if pool.Len() != len(scenario.outputs) {
-			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), pool.Len())
+		if pool.targets.Len() != len(scenario.outputs) {
+			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), pool.targets.Len())
 		} else {
 			for j, output := range scenario.outputs {
 				target := pool.targets[j]
@@ -127,8 +128,8 @@ func testTargetPool(t test.Tester) {
 				}
 			}
 
-			if pool.Len() != len(scenario.outputs) {
-				t.Errorf("%s %d. expected to repopulated with %d elements, got %d", scenario.name, i, len(scenario.outputs), pool.Len())
+			if pool.targets.Len() != len(scenario.outputs) {
+				t.Errorf("%s %d. expected to repopulated with %d elements, got %d", scenario.name, i, len(scenario.outputs), pool.targets.Len())
 			}
 		}
 	}
@@ -187,10 +188,10 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 	pool.addTarget(oldTarget2)
 
 	pool.replaceTargets([]Target{newTarget1, newTarget2})
-	sort.Sort(pool)
+	sort.Sort(pool.targets)
 
-	if pool.Len() != 2 {
-		t.Errorf("Expected 2 elements in pool, had %d", pool.Len())
+	if pool.targets.Len() != 2 {
+		t.Errorf("Expected 2 elements in pool, had %d", pool.targets.Len())
 	}
 
 	target1 := pool.targets[0].(*target)
