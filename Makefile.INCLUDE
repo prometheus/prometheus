@@ -55,7 +55,9 @@ APT_GET_INSTALL := sudo apt-get install -y
 BREW_INSTALL := brew install
 # By default, wget sets the creation time to match the server's, which throws
 # off Make.  :-(
-WGET := wget --no-use-server-timestamps -c
+#
+# Set WGET_OPTIONS to include ``--no-use-server-timestamps`` to alleviate this.
+WGET := wget $(WGET_OPTIONS) -c
 
 REV        := $(shell git rev-parse --short HEAD)
 BRANCH     := $(shell git rev-parse --abbrev-ref HEAD)

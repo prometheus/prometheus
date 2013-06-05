@@ -23,6 +23,9 @@ advice:
 binary: build
 	go build -o prometheus $(BUILDFLAGS) .
 
+race_condition_binary: build
+	CGO_CFLAGS="-I$(PWD)/build/root/include" CGO_LDFLAGS="-L$(PWD)/build/root/lib" go build -race -o prometheus $(BUILDFLAGS) .
+
 build: preparation config model tools web
 
 clean:
@@ -79,4 +82,4 @@ tools:
 web: preparation config model
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean config documentation format model package preparation run search_index source_path test tools
+.PHONY: advice binary build clean config documentation format model package preparation race_condition_binary run search_index source_path test tools
