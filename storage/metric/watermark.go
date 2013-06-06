@@ -119,7 +119,7 @@ func (lru *WatermarkCache) Clear() {
 }
 
 func (lru *WatermarkCache) updateInplace(e *list.Element, w *Watermarks) {
-	e.Value = w
+	e.Value.(*entry).watermarks = w
 	lru.moveToFront(e)
 	lru.checkCapacity()
 }

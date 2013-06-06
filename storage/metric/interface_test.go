@@ -19,5 +19,5 @@ import (
 
 func TestInterfaceAdherence(t *testing.T) {
 	var _ MetricPersistence = &LevelDBMetricPersistence{}
-	var _ MetricPersistence = NewMemorySeriesStorage()
+	var _ MetricPersistence = NewMemorySeriesStorage(MemorySeriesOptions{})
 }

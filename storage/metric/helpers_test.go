@@ -65,7 +65,7 @@ func buildLevelDBTestPersistence(name string, f func(p MetricPersistence, t test
 func buildMemoryTestPersistence(f func(p MetricPersistence, t test.Tester)) func(t test.Tester) {
 	return func(t test.Tester) {
 
-		p := NewMemorySeriesStorage()
+		p := NewMemorySeriesStorage(MemorySeriesOptions{})
 
 		defer p.Close()
 

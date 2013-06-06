@@ -644,7 +644,7 @@ func BenchmarkMemoryAppendSampleAsPureSingleEntityAppend(b *testing.B) {
 
 func testMemoryStochastic(t test.Tester) {
 	persistenceMaker := func() (MetricPersistence, test.Closer) {
-		return NewMemorySeriesStorage(), test.NilCloser
+		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 
 	StochasticTests(persistenceMaker, t)

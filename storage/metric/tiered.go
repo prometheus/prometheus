@@ -19,6 +19,8 @@ import (
 	"sort"
 	"time"
 
+	"code.google.com/p/goprotobuf/proto"
+
 	dto "github.com/prometheus/prometheus/model/generated"
 
 	"github.com/prometheus/prometheus/coding"
@@ -62,6 +64,13 @@ const (
 	tieredStorageStopping
 )
 
+const (
+	// Ignore timeseries in queries that are more stale than this limit.
+	stalenessLimit = time.Minute * 5
+	// Size of the watermarks cache (used in determining timeseries freshness).
+	wmCacheSizeBytes = 5 * 1024 * 1024
+)
+
 // TieredStorage both persists samples and generates materialized views for
 // queries.
 type TieredStorage struct {
@@ -85,6 +94,8 @@ type TieredStorage struct {
 
 	memorySemaphore chan bool
 	diskSemaphore   chan bool
+
+	wmCache *WatermarkCache
 }
 
 // viewJob encapsulates a request to extract sample values from the datastore.
@@ -107,17 +118,22 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 		return nil, err
 	}
 
+	wmCache := NewWatermarkCache(wmCacheSizeBytes)
+	memOptions := MemorySeriesOptions{WatermarkCache: wmCache}
+
 	s := &TieredStorage{
 		appendToDiskQueue:   make(chan model.Samples, appendToDiskQueueDepth),
 		DiskStorage:         diskStorage,
 		draining:            make(chan chan<- bool),
 		flushMemoryInterval: flushMemoryInterval,
-		memoryArena:         NewMemorySeriesStorage(),
+		memoryArena:         NewMemorySeriesStorage(memOptions),
 		memoryTTL:           memoryTTL,
 		viewQueue:           make(chan viewJob, viewQueueDepth),
 
 		diskSemaphore:   make(chan bool, tieredDiskSemaphores),
 		memorySemaphore: make(chan bool, tieredMemorySemaphores),
+
+		wmCache: wmCache,
 	}
 
 	for i := 0; i < tieredDiskSemaphores; i++ {
@@ -315,8 +331,36 @@ func (t *TieredStorage) Close() {
 	//            get flushed.
 	close(t.appendToDiskQueue)
 	close(t.viewQueue)
+	t.wmCache.Clear()
 
 	t.state = tieredStorageStopping
+}
+
+func (t *TieredStorage) seriesTooOld(f *model.Fingerprint, i time.Time) (bool, error) {
+	// BUG(julius): Make this configurable by query layer.
+	i = i.Add(-stalenessLimit)
+
+	wm, ok := t.wmCache.Get(f)
+	if !ok {
+		rowKey := coding.NewPBEncoder(f.ToDTO())
+		raw, err := t.DiskStorage.MetricHighWatermarks.Get(rowKey)
+		if err != nil {
+			return false, err
+		}
+		if raw != nil {
+			value := &dto.MetricHighWatermark{}
+			err = proto.Unmarshal(raw, value)
+			if err != nil {
+				return false, err
+			}
+
+			wmTime := time.Unix(*value.Timestamp, 0).UTC()
+			t.wmCache.Set(f, &Watermarks{High: wmTime})
+			return wmTime.Before(i), nil
+		}
+		return true, nil
+	}
+	return wm.High.Before(i), nil
 }
 
 func (t *TieredStorage) renderView(viewJob viewJob) {
@@ -342,6 +386,15 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 	extractionTimer := viewJob.stats.GetTimer(stats.ViewDataExtractionTime).Start()
 	for _, scanJob := range scans {
+		old, err := t.seriesTooOld(scanJob.fingerprint, *scanJob.operations[0].CurrentTime())
+		if err != nil {
+			log.Printf("Error getting watermark from cache for %s: %s", scanJob.fingerprint, err)
+			continue
+		}
+		if old {
+			continue
+		}
+
 		var seriesFrontier *seriesFrontier = nil
 		var seriesPresent = true
 
