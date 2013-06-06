@@ -151,9 +151,16 @@ func newStream(metric model.Metric) *stream {
 type memorySeriesStorage struct {
 	sync.RWMutex
 
+	wmCache                 *WatermarkCache
 	fingerprintToSeries     map[model.Fingerprint]*stream
 	labelPairToFingerprints map[model.LabelPair]model.Fingerprints
 	labelNameToFingerprints map[model.LabelName]model.Fingerprints
+}
+
+type MemorySeriesOptions struct {
+	// If provided, this WatermarkCache will be updated for any samples that are
+	// appended to the memorySeriesStorage.
+	WatermarkCache *WatermarkCache
 }
 
 func (s *memorySeriesStorage) AppendSamples(samples model.Samples) error {
@@ -171,6 +178,10 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 	metric := sample.Metric
 	fingerprint := model.NewFingerprintFromMetric(metric)
 	series, ok := s.fingerprintToSeries[*fingerprint]
+
+	if s.wmCache != nil {
+		s.wmCache.Set(fingerprint, &Watermarks{High: sample.Timestamp})
+	}
 
 	if !ok {
 		series = newStream(metric)
@@ -355,10 +366,11 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (v
 	return
 }
 
-func NewMemorySeriesStorage() *memorySeriesStorage {
+func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[model.Fingerprint]*stream),
 		labelPairToFingerprints: make(map[model.LabelPair]model.Fingerprints),
 		labelNameToFingerprints: make(map[model.LabelName]model.Fingerprints),
+		wmCache:                 o.WatermarkCache,
 	}
 }
