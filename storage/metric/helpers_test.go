@@ -101,7 +101,10 @@ func NewTestTieredStorage(t test.Tester) (storage *TieredStorage, closer test.Cl
 		t.Fatalf("storage == nil")
 	}
 
-	go storage.Serve()
+	started := make(chan bool)
+	go storage.Serve(started)
+	<-started
+
 	closer = &testTieredStorageCloser{
 		storage:   storage,
 		directory: directory,
