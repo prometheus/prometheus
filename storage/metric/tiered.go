@@ -156,7 +156,7 @@ func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 }
 
 // Starts serving requests.
-func (t *TieredStorage) Serve() {
+func (t *TieredStorage) Serve(started chan<- bool) {
 	flushMemoryTicker := time.NewTicker(t.flushMemoryInterval)
 	defer flushMemoryTicker.Stop()
 	queueReportTicker := time.NewTicker(time.Second)
@@ -167,6 +167,8 @@ func (t *TieredStorage) Serve() {
 			t.reportQueues()
 		}
 	}()
+
+	started <- true
 
 	for {
 		select {

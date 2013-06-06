@@ -79,8 +79,9 @@ func NewTestTieredStorage(t test.Tester) (storage *metric.TieredStorage, closer 
 		directory.Close()
 		t.Fatalf("storage == nil")
 	}
-
-	go storage.Serve()
+	started := make(chan bool)
+	go storage.Serve(started)
+	<-started
 	closer = &testTieredStorageCloser{
 		storage:   storage,
 		directory: directory,
