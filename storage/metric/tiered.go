@@ -133,15 +133,11 @@ func (t *TieredStorage) Drain(drained chan<- bool) {
 
 func (t *TieredStorage) drain(drained chan<- bool) {
 	if t.state >= tieredStorageDraining {
-		drained <- true
-		return
+		panic("Illegal State: Supplemental drain requested.")
 	}
 
-	select {
-	case t.draining <- (drained):
-		log.Println("Triggering drain...")
-	default:
-	}
+	log.Println("Triggering drain...")
+	t.draining <- (drained)
 }
 
 // Enqueues a ViewRequestBuilder for materialization, subject to a timeout.
