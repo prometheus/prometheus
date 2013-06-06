@@ -21,11 +21,9 @@ import (
 	"time"
 )
 
-const (
-	// Assuming sample rate of 1 / 15Hz, this allows for one hour's worth of
-	// storage per metric without any major reallocations.
-	initialSeriesArenaSize = 4 * 60
-)
+// Assuming sample rate of 1 / 15Hz, this allows for one hour's worth of
+// storage per metric without any major reallocations.
+const initialSeriesArenaSize = 4 * 60
 
 // Models a given sample entry stored in the in-memory arena.
 type value interface {
@@ -167,15 +165,15 @@ func (s *memorySeriesStorage) AppendSamples(samples model.Samples) error {
 }
 
 func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
+	s.Lock()
+	defer s.Unlock()
+
 	metric := sample.Metric
 	fingerprint := model.NewFingerprintFromMetric(metric)
-	s.RLock()
 	series, ok := s.fingerprintToSeries[*fingerprint]
-	s.RUnlock()
 
 	if !ok {
 		series = newStream(metric)
-		s.Lock()
 		s.fingerprintToSeries[*fingerprint] = series
 
 		for k, v := range metric {
@@ -191,8 +189,6 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 			labelNameValues = append(labelNameValues, fingerprint)
 			s.labelNameToFingerprints[k] = labelNameValues
 		}
-
-		s.Unlock()
 	}
 
 	series.add(sample.Timestamp, sample.Value)
@@ -203,15 +199,14 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 // Append raw samples, bypassing indexing. Only used to add data to views,
 // which don't need to lookup by metric.
 func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *model.Fingerprint, samples model.Values) {
-	s.RLock()
+	s.Lock()
+	defer s.Unlock()
+
 	series, ok := s.fingerprintToSeries[*fingerprint]
-	s.RUnlock()
 
 	if !ok {
 		series = newStream(model.Metric{})
-		s.Lock()
 		s.fingerprintToSeries[*fingerprint] = series
-		s.Unlock()
 	}
 
 	for _, sample := range samples {
@@ -220,9 +215,10 @@ func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *model.Fi
 }
 
 func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fingerprints model.Fingerprints, err error) {
-	sets := []utility.Set{}
-
 	s.RLock()
+	defer s.RUnlock()
+
+	sets := []utility.Set{}
 	for k, v := range l {
 		values := s.labelPairToFingerprints[model.LabelPair{
 			Name:  k,
@@ -234,7 +230,6 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 		}
 		sets = append(sets, set)
 	}
-	s.RUnlock()
 
 	setCount := len(sets)
 	if setCount == 0 {
@@ -256,6 +251,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (model.Fingerprints, error) {
 	s.RLock()
 	defer s.RUnlock()
+
 	values, ok := s.labelNameToFingerprints[l]
 	if !ok {
 		return nil, nil
@@ -269,8 +265,9 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (mo
 
 func (s *memorySeriesStorage) GetMetricForFingerprint(f *model.Fingerprint) (model.Metric, error) {
 	s.RLock()
+	defer s.RUnlock()
+
 	series, ok := s.fingerprintToSeries[*f]
-	s.RUnlock()
 	if !ok {
 		return nil, nil
 	}
@@ -285,8 +282,9 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(f *model.Fingerprint) (mod
 
 func (s *memorySeriesStorage) CloneSamples(f *model.Fingerprint) model.Values {
 	s.RLock()
+	defer s.RUnlock()
+
 	series, ok := s.fingerprintToSeries[*f]
-	s.RUnlock()
 	if !ok {
 		return nil
 	}
@@ -296,8 +294,9 @@ func (s *memorySeriesStorage) CloneSamples(f *model.Fingerprint) model.Values {
 
 func (s *memorySeriesStorage) GetValueAtTime(f *model.Fingerprint, t time.Time) model.Values {
 	s.RLock()
+	defer s.RUnlock()
+
 	series, ok := s.fingerprintToSeries[*f]
-	s.RUnlock()
 	if !ok {
 		return nil
 	}
@@ -307,8 +306,9 @@ func (s *memorySeriesStorage) GetValueAtTime(f *model.Fingerprint, t time.Time) 
 
 func (s *memorySeriesStorage) GetBoundaryValues(f *model.Fingerprint, i model.Interval) model.Values {
 	s.RLock()
+	defer s.RUnlock()
+
 	series, ok := s.fingerprintToSeries[*f]
-	s.RUnlock()
 	if !ok {
 		return nil
 	}
@@ -318,8 +318,9 @@ func (s *memorySeriesStorage) GetBoundaryValues(f *model.Fingerprint, i model.In
 
 func (s *memorySeriesStorage) GetRangeValues(f *model.Fingerprint, i model.Interval) model.Values {
 	s.RLock()
+	defer s.RUnlock()
+
 	series, ok := s.fingerprintToSeries[*f]
-	s.RUnlock()
 
 	if !ok {
 		return nil
@@ -329,12 +330,18 @@ func (s *memorySeriesStorage) GetRangeValues(f *model.Fingerprint, i model.Inter
 }
 
 func (s *memorySeriesStorage) Close() {
+	s.Lock()
+	defer s.Unlock()
+
 	s.fingerprintToSeries = map[model.Fingerprint]*stream{}
 	s.labelPairToFingerprints = map[model.LabelPair]model.Fingerprints{}
 	s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
 }
 
 func (s *memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
+	s.RLock()
+	defer s.RUnlock()
+
 	valueSet := map[model.LabelValue]bool{}
 	for _, series := range s.fingerprintToSeries {
 		if value, ok := series.metric[labelName]; ok {
@@ -344,6 +351,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (v
 			}
 		}
 	}
+
 	return
 }
 
