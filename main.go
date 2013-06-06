@@ -266,7 +266,10 @@ func main() {
 	}
 	defer prometheus.close()
 
-	go ts.Serve()
+	storageStarted := make(chan bool)
+	go ts.Serve(storageStarted)
+	<-storageStarted
+
 	go prometheus.interruptHandler()
 	go prometheus.reportDatabaseState()
 
