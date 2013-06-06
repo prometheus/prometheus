@@ -492,22 +492,19 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 
 	mutationCount := 0
 	for fingerprint, samples := range groups {
-		key := &dto.Fingerprint{}
+		keyEncoded := coding.NewPBEncoder(fingerprint.ToDTO())
 		value := &dto.MetricHighWatermark{}
-		raw := []byte{}
 		newestSampleTimestamp := samples[len(samples)-1].Timestamp
-		keyEncoded := coding.NewPBEncoder(key)
 
-		key.Signature = proto.String(fingerprint.ToRowKey())
-		raw, err = l.MetricHighWatermarks.Get(keyEncoded)
+		raw, err := l.MetricHighWatermarks.Get(keyEncoded)
 		if err != nil {
-			return
+			return err
 		}
 
 		if raw != nil {
 			err = proto.Unmarshal(raw, value)
 			if err != nil {
-				return
+				return err
 			}
 
 			if newestSampleTimestamp.Before(time.Unix(*value.Timestamp, 0)) {
@@ -521,10 +518,10 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 
 	err = l.MetricHighWatermarks.Commit(batch)
 	if err != nil {
-		return
+		return err
 	}
 
-	return
+	return nil
 }
 
 func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err error) {
