@@ -85,10 +85,13 @@ const (
 // Interfaces.
 
 // All node interfaces include the Node interface.
+type Nodes []Node
+
 type Node interface {
 	Type() ExprType
+	Children() Nodes
 	NodeTreeToDotGraph() string
-	Children() []Node
+	String() string
 }
 
 // All node types implement one of the following interfaces. The name of the
@@ -126,7 +129,7 @@ type (
 	// A function of numeric return type.
 	ScalarFunctionCall struct {
 		function *Function
-		args     []Node
+		args     Nodes
 	}
 
 	// An arithmetic expression of numeric type.
@@ -151,13 +154,13 @@ type (
 	// A function of vector return type.
 	VectorFunctionCall struct {
 		function *Function
-		args     []Node
+		args     Nodes
 	}
 
 	// A vector aggregation with vector return type.
 	VectorAggregation struct {
 		aggrType AggrType
-		groupBy  []model.LabelName
+		groupBy  model.LabelNames
 		vector   VectorNode
 	}
 
@@ -194,7 +197,7 @@ type (
 	// A function of string return type.
 	StringFunctionCall struct {
 		function *Function
-		args     []Node
+		args     Nodes
 	}
 )
 
@@ -214,16 +217,16 @@ func (node StringLiteral) Type() ExprType      { return STRING }
 func (node StringFunctionCall) Type() ExprType { return STRING }
 
 // Node.Children() methods.
-func (node ScalarLiteral) Children() []Node      { return []Node{} }
-func (node ScalarFunctionCall) Children() []Node { return node.args }
-func (node ScalarArithExpr) Children() []Node    { return []Node{node.lhs, node.rhs} }
-func (node VectorLiteral) Children() []Node      { return []Node{} }
-func (node VectorFunctionCall) Children() []Node { return node.args }
-func (node VectorAggregation) Children() []Node  { return []Node{node.vector} }
-func (node VectorArithExpr) Children() []Node    { return []Node{node.lhs, node.rhs} }
-func (node MatrixLiteral) Children() []Node      { return []Node{} }
-func (node StringLiteral) Children() []Node      { return []Node{} }
-func (node StringFunctionCall) Children() []Node { return node.args }
+func (node ScalarLiteral) Children() Nodes      { return Nodes{} }
+func (node ScalarFunctionCall) Children() Nodes { return node.args }
+func (node ScalarArithExpr) Children() Nodes    { return Nodes{node.lhs, node.rhs} }
+func (node VectorLiteral) Children() Nodes      { return Nodes{} }
+func (node VectorFunctionCall) Children() Nodes { return node.args }
+func (node VectorAggregation) Children() Nodes  { return Nodes{node.vector} }
+func (node VectorArithExpr) Children() Nodes    { return Nodes{node.lhs, node.rhs} }
+func (node MatrixLiteral) Children() Nodes      { return Nodes{} }
+func (node StringLiteral) Children() Nodes      { return Nodes{} }
+func (node StringFunctionCall) Children() Nodes { return node.args }
 
 func (node *ScalarLiteral) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
 	return node.value
@@ -622,7 +625,7 @@ func NewVectorLiteral(labels model.LabelSet) *VectorLiteral {
 	}
 }
 
-func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy []model.LabelName) *VectorAggregation {
+func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy model.LabelNames) *VectorAggregation {
 	return &VectorAggregation{
 		aggrType: aggrType,
 		groupBy:  groupBy,
@@ -630,7 +633,7 @@ func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy []model.
 	}
 }
 
-func NewFunctionCall(function *Function, args []Node) (Node, error) {
+func NewFunctionCall(function *Function, args Nodes) (Node, error) {
 	if err := function.CheckArgTypes(args); err != nil {
 		return nil, err
 	}
@@ -654,7 +657,7 @@ func NewFunctionCall(function *Function, args []Node) (Node, error) {
 	panic("Function with invalid return type")
 }
 
-func nodesHaveTypes(nodes []Node, exprTypes []ExprType) bool {
+func nodesHaveTypes(nodes Nodes, exprTypes []ExprType) bool {
 	for _, node := range nodes {
 		correctType := false
 		for _, exprType := range exprTypes {
@@ -670,7 +673,7 @@ func nodesHaveTypes(nodes []Node, exprTypes []ExprType) bool {
 }
 
 func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
-	if !nodesHaveTypes([]Node{lhs, rhs}, []ExprType{SCALAR, VECTOR}) {
+	if !nodesHaveTypes(Nodes{lhs, rhs}, []ExprType{SCALAR, VECTOR}) {
 		return nil, errors.New("Binary operands must be of vector or scalar type")
 	}
 	if lhs.Type() == SCALAR && rhs.Type() == VECTOR {

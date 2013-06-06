@@ -45,6 +45,8 @@ func (opType BinOpType) String() string {
 		NE:  "!=",
 		GE:  ">=",
 		LE:  "<=",
+		AND: "AND",
+		OR:  "OR",
 	}
 	return opTypeMap[opType]
 }
@@ -71,13 +73,13 @@ func (exprType ExprType) String() string {
 }
 
 func (vector Vector) String() string {
-	metricStrings := []string{}
+	metricStrings := make([]string, 0, len(vector))
 	for _, sample := range vector {
 		metricName, ok := sample.Metric[model.MetricNameLabel]
 		if !ok {
 			panic("Tried to print vector without metric name")
 		}
-		labelStrings := []string{}
+		labelStrings := make([]string, 0, len(sample.Metric)-1)
 		for label, value := range sample.Metric {
 			if label != model.MetricNameLabel {
 				// TODO escape special chars in label values here and elsewhere.
@@ -95,20 +97,20 @@ func (vector Vector) String() string {
 }
 
 func (matrix Matrix) String() string {
-	metricStrings := []string{}
+	metricStrings := make([]string, 0, len(matrix))
 	for _, sampleSet := range matrix {
 		metricName, ok := sampleSet.Metric[model.MetricNameLabel]
 		if !ok {
 			panic("Tried to print matrix without metric name")
 		}
-		labelStrings := []string{}
+		labelStrings := make([]string, 0, len(sampleSet.Metric)-1)
 		for label, value := range sampleSet.Metric {
 			if label != model.MetricNameLabel {
 				labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
 			}
 		}
 		sort.Strings(labelStrings)
-		valueStrings := []string{}
+		valueStrings := make([]string, 0, len(sampleSet.Values))
 		for _, value := range sampleSet.Values {
 			valueStrings = append(valueStrings,
 				fmt.Sprintf("\n%v @[%v]", value.Value, value.Timestamp))
@@ -204,27 +206,6 @@ func EvalToString(node Node, timestamp time.Time, format OutputFormat, storage *
 	panic("Switch didn't cover all node types")
 }
 
-func (node *VectorLiteral) String() string {
-	metricName, ok := node.labels[model.MetricNameLabel]
-	if !ok {
-		panic("Tried to print vector without metric name")
-	}
-	labelStrings := []string{}
-	for label, value := range node.labels {
-		if label != model.MetricNameLabel {
-			labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
-		}
-	}
-	sort.Strings(labelStrings)
-	return fmt.Sprintf("%s{%s}", metricName, strings.Join(labelStrings, ","))
-}
-
-func (node *MatrixLiteral) String() string {
-	vectorString := (&VectorLiteral{labels: node.labels}).String()
-	intervalString := fmt.Sprintf("['%s']", utility.DurationToString(node.interval))
-	return vectorString + intervalString
-}
-
 func (node *ScalarLiteral) NodeTreeToDotGraph() string {
 	return fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.value)
 }
@@ -268,7 +249,7 @@ func (node *VectorFunctionCall) NodeTreeToDotGraph() string {
 }
 
 func (node *VectorAggregation) NodeTreeToDotGraph() string {
-	groupByStrings := []string{}
+	groupByStrings := make([]string, 0, len(node.groupBy))
 	for _, label := range node.groupBy {
 		groupByStrings = append(groupByStrings, string(label))
 	}
@@ -305,4 +286,65 @@ func (node *StringFunctionCall) NodeTreeToDotGraph() string {
 	graph := fmt.Sprintf("%#p[label=\"%s\"];\n", node, node.function.name)
 	graph += functionArgsToDotGraph(node, node.args)
 	return graph
+}
+
+func (nodes Nodes) String() string {
+	nodeStrings := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		nodeStrings = append(nodeStrings, node.String())
+	}
+	return strings.Join(nodeStrings, ", ")
+}
+
+func (node *ScalarLiteral) String() string {
+	return fmt.Sprint(node.value)
+}
+
+func (node *ScalarFunctionCall) String() string {
+	return fmt.Sprintf("%s(%s)", node.function.name, node.args)
+}
+
+func (node *ScalarArithExpr) String() string {
+	return fmt.Sprintf("(%s %s %s)", node.lhs, node.opType, node.rhs)
+}
+
+func (node *VectorLiteral) String() string {
+	metricName, ok := node.labels[model.MetricNameLabel]
+	if !ok {
+		panic("Tried to print vector without metric name")
+	}
+	labelStrings := make([]string, 0, len(node.labels)-1)
+	for label, value := range node.labels {
+		if label != model.MetricNameLabel {
+			labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
+		}
+	}
+	sort.Strings(labelStrings)
+	return fmt.Sprintf("%s{%s}", metricName, strings.Join(labelStrings, ","))
+}
+
+func (node *VectorFunctionCall) String() string {
+	return fmt.Sprintf("%s(%s)", node.function.name, node.args)
+}
+
+func (node *VectorAggregation) String() string {
+	return fmt.Sprintf("%s(%s) BY (%s)", node.aggrType, node.vector, node.groupBy)
+}
+
+func (node *VectorArithExpr) String() string {
+	return fmt.Sprintf("(%s %s %s)", node.lhs, node.opType, node.rhs)
+}
+
+func (node *MatrixLiteral) String() string {
+	vectorString := (&VectorLiteral{labels: node.labels}).String()
+	intervalString := fmt.Sprintf("[%s]", utility.DurationToString(node.interval))
+	return vectorString + intervalString
+}
+
+func (node *StringLiteral) String() string {
+	return fmt.Sprintf("'%s'", node.str)
+}
+
+func (node *StringFunctionCall) String() string {
+	return fmt.Sprintf("%s(%s)", node.function.name, node.args)
 }

@@ -31,4 +31,6 @@ type Rule interface {
 	Eval(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error)
 	// ToDotGraph returns a Graphviz dot graph of the rule.
 	ToDotGraph() string
+	// String returns a human-readable string representation of the rule.
+	String() string
 }
