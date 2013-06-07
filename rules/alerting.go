@@ -147,6 +147,10 @@ func (rule AlertingRule) ToDotGraph() string {
 	return graph
 }
 
+func (rule AlertingRule) String() string {
+	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s\n", rule.name, rule.vector, utility.DurationToString(rule.holdDuration), rule.labels)
+}
+
 // Construct a new AlertingRule.
 func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels model.LabelSet) *AlertingRule {
 	return &AlertingRule{

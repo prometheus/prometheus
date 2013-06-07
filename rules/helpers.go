@@ -50,7 +50,7 @@ func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {
 	return functionCall, nil
 }
 
-func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy []model.LabelName) (*ast.VectorAggregation, error) {
+func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy model.LabelNames) (*ast.VectorAggregation, error) {
 	if _, ok := vector.(ast.VectorNode); !ok {
 		return nil, fmt.Errorf("Operand of %v aggregation must be of vector type", aggrTypeStr)
 	}

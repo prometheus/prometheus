@@ -14,7 +14,6 @@
 %{
         package rules
 
-        import "fmt"
         import "github.com/prometheus/prometheus/model"
         import "github.com/prometheus/prometheus/rules/ast"
 %}
@@ -25,7 +24,7 @@
         ruleNode ast.Node
         ruleNodeSlice []ast.Node
         boolean bool
-        labelNameSlice []model.LabelName
+        labelNameSlice model.LabelNames
         labelSet model.LabelSet
 }
 
@@ -164,13 +163,13 @@ rule_expr          : '(' rule_expr ')'
                    ;
 
 grouping_opts      :
-                     { $$ = []model.LabelName{} }
+                     { $$ = model.LabelNames{} }
                    | GROUP_OP '(' label_list ')'
                      { $$ = $3 }
                    ;
 
 label_list         : IDENTIFIER
-                     { $$ = []model.LabelName{model.LabelName($1)} }
+                     { $$ = model.LabelNames{model.LabelName($1)} }
                    | label_list ',' IDENTIFIER
                      { $$ = append($$, model.LabelName($3)) }
                    ;

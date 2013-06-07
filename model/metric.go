@@ -19,6 +19,7 @@ import (
 	"fmt"
 	dto "github.com/prometheus/prometheus/model/generated"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -50,36 +51,14 @@ func (l LabelSet) Merge(other LabelSet) LabelSet {
 }
 
 func (l LabelSet) String() string {
-	var (
-		buffer     bytes.Buffer
-		labels     LabelNames
-		labelCount int = len(l)
-	)
-
-	for name := range l {
-		labels = append(labels, name)
+	labelStrings := make([]string, 0, len(l))
+	for label, value := range l {
+		labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
 	}
 
-	sort.Sort(labels)
+	sort.Strings(labelStrings)
 
-	fmt.Fprintf(&buffer, "{")
-	for i := 0; i < labelCount; i++ {
-		var (
-			label = labels[i]
-			value = l[label]
-		)
-
-		switch i {
-		case labelCount - 1:
-			fmt.Fprintf(&buffer, "%s=%s", label, value)
-		default:
-			fmt.Fprintf(&buffer, "%s=%s, ", label, value)
-		}
-	}
-
-	fmt.Fprintf(&buffer, "}")
-
-	return buffer.String()
+	return fmt.Sprintf("{%s}", strings.Join(labelStrings, ", "))
 }
 
 func (l LabelSet) ToMetric() Metric {
