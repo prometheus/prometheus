@@ -217,7 +217,6 @@ func (t *TieredStorage) Serve(started chan<- bool) {
 	t.mu.Lock()
 	if t.state != tieredStorageStarting {
 		panic("Illegal State: Attempted to restart TieredStorage.")
-		return
 	}
 
 	t.state = tieredStorageServing

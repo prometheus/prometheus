@@ -131,7 +131,7 @@ func testProcessor002Process(t test.Tester) {
 
 		reader, err := os.Open(path.Join("fixtures", scenario.in))
 		if err != nil {
-			t.Fatalf("%d. couldn't open scenario input file %s: %s", scenario.in, err)
+			t.Fatalf("%d. couldn't open scenario input file %s: %s", i, scenario.in, err)
 		}
 
 		err = Processor002.Process(reader, time.Now(), scenario.baseLabels, inputChannel)
