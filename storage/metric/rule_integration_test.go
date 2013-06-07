@@ -896,7 +896,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 
 func testMemoryGetValueAtTime(t test.Tester) {
 	persistenceMaker := func() (MetricPersistence, test.Closer) {
-		return NewMemorySeriesStorage(), test.NilCloser
+		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 
 	GetValueAtTimeTests(persistenceMaker, t)
@@ -924,7 +924,7 @@ func BenchmarkMemoryGetBoundaryValues(b *testing.B) {
 
 func testMemoryGetRangeValues(t test.Tester) {
 	persistenceMaker := func() (MetricPersistence, test.Closer) {
-		return NewMemorySeriesStorage(), test.NilCloser
+		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 
 	GetRangeValuesTests(persistenceMaker, false, t)
@@ -932,7 +932,7 @@ func testMemoryGetRangeValues(t test.Tester) {
 
 func testMemoryGetBoundaryValues(t test.Tester) {
 	persistenceMaker := func() (MetricPersistence, test.Closer) {
-		return NewMemorySeriesStorage(), test.NilCloser
+		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 
 	GetRangeValuesTests(persistenceMaker, true, t)

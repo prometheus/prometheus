@@ -48,7 +48,7 @@ func BenchmarkStreamAdd(b *testing.B) {
 
 func benchmarkAppendSample(b *testing.B, labels int) {
 	b.StopTimer()
-	s := NewMemorySeriesStorage()
+	s := NewMemorySeriesStorage(MemorySeriesOptions{})
 
 	metric := model.Metric{}
 

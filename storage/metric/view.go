@@ -110,5 +110,5 @@ func (v view) appendSamples(fingerprint *model.Fingerprint, samples model.Values
 }
 
 func newView() view {
-	return view{NewMemorySeriesStorage()}
+	return view{NewMemorySeriesStorage(MemorySeriesOptions{})}
 }
