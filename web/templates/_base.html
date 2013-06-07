@@ -13,6 +13,8 @@
       <a href="/graph">Graph &amp; Console</a>
       <a href="/">Status</a>
       <a href="/databases">Databases</a>
+      {{ define "user_dashboard_link" }}{{ end }}
+      {{ template "user_dashboard_link" .}}
 
       <!-- Help should preferentially be the right-most element. -->
       <a href="https://github.com/prometheus/prometheus/wiki" target="_blank">Help</a>
