@@ -75,12 +75,15 @@ func (w WebService) ServeForever() error {
 	return http.ListenAndServe(*listenAddress, exp.DefaultCoarseMux)
 }
 
-func getTemplate(name string) (t *template.Template, err error) {
-	if *useLocalAssets {
-		return template.ParseFiles("web/templates/_base.html", fmt.Sprintf("web/templates/%s.html", name))
-	}
+func getLocalTemplate(name string) (*template.Template, error) {
+	return template.ParseFiles(
+		"web/templates/_base.html",
+		fmt.Sprintf("web/templates/%s.html", name),
+	)
+}
 
-	t = template.New("_base")
+func getEmbeddedTemplate(name string) (*template.Template, error) {
+	t := template.New("_base")
 
 	file, err := blob.GetFile(blob.TemplateFiles, "_base.html")
 	if err != nil {
@@ -95,6 +98,26 @@ func getTemplate(name string) (t *template.Template, err error) {
 		return nil, err
 	}
 	t.Parse(string(file))
+
+	return t, nil
+}
+
+
+func getTemplate(name string) (t *template.Template, err error) {
+	if *useLocalAssets {
+		t, err = getLocalTemplate(name)
+	} else {
+		t, err = getEmbeddedTemplate(name)
+	}
+
+	if err != nil {
+		return
+	}
+
+	if *userAssetsPath != "" {
+		// replace "user_dashboard_link" template
+		t.Parse(`{{define "user_dashboard_link"}}<a href="/user">User Dashboard{{end}}`)
+	}
 
 	return
 }
