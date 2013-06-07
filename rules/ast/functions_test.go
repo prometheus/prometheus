@@ -23,7 +23,8 @@ type emptyRangeNode struct{}
 
 func (node emptyRangeNode) Type() ExprType             { return MATRIX }
 func (node emptyRangeNode) NodeTreeToDotGraph() string { return "" }
-func (node emptyRangeNode) Children() []Node           { return []Node{} }
+func (node emptyRangeNode) String() string             { return "" }
+func (node emptyRangeNode) Children() Nodes            { return Nodes{} }
 
 func (node emptyRangeNode) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 	return Matrix{

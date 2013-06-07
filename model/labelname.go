@@ -13,6 +13,10 @@
 
 package model
 
+import (
+	"strings"
+)
+
 const (
 	// The label name indicating the metric name of a timeseries.
 	MetricNameLabel = LabelName("name")
@@ -49,4 +53,12 @@ func (l LabelNames) Less(i, j int) bool {
 
 func (l LabelNames) Swap(i, j int) {
 	l[i], l[j] = l[j], l[i]
+}
+
+func (l LabelNames) String() string {
+	labelStrings := make([]string, 0, len(l))
+	for _, label := range l {
+		labelStrings = append(labelStrings, string(label))
+	}
+	return strings.Join(labelStrings, ", ")
 }

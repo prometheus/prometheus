@@ -67,6 +67,10 @@ func (rule RecordingRule) ToDotGraph() string {
 	return graph
 }
 
+func (rule RecordingRule) String() string {
+	return fmt.Sprintf("%s%s = %s\n", rule.name, rule.labels, rule.vector)
+}
+
 // Construct a new RecordingRule.
 func NewRecordingRule(name string, labels model.LabelSet, vector ast.VectorNode, permanent bool) *RecordingRule {
 	return &RecordingRule{
