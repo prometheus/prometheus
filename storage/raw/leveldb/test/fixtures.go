@@ -14,7 +14,8 @@
 package test
 
 import (
-	"github.com/prometheus/prometheus/coding"
+	"code.google.com/p/goprotobuf/proto"
+
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility/test"
 )
@@ -28,7 +29,7 @@ type (
 	// Pair models a prospective (key, value) double that will be committed to
 	// a database.
 	Pair interface {
-		Get() (key, value coding.Encoder)
+		Get() (key, value proto.Message)
 	}
 
 	// Pairs models a list of Pair for disk committing.
@@ -47,7 +48,7 @@ type (
 		// data to build.
 		HasNext() (has bool)
 		// Next emits the next (key, value) double for storage.
-		Next() (key coding.Encoder, value coding.Encoder)
+		Next() (key, value proto.Message)
 	}
 
 	preparer struct {
@@ -88,7 +89,7 @@ func (f cassetteFactory) HasNext() bool {
 	return f.index < f.count
 }
 
-func (f *cassetteFactory) Next() (key, value coding.Encoder) {
+func (f *cassetteFactory) Next() (key, value proto.Message) {
 	key, value = f.pairs[f.index].Get()
 
 	f.index++

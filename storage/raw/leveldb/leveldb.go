@@ -16,11 +16,14 @@ package leveldb
 import (
 	"flag"
 	"fmt"
+	"time"
+
+	"code.google.com/p/goprotobuf/proto"
 	"github.com/jmhodges/levigo"
+
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
-	"time"
 )
 
 var (
@@ -250,38 +253,37 @@ func (l *LevelDBPersistence) Close() {
 	return
 }
 
-func (l *LevelDBPersistence) Get(value coding.Encoder) (b []byte, err error) {
-	key := value.MustEncode()
-
-	return l.storage.Get(l.readOptions, key)
-}
-
-func (l *LevelDBPersistence) Has(value coding.Encoder) (h bool, err error) {
-	raw, err := l.Get(value)
+func (l *LevelDBPersistence) Get(k, v proto.Message) (bool, error) {
+	raw, err := l.storage.Get(l.readOptions, coding.NewPBEncoder(k).MustEncode())
 	if err != nil {
-		return
+		return false, err
+	}
+	if raw == nil {
+		return false, nil
 	}
 
-	h = raw != nil
+	if v == nil {
+		return true, nil
+	}
 
-	return
+	err = proto.Unmarshal(raw, v)
+	if err != nil {
+		return true, err
+	}
+
+	return true, nil
 }
 
-func (l *LevelDBPersistence) Drop(value coding.Encoder) (err error) {
-	key := value.MustEncode()
-	err = l.storage.Delete(l.writeOptions, key)
-
-	return
+func (l *LevelDBPersistence) Has(k proto.Message) (has bool, err error) {
+	return l.Get(k, nil)
 }
 
-func (l *LevelDBPersistence) Put(key, value coding.Encoder) (err error) {
-	keyEncoded := key.MustEncode()
+func (l *LevelDBPersistence) Drop(k proto.Message) error {
+	return l.storage.Delete(l.writeOptions, coding.NewPBEncoder(k).MustEncode())
+}
 
-	valueEncoded := value.MustEncode()
-
-	err = l.storage.Put(l.writeOptions, keyEncoded, valueEncoded)
-
-	return
+func (l *LevelDBPersistence) Put(key, value proto.Message) error {
+	return l.storage.Put(l.writeOptions, coding.NewPBEncoder(key).MustEncode(), coding.NewPBEncoder(value).MustEncode())
 }
 
 func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {

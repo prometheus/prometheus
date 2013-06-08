@@ -206,10 +206,10 @@ func (w watermarkFilter) shouldStop() bool {
 	return len(w.stop) != 0
 }
 
-func getCurationRemark(states raw.Persistence, processor Processor, ignoreYoungerThan time.Duration, fingerprint *model.Fingerprint) (remark *model.CurationRemark, err error) {
+func getCurationRemark(states raw.Persistence, processor Processor, ignoreYoungerThan time.Duration, fingerprint *model.Fingerprint) (*model.CurationRemark, error) {
 	rawSignature, err := processor.Signature()
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	curationKey := model.CurationKey{
@@ -220,30 +220,17 @@ func getCurationRemark(states raw.Persistence, processor Processor, ignoreYounge
 	}.ToDTO()
 	curationValue := &dto.CurationValue{}
 
-	rawKey := coding.NewPBEncoder(curationKey)
-
-	has, err := states.Has(rawKey)
+	present, err := states.Get(curationKey, curationValue)
 	if err != nil {
-		return
+		return nil, err
 	}
-	if !has {
-		return
-	}
-
-	rawCurationValue, err := states.Get(rawKey)
-	if err != nil {
-		return
+	if !present {
+		return nil, nil
 	}
 
-	err = proto.Unmarshal(rawCurationValue, curationValue)
-	if err != nil {
-		return
-	}
+	remark := model.NewCurationRemarkFromDTO(curationValue)
 
-	baseRemark := model.NewCurationRemarkFromDTO(curationValue)
-	remark = &baseRemark
-
-	return
+	return &remark, nil
 }
 
 func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult) {
@@ -386,7 +373,7 @@ func (w watermarkOperator) refreshCurationRemark(f *model.Fingerprint, finished 
 		LastCompletionTimestamp: finished,
 	}.ToDTO()
 
-	err = w.curationState.Put(coding.NewPBEncoder(curationKey), coding.NewPBEncoder(curationValue))
+	err = w.curationState.Put(curationKey, curationValue)
 
 	return
 }

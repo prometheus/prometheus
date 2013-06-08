@@ -19,8 +19,6 @@ import (
 	"sort"
 	"time"
 
-	"code.google.com/p/goprotobuf/proto"
-
 	dto "github.com/prometheus/prometheus/model/generated"
 
 	"github.com/prometheus/prometheus/coding"
@@ -341,18 +339,12 @@ func (t *TieredStorage) seriesTooOld(f *model.Fingerprint, i time.Time) (bool, e
 
 	wm, ok := t.wmCache.Get(f)
 	if !ok {
-		rowKey := coding.NewPBEncoder(f.ToDTO())
-		raw, err := t.DiskStorage.MetricHighWatermarks.Get(rowKey)
+		value := &dto.MetricHighWatermark{}
+		present, err := t.DiskStorage.MetricHighWatermarks.Get(f.ToDTO(), value)
 		if err != nil {
 			return false, err
 		}
-		if raw != nil {
-			value := &dto.MetricHighWatermark{}
-			err = proto.Unmarshal(raw, value)
-			if err != nil {
-				return false, err
-			}
-
+		if present {
 			wmTime := time.Unix(*value.Timestamp, 0).UTC()
 			t.wmCache.Set(f, &Watermarks{High: wmTime})
 			return wmTime.Before(i), nil
