@@ -13,13 +13,11 @@
 
 package index
 
-import (
-	"github.com/prometheus/prometheus/coding"
-)
+import "code.google.com/p/goprotobuf/proto"
 
 type MembershipIndex interface {
-	Has(key coding.Encoder) (bool, error)
-	Put(key coding.Encoder) error
-	Drop(key coding.Encoder) error
+	Has(key proto.Message) (bool, error)
+	Put(key proto.Message) error
+	Drop(key proto.Message) error
 	Close()
 }

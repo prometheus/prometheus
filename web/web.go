@@ -102,7 +102,6 @@ func getEmbeddedTemplate(name string) (*template.Template, error) {
 	return t, nil
 }
 
-
 func getTemplate(name string) (t *template.Template, err error) {
 	if *useLocalAssets {
 		t, err = getLocalTemplate(name)

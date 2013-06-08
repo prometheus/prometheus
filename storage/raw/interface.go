@@ -14,7 +14,8 @@
 package raw
 
 import (
-	"github.com/prometheus/prometheus/coding"
+	"code.google.com/p/goprotobuf/proto"
+
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -25,14 +26,14 @@ type Persistence interface {
 	// persistence.
 	Close()
 	// Has informs the user whether a given key exists in the database.
-	Has(key coding.Encoder) (bool, error)
+	Has(key proto.Message) (bool, error)
 	// Get retrieves the key from the database if it exists or returns nil if
 	// it is absent.
-	Get(key coding.Encoder) ([]byte, error)
+	Get(key, value proto.Message) (present bool, err error)
 	// Drop removes the key from the database.
-	Drop(key coding.Encoder) error
+	Drop(key proto.Message) error
 	// Put sets the key to a given value.
-	Put(key, value coding.Encoder) error
+	Put(key, value proto.Message) error
 	// ForEach is responsible for iterating through all records in the database
 	// until one of the following conditions are met:
 	//
@@ -41,7 +42,7 @@ type Persistence interface {
 	// 3.) A FilterResult of STOP is emitted by the Filter.
 	//
 	// Decoding errors for an entity cause that entity to be skipped.
-	ForEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error)
+	ForEach(storage.RecordDecoder, storage.RecordFilter, storage.RecordOperator) (scannedEntireCorpus bool, err error)
 	// Commit applies the Batch operations to the database.
 	Commit(Batch) error
 }
@@ -54,7 +55,7 @@ type Batch interface {
 	// batch mutation.
 	Close()
 	// Put follows the same protocol as Persistence.Put.
-	Put(key, value coding.Encoder)
+	Put(key, value proto.Message)
 	// Drop follows the same protocol as Persistence.Drop.
-	Drop(key coding.Encoder)
+	Drop(key proto.Message)
 }
