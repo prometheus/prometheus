@@ -19,17 +19,20 @@
 package main
 
 import (
-	"code.google.com/p/goprotobuf/proto"
 	"encoding/csv"
 	"flag"
 	"fmt"
-	"github.com/prometheus/prometheus/model"
-	dto "github.com/prometheus/prometheus/model/generated"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/metric"
 	"log"
 	"os"
 	"strconv"
+
+	"code.google.com/p/goprotobuf/proto"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 var (

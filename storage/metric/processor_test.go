@@ -14,15 +14,17 @@
 package metric
 
 import (
-	"code.google.com/p/goprotobuf/proto"
 	"fmt"
-	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/model"
-	dto "github.com/prometheus/prometheus/model/generated"
-	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	fixture "github.com/prometheus/prometheus/storage/raw/leveldb/test"
 	"testing"
 	"time"
+
+	"code.google.com/p/goprotobuf/proto"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+	fixture "github.com/prometheus/prometheus/storage/raw/leveldb/test"
+
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
 type curationState struct {
@@ -56,40 +58,40 @@ type out struct {
 	sampleGroups   []sampleGroup
 }
 
-func (c curationState) Get() (key, value coding.Encoder) {
+func (c curationState) Get() (key, value proto.Message) {
 	signature, err := c.processor.Signature()
 	if err != nil {
 		panic(err)
 	}
-	key = coding.NewPBEncoder(model.CurationKey{
+	key = model.CurationKey{
 		Fingerprint:              model.NewFingerprintFromRowKey(c.fingerprint),
 		ProcessorMessageRaw:      signature,
 		ProcessorMessageTypeName: c.processor.Name(),
 		IgnoreYoungerThan:        c.ignoreYoungerThan,
-	}.ToDTO())
+	}.ToDTO()
 
-	value = coding.NewPBEncoder(model.CurationRemark{
+	value = model.CurationRemark{
 		LastCompletionTimestamp: c.lastCurated,
-	}.ToDTO())
+	}.ToDTO()
 
 	return
 }
 
-func (w watermarkState) Get() (key, value coding.Encoder) {
-	key = coding.NewPBEncoder(model.NewFingerprintFromRowKey(w.fingerprint).ToDTO())
-	value = coding.NewPBEncoder(model.NewWatermarkFromTime(w.lastAppended).ToMetricHighWatermarkDTO())
+func (w watermarkState) Get() (key, value proto.Message) {
+	key = model.NewFingerprintFromRowKey(w.fingerprint).ToDTO()
+	value = model.NewWatermarkFromTime(w.lastAppended).ToMetricHighWatermarkDTO()
 	return
 }
 
-func (s sampleGroup) Get() (key, value coding.Encoder) {
-	key = coding.NewPBEncoder(model.SampleKey{
+func (s sampleGroup) Get() (key, value proto.Message) {
+	key = model.SampleKey{
 		Fingerprint:    model.NewFingerprintFromRowKey(s.fingerprint),
 		FirstTimestamp: s.values[0].Timestamp,
 		LastTimestamp:  s.values[len(s.values)-1].Timestamp,
 		SampleCount:    uint32(len(s.values)),
-	}.ToDTO())
+	}.ToDTO()
 
-	value = coding.NewPBEncoder(s.values.ToDTO())
+	value = s.values.ToDTO()
 
 	return
 }

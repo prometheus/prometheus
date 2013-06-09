@@ -14,20 +14,15 @@
 package leveldb
 
 import (
-	"github.com/prometheus/prometheus/coding"
+	"code.google.com/p/goprotobuf/proto"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
-type indexValue struct{}
-
-func (i *indexValue) MustEncode() []byte {
-	return []byte{}
-}
-
-var (
-	existenceValue = &indexValue{}
-)
+var existenceValue = &dto.MembershipIndexValue{}
 
 type LevelDBMembershipIndex struct {
 	persistence *leveldb.LevelDBPersistence
@@ -37,16 +32,16 @@ func (l *LevelDBMembershipIndex) Close() {
 	l.persistence.Close()
 }
 
-func (l *LevelDBMembershipIndex) Has(key coding.Encoder) (bool, error) {
-	return l.persistence.Has(key)
+func (l *LevelDBMembershipIndex) Has(k proto.Message) (bool, error) {
+	return l.persistence.Has(k)
 }
 
-func (l *LevelDBMembershipIndex) Drop(key coding.Encoder) error {
-	return l.persistence.Drop(key)
+func (l *LevelDBMembershipIndex) Drop(k proto.Message) error {
+	return l.persistence.Drop(k)
 }
 
-func (l *LevelDBMembershipIndex) Put(key coding.Encoder) error {
-	return l.persistence.Put(key, existenceValue)
+func (l *LevelDBMembershipIndex) Put(k proto.Message) error {
+	return l.persistence.Put(k, existenceValue)
 }
 
 func NewLevelDBMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (i *LevelDBMembershipIndex, err error) {

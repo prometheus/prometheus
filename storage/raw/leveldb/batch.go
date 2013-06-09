@@ -15,7 +15,10 @@ package leveldb
 
 import (
 	"fmt"
+
+	"code.google.com/p/goprotobuf/proto"
 	"github.com/jmhodges/levigo"
+
 	"github.com/prometheus/prometheus/coding"
 )
 
@@ -31,25 +34,23 @@ func NewBatch() *batch {
 	}
 }
 
-func (b *batch) Drop(key coding.Encoder) {
-	keyEncoded := key.MustEncode()
-	b.drops++
+func (b *batch) Drop(key proto.Message) {
+	b.batch.Delete(coding.NewPBEncoder(key).MustEncode())
 
-	b.batch.Delete(keyEncoded)
+	b.drops++
 }
 
-func (b *batch) Put(key, value coding.Encoder) {
-	keyEncoded := key.MustEncode()
-	valueEncoded := value.MustEncode()
+func (b *batch) Put(key, value proto.Message) {
+	b.batch.Put(coding.NewPBEncoder(key).MustEncode(), coding.NewPBEncoder(value).MustEncode())
+
 	b.puts++
 
-	b.batch.Put(keyEncoded, valueEncoded)
 }
 
-func (b batch) Close() {
+func (b *batch) Close() {
 	b.batch.Close()
 }
 
-func (b batch) String() string {
+func (b *batch) String() string {
 	return fmt.Sprintf("LevelDB batch with %d puts and %d drops.", b.puts, b.drops)
 }
