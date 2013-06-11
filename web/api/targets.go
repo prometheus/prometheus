@@ -52,5 +52,5 @@ func (serv MetricsService) SetTargets(targetGroups []TargetGroup, jobName string
 
 	// BUG(julius): Validate that this ScrapeInterval is in fact the proper one
 	// for the job.
-	serv.TargetManager.ReplaceTargets(*job, newTargets, serv.Config.ScrapeInterval())
+	serv.TargetManager.ReplaceTargets(*job, newTargets)
 }
