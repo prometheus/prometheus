@@ -20,7 +20,7 @@ SUFFIXES:
 include ../../Makefile.INCLUDE
 
 pruner: $(shell find . -iname '*.go')
-	go build -o pruner .
+	$(GO) build -o pruner .
 
 clean:
 	rm -rf $(MAKE_ARTIFACTS)

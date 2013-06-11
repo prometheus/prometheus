@@ -25,15 +25,27 @@ else
 export THIRD_PARTY_BUILD_OUTPUT :=
 endif
 
+OS=$(shell uname)
+ARCH=$(shell uname -m)
+
 GO_VERSION := 1.1
+GOOS		= $(subst Darwin,darwin,$(subst Linux,linux,$(OS)))
+GOARCH		= $(subst x86_64,amd64,$(ARCH))
+GOPKG		= go$(GO_VERSION).$(GOOS)-$(GOARCH).tar.gz
+GOROOT		= $(PWD)/build/root/go
+GOPATH		= $(PWD)/build/root/gopath
+GOCC		= $(GOROOT)/bin/go
+TMPDIR		= /tmp
+GOENV		= TMPDIR=$(TMPDIR) GOROOT=$(GOROOT) GOPATH=$(GOPATH)
+GO		= $(GOENV) $(GOCC)
+
 LEVELDB_VERSION := 1.9.0
 PROTOCOL_BUFFERS_VERSION := 2.5.0
 SNAPPY_VERSION := 1.1.0
 
 UNAME := $(shell uname)
-FIRST_GOPATH := $(shell echo $${GOPATH} | awk -F':' '{ print $$1 }')
-FULL_GOPATH := $(FIRST_GOPATH)/src/github.com/prometheus/prometheus
-FULL_GOPATH_BASE := $(FIRST_GOPATH)/src/github.com/prometheus
+FULL_GOPATH := $(GOPATH)/src/github.com/prometheus/prometheus
+FULL_GOPATH_BASE := $(GOPATH)/src/github.com/prometheus
 
 export PREFIX=$(PWD)/build/root
 
@@ -50,7 +62,7 @@ export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 
 export GO_TEST_FLAGS := "-v"
 
-GO_GET := go get -u -v -x
+GO_GET := $(GO) get -u -v -x
 APT_GET_INSTALL := sudo apt-get install -y
 BREW_INSTALL := brew install
 # By default, wget sets the creation time to match the server's, which throws
