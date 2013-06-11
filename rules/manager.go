@@ -30,6 +30,7 @@ type Result struct {
 type RuleManager interface {
 	AddRulesFromConfig(config config.Config) error
 	Run()
+	Rules() []Rule
 }
 
 type ruleManager struct {
@@ -116,4 +117,13 @@ func (m *ruleManager) AddRulesFromConfig(config config.Config) error {
 		m.Unlock()
 	}
 	return nil
+}
+
+func (m *ruleManager) Rules() []Rule {
+	m.Lock()
+	defer m.Unlock()
+
+	rules := make([]Rule, len(m.rules))
+	copy(rules, m.rules)
+	return rules
 }
