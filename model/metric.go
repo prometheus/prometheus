@@ -53,12 +53,37 @@ func (l LabelSet) Merge(other LabelSet) LabelSet {
 func (l LabelSet) String() string {
 	labelStrings := make([]string, 0, len(l))
 	for label, value := range l {
-		labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
+		labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))
 	}
 
-	sort.Strings(labelStrings)
+	switch len(labelStrings) {
+	case 0:
+		return ""
+	default:
+		sort.Strings(labelStrings)
+		return fmt.Sprintf("{%s}", strings.Join(labelStrings, ", "))
+	}
+}
 
-	return fmt.Sprintf("{%s}", strings.Join(labelStrings, ", "))
+func (m Metric) String() string {
+	metricName, ok := m[MetricNameLabel]
+	if !ok {
+		panic("Tried to print metric without name")
+	}
+	labelStrings := make([]string, 0, len(m)-1)
+	for label, value := range m {
+		if label != MetricNameLabel {
+			labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))
+		}
+	}
+
+	switch len(labelStrings) {
+	case 0:
+		return string(metricName)
+	default:
+		sort.Strings(labelStrings)
+		return fmt.Sprintf("%s{%s}", metricName, strings.Join(labelStrings, ", "))
+	}
 }
 
 func (l LabelSet) ToMetric() Metric {
