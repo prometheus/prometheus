@@ -75,22 +75,9 @@ func (exprType ExprType) String() string {
 func (vector Vector) String() string {
 	metricStrings := make([]string, 0, len(vector))
 	for _, sample := range vector {
-		metricName, ok := sample.Metric[model.MetricNameLabel]
-		if !ok {
-			panic("Tried to print vector without metric name")
-		}
-		labelStrings := make([]string, 0, len(sample.Metric)-1)
-		for label, value := range sample.Metric {
-			if label != model.MetricNameLabel {
-				// TODO escape special chars in label values here and elsewhere.
-				labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
-			}
-		}
-		sort.Strings(labelStrings)
 		metricStrings = append(metricStrings,
-			fmt.Sprintf("%s{%s} => %v @[%v]",
-				metricName,
-				strings.Join(labelStrings, ","),
+			fmt.Sprintf("%s => %v @[%v]",
+				sample.Metric,
 				sample.Value, sample.Timestamp))
 	}
 	return strings.Join(metricStrings, "\n")
@@ -106,7 +93,7 @@ func (matrix Matrix) String() string {
 		labelStrings := make([]string, 0, len(sampleSet.Metric)-1)
 		for label, value := range sampleSet.Metric {
 			if label != model.MetricNameLabel {
-				labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
+				labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))
 			}
 		}
 		sort.Strings(labelStrings)
@@ -118,7 +105,7 @@ func (matrix Matrix) String() string {
 		metricStrings = append(metricStrings,
 			fmt.Sprintf("%s{%s} => %s",
 				metricName,
-				strings.Join(labelStrings, ","),
+				strings.Join(labelStrings, ", "),
 				strings.Join(valueStrings, ", ")))
 	}
 	sort.Strings(metricStrings)
@@ -279,7 +266,7 @@ func (node *MatrixLiteral) NodeTreeToDotGraph() string {
 }
 
 func (node *StringLiteral) NodeTreeToDotGraph() string {
-	return fmt.Sprintf("%#p[label=\"'%s'\"];\n", node, node.str)
+	return fmt.Sprintf("%#p[label=\"'%q'\"];\n", node, node.str)
 }
 
 func (node *StringFunctionCall) NodeTreeToDotGraph() string {
@@ -316,11 +303,17 @@ func (node *VectorLiteral) String() string {
 	labelStrings := make([]string, 0, len(node.labels)-1)
 	for label, value := range node.labels {
 		if label != model.MetricNameLabel {
-			labelStrings = append(labelStrings, fmt.Sprintf("%s='%s'", label, value))
+			labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))
 		}
 	}
-	sort.Strings(labelStrings)
-	return fmt.Sprintf("%s{%s}", metricName, strings.Join(labelStrings, ","))
+
+	switch len(labelStrings) {
+	case 0:
+		return string(metricName)
+	default:
+		sort.Strings(labelStrings)
+		return fmt.Sprintf("%s{%s}", metricName, strings.Join(labelStrings, ","))
+	}
 }
 
 func (node *VectorFunctionCall) String() string {
@@ -342,7 +335,7 @@ func (node *MatrixLiteral) String() string {
 }
 
 func (node *StringLiteral) String() string {
-	return fmt.Sprintf("'%s'", node.str)
+	return fmt.Sprintf("%q", node.str)
 }
 
 func (node *StringFunctionCall) String() string {

@@ -15,6 +15,7 @@ package web
 
 import (
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/metric"
 	"net/http"
 	"sync"
@@ -26,7 +27,7 @@ type PrometheusStatus struct {
 	Config      string
 	Curation    metric.CurationState
 	Flags       map[string]string
-	Rules       string
+	Rules       []rules.Rule
 	TargetPools map[string]*retrieval.TargetPool
 
 	Birth time.Time

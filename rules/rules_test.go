@@ -109,252 +109,252 @@ func TestExpressions(t *testing.T) {
 		intervalRanges int
 	}{
 		{
-			expr:           "SUM(http_requests)",
-			output:         []string{"http_requests{} => 3600 @[%v]"},
+			expr:           `SUM(http_requests)`,
+			output:         []string{`http_requests => 3600 @[%v]`},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job)",
+			expr: `SUM(http_requests) BY (job)`,
 			output: []string{
-				"http_requests{job='api-server'} => 1000 @[%v]",
-				"http_requests{job='app-server'} => 2600 @[%v]",
+				`http_requests{job="api-server"} => 1000 @[%v]`,
+				`http_requests{job="app-server"} => 2600 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "COUNT(http_requests) BY (job)",
+			expr: `COUNT(http_requests) BY (job)`,
 			output: []string{
-				"http_requests{job='api-server'} => 4 @[%v]",
-				"http_requests{job='app-server'} => 4 @[%v]",
+				`http_requests{job="api-server"} => 4 @[%v]`,
+				`http_requests{job="app-server"} => 4 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job, group)",
+			expr: `SUM(http_requests) BY (job, group)`,
 			output: []string{
-				"http_requests{group='canary',job='api-server'} => 700 @[%v]",
-				"http_requests{group='canary',job='app-server'} => 1500 @[%v]",
-				"http_requests{group='production',job='api-server'} => 300 @[%v]",
-				"http_requests{group='production',job='app-server'} => 1100 @[%v]",
+				`http_requests{group="canary", job="api-server"} => 700 @[%v]`,
+				`http_requests{group="canary", job="app-server"} => 1500 @[%v]`,
+				`http_requests{group="production", job="api-server"} => 300 @[%v]`,
+				`http_requests{group="production", job="app-server"} => 1100 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "AVG(http_requests) BY (job)",
+			expr: `AVG(http_requests) BY (job)`,
 			output: []string{
-				"http_requests{job='api-server'} => 250 @[%v]",
-				"http_requests{job='app-server'} => 650 @[%v]",
+				`http_requests{job="api-server"} => 250 @[%v]`,
+				`http_requests{job="app-server"} => 650 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "MIN(http_requests) BY (job)",
+			expr: `MIN(http_requests) BY (job)`,
 			output: []string{
-				"http_requests{job='api-server'} => 100 @[%v]",
-				"http_requests{job='app-server'} => 500 @[%v]",
+				`http_requests{job="api-server"} => 100 @[%v]`,
+				`http_requests{job="app-server"} => 500 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "MAX(http_requests) BY (job)",
+			expr: `MAX(http_requests) BY (job)`,
 			output: []string{
-				"http_requests{job='api-server'} => 400 @[%v]",
-				"http_requests{job='app-server'} => 800 @[%v]",
+				`http_requests{job="api-server"} => 400 @[%v]`,
+				`http_requests{job="app-server"} => 800 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) - COUNT(http_requests) BY (job)",
+			expr: `SUM(http_requests) BY (job) - COUNT(http_requests) BY (job)`,
 			output: []string{
-				"http_requests{job='api-server'} => 996 @[%v]",
-				"http_requests{job='app-server'} => 2596 @[%v]",
+				`http_requests{job="api-server"} => 996 @[%v]`,
+				`http_requests{job="app-server"} => 2596 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) - 2",
+			expr: `SUM(http_requests) BY (job) - 2`,
 			output: []string{
-				"http_requests{job='api-server'} => 998 @[%v]",
-				"http_requests{job='app-server'} => 2598 @[%v]",
+				`http_requests{job="api-server"} => 998 @[%v]`,
+				`http_requests{job="app-server"} => 2598 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) % 3",
+			expr: `SUM(http_requests) BY (job) % 3`,
 			output: []string{
-				"http_requests{job='api-server'} => 1 @[%v]",
-				"http_requests{job='app-server'} => 2 @[%v]",
+				`http_requests{job="api-server"} => 1 @[%v]`,
+				`http_requests{job="app-server"} => 2 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) / 0",
+			expr: `SUM(http_requests) BY (job) / 0`,
 			output: []string{
-				"http_requests{job='api-server'} => +Inf @[%v]",
-				"http_requests{job='app-server'} => +Inf @[%v]",
+				`http_requests{job="api-server"} => +Inf @[%v]`,
+				`http_requests{job="app-server"} => +Inf @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) > 1000",
+			expr: `SUM(http_requests) BY (job) > 1000`,
 			output: []string{
-				"http_requests{job='app-server'} => 2600 @[%v]",
+				`http_requests{job="app-server"} => 2600 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) <= 1000",
+			expr: `SUM(http_requests) BY (job) <= 1000`,
 			output: []string{
-				"http_requests{job='api-server'} => 1000 @[%v]",
+				`http_requests{job="api-server"} => 1000 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) != 1000",
+			expr: `SUM(http_requests) BY (job) != 1000`,
 			output: []string{
-				"http_requests{job='app-server'} => 2600 @[%v]",
+				`http_requests{job="app-server"} => 2600 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) == 1000",
+			expr: `SUM(http_requests) BY (job) == 1000`,
 			output: []string{
-				"http_requests{job='api-server'} => 1000 @[%v]",
+				`http_requests{job="api-server"} => 1000 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "SUM(http_requests) BY (job) + SUM(http_requests) BY (job)",
+			expr: `SUM(http_requests) BY (job) + SUM(http_requests) BY (job)`,
 			output: []string{
-				"http_requests{job='api-server'} => 2000 @[%v]",
-				"http_requests{job='app-server'} => 5200 @[%v]",
+				`http_requests{job="api-server"} => 2000 @[%v]`,
+				`http_requests{job="app-server"} => 5200 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "http_requests{job='api-server', group='canary'}",
+			expr: `http_requests{job="api-server", group="canary"}`,
 			output: []string{
-				"http_requests{group='canary',instance='0',job='api-server'} => 300 @[%v]",
-				"http_requests{group='canary',instance='1',job='api-server'} => 400 @[%v]",
+				`http_requests{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
+				`http_requests{group="canary", instance="1", job="api-server"} => 400 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 2,
 		}, {
-			expr: "http_requests{job='api-server', group='canary'} + delta(http_requests{job='api-server'}[5m], 1)",
+			expr: `http_requests{job="api-server", group="canary"} + delta(http_requests{job="api-server"}[5m], 1)`,
 			output: []string{
-				"http_requests{group='canary',instance='0',job='api-server'} => 330 @[%v]",
-				"http_requests{group='canary',instance='1',job='api-server'} => 440 @[%v]",
+				`http_requests{group="canary", instance="0", job="api-server"} => 330 @[%v]`,
+				`http_requests{group="canary", instance="1", job="api-server"} => 440 @[%v]`,
 			},
 			fullRanges:     4,
 			intervalRanges: 0,
 		}, {
-			expr: "delta(http_requests[25m], 1)",
+			expr: `delta(http_requests[25m], 1)`,
 			output: []string{
-				"http_requests{group='canary',instance='0',job='api-server'} => 150 @[%v]",
-				"http_requests{group='canary',instance='0',job='app-server'} => 350 @[%v]",
-				"http_requests{group='canary',instance='1',job='api-server'} => 200 @[%v]",
-				"http_requests{group='canary',instance='1',job='app-server'} => 400 @[%v]",
-				"http_requests{group='production',instance='0',job='api-server'} => 50 @[%v]",
-				"http_requests{group='production',instance='0',job='app-server'} => 250 @[%v]",
-				"http_requests{group='production',instance='1',job='api-server'} => 100 @[%v]",
-				"http_requests{group='production',instance='1',job='app-server'} => 300 @[%v]",
+				`http_requests{group="canary", instance="0", job="api-server"} => 150 @[%v]`,
+				`http_requests{group="canary", instance="0", job="app-server"} => 350 @[%v]`,
+				`http_requests{group="canary", instance="1", job="api-server"} => 200 @[%v]`,
+				`http_requests{group="canary", instance="1", job="app-server"} => 400 @[%v]`,
+				`http_requests{group="production", instance="0", job="api-server"} => 50 @[%v]`,
+				`http_requests{group="production", instance="0", job="app-server"} => 250 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 100 @[%v]`,
+				`http_requests{group="production", instance="1", job="app-server"} => 300 @[%v]`,
 			},
 			fullRanges:     8,
 			intervalRanges: 0,
 		}, {
-			expr: "sort(http_requests)",
+			expr: `sort(http_requests)`,
 			output: []string{
-				"http_requests{group='production',instance='0',job='api-server'} => 100 @[%v]",
-				"http_requests{group='production',instance='1',job='api-server'} => 200 @[%v]",
-				"http_requests{group='canary',instance='0',job='api-server'} => 300 @[%v]",
-				"http_requests{group='canary',instance='1',job='api-server'} => 400 @[%v]",
-				"http_requests{group='production',instance='0',job='app-server'} => 500 @[%v]",
-				"http_requests{group='production',instance='1',job='app-server'} => 600 @[%v]",
-				"http_requests{group='canary',instance='0',job='app-server'} => 700 @[%v]",
-				"http_requests{group='canary',instance='1',job='app-server'} => 800 @[%v]",
+				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+				`http_requests{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
+				`http_requests{group="canary", instance="1", job="api-server"} => 400 @[%v]`,
+				`http_requests{group="production", instance="0", job="app-server"} => 500 @[%v]`,
+				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
+				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
 			},
 			checkOrder:     true,
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
-			expr: "sort_desc(http_requests)",
+			expr: `sort_desc(http_requests)`,
 			output: []string{
-				"http_requests{group='canary',instance='1',job='app-server'} => 800 @[%v]",
-				"http_requests{group='canary',instance='0',job='app-server'} => 700 @[%v]",
-				"http_requests{group='production',instance='1',job='app-server'} => 600 @[%v]",
-				"http_requests{group='production',instance='0',job='app-server'} => 500 @[%v]",
-				"http_requests{group='canary',instance='1',job='api-server'} => 400 @[%v]",
-				"http_requests{group='canary',instance='0',job='api-server'} => 300 @[%v]",
-				"http_requests{group='production',instance='1',job='api-server'} => 200 @[%v]",
-				"http_requests{group='production',instance='0',job='api-server'} => 100 @[%v]",
+				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
+				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
+				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+				`http_requests{group="production", instance="0", job="app-server"} => 500 @[%v]`,
+				`http_requests{group="canary", instance="1", job="api-server"} => 400 @[%v]`,
+				`http_requests{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
 			},
 			checkOrder:     true,
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
 			// Single-letter label names and values.
-			expr: "x{y='testvalue'}",
+			expr: `x{y="testvalue"}`,
 			output: []string{
-				"x{y='testvalue'} => 100 @[%v]",
+				`x{y="testvalue"} => 100 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 1,
 		}, {
 			// Lower-cased aggregation operators should work too.
-			expr: "sum(http_requests) by (job) + min(http_requests) by (job) + max(http_requests) by (job) + avg(http_requests) by (job)",
+			expr: `sum(http_requests) by (job) + min(http_requests) by (job) + max(http_requests) by (job) + avg(http_requests) by (job)`,
 			output: []string{
-				"http_requests{job='app-server'} => 4550 @[%v]",
-				"http_requests{job='api-server'} => 1750 @[%v]",
+				`http_requests{job="app-server"} => 4550 @[%v]`,
+				`http_requests{job="api-server"} => 1750 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
 			// Deltas should be adjusted for target interval vs. samples under target interval.
-			expr:           "delta(http_requests{group='canary',instance='1',job='app-server'}[18m], 1)",
-			output:         []string{"http_requests{group='canary',instance='1',job='app-server'} => 288 @[%v]"},
+			expr:           `delta(http_requests{group="canary", instance="1", job="app-server"}[18m], 1)`,
+			output:         []string{`http_requests{group="canary", instance="1", job="app-server"} => 288 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
 			// Rates should transform per-interval deltas to per-second rates.
-			expr:           "rate(http_requests{group='canary',instance='1',job='app-server'}[10m])",
-			output:         []string{"http_requests{group='canary',instance='1',job='app-server'} => 0.26666666666666666 @[%v]"},
+			expr:           `rate(http_requests{group="canary", instance="1", job="app-server"}[10m])`,
+			output:         []string{`http_requests{group="canary", instance="1", job="app-server"} => 0.26666666666666666 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
 			// Counter resets in middle of range are ignored by delta() if counter == 1.
-			expr:           "delta(testcounter_reset_middle[50m], 1)",
-			output:         []string{"testcounter_reset_middle{} => 90 @[%v]"},
+			expr:           `delta(testcounter_reset_middle[50m], 1)`,
+			output:         []string{`testcounter_reset_middle => 90 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
 			// Counter resets in middle of range are not ignored by delta() if counter == 0.
-			expr:           "delta(testcounter_reset_middle[50m], 0)",
-			output:         []string{"testcounter_reset_middle{} => 50 @[%v]"},
+			expr:           `delta(testcounter_reset_middle[50m], 0)`,
+			output:         []string{`testcounter_reset_middle => 50 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
 			// Counter resets at end of range are ignored by delta() if counter == 1.
-			expr:           "delta(testcounter_reset_end[5m], 1)",
-			output:         []string{"testcounter_reset_end{} => 0 @[%v]"},
+			expr:           `delta(testcounter_reset_end[5m], 1)`,
+			output:         []string{`testcounter_reset_end => 0 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
 			// Counter resets at end of range are not ignored by delta() if counter == 0.
-			expr:           "delta(testcounter_reset_end[5m], 0)",
-			output:         []string{"testcounter_reset_end{} => -90 @[%v]"},
+			expr:           `delta(testcounter_reset_end[5m], 0)`,
+			output:         []string{`testcounter_reset_end => -90 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
-			// Empty expressions shouldn't parse.
-			expr:       "",
+			// Empty expressions shouldn"t parse.
+			expr:       ``,
 			shouldFail: true,
 		}, {
 			// Subtracting a vector from a scalar is not supported.
-			expr:       "1 - http_requests",
+			expr:       `1 - http_requests`,
 			shouldFail: true,
 		}, {
-			// Interval durations can't be in quotes.
-			expr:       "http_requests['1m']",
+			// Interval durations can"t be in quotes.
+			expr:       `http_requests["1m"]`,
 			shouldFail: true,
 		},
 	}
@@ -498,18 +498,18 @@ func TestAlertingRule(t *testing.T) {
 	// Labels in expected output need to be alphabetically sorted.
 	var evalOutputs = [][]string{
 		{
-			"ALERTS{alertname='HttpRequestRateLow',alertstate='pending',group='canary',instance='0',job='app-server'} => 1 @[%v]",
-			"ALERTS{alertname='HttpRequestRateLow',alertstate='pending',group='canary',instance='1',job='app-server'} => 1 @[%v]",
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server"} => 1 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server"} => 1 @[%v]`,
 		},
 		{
-			"ALERTS{alertname='HttpRequestRateLow',alertstate='pending',group='canary',instance='0',job='app-server'} => 0 @[%v]",
-			"ALERTS{alertname='HttpRequestRateLow',alertstate='firing',group='canary',instance='0',job='app-server'} => 1 @[%v]",
-			"ALERTS{alertname='HttpRequestRateLow',alertstate='pending',group='canary',instance='1',job='app-server'} => 0 @[%v]",
-			"ALERTS{alertname='HttpRequestRateLow',alertstate='firing',group='canary',instance='1',job='app-server'} => 1 @[%v]",
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server"} => 0 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server"} => 1 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server"} => 0 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server"} => 1 @[%v]`,
 		},
 		{
-			"ALERTS{alertname='HttpRequestRateLow',alertstate='firing',group='canary',instance='1',job='app-server'} => 0 @[%v]",
-			"ALERTS{alertname='HttpRequestRateLow',alertstate='firing',group='canary',instance='0',job='app-server'} => 0 @[%v]",
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server"} => 0 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server"} => 0 @[%v]`,
 		},
 		{
 		/* empty */
@@ -523,7 +523,7 @@ func TestAlertingRule(t *testing.T) {
 	defer closer.Close()
 	tieredStorage.Flush()
 
-	alertExpr, err := LoadExprFromString("http_requests{group='canary',job='app-server'} < 100")
+	alertExpr, err := LoadExprFromString(`http_requests{group="canary", job="app-server"} < 100`)
 	if err != nil {
 		t.Fatalf("Unable to parse alert expression: %s", err)
 	}

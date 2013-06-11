@@ -212,6 +212,14 @@ func main() {
 	targetManager := retrieval.NewTargetManager(scrapeResults, *concurrentRetrievalAllowance)
 	targetManager.AddTargetsFromConfig(conf)
 
+	// Queue depth will need to be exposed
+	ruleManager := rules.NewRuleManager(ruleResults, conf.EvaluationInterval(), ts)
+	err = ruleManager.AddRulesFromConfig(conf)
+	if err != nil {
+		log.Fatalf("Error loading rule files: %v", err)
+	}
+	go ruleManager.Run()
+
 	flags := map[string]string{}
 
 	flag.VisitAll(func(f *flag.Flag) {
@@ -222,6 +230,7 @@ func main() {
 		PrometheusStatus: &web.PrometheusStatus{
 			BuildInfo:   BuildInfo,
 			Config:      conf.String(),
+			Rules:       ruleManager.Rules(),
 			TargetPools: targetManager.Pools(),
 			Flags:       flags,
 			Birth:       time.Now(),
@@ -320,15 +329,6 @@ func main() {
 			log.Println("Done")
 		}
 	}()
-
-	// Queue depth will need to be exposed
-
-	ruleManager := rules.NewRuleManager(ruleResults, conf.EvaluationInterval(), ts)
-	err = ruleManager.AddRulesFromConfig(conf)
-	if err != nil {
-		log.Fatalf("Error loading rule files: %v", err)
-	}
-	go ruleManager.Run()
 
 	go func() {
 		err := webService.ServeForever()
