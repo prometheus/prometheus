@@ -57,7 +57,12 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
 	targetPool, ok := m.poolsByJob[job.GetName()]
 
 	if !ok {
-		targetPool = NewTargetPool(m)
+		var provider TargetProvider = nil
+		if job.SdName != nil {
+			provider = NewSdTargetProvider(job)
+		}
+
+		targetPool = NewTargetPool(m, provider)
 		log.Printf("Pool for job %s does not exist; creating and starting...", job.GetName())
 
 		interval := job.ScrapeInterval()
@@ -86,6 +91,11 @@ func (m targetManager) Remove(t Target) {
 
 func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 	for _, job := range config.Jobs() {
+		if job.SdName != nil {
+			m.TargetPoolForJob(job)
+			continue
+		}
+
 		for _, targetGroup := range job.TargetGroup {
 			baseLabels := model.LabelSet{
 				model.JobLabel: model.LabelValue(job.GetName()),
