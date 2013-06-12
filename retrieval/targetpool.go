@@ -37,13 +37,16 @@ type TargetPool struct {
 	targets             targets
 	addTargetQueue      chan Target
 	replaceTargetsQueue chan targets
+
+	targetProvider TargetProvider
 }
 
-func NewTargetPool(m TargetManager) *TargetPool {
+func NewTargetPool(m TargetManager, p TargetProvider) *TargetPool {
 	return &TargetPool{
 		manager:             m,
 		addTargetQueue:      make(chan Target, targetAddQueueSize),
 		replaceTargetsQueue: make(chan targets, targetReplaceQueueSize),
+		targetProvider:      p,
 	}
 }
 
@@ -121,6 +124,15 @@ func (p *TargetPool) runSingle(earliest time.Time, results chan format.Result, t
 }
 
 func (p *TargetPool) runIteration(results chan format.Result, interval time.Duration) {
+	if p.targetProvider != nil {
+		targets, err := p.targetProvider.Targets()
+		if err != nil {
+			log.Printf("Error looking up targets: %s", err)
+			return
+		}
+		p.ReplaceTargets(targets)
+	}
+
 	p.RLock()
 	defer p.RUnlock()
 

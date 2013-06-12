@@ -121,15 +121,21 @@ func (m *TargetGroup) GetLabels() *LabelPairs {
 }
 
 type JobConfig struct {
-	Name             *string        `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
-	ScrapeInterval   *string        `protobuf:"bytes,2,opt,name=scrape_interval" json:"scrape_interval,omitempty"`
-	TargetGroup      []*TargetGroup `protobuf:"bytes,3,rep,name=target_group" json:"target_group,omitempty"`
-	XXX_unrecognized []byte         `json:"-"`
+	Name              *string        `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	ScrapeInterval    *string        `protobuf:"bytes,2,opt,name=scrape_interval" json:"scrape_interval,omitempty"`
+	SdName            *string        `protobuf:"bytes,3,opt,name=sd_name" json:"sd_name,omitempty"`
+	SdRefreshInterval *string        `protobuf:"bytes,4,opt,name=sd_refresh_interval,def=30s" json:"sd_refresh_interval,omitempty"`
+	TargetGroup       []*TargetGroup `protobuf:"bytes,5,rep,name=target_group" json:"target_group,omitempty"`
+	MetricsPath       *string        `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics.json" json:"metrics_path,omitempty"`
+	XXX_unrecognized  []byte         `json:"-"`
 }
 
 func (m *JobConfig) Reset()         { *m = JobConfig{} }
 func (m *JobConfig) String() string { return proto.CompactTextString(m) }
 func (*JobConfig) ProtoMessage()    {}
+
+const Default_JobConfig_SdRefreshInterval string = "30s"
+const Default_JobConfig_MetricsPath string = "/metrics.json"
 
 func (m *JobConfig) GetName() string {
 	if m != nil && m.Name != nil {
@@ -145,11 +151,32 @@ func (m *JobConfig) GetScrapeInterval() string {
 	return ""
 }
 
+func (m *JobConfig) GetSdName() string {
+	if m != nil && m.SdName != nil {
+		return *m.SdName
+	}
+	return ""
+}
+
+func (m *JobConfig) GetSdRefreshInterval() string {
+	if m != nil && m.SdRefreshInterval != nil {
+		return *m.SdRefreshInterval
+	}
+	return Default_JobConfig_SdRefreshInterval
+}
+
 func (m *JobConfig) GetTargetGroup() []*TargetGroup {
 	if m != nil {
 		return m.TargetGroup
 	}
 	return nil
+}
+
+func (m *JobConfig) GetMetricsPath() string {
+	if m != nil && m.MetricsPath != nil {
+		return *m.MetricsPath
+	}
+	return Default_JobConfig_MetricsPath
 }
 
 type PrometheusConfig struct {

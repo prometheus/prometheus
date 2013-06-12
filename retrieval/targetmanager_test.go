@@ -95,15 +95,15 @@ func testTargetManager(t test.Tester) {
 		interval:  time.Minute,
 	}
 
-	targetManager.AddTarget(testJob1, target1GroupA, 0)
-	targetManager.AddTarget(testJob1, target2GroupA, 0)
+	targetManager.AddTarget(testJob1, target1GroupA)
+	targetManager.AddTarget(testJob1, target2GroupA)
 
 	target1GroupB := &fakeTarget{
 		schedules: []time.Time{time.Now()},
 		interval:  time.Minute * 2,
 	}
 
-	targetManager.AddTarget(testJob2, target1GroupB, 0)
+	targetManager.AddTarget(testJob2, target1GroupB)
 }
 
 func TestTargetManager(t *testing.T) {
