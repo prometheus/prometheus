@@ -45,18 +45,18 @@ cc-implementation-Linux-stamp:
 	[ -x "$$(which cc)" ] || $(APT_GET_INSTALL) build-essential
 	touch $@
 
-dependencies-stamp: cache-stamp go-stamp goprotobuf-stamp gorest-stamp goskiplist-stamp instrumentation-stamp levigo-stamp
+dependencies-stamp: cache-stamp go-stamp goprotobuf-protoc-gen-go-stamp gorest-stamp goskiplist-stamp instrumentation-stamp levigo-stamp
 	touch $@
 
 go-stamp:
 	[ -x "$$(which go)" ] || { echo "go not found." ; false ; }
 	touch $@
 
-goprotobuf-protoc-gen-go-stamp: protoc-stamp
+goprotobuf-protoc-gen-go-stamp: protoc-stamp goprotobuf-stamp
 	$(GO_GET) code.google.com/p/goprotobuf/protoc-gen-go $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
-goprotobuf-stamp: go-stamp mercurial-stamp
+goprotobuf-stamp: go-stamp protoc-stamp mercurial-stamp
 	$(GO_GET) code.google.com/p/goprotobuf/proto $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
@@ -159,6 +159,7 @@ clean:
 	$(MAKE) -C cache clean
 	$(MAKE) -C dirty clean
 	$(MAKE) -C root clean
+	$(MAKE) -C package clean
 	rm -rf *-stamp
 
 

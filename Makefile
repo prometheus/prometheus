@@ -41,7 +41,7 @@ documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
 format:
-	find . -iname '*.go' | egrep -v "generated|\.(l|y)\.go" | xargs -n1 $(GOROOT)/bin/gofmt -w -s=true
+	find . -iname '*.go' | egrep -v "generated|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
 
 build/cache/$(GOPKG):
 	curl -o $@ http://go.googlecode.com/files/$(GOPKG)

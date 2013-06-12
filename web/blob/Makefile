@@ -11,12 +11,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+include ../../Makefile.INCLUDE
+
 all: files.go
 
 SUFFIXES:
 
 files.go: $(shell find ../templates/ ../static/ -type f)
-	../../utility/embed-static.sh ../static ../templates | gofmt > $@
+	../../utility/embed-static.sh ../static ../templates | $(GOFMT) > $@
 
 clean:
 	-rm  files.go
