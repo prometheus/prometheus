@@ -32,6 +32,8 @@ var configTests = []struct {
 		inputFile: "sample.conf.input",
 	}, {
 		inputFile: "empty.conf.input",
+	}, {
+		inputFile: "sd_targets.conf.input",
 	},
 	{
 		inputFile:   "invalid_proto_format.conf.input",
@@ -52,6 +54,11 @@ var configTests = []struct {
 		inputFile:   "invalid_label_name.conf.input",
 		shouldFail:  true,
 		errContains: "Invalid label name",
+	},
+	{
+		inputFile:   "mixing_sd_and_manual_targets.conf.input",
+		shouldFail:  true,
+		errContains: "Specified both DNS-SD name and target group",
 	},
 }
 

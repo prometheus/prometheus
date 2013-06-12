@@ -55,8 +55,18 @@ message JobConfig {
 	// How frequently to scrape targets from this job. Overrides the global
 	// default.
 	optional string scrape_interval = 2;
-	// List of labeled target groups for this job.
-	repeated TargetGroup target_group = 3;
+	// The DNS-SD service name pointing to SRV records containing endpoint
+	// information for a job. When this field is provided, no target_group
+	// elements may be set.
+	optional string sd_name = 3;
+  // Discovery refresh period when using DNS-SD to discover targets. Must be a
+  // valid Prometheus duration string in the form "[0-9]+[smhdwy]".
+  optional string sd_refresh_interval = 4 [default = "30s"];
+	// List of labeled target groups for this job. Only legal when DNS-SD isn't
+	// used for a job.
+	repeated TargetGroup target_group = 5;
+	// The HTTP resource path to fetch metrics from on targets.
+	optional string metrics_path = 6 [default = "/metrics.json"];
 }
 
 // The top-level Prometheus configuration.
