@@ -14,10 +14,12 @@
 package api
 
 import (
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/retrieval"
 	"net/http"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/retrieval"
 )
 
 type TargetGroup struct {
@@ -37,11 +39,11 @@ func (serv MetricsService) SetTargets(targetGroups []TargetGroup, jobName string
 
 	for _, targetGroup := range targetGroups {
 		// Do mandatory map type conversion due to Go shortcomings.
-		baseLabels := model.LabelSet{
-			model.JobLabel: model.LabelValue(job.GetName()),
+		baseLabels := clientmodel.LabelSet{
+			clientmodel.JobLabel: clientmodel.LabelValue(job.GetName()),
 		}
 		for label, value := range targetGroup.BaseLabels {
-			baseLabels[model.LabelName(label)] = model.LabelValue(value)
+			baseLabels[clientmodel.LabelName(label)] = clientmodel.LabelValue(value)
 		}
 
 		for _, endpoint := range targetGroup.Endpoints {

@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/prometheus/retrieval/format"
+	"github.com/prometheus/client_golang/extraction"
 )
 
 const (
@@ -50,7 +50,7 @@ func NewTargetPool(m TargetManager, p TargetProvider) *TargetPool {
 	}
 }
 
-func (p *TargetPool) Run(results chan format.Result, interval time.Duration) {
+func (p *TargetPool) Run(results chan<- *extraction.Result, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -116,14 +116,14 @@ func (p *TargetPool) replaceTargets(newTargets []Target) {
 	p.targets = newTargets
 }
 
-func (p *TargetPool) runSingle(earliest time.Time, results chan format.Result, t Target) {
+func (p *TargetPool) runSingle(earliest time.Time, results chan<- *extraction.Result, t Target) {
 	p.manager.acquire()
 	defer p.manager.release()
 
 	t.Scrape(earliest, results)
 }
 
-func (p *TargetPool) runIteration(results chan format.Result, interval time.Duration) {
+func (p *TargetPool) runIteration(results chan<- *extraction.Result, interval time.Duration) {
 	if p.targetProvider != nil {
 		targets, err := p.targetProvider.Targets()
 		if err != nil {

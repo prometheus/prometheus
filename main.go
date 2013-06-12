@@ -15,19 +15,21 @@ package main
 
 import (
 	"flag"
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/retrieval/format"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	"github.com/prometheus/prometheus/web"
-	"github.com/prometheus/prometheus/web/api"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/extraction"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
+	"github.com/prometheus/prometheus/web"
+	"github.com/prometheus/prometheus/web/api"
 )
 
 const (
@@ -77,7 +79,7 @@ type prometheus struct {
 	stopBackgroundOperations chan bool
 
 	ruleResults   chan *rules.Result
-	scrapeResults chan format.Result
+	scrapeResults chan *extraction.Result
 
 	storage *metric.TieredStorage
 }
@@ -198,7 +200,7 @@ func main() {
 		log.Fatalln("Nil tiered storage.")
 	}
 
-	scrapeResults := make(chan format.Result, *scrapeResultsQueueCapacity)
+	scrapeResults := make(chan *extraction.Result, *scrapeResultsQueueCapacity)
 	ruleResults := make(chan *rules.Result, *ruleResultsQueueCapacity)
 	curationState := make(chan metric.CurationState, 1)
 	databaseStates := make(chan []leveldb.DatabaseState, 1)
