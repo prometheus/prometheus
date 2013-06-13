@@ -52,7 +52,7 @@ func NewSdTargetProvider(job config.JobConfig) *sdTargetProvider {
 }
 
 func (p *sdTargetProvider) Targets() ([]Target, error) {
-	if time.Since(p.lastRefresh) > p.refreshInterval {
+	if time.Since(p.lastRefresh) < p.refreshInterval {
 		return p.targets, nil
 	}
 
