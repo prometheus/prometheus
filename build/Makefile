@@ -45,32 +45,15 @@ cc-implementation-Linux-stamp:
 	[ -x "$$(which cc)" ] || $(APT_GET_INSTALL) build-essential
 	touch $@
 
-dependencies-stamp: cache-stamp go-stamp goprotobuf-protoc-gen-go-stamp gorest-stamp goskiplist-stamp instrumentation-stamp levigo-stamp
-	touch $@
-
-go-stamp:
-	[ -x "$$(which go)" ] || { echo "go not found." ; false ; }
+dependencies-stamp: cache-stamp cc-stamp leveldb-stamp snappy-stamp
 	touch $@
 
 goprotobuf-protoc-gen-go-stamp: protoc-stamp goprotobuf-stamp
 	$(GO_GET) code.google.com/p/goprotobuf/protoc-gen-go $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
-goprotobuf-stamp: go-stamp protoc-stamp mercurial-stamp
+goprotobuf-stamp: protoc-stamp
 	$(GO_GET) code.google.com/p/goprotobuf/proto $(THIRD_PARTY_BUILD_OUTPUT)
-	touch $@
-
-gorest-stamp: go-stamp
-	$(GO_GET) code.google.com/p/gorest $(THIRD_PARTY_BUILD_OUTPUT)
-	touch $@
-
-goskiplist-stamp: go-stamp
-	$(GO_GET) github.com/ryszard/goskiplist/skiplist $(THIRD_PARTY_BUILD_OUTPUT)
-	touch $@
-
-instrumentation-stamp: go-stamp
-	$(GO_GET) github.com/prometheus/client_golang/prometheus $(THIRD_PARTY_BUILD_OUTPUT)
-	$(GO_GET) github.com/prometheus/client_golang/prometheus/exp $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
 leveldb-stamp: cache-stamp cache/leveldb-$(LEVELDB_VERSION).tar.gz cc-stamp rsync-stamp snappy-stamp
@@ -85,25 +68,9 @@ leveldb-stamp: cache-stamp cache/leveldb-$(LEVELDB_VERSION).tar.gz cc-stamp rsyn
 	rsync -av "dirty/leveldb-$(LEVELDB_VERSION)/"*.a "$(PREFIX)/lib/" $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
-levigo-stamp: cc-stamp go-stamp leveldb-stamp snappy-stamp
-	CGO_CFLAGS="-I$(PREFIX)/include" CGO_LDFLAGS="-L$(PREFIX)/lib" $(GO_GET) github.com/jmhodges/levigo $(THIRD_PARTY_BUILD_OUTPUT)
-	touch $@
-
 libunwind-stamp:
 	$(APT_GET_INSTALL) libunwind7
 	$(APT_GET_INSTALL) libunwind7-dev
-	touch $@
-
-mercurial-implementation-Darwin-stamp:
-	[ -x "$$(which hg)" ] || $(BREW_INSTALL) mercurial
-	touch $@
-
-mercurial-implementation-Linux-stamp:
-	[ -x "$$(which hg)" ] || $(APT_GET_INSTALL) mercurial
-	touch $@
-
-mercurial-stamp: mercurial-implementation-$(UNAME)-stamp
-	[ -x "$$(which hg)" ] || { echo "hg not found." ; false ; }
 	touch $@
 
 noop-target-stamp:

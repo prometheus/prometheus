@@ -17,13 +17,20 @@ include Makefile.INCLUDE
 
 all: binary test
 
+$(GOCC): build/cache/$(GOPKG)
+	tar -C build/root -xzf $<
+	touch $@
+
 advice:
 	$(GO) tool vet .
 
 binary: build
 	$(GO) build -o prometheus $(BUILDFLAGS) .
 
-build: preparation config model tools web
+build: config dependencies model preparation tools web
+
+build/cache/$(GOPKG):
+	curl -o $@ http://go.googlecode.com/files/$(GOPKG)
 
 clean:
 	$(MAKE) -C build clean
@@ -34,8 +41,11 @@ clean:
 	-find . -type f -iname '*#' -exec rm '{}' ';'
 	-find . -type f -iname '.#*' -exec rm '{}' ';'
 
-config: preparation
+config: dependencies preparation
 	$(MAKE) -C config
+
+dependencies: preparation
+	$(GO) get -d
 
 documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
@@ -43,14 +53,7 @@ documentation: search_index
 format:
 	find . -iname '*.go' | egrep -v "generated|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
 
-build/cache/$(GOPKG):
-	curl -o $@ http://go.googlecode.com/files/$(GOPKG)
-
-$(GOCC): build/cache/$(GOPKG)
-	tar -C build/root -xzf $<
-	touch $@
-
-model: preparation
+model: dependencies preparation
 	$(MAKE) -C model
 
 package: binary
@@ -61,7 +64,7 @@ preparation: $(GOCC) source_path
 	$(MAKE) -C build
 
 race_condition_binary: build
-	CGO_CFLAGS="-I$(PWD)/build/root/include" CGO_LDFLAGS="-L$(PWD)/build/root/lib" go build -race -o prometheus.race $(BUILDFLAGS) .
+	CGO_CFLAGS="-I$(PWD)/build/root/include" CGO_LDFLAGS="-L$(PWD)/build/root/lib" $(GO) build -race -o prometheus.race $(BUILDFLAGS) .
 
 race_condition_run: race_condition_binary
 	./prometheus.race $(ARGUMENTS)
@@ -72,7 +75,7 @@ run: binary
 search_index:
 	godoc -index -write_index -index_files='search_index'
 
-server: config model preparation
+server: config dependencies model preparation
 	$(MAKE) -C server
 
 # source_path is responsible for ensuring that the builder has not done anything
@@ -85,10 +88,10 @@ test: build
 	$(GOENV) find . -maxdepth 1 -mindepth 1 -type d -and -not -path ./build -exec $(GOCC) test {}/... $(GO_TEST_FLAGS) \;
 	$(GO) test $(GO_TEST_FLAGS)
 
-tools:
+tools: dependencies preparation
 	$(MAKE) -C tools
 
-web: preparation config model
+web: config dependencies model preparation
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean config documentation format model package preparation race_condition_binary race_condition_run run search_index source_path test tools
+.PHONY: advice binary build clean config dependencies documentation format model package preparation race_condition_binary race_condition_run run search_index source_path test tools
