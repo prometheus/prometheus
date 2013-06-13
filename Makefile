@@ -25,9 +25,11 @@ advice:
 	$(GO) tool vet .
 
 binary: build
-	$(GO) build -o prometheus $(BUILDFLAGS) .
 
 build: config dependencies model preparation tools web
+	$(GO) build -o prometheus $(BUILDFLAGS) .
+	cp prometheus build/package/prometheus
+	rsync -av build/root/lib/ build/package/lib/
 
 build/cache/$(GOPKG):
 	curl -o $@ http://go.googlecode.com/files/$(GOPKG)
@@ -55,10 +57,6 @@ format:
 
 model: dependencies preparation
 	$(MAKE) -C model
-
-package: binary
-	cp prometheus build/package/prometheus
-	rsync -av build/root/lib/ build/package/lib/
 
 preparation: $(GOCC) source_path
 	$(MAKE) -C build
