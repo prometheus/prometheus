@@ -20,7 +20,7 @@ SUFFIXES:
 include ../../Makefile.INCLUDE
 
 dumper: $(shell find . -iname '*.go')
-	go build -o dumper .
+	$(GO) build -o dumper .
 
 clean:
 	rm -rf $(MAKE_ARTIFACTS)

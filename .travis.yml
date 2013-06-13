@@ -2,6 +2,9 @@
 
 language: go
 
+go:
+ - 1.1
+
 # Explicitly stop before_script from doing anything by giving 'em nil work.
 before_script:
  - echo "Before Script"
@@ -13,6 +16,4 @@ install:
 script:
  - echo "Script"
  - cd ${TRAVIS_BUILD_DIR}
- - gvm install go1.1 || true
- - gvm use go1.1 || true
  - bash -l ./tests-for-die-in-a-fire-travis.sh

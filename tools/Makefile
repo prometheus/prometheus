@@ -24,6 +24,7 @@ pruner:
 	$(MAKE) -C pruner
 
 clean:
-	$(MAKE) -C dumper pruner clean
+	$(MAKE) -C dumper clean
+	$(MAKE) -C pruner clean
 
 .PHONY: clean dumper pruner

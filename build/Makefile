@@ -45,18 +45,18 @@ cc-implementation-Linux-stamp:
 	[ -x "$$(which cc)" ] || $(APT_GET_INSTALL) build-essential
 	touch $@
 
-dependencies-stamp: cache-stamp go-stamp goprotobuf-stamp gorest-stamp goskiplist-stamp instrumentation-stamp levigo-stamp
+dependencies-stamp: cache-stamp go-stamp goprotobuf-protoc-gen-go-stamp gorest-stamp goskiplist-stamp instrumentation-stamp levigo-stamp
 	touch $@
 
-go-stamp: gvm-stamp
+go-stamp:
 	[ -x "$$(which go)" ] || { echo "go not found." ; false ; }
 	touch $@
 
-goprotobuf-protoc-gen-go-stamp: protoc-stamp
+goprotobuf-protoc-gen-go-stamp: protoc-stamp goprotobuf-stamp
 	$(GO_GET) code.google.com/p/goprotobuf/protoc-gen-go $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
-goprotobuf-stamp: go-stamp mercurial-stamp
+goprotobuf-stamp: go-stamp protoc-stamp mercurial-stamp
 	$(GO_GET) code.google.com/p/goprotobuf/proto $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
@@ -66,29 +66,6 @@ gorest-stamp: go-stamp
 
 goskiplist-stamp: go-stamp
 	$(GO_GET) github.com/ryszard/goskiplist/skiplist $(THIRD_PARTY_BUILD_OUTPUT)
-	touch $@
-
-gvm-stamp: bison-stamp cc-stamp mercurial-stamp
-	[ -x "$$(which gvm)" ] || { echo "gvm not found; install manually from https://github.com/moovweb/gvm." ; false ; }
-	#
-	# ********** **********
-	# gvm installed go$(GO_VERSION) if it did not exist already.
-  #
-  # Prometheus expects go$(GO_VERSION) to be used for building.
-	# This can be achieved by running ``gvm use go$(GO_VERSION)`` before any
-	# other Prometheus make tools.
-	#
-	# Once this build finishes, $(GOPATH) will be mutated and
-	# contain some new packages.  Here is an example workflow:
-	#
-	# $ gvm install go$(GO_VERSION)
-	# $ gvm use go$(GO_VERSION)
-	# $ gvm pkgset create prometheus
-	# $ gvm pkgset use prometheus
-	#
-	# ********** **********
-	#
-	-[ -z "${CI}" ] && read -p "Press [ENTER] upon reading." _
 	touch $@
 
 instrumentation-stamp: go-stamp
@@ -182,6 +159,7 @@ clean:
 	$(MAKE) -C cache clean
 	$(MAKE) -C dirty clean
 	$(MAKE) -C root clean
+	$(MAKE) -C package clean
 	rm -rf *-stamp
 
 
