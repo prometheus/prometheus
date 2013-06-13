@@ -14,9 +14,11 @@
 package rules
 
 import (
+	"html/template"
+	"time"
+
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric"
-	"time"
 )
 
 // A Rule encapsulates a vector expression which is evaluated at a specified
@@ -33,4 +35,7 @@ type Rule interface {
 	ToDotGraph() string
 	// String returns a human-readable string representation of the rule.
 	String() string
+	// HTMLSnippet returns a human-readable string representation of the rule,
+	// decorated with HTML elements for use the web frontend.
+	HTMLSnippet() template.HTML
 }

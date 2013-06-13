@@ -13,7 +13,7 @@
 
 all: blob-stamp
 
-blob-stamp: static/generated/protocol_buffer.descriptor
+blob-stamp: static/generated/protocol_buffer.descriptor templates/*
 	$(MAKE) -C blob
 	touch $@
 
