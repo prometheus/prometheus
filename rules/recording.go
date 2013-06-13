@@ -15,11 +15,13 @@ package rules
 
 import (
 	"fmt"
+	"html/template"
+	"time"
+
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
-	"time"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
@@ -69,6 +71,17 @@ func (rule RecordingRule) ToDotGraph() string {
 
 func (rule RecordingRule) String() string {
 	return fmt.Sprintf("%s%s = %s\n", rule.name, rule.labels, rule.vector)
+}
+
+func (rule RecordingRule) HTMLSnippet() template.HTML {
+	ruleExpr := rule.vector.String()
+	return template.HTML(fmt.Sprintf(
+		`<a href="%s">%s</a>%s = <a href="%s">%s</a>`,
+		ConsoleLinkForExpression(rule.name),
+		rule.name,
+		rule.labels,
+		ConsoleLinkForExpression(ruleExpr),
+		ruleExpr))
 }
 
 // Construct a new RecordingRule.

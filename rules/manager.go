@@ -28,9 +28,16 @@ type Result struct {
 }
 
 type RuleManager interface {
+	// Load and add rules from rule files specified in the configuration.
 	AddRulesFromConfig(config config.Config) error
+	// Start the rule manager's periodic rule evaluation.
 	Run()
+	// Stop the rule manager's rule evaluation cycles.
+	Stop()
+	// Return all rules.
 	Rules() []Rule
+	// Return all alerting rules.
+	AlertingRules() []*AlertingRule
 }
 
 type ruleManager struct {
@@ -126,4 +133,17 @@ func (m *ruleManager) Rules() []Rule {
 	rules := make([]Rule, len(m.rules))
 	copy(rules, m.rules)
 	return rules
+}
+
+func (m *ruleManager) AlertingRules() []*AlertingRule {
+	m.Lock()
+	defer m.Unlock()
+
+	alerts := []*AlertingRule{}
+	for _, rule := range m.rules {
+		if alertingRule, ok := rule.(*AlertingRule); ok {
+			alerts = append(alerts, alertingRule)
+		}
+	}
+	return alerts
 }

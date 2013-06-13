@@ -38,6 +38,7 @@ type WebService struct {
 	StatusHandler    *StatusHandler
 	DatabasesHandler *DatabasesHandler
 	MetricsHandler   *api.MetricsService
+	AlertsHandler    *AlertsHandler
 }
 
 func (w WebService) ServeForever() error {
@@ -56,6 +57,7 @@ func (w WebService) ServeForever() error {
 
 	exp.Handle("/", w.StatusHandler)
 	exp.Handle("/databases", w.DatabasesHandler)
+	exp.Handle("/alerts", w.AlertsHandler)
 	exp.HandleFunc("/graph", graphHandler)
 
 	exp.Handle("/api/", gorest.Handle())

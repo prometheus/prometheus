@@ -27,7 +27,7 @@ type PrometheusStatus struct {
 	Config      string
 	Curation    metric.CurationState
 	Flags       map[string]string
-	Rules       []rules.Rule
+	RuleManager rules.RuleManager
 	TargetPools map[string]*retrieval.TargetPool
 
 	Birth time.Time

@@ -321,7 +321,12 @@ func (node *VectorFunctionCall) String() string {
 }
 
 func (node *VectorAggregation) String() string {
-	return fmt.Sprintf("%s(%s) BY (%s)", node.aggrType, node.vector, node.groupBy)
+	aggrString := fmt.Sprintf("%s(%s)", node.aggrType, node.vector)
+	if len(node.groupBy) > 0 {
+		return fmt.Sprintf("%s BY (%s)", aggrString, node.groupBy)
+	} else {
+		return aggrString
+	}
 }
 
 func (node *VectorArithExpr) String() string {

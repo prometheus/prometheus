@@ -15,6 +15,8 @@ package rules
 
 import (
 	"fmt"
+	"html"
+
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/utility"
@@ -110,4 +112,8 @@ func NewMatrix(vector ast.Node, intervalStr string) (ast.MatrixNode, error) {
 	}
 	vectorLiteral := vector.(*ast.VectorLiteral)
 	return ast.NewMatrixLiteral(vectorLiteral, interval), nil
+}
+
+func ConsoleLinkForExpression(expr string) string {
+	return html.EscapeString(fmt.Sprintf(`graph#[{"expr":%q,"tab":1}]`, expr))
 }

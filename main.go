@@ -230,12 +230,16 @@ func main() {
 		PrometheusStatus: &web.PrometheusStatus{
 			BuildInfo:   BuildInfo,
 			Config:      conf.String(),
-			Rules:       ruleManager.Rules(),
+			RuleManager: ruleManager,
 			TargetPools: targetManager.Pools(),
 			Flags:       flags,
 			Birth:       time.Now(),
 		},
 		CurationState: curationState,
+	}
+
+	alertsHandler := &web.AlertsHandler{
+		RuleManager: ruleManager,
 	}
 
 	databasesHandler := &web.DatabasesHandler{
@@ -252,6 +256,7 @@ func main() {
 		StatusHandler:    statusHandler,
 		MetricsHandler:   metricsService,
 		DatabasesHandler: databasesHandler,
+		AlertsHandler:    alertsHandler,
 	}
 
 	prometheus := prometheus{
