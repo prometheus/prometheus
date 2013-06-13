@@ -14,9 +14,12 @@
 package metric
 
 import (
+	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage"
-	"time"
 )
 
 // MetricPersistence is a system for storing metric samples in a persistence
@@ -31,10 +34,10 @@ type MetricPersistence interface {
 	// Flush() error
 
 	// Record a new sample in the storage layer.
-	AppendSample(model.Sample) error
+	AppendSample(clientmodel.Sample) error
 
 	// Record a group of new samples in the storage layer.
-	AppendSamples(model.Samples) error
+	AppendSamples(clientmodel.Samples) error
 
 	// Get all of the metric fingerprints that are associated with the provided
 	// label set.
@@ -45,15 +48,15 @@ type MetricPersistence interface {
 	GetFingerprintsForLabelName(model.LabelName) (model.Fingerprints, error)
 
 	// Get the metric associated with the provided fingerprint.
-	GetMetricForFingerprint(*model.Fingerprint) (model.Metric, error)
+	GetMetricForFingerprint(*clientmodel.Fingerprint) (clientmodel.Metric, error)
 
 	// Get the two metric values that are immediately adjacent to a given time.
-	GetValueAtTime(*model.Fingerprint, time.Time) model.Values
+	GetValueAtTime(*clientmodel.Fingerprint, time.Time) model.Values
 	// Get the boundary values of an interval: the first value older than the
 	// interval start, and the first value younger than the interval end.
-	GetBoundaryValues(*model.Fingerprint, model.Interval) model.Values
+	GetBoundaryValues(*clientmodel.Fingerprint, model.Interval) model.Values
 	// Get all values contained within a provided interval.
-	GetRangeValues(*model.Fingerprint, model.Interval) model.Values
+	GetRangeValues(*clientmodel.Fingerprint, model.Interval) model.Values
 	// Get all label values that are associated with a given label name.
 	GetAllValuesForLabel(model.LabelName) (model.LabelValues, error)
 
@@ -65,17 +68,17 @@ type MetricPersistence interface {
 // View provides a view of the values in the datastore subject to the request
 // of a preloading operation.
 type View interface {
-	GetValueAtTime(*model.Fingerprint, time.Time) model.Values
-	GetBoundaryValues(*model.Fingerprint, model.Interval) model.Values
-	GetRangeValues(*model.Fingerprint, model.Interval) model.Values
+	GetValueAtTime(*clientmodel.Fingerprint, time.Time) model.Values
+	GetBoundaryValues(*clientmodel.Fingerprint, model.Interval) model.Values
+	GetRangeValues(*clientmodel.Fingerprint, model.Interval) model.Values
 
 	// Destroy this view.
 	Close()
 }
 
 type Series interface {
-	Fingerprint() *model.Fingerprint
-	Metric() model.Metric
+	Fingerprint() *clientmodel.Fingerprint
+	Metric() clientmodel.Metric
 }
 
 type IteratorsForFingerprintBuilder interface {

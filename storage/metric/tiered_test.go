@@ -22,11 +22,11 @@ import (
 	"time"
 )
 
-func buildSamples(from, to time.Time, interval time.Duration, m model.Metric) (v []model.Sample) {
+func buildSamples(from, to time.Time, interval time.Duration, m clientmodel.Metric) (v []clientmodel.Sample) {
 	i := model.SampleValue(0)
 
 	for from.Before(to) {
-		v = append(v, model.Sample{
+		v = append(v, clientmodel.Sample{
 			Metric:    m,
 			Value:     i,
 			Timestamp: from,
@@ -53,10 +53,10 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 	}
 	var (
 		instant     = time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local)
-		metric      = model.Metric{model.MetricNameLabel: "request_count"}
+		metric      = clientmodel.Metric{model.MetricNameLabel: "request_count"}
 		fingerprint = *model.NewFingerprintFromMetric(metric)
 		scenarios   = []struct {
-			data []model.Sample
+			data []clientmodel.Sample
 			in   in
 			out  out
 		}{
@@ -75,7 +75,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			},
 			// Single sample, query asks for exact sample time.
 			{
-				data: []model.Sample{
+				data: []clientmodel.Sample{
 					{
 						Metric:    metric,
 						Value:     0,
@@ -102,7 +102,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			},
 			// Single sample, query time before the sample.
 			{
-				data: []model.Sample{
+				data: []clientmodel.Sample{
 					{
 						Metric:    metric,
 						Value:     0,
@@ -134,7 +134,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			},
 			// Single sample, query time after the sample.
 			{
-				data: []model.Sample{
+				data: []clientmodel.Sample{
 					{
 						Metric:    metric,
 						Value:     0,
@@ -161,7 +161,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			},
 			// Two samples, query asks for first sample time.
 			{
-				data: []model.Sample{
+				data: []clientmodel.Sample{
 					{
 						Metric:    metric,
 						Value:     0,
@@ -193,7 +193,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			},
 			// Three samples, query asks for second sample time.
 			{
-				data: []model.Sample{
+				data: []clientmodel.Sample{
 					{
 						Metric:    metric,
 						Value:     0,
@@ -230,7 +230,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			},
 			// Three samples, query asks for time between first and second samples.
 			{
-				data: []model.Sample{
+				data: []clientmodel.Sample{
 					{
 						Metric:    metric,
 						Value:     0,
@@ -271,7 +271,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			},
 			// Three samples, query asks for time between second and third samples.
 			{
-				data: []model.Sample{
+				data: []clientmodel.Sample{
 					{
 						Metric:    metric,
 						Value:     0,
@@ -475,8 +475,8 @@ func TestGetAllValuesForLabel(t *testing.T) {
 	for i, scenario := range scenarios {
 		tiered, closer := NewTestTieredStorage(t)
 		for j, metric := range scenario.in {
-			sample := model.Sample{
-				Metric: model.Metric{model.MetricNameLabel: model.LabelValue(metric.metricName)},
+			sample := clientmodel.Sample{
+				Metric: clientmodel.Metric{model.MetricNameLabel: model.LabelValue(metric.metricName)},
 			}
 			if metric.appendToMemory {
 				if err := tiered.memoryArena.AppendSample(sample); err != nil {
@@ -510,11 +510,11 @@ func TestGetAllValuesForLabel(t *testing.T) {
 func TestGetFingerprintsForLabelSet(t *testing.T) {
 	tiered, closer := NewTestTieredStorage(t)
 	defer closer.Close()
-	memorySample := model.Sample{
-		Metric: model.Metric{model.MetricNameLabel: "http_requests", "method": "/foo"},
+	memorySample := clientmodel.Sample{
+		Metric: clientmodel.Metric{model.MetricNameLabel: "http_requests", "method": "/foo"},
 	}
-	diskSample := model.Sample{
-		Metric: model.Metric{model.MetricNameLabel: "http_requests", "method": "/bar"},
+	diskSample := clientmodel.Sample{
+		Metric: clientmodel.Metric{model.MetricNameLabel: "http_requests", "method": "/bar"},
 	}
 	if err := tiered.memoryArena.AppendSample(memorySample); err != nil {
 		t.Fatalf("Failed to add fixture data: %s", err)

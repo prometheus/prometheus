@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/model"
 )
 
@@ -32,7 +34,7 @@ type WatermarkCache struct {
 	mu sync.Mutex
 
 	list  *list.List
-	table map[model.Fingerprint]*list.Element
+	table map[clientmodel.Fingerprint]*list.Element
 
 	size Bytes
 
@@ -44,7 +46,7 @@ type Watermarks struct {
 }
 
 type entry struct {
-	fingerprint *model.Fingerprint
+	fingerprint *clientmodel.Fingerprint
 	watermarks  *Watermarks
 	accessed    time.Time
 }
@@ -52,12 +54,12 @@ type entry struct {
 func NewWatermarkCache(allowance Bytes) *WatermarkCache {
 	return &WatermarkCache{
 		list:      list.New(),
-		table:     map[model.Fingerprint]*list.Element{},
+		table:     map[clientmodel.Fingerprint]*list.Element{},
 		allowance: allowance,
 	}
 }
 
-func (lru *WatermarkCache) Get(f *model.Fingerprint) (v *Watermarks, ok bool) {
+func (lru *WatermarkCache) Get(f *clientmodel.Fingerprint) (v *Watermarks, ok bool) {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
 
@@ -71,7 +73,7 @@ func (lru *WatermarkCache) Get(f *model.Fingerprint) (v *Watermarks, ok bool) {
 	return element.Value.(*entry).watermarks, true
 }
 
-func (lru *WatermarkCache) Set(f *model.Fingerprint, w *Watermarks) {
+func (lru *WatermarkCache) Set(f *clientmodel.Fingerprint, w *Watermarks) {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
 
@@ -82,7 +84,7 @@ func (lru *WatermarkCache) Set(f *model.Fingerprint, w *Watermarks) {
 	}
 }
 
-func (lru *WatermarkCache) SetIfAbsent(f *model.Fingerprint, w *Watermarks) {
+func (lru *WatermarkCache) SetIfAbsent(f *clientmodel.Fingerprint, w *Watermarks) {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
 
@@ -93,7 +95,7 @@ func (lru *WatermarkCache) SetIfAbsent(f *model.Fingerprint, w *Watermarks) {
 	}
 }
 
-func (lru *WatermarkCache) Delete(f *model.Fingerprint) bool {
+func (lru *WatermarkCache) Delete(f *clientmodel.Fingerprint) bool {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
 
@@ -114,7 +116,7 @@ func (lru *WatermarkCache) Clear() {
 	defer lru.mu.Unlock()
 
 	lru.list.Init()
-	lru.table = map[model.Fingerprint]*list.Element{}
+	lru.table = map[clientmodel.Fingerprint]*list.Element{}
 	lru.size = 0
 }
 
@@ -129,7 +131,7 @@ func (lru *WatermarkCache) moveToFront(e *list.Element) {
 	e.Value.(*entry).accessed = time.Now()
 }
 
-func (lru *WatermarkCache) addNew(f *model.Fingerprint, w *Watermarks) {
+func (lru *WatermarkCache) addNew(f *clientmodel.Fingerprint, w *Watermarks) {
 	lru.table[*f] = lru.list.PushFront(&entry{
 		fingerprint: f,
 		watermarks:  w,

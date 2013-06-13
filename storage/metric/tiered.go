@@ -21,6 +21,8 @@ import (
 
 	dto "github.com/prometheus/prometheus/model/generated"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
@@ -78,7 +80,7 @@ type TieredStorage struct {
 	// BUG(matt): This introduces a Law of Demeter violation.  Ugh.
 	DiskStorage *LevelDBMetricPersistence
 
-	appendToDiskQueue chan model.Samples
+	appendToDiskQueue chan clientmodel.Samples
 
 	memoryArena         *memorySeriesStorage
 	memoryTTL           time.Duration
@@ -120,7 +122,7 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 	memOptions := MemorySeriesOptions{WatermarkCache: wmCache}
 
 	s := &TieredStorage{
-		appendToDiskQueue:   make(chan model.Samples, appendToDiskQueueDepth),
+		appendToDiskQueue:   make(chan clientmodel.Samples, appendToDiskQueueDepth),
 		DiskStorage:         diskStorage,
 		draining:            make(chan chan<- bool),
 		flushMemoryInterval: flushMemoryInterval,
@@ -145,7 +147,7 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 }
 
 // Enqueues Samples for storage.
-func (t *TieredStorage) AppendSamples(samples model.Samples) (err error) {
+func (t *TieredStorage) AppendSamples(samples clientmodel.Samples) (err error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.state != tieredStorageServing {
@@ -279,10 +281,10 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 		i := sort.Search(len(stream.values), finder)
 		toArchive := stream.values[:i]
 		toKeep := stream.values[i:]
-		queued := make(model.Samples, 0, len(toArchive))
+		queued := make(clientmodel.Samples, 0, len(toArchive))
 
 		for _, value := range toArchive {
-			queued = append(queued, model.Sample{
+			queued = append(queued, clientmodel.Sample{
 				Metric:    stream.metric,
 				Timestamp: value.Timestamp,
 				Value:     value.Value,
@@ -298,7 +300,7 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 	queueLength := len(t.appendToDiskQueue)
 	if queueLength > 0 {
 		log.Printf("Writing %d samples ...", queueLength)
-		samples := model.Samples{}
+		samples := clientmodel.Samples{}
 		for i := 0; i < queueLength; i++ {
 			chunk := <-t.appendToDiskQueue
 			samples = append(samples, chunk...)
@@ -333,7 +335,7 @@ func (t *TieredStorage) Close() {
 	t.state = tieredStorageStopping
 }
 
-func (t *TieredStorage) seriesTooOld(f *model.Fingerprint, i time.Time) (bool, error) {
+func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (bool, error) {
 	// BUG(julius): Make this configurable by query layer.
 	i = i.Add(-stalenessLimit)
 
@@ -514,7 +516,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	return
 }
 
-func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint *model.Fingerprint, ts time.Time) (chunk model.Values) {
+func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint *clientmodel.Fingerprint, ts time.Time) (chunk model.Values) {
 	var (
 		targetKey = &dto.SampleKey{
 			Fingerprint: fingerprint.ToDTO(),
@@ -638,7 +640,7 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (mod
 	if err != nil {
 		return nil, err
 	}
-	fingerprintSet := map[model.Fingerprint]bool{}
+	fingerprintSet := map[clientmodel.Fingerprint]bool{}
 	for _, fingerprint := range append(memFingerprints, diskFingerprints...) {
 		fingerprintSet[*fingerprint] = true
 	}
@@ -652,7 +654,7 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (mod
 }
 
 // Get the metric associated with the provided fingerprint.
-func (t *TieredStorage) GetMetricForFingerprint(f *model.Fingerprint) (model.Metric, error) {
+func (t *TieredStorage) GetMetricForFingerprint(f *clientmodel.Fingerprint) (clientmodel.Metric, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 

@@ -23,6 +23,8 @@ import (
 
 	"code.google.com/p/goprotobuf/proto"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	dto "github.com/prometheus/prometheus/model/generated"
 	index "github.com/prometheus/prometheus/storage/raw/index/leveldb"
 
@@ -172,14 +174,14 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 	return emission, nil
 }
 
-func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error) {
+func (l *LevelDBMetricPersistence) AppendSample(sample clientmodel.Sample) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: appendSample, result: failure})
 	}(time.Now())
 
-	err = l.AppendSamples(model.Samples{sample})
+	err = l.AppendSamples(clientmodel.Samples{&sample})
 
 	return
 }
@@ -187,14 +189,15 @@ func (l *LevelDBMetricPersistence) AppendSample(sample model.Sample) (err error)
 // groupByFingerprint collects all of the provided samples, groups them
 // together by their respective metric fingerprint, and finally sorts
 // them chronologically.
-func groupByFingerprint(samples model.Samples) map[model.Fingerprint]model.Samples {
-	fingerprintToSamples := map[model.Fingerprint]model.Samples{}
+func groupByFingerprint(samples clientmodel.Samples) map[clientmodel.Fingerprint]clientmodel.Samples {
+	fingerprintToSamples := map[clientmodel.Fingerprint]clientmodel.Samples{}
 
 	for _, sample := range samples {
-		fingerprint := *model.NewFingerprintFromMetric(sample.Metric)
-		samples := fingerprintToSamples[fingerprint]
+		fingerprint := &clientmodel.Fingerprint{}
+		fingerprint.LoadFromMetric(sample.Metric)
+		samples := fingerprintToSamples[*fingerprint]
 		samples = append(samples, sample)
-		fingerprintToSamples[fingerprint] = samples
+		fingerprintToSamples[*fingerprint] = samples
 	}
 
 	sortingSemaphore := make(chan bool, sortConcurrency)
@@ -208,7 +211,7 @@ func groupByFingerprint(samples model.Samples) map[model.Fingerprint]model.Sampl
 		doneSorting.Add(1)
 
 		<-sortingSemaphore
-		go func(samples model.Samples) {
+		go func(samples clientmodel.Samples) {
 			sort.Sort(samples)
 			sortingSemaphore <- true
 			doneSorting.Done()
@@ -223,14 +226,14 @@ func groupByFingerprint(samples model.Samples) map[model.Fingerprint]model.Sampl
 // findUnindexedMetrics scours the metric membership index for each given Metric
 // in the keyspace and returns a map of Fingerprint-Metric pairs that are
 // absent.
-func (l *LevelDBMetricPersistence) findUnindexedMetrics(candidates map[model.Fingerprint]model.Metric) (unindexed map[model.Fingerprint]model.Metric, err error) {
+func (l *LevelDBMetricPersistence) findUnindexedMetrics(candidates map[clientmodel.Fingerprint]clientmodel.Metric) (unindexed map[clientmodel.Fingerprint]clientmodel.Metric, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: findUnindexedMetrics, result: success}, map[string]string{operation: findUnindexedMetrics, result: failure})
 	}(time.Now())
 
-	unindexed = make(map[model.Fingerprint]model.Metric)
+	unindexed = make(map[clientmodel.Fingerprint]clientmodel.Metric)
 
 	// Determine which metrics are unknown in the database.
 	for fingerprint, metric := range candidates {
@@ -252,7 +255,7 @@ func (l *LevelDBMetricPersistence) findUnindexedMetrics(candidates map[model.Fin
 // the index to reflect the new state.
 //
 // This operation is idempotent.
-func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint]model.Metric) (err error) {
+func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[clientmodel.Fingerprint]clientmodel.Metric) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -288,7 +291,7 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint
 	for labelName, fingerprintSet := range labelNameFingerprints {
 		fingerprints := model.Fingerprints{}
 		for e := range fingerprintSet {
-			fingerprint := e.(model.Fingerprint)
+			fingerprint := e.(clientmodel.Fingerprint)
 			fingerprints = append(fingerprints, &fingerprint)
 		}
 
@@ -318,7 +321,7 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[model.Fingerprint
 // the index to reflect the new state.
 //
 // This operation is idempotent.
-func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint]model.Metric) (err error) {
+func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[clientmodel.Fingerprint]clientmodel.Metric) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -360,7 +363,7 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint
 	for labelPair, fingerprintSet := range labelPairFingerprints {
 		fingerprints := model.Fingerprints{}
 		for e := range fingerprintSet {
-			fingerprint := e.(model.Fingerprint)
+			fingerprint := e.(clientmodel.Fingerprint)
 			fingerprints = append(fingerprints, &fingerprint)
 		}
 
@@ -390,7 +393,7 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[model.Fingerprint
 // in the index and then bulk updates.
 //
 // This operation is idempotent.
-func (l *LevelDBMetricPersistence) indexFingerprints(metrics map[model.Fingerprint]model.Metric) (err error) {
+func (l *LevelDBMetricPersistence) indexFingerprints(metrics map[clientmodel.Fingerprint]clientmodel.Metric) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -417,7 +420,7 @@ var existenceIdentity = &dto.MembershipIndexValue{}
 // indexMetrics takes groups of samples, determines which ones contain metrics
 // that are unknown to the storage stack, and then proceeds to update all
 // affected indices.
-func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerprint]model.Metric) (err error) {
+func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[clientmodel.Fingerprint]clientmodel.Metric) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -425,7 +428,7 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerpri
 	}(time.Now())
 
 	var (
-		absentMetrics map[model.Fingerprint]model.Metric
+		absentMetrics map[clientmodel.Fingerprint]clientmodel.Metric
 	)
 
 	absentMetrics, err = l.findUnindexedMetrics(fingerprints)
@@ -478,7 +481,7 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[model.Fingerpri
 	return
 }
 
-func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Fingerprint]model.Samples) (err error) {
+func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[clientmodel.Fingerprint]clientmodel.Samples) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -518,7 +521,7 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 	return nil
 }
 
-func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err error) {
+func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -529,8 +532,8 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 	indexErrChan := make(chan error, 1)
 	watermarkErrChan := make(chan error, 1)
 
-	go func(groups map[model.Fingerprint]model.Samples) {
-		metrics := map[model.Fingerprint]model.Metric{}
+	go func(groups map[clientmodel.Fingerprint]clientmodel.Samples) {
+		metrics := map[clientmodel.Fingerprint]clientmodel.Metric{}
 
 		for fingerprint, samples := range groups {
 			metrics[fingerprint] = samples[0].Metric
@@ -539,7 +542,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples model.Samples) (err err
 		indexErrChan <- l.indexMetrics(metrics)
 	}(fingerprintToSamples)
 
-	go func(groups map[model.Fingerprint]model.Samples) {
+	go func(groups map[clientmodel.Fingerprint]clientmodel.Samples) {
 		watermarkErrChan <- l.refreshHighWatermarks(groups)
 	}(fingerprintToSamples)
 
@@ -718,7 +721,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 		base = base.Intersection(sets[i])
 	}
 	for _, e := range base.Elements() {
-		fingerprint := e.(model.Fingerprint)
+		fingerprint := e.(clientmodel.Fingerprint)
 		fps = append(fps, &fingerprint)
 	}
 
@@ -749,7 +752,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.L
 	return fps, nil
 }
 
-func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint) (m model.Metric, err error) {
+func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *clientmodel.Fingerprint) (m clientmodel.Metric, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -765,7 +768,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint)
 		return nil, nil
 	}
 
-	m = model.Metric{}
+	m = clientmodel.Metric{}
 
 	for _, v := range unmarshaled.LabelPair {
 		m[model.LabelName(*v.Name)] = model.LabelValue(*v.Value)
@@ -774,15 +777,15 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *model.Fingerprint)
 	return m, nil
 }
 
-func (l LevelDBMetricPersistence) GetValueAtTime(f *model.Fingerprint, t time.Time) model.Values {
+func (l LevelDBMetricPersistence) GetValueAtTime(f *clientmodel.Fingerprint, t time.Time) model.Values {
 	panic("Not implemented")
 }
 
-func (l LevelDBMetricPersistence) GetBoundaryValues(f *model.Fingerprint, i model.Interval) model.Values {
+func (l LevelDBMetricPersistence) GetBoundaryValues(f *clientmodel.Fingerprint, i model.Interval) model.Values {
 	panic("Not implemented")
 }
 
-func (l *LevelDBMetricPersistence) GetRangeValues(f *model.Fingerprint, i model.Interval) model.Values {
+func (l *LevelDBMetricPersistence) GetRangeValues(f *clientmodel.Fingerprint, i model.Interval) model.Values {
 	panic("Not implemented")
 }
 

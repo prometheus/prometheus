@@ -15,12 +15,16 @@ package metric
 
 import (
 	"fmt"
+	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/model"
-	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	"time"
 )
 
 // diskFrontier describes an on-disk store of series to provide a
@@ -29,9 +33,9 @@ import (
 // This is used to reduce the burden associated with LevelDB iterator
 // management.
 type diskFrontier struct {
-	firstFingerprint *model.Fingerprint
+	firstFingerprint *clientmodel.Fingerprint
 	firstSupertime   time.Time
-	lastFingerprint  *model.Fingerprint
+	lastFingerprint  *clientmodel.Fingerprint
 	lastSupertime    time.Time
 }
 
@@ -39,7 +43,7 @@ func (f diskFrontier) String() string {
 	return fmt.Sprintf("diskFrontier from %s at %s to %s at %s", f.firstFingerprint.ToRowKey(), f.firstSupertime, f.lastFingerprint.ToRowKey(), f.lastSupertime)
 }
 
-func (f diskFrontier) ContainsFingerprint(fingerprint *model.Fingerprint) bool {
+func (f diskFrontier) ContainsFingerprint(fingerprint *clientmodel.Fingerprint) bool {
 	return !(fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint))
 }
 
@@ -83,7 +87,7 @@ func (f seriesFrontier) String() string {
 
 // newSeriesFrontier furnishes a populated diskFrontier for a given
 // fingerprint.  If the series is absent, present will be false.
-func newSeriesFrontier(f *model.Fingerprint, d *diskFrontier, i leveldb.Iterator) (s *seriesFrontier, present bool, err error) {
+func newSeriesFrontier(f *clientmodel.Fingerprint, d *diskFrontier, i leveldb.Iterator) (s *seriesFrontier, present bool, err error) {
 	lowerSeek := firstSupertime
 	upperSeek := lastSupertime
 

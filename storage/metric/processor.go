@@ -19,6 +19,8 @@ import (
 
 	"code.google.com/p/goprotobuf/proto"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	dto "github.com/prometheus/prometheus/model/generated"
 
 	"github.com/prometheus/prometheus/model"
@@ -43,7 +45,7 @@ type Processor interface {
 	//
 	// Upon completion or error, the last time at which the processor finished
 	// shall be emitted in addition to any errors.
-	Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *model.Fingerprint) (lastCurated time.Time, err error)
+	Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error)
 }
 
 // CompactionProcessor combines sparse values in the database together such
@@ -85,7 +87,7 @@ func (p CompactionProcessor) String() string {
 	return fmt.Sprintf("compactionProcessor for minimum group size %d", p.MinimumGroupSize)
 }
 
-func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *model.Fingerprint) (lastCurated time.Time, err error) {
+func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {
@@ -257,7 +259,7 @@ func (p DeletionProcessor) String() string {
 	return "deletionProcessor"
 }
 
-func (p DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *model.Fingerprint) (lastCurated time.Time, err error) {
+func (p DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {

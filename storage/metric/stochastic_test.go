@@ -98,9 +98,9 @@ func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 		ts := time.Unix(int64(x), int64(x))
 		labelName := model.LabelName(x)
 		labelValue := model.LabelValue(x)
-		l := model.Metric{labelName: labelValue}
+		l := clientmodel.Metric{labelName: labelValue}
 
-		sample := model.Sample{
+		sample := clientmodel.Sample{
 			Value:     v,
 			Timestamp: ts,
 			Metric:    l,
@@ -127,9 +127,9 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 		ts := time.Unix(int64(x), int64(x))
 		labelName := model.LabelName(x)
 		labelValue := model.LabelValue(x)
-		l := model.Metric{labelName: labelValue}
+		l := clientmodel.Metric{labelName: labelValue}
 
-		sample := model.Sample{
+		sample := clientmodel.Sample{
 			Value:     v,
 			Timestamp: ts,
 			Metric:    l,
@@ -173,10 +173,10 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 
 func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) bool {
-		sample := model.Sample{
+		sample := clientmodel.Sample{
 			Value:     model.SampleValue(x),
 			Timestamp: time.Unix(int64(x), 0),
-			Metric:    model.Metric{model.MetricNameLabel: "my_metric"},
+			Metric:    clientmodel.Metric{model.MetricNameLabel: "my_metric"},
 		}
 
 		err := p.AppendSample(sample)
@@ -189,7 +189,7 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	}
 }
 
-func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *model.Fingerprint, i model.Interval) (samples model.Values, err error) {
+func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerprint, i model.Interval) (samples model.Values, err error) {
 	k := &dto.SampleKey{
 		Fingerprint: fp.ToDTO(),
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
@@ -258,8 +258,8 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 		metricNewestSample := map[int]int64{}
 
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
-			sample := model.Sample{
-				Metric: model.Metric{},
+			sample := clientmodel.Sample{
+				Metric: clientmodel.Metric{},
 			}
 
 			v := model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
@@ -400,7 +400,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				}
 			}
 
-			metric := model.Metric{}
+			metric := clientmodel.Metric{}
 			metric[model.MetricNameLabel] = model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
 
 			for i := 0; i < numberOfSharedLabels; i++ {

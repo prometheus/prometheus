@@ -119,7 +119,7 @@ func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} 
 		intervalCorrection := model.SampleValue(targetInterval) / model.SampleValue(sampledInterval)
 		resultValue *= intervalCorrection
 
-		resultSample := model.Sample{
+		resultSample := clientmodel.Sample{
 			Metric:    samples.Metric,
 			Value:     resultValue,
 			Timestamp: timestamp,
@@ -183,8 +183,8 @@ func sortDescImpl(timestamp time.Time, view *viewAdapter, args []Node) interface
 // === sampleVectorImpl() Vector ===
 func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return Vector{
-		model.Sample{
-			Metric: model.Metric{
+		clientmodel.Sample{
+			Metric: clientmodel.Metric{
 				model.MetricNameLabel: "http_requests",
 				model.JobLabel:        "api-server",
 				"instance":            "0",
@@ -192,8 +192,8 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 			Value:     10,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
+		clientmodel.Sample{
+			Metric: clientmodel.Metric{
 				model.MetricNameLabel: "http_requests",
 				model.JobLabel:        "api-server",
 				"instance":            "1",
@@ -201,8 +201,8 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 			Value:     20,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
+		clientmodel.Sample{
+			Metric: clientmodel.Metric{
 				model.MetricNameLabel: "http_requests",
 				model.JobLabel:        "api-server",
 				"instance":            "2",
@@ -210,8 +210,8 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 			Value:     30,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
+		clientmodel.Sample{
+			Metric: clientmodel.Metric{
 				model.MetricNameLabel: "http_requests",
 				model.JobLabel:        "api-server",
 				"instance":            "3",
@@ -220,8 +220,8 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 			Value:     40,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
+		clientmodel.Sample{
+			Metric: clientmodel.Metric{
 				model.MetricNameLabel: "http_requests",
 				model.JobLabel:        "api-server",
 				"instance":            "2",
@@ -230,8 +230,8 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 			Value:     40,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
+		clientmodel.Sample{
+			Metric: clientmodel.Metric{
 				model.MetricNameLabel: "http_requests",
 				model.JobLabel:        "api-server",
 				"instance":            "3",
@@ -240,8 +240,8 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 			Value:     40,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
+		clientmodel.Sample{
+			Metric: clientmodel.Metric{
 				model.MetricNameLabel: "http_requests",
 				model.JobLabel:        "api-server",
 				"instance":            "3",

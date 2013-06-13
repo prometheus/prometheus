@@ -47,7 +47,7 @@ type alert struct {
 	// The name of the alert.
 	name string
 	// The vector element labelset triggering this alert.
-	metric model.Metric
+	metric clientmodel.Metric
 	// The state of the alert (PENDING or FIRING).
 	state alertState
 	// The time when the alert first transitioned into PENDING state.
@@ -55,8 +55,8 @@ type alert struct {
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a alert) sample(timestamp time.Time, value model.SampleValue) model.Sample {
-	recordedMetric := model.Metric{}
+func (a alert) sample(timestamp time.Time, value model.SampleValue) clientmodel.Sample {
+	recordedMetric := clientmodel.Metric{}
 	for label, value := range a.metric {
 		recordedMetric[label] = value
 	}
@@ -65,7 +65,7 @@ func (a alert) sample(timestamp time.Time, value model.SampleValue) model.Sample
 	recordedMetric[model.AlertNameLabel] = model.LabelValue(a.name)
 	recordedMetric[model.AlertStateLabel] = model.LabelValue(a.state.String())
 
-	return model.Sample{
+	return clientmodel.Sample{
 		Metric:    recordedMetric,
 		Value:     value,
 		Timestamp: timestamp,
@@ -85,7 +85,7 @@ type AlertingRule struct {
 	labels model.LabelSet
 	// A map of alerts which are currently active (PENDING or FIRING), keyed by
 	// the fingerprint of the labelset they correspond to.
-	activeAlerts map[model.Fingerprint]*alert
+	activeAlerts map[clientmodel.Fingerprint]*alert
 }
 
 func (rule AlertingRule) Name() string { return rule.name }
@@ -158,6 +158,6 @@ func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Durat
 		vector:       vector,
 		holdDuration: holdDuration,
 		labels:       labels,
-		activeAlerts: map[model.Fingerprint]*alert{},
+		activeAlerts: map[clientmodel.Fingerprint]*alert{},
 	}
 }

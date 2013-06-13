@@ -117,7 +117,7 @@ func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp 
 			continue
 		}
 		if samplePair != nil {
-			samples = append(samples, model.Sample{
+			samples = append(samples, clientmodel.Sample{
 				Metric:    m,
 				Value:     samplePair.Value,
 				Timestamp: timestamp,

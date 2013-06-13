@@ -26,7 +26,7 @@ var (
 	testInstant  = time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern).In(time.UTC)
 )
 
-func testAppendSample(p MetricPersistence, s model.Sample, t test.Tester) {
+func testAppendSample(p MetricPersistence, s clientmodel.Sample, t test.Tester) {
 	err := p.AppendSample(s)
 	if err != nil {
 		t.Fatal(err)

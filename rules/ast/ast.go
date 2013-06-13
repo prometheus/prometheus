@@ -29,11 +29,11 @@ import (
 // ----------------------------------------------------------------------------
 // Raw data value types.
 
-type Vector model.Samples
+type Vector clientmodel.Samples
 type Matrix []model.SampleSet
 
 type groupedAggregation struct {
-	labels     model.Metric
+	labels     clientmodel.Metric
 	value      model.SampleValue
 	groupCount int
 }
@@ -242,7 +242,7 @@ func (node *ScalarFunctionCall) Eval(timestamp time.Time, view *viewAdapter) mod
 	return node.function.callFn(timestamp, view, node.args).(model.SampleValue)
 }
 
-func (node *VectorAggregation) labelsToGroupingKey(labels model.Metric) string {
+func (node *VectorAggregation) labelsToGroupingKey(labels clientmodel.Metric) string {
 	keyParts := []string{}
 	for _, keyLabel := range node.groupBy {
 		keyParts = append(keyParts, string(labels[keyLabel]))
@@ -250,7 +250,7 @@ func (node *VectorAggregation) labelsToGroupingKey(labels model.Metric) string {
 	return strings.Join(keyParts, ",") // TODO not safe when label value contains comma.
 }
 
-func labelsToKey(labels model.Metric) string {
+func labelsToKey(labels clientmodel.Metric) string {
 	keyParts := []string{}
 	for label, value := range labels {
 		keyParts = append(keyParts, fmt.Sprintf("%v='%v'", label, value))
@@ -312,8 +312,8 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 	return matrix, nil
 }
 
-func labelIntersection(metric1, metric2 model.Metric) model.Metric {
-	intersection := model.Metric{}
+func labelIntersection(metric1, metric2 clientmodel.Metric) clientmodel.Metric {
+	intersection := clientmodel.Metric{}
 	for label, value := range metric1 {
 		if metric2[label] == value {
 			intersection[label] = value
@@ -333,7 +333,7 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[stri
 		default:
 			// For other aggregations, we already have the right value.
 		}
-		sample := model.Sample{
+		sample := clientmodel.Sample{
 			Metric:    aggregation.labels,
 			Value:     aggregation.value,
 			Timestamp: timestamp,
@@ -521,7 +521,7 @@ func evalVectorBinop(opType BinOpType,
 	panic("Not all enum values enumerated in switch")
 }
 
-func labelsEqual(labels1, labels2 model.Metric) bool {
+func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
 	if len(labels1) != len(labels2) {
 		return false
 	}

@@ -14,11 +14,14 @@
 package metric
 
 import (
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/utility"
 	"sort"
 	"sync"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/utility"
 )
 
 // Assuming sample rate of 1 / 15Hz, this allows for one hour's worth of
@@ -42,7 +45,7 @@ func (v singletonValue) get() model.SampleValue {
 type stream struct {
 	sync.RWMutex
 
-	metric model.Metric
+	metric clientmodel.Metric
 	values model.Values
 }
 
@@ -141,7 +144,7 @@ func (s *stream) getRangeValues(in model.Interval) model.Values {
 	return result
 }
 
-func newStream(metric model.Metric) *stream {
+func newStream(metric clientmodel.Metric) *stream {
 	return &stream{
 		metric: metric,
 		values: make(model.Values, 0, initialSeriesArenaSize),
@@ -152,7 +155,7 @@ type memorySeriesStorage struct {
 	sync.RWMutex
 
 	wmCache                 *WatermarkCache
-	fingerprintToSeries     map[model.Fingerprint]*stream
+	fingerprintToSeries     map[clientmodel.Fingerprint]*stream
 	labelPairToFingerprints map[model.LabelPair]model.Fingerprints
 	labelNameToFingerprints map[model.LabelName]model.Fingerprints
 }
@@ -163,7 +166,7 @@ type MemorySeriesOptions struct {
 	WatermarkCache *WatermarkCache
 }
 
-func (s *memorySeriesStorage) AppendSamples(samples model.Samples) error {
+func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) error {
 	for _, sample := range samples {
 		s.AppendSample(sample)
 	}
@@ -171,7 +174,7 @@ func (s *memorySeriesStorage) AppendSamples(samples model.Samples) error {
 	return nil
 }
 
-func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
+func (s *memorySeriesStorage) AppendSample(sample clientmodel.Sample) error {
 	s.Lock()
 	defer s.Unlock()
 
@@ -209,14 +212,14 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 
 // Append raw samples, bypassing indexing. Only used to add data to views,
 // which don't need to lookup by metric.
-func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *model.Fingerprint, samples model.Values) {
+func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmodel.Fingerprint, samples model.Values) {
 	s.Lock()
 	defer s.Unlock()
 
 	series, ok := s.fingerprintToSeries[*fingerprint]
 
 	if !ok {
-		series = newStream(model.Metric{})
+		series = newStream(clientmodel.Metric{})
 		s.fingerprintToSeries[*fingerprint] = series
 	}
 
@@ -252,7 +255,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 		base = base.Intersection(sets[i])
 	}
 	for _, e := range base.Elements() {
-		fingerprint := e.(model.Fingerprint)
+		fingerprint := e.(clientmodel.Fingerprint)
 		fingerprints = append(fingerprints, &fingerprint)
 	}
 
@@ -274,7 +277,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (mo
 	return fingerprints, nil
 }
 
-func (s *memorySeriesStorage) GetMetricForFingerprint(f *model.Fingerprint) (model.Metric, error) {
+func (s *memorySeriesStorage) GetMetricForFingerprint(f *clientmodel.Fingerprint) (clientmodel.Metric, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -283,7 +286,7 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(f *model.Fingerprint) (mod
 		return nil, nil
 	}
 
-	metric := model.Metric{}
+	metric := clientmodel.Metric{}
 	for label, value := range series.metric {
 		metric[label] = value
 	}
@@ -291,7 +294,7 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(f *model.Fingerprint) (mod
 	return metric, nil
 }
 
-func (s *memorySeriesStorage) CloneSamples(f *model.Fingerprint) model.Values {
+func (s *memorySeriesStorage) CloneSamples(f *clientmodel.Fingerprint) model.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -303,7 +306,7 @@ func (s *memorySeriesStorage) CloneSamples(f *model.Fingerprint) model.Values {
 	return series.clone()
 }
 
-func (s *memorySeriesStorage) GetValueAtTime(f *model.Fingerprint, t time.Time) model.Values {
+func (s *memorySeriesStorage) GetValueAtTime(f *clientmodel.Fingerprint, t time.Time) model.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -315,7 +318,7 @@ func (s *memorySeriesStorage) GetValueAtTime(f *model.Fingerprint, t time.Time) 
 	return series.getValueAtTime(t)
 }
 
-func (s *memorySeriesStorage) GetBoundaryValues(f *model.Fingerprint, i model.Interval) model.Values {
+func (s *memorySeriesStorage) GetBoundaryValues(f *clientmodel.Fingerprint, i model.Interval) model.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -327,7 +330,7 @@ func (s *memorySeriesStorage) GetBoundaryValues(f *model.Fingerprint, i model.In
 	return series.getBoundaryValues(i)
 }
 
-func (s *memorySeriesStorage) GetRangeValues(f *model.Fingerprint, i model.Interval) model.Values {
+func (s *memorySeriesStorage) GetRangeValues(f *clientmodel.Fingerprint, i model.Interval) model.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -344,7 +347,7 @@ func (s *memorySeriesStorage) Close() {
 	s.Lock()
 	defer s.Unlock()
 
-	s.fingerprintToSeries = map[model.Fingerprint]*stream{}
+	s.fingerprintToSeries = map[clientmodel.Fingerprint]*stream{}
 	s.labelPairToFingerprints = map[model.LabelPair]model.Fingerprints{}
 	s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
 }
@@ -368,7 +371,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (v
 
 func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
-		fingerprintToSeries:     make(map[model.Fingerprint]*stream),
+		fingerprintToSeries:     make(map[clientmodel.Fingerprint]*stream),
 		labelPairToFingerprints: make(map[model.LabelPair]model.Fingerprints),
 		labelNameToFingerprints: make(map[model.LabelName]model.Fingerprints),
 		wmCache:                 o.WatermarkCache,

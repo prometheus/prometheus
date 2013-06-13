@@ -24,7 +24,7 @@ import (
 
 type Result struct {
 	Err     error // TODO propagate errors from rule evaluation.
-	Samples model.Samples
+	Samples clientmodel.Samples
 }
 
 type RuleManager interface {
@@ -94,7 +94,7 @@ func (m *ruleManager) runIteration(results chan *Result) {
 		go func(rule Rule) {
 			defer wg.Done()
 			vector, err := rule.Eval(now, m.storage)
-			samples := make(model.Samples, len(vector))
+			samples := make(clientmodel.Samples, len(vector))
 			copy(samples, vector)
 			m.results <- &Result{
 				Samples: samples,

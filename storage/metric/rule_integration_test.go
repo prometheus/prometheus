@@ -320,12 +320,12 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			defer closer.Close()
 			defer p.Close()
 
-			m := model.Metric{
+			m := clientmodel.Metric{
 				model.MetricNameLabel: "age_in_years",
 			}
 
 			for _, value := range context.values {
-				testAppendSample(p, model.Sample{
+				testAppendSample(p, clientmodel.Sample{
 					Value:     model.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
@@ -811,12 +811,12 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 			defer closer.Close()
 			defer p.Close()
 
-			m := model.Metric{
+			m := clientmodel.Metric{
 				model.MetricNameLabel: "age_in_years",
 			}
 
 			for _, value := range context.values {
-				testAppendSample(p, model.Sample{
+				testAppendSample(p, clientmodel.Sample{
 					Value:     model.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,

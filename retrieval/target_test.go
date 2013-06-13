@@ -52,8 +52,8 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	}
 
 	actual := result.Samples[0]
-	expected := model.Sample{
-		Metric: model.Metric{
+	expected := clientmodel.Sample{
+		Metric: clientmodel.Metric{
 			model.MetricNameLabel: model.ScrapeHealthMetricName,
 			model.InstanceLabel:   "http://example.url",
 			model.JobLabel:        "testjob",

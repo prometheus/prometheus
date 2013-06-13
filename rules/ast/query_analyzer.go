@@ -21,8 +21,8 @@ import (
 	"time"
 )
 
-type FullRangeMap map[model.Fingerprint]time.Duration
-type IntervalRangeMap map[model.Fingerprint]bool
+type FullRangeMap map[clientmodel.Fingerprint]time.Duration
+type IntervalRangeMap map[clientmodel.Fingerprint]bool
 
 type QueryAnalyzer struct {
 	// Values collected by query analysis.

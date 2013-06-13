@@ -140,7 +140,7 @@ func testBuilder(t test.Tester) {
 
 	for i, scenario := range scenarios {
 		builder := viewRequestBuilder{
-			operations: map[model.Fingerprint]ops{},
+			operations: map[clientmodel.Fingerprint]ops{},
 		}
 
 		for _, atTime := range scenario.in.atTimes {

@@ -14,16 +14,21 @@
 package metric
 
 import (
-	"code.google.com/p/goprotobuf/proto"
 	"fmt"
+	"strings"
+	"time"
+
+	"code.google.com/p/goprotobuf/proto"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/model"
-	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	"strings"
-	"time"
 )
 
 // CurationState contains high-level curation state information for the
@@ -32,7 +37,7 @@ type CurationState struct {
 	Active      bool
 	Name        string
 	Limit       time.Duration
-	Fingerprint *model.Fingerprint
+	Fingerprint *clientmodel.Fingerprint
 }
 
 // watermarkFilter determines whether to include or exclude candidate
@@ -206,7 +211,7 @@ func (w watermarkFilter) shouldStop() bool {
 	return len(w.stop) != 0
 }
 
-func getCurationRemark(states raw.Persistence, processor Processor, ignoreYoungerThan time.Duration, fingerprint *model.Fingerprint) (*model.CurationRemark, error) {
+func getCurationRemark(states raw.Persistence, processor Processor, ignoreYoungerThan time.Duration, fingerprint *clientmodel.Fingerprint) (*model.CurationRemark, error) {
 	rawSignature, err := processor.Signature()
 	if err != nil {
 		return nil, err
@@ -234,7 +239,7 @@ func getCurationRemark(states raw.Persistence, processor Processor, ignoreYounge
 }
 
 func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult) {
-	fingerprint := key.(*model.Fingerprint)
+	fingerprint := key.(*clientmodel.Fingerprint)
 
 	defer func() {
 		labels := map[string]string{
@@ -291,7 +296,7 @@ func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult)
 
 // curationConsistent determines whether the given metric is in a dirty state
 // and needs curation.
-func (w watermarkFilter) curationConsistent(f *model.Fingerprint, watermark model.Watermark) (consistent bool, err error) {
+func (w watermarkFilter) curationConsistent(f *clientmodel.Fingerprint, watermark model.Watermark) (consistent bool, err error) {
 	curationRemark, err := getCurationRemark(w.curationState, w.processor, w.ignoreYoungerThan, f)
 	if err != nil {
 		return
@@ -304,7 +309,7 @@ func (w watermarkFilter) curationConsistent(f *model.Fingerprint, watermark mode
 }
 
 func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
-	fingerprint := key.(*model.Fingerprint)
+	fingerprint := key.(*clientmodel.Fingerprint)
 
 	seriesFrontier, present, err := newSeriesFrontier(fingerprint, w.diskFrontier, w.sampleIterator)
 	if err != nil || !present {
@@ -358,7 +363,7 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 	return
 }
 
-func (w watermarkOperator) refreshCurationRemark(f *model.Fingerprint, finished time.Time) (err error) {
+func (w watermarkOperator) refreshCurationRemark(f *clientmodel.Fingerprint, finished time.Time) (err error) {
 	signature, err := w.processor.Signature()
 	if err != nil {
 		return

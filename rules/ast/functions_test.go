@@ -29,7 +29,7 @@ func (node emptyRangeNode) Children() Nodes            { return Nodes{} }
 func (node emptyRangeNode) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 	return Matrix{
 		model.SampleSet{
-			Metric: model.Metric{model.MetricNameLabel: "empty_metric"},
+			Metric: clientmodel.Metric{model.MetricNameLabel: "empty_metric"},
 			Values: model.Values{},
 		},
 	}
@@ -38,7 +38,7 @@ func (node emptyRangeNode) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 func (node emptyRangeNode) EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix {
 	return Matrix{
 		model.SampleSet{
-			Metric: model.Metric{model.MetricNameLabel: "empty_metric"},
+			Metric: clientmodel.Metric{model.MetricNameLabel: "empty_metric"},
 			Values: model.Values{},
 		},
 	}
