@@ -16,6 +16,4 @@
 # A helper until https://github.com/travis-ci/travis-cookbooks/issues/184 is
 # remedied.
 
-. ./tests-for-die-in-a-fire-travis.shlib
-
 make -f Makefile || exit 1

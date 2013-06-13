@@ -18,17 +18,15 @@ include Makefile.INCLUDE
 all: binary test
 
 advice:
-	go tool vet .
+	$(GO) tool vet .
 
 binary: build
-	go build -o prometheus $(BUILDFLAGS) .
+	$(GO) build -o prometheus $(BUILDFLAGS) .
 
 build: preparation config model tools web
 
 clean:
 	$(MAKE) -C build clean
-	$(MAKE) -C config clean
-	$(MAKE) -C model clean
 	$(MAKE) -C tools clean
 	$(MAKE) -C web clean
 	rm -rf $(TEST_ARTIFACTS)
@@ -43,7 +41,14 @@ documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
 format:
-	find . -iname '*.go' | egrep -v "generated|\.(l|y)\.go" | xargs -n1 gofmt -w -s=true
+	find . -iname '*.go' | egrep -v "generated|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
+
+build/cache/$(GOPKG):
+	curl -o $@ http://go.googlecode.com/files/$(GOPKG)
+
+$(GOCC): build/cache/$(GOPKG)
+	tar -C build/root -xzf $<
+	touch $@
 
 model: preparation
 	$(MAKE) -C model
@@ -52,7 +57,7 @@ package: binary
 	cp prometheus build/package/prometheus
 	rsync -av build/root/lib/ build/package/lib/
 
-preparation: source_path
+preparation: $(GOCC) source_path
 	$(MAKE) -C build
 
 race_condition_binary: build
@@ -77,7 +82,8 @@ source_path:
 	[ -d "$(FULL_GOPATH)" ]
 
 test: build
-	go test ./... $(GO_TEST_FLAGS)
+	$(GOENV) find . -maxdepth 1 -mindepth 1 -type d -and -not -path ./build -exec $(GOCC) test {}/... $(GO_TEST_FLAGS) \;
+	$(GO) test $(GO_TEST_FLAGS)
 
 tools:
 	$(MAKE) -C tools
