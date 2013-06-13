@@ -1,0 +1,41 @@
+{{define "head"}}
+    <link type="text/css" rel="stylesheet" href="/static/css/alerts.css">
+    <script src="/static/js/alerts.js"></script>
+{{end}}
+
+{{define "content"}}
+    <h2>Alerts</h2>
+    <div class="grouping_box">
+      {{range .AlertingRules}}
+      {{$activeAlerts := .ActiveAlerts}}
+      <div class="alert_wrapper">
+        <div class="alert_header {{.State}}">
+          {{.Name}} ({{len $activeAlerts}} active)
+        </div>
+        <div class="alert_content">
+          <div class="alert_description">
+            <b>Rule:</b> {{.HTMLSnippet}}
+          </div>
+          {{if $activeAlerts}}
+          <table class="alert_active_elements">
+            <tr>
+              <th>Labels</th>
+              <th>State</th>
+              <th>Active Since</th>
+              <th>Value</th>
+            </tr>
+            {{range $activeAlerts}}
+            <tr>
+              <td>{{.Labels}}</td>
+              <td>{{.State}}</td>
+              <td>{{.ActiveSince}}</td>
+              <td>{{.Value}}</td>
+            </tr>
+            {{end}}
+          </table>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+{{end}}
