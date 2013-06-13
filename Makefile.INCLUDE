@@ -61,6 +61,9 @@ export CPPFLAGS := $(CPPFLAGS) -I$(PREFIX)/include
 export LDFLAGS := $(LDFLAGS) -L$(PREFIX)/lib
 export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 
+export CGO_CFLAGS = $(CFLAGS)
+export CGO_LDFLAGS = $(LDFLAGS)
+
 export GO_TEST_FLAGS := "-v"
 
 GO_GET := $(GO) get -u -v -x

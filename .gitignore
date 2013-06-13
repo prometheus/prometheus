@@ -29,5 +29,3 @@ command-line-arguments.test
 *BASE*
 *LOCAL*
 *REMOTE*
-build/root
-tools/dumper/dumper

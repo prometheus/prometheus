@@ -105,6 +105,10 @@ architecture and release identification remarks for us.
 
     $ make test
 
+## Packaging
+
+    $ make package
+
 ### Race Detector
 
 Go 1.1 includes a [race
