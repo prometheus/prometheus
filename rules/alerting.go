@@ -115,7 +115,8 @@ func (rule *AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorag
 	rule.mutex.Lock()
 	defer rule.mutex.Unlock()
 
-	// Create pending alerts for any new vector elements in the alert expression.
+	// Create pending alerts for any new vector elements in the alert expression
+	// or update the expression value for existing elements.
 	resultFingerprints := utility.Set{}
 	for _, sample := range exprResult {
 		fp := *model.NewFingerprintFromMetric(sample.Metric)
@@ -129,7 +130,7 @@ func (rule *AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorag
 			}
 			rule.activeAlerts[fp] = &Alert{
 				Name:        rule.name,
-				Labels:      sample.Metric.ToLabelSet(),
+				Labels:      labels,
 				State:       PENDING,
 				ActiveSince: timestamp,
 				Value:       sample.Value,
