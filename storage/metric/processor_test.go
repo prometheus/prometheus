@@ -70,7 +70,7 @@ func (c curationState) Get() (key, value proto.Message) {
 		IgnoreYoungerThan:        c.ignoreYoungerThan,
 	}.ToDTO()
 
-	value = model.CurationRemark{
+	value = curationRemark{
 		LastCompletionTimestamp: c.lastCurated,
 	}.ToDTO()
 
@@ -906,7 +906,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			if !actualKey.Equal(expectedKey) {
 				t.Fatalf("%d.%d. expected %s, got %s", i, j, expectedKey, actualKey)
 			}
-			expectedCurationRemark := model.CurationRemark{
+			expectedCurationRemark := curationRemark{
 				LastCompletionTimestamp: expected.lastCurated,
 			}
 			if !actualCurationRemark.Equal(expectedCurationRemark) {
@@ -1424,7 +1424,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			if !actualKey.Equal(expectedKey) {
 				t.Fatalf("%d.%d. expected %s, got %s", i, j, expectedKey, actualKey)
 			}
-			expectedCurationRemark := model.CurationRemark{
+			expectedCurationRemark := curationRemark{
 				LastCompletionTimestamp: expected.lastCurated,
 			}
 			if !actualCurationRemark.Equal(expectedCurationRemark) {

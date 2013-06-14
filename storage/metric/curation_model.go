@@ -46,18 +46,14 @@ func (c *curationRemark) String() string {
 	return fmt.Sprintf("Last curated at %s", c.LastCompletionTimestamp)
 }
 
+func (c *curationRemark) load(d *dto.CurationValue) {
+	c.LastCompletionTimestamp = time.Unix(d.GetLastCompletionTimestamp(), 0).UTC()
+}
+
 // // ToDTO generates the dto.CurationValue representation of this.
 // func (c *curationRemark) ToDTO() *dto.CurationValue {
 // 	return &dto.CurationValue{
 // 		LastCompletionTimestamp: proto.Int64(c.LastCompletionTimestamp.Unix()),
-// 	}
-// }
-
-// NewcurationRemarkFromDTO builds curationRemark from the provided
-// dto.CurationValue object.
-// func NewcurationRemarkFromDTO(d *dto.CurationValue) curationRemark {
-// 	return curationRemark{
-// 		LastCompletionTimestamp: time.Unix(*d.LastCompletionTimestamp, 0).UTC(),
 // 	}
 // }
 
@@ -86,22 +82,26 @@ func (c *curationKey) Equal(o *curationKey) bool {
 	return true
 }
 
-// // ToDTO generates a dto.CurationKey representation of this.
-// func (c curationKey) ToDTO() *dto.CurationKey {
-// 	return &dto.curationKey{
-// 		Fingerprint:              c.Fingerprint.ToDTO(),
-// 		ProcessorMessageRaw:      c.ProcessorMessageRaw,
-// 		ProcessorMessageTypeName: proto.String(c.ProcessorMessageTypeName),
-// 		IgnoreYoungerThan:        proto.Int64(int64(c.IgnoreYoungerThan)),
-// 	}
-// }
+func (c *curationKey) dump(d *dto.CurationKey) {
+	// BUG(matt): Avenue for simplification.
+	fingerprint := &clientmodel.Fingerprint{}
+	fingerprintDTO := &dto.Fingerprint{}
 
-// // NewCurationKeyFromDTO builds CurationKey from the provided dto.CurationKey.
-// func NewCurationKeyFromDTO(d *dto.CurationKey) CurationKey {
-// 	return CurationKey{
-// 		Fingerprint:              NewFingerprintFromDTO(d.Fingerprint),
-// 		ProcessorMessageRaw:      d.ProcessorMessageRaw,
-// 		ProcessorMessageTypeName: *d.ProcessorMessageTypeName,
-// 		IgnoreYoungerThan:        time.Duration(*d.IgnoreYoungerThan),
-// 	}
-// }
+	dumpFingerprint(fingerprintDTO, fingerprint)
+
+	d.Fingerprint = fingerprintDTO
+	d.ProcessorMessageRaw = c.ProcessorMessageRaw
+	d.ProcessorMessageTypeName = proto.String(c.ProcessorMessageTypeName)
+	d.IgnoreYoungerThan = proto.Int64(int64(c.IgnoreYoungerThan))
+}
+
+func (c *curationKey) load(d *dto.CurationKey) {
+	// BUG(matt): Avenue for simplification.
+	c.Fingerprint = &clientmodel.Fingerprint{}
+
+	loadFingerprint(c.Fingerprint, d.Fingerprint)
+
+	c.ProcessorMessageRaw = d.ProcessorMessageRaw
+	c.ProcessorMessageTypeName = d.GetProcessorMessageTypeName()
+	c.IgnoreYoungerThan = time.Duration(d.GetIgnoreYoungerThan())
+}

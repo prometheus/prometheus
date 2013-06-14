@@ -25,7 +25,6 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 
 	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
@@ -73,7 +72,12 @@ type Curator struct {
 
 // watermarkDecoder converts (dto.Fingerprint, dto.MetricHighWatermark) doubles
 // into (model.Fingerprint, model.Watermark) doubles.
-type watermarkDecoder struct{}
+type watermarkDecoder struct {
+	fingerprintDTOs   fingerprintDTOLessor
+	fingerprints      fingerprintLessor
+	highWatermarkDTOs highWatermarkDTOLessor
+	highWatermarks    watermarksLessor
+}
 
 // watermarkOperator scans over the curator.samples table for metrics whose
 // high watermark has been determined to be allowable for curation.  This type
@@ -142,9 +146,10 @@ func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, process
 		return
 	}
 
-	decoder := watermarkDecoder{}
+	decoder := &watermarkDecoder{}
+	// defer decoder.close()
 
-	filter := watermarkFilter{
+	filter := &watermarkFilter{
 		curationState:     curationState,
 		ignoreYoungerThan: ignoreYoungerThan,
 		processor:         processor,
@@ -179,66 +184,68 @@ func (c Curator) Drain() {
 	}
 }
 
-func (w watermarkDecoder) DecodeKey(in interface{}) (out interface{}, err error) {
-	key := &dto.Fingerprint{}
+func (w *watermarkDecoder) DecodeKey(in interface{}) (interface{}, error) {
+	key := w.fingerprintDTOs.lease()
+	// defer w.fingerprintDTOs.credit(key)
 	bytes := in.([]byte)
 
-	err = proto.Unmarshal(bytes, key)
-	if err != nil {
-		return
+	if err := proto.Unmarshal(bytes, key); err != nil {
+		return nil, err
 	}
 
-	out = model.NewFingerprintFromDTO(key)
+	fingerprint := w.fingerprints.lease()
+	loadFingerprint(fingerprint, key)
 
-	return
+	return fingerprint, nil
 }
 
-func (w watermarkDecoder) DecodeValue(in interface{}) (out interface{}, err error) {
-	dto := &dto.MetricHighWatermark{}
+func (w *watermarkDecoder) DecodeValue(in interface{}) (interface{}, error) {
+	value := w.highWatermarkDTOs.lease()
+	defer w.highWatermarkDTOs.credit(value)
 	bytes := in.([]byte)
 
-	err = proto.Unmarshal(bytes, dto)
-	if err != nil {
-		return
+	if err := proto.Unmarshal(bytes, value); err != nil {
+		return nil, err
 	}
 
-	out = model.NewWatermarkFromHighWatermarkDTO(dto)
+	watermark := w.highWatermarks.lease()
+	watermark.load(value)
 
-	return
+	return watermark, nil
 }
 
-func (w watermarkFilter) shouldStop() bool {
+func (w *watermarkDecoder) close() {
+	w.fingerprintDTOs.close()
+	w.fingerprints.close()
+	w.highWatermarks.close()
+	w.highWatermarkDTOs.close()
+}
+
+func (w *watermarkFilter) shouldStop() bool {
 	return len(w.stop) != 0
 }
 
-func getCurationRemark(states raw.Persistence, processor Processor, ignoreYoungerThan time.Duration, fingerprint *clientmodel.Fingerprint) (*model.CurationRemark, error) {
-	rawSignature, err := processor.Signature()
-	if err != nil {
-		return nil, err
-	}
-
-	curationKey := model.CurationKey{
-		Fingerprint:              fingerprint,
-		ProcessorMessageRaw:      rawSignature,
-		ProcessorMessageTypeName: processor.Name(),
-		IgnoreYoungerThan:        ignoreYoungerThan,
-	}.ToDTO()
+func getCurationRemark(states raw.Persistence, k *curationKey) (r *curationRemark, found bool, err error) {
+	curationKey := &dto.CurationKey{}
 	curationValue := &dto.CurationValue{}
+
+	k.dump(curationKey)
 
 	present, err := states.Get(curationKey, curationValue)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if !present {
-		return nil, nil
+		return nil, false, nil
 	}
 
-	remark := model.NewCurationRemarkFromDTO(curationValue)
+	remark := &curationRemark{}
+	remark.load(curationValue)
 
-	return &remark, nil
+	return remark, true, nil
 }
 
-func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult) {
+func (w *watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult) {
 	fingerprint := key.(*clientmodel.Fingerprint)
 
 	defer func() {
@@ -296,7 +303,7 @@ func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult)
 
 // curationConsistent determines whether the given metric is in a dirty state
 // and needs curation.
-func (w watermarkFilter) curationConsistent(f *clientmodel.Fingerprint, watermark model.Watermark) (consistent bool, err error) {
+func (w *watermarkFilter) curationConsistent(f *clientmodel.Fingerprint, watermark model.Watermark) (consistent bool, err error) {
 	curationRemark, err := getCurationRemark(w.curationState, w.processor, w.ignoreYoungerThan, f)
 	if err != nil {
 		return
@@ -368,13 +375,13 @@ func (w watermarkOperator) refreshCurationRemark(f *clientmodel.Fingerprint, fin
 	if err != nil {
 		return
 	}
-	curationKey := model.CurationKey{
+	curationKey := curationKey{
 		Fingerprint:              f,
 		ProcessorMessageRaw:      signature,
 		ProcessorMessageTypeName: w.processor.Name(),
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
 	}.ToDTO()
-	curationValue := model.CurationRemark{
+	curationValue := curationRemark{
 		LastCompletionTimestamp: finished,
 	}.ToDTO()
 

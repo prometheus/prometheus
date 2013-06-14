@@ -23,7 +23,6 @@ import (
 
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
@@ -198,7 +197,7 @@ func (s seriesFrontier) After(t time.Time) bool {
 
 // optimalStartTime indicates what the best start time for a curation operation
 // should be given the curation remark.
-func (s seriesFrontier) optimalStartTime(remark *model.CurationRemark) (t time.Time) {
+func (s seriesFrontier) optimalStartTime(remark *curationRemark) (t time.Time) {
 	switch {
 	case remark == nil:
 		t = s.firstSupertime

@@ -37,7 +37,7 @@ type Processor interface {
 	Name() string
 	// Signature emits a byte signature for this process for the purpose of
 	// remarking how far along it has been applied to the database.
-	Signature() (signature []byte, err error)
+	Signature() []byte
 	// Apply runs this processor against the sample set.  sampleIterator expects
 	// to be pre-seeked to the initial starting position.  The processor will
 	// run until up until stopAt has been reached.  It is imperative that the
@@ -65,29 +65,32 @@ type CompactionProcessor struct {
 	signature []byte
 }
 
-func (p CompactionProcessor) Name() string {
+func (p *CompactionProcessor) Name() string {
 	return "io.prometheus.CompactionProcessorDefinition"
 }
 
-func (p *CompactionProcessor) Signature() (out []byte, err error) {
+func (p *CompactionProcessor) Signature() []byte {
 	if len(p.signature) == 0 {
 		out, err = proto.Marshal(&dto.CompactionProcessorDefinition{
 			MinimumGroupSize: proto.Uint32(uint32(p.MinimumGroupSize)),
 		})
+		if err != nil {
+			panic(err)
+		}
 
 		p.signature = out
 	}
 
-	out = p.signature
+	return p.signature
 
 	return
 }
 
-func (p CompactionProcessor) String() string {
+func (p *CompactionProcessor) String() string {
 	return fmt.Sprintf("compactionProcessor for minimum group size %d", p.MinimumGroupSize)
 }
 
-func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
+func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {
@@ -239,7 +242,7 @@ type DeletionProcessor struct {
 	signature []byte
 }
 
-func (p DeletionProcessor) Name() string {
+func (p *DeletionProcessor) Name() string {
 	return "io.prometheus.DeletionProcessorDefinition"
 }
 
@@ -255,11 +258,11 @@ func (p *DeletionProcessor) Signature() (out []byte, err error) {
 	return
 }
 
-func (p DeletionProcessor) String() string {
+func (p *DeletionProcessor) String() string {
 	return "deletionProcessor"
 }
 
-func (p DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
+func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {

@@ -14,6 +14,8 @@
 package metric
 
 import (
+	"time"
+
 	"code.google.com/p/goprotobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -25,4 +27,8 @@ func dumpFingerprint(d *dto.Fingerprint, f *clientmodel.Fingerprint) {
 	d.Reset()
 
 	d.Signature = proto.String(f.String())
+}
+
+func loadFingerprint(f *clientmodel.Fingerprint, d *dto.Fingerprint) {
+	f.LoadFromString(d.GetSignature())
 }

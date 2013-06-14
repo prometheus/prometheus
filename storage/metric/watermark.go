@@ -19,11 +19,9 @@ import (
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/model"
 )
 
-// unsafe.Sizeof(Watermarks{})
+// unsafe.Sizeof(watermarks{})
 const elementSize = 24
 
 type Bytes uint64
@@ -41,13 +39,17 @@ type WatermarkCache struct {
 	allowance Bytes
 }
 
-type Watermarks struct {
+type watermarks struct {
 	High time.Time
+}
+
+func (w *watermarks) load(d *dto.MetricHighWatermark) {
+	w.High = time.Unix(d.GetTimestamp(), 0).Time.Unix()
 }
 
 type entry struct {
 	fingerprint *clientmodel.Fingerprint
-	watermarks  *Watermarks
+	watermarks  *watermarks
 	accessed    time.Time
 }
 
@@ -59,7 +61,7 @@ func NewWatermarkCache(allowance Bytes) *WatermarkCache {
 	}
 }
 
-func (lru *WatermarkCache) Get(f *clientmodel.Fingerprint) (v *Watermarks, ok bool) {
+func (lru *WatermarkCache) Get(f *clientmodel.Fingerprint) (v *watermarks, ok bool) {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
 
@@ -73,7 +75,7 @@ func (lru *WatermarkCache) Get(f *clientmodel.Fingerprint) (v *Watermarks, ok bo
 	return element.Value.(*entry).watermarks, true
 }
 
-func (lru *WatermarkCache) Set(f *clientmodel.Fingerprint, w *Watermarks) {
+func (lru *WatermarkCache) Set(f *clientmodel.Fingerprint, w *watermarks) {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
 
@@ -84,7 +86,7 @@ func (lru *WatermarkCache) Set(f *clientmodel.Fingerprint, w *Watermarks) {
 	}
 }
 
-func (lru *WatermarkCache) SetIfAbsent(f *clientmodel.Fingerprint, w *Watermarks) {
+func (lru *WatermarkCache) SetIfAbsent(f *clientmodel.Fingerprint, w *watermarks) {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
 
@@ -94,6 +96,22 @@ func (lru *WatermarkCache) SetIfAbsent(f *clientmodel.Fingerprint, w *Watermarks
 		lru.addNew(f, w)
 	}
 }
+
+// // ToMetricHighWatermarkDTO builds a MetricHighWatermark DTO out of a given
+// // Watermark.
+// func (w watermark) ToMetricHighWatermarkDTO() *dto.MetricHighWatermark {
+// 	return &dto.MetricHighWatermark{
+// 		Timestamp: proto.Int64(w.Time.Unix()),
+// 	}
+// }
+
+// // NewWatermarkFromHighWatermarkDTO builds Watermark from the provided
+// // dto.MetricHighWatermark object.
+// func NewWatermarkFromHighWatermarkDTO(d *dto.MetricHighWatermark) Watermark {
+// 	return Watermark{
+// 		time.Unix(*d.Timestamp, 0).UTC(),
+// 	}
+// }
 
 func (lru *WatermarkCache) Delete(f *clientmodel.Fingerprint) bool {
 	lru.mu.Lock()
@@ -120,7 +138,7 @@ func (lru *WatermarkCache) Clear() {
 	lru.size = 0
 }
 
-func (lru *WatermarkCache) updateInplace(e *list.Element, w *Watermarks) {
+func (lru *WatermarkCache) updateInplace(e *list.Element, w *watermarks) {
 	e.Value.(*entry).watermarks = w
 	lru.moveToFront(e)
 	lru.checkCapacity()
@@ -131,7 +149,7 @@ func (lru *WatermarkCache) moveToFront(e *list.Element) {
 	e.Value.(*entry).accessed = time.Now()
 }
 
-func (lru *WatermarkCache) addNew(f *clientmodel.Fingerprint, w *Watermarks) {
+func (lru *WatermarkCache) addNew(f *clientmodel.Fingerprint, w *watermarks) {
 	lru.table[*f] = lru.list.PushFront(&entry{
 		fingerprint: f,
 		watermarks:  w,
