@@ -84,7 +84,7 @@ func (w watermarkState) Get() (key, value proto.Message) {
 }
 
 func (s sampleGroup) Get() (key, value proto.Message) {
-	key = model.SampleKey{
+	key = sampleKey{
 		Fingerprint:    model.NewFingerprintFromRowKey(s.fingerprint),
 		FirstTimestamp: s.values[0].Timestamp,
 		LastTimestamp:  s.values[len(s.values)-1].Timestamp,

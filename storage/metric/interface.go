@@ -41,11 +41,11 @@ type MetricPersistence interface {
 
 	// Get all of the metric fingerprints that are associated with the provided
 	// label set.
-	GetFingerprintsForLabelSet(model.LabelSet) (model.Fingerprints, error)
+	GetFingerprintsForLabelSet(clientmodel.LabelSet) (clientmodel.Fingerprints, error)
 
 	// Get all of the metric fingerprints that are associated for a given label
 	// name.
-	GetFingerprintsForLabelName(model.LabelName) (model.Fingerprints, error)
+	GetFingerprintsForLabelName(clientmodel.LabelName) (clientmodel.Fingerprints, error)
 
 	// Get the metric associated with the provided fingerprint.
 	GetMetricForFingerprint(*clientmodel.Fingerprint) (clientmodel.Metric, error)
@@ -58,7 +58,7 @@ type MetricPersistence interface {
 	// Get all values contained within a provided interval.
 	GetRangeValues(*clientmodel.Fingerprint, model.Interval) model.Values
 	// Get all label values that are associated with a given label name.
-	GetAllValuesForLabel(model.LabelName) (model.LabelValues, error)
+	GetAllValuesForLabel(clientmodel.LabelName) (clientmodel.LabelValues, error)
 
 	// Requests the storage stack to build a materialized View of the values
 	// contained therein.

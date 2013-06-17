@@ -11,14 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package model
+package metric
 
 import (
-	"code.google.com/p/goprotobuf/proto"
 	"fmt"
-	"github.com/prometheus/prometheus/coding/indexable"
-	dto "github.com/prometheus/prometheus/model/generated"
 	"time"
+
+	"code.google.com/p/goprotobuf/proto"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
+	"github.com/prometheus/prometheus/coding/indexable"
 )
 
 // SampleKey models the business logic around the data-transfer object

@@ -38,7 +38,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	testTarget := target{
 		scheduler:  literalScheduler{},
 		address:    "http://example.url",
-		baseLabels: model.LabelSet{model.JobLabel: "testjob"},
+		baseLabels: clientmodel.LabelSet{model.JobLabel: "testjob"},
 	}
 
 	now := time.Now()
@@ -81,7 +81,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	defer server.Close()
 
-	testTarget := NewTarget(server.URL, 10*time.Millisecond, model.LabelSet{})
+	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
 	results := make(chan format.Result, 1024)
 
 	// scrape once without timeout

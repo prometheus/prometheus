@@ -39,7 +39,7 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 		},
 	}, t)
 
-	result, err := p.GetFingerprintsForLabelSet(model.LabelSet{
+	result, err := p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
 		model.MetricNameLabel: model.LabelValue("my_metric"),
 	})
 
@@ -51,8 +51,8 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected two elements.")
 	}
 
-	result, err = p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.LabelName("request_type"): model.LabelValue("your_mom"),
+	result, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		clientmodel.LabelName("request_type"): model.LabelValue("your_mom"),
 	})
 
 	if err != nil {
@@ -63,8 +63,8 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	result, err = p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.LabelName("request_type"): model.LabelValue("your_dad"),
+	result, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		clientmodel.LabelName("request_type"): model.LabelValue("your_dad"),
 	})
 
 	if err != nil {
@@ -108,7 +108,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected two elements.")
 	}
 
-	b = model.LabelName("request_type")
+	b = clientmodel.LabelName("request_type")
 	result, err = p.GetFingerprintsForLabelName(b)
 
 	if err != nil {
@@ -119,7 +119,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected two elements.")
 	}
 
-	b = model.LabelName("language")
+	b = clientmodel.LabelName("language")
 	result, err = p.GetFingerprintsForLabelName(b)
 
 	if err != nil {
@@ -130,7 +130,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	b = model.LabelName("sprache")
+	b = clientmodel.LabelName("sprache")
 	result, err = p.GetFingerprintsForLabelName(b)
 
 	if err != nil {
@@ -160,8 +160,8 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		},
 	}, t)
 
-	result, err := p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.LabelName("request_type"): model.LabelValue("your_mom"),
+	result, err := p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		clientmodel.LabelName("request_type"): model.LabelValue("your_mom"),
 	})
 
 	if err != nil {
@@ -189,8 +189,8 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected metric to match.")
 	}
 
-	result, err = p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.LabelName("request_type"): model.LabelValue("your_dad"),
+	result, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		clientmodel.LabelName("request_type"): model.LabelValue("your_dad"),
 	})
 
 	if err != nil {
@@ -275,7 +275,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 		return
 	}
 
-	labelSet := model.LabelSet{
+	labelSet := clientmodel.LabelSet{
 		model.MetricNameLabel: "errors_total",
 		"controller":          "foo",
 		"operation":           "bar",
@@ -337,7 +337,7 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 		return
 	}
 
-	labelSet := model.LabelSet{
+	labelSet := clientmodel.LabelSet{
 		model.MetricNameLabel: "errors_total",
 		"controller":          "foo",
 		"operation":           "bar",

@@ -82,7 +82,7 @@ type AlertingRule struct {
 	// output vector before an alert transitions from PENDING to FIRING state.
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
-	labels model.LabelSet
+	labels clientmodel.LabelSet
 	// A map of alerts which are currently active (PENDING or FIRING), keyed by
 	// the fingerprint of the labelset they correspond to.
 	activeAlerts map[clientmodel.Fingerprint]*alert
@@ -152,7 +152,7 @@ func (rule AlertingRule) String() string {
 }
 
 // Construct a new AlertingRule.
-func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels model.LabelSet) *AlertingRule {
+func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels clientmodel.LabelSet) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
 		vector:       vector,

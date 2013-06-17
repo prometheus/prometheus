@@ -21,7 +21,7 @@ import (
 )
 
 func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence, t test.Tester) {
-	metrics := []model.LabelSet{
+	metrics := []clientmodel.LabelSet{
 		{model.MetricNameLabel: "request_metrics_latency_equal_tallying_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
 		{model.MetricNameLabel: "requests_metrics_latency_equal_accumulating_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
 		{model.MetricNameLabel: "requests_metrics_latency_logarithmic_accumulating_microseconds", "instance": "http://localhost:9090/metrics.json", "percentile": "0.010000"},
@@ -33,7 +33,7 @@ func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence,
 		m := clientmodel.Metric{}
 
 		for k, v := range metric {
-			m[model.LabelName(k)] = model.LabelValue(v)
+			m[clientmodel.LabelName(k)] = model.LabelValue(v)
 		}
 
 		testAppendSample(p, clientmodel.Sample{
@@ -43,7 +43,7 @@ func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence,
 		}, t)
 	}
 
-	labelSet := model.LabelSet{
+	labelSet := clientmodel.LabelSet{
 		model.MetricNameLabel: "targets_healthy_scrape_latency_ms",
 		"percentile":          "0.010000",
 	}

@@ -156,8 +156,8 @@ type memorySeriesStorage struct {
 
 	wmCache                 *WatermarkCache
 	fingerprintToSeries     map[clientmodel.Fingerprint]*stream
-	labelPairToFingerprints map[model.LabelPair]model.Fingerprints
-	labelNameToFingerprints map[model.LabelName]model.Fingerprints
+	labelPairToFingerprints map[model.LabelPair]clientmodel.Fingerprints
+	labelNameToFingerprints map[clientmodel.LabelName]clientmodel.Fingerprints
 }
 
 type MemorySeriesOptions struct {
@@ -228,7 +228,7 @@ func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmo
 	}
 }
 
-func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fingerprints model.Fingerprints, err error) {
+func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l clientmodel.LabelSet) (fingerprints clientmodel.Fingerprints, err error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -262,7 +262,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l model.LabelSet) (fing
 	return fingerprints, nil
 }
 
-func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (model.Fingerprints, error) {
+func (s *memorySeriesStorage) GetFingerprintsForLabelName(l clientmodel.LabelName) (clientmodel.Fingerprints, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -271,7 +271,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelName(l model.LabelName) (mo
 		return nil, nil
 	}
 
-	fingerprints := make(model.Fingerprints, len(values))
+	fingerprints := make(clientmodel.Fingerprints, len(values))
 	copy(fingerprints, values)
 
 	return fingerprints, nil
@@ -348,11 +348,11 @@ func (s *memorySeriesStorage) Close() {
 	defer s.Unlock()
 
 	s.fingerprintToSeries = map[clientmodel.Fingerprint]*stream{}
-	s.labelPairToFingerprints = map[model.LabelPair]model.Fingerprints{}
-	s.labelNameToFingerprints = map[model.LabelName]model.Fingerprints{}
+	s.labelPairToFingerprints = map[model.LabelPair]clientmodel.Fingerprints{}
+	s.labelNameToFingerprints = map[clientmodel.LabelName]clientmodel.Fingerprints{}
 }
 
-func (s *memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
+func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (values clientmodel.LabelValues, err error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -372,8 +372,8 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName model.LabelName) (v
 func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[clientmodel.Fingerprint]*stream),
-		labelPairToFingerprints: make(map[model.LabelPair]model.Fingerprints),
-		labelNameToFingerprints: make(map[model.LabelName]model.Fingerprints),
+		labelPairToFingerprints: make(map[model.LabelPair]clientmodel.Fingerprints),
+		labelNameToFingerprints: make(map[clientmodel.LabelName]clientmodel.Fingerprints),
 		wmCache:                 o.WatermarkCache,
 	}
 }

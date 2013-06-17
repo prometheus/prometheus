@@ -521,7 +521,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 		targetKey = &dto.SampleKey{
 			Fingerprint: fingerprint.ToDTO(),
 		}
-		foundKey    model.SampleKey
+		foundKey    sampleKey
 		foundValues model.Values
 	)
 
@@ -593,7 +593,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 }
 
 // Get all label values that are associated with the provided label name.
-func (t *TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (model.LabelValues, error) {
+func (t *TieredStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -611,7 +611,7 @@ func (t *TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (model.L
 	}
 
 	valueSet := map[model.LabelValue]bool{}
-	values := model.LabelValues{}
+	values := clientmodel.LabelValues{}
 	for _, value := range append(diskValues, memoryValues...) {
 		if !valueSet[value] {
 			values = append(values, value)
@@ -624,7 +624,7 @@ func (t *TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (model.L
 
 // Get all of the metric fingerprints that are associated with the provided
 // label set.
-func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (model.Fingerprints, error) {
+func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet) (clientmodel.Fingerprints, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -644,7 +644,7 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (mod
 	for _, fingerprint := range append(memFingerprints, diskFingerprints...) {
 		fingerprintSet[*fingerprint] = true
 	}
-	fingerprints := model.Fingerprints{}
+	fingerprints := clientmodel.Fingerprints{}
 	for fingerprint := range fingerprintSet {
 		fpCopy := fingerprint
 		fingerprints = append(fingerprints, &fpCopy)

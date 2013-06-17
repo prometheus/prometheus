@@ -43,8 +43,8 @@ func (t fakeTarget) GlobalAddress() string {
 	return t.Address()
 }
 
-func (t fakeTarget) BaseLabels() model.LabelSet {
-	return model.LabelSet{}
+func (t fakeTarget) BaseLabels() clientmodel.LabelSet {
+	return clientmodel.LabelSet{}
 }
 
 func (t fakeTarget) Interval() time.Duration {

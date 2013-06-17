@@ -528,7 +528,7 @@ func TestAlertingRule(t *testing.T) {
 		t.Fatalf("Unable to parse alert expression: %s", err)
 	}
 	alertName := "HttpRequestRateLow"
-	alertLabels := model.LabelSet{
+	alertLabels := clientmodel.LabelSet{
 		"summary": "HTTP request rate is low",
 	}
 	rule := NewAlertingRule(alertName, alertExpr.(ast.VectorNode), time.Minute, alertLabels)

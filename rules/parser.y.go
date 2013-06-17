@@ -16,7 +16,7 @@ type yySymType struct {
 	ruleNodeSlice  []ast.Node
 	boolean        bool
 	labelNameSlice model.LabelNames
-	labelSet       model.LabelSet
+	labelSet       clientmodel.LabelSet
 }
 
 const START_RULES = 57346
@@ -441,7 +441,7 @@ yydefault:
 	case 12:
 		//line parser.y:96
 		{
-			yyVAL.labelSet = model.LabelSet{}
+			yyVAL.labelSet = clientmodel.LabelSet{}
 		}
 	case 13:
 		//line parser.y:98
@@ -451,7 +451,7 @@ yydefault:
 	case 14:
 		//line parser.y:100
 		{
-			yyVAL.labelSet = model.LabelSet{}
+			yyVAL.labelSet = clientmodel.LabelSet{}
 		}
 	case 15:
 		//line parser.y:103
@@ -468,7 +468,7 @@ yydefault:
 	case 17:
 		//line parser.y:109
 		{
-			yyVAL.labelSet = model.LabelSet{model.LabelName(yyS[yypt-2].str): model.LabelValue(yyS[yypt-0].str)}
+			yyVAL.labelSet = clientmodel.LabelSet{clientmodel.LabelName(yyS[yypt-2].str): model.LabelValue(yyS[yypt-0].str)}
 		}
 	case 18:
 		//line parser.y:114
@@ -569,12 +569,12 @@ yydefault:
 	case 30:
 		//line parser.y:172
 		{
-			yyVAL.labelNameSlice = model.LabelNames{model.LabelName(yyS[yypt-0].str)}
+			yyVAL.labelNameSlice = model.LabelNames{clientmodel.LabelName(yyS[yypt-0].str)}
 		}
 	case 31:
 		//line parser.y:174
 		{
-			yyVAL.labelNameSlice = append(yyVAL.labelNameSlice, model.LabelName(yyS[yypt-0].str))
+			yyVAL.labelNameSlice = append(yyVAL.labelNameSlice, clientmodel.LabelName(yyS[yypt-0].str))
 		}
 	case 32:
 		//line parser.y:178

@@ -101,7 +101,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 	var pendingMutations = 0
 	var pendingSamples model.Values
-	var sampleKey model.SampleKey
+	var sampleKey sampleKey
 	var unactedSamples model.Values
 	var lastTouchedTime time.Time
 	var keyDropped bool

@@ -53,7 +53,7 @@ func benchmarkAppendSample(b *testing.B, labels int) {
 	metric := clientmodel.Metric{}
 
 	for i := 0; i < labels; i++ {
-		metric[model.LabelName(fmt.Sprintf("label_%d", i))] = model.LabelValue(fmt.Sprintf("value_%d", i))
+		metric[clientmodel.LabelName(fmt.Sprintf("label_%d", i))] = model.LabelValue(fmt.Sprintf("value_%d", i))
 	}
 	samples := make(clientmodel.Samples, 0, b.N)
 	for i := 0; i < b.N; i++ {

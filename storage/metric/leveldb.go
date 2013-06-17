@@ -262,7 +262,7 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[clientmodel.Finge
 		recordOutcome(duration, err, map[string]string{operation: indexLabelNames, result: success}, map[string]string{operation: indexLabelNames, result: failure})
 	}(time.Now())
 
-	labelNameFingerprints := map[model.LabelName]utility.Set{}
+	labelNameFingerprints := map[clientmodel.LabelName]utility.Set{}
 
 	for fingerprint, metric := range metrics {
 		for labelName := range metric {
@@ -289,7 +289,7 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[clientmodel.Finge
 	defer batch.Close()
 
 	for labelName, fingerprintSet := range labelNameFingerprints {
-		fingerprints := model.Fingerprints{}
+		fingerprints := clientmodel.Fingerprints{}
 		for e := range fingerprintSet {
 			fingerprint := e.(clientmodel.Fingerprint)
 			fingerprints = append(fingerprints, &fingerprint)
@@ -340,7 +340,7 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[clientmodel.Finge
 			if !ok {
 				fingerprintSet = utility.Set{}
 
-				fingerprints, err := l.GetFingerprintsForLabelSet(model.LabelSet{
+				fingerprints, err := l.GetFingerprintsForLabelSet(clientmodel.LabelSet{
 					labelName: labelValue,
 				})
 				if err != nil {
@@ -361,7 +361,7 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[clientmodel.Finge
 	defer batch.Close()
 
 	for labelPair, fingerprintSet := range labelPairFingerprints {
-		fingerprints := model.Fingerprints{}
+		fingerprints := clientmodel.Fingerprints{}
 		for e := range fingerprintSet {
 			fingerprint := e.(clientmodel.Fingerprint)
 			fingerprints = append(fingerprints, &fingerprint)
@@ -565,7 +565,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			chunk := group[0:take]
 			group = group[take:lengthOfGroup]
 
-			key := model.SampleKey{
+			key := sampleKey{
 				Fingerprint:    &fingerprint,
 				FirstTimestamp: chunk[0].Timestamp,
 				LastTimestamp:  chunk[take-1].Timestamp,
@@ -602,7 +602,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 	return
 }
 
-func extractSampleKey(i leveldb.Iterator) (key model.SampleKey, err error) {
+func extractSampleKey(i leveldb.Iterator) (key sampleKey, err error) {
 	k := &dto.SampleKey{}
 	err = proto.Unmarshal(i.Key(), k)
 	if err != nil {
@@ -682,7 +682,7 @@ func (l *LevelDBMetricPersistence) HasLabelName(dto *dto.LabelName) (value bool,
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.LabelSet) (fps model.Fingerprints, err error) {
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet) (fps clientmodel.Fingerprints, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -728,7 +728,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet model.Lab
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName model.LabelName) (fps model.Fingerprints, err error) {
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName clientmodel.LabelName) (fps clientmodel.Fingerprints, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -771,7 +771,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *clientmodel.Finger
 	m = clientmodel.Metric{}
 
 	for _, v := range unmarshaled.LabelPair {
-		m[model.LabelName(*v.Name)] = model.LabelValue(*v.Value)
+		m[clientmodel.LabelName(*v.Name)] = model.LabelValue(*v.Value)
 	}
 
 	return m, nil
@@ -799,7 +799,7 @@ func (d *MetricKeyDecoder) DecodeKey(in interface{}) (out interface{}, err error
 	}
 
 	out = model.LabelPair{
-		Name:  model.LabelName(*unmarshaled.Name),
+		Name:  clientmodel.LabelName(*unmarshaled.Name),
 		Value: model.LabelValue(*unmarshaled.Value),
 	}
 
@@ -811,7 +811,7 @@ func (d *MetricKeyDecoder) DecodeValue(in interface{}) (out interface{}, err err
 }
 
 type LabelNameFilter struct {
-	labelName model.LabelName
+	labelName clientmodel.LabelName
 }
 
 func (f LabelNameFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
@@ -832,7 +832,7 @@ func (op *CollectLabelValuesOp) Operate(key, value interface{}) (err *storage.Op
 	return
 }
 
-func (l *LevelDBMetricPersistence) GetAllValuesForLabel(labelName model.LabelName) (values model.LabelValues, err error) {
+func (l *LevelDBMetricPersistence) GetAllValuesForLabel(labelName clientmodel.LabelName) (values clientmodel.LabelValues, err error) {
 	filter := &LabelNameFilter{
 		labelName: labelName,
 	}

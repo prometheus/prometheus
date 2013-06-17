@@ -20,14 +20,14 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
-func CreateRecordingRule(name string, labels model.LabelSet, expr ast.Node, permanent bool) (*RecordingRule, error) {
+func CreateRecordingRule(name string, labels clientmodel.LabelSet, expr ast.Node, permanent bool) (*RecordingRule, error) {
 	if _, ok := expr.(ast.VectorNode); !ok {
 		return nil, fmt.Errorf("Recording rule expression %v does not evaluate to vector type", expr)
 	}
 	return NewRecordingRule(name, labels, expr.(ast.VectorNode), permanent), nil
 }
 
-func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labels model.LabelSet) (*AlertingRule, error) {
+func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labels clientmodel.LabelSet) (*AlertingRule, error) {
 	if _, ok := expr.(ast.VectorNode); !ok {
 		return nil, fmt.Errorf("Alert rule expression %v does not evaluate to vector type", expr)
 	}

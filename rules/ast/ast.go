@@ -146,9 +146,9 @@ type (
 type (
 	// Vector literal, i.e. metric name plus labelset.
 	VectorLiteral struct {
-		labels model.LabelSet
+		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
-		fingerprints model.Fingerprints
+		fingerprints clientmodel.Fingerprints
 	}
 
 	// A function of vector return type.
@@ -178,9 +178,9 @@ type (
 type (
 	// Matrix literal, i.e. metric name plus labelset and timerange.
 	MatrixLiteral struct {
-		labels model.LabelSet
+		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
-		fingerprints model.Fingerprints
+		fingerprints clientmodel.Fingerprints
 		interval     time.Duration
 	}
 )
@@ -619,7 +619,7 @@ func NewScalarLiteral(value model.SampleValue) *ScalarLiteral {
 	}
 }
 
-func NewVectorLiteral(labels model.LabelSet) *VectorLiteral {
+func NewVectorLiteral(labels clientmodel.LabelSet) *VectorLiteral {
 	return &VectorLiteral{
 		labels: labels,
 	}

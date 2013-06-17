@@ -107,7 +107,7 @@ func (v *viewAdapter) chooseClosestSample(samples model.Values, timestamp time.T
 	}
 }
 
-func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp time.Time) (samples Vector, err error) {
+func (v *viewAdapter) GetValueAtTime(fingerprints clientmodel.Fingerprints, timestamp time.Time) (samples Vector, err error) {
 	timer := v.stats.GetTimer(stats.GetValueAtTimeTime).Start()
 	for _, fingerprint := range fingerprints {
 		sampleCandidates := v.view.GetValueAtTime(fingerprint, timestamp)
@@ -128,7 +128,7 @@ func (v *viewAdapter) GetValueAtTime(fingerprints model.Fingerprints, timestamp 
 	return samples, err
 }
 
-func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
+func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
 	timer := v.stats.GetTimer(stats.GetBoundaryValuesTime).Start()
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetBoundaryValues(fingerprint, *interval)
@@ -152,7 +152,7 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints model.Fingerprints, interva
 	return sampleSets, nil
 }
 
-func (v *viewAdapter) GetRangeValues(fingerprints model.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
+func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
 	timer := v.stats.GetTimer(stats.GetRangeValuesTime).Start()
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetRangeValues(fingerprint, *interval)

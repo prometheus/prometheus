@@ -256,9 +256,7 @@ func (w *watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult
 		}
 
 		curationFilterOperations.Increment(labels)
-	}()
 
-	defer func() {
 		select {
 		case w.status <- CurationState{
 			Active:      true,
@@ -275,19 +273,25 @@ func (w *watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult
 		return storage.STOP
 	}
 
-	curationRemark, err := getCurationRemark(w.curationState, w.processor, w.ignoreYoungerThan, fingerprint)
+	k := &curationKey{
+		Fingerprint:              fingerprint,
+		ProcessorMessageRaw:      w.processor.Signature(),
+		ProcessorMessageTypeName: w.processor.Name(),
+		IgnoreYoungerThan:        w.ignoreYoungerThan,
+	}
+
+	curationRemark, present, err := getCurationRemark(w.curationState, k)
 	if err != nil {
 		return
 	}
-	if curationRemark == nil {
-		r = storage.ACCEPT
-		return
+	if !present {
+		return storage.ACCEPT
 	}
 	if !curationRemark.OlderThan(w.stopAt) {
 		return storage.SKIP
 	}
-	watermark := value.(model.Watermark)
-	if !curationRemark.OlderThan(watermark.Time) {
+	watermark := value.(watermarks)
+	if !curationRemark.OlderThan(watermark.High) {
 		return storage.SKIP
 	}
 	curationConsistent, err := w.curationConsistent(fingerprint, watermark)
@@ -303,16 +307,25 @@ func (w *watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult
 
 // curationConsistent determines whether the given metric is in a dirty state
 // and needs curation.
-func (w *watermarkFilter) curationConsistent(f *clientmodel.Fingerprint, watermark model.Watermark) (consistent bool, err error) {
-	curationRemark, err := getCurationRemark(w.curationState, w.processor, w.ignoreYoungerThan, f)
-	if err != nil {
-		return
+func (w *watermarkFilter) curationConsistent(f *clientmodel.Fingerprint, watermark watermarks) (bool, error) {
+	k := &curationKey{
+		Fingerprint:              f,
+		ProcessorMessageRaw:      w.processor.Signature(),
+		ProcessorMessageTypeName: w.processor.Name(),
+		IgnoreYoungerThan:        w.ignoreYoungerThan,
 	}
-	if !curationRemark.OlderThan(watermark.Time) {
-		consistent = true
+	curationRemark, present, err := getCurationRemark(w.curationState, k)
+	if err != nil {
+		return false, err
+	}
+	if !present {
+		return false, nil
+	}
+	if !curationRemark.OlderThan(watermark.High) {
+		return true, nil
 	}
 
-	return
+	return false, nil
 }
 
 func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
@@ -326,7 +339,14 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: false}
 	}
 
-	curationState, err := getCurationRemark(w.curationState, w.processor, w.ignoreYoungerThan, fingerprint)
+	k := &curationKey{
+		Fingerprint:              fingerprint,
+		ProcessorMessageRaw:      w.processor.Signature(),
+		ProcessorMessageTypeName: w.processor.Name(),
+		IgnoreYoungerThan:        w.ignoreYoungerThan,
+	}
+
+	curationState, _, err := getCurationRemark(w.curationState, k)
 	if err != nil {
 		// An anomaly with the curation remark is likely not fatal in the sense that
 		// there was a decoding error with the entity and shouldn't be cause to stop
@@ -335,7 +355,7 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: true}
 	}
 
-	startKey := model.SampleKey{
+	startKey := sampleKey{
 		Fingerprint:    fingerprint,
 		FirstTimestamp: seriesFrontier.optimalStartTime(curationState),
 	}

@@ -14,7 +14,6 @@
 package metric
 
 import (
-	"time"
 
 	"code.google.com/p/goprotobuf/proto"
 

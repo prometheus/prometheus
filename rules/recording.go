@@ -26,7 +26,7 @@ import (
 type RecordingRule struct {
 	name      string
 	vector    ast.VectorNode
-	labels    model.LabelSet
+	labels    clientmodel.LabelSet
 	permanent bool
 }
 
@@ -72,7 +72,7 @@ func (rule RecordingRule) String() string {
 }
 
 // Construct a new RecordingRule.
-func NewRecordingRule(name string, labels model.LabelSet, vector ast.VectorNode, permanent bool) *RecordingRule {
+func NewRecordingRule(name string, labels clientmodel.LabelSet, vector ast.VectorNode, permanent bool) *RecordingRule {
 	return &RecordingRule{
 		name:      name,
 		labels:    labels,

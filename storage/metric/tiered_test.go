@@ -525,31 +525,31 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 	tiered.Flush()
 
 	scenarios := []struct {
-		labels  model.LabelSet
+		labels  clientmodel.LabelSet
 		fpCount int
 	}{
 		{
-			labels:  model.LabelSet{},
+			labels:  clientmodel.LabelSet{},
 			fpCount: 0,
 		}, {
-			labels: model.LabelSet{
+			labels: clientmodel.LabelSet{
 				model.MetricNameLabel: "http_requests",
 			},
 			fpCount: 2,
 		}, {
-			labels: model.LabelSet{
+			labels: clientmodel.LabelSet{
 				model.MetricNameLabel: "http_requests",
 				"method":              "/foo",
 			},
 			fpCount: 1,
 		}, {
-			labels: model.LabelSet{
+			labels: clientmodel.LabelSet{
 				model.MetricNameLabel: "http_requests",
 				"method":              "/bar",
 			},
 			fpCount: 1,
 		}, {
-			labels: model.LabelSet{
+			labels: clientmodel.LabelSet{
 				model.MetricNameLabel: "http_requests",
 				"method":              "/baz",
 			},
