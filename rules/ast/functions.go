@@ -66,7 +66,7 @@ func (function *Function) CheckArgTypes(args []Node) error {
 
 // === time() model.SampleValue ===
 func timeImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
-	return model.SampleValue(time.Now().Unix())
+	return clientmodel.SampleValue(time.Now().Unix())
 }
 
 // === delta(matrix MatrixNode, isCounter ScalarNode) Vector ===
@@ -91,8 +91,8 @@ func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} 
 			continue
 		}
 
-		counterCorrection := model.SampleValue(0)
-		lastValue := model.SampleValue(0)
+		counterCorrection := clientmodel.SampleValue(0)
+		lastValue := clientmodel.SampleValue(0)
 		for _, sample := range samples.Values {
 			currentValue := sample.Value
 			if isCounter && currentValue < lastValue {
@@ -116,7 +116,7 @@ func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} 
 		// them. Depending on how many samples are found under a target interval,
 		// the delta results are distorted and temporal aliasing occurs (ugly
 		// bumps). This effect is corrected for below.
-		intervalCorrection := model.SampleValue(targetInterval) / model.SampleValue(sampledInterval)
+		intervalCorrection := clientmodel.SampleValue(targetInterval) / clientmodel.SampleValue(sampledInterval)
 		resultValue *= intervalCorrection
 
 		resultSample := clientmodel.Sample{
@@ -139,7 +139,7 @@ func rateImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	// matrix, such as looking at the samples themselves.
 	interval := args[0].(*MatrixLiteral).interval
 	for i := range vector {
-		vector[i].Value /= model.SampleValue(interval / time.Second)
+		vector[i].Value /= clientmodel.SampleValue(interval / time.Second)
 	}
 	return vector
 }

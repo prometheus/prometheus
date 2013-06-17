@@ -263,7 +263,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 		for j := 0; j < repetitions; j++ {
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
 			testAppendSample(p, clientmodel.Sample{
-				Value:     model.SampleValue(i),
+				Value:     clientmodel.SampleValue(i),
 				Timestamp: time,
 				Metric:    metric,
 			}, t)
@@ -297,7 +297,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 				t.Fatal("expected at least one sample.")
 			}
 
-			expected := model.SampleValue(i)
+			expected := clientmodel.SampleValue(i)
 
 			for _, sample := range samples {
 				if sample.Value != expected {
@@ -323,7 +323,7 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 		for j := 0; j < repetitions; j++ {
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
 			s = append(s, clientmodel.Sample{
-				Value:     model.SampleValue(i),
+				Value:     clientmodel.SampleValue(i),
 				Timestamp: time,
 				Metric:    metric,
 			})
@@ -359,7 +359,7 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 				t.Fatal("expected at least one sample.")
 			}
 
-			expected := model.SampleValue(i)
+			expected := clientmodel.SampleValue(i)
 
 			for _, sample := range samples {
 				if sample.Value != expected {

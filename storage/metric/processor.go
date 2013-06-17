@@ -23,7 +23,6 @@ import (
 
 	dto "github.com/prometheus/prometheus/model/generated"
 
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
@@ -100,9 +99,9 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 	}()
 
 	var pendingMutations = 0
-	var pendingSamples model.Values
+	var pendingSamples Values
 	var sampleKey sampleKey
-	var unactedSamples model.Values
+	var unactedSamples Values
 	var lastTouchedTime time.Time
 	var keyDropped bool
 
@@ -156,7 +155,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		case len(pendingSamples) == 0 && len(unactedSamples) >= p.MinimumGroupSize:
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
-			unactedSamples = model.Values{}
+			unactedSamples = Values{}
 
 		case len(pendingSamples)+len(unactedSamples) < p.MinimumGroupSize:
 			if !keyDropped {
@@ -165,7 +164,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			}
 			pendingSamples = append(pendingSamples, unactedSamples...)
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
-			unactedSamples = model.Values{}
+			unactedSamples = Values{}
 			pendingMutations++
 
 		// If the number of pending writes equals the target group size
@@ -187,7 +186,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 				} else {
 					pendingSamples = unactedSamples
 					lastTouchedTime = pendingSamples[len(pendingSamples)-1].Timestamp
-					unactedSamples = model.Values{}
+					unactedSamples = Values{}
 				}
 			}
 
@@ -214,7 +213,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		pendingSamples = append(pendingSamples, unactedSamples...)
 		newSampleKey := pendingSamples.ToSampleKey(fingerprint)
 		pendingBatch.Put(newSampleKey.ToDTO(), pendingSamples.ToDTO())
-		pendingSamples = model.Values{}
+		pendingSamples = Values{}
 		pendingMutations++
 		lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
 	}
@@ -322,7 +321,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 		case !sampleKey.MayContain(stopAt):
 			pendingBatch.Drop(sampleKey.ToDTO())
 			lastCurated = sampleKey.LastTimestamp
-			sampleValues = model.Values{}
+			sampleValues = Values{}
 			pendingMutations++
 
 		case sampleKey.MayContain(stopAt):

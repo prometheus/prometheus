@@ -614,7 +614,7 @@ func extractSampleKey(i leveldb.Iterator) (key sampleKey, err error) {
 	return
 }
 
-func extractSampleValues(i leveldb.Iterator) (values model.Values, err error) {
+func extractSampleValues(i leveldb.Iterator) (values Values, err error) {
 	v := &dto.SampleValueSeries{}
 	err = proto.Unmarshal(i.Value(), v)
 	if err != nil {
@@ -777,15 +777,15 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *clientmodel.Finger
 	return m, nil
 }
 
-func (l LevelDBMetricPersistence) GetValueAtTime(f *clientmodel.Fingerprint, t time.Time) model.Values {
+func (l LevelDBMetricPersistence) GetValueAtTime(f *clientmodel.Fingerprint, t time.Time) Values {
 	panic("Not implemented")
 }
 
-func (l LevelDBMetricPersistence) GetBoundaryValues(f *clientmodel.Fingerprint, i model.Interval) model.Values {
+func (l LevelDBMetricPersistence) GetBoundaryValues(f *clientmodel.Fingerprint, i Interval) Values {
 	panic("Not implemented")
 }
 
-func (l *LevelDBMetricPersistence) GetRangeValues(f *clientmodel.Fingerprint, i model.Interval) model.Values {
+func (l *LevelDBMetricPersistence) GetRangeValues(f *clientmodel.Fingerprint, i Interval) Values {
 	panic("Not implemented")
 }
 

@@ -31,25 +31,25 @@ const initialSeriesArenaSize = 4 * 60
 // Models a given sample entry stored in the in-memory arena.
 type value interface {
 	// Gets the given value.
-	get() model.SampleValue
+	get() clientmodel.SampleValue
 }
 
 // Models a single sample value.  It presumes that there is either no subsequent
 // value seen or that any subsequent values are of a different value.
-type singletonValue model.SampleValue
+type singletonValue clientmodel.SampleValue
 
-func (v singletonValue) get() model.SampleValue {
-	return model.SampleValue(v)
+func (v singletonValue) get() clientmodel.SampleValue {
+	return clientmodel.SampleValue(v)
 }
 
 type stream struct {
 	sync.RWMutex
 
 	metric clientmodel.Metric
-	values model.Values
+	values Values
 }
 
-func (s *stream) add(timestamp time.Time, value model.SampleValue) {
+func (s *stream) add(timestamp time.Time, value clientmodel.SampleValue) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -61,19 +61,19 @@ func (s *stream) add(timestamp time.Time, value model.SampleValue) {
 	})
 }
 
-func (s *stream) clone() model.Values {
+func (s *stream) clone() Values {
 	s.RLock()
 	defer s.RUnlock()
 
 	// BUG(all): Examine COW technique.
 
-	clone := make(model.Values, len(s.values))
+	clone := make(Values, len(s.values))
 	copy(clone, s.values)
 
 	return clone
 }
 
-func (s *stream) getValueAtTime(t time.Time) model.Values {
+func (s *stream) getValueAtTime(t time.Time) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -81,29 +81,29 @@ func (s *stream) getValueAtTime(t time.Time) model.Values {
 	l := len(s.values)
 	switch l {
 	case 0:
-		return model.Values{}
+		return Values{}
 	case 1:
-		return model.Values{s.values[0]}
+		return Values{s.values[0]}
 	default:
 		index := sort.Search(l, func(i int) bool {
 			return !s.values[i].Timestamp.Before(t)
 		})
 
 		if index == 0 {
-			return model.Values{s.values[0]}
+			return Values{s.values[0]}
 		}
 		if index == l {
-			return model.Values{s.values[l-1]}
+			return Values{s.values[l-1]}
 		}
 
 		if s.values[index].Timestamp.Equal(t) {
-			return model.Values{s.values[index]}
+			return Values{s.values[index]}
 		}
-		return model.Values{s.values[index-1], s.values[index]}
+		return Values{s.values[index-1], s.values[index]}
 	}
 }
 
-func (s *stream) getBoundaryValues(in model.Interval) model.Values {
+func (s *stream) getBoundaryValues(in Interval) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -118,15 +118,15 @@ func (s *stream) getBoundaryValues(in model.Interval) model.Values {
 	resultRange := s.values[oldest:newest]
 	switch len(resultRange) {
 	case 0:
-		return model.Values{}
+		return Values{}
 	case 1:
-		return model.Values{resultRange[0]}
+		return Values{resultRange[0]}
 	default:
-		return model.Values{resultRange[0], resultRange[len(resultRange)-1]}
+		return Values{resultRange[0], resultRange[len(resultRange)-1]}
 	}
 }
 
-func (s *stream) getRangeValues(in model.Interval) model.Values {
+func (s *stream) getRangeValues(in Interval) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -138,7 +138,7 @@ func (s *stream) getRangeValues(in model.Interval) model.Values {
 		return s.values[i].Timestamp.After(in.NewestInclusive)
 	})
 
-	result := make(model.Values, newest-oldest)
+	result := make(Values, newest-oldest)
 	copy(result, s.values[oldest:newest])
 
 	return result
@@ -147,7 +147,7 @@ func (s *stream) getRangeValues(in model.Interval) model.Values {
 func newStream(metric clientmodel.Metric) *stream {
 	return &stream{
 		metric: metric,
-		values: make(model.Values, 0, initialSeriesArenaSize),
+		values: make(Values, 0, initialSeriesArenaSize),
 	}
 }
 
@@ -212,7 +212,7 @@ func (s *memorySeriesStorage) AppendSample(sample clientmodel.Sample) error {
 
 // Append raw samples, bypassing indexing. Only used to add data to views,
 // which don't need to lookup by metric.
-func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmodel.Fingerprint, samples model.Values) {
+func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmodel.Fingerprint, samples Values) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -294,7 +294,7 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(f *clientmodel.Fingerprint
 	return metric, nil
 }
 
-func (s *memorySeriesStorage) CloneSamples(f *clientmodel.Fingerprint) model.Values {
+func (s *memorySeriesStorage) CloneSamples(f *clientmodel.Fingerprint) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -306,7 +306,7 @@ func (s *memorySeriesStorage) CloneSamples(f *clientmodel.Fingerprint) model.Val
 	return series.clone()
 }
 
-func (s *memorySeriesStorage) GetValueAtTime(f *clientmodel.Fingerprint, t time.Time) model.Values {
+func (s *memorySeriesStorage) GetValueAtTime(f *clientmodel.Fingerprint, t time.Time) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -318,7 +318,7 @@ func (s *memorySeriesStorage) GetValueAtTime(f *clientmodel.Fingerprint, t time.
 	return series.getValueAtTime(t)
 }
 
-func (s *memorySeriesStorage) GetBoundaryValues(f *clientmodel.Fingerprint, i model.Interval) model.Values {
+func (s *memorySeriesStorage) GetBoundaryValues(f *clientmodel.Fingerprint, i Interval) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -330,7 +330,7 @@ func (s *memorySeriesStorage) GetBoundaryValues(f *clientmodel.Fingerprint, i mo
 	return series.getBoundaryValues(i)
 }
 
-func (s *memorySeriesStorage) GetRangeValues(f *clientmodel.Fingerprint, i model.Interval) model.Values {
+func (s *memorySeriesStorage) GetRangeValues(f *clientmodel.Fingerprint, i Interval) Values {
 	s.RLock()
 	defer s.RUnlock()
 

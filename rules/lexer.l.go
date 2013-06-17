@@ -510,7 +510,7 @@ var yyrules []yyrule = []yyrule{{regexp.MustCompile("[^\\n]"), nil, []yystartcon
 		if err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax {
 			panic("Invalid float")
 		}
-		yylval.num = model.SampleValue(num)
+		yylval.num = clientmodel.SampleValue(num)
 		return yyactionreturn{NUMBER, yyRT_USER_RETURN}
 	}
 	return yyactionreturn{0, yyRT_FALLTHROUGH}

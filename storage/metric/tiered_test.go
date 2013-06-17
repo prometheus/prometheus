@@ -23,7 +23,7 @@ import (
 )
 
 func buildSamples(from, to time.Time, interval time.Duration, m clientmodel.Metric) (v []clientmodel.Sample) {
-	i := model.SampleValue(0)
+	i := clientmodel.SampleValue(0)
 
 	for from.Before(to) {
 		v = append(v, clientmodel.Sample{
@@ -47,9 +47,9 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 	}
 
 	type out struct {
-		atTime     []model.Values
-		atInterval []model.Values
-		alongRange []model.Values
+		atTime     []Values
+		atInterval []Values
+		alongRange []Values
 	}
 	var (
 		instant     = time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local)
@@ -70,7 +70,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []model.Values{{}},
+					atTime: []Values{{}},
 				},
 			},
 			// Single sample, query asks for exact sample time.
@@ -90,7 +90,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []model.Values{
+					atTime: []Values{
 						{
 							{
 								Timestamp: instant,
@@ -122,7 +122,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []model.Values{
+					atTime: []Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second),
@@ -149,7 +149,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []model.Values{
+					atTime: []Values{
 						{
 							{
 								Timestamp: instant,
@@ -181,7 +181,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []model.Values{
+					atTime: []Values{
 						{
 							{
 								Timestamp: instant,
@@ -218,7 +218,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []model.Values{
+					atTime: []Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second),
@@ -255,7 +255,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []model.Values{
+					atTime: []Values{
 						{
 							{
 								Timestamp: instant,
@@ -296,7 +296,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []model.Values{
+					atTime: []Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second * 2),
@@ -321,7 +321,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []model.Values{
+					atTime: []Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize/2)),
@@ -570,18 +570,18 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 
 func testTruncateBefore(t test.Tester) {
 	type in struct {
-		values model.Values
+		values Values
 		time   time.Time
 	}
 	instant := time.Now()
 	var scenarios = []struct {
 		in  in
-		out model.Values
+		out Values
 	}{
 		{
 			in: in{
 				time: instant,
-				values: model.Values{
+				values: Values{
 					{
 						Value:     0,
 						Timestamp: instant,
@@ -604,7 +604,7 @@ func testTruncateBefore(t test.Tester) {
 					},
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Value:     0,
 					Timestamp: instant,
@@ -630,7 +630,7 @@ func testTruncateBefore(t test.Tester) {
 		{
 			in: in{
 				time: instant.Add(2 * time.Second),
-				values: model.Values{
+				values: Values{
 					{
 						Value:     0,
 						Timestamp: instant,
@@ -653,7 +653,7 @@ func testTruncateBefore(t test.Tester) {
 					},
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Value:     1,
 					Timestamp: instant.Add(time.Second),
@@ -675,7 +675,7 @@ func testTruncateBefore(t test.Tester) {
 		{
 			in: in{
 				time: instant.Add(5 * time.Second),
-				values: model.Values{
+				values: Values{
 					{
 						Value:     0,
 						Timestamp: instant,
@@ -698,7 +698,7 @@ func testTruncateBefore(t test.Tester) {
 					},
 				},
 			},
-			out: model.Values{
+			out: Values{
 				// Preserve the last value in case it needs to be used for the next set.
 				{
 					Value:     4,

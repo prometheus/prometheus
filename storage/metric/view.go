@@ -18,8 +18,6 @@ import (
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/model"
 )
 
 var (
@@ -108,7 +106,7 @@ type view struct {
 	*memorySeriesStorage
 }
 
-func (v view) appendSamples(fingerprint *clientmodel.Fingerprint, samples model.Values) {
+func (v view) appendSamples(fingerprint *clientmodel.Fingerprint, samples Values) {
 	v.memorySeriesStorage.appendSamplesWithoutIndexing(fingerprint, samples)
 }
 

@@ -25,10 +25,10 @@ func BenchmarkStreamAdd(b *testing.B) {
 	b.StopTimer()
 	s := newStream(clientmodel.Metric{})
 	times := make([]time.Time, 0, b.N)
-	samples := make([]model.SampleValue, 0, b.N)
+	samples := make([]clientmodel.SampleValue, 0, b.N)
 	for i := 0; i < b.N; i++ {
 		times = append(times, time.Date(i, 0, 0, 0, 0, 0, 0, time.UTC))
-		samples = append(samples, model.SampleValue(i))
+		samples = append(samples, clientmodel.SampleValue(i))
 	}
 
 	b.StartTimer()
@@ -59,7 +59,7 @@ func benchmarkAppendSample(b *testing.B, labels int) {
 	for i := 0; i < b.N; i++ {
 		samples = append(samples, clientmodel.Sample{
 			Metric:    metric,
-			Value:     model.SampleValue(i),
+			Value:     clientmodel.SampleValue(i),
 			Timestamp: time.Date(i, 0, 0, 0, 0, 0, 0, time.UTC),
 		})
 	}

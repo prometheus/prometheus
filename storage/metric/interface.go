@@ -18,7 +18,6 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -51,12 +50,12 @@ type MetricPersistence interface {
 	GetMetricForFingerprint(*clientmodel.Fingerprint) (clientmodel.Metric, error)
 
 	// Get the two metric values that are immediately adjacent to a given time.
-	GetValueAtTime(*clientmodel.Fingerprint, time.Time) model.Values
+	GetValueAtTime(*clientmodel.Fingerprint, time.Time) Values
 	// Get the boundary values of an interval: the first value older than the
 	// interval start, and the first value younger than the interval end.
-	GetBoundaryValues(*clientmodel.Fingerprint, model.Interval) model.Values
+	GetBoundaryValues(*clientmodel.Fingerprint, Interval) Values
 	// Get all values contained within a provided interval.
-	GetRangeValues(*clientmodel.Fingerprint, model.Interval) model.Values
+	GetRangeValues(*clientmodel.Fingerprint, Interval) Values
 	// Get all label values that are associated with a given label name.
 	GetAllValuesForLabel(clientmodel.LabelName) (clientmodel.LabelValues, error)
 
@@ -68,9 +67,9 @@ type MetricPersistence interface {
 // View provides a view of the values in the datastore subject to the request
 // of a preloading operation.
 type View interface {
-	GetValueAtTime(*clientmodel.Fingerprint, time.Time) model.Values
-	GetBoundaryValues(*clientmodel.Fingerprint, model.Interval) model.Values
-	GetRangeValues(*clientmodel.Fingerprint, model.Interval) model.Values
+	GetValueAtTime(*clientmodel.Fingerprint, time.Time) Values
+	GetBoundaryValues(*clientmodel.Fingerprint, Interval) Values
+	GetRangeValues(*clientmodel.Fingerprint, Interval) Values
 
 	// Destroy this view.
 	Close()

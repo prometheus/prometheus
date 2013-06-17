@@ -23,7 +23,7 @@ import (
 var testSampleInterval = time.Duration(5) * time.Minute
 var testStartTime = time.Time{}
 
-func getTestValueStream(startVal model.SampleValue, endVal model.SampleValue, stepVal model.SampleValue, startTime time.Time) (resultValues model.Values) {
+func getTestValueStream(startVal clientmodel.SampleValue, endVal clientmodel.SampleValue, stepVal clientmodel.SampleValue, startTime time.Time) (resultValues Values) {
 	currentTime := startTime
 	for currentVal := startVal; currentVal <= endVal; currentVal += stepVal {
 		sample := model.SamplePair{

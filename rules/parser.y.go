@@ -10,7 +10,7 @@ import "github.com/prometheus/prometheus/rules/ast"
 //line parser.y:21
 type yySymType struct {
 	yys            int
-	num            model.SampleValue
+	num            clientmodel.SampleValue
 	str            string
 	ruleNode       ast.Node
 	ruleNodeSlice  []ast.Node

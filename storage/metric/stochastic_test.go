@@ -94,7 +94,7 @@ func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 
 func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) (success bool) {
-		v := model.SampleValue(x)
+		v := clientmodel.SampleValue(x)
 		ts := time.Unix(int64(x), int64(x))
 		labelName := clientmodel.LabelName(x)
 		labelValue := model.LabelValue(x)
@@ -123,7 +123,7 @@ func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 
 func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) (success bool) {
-		v := model.SampleValue(x)
+		v := clientmodel.SampleValue(x)
 		ts := time.Unix(int64(x), int64(x))
 		labelName := clientmodel.LabelName(x)
 		labelValue := model.LabelValue(x)
@@ -174,7 +174,7 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) bool {
 		sample := clientmodel.Sample{
-			Value:     model.SampleValue(x),
+			Value:     clientmodel.SampleValue(x),
 			Timestamp: time.Unix(int64(x), 0),
 			Metric:    clientmodel.Metric{model.MetricNameLabel: "my_metric"},
 		}
@@ -189,7 +189,7 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	}
 }
 
-func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerprint, i model.Interval) (samples model.Values, err error) {
+func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerprint, i Interval) (samples Values, err error) {
 	k := &dto.SampleKey{
 		Fingerprint: fp.ToDTO(),
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
@@ -316,7 +316,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 
 			for sampleIndex := 0; sampleIndex < numberOfSamples; sampleIndex++ {
 				sample.Timestamp = sortedTimestamps[sampleIndex]
-				sample.Value = model.SampleValue(sampleIndex)
+				sample.Value = clientmodel.SampleValue(sampleIndex)
 
 				err := p.AppendSample(sample)
 
@@ -461,12 +461,12 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 					begin, end = second, first
 				}
 
-				interval := model.Interval{
+				interval := Interval{
 					OldestInclusive: time.Unix(begin, 0),
 					NewestInclusive: time.Unix(end, 0),
 				}
 
-				samples := model.Values{}
+				samples := Values{}
 				fp := model.NewFingerprintFromMetric(metric)
 				switch persistence := p.(type) {
 				case *LevelDBMetricPersistence:

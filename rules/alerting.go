@@ -55,7 +55,7 @@ type alert struct {
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a alert) sample(timestamp time.Time, value model.SampleValue) clientmodel.Sample {
+func (a alert) sample(timestamp time.Time, value clientmodel.SampleValue) clientmodel.Sample {
 	recordedMetric := clientmodel.Metric{}
 	for label, value := range a.metric {
 		recordedMetric[label] = value

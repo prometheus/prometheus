@@ -30,7 +30,7 @@ func (node emptyRangeNode) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 	return Matrix{
 		model.SampleSet{
 			Metric: clientmodel.Metric{model.MetricNameLabel: "empty_metric"},
-			Values: model.Values{},
+			Values: Values{},
 		},
 	}
 }
@@ -39,7 +39,7 @@ func (node emptyRangeNode) EvalBoundaries(timestamp time.Time, view *viewAdapter
 	return Matrix{
 		model.SampleSet{
 			Metric: clientmodel.Metric{model.MetricNameLabel: "empty_metric"},
-			Values: model.Values{},
+			Values: Values{},
 		},
 	}
 }

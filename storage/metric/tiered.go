@@ -31,7 +31,7 @@ import (
 	"sync"
 )
 
-type chunk model.Values
+type chunk Values
 
 // TruncateBefore returns a subslice of the original such that extraneous
 // samples in the collection that occur before the provided time are
@@ -470,7 +470,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			}
 
 			// For each op, extract all needed data from the current chunk.
-			out := model.Values{}
+			out := Values{}
 			for _, op := range standingOps {
 				if op.CurrentTime().After(targetTime) {
 					break
@@ -479,7 +479,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 				currentChunk = currentChunk.TruncateBefore(*(op.CurrentTime()))
 
 				for op.CurrentTime() != nil && !op.CurrentTime().After(targetTime) {
-					out = op.ExtractSamples(model.Values(currentChunk))
+					out = op.ExtractSamples(Values(currentChunk))
 
 					// Append the extracted samples to the materialized view.
 					view.appendSamples(scanJob.fingerprint, out)
@@ -516,13 +516,13 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	return
 }
 
-func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint *clientmodel.Fingerprint, ts time.Time) (chunk model.Values) {
+func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint *clientmodel.Fingerprint, ts time.Time) (chunk Values) {
 	var (
 		targetKey = &dto.SampleKey{
 			Fingerprint: fingerprint.ToDTO(),
 		}
 		foundKey    sampleKey
-		foundValues model.Values
+		foundValues Values
 	)
 
 	// Limit the target key to be within the series' keyspace.

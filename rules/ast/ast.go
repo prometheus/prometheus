@@ -34,7 +34,7 @@ type Matrix []model.SampleSet
 
 type groupedAggregation struct {
 	labels     clientmodel.Metric
-	value      model.SampleValue
+	value      clientmodel.SampleValue
 	groupCount int
 }
 
@@ -98,7 +98,7 @@ type Node interface {
 // interface represents the type returned to the parent node.
 type ScalarNode interface {
 	Node
-	Eval(timestamp time.Time, view *viewAdapter) model.SampleValue
+	Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue
 }
 
 type VectorNode interface {
@@ -123,7 +123,7 @@ type StringNode interface {
 type (
 	// A numeric literal.
 	ScalarLiteral struct {
-		value model.SampleValue
+		value clientmodel.SampleValue
 	}
 
 	// A function of numeric return type.
@@ -228,18 +228,18 @@ func (node MatrixLiteral) Children() Nodes      { return Nodes{} }
 func (node StringLiteral) Children() Nodes      { return Nodes{} }
 func (node StringFunctionCall) Children() Nodes { return node.args }
 
-func (node *ScalarLiteral) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
+func (node *ScalarLiteral) Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue {
 	return node.value
 }
 
-func (node *ScalarArithExpr) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
+func (node *ScalarArithExpr) Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue {
 	lhs := node.lhs.Eval(timestamp, view)
 	rhs := node.rhs.Eval(timestamp, view)
 	return evalScalarBinop(node.opType, lhs, rhs)
 }
 
-func (node *ScalarFunctionCall) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
-	return node.function.callFn(timestamp, view, node.args).(model.SampleValue)
+func (node *ScalarFunctionCall) Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue {
+	return node.function.callFn(timestamp, view, node.args).(clientmodel.SampleValue)
 }
 
 func (node *VectorAggregation) labelsToGroupingKey(labels clientmodel.Metric) string {
@@ -294,7 +294,7 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 			if sampleSets[groupingKey] == nil {
 				sampleSets[groupingKey] = &model.SampleSet{
 					Metric: sample.Metric,
-					Values: model.Values{samplePair},
+					Values: Values{samplePair},
 				}
 			} else {
 				sampleSets[groupingKey].Values = append(sampleSets[groupingKey].Values, samplePair)
@@ -327,9 +327,9 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[stri
 	for _, aggregation := range aggregations {
 		switch node.aggrType {
 		case AVG:
-			aggregation.value = aggregation.value / model.SampleValue(aggregation.groupCount)
+			aggregation.value = aggregation.value / clientmodel.SampleValue(aggregation.groupCount)
 		case COUNT:
-			aggregation.value = model.SampleValue(aggregation.groupCount)
+			aggregation.value = clientmodel.SampleValue(aggregation.groupCount)
 		default:
 			// For other aggregations, we already have the right value.
 		}
@@ -394,8 +394,8 @@ func (node *VectorFunctionCall) Eval(timestamp time.Time, view *viewAdapter) Vec
 }
 
 func evalScalarBinop(opType BinOpType,
-	lhs model.SampleValue,
-	rhs model.SampleValue) model.SampleValue {
+	lhs clientmodel.SampleValue,
+	rhs clientmodel.SampleValue) clientmodel.SampleValue {
 	switch opType {
 	case ADD:
 		return lhs + rhs
@@ -407,13 +407,13 @@ func evalScalarBinop(opType BinOpType,
 		if rhs != 0 {
 			return lhs / rhs
 		} else {
-			return model.SampleValue(math.Inf(int(rhs)))
+			return clientmodel.SampleValue(math.Inf(int(rhs)))
 		}
 	case MOD:
 		if rhs != 0 {
-			return model.SampleValue(int(lhs) % int(rhs))
+			return clientmodel.SampleValue(int(lhs) % int(rhs))
 		} else {
-			return model.SampleValue(math.Inf(int(rhs)))
+			return clientmodel.SampleValue(math.Inf(int(rhs)))
 		}
 	case EQ:
 		if lhs == rhs {
@@ -456,8 +456,8 @@ func evalScalarBinop(opType BinOpType,
 }
 
 func evalVectorBinop(opType BinOpType,
-	lhs model.SampleValue,
-	rhs model.SampleValue) (model.SampleValue, bool) {
+	lhs clientmodel.SampleValue,
+	rhs clientmodel.SampleValue) (clientmodel.SampleValue, bool) {
 	switch opType {
 	case ADD:
 		return lhs + rhs, true
@@ -469,13 +469,13 @@ func evalVectorBinop(opType BinOpType,
 		if rhs != 0 {
 			return lhs / rhs, true
 		} else {
-			return model.SampleValue(math.Inf(int(rhs))), true
+			return clientmodel.SampleValue(math.Inf(int(rhs))), true
 		}
 	case MOD:
 		if rhs != 0 {
-			return model.SampleValue(int(lhs) % int(rhs)), true
+			return clientmodel.SampleValue(int(lhs) % int(rhs)), true
 		} else {
-			return model.SampleValue(math.Inf(int(rhs))), true
+			return clientmodel.SampleValue(math.Inf(int(rhs))), true
 		}
 	case EQ:
 		if lhs == rhs {
@@ -565,7 +565,7 @@ func (node *VectorArithExpr) Eval(timestamp time.Time, view *viewAdapter) Vector
 }
 
 func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
-	interval := &model.Interval{
+	interval := &Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
 	}
@@ -578,7 +578,7 @@ func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 }
 
 func (node *MatrixLiteral) EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix {
-	interval := &model.Interval{
+	interval := &Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
 	}
@@ -613,7 +613,7 @@ func (node *StringFunctionCall) Eval(timestamp time.Time, view *viewAdapter) str
 // ----------------------------------------------------------------------------
 // Constructors.
 
-func NewScalarLiteral(value model.SampleValue) *ScalarLiteral {
+func NewScalarLiteral(value clientmodel.SampleValue) *ScalarLiteral {
 	return &ScalarLiteral{
 		value: value,
 	}

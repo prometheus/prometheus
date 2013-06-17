@@ -69,7 +69,7 @@ func (d SamplesDumper) Filter(_, _ interface{}) storage.FilterResult {
 
 func (d SamplesDumper) Operate(key, value interface{}) *storage.OperatorError {
 	sampleKey := key.(sampleKey)
-	for i, sample := range value.(model.Values) {
+	for i, sample := range value.(Values) {
 		d.Write([]string{
 			sampleKey.Fingerprint.String(),
 			strconv.FormatInt(sampleKey.FirstTimestamp.Unix(), 10),

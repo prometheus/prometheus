@@ -37,7 +37,7 @@ func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence,
 		}
 
 		testAppendSample(p, clientmodel.Sample{
-			Value:     model.SampleValue(0.0),
+			Value:     clientmodel.SampleValue(0.0),
 			Timestamp: time.Now(),
 			Metric:    m,
 		}, t)

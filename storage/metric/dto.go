@@ -14,7 +14,6 @@
 package metric
 
 import (
-
 	"code.google.com/p/goprotobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"

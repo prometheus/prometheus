@@ -50,8 +50,8 @@ func interpolateSamples(first, second *model.SamplePair, timestamp time.Time) *m
 	dv := second.Value - first.Value
 	dt := second.Timestamp.Sub(first.Timestamp)
 
-	dDt := dv / model.SampleValue(dt)
-	offset := model.SampleValue(timestamp.Sub(first.Timestamp))
+	dDt := dv / clientmodel.SampleValue(dt)
+	offset := clientmodel.SampleValue(timestamp.Sub(first.Timestamp))
 
 	return &model.SamplePair{
 		Value:     first.Value + (offset * dDt),
@@ -63,7 +63,7 @@ func interpolateSamples(first, second *model.SamplePair, timestamp time.Time) *m
 // surrounding a given target time. If samples are found both before and after
 // the target time, the sample value is interpolated between these. Otherwise,
 // the single closest sample is returned verbatim.
-func (v *viewAdapter) chooseClosestSample(samples model.Values, timestamp time.Time) *model.SamplePair {
+func (v *viewAdapter) chooseClosestSample(samples Values, timestamp time.Time) *model.SamplePair {
 	var closestBefore *model.SamplePair
 	var closestAfter *model.SamplePair
 	for _, candidate := range samples {
@@ -128,7 +128,7 @@ func (v *viewAdapter) GetValueAtTime(fingerprints clientmodel.Fingerprints, time
 	return samples, err
 }
 
-func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
+func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, interval *Interval) (sampleSets []model.SampleSet, err error) {
 	timer := v.stats.GetTimer(stats.GetBoundaryValuesTime).Start()
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetBoundaryValues(fingerprint, *interval)
@@ -152,7 +152,7 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, i
 	return sampleSets, nil
 }
 
-func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, interval *model.Interval) (sampleSets []model.SampleSet, err error) {
+func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, interval *Interval) (sampleSets []model.SampleSet, err error) {
 	timer := v.stats.GetTimer(stats.GetRangeValuesTime).Start()
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetRangeValues(fingerprint, *interval)
