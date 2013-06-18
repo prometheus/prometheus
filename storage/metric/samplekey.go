@@ -36,7 +36,7 @@ type SampleKey struct {
 // MayContain indicates whether the given SampleKey could potentially contain a
 // value at the provided time.  Even if true is emitted, that does not mean a
 // satisfactory value, in fact, exists.
-func (s SampleKey) MayContain(t time.Time) bool {
+func (s *SampleKey) MayContain(t time.Time) bool {
 	switch {
 	case t.Before(s.FirstTimestamp):
 		return false
@@ -48,7 +48,7 @@ func (s SampleKey) MayContain(t time.Time) bool {
 }
 
 // ToDTO converts this SampleKey into a DTO for use in serialization purposes.
-func (s SampleKey) ToDTO() (out *dto.SampleKey) {
+func (s *SampleKey) ToDTO() (out *dto.SampleKey) {
 	out = &dto.SampleKey{
 		Fingerprint:   s.Fingerprint.ToDTO(),
 		Timestamp:     indexable.EncodeTime(s.FirstTimestamp),
@@ -62,7 +62,7 @@ func (s SampleKey) ToDTO() (out *dto.SampleKey) {
 // ToPartialDTO converts this SampleKey into a DTO that is only suitable for
 // database exploration purposes for a given (Fingerprint, First Sample Time)
 // tuple.
-func (s SampleKey) ToPartialDTO(out *dto.SampleKey) {
+func (s *SampleKey) ToPartialDTO(out *dto.SampleKey) {
 	out = &dto.SampleKey{
 		Fingerprint: s.Fingerprint.ToDTO(),
 		Timestamp:   indexable.EncodeTime(s.FirstTimestamp),
@@ -71,17 +71,22 @@ func (s SampleKey) ToPartialDTO(out *dto.SampleKey) {
 	return
 }
 
-func (s SampleKey) String() string {
+func (s *SampleKey) String() string {
 	return fmt.Sprintf("SampleKey for %s at %s to %s with %d values.", s.Fingerprint, s.FirstTimestamp, s.LastTimestamp, s.SampleCount)
 }
 
-// NewSampleKeyFromDTO builds a new SampleKey from a provided data-transfer
-// object.
-func NewSampleKeyFromDTO(dto *dto.SampleKey) SampleKey {
-	return SampleKey{
-		Fingerprint:    NewFingerprintFromDTO(dto.Fingerprint),
-		FirstTimestamp: indexable.DecodeTime(dto.Timestamp),
-		LastTimestamp:  time.Unix(*dto.LastTimestamp, 0).UTC(),
-		SampleCount:    *dto.SampleCount,
-	}
+func (s *SampleKey) dump(d *dto.SampleKey) {
+	f := &clientmodel.Fingerprint{}
+	loadFingerprint(f, d.Fingerprint)
+	s.Fingerprint = f
+	s.FirstTimestamp = indexable.DecodeTime(d.Timestamp)
+	s.LastTimestamp = time.Unix(d.GetLastTimestamp(), 0).UTC()
+	s.SampleCount = d.GetSampleCount()
+}
+
+func (s *SampleKey) load(d *dto.SampleKey) {
+	d.Fingerprint = NewFingerprintFromDTO(dto.Fingerprint)
+	d.FirstTimestamp = indexable.DecodeTime(dto.Timestamp)
+	d.LastTimestamp = time.Unix(*dto.LastTimestamp, 0).UTC()
+	d.SampleCount = *dto.SampleCount
 }

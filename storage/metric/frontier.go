@@ -39,10 +39,10 @@ type diskFrontier struct {
 }
 
 func (f diskFrontier) String() string {
-	return fmt.Sprintf("diskFrontier from %s at %s to %s at %s", f.firstFingerprint.ToRowKey(), f.firstSupertime, f.lastFingerprint.ToRowKey(), f.lastSupertime)
+	return fmt.Sprintf("diskFrontier from %s at %s to %s at %s", f.firstFingerprint, f.firstSupertime, f.lastFingerprint, f.lastSupertime)
 }
 
-func (f diskFrontier) ContainsFingerprint(fingerprint *clientmodel.Fingerprint) bool {
+func (f *diskFrontier) ContainsFingerprint(fingerprint *clientmodel.Fingerprint) bool {
 	return !(fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint))
 }
 
@@ -80,7 +80,7 @@ type seriesFrontier struct {
 	lastTime       time.Time
 }
 
-func (f seriesFrontier) String() string {
+func (f *seriesFrontier) String() string {
 	return fmt.Sprintf("seriesFrontier from %s to %s at %s", f.firstSupertime, f.lastSupertime, f.lastTime)
 }
 
@@ -107,8 +107,10 @@ func newSeriesFrontier(f *clientmodel.Fingerprint, d *diskFrontier, i leveldb.It
 	}
 
 	// TODO: Convert this to SampleKey.ToPartialDTO.
+	fprint := &dto.Fingerprint{}
+	dumpFingerprint(fprint, f)
 	key := &dto.SampleKey{
-		Fingerprint: f.ToDTO(),
+		Fingerprint: fprint,
 		Timestamp:   upperSeek,
 	}
 
@@ -172,14 +174,14 @@ func newSeriesFrontier(f *clientmodel.Fingerprint, d *diskFrontier, i leveldb.It
 
 // Contains indicates whether a given time value is within the recorded
 // interval.
-func (s seriesFrontier) Contains(t time.Time) bool {
+func (s *seriesFrontier) Contains(t time.Time) bool {
 	return !(t.Before(s.firstSupertime) || t.After(s.lastTime))
 }
 
 // InSafeSeekRange indicates whether the time is within the recorded time range
 // and is safely seekable such that a seek does not result in an iterator point
 // after the last value of the series or outside of the entire store.
-func (s seriesFrontier) InSafeSeekRange(t time.Time) (safe bool) {
+func (s *seriesFrontier) InSafeSeekRange(t time.Time) (safe bool) {
 	if !s.Contains(t) {
 		return
 	}
@@ -191,13 +193,13 @@ func (s seriesFrontier) InSafeSeekRange(t time.Time) (safe bool) {
 	return true
 }
 
-func (s seriesFrontier) After(t time.Time) bool {
+func (s *seriesFrontier) After(t time.Time) bool {
 	return s.firstSupertime.After(t)
 }
 
 // optimalStartTime indicates what the best start time for a curation operation
 // should be given the curation remark.
-func (s seriesFrontier) optimalStartTime(remark *curationRemark) (t time.Time) {
+func (s *seriesFrontier) optimalStartTime(remark *curationRemark) (t time.Time) {
 	switch {
 	case remark == nil:
 		t = s.firstSupertime

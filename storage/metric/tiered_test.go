@@ -476,7 +476,7 @@ func TestGetAllValuesForLabel(t *testing.T) {
 		tiered, closer := NewTestTieredStorage(t)
 		for j, metric := range scenario.in {
 			sample := clientmodel.Sample{
-				Metric: clientmodel.Metric{model.MetricNameLabel: model.LabelValue(metric.metricName)},
+				Metric: clientmodel.Metric{model.MetricNameLabel: clientmodel.LabelValue(metric.metricName)},
 			}
 			if metric.appendToMemory {
 				if err := tiered.memoryArena.AppendSample(sample); err != nil {

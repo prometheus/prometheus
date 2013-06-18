@@ -156,7 +156,7 @@ type memorySeriesStorage struct {
 
 	wmCache                 *WatermarkCache
 	fingerprintToSeries     map[clientmodel.Fingerprint]*stream
-	labelPairToFingerprints map[model.LabelPair]clientmodel.Fingerprints
+	labelPairToFingerprints map[LabelPair]clientmodel.Fingerprints
 	labelNameToFingerprints map[clientmodel.LabelName]clientmodel.Fingerprints
 }
 
@@ -191,7 +191,7 @@ func (s *memorySeriesStorage) AppendSample(sample clientmodel.Sample) error {
 		s.fingerprintToSeries[*fingerprint] = series
 
 		for k, v := range metric {
-			labelPair := model.LabelPair{
+			labelPair := LabelPair{
 				Name:  k,
 				Value: v,
 			}
@@ -234,7 +234,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l clientmodel.LabelSet)
 
 	sets := []utility.Set{}
 	for k, v := range l {
-		values := s.labelPairToFingerprints[model.LabelPair{
+		values := s.labelPairToFingerprints[LabelPair{
 			Name:  k,
 			Value: v,
 		}]
@@ -348,7 +348,7 @@ func (s *memorySeriesStorage) Close() {
 	defer s.Unlock()
 
 	s.fingerprintToSeries = map[clientmodel.Fingerprint]*stream{}
-	s.labelPairToFingerprints = map[model.LabelPair]clientmodel.Fingerprints{}
+	s.labelPairToFingerprints = map[LabelPair]clientmodel.Fingerprints{}
 	s.labelNameToFingerprints = map[clientmodel.LabelName]clientmodel.Fingerprints{}
 }
 
@@ -356,7 +356,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelNa
 	s.RLock()
 	defer s.RUnlock()
 
-	valueSet := map[model.LabelValue]bool{}
+	valueSet := map[clientmodel.LabelValue]bool{}
 	for _, series := range s.fingerprintToSeries {
 		if value, ok := series.metric[labelName]; ok {
 			if !valueSet[value] {
@@ -372,7 +372,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelNa
 func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[clientmodel.Fingerprint]*stream),
-		labelPairToFingerprints: make(map[model.LabelPair]clientmodel.Fingerprints),
+		labelPairToFingerprints: make(map[LabelPair]clientmodel.Fingerprints),
 		labelNameToFingerprints: make(map[clientmodel.LabelName]clientmodel.Fingerprints),
 		wmCache:                 o.WatermarkCache,
 	}

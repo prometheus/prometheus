@@ -610,7 +610,7 @@ func (t *TieredStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (c
 		return nil, err
 	}
 
-	valueSet := map[model.LabelValue]bool{}
+	valueSet := map[clientmodel.LabelValue]bool{}
 	values := clientmodel.LabelValues{}
 	for _, value := range append(diskValues, memoryValues...) {
 		if !valueSet[value] {

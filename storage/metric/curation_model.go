@@ -50,6 +50,12 @@ func (c *curationRemark) load(d *dto.CurationValue) {
 	c.LastCompletionTimestamp = time.Unix(d.GetLastCompletionTimestamp(), 0).UTC()
 }
 
+func (c *curationRemark) dump(d *dto.CurationValue) {
+	d.Reset()
+
+	d.LastCompletionTimestamp = proto.Int64(c.LastCompletionTimestamp.Unix())
+}
+
 // // ToDTO generates the dto.CurationValue representation of this.
 // func (c *curationRemark) ToDTO() *dto.CurationValue {
 // 	return &dto.CurationValue{
@@ -83,6 +89,8 @@ func (c *curationKey) Equal(o *curationKey) bool {
 }
 
 func (c *curationKey) dump(d *dto.CurationKey) {
+	d.Reset()
+
 	// BUG(matt): Avenue for simplification.
 	fingerprint := &clientmodel.Fingerprint{}
 	fingerprintDTO := &dto.Fingerprint{}

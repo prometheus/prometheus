@@ -468,7 +468,7 @@ yydefault:
 	case 17:
 		//line parser.y:109
 		{
-			yyVAL.labelSet = clientmodel.LabelSet{clientmodel.LabelName(yyS[yypt-2].str): model.LabelValue(yyS[yypt-0].str)}
+			yyVAL.labelSet = clientmodel.LabelSet{clientmodel.LabelName(yyS[yypt-2].str): clientmodel.LabelValue(yyS[yypt-0].str)}
 		}
 	case 18:
 		//line parser.y:114
@@ -478,7 +478,7 @@ yydefault:
 	case 19:
 		//line parser.y:116
 		{
-			yyS[yypt-0].labelSet[model.MetricNameLabel] = model.LabelValue(yyS[yypt-1].str)
+			yyS[yypt-0].labelSet[model.MetricNameLabel] = clientmodel.LabelValue(yyS[yypt-1].str)
 			yyVAL.ruleNode = ast.NewVectorLiteral(yyS[yypt-0].labelSet)
 		}
 	case 20:

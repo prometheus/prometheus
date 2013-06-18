@@ -42,7 +42,7 @@ func BasicLifecycleTests(p MetricPersistence, t test.Tester) {
 func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 	hasLabelPair := func(x int) (success bool) {
 		name := clientmodel.LabelName(string(x))
-		value := model.LabelValue(string(x))
+		value := clientmodel.LabelValue(string(x))
 
 		labelSet := clientmodel.LabelSet{
 			name: value,
@@ -97,7 +97,7 @@ func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 		v := clientmodel.SampleValue(x)
 		ts := time.Unix(int64(x), int64(x))
 		labelName := clientmodel.LabelName(x)
-		labelValue := model.LabelValue(x)
+		labelValue := clientmodel.LabelValue(x)
 		l := clientmodel.Metric{labelName: labelValue}
 
 		sample := clientmodel.Sample{
@@ -126,7 +126,7 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 		v := clientmodel.SampleValue(x)
 		ts := time.Unix(int64(x), int64(x))
 		labelName := clientmodel.LabelName(x)
-		labelValue := model.LabelValue(x)
+		labelValue := clientmodel.LabelValue(x)
 		l := clientmodel.Metric{labelName: labelValue}
 
 		sample := clientmodel.Sample{
@@ -262,19 +262,19 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				Metric: clientmodel.Metric{},
 			}
 
-			v := model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
+			v := clientmodel.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
 			sample.Metric[model.MetricNameLabel] = v
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
 				l := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
-				v := model.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex))
+				v := clientmodel.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex))
 
 				sample.Metric[l] = v
 			}
 
 			for unsharedLabelIndex := 0; unsharedLabelIndex < numberOfUnsharedLabels; unsharedLabelIndex++ {
 				l := clientmodel.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
-				v := model.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
+				v := clientmodel.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
 
 				sample.Metric[l] = v
 			}
@@ -331,7 +331,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
 				labelPair := clientmodel.LabelSet{
-					clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex)): model.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex)),
+					clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex)): clientmodel.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex)),
 				}
 
 				fingerprints, err := p.GetFingerprintsForLabelSet(labelPair)
@@ -374,7 +374,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
 			for unsharedLabelIndex := 0; unsharedLabelIndex < numberOfUnsharedLabels; unsharedLabelIndex++ {
 				labelName := clientmodel.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
-				labelValue := model.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
+				labelValue := clientmodel.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
 				labelSet := clientmodel.LabelSet{
 					labelName: labelValue,
 				}
@@ -401,18 +401,18 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 			}
 
 			metric := clientmodel.Metric{}
-			metric[model.MetricNameLabel] = model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
+			metric[model.MetricNameLabel] = clientmodel.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
 
 			for i := 0; i < numberOfSharedLabels; i++ {
 				l := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", i))
-				v := model.LabelValue(fmt.Sprintf("label_%d", i))
+				v := clientmodel.LabelValue(fmt.Sprintf("label_%d", i))
 
 				metric[l] = v
 			}
 
 			for i := 0; i < numberOfUnsharedLabels; i++ {
 				l := clientmodel.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, i))
-				v := model.LabelValue(fmt.Sprintf("private_label_%d", i))
+				v := clientmodel.LabelValue(fmt.Sprintf("private_label_%d", i))
 
 				metric[l] = v
 			}

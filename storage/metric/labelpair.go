@@ -11,11 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package model
+package metric
+
+import (
+	clientmodel "github.com/prometheus/client_golang/model"
+)
 
 type LabelPair struct {
-	Name  LabelName
-	Value LabelValue
+	Name  clientmodel.LabelName
+	Value clientmodel.LabelValue
 }
 
 type LabelPairs []LabelPair

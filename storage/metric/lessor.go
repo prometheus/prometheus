@@ -67,7 +67,7 @@ func (l fingerprintLessor) credit(d *clientmodel.Fingerprint) {
 func (l fingerprintLessor) close() {
 	close(l)
 
-	for _ = range f {
+	for _ = range l {
 	}
 }
 
@@ -94,7 +94,7 @@ func (l highWatermarkDTOLessor) credit(d *dto.MetricHighWatermark) {
 func (l highWatermarkDTOLessor) close() {
 	close(l)
 
-	for _ = range f {
+	for _ = range l {
 	}
 }
 
@@ -119,6 +119,6 @@ func (l watermarksLessor) credit(d *watermarks) {
 func (l watermarksLessor) close() {
 	close(l)
 
-	for _ = range f {
+	for _ = range l {
 	}
 }

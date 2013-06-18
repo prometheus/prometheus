@@ -28,7 +28,6 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 	index "github.com/prometheus/prometheus/storage/raw/index/leveldb"
 
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
@@ -235,9 +234,9 @@ func (l *LevelDBMetricPersistence) findUnindexedMetrics(candidates map[clientmod
 
 	unindexed = make(map[clientmodel.Fingerprint]clientmodel.Metric)
 
-	// Determine which metrics are unknown in the database.
+	dto := &dto.Metric{}
 	for fingerprint, metric := range candidates {
-		dto := model.MetricToDTO(metric)
+		dumpMetric(dto, metric)
 		indexHas, err := l.hasIndexMetric(dto)
 		if err != nil {
 			return unindexed, err
@@ -247,7 +246,7 @@ func (l *LevelDBMetricPersistence) findUnindexedMetrics(candidates map[clientmod
 		}
 	}
 
-	return
+	return unindexed, nil
 }
 
 // indexLabelNames accumulates all label name to fingerprint index entries for
@@ -302,7 +301,9 @@ func (l *LevelDBMetricPersistence) indexLabelNames(metrics map[clientmodel.Finge
 		}
 		value := &dto.FingerprintCollection{}
 		for _, fingerprint := range fingerprints {
-			value.Member = append(value.Member, fingerprint.ToDTO())
+			f := &dto.Fingerprint{}
+			dumpFingerprint(f, fingerprint)
+			value.Member = append(value.Member, f)
 		}
 
 		batch.Put(key, value)
@@ -328,11 +329,11 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[clientmodel.Finge
 		recordOutcome(duration, err, map[string]string{operation: indexLabelPairs, result: success}, map[string]string{operation: indexLabelPairs, result: failure})
 	}(time.Now())
 
-	labelPairFingerprints := map[model.LabelPair]utility.Set{}
+	labelPairFingerprints := map[LabelPair]utility.Set{}
 
 	for fingerprint, metric := range metrics {
 		for labelName, labelValue := range metric {
-			labelPair := model.LabelPair{
+			labelPair := LabelPair{
 				Name:  labelName,
 				Value: labelValue,
 			}
@@ -375,7 +376,9 @@ func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[clientmodel.Finge
 		}
 		value := &dto.FingerprintCollection{}
 		for _, fingerprint := range fingerprints {
-			value.Member = append(value.Member, fingerprint.ToDTO())
+			f := &dto.Fingerprint{}
+			dumpFingerprint(f, fingerprint)
+			value.Member = append(value.Member, f)
 		}
 
 		batch.Put(key, value)
@@ -404,7 +407,11 @@ func (l *LevelDBMetricPersistence) indexFingerprints(metrics map[clientmodel.Fin
 	defer batch.Close()
 
 	for fingerprint, metric := range metrics {
-		batch.Put(fingerprint.ToDTO(), model.MetricToDTO(metric))
+		f := &dto.Fingerprint{}
+		dumpFingerprint(f, &fingerprint)
+		m := &dto.Metric{}
+		dumpMetric(m, metric)
+		batch.Put(f, m)
 	}
 
 	err = l.fingerprintToMetrics.Commit(batch)
@@ -469,7 +476,9 @@ func (l *LevelDBMetricPersistence) indexMetrics(fingerprints map[clientmodel.Fin
 	defer batch.Close()
 
 	for _, metric := range absentMetrics {
-		batch.Put(model.MetricToDTO(metric), existenceIdentity)
+		m := &dto.Metric{}
+		dumpMetric(m, metric)
+		batch.Put(m, existenceIdentity)
 	}
 
 	err = l.metricMembershipIndex.Commit(batch)
@@ -495,7 +504,9 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[clientmodel.
 	for fingerprint, samples := range groups {
 		value := &dto.MetricHighWatermark{}
 		newestSampleTimestamp := samples[len(samples)-1].Timestamp
-		present, err := l.MetricHighWatermarks.Get(fingerprint.ToDTO(), value)
+		f := &dto.Fingerprint{}
+		dumpFingerprint(f, &fingerprint)
+		present, err := l.MetricHighWatermarks.Get(f, value)
 		if err != nil {
 			return err
 		}
@@ -509,7 +520,7 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[clientmodel.
 		}
 
 		value.Timestamp = proto.Int64(newestSampleTimestamp.Unix())
-		batch.Put(fingerprint.ToDTO(), value)
+		batch.Put(f, value)
 		mutationCount++
 	}
 
@@ -565,22 +576,24 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			chunk := group[0:take]
 			group = group[take:lengthOfGroup]
 
-			key := sampleKey{
+			key := SampleKey{
 				Fingerprint:    &fingerprint,
 				FirstTimestamp: chunk[0].Timestamp,
 				LastTimestamp:  chunk[take-1].Timestamp,
 				SampleCount:    uint32(take),
-			}.ToDTO()
+			}
 
 			value := &dto.SampleValueSeries{}
 			for _, sample := range chunk {
 				value.Value = append(value.Value, &dto.SampleValueSeries_Value{
 					Timestamp: proto.Int64(sample.Timestamp.Unix()),
-					Value:     sample.Value.ToDTO(),
+					Value:     proto.Float64(float64(sample.Value)),
 				})
 			}
 
-			samplesBatch.Put(key, value)
+			k := &dto.SampleKey{}
+			key.dump(k)
+			samplesBatch.Put(k, value)
 		}
 	}
 
@@ -602,48 +615,27 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 	return
 }
 
-func extractSampleKey(i leveldb.Iterator) (key sampleKey, err error) {
+func extractSampleKey(i leveldb.Iterator) (SampleKey, error) {
 	k := &dto.SampleKey{}
-	err = proto.Unmarshal(i.Key(), k)
+	err := proto.Unmarshal(i.Key(), k)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	key = model.NewSampleKeyFromDTO(k)
+	key := &SampleKey{}
+	key.load(k)
 
-	return
+	return *key, nil
 }
 
-func extractSampleValues(i leveldb.Iterator) (values Values, err error) {
+func extractSampleValues(i leveldb.Iterator) (Values, error) {
 	v := &dto.SampleValueSeries{}
-	err = proto.Unmarshal(i.Value(), v)
+	err := proto.Unmarshal(i.Value(), v)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	values = model.NewValuesFromDTO(v)
-
-	return
-}
-
-func fingerprintsEqual(l *dto.Fingerprint, r *dto.Fingerprint) bool {
-	if l == r {
-		return true
-	}
-
-	if l == nil && r == nil {
-		return true
-	}
-
-	if r.Signature == l.Signature {
-		return true
-	}
-
-	if *r.Signature == *l.Signature {
-		return true
-	}
-
-	return false
+	return NewValuesFromDTO(v), nil
 }
 
 func (l *LevelDBMetricPersistence) hasIndexMetric(dto *dto.Metric) (value bool, err error) {
@@ -690,10 +682,17 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet clientmod
 	}(time.Now())
 
 	sets := []utility.Set{}
+	pair := &dto.LabelPair{}
+	unmarshaled := &dto.FingerprintCollection{}
 
-	for _, labelSetDTO := range model.LabelSetToDTOs(&labelSet) {
-		unmarshaled := &dto.FingerprintCollection{}
-		present, err := l.labelSetToFingerprints.Get(labelSetDTO, unmarshaled)
+	for name, value := range labelSet {
+		pair.Reset()
+		unmarshaled.Reset()
+
+		pair.Name = proto.String(string(name))
+		pair.Value = proto.String(string(value))
+
+		present, err := l.labelSetToFingerprints.Get(pair, unmarshaled)
 		if err != nil {
 			return fps, err
 		}
@@ -704,7 +703,8 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet clientmod
 		set := utility.Set{}
 
 		for _, m := range unmarshaled.Member {
-			fp := model.NewFingerprintFromRowKey(*m.Signature)
+			fp := &clientmodel.Fingerprint{}
+			loadFingerprint(fp, m)
 			set.Add(*fp)
 		}
 
@@ -713,7 +713,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet clientmod
 
 	numberOfSets := len(sets)
 	if numberOfSets == 0 {
-		return
+		return nil, nil
 	}
 
 	base := sets[0]
@@ -725,7 +725,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet clientmod
 		fps = append(fps, &fingerprint)
 	}
 
-	return
+	return fps, nil
 }
 
 func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName clientmodel.LabelName) (fps clientmodel.Fingerprints, err error) {
@@ -736,7 +736,9 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName clientm
 	}(time.Now())
 
 	unmarshaled := &dto.FingerprintCollection{}
-	present, err := l.labelNameToFingerprints.Get(model.LabelNameToDTO(&labelName), unmarshaled)
+	d := &dto.LabelName{}
+	dumpLabelName(d, labelName)
+	present, err := l.labelNameToFingerprints.Get(d, unmarshaled)
 	if err != nil {
 		return nil, err
 	}
@@ -745,7 +747,8 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelName(labelName clientm
 	}
 
 	for _, m := range unmarshaled.Member {
-		fp := model.NewFingerprintFromRowKey(*m.Signature)
+		fp := &clientmodel.Fingerprint{}
+		loadFingerprint(fp, m)
 		fps = append(fps, fp)
 	}
 
@@ -760,7 +763,9 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *clientmodel.Finger
 	}(time.Now())
 
 	unmarshaled := &dto.Metric{}
-	present, err := l.fingerprintToMetrics.Get(model.FingerprintToDTO(f), unmarshaled)
+	d := &dto.Fingerprint{}
+	dumpFingerprint(d, f)
+	present, err := l.fingerprintToMetrics.Get(d, unmarshaled)
 	if err != nil {
 		return nil, err
 	}
@@ -771,7 +776,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *clientmodel.Finger
 	m = clientmodel.Metric{}
 
 	for _, v := range unmarshaled.LabelPair {
-		m[clientmodel.LabelName(*v.Name)] = model.LabelValue(*v.Value)
+		m[clientmodel.LabelName(v.GetName())] = clientmodel.LabelValue(v.GetValue())
 	}
 
 	return m, nil
@@ -798,9 +803,9 @@ func (d *MetricKeyDecoder) DecodeKey(in interface{}) (out interface{}, err error
 		return
 	}
 
-	out = model.LabelPair{
+	out = LabelPair{
 		Name:  clientmodel.LabelName(*unmarshaled.Name),
-		Value: model.LabelValue(*unmarshaled.Value),
+		Value: clientmodel.LabelValue(*unmarshaled.Value),
 	}
 
 	return
@@ -815,7 +820,7 @@ type LabelNameFilter struct {
 }
 
 func (f LabelNameFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
-	labelPair, ok := key.(model.LabelPair)
+	labelPair, ok := key.(LabelPair)
 	if ok && labelPair.Name == f.labelName {
 		return storage.ACCEPT
 	}
@@ -823,12 +828,12 @@ func (f LabelNameFilter) Filter(key, value interface{}) (filterResult storage.Fi
 }
 
 type CollectLabelValuesOp struct {
-	labelValues []model.LabelValue
+	labelValues []clientmodel.LabelValue
 }
 
 func (op *CollectLabelValuesOp) Operate(key, value interface{}) (err *storage.OperatorError) {
-	labelPair := key.(model.LabelPair)
-	op.labelValues = append(op.labelValues, model.LabelValue(labelPair.Value))
+	labelPair := key.(LabelPair)
+	op.labelValues = append(op.labelValues, clientmodel.LabelValue(labelPair.Value))
 	return
 }
 

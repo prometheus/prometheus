@@ -355,12 +355,13 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: true}
 	}
 
-	startKey := sampleKey{
+	startKey := SampleKey{
 		Fingerprint:    fingerprint,
 		FirstTimestamp: seriesFrontier.optimalStartTime(curationState),
 	}
-
-	prospectiveKey := coding.NewPBEncoder(startKey.ToDTO()).MustEncode()
+	dto := &dto.SampleKey{}
+	startKey.dump(dto)
+	prospectiveKey := coding.NewPBEncoder(dto).MustEncode()
 	if !w.sampleIterator.Seek(prospectiveKey) {
 		// LevelDB is picky about the seek ranges.  If an iterator was invalidated,
 		// no work may occur, and the iterator cannot be recovered.
@@ -391,21 +392,21 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 }
 
 func (w watermarkOperator) refreshCurationRemark(f *clientmodel.Fingerprint, finished time.Time) (err error) {
-	signature, err := w.processor.Signature()
-	if err != nil {
-		return
-	}
+	k := &dto.CurationKey{}
 	curationKey := curationKey{
 		Fingerprint:              f,
-		ProcessorMessageRaw:      signature,
+		ProcessorMessageRaw:      w.processor.Signature(),
 		ProcessorMessageTypeName: w.processor.Name(),
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
-	}.ToDTO()
+	}
+	curationKey.dump(k)
+	v := &dto.CurationValue{}
 	curationValue := curationRemark{
 		LastCompletionTimestamp: finished,
-	}.ToDTO()
+	}
+	curationValue.dump(v)
 
-	err = w.curationState.Put(curationKey, curationValue)
+	err = w.curationState.Put(k, v)
 
 	return
 }

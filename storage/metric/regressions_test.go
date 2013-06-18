@@ -33,7 +33,7 @@ func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence,
 		m := clientmodel.Metric{}
 
 		for k, v := range metric {
-			m[clientmodel.LabelName(k)] = model.LabelValue(v)
+			m[clientmodel.LabelName(k)] = clientmodel.LabelValue(v)
 		}
 
 		testAppendSample(p, clientmodel.Sample{

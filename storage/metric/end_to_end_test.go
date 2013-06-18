@@ -40,7 +40,7 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 	}, t)
 
 	result, err := p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
-		model.MetricNameLabel: model.LabelValue("my_metric"),
+		model.MetricNameLabel: clientmodel.LabelValue("my_metric"),
 	})
 
 	if err != nil {
@@ -52,7 +52,7 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 	}
 
 	result, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
-		clientmodel.LabelName("request_type"): model.LabelValue("your_mom"),
+		clientmodel.LabelName("request_type"): clientmodel.LabelValue("your_mom"),
 	})
 
 	if err != nil {
@@ -64,7 +64,7 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 	}
 
 	result, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
-		clientmodel.LabelName("request_type"): model.LabelValue("your_dad"),
+		clientmodel.LabelName("request_type"): clientmodel.LabelValue("your_dad"),
 	})
 
 	if err != nil {
@@ -161,7 +161,7 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 	}, t)
 
 	result, err := p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
-		clientmodel.LabelName("request_type"): model.LabelValue("your_mom"),
+		clientmodel.LabelName("request_type"): clientmodel.LabelValue("your_mom"),
 	})
 
 	if err != nil {
@@ -190,7 +190,7 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 	}
 
 	result, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
-		clientmodel.LabelName("request_type"): model.LabelValue("your_dad"),
+		clientmodel.LabelName("request_type"): clientmodel.LabelValue("your_dad"),
 	})
 
 	if err != nil {

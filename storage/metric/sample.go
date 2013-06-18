@@ -1,11 +1,17 @@
 package metric
 
+import (
+	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+)
+
 func (s SamplePair) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("{\"Value\": \"%f\", \"Timestamp\": %d}", s.Value, s.Timestamp.Unix())), nil
 }
 
 type SamplePair struct {
-	Value     SampleValue
+	Value     clientmodel.SampleValue
 	Timestamp time.Time
 }
 
@@ -114,10 +120,12 @@ func (v Values) String() string {
 	return buffer.String()
 }
 
-func NewValuesFromDTO(dto *dto.SampleValueSeries) (v Values) {
-	for _, value := range dto.Value {
+func NewValuesFromDTO(d *dto.SampleValueSeries) Values {
+	v := make(Values, 0, len(d.Value))
+
+	for _, value := range d.Value {
 		v = append(v, SamplePair{
-			Timestamp: time.Unix(*value.Timestamp, 0).UTC(),
+			Timestamp: time.Unix(value.GetTimestamp(), 0).UTC(),
 			Value:     SampleValue(*value.Value),
 		})
 	}

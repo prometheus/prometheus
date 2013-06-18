@@ -14,6 +14,8 @@
 package metric
 
 import (
+	"sort"
+
 	"code.google.com/p/goprotobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -30,3 +32,63 @@ func dumpFingerprint(d *dto.Fingerprint, f *clientmodel.Fingerprint) {
 func loadFingerprint(f *clientmodel.Fingerprint, d *dto.Fingerprint) {
 	f.LoadFromString(d.GetSignature())
 }
+
+func dumpMetric(d *dto.Metric, m clientmodel.Metric) {
+	d.Reset()
+
+	metricLength := len(m)
+	labelNames := make([]string, 0, metricLength)
+
+	for labelName := range m {
+		labelNames = append(labelNames, string(labelName))
+	}
+
+	sort.Strings(labelNames)
+
+	pairs := make([]*dto.LabelPair, 0, metricLength)
+
+	for _, labelName := range labelNames {
+		l := clientmodel.LabelName(labelName)
+		labelValue := m[l]
+		labelPair := &dto.LabelPair{
+			Name:  proto.String(string(labelName)),
+			Value: proto.String(string(labelValue)),
+		}
+
+		pairs = append(pairs, labelPair)
+	}
+
+	d.LabelPair = pairs
+}
+
+func dumpLabelName(d *dto.LabelName, l clientmodel.LabelName) {
+	d.Reset()
+
+	d.Name = proto.String(string(l))
+}
+
+// func (s clientmodel.LabelSet) dumpLabelSetTo []*dto.LabelPair {
+// 	metricLength := len(*s)
+// 	labelNames := make([]string, 0, metricLength)
+
+// 	for labelName := range *s {
+// 		labelNames = append(labelNames, string(labelName))
+// 	}
+
+// 	sort.Strings(labelNames)
+
+// 	labelSets := make([]*dto.LabelPair, 0, metricLength)
+
+// 	for _, labelName := range labelNames {
+// 		l := LabelName(labelName)
+// 		labelValue := (*s)[l]
+// 		labelPair := &dto.LabelPair{
+// 			Name:  proto.String(string(labelName)),
+// 			Value: proto.String(string(labelValue)),
+// 		}
+
+// 		labelSets = append(labelSets, labelPair)
+// 	}
+
+// 	return labelSets
+// }

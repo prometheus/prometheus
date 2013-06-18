@@ -62,8 +62,8 @@ func (a alert) sample(timestamp time.Time, value clientmodel.SampleValue) client
 	}
 
 	recordedMetric[model.MetricNameLabel] = model.AlertMetricName
-	recordedMetric[model.AlertNameLabel] = model.LabelValue(a.name)
-	recordedMetric[model.AlertStateLabel] = model.LabelValue(a.state.String())
+	recordedMetric[model.AlertNameLabel] = clientmodel.LabelValue(a.name)
+	recordedMetric[model.AlertStateLabel] = clientmodel.LabelValue(a.state.String())
 
 	return clientmodel.Sample{
 		Metric:    recordedMetric,
