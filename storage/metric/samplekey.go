@@ -50,7 +50,7 @@ func (s *SampleKey) MayContain(t time.Time) bool {
 }
 
 // ToDTO converts this SampleKey into a DTO for use in serialization purposes.
-func (s *SampleKey) dump() (d *dto.SampleKey) {
+func (s *SampleKey) dump(d *dto.SampleKey) {
 	d.Reset()
 	fp := &clientmodel.Fingerprint{}
 	dumpFingerprint(fp, s.Fingerprint)
@@ -75,15 +75,6 @@ func (s *SampleKey) ToPartialDTO(out *dto.SampleKey) {
 
 func (s *SampleKey) String() string {
 	return fmt.Sprintf("SampleKey for %s at %s to %s with %d values.", s.Fingerprint, s.FirstTimestamp, s.LastTimestamp, s.SampleCount)
-}
-
-func (s *SampleKey) dump(d *dto.SampleKey) {
-	f := &clientmodel.Fingerprint{}
-	loadFingerprint(f, d.Fingerprint)
-	s.Fingerprint = f
-	s.FirstTimestamp = indexable.DecodeTime(d.Timestamp)
-	s.LastTimestamp = time.Unix(d.GetLastTimestamp(), 0).UTC()
-	s.SampleCount = d.GetSampleCount()
 }
 
 func (s *SampleKey) load(d *dto.SampleKey) {

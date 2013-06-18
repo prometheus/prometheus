@@ -219,7 +219,8 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 	if len(unactedSamples) > 0 || len(pendingSamples) > 0 {
 		pendingSamples = append(pendingSamples, unactedSamples...)
 		k := &dto.SampleKey{}
-		newSampleKey := pendingSamples.ToSampleKey(fingerprint).dump(k)
+		newSampleKey := pendingSamples.ToSampleKey(fingerprint)
+		newSampleKey.dump(k)
 		b := &dto.SampleValueSeries{}
 		pendingSamples.dump(b)
 		pendingBatch.Put(k, b)
@@ -329,7 +330,9 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 			pendingBatch = nil
 
 		case !sampleKey.MayContain(stopAt):
-			pendingBatch.Drop(sampleKey.ToDTO())
+			k := &dto.SampleKey{}
+			sampleKey.dump(k)
+			pendingBatch.Drop(k)
 			lastCurated = sampleKey.LastTimestamp
 			sampleValues = Values{}
 			pendingMutations++

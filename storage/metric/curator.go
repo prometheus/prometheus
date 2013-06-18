@@ -355,7 +355,7 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: true}
 	}
 
-	startKey := SampleKey{
+	startKey := &SampleKey{
 		Fingerprint:    fingerprint,
 		FirstTimestamp: seriesFrontier.optimalStartTime(curationState),
 	}
