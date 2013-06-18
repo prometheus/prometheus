@@ -19,6 +19,8 @@ import (
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+
+	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 // unsafe.Sizeof(watermarks{})

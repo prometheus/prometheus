@@ -70,7 +70,7 @@ func (p *CompactionProcessor) Name() string {
 
 func (p *CompactionProcessor) Signature() []byte {
 	if len(p.signature) == 0 {
-		out, err = proto.Marshal(&dto.CompactionProcessorDefinition{
+		out, err := proto.Marshal(&dto.CompactionProcessorDefinition{
 			MinimumGroupSize: proto.Uint32(uint32(p.MinimumGroupSize)),
 		})
 		if err != nil {
@@ -81,8 +81,6 @@ func (p *CompactionProcessor) Signature() []byte {
 	}
 
 	return p.signature
-
-	return
 }
 
 func (p *CompactionProcessor) String() string {
@@ -100,7 +98,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 	var pendingMutations = 0
 	var pendingSamples Values
-	var sampleKey sampleKey
+	var sampleKey *SampleKey
 	var unactedSamples Values
 	var lastTouchedTime time.Time
 	var keyDropped bool
@@ -159,7 +157,9 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		case len(pendingSamples)+len(unactedSamples) < p.MinimumGroupSize:
 			if !keyDropped {
-				pendingBatch.Drop(sampleKey.ToDTO())
+				k := &dto.SampleKey{}
+				sampleKey.dump(k)
+				pendingBatch.Drop(k)
 				keyDropped = true
 			}
 			pendingSamples = append(pendingSamples, unactedSamples...)
@@ -169,13 +169,18 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		// If the number of pending writes equals the target group size
 		case len(pendingSamples) == p.MinimumGroupSize:
+			k := &dto.SampleKey{}
 			newSampleKey := pendingSamples.ToSampleKey(fingerprint)
-			pendingBatch.Put(newSampleKey.ToDTO(), pendingSamples.ToDTO())
+			newSampleKey.dump(k)
+			b := &dto.SampleValueSeries{}
+			pendingSamples.dump(b)
+			pendingBatch.Put(k, b)
 			pendingMutations++
 			lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
 			if len(unactedSamples) > 0 {
 				if !keyDropped {
-					pendingBatch.Drop(sampleKey.ToDTO())
+					sampleKey.dump(k)
+					pendingBatch.Drop(k)
 					keyDropped = true
 				}
 
@@ -192,7 +197,9 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		case len(pendingSamples)+len(unactedSamples) >= p.MinimumGroupSize:
 			if !keyDropped {
-				pendingBatch.Drop(sampleKey.ToDTO())
+				k := &dto.SampleKey{}
+				sampleKey.dump(k)
+				pendingBatch.Drop(k)
 				keyDropped = true
 			}
 			remainder := p.MinimumGroupSize - len(pendingSamples)
@@ -211,8 +218,11 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 	if len(unactedSamples) > 0 || len(pendingSamples) > 0 {
 		pendingSamples = append(pendingSamples, unactedSamples...)
-		newSampleKey := pendingSamples.ToSampleKey(fingerprint)
-		pendingBatch.Put(newSampleKey.ToDTO(), pendingSamples.ToDTO())
+		k := &dto.SampleKey{}
+		newSampleKey := pendingSamples.ToSampleKey(fingerprint).dump(k)
+		b := &dto.SampleValueSeries{}
+		pendingSamples.dump(b)
+		pendingBatch.Put(k, b)
 		pendingSamples = Values{}
 		pendingMutations++
 		lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
@@ -330,9 +340,12 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 
 			sampleValues = sampleValues.TruncateBefore(stopAt)
 			if len(sampleValues) > 0 {
-				sampleKey = sampleValues.ToSampleKey(fingerprint)
+				k := &dto.SampleKey{}
+				sampleValues.ToSampleKey(fingerprint).dump(k)
+				v := &dto.SampleValueSeries{}
+				sampleValues.dump(v)
 				lastCurated = sampleKey.FirstTimestamp
-				pendingBatch.Put(sampleKey.ToDTO(), sampleValues.ToDTO())
+				pendingBatch.Put(k, v)
 				pendingMutations++
 			} else {
 				lastCurated = sampleKey.LastTimestamp

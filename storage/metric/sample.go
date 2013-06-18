@@ -1,9 +1,16 @@
 package metric
 
 import (
+	"bytes"
+	"fmt"
+	"sort"
 	"time"
 
+	"code.google.com/p/goprotobuf/proto"
+
 	clientmodel "github.com/prometheus/client_golang/model"
+
+	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 func (s SamplePair) MarshalJSON() ([]byte, error) {
@@ -15,24 +22,27 @@ type SamplePair struct {
 	Timestamp time.Time
 }
 
-func (s SamplePair) Equal(o SamplePair) bool {
+func (s *SamplePair) Equal(o *SamplePair) bool {
+	if s == o {
+		return true
+	}
+
 	return s.Value.Equal(o.Value) && s.Timestamp.Equal(o.Timestamp)
 }
 
-func (s SamplePair) ToDTO() (out *dto.SampleValueSeries_Value) {
-	out = &dto.SampleValueSeries_Value{
-		Timestamp: proto.Int64(s.Timestamp.Unix()),
-		Value:     s.Value.ToDTO(),
-	}
+func (s *SamplePair) dump(d *dto.SampleValueSeries_Value) {
+	d.Reset()
 
-	return
+	d.Timestamp = proto.Int64(s.Timestamp.Unix())
+	d.Value = proto.Float64(float64(s.Value))
+
 }
 
-func (s SamplePair) String() string {
+func (s *SamplePair) String() string {
 	return fmt.Sprintf("SamplePair at %s of %s", s.Timestamp, s.Value)
 }
 
-type Values []SamplePair
+type Values []*SamplePair
 
 func (v Values) Len() int {
 	return len(v)
@@ -86,18 +96,18 @@ func (v Values) TruncateBefore(t time.Time) Values {
 	return v[index:]
 }
 
-func (v Values) ToDTO() (out *dto.SampleValueSeries) {
-	out = &dto.SampleValueSeries{}
+func (v Values) dump(d *dto.SampleValueSeries) {
+	d.Reset()
 
 	for _, value := range v {
-		out.Value = append(out.Value, value.ToDTO())
+		element := &dto.SampleValueSeries_Value{}
+		value.dump(element)
+		d.Value = append(d.Value, element)
 	}
-
-	return
 }
 
-func (v Values) ToSampleKey(f *Fingerprint) SampleKey {
-	return SampleKey{
+func (v Values) ToSampleKey(f *clientmodel.Fingerprint) *SampleKey {
+	return &SampleKey{
 		Fingerprint:    f,
 		FirstTimestamp: v[0].Timestamp,
 		LastTimestamp:  v[len(v)-1].Timestamp,
@@ -121,12 +131,14 @@ func (v Values) String() string {
 }
 
 func NewValuesFromDTO(d *dto.SampleValueSeries) Values {
+	// BUG(matt): Incogruent from the other load/dump API types, but much more
+	// performant.
 	v := make(Values, 0, len(d.Value))
 
 	for _, value := range d.Value {
-		v = append(v, SamplePair{
+		v = append(v, &SamplePair{
 			Timestamp: time.Unix(value.GetTimestamp(), 0).UTC(),
-			Value:     SampleValue(*value.Value),
+			Value:     clientmodel.SampleValue(value.GetValue()),
 		})
 	}
 
@@ -134,7 +146,7 @@ func NewValuesFromDTO(d *dto.SampleValueSeries) Values {
 }
 
 type SampleSet struct {
-	Metric Metric
+	Metric clientmodel.Metric
 	Values Values
 }
 

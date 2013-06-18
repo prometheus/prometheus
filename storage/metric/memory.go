@@ -20,7 +20,6 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -55,7 +54,7 @@ func (s *stream) add(timestamp time.Time, value clientmodel.SampleValue) {
 
 	// BUG(all): https://github.com/prometheus/prometheus/pull/265/files#r4336435.
 
-	s.values = append(s.values, model.SamplePair{
+	s.values = append(s.values, &SamplePair{
 		Timestamp: timestamp,
 		Value:     value,
 	})
@@ -174,16 +173,17 @@ func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) error {
 	return nil
 }
 
-func (s *memorySeriesStorage) AppendSample(sample clientmodel.Sample) error {
+func (s *memorySeriesStorage) AppendSample(sample *clientmodel.Sample) error {
 	s.Lock()
 	defer s.Unlock()
 
 	metric := sample.Metric
-	fingerprint := model.NewFingerprintFromMetric(metric)
+	fingerprint := &clientmodel.Fingerprint{}
+	fingerprint.LoadFromMetric(metric)
 	series, ok := s.fingerprintToSeries[*fingerprint]
 
 	if s.wmCache != nil {
-		s.wmCache.Set(fingerprint, &Watermarks{High: sample.Timestamp})
+		s.wmCache.Set(fingerprint, &watermarks{High: sample.Timestamp})
 	}
 
 	if !ok {

@@ -66,29 +66,3 @@ func dumpLabelName(d *dto.LabelName, l clientmodel.LabelName) {
 
 	d.Name = proto.String(string(l))
 }
-
-// func (s clientmodel.LabelSet) dumpLabelSetTo []*dto.LabelPair {
-// 	metricLength := len(*s)
-// 	labelNames := make([]string, 0, metricLength)
-
-// 	for labelName := range *s {
-// 		labelNames = append(labelNames, string(labelName))
-// 	}
-
-// 	sort.Strings(labelNames)
-
-// 	labelSets := make([]*dto.LabelPair, 0, metricLength)
-
-// 	for _, labelName := range labelNames {
-// 		l := LabelName(labelName)
-// 		labelValue := (*s)[l]
-// 		labelPair := &dto.LabelPair{
-// 			Name:  proto.String(string(labelName)),
-// 			Value: proto.String(string(labelValue)),
-// 		}
-
-// 		labelSets = append(labelSets, labelPair)
-// 	}
-
-// 	return labelSets
-// }

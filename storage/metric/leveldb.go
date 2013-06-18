@@ -615,7 +615,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 	return
 }
 
-func extractSampleKey(i leveldb.Iterator) (SampleKey, error) {
+func extractSampleKey(i leveldb.Iterator) (*SampleKey, error) {
 	k := &dto.SampleKey{}
 	err := proto.Unmarshal(i.Key(), k)
 	if err != nil {
@@ -625,7 +625,7 @@ func extractSampleKey(i leveldb.Iterator) (SampleKey, error) {
 	key := &SampleKey{}
 	key.load(k)
 
-	return *key, nil
+	return key, nil
 }
 
 func extractSampleValues(i leveldb.Iterator) (Values, error) {

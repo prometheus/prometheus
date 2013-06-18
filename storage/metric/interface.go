@@ -33,7 +33,7 @@ type MetricPersistence interface {
 	// Flush() error
 
 	// Record a new sample in the storage layer.
-	AppendSample(clientmodel.Sample) error
+	AppendSample(*clientmodel.Sample) error
 
 	// Record a group of new samples in the storage layer.
 	AppendSamples(clientmodel.Samples) error

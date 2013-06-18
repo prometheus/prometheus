@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"sync"
 	"time"
 
 	dto "github.com/prometheus/prometheus/model/generated"
@@ -25,10 +26,8 @@ import (
 
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	"sync"
 )
 
 type chunk Values

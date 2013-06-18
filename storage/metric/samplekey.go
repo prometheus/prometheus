@@ -19,6 +19,8 @@ import (
 
 	"code.google.com/p/goprotobuf/proto"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	dto "github.com/prometheus/prometheus/model/generated"
 
 	"github.com/prometheus/prometheus/coding/indexable"
@@ -27,7 +29,7 @@ import (
 // SampleKey models the business logic around the data-transfer object
 // SampleKey.
 type SampleKey struct {
-	Fingerprint    *Fingerprint
+	Fingerprint    *clientmodel.Fingerprint
 	FirstTimestamp time.Time
 	LastTimestamp  time.Time
 	SampleCount    uint32
@@ -48,15 +50,15 @@ func (s *SampleKey) MayContain(t time.Time) bool {
 }
 
 // ToDTO converts this SampleKey into a DTO for use in serialization purposes.
-func (s *SampleKey) ToDTO() (out *dto.SampleKey) {
-	out = &dto.SampleKey{
-		Fingerprint:   s.Fingerprint.ToDTO(),
-		Timestamp:     indexable.EncodeTime(s.FirstTimestamp),
-		LastTimestamp: proto.Int64(s.LastTimestamp.Unix()),
-		SampleCount:   proto.Uint32(s.SampleCount),
-	}
+func (s *SampleKey) dump() (d *dto.SampleKey) {
+	d.Reset()
+	fp := &clientmodel.Fingerprint{}
+	dumpFingerprint(fp, s.Fingerprint)
 
-	return
+	d.Fingerprint = fp
+	d.Timestamp = indexable.EncodeTime(s.FirstTimestamp)
+	d.LastTimestamp = proto.Int64(s.LastTimestamp.Unix())
+	d.SampleCount = proto.Uint32(s.SampleCount)
 }
 
 // ToPartialDTO converts this SampleKey into a DTO that is only suitable for
