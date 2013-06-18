@@ -666,6 +666,7 @@ func (t *TieredStorage) GetMetricForFingerprint(f *model.Fingerprint) (model.Met
 	}
 	if m == nil {
 		m, err = t.DiskStorage.GetMetricForFingerprint(f)
+		t.memoryArena.CreateEmptySeries(m)
 	}
 	return m, err
 }
