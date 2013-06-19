@@ -14,11 +14,12 @@
 package metric
 
 import (
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/utility/test"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 func testOptimizeTimeGroups(t test.Tester) {
@@ -583,6 +584,31 @@ func testOptimizeForward(t test.Tester) {
 					&getValuesAlongRangeOp{
 						from:    testInstant,
 						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+					},
+				},
+			},
+			// Range with subsequent overlapping interval.
+			{
+				in: ops{
+					&getValuesAlongRangeOp{
+						from:    testInstant,
+						through: testInstant.Add(3 * time.Minute),
+					},
+					&getValuesAtIntervalOp{
+						from:     testInstant.Add(1 * time.Minute),
+						through:  testInstant.Add(4 * time.Minute),
+						interval: time.Second * 10,
+					},
+				},
+				out: ops{
+					&getValuesAlongRangeOp{
+						from:    testInstant,
+						through: testInstant.Add(3 * time.Minute),
+					},
+					&getValuesAtIntervalOp{
+						from:     testInstant.Add(3*time.Minute + 10*time.Second),
+						through:  testInstant.Add(4 * time.Minute),
+						interval: time.Second * 10,
 					},
 				},
 			},
