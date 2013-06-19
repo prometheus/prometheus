@@ -15,7 +15,9 @@ package rules
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/utility"
 )
@@ -50,7 +52,7 @@ func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {
 	return functionCall, nil
 }
 
-func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy model.LabelNames) (*ast.VectorAggregation, error) {
+func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy clientmodel.LabelNames) (*ast.VectorAggregation, error) {
 	if _, ok := vector.(ast.VectorNode); !ok {
 		return nil, fmt.Errorf("Operand of %v aggregation must be of vector type", aggrTypeStr)
 	}

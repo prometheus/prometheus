@@ -52,7 +52,7 @@ func (s *SampleKey) MayContain(t time.Time) bool {
 // ToDTO converts this SampleKey into a DTO for use in serialization purposes.
 func (s *SampleKey) dump(d *dto.SampleKey) {
 	d.Reset()
-	fp := &clientmodel.Fingerprint{}
+	fp := &dto.Fingerprint{}
 	dumpFingerprint(fp, s.Fingerprint)
 
 	d.Fingerprint = fp
@@ -64,13 +64,14 @@ func (s *SampleKey) dump(d *dto.SampleKey) {
 // ToPartialDTO converts this SampleKey into a DTO that is only suitable for
 // database exploration purposes for a given (Fingerprint, First Sample Time)
 // tuple.
-func (s *SampleKey) ToPartialDTO(out *dto.SampleKey) {
-	out = &dto.SampleKey{
-		Fingerprint: s.Fingerprint.ToDTO(),
-		Timestamp:   indexable.EncodeTime(s.FirstTimestamp),
-	}
+func (s *SampleKey) dumpPartial(d *dto.SampleKey) {
+	d.Reset()
 
-	return
+	f := &dto.Fingerprint{}
+	dumpFingerprint(f, s.Fingerprint)
+
+	d.Fingerprint = f
+	d.Timestamp = indexable.EncodeTime(s.FirstTimestamp)
 }
 
 func (s *SampleKey) String() string {
@@ -78,8 +79,10 @@ func (s *SampleKey) String() string {
 }
 
 func (s *SampleKey) load(d *dto.SampleKey) {
-	d.Fingerprint = NewFingerprintFromDTO(dto.Fingerprint)
-	d.FirstTimestamp = indexable.DecodeTime(dto.Timestamp)
-	d.LastTimestamp = time.Unix(*dto.LastTimestamp, 0).UTC()
-	d.SampleCount = *dto.SampleCount
+	f := &clientmodel.Fingerprint{}
+	loadFingerprint(f, d.GetFingerprint())
+	s.Fingerprint = f
+	s.FirstTimestamp = indexable.DecodeTime(d.Timestamp)
+	s.LastTimestamp = time.Unix(d.GetLastTimestamp(), 0).UTC()
+	s.SampleCount = d.GetSampleCount()
 }

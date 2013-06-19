@@ -15,12 +15,23 @@ package rules
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
+	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
-	"time"
+)
+
+const (
+	// The metric name for synthetic alert timeseries.
+	AlertMetricName clientmodel.LabelValue = "ALERTS"
+	// The label name indicating the name of an alert.
+	AlertNameLabel = "alertname"
+	// The label name indicating the state of an alert.
+	AlertStateLabel = "alertstate"
 )
 
 // States that active alerts can be in.
@@ -55,17 +66,17 @@ type alert struct {
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a alert) sample(timestamp time.Time, value clientmodel.SampleValue) clientmodel.Sample {
+func (a alert) sample(timestamp time.Time, value clientmodel.SampleValue) *clientmodel.Sample {
 	recordedMetric := clientmodel.Metric{}
 	for label, value := range a.metric {
 		recordedMetric[label] = value
 	}
 
-	recordedMetric[model.MetricNameLabel] = model.AlertMetricName
-	recordedMetric[model.AlertNameLabel] = clientmodel.LabelValue(a.name)
-	recordedMetric[model.AlertStateLabel] = clientmodel.LabelValue(a.state.String())
+	recordedMetric[clientmodel.MetricNameLabel] = AlertMetricName
+	recordedMetric[AlertNameLabel] = clientmodel.LabelValue(a.name)
+	recordedMetric[AlertStateLabel] = clientmodel.LabelValue(a.state.String())
 
-	return clientmodel.Sample{
+	return &clientmodel.Sample{
 		Metric:    recordedMetric,
 		Value:     value,
 		Timestamp: timestamp,
@@ -104,11 +115,12 @@ func (rule AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorage
 	// Create pending alerts for any new vector elements in the alert expression.
 	resultFingerprints := utility.Set{}
 	for _, sample := range exprResult {
-		fp := *model.NewFingerprintFromMetric(sample.Metric)
-		resultFingerprints.Add(fp)
+		fp := &clientmodel.Fingerprint{}
+		fp.LoadFromMetric(sample.Metric)
+		resultFingerprints.Add(*fp)
 
-		if _, ok := rule.activeAlerts[fp]; !ok {
-			rule.activeAlerts[fp] = &alert{
+		if _, ok := rule.activeAlerts[*fp]; !ok {
+			rule.activeAlerts[*fp] = &alert{
 				name:        rule.name,
 				metric:      sample.Metric,
 				state:       PENDING,

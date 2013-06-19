@@ -14,18 +14,21 @@
 %{
         package rules
 
-        import "github.com/prometheus/prometheus/model"
+import (
+        clientmodel "github.com/prometheus/client_golang/model"
+
         import "github.com/prometheus/prometheus/rules/ast"
+        )
 %}
 
 %union {
-        num model.SampleValue
+        num clientmodel.SampleValue
         str string
         ruleNode ast.Node
         ruleNodeSlice []ast.Node
         boolean bool
-        labelNameSlice model.LabelNames
-        labelSet model.LabelSet
+        labelNameSlice clientmodel.LabelNames
+        labelSet clientmodel.LabelSet
 }
 
 /* We simulate multiple start symbols for closely-related grammars via dummy tokens. See
@@ -93,11 +96,11 @@ qualifier          : /* empty */
                    ;
 
 rule_labels        : /* empty */
-                     { $$ = model.LabelSet{} }
+                     { $$ = clientmodel.LabelSet{} }
                    | '{' label_assign_list '}'
                      { $$ = $2  }
                    | '{' '}'
-                     { $$ = model.LabelSet{} }
+                     { $$ = clientmodel.LabelSet{} }
 
 label_assign_list  : label_assign
                      { $$ = $1 }
@@ -106,14 +109,14 @@ label_assign_list  : label_assign
                    ;
 
 label_assign       : IDENTIFIER '=' STRING
-                     { $$ = model.LabelSet{ model.LabelName($1): model.LabelValue($3) } }
+                     { $$ = clientmodel.LabelSet{ clientmodel.LabelName($1): clientmodel.LabelValue($3) } }
                    ;
 
 
 rule_expr          : '(' rule_expr ')'
                      { $$ = $2 }
                    | IDENTIFIER rule_labels
-                     { $2[model.MetricNameLabel] = model.LabelValue($1); $$ = ast.NewVectorLiteral($2) }
+                     { $2[clientmodel.MetricNameLabel] = clientmodel.LabelValue($1); $$ = ast.NewVectorLiteral($2) }
                    | IDENTIFIER '(' func_arg_list ')'
                      {
                        var err error
@@ -163,15 +166,15 @@ rule_expr          : '(' rule_expr ')'
                    ;
 
 grouping_opts      :
-                     { $$ = model.LabelNames{} }
+                     { $$ = clientmodel.LabelNames{} }
                    | GROUP_OP '(' label_list ')'
                      { $$ = $3 }
                    ;
 
 label_list         : IDENTIFIER
-                     { $$ = model.LabelNames{model.LabelName($1)} }
+                     { $$ = clientmodel.LabelNames{clientmodel.LabelName($1)} }
                    | label_list ',' IDENTIFIER
-                     { $$ = append($$, model.LabelName($3)) }
+                     { $$ = append($$, clientmodel.LabelName($3)) }
                    ;
 
 func_arg_list      : func_arg

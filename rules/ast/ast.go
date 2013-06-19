@@ -16,21 +16,25 @@ package ast
 import (
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
 	"log"
 	"math"
 	"sort"
 	"strings"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/stats"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 // ----------------------------------------------------------------------------
 // Raw data value types.
 
 type Vector clientmodel.Samples
-type Matrix []model.SampleSet
+
+// BUG(julius): Pointerize this.
+type Matrix []metric.SampleSet
 
 type groupedAggregation struct {
 	labels     clientmodel.Metric
@@ -160,7 +164,7 @@ type (
 	// A vector aggregation with vector return type.
 	VectorAggregation struct {
 		aggrType AggrType
-		groupBy  model.LabelNames
+		groupBy  clientmodel.LabelNames
 		vector   VectorNode
 	}
 
@@ -243,6 +247,7 @@ func (node *ScalarFunctionCall) Eval(timestamp time.Time, view *viewAdapter) cli
 }
 
 func (node *VectorAggregation) labelsToGroupingKey(labels clientmodel.Metric) string {
+	// BUG(julius): Use a formal hash for this: fnv-1a.
 	keyParts := []string{}
 	for _, keyLabel := range node.groupBy {
 		keyParts = append(keyParts, string(labels[keyLabel]))
@@ -282,19 +287,19 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 
 	// TODO implement watchdog timer for long-running queries.
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
-	sampleSets := map[string]*model.SampleSet{}
+	sampleSets := map[string]*metric.SampleSet{}
 	for t := start; t.Before(end); t = t.Add(interval) {
 		vector := node.Eval(t, viewAdapter)
 		for _, sample := range vector {
-			samplePair := model.SamplePair{
+			samplePair := &metric.SamplePair{
 				Value:     sample.Value,
 				Timestamp: sample.Timestamp,
 			}
 			groupingKey := labelsToKey(sample.Metric)
 			if sampleSets[groupingKey] == nil {
-				sampleSets[groupingKey] = &model.SampleSet{
+				sampleSets[groupingKey] = &metric.SampleSet{
 					Metric: sample.Metric,
-					Values: Values{samplePair},
+					Values: metric.Values{samplePair},
 				}
 			} else {
 				sampleSets[groupingKey].Values = append(sampleSets[groupingKey].Values, samplePair)
@@ -333,7 +338,7 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[stri
 		default:
 			// For other aggregations, we already have the right value.
 		}
-		sample := clientmodel.Sample{
+		sample := &clientmodel.Sample{
 			Metric:    aggregation.labels,
 			Value:     aggregation.value,
 			Timestamp: timestamp,
@@ -526,7 +531,7 @@ func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
 		return false
 	}
 	for label, value := range labels1 {
-		if labels2[label] != value && label != model.MetricNameLabel {
+		if labels2[label] != value && label != clientmodel.MetricNameLabel {
 			return false
 		}
 	}
@@ -565,7 +570,7 @@ func (node *VectorArithExpr) Eval(timestamp time.Time, view *viewAdapter) Vector
 }
 
 func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
-	interval := &Interval{
+	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
 	}
@@ -578,7 +583,7 @@ func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 }
 
 func (node *MatrixLiteral) EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix {
-	interval := &Interval{
+	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
 	}
@@ -625,7 +630,7 @@ func NewVectorLiteral(labels clientmodel.LabelSet) *VectorLiteral {
 	}
 }
 
-func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy model.LabelNames) *VectorAggregation {
+func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy clientmodel.LabelNames) *VectorAggregation {
 	return &VectorAggregation{
 		aggrType: aggrType,
 		groupBy:  groupBy,

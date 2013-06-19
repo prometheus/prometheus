@@ -15,11 +15,13 @@ package rules
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
+	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
-	"time"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
@@ -45,7 +47,7 @@ func (rule RecordingRule) Eval(timestamp time.Time, storage *metric.TieredStorag
 
 	// Override the metric name and labels.
 	for _, sample := range vector {
-		sample.Metric[model.MetricNameLabel] = clientmodel.LabelValue(rule.name)
+		sample.Metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(rule.name)
 		for label, value := range rule.labels {
 			if value == "" {
 				delete(sample.Metric, label)

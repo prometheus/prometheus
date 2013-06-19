@@ -4,7 +4,7 @@ package rules
 import __yyfmt__ "fmt"
 
 //line parser.y:15
-import "github.com/prometheus/prometheus/model"
+import clientmodel "github.com/prometheus/client_golang/model"
 import "github.com/prometheus/prometheus/rules/ast"
 
 //line parser.y:21
@@ -15,7 +15,7 @@ type yySymType struct {
 	ruleNode       ast.Node
 	ruleNodeSlice  []ast.Node
 	boolean        bool
-	labelNameSlice model.LabelNames
+	labelNameSlice clientmodel.LabelNames
 	labelSet       clientmodel.LabelSet
 }
 
@@ -478,7 +478,7 @@ yydefault:
 	case 19:
 		//line parser.y:116
 		{
-			yyS[yypt-0].labelSet[model.MetricNameLabel] = clientmodel.LabelValue(yyS[yypt-1].str)
+			yyS[yypt-0].labelSet[clientmodel.MetricNameLabel] = clientmodel.LabelValue(yyS[yypt-1].str)
 			yyVAL.ruleNode = ast.NewVectorLiteral(yyS[yypt-0].labelSet)
 		}
 	case 20:
@@ -559,7 +559,7 @@ yydefault:
 	case 28:
 		//line parser.y:166
 		{
-			yyVAL.labelNameSlice = model.LabelNames{}
+			yyVAL.labelNameSlice = clientmodel.LabelNames{}
 		}
 	case 29:
 		//line parser.y:168
@@ -569,7 +569,7 @@ yydefault:
 	case 30:
 		//line parser.y:172
 		{
-			yyVAL.labelNameSlice = model.LabelNames{clientmodel.LabelName(yyS[yypt-0].str)}
+			yyVAL.labelNameSlice = clientmodel.LabelNames{clientmodel.LabelName(yyS[yypt-0].str)}
 		}
 	case 31:
 		//line parser.y:174

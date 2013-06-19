@@ -9,9 +9,10 @@ import (
 	"sort"
 )
 import (
-	"github.com/prometheus/prometheus/model"
 	"strconv"
 	"strings"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 var yyin io.Reader = os.Stdin

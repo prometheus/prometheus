@@ -29,12 +29,6 @@ const (
 	ExporterLabelPrefix = LabelName("exporter_")
 	// The metric name for the synthetic health variable.
 	ScrapeHealthMetricName = LabelValue("up")
-	// The metric name for synthetic alert timeseries.
-	AlertMetricName = LabelValue("ALERTS")
-	// The label name indicating the name of an alert.
-	AlertNameLabel = LabelName("alertname")
-	// The label name indicating the state of an alert.
-	AlertStateLabel = LabelName("alertstate")
 )
 
 // A LabelName is a key for a LabelSet or Metric.  It has a value associated

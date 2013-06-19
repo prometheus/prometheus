@@ -283,7 +283,7 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 		queued := make(clientmodel.Samples, 0, len(toArchive))
 
 		for _, value := range toArchive {
-			queued = append(queued, clientmodel.Sample{
+			queued = append(queued, &clientmodel.Sample{
 				Metric:    stream.metric,
 				Timestamp: value.Timestamp,
 				Value:     value.Value,
@@ -341,13 +341,15 @@ func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (b
 	wm, ok := t.wmCache.Get(f)
 	if !ok {
 		value := &dto.MetricHighWatermark{}
-		present, err := t.DiskStorage.MetricHighWatermarks.Get(f.ToDTO(), value)
+		k := &dto.Fingerprint{}
+		dumpFingerprint(k, f)
+		present, err := t.DiskStorage.MetricHighWatermarks.Get(k, value)
 		if err != nil {
 			return false, err
 		}
 		if present {
 			wmTime := time.Unix(*value.Timestamp, 0).UTC()
-			t.wmCache.Set(f, &Watermarks{High: wmTime})
+			t.wmCache.Set(f, &watermarks{High: wmTime})
 			return wmTime.Before(i), nil
 		}
 		return true, nil
@@ -516,13 +518,14 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 }
 
 func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint *clientmodel.Fingerprint, ts time.Time) (chunk Values) {
-	var (
-		targetKey = &dto.SampleKey{
-			Fingerprint: fingerprint.ToDTO(),
-		}
-		foundKey    sampleKey
-		foundValues Values
-	)
+
+	fd := &dto.Fingerprint{}
+	dumpFingerprint(fd, fingerprint)
+	targetKey := &dto.SampleKey{
+		Fingerprint: fd,
+	}
+	var foundKey *SampleKey
+	var foundValues Values
 
 	// Limit the target key to be within the series' keyspace.
 	if ts.After(frontier.lastSupertime) {

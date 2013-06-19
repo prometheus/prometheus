@@ -15,10 +15,12 @@ package ast
 
 import (
 	"flag"
-	"github.com/prometheus/prometheus/model"
+	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
-	"time"
 )
 
 var defaultStalenessDelta = flag.Int("defaultStalenessDelta", 300, "Default staleness delta allowance in seconds during expression evaluations.")
@@ -46,14 +48,14 @@ type viewAdapter struct {
 
 // interpolateSamples interpolates a value at a target time between two
 // provided sample pairs.
-func interpolateSamples(first, second *model.SamplePair, timestamp time.Time) *model.SamplePair {
+func interpolateSamples(first, second *metric.SamplePair, timestamp time.Time) *metric.SamplePair {
 	dv := second.Value - first.Value
 	dt := second.Timestamp.Sub(first.Timestamp)
 
 	dDt := dv / clientmodel.SampleValue(dt)
 	offset := clientmodel.SampleValue(timestamp.Sub(first.Timestamp))
 
-	return &model.SamplePair{
+	return &metric.SamplePair{
 		Value:     first.Value + (offset * dDt),
 		Timestamp: timestamp,
 	}
@@ -63,9 +65,9 @@ func interpolateSamples(first, second *model.SamplePair, timestamp time.Time) *m
 // surrounding a given target time. If samples are found both before and after
 // the target time, the sample value is interpolated between these. Otherwise,
 // the single closest sample is returned verbatim.
-func (v *viewAdapter) chooseClosestSample(samples Values, timestamp time.Time) *model.SamplePair {
-	var closestBefore *model.SamplePair
-	var closestAfter *model.SamplePair
+func (v *viewAdapter) chooseClosestSample(samples metric.Values, timestamp time.Time) *metric.SamplePair {
+	var closestBefore *metric.SamplePair
+	var closestAfter *metric.SamplePair
 	for _, candidate := range samples {
 		delta := candidate.Timestamp.Sub(timestamp)
 		// Samples before target time.
@@ -79,7 +81,7 @@ func (v *viewAdapter) chooseClosestSample(samples Values, timestamp time.Time) *
 				continue
 			}
 			sample := candidate
-			closestBefore = &sample
+			closestBefore = sample
 		}
 
 		// Samples after target time.
@@ -93,7 +95,7 @@ func (v *viewAdapter) chooseClosestSample(samples Values, timestamp time.Time) *
 				continue
 			}
 			sample := candidate
-			closestAfter = &sample
+			closestAfter = sample
 		}
 	}
 
@@ -117,7 +119,7 @@ func (v *viewAdapter) GetValueAtTime(fingerprints clientmodel.Fingerprints, time
 			continue
 		}
 		if samplePair != nil {
-			samples = append(samples, clientmodel.Sample{
+			samples = append(samples, &clientmodel.Sample{
 				Metric:    m,
 				Value:     samplePair.Value,
 				Timestamp: timestamp,
@@ -128,7 +130,7 @@ func (v *viewAdapter) GetValueAtTime(fingerprints clientmodel.Fingerprints, time
 	return samples, err
 }
 
-func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, interval *Interval) (sampleSets []model.SampleSet, err error) {
+func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, interval *metric.Interval) (sampleSets []metric.SampleSet, err error) {
 	timer := v.stats.GetTimer(stats.GetBoundaryValuesTime).Start()
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetBoundaryValues(fingerprint, *interval)
@@ -142,7 +144,7 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, i
 			continue
 		}
 
-		sampleSet := model.SampleSet{
+		sampleSet := metric.SampleSet{
 			Metric: m,
 			Values: samplePairs,
 		}
@@ -152,7 +154,7 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, i
 	return sampleSets, nil
 }
 
-func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, interval *Interval) (sampleSets []model.SampleSet, err error) {
+func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, interval *metric.Interval) (sampleSets []metric.SampleSet, err error) {
 	timer := v.stats.GetTimer(stats.GetRangeValuesTime).Start()
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetRangeValues(fingerprint, *interval)
@@ -166,7 +168,7 @@ func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, inte
 			continue
 		}
 
-		sampleSet := model.SampleSet{
+		sampleSet := metric.SampleSet{
 			Metric: m,
 			Values: samplePairs,
 		}

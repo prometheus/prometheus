@@ -14,12 +14,14 @@
 package rules
 
 import (
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/storage/metric"
 	"log"
 	"sync"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 type Result struct {

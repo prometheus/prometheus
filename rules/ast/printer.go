@@ -16,13 +16,15 @@ package ast
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility"
 	"sort"
 	"strings"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/stats"
+	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/utility"
 )
 
 type OutputFormat int
@@ -86,13 +88,13 @@ func (vector Vector) String() string {
 func (matrix Matrix) String() string {
 	metricStrings := make([]string, 0, len(matrix))
 	for _, sampleSet := range matrix {
-		metricName, ok := sampleSet.Metric[model.MetricNameLabel]
+		metricName, ok := sampleSet.Metric[clientmodel.MetricNameLabel]
 		if !ok {
 			panic("Tried to print matrix without metric name")
 		}
 		labelStrings := make([]string, 0, len(sampleSet.Metric)-1)
 		for label, value := range sampleSet.Metric {
-			if label != model.MetricNameLabel {
+			if label != clientmodel.MetricNameLabel {
 				labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))
 			}
 		}
@@ -296,13 +298,13 @@ func (node *ScalarArithExpr) String() string {
 }
 
 func (node *VectorLiteral) String() string {
-	metricName, ok := node.labels[model.MetricNameLabel]
+	metricName, ok := node.labels[clientmodel.MetricNameLabel]
 	if !ok {
 		panic("Tried to print vector without metric name")
 	}
 	labelStrings := make([]string, 0, len(node.labels)-1)
 	for label, value := range node.labels {
-		if label != model.MetricNameLabel {
+		if label != clientmodel.MetricNameLabel {
 			labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))
 		}
 	}

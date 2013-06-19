@@ -14,11 +14,13 @@
 package ast
 
 import (
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
 	"log"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/stats"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 type FullRangeMap map[clientmodel.Fingerprint]time.Duration

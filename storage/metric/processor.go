@@ -256,16 +256,18 @@ func (p *DeletionProcessor) Name() string {
 	return "io.prometheus.DeletionProcessorDefinition"
 }
 
-func (p *DeletionProcessor) Signature() (out []byte, err error) {
+func (p *DeletionProcessor) Signature() []byte {
 	if len(p.signature) == 0 {
-		out, err = proto.Marshal(&dto.DeletionProcessorDefinition{})
+		out, err := proto.Marshal(&dto.DeletionProcessorDefinition{})
+
+		if err != nil {
+			panic(err)
+		}
 
 		p.signature = out
 	}
 
-	out = p.signature
-
-	return
+	return p.signature
 }
 
 func (p *DeletionProcessor) String() string {
@@ -338,7 +340,9 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 			pendingMutations++
 
 		case sampleKey.MayContain(stopAt):
-			pendingBatch.Drop(sampleKey.ToDTO())
+			k := &dto.SampleKey{}
+			sampleKey.dump(k)
+			pendingBatch.Drop(k)
 			pendingMutations++
 
 			sampleValues = sampleValues.TruncateBefore(stopAt)

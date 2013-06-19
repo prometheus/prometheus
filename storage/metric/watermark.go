@@ -46,7 +46,7 @@ type watermarks struct {
 }
 
 func (w *watermarks) load(d *dto.MetricHighWatermark) {
-	w.High = time.Unix(d.GetTimestamp(), 0).Time.Unix()
+	w.High = time.Unix(d.GetTimestamp(), 0).UTC()
 }
 
 type entry struct {
