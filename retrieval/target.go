@@ -22,14 +22,17 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/extraction"
+
 	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/model"
 )
 
-var (
-	localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
+const (
+	InstanceLabel clientmodel.LabelName = "instance"
+	// The metric name for the synthetic health variable.
+	ScrapeHealthMetricName = "up"
 )
+
+var localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
 
 // The state of the given Target.
 type TargetState int
@@ -152,8 +155,8 @@ func (t *target) recordScrapeHealth(results chan<- *extraction.Result, timestamp
 	for label, value := range t.baseLabels {
 		metric[label] = value
 	}
-	metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(model.ScrapeHealthMetricName)
-	metric[clientmodel.LabelName(model.InstanceLabel)] = clientmodel.LabelValue(t.Address())
+	metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(ScrapeHealthMetricName)
+	metric[clientmodel.LabelName(InstanceLabel)] = clientmodel.LabelValue(t.Address())
 
 	healthValue := clientmodel.SampleValue(0)
 	if healthy {
@@ -216,7 +219,7 @@ func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) 
 
 	// XXX: This is a wart; we need to handle this more gracefully down the
 	//      road, especially once we have service discovery support.
-	baseLabels := clientmodel.LabelSet{clientmodel.LabelName(model.InstanceLabel): clientmodel.LabelValue(t.Address())}
+	baseLabels := clientmodel.LabelSet{clientmodel.LabelName(InstanceLabel): clientmodel.LabelValue(t.Address())}
 	for baseLabel, baseValue := range t.baseLabels {
 		baseLabels[baseLabel] = baseValue
 	}
