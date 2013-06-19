@@ -53,7 +53,7 @@ documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
 format:
-	find . -iname '*.go' | egrep -v "generated|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
+	find . -iname '*.go' | egrep -v "^./build/|generated|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
 
 model: dependencies preparation
 	$(MAKE) -C model
