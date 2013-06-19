@@ -141,6 +141,10 @@ func (s *stream) getRangeValues(in model.Interval) model.Values {
 	return result
 }
 
+func (s *stream) empty() bool {
+	return len(s.values) == 0
+}
+
 func newStream(metric model.Metric) *stream {
 	return &stream{
 		metric: metric,
@@ -258,7 +262,7 @@ func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- model
 
 	s.Lock()
 	for _, fingerprint := range emptySeries {
-		if len(s.fingerprintToSeries[fingerprint].values) == 0 {
+		if s.fingerprintToSeries[fingerprint].empty() {
 			s.dropSeries(&fingerprint)
 		}
 	}
