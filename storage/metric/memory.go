@@ -141,6 +141,10 @@ func (s *stream) getRangeValues(in model.Interval) model.Values {
 	return result
 }
 
+func (s *stream) empty() bool {
+	return len(s.values) == 0
+}
+
 func newStream(metric model.Metric) *stream {
 	return &stream{
 		metric: metric,
@@ -175,13 +179,27 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 	s.Lock()
 	defer s.Unlock()
 
-	metric := sample.Metric
-	fingerprint := model.NewFingerprintFromMetric(metric)
-	series, ok := s.fingerprintToSeries[*fingerprint]
+	fingerprint := model.NewFingerprintFromMetric(sample.Metric)
+	series := s.getOrCreateSeries(sample.Metric, fingerprint)
+	series.add(sample.Timestamp, sample.Value)
 
 	if s.wmCache != nil {
 		s.wmCache.Set(fingerprint, &Watermarks{High: sample.Timestamp})
 	}
+
+	return nil
+}
+
+func (s *memorySeriesStorage) CreateEmptySeries(metric model.Metric) {
+	s.Lock()
+	defer s.Unlock()
+
+	fingerprint := model.NewFingerprintFromMetric(metric)
+	s.getOrCreateSeries(metric, fingerprint)
+}
+
+func (s *memorySeriesStorage) getOrCreateSeries(metric model.Metric, fingerprint *model.Fingerprint) *stream {
+	series, ok := s.fingerprintToSeries[*fingerprint]
 
 	if !ok {
 		series = newStream(metric)
@@ -201,10 +219,71 @@ func (s *memorySeriesStorage) AppendSample(sample model.Sample) error {
 			s.labelNameToFingerprints[k] = labelNameValues
 		}
 	}
+	return series
+}
 
-	series.add(sample.Timestamp, sample.Value)
+func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- model.Samples) {
+	emptySeries := []model.Fingerprint{}
 
-	return nil
+	s.RLock()
+	for fingerprint, stream := range s.fingerprintToSeries {
+		finder := func(i int) bool {
+			return stream.values[i].Timestamp.After(flushOlderThan)
+		}
+
+		stream.Lock()
+
+		i := sort.Search(len(stream.values), finder)
+		toArchive := stream.values[:i]
+		toKeep := stream.values[i:]
+		queued := make(model.Samples, 0, len(toArchive))
+
+		for _, value := range toArchive {
+			queued = append(queued, model.Sample{
+				Metric:    stream.metric,
+				Timestamp: value.Timestamp,
+				Value:     value.Value,
+			})
+		}
+
+		// BUG(all): this can deadlock if the queue is full, as we only ever clear
+		// the queue after calling this method:
+		// https://github.com/prometheus/prometheus/issues/275
+		queue <- queued
+
+		stream.values = toKeep
+
+		if len(toKeep) == 0 {
+			emptySeries = append(emptySeries, fingerprint)
+		}
+		stream.Unlock()
+	}
+	s.RUnlock()
+
+	s.Lock()
+	for _, fingerprint := range emptySeries {
+		if s.fingerprintToSeries[fingerprint].empty() {
+			s.dropSeries(&fingerprint)
+		}
+	}
+	s.Unlock()
+}
+
+// Drop all references to a series, including any samples.
+func (s *memorySeriesStorage) dropSeries(fingerprint *model.Fingerprint) {
+	series, ok := s.fingerprintToSeries[*fingerprint]
+	if !ok {
+		return
+	}
+	for k, v := range series.metric {
+		labelPair := model.LabelPair{
+			Name:  k,
+			Value: v,
+		}
+		delete(s.labelPairToFingerprints, labelPair)
+		delete(s.labelNameToFingerprints, k)
+	}
+	delete(s.fingerprintToSeries, *fingerprint)
 }
 
 // Append raw samples, bypassing indexing. Only used to add data to views,
