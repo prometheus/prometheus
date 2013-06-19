@@ -262,38 +262,10 @@ func (t *TieredStorage) Flush() {
 }
 
 func (t *TieredStorage) flushMemory(ttl time.Duration) {
-	t.memoryArena.RLock()
-	defer t.memoryArena.RUnlock()
-
-	cutOff := time.Now().Add(-1 * ttl)
+	flushOlderThan := time.Now().Add(-1 * ttl)
 
 	log.Println("Flushing...")
-
-	for _, stream := range t.memoryArena.fingerprintToSeries {
-		finder := func(i int) bool {
-			return stream.values[i].Timestamp.After(cutOff)
-		}
-
-		stream.Lock()
-
-		i := sort.Search(len(stream.values), finder)
-		toArchive := stream.values[:i]
-		toKeep := stream.values[i:]
-		queued := make(model.Samples, 0, len(toArchive))
-
-		for _, value := range toArchive {
-			queued = append(queued, model.Sample{
-				Metric:    stream.metric,
-				Timestamp: value.Timestamp,
-				Value:     value.Value,
-			})
-		}
-
-		t.appendToDiskQueue <- queued
-
-		stream.values = toKeep
-		stream.Unlock()
-	}
+	t.memoryArena.Flush(flushOlderThan, t.appendToDiskQueue)
 
 	queueLength := len(t.appendToDiskQueue)
 	if queueLength > 0 {
