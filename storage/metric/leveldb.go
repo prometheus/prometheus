@@ -592,7 +592,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			}
 
 			k := &dto.SampleKey{}
-			key.dump(k)
+			key.Dump(k)
 			samplesBatch.Put(k, value)
 		}
 	}
@@ -623,7 +623,7 @@ func extractSampleKey(i leveldb.Iterator) (*SampleKey, error) {
 	}
 
 	key := &SampleKey{}
-	key.load(k)
+	key.Load(k)
 
 	return key, nil
 }

@@ -50,7 +50,7 @@ func (s *SampleKey) MayContain(t time.Time) bool {
 }
 
 // ToDTO converts this SampleKey into a DTO for use in serialization purposes.
-func (s *SampleKey) dump(d *dto.SampleKey) {
+func (s *SampleKey) Dump(d *dto.SampleKey) {
 	d.Reset()
 	fp := &dto.Fingerprint{}
 	dumpFingerprint(fp, s.Fingerprint)
@@ -64,7 +64,7 @@ func (s *SampleKey) dump(d *dto.SampleKey) {
 // ToPartialDTO converts this SampleKey into a DTO that is only suitable for
 // database exploration purposes for a given (Fingerprint, First Sample Time)
 // tuple.
-func (s *SampleKey) dumpPartial(d *dto.SampleKey) {
+func (s *SampleKey) FOOdumpPartial(d *dto.SampleKey) {
 	d.Reset()
 
 	f := &dto.Fingerprint{}
@@ -78,7 +78,7 @@ func (s *SampleKey) String() string {
 	return fmt.Sprintf("SampleKey for %s at %s to %s with %d values.", s.Fingerprint, s.FirstTimestamp, s.LastTimestamp, s.SampleCount)
 }
 
-func (s *SampleKey) load(d *dto.SampleKey) {
+func (s *SampleKey) Load(d *dto.SampleKey) {
 	f := &clientmodel.Fingerprint{}
 	loadFingerprint(f, d.GetFingerprint())
 	s.Fingerprint = f

@@ -158,7 +158,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		case len(pendingSamples)+len(unactedSamples) < p.MinimumGroupSize:
 			if !keyDropped {
 				k := &dto.SampleKey{}
-				sampleKey.dump(k)
+				sampleKey.Dump(k)
 				pendingBatch.Drop(k)
 				keyDropped = true
 			}
@@ -171,7 +171,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		case len(pendingSamples) == p.MinimumGroupSize:
 			k := &dto.SampleKey{}
 			newSampleKey := pendingSamples.ToSampleKey(fingerprint)
-			newSampleKey.dump(k)
+			newSampleKey.Dump(k)
 			b := &dto.SampleValueSeries{}
 			pendingSamples.dump(b)
 			pendingBatch.Put(k, b)
@@ -179,7 +179,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
 			if len(unactedSamples) > 0 {
 				if !keyDropped {
-					sampleKey.dump(k)
+					sampleKey.Dump(k)
 					pendingBatch.Drop(k)
 					keyDropped = true
 				}
@@ -198,7 +198,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		case len(pendingSamples)+len(unactedSamples) >= p.MinimumGroupSize:
 			if !keyDropped {
 				k := &dto.SampleKey{}
-				sampleKey.dump(k)
+				sampleKey.Dump(k)
 				pendingBatch.Drop(k)
 				keyDropped = true
 			}
@@ -220,7 +220,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		pendingSamples = append(pendingSamples, unactedSamples...)
 		k := &dto.SampleKey{}
 		newSampleKey := pendingSamples.ToSampleKey(fingerprint)
-		newSampleKey.dump(k)
+		newSampleKey.Dump(k)
 		b := &dto.SampleValueSeries{}
 		pendingSamples.dump(b)
 		pendingBatch.Put(k, b)
@@ -333,7 +333,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 
 		case !sampleKey.MayContain(stopAt):
 			k := &dto.SampleKey{}
-			sampleKey.dump(k)
+			sampleKey.Dump(k)
 			pendingBatch.Drop(k)
 			lastCurated = sampleKey.LastTimestamp
 			sampleValues = Values{}
@@ -341,14 +341,14 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 
 		case sampleKey.MayContain(stopAt):
 			k := &dto.SampleKey{}
-			sampleKey.dump(k)
+			sampleKey.Dump(k)
 			pendingBatch.Drop(k)
 			pendingMutations++
 
 			sampleValues = sampleValues.TruncateBefore(stopAt)
 			if len(sampleValues) > 0 {
 				k := &dto.SampleKey{}
-				sampleValues.ToSampleKey(fingerprint).dump(k)
+				sampleValues.ToSampleKey(fingerprint).Dump(k)
 				v := &dto.SampleValueSeries{}
 				sampleValues.dump(v)
 				lastCurated = sampleKey.FirstTimestamp

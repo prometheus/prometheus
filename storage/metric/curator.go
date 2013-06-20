@@ -360,7 +360,7 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		FirstTimestamp: seriesFrontier.optimalStartTime(curationState),
 	}
 	dto := &dto.SampleKey{}
-	startKey.dump(dto)
+	startKey.Dump(dto)
 	prospectiveKey := coding.NewPBEncoder(dto).MustEncode()
 	if !w.sampleIterator.Seek(prospectiveKey) {
 		// LevelDB is picky about the seek ranges.  If an iterator was invalidated,

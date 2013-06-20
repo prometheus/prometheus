@@ -23,8 +23,7 @@ advice:
 binary: build
 	go build -o prometheus $(BUILDFLAGS) .
 
-# build: preparation config model tools web
-build: preparation config model web
+build: preparation config model tools web
 
 clean:
 	$(MAKE) -C build clean
