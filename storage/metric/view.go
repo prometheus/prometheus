@@ -14,9 +14,10 @@
 package metric
 
 import (
-	"github.com/prometheus/prometheus/model"
 	"sort"
 	"time"
+
+	"github.com/prometheus/prometheus/model"
 )
 
 var (
