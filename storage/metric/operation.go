@@ -15,10 +15,11 @@ package metric
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
 	"math"
 	"sort"
 	"time"
+
+	"github.com/prometheus/prometheus/model"
 )
 
 // Encapsulates a primitive query operation.
@@ -65,11 +66,11 @@ type getValuesAtTimeOp struct {
 	consumed bool
 }
 
-func (o getValuesAtTimeOp) String() string {
-	return fmt.Sprintf("getValuesAtTimeOp at %s", o.time)
+func (g *getValuesAtTimeOp) String() string {
+	return fmt.Sprintf("getValuesAtTimeOp at %s", g.time)
 }
 
-func (g getValuesAtTimeOp) StartsAt() time.Time {
+func (g *getValuesAtTimeOp) StartsAt() time.Time {
 	return g.time
 }
 
@@ -82,7 +83,7 @@ func (g *getValuesAtTimeOp) ExtractSamples(in model.Values) (out model.Values) {
 	return
 }
 
-func (g getValuesAtTimeOp) GreedierThan(op op) (superior bool) {
+func (g *getValuesAtTimeOp) GreedierThan(op op) (superior bool) {
 	switch op.(type) {
 	case *getValuesAtTimeOp:
 		superior = true
@@ -139,15 +140,15 @@ type getValuesAtIntervalOp struct {
 	interval time.Duration
 }
 
-func (o getValuesAtIntervalOp) String() string {
+func (o *getValuesAtIntervalOp) String() string {
 	return fmt.Sprintf("getValuesAtIntervalOp from %s each %s through %s", o.from, o.interval, o.through)
 }
 
-func (g getValuesAtIntervalOp) StartsAt() time.Time {
+func (g *getValuesAtIntervalOp) StartsAt() time.Time {
 	return g.from
 }
 
-func (g getValuesAtIntervalOp) Through() time.Time {
+func (g *getValuesAtIntervalOp) Through() time.Time {
 	return g.through
 }
 
@@ -174,14 +175,14 @@ func (g *getValuesAtIntervalOp) ExtractSamples(in model.Values) (out model.Value
 	return
 }
 
-func (g getValuesAtIntervalOp) CurrentTime() (currentTime *time.Time) {
+func (g *getValuesAtIntervalOp) CurrentTime() (currentTime *time.Time) {
 	if g.from.After(g.through) {
 		return
 	}
 	return &g.from
 }
 
-func (g getValuesAtIntervalOp) GreedierThan(op op) (superior bool) {
+func (g *getValuesAtIntervalOp) GreedierThan(op op) (superior bool) {
 	switch o := op.(type) {
 	case *getValuesAtTimeOp:
 		superior = true
@@ -199,15 +200,15 @@ type getValuesAlongRangeOp struct {
 	through time.Time
 }
 
-func (o getValuesAlongRangeOp) String() string {
+func (o *getValuesAlongRangeOp) String() string {
 	return fmt.Sprintf("getValuesAlongRangeOp from %s through %s", o.from, o.through)
 }
 
-func (g getValuesAlongRangeOp) StartsAt() time.Time {
+func (g *getValuesAlongRangeOp) StartsAt() time.Time {
 	return g.from
 }
 
-func (g getValuesAlongRangeOp) Through() time.Time {
+func (g *getValuesAlongRangeOp) Through() time.Time {
 	return g.through
 }
 
@@ -244,14 +245,14 @@ func (g *getValuesAlongRangeOp) ExtractSamples(in model.Values) (out model.Value
 	return in[firstIdx:lastIdx]
 }
 
-func (g getValuesAlongRangeOp) CurrentTime() (currentTime *time.Time) {
+func (g *getValuesAlongRangeOp) CurrentTime() (currentTime *time.Time) {
 	if g.from.After(g.through) {
 		return
 	}
 	return &g.from
 }
 
-func (g getValuesAlongRangeOp) GreedierThan(op op) (superior bool) {
+func (g *getValuesAlongRangeOp) GreedierThan(op op) (superior bool) {
 	switch o := op.(type) {
 	case *getValuesAtTimeOp:
 		superior = true
@@ -376,109 +377,106 @@ func collectRanges(ops ops) (ranges ops) {
 // simplification.  For instance, if a range query happens to overlap a get-a-
 // value-at-a-certain-point-request, the range query should flatten and subsume
 // the other.
-func optimizeForward(pending ops) (out ops) {
-	if len(pending) == 0 {
-		return
+func optimizeForward(unoptimized ops) ops {
+	if len(unoptimized) <= 1 {
+		return unoptimized
 	}
 
-	var (
-		head op = pending[0]
-		tail ops
-	)
+	head := unoptimized[0]
+	unoptimized = unoptimized[1:]
+	optimized := ops{}
 
-	pending = pending[1:]
-
-	switch t := head.(type) {
+	switch headOp := head.(type) {
 	case *getValuesAtTimeOp:
-		out = ops{head}
+		optimized = ops{head}
 	case *getValuesAtIntervalOp:
-		// If the last value was a scan at a given frequency along an interval,
-		// several optimizations may exist.
-		for _, peekOperation := range pending {
-			if peekOperation.StartsAt().After(t.Through()) {
-				break
-			}
-
-			// If the type is not a range request, we can't do anything.
-			switch next := peekOperation.(type) {
-			case *getValuesAlongRangeOp:
-				if !next.GreedierThan(t) {
-					var (
-						before = getValuesAtIntervalOp(*t)
-						after  = getValuesAtIntervalOp(*t)
-					)
-
-					before.through = next.from
-
-					// Truncate the get value at interval request if a range request cuts
-					// it off somewhere.
-					var (
-						from = next.from
-					)
-
-					for !from.After(next.through) {
-						from = from.Add(t.interval)
-					}
-
-					after.from = from
-
-					pending = append(ops{&before, &after}, pending...)
-					sort.Sort(startsAtSort{pending})
-
-					return optimizeForward(pending)
-				}
-			}
-		}
-
+		optimized, unoptimized = optimizeForwardGetValuesAtInterval(headOp, unoptimized)
 	case *getValuesAlongRangeOp:
-		for _, peekOperation := range pending {
-			if peekOperation.StartsAt().After(t.Through()) {
-				break
-			}
-
-			switch next := peekOperation.(type) {
-			// All values at a specific time may be elided into the range query.
-			case *getValuesAtTimeOp:
-				pending = pending[1:]
-				continue
-			case *getValuesAlongRangeOp:
-				// Range queries should be concatenated if they overlap.
-				if next.GreedierThan(t) {
-					next.from = t.from
-
-					return optimizeForward(pending)
-				} else {
-					pending = pending[1:]
-				}
-			case *getValuesAtIntervalOp:
-				pending = pending[1:]
-
-				if next.GreedierThan(t) {
-					var (
-						nextStart = next.from
-					)
-
-					for !nextStart.After(next.through) {
-						nextStart = nextStart.Add(next.interval)
-					}
-
-					next.from = nextStart
-					tail = append(ops{next}, pending...)
-				}
-			default:
-				panic("unknown operation type")
-			}
-		}
+		optimized, unoptimized = optimizeForwardGetValuesAlongRange(headOp, unoptimized)
 	default:
 		panic("unknown operation type")
 	}
 
-	// Strictly needed?
-	sort.Sort(startsAtSort{pending})
+	tail := optimizeForward(unoptimized)
 
-	tail = optimizeForward(pending)
+	return append(optimized, tail...)
+}
 
-	return append(ops{head}, tail...)
+func optimizeForwardGetValuesAtInterval(headOp *getValuesAtIntervalOp, unoptimized ops) (ops, ops) {
+	// If the last value was a scan at a given frequency along an interval,
+	// several optimizations may exist.
+	for _, peekOperation := range unoptimized {
+		if peekOperation.StartsAt().After(headOp.Through()) {
+			break
+		}
+
+		// If the type is not a range request, we can't do anything.
+		switch next := peekOperation.(type) {
+		case *getValuesAlongRangeOp:
+			if !next.GreedierThan(headOp) {
+				after := getValuesAtIntervalOp(*headOp)
+
+				headOp.through = next.from
+
+				// Truncate the get value at interval request if a range request cuts
+				// it off somewhere.
+				from := next.from
+
+				for !from.After(next.through) {
+					from = from.Add(headOp.interval)
+				}
+
+				after.from = from
+
+				unoptimized = append(ops{&after}, unoptimized...)
+				sort.Sort(startsAtSort{unoptimized})
+				return ops{headOp}, unoptimized
+			}
+		}
+	}
+	return ops{headOp}, unoptimized
+}
+
+func optimizeForwardGetValuesAlongRange(headOp *getValuesAlongRangeOp, unoptimized ops) (ops, ops) {
+	optimized := ops{}
+	for _, peekOperation := range unoptimized {
+		if peekOperation.StartsAt().After(headOp.Through()) {
+			optimized = ops{headOp}
+			break
+		}
+
+		switch next := peekOperation.(type) {
+		// All values at a specific time may be elided into the range query.
+		case *getValuesAtTimeOp:
+			optimized = ops{headOp}
+			unoptimized = unoptimized[1:]
+		case *getValuesAlongRangeOp:
+			// Range queries should be concatenated if they overlap.
+			if next.GreedierThan(headOp) {
+				next.from = headOp.from
+				return optimized, unoptimized
+			}
+			optimized = ops{headOp}
+			unoptimized = unoptimized[1:]
+		case *getValuesAtIntervalOp:
+			optimized = ops{headOp}
+			unoptimized = unoptimized[1:]
+
+			if next.GreedierThan(headOp) {
+				nextStart := next.from
+
+				for !nextStart.After(headOp.through) {
+					nextStart = nextStart.Add(next.interval)
+				}
+
+				next.from = nextStart
+				unoptimized = append(ops{next}, unoptimized...)
+			}
+		default:
+			panic("unknown operation type")
+		}
+	}
+	return optimized, unoptimized
 }
 
 // selectQueriesForTime chooses all subsequent operations from the slice that
