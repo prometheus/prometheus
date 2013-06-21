@@ -14,11 +14,12 @@
 package metric
 
 import (
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/utility"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/model"
+	"github.com/prometheus/prometheus/utility"
 )
 
 // Assuming sample rate of 1 / 15Hz, this allows for one hour's worth of
@@ -368,6 +369,15 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(f *model.Fingerprint) (mod
 	}
 
 	return metric, nil
+}
+
+func (s *memorySeriesStorage) HasFingerprint(f *model.Fingerprint) bool {
+	s.RLock()
+	defer s.RUnlock()
+
+	_, has := s.fingerprintToSeries[*f]
+
+	return has
 }
 
 func (s *memorySeriesStorage) CloneSamples(f *model.Fingerprint) model.Values {

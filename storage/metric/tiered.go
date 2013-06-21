@@ -309,20 +309,35 @@ func (t *TieredStorage) seriesTooOld(f *model.Fingerprint, i time.Time) (bool, e
 	// BUG(julius): Make this configurable by query layer.
 	i = i.Add(-stalenessLimit)
 
-	wm, ok := t.wmCache.Get(f)
-	if !ok {
+	wm, cacheHit := t.wmCache.Get(f)
+	if !cacheHit {
 		value := &dto.MetricHighWatermark{}
-		present, err := t.DiskStorage.MetricHighWatermarks.Get(f.ToDTO(), value)
+		diskHit, err := t.DiskStorage.MetricHighWatermarks.Get(f.ToDTO(), value)
 		if err != nil {
 			return false, err
 		}
-		if present {
+
+		if diskHit {
 			wmTime := time.Unix(*value.Timestamp, 0).UTC()
 			t.wmCache.Set(f, &Watermarks{High: wmTime})
 			return wmTime.Before(i), nil
 		}
-		return true, nil
+
+		if !t.memoryArena.HasFingerprint(f) {
+			return true, nil
+		}
+
+		samples := t.memoryArena.CloneSamples(f)
+		if len(samples) == 0 {
+			return true, nil
+		}
+
+		newest := samples[0].Timestamp
+		t.wmCache.Set(f, &Watermarks{High: newest})
+
+		return false, nil
 	}
+
 	return wm.High.Before(i), nil
 }
 
