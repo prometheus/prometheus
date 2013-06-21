@@ -506,7 +506,7 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[model.Finger
 		}
 
 		// BUG(matt): Repace this with watermark management.
-		if !newestSampleTimestamp.Before(time.Unix(value.GetTimestamp(), 0)) {
+		if newestSampleTimestamp.After(time.Unix(value.GetTimestamp(), 0)) {
 			value.Timestamp = proto.Int64(newestSampleTimestamp.Unix())
 			batch.Put(fingerprint.ToDTO(), value)
 		}
