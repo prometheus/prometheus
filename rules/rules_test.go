@@ -15,15 +15,17 @@ package rules
 
 import (
 	"fmt"
+	"path"
+	"strings"
+	"testing"
+	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
-	"path"
-	"strings"
-	"testing"
-	"time"
 )
 
 var (

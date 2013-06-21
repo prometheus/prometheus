@@ -66,7 +66,7 @@ func (function *Function) CheckArgTypes(args []Node) error {
 	return nil
 }
 
-// === time() model.SampleValue ===
+// === time() clientmodel.SampleValue ===
 func timeImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return clientmodel.SampleValue(time.Now().Unix())
 }
