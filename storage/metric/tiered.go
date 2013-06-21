@@ -314,7 +314,7 @@ func (t *TieredStorage) seriesTooOld(f *model.Fingerprint, i time.Time) (bool, e
 		if t.memoryArena.HasFingerprint(f) {
 			samples := t.memoryArena.CloneSamples(f)
 			if len(samples) > 0 {
-				newest := samples[0].Timestamp
+				newest := samples[len(samples)-1].Timestamp
 				t.wmCache.Set(f, &Watermarks{High: newest})
 
 				return newest.Before(i), nil
