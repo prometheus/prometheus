@@ -14,7 +14,6 @@
 package retrieval
 
 import (
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/retrieval/format"
 	"net/http"
 	"net/http/httptest"

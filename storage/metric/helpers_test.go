@@ -15,9 +15,11 @@ package metric
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/utility/test"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 var (
@@ -26,7 +28,7 @@ var (
 	testInstant  = time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern).In(time.UTC)
 )
 
-func testAppendSample(p MetricPersistence, s clientmodel.Sample, t test.Tester) {
+func testAppendSample(p MetricPersistence, s *clientmodel.Sample, t test.Tester) {
 	err := p.AppendSample(s)
 	if err != nil {
 		t.Fatal(err)

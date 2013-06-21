@@ -20,10 +20,11 @@ import (
 
 	"code.google.com/p/goprotobuf/proto"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	dto "github.com/prometheus/prometheus/model/generated"
 	fixture "github.com/prometheus/prometheus/storage/raw/leveldb/test"
 
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
@@ -59,41 +60,59 @@ type out struct {
 }
 
 func (c curationState) Get() (key, value proto.Message) {
-	signature, err := c.processor.Signature()
-	if err != nil {
-		panic(err)
-	}
-	key = model.CurationKey{
-		Fingerprint:              model.NewFingerprintFromRowKey(c.fingerprint),
+	signature := c.processor.Signature()
+	fingerprint := &clientmodel.Fingerprint{}
+	fingerprint.LoadFromString(c.fingerprint)
+	keyRaw := curationKey{
+		Fingerprint:              fingerprint,
 		ProcessorMessageRaw:      signature,
 		ProcessorMessageTypeName: c.processor.Name(),
 		IgnoreYoungerThan:        c.ignoreYoungerThan,
-	}.ToDTO()
+	}
 
-	value = curationRemark{
+	k := &dto.CurationKey{}
+	keyRaw.dump(k)
+	key = k
+
+	valueRaw := curationRemark{
 		LastCompletionTimestamp: c.lastCurated,
-	}.ToDTO()
+	}
+	v := &dto.CurationValue{}
+	valueRaw.dump(v)
 
-	return
+	return k, v
 }
 
 func (w watermarkState) Get() (key, value proto.Message) {
-	key = model.NewFingerprintFromRowKey(w.fingerprint).ToDTO()
-	value = model.NewWatermarkFromTime(w.lastAppended).ToMetricHighWatermarkDTO()
-	return
+	fingerprint := &clientmodel.Fingerprint{}
+	fingerprint.LoadFromString(w.fingerprint)
+	k := &dto.Fingerprint{}
+	dumpFingerprint(k, fingerprint)
+	v := &dto.MetricHighWatermark{}
+	rawValue := &watermarks{
+		High: w.lastAppended,
+	}
+	rawValue.dump(v)
+
+	return k, v
 }
 
 func (s sampleGroup) Get() (key, value proto.Message) {
-	key = sampleKey{
-		Fingerprint:    model.NewFingerprintFromRowKey(s.fingerprint),
+	fingerprint := &clientmodel.Fingerprint{}
+	fingerprint.LoadFromString(s.fingerprint)
+	keyRaw := SampleKey{
+		Fingerprint:    fingerprint,
 		FirstTimestamp: s.values[0].Timestamp,
 		LastTimestamp:  s.values[len(s.values)-1].Timestamp,
 		SampleCount:    uint32(len(s.values)),
-	}.ToDTO()
+	}
+	k := &dto.SampleKey{}
+	keyRaw.Dump(k)
 
-	value = s.values.ToDTO()
+	v := &dto.SampleValueSeries{}
+	s.values.dump(v)
 
-	return
+	return k, v
 }
 
 func TestCuratorCompactionProcessor(t *testing.T) {
@@ -888,16 +907,14 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
+			curationKey := &curationKey{}
+			curationKey.load(curationKeyDto)
+			actualCurationRemark := &curationRemark{}
+			actualCurationRemark.load(curationValueDto)
+			signature := expected.processor.Signature()
 
-			curationKey := model.NewCurationKeyFromDTO(curationKeyDto)
-			actualCurationRemark := model.NewCurationRemarkFromDTO(curationValueDto)
-			signature, err := expected.processor.Signature()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			actualKey := curationKey
-			expectedKey := model.CurationKey{
+			actualKey := curationKey // ?
+			expectedKey := &curationKey{
 				Fingerprint:              model.NewFingerprintFromRowKey(expected.fingerprint),
 				IgnoreYoungerThan:        expected.ignoreYoungerThan,
 				ProcessorMessageRaw:      signature,
@@ -1415,7 +1432,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			}
 
 			actualKey := curationKey
-			expectedKey := model.CurationKey{
+			expectedKey := curationKey{
 				Fingerprint:              model.NewFingerprintFromRowKey(expected.fingerprint),
 				IgnoreYoungerThan:        expected.ignoreYoungerThan,
 				ProcessorMessageRaw:      signature,

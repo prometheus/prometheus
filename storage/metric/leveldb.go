@@ -173,14 +173,14 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 	return emission, nil
 }
 
-func (l *LevelDBMetricPersistence) AppendSample(sample clientmodel.Sample) (err error) {
+func (l *LevelDBMetricPersistence) AppendSample(sample *clientmodel.Sample) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: appendSample, result: failure})
 	}(time.Now())
 
-	err = l.AppendSamples(clientmodel.Samples{&sample})
+	err = l.AppendSamples(clientmodel.Samples{sample})
 
 	return
 }

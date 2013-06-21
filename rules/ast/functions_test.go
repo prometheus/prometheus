@@ -14,7 +14,6 @@
 package ast
 
 import (
-	"github.com/prometheus/prometheus/model"
 	"testing"
 	"time"
 )

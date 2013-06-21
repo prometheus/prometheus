@@ -14,7 +14,6 @@
 package metric
 
 import (
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
 	"sort"
 	"testing"

@@ -15,7 +15,7 @@ package rules
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
+
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"

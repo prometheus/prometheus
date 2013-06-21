@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"code.google.com/p/goprotobuf/proto"
+
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	dto "github.com/prometheus/prometheus/model/generated"
@@ -47,6 +49,12 @@ type watermarks struct {
 
 func (w *watermarks) load(d *dto.MetricHighWatermark) {
 	w.High = time.Unix(d.GetTimestamp(), 0).UTC()
+}
+
+func (w *watermarks) dump(d *dto.MetricHighWatermark) {
+	d.Reset()
+
+	d.Timestamp = proto.Int64(w.High.Unix())
 }
 
 type entry struct {
@@ -98,22 +106,6 @@ func (lru *WatermarkCache) SetIfAbsent(f *clientmodel.Fingerprint, w *watermarks
 		lru.addNew(f, w)
 	}
 }
-
-// // ToMetricHighWatermarkDTO builds a MetricHighWatermark DTO out of a given
-// // Watermark.
-// func (w watermark) ToMetricHighWatermarkDTO() *dto.MetricHighWatermark {
-// 	return &dto.MetricHighWatermark{
-// 		Timestamp: proto.Int64(w.Time.Unix()),
-// 	}
-// }
-
-// // NewWatermarkFromHighWatermarkDTO builds Watermark from the provided
-// // dto.MetricHighWatermark object.
-// func NewWatermarkFromHighWatermarkDTO(d *dto.MetricHighWatermark) Watermark {
-// 	return Watermark{
-// 		time.Unix(*d.Timestamp, 0).UTC(),
-// 	}
-// }
 
 func (lru *WatermarkCache) Delete(f *clientmodel.Fingerprint) bool {
 	lru.mu.Lock()

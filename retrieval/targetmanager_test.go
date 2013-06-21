@@ -17,7 +17,7 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 	"github.com/prometheus/prometheus/config"
 	pb "github.com/prometheus/prometheus/config/generated"
-	"github.com/prometheus/prometheus/model"
+
 	"github.com/prometheus/prometheus/retrieval/format"
 	"github.com/prometheus/prometheus/utility/test"
 	"testing"

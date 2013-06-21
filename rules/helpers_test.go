@@ -14,7 +14,6 @@
 package rules
 
 import (
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric"
 	"time"

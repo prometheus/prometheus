@@ -15,10 +15,11 @@ package metric
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
 	"runtime"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 func BenchmarkStreamAdd(b *testing.B) {
@@ -57,7 +58,7 @@ func benchmarkAppendSample(b *testing.B, labels int) {
 	}
 	samples := make(clientmodel.Samples, 0, b.N)
 	for i := 0; i < b.N; i++ {
-		samples = append(samples, clientmodel.Sample{
+		samples = append(samples, &clientmodel.Sample{
 			Metric:    metric,
 			Value:     clientmodel.SampleValue(i),
 			Timestamp: time.Date(i, 0, 0, 0, 0, 0, 0, time.UTC),
