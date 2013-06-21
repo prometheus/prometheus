@@ -269,17 +269,17 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 
 	queueLength := len(t.appendToDiskQueue)
 	if queueLength > 0 {
-		log.Printf("Writing %d samples ...", queueLength)
 		samples := model.Samples{}
 		for i := 0; i < queueLength; i++ {
 			chunk := <-t.appendToDiskQueue
 			samples = append(samples, chunk...)
 		}
 
+		log.Printf("Writing %d samples...", len(samples))
 		t.DiskStorage.AppendSamples(samples)
 	}
 
-	log.Println("Done flushing...")
+	log.Println("Done flushing.")
 }
 
 func (t *TieredStorage) Close() {
