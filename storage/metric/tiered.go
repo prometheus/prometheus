@@ -311,6 +311,16 @@ func (t *TieredStorage) seriesTooOld(f *model.Fingerprint, i time.Time) (bool, e
 
 	wm, cacheHit := t.wmCache.Get(f)
 	if !cacheHit {
+		if t.memoryArena.HasFingerprint(f) {
+			samples := t.memoryArena.CloneSamples(f)
+			if len(samples) > 0 {
+				newest := samples[0].Timestamp
+				t.wmCache.Set(f, &Watermarks{High: newest})
+
+				return newest.Before(i), nil
+			}
+		}
+
 		value := &dto.MetricHighWatermark{}
 		diskHit, err := t.DiskStorage.MetricHighWatermarks.Get(f.ToDTO(), value)
 		if err != nil {
@@ -320,20 +330,9 @@ func (t *TieredStorage) seriesTooOld(f *model.Fingerprint, i time.Time) (bool, e
 		if diskHit {
 			wmTime := time.Unix(*value.Timestamp, 0).UTC()
 			t.wmCache.Set(f, &Watermarks{High: wmTime})
+
 			return wmTime.Before(i), nil
 		}
-
-		if !t.memoryArena.HasFingerprint(f) {
-			return true, nil
-		}
-
-		samples := t.memoryArena.CloneSamples(f)
-		if len(samples) == 0 {
-			return true, nil
-		}
-
-		newest := samples[0].Timestamp
-		t.wmCache.Set(f, &Watermarks{High: newest})
 
 		return false, nil
 	}
