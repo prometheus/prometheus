@@ -907,15 +907,16 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
-			curationKey := &curationKey{}
-			curationKey.load(curationKeyDto)
+			actualKey := &curationKey{}
+			actualKey.load(curationKeyDto)
 			actualCurationRemark := &curationRemark{}
 			actualCurationRemark.load(curationValueDto)
 			signature := expected.processor.Signature()
 
-			actualKey := curationKey // ?
+			expectedFingerprint := &clientmodel.Fingerprint{}
+			expectedFingerprint.LoadFromString(expected.fingerprint)
 			expectedKey := &curationKey{
-				Fingerprint:              model.NewFingerprintFromRowKey(expected.fingerprint),
+				Fingerprint:              expectedFingerprint,
 				IgnoreYoungerThan:        expected.ignoreYoungerThan,
 				ProcessorMessageRaw:      signature,
 				ProcessorMessageTypeName: expected.processor.Name(),
@@ -955,7 +956,9 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 				t.Fatalf("%d.%d. error %s", i, j, err)
 			}
 
-			if !model.NewFingerprintFromRowKey(expected.fingerprint).Equal(sampleKey.Fingerprint) {
+			expectedFingerprint := &clientmodel.Fingerprint{}
+			expectedFingerprint.LoadFromString(expected.fingerprint)
+			if !expectedFingerprint.Equal(sampleKey.Fingerprint) {
 				t.Fatalf("%d.%d. expected fingerprint %s, got %s", i, j, expected.fingerprint, sampleKey.Fingerprint)
 			}
 
@@ -1424,16 +1427,16 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
 
-			curationKey := model.NewCurationKeyFromDTO(curationKeyDto)
-			actualCurationRemark := model.NewCurationRemarkFromDTO(curationValueDto)
-			signature, err := expected.processor.Signature()
-			if err != nil {
-				t.Fatal(err)
-			}
+			actualKey := &curationKey{}
+			actualKey.load(curationKeyDto)
+			actualCurationRemark := &curationRemark{}
+			actualCurationRemark.load(curationValueDto)
+			signature := expected.processor.Signature()
 
-			actualKey := curationKey
-			expectedKey := curationKey{
-				Fingerprint:              model.NewFingerprintFromRowKey(expected.fingerprint),
+			expectedFingerprint := &clientmodel.Fingerprint{}
+			expectedFingerprint.LoadFromString(expected.fingerprint)
+			expectedKey := &curationKey{
+				Fingerprint:              expectedFingerprint,
 				IgnoreYoungerThan:        expected.ignoreYoungerThan,
 				ProcessorMessageRaw:      signature,
 				ProcessorMessageTypeName: expected.processor.Name(),

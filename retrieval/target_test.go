@@ -14,11 +14,14 @@
 package retrieval
 
 import (
-	"github.com/prometheus/prometheus/retrieval/format"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/client_golang/extraction"
 )
 
 func TestTargetScrapeUpdatesState(t *testing.T) {
@@ -27,7 +30,7 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 		state:     UNKNOWN,
 		address:   "bad schema",
 	}
-	testTarget.Scrape(time.Time{}, make(chan format.Result, 2))
+	testTarget.Scrape(time.Time{}, make(chan *extraction.Result, 2))
 	if testTarget.state != UNREACHABLE {
 		t.Errorf("Expected target state %v, actual: %v", UNREACHABLE, testTarget.state)
 	}
@@ -37,11 +40,11 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	testTarget := target{
 		scheduler:  literalScheduler{},
 		address:    "http://example.url",
-		baseLabels: clientmodel.LabelSet{model.JobLabel: "testjob"},
+		baseLabels: clientmodel.LabelSet{clientmodel.JobLabel: "testjob"},
 	}
 
 	now := time.Now()
-	results := make(chan format.Result)
+	results := make(chan *extraction.Result)
 	go testTarget.recordScrapeHealth(results, now, true)
 
 	result := <-results
@@ -51,11 +54,11 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	}
 
 	actual := result.Samples[0]
-	expected := clientmodel.Sample{
+	expected := &clientmodel.Sample{
 		Metric: clientmodel.Metric{
-			model.MetricNameLabel: model.ScrapeHealthMetricName,
-			model.InstanceLabel:   "http://example.url",
-			model.JobLabel:        "testjob",
+			clientmodel.MetricNameLabel: ScrapeHealthMetricName,
+			InstanceLabel:               "http://example.url",
+			clientmodel.JobLabel:        "testjob",
 		},
 		Timestamp: now,
 		Value:     1,
@@ -81,7 +84,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	defer server.Close()
 
 	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
-	results := make(chan format.Result, 1024)
+	results := make(chan *extraction.Result, 1024)
 
 	// scrape once without timeout
 	signal <- true
