@@ -14,9 +14,12 @@
 package metric
 
 import (
-	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
@@ -320,11 +323,11 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			defer p.Close()
 
 			m := clientmodel.Metric{
-				model.MetricNameLabel: "age_in_years",
+				clientmodel.MetricNameLabel: "age_in_years",
 			}
 
 			for _, value := range context.values {
-				testAppendSample(p, clientmodel.Sample{
+				testAppendSample(p, &clientmodel.Sample{
 					Value:     clientmodel.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
@@ -334,8 +337,9 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			for j, behavior := range context.behaviors {
 				input := behavior.input
 				time := time.Date(input.year, input.month, input.day, input.hour, 0, 0, 0, time.UTC)
-
-				actual := p.GetValueAtTime(model.NewFingerprintFromMetric(m), time)
+				fingerprint := &clientmodel.Fingerprint{}
+				fingerprint.LoadFromMetric(m)
+				actual := p.GetValueAtTime(fingerprint, time)
 
 				if len(behavior.output) != len(actual) {
 					t.Fatalf("%d.%d(%s.%s). Expected %d samples but got: %v\n", i, j, context.name, behavior.name, len(behavior.output), actual)
@@ -811,11 +815,11 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 			defer p.Close()
 
 			m := clientmodel.Metric{
-				model.MetricNameLabel: "age_in_years",
+				clientmodel.MetricNameLabel: "age_in_years",
 			}
 
 			for _, value := range context.values {
-				testAppendSample(p, clientmodel.Sample{
+				testAppendSample(p, &clientmodel.Sample{
 					Value:     clientmodel.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
@@ -833,7 +837,8 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 
 				actualValues := Values{}
 				expectedValues := []output{}
-				fp := model.NewFingerprintFromMetric(m)
+				fp := &clientmodel.Fingerprint{}
+				fp.LoadFromMetric(m)
 				if onlyBoundaries {
 					actualValues = p.GetBoundaryValues(fp, in)
 					l := len(behavior.output)

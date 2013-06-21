@@ -15,22 +15,23 @@ package metric
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/coding/indexable"
-
-	dto "github.com/prometheus/prometheus/model/generated"
-	"github.com/prometheus/prometheus/utility/test"
 	"math"
 	"math/rand"
 	"sort"
 	"testing"
 	"testing/quick"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
+	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/coding/indexable"
+	"github.com/prometheus/prometheus/utility/test"
 )
 
-const (
-	stochasticMaximumVariance = 8
-)
+const stochasticMaximumVariance = 8
 
 func BasicLifecycleTests(p MetricPersistence, t test.Tester) {
 	if p == nil {
@@ -100,7 +101,7 @@ func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 		labelValue := clientmodel.LabelValue(x)
 		l := clientmodel.Metric{labelName: labelValue}
 
-		sample := clientmodel.Sample{
+		sample := &clientmodel.Sample{
 			Value:     v,
 			Timestamp: ts,
 			Metric:    l,
@@ -129,7 +130,7 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 		labelValue := clientmodel.LabelValue(x)
 		l := clientmodel.Metric{labelName: labelValue}
 
-		sample := clientmodel.Sample{
+		sample := &clientmodel.Sample{
 			Value:     v,
 			Timestamp: ts,
 			Metric:    l,
@@ -173,10 +174,10 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 
 func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) bool {
-		sample := clientmodel.Sample{
+		sample := &clientmodel.Sample{
 			Value:     clientmodel.SampleValue(x),
 			Timestamp: time.Unix(int64(x), 0),
-			Metric:    clientmodel.Metric{model.MetricNameLabel: "my_metric"},
+			Metric:    clientmodel.Metric{clientmodel.MetricNameLabel: "my_metric"},
 		}
 
 		err := p.AppendSample(sample)
@@ -190,8 +191,10 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 }
 
 func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerprint, i Interval) (samples Values, err error) {
+	fpDto := &dto.Fingerprint{}
+	dumpFingerprint(fpDto, fp)
 	k := &dto.SampleKey{
-		Fingerprint: fp.ToDTO(),
+		Fingerprint: fpDto,
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
 	}
 
@@ -258,12 +261,12 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 		metricNewestSample := map[int]int64{}
 
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
-			sample := clientmodel.Sample{
+			sample := &clientmodel.Sample{
 				Metric: clientmodel.Metric{},
 			}
 
 			v := clientmodel.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
-			sample.Metric[model.MetricNameLabel] = v
+			sample.Metric[clientmodel.MetricNameLabel] = v
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
 				l := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
@@ -401,7 +404,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 			}
 
 			metric := clientmodel.Metric{}
-			metric[model.MetricNameLabel] = clientmodel.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
+			metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
 
 			for i := 0; i < numberOfSharedLabels; i++ {
 				l := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", i))
@@ -467,7 +470,8 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				}
 
 				samples := Values{}
-				fp := model.NewFingerprintFromMetric(metric)
+				fp := &clientmodel.Fingerprint{}
+				fp.LoadFromMetric(metric)
 				switch persistence := p.(type) {
 				case *LevelDBMetricPersistence:
 					var err error

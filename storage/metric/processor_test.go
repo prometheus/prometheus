@@ -1476,7 +1476,9 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 				t.Fatalf("%d.%d. error %s", i, j, err)
 			}
 
-			if !model.NewFingerprintFromRowKey(expected.fingerprint).Equal(sampleKey.Fingerprint) {
+			expectedFingerprint := &clientmodel.Fingerprint{}
+			expectedFingerprint.LoadFromString(expected.fingerprint)
+			if !expectedFingerprint.Equal(sampleKey.Fingerprint) {
 				t.Fatalf("%d.%d. expected fingerprint %s, got %s", i, j, expected.fingerprint, sampleKey.Fingerprint)
 			}
 

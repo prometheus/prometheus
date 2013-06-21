@@ -14,9 +14,12 @@
 package metric
 
 import (
-	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 func testBuilder(t test.Tester) {
@@ -143,29 +146,32 @@ func testBuilder(t test.Tester) {
 		}
 
 		for _, atTime := range scenario.in.atTimes {
-			fingerprint := *model.NewFingerprintFromRowKey(atTime.fingerprint)
+			fingerprint := &clientmodel.Fingerprint{}
+			fingerprint.LoadFromString(atTime.fingerprint)
 			builder.GetMetricAtTime(fingerprint, atTime.time)
 		}
 
 		for _, atInterval := range scenario.in.atIntervals {
-			fingerprint := *model.NewFingerprintFromRowKey(atInterval.fingerprint)
+			fingerprint := &clientmodel.Fingerprint{}
+			fingerprint.LoadFromString(atInterval.fingerprint)
 			builder.GetMetricAtInterval(fingerprint, atInterval.from, atInterval.through, atInterval.interval)
 		}
 
 		for _, atRange := range scenario.in.atRanges {
-			fingerprint := *model.NewFingerprintFromRowKey(atRange.fingerprint)
+			fingerprint := &clientmodel.Fingerprint{}
+			fingerprint.LoadFromString(atRange.fingerprint)
 			builder.GetMetricRange(fingerprint, atRange.from, atRange.through)
 		}
 
 		jobs := builder.ScanJobs()
 
 		if len(scenario.out) != len(jobs) {
-			t.Fatalf("%d. expected job length of %d, got %d\n", i, len(scenario.out), len(jobs))
+			t.Fatalf("%d. expected job length of %d, got %d", i, len(scenario.out), len(jobs))
 		}
 
 		for j, job := range scenario.out {
-			if jobs[j].fingerprint.ToRowKey() != job.fingerprint {
-				t.Fatalf("%d.%d. expected fingerprint %s, got %s\n", i, j, job.fingerprint, jobs[j].fingerprint.ToRowKey())
+			if jobs[j].fingerprint.String() != job.fingerprint {
+				t.Fatalf("%d.%d. expected fingerprint %s, got %s", i, j, job.fingerprint, jobs[j].fingerprint)
 			}
 		}
 	}
