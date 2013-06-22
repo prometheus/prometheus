@@ -391,7 +391,7 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 	return
 }
 
-func (w watermarkOperator) refreshCurationRemark(f *clientmodel.Fingerprint, finished time.Time) (err error) {
+func (w watermarkOperator) refreshCurationRemark(f *clientmodel.Fingerprint, finished time.Time) error {
 	k := &dto.CurationKey{}
 	curationKey := curationKey{
 		Fingerprint:              f,
@@ -406,7 +406,5 @@ func (w watermarkOperator) refreshCurationRemark(f *clientmodel.Fingerprint, fin
 	}
 	curationValue.dump(v)
 
-	err = w.curationState.Put(k, v)
-
-	return
+	return w.curationState.Put(k, v)
 }

@@ -92,10 +92,9 @@ func (c *curationKey) dump(d *dto.CurationKey) {
 	d.Reset()
 
 	// BUG(matt): Avenue for simplification.
-	fingerprint := &clientmodel.Fingerprint{}
 	fingerprintDTO := &dto.Fingerprint{}
 
-	dumpFingerprint(fingerprintDTO, fingerprint)
+	dumpFingerprint(fingerprintDTO, c.Fingerprint)
 
 	d.Fingerprint = fingerprintDTO
 	d.ProcessorMessageRaw = c.ProcessorMessageRaw

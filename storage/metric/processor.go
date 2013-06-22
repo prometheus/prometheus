@@ -348,7 +348,8 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 			sampleValues = sampleValues.TruncateBefore(stopAt)
 			if len(sampleValues) > 0 {
 				k := &dto.SampleKey{}
-				sampleValues.ToSampleKey(fingerprint).Dump(k)
+				sampleKey = sampleValues.ToSampleKey(fingerprint)
+				sampleKey.Dump(k)
 				v := &dto.SampleValueSeries{}
 				sampleValues.dump(v)
 				lastCurated = sampleKey.FirstTimestamp
