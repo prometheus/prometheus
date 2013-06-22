@@ -202,17 +202,14 @@ func groupByFingerprint(samples clientmodel.Samples) map[clientmodel.Fingerprint
 	sortingSemaphore := make(chan bool, sortConcurrency)
 	doneSorting := sync.WaitGroup{}
 
-	for i := 0; i < sortConcurrency; i++ {
-		sortingSemaphore <- true
-	}
-
 	for _, samples := range fingerprintToSamples {
 		doneSorting.Add(1)
 
-		<-sortingSemaphore
+		sortingSemaphore <- true
 		go func(samples clientmodel.Samples) {
 			sort.Sort(samples)
-			sortingSemaphore <- true
+
+			<-sortingSemaphore
 			doneSorting.Done()
 		}(samples)
 	}

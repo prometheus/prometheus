@@ -290,7 +290,7 @@ func (w *watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult
 	if !curationRemark.OlderThan(w.stopAt) {
 		return storage.SKIP
 	}
-	watermark := value.(watermarks)
+	watermark := value.(*watermarks)
 	if !curationRemark.OlderThan(watermark.High) {
 		return storage.SKIP
 	}
@@ -307,7 +307,7 @@ func (w *watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult
 
 // curationConsistent determines whether the given metric is in a dirty state
 // and needs curation.
-func (w *watermarkFilter) curationConsistent(f *clientmodel.Fingerprint, watermark watermarks) (bool, error) {
+func (w *watermarkFilter) curationConsistent(f *clientmodel.Fingerprint, watermark *watermarks) (bool, error) {
 	k := &curationKey{
 		Fingerprint:              f,
 		ProcessorMessageRaw:      w.processor.Signature(),

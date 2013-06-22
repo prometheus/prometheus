@@ -50,10 +50,12 @@ func buildLevelDBTestPersistencesMaker(name string, t test.Tester) func() (Metri
 
 func buildLevelDBTestPersistence(name string, f func(p MetricPersistence, t test.Tester)) func(t test.Tester) {
 	return func(t test.Tester) {
+
 		temporaryDirectory := test.NewTemporaryDirectory(fmt.Sprintf("test_leveldb_%s", name), t)
 		defer temporaryDirectory.Close()
 
 		p, err := NewLevelDBMetricPersistence(temporaryDirectory.Path())
+
 		if err != nil {
 			t.Errorf("Could not create LevelDB Metric Persistence: %q\n", err)
 		}

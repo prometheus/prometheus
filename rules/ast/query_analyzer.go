@@ -107,10 +107,10 @@ func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.
 	requestBuildTimer := queryStats.GetTimer(stats.ViewRequestBuildTime).Start()
 	viewBuilder := metric.NewViewRequestBuilder()
 	for fingerprint, rangeDuration := range analyzer.FullRanges {
-		viewBuilder.GetMetricRange(fingerprint, timestamp.Add(-rangeDuration), timestamp)
+		viewBuilder.GetMetricRange(&fingerprint, timestamp.Add(-rangeDuration), timestamp)
 	}
 	for fingerprint := range analyzer.IntervalRanges {
-		viewBuilder.GetMetricAtTime(fingerprint, timestamp)
+		viewBuilder.GetMetricAtTime(&fingerprint, timestamp)
 	}
 	requestBuildTimer.Stop()
 
@@ -134,11 +134,11 @@ func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interva
 	for fingerprint, rangeDuration := range analyzer.FullRanges {
 		// TODO: we should support GetMetricRangeAtInterval() or similar ops in the view builder.
 		for t := start; t.Before(end); t = t.Add(interval) {
-			viewBuilder.GetMetricRange(fingerprint, t.Add(-rangeDuration), t)
+			viewBuilder.GetMetricRange(&fingerprint, t.Add(-rangeDuration), t)
 		}
 	}
 	for fingerprint := range analyzer.IntervalRanges {
-		viewBuilder.GetMetricAtInterval(fingerprint, start, end, interval)
+		viewBuilder.GetMetricAtInterval(&fingerprint, start, end, interval)
 	}
 	requestBuildTimer.Stop()
 
