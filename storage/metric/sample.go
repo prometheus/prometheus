@@ -56,6 +56,20 @@ func (v Values) Swap(i, j int) {
 	v[i], v[j] = v[j], v[i]
 }
 
+func (v Values) Equal(o Values) bool {
+	if len(v) != len(o) {
+		return false
+	}
+
+	for i, expected := range v {
+		if !expected.Equal(o[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // FirstTimeAfter indicates whether the first sample of a set is after a given
 // timestamp.
 func (v Values) FirstTimeAfter(t time.Time) bool {

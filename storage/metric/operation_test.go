@@ -1358,6 +1358,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			},
 		},
 	}
+
 	for i, scenario := range scenarios {
 		actual := scenario.op.ExtractSamples(scenario.in)
 		if len(actual) != len(scenario.out) {
@@ -1365,7 +1366,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
 		}
 		for j, out := range scenario.out {
-			if out != actual[j] {
+			if !out.Equal(actual[j]) {
 				t.Fatalf("%d. expected output %v, got %v", i, scenario.out, actual)
 			}
 		}
@@ -1620,7 +1621,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		}
 
 		for j, out := range scenario.out {
-			if out != actual[j] {
+			if !out.Equal(actual[j]) {
 				t.Fatalf("%d. expected output %v, got %v", i, scenario.out, actual)
 			}
 		}
@@ -1796,7 +1797,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
 		}
 		for j, out := range scenario.out {
-			if out != actual[j] {
+			if !out.Equal(actual[j]) {
 				t.Fatalf("%d. expected output %v, got %v", i, scenario.out, actual)
 			}
 		}
