@@ -29,7 +29,8 @@ import (
 var (
 	leveldbFlushOnMutate     = flag.Bool("leveldbFlushOnMutate", false, "Whether LevelDB should flush every operation to disk upon mutation before returning (bool).")
 	leveldbUseSnappy         = flag.Bool("leveldbUseSnappy", true, "Whether LevelDB attempts to use Snappy for compressing elements (bool).")
-	leveldbUseParanoidChecks = flag.Bool("leveldbUseParanoidChecks", true, "Whether LevelDB uses expensive checks (bool).")
+	leveldbUseParanoidChecks = flag.Bool("leveldbUseParanoidChecks", false, "Whether LevelDB uses expensive checks (bool).")
+	maximumOpenFiles         = flag.Int("leveldb.maximumOpenFiles", 128, "The maximum number of files each LevelDB may maintain.")
 )
 
 // LevelDBPersistence is a disk-backed sorted key-value store.
@@ -168,7 +169,7 @@ func (i levigoIterator) GetError() (err error) {
 	return i.iterator.GetError()
 }
 
-func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (p *LevelDBPersistence, err error) {
+func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (*LevelDBPersistence, error) {
 	options := levigo.NewOptions()
 	options.SetCreateIfMissing(true)
 	options.SetParanoidChecks(*leveldbUseParanoidChecks)
@@ -184,18 +185,19 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 	filterPolicy := levigo.NewBloomFilter(bitsPerBloomFilterEncoded)
 	options.SetFilterPolicy(filterPolicy)
 
+	options.SetMaxOpenFiles(*maximumOpenFiles)
+
 	storage, err := levigo.Open(storageRoot, options)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	var (
-		readOptions  = levigo.NewReadOptions()
-		writeOptions = levigo.NewWriteOptions()
-	)
+	readOptions := levigo.NewReadOptions()
 
+	writeOptions := levigo.NewWriteOptions()
 	writeOptions.SetSync(*leveldbFlushOnMutate)
-	p = &LevelDBPersistence{
+
+	return &LevelDBPersistence{
 		path: storageRoot,
 
 		cache:        cache,
@@ -206,9 +208,7 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 		writeOptions: writeOptions,
 
 		storage: storage,
-	}
-
-	return
+	}, nil
 }
 
 func (l *LevelDBPersistence) Close() {
