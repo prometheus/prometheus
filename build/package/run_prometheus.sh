@@ -17,11 +17,12 @@ readonly binary="${0}"
 readonly binary_path="$(readlink -f ${binary})"
 readonly binary_directory="$(dirname ${binary_path})"
 
-if [ -n "${LD_LIBRARY_PATH}" ]; then
-  export LD_LIBRARY_PATH="${binary_directory}/lib:${LD_LIBRARY_PATH}"
-fi
+readonly platform=$(uname | tr '[:upper:]' '[:lower:]')
 
-if [ -n "${DYLD_LIBRARY_PATH}" ]; then
+
+export LD_LIBRARY_PATH="${binary_directory}/lib:${LD_LIBRARY_PATH}"
+
+if [[ "${platform}" == "darwin" ]]; then
   export DYLD_LIBRARY_PATH="${binary_directory}/lib:${DYLD_LIBRARY_PATH}"
 fi
 
