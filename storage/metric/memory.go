@@ -266,12 +266,9 @@ func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- clien
 
 	s.Lock()
 	for _, fingerprint := range emptySeries {
-		series, _ := s.fingerprintToSeries[*fingerprint]
-		if series.empty() {
-			continue
+		if s.fingerprintToSeries[*fingerprint].empty() {
+			s.dropSeries(fingerprint)
 		}
-
-		s.dropSeries(fingerprint)
 	}
 	s.Unlock()
 }
