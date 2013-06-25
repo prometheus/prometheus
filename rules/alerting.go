@@ -19,11 +19,22 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/prometheus/model"
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
+)
+
+const (
+	// The metric name for synthetic alert timeseries.
+	AlertMetricName clientmodel.LabelValue = "ALERTS"
+
+	// The label name indicating the name of an alert.
+	AlertNameLabel clientmodel.LabelName = "alertname"
+	// The label name indicating the state of an alert.
+	AlertStateLabel clientmodel.LabelName = "alertstate"
 )
 
 // States that active alerts can be in.
@@ -53,27 +64,27 @@ type Alert struct {
 	// The name of the alert.
 	Name string
 	// The vector element labelset triggering this alert.
-	Labels model.LabelSet
+	Labels clientmodel.LabelSet
 	// The state of the alert (PENDING or FIRING).
 	State AlertState
 	// The time when the alert first transitioned into PENDING state.
 	ActiveSince time.Time
 	// The value of the alert expression for this vector element.
-	Value model.SampleValue
+	Value clientmodel.SampleValue
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a Alert) sample(timestamp time.Time, value model.SampleValue) model.Sample {
-	recordedMetric := model.Metric{}
+func (a Alert) sample(timestamp time.Time, value clientmodel.SampleValue) *clientmodel.Sample {
+	recordedMetric := clientmodel.Metric{}
 	for label, value := range a.Labels {
 		recordedMetric[label] = value
 	}
 
-	recordedMetric[model.MetricNameLabel] = model.AlertMetricName
-	recordedMetric[model.AlertNameLabel] = model.LabelValue(a.Name)
-	recordedMetric[model.AlertStateLabel] = model.LabelValue(a.State.String())
+	recordedMetric[clientmodel.MetricNameLabel] = AlertMetricName
+	recordedMetric[AlertNameLabel] = clientmodel.LabelValue(a.Name)
+	recordedMetric[AlertStateLabel] = clientmodel.LabelValue(a.State.String())
 
-	return model.Sample{
+	return &clientmodel.Sample{
 		Metric:    recordedMetric,
 		Value:     value,
 		Timestamp: timestamp,
@@ -90,13 +101,13 @@ type AlertingRule struct {
 	// output vector before an alert transitions from PENDING to FIRING state.
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
-	labels model.LabelSet
+	labels clientmodel.LabelSet
 
 	// Protects the below.
 	mutex sync.Mutex
 	// A map of alerts which are currently active (PENDING or FIRING), keyed by
 	// the fingerprint of the labelset they correspond to.
-	activeAlerts map[model.Fingerprint]*Alert
+	activeAlerts map[clientmodel.Fingerprint]*Alert
 }
 
 func (rule *AlertingRule) Name() string { return rule.name }
@@ -119,16 +130,17 @@ func (rule *AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorag
 	// or update the expression value for existing elements.
 	resultFingerprints := utility.Set{}
 	for _, sample := range exprResult {
-		fp := *model.NewFingerprintFromMetric(sample.Metric)
-		resultFingerprints.Add(fp)
+		fp := new(clientmodel.Fingerprint)
+		fp.LoadFromMetric(sample.Metric)
+		resultFingerprints.Add(*fp)
 
-		alert, ok := rule.activeAlerts[fp]
-		if !ok {
-			labels := sample.Metric.ToLabelSet()
-			if _, ok := labels[model.MetricNameLabel]; ok {
-				delete(labels, model.MetricNameLabel)
+		if alert, ok := rule.activeAlerts[*fp]; !ok {
+			labels := clientmodel.LabelSet{}
+			labels.MergeFromMetric(sample.Metric)
+			if _, ok := labels[clientmodel.MetricNameLabel]; ok {
+				delete(labels, clientmodel.MetricNameLabel)
 			}
-			rule.activeAlerts[fp] = &Alert{
+			rule.activeAlerts[*fp] = &Alert{
 				Name:        rule.name,
 				Labels:      labels,
 				State:       PENDING,
@@ -175,9 +187,9 @@ func (rule *AlertingRule) String() string {
 }
 
 func (rule *AlertingRule) HTMLSnippet() template.HTML {
-	alertMetric := model.Metric{
-		model.MetricNameLabel: model.AlertMetricName,
-		model.AlertNameLabel:  model.LabelValue(rule.name),
+	alertMetric := clientmodel.Metric{
+		clientmodel.MetricNameLabel: AlertMetricName,
+		AlertNameLabel:              clientmodel.LabelValue(rule.name),
 	}
 	return template.HTML(fmt.Sprintf(
 		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
@@ -214,12 +226,12 @@ func (rule *AlertingRule) ActiveAlerts() []Alert {
 }
 
 // Construct a new AlertingRule.
-func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels model.LabelSet) *AlertingRule {
+func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels clientmodel.LabelSet) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
 		vector:       vector,
 		holdDuration: holdDuration,
 		labels:       labels,
-		activeAlerts: map[model.Fingerprint]*Alert{},
+		activeAlerts: map[clientmodel.Fingerprint]*Alert{},
 	}
 }

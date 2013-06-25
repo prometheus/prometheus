@@ -17,7 +17,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/prometheus/prometheus/model"
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 var (
@@ -30,56 +30,56 @@ var (
 // Represents the summation of all datastore queries that shall be performed to
 // extract values.  Each operation mutates the state of the builder.
 type ViewRequestBuilder interface {
-	GetMetricAtTime(fingerprint model.Fingerprint, time time.Time)
-	GetMetricAtInterval(fingerprint model.Fingerprint, from, through time.Time, interval time.Duration)
-	GetMetricRange(fingerprint model.Fingerprint, from, through time.Time)
+	GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time time.Time)
+	GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through time.Time, interval time.Duration)
+	GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through time.Time)
 	ScanJobs() scanJobs
 }
 
 // Contains the various unoptimized requests for data.
 type viewRequestBuilder struct {
-	operations map[model.Fingerprint]ops
+	operations map[clientmodel.Fingerprint]ops
 }
 
 // Furnishes a ViewRequestBuilder for remarking what types of queries to perform.
 func NewViewRequestBuilder() viewRequestBuilder {
 	return viewRequestBuilder{
-		operations: make(map[model.Fingerprint]ops),
+		operations: make(map[clientmodel.Fingerprint]ops),
 	}
 }
 
 // Gets for the given Fingerprint either the value at that time if there is an
 // match or the one or two values adjacent thereto.
-func (v viewRequestBuilder) GetMetricAtTime(fingerprint model.Fingerprint, time time.Time) {
-	ops := v.operations[fingerprint]
+func (v viewRequestBuilder) GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time time.Time) {
+	ops := v.operations[*fingerprint]
 	ops = append(ops, &getValuesAtTimeOp{
 		time: time,
 	})
-	v.operations[fingerprint] = ops
+	v.operations[*fingerprint] = ops
 }
 
 // Gets for the given Fingerprint either the value at that interval from From
 // through Through  if there is an match or the one or two values adjacent
 // for each point.
-func (v viewRequestBuilder) GetMetricAtInterval(fingerprint model.Fingerprint, from, through time.Time, interval time.Duration) {
-	ops := v.operations[fingerprint]
+func (v viewRequestBuilder) GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through time.Time, interval time.Duration) {
+	ops := v.operations[*fingerprint]
 	ops = append(ops, &getValuesAtIntervalOp{
 		from:     from,
 		through:  through,
 		interval: interval,
 	})
-	v.operations[fingerprint] = ops
+	v.operations[*fingerprint] = ops
 }
 
 // Gets for the given Fingerprint either the values that occur inclusively from
 // From through Through.
-func (v viewRequestBuilder) GetMetricRange(fingerprint model.Fingerprint, from, through time.Time) {
-	ops := v.operations[fingerprint]
+func (v viewRequestBuilder) GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through time.Time) {
+	ops := v.operations[*fingerprint]
 	ops = append(ops, &getValuesAlongRangeOp{
 		from:    from,
 		through: through,
 	})
-	v.operations[fingerprint] = ops
+	v.operations[*fingerprint] = ops
 }
 
 // Emits the optimized scans that will occur in the data store.  This
@@ -106,7 +106,7 @@ type view struct {
 	*memorySeriesStorage
 }
 
-func (v view) appendSamples(fingerprint *model.Fingerprint, samples model.Values) {
+func (v view) appendSamples(fingerprint *clientmodel.Fingerprint, samples Values) {
 	v.memorySeriesStorage.appendSamplesWithoutIndexing(fingerprint, samples)
 }
 

@@ -14,19 +14,21 @@
 package rules
 
 import (
-	"github.com/prometheus/prometheus/model"
+	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/metric"
-	"time"
 )
 
 var testSampleInterval = time.Duration(5) * time.Minute
 var testStartTime = time.Time{}
 
-func getTestValueStream(startVal model.SampleValue, endVal model.SampleValue, stepVal model.SampleValue, startTime time.Time) (resultValues model.Values) {
+func getTestValueStream(startVal clientmodel.SampleValue, endVal clientmodel.SampleValue, stepVal clientmodel.SampleValue, startTime time.Time) (resultValues metric.Values) {
 	currentTime := startTime
 	for currentVal := startVal; currentVal <= endVal; currentVal += stepVal {
-		sample := model.SamplePair{
+		sample := &metric.SamplePair{
 			Value:     currentVal,
 			Timestamp: currentTime,
 		}
@@ -40,7 +42,7 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 	vector := ast.Vector{}
 	for _, sampleSet := range matrix {
 		lastSample := sampleSet.Values[len(sampleSet.Values)-1]
-		vector = append(vector, model.Sample{
+		vector = append(vector, &clientmodel.Sample{
 			Metric:    sampleSet.Metric,
 			Value:     lastSample.Value,
 			Timestamp: lastSample.Timestamp,
@@ -50,10 +52,10 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 }
 
 func storeMatrix(storage metric.TieredStorage, matrix ast.Matrix) (err error) {
-	pendingSamples := model.Samples{}
+	pendingSamples := clientmodel.Samples{}
 	for _, sampleSet := range matrix {
 		for _, sample := range sampleSet.Values {
-			pendingSamples = append(pendingSamples, model.Sample{
+			pendingSamples = append(pendingSamples, &clientmodel.Sample{
 				Metric:    sampleSet.Metric,
 				Value:     sample.Value,
 				Timestamp: sample.Timestamp,
@@ -66,96 +68,96 @@ func storeMatrix(storage metric.TieredStorage, matrix ast.Matrix) (err error) {
 
 var testMatrix = ast.Matrix{
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "http_requests",
-			model.JobLabel:        "api-server",
-			"instance":            "0",
-			"group":               "production",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "http_requests",
+			clientmodel.JobLabel:        "api-server",
+			"instance":                  "0",
+			"group":                     "production",
 		},
 		Values: getTestValueStream(0, 100, 10, testStartTime),
 	},
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "http_requests",
-			model.JobLabel:        "api-server",
-			"instance":            "1",
-			"group":               "production",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "http_requests",
+			clientmodel.JobLabel:        "api-server",
+			"instance":                  "1",
+			"group":                     "production",
 		},
 		Values: getTestValueStream(0, 200, 20, testStartTime),
 	},
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "http_requests",
-			model.JobLabel:        "api-server",
-			"instance":            "0",
-			"group":               "canary",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "http_requests",
+			clientmodel.JobLabel:        "api-server",
+			"instance":                  "0",
+			"group":                     "canary",
 		},
 		Values: getTestValueStream(0, 300, 30, testStartTime),
 	},
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "http_requests",
-			model.JobLabel:        "api-server",
-			"instance":            "1",
-			"group":               "canary",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "http_requests",
+			clientmodel.JobLabel:        "api-server",
+			"instance":                  "1",
+			"group":                     "canary",
 		},
 		Values: getTestValueStream(0, 400, 40, testStartTime),
 	},
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "http_requests",
-			model.JobLabel:        "app-server",
-			"instance":            "0",
-			"group":               "production",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "http_requests",
+			clientmodel.JobLabel:        "app-server",
+			"instance":                  "0",
+			"group":                     "production",
 		},
 		Values: getTestValueStream(0, 500, 50, testStartTime),
 	},
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "http_requests",
-			model.JobLabel:        "app-server",
-			"instance":            "1",
-			"group":               "production",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "http_requests",
+			clientmodel.JobLabel:        "app-server",
+			"instance":                  "1",
+			"group":                     "production",
 		},
 		Values: getTestValueStream(0, 600, 60, testStartTime),
 	},
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "http_requests",
-			model.JobLabel:        "app-server",
-			"instance":            "0",
-			"group":               "canary",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "http_requests",
+			clientmodel.JobLabel:        "app-server",
+			"instance":                  "0",
+			"group":                     "canary",
 		},
 		Values: getTestValueStream(0, 700, 70, testStartTime),
 	},
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "http_requests",
-			model.JobLabel:        "app-server",
-			"instance":            "1",
-			"group":               "canary",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "http_requests",
+			clientmodel.JobLabel:        "app-server",
+			"instance":                  "1",
+			"group":                     "canary",
 		},
 		Values: getTestValueStream(0, 800, 80, testStartTime),
 	},
 	// Single-letter metric and label names.
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "x",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "x",
 			"y": "testvalue",
 		},
 		Values: getTestValueStream(0, 100, 10, testStartTime),
 	},
 	// Counter reset in the middle of range.
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "testcounter_reset_middle",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "testcounter_reset_middle",
 		},
 		Values: append(getTestValueStream(0, 40, 10, testStartTime), getTestValueStream(0, 50, 10, testStartTime.Add(testSampleInterval*5))...),
 	},
 	// Counter reset at the end of range.
 	{
-		Metric: model.Metric{
-			model.MetricNameLabel: "testcounter_reset_end",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "testcounter_reset_end",
 		},
 		Values: append(getTestValueStream(0, 90, 10, testStartTime), getTestValueStream(0, 0, 10, testStartTime.Add(testSampleInterval*10))...),
 	},

@@ -11,49 +11,49 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package model
+package metric
 
 import (
-	"time"
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-type Sample struct {
-	Metric    Metric
-	Value     SampleValue
-	Timestamp time.Time
+type LabelPair struct {
+	Name  clientmodel.LabelName
+	Value clientmodel.LabelValue
 }
 
-func (s Sample) Equal(sample Sample) bool {
-	if !NewFingerprintFromMetric(s.Metric).Equal(NewFingerprintFromMetric(sample.Metric)) {
-		return false
-	}
-	if !s.Timestamp.Equal(sample.Timestamp) {
-		return false
-	}
-	if !s.Value.Equal(sample.Value) {
-		return false
-	}
-
-	return true
-}
-
-type Samples []Sample
-
-func (s Samples) Len() int {
-	return len(s)
-}
-
-func (s Samples) Less(i, j int) bool {
+func (l *LabelPair) Equal(o *LabelPair) bool {
 	switch {
-	case NewFingerprintFromMetric(s[i].Metric).Less(NewFingerprintFromMetric(s[j].Metric)):
+	case l.Name != o.Name:
+		return false
+	case l.Value != o.Value:
+		return false
+	default:
 		return true
-	case s[i].Timestamp.Before(s[j].Timestamp):
+	}
+}
+
+type LabelPairs []*LabelPair
+
+func (l LabelPairs) Len() int {
+	return len(l)
+}
+
+func (l LabelPairs) Less(i, j int) bool {
+	switch {
+	case l[i].Name > l[j].Name:
+		return false
+	case l[i].Name < l[j].Name:
+		return true
+	case l[i].Value > l[j].Value:
+		return false
+	case l[i].Value < l[j].Value:
 		return true
 	default:
 		return false
 	}
 }
 
-func (s Samples) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
+func (l LabelPairs) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
 }

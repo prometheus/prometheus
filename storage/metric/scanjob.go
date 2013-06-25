@@ -16,12 +16,13 @@ package metric
 import (
 	"bytes"
 	"fmt"
-	"github.com/prometheus/prometheus/model"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 // scanJob models a range of queries.
 type scanJob struct {
-	fingerprint *model.Fingerprint
+	fingerprint *clientmodel.Fingerprint
 	operations  ops
 }
 

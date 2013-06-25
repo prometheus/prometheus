@@ -14,18 +14,16 @@
 package rules
 
 import (
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/storage/metric"
 	"log"
 	"sync"
 	"time"
-)
 
-type Result struct {
-	Err     error // TODO propagate errors from rule evaluation.
-	Samples model.Samples
-}
+	"github.com/prometheus/client_golang/extraction"
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage/metric"
+)
 
 type RuleManager interface {
 	// Load and add rules from rule files specified in the configuration.
@@ -45,13 +43,13 @@ type ruleManager struct {
 	sync.Mutex
 	rules []Rule
 
-	results  chan *Result
+	results  chan<- *extraction.Result
 	done     chan bool
 	interval time.Duration
 	storage  *metric.TieredStorage
 }
 
-func NewRuleManager(results chan *Result, interval time.Duration, storage *metric.TieredStorage) RuleManager {
+func NewRuleManager(results chan<- *extraction.Result, interval time.Duration, storage *metric.TieredStorage) RuleManager {
 	manager := &ruleManager{
 		results:  results,
 		rules:    []Rule{},
@@ -86,7 +84,7 @@ func (m *ruleManager) Stop() {
 	}
 }
 
-func (m *ruleManager) runIteration(results chan *Result) {
+func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 	now := time.Now()
 	wg := sync.WaitGroup{}
 
@@ -101,9 +99,9 @@ func (m *ruleManager) runIteration(results chan *Result) {
 		go func(rule Rule) {
 			defer wg.Done()
 			vector, err := rule.Eval(now, m.storage)
-			samples := make(model.Samples, len(vector))
+			samples := make(clientmodel.Samples, len(vector))
 			copy(samples, vector)
-			m.results <- &Result{
+			m.results <- &extraction.Result{
 				Samples: samples,
 				Err:     err,
 			}

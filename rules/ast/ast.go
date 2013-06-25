@@ -16,25 +16,29 @@ package ast
 import (
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
+	"hash/fnv"
 	"log"
 	"math"
 	"sort"
-	"strings"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/stats"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 // ----------------------------------------------------------------------------
 // Raw data value types.
 
-type Vector model.Samples
-type Matrix []model.SampleSet
+type Vector clientmodel.Samples
+
+// BUG(julius): Pointerize this.
+type Matrix []metric.SampleSet
 
 type groupedAggregation struct {
-	labels     model.Metric
-	value      model.SampleValue
+	labels     clientmodel.Metric
+	value      clientmodel.SampleValue
 	groupCount int
 }
 
@@ -98,7 +102,7 @@ type Node interface {
 // interface represents the type returned to the parent node.
 type ScalarNode interface {
 	Node
-	Eval(timestamp time.Time, view *viewAdapter) model.SampleValue
+	Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue
 }
 
 type VectorNode interface {
@@ -123,7 +127,7 @@ type StringNode interface {
 type (
 	// A numeric literal.
 	ScalarLiteral struct {
-		value model.SampleValue
+		value clientmodel.SampleValue
 	}
 
 	// A function of numeric return type.
@@ -146,9 +150,9 @@ type (
 type (
 	// Vector literal, i.e. metric name plus labelset.
 	VectorLiteral struct {
-		labels model.LabelSet
+		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
-		fingerprints model.Fingerprints
+		fingerprints clientmodel.Fingerprints
 	}
 
 	// A function of vector return type.
@@ -160,7 +164,7 @@ type (
 	// A vector aggregation with vector return type.
 	VectorAggregation struct {
 		aggrType AggrType
-		groupBy  model.LabelNames
+		groupBy  clientmodel.LabelNames
 		vector   VectorNode
 	}
 
@@ -178,9 +182,9 @@ type (
 type (
 	// Matrix literal, i.e. metric name plus labelset and timerange.
 	MatrixLiteral struct {
-		labels model.LabelSet
+		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
-		fingerprints model.Fingerprints
+		fingerprints clientmodel.Fingerprints
 		interval     time.Duration
 	}
 )
@@ -228,35 +232,48 @@ func (node MatrixLiteral) Children() Nodes      { return Nodes{} }
 func (node StringLiteral) Children() Nodes      { return Nodes{} }
 func (node StringFunctionCall) Children() Nodes { return node.args }
 
-func (node *ScalarLiteral) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
+func (node *ScalarLiteral) Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue {
 	return node.value
 }
 
-func (node *ScalarArithExpr) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
+func (node *ScalarArithExpr) Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue {
 	lhs := node.lhs.Eval(timestamp, view)
 	rhs := node.rhs.Eval(timestamp, view)
 	return evalScalarBinop(node.opType, lhs, rhs)
 }
 
-func (node *ScalarFunctionCall) Eval(timestamp time.Time, view *viewAdapter) model.SampleValue {
-	return node.function.callFn(timestamp, view, node.args).(model.SampleValue)
+func (node *ScalarFunctionCall) Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue {
+	return node.function.callFn(timestamp, view, node.args).(clientmodel.SampleValue)
 }
 
-func (node *VectorAggregation) labelsToGroupingKey(labels model.Metric) string {
-	keyParts := []string{}
-	for _, keyLabel := range node.groupBy {
-		keyParts = append(keyParts, string(labels[keyLabel]))
+func (node *VectorAggregation) labelsToGroupingKey(labels clientmodel.Metric) uint64 {
+	summer := fnv.New64a()
+	for _, label := range node.groupBy {
+		fmt.Fprint(summer, labels[label])
 	}
-	return strings.Join(keyParts, ",") // TODO not safe when label value contains comma.
+
+	return summer.Sum64()
 }
 
-func labelsToKey(labels model.Metric) string {
-	keyParts := []string{}
+func labelsToKey(labels clientmodel.Metric) uint64 {
+	pairs := metric.LabelPairs{}
+
 	for label, value := range labels {
-		keyParts = append(keyParts, fmt.Sprintf("%v='%v'", label, value))
+		pairs = append(pairs, &metric.LabelPair{
+			Name:  label,
+			Value: value,
+		})
 	}
-	sort.Strings(keyParts)
-	return strings.Join(keyParts, ",") // TODO not safe when label value contains comma.
+
+	sort.Sort(pairs)
+
+	summer := fnv.New64a()
+
+	for _, pair := range pairs {
+		fmt.Fprint(summer, pair.Name, pair.Value)
+	}
+
+	return summer.Sum64()
 }
 
 func EvalVectorInstant(node VectorNode, timestamp time.Time, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (vector Vector, err error) {
@@ -282,19 +299,19 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 
 	// TODO implement watchdog timer for long-running queries.
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
-	sampleSets := map[string]*model.SampleSet{}
+	sampleSets := map[uint64]*metric.SampleSet{}
 	for t := start; t.Before(end); t = t.Add(interval) {
 		vector := node.Eval(t, viewAdapter)
 		for _, sample := range vector {
-			samplePair := model.SamplePair{
+			samplePair := &metric.SamplePair{
 				Value:     sample.Value,
 				Timestamp: sample.Timestamp,
 			}
 			groupingKey := labelsToKey(sample.Metric)
 			if sampleSets[groupingKey] == nil {
-				sampleSets[groupingKey] = &model.SampleSet{
+				sampleSets[groupingKey] = &metric.SampleSet{
 					Metric: sample.Metric,
-					Values: model.Values{samplePair},
+					Values: metric.Values{samplePair},
 				}
 			} else {
 				sampleSets[groupingKey].Values = append(sampleSets[groupingKey].Values, samplePair)
@@ -312,8 +329,8 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 	return matrix, nil
 }
 
-func labelIntersection(metric1, metric2 model.Metric) model.Metric {
-	intersection := model.Metric{}
+func labelIntersection(metric1, metric2 clientmodel.Metric) clientmodel.Metric {
+	intersection := clientmodel.Metric{}
 	for label, value := range metric1 {
 		if metric2[label] == value {
 			intersection[label] = value
@@ -322,18 +339,18 @@ func labelIntersection(metric1, metric2 model.Metric) model.Metric {
 	return intersection
 }
 
-func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[string]*groupedAggregation, timestamp time.Time) Vector {
+func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[uint64]*groupedAggregation, timestamp time.Time) Vector {
 	vector := Vector{}
 	for _, aggregation := range aggregations {
 		switch node.aggrType {
 		case AVG:
-			aggregation.value = aggregation.value / model.SampleValue(aggregation.groupCount)
+			aggregation.value = aggregation.value / clientmodel.SampleValue(aggregation.groupCount)
 		case COUNT:
-			aggregation.value = model.SampleValue(aggregation.groupCount)
+			aggregation.value = clientmodel.SampleValue(aggregation.groupCount)
 		default:
 			// For other aggregations, we already have the right value.
 		}
-		sample := model.Sample{
+		sample := &clientmodel.Sample{
 			Metric:    aggregation.labels,
 			Value:     aggregation.value,
 			Timestamp: timestamp,
@@ -345,7 +362,7 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[stri
 
 func (node *VectorAggregation) Eval(timestamp time.Time, view *viewAdapter) Vector {
 	vector := node.vector.Eval(timestamp, view)
-	result := map[string]*groupedAggregation{}
+	result := map[uint64]*groupedAggregation{}
 	for _, sample := range vector {
 		groupingKey := node.labelsToGroupingKey(sample.Metric)
 		if groupedResult, ok := result[groupingKey]; ok {
@@ -377,6 +394,7 @@ func (node *VectorAggregation) Eval(timestamp time.Time, view *viewAdapter) Vect
 			}
 		}
 	}
+
 	return node.groupedAggregationsToVector(result, timestamp)
 }
 
@@ -394,8 +412,8 @@ func (node *VectorFunctionCall) Eval(timestamp time.Time, view *viewAdapter) Vec
 }
 
 func evalScalarBinop(opType BinOpType,
-	lhs model.SampleValue,
-	rhs model.SampleValue) model.SampleValue {
+	lhs clientmodel.SampleValue,
+	rhs clientmodel.SampleValue) clientmodel.SampleValue {
 	switch opType {
 	case ADD:
 		return lhs + rhs
@@ -407,13 +425,13 @@ func evalScalarBinop(opType BinOpType,
 		if rhs != 0 {
 			return lhs / rhs
 		} else {
-			return model.SampleValue(math.Inf(int(rhs)))
+			return clientmodel.SampleValue(math.Inf(int(rhs)))
 		}
 	case MOD:
 		if rhs != 0 {
-			return model.SampleValue(int(lhs) % int(rhs))
+			return clientmodel.SampleValue(int(lhs) % int(rhs))
 		} else {
-			return model.SampleValue(math.Inf(int(rhs)))
+			return clientmodel.SampleValue(math.Inf(int(rhs)))
 		}
 	case EQ:
 		if lhs == rhs {
@@ -456,8 +474,8 @@ func evalScalarBinop(opType BinOpType,
 }
 
 func evalVectorBinop(opType BinOpType,
-	lhs model.SampleValue,
-	rhs model.SampleValue) (model.SampleValue, bool) {
+	lhs clientmodel.SampleValue,
+	rhs clientmodel.SampleValue) (clientmodel.SampleValue, bool) {
 	switch opType {
 	case ADD:
 		return lhs + rhs, true
@@ -469,13 +487,13 @@ func evalVectorBinop(opType BinOpType,
 		if rhs != 0 {
 			return lhs / rhs, true
 		} else {
-			return model.SampleValue(math.Inf(int(rhs))), true
+			return clientmodel.SampleValue(math.Inf(int(rhs))), true
 		}
 	case MOD:
 		if rhs != 0 {
-			return model.SampleValue(int(lhs) % int(rhs)), true
+			return clientmodel.SampleValue(int(lhs) % int(rhs)), true
 		} else {
-			return model.SampleValue(math.Inf(int(rhs))), true
+			return clientmodel.SampleValue(math.Inf(int(rhs))), true
 		}
 	case EQ:
 		if lhs == rhs {
@@ -521,12 +539,12 @@ func evalVectorBinop(opType BinOpType,
 	panic("Not all enum values enumerated in switch")
 }
 
-func labelsEqual(labels1, labels2 model.Metric) bool {
+func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
 	if len(labels1) != len(labels2) {
 		return false
 	}
 	for label, value := range labels1 {
-		if labels2[label] != value && label != model.MetricNameLabel {
+		if labels2[label] != value && label != clientmodel.MetricNameLabel {
 			return false
 		}
 	}
@@ -565,7 +583,7 @@ func (node *VectorArithExpr) Eval(timestamp time.Time, view *viewAdapter) Vector
 }
 
 func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
-	interval := &model.Interval{
+	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
 	}
@@ -578,7 +596,7 @@ func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 }
 
 func (node *MatrixLiteral) EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix {
-	interval := &model.Interval{
+	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
 	}
@@ -595,7 +613,7 @@ func (matrix Matrix) Len() int {
 }
 
 func (matrix Matrix) Less(i, j int) bool {
-	return labelsToKey(matrix[i].Metric) < labelsToKey(matrix[j].Metric)
+	return matrix[i].Metric.String() < matrix[j].Metric.String()
 }
 
 func (matrix Matrix) Swap(i, j int) {
@@ -613,19 +631,19 @@ func (node *StringFunctionCall) Eval(timestamp time.Time, view *viewAdapter) str
 // ----------------------------------------------------------------------------
 // Constructors.
 
-func NewScalarLiteral(value model.SampleValue) *ScalarLiteral {
+func NewScalarLiteral(value clientmodel.SampleValue) *ScalarLiteral {
 	return &ScalarLiteral{
 		value: value,
 	}
 }
 
-func NewVectorLiteral(labels model.LabelSet) *VectorLiteral {
+func NewVectorLiteral(labels clientmodel.LabelSet) *VectorLiteral {
 	return &VectorLiteral{
 		labels: labels,
 	}
 }
 
-func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy model.LabelNames) *VectorAggregation {
+func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy clientmodel.LabelNames) *VectorAggregation {
 	return &VectorAggregation{
 		aggrType: aggrType,
 		groupBy:  groupBy,

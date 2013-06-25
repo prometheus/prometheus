@@ -15,22 +15,23 @@ package metric
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/coding/indexable"
-	"github.com/prometheus/prometheus/model"
-	dto "github.com/prometheus/prometheus/model/generated"
-	"github.com/prometheus/prometheus/utility/test"
 	"math"
 	"math/rand"
 	"sort"
 	"testing"
 	"testing/quick"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
+	"github.com/prometheus/prometheus/coding"
+	"github.com/prometheus/prometheus/coding/indexable"
+	"github.com/prometheus/prometheus/utility/test"
 )
 
-const (
-	stochasticMaximumVariance = 8
-)
+const stochasticMaximumVariance = 8
 
 func BasicLifecycleTests(p MetricPersistence, t test.Tester) {
 	if p == nil {
@@ -41,10 +42,10 @@ func BasicLifecycleTests(p MetricPersistence, t test.Tester) {
 
 func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 	hasLabelPair := func(x int) (success bool) {
-		name := model.LabelName(string(x))
-		value := model.LabelValue(string(x))
+		name := clientmodel.LabelName(string(x))
+		value := clientmodel.LabelValue(string(x))
 
-		labelSet := model.LabelSet{
+		labelSet := clientmodel.LabelSet{
 			name: value,
 		}
 
@@ -69,7 +70,7 @@ func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 	}
 
 	hasLabelName := func(x int) (success bool) {
-		labelName := model.LabelName(string(x))
+		labelName := clientmodel.LabelName(string(x))
 
 		fingerprints, err := p.GetFingerprintsForLabelName(labelName)
 		if err != nil {
@@ -94,13 +95,13 @@ func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 
 func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) (success bool) {
-		v := model.SampleValue(x)
+		v := clientmodel.SampleValue(x)
 		ts := time.Unix(int64(x), int64(x))
-		labelName := model.LabelName(x)
-		labelValue := model.LabelValue(x)
-		l := model.Metric{labelName: labelValue}
+		labelName := clientmodel.LabelName(x)
+		labelValue := clientmodel.LabelValue(x)
+		l := clientmodel.Metric{labelName: labelValue}
 
-		sample := model.Sample{
+		sample := &clientmodel.Sample{
 			Value:     v,
 			Timestamp: ts,
 			Metric:    l,
@@ -123,13 +124,13 @@ func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 
 func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) (success bool) {
-		v := model.SampleValue(x)
+		v := clientmodel.SampleValue(x)
 		ts := time.Unix(int64(x), int64(x))
-		labelName := model.LabelName(x)
-		labelValue := model.LabelValue(x)
-		l := model.Metric{labelName: labelValue}
+		labelName := clientmodel.LabelName(x)
+		labelValue := clientmodel.LabelValue(x)
+		l := clientmodel.Metric{labelName: labelValue}
 
-		sample := model.Sample{
+		sample := &clientmodel.Sample{
 			Value:     v,
 			Timestamp: ts,
 			Metric:    l,
@@ -151,7 +152,7 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 			return
 		}
 
-		fingerprints, err = p.GetFingerprintsForLabelSet(model.LabelSet{
+		fingerprints, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
 			labelName: labelValue,
 		})
 		if err != nil {
@@ -173,10 +174,10 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 
 func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) bool {
-		sample := model.Sample{
-			Value:     model.SampleValue(x),
+		sample := &clientmodel.Sample{
+			Value:     clientmodel.SampleValue(x),
 			Timestamp: time.Unix(int64(x), 0),
-			Metric:    model.Metric{model.MetricNameLabel: "my_metric"},
+			Metric:    clientmodel.Metric{clientmodel.MetricNameLabel: "my_metric"},
 		}
 
 		err := p.AppendSample(sample)
@@ -189,9 +190,11 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	}
 }
 
-func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *model.Fingerprint, i model.Interval) (samples model.Values, err error) {
+func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerprint, i Interval) (samples Values, err error) {
+	fpDto := &dto.Fingerprint{}
+	dumpFingerprint(fpDto, fp)
 	k := &dto.SampleKey{
-		Fingerprint: fp.ToDTO(),
+		Fingerprint: fpDto,
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
 	}
 
@@ -258,23 +261,23 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 		metricNewestSample := map[int]int64{}
 
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
-			sample := model.Sample{
-				Metric: model.Metric{},
+			sample := &clientmodel.Sample{
+				Metric: clientmodel.Metric{},
 			}
 
-			v := model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
-			sample.Metric[model.MetricNameLabel] = v
+			v := clientmodel.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
+			sample.Metric[clientmodel.MetricNameLabel] = v
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
-				l := model.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
-				v := model.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex))
+				l := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
+				v := clientmodel.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex))
 
 				sample.Metric[l] = v
 			}
 
 			for unsharedLabelIndex := 0; unsharedLabelIndex < numberOfUnsharedLabels; unsharedLabelIndex++ {
-				l := model.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
-				v := model.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
+				l := clientmodel.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
+				v := clientmodel.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
 
 				sample.Metric[l] = v
 			}
@@ -316,7 +319,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 
 			for sampleIndex := 0; sampleIndex < numberOfSamples; sampleIndex++ {
 				sample.Timestamp = sortedTimestamps[sampleIndex]
-				sample.Value = model.SampleValue(sampleIndex)
+				sample.Value = clientmodel.SampleValue(sampleIndex)
 
 				err := p.AppendSample(sample)
 
@@ -330,8 +333,8 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 			metricNewestSample[metricIndex] = newestSample
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
-				labelPair := model.LabelSet{
-					model.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex)): model.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex)),
+				labelPair := clientmodel.LabelSet{
+					clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex)): clientmodel.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex)),
 				}
 
 				fingerprints, err := p.GetFingerprintsForLabelSet(labelPair)
@@ -344,7 +347,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 					return
 				}
 
-				labelName := model.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
+				labelName := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
 				fingerprints, err = p.GetFingerprintsForLabelName(labelName)
 				if err != nil {
 					t.Error(err)
@@ -358,7 +361,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 		}
 
 		for sharedIndex := 0; sharedIndex < numberOfSharedLabels; sharedIndex++ {
-			labelName := model.LabelName(fmt.Sprintf("shared_label_%d", sharedIndex))
+			labelName := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedIndex))
 			fingerprints, err := p.GetFingerprintsForLabelName(labelName)
 			if err != nil {
 				t.Error(err)
@@ -373,9 +376,9 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 
 		for metricIndex := 0; metricIndex < numberOfMetrics; metricIndex++ {
 			for unsharedLabelIndex := 0; unsharedLabelIndex < numberOfUnsharedLabels; unsharedLabelIndex++ {
-				labelName := model.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
-				labelValue := model.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
-				labelSet := model.LabelSet{
+				labelName := clientmodel.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
+				labelValue := clientmodel.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
+				labelSet := clientmodel.LabelSet{
 					labelName: labelValue,
 				}
 
@@ -400,19 +403,19 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				}
 			}
 
-			metric := model.Metric{}
-			metric[model.MetricNameLabel] = model.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
+			metric := clientmodel.Metric{}
+			metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
 
 			for i := 0; i < numberOfSharedLabels; i++ {
-				l := model.LabelName(fmt.Sprintf("shared_label_%d", i))
-				v := model.LabelValue(fmt.Sprintf("label_%d", i))
+				l := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", i))
+				v := clientmodel.LabelValue(fmt.Sprintf("label_%d", i))
 
 				metric[l] = v
 			}
 
 			for i := 0; i < numberOfUnsharedLabels; i++ {
-				l := model.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, i))
-				v := model.LabelValue(fmt.Sprintf("private_label_%d", i))
+				l := clientmodel.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, i))
+				v := clientmodel.LabelValue(fmt.Sprintf("private_label_%d", i))
 
 				metric[l] = v
 			}
@@ -461,13 +464,14 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 					begin, end = second, first
 				}
 
-				interval := model.Interval{
+				interval := Interval{
 					OldestInclusive: time.Unix(begin, 0),
 					NewestInclusive: time.Unix(end, 0),
 				}
 
-				samples := model.Values{}
-				fp := model.NewFingerprintFromMetric(metric)
+				samples := Values{}
+				fp := &clientmodel.Fingerprint{}
+				fp.LoadFromMetric(metric)
 				switch persistence := p.(type) {
 				case *LevelDBMetricPersistence:
 					var err error

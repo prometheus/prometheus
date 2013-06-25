@@ -14,18 +14,25 @@ package retrieval
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/retrieval/format"
+
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/extraction"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-var (
-	localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
+const (
+	InstanceLabel clientmodel.LabelName = "instance"
+	// The metric name for the synthetic health variable.
+	ScrapeHealthMetricName clientmodel.LabelValue = "up"
 )
+
+var localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
 
 // The state of the given Target.
 type TargetState int
@@ -81,7 +88,7 @@ type Target interface {
 	// alluded to in the scheduledFor function, to use this as it wants to.  The
 	// current use case is to create a common batching time for scraping multiple
 	// Targets in the future through the TargetPool.
-	Scrape(earliest time.Time, results chan format.Result) error
+	Scrape(earliest time.Time, results chan<- *extraction.Result) error
 	// Fulfill the healthReporter interface.
 	State() TargetState
 	// Report the soonest time at which this Target may be scheduled for
@@ -100,7 +107,7 @@ type Target interface {
 	// to the address of the prometheus server.
 	GlobalAddress() string
 	// Return the target's base labels.
-	BaseLabels() model.LabelSet
+	BaseLabels() clientmodel.LabelSet
 	// Merge a new externally supplied target definition (e.g. with changed base
 	// labels) into an old target definition for the same endpoint. Preserve
 	// remaining information - like health state - from the old target.
@@ -121,13 +128,13 @@ type target struct {
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
 	Deadline time.Duration
 	// Any base labels that are added to this target and its metrics.
-	baseLabels model.LabelSet
+	baseLabels clientmodel.LabelSet
 	// The HTTP client used to scrape the target's endpoint.
 	client http.Client
 }
 
 // Furnish a reasonably configured target for querying.
-func NewTarget(address string, deadline time.Duration, baseLabels model.LabelSet) Target {
+func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.LabelSet) Target {
 	target := &target{
 		address:    address,
 		Deadline:   deadline,
@@ -143,32 +150,32 @@ func NewTarget(address string, deadline time.Duration, baseLabels model.LabelSet
 	return target
 }
 
-func (t *target) recordScrapeHealth(results chan format.Result, timestamp time.Time, healthy bool) {
-	metric := model.Metric{}
+func (t *target) recordScrapeHealth(results chan<- *extraction.Result, timestamp time.Time, healthy bool) {
+	metric := clientmodel.Metric{}
 	for label, value := range t.baseLabels {
 		metric[label] = value
 	}
-	metric[model.MetricNameLabel] = model.ScrapeHealthMetricName
-	metric[model.InstanceLabel] = model.LabelValue(t.Address())
+	metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(ScrapeHealthMetricName)
+	metric[InstanceLabel] = clientmodel.LabelValue(t.Address())
 
-	healthValue := model.SampleValue(0)
+	healthValue := clientmodel.SampleValue(0)
 	if healthy {
-		healthValue = model.SampleValue(1)
+		healthValue = clientmodel.SampleValue(1)
 	}
 
-	sample := model.Sample{
+	sample := &clientmodel.Sample{
 		Metric:    metric,
 		Timestamp: timestamp,
 		Value:     healthValue,
 	}
 
-	results <- format.Result{
+	results <- &extraction.Result{
 		Err:     nil,
-		Samples: model.Samples{sample},
+		Samples: clientmodel.Samples{sample},
 	}
 }
 
-func (t *target) Scrape(earliest time.Time, results chan format.Result) (err error) {
+func (t *target) Scrape(earliest time.Time, results chan<- *extraction.Result) (err error) {
 	now := time.Now()
 	futureState := t.state
 
@@ -187,7 +194,7 @@ func (t *target) Scrape(earliest time.Time, results chan format.Result) (err err
 	return err
 }
 
-func (t *target) scrape(timestamp time.Time, results chan format.Result) (err error) {
+func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) (err error) {
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
 		labels := map[string]string{address: t.Address(), outcome: success}
@@ -205,19 +212,24 @@ func (t *target) scrape(timestamp time.Time, results chan format.Result) (err er
 	}
 	defer resp.Body.Close()
 
-	processor, err := format.DefaultRegistry.ProcessorForRequestHeader(resp.Header)
+	processor, err := extraction.ProcessorForRequestHeader(resp.Header)
 	if err != nil {
 		return err
 	}
 
 	// XXX: This is a wart; we need to handle this more gracefully down the
 	//      road, especially once we have service discovery support.
-	baseLabels := model.LabelSet{model.InstanceLabel: model.LabelValue(t.Address())}
+	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.Address())}
 	for baseLabel, baseValue := range t.baseLabels {
 		baseLabels[baseLabel] = baseValue
 	}
 
-	return processor.Process(resp.Body, timestamp, baseLabels, results)
+	processOptions := &extraction.ProcessOptions{
+		Timestamp:  timestamp,
+		BaseLabels: baseLabels,
+	}
+
+	return processor.ProcessSingle(resp.Body, results, processOptions)
 }
 
 func (t target) State() TargetState {
@@ -249,7 +261,7 @@ func (t target) GlobalAddress() string {
 	return address
 }
 
-func (t target) BaseLabels() model.LabelSet {
+func (t target) BaseLabels() clientmodel.LabelSet {
 	return t.baseLabels
 }
 

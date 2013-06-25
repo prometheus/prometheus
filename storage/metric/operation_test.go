@@ -18,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility/test"
 )
 
@@ -1203,8 +1202,8 @@ func BenchmarkOptimize(b *testing.B) {
 func TestGetValuesAtTimeOp(t *testing.T) {
 	var scenarios = []struct {
 		op  getValuesAtTimeOp
-		in  model.Values
-		out model.Values
+		in  Values
+		out Values
 	}{
 		// No values.
 		{
@@ -1217,13 +1216,13 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				time: testInstant,
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1235,13 +1234,13 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				time: testInstant.Add(1 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1253,13 +1252,13 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				time: testInstant.Add(2 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1271,7 +1270,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				time: testInstant,
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1281,7 +1280,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1293,7 +1292,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				time: testInstant.Add(1 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1303,7 +1302,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1315,7 +1314,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				time: testInstant.Add(90 * time.Second),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1325,7 +1324,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1341,7 +1340,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				time: testInstant.Add(2 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1351,7 +1350,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1367,7 +1366,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				time: testInstant.Add(3 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1377,7 +1376,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -1385,6 +1384,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			},
 		},
 	}
+
 	for i, scenario := range scenarios {
 		actual := scenario.op.ExtractSamples(scenario.in)
 		if len(actual) != len(scenario.out) {
@@ -1392,7 +1392,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
 		}
 		for j, out := range scenario.out {
-			if out != actual[j] {
+			if !out.Equal(actual[j]) {
 				t.Fatalf("%d. expected output %v, got %v", i, scenario.out, actual)
 			}
 		}
@@ -1402,8 +1402,8 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 func TestGetValuesAtIntervalOp(t *testing.T) {
 	var scenarios = []struct {
 		op  getValuesAtIntervalOp
-		in  model.Values
-		out model.Values
+		in  Values
+		out Values
 	}{
 		// No values.
 		{
@@ -1420,7 +1420,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				through:  testInstant.Add(1 * time.Minute),
 				interval: 30 * time.Second,
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -1430,7 +1430,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -1444,7 +1444,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				through:  testInstant.Add(2 * time.Minute),
 				interval: 30 * time.Second,
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1454,7 +1454,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1472,7 +1472,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				through:  testInstant.Add(2 * time.Minute),
 				interval: 30 * time.Second,
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -1486,7 +1486,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1504,7 +1504,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				through:  testInstant.Add(3 * time.Minute),
 				interval: 30 * time.Second,
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1514,7 +1514,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1532,7 +1532,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				through:  testInstant.Add(4 * time.Minute),
 				interval: 30 * time.Second,
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -1550,7 +1550,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -1568,7 +1568,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				through:  testInstant.Add(3 * time.Minute),
 				interval: 30 * time.Second,
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -1578,7 +1578,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1596,7 +1596,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				through:  testInstant.Add(4 * time.Minute),
 				interval: 3 * time.Minute,
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -1614,7 +1614,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -1647,7 +1647,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		}
 
 		for j, out := range scenario.out {
-			if out != actual[j] {
+			if !out.Equal(actual[j]) {
 				t.Fatalf("%d. expected output %v, got %v", i, scenario.out, actual)
 			}
 		}
@@ -1657,8 +1657,8 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 func TestGetValuesAlongRangeOp(t *testing.T) {
 	var scenarios = []struct {
 		op  getValuesAlongRangeOp
-		in  model.Values
-		out model.Values
+		in  Values
+		out Values
 	}{
 		// No values.
 		{
@@ -1673,7 +1673,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				from:    testInstant,
 				through: testInstant.Add(1 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -1683,7 +1683,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{},
+			out: Values{},
 		},
 		// Operator range starts before first value, ends within available values.
 		{
@@ -1691,7 +1691,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				from:    testInstant,
 				through: testInstant.Add(2 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1701,7 +1701,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1714,7 +1714,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				from:    testInstant.Add(1 * time.Minute),
 				through: testInstant.Add(2 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -1728,7 +1728,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1741,7 +1741,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				from:    testInstant,
 				through: testInstant.Add(3 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1751,7 +1751,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -1768,7 +1768,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				from:    testInstant.Add(2 * time.Minute),
 				through: testInstant.Add(4 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -1786,7 +1786,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -1803,7 +1803,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				from:    testInstant.Add(2 * time.Minute),
 				through: testInstant.Add(3 * time.Minute),
 			},
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -1813,7 +1813,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: model.Values{},
+			out: Values{},
 		},
 	}
 	for i, scenario := range scenarios {
@@ -1823,7 +1823,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
 		}
 		for j, out := range scenario.out {
-			if out != actual[j] {
+			if !out.Equal(actual[j]) {
 				t.Fatalf("%d. expected output %v, got %v", i, scenario.out, actual)
 			}
 		}

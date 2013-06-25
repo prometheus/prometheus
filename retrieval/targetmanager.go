@@ -14,11 +14,13 @@
 package retrieval
 
 import (
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/retrieval/format"
 	"log"
 	"time"
+
+	"github.com/prometheus/client_golang/extraction"
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 type TargetManager interface {
@@ -34,10 +36,10 @@ type TargetManager interface {
 type targetManager struct {
 	requestAllowance chan bool
 	poolsByJob       map[string]*TargetPool
-	results          chan format.Result
+	results          chan<- *extraction.Result
 }
 
-func NewTargetManager(results chan format.Result, requestAllowance int) TargetManager {
+func NewTargetManager(results chan<- *extraction.Result, requestAllowance int) TargetManager {
 	return &targetManager{
 		requestAllowance: make(chan bool, requestAllowance),
 		results:          results,
@@ -97,12 +99,12 @@ func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 		}
 
 		for _, targetGroup := range job.TargetGroup {
-			baseLabels := model.LabelSet{
-				model.JobLabel: model.LabelValue(job.GetName()),
+			baseLabels := clientmodel.LabelSet{
+				clientmodel.JobLabel: clientmodel.LabelValue(job.GetName()),
 			}
 			if targetGroup.Labels != nil {
 				for _, label := range targetGroup.Labels.Label {
-					baseLabels[model.LabelName(label.GetName())] = model.LabelValue(label.GetValue())
+					baseLabels[clientmodel.LabelName(label.GetName())] = clientmodel.LabelValue(label.GetValue())
 				}
 			}
 

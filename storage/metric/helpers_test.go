@@ -15,9 +15,11 @@ package metric
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/utility/test"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 var (
@@ -26,7 +28,7 @@ var (
 	testInstant  = time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern).In(time.UTC)
 )
 
-func testAppendSample(p MetricPersistence, s model.Sample, t test.Tester) {
+func testAppendSample(p MetricPersistence, s *clientmodel.Sample, t test.Tester) {
 	err := p.AppendSample(s)
 	if err != nil {
 		t.Fatal(err)
@@ -48,10 +50,12 @@ func buildLevelDBTestPersistencesMaker(name string, t test.Tester) func() (Metri
 
 func buildLevelDBTestPersistence(name string, f func(p MetricPersistence, t test.Tester)) func(t test.Tester) {
 	return func(t test.Tester) {
+
 		temporaryDirectory := test.NewTemporaryDirectory(fmt.Sprintf("test_leveldb_%s", name), t)
 		defer temporaryDirectory.Close()
 
 		p, err := NewLevelDBMetricPersistence(temporaryDirectory.Path())
+
 		if err != nil {
 			t.Errorf("Could not create LevelDB Metric Persistence: %q\n", err)
 		}
@@ -78,12 +82,12 @@ type testTieredStorageCloser struct {
 	directory test.Closer
 }
 
-func (t testTieredStorageCloser) Close() {
+func (t *testTieredStorageCloser) Close() {
 	t.storage.Close()
 	t.directory.Close()
 }
 
-func NewTestTieredStorage(t test.Tester) (storage *TieredStorage, closer test.Closer) {
+func NewTestTieredStorage(t test.Tester) (*TieredStorage, test.Closer) {
 	var directory test.TemporaryDirectory
 	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
 	storage, err := NewTieredStorage(2500, 1000, 5*time.Second, 0, directory.Path())
@@ -105,9 +109,10 @@ func NewTestTieredStorage(t test.Tester) (storage *TieredStorage, closer test.Cl
 	go storage.Serve(started)
 	<-started
 
-	closer = &testTieredStorageCloser{
+	closer := &testTieredStorageCloser{
 		storage:   storage,
 		directory: directory,
 	}
-	return
+
+	return storage, closer
 }
