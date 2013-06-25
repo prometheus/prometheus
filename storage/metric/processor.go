@@ -19,9 +19,10 @@ import (
 
 	"code.google.com/p/goprotobuf/proto"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	dto "github.com/prometheus/prometheus/model/generated"
 
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
@@ -35,7 +36,7 @@ type Processor interface {
 	Name() string
 	// Signature emits a byte signature for this process for the purpose of
 	// remarking how far along it has been applied to the database.
-	Signature() (signature []byte, err error)
+	Signature() []byte
 	// Apply runs this processor against the sample set.  sampleIterator expects
 	// to be pre-seeked to the initial starting position.  The processor will
 	// run until up until stopAt has been reached.  It is imperative that the
@@ -43,7 +44,7 @@ type Processor interface {
 	//
 	// Upon completion or error, the last time at which the processor finished
 	// shall be emitted in addition to any errors.
-	Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *model.Fingerprint) (lastCurated time.Time, err error)
+	Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error)
 }
 
 // CompactionProcessor combines sparse values in the database together such
@@ -63,29 +64,30 @@ type CompactionProcessor struct {
 	signature []byte
 }
 
-func (p CompactionProcessor) Name() string {
+func (p *CompactionProcessor) Name() string {
 	return "io.prometheus.CompactionProcessorDefinition"
 }
 
-func (p *CompactionProcessor) Signature() (out []byte, err error) {
+func (p *CompactionProcessor) Signature() []byte {
 	if len(p.signature) == 0 {
-		out, err = proto.Marshal(&dto.CompactionProcessorDefinition{
+		out, err := proto.Marshal(&dto.CompactionProcessorDefinition{
 			MinimumGroupSize: proto.Uint32(uint32(p.MinimumGroupSize)),
 		})
+		if err != nil {
+			panic(err)
+		}
 
 		p.signature = out
 	}
 
-	out = p.signature
-
-	return
+	return p.signature
 }
 
-func (p CompactionProcessor) String() string {
+func (p *CompactionProcessor) String() string {
 	return fmt.Sprintf("compactionProcessor for minimum group size %d", p.MinimumGroupSize)
 }
 
-func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *model.Fingerprint) (lastCurated time.Time, err error) {
+func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {
@@ -95,9 +97,9 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersi
 	}()
 
 	var pendingMutations = 0
-	var pendingSamples model.Values
-	var sampleKey model.SampleKey
-	var unactedSamples model.Values
+	var pendingSamples Values
+	var sampleKey *SampleKey
+	var unactedSamples Values
 	var lastTouchedTime time.Time
 	var keyDropped bool
 
@@ -151,27 +153,36 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersi
 
 		case len(pendingSamples) == 0 && len(unactedSamples) >= p.MinimumGroupSize:
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
-			unactedSamples = model.Values{}
+			unactedSamples = Values{}
 
 		case len(pendingSamples)+len(unactedSamples) < p.MinimumGroupSize:
 			if !keyDropped {
-				pendingBatch.Drop(sampleKey.ToDTO())
+				k := new(dto.SampleKey)
+				sampleKey.Dump(k)
+				pendingBatch.Drop(k)
+
 				keyDropped = true
 			}
 			pendingSamples = append(pendingSamples, unactedSamples...)
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
-			unactedSamples = model.Values{}
+			unactedSamples = Values{}
 			pendingMutations++
 
 		// If the number of pending writes equals the target group size
 		case len(pendingSamples) == p.MinimumGroupSize:
+			k := new(dto.SampleKey)
 			newSampleKey := pendingSamples.ToSampleKey(fingerprint)
-			pendingBatch.Put(newSampleKey.ToDTO(), pendingSamples.ToDTO())
+			newSampleKey.Dump(k)
+			b := new(dto.SampleValueSeries)
+			pendingSamples.dump(b)
+			pendingBatch.Put(k, b)
+
 			pendingMutations++
 			lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
 			if len(unactedSamples) > 0 {
 				if !keyDropped {
-					pendingBatch.Drop(sampleKey.ToDTO())
+					sampleKey.Dump(k)
+					pendingBatch.Drop(k)
 					keyDropped = true
 				}
 
@@ -182,13 +193,15 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersi
 				} else {
 					pendingSamples = unactedSamples
 					lastTouchedTime = pendingSamples[len(pendingSamples)-1].Timestamp
-					unactedSamples = model.Values{}
+					unactedSamples = Values{}
 				}
 			}
 
 		case len(pendingSamples)+len(unactedSamples) >= p.MinimumGroupSize:
 			if !keyDropped {
-				pendingBatch.Drop(sampleKey.ToDTO())
+				k := new(dto.SampleKey)
+				sampleKey.Dump(k)
+				pendingBatch.Drop(k)
 				keyDropped = true
 			}
 			remainder := p.MinimumGroupSize - len(pendingSamples)
@@ -207,9 +220,13 @@ func (p CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersi
 
 	if len(unactedSamples) > 0 || len(pendingSamples) > 0 {
 		pendingSamples = append(pendingSamples, unactedSamples...)
+		k := new(dto.SampleKey)
 		newSampleKey := pendingSamples.ToSampleKey(fingerprint)
-		pendingBatch.Put(newSampleKey.ToDTO(), pendingSamples.ToDTO())
-		pendingSamples = model.Values{}
+		newSampleKey.Dump(k)
+		b := new(dto.SampleValueSeries)
+		pendingSamples.dump(b)
+		pendingBatch.Put(k, b)
+		pendingSamples = Values{}
 		pendingMutations++
 		lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
 	}
@@ -237,27 +254,29 @@ type DeletionProcessor struct {
 	signature []byte
 }
 
-func (p DeletionProcessor) Name() string {
+func (p *DeletionProcessor) Name() string {
 	return "io.prometheus.DeletionProcessorDefinition"
 }
 
-func (p *DeletionProcessor) Signature() (out []byte, err error) {
+func (p *DeletionProcessor) Signature() []byte {
 	if len(p.signature) == 0 {
-		out, err = proto.Marshal(&dto.DeletionProcessorDefinition{})
+		out, err := proto.Marshal(&dto.DeletionProcessorDefinition{})
+
+		if err != nil {
+			panic(err)
+		}
 
 		p.signature = out
 	}
 
-	out = p.signature
-
-	return
+	return p.signature
 }
 
-func (p DeletionProcessor) String() string {
+func (p *DeletionProcessor) String() string {
 	return "deletionProcessor"
 }
 
-func (p DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *model.Fingerprint) (lastCurated time.Time, err error) {
+func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {
@@ -315,20 +334,28 @@ func (p DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersist
 			pendingBatch = nil
 
 		case !sampleKey.MayContain(stopAt):
-			pendingBatch.Drop(sampleKey.ToDTO())
+			k := &dto.SampleKey{}
+			sampleKey.Dump(k)
+			pendingBatch.Drop(k)
 			lastCurated = sampleKey.LastTimestamp
-			sampleValues = model.Values{}
+			sampleValues = Values{}
 			pendingMutations++
 
 		case sampleKey.MayContain(stopAt):
-			pendingBatch.Drop(sampleKey.ToDTO())
+			k := &dto.SampleKey{}
+			sampleKey.Dump(k)
+			pendingBatch.Drop(k)
 			pendingMutations++
 
 			sampleValues = sampleValues.TruncateBefore(stopAt)
 			if len(sampleValues) > 0 {
+				k := &dto.SampleKey{}
 				sampleKey = sampleValues.ToSampleKey(fingerprint)
+				sampleKey.Dump(k)
+				v := &dto.SampleValueSeries{}
+				sampleValues.dump(v)
 				lastCurated = sampleKey.FirstTimestamp
-				pendingBatch.Put(sampleKey.ToDTO(), sampleValues.ToDTO())
+				pendingBatch.Put(k, v)
 				pendingMutations++
 			} else {
 				lastCurated = sampleKey.LastTimestamp

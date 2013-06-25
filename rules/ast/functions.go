@@ -16,10 +16,12 @@ package ast
 import (
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/utility"
 	"sort"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/utility"
 )
 
 type Function struct {
@@ -64,9 +66,9 @@ func (function *Function) CheckArgTypes(args []Node) error {
 	return nil
 }
 
-// === time() model.SampleValue ===
+// === time() clientmodel.SampleValue ===
 func timeImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
-	return model.SampleValue(time.Now().Unix())
+	return clientmodel.SampleValue(time.Now().Unix())
 }
 
 // === delta(matrix MatrixNode, isCounter ScalarNode) Vector ===
@@ -91,8 +93,8 @@ func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} 
 			continue
 		}
 
-		counterCorrection := model.SampleValue(0)
-		lastValue := model.SampleValue(0)
+		counterCorrection := clientmodel.SampleValue(0)
+		lastValue := clientmodel.SampleValue(0)
 		for _, sample := range samples.Values {
 			currentValue := sample.Value
 			if isCounter && currentValue < lastValue {
@@ -116,10 +118,10 @@ func deltaImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} 
 		// them. Depending on how many samples are found under a target interval,
 		// the delta results are distorted and temporal aliasing occurs (ugly
 		// bumps). This effect is corrected for below.
-		intervalCorrection := model.SampleValue(targetInterval) / model.SampleValue(sampledInterval)
+		intervalCorrection := clientmodel.SampleValue(targetInterval) / clientmodel.SampleValue(sampledInterval)
 		resultValue *= intervalCorrection
 
-		resultSample := model.Sample{
+		resultSample := &clientmodel.Sample{
 			Metric:    samples.Metric,
 			Value:     resultValue,
 			Timestamp: timestamp,
@@ -139,7 +141,7 @@ func rateImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	// matrix, such as looking at the samples themselves.
 	interval := args[0].(*MatrixLiteral).interval
 	for i := range vector {
-		vector[i].Value /= model.SampleValue(interval / time.Second)
+		vector[i].Value /= clientmodel.SampleValue(interval / time.Second)
 	}
 	return vector
 }
@@ -183,69 +185,69 @@ func sortDescImpl(timestamp time.Time, view *viewAdapter, args []Node) interface
 // === sampleVectorImpl() Vector ===
 func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
 	return Vector{
-		model.Sample{
-			Metric: model.Metric{
-				model.MetricNameLabel: "http_requests",
-				model.JobLabel:        "api-server",
-				"instance":            "0",
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "http_requests",
+				clientmodel.JobLabel:        "api-server",
+				"instance":                  "0",
 			},
 			Value:     10,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
-				model.MetricNameLabel: "http_requests",
-				model.JobLabel:        "api-server",
-				"instance":            "1",
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "http_requests",
+				clientmodel.JobLabel:        "api-server",
+				"instance":                  "1",
 			},
 			Value:     20,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
-				model.MetricNameLabel: "http_requests",
-				model.JobLabel:        "api-server",
-				"instance":            "2",
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "http_requests",
+				clientmodel.JobLabel:        "api-server",
+				"instance":                  "2",
 			},
 			Value:     30,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
-				model.MetricNameLabel: "http_requests",
-				model.JobLabel:        "api-server",
-				"instance":            "3",
-				"group":               "canary",
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "http_requests",
+				clientmodel.JobLabel:        "api-server",
+				"instance":                  "3",
+				"group":                     "canary",
 			},
 			Value:     40,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
-				model.MetricNameLabel: "http_requests",
-				model.JobLabel:        "api-server",
-				"instance":            "2",
-				"group":               "canary",
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "http_requests",
+				clientmodel.JobLabel:        "api-server",
+				"instance":                  "2",
+				"group":                     "canary",
 			},
 			Value:     40,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
-				model.MetricNameLabel: "http_requests",
-				model.JobLabel:        "api-server",
-				"instance":            "3",
-				"group":               "mytest",
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "http_requests",
+				clientmodel.JobLabel:        "api-server",
+				"instance":                  "3",
+				"group":                     "mytest",
 			},
 			Value:     40,
 			Timestamp: timestamp,
 		},
-		model.Sample{
-			Metric: model.Metric{
-				model.MetricNameLabel: "http_requests",
-				model.JobLabel:        "api-server",
-				"instance":            "3",
-				"group":               "mytest",
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "http_requests",
+				clientmodel.JobLabel:        "api-server",
+				"instance":                  "3",
+				"group":                     "mytest",
 			},
 			Value:     40,
 			Timestamp: timestamp,

@@ -19,8 +19,9 @@ import (
 	"net/url"
 	"time"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -61,8 +62,8 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 		return nil, err
 	}
 
-	baseLabels := model.LabelSet{
-		model.JobLabel: model.LabelValue(p.job.GetName()),
+	baseLabels := clientmodel.LabelSet{
+		clientmodel.JobLabel: clientmodel.LabelValue(p.job.GetName()),
 	}
 
 	targets := make([]Target, 0, len(addrs))

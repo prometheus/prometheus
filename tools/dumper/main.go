@@ -30,7 +30,6 @@ import (
 
 	dto "github.com/prometheus/prometheus/model/generated"
 
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -43,33 +42,36 @@ type SamplesDumper struct {
 	*csv.Writer
 }
 
-func (d SamplesDumper) DecodeKey(in interface{}) (interface{}, error) {
+func (d *SamplesDumper) DecodeKey(in interface{}) (interface{}, error) {
 	key := &dto.SampleKey{}
 	err := proto.Unmarshal(in.([]byte), key)
 	if err != nil {
 		return nil, err
 	}
 
-	return model.NewSampleKeyFromDTO(key), nil
+	sampleKey := &metric.SampleKey{}
+	sampleKey.Load(key)
+
+	return sampleKey, nil
 }
 
-func (d SamplesDumper) DecodeValue(in interface{}) (interface{}, error) {
+func (d *SamplesDumper) DecodeValue(in interface{}) (interface{}, error) {
 	values := &dto.SampleValueSeries{}
 	err := proto.Unmarshal(in.([]byte), values)
 	if err != nil {
 		return nil, err
 	}
 
-	return model.NewValuesFromDTO(values), nil
+	return metric.NewValuesFromDTO(values), nil
 }
 
-func (d SamplesDumper) Filter(_, _ interface{}) storage.FilterResult {
+func (d *SamplesDumper) Filter(_, _ interface{}) storage.FilterResult {
 	return storage.ACCEPT
 }
 
-func (d SamplesDumper) Operate(key, value interface{}) *storage.OperatorError {
-	sampleKey := key.(model.SampleKey)
-	for i, sample := range value.(model.Values) {
+func (d *SamplesDumper) Operate(key, value interface{}) *storage.OperatorError {
+	sampleKey := key.(*metric.SampleKey)
+	for i, sample := range value.(metric.Values) {
 		d.Write([]string{
 			sampleKey.Fingerprint.String(),
 			strconv.FormatInt(sampleKey.FirstTimestamp.Unix(), 10),
@@ -102,7 +104,10 @@ func main() {
 	}
 	defer persistence.Close()
 
-	dumper := SamplesDumper{csv.NewWriter(os.Stdout)}
+	dumper := &SamplesDumper{
+		csv.NewWriter(os.Stdout),
+	}
+
 	entire, err := persistence.MetricSamples.ForEach(dumper, dumper, dumper)
 	if err != nil {
 		log.Fatalf("Error dumping samples: %s", err)

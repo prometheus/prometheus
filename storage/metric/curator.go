@@ -14,16 +14,21 @@
 package metric
 
 import (
-	"code.google.com/p/goprotobuf/proto"
+	"bytes"
 	"fmt"
-	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/model"
+	"strings"
+	"time"
+
+	"code.google.com/p/goprotobuf/proto"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	dto "github.com/prometheus/prometheus/model/generated"
+
+	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	"strings"
-	"time"
 )
 
 // CurationState contains high-level curation state information for the
@@ -32,28 +37,7 @@ type CurationState struct {
 	Active      bool
 	Name        string
 	Limit       time.Duration
-	Fingerprint *model.Fingerprint
-}
-
-// watermarkFilter determines whether to include or exclude candidate
-// values from the curation process by virtue of how old the high watermark is.
-type watermarkFilter struct {
-	// curationState is the data store for curation remarks.
-	curationState raw.Persistence
-	// ignoreYoungerThan conveys this filter's policy of not working on elements
-	// younger than a given relative time duration.  This is persisted to the
-	// curation remark database (curationState) to indicate how far a given
-	// policy of this type has progressed.
-	ignoreYoungerThan time.Duration
-	// processor is the post-processor that performs whatever action is desired on
-	// the data that is deemed valid to be worked on.
-	processor Processor
-	// stop functions as the global stop channel for all future operations.
-	stop chan bool
-	// stopAt is used to determine the elegibility of series for compaction.
-	stopAt time.Time
-	// status is the outbound channel for notifying the status page of its state.
-	status chan CurationState
+	Fingerprint *clientmodel.Fingerprint
 }
 
 // curator is responsible for effectuating a given curation policy across the
@@ -66,17 +50,19 @@ type Curator struct {
 	Stop chan bool
 }
 
-// watermarkDecoder converts (dto.Fingerprint, dto.MetricHighWatermark) doubles
+// watermarkScanner converts (dto.Fingerprint, dto.MetricHighWatermark) doubles
 // into (model.Fingerprint, model.Watermark) doubles.
-type watermarkDecoder struct{}
-
-// watermarkOperator scans over the curator.samples table for metrics whose
+//
+// watermarkScanner determines whether to include or exclude candidate
+// values from the curation process by virtue of how old the high watermark is.
+//
+// watermarkScanner scans over the curator.samples table for metrics whose
 // high watermark has been determined to be allowable for curation.  This type
 // is individually responsible for compaction.
 //
 // The scanning starts from CurationRemark.LastCompletionTimestamp and goes
 // forward until the stop point or end of the series is reached.
-type watermarkOperator struct {
+type watermarkScanner struct {
 	// curationState is the data store for curation remarks.
 	curationState raw.Persistence
 	// diskFrontier models the available seekable ranges for the provided
@@ -93,6 +79,11 @@ type watermarkOperator struct {
 	samples raw.Persistence
 	// stopAt is a cue for when to stop mutating a given series.
 	stopAt time.Time
+
+	// stop functions as the global stop channel for all future operations.
+	stop chan bool
+	// status is the outbound channel for notifying the status page of its state.
+	status chan CurationState
 }
 
 // run facilitates the curation lifecycle.
@@ -101,7 +92,7 @@ type watermarkOperator struct {
 // curated.
 // curationState is the on-disk store where the curation remarks are made for
 // how much progress has been made.
-func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState, samples, watermarks *leveldb.LevelDBPersistence, status chan CurationState) (err error) {
+func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState, samples, watermarks *leveldb.LevelDBPersistence, status chan CurationState) (err error) {
 	defer func(t time.Time) {
 		duration := float64(time.Since(t) / time.Millisecond)
 
@@ -137,104 +128,89 @@ func (c Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, process
 		return
 	}
 
-	decoder := watermarkDecoder{}
-
-	filter := watermarkFilter{
+	scanner := &watermarkScanner{
 		curationState:     curationState,
 		ignoreYoungerThan: ignoreYoungerThan,
 		processor:         processor,
 		status:            status,
 		stop:              c.Stop,
 		stopAt:            instant.Add(-1 * ignoreYoungerThan),
+
+		diskFrontier:   diskFrontier,
+		sampleIterator: iterator,
+		samples:        samples,
 	}
 
 	// Right now, the ability to stop a curation is limited to the beginning of
 	// each fingerprint cycle.  It is impractical to cease the work once it has
 	// begun for a given series.
-	operator := watermarkOperator{
-		curationState:     curationState,
-		diskFrontier:      diskFrontier,
-		processor:         processor,
-		ignoreYoungerThan: ignoreYoungerThan,
-		sampleIterator:    iterator,
-		samples:           samples,
-		stopAt:            instant.Add(-1 * ignoreYoungerThan),
-	}
-
-	_, err = watermarks.ForEach(decoder, filter, operator)
+	_, err = watermarks.ForEach(scanner, scanner, scanner)
 
 	return
 }
 
 // drain instructs the curator to stop at the next convenient moment as to not
 // introduce data inconsistencies.
-func (c Curator) Drain() {
+func (c *Curator) Drain() {
 	if len(c.Stop) == 0 {
 		c.Stop <- true
 	}
 }
 
-func (w watermarkDecoder) DecodeKey(in interface{}) (out interface{}, err error) {
-	key := &dto.Fingerprint{}
+func (w *watermarkScanner) DecodeKey(in interface{}) (interface{}, error) {
+	key := new(dto.Fingerprint)
 	bytes := in.([]byte)
 
-	err = proto.Unmarshal(bytes, key)
-	if err != nil {
-		return
+	if err := proto.Unmarshal(bytes, key); err != nil {
+		return nil, err
 	}
 
-	out = model.NewFingerprintFromDTO(key)
+	fingerprint := new(clientmodel.Fingerprint)
+	loadFingerprint(fingerprint, key)
 
-	return
+	return fingerprint, nil
 }
 
-func (w watermarkDecoder) DecodeValue(in interface{}) (out interface{}, err error) {
-	dto := &dto.MetricHighWatermark{}
+func (w *watermarkScanner) DecodeValue(in interface{}) (interface{}, error) {
+	value := new(dto.MetricHighWatermark)
 	bytes := in.([]byte)
 
-	err = proto.Unmarshal(bytes, dto)
-	if err != nil {
-		return
+	if err := proto.Unmarshal(bytes, value); err != nil {
+		return nil, err
 	}
 
-	out = model.NewWatermarkFromHighWatermarkDTO(dto)
+	watermark := new(watermarks)
+	watermark.load(value)
 
-	return
+	return watermark, nil
 }
 
-func (w watermarkFilter) shouldStop() bool {
+func (w *watermarkScanner) shouldStop() bool {
 	return len(w.stop) != 0
 }
 
-func getCurationRemark(states raw.Persistence, processor Processor, ignoreYoungerThan time.Duration, fingerprint *model.Fingerprint) (*model.CurationRemark, error) {
-	rawSignature, err := processor.Signature()
-	if err != nil {
-		return nil, err
-	}
+func (w *watermarkScanner) getCurationRemark(k *curationKey) (r *curationRemark, found bool, err error) {
+	curationKey := new(dto.CurationKey)
+	curationValue := new(dto.CurationValue)
 
-	curationKey := model.CurationKey{
-		Fingerprint:              fingerprint,
-		ProcessorMessageRaw:      rawSignature,
-		ProcessorMessageTypeName: processor.Name(),
-		IgnoreYoungerThan:        ignoreYoungerThan,
-	}.ToDTO()
-	curationValue := &dto.CurationValue{}
+	k.dump(curationKey)
 
-	present, err := states.Get(curationKey, curationValue)
+	present, err := w.curationState.Get(curationKey, curationValue)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if !present {
-		return nil, nil
+		return nil, false, nil
 	}
 
-	remark := model.NewCurationRemarkFromDTO(curationValue)
+	remark := new(curationRemark)
+	remark.load(curationValue)
 
-	return &remark, nil
+	return remark, true, nil
 }
 
-func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult) {
-	fingerprint := key.(*model.Fingerprint)
+func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResult) {
+	fingerprint := key.(*clientmodel.Fingerprint)
 
 	defer func() {
 		labels := map[string]string{
@@ -244,9 +220,7 @@ func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult)
 		}
 
 		curationFilterOperations.Increment(labels)
-	}()
 
-	defer func() {
 		select {
 		case w.status <- CurationState{
 			Active:      true,
@@ -263,19 +237,25 @@ func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult)
 		return storage.STOP
 	}
 
-	curationRemark, err := getCurationRemark(w.curationState, w.processor, w.ignoreYoungerThan, fingerprint)
+	k := &curationKey{
+		Fingerprint:              fingerprint,
+		ProcessorMessageRaw:      w.processor.Signature(),
+		ProcessorMessageTypeName: w.processor.Name(),
+		IgnoreYoungerThan:        w.ignoreYoungerThan,
+	}
+
+	curationRemark, present, err := w.getCurationRemark(k)
 	if err != nil {
 		return
 	}
-	if curationRemark == nil {
-		r = storage.ACCEPT
-		return
+	if !present {
+		return storage.ACCEPT
 	}
 	if !curationRemark.OlderThan(w.stopAt) {
 		return storage.SKIP
 	}
-	watermark := value.(model.Watermark)
-	if !curationRemark.OlderThan(watermark.Time) {
+	watermark := value.(*watermarks)
+	if !curationRemark.OlderThan(watermark.High) {
 		return storage.SKIP
 	}
 	curationConsistent, err := w.curationConsistent(fingerprint, watermark)
@@ -291,20 +271,29 @@ func (w watermarkFilter) Filter(key, value interface{}) (r storage.FilterResult)
 
 // curationConsistent determines whether the given metric is in a dirty state
 // and needs curation.
-func (w watermarkFilter) curationConsistent(f *model.Fingerprint, watermark model.Watermark) (consistent bool, err error) {
-	curationRemark, err := getCurationRemark(w.curationState, w.processor, w.ignoreYoungerThan, f)
-	if err != nil {
-		return
+func (w *watermarkScanner) curationConsistent(f *clientmodel.Fingerprint, watermark *watermarks) (bool, error) {
+	k := &curationKey{
+		Fingerprint:              f,
+		ProcessorMessageRaw:      w.processor.Signature(),
+		ProcessorMessageTypeName: w.processor.Name(),
+		IgnoreYoungerThan:        w.ignoreYoungerThan,
 	}
-	if !curationRemark.OlderThan(watermark.Time) {
-		consistent = true
+	curationRemark, present, err := w.getCurationRemark(k)
+	if err != nil {
+		return false, err
+	}
+	if !present {
+		return false, nil
+	}
+	if !curationRemark.OlderThan(watermark.High) {
+		return true, nil
 	}
 
-	return
+	return false, nil
 }
 
-func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
-	fingerprint := key.(*model.Fingerprint)
+func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
+	fingerprint := key.(*clientmodel.Fingerprint)
 
 	seriesFrontier, present, err := newSeriesFrontier(fingerprint, w.diskFrontier, w.sampleIterator)
 	if err != nil || !present {
@@ -314,7 +303,14 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: false}
 	}
 
-	curationState, err := getCurationRemark(w.curationState, w.processor, w.ignoreYoungerThan, fingerprint)
+	k := &curationKey{
+		Fingerprint:              fingerprint,
+		ProcessorMessageRaw:      w.processor.Signature(),
+		ProcessorMessageTypeName: w.processor.Name(),
+		IgnoreYoungerThan:        w.ignoreYoungerThan,
+	}
+
+	curationState, _, err := w.getCurationRemark(k)
 	if err != nil {
 		// An anomaly with the curation remark is likely not fatal in the sense that
 		// there was a decoding error with the entity and shouldn't be cause to stop
@@ -323,12 +319,14 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: true}
 	}
 
-	startKey := model.SampleKey{
+	startKey := &SampleKey{
 		Fingerprint:    fingerprint,
 		FirstTimestamp: seriesFrontier.optimalStartTime(curationState),
 	}
+	dto := new(dto.SampleKey)
 
-	prospectiveKey := coding.NewPBEncoder(startKey.ToDTO()).MustEncode()
+	startKey.Dump(dto)
+	prospectiveKey := coding.NewPBEncoder(dto).MustEncode()
 	if !w.sampleIterator.Seek(prospectiveKey) {
 		// LevelDB is picky about the seek ranges.  If an iterator was invalidated,
 		// no work may occur, and the iterator cannot be recovered.
@@ -358,22 +356,101 @@ func (w watermarkOperator) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 	return
 }
 
-func (w watermarkOperator) refreshCurationRemark(f *model.Fingerprint, finished time.Time) (err error) {
-	signature, err := w.processor.Signature()
-	if err != nil {
-		return
-	}
-	curationKey := model.CurationKey{
+func (w *watermarkScanner) refreshCurationRemark(f *clientmodel.Fingerprint, finished time.Time) error {
+	curationKey := curationKey{
 		Fingerprint:              f,
-		ProcessorMessageRaw:      signature,
+		ProcessorMessageRaw:      w.processor.Signature(),
 		ProcessorMessageTypeName: w.processor.Name(),
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
-	}.ToDTO()
-	curationValue := model.CurationRemark{
+	}
+	k := new(dto.CurationKey)
+	curationKey.dump(k)
+	curationValue := curationRemark{
 		LastCompletionTimestamp: finished,
-	}.ToDTO()
+	}
+	v := new(dto.CurationValue)
+	curationValue.dump(v)
 
-	err = w.curationState.Put(curationKey, curationValue)
+	return w.curationState.Put(k, v)
+}
 
-	return
+// curationRemark provides a representation of dto.CurationValue with associated
+// business logic methods attached to it to enhance code readability.
+type curationRemark struct {
+	LastCompletionTimestamp time.Time
+}
+
+// OlderThan answers whether this curationRemark is older than the provided
+// cutOff time.
+func (c *curationRemark) OlderThan(t time.Time) bool {
+	return c.LastCompletionTimestamp.Before(t)
+}
+
+// Equal answers whether the two curationRemarks are equivalent.
+func (c *curationRemark) Equal(o curationRemark) bool {
+	return c.LastCompletionTimestamp.Equal(o.LastCompletionTimestamp)
+}
+
+func (c *curationRemark) String() string {
+	return fmt.Sprintf("Last curated at %s", c.LastCompletionTimestamp)
+}
+
+func (c *curationRemark) load(d *dto.CurationValue) {
+	c.LastCompletionTimestamp = time.Unix(d.GetLastCompletionTimestamp(), 0).UTC()
+}
+
+func (c *curationRemark) dump(d *dto.CurationValue) {
+	d.Reset()
+
+	d.LastCompletionTimestamp = proto.Int64(c.LastCompletionTimestamp.Unix())
+}
+
+// curationKey provides a representation of dto.CurationKey with associated
+// business logic methods attached to it to enhance code readability.
+type curationKey struct {
+	Fingerprint              *clientmodel.Fingerprint
+	ProcessorMessageRaw      []byte
+	ProcessorMessageTypeName string
+	IgnoreYoungerThan        time.Duration
+}
+
+// Equal answers whether the two curationKeys are equivalent.
+func (c *curationKey) Equal(o *curationKey) bool {
+	switch {
+	case !c.Fingerprint.Equal(o.Fingerprint):
+		return false
+	case bytes.Compare(c.ProcessorMessageRaw, o.ProcessorMessageRaw) != 0:
+		return false
+	case c.ProcessorMessageTypeName != o.ProcessorMessageTypeName:
+		return false
+	case c.IgnoreYoungerThan != o.IgnoreYoungerThan:
+		return false
+	}
+
+	return true
+}
+
+func (c *curationKey) dump(d *dto.CurationKey) {
+	d.Reset()
+
+	// BUG(matt): Avenue for simplification.
+	fingerprintDTO := &dto.Fingerprint{}
+
+	dumpFingerprint(fingerprintDTO, c.Fingerprint)
+
+	d.Fingerprint = fingerprintDTO
+	d.ProcessorMessageRaw = c.ProcessorMessageRaw
+	d.ProcessorMessageTypeName = proto.String(c.ProcessorMessageTypeName)
+	d.IgnoreYoungerThan = proto.Int64(int64(c.IgnoreYoungerThan))
+}
+
+func (c *curationKey) load(d *dto.CurationKey) {
+	// BUG(matt): Avenue for simplification.
+	c.Fingerprint = &clientmodel.Fingerprint{}
+
+	loadFingerprint(c.Fingerprint, d.Fingerprint)
+
+	c.ProcessorMessageRaw = d.ProcessorMessageRaw
+	c.ProcessorMessageTypeName = d.GetProcessorMessageTypeName()
+	c.IgnoreYoungerThan = time.Duration(d.GetIgnoreYoungerThan())
 }

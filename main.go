@@ -15,32 +15,31 @@ package main
 
 import (
 	"flag"
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/retrieval/format"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	"github.com/prometheus/prometheus/web"
-	"github.com/prometheus/prometheus/web/api"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/extraction"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
+	"github.com/prometheus/prometheus/web"
+	"github.com/prometheus/prometheus/web/api"
 )
 
-const (
-	deletionBatchSize = 100
-)
+const deletionBatchSize = 100
 
 // Commandline flags.
 var (
 	printVersion                 = flag.Bool("version", false, "print version information")
 	configFile                   = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
 	metricsStoragePath           = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
-	scrapeResultsQueueCapacity   = flag.Int("scrapeResultsQueueCapacity", 4096, "The size of the scrape results queue.")
-	ruleResultsQueueCapacity     = flag.Int("ruleResultsQueueCapacity", 4096, "The size of the rule results queue.")
+	samplesQueueCapacity         = flag.Int("samplesQueueCapacity", 4096, "The size of the unwritten samples queue.")
 	concurrentRetrievalAllowance = flag.Int("concurrentRetrievalAllowance", 15, "The number of concurrent metrics retrieval requests allowed.")
 	diskAppendQueueCapacity      = flag.Int("queue.diskAppendCapacity", 1000000, "The size of the queue for items that are pending writing to disk.")
 	memoryAppendQueueCapacity    = flag.Int("queue.memoryAppendCapacity", 10000, "The size of the queue for items that are pending writing to memory.")
@@ -76,8 +75,7 @@ type prometheus struct {
 	databaseStates           chan []leveldb.DatabaseState
 	stopBackgroundOperations chan bool
 
-	ruleResults   chan *rules.Result
-	scrapeResults chan format.Result
+	unwrittenSamples chan *extraction.Result
 
 	storage *metric.TieredStorage
 }
@@ -198,8 +196,7 @@ func main() {
 		log.Fatalln("Nil tiered storage.")
 	}
 
-	scrapeResults := make(chan format.Result, *scrapeResultsQueueCapacity)
-	ruleResults := make(chan *rules.Result, *ruleResultsQueueCapacity)
+	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
 	curationState := make(chan metric.CurationState, 1)
 	databaseStates := make(chan []leveldb.DatabaseState, 1)
 	// Coprime numbers, fool!
@@ -209,11 +206,11 @@ func main() {
 	deletionTimer := time.NewTicker(*deleteInterval)
 
 	// Queue depth will need to be exposed
-	targetManager := retrieval.NewTargetManager(scrapeResults, *concurrentRetrievalAllowance)
+	targetManager := retrieval.NewTargetManager(unwrittenSamples, *concurrentRetrievalAllowance)
 	targetManager.AddTargetsFromConfig(conf)
 
 	// Queue depth will need to be exposed
-	ruleManager := rules.NewRuleManager(ruleResults, conf.EvaluationInterval(), ts)
+	ruleManager := rules.NewRuleManager(unwrittenSamples, conf.EvaluationInterval(), ts)
 	err = ruleManager.AddRulesFromConfig(conf)
 	if err != nil {
 		log.Fatalf("Error loading rule files: %v", err)
@@ -259,7 +256,7 @@ func main() {
 		AlertsHandler:    alertsHandler,
 	}
 
-	prometheus := prometheus{
+	prometheus := &prometheus{
 		bodyCompactionTimer: bodyCompactionTimer,
 		headCompactionTimer: headCompactionTimer,
 		tailCompactionTimer: tailCompactionTimer,
@@ -271,8 +268,7 @@ func main() {
 		curationState:  curationState,
 		databaseStates: databaseStates,
 
-		ruleResults:   ruleResults,
-		scrapeResults: scrapeResults,
+		unwrittenSamples: unwrittenSamples,
 
 		stopBackgroundOperations: make(chan bool, 1),
 
@@ -343,17 +339,9 @@ func main() {
 	}()
 
 	// TODO(all): Migrate this into prometheus.serve().
-	for {
-		select {
-		case scrapeResult := <-scrapeResults:
-			if scrapeResult.Err == nil {
-				ts.AppendSamples(scrapeResult.Samples)
-			}
-
-		case ruleResult := <-ruleResults:
-			if ruleResult.Err == nil {
-				ts.AppendSamples(ruleResult.Samples)
-			}
+	for block := range unwrittenSamples {
+		if block.Err == nil {
+			ts.AppendSamples(block.Samples)
 		}
 	}
 }

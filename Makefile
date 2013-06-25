@@ -17,8 +17,8 @@ include Makefile.INCLUDE
 
 all: binary test
 
-$(GOCC): build/cache/$(GOPKG)
-	tar -C build/root -xzf $<
+$(GOCC): $(BUILD_PATH)/cache/$(GOPKG) source_path
+	tar -C $(BUILD_PATH)/root -xzf $<
 	touch $@
 
 advice:
@@ -28,14 +28,14 @@ binary: build
 
 build: config dependencies model preparation tools web
 	$(GO) build -o prometheus $(BUILDFLAGS) .
-	cp prometheus build/package/prometheus
-	rsync -av build/root/lib/ build/package/lib/
+	cp prometheus $(BUILD_PATH)/package/prometheus
+	rsync -av --delete $(BUILD_PATH)/root/lib/ $(BUILD_PATH)/package/lib/
 
-build/cache/$(GOPKG):
+$(BUILD_PATH)/cache/$(GOPKG):
 	curl -o $@ http://go.googlecode.com/files/$(GOPKG)
 
 clean:
-	$(MAKE) -C build clean
+	$(MAKE) -C $(BUILD_PATH) clean
 	$(MAKE) -C tools clean
 	$(MAKE) -C web clean
 	rm -rf $(TEST_ARTIFACTS)
@@ -53,16 +53,16 @@ documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
 format:
-	find . -iname '*.go' | egrep -v "^./build/|generated|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
+	find . -iname '*.go' | egrep -v "^\./\.build|./generated|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
 
 model: dependencies preparation
 	$(MAKE) -C model
 
 preparation: $(GOCC) source_path
-	$(MAKE) -C build
+	$(MAKE) -C $(BUILD_PATH)
 
 race_condition_binary: build
-	CGO_CFLAGS="-I$(PWD)/build/root/include" CGO_LDFLAGS="-L$(PWD)/build/root/lib" $(GO) build -race -o prometheus.race $(BUILDFLAGS) .
+	CGO_CFLAGS="-I$(BUILD_PATH)/root/include" CGO_LDFLAGS="-L$(BUILD_PATH)/root/lib" $(GO) build -race -o prometheus.race $(BUILDFLAGS) .
 
 race_condition_run: race_condition_binary
 	./prometheus.race $(ARGUMENTS)
@@ -83,13 +83,16 @@ source_path:
 	[ -d "$(FULL_GOPATH)" ]
 
 test: build
-	$(GOENV) find . -maxdepth 1 -mindepth 1 -type d -and -not -path ./build -exec $(GOCC) test {}/... $(GO_TEST_FLAGS) \;
+	$(GOENV) find . -maxdepth 1 -mindepth 1 -type d -and -not -path $(BUILD_PATH) -exec $(GOCC) test {}/... $(GO_TEST_FLAGS) \;
 	$(GO) test $(GO_TEST_FLAGS)
 
 tools: dependencies preparation
 	$(MAKE) -C tools
 
+update:
+	$(GO) get -d
+
 web: config dependencies model preparation
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean config dependencies documentation format model package preparation race_condition_binary race_condition_run run search_index source_path test tools
+.PHONY: advice binary build clean config dependencies documentation format model package preparation race_condition_binary race_condition_run run search_index source_path test tools update

@@ -14,10 +14,11 @@
 package leveldb
 
 import (
-	"github.com/prometheus/prometheus/storage/raw"
 	"testing"
+
+	"github.com/prometheus/prometheus/storage/raw"
 )
 
 func TestInterfaceAdherence(t *testing.T) {
-	var _ raw.Persistence = &LevelDBPersistence{}
+	var _ raw.Persistence = new(LevelDBPersistence)
 }

@@ -14,14 +14,19 @@
 package retrieval
 
 import (
-	"code.google.com/p/goprotobuf/proto"
-	"github.com/prometheus/prometheus/config"
-	pb "github.com/prometheus/prometheus/config/generated"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/retrieval/format"
-	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
+
+	"code.google.com/p/goprotobuf/proto"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/client_golang/extraction"
+
+	pb "github.com/prometheus/prometheus/config/generated"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 type fakeTarget struct {
@@ -43,15 +48,15 @@ func (t fakeTarget) GlobalAddress() string {
 	return t.Address()
 }
 
-func (t fakeTarget) BaseLabels() model.LabelSet {
-	return model.LabelSet{}
+func (t fakeTarget) BaseLabels() clientmodel.LabelSet {
+	return clientmodel.LabelSet{}
 }
 
 func (t fakeTarget) Interval() time.Duration {
 	return t.interval
 }
 
-func (t *fakeTarget) Scrape(e time.Time, r chan format.Result) error {
+func (t *fakeTarget) Scrape(e time.Time, r chan<- *extraction.Result) error {
 	t.scrapeCount++
 
 	return nil
@@ -71,7 +76,7 @@ func (t *fakeTarget) scheduledFor() (time time.Time) {
 func (t *fakeTarget) Merge(newTarget Target) {}
 
 func testTargetManager(t test.Tester) {
-	results := make(chan format.Result, 5)
+	results := make(chan *extraction.Result, 5)
 	targetManager := NewTargetManager(results, 3)
 	testJob1 := config.JobConfig{
 		JobConfig: pb.JobConfig{

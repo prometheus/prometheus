@@ -18,8 +18,6 @@ import (
 	"math"
 	"sort"
 	"time"
-
-	"github.com/prometheus/prometheus/model"
 )
 
 // Encapsulates a primitive query operation.
@@ -27,7 +25,7 @@ type op interface {
 	// The time at which this operation starts.
 	StartsAt() time.Time
 	// Extract samples from stream of values and advance operation time.
-	ExtractSamples(in model.Values) (out model.Values)
+	ExtractSamples(in Values) (out Values)
 	// Get current operation time or nil if no subsequent work associated with
 	// this operator remains.
 	CurrentTime() *time.Time
@@ -74,7 +72,7 @@ func (g *getValuesAtTimeOp) StartsAt() time.Time {
 	return g.time
 }
 
-func (g *getValuesAtTimeOp) ExtractSamples(in model.Values) (out model.Values) {
+func (g *getValuesAtTimeOp) ExtractSamples(in Values) (out Values) {
 	if len(in) == 0 {
 		return
 	}
@@ -101,7 +99,7 @@ func (g *getValuesAtTimeOp) GreedierThan(op op) (superior bool) {
 // are adjacent to it.
 //
 // An assumption of this is that the provided samples are already sorted!
-func extractValuesAroundTime(t time.Time, in model.Values) (out model.Values) {
+func extractValuesAroundTime(t time.Time, in Values) (out Values) {
 	i := sort.Search(len(in), func(i int) bool {
 		return !in[i].Timestamp.Before(t)
 	})
@@ -152,7 +150,7 @@ func (g *getValuesAtIntervalOp) Through() time.Time {
 	return g.through
 }
 
-func (g *getValuesAtIntervalOp) ExtractSamples(in model.Values) (out model.Values) {
+func (g *getValuesAtIntervalOp) ExtractSamples(in Values) (out Values) {
 	if len(in) == 0 {
 		return
 	}
@@ -212,7 +210,7 @@ func (g *getValuesAlongRangeOp) Through() time.Time {
 	return g.through
 }
 
-func (g *getValuesAlongRangeOp) ExtractSamples(in model.Values) (out model.Values) {
+func (g *getValuesAlongRangeOp) ExtractSamples(in Values) (out Values) {
 	if len(in) == 0 {
 		return
 	}

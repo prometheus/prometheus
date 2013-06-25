@@ -15,20 +15,21 @@ package metric
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
 	"runtime"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 func BenchmarkStreamAdd(b *testing.B) {
 	b.StopTimer()
-	s := newStream(model.Metric{})
+	s := newStream(clientmodel.Metric{})
 	times := make([]time.Time, 0, b.N)
-	samples := make([]model.SampleValue, 0, b.N)
+	samples := make([]clientmodel.SampleValue, 0, b.N)
 	for i := 0; i < b.N; i++ {
 		times = append(times, time.Date(i, 0, 0, 0, 0, 0, 0, time.UTC))
-		samples = append(samples, model.SampleValue(i))
+		samples = append(samples, clientmodel.SampleValue(i))
 	}
 
 	b.StartTimer()
@@ -50,16 +51,16 @@ func benchmarkAppendSample(b *testing.B, labels int) {
 	b.StopTimer()
 	s := NewMemorySeriesStorage(MemorySeriesOptions{})
 
-	metric := model.Metric{}
+	metric := clientmodel.Metric{}
 
 	for i := 0; i < labels; i++ {
-		metric[model.LabelName(fmt.Sprintf("label_%d", i))] = model.LabelValue(fmt.Sprintf("value_%d", i))
+		metric[clientmodel.LabelName(fmt.Sprintf("label_%d", i))] = clientmodel.LabelValue(fmt.Sprintf("value_%d", i))
 	}
-	samples := make(model.Samples, 0, b.N)
+	samples := make(clientmodel.Samples, 0, b.N)
 	for i := 0; i < b.N; i++ {
-		samples = append(samples, model.Sample{
+		samples = append(samples, &clientmodel.Sample{
 			Metric:    metric,
-			Value:     model.SampleValue(i),
+			Value:     clientmodel.SampleValue(i),
 			Timestamp: time.Date(i, 0, 0, 0, 0, 0, 0, time.UTC),
 		})
 	}

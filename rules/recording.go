@@ -18,7 +18,8 @@ import (
 	"html/template"
 	"time"
 
-	"github.com/prometheus/prometheus/model"
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -28,7 +29,7 @@ import (
 type RecordingRule struct {
 	name      string
 	vector    ast.VectorNode
-	labels    model.LabelSet
+	labels    clientmodel.LabelSet
 	permanent bool
 }
 
@@ -47,7 +48,7 @@ func (rule RecordingRule) Eval(timestamp time.Time, storage *metric.TieredStorag
 
 	// Override the metric name and labels.
 	for _, sample := range vector {
-		sample.Metric[model.MetricNameLabel] = model.LabelValue(rule.name)
+		sample.Metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(rule.name)
 		for label, value := range rule.labels {
 			if value == "" {
 				delete(sample.Metric, label)
@@ -85,7 +86,7 @@ func (rule RecordingRule) HTMLSnippet() template.HTML {
 }
 
 // Construct a new RecordingRule.
-func NewRecordingRule(name string, labels model.LabelSet, vector ast.VectorNode, permanent bool) *RecordingRule {
+func NewRecordingRule(name string, labels clientmodel.LabelSet, vector ast.VectorNode, permanent bool) *RecordingRule {
 	return &RecordingRule{
 		name:      name,
 		labels:    labels,
