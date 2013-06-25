@@ -15,15 +15,17 @@ package rules
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/rules/ast"
-	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility/test"
 	"path"
 	"strings"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/stats"
+	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 var (
@@ -528,7 +530,7 @@ func TestAlertingRule(t *testing.T) {
 		t.Fatalf("Unable to parse alert expression: %s", err)
 	}
 	alertName := "HttpRequestRateLow"
-	alertLabels := model.LabelSet{
+	alertLabels := clientmodel.LabelSet{
 		"summary": "HTTP request rate is low",
 	}
 	rule := NewAlertingRule(alertName, alertExpr.(ast.VectorNode), time.Minute, alertLabels)

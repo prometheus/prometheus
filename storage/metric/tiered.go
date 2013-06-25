@@ -17,19 +17,20 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"sync"
 	"time"
 
 	dto "github.com/prometheus/prometheus/model/generated"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
-	"github.com/prometheus/prometheus/model"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	"sync"
 )
 
-type chunk model.Values
+type chunk Values
 
 // TruncateBefore returns a subslice of the original such that extraneous
 // samples in the collection that occur before the provided time are
@@ -78,7 +79,7 @@ type TieredStorage struct {
 	// BUG(matt): This introduces a Law of Demeter violation.  Ugh.
 	DiskStorage *LevelDBMetricPersistence
 
-	appendToDiskQueue chan model.Samples
+	appendToDiskQueue chan clientmodel.Samples
 
 	memoryArena         *memorySeriesStorage
 	memoryTTL           time.Duration
@@ -120,7 +121,7 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 	memOptions := MemorySeriesOptions{WatermarkCache: wmCache}
 
 	s := &TieredStorage{
-		appendToDiskQueue:   make(chan model.Samples, appendToDiskQueueDepth),
+		appendToDiskQueue:   make(chan clientmodel.Samples, appendToDiskQueueDepth),
 		DiskStorage:         diskStorage,
 		draining:            make(chan chan<- bool),
 		flushMemoryInterval: flushMemoryInterval,
@@ -145,7 +146,7 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 }
 
 // Enqueues Samples for storage.
-func (t *TieredStorage) AppendSamples(samples model.Samples) (err error) {
+func (t *TieredStorage) AppendSamples(samples clientmodel.Samples) (err error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.state != tieredStorageServing {
@@ -169,6 +170,8 @@ func (t *TieredStorage) drain(drained chan<- bool) {
 	if t.state >= tieredStorageDraining {
 		panic("Illegal State: Supplemental drain requested.")
 	}
+
+	t.state = tieredStorageDraining
 
 	log.Println("Triggering drain...")
 	t.draining <- (drained)
@@ -269,7 +272,7 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 
 	queueLength := len(t.appendToDiskQueue)
 	if queueLength > 0 {
-		samples := model.Samples{}
+		samples := clientmodel.Samples{}
 		for i := 0; i < queueLength; i++ {
 			chunk := <-t.appendToDiskQueue
 			samples = append(samples, chunk...)
@@ -286,6 +289,10 @@ func (t *TieredStorage) Close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	t.close()
+}
+
+func (t *TieredStorage) close() {
 	if t.state == tieredStorageStopping {
 		panic("Illegal State: Attempted to restop TieredStorage.")
 	}
@@ -305,7 +312,7 @@ func (t *TieredStorage) Close() {
 	t.state = tieredStorageStopping
 }
 
-func (t *TieredStorage) seriesTooOld(f *model.Fingerprint, i time.Time) (bool, error) {
+func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (bool, error) {
 	// BUG(julius): Make this configurable by query layer.
 	i = i.Add(-stalenessLimit)
 
@@ -315,21 +322,23 @@ func (t *TieredStorage) seriesTooOld(f *model.Fingerprint, i time.Time) (bool, e
 			samples := t.memoryArena.CloneSamples(f)
 			if len(samples) > 0 {
 				newest := samples[len(samples)-1].Timestamp
-				t.wmCache.Set(f, &Watermarks{High: newest})
+				t.wmCache.Set(f, &watermarks{High: newest})
 
 				return newest.Before(i), nil
 			}
 		}
 
 		value := &dto.MetricHighWatermark{}
-		diskHit, err := t.DiskStorage.MetricHighWatermarks.Get(f.ToDTO(), value)
+		k := &dto.Fingerprint{}
+		dumpFingerprint(k, f)
+		diskHit, err := t.DiskStorage.MetricHighWatermarks.Get(k, value)
 		if err != nil {
 			return false, err
 		}
 
 		if diskHit {
 			wmTime := time.Unix(*value.Timestamp, 0).UTC()
-			t.wmCache.Set(f, &Watermarks{High: wmTime})
+			t.wmCache.Set(f, &watermarks{High: wmTime})
 
 			return wmTime.Before(i), nil
 		}
@@ -454,7 +463,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			}
 
 			// For each op, extract all needed data from the current chunk.
-			out := model.Values{}
+			out := Values{}
 			for _, op := range standingOps {
 				if op.CurrentTime().After(targetTime) {
 					break
@@ -463,7 +472,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 				currentChunk = currentChunk.TruncateBefore(*(op.CurrentTime()))
 
 				for op.CurrentTime() != nil && !op.CurrentTime().After(targetTime) {
-					out = op.ExtractSamples(model.Values(currentChunk))
+					out = op.ExtractSamples(Values(currentChunk))
 
 					// Append the extracted samples to the materialized view.
 					view.appendSamples(scanJob.fingerprint, out)
@@ -500,14 +509,15 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	return
 }
 
-func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint *model.Fingerprint, ts time.Time) (chunk model.Values) {
-	var (
-		targetKey = &dto.SampleKey{
-			Fingerprint: fingerprint.ToDTO(),
-		}
-		foundKey    model.SampleKey
-		foundValues model.Values
-	)
+func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint *clientmodel.Fingerprint, ts time.Time) (chunk Values) {
+
+	fd := &dto.Fingerprint{}
+	dumpFingerprint(fd, fingerprint)
+	targetKey := &dto.SampleKey{
+		Fingerprint: fd,
+	}
+	var foundKey *SampleKey
+	var foundValues Values
 
 	// Limit the target key to be within the series' keyspace.
 	if ts.After(frontier.lastSupertime) {
@@ -577,7 +587,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 }
 
 // Get all label values that are associated with the provided label name.
-func (t *TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (model.LabelValues, error) {
+func (t *TieredStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -594,8 +604,8 @@ func (t *TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (model.L
 		return nil, err
 	}
 
-	valueSet := map[model.LabelValue]bool{}
-	values := model.LabelValues{}
+	valueSet := map[clientmodel.LabelValue]bool{}
+	values := clientmodel.LabelValues{}
 	for _, value := range append(diskValues, memoryValues...) {
 		if !valueSet[value] {
 			values = append(values, value)
@@ -608,7 +618,7 @@ func (t *TieredStorage) GetAllValuesForLabel(labelName model.LabelName) (model.L
 
 // Get all of the metric fingerprints that are associated with the provided
 // label set.
-func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (model.Fingerprints, error) {
+func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet) (clientmodel.Fingerprints, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -624,11 +634,11 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (mod
 	if err != nil {
 		return nil, err
 	}
-	fingerprintSet := map[model.Fingerprint]bool{}
+	fingerprintSet := map[clientmodel.Fingerprint]bool{}
 	for _, fingerprint := range append(memFingerprints, diskFingerprints...) {
 		fingerprintSet[*fingerprint] = true
 	}
-	fingerprints := model.Fingerprints{}
+	fingerprints := clientmodel.Fingerprints{}
 	for fingerprint := range fingerprintSet {
 		fpCopy := fingerprint
 		fingerprints = append(fingerprints, &fpCopy)
@@ -638,7 +648,7 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet model.LabelSet) (mod
 }
 
 // Get the metric associated with the provided fingerprint.
-func (t *TieredStorage) GetMetricForFingerprint(f *model.Fingerprint) (model.Metric, error) {
+func (t *TieredStorage) GetMetricForFingerprint(f *clientmodel.Fingerprint) (clientmodel.Metric, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 

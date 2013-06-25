@@ -14,10 +14,12 @@
 package metric
 
 import (
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
@@ -26,7 +28,7 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 		month time.Month
 		day   int
 		hour  int
-		value model.SampleValue
+		value clientmodel.SampleValue
 	}
 
 	type input struct {
@@ -36,7 +38,7 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 		hour  int
 	}
 
-	type output []model.SampleValue
+	type output []clientmodel.SampleValue
 
 	type behavior struct {
 		name   string
@@ -320,13 +322,13 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			defer closer.Close()
 			defer p.Close()
 
-			m := model.Metric{
-				model.MetricNameLabel: "age_in_years",
+			m := clientmodel.Metric{
+				clientmodel.MetricNameLabel: "age_in_years",
 			}
 
 			for _, value := range context.values {
-				testAppendSample(p, model.Sample{
-					Value:     model.SampleValue(value.value),
+				testAppendSample(p, &clientmodel.Sample{
+					Value:     clientmodel.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
 				}, t)
@@ -335,8 +337,9 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			for j, behavior := range context.behaviors {
 				input := behavior.input
 				time := time.Date(input.year, input.month, input.day, input.hour, 0, 0, 0, time.UTC)
-
-				actual := p.GetValueAtTime(model.NewFingerprintFromMetric(m), time)
+				fingerprint := &clientmodel.Fingerprint{}
+				fingerprint.LoadFromMetric(m)
+				actual := p.GetValueAtTime(fingerprint, time)
 
 				if len(behavior.output) != len(actual) {
 					t.Fatalf("%d.%d(%s.%s). Expected %d samples but got: %v\n", i, j, context.name, behavior.name, len(behavior.output), actual)
@@ -358,7 +361,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 		month time.Month
 		day   int
 		hour  int
-		value model.SampleValue
+		value clientmodel.SampleValue
 	}
 
 	type input struct {
@@ -377,7 +380,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 		month time.Month
 		day   int
 		hour  int
-		value model.SampleValue
+		value clientmodel.SampleValue
 	}
 
 	type behavior struct {
@@ -811,13 +814,13 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 			defer closer.Close()
 			defer p.Close()
 
-			m := model.Metric{
-				model.MetricNameLabel: "age_in_years",
+			m := clientmodel.Metric{
+				clientmodel.MetricNameLabel: "age_in_years",
 			}
 
 			for _, value := range context.values {
-				testAppendSample(p, model.Sample{
-					Value:     model.SampleValue(value.value),
+				testAppendSample(p, &clientmodel.Sample{
+					Value:     clientmodel.SampleValue(value.value),
 					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
 					Metric:    m,
 				}, t)
@@ -827,14 +830,15 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 				input := behavior.input
 				open := time.Date(input.openYear, input.openMonth, input.openDay, input.openHour, 0, 0, 0, time.UTC)
 				end := time.Date(input.endYear, input.endMonth, input.endDay, input.endHour, 0, 0, 0, time.UTC)
-				in := model.Interval{
+				in := Interval{
 					OldestInclusive: open,
 					NewestInclusive: end,
 				}
 
-				actualValues := model.Values{}
+				actualValues := Values{}
 				expectedValues := []output{}
-				fp := model.NewFingerprintFromMetric(m)
+				fp := &clientmodel.Fingerprint{}
+				fp.LoadFromMetric(m)
 				if onlyBoundaries {
 					actualValues = p.GetBoundaryValues(fp, in)
 					l := len(behavior.output)
@@ -865,7 +869,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 					for k, actual := range actualValues {
 						expected := expectedValues[k]
 
-						if actual.Value != model.SampleValue(expected.value) {
+						if actual.Value != clientmodel.SampleValue(expected.value) {
 							t.Fatalf("%d.%d.%d(%s). Expected %v but got: %v\n", i, j, k, behavior.name, expected.value, actual.Value)
 						}
 

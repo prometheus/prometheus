@@ -11,20 +11,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package model
+package metric
 
 import (
-	"code.google.com/p/goprotobuf/proto"
 	"fmt"
-	"github.com/prometheus/prometheus/coding/indexable"
-	dto "github.com/prometheus/prometheus/model/generated"
 	"time"
+
+	"code.google.com/p/goprotobuf/proto"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
+	"github.com/prometheus/prometheus/coding/indexable"
 )
 
 // SampleKey models the business logic around the data-transfer object
 // SampleKey.
 type SampleKey struct {
-	Fingerprint    *Fingerprint
+	Fingerprint    *clientmodel.Fingerprint
 	FirstTimestamp time.Time
 	LastTimestamp  time.Time
 	SampleCount    uint32
@@ -33,7 +38,7 @@ type SampleKey struct {
 // MayContain indicates whether the given SampleKey could potentially contain a
 // value at the provided time.  Even if true is emitted, that does not mean a
 // satisfactory value, in fact, exists.
-func (s SampleKey) MayContain(t time.Time) bool {
+func (s *SampleKey) MayContain(t time.Time) bool {
 	switch {
 	case t.Before(s.FirstTimestamp):
 		return false
@@ -45,40 +50,39 @@ func (s SampleKey) MayContain(t time.Time) bool {
 }
 
 // ToDTO converts this SampleKey into a DTO for use in serialization purposes.
-func (s SampleKey) ToDTO() (out *dto.SampleKey) {
-	out = &dto.SampleKey{
-		Fingerprint:   s.Fingerprint.ToDTO(),
-		Timestamp:     indexable.EncodeTime(s.FirstTimestamp),
-		LastTimestamp: proto.Int64(s.LastTimestamp.Unix()),
-		SampleCount:   proto.Uint32(s.SampleCount),
-	}
+func (s *SampleKey) Dump(d *dto.SampleKey) {
+	d.Reset()
+	fp := &dto.Fingerprint{}
+	dumpFingerprint(fp, s.Fingerprint)
 
-	return
+	d.Fingerprint = fp
+	d.Timestamp = indexable.EncodeTime(s.FirstTimestamp)
+	d.LastTimestamp = proto.Int64(s.LastTimestamp.Unix())
+	d.SampleCount = proto.Uint32(s.SampleCount)
 }
 
 // ToPartialDTO converts this SampleKey into a DTO that is only suitable for
 // database exploration purposes for a given (Fingerprint, First Sample Time)
 // tuple.
-func (s SampleKey) ToPartialDTO(out *dto.SampleKey) {
-	out = &dto.SampleKey{
-		Fingerprint: s.Fingerprint.ToDTO(),
-		Timestamp:   indexable.EncodeTime(s.FirstTimestamp),
-	}
+func (s *SampleKey) FOOdumpPartial(d *dto.SampleKey) {
+	d.Reset()
 
-	return
+	f := &dto.Fingerprint{}
+	dumpFingerprint(f, s.Fingerprint)
+
+	d.Fingerprint = f
+	d.Timestamp = indexable.EncodeTime(s.FirstTimestamp)
 }
 
-func (s SampleKey) String() string {
+func (s *SampleKey) String() string {
 	return fmt.Sprintf("SampleKey for %s at %s to %s with %d values.", s.Fingerprint, s.FirstTimestamp, s.LastTimestamp, s.SampleCount)
 }
 
-// NewSampleKeyFromDTO builds a new SampleKey from a provided data-transfer
-// object.
-func NewSampleKeyFromDTO(dto *dto.SampleKey) SampleKey {
-	return SampleKey{
-		Fingerprint:    NewFingerprintFromDTO(dto.Fingerprint),
-		FirstTimestamp: indexable.DecodeTime(dto.Timestamp),
-		LastTimestamp:  time.Unix(*dto.LastTimestamp, 0).UTC(),
-		SampleCount:    *dto.SampleCount,
-	}
+func (s *SampleKey) Load(d *dto.SampleKey) {
+	f := &clientmodel.Fingerprint{}
+	loadFingerprint(f, d.GetFingerprint())
+	s.Fingerprint = f
+	s.FirstTimestamp = indexable.DecodeTime(d.Timestamp)
+	s.LastTimestamp = time.Unix(d.GetLastTimestamp(), 0).UTC()
+	s.SampleCount = d.GetSampleCount()
 }

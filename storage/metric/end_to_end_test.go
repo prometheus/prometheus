@@ -14,33 +14,35 @@
 package metric
 
 import (
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
-	testAppendSample(p, model.Sample{
+	testAppendSample(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
-		Metric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-			"request_type":        "your_mom",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+			"request_type":              "your_mom",
 		},
 	}, t)
 
-	testAppendSample(p, model.Sample{
+	testAppendSample(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
-		Metric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-			"request_type":        "your_dad",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+			"request_type":              "your_dad",
 		},
 	}, t)
 
-	result, err := p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.MetricNameLabel: model.LabelValue("my_metric"),
+	result, err := p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		clientmodel.MetricNameLabel: clientmodel.LabelValue("my_metric"),
 	})
 
 	if err != nil {
@@ -51,8 +53,8 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected two elements.")
 	}
 
-	result, err = p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.LabelName("request_type"): model.LabelValue("your_mom"),
+	result, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		clientmodel.LabelName("request_type"): clientmodel.LabelValue("your_mom"),
 	})
 
 	if err != nil {
@@ -63,8 +65,8 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	result, err = p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.LabelName("request_type"): model.LabelValue("your_dad"),
+	result, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		clientmodel.LabelName("request_type"): clientmodel.LabelValue("your_dad"),
 	})
 
 	if err != nil {
@@ -77,27 +79,27 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 }
 
 func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
-	testAppendSample(p, model.Sample{
+	testAppendSample(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
-		Metric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-			"request_type":        "your_mom",
-			"language":            "english",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+			"request_type":              "your_mom",
+			"language":                  "english",
 		},
 	}, t)
 
-	testAppendSample(p, model.Sample{
+	testAppendSample(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
-		Metric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-			"request_type":        "your_dad",
-			"sprache":             "deutsch",
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+			"request_type":              "your_dad",
+			"sprache":                   "deutsch",
 		},
 	}, t)
 
-	b := model.MetricNameLabel
+	b := clientmodel.MetricNameLabel
 	result, err := p.GetFingerprintsForLabelName(b)
 
 	if err != nil {
@@ -108,7 +110,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected two elements.")
 	}
 
-	b = model.LabelName("request_type")
+	b = clientmodel.LabelName("request_type")
 	result, err = p.GetFingerprintsForLabelName(b)
 
 	if err != nil {
@@ -119,7 +121,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected two elements.")
 	}
 
-	b = model.LabelName("language")
+	b = clientmodel.LabelName("language")
 	result, err = p.GetFingerprintsForLabelName(b)
 
 	if err != nil {
@@ -130,7 +132,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	b = model.LabelName("sprache")
+	b = clientmodel.LabelName("sprache")
 	result, err = p.GetFingerprintsForLabelName(b)
 
 	if err != nil {
@@ -143,25 +145,25 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 }
 
 func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
-	testAppendSample(p, model.Sample{
+	testAppendSample(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
-		Metric: model.Metric{
+		Metric: clientmodel.Metric{
 			"request_type": "your_mom",
 		},
 	}, t)
 
-	testAppendSample(p, model.Sample{
+	testAppendSample(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
-		Metric: model.Metric{
+		Metric: clientmodel.Metric{
 			"request_type": "your_dad",
 			"one-off":      "value",
 		},
 	}, t)
 
-	result, err := p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.LabelName("request_type"): model.LabelValue("your_mom"),
+	result, err := p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		clientmodel.LabelName("request_type"): clientmodel.LabelValue("your_mom"),
 	})
 
 	if err != nil {
@@ -189,8 +191,8 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected metric to match.")
 	}
 
-	result, err = p.GetFingerprintsForLabelSet(model.LabelSet{
-		model.LabelName("request_type"): model.LabelValue("your_dad"),
+	result, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		clientmodel.LabelName("request_type"): clientmodel.LabelValue("your_dad"),
 	})
 
 	if err != nil {
@@ -250,10 +252,10 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 }
 
 func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
-	metric := model.Metric{
-		model.MetricNameLabel: "errors_total",
-		"controller":          "foo",
-		"operation":           "bar",
+	metric := clientmodel.Metric{
+		clientmodel.MetricNameLabel: "errors_total",
+		"controller":                "foo",
+		"operation":                 "bar",
 	}
 
 	increments := 10
@@ -262,8 +264,8 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 	for i := 0; i < increments; i++ {
 		for j := 0; j < repetitions; j++ {
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			testAppendSample(p, model.Sample{
-				Value:     model.SampleValue(i),
+			testAppendSample(p, &clientmodel.Sample{
+				Value:     clientmodel.SampleValue(i),
 				Timestamp: time,
 				Metric:    metric,
 			}, t)
@@ -275,10 +277,10 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 		return
 	}
 
-	labelSet := model.LabelSet{
-		model.MetricNameLabel: "errors_total",
-		"controller":          "foo",
-		"operation":           "bar",
+	labelSet := clientmodel.LabelSet{
+		clientmodel.MetricNameLabel: "errors_total",
+		"controller":                "foo",
+		"operation":                 "bar",
 	}
 
 	for i := 0; i < increments; i++ {
@@ -297,7 +299,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 				t.Fatal("expected at least one sample.")
 			}
 
-			expected := model.SampleValue(i)
+			expected := clientmodel.SampleValue(i)
 
 			for _, sample := range samples {
 				if sample.Value != expected {
@@ -309,21 +311,21 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 }
 
 func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
-	metric := model.Metric{
-		model.MetricNameLabel: "errors_total",
-		"controller":          "foo",
-		"operation":           "bar",
+	metric := clientmodel.Metric{
+		clientmodel.MetricNameLabel: "errors_total",
+		"controller":                "foo",
+		"operation":                 "bar",
 	}
 
 	increments := 10
 	repetitions := 500
 
-	s := model.Samples{}
+	s := clientmodel.Samples{}
 	for i := 0; i < increments; i++ {
 		for j := 0; j < repetitions; j++ {
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			s = append(s, model.Sample{
-				Value:     model.SampleValue(i),
+			s = append(s, &clientmodel.Sample{
+				Value:     clientmodel.SampleValue(i),
 				Timestamp: time,
 				Metric:    metric,
 			})
@@ -337,10 +339,10 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 		return
 	}
 
-	labelSet := model.LabelSet{
-		model.MetricNameLabel: "errors_total",
-		"controller":          "foo",
-		"operation":           "bar",
+	labelSet := clientmodel.LabelSet{
+		clientmodel.MetricNameLabel: "errors_total",
+		"controller":                "foo",
+		"operation":                 "bar",
 	}
 
 	for i := 0; i < increments; i++ {
@@ -359,7 +361,7 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 				t.Fatal("expected at least one sample.")
 			}
 
-			expected := model.SampleValue(i)
+			expected := clientmodel.SampleValue(i)
 
 			for _, sample := range samples {
 				if sample.Value != expected {

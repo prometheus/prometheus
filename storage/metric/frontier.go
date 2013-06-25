@@ -15,12 +15,15 @@ package metric
 
 import (
 	"fmt"
+	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	dto "github.com/prometheus/prometheus/model/generated"
+
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
-	"github.com/prometheus/prometheus/model"
-	dto "github.com/prometheus/prometheus/model/generated"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	"time"
 )
 
 // diskFrontier describes an on-disk store of series to provide a
@@ -29,17 +32,17 @@ import (
 // This is used to reduce the burden associated with LevelDB iterator
 // management.
 type diskFrontier struct {
-	firstFingerprint *model.Fingerprint
+	firstFingerprint *clientmodel.Fingerprint
 	firstSupertime   time.Time
-	lastFingerprint  *model.Fingerprint
+	lastFingerprint  *clientmodel.Fingerprint
 	lastSupertime    time.Time
 }
 
 func (f diskFrontier) String() string {
-	return fmt.Sprintf("diskFrontier from %s at %s to %s at %s", f.firstFingerprint.ToRowKey(), f.firstSupertime, f.lastFingerprint.ToRowKey(), f.lastSupertime)
+	return fmt.Sprintf("diskFrontier from %s at %s to %s at %s", f.firstFingerprint, f.firstSupertime, f.lastFingerprint, f.lastSupertime)
 }
 
-func (f diskFrontier) ContainsFingerprint(fingerprint *model.Fingerprint) bool {
+func (f *diskFrontier) ContainsFingerprint(fingerprint *clientmodel.Fingerprint) bool {
 	return !(fingerprint.Less(f.firstFingerprint) || f.lastFingerprint.Less(fingerprint))
 }
 
@@ -60,14 +63,12 @@ func newDiskFrontier(i leveldb.Iterator) (d *diskFrontier, present bool, err err
 		return nil, false, err
 	}
 
-	d = &diskFrontier{}
-
-	d.firstFingerprint = firstKey.Fingerprint
-	d.firstSupertime = firstKey.FirstTimestamp
-	d.lastFingerprint = lastKey.Fingerprint
-	d.lastSupertime = lastKey.FirstTimestamp
-
-	return d, true, nil
+	return &diskFrontier{
+		firstFingerprint: firstKey.Fingerprint,
+		firstSupertime:   firstKey.FirstTimestamp,
+		lastFingerprint:  lastKey.Fingerprint,
+		lastSupertime:    lastKey.FirstTimestamp,
+	}, true, nil
 }
 
 // seriesFrontier represents the valid seek frontier for a given series.
@@ -77,13 +78,13 @@ type seriesFrontier struct {
 	lastTime       time.Time
 }
 
-func (f seriesFrontier) String() string {
+func (f *seriesFrontier) String() string {
 	return fmt.Sprintf("seriesFrontier from %s to %s at %s", f.firstSupertime, f.lastSupertime, f.lastTime)
 }
 
 // newSeriesFrontier furnishes a populated diskFrontier for a given
 // fingerprint.  If the series is absent, present will be false.
-func newSeriesFrontier(f *model.Fingerprint, d *diskFrontier, i leveldb.Iterator) (s *seriesFrontier, present bool, err error) {
+func newSeriesFrontier(f *clientmodel.Fingerprint, d *diskFrontier, i leveldb.Iterator) (s *seriesFrontier, present bool, err error) {
 	lowerSeek := firstSupertime
 	upperSeek := lastSupertime
 
@@ -104,8 +105,10 @@ func newSeriesFrontier(f *model.Fingerprint, d *diskFrontier, i leveldb.Iterator
 	}
 
 	// TODO: Convert this to SampleKey.ToPartialDTO.
+	fp := new(dto.Fingerprint)
+	dumpFingerprint(fp, f)
 	key := &dto.SampleKey{
-		Fingerprint: f.ToDTO(),
+		Fingerprint: fp,
 		Timestamp:   upperSeek,
 	}
 
@@ -169,14 +172,14 @@ func newSeriesFrontier(f *model.Fingerprint, d *diskFrontier, i leveldb.Iterator
 
 // Contains indicates whether a given time value is within the recorded
 // interval.
-func (s seriesFrontier) Contains(t time.Time) bool {
+func (s *seriesFrontier) Contains(t time.Time) bool {
 	return !(t.Before(s.firstSupertime) || t.After(s.lastTime))
 }
 
 // InSafeSeekRange indicates whether the time is within the recorded time range
 // and is safely seekable such that a seek does not result in an iterator point
 // after the last value of the series or outside of the entire store.
-func (s seriesFrontier) InSafeSeekRange(t time.Time) (safe bool) {
+func (s *seriesFrontier) InSafeSeekRange(t time.Time) (safe bool) {
 	if !s.Contains(t) {
 		return
 	}
@@ -188,13 +191,13 @@ func (s seriesFrontier) InSafeSeekRange(t time.Time) (safe bool) {
 	return true
 }
 
-func (s seriesFrontier) After(t time.Time) bool {
+func (s *seriesFrontier) After(t time.Time) bool {
 	return s.firstSupertime.After(t)
 }
 
 // optimalStartTime indicates what the best start time for a curation operation
 // should be given the curation remark.
-func (s seriesFrontier) optimalStartTime(remark *model.CurationRemark) (t time.Time) {
+func (s *seriesFrontier) optimalStartTime(remark *curationRemark) (t time.Time) {
 	switch {
 	case remark == nil:
 		t = s.firstSupertime

@@ -11,26 +11,55 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package model
+package metric
 
 import (
-	"github.com/prometheus/prometheus/utility/test"
 	"sort"
 	"testing"
+
+	"github.com/prometheus/prometheus/utility/test"
 )
 
-func testLabelValues(t test.Tester) {
+func testLabelPairs(t test.Tester) {
 	var scenarios = []struct {
-		in  LabelValues
-		out LabelValues
+		in  LabelPairs
+		out LabelPairs
 	}{
 		{
-			in:  LabelValues{"ZZZ", "zzz"},
-			out: LabelValues{"ZZZ", "zzz"},
+			in: LabelPairs{
+				{
+					Name:  "AAA",
+					Value: "aaa",
+				},
+			},
+			out: LabelPairs{
+				{
+					Name:  "AAA",
+					Value: "aaa",
+				},
+			},
 		},
 		{
-			in:  LabelValues{"aaa", "AAA"},
-			out: LabelValues{"AAA", "aaa"},
+			in: LabelPairs{
+				{
+					Name:  "aaa",
+					Value: "aaa",
+				},
+				{
+					Name:  "ZZZ",
+					Value: "aaa",
+				},
+			},
+			out: LabelPairs{
+				{
+					Name:  "ZZZ",
+					Value: "aaa",
+				},
+				{
+					Name:  "aaa",
+					Value: "aaa",
+				},
+			},
 		},
 	}
 
@@ -38,19 +67,19 @@ func testLabelValues(t test.Tester) {
 		sort.Sort(scenario.in)
 
 		for j, expected := range scenario.out {
-			if expected != scenario.in[j] {
+			if !expected.Equal(scenario.in[j]) {
 				t.Errorf("%d.%d expected %s, got %s", i, j, expected, scenario.in[j])
 			}
 		}
 	}
 }
 
-func TestLabelValues(t *testing.T) {
-	testLabelValues(t)
+func TestLabelPairs(t *testing.T) {
+	testLabelPairs(t)
 }
 
-func BenchmarkLabelValues(b *testing.B) {
+func BenchmarkLabelPairs(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testLabelValues(b)
+		testLabelPairs(b)
 	}
 }

@@ -15,9 +15,10 @@
 package rules
 
 import (
-        "github.com/prometheus/prometheus/model"
         "strconv"
         "strings"
+
+        clientmodel "github.com/prometheus/client_golang/model"
 )
 %}
 
@@ -58,7 +59,7 @@ avg|sum|max|min|count    { yylval.str = strings.ToUpper(yytext); return AGGR_OP 
                            if (err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax) {
                              panic("Invalid float")
                            }
-                           yylval.num = model.SampleValue(num)
+                           yylval.num = clientmodel.SampleValue(num)
                            return NUMBER }
 
 \"(\\.|[^\\"])*\"        { yylval.str = yytext[1:len(yytext) - 1]; return STRING }

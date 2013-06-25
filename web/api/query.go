@@ -14,17 +14,20 @@
 package api
 
 import (
-	"code.google.com/p/gorest"
 	"encoding/json"
 	"errors"
-	"github.com/prometheus/prometheus/model"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/rules/ast"
-	"github.com/prometheus/prometheus/stats"
 	"log"
 	"net/http"
 	"sort"
 	"time"
+
+	"code.google.com/p/gorest"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/stats"
 )
 
 func (serv MetricsService) setAccessControlHeaders(rb *gorest.ResponseBuilder) {
@@ -114,7 +117,7 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 }
 
 func (serv MetricsService) Metrics() string {
-	metricNames, err := serv.Storage.GetAllValuesForLabel(model.MetricNameLabel)
+	metricNames, err := serv.Storage.GetAllValuesForLabel(clientmodel.MetricNameLabel)
 	rb := serv.ResponseBuilder()
 	serv.setAccessControlHeaders(rb)
 	rb.SetContentType(gorest.Application_Json)

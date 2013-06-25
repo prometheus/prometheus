@@ -14,9 +14,12 @@
 package ast
 
 import (
-	"github.com/prometheus/prometheus/model"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 type emptyRangeNode struct{}
@@ -28,18 +31,18 @@ func (node emptyRangeNode) Children() Nodes            { return Nodes{} }
 
 func (node emptyRangeNode) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 	return Matrix{
-		model.SampleSet{
-			Metric: model.Metric{model.MetricNameLabel: "empty_metric"},
-			Values: model.Values{},
+		metric.SampleSet{
+			Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
+			Values: metric.Values{},
 		},
 	}
 }
 
 func (node emptyRangeNode) EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix {
 	return Matrix{
-		model.SampleSet{
-			Metric: model.Metric{model.MetricNameLabel: "empty_metric"},
-			Values: model.Values{},
+		metric.SampleSet{
+			Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
+			Values: metric.Values{},
 		},
 	}
 }
