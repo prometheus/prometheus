@@ -1633,17 +1633,15 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 	for i, scenario := range scenarios {
 		actual := scenario.op.ExtractSamples(scenario.in)
 		if len(actual) != len(scenario.out) {
-			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), scenario.op)
-			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
+			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), actual)
 		}
 
 		if len(scenario.in) < 1 {
 			continue
 		}
-		opTime := scenario.op.CurrentTime()
 		lastExtractedTime := scenario.out[len(scenario.out)-1].Timestamp
-		if opTime != nil && opTime.Before(lastExtractedTime) {
-			t.Fatalf("%d. expected op.CurrentTime() to be nil or after current chunk, %v, %v", i, scenario.op.CurrentTime(), scenario.out)
+		if !scenario.op.Consumed() && scenario.op.CurrentTime().Before(lastExtractedTime) {
+			t.Fatalf("%d. expected op to be consumed or with CurrentTime() after current chunk, %v, %v", i, scenario.op.CurrentTime(), scenario.out)
 		}
 
 		for j, out := range scenario.out {
@@ -1819,8 +1817,164 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 	for i, scenario := range scenarios {
 		actual := scenario.op.ExtractSamples(scenario.in)
 		if len(actual) != len(scenario.out) {
-			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), scenario.op)
-			t.Fatalf("%d. expected length %d, got %d", i, len(scenario.out), len(actual))
+			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), actual)
+		}
+		for j, out := range scenario.out {
+			if out != actual[j] {
+				t.Fatalf("%d. expected output %v, got %v", i, scenario.out, actual)
+			}
+		}
+	}
+}
+
+func TestGetValueRangeAtIntervalOp(t *testing.T) {
+	testOp := getValueRangeAtIntervalOp{
+		rangeFrom:     testInstant.Add(-2 * time.Minute),
+		rangeThrough:  testInstant,
+		rangeDuration: 2 * time.Minute,
+		interval:      10 * time.Minute,
+		through:       testInstant.Add(20 * time.Minute),
+	}
+
+	var scenarios = []struct {
+		op  getValueRangeAtIntervalOp
+		in  model.Values
+		out model.Values
+	}{
+		// All values before the first range.
+		{
+			op: testOp,
+			in: model.Values{
+				{
+					Timestamp: testInstant.Add(-4 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(-3 * time.Minute),
+					Value:     2,
+				},
+			},
+			out: model.Values{},
+		},
+		// Values starting before first range, ending after last.
+		{
+			op: testOp,
+			in: model.Values{
+				{
+					Timestamp: testInstant.Add(-4 * time.Minute),
+					Value:     1,
+				},
+				{
+					Timestamp: testInstant.Add(-3 * time.Minute),
+					Value:     2,
+				},
+				{
+					Timestamp: testInstant.Add(-2 * time.Minute),
+					Value:     3,
+				},
+				{
+					Timestamp: testInstant.Add(-1 * time.Minute),
+					Value:     4,
+				},
+				{
+					Timestamp: testInstant.Add(0 * time.Minute),
+					Value:     5,
+				},
+				{
+					Timestamp: testInstant.Add(5 * time.Minute),
+					Value:     6,
+				},
+				{
+					Timestamp: testInstant.Add(8 * time.Minute),
+					Value:     7,
+				},
+				{
+					Timestamp: testInstant.Add(9 * time.Minute),
+					Value:     8,
+				},
+				{
+					Timestamp: testInstant.Add(10 * time.Minute),
+					Value:     9,
+				},
+				{
+					Timestamp: testInstant.Add(15 * time.Minute),
+					Value:     10,
+				},
+				{
+					Timestamp: testInstant.Add(18 * time.Minute),
+					Value:     11,
+				},
+				{
+					Timestamp: testInstant.Add(19 * time.Minute),
+					Value:     12,
+				},
+				{
+					Timestamp: testInstant.Add(20 * time.Minute),
+					Value:     13,
+				},
+				{
+					Timestamp: testInstant.Add(21 * time.Minute),
+					Value:     14,
+				},
+			},
+			out: model.Values{
+				{
+					Timestamp: testInstant.Add(-2 * time.Minute),
+					Value:     3,
+				},
+				{
+					Timestamp: testInstant.Add(-1 * time.Minute),
+					Value:     4,
+				},
+				{
+					Timestamp: testInstant.Add(0 * time.Minute),
+					Value:     5,
+				},
+				{
+					Timestamp: testInstant.Add(8 * time.Minute),
+					Value:     7,
+				},
+				{
+					Timestamp: testInstant.Add(9 * time.Minute),
+					Value:     8,
+				},
+				{
+					Timestamp: testInstant.Add(10 * time.Minute),
+					Value:     9,
+				},
+				{
+					Timestamp: testInstant.Add(18 * time.Minute),
+					Value:     11,
+				},
+				{
+					Timestamp: testInstant.Add(19 * time.Minute),
+					Value:     12,
+				},
+				{
+					Timestamp: testInstant.Add(20 * time.Minute),
+					Value:     13,
+				},
+			},
+		},
+		// Values starting after last range.
+		{
+			op: testOp,
+			in: model.Values{
+				{
+					Timestamp: testInstant.Add(21 * time.Minute),
+					Value:     14,
+				},
+			},
+			out: model.Values{},
+		},
+	}
+	for i, scenario := range scenarios {
+		actual := model.Values{}
+		for !scenario.op.Consumed() {
+			actual = append(actual, scenario.op.ExtractSamples(scenario.in)...)
+		}
+		if len(actual) != len(scenario.out) {
+			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), actual)
 		}
 		for j, out := range scenario.out {
 			if !out.Equal(actual[j]) {
