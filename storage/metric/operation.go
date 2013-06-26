@@ -25,7 +25,9 @@ type op interface {
 	// The time at which this operation starts.
 	StartsAt() time.Time
 	// Extract samples from stream of values and advance operation time.
-	ExtractSamples(in Values) (out Values)
+	ExtractSamples(Values) Values
+	// Return whether the operator has consumed all data it needs.
+	Consumed() bool
 	// Get current operation time or nil if no subsequent work associated with
 	// this operator remains.
 	CurrentTime() *time.Time
@@ -124,11 +126,12 @@ func extractValuesAroundTime(t time.Time, in Values) (out Values) {
 	return
 }
 
-func (g getValuesAtTimeOp) CurrentTime() (currentTime *time.Time) {
-	if !g.consumed {
-		currentTime = &g.time
-	}
-	return
+func (g getValuesAtTimeOp) CurrentTime() *time.Time {
+	return &g.time
+}
+
+func (g getValuesAtTimeOp) Consumed() bool {
+	return g.consumed
 }
 
 // Encapsulates getting values at a given interval over a duration.
@@ -173,11 +176,12 @@ func (g *getValuesAtIntervalOp) ExtractSamples(in Values) (out Values) {
 	return
 }
 
-func (g *getValuesAtIntervalOp) CurrentTime() (currentTime *time.Time) {
-	if g.from.After(g.through) {
-		return
-	}
+func (g *getValuesAtIntervalOp) CurrentTime() *time.Time {
 	return &g.from
+}
+
+func (g *getValuesAtIntervalOp) Consumed() bool {
+	return g.from.After(g.through)
 }
 
 func (g *getValuesAtIntervalOp) GreedierThan(op op) (superior bool) {
@@ -193,6 +197,7 @@ func (g *getValuesAtIntervalOp) GreedierThan(op op) (superior bool) {
 	return
 }
 
+// Encapsulates getting all values in a given range.
 type getValuesAlongRangeOp struct {
 	from    time.Time
 	through time.Time
@@ -243,11 +248,12 @@ func (g *getValuesAlongRangeOp) ExtractSamples(in Values) (out Values) {
 	return in[firstIdx:lastIdx]
 }
 
-func (g *getValuesAlongRangeOp) CurrentTime() (currentTime *time.Time) {
-	if g.from.After(g.through) {
-		return
-	}
+func (g *getValuesAlongRangeOp) CurrentTime() *time.Time {
 	return &g.from
+}
+
+func (g *getValuesAlongRangeOp) Consumed() bool {
+	return g.from.After(g.through)
 }
 
 func (g *getValuesAlongRangeOp) GreedierThan(op op) (superior bool) {
@@ -261,6 +267,86 @@ func (g *getValuesAlongRangeOp) GreedierThan(op op) (superior bool) {
 	}
 
 	return
+}
+
+// Encapsulates getting all values from ranges along intervals.
+//
+// Works just like getValuesAlongRangeOp, but when from > through, through is
+// incremented by interval and from is reset to through-rangeDuration. Returns
+// current time nil when from > totalThrough.
+type getValueRangeAtIntervalOp struct {
+	rangeFrom     time.Time
+	rangeThrough  time.Time
+	rangeDuration time.Duration
+	interval      time.Duration
+	through       time.Time
+}
+
+func (o *getValueRangeAtIntervalOp) String() string {
+	return fmt.Sprintf("getValueRangeAtIntervalOp range %s from %s each %s through %s", o.rangeDuration, o.rangeFrom, o.interval, o.through)
+}
+
+func (g *getValueRangeAtIntervalOp) StartsAt() time.Time {
+	return g.rangeFrom
+}
+
+func (g *getValueRangeAtIntervalOp) Through() time.Time {
+	panic("not implemented")
+}
+
+func (g *getValueRangeAtIntervalOp) advanceToNextInterval() {
+	g.rangeThrough = g.rangeThrough.Add(g.interval)
+	g.rangeFrom = g.rangeThrough.Add(-g.rangeDuration)
+}
+
+func (g *getValueRangeAtIntervalOp) ExtractSamples(in Values) (out Values) {
+	if len(in) == 0 {
+		return
+	}
+	// Find the first sample where time >= g.from.
+	firstIdx := sort.Search(len(in), func(i int) bool {
+		return !in[i].Timestamp.Before(g.rangeFrom)
+	})
+	if firstIdx == len(in) {
+		// No samples at or after operator start time. This can only happen if we
+		// try applying the operator to a time after the last recorded sample. In
+		// this case, we're finished.
+		g.rangeFrom = g.through.Add(1)
+		return
+	}
+
+	// Find the first sample where time > g.rangeThrough.
+	lastIdx := sort.Search(len(in), func(i int) bool {
+		return in[i].Timestamp.After(g.rangeThrough)
+	})
+	// This only happens when there is only one sample and it is both after
+	// g.rangeFrom and after g.rangeThrough. In this case, both indexes are 0.
+	if lastIdx == firstIdx {
+		g.advanceToNextInterval()
+		return
+	}
+
+	lastSampleTime := in[lastIdx-1].Timestamp
+	// Sample times are stored with a maximum time resolution of one second, so
+	// we have to add exactly that to target the next chunk on the next op
+	// iteration.
+	g.rangeFrom = lastSampleTime.Add(time.Second)
+	if g.rangeFrom.After(g.rangeThrough) {
+		g.advanceToNextInterval()
+	}
+	return in[firstIdx:lastIdx]
+}
+
+func (g *getValueRangeAtIntervalOp) CurrentTime() *time.Time {
+	return &g.rangeFrom
+}
+
+func (g *getValueRangeAtIntervalOp) Consumed() bool {
+	return g.rangeFrom.After(g.through)
+}
+
+func (g *getValueRangeAtIntervalOp) GreedierThan(op op) bool {
+	panic("not implemented")
 }
 
 // Provides a collection of getMetricRangeOperation.
