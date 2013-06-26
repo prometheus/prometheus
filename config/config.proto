@@ -59,9 +59,9 @@ message JobConfig {
 	// information for a job. When this field is provided, no target_group
 	// elements may be set.
 	optional string sd_name = 3;
-  // Discovery refresh period when using DNS-SD to discover targets. Must be a
-  // valid Prometheus duration string in the form "[0-9]+[smhdwy]".
-  optional string sd_refresh_interval = 4 [default = "30s"];
+	// Discovery refresh period when using DNS-SD to discover targets. Must be a
+	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
+	optional string sd_refresh_interval = 4 [default = "30s"];
 	// List of labeled target groups for this job. Only legal when DNS-SD isn't
 	// used for a job.
 	repeated TargetGroup target_group = 5;
