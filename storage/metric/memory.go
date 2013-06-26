@@ -227,7 +227,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, finge
 }
 
 func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- clientmodel.Samples) {
-	emptySeries := clientmodel.Fingerprints{}
+	emptySeries := []clientmodel.Fingerprint{}
 
 	s.RLock()
 	for fingerprint, stream := range s.fingerprintToSeries {
@@ -258,7 +258,7 @@ func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- clien
 		stream.values = toKeep
 
 		if len(toKeep) == 0 {
-			emptySeries = append(emptySeries, &fingerprint)
+			emptySeries = append(emptySeries, fingerprint)
 		}
 		stream.Unlock()
 	}
@@ -266,8 +266,8 @@ func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- clien
 
 	s.Lock()
 	for _, fingerprint := range emptySeries {
-		if s.fingerprintToSeries[*fingerprint].empty() {
-			s.dropSeries(fingerprint)
+		if s.fingerprintToSeries[fingerprint].empty() {
+			s.dropSeries(&fingerprint)
 		}
 	}
 	s.Unlock()
