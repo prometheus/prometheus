@@ -24,5 +24,5 @@ include ../Makefile.INCLUDE
 
 
 generated/config.pb.go: config.proto
-	$(MAKE) -C ../build goprotobuf-protoc-gen-go-stamp
+	$(MAKE) -C ../.build goprotobuf-protoc-gen-go-stamp
 	$(PROTOC) --proto_path=$(PREFIX)/include:. --go_out=generated/ config.proto

@@ -20,12 +20,12 @@ include ../Makefile.INCLUDE
 # In order to build the generated targets in this directory, run the
 # following:
 #
-#     make -C build goprotobuf-protoc-gen-go-stamp
+#     make -C .build goprotobuf-protoc-gen-go-stamp
 
 generated/data.pb.go: data.proto
-	$(MAKE) -C ../build goprotobuf-protoc-gen-go-stamp
+	$(MAKE) -C ../.build goprotobuf-protoc-gen-go-stamp
 	$(PROTOC) --proto_path=$(PREFIX)/include:. --include_imports --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
 
 generated/descriptor.blob: data.proto
-	$(MAKE) -C ../build goprotobuf-protoc-gen-go-stamp
+	$(MAKE) -C ../.build goprotobuf-protoc-gen-go-stamp
 	$(PROTOC) --proto_path=$(PREFIX)/include:. --include_imports --go_out=generated/ --descriptor_set_out=generated/descriptor.blob data.proto
