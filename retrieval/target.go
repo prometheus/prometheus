@@ -14,7 +14,6 @@ package retrieval
 
 import (
 	"fmt"
-
 	"log"
 	"net/http"
 	"os"
@@ -194,6 +193,8 @@ func (t *target) Scrape(earliest time.Time, results chan<- *extraction.Result) (
 	return err
 }
 
+const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/json;schema=prometheus/telemetry;version=0.0.2;q=0.2,*/*;q=0.1`
+
 func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) (err error) {
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
@@ -206,7 +207,13 @@ func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) 
 		targetOperations.Increment(labels)
 	}(time.Now())
 
-	resp, err := t.client.Get(t.Address())
+	req, err := http.NewRequest("GET", t.Address(), nil)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Add("Accept", acceptHeader)
+
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return err
 	}
