@@ -1,4 +1,3 @@
-
 # Prometheus
 
 Bedecke deinen Himmel, Zeus!  A new kid is in town.
@@ -6,9 +5,9 @@ Bedecke deinen Himmel, Zeus!  A new kid is in town.
 Prometheus is a generic time series collection and computation server that is
 useful in the following fields:
 
-1. Industrial Experimentation / Real-Time Behavioral Validation / Software Release Qualification
-2. Econometric and Natural Sciences
-3. Operational Concerns and Monitoring
+* Industrial Experimentation / Real-Time Behavioral Validation / Software Release Qualification
+* Econometric and Natural Sciences
+* Operational Concerns and Monitoring
 
 The system is designed to collect telemetry from named targets on given
 intervals, evaluate rule expressions, display the results, and trigger an
