@@ -343,7 +343,8 @@ func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (b
 			return wmTime.Before(i), nil
 		}
 
-		return false, nil
+		t.wmCache.Set(f, &watermarks{})
+		return true, nil
 	}
 
 	return wm.High.Before(i), nil
