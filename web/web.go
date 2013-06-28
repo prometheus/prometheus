@@ -14,17 +14,20 @@
 package web
 
 import (
-	"code.google.com/p/gorest"
 	"flag"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/exp"
-	"github.com/prometheus/prometheus/web/api"
-	"github.com/prometheus/prometheus/web/blob"
 	"html/template"
 	"log"
 	"net/http"
 	"net/http/pprof"
+
+	"code.google.com/p/gorest"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/exp"
+
+	"github.com/prometheus/prometheus/web/api"
+	"github.com/prometheus/prometheus/web/blob"
 )
 
 // Commandline flags.
@@ -60,7 +63,7 @@ func (w WebService) ServeForever() error {
 	exp.Handle("/alerts", w.AlertsHandler)
 	exp.HandleFunc("/graph", graphHandler)
 
-	exp.Handle("/api/", gorest.Handle())
+	exp.Handle("/api/", compressionHandler{handler: gorest.Handle()})
 	exp.Handle("/metrics.json", prometheus.DefaultHandler)
 	if *useLocalAssets {
 		exp.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
