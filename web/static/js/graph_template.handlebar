@@ -48,7 +48,10 @@
                   </span>
                 </div>
 
-                <div class="graph"></div>
+                <div class="graph_area">
+                  <div class="y_axis"></div>
+                  <div class="graph"></div>
+                </div>
                 <div class="legend"></div>
               </div>
               <div id="console{{id}}" class="console reload"></div>
