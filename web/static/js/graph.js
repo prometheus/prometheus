@@ -100,6 +100,7 @@ Prometheus.Graph.prototype.initialize = function() {
   })
 
   self.graph = graphWrapper.find(".graph");
+  self.yAxis = graphWrapper.find(".y_axis");
   self.legend = graphWrapper.find(".legend");
   self.spinner = graphWrapper.find(".spinner");
   self.evalStats = graphWrapper.find(".eval_stats");
@@ -400,7 +401,7 @@ Prometheus.Graph.prototype.showGraph = function() {
   self.rickshawGraph = new Rickshaw.Graph({
     element: self.graph[0],
     height: Math.max(self.graph.innerHeight(), 100),
-    width: Math.max(self.graph.innerWidth(), 200),
+    width: Math.max(self.graph.innerWidth() - 80, 200),
     renderer: (self.stacked.is(":checked") ? "stack" : "line"),
     interpolation: "linear",
     series: self.data,
@@ -411,7 +412,9 @@ Prometheus.Graph.prototype.showGraph = function() {
 
   var yAxis = new Rickshaw.Graph.Axis.Y({
     graph: self.rickshawGraph,
+    orientation: "left",
     tickFormat: Rickshaw.Fixtures.Number.formatKMBT,
+    element: self.yAxis[0],
   });
 
   self.rickshawGraph.render();
@@ -422,6 +425,7 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
   if (self.data.length == 0) { return; }
   self.legend.empty();
   if (self.rickshawGraph == null || reloadGraph) {
+    self.yAxis.empty();
     self.graph.empty();
     self.showGraph();
   } else {
@@ -483,7 +487,7 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
 Prometheus.Graph.prototype.resizeGraph = function() {
   var self = this;
   self.rickshawGraph.configure({
-    width: Math.max(self.graph.innerWidth(), 200),
+    width: Math.max(self.graph.innerWidth() - 80, 200),
   });
   self.rickshawGraph.render();
 }

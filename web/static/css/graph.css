@@ -16,18 +16,33 @@ a:active { color: black; }
 
 .graph {
   position: relative;
+  left: 40px;
   min-height: 400px;
 }
 
-svg {
-  border: 1px solid #aaa;
-  margin-bottom: 5px;
+.graph svg {
+  border-top: 1px solid #aaa;
+  border-right: 1px solid #aaa;
+  border-bottom: 1px solid #aaa;
 }
 
 .legend {
   display: inline-block;
   vertical-align: top;
-  margin: 0 0 0 0px;
+  margin: 0 0 0 40px;
+}
+
+.graph_area {
+  position: relative;
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 5px 0 5px 0;
+}
+
+.y_axis {
+  position: absolute;
+  top: 1px;
+  bottom: 0;
+  width: 40px;
 }
 
 .graph .detail .x_label.flipped {
