@@ -17,7 +17,8 @@ parser.y.go: parser.y
 	go tool yacc -o parser.y.go -v "" parser.y
 
 lexer.l.go: parser.y.go lexer.l
-	golex lexer.l
+	# This is golex from https://github.com/cznic/golex.
+	golex -o="lexer.l.go" lexer.l
 
 clean:
 	rm lexer.l.go parser.y.go
