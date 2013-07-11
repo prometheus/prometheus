@@ -14,10 +14,10 @@
 %{
         package rules
 
-import (
-        clientmodel "github.com/prometheus/client_golang/model"
+        import (
+          clientmodel "github.com/prometheus/client_golang/model"
 
-        import "github.com/prometheus/prometheus/rules/ast"
+          "github.com/prometheus/prometheus/rules/ast"
         )
 %}
 

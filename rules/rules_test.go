@@ -124,6 +124,17 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
+			expr: `
+				// Test comment.
+				SUM(http_requests) BY /* comments shouldn't
+				have any effect */ (job) // another comment`,
+			output: []string{
+				`http_requests{job="api-server"} => 1000 @[%v]`,
+				`http_requests{job="app-server"} => 2600 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 8,
+		}, {
 			expr: `COUNT(http_requests) BY (job)`,
 			output: []string{
 				`http_requests{job="api-server"} => 4 @[%v]`,
@@ -448,7 +459,7 @@ var ruleTests = []struct {
 	{
 		inputFile:   "syntax_error.rules",
 		shouldFail:  true,
-		errContains: "Error parsing rules at line 3",
+		errContains: "Error parsing rules at line 5",
 	},
 	{
 		inputFile:   "non_vector.rules",
