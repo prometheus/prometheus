@@ -14,69 +14,87 @@
 package rules
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/rules/ast"
 	"io"
+	"log"
 	"os"
 	"strings"
-	"sync"
-)
 
-// GoLex sadly needs these global variables for storing temporary token/parsing information.
-var (
-	yylval     *yySymType // For storing extra token information, like the contents of a string.
-	yyline     int        // Line number within the current file or buffer.
-	yypos      int        // Character position within the current line.
-	parseMutex sync.Mutex // Mutex protecting the parsing-related global state defined above.
+	"github.com/prometheus/prometheus/rules/ast"
 )
 
 type RulesLexer struct {
-	errors      []string // Errors encountered during parsing.
-	startToken  int      // Dummy token to simulate multiple start symbols (see below).
-	parsedRules []Rule   // Parsed full rules.
-	parsedExpr  ast.Node // Parsed single expression.
-}
+	// Errors encountered during parsing.
+	errors []string
+	// Dummy token to simulate multiple start symbols (see below).
+	startToken int
+	// Parsed full rules.
+	parsedRules []Rule
+	// Parsed single expression.
+	parsedExpr ast.Node
 
-func (lexer *RulesLexer) Lex(lval *yySymType) int {
-	yylval = lval
+	// Current character.
+	current byte
+	// Current token buffer.
+	buf []byte
+	// Input text.
+	src *bufio.Reader
+	// Whether we have a current char.
+	empty bool
 
-	// We simulate multiple start symbols for closely-related grammars via dummy tokens. See
-	// http://www.gnu.org/software/bison/manual/html_node/Multiple-start_002dsymbols.html
-	// Reason: we want to be able to parse lists of named rules as well as single expressions.
-	if lexer.startToken != 0 {
-		startToken := lexer.startToken
-		lexer.startToken = 0
-		return startToken
-	}
-
-	tokenType := yylex()
-	return tokenType
+	// Current input line.
+	line int
+	// Current character position within the current input line.
+	pos int
 }
 
 func (lexer *RulesLexer) Error(errorStr string) {
-	err := fmt.Sprintf("Error parsing rules at line %v, char %v: %v", yyline, yypos, errorStr)
+	err := fmt.Sprintf("Error parsing rules at line %v, char %v: %v", lexer.line, lexer.pos, errorStr)
 	lexer.errors = append(lexer.errors, err)
 }
 
-func LoadFromReader(rulesReader io.Reader, singleExpr bool) (interface{}, error) {
-	parseMutex.Lock()
-	defer parseMutex.Unlock()
+func (lexer *RulesLexer) getChar() byte {
+	if lexer.current != 0 {
+		lexer.buf = append(lexer.buf, lexer.current)
+	}
+	lexer.current = 0
+	if b, err := lexer.src.ReadByte(); err == nil {
+		if b == '\n' {
+			lexer.line++
+			lexer.pos = 0
+		} else {
+			lexer.pos++
+		}
+		lexer.current = b
+	} else if err != io.EOF {
+		log.Fatal(err)
+	}
+	return lexer.current
+}
 
-	yyin = rulesReader
-	yypos = 1
-	yyline = 1
-	yydata = ""
-	yytext = ""
+func (lexer *RulesLexer) token() string {
+	return string(lexer.buf)
+}
 
+func newRulesLexer(src io.Reader, singleExpr bool) *RulesLexer {
 	lexer := &RulesLexer{
 		startToken: START_RULES,
+		src:        bufio.NewReader(src),
+		pos:        1,
+		line:       1,
 	}
 
 	if singleExpr {
 		lexer.startToken = START_EXPRESSION
 	}
+	lexer.getChar()
+	return lexer
+}
 
+func LoadFromReader(rulesReader io.Reader, singleExpr bool) (interface{}, error) {
+	lexer := newRulesLexer(rulesReader, singleExpr)
 	ret := yyParse(lexer)
 	if ret != 0 && len(lexer.errors) == 0 {
 		lexer.Error("Unknown parser error")
