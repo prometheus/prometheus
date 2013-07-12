@@ -127,10 +127,10 @@ func (p *TargetPool) runIteration(results chan<- *extraction.Result, interval ti
 	if p.targetProvider != nil {
 		targets, err := p.targetProvider.Targets()
 		if err != nil {
-			log.Printf("Error looking up targets: %s", err)
-			return
+			log.Printf("Error looking up targets, keeping old list: %s", err)
+		} else {
+			p.ReplaceTargets(targets)
 		}
-		p.ReplaceTargets(targets)
 	}
 
 	p.RLock()
