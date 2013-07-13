@@ -6,13 +6,22 @@ a { color: black; }
 a:hover { color: gray; }
 a:active { color: black; }
 
+.eval_stats {
+  float: right;
+}
+
 .graph_wrapper {
   margin-top: 8px;
+}
+
+.graph_wrapper .input-append, .graph_wrapper select {
+  margin: 0;
 }
 
 .graph_container {
   font-family: Arial, Helvetica, sans-serif;
 }
+
 
 .graph {
   position: relative;
@@ -85,6 +94,13 @@ a:active { color: black; }
 input[title=*]:hover:after {
   content: attr(title);
 }
+
+.config input, .config select {
+  height: 16px;
+  margin-bottom: 0;
+}
+
+
 
 .console {
   white-space: pre;

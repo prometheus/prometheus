@@ -5,14 +5,8 @@ body {
   color: #333;
   background-color: #f2f2f2;
   margin: 0px;
-  padding: 0px;
-}
+  padding: 40px 0 0 0;
 
-input:not([type=submit]):not([type=file]):not([type=button]) {
-  border: 1px solid #aaa;
-  -webkit-border-radius: 3px;
-     -moz-border-radius: 3px;
-          border-radius: 3px;
 }
 
 h2 {
@@ -21,8 +15,7 @@ h2 {
 
 .grouping_box {
   position: relative;
-  padding: 5px;
-  margin: 2px;
+  padding: 0, 5px, 0px, 5px;
   background-color: #fff;
   border: 1px solid #ccc;
   -webkit-border-radius: 4px;
@@ -51,7 +44,6 @@ input {
 
 select {
   z-index: 10;
-  width: 150px;
 }
 
 input[name=end_input], input[name=range_input] {
@@ -59,26 +51,17 @@ input[name=end_input], input[name=range_input] {
   margin-right: -4px;
 }
 
-#navigation {
-  background-color: #333;
-  padding: 3px;
-  font-size: 13px;
-  font-weight: bold;
+/*
+ * This reduces the spacing between the bootstrap navbar and the content below.
+ */
+div.navbar {
+  margin-bottom: 2px;
 }
-
-#navigation a {
-  color: #bbb;
-  padding: 5px;
-  text-decoration: none;
-}
-
-#navigation a:visited { color: #bbb }
-#navigation a:active { color: #fff }
-#navigation a:hover { color: #fff }
 
 #add_graph {
     margin-left: 8px;
 }
+
 
 .literal_output td {
   font-family: monospace;
@@ -88,4 +71,63 @@ input[name=end_input], input[name=range_input] {
   background-color: #f2dede;
   border: 1px solid #c0a0a0;
   padding: 0 2px 0 2px;
+}
+
+/* Graph padding */
+.ui-tabs .ui-tabs-panel {
+display: block;
+border-width: 0;
+padding: .5em 1em;
+background: none;
+}
+
+
+#graphRangeLabel {
+  display: inline;
+  padding-right: 10px;
+}
+
+#graphRefresh {
+  display: inline;
+}
+
+#graphStacked {
+  display: inline;
+}
+
+#stackedCheckbox {
+  margin: 0;
+}
+
+ /*
+  * BUG: Move these to classes.
+  */
+#graphInput {
+  font-size: 10pt;
+  margin-right: .3em;
+}
+
+#graphInput .btn {
+  margin-right: 0;
+}
+
+.grouping_box {
+  padding: 0, 5px, 0px, 5px;
+}
+
+/*
+* this fixes the padding on the graph equation input box, both set in bootstrap
+* but not reading this
+*/
+
+span.input-append {
+  margin-bottom: 0;
+}
+
+select name="insert_metric"{
+  margin-bottom: 0px
+}
+
+input [type="text"] {
+  height: 15px;
 }

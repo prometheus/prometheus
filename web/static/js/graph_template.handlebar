@@ -1,50 +1,104 @@
+        <!--
+
+        Problems:
+        - Tab Button Style Mismatch with Others
+        - "Insert Metric at Cursor" Drop-Down Style Mismatch with Button
+
+        -->
         <div id="graph_wrapper{{id}}" class="graph_wrapper">
           <form action="/api/query_range" method="GET" class="query_form">
             <div class="grouping_box">
               <div class="head">
                 <div class="expr">
-                  <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" size="80" value="{{expr}}">
+                  <span class="input-append">
+                    <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" value="{{expr}}" class="input-xxlarge">
+                    <input class="btn" type="submit" value="Execute" name="submit">
+                  </span>
                   <select name="insert_metric">
-                      <option value="">- Insert Metric -</option>
-                  </select>
-                  <input type="submit" value="Graph" name="submit">
+                      <option value="">- Insert Metric at Cursor -</option>
+                  </select>                  
                 </div>
               </div>
               <div class="eval_stats"></div>
               <img src="/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
             </div>
+            <!--
+              TODO: Convert this to Bootstrap navbar.  This requires Javascript
+                    refresh.
+              -->
             <div class="grouping_box tabs">
               <ul>
                 <li><a href="#graph{{id}}">Graph</a></li>
-                <li><a href="#console{{id}}">Console</a></li>
-              </ul>
-              <div id="graph{{id}}" class="graph_container reload">
+                <li><a href="#console{{id}}">Tabular</a></li>
+              </ul>              
+              <div id="graph{{id}}" class="graph_container reload">                
                 <div class="config">
-                  <label for="range_input{{id}}">Range:</label>
-                  <input type="button" value="-" name="dec_range">
-                  <input title="Time range of graph" type="text" name="range_input" id="range_input{{id}}" size="3" value="{{range_input}}"  >
-                  <input type="button" value="+" name="inc_range">
-                  <input type="hidden" name="range">
+                  <label for="range_input{{id}}" id="graphRangeLabel">Range:</label>
+                  <!-- Extracted to force grouped inputs. -->
+                  <input type="hidden" name="range">                  
+                  <div class="input-prepend input-append" id="graphInput">
 
-                  <input type="button" value="&larr;" name="dec_end">
-                  <input title="End time of graph" placeholder="Until" type="text" name="end_input" id="end{{id}}" size="16" value="{{end  }}">
-                  <input type="button" value="&rarr;" name="inc_end">
+                    <button
+                        class="btn btn-small" 
+                        type="button"
+                        name="dec_range"
+                        title="Shrink the time range.">
+                      <i class="icon-minus"></i>
+                    </button>
+                    
+                    <input
+                        class="input-mini"
+                        id="range_input{{id}}"
+                        title="Time range of graph"
+                        type="text"
+                        name="range_input"
+                        size="3"
+                        value="{{range_input}}">
+
+                    <button
+                        class="btn btn-small"
+                        name="inc_range"
+                        title="Grow the time range.">
+                      <i class="icon-plus"></i>
+                    </button>
+                  </div>
+
+                  <!-- Extracted to force grouped inputs. -->
                   <input type="hidden" name="end">
+                  <div class="input-prepend input-append" id="graphInput">
 
-                  <input title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
+                    <button
+                        class="btn btn-small"
+                        name="dec_end"
+                        title="Rewind the end time.">
+                      <i class="icon-backward"></i>
+                    </button>
+
+                    <input
+                        class="input-medium"
+                        id="end{{id}}"
+                        title="End time of graph"
+                        placeholder="Until"
+                        type="text"
+                        name="end_input"
+                        size="16"
+                        value="{{end  }}">
+
+                    <button
+                        class="btn btn-small"
+                        name="inc_end"
+                        title="Advance the end time.">
+                      <i class="icon-forward"></i>
+                    </button>
+                  </div>
+                  
+
+                  <input class="input-small" title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
                   <input type="hidden" name="step">
-                  <label for="refresh">↻</label>
-                  <select title="Auto-refresh interval" name="refresh" class="refresh_interval">
-                    <option>disabled</option>
-                    <option>2m</option>
-                    <option>3m</option>
-                    <option>5m</option>
-                    <option>10m</option>
-                    <option>15m</option>
-                  </select>
+
                   <span class="opts">
                     <input type="checkbox" name="stacked" id="stacked{{id}}" {{stacked_checked}}>
-                    <label for="stacked{{id}}">Stacked</label>
+                    <label for="stacked{{id}}" id="graphStacked">Stacked</label>
                   </span>
                 </div>
 
