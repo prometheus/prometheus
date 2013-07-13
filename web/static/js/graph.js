@@ -124,11 +124,11 @@ Prometheus.Graph.prototype.initialize = function() {
   });
   self.spinner.hide();
 
-  self.queryForm.find("input[name=inc_range]").click(function() { self.increaseRange(); });
-  self.queryForm.find("input[name=dec_range]").click(function() { self.decreaseRange(); });
+  self.queryForm.find("button[name=inc_range]").click(function() { self.increaseRange(); });
+  self.queryForm.find("button[name=dec_range]").click(function() { self.decreaseRange(); });
 
-  self.queryForm.find("input[name=inc_end]").click(function() { self.increaseEnd(); });
-  self.queryForm.find("input[name=dec_end]").click(function() { self.decreaseEnd(); });
+  self.queryForm.find("button[name=inc_end]").click(function() { self.increaseEnd(); });
+  self.queryForm.find("button[name=dec_end]").click(function() { self.decreaseEnd(); });
 
   self.insertMetric.change(function() {
     self.expr.selection('replace', {text: self.insertMetric.val(), mode: 'before'})
@@ -238,7 +238,7 @@ Prometheus.Graph.prototype.decreaseRange = function() {
 Prometheus.Graph.prototype.getEndDate = function() {
   var self = this;
   if (!self.endDate || !self.endDate.val()) {
-    return null; 
+    return null;
   }
   return new Date(self.endDate.val()).getTime();
 };
@@ -509,8 +509,18 @@ Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
 
 Prometheus.Graph.prototype.handleConsoleResponse = function(text, textStatus) {
   var self = this;
+  var body = "<table class=\"table-striped console_table\"></table>";
   self.consoleTab.removeClass('reload');
-  self.consoleTab.text(text);
+  self.consoleTab.html(body);
+
+  var elements = text.split("\n");
+  var table = $("#console_table");
+  table.find("tr:gt(0)").remove();
+  for (var i = 0; i < elements.length; i++) {
+    var e = "<tr><td>" + elements[i] + "</td></tr>";
+    table.append(e);
+  }
+  console.log(table);
 }
 
 function parseGraphOptionsFromUrl() {
