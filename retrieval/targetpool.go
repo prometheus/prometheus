@@ -146,7 +146,7 @@ func (p *TargetPool) runIteration(results chan<- *extraction.Result, interval ti
 	for _, target := range p.targets {
 		now := time.Now()
 
-		if target.scheduledFor().After(now) {
+		if target.ScheduledFor().After(now) {
 			// None of the remaining targets are ready to be scheduled. Signal that
 			// we're done processing them in this scrape iteration.
 			continue
