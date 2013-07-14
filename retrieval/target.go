@@ -10,9 +10,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package retrieval
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net/http"
@@ -236,7 +238,15 @@ func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) 
 		BaseLabels: baseLabels,
 	}
 
-	return processor.ProcessSingle(resp.Body, results, processOptions)
+	// N.B. - It is explicitly required to extract the entire payload before
+	//        attempting to deserialize, as the underlying reader expects will
+	//        interpret pending data as a truncated message.
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return err
+	}
+
+	return processor.ProcessSingle(buf, results, processOptions)
 }
 
 func (t target) State() TargetState {
