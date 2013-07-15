@@ -98,6 +98,9 @@ type Target interface {
 	//
 	// Right now, this is used as the sorting key in TargetPool.
 	ScheduledFor() time.Time
+	// EstimatedTimeToExecute emits the amount of time until the next prospective
+	// scheduling opportunity for this target.
+	EstimatedTimeToExecute() time.Duration
 	// Return the last encountered scrape error, if any.
 	LastError() error
 	// The address to which the Target corresponds.  Out of all of the available
@@ -255,6 +258,10 @@ func (t *target) State() TargetState {
 
 func (t *target) ScheduledFor() time.Time {
 	return t.scheduler.ScheduledFor()
+}
+
+func (t *target) EstimatedTimeToExecute() time.Duration {
+	return t.scheduler.ScheduledFor().Sub(time.Now())
 }
 
 func (t *target) LastError() error {
