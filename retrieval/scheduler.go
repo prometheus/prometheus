@@ -25,7 +25,7 @@ const (
 	// The base units for the exponential backoff.
 	DEFAULT_BACKOFF_VALUE_UNIT = time.Second
 	// The maximum allowed backoff time.
-	MAXIMUM_BACKOFF_VALUE = 30 * time.Minute
+	MAXIMUM_BACKOFF_VALUE = 2 * time.Minute
 )
 
 // scheduler is an interface that various scheduling strategies must fulfill

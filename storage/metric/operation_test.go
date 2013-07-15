@@ -1838,13 +1838,13 @@ func TestGetValueRangeAtIntervalOp(t *testing.T) {
 
 	var scenarios = []struct {
 		op  getValueRangeAtIntervalOp
-		in  model.Values
-		out model.Values
+		in  Values
+		out Values
 	}{
 		// All values before the first range.
 		{
 			op: testOp,
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(-4 * time.Minute),
 					Value:     1,
@@ -1854,12 +1854,12 @@ func TestGetValueRangeAtIntervalOp(t *testing.T) {
 					Value:     2,
 				},
 			},
-			out: model.Values{},
+			out: Values{},
 		},
 		// Values starting before first range, ending after last.
 		{
 			op: testOp,
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(-4 * time.Minute),
 					Value:     1,
@@ -1917,7 +1917,7 @@ func TestGetValueRangeAtIntervalOp(t *testing.T) {
 					Value:     14,
 				},
 			},
-			out: model.Values{
+			out: Values{
 				{
 					Timestamp: testInstant.Add(-2 * time.Minute),
 					Value:     3,
@@ -1959,17 +1959,17 @@ func TestGetValueRangeAtIntervalOp(t *testing.T) {
 		// Values starting after last range.
 		{
 			op: testOp,
-			in: model.Values{
+			in: Values{
 				{
 					Timestamp: testInstant.Add(21 * time.Minute),
 					Value:     14,
 				},
 			},
-			out: model.Values{},
+			out: Values{},
 		},
 	}
 	for i, scenario := range scenarios {
-		actual := model.Values{}
+		actual := Values{}
 		for !scenario.op.Consumed() {
 			actual = append(actual, scenario.op.ExtractSamples(scenario.in)...)
 		}

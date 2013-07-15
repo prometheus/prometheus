@@ -40,23 +40,43 @@
 
     <h2>Targets</h2>
     <div class="grouping_box">
-      <ul>
-        {{range $job, $pool := .TargetPools}}
-          <li>{{$job}}
-            <ul>
-              {{range $pool.Targets}}
-                <li>
-                <a href="{{.GlobalAddress}}">{{.Address}}</a> (State: {{.State}}, Base Labels: {{.BaseLabels}})
+      {{range $job, $pool := .TargetPools}}
+      <h3>{{$job}}</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Endpoint</th>
+              <th>State</th>
+              <th>Base Labels</th>
+              <th>Next Retrieval</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+          {{range $pool.Targets}}
+            <tr>
+              <td>
+                <a href="{{.GlobalAddress}}">{{.Address}}</a>
+              </td>
+              <td>
+                {{.State}}
+              </td>
+              <td>
+                {{.BaseLabels}}
+              </td>
+              <td>
+                {{.EstimatedTimeToExecute}}
+              </td>
+              <td>
                 {{if .LastError}}
-                <br/>
-                <span class="error_text"><b>Scrape error:</b> "{{.LastError}}"</span>
+                <span class="error_text">{{.LastError}}</span>
                 {{end}}
-                </li>
-              {{end}}
-            </ul>
-          </li>
-        {{end}}
-      </ul>
+              </td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+      {{end}}
     </div>
 
     <h2>Curation</h2>

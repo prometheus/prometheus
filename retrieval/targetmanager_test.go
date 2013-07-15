@@ -66,7 +66,7 @@ func (t fakeTarget) State() TargetState {
 	return ALIVE
 }
 
-func (t *fakeTarget) scheduledFor() (time time.Time) {
+func (t *fakeTarget) ScheduledFor() (time time.Time) {
 	time = t.schedules[t.scheduleIndex]
 	t.scheduleIndex++
 
