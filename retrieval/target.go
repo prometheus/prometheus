@@ -97,7 +97,10 @@ type Target interface {
 	// time, but it should occur no sooner than it.
 	//
 	// Right now, this is used as the sorting key in TargetPool.
-	scheduledFor() time.Time
+	ScheduledFor() time.Time
+	// EstimatedTimeToExecute emits the amount of time until the next prospective
+	// scheduling opportunity for this target.
+	EstimatedTimeToExecute() time.Duration
 	// Return the last encountered scrape error, if any.
 	LastError() error
 	// The address to which the Target corresponds.  Out of all of the available
@@ -176,11 +179,11 @@ func (t *target) recordScrapeHealth(results chan<- *extraction.Result, timestamp
 	}
 }
 
-func (t *target) Scrape(earliest time.Time, results chan<- *extraction.Result) (err error) {
+func (t *target) Scrape(earliest time.Time, results chan<- *extraction.Result) error {
 	now := time.Now()
 	futureState := t.state
-
-	if err = t.scrape(now, results); err != nil {
+	err := t.scrape(now, results)
+	if err != nil {
 		t.recordScrapeHealth(results, now, false)
 		futureState = UNREACHABLE
 	} else {
@@ -249,23 +252,27 @@ func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) 
 	return processor.ProcessSingle(buf, results, processOptions)
 }
 
-func (t target) State() TargetState {
+func (t *target) State() TargetState {
 	return t.state
 }
 
-func (t target) scheduledFor() time.Time {
+func (t *target) ScheduledFor() time.Time {
 	return t.scheduler.ScheduledFor()
 }
 
-func (t target) LastError() error {
+func (t *target) EstimatedTimeToExecute() time.Duration {
+	return t.scheduler.ScheduledFor().Sub(time.Now())
+}
+
+func (t *target) LastError() error {
 	return t.lastError
 }
 
-func (t target) Address() string {
+func (t *target) Address() string {
 	return t.address
 }
 
-func (t target) GlobalAddress() string {
+func (t *target) GlobalAddress() string {
 	address := t.address
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -278,7 +285,7 @@ func (t target) GlobalAddress() string {
 	return address
 }
 
-func (t target) BaseLabels() clientmodel.LabelSet {
+func (t *target) BaseLabels() clientmodel.LabelSet {
 	return t.baseLabels
 }
 
@@ -299,7 +306,7 @@ func (t targets) Len() int {
 }
 
 func (t targets) Less(i, j int) bool {
-	return t[i].scheduledFor().Before(t[j].scheduledFor())
+	return t[i].ScheduledFor().Before(t[j].ScheduledFor())
 }
 
 func (t targets) Swap(i, j int) {
