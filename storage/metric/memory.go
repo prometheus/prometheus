@@ -55,7 +55,7 @@ func (s *stream) add(timestamp time.Time, value clientmodel.SampleValue) {
 	// BUG(all): https://github.com/prometheus/prometheus/pull/265/files#r4336435.
 
 	s.values = append(s.values, &SamplePair{
-		Timestamp: timestamp,
+		Timestamp: timestamp.Round(time.Second).UTC(),
 		Value:     value,
 	})
 }
