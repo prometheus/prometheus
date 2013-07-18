@@ -118,10 +118,6 @@ input[title=*]:hover:after {
   overflow: scroll;
 }
 
-.ui-tabs {
-  padding: 0px;
-}
-
 .ui-widget {
   font-size: 0.8em;
 }
@@ -157,20 +153,14 @@ select name="insert_metric" {
   background: none;
 }
 
-#graph_container .grouping_box {
-  padding: 1px 1px 1px 1px;
-}
-
-/*
-* The tabs now have a bottom boder, which is not affected by the border-bottom:0; tag.
-* Any thoughts on how to fix?
-*/
-
 .ui-tabs .ui-tabs-nav li {
   font-family:  "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 11pt;
-  padding: .5em 1em;
   border-bottom: 0;
+}
+
+#graph_container .grouping_box {
+  padding: 1px 1px 1px 1px;
 }
 
 /*
