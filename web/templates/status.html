@@ -13,8 +13,8 @@
       </table>
     </div>
     <h2>Build Information</h2>
-    <div class="grouping_box table-striped">
-      <table>
+    <div class="grouping_box">
+      <table class="table-striped">
         <tbody>
           {{range $key, $value := .BuildInfo}}
           <tr>
@@ -80,8 +80,8 @@
     </div>
 
     <h2>Curation</h2>
-    <div class="grouping_box table-striped">
-      <table>
+    <div class="grouping_box">
+      <table class="table-striped">
         <tr>
           <th>Active</th>
           <td>{{.Curation.Active}}</td>
@@ -104,8 +104,8 @@
     </div>
 
     <h2>Startup Flags</h2>
-    <div class="grouping_box table-striped" id="startupFlags">
-      <table>
+    <div class="grouping_box table-striped">
+      <table class="table-striped">
         <tbody>
           {{range $key, $value := .Flags}}
           <tr>

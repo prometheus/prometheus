@@ -15,13 +15,13 @@ h2 {
 
 .grouping_box {
   position: relative;
-  padding: 0, 5px, 0px, 5px;
+  padding: 0 5px 0 5px;
   background-color: #fff;
   border: 1px solid #ccc;
   -webkit-border-radius: 4px;
      -moz-border-radius: 4px;
           border-radius: 4px;
-  margin: 0px 8px 2px 8px;
+  margin: 0 8px 2px 8px;
 }
 
 .grouping_box .head, .eval_stats {
@@ -58,76 +58,8 @@ div.navbar {
   margin-bottom: 2px;
 }
 
-#add_graph {
-    margin-left: 8px;
-}
-
-
 .literal_output td {
   font-family: monospace;
 }
 
-.error_text {
-  background-color: #f2dede;
-  border: 1px solid #c0a0a0;
-  padding: 0 2px 0 2px;
-}
 
-/* Graph padding */
-.ui-tabs .ui-tabs-panel {
-display: block;
-border-width: 0;
-padding: .5em 1em;
-background: none;
-}
-
-
-#graphRangeLabel {
-  display: inline;
-  padding-right: 10px;
-}
-
-#graphRefresh {
-  display: inline;
-}
-
-#graphStacked {
-  display: inline;
-}
-
-#stackedCheckbox {
-  margin: 0;
-}
-
- /*
-  * BUG: Move these to classes.
-  */
-#graphInput {
-  font-size: 10pt;
-  margin-right: .3em;
-}
-
-#graphInput .btn {
-  margin-right: 0;
-}
-
-.grouping_box {
-  padding: 0, 5px, 0px, 5px;
-}
-
-/*
-* this fixes the padding on the graph equation input box, both set in bootstrap
-* but not reading this
-*/
-
-span.input-append {
-  margin-bottom: 0;
-}
-
-select name="insert_metric"{
-  margin-bottom: 0px
-}
-
-input [type="text"] {
-  height: 15px;
-}

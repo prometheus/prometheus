@@ -238,7 +238,7 @@ Prometheus.Graph.prototype.decreaseRange = function() {
 Prometheus.Graph.prototype.getEndDate = function() {
   var self = this;
   if (!self.endDate || !self.endDate.val()) {
-    return null; 
+    return null;
   }
   return new Date(self.endDate.val()).getTime();
 };
@@ -509,12 +509,12 @@ Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
 
 Prometheus.Graph.prototype.handleConsoleResponse = function(text, textStatus) {
   var self = this;
-  var body = "<table id=\"consoleTable\" class=\"table-striped\"></table>";
-  self.consoleTab.removeClass('reload');  
+  var body = "<table class=\"table-striped console_table\"></table>";
+  self.consoleTab.removeClass('reload');
   self.consoleTab.html(body);
 
   var elements = text.split("\n");
-  var table = $("#consoleTable");
+  var table = $("#console_table");
   table.find("tr:gt(0)").remove();
   for (var i = 0; i < elements.length; i++) {
     var e = "<tr><td>" + elements[i] + "</td></tr>";

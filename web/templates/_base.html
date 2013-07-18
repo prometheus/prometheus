@@ -3,10 +3,10 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Prometheus Time Series Collection and Processing Server</title>
-    <script src="../static/vendor/js/jquery.min.js"></script>
+    <script src="/static/vendor/js/jquery.min.js"></script>
 
-    <link type="text/css" rel="stylesheet" href="../static/vendor/bootstrap/css/bootstrap.css">
-    <link type="text/css" rel="stylesheet" href="../static/css/prometheus.css">
+    <link type="text/css" rel="stylesheet" href="/static/vendor/bootstrap/css/bootstrap.css">
+    <link type="text/css" rel="stylesheet" href="/static/css/prometheus.css">
 
     {{template "head" .}}
   </head>
@@ -17,16 +17,15 @@
         <div class="container-fluid">
           <a class="brand" href="https://github.com/prometheus/prometheus" target="_blank">Prometheus</a>
           <ul class="nav">
-            <li>{{ define "user_dashboard_link" }}
-                {{ template "user_dashboard_link" .}}
-                {{ end }}</li>                    
-            <li><a href="/alerts">Alerts</a></li>          
+            <li>{{ define "user_dashboard_link" }}{{ end }}
+                {{ template "user_dashboard_link" .}}</li>
+            <li><a href="/alerts">Alerts</a></li>
             <li><a href="/graph">Graph &amp; Console</a></li>
             <li><a href="/">Status</a></li>
             <li><a href="/databases">Databases</a></li>
             <li>
-              <a href="https://github.com/prometheus/prometheus/wiki" target="_blank">  Help
-              </a></li>
+              <a href="https://github.com/prometheus/prometheus/wiki" target="_blank">Help</a>
+            </li>
           </ul>
         </div>
       </div>

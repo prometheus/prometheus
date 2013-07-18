@@ -22,7 +22,6 @@ a:active { color: black; }
   font-family: Arial, Helvetica, sans-serif;
 }
 
-
 .graph {
   position: relative;
   left: 40px;
@@ -33,6 +32,10 @@ a:active { color: black; }
   border-top: 1px solid #aaa;
   border-right: 1px solid #aaa;
   border-bottom: 1px solid #aaa;
+}
+
+#add_graph {
+    margin-left: 8px;
 }
 
 .legend {
@@ -74,6 +77,12 @@ a:active { color: black; }
   padding: 0.5em;
 }
 
+.error_text {
+  background-color: #f2dede;
+  border: 1px solid #c0a0a0;
+  padding: 0 2px 0 2px;
+}
+
 .labels {
   font-size: 11px;
   line-height: 11px;
@@ -96,11 +105,13 @@ input[title=*]:hover:after {
 }
 
 .config input, .config select {
-  height: 16px;
+  height: 15px;
   margin-bottom: 0;
 }
 
-
+.config label {
+  display: inline;
+}
 
 .console {
   white-space: pre;
@@ -110,6 +121,69 @@ input[title=*]:hover:after {
 .ui-tabs {
   padding: 0px;
 }
+
 .ui-widget {
   font-size: 0.8em;
+}
+
+.stacked {
+  margin: 0;
+}
+
+span.input-append {
+  margin-bottom: 0;
+}
+
+select name="insert_metric" {
+  margin-bottom: 0px;
+}
+
+/*
+ * REVIEW ME: This appears to cause a mismatch in the height between this text box
+ *            and the button next to it.  Do we explicitly need this?  The previous
+ *            version didn't.
+ *
+ * input[type="text"] {
+ *  height: 15px;
+ * }
+ */
+
+
+/* Graph toolbar alignment fixes */
+.ui-tabs .ui-tabs-panel {
+  display: block;
+  border-width: 0;
+  padding: .5em 1em;
+  background: none;
+}
+
+#graph_container .grouping_box {
+  padding: 1px 1px 1px 1px;
+}
+
+/*
+* The tabs now have a bottom boder, which is not affected by the border-bottom:0; tag.
+* Any thoughts on how to fix?
+*/
+
+.ui-tabs .ui-tabs-nav li {
+  font-family:  "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 11pt;
+  padding: .5em 1em;
+  border-bottom: 0;
+}
+
+/*
+* Buttons have some issues after the class changes.
+* Text is not vertically centering, placeholder text is missing & there may be other, hidden problems.
+* Here are my -not successful as of yet- attempts to fix.
+*/
+.input-append button {
+  font-size: 10pt;
+  margin-right: .3em;
+  margin-right: 0;
+}
+
+.input-append i {
+  padding-top: -4px;
 }
