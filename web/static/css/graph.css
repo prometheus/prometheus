@@ -105,7 +105,7 @@ input[title=*]:hover:after {
 }
 
 .config input, .config select {
-  height: 15px;
+  height: 12px;
   margin-bottom: 0;
 }
 
@@ -144,8 +144,6 @@ select name="insert_metric" {
  * }
  */
 
-
-/* Graph toolbar alignment fixes */
 .ui-tabs .ui-tabs-panel {
   display: block;
   border-width: 0;
@@ -165,8 +163,9 @@ select name="insert_metric" {
 
 /*
 * Buttons have some issues after the class changes.
-* Text is not vertically centering, placeholder text is missing & there may be other, hidden problems.
+* Text is not vertically centering, placeholder text is missing & functionality is broken.
 * Here are my -not successful as of yet- attempts to fix.
+*
 */
 .input-append button {
   font-size: 10pt;
@@ -176,4 +175,8 @@ select name="insert_metric" {
 
 .input-append i {
   padding-top: -4px;
+}
+
+#end0 {
+  width: 180px;
 }
