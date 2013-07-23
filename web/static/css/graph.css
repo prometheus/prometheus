@@ -161,22 +161,22 @@ select name="insert_metric" {
   padding: 1px 1px 1px 1px;
 }
 
-/*
-* Buttons have some issues after the class changes.
-* Text is not vertically centering, placeholder text is missing & functionality is broken.
-* Here are my -not successful as of yet- attempts to fix.
-*
-*/
-.input-append button {
+/* Button problem */
+
+.config button {
   font-size: 10pt;
   margin-right: .3em;
-  margin-right: 0;
+}
+
+.config input {
+  font-size: 10pt;
 }
 
 .input-append i {
   padding-top: -4px;
+  margin-top: 0;
 }
 
-#end0 {
-  width: 180px;
+.datepicker {
+  font-size: 10pt;
 }

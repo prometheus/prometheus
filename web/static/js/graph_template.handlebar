@@ -50,6 +50,7 @@
 
                     <button
                         class="btn btn-mini"
+                        type="button"
                         name="inc_range"
                         title="Grow the time range.">
                       <i class="icon-plus"></i>
@@ -62,13 +63,14 @@
 
                     <button
                         class="btn btn-mini"
+                        type="button"
                         name="dec_end"
                         title="Rewind the end time.">
                       <i class="icon-backward"></i>
                     </button>
 
                     <input
-                        class="input-mini"
+                        class="input-xxl"
                         id="end{{id}}"
                         title="End time of graph"
                         placeholder="Until"
@@ -79,6 +81,7 @@
 
                     <button
                         class="btn btn-mini"
+                        type="button"
                         name="inc_end"
                         title="Advance the end time.">
                       <i class="icon-forward"></i>
