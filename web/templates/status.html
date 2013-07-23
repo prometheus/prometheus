@@ -2,7 +2,7 @@
 
 {{define "content"}}
     <h2>Runtime Information</h2>
-    <div class="grouping_box">
+    <div class="grouping_box table-striped">
       <table>
         <tbody>
           <tr>
@@ -14,7 +14,7 @@
     </div>
     <h2>Build Information</h2>
     <div class="grouping_box">
-      <table>
+      <table class="table-striped">
         <tbody>
           {{range $key, $value := .BuildInfo}}
           <tr>
@@ -81,7 +81,7 @@
 
     <h2>Curation</h2>
     <div class="grouping_box">
-      <table>
+      <table class="table-striped">
         <tr>
           <th>Active</th>
           <td>{{.Curation.Active}}</td>
@@ -104,8 +104,8 @@
     </div>
 
     <h2>Startup Flags</h2>
-    <div class="grouping_box">
-      <table>
+    <div class="grouping_box table-striped">
+      <table class="table-striped">
         <tbody>
           {{range $key, $value := .Flags}}
           <tr>
