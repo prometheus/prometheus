@@ -77,7 +77,7 @@
                         type="text"
                         name="end_input"
                         size="16"
-                        value="{{end  }}">
+                        value="{{end}}">
 
                     <button
                         class="btn btn-mini"

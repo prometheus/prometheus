@@ -77,12 +77,6 @@ a:active { color: black; }
   padding: 0.5em;
 }
 
-.error_text {
-  background-color: #f2dede;
-  border: 1px solid #c0a0a0;
-  padding: 0 2px 0 2px;
-}
-
 .labels {
   font-size: 11px;
   line-height: 11px;
@@ -129,16 +123,6 @@ span.input-append {
 select name="insert_metric" {
   margin-bottom: 0px;
 }
-
-/*
- * REVIEW ME: This appears to cause a mismatch in the height between this text box
- *            and the button next to it.  Do we explicitly need this?  The previous
- *            version didn't.
- *
- * input[type="text"] {
- *  height: 15px;
- * }
- */
 
 .ui-tabs .ui-tabs-panel {
   display: block;

@@ -9,6 +9,12 @@ body {
 
 }
 
+.error_text {
+  background-color: #f2dede;
+  border: 1px solid #c0a0a0;
+  padding: 0 2px 0 2px;
+}
+
 h2 {
   margin-left: 8px;
 }
