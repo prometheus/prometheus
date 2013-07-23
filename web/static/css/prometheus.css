@@ -5,14 +5,14 @@ body {
   color: #333;
   background-color: #f2f2f2;
   margin: 0px;
-  padding: 0px;
+  padding: 40px 0 0 0;
+
 }
 
-input:not([type=submit]):not([type=file]):not([type=button]) {
-  border: 1px solid #aaa;
-  -webkit-border-radius: 3px;
-     -moz-border-radius: 3px;
-          border-radius: 3px;
+.error_text {
+  background-color: #f2dede;
+  border: 1px solid #c0a0a0;
+  padding: 0 2px 0 2px;
 }
 
 h2 {
@@ -21,14 +21,13 @@ h2 {
 
 .grouping_box {
   position: relative;
-  padding: 5px;
-  margin: 2px;
+  padding: 0 5px 0 5px;
   background-color: #fff;
   border: 1px solid #ccc;
   -webkit-border-radius: 4px;
      -moz-border-radius: 4px;
           border-radius: 4px;
-  margin: 0px 8px 2px 8px;
+  margin: 0 8px 2px 8px;
 }
 
 .grouping_box .head, .eval_stats {
@@ -51,7 +50,6 @@ input {
 
 select {
   z-index: 10;
-  width: 150px;
 }
 
 input[name=end_input], input[name=range_input] {
@@ -59,33 +57,15 @@ input[name=end_input], input[name=range_input] {
   margin-right: -4px;
 }
 
-#navigation {
-  background-color: #333;
-  padding: 3px;
-  font-size: 13px;
-  font-weight: bold;
-}
-
-#navigation a {
-  color: #bbb;
-  padding: 5px;
-  text-decoration: none;
-}
-
-#navigation a:visited { color: #bbb }
-#navigation a:active { color: #fff }
-#navigation a:hover { color: #fff }
-
-#add_graph {
-    margin-left: 8px;
+/*
+ * This reduces the spacing between the bootstrap navbar and the content below.
+ */
+div.navbar {
+  margin-bottom: 2px;
 }
 
 .literal_output td {
   font-family: monospace;
 }
 
-.error_text {
-  background-color: #f2dede;
-  border: 1px solid #c0a0a0;
-  padding: 0 2px 0 2px;
-}
+
