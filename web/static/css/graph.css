@@ -6,8 +6,16 @@ a { color: black; }
 a:hover { color: gray; }
 a:active { color: black; }
 
+.eval_stats {
+  float: right;
+}
+
 .graph_wrapper {
   margin-top: 8px;
+}
+
+.graph_wrapper .input-append, .graph_wrapper select {
+  margin: 2px;
 }
 
 .graph_container {
@@ -24,6 +32,10 @@ a:active { color: black; }
   border-top: 1px solid #aaa;
   border-right: 1px solid #aaa;
   border-bottom: 1px solid #aaa;
+}
+
+#add_graph {
+    margin-left: 8px;
 }
 
 .legend {
@@ -86,14 +98,82 @@ input[title=*]:hover:after {
   content: attr(title);
 }
 
+.config input, .config select {
+  height: 12px;
+  margin-bottom: 0;
+}
+
+.config label {
+  display: inline;
+}
+
 .console {
   white-space: pre;
   overflow: scroll;
 }
 
-.ui-tabs {
-  padding: 0px;
-}
 .ui-widget {
   font-size: 0.8em;
+}
+
+span.input-append {
+  margin-bottom: 0;
+}
+
+select name="insert_metric" {
+  margin-bottom: 0px;
+}
+
+.ui-tabs .ui-tabs-panel {
+  display: block;
+  border-width: 0;
+  padding: .5em 1em;
+  background: none;
+}
+
+.ui-tabs .ui-tabs-nav li {
+  font-family:  "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 11pt;
+  border-bottom: 0;
+}
+
+#graph_container .grouping_box {
+  padding: 2px;
+}
+
+/* Buttons */
+
+.config button {
+  font-size: 10pt;
+  margin-right: .3em;
+}
+
+.config input {
+  font-size: 10pt;
+}
+
+.config .input-append i {
+  padding-top: -4px;
+  margin-top: 0;
+}
+
+.config .input-append .btn:first-child i {
+  margin-right: 4px;
+  margin-left: 2px;
+}
+
+.config .input-append .btn:last-child i {
+  margin-left: 6px;
+}
+
+.config .icon-backward {
+  background-position: -242px -72px;
+}
+
+.datepicker {
+  font-size: 10pt;
+}
+
+.config label.checkbox {
+  padding-top: 0;
 }
