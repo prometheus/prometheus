@@ -70,7 +70,7 @@
                     </button>
 
                     <input
-                        class="input-xxl"
+                        class="input-medium"
                         id="end{{id}}"
                         title="End time of graph"
                         placeholder="Until"
@@ -92,10 +92,10 @@
                   <input class="input-small" title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
                   <input type="hidden" name="step">
 
-                  <span class="opts">
-                    <input type="checkbox" name="stacked" class="stacked{{id}}" {{stacked_checked}}>
-                    <label for="stacked{{id}}">Stacked</label>
-                  </span>
+                  <label class="checkbox inline">
+                    <input type="checkbox" name="stacked" {{stacked_checked}}>
+                    Stacked
+                  </label>
                 </div>
 
                 <div class="graph_area">

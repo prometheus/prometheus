@@ -15,7 +15,7 @@ a:active { color: black; }
 }
 
 .graph_wrapper .input-append, .graph_wrapper select {
-  margin: 0;
+  margin: 2px;
 }
 
 .graph_container {
@@ -122,10 +122,6 @@ input[title=*]:hover:after {
   font-size: 0.8em;
 }
 
-.stacked {
-  margin: 0;
-}
-
 span.input-append {
   margin-bottom: 0;
 }
@@ -158,10 +154,10 @@ select name="insert_metric" {
 }
 
 #graph_container .grouping_box {
-  padding: 1px 1px 1px 1px;
+  padding: 2px;
 }
 
-/* Button problem */
+/* Buttons */
 
 .config button {
   font-size: 10pt;
@@ -172,11 +168,28 @@ select name="insert_metric" {
   font-size: 10pt;
 }
 
-.input-append i {
+.config .input-append i {
   padding-top: -4px;
   margin-top: 0;
 }
 
+.config .input-append .btn:first-child i {
+  margin-right: 4px;
+  margin-left: 2px;
+}
+
+.config .input-append .btn:last-child i {
+  margin-left: 6px;
+}
+
+.config .icon-backward {
+  background-position: -242px -72px;
+}
+
 .datepicker {
   font-size: 10pt;
+}
+
+.config label.checkbox {
+  padding-top: 0;
 }
