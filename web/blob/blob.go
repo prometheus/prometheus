@@ -61,5 +61,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		contentType = mimeMap[parts[len(parts)-1]]
 	}
 	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=259200")
 	w.Write(file)
 }
