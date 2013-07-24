@@ -482,10 +482,12 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
 
 Prometheus.Graph.prototype.resizeGraph = function() {
   var self = this;
-  self.rickshawGraph.configure({
-    width: Math.max(self.graph.innerWidth() - 80, 200),
-  });
-  self.rickshawGraph.render();
+  if (self.rickshawGraph != null) {
+    self.rickshawGraph.configure({
+      width: Math.max(self.graph.innerWidth() - 80, 200),
+    });
+    self.rickshawGraph.render();
+  }
 }
 
 Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
