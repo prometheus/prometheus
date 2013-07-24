@@ -1,12 +1,5 @@
 body {
-  font-family: Arial, sans-serif;
-  font-size: 14px;
-  line-height: 20px;
-  color: #333;
-  background-color: #f2f2f2;
-  margin: 0px;
-  padding: 40px 0 0 0;
-
+  padding-top: 40px;
 }
 
 .error_text {
