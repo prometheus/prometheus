@@ -4,38 +4,46 @@
 {{end}}
 
 {{define "content"}}
-    <h2>Alerts</h2>
-    <div class="grouping_box">
-      {{range .AlertingRules}}
+<div class="container-fluid">
+  <h2>Alerts</h2>
+  <table class="table table-bordered table-collapsed">
+    <tbody>
+    {{$alertStateToRowClass := .AlertStateToRowClass}}
+    {{range .AlertingRules}}
       {{$activeAlerts := .ActiveAlerts}}
-      <div class="alert_wrapper">
-        <div class="alert_header {{.State}}">
-          {{.Name}} ({{len $activeAlerts}} active)
-        </div>
-        <div class="alert_content">
+      <tr class="{{index $alertStateToRowClass .State}} alert_header">
+        <td><i class="icon-chevron-down"></i> <b>{{.Name}}</b> ({{len $activeAlerts}} active)</td>
+      </tr>
+      <tr class="alert_details">
+        <td>
           <div class="alert_description">
-            <b>Rule:</b> {{.HTMLSnippet}}
+            <span class="label alert_rule">{{.HTMLSnippet}}</span>
+            <a href="#" class="silence_children_link">Silence All Children&hellip;</a>
           </div>
           {{if $activeAlerts}}
-          <table class="alert_active_elements">
-            <tr>
+          <table class="table table-bordered table-hover table-condensed alert_elements_table">
+            <tr class="">
               <th>Labels</th>
               <th>State</th>
               <th>Active Since</th>
               <th>Value</th>
+              <th>Silence</th>
             </tr>
             {{range $activeAlerts}}
-            <tr>
+            <tr class="{{index $alertStateToRowClass .State}}"> 
               <td>{{.Labels}}</td>
               <td>{{.State}}</td>
               <td>{{.ActiveSince}}</td>
               <td>{{.Value}}</td>
+              <td><a href="#" class="silence_alert_link">Silence&hellip;</button><td>
             </tr>
             {{end}}
           </table>
           {{end}}
-        </div>
-      </div>
-      {{end}}
-    </div>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
 {{end}}

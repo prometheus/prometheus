@@ -1,48 +1,23 @@
-.alert_wrapper {
-  padding: 2px;
-}
-
 .alert_header {
-  padding: 3px;
   cursor: pointer;
 }
 
-.alert_content {
-  padding: 3px;
+.alert_details {
   display: none;
 }
 
-.alert_header.firing {
-  background-color: #ff7673;
+.silence_children_link {
+  margin-left: 5px;
 }
 
-.alert_header.pending {
-  background-color: #ffcf40;
-}
-
-.alert_header.inactive {
-  background-color: #92ed6b;
+.alert_rule {
+  padding: 5px;
+  color: #333;
+  background-color: #ddd;
+  font-family: monospace;
+  font-weight: normal;
 }
 
 .alert_description {
-  margin-left: 3px;
   padding: 8px 0 8px 0;
-}
-
-.alert_active_elements {
-  border: 1px solid #dddddd;
-}
-
-.alert_active_elements th {
-  background-color: #dddddd;
-  padding: 0 5px 0 5px;
-}
-
-.alert_active_elements td {
-  background-color: #eebbbb;
-  padding: 0 5px 0 5px;
-}
-
-.alert_active_elements tr:hover td {
-  background-color: #ffcf40;
 }

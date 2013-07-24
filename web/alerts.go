@@ -21,7 +21,8 @@ import (
 )
 
 type AlertStatus struct {
-	AlertingRules []*rules.AlertingRule
+	AlertingRules        []*rules.AlertingRule
+	AlertStateToRowClass map[rules.AlertState]string
 }
 
 type AlertsHandler struct {
@@ -56,6 +57,11 @@ func (h *AlertsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	alertStatus := AlertStatus{
 		AlertingRules: alertsSorter.alerts,
+		AlertStateToRowClass: map[rules.AlertState]string{
+			rules.INACTIVE: "success",
+			rules.PENDING:  "warning",
+			rules.FIRING:   "error",
+		},
 	}
 	executeTemplate(w, "alerts", alertStatus)
 }
