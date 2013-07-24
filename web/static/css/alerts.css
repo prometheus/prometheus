@@ -6,6 +6,10 @@
   display: none;
 }
 
+.silence_children_link {
+  margin-left: 5px;
+}
+
 .alert_rule {
   padding: 5px;
   color: #333;

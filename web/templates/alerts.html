@@ -18,6 +18,7 @@
         <td>
           <div class="alert_description">
             <span class="label alert_rule">{{.HTMLSnippet}}</span>
+            <a href="#" class="silence_children_link">Silence All Children&hellip;</a>
           </div>
           {{if $activeAlerts}}
           <table class="table table-bordered table-hover table-condensed alert_elements_table">
@@ -26,6 +27,7 @@
               <th>State</th>
               <th>Active Since</th>
               <th>Value</th>
+              <th>Silence</th>
             </tr>
             {{range $activeAlerts}}
             <tr class="{{index $alertStateToRowClass .State}}"> 
@@ -33,6 +35,7 @@
               <td>{{.State}}</td>
               <td>{{.ActiveSince}}</td>
               <td>{{.Value}}</td>
+              <td><a href="#" class="silence_alert_link">Silence&hellip;</button><td>
             </tr>
             {{end}}
           </table>

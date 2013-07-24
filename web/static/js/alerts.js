@@ -9,6 +9,10 @@ function init() {
     }
     $(this).next().toggle();
   });
+
+  $(".silence_alert_link, .silence_children_link").click(function() {
+    alert("Silencing is not yet supported.");
+  });
 }
 
 $(init);
