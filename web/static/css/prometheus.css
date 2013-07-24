@@ -2,52 +2,14 @@ body {
   padding-top: 40px;
 }
 
+th.job_header {
+  font-size: 20px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
 .error_text {
-  background-color: #f2dede;
-  border: 1px solid #c0a0a0;
-  padding: 0 2px 0 2px;
-}
-
-h2 {
-  margin-left: 8px;
-}
-
-.grouping_box {
-  position: relative;
-  padding: 0 5px 0 5px;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  -webkit-border-radius: 4px;
-     -moz-border-radius: 4px;
-          border-radius: 4px;
-  margin: 0 8px 2px 8px;
-}
-
-.grouping_box .head, .eval_stats {
-  display: inline-block;
-  vertical-align: top;
-}
-
-.grouping_box .head .opts {
-  float: right;
-}
-
-table tbody th {
-  text-align: left;
-}
-
-input {
-  margin: 0;
-  border: 1px solid gray;
-}
-
-select {
-  z-index: 10;
-}
-
-input[name=end_input], input[name=range_input] {
-  margin-left: -4px;
-  margin-right: -4px;
+  padding: 0 4px 0 4px;
 }
 
 /*
@@ -60,5 +22,3 @@ div.navbar {
 .literal_output td {
   font-family: monospace;
 }
-
-

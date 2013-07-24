@@ -1,39 +1,38 @@
 {{define "head"}}<!-- nix -->{{end}}
 
 {{define "content"}}
-    <h2>Database Information</h2>
-    <div class="grouping_box">
-    {{range .States}}
-    <div class="grouping_box">
-    <h3>{{.Name}}</h3>
-    <table class="literal_output">
-    <tbody>
-    <tr>
-    <th>Path</th>
-    <td>{{.Path}}</td>
-    </tr>
-    <tr>
-    <th>Last Refreshed</th>
-    <td>{{.LastRefreshed}}</td>
-    </tr>
-    <tr>
-    <th>Type</th>
-    <td>{{.Type}}</td>
-    </tr>
-    <tr>
-    <th>Approximate Size</th>
-    <td>{{.ApproximateSize}}</td>
-    </tr>
-    <tr>
-    <th>Low Level Status</th>
-    <td><pre>{{.LowLevelStatus}}</pre></td>
-    </tr>
-    <tr>
-    <th>SSTable Status</th>
-    <td><pre>{{.SSTablesStatus}}</pre></td>
-    </tr>
-    </tbody>
-    </table>
+    <div class="container-fluid">
+      <h2>Database Information</h2>
+      {{range .States}}
+      <h3>{{.Name}}</h3>
+      <table class="table table-bordered table-condensed table-hover literal_output">
+        <tbody>
+          <tr>
+            <th>Path</th>
+            <td>{{.Path}}</td>
+          </tr>
+          <tr>
+            <th>Last Refreshed</th>
+            <td>{{.LastRefreshed}}</td>
+          </tr>
+          <tr>
+            <th>Type</th>
+            <td>{{.Type}}</td>
+          </tr>
+          <tr>
+            <th>Approximate Size</th>
+            <td>{{.ApproximateSize}}</td>
+          </tr>
+          <tr>
+            <th>Low Level Status</th>
+            <td><pre>{{.LowLevelStatus}}</pre></td>
+          </tr>
+          <tr>
+            <th>SSTable Status</th>
+            <td><pre>{{.SSTablesStatus}}</pre></td>
+          </tr>
+        </tbody>
+      </table>
+      {{end}}
     </div>
-    {{end}}
 {{end}}
