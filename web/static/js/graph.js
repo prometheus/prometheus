@@ -55,10 +55,10 @@ Prometheus.Graph.prototype.initialize = function() {
   self.id = Prometheus.Graph.numGraphs++;
 
   // Set default options.
-  self.options['id'] = self.id;
-  self.options['range_input'] = self.options['range_input'] || "1h";
-  self.options['stacked_checked'] = self.options['stacked'] ? "checked" : "";
-  self.options['tab'] = self.options['tab'] || 0;
+  self.options["id"] = self.id;
+  self.options["range_input"] = self.options["range_input"] || "1h";
+  self.options["stacked_checked"] = self.options["stacked"] ? "checked" : "";
+  self.options["tab"] = self.options["tab"] || 0;
 
   // Draw graph controls and container from Handlebars template.
 
@@ -77,22 +77,22 @@ Prometheus.Graph.prototype.initialize = function() {
 
   self.consoleTab = graphWrapper.find(".console");
   self.graphTab   = graphWrapper.find(".graph_container");
-  self.tabs = graphWrapper.find(".tabs");;
-  self.tab  = $(self.tabs.find("> div")[self.options['tab']]); // active tab
+  self.tabs = graphWrapper.find(".tabs");
+  self.tab  = $(self.tabs.find("> div")[self.options["tab"]]); // active tab
 
   self.tabs.tabs({
-    active: self.options['tab'],
+    active: self.options["tab"],
     activate: function(e, ui) {
       storeGraphOptionsInUrl();
       self.tab = ui.newPanel
-      if (self.tab.hasClass('reload')) { // reload if flagged with class 'reload'
+      if (self.tab.hasClass("reload")) { // reload if flagged with class "reload"
         self.submitQuery();
       }
     }
   });
 
   // Return moves focus back to expr instead of submitting.
-  self.insertMetric.bind('keydown', 'return', function(e) {
+  self.insertMetric.bind("keydown", "return", function(e) {
     self.expr.focus();
     self.expr.val(self.expr.val());
 
@@ -113,12 +113,12 @@ Prometheus.Graph.prototype.initialize = function() {
     self.endDate.val("");
   }
   self.endDate.change(function() { self.submitQuery() });
-  self.refreshInterval.change(function() { self.updateRefresh() })
+  self.refreshInterval.change(function() { self.updateRefresh() });
 
   self.stacked.change(function() { self.updateGraph(); });
   self.queryForm.submit(function() {
-    self.consoleTab.addClass('reload');
-    self.graphTab.addClass('reload');
+    self.consoleTab.addClass("reload");
+    self.graphTab.addClass("reload");
     self.submitQuery();
     return false;
   });
@@ -131,10 +131,10 @@ Prometheus.Graph.prototype.initialize = function() {
   self.queryForm.find("button[name=dec_end]").click(function() { self.decreaseEnd(); });
 
   self.insertMetric.change(function() {
-    self.expr.selection('replace', {text: self.insertMetric.val(), mode: 'before'})
+    self.expr.selection("replace", {text: self.insertMetric.val(), mode: "before"});
     self.insertMetric.focus(); // refocusing
   });
-  self.insertMetric.click(function() { self.expr.focus() })
+  self.insertMetric.click(function() { self.expr.focus() });
 
   self.expr.focus(); // TODO: move to external Graph method.
 
@@ -152,12 +152,12 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
       url: "/api/metrics",
       dataType: "json",
       success: function(json, textStatus) {
-        var availableMetrics = []
+        var availableMetrics = [];
         for (var i = 0; i < json.length; i++) {
           self.insertMetric[0].options.add(new Option(json[i], json[i]));
-          availableMetrics.push(json[i])
+          availableMetrics.push(json[i]);
         }
-        self.expr.autocomplete({source: availableMetrics})
+        self.expr.autocomplete({source: availableMetrics});
       },
       error: function() {
         alert("Error loading available metrics!");
@@ -191,7 +191,7 @@ Prometheus.Graph.prototype.getOptions = function() {
         }
       }
   });
-  options['tab'] = self.tabs.tabs("option", "active");
+  options["tab"] = self.tabs.tabs("option", "active");
   return options;
 };
 
@@ -256,8 +256,8 @@ Prometheus.Graph.prototype.getOrSetEndDate = function() {
 
 Prometheus.Graph.prototype.setEndDate = function(date) {
   var self = this;
-  dateString = date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate() + ' ' +
-               date.getHours() + ':' + date.getMinutes();
+  dateString = date.getFullYear() + "-" + (date.getMonth()+1) + "-" + date.getDate() + " " +
+               date.getHours() + ":" + date.getMinutes();
   self.endDate.val("");
   self.endDate.appendDtpicker({"current": dateString});
 };
@@ -277,7 +277,7 @@ Prometheus.Graph.prototype.decreaseEnd = function() {
 Prometheus.Graph.prototype.submitQuery = function() {
   var self = this;
   if (!self.expr.val()) {
-    return
+    return;
   }
 
   self.spinner.show();
@@ -326,16 +326,16 @@ Prometheus.Graph.prototype.updateRefresh = function() {
   var self = this;
 
   if (self.timeoutID) {
-    window.clearTimeout(self.timeoutID)
+    window.clearTimeout(self.timeoutID);
   }
 
   interval = self.parseDuration(self.refreshInterval.val());
   if (!interval) { return };
 
   self.timeoutID = window.setTimeout(function() {
-    self.submitQuery()
-    self.updateRefresh()
-  }, interval * SECOND)
+    self.submitQuery();
+    self.updateRefresh();
+  }, interval * SECOND);
 }
 
 Prometheus.Graph.prototype.renderLabels = function(labels) {
@@ -345,7 +345,7 @@ Prometheus.Graph.prototype.renderLabels = function(labels) {
       labelStrings.push("<strong>" + label + "</strong>: " + labels[label]);
     }
   }
-  return labels = "<div class='labels'>" + labelStrings.join("<br>") + "</div>";
+  return labels = "<div class=\"labels\">" + labelStrings.join("<br>") + "</div>";
 }
 
 Prometheus.Graph.prototype.metricToTsName = function(labels) {
@@ -353,7 +353,7 @@ Prometheus.Graph.prototype.metricToTsName = function(labels) {
   var labelStrings = [];
    for (label in labels) {
      if (label != "name") {
-      labelStrings.push(label + "='" + labels[label] + "'");
+      labelStrings.push(label + "=\"" + labels[label] + "\"");
      }
    }
   tsName += labelStrings.join(",") + "}";
@@ -501,7 +501,7 @@ Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
     alert("No datapoints found.");
     return;
   }
-  self.graphTab.removeClass('reload');
+  self.graphTab.removeClass("reload");
   self.updateGraph(true);
 }
 
