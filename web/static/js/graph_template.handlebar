@@ -104,7 +104,16 @@
                 </div>
                 <div class="legend"></div>
               </div>
-              <div id="console{{id}}" class="console reload"></div>
+              <div id="console{{id}}" class="console reload">
+                <table class="table table-condensed table-bordered table-hover console_table">
+                  <thead>
+                    <th>Element</th>
+                    <th>Value</th>
+                  </thead>
+                  <tbody>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </form>
         </div>

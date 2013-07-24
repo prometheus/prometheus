@@ -24,7 +24,7 @@ import (
 type MetricsService struct {
 	gorest.RestService `root:"/api/" consumes:"application/json" produces:"application/json"`
 
-	query      gorest.EndPoint `method:"GET" path:"/query?{expr:string}&{json:string}" output:"string"`
+	query      gorest.EndPoint `method:"GET" path:"/query?{expr:string}&{as_text:string}" output:"string"`
 	queryRange gorest.EndPoint `method:"GET" path:"/query_range?{expr:string}&{end:int64}&{range:int64}&{step:int64}" output:"string"`
 	metrics    gorest.EndPoint `method:"GET" path:"/metrics" output:"string"`
 
