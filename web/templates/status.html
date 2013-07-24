@@ -1,49 +1,40 @@
 {{define "head"}}<!-- nix -->{{end}}
 
 {{define "content"}}
+  <div class="container-fluid">
     <h2>Runtime Information</h2>
-    <div class="grouping_box table-striped">
-      <table>
-        <tbody>
-          <tr>
-            <th>Uptime</th>
-            <td>{{.Birth}}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <table class="table table-condensed table-bordered table-striped table-hover">
+      <tbody>
+        <tr>
+          <th>Uptime</th>
+          <td>{{.Birth}}</td>
+        </tr>
+      </tbody>
+    </table>
+
     <h2>Build Information</h2>
-    <div class="grouping_box">
-      <table class="table-striped">
-        <tbody>
-          {{range $key, $value := .BuildInfo}}
-          <tr>
-            <th scope="row">{{$key}}</th>
-            <td>{{$value}}</td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-    </div>
+    <table class="table table-condensed table-bordered table-striped table-hover">
+      <tbody>
+        {{range $key, $value := .BuildInfo}}
+        <tr>
+          <th scope="row">{{$key}}</th>
+          <td>{{$value}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
 
     <h2>Configuration</h2>
-    <div class="grouping_box">
-    <pre>
-{{.Config}}
-    </pre>
-    </div>
+    <pre>{{.Config}}</pre>
 
     <h2>Rules</h2>
-    <div class="grouping_box">
     <pre>{{range .RuleManager.Rules}}{{.HTMLSnippet}}<br/>{{end}}</pre>
-    </div>
 
     <h2>Targets</h2>
-    <div class="grouping_box">
       {{range $job, $pool := .TargetPools}}
-      <h3>{{$job}}</h3>
-        <table>
+        <table class="table table-condensed table-bordered table-striped table-hover">
           <thead>
+            <tr><th colspan="5" class="job_header">{{$job}}</th></tr>
             <tr>
               <th>Endpoint</th>
               <th>State</th>
@@ -69,7 +60,7 @@
               </td>
               <td>
                 {{if .LastError}}
-                <span class="error_text">{{.LastError}}</span>
+                <span class="alert alert-error error_text">{{.LastError}}</span>
                 {{end}}
               </td>
             </tr>
@@ -77,43 +68,39 @@
           </tbody>
         </table>
       {{end}}
-    </div>
 
     <h2>Curation</h2>
-    <div class="grouping_box">
-      <table class="table-striped">
-        <tr>
-          <th>Active</th>
-          <td>{{.Curation.Active}}</td>
-        </tr>
-        {{if .Curation.Active}}
-        <tr>
-          <th>Processor Name</th>
-          <td>{{.Curation.Name}}</td>
-        </tr>
-        <tr>
-          <th>Recency Limit</th>
-          <td>{{.Curation.Limit}}</td>
-        </tr>
-        <tr>
-          <th>Current Fingerprint</th>
-          <td>{{.Curation.Fingerprint}}</td>
-        </tr>
-        {{end}}
-      </table>
-    </div>
+    <table class="table table-condensed table-bordered table-striped table-hover">
+      <tr>
+        <th>Active</th>
+        <td>{{.Curation.Active}}</td>
+      </tr>
+      {{if .Curation.Active}}
+      <tr>
+        <th>Processor Name</th>
+        <td>{{.Curation.Name}}</td>
+      </tr>
+      <tr>
+        <th>Recency Limit</th>
+        <td>{{.Curation.Limit}}</td>
+      </tr>
+      <tr>
+        <th>Current Fingerprint</th>
+        <td>{{.Curation.Fingerprint}}</td>
+      </tr>
+      {{end}}
+    </table>
 
     <h2>Startup Flags</h2>
-    <div class="grouping_box table-striped">
-      <table class="table-striped">
-        <tbody>
-          {{range $key, $value := .Flags}}
-          <tr>
-            <th scope="row">{{$key}}</th>
-            <td>{{$value}}</td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-    </div>
+    <table class="table table-condensed table-bordered table-striped table-hover">
+      <tbody>
+        {{range $key, $value := .Flags}}
+        <tr>
+          <th scope="row">{{$key}}</th>
+          <td>{{$value}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
 {{end}}

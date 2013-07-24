@@ -176,3 +176,28 @@ select name="insert_metric" {
 .config label.checkbox {
   padding-top: 0;
 }
+
+.grouping_box {
+  position: relative;
+  padding: 0 5px 0 5px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  -webkit-border-radius: 4px;
+     -moz-border-radius: 4px;
+          border-radius: 4px;
+  margin: 0 8px 2px 8px;
+}
+
+.grouping_box .head, .eval_stats {
+  display: inline-block;
+  vertical-align: top;
+}
+
+.grouping_box .head .opts {
+  float: right;
+}
+
+input[name="end_input"], input[name="range_input"] {
+  margin-left: -4px;
+  margin-right: -4px;
+}
