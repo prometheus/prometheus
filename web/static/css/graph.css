@@ -107,9 +107,8 @@ input[title=*]:hover:after {
   display: inline;
 }
 
-.console {
-  white-space: pre;
-  overflow: scroll;
+.console_table {
+  margin-top: 5px;
 }
 
 .ui-widget {

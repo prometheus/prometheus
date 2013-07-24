@@ -37,7 +37,7 @@ func (serv MetricsService) setAccessControlHeaders(rb *gorest.ResponseBuilder) {
 	rb.AddHeader("Access-Control-Expose-Headers", "Date")
 }
 
-func (serv MetricsService) Query(expr string, formatJson string) string {
+func (serv MetricsService) Query(expr string, asText string) string {
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
 		return ast.ErrorToJSON(err)
@@ -48,7 +48,8 @@ func (serv MetricsService) Query(expr string, formatJson string) string {
 	rb := serv.ResponseBuilder()
 	serv.setAccessControlHeaders(rb)
 	var format ast.OutputFormat
-	if formatJson != "" {
+  // BUG(julius): Use Content-Type negotiation.
+	if asText == "" {
 		format = ast.JSON
 		rb.SetContentType(gorest.Application_Json)
 	} else {

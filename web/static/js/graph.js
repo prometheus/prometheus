@@ -293,26 +293,22 @@ Prometheus.Graph.prototype.submitQuery = function() {
   self.queryForm.find("input[name=end]").val(endDate);
 
   if (self.queryXhr) {
-    self.queryXhr.abort()
+    self.queryXhr.abort();
   }
-  var url
-  var data
+  var url;
+  var success;
   if (self.tab[0] == self.graphTab[0]) {
-    url  = self.queryForm.attr("action")
-    data = self.queryForm.serialize()
-    dataType = "json"
-    success = function(json, textStatus) { self.handleGraphResponse(json, textStatus) }
+    url  = self.queryForm.attr("action");
+    success = function(json, textStatus) { self.handleGraphResponse(json, textStatus); };
   } else {
-    url  = '/api/query'
-    data = self.expr.serialize()
-    dataType = "text"
-    success = function(text, textStatus) { self.handleConsoleResponse(text, textStatus) }
+    url  = "/api/query";
+    success = function(text, textStatus) { self.handleConsoleResponse(text, textStatus); };
   }
 
   self.queryXhr = $.ajax({
       method: self.queryForm.attr("method"),
       url: url,
-      dataType: dataType,
+      dataType: "json",
       data: self.queryForm.serialize(),
       success: success,
       error: function(xhr, resp) {
@@ -507,20 +503,39 @@ Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
   self.updateGraph(true);
 }
 
-Prometheus.Graph.prototype.handleConsoleResponse = function(text, textStatus) {
+Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   var self = this;
-  var body = "<table class=\"table-striped console_table\"></table>";
-  self.consoleTab.removeClass('reload');
-  self.consoleTab.html(body);
+  self.consoleTab.removeClass("reload");
 
-  var elements = text.split("\n");
-  var table = $("#console_table");
-  table.find("tr:gt(0)").remove();
-  for (var i = 0; i < elements.length; i++) {
-    var e = "<tr><td>" + elements[i] + "</td></tr>";
-    table.append(e);
+  var tBody = self.consoleTab.find(".console_table tbody");
+  tBody.empty();
+
+  switch(data.Type) {
+  case "vector":
+    for (var i = 0; i < data.Value.length; i++) {
+      var v = data.Value[i];
+      var tsName = self.metricToTsName(v.Metric);
+      tBody.append("<tr><td>" + tsName + "</td><td>" + v.Value + "</td></tr>")
+    }
+    break;
+  case "matrix":
+    for (var i = 0; i < data.Value.length; i++) {
+      var v = data.Value[i];
+      var tsName = self.metricToTsName(v.Metric);
+      var valueText = "";
+      for (var j = 0; j < v.Values.length; j++) {
+        valueText += v.Values[j].Value + " @" + v.Values[j].Timestamp + "<br/>";
+      }
+      tBody.append("<tr><td>" + tsName + "</td><td>" + valueText + "</td></tr>")
+    }
+    break;
+  case "scalar":
+    tBody.append("<tr><td>scalar</td><td>" + data.Value + "</td></tr>");
+    break;
+  default:
+    alert("Unsupported value type!");
+    break;
   }
-  console.log(table);
 }
 
 function parseGraphOptionsFromUrl() {
