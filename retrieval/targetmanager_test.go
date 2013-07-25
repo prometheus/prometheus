@@ -75,7 +75,7 @@ func (t *fakeTarget) ScheduledFor() (time time.Time) {
 
 func (t *fakeTarget) Merge(newTarget Target) {}
 
-func (t	*fakeTarget) EstimatedTimeToExecute() time.Duration { return 0 }
+func (t *fakeTarget) EstimatedTimeToExecute() time.Duration { return 0 }
 
 func testTargetManager(t test.Tester) {
 	results := make(chan *extraction.Result, 5)

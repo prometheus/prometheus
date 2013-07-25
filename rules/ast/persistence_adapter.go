@@ -109,14 +109,15 @@ func (v *viewAdapter) chooseClosestSample(samples metric.Values, timestamp time.
 	}
 }
 
-func (v *viewAdapter) GetValueAtTime(fingerprints clientmodel.Fingerprints, timestamp time.Time) (samples Vector, err error) {
+func (v *viewAdapter) GetValueAtTime(fingerprints clientmodel.Fingerprints, timestamp time.Time) (Vector, error) {
 	timer := v.stats.GetTimer(stats.GetValueAtTimeTime).Start()
+	samples := Vector{}
 	for _, fingerprint := range fingerprints {
 		sampleCandidates := v.view.GetValueAtTime(fingerprint, timestamp)
 		samplePair := v.chooseClosestSample(sampleCandidates, timestamp)
 		m, err := v.storage.GetMetricForFingerprint(fingerprint)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		if samplePair != nil {
 			samples = append(samples, &clientmodel.Sample{
@@ -127,11 +128,12 @@ func (v *viewAdapter) GetValueAtTime(fingerprints clientmodel.Fingerprints, time
 		}
 	}
 	timer.Stop()
-	return samples, err
+	return samples, nil
 }
 
-func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, interval *metric.Interval) (sampleSets []metric.SampleSet, err error) {
+func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, interval *metric.Interval) ([]metric.SampleSet, error) {
 	timer := v.stats.GetTimer(stats.GetBoundaryValuesTime).Start()
+	sampleSets := []metric.SampleSet{}
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetBoundaryValues(fingerprint, *interval)
 		if len(samplePairs) == 0 {
@@ -141,7 +143,7 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, i
 		// TODO: memoize/cache this.
 		m, err := v.storage.GetMetricForFingerprint(fingerprint)
 		if err != nil {
-			continue
+			return nil, err
 		}
 
 		sampleSet := metric.SampleSet{
@@ -154,8 +156,9 @@ func (v *viewAdapter) GetBoundaryValues(fingerprints clientmodel.Fingerprints, i
 	return sampleSets, nil
 }
 
-func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, interval *metric.Interval) (sampleSets []metric.SampleSet, err error) {
+func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, interval *metric.Interval) ([]metric.SampleSet, error) {
 	timer := v.stats.GetTimer(stats.GetRangeValuesTime).Start()
+	sampleSets := []metric.SampleSet{}
 	for _, fingerprint := range fingerprints {
 		samplePairs := v.view.GetRangeValues(fingerprint, *interval)
 		if len(samplePairs) == 0 {
@@ -165,7 +168,7 @@ func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, inte
 		// TODO: memoize/cache this.
 		m, err := v.storage.GetMetricForFingerprint(fingerprint)
 		if err != nil {
-			continue
+			return nil, err
 		}
 
 		sampleSet := metric.SampleSet{
