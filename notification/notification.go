@@ -95,13 +95,34 @@ func (n *NotificationHandler) sendNotifications(reqs rules.NotificationReqs) err
 	return nil
 }
 
-// Continusouly dispatch notifications.
+// Report notification queue occupancy and capacity.
+func (n *NotificationHandler) reportQueues() {
+	notificationsQueueSize.Set(map[string]string{facet: occupancy}, float64(len(n.pendingNotifications)))
+	notificationsQueueSize.Set(map[string]string{facet: capacity}, float64(cap(n.pendingNotifications)))
+}
+
+// Continuously dispatch notifications.
 func (n *NotificationHandler) Run() {
+	queueReportTicker := time.NewTicker(time.Second)
+	go func() {
+		for _ = range queueReportTicker.C {
+			n.reportQueues()
+		}
+	}()
+	defer queueReportTicker.Stop()
+
 	for reqs := range n.pendingNotifications {
 		if n.alertmanagerUrl == "" {
 			log.Println("No alert manager configured, not dispatching notification")
+			notificationsCount.Increment(map[string]string{result: dropped})
+			continue
 		}
-		if err := n.sendNotifications(reqs); err != nil {
+
+		begin := time.Now()
+		err := n.sendNotifications(reqs)
+		recordOutcome(time.Since(begin), err)
+
+		if err != nil {
 			log.Println("Error sending notification:", err)
 		}
 	}
