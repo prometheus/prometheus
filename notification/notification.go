@@ -98,6 +98,9 @@ func (n *NotificationHandler) sendNotifications(reqs rules.NotificationReqs) err
 // Continusouly dispatch notifications.
 func (n *NotificationHandler) Run() {
 	for reqs := range n.pendingNotifications {
+		if n.alertmanagerUrl == "" {
+			log.Println("No alert manager configured, not dispatching notification")
+		}
 		if err := n.sendNotifications(reqs); err != nil {
 			log.Println("Error sending notification:", err)
 		}
