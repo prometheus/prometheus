@@ -38,24 +38,36 @@ type RuleManager interface {
 	AlertingRules() []*AlertingRule
 }
 
+// A request for sending an alert notification to the alert manager. This needs
+// to be defined in this package to prevent a circular import between
+// rules<->notification.
+type NotificationReq struct {
+	Rule        *AlertingRule
+	ActiveAlert Alert
+}
+
+type NotificationReqs []*NotificationReq
+
 type ruleManager struct {
 	// Protects the rules list.
 	sync.Mutex
 	rules []Rule
 
-	results  chan<- *extraction.Result
-	done     chan bool
-	interval time.Duration
-	storage  *metric.TieredStorage
+	results       chan<- *extraction.Result
+	notifications chan<- NotificationReqs
+	done          chan bool
+	interval      time.Duration
+	storage       *metric.TieredStorage
 }
 
-func NewRuleManager(results chan<- *extraction.Result, interval time.Duration, storage *metric.TieredStorage) RuleManager {
+func NewRuleManager(results chan<- *extraction.Result, notifications chan<- NotificationReqs, interval time.Duration, storage *metric.TieredStorage) RuleManager {
 	manager := &ruleManager{
-		results:  results,
-		rules:    []Rule{},
-		done:     make(chan bool),
-		interval: interval,
-		storage:  storage,
+		results:       results,
+		notifications: notifications,
+		rules:         []Rule{},
+		done:          make(chan bool),
+		interval:      interval,
+		storage:       storage,
 	}
 	return manager
 }
@@ -84,6 +96,27 @@ func (m *ruleManager) Stop() {
 	}
 }
 
+func (m *ruleManager) queueAlertNotifications(rule *AlertingRule) {
+	activeAlerts := rule.ActiveAlerts()
+	if len(activeAlerts) == 0 {
+		return
+	}
+
+	notifications := make(NotificationReqs, 0, len(activeAlerts))
+	for _, aa := range activeAlerts {
+		if aa.State != FIRING {
+			// BUG: In the future, make AlertManager support pending alerts?
+			continue
+		}
+
+		notifications = append(notifications, &NotificationReq{
+			Rule:        rule,
+			ActiveAlert: aa,
+		})
+	}
+	m.notifications <- notifications
+}
+
 func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 	now := time.Now()
 	wg := sync.WaitGroup{}
@@ -104,6 +137,10 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 			m.results <- &extraction.Result{
 				Samples: samples,
 				Err:     err,
+			}
+
+			if alertingRule, ok := rule.(*AlertingRule); ok {
+				m.queueAlertNotifications(alertingRule)
 			}
 		}(rule)
 	}

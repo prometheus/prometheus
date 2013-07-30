@@ -48,7 +48,7 @@ func (serv MetricsService) Query(expr string, asText string) string {
 	rb := serv.ResponseBuilder()
 	serv.setAccessControlHeaders(rb)
 	var format ast.OutputFormat
-  // BUG(julius): Use Content-Type negotiation.
+	// BUG(julius): Use Content-Type negotiation.
 	if asText == "" {
 		format = ast.JSON
 		rb.SetContentType(gorest.Application_Json)

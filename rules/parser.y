@@ -41,7 +41,7 @@
 %token <num> NUMBER
 %token PERMANENT GROUP_OP
 %token <str> AGGR_OP CMP_OP ADDITIVE_OP MULT_OP
-%token ALERT IF FOR WITH
+%token ALERT IF FOR WITH SUMMARY DESCRIPTION
 
 %type <ruleNodeSlice> func_arg_list
 %type <labelNameSlice> label_list grouping_opts
@@ -75,9 +75,9 @@ rules_stat         : qualifier IDENTIFIER rule_labels '=' rule_expr
                        if err != nil { yylex.Error(err.Error()); return 1 }
                        yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
                      }
-                   | ALERT IDENTIFIER IF rule_expr for_duration WITH rule_labels
+                   | ALERT IDENTIFIER IF rule_expr for_duration WITH rule_labels SUMMARY STRING DESCRIPTION STRING
                      {
-                       rule, err := CreateAlertingRule($2, $4, $5, $7)
+                       rule, err := CreateAlertingRule($2, $4, $5, $7, $9, $11)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                        yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
                      }
