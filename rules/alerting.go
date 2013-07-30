@@ -101,7 +101,11 @@ type AlertingRule struct {
 	// output vector before an alert transitions from PENDING to FIRING state.
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
-	labels clientmodel.LabelSet
+	Labels clientmodel.LabelSet
+	// Short alert summary, suitable for email subjects.
+	Summary string
+	// More detailed alert description.
+	Description string
 
 	// Protects the below.
 	mutex sync.Mutex
@@ -110,7 +114,9 @@ type AlertingRule struct {
 	activeAlerts map[clientmodel.Fingerprint]*Alert
 }
 
-func (rule *AlertingRule) Name() string { return rule.name }
+func (rule *AlertingRule) Name() string {
+	return rule.name
+}
 
 func (rule *AlertingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
 	return ast.EvalVectorInstant(rule.vector, timestamp, storage, stats.NewTimerGroup())
@@ -137,6 +143,7 @@ func (rule *AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorag
 		if alert, ok := rule.activeAlerts[*fp]; !ok {
 			labels := clientmodel.LabelSet{}
 			labels.MergeFromMetric(sample.Metric)
+			labels = labels.Merge(rule.Labels)
 			if _, ok := labels[clientmodel.MetricNameLabel]; ok {
 				delete(labels, clientmodel.MetricNameLabel)
 			}
@@ -183,7 +190,7 @@ func (rule *AlertingRule) ToDotGraph() string {
 }
 
 func (rule *AlertingRule) String() string {
-	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.vector, utility.DurationToString(rule.holdDuration), rule.labels)
+	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.vector, utility.DurationToString(rule.holdDuration), rule.Labels)
 }
 
 func (rule *AlertingRule) HTMLSnippet() template.HTML {
@@ -198,7 +205,7 @@ func (rule *AlertingRule) HTMLSnippet() template.HTML {
 		ConsoleLinkForExpression(rule.vector.String()),
 		rule.vector,
 		utility.DurationToString(rule.holdDuration),
-		rule.labels))
+		rule.Labels))
 }
 
 func (rule *AlertingRule) State() AlertState {
@@ -226,12 +233,15 @@ func (rule *AlertingRule) ActiveAlerts() []Alert {
 }
 
 // Construct a new AlertingRule.
-func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels clientmodel.LabelSet) *AlertingRule {
+func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels clientmodel.LabelSet, summary string, description string) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
 		vector:       vector,
 		holdDuration: holdDuration,
-		labels:       labels,
+		Labels:       labels,
+		Summary:      summary,
+		Description:  description,
+
 		activeAlerts: map[clientmodel.Fingerprint]*Alert{},
 	}
 }

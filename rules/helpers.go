@@ -30,7 +30,7 @@ func CreateRecordingRule(name string, labels clientmodel.LabelSet, expr ast.Node
 	return NewRecordingRule(name, labels, expr.(ast.VectorNode), permanent), nil
 }
 
-func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labels clientmodel.LabelSet) (*AlertingRule, error) {
+func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labels clientmodel.LabelSet, summary string, description string) (*AlertingRule, error) {
 	if _, ok := expr.(ast.VectorNode); !ok {
 		return nil, fmt.Errorf("Alert rule expression %v does not evaluate to vector type", expr)
 	}
@@ -38,7 +38,7 @@ func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labe
 	if err != nil {
 		return nil, err
 	}
-	return NewAlertingRule(name, expr.(ast.VectorNode), holdDuration, labels), nil
+	return NewAlertingRule(name, expr.(ast.VectorNode), holdDuration, labels, summary, description), nil
 }
 
 func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {

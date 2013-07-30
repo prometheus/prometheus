@@ -511,18 +511,18 @@ func TestAlertingRule(t *testing.T) {
 	// Labels in expected output need to be alphabetically sorted.
 	var evalOutputs = [][]string{
 		{
-			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server"} => 1 @[%v]`,
-			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server"} => 1 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server", severity="critical"} => 1 @[%v]`,
 		},
 		{
-			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server"} => 0 @[%v]`,
-			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server"} => 1 @[%v]`,
-			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server"} => 0 @[%v]`,
-			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server"} => 1 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 1 @[%v]`,
 		},
 		{
-			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server"} => 0 @[%v]`,
-			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server"} => 0 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
+			`ALERTS{alertname="HttpRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
 		},
 		{
 		/* empty */
@@ -542,9 +542,9 @@ func TestAlertingRule(t *testing.T) {
 	}
 	alertName := "HttpRequestRateLow"
 	alertLabels := clientmodel.LabelSet{
-		"summary": "HTTP request rate is low",
+		"severity": "critical",
 	}
-	rule := NewAlertingRule(alertName, alertExpr.(ast.VectorNode), time.Minute, alertLabels)
+	rule := NewAlertingRule(alertName, alertExpr.(ast.VectorNode), time.Minute, alertLabels, "summary", "description")
 
 	for i, expected := range evalOutputs {
 		evalTime := testStartTime.Add(testSampleInterval * time.Duration(i))
