@@ -25,6 +25,8 @@ import (
 	"github.com/prometheus/client_golang/extraction"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/utility"
 )
 
 const (
@@ -143,7 +145,7 @@ func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.La
 		address:    address,
 		Deadline:   deadline,
 		baseLabels: baseLabels,
-		client:     NewDeadlineClient(deadline),
+		client:     utility.NewDeadlineClient(deadline),
 	}
 
 	scheduler := &healthScheduler{

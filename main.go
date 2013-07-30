@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/extraction"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -62,6 +63,9 @@ var (
 
 	arenaFlushInterval = flag.Duration("arena.flushInterval", 15*time.Minute, "The period at which the in-memory arena is flushed to disk.")
 	arenaTTL           = flag.Duration("arena.ttl", 10*time.Minute, "The relative age of values to purge to disk from memory.")
+
+	alertmanagerUrl           = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
+	notificationQueueCapacity = flag.Int("alertmanager.notificationQueueCapacity", 100, "The size of the queue for pending alert manager notifications.")
 )
 
 type prometheus struct {
@@ -77,7 +81,9 @@ type prometheus struct {
 
 	unwrittenSamples chan *extraction.Result
 
-	storage *metric.TieredStorage
+	ruleManager   rules.RuleManager
+	notifications chan rules.NotificationReqs
+	storage       *metric.TieredStorage
 }
 
 func (p *prometheus) interruptHandler() {
@@ -146,7 +152,10 @@ func (p *prometheus) close() {
 
 	p.curationMutex.Lock()
 
+	p.ruleManager.Stop()
 	p.storage.Close()
+
+	close(p.notifications)
 	close(p.stopBackgroundOperations)
 	close(p.curationState)
 	close(p.databaseStates)
@@ -209,13 +218,19 @@ func main() {
 	targetManager := retrieval.NewTargetManager(unwrittenSamples, *concurrentRetrievalAllowance)
 	targetManager.AddTargetsFromConfig(conf)
 
+	notifications := make(chan rules.NotificationReqs, *notificationQueueCapacity)
+
 	// Queue depth will need to be exposed
-	ruleManager := rules.NewRuleManager(unwrittenSamples, conf.EvaluationInterval(), ts)
+	ruleManager := rules.NewRuleManager(unwrittenSamples, notifications, conf.EvaluationInterval(), ts)
 	err = ruleManager.AddRulesFromConfig(conf)
 	if err != nil {
 		log.Fatalf("Error loading rule files: %v", err)
 	}
 	go ruleManager.Run()
+
+	// Queue depth will need to be exposed
+	notificationHandler := notification.NewNotificationHandler(*alertmanagerUrl, notifications)
+	go notificationHandler.Run()
 
 	flags := map[string]string{}
 
@@ -272,7 +287,9 @@ func main() {
 
 		stopBackgroundOperations: make(chan bool, 1),
 
-		storage: ts,
+		ruleManager:   ruleManager,
+		notifications: notifications,
+		storage:       ts,
 	}
 	defer prometheus.close()
 

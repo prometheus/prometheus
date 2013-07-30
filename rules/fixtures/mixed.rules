@@ -3,11 +3,14 @@ dc_http_request_rate5m = sum(rate(http_request_count[5m])) by (dc)
 
 // A simple test alerting rule.
 ALERT GlobalRequestRateLow IF(dc_http_request_rate5m < 10000) FOR 5m WITH {
-  description = "Global HTTP request rate low!",
-  summary = "Request rate low"
-  /* ... more fields here ... */
-}
+    service = "testservice"
+    /* ... more fields here ... */
+  }
+  SUMMARY "Global request rate low"
+  DESCRIPTION "The global request rate is low"
 
 foo = bar{label1="value1"}
 
 ALERT BazAlert IF(foo > 10) WITH {}
+  SUMMARY "Baz"
+  DESCRIPTION "BazAlert"
