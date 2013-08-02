@@ -534,6 +534,9 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   case "scalar":
     tBody.append("<tr><td>scalar</td><td>" + data.Value + "</td></tr>");
     break;
+  case "error":
+    alert(json.Value);
+    break;
   default:
     alert("Unsupported value type!");
     break;
