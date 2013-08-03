@@ -83,8 +83,7 @@ source_path:
 	[ -d "$(FULL_GOPATH)" ]
 
 test: build
-	$(GOENV) find . -maxdepth 1 -mindepth 1 -type d -and -not -path $(BUILD_PATH) -exec $(GOCC) test {}/... $(GO_TEST_FLAGS) \;
-	$(GO) test $(GO_TEST_FLAGS)
+	$(GO) test $(GO_TEST_FLAGS) ./...
 
 tools: dependencies preparation
 	$(MAKE) -C tools
