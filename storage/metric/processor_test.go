@@ -848,19 +848,25 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.in.sampleGroups))
 		defer sampleDirectory.Close()
 
-		curatorStates, err := leveldb.NewLevelDBPersistence(curatorDirectory.Path(), 0, 0)
+		curatorStates, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
+			Path: curatorDirectory.Path(),
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer curatorStates.Close()
 
-		watermarkStates, err := leveldb.NewLevelDBPersistence(watermarkDirectory.Path(), 0, 0)
+		watermarkStates, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
+			Path: watermarkDirectory.Path(),
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer watermarkStates.Close()
 
-		samples, err := leveldb.NewLevelDBPersistence(sampleDirectory.Path(), 0, 0)
+		samples, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
+			Path: sampleDirectory.Path(),
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1367,19 +1373,21 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.in.sampleGroups))
 		defer sampleDirectory.Close()
 
-		curatorStates, err := leveldb.NewLevelDBPersistence(curatorDirectory.Path(), 0, 0)
+		curatorStates, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
+			Path: curatorDirectory.Path()})
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer curatorStates.Close()
 
-		watermarkStates, err := leveldb.NewLevelDBPersistence(watermarkDirectory.Path(), 0, 0)
+		watermarkStates, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
+			Path: watermarkDirectory.Path()})
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer watermarkStates.Close()
 
-		samples, err := leveldb.NewLevelDBPersistence(sampleDirectory.Path(), 0, 0)
+		samples, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{Path: sampleDirectory.Path()})
 		if err != nil {
 			t.Fatal(err)
 		}

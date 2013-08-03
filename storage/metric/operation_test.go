@@ -1820,7 +1820,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 			t.Fatalf("%d. expected length %d, got %d: %v", i, len(scenario.out), len(actual), actual)
 		}
 		for j, out := range scenario.out {
-			if out != actual[j] {
+			if !out.Equal(actual[j]) {
 				t.Fatalf("%d. expected output %v, got %v", i, scenario.out, actual)
 			}
 		}

@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
-var existenceValue = &dto.MembershipIndexValue{}
+var existenceValue = new(dto.MembershipIndexValue)
 
 type LevelDBMembershipIndex struct {
 	persistence *leveldb.LevelDBPersistence
@@ -44,18 +44,19 @@ func (l *LevelDBMembershipIndex) Put(k proto.Message) error {
 	return l.persistence.Put(k, existenceValue)
 }
 
-func NewLevelDBMembershipIndex(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (i *LevelDBMembershipIndex, err error) {
+type LevelDBIndexOptions struct {
+	leveldb.LevelDBOptions
+}
 
-	leveldbPersistence, err := leveldb.NewLevelDBPersistence(storageRoot, cacheCapacity, bitsPerBloomFilterEncoded)
+func NewLevelDBMembershipIndex(o *LevelDBIndexOptions) (i *LevelDBMembershipIndex, err error) {
+	leveldbPersistence, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	i = &LevelDBMembershipIndex{
+	return &LevelDBMembershipIndex{
 		persistence: leveldbPersistence,
-	}
-
-	return
+	}, nil
 }
 
 func (l *LevelDBMembershipIndex) Commit(batch raw.Batch) error {
