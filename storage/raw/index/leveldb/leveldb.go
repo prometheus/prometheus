@@ -75,6 +75,6 @@ func (l *LevelDBMembershipIndex) ApproximateSize() (uint64, error) {
 	return l.persistence.ApproximateSize()
 }
 
-func (l *LevelDBMembershipIndex) State() leveldb.DatabaseState {
+func (l *LevelDBMembershipIndex) State() string {
 	return l.persistence.State()
 }

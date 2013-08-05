@@ -23,6 +23,10 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	dto "github.com/prometheus/prometheus/model/generated"
+
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/raw"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
 // unsafe.Sizeof(watermarks{})
@@ -161,4 +165,98 @@ func (lru *WatermarkCache) checkCapacity() {
 		delete(lru.table, *delWatermarks.fingerprint)
 		lru.size -= elementSize
 	}
+}
+
+type FingerprintHighWatermarkMapping map[clientmodel.Fingerprint]time.Time
+
+type HighWatermarker interface {
+	raw.ForEacher
+
+	UpdateBatch(FingerprintHighWatermarkMapping) error
+	Get(*clientmodel.Fingerprint) (t time.Time, ok bool, err error)
+	Close() error
+	State() string
+	Size() (uint64, bool, error)
+}
+
+type leveldbHighWatermarker struct {
+	p *leveldb.LevelDBPersistence
+}
+
+func (w *leveldbHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, ok bool, err error) {
+	k := new(dto.Fingerprint)
+	dumpFingerprint(k, f)
+	v := new(dto.MetricHighWatermark)
+	ok, err = w.p.Get(k, v)
+	if err != nil {
+		return t, ok, err
+	}
+	if !ok {
+		return t, ok, err
+	}
+	t = time.Unix(v.GetTimestamp(), 0)
+	return t, true, nil
+}
+
+func (w *leveldbHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) error {
+	batch := leveldb.NewBatch()
+	defer batch.Close()
+
+	for fp, t := range m {
+		existing, present, err := w.Get(&fp)
+		if err != nil {
+			return err
+		}
+		k := new(dto.Fingerprint)
+		dumpFingerprint(k, &fp)
+		v := new(dto.MetricHighWatermark)
+		if !present {
+			v.Timestamp = proto.Int64(t.Unix())
+			batch.Put(k, v)
+
+			continue
+		}
+
+		// BUG(matt): Repace this with watermark management.
+		if t.After(existing) {
+			v.Timestamp = proto.Int64(t.Unix())
+			batch.Put(k, v)
+		}
+	}
+
+	return w.p.Commit(batch)
+}
+
+func (i *leveldbHighWatermarker) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
+	return i.p.ForEach(d, f, o)
+}
+
+func (i *leveldbHighWatermarker) Close() error {
+	i.p.Close()
+
+	return nil
+}
+
+func (i *leveldbHighWatermarker) State() string {
+	return i.p.State()
+}
+
+func (i *leveldbHighWatermarker) Size() (uint64, bool, error) {
+	s, err := i.p.ApproximateSize()
+	return s, true, err
+}
+
+type LevelDBHighWatermarkerOptions struct {
+	leveldb.LevelDBOptions
+}
+
+func NewLevelDBHighWatermarker(o *LevelDBHighWatermarkerOptions) (HighWatermarker, error) {
+	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return &leveldbHighWatermarker{
+		p: s,
+	}, nil
 }

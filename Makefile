@@ -17,7 +17,7 @@ include Makefile.INCLUDE
 
 all: binary test
 
-$(GOCC): $(BUILD_PATH)/cache/$(GOPKG) source_path
+$(GOCC): $(BUILD_PATH)/cache/$(GOPKG) $(FULL_GOPATH)
 	tar -C $(BUILD_PATH)/root -xzf $<
 	touch $@
 
@@ -58,7 +58,7 @@ format:
 model: dependencies preparation
 	$(MAKE) -C model
 
-preparation: $(GOCC) source_path
+preparation: $(GOCC) $(FULL_GOPATH)
 	$(MAKE) -C $(BUILD_PATH)
 
 race_condition_binary: build
@@ -76,9 +76,9 @@ search_index:
 server: config dependencies model preparation
 	$(MAKE) -C server
 
-# source_path is responsible for ensuring that the builder has not done anything
+# $(FULL_GOPATH) is responsible for ensuring that the builder has not done anything
 # stupid like working on Prometheus outside of ${GOPATH}.
-source_path:
+$(FULL_GOPATH):
 	-[ -d "$(FULL_GOPATH)" ] || { mkdir -vp $(FULL_GOPATH_BASE) ; ln -s "$(PWD)" "$(FULL_GOPATH)" ; }
 	[ -d "$(FULL_GOPATH)" ]
 
@@ -94,4 +94,4 @@ update:
 web: config dependencies model preparation
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean config dependencies documentation format model package preparation race_condition_binary race_condition_run run search_index source_path test tools update
+.PHONY: advice binary build clean config dependencies documentation format model package preparation race_condition_binary race_condition_run run search_index test tools update

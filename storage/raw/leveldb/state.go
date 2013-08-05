@@ -14,8 +14,10 @@
 package leveldb
 
 import (
+	"bytes"
+	"fmt"
+
 	"github.com/prometheus/prometheus/utility"
-	"time"
 )
 
 const (
@@ -26,9 +28,8 @@ const (
 // DatabaseState models a bundle of metadata about a LevelDB database used in
 // template format string interpolation.
 type DatabaseState struct {
-	LastRefreshed   time.Time
-	Type            string
 	Name            string
+	Purpose         string
 	Path            string
 	LowLevelStatus  string
 	SSTablesStatus  string
@@ -36,10 +37,25 @@ type DatabaseState struct {
 	Error           error
 }
 
-func (l *LevelDBPersistence) State() DatabaseState {
+func (s DatabaseState) String() string {
+	b := new(bytes.Buffer)
+
+	fmt.Fprintln(b, "Name:", s.Name)
+	fmt.Fprintln(b, "Path:", s.Path)
+	fmt.Fprintln(b, "Purpose:", s.Purpose)
+	fmt.Fprintln(b, "Low Level Diagnostics:", s.LowLevelStatus)
+	fmt.Fprintln(b, "SSTable Statistics:", s.SSTablesStatus)
+	fmt.Fprintln(b, "Approximate Size:", s.ApproximateSize)
+	fmt.Fprintln(b, "Error:", s.Error)
+
+	return b.String()
+}
+
+func (l *LevelDBPersistence) LowLevelState() DatabaseState {
 	databaseState := DatabaseState{
-		LastRefreshed:  time.Now(),
 		Path:           l.path,
+		Name:           l.name,
+		Purpose:        l.purpose,
 		LowLevelStatus: l.storage.PropertyValue(statsKey),
 		SSTablesStatus: l.storage.PropertyValue(sstablesKey),
 	}
@@ -51,4 +67,8 @@ func (l *LevelDBPersistence) State() DatabaseState {
 	}
 
 	return databaseState
+}
+
+func (l *LevelDBPersistence) State() string {
+	return l.LowLevelState().String()
 }

@@ -92,7 +92,7 @@ type watermarkScanner struct {
 // curated.
 // curationState is the on-disk store where the curation remarks are made for
 // how much progress has been made.
-func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState, samples, watermarks *leveldb.LevelDBPersistence, status chan CurationState) (err error) {
+func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState, samples *leveldb.LevelDBPersistence, watermarks HighWatermarker, status chan CurationState) (err error) {
 	defer func(t time.Time) {
 		duration := float64(time.Since(t) / time.Millisecond)
 

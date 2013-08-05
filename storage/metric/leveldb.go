@@ -39,7 +39,7 @@ type LevelDBMetricPersistence struct {
 	fingerprintToMetrics    FingerprintMetricIndex
 	labelNameToFingerprints LabelNameFingerprintIndex
 	labelSetToFingerprints  LabelSetFingerprintIndex
-	MetricHighWatermarks    *leveldb.LevelDBPersistence
+	MetricHighWatermarks    HighWatermarker
 	metricMembershipIndex   MetricMembershipIndex
 	MetricSamples           *leveldb.LevelDBPersistence
 }
@@ -114,6 +114,8 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 				var err error
 				emission.fingerprintToMetrics, err = NewLevelDBFingerprintMetricIndex(&LevelDBFingerprintMetricIndexOptions{
 					LevelDBOptions: leveldb.LevelDBOptions{
+						Name:           "Metrics by Fingerprint",
+						Purpose:        "Index",
 						Path:           baseDirectory + "/label_name_and_value_pairs_by_fingerprint",
 						CacheSizeBytes: *fingerprintsToLabelPairCacheSize,
 					},
@@ -126,6 +128,8 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			func() {
 				var err error
 				o := &leveldb.LevelDBOptions{
+					Name:           "Samples",
+					Purpose:        "Timeseries",
 					Path:           baseDirectory + "/samples_by_fingerprint",
 					CacheSizeBytes: *fingerprintsToLabelPairCacheSize,
 				}
@@ -137,11 +141,13 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"High Watermarks by Fingerprint",
 			func() {
 				var err error
-				o := &leveldb.LevelDBOptions{
-					Path:           baseDirectory + "/high_watermarks_by_fingerprint",
-					CacheSizeBytes: *highWatermarkCacheSize,
-				}
-				emission.MetricHighWatermarks, err = leveldb.NewLevelDBPersistence(o)
+				emission.MetricHighWatermarks, err = NewLevelDBHighWatermarker(&LevelDBHighWatermarkerOptions{
+					LevelDBOptions: leveldb.LevelDBOptions{
+						Name:           "High Watermarks",
+						Purpose:        "The youngest sample in the database per metric.",
+						Path:           baseDirectory + "/high_watermarks_by_fingerprint",
+						CacheSizeBytes: *highWatermarkCacheSize,
+					}})
 				workers.MayFail(err)
 			},
 		},
@@ -151,6 +157,8 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 				var err error
 				emission.labelNameToFingerprints, err = NewLevelLabelNameFingerprintIndex(&LevelDBLabelNameFingerprintIndexOptions{
 					LevelDBOptions: leveldb.LevelDBOptions{
+						Name:           "Fingerprints by Label Name",
+						Purpose:        "Index",
 						Path:           baseDirectory + "/fingerprints_by_label_name",
 						CacheSizeBytes: *labelNameToFingerprintsCacheSize,
 					},
@@ -164,6 +172,8 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 				var err error
 				emission.labelSetToFingerprints, err = NewLevelDBLabelSetFingerprintIndex(&LevelDBLabelSetFingerprintIndexOptions{
 					LevelDBOptions: leveldb.LevelDBOptions{
+						Name:           "Fingerprints by Label Pair",
+						Purpose:        "Index",
 						Path:           baseDirectory + "/fingerprints_by_label_name_and_value_pair",
 						CacheSizeBytes: *labelPairToFingerprintsCacheSize,
 					},
@@ -178,6 +188,8 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 				emission.metricMembershipIndex, err = NewLevelDBMetricMembershipIndex(
 					&LevelDBMetricMembershipIndexOptions{
 						LevelDBOptions: leveldb.LevelDBOptions{
+							Name:           "Metric Membership",
+							Purpose:        "Index",
 							Path:           baseDirectory + "/metric_membership_index",
 							CacheSizeBytes: *metricMembershipIndexCacheSize,
 						},
@@ -190,6 +202,8 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			func() {
 				var err error
 				o := &leveldb.LevelDBOptions{
+					Name:           "Sample Curation Remarks",
+					Purpose:        "Ledger of Progress for Various Curators",
 					Path:           baseDirectory + "/curation_remarks",
 					CacheSizeBytes: *curationRemarksCacheSize,
 				}
@@ -459,41 +473,16 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[clientmodel.
 		recordOutcome(duration, err, map[string]string{operation: refreshHighWatermarks, result: success}, map[string]string{operation: refreshHighWatermarks, result: failure})
 	}(time.Now())
 
-	batch := leveldb.NewBatch()
-	defer batch.Close()
-
-	value := &dto.MetricHighWatermark{}
-	for fingerprint, samples := range groups {
-		value.Reset()
-		f := new(dto.Fingerprint)
-		dumpFingerprint(f, &fingerprint)
-		present, err := l.MetricHighWatermarks.Get(f, value)
-		if err != nil {
-			return err
-		}
-
-		newestSampleTimestamp := samples[len(samples)-1].Timestamp
-
-		if !present {
-			value.Timestamp = proto.Int64(newestSampleTimestamp.Unix())
-			batch.Put(f, value)
-
+	b := FingerprintHighWatermarkMapping{}
+	for fp, ss := range groups {
+		if len(ss) == 0 {
 			continue
 		}
 
-		// BUG(matt): Repace this with watermark management.
-		if newestSampleTimestamp.After(time.Unix(value.GetTimestamp(), 0)) {
-			value.Timestamp = proto.Int64(newestSampleTimestamp.Unix())
-			batch.Put(f, value)
-		}
+		b[fp] = ss[len(ss)-1].Timestamp
 	}
 
-	err = l.MetricHighWatermarks.Commit(batch)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return l.MetricHighWatermarks.UpdateBatch(b)
 }
 
 func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (err error) {
@@ -783,7 +772,7 @@ func (l *LevelDBMetricPersistence) CompactKeyspaces() {
 	// l.fingerprintToMetrics.CompactKeyspace()
 	//	l.labelNameToFingerprints.CompactKeyspace()
 	//	l.labelSetToFingerprints.CompactKeyspace()
-	l.MetricHighWatermarks.CompactKeyspace()
+	//	l.MetricHighWatermarks.CompactKeyspace()
 	// 	l.metricMembershipIndex.CompactKeyspace()
 	l.MetricSamples.CompactKeyspace()
 }
@@ -796,30 +785,30 @@ func (l *LevelDBMetricPersistence) ApproximateSizes() (total uint64, err error) 
 	}
 	total += size
 
-	// if size, err = l.fingerprintToMetrics.ApproximateSize(); err != nil {
-	// 	return 0, err
-	// }
-	// total += size
-
-	// if size, err = l.labelNameToFingerprints.ApproximateSize(); err != nil {
-	// 	return 0, err
-	// }
-	// total += size
-
-	// if size, err = l.labelSetToFingerprints.ApproximateSize(); err != nil {
-	// 	return 0, err
-	// }
-	// total += size
-
-	if size, err = l.MetricHighWatermarks.ApproximateSize(); err != nil {
+	if size, _, err = l.fingerprintToMetrics.Size(); err != nil {
 		return 0, err
 	}
 	total += size
 
-	// if size, err = l.metricMembershipIndex.ApproximateSize(); err != nil {
-	// 	return 0, err
-	// }
-	// total += size
+	if size, _, err = l.labelNameToFingerprints.Size(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, _, err = l.labelSetToFingerprints.Size(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, _, err = l.MetricHighWatermarks.Size(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, _, err = l.metricMembershipIndex.Size(); err != nil {
+		return 0, err
+	}
+	total += size
 
 	if size, err = l.MetricSamples.ApproximateSize(); err != nil {
 		return 0, err
@@ -829,43 +818,14 @@ func (l *LevelDBMetricPersistence) ApproximateSizes() (total uint64, err error) 
 	return total, nil
 }
 
-func (l *LevelDBMetricPersistence) States() []leveldb.DatabaseState {
-	states := []leveldb.DatabaseState{}
-
-	state := l.CurationRemarks.State()
-	state.Name = "Curation Remarks"
-	state.Type = "Watermark"
-	states = append(states, state)
-
-	// state = l.fingerprintToMetrics.State()
-	// state.Name = "Fingerprints to Metrics"
-	// state.Type = "Index"
-	// states = append(states, state)
-
-	// state = l.labelNameToFingerprints.State()
-	// state.Name = "Label Name to Fingerprints"
-	// state.Type = "Inverted Index"
-	// states = append(states, state)
-
-	// state = l.labelSetToFingerprints.State()
-	// state.Name = "Label Pair to Fingerprints"
-	// state.Type = "Inverted Index"
-	// states = append(states, state)
-
-	state = l.MetricHighWatermarks.State()
-	state.Name = "Metric Last Write"
-	state.Type = "Watermark"
-	states = append(states, state)
-
-	// state = l.metricMembershipIndex.State()
-	// state.Name = "Metric Membership"
-	// state.Type = "Index"
-	// states = append(states, state)
-
-	state = l.MetricSamples.State()
-	state.Name = "Samples"
-	state.Type = "Time Series"
-	states = append(states, state)
-
-	return states
+func (l *LevelDBMetricPersistence) States() []string {
+	return []string{
+		l.CurationRemarks.State(),
+		l.fingerprintToMetrics.State(),
+		l.labelNameToFingerprints.State(),
+		l.labelSetToFingerprints.State(),
+		l.MetricHighWatermarks.State(),
+		l.metricMembershipIndex.State(),
+		l.MetricSamples.State(),
+	}
 }

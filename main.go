@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/web"
 	"github.com/prometheus/prometheus/web/api"
 )
@@ -76,7 +75,7 @@ type prometheus struct {
 	reportDatabasesTimer     *time.Ticker
 	curationMutex            sync.Mutex
 	curationState            chan metric.CurationState
-	databaseStates           chan []leveldb.DatabaseState
+	databaseStates           chan []string
 	stopBackgroundOperations chan bool
 
 	unwrittenSamples chan *extraction.Result
@@ -207,7 +206,7 @@ func main() {
 
 	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
 	curationState := make(chan metric.CurationState, 1)
-	databaseStates := make(chan []leveldb.DatabaseState, 1)
+	databaseStates := make(chan []string, 1)
 	// Coprime numbers, fool!
 	headCompactionTimer := time.NewTicker(*headCompactInterval)
 	bodyCompactionTimer := time.NewTicker(*bodyCompactInterval)

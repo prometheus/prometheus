@@ -33,6 +33,8 @@ type FingerprintMetricIndex interface {
 	IndexBatch(FingerprintMetricMapping) error
 	Lookup(*clientmodel.Fingerprint) (m clientmodel.Metric, ok bool, err error)
 	Close() error
+	State() string
+	Size() (s uint64, present bool, err error)
 }
 
 type leveldbFingerprintMetricIndex struct {
@@ -47,6 +49,15 @@ func (i *leveldbFingerprintMetricIndex) Close() error {
 	i.p.Close()
 
 	return nil
+}
+
+func (i *leveldbFingerprintMetricIndex) State() string {
+	return i.p.State()
+}
+
+func (i *leveldbFingerprintMetricIndex) Size() (uint64, bool, error) {
+	s, err := i.p.ApproximateSize()
+	return s, true, err
 }
 
 func (i *leveldbFingerprintMetricIndex) IndexBatch(mapping FingerprintMetricMapping) error {
@@ -102,6 +113,8 @@ type LabelNameFingerprintIndex interface {
 	Lookup(clientmodel.LabelName) (fps clientmodel.Fingerprints, ok bool, err error)
 	Has(clientmodel.LabelName) (ok bool, err error)
 	Close() error
+	State() string
+	Size() (s uint64, present bool, err error)
 }
 
 type leveldbLabelNameFingerprintIndex struct {
@@ -164,6 +177,15 @@ func (i *leveldbLabelNameFingerprintIndex) Close() error {
 	return nil
 }
 
+func (i *leveldbLabelNameFingerprintIndex) Size() (uint64, bool, error) {
+	s, err := i.p.ApproximateSize()
+	return s, true, err
+}
+
+func (i *leveldbLabelNameFingerprintIndex) State() string {
+	return i.p.State()
+}
+
 type LevelDBLabelNameFingerprintIndexOptions struct {
 	leveldb.LevelDBOptions
 }
@@ -188,6 +210,8 @@ type LabelSetFingerprintIndex interface {
 	Lookup(*LabelPair) (m clientmodel.Fingerprints, ok bool, err error)
 	Has(*LabelPair) (ok bool, err error)
 	Close() error
+	State() string
+	Size() (s uint64, present bool, err error)
 }
 
 type leveldbLabelSetFingerprintIndex struct {
@@ -265,6 +289,15 @@ func (i *leveldbLabelSetFingerprintIndex) Close() error {
 	return nil
 }
 
+func (i *leveldbLabelSetFingerprintIndex) Size() (uint64, bool, error) {
+	s, err := i.p.ApproximateSize()
+	return s, true, err
+}
+
+func (i *leveldbLabelSetFingerprintIndex) State() string {
+	return i.p.State()
+}
+
 func NewLevelDBLabelSetFingerprintIndex(o *LevelDBLabelSetFingerprintIndexOptions) (LabelSetFingerprintIndex, error) {
 	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
 	if err != nil {
@@ -280,6 +313,8 @@ type MetricMembershipIndex interface {
 	IndexBatch([]clientmodel.Metric) error
 	Has(clientmodel.Metric) (ok bool, err error)
 	Close() error
+	State() string
+	Size() (s uint64, present bool, err error)
 }
 
 type leveldbMetricMembershipIndex struct {
@@ -312,6 +347,15 @@ func (i *leveldbMetricMembershipIndex) Close() error {
 	i.p.Close()
 
 	return nil
+}
+
+func (i *leveldbMetricMembershipIndex) Size() (uint64, bool, error) {
+	s, err := i.p.ApproximateSize()
+	return s, true, err
+}
+
+func (i *leveldbMetricMembershipIndex) State() string {
+	return i.p.State()
 }
 
 type LevelDBMetricMembershipIndexOptions struct {

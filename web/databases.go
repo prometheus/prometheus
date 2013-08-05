@@ -14,15 +14,14 @@
 package web
 
 import (
-	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"net/http"
 	"sync"
 )
 
 type DatabasesHandler struct {
-	States []leveldb.DatabaseState
+	States []string
 
-	Incoming chan []leveldb.DatabaseState
+	Incoming chan []string
 
 	mutex sync.RWMutex
 }

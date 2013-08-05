@@ -854,10 +854,11 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer curatorStates.Close()
 
-		watermarkStates, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
-			Path: watermarkDirectory.Path(),
+		watermarkStates, err := NewLevelDBHighWatermarker(&LevelDBHighWatermarkerOptions{
+			LevelDBOptions: leveldb.LevelDBOptions{
+				Path: watermarkDirectory.Path(),
+			},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -1380,8 +1381,11 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		}
 		defer curatorStates.Close()
 
-		watermarkStates, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
-			Path: watermarkDirectory.Path()})
+		watermarkStates, err := NewLevelDBHighWatermarker(&LevelDBHighWatermarkerOptions{
+			LevelDBOptions: leveldb.LevelDBOptions{
+				Path: watermarkDirectory.Path(),
+			},
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
