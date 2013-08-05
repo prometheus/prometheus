@@ -16,26 +16,45 @@ package web
 import (
 	"net/http"
 	"sync"
+	"time"
+
+	"github.com/prometheus/prometheus/storage/raw"
 )
 
-type DatabasesHandler struct {
-	States []string
+type DatabaseStatesProvider interface {
+	States() raw.DatabaseStates
+}
 
-	Incoming chan []string
+type DatabasesHandler struct {
+	RefreshInterval time.Duration
+	NextRefresh     time.Time
+
+	Current raw.DatabaseStates
+
+	Provider DatabaseStatesProvider
 
 	mutex sync.RWMutex
 }
 
 func (h *DatabasesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	select {
-	case states := <-h.Incoming:
-		h.mutex.Lock()
-		defer h.mutex.Unlock()
-		h.States = states
-	default:
-		h.mutex.RLock()
-		defer h.mutex.RUnlock()
-	}
+	h.Refresh()
 
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
 	executeTemplate(w, "databases", h)
+}
+
+func (h *DatabasesHandler) Refresh() {
+	h.mutex.RLock()
+	if !time.Now().After(h.NextRefresh) {
+		h.mutex.RUnlock()
+		return
+	}
+	h.mutex.RUnlock()
+
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	h.Current = h.Provider.States()
+	h.NextRefresh = time.Now().Add(h.RefreshInterval)
 }

@@ -14,9 +14,7 @@
 package leveldb
 
 import (
-	"bytes"
-	"fmt"
-
+	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -25,50 +23,22 @@ const (
 	sstablesKey = "leveldb.sstables"
 )
 
-// DatabaseState models a bundle of metadata about a LevelDB database used in
-// template format string interpolation.
-type DatabaseState struct {
-	Name            string
-	Purpose         string
-	Path            string
-	LowLevelStatus  string
-	SSTablesStatus  string
-	ApproximateSize utility.ByteSize
-	Error           error
-}
-
-func (s DatabaseState) String() string {
-	b := new(bytes.Buffer)
-
-	fmt.Fprintln(b, "Name:", s.Name)
-	fmt.Fprintln(b, "Path:", s.Path)
-	fmt.Fprintln(b, "Purpose:", s.Purpose)
-	fmt.Fprintln(b, "Low Level Diagnostics:", s.LowLevelStatus)
-	fmt.Fprintln(b, "SSTable Statistics:", s.SSTablesStatus)
-	fmt.Fprintln(b, "Approximate Size:", s.ApproximateSize)
-	fmt.Fprintln(b, "Error:", s.Error)
-
-	return b.String()
-}
-
-func (l *LevelDBPersistence) LowLevelState() DatabaseState {
-	databaseState := DatabaseState{
-		Path:           l.path,
-		Name:           l.name,
-		Purpose:        l.purpose,
-		LowLevelStatus: l.storage.PropertyValue(statsKey),
-		SSTablesStatus: l.storage.PropertyValue(sstablesKey),
+func (l *LevelDBPersistence) State() *raw.DatabaseState {
+	databaseState := &raw.DatabaseState{
+		Location:     l.path,
+		Name:         l.name,
+		Purpose:      l.purpose,
+		Supplemental: map[string]string{},
 	}
 
 	if size, err := l.ApproximateSize(); err != nil {
-		databaseState.Error = err
+		databaseState.Supplemental["Errors"] = err.Error()
 	} else {
-		databaseState.ApproximateSize = utility.ByteSize(size)
+		databaseState.Size = utility.ByteSize(size)
 	}
 
-	return databaseState
-}
+	databaseState.Supplemental["Low Level"] = l.storage.PropertyValue(statsKey)
+	databaseState.Supplemental["SSTable"] = l.storage.PropertyValue(sstablesKey)
 
-func (l *LevelDBPersistence) State() string {
-	return l.LowLevelState().String()
+	return databaseState
 }

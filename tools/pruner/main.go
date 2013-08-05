@@ -44,7 +44,7 @@ func main() {
 	log.Printf("Starting compaction...")
 	size, _ := persistences.ApproximateSizes()
 	log.Printf("Original Size: %d", size)
-	persistences.CompactKeyspaces()
+	persistences.Prune()
 	log.Printf("Finished in %s", time.Since(start))
 	size, _ = persistences.ApproximateSizes()
 	log.Printf("New Size: %d", size)

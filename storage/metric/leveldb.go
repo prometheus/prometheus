@@ -28,6 +28,7 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
 )
@@ -88,7 +89,7 @@ func (l *LevelDBMetricPersistence) Close() {
 					closer.Close()
 				case errorCloser:
 					if err := closer.Close(); err != nil {
-						log.Println("anomaly closing", err)
+						log.Println("anomaly closing:", err)
 					}
 				}
 			}
@@ -767,14 +768,14 @@ func (l *LevelDBMetricPersistence) GetAllValuesForLabel(labelName clientmodel.La
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
-func (l *LevelDBMetricPersistence) CompactKeyspaces() {
-	l.CurationRemarks.CompactKeyspace()
-	// l.fingerprintToMetrics.CompactKeyspace()
-	//	l.labelNameToFingerprints.CompactKeyspace()
-	//	l.labelSetToFingerprints.CompactKeyspace()
-	//	l.MetricHighWatermarks.CompactKeyspace()
-	// 	l.metricMembershipIndex.CompactKeyspace()
-	l.MetricSamples.CompactKeyspace()
+func (l *LevelDBMetricPersistence) Prune() {
+	l.CurationRemarks.Prune()
+	l.fingerprintToMetrics.Prune()
+	l.labelNameToFingerprints.Prune()
+	l.labelSetToFingerprints.Prune()
+	l.MetricHighWatermarks.Prune()
+	l.metricMembershipIndex.Prune()
+	l.MetricSamples.Prune()
 }
 
 func (l *LevelDBMetricPersistence) ApproximateSizes() (total uint64, err error) {
@@ -818,8 +819,8 @@ func (l *LevelDBMetricPersistence) ApproximateSizes() (total uint64, err error) 
 	return total, nil
 }
 
-func (l *LevelDBMetricPersistence) States() []string {
-	return []string{
+func (l *LevelDBMetricPersistence) States() raw.DatabaseStates {
+	return raw.DatabaseStates{
 		l.CurationRemarks.State(),
 		l.fingerprintToMetrics.State(),
 		l.labelNameToFingerprints.State(),

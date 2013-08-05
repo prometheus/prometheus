@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/metric"
+
 	"github.com/prometheus/prometheus/web"
 	"github.com/prometheus/prometheus/web/api"
 )
@@ -68,14 +69,13 @@ var (
 )
 
 type prometheus struct {
-	headCompactionTimer      *time.Ticker
-	bodyCompactionTimer      *time.Ticker
-	tailCompactionTimer      *time.Ticker
-	deletionTimer            *time.Ticker
-	reportDatabasesTimer     *time.Ticker
+	headCompactionTimer *time.Ticker
+	bodyCompactionTimer *time.Ticker
+	tailCompactionTimer *time.Ticker
+	deletionTimer       *time.Ticker
+
 	curationMutex            sync.Mutex
 	curationState            chan metric.CurationState
-	databaseStates           chan []string
 	stopBackgroundOperations chan bool
 
 	unwrittenSamples chan *extraction.Result
@@ -141,10 +141,6 @@ func (p *prometheus) close() {
 		p.deletionTimer.Stop()
 	}
 
-	if p.reportDatabasesTimer != nil {
-		p.reportDatabasesTimer.Stop()
-	}
-
 	if len(p.stopBackgroundOperations) == 0 {
 		p.stopBackgroundOperations <- true
 	}
@@ -157,26 +153,6 @@ func (p *prometheus) close() {
 	close(p.notifications)
 	close(p.stopBackgroundOperations)
 	close(p.curationState)
-	close(p.databaseStates)
-}
-
-func (p *prometheus) reportDatabaseState() {
-	for _ = range p.reportDatabasesTimer.C {
-		// BUG(matt): Per Julius, ...
-		// These channel magic tricks confuse me and seem a bit awkward just to
-		// pass a status around. Now that we have Go 1.1, would it be maybe be
-		// nicer to pass ts.DiskStorage.States as a method value
-		// (http://tip.golang.org/ref/spec#Method_values) to the web layer
-		// instead of doing this?
-		select {
-		case <-p.databaseStates:
-			// Reset the future database state if nobody consumes it.
-		case p.databaseStates <- p.storage.DiskStorage.States():
-			// Set the database state so someone can consume it if they want.
-		default:
-			// Don't block.
-		}
-	}
 }
 
 func main() {
@@ -206,7 +182,6 @@ func main() {
 
 	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
 	curationState := make(chan metric.CurationState, 1)
-	databaseStates := make(chan []string, 1)
 	// Coprime numbers, fool!
 	headCompactionTimer := time.NewTicker(*headCompactInterval)
 	bodyCompactionTimer := time.NewTicker(*bodyCompactInterval)
@@ -254,7 +229,7 @@ func main() {
 	}
 
 	databasesHandler := &web.DatabasesHandler{
-		Incoming: databaseStates,
+		Provider: ts.DiskStorage,
 	}
 
 	metricsService := &api.MetricsService{
@@ -277,10 +252,7 @@ func main() {
 
 		deletionTimer: deletionTimer,
 
-		reportDatabasesTimer: time.NewTicker(15 * time.Minute),
-
-		curationState:  curationState,
-		databaseStates: databaseStates,
+		curationState: curationState,
 
 		unwrittenSamples: unwrittenSamples,
 
@@ -297,7 +269,6 @@ func main() {
 	<-storageStarted
 
 	go prometheus.interruptHandler()
-	go prometheus.reportDatabaseState()
 
 	go func() {
 		for _ = range prometheus.headCompactionTimer.C {

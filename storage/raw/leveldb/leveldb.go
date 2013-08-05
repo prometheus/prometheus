@@ -163,6 +163,13 @@ func (i levigoIterator) GetError() (err error) {
 	return i.iterator.GetError()
 }
 
+type Compression uint
+
+const (
+	Snappy Compression = iota
+	Uncompressed
+)
+
 type LevelDBOptions struct {
 	Path    string
 	Name    string
@@ -174,15 +181,16 @@ type LevelDBOptions struct {
 	FlushOnMutate     bool
 	UseParanoidChecks bool
 
-	NotUseSnappy bool
+	Compression Compression
 }
 
 func NewLevelDBPersistence(o *LevelDBOptions) (*LevelDBPersistence, error) {
 	options := levigo.NewOptions()
 	options.SetCreateIfMissing(true)
 	options.SetParanoidChecks(o.UseParanoidChecks)
+
 	compression := levigo.SnappyCompression
-	if !o.NotUseSnappy {
+	if o.Compression == Uncompressed {
 		compression = levigo.NoCompression
 	}
 	options.SetCompression(compression)
@@ -313,7 +321,7 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
-func (l *LevelDBPersistence) CompactKeyspace() {
+func (l *LevelDBPersistence) Prune() {
 
 	// Magic values per https://code.google.com/p/leveldb/source/browse/include/leveldb/db.h#131.
 	keyspace := levigo.Range{

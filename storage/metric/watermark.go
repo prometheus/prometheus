@@ -15,6 +15,7 @@ package metric
 
 import (
 	"container/list"
+	"io"
 	"sync"
 	"time"
 
@@ -170,20 +171,21 @@ func (lru *WatermarkCache) checkCapacity() {
 type FingerprintHighWatermarkMapping map[clientmodel.Fingerprint]time.Time
 
 type HighWatermarker interface {
+	io.Closer
 	raw.ForEacher
+	raw.Pruner
 
 	UpdateBatch(FingerprintHighWatermarkMapping) error
 	Get(*clientmodel.Fingerprint) (t time.Time, ok bool, err error)
-	Close() error
-	State() string
+	State() *raw.DatabaseState
 	Size() (uint64, bool, error)
 }
 
-type leveldbHighWatermarker struct {
+type LeveldbHighWatermarker struct {
 	p *leveldb.LevelDBPersistence
 }
 
-func (w *leveldbHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, ok bool, err error) {
+func (w *LeveldbHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, ok bool, err error) {
 	k := new(dto.Fingerprint)
 	dumpFingerprint(k, f)
 	v := new(dto.MetricHighWatermark)
@@ -198,7 +200,7 @@ func (w *leveldbHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, o
 	return t, true, nil
 }
 
-func (w *leveldbHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) error {
+func (w *LeveldbHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) error {
 	batch := leveldb.NewBatch()
 	defer batch.Close()
 
@@ -217,7 +219,7 @@ func (w *leveldbHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) 
 			continue
 		}
 
-		// BUG(matt): Repace this with watermark management.
+		// BUG(matt): Replace this with watermark management.
 		if t.After(existing) {
 			v.Timestamp = proto.Int64(t.Unix())
 			batch.Put(k, v)
@@ -227,21 +229,27 @@ func (w *leveldbHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) 
 	return w.p.Commit(batch)
 }
 
-func (i *leveldbHighWatermarker) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
+func (i *LeveldbHighWatermarker) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
 	return i.p.ForEach(d, f, o)
 }
 
-func (i *leveldbHighWatermarker) Close() error {
+func (i *LeveldbHighWatermarker) Prune() (bool, error) {
+	i.p.Prune()
+
+	return false, nil
+}
+
+func (i *LeveldbHighWatermarker) Close() error {
 	i.p.Close()
 
 	return nil
 }
 
-func (i *leveldbHighWatermarker) State() string {
+func (i *LeveldbHighWatermarker) State() *raw.DatabaseState {
 	return i.p.State()
 }
 
-func (i *leveldbHighWatermarker) Size() (uint64, bool, error) {
+func (i *LeveldbHighWatermarker) Size() (uint64, bool, error) {
 	s, err := i.p.ApproximateSize()
 	return s, true, err
 }
@@ -256,7 +264,7 @@ func NewLevelDBHighWatermarker(o *LevelDBHighWatermarkerOptions) (HighWatermarke
 		return nil, err
 	}
 
-	return &leveldbHighWatermarker{
+	return &LeveldbHighWatermarker{
 		p: s,
 	}, nil
 }

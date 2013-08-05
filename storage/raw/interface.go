@@ -64,3 +64,7 @@ type Batch interface {
 	// Drop follows the same protocol as Persistence.Drop.
 	Drop(key proto.Message)
 }
+
+type Pruner interface {
+	Prune() (noop bool, err error)
+}
