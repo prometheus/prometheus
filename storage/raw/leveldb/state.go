@@ -14,8 +14,8 @@
 package leveldb
 
 import (
+	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/utility"
-	"time"
 )
 
 const (
@@ -23,32 +23,22 @@ const (
 	sstablesKey = "leveldb.sstables"
 )
 
-// DatabaseState models a bundle of metadata about a LevelDB database used in
-// template format string interpolation.
-type DatabaseState struct {
-	LastRefreshed   time.Time
-	Type            string
-	Name            string
-	Path            string
-	LowLevelStatus  string
-	SSTablesStatus  string
-	ApproximateSize utility.ByteSize
-	Error           error
-}
-
-func (l *LevelDBPersistence) State() DatabaseState {
-	databaseState := DatabaseState{
-		LastRefreshed:  time.Now(),
-		Path:           l.path,
-		LowLevelStatus: l.storage.PropertyValue(statsKey),
-		SSTablesStatus: l.storage.PropertyValue(sstablesKey),
+func (l *LevelDBPersistence) State() *raw.DatabaseState {
+	databaseState := &raw.DatabaseState{
+		Location:     l.path,
+		Name:         l.name,
+		Purpose:      l.purpose,
+		Supplemental: map[string]string{},
 	}
 
 	if size, err := l.ApproximateSize(); err != nil {
-		databaseState.Error = err
+		databaseState.Supplemental["Errors"] = err.Error()
 	} else {
-		databaseState.ApproximateSize = utility.ByteSize(size)
+		databaseState.Size = utility.ByteSize(size)
 	}
+
+	databaseState.Supplemental["Low Level"] = l.storage.PropertyValue(statsKey)
+	databaseState.Supplemental["SSTable"] = l.storage.PropertyValue(sstablesKey)
 
 	return databaseState
 }

@@ -14,7 +14,6 @@
 package leveldb
 
 import (
-	"flag"
 	"fmt"
 	"time"
 
@@ -26,16 +25,11 @@ import (
 	"github.com/prometheus/prometheus/storage/raw"
 )
 
-var (
-	leveldbFlushOnMutate     = flag.Bool("leveldbFlushOnMutate", false, "Whether LevelDB should flush every operation to disk upon mutation before returning (bool).")
-	leveldbUseSnappy         = flag.Bool("leveldbUseSnappy", true, "Whether LevelDB attempts to use Snappy for compressing elements (bool).")
-	leveldbUseParanoidChecks = flag.Bool("leveldbUseParanoidChecks", false, "Whether LevelDB uses expensive checks (bool).")
-	maximumOpenFiles         = flag.Int("leveldb.maximumOpenFiles", 128, "The maximum number of files each LevelDB may maintain.")
-)
-
 // LevelDBPersistence is a disk-backed sorted key-value store.
 type LevelDBPersistence struct {
-	path string
+	path    string
+	name    string
+	purpose string
 
 	cache        *levigo.Cache
 	filterPolicy *levigo.FilterPolicy
@@ -169,25 +163,47 @@ func (i levigoIterator) GetError() (err error) {
 	return i.iterator.GetError()
 }
 
-func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilterEncoded int) (*LevelDBPersistence, error) {
+type Compression uint
+
+const (
+	Snappy Compression = iota
+	Uncompressed
+)
+
+type LevelDBOptions struct {
+	Path    string
+	Name    string
+	Purpose string
+
+	CacheSizeBytes    int
+	OpenFileAllowance int
+
+	FlushOnMutate     bool
+	UseParanoidChecks bool
+
+	Compression Compression
+}
+
+func NewLevelDBPersistence(o *LevelDBOptions) (*LevelDBPersistence, error) {
 	options := levigo.NewOptions()
 	options.SetCreateIfMissing(true)
-	options.SetParanoidChecks(*leveldbUseParanoidChecks)
-	compression := levigo.NoCompression
-	if *leveldbUseSnappy {
-		compression = levigo.SnappyCompression
+	options.SetParanoidChecks(o.UseParanoidChecks)
+
+	compression := levigo.SnappyCompression
+	if o.Compression == Uncompressed {
+		compression = levigo.NoCompression
 	}
 	options.SetCompression(compression)
 
-	cache := levigo.NewLRUCache(cacheCapacity)
+	cache := levigo.NewLRUCache(o.CacheSizeBytes)
 	options.SetCache(cache)
 
-	filterPolicy := levigo.NewBloomFilter(bitsPerBloomFilterEncoded)
+	filterPolicy := levigo.NewBloomFilter(10)
 	options.SetFilterPolicy(filterPolicy)
 
-	options.SetMaxOpenFiles(*maximumOpenFiles)
+	options.SetMaxOpenFiles(o.OpenFileAllowance)
 
-	storage, err := levigo.Open(storageRoot, options)
+	storage, err := levigo.Open(o.Path, options)
 	if err != nil {
 		return nil, err
 	}
@@ -195,10 +211,12 @@ func NewLevelDBPersistence(storageRoot string, cacheCapacity, bitsPerBloomFilter
 	readOptions := levigo.NewReadOptions()
 
 	writeOptions := levigo.NewWriteOptions()
-	writeOptions.SetSync(*leveldbFlushOnMutate)
+	writeOptions.SetSync(o.FlushOnMutate)
 
 	return &LevelDBPersistence{
-		path: storageRoot,
+		path:    o.Path,
+		name:    o.Name,
+		purpose: o.Purpose,
 
 		cache:        cache,
 		filterPolicy: filterPolicy,
@@ -303,7 +321,7 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
-func (l *LevelDBPersistence) CompactKeyspace() {
+func (l *LevelDBPersistence) Prune() {
 
 	// Magic values per https://code.google.com/p/leveldb/source/browse/include/leveldb/db.h#131.
 	keyspace := levigo.Range{

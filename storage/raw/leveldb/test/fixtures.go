@@ -20,10 +20,7 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 )
 
-const (
-	cacheCapacity             = 0
-	bitsPerBloomFilterEncoded = 0
-)
+const cacheCapacity = 0
 
 type (
 	// Pair models a prospective (key, value) double that will be committed to
@@ -64,7 +61,11 @@ type (
 
 func (p preparer) Prepare(n string, f FixtureFactory) (t test.TemporaryDirectory) {
 	t = test.NewTemporaryDirectory(n, p.tester)
-	persistence, err := leveldb.NewLevelDBPersistence(t.Path(), cacheCapacity, bitsPerBloomFilterEncoded)
+	o := &leveldb.LevelDBOptions{
+		Path:           t.Path(),
+		CacheSizeBytes: cacheCapacity,
+	}
+	persistence, err := leveldb.NewLevelDBPersistence(o)
 	if err != nil {
 		defer t.Close()
 		p.tester.Fatal(err)
