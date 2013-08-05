@@ -331,7 +331,7 @@ func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (b
 		value := &dto.MetricHighWatermark{}
 		k := &dto.Fingerprint{}
 		dumpFingerprint(k, f)
-		diskHit, err := t.DiskStorage.MetricHighWatermarks.Get(k, value)
+		_, diskHit, err := t.DiskStorage.MetricHighWatermarks.Get(f)
 		if err != nil {
 			return false, err
 		}

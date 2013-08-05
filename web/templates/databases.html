@@ -3,34 +3,28 @@
 {{define "content"}}
     <div class="container-fluid">
       <h2>Database Information</h2>
-      {{range .States}}
-      <h3>{{.Name}}</h3>
+      {{range $database := .Current }}
+      <h3>{{$database.Name}}</h3>
       <table class="table table-bordered table-condensed table-hover literal_output">
         <tbody>
           <tr>
-            <th>Path</th>
-            <td>{{.Path}}</td>
+            <th>Location</th>
+            <td>{{$database.Location}}</td>
           </tr>
           <tr>
-            <th>Last Refreshed</th>
-            <td>{{.LastRefreshed}}</td>
+            <th>Purpose</th>
+            <td>{{$database.Purpose}}</td>
           </tr>
           <tr>
-            <th>Type</th>
-            <td>{{.Type}}</td>
+            <th>Size</th>
+            <td>{{$database.Size}}</td>
           </tr>
+          {{range $subject, $state := $database.Supplemental }}
           <tr>
-            <th>Approximate Size</th>
-            <td>{{.ApproximateSize}}</td>
+            <th>{{$subject}}</th>
+            <td><pre>{{$state}}</pre></td>
           </tr>
-          <tr>
-            <th>Low Level Status</th>
-            <td><pre>{{.LowLevelStatus}}</pre></td>
-          </tr>
-          <tr>
-            <th>SSTable Status</th>
-            <td><pre>{{.SSTablesStatus}}</pre></td>
-          </tr>
+          {{end}}
         </tbody>
       </table>
       {{end}}

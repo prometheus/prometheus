@@ -15,6 +15,7 @@ package metric
 
 import (
 	"container/list"
+	"io"
 	"sync"
 	"time"
 
@@ -23,6 +24,10 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	dto "github.com/prometheus/prometheus/model/generated"
+
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/raw"
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
 // unsafe.Sizeof(watermarks{})
@@ -161,4 +166,105 @@ func (lru *WatermarkCache) checkCapacity() {
 		delete(lru.table, *delWatermarks.fingerprint)
 		lru.size -= elementSize
 	}
+}
+
+type FingerprintHighWatermarkMapping map[clientmodel.Fingerprint]time.Time
+
+type HighWatermarker interface {
+	io.Closer
+	raw.ForEacher
+	raw.Pruner
+
+	UpdateBatch(FingerprintHighWatermarkMapping) error
+	Get(*clientmodel.Fingerprint) (t time.Time, ok bool, err error)
+	State() *raw.DatabaseState
+	Size() (uint64, bool, error)
+}
+
+type LeveldbHighWatermarker struct {
+	p *leveldb.LevelDBPersistence
+}
+
+func (w *LeveldbHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, ok bool, err error) {
+	k := new(dto.Fingerprint)
+	dumpFingerprint(k, f)
+	v := new(dto.MetricHighWatermark)
+	ok, err = w.p.Get(k, v)
+	if err != nil {
+		return t, ok, err
+	}
+	if !ok {
+		return t, ok, err
+	}
+	t = time.Unix(v.GetTimestamp(), 0)
+	return t, true, nil
+}
+
+func (w *LeveldbHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) error {
+	batch := leveldb.NewBatch()
+	defer batch.Close()
+
+	for fp, t := range m {
+		existing, present, err := w.Get(&fp)
+		if err != nil {
+			return err
+		}
+		k := new(dto.Fingerprint)
+		dumpFingerprint(k, &fp)
+		v := new(dto.MetricHighWatermark)
+		if !present {
+			v.Timestamp = proto.Int64(t.Unix())
+			batch.Put(k, v)
+
+			continue
+		}
+
+		// BUG(matt): Replace this with watermark management.
+		if t.After(existing) {
+			v.Timestamp = proto.Int64(t.Unix())
+			batch.Put(k, v)
+		}
+	}
+
+	return w.p.Commit(batch)
+}
+
+func (i *LeveldbHighWatermarker) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
+	return i.p.ForEach(d, f, o)
+}
+
+func (i *LeveldbHighWatermarker) Prune() (bool, error) {
+	i.p.Prune()
+
+	return false, nil
+}
+
+func (i *LeveldbHighWatermarker) Close() error {
+	i.p.Close()
+
+	return nil
+}
+
+func (i *LeveldbHighWatermarker) State() *raw.DatabaseState {
+	return i.p.State()
+}
+
+func (i *LeveldbHighWatermarker) Size() (uint64, bool, error) {
+	s, err := i.p.ApproximateSize()
+	return s, true, err
+}
+
+type LevelDBHighWatermarkerOptions struct {
+	leveldb.LevelDBOptions
+}
+
+func NewLevelDBHighWatermarker(o *LevelDBHighWatermarkerOptions) (HighWatermarker, error) {
+	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LeveldbHighWatermarker{
+		p: s,
+	}, nil
 }
