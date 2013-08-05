@@ -229,7 +229,8 @@ func main() {
 	}
 
 	databasesHandler := &web.DatabasesHandler{
-		Provider: ts.DiskStorage,
+		Provider:        ts.DiskStorage,
+		RefreshInterval: 5 * time.Minute,
 	}
 
 	metricsService := &api.MetricsService{
