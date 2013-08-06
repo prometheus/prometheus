@@ -64,7 +64,7 @@ type Curator struct {
 // forward until the stop point or end of the series is reached.
 type watermarkScanner struct {
 	// curationState is the data store for curation remarks.
-	curationState raw.Persistence
+	curationState CurationRemarker
 	// diskFrontier models the available seekable ranges for the provided
 	// sampleIterator.
 	diskFrontier *diskFrontier
@@ -92,7 +92,7 @@ type watermarkScanner struct {
 // curated.
 // curationState is the on-disk store where the curation remarks are made for
 // how much progress has been made.
-func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState, samples *leveldb.LevelDBPersistence, watermarks HighWatermarker, status chan CurationState) (err error) {
+func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState CurationRemarker, samples *leveldb.LevelDBPersistence, watermarks HighWatermarker, status chan CurationState) (err error) {
 	defer func(t time.Time) {
 		duration := float64(time.Since(t) / time.Millisecond)
 
@@ -189,26 +189,6 @@ func (w *watermarkScanner) shouldStop() bool {
 	return len(w.stop) != 0
 }
 
-func (w *watermarkScanner) getCurationRemark(k *curationKey) (r *curationRemark, found bool, err error) {
-	curationKey := new(dto.CurationKey)
-	curationValue := new(dto.CurationValue)
-
-	k.dump(curationKey)
-
-	present, err := w.curationState.Get(curationKey, curationValue)
-	if err != nil {
-		return nil, false, err
-	}
-	if !present {
-		return nil, false, nil
-	}
-
-	remark := new(curationRemark)
-	remark.load(curationValue)
-
-	return remark, true, nil
-}
-
 func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResult) {
 	fingerprint := key.(*clientmodel.Fingerprint)
 
@@ -244,18 +224,18 @@ func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResul
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
 	}
 
-	curationRemark, present, err := w.getCurationRemark(k)
+	curationRemark, present, err := w.curationState.Get(k)
 	if err != nil {
 		return
 	}
 	if !present {
 		return storage.ACCEPT
 	}
-	if !curationRemark.OlderThan(w.stopAt) {
+	if !curationRemark.Before(w.stopAt) {
 		return storage.SKIP
 	}
 	watermark := value.(*watermarks)
-	if !curationRemark.OlderThan(watermark.High) {
+	if !curationRemark.Before(watermark.High) {
 		return storage.SKIP
 	}
 	curationConsistent, err := w.curationConsistent(fingerprint, watermark)
@@ -278,14 +258,14 @@ func (w *watermarkScanner) curationConsistent(f *clientmodel.Fingerprint, waterm
 		ProcessorMessageTypeName: w.processor.Name(),
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
 	}
-	curationRemark, present, err := w.getCurationRemark(k)
+	curationRemark, present, err := w.curationState.Get(k)
 	if err != nil {
 		return false, err
 	}
 	if !present {
 		return false, nil
 	}
-	if !curationRemark.OlderThan(watermark.High) {
+	if !curationRemark.Before(watermark.High) {
 		return true, nil
 	}
 
@@ -303,14 +283,13 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: false}
 	}
 
-	k := &curationKey{
+	curationState, present, err := w.curationState.Get(&curationKey{
 		Fingerprint:              fingerprint,
 		ProcessorMessageRaw:      w.processor.Signature(),
 		ProcessorMessageTypeName: w.processor.Name(),
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
-	}
+	})
 
-	curationState, _, err := w.getCurationRemark(k)
 	if err != nil {
 		// An anomaly with the curation remark is likely not fatal in the sense that
 		// there was a decoding error with the entity and shouldn't be cause to stop
@@ -318,10 +297,19 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		// work forward.  With an idempotent processor, this is safe.
 		return &storage.OperatorError{error: err, Continuable: true}
 	}
+	var firstSeek time.Time
+	switch {
+	case !present, seriesFrontier.After(curationState):
+		firstSeek = seriesFrontier.firstSupertime
+	case !seriesFrontier.InSafeSeekRange(curationState):
+		firstSeek = seriesFrontier.lastSupertime
+	default:
+		firstSeek = curationState
+	}
 
 	startKey := &SampleKey{
 		Fingerprint:    fingerprint,
-		FirstTimestamp: seriesFrontier.optimalStartTime(curationState),
+		FirstTimestamp: firstSeek,
 	}
 	dto := new(dto.SampleKey)
 
@@ -345,7 +333,13 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: false}
 	}
 
-	err = w.refreshCurationRemark(fingerprint, lastTime)
+	err = w.curationState.Update(&curationKey{
+		Fingerprint:              fingerprint,
+		ProcessorMessageRaw:      w.processor.Signature(),
+		ProcessorMessageTypeName: w.processor.Name(),
+		IgnoreYoungerThan:        w.ignoreYoungerThan,
+	},
+		lastTime)
 	if err != nil {
 		// Under the assumption that the processors are idempotent, they can be
 		// re-run; thusly, the commitment of the curation remark is no cause
@@ -353,56 +347,7 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: true}
 	}
 
-	return
-}
-
-func (w *watermarkScanner) refreshCurationRemark(f *clientmodel.Fingerprint, finished time.Time) error {
-	curationKey := curationKey{
-		Fingerprint:              f,
-		ProcessorMessageRaw:      w.processor.Signature(),
-		ProcessorMessageTypeName: w.processor.Name(),
-		IgnoreYoungerThan:        w.ignoreYoungerThan,
-	}
-	k := new(dto.CurationKey)
-	curationKey.dump(k)
-	curationValue := curationRemark{
-		LastCompletionTimestamp: finished,
-	}
-	v := new(dto.CurationValue)
-	curationValue.dump(v)
-
-	return w.curationState.Put(k, v)
-}
-
-// curationRemark provides a representation of dto.CurationValue with associated
-// business logic methods attached to it to enhance code readability.
-type curationRemark struct {
-	LastCompletionTimestamp time.Time
-}
-
-// OlderThan answers whether this curationRemark is older than the provided
-// cutOff time.
-func (c *curationRemark) OlderThan(t time.Time) bool {
-	return c.LastCompletionTimestamp.Before(t)
-}
-
-// Equal answers whether the two curationRemarks are equivalent.
-func (c *curationRemark) Equal(o curationRemark) bool {
-	return c.LastCompletionTimestamp.Equal(o.LastCompletionTimestamp)
-}
-
-func (c *curationRemark) String() string {
-	return fmt.Sprintf("Last curated at %s", c.LastCompletionTimestamp)
-}
-
-func (c *curationRemark) load(d *dto.CurationValue) {
-	c.LastCompletionTimestamp = time.Unix(d.GetLastCompletionTimestamp(), 0).UTC()
-}
-
-func (c *curationRemark) dump(d *dto.CurationValue) {
-	d.Reset()
-
-	d.LastCompletionTimestamp = proto.Int64(c.LastCompletionTimestamp.Unix())
+	return nil
 }
 
 // curationKey provides a representation of dto.CurationKey with associated

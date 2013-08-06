@@ -14,7 +14,6 @@
 package metric
 
 import (
-	"io"
 	"sort"
 
 	"code.google.com/p/goprotobuf/proto"
@@ -31,7 +30,6 @@ import (
 type FingerprintMetricMapping map[clientmodel.Fingerprint]clientmodel.Metric
 
 type FingerprintMetricIndex interface {
-	io.Closer
 	raw.Pruner
 
 	IndexBatch(FingerprintMetricMapping) error
@@ -40,7 +38,7 @@ type FingerprintMetricIndex interface {
 	Size() (s uint64, present bool, err error)
 }
 
-type LeveldbFingerprintMetricIndex struct {
+type LevelDBFingerprintMetricIndex struct {
 	p *leveldb.LevelDBPersistence
 }
 
@@ -48,22 +46,20 @@ type LevelDBFingerprintMetricIndexOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func (i *LeveldbFingerprintMetricIndex) Close() error {
+func (i *LevelDBFingerprintMetricIndex) Close() {
 	i.p.Close()
-
-	return nil
 }
 
-func (i *LeveldbFingerprintMetricIndex) State() *raw.DatabaseState {
+func (i *LevelDBFingerprintMetricIndex) State() *raw.DatabaseState {
 	return i.p.State()
 }
 
-func (i *LeveldbFingerprintMetricIndex) Size() (uint64, bool, error) {
-	s, err := i.p.ApproximateSize()
+func (i *LevelDBFingerprintMetricIndex) Size() (uint64, bool, error) {
+	s, err := i.p.Size()
 	return s, true, err
 }
 
-func (i *LeveldbFingerprintMetricIndex) IndexBatch(mapping FingerprintMetricMapping) error {
+func (i *LevelDBFingerprintMetricIndex) IndexBatch(mapping FingerprintMetricMapping) error {
 	b := leveldb.NewBatch()
 	defer b.Close()
 
@@ -79,7 +75,7 @@ func (i *LeveldbFingerprintMetricIndex) IndexBatch(mapping FingerprintMetricMapp
 	return i.p.Commit(b)
 }
 
-func (i *LeveldbFingerprintMetricIndex) Lookup(f *clientmodel.Fingerprint) (m clientmodel.Metric, ok bool, err error) {
+func (i *LevelDBFingerprintMetricIndex) Lookup(f *clientmodel.Fingerprint) (m clientmodel.Metric, ok bool, err error) {
 	k := new(dto.Fingerprint)
 	dumpFingerprint(k, f)
 	v := new(dto.Metric)
@@ -98,19 +94,19 @@ func (i *LeveldbFingerprintMetricIndex) Lookup(f *clientmodel.Fingerprint) (m cl
 	return m, true, nil
 }
 
-func (i *LeveldbFingerprintMetricIndex) Prune() (bool, error) {
+func (i *LevelDBFingerprintMetricIndex) Prune() (bool, error) {
 	i.p.Prune()
 
 	return false, nil
 }
 
-func NewLevelDBFingerprintMetricIndex(o *LevelDBFingerprintMetricIndexOptions) (FingerprintMetricIndex, error) {
+func NewLevelDBFingerprintMetricIndex(o *LevelDBFingerprintMetricIndexOptions) (*LevelDBFingerprintMetricIndex, error) {
 	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return &LeveldbFingerprintMetricIndex{
+	return &LevelDBFingerprintMetricIndex{
 		p: s,
 	}, nil
 }
@@ -118,7 +114,6 @@ func NewLevelDBFingerprintMetricIndex(o *LevelDBFingerprintMetricIndexOptions) (
 type LabelNameFingerprintMapping map[clientmodel.LabelName]clientmodel.Fingerprints
 
 type LabelNameFingerprintIndex interface {
-	io.Closer
 	raw.Pruner
 
 	IndexBatch(LabelNameFingerprintMapping) error
@@ -128,11 +123,11 @@ type LabelNameFingerprintIndex interface {
 	Size() (s uint64, present bool, err error)
 }
 
-type LeveldbLabelNameFingerprintIndex struct {
+type LevelDBLabelNameFingerprintIndex struct {
 	p *leveldb.LevelDBPersistence
 }
 
-func (i *LeveldbLabelNameFingerprintIndex) IndexBatch(b LabelNameFingerprintMapping) error {
+func (i *LevelDBLabelNameFingerprintIndex) IndexBatch(b LabelNameFingerprintMapping) error {
 	batch := leveldb.NewBatch()
 	defer batch.Close()
 
@@ -155,7 +150,7 @@ func (i *LeveldbLabelNameFingerprintIndex) IndexBatch(b LabelNameFingerprintMapp
 	return i.p.Commit(batch)
 }
 
-func (i *LeveldbLabelNameFingerprintIndex) Lookup(l clientmodel.LabelName) (fps clientmodel.Fingerprints, ok bool, err error) {
+func (i *LevelDBLabelNameFingerprintIndex) Lookup(l clientmodel.LabelName) (fps clientmodel.Fingerprints, ok bool, err error) {
 	k := new(dto.LabelName)
 	dumpLabelName(k, l)
 	v := new(dto.FingerprintCollection)
@@ -176,30 +171,28 @@ func (i *LeveldbLabelNameFingerprintIndex) Lookup(l clientmodel.LabelName) (fps 
 	return fps, true, nil
 }
 
-func (i *LeveldbLabelNameFingerprintIndex) Has(l clientmodel.LabelName) (ok bool, err error) {
+func (i *LevelDBLabelNameFingerprintIndex) Has(l clientmodel.LabelName) (ok bool, err error) {
 	return i.p.Has(&dto.LabelName{
 		Name: proto.String(string(l)),
 	})
 }
 
-func (i *LeveldbLabelNameFingerprintIndex) Prune() (bool, error) {
+func (i *LevelDBLabelNameFingerprintIndex) Prune() (bool, error) {
 	i.p.Prune()
 
 	return false, nil
 }
 
-func (i *LeveldbLabelNameFingerprintIndex) Close() error {
+func (i *LevelDBLabelNameFingerprintIndex) Close() {
 	i.p.Close()
-
-	return nil
 }
 
-func (i *LeveldbLabelNameFingerprintIndex) Size() (uint64, bool, error) {
-	s, err := i.p.ApproximateSize()
+func (i *LevelDBLabelNameFingerprintIndex) Size() (uint64, bool, error) {
+	s, err := i.p.Size()
 	return s, true, err
 }
 
-func (i *LeveldbLabelNameFingerprintIndex) State() *raw.DatabaseState {
+func (i *LevelDBLabelNameFingerprintIndex) State() *raw.DatabaseState {
 	return i.p.State()
 }
 
@@ -207,13 +200,13 @@ type LevelDBLabelNameFingerprintIndexOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func NewLevelLabelNameFingerprintIndex(o *LevelDBLabelNameFingerprintIndexOptions) (LabelNameFingerprintIndex, error) {
+func NewLevelLabelNameFingerprintIndex(o *LevelDBLabelNameFingerprintIndexOptions) (*LevelDBLabelNameFingerprintIndex, error) {
 	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return &LeveldbLabelNameFingerprintIndex{
+	return &LevelDBLabelNameFingerprintIndex{
 		p: s,
 	}, nil
 }
@@ -221,7 +214,6 @@ func NewLevelLabelNameFingerprintIndex(o *LevelDBLabelNameFingerprintIndexOption
 type LabelSetFingerprintMapping map[LabelPair]clientmodel.Fingerprints
 
 type LabelSetFingerprintIndex interface {
-	io.Closer
 	raw.ForEacher
 	raw.Pruner
 
@@ -232,7 +224,7 @@ type LabelSetFingerprintIndex interface {
 	Size() (s uint64, present bool, err error)
 }
 
-type LeveldbLabelSetFingerprintIndex struct {
+type LevelDBLabelSetFingerprintIndex struct {
 	p *leveldb.LevelDBPersistence
 }
 
@@ -240,7 +232,7 @@ type LevelDBLabelSetFingerprintIndexOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func (i *LeveldbLabelSetFingerprintIndex) IndexBatch(m LabelSetFingerprintMapping) error {
+func (i *LevelDBLabelSetFingerprintIndex) IndexBatch(m LabelSetFingerprintMapping) error {
 	batch := leveldb.NewBatch()
 	defer batch.Close()
 
@@ -264,7 +256,7 @@ func (i *LeveldbLabelSetFingerprintIndex) IndexBatch(m LabelSetFingerprintMappin
 	return i.p.Commit(batch)
 }
 
-func (i *LeveldbLabelSetFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.Fingerprints, ok bool, err error) {
+func (i *LevelDBLabelSetFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.Fingerprints, ok bool, err error) {
 	k := &dto.LabelPair{
 		Name:  proto.String(string(p.Name)),
 		Value: proto.String(string(p.Value)),
@@ -289,7 +281,7 @@ func (i *LeveldbLabelSetFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.Fi
 	return m, true, nil
 }
 
-func (i *LeveldbLabelSetFingerprintIndex) Has(p *LabelPair) (ok bool, err error) {
+func (i *LevelDBLabelSetFingerprintIndex) Has(p *LabelPair) (ok bool, err error) {
 	k := &dto.LabelPair{
 		Name:  proto.String(string(p.Name)),
 		Value: proto.String(string(p.Value)),
@@ -298,43 +290,40 @@ func (i *LeveldbLabelSetFingerprintIndex) Has(p *LabelPair) (ok bool, err error)
 	return i.p.Has(k)
 }
 
-func (i *LeveldbLabelSetFingerprintIndex) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
+func (i *LevelDBLabelSetFingerprintIndex) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
 	return i.p.ForEach(d, f, o)
 }
 
-func (i *LeveldbLabelSetFingerprintIndex) Prune() (bool, error) {
+func (i *LevelDBLabelSetFingerprintIndex) Prune() (bool, error) {
 	i.p.Prune()
 	return false, nil
 }
 
-func (i *LeveldbLabelSetFingerprintIndex) Close() error {
+func (i *LevelDBLabelSetFingerprintIndex) Close() {
 	i.p.Close()
-
-	return nil
 }
 
-func (i *LeveldbLabelSetFingerprintIndex) Size() (uint64, bool, error) {
-	s, err := i.p.ApproximateSize()
+func (i *LevelDBLabelSetFingerprintIndex) Size() (uint64, bool, error) {
+	s, err := i.p.Size()
 	return s, true, err
 }
 
-func (i *LeveldbLabelSetFingerprintIndex) State() *raw.DatabaseState {
+func (i *LevelDBLabelSetFingerprintIndex) State() *raw.DatabaseState {
 	return i.p.State()
 }
 
-func NewLevelDBLabelSetFingerprintIndex(o *LevelDBLabelSetFingerprintIndexOptions) (LabelSetFingerprintIndex, error) {
+func NewLevelDBLabelSetFingerprintIndex(o *LevelDBLabelSetFingerprintIndexOptions) (*LevelDBLabelSetFingerprintIndex, error) {
 	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return &LeveldbLabelSetFingerprintIndex{
+	return &LevelDBLabelSetFingerprintIndex{
 		p: s,
 	}, nil
 }
 
 type MetricMembershipIndex interface {
-	io.Closer
 	raw.Pruner
 
 	IndexBatch([]clientmodel.Metric) error
@@ -343,13 +332,13 @@ type MetricMembershipIndex interface {
 	Size() (s uint64, present bool, err error)
 }
 
-type LeveldbMetricMembershipIndex struct {
+type LevelDBMetricMembershipIndex struct {
 	p *leveldb.LevelDBPersistence
 }
 
 var existenceIdentity = new(dto.MembershipIndexValue)
 
-func (i *LeveldbMetricMembershipIndex) IndexBatch(ms []clientmodel.Metric) error {
+func (i *LevelDBMetricMembershipIndex) IndexBatch(ms []clientmodel.Metric) error {
 	batch := leveldb.NewBatch()
 	defer batch.Close()
 
@@ -362,29 +351,27 @@ func (i *LeveldbMetricMembershipIndex) IndexBatch(ms []clientmodel.Metric) error
 	return i.p.Commit(batch)
 }
 
-func (i *LeveldbMetricMembershipIndex) Has(m clientmodel.Metric) (ok bool, err error) {
+func (i *LevelDBMetricMembershipIndex) Has(m clientmodel.Metric) (ok bool, err error) {
 	k := new(dto.Metric)
 	dumpMetric(k, m)
 
 	return i.p.Has(k)
 }
 
-func (i *LeveldbMetricMembershipIndex) Close() error {
+func (i *LevelDBMetricMembershipIndex) Close() {
 	i.p.Close()
-
-	return nil
 }
 
-func (i *LeveldbMetricMembershipIndex) Size() (uint64, bool, error) {
-	s, err := i.p.ApproximateSize()
+func (i *LevelDBMetricMembershipIndex) Size() (uint64, bool, error) {
+	s, err := i.p.Size()
 	return s, true, err
 }
 
-func (i *LeveldbMetricMembershipIndex) State() *raw.DatabaseState {
+func (i *LevelDBMetricMembershipIndex) State() *raw.DatabaseState {
 	return i.p.State()
 }
 
-func (i *LeveldbMetricMembershipIndex) Prune() (bool, error) {
+func (i *LevelDBMetricMembershipIndex) Prune() (bool, error) {
 	i.p.Prune()
 
 	return false, nil
@@ -394,13 +381,13 @@ type LevelDBMetricMembershipIndexOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func NewLevelDBMetricMembershipIndex(o *LevelDBMetricMembershipIndexOptions) (MetricMembershipIndex, error) {
+func NewLevelDBMetricMembershipIndex(o *LevelDBMetricMembershipIndexOptions) (*LevelDBMetricMembershipIndex, error) {
 	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return &LeveldbMetricMembershipIndex{
+	return &LevelDBMetricMembershipIndex{
 		p: s,
 	}, nil
 }
