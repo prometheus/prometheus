@@ -338,8 +338,7 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		ProcessorMessageRaw:      w.processor.Signature(),
 		ProcessorMessageTypeName: w.processor.Name(),
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
-	},
-		lastTime)
+	}, lastTime)
 	if err != nil {
 		// Under the assumption that the processors are idempotent, they can be
 		// re-run; thusly, the commitment of the curation remark is no cause
