@@ -194,19 +194,3 @@ func (s *seriesFrontier) InSafeSeekRange(t time.Time) (safe bool) {
 func (s *seriesFrontier) After(t time.Time) bool {
 	return s.firstSupertime.After(t)
 }
-
-// optimalStartTime indicates what the best start time for a curation operation
-// should be given the curation remark.
-func (s *seriesFrontier) optimalStartTime(remark *curationRemark) (t time.Time) {
-	switch {
-	case remark == nil:
-		t = s.firstSupertime
-	case s.After(remark.LastCompletionTimestamp):
-		t = s.firstSupertime
-	case !s.InSafeSeekRange(remark.LastCompletionTimestamp):
-		t = s.lastSupertime
-	default:
-		t = remark.LastCompletionTimestamp
-	}
-	return
-}

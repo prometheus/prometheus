@@ -71,8 +71,8 @@ func (l *LevelDBMembershipIndex) Prune() {
 	l.persistence.Prune()
 }
 
-func (l *LevelDBMembershipIndex) ApproximateSize() (uint64, error) {
-	return l.persistence.ApproximateSize()
+func (l *LevelDBMembershipIndex) Size() (uint64, error) {
+	return l.persistence.Size()
 }
 
 func (l *LevelDBMembershipIndex) State() *raw.DatabaseState {

@@ -31,7 +31,7 @@ func (l *LevelDBPersistence) State() *raw.DatabaseState {
 		Supplemental: map[string]string{},
 	}
 
-	if size, err := l.ApproximateSize(); err != nil {
+	if size, err := l.Size(); err != nil {
 		databaseState.Supplemental["Errors"] = err.Error()
 	} else {
 		databaseState.Size = utility.ByteSize(size)

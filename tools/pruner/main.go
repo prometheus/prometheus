@@ -42,10 +42,10 @@ func main() {
 
 	start := time.Now()
 	log.Printf("Starting compaction...")
-	size, _ := persistences.ApproximateSizes()
+	size, _ := persistences.Sizes()
 	log.Printf("Original Size: %d", size)
 	persistences.Prune()
 	log.Printf("Finished in %s", time.Since(start))
-	size, _ = persistences.ApproximateSizes()
+	size, _ = persistences.Sizes()
 	log.Printf("New Size: %d", size)
 }

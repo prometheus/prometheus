@@ -72,13 +72,10 @@ func (c curationState) Get() (key, value proto.Message) {
 
 	k := &dto.CurationKey{}
 	keyRaw.dump(k)
-	key = k
 
-	valueRaw := curationRemark{
-		LastCompletionTimestamp: c.lastCurated,
+	v := &dto.CurationValue{
+		LastCompletionTimestamp: proto.Int64(c.lastCurated.Unix()),
 	}
-	v := &dto.CurationValue{}
-	valueRaw.dump(v)
 
 	return k, v
 }
@@ -848,8 +845,10 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.in.sampleGroups))
 		defer sampleDirectory.Close()
 
-		curatorStates, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
-			Path: curatorDirectory.Path(),
+		curatorStates, err := NewLevelDBCurationRemarker(&LevelDBCurationRemarkerOptions{
+			LevelDBOptions: leveldb.LevelDBOptions{
+				Path: curatorDirectory.Path(),
+			},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -888,7 +887,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		iterator := curatorStates.NewIterator(true)
+		iterator := curatorStates.p.NewIterator(true)
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.curationStates {
@@ -904,38 +903,35 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			}
 
 			curationKeyDto := &dto.CurationKey{}
-			curationValueDto := &dto.CurationValue{}
 
 			err = proto.Unmarshal(iterator.Key(), curationKeyDto)
 			if err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
-			err = proto.Unmarshal(iterator.Value(), curationValueDto)
-			if err != nil {
-				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
-			}
-			actualKey := &curationKey{}
+			actualKey := new(curationKey)
 			actualKey.load(curationKeyDto)
-			actualCurationRemark := &curationRemark{}
-			actualCurationRemark.load(curationValueDto)
-			signature := expected.processor.Signature()
+
+			actualValue, present, err := curatorStates.Get(actualKey)
+			if !present {
+				t.Fatalf("%d.%d. could not get key-value pair %s", i, j, actualKey)
+			}
+			if err != nil {
+				t.Fatalf("%d.%d. could not get key-value pair %s", i, j, err)
+			}
 
 			expectedFingerprint := &clientmodel.Fingerprint{}
 			expectedFingerprint.LoadFromString(expected.fingerprint)
 			expectedKey := &curationKey{
 				Fingerprint:              expectedFingerprint,
 				IgnoreYoungerThan:        expected.ignoreYoungerThan,
-				ProcessorMessageRaw:      signature,
+				ProcessorMessageRaw:      expected.processor.Signature(),
 				ProcessorMessageTypeName: expected.processor.Name(),
 			}
 			if !actualKey.Equal(expectedKey) {
 				t.Fatalf("%d.%d. expected %s, got %s", i, j, expectedKey, actualKey)
 			}
-			expectedCurationRemark := curationRemark{
-				LastCompletionTimestamp: expected.lastCurated,
-			}
-			if !actualCurationRemark.Equal(expectedCurationRemark) {
-				t.Fatalf("%d.%d. expected %s, got %s", i, j, expectedCurationRemark, actualCurationRemark)
+			if !actualValue.Equal(expected.lastCurated) {
+				t.Fatalf("%d.%d. expected %s, got %s", i, j, expected.lastCurated, actualValue)
 			}
 		}
 
@@ -1374,8 +1370,11 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.in.sampleGroups))
 		defer sampleDirectory.Close()
 
-		curatorStates, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
-			Path: curatorDirectory.Path()})
+		curatorStates, err := NewLevelDBCurationRemarker(&LevelDBCurationRemarkerOptions{
+			LevelDBOptions: leveldb.LevelDBOptions{
+				Path: curatorDirectory.Path(),
+			},
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1412,7 +1411,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		iterator := curatorStates.NewIterator(true)
+		iterator := curatorStates.p.NewIterator(true)
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.curationStates {
@@ -1427,23 +1426,24 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 				}
 			}
 
-			curationKeyDto := &dto.CurationKey{}
-			curationValueDto := &dto.CurationValue{}
+			curationKeyDto := new(dto.CurationKey)
 
 			err = proto.Unmarshal(iterator.Key(), curationKeyDto)
 			if err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
-			err = proto.Unmarshal(iterator.Value(), curationValueDto)
-			if err != nil {
-				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
-			}
 
-			actualKey := &curationKey{}
+			actualKey := new(curationKey)
 			actualKey.load(curationKeyDto)
-			actualCurationRemark := &curationRemark{}
-			actualCurationRemark.load(curationValueDto)
 			signature := expected.processor.Signature()
+
+			actualValue, present, err := curatorStates.Get(actualKey)
+			if !present {
+				t.Fatalf("%d.%d. could not get key-value pair %s", i, j, actualKey)
+			}
+			if err != nil {
+				t.Fatalf("%d.%d. could not get key-value pair %s", i, j, err)
+			}
 
 			expectedFingerprint := &clientmodel.Fingerprint{}
 			expectedFingerprint.LoadFromString(expected.fingerprint)
@@ -1456,11 +1456,8 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			if !actualKey.Equal(expectedKey) {
 				t.Fatalf("%d.%d. expected %s, got %s", i, j, expectedKey, actualKey)
 			}
-			expectedCurationRemark := curationRemark{
-				LastCompletionTimestamp: expected.lastCurated,
-			}
-			if !actualCurationRemark.Equal(expectedCurationRemark) {
-				t.Fatalf("%d.%d. expected %s, got %s", i, j, expectedCurationRemark, actualCurationRemark)
+			if !actualValue.Equal(expected.lastCurated) {
+				t.Fatalf("%d.%d. expected %s, got %s", i, j, expected.lastCurated, actualValue)
 			}
 		}
 

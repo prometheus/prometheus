@@ -15,7 +15,6 @@ package metric
 
 import (
 	"container/list"
-	"io"
 	"sync"
 	"time"
 
@@ -171,7 +170,6 @@ func (lru *WatermarkCache) checkCapacity() {
 type FingerprintHighWatermarkMapping map[clientmodel.Fingerprint]time.Time
 
 type HighWatermarker interface {
-	io.Closer
 	raw.ForEacher
 	raw.Pruner
 
@@ -181,11 +179,11 @@ type HighWatermarker interface {
 	Size() (uint64, bool, error)
 }
 
-type LeveldbHighWatermarker struct {
+type LevelDBHighWatermarker struct {
 	p *leveldb.LevelDBPersistence
 }
 
-func (w *LeveldbHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, ok bool, err error) {
+func (w *LevelDBHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, ok bool, err error) {
 	k := new(dto.Fingerprint)
 	dumpFingerprint(k, f)
 	v := new(dto.MetricHighWatermark)
@@ -200,7 +198,7 @@ func (w *LeveldbHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, o
 	return t, true, nil
 }
 
-func (w *LeveldbHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) error {
+func (w *LevelDBHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) error {
 	batch := leveldb.NewBatch()
 	defer batch.Close()
 
@@ -229,28 +227,26 @@ func (w *LeveldbHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) 
 	return w.p.Commit(batch)
 }
 
-func (i *LeveldbHighWatermarker) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
-	return i.p.ForEach(d, f, o)
+func (w *LevelDBHighWatermarker) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
+	return w.p.ForEach(d, f, o)
 }
 
-func (i *LeveldbHighWatermarker) Prune() (bool, error) {
-	i.p.Prune()
+func (w *LevelDBHighWatermarker) Prune() (bool, error) {
+	w.p.Prune()
 
 	return false, nil
 }
 
-func (i *LeveldbHighWatermarker) Close() error {
-	i.p.Close()
-
-	return nil
+func (w *LevelDBHighWatermarker) Close() {
+	w.p.Close()
 }
 
-func (i *LeveldbHighWatermarker) State() *raw.DatabaseState {
-	return i.p.State()
+func (w *LevelDBHighWatermarker) State() *raw.DatabaseState {
+	return w.p.State()
 }
 
-func (i *LeveldbHighWatermarker) Size() (uint64, bool, error) {
-	s, err := i.p.ApproximateSize()
+func (w *LevelDBHighWatermarker) Size() (uint64, bool, error) {
+	s, err := w.p.Size()
 	return s, true, err
 }
 
@@ -258,13 +254,82 @@ type LevelDBHighWatermarkerOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func NewLevelDBHighWatermarker(o *LevelDBHighWatermarkerOptions) (HighWatermarker, error) {
+func NewLevelDBHighWatermarker(o *LevelDBHighWatermarkerOptions) (*LevelDBHighWatermarker, error) {
 	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return &LeveldbHighWatermarker{
+	return &LevelDBHighWatermarker{
+		p: s,
+	}, nil
+}
+
+type CurationRemarker interface {
+	raw.Pruner
+
+	Update(*curationKey, time.Time) error
+	Get(*curationKey) (t time.Time, ok bool, err error)
+	State() *raw.DatabaseState
+	Size() (uint64, bool, error)
+}
+
+type LevelDBCurationRemarker struct {
+	p *leveldb.LevelDBPersistence
+}
+
+type LevelDBCurationRemarkerOptions struct {
+	leveldb.LevelDBOptions
+}
+
+func (w *LevelDBCurationRemarker) State() *raw.DatabaseState {
+	return w.p.State()
+}
+
+func (w *LevelDBCurationRemarker) Size() (uint64, bool, error) {
+	s, err := w.p.Size()
+	return s, true, err
+}
+
+func (w *LevelDBCurationRemarker) Close() {
+	w.p.Close()
+}
+
+func (w *LevelDBCurationRemarker) Prune() (bool, error) {
+	w.p.Prune()
+
+	return false, nil
+}
+
+func (w *LevelDBCurationRemarker) Get(c *curationKey) (t time.Time, ok bool, err error) {
+	k := new(dto.CurationKey)
+	c.dump(k)
+	v := new(dto.CurationValue)
+
+	ok, err = w.p.Get(k, v)
+	if err != nil || !ok {
+		return t, ok, err
+	}
+
+	return time.Unix(v.GetLastCompletionTimestamp(), 0).UTC(), true, nil
+}
+
+func (w *LevelDBCurationRemarker) Update(pair *curationKey, t time.Time) error {
+	k := new(dto.CurationKey)
+	pair.dump(k)
+
+	return w.p.Put(k, &dto.CurationValue{
+		LastCompletionTimestamp: proto.Int64(t.Unix()),
+	})
+}
+
+func NewLevelDBCurationRemarker(o *LevelDBCurationRemarkerOptions) (*LevelDBCurationRemarker, error) {
+	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LevelDBCurationRemarker{
 		p: s,
 	}, nil
 }
