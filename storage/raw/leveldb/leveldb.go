@@ -332,7 +332,7 @@ func (l *LevelDBPersistence) Prune() {
 	l.storage.CompactRange(keyspace)
 }
 
-func (l *LevelDBPersistence) ApproximateSize() (uint64, error) {
+func (l *LevelDBPersistence) Size() (uint64, error) {
 	iterator := l.NewIterator(false)
 	defer iterator.Close()
 

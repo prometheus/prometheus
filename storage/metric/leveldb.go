@@ -36,7 +36,7 @@ import (
 const sortConcurrency = 2
 
 type LevelDBMetricPersistence struct {
-	CurationRemarks         *leveldb.LevelDBPersistence
+	CurationRemarks         CurationRemarker
 	fingerprintToMetrics    FingerprintMetricIndex
 	labelNameToFingerprints LabelNameFingerprintIndex
 	labelSetToFingerprints  LabelSetFingerprintIndex
@@ -202,13 +202,14 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Sample Curation Remarks",
 			func() {
 				var err error
-				o := &leveldb.LevelDBOptions{
-					Name:           "Sample Curation Remarks",
-					Purpose:        "Ledger of Progress for Various Curators",
-					Path:           baseDirectory + "/curation_remarks",
-					CacheSizeBytes: *curationRemarksCacheSize,
-				}
-				emission.CurationRemarks, err = leveldb.NewLevelDBPersistence(o)
+				emission.CurationRemarks, err = NewLevelDBCurationRemarker(&LevelDBCurationRemarkerOptions{
+					LevelDBOptions: leveldb.LevelDBOptions{
+						Name:           "Sample Curation Remarks",
+						Purpose:        "Ledger of Progress for Various Curators",
+						Path:           baseDirectory + "/curation_remarks",
+						CacheSizeBytes: *curationRemarksCacheSize,
+					},
+				})
 				workers.MayFail(err)
 			},
 		},
@@ -764,7 +765,7 @@ func (l *LevelDBMetricPersistence) GetAllValuesForLabel(labelName clientmodel.La
 	return
 }
 
-// CompactKeyspace compacts each database's keyspace serially.
+// Prune compacts each database's keyspace serially.
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
@@ -778,10 +779,10 @@ func (l *LevelDBMetricPersistence) Prune() {
 	l.MetricSamples.Prune()
 }
 
-func (l *LevelDBMetricPersistence) ApproximateSizes() (total uint64, err error) {
+func (l *LevelDBMetricPersistence) Sizes() (total uint64, err error) {
 	size := uint64(0)
 
-	if size, err = l.CurationRemarks.ApproximateSize(); err != nil {
+	if size, _, err = l.CurationRemarks.Size(); err != nil {
 		return 0, err
 	}
 	total += size
@@ -811,7 +812,7 @@ func (l *LevelDBMetricPersistence) ApproximateSizes() (total uint64, err error) 
 	}
 	total += size
 
-	if size, err = l.MetricSamples.ApproximateSize(); err != nil {
+	if size, err = l.MetricSamples.Size(); err != nil {
 		return 0, err
 	}
 	total += size
