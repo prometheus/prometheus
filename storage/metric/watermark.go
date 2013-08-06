@@ -227,26 +227,26 @@ func (w *LevelDBHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) 
 	return w.p.Commit(batch)
 }
 
-func (i *LevelDBHighWatermarker) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
-	return i.p.ForEach(d, f, o)
+func (w *LevelDBHighWatermarker) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
+	return w.p.ForEach(d, f, o)
 }
 
-func (i *LevelDBHighWatermarker) Prune() (bool, error) {
-	i.p.Prune()
+func (w *LevelDBHighWatermarker) Prune() (bool, error) {
+	w.p.Prune()
 
 	return false, nil
 }
 
-func (i *LevelDBHighWatermarker) Close() {
-	i.p.Close()
+func (w *LevelDBHighWatermarker) Close() {
+	w.p.Close()
 }
 
-func (i *LevelDBHighWatermarker) State() *raw.DatabaseState {
-	return i.p.State()
+func (w *LevelDBHighWatermarker) State() *raw.DatabaseState {
+	return w.p.State()
 }
 
-func (i *LevelDBHighWatermarker) Size() (uint64, bool, error) {
-	s, err := i.p.Size()
+func (w *LevelDBHighWatermarker) Size() (uint64, bool, error) {
+	s, err := w.p.Size()
 	return s, true, err
 }
 
@@ -282,31 +282,31 @@ type LevelDBCurationRemarkerOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func (i *LevelDBCurationRemarker) State() *raw.DatabaseState {
-	return i.p.State()
+func (w *LevelDBCurationRemarker) State() *raw.DatabaseState {
+	return w.p.State()
 }
 
-func (i *LevelDBCurationRemarker) Size() (uint64, bool, error) {
-	s, err := i.p.Size()
+func (w *LevelDBCurationRemarker) Size() (uint64, bool, error) {
+	s, err := w.p.Size()
 	return s, true, err
 }
 
-func (i *LevelDBCurationRemarker) Close() {
-	i.p.Close()
+func (w *LevelDBCurationRemarker) Close() {
+	w.p.Close()
 }
 
-func (i *LevelDBCurationRemarker) Prune() (bool, error) {
-	i.p.Prune()
+func (w *LevelDBCurationRemarker) Prune() (bool, error) {
+	w.p.Prune()
 
 	return false, nil
 }
 
-func (i *LevelDBCurationRemarker) Get(c *curationKey) (t time.Time, ok bool, err error) {
+func (w *LevelDBCurationRemarker) Get(c *curationKey) (t time.Time, ok bool, err error) {
 	k := new(dto.CurationKey)
 	c.dump(k)
 	v := new(dto.CurationValue)
 
-	ok, err = i.p.Get(k, v)
+	ok, err = w.p.Get(k, v)
 	if err != nil || !ok {
 		return t, ok, err
 	}
@@ -314,11 +314,11 @@ func (i *LevelDBCurationRemarker) Get(c *curationKey) (t time.Time, ok bool, err
 	return time.Unix(v.GetLastCompletionTimestamp(), 0).UTC(), true, nil
 }
 
-func (i *LevelDBCurationRemarker) Update(pair *curationKey, t time.Time) error {
+func (w *LevelDBCurationRemarker) Update(pair *curationKey, t time.Time) error {
 	k := new(dto.CurationKey)
 	pair.dump(k)
 
-	return i.p.Put(k, &dto.CurationValue{
+	return w.p.Put(k, &dto.CurationValue{
 		LastCompletionTimestamp: proto.Int64(t.Unix()),
 	})
 }
