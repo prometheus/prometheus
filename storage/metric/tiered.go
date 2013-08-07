@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
+	"github.com/prometheus/prometheus/utility"
 
 	dto "github.com/prometheus/prometheus/model/generated"
 )
@@ -64,12 +65,8 @@ const (
 	tieredStorageStopping
 )
 
-const (
-	// Ignore timeseries in queries that are more stale than this limit.
-	stalenessLimit = time.Minute * 5
-	// Size of the watermarks cache (used in determining timeseries freshness).
-	wmCacheSizeBytes = 5 * 1024 * 1024
-)
+// Ignore timeseries in queries that are more stale than this limit.
+const stalenessLimit = time.Minute * 5
 
 // TieredStorage both persists samples and generates materialized views for
 // queries.
@@ -95,7 +92,7 @@ type TieredStorage struct {
 	memorySemaphore chan bool
 	diskSemaphore   chan bool
 
-	wmCache *WatermarkCache
+	wmCache *watermarkCache
 
 	Indexer MetricIndexer
 }
@@ -114,14 +111,21 @@ const (
 	tieredMemorySemaphores = 5
 )
 
+const watermarkCacheLimit = 1024 * 1024
+
 func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, memoryTTL time.Duration, root string) (*TieredStorage, error) {
 	diskStorage, err := NewLevelDBMetricPersistence(root)
 	if err != nil {
 		return nil, err
 	}
 
-	wmCache := NewWatermarkCache(wmCacheSizeBytes)
-	memOptions := MemorySeriesOptions{WatermarkCache: wmCache}
+	wmCache := &watermarkCache{
+		C: utility.NewSynchronizedCache(utility.NewLRUCache(watermarkCacheLimit)),
+	}
+
+	memOptions := MemorySeriesOptions{
+		WatermarkCache: wmCache,
+	}
 
 	s := &TieredStorage{
 		appendToDiskQueue:   make(chan clientmodel.Samples, appendToDiskQueueDepth),
@@ -319,13 +323,13 @@ func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (b
 	// BUG(julius): Make this configurable by query layer.
 	i = i.Add(-stalenessLimit)
 
-	wm, cacheHit := t.wmCache.Get(f)
+	wm, cacheHit, _ := t.wmCache.Get(f)
 	if !cacheHit {
 		if t.memoryArena.HasFingerprint(f) {
 			samples := t.memoryArena.CloneSamples(f)
 			if len(samples) > 0 {
 				newest := samples[len(samples)-1].Timestamp
-				t.wmCache.Set(f, &watermarks{High: newest})
+				t.wmCache.Put(f, &watermarks{High: newest})
 
 				return newest.Before(i), nil
 			}
@@ -337,12 +341,12 @@ func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (b
 		}
 
 		if diskHit {
-			t.wmCache.Set(f, &watermarks{High: highTime})
+			t.wmCache.Put(f, &watermarks{High: highTime})
 
 			return highTime.Before(i), nil
 		}
 
-		t.wmCache.Set(f, &watermarks{})
+		t.wmCache.Put(f, &watermarks{})
 		return true, nil
 	}
 
