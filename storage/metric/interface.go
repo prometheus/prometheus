@@ -40,11 +40,11 @@ type MetricPersistence interface {
 
 	// Get all of the metric fingerprints that are associated with the provided
 	// label set.
-	GetFingerprintsForLabelSet(clientmodel.LabelSet) (clientmodel.Fingerprints, error)
+	GetFingerprintsForLabelSet(clientmodel.LabelSet) (clientmodel.FingerprintSet, error)
 
 	// Get all of the metric fingerprints that are associated for a given label
 	// name.
-	GetFingerprintsForLabelName(clientmodel.LabelName) (clientmodel.Fingerprints, error)
+	GetFingerprintsForLabelName(clientmodel.LabelName) (clientmodel.FingerprintSet, error)
 
 	// Get the metric associated with the provided fingerprint.
 	GetMetricForFingerprint(*clientmodel.Fingerprint) (clientmodel.Metric, error)

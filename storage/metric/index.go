@@ -14,7 +14,8 @@
 package metric
 
 import (
-	"sort"
+	"io"
+	"sync"
 
 	"code.google.com/p/goprotobuf/proto"
 
@@ -23,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
-	"github.com/prometheus/prometheus/utility"
 
 	dto "github.com/prometheus/prometheus/model/generated"
 )
@@ -112,13 +112,13 @@ func NewLevelDBFingerprintMetricIndex(o LevelDBFingerprintMetricIndexOptions) (*
 	}, nil
 }
 
-type LabelNameFingerprintMapping map[clientmodel.LabelName]clientmodel.Fingerprints
+type LabelNameFingerprintMapping map[clientmodel.LabelName]clientmodel.FingerprintSet
 
 type LabelNameFingerprintIndex interface {
 	raw.Pruner
 
 	IndexBatch(LabelNameFingerprintMapping) error
-	Lookup(clientmodel.LabelName) (fps clientmodel.Fingerprints, ok bool, err error)
+	Lookup(clientmodel.LabelName) (fps clientmodel.FingerprintSet, ok bool, err error)
 	Has(clientmodel.LabelName) (ok bool, err error)
 	State() *raw.DatabaseState
 	Size() (s uint64, present bool, err error)
@@ -133,15 +133,13 @@ func (i *LevelDBLabelNameFingerprintIndex) IndexBatch(b LabelNameFingerprintMapp
 	defer batch.Close()
 
 	for labelName, fingerprints := range b {
-		sort.Sort(fingerprints)
-
 		key := &dto.LabelName{
 			Name: proto.String(string(labelName)),
 		}
 		value := new(dto.FingerprintCollection)
-		for _, fingerprint := range fingerprints {
+		for fingerprint := range fingerprints {
 			f := new(dto.Fingerprint)
-			dumpFingerprint(f, fingerprint)
+			dumpFingerprint(f, &fingerprint)
 			value.Member = append(value.Member, f)
 		}
 
@@ -151,7 +149,7 @@ func (i *LevelDBLabelNameFingerprintIndex) IndexBatch(b LabelNameFingerprintMapp
 	return i.p.Commit(batch)
 }
 
-func (i *LevelDBLabelNameFingerprintIndex) Lookup(l clientmodel.LabelName) (fps clientmodel.Fingerprints, ok bool, err error) {
+func (i *LevelDBLabelNameFingerprintIndex) Lookup(l clientmodel.LabelName) (fps clientmodel.FingerprintSet, ok bool, err error) {
 	k := new(dto.LabelName)
 	dumpLabelName(k, l)
 	v := new(dto.FingerprintCollection)
@@ -163,10 +161,12 @@ func (i *LevelDBLabelNameFingerprintIndex) Lookup(l clientmodel.LabelName) (fps 
 		return nil, false, nil
 	}
 
+	fps = clientmodel.FingerprintSet{}
+
 	for _, m := range v.Member {
 		fp := new(clientmodel.Fingerprint)
 		loadFingerprint(fp, m)
-		fps = append(fps, fp)
+		fps[*fp] = true
 	}
 
 	return fps, true, nil
@@ -212,14 +212,14 @@ func NewLevelLabelNameFingerprintIndex(o LevelDBLabelNameFingerprintIndexOptions
 	}, nil
 }
 
-type LabelPairFingerprintMapping map[LabelPair]clientmodel.Fingerprints
+type LabelPairFingerprintMapping map[LabelPair]clientmodel.FingerprintSet
 
 type LabelPairFingerprintIndex interface {
 	raw.ForEacher
 	raw.Pruner
 
 	IndexBatch(LabelPairFingerprintMapping) error
-	Lookup(*LabelPair) (m clientmodel.Fingerprints, ok bool, err error)
+	Lookup(*LabelPair) (m clientmodel.FingerprintSet, ok bool, err error)
 	Has(*LabelPair) (ok bool, err error)
 	State() *raw.DatabaseState
 	Size() (s uint64, present bool, err error)
@@ -238,16 +238,14 @@ func (i *LevelDBLabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintMapp
 	defer batch.Close()
 
 	for pair, fps := range m {
-		sort.Sort(fps)
-
 		key := &dto.LabelPair{
 			Name:  proto.String(string(pair.Name)),
 			Value: proto.String(string(pair.Value)),
 		}
 		value := new(dto.FingerprintCollection)
-		for _, fp := range fps {
+		for fp := range fps {
 			f := new(dto.Fingerprint)
-			dumpFingerprint(f, fp)
+			dumpFingerprint(f, &fp)
 			value.Member = append(value.Member, f)
 		}
 
@@ -257,7 +255,7 @@ func (i *LevelDBLabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintMapp
 	return i.p.Commit(batch)
 }
 
-func (i *LevelDBLabelPairFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.Fingerprints, ok bool, err error) {
+func (i *LevelDBLabelPairFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.FingerprintSet, ok bool, err error) {
 	k := &dto.LabelPair{
 		Name:  proto.String(string(p.Name)),
 		Value: proto.String(string(p.Value)),
@@ -276,7 +274,7 @@ func (i *LevelDBLabelPairFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.F
 	for _, pair := range v.Member {
 		fp := new(clientmodel.Fingerprint)
 		loadFingerprint(fp, pair)
-		m = append(m, fp)
+		m[*fp] = true
 	}
 
 	return m, true, nil
@@ -400,6 +398,183 @@ type MetricIndexer interface {
 	IndexMetrics(FingerprintMetricMapping) error
 }
 
+type IndexerObserver interface {
+	Observe(FingerprintMetricMapping) error
+}
+
+type IndexerProxy struct {
+	err error
+
+	i         MetricIndexer
+	observers []IndexerObserver
+}
+
+func (p *IndexerProxy) IndexMetrics(b FingerprintMetricMapping) error {
+	if p.err != nil {
+		return p.err
+	}
+	if p.err = p.i.IndexMetrics(b); p.err != nil {
+		return p.err
+	}
+
+	for _, o := range p.observers {
+		if p.err = o.Observe(b); p.err != nil {
+			return p.err
+		}
+	}
+
+	return nil
+}
+
+func (p *IndexerProxy) Close() error {
+	if p.err != nil {
+		return p.err
+	}
+	if closer, ok := p.i.(io.Closer); ok {
+		p.err = closer.Close()
+		return p.err
+	}
+	return nil
+}
+
+func (p *IndexerProxy) Flush() error {
+	if p.err != nil {
+		return p.err
+	}
+	if flusher, ok := p.i.(flusher); ok {
+		p.err = flusher.Flush()
+		return p.err
+	}
+	return nil
+}
+
+func NewIndexerProxy(i MetricIndexer, o ...IndexerObserver) *IndexerProxy {
+	return &IndexerProxy{
+		i:         i,
+		observers: o,
+	}
+}
+
+type SynchronizedIndexer struct {
+	mu sync.Mutex
+	i  MetricIndexer
+}
+
+func (i *SynchronizedIndexer) IndexMetrics(b FingerprintMetricMapping) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	return i.i.IndexMetrics(b)
+}
+
+type flusher interface {
+	Flush() error
+}
+
+func (i *SynchronizedIndexer) Flush() error {
+	if flusher, ok := i.i.(flusher); ok {
+		i.mu.Lock()
+		defer i.mu.Unlock()
+
+		return flusher.Flush()
+	}
+
+	return nil
+}
+
+func (i *SynchronizedIndexer) Close() error {
+	if closer, ok := i.i.(io.Closer); ok {
+		i.mu.Lock()
+		defer i.mu.Unlock()
+
+		return closer.Close()
+	}
+
+	return nil
+}
+
+func NewSynchronizedIndex(i MetricIndexer) *SynchronizedIndexer {
+	return &SynchronizedIndexer{
+		i: i,
+	}
+}
+
+type BufferedIndexer struct {
+	i MetricIndexer
+
+	limit int
+
+	buf []FingerprintMetricMapping
+
+	err error
+}
+
+func (i *BufferedIndexer) IndexMetrics(b FingerprintMetricMapping) error {
+	if i.err != nil {
+		return i.err
+	}
+
+	if len(i.buf) < i.limit {
+		i.buf = append(i.buf, b)
+
+		return nil
+	}
+
+	i.buf = append(i.buf)
+
+	i.err = i.Flush()
+
+	return i.err
+}
+
+func (i *BufferedIndexer) Flush() error {
+	if i.err != nil {
+		return i.err
+	}
+
+	if len(i.buf) == 0 {
+		return nil
+	}
+
+	superset := FingerprintMetricMapping{}
+	for _, b := range i.buf {
+		for fp, m := range b {
+			if _, ok := superset[fp]; ok {
+				continue
+			}
+
+			superset[fp] = m
+		}
+	}
+
+	i.buf = make([]FingerprintMetricMapping, 0, i.limit)
+
+	i.err = i.i.IndexMetrics(superset)
+
+	return i.err
+}
+
+func (i *BufferedIndexer) Close() error {
+	if err := i.Flush(); err != nil {
+		return err
+	}
+
+	if closer, ok := i.i.(io.Closer); ok {
+		return closer.Close()
+	}
+
+	return nil
+}
+
+func NewBufferedIndexer(i MetricIndexer, limit int) *BufferedIndexer {
+
+	return &BufferedIndexer{
+		i:     i,
+		limit: limit,
+		buf:   make([]FingerprintMetricMapping, 0, limit),
+	}
+}
+
 // TotalIndexer is a MetricIndexer that indexes all standard facets of a metric
 // that a user or the Prometheus subsystem would want to query against:
 //
@@ -436,7 +611,7 @@ func findUnindexed(i MetricMembershipIndex, b FingerprintMetricMapping) (Fingerp
 }
 
 func extendLabelNameIndex(i LabelNameFingerprintIndex, b FingerprintMetricMapping) (LabelNameFingerprintMapping, error) {
-	collection := map[clientmodel.LabelName]utility.Set{}
+	collection := LabelNameFingerprintMapping{}
 
 	for fp, m := range b {
 		for l := range m {
@@ -447,35 +622,24 @@ func extendLabelNameIndex(i LabelNameFingerprintIndex, b FingerprintMetricMappin
 					return nil, err
 				}
 
-				set = utility.Set{}
+				set = clientmodel.FingerprintSet{}
 
-				for _, baseFp := range baseFps {
-					set.Add(*baseFp)
+				for baseFp := range baseFps {
+					set[baseFp] = true
 				}
 
 				collection[l] = set
 			}
 
-			set.Add(fp)
+			set[fp] = true
 		}
 	}
 
-	batch := LabelNameFingerprintMapping{}
-	for l, set := range collection {
-		fps := clientmodel.Fingerprints{}
-		for e := range set {
-			fp := e.(clientmodel.Fingerprint)
-			fps = append(fps, &fp)
-		}
-
-		batch[l] = fps
-	}
-
-	return batch, nil
+	return collection, nil
 }
 
 func extendLabelPairIndex(i LabelPairFingerprintIndex, b FingerprintMetricMapping) (LabelPairFingerprintMapping, error) {
-	collection := map[LabelPair]utility.Set{}
+	collection := LabelPairFingerprintMapping{}
 
 	for fp, m := range b {
 		for n, v := range m {
@@ -490,25 +654,28 @@ func extendLabelPairIndex(i LabelPairFingerprintIndex, b FingerprintMetricMappin
 					return nil, err
 				}
 
-				set = utility.Set{}
-				for _, baseFp := range baseFps {
-					set.Add(*baseFp)
+				set = clientmodel.FingerprintSet{}
+				for baseFp := range baseFps {
+					set[baseFp] = true
 				}
 
 				collection[pair] = set
 			}
 
-			set.Add(fp)
+			set[fp] = true
 		}
 	}
 
 	batch := LabelPairFingerprintMapping{}
 
 	for pair, set := range collection {
-		fps := batch[pair]
+		fps, ok := batch[pair]
+		if !ok {
+			fps = clientmodel.FingerprintSet{}
+			batch[pair] = fps
+		}
 		for element := range set {
-			fp := element.(clientmodel.Fingerprint)
-			fps = append(fps, &fp)
+			fps[element] = true
 		}
 		batch[pair] = fps
 	}
@@ -543,4 +710,44 @@ func (i *TotalIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 	}
 
 	return i.MetricMembership.IndexBatch(unindexed)
+}
+
+func findIntersection(i LabelPairFingerprintIndex, s clientmodel.LabelSet) (clientmodel.FingerprintSet, error) {
+	sets := []clientmodel.FingerprintSet{}
+
+	for n, v := range s {
+		fps, ok, err := i.Lookup(&LabelPair{
+			Name:  n,
+			Value: v,
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Warning: If no results are returned, there could be a violation of an
+		// invariant with this.  The original behavior would not check this
+		// condition.
+		if !ok {
+			return nil, nil
+		}
+
+		set := clientmodel.FingerprintSet{}
+
+		for fp := range fps {
+			set[fp] = true
+		}
+
+		sets = append(sets, set)
+	}
+
+	numberOfSets := len(sets)
+	if numberOfSets == 0 {
+		return nil, nil
+	}
+
+	base := sets[0]
+	for i := 1; i < numberOfSets; i++ {
+		base = base.Intersection(sets[i])
+	}
+
+	return base, nil
 }

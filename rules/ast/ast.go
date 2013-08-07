@@ -153,7 +153,7 @@ type (
 	VectorLiteral struct {
 		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
-		fingerprints clientmodel.Fingerprints
+		fingerprints clientmodel.FingerprintSet
 	}
 
 	// A function of vector return type.
@@ -185,7 +185,7 @@ type (
 	MatrixLiteral struct {
 		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
-		fingerprints clientmodel.Fingerprints
+		fingerprints clientmodel.FingerprintSet
 		interval     time.Duration
 	}
 )

@@ -78,7 +78,6 @@ type prometheus struct {
 	deletionTimer       *time.Ticker
 
 	curationMutex            sync.Mutex
-	curationState            chan metric.CurationState
 	stopBackgroundOperations chan bool
 
 	unwrittenSamples chan *extraction.Result
@@ -86,6 +85,8 @@ type prometheus struct {
 	ruleManager   rules.RuleManager
 	notifications chan notification.NotificationReqs
 	storage       *metric.TieredStorage
+
+	status metric.CurationStateUpdater
 }
 
 func (p *prometheus) interruptHandler() {
@@ -112,7 +113,7 @@ func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
 		Stop: p.stopBackgroundOperations,
 	}
 
-	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
+	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.status)
 }
 
 func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
@@ -127,7 +128,7 @@ func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
 		Stop: p.stopBackgroundOperations,
 	}
 
-	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
+	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.status)
 }
 
 func (p *prometheus) close() {
@@ -155,7 +156,6 @@ func (p *prometheus) close() {
 
 	close(p.notifications)
 	close(p.stopBackgroundOperations)
-	close(p.curationState)
 }
 
 func main() {
@@ -181,7 +181,6 @@ func main() {
 	}
 
 	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
-	curationState := make(chan metric.CurationState, 1)
 	// Coprime numbers, fool!
 	headCompactionTimer := time.NewTicker(*headCompactInterval)
 	bodyCompactionTimer := time.NewTicker(*bodyCompactInterval)
@@ -211,16 +210,17 @@ func main() {
 		flags[f.Name] = f.Value.String()
 	})
 
+	prometheusStatus := &web.PrometheusStatus{
+		BuildInfo:   BuildInfo,
+		Config:      conf.String(),
+		RuleManager: ruleManager,
+		TargetPools: targetManager.Pools(),
+		Flags:       flags,
+		Birth:       time.Now(),
+	}
+
 	statusHandler := &web.StatusHandler{
-		PrometheusStatus: &web.PrometheusStatus{
-			BuildInfo:   BuildInfo,
-			Config:      conf.String(),
-			RuleManager: ruleManager,
-			TargetPools: targetManager.Pools(),
-			Flags:       flags,
-			Birth:       time.Now(),
-		},
-		CurationState: curationState,
+		PrometheusStatus: prometheusStatus,
 	}
 
 	alertsHandler := &web.AlertsHandler{
@@ -252,8 +252,6 @@ func main() {
 
 		deletionTimer: deletionTimer,
 
-		curationState: curationState,
-
 		unwrittenSamples: unwrittenSamples,
 
 		stopBackgroundOperations: make(chan bool, 1),
@@ -261,6 +259,8 @@ func main() {
 		ruleManager:   ruleManager,
 		notifications: notifications,
 		storage:       ts,
+
+		status: prometheusStatus,
 	}
 	defer prometheus.close()
 

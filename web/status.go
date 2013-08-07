@@ -14,15 +14,18 @@
 package web
 
 import (
-	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage/metric"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 type PrometheusStatus struct {
+	mu sync.RWMutex
+
 	BuildInfo   map[string]string
 	Config      string
 	Curation    metric.CurationState
@@ -31,6 +34,13 @@ type PrometheusStatus struct {
 	TargetPools map[string]*retrieval.TargetPool
 
 	Birth time.Time
+}
+
+func (s *PrometheusStatus) UpdateCurationState(c *metric.CurationState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Curation = *c
 }
 
 type StatusHandler struct {

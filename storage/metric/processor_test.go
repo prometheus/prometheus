@@ -28,6 +28,11 @@ import (
 	fixture "github.com/prometheus/prometheus/storage/raw/leveldb/test"
 )
 
+type nullCurationStateUpdater bool
+
+func (*nullCurationStateUpdater) UpdateCurationState(*CurationState) {
+}
+
 type curationState struct {
 	fingerprint       string
 	ignoreYoungerThan time.Duration
@@ -872,8 +877,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		}
 		defer samples.Close()
 
-		updates := make(chan CurationState, 100)
-		defer close(updates)
+		updates := new(nullCurationStateUpdater)
 
 		stop := make(chan bool)
 		defer close(stop)
@@ -1396,8 +1400,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		}
 		defer samples.Close()
 
-		updates := make(chan CurationState, 100)
-		defer close(updates)
+		updates := new(nullCurationStateUpdater)
 
 		stop := make(chan bool)
 		defer close(stop)
