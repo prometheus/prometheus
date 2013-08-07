@@ -189,7 +189,7 @@ func newArrayStream(metric clientmodel.Metric) *arrayStream {
 type memorySeriesStorage struct {
 	sync.RWMutex
 
-	wmCache                 *WatermarkCache
+	wmCache                 *watermarkCache
 	fingerprintToSeries     map[clientmodel.Fingerprint]stream
 	labelPairToFingerprints map[LabelPair]clientmodel.Fingerprints
 	labelNameToFingerprints map[clientmodel.LabelName]clientmodel.Fingerprints
@@ -198,7 +198,7 @@ type memorySeriesStorage struct {
 type MemorySeriesOptions struct {
 	// If provided, this WatermarkCache will be updated for any samples that are
 	// appended to the memorySeriesStorage.
-	WatermarkCache *WatermarkCache
+	WatermarkCache *watermarkCache
 }
 
 func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) error {
@@ -222,7 +222,7 @@ func (s *memorySeriesStorage) AppendSample(sample *clientmodel.Sample) error {
 	})
 
 	if s.wmCache != nil {
-		s.wmCache.Set(fingerprint, &watermarks{High: sample.Timestamp})
+		s.wmCache.Put(fingerprint, &watermarks{High: sample.Timestamp})
 	}
 
 	return nil

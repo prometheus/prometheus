@@ -116,6 +116,7 @@ func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.
 	requestBuildTimer.Stop()
 
 	buildTimer := queryStats.GetTimer(stats.InnerViewBuildingTime).Start()
+	// BUG(julius): Clear Law of Demeter violation.
 	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second, queryStats)
 	buildTimer.Stop()
 	if err != nil {
