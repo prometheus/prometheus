@@ -13,8 +13,11 @@ var _ = proto.Marshal
 var _ = &json.SyntaxError{}
 var _ = math.Inf
 
+// A label/value pair suitable for attaching to timeseries.
 type LabelPair struct {
-	Name             *string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	// The name of the label. Must adhere to the regex "[a-zA-Z_][a-zA-Z0-9_]*".
+	Name *string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	// The value of the label. May contain any characters.
 	Value            *string `protobuf:"bytes,2,opt,name=value" json:"value,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
@@ -37,6 +40,7 @@ func (m *LabelPair) GetValue() string {
 	return ""
 }
 
+// A set of label/value pairs.
 type LabelPairs struct {
 	Label            []*LabelPair `protobuf:"bytes,1,rep,name=label" json:"label,omitempty"`
 	XXX_unrecognized []byte       `json:"-"`
@@ -53,12 +57,19 @@ func (m *LabelPairs) GetLabel() []*LabelPair {
 	return nil
 }
 
+// The global Prometheus configuration section.
 type GlobalConfig struct {
-	ScrapeInterval     *string     `protobuf:"bytes,1,opt,name=scrape_interval,def=1m" json:"scrape_interval,omitempty"`
-	EvaluationInterval *string     `protobuf:"bytes,2,opt,name=evaluation_interval,def=1m" json:"evaluation_interval,omitempty"`
-	Labels             *LabelPairs `protobuf:"bytes,3,opt,name=labels" json:"labels,omitempty"`
-	RuleFile           []string    `protobuf:"bytes,4,rep,name=rule_file" json:"rule_file,omitempty"`
-	XXX_unrecognized   []byte      `json:"-"`
+	// How frequently to scrape targets by default. Must be a valid Prometheus
+	// duration string in the form "[0-9]+[smhdwy]".
+	ScrapeInterval *string `protobuf:"bytes,1,opt,name=scrape_interval,def=1m" json:"scrape_interval,omitempty"`
+	// How frequently to evaluate rules by default. Must be a valid Prometheus
+	// duration string in the form "[0-9]+[smhdwy]".
+	EvaluationInterval *string `protobuf:"bytes,2,opt,name=evaluation_interval,def=1m" json:"evaluation_interval,omitempty"`
+	// The labels to add to any timeseries that this Prometheus instance scrapes.
+	Labels *LabelPairs `protobuf:"bytes,3,opt,name=labels" json:"labels,omitempty"`
+	// The list of file names of rule files to load.
+	RuleFile         []string `protobuf:"bytes,4,rep,name=rule_file" json:"rule_file,omitempty"`
+	XXX_unrecognized []byte   `json:"-"`
 }
 
 func (m *GlobalConfig) Reset()         { *m = GlobalConfig{} }
@@ -96,8 +107,11 @@ func (m *GlobalConfig) GetRuleFile() []string {
 	return nil
 }
 
+// A labeled group of targets to scrape for a job.
 type TargetGroup struct {
-	Target           []string    `protobuf:"bytes,1,rep,name=target" json:"target,omitempty"`
+	// The list of endpoints to scrape via HTTP.
+	Target []string `protobuf:"bytes,1,rep,name=target" json:"target,omitempty"`
+	// The labels to add to any timeseries scraped for this target group.
 	Labels           *LabelPairs `protobuf:"bytes,2,opt,name=labels" json:"labels,omitempty"`
 	XXX_unrecognized []byte      `json:"-"`
 }
@@ -120,14 +134,26 @@ func (m *TargetGroup) GetLabels() *LabelPairs {
 	return nil
 }
 
+// The configuration for a Prometheus job to scrape.
 type JobConfig struct {
-	Name              *string        `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
-	ScrapeInterval    *string        `protobuf:"bytes,2,opt,name=scrape_interval" json:"scrape_interval,omitempty"`
-	SdName            *string        `protobuf:"bytes,3,opt,name=sd_name" json:"sd_name,omitempty"`
-	SdRefreshInterval *string        `protobuf:"bytes,4,opt,name=sd_refresh_interval,def=30s" json:"sd_refresh_interval,omitempty"`
-	TargetGroup       []*TargetGroup `protobuf:"bytes,5,rep,name=target_group" json:"target_group,omitempty"`
-	MetricsPath       *string        `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics.json" json:"metrics_path,omitempty"`
-	XXX_unrecognized  []byte         `json:"-"`
+	// The job name. Must adhere to the regex "[a-zA-Z_][a-zA-Z0-9_-]*".
+	Name *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	// How frequently to scrape targets from this job. Overrides the global
+	// default.
+	ScrapeInterval *string `protobuf:"bytes,2,opt,name=scrape_interval" json:"scrape_interval,omitempty"`
+	// The DNS-SD service name pointing to SRV records containing endpoint
+	// information for a job. When this field is provided, no target_group
+	// elements may be set.
+	SdName *string `protobuf:"bytes,3,opt,name=sd_name" json:"sd_name,omitempty"`
+	// Discovery refresh period when using DNS-SD to discover targets. Must be a
+	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
+	SdRefreshInterval *string `protobuf:"bytes,4,opt,name=sd_refresh_interval,def=30s" json:"sd_refresh_interval,omitempty"`
+	// List of labeled target groups for this job. Only legal when DNS-SD isn't
+	// used for a job.
+	TargetGroup []*TargetGroup `protobuf:"bytes,5,rep,name=target_group" json:"target_group,omitempty"`
+	// The HTTP resource path to fetch metrics from on targets.
+	MetricsPath      *string `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics.json" json:"metrics_path,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *JobConfig) Reset()         { *m = JobConfig{} }
@@ -179,10 +205,15 @@ func (m *JobConfig) GetMetricsPath() string {
 	return Default_JobConfig_MetricsPath
 }
 
+// The top-level Prometheus configuration.
 type PrometheusConfig struct {
-	Global           *GlobalConfig `protobuf:"bytes,1,opt,name=global" json:"global,omitempty"`
-	Job              []*JobConfig  `protobuf:"bytes,2,rep,name=job" json:"job,omitempty"`
-	XXX_unrecognized []byte        `json:"-"`
+	// Global Prometheus configuration options. If omitted, an empty global
+	// configuration with default values (see GlobalConfig definition) will be
+	// created.
+	Global *GlobalConfig `protobuf:"bytes,1,opt,name=global" json:"global,omitempty"`
+	// The list of jobs to scrape.
+	Job              []*JobConfig `protobuf:"bytes,2,rep,name=job" json:"job,omitempty"`
+	XXX_unrecognized []byte       `json:"-"`
 }
 
 func (m *PrometheusConfig) Reset()         { *m = PrometheusConfig{} }
