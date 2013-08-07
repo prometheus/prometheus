@@ -132,7 +132,7 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 		curationState:     curationState,
 		ignoreYoungerThan: ignoreYoungerThan,
 		processor:         processor,
-		status:            status,
+		status:            updater,
 		stop:              c.Stop,
 		stopAt:            instant.Add(-1 * ignoreYoungerThan),
 

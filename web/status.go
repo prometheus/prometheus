@@ -36,6 +36,13 @@ type PrometheusStatusHandler struct {
 	Birth time.Time
 }
 
+func (s *PrometheusStatus) UpdateCurationState(c *metric.CurationState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Curation = *c
+}
+
 func (h *PrometheusStatusHandler) UpdateCurationState(c *metric.CurationState) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

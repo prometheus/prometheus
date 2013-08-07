@@ -174,7 +174,12 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	metric, err := p.GetMetricForFingerprint(result[0])
+	var fp *clientmodel.Fingerprint
+	for f := range result {
+		fp = &f
+	}
+
+	metric, err := p.GetMetricForFingerprint(fp)
 	if err != nil {
 		t.Error(err)
 	}
@@ -203,7 +208,11 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	metric, err = p.GetMetricForFingerprint(result[0])
+	for f := range result {
+		fp = &f
+	}
+
+	metric, err = p.GetMetricForFingerprint(fp)
 
 	if metric == nil {
 		t.Fatal("Did not expect nil.")
@@ -228,7 +237,7 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 	// Verify that mutating a returned metric does not result in the mutated
 	// metric to be returned at the next GetMetricForFingerprint() call.
 	metric["one-off"] = "new value"
-	metric, err = p.GetMetricForFingerprint(result[0])
+	metric, err = p.GetMetricForFingerprint(fp)
 
 	if metric == nil {
 		t.Fatal("Did not expect nil.")
@@ -294,7 +303,13 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 			}
 
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			samples := p.GetValueAtTime(fingerprints[0], time)
+
+			var fingerprint *clientmodel.Fingerprint
+			for f := range fingerprints {
+				fingerprint = &f
+			}
+
+			samples := p.GetValueAtTime(fingerprint, time)
 			if len(samples) == 0 {
 				t.Fatal("expected at least one sample.")
 			}
@@ -355,8 +370,13 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 				t.Fatalf("expected %d fingerprints, got %d", 1, len(fingerprints))
 			}
 
+			var fingerprint *clientmodel.Fingerprint
+			for f := range fingerprints {
+				fingerprint = &f
+			}
+
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			samples := p.GetValueAtTime(fingerprints[0], time)
+			samples := p.GetValueAtTime(fingerprint, time)
 			if len(samples) == 0 {
 				t.Fatal("expected at least one sample.")
 			}

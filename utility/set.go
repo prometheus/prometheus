@@ -42,6 +42,10 @@ func (s Set) Has(v interface{}) bool {
 func (s Set) Intersection(o Set) Set {
 	result := make(Set)
 
+	if len(s) == 0 || len(o) == 0 {
+		return Set{}
+	}
+
 	for k := range s {
 		if o.Has(k) {
 			result[k] = true

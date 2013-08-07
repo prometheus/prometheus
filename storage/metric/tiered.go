@@ -64,12 +64,8 @@ const (
 	tieredStorageStopping
 )
 
-const (
-	// Ignore timeseries in queries that are more stale than this limit.
-	stalenessLimit = time.Minute * 5
-	// Size of the watermarks cache (used in determining timeseries freshness).
-	wmCacheSizeBytes = 5 * 1024 * 1024
-)
+// Ignore timeseries in queries that are more stale than this limit.
+const stalenessLimit = time.Minute * 5
 
 // TieredStorage both persists samples and generates materialized views for
 // queries.
@@ -95,7 +91,7 @@ type TieredStorage struct {
 	memorySemaphore chan bool
 	diskSemaphore   chan bool
 
-	wmCache *WatermarkCache
+	wmCache *watermarkCache
 
 	Indexer MetricIndexer
 }
@@ -114,14 +110,21 @@ const (
 	tieredMemorySemaphores = 5
 )
 
+const watermarkCacheLimit = 1024 * 1024
+
 func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, memoryTTL time.Duration, root string) (*TieredStorage, error) {
 	diskStorage, err := NewLevelDBMetricPersistence(root)
 	if err != nil {
 		return nil, err
 	}
 
-	wmCache := NewWatermarkCache(wmCacheSizeBytes)
-	memOptions := MemorySeriesOptions{WatermarkCache: wmCache}
+	wmCache := &watermarkCache{
+		C: utility.NewSynchronizedCache(utility.NewLRUCache(watermarkCacheLimit)),
+	}
+
+	memOptions := MemorySeriesOptions{
+		WatermarkCache: wmCache,
+	}
 
 	s := &TieredStorage{
 		appendToDiskQueue:   make(chan clientmodel.Samples, appendToDiskQueueDepth),
@@ -319,13 +322,13 @@ func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (b
 	// BUG(julius): Make this configurable by query layer.
 	i = i.Add(-stalenessLimit)
 
-	wm, cacheHit := t.wmCache.Get(f)
+	wm, cacheHit, _ := t.wmCache.Get(f)
 	if !cacheHit {
 		if t.memoryArena.HasFingerprint(f) {
 			samples := t.memoryArena.CloneSamples(f)
 			if len(samples) > 0 {
 				newest := samples[len(samples)-1].Timestamp
-				t.wmCache.Set(f, &watermarks{High: newest})
+				t.wmCache.Put(f, &watermarks{High: newest})
 
 				return newest.Before(i), nil
 			}
@@ -337,12 +340,12 @@ func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (b
 		}
 
 		if diskHit {
-			t.wmCache.Set(f, &watermarks{High: highTime})
+			t.wmCache.Put(f, &watermarks{High: highTime})
 
 			return highTime.Before(i), nil
 		}
 
-		t.wmCache.Set(f, &watermarks{})
+		t.wmCache.Put(f, &watermarks{})
 		return true, nil
 	}
 
@@ -618,7 +621,7 @@ func (t *TieredStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (c
 
 // Get all of the metric fingerprints that are associated with the provided
 // label set.
-func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet) (clientmodel.Fingerprints, error) {
+func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet) (clientmodel.FingerprintSet, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -634,17 +637,16 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet
 	if err != nil {
 		return nil, err
 	}
-	fingerprintSet := map[clientmodel.Fingerprint]bool{}
-	for _, fingerprint := range append(memFingerprints, diskFingerprints...) {
-		fingerprintSet[*fingerprint] = true
+
+	fps := clientmodel.FingerprintSet{}
+	for fp := range memFingerprints {
+		fps[fp] = true
 	}
-	fingerprints := clientmodel.Fingerprints{}
-	for fingerprint := range fingerprintSet {
-		fpCopy := fingerprint
-		fingerprints = append(fingerprints, &fpCopy)
+	for fp := range diskFingerprints {
+		fps[fp] = true
 	}
 
-	return fingerprints, nil
+	return fps, nil
 }
 
 // Get the metric associated with the provided fingerprint.

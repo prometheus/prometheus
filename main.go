@@ -88,7 +88,7 @@ type prometheus struct {
 	notifications chan notification.NotificationReqs
 	storage       *metric.TieredStorage
 
-	curationState metric.CurationStateUpdater
+	status metric.CurationStateUpdater
 }
 
 func (p *prometheus) interruptHandler() {
@@ -115,7 +115,7 @@ func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
 		Stop: p.stopBackgroundOperations,
 	}
 
-	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
+	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.status)
 }
 
 func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
@@ -130,7 +130,7 @@ func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
 		Stop: p.stopBackgroundOperations,
 	}
 
-	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
+	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.status)
 }
 
 func (p *prometheus) close() {
@@ -226,7 +226,6 @@ func main() {
 		Flags:       flags,
 		Birth:       time.Now(),
 	}
-
 	alertsHandler := &web.AlertsHandler{
 		RuleManager: ruleManager,
 	}
@@ -256,8 +255,6 @@ func main() {
 
 		deletionTimer: deletionTimer,
 
-		curationState: prometheusStatus,
-
 		unwrittenSamples: unwrittenSamples,
 
 		stopBackgroundOperations: make(chan bool, 1),
@@ -265,6 +262,8 @@ func main() {
 		ruleManager:   ruleManager,
 		notifications: notifications,
 		storage:       ts,
+
+		status: prometheusStatus,
 	}
 	defer prometheus.close()
 
