@@ -404,13 +404,13 @@ type MetricIndexer interface {
 // that a user or the Prometheus subsystem would want to query against:
 //
 //    "<Label Name>" -> {Fingerprint, ...}
-//    "<Label Name> <Label Pair>" -> {Fingerprint, ...}
+//    "<Label Name> <Label Value>" -> {Fingerprint, ...}
 //
 //    "<Fingerprint>" -> Metric
 //
 //    "<Metric>" -> Existence Value
 //
-//  This type supports concrete queries but only single writes, and it has no
+// This type supports concrete queries but only single writes, and it has no
 // locking semantics to enforce this.
 type TotalIndexer struct {
 	FingerprintToMetric    FingerprintMetricIndex
