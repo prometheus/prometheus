@@ -95,6 +95,8 @@ type TieredStorage struct {
 	diskSemaphore   chan bool
 
 	wmCache *WatermarkCache
+
+	Indexer MetricIndexer
 }
 
 // viewJob encapsulates a request to extract sample values from the datastore.
