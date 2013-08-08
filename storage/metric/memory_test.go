@@ -24,7 +24,7 @@ import (
 
 func BenchmarkStreamAdd(b *testing.B) {
 	b.StopTimer()
-	s := newStream(clientmodel.Metric{})
+	s := newArrayStream(clientmodel.Metric{})
 	times := make([]time.Time, 0, b.N)
 	samples := make([]clientmodel.SampleValue, 0, b.N)
 	for i := 0; i < b.N; i++ {
