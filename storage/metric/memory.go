@@ -41,26 +41,36 @@ func (v singletonValue) get() clientmodel.SampleValue {
 	return clientmodel.SampleValue(v)
 }
 
-type stream struct {
+type stream interface {
+	add(...*SamplePair)
+	clone() Values
+	size() int
+	empty()
+	metric() clientmodel.Metric
+	getValueAtTime(t time.Time) Values
+	getBoundaryValues(in Interval) Values
+	getRangeValues(in Interval) Values
+}
+
+type arrayStream struct {
 	sync.RWMutex
 
-	metric clientmodel.Metric
+	m      clientmodel.Metric
 	values Values
 }
 
-func (s *stream) add(timestamp time.Time, value clientmodel.SampleValue) {
+func (s *arrayStream) metric() clientmodel.Metric {
+	return s.m
+}
+
+func (s *arrayStream) add(v ...*SamplePair) {
 	s.Lock()
 	defer s.Unlock()
 
-	// BUG(all): https://github.com/prometheus/prometheus/pull/265/files#r4336435.
-
-	s.values = append(s.values, &SamplePair{
-		Timestamp: timestamp.Round(time.Second).UTC(),
-		Value:     value,
-	})
+	s.values = append(s.values, v...)
 }
 
-func (s *stream) clone() Values {
+func (s *arrayStream) clone() Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -72,7 +82,7 @@ func (s *stream) clone() Values {
 	return clone
 }
 
-func (s *stream) getValueAtTime(t time.Time) Values {
+func (s *arrayStream) getValueAtTime(t time.Time) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -102,7 +112,7 @@ func (s *stream) getValueAtTime(t time.Time) Values {
 	}
 }
 
-func (s *stream) getBoundaryValues(in Interval) Values {
+func (s *arrayStream) getBoundaryValues(in Interval) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -125,7 +135,7 @@ func (s *stream) getBoundaryValues(in Interval) Values {
 	}
 }
 
-func (s *stream) getRangeValues(in Interval) Values {
+func (s *arrayStream) getRangeValues(in Interval) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -143,13 +153,17 @@ func (s *stream) getRangeValues(in Interval) Values {
 	return result
 }
 
-func (s *stream) empty() bool {
-	return len(s.values) == 0
+func (s *arrayStream) size() int {
+	return len(s.values)
 }
 
-func newStream(metric clientmodel.Metric) *stream {
-	return &stream{
-		metric: metric,
+func (s *arrayStream) empty() {
+	s.values = Values{}
+}
+
+func newArrayStream(metric clientmodel.Metric) *arrayStream {
+	return &arrayStream{
+		m:      metric,
 		values: make(Values, 0, initialSeriesArenaSize),
 	}
 }
@@ -158,7 +172,7 @@ type memorySeriesStorage struct {
 	sync.RWMutex
 
 	wmCache                 *WatermarkCache
-	fingerprintToSeries     map[clientmodel.Fingerprint]*stream
+	fingerprintToSeries     map[clientmodel.Fingerprint]stream
 	labelPairToFingerprints map[LabelPair]clientmodel.Fingerprints
 	labelNameToFingerprints map[clientmodel.LabelName]clientmodel.Fingerprints
 }
@@ -184,7 +198,10 @@ func (s *memorySeriesStorage) AppendSample(sample *clientmodel.Sample) error {
 	fingerprint := &clientmodel.Fingerprint{}
 	fingerprint.LoadFromMetric(sample.Metric)
 	series := s.getOrCreateSeries(sample.Metric, fingerprint)
-	series.add(sample.Timestamp, sample.Value)
+	series.add(&SamplePair{
+		Value:     sample.Value,
+		Timestamp: sample.Timestamp,
+	})
 
 	if s.wmCache != nil {
 		s.wmCache.Set(fingerprint, &watermarks{High: sample.Timestamp})
@@ -202,11 +219,11 @@ func (s *memorySeriesStorage) CreateEmptySeries(metric clientmodel.Metric) {
 	s.getOrCreateSeries(metric, fingerprint)
 }
 
-func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, fingerprint *clientmodel.Fingerprint) *stream {
+func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, fingerprint *clientmodel.Fingerprint) stream {
 	series, ok := s.fingerprintToSeries[*fingerprint]
 
 	if !ok {
-		series = newStream(metric)
+		series = newArrayStream(metric)
 		s.fingerprintToSeries[*fingerprint] = series
 
 		for k, v := range metric {
@@ -231,20 +248,21 @@ func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- clien
 
 	s.RLock()
 	for fingerprint, stream := range s.fingerprintToSeries {
+		values := stream.clone()
+		stream.empty()
+
 		finder := func(i int) bool {
-			return stream.values[i].Timestamp.After(flushOlderThan)
+			return values[i].Timestamp.After(flushOlderThan)
 		}
 
-		stream.Lock()
-
-		i := sort.Search(len(stream.values), finder)
-		toArchive := stream.values[:i]
-		toKeep := stream.values[i:]
+		i := sort.Search(len(values), finder)
+		toArchive := values[:i]
+		toKeep := values[i:]
 		queued := make(clientmodel.Samples, 0, len(toArchive))
 
 		for _, value := range toArchive {
 			queued = append(queued, &clientmodel.Sample{
-				Metric:    stream.metric,
+				Metric:    stream.metric(),
 				Timestamp: value.Timestamp,
 				Value:     value.Value,
 			})
@@ -255,18 +273,17 @@ func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- clien
 		// https://github.com/prometheus/prometheus/issues/275
 		queue <- queued
 
-		stream.values = toKeep
+		stream.add(toKeep...)
 
 		if len(toKeep) == 0 {
 			emptySeries = append(emptySeries, fingerprint)
 		}
-		stream.Unlock()
 	}
 	s.RUnlock()
 
 	s.Lock()
 	for _, fingerprint := range emptySeries {
-		if s.fingerprintToSeries[fingerprint].empty() {
+		if s.fingerprintToSeries[fingerprint].size() == 0 {
 			s.dropSeries(&fingerprint)
 		}
 	}
@@ -279,7 +296,7 @@ func (s *memorySeriesStorage) dropSeries(fingerprint *clientmodel.Fingerprint) {
 	if !ok {
 		return
 	}
-	for k, v := range series.metric {
+	for k, v := range series.metric() {
 		labelPair := LabelPair{
 			Name:  k,
 			Value: v,
@@ -299,13 +316,11 @@ func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmo
 	series, ok := s.fingerprintToSeries[*fingerprint]
 
 	if !ok {
-		series = newStream(clientmodel.Metric{})
+		series = newArrayStream(clientmodel.Metric{})
 		s.fingerprintToSeries[*fingerprint] = series
 	}
 
-	for _, sample := range samples {
-		series.add(sample.Timestamp, sample.Value)
-	}
+	series.add(samples...)
 }
 
 func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l clientmodel.LabelSet) (fingerprints clientmodel.Fingerprints, err error) {
@@ -367,7 +382,7 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(f *clientmodel.Fingerprint
 	}
 
 	metric := clientmodel.Metric{}
-	for label, value := range series.metric {
+	for label, value := range series.metric() {
 		metric[label] = value
 	}
 
@@ -436,7 +451,7 @@ func (s *memorySeriesStorage) Close() {
 	s.Lock()
 	defer s.Unlock()
 
-	s.fingerprintToSeries = map[clientmodel.Fingerprint]*stream{}
+	s.fingerprintToSeries = map[clientmodel.Fingerprint]stream{}
 	s.labelPairToFingerprints = map[LabelPair]clientmodel.Fingerprints{}
 	s.labelNameToFingerprints = map[clientmodel.LabelName]clientmodel.Fingerprints{}
 }
@@ -447,7 +462,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelNa
 
 	valueSet := map[clientmodel.LabelValue]bool{}
 	for _, series := range s.fingerprintToSeries {
-		if value, ok := series.metric[labelName]; ok {
+		if value, ok := series.metric()[labelName]; ok {
 			if !valueSet[value] {
 				values = append(values, value)
 				valueSet[value] = true
@@ -460,7 +475,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelNa
 
 func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
-		fingerprintToSeries:     make(map[clientmodel.Fingerprint]*stream),
+		fingerprintToSeries:     make(map[clientmodel.Fingerprint]stream),
 		labelPairToFingerprints: make(map[LabelPair]clientmodel.Fingerprints),
 		labelNameToFingerprints: make(map[clientmodel.LabelName]clientmodel.Fingerprints),
 		wmCache:                 o.WatermarkCache,
