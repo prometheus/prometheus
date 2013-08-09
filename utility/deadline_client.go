@@ -21,8 +21,8 @@ import (
 
 // NewDeadlineClient returns a new http.Client which will time out long running
 // requests.
-func NewDeadlineClient(timeout time.Duration) http.Client {
-	return http.Client{
+func NewDeadlineClient(timeout time.Duration) *http.Client {
+	return &http.Client{
 		Transport: &http.Transport{
 			// We need to disable keepalive, becasue we set a deadline on the
 			// underlying connection.

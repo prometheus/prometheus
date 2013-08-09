@@ -22,6 +22,8 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/client_golang/extraction"
+
+	"github.com/prometheus/prometheus/utility"
 )
 
 func TestTargetScrapeUpdatesState(t *testing.T) {
@@ -29,6 +31,7 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 		scheduler: literalScheduler{},
 		state:     UNKNOWN,
 		address:   "bad schema",
+		httpClient:    utility.NewDeadlineClient(0),
 	}
 	testTarget.Scrape(time.Time{}, make(chan *extraction.Result, 2))
 	if testTarget.state != UNREACHABLE {
@@ -41,6 +44,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 		scheduler:  literalScheduler{},
 		address:    "http://example.url",
 		baseLabels: clientmodel.LabelSet{clientmodel.JobLabel: "testjob"},
+		httpClient:     utility.NewDeadlineClient(0),
 	}
 
 	now := time.Now()

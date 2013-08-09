@@ -17,14 +17,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"text/template"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -37,6 +38,29 @@ var (
 	deadline = flag.Duration("alertmanager.httpDeadline", 10*time.Second, "Alert manager HTTP API timeout.")
 )
 
+// A request for sending a notification to the alert manager for a single alert
+// vector element.
+type NotificationReq struct {
+	// Short-form alert summary. May contain text/template-style interpolations.
+	Summary string
+	// Longer alert description. May contain text/template-style interpolations.
+	Description string
+	// Labels associated with this alert notification, including alert name.
+	Labels clientmodel.LabelSet
+	// Current value of alert
+	Value clientmodel.SampleValue
+	// Since when this alert has been active (pending or firing).
+	ActiveSince time.Time
+	// A textual representation of the rule that triggered the alert.
+	RuleString string
+}
+
+type NotificationReqs []*NotificationReq
+
+type httpPoster interface {
+	Post(url string, bodyType string, body io.Reader) (*http.Response, error)
+}
+
 // NotificationHandler is responsible for dispatching alert notifications to an
 // alert manager service.
 type NotificationHandler struct {
@@ -45,13 +69,13 @@ type NotificationHandler struct {
 	// The URL of this Prometheus instance to include in notifications.
 	prometheusUrl string
 	// Buffer of notifications that have not yet been sent.
-	pendingNotifications <-chan rules.NotificationReqs
+	pendingNotifications <-chan NotificationReqs
 	// HTTP client with custom timeout settings.
-	httpClient http.Client
+	httpClient httpPoster
 }
 
 // Construct a new NotificationHandler.
-func NewNotificationHandler(alertmanagerUrl string, prometheusUrl string, notificationReqs <-chan rules.NotificationReqs) *NotificationHandler {
+func NewNotificationHandler(alertmanagerUrl string, prometheusUrl string, notificationReqs <-chan NotificationReqs) *NotificationHandler {
 	return &NotificationHandler{
 		alertmanagerUrl:      alertmanagerUrl,
 		pendingNotifications: notificationReqs,
@@ -60,21 +84,55 @@ func NewNotificationHandler(alertmanagerUrl string, prometheusUrl string, notifi
 	}
 }
 
+// Interpolate alert information into summary/description templates.
+func interpolateMessage(msg string, labels clientmodel.LabelSet, value clientmodel.SampleValue) string {
+	t := template.New("message")
+
+	// Inject some convenience variables that are easier to remember for users
+	// who are not used to Go's templating system.
+	defs :=
+		"{{$labels := .Labels}}" +
+			"{{$value := .Value}}"
+
+	if _, err := t.Parse(defs + msg); err != nil {
+		log.Println("Error parsing template:", err)
+		return msg
+	}
+
+	l := map[string]string{}
+	for k, v := range labels {
+		l[string(k)] = string(v)
+	}
+
+	tmplData := struct {
+		Labels map[string]string
+		Value  clientmodel.SampleValue
+	}{
+		Labels: l,
+		Value:  value,
+	}
+
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, &tmplData); err != nil {
+		log.Println("Error executing template:", err)
+		return msg
+	}
+	return buf.String()
+}
+
 // Send a list of notifications to the configured alert manager.
-func (n *NotificationHandler) sendNotifications(reqs rules.NotificationReqs) error {
+func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	alerts := make([]map[string]interface{}, 0, len(reqs))
 	for _, req := range reqs {
 		alerts = append(alerts, map[string]interface{}{
-			"Summary":     req.Rule.Summary,
-			"Description": req.Rule.Description,
-			"Labels": req.ActiveAlert.Labels.Merge(clientmodel.LabelSet{
-				rules.AlertNameLabel: clientmodel.LabelValue(req.Rule.Name()),
-			}),
+			"Summary":     interpolateMessage(req.Summary, req.Labels, req.Value),
+			"Description": interpolateMessage(req.Description, req.Labels, req.Value),
+			"Labels":      req.Labels,
 			"Payload": map[string]interface{}{
-				"Value":        req.ActiveAlert.Value,
-				"ActiveSince":  req.ActiveAlert.ActiveSince,
+				"Value":       req.Value,
+				"ActiveSince": req.ActiveSince,
 				"GeneratorUrl": n.prometheusUrl,
-				"AlertingRule": req.Rule.String(),
+				"AlertingRule": req.RuleString,
 			},
 		})
 	}
