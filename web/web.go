@@ -18,8 +18,10 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
 	"net/http/pprof"
+	"os"
 
 	"code.google.com/p/gorest"
 
@@ -64,7 +66,7 @@ func (w WebService) ServeForever() error {
 	exp.HandleFunc("/graph", graphHandler)
 
 	exp.Handle("/api/", compressionHandler{handler: gorest.Handle()})
-	exp.Handle("/metrics.json", prometheus.DefaultHandler)
+	exp.Handle("/metrics", prometheus.DefaultHandler)
 	if *useLocalAssets {
 		exp.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	} else {
@@ -136,4 +138,16 @@ func executeTemplate(w http.ResponseWriter, name string, data interface{}) {
 	if err != nil {
 		log.Printf("Error executing template: %s", err)
 	}
+}
+
+func MustBuildServerUrl() string {
+	_, port, err := net.SplitHostPort(*listenAddress)
+	if err != nil {
+		panic(err)
+	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("http://%s:%s", hostname, port)
 }
