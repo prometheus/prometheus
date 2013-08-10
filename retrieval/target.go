@@ -203,6 +203,7 @@ func (t *target) Scrape(earliest time.Time, ingester extraction.Ingester) error 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/json;schema=prometheus/telemetry;version=0.0.2;q=0.2,*/*;q=0.1`
 
 func (t *target) scrape(timestamp time.Time, ingester extraction.Ingester) (err error) {
+
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
 		labels := map[string]string{address: t.Address(), outcome: success}
