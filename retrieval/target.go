@@ -224,6 +224,7 @@ func (i *extendLabelsIngester) Ingest(r *extraction.Result) error {
 	return i.i.Ingest(r)
 }
 
+
 func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) (err error) {
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
