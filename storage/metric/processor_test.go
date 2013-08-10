@@ -845,7 +845,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.in.sampleGroups))
 		defer sampleDirectory.Close()
 
-		curatorStates, err := NewLevelDBCurationRemarker(&LevelDBCurationRemarkerOptions{
+		curatorStates, err := NewLevelDBCurationRemarker(LevelDBCurationRemarkerOptions{
 			LevelDBOptions: leveldb.LevelDBOptions{
 				Path: curatorDirectory.Path(),
 			},
@@ -854,7 +854,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		watermarkStates, err := NewLevelDBHighWatermarker(&LevelDBHighWatermarkerOptions{
+		watermarkStates, err := NewLevelDBHighWatermarker(LevelDBHighWatermarkerOptions{
 			LevelDBOptions: leveldb.LevelDBOptions{
 				Path: watermarkDirectory.Path(),
 			},
@@ -864,7 +864,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		}
 		defer watermarkStates.Close()
 
-		samples, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{
+		samples, err := leveldb.NewLevelDBPersistence(leveldb.LevelDBOptions{
 			Path: sampleDirectory.Path(),
 		})
 		if err != nil {
@@ -1370,7 +1370,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		sampleDirectory := fixture.NewPreparer(t).Prepare("sample", fixture.NewCassetteFactory(scenario.in.sampleGroups))
 		defer sampleDirectory.Close()
 
-		curatorStates, err := NewLevelDBCurationRemarker(&LevelDBCurationRemarkerOptions{
+		curatorStates, err := NewLevelDBCurationRemarker(LevelDBCurationRemarkerOptions{
 			LevelDBOptions: leveldb.LevelDBOptions{
 				Path: curatorDirectory.Path(),
 			},
@@ -1380,7 +1380,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		}
 		defer curatorStates.Close()
 
-		watermarkStates, err := NewLevelDBHighWatermarker(&LevelDBHighWatermarkerOptions{
+		watermarkStates, err := NewLevelDBHighWatermarker(LevelDBHighWatermarkerOptions{
 			LevelDBOptions: leveldb.LevelDBOptions{
 				Path: watermarkDirectory.Path(),
 			},
@@ -1390,7 +1390,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		}
 		defer watermarkStates.Close()
 
-		samples, err := leveldb.NewLevelDBPersistence(&leveldb.LevelDBOptions{Path: sampleDirectory.Path()})
+		samples, err := leveldb.NewLevelDBPersistence(leveldb.LevelDBOptions{Path: sampleDirectory.Path()})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -101,8 +101,8 @@ func (i *LevelDBFingerprintMetricIndex) Prune() (bool, error) {
 	return false, nil
 }
 
-func NewLevelDBFingerprintMetricIndex(o *LevelDBFingerprintMetricIndexOptions) (*LevelDBFingerprintMetricIndex, error) {
-	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+func NewLevelDBFingerprintMetricIndex(o LevelDBFingerprintMetricIndexOptions) (*LevelDBFingerprintMetricIndex, error) {
+	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -201,8 +201,8 @@ type LevelDBLabelNameFingerprintIndexOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func NewLevelLabelNameFingerprintIndex(o *LevelDBLabelNameFingerprintIndexOptions) (*LevelDBLabelNameFingerprintIndex, error) {
-	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+func NewLevelLabelNameFingerprintIndex(o LevelDBLabelNameFingerprintIndexOptions) (*LevelDBLabelNameFingerprintIndex, error) {
+	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -313,8 +313,8 @@ func (i *LevelDBLabelPairFingerprintIndex) State() *raw.DatabaseState {
 	return i.p.State()
 }
 
-func NewLevelDBLabelSetFingerprintIndex(o *LevelDBLabelSetFingerprintIndexOptions) (*LevelDBLabelPairFingerprintIndex, error) {
-	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+func NewLevelDBLabelSetFingerprintIndex(o LevelDBLabelSetFingerprintIndexOptions) (*LevelDBLabelPairFingerprintIndex, error) {
+	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -382,8 +382,8 @@ type LevelDBMetricMembershipIndexOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func NewLevelDBMetricMembershipIndex(o *LevelDBMetricMembershipIndexOptions) (*LevelDBMetricMembershipIndex, error) {
-	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+func NewLevelDBMetricMembershipIndex(o LevelDBMetricMembershipIndexOptions) (*LevelDBMetricMembershipIndex, error) {
+	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
