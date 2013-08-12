@@ -81,7 +81,7 @@ type prometheus struct {
 	unwrittenSamples chan *extraction.Result
 
 	ruleManager   rules.RuleManager
-	notifications chan rules.NotificationReqs
+	notifications chan notification.NotificationReqs
 	storage       *metric.TieredStorage
 }
 
@@ -192,7 +192,7 @@ func main() {
 	targetManager := retrieval.NewTargetManager(unwrittenSamples, *concurrentRetrievalAllowance)
 	targetManager.AddTargetsFromConfig(conf)
 
-	notifications := make(chan rules.NotificationReqs, *notificationQueueCapacity)
+	notifications := make(chan notification.NotificationReqs, *notificationQueueCapacity)
 
 	// Queue depth will need to be exposed
 	ruleManager := rules.NewRuleManager(unwrittenSamples, notifications, conf.EvaluationInterval(), ts)

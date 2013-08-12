@@ -136,7 +136,7 @@ type target struct {
 	// Any base labels that are added to this target and its metrics.
 	baseLabels clientmodel.LabelSet
 	// The HTTP client used to scrape the target's endpoint.
-	client http.Client
+	httpClient *http.Client
 }
 
 // Furnish a reasonably configured target for querying.
@@ -145,7 +145,7 @@ func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.La
 		address:    address,
 		Deadline:   deadline,
 		baseLabels: baseLabels,
-		client:     utility.NewDeadlineClient(deadline),
+		httpClient: utility.NewDeadlineClient(deadline),
 	}
 
 	scheduler := &healthScheduler{
@@ -220,7 +220,7 @@ func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) 
 	}
 	req.Header.Add("Accept", acceptHeader)
 
-	resp, err := t.client.Do(req)
+	resp, err := t.httpClient.Do(req)
 	if err != nil {
 		return err
 	}

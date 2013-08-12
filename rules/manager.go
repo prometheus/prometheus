@@ -22,6 +22,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -38,29 +39,19 @@ type RuleManager interface {
 	AlertingRules() []*AlertingRule
 }
 
-// A request for sending an alert notification to the alert manager. This needs
-// to be defined in this package to prevent a circular import between
-// rules<->notification.
-type NotificationReq struct {
-	Rule        *AlertingRule
-	ActiveAlert Alert
-}
-
-type NotificationReqs []*NotificationReq
-
 type ruleManager struct {
 	// Protects the rules list.
 	sync.Mutex
 	rules []Rule
 
 	results       chan<- *extraction.Result
-	notifications chan<- NotificationReqs
+	notifications chan<- notification.NotificationReqs
 	done          chan bool
 	interval      time.Duration
 	storage       *metric.TieredStorage
 }
 
-func NewRuleManager(results chan<- *extraction.Result, notifications chan<- NotificationReqs, interval time.Duration, storage *metric.TieredStorage) RuleManager {
+func NewRuleManager(results chan<- *extraction.Result, notifications chan<- notification.NotificationReqs, interval time.Duration, storage *metric.TieredStorage) RuleManager {
 	manager := &ruleManager{
 		results:       results,
 		notifications: notifications,
@@ -102,16 +93,22 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule) {
 		return
 	}
 
-	notifications := make(NotificationReqs, 0, len(activeAlerts))
+	notifications := make(notification.NotificationReqs, 0, len(activeAlerts))
 	for _, aa := range activeAlerts {
 		if aa.State != FIRING {
 			// BUG: In the future, make AlertManager support pending alerts?
 			continue
 		}
 
-		notifications = append(notifications, &NotificationReq{
-			Rule:        rule,
-			ActiveAlert: aa,
+		notifications = append(notifications, &notification.NotificationReq{
+			Summary:     rule.Summary,
+			Description: rule.Description,
+			Labels: aa.Labels.Merge(clientmodel.LabelSet{
+				AlertNameLabel: clientmodel.LabelValue(rule.Name()),
+			}),
+			Value:       aa.Value,
+			ActiveSince: aa.ActiveSince,
+			RuleString:  rule.String(),
 		})
 	}
 	m.notifications <- notifications
