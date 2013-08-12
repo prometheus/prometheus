@@ -89,6 +89,9 @@ BUILDFLAGS := -ldflags \
 		-X main.goVersion $(GO_VERSION)\
 		-X main.leveldbVersion $(LEVELDB_VERSION)\
 		-X main.protobufVersion $(PROTOCOL_BUFFERS_VERSION)\
-		-X main.snappyVersion $(SNAPPY_VERSION)"
+		-X main.snappyVersion $(SNAPPY_VERSION)\
+		-linkmode external\
+		-extldflags '-lstdc++ -lpthread -static\
+		$(PREFIX)/lib/libleveldb.a $(PREFIX)/lib/libsnappy.a'"
 
 PROTOC := $(LOCAL_BINARIES)/protoc
