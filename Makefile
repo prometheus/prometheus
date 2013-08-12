@@ -31,6 +31,9 @@ build: config dependencies model preparation tools web
 	cp prometheus $(BUILD_PATH)/package/prometheus
 	rsync -av --delete $(BUILD_PATH)/root/lib/ $(BUILD_PATH)/package/lib/
 
+docker: build
+	docker build -t prometheus:$(REV) .
+
 $(BUILD_PATH)/cache/$(GOPKG):
 	curl -o $@ http://go.googlecode.com/files/$(GOPKG)
 
