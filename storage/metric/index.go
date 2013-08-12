@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
+	"github.com/prometheus/prometheus/utility"
 )
 
 type FingerprintMetricMapping map[clientmodel.Fingerprint]clientmodel.Metric
@@ -211,20 +212,20 @@ func NewLevelLabelNameFingerprintIndex(o *LevelDBLabelNameFingerprintIndexOption
 	}, nil
 }
 
-type LabelSetFingerprintMapping map[LabelPair]clientmodel.Fingerprints
+type LabelPairFingerprintMapping map[LabelPair]clientmodel.Fingerprints
 
-type LabelSetFingerprintIndex interface {
+type LabelPairFingerprintIndex interface {
 	raw.ForEacher
 	raw.Pruner
 
-	IndexBatch(LabelSetFingerprintMapping) error
+	IndexBatch(LabelPairFingerprintMapping) error
 	Lookup(*LabelPair) (m clientmodel.Fingerprints, ok bool, err error)
 	Has(*LabelPair) (ok bool, err error)
 	State() *raw.DatabaseState
 	Size() (s uint64, present bool, err error)
 }
 
-type LevelDBLabelSetFingerprintIndex struct {
+type LevelDBLabelPairFingerprintIndex struct {
 	p *leveldb.LevelDBPersistence
 }
 
@@ -232,7 +233,7 @@ type LevelDBLabelSetFingerprintIndexOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func (i *LevelDBLabelSetFingerprintIndex) IndexBatch(m LabelSetFingerprintMapping) error {
+func (i *LevelDBLabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintMapping) error {
 	batch := leveldb.NewBatch()
 	defer batch.Close()
 
@@ -256,7 +257,7 @@ func (i *LevelDBLabelSetFingerprintIndex) IndexBatch(m LabelSetFingerprintMappin
 	return i.p.Commit(batch)
 }
 
-func (i *LevelDBLabelSetFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.Fingerprints, ok bool, err error) {
+func (i *LevelDBLabelPairFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.Fingerprints, ok bool, err error) {
 	k := &dto.LabelPair{
 		Name:  proto.String(string(p.Name)),
 		Value: proto.String(string(p.Value)),
@@ -281,7 +282,7 @@ func (i *LevelDBLabelSetFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.Fi
 	return m, true, nil
 }
 
-func (i *LevelDBLabelSetFingerprintIndex) Has(p *LabelPair) (ok bool, err error) {
+func (i *LevelDBLabelPairFingerprintIndex) Has(p *LabelPair) (ok bool, err error) {
 	k := &dto.LabelPair{
 		Name:  proto.String(string(p.Name)),
 		Value: proto.String(string(p.Value)),
@@ -290,35 +291,35 @@ func (i *LevelDBLabelSetFingerprintIndex) Has(p *LabelPair) (ok bool, err error)
 	return i.p.Has(k)
 }
 
-func (i *LevelDBLabelSetFingerprintIndex) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
+func (i *LevelDBLabelPairFingerprintIndex) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
 	return i.p.ForEach(d, f, o)
 }
 
-func (i *LevelDBLabelSetFingerprintIndex) Prune() (bool, error) {
+func (i *LevelDBLabelPairFingerprintIndex) Prune() (bool, error) {
 	i.p.Prune()
 	return false, nil
 }
 
-func (i *LevelDBLabelSetFingerprintIndex) Close() {
+func (i *LevelDBLabelPairFingerprintIndex) Close() {
 	i.p.Close()
 }
 
-func (i *LevelDBLabelSetFingerprintIndex) Size() (uint64, bool, error) {
+func (i *LevelDBLabelPairFingerprintIndex) Size() (uint64, bool, error) {
 	s, err := i.p.Size()
 	return s, true, err
 }
 
-func (i *LevelDBLabelSetFingerprintIndex) State() *raw.DatabaseState {
+func (i *LevelDBLabelPairFingerprintIndex) State() *raw.DatabaseState {
 	return i.p.State()
 }
 
-func NewLevelDBLabelSetFingerprintIndex(o *LevelDBLabelSetFingerprintIndexOptions) (*LevelDBLabelSetFingerprintIndex, error) {
+func NewLevelDBLabelSetFingerprintIndex(o *LevelDBLabelSetFingerprintIndexOptions) (*LevelDBLabelPairFingerprintIndex, error) {
 	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return &LevelDBLabelSetFingerprintIndex{
+	return &LevelDBLabelPairFingerprintIndex{
 		p: s,
 	}, nil
 }
@@ -326,7 +327,7 @@ func NewLevelDBLabelSetFingerprintIndex(o *LevelDBLabelSetFingerprintIndexOption
 type MetricMembershipIndex interface {
 	raw.Pruner
 
-	IndexBatch([]clientmodel.Metric) error
+	IndexBatch(FingerprintMetricMapping) error
 	Has(clientmodel.Metric) (ok bool, err error)
 	State() *raw.DatabaseState
 	Size() (s uint64, present bool, err error)
@@ -338,11 +339,11 @@ type LevelDBMetricMembershipIndex struct {
 
 var existenceIdentity = new(dto.MembershipIndexValue)
 
-func (i *LevelDBMetricMembershipIndex) IndexBatch(ms []clientmodel.Metric) error {
+func (i *LevelDBMetricMembershipIndex) IndexBatch(b FingerprintMetricMapping) error {
 	batch := leveldb.NewBatch()
 	defer batch.Close()
 
-	for _, m := range ms {
+	for _, m := range b {
 		k := new(dto.Metric)
 		dumpMetric(k, m)
 		batch.Put(k, existenceIdentity)
@@ -390,4 +391,156 @@ func NewLevelDBMetricMembershipIndex(o *LevelDBMetricMembershipIndexOptions) (*L
 	return &LevelDBMetricMembershipIndex{
 		p: s,
 	}, nil
+}
+
+// MetricIndexer indexes facets of a clientmodel.Metric.
+type MetricIndexer interface {
+	// IndexMetric makes no assumptions about the concurrency safety of the
+	// underlying implementer.
+	IndexMetrics(FingerprintMetricMapping) error
+}
+
+// TotalIndexer is a MetricIndexer that indexes all standard facets of a metric
+// that a user or the Prometheus subsystem would want to query against:
+//
+//    "<Label Name>" -> {Fingerprint, ...}
+//    "<Label Name> <Label Value>" -> {Fingerprint, ...}
+//
+//    "<Fingerprint>" -> Metric
+//
+//    "<Metric>" -> Existence Value
+//
+// This type supports concrete queries but only single writes, and it has no
+// locking semantics to enforce this.
+type TotalIndexer struct {
+	FingerprintToMetric    FingerprintMetricIndex
+	LabelNameToFingerprint LabelNameFingerprintIndex
+	LabelPairToFingerprint LabelPairFingerprintIndex
+	MetricMembership       MetricMembershipIndex
+}
+
+func findUnindexed(i MetricMembershipIndex, b FingerprintMetricMapping) (FingerprintMetricMapping, error) {
+	out := FingerprintMetricMapping{}
+
+	for fp, m := range b {
+		has, err := i.Has(m)
+		if err != nil {
+			return nil, err
+		}
+		if !has {
+			out[fp] = m
+		}
+	}
+
+	return out, nil
+}
+
+func extendLabelNameIndex(i LabelNameFingerprintIndex, b FingerprintMetricMapping) (LabelNameFingerprintMapping, error) {
+	collection := map[clientmodel.LabelName]utility.Set{}
+
+	for fp, m := range b {
+		for l := range m {
+			set, ok := collection[l]
+			if !ok {
+				baseFps, _, err := i.Lookup(l)
+				if err != nil {
+					return nil, err
+				}
+
+				set = utility.Set{}
+
+				for _, baseFp := range baseFps {
+					set.Add(*baseFp)
+				}
+
+				collection[l] = set
+			}
+
+			set.Add(fp)
+		}
+	}
+
+	batch := LabelNameFingerprintMapping{}
+	for l, set := range collection {
+		fps := clientmodel.Fingerprints{}
+		for e := range set {
+			fp := e.(clientmodel.Fingerprint)
+			fps = append(fps, &fp)
+		}
+
+		batch[l] = fps
+	}
+
+	return batch, nil
+}
+
+func extendLabelPairIndex(i LabelPairFingerprintIndex, b FingerprintMetricMapping) (LabelPairFingerprintMapping, error) {
+	collection := map[LabelPair]utility.Set{}
+
+	for fp, m := range b {
+		for n, v := range m {
+			pair := LabelPair{
+				Name:  n,
+				Value: v,
+			}
+			set, ok := collection[pair]
+			if !ok {
+				baseFps, _, err := i.Lookup(&pair)
+				if err != nil {
+					return nil, err
+				}
+
+				set = utility.Set{}
+				for _, baseFp := range baseFps {
+					set.Add(*baseFp)
+				}
+
+				collection[pair] = set
+			}
+
+			set.Add(fp)
+		}
+	}
+
+	batch := LabelPairFingerprintMapping{}
+
+	for pair, set := range collection {
+		fps := batch[pair]
+		for element := range set {
+			fp := element.(clientmodel.Fingerprint)
+			fps = append(fps, &fp)
+		}
+		batch[pair] = fps
+	}
+
+	return batch, nil
+}
+
+func (i *TotalIndexer) IndexMetrics(b FingerprintMetricMapping) error {
+	unindexed, err := findUnindexed(i.MetricMembership, b)
+	if err != nil {
+		return err
+	}
+
+	labelNames, err := extendLabelNameIndex(i.LabelNameToFingerprint, unindexed)
+	if err != nil {
+		return err
+	}
+	if err := i.LabelNameToFingerprint.IndexBatch(labelNames); err != nil {
+		return err
+	}
+
+	labelPairs, err := extendLabelPairIndex(i.LabelPairToFingerprint, unindexed)
+	if err != nil {
+		return err
+	}
+	if err := i.LabelPairToFingerprint.IndexBatch(labelPairs); err != nil {
+		return err
+	}
+
+	if err := i.FingerprintToMetric.IndexBatch(unindexed); err != nil {
+		return err
+	}
+
+	return i.MetricMembership.IndexBatch(unindexed)
 }

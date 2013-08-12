@@ -39,10 +39,25 @@ type LevelDBMetricPersistence struct {
 	CurationRemarks         CurationRemarker
 	fingerprintToMetrics    FingerprintMetricIndex
 	labelNameToFingerprints LabelNameFingerprintIndex
-	labelSetToFingerprints  LabelSetFingerprintIndex
+	labelSetToFingerprints  LabelPairFingerprintIndex
 	MetricHighWatermarks    HighWatermarker
 	metricMembershipIndex   MetricMembershipIndex
-	MetricSamples           *leveldb.LevelDBPersistence
+
+	Indexer MetricIndexer
+
+	MetricSamples *leveldb.LevelDBPersistence
+
+	// The remaining indices will be replaced with generalized interface resolvers:
+	//
+	// type FingerprintResolver interface {
+	// 	GetFingerprintForMetric(clientmodel.Metric) (*clientmodel.Fingerprint, bool, error)
+	// 	GetFingerprintsForLabelName(clientmodel.LabelName) (clientmodel.Fingerprints, bool, error)
+	// 	GetFingerprintsForLabelSet(LabelPair) (clientmodel.Fingerprints, bool, error)
+	// }
+
+	// type MetricResolver interface {
+	// 	GetMetricsForFingerprint(clientmodel.Fingerprints) (FingerprintMetricMapping, bool, error)
+	// }
 }
 
 var (
@@ -228,6 +243,13 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 		return nil, fmt.Errorf("Unable to open metric persistence.")
 	}
 
+	emission.Indexer = &TotalIndexer{
+		FingerprintToMetric:    emission.fingerprintToMetrics,
+		LabelNameToFingerprint: emission.labelNameToFingerprints,
+		LabelPairToFingerprint: emission.labelSetToFingerprints,
+		MetricMembership:       emission.metricMembershipIndex,
+	}
+
 	return emission, nil
 }
 
@@ -277,197 +299,6 @@ func groupByFingerprint(samples clientmodel.Samples) map[clientmodel.Fingerprint
 	return fingerprintToSamples
 }
 
-// findUnindexedMetrics scours the metric membership index for each given Metric
-// in the keyspace and returns a map of Fingerprint-Metric pairs that are
-// absent.
-func (l *LevelDBMetricPersistence) findUnindexedMetrics(candidates map[clientmodel.Fingerprint]clientmodel.Metric) (unindexed FingerprintMetricMapping, err error) {
-	defer func(begin time.Time) {
-		duration := time.Since(begin)
-
-		recordOutcome(duration, err, map[string]string{operation: findUnindexedMetrics, result: success}, map[string]string{operation: findUnindexedMetrics, result: failure})
-	}(time.Now())
-
-	unindexed = FingerprintMetricMapping{}
-	for fingerprint, metric := range candidates {
-		indexHas, err := l.hasIndexMetric(metric)
-		if err != nil {
-			return unindexed, err
-		}
-		if !indexHas {
-			unindexed[fingerprint] = metric
-		}
-	}
-
-	return unindexed, nil
-}
-
-// indexLabelNames accumulates all label name to fingerprint index entries for
-// the dirty metrics, appends the new dirtied metrics, sorts, and bulk updates
-// the index to reflect the new state.
-//
-// This operation is idempotent.
-func (l *LevelDBMetricPersistence) indexLabelNames(metrics FingerprintMetricMapping) (err error) {
-	defer func(begin time.Time) {
-		duration := time.Since(begin)
-
-		recordOutcome(duration, err, map[string]string{operation: indexLabelNames, result: success}, map[string]string{operation: indexLabelNames, result: failure})
-	}(time.Now())
-
-	retrieved := map[clientmodel.LabelName]utility.Set{}
-
-	for fingerprint, metric := range metrics {
-		for labelName := range metric {
-			fingerprintSet, ok := retrieved[labelName]
-			if !ok {
-				fingerprints, err := l.GetFingerprintsForLabelName(labelName)
-				if err != nil {
-					return err
-				}
-
-				fingerprintSet = utility.Set{}
-				retrieved[labelName] = fingerprintSet
-
-				for _, fingerprint := range fingerprints {
-					fingerprintSet.Add(*fingerprint)
-				}
-			}
-
-			fingerprintSet.Add(fingerprint)
-		}
-	}
-
-	pending := LabelNameFingerprintMapping{}
-	for name, set := range retrieved {
-		fps := pending[name]
-		for fp := range set {
-			f := fp.(clientmodel.Fingerprint)
-			fps = append(fps, &f)
-		}
-		pending[name] = fps
-	}
-
-	return l.labelNameToFingerprints.IndexBatch(pending)
-}
-
-// indexLabelPairs accumulates all label pair to fingerprint index entries for
-// the dirty metrics, appends the new dirtied metrics, sorts, and bulk updates
-// the index to reflect the new state.
-//
-// This operation is idempotent.
-func (l *LevelDBMetricPersistence) indexLabelPairs(metrics map[clientmodel.Fingerprint]clientmodel.Metric) (err error) {
-	defer func(begin time.Time) {
-		duration := time.Since(begin)
-
-		recordOutcome(duration, err, map[string]string{operation: indexLabelPairs, result: success}, map[string]string{operation: indexLabelPairs, result: failure})
-	}(time.Now())
-
-	collection := map[LabelPair]utility.Set{}
-
-	for fingerprint, metric := range metrics {
-		for labelName, labelValue := range metric {
-			labelPair := LabelPair{
-				Name:  labelName,
-				Value: labelValue,
-			}
-			fingerprintSet, ok := collection[labelPair]
-			if !ok {
-				fingerprints, _, err := l.labelSetToFingerprints.Lookup(&labelPair)
-				if err != nil {
-					return err
-				}
-
-				fingerprintSet = utility.Set{}
-				for _, fingerprint := range fingerprints {
-					fingerprintSet.Add(*fingerprint)
-				}
-
-				collection[labelPair] = fingerprintSet
-			}
-
-			fingerprintSet.Add(fingerprint)
-		}
-	}
-
-	batch := LabelSetFingerprintMapping{}
-
-	for pair, elements := range collection {
-		fps := batch[pair]
-		for element := range elements {
-			fp := element.(clientmodel.Fingerprint)
-			fps = append(fps, &fp)
-		}
-		batch[pair] = fps
-	}
-
-	return l.labelSetToFingerprints.IndexBatch(batch)
-}
-
-// indexFingerprints updates all of the Fingerprint to Metric reverse lookups
-// in the index and then bulk updates.
-//
-// This operation is idempotent.
-func (l *LevelDBMetricPersistence) indexFingerprints(b FingerprintMetricMapping) (err error) {
-	defer func(begin time.Time) {
-		duration := time.Since(begin)
-
-		recordOutcome(duration, err, map[string]string{operation: indexFingerprints, result: success}, map[string]string{operation: indexFingerprints, result: failure})
-	}(time.Now())
-
-	return l.fingerprintToMetrics.IndexBatch(b)
-}
-
-// indexMetrics takes groups of samples, determines which ones contain metrics
-// that are unknown to the storage stack, and then proceeds to update all
-// affected indices.
-func (l *LevelDBMetricPersistence) indexMetrics(fingerprints FingerprintMetricMapping) (err error) {
-	defer func(begin time.Time) {
-		duration := time.Since(begin)
-
-		recordOutcome(duration, err, map[string]string{operation: indexMetrics, result: success}, map[string]string{operation: indexMetrics, result: failure})
-	}(time.Now())
-
-	absentees, err := l.findUnindexedMetrics(fingerprints)
-	if err != nil {
-		return
-	}
-
-	if len(absentees) == 0 {
-		return
-	}
-
-	// TODO: For the missing fingerprints, determine what label names and pairs
-	// are absent and act accordingly and append fingerprints.
-	workers := utility.NewUncertaintyGroup(3)
-
-	go func() {
-		workers.MayFail(l.indexLabelNames(absentees))
-	}()
-
-	go func() {
-		workers.MayFail(l.indexLabelPairs(absentees))
-	}()
-
-	go func() {
-		workers.MayFail(l.indexFingerprints(absentees))
-	}()
-
-	// If any of the preceding operations failed, we will have inconsistent
-	// indices.  Thusly, the Metric membership index should NOT be updated, as
-	// its state is used to determine whether to bulk update the other indices.
-	// Given that those operations are idempotent, it is OK to repeat them;
-	// however, it will consume considerable amounts of time.
-	if !workers.Wait() {
-		return fmt.Errorf("Could not index due to %s", workers.Errors())
-	}
-
-	ms := []clientmodel.Metric{}
-	for _, m := range absentees {
-		ms = append(ms, m)
-	}
-
-	return l.metricMembershipIndex.IndexBatch(ms)
-}
-
 func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[clientmodel.Fingerprint]clientmodel.Samples) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
@@ -505,7 +336,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			metrics[fingerprint] = samples[0].Metric
 		}
 
-		indexErrChan <- l.indexMetrics(metrics)
+		indexErrChan <- l.Indexer.IndexMetrics(metrics)
 	}(fingerprintToSamples)
 
 	go func(groups map[clientmodel.Fingerprint]clientmodel.Samples) {
