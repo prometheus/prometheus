@@ -26,4 +26,4 @@ if [[ "${platform}" == "darwin" ]]; then
   export DYLD_LIBRARY_PATH="${binary_directory}/lib:${DYLD_LIBRARY_PATH}"
 fi
 
-"${binary_directory}/prometheus" "${@}" &
+exec "${binary_directory}/prometheus" "${@}"
