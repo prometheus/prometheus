@@ -202,17 +202,26 @@ func (t *target) Scrape(earliest time.Time, results chan<- *extraction.Result) e
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/json;schema=prometheus/telemetry;version=0.0.2;q=0.2,*/*;q=0.1`
 
+type channelIngester chan<- *extraction.Result
+
+func (i channelIngester) Ingest(r *extraction.Result) error {
+	i <- r
+
+	return nil
+}
+
 type extendLabelsIngester struct {
 	baseLabels clientmodel.LabelSet
-	results chan<- *extraction.Result
+
+	i extraction.Ingester
 }
 
 func (i *extendLabelsIngester) Ingest(r *extraction.Result) error {
 	for _, s := range r.Samples {
 		s.Metric.MergeFromLabelSet(i.baseLabels, clientmodel.ExporterLabelPrefix)
 	}
-	i.results <- r
-	return nil
+
+	return i.i.Ingest(r)
 }
 
 func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) (err error) {
@@ -261,10 +270,11 @@ func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) 
 
 	ingester := &extendLabelsIngester{
 		baseLabels: baseLabels,
-		results: results,
+
+		i: channelIngester(results),
 	}
 	processOptions := &extraction.ProcessOptions{
-		Timestamp:  timestamp,
+		Timestamp: timestamp,
 	}
 	return processor.ProcessSingle(buf, ingester, processOptions)
 }

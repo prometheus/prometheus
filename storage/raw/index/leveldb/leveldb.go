@@ -48,8 +48,8 @@ type LevelDBIndexOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func NewLevelDBMembershipIndex(o *LevelDBIndexOptions) (i *LevelDBMembershipIndex, err error) {
-	leveldbPersistence, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+func NewLevelDBMembershipIndex(o LevelDBIndexOptions) (i *LevelDBMembershipIndex, err error) {
+	leveldbPersistence, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
