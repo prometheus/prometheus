@@ -42,6 +42,8 @@ var (
 type NotificationHandler struct {
 	// The URL of the alert manager to send notifications to.
 	alertmanagerUrl string
+	// The URL of this Prometheus instance to include in notifications.
+	prometheusUrl string
 	// Buffer of notifications that have not yet been sent.
 	pendingNotifications <-chan rules.NotificationReqs
 	// HTTP client with custom timeout settings.
@@ -49,11 +51,12 @@ type NotificationHandler struct {
 }
 
 // Construct a new NotificationHandler.
-func NewNotificationHandler(alertmanagerUrl string, notificationReqs <-chan rules.NotificationReqs) *NotificationHandler {
+func NewNotificationHandler(alertmanagerUrl string, prometheusUrl string, notificationReqs <-chan rules.NotificationReqs) *NotificationHandler {
 	return &NotificationHandler{
 		alertmanagerUrl:      alertmanagerUrl,
 		pendingNotifications: notificationReqs,
 		httpClient:           utility.NewDeadlineClient(*deadline),
+		prometheusUrl:        prometheusUrl,
 	}
 }
 
@@ -68,8 +71,10 @@ func (n *NotificationHandler) sendNotifications(reqs rules.NotificationReqs) err
 				rules.AlertNameLabel: clientmodel.LabelValue(req.Rule.Name()),
 			}),
 			"Payload": map[string]interface{}{
-				"Value":       req.ActiveAlert.Value,
-				"ActiveSince": req.ActiveAlert.ActiveSince,
+				"Value":        req.ActiveAlert.Value,
+				"ActiveSince":  req.ActiveAlert.ActiveSince,
+				"GeneratorUrl": n.prometheusUrl,
+				"AlertingRule": req.Rule.String(),
 			},
 		})
 	}
