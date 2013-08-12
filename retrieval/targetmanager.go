@@ -14,8 +14,9 @@
 package retrieval
 
 import (
-	"log"
 	"time"
+
+	"github.com/golang/glog"
 
 	"github.com/prometheus/client_golang/extraction"
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -65,7 +66,7 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
 		}
 
 		targetPool = NewTargetPool(m, provider)
-		log.Printf("Pool for job %s does not exist; creating and starting...", job.GetName())
+		glog.Infof("Pool for job %s does not exist; creating and starting...", job.GetName())
 
 		interval := job.ScrapeInterval()
 		m.poolsByJob[job.GetName()] = targetPool

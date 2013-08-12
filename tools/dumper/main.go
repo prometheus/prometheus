@@ -22,9 +22,10 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
+
+	"github.com/golang/glog"
 
 	"code.google.com/p/goprotobuf/proto"
 
@@ -95,12 +96,12 @@ func main() {
 	flag.Parse()
 
 	if storageRoot == nil || *storageRoot == "" {
-		log.Fatal("Must provide a path...")
+		glog.Fatal("Must provide a path...")
 	}
 
 	persistence, err := metric.NewLevelDBMetricPersistence(*storageRoot)
 	if err != nil {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
 	defer persistence.Close()
 
@@ -110,13 +111,13 @@ func main() {
 
 	entire, err := persistence.MetricSamples.ForEach(dumper, dumper, dumper)
 	if err != nil {
-		log.Fatalf("Error dumping samples: %s", err)
+		glog.Fatal("Error dumping samples:", err)
 	}
 	if !entire {
-		log.Fatalf("Didn't scan entire corpus")
+		glog.Fatal("Didn't scan entire corpus")
 	}
 	dumper.Flush()
 	if err = dumper.Error(); err != nil {
-		log.Fatalf("Error flushing CSV: %s", err)
+		glog.Fatal("Error flushing CSV:", err)
 	}
 }

@@ -5,9 +5,10 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
+
+	"github.com/golang/glog"
 )
 
 const (
@@ -50,7 +51,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	file, err := GetFile(StaticFiles, name)
 	if err != nil {
 		if err != io.EOF {
-			log.Printf("Could not get file: %s", err)
+			glog.Warning("Could not get file:", err)
 		}
 		w.WriteHeader(http.StatusNotFound)
 		return

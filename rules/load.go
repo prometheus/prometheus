@@ -18,9 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
+
+	"github.com/golang/glog"
 
 	"github.com/prometheus/prometheus/rules/ast"
 )
@@ -69,7 +70,7 @@ func (lexer *RulesLexer) getChar() byte {
 		}
 		lexer.current = b
 	} else if err != io.EOF {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
 	return lexer.current
 }

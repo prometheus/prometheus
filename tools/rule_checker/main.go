@@ -19,7 +19,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
+
+	"github.com/golang/glog"
 
 	"github.com/prometheus/prometheus/rules"
 )
@@ -30,12 +31,12 @@ func main() {
 	flag.Parse()
 
 	if *ruleFile == "" {
-		log.Fatal("Must provide a rule file path")
+		glog.Fatal("Must provide a rule file path")
 	}
 
 	rules, err := rules.LoadRulesFromFile(*ruleFile)
 	if err != nil {
-		log.Fatalf("Error loading rule file %s: %s", *ruleFile, err)
+		glog.Fatalf("Error loading rule file %s: %s", *ruleFile, err)
 	}
 
 	fmt.Printf("Successfully loaded %d rules:\n\n", len(rules))
