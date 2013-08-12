@@ -15,10 +15,11 @@ package metric
 
 import (
 	"fmt"
-	"log"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 
 	dto "github.com/prometheus/prometheus/model/generated"
 
@@ -175,7 +176,7 @@ func (t *TieredStorage) drain(drained chan<- bool) {
 
 	t.state = tieredStorageDraining
 
-	log.Println("Triggering drain...")
+	glog.Info("Triggering drain...")
 	t.draining <- (drained)
 }
 
@@ -269,7 +270,7 @@ func (t *TieredStorage) Flush() {
 func (t *TieredStorage) flushMemory(ttl time.Duration) {
 	flushOlderThan := time.Now().Add(-1 * ttl)
 
-	log.Println("Flushing...")
+	glog.Info("Flushing samples to disk...")
 	t.memoryArena.Flush(flushOlderThan, t.appendToDiskQueue)
 
 	queueLength := len(t.appendToDiskQueue)
@@ -280,11 +281,11 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 			samples = append(samples, chunk...)
 		}
 
-		log.Printf("Writing %d samples...", len(samples))
+		glog.Infof("Writing %d samples...", len(samples))
 		t.DiskStorage.AppendSamples(samples)
 	}
 
-	log.Println("Done flushing.")
+	glog.Info("Done flushing.")
 }
 
 func (t *TieredStorage) Close() {
@@ -373,7 +374,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	for _, scanJob := range scans {
 		old, err := t.seriesTooOld(scanJob.fingerprint, *scanJob.operations[0].CurrentTime())
 		if err != nil {
-			log.Printf("Error getting watermark from cache for %s: %s", scanJob.fingerprint, err)
+			glog.Errorf("Error getting watermark from cache for %s: %s", scanJob.fingerprint, err)
 			continue
 		}
 		if old {

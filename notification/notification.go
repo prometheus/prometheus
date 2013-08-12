@@ -19,10 +19,11 @@ import (
 	"flag"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"text/template"
 	"time"
+
+	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -95,7 +96,7 @@ func interpolateMessage(msg string, labels clientmodel.LabelSet, value clientmod
 			"{{$value := .Value}}"
 
 	if _, err := t.Parse(defs + msg); err != nil {
-		log.Println("Error parsing template:", err)
+		glog.Warning("Error parsing template:", err)
 		return msg
 	}
 
@@ -114,7 +115,7 @@ func interpolateMessage(msg string, labels clientmodel.LabelSet, value clientmod
 
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, &tmplData); err != nil {
-		log.Println("Error executing template:", err)
+		glog.Warning("Error executing template:", err)
 		return msg
 	}
 	return buf.String()
@@ -176,7 +177,7 @@ func (n *NotificationHandler) Run() {
 
 	for reqs := range n.pendingNotifications {
 		if n.alertmanagerUrl == "" {
-			log.Println("No alert manager configured, not dispatching notification")
+			glog.Warning("No alert manager configured, not dispatching notification")
 			notificationsCount.Increment(map[string]string{result: dropped})
 			continue
 		}
@@ -186,7 +187,7 @@ func (n *NotificationHandler) Run() {
 		recordOutcome(time.Since(begin), err)
 
 		if err != nil {
-			log.Println("Error sending notification:", err)
+			glog.Error("Error sending notification:", err)
 		}
 	}
 }

@@ -16,10 +16,11 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"sort"
 	"time"
+
+	"github.com/golang/glog"
 
 	"code.google.com/p/gorest"
 
@@ -59,7 +60,7 @@ func (serv MetricsService) Query(expr string, asText string) string {
 
 	queryStats := stats.NewTimerGroup()
 	result := ast.EvalToString(exprNode, timestamp, format, serv.Storage, queryStats)
-	log.Printf("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
+	glog.Infof("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
 	return result
 }
 
@@ -113,7 +114,7 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 	result := ast.TypedValueToJSON(matrix, "matrix")
 	jsonTimer.Stop()
 
-	log.Printf("Range query: %s\nQuery stats:\n%s\n", expr, queryStats)
+	glog.Infof("Range query: %s\nQuery stats:\n%s\n", expr, queryStats)
 	return result
 }
 
@@ -123,14 +124,14 @@ func (serv MetricsService) Metrics() string {
 	serv.setAccessControlHeaders(rb)
 	rb.SetContentType(gorest.Application_Json)
 	if err != nil {
-		log.Printf("Error loading metric names: %v", err)
+		glog.Error("Error loading metric names:", err)
 		rb.SetResponseCode(http.StatusInternalServerError)
 		return err.Error()
 	}
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
-		log.Printf("Error marshalling metric names: %v", err)
+		glog.Error("Error marshalling metric names:", err)
 		rb.SetResponseCode(http.StatusInternalServerError)
 		return err.Error()
 	}

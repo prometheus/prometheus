@@ -17,10 +17,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"log"
 	"math"
 	"sort"
 	"time"
+
+	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -401,7 +402,7 @@ func (node *VectorAggregation) Eval(timestamp time.Time, view *viewAdapter) Vect
 func (node *VectorLiteral) Eval(timestamp time.Time, view *viewAdapter) Vector {
 	values, err := view.GetValueAtTime(node.fingerprints, timestamp)
 	if err != nil {
-		log.Println("Unable to get vector values:", err)
+		glog.Error("Unable to get vector values:", err)
 		return Vector{}
 	}
 	return values
@@ -589,7 +590,7 @@ func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 	}
 	values, err := view.GetRangeValues(node.fingerprints, interval)
 	if err != nil {
-		log.Println("Unable to get values for vector interval:", err)
+		glog.Error("Unable to get values for vector interval:", err)
 		return Matrix{}
 	}
 	return values
@@ -602,7 +603,7 @@ func (node *MatrixLiteral) EvalBoundaries(timestamp time.Time, view *viewAdapter
 	}
 	values, err := view.GetBoundaryValues(node.fingerprints, interval)
 	if err != nil {
-		log.Printf("Unable to get boundary values for vector interval:", err)
+		glog.Error("Unable to get boundary values for vector interval:", err)
 		return Matrix{}
 	}
 	return values

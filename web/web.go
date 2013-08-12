@@ -17,11 +17,12 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"log"
 	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
+
+	"github.com/golang/glog"
 
 	"code.google.com/p/gorest"
 
@@ -77,7 +78,7 @@ func (w WebService) ServeForever() error {
 		exp.Handle("/user/", http.StripPrefix("/user/", http.FileServer(http.Dir(*userAssetsPath))))
 	}
 
-	log.Printf("listening on %s", *listenAddress)
+	glog.Info("listening on %s", *listenAddress)
 
 	return http.ListenAndServe(*listenAddress, exp.DefaultCoarseMux)
 }
@@ -94,14 +95,14 @@ func getEmbeddedTemplate(name string) (*template.Template, error) {
 
 	file, err := blob.GetFile(blob.TemplateFiles, "_base.html")
 	if err != nil {
-		log.Printf("Could not read base template: %s", err)
+		glog.Error("Could not read base template:", err)
 		return nil, err
 	}
 	t.Parse(string(file))
 
 	file, err = blob.GetFile(blob.TemplateFiles, name+".html")
 	if err != nil {
-		log.Printf("Could not read %s template: %s", name, err)
+		glog.Errorf("Could not read %s template: %s", name, err)
 		return nil, err
 	}
 	t.Parse(string(file))
@@ -131,12 +132,12 @@ func getTemplate(name string) (t *template.Template, err error) {
 func executeTemplate(w http.ResponseWriter, name string, data interface{}) {
 	tpl, err := getTemplate(name)
 	if err != nil {
-		log.Printf("Error preparing layout template: %s", err)
+		glog.Error("Error preparing layout template:", err)
 		return
 	}
 	err = tpl.Execute(w, data)
 	if err != nil {
-		log.Printf("Error executing template: %s", err)
+		glog.Error("Error executing template:", err)
 	}
 }
 

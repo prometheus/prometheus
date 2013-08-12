@@ -19,8 +19,9 @@ package main
 import (
 	"flag"
 	"github.com/prometheus/prometheus/storage/metric"
-	"log"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 var (
@@ -31,21 +32,21 @@ func main() {
 	flag.Parse()
 
 	if storageRoot == nil || *storageRoot == "" {
-		log.Fatal("Must provide a path...")
+		glog.Fatal("Must provide a path...")
 	}
 
 	persistences, err := metric.NewLevelDBMetricPersistence(*storageRoot)
 	if err != nil {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
 	defer persistences.Close()
 
 	start := time.Now()
-	log.Printf("Starting compaction...")
+	glog.Info("Starting compaction...")
 	size, _ := persistences.Sizes()
-	log.Printf("Original Size: %d", size)
+	glog.Info("Original Size:", size)
 	persistences.Prune()
-	log.Printf("Finished in %s", time.Since(start))
+	glog.Info("Finished in", time.Since(start))
 	size, _ = persistences.Sizes()
-	log.Printf("New Size: %d", size)
+	glog.Info("New Size:", size)
 }

@@ -16,11 +16,12 @@ package retrieval
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/golang/glog"
 
 	"github.com/prometheus/client_golang/extraction"
 
@@ -303,7 +304,7 @@ func (t *target) GlobalAddress() string {
 	address := t.address
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.Printf("Couldn't get hostname: %s, returning target.Address()", err)
+		glog.Warning("Couldn't get hostname: %s, returning target.Address()", err)
 		return address
 	}
 	for _, localhostRepresentation := range localhostRepresentations {

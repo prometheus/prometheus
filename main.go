@@ -15,11 +15,12 @@ package main
 
 import (
 	"flag"
-	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 
 	"github.com/prometheus/client_golang/extraction"
 
@@ -91,7 +92,7 @@ func (p *prometheus) interruptHandler() {
 
 	<-notifier
 
-	log.Println("Received SIGINT; Exiting Gracefully...")
+	glog.Warning("Received SIGINT; Exiting gracefully...")
 	p.close()
 	os.Exit(0)
 }
@@ -169,15 +170,15 @@ func main() {
 
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
-		log.Fatalf("Error loading configuration from %s: %v", *configFile, err)
+		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
 	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, *arenaTTL, *metricsStoragePath)
 	if err != nil {
-		log.Fatalf("Error opening storage: %s", err)
+		glog.Fatal("Error opening storage:", err)
 	}
 	if ts == nil {
-		log.Fatalln("Nil tiered storage.")
+		glog.Fatal("Nil tiered storage.")
 	}
 
 	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
@@ -198,7 +199,7 @@ func main() {
 	ruleManager := rules.NewRuleManager(unwrittenSamples, notifications, conf.EvaluationInterval(), ts)
 	err = ruleManager.AddRulesFromConfig(conf)
 	if err != nil {
-		log.Fatalf("Error loading rule files: %v", err)
+		glog.Fatal("Error loading rule files:", err)
 	}
 	go ruleManager.Run()
 
@@ -273,56 +274,56 @@ func main() {
 
 	go func() {
 		for _ = range prometheus.headCompactionTimer.C {
-			log.Println("Starting head compaction...")
+			glog.Info("Starting head compaction...")
 			err := prometheus.compact(*headAge, *headGroupSize)
 
 			if err != nil {
-				log.Printf("could not compact due to %s", err)
+				glog.Error("could not compact:", err)
 			}
-			log.Println("Done")
+			glog.Info("Done")
 		}
 	}()
 
 	go func() {
 		for _ = range prometheus.bodyCompactionTimer.C {
-			log.Println("Starting body compaction...")
+			glog.Info("Starting body compaction...")
 			err := prometheus.compact(*bodyAge, *bodyGroupSize)
 
 			if err != nil {
-				log.Printf("could not compact due to %s", err)
+				glog.Error("could not compact:", err)
 			}
-			log.Println("Done")
+			glog.Info("Done")
 		}
 	}()
 
 	go func() {
 		for _ = range prometheus.tailCompactionTimer.C {
-			log.Println("Starting tail compaction...")
+			glog.Info("Starting tail compaction...")
 			err := prometheus.compact(*tailAge, *tailGroupSize)
 
 			if err != nil {
-				log.Printf("could not compact due to %s", err)
+				glog.Error("could not compact:", err)
 			}
-			log.Println("Done")
+			glog.Info("Done")
 		}
 	}()
 
 	go func() {
 		for _ = range prometheus.deletionTimer.C {
-			log.Println("Starting deletion of stale values...")
+			glog.Info("Starting deletion of stale values...")
 			err := prometheus.delete(*deleteAge, deletionBatchSize)
 
 			if err != nil {
-				log.Printf("could not delete due to %s", err)
+				glog.Error("could not delete:", err)
 			}
-			log.Println("Done")
+			glog.Info("Done")
 		}
 	}()
 
 	go func() {
 		err := webService.ServeForever()
 		if err != nil {
-			log.Fatal(err)
+			glog.Fatal(err)
 		}
 	}()
 

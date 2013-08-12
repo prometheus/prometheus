@@ -14,8 +14,9 @@
 package ast
 
 import (
-	"log"
 	"time"
+
+	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -56,7 +57,7 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 	case *VectorLiteral:
 		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
 		if err != nil {
-			log.Printf("Error getting fingerprints for labelset %v: %v", n.labels, err)
+			glog.Errorf("Error getting fingerprints for labelset %v: %v", n.labels, err)
 			return
 		}
 		n.fingerprints = fingerprints
@@ -68,7 +69,7 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 	case *MatrixLiteral:
 		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
 		if err != nil {
-			log.Printf("Error getting fingerprints for labelset %v: %v", n.labels, err)
+			glog.Errorf("Error getting fingerprints for labelset %v: %v", n.labels, err)
 			return
 		}
 		n.fingerprints = fingerprints

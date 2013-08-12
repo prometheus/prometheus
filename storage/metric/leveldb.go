@@ -16,10 +16,11 @@ package metric
 import (
 	"flag"
 	"fmt"
-	"log"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 
 	"code.google.com/p/goprotobuf/proto"
 
@@ -104,7 +105,7 @@ func (l *LevelDBMetricPersistence) Close() {
 					closer.Close()
 				case errorCloser:
 					if err := closer.Close(); err != nil {
-						log.Println("anomaly closing:", err)
+						glog.Error("Error closing persistence:", err)
 					}
 				}
 			}
@@ -236,7 +237,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 
 	if !workers.Wait() {
 		for _, err := range workers.Errors() {
-			log.Printf("Could not open storage due to %s", err)
+			glog.Error("Could not open storage:", err)
 		}
 
 		return nil, fmt.Errorf("Unable to open metric persistence.")
