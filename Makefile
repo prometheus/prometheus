@@ -71,7 +71,7 @@ race_condition_run: race_condition_binary
 	./prometheus.race $(ARGUMENTS)
 
 run: binary
-	./prometheus $(ARGUMENTS)
+	./prometheus -alsologtostderr -stderrthreshold=0 $(ARGUMENTS)
 
 search_index:
 	godoc -index -write_index -index_files='search_index'
