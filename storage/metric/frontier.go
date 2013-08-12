@@ -19,11 +19,11 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	dto "github.com/prometheus/prometheus/model/generated"
-
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
+
+	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 // diskFrontier describes an on-disk store of series to provide a

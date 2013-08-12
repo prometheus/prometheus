@@ -14,11 +14,11 @@
 package retrieval
 
 import (
-	"log"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
 )
 
@@ -63,7 +63,7 @@ func (p *TargetPool) Run(results chan<- *extraction.Result, interval time.Durati
 		case newTargets := <-p.replaceTargetsQueue:
 			p.replaceTargets(newTargets)
 		case <-p.done:
-			log.Printf("TargetPool exiting...")
+			glog.Info("TargetPool exiting...")
 			return
 		}
 	}
@@ -127,7 +127,7 @@ func (p *TargetPool) runIteration(results chan<- *extraction.Result, interval ti
 	if p.targetProvider != nil {
 		targets, err := p.targetProvider.Targets()
 		if err != nil {
-			log.Printf("Error looking up targets, keeping old list: %s", err)
+			glog.Warning("Error looking up targets, keeping old list: %s", err)
 		} else {
 			p.ReplaceTargets(targets)
 		}

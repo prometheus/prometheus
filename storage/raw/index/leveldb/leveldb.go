@@ -16,10 +16,10 @@ package leveldb
 import (
 	"code.google.com/p/goprotobuf/proto"
 
-	dto "github.com/prometheus/prometheus/model/generated"
-
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
+
+	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 var existenceValue = new(dto.MembershipIndexValue)

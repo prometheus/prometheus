@@ -15,13 +15,14 @@ package retrieval
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"time"
 
+	"github.com/golang/glog"
+	"github.com/miekg/dns"
+
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/miekg/dns"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/utility"
 )
@@ -77,7 +78,7 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 	for _, record := range response.Answer {
 		addr, ok := record.(*dns.SRV)
 		if !ok {
-			log.Printf("%s is not a valid SRV record", addr)
+			glog.Warning("%s is not a valid SRV record", addr)
 			continue
 		}
 		// Remove the final dot from rooted DNS names to make them look more usual.

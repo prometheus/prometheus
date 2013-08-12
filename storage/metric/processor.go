@@ -21,10 +21,10 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	dto "github.com/prometheus/prometheus/model/generated"
-
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
+
+	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 // processor models a post-processing agent that performs work given a sample

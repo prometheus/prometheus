@@ -24,11 +24,11 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	dto "github.com/prometheus/prometheus/model/generated"
-
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/utility/test"
+
+	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 const stochasticMaximumVariance = 8

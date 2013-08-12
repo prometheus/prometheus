@@ -14,11 +14,12 @@
 package rules
 
 import (
-	"log"
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
+
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -74,7 +75,7 @@ func (m *ruleManager) Run() {
 			m.runIteration(m.results)
 			evalDurations.Add(map[string]string{intervalKey: m.interval.String()}, float64(time.Since(start)/time.Millisecond))
 		case <-m.done:
-			log.Printf("RuleManager exiting...")
+			glog.Info("RuleManager exiting...")
 			break
 		}
 	}

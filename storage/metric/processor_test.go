@@ -22,10 +22,10 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/raw/leveldb"
+
 	dto "github.com/prometheus/prometheus/model/generated"
 	fixture "github.com/prometheus/prometheus/storage/raw/leveldb/test"
-
-	"github.com/prometheus/prometheus/storage/raw/leveldb"
 )
 
 type curationState struct {

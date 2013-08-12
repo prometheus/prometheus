@@ -23,12 +23,12 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	dto "github.com/prometheus/prometheus/model/generated"
-
 	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
+
+	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 // CurationState contains high-level curation state information for the

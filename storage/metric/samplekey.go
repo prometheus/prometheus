@@ -21,9 +21,9 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	dto "github.com/prometheus/prometheus/model/generated"
-
 	"github.com/prometheus/prometheus/coding/indexable"
+
+	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 // SampleKey models the business logic around the data-transfer object
