@@ -28,10 +28,10 @@ import (
 
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := target{
-		scheduler: literalScheduler{},
-		state:     UNKNOWN,
-		address:   "bad schema",
-		httpClient:    utility.NewDeadlineClient(0),
+		scheduler:  literalScheduler{},
+		state:      UNKNOWN,
+		address:    "bad schema",
+		httpClient: utility.NewDeadlineClient(0),
 	}
 	testTarget.Scrape(time.Time{}, make(chan *extraction.Result, 2))
 	if testTarget.state != UNREACHABLE {
@@ -44,7 +44,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 		scheduler:  literalScheduler{},
 		address:    "http://example.url",
 		baseLabels: clientmodel.LabelSet{clientmodel.JobLabel: "testjob"},
-		httpClient:     utility.NewDeadlineClient(0),
+		httpClient: utility.NewDeadlineClient(0),
 	}
 
 	now := time.Now()

@@ -254,8 +254,8 @@ type LevelDBHighWatermarkerOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func NewLevelDBHighWatermarker(o *LevelDBHighWatermarkerOptions) (*LevelDBHighWatermarker, error) {
-	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+func NewLevelDBHighWatermarker(o LevelDBHighWatermarkerOptions) (*LevelDBHighWatermarker, error) {
+	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -323,8 +323,8 @@ func (w *LevelDBCurationRemarker) Update(pair *curationKey, t time.Time) error {
 	})
 }
 
-func NewLevelDBCurationRemarker(o *LevelDBCurationRemarkerOptions) (*LevelDBCurationRemarker, error) {
-	s, err := leveldb.NewLevelDBPersistence(&o.LevelDBOptions)
+func NewLevelDBCurationRemarker(o LevelDBCurationRemarkerOptions) (*LevelDBCurationRemarker, error) {
+	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
 	if err != nil {
 		return nil, err
 	}

@@ -61,11 +61,10 @@ type (
 
 func (p preparer) Prepare(n string, f FixtureFactory) (t test.TemporaryDirectory) {
 	t = test.NewTemporaryDirectory(n, p.tester)
-	o := &leveldb.LevelDBOptions{
+	persistence, err := leveldb.NewLevelDBPersistence(leveldb.LevelDBOptions{
 		Path:           t.Path(),
 		CacheSizeBytes: cacheCapacity,
-	}
-	persistence, err := leveldb.NewLevelDBPersistence(o)
+	})
 	if err != nil {
 		defer t.Close()
 		p.tester.Fatal(err)

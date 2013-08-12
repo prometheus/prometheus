@@ -184,7 +184,7 @@ type LevelDBOptions struct {
 	Compression Compression
 }
 
-func NewLevelDBPersistence(o *LevelDBOptions) (*LevelDBPersistence, error) {
+func NewLevelDBPersistence(o LevelDBOptions) (*LevelDBPersistence, error) {
 	options := levigo.NewOptions()
 	options.SetCreateIfMissing(true)
 	options.SetParanoidChecks(o.UseParanoidChecks)

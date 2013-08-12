@@ -128,7 +128,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Label Names and Value Pairs by Fingerprint",
 			func() {
 				var err error
-				emission.fingerprintToMetrics, err = NewLevelDBFingerprintMetricIndex(&LevelDBFingerprintMetricIndexOptions{
+				emission.fingerprintToMetrics, err = NewLevelDBFingerprintMetricIndex(LevelDBFingerprintMetricIndexOptions{
 					LevelDBOptions: leveldb.LevelDBOptions{
 						Name:           "Metrics by Fingerprint",
 						Purpose:        "Index",
@@ -143,13 +143,12 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Samples by Fingerprint",
 			func() {
 				var err error
-				o := &leveldb.LevelDBOptions{
+				emission.MetricSamples, err = leveldb.NewLevelDBPersistence(leveldb.LevelDBOptions{
 					Name:           "Samples",
 					Purpose:        "Timeseries",
 					Path:           baseDirectory + "/samples_by_fingerprint",
 					CacheSizeBytes: *fingerprintsToLabelPairCacheSize,
-				}
-				emission.MetricSamples, err = leveldb.NewLevelDBPersistence(o)
+				})
 				workers.MayFail(err)
 			},
 		},
@@ -157,7 +156,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"High Watermarks by Fingerprint",
 			func() {
 				var err error
-				emission.MetricHighWatermarks, err = NewLevelDBHighWatermarker(&LevelDBHighWatermarkerOptions{
+				emission.MetricHighWatermarks, err = NewLevelDBHighWatermarker(LevelDBHighWatermarkerOptions{
 					LevelDBOptions: leveldb.LevelDBOptions{
 						Name:           "High Watermarks",
 						Purpose:        "The youngest sample in the database per metric.",
@@ -171,7 +170,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Fingerprints by Label Name",
 			func() {
 				var err error
-				emission.labelNameToFingerprints, err = NewLevelLabelNameFingerprintIndex(&LevelDBLabelNameFingerprintIndexOptions{
+				emission.labelNameToFingerprints, err = NewLevelLabelNameFingerprintIndex(LevelDBLabelNameFingerprintIndexOptions{
 					LevelDBOptions: leveldb.LevelDBOptions{
 						Name:           "Fingerprints by Label Name",
 						Purpose:        "Index",
@@ -186,7 +185,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Fingerprints by Label Name and Value Pair",
 			func() {
 				var err error
-				emission.labelSetToFingerprints, err = NewLevelDBLabelSetFingerprintIndex(&LevelDBLabelSetFingerprintIndexOptions{
+				emission.labelSetToFingerprints, err = NewLevelDBLabelSetFingerprintIndex(LevelDBLabelSetFingerprintIndexOptions{
 					LevelDBOptions: leveldb.LevelDBOptions{
 						Name:           "Fingerprints by Label Pair",
 						Purpose:        "Index",
@@ -202,7 +201,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			func() {
 				var err error
 				emission.metricMembershipIndex, err = NewLevelDBMetricMembershipIndex(
-					&LevelDBMetricMembershipIndexOptions{
+					LevelDBMetricMembershipIndexOptions{
 						LevelDBOptions: leveldb.LevelDBOptions{
 							Name:           "Metric Membership",
 							Purpose:        "Index",
@@ -217,7 +216,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Sample Curation Remarks",
 			func() {
 				var err error
-				emission.CurationRemarks, err = NewLevelDBCurationRemarker(&LevelDBCurationRemarkerOptions{
+				emission.CurationRemarks, err = NewLevelDBCurationRemarker(LevelDBCurationRemarkerOptions{
 					LevelDBOptions: leveldb.LevelDBOptions{
 						Name:           "Sample Curation Remarks",
 						Purpose:        "Ledger of Progress for Various Curators",

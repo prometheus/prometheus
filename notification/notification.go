@@ -129,8 +129,8 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 			"Description": interpolateMessage(req.Description, req.Labels, req.Value),
 			"Labels":      req.Labels,
 			"Payload": map[string]interface{}{
-				"Value":       req.Value,
-				"ActiveSince": req.ActiveSince,
+				"Value":        req.Value,
+				"ActiveSince":  req.ActiveSince,
 				"GeneratorUrl": n.prometheusUrl,
 				"AlertingRule": req.RuleString,
 			},
