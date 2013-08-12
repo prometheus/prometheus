@@ -303,7 +303,7 @@ func (t *target) GlobalAddress() string {
 	address := t.address
 	hostname, err := os.Hostname()
 	if err != nil {
-		glog.Warning("Couldn't get hostname: %s, returning target.Address()", err)
+		glog.Warningf("Couldn't get hostname: %s, returning target.Address()", err)
 		return address
 	}
 	for _, localhostRepresentation := range localhostRepresentations {

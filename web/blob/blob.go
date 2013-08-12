@@ -51,7 +51,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	file, err := GetFile(StaticFiles, name)
 	if err != nil {
 		if err != io.EOF {
-			glog.Warning("Could not get file:", err)
+			glog.Warning("Could not get file: ", err)
 		}
 		w.WriteHeader(http.StatusNotFound)
 		return

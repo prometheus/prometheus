@@ -78,7 +78,7 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 	for _, record := range response.Answer {
 		addr, ok := record.(*dns.SRV)
 		if !ok {
-			glog.Warning("%s is not a valid SRV record", addr)
+			glog.Warningf("%s is not a valid SRV record", addr)
 			continue
 		}
 		// Remove the final dot from rooted DNS names to make them look more usual.

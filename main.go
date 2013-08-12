@@ -173,7 +173,7 @@ func main() {
 
 	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, *arenaTTL, *metricsStoragePath)
 	if err != nil {
-		glog.Fatal("Error opening storage:", err)
+		glog.Fatal("Error opening storage: ", err)
 	}
 
 	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
@@ -193,7 +193,7 @@ func main() {
 	// Queue depth will need to be exposed
 	ruleManager := rules.NewRuleManager(unwrittenSamples, notifications, conf.EvaluationInterval(), ts)
 	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
-		glog.Fatal("Error loading rule files:", err)
+		glog.Fatal("Error loading rule files: ", err)
 	}
 	go ruleManager.Run()
 
@@ -272,7 +272,7 @@ func main() {
 			err := prometheus.compact(*headAge, *headGroupSize)
 
 			if err != nil {
-				glog.Error("could not compact:", err)
+				glog.Error("could not compact: ", err)
 			}
 			glog.Info("Done")
 		}
@@ -284,7 +284,7 @@ func main() {
 			err := prometheus.compact(*bodyAge, *bodyGroupSize)
 
 			if err != nil {
-				glog.Error("could not compact:", err)
+				glog.Error("could not compact: ", err)
 			}
 			glog.Info("Done")
 		}
@@ -296,7 +296,7 @@ func main() {
 			err := prometheus.compact(*tailAge, *tailGroupSize)
 
 			if err != nil {
-				glog.Error("could not compact:", err)
+				glog.Error("could not compact: ", err)
 			}
 			glog.Info("Done")
 		}
@@ -308,7 +308,7 @@ func main() {
 			err := prometheus.delete(*deleteAge, deletionBatchSize)
 
 			if err != nil {
-				glog.Error("could not delete:", err)
+				glog.Error("could not delete: ", err)
 			}
 			glog.Info("Done")
 		}

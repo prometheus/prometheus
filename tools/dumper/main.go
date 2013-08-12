@@ -110,13 +110,13 @@ func main() {
 
 	entire, err := persistence.MetricSamples.ForEach(dumper, dumper, dumper)
 	if err != nil {
-		glog.Fatal("Error dumping samples:", err)
+		glog.Fatal("Error dumping samples: ", err)
 	}
 	if !entire {
 		glog.Fatal("Didn't scan entire corpus")
 	}
 	dumper.Flush()
 	if err = dumper.Error(); err != nil {
-		glog.Fatal("Error flushing CSV:", err)
+		glog.Fatal("Error flushing CSV: ", err)
 	}
 }

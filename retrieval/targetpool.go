@@ -127,7 +127,7 @@ func (p *TargetPool) runIteration(results chan<- *extraction.Result, interval ti
 	if p.targetProvider != nil {
 		targets, err := p.targetProvider.Targets()
 		if err != nil {
-			glog.Warning("Error looking up targets, keeping old list: %s", err)
+			glog.Warningf("Error looking up targets, keeping old list: %s", err)
 		} else {
 			p.ReplaceTargets(targets)
 		}

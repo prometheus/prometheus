@@ -96,7 +96,7 @@ func interpolateMessage(msg string, labels clientmodel.LabelSet, value clientmod
 			"{{$value := .Value}}"
 
 	if _, err := t.Parse(defs + msg); err != nil {
-		glog.Warning("Error parsing template:", err)
+		glog.Warning("Error parsing template: ", err)
 		return msg
 	}
 
@@ -115,7 +115,7 @@ func interpolateMessage(msg string, labels clientmodel.LabelSet, value clientmod
 
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, &tmplData); err != nil {
-		glog.Warning("Error executing template:", err)
+		glog.Warning("Error executing template: ", err)
 		return msg
 	}
 	return buf.String()
@@ -187,7 +187,7 @@ func (n *NotificationHandler) Run() {
 		recordOutcome(time.Since(begin), err)
 
 		if err != nil {
-			glog.Error("Error sending notification:", err)
+			glog.Error("Error sending notification: ", err)
 		}
 	}
 }

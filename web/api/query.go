@@ -123,14 +123,14 @@ func (serv MetricsService) Metrics() string {
 	serv.setAccessControlHeaders(rb)
 	rb.SetContentType(gorest.Application_Json)
 	if err != nil {
-		glog.Error("Error loading metric names:", err)
+		glog.Error("Error loading metric names: ", err)
 		rb.SetResponseCode(http.StatusInternalServerError)
 		return err.Error()
 	}
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
-		glog.Error("Error marshalling metric names:", err)
+		glog.Error("Error marshalling metric names: ", err)
 		rb.SetResponseCode(http.StatusInternalServerError)
 		return err.Error()
 	}

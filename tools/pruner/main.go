@@ -44,9 +44,9 @@ func main() {
 	start := time.Now()
 	glog.Info("Starting compaction...")
 	size, _ := persistences.Sizes()
-	glog.Info("Original Size:", size)
+	glog.Info("Original Size: ", size)
 	persistences.Prune()
-	glog.Info("Finished in", time.Since(start))
+	glog.Info("Finished in ", time.Since(start))
 	size, _ = persistences.Sizes()
-	glog.Info("New Size:", size)
+	glog.Info("New Size: ", size)
 }
