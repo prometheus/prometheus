@@ -202,8 +202,8 @@ func main() {
 	}
 	go ruleManager.Run()
 
-	// Queue depth will need to be exposed
-	notificationHandler := notification.NewNotificationHandler(*alertmanagerUrl, notifications)
+	prometheusUrl := web.MustBuildServerUrl()
+	notificationHandler := notification.NewNotificationHandler(*alertmanagerUrl, prometheusUrl, notifications)
 	go notificationHandler.Run()
 
 	flags := map[string]string{}
