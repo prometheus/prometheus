@@ -16,10 +16,14 @@ package config
 import (
 	"code.google.com/p/goprotobuf/proto"
 	"fmt"
-	pb "github.com/prometheus/prometheus/config/generated"
-	"github.com/prometheus/prometheus/utility"
 	"regexp"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	pb "github.com/prometheus/prometheus/config/generated"
+
+	"github.com/prometheus/prometheus/utility"
 )
 
 var jobNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_-]*$")
@@ -96,6 +100,17 @@ func (c Config) GetJobByName(name string) *JobConfig {
 		}
 	}
 	return nil
+}
+
+// Return the global labels as a LabelSet.
+func (c Config) GlobalLabels() clientmodel.LabelSet {
+	labels := clientmodel.LabelSet{}
+	if c.Global.Labels != nil {
+		for _, label := range c.Global.Labels.Label {
+			labels[clientmodel.LabelName(label.GetName())] = clientmodel.LabelValue(label.GetValue())
+		}
+	}
+	return labels
 }
 
 // Jobs returns all the jobs in a Config object.

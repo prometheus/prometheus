@@ -15,6 +15,8 @@ package retrieval
 
 import (
 	"time"
+
+	"github.com/prometheus/client_golang/extraction"
 )
 
 type literalScheduler time.Time
@@ -24,4 +26,10 @@ func (s literalScheduler) ScheduledFor() time.Time {
 }
 
 func (s literalScheduler) Reschedule(earliest time.Time, future TargetState) {
+}
+
+type nopIngester struct{}
+
+func (i nopIngester) Ingest(*extraction.Result) error {
+	return nil
 }
