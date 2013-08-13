@@ -37,13 +37,13 @@ type TargetManager interface {
 type targetManager struct {
 	requestAllowance chan bool
 	poolsByJob       map[string]*TargetPool
-	results          chan<- *extraction.Result
+	ingester         extraction.Ingester
 }
 
-func NewTargetManager(results chan<- *extraction.Result, requestAllowance int) TargetManager {
+func NewTargetManager(ingester extraction.Ingester, requestAllowance int) TargetManager {
 	return &targetManager{
 		requestAllowance: make(chan bool, requestAllowance),
-		results:          results,
+		ingester:         ingester,
 		poolsByJob:       make(map[string]*TargetPool),
 	}
 }
@@ -71,7 +71,7 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
 		interval := job.ScrapeInterval()
 		m.poolsByJob[job.GetName()] = targetPool
 		// BUG(all): Investigate whether this auto-goroutine creation is desired.
-		go targetPool.Run(m.results, interval)
+		go targetPool.Run(m.ingester, interval)
 	}
 
 	return targetPool

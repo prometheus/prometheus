@@ -91,7 +91,7 @@ type Target interface {
 	// alluded to in the scheduledFor function, to use this as it wants to.  The
 	// current use case is to create a common batching time for scraping multiple
 	// Targets in the future through the TargetPool.
-	Scrape(earliest time.Time, results chan<- *extraction.Result) error
+	Scrape(earliest time.Time, ingester extraction.Ingester) error
 	// Fulfill the healthReporter interface.
 	State() TargetState
 	// Report the soonest time at which this Target may be scheduled for
@@ -156,7 +156,7 @@ func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.La
 	return target
 }
 
-func (t *target) recordScrapeHealth(results chan<- *extraction.Result, timestamp time.Time, healthy bool) {
+func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp time.Time, healthy bool) {
 	metric := clientmodel.Metric{}
 	for label, value := range t.baseLabels {
 		metric[label] = value
@@ -175,21 +175,21 @@ func (t *target) recordScrapeHealth(results chan<- *extraction.Result, timestamp
 		Value:     healthValue,
 	}
 
-	results <- &extraction.Result{
+	ingester.Ingest(&extraction.Result{
 		Err:     nil,
 		Samples: clientmodel.Samples{sample},
-	}
+	})
 }
 
-func (t *target) Scrape(earliest time.Time, results chan<- *extraction.Result) error {
+func (t *target) Scrape(earliest time.Time, ingester extraction.Ingester) error {
 	now := time.Now()
 	futureState := t.state
-	err := t.scrape(now, results)
+	err := t.scrape(now, ingester)
 	if err != nil {
-		t.recordScrapeHealth(results, now, false)
+		t.recordScrapeHealth(ingester, now, false)
 		futureState = UNREACHABLE
 	} else {
-		t.recordScrapeHealth(results, now, true)
+		t.recordScrapeHealth(ingester, now, true)
 		futureState = ALIVE
 	}
 
@@ -202,29 +202,7 @@ func (t *target) Scrape(earliest time.Time, results chan<- *extraction.Result) e
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/json;schema=prometheus/telemetry;version=0.0.2;q=0.2,*/*;q=0.1`
 
-type channelIngester chan<- *extraction.Result
-
-func (i channelIngester) Ingest(r *extraction.Result) error {
-	i <- r
-
-	return nil
-}
-
-type extendLabelsIngester struct {
-	baseLabels clientmodel.LabelSet
-
-	i extraction.Ingester
-}
-
-func (i *extendLabelsIngester) Ingest(r *extraction.Result) error {
-	for _, s := range r.Samples {
-		s.Metric.MergeFromLabelSet(i.baseLabels, clientmodel.ExporterLabelPrefix)
-	}
-
-	return i.i.Ingest(r)
-}
-
-func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) (err error) {
+func (t *target) scrape(timestamp time.Time, ingester extraction.Ingester) (err error) {
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
 		labels := map[string]string{address: t.Address(), outcome: success}
@@ -268,15 +246,16 @@ func (t *target) scrape(timestamp time.Time, results chan<- *extraction.Result) 
 		return err
 	}
 
-	ingester := &extendLabelsIngester{
-		baseLabels: baseLabels,
+	i := &extraction.MergeLabelsIngester{
+		Labels:          baseLabels,
+		CollisionPrefix: clientmodel.ExporterLabelPrefix,
 
-		i: channelIngester(results),
+		Ingester: ingester,
 	}
 	processOptions := &extraction.ProcessOptions{
 		Timestamp: timestamp,
 	}
-	return processor.ProcessSingle(buf, ingester, processOptions)
+	return processor.ProcessSingle(buf, i, processOptions)
 }
 
 func (t *target) State() TargetState {
