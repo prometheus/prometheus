@@ -18,8 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/extraction"
-
 	"github.com/prometheus/prometheus/utility/test"
 )
 
@@ -150,7 +148,7 @@ func TestTargetPoolIterationWithUnhealthyTargetsFinishes(t *testing.T) {
 
 	done := make(chan bool)
 	go func() {
-		pool.runIteration(make(chan *extraction.Result), time.Duration(0))
+		pool.runIteration(nopIngester{}, time.Duration(0))
 		done <- true
 	}()
 
