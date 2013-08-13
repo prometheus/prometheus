@@ -36,7 +36,6 @@ const deletionBatchSize = 100
 
 // Commandline flags.
 var (
-	printVersion                 = flag.Bool("version", false, "print version information")
 	configFile                   = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
 	metricsStoragePath           = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
 	concurrentRetrievalAllowance = flag.Int("concurrentRetrievalAllowance", 15, "The number of concurrent metrics retrieval requests allowed.")
@@ -66,6 +65,8 @@ var (
 
 	alertmanagerUrl           = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
 	notificationQueueCapacity = flag.Int("alertmanager.notificationQueueCapacity", 100, "The size of the queue for pending alert manager notifications.")
+
+	printVersion = flag.Bool("version", false, "print version information")
 )
 
 type prometheus struct {
