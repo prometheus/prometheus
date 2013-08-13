@@ -31,6 +31,11 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 )
 
+// CurationStateUpdater receives updates about the curation state.
+type CurationStateUpdater interface {
+	UpdateCurationState(*CurationState)
+}
+
 // CurationState contains high-level curation state information for the
 // heads-up-display.
 type CurationState struct {
@@ -83,7 +88,7 @@ type watermarkScanner struct {
 	// stop functions as the global stop channel for all future operations.
 	stop chan bool
 	// status is the outbound channel for notifying the status page of its state.
-	status chan CurationState
+	status CurationStateUpdater
 }
 
 // run facilitates the curation lifecycle.
@@ -92,7 +97,7 @@ type watermarkScanner struct {
 // curated.
 // curationState is the on-disk store where the curation remarks are made for
 // how much progress has been made.
-func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState CurationRemarker, samples *leveldb.LevelDBPersistence, watermarks HighWatermarker, status chan CurationState) (err error) {
+func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState CurationRemarker, samples *leveldb.LevelDBPersistence, watermarks HighWatermarker, status CurationStateUpdater) (err error) {
 	defer func(t time.Time) {
 		duration := float64(time.Since(t) / time.Millisecond)
 
@@ -108,13 +113,8 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 		curationDuration.IncrementBy(labels, duration)
 		curationDurations.Add(labels, duration)
 	}(time.Now())
-	defer func() {
-		select {
-		case status <- CurationState{Active: false}:
-		case <-status:
-		default:
-		}
-	}()
+
+	defer status.UpdateCurationState(&CurationState{Active: false})
 
 	iterator := samples.NewIterator(true)
 	defer iterator.Close()
@@ -201,16 +201,12 @@ func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResul
 
 		curationFilterOperations.Increment(labels)
 
-		select {
-		case w.status <- CurationState{
+		w.status.UpdateCurationState(&CurationState{
 			Active:      true,
 			Name:        w.processor.Name(),
 			Limit:       w.ignoreYoungerThan,
 			Fingerprint: fingerprint,
-		}:
-		case <-w.status:
-		default:
-		}
+		})
 	}()
 
 	if w.shouldStop() {

@@ -14,15 +14,18 @@
 package web
 
 import (
-	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage/metric"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
-type PrometheusStatus struct {
+type PrometheusStatusHandler struct {
+	mu sync.RWMutex
+
 	BuildInfo   map[string]string
 	Config      string
 	Curation    metric.CurationState
@@ -33,23 +36,16 @@ type PrometheusStatus struct {
 	Birth time.Time
 }
 
-type StatusHandler struct {
-	CurationState    chan metric.CurationState
-	PrometheusStatus *PrometheusStatus
+func (h *PrometheusStatusHandler) UpdateCurationState(c *metric.CurationState) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	mutex sync.RWMutex
+	h.Curation = *c
 }
 
-func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	select {
-	case curationState := <-h.CurationState:
-		h.mutex.Lock()
-		defer h.mutex.Unlock()
-		h.PrometheusStatus.Curation = curationState
-	default:
-		h.mutex.RLock()
-		defer h.mutex.RUnlock()
-	}
+func (h *PrometheusStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
-	executeTemplate(w, "status", h.PrometheusStatus)
+	executeTemplate(w, "status", h)
 }

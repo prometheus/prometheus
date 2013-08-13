@@ -39,7 +39,7 @@ var (
 )
 
 type WebService struct {
-	StatusHandler    *StatusHandler
+	StatusHandler    *PrometheusStatusHandler
 	DatabasesHandler *DatabasesHandler
 	MetricsHandler   *api.MetricsService
 	AlertsHandler    *AlertsHandler

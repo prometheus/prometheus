@@ -80,7 +80,6 @@ type prometheus struct {
 	deletionTimer       *time.Ticker
 
 	curationMutex            sync.Mutex
-	curationState            chan metric.CurationState
 	stopBackgroundOperations chan bool
 
 	unwrittenSamples chan *extraction.Result
@@ -88,6 +87,8 @@ type prometheus struct {
 	ruleManager   rules.RuleManager
 	notifications chan notification.NotificationReqs
 	storage       *metric.TieredStorage
+
+	curationState metric.CurationStateUpdater
 }
 
 func (p *prometheus) interruptHandler() {
@@ -157,7 +158,6 @@ func (p *prometheus) close() {
 
 	close(p.notifications)
 	close(p.stopBackgroundOperations)
-	close(p.curationState)
 }
 
 func main() {
@@ -189,7 +189,6 @@ func main() {
 
 		Ingester: retrieval.ChannelIngester(unwrittenSamples),
 	}
-	curationState := make(chan metric.CurationState, 1)
 	// Coprime numbers, fool!
 	headCompactionTimer := time.NewTicker(*headCompactInterval)
 	bodyCompactionTimer := time.NewTicker(*bodyCompactInterval)
@@ -219,16 +218,13 @@ func main() {
 		flags[f.Name] = f.Value.String()
 	})
 
-	statusHandler := &web.StatusHandler{
-		PrometheusStatus: &web.PrometheusStatus{
-			BuildInfo:   BuildInfo,
-			Config:      conf.String(),
-			RuleManager: ruleManager,
-			TargetPools: targetManager.Pools(),
-			Flags:       flags,
-			Birth:       time.Now(),
-		},
-		CurationState: curationState,
+	prometheusStatus := &web.PrometheusStatusHandler{
+		BuildInfo:   BuildInfo,
+		Config:      conf.String(),
+		RuleManager: ruleManager,
+		TargetPools: targetManager.Pools(),
+		Flags:       flags,
+		Birth:       time.Now(),
 	}
 
 	alertsHandler := &web.AlertsHandler{
@@ -247,7 +243,7 @@ func main() {
 	}
 
 	webService := &web.WebService{
-		StatusHandler:    statusHandler,
+		StatusHandler:    prometheusStatus,
 		MetricsHandler:   metricsService,
 		DatabasesHandler: databasesHandler,
 		AlertsHandler:    alertsHandler,
@@ -260,7 +256,7 @@ func main() {
 
 		deletionTimer: deletionTimer,
 
-		curationState: curationState,
+		curationState: prometheusStatus,
 
 		unwrittenSamples: unwrittenSamples,
 

@@ -112,6 +112,10 @@ func (s sampleGroup) Get() (key, value proto.Message) {
 	return k, v
 }
 
+type noopUpdater bool
+
+func (noopUpdater) UpdateCurationState(*CurationState) {}
+
 func TestCuratorCompactionProcessor(t *testing.T) {
 	scenarios := []struct {
 		in  in
@@ -872,8 +876,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		}
 		defer samples.Close()
 
-		updates := make(chan CurationState, 100)
-		defer close(updates)
+		updates := new(noopUpdater)
 
 		stop := make(chan bool)
 		defer close(stop)
@@ -1396,8 +1399,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		}
 		defer samples.Close()
 
-		updates := make(chan CurationState, 100)
-		defer close(updates)
+		updates := new(noopUpdater)
 
 		stop := make(chan bool)
 		defer close(stop)
