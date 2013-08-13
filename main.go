@@ -36,13 +36,14 @@ const deletionBatchSize = 100
 
 // Commandline flags.
 var (
-	configFile                   = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
-	metricsStoragePath           = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
-	concurrentRetrievalAllowance = flag.Int("concurrentRetrievalAllowance", 15, "The number of concurrent metrics retrieval requests allowed.")
+	configFile         = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
+	metricsStoragePath = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
 
-	samplesQueueCapacity      = flag.Int("queue.samplesCapacity", 4096, "The size of the unwritten samples queue.")
-	diskAppendQueueCapacity   = flag.Int("queue.diskAppendCapacity", 1000000, "The size of the queue for items that are pending writing to disk.")
-	memoryAppendQueueCapacity = flag.Int("queue.memoryAppendCapacity", 10000, "The size of the queue for items that are pending writing to memory.")
+	alertmanagerUrl = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
+
+	samplesQueueCapacity      = flag.Int("storage.queue.samplesCapacity", 4096, "The size of the unwritten samples queue.")
+	diskAppendQueueCapacity   = flag.Int("storage.queue.diskAppendCapacity", 1000000, "The size of the queue for items that are pending writing to disk.")
+	memoryAppendQueueCapacity = flag.Int("storage.queue.memoryAppendCapacity", 10000, "The size of the queue for items that are pending writing to memory.")
 
 	headCompactInterval = flag.Duration("compact.headInterval", 10*3*time.Minute, "The amount of time between head compactions.")
 	bodyCompactInterval = flag.Duration("compact.bodyInterval", 10*5*time.Minute, "The amount of time between body compactions.")
@@ -63,8 +64,9 @@ var (
 	arenaFlushInterval = flag.Duration("arena.flushInterval", 15*time.Minute, "The period at which the in-memory arena is flushed to disk.")
 	arenaTTL           = flag.Duration("arena.ttl", 10*time.Minute, "The relative age of values to purge to disk from memory.")
 
-	alertmanagerUrl           = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
 	notificationQueueCapacity = flag.Int("alertmanager.notificationQueueCapacity", 100, "The size of the queue for pending alert manager notifications.")
+
+	concurrentRetrievalAllowance = flag.Int("concurrentRetrievalAllowance", 15, "The number of concurrent metrics retrieval requests allowed.")
 
 	printVersion = flag.Bool("version", false, "print version information")
 )
