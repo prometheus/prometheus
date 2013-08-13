@@ -26,6 +26,15 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
+type collectResultIngester struct {
+	result *extraction.Result
+}
+
+func (i *collectResultIngester) Ingest(r *extraction.Result) error {
+	i.result = r
+	return nil
+}
+
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := target{
 		scheduler:  literalScheduler{},
@@ -33,7 +42,7 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 		address:    "bad schema",
 		httpClient: utility.NewDeadlineClient(0),
 	}
-	testTarget.Scrape(time.Time{}, make(chan *extraction.Result, 2))
+	testTarget.Scrape(time.Time{}, nopIngester{})
 	if testTarget.state != UNREACHABLE {
 		t.Errorf("Expected target state %v, actual: %v", UNREACHABLE, testTarget.state)
 	}
@@ -48,10 +57,10 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	}
 
 	now := time.Now()
-	results := make(chan *extraction.Result)
-	go testTarget.recordScrapeHealth(results, now, true)
+	ingester := &collectResultIngester{}
+	testTarget.recordScrapeHealth(ingester, now, true)
 
-	result := <-results
+	result := ingester.result
 
 	if len(result.Samples) != 1 {
 		t.Fatalf("Expected one sample, got %d", len(result.Samples))
@@ -88,11 +97,11 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	defer server.Close()
 
 	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
-	results := make(chan *extraction.Result, 1024)
+	ingester := nopIngester{}
 
 	// scrape once without timeout
 	signal <- true
-	if err := testTarget.Scrape(time.Now(), results); err != nil {
+	if err := testTarget.Scrape(time.Now(), ingester); err != nil {
 		t.Fatal(err)
 	}
 
@@ -101,12 +110,12 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again
 	signal <- true
-	if err := testTarget.Scrape(time.Now(), results); err != nil {
+	if err := testTarget.Scrape(time.Now(), ingester); err != nil {
 		t.Fatal(err)
 	}
 
 	// now timeout
-	if err := testTarget.Scrape(time.Now(), results); err == nil {
+	if err := testTarget.Scrape(time.Now(), ingester); err == nil {
 		t.Fatal("expected scrape to timeout")
 	} else {
 		signal <- true // let handler continue
@@ -114,7 +123,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again without timeout
 	signal <- true
-	if err := testTarget.Scrape(time.Now(), results); err != nil {
+	if err := testTarget.Scrape(time.Now(), ingester); err != nil {
 		t.Fatal(err)
 	}
 }

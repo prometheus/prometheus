@@ -56,7 +56,7 @@ func (t fakeTarget) Interval() time.Duration {
 	return t.interval
 }
 
-func (t *fakeTarget) Scrape(e time.Time, r chan<- *extraction.Result) error {
+func (t *fakeTarget) Scrape(e time.Time, i extraction.Ingester) error {
 	t.scrapeCount++
 
 	return nil
@@ -78,8 +78,7 @@ func (t *fakeTarget) Merge(newTarget Target) {}
 func (t *fakeTarget) EstimatedTimeToExecute() time.Duration { return 0 }
 
 func testTargetManager(t test.Tester) {
-	results := make(chan *extraction.Result, 5)
-	targetManager := NewTargetManager(results, 3)
+	targetManager := NewTargetManager(nopIngester{}, 3)
 	testJob1 := config.JobConfig{
 		JobConfig: pb.JobConfig{
 			Name:           proto.String("test_job1"),
