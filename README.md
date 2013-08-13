@@ -18,14 +18,13 @@ If you read below in the _Getting Started_ section, the build infrastructure
 will take care of the following things for you in most cases:
 
   1. Go 1.1.
-  2. GVM: [https://github.com/moovweb/gvm](https://github.com/moovweb/gvm) is highly recommended as well.
-  3. LevelDB: [https://code.google.com/p/leveldb/](https://code.google.com/p/leveldb/).
-  4. Protocol Buffers Compiler: [http://code.google.com/p/protobuf/](http://code.google.com/p/protobuf/).
-  5. goprotobuf: the code generator and runtime library: [http://code.google.com/p/goprotobuf/](http://code.google.com/p/goprotobuf/).
-  6. Levigo, a Go-wrapper around LevelDB's C library: [https://github.com/jmhodges/levigo](https://github.com/jmhodges/levigo).
-  7. GoRest, a RESTful style web-services framework: [http://code.google.com/p/gorest/](http://code.google.com/p/gorest/).
-  8. Prometheus Client, Prometheus in Prometheus [https://github.com/prometheus/client_golang](https://github.com/prometheus/client_golang).
-  9. Snappy, a compression library for LevelDB and Levigo [http://code.google.com/p/snappy/](http://code.google.com/p/snappy/).
+  2. LevelDB: [https://code.google.com/p/leveldb/](https://code.google.com/p/leveldb/).
+  3. Protocol Buffers Compiler: [http://code.google.com/p/protobuf/](http://code.google.com/p/protobuf/).
+  4. goprotobuf: the code generator and runtime library: [http://code.google.com/p/goprotobuf/](http://code.google.com/p/goprotobuf/).
+  5. Levigo, a Go-wrapper around LevelDB's C library: [https://github.com/jmhodges/levigo](https://github.com/jmhodges/levigo).
+  6. GoRest, a RESTful style web-services framework: [http://code.google.com/p/gorest/](http://code.google.com/p/gorest/).
+  7. Prometheus Client, Prometheus in Prometheus [https://github.com/prometheus/client_golang](https://github.com/prometheus/client_golang).
+  8. Snappy, a compression library for LevelDB and Levigo [http://code.google.com/p/snappy/](http://code.google.com/p/snappy/).
 
 ## Getting Started
 
@@ -34,32 +33,6 @@ For basic help how to get started:
   * The source code is periodically indexed: [Prometheus Core](http://godoc.org/github.com/prometheus/prometheus).
   * For UNIX-like environment users users, please consult the Travis CI configuration in _.travis.yml_ and _Makefile_.
   * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers).
-
-### Working with GVM
-Starting out, the following workflow is advised:
-
-    $ gvm install go1.1
-    $ gvm use go1.1
-    $ gvm pkgset create prometheus
-    $ gvm pkgset use prometheus
-
-This is mainly due to the fact that it allows the user to partition the
-compile-time side-effects from the rest of one's work environment, particularly
-``${GOPATH}``.
-
-Read below in the _General_ section.
-
-### Not Using GVM
-It is entirely possible to build Prometheus without ``gvm``.  I presently do not
-advise taking this route due to build environment pollution both against
-Prometheus and from its build infrastructure onto the system---namely
-``${GOPATH}``.
-
-If you really want to avoid GVM, execute the following:
-
-    $ touch build/gvm-stamp
-
-Read below in the _General_ section.
 
 ### General
 
@@ -110,10 +83,9 @@ architecture and release identification remarks for us.
 
 ### Race Detector
 
-Go 1.1 includes a [race
-detector](http://tip.golang.org/doc/articles/race_detector.html) which can be
-enabled at build time. Here's how to use it with prometheus (assumes that
-you've already run a successful build).
+Go 1.1 includes a [race detector](http://tip.golang.org/doc/articles/race_detector.html)
+which can be enabled at build time. Here's how to use it with Prometheus
+(assumes that you've already run a successful build).
 
 To run the tests with race detection:
 
