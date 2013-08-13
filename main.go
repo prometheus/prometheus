@@ -23,6 +23,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/retrieval"
@@ -181,6 +183,12 @@ func main() {
 	}
 
 	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
+	ingester := &extraction.MergeLabelsIngester{
+		Labels:          conf.GlobalLabels(),
+		CollisionPrefix: clientmodel.ExporterLabelPrefix,
+
+		Ingester: extraction.ChannelIngester(unwrittenSamples),
+	}
 	curationState := make(chan metric.CurationState, 1)
 	// Coprime numbers, fool!
 	headCompactionTimer := time.NewTicker(*headCompactInterval)
@@ -189,7 +197,7 @@ func main() {
 	deletionTimer := time.NewTicker(*deleteInterval)
 
 	// Queue depth will need to be exposed
-	targetManager := retrieval.NewTargetManager(unwrittenSamples, *concurrentRetrievalAllowance)
+	targetManager := retrieval.NewTargetManager(ingester, *concurrentRetrievalAllowance)
 	targetManager.AddTargetsFromConfig(conf)
 
 	notifications := make(chan notification.NotificationReqs, *notificationQueueCapacity)
