@@ -47,6 +47,7 @@ clean:
 	$(MAKE) -C tools clean
 	$(MAKE) -C web clean
 	rm -rf $(TEST_ARTIFACTS)
+	-rm prometheus-$(REV).tar.gz
 	-find . -type f -iname '*~' -exec rm '{}' ';'
 	-find . -type f -iname '*#' -exec rm '{}' ';'
 	-find . -type f -iname '.#*' -exec rm '{}' ';'
@@ -102,4 +103,4 @@ update:
 web: config dependencies model preparation
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean config dependencies documentation format model package preparation race_condition_binary race_condition_run run search_index test tools update
+.PHONY: advice binary build clean config dependencies documentation format model package preparation race_condition_binary race_condition_run run search_index tarball test tools update
