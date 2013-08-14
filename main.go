@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/golang/glog"
@@ -93,11 +94,11 @@ type prometheus struct {
 
 func (p *prometheus) interruptHandler() {
 	notifier := make(chan os.Signal)
-	signal.Notify(notifier, os.Interrupt)
+	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
 
 	<-notifier
 
-	glog.Warning("Received SIGINT; Exiting gracefully...")
+	glog.Warning("Received SIGINT/SIGTERM; Exiting gracefully...")
 	p.close()
 	os.Exit(0)
 }
