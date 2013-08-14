@@ -14,7 +14,9 @@
 package metric
 
 import (
+	"io"
 	"sort"
+	"sync"
 
 	"code.google.com/p/goprotobuf/proto"
 
