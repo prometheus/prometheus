@@ -34,11 +34,6 @@ build: config dependencies model preparation tools web
 docker: build
 	docker build -t prometheus:$(REV) .
 
-tarball: build prometheus-$(REV).tar.gz
-
-prometheus-$(REV).tar.gz:
-	tar -czf prometheus-$(REV).tar.gz prometheus
-
 $(BUILD_PATH)/cache/$(GOPKG):
 	curl -o $@ http://go.googlecode.com/files/$(GOPKG)
 

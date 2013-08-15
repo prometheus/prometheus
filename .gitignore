@@ -9,7 +9,6 @@
 *.pyc
 *.rej
 *.so
-*.tar.gz
 *~
 .*.swp
 .DS_Store
