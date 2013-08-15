@@ -31,10 +31,6 @@ type MetricPersistence interface {
 	// closed when finished.
 	Close()
 
-	// Commit all pending operations, if any, since some of the storage components
-	// queue work on channels and operate on it in bulk.
-	// Flush() error
-
 	// Record a group of new samples in the storage layer.
 	AppendSamples(clientmodel.Samples) error
 
@@ -58,10 +54,6 @@ type MetricPersistence interface {
 	GetRangeValues(*clientmodel.Fingerprint, Interval) Values
 	// Get all label values that are associated with a given label name.
 	GetAllValuesForLabel(clientmodel.LabelName) (clientmodel.LabelValues, error)
-
-	// Requests the storage stack to build a materialized View of the values
-	// contained therein.
-	// MakeView(builder ViewRequestBuilder, deadline time.Duration) (View, error)
 }
 
 // View provides a view of the values in the datastore subject to the request
