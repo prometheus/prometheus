@@ -47,7 +47,7 @@ func BenchmarkStreamAdd(b *testing.B) {
 	b.Logf("%d cycles with %f bytes per cycle, totalling %d", b.N, float32(post.TotalAlloc-pre.TotalAlloc)/float32(b.N), post.TotalAlloc-pre.TotalAlloc)
 }
 
-func benchmarkAppendSample(b *testing.B, labels int) {
+func benchmarkAppendSamples(b *testing.B, labels int) {
 	b.StopTimer()
 	s := NewMemorySeriesStorage(MemorySeriesOptions{})
 
@@ -80,17 +80,17 @@ func benchmarkAppendSample(b *testing.B, labels int) {
 }
 
 func BenchmarkAppendSample1(b *testing.B) {
-	benchmarkAppendSample(b, 1)
+	benchmarkAppendSamples(b, 1)
 }
 
 func BenchmarkAppendSample10(b *testing.B) {
-	benchmarkAppendSample(b, 10)
+	benchmarkAppendSamples(b, 10)
 }
 
 func BenchmarkAppendSample100(b *testing.B) {
-	benchmarkAppendSample(b, 100)
+	benchmarkAppendSamples(b, 100)
 }
 
 func BenchmarkAppendSample1000(b *testing.B) {
-	benchmarkAppendSample(b, 1000)
+	benchmarkAppendSamples(b, 1000)
 }

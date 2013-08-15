@@ -107,7 +107,7 @@ func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 			Metric:    l,
 		}
 
-		err := p.AppendSample(sample)
+		err := p.AppendSamples(clientmodel.Samples{sample})
 
 		success = err == nil
 		if !success {
@@ -136,7 +136,7 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 			Metric:    l,
 		}
 
-		err := p.AppendSample(sample)
+		err := p.AppendSamples(clientmodel.Samples{sample})
 		if err != nil {
 			t.Error(err)
 			return
@@ -180,7 +180,7 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 			Metric:    clientmodel.Metric{clientmodel.MetricNameLabel: "my_metric"},
 		}
 
-		err := p.AppendSample(sample)
+		err := p.AppendSamples(clientmodel.Samples{sample})
 
 		return err == nil
 	}
@@ -321,7 +321,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				sample.Timestamp = sortedTimestamps[sampleIndex]
 				sample.Value = clientmodel.SampleValue(sampleIndex)
 
-				err := p.AppendSample(sample)
+				err := p.AppendSamples(clientmodel.Samples{sample})
 
 				if err != nil {
 					t.Error(err)

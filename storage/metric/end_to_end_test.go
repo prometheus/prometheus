@@ -23,7 +23,7 @@ import (
 )
 
 func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
-	testAppendSample(p, &clientmodel.Sample{
+	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: clientmodel.Metric{
@@ -32,7 +32,7 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 		},
 	}, t)
 
-	testAppendSample(p, &clientmodel.Sample{
+	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: clientmodel.Metric{
@@ -79,7 +79,7 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 }
 
 func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
-	testAppendSample(p, &clientmodel.Sample{
+	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: clientmodel.Metric{
@@ -89,7 +89,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 		},
 	}, t)
 
-	testAppendSample(p, &clientmodel.Sample{
+	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: clientmodel.Metric{
@@ -145,7 +145,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 }
 
 func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
-	testAppendSample(p, &clientmodel.Sample{
+	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: clientmodel.Metric{
@@ -153,7 +153,7 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		},
 	}, t)
 
-	testAppendSample(p, &clientmodel.Sample{
+	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: time.Time{},
 		Metric: clientmodel.Metric{
@@ -264,7 +264,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 	for i := 0; i < increments; i++ {
 		for j := 0; j < repetitions; j++ {
 			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			testAppendSample(p, &clientmodel.Sample{
+			testAppendSamples(p, &clientmodel.Sample{
 				Value:     clientmodel.SampleValue(i),
 				Timestamp: time,
 				Metric:    metric,
