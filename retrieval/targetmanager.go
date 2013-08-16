@@ -14,8 +14,6 @@
 package retrieval
 
 import (
-	"time"
-
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
 
@@ -110,7 +108,7 @@ func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 			}
 
 			for _, endpoint := range targetGroup.Target {
-				target := NewTarget(endpoint, time.Second*5, baseLabels)
+				target := NewTarget(endpoint, job.ScrapeTimeout(), baseLabels)
 				m.AddTarget(job, target)
 			}
 		}
