@@ -21,9 +21,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// AppendBatch models a batch of samples to be stored.
-type AppendBatch map[clientmodel.Fingerprint]SampleSet
-
 // MetricPersistence is a system for storing metric samples in a persistence
 // layer.
 type MetricPersistence interface {

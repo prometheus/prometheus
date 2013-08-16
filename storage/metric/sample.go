@@ -168,3 +168,20 @@ type Interval struct {
 	OldestInclusive time.Time
 	NewestInclusive time.Time
 }
+
+// AppendBatch models a batch of samples to be stored.
+type AppendBatch map[clientmodel.Fingerprint]SampleSet
+
+func (b AppendBatch) Add(s SampleSet) {
+	fp := clientmodel.Fingerprint{}
+	fp.LoadFromMetric(s.Metric)
+	ss, ok := b[fp]
+	if !ok {
+		b[fp] = s
+		return
+	}
+
+	ss.Values = append(ss.Values, s.Values...)
+
+	b[fp] = ss
+}
