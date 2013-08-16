@@ -49,12 +49,18 @@ message TargetGroup {
 }
 
 // The configuration for a Prometheus job to scrape.
+//
+// The next field no. is 8.
 message JobConfig {
 	// The job name. Must adhere to the regex "[a-zA-Z_][a-zA-Z0-9_-]*".
 	required string name = 1;
 	// How frequently to scrape targets from this job. Overrides the global
-	// default.
+	// default. Must be a valid Prometheus duration string in the form
+	// "[0-9]+[smhdwy]".
 	optional string scrape_interval = 2;
+	// Per-target timeout when scraping this job. Must be a valid Prometheus
+	// duration string in the form "[0-9]+[smhdwy]".
+	optional string scrape_timeout = 7 [default = "10s"];
 	// The DNS-SD service name pointing to SRV records containing endpoint
 	// information for a job. When this field is provided, no target_group
 	// elements may be set.
