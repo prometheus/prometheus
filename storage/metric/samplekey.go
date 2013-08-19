@@ -61,19 +61,6 @@ func (s *SampleKey) Dump(d *dto.SampleKey) {
 	d.SampleCount = proto.Uint32(s.SampleCount)
 }
 
-// ToPartialDTO converts this SampleKey into a DTO that is only suitable for
-// database exploration purposes for a given (Fingerprint, First Sample Time)
-// tuple.
-func (s *SampleKey) FOOdumpPartial(d *dto.SampleKey) {
-	d.Reset()
-
-	f := &dto.Fingerprint{}
-	dumpFingerprint(f, s.Fingerprint)
-
-	d.Fingerprint = f
-	d.Timestamp = indexable.EncodeTime(s.FirstTimestamp)
-}
-
 func (s *SampleKey) String() string {
 	return fmt.Sprintf("SampleKey for %s at %s to %s with %d values.", s.Fingerprint, s.FirstTimestamp, s.LastTimestamp, s.SampleCount)
 }

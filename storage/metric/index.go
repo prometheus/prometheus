@@ -542,7 +542,7 @@ func (i *BufferedIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 		return nil
 	}
 
-	i.buf = append(i.buf)
+	i.buf = append(i.buf, b)
 
 	i.err = i.Flush()
 
