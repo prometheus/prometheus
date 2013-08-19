@@ -34,6 +34,9 @@ build: config dependencies model preparation tools web
 docker: build
 	docker build -t prometheus:$(REV) .
 
+tarball: build
+	tar -C $(BUILD_PATH)/package -czf prometheus.tar.gz .
+
 $(BUILD_PATH)/cache/$(GOPKG):
 	curl -o $@ http://go.googlecode.com/files/$(GOPKG)
 
@@ -42,7 +45,7 @@ clean:
 	$(MAKE) -C tools clean
 	$(MAKE) -C web clean
 	rm -rf $(TEST_ARTIFACTS)
-	-rm prometheus-$(REV).tar.gz
+	-rm prometheus.tar.gz
 	-find . -type f -iname '*~' -exec rm '{}' ';'
 	-find . -type f -iname '*#' -exec rm '{}' ';'
 	-find . -type f -iname '.#*' -exec rm '{}' ';'
