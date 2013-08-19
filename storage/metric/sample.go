@@ -164,6 +164,11 @@ type SampleSet struct {
 	Values Values
 }
 
+func (s *SampleSet) add(vs ...*SamplePair) {
+	s.Values = append(s.Values, vs...)
+	sort.Sort(s.Values)
+}
+
 type Interval struct {
 	OldestInclusive time.Time
 	NewestInclusive time.Time
