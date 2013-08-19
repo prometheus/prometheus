@@ -15,7 +15,6 @@ package api
 
 import (
 	"net/http"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -47,7 +46,7 @@ func (serv MetricsService) SetTargets(targetGroups []TargetGroup, jobName string
 		}
 
 		for _, endpoint := range targetGroup.Endpoints {
-			newTarget := retrieval.NewTarget(endpoint, time.Second*5, baseLabels)
+			newTarget := retrieval.NewTarget(endpoint, job.ScrapeTimeout(), baseLabels)
 			newTargets = append(newTargets, newTarget)
 		}
 	}

@@ -79,6 +79,9 @@ func (c Config) Validate() error {
 		if _, err := utility.StringToDuration(job.GetSdRefreshInterval()); err != nil {
 			return fmt.Errorf("Invalid SD refresh interval for job '%s': %s", job.GetName(), err)
 		}
+		if _, err := utility.StringToDuration(job.GetScrapeTimeout()); err != nil {
+			return fmt.Errorf("Invalid scrape timeout for job '%s': %s", job.GetName(), err)
+		}
 		for _, targetGroup := range job.TargetGroup {
 			if err := c.validateLabels(targetGroup.Labels); err != nil {
 				return fmt.Errorf("Invalid labels for job '%s': %s", job.GetName(), err)
@@ -148,5 +151,10 @@ type JobConfig struct {
 
 // EvaluationInterval gets the scrape interval for a job.
 func (c JobConfig) ScrapeInterval() time.Duration {
+	return stringToDuration(c.GetScrapeInterval())
+}
+
+// EvaluationInterval gets the scrape interval for a job.
+func (c JobConfig) ScrapeTimeout() time.Duration {
 	return stringToDuration(c.GetScrapeInterval())
 }

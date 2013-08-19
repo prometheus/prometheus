@@ -86,7 +86,7 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 			addr.Target = addr.Target[:len(addr.Target)-1]
 		}
 		endpoint.Host = fmt.Sprintf("%s:%d", addr.Target, addr.Port)
-		t := NewTarget(endpoint.String(), time.Second*5, baseLabels)
+		t := NewTarget(endpoint.String(), p.job.ScrapeTimeout(), baseLabels)
 		targets = append(targets, t)
 	}
 
