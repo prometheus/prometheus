@@ -48,7 +48,7 @@ type testNotificationScenario struct {
 func (s *testNotificationScenario) test(i int, t *testing.T) {
 	notifications := make(chan NotificationReqs)
 	defer close(notifications)
-	h := NewNotificationHandler("alertmanager_url", "prometheus_url", notifications)
+	h := NewNotificationHandler("alertmanager_url", notifications)
 
 	receivedPost := make(chan bool, 1)
 	poster := testHttpPoster{receivedPost: receivedPost}
@@ -63,9 +63,10 @@ func (s *testNotificationScenario) test(i int, t *testing.T) {
 			Labels: clientmodel.LabelSet{
 				clientmodel.LabelName("instance"): clientmodel.LabelValue("testinstance"),
 			},
-			Value:       clientmodel.SampleValue(1.0 / 3.0),
-			ActiveSince: time.Time{},
-			RuleString:  "Test rule string",
+			Value:        clientmodel.SampleValue(1.0 / 3.0),
+			ActiveSince:  time.Time{},
+			RuleString:   "Test rule string",
+			GeneratorUrl: "prometheus_url",
 		},
 	}
 
