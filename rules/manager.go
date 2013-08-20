@@ -45,21 +45,37 @@ type ruleManager struct {
 	sync.Mutex
 	rules []Rule
 
+	done chan bool
+
+	interval time.Duration
+	storage  *metric.TieredStorage
+
 	results       chan<- *extraction.Result
 	notifications chan<- notification.NotificationReqs
-	done          chan bool
-	interval      time.Duration
-	storage       *metric.TieredStorage
+
+	prometheusUrl string
 }
 
-func NewRuleManager(results chan<- *extraction.Result, notifications chan<- notification.NotificationReqs, interval time.Duration, storage *metric.TieredStorage) RuleManager {
+type RuleManagerOptions struct {
+	EvaluationInterval time.Duration
+	Storage            *metric.TieredStorage
+
+	Notifications chan<- notification.NotificationReqs
+	Results       chan<- *extraction.Result
+
+	PrometheusUrl string
+}
+
+func NewRuleManager(o *RuleManagerOptions) RuleManager {
 	manager := &ruleManager{
-		results:       results,
-		notifications: notifications,
-		rules:         []Rule{},
-		done:          make(chan bool),
-		interval:      interval,
-		storage:       storage,
+		rules: []Rule{},
+		done:  make(chan bool),
+
+		interval:      o.EvaluationInterval,
+		storage:       o.Storage,
+		results:       o.Results,
+		notifications: o.Notifications,
+		prometheusUrl: o.PrometheusUrl,
 	}
 	return manager
 }
@@ -107,9 +123,10 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule) {
 			Labels: aa.Labels.Merge(clientmodel.LabelSet{
 				AlertNameLabel: clientmodel.LabelValue(rule.Name()),
 			}),
-			Value:       aa.Value,
-			ActiveSince: aa.ActiveSince,
-			RuleString:  rule.String(),
+			Value:        aa.Value,
+			ActiveSince:  aa.ActiveSince,
+			RuleString:   rule.String(),
+			GeneratorUrl: m.prometheusUrl + ConsoleLinkForExpression(rule.vector.String()),
 		})
 	}
 	m.notifications <- notifications

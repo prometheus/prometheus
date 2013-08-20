@@ -203,14 +203,19 @@ func main() {
 	notifications := make(chan notification.NotificationReqs, *notificationQueueCapacity)
 
 	// Queue depth will need to be exposed
-	ruleManager := rules.NewRuleManager(unwrittenSamples, notifications, conf.EvaluationInterval(), ts)
+	ruleManager := rules.NewRuleManager(&rules.RuleManagerOptions{
+		Results:            unwrittenSamples,
+		Notifications:      notifications,
+		EvaluationInterval: conf.EvaluationInterval(),
+		Storage:            ts,
+		PrometheusUrl:      web.MustBuildServerUrl(),
+	})
 	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
 		glog.Fatal("Error loading rule files: ", err)
 	}
 	go ruleManager.Run()
 
-	prometheusUrl := web.MustBuildServerUrl()
-	notificationHandler := notification.NewNotificationHandler(*alertmanagerUrl, prometheusUrl, notifications)
+	notificationHandler := notification.NewNotificationHandler(*alertmanagerUrl, notifications)
 	go notificationHandler.Run()
 
 	flags := map[string]string{}
