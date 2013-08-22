@@ -385,6 +385,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			continue
 		}
 
+		var seriesFrontierRes seriesFrontierResolver
 		var seriesFrontier *seriesFrontier = nil
 		var seriesPresent = true
 
@@ -427,8 +428,15 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 					}
 				}
 
+				if diskPresent && seriesFrontierRes == nil {
+					seriesFrontierRes = &levigoSeriesFrontierResolver{
+						iterator: iterator,
+						frontier: diskFrontier,
+					}
+				}
+
 				if seriesFrontier == nil && diskPresent {
-					seriesFrontier, seriesPresent, err = newSeriesFrontier(scanJob.fingerprint, diskFrontier, iterator)
+					seriesFrontier, seriesPresent, err = seriesFrontierRes.GetFrontier(scanJob.fingerprint)
 					if err != nil {
 						panic(err)
 					}

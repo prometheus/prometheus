@@ -82,94 +82,6 @@ func (f *seriesFrontier) String() string {
 	return fmt.Sprintf("seriesFrontier from %s to %s at %s", f.firstSupertime, f.lastSupertime, f.lastTime)
 }
 
-// newSeriesFrontier furnishes a populated diskFrontier for a given
-// fingerprint.  If the series is absent, present will be false.
-func newSeriesFrontier(f *clientmodel.Fingerprint, d *diskFrontier, i leveldb.Iterator) (s *seriesFrontier, present bool, err error) {
-	lowerSeek := firstSupertime
-	upperSeek := lastSupertime
-
-	// If the diskFrontier for this iterator says that the candidate fingerprint
-	// is outside of its seeking domain, there is no way that a seriesFrontier
-	// could be materialized.  Simply bail.
-	if !d.ContainsFingerprint(f) {
-		return nil, false, nil
-	}
-
-	// If we are either the first or the last key in the database, we need to use
-	// pessimistic boundary frontiers.
-	if f.Equal(d.firstFingerprint) {
-		lowerSeek = indexable.EncodeTime(d.firstSupertime)
-	}
-	if f.Equal(d.lastFingerprint) {
-		upperSeek = indexable.EncodeTime(d.lastSupertime)
-	}
-
-	// TODO: Convert this to SampleKey.ToPartialDTO.
-	fp := new(dto.Fingerprint)
-	dumpFingerprint(fp, f)
-	key := &dto.SampleKey{
-		Fingerprint: fp,
-		Timestamp:   upperSeek,
-	}
-
-	raw := coding.NewPBEncoder(key).MustEncode()
-	i.Seek(raw)
-
-	if i.Key() == nil {
-		return nil, false, fmt.Errorf("illegal condition: empty key")
-	}
-
-	retrievedKey, err := extractSampleKey(i)
-	if err != nil {
-		panic(err)
-	}
-
-	retrievedFingerprint := retrievedKey.Fingerprint
-
-	// The returned fingerprint may not match if the original seek key lives
-	// outside of a metric's frontier.  This is probable, for we are seeking to
-	// to the maximum allowed time, which could advance us to the next
-	// fingerprint.
-	//
-	//
-	if !retrievedFingerprint.Equal(f) {
-		i.Previous()
-
-		retrievedKey, err = extractSampleKey(i)
-		if err != nil {
-			panic(err)
-		}
-		retrievedFingerprint := retrievedKey.Fingerprint
-		// If the previous key does not match, we know that the requested
-		// fingerprint does not live in the database.
-		if !retrievedFingerprint.Equal(f) {
-			return nil, false, nil
-		}
-	}
-
-	s = &seriesFrontier{
-		lastSupertime: retrievedKey.FirstTimestamp,
-		lastTime:      retrievedKey.LastTimestamp,
-	}
-
-	key.Timestamp = lowerSeek
-
-	raw = coding.NewPBEncoder(key).MustEncode()
-
-	i.Seek(raw)
-
-	retrievedKey, err = extractSampleKey(i)
-	if err != nil {
-		panic(err)
-	}
-
-	retrievedFingerprint = retrievedKey.Fingerprint
-
-	s.firstSupertime = retrievedKey.FirstTimestamp
-
-	return s, true, nil
-}
-
 // Contains indicates whether a given time value is within the recorded
 // interval.
 func (s *seriesFrontier) Contains(t time.Time) bool {
@@ -193,4 +105,100 @@ func (s *seriesFrontier) InSafeSeekRange(t time.Time) (safe bool) {
 
 func (s *seriesFrontier) After(t time.Time) bool {
 	return s.firstSupertime.After(t)
+}
+
+type seriesFrontierResolver interface {
+	GetFrontier(*clientmodel.Fingerprint) (*seriesFrontier, bool, error)
+}
+
+type levigoSeriesFrontierResolver struct {
+	iterator leveldb.Iterator
+
+	frontier *diskFrontier
+}
+
+func (f *levigoSeriesFrontierResolver) GetFrontier(fp *clientmodel.Fingerprint) (*seriesFrontier, bool, error) {
+	lowerSeek := firstSupertime
+	upperSeek := lastSupertime
+
+	// If the diskFrontier for this iterator says that the candidate fingerprint
+	// is outside of its seeking domain, there is no way that a seriesFrontier
+	// could be materialized.  Simply bail.
+	if !f.frontier.ContainsFingerprint(fp) {
+		return nil, false, nil
+	}
+
+	// If we are either the first or the last key in the database, we need to use
+	// pessimistic boundary frontiers.
+	if fp.Equal(f.frontier.firstFingerprint) {
+		lowerSeek = indexable.EncodeTime(f.frontier.firstSupertime)
+	}
+	if fp.Equal(f.frontier.lastFingerprint) {
+		upperSeek = indexable.EncodeTime(f.frontier.lastSupertime)
+	}
+
+	// TODO: Convert this to SampleKey.ToPartialDTO.
+	k := new(dto.Fingerprint)
+	dumpFingerprint(k, fp)
+	key := &dto.SampleKey{
+		Fingerprint: k,
+		Timestamp:   upperSeek,
+	}
+
+	raw := coding.NewPBEncoder(key).MustEncode()
+	f.iterator.Seek(raw)
+
+	if f.iterator.Key() == nil {
+		return nil, false, fmt.Errorf("illegal condition: empty key")
+	}
+
+	retrievedKey, err := extractSampleKey(f.iterator)
+	if err != nil {
+		panic(err)
+	}
+
+	retrievedFingerprint := retrievedKey.Fingerprint
+
+	// The returned fingerprint may not match if the original seek key lives
+	// outside of a metric's frontier.  This is probable, for we are seeking to
+	// to the maximum allowed time, which could advance us to the next
+	// fingerprint.
+	//
+	//
+	if !retrievedFingerprint.Equal(fp) {
+		f.iterator.Previous()
+
+		retrievedKey, err = extractSampleKey(f.iterator)
+		if err != nil {
+			panic(err)
+		}
+		retrievedFingerprint := retrievedKey.Fingerprint
+		// If the previous key does not match, we know that the requested
+		// fingerprint does not live in the database.
+		if !retrievedFingerprint.Equal(fp) {
+			return nil, false, nil
+		}
+	}
+
+	s := &seriesFrontier{
+		lastSupertime: retrievedKey.FirstTimestamp,
+		lastTime:      retrievedKey.LastTimestamp,
+	}
+
+	key.Timestamp = lowerSeek
+
+	raw = coding.NewPBEncoder(key).MustEncode()
+
+	f.iterator.Seek(raw)
+
+	retrievedKey, err = extractSampleKey(f.iterator)
+	if err != nil {
+		panic(err)
+	}
+
+	retrievedFingerprint = retrievedKey.Fingerprint
+
+	s.firstSupertime = retrievedKey.FirstTimestamp
+
+	return s, true, nil
 }

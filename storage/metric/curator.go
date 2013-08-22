@@ -70,9 +70,6 @@ type Curator struct {
 type watermarkScanner struct {
 	// curationState is the data store for curation remarks.
 	curationState CurationRemarker
-	// diskFrontier models the available seekable ranges for the provided
-	// sampleIterator.
-	diskFrontier *diskFrontier
 	// ignoreYoungerThan is passed into the curation remark for the given series.
 	ignoreYoungerThan time.Duration
 	// processor is responsible for executing a given stategy on the
@@ -89,6 +86,8 @@ type watermarkScanner struct {
 	stop chan bool
 	// status is the outbound channel for notifying the status page of its state.
 	status CurationStateUpdater
+
+	seriesFrontierRes seriesFrontierResolver
 }
 
 // run facilitates the curation lifecycle.
@@ -136,9 +135,13 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 		stop:              c.Stop,
 		stopAt:            instant.Add(-1 * ignoreYoungerThan),
 
-		diskFrontier:   diskFrontier,
 		sampleIterator: iterator,
 		samples:        samples,
+
+		seriesFrontierRes: &levigoSeriesFrontierResolver{
+			iterator: iterator,
+			frontier: diskFrontier,
+		},
 	}
 
 	// Right now, the ability to stop a curation is limited to the beginning of
@@ -271,7 +274,7 @@ func (w *watermarkScanner) curationConsistent(f *clientmodel.Fingerprint, waterm
 func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
 	fingerprint := key.(*clientmodel.Fingerprint)
 
-	seriesFrontier, present, err := newSeriesFrontier(fingerprint, w.diskFrontier, w.sampleIterator)
+	seriesFrontier, present, err := w.seriesFrontierRes.GetFrontier(fingerprint)
 	if err != nil || !present {
 		// An anomaly with the series frontier is severe in the sense that some sort
 		// of an illegal state condition exists in the storage layer, which would
