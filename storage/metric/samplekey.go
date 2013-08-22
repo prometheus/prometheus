@@ -35,6 +35,24 @@ type SampleKey struct {
 	SampleCount    uint32
 }
 
+func (s *SampleKey) Equal(o *SampleKey) bool {
+	if s == o {
+		return true
+	}
+
+	if !s.Fingerprint.Equal(o.Fingerprint) {
+		return false
+	}
+	if !s.FirstTimestamp.Equal(o.FirstTimestamp) {
+		return false
+	}
+	if !s.LastTimestamp.Equal(o.LastTimestamp) {
+		return false
+	}
+
+	return s.SampleCount == o.SampleCount
+}
+
 // MayContain indicates whether the given SampleKey could potentially contain a
 // value at the provided time.  Even if true is emitted, that does not mean a
 // satisfactory value, in fact, exists.
@@ -49,6 +67,21 @@ func (s *SampleKey) MayContain(t time.Time) bool {
 	}
 }
 
+func (s *SampleKey) Before(fp *clientmodel.Fingerprint, t time.Time) bool {
+	if s.Fingerprint.Less(fp) {
+		return true
+	}
+	if !s.Fingerprint.Equal(fp) {
+		return false
+	}
+
+	if s.FirstTimestamp.Before(t) {
+		return true
+	}
+
+	return s.LastTimestamp.Before(t)
+}
+
 // ToDTO converts this SampleKey into a DTO for use in serialization purposes.
 func (s *SampleKey) Dump(d *dto.SampleKey) {
 	d.Reset()
@@ -59,19 +92,6 @@ func (s *SampleKey) Dump(d *dto.SampleKey) {
 	d.Timestamp = indexable.EncodeTime(s.FirstTimestamp)
 	d.LastTimestamp = proto.Int64(s.LastTimestamp.Unix())
 	d.SampleCount = proto.Uint32(s.SampleCount)
-}
-
-// ToPartialDTO converts this SampleKey into a DTO that is only suitable for
-// database exploration purposes for a given (Fingerprint, First Sample Time)
-// tuple.
-func (s *SampleKey) FOOdumpPartial(d *dto.SampleKey) {
-	d.Reset()
-
-	f := &dto.Fingerprint{}
-	dumpFingerprint(f, s.Fingerprint)
-
-	d.Fingerprint = f
-	d.Timestamp = indexable.EncodeTime(s.FirstTimestamp)
 }
 
 func (s *SampleKey) String() string {
