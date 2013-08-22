@@ -24,7 +24,6 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/coding"
-	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
@@ -90,7 +89,6 @@ type TieredStorage struct {
 	state tieredStorageState
 
 	memorySemaphore chan bool
-	diskSemaphore   chan bool
 
 	wmCache *watermarkCache
 
@@ -107,7 +105,6 @@ type viewJob struct {
 }
 
 const (
-	tieredDiskSemaphores   = 1
 	tieredMemorySemaphores = 5
 )
 
@@ -136,15 +133,11 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 		memoryTTL:           memoryTTL,
 		viewQueue:           make(chan viewJob, viewQueueDepth),
 
-		diskSemaphore:   make(chan bool, tieredDiskSemaphores),
 		memorySemaphore: make(chan bool, tieredMemorySemaphores),
 
 		wmCache: wmCache,
 	}
 
-	for i := 0; i < tieredDiskSemaphores; i++ {
-		s.diskSemaphore <- true
-	}
 	for i := 0; i < tieredMemorySemaphores; i++ {
 		s.memorySemaphore <- true
 	}
@@ -370,9 +363,20 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	scanJobsTimer.Stop()
 	view := newView()
 
-	var iterator leveldb.Iterator = nil
-	var diskFrontier *diskFrontier = nil
-	var diskPresent = true
+	// Get a single iterator that will be used for all data extraction
+	// below.
+	iterator := t.DiskStorage.MetricSamples.NewIterator(true)
+	defer iterator.Close()
+	diskPresent := iterator.SeekToLast()
+	var firstBlock, lastBlock *SampleKey
+	if diskPresent {
+		lastBlock, _ = extractSampleKey(iterator)
+		if !iterator.SeekToFirst() {
+			diskPresent = false
+		} else {
+			firstBlock, _ = extractSampleKey(iterator)
+		}
+	}
 
 	extractionTimer := viewJob.stats.GetTimer(stats.ViewDataExtractionTime).Start()
 	for _, scanJob := range scans {
@@ -384,9 +388,6 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 		if old {
 			continue
 		}
-
-		var seriesFrontier *seriesFrontier = nil
-		var seriesPresent = true
 
 		standingOps := scanJob.operations
 		memValues := t.memoryArena.CloneSamples(scanJob.fingerprint)
@@ -402,45 +403,17 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 			currentChunk := chunk{}
 			// If we aimed before the oldest value in memory, load more data from disk.
-			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && diskPresent && seriesPresent {
-				diskPrepareTimer := viewJob.stats.GetTimer(stats.ViewDiskPreparationTime).Start()
-				// Conditionalize disk access.
-				if diskFrontier == nil && diskPresent {
-					if iterator == nil {
-						<-t.diskSemaphore
-						defer func() {
-							t.diskSemaphore <- true
-						}()
-
-						// Get a single iterator that will be used for all data extraction
-						// below.
-						iterator = t.DiskStorage.MetricSamples.NewIterator(true)
-						defer iterator.Close()
-					}
-
-					diskFrontier, diskPresent, err = newDiskFrontier(iterator)
-					if err != nil {
-						panic(err)
-					}
-					if !diskPresent {
-						seriesPresent = false
-					}
-				}
-
-				if seriesFrontier == nil && diskPresent {
-					seriesFrontier, seriesPresent, err = newSeriesFrontier(scanJob.fingerprint, diskFrontier, iterator)
-					if err != nil {
-						panic(err)
-					}
-				}
-				diskPrepareTimer.Stop()
-
-				if diskPresent && seriesPresent {
+			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && diskPresent {
+				if diskPresent {
 					diskTimer := viewJob.stats.GetTimer(stats.ViewDiskExtractionTime).Start()
-					diskValues := t.loadChunkAroundTime(iterator, seriesFrontier, scanJob.fingerprint, targetTime)
+					diskValues, expired := t.loadChunkAroundTime(iterator, scanJob.fingerprint, targetTime, firstBlock, lastBlock)
+					if expired {
+						diskPresent = false
+					}
 					diskTimer.Stop()
 
 					// If we aimed past the newest value on disk, combine it with the next value from memory.
+					// LTB blows up.
 					if len(memValues) > 0 && diskValues.LastTimeBefore(targetTime) {
 						latestDiskValue := diskValues[len(diskValues)-1:]
 						currentChunk = append(chunk(latestDiskValue), chunk(memValues)...)
@@ -513,31 +486,39 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	return
 }
 
-func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier *seriesFrontier, fingerprint *clientmodel.Fingerprint, ts time.Time) (chunk Values) {
-
-	fd := &dto.Fingerprint{}
-	dumpFingerprint(fd, fingerprint)
-	targetKey := &dto.SampleKey{
-		Fingerprint: fd,
+func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerprint *clientmodel.Fingerprint, ts time.Time, firstBlock, lastBlock *SampleKey) (chunk Values, expired bool) {
+	if fingerprint.Less(firstBlock.Fingerprint) {
+		return nil, false
 	}
+	if lastBlock.Fingerprint.Less(fingerprint) {
+		return nil, true
+	}
+
+	seekingKey := &SampleKey{
+		Fingerprint: fingerprint,
+	}
+
+	if fingerprint.Equal(firstBlock.Fingerprint) {
+		seekingKey.FirstTimestamp = firstBlock.FirstTimestamp
+	} else if fingerprint.Equal(lastBlock.Fingerprint) {
+		seekingKey.FirstTimestamp = lastBlock.FirstTimestamp
+	} else {
+		seekingKey.FirstTimestamp = ts
+	}
+
+	fd := new(dto.SampleKey)
+	seekingKey.Dump(fd)
+
+	// Try seeking to target key.
+	rawKey := coding.NewPBEncoder(fd).MustEncode()
+	if !iterator.Seek(rawKey) {
+		return chunk, true
+	}
+
 	var foundKey *SampleKey
 	var foundValues Values
 
-	// Limit the target key to be within the series' keyspace.
-	if ts.After(frontier.lastSupertime) {
-		targetKey.Timestamp = indexable.EncodeTime(frontier.lastSupertime)
-	} else {
-		targetKey.Timestamp = indexable.EncodeTime(ts)
-	}
-
-	// Try seeking to target key.
-	rawKey := coding.NewPBEncoder(targetKey).MustEncode()
-	iterator.Seek(rawKey)
-
-	foundKey, err := extractSampleKey(iterator)
-	if err != nil {
-		panic(err)
-	}
+	foundKey, _ = extractSampleKey(iterator)
 
 	// Figure out if we need to rewind by one block.
 	// Imagine the following supertime blocks with time ranges:
@@ -551,43 +532,40 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, frontier 
 	//
 	// Only do the rewind if there is another chunk before this one.
 	rewound := false
-	firstTime := foundKey.FirstTimestamp
-	if ts.Before(firstTime) && !frontier.firstSupertime.After(ts) {
-		iterator.Previous()
-		rewound = true
-	}
+	if !foundKey.Fingerprint.Equal(fingerprint) || !foundKey.MayContain(ts) {
+		if !foundKey.Equal(firstBlock) {
+			if !iterator.Previous() {
+				panic("This should never return false.")
+			}
 
-	foundValues, err = extractSampleValues(iterator)
-	if err != nil {
-		return
-	}
+			foundKey, _ = extractSampleKey(iterator)
+			rewound = true
 
-	// If we rewound, but the target time is still past the current block, return
-	// the last value of the current (rewound) block and the entire next block.
-	if rewound {
-		foundKey, err = extractSampleKey(iterator)
-		if err != nil {
-			return
-		}
-		currentChunkLastTime := foundKey.LastTimestamp
-
-		if ts.After(currentChunkLastTime) {
-			sampleCount := len(foundValues)
-			chunk = append(chunk, foundValues[sampleCount-1])
-			// We know there's a next block since we have rewound from it.
-			iterator.Next()
-
-			foundValues, err = extractSampleValues(iterator)
-			if err != nil {
-				return
+			if !foundKey.Fingerprint.Equal(fingerprint) || !foundKey.MayContain(ts) {
+				return chunk, false
 			}
 		}
+	} else if !foundKey.Fingerprint.Equal(fingerprint) {
+		return chunk, false
+	} else {
+		glog.Info("Did not rewind but used what we got.")
 	}
 
-	// Now append all the samples of the currently seeked block to the output.
-	chunk = append(chunk, foundValues...)
+	foundValues, _ = extractSampleValues(iterator)
 
-	return
+	if rewound {
+		if !iterator.Next() {
+			return foundValues, true
+		}
+
+		foundKey, _ = extractSampleKey(iterator)
+		if foundKey.Fingerprint.Equal(fingerprint) {
+			extraValues, _ := extractSampleValues(iterator)
+			return append(foundValues, extraValues...), false
+		}
+	}
+
+	return foundValues, false
 }
 
 // Get all label values that are associated with the provided label name.

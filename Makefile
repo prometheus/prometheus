@@ -89,7 +89,7 @@ $(FULL_GOPATH):
 	-[ -d "$(FULL_GOPATH)" ] || { mkdir -vp $(FULL_GOPATH_BASE) ; ln -s "$(PWD)" "$(FULL_GOPATH)" ; }
 	[ -d "$(FULL_GOPATH)" ]
 
-test: build
+test:
 	$(GO) test $(GO_TEST_FLAGS) ./...
 
 tools: dependencies preparation
