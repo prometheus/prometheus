@@ -107,12 +107,13 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 	if err != nil {
 		return
 	}
+
 	unactedSamples, err = extractSampleValues(sampleIterator)
 	if err != nil {
 		return
 	}
 
-	for lastCurated.Before(stopAt) && lastTouchedTime.Before(stopAt) {
+	for lastCurated.Before(stopAt) && lastTouchedTime.Before(stopAt) && sampleKey.Fingerprint.Equal(fingerprint) {
 		switch {
 		// Furnish a new pending batch operation if none is available.
 		case pendingBatch == nil:
@@ -289,6 +290,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 	if err != nil {
 		return
 	}
+
 	sampleValues, err := extractSampleValues(sampleIterator)
 	if err != nil {
 		return
@@ -296,7 +298,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 
 	pendingMutations := 0
 
-	for lastCurated.Before(stopAt) {
+	for lastCurated.Before(stopAt) && sampleKey.Fingerprint.Equal(fingerprint) {
 		switch {
 		// Furnish a new pending batch operation if none is available.
 		case pendingBatch == nil:
