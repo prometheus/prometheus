@@ -298,21 +298,12 @@ func groupByFingerprint(samples clientmodel.Samples) map[clientmodel.Fingerprint
 	return fingerprintToSamples
 }
 
-func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[clientmodel.Fingerprint]clientmodel.Samples) (err error) {
+func (l *LevelDBMetricPersistence) refreshHighWatermarks(b FingerprintHighWatermarkMapping) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
 		recordOutcome(duration, err, map[string]string{operation: refreshHighWatermarks, result: success}, map[string]string{operation: refreshHighWatermarks, result: failure})
 	}(time.Now())
-
-	b := FingerprintHighWatermarkMapping{}
-	for fp, ss := range groups {
-		if len(ss) == 0 {
-			continue
-		}
-
-		b[fp] = ss[len(ss)-1].Timestamp
-	}
 
 	return l.MetricHighWatermarks.UpdateBatch(b)
 }
@@ -326,7 +317,6 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 
 	fingerprintToSamples := groupByFingerprint(samples)
 	indexErrChan := make(chan error, 1)
-	watermarkErrChan := make(chan error, 1)
 
 	go func(groups map[clientmodel.Fingerprint]clientmodel.Samples) {
 		metrics := FingerprintMetricMapping{}
@@ -338,12 +328,10 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 		indexErrChan <- l.Indexer.IndexMetrics(metrics)
 	}(fingerprintToSamples)
 
-	go func(groups map[clientmodel.Fingerprint]clientmodel.Samples) {
-		watermarkErrChan <- l.refreshHighWatermarks(groups)
-	}(fingerprintToSamples)
-
 	samplesBatch := leveldb.NewBatch()
 	defer samplesBatch.Close()
+
+	highWatermarks := FingerprintHighWatermarkMapping{}
 
 	for fingerprint, group := range fingerprintToSamples {
 		for {
@@ -360,6 +348,8 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 
 			chunk := group[0:take]
 			group = group[take:lengthOfGroup]
+
+			highWatermarks[fingerprint] = chunk[0].Timestamp
 
 			key := SampleKey{
 				Fingerprint:    &fingerprint,
@@ -382,22 +372,20 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 		}
 	}
 
-	err = l.MetricSamples.Commit(samplesBatch)
-	if err != nil {
-		return
+	if err = l.MetricSamples.Commit(samplesBatch); err == nil {
+		err = l.refreshHighWatermarks(highWatermarks)
+	} else {
+		glog.Warning("Failed to write sample batch; no watermark update.")
 	}
 
-	err = <-indexErrChan
-	if err != nil {
-		return
+	if indexErr := <-indexErrChan; indexErr != nil {
+		if err != nil {
+			return fmt.Errorf("Error writing and indexing samples: %s and %s", err, indexErr)
+		}
+		return err
 	}
 
-	err = <-watermarkErrChan
-	if err != nil {
-		return
-	}
-
-	return
+	return nil
 }
 
 func extractSampleKey(i leveldb.Iterator) (*SampleKey, error) {
