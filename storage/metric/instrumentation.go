@@ -49,6 +49,7 @@ const (
 	indexMetrics                = "index_metrics"
 	rebuildDiskFrontier         = "rebuild_disk_frontier"
 	refreshHighWatermarks       = "refresh_high_watermarks"
+	refreshHighBlockWatermarks  = "refresh_high_block_watermarks"
 	renderView                  = "render_view"
 	setLabelNameFingerprints    = "set_label_name_fingerprints"
 	setLabelPairFingerprints    = "set_label_pair_fingerprints"

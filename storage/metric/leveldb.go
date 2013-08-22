@@ -36,12 +36,13 @@ import (
 const sortConcurrency = 2
 
 type LevelDBMetricPersistence struct {
-	CurationRemarks         CurationRemarker
-	FingerprintToMetrics    FingerprintMetricIndex
-	LabelNameToFingerprints LabelNameFingerprintIndex
-	LabelSetToFingerprints  LabelPairFingerprintIndex
-	MetricHighWatermarks    HighWatermarker
-	MetricMembershipIndex   MetricMembershipIndex
+	CurationRemarks           CurationRemarker
+	FingerprintToMetrics      FingerprintMetricIndex
+	LabelNameToFingerprints   LabelNameFingerprintIndex
+	LabelSetToFingerprints    LabelPairFingerprintIndex
+	MetricHighBlockWatermarks HighWatermarker
+	MetricHighWatermarks      HighWatermarker
+	MetricMembershipIndex     MetricMembershipIndex
 
 	Indexer MetricIndexer
 
@@ -68,6 +69,7 @@ var (
 	curationRemarksCacheSize         = flag.Int("curationRemarksCacheSize", 5*1024*1024, "The size for the curation remarks cache (bytes).")
 	fingerprintsToLabelPairCacheSize = flag.Int("fingerprintsToLabelPairCacheSizeBytes", 25*1024*1024, "The size for the fingerprint to label pair index (bytes).")
 	highWatermarkCacheSize           = flag.Int("highWatermarksByFingerprintSizeBytes", 5*1024*1024, "The size for the metric high watermarks (bytes).")
+	highBlockWatermarkCacheSize      = flag.Int("highBlockWatermarksByFingerprintSizeBytes", 5*1024*1024, "The size for the metric high block watermarks (bytes).")
 	labelNameToFingerprintsCacheSize = flag.Int("labelNameToFingerprintsCacheSizeBytes", 25*1024*1024, "The size for the label name to metric fingerprint index (bytes).")
 	labelPairToFingerprintsCacheSize = flag.Int("labelPairToFingerprintsCacheSizeBytes", 25*1024*1024, "The size for the label pair to metric fingerprint index (bytes).")
 	metricMembershipIndexCacheSize   = flag.Int("metricMembershipCacheSizeBytes", 5*1024*1024, "The size for the metric membership index (bytes).")
@@ -88,6 +90,7 @@ func (l *LevelDBMetricPersistence) Close() {
 		l.FingerprintToMetrics,
 		l.LabelNameToFingerprints,
 		l.LabelSetToFingerprints,
+		l.MetricHighBlockWatermarks,
 		l.MetricHighWatermarks,
 		l.MetricMembershipIndex,
 		l.MetricSamples,
@@ -116,7 +119,7 @@ func (l *LevelDBMetricPersistence) Close() {
 }
 
 func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistence, error) {
-	workers := utility.NewUncertaintyGroup(7)
+	workers := utility.NewUncertaintyGroup(8)
 
 	emission := new(LevelDBMetricPersistence)
 
@@ -153,12 +156,26 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			},
 		},
 		{
-			"High Watermarks by Fingerprint",
+			"High Metric Block Watermarks by Fingerprint",
+			func() {
+				var err error
+				emission.MetricHighBlockWatermarks, err = NewLevelDBHighWatermarker(LevelDBHighWatermarkerOptions{
+					LevelDBOptions: leveldb.LevelDBOptions{
+						Name:           "High Metric Block Watermarks",
+						Purpose:        "The youngest sample block in the database per metric.",
+						Path:           baseDirectory + "/high_block_watermarks_by_fingerprint",
+						CacheSizeBytes: *highBlockWatermarkCacheSize,
+					}})
+				workers.MayFail(err)
+			},
+		},
+		{
+			"High Metric Watermarks by Fingerprint",
 			func() {
 				var err error
 				emission.MetricHighWatermarks, err = NewLevelDBHighWatermarker(LevelDBHighWatermarkerOptions{
 					LevelDBOptions: leveldb.LevelDBOptions{
-						Name:           "High Watermarks",
+						Name:           "High Metric Watermarks",
 						Purpose:        "The youngest sample in the database per metric.",
 						Path:           baseDirectory + "/high_watermarks_by_fingerprint",
 						CacheSizeBytes: *highWatermarkCacheSize,
@@ -298,6 +315,16 @@ func groupByFingerprint(samples clientmodel.Samples) map[clientmodel.Fingerprint
 	return fingerprintToSamples
 }
 
+func (l *LevelDBMetricPersistence) refreshHighBlockWatermarks(b FingerprintHighWatermarkMapping) (err error) {
+	defer func(begin time.Time) {
+		duration := time.Since(begin)
+
+		recordOutcome(duration, err, map[string]string{operation: refreshHighBlockWatermarks, result: success}, map[string]string{operation: refreshHighBlockWatermarks, result: failure})
+	}(time.Now())
+
+	return l.MetricHighBlockWatermarks.UpdateBatch(b)
+}
+
 func (l *LevelDBMetricPersistence) refreshHighWatermarks(b FingerprintHighWatermarkMapping) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
@@ -331,6 +358,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 	samplesBatch := leveldb.NewBatch()
 	defer samplesBatch.Close()
 
+	highBlockWatermarks := FingerprintHighWatermarkMapping{}
 	highWatermarks := FingerprintHighWatermarkMapping{}
 
 	for fingerprint, group := range fingerprintToSamples {
@@ -349,7 +377,8 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			chunk := group[0:take]
 			group = group[take:lengthOfGroup]
 
-			highWatermarks[fingerprint] = chunk[0].Timestamp
+			highBlockWatermarks[fingerprint] = chunk[0].Timestamp
+			highWatermarks[fingerprint] = chunk[take-1].Timestamp
 
 			key := SampleKey{
 				Fingerprint:    &fingerprint,
@@ -373,7 +402,9 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 	}
 
 	if err = l.MetricSamples.Commit(samplesBatch); err == nil {
-		err = l.refreshHighWatermarks(highWatermarks)
+		if err = l.refreshHighBlockWatermarks(highBlockWatermarks); err == nil {
+			err = l.refreshHighWatermarks(highWatermarks)
+		}
 	} else {
 		glog.Warning("Failed to write sample batch; no watermark update.")
 	}
@@ -592,6 +623,7 @@ func (l *LevelDBMetricPersistence) Prune() {
 	l.FingerprintToMetrics.Prune()
 	l.LabelNameToFingerprints.Prune()
 	l.LabelSetToFingerprints.Prune()
+	l.MetricHighBlockWatermarks.Prune()
 	l.MetricHighWatermarks.Prune()
 	l.MetricMembershipIndex.Prune()
 	l.MetricSamples.Prune()
@@ -620,6 +652,11 @@ func (l *LevelDBMetricPersistence) Sizes() (total uint64, err error) {
 	}
 	total += size
 
+	if size, _, err = l.MetricHighBlockWatermarks.Size(); err != nil {
+		return 0, err
+	}
+	total += size
+
 	if size, _, err = l.MetricHighWatermarks.Size(); err != nil {
 		return 0, err
 	}
@@ -644,6 +681,7 @@ func (l *LevelDBMetricPersistence) States() raw.DatabaseStates {
 		l.FingerprintToMetrics.State(),
 		l.LabelNameToFingerprints.State(),
 		l.LabelSetToFingerprints.State(),
+		l.MetricHighBlockWatermarks.State(),
 		l.MetricHighWatermarks.State(),
 		l.MetricMembershipIndex.State(),
 		l.MetricSamples.State(),
