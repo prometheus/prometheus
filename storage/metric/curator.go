@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"code.google.com/p/goprotobuf/proto"
+	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -70,9 +71,6 @@ type Curator struct {
 type watermarkScanner struct {
 	// curationState is the data store for curation remarks.
 	curationState CurationRemarker
-	// diskFrontier models the available seekable ranges for the provided
-	// sampleIterator.
-	diskFrontier *diskFrontier
 	// ignoreYoungerThan is passed into the curation remark for the given series.
 	ignoreYoungerThan time.Duration
 	// processor is responsible for executing a given stategy on the
@@ -89,6 +87,8 @@ type watermarkScanner struct {
 	stop chan bool
 	// status is the outbound channel for notifying the status page of its state.
 	status CurationStateUpdater
+
+	firstBlock, lastBlock *SampleKey
 }
 
 // run facilitates the curation lifecycle.
@@ -119,14 +119,19 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 	iterator := samples.NewIterator(true)
 	defer iterator.Close()
 
-	diskFrontier, present, err := newDiskFrontier(iterator)
-	if err != nil {
+	if !iterator.SeekToLast() {
+		glog.Info("Empty database; skipping curation.")
+
 		return
 	}
-	if !present {
-		// No sample database exists; no work to do!
+	lastBlock, _ := extractSampleKey(iterator)
+
+	if !iterator.SeekToFirst() {
+		glog.Info("Empty database; skipping curation.")
+
 		return
 	}
+	firstBlock, _ := extractSampleKey(iterator)
 
 	scanner := &watermarkScanner{
 		curationState:     curationState,
@@ -136,9 +141,11 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 		stop:              c.Stop,
 		stopAt:            instant.Add(-1 * ignoreYoungerThan),
 
-		diskFrontier:   diskFrontier,
 		sampleIterator: iterator,
 		samples:        samples,
+
+		firstBlock: firstBlock,
+		lastBlock:  lastBlock,
 	}
 
 	// Right now, the ability to stop a curation is limited to the beginning of
@@ -271,12 +278,11 @@ func (w *watermarkScanner) curationConsistent(f *clientmodel.Fingerprint, waterm
 func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
 	fingerprint := key.(*clientmodel.Fingerprint)
 
-	seriesFrontier, present, err := newSeriesFrontier(fingerprint, w.diskFrontier, w.sampleIterator)
-	if err != nil || !present {
-		// An anomaly with the series frontier is severe in the sense that some sort
-		// of an illegal state condition exists in the storage layer, which would
-		// probably signify an illegal disk frontier.
-		return &storage.OperatorError{error: err, Continuable: false}
+	if fingerprint.Less(w.firstBlock.Fingerprint) {
+		return nil
+	}
+	if w.lastBlock.Fingerprint.Less(fingerprint) {
+		return nil
 	}
 
 	curationState, present, err := w.curationState.Get(&curationKey{
@@ -285,7 +291,6 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		ProcessorMessageTypeName: w.processor.Name(),
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
 	})
-
 	if err != nil {
 		// An anomaly with the curation remark is likely not fatal in the sense that
 		// there was a decoding error with the entity and shouldn't be cause to stop
@@ -293,23 +298,21 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		// work forward.  With an idempotent processor, this is safe.
 		return &storage.OperatorError{error: err, Continuable: true}
 	}
-	var firstSeek time.Time
-	switch {
-	case !present, seriesFrontier.After(curationState):
-		firstSeek = seriesFrontier.firstSupertime
-	case !seriesFrontier.InSafeSeekRange(curationState):
-		firstSeek = seriesFrontier.lastSupertime
-	default:
-		firstSeek = curationState
+
+	keySet := &SampleKey{
+		Fingerprint: fingerprint,
 	}
 
-	startKey := &SampleKey{
-		Fingerprint:    fingerprint,
-		FirstTimestamp: firstSeek,
+	if !present && fingerprint.Equal(w.firstBlock.Fingerprint) {
+		// If the fingerprint is the same, then we simply need to use the earliest
+		// block found in the database.
+		*keySet = *w.firstBlock
+	} else if present {
+		keySet.FirstTimestamp = curationState
 	}
+
 	dto := new(dto.SampleKey)
-
-	startKey.Dump(dto)
+	keySet.Dump(dto)
 	prospectiveKey := coding.NewPBEncoder(dto).MustEncode()
 	if !w.sampleIterator.Seek(prospectiveKey) {
 		// LevelDB is picky about the seek ranges.  If an iterator was invalidated,
@@ -317,25 +320,41 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: fmt.Errorf("Illegal Condition: Iterator invalidated due to seek range."), Continuable: false}
 	}
 
-	newestAllowedSample := w.stopAt
-	if !newestAllowedSample.Before(seriesFrontier.lastSupertime) {
-		newestAllowedSample = seriesFrontier.lastSupertime
+	for {
+		sampleKey, err := extractSampleKey(w.sampleIterator)
+		if err != nil {
+			return
+		}
+		if !sampleKey.Fingerprint.Equal(fingerprint) {
+			return
+		}
+
+		if !present {
+			break
+		}
+
+		if !(sampleKey.FirstTimestamp.Before(curationState) && sampleKey.LastTimestamp.Before(curationState)) {
+			break
+		}
+
+		if !w.sampleIterator.Next() {
+			return
+		}
 	}
 
-	lastTime, err := w.processor.Apply(w.sampleIterator, w.samples, newestAllowedSample, fingerprint)
+	lastTime, err := w.processor.Apply(w.sampleIterator, w.samples, w.stopAt, fingerprint)
 	if err != nil {
 		// We can't divine the severity of a processor error without refactoring the
 		// interface.
 		return &storage.OperatorError{error: err, Continuable: false}
 	}
 
-	err = w.curationState.Update(&curationKey{
+	if err = w.curationState.Update(&curationKey{
 		Fingerprint:              fingerprint,
 		ProcessorMessageRaw:      w.processor.Signature(),
 		ProcessorMessageTypeName: w.processor.Name(),
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
-	}, lastTime)
-	if err != nil {
+	}, lastTime); err != nil {
 		// Under the assumption that the processors are idempotent, they can be
 		// re-run; thusly, the commitment of the curation remark is no cause
 		// to cease further progress.
