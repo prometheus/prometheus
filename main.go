@@ -48,21 +48,21 @@ var (
 	diskAppendQueueCapacity   = flag.Int("storage.queue.diskAppendCapacity", 1000000, "The size of the queue for items that are pending writing to disk.")
 	memoryAppendQueueCapacity = flag.Int("storage.queue.memoryAppendCapacity", 10000, "The size of the queue for items that are pending writing to memory.")
 
-	headCompactInterval = flag.Duration("compact.headInterval", 10*3*time.Minute, "The amount of time between head compactions.")
-	bodyCompactInterval = flag.Duration("compact.bodyInterval", 10*5*time.Minute, "The amount of time between body compactions.")
-	tailCompactInterval = flag.Duration("compact.tailInterval", 10*7*time.Minute, "The amount of time between tail compactions.")
+	headCompactInterval = flag.Duration("compact.headInterval", 3*time.Hour, "The amount of time between head compactions.")
+	bodyCompactInterval = flag.Duration("compact.bodyInterval", 5*time.Hour, "The amount of time between body compactions.")
+	tailCompactInterval = flag.Duration("compact.tailInterval", 7*time.Hour, "The amount of time between tail compactions.")
 
-	headGroupSize = flag.Int("compact.headGroupSize", 50, "The minimum group size for head samples.")
-	bodyGroupSize = flag.Int("compact.bodyGroupSize", 250, "The minimum group size for body samples.")
-	tailGroupSize = flag.Int("compact.tailGroupSize", 5000, "The minimum group size for tail samples.")
+	headGroupSize = flag.Int("compact.headGroupSize", 500, "The minimum group size for head samples.")
+	bodyGroupSize = flag.Int("compact.bodyGroupSize", 5000, "The minimum group size for body samples.")
+	tailGroupSize = flag.Int("compact.tailGroupSize", 10000, "The minimum group size for tail samples.")
 
 	headAge = flag.Duration("compact.headAgeInclusiveness", 5*time.Minute, "The relative inclusiveness of head samples.")
 	bodyAge = flag.Duration("compact.bodyAgeInclusiveness", time.Hour, "The relative inclusiveness of body samples.")
 	tailAge = flag.Duration("compact.tailAgeInclusiveness", 24*time.Hour, "The relative inclusiveness of tail samples.")
 
-	deleteInterval = flag.Duration("delete.interval", 10*11*time.Minute, "The amount of time between deletion of old values.")
+	deleteInterval = flag.Duration("delete.interval", 11*time.Hour, "The amount of time between deletion of old values.")
 
-	deleteAge = flag.Duration("delete.ageMaximum", 10*24*time.Hour, "The relative maximum age for values before they are deleted.")
+	deleteAge = flag.Duration("delete.ageMaximum", 15*24*time.Hour, "The relative maximum age for values before they are deleted.")
 
 	arenaFlushInterval = flag.Duration("arena.flushInterval", 15*time.Minute, "The period at which the in-memory arena is flushed to disk.")
 	arenaTTL           = flag.Duration("arena.ttl", 10*time.Minute, "The relative age of values to purge to disk from memory.")
