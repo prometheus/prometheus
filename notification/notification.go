@@ -54,6 +54,8 @@ type NotificationReq struct {
 	ActiveSince time.Time
 	// A textual representation of the rule that triggered the alert.
 	RuleString string
+	// Prometheus console link to alert expression.
+	GeneratorUrl string
 }
 
 type NotificationReqs []*NotificationReq
@@ -67,8 +69,6 @@ type httpPoster interface {
 type NotificationHandler struct {
 	// The URL of the alert manager to send notifications to.
 	alertmanagerUrl string
-	// The URL of this Prometheus instance to include in notifications.
-	prometheusUrl string
 	// Buffer of notifications that have not yet been sent.
 	pendingNotifications <-chan NotificationReqs
 	// HTTP client with custom timeout settings.
@@ -76,12 +76,11 @@ type NotificationHandler struct {
 }
 
 // Construct a new NotificationHandler.
-func NewNotificationHandler(alertmanagerUrl string, prometheusUrl string, notificationReqs <-chan NotificationReqs) *NotificationHandler {
+func NewNotificationHandler(alertmanagerUrl string, notificationReqs <-chan NotificationReqs) *NotificationHandler {
 	return &NotificationHandler{
 		alertmanagerUrl:      alertmanagerUrl,
 		pendingNotifications: notificationReqs,
 		httpClient:           utility.NewDeadlineClient(*deadline),
-		prometheusUrl:        prometheusUrl,
 	}
 }
 
@@ -132,7 +131,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 			"Payload": map[string]interface{}{
 				"Value":        req.Value,
 				"ActiveSince":  req.ActiveSince,
-				"GeneratorUrl": n.prometheusUrl,
+				"GeneratorUrl": req.GeneratorUrl,
 				"AlertingRule": req.RuleString,
 			},
 		})
