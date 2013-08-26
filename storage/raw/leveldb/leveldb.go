@@ -15,13 +15,30 @@ package leveldb
 
 import (
 	"fmt"
-	"time"
 
 	"code.google.com/p/goprotobuf/proto"
-	"github.com/jmhodges/levigo"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/cache"
+	"github.com/syndtr/goleveldb/leveldb/comparer"
+	"github.com/syndtr/goleveldb/leveldb/errors"
+	"github.com/syndtr/goleveldb/leveldb/filter"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
+)
+
+var (
+	// Magic values per https://code.google.com/p/leveldb/source/browse/include/leveldb/db.h#131.
+	keyspace = leveldb.Range{
+		Start: nil,
+		Limit: nil,
+	}
+
+	iteratorOpts = &opt.ReadOptions{
+	//		Flag: opt.RFDontFillCache | opt.RFDontCopyBuffer,
+	//Flag: opt.RFDontCopyBuffer,
+	}
 )
 
 // LevelDBPersistence is a disk-backed sorted key-value store.
@@ -30,173 +47,11 @@ type LevelDBPersistence struct {
 	name    string
 	purpose string
 
-	cache        *levigo.Cache
-	filterPolicy *levigo.FilterPolicy
-	options      *levigo.Options
-	storage      *levigo.DB
-	readOptions  *levigo.ReadOptions
-	writeOptions *levigo.WriteOptions
+	storage *leveldb.DB
+
+	readOpts  *opt.ReadOptions
+	writeOpts *opt.WriteOptions
 }
-
-// levigoIterator wraps the LevelDB resources in a convenient manner for uniform
-// resource access and closing through the raw.Iterator protocol.
-type levigoIterator struct {
-	// iterator is the receiver of most proxied operation calls.
-	iterator *levigo.Iterator
-	// readOptions is only set if the iterator is a snapshot of an underlying
-	// database.  This signals that it needs to be explicitly reaped upon the
-	// end of this iterator's life.
-	readOptions *levigo.ReadOptions
-	// snapshot is only set if the iterator is a snapshot of an underlying
-	// database.  This signals that it needs to be explicitly reaped upon the
-	// end of this this iterator's life.
-	snapshot *levigo.Snapshot
-	// storage is only set if the iterator is a snapshot of an underlying
-	// database.  This signals that it needs to be explicitly reaped upon the
-	// end of this this iterator's life.  The snapshot must be freed in the
-	// context of an actual database.
-	storage *levigo.DB
-	// closed indicates whether the iterator has been closed before.
-	closed bool
-	// valid indicates whether the iterator may be used.  If a LevelDB iterator
-	// ever becomes invalid, it must be disposed of and cannot be reused.
-	valid bool
-	// creationTime provides the time at which the iterator was made.
-	creationTime time.Time
-}
-
-func (i levigoIterator) String() string {
-	valid := "valid"
-	open := "open"
-	snapshotted := "snapshotted"
-
-	if i.closed {
-		open = "closed"
-	}
-	if !i.valid {
-		valid = "invalid"
-	}
-	if i.snapshot == nil {
-		snapshotted = "unsnapshotted"
-	}
-
-	return fmt.Sprintf("levigoIterator created at %s that is %s and %s and %s", i.creationTime, open, valid, snapshotted)
-}
-
-func (i *levigoIterator) Close() error {
-	if i.closed {
-		return nil
-	}
-
-	if i.iterator != nil {
-		i.iterator.Close()
-	}
-	if i.readOptions != nil {
-		i.readOptions.Close()
-	}
-	if i.snapshot != nil {
-		i.storage.ReleaseSnapshot(i.snapshot)
-	}
-
-	// Explicitly dereference the pointers to prevent cycles, however unlikely.
-	i.iterator = nil
-	i.readOptions = nil
-	i.snapshot = nil
-	i.storage = nil
-
-	i.closed = true
-	i.valid = false
-
-	return nil
-}
-
-func (i *levigoIterator) Seek(m proto.Message) bool {
-	buf, _ := buffers.Get()
-	defer buffers.Give(buf)
-
-	if err := buf.Marshal(m); err != nil {
-		panic(err)
-	}
-
-	i.iterator.Seek(buf.Bytes())
-
-	i.valid = i.iterator.Valid()
-
-	return i.valid
-}
-
-func (i *levigoIterator) SeekToFirst() bool {
-	i.iterator.SeekToFirst()
-
-	i.valid = i.iterator.Valid()
-
-	return i.valid
-}
-
-func (i *levigoIterator) SeekToLast() bool {
-	i.iterator.SeekToLast()
-
-	i.valid = i.iterator.Valid()
-
-	return i.valid
-}
-
-func (i *levigoIterator) Next() bool {
-	i.iterator.Next()
-
-	i.valid = i.iterator.Valid()
-
-	return i.valid
-}
-
-func (i *levigoIterator) Previous() bool {
-	i.iterator.Prev()
-
-	i.valid = i.iterator.Valid()
-
-	return i.valid
-}
-
-func (i *levigoIterator) rawKey() (key []byte) {
-	return i.iterator.Key()
-}
-
-func (i *levigoIterator) rawValue() (value []byte) {
-	return i.iterator.Value()
-}
-
-func (i *levigoIterator) Error() (err error) {
-	return i.iterator.GetError()
-}
-
-func (i *levigoIterator) Key(m proto.Message) error {
-	buf, _ := buffers.Get()
-	defer buffers.Give(buf)
-
-	buf.SetBuf(i.iterator.Key())
-
-	return buf.Unmarshal(m)
-}
-
-func (i *levigoIterator) Value(m proto.Message) error {
-	buf, _ := buffers.Get()
-	defer buffers.Give(buf)
-
-	buf.SetBuf(i.iterator.Value())
-
-	return buf.Unmarshal(m)
-}
-
-func (i *levigoIterator) Valid() bool {
-	return i.valid
-}
-
-type Compression uint
-
-const (
-	Snappy Compression = iota
-	Uncompressed
-)
 
 type LevelDBOptions struct {
 	Path    string
@@ -205,98 +60,44 @@ type LevelDBOptions struct {
 
 	CacheSizeBytes    int
 	OpenFileAllowance int
-
-	FlushOnMutate     bool
-	UseParanoidChecks bool
-
-	Compression Compression
 }
 
 func NewLevelDBPersistence(o LevelDBOptions) (*LevelDBPersistence, error) {
-	options := levigo.NewOptions()
-	options.SetCreateIfMissing(true)
-	options.SetParanoidChecks(o.UseParanoidChecks)
+	options := &opt.Options{
+		Comparer: new(comparer.BytesComparer),
 
-	compression := levigo.SnappyCompression
-	if o.Compression == Uncompressed {
-		compression = levigo.NoCompression
+		Flag: opt.OFCreateIfMissing,
+
+		CompressionType: opt.SnappyCompression,
+
+		MaxOpenFiles: 20,
+
+		BlockCache: cache.NewLRUCache(o.CacheSizeBytes),
+
+		Filter: filter.NewBloomFilter(10),
 	}
-	options.SetCompression(compression)
 
-	cache := levigo.NewLRUCache(o.CacheSizeBytes)
-	options.SetCache(cache)
-
-	filterPolicy := levigo.NewBloomFilter(10)
-	options.SetFilterPolicy(filterPolicy)
-
-	options.SetMaxOpenFiles(o.OpenFileAllowance)
-
-	storage, err := levigo.Open(o.Path, options)
+	storage, err := leveldb.OpenFile(o.Path, options)
 	if err != nil {
 		return nil, err
 	}
-
-	readOptions := levigo.NewReadOptions()
-
-	writeOptions := levigo.NewWriteOptions()
-	writeOptions.SetSync(o.FlushOnMutate)
 
 	return &LevelDBPersistence{
 		path:    o.Path,
 		name:    o.Name,
 		purpose: o.Purpose,
 
-		cache:        cache,
-		filterPolicy: filterPolicy,
-
-		options:      options,
-		readOptions:  readOptions,
-		writeOptions: writeOptions,
-
 		storage: storage,
+
+		readOpts: &opt.ReadOptions{
+		// Flag: opt.RFDontCopyBuffer,
+		},
+		writeOpts: &opt.WriteOptions{},
 	}, nil
 }
 
 func (l *LevelDBPersistence) Close() error {
-	// These are deferred to take advantage of forced closing in case of stack
-	// unwinding due to anomalies.
-	defer func() {
-		if l.storage != nil {
-			l.storage.Close()
-		}
-	}()
-
-	defer func() {
-		if l.filterPolicy != nil {
-			l.filterPolicy.Close()
-		}
-	}()
-
-	defer func() {
-		if l.cache != nil {
-			l.cache.Close()
-		}
-	}()
-
-	defer func() {
-		if l.options != nil {
-			l.options.Close()
-		}
-	}()
-
-	defer func() {
-		if l.readOptions != nil {
-			l.readOptions.Close()
-		}
-	}()
-
-	defer func() {
-		if l.writeOptions != nil {
-			l.writeOptions.Close()
-		}
-	}()
-
-	return nil
+	return l.storage.Close()
 }
 
 func (l *LevelDBPersistence) Get(k, v proto.Message) (bool, error) {
@@ -307,7 +108,10 @@ func (l *LevelDBPersistence) Get(k, v proto.Message) (bool, error) {
 		panic(err)
 	}
 
-	raw, err := l.storage.Get(l.readOptions, buf.Bytes())
+	raw, err := l.storage.Get(buf.Bytes(), l.readOpts)
+	if err == errors.ErrNotFound {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
@@ -340,7 +144,7 @@ func (l *LevelDBPersistence) Drop(k proto.Message) error {
 		panic(err)
 	}
 
-	return l.storage.Delete(l.writeOptions, buf.Bytes())
+	return l.storage.Delete(buf.Bytes(), l.writeOpts)
 }
 
 func (l *LevelDBPersistence) Put(key, value proto.Message) error {
@@ -358,20 +162,11 @@ func (l *LevelDBPersistence) Put(key, value proto.Message) error {
 		panic(err)
 	}
 
-	return l.storage.Put(l.writeOptions, keyBuf.Bytes(), valBuf.Bytes())
+	return l.storage.Put(keyBuf.Bytes(), valBuf.Bytes(), l.writeOpts)
 }
 
 func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
-	// XXX: This is a wart to clean up later.  Ideally, after doing extensive
-	//      tests, we could create a Batch struct that journals pending
-	//      operations which the given Persistence implementation could convert
-	//      to its specific commit requirements.
-	batch, ok := b.(*batch)
-	if !ok {
-		panic("leveldb.batch expected")
-	}
-
-	return l.storage.Write(l.writeOptions, batch.batch)
+	return l.storage.Write(b.(*Batch).batch, l.writeOpts)
 }
 
 // CompactKeyspace compacts the entire database's keyspace.
@@ -379,13 +174,6 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
 func (l *LevelDBPersistence) Prune() {
-
-	// Magic values per https://code.google.com/p/leveldb/source/browse/include/leveldb/db.h#131.
-	keyspace := levigo.Range{
-		Start: nil,
-		Limit: nil,
-	}
-
 	l.storage.CompactRange(keyspace)
 }
 
@@ -400,23 +188,22 @@ func (l *LevelDBPersistence) Size() (uint64, error) {
 		return 0, fmt.Errorf("could not seek to first key")
 	}
 
-	keyspace := levigo.Range{}
+	keyspace := leveldb.Range{}
 
-	keyspace.Start = iterator.rawKey()
+	keyspace.Start = iterator.getIterator().Key()
 
 	if !iterator.SeekToLast() {
 		return 0, fmt.Errorf("could not seek to last key")
 	}
 
-	keyspace.Limit = iterator.rawKey()
+	keyspace.Limit = iterator.getIterator().Key()
 
-	sizes := l.storage.GetApproximateSizes([]levigo.Range{keyspace})
-	total := uint64(0)
-	for _, size := range sizes {
-		total += size
+	sizes, err := l.storage.GetApproximateSizes([]leveldb.Range{keyspace})
+	if err != nil {
+		return 0, err
 	}
 
-	return total, nil
+	return sizes.Sum(), nil
 }
 
 // NewIterator creates a new levigoIterator, which follows the Iterator
@@ -435,27 +222,22 @@ func (l *LevelDBPersistence) Size() (uint64, error) {
 //
 // The iterator is optionally snapshotable.
 func (l *LevelDBPersistence) NewIterator(snapshotted bool) (Iterator, error) {
-	var (
-		snapshot    *levigo.Snapshot
-		readOptions *levigo.ReadOptions
-		iterator    *levigo.Iterator
-	)
-
-	if snapshotted {
-		snapshot = l.storage.NewSnapshot()
-		readOptions = levigo.NewReadOptions()
-		readOptions.SetSnapshot(snapshot)
-		iterator = l.storage.NewIterator(readOptions)
-	} else {
-		iterator = l.storage.NewIterator(l.readOptions)
+	if !snapshotted {
+		return &iter{
+			iter: l.storage.NewIterator(iteratorOpts),
+		}, nil
 	}
 
-	return &levigoIterator{
-		creationTime: time.Now(),
-		iterator:     iterator,
-		readOptions:  readOptions,
-		snapshot:     snapshot,
-		storage:      l.storage,
+	snap, err := l.storage.GetSnapshot()
+	if err != nil {
+		return nil, err
+	}
+
+	return &snapIter{
+		iter: iter{
+			iter: snap.NewIterator(iteratorOpts),
+		},
+		snap: snap,
 	}, nil
 }
 
@@ -472,11 +254,11 @@ func (l *LevelDBPersistence) ForEach(decoder storage.RecordDecoder, filter stora
 			return false, err
 		}
 
-		decodedKey, decodeErr := decoder.DecodeKey(iterator.rawKey())
+		decodedKey, decodeErr := decoder.DecodeKey(iterator.getIterator().Key())
 		if decodeErr != nil {
 			continue
 		}
-		decodedValue, decodeErr := decoder.DecodeValue(iterator.rawValue())
+		decodedValue, decodeErr := decoder.DecodeValue(iterator.getIterator().Value())
 		if decodeErr != nil {
 			continue
 		}

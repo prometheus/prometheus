@@ -15,10 +15,9 @@ package leveldb
 
 import (
 	"code.google.com/p/goprotobuf/proto"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/iterator"
 )
-
-// TODO: Evaluate whether to use coding.Encoder for the key and values instead
-//       raw bytes for consistency reasons.
 
 type Iterator interface {
 	Error() error
@@ -36,6 +35,82 @@ type Iterator interface {
 
 	Close() error
 
-	rawKey() []byte
-	rawValue() []byte
+	getIterator() iterator.Iterator
+}
+
+type iter struct {
+	iter iterator.Iterator
+}
+
+func (i *iter) Error() error {
+	return i.iter.Error()
+}
+
+func (i *iter) Valid() bool {
+	return i.iter.Valid()
+}
+
+func (i *iter) SeekToFirst() bool {
+	return i.iter.First()
+}
+
+func (i *iter) SeekToLast() bool {
+	return i.iter.Last()
+}
+
+func (i *iter) Seek(k proto.Message) bool {
+	buf, _ := buffers.Get()
+	defer buffers.Give(buf)
+
+	if err := buf.Marshal(k); err != nil {
+		panic(err)
+	}
+
+	return i.iter.Seek(buf.Bytes())
+}
+
+func (i *iter) Next() bool {
+	return i.iter.Next()
+}
+
+func (i *iter) Previous() bool {
+	return i.iter.Prev()
+}
+
+func (i *iter) Key(k proto.Message) error {
+	buf, _ := buffers.Get()
+	defer buffers.Give(buf)
+
+	buf.SetBuf(i.iter.Key())
+
+	return buf.Unmarshal(k)
+}
+
+func (i *iter) Value(v proto.Message) error {
+	buf, _ := buffers.Get()
+	defer buffers.Give(buf)
+
+	buf.SetBuf(i.iter.Value())
+
+	return buf.Unmarshal(v)
+}
+
+func (*iter) Close() error {
+	return nil
+}
+
+func (i *iter) getIterator() iterator.Iterator {
+	return i.iter
+}
+
+type snapIter struct {
+	iter
+
+	snap *leveldb.Snapshot
+}
+
+func (i *snapIter) Close() error {
+	i.snap.Release()
+
+	return nil
 }
