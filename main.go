@@ -114,6 +114,8 @@ func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
 
 	curator := metric.Curator{
 		Stop: p.stopBackgroundOperations,
+
+		ViewQueue: p.storage.ViewQueue,
 	}
 
 	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
@@ -129,6 +131,8 @@ func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
 
 	curator := metric.Curator{
 		Stop: p.stopBackgroundOperations,
+
+		ViewQueue: p.storage.ViewQueue,
 	}
 
 	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)

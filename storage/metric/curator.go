@@ -32,6 +32,8 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 )
 
+const curationYieldPeriod = 250 * time.Millisecond
+
 // CurationStateUpdater receives updates about the curation state.
 type CurationStateUpdater interface {
 	UpdateCurationState(*CurationState)
@@ -54,6 +56,8 @@ type Curator struct {
 	// The moment a value is ingested inside of it, the curator goes into drain
 	// mode.
 	Stop chan bool
+
+	ViewQueue chan viewJob
 }
 
 // watermarkScanner converts (dto.Fingerprint, dto.MetricHighWatermark) doubles
@@ -89,6 +93,8 @@ type watermarkScanner struct {
 	status CurationStateUpdater
 
 	firstBlock, lastBlock *SampleKey
+
+	ViewQueue chan viewJob
 }
 
 // run facilitates the curation lifecycle.
@@ -146,6 +152,8 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 
 		firstBlock: firstBlock,
 		lastBlock:  lastBlock,
+
+		ViewQueue: c.ViewQueue,
 	}
 
 	// Right now, the ability to stop a curation is limited to the beginning of
@@ -276,6 +284,10 @@ func (w *watermarkScanner) curationConsistent(f *clientmodel.Fingerprint, waterm
 }
 
 func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
+	if len(w.ViewQueue) > 0 {
+		time.Sleep(curationYieldPeriod)
+	}
+
 	fingerprint := key.(*clientmodel.Fingerprint)
 
 	if fingerprint.Less(w.firstBlock.Fingerprint) {
