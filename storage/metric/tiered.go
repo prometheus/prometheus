@@ -82,7 +82,7 @@ type TieredStorage struct {
 	memoryTTL           time.Duration
 	flushMemoryInterval time.Duration
 
-	viewQueue chan viewJob
+	ViewQueue chan viewJob
 
 	draining chan chan<- bool
 
@@ -131,7 +131,7 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 		flushMemoryInterval: flushMemoryInterval,
 		memoryArena:         NewMemorySeriesStorage(memOptions),
 		memoryTTL:           memoryTTL,
-		viewQueue:           make(chan viewJob, viewQueueDepth),
+		ViewQueue:           make(chan viewJob, viewQueueDepth),
 
 		memorySemaphore: make(chan bool, tieredMemorySemaphores),
 
@@ -194,7 +194,7 @@ func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 	abortChan := make(chan bool, 1)
 	errChan := make(chan error)
 	queryStats.GetTimer(stats.ViewQueueTime).Start()
-	t.viewQueue <- viewJob{
+	t.ViewQueue <- viewJob{
 		builder: builder,
 		output:  result,
 		abort:   abortChan,
@@ -240,7 +240,7 @@ func (t *TieredStorage) Serve(started chan<- bool) {
 		select {
 		case <-flushMemoryTicker.C:
 			t.flushMemory(t.memoryTTL)
-		case viewRequest := <-t.viewQueue:
+		case viewRequest := <-t.ViewQueue:
 			viewRequest.stats.GetTimer(stats.ViewQueueTime).Stop()
 			<-t.memorySemaphore
 			go t.renderView(viewRequest)
@@ -256,8 +256,8 @@ func (t *TieredStorage) reportQueues() {
 	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "occupancy"}, float64(len(t.appendToDiskQueue)))
 	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "capacity"}, float64(cap(t.appendToDiskQueue)))
 
-	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "occupancy"}, float64(len(t.viewQueue)))
-	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "capacity"}, float64(cap(t.viewQueue)))
+	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "occupancy"}, float64(len(t.ViewQueue)))
+	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "capacity"}, float64(cap(t.ViewQueue)))
 }
 
 func (t *TieredStorage) Flush() {
@@ -306,7 +306,7 @@ func (t *TieredStorage) close() {
 	// BUG(matt): There is a probability that pending items may hang here and not
 	//            get flushed.
 	close(t.appendToDiskQueue)
-	close(t.viewQueue)
+	close(t.ViewQueue)
 	t.wmCache.Clear()
 
 	t.state = tieredStorageStopping
