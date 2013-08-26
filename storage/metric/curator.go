@@ -32,6 +32,8 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 )
 
+const curationYieldPeriod = 250 * time.Millisecond
+
 // CurationStateUpdater receives updates about the curation state.
 type CurationStateUpdater interface {
 	UpdateCurationState(*CurationState)
@@ -276,6 +278,8 @@ func (w *watermarkScanner) curationConsistent(f *clientmodel.Fingerprint, waterm
 }
 
 func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
+	time.Sleep(curationYieldPeriod)
+
 	fingerprint := key.(*clientmodel.Fingerprint)
 
 	if fingerprint.Less(w.firstBlock.Fingerprint) {
