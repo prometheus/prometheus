@@ -20,6 +20,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/cache"
 	"github.com/syndtr/goleveldb/leveldb/comparer"
+	"github.com/syndtr/goleveldb/leveldb/errors"
 	"github.com/syndtr/goleveldb/leveldb/filter"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 
@@ -36,7 +37,7 @@ var (
 	}
 
 	iteratorOpts = &opt.ReadOptions{
-		Flag: opt.RFDontFillCache | opt.RFDontCopyBuffer,
+	//		Flag: opt.RFDontFillCache | opt.RFDontCopyBuffer,
 	}
 )
 
@@ -101,6 +102,9 @@ func (l *LevelDBPersistence) Close() error {
 
 func (l *LevelDBPersistence) Get(k, v proto.Message) (bool, error) {
 	raw, err := l.storage.Get(coding.NewPBEncoder(k).MustEncode(), l.readOpts)
+	if err == errors.ErrNotFound {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}

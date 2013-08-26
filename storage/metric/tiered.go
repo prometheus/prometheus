@@ -562,7 +562,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 	if fingerprint.Less(foundKey.Fingerprint) {
 		if !foundKey.Equal(firstBlock) {
 			if !iterator.Previous() {
-				panic("This should never return false.")
+				panic(fmt.Sprintf("This should never return false: %s %s %s %s", fingerprint, foundKey, firstBlock, iterator.Error()))
 			}
 
 			foundKey, _ = extractSampleKey(iterator)
