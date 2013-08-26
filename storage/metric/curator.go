@@ -24,7 +24,6 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
@@ -122,7 +121,10 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 
 	defer status.UpdateCurationState(&CurationState{Active: false})
 
-	iterator := samples.NewIterator(true)
+	iterator, err := samples.NewIterator(true)
+	if err != nil {
+		return err
+	}
 	defer iterator.Close()
 
 	if !iterator.SeekToLast() {
@@ -325,8 +327,7 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 
 	dto := new(dto.SampleKey)
 	keySet.Dump(dto)
-	prospectiveKey := coding.NewPBEncoder(dto).MustEncode()
-	if !w.sampleIterator.Seek(prospectiveKey) {
+	if !w.sampleIterator.Seek(dto) {
 		// LevelDB is picky about the seek ranges.  If an iterator was invalidated,
 		// no work may occur, and the iterator cannot be recovered.
 		return &storage.OperatorError{error: fmt.Errorf("Illegal Condition: Iterator invalidated due to seek range."), Continuable: false}

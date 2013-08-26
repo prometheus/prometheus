@@ -23,7 +23,6 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
@@ -396,7 +395,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 				if iterator == nil {
 					// Get a single iterator that will be used for all data extraction
 					// below.
-					iterator = t.DiskStorage.MetricSamples.NewIterator(true)
+					iterator, _ = t.DiskStorage.MetricSamples.NewIterator(true)
 					defer iterator.Close()
 					if diskPresent = iterator.SeekToLast(); diskPresent {
 						lastBlock, _ = extractSampleKey(iterator)
@@ -516,9 +515,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 	fd := new(dto.SampleKey)
 	seekingKey.Dump(fd)
 
-	// Try seeking to target key.
-	rawKey := coding.NewPBEncoder(fd).MustEncode()
-	if !iterator.Seek(rawKey) {
+	if !iterator.Seek(fd) {
 		return chunk, true
 	}
 

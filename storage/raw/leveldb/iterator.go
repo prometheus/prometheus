@@ -13,30 +13,89 @@
 
 package leveldb
 
-// TODO: Evaluate whether to use coding.Encoder for the key and values instead
-//       raw bytes for consistency reasons.
+import (
+	"code.google.com/p/goprotobuf/proto"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/iterator"
 
-// Iterator wraps Levigo and LevelDB's iterator behaviors in a manner that is
-// conducive to IO-free testing.
-//
-// It borrows some of the operational assumptions from goskiplist, which
-// functions very similarly, in that it uses no separate Valid method to
-// determine health.  All methods that have a return signature of (ok bool)
-// assume in the real LevelDB case that if ok == false that the iterator
-// must be disposed of at this given instance and recreated if future
-// work is desired.  This is a quirk of LevelDB itself!
+	"github.com/prometheus/prometheus/coding"
+)
+
 type Iterator interface {
-	// GetError reports low-level errors, if available.  This should not indicate
-	// that the iterator is necessarily unhealthy but maybe that the underlying
-	// table is corrupted itself.  See the notes above for (ok bool) return
-	// signatures to determine iterator health.
-	GetError() error
-	Key() []byte
-	Next() (ok bool)
-	Previous() (ok bool)
-	Seek(key []byte) (ok bool)
-	SeekToFirst() (ok bool)
-	SeekToLast() (ok bool)
-	Value() []byte
-	Close()
+	Error() error
+	Valid() bool
+
+	SeekToFirst() bool
+	SeekToLast() bool
+	Seek(proto.Message) bool
+
+	Next() bool
+	Previous() bool
+
+	Key(proto.Message) error
+	Value(proto.Message) error
+
+	Close() error
+
+	getIterator() iterator.Iterator
+}
+
+type iter struct {
+	iter iterator.Iterator
+}
+
+func (i *iter) Error() error {
+	return i.iter.Error()
+}
+
+func (i *iter) Valid() bool {
+	return i.iter.Valid()
+}
+
+func (i *iter) SeekToFirst() bool {
+	return i.iter.First()
+}
+
+func (i *iter) SeekToLast() bool {
+	return i.iter.Last()
+}
+
+func (i *iter) Seek(k proto.Message) bool {
+	return i.iter.Seek(coding.NewPBEncoder(k).MustEncode())
+}
+
+func (i *iter) Next() bool {
+	return i.iter.Next()
+}
+
+func (i *iter) Previous() bool {
+	return i.iter.Prev()
+}
+
+func (i *iter) Key(k proto.Message) error {
+	return proto.Unmarshal(i.iter.Key(), k)
+}
+
+func (i *iter) Value(v proto.Message) error {
+	return proto.Unmarshal(i.iter.Value(), v)
+}
+
+func (*iter) Close() error {
+	return nil
+}
+
+func (i *iter) getIterator() iterator.Iterator {
+	return i.iter
+}
+
+type snapIter struct {
+	iter
+
+	snap *leveldb.Snapshot
+}
+
+func (i *snapIter) Close() error {
+	i.snap.Release()
+
+	return nil
 }
