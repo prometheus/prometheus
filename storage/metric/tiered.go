@@ -558,6 +558,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 	defer t.dtoSampleKeys.Give(dto)
 
 	seekingKey.Dump(dto)
+
 	if !iterator.Seek(dto) {
 		return chunk, true
 	}
@@ -610,7 +611,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 	if fingerprint.Less(seekingKey.Fingerprint) {
 		if !seekingKey.Equal(firstBlock) {
 			if !iterator.Previous() {
-				panic("This should never return false.")
+				panic(fmt.Sprintf("This should never return false: %s %s %s %s", fingerprint, seekingKey, firstBlock, iterator.Error()))
 			}
 
 			if err := iterator.Key(dto); err != nil {

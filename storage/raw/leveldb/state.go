@@ -37,8 +37,8 @@ func (l *LevelDBPersistence) State() *raw.DatabaseState {
 		databaseState.Size = utility.ByteSize(size)
 	}
 
-	databaseState.Supplemental["Low Level"] = l.storage.PropertyValue(statsKey)
-	databaseState.Supplemental["SSTable"] = l.storage.PropertyValue(sstablesKey)
+	databaseState.Supplemental["Low Level"], _ = l.storage.GetProperty(statsKey)
+	databaseState.Supplemental["SSTable"], _ = l.storage.GetProperty(sstablesKey)
 
 	return databaseState
 }
