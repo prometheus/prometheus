@@ -24,7 +24,6 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/coding/indexable"
 	"github.com/prometheus/prometheus/utility/test"
 
@@ -198,12 +197,13 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerpr
 		Timestamp:   indexable.EncodeTime(i.OldestInclusive),
 	}
 
-	e := coding.NewPBEncoder(k).MustEncode()
-
-	iterator := l.MetricSamples.NewIterator(true)
+	iterator, err := l.MetricSamples.NewIterator(true)
+	if err != nil {
+		panic(err)
+	}
 	defer iterator.Close()
 
-	for valid := iterator.Seek(e); valid; valid = iterator.Next() {
+	for valid := iterator.Seek(k); valid; valid = iterator.Next() {
 		retrievedKey, err := extractSampleKey(iterator)
 		if err != nil {
 			return samples, err
