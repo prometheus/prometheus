@@ -18,8 +18,6 @@ import (
 
 	"code.google.com/p/goprotobuf/proto"
 	"github.com/jmhodges/levigo"
-
-	"github.com/prometheus/prometheus/coding"
 )
 
 type batch struct {
@@ -35,13 +33,34 @@ func NewBatch() *batch {
 }
 
 func (b *batch) Drop(key proto.Message) {
-	b.batch.Delete(coding.NewPBEncoder(key).MustEncode())
+	buf, _ := buffers.Get()
+	defer buffers.Give(buf)
+
+	if err := buf.Marshal(key); err != nil {
+		panic(err)
+	}
+
+	b.batch.Delete(buf.Bytes())
 
 	b.drops++
 }
 
 func (b *batch) Put(key, value proto.Message) {
-	b.batch.Put(coding.NewPBEncoder(key).MustEncode(), coding.NewPBEncoder(value).MustEncode())
+	keyBuf, _ := buffers.Get()
+	defer buffers.Give(keyBuf)
+
+	if err := keyBuf.Marshal(key); err != nil {
+		panic(err)
+	}
+
+	valBuf, _ := buffers.Get()
+	defer buffers.Give(valBuf)
+
+	if err := valBuf.Marshal(value); err != nil {
+		panic(err)
+	}
+
+	b.batch.Put(keyBuf.Bytes(), valBuf.Bytes())
 
 	b.puts++
 

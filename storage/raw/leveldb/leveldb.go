@@ -20,7 +20,6 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 	"github.com/jmhodges/levigo"
 
-	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 )
@@ -84,9 +83,9 @@ func (i levigoIterator) String() string {
 	return fmt.Sprintf("levigoIterator created at %s that is %s and %s and %s", i.creationTime, open, valid, snapshotted)
 }
 
-func (i *levigoIterator) Close() {
+func (i *levigoIterator) Close() error {
 	if i.closed {
-		return
+		return nil
 	}
 
 	if i.iterator != nil {
@@ -108,11 +107,18 @@ func (i *levigoIterator) Close() {
 	i.closed = true
 	i.valid = false
 
-	return
+	return nil
 }
 
-func (i *levigoIterator) Seek(key []byte) bool {
-	i.iterator.Seek(key)
+func (i *levigoIterator) Seek(m proto.Message) bool {
+	buf, _ := buffers.Get()
+	defer buffers.Give(buf)
+
+	if err := buf.Marshal(m); err != nil {
+		panic(err)
+	}
+
+	i.iterator.Seek(buf.Bytes())
 
 	i.valid = i.iterator.Valid()
 
@@ -151,16 +157,38 @@ func (i *levigoIterator) Previous() bool {
 	return i.valid
 }
 
-func (i levigoIterator) Key() (key []byte) {
+func (i *levigoIterator) rawKey() (key []byte) {
 	return i.iterator.Key()
 }
 
-func (i levigoIterator) Value() (value []byte) {
+func (i *levigoIterator) rawValue() (value []byte) {
 	return i.iterator.Value()
 }
 
-func (i levigoIterator) GetError() (err error) {
+func (i *levigoIterator) Error() (err error) {
 	return i.iterator.GetError()
+}
+
+func (i *levigoIterator) Key(m proto.Message) error {
+	buf, _ := buffers.Get()
+	defer buffers.Give(buf)
+
+	buf.SetBuf(i.iterator.Key())
+
+	return buf.Unmarshal(m)
+}
+
+func (i *levigoIterator) Value(m proto.Message) error {
+	buf, _ := buffers.Get()
+	defer buffers.Give(buf)
+
+	buf.SetBuf(i.iterator.Value())
+
+	return buf.Unmarshal(m)
+}
+
+func (i *levigoIterator) Valid() bool {
+	return i.valid
 }
 
 type Compression uint
@@ -229,7 +257,7 @@ func NewLevelDBPersistence(o LevelDBOptions) (*LevelDBPersistence, error) {
 	}, nil
 }
 
-func (l *LevelDBPersistence) Close() {
+func (l *LevelDBPersistence) Close() error {
 	// These are deferred to take advantage of forced closing in case of stack
 	// unwinding due to anomalies.
 	defer func() {
@@ -268,11 +296,18 @@ func (l *LevelDBPersistence) Close() {
 		}
 	}()
 
-	return
+	return nil
 }
 
 func (l *LevelDBPersistence) Get(k, v proto.Message) (bool, error) {
-	raw, err := l.storage.Get(l.readOptions, coding.NewPBEncoder(k).MustEncode())
+	buf, _ := buffers.Get()
+	defer buffers.Give(buf)
+
+	if err := buf.Marshal(k); err != nil {
+		panic(err)
+	}
+
+	raw, err := l.storage.Get(l.readOptions, buf.Bytes())
 	if err != nil {
 		return false, err
 	}
@@ -284,8 +319,9 @@ func (l *LevelDBPersistence) Get(k, v proto.Message) (bool, error) {
 		return true, nil
 	}
 
-	err = proto.Unmarshal(raw, v)
-	if err != nil {
+	buf.SetBuf(raw)
+
+	if err := buf.Unmarshal(v); err != nil {
 		return true, err
 	}
 
@@ -297,11 +333,32 @@ func (l *LevelDBPersistence) Has(k proto.Message) (has bool, err error) {
 }
 
 func (l *LevelDBPersistence) Drop(k proto.Message) error {
-	return l.storage.Delete(l.writeOptions, coding.NewPBEncoder(k).MustEncode())
+	buf, _ := buffers.Get()
+	defer buffers.Give(buf)
+
+	if err := buf.Marshal(k); err != nil {
+		panic(err)
+	}
+
+	return l.storage.Delete(l.writeOptions, buf.Bytes())
 }
 
 func (l *LevelDBPersistence) Put(key, value proto.Message) error {
-	return l.storage.Put(l.writeOptions, coding.NewPBEncoder(key).MustEncode(), coding.NewPBEncoder(value).MustEncode())
+	keyBuf, _ := buffers.Get()
+	defer buffers.Give(keyBuf)
+
+	if err := keyBuf.Marshal(key); err != nil {
+		panic(err)
+	}
+
+	valBuf, _ := buffers.Get()
+	defer buffers.Give(valBuf)
+
+	if err := valBuf.Marshal(value); err != nil {
+		panic(err)
+	}
+
+	return l.storage.Put(l.writeOptions, keyBuf.Bytes(), valBuf.Bytes())
 }
 
 func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
@@ -333,7 +390,10 @@ func (l *LevelDBPersistence) Prune() {
 }
 
 func (l *LevelDBPersistence) Size() (uint64, error) {
-	iterator := l.NewIterator(false)
+	iterator, err := l.NewIterator(false)
+	if err != nil {
+		return 0, err
+	}
 	defer iterator.Close()
 
 	if !iterator.SeekToFirst() {
@@ -342,13 +402,13 @@ func (l *LevelDBPersistence) Size() (uint64, error) {
 
 	keyspace := levigo.Range{}
 
-	keyspace.Start = iterator.Key()
+	keyspace.Start = iterator.rawKey()
 
 	if !iterator.SeekToLast() {
 		return 0, fmt.Errorf("could not seek to last key")
 	}
 
-	keyspace.Limit = iterator.Key()
+	keyspace.Limit = iterator.rawKey()
 
 	sizes := l.storage.GetApproximateSizes([]levigo.Range{keyspace})
 	total := uint64(0)
@@ -374,7 +434,7 @@ func (l *LevelDBPersistence) Size() (uint64, error) {
 // will be leaked.
 //
 // The iterator is optionally snapshotable.
-func (l *LevelDBPersistence) NewIterator(snapshotted bool) Iterator {
+func (l *LevelDBPersistence) NewIterator(snapshotted bool) (Iterator, error) {
 	var (
 		snapshot    *levigo.Snapshot
 		readOptions *levigo.ReadOptions
@@ -396,27 +456,27 @@ func (l *LevelDBPersistence) NewIterator(snapshotted bool) Iterator {
 		readOptions:  readOptions,
 		snapshot:     snapshot,
 		storage:      l.storage,
-	}
+	}, nil
 }
 
 func (l *LevelDBPersistence) ForEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error) {
-	var (
-		iterator = l.NewIterator(true)
-		valid    bool
-	)
+	iterator, err := l.NewIterator(true)
+	if err != nil {
+		return false, err
+	}
+
 	defer iterator.Close()
 
-	for valid = iterator.SeekToFirst(); valid; valid = iterator.Next() {
-		err = iterator.GetError()
-		if err != nil {
-			return
+	for valid := iterator.SeekToFirst(); valid; valid = iterator.Next() {
+		if err = iterator.Error(); err != nil {
+			return false, err
 		}
 
-		decodedKey, decodeErr := decoder.DecodeKey(iterator.Key())
+		decodedKey, decodeErr := decoder.DecodeKey(iterator.rawKey())
 		if decodeErr != nil {
 			continue
 		}
-		decodedValue, decodeErr := decoder.DecodeValue(iterator.Value())
+		decodedValue, decodeErr := decoder.DecodeValue(iterator.rawValue())
 		if decodeErr != nil {
 			continue
 		}
@@ -436,6 +496,5 @@ func (l *LevelDBPersistence) ForEach(decoder storage.RecordDecoder, filter stora
 			}
 		}
 	}
-	scannedEntireCorpus = true
-	return
+	return true, nil
 }

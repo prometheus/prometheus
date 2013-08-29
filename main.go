@@ -80,7 +80,7 @@ type prometheus struct {
 	tailCompactionTimer *time.Ticker
 	deletionTimer       *time.Ticker
 
-	curationMutex            sync.Mutex
+	curationSema             chan bool
 	stopBackgroundOperations chan bool
 
 	unwrittenSamples chan *extraction.Result
@@ -104,41 +104,62 @@ func (p *prometheus) interruptHandler() {
 }
 
 func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
-	p.curationMutex.Lock()
-	defer p.curationMutex.Unlock()
-
-	processor := &metric.CompactionProcessor{
-		MaximumMutationPoolBatch: groupSize * 3,
-		MinimumGroupSize:         groupSize,
+	select {
+	case p.curationSema <- true:
+	default:
+		glog.Warningf("Deferred compaction for %s and %s due to existing operation.", operation, groupSize)
+		return
 	}
 
-	curator := metric.Curator{
+	defer func() {
+		<-p.curationSema
+	}()
+
+	processor := metric.NewCompactionProcessor(&metric.CompactionProcessorOptions{
+		MaximumMutationPoolBatch: groupSize * 3,
+		MinimumGroupSize:         groupSize,
+	})
+	defer processor.Close()
+
+	curator := metric.NewCurator(&metric.CuratorOptions{
 		Stop: p.stopBackgroundOperations,
 
 		ViewQueue: p.storage.ViewQueue,
-	}
+	})
+	defer curator.Close()
 
 	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
 }
 
 func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
-	p.curationMutex.Lock()
-	defer p.curationMutex.Unlock()
-
-	processor := &metric.DeletionProcessor{
-		MaximumMutationPoolBatch: batchSize,
+	select {
+	case p.curationSema <- true:
+	default:
+		glog.Warningf("Deferred compaction for %s and %s due to existing operation.", operation, groupSize)
+		return
 	}
 
-	curator := metric.Curator{
+	processor := metric.NewDeletionProcessor(&metric.DeletionProcessorOptions{
+		MaximumMutationPoolBatch: batchSize,
+	})
+	defer processor.Close()
+
+	curator := metric.NewCurator(&metric.CuratorOptions{
 		Stop: p.stopBackgroundOperations,
 
 		ViewQueue: p.storage.ViewQueue,
-	}
+	})
+	defer curator.Close()
 
 	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
 }
 
 func (p *prometheus) close() {
+	select {
+	case p.curationSema <- true:
+	default:
+	}
+
 	if p.headCompactionTimer != nil {
 		p.headCompactionTimer.Stop()
 	}
@@ -155,8 +176,6 @@ func (p *prometheus) close() {
 	if len(p.stopBackgroundOperations) == 0 {
 		p.stopBackgroundOperations <- true
 	}
-
-	p.curationMutex.Lock()
 
 	p.ruleManager.Stop()
 	p.storage.Close()
@@ -267,6 +286,7 @@ func main() {
 		deletionTimer: deletionTimer,
 
 		curationState: prometheusStatus,
+		curationSema:  make(chan bool),
 
 		unwrittenSamples: unwrittenSamples,
 
