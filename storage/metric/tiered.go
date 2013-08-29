@@ -23,12 +23,9 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
-
-	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 type chunk Values
@@ -95,6 +92,9 @@ type TieredStorage struct {
 	Indexer MetricIndexer
 
 	flushSema chan bool
+
+	dtoSampleKeys *dtoSampleKeyList
+	sampleKeys    *sampleKeyList
 }
 
 // viewJob encapsulates a request to extract sample values from the datastore.
@@ -140,6 +140,9 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 		wmCache: wmCache,
 
 		flushSema: make(chan bool, 1),
+
+		dtoSampleKeys: newDtoSampleKeyList(10),
+		sampleKeys:    newSampleKeyList(10),
 	}
 
 	for i := 0; i < tieredMemorySemaphores; i++ {
@@ -323,6 +326,9 @@ func (t *TieredStorage) close() {
 	close(t.ViewQueue)
 	t.wmCache.Clear()
 
+	t.dtoSampleKeys.Close()
+	t.sampleKeys.Close()
+
 	t.state = tieredStorageStopping
 }
 
@@ -379,7 +385,15 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 	var iterator leveldb.Iterator
 	diskPresent := true
-	var firstBlock, lastBlock *SampleKey
+
+	firstBlock, _ := t.sampleKeys.Get()
+	defer t.sampleKeys.Give(firstBlock)
+
+	lastBlock, _ := t.sampleKeys.Get()
+	defer t.sampleKeys.Give(lastBlock)
+
+	sampleKeyDto, _ := t.dtoSampleKeys.Get()
+	defer t.dtoSampleKeys.Give(sampleKeyDto)
 
 	extractionTimer := viewJob.stats.GetTimer(stats.ViewDataExtractionTime).Start()
 	for _, scanJob := range scans {
@@ -410,14 +424,23 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 				if iterator == nil {
 					// Get a single iterator that will be used for all data extraction
 					// below.
-					iterator = t.DiskStorage.MetricSamples.NewIterator(true)
+					iterator, _ = t.DiskStorage.MetricSamples.NewIterator(true)
 					defer iterator.Close()
 					if diskPresent = iterator.SeekToLast(); diskPresent {
-						lastBlock, _ = extractSampleKey(iterator)
+						if err := iterator.Key(sampleKeyDto); err != nil {
+							panic(err)
+						}
+
+						lastBlock.Load(sampleKeyDto)
+
 						if !iterator.SeekToFirst() {
 							diskPresent = false
 						} else {
-							firstBlock, _ = extractSampleKey(iterator)
+							if err := iterator.Key(sampleKeyDto); err != nil {
+								panic(err)
+							}
+
+							firstBlock.Load(sampleKeyDto)
 						}
 					}
 				}
@@ -515,9 +538,10 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 		return nil, true
 	}
 
-	seekingKey := &SampleKey{
-		Fingerprint: fingerprint,
-	}
+	seekingKey, _ := t.sampleKeys.Get()
+	defer t.sampleKeys.Give(seekingKey)
+
+	seekingKey.Fingerprint = fingerprint
 
 	if fingerprint.Equal(firstBlock.Fingerprint) && ts.Before(firstBlock.FirstTimestamp) {
 		seekingKey.FirstTimestamp = firstBlock.FirstTimestamp
@@ -527,21 +551,22 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 		seekingKey.FirstTimestamp = ts
 	}
 
-	fd := new(dto.SampleKey)
-	seekingKey.Dump(fd)
+	dto, _ := t.dtoSampleKeys.Get()
+	defer t.dtoSampleKeys.Give(dto)
 
-	// Try seeking to target key.
-	rawKey := coding.NewPBEncoder(fd).MustEncode()
-	if !iterator.Seek(rawKey) {
+	seekingKey.Dump(dto)
+	if !iterator.Seek(dto) {
 		return chunk, true
 	}
 
-	var foundKey *SampleKey
 	var foundValues Values
 
-	foundKey, _ = extractSampleKey(iterator)
+	if err := iterator.Key(dto); err != nil {
+		panic(err)
+	}
+	seekingKey.Load(dto)
 
-	if foundKey.Fingerprint.Equal(fingerprint) {
+	if seekingKey.Fingerprint.Equal(fingerprint) {
 		// Figure out if we need to rewind by one block.
 		// Imagine the following supertime blocks with time ranges:
 		//
@@ -553,16 +578,19 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 		// iterator seek behavior.
 		//
 		// Only do the rewind if there is another chunk before this one.
-		if !foundKey.MayContain(ts) {
+		if !seekingKey.MayContain(ts) {
 			postValues, _ := extractSampleValues(iterator)
-			if !foundKey.Equal(firstBlock) {
+			if !seekingKey.Equal(firstBlock) {
 				if !iterator.Previous() {
 					panic("This should never return false.")
 				}
 
-				foundKey, _ = extractSampleKey(iterator)
+				if err := iterator.Key(dto); err != nil {
+					panic(err)
+				}
+				seekingKey.Load(dto)
 
-				if !foundKey.Fingerprint.Equal(fingerprint) {
+				if !seekingKey.Fingerprint.Equal(fingerprint) {
 					return postValues, false
 				}
 
@@ -576,15 +604,18 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 		return foundValues, false
 	}
 
-	if fingerprint.Less(foundKey.Fingerprint) {
-		if !foundKey.Equal(firstBlock) {
+	if fingerprint.Less(seekingKey.Fingerprint) {
+		if !seekingKey.Equal(firstBlock) {
 			if !iterator.Previous() {
 				panic("This should never return false.")
 			}
 
-			foundKey, _ = extractSampleKey(iterator)
+			if err := iterator.Key(dto); err != nil {
+				panic(err)
+			}
+			seekingKey.Load(dto)
 
-			if !foundKey.Fingerprint.Equal(fingerprint) {
+			if !seekingKey.Fingerprint.Equal(fingerprint) {
 				return nil, false
 			}
 
