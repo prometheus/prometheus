@@ -23,9 +23,9 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
-// Assuming sample rate of 1 / 15Hz, this allows for one hour's worth of
+// Assuming sample rate of 1 / 15Hz, this allows for five minutes's worth of
 // storage per metric without any major reallocations.
-const initialSeriesArenaSize = 4 * 60
+const initialSeriesArenaSize = 4 * 5
 
 // Models a given sample entry stored in the in-memory arena.
 type value interface {
@@ -49,7 +49,6 @@ type stream interface {
 
 	size() int
 	clear()
-
 	metric() clientmodel.Metric
 
 	getValueAtTime(t time.Time) Values
@@ -191,8 +190,8 @@ type memorySeriesStorage struct {
 
 	wmCache                 *watermarkCache
 	fingerprintToSeries     map[clientmodel.Fingerprint]stream
-	labelPairToFingerprints map[LabelPair]clientmodel.Fingerprints
-	labelNameToFingerprints map[clientmodel.LabelName]clientmodel.Fingerprints
+	labelPairToFingerprints map[LabelPair]clientmodel.FingerprintSet
+	labelNameToFingerprints map[clientmodel.LabelName]clientmodel.FingerprintSet
 }
 
 type MemorySeriesOptions struct {
@@ -249,13 +248,19 @@ func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, finge
 				Name:  k,
 				Value: v,
 			}
-			labelPairValues := s.labelPairToFingerprints[labelPair]
-			labelPairValues = append(labelPairValues, fingerprint)
-			s.labelPairToFingerprints[labelPair] = labelPairValues
+			labelPairValues, ok := s.labelPairToFingerprints[labelPair]
+			if !ok {
+				labelPairValues = clientmodel.FingerprintSet{}
+				s.labelPairToFingerprints[labelPair] = labelPairValues
+			}
+			labelPairValues[*fingerprint] = true
 
-			labelNameValues := s.labelNameToFingerprints[k]
-			labelNameValues = append(labelNameValues, fingerprint)
-			s.labelNameToFingerprints[k] = labelNameValues
+			labelNameValues, ok := s.labelNameToFingerprints[k]
+			if !ok {
+				labelNameValues = clientmodel.FingerprintSet{}
+				s.labelNameToFingerprints[k] = labelNameValues
+			}
+			labelNameValues[*fingerprint] = true
 		}
 	}
 	return series
@@ -309,9 +314,18 @@ func (s *memorySeriesStorage) dropSeries(fingerprint *clientmodel.Fingerprint) {
 			Name:  k,
 			Value: v,
 		}
-		delete(s.labelPairToFingerprints, labelPair)
-		delete(s.labelNameToFingerprints, k)
+		// There was a serious bug here.  We effectively dropped and regenerated
+		// everything!
+		if set, ok := s.labelPairToFingerprints[labelPair]; ok {
+			delete(set, *fingerprint)
+		}
+		if set, ok := s.labelNameToFingerprints[k]; ok {
+			delete(set, *fingerprint)
+		}
 	}
+
+	series.clear()
+
 	delete(s.fingerprintToSeries, *fingerprint)
 }
 
@@ -342,8 +356,8 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l clientmodel.LabelSet)
 			Value: v,
 		}]
 		set := utility.Set{}
-		for _, fingerprint := range values {
-			set.Add(*fingerprint)
+		for fingerprint := range values {
+			set.Add(fingerprint)
 		}
 		sets = append(sets, set)
 	}
@@ -375,7 +389,9 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelName(l clientmodel.LabelNam
 	}
 
 	fingerprints := make(clientmodel.Fingerprints, len(values))
-	copy(fingerprints, values)
+	for fp := range values {
+		fingerprints = append(fingerprints, &fp)
+	}
 
 	return fingerprints, nil
 }
@@ -460,8 +476,8 @@ func (s *memorySeriesStorage) Close() {
 	defer s.Unlock()
 
 	s.fingerprintToSeries = map[clientmodel.Fingerprint]stream{}
-	s.labelPairToFingerprints = map[LabelPair]clientmodel.Fingerprints{}
-	s.labelNameToFingerprints = map[clientmodel.LabelName]clientmodel.Fingerprints{}
+	s.labelPairToFingerprints = map[LabelPair]clientmodel.FingerprintSet{}
+	s.labelNameToFingerprints = map[clientmodel.LabelName]clientmodel.FingerprintSet{}
 }
 
 func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (values clientmodel.LabelValues, err error) {
@@ -484,8 +500,8 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelNa
 func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[clientmodel.Fingerprint]stream),
-		labelPairToFingerprints: make(map[LabelPair]clientmodel.Fingerprints),
-		labelNameToFingerprints: make(map[clientmodel.LabelName]clientmodel.Fingerprints),
+		labelPairToFingerprints: make(map[LabelPair]clientmodel.FingerprintSet),
+		labelNameToFingerprints: make(map[clientmodel.LabelName]clientmodel.FingerprintSet),
 		wmCache:                 o.WatermarkCache,
 	}
 }
