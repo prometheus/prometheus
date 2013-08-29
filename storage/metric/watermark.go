@@ -67,7 +67,7 @@ func (w *LevelDBHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, o
 		return t, ok, err
 	}
 	if !ok {
-		return t, ok, err
+		return t, ok, nil
 	}
 	t = time.Unix(v.GetTimestamp(), 0)
 	return t, true, nil
