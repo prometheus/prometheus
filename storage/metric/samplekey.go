@@ -35,6 +35,21 @@ type SampleKey struct {
 	SampleCount    uint32
 }
 
+// Constrain merges the underlying SampleKey to fit within the keyspace of
+// the provided first and last keys and returns whether the key was modified.
+func (s *SampleKey) Constrain(first, last *SampleKey) bool {
+	switch {
+	case s.Before(first.Fingerprint, first.FirstTimestamp):
+		*s = *first
+		return true
+	case last.Before(s.Fingerprint, s.FirstTimestamp):
+		*s = *last
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *SampleKey) Equal(o *SampleKey) bool {
 	if s == o {
 		return true

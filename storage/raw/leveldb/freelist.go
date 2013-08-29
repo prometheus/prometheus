@@ -14,28 +14,33 @@
 package leveldb
 
 import (
+	"github.com/prometheus/prometheus/utility"
+
 	"code.google.com/p/goprotobuf/proto"
 )
 
-// TODO: Evaluate whether to use coding.Encoder for the key and values instead
-//       raw bytes for consistency reasons.
+var buffers = newBufferList(50)
 
-type Iterator interface {
-	Error() error
-	Valid() bool
+type bufferList struct {
+	l utility.FreeList
+}
 
-	SeekToFirst() bool
-	SeekToLast() bool
-	Seek(proto.Message) bool
+func (l *bufferList) Get() (*proto.Buffer, bool) {
+	if v, ok := l.l.Get(); ok {
+		return v.(*proto.Buffer), ok
+	}
 
-	Next() bool
-	Previous() bool
+	return proto.NewBuffer(make([]byte, 0, 4096)), false
+}
 
-	Key(proto.Message) error
-	Value(proto.Message) error
+func (l *bufferList) Give(v *proto.Buffer) bool {
+	v.Reset()
 
-	Close() error
+	return l.l.Give(v)
+}
 
-	rawKey() []byte
-	rawValue() []byte
+func newBufferList(cap int) *bufferList {
+	return &bufferList{
+		l: utility.NewFreeList(cap),
+	}
 }
