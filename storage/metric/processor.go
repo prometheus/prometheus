@@ -50,18 +50,14 @@ type Processor interface {
 // CompactionProcessor combines sparse values in the database together such
 // that at least MinimumGroupSize-sized chunks are grouped together.
 type CompactionProcessor struct {
-	// MaximumMutationPoolBatch represents approximately the largest pending
-	// batch of mutation operations for the database before pausing to
-	// commit before resumption.
-	//
-	// A reasonable value would be (MinimumGroupSize * 2) + 1.
-	MaximumMutationPoolBatch int
-	// MinimumGroupSize represents the smallest allowed sample chunk size in the
-	// database.
-	MinimumGroupSize int
+	maximumMutationPoolBatch int
+	minimumGroupSize         int
 	// signature is the byte representation of the CompactionProcessor's settings,
 	// used for purely memoization purposes across an instance.
 	signature []byte
+
+	dtoSampleKeys *dtoSampleKeyList
+	sampleKeys    *sampleKeyList
 }
 
 func (p *CompactionProcessor) Name() string {
@@ -71,7 +67,7 @@ func (p *CompactionProcessor) Name() string {
 func (p *CompactionProcessor) Signature() []byte {
 	if len(p.signature) == 0 {
 		out, err := proto.Marshal(&dto.CompactionProcessorDefinition{
-			MinimumGroupSize: proto.Uint32(uint32(p.MinimumGroupSize)),
+			MinimumGroupSize: proto.Uint32(uint32(p.minimumGroupSize)),
 		})
 		if err != nil {
 			panic(err)
@@ -84,7 +80,7 @@ func (p *CompactionProcessor) Signature() []byte {
 }
 
 func (p *CompactionProcessor) String() string {
-	return fmt.Sprintf("compactionProcessor for minimum group size %d", p.MinimumGroupSize)
+	return fmt.Sprintf("compactionProcessor for minimum group size %d", p.minimumGroupSize)
 }
 
 func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
@@ -98,15 +94,21 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 	var pendingMutations = 0
 	var pendingSamples Values
-	var sampleKey *SampleKey
 	var unactedSamples Values
 	var lastTouchedTime time.Time
 	var keyDropped bool
 
-	sampleKey, err = extractSampleKey(sampleIterator)
-	if err != nil {
+	sampleKey, _ := p.sampleKeys.Get()
+	defer p.sampleKeys.Give(sampleKey)
+
+	sampleKeyDto, _ := p.dtoSampleKeys.Get()
+	defer p.dtoSampleKeys.Give(sampleKeyDto)
+
+	if err = sampleIterator.Key(sampleKeyDto); err != nil {
 		return
 	}
+
+	sampleKey.Load(sampleKeyDto)
 
 	unactedSamples, err = extractSampleValues(sampleIterator)
 	if err != nil {
@@ -129,10 +131,11 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 			keyDropped = false
 
-			sampleKey, err = extractSampleKey(sampleIterator)
-			if err != nil {
+			if err = sampleIterator.Key(sampleKeyDto); err != nil {
 				return
 			}
+			sampleKey.Load(sampleKeyDto)
+
 			unactedSamples, err = extractSampleValues(sampleIterator)
 			if err != nil {
 				return
@@ -141,7 +144,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		// If the number of pending mutations exceeds the allowed batch amount,
 		// commit to disk and delete the batch.  A new one will be recreated if
 		// necessary.
-		case pendingMutations >= p.MaximumMutationPoolBatch:
+		case pendingMutations >= p.maximumMutationPoolBatch:
 			err = samplesPersistence.Commit(pendingBatch)
 			if err != nil {
 				return
@@ -152,11 +155,11 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			pendingBatch.Close()
 			pendingBatch = nil
 
-		case len(pendingSamples) == 0 && len(unactedSamples) >= p.MinimumGroupSize:
+		case len(pendingSamples) == 0 && len(unactedSamples) >= p.minimumGroupSize:
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
 			unactedSamples = Values{}
 
-		case len(pendingSamples)+len(unactedSamples) < p.MinimumGroupSize:
+		case len(pendingSamples)+len(unactedSamples) < p.minimumGroupSize:
 			if !keyDropped {
 				k := new(dto.SampleKey)
 				sampleKey.Dump(k)
@@ -170,7 +173,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			pendingMutations++
 
 		// If the number of pending writes equals the target group size
-		case len(pendingSamples) == p.MinimumGroupSize:
+		case len(pendingSamples) == p.minimumGroupSize:
 			k := new(dto.SampleKey)
 			newSampleKey := pendingSamples.ToSampleKey(fingerprint)
 			newSampleKey.Dump(k)
@@ -187,9 +190,9 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 					keyDropped = true
 				}
 
-				if len(unactedSamples) > p.MinimumGroupSize {
-					pendingSamples = unactedSamples[:p.MinimumGroupSize]
-					unactedSamples = unactedSamples[p.MinimumGroupSize:]
+				if len(unactedSamples) > p.minimumGroupSize {
+					pendingSamples = unactedSamples[:p.minimumGroupSize]
+					unactedSamples = unactedSamples[p.minimumGroupSize:]
 					lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
 				} else {
 					pendingSamples = unactedSamples
@@ -198,14 +201,14 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 				}
 			}
 
-		case len(pendingSamples)+len(unactedSamples) >= p.MinimumGroupSize:
+		case len(pendingSamples)+len(unactedSamples) >= p.minimumGroupSize:
 			if !keyDropped {
 				k := new(dto.SampleKey)
 				sampleKey.Dump(k)
 				pendingBatch.Drop(k)
 				keyDropped = true
 			}
-			remainder := p.MinimumGroupSize - len(pendingSamples)
+			remainder := p.minimumGroupSize - len(pendingSamples)
 			pendingSamples = append(pendingSamples, unactedSamples[:remainder]...)
 			unactedSamples = unactedSamples[remainder:]
 			if len(unactedSamples) == 0 {
@@ -244,15 +247,42 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 	return
 }
 
-// DeletionProcessor deletes sample blocks older than a defined value.
-type DeletionProcessor struct {
+func (p *CompactionProcessor) Close() {
+	p.dtoSampleKeys.Close()
+	p.sampleKeys.Close()
+}
+
+type CompactionProcessorOptions struct {
 	// MaximumMutationPoolBatch represents approximately the largest pending
 	// batch of mutation operations for the database before pausing to
 	// commit before resumption.
+	//
+	// A reasonable value would be (MinimumGroupSize * 2) + 1.
 	MaximumMutationPoolBatch int
+	// MinimumGroupSize represents the smallest allowed sample chunk size in the
+	// database.
+	MinimumGroupSize int
+}
+
+func NewCompactionProcessor(o *CompactionProcessorOptions) *CompactionProcessor {
+	return &CompactionProcessor{
+		maximumMutationPoolBatch: o.MaximumMutationPoolBatch,
+		minimumGroupSize:         o.MinimumGroupSize,
+
+		dtoSampleKeys: newDtoSampleKeyList(10),
+		sampleKeys:    newSampleKeyList(10),
+	}
+}
+
+// DeletionProcessor deletes sample blocks older than a defined value.
+type DeletionProcessor struct {
+	maximumMutationPoolBatch int
 	// signature is the byte representation of the DeletionProcessor's settings,
 	// used for purely memoization purposes across an instance.
 	signature []byte
+
+	dtoSampleKeys *dtoSampleKeyList
+	sampleKeys    *sampleKeyList
 }
 
 func (p *DeletionProcessor) Name() string {
@@ -286,10 +316,16 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 		}
 	}()
 
-	sampleKey, err := extractSampleKey(sampleIterator)
-	if err != nil {
+	sampleKeyDto, _ := p.dtoSampleKeys.Get()
+	defer p.dtoSampleKeys.Give(sampleKeyDto)
+
+	sampleKey, _ := p.sampleKeys.Get()
+	defer p.sampleKeys.Give(sampleKey)
+
+	if err = sampleIterator.Key(sampleKeyDto); err != nil {
 		return
 	}
+	sampleKey.Load(sampleKeyDto)
 
 	sampleValues, err := extractSampleValues(sampleIterator)
 	if err != nil {
@@ -312,10 +348,11 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 				return lastCurated, fmt.Errorf("Illegal Condition: Invalid Iterator on Continuation")
 			}
 
-			sampleKey, err = extractSampleKey(sampleIterator)
-			if err != nil {
+			if err = sampleIterator.Key(sampleKeyDto); err != nil {
 				return
 			}
+			sampleKey.Load(sampleKeyDto)
+
 			sampleValues, err = extractSampleValues(sampleIterator)
 			if err != nil {
 				return
@@ -324,7 +361,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 		// If the number of pending mutations exceeds the allowed batch amount,
 		// commit to disk and delete the batch.  A new one will be recreated if
 		// necessary.
-		case pendingMutations >= p.MaximumMutationPoolBatch:
+		case pendingMutations >= p.maximumMutationPoolBatch:
 			err = samplesPersistence.Commit(pendingBatch)
 			if err != nil {
 				return
@@ -378,4 +415,25 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 	}
 
 	return
+}
+
+func (p *DeletionProcessor) Close() {
+	p.dtoSampleKeys.Close()
+	p.sampleKeys.Close()
+}
+
+type DeletionProcessorOptions struct {
+	// MaximumMutationPoolBatch represents approximately the largest pending
+	// batch of mutation operations for the database before pausing to
+	// commit before resumption.
+	MaximumMutationPoolBatch int
+}
+
+func NewDeletionProcessor(o *DeletionProcessorOptions) *DeletionProcessor {
+	return &DeletionProcessor{
+		maximumMutationPoolBatch: o.MaximumMutationPoolBatch,
+
+		dtoSampleKeys: newDtoSampleKeyList(10),
+		sampleKeys:    newSampleKeyList(10),
+	}
 }

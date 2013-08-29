@@ -107,16 +107,18 @@ func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
 	p.curationMutex.Lock()
 	defer p.curationMutex.Unlock()
 
-	processor := &metric.CompactionProcessor{
+	processor := metric.NewCompactionProcessor(&metric.CompactionProcessorOptions{
 		MaximumMutationPoolBatch: groupSize * 3,
 		MinimumGroupSize:         groupSize,
-	}
+	})
+	defer processor.Close()
 
-	curator := metric.Curator{
+	curator := metric.NewCurator(&metric.CuratorOptions{
 		Stop: p.stopBackgroundOperations,
 
 		ViewQueue: p.storage.ViewQueue,
-	}
+	})
+	defer curator.Close()
 
 	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
 }
@@ -125,15 +127,17 @@ func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
 	p.curationMutex.Lock()
 	defer p.curationMutex.Unlock()
 
-	processor := &metric.DeletionProcessor{
+	processor := metric.NewDeletionProcessor(&metric.DeletionProcessorOptions{
 		MaximumMutationPoolBatch: batchSize,
-	}
+	})
+	defer processor.Close()
 
-	curator := metric.Curator{
+	curator := metric.NewCurator(&metric.CuratorOptions{
 		Stop: p.stopBackgroundOperations,
 
 		ViewQueue: p.storage.ViewQueue,
-	}
+	})
+	defer curator.Close()
 
 	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
 }
