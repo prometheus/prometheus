@@ -890,7 +890,10 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		iterator := curatorStates.p.NewIterator(true)
+		iterator, err := curatorStates.p.NewIterator(true)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.curationStates {
@@ -905,9 +908,8 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 				}
 			}
 
-			curationKeyDto := &dto.CurationKey{}
-
-			err = proto.Unmarshal(iterator.Key(), curationKeyDto)
+			curationKeyDto := new(dto.CurationKey)
+			err = iterator.Key(curationKeyDto)
 			if err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
@@ -938,7 +940,10 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			}
 		}
 
-		iterator = samples.NewIterator(true)
+		iterator, err = samples.NewIterator(true)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.sampleGroups {
@@ -1413,7 +1418,10 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		iterator := curatorStates.p.NewIterator(true)
+		iterator, err := curatorStates.p.NewIterator(true)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.curationStates {
@@ -1429,9 +1437,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			}
 
 			curationKeyDto := new(dto.CurationKey)
-
-			err = proto.Unmarshal(iterator.Key(), curationKeyDto)
-			if err != nil {
+			if err := iterator.Key(curationKeyDto); err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
 
@@ -1463,7 +1469,10 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			}
 		}
 
-		iterator = samples.NewIterator(true)
+		iterator, err = samples.NewIterator(true)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.sampleGroups {
