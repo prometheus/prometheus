@@ -15,6 +15,7 @@ package metric
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -24,7 +25,6 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/coding"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
@@ -33,6 +33,8 @@ import (
 )
 
 const curationYieldPeriod = 250 * time.Millisecond
+
+var errIllegalIterator = errors.New("Iterator invalid.")
 
 // CurationStateUpdater receives updates about the curation state.
 type CurationStateUpdater interface {
@@ -48,16 +50,36 @@ type CurationState struct {
 	Fingerprint *clientmodel.Fingerprint
 }
 
-// curator is responsible for effectuating a given curation policy across the
-// stored samples on-disk.  This is useful to compact sparse sample values into
-// single sample entities to reduce keyspace load on the datastore.
-type Curator struct {
+type CuratorOptions struct {
 	// Stop functions as a channel that when empty allows the curator to operate.
 	// The moment a value is ingested inside of it, the curator goes into drain
 	// mode.
 	Stop chan bool
 
 	ViewQueue chan viewJob
+}
+
+// curator is responsible for effectuating a given curation policy across the
+// stored samples on-disk.  This is useful to compact sparse sample values into
+// single sample entities to reduce keyspace load on the datastore.
+type Curator struct {
+	stop chan bool
+
+	viewQueue chan viewJob
+
+	dtoSampleKeys *dtoSampleKeyList
+	sampleKeys    *sampleKeyList
+}
+
+func NewCurator(o *CuratorOptions) *Curator {
+	return &Curator{
+		stop: o.Stop,
+
+		viewQueue: o.ViewQueue,
+
+		dtoSampleKeys: newDtoSampleKeyList(10),
+		sampleKeys:    newSampleKeyList(10),
+	}
 }
 
 // watermarkScanner converts (dto.Fingerprint, dto.MetricHighWatermark) doubles
@@ -95,6 +117,9 @@ type watermarkScanner struct {
 	firstBlock, lastBlock *SampleKey
 
 	ViewQueue chan viewJob
+
+	dtoSampleKeys *dtoSampleKeyList
+	sampleKeys    *sampleKeyList
 }
 
 // run facilitates the curation lifecycle.
@@ -122,7 +147,10 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 
 	defer status.UpdateCurationState(&CurationState{Active: false})
 
-	iterator := samples.NewIterator(true)
+	iterator, err := samples.NewIterator(true)
+	if err != nil {
+		return err
+	}
 	defer iterator.Close()
 
 	if !iterator.SeekToLast() {
@@ -130,21 +158,40 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 
 		return
 	}
-	lastBlock, _ := extractSampleKey(iterator)
+
+	keyDto, _ := c.dtoSampleKeys.Get()
+	defer c.dtoSampleKeys.Give(keyDto)
+
+	lastBlock, _ := c.sampleKeys.Get()
+	defer c.sampleKeys.Give(lastBlock)
+
+	if err := iterator.Key(keyDto); err != nil {
+		panic(err)
+	}
+
+	lastBlock.Load(keyDto)
 
 	if !iterator.SeekToFirst() {
 		glog.Info("Empty database; skipping curation.")
 
 		return
 	}
-	firstBlock, _ := extractSampleKey(iterator)
+
+	firstBlock, _ := c.sampleKeys.Get()
+	defer c.sampleKeys.Give(firstBlock)
+
+	if err := iterator.Key(keyDto); err != nil {
+		panic(err)
+	}
+
+	firstBlock.Load(keyDto)
 
 	scanner := &watermarkScanner{
 		curationState:     curationState,
 		ignoreYoungerThan: ignoreYoungerThan,
 		processor:         processor,
 		status:            status,
-		stop:              c.Stop,
+		stop:              c.stop,
 		stopAt:            instant.Add(-1 * ignoreYoungerThan),
 
 		sampleIterator: iterator,
@@ -153,7 +200,10 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 		firstBlock: firstBlock,
 		lastBlock:  lastBlock,
 
-		ViewQueue: c.ViewQueue,
+		ViewQueue: c.viewQueue,
+
+		dtoSampleKeys: c.dtoSampleKeys,
+		sampleKeys:    c.sampleKeys,
 	}
 
 	// Right now, the ability to stop a curation is limited to the beginning of
@@ -167,9 +217,14 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, proces
 // drain instructs the curator to stop at the next convenient moment as to not
 // introduce data inconsistencies.
 func (c *Curator) Drain() {
-	if len(c.Stop) == 0 {
-		c.Stop <- true
+	if len(c.stop) == 0 {
+		c.stop <- true
 	}
+}
+
+func (c *Curator) Close() {
+	c.dtoSampleKeys.Close()
+	c.sampleKeys.Close()
 }
 
 func (w *watermarkScanner) DecodeKey(in interface{}) (interface{}, error) {
@@ -284,26 +339,32 @@ func (w *watermarkScanner) curationConsistent(f *clientmodel.Fingerprint, waterm
 }
 
 func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorError) {
+	fingerprint := key.(*clientmodel.Fingerprint)
+
+	glog.Infof("Curating %s...", fingerprint)
+
 	if len(w.ViewQueue) > 0 {
+		glog.Warning("Deferred due to view queue.")
 		time.Sleep(curationYieldPeriod)
 	}
 
-	fingerprint := key.(*clientmodel.Fingerprint)
-
 	if fingerprint.Less(w.firstBlock.Fingerprint) {
+		glog.Warning("Skipped since before keyspace.")
 		return nil
 	}
 	if w.lastBlock.Fingerprint.Less(fingerprint) {
+		glog.Warning("Skipped since after keyspace.")
 		return nil
 	}
 
-	curationState, present, err := w.curationState.Get(&curationKey{
+	curationState, _, err := w.curationState.Get(&curationKey{
 		Fingerprint:              fingerprint,
 		ProcessorMessageRaw:      w.processor.Signature(),
 		ProcessorMessageTypeName: w.processor.Name(),
 		IgnoreYoungerThan:        w.ignoreYoungerThan,
 	})
 	if err != nil {
+		glog.Warning("Unable to get curation state: %s", err)
 		// An anomaly with the curation remark is likely not fatal in the sense that
 		// there was a decoding error with the entity and shouldn't be cause to stop
 		// work.  The process will simply start from a pessimistic work time and
@@ -311,47 +372,45 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		return &storage.OperatorError{error: err, Continuable: true}
 	}
 
-	keySet := &SampleKey{
-		Fingerprint: fingerprint,
+	keySet, _ := w.sampleKeys.Get()
+	defer w.sampleKeys.Give(keySet)
+
+	keySet.Fingerprint = fingerprint
+	keySet.FirstTimestamp = curationState
+
+	// Invariant: The fingerprint tests above ensure that we have the same
+	// fingerprint.
+	keySet.Constrain(w.firstBlock, w.lastBlock)
+
+	seeker := &iteratorSeekerState{
+		i: w.sampleIterator,
+
+		obj: keySet,
+
+		first: w.firstBlock,
+		last:  w.lastBlock,
+
+		dtoSampleKeys: w.dtoSampleKeys,
+		sampleKeys:    w.sampleKeys,
 	}
 
-	if !present && fingerprint.Equal(w.firstBlock.Fingerprint) {
-		// If the fingerprint is the same, then we simply need to use the earliest
-		// block found in the database.
-		*keySet = *w.firstBlock
-	} else if present {
-		keySet.FirstTimestamp = curationState
+	for state := seeker.initialize; state != nil; state = state() {
 	}
 
-	dto := new(dto.SampleKey)
-	keySet.Dump(dto)
-	prospectiveKey := coding.NewPBEncoder(dto).MustEncode()
-	if !w.sampleIterator.Seek(prospectiveKey) {
-		// LevelDB is picky about the seek ranges.  If an iterator was invalidated,
-		// no work may occur, and the iterator cannot be recovered.
-		return &storage.OperatorError{error: fmt.Errorf("Illegal Condition: Iterator invalidated due to seek range."), Continuable: false}
+	if seeker.err != nil {
+		glog.Warningf("Got error in state machine: %s", seeker.err)
+
+		return &storage.OperatorError{error: seeker.err, Continuable: !seeker.iteratorInvalid}
 	}
 
-	for {
-		sampleKey, err := extractSampleKey(w.sampleIterator)
-		if err != nil {
-			return
-		}
-		if !sampleKey.Fingerprint.Equal(fingerprint) {
-			return
-		}
+	if seeker.iteratorInvalid {
+		glog.Warningf("Got illegal iterator in state machine: %s", err)
 
-		if !present {
-			break
-		}
+		return &storage.OperatorError{error: errIllegalIterator, Continuable: false}
+	}
 
-		if !(sampleKey.FirstTimestamp.Before(curationState) && sampleKey.LastTimestamp.Before(curationState)) {
-			break
-		}
-
-		if !w.sampleIterator.Next() {
-			return
-		}
+	if !seeker.seriesOperable {
+		return
 	}
 
 	lastTime, err := w.processor.Apply(w.sampleIterator, w.samples, w.stopAt, fingerprint)

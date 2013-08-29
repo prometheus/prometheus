@@ -48,39 +48,47 @@ func NewViewRequestBuilder() *viewRequestBuilder {
 	}
 }
 
+var getValuesAtTimes = newValueAtTimeList(10 * 1024)
+
 // Gets for the given Fingerprint either the value at that time if there is an
 // match or the one or two values adjacent thereto.
 func (v *viewRequestBuilder) GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time time.Time) {
 	ops := v.operations[*fingerprint]
-	ops = append(ops, &getValuesAtTimeOp{
-		time: time,
-	})
+	op, _ := getValuesAtTimes.Get()
+	op.time = time
+	ops = append(ops, op)
 	v.operations[*fingerprint] = ops
 }
+
+var getValuesAtIntervals = newValueAtIntervalList(10 * 1024)
 
 // Gets for the given Fingerprint either the value at that interval from From
 // through Through  if there is an match or the one or two values adjacent
 // for each point.
 func (v *viewRequestBuilder) GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through time.Time, interval time.Duration) {
 	ops := v.operations[*fingerprint]
-	ops = append(ops, &getValuesAtIntervalOp{
-		from:     from,
-		through:  through,
-		interval: interval,
-	})
+	op, _ := getValuesAtIntervals.Get()
+	op.from = from
+	op.through = through
+	op.interval = interval
+	ops = append(ops, op)
 	v.operations[*fingerprint] = ops
 }
+
+var getValuesAlongRanges = newValueAlongRangeList(10 * 1024)
 
 // Gets for the given Fingerprint the values that occur inclusively from From
 // through Through.
 func (v *viewRequestBuilder) GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through time.Time) {
 	ops := v.operations[*fingerprint]
-	ops = append(ops, &getValuesAlongRangeOp{
-		from:    from,
-		through: through,
-	})
+	op, _ := getValuesAlongRanges.Get()
+	op.from = from
+	op.through = through
+	ops = append(ops, op)
 	v.operations[*fingerprint] = ops
 }
+
+var getValuesAtIntervalAlongRanges = newValueAtIntervalAlongRangeList(10 * 1024)
 
 // Gets value ranges at intervals for the given Fingerprint:
 //
@@ -90,13 +98,13 @@ func (v *viewRequestBuilder) GetMetricRange(fingerprint *clientmodel.Fingerprint
 //  from     interval       rangeDuration     through
 func (v *viewRequestBuilder) GetMetricRangeAtInterval(fingerprint *clientmodel.Fingerprint, from, through time.Time, interval, rangeDuration time.Duration) {
 	ops := v.operations[*fingerprint]
-	ops = append(ops, &getValueRangeAtIntervalOp{
-		rangeFrom:     from,
-		rangeThrough:  from.Add(rangeDuration),
-		rangeDuration: rangeDuration,
-		interval:      interval,
-		through:       through,
-	})
+	op, _ := getValuesAtIntervalAlongRanges.Get()
+	op.rangeFrom = from
+	op.rangeThrough = from.Add(rangeDuration)
+	op.rangeDuration = rangeDuration
+	op.interval = interval
+	op.through = through
+	ops = append(ops, op)
 	v.operations[*fingerprint] = ops
 }
 
@@ -133,4 +141,19 @@ func (v view) appendSamples(fingerprint *clientmodel.Fingerprint, samples Values
 
 func newView() view {
 	return view{NewMemorySeriesStorage(MemorySeriesOptions{})}
+}
+
+func giveBackOp(op interface{}) bool {
+	switch v := op.(type) {
+	case *getValuesAtTimeOp:
+		return getValuesAtTimes.Give(v)
+	case *getValuesAtIntervalOp:
+		return getValuesAtIntervals.Give(v)
+	case *getValuesAlongRangeOp:
+		return getValuesAlongRanges.Give(v)
+	case *getValueRangeAtIntervalOp:
+		return getValuesAtIntervalAlongRanges.Give(v)
+	default:
+		panic("unrecognized operation")
+	}
 }
