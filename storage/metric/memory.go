@@ -288,13 +288,14 @@ func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- clien
 	}
 	s.RUnlock()
 
-	s.Lock()
 	for _, fingerprint := range emptySeries {
-		if s.fingerprintToSeries[fingerprint].size() == 0 {
+		if series, ok := s.fingerprintToSeries[fingerprint]; ok && series.size() == 0 {
+			s.Lock()
 			s.dropSeries(&fingerprint)
+			s.Unlock()
+
 		}
 	}
-	s.Unlock()
 }
 
 // Drop all references to a series, including any samples.

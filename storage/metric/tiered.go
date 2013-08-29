@@ -93,6 +93,8 @@ type TieredStorage struct {
 	wmCache *watermarkCache
 
 	Indexer MetricIndexer
+
+	flushSema chan bool
 }
 
 // viewJob encapsulates a request to extract sample values from the datastore.
@@ -136,6 +138,8 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 		memorySemaphore: make(chan bool, tieredMemorySemaphores),
 
 		wmCache: wmCache,
+
+		flushSema: make(chan bool, 1),
 	}
 
 	for i := 0; i < tieredMemorySemaphores; i++ {
@@ -235,11 +239,16 @@ func (t *TieredStorage) Serve(started chan<- bool) {
 	}()
 
 	started <- true
-
 	for {
 		select {
 		case <-flushMemoryTicker.C:
-			t.flushMemory(t.memoryTTL)
+			select {
+			case t.flushSema <- true:
+				t.flushMemory(t.memoryTTL)
+				<-t.flushSema
+			default:
+				glog.Warning("Backlogging on flush...")
+			}
 		case viewRequest := <-t.ViewQueue:
 			viewRequest.stats.GetTimer(stats.ViewQueueTime).Stop()
 			<-t.memorySemaphore
@@ -247,6 +256,7 @@ func (t *TieredStorage) Serve(started chan<- bool) {
 		case drainingDone := <-t.draining:
 			t.Flush()
 			drainingDone <- true
+
 			return
 		}
 	}
@@ -261,7 +271,9 @@ func (t *TieredStorage) reportQueues() {
 }
 
 func (t *TieredStorage) Flush() {
+	t.flushSema <- true
 	t.flushMemory(0)
+	<-t.flushSema
 }
 
 func (t *TieredStorage) flushMemory(ttl time.Duration) {
