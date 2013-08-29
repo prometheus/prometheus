@@ -13,30 +13,29 @@
 
 package leveldb
 
+import (
+	"code.google.com/p/goprotobuf/proto"
+)
+
 // TODO: Evaluate whether to use coding.Encoder for the key and values instead
 //       raw bytes for consistency reasons.
 
-// Iterator wraps Levigo and LevelDB's iterator behaviors in a manner that is
-// conducive to IO-free testing.
-//
-// It borrows some of the operational assumptions from goskiplist, which
-// functions very similarly, in that it uses no separate Valid method to
-// determine health.  All methods that have a return signature of (ok bool)
-// assume in the real LevelDB case that if ok == false that the iterator
-// must be disposed of at this given instance and recreated if future
-// work is desired.  This is a quirk of LevelDB itself!
 type Iterator interface {
-	// GetError reports low-level errors, if available.  This should not indicate
-	// that the iterator is necessarily unhealthy but maybe that the underlying
-	// table is corrupted itself.  See the notes above for (ok bool) return
-	// signatures to determine iterator health.
-	GetError() error
-	Key() []byte
-	Next() (ok bool)
-	Previous() (ok bool)
-	Seek(key []byte) (ok bool)
-	SeekToFirst() (ok bool)
-	SeekToLast() (ok bool)
-	Value() []byte
-	Close()
+	Error() error
+	Valid() bool
+
+	SeekToFirst() bool
+	SeekToLast() bool
+	Seek(proto.Message) bool
+
+	Next() bool
+	Previous() bool
+
+	Key(proto.Message) error
+	Value(proto.Message) error
+
+	Close() error
+
+	rawKey() []byte
+	rawValue() []byte
 }
