@@ -282,6 +282,7 @@ func EvalVectorInstant(node VectorNode, timestamp time.Time, storage *metric.Tie
 	if err != nil {
 		return
 	}
+	defer viewAdapter.Close()
 	vector = node.Eval(timestamp, viewAdapter)
 	return
 }
@@ -297,6 +298,7 @@ func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval t
 	if err != nil {
 		return nil, err
 	}
+	defer viewAdapter.Close()
 
 	// TODO implement watchdog timer for long-running queries.
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()

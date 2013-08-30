@@ -135,12 +135,12 @@ type view struct {
 	*memorySeriesStorage
 }
 
-func (v view) appendSamples(fingerprint *clientmodel.Fingerprint, samples Values) {
+func (v *view) appendSamples(fingerprint *clientmodel.Fingerprint, samples Values) {
 	v.memorySeriesStorage.appendSamplesWithoutIndexing(fingerprint, samples)
 }
 
-func newView() view {
-	return view{NewMemorySeriesStorage(MemorySeriesOptions{})}
+func newView() *view {
+	return &view{NewMemorySeriesStorage(MemorySeriesOptions{})}
 }
 
 func giveBackOp(op interface{}) bool {

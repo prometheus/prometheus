@@ -180,3 +180,27 @@ func newValueAtIntervalAlongRangeList(cap int) *valueAtIntervalAlongRangeList {
 		l: utility.NewFreeList(cap),
 	}
 }
+
+type arrayStreamList struct {
+	l utility.FreeList
+}
+
+func (l *arrayStreamList) Get() (*arrayStream, bool) {
+	if v, ok := l.l.Get(); ok {
+		return v.(*arrayStream), ok
+	}
+
+	return newArrayStream(), false
+}
+
+func (l *arrayStreamList) Give(v *arrayStream) bool {
+	v.clear()
+
+	return l.l.Give(v)
+}
+
+func newArrayStreamList(cap int) *arrayStreamList {
+	return &arrayStreamList{
+		l: utility.NewFreeList(cap),
+	}
+}

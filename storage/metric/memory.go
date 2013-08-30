@@ -41,22 +41,6 @@ func (v singletonValue) get() clientmodel.SampleValue {
 	return clientmodel.SampleValue(v)
 }
 
-type stream interface {
-	add(...*SamplePair)
-
-	clone() Values
-	expunge(age time.Time) Values
-
-	size() int
-	clear()
-
-	metric() clientmodel.Metric
-
-	getValueAtTime(t time.Time) Values
-	getBoundaryValues(in Interval) Values
-	getRangeValues(in Interval) Values
-}
-
 type arrayStream struct {
 	sync.RWMutex
 
@@ -176,12 +160,14 @@ func (s *arrayStream) size() int {
 }
 
 func (s *arrayStream) clear() {
-	s.values = Values{}
+	s.m = nil
+	s.values = s.values[0:0]
 }
 
-func newArrayStream(metric clientmodel.Metric) *arrayStream {
+var arrayStreams = newArrayStreamList(1024)
+
+func newArrayStream() *arrayStream {
 	return &arrayStream{
-		m:      metric,
 		values: make(Values, 0, initialSeriesArenaSize),
 	}
 }
@@ -190,7 +176,7 @@ type memorySeriesStorage struct {
 	sync.RWMutex
 
 	wmCache                 *watermarkCache
-	fingerprintToSeries     map[clientmodel.Fingerprint]stream
+	fingerprintToSeries     map[clientmodel.Fingerprint]*arrayStream
 	labelPairToFingerprints map[LabelPair]clientmodel.Fingerprints
 	labelNameToFingerprints map[clientmodel.LabelName]clientmodel.Fingerprints
 }
@@ -237,11 +223,12 @@ func (s *memorySeriesStorage) CreateEmptySeries(metric clientmodel.Metric) {
 	s.getOrCreateSeries(metric, fingerprint)
 }
 
-func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, fingerprint *clientmodel.Fingerprint) stream {
+func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, fingerprint *clientmodel.Fingerprint) *arrayStream {
 	series, ok := s.fingerprintToSeries[*fingerprint]
 
 	if !ok {
-		series = newArrayStream(metric)
+		series, _ = arrayStreams.Get()
+		series.m = metric
 		s.fingerprintToSeries[*fingerprint] = series
 
 		for k, v := range metric {
@@ -324,7 +311,8 @@ func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmo
 	series, ok := s.fingerprintToSeries[*fingerprint]
 
 	if !ok {
-		series = newArrayStream(clientmodel.Metric{})
+		series, _ = arrayStreams.Get()
+		series.m = clientmodel.Metric{}
 		s.fingerprintToSeries[*fingerprint] = series
 	}
 
@@ -459,7 +447,16 @@ func (s *memorySeriesStorage) Close() {
 	s.Lock()
 	defer s.Unlock()
 
-	s.fingerprintToSeries = map[clientmodel.Fingerprint]stream{}
+	for fp, stream := range s.fingerprintToSeries {
+		delete(s.fingerprintToSeries, fp)
+
+		if !arrayStreams.Give(stream) {
+			break
+		}
+	}
+
+	s.fingerprintToSeries = map[clientmodel.Fingerprint]*arrayStream{}
+
 	s.labelPairToFingerprints = map[LabelPair]clientmodel.Fingerprints{}
 	s.labelNameToFingerprints = map[clientmodel.LabelName]clientmodel.Fingerprints{}
 }
@@ -483,7 +480,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelNa
 
 func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
-		fingerprintToSeries:     make(map[clientmodel.Fingerprint]stream),
+		fingerprintToSeries:     make(map[clientmodel.Fingerprint]*arrayStream),
 		labelPairToFingerprints: make(map[LabelPair]clientmodel.Fingerprints),
 		labelNameToFingerprints: make(map[clientmodel.LabelName]clientmodel.Fingerprints),
 		wmCache:                 o.WatermarkCache,

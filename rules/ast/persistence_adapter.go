@@ -46,6 +46,10 @@ type viewAdapter struct {
 	stats *stats.TimerGroup
 }
 
+func (a *viewAdapter) Close() {
+	a.view.Close()
+}
+
 // interpolateSamples interpolates a value at a target time between two
 // provided sample pairs.
 func interpolateSamples(first, second *metric.SamplePair, timestamp time.Time) *metric.SamplePair {
