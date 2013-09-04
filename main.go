@@ -106,8 +106,9 @@ func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
 	select {
 	case p.curationSema <- true:
 	default:
-		glog.Warningf("Deferred compaction for %s and %s due to existing operation.", operation, groupSize)
-		return
+		glog.Warningf("Deferred compaction for %s and %s due to existing operation.", olderThan, groupSize)
+
+		return nil
 	}
 
 	defer func() {
@@ -134,8 +135,9 @@ func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
 	select {
 	case p.curationSema <- true:
 	default:
-		glog.Warningf("Deferred compaction for %s and %s due to existing operation.", operation, groupSize)
-		return
+		glog.Warningf("Deferred deletion for %s due to existing operation.", olderThan)
+
+		return nil
 	}
 
 	processor := metric.NewDeletionProcessor(&metric.DeletionProcessorOptions{
