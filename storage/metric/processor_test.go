@@ -123,10 +123,10 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 	}{
 		{
 			in: in{
-				processor: &CompactionProcessor{
+				processor: NewCompactionProcessor(&CompactionProcessorOptions{
 					MinimumGroupSize:         5,
 					MaximumMutationPoolBatch: 15,
-				},
+				}),
 				ignoreYoungerThan: 1 * time.Hour,
 				groupSize:         5,
 				curationStates: fixture.Pairs{
@@ -134,27 +134,27 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint:       "0001-A-1-Z",
 						ignoreYoungerThan: 1 * time.Hour,
 						lastCurated:       testInstant.Add(-1 * 30 * time.Minute),
-						processor: &CompactionProcessor{
+						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 					},
 					curationState{
 						fingerprint:       "0002-A-2-Z",
 						ignoreYoungerThan: 1 * time.Hour,
 						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
-						processor: &CompactionProcessor{
+						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 					},
 					// This rule should effectively be ignored.
 					curationState{
 						fingerprint: "0002-A-2-Z",
-						processor: &CompactionProcessor{
+						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         2,
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 						ignoreYoungerThan: 30 * time.Minute,
 						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
 					},
@@ -553,28 +553,28 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint:       "0001-A-1-Z",
 						ignoreYoungerThan: time.Hour,
 						lastCurated:       testInstant.Add(-1 * 30 * time.Minute),
-						processor: &CompactionProcessor{
+						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 					},
 					{
 						fingerprint:       "0002-A-2-Z",
 						ignoreYoungerThan: 30 * time.Minute,
 						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
-						processor: &CompactionProcessor{
+						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         2,
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 					},
 					{
 						fingerprint:       "0002-A-2-Z",
 						ignoreYoungerThan: time.Hour,
 						lastCurated:       testInstant.Add(-1 * 60 * time.Minute),
-						processor: &CompactionProcessor{
+						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 					},
 				},
 				sampleGroups: []sampleGroup{
@@ -881,16 +881,20 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		stop := make(chan bool)
 		defer close(stop)
 
-		c := Curator{
+		c := NewCurator(&CuratorOptions{
 			Stop: stop,
-		}
+		})
+		defer c.Close()
 
 		err = c.Run(scenario.in.ignoreYoungerThan, testInstant, scenario.in.processor, curatorStates, samples, watermarkStates, updates)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		iterator := curatorStates.p.NewIterator(true)
+		iterator, err := curatorStates.p.NewIterator(true)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.curationStates {
@@ -905,9 +909,8 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 				}
 			}
 
-			curationKeyDto := &dto.CurationKey{}
-
-			err = proto.Unmarshal(iterator.Key(), curationKeyDto)
+			curationKeyDto := new(dto.CurationKey)
+			err = iterator.Key(curationKeyDto)
 			if err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
@@ -938,7 +941,10 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			}
 		}
 
-		iterator = samples.NewIterator(true)
+		iterator, err = samples.NewIterator(true)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.sampleGroups {
@@ -1004,9 +1010,9 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 	}{
 		{
 			in: in{
-				processor: &DeletionProcessor{
+				processor: NewDeletionProcessor(&DeletionProcessorOptions{
 					MaximumMutationPoolBatch: 15,
-				},
+				}),
 				ignoreYoungerThan: 1 * time.Hour,
 				groupSize:         5,
 				curationStates: fixture.Pairs{
@@ -1014,17 +1020,17 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint:       "0001-A-1-Z",
 						ignoreYoungerThan: 1 * time.Hour,
 						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
-						processor: &DeletionProcessor{
+						processor: NewDeletionProcessor(&DeletionProcessorOptions{
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 					},
 					curationState{
 						fingerprint:       "0002-A-2-Z",
 						ignoreYoungerThan: 1 * time.Hour,
 						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
-						processor: &DeletionProcessor{
+						processor: NewDeletionProcessor(&DeletionProcessorOptions{
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 					},
 				},
 				watermarkStates: fixture.Pairs{
@@ -1317,17 +1323,17 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint:       "0001-A-1-Z",
 						ignoreYoungerThan: 1 * time.Hour,
 						lastCurated:       testInstant.Add(-1 * 30 * time.Minute),
-						processor: &DeletionProcessor{
+						processor: NewDeletionProcessor(&DeletionProcessorOptions{
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 					},
 					{
 						fingerprint:       "0002-A-2-Z",
 						ignoreYoungerThan: 1 * time.Hour,
 						lastCurated:       testInstant.Add(-1 * 60 * time.Minute),
-						processor: &DeletionProcessor{
+						processor: NewDeletionProcessor(&DeletionProcessorOptions{
 							MaximumMutationPoolBatch: 15,
-						},
+						}),
 					},
 				},
 				sampleGroups: []sampleGroup{
@@ -1404,16 +1410,20 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		stop := make(chan bool)
 		defer close(stop)
 
-		c := Curator{
+		c := NewCurator(&CuratorOptions{
 			Stop: stop,
-		}
+		})
+		defer c.Close()
 
 		err = c.Run(scenario.in.ignoreYoungerThan, testInstant, scenario.in.processor, curatorStates, samples, watermarkStates, updates)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		iterator := curatorStates.p.NewIterator(true)
+		iterator, err := curatorStates.p.NewIterator(true)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.curationStates {
@@ -1429,9 +1439,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			}
 
 			curationKeyDto := new(dto.CurationKey)
-
-			err = proto.Unmarshal(iterator.Key(), curationKeyDto)
-			if err != nil {
+			if err := iterator.Key(curationKeyDto); err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
 
@@ -1463,7 +1471,10 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			}
 		}
 
-		iterator = samples.NewIterator(true)
+		iterator, err = samples.NewIterator(true)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer iterator.Close()
 
 		for j, expected := range scenario.out.sampleGroups {

@@ -38,7 +38,7 @@ type Persistence interface {
 
 	// Close reaps all of the underlying system resources associated with this
 	// persistence.
-	Close()
+	Close() error
 	// Has informs the user whether a given key exists in the database.
 	Has(key proto.Message) (bool, error)
 	// Get retrieves the key from the database if it exists or returns nil if

@@ -21,6 +21,9 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"time"
+
+	pprof_runtime "runtime/pprof"
 
 	"code.google.com/p/gorest"
 	"github.com/golang/glog"
@@ -63,6 +66,7 @@ func (w WebService) ServeForever() error {
 	exp.Handle("/databases", w.DatabasesHandler)
 	exp.Handle("/alerts", w.AlertsHandler)
 	exp.HandleFunc("/graph", graphHandler)
+	exp.HandleFunc("/heap", dumpHeap)
 
 	exp.Handle("/api/", compressionHandler{handler: gorest.Handle()})
 	exp.Handle("/metrics", prometheus.DefaultHandler)
@@ -137,6 +141,18 @@ func executeTemplate(w http.ResponseWriter, name string, data interface{}) {
 	if err != nil {
 		glog.Error("Error executing template: ", err)
 	}
+}
+
+func dumpHeap(w http.ResponseWriter, r *http.Request) {
+	target := fmt.Sprintf("/tmp/%d.heap", time.Now().Unix())
+	f, err := os.Create(target)
+	if err != nil {
+		glog.Error("Could not dump heap: ", err)
+	}
+	fmt.Fprintf(w, "Writing to %s...", target)
+	defer f.Close()
+	pprof_runtime.WriteHeapProfile(f)
+	fmt.Fprintf(w, "Done")
 }
 
 func MustBuildServerUrl() string {

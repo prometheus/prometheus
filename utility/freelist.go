@@ -11,31 +11,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package leveldb
+package utility
 
-import (
-	"code.google.com/p/goprotobuf/proto"
-)
+type FreeList chan interface{}
 
-// TODO: Evaluate whether to use coding.Encoder for the key and values instead
-//       raw bytes for consistency reasons.
+func NewFreeList(cap int) FreeList {
+	return make(FreeList, cap)
+}
 
-type Iterator interface {
-	Error() error
-	Valid() bool
+func (l FreeList) Get() (interface{}, bool) {
+	select {
+	case v := <-l:
+		return v, true
+	default:
+		return nil, false
+	}
+}
 
-	SeekToFirst() bool
-	SeekToLast() bool
-	Seek(proto.Message) bool
+func (l FreeList) Give(v interface{}) bool {
+	select {
+	case l <- v:
+		return true
+	default:
+		return false
+	}
+}
 
-	Next() bool
-	Previous() bool
+func (l FreeList) Close() {
+	close(l)
 
-	Key(proto.Message) error
-	Value(proto.Message) error
-
-	Close() error
-
-	rawKey() []byte
-	rawValue() []byte
+	for _ = range l {
+	}
 }
