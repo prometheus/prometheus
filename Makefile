@@ -38,7 +38,7 @@ tarball: build
 	tar -C $(BUILD_PATH)/package -czf prometheus.tar.gz .
 
 $(BUILD_PATH)/cache/$(GOPKG):
-	curl -o $@ http://go.googlecode.com/files/$(GOPKG)
+	curl -o $@ $(GOURL)/$(GOPKG)
 
 clean:
 	$(MAKE) -C $(BUILD_PATH) clean
