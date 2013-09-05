@@ -345,8 +345,14 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 	samplesBatch := leveldb.NewBatch()
 	defer samplesBatch.Close()
 
+	key := new(SampleKey)
+	keyDto := new(dto.SampleKey)
+	value := new(dto.SampleValueSeries)
+
 	for fingerprint, group := range fingerprintToSamples {
 		for {
+			value.Reset()
+
 			lengthOfGroup := len(group)
 
 			if lengthOfGroup == 0 {
@@ -361,24 +367,21 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			chunk := group[0:take]
 			group = group[take:lengthOfGroup]
 
-			key := SampleKey{
-				Fingerprint:    &fingerprint,
-				FirstTimestamp: chunk[0].Timestamp,
-				LastTimestamp:  chunk[take-1].Timestamp,
-				SampleCount:    uint32(take),
-			}
+			key.Fingerprint = &fingerprint
+			key.FirstTimestamp = chunk[0].Timestamp
+			key.LastTimestamp = chunk[take-1].Timestamp
+			key.SampleCount = uint32(take)
 
-			value := &dto.SampleValueSeries{}
 			for _, sample := range chunk {
+				// XXX: Candidate for allocation reduction.
 				value.Value = append(value.Value, &dto.SampleValueSeries_Value{
 					Timestamp: proto.Int64(sample.Timestamp.Unix()),
 					Value:     proto.Float64(float64(sample.Value)),
 				})
 			}
 
-			k := &dto.SampleKey{}
-			key.Dump(k)
-			samplesBatch.Put(k, value)
+			key.Dump(keyDto)
+			samplesBatch.Put(keyDto, value)
 		}
 	}
 
