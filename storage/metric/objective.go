@@ -171,14 +171,16 @@ func (s *iteratorSeekerState) initialMatchTime() iteratorSeeker {
 		return s.destroy
 
 	case s.obj.FirstTimestamp.Before(s.key.FirstTimestamp):
-		return s.reCue
+		return s.reCueBackward
 
+	case s.obj.FirstTimestamp.After(s.key.LastTimestamp):
+		return s.reCueForward
 	default:
 		panic("violated invariant " + fmt.Sprintln(s.obj, s.key))
 	}
 }
 
-func (s *iteratorSeekerState) reCue() iteratorSeeker {
+func (s *iteratorSeekerState) reCueBackward() iteratorSeeker {
 	s.i.Previous()
 	if !s.i.Valid() {
 		glog.Warningf("Could not backtrack for %s", s)
@@ -196,6 +198,35 @@ func (s *iteratorSeekerState) reCue() iteratorSeeker {
 		return s.fastForward
 	}
 
+	s.seriesOperable = true
+	return s.destroy
+}
+
+func (s *iteratorSeekerState) reCueForward() iteratorSeeker {
+	if s.key.Equal(s.last) {
+		glog.Info("Reached the end of the database; stopping.")
+		return s.destroy
+	}
+
+	s.i.Next()
+	if !s.i.Valid() {
+		glog.Warningf("Could not poke forward for for %s", s)
+		panic("violated invariant")
+	}
+
+	if err := s.i.Key(s.keyDto); err != nil {
+		s.err = err
+		return s.destroy
+	}
+
+	s.key.Load(s.keyDto)
+
+	if !s.key.Fingerprint.Equal(s.obj.Fingerprint) {
+		glog.Info("Poked forward and didn't match; aborting.")
+		return s.destroy
+	}
+
+	glog.Info("Poked forward and found target; may be sign of bad FSM.")
 	s.seriesOperable = true
 	return s.destroy
 }
