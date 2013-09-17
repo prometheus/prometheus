@@ -16,6 +16,7 @@ package ast
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -255,6 +256,15 @@ func sampleVectorImpl(timestamp time.Time, view *viewAdapter, args []Node) inter
 	}
 }
 
+// === scalar(node *VectorNode) Scalar ===
+func scalarImpl(timestamp time.Time, view *viewAdapter, args []Node) interface{} {
+	v := args[0].(VectorNode).Eval(timestamp, view)
+	if len(v) != 1 {
+		return clientmodel.SampleValue(math.NaN())
+	}
+	return clientmodel.SampleValue(v[0].Value)
+}
+
 var functions = map[string]*Function{
 	"delta": {
 		name:       "delta",
@@ -291,6 +301,12 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{},
 		returnType: SCALAR,
 		callFn:     timeImpl,
+	},
+	"scalar": {
+		name:       "scalar",
+		argTypes:   []ExprType{VECTOR},
+		returnType: SCALAR,
+		callFn:     scalarImpl,
 	},
 }
 
