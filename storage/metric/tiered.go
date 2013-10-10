@@ -112,8 +112,12 @@ const (
 
 const watermarkCacheLimit = 1024 * 1024
 
-func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, memoryTTL time.Duration, root string) (*TieredStorage, error) {
-	diskStorage, err := NewLevelDBMetricPersistence(root)
+func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, memoryTTL time.Duration, rootDirectory string) (*TieredStorage, error) {
+	if isDir, _ := utility.IsDir(rootDirectory); !isDir {
+		return nil, fmt.Errorf("Could not find metrics directory %s", rootDirectory)
+	}
+
+	diskStorage, err := NewLevelDBMetricPersistence(rootDirectory)
 	if err != nil {
 		return nil, err
 	}
