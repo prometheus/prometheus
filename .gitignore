@@ -3,14 +3,18 @@
 *.a[568o]
 *.cgo*.c
 *.cgo*.go
-*.conf
 *.exe
 *.orig
 *.pyc
 *.rej
 *.so
+
+# Editor files #
+################
 *~
 .*.swp
+.*.swo
+
 .DS_Store
 ._*
 .nfs.*
