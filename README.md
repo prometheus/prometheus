@@ -39,6 +39,11 @@ For basic help how to get started:
 For first time users, simply run the following:
 
     $ make
+    $ ARGUMENTS="-configFile=documentation/examples/prometheus.conf" make run
+
+``${ARGUMENTS}`` is passed verbatim into the makefile and thusly Prometheus as
+``$(ARGUMENTS)``.  This is useful for quick one-off invocations and smoke
+testing.
 
 If you run into problems, try the following:
 
@@ -56,13 +61,6 @@ staticly link against C dependency libraries, so including the ``lib``
 directory is paramount.  Providing ``LD_LIBRARY_PATH`` or
 ``DYLD_LIBRARY_PATH`` in a scaffolding shell script is advised.
 
-Executing the following target will start up Prometheus for lazy users:
-
-   $ ARGUMENTS="-foo -bar -baz" make run
-
-``${ARGUMENTS}`` is passed verbatim into the makefile and thusly Prometheus as
-``$(ARGUMENTS)``.  This is useful for quick one-off invocations and smoke
-testing.
 
 ### Problems
 If at any point you run into an error with the ``make`` build system in terms of
