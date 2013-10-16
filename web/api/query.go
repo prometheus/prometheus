@@ -38,6 +38,9 @@ func (serv MetricsService) setAccessControlHeaders(rb *gorest.ResponseBuilder) {
 }
 
 func (serv MetricsService) Query(expr string, asText string) string {
+	rb := serv.ResponseBuilder()
+	serv.setAccessControlHeaders(rb)
+
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
 		return ast.ErrorToJSON(err)
@@ -45,8 +48,6 @@ func (serv MetricsService) Query(expr string, asText string) string {
 
 	timestamp := serv.time.Now()
 
-	rb := serv.ResponseBuilder()
-	serv.setAccessControlHeaders(rb)
 	var format ast.OutputFormat
 	// BUG(julius): Use Content-Type negotiation.
 	if asText == "" {
@@ -64,6 +65,9 @@ func (serv MetricsService) Query(expr string, asText string) string {
 }
 
 func (serv MetricsService) QueryRange(expr string, end int64, duration int64, step int64) string {
+	rb := serv.ResponseBuilder()
+	serv.setAccessControlHeaders(rb)
+
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
 		return ast.ErrorToJSON(err)
@@ -71,8 +75,6 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 	if exprNode.Type() != ast.VECTOR {
 		return ast.ErrorToJSON(errors.New("Expression does not evaluate to vector type"))
 	}
-	rb := serv.ResponseBuilder()
-	serv.setAccessControlHeaders(rb)
 	rb.SetContentType(gorest.Application_Json)
 
 	if end == 0 {
@@ -118,9 +120,10 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 }
 
 func (serv MetricsService) Metrics() string {
-	metricNames, err := serv.Storage.GetAllValuesForLabel(clientmodel.MetricNameLabel)
 	rb := serv.ResponseBuilder()
 	serv.setAccessControlHeaders(rb)
+
+	metricNames, err := serv.Storage.GetAllValuesForLabel(clientmodel.MetricNameLabel)
 	rb.SetContentType(gorest.Application_Json)
 	if err != nil {
 		glog.Error("Error loading metric names: ", err)
