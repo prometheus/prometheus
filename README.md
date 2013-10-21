@@ -31,7 +31,7 @@ will take care of the following things for you in most cases:
 For basic help how to get started:
 
   * The source code is periodically indexed: [Prometheus Core](http://godoc.org/github.com/prometheus/prometheus).
-  * For UNIX-like environment users users, please consult the Travis CI configuration in _.travis.yml_ and _Makefile_.
+  * For UNIX-like environment users, please consult the Travis CI configuration in _.travis.yml_ and _Makefile_.
   * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers).
 
 ### General
