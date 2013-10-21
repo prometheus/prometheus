@@ -67,7 +67,7 @@ func (w *LevelDBHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, o
 		return t, ok, err
 	}
 	if !ok {
-		return t, ok, nil
+		return time.Unix(0, 0), ok, nil
 	}
 	t = time.Unix(v.GetTimestamp(), 0)
 	return t, true, nil
@@ -183,7 +183,7 @@ func (w *LevelDBCurationRemarker) Get(c *curationKey) (t time.Time, ok bool, err
 
 	ok, err = w.p.Get(k, v)
 	if err != nil || !ok {
-		return t, ok, err
+		return time.Unix(0, 0), ok, err
 	}
 
 	return time.Unix(v.GetLastCompletionTimestamp(), 0).UTC(), true, nil
