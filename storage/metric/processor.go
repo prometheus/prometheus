@@ -119,12 +119,14 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		switch {
 		// Furnish a new pending batch operation if none is available.
 		case pendingBatch == nil:
+			fmt.Println("000")
 			pendingBatch = leveldb.NewBatch()
 
 		// If there are no sample values to extract from the datastore, let's
 		// continue extracting more values to use.  We know that the time.Before()
 		// block would prevent us from going into unsafe territory.
 		case len(unactedSamples) == 0:
+			fmt.Println("A")
 			if !sampleIterator.Next() {
 				return lastCurated, fmt.Errorf("Illegal Condition: Invalid Iterator on Continuation")
 			}
@@ -148,6 +150,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		// commit to disk and delete the batch.  A new one will be recreated if
 		// necessary.
 		case pendingMutations >= p.maximumMutationPoolBatch:
+			fmt.Println("B")
 			err = samplesPersistence.Commit(pendingBatch)
 			if err != nil {
 				return
@@ -159,10 +162,12 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			pendingBatch = nil
 
 		case len(pendingSamples) == 0 && len(unactedSamples) >= p.minimumGroupSize:
+			fmt.Println("C")
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
 			unactedSamples = Values{}
 
 		case len(pendingSamples)+len(unactedSamples) < p.minimumGroupSize:
+			fmt.Println("D")
 			if !keyDropped {
 				k := new(dto.SampleKey)
 				sampleKey.Dump(k)
@@ -177,6 +182,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		// If the number of pending writes equals the target group size
 		case len(pendingSamples) == p.minimumGroupSize:
+			fmt.Println("E")
 			k := new(dto.SampleKey)
 			newSampleKey := pendingSamples.ToSampleKey(fingerprint)
 			newSampleKey.Dump(k)
@@ -187,6 +193,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			pendingMutations++
 			lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
 			if len(unactedSamples) > 0 {
+				fmt.Println("E1")
 				if !keyDropped {
 					sampleKey.Dump(k)
 					pendingBatch.Drop(k)
@@ -194,10 +201,12 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 				}
 
 				if len(unactedSamples) > p.minimumGroupSize {
+				fmt.Println("E2")
 					pendingSamples = unactedSamples[:p.minimumGroupSize]
 					unactedSamples = unactedSamples[p.minimumGroupSize:]
 					lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
 				} else {
+				fmt.Println("E3")
 					pendingSamples = unactedSamples
 					lastTouchedTime = pendingSamples[len(pendingSamples)-1].Timestamp
 					unactedSamples = Values{}
@@ -205,6 +214,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			}
 
 		case len(pendingSamples)+len(unactedSamples) >= p.minimumGroupSize:
+			fmt.Println("F")
 			if !keyDropped {
 				k := new(dto.SampleKey)
 				sampleKey.Dump(k)
@@ -221,6 +231,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			}
 			pendingMutations++
 		default:
+			panic("ARGL")
 			err = fmt.Errorf("Unhandled processing case.")
 		}
 	}
@@ -236,6 +247,15 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		pendingSamples = Values{}
 		pendingMutations++
 		lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
+	}
+
+	// We might have arrived at a chunk which is too young to be curated (after
+	// stopAt), but we still need to seek to the next fingerprint.
+	for fingerprint.Equal(sampleKey.Fingerprint) && sampleIterator.Next() {
+		if err = sampleIterator.Key(sampleKeyDto); err != nil {
+			return
+		}
+		sampleKey.Load(sampleKeyDto)
 	}
 
 	// This is not deferred due to the off-chance that a pre-existing commit
