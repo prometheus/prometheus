@@ -16,11 +16,12 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
-	"code.google.com/p/gorest"
 	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -28,54 +29,67 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
+	"github.com/prometheus/prometheus/web/http_utils"
 )
 
-func (serv MetricsService) setAccessControlHeaders(rb *gorest.ResponseBuilder) {
-	rb.AddHeader("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin")
-	rb.AddHeader("Access-Control-Allow-Methods", "GET")
-	rb.AddHeader("Access-Control-Allow-Origin", "*")
-	rb.AddHeader("Access-Control-Expose-Headers", "Date")
+// Enables cross-site script calls.
+func setAccessControlHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin")
+	w.Header().Set("Access-Control-Allow-Methods", "GET")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "Date")
 }
 
-func (serv MetricsService) Query(expr string, asText string) string {
-	rb := serv.ResponseBuilder()
-	serv.setAccessControlHeaders(rb)
-
-	exprNode, err := rules.LoadExprFromString(expr)
-	if err != nil {
-		return ast.ErrorToJSON(err)
-	}
-
-	timestamp := serv.time.Now()
-
+func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
+	setAccessControlHeaders(w)
 	var format ast.OutputFormat
 	// BUG(julius): Use Content-Type negotiation.
 	if asText == "" {
 		format = ast.JSON
-		rb.SetContentType(gorest.Application_Json)
+		w.Header().Set("Content-Type", "application/json")
 	} else {
 		format = ast.TEXT
-		rb.SetContentType(gorest.Text_Plain)
+		w.Header().Set("Content-Type", "text/plain")
 	}
+
+
+	params := http_utils.GetQueryParams(r)
+	expr := params.Get("expr")
+	asText := params.Get("asText")
+
+	exprNode, err := rules.LoadExprFromString(expr)
+	if err != nil {
+		fmt.Fprint(w, ast.ErrorToJSON(err))
+		return
+	}
+
+	timestamp := serv.time.Now()
 
 	queryStats := stats.NewTimerGroup()
 	result := ast.EvalToString(exprNode, timestamp, format, serv.Storage, queryStats)
 	glog.Infof("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
-	return result
+	fmt.Fprint(w, result)
 }
 
-func (serv MetricsService) QueryRange(expr string, end int64, duration int64, step int64) string {
-	rb := serv.ResponseBuilder()
-	serv.setAccessControlHeaders(rb)
+func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
+	setAccessControlHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
+
+	params := http_utils.GetQueryParams(r)
+	expr := params.Get("expr")
+	end, _ := strconv.ParseInt(params.Get("end"), 0, 64)
+	duration, _ := strconv.ParseInt(params.Get("range"), 0, 64)
+	step, _ := strconv.ParseInt(params.Get("step"), 0, 64)
 
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
-		return ast.ErrorToJSON(err)
+		fmt.Fprint(w, ast.ErrorToJSON(err))
+		return
 	}
 	if exprNode.Type() != ast.VECTOR {
-		return ast.ErrorToJSON(errors.New("Expression does not evaluate to vector type"))
+		fmt.Fprint(w, ast.ErrorToJSON(errors.New("Expression does not evaluate to vector type"))
+		return
 	}
-	rb.SetContentType(gorest.Application_Json)
 
 	if end == 0 {
 		end = serv.time.Now().Unix()
@@ -103,7 +117,8 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 		serv.Storage,
 		queryStats)
 	if err != nil {
-		return ast.ErrorToJSON(err)
+		fmt.Fprint(w, ast.ErrorToJSON(err))
+		return
 	}
 	evalTimer.Stop()
 
@@ -116,26 +131,26 @@ func (serv MetricsService) QueryRange(expr string, end int64, duration int64, st
 	jsonTimer.Stop()
 
 	glog.Infof("Range query: %s\nQuery stats:\n%s\n", expr, queryStats)
-	return result
+	fmt.Fprint(w, result)
 }
 
-func (serv MetricsService) Metrics() string {
-	rb := serv.ResponseBuilder()
-	serv.setAccessControlHeaders(rb)
+func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
+	setAccessControlHeaders(w)
 
 	metricNames, err := serv.Storage.GetAllValuesForLabel(clientmodel.MetricNameLabel)
-	rb.SetContentType(gorest.Application_Json)
+	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		glog.Error("Error loading metric names: ", err)
-		rb.SetResponseCode(http.StatusInternalServerError)
-		return err.Error()
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fmt.Fprint(w, ast.ErrorToJSON(err))
+		return
 	}
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
 		glog.Error("Error marshalling metric names: ", err)
-		rb.SetResponseCode(http.StatusInternalServerError)
-		return err.Error()
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	return string(resultBytes)
+	w.Write(resultBytes)
 }
