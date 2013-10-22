@@ -238,6 +238,15 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
 	}
 
+	// We might have arrived at a chunk which is too young to be curated (after
+	// stopAt), but we still need to seek to the next fingerprint.
+	for fingerprint.Equal(sampleKey.Fingerprint) && sampleIterator.Next() {
+		if err = sampleIterator.Key(sampleKeyDto); err != nil {
+			return
+		}
+		sampleKey.Load(sampleKeyDto)
+	}
+
 	// This is not deferred due to the off-chance that a pre-existing commit
 	// failed.
 	if pendingBatch != nil && pendingMutations > 0 {
