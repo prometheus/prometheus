@@ -662,3 +662,34 @@ func (l *LevelDBMetricPersistence) States() raw.DatabaseStates {
 		l.MetricSamples.State(),
 	}
 }
+
+type MetricSamplesDecoder struct {}
+
+func (d *MetricSamplesDecoder) DecodeKey(in interface{}) (interface{}, error) {
+	key := &dto.SampleKey{}
+	err := proto.Unmarshal(in.([]byte), key)
+	if err != nil {
+		return nil, err
+	}
+
+	sampleKey := &SampleKey{}
+	sampleKey.Load(key)
+
+	return sampleKey, nil
+}
+
+func (d *MetricSamplesDecoder) DecodeValue(in interface{}) (interface{}, error) {
+	values := &dto.SampleValueSeries{}
+	err := proto.Unmarshal(in.([]byte), values)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewValuesFromDTO(values), nil
+}
+
+type AcceptAllFilter struct {}
+
+func (d *AcceptAllFilter) Filter(_, _ interface{}) storage.FilterResult {
+	return storage.ACCEPT
+}

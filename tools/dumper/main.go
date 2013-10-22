@@ -25,53 +25,30 @@ import (
 	"os"
 	"strconv"
 
-	"code.google.com/p/goprotobuf/proto"
 	"github.com/golang/glog"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
-
-	dto "github.com/prometheus/prometheus/model/generated"
 )
 
 var (
 	storageRoot = flag.String("storage.root", "", "The path to the storage root for Prometheus.")
+	dieOnBadChunk = flag.Bool("dieOnBadChunk", false, "Whether to die upon encountering a bad chunk.")
 )
 
 type SamplesDumper struct {
 	*csv.Writer
 }
 
-func (d *SamplesDumper) DecodeKey(in interface{}) (interface{}, error) {
-	key := &dto.SampleKey{}
-	err := proto.Unmarshal(in.([]byte), key)
-	if err != nil {
-		return nil, err
-	}
-
-	sampleKey := &metric.SampleKey{}
-	sampleKey.Load(key)
-
-	return sampleKey, nil
-}
-
-func (d *SamplesDumper) DecodeValue(in interface{}) (interface{}, error) {
-	values := &dto.SampleValueSeries{}
-	err := proto.Unmarshal(in.([]byte), values)
-	if err != nil {
-		return nil, err
-	}
-
-	return metric.NewValuesFromDTO(values), nil
-}
-
-func (d *SamplesDumper) Filter(_, _ interface{}) storage.FilterResult {
-	return storage.ACCEPT
-}
-
 func (d *SamplesDumper) Operate(key, value interface{}) *storage.OperatorError {
 	sampleKey := key.(*metric.SampleKey)
+	if *dieOnBadChunk && sampleKey.FirstTimestamp.After(sampleKey.LastTimestamp) {
+		glog.Fatalf("Chunk: First time (%v) after last time (%v): %v\n", sampleKey.FirstTimestamp.Unix(), sampleKey.LastTimestamp.Unix(), sampleKey)
+	}
 	for i, sample := range value.(metric.Values) {
+		if *dieOnBadChunk && (sample.Timestamp.Before(sampleKey.FirstTimestamp) || sample.Timestamp.After(sampleKey.LastTimestamp)) {
+			glog.Fatalf("Sample not within chunk boundaries: chunk FirstTimestamp (%v), chunk LastTimestamp (%v) vs. sample Timestamp (%v)\n", sampleKey.FirstTimestamp.Unix(), sampleKey.LastTimestamp.Unix(), sample.Timestamp)
+		}
 		d.Write([]string{
 			sampleKey.Fingerprint.String(),
 			strconv.FormatInt(sampleKey.FirstTimestamp.Unix(), 10),
@@ -108,7 +85,7 @@ func main() {
 		csv.NewWriter(os.Stdout),
 	}
 
-	entire, err := persistence.MetricSamples.ForEach(dumper, dumper, dumper)
+	entire, err := persistence.MetricSamples.ForEach(&metric.MetricSamplesDecoder{}, &metric.AcceptAllFilter{}, dumper)
 	if err != nil {
 		glog.Fatal("Error dumping samples: ", err)
 	}
