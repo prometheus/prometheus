@@ -14,24 +14,31 @@
 package api
 
 import (
-	"code.google.com/p/gorest"
+	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus/exp"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/web/http_utils"
 )
 
 type MetricsService struct {
-	gorest.RestService `root:"/api/" consumes:"application/json" produces:"application/json"`
-
-	query      gorest.EndPoint `method:"GET" path:"/query?{expr:string}&{as_text:string}" output:"string"`
-	queryRange gorest.EndPoint `method:"GET" path:"/query_range?{expr:string}&{end:int64}&{range:int64}&{step:int64}" output:"string"`
-	metrics    gorest.EndPoint `method:"GET" path:"/metrics" output:"string"`
-
-	setTargets gorest.EndPoint `method:"PUT" path:"/jobs/{jobName:string}/targets" postdata:"[]TargetGroup"`
-	time       utility.Time
-
+	time          utility.Time
 	Config        *config.Config
 	TargetManager retrieval.TargetManager
 	Storage       *metric.TieredStorage
+}
+
+func (msrv *MetricsService) RegisterHandler() {
+	handler := func(h func(http.ResponseWriter, *http.Request)) http.Handler {
+		return http_utils.CompressionHandler{
+			Handler: http.HandlerFunc(h),
+		}
+	}
+	exp.Handle("/api/query", handler(msrv.Query))
+	exp.Handle("/api/query_range", handler(msrv.QueryRange))
+	exp.Handle("/api/metrics", handler(msrv.Metrics))
+	exp.Handle("/api/targets", handler(msrv.SetTargets))
 }
