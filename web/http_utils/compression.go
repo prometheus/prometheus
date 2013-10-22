@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package web
+package http_utils
 
 import (
 	"compress/gzip"
@@ -80,13 +80,13 @@ func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) 
 
 // Wrapper around http.Handler which adds suitable response compression based
 // on the client's Accept-Encoding headers.
-type compressionHandler struct {
-	handler http.Handler
+type CompressionHandler struct {
+	Handler http.Handler
 }
 
 // Adds compression to the original http.Handler's ServeHTTP() method.
-func (c compressionHandler) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
+func (c CompressionHandler) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 	compWriter := newCompressedResponseWriter(writer, req)
-	c.handler.ServeHTTP(compWriter, req)
+	c.Handler.ServeHTTP(compWriter, req)
 	compWriter.Close()
 }

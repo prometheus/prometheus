@@ -14,11 +14,13 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/web/http_utils"
 )
 
 type TargetGroup struct {
@@ -26,11 +28,21 @@ type TargetGroup struct {
 	BaseLabels map[string]string `json:"baseLabels"`
 }
 
-func (serv MetricsService) SetTargets(targetGroups []TargetGroup, jobName string) {
+func (serv MetricsService) SetTargets(w http.ResponseWriter, r *http.Request) {
+	params := http_utils.GetQueryParams(r)
+	jobName := params.Get("job")
+
+	decoder := json.NewDecoder(r.Body)
+	var targetGroups []TargetGroup
+	err := decoder.Decode(&targetGroups)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	job := serv.Config.GetJobByName(jobName)
 	if job == nil {
-		rb := serv.ResponseBuilder()
-		rb.SetResponseCode(http.StatusNotFound)
+		http.Error(w, "job not found", http.StatusNotFound)
 		return
 	}
 
