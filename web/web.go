@@ -25,7 +25,6 @@ import (
 
 	pprof_runtime "runtime/pprof"
 
-	"code.google.com/p/gorest"
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/exp"
@@ -49,8 +48,6 @@ type WebService struct {
 }
 
 func (w WebService) ServeForever() error {
-	gorest.RegisterService(w.MetricsHandler)
-
 	exp.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", 404)
 	}))
@@ -68,7 +65,7 @@ func (w WebService) ServeForever() error {
 	exp.HandleFunc("/graph", graphHandler)
 	exp.HandleFunc("/heap", dumpHeap)
 
-	exp.Handle("/api/", compressionHandler{handler: gorest.Handle()})
+	w.MetricsHandler.RegisterHandler()
 	exp.Handle("/metrics", prometheus.DefaultHandler)
 	if *useLocalAssets {
 		exp.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
