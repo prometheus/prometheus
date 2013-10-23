@@ -100,7 +100,7 @@ To run the server with race detection:
 
 ## Contributing
 
-Refer to (CONTRIBUTING.md)
+Refer to [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 
