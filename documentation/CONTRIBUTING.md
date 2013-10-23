@@ -13,7 +13,7 @@ Prometheus, you must use Gerrit.
 3. Clone the repo: `git clone http://review.prometheus.io/prometheus`
 4. Add your user-specific remote that you will push your changes to:
    `git remote add <your-remote-name> ssh://<username>@review.prometheus.io:29418/prometheus`
-4. Add Change-Id commit hook: "curl -o .git/hooks/commit-msg http://review.prometheus.io/tools/hooks/commit-msg"
+5. Add Change-Id commit hook: `curl -o .git/hooks/commit-msg http://review.prometheus.io/tools/hooks/commit-msg`
 6. Make the file executable: `chmod u+x .git/hooks/commit-msg`
 7. Commit any local changes to git, then:
 8. `git push <your-remote-name> HEAD:refs/for/master`
