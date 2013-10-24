@@ -9,8 +9,13 @@
 *.pyc
 *.rej
 *.so
+
+# Editor files #
+################
 *~
 .*.swp
+.*.swo
+
 .DS_Store
 ._*
 .nfs.*
