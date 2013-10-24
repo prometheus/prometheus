@@ -135,6 +135,9 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 				return
 			}
 			sampleKey.Load(sampleKeyDto)
+			if !sampleKey.Fingerprint.Equal(fingerprint) {
+				break
+			}
 
 			unactedSamples, err = extractSampleValues(sampleIterator)
 			if err != nil {
