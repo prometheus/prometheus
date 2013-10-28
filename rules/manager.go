@@ -124,7 +124,7 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule) {
 				AlertNameLabel: clientmodel.LabelValue(rule.Name()),
 			}),
 			Value:        aa.Value,
-			ActiveSince:  aa.ActiveSince,
+			ActiveSince:  aa.ActiveSince.Time(),
 			RuleString:   rule.String(),
 			GeneratorUrl: m.prometheusUrl + ConsoleLinkForExpression(rule.vector.String()),
 		})
@@ -133,7 +133,7 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule) {
 }
 
 func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
-	now := time.Now()
+	now := clientmodel.Now()
 	wg := sync.WaitGroup{}
 
 	m.Lock()

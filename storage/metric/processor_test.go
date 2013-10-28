@@ -16,7 +16,6 @@ package metric
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	"code.google.com/p/goprotobuf/proto"
 
@@ -30,14 +29,14 @@ import (
 
 type curationState struct {
 	fingerprint       string
-	ignoreYoungerThan time.Duration
-	lastCurated       time.Time
+	ignoreYoungerThan clientmodel.Duration
+	lastCurated       clientmodel.Timestamp
 	processor         Processor
 }
 
 type watermarkState struct {
 	fingerprint  string
-	lastAppended time.Time
+	lastAppended clientmodel.Timestamp
 }
 
 type sampleGroup struct {
@@ -49,7 +48,7 @@ type in struct {
 	curationStates    fixture.Pairs
 	watermarkStates   fixture.Pairs
 	sampleGroups      fixture.Pairs
-	ignoreYoungerThan time.Duration
+	ignoreYoungerThan clientmodel.Duration
 	groupSize         uint32
 	processor         Processor
 }
@@ -127,13 +126,13 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					MinimumGroupSize:         5,
 					MaximumMutationPoolBatch: 15,
 				}),
-				ignoreYoungerThan: 1 * time.Hour,
+				ignoreYoungerThan: 1 * clientmodel.Hour,
 				groupSize:         5,
 				curationStates: fixture.Pairs{
 					curationState{
 						fingerprint:       "0001-A-1-Z",
-						ignoreYoungerThan: 1 * time.Hour,
-						lastCurated:       testInstant.Add(-1 * 30 * time.Minute),
+						ignoreYoungerThan: 1 * clientmodel.Hour,
+						lastCurated:       testInstant.Add(-1 * 30 * clientmodel.Minute),
 						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
@@ -141,8 +140,8 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					curationState{
 						fingerprint:       "0002-A-2-Z",
-						ignoreYoungerThan: 1 * time.Hour,
-						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
+						ignoreYoungerThan: 1 * clientmodel.Hour,
+						lastCurated:       testInstant.Add(-1 * 90 * clientmodel.Minute),
 						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
@@ -155,18 +154,18 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 							MinimumGroupSize:         2,
 							MaximumMutationPoolBatch: 15,
 						}),
-						ignoreYoungerThan: 30 * time.Minute,
-						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
+						ignoreYoungerThan: 30 * clientmodel.Minute,
+						lastCurated:       testInstant.Add(-1 * 90 * clientmodel.Minute),
 					},
 				},
 				watermarkStates: fixture.Pairs{
 					watermarkState{
 						fingerprint:  "0001-A-1-Z",
-						lastAppended: testInstant.Add(-1 * 15 * time.Minute),
+						lastAppended: testInstant.Add(-1 * 15 * clientmodel.Minute),
 					},
 					watermarkState{
 						fingerprint:  "0002-A-2-Z",
-						lastAppended: testInstant.Add(-1 * 15 * time.Minute),
+						lastAppended: testInstant.Add(-1 * 15 * clientmodel.Minute),
 					},
 				},
 				sampleGroups: fixture.Pairs{
@@ -174,23 +173,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 90 * clientmodel.Minute),
 								Value:     0,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 85 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 85 * clientmodel.Minute),
 								Value:     1,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 80 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 80 * clientmodel.Minute),
 								Value:     2,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 75 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 75 * clientmodel.Minute),
 								Value:     3,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 70 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 70 * clientmodel.Minute),
 								Value:     4,
 							},
 						},
@@ -199,23 +198,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 65 * clientmodel.Minute),
 								Value:     0.25,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 60 * clientmodel.Minute),
 								Value:     1.25,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 55 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 55 * clientmodel.Minute),
 								Value:     2.25,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 50 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 50 * clientmodel.Minute),
 								Value:     3.25,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 45 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 45 * clientmodel.Minute),
 								Value:     4.25,
 							},
 						},
@@ -224,15 +223,15 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 40 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 40 * clientmodel.Minute),
 								Value:     0.50,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 35 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 35 * clientmodel.Minute),
 								Value:     1.50,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 30 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 30 * clientmodel.Minute),
 								Value:     2.50,
 							},
 						},
@@ -241,7 +240,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 25 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 25 * clientmodel.Minute),
 								Value:     0.75,
 							},
 						},
@@ -250,7 +249,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 20 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 20 * clientmodel.Minute),
 								Value:     -2,
 							},
 						},
@@ -259,7 +258,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 15 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 15 * clientmodel.Minute),
 								Value:     -3,
 							},
 						},
@@ -269,7 +268,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 90 * clientmodel.Minute),
 								Value:     0,
 							},
 						},
@@ -279,7 +278,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 89 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 89 * clientmodel.Minute),
 								Value:     1,
 							},
 						},
@@ -289,7 +288,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 88 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 88 * clientmodel.Minute),
 								Value:     2,
 							},
 						},
@@ -299,7 +298,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 87 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 87 * clientmodel.Minute),
 								Value:     3,
 							},
 						},
@@ -309,7 +308,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 86 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 86 * clientmodel.Minute),
 								Value:     4,
 							},
 						},
@@ -319,7 +318,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 85 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 85 * clientmodel.Minute),
 								Value:     5,
 							},
 						},
@@ -329,7 +328,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 84 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 84 * clientmodel.Minute),
 								Value:     6,
 							},
 						},
@@ -339,7 +338,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 83 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 83 * clientmodel.Minute),
 								Value:     7,
 							},
 						},
@@ -349,7 +348,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 82 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 82 * clientmodel.Minute),
 								Value:     8,
 							},
 						},
@@ -359,7 +358,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 81 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 81 * clientmodel.Minute),
 								Value:     9,
 							},
 						},
@@ -369,7 +368,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 80 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 80 * clientmodel.Minute),
 								Value:     10,
 							},
 						},
@@ -379,7 +378,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 79 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 79 * clientmodel.Minute),
 								Value:     11,
 							},
 						},
@@ -389,7 +388,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 78 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 78 * clientmodel.Minute),
 								Value:     12,
 							},
 						},
@@ -399,7 +398,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 77 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 77 * clientmodel.Minute),
 								Value:     13,
 							},
 						},
@@ -410,37 +409,37 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						values: Values{
 							{
 								// Block 3
-								Timestamp: testInstant.Add(-1 * 76 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 76 * clientmodel.Minute),
 								Value:     14,
 							},
 							{
 								// Block 4
-								Timestamp: testInstant.Add(-1 * 75 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 75 * clientmodel.Minute),
 								Value:     15,
 							},
 							{
 								// Block 4
-								Timestamp: testInstant.Add(-1 * 74 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 74 * clientmodel.Minute),
 								Value:     16,
 							},
 							{
 								// Block 4
-								Timestamp: testInstant.Add(-1 * 73 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 73 * clientmodel.Minute),
 								Value:     17,
 							},
 							{
 								// Block 4
-								Timestamp: testInstant.Add(-1 * 72 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 72 * clientmodel.Minute),
 								Value:     18,
 							},
 							{
 								// Block 4
-								Timestamp: testInstant.Add(-1 * 71 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 71 * clientmodel.Minute),
 								Value:     19,
 							},
 							{
 								// Block 5
-								Timestamp: testInstant.Add(-1 * 70 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 70 * clientmodel.Minute),
 								Value:     20,
 							},
 						},
@@ -450,7 +449,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 69 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 69 * clientmodel.Minute),
 								Value:     21,
 							},
 						},
@@ -460,7 +459,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 68 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 68 * clientmodel.Minute),
 								Value:     22,
 							},
 						},
@@ -470,7 +469,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 67 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 67 * clientmodel.Minute),
 								Value:     23,
 							},
 						},
@@ -480,7 +479,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 66 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 66 * clientmodel.Minute),
 								Value:     24,
 							},
 						},
@@ -490,7 +489,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 65 * clientmodel.Minute),
 								Value:     25,
 							},
 						},
@@ -500,7 +499,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 64 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 64 * clientmodel.Minute),
 								Value:     26,
 							},
 						},
@@ -510,7 +509,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 63 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 63 * clientmodel.Minute),
 								Value:     27,
 							},
 						},
@@ -520,7 +519,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 62 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 62 * clientmodel.Minute),
 								Value:     28,
 							},
 						},
@@ -530,7 +529,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 61 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 61 * clientmodel.Minute),
 								Value:     29,
 							},
 						},
@@ -540,7 +539,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 60 * clientmodel.Minute),
 								Value:     30,
 							},
 						},
@@ -551,8 +550,8 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 				curationStates: []curationState{
 					{
 						fingerprint:       "0001-A-1-Z",
-						ignoreYoungerThan: time.Hour,
-						lastCurated:       testInstant.Add(-1 * 30 * time.Minute),
+						ignoreYoungerThan: clientmodel.Hour,
+						lastCurated:       testInstant.Add(-1 * 30 * clientmodel.Minute),
 						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
@@ -560,8 +559,8 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint:       "0002-A-2-Z",
-						ignoreYoungerThan: 30 * time.Minute,
-						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
+						ignoreYoungerThan: 30 * clientmodel.Minute,
+						lastCurated:       testInstant.Add(-1 * 90 * clientmodel.Minute),
 						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         2,
 							MaximumMutationPoolBatch: 15,
@@ -569,8 +568,8 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint:       "0002-A-2-Z",
-						ignoreYoungerThan: time.Hour,
-						lastCurated:       testInstant.Add(-1 * 60 * time.Minute),
+						ignoreYoungerThan: clientmodel.Hour,
+						lastCurated:       testInstant.Add(-1 * 60 * clientmodel.Minute),
 						processor: NewCompactionProcessor(&CompactionProcessorOptions{
 							MinimumGroupSize:         5,
 							MaximumMutationPoolBatch: 15,
@@ -582,23 +581,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 90 * clientmodel.Minute),
 								Value:     0,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 85 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 85 * clientmodel.Minute),
 								Value:     1,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 80 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 80 * clientmodel.Minute),
 								Value:     2,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 75 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 75 * clientmodel.Minute),
 								Value:     3,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 70 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 70 * clientmodel.Minute),
 								Value:     4,
 							},
 						},
@@ -607,23 +606,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 65 * clientmodel.Minute),
 								Value:     0.25,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 60 * clientmodel.Minute),
 								Value:     1.25,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 55 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 55 * clientmodel.Minute),
 								Value:     2.25,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 50 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 50 * clientmodel.Minute),
 								Value:     3.25,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 45 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 45 * clientmodel.Minute),
 								Value:     4.25,
 							},
 						},
@@ -632,15 +631,15 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 40 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 40 * clientmodel.Minute),
 								Value:     0.50,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 35 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 35 * clientmodel.Minute),
 								Value:     1.50,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 30 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 30 * clientmodel.Minute),
 								Value:     2.50,
 							},
 						},
@@ -649,7 +648,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 25 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 25 * clientmodel.Minute),
 								Value:     0.75,
 							},
 						},
@@ -658,7 +657,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 20 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 20 * clientmodel.Minute),
 								Value:     -2,
 							},
 						},
@@ -667,7 +666,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 15 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 15 * clientmodel.Minute),
 								Value:     -3,
 							},
 						},
@@ -677,23 +676,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 90 * clientmodel.Minute),
 								Value:     0,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 89 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 89 * clientmodel.Minute),
 								Value:     1,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 88 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 88 * clientmodel.Minute),
 								Value:     2,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 87 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 87 * clientmodel.Minute),
 								Value:     3,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 86 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 86 * clientmodel.Minute),
 								Value:     4,
 							},
 						},
@@ -703,23 +702,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 85 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 85 * clientmodel.Minute),
 								Value:     5,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 84 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 84 * clientmodel.Minute),
 								Value:     6,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 83 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 83 * clientmodel.Minute),
 								Value:     7,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 82 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 82 * clientmodel.Minute),
 								Value:     8,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 81 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 81 * clientmodel.Minute),
 								Value:     9,
 							},
 						},
@@ -729,23 +728,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 80 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 80 * clientmodel.Minute),
 								Value:     10,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 79 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 79 * clientmodel.Minute),
 								Value:     11,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 78 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 78 * clientmodel.Minute),
 								Value:     12,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 77 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 77 * clientmodel.Minute),
 								Value:     13,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 76 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 76 * clientmodel.Minute),
 								Value:     14,
 							},
 						},
@@ -754,23 +753,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 75 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 75 * clientmodel.Minute),
 								Value:     15,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 74 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 74 * clientmodel.Minute),
 								Value:     16,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 73 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 73 * clientmodel.Minute),
 								Value:     17,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 72 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 72 * clientmodel.Minute),
 								Value:     18,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 71 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 71 * clientmodel.Minute),
 								Value:     19,
 							},
 						},
@@ -779,23 +778,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 70 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 70 * clientmodel.Minute),
 								Value:     20,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 69 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 69 * clientmodel.Minute),
 								Value:     21,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 68 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 68 * clientmodel.Minute),
 								Value:     22,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 67 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 67 * clientmodel.Minute),
 								Value:     23,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 66 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 66 * clientmodel.Minute),
 								Value:     24,
 							},
 						},
@@ -804,23 +803,23 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 65 * clientmodel.Minute),
 								Value:     25,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 64 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 64 * clientmodel.Minute),
 								Value:     26,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 63 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 63 * clientmodel.Minute),
 								Value:     27,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 62 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 62 * clientmodel.Minute),
 								Value:     28,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 61 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 61 * clientmodel.Minute),
 								Value:     29,
 							},
 						},
@@ -829,7 +828,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 60 * clientmodel.Minute),
 								Value:     30,
 							},
 						},
@@ -1013,21 +1012,21 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 				processor: NewDeletionProcessor(&DeletionProcessorOptions{
 					MaximumMutationPoolBatch: 15,
 				}),
-				ignoreYoungerThan: 1 * time.Hour,
+				ignoreYoungerThan: 1 * clientmodel.Hour,
 				groupSize:         5,
 				curationStates: fixture.Pairs{
 					curationState{
 						fingerprint:       "0001-A-1-Z",
-						ignoreYoungerThan: 1 * time.Hour,
-						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
+						ignoreYoungerThan: 1 * clientmodel.Hour,
+						lastCurated:       testInstant.Add(-1 * 90 * clientmodel.Minute),
 						processor: NewDeletionProcessor(&DeletionProcessorOptions{
 							MaximumMutationPoolBatch: 15,
 						}),
 					},
 					curationState{
 						fingerprint:       "0002-A-2-Z",
-						ignoreYoungerThan: 1 * time.Hour,
-						lastCurated:       testInstant.Add(-1 * 90 * time.Minute),
+						ignoreYoungerThan: 1 * clientmodel.Hour,
+						lastCurated:       testInstant.Add(-1 * 90 * clientmodel.Minute),
 						processor: NewDeletionProcessor(&DeletionProcessorOptions{
 							MaximumMutationPoolBatch: 15,
 						}),
@@ -1036,11 +1035,11 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 				watermarkStates: fixture.Pairs{
 					watermarkState{
 						fingerprint:  "0001-A-1-Z",
-						lastAppended: testInstant.Add(-1 * 15 * time.Minute),
+						lastAppended: testInstant.Add(-1 * 15 * clientmodel.Minute),
 					},
 					watermarkState{
 						fingerprint:  "0002-A-2-Z",
-						lastAppended: testInstant.Add(-1 * 15 * time.Minute),
+						lastAppended: testInstant.Add(-1 * 15 * clientmodel.Minute),
 					},
 				},
 				sampleGroups: fixture.Pairs{
@@ -1048,11 +1047,11 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 90 * clientmodel.Minute),
 								Value:     90,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 30 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 30 * clientmodel.Minute),
 								Value:     30,
 							},
 						},
@@ -1061,7 +1060,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 15 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 15 * clientmodel.Minute),
 								Value:     15,
 							},
 						},
@@ -1070,7 +1069,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 90 * clientmodel.Minute),
 								Value:     0,
 							},
 						},
@@ -1079,7 +1078,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 89 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 89 * clientmodel.Minute),
 								Value:     1,
 							},
 						},
@@ -1088,7 +1087,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 88 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 88 * clientmodel.Minute),
 								Value:     2,
 							},
 						},
@@ -1097,7 +1096,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 87 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 87 * clientmodel.Minute),
 								Value:     3,
 							},
 						},
@@ -1106,7 +1105,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 86 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 86 * clientmodel.Minute),
 								Value:     4,
 							},
 						},
@@ -1115,7 +1114,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 85 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 85 * clientmodel.Minute),
 								Value:     5,
 							},
 						},
@@ -1124,7 +1123,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 84 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 84 * clientmodel.Minute),
 								Value:     6,
 							},
 						},
@@ -1133,7 +1132,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 83 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 83 * clientmodel.Minute),
 								Value:     7,
 							},
 						},
@@ -1142,7 +1141,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 82 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 82 * clientmodel.Minute),
 								Value:     8,
 							},
 						},
@@ -1151,7 +1150,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 81 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 81 * clientmodel.Minute),
 								Value:     9,
 							},
 						},
@@ -1160,7 +1159,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 80 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 80 * clientmodel.Minute),
 								Value:     10,
 							},
 						},
@@ -1169,7 +1168,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 79 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 79 * clientmodel.Minute),
 								Value:     11,
 							},
 						},
@@ -1178,7 +1177,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 78 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 78 * clientmodel.Minute),
 								Value:     12,
 							},
 						},
@@ -1187,7 +1186,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 77 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 77 * clientmodel.Minute),
 								Value:     13,
 							},
 						},
@@ -1196,31 +1195,31 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 76 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 76 * clientmodel.Minute),
 								Value:     14,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 75 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 75 * clientmodel.Minute),
 								Value:     15,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 74 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 74 * clientmodel.Minute),
 								Value:     16,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 73 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 73 * clientmodel.Minute),
 								Value:     17,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 72 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 72 * clientmodel.Minute),
 								Value:     18,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 71 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 71 * clientmodel.Minute),
 								Value:     19,
 							},
 							{
-								Timestamp: testInstant.Add(-1 * 70 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 70 * clientmodel.Minute),
 								Value:     20,
 							},
 						},
@@ -1229,7 +1228,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 69 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 69 * clientmodel.Minute),
 								Value:     21,
 							},
 						},
@@ -1238,7 +1237,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 68 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 68 * clientmodel.Minute),
 								Value:     22,
 							},
 						},
@@ -1247,7 +1246,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 67 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 67 * clientmodel.Minute),
 								Value:     23,
 							},
 						},
@@ -1256,7 +1255,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 66 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 66 * clientmodel.Minute),
 								Value:     24,
 							},
 						},
@@ -1265,7 +1264,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 65 * clientmodel.Minute),
 								Value:     25,
 							},
 						},
@@ -1274,7 +1273,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 64 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 64 * clientmodel.Minute),
 								Value:     26,
 							},
 						},
@@ -1283,7 +1282,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 63 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 63 * clientmodel.Minute),
 								Value:     27,
 							},
 						},
@@ -1292,7 +1291,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 62 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 62 * clientmodel.Minute),
 								Value:     28,
 							},
 						},
@@ -1301,7 +1300,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 61 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 61 * clientmodel.Minute),
 								Value:     29,
 							},
 						},
@@ -1310,7 +1309,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 60 * clientmodel.Minute),
 								Value:     30,
 							},
 						},
@@ -1321,16 +1320,16 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 				curationStates: []curationState{
 					{
 						fingerprint:       "0001-A-1-Z",
-						ignoreYoungerThan: 1 * time.Hour,
-						lastCurated:       testInstant.Add(-1 * 30 * time.Minute),
+						ignoreYoungerThan: 1 * clientmodel.Hour,
+						lastCurated:       testInstant.Add(-1 * 30 * clientmodel.Minute),
 						processor: NewDeletionProcessor(&DeletionProcessorOptions{
 							MaximumMutationPoolBatch: 15,
 						}),
 					},
 					{
 						fingerprint:       "0002-A-2-Z",
-						ignoreYoungerThan: 1 * time.Hour,
-						lastCurated:       testInstant.Add(-1 * 60 * time.Minute),
+						ignoreYoungerThan: 1 * clientmodel.Hour,
+						lastCurated:       testInstant.Add(-1 * 60 * clientmodel.Minute),
 						processor: NewDeletionProcessor(&DeletionProcessorOptions{
 							MaximumMutationPoolBatch: 15,
 						}),
@@ -1341,7 +1340,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 30 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 30 * clientmodel.Minute),
 								Value:     30,
 							},
 						},
@@ -1350,7 +1349,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0001-A-1-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 15 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 15 * clientmodel.Minute),
 								Value:     15,
 							},
 						},
@@ -1359,7 +1358,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 						fingerprint: "0002-A-2-Z",
 						values: Values{
 							{
-								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
+								Timestamp: testInstant.Add(-1 * 60 * clientmodel.Minute),
 								Value:     30,
 							},
 						},

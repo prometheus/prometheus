@@ -46,7 +46,7 @@ type CurationStateUpdater interface {
 type CurationState struct {
 	Active      bool
 	Name        string
-	Limit       time.Duration
+	Limit       clientmodel.Duration
 	Fingerprint *clientmodel.Fingerprint
 }
 
@@ -98,7 +98,7 @@ type watermarkScanner struct {
 	// curationState is the data store for curation remarks.
 	curationState CurationRemarker
 	// ignoreYoungerThan is passed into the curation remark for the given series.
-	ignoreYoungerThan time.Duration
+	ignoreYoungerThan clientmodel.Duration
 	// processor is responsible for executing a given stategy on the
 	// to-be-operated-on series.
 	processor Processor
@@ -107,7 +107,7 @@ type watermarkScanner struct {
 	// samples
 	samples raw.Persistence
 	// stopAt is a cue for when to stop mutating a given series.
-	stopAt time.Time
+	stopAt clientmodel.Timestamp
 
 	// stop functions as the global stop channel for all future operations.
 	stop chan bool
@@ -128,7 +128,7 @@ type watermarkScanner struct {
 // curated.
 // curationState is the on-disk store where the curation remarks are made for
 // how much progress has been made.
-func (c *Curator) Run(ignoreYoungerThan time.Duration, instant time.Time, processor Processor, curationState CurationRemarker, samples *leveldb.LevelDBPersistence, watermarks HighWatermarker, status CurationStateUpdater) (err error) {
+func (c *Curator) Run(ignoreYoungerThan clientmodel.Duration, instant clientmodel.Timestamp, processor Processor, curationState CurationRemarker, samples *leveldb.LevelDBPersistence, watermarks HighWatermarker, status CurationStateUpdater) (err error) {
 	defer func(t time.Time) {
 		duration := float64(time.Since(t) / time.Millisecond)
 
@@ -441,7 +441,7 @@ type curationKey struct {
 	Fingerprint              *clientmodel.Fingerprint
 	ProcessorMessageRaw      []byte
 	ProcessorMessageTypeName string
-	IgnoreYoungerThan        time.Duration
+	IgnoreYoungerThan        clientmodel.Duration
 }
 
 // Equal answers whether the two curationKeys are equivalent.
@@ -482,5 +482,5 @@ func (c *curationKey) load(d *dto.CurationKey) {
 
 	c.ProcessorMessageRaw = d.ProcessorMessageRaw
 	c.ProcessorMessageTypeName = d.GetProcessorMessageTypeName()
-	c.IgnoreYoungerThan = time.Duration(d.GetIgnoreYoungerThan())
+	c.IgnoreYoungerThan = clientmodel.Duration(d.GetIgnoreYoungerThan())
 }

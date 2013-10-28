@@ -128,7 +128,7 @@ func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
 	})
 	defer curator.Close()
 
-	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
+	return curator.Run(clientmodel.NewDuration(olderThan), clientmodel.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
 }
 
 func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
@@ -152,7 +152,7 @@ func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
 	})
 	defer curator.Close()
 
-	return curator.Run(olderThan, time.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
+	return curator.Run(clientmodel.NewDuration(olderThan), clientmodel.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
 }
 
 func (p *prometheus) close() {
@@ -202,7 +202,7 @@ func main() {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, *arenaTTL, *metricsStoragePath)
+	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, clientmodel.NewDuration(*arenaTTL), *metricsStoragePath)
 	if err != nil {
 		glog.Fatal("Error opening storage: ", err)
 	}

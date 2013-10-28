@@ -14,8 +14,6 @@
 package metric
 
 import (
-	"time"
-
 	"code.google.com/p/goprotobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -29,11 +27,11 @@ import (
 )
 
 type watermarks struct {
-	High time.Time
+	High clientmodel.Timestamp
 }
 
 func (w *watermarks) load(d *dto.MetricHighWatermark) {
-	w.High = time.Unix(d.GetTimestamp(), 0).UTC()
+	w.High = clientmodel.TimestampFromUnix(d.GetTimestamp())
 }
 
 func (w *watermarks) dump(d *dto.MetricHighWatermark) {
@@ -42,14 +40,14 @@ func (w *watermarks) dump(d *dto.MetricHighWatermark) {
 	d.Timestamp = proto.Int64(w.High.Unix())
 }
 
-type FingerprintHighWatermarkMapping map[clientmodel.Fingerprint]time.Time
+type FingerprintHighWatermarkMapping map[clientmodel.Fingerprint]clientmodel.Timestamp
 
 type HighWatermarker interface {
 	raw.ForEacher
 	raw.Pruner
 
 	UpdateBatch(FingerprintHighWatermarkMapping) error
-	Get(*clientmodel.Fingerprint) (t time.Time, ok bool, err error)
+	Get(*clientmodel.Fingerprint) (t clientmodel.Timestamp, ok bool, err error)
 	State() *raw.DatabaseState
 	Size() (uint64, bool, error)
 }
@@ -58,7 +56,7 @@ type LevelDBHighWatermarker struct {
 	p *leveldb.LevelDBPersistence
 }
 
-func (w *LevelDBHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, ok bool, err error) {
+func (w *LevelDBHighWatermarker) Get(f *clientmodel.Fingerprint) (t clientmodel.Timestamp, ok bool, err error) {
 	k := new(dto.Fingerprint)
 	dumpFingerprint(k, f)
 	v := new(dto.MetricHighWatermark)
@@ -67,9 +65,9 @@ func (w *LevelDBHighWatermarker) Get(f *clientmodel.Fingerprint) (t time.Time, o
 		return t, ok, err
 	}
 	if !ok {
-		return time.Unix(0, 0), ok, nil
+		return clientmodel.TimestampFromUnix(0), ok, nil
 	}
-	t = time.Unix(v.GetTimestamp(), 0)
+	t = clientmodel.TimestampFromUnix(v.GetTimestamp())
 	return t, true, nil
 }
 
@@ -143,8 +141,8 @@ func NewLevelDBHighWatermarker(o LevelDBHighWatermarkerOptions) (*LevelDBHighWat
 type CurationRemarker interface {
 	raw.Pruner
 
-	Update(*curationKey, time.Time) error
-	Get(*curationKey) (t time.Time, ok bool, err error)
+	Update(*curationKey, clientmodel.Timestamp) error
+	Get(*curationKey) (t clientmodel.Timestamp, ok bool, err error)
 	State() *raw.DatabaseState
 	Size() (uint64, bool, error)
 }
@@ -176,20 +174,20 @@ func (w *LevelDBCurationRemarker) Prune() (bool, error) {
 	return false, nil
 }
 
-func (w *LevelDBCurationRemarker) Get(c *curationKey) (t time.Time, ok bool, err error) {
+func (w *LevelDBCurationRemarker) Get(c *curationKey) (t clientmodel.Timestamp, ok bool, err error) {
 	k := new(dto.CurationKey)
 	c.dump(k)
 	v := new(dto.CurationValue)
 
 	ok, err = w.p.Get(k, v)
 	if err != nil || !ok {
-		return time.Unix(0, 0), ok, err
+		return clientmodel.TimestampFromUnix(0), ok, err
 	}
 
-	return time.Unix(v.GetLastCompletionTimestamp(), 0).UTC(), true, nil
+	return clientmodel.TimestampFromUnix(v.GetLastCompletionTimestamp()), true, nil
 }
 
-func (w *LevelDBCurationRemarker) Update(pair *curationKey, t time.Time) error {
+func (w *LevelDBCurationRemarker) Update(pair *curationKey, t clientmodel.Timestamp) error {
 	k := new(dto.CurationKey)
 	pair.dump(k)
 

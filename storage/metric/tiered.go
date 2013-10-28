@@ -35,7 +35,7 @@ type chunk Values
 // dropped.  The original slice is not mutated.  It works with the assumption
 // that consumers of these values could want preceding values if none would
 // exist prior to the defined time.
-func (c chunk) TruncateBefore(t time.Time) chunk {
+func (c chunk) TruncateBefore(t clientmodel.Timestamp) chunk {
 	index := sort.Search(len(c), func(i int) bool {
 		timestamp := c[i].Timestamp
 
@@ -62,7 +62,7 @@ const (
 )
 
 // Ignore timeseries in queries that are more stale than this limit.
-const stalenessLimit = time.Minute * 5
+const stalenessLimit = clientmodel.Minute * 5
 
 // TieredStorage both persists samples and generates materialized views for
 // queries.
@@ -76,7 +76,7 @@ type TieredStorage struct {
 	appendToDiskQueue chan clientmodel.Samples
 
 	memoryArena         *memorySeriesStorage
-	memoryTTL           time.Duration
+	memoryTTL           clientmodel.Duration
 	flushMemoryInterval time.Duration
 
 	ViewQueue chan viewJob
@@ -112,7 +112,7 @@ const (
 
 const watermarkCacheLimit = 1024 * 1024
 
-func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, memoryTTL time.Duration, rootDirectory string) (*TieredStorage, error) {
+func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval time.Duration, memoryTTL clientmodel.Duration, rootDirectory string) (*TieredStorage, error) {
 	if isDir, _ := utility.IsDir(rootDirectory); !isDir {
 		return nil, fmt.Errorf("Could not find metrics directory %s", rootDirectory)
 	}
@@ -285,8 +285,8 @@ func (t *TieredStorage) Flush() {
 	<-t.flushSema
 }
 
-func (t *TieredStorage) flushMemory(ttl time.Duration) {
-	flushOlderThan := time.Now().Add(-1 * ttl)
+func (t *TieredStorage) flushMemory(ttl clientmodel.Duration) {
+	flushOlderThan := clientmodel.Now().Add(-1 * ttl)
 
 	glog.Info("Flushing samples to disk...")
 	t.memoryArena.Flush(flushOlderThan, t.appendToDiskQueue)
@@ -336,7 +336,7 @@ func (t *TieredStorage) close() {
 	t.state = tieredStorageStopping
 }
 
-func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i time.Time) (bool, error) {
+func (t *TieredStorage) seriesTooOld(f *clientmodel.Fingerprint, i clientmodel.Timestamp) (bool, error) {
 	// BUG(julius): Make this configurable by query layer.
 	i = i.Add(-stalenessLimit)
 
@@ -401,7 +401,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 	extractionTimer := viewJob.stats.GetTimer(stats.ViewDataExtractionTime).Start()
 	for _, scanJob := range scans {
-		old, err := t.seriesTooOld(scanJob.fingerprint, *scanJob.operations[0].CurrentTime())
+		old, err := t.seriesTooOld(scanJob.fingerprint, scanJob.operations[0].CurrentTime())
 		if err != nil {
 			glog.Errorf("Error getting watermark from cache for %s: %s", scanJob.fingerprint, err)
 			continue
@@ -420,7 +420,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			}
 
 			// Load data value chunk(s) around the first standing op's current time.
-			targetTime := *standingOps[0].CurrentTime()
+			targetTime := standingOps[0].CurrentTime()
 
 			currentChunk := chunk{}
 			// If we aimed before the oldest value in memory, load more data from disk.
@@ -494,7 +494,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 					break
 				}
 
-				currentChunk = currentChunk.TruncateBefore(*(op.CurrentTime()))
+				currentChunk = currentChunk.TruncateBefore(op.CurrentTime())
 
 				for !op.Consumed() && !op.CurrentTime().After(targetTime) {
 					out = op.ExtractSamples(Values(currentChunk))
@@ -537,7 +537,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	return
 }
 
-func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerprint *clientmodel.Fingerprint, ts time.Time, firstBlock, lastBlock *SampleKey) (chunk Values, expired bool) {
+func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerprint *clientmodel.Fingerprint, ts clientmodel.Timestamp, firstBlock, lastBlock *SampleKey) (chunk Values, expired bool) {
 	if fingerprint.Less(firstBlock.Fingerprint) {
 		return nil, false
 	}

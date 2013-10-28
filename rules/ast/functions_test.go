@@ -15,7 +15,6 @@ package ast
 
 import (
 	"testing"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -29,7 +28,7 @@ func (node emptyRangeNode) NodeTreeToDotGraph() string { return "" }
 func (node emptyRangeNode) String() string             { return "" }
 func (node emptyRangeNode) Children() Nodes            { return Nodes{} }
 
-func (node emptyRangeNode) Eval(timestamp time.Time, view *viewAdapter) Matrix {
+func (node emptyRangeNode) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
 	return Matrix{
 		metric.SampleSet{
 			Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
@@ -38,7 +37,7 @@ func (node emptyRangeNode) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 	}
 }
 
-func (node emptyRangeNode) EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix {
+func (node emptyRangeNode) EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
 	return Matrix{
 		metric.SampleSet{
 			Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
@@ -48,7 +47,7 @@ func (node emptyRangeNode) EvalBoundaries(timestamp time.Time, view *viewAdapter
 }
 
 func TestDeltaWithEmptyElementDoesNotCrash(t *testing.T) {
-	now := time.Now()
+	now := clientmodel.Now()
 	vector := deltaImpl(now, nil, []Node{emptyRangeNode{}, &ScalarLiteral{value: 0}}).(Vector)
 	if len(vector) != 0 {
 		t.Fatalf("Expected empty result vector, got: %v", vector)

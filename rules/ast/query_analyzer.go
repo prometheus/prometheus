@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-type FullRangeMap map[clientmodel.Fingerprint]time.Duration
+type FullRangeMap map[clientmodel.Fingerprint]clientmodel.Duration
 type IntervalRangeMap map[clientmodel.Fingerprint]bool
 
 type QueryAnalyzer struct {
@@ -99,7 +99,7 @@ func (analyzer *QueryAnalyzer) AnalyzeQueries(node Node) {
 	}
 }
 
-func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (*viewAdapter, error) {
+func viewAdapterForInstantQuery(node Node, timestamp clientmodel.Timestamp, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (*viewAdapter, error) {
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)
@@ -125,7 +125,7 @@ func viewAdapterForInstantQuery(node Node, timestamp time.Time, storage *metric.
 	return NewViewAdapter(view, storage, queryStats), nil
 }
 
-func viewAdapterForRangeQuery(node Node, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (*viewAdapter, error) {
+func viewAdapterForRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval clientmodel.Duration, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (*viewAdapter, error) {
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)

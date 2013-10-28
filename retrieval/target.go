@@ -156,7 +156,7 @@ func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.La
 	return target
 }
 
-func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp time.Time, healthy bool) {
+func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clientmodel.Timestamp, healthy bool) {
 	metric := clientmodel.Metric{}
 	for label, value := range t.baseLabels {
 		metric[label] = value
@@ -182,7 +182,7 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp time
 }
 
 func (t *target) Scrape(earliest time.Time, ingester extraction.Ingester) error {
-	now := time.Now()
+	now := clientmodel.Now()
 	futureState := t.state
 	err := t.scrape(now, ingester)
 	if err != nil {
@@ -202,7 +202,7 @@ func (t *target) Scrape(earliest time.Time, ingester extraction.Ingester) error 
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/json;schema=prometheus/telemetry;version=0.0.2;q=0.2,*/*;q=0.1`
 
-func (t *target) scrape(timestamp time.Time, ingester extraction.Ingester) (err error) {
+func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ingester) (err error) {
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
 		labels := map[string]string{address: t.Address(), outcome: success}

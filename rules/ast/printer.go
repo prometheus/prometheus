@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -145,7 +144,7 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 	return string(dataJSON)
 }
 
-func EvalToString(node Node, timestamp time.Time, format OutputFormat, storage *metric.TieredStorage, queryStats *stats.TimerGroup) string {
+func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputFormat, storage *metric.TieredStorage, queryStats *stats.TimerGroup) string {
 	viewTimer := queryStats.GetTimer(stats.TotalViewBuildingTime).Start()
 	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
 	viewTimer.Stop()
@@ -337,7 +336,7 @@ func (node *VectorArithExpr) String() string {
 
 func (node *MatrixLiteral) String() string {
 	vectorString := (&VectorLiteral{labels: node.labels}).String()
-	intervalString := fmt.Sprintf("[%s]", utility.DurationToString(node.interval))
+	intervalString := fmt.Sprintf("[%s]", utility.DurationToString(node.interval.TimeDuration()))
 	return vectorString + intervalString
 }
 

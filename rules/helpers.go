@@ -39,7 +39,7 @@ func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labe
 	if err != nil {
 		return nil, err
 	}
-	return NewAlertingRule(name, expr.(ast.VectorNode), holdDuration, labels, summary, description), nil
+	return NewAlertingRule(name, expr.(ast.VectorNode), clientmodel.NewDuration(holdDuration), labels, summary, description), nil
 }
 
 func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {
@@ -113,7 +113,7 @@ func NewMatrix(vector ast.Node, intervalStr string) (ast.MatrixNode, error) {
 		return nil, err
 	}
 	vectorLiteral := vector.(*ast.VectorLiteral)
-	return ast.NewMatrixLiteral(vectorLiteral, interval), nil
+	return ast.NewMatrixLiteral(vectorLiteral, clientmodel.NewDuration(interval)), nil
 }
 
 func ConsoleLinkForExpression(expr string) string {

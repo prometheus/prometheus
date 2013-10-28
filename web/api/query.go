@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"time"
 
 	"github.com/golang/glog"
 
@@ -63,7 +62,7 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timestamp := serv.time.Now()
+	timestamp := clientmodel.TimestampFromTime(serv.time.Now())
 
 	queryStats := stats.NewTimerGroup()
 	result := ast.EvalToString(exprNode, timestamp, format, serv.Storage, queryStats)
@@ -92,7 +91,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if end == 0 {
-		end = serv.time.Now().Unix()
+		end = clientmodel.Now().Unix()
 	}
 
 	if step < 1 {
@@ -111,9 +110,9 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	evalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
 	matrix, err := ast.EvalVectorRange(
 		exprNode.(ast.VectorNode),
-		time.Unix(end-duration, 0).UTC(),
-		time.Unix(end, 0).UTC(),
-		time.Duration(step)*time.Second,
+		clientmodel.TimestampFromUnix(end-duration),
+		clientmodel.TimestampFromUnix(end),
+		clientmodel.Duration(step)*clientmodel.Second,
 		serv.Storage,
 		queryStats)
 	if err != nil {

@@ -15,18 +15,19 @@ package indexable
 
 import (
 	"encoding/binary"
-	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 // EncodeTimeInto writes the provided time into the specified buffer subject
 // to the LevelDB big endian key sort order requirement.
-func EncodeTimeInto(dst []byte, t time.Time) {
+func EncodeTimeInto(dst []byte, t clientmodel.Timestamp) {
 	binary.BigEndian.PutUint64(dst, uint64(t.Unix()))
 }
 
 // EncodeTime converts the provided time into a byte buffer subject to the
 // LevelDB big endian key sort order requirement.
-func EncodeTime(t time.Time) []byte {
+func EncodeTime(t clientmodel.Timestamp) []byte {
 	buffer := make([]byte, 8)
 
 	EncodeTimeInto(buffer, t)
@@ -36,6 +37,6 @@ func EncodeTime(t time.Time) []byte {
 
 // DecodeTime deserializes a big endian byte array into a Unix time in UTC,
 // omitting granularity precision less than a second.
-func DecodeTime(src []byte) time.Time {
-	return time.Unix(int64(binary.BigEndian.Uint64(src)), 0).UTC()
+func DecodeTime(src []byte) clientmodel.Timestamp {
+	return clientmodel.TimestampFromUnix(int64(binary.BigEndian.Uint64(src)))
 }
