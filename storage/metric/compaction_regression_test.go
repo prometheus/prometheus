@@ -14,9 +14,9 @@
 package metric
 
 import (
+	"flag"
 	"fmt"
 	"testing"
-	"flag"
 	"time"
 
 	"github.com/prometheus/prometheus/storage"
@@ -25,9 +25,10 @@ import (
 )
 
 type nopCurationStateUpdater struct{}
+
 func (n *nopCurationStateUpdater) UpdateCurationState(*CurationState) {}
 
-func generateTestSamples(endTime time.Time, numTs int, samplesPerTs int, interval time.Duration) clientmodel.Samples {
+func generateTestSamples(endTime clientmodel.Timestamp, numTs int, samplesPerTs int, interval time.Duration) clientmodel.Samples {
 	samples := clientmodel.Samples{}
 
 	startTime := endTime.Add(-interval * time.Duration(samplesPerTs-1))
@@ -37,7 +38,7 @@ func generateTestSamples(endTime time.Time, numTs int, samplesPerTs int, interva
 		for i := 0; i < samplesPerTs; i++ {
 			sample := &clientmodel.Sample{
 				Metric:    metric,
-				Value:     clientmodel.SampleValue(ts + 1000 * i),
+				Value:     clientmodel.SampleValue(ts + 1000*i),
 				Timestamp: startTime.Add(interval * time.Duration(i)),
 			}
 			samples = append(samples, sample)
@@ -47,9 +48,9 @@ func generateTestSamples(endTime time.Time, numTs int, samplesPerTs int, interva
 }
 
 type compactionChecker struct {
-	t *testing.T
-	sampleIdx int
-	numChunks int
+	t               *testing.T
+	sampleIdx       int
+	numChunks       int
 	expectedSamples clientmodel.Samples
 }
 
@@ -73,7 +74,7 @@ func (c *compactionChecker) Operate(key, value interface{}) *storage.OperatorErr
 		}
 
 		sp := &SamplePair{
-			Value: expected.Value,
+			Value:     expected.Value,
 			Timestamp: expected.Timestamp,
 		}
 		if !sample.Equal(sp) {
@@ -84,11 +85,10 @@ func (c *compactionChecker) Operate(key, value interface{}) *storage.OperatorErr
 	return nil
 }
 
-
 func checkStorageSaneAndEquivalent(t *testing.T, name string, ts *TieredStorage, samples clientmodel.Samples, expectedNumChunks int) {
 	cc := &compactionChecker{
 		expectedSamples: samples,
-		t: t,
+		t:               t,
 	}
 	entire, err := ts.DiskStorage.MetricSamples.ForEach(&MetricSamplesDecoder{}, &AcceptAllFilter{}, cc)
 	if err != nil {
@@ -104,15 +104,15 @@ func checkStorageSaneAndEquivalent(t *testing.T, name string, ts *TieredStorage,
 
 type compactionTestScenario struct {
 	leveldbChunkSize int
-	numTimeseries int
-	samplesPerTs int
+	numTimeseries    int
+	samplesPerTs     int
 
-	ignoreYoungerThan time.Duration
+	ignoreYoungerThan        time.Duration
 	maximumMutationPoolBatch int
-	minimumGroupSize int
+	minimumGroupSize         int
 
 	uncompactedChunks int
-	compactedChunks int
+	compactedChunks   int
 }
 
 func (s compactionTestScenario) run(t *testing.T) {
@@ -133,17 +133,16 @@ func (s compactionTestScenario) run(t *testing.T) {
 	// 3. Compact test storage.
 	processor := NewCompactionProcessor(&CompactionProcessorOptions{
 		MaximumMutationPoolBatch: s.maximumMutationPoolBatch,
-		MinimumGroupSize: s.minimumGroupSize,
+		MinimumGroupSize:         s.minimumGroupSize,
 	})
 	defer processor.Close()
 
 	curator := NewCurator(&CuratorOptions{
-		Stop: make(chan bool),
+		Stop:      make(chan bool),
 		ViewQueue: ts.ViewQueue,
 	})
 	defer curator.Close()
 
-	fmt.Println("test instant:", testInstant)
 	err := curator.Run(s.ignoreYoungerThan, testInstant, processor, ts.DiskStorage.CurationRemarks, ts.DiskStorage.MetricSamples, ts.DiskStorage.MetricHighWatermarks, &nopCurationStateUpdater{})
 	if err != nil {
 		t.Fatalf("Failed to run curator: %s", err)
@@ -179,15 +178,15 @@ func TestCompaction(t *testing.T) {
 		//          5  |            C  |   11 .. 15
 		{
 			leveldbChunkSize: 5,
-			numTimeseries: 3,
-			samplesPerTs: 15,
+			numTimeseries:    3,
+			samplesPerTs:     15,
 
-			ignoreYoungerThan: time.Minute,
+			ignoreYoungerThan:        time.Minute,
 			maximumMutationPoolBatch: 30,
-			minimumGroupSize: 10,
+			minimumGroupSize:         10,
 
 			uncompactedChunks: 9,
-			compactedChunks: 6,
+			compactedChunks:   6,
 		},
 		// BEFORE COMPACTION:
 		//
@@ -210,15 +209,15 @@ func TestCompaction(t *testing.T) {
 		//         10  |            C  |    1 .. 15
 		{
 			leveldbChunkSize: 5,
-			numTimeseries: 3,
-			samplesPerTs: 15,
+			numTimeseries:    3,
+			samplesPerTs:     15,
 
-			ignoreYoungerThan: time.Minute,
+			ignoreYoungerThan:        time.Minute,
 			maximumMutationPoolBatch: 30,
-			minimumGroupSize: 30,
+			minimumGroupSize:         30,
 
 			uncompactedChunks: 9,
-			compactedChunks: 3,
+			compactedChunks:   3,
 		},
 		// BUG: This case crashes! See:
 		//			https://github.com/prometheus/prometheus/issues/368

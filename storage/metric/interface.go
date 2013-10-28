@@ -14,8 +14,6 @@
 package metric
 
 import (
-	"time"
-
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage"
@@ -46,7 +44,7 @@ type MetricPersistence interface {
 	GetMetricForFingerprint(*clientmodel.Fingerprint) (clientmodel.Metric, error)
 
 	// Get the two metric values that are immediately adjacent to a given time.
-	GetValueAtTime(*clientmodel.Fingerprint, time.Time) Values
+	GetValueAtTime(*clientmodel.Fingerprint, clientmodel.Timestamp) Values
 	// Get the boundary values of an interval: the first value older than the
 	// interval start, and the first value younger than the interval end.
 	GetBoundaryValues(*clientmodel.Fingerprint, Interval) Values
@@ -59,7 +57,7 @@ type MetricPersistence interface {
 // View provides a view of the values in the datastore subject to the request
 // of a preloading operation.
 type View interface {
-	GetValueAtTime(*clientmodel.Fingerprint, time.Time) Values
+	GetValueAtTime(*clientmodel.Fingerprint, clientmodel.Timestamp) Values
 	GetBoundaryValues(*clientmodel.Fingerprint, Interval) Values
 	GetRangeValues(*clientmodel.Fingerprint, Interval) Values
 

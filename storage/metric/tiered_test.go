@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 )
 
-func buildSamples(from, to time.Time, interval time.Duration, m clientmodel.Metric) (v clientmodel.Samples) {
+func buildSamples(from, to clientmodel.Timestamp, interval time.Duration, m clientmodel.Metric) (v clientmodel.Samples) {
 	i := clientmodel.SampleValue(0)
 
 	for from.Before(to) {
@@ -57,7 +57,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 	fingerprint := &clientmodel.Fingerprint{}
 	fingerprint.LoadFromMetric(metric)
 	var (
-		instant   = time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local)
+		instant   = clientmodel.TimestampFromTime(time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local))
 		scenarios = []struct {
 			data clientmodel.Samples
 			in   in
@@ -315,11 +315,11 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			},
 			// Two chunks of samples, query asks for values from first chunk.
 			{
-				data: buildSamples(instant, instant.Add(time.Duration(*leveldbChunkSize*2)*time.Second), time.Second, metric),
+				data: buildSamples(instant, instant.Add(time.Duration(*leveldbChunkSize*4)*time.Second), 2*time.Second, metric),
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second*time.Duration(*leveldbChunkSize/2) + 1),
+							time: instant.Add(time.Second*time.Duration(*leveldbChunkSize*2) + clientmodel.MinimumTick),
 						},
 					},
 				},
@@ -327,12 +327,12 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					atTime: []Values{
 						{
 							{
-								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize/2)),
-								Value:     100,
+								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize*2)),
+								Value:     200,
 							},
 							{
-								Timestamp: instant.Add(time.Second * (time.Duration(*leveldbChunkSize/2) + 1)),
-								Value:     101,
+								Timestamp: instant.Add(time.Second * (time.Duration(*leveldbChunkSize*2) + 2)),
+								Value:     201,
 							},
 						},
 					},
@@ -574,9 +574,9 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 func testTruncateBefore(t test.Tester) {
 	type in struct {
 		values Values
-		time   time.Time
+		time   clientmodel.Timestamp
 	}
-	instant := time.Now()
+	instant := clientmodel.Now()
 	var scenarios = []struct {
 		in  in
 		out Values

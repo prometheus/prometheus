@@ -15,7 +15,6 @@ package metric
 
 import (
 	"testing"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -40,7 +39,7 @@ func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence,
 
 		testAppendSamples(p, &clientmodel.Sample{
 			Value:     clientmodel.SampleValue(0.0),
-			Timestamp: time.Now(),
+			Timestamp: clientmodel.Now(),
 			Metric:    m,
 		}, t)
 	}

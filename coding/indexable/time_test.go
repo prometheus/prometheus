@@ -17,14 +17,15 @@ import (
 	"math/rand"
 	"testing"
 	"testing/quick"
-	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 func TestTimeEndToEnd(t *testing.T) {
 	tester := func(x int) bool {
 		random := rand.New(rand.NewSource(int64(x)))
 		buffer := make([]byte, 8)
-		incoming := time.Unix(random.Int63(), 0)
+		incoming := clientmodel.TimestampFromUnix(random.Int63())
 
 		EncodeTimeInto(buffer, incoming)
 		outgoing := DecodeTime(buffer)

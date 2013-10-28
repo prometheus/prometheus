@@ -15,7 +15,6 @@ package metric
 
 import (
 	"fmt"
-	"time"
 
 	"code.google.com/p/goprotobuf/proto"
 
@@ -44,7 +43,7 @@ type Processor interface {
 	//
 	// Upon completion or error, the last time at which the processor finished
 	// shall be emitted in addition to any errors.
-	Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error)
+	Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt clientmodel.Timestamp, fingerprint *clientmodel.Fingerprint) (lastCurated clientmodel.Timestamp, err error)
 }
 
 // CompactionProcessor combines sparse values in the database together such
@@ -83,7 +82,7 @@ func (p *CompactionProcessor) String() string {
 	return fmt.Sprintf("compactionProcessor for minimum group size %d", p.minimumGroupSize)
 }
 
-func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
+func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt clientmodel.Timestamp, fingerprint *clientmodel.Fingerprint) (lastCurated clientmodel.Timestamp, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {
@@ -95,7 +94,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 	var pendingMutations = 0
 	var pendingSamples Values
 	var unactedSamples Values
-	var lastTouchedTime time.Time
+	var lastTouchedTime clientmodel.Timestamp
 	var keyDropped bool
 
 	sampleKey, _ := p.sampleKeys.Get()
@@ -185,7 +184,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			pendingBatch.Put(k, b)
 
 			pendingMutations++
-			lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
+			lastCurated = newSampleKey.FirstTimestamp
 			if len(unactedSamples) > 0 {
 				if !keyDropped {
 					sampleKey.Dump(k)
@@ -235,7 +234,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		pendingBatch.Put(k, b)
 		pendingSamples = Values{}
 		pendingMutations++
-		lastCurated = newSampleKey.FirstTimestamp.In(time.UTC)
+		lastCurated = newSampleKey.FirstTimestamp
 	}
 
 	// This is not deferred due to the off-chance that a pre-existing commit
@@ -310,7 +309,7 @@ func (p *DeletionProcessor) String() string {
 	return "deletionProcessor"
 }
 
-func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt time.Time, fingerprint *clientmodel.Fingerprint) (lastCurated time.Time, err error) {
+func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt clientmodel.Timestamp, fingerprint *clientmodel.Fingerprint) (lastCurated clientmodel.Timestamp, err error) {
 	var pendingBatch raw.Batch = nil
 
 	defer func() {

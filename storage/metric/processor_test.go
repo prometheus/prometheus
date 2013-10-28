@@ -31,13 +31,13 @@ import (
 type curationState struct {
 	fingerprint       string
 	ignoreYoungerThan time.Duration
-	lastCurated       time.Time
+	lastCurated       clientmodel.Timestamp
 	processor         Processor
 }
 
 type watermarkState struct {
 	fingerprint  string
-	lastAppended time.Time
+	lastAppended clientmodel.Timestamp
 }
 
 type sampleGroup struct {

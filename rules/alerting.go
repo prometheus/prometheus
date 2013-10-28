@@ -68,13 +68,13 @@ type Alert struct {
 	// The state of the alert (PENDING or FIRING).
 	State AlertState
 	// The time when the alert first transitioned into PENDING state.
-	ActiveSince time.Time
+	ActiveSince clientmodel.Timestamp
 	// The value of the alert expression for this vector element.
 	Value clientmodel.SampleValue
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a Alert) sample(timestamp time.Time, value clientmodel.SampleValue) *clientmodel.Sample {
+func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleValue) *clientmodel.Sample {
 	recordedMetric := clientmodel.Metric{}
 	for label, value := range a.Labels {
 		recordedMetric[label] = value
@@ -118,11 +118,11 @@ func (rule *AlertingRule) Name() string {
 	return rule.name
 }
 
-func (rule *AlertingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
+func (rule *AlertingRule) EvalRaw(timestamp clientmodel.Timestamp, storage *metric.TieredStorage) (ast.Vector, error) {
 	return ast.EvalVectorInstant(rule.vector, timestamp, storage, stats.NewTimerGroup())
 }
 
-func (rule *AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
+func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage *metric.TieredStorage) (ast.Vector, error) {
 	// Get the raw value of the rule expression.
 	exprResult, err := rule.EvalRaw(timestamp, storage)
 	if err != nil {
