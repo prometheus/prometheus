@@ -28,7 +28,7 @@ type nopCurationStateUpdater struct{}
 
 func (n *nopCurationStateUpdater) UpdateCurationState(*CurationState) {}
 
-func generateTestSamples(endTime time.Time, numTs int, samplesPerTs int, interval time.Duration) clientmodel.Samples {
+func generateTestSamples(endTime clientmodel.Timestamp, numTs int, samplesPerTs int, interval time.Duration) clientmodel.Samples {
 	samples := make(clientmodel.Samples, 0, numTs*samplesPerTs)
 
 	startTime := endTime.Add(-interval * time.Duration(samplesPerTs-1))

@@ -33,7 +33,7 @@ var (
 	fixturesPath = "fixtures"
 )
 
-func annotateWithTime(lines []string, timestamp time.Time) []string {
+func annotateWithTime(lines []string, timestamp clientmodel.Timestamp) []string {
 	annotatedLines := []string{}
 	for _, line := range lines {
 		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp))

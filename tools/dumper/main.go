@@ -32,7 +32,7 @@ import (
 )
 
 var (
-	storageRoot = flag.String("storage.root", "", "The path to the storage root for Prometheus.")
+	storageRoot   = flag.String("storage.root", "", "The path to the storage root for Prometheus.")
 	dieOnBadChunk = flag.Bool("dieOnBadChunk", false, "Whether to die upon encountering a bad chunk.")
 )
 

@@ -30,9 +30,9 @@ var (
 // Represents the summation of all datastore queries that shall be performed to
 // extract values.  Each operation mutates the state of the builder.
 type ViewRequestBuilder interface {
-	GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time time.Time)
-	GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through time.Time, interval time.Duration)
-	GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through time.Time)
+	GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time clientmodel.Timestamp)
+	GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration)
+	GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp)
 	ScanJobs() scanJobs
 }
 
@@ -52,7 +52,7 @@ var getValuesAtTimes = newValueAtTimeList(10 * 1024)
 
 // Gets for the given Fingerprint either the value at that time if there is an
 // match or the one or two values adjacent thereto.
-func (v *viewRequestBuilder) GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time time.Time) {
+func (v *viewRequestBuilder) GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time clientmodel.Timestamp) {
 	ops := v.operations[*fingerprint]
 	op, _ := getValuesAtTimes.Get()
 	op.time = time
@@ -65,7 +65,7 @@ var getValuesAtIntervals = newValueAtIntervalList(10 * 1024)
 // Gets for the given Fingerprint either the value at that interval from From
 // through Through  if there is an match or the one or two values adjacent
 // for each point.
-func (v *viewRequestBuilder) GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through time.Time, interval time.Duration) {
+func (v *viewRequestBuilder) GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration) {
 	ops := v.operations[*fingerprint]
 	op, _ := getValuesAtIntervals.Get()
 	op.from = from
@@ -79,7 +79,7 @@ var getValuesAlongRanges = newValueAlongRangeList(10 * 1024)
 
 // Gets for the given Fingerprint the values that occur inclusively from From
 // through Through.
-func (v *viewRequestBuilder) GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through time.Time) {
+func (v *viewRequestBuilder) GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp) {
 	ops := v.operations[*fingerprint]
 	op, _ := getValuesAlongRanges.Get()
 	op.from = from
@@ -96,7 +96,7 @@ var getValuesAtIntervalAlongRanges = newValueAtIntervalAlongRangeList(10 * 1024)
 //   ^    ^            ^       ^    ^            ^
 //   |    \------------/       \----/            |
 //  from     interval       rangeDuration     through
-func (v *viewRequestBuilder) GetMetricRangeAtInterval(fingerprint *clientmodel.Fingerprint, from, through time.Time, interval, rangeDuration time.Duration) {
+func (v *viewRequestBuilder) GetMetricRangeAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration) {
 	ops := v.operations[*fingerprint]
 	op, _ := getValuesAtIntervalAlongRanges.Get()
 	op.rangeFrom = from

@@ -25,7 +25,7 @@ import (
 var (
 	// ``hg clone https://code.google.com/p/go ; cd go ; hg log | tail -n 20``
 	usEastern, _ = time.LoadLocation("US/Eastern")
-	testInstant  = time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern).In(time.UTC)
+	testInstant  = clientmodel.TimestampFromTime(time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern).In(time.UTC))
 )
 
 func testAppendSamples(p MetricPersistence, s *clientmodel.Sample, t test.Tester) {

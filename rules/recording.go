@@ -16,7 +16,6 @@ package rules
 import (
 	"fmt"
 	"html/template"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -35,11 +34,11 @@ type RecordingRule struct {
 
 func (rule RecordingRule) Name() string { return rule.name }
 
-func (rule RecordingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
+func (rule RecordingRule) EvalRaw(timestamp clientmodel.Timestamp, storage *metric.TieredStorage) (ast.Vector, error) {
 	return ast.EvalVectorInstant(rule.vector, timestamp, storage, stats.NewTimerGroup())
 }
 
-func (rule RecordingRule) Eval(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
+func (rule RecordingRule) Eval(timestamp clientmodel.Timestamp, storage *metric.TieredStorage) (ast.Vector, error) {
 	// Get the raw value of the rule expression.
 	vector, err := rule.EvalRaw(timestamp, storage)
 	if err != nil {

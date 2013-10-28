@@ -526,7 +526,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *clientmodel.Finger
 	return m, nil
 }
 
-func (l *LevelDBMetricPersistence) GetValueAtTime(f *clientmodel.Fingerprint, t time.Time) Values {
+func (l *LevelDBMetricPersistence) GetValueAtTime(f *clientmodel.Fingerprint, t clientmodel.Timestamp) Values {
 	panic("Not implemented")
 }
 
@@ -663,7 +663,7 @@ func (l *LevelDBMetricPersistence) States() raw.DatabaseStates {
 	}
 }
 
-type MetricSamplesDecoder struct {}
+type MetricSamplesDecoder struct{}
 
 func (d *MetricSamplesDecoder) DecodeKey(in interface{}) (interface{}, error) {
 	key := &dto.SampleKey{}
@@ -688,7 +688,7 @@ func (d *MetricSamplesDecoder) DecodeValue(in interface{}) (interface{}, error) 
 	return NewValuesFromDTO(values), nil
 }
 
-type AcceptAllFilter struct {}
+type AcceptAllFilter struct{}
 
 func (d *AcceptAllFilter) Filter(_, _ interface{}) storage.FilterResult {
 	return storage.ACCEPT

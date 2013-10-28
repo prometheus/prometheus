@@ -329,14 +329,14 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 			for _, value := range context.values {
 				testAppendSamples(p, &clientmodel.Sample{
 					Value:     clientmodel.SampleValue(value.value),
-					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
+					Timestamp: clientmodel.TimestampFromTime(time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC)),
 					Metric:    m,
 				}, t)
 			}
 
 			for j, behavior := range context.behaviors {
 				input := behavior.input
-				time := time.Date(input.year, input.month, input.day, input.hour, 0, 0, 0, time.UTC)
+				time := clientmodel.TimestampFromTime(time.Date(input.year, input.month, input.day, input.hour, 0, 0, 0, time.UTC))
 				fingerprint := &clientmodel.Fingerprint{}
 				fingerprint.LoadFromMetric(m)
 				actual := p.GetValueAtTime(fingerprint, time)
@@ -821,15 +821,15 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 			for _, value := range context.values {
 				testAppendSamples(p, &clientmodel.Sample{
 					Value:     clientmodel.SampleValue(value.value),
-					Timestamp: time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC),
+					Timestamp: clientmodel.TimestampFromTime(time.Date(value.year, value.month, value.day, value.hour, 0, 0, 0, time.UTC)),
 					Metric:    m,
 				}, t)
 			}
 
 			for j, behavior := range context.behaviors {
 				input := behavior.input
-				open := time.Date(input.openYear, input.openMonth, input.openDay, input.openHour, 0, 0, 0, time.UTC)
-				end := time.Date(input.endYear, input.endMonth, input.endDay, input.endHour, 0, 0, 0, time.UTC)
+				open := clientmodel.TimestampFromTime(time.Date(input.openYear, input.openMonth, input.openDay, input.openHour, 0, 0, 0, time.UTC))
+				end := clientmodel.TimestampFromTime(time.Date(input.endYear, input.endMonth, input.endDay, input.endHour, 0, 0, 0, time.UTC))
 				in := Interval{
 					OldestInclusive: open,
 					NewestInclusive: end,
@@ -873,11 +873,11 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 							t.Fatalf("%d.%d.%d(%s). Expected %v but got: %v\n", i, j, k, behavior.name, expected.value, actual.Value)
 						}
 
-						if actual.Timestamp.Year() != expected.year {
-							t.Fatalf("%d.%d.%d(%s). Expected %d but got: %d\n", i, j, k, behavior.name, expected.year, actual.Timestamp.Year())
+						if actual.Timestamp.Time().Year() != expected.year {
+							t.Fatalf("%d.%d.%d(%s). Expected %d but got: %d\n", i, j, k, behavior.name, expected.year, actual.Timestamp.Time().Year())
 						}
-						if actual.Timestamp.Month() != expected.month {
-							t.Fatalf("%d.%d.%d(%s). Expected %d but got: %d\n", i, j, k, behavior.name, expected.month, actual.Timestamp.Month())
+						if actual.Timestamp.Time().Month() != expected.month {
+							t.Fatalf("%d.%d.%d(%s). Expected %d but got: %d\n", i, j, k, behavior.name, expected.month, actual.Timestamp.Time().Month())
 						}
 						// XXX: Find problem here.
 						// Mismatches occur in this and have for a long time in the LevelDB

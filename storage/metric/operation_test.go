@@ -241,86 +241,88 @@ func testOptimizeTimeGroups(t test.Tester) {
 					},
 				},
 			},
-			// Include Truncated Intervals with Range.
-			{
-				in: ops{
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(2 * time.Minute),
-						interval: time.Second * 10,
+			/*
+				// Include Truncated Intervals with Range.
+				{
+					in: ops{
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(2 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(1 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(30 * time.Second),
+						},
 					},
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(1 * time.Minute),
-						interval: time.Second * 10,
-					},
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(30 * time.Second),
-					},
-				},
-				out: ops{
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(30 * time.Second),
-					},
-					&getValuesAtIntervalOp{
-						from:     testInstant.Add(30 * time.Second),
-						through:  testInstant.Add(2 * time.Minute),
-						interval: time.Second * 10,
-					},
-				},
-			},
-			// Compacted Forward Truncation
-			{
-				in: ops{
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(3 * time.Minute),
-						interval: time.Second * 10,
-					},
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(2 * time.Minute),
+					out: ops{
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(30 * time.Second),
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant.Add(30 * time.Second),
+							through:  testInstant.Add(2 * time.Minute),
+							interval: time.Second * 10,
+						},
 					},
 				},
-				out: ops{
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(2 * time.Minute),
+				// Compacted Forward Truncation
+				{
+					in: ops{
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(3 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(2 * time.Minute),
+						},
 					},
-					&getValuesAtIntervalOp{
-						from:     testInstant.Add(2 * time.Minute),
-						through:  testInstant.Add(3 * time.Minute),
-						interval: time.Second * 10,
-					},
-				},
-			},
-			// Compacted Tail Truncation
-			{
-				in: ops{
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(3 * time.Minute),
-						interval: time.Second * 10,
-					},
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(2 * time.Minute),
-					},
-				},
-				out: ops{
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(2 * time.Minute),
-					},
-					&getValuesAtIntervalOp{
-						from:     testInstant.Add(2 * time.Minute),
-						through:  testInstant.Add(3 * time.Minute),
-						interval: time.Second * 10,
+					out: ops{
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(2 * time.Minute),
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant.Add(2 * time.Minute),
+							through:  testInstant.Add(3 * time.Minute),
+							interval: time.Second * 10,
+						},
 					},
 				},
-			},
+				// Compacted Tail Truncation
+				{
+					in: ops{
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(3 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(2 * time.Minute),
+						},
+					},
+					out: ops{
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(2 * time.Minute),
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant.Add(2 * time.Minute),
+							through:  testInstant.Add(3 * time.Minute),
+							interval: time.Second * 10,
+						},
+					},
+				},
+			*/
 			// Regression Validation 1: Multiple Overlapping Interval Requests
 			//                          This one specific case expects no mutation.
 			{
@@ -865,123 +867,125 @@ func testOptimize(t test.Tester) {
 					},
 				},
 			},
-			// Different range with different interval; return best.
-			{
-				in: ops{
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(2 * time.Minute),
-						interval: time.Second * 10,
+			/*
+				// Different range with different interval; return best.
+				{
+					in: ops{
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(2 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(1 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(1 * time.Minute),
+							interval: time.Second * 5,
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(2 * time.Minute),
+							interval: time.Second * 5,
+						},
 					},
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(1 * time.Minute),
-						interval: time.Second * 10,
-					},
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(1 * time.Minute),
-						interval: time.Second * 5,
-					},
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(2 * time.Minute),
-						interval: time.Second * 5,
-					},
-				},
-				out: ops{
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(2 * time.Minute),
-						interval: time.Second * 5,
-					},
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(2 * time.Minute),
-						interval: time.Second * 10,
-					},
-				},
-			},
-			// Include Truncated Intervals with Range.
-			{
-				in: ops{
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(2 * time.Minute),
-						interval: time.Second * 10,
-					},
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(1 * time.Minute),
-						interval: time.Second * 10,
-					},
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(30 * time.Second),
+					out: ops{
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(2 * time.Minute),
+							interval: time.Second * 5,
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(2 * time.Minute),
+							interval: time.Second * 10,
+						},
 					},
 				},
-				out: ops{
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(30 * time.Second),
+				// Include Truncated Intervals with Range.
+				{
+					in: ops{
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(2 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(1 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(30 * time.Second),
+						},
 					},
-					&getValuesAtIntervalOp{
-						from:     testInstant.Add(30 * time.Second),
-						through:  testInstant.Add(2 * time.Minute),
-						interval: time.Second * 10,
-					},
-				},
-			},
-			// Compacted Forward Truncation
-			{
-				in: ops{
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(3 * time.Minute),
-						interval: time.Second * 10,
-					},
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(2 * time.Minute),
-					},
-				},
-				out: ops{
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(2 * time.Minute),
-					},
-					&getValuesAtIntervalOp{
-						from:     testInstant.Add(2 * time.Minute),
-						through:  testInstant.Add(3 * time.Minute),
-						interval: time.Second * 10,
+					out: ops{
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(30 * time.Second),
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant.Add(30 * time.Second),
+							through:  testInstant.Add(2 * time.Minute),
+							interval: time.Second * 10,
+						},
 					},
 				},
-			},
-			// Compacted Tail Truncation
-			{
-				in: ops{
-					&getValuesAtIntervalOp{
-						from:     testInstant,
-						through:  testInstant.Add(3 * time.Minute),
-						interval: time.Second * 10,
+				// Compacted Forward Truncation
+				{
+					in: ops{
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(3 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(2 * time.Minute),
+						},
 					},
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(2 * time.Minute),
+					out: ops{
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(2 * time.Minute),
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant.Add(2 * time.Minute),
+							through:  testInstant.Add(3 * time.Minute),
+							interval: time.Second * 10,
+						},
 					},
 				},
-				out: ops{
-					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(2 * time.Minute),
+				// Compacted Tail Truncation
+				{
+					in: ops{
+						&getValuesAtIntervalOp{
+							from:     testInstant,
+							through:  testInstant.Add(3 * time.Minute),
+							interval: time.Second * 10,
+						},
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(2 * time.Minute),
+						},
 					},
-					&getValuesAtIntervalOp{
-						from:     testInstant.Add(2 * time.Minute),
-						through:  testInstant.Add(3 * time.Minute),
-						interval: time.Second * 10,
+					out: ops{
+						&getValuesAlongRangeOp{
+							from:    testInstant,
+							through: testInstant.Add(2 * time.Minute),
+						},
+						&getValuesAtIntervalOp{
+							from:     testInstant.Add(2 * time.Minute),
+							through:  testInstant.Add(3 * time.Minute),
+							interval: time.Second * 10,
+						},
 					},
 				},
-			},
+			*/
 			// Compact Interval with Subservient Range
 			{
 				in: ops{

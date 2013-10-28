@@ -56,7 +56,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 		httpClient: utility.NewDeadlineClient(0),
 	}
 
-	now := time.Now()
+	now := clientmodel.Now()
 	ingester := &collectResultIngester{}
 	testTarget.recordScrapeHealth(ingester, now, true)
 
