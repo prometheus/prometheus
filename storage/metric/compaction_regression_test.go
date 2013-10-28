@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"testing"
 	"flag"
-	"time"
 
 	"github.com/prometheus/prometheus/storage"
 
@@ -27,10 +26,10 @@ import (
 type nopCurationStateUpdater struct{}
 func (n *nopCurationStateUpdater) UpdateCurationState(*CurationState) {}
 
-func generateTestSamples(endTime time.Time, numTs int, samplesPerTs int, interval time.Duration) clientmodel.Samples {
+func generateTestSamples(endTime clientmodel.Timestamp, numTs int, samplesPerTs int, interval clientmodel.Duration) clientmodel.Samples {
 	samples := clientmodel.Samples{}
 
-	startTime := endTime.Add(-interval * time.Duration(samplesPerTs-1))
+	startTime := endTime.Add(-interval * clientmodel.Duration(samplesPerTs-1))
 	for ts := 0; ts < numTs; ts++ {
 		metric := clientmodel.Metric{}
 		metric["name"] = clientmodel.LabelValue(fmt.Sprintf("metric_%d", ts))
@@ -38,7 +37,7 @@ func generateTestSamples(endTime time.Time, numTs int, samplesPerTs int, interva
 			sample := &clientmodel.Sample{
 				Metric:    metric,
 				Value:     clientmodel.SampleValue(ts + 1000 * i),
-				Timestamp: startTime.Add(interval * time.Duration(i)),
+				Timestamp: startTime.Add(interval * clientmodel.Duration(i)),
 			}
 			samples = append(samples, sample)
 		}
@@ -107,7 +106,7 @@ type compactionTestScenario struct {
 	numTimeseries int
 	samplesPerTs int
 
-	ignoreYoungerThan time.Duration
+	ignoreYoungerThan clientmodel.Duration
 	maximumMutationPoolBatch int
 	minimumGroupSize int
 
@@ -123,7 +122,7 @@ func (s compactionTestScenario) run(t *testing.T) {
 	defer closer.Close()
 
 	// 1. Store test values.
-	samples := generateTestSamples(testInstant, s.numTimeseries, s.samplesPerTs, time.Minute)
+	samples := generateTestSamples(testInstant, s.numTimeseries, s.samplesPerTs, clientmodel.Minute)
 	ts.AppendSamples(samples)
 	ts.Flush()
 
@@ -143,7 +142,6 @@ func (s compactionTestScenario) run(t *testing.T) {
 	})
 	defer curator.Close()
 
-	fmt.Println("test instant:", testInstant)
 	err := curator.Run(s.ignoreYoungerThan, testInstant, processor, ts.DiskStorage.CurationRemarks, ts.DiskStorage.MetricSamples, ts.DiskStorage.MetricHighWatermarks, &nopCurationStateUpdater{})
 	if err != nil {
 		t.Fatalf("Failed to run curator: %s", err)
@@ -182,7 +180,7 @@ func TestCompaction(t *testing.T) {
 			numTimeseries: 3,
 			samplesPerTs: 15,
 
-			ignoreYoungerThan: time.Minute,
+			ignoreYoungerThan: clientmodel.Minute,
 			maximumMutationPoolBatch: 30,
 			minimumGroupSize: 10,
 
@@ -213,7 +211,7 @@ func TestCompaction(t *testing.T) {
 			numTimeseries: 3,
 			samplesPerTs: 15,
 
-			ignoreYoungerThan: time.Minute,
+			ignoreYoungerThan: clientmodel.Minute,
 			maximumMutationPoolBatch: 30,
 			minimumGroupSize: 30,
 
@@ -229,7 +227,7 @@ func TestCompaction(t *testing.T) {
 		//	numTimeseries: 3,
 		//	samplesPerTs: 20,
 
-		//	ignoreYoungerThan: time.Minute,
+		//	ignoreYoungerThan: clientmodel.Minute,
 		//	maximumMutationPoolBatch: 30,
 		//	minimumGroupSize: 10,
 

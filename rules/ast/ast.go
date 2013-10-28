@@ -19,7 +19,6 @@ import (
 	"hash/fnv"
 	"math"
 	"sort"
-	"time"
 
 	"github.com/golang/glog"
 
@@ -103,23 +102,23 @@ type Node interface {
 // interface represents the type returned to the parent node.
 type ScalarNode interface {
 	Node
-	Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue
+	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue
 }
 
 type VectorNode interface {
 	Node
-	Eval(timestamp time.Time, view *viewAdapter) Vector
+	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector
 }
 
 type MatrixNode interface {
 	Node
-	Eval(timestamp time.Time, view *viewAdapter) Matrix
-	EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix
+	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix
+	EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix
 }
 
 type StringNode interface {
 	Node
-	Eval(timestamp time.Time, view *viewAdapter) string
+	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string
 }
 
 // ----------------------------------------------------------------------------
@@ -186,7 +185,7 @@ type (
 		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
 		fingerprints clientmodel.Fingerprints
-		interval     time.Duration
+		interval     clientmodel.Duration
 	}
 )
 
@@ -233,17 +232,17 @@ func (node MatrixLiteral) Children() Nodes      { return Nodes{} }
 func (node StringLiteral) Children() Nodes      { return Nodes{} }
 func (node StringFunctionCall) Children() Nodes { return node.args }
 
-func (node *ScalarLiteral) Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue {
+func (node *ScalarLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
 	return node.value
 }
 
-func (node *ScalarArithExpr) Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue {
+func (node *ScalarArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
 	lhs := node.lhs.Eval(timestamp, view)
 	rhs := node.rhs.Eval(timestamp, view)
 	return evalScalarBinop(node.opType, lhs, rhs)
 }
 
-func (node *ScalarFunctionCall) Eval(timestamp time.Time, view *viewAdapter) clientmodel.SampleValue {
+func (node *ScalarFunctionCall) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
 	return node.function.callFn(timestamp, view, node.args).(clientmodel.SampleValue)
 }
 
@@ -277,7 +276,7 @@ func labelsToKey(labels clientmodel.Metric) uint64 {
 	return summer.Sum64()
 }
 
-func EvalVectorInstant(node VectorNode, timestamp time.Time, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (vector Vector, err error) {
+func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (vector Vector, err error) {
 	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
 	if err != nil {
 		return
@@ -286,7 +285,7 @@ func EvalVectorInstant(node VectorNode, timestamp time.Time, storage *metric.Tie
 	return
 }
 
-func EvalVectorRange(node VectorNode, start time.Time, end time.Time, interval time.Duration, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (Matrix, error) {
+func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmodel.Timestamp, interval clientmodel.Duration, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (Matrix, error) {
 	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
 	// null in JSON.
 	matrix := Matrix{}
@@ -340,7 +339,7 @@ func labelIntersection(metric1, metric2 clientmodel.Metric) clientmodel.Metric {
 	return intersection
 }
 
-func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[uint64]*groupedAggregation, timestamp time.Time) Vector {
+func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[uint64]*groupedAggregation, timestamp clientmodel.Timestamp) Vector {
 	vector := Vector{}
 	for _, aggregation := range aggregations {
 		switch node.aggrType {
@@ -361,7 +360,7 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[uint
 	return vector
 }
 
-func (node *VectorAggregation) Eval(timestamp time.Time, view *viewAdapter) Vector {
+func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
 	vector := node.vector.Eval(timestamp, view)
 	result := map[uint64]*groupedAggregation{}
 	for _, sample := range vector {
@@ -399,7 +398,7 @@ func (node *VectorAggregation) Eval(timestamp time.Time, view *viewAdapter) Vect
 	return node.groupedAggregationsToVector(result, timestamp)
 }
 
-func (node *VectorLiteral) Eval(timestamp time.Time, view *viewAdapter) Vector {
+func (node *VectorLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
 	values, err := view.GetValueAtTime(node.fingerprints, timestamp)
 	if err != nil {
 		glog.Error("Unable to get vector values: ", err)
@@ -408,7 +407,7 @@ func (node *VectorLiteral) Eval(timestamp time.Time, view *viewAdapter) Vector {
 	return values
 }
 
-func (node *VectorFunctionCall) Eval(timestamp time.Time, view *viewAdapter) Vector {
+func (node *VectorFunctionCall) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
 	return node.function.callFn(timestamp, view, node.args).(Vector)
 }
 
@@ -552,7 +551,7 @@ func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
 	return true
 }
 
-func (node *VectorArithExpr) Eval(timestamp time.Time, view *viewAdapter) Vector {
+func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
 	lhs := node.lhs.Eval(timestamp, view)
 	result := Vector{}
 	if node.rhs.Type() == SCALAR {
@@ -583,7 +582,7 @@ func (node *VectorArithExpr) Eval(timestamp time.Time, view *viewAdapter) Vector
 	panic("Invalid vector arithmetic expression operands")
 }
 
-func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
+func (node *MatrixLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
 	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
@@ -596,7 +595,7 @@ func (node *MatrixLiteral) Eval(timestamp time.Time, view *viewAdapter) Matrix {
 	return values
 }
 
-func (node *MatrixLiteral) EvalBoundaries(timestamp time.Time, view *viewAdapter) Matrix {
+func (node *MatrixLiteral) EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
 	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
@@ -621,11 +620,11 @@ func (matrix Matrix) Swap(i, j int) {
 	matrix[i], matrix[j] = matrix[j], matrix[i]
 }
 
-func (node *StringLiteral) Eval(timestamp time.Time, view *viewAdapter) string {
+func (node *StringLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string {
 	return node.str
 }
 
-func (node *StringFunctionCall) Eval(timestamp time.Time, view *viewAdapter) string {
+func (node *StringFunctionCall) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string {
 	return node.function.callFn(timestamp, view, node.args).(string)
 }
 
@@ -720,7 +719,7 @@ func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
 	}, nil
 }
 
-func NewMatrixLiteral(vector *VectorLiteral, interval time.Duration) *MatrixLiteral {
+func NewMatrixLiteral(vector *VectorLiteral, interval clientmodel.Duration) *MatrixLiteral {
 	return &MatrixLiteral{
 		labels:   vector.labels,
 		interval: interval,

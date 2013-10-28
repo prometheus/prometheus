@@ -15,7 +15,6 @@ package metric
 
 import (
 	"testing"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -25,7 +24,7 @@ import (
 func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
-		Timestamp: time.Time{},
+		Timestamp: 0,
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: "my_metric",
 			"request_type":              "your_mom",
@@ -34,7 +33,7 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
-		Timestamp: time.Time{},
+		Timestamp: 0,
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: "my_metric",
 			"request_type":              "your_dad",
@@ -81,7 +80,7 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
-		Timestamp: time.Time{},
+		Timestamp: 0,
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: "my_metric",
 			"request_type":              "your_mom",
@@ -91,7 +90,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
-		Timestamp: time.Time{},
+		Timestamp: 0,
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: "my_metric",
 			"request_type":              "your_dad",
@@ -147,7 +146,7 @@ func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
 func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
-		Timestamp: time.Time{},
+		Timestamp: 0,
 		Metric: clientmodel.Metric{
 			"request_type": "your_mom",
 		},
@@ -155,7 +154,7 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
-		Timestamp: time.Time{},
+		Timestamp: 0,
 		Metric: clientmodel.Metric{
 			"request_type": "your_dad",
 			"one-off":      "value",
@@ -263,7 +262,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 
 	for i := 0; i < increments; i++ {
 		for j := 0; j < repetitions; j++ {
-			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
+			time := clientmodel.Timestamp(0).Add(clientmodel.Duration(i) * clientmodel.Hour).Add(clientmodel.Duration(j) * clientmodel.Second)
 			testAppendSamples(p, &clientmodel.Sample{
 				Value:     clientmodel.SampleValue(i),
 				Timestamp: time,
@@ -293,7 +292,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 				t.Fatalf("expected %d fingerprints, got %d", 1, len(fingerprints))
 			}
 
-			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
+			time := clientmodel.Timestamp(0).Add(clientmodel.Duration(i) * clientmodel.Hour).Add(clientmodel.Duration(j) * clientmodel.Second)
 			samples := p.GetValueAtTime(fingerprints[0], time)
 			if len(samples) == 0 {
 				t.Fatal("expected at least one sample.")
@@ -323,7 +322,7 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 	s := clientmodel.Samples{}
 	for i := 0; i < increments; i++ {
 		for j := 0; j < repetitions; j++ {
-			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
+			time := clientmodel.Timestamp(0).Add(clientmodel.Duration(i) * clientmodel.Hour).Add(clientmodel.Duration(j) * clientmodel.Second)
 			s = append(s, &clientmodel.Sample{
 				Value:     clientmodel.SampleValue(i),
 				Timestamp: time,
@@ -355,7 +354,7 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 				t.Fatalf("expected %d fingerprints, got %d", 1, len(fingerprints))
 			}
 
-			time := time.Time{}.Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
+			time := clientmodel.Timestamp(0).Add(clientmodel.Duration(i) * clientmodel.Hour).Add(clientmodel.Duration(j) * clientmodel.Second)
 			samples := p.GetValueAtTime(fingerprints[0], time)
 			if len(samples) == 0 {
 				t.Fatal("expected at least one sample.")

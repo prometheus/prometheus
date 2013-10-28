@@ -33,7 +33,7 @@ var (
 	fixturesPath = "fixtures"
 )
 
-func annotateWithTime(lines []string, timestamp time.Time) []string {
+func annotateWithTime(lines []string, timestamp clientmodel.Timestamp) []string {
 	annotatedLines := []string{}
 	for _, line := range lines {
 		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp))
@@ -67,7 +67,7 @@ func (t testTieredStorageCloser) Close() {
 func NewTestTieredStorage(t test.Tester) (storage *metric.TieredStorage, closer test.Closer) {
 	var directory test.TemporaryDirectory
 	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
-	storage, err := metric.NewTieredStorage(2500, 1000, 5*time.Second, 0*time.Second, directory.Path())
+	storage, err := metric.NewTieredStorage(2500, 1000, 5*time.Second, 0*clientmodel.Second, directory.Path())
 
 	if err != nil {
 		if storage != nil {
@@ -544,10 +544,10 @@ func TestAlertingRule(t *testing.T) {
 	alertLabels := clientmodel.LabelSet{
 		"severity": "critical",
 	}
-	rule := NewAlertingRule(alertName, alertExpr.(ast.VectorNode), time.Minute, alertLabels, "summary", "description")
+	rule := NewAlertingRule(alertName, alertExpr.(ast.VectorNode), clientmodel.Minute, alertLabels, "summary", "description")
 
 	for i, expected := range evalOutputs {
-		evalTime := testStartTime.Add(testSampleInterval * time.Duration(i))
+		evalTime := testStartTime.Add(testSampleInterval * clientmodel.Duration(i))
 		actual, err := rule.Eval(evalTime, tieredStorage)
 		if err != nil {
 			t.Fatalf("Error during alerting rule evaluation: %s", err)

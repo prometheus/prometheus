@@ -16,7 +16,6 @@ package metric
 import (
 	"sort"
 	"sync"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -45,14 +44,14 @@ type stream interface {
 	add(...*SamplePair)
 
 	clone() Values
-	expunge(age time.Time) Values
+	expunge(age clientmodel.Timestamp) Values
 
 	size() int
 	clear()
 
 	metric() clientmodel.Metric
 
-	getValueAtTime(t time.Time) Values
+	getValueAtTime(t clientmodel.Timestamp) Values
 	getBoundaryValues(in Interval) Values
 	getRangeValues(in Interval) Values
 }
@@ -85,7 +84,7 @@ func (s *arrayStream) clone() Values {
 	return clone
 }
 
-func (s *arrayStream) expunge(t time.Time) Values {
+func (s *arrayStream) expunge(t clientmodel.Timestamp) Values {
 	s.Lock()
 	defer s.Unlock()
 
@@ -100,7 +99,7 @@ func (s *arrayStream) expunge(t time.Time) Values {
 	return expunged
 }
 
-func (s *arrayStream) getValueAtTime(t time.Time) Values {
+func (s *arrayStream) getValueAtTime(t clientmodel.Timestamp) Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -261,7 +260,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, finge
 	return series
 }
 
-func (s *memorySeriesStorage) Flush(flushOlderThan time.Time, queue chan<- clientmodel.Samples) {
+func (s *memorySeriesStorage) Flush(flushOlderThan clientmodel.Timestamp, queue chan<- clientmodel.Samples) {
 	emptySeries := []clientmodel.Fingerprint{}
 
 	s.RLock()
@@ -418,7 +417,7 @@ func (s *memorySeriesStorage) CloneSamples(f *clientmodel.Fingerprint) Values {
 	return series.clone()
 }
 
-func (s *memorySeriesStorage) GetValueAtTime(f *clientmodel.Fingerprint, t time.Time) Values {
+func (s *memorySeriesStorage) GetValueAtTime(f *clientmodel.Fingerprint, t clientmodel.Timestamp) Values {
 	s.RLock()
 	defer s.RUnlock()
 

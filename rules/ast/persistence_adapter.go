@@ -15,7 +15,6 @@ package ast
 
 import (
 	"flag"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -29,7 +28,7 @@ var defaultStalenessDelta = flag.Int("defaultStalenessDelta", 300, "Default stal
 type StalenessPolicy struct {
 	// Describes the inclusive limit at which individual points if requested will
 	// be matched and subject to interpolation.
-	DeltaAllowance time.Duration
+	DeltaAllowance clientmodel.Duration
 }
 
 type viewAdapter struct {
@@ -48,7 +47,7 @@ type viewAdapter struct {
 
 // interpolateSamples interpolates a value at a target time between two
 // provided sample pairs.
-func interpolateSamples(first, second *metric.SamplePair, timestamp time.Time) *metric.SamplePair {
+func interpolateSamples(first, second *metric.SamplePair, timestamp clientmodel.Timestamp) *metric.SamplePair {
 	dv := second.Value - first.Value
 	dt := second.Timestamp.Sub(first.Timestamp)
 
@@ -65,7 +64,7 @@ func interpolateSamples(first, second *metric.SamplePair, timestamp time.Time) *
 // surrounding a given target time. If samples are found both before and after
 // the target time, the sample value is interpolated between these. Otherwise,
 // the single closest sample is returned verbatim.
-func (v *viewAdapter) chooseClosestSample(samples metric.Values, timestamp time.Time) *metric.SamplePair {
+func (v *viewAdapter) chooseClosestSample(samples metric.Values, timestamp clientmodel.Timestamp) *metric.SamplePair {
 	var closestBefore *metric.SamplePair
 	var closestAfter *metric.SamplePair
 	for _, candidate := range samples {
@@ -109,7 +108,7 @@ func (v *viewAdapter) chooseClosestSample(samples metric.Values, timestamp time.
 	}
 }
 
-func (v *viewAdapter) GetValueAtTime(fingerprints clientmodel.Fingerprints, timestamp time.Time) (Vector, error) {
+func (v *viewAdapter) GetValueAtTime(fingerprints clientmodel.Fingerprints, timestamp clientmodel.Timestamp) (Vector, error) {
 	timer := v.stats.GetTimer(stats.GetValueAtTimeTime).Start()
 	samples := Vector{}
 	for _, fingerprint := range fingerprints {
@@ -183,7 +182,7 @@ func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, inte
 
 func NewViewAdapter(view metric.View, storage *metric.TieredStorage, queryStats *stats.TimerGroup) *viewAdapter {
 	stalenessPolicy := StalenessPolicy{
-		DeltaAllowance: time.Duration(*defaultStalenessDelta) * time.Second,
+		DeltaAllowance: clientmodel.Duration(*defaultStalenessDelta) * clientmodel.Second,
 	}
 
 	return &viewAdapter{

@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 )
 
-func buildSamples(from, to time.Time, interval time.Duration, m clientmodel.Metric) (v clientmodel.Samples) {
+func buildSamples(from, to clientmodel.Timestamp, interval clientmodel.Duration, m clientmodel.Metric) (v clientmodel.Samples) {
 	i := clientmodel.SampleValue(0)
 
 	for from.Before(to) {
@@ -57,7 +57,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 	fingerprint := &clientmodel.Fingerprint{}
 	fingerprint.LoadFromMetric(metric)
 	var (
-		instant   = time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local)
+		instant   = clientmodel.TimestampFromTime(time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local))
 		scenarios = []struct {
 			data clientmodel.Samples
 			in   in
@@ -109,12 +109,12 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					{
 						Metric:    metric,
 						Value:     0,
-						Timestamp: instant.Add(time.Second),
+						Timestamp: instant.Add(clientmodel.Second),
 					},
 					{
 						Metric:    metric,
 						Value:     1,
-						Timestamp: instant.Add(time.Second * 2),
+						Timestamp: instant.Add(clientmodel.Second * 2),
 					},
 				},
 				in: in{
@@ -128,7 +128,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					atTime: []Values{
 						{
 							{
-								Timestamp: instant.Add(time.Second),
+								Timestamp: instant.Add(clientmodel.Second),
 								Value:     0,
 							},
 						},
@@ -147,7 +147,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second),
+							time: instant.Add(clientmodel.Second),
 						},
 					},
 				},
@@ -173,7 +173,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					{
 						Metric:    metric,
 						Value:     1,
-						Timestamp: instant.Add(time.Second),
+						Timestamp: instant.Add(clientmodel.Second),
 					},
 				},
 				in: in{
@@ -205,18 +205,18 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					{
 						Metric:    metric,
 						Value:     1,
-						Timestamp: instant.Add(time.Second),
+						Timestamp: instant.Add(clientmodel.Second),
 					},
 					{
 						Metric:    metric,
 						Value:     2,
-						Timestamp: instant.Add(time.Second * 2),
+						Timestamp: instant.Add(clientmodel.Second * 2),
 					},
 				},
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second),
+							time: instant.Add(clientmodel.Second),
 						},
 					},
 				},
@@ -224,7 +224,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					atTime: []Values{
 						{
 							{
-								Timestamp: instant.Add(time.Second),
+								Timestamp: instant.Add(clientmodel.Second),
 								Value:     1,
 							},
 						},
@@ -242,18 +242,18 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					{
 						Metric:    metric,
 						Value:     1,
-						Timestamp: instant.Add(time.Second * 2),
+						Timestamp: instant.Add(clientmodel.Second * 2),
 					},
 					{
 						Metric:    metric,
 						Value:     2,
-						Timestamp: instant.Add(time.Second * 4),
+						Timestamp: instant.Add(clientmodel.Second * 4),
 					},
 				},
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second),
+							time: instant.Add(clientmodel.Second),
 						},
 					},
 				},
@@ -265,7 +265,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 								Value:     0,
 							},
 							{
-								Timestamp: instant.Add(time.Second * 2),
+								Timestamp: instant.Add(clientmodel.Second * 2),
 								Value:     1,
 							},
 						},
@@ -283,18 +283,18 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					{
 						Metric:    metric,
 						Value:     1,
-						Timestamp: instant.Add(time.Second * 2),
+						Timestamp: instant.Add(clientmodel.Second * 2),
 					},
 					{
 						Metric:    metric,
 						Value:     2,
-						Timestamp: instant.Add(time.Second * 4),
+						Timestamp: instant.Add(clientmodel.Second * 4),
 					},
 				},
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second * 3),
+							time: instant.Add(clientmodel.Second * 3),
 						},
 					},
 				},
@@ -302,11 +302,11 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					atTime: []Values{
 						{
 							{
-								Timestamp: instant.Add(time.Second * 2),
+								Timestamp: instant.Add(clientmodel.Second * 2),
 								Value:     1,
 							},
 							{
-								Timestamp: instant.Add(time.Second * 4),
+								Timestamp: instant.Add(clientmodel.Second * 4),
 								Value:     2,
 							},
 						},
@@ -315,11 +315,11 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			},
 			// Two chunks of samples, query asks for values from first chunk.
 			{
-				data: buildSamples(instant, instant.Add(time.Duration(*leveldbChunkSize*2)*time.Second), time.Second, metric),
+				data: buildSamples(instant, instant.Add(clientmodel.Duration(*leveldbChunkSize*4)*clientmodel.Second), 2*clientmodel.Second, metric),
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second*time.Duration(*leveldbChunkSize/2) + 1),
+							time: instant.Add(clientmodel.Second*clientmodel.Duration(*leveldbChunkSize) + 1),
 						},
 					},
 				},
@@ -327,11 +327,11 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					atTime: []Values{
 						{
 							{
-								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize/2)),
+								Timestamp: instant.Add(clientmodel.Second * clientmodel.Duration(*leveldbChunkSize)),
 								Value:     100,
 							},
 							{
-								Timestamp: instant.Add(time.Second * (time.Duration(*leveldbChunkSize/2) + 1)),
+								Timestamp: instant.Add(clientmodel.Second * (clientmodel.Duration(*leveldbChunkSize) + 2 * clientmodel.Second)),
 								Value:     101,
 							},
 						},
@@ -574,9 +574,9 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 func testTruncateBefore(t test.Tester) {
 	type in struct {
 		values Values
-		time   time.Time
+		time   clientmodel.Timestamp
 	}
-	instant := time.Now()
+	instant := clientmodel.Now()
 	var scenarios = []struct {
 		in  in
 		out Values
@@ -591,19 +591,19 @@ func testTruncateBefore(t test.Tester) {
 					},
 					{
 						Value:     1,
-						Timestamp: instant.Add(time.Second),
+						Timestamp: instant.Add(clientmodel.Second),
 					},
 					{
 						Value:     2,
-						Timestamp: instant.Add(2 * time.Second),
+						Timestamp: instant.Add(2 * clientmodel.Second),
 					},
 					{
 						Value:     3,
-						Timestamp: instant.Add(3 * time.Second),
+						Timestamp: instant.Add(3 * clientmodel.Second),
 					},
 					{
 						Value:     4,
-						Timestamp: instant.Add(4 * time.Second),
+						Timestamp: instant.Add(4 * clientmodel.Second),
 					},
 				},
 			},
@@ -614,25 +614,25 @@ func testTruncateBefore(t test.Tester) {
 				},
 				{
 					Value:     1,
-					Timestamp: instant.Add(time.Second),
+					Timestamp: instant.Add(clientmodel.Second),
 				},
 				{
 					Value:     2,
-					Timestamp: instant.Add(2 * time.Second),
+					Timestamp: instant.Add(2 * clientmodel.Second),
 				},
 				{
 					Value:     3,
-					Timestamp: instant.Add(3 * time.Second),
+					Timestamp: instant.Add(3 * clientmodel.Second),
 				},
 				{
 					Value:     4,
-					Timestamp: instant.Add(4 * time.Second),
+					Timestamp: instant.Add(4 * clientmodel.Second),
 				},
 			},
 		},
 		{
 			in: in{
-				time: instant.Add(2 * time.Second),
+				time: instant.Add(2 * clientmodel.Second),
 				values: Values{
 					{
 						Value:     0,
@@ -640,44 +640,44 @@ func testTruncateBefore(t test.Tester) {
 					},
 					{
 						Value:     1,
-						Timestamp: instant.Add(time.Second),
+						Timestamp: instant.Add(clientmodel.Second),
 					},
 					{
 						Value:     2,
-						Timestamp: instant.Add(2 * time.Second),
+						Timestamp: instant.Add(2 * clientmodel.Second),
 					},
 					{
 						Value:     3,
-						Timestamp: instant.Add(3 * time.Second),
+						Timestamp: instant.Add(3 * clientmodel.Second),
 					},
 					{
 						Value:     4,
-						Timestamp: instant.Add(4 * time.Second),
+						Timestamp: instant.Add(4 * clientmodel.Second),
 					},
 				},
 			},
 			out: Values{
 				{
 					Value:     1,
-					Timestamp: instant.Add(time.Second),
+					Timestamp: instant.Add(clientmodel.Second),
 				},
 				{
 					Value:     2,
-					Timestamp: instant.Add(2 * time.Second),
+					Timestamp: instant.Add(2 * clientmodel.Second),
 				},
 				{
 					Value:     3,
-					Timestamp: instant.Add(3 * time.Second),
+					Timestamp: instant.Add(3 * clientmodel.Second),
 				},
 				{
 					Value:     4,
-					Timestamp: instant.Add(4 * time.Second),
+					Timestamp: instant.Add(4 * clientmodel.Second),
 				},
 			},
 		},
 		{
 			in: in{
-				time: instant.Add(5 * time.Second),
+				time: instant.Add(5 * clientmodel.Second),
 				values: Values{
 					{
 						Value:     0,
@@ -685,19 +685,19 @@ func testTruncateBefore(t test.Tester) {
 					},
 					{
 						Value:     1,
-						Timestamp: instant.Add(time.Second),
+						Timestamp: instant.Add(clientmodel.Second),
 					},
 					{
 						Value:     2,
-						Timestamp: instant.Add(2 * time.Second),
+						Timestamp: instant.Add(2 * clientmodel.Second),
 					},
 					{
 						Value:     3,
-						Timestamp: instant.Add(3 * time.Second),
+						Timestamp: instant.Add(3 * clientmodel.Second),
 					},
 					{
 						Value:     4,
-						Timestamp: instant.Add(4 * time.Second),
+						Timestamp: instant.Add(4 * clientmodel.Second),
 					},
 				},
 			},
@@ -705,7 +705,7 @@ func testTruncateBefore(t test.Tester) {
 				// Preserve the last value in case it needs to be used for the next set.
 				{
 					Value:     4,
-					Timestamp: instant.Add(4 * time.Second),
+					Timestamp: instant.Add(4 * clientmodel.Second),
 				},
 			},
 		},

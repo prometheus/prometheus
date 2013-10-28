@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"html/template"
 	"sync"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -68,13 +67,13 @@ type Alert struct {
 	// The state of the alert (PENDING or FIRING).
 	State AlertState
 	// The time when the alert first transitioned into PENDING state.
-	ActiveSince time.Time
+	ActiveSince clientmodel.Timestamp
 	// The value of the alert expression for this vector element.
 	Value clientmodel.SampleValue
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a Alert) sample(timestamp time.Time, value clientmodel.SampleValue) *clientmodel.Sample {
+func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleValue) *clientmodel.Sample {
 	recordedMetric := clientmodel.Metric{}
 	for label, value := range a.Labels {
 		recordedMetric[label] = value
@@ -99,7 +98,7 @@ type AlertingRule struct {
 	vector ast.VectorNode
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from PENDING to FIRING state.
-	holdDuration time.Duration
+	holdDuration clientmodel.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
 	Labels clientmodel.LabelSet
 	// Short alert summary, suitable for email subjects.
@@ -118,11 +117,11 @@ func (rule *AlertingRule) Name() string {
 	return rule.name
 }
 
-func (rule *AlertingRule) EvalRaw(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
+func (rule *AlertingRule) EvalRaw(timestamp clientmodel.Timestamp, storage *metric.TieredStorage) (ast.Vector, error) {
 	return ast.EvalVectorInstant(rule.vector, timestamp, storage, stats.NewTimerGroup())
 }
 
-func (rule *AlertingRule) Eval(timestamp time.Time, storage *metric.TieredStorage) (ast.Vector, error) {
+func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage *metric.TieredStorage) (ast.Vector, error) {
 	// Get the raw value of the rule expression.
 	exprResult, err := rule.EvalRaw(timestamp, storage)
 	if err != nil {
@@ -185,12 +184,12 @@ func (rule *AlertingRule) ToDotGraph() string {
 	  %#p[shape="box",label="ALERT %s IF FOR %s"];
 		%#p -> %#p;
 		%s
-	}`, &rule, rule.name, utility.DurationToString(rule.holdDuration), &rule, rule.vector, rule.vector.NodeTreeToDotGraph())
+	}`, &rule, rule.name, utility.DurationToString(rule.holdDuration.TimeDuration()), &rule, rule.vector, rule.vector.NodeTreeToDotGraph())
 	return graph
 }
 
 func (rule *AlertingRule) String() string {
-	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.vector, utility.DurationToString(rule.holdDuration), rule.Labels)
+	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.vector, utility.DurationToString(rule.holdDuration.TimeDuration()), rule.Labels)
 }
 
 func (rule *AlertingRule) HTMLSnippet() template.HTML {
@@ -204,7 +203,7 @@ func (rule *AlertingRule) HTMLSnippet() template.HTML {
 		rule.name,
 		ConsoleLinkForExpression(rule.vector.String()),
 		rule.vector,
-		utility.DurationToString(rule.holdDuration),
+		utility.DurationToString(rule.holdDuration.TimeDuration()),
 		rule.Labels))
 }
 
@@ -233,7 +232,7 @@ func (rule *AlertingRule) ActiveAlerts() []Alert {
 }
 
 // Construct a new AlertingRule.
-func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels clientmodel.LabelSet, summary string, description string) *AlertingRule {
+func NewAlertingRule(name string, vector ast.VectorNode, holdDuration clientmodel.Duration, labels clientmodel.LabelSet, summary string, description string) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
 		vector:       vector,

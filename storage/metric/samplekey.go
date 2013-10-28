@@ -15,7 +15,6 @@ package metric
 
 import (
 	"fmt"
-	"time"
 
 	"code.google.com/p/goprotobuf/proto"
 
@@ -30,8 +29,8 @@ import (
 // SampleKey.
 type SampleKey struct {
 	Fingerprint    *clientmodel.Fingerprint
-	FirstTimestamp time.Time
-	LastTimestamp  time.Time
+	FirstTimestamp clientmodel.Timestamp
+	LastTimestamp  clientmodel.Timestamp
 	SampleCount    uint32
 }
 
@@ -71,7 +70,7 @@ func (s *SampleKey) Equal(o *SampleKey) bool {
 // MayContain indicates whether the given SampleKey could potentially contain a
 // value at the provided time.  Even if true is emitted, that does not mean a
 // satisfactory value, in fact, exists.
-func (s *SampleKey) MayContain(t time.Time) bool {
+func (s *SampleKey) MayContain(t clientmodel.Timestamp) bool {
 	switch {
 	case t.Before(s.FirstTimestamp):
 		return false
@@ -82,7 +81,7 @@ func (s *SampleKey) MayContain(t time.Time) bool {
 	}
 }
 
-func (s *SampleKey) Before(fp *clientmodel.Fingerprint, t time.Time) bool {
+func (s *SampleKey) Before(fp *clientmodel.Fingerprint, t clientmodel.Timestamp) bool {
 	if s.Fingerprint.Less(fp) {
 		return true
 	}
@@ -118,6 +117,6 @@ func (s *SampleKey) Load(d *dto.SampleKey) {
 	loadFingerprint(f, d.GetFingerprint())
 	s.Fingerprint = f
 	s.FirstTimestamp = indexable.DecodeTime(d.Timestamp)
-	s.LastTimestamp = time.Unix(d.GetLastTimestamp(), 0).UTC()
+	s.LastTimestamp = clientmodel.TimestampFromUnix(d.GetLastTimestamp())
 	s.SampleCount = d.GetSampleCount()
 }

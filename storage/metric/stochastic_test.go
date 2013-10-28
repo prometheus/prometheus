@@ -20,7 +20,6 @@ import (
 	"sort"
 	"testing"
 	"testing/quick"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -95,7 +94,7 @@ func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) (success bool) {
 		v := clientmodel.SampleValue(x)
-		ts := time.Unix(int64(x), int64(x))
+		ts := clientmodel.TimestampFromUnix(int64(x))
 		labelName := clientmodel.LabelName(x)
 		labelValue := clientmodel.LabelValue(x)
 		l := clientmodel.Metric{labelName: labelValue}
@@ -124,7 +123,7 @@ func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester) {
 	appendSample := func(x int) (success bool) {
 		v := clientmodel.SampleValue(x)
-		ts := time.Unix(int64(x), int64(x))
+		ts := clientmodel.TimestampFromUnix(int64(x))
 		labelName := clientmodel.LabelName(x)
 		labelValue := clientmodel.LabelValue(x)
 		l := clientmodel.Metric{labelName: labelValue}
@@ -175,7 +174,7 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	appendSample := func(x int) bool {
 		sample := &clientmodel.Sample{
 			Value:     clientmodel.SampleValue(x),
-			Timestamp: time.Unix(int64(x), 0),
+			Timestamp: clientmodel.TimestampFromUnix(int64(x)),
 			Metric:    clientmodel.Metric{clientmodel.MetricNameLabel: "my_metric"},
 		}
 
@@ -227,7 +226,7 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerpr
 	return
 }
 
-type timeslice []time.Time
+type timeslice []clientmodel.Timestamp
 
 func (t timeslice) Len() int {
 	return len(t)
@@ -313,7 +312,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 			// BUG(matt): Invariant of the in-memory database assumes this.
 			sortedTimestamps := timeslice{}
 			for sampleIndex := 0; sampleIndex < numberOfSamples; sampleIndex++ {
-				sortedTimestamps = append(sortedTimestamps, time.Unix(nextTimestamp(), 0))
+				sortedTimestamps = append(sortedTimestamps, clientmodel.TimestampFromUnix(nextTimestamp()))
 			}
 			sort.Sort(sortedTimestamps)
 
@@ -465,8 +464,8 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				}
 
 				interval := Interval{
-					OldestInclusive: time.Unix(begin, 0),
-					NewestInclusive: time.Unix(end, 0),
+					OldestInclusive: clientmodel.TimestampFromUnix(begin),
+					NewestInclusive: clientmodel.TimestampFromUnix(end),
 				}
 
 				samples := Values{}

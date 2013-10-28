@@ -15,7 +15,6 @@ package metric
 
 import (
 	"testing"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -25,20 +24,20 @@ import (
 func testBuilder(t test.Tester) {
 	type atTime struct {
 		fingerprint string
-		time        time.Time
+		time        clientmodel.Timestamp
 	}
 
 	type atInterval struct {
 		fingerprint string
-		from        time.Time
-		through     time.Time
-		interval    time.Duration
+		from        clientmodel.Timestamp
+		through     clientmodel.Timestamp
+		interval    clientmodel.Duration
 	}
 
 	type atRange struct {
 		fingerprint string
-		from        time.Time
-		through     time.Time
+		from        clientmodel.Timestamp
+		through     clientmodel.Timestamp
 	}
 
 	type in struct {
@@ -62,11 +61,11 @@ func testBuilder(t test.Tester) {
 				atTimes: []atTime{
 					{
 						fingerprint: "0000000000000001111-a-4-a",
-						time:        time.Unix(100, 0),
+						time:        clientmodel.TimestampFromUnix(100),
 					},
 					{
 						fingerprint: "0000000000000000000-a-4-a",
-						time:        time.Unix(100, 0),
+						time:        clientmodel.TimestampFromUnix(100),
 					},
 				},
 			},
@@ -85,19 +84,19 @@ func testBuilder(t test.Tester) {
 				atTimes: []atTime{
 					{
 						fingerprint: "1111-a-4-a",
-						time:        time.Unix(100, 0),
+						time:        clientmodel.TimestampFromUnix(100),
 					},
 					{
 						fingerprint: "1111-a-4-a",
-						time:        time.Unix(200, 0),
+						time:        clientmodel.TimestampFromUnix(200),
 					},
 					{
 						fingerprint: "0-a-4-a",
-						time:        time.Unix(100, 0),
+						time:        clientmodel.TimestampFromUnix(100),
 					},
 					{
 						fingerprint: "0-a-4-a",
-						time:        time.Unix(0, 0),
+						time:        clientmodel.TimestampFromUnix(0),
 					},
 				},
 			},
@@ -116,19 +115,19 @@ func testBuilder(t test.Tester) {
 				atTimes: []atTime{
 					{
 						fingerprint: "1111-a-4-a",
-						time:        time.Unix(100, 0),
+						time:        clientmodel.TimestampFromUnix(100),
 					},
 				},
 				atRanges: []atRange{
 					{
 						fingerprint: "1111-a-4-a",
-						from:        time.Unix(100, 0),
-						through:     time.Unix(1000, 0),
+						from:        clientmodel.TimestampFromUnix(100),
+						through:     clientmodel.TimestampFromUnix(1000),
 					},
 					{
 						fingerprint: "1111-a-4-a",
-						from:        time.Unix(100, 0),
-						through:     time.Unix(9000, 0),
+						from:        clientmodel.TimestampFromUnix(100),
+						through:     clientmodel.TimestampFromUnix(9000),
 					},
 				},
 			},
