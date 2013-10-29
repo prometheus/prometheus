@@ -16,6 +16,8 @@ package retrieval
 import (
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -95,19 +97,31 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 }
 
 func lookupSRV(name string) (*dns.Msg, error) {
-	name = dns.Fqdn(name)
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
 		return nil, fmt.Errorf("Couldn't load resolv.conf: %s", err)
 	}
-	client := &dns.Client{}
-	msg := &dns.Msg{}
-	msg.SetQuestion(name, dns.TypeSRV)
 
+	port, err := strconv.Atoi(conf.Port)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid dns port in %s", resolvConf)
+	}
+
+	client := &dns.Client{}
 	response := &dns.Msg{}
+
 	for _, server := range conf.Servers {
-		server := fmt.Sprintf("%s:%s", server, conf.Port)
-		response, err = lookup(msg, client, server, false)
+		for _, suffix := range conf.Search {
+			response, err = lookup(name, dns.TypeSRV, client, server, port, suffix, false)
+			if err == nil {
+				if len(response.Answer) > 0 {
+					return response, nil
+				}
+			} else {
+				glog.Warningf("Resolving %s.%s failed: %s", name, suffix, err)
+			}
+		}
+		response, err = lookup(name, dns.TypeSRV, client, server, port, "", false)
 		if err == nil {
 			return response, nil
 		}
@@ -115,7 +129,12 @@ func lookupSRV(name string) (*dns.Msg, error) {
 	return response, fmt.Errorf("Couldn't resolve %s: No server responded", name)
 }
 
-func lookup(msg *dns.Msg, client *dns.Client, server string, edns bool) (*dns.Msg, error) {
+func lookup(name string, queryType uint16, client *dns.Client, server string, port int, suffix string, edns bool) (*dns.Msg, error) {
+	msg := &dns.Msg{}
+	lname := strings.Join([]string{name, suffix}, ".")
+	glog.Warning("Resolving ", dns.Fqdn(lname))
+	msg.SetQuestion(dns.Fqdn(lname), queryType)
+
 	if edns {
 		opt := &dns.OPT{
 			Hdr: dns.RR_Header{
@@ -127,7 +146,7 @@ func lookup(msg *dns.Msg, client *dns.Client, server string, edns bool) (*dns.Ms
 		msg.Extra = append(msg.Extra, opt)
 	}
 
-	response, _, err := client.Exchange(msg, server)
+	response, _, err := client.Exchange(msg, fmt.Sprintf("%s:%d", server, port))
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +164,7 @@ func lookup(msg *dns.Msg, client *dns.Client, server string, edns bool) (*dns.Ms
 			client.Net = "tcp"
 		}
 
-		return lookup(msg, client, server, !edns)
+		return lookup(name, queryType, client, server, port, suffix, !edns)
 	}
 
 	return response, nil
