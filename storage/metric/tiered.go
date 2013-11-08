@@ -18,6 +18,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"os"
 
 	"github.com/golang/glog"
 
@@ -114,7 +115,9 @@ const watermarkCacheLimit = 1024 * 1024
 
 func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval, memoryTTL time.Duration, rootDirectory string) (*TieredStorage, error) {
 	if isDir, _ := utility.IsDir(rootDirectory); !isDir {
-		return nil, fmt.Errorf("Could not find metrics directory %s", rootDirectory)
+		if err := os.MkdirAll(rootDirectory, 0755); err != nil {
+			return nil, fmt.Errorf("Could not find or create metrics directory %s: %s", rootDirectory, err)
+		}
 	}
 
 	diskStorage, err := NewLevelDBMetricPersistence(rootDirectory)
