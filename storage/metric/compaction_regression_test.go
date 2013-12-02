@@ -220,22 +220,43 @@ func TestCompaction(t *testing.T) {
 			uncompactedChunks: 9,
 			compactedChunks: 3,
 		},
-		// BUG: This case crashes! See:
-		//			https://github.com/prometheus/prometheus/issues/368
-		//			Fix this!
+		// BEFORE COMPACTION:
 		//
-		//{
-		//	leveldbChunkSize: 5,
-		//	numTimeseries: 3,
-		//	samplesPerTs: 20,
+		// Chunk size  |  Fingerprint  |  Samples
+		//          5  |            A  |    1 ..  5
+		//          5  |            A  |    6 .. 10
+		//          5  |            A  |   11 .. 15
+		//          5  |            A  |   16 .. 20
+		//          5  |            B  |    1 ..  5
+		//          5  |            B  |    6 .. 10
+		//          5  |            B  |   11 .. 15
+		//          5  |            B  |   16 .. 20
+		//          5  |            C  |    1 ..  5
+		//          5  |            C  |    6 .. 10
+		//          5  |            C  |   11 .. 15
+		//          5  |            C  |   16 .. 20
+		//
+		// AFTER COMPACTION:
+		//
+		// Chunk size  |  Fingerprint  |  Samples
+		//         10  |            A  |    1 .. 15
+		//         10  |            A  |   16 .. 20
+		//         10  |            B  |    1 .. 15
+		//         10  |            B  |   16 .. 20
+		//         10  |            C  |    1 .. 15
+		//         10  |            C  |   16 .. 20
+		{
+			leveldbChunkSize: 5,
+			numTimeseries: 3,
+			samplesPerTs: 20,
 
-		//	ignoreYoungerThan: time.Minute,
-		//	maximumMutationPoolBatch: 30,
-		//	minimumGroupSize: 10,
+			ignoreYoungerThan: time.Minute,
+			maximumMutationPoolBatch: 30,
+			minimumGroupSize: 10,
 
-		//	uncompactedChunks: 12,
-		//	compactedChunks: 9,
-		//},
+			uncompactedChunks: 12,
+			compactedChunks: 6,
+		},
 	}
 
 	for _, s := range scenarios {
