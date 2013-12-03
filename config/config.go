@@ -69,7 +69,13 @@ func (c Config) Validate() error {
 	}
 
 	// Check each job configuration for validity.
+	jobNames := map[string]bool{}
 	for _, job := range c.Job {
+		if jobNames[job.GetName()] {
+			return fmt.Errorf("Found multiple jobs configured with the same name: '%s'", job.GetName())
+		}
+		jobNames[job.GetName()] = true
+
 		if !jobNameRE.MatchString(job.GetName()) {
 			return fmt.Errorf("Invalid job name '%s'", job.GetName())
 		}

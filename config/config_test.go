@@ -60,6 +60,11 @@ var configTests = []struct {
 		shouldFail:  true,
 		errContains: "Specified both DNS-SD name and target group",
 	},
+	{
+		inputFile:   "repeated_job_name.conf.input",
+		shouldFail:  true,
+		errContains: "Found multiple jobs configured with the same name: 'testjob1'",
+	},
 }
 
 func TestConfigs(t *testing.T) {
