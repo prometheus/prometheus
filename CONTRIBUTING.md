@@ -7,9 +7,10 @@ Prometheus, you must use Gerrit.
 ## Setup
 
 1. Sign in at http://review.prometheus.io/
-2. Set a username and upload an SSH pubkey for git ssh access. `cat
-   ~/.ssh/id_rsa.pub | pbcopy` will copy your public key to your
-   clipboard so you can paste it.
+2. Set a username and upload an SSH pubkey for git ssh access.
+
+   On OSX you can use `cat ~/.ssh/id_rsa.pub | pbcopy` to copy your public key
+   to your clipboard so you can paste it.
 3. Clone the repo: `git clone http://review.prometheus.io/prometheus`
 4. Add your user-specific remote that you will push your changes to:
    `git remote add <your-remote-name> ssh://<username>@review.prometheus.io:29418/prometheus`
