@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/web"
 	"github.com/prometheus/prometheus/web/api"
 )
@@ -42,6 +43,10 @@ var (
 	metricsStoragePath = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
 
 	alertmanagerUrl = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
+
+	tsdbUrl           = flag.String("tsdb.url", "", "The URL of the OpenTSDB instance to send samples to.")
+	tsdbTimeout       = flag.Duration("tsdb.timeout", 30*time.Second, "The timeout to use when sending samples to OpenTSDB.")
+	tsdbQueueCapacity = flag.Int("tsdb.queue.samplesCapacity", 512, "The size of the queue for sample batches to be written to OpenTSDB.")
 
 	samplesQueueCapacity      = flag.Int("storage.queue.samplesCapacity", 4096, "The size of the unwritten samples queue.")
 	diskAppendQueueCapacity   = flag.Int("storage.queue.diskAppendCapacity", 1000000, "The size of the queue for items that are pending writing to disk.")
@@ -88,6 +93,7 @@ type prometheus struct {
 	targetManager retrieval.TargetManager
 	notifications chan notification.NotificationReqs
 	storage       *metric.TieredStorage
+	tsdbQueue     *tsdb.TSDBQueueManager
 
 	curationState metric.CurationStateUpdater
 }
@@ -186,6 +192,10 @@ func (p *prometheus) close() {
 
 	p.storage.Close()
 
+	if p.tsdbQueue != nil {
+		p.tsdbQueue.Close()
+	}
+
 	close(p.notifications)
 	close(p.stopBackgroundOperations)
 }
@@ -210,6 +220,15 @@ func main() {
 	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, *arenaTTL, *metricsStoragePath)
 	if err != nil {
 		glog.Fatal("Error opening storage: ", err)
+	}
+
+	var tsdbQueue *tsdb.TSDBQueueManager = nil
+	if *tsdbUrl == "" {
+		glog.Warningf("No TSDB URL provided, not sending any samples to long-term storage")
+	} else {
+		openTSDB := tsdb.NewOpenTSDBClient(*tsdbUrl, *tsdbTimeout)
+		tsdbQueue = tsdb.NewTSDBQueueManager(openTSDB, *tsdbQueueCapacity)
+		go tsdbQueue.Run()
 	}
 
 	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
@@ -302,6 +321,7 @@ func main() {
 		targetManager: targetManager,
 		notifications: notifications,
 		storage:       ts,
+		tsdbQueue:     tsdbQueue,
 	}
 	defer prometheus.close()
 
@@ -368,8 +388,11 @@ func main() {
 
 	// TODO(all): Migrate this into prometheus.serve().
 	for block := range unwrittenSamples {
-		if block.Err == nil {
+		if block.Err == nil && len(block.Samples) > 0 {
 			ts.AppendSamples(block.Samples)
+			if tsdbQueue != nil {
+				tsdbQueue.Queue(block.Samples)
+			}
 		}
 	}
 }
