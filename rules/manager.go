@@ -14,6 +14,7 @@
 package rules
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -167,7 +168,7 @@ func (m *ruleManager) AddRulesFromConfig(config config.Config) error {
 	for _, ruleFile := range config.Global.RuleFile {
 		newRules, err := LoadRulesFromFile(ruleFile)
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %s", ruleFile, err)
 		}
 		m.Lock()
 		m.rules = append(m.rules, newRules...)
