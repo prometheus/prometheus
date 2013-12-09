@@ -30,6 +30,8 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 	"github.com/prometheus/prometheus/web"
 	"github.com/prometheus/prometheus/web/api"
 )
@@ -42,6 +44,10 @@ var (
 	metricsStoragePath = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
 
 	alertmanagerUrl = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
+
+	remoteTSDBUrl           = flag.String("storage.remote.url", "", "The URL of the OpenTSDB instance to send samples to.")
+	remoteTSDBTimeout       = flag.Duration("storage.remote.timeout", 30*time.Second, "The timeout to use when sending samples to OpenTSDB.")
+	remoteTSDBQueueCapacity = flag.Int("storage.remote.queue.samplesCapacity", 512, "The size of the queue for sample batches to be written to OpenTSDB.")
 
 	samplesQueueCapacity      = flag.Int("storage.queue.samplesCapacity", 4096, "The size of the unwritten samples queue.")
 	diskAppendQueueCapacity   = flag.Int("storage.queue.diskAppendCapacity", 1000000, "The size of the queue for items that are pending writing to disk.")
@@ -84,10 +90,11 @@ type prometheus struct {
 
 	unwrittenSamples chan *extraction.Result
 
-	ruleManager   rules.RuleManager
-	targetManager retrieval.TargetManager
-	notifications chan notification.NotificationReqs
-	storage       *metric.TieredStorage
+	ruleManager     rules.RuleManager
+	targetManager   retrieval.TargetManager
+	notifications   chan notification.NotificationReqs
+	storage         *metric.TieredStorage
+	remoteTSDBQueue *remote.TSDBQueueManager
 
 	curationState metric.CurationStateUpdater
 }
@@ -186,6 +193,10 @@ func (p *prometheus) close() {
 
 	p.storage.Close()
 
+	if p.remoteTSDBQueue != nil {
+		p.remoteTSDBQueue.Close()
+	}
+
 	close(p.notifications)
 	close(p.stopBackgroundOperations)
 }
@@ -210,6 +221,15 @@ func main() {
 	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, *arenaTTL, *metricsStoragePath)
 	if err != nil {
 		glog.Fatal("Error opening storage: ", err)
+	}
+
+	var remoteTSDBQueue *remote.TSDBQueueManager = nil
+	if *remoteTSDBUrl == "" {
+		glog.Warningf("No TSDB URL provided; not sending any samples to long-term storage")
+	} else {
+		openTSDB := opentsdb.NewClient(*remoteTSDBUrl, *remoteTSDBTimeout)
+		remoteTSDBQueue = remote.NewTSDBQueueManager(openTSDB, *remoteTSDBQueueCapacity)
+		go remoteTSDBQueue.Run()
 	}
 
 	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
@@ -298,10 +318,11 @@ func main() {
 
 		stopBackgroundOperations: make(chan bool, 1),
 
-		ruleManager:   ruleManager,
-		targetManager: targetManager,
-		notifications: notifications,
-		storage:       ts,
+		ruleManager:     ruleManager,
+		targetManager:   targetManager,
+		notifications:   notifications,
+		storage:         ts,
+		remoteTSDBQueue: remoteTSDBQueue,
 	}
 	defer prometheus.close()
 
@@ -368,8 +389,11 @@ func main() {
 
 	// TODO(all): Migrate this into prometheus.serve().
 	for block := range unwrittenSamples {
-		if block.Err == nil {
+		if block.Err == nil && len(block.Samples) > 0 {
 			ts.AppendSamples(block.Samples)
+			if remoteTSDBQueue != nil {
+				remoteTSDBQueue.Queue(block.Samples)
+			}
 		}
 	}
 }
