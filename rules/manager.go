@@ -146,7 +146,11 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 		// BUG(julius): Look at fixing thundering herd.
 		go func(rule Rule) {
 			defer wg.Done()
+
+			start := time.Now()
 			vector, err := rule.Eval(now, m.storage)
+			evalDuration.Add(map[string]string{intervalKey: m.interval.String()}, float64(time.Since(start)/time.Millisecond))
+
 			samples := make(clientmodel.Samples, len(vector))
 			copy(samples, vector)
 			m.results <- &extraction.Result{
@@ -154,8 +158,15 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 				Err:     err,
 			}
 
-			if alertingRule, ok := rule.(*AlertingRule); ok {
+			switch rule.(type) {
+			case AlertingRule:
+				alertingRule, _ := rule.(*AlertingRule)
 				m.queueAlertNotifications(alertingRule)
+				alertingRuleCount.Increment()
+			case RecordingRule:
+				recordingRuleCount.Increment()
+			default:
+				panic(fmt.Printf("Unknown rule type: %T", rule))
 			}
 		}(rule)
 	}
