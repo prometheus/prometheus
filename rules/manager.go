@@ -14,6 +14,7 @@
 package rules
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -89,7 +90,7 @@ func (m *ruleManager) Run() {
 		case <-ticker.C:
 			start := time.Now()
 			m.runIteration(m.results)
-			evalDurations.Add(map[string]string{intervalKey: m.interval.String()}, float64(time.Since(start)/time.Millisecond))
+			evalDurations.Add(map[string]string{intervalLabel: m.interval.String()}, float64(time.Since(start)/time.Millisecond))
 		case <-m.done:
 			glog.Info("RuleManager exiting...")
 			break
@@ -146,7 +147,11 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 		// BUG(julius): Look at fixing thundering herd.
 		go func(rule Rule) {
 			defer wg.Done()
+
+			start := time.Now()
 			vector, err := rule.Eval(now, m.storage)
+			duration := float64(time.Since(start) / time.Millisecond)
+
 			samples := make(clientmodel.Samples, len(vector))
 			copy(samples, vector)
 			m.results <- &extraction.Result{
@@ -154,8 +159,16 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 				Err:     err,
 			}
 
-			if alertingRule, ok := rule.(*AlertingRule); ok {
-				m.queueAlertNotifications(alertingRule)
+			switch r := rule.(type) {
+			case *AlertingRule:
+				m.queueAlertNotifications(r)
+				ruleCount.Increment(map[string]string{ruleTypeLabel: alertingRuleType})
+				evalDuration.Add(map[string]string{ruleTypeLabel: alertingRuleType}, duration)
+			case *RecordingRule:
+				ruleCount.Increment(map[string]string{ruleTypeLabel: recordingRuleType})
+				evalDuration.Add(map[string]string{ruleTypeLabel: recordingRuleType}, duration)
+			default:
+				panic(fmt.Sprintf("Unknown rule type: %T", rule))
 			}
 		}(rule)
 	}
