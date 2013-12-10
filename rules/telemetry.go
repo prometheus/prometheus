@@ -14,21 +14,35 @@
 package rules
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
-	intervalKey = "interval"
+	intervalLabel     = "interval"
+	ruleTypeLabel     = "rule_type"
+	alertingRuleType  = "alerting"
+	recordingRuleType = "recording"
 )
 
 var (
-	evalDurations = prometheus.NewHistogram(&prometheus.HistogramSpecification{
+	evalDuration      = prometheus.NewDefaultHistogram()
+	evalCount         = prometheus.NewCounter()
+	iterationDuration = prometheus.NewHistogram(&prometheus.HistogramSpecification{
 		Starts:                prometheus.LogarithmicSizedBucketsFor(0, 10000),
 		BucketBuilder:         prometheus.AccumulatingBucketBuilder(prometheus.EvictAndReplaceWith(10, prometheus.AverageReducer), 100),
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99}})
-	evalDuration = prometheus.NewCounter()
 )
 
+func recordOutcome(ruleType string, duration time.Duration) {
+	millisecondDuration := float64(duration / time.Millisecond)
+	evalCount.Increment(map[string]string{ruleTypeLabel: ruleType})
+	evalDuration.Add(map[string]string{ruleTypeLabel: ruleType}, millisecondDuration)
+}
+
 func init() {
-	prometheus.Register("prometheus_evaluator_duration_ms", "The duration for each evaluation pool to execute.", prometheus.NilLabels, evalDurations)
+	prometheus.Register("prometheus_evaluator_duration_ms", "The duration for each evaluation pool to execute.", prometheus.NilLabels, iterationDuration)
+	prometheus.Register("prometheus_rule_evaluation_duration_ms", "The duration for a rule to execute.", prometheus.NilLabels, evalDuration)
+	prometheus.Register("prometheus_rule_evaluation_count", "The number of rules evaluated.", prometheus.NilLabels, evalCount)
 }
