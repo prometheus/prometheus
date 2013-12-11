@@ -29,6 +29,7 @@ type TargetManager interface {
 	ReplaceTargets(job config.JobConfig, newTargets []Target)
 	Remove(t Target)
 	AddTargetsFromConfig(config config.Config)
+	Stop()
 	Pools() map[string]*TargetPool
 }
 
@@ -112,6 +113,13 @@ func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 				m.AddTarget(job, target)
 			}
 		}
+	}
+}
+
+func (m *targetManager) Stop() {
+	glog.Info("Target manager exiting...")
+	for _, p := range m.poolsByJob {
+		p.Stop()
 	}
 }
 

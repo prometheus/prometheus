@@ -47,6 +47,7 @@ func NewTargetPool(m TargetManager, p TargetProvider) *TargetPool {
 		addTargetQueue:      make(chan Target, targetAddQueueSize),
 		replaceTargetsQueue: make(chan targets, targetReplaceQueueSize),
 		targetProvider:      p,
+		done:                make(chan bool),
 	}
 }
 

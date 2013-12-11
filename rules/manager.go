@@ -91,8 +91,8 @@ func (m *ruleManager) Run() {
 			m.runIteration(m.results)
 			evalDurations.Add(map[string]string{intervalKey: m.interval.String()}, float64(time.Since(start)/time.Millisecond))
 		case <-m.done:
-			glog.Info("RuleManager exiting...")
-			break
+			glog.Info("Rule manager exiting...")
+			return
 		}
 	}
 }

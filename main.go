@@ -85,6 +85,7 @@ type prometheus struct {
 	unwrittenSamples chan *extraction.Result
 
 	ruleManager   rules.RuleManager
+	targetManager retrieval.TargetManager
 	notifications chan notification.NotificationReqs
 	storage       *metric.TieredStorage
 
@@ -174,11 +175,15 @@ func (p *prometheus) close() {
 		p.deletionTimer.Stop()
 	}
 
+	// Stop any currently active curation (deletion or compaction).
 	if len(p.stopBackgroundOperations) == 0 {
 		p.stopBackgroundOperations <- true
 	}
 
 	p.ruleManager.Stop()
+	p.targetManager.Stop()
+	close(p.unwrittenSamples)
+
 	p.storage.Close()
 
 	close(p.notifications)
@@ -294,6 +299,7 @@ func main() {
 		stopBackgroundOperations: make(chan bool, 1),
 
 		ruleManager:   ruleManager,
+		targetManager: targetManager,
 		notifications: notifications,
 		storage:       ts,
 	}
