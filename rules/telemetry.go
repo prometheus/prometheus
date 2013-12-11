@@ -18,22 +18,23 @@ import (
 )
 
 const (
-	intervalKey = "interval"
+	intervalKey       = "interval"
+	ruleTypeLabel     = "rule_type"
+	alertingRuleType  = "alerting"
+	recordingRuleType = "recording"
 )
 
 var (
+	evalDuration  = prometheus.NewDefaultHistogram()
+	ruleCount     = prometheus.NewCounter()
 	evalDurations = prometheus.NewHistogram(&prometheus.HistogramSpecification{
 		Starts:                prometheus.LogarithmicSizedBucketsFor(0, 10000),
 		BucketBuilder:         prometheus.AccumulatingBucketBuilder(prometheus.EvictAndReplaceWith(10, prometheus.AverageReducer), 100),
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99}})
-	evalDuration       = prometheus.NewDefaultHistogram()
-	alertingRuleCount  = prometheus.NewCounter()
-	recordingRuleCount = prometheus.NewCounter()
 )
 
 func init() {
 	prometheus.Register("prometheus_evaluator_duration_ms", "The duration for each evaluation pool to execute.", prometheus.NilLabels, evalDurations)
 	prometheus.Register("prometheus_rule_evaluation_duration_ms", "The duration for a rule to execute.", prometheus.NilLabels, evalDuration)
-	prometheus.Register("prometheus_alerting_rule_total", "The number of alerting rules evaluated.", prometheus.NilLabels, alertingRuleCount)
-	prometheus.Register("prometheus_recording_rule_total", "The number of recording rules evaluated.", prometheus.NilLabels, recordingRuleCount)
+	prometheus.Register("prometheus_rule_evaluation_count", "The number of rules evaluated.", prometheus.NilLabels, ruleCount)
 }

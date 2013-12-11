@@ -16,6 +16,7 @@ package rules
 import (
 	"sync"
 	"time"
+    "fmt"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
@@ -158,15 +159,14 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 				Err:     err,
 			}
 
-			switch rule.(type) {
-			case AlertingRule:
-				alertingRule, _ := rule.(*AlertingRule)
-				m.queueAlertNotifications(alertingRule)
-				alertingRuleCount.Increment()
-			case RecordingRule:
-				recordingRuleCount.Increment()
+			switch r := rule.(type) {
+			case *AlertingRule:
+				m.queueAlertNotifications(r)
+				ruleCount.Increment(map[string]string{ruleTypeLabel: alertingRuleType})
+			case *RecordingRule:
+				ruleCount.Increment(map[string]string{ruleTypeLabel: recordingRuleType})
 			default:
-				panic(fmt.Printf("Unknown rule type: %T", rule))
+				panic(fmt.Sprintf("Unknown rule type: %T", rule))
 			}
 		}(rule)
 	}
