@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -168,6 +169,7 @@ func (t *TieredStorage) AppendSamples(samples clientmodel.Samples) (err error) {
 	}
 
 	t.memoryArena.AppendSamples(samples)
+	storedSamplesCount.IncrementBy(prometheus.NilLabels, float64(len(samples)))
 
 	return
 }
