@@ -168,6 +168,7 @@ func (t *TieredStorage) AppendSamples(samples clientmodel.Samples) (err error) {
 	}
 
 	t.memoryArena.AppendSamples(samples)
+	storedSamplesCount.IncrementBy(map[string]string{storedSamplesLabel: appendSamples}, float64(len(samples)))
 
 	return
 }
@@ -303,7 +304,10 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 		}
 
 		glog.Infof("Writing %d samples...", len(samples))
+		start := time.Now()
 		t.DiskStorage.AppendSamples(samples)
+		duration := time.Since(start)
+		storedSamplesDuration.Add(map[string]string{writeDurationLabel: appendSamples}, float64(duration/time.Millisecond))
 	}
 
 	glog.Info("Done flushing.")
