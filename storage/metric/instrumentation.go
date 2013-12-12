@@ -72,6 +72,7 @@ var (
 	storageOperationDurations = prometheus.NewCounter()
 	storageLatency            = prometheus.NewHistogram(diskLatencyHistogram)
 	queueSizes                = prometheus.NewGauge()
+	storedSamplesCount        = prometheus.NewCounter()
 )
 
 func recordOutcome(duration time.Duration, err error, success, failure map[string]string) {
@@ -94,4 +95,5 @@ func init() {
 	prometheus.Register("curation_filter_operations_total", "The number of curation filter operations completed.", prometheus.NilLabels, curationFilterOperations)
 	prometheus.Register("curation_duration_ms_total", "The total time spent in curation (ms).", prometheus.NilLabels, curationDuration)
 	prometheus.Register("curation_durations_ms", "Histogram of time spent in curation (ms).", prometheus.NilLabels, curationDurations)
+	prometheus.Register("prometheus_stored_samples_total", "The number of samples that have been stored.", prometheus.NilLabels, storedSamplesCount)
 }
