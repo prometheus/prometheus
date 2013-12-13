@@ -92,8 +92,8 @@ func init() {
 	prometheus.Register("prometheus_metric_disk_latency_microseconds", "Latency for metric disk operations in microseconds.", prometheus.NilLabels, storageLatency)
 	prometheus.Register("prometheus_storage_operation_time_total_microseconds", "The total time spent performing a given storage operation.", prometheus.NilLabels, storageOperationDurations)
 	prometheus.Register("prometheus_storage_queue_sizes_total", "The various sizes and capacities of the storage queues.", prometheus.NilLabels, queueSizes)
-	prometheus.Register("curation_filter_operations_total", "The number of curation filter operations completed.", prometheus.NilLabels, curationFilterOperations)
-	prometheus.Register("curation_duration_ms_total", "The total time spent in curation (ms).", prometheus.NilLabels, curationDuration)
-	prometheus.Register("curation_durations_ms", "Histogram of time spent in curation (ms).", prometheus.NilLabels, curationDurations)
+	prometheus.Register("prometheus_curation_filter_operations_total", "The number of curation filter operations completed.", prometheus.NilLabels, curationFilterOperations)
+	prometheus.Register("prometheus_curation_duration_ms_total", "The total time spent in curation (ms).", prometheus.NilLabels, curationDuration)
+	prometheus.Register("prometheus_curation_durations_ms", "Histogram of time spent in curation (ms).", prometheus.NilLabels, curationDurations)
 	prometheus.Register("prometheus_stored_samples_total", "The number of samples that have been stored.", prometheus.NilLabels, storedSamplesCount)
 }
