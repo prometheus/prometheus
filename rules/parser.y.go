@@ -30,16 +30,17 @@ const DURATION = 57350
 const NUMBER = 57351
 const PERMANENT = 57352
 const GROUP_OP = 57353
-const AGGR_OP = 57354
-const CMP_OP = 57355
-const ADDITIVE_OP = 57356
-const MULT_OP = 57357
-const ALERT = 57358
-const IF = 57359
-const FOR = 57360
-const WITH = 57361
-const SUMMARY = 57362
-const DESCRIPTION = 57363
+const KEEPING_EXTRA = 57354
+const AGGR_OP = 57355
+const CMP_OP = 57356
+const ADDITIVE_OP = 57357
+const MULT_OP = 57358
+const ALERT = 57359
+const IF = 57360
+const FOR = 57361
+const WITH = 57362
+const SUMMARY = 57363
+const DESCRIPTION = 57364
 
 var yyToknames = []string{
 	"START_RULES",
@@ -50,6 +51,7 @@ var yyToknames = []string{
 	"NUMBER",
 	"PERMANENT",
 	"GROUP_OP",
+	"KEEPING_EXTRA",
 	"AGGR_OP",
 	"CMP_OP",
 	"ADDITIVE_OP",
@@ -68,7 +70,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyMaxDepth = 200
 
-//line parser.y:191
+//line parser.y:197
 
 
 //line yacctab:1
@@ -81,79 +83,79 @@ var yyExca = []int{
 	-2, 1,
 }
 
-const yyNprod = 36
+const yyNprod = 38
 const yyPrivate = 57344
 
 var yyTokenNames []string
 var yyStates []string
 
-const yyLast = 101
+const yyLast = 103
 
 var yyAct = []int{
 
-	20, 38, 34, 43, 33, 17, 6, 18, 16, 17,
-	19, 15, 59, 18, 16, 17, 16, 17, 15, 27,
-	28, 29, 15, 60, 23, 41, 40, 49, 15, 22,
-	15, 8, 35, 67, 10, 66, 45, 9, 44, 50,
-	18, 16, 17, 46, 47, 51, 18, 16, 17, 53,
-	52, 7, 32, 57, 30, 15, 39, 8, 35, 48,
-	10, 15, 65, 9, 8, 22, 71, 10, 21, 68,
-	9, 61, 42, 14, 37, 56, 62, 7, 26, 13,
-	72, 70, 54, 69, 7, 64, 39, 25, 24, 2,
-	3, 11, 5, 4, 1, 58, 12, 36, 55, 63,
-	31,
+	20, 38, 34, 17, 33, 43, 6, 18, 16, 17,
+	19, 15, 59, 18, 16, 17, 15, 62, 23, 27,
+	28, 29, 15, 46, 47, 41, 40, 49, 15, 22,
+	8, 35, 69, 10, 68, 50, 45, 9, 44, 39,
+	18, 16, 17, 48, 73, 51, 18, 16, 17, 53,
+	52, 7, 32, 57, 30, 15, 8, 35, 37, 10,
+	70, 15, 8, 9, 67, 10, 16, 17, 22, 9,
+	61, 21, 63, 42, 14, 64, 56, 7, 26, 74,
+	15, 13, 72, 7, 54, 71, 66, 39, 25, 24,
+	2, 3, 11, 5, 4, 1, 58, 60, 12, 36,
+	55, 65, 31,
 }
 var yyPact = []int{
 
-	85, -1000, -1000, 58, 63, -1000, 33, 58, 42, -2,
-	-1000, -1000, 82, 81, -1000, 70, 58, 58, 58, 27,
-	-1000, 25, 50, 58, 6, 55, -26, -10, -17, 2,
-	-1000, 11, -1000, -1000, 33, -1000, 19, -1000, -1000, 37,
-	0, 17, 58, -1000, -1000, 51, -1000, 80, 75, 64,
-	58, -6, -1000, -1000, -1000, -1000, -3, 33, 52, 68,
-	79, 6, -1000, 8, -1000, 49, -1000, 77, 74, -1000,
-	45, 73, -1000,
+	86, -1000, -1000, 56, 64, -1000, 32, 56, 44, -9,
+	-1000, -1000, 83, 82, -1000, 70, 56, 56, 56, 26,
+	-1000, 24, 33, 56, 5, 55, -25, -13, -18, 51,
+	-1000, 10, -1000, -1000, 32, -1000, -2, -1000, -1000, 20,
+	-1, 12, 56, -1000, -1000, 50, -1000, 81, 77, 65,
+	56, -7, -1000, -1000, -1000, 58, -10, 32, 52, 67,
+	-1000, -1000, 80, 5, -1000, 6, -1000, 39, -1000, 79,
+	75, -1000, 22, 72, -1000,
 }
 var yyPgo = []int{
 
-	0, 100, 99, 98, 1, 97, 0, 2, 4, 96,
-	95, 94, 93, 92, 91,
+	0, 102, 101, 100, 1, 99, 0, 2, 4, 98,
+	97, 96, 95, 94, 93, 92,
 }
 var yyR1 = []int{
 
-	0, 11, 11, 12, 12, 13, 14, 14, 10, 10,
+	0, 12, 12, 13, 13, 14, 15, 15, 11, 11,
 	9, 9, 6, 6, 6, 5, 5, 4, 7, 7,
-	7, 7, 7, 7, 7, 7, 7, 7, 3, 3,
-	2, 2, 1, 1, 8, 8,
+	7, 7, 7, 7, 7, 7, 7, 7, 10, 10,
+	3, 3, 2, 2, 1, 1, 8, 8,
 }
 var yyR2 = []int{
 
 	0, 2, 2, 0, 2, 1, 5, 11, 0, 2,
 	0, 1, 0, 3, 2, 1, 3, 3, 3, 2,
-	4, 3, 4, 5, 3, 3, 3, 1, 0, 4,
-	1, 3, 1, 3, 1, 1,
+	4, 3, 4, 6, 3, 3, 3, 1, 0, 1,
+	0, 4, 1, 3, 1, 3, 1, 1,
 }
 var yyChk = []int{
 
-	-1000, -11, 4, 5, -12, -13, -7, 26, 6, 12,
-	9, -14, -9, 16, 10, 28, 14, 15, 13, -7,
-	-6, 26, 23, 26, 6, 6, 8, -7, -7, -7,
-	27, -1, 27, -8, -7, 7, -5, 24, -4, 6,
-	-7, -6, 17, 29, 27, 25, 24, 25, 22, 27,
-	22, -7, -8, -4, 7, -3, 11, -7, -10, 18,
-	26, 19, 8, -2, 6, -6, 27, 25, 20, 6,
-	7, 21, 7,
+	-1000, -12, 4, 5, -13, -14, -7, 27, 6, 13,
+	9, -15, -9, 17, 10, 29, 15, 16, 14, -7,
+	-6, 27, 24, 27, 6, 6, 8, -7, -7, -7,
+	28, -1, 28, -8, -7, 7, -5, 25, -4, 6,
+	-7, -6, 18, 30, 28, 26, 25, 26, 23, 28,
+	23, -7, -8, -4, 7, -3, 11, -7, -11, 19,
+	-10, 12, 27, 20, 8, -2, 6, -6, 28, 26,
+	21, 6, 7, 22, 7,
 }
 var yyDef = []int{
 
 	0, -2, 3, 0, -2, 2, 5, 0, 12, 0,
 	27, 4, 0, 0, 11, 0, 0, 0, 0, 0,
 	19, 0, 0, 0, 12, 0, 0, 24, 25, 26,
-	18, 0, 21, 32, 34, 35, 0, 14, 15, 0,
-	0, 0, 0, 22, 20, 0, 13, 0, 0, 28,
-	0, 8, 33, 16, 17, 23, 0, 6, 0, 0,
-	0, 12, 9, 0, 30, 0, 29, 0, 0, 31,
-	0, 0, 7,
+	18, 0, 21, 34, 36, 37, 0, 14, 15, 0,
+	0, 0, 0, 22, 20, 0, 13, 0, 0, 30,
+	0, 8, 35, 16, 17, 28, 0, 6, 0, 0,
+	23, 29, 0, 12, 9, 0, 32, 0, 31, 0,
+	0, 33, 0, 0, 7,
 }
 var yyTok1 = []int{
 
@@ -161,20 +163,21 @@ var yyTok1 = []int{
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	26, 27, 3, 3, 25, 3, 3, 3, 3, 3,
+	27, 28, 3, 3, 26, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 22, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 28, 3, 29, 3, 3, 3, 3, 3, 3,
+	3, 23, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 23, 3, 24,
+	3, 29, 3, 30, 3, 3, 3, 3, 3, 3,
+	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+	3, 3, 3, 24, 3, 25,
 }
 var yyTok2 = []int{
 
 	2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
 	12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+	22,
 }
 var yyTok3 = []int{
 	0,
@@ -483,7 +486,7 @@ yydefault:
 		//line parser.y:139
 		{
 	                       var err error
-	                       yyVAL.ruleNode, err = NewVectorAggregation(yyS[yypt-4].str, yyS[yypt-2].ruleNode, yyS[yypt-0].labelNameSlice)
+	                       yyVAL.ruleNode, err = NewVectorAggregation(yyS[yypt-5].str, yyS[yypt-3].ruleNode, yyS[yypt-1].labelNameSlice, yyS[yypt-0].boolean)
 	                       if err != nil { yylex.Error(err.Error()); return 1 }
 	                     }
 	case 24:
@@ -512,27 +515,33 @@ yydefault:
 		{ yyVAL.ruleNode = ast.NewScalarLiteral(yyS[yypt-0].num)}
 	case 28:
 		//line parser.y:169
-		{ yyVAL.labelNameSlice = clientmodel.LabelNames{} }
+		{ yyVAL.boolean = false }
 	case 29:
 		//line parser.y:171
-		{ yyVAL.labelNameSlice = yyS[yypt-1].labelNameSlice }
+		{ yyVAL.boolean = true }
 	case 30:
 		//line parser.y:175
-		{ yyVAL.labelNameSlice = clientmodel.LabelNames{clientmodel.LabelName(yyS[yypt-0].str)} }
+		{ yyVAL.labelNameSlice = clientmodel.LabelNames{} }
 	case 31:
 		//line parser.y:177
-		{ yyVAL.labelNameSlice = append(yyVAL.labelNameSlice, clientmodel.LabelName(yyS[yypt-0].str)) }
+		{ yyVAL.labelNameSlice = yyS[yypt-1].labelNameSlice }
 	case 32:
 		//line parser.y:181
-		{ yyVAL.ruleNodeSlice = []ast.Node{yyS[yypt-0].ruleNode} }
+		{ yyVAL.labelNameSlice = clientmodel.LabelNames{clientmodel.LabelName(yyS[yypt-0].str)} }
 	case 33:
 		//line parser.y:183
-		{ yyVAL.ruleNodeSlice = append(yyVAL.ruleNodeSlice, yyS[yypt-0].ruleNode) }
+		{ yyVAL.labelNameSlice = append(yyVAL.labelNameSlice, clientmodel.LabelName(yyS[yypt-0].str)) }
 	case 34:
 		//line parser.y:187
-		{ yyVAL.ruleNode = yyS[yypt-0].ruleNode }
+		{ yyVAL.ruleNodeSlice = []ast.Node{yyS[yypt-0].ruleNode} }
 	case 35:
 		//line parser.y:189
+		{ yyVAL.ruleNodeSlice = append(yyVAL.ruleNodeSlice, yyS[yypt-0].ruleNode) }
+	case 36:
+		//line parser.y:193
+		{ yyVAL.ruleNode = yyS[yypt-0].ruleNode }
+	case 37:
+		//line parser.y:195
 		{ yyVAL.ruleNode = ast.NewStringLiteral(yyS[yypt-0].str) }
 	}
 	goto yystack /* stack new state and value */
