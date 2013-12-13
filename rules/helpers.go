@@ -54,7 +54,7 @@ func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {
 	return functionCall, nil
 }
 
-func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy clientmodel.LabelNames) (*ast.VectorAggregation, error) {
+func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy clientmodel.LabelNames, keepExtraLabels bool) (*ast.VectorAggregation, error) {
 	if _, ok := vector.(ast.VectorNode); !ok {
 		return nil, fmt.Errorf("Operand of %v aggregation must be of vector type", aggrTypeStr)
 	}
@@ -69,7 +69,7 @@ func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy clientmod
 	if !ok {
 		return nil, fmt.Errorf("Unknown aggregation type '%v'", aggrTypeStr)
 	}
-	return ast.NewVectorAggregation(aggrType, vector.(ast.VectorNode), groupBy), nil
+	return ast.NewVectorAggregation(aggrType, vector.(ast.VectorNode), groupBy, keepExtraLabels), nil
 }
 
 func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node) (ast.Node, error) {
