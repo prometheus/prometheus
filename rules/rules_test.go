@@ -116,6 +116,22 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
+			expr: `SUM(http_requests{instance="0"}) BY(job)`,
+			output: []string{
+				`http_requests{job="api-server"} => 400 @[%v]`,
+				`http_requests{job="app-server"} => 1200 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 4,
+		}, {
+			expr: `SUM(http_requests{instance="0"}) BY(job) KEEP_EXTRA`,
+			output: []string{
+				`http_requests{instance="0", job="api-server"} => 400 @[%v]`,
+				`http_requests{instance="0", job="app-server"} => 1200 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 4,
+		}, {
 			expr: `SUM(http_requests) BY (job)`,
 			output: []string{
 				`http_requests{job="api-server"} => 1000 @[%v]`,

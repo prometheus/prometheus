@@ -39,7 +39,7 @@
 
 %token <str> IDENTIFIER STRING DURATION
 %token <num> NUMBER
-%token PERMANENT GROUP_OP
+%token PERMANENT GROUP_OP KEEP_EXTRA
 %token <str> AGGR_OP CMP_OP ADDITIVE_OP MULT_OP
 %token ALERT IF FOR WITH SUMMARY DESCRIPTION
 
@@ -47,7 +47,7 @@
 %type <labelNameSlice> label_list grouping_opts
 %type <labelSet> label_assign label_assign_list rule_labels
 %type <ruleNode> rule_expr func_arg
-%type <boolean> qualifier
+%type <boolean> qualifier keep_extra_opts
 %type <str> for_duration
 
 %right '='
@@ -135,10 +135,10 @@ rule_expr          : '(' rule_expr ')'
                        $$, err = NewMatrix($1, $3)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
-                   | AGGR_OP '(' rule_expr ')' grouping_opts
+                   | AGGR_OP '(' rule_expr ')' grouping_opts keep_extra_opts
                      {
                        var err error
-                       $$, err = NewVectorAggregation($1, $3, $5)
+                       $$, err = NewVectorAggregation($1, $3, $5, $6)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
                    /* Yacc can only attach associativity to terminals, so we
@@ -163,6 +163,12 @@ rule_expr          : '(' rule_expr ')'
                      }
                    | NUMBER
                      { $$ = ast.NewScalarLiteral($1)}
+                   ;
+
+keep_extra_opts    :
+                     { $$ = false }
+                   | KEEP_EXTRA
+                     { $$ = true }
                    ;
 
 grouping_opts      :

@@ -164,9 +164,10 @@ type (
 
 	// A vector aggregation with vector return type.
 	VectorAggregation struct {
-		aggrType AggrType
-		groupBy  clientmodel.LabelNames
-		vector   VectorNode
+		aggrType        AggrType
+		groupBy         clientmodel.LabelNames
+		keepExtraLabels bool
+		vector          VectorNode
 	}
 
 	// An arithmetic expression of vector type.
@@ -367,7 +368,10 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp, view *viewA
 	for _, sample := range vector {
 		groupingKey := node.labelsToGroupingKey(sample.Metric)
 		if groupedResult, ok := result[groupingKey]; ok {
-			groupedResult.labels = labelIntersection(groupedResult.labels, sample.Metric)
+			if node.keepExtraLabels {
+				groupedResult.labels = labelIntersection(groupedResult.labels, sample.Metric)
+			}
+
 			switch node.aggrType {
 			case SUM:
 				groupedResult.value += sample.Value
@@ -388,8 +392,17 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp, view *viewA
 				panic("Unknown aggregation type")
 			}
 		} else {
+			m := clientmodel.Metric{}
+			if node.keepExtraLabels {
+				m = sample.Metric
+			} else {
+				m[clientmodel.MetricNameLabel] = sample.Metric[clientmodel.MetricNameLabel]
+				for _, l := range node.groupBy {
+					m[l] = sample.Metric[l]
+				}
+			}
 			result[groupingKey] = &groupedAggregation{
-				labels:     sample.Metric,
+				labels:     m,
 				value:      sample.Value,
 				groupCount: 1,
 			}
@@ -644,11 +657,12 @@ func NewVectorLiteral(labels clientmodel.LabelSet) *VectorLiteral {
 	}
 }
 
-func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy clientmodel.LabelNames) *VectorAggregation {
+func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy clientmodel.LabelNames, keepExtraLabels bool) *VectorAggregation {
 	return &VectorAggregation{
-		aggrType: aggrType,
-		groupBy:  groupBy,
-		vector:   vector,
+		aggrType:        aggrType,
+		groupBy:         groupBy,
+		keepExtraLabels: keepExtraLabels,
+		vector:          vector,
 	}
 }
 
