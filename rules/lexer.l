@@ -78,6 +78,7 @@ DESCRIPTION|description  return DESCRIPTION
 
 PERMANENT|permanent      return PERMANENT
 BY|by                    return GROUP_OP
+KEEP_EXTRA|keep_extra    return KEEP_EXTRA
 AVG|SUM|MAX|MIN|COUNT    lval.str = lexer.token(); return AGGR_OP
 avg|sum|max|min|count    lval.str = strings.ToUpper(lexer.token()); return AGGR_OP
 \<|>|AND|OR|and|or       lval.str = strings.ToUpper(lexer.token()); return CMP_OP
