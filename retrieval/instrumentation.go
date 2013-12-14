@@ -42,10 +42,20 @@ var (
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99}})
 
 	targetOperations = prometheus.NewCounter()
+	dnsSDLookupCount = prometheus.NewCounter()
 )
+
+func recordOutcome(err error) {
+	message := success
+	if err != nil {
+		message = failure
+	}
+	dnsSDLookupCount.Increment(map[string]string{outcome: message})
+}
 
 func init() {
 	prometheus.Register("prometheus_target_operations_total", "The total numbers of operations of the various targets that are being monitored.", prometheus.NilLabels, targetOperations)
 	prometheus.Register("prometheus_target_operation_latency_ms", "The latencies for various target operations.", prometheus.NilLabels, targetOperationLatencies)
 	prometheus.Register("prometheus_targetpool_duration_ms", "The durations for each TargetPool to retrieve state from all included entities.", prometheus.NilLabels, retrievalDurations)
+	prometheus.Register("prometheus_dns_sd_lookup_total", "The number of DNS-SD lookup successes/failures per pool.", prometheus.NilLabels, dnsSDLookupCount)
 }
