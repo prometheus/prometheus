@@ -59,11 +59,15 @@ func NewSdTargetProvider(job config.JobConfig) *sdTargetProvider {
 }
 
 func (p *sdTargetProvider) Targets() ([]Target, error) {
+	var err error
+	defer func() { recordOutcome(err) }()
+
 	if time.Since(p.lastRefresh) < p.refreshInterval {
 		return p.targets, nil
 	}
 
 	response, err := lookupSRV(p.job.GetSdName())
+
 	if err != nil {
 		return nil, err
 	}
