@@ -63,8 +63,12 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 		return p.targets, nil
 	}
 
+	message := success
 	response, err := lookupSRV(p.job.GetSdName())
+	defer func() { DNSSDLookupCount.Increment(map[string]string{outcome: message}) }()
+
 	if err != nil {
+		message = failure
 		return nil, err
 	}
 
