@@ -158,7 +158,7 @@ type JobConfig struct {
 	// used for a job.
 	TargetGroup []*TargetGroup `protobuf:"bytes,5,rep,name=target_group" json:"target_group,omitempty"`
 	// The HTTP resource path to fetch metrics from on targets.
-	MetricsPath      *string `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics.json" json:"metrics_path,omitempty"`
+	MetricsPath      *string `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics" json:"metrics_path,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -168,7 +168,7 @@ func (*JobConfig) ProtoMessage()    {}
 
 const Default_JobConfig_ScrapeTimeout string = "10s"
 const Default_JobConfig_SdRefreshInterval string = "30s"
-const Default_JobConfig_MetricsPath string = "/metrics.json"
+const Default_JobConfig_MetricsPath string = "/metrics"
 
 func (m *JobConfig) GetName() string {
 	if m != nil && m.Name != nil {

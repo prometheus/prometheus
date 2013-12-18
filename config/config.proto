@@ -72,7 +72,7 @@ message JobConfig {
 	// used for a job.
 	repeated TargetGroup target_group = 5;
 	// The HTTP resource path to fetch metrics from on targets.
-	optional string metrics_path = 6 [default = "/metrics.json"];
+	optional string metrics_path = 6 [default = "/metrics"];
 }
 
 // The top-level Prometheus configuration.
