@@ -19,6 +19,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"os"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
