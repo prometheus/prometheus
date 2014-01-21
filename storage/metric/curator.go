@@ -369,7 +369,7 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		// there was a decoding error with the entity and shouldn't be cause to stop
 		// work.  The process will simply start from a pessimistic work time and
 		// work forward.  With an idempotent processor, this is safe.
-		return &storage.OperatorError{error: err, Continuable: true}
+		return &storage.OperatorError{Error: err, Continuable: true}
 	}
 
 	keySet, _ := w.sampleKeys.Get()
@@ -400,13 +400,13 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 	if seeker.err != nil {
 		glog.Warningf("Got error in state machine: %s", seeker.err)
 
-		return &storage.OperatorError{error: seeker.err, Continuable: !seeker.iteratorInvalid}
+		return &storage.OperatorError{Error: seeker.err, Continuable: !seeker.iteratorInvalid}
 	}
 
 	if seeker.iteratorInvalid {
 		glog.Warningf("Got illegal iterator in state machine: %s", err)
 
-		return &storage.OperatorError{error: errIllegalIterator, Continuable: false}
+		return &storage.OperatorError{Error: errIllegalIterator, Continuable: false}
 	}
 
 	if !seeker.seriesOperable {
@@ -417,7 +417,7 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 	if err != nil {
 		// We can't divine the severity of a processor error without refactoring the
 		// interface.
-		return &storage.OperatorError{error: err, Continuable: false}
+		return &storage.OperatorError{Error: err, Continuable: false}
 	}
 
 	if err = w.curationState.Update(&curationKey{
@@ -429,7 +429,7 @@ func (w *watermarkScanner) Operate(key, _ interface{}) (oErr *storage.OperatorEr
 		// Under the assumption that the processors are idempotent, they can be
 		// re-run; thusly, the commitment of the curation remark is no cause
 		// to cease further progress.
-		return &storage.OperatorError{error: err, Continuable: true}
+		return &storage.OperatorError{Error: err, Continuable: true}
 	}
 
 	return nil

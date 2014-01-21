@@ -50,7 +50,7 @@ func (f FilterResult) String() string {
 type OperatorErrorType int
 
 type OperatorError struct {
-	error
+	Error       error
 	Continuable bool
 }
 

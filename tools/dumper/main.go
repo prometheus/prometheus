@@ -60,7 +60,7 @@ func (d *SamplesDumper) Operate(key, value interface{}) *storage.OperatorError {
 		})
 		if err := d.Error(); err != nil {
 			return &storage.OperatorError{
-				error:       err,
+				Error:       err,
 				Continuable: false,
 			}
 		}
