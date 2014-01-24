@@ -41,7 +41,7 @@ var (
 		BucketBuilder:         prometheus.AccumulatingBucketBuilder(prometheus.EvictAndReplaceWith(10, prometheus.AverageReducer), 100),
 		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99}})
 
-	targetOperations = prometheus.NewCounter()
+	targetOperations  = prometheus.NewCounter()
 	dnsSDLookupsCount = prometheus.NewCounter()
 )
 

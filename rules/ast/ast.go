@@ -398,7 +398,9 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp, view *viewA
 			} else {
 				m[clientmodel.MetricNameLabel] = sample.Metric[clientmodel.MetricNameLabel]
 				for _, l := range node.groupBy {
-					m[l] = sample.Metric[l]
+					if v, ok := sample.Metric[l]; ok {
+						m[l] = v
+					}
 				}
 			}
 			result[groupingKey] = &groupedAggregation{

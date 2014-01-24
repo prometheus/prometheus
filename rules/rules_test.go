@@ -140,6 +140,15 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
+			// Non-existent labels mentioned in BY-clauses shouldn't propagate to output.
+			expr: `SUM(http_requests) BY (job, nonexistent)`,
+			output: []string{
+				`http_requests{job="api-server"} => 1000 @[%v]`,
+				`http_requests{job="app-server"} => 2600 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 8,
+		}, {
 			expr: `
 				// Test comment.
 				SUM(http_requests) BY /* comments shouldn't
