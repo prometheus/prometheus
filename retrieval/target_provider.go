@@ -136,7 +136,6 @@ func lookupSRV(name string) (*dns.Msg, error) {
 func lookup(name string, queryType uint16, client *dns.Client, server string, port int, suffix string, edns bool) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	lname := strings.Join([]string{name, suffix}, ".")
-	glog.Warning("Resolving ", dns.Fqdn(lname))
 	msg.SetQuestion(dns.Fqdn(lname), queryType)
 
 	if edns {
