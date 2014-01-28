@@ -261,12 +261,6 @@ func (l *LevelDBPersistence) Close() error {
 	// These are deferred to take advantage of forced closing in case of stack
 	// unwinding due to anomalies.
 	defer func() {
-		if l.storage != nil {
-			l.storage.Close()
-		}
-	}()
-
-	defer func() {
 		if l.filterPolicy != nil {
 			l.filterPolicy.Close()
 		}
@@ -293,6 +287,12 @@ func (l *LevelDBPersistence) Close() error {
 	defer func() {
 		if l.writeOptions != nil {
 			l.writeOptions.Close()
+		}
+	}()
+
+	defer func() {
+		if l.storage != nil {
+			l.storage.Close()
 		}
 	}()
 
