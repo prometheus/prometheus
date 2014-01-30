@@ -159,7 +159,7 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 		evalTimer.Stop()
 		switch format {
 		case TEXT:
-			return fmt.Sprintf("scalar: %v", scalar)
+			return fmt.Sprintf("scalar: %v @[%v]", scalar, timestamp)
 		case JSON:
 			return TypedValueToJSON(scalar, "scalar")
 		}

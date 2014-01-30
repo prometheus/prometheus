@@ -265,7 +265,18 @@ func scalarImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node)
 	return clientmodel.SampleValue(v[0].Value)
 }
 
+// === count_scalar(vector VectorNode) model.SampleValue ===
+func countScalarImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	return clientmodel.SampleValue(len(args[0].(VectorNode).Eval(timestamp, view)))
+}
+
 var functions = map[string]*Function{
+	"count_scalar": {
+		name:       "count_scalar",
+		argTypes:   []ExprType{VECTOR},
+		returnType: SCALAR,
+		callFn:     countScalarImpl,
+	},
 	"delta": {
 		name:       "delta",
 		argTypes:   []ExprType{MATRIX, SCALAR},

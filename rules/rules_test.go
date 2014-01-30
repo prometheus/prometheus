@@ -383,6 +383,18 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
+			// count_scalar for a non-empty vector should return scalar element count.
+			expr:           `count_scalar(http_requests)`,
+			output:         []string{`scalar: 8 @[%v]`},
+			fullRanges:     0,
+			intervalRanges: 8,
+		}, {
+			// count_scalar for an empty vector should return scalar 0.
+			expr:           `count_scalar(nonexistent)`,
+			output:         []string{`scalar: 0 @[%v]`},
+			fullRanges:     0,
+			intervalRanges: 0,
+		}, {
 			// Empty expressions shouldn"t parse.
 			expr:       ``,
 			shouldFail: true,
