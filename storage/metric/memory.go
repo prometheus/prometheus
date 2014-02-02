@@ -231,9 +231,14 @@ func (s *memorySeriesStorage) CreateEmptySeries(metric clientmodel.Metric) {
 	s.Lock()
 	defer s.Unlock()
 
+	m := clientmodel.Metric{}
+	for label, value := range metric {
+		m[label] = value
+	}
+
 	fingerprint := &clientmodel.Fingerprint{}
-	fingerprint.LoadFromMetric(metric)
-	s.getOrCreateSeries(metric, fingerprint)
+	fingerprint.LoadFromMetric(m)
+	s.getOrCreateSeries(m, fingerprint)
 }
 
 func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, fingerprint *clientmodel.Fingerprint) stream {

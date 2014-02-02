@@ -729,3 +729,42 @@ func testTruncateBefore(t test.Tester) {
 func TestTruncateBefore(t *testing.T) {
 	testTruncateBefore(t)
 }
+
+func TestGetMetricForFingerprintCachesCopyOfMetric(t *testing.T) {
+	ts, closer := NewTestTieredStorage(t)
+	defer closer.Close()
+
+	m := clientmodel.Metric{
+		clientmodel.MetricNameLabel: "testmetric",
+	}
+	samples := clientmodel.Samples{
+		&clientmodel.Sample{
+			Metric:    m,
+			Value:     0,
+			Timestamp: clientmodel.Now(),
+		},
+	}
+
+	if err := ts.AppendSamples(samples); err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	ts.Flush()
+
+	fp := &clientmodel.Fingerprint{}
+	fp.LoadFromMetric(m)
+	m, err := ts.GetMetricForFingerprint(fp)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	m[clientmodel.MetricNameLabel] = "changedmetric"
+
+	m, err = ts.GetMetricForFingerprint(fp)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	if m[clientmodel.MetricNameLabel] != "testmetric" {
+		t.Fatal("Metric name label value has changed: ", m[clientmodel.MetricNameLabel])
+	}
+}
