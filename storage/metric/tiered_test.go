@@ -746,7 +746,7 @@ func TestGetMetricForFingerprintCachesCopyOfMetric(t *testing.T) {
 	}
 
 	if err := ts.AppendSamples(samples); err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
 	}
 
 	ts.Flush()
@@ -755,14 +755,14 @@ func TestGetMetricForFingerprintCachesCopyOfMetric(t *testing.T) {
 	fp.LoadFromMetric(m)
 	m, err := ts.GetMetricForFingerprint(fp)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
 	}
 
 	m[clientmodel.MetricNameLabel] = "changedmetric"
 
 	m, err = ts.GetMetricForFingerprint(fp)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
 	}
 	if m[clientmodel.MetricNameLabel] != "testmetric" {
 		t.Fatal("Metric name label value has changed: ", m[clientmodel.MetricNameLabel])
