@@ -25,7 +25,8 @@ import (
 
 var defaultStalenessDelta = flag.Int("defaultStalenessDelta", 300, "Default staleness delta allowance in seconds during expression evaluations.")
 
-// Describes the lenience limits to apply to values from the materialized view.
+// StalenessPolicy describes the lenience limits to apply to values
+// from the materialized view.
 type StalenessPolicy struct {
 	// Describes the inclusive limit at which individual points if requested will
 	// be matched and subject to interpolation.
@@ -181,6 +182,7 @@ func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, inte
 	return sampleSets, nil
 }
 
+// NewViewAdapter returns a pointer to a newly created view adapter.
 func NewViewAdapter(view metric.View, storage *metric.TieredStorage, queryStats *stats.TimerGroup) *viewAdapter {
 	stalenessPolicy := StalenessPolicy{
 		DeltaAllowance: time.Duration(*defaultStalenessDelta) * time.Second,

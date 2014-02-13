@@ -24,9 +24,16 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
+// FullRangeMap maps the fingerprint of a full range to the duration
+// of the matrix literal it resulted from.
 type FullRangeMap map[clientmodel.Fingerprint]time.Duration
+
+// IntervalRangeMap is a set of fingerprints of interval ranges.
 type IntervalRangeMap map[clientmodel.Fingerprint]bool
 
+// A QueryAnalyzer recursively traverses the AST to look for any nodes
+// which will need data from the datastore. Instantiate with
+// NewQueryAnalyzer.
 type QueryAnalyzer struct {
 	// Values collected by query analysis.
 	//
@@ -37,13 +44,16 @@ type QueryAnalyzer struct {
 	// This is because full ranges can only result from matrix literals (like
 	// "foo[5m]"), which have said time-spanning behavior during a ranged query.
 	FullRanges FullRangeMap
-	// Interval ranges always implicitly span the whole query interval.
+	// Interval ranges always implicitly span the whole query range.
 	IntervalRanges IntervalRangeMap
 	// The underlying storage to which the query will be applied. Needed for
 	// extracting timeseries fingerprint information during query analysis.
 	storage *metric.TieredStorage
 }
 
+// NewQueryAnalyzer returns a pointer to a newly instantiated
+// QueryAnalyzer. The storage is needed to extract timeseries
+// fingerprint information during query analysis.
 func NewQueryAnalyzer(storage *metric.TieredStorage) *QueryAnalyzer {
 	return &QueryAnalyzer{
 		FullRanges:     FullRangeMap{},
@@ -52,6 +62,7 @@ func NewQueryAnalyzer(storage *metric.TieredStorage) *QueryAnalyzer {
 	}
 }
 
+// Visit implements the Visitor interface.
 func (analyzer *QueryAnalyzer) Visit(node Node) {
 	switch n := node.(type) {
 	case *VectorLiteral:
@@ -79,6 +90,8 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 	}
 }
 
+// AnalyzeQueries walks the AST, starting at node, calling Visit on
+// each node to collect fingerprints.
 func (analyzer *QueryAnalyzer) AnalyzeQueries(node Node) {
 	Walk(analyzer, node)
 	// Find and dedupe overlaps between full and stepped ranges. Full ranges
