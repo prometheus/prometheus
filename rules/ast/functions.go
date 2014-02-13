@@ -14,7 +14,6 @@
 package ast
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -25,6 +24,8 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
+// Function represents a function of the expression language and is
+// used by function nodes.
 type Function struct {
 	name       string
 	argTypes   []ExprType
@@ -32,11 +33,14 @@ type Function struct {
 	callFn     func(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{}
 }
 
+// CheckArgTypes returns a non-nil error if the number or types of
+// passed in arg nodes do not match the function's expectations.
 func (function *Function) CheckArgTypes(args []Node) error {
 	if len(function.argTypes) != len(args) {
-		return errors.New(
-			fmt.Sprintf("Wrong number of arguments to function %v(): %v expected, %v given",
-				function.name, len(function.argTypes), len(args)))
+		return fmt.Errorf(
+			"wrong number of arguments to function %v(): %v expected, %v given",
+			function.name, len(function.argTypes), len(args),
+		)
 	}
 	for idx, argType := range function.argTypes {
 		invalidType := false
@@ -59,9 +63,10 @@ func (function *Function) CheckArgTypes(args []Node) error {
 		}
 
 		if invalidType {
-			return errors.New(
-				fmt.Sprintf("Wrong type for argument %v in function %v(), expected %v",
-					idx, function.name, expectedType))
+			return fmt.Errorf(
+				"wrong type for argument %v in function %v(), expected %v",
+				idx, function.name, expectedType,
+			)
 		}
 	}
 	return nil
@@ -175,7 +180,7 @@ func sortImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) i
 // === sortDesc(node *VectorNode) Vector ===
 func sortDescImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
 	descByValueSorter := utility.ReverseSorter{
-		vectorByValueSorter{
+		Interface: vectorByValueSorter{
 			vector: args[0].(VectorNode).Eval(timestamp, view),
 		},
 	}
@@ -321,10 +326,12 @@ var functions = map[string]*Function{
 	},
 }
 
+// GetFunction returns a predefined Function object for the given
+// name.
 func GetFunction(name string) (*Function, error) {
 	function, ok := functions[name]
 	if !ok {
-		return nil, errors.New(fmt.Sprintf("Couldn't find function %v()", name))
+		return nil, fmt.Errorf("couldn't find function %v()", name)
 	}
 	return function, nil
 }

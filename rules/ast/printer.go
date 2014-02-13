@@ -26,8 +26,10 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
+// OutputFormat is an enum for the possible output formats.
 type OutputFormat int
 
+// Possible output formats.
 const (
 	TEXT OutputFormat = iota
 	JSON
@@ -113,6 +115,7 @@ func (matrix Matrix) String() string {
 	return strings.Join(metricStrings, "\n")
 }
 
+// ErrorToJSON converts the given error into JSON.
 func ErrorToJSON(err error) string {
 	errorStruct := struct {
 		Type  string
@@ -129,6 +132,8 @@ func ErrorToJSON(err error) string {
 	return string(errorJSON)
 }
 
+// TypedValueToJSON converts the given data of type 'scalar',
+// 'vector', or 'matrix' into its JSON representation.
 func TypedValueToJSON(data interface{}, typeStr string) string {
 	dataStruct := struct {
 		Type  string
@@ -144,6 +149,7 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 	return string(dataJSON)
 }
 
+// EvalToString evaluates the given node into a string of the given format.
 func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputFormat, storage *metric.TieredStorage, queryStats *stats.TimerGroup) string {
 	viewTimer := queryStats.GetTimer(stats.TotalViewBuildingTime).Start()
 	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
@@ -194,6 +200,8 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 	panic("Switch didn't cover all node types")
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the scalar
+// literal.
 func (node *ScalarLiteral) NodeTreeToDotGraph() string {
 	return fmt.Sprintf("%#p[label=\"%v\"];\n", node, node.value)
 }
@@ -209,12 +217,15 @@ func functionArgsToDotGraph(node Node, args []Node) string {
 	return graph
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the function
+// call.
 func (node *ScalarFunctionCall) NodeTreeToDotGraph() string {
 	graph := fmt.Sprintf("%#p[label=\"%s\"];\n", node, node.function.name)
 	graph += functionArgsToDotGraph(node, node.args)
 	return graph
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the expression.
 func (node *ScalarArithExpr) NodeTreeToDotGraph() string {
 	graph := fmt.Sprintf(`
 		%#p[label="%s"];
@@ -226,16 +237,21 @@ func (node *ScalarArithExpr) NodeTreeToDotGraph() string {
 	return graph
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the vector literal.
 func (node *VectorLiteral) NodeTreeToDotGraph() string {
 	return fmt.Sprintf("%#p[label=\"%s\"];\n", node, node)
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the function
+// call.
 func (node *VectorFunctionCall) NodeTreeToDotGraph() string {
 	graph := fmt.Sprintf("%#p[label=\"%s\"];\n", node, node.function.name)
 	graph += functionArgsToDotGraph(node, node.args)
 	return graph
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the vector
+// aggregation.
 func (node *VectorAggregation) NodeTreeToDotGraph() string {
 	groupByStrings := make([]string, 0, len(node.groupBy))
 	for _, label := range node.groupBy {
@@ -251,6 +267,7 @@ func (node *VectorAggregation) NodeTreeToDotGraph() string {
 	return graph
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the expression.
 func (node *VectorArithExpr) NodeTreeToDotGraph() string {
 	graph := fmt.Sprintf(`
 		%#p[label="%s"];
@@ -262,14 +279,20 @@ func (node *VectorArithExpr) NodeTreeToDotGraph() string {
 	return graph
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the matrix
+// literal.
 func (node *MatrixLiteral) NodeTreeToDotGraph() string {
 	return fmt.Sprintf("%#p[label=\"%s\"];\n", node, node)
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the string
+// literal.
 func (node *StringLiteral) NodeTreeToDotGraph() string {
 	return fmt.Sprintf("%#p[label=\"'%q'\"];\n", node, node.str)
 }
 
+// NodeTreeToDotGraph returns a DOT representation of the function
+// call.
 func (node *StringFunctionCall) NodeTreeToDotGraph() string {
 	graph := fmt.Sprintf("%#p[label=\"%s\"];\n", node, node.function.name)
 	graph += functionArgsToDotGraph(node, node.args)
@@ -325,9 +348,8 @@ func (node *VectorAggregation) String() string {
 	aggrString := fmt.Sprintf("%s(%s)", node.aggrType, node.vector)
 	if len(node.groupBy) > 0 {
 		return fmt.Sprintf("%s BY (%s)", aggrString, node.groupBy)
-	} else {
-		return aggrString
 	}
+	return aggrString
 }
 
 func (node *VectorArithExpr) String() string {

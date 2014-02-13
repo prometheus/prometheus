@@ -32,8 +32,12 @@ import (
 // ----------------------------------------------------------------------------
 // Raw data value types.
 
+// Vector is basically only an alias for clientmodel.Samples, but the
+// contract is that in a Vector, all Samples have the same timestamp.
 type Vector clientmodel.Samples
 
+// Matrix is a slice of SampleSets that implements sort.Interface and
+// has a String method.
 // BUG(julius): Pointerize this.
 type Matrix []metric.SampleSet
 
@@ -46,9 +50,10 @@ type groupedAggregation struct {
 // ----------------------------------------------------------------------------
 // Enums.
 
-// Rule language expression types.
+// ExprType is an enum for the rule language expression types.
 type ExprType int
 
+// Possible language expression types.
 const (
 	SCALAR ExprType = iota
 	VECTOR
@@ -56,9 +61,10 @@ const (
 	STRING
 )
 
-// Binary operator types.
+// BinOpType is an enum for binary operator types.
 type BinOpType int
 
+// Possible binary operator types.
 const (
 	ADD BinOpType = iota
 	SUB
@@ -75,9 +81,10 @@ const (
 	OR
 )
 
-// Aggregation types.
+// AggrType is an enum for aggregation types.
 type AggrType int
 
+// Possible aggregation types.
 const (
 	SUM AggrType = iota
 	AVG
@@ -89,9 +96,13 @@ const (
 // ----------------------------------------------------------------------------
 // Interfaces.
 
-// All node interfaces include the Node interface.
+// Nodes is a slice of any mix of node types as all node types
+// implement the Node interface.
 type Nodes []Node
 
+// Node is the top-level interface for any kind of nodes. Each node
+// type implements one of the ...Node interfaces, each of which embeds
+// this Node interface.
 type Node interface {
 	Type() ExprType
 	Children() Nodes
@@ -99,26 +110,37 @@ type Node interface {
 	String() string
 }
 
-// All node types implement one of the following interfaces. The name of the
-// interface represents the type returned to the parent node.
+// ScalarNode is a Node for scalar values.
 type ScalarNode interface {
 	Node
+	// Eval evaluates and returns the value of the scalar represented by this node.
 	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue
 }
 
+// VectorNode is a Node for vector values.
 type VectorNode interface {
 	Node
+	// Eval evaluates the node recursively and returns the result
+	// as a Vector (i.e. a slice of Samples all at the given
+	// Timestamp).
 	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector
 }
 
+// MatrixNode is a Node for matrix values.
 type MatrixNode interface {
 	Node
+	// Eval evaluates the node recursively and returns the result as a Matrix.
 	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix
+	// Eval evaluates the node recursively and returns the result
+	// as a Matrix that only contains the boundary values.
 	EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix
 }
 
+// StringNode is a Node for string values.
 type StringNode interface {
 	Node
+	// Eval evaluates and returns the value of the string
+	// represented by this node.
 	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string
 }
 
@@ -126,18 +148,20 @@ type StringNode interface {
 // ScalarNode types.
 
 type (
-	// A numeric literal.
+	// ScalarLiteral represents a numeric literal.
 	ScalarLiteral struct {
 		value clientmodel.SampleValue
 	}
 
-	// A function of numeric return type.
+	// ScalarFunctionCall represents a function with a numeric
+	// return type.
 	ScalarFunctionCall struct {
 		function *Function
 		args     Nodes
 	}
 
-	// An arithmetic expression of numeric type.
+	// ScalarArithExpr represents an arithmetic expression of
+	// numeric type.
 	ScalarArithExpr struct {
 		opType BinOpType
 		lhs    ScalarNode
@@ -149,20 +173,21 @@ type (
 // VectorNode types.
 
 type (
-	// Vector literal, i.e. metric name plus labelset.
+	// A VectorLiteral represents a metric name plus labelset.
 	VectorLiteral struct {
 		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
 		fingerprints clientmodel.Fingerprints
 	}
 
-	// A function of vector return type.
+	// VectorFunctionCall represents a function with vector return
+	// type.
 	VectorFunctionCall struct {
 		function *Function
 		args     Nodes
 	}
 
-	// A vector aggregation with vector return type.
+	// A VectorAggregation with vector return type.
 	VectorAggregation struct {
 		aggrType        AggrType
 		groupBy         clientmodel.LabelNames
@@ -170,7 +195,8 @@ type (
 		vector          VectorNode
 	}
 
-	// An arithmetic expression of vector type.
+	// VectorArithExpr represents an arithmetic expression of
+	// vector type.
 	VectorArithExpr struct {
 		opType BinOpType
 		lhs    VectorNode
@@ -182,10 +208,12 @@ type (
 // MatrixNode types.
 
 type (
-	// Matrix literal, i.e. metric name plus labelset and timerange.
+	// A MatrixLiteral represents a metric name plus labelset and
+	// timerange.
 	MatrixLiteral struct {
 		labels clientmodel.LabelSet
-		// Fingerprints are populated from labels at query analysis time.
+		// Fingerprints are populated from labels at query
+		// analysis time.
 		fingerprints clientmodel.Fingerprints
 		interval     time.Duration
 	}
@@ -195,12 +223,13 @@ type (
 // StringNode types.
 
 type (
-	// String literal.
+	// A StringLiteral is what you think it is.
 	StringLiteral struct {
 		str string
 	}
 
-	// A function of string return type.
+	// StringFunctionCall represents a function with string return
+	// type.
 	StringFunctionCall struct {
 		function *Function
 		args     Nodes
@@ -210,40 +239,88 @@ type (
 // ----------------------------------------------------------------------------
 // Implementations.
 
-// Node.Type() methods.
-func (node ScalarLiteral) Type() ExprType      { return SCALAR }
+// Type implements the Node interface.
+func (node ScalarLiteral) Type() ExprType { return SCALAR }
+
+// Type implements the Node interface.
 func (node ScalarFunctionCall) Type() ExprType { return SCALAR }
-func (node ScalarArithExpr) Type() ExprType    { return SCALAR }
-func (node VectorLiteral) Type() ExprType      { return VECTOR }
+
+// Type implements the Node interface.
+func (node ScalarArithExpr) Type() ExprType { return SCALAR }
+
+// Type implements the Node interface.
+func (node VectorLiteral) Type() ExprType { return VECTOR }
+
+// Type implements the Node interface.
 func (node VectorFunctionCall) Type() ExprType { return VECTOR }
-func (node VectorAggregation) Type() ExprType  { return VECTOR }
-func (node VectorArithExpr) Type() ExprType    { return VECTOR }
-func (node MatrixLiteral) Type() ExprType      { return MATRIX }
-func (node StringLiteral) Type() ExprType      { return STRING }
+
+// Type implements the Node interface.
+func (node VectorAggregation) Type() ExprType { return VECTOR }
+
+// Type implements the Node interface.
+func (node VectorArithExpr) Type() ExprType { return VECTOR }
+
+// Type implements the Node interface.
+func (node MatrixLiteral) Type() ExprType { return MATRIX }
+
+// Type implements the Node interface.
+func (node StringLiteral) Type() ExprType { return STRING }
+
+// Type implements the Node interface.
 func (node StringFunctionCall) Type() ExprType { return STRING }
 
-// Node.Children() methods.
-func (node ScalarLiteral) Children() Nodes      { return Nodes{} }
+// Children implements the Node interface and returns an empty slice.
+func (node ScalarLiteral) Children() Nodes { return Nodes{} }
+
+// Children implements the Node interface and returns the args of the
+// function call.
 func (node ScalarFunctionCall) Children() Nodes { return node.args }
-func (node ScalarArithExpr) Children() Nodes    { return Nodes{node.lhs, node.rhs} }
-func (node VectorLiteral) Children() Nodes      { return Nodes{} }
+
+// Children implements the Node interface and returns the LHS and the RHS
+// of the expression.
+func (node ScalarArithExpr) Children() Nodes { return Nodes{node.lhs, node.rhs} }
+
+// Children implements the Node interface and returns an empty slice.
+func (node VectorLiteral) Children() Nodes { return Nodes{} }
+
+// Children implements the Node interface and returns the args of the
+// function call.
 func (node VectorFunctionCall) Children() Nodes { return node.args }
-func (node VectorAggregation) Children() Nodes  { return Nodes{node.vector} }
-func (node VectorArithExpr) Children() Nodes    { return Nodes{node.lhs, node.rhs} }
-func (node MatrixLiteral) Children() Nodes      { return Nodes{} }
-func (node StringLiteral) Children() Nodes      { return Nodes{} }
+
+// Children implements the Node interface and returns the vector to be
+// aggregated.
+func (node VectorAggregation) Children() Nodes { return Nodes{node.vector} }
+
+// Children implements the Node interface and returns the LHS and the RHS
+// of the expression.
+func (node VectorArithExpr) Children() Nodes { return Nodes{node.lhs, node.rhs} }
+
+// Children implements the Node interface and returns an empty slice.
+func (node MatrixLiteral) Children() Nodes { return Nodes{} }
+
+// Children implements the Node interface and returns an empty slice.
+func (node StringLiteral) Children() Nodes { return Nodes{} }
+
+// Children implements the Node interface and returns the args of the
+// function call.
 func (node StringFunctionCall) Children() Nodes { return node.args }
 
+// Eval implements the ScalarNode interface and returns the literal
+// value.
 func (node *ScalarLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
 	return node.value
 }
 
+// Eval implements the ScalarNode interface and returns the result of
+// the expression.
 func (node *ScalarArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
 	lhs := node.lhs.Eval(timestamp, view)
 	rhs := node.rhs.Eval(timestamp, view)
 	return evalScalarBinop(node.opType, lhs, rhs)
 }
 
+// Eval implements the ScalarNode interface and returns the result of
+// the function call.
 func (node *ScalarFunctionCall) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
 	return node.function.callFn(timestamp, view, node.args).(clientmodel.SampleValue)
 }
@@ -278,6 +355,7 @@ func labelsToKey(labels clientmodel.Metric) uint64 {
 	return summer.Sum64()
 }
 
+// EvalVectorInstant evaluates a VectorNode with an instant query.
 func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (vector Vector, err error) {
 	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
 	if err != nil {
@@ -287,6 +365,7 @@ func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage
 	return
 }
 
+// EvalVectorRange evaluates a VectorNode with a range query.
 func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (Matrix, error) {
 	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
 	// null in JSON.
@@ -362,6 +441,8 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[uint
 	return vector
 }
 
+// Eval implements the VectorNode interface and returns the aggregated
+// Vector.
 func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
 	vector := node.vector.Eval(timestamp, view)
 	result := map[uint64]*groupedAggregation{}
@@ -414,6 +495,8 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp, view *viewA
 	return node.groupedAggregationsToVector(result, timestamp)
 }
 
+// Eval implements the VectorNode interface and returns the value of
+// the literal.
 func (node *VectorLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
 	values, err := view.GetValueAtTime(node.fingerprints, timestamp)
 	if err != nil {
@@ -423,6 +506,8 @@ func (node *VectorLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapt
 	return values
 }
 
+// Eval implements the VectorNode interface and returns the result of
+// the function call.
 func (node *VectorFunctionCall) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
 	return node.function.callFn(timestamp, view, node.args).(Vector)
 }
@@ -440,51 +525,43 @@ func evalScalarBinop(opType BinOpType,
 	case DIV:
 		if rhs != 0 {
 			return lhs / rhs
-		} else {
-			return clientmodel.SampleValue(math.Inf(int(rhs)))
 		}
+		return clientmodel.SampleValue(math.Inf(int(rhs)))
 	case MOD:
 		if rhs != 0 {
 			return clientmodel.SampleValue(int(lhs) % int(rhs))
-		} else {
-			return clientmodel.SampleValue(math.Inf(int(rhs)))
 		}
+		return clientmodel.SampleValue(math.Inf(int(rhs)))
 	case EQ:
 		if lhs == rhs {
 			return 1
-		} else {
-			return 0
 		}
+		return 0
 	case NE:
 		if lhs != rhs {
 			return 1
-		} else {
-			return 0
 		}
+		return 0
 	case GT:
 		if lhs > rhs {
 			return 1
-		} else {
-			return 0
 		}
+		return 0
 	case LT:
 		if lhs < rhs {
 			return 1
-		} else {
-			return 0
 		}
+		return 0
 	case GE:
 		if lhs >= rhs {
 			return 1
-		} else {
-			return 0
 		}
+		return 0
 	case LE:
 		if lhs <= rhs {
 			return 1
-		} else {
-			return 0
 		}
+		return 0
 	}
 	panic("Not all enum values enumerated in switch")
 }
@@ -502,51 +579,43 @@ func evalVectorBinop(opType BinOpType,
 	case DIV:
 		if rhs != 0 {
 			return lhs / rhs, true
-		} else {
-			return clientmodel.SampleValue(math.Inf(int(rhs))), true
 		}
+		return clientmodel.SampleValue(math.Inf(int(rhs))), true
 	case MOD:
 		if rhs != 0 {
 			return clientmodel.SampleValue(int(lhs) % int(rhs)), true
-		} else {
-			return clientmodel.SampleValue(math.Inf(int(rhs))), true
 		}
+		return clientmodel.SampleValue(math.Inf(int(rhs))), true
 	case EQ:
 		if lhs == rhs {
 			return lhs, true
-		} else {
-			return 0, false
 		}
+		return 0, false
 	case NE:
 		if lhs != rhs {
 			return lhs, true
-		} else {
-			return 0, false
 		}
+		return 0, false
 	case GT:
 		if lhs > rhs {
 			return lhs, true
-		} else {
-			return 0, false
 		}
+		return 0, false
 	case LT:
 		if lhs < rhs {
 			return lhs, true
-		} else {
-			return 0, false
 		}
+		return 0, false
 	case GE:
 		if lhs >= rhs {
 			return lhs, true
-		} else {
-			return 0, false
 		}
+		return 0, false
 	case LE:
 		if lhs <= rhs {
 			return lhs, true
-		} else {
-			return 0, false
 		}
+		return 0, false
 	case AND:
 		return lhs, true
 	case OR:
@@ -567,6 +636,8 @@ func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
 	return true
 }
 
+// Eval implements the VectorNode interface and returns the result of
+// the expression.
 func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
 	lhs := node.lhs.Eval(timestamp, view)
 	result := Vector{}
@@ -598,6 +669,8 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAda
 	panic("Invalid vector arithmetic expression operands")
 }
 
+// Eval implements the MatrixNode interface and returns the value of
+// the literal.
 func (node *MatrixLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
 	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
@@ -611,6 +684,8 @@ func (node *MatrixLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapt
 	return values
 }
 
+// EvalBoundaries implements the MatrixNode interface and returns the
+// boundary values of the literal.
 func (node *MatrixLiteral) EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
 	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
@@ -624,22 +699,29 @@ func (node *MatrixLiteral) EvalBoundaries(timestamp clientmodel.Timestamp, view 
 	return values
 }
 
+// Len implements sort.Interface.
 func (matrix Matrix) Len() int {
 	return len(matrix)
 }
 
+// Less implements sort.Interface.
 func (matrix Matrix) Less(i, j int) bool {
 	return matrix[i].Metric.String() < matrix[j].Metric.String()
 }
 
+// Swap implements sort.Interface.
 func (matrix Matrix) Swap(i, j int) {
 	matrix[i], matrix[j] = matrix[j], matrix[i]
 }
 
+// Eval implements the StringNode interface and returns the value of
+// the literal.
 func (node *StringLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string {
 	return node.str
 }
 
+// Eval implements the StringNode interface and returns the result of
+// the function call.
 func (node *StringFunctionCall) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string {
 	return node.function.callFn(timestamp, view, node.args).(string)
 }
@@ -647,18 +729,24 @@ func (node *StringFunctionCall) Eval(timestamp clientmodel.Timestamp, view *view
 // ----------------------------------------------------------------------------
 // Constructors.
 
+// NewScalarLiteral returns a ScalarLiteral with the given value.
 func NewScalarLiteral(value clientmodel.SampleValue) *ScalarLiteral {
 	return &ScalarLiteral{
 		value: value,
 	}
 }
 
+// NewVectorLiteral returns a (not yet evaluated) VectorLiteral with
+// the given LabelSet.
 func NewVectorLiteral(labels clientmodel.LabelSet) *VectorLiteral {
 	return &VectorLiteral{
 		labels: labels,
 	}
 }
 
+// NewVectorAggregation returns a (not yet evaluated)
+// VectorAggregation, aggregating the given VectorNode using the given
+// AggrType, grouping by the given LabelNames.
 func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy clientmodel.LabelNames, keepExtraLabels bool) *VectorAggregation {
 	return &VectorAggregation{
 		aggrType:        aggrType,
@@ -668,6 +756,9 @@ func NewVectorAggregation(aggrType AggrType, vector VectorNode, groupBy clientmo
 	}
 }
 
+// NewFunctionCall returns a (not yet evaluated) function call node
+// (of type ScalarFunctionCall, VectorFunctionCall, or
+// StringFunctionCall).
 func NewFunctionCall(function *Function, args Nodes) (Node, error) {
 	if err := function.CheckArgTypes(args); err != nil {
 		return nil, err
@@ -707,12 +798,14 @@ func nodesHaveTypes(nodes Nodes, exprTypes []ExprType) bool {
 	return true
 }
 
+// NewArithExpr returns a (not yet evaluated) expression node (of type
+// VectorArithExpr or ScalarArithExpr).
 func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
 	if !nodesHaveTypes(Nodes{lhs, rhs}, []ExprType{SCALAR, VECTOR}) {
-		return nil, errors.New("Binary operands must be of vector or scalar type")
+		return nil, errors.New("binary operands must be of vector or scalar type")
 	}
 	if lhs.Type() == SCALAR && rhs.Type() == VECTOR {
-		return nil, errors.New("Left side of vector binary operation must be of vector type")
+		return nil, errors.New("left side of vector binary operation must be of vector type")
 	}
 
 	if opType == AND || opType == OR {
@@ -736,6 +829,8 @@ func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
 	}, nil
 }
 
+// NewMatrixLiteral returns a (not yet evaluated) MatrixLiteral with
+// the given VectorLiteral and Duration.
 func NewMatrixLiteral(vector *VectorLiteral, interval time.Duration) *MatrixLiteral {
 	return &MatrixLiteral{
 		labels:   vector.labels,
@@ -743,6 +838,8 @@ func NewMatrixLiteral(vector *VectorLiteral, interval time.Duration) *MatrixLite
 	}
 }
 
+// NewStringLiteral returns a StringLiteral with the given string as
+// value.
 func NewStringLiteral(str string) *StringLiteral {
 	return &StringLiteral{
 		str: str,
