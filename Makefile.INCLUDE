@@ -58,9 +58,9 @@ export LOCAL_BINARIES=$(PREFIX)/bin
 export PATH := $(LOCAL_BINARIES):$(GOPATH)/bin:$(PATH)
 export LD_LIBRARY_PATH := $(PREFIX)/lib:$(LD_LIBRARY_PATH)
 
-export CFLAGS := $(CFLAGS) -I$(PREFIX)/include
-export CXXFLAGS := $(CXXFLAGS) -I$(PREFIX)/include
-export CPPFLAGS := $(CPPFLAGS) -I$(PREFIX)/include
+export CFLAGS := $(CFLAGS) -I$(PREFIX)/include -O3
+export CXXFLAGS := $(CXXFLAGS) -I$(PREFIX)/include -O3
+export CPPFLAGS := $(CPPFLAGS) -I$(PREFIX)/include -O3
 export LDFLAGS := $(LDFLAGS) -L$(PREFIX)/lib
 export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 
