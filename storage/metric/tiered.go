@@ -193,7 +193,7 @@ func (t *TieredStorage) drain(drained chan<- bool) {
 	t.draining <- (drained)
 }
 
-// Enqueues a ViewRequestBuilder for materialization, subject to a timeout.
+// Materializes a View according to a ViewRequestBuilder, subject to a timeout.
 func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration, queryStats *stats.TimerGroup) (View, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -264,8 +264,8 @@ func (t *TieredStorage) Serve(started chan<- bool) {
 				glog.Warning("Backlogging on flush...")
 			}
 		case viewRequest := <-t.ViewQueue:
-			viewRequest.stats.GetTimer(stats.ViewQueueTime).Stop()
 			<-t.memorySemaphore
+			viewRequest.stats.GetTimer(stats.ViewQueueTime).Stop()
 			go t.renderView(viewRequest)
 		case drainingDone := <-t.draining:
 			t.Flush()

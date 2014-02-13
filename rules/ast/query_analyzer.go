@@ -62,9 +62,7 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 		}
 		n.fingerprints = fingerprints
 		for _, fingerprint := range fingerprints {
-			if !analyzer.IntervalRanges[*fingerprint] {
-				analyzer.IntervalRanges[*fingerprint] = true
-			}
+			analyzer.IntervalRanges[*fingerprint] = true
 		}
 	case *MatrixLiteral:
 		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
@@ -74,15 +72,9 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 		}
 		n.fingerprints = fingerprints
 		for _, fingerprint := range fingerprints {
-			interval := n.interval
-			// If an interval has already been recorded for this fingerprint, merge
-			// it with the current interval.
-			if oldInterval, ok := analyzer.FullRanges[*fingerprint]; ok {
-				if oldInterval > interval {
-					interval = oldInterval
-				}
+			if analyzer.FullRanges[*fingerprint] < n.interval {
+				analyzer.FullRanges[*fingerprint] = n.interval
 			}
-			analyzer.FullRanges[*fingerprint] = interval
 		}
 	}
 }
@@ -93,9 +85,7 @@ func (analyzer *QueryAnalyzer) AnalyzeQueries(node Node) {
 	// always contain more points *and* span more time than stepped ranges, so
 	// throw away stepped ranges for fingerprints which have full ranges.
 	for fingerprint := range analyzer.FullRanges {
-		if analyzer.IntervalRanges[fingerprint] {
-			delete(analyzer.IntervalRanges, fingerprint)
-		}
+		delete(analyzer.IntervalRanges, fingerprint)
 	}
 }
 
@@ -117,7 +107,7 @@ func viewAdapterForInstantQuery(node Node, timestamp clientmodel.Timestamp, stor
 
 	buildTimer := queryStats.GetTimer(stats.InnerViewBuildingTime).Start()
 	// BUG(julius): Clear Law of Demeter violation.
-	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second, queryStats)
+	view, err := analyzer.storage.MakeView(viewBuilder, 60*time.Second, queryStats)
 	buildTimer.Stop()
 	if err != nil {
 		return nil, err
