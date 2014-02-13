@@ -73,7 +73,11 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 		}
 		n.fingerprints = fingerprints
 		for _, fingerprint := range fingerprints {
-			analyzer.IntervalRanges[*fingerprint] = true
+			// Only add the fingerprint to IntervalRanges if not yet present in FullRanges.
+			// Full ranges always contain more points and span more time than interval ranges.
+			if _, alreadyInFullRanges := analyzer.FullRanges[*fingerprint]; !alreadyInFullRanges {
+				analyzer.IntervalRanges[*fingerprint] = true
+			}
 		}
 	case *MatrixLiteral:
 		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
@@ -85,6 +89,10 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 		for _, fingerprint := range fingerprints {
 			if analyzer.FullRanges[*fingerprint] < n.interval {
 				analyzer.FullRanges[*fingerprint] = n.interval
+				// Delete the fingerprint from IntervalRanges. Full ranges always contain
+				// more points and span more time than interval ranges, so we don't need
+				// an interval range for the same fingerprint, should we have one.
+				delete(analyzer.IntervalRanges, *fingerprint)
 			}
 		}
 	}
@@ -94,12 +102,6 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 // each node to collect fingerprints.
 func (analyzer *QueryAnalyzer) AnalyzeQueries(node Node) {
 	Walk(analyzer, node)
-	// Find and dedupe overlaps between full and stepped ranges. Full ranges
-	// always contain more points *and* span more time than stepped ranges, so
-	// throw away stepped ranges for fingerprints which have full ranges.
-	for fingerprint := range analyzer.FullRanges {
-		delete(analyzer.IntervalRanges, fingerprint)
-	}
 }
 
 func viewAdapterForInstantQuery(node Node, timestamp clientmodel.Timestamp, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (*viewAdapter, error) {
