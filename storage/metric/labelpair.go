@@ -17,11 +17,14 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
+// LabelPair pairs a name with a value.
 type LabelPair struct {
 	Name  clientmodel.LabelName
 	Value clientmodel.LabelValue
 }
 
+// Equal returns true iff both the Name and the Value of this LabelPair and o
+// are equal.
 func (l *LabelPair) Equal(o *LabelPair) bool {
 	switch {
 	case l.Name != o.Name:
@@ -33,6 +36,8 @@ func (l *LabelPair) Equal(o *LabelPair) bool {
 	}
 }
 
+// LabelPairs is a sortable slice of LabelPair pointers. It implements
+// sort.Interface.
 type LabelPairs []*LabelPair
 
 func (l LabelPairs) Len() int {

@@ -17,8 +17,6 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
@@ -40,27 +38,32 @@ func (w *watermarks) dump(d *dto.MetricHighWatermark) {
 	d.Timestamp = proto.Int64(w.High.Unix())
 }
 
+// A FingerprintHighWatermarkMapping is used for batch updates of many high
+// watermarks in a database.
 type FingerprintHighWatermarkMapping map[clientmodel.Fingerprint]clientmodel.Timestamp
 
+// HighWatermarker models a high-watermark database.
 type HighWatermarker interface {
+	raw.Database
 	raw.ForEacher
 	raw.Pruner
 
 	UpdateBatch(FingerprintHighWatermarkMapping) error
 	Get(*clientmodel.Fingerprint) (t clientmodel.Timestamp, ok bool, err error)
-	State() *raw.DatabaseState
-	Size() (uint64, bool, error)
 }
 
+// LevelDBHighWatermarker is an implementation of HighWatermarker backed by
+// leveldb.
 type LevelDBHighWatermarker struct {
-	p *leveldb.LevelDBPersistence
+	*leveldb.LevelDBPersistence
 }
 
+// Get implements HighWatermarker.
 func (w *LevelDBHighWatermarker) Get(f *clientmodel.Fingerprint) (t clientmodel.Timestamp, ok bool, err error) {
-	k := new(dto.Fingerprint)
+	k := &dto.Fingerprint{}
 	dumpFingerprint(k, f)
-	v := new(dto.MetricHighWatermark)
-	ok, err = w.p.Get(k, v)
+	v := &dto.MetricHighWatermark{}
+	ok, err = w.LevelDBPersistence.Get(k, v)
 	if err != nil {
 		return t, ok, err
 	}
@@ -71,6 +74,7 @@ func (w *LevelDBHighWatermarker) Get(f *clientmodel.Fingerprint) (t clientmodel.
 	return t, true, nil
 }
 
+// UpdateBatch implements HighWatermarker.
 func (w *LevelDBHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) error {
 	batch := leveldb.NewBatch()
 	defer batch.Close()
@@ -80,9 +84,9 @@ func (w *LevelDBHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) 
 		if err != nil {
 			return err
 		}
-		k := new(dto.Fingerprint)
+		k := &dto.Fingerprint{}
 		dumpFingerprint(k, &fp)
-		v := new(dto.MetricHighWatermark)
+		v := &dto.MetricHighWatermark{}
 		if !present {
 			v.Timestamp = proto.Int64(t.Unix())
 			batch.Put(k, v)
@@ -97,36 +101,15 @@ func (w *LevelDBHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) 
 		}
 	}
 
-	return w.p.Commit(batch)
+	return w.LevelDBPersistence.Commit(batch)
 }
 
-func (w *LevelDBHighWatermarker) ForEach(d storage.RecordDecoder, f storage.RecordFilter, o storage.RecordOperator) (bool, error) {
-	return w.p.ForEach(d, f, o)
-}
-
-func (w *LevelDBHighWatermarker) Prune() (bool, error) {
-	w.p.Prune()
-
-	return false, nil
-}
-
-func (w *LevelDBHighWatermarker) Close() {
-	w.p.Close()
-}
-
-func (w *LevelDBHighWatermarker) State() *raw.DatabaseState {
-	return w.p.State()
-}
-
-func (w *LevelDBHighWatermarker) Size() (uint64, bool, error) {
-	s, err := w.p.Size()
-	return s, true, err
-}
-
+// LevelDBHighWatermarkerOptions just wraps leveldb.LevelDBOptions.
 type LevelDBHighWatermarkerOptions struct {
 	leveldb.LevelDBOptions
 }
 
+// NewLevelDBHighWatermarker returns a LevelDBHighWatermarker ready to use.
 func NewLevelDBHighWatermarker(o LevelDBHighWatermarkerOptions) (*LevelDBHighWatermarker, error) {
 	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
 	if err != nil {
@@ -134,52 +117,37 @@ func NewLevelDBHighWatermarker(o LevelDBHighWatermarkerOptions) (*LevelDBHighWat
 	}
 
 	return &LevelDBHighWatermarker{
-		p: s,
+		LevelDBPersistence: s,
 	}, nil
 }
 
+// CurationRemarker models a curation remarker database.
 type CurationRemarker interface {
+	raw.Database
 	raw.Pruner
 
 	Update(*curationKey, clientmodel.Timestamp) error
 	Get(*curationKey) (t clientmodel.Timestamp, ok bool, err error)
-	State() *raw.DatabaseState
-	Size() (uint64, bool, error)
 }
 
+// LevelDBCurationRemarker is an implementation of CurationRemarker backed by
+// leveldb.
 type LevelDBCurationRemarker struct {
-	p *leveldb.LevelDBPersistence
+	*leveldb.LevelDBPersistence
 }
 
+// LevelDBCurationRemarkerOptions just wraps leveldb.LevelDBOptions.
 type LevelDBCurationRemarkerOptions struct {
 	leveldb.LevelDBOptions
 }
 
-func (w *LevelDBCurationRemarker) State() *raw.DatabaseState {
-	return w.p.State()
-}
-
-func (w *LevelDBCurationRemarker) Size() (uint64, bool, error) {
-	s, err := w.p.Size()
-	return s, true, err
-}
-
-func (w *LevelDBCurationRemarker) Close() {
-	w.p.Close()
-}
-
-func (w *LevelDBCurationRemarker) Prune() (bool, error) {
-	w.p.Prune()
-
-	return false, nil
-}
-
+// Get implements CurationRemarker.
 func (w *LevelDBCurationRemarker) Get(c *curationKey) (t clientmodel.Timestamp, ok bool, err error) {
-	k := new(dto.CurationKey)
+	k := &dto.CurationKey{}
 	c.dump(k)
-	v := new(dto.CurationValue)
+	v := &dto.CurationValue{}
 
-	ok, err = w.p.Get(k, v)
+	ok, err = w.LevelDBPersistence.Get(k, v)
 	if err != nil || !ok {
 		return clientmodel.TimestampFromUnix(0), ok, err
 	}
@@ -187,15 +155,17 @@ func (w *LevelDBCurationRemarker) Get(c *curationKey) (t clientmodel.Timestamp, 
 	return clientmodel.TimestampFromUnix(v.GetLastCompletionTimestamp()), true, nil
 }
 
+// Update implements CurationRemarker.
 func (w *LevelDBCurationRemarker) Update(pair *curationKey, t clientmodel.Timestamp) error {
-	k := new(dto.CurationKey)
+	k := &dto.CurationKey{}
 	pair.dump(k)
 
-	return w.p.Put(k, &dto.CurationValue{
+	return w.LevelDBPersistence.Put(k, &dto.CurationValue{
 		LastCompletionTimestamp: proto.Int64(t.Unix()),
 	})
 }
 
+// NewLevelDBCurationRemarker returns a LevelDBCurationRemarker ready to use.
 func NewLevelDBCurationRemarker(o LevelDBCurationRemarkerOptions) (*LevelDBCurationRemarker, error) {
 	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
 	if err != nil {
@@ -203,7 +173,7 @@ func NewLevelDBCurationRemarker(o LevelDBCurationRemarkerOptions) (*LevelDBCurat
 	}
 
 	return &LevelDBCurationRemarker{
-		p: s,
+		LevelDBPersistence: s,
 	}, nil
 }
 

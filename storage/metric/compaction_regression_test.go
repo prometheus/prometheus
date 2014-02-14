@@ -60,7 +60,7 @@ func (c *compactionChecker) Operate(key, value interface{}) *storage.OperatorErr
 	if sampleKey.FirstTimestamp.After(sampleKey.LastTimestamp) {
 		c.t.Fatalf("Chunk FirstTimestamp (%v) is after LastTimestamp (%v): %v", sampleKey.FirstTimestamp.Unix(), sampleKey.LastTimestamp.Unix(), sampleKey)
 	}
-	fp := new(clientmodel.Fingerprint)
+	fp := &clientmodel.Fingerprint{}
 	for _, sample := range value.(Values) {
 		if sample.Timestamp.Before(sampleKey.FirstTimestamp) || sample.Timestamp.After(sampleKey.LastTimestamp) {
 			c.t.Fatalf("Sample not within chunk boundaries: chunk FirstTimestamp (%v), chunk LastTimestamp (%v) vs. sample Timestamp (%v)", sampleKey.FirstTimestamp.Unix(), sampleKey.LastTimestamp.Unix(), sample.Timestamp)

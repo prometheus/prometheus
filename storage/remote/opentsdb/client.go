@@ -17,7 +17,7 @@ import (
 
 const (
 	putEndpoint     = "/api/put"
-	contentTypeJson = "application/json"
+	contentTypeJSON = "application/json"
 )
 
 var (
@@ -30,7 +30,7 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// Create a new Client.
+// NewClient creates a new Client.
 func NewClient(url string, timeout time.Duration) *Client {
 	return &Client{
 		url:        url,
@@ -47,12 +47,13 @@ type StoreSamplesRequest struct {
 	Tags      map[string]string       `json:"tags"`
 }
 
-// Escape Prometheus label values to valid tag values for OpenTSDB.
+// escapeTagValue escapes Prometheus label values to valid tag values for
+// OpenTSDB.
 func escapeTagValue(l clientmodel.LabelValue) string {
 	return illegalCharsRE.ReplaceAllString(string(l), "_")
 }
 
-// Translate Prometheus metric into OpenTSDB tags.
+// tagsFromMetric translates Prometheus metric into OpenTSDB tags.
 func tagsFromMetric(m clientmodel.Metric) map[string]string {
 	tags := make(map[string]string, len(m)-1)
 	for l, v := range m {
@@ -64,7 +65,7 @@ func tagsFromMetric(m clientmodel.Metric) map[string]string {
 	return tags
 }
 
-// Send a batch of samples to OpenTSDB via its HTTP API.
+// Store sends a batch of samples to OpenTSDB via its HTTP API.
 func (c *Client) Store(samples clientmodel.Samples) error {
 	reqs := make([]StoreSamplesRequest, 0, len(samples))
 	for _, s := range samples {
@@ -91,7 +92,7 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 
 	resp, err := c.httpClient.Post(
 		u.String(),
-		contentTypeJson,
+		contentTypeJSON,
 		bytes.NewBuffer(buf),
 	)
 	if err != nil {
@@ -116,5 +117,5 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 	if err := json.Unmarshal(buf, &r); err != nil {
 		return err
 	}
-	return fmt.Errorf("Failed to write %d samples to OpenTSDB, %d succeeded", r["failed"], r["success"])
+	return fmt.Errorf("failed to write %d samples to OpenTSDB, %d succeeded", r["failed"], r["success"])
 }

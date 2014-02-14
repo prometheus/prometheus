@@ -13,11 +13,7 @@
 
 package metric
 
-import (
-	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/storage"
-)
+import clientmodel "github.com/prometheus/client_golang/model"
 
 // AppendBatch models a batch of samples to be stored.
 type AppendBatch map[clientmodel.Fingerprint]SampleSet
@@ -32,24 +28,17 @@ type MetricPersistence interface {
 	// Record a group of new samples in the storage layer.
 	AppendSamples(clientmodel.Samples) error
 
-	// Get all of the metric fingerprints that are associated with the provided
-	// label set.
+	// Get all of the metric fingerprints that are associated with the
+	// provided label set.
 	GetFingerprintsForLabelSet(clientmodel.LabelSet) (clientmodel.Fingerprints, error)
 
-	// Get all of the metric fingerprints that are associated for a given label
-	// name.
+	// Get all of the metric fingerprints that are associated for a given
+	// label name.
 	GetFingerprintsForLabelName(clientmodel.LabelName) (clientmodel.Fingerprints, error)
 
 	// Get the metric associated with the provided fingerprint.
 	GetMetricForFingerprint(*clientmodel.Fingerprint) (clientmodel.Metric, error)
 
-	// Get the two metric values that are immediately adjacent to a given time.
-	GetValueAtTime(*clientmodel.Fingerprint, clientmodel.Timestamp) Values
-	// Get the boundary values of an interval: the first value older than the
-	// interval start, and the first value younger than the interval end.
-	GetBoundaryValues(*clientmodel.Fingerprint, Interval) Values
-	// Get all values contained within a provided interval.
-	GetRangeValues(*clientmodel.Fingerprint, Interval) Values
 	// Get all label values that are associated with a given label name.
 	GetAllValuesForLabel(clientmodel.LabelName) (clientmodel.LabelValues, error)
 }
@@ -57,19 +46,19 @@ type MetricPersistence interface {
 // View provides a view of the values in the datastore subject to the request
 // of a preloading operation.
 type View interface {
+	// Get the two values that are immediately adjacent to a given time.
 	GetValueAtTime(*clientmodel.Fingerprint, clientmodel.Timestamp) Values
+	// Get the boundary values of an interval: the first value older than
+	// the interval start, and the first value younger than the interval
+	// end.
 	GetBoundaryValues(*clientmodel.Fingerprint, Interval) Values
+	// Get all values contained within a provided interval.
 	GetRangeValues(*clientmodel.Fingerprint, Interval) Values
-
-	// Destroy this view.
-	Close()
 }
 
-type Series interface {
-	Fingerprint() *clientmodel.Fingerprint
-	Metric() clientmodel.Metric
-}
-
-type IteratorsForFingerprintBuilder interface {
-	ForStream(stream *stream) (storage.RecordDecoder, storage.RecordFilter, storage.RecordOperator)
+// ViewableMetricPersistence is a MetricPersistence that is able to present the
+// samples it has stored as a View.
+type ViewableMetricPersistence interface {
+	MetricPersistence
+	View
 }

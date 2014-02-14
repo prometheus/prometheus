@@ -112,7 +112,7 @@ func (s sampleGroup) Get() (key, value proto.Message) {
 	return k, v
 }
 
-type noopUpdater bool
+type noopUpdater struct{}
 
 func (noopUpdater) UpdateCurationState(*CurationState) {}
 
@@ -876,7 +876,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 		}
 		defer samples.Close()
 
-		updates := new(noopUpdater)
+		updates := &noopUpdater{}
 
 		stop := make(chan bool)
 		defer close(stop)
@@ -891,7 +891,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		iterator, err := curatorStates.p.NewIterator(true)
+		iterator, err := curatorStates.LevelDBPersistence.NewIterator(true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -909,12 +909,12 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 				}
 			}
 
-			curationKeyDto := new(dto.CurationKey)
+			curationKeyDto := &dto.CurationKey{}
 			err = iterator.Key(curationKeyDto)
 			if err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
-			actualKey := new(curationKey)
+			actualKey := &curationKey{}
 			actualKey.load(curationKeyDto)
 
 			actualValue, present, err := curatorStates.Get(actualKey)
@@ -988,7 +988,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 
 			for k, actualValue := range sampleValues {
 				if expected.values[k].Value != actualValue.Value {
-					t.Fatalf("%d.%d.%d. expected %d, got %d", i, j, k, expected.values[k].Value, actualValue.Value)
+					t.Fatalf("%d.%d.%d. expected %v, got %v", i, j, k, expected.values[k].Value, actualValue.Value)
 				}
 				if !expected.values[k].Timestamp.Equal(actualValue.Timestamp) {
 					t.Fatalf("%d.%d.%d. expected %s, got %s", i, j, k, expected.values[k].Timestamp, actualValue.Timestamp)
@@ -1405,7 +1405,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 		}
 		defer samples.Close()
 
-		updates := new(noopUpdater)
+		updates := &noopUpdater{}
 
 		stop := make(chan bool)
 		defer close(stop)
@@ -1420,7 +1420,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		iterator, err := curatorStates.p.NewIterator(true)
+		iterator, err := curatorStates.LevelDBPersistence.NewIterator(true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1438,12 +1438,12 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 				}
 			}
 
-			curationKeyDto := new(dto.CurationKey)
+			curationKeyDto := &dto.CurationKey{}
 			if err := iterator.Key(curationKeyDto); err != nil {
 				t.Fatalf("%d.%d. could not unmarshal: %s", i, j, err)
 			}
 
-			actualKey := new(curationKey)
+			actualKey := &curationKey{}
 			actualKey.load(curationKeyDto)
 			signature := expected.processor.Signature()
 
@@ -1518,7 +1518,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 
 			for k, actualValue := range sampleValues {
 				if expected.values[k].Value != actualValue.Value {
-					t.Fatalf("%d.%d.%d. expected %d, got %d", i, j, k, expected.values[k].Value, actualValue.Value)
+					t.Fatalf("%d.%d.%d. expected %v, got %v", i, j, k, expected.values[k].Value, actualValue.Value)
 				}
 				if !expected.values[k].Timestamp.Equal(actualValue.Timestamp) {
 					t.Fatalf("%d.%d.%d. expected %s, got %s", i, j, k, expected.values[k].Timestamp, actualValue.Timestamp)

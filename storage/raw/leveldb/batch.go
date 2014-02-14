@@ -26,6 +26,7 @@ type batch struct {
 	puts  uint32
 }
 
+// NewBatch returns a fully allocated batch object.
 func NewBatch() *batch {
 	return &batch{
 		batch: levigo.NewWriteBatch(),

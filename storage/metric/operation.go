@@ -22,7 +22,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-// Encapsulates a primitive query operation.
+// op encapsulates a primitive query operation.
 type op interface {
 	// The time at which this operation starts.
 	StartsAt() clientmodel.Timestamp
@@ -30,14 +30,14 @@ type op interface {
 	ExtractSamples(Values) Values
 	// Return whether the operator has consumed all data it needs.
 	Consumed() bool
-	// Get current operation time or nil if no subsequent work associated with
-	// this operator remains.
+	// Get current operation time or nil if no subsequent work associated
+	// with this operator remains.
 	CurrentTime() clientmodel.Timestamp
 	// GreedierThan indicates whether this present operation should take
 	// precedence over the other operation due to greediness.
 	//
-	// A critical assumption is that this operator and the other occur at the
-	// same time: this.StartsAt().Equal(op.StartsAt()).
+	// A critical assumption is that this operator and the other occur at
+	// the same time: this.StartsAt().Equal(op.StartsAt()).
 	GreedierThan(op) bool
 }
 
@@ -48,8 +48,8 @@ func (o ops) Len() int {
 	return len(o)
 }
 
-// startsAtSort implements the sorting protocol and allows operator to be sorted
-// in chronological order by when they start.
+// startsAtSort implements sort.Interface and allows operator to be sorted in
+// chronological order by when they start.
 type startsAtSort struct {
 	ops
 }
@@ -62,7 +62,8 @@ func (o ops) Swap(i, j int) {
 	o[i], o[j] = o[j], o[i]
 }
 
-// Encapsulates getting values at or adjacent to a specific time.
+// getValuesAtTimeOp encapsulates getting values at or adjacent to a specific
+// time.
 type getValuesAtTimeOp struct {
 	time     clientmodel.Timestamp
 	consumed bool
@@ -112,15 +113,17 @@ func extractValuesAroundTime(t clientmodel.Timestamp, in Values) (out Values) {
 		out = in[len(in)-1:]
 	} else {
 		if in[i].Timestamp.Equal(t) && len(in) > i+1 {
-			// We hit exactly the current sample time. Very unlikely in practice.
-			// Return only the current sample.
+			// We hit exactly the current sample time. Very unlikely
+			// in practice.  Return only the current sample.
 			out = in[i : i+1]
 		} else {
 			if i == 0 {
-				// We hit before the first sample time. Return only the first sample.
+				// We hit before the first sample time. Return
+				// only the first sample.
 				out = in[0:1]
 			} else {
-				// We hit between two samples. Return both surrounding samples.
+				// We hit between two samples. Return both
+				// surrounding samples.
 				out = in[i-1 : i+1]
 			}
 		}
@@ -136,15 +139,16 @@ func (g getValuesAtTimeOp) Consumed() bool {
 	return g.consumed
 }
 
-// Encapsulates getting values at a given interval over a duration.
+// getValuesAtIntervalOp encapsulates getting values at a given interval over a
+// duration.
 type getValuesAtIntervalOp struct {
 	from     clientmodel.Timestamp
 	through  clientmodel.Timestamp
 	interval time.Duration
 }
 
-func (o *getValuesAtIntervalOp) String() string {
-	return fmt.Sprintf("getValuesAtIntervalOp from %s each %s through %s", o.from, o.interval, o.through)
+func (g *getValuesAtIntervalOp) String() string {
+	return fmt.Sprintf("getValuesAtIntervalOp from %s each %s through %s", g.from, g.interval, g.through)
 }
 
 func (g *getValuesAtIntervalOp) StartsAt() clientmodel.Timestamp {
@@ -199,14 +203,14 @@ func (g *getValuesAtIntervalOp) GreedierThan(op op) (superior bool) {
 	return
 }
 
-// Encapsulates getting all values in a given range.
+// getValuesAlongRangeOp encapsulates getting all values in a given range.
 type getValuesAlongRangeOp struct {
 	from    clientmodel.Timestamp
 	through clientmodel.Timestamp
 }
 
-func (o *getValuesAlongRangeOp) String() string {
-	return fmt.Sprintf("getValuesAlongRangeOp from %s through %s", o.from, o.through)
+func (g *getValuesAlongRangeOp) String() string {
+	return fmt.Sprintf("getValuesAlongRangeOp from %s through %s", g.from, g.through)
 }
 
 func (g *getValuesAlongRangeOp) StartsAt() clientmodel.Timestamp {
@@ -271,7 +275,8 @@ func (g *getValuesAlongRangeOp) GreedierThan(op op) (superior bool) {
 	return
 }
 
-// Encapsulates getting all values from ranges along intervals.
+// getValueRangeAtIntervalOp encapsulates getting all values from ranges along
+// intervals.
 //
 // Works just like getValuesAlongRangeOp, but when from > through, through is
 // incremented by interval and from is reset to through-rangeDuration. Returns
@@ -284,8 +289,8 @@ type getValueRangeAtIntervalOp struct {
 	through       clientmodel.Timestamp
 }
 
-func (o *getValueRangeAtIntervalOp) String() string {
-	return fmt.Sprintf("getValueRangeAtIntervalOp range %s from %s each %s through %s", o.rangeDuration, o.rangeFrom, o.interval, o.through)
+func (g *getValueRangeAtIntervalOp) String() string {
+	return fmt.Sprintf("getValueRangeAtIntervalOp range %s from %s each %s through %s", g.rangeDuration, g.rangeFrom, g.interval, g.through)
 }
 
 func (g *getValueRangeAtIntervalOp) StartsAt() clientmodel.Timestamp {

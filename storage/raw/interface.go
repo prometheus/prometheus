@@ -19,9 +19,25 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// Database provides a few very basic methods to manage a database and inquire
+// its state.
+type Database interface {
+	// Close reaps all of the underlying system resources associated with
+	// this database. For databases that don't need that kind of clean-up,
+	// it is implemented as a no-op (so that clients don't need to reason
+	// and always call Close 'just in case').
+	Close() error
+	// State reports the state of the database as a DatabaseState object.
+	State() *DatabaseState
+	// Size returns the total size of the database in bytes. The number may
+	// be an approximation, depending on the underlying database type.
+	Size() (uint64, error)
+}
+
+// ForEacher is implemented by databases that can be iterated through.
 type ForEacher interface {
-	// ForEach is responsible for iterating through all records in the database
-	// until one of the following conditions are met:
+	// ForEach is responsible for iterating through all records in the
+	// database until one of the following conditions are met:
 	//
 	// 1.) A system anomaly in the database scan.
 	// 2.) The last record in the database is reached.
@@ -31,18 +47,21 @@ type ForEacher interface {
 	ForEach(storage.RecordDecoder, storage.RecordFilter, storage.RecordOperator) (scannedEntireCorpus bool, err error)
 }
 
+// Pruner is implemented by a database that can be pruned in some way.
+type Pruner interface {
+	Prune()
+}
+
 // Persistence models a key-value store for bytes that supports various
 // additional operations.
 type Persistence interface {
+	Database
 	ForEacher
 
-	// Close reaps all of the underlying system resources associated with this
-	// persistence.
-	Close() error
 	// Has informs the user whether a given key exists in the database.
 	Has(key proto.Message) (bool, error)
-	// Get retrieves the key from the database if it exists or returns nil if
-	// it is absent.
+	// Get populates 'value' with the value of 'key', if present, in which
+	// case 'present' is returned as true.
 	Get(key, value proto.Message) (present bool, err error)
 	// Drop removes the key from the database.
 	Drop(key proto.Message) error
@@ -56,15 +75,11 @@ type Persistence interface {
 // en masse.  The interface implies no protocol around the atomicity of
 // effectuation.
 type Batch interface {
-	// Close reaps all of the underlying system resources associated with this
-	// batch mutation.
+	// Close reaps all of the underlying system resources associated with
+	// this batch mutation.
 	Close()
 	// Put follows the same protocol as Persistence.Put.
 	Put(key, value proto.Message)
 	// Drop follows the same protocol as Persistence.Drop.
 	Drop(key proto.Message)
-}
-
-type Pruner interface {
-	Prune() (noop bool, err error)
 }
