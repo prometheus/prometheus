@@ -27,8 +27,9 @@ var (
 	lastSupertime = []byte{127, 255, 255, 255, 255, 255, 255, 255}
 )
 
-// Represents the summation of all datastore queries that shall be performed to
-// extract values.  Each operation mutates the state of the builder.
+// ViewRequestBuilder represents the summation of all datastore queries that
+// shall be performed to extract values.  Each operation mutates the state of
+// the builder.
 type ViewRequestBuilder interface {
 	GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time clientmodel.Timestamp)
 	GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration)
@@ -36,12 +37,13 @@ type ViewRequestBuilder interface {
 	ScanJobs() scanJobs
 }
 
-// Contains the various unoptimized requests for data.
+// viewRequestBuilder contains the various unoptimized requests for data.
 type viewRequestBuilder struct {
 	operations map[clientmodel.Fingerprint]ops
 }
 
-// Furnishes a ViewRequestBuilder for remarking what types of queries to perform.
+// NewViewRequestBuilder furnishes a ViewRequestBuilder for remarking what types
+// of queries to perform.
 func NewViewRequestBuilder() *viewRequestBuilder {
 	return &viewRequestBuilder{
 		operations: make(map[clientmodel.Fingerprint]ops),
@@ -50,8 +52,8 @@ func NewViewRequestBuilder() *viewRequestBuilder {
 
 var getValuesAtTimes = newValueAtTimeList(10 * 1024)
 
-// Gets for the given Fingerprint either the value at that time if there is an
-// match or the one or two values adjacent thereto.
+// GetMetricAtTime gets for the given Fingerprint either the value at that time
+// if there is an match or the one or two values adjacent thereto.
 func (v *viewRequestBuilder) GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time clientmodel.Timestamp) {
 	ops := v.operations[*fingerprint]
 	op, _ := getValuesAtTimes.Get()
@@ -62,9 +64,9 @@ func (v *viewRequestBuilder) GetMetricAtTime(fingerprint *clientmodel.Fingerprin
 
 var getValuesAtIntervals = newValueAtIntervalList(10 * 1024)
 
-// Gets for the given Fingerprint either the value at that interval from From
-// through Through  if there is an match or the one or two values adjacent
-// for each point.
+// GetMetricAtInterval gets for the given Fingerprint either the value at that
+// interval from From through Through if there is an match or the one or two
+// values adjacent for each point.
 func (v *viewRequestBuilder) GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration) {
 	ops := v.operations[*fingerprint]
 	op, _ := getValuesAtIntervals.Get()
@@ -77,8 +79,8 @@ func (v *viewRequestBuilder) GetMetricAtInterval(fingerprint *clientmodel.Finger
 
 var getValuesAlongRanges = newValueAlongRangeList(10 * 1024)
 
-// Gets for the given Fingerprint the values that occur inclusively from From
-// through Through.
+// GetMetricRange gets for the given Fingerprint the values that occur
+// inclusively from From through Through.
 func (v *viewRequestBuilder) GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp) {
 	ops := v.operations[*fingerprint]
 	op, _ := getValuesAlongRanges.Get()
@@ -90,7 +92,8 @@ func (v *viewRequestBuilder) GetMetricRange(fingerprint *clientmodel.Fingerprint
 
 var getValuesAtIntervalAlongRanges = newValueAtIntervalAlongRangeList(10 * 1024)
 
-// Gets value ranges at intervals for the given Fingerprint:
+// GetMetricRangeAtInterval gets value ranges at intervals for the given
+// Fingerprint:
 //
 //   |----|       |----|       |----|       |----|
 //   ^    ^            ^       ^    ^            ^
@@ -108,7 +111,7 @@ func (v *viewRequestBuilder) GetMetricRangeAtInterval(fingerprint *clientmodel.F
 	v.operations[*fingerprint] = ops
 }
 
-// Emits the optimized scans that will occur in the data store.  This
+// ScanJobs emits the optimized scans that will occur in the data store.  This
 // effectively resets the ViewRequestBuilder back to a pristine state.
 func (v *viewRequestBuilder) ScanJobs() (j scanJobs) {
 	for fingerprint, operations := range v.operations {

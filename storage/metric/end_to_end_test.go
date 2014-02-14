@@ -272,8 +272,9 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 		}
 	}
 
-	if true {
-		// XXX: Purely a benchmark.
+	v, ok := p.(View)
+	if !ok {
+		// It's purely a benchmark for a MetricPersistance that is not viewable.
 		return
 	}
 
@@ -294,7 +295,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 			}
 
 			time := clientmodel.Timestamp(0).Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			samples := p.GetValueAtTime(fingerprints[0], time)
+			samples := v.GetValueAtTime(fingerprints[0], time)
 			if len(samples) == 0 {
 				t.Fatal("expected at least one sample.")
 			}
@@ -303,7 +304,7 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 
 			for _, sample := range samples {
 				if sample.Value != expected {
-					t.Fatalf("expected %d value, got %d", expected, sample.Value)
+					t.Fatalf("expected %v value, got %v", expected, sample.Value)
 				}
 			}
 		}
@@ -334,8 +335,9 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 
 	p.AppendSamples(s)
 
-	if true {
-		// XXX: Purely a benchmark.
+	v, ok := p.(View)
+	if !ok {
+		// It's purely a benchmark for a MetricPersistance that is not viewable.
 		return
 	}
 
@@ -356,7 +358,7 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 			}
 
 			time := clientmodel.Timestamp(0).Add(time.Duration(i) * time.Hour).Add(time.Duration(j) * time.Second)
-			samples := p.GetValueAtTime(fingerprints[0], time)
+			samples := v.GetValueAtTime(fingerprints[0], time)
 			if len(samples) == 0 {
 				t.Fatal("expected at least one sample.")
 			}
@@ -365,7 +367,7 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 
 			for _, sample := range samples {
 				if sample.Value != expected {
-					t.Fatalf("expected %d value, got %d", expected, sample.Value)
+					t.Fatalf("expected %v value, got %v", expected, sample.Value)
 				}
 			}
 		}

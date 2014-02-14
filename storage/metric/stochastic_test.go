@@ -422,8 +422,8 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 			for i := 0; i < numberOfRangeScans; i++ {
 				timestamps := metricTimestamps[metricIndex]
 
-				var first int64 = 0
-				var second int64 = 0
+				var first int64
+				var second int64
 
 				for {
 					firstCandidate := random.Int63n(int64(len(timestamps)))
@@ -472,6 +472,11 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				fp := &clientmodel.Fingerprint{}
 				fp.LoadFromMetric(metric)
 				switch persistence := p.(type) {
+				case View:
+					samples = persistence.GetRangeValues(fp, interval)
+					if len(samples) < 2 {
+						t.Fatalf("expected sample count greater than %d, got %d", 2, len(samples))
+					}
 				case *LevelDBMetricPersistence:
 					var err error
 					samples, err = levelDBGetRangeValues(persistence, fp, interval)
@@ -482,10 +487,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 						t.Fatalf("expected sample count greater than %d, got %d", 2, len(samples))
 					}
 				default:
-					samples = p.GetRangeValues(fp, interval)
-					if len(samples) < 2 {
-						t.Fatalf("expected sample count greater than %d, got %d", 2, len(samples))
-					}
+					t.Error("Unexpected type of MetricPersistence.")
 				}
 			}
 		}

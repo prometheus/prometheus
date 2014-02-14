@@ -20,5 +20,5 @@ import (
 )
 
 func TestInterfaceAdherence(t *testing.T) {
-	var _ raw.Persistence = new(LevelDBPersistence)
+	var _ raw.Persistence = &LevelDBPersistence{}
 }

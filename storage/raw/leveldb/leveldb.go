@@ -24,7 +24,8 @@ import (
 	"github.com/prometheus/prometheus/storage/raw"
 )
 
-// LevelDBPersistence is a disk-backed sorted key-value store.
+// LevelDBPersistence is a disk-backed sorted key-value store. It implements the
+// interfaces raw.Database, raw.ForEacher, raw.Pruner, raw.Persistence.
 type LevelDBPersistence struct {
 	path    string
 	name    string
@@ -43,23 +44,24 @@ type LevelDBPersistence struct {
 type levigoIterator struct {
 	// iterator is the receiver of most proxied operation calls.
 	iterator *levigo.Iterator
-	// readOptions is only set if the iterator is a snapshot of an underlying
-	// database.  This signals that it needs to be explicitly reaped upon the
-	// end of this iterator's life.
+	// readOptions is only set if the iterator is a snapshot of an
+	// underlying database.  This signals that it needs to be explicitly
+	// reaped upon the end of this iterator's life.
 	readOptions *levigo.ReadOptions
 	// snapshot is only set if the iterator is a snapshot of an underlying
-	// database.  This signals that it needs to be explicitly reaped upon the
-	// end of this this iterator's life.
+	// database.  This signals that it needs to be explicitly reaped upon
+	// the end of this this iterator's life.
 	snapshot *levigo.Snapshot
 	// storage is only set if the iterator is a snapshot of an underlying
-	// database.  This signals that it needs to be explicitly reaped upon the
-	// end of this this iterator's life.  The snapshot must be freed in the
-	// context of an actual database.
+	// database.  This signals that it needs to be explicitly reaped upon
+	// the end of this this iterator's life.  The snapshot must be freed in
+	// the context of an actual database.
 	storage *levigo.DB
 	// closed indicates whether the iterator has been closed before.
 	closed bool
-	// valid indicates whether the iterator may be used.  If a LevelDB iterator
-	// ever becomes invalid, it must be disposed of and cannot be reused.
+	// valid indicates whether the iterator may be used.  If a LevelDB
+	// iterator ever becomes invalid, it must be disposed of and cannot be
+	// reused.
 	valid bool
 	// creationTime provides the time at which the iterator was made.
 	creationTime time.Time
@@ -191,13 +193,16 @@ func (i *levigoIterator) Valid() bool {
 	return i.valid
 }
 
+// Compression defines the compression mode.
 type Compression uint
 
+// Possible compression modes.
 const (
 	Snappy Compression = iota
 	Uncompressed
 )
 
+// LevelDBOptions bundles options needed to create a LevelDBPersistence object.
 type LevelDBOptions struct {
 	Path    string
 	Name    string
@@ -212,6 +217,8 @@ type LevelDBOptions struct {
 	Compression Compression
 }
 
+// NewLevelDBPersistence returns an initialized LevelDBPersistence object,
+// created with the given options.
 func NewLevelDBPersistence(o LevelDBOptions) (*LevelDBPersistence, error) {
 	options := levigo.NewOptions()
 	options.SetCreateIfMissing(true)
@@ -257,9 +264,10 @@ func NewLevelDBPersistence(o LevelDBOptions) (*LevelDBPersistence, error) {
 	}, nil
 }
 
+// Close implements raw.Persistence (and raw.Database).
 func (l *LevelDBPersistence) Close() error {
-	// These are deferred to take advantage of forced closing in case of stack
-	// unwinding due to anomalies.
+	// These are deferred to take advantage of forced closing in case of
+	// stack unwinding due to anomalies.
 	defer func() {
 		if l.filterPolicy != nil {
 			l.filterPolicy.Close()
@@ -299,6 +307,7 @@ func (l *LevelDBPersistence) Close() error {
 	return nil
 }
 
+// Get implements raw.Persistence.
 func (l *LevelDBPersistence) Get(k, v proto.Message) (bool, error) {
 	buf, _ := buffers.Get()
 	defer buffers.Give(buf)
@@ -328,10 +337,12 @@ func (l *LevelDBPersistence) Get(k, v proto.Message) (bool, error) {
 	return true, nil
 }
 
+// Has implements raw.Persistence.
 func (l *LevelDBPersistence) Has(k proto.Message) (has bool, err error) {
 	return l.Get(k, nil)
 }
 
+// Drop implements raw.Persistence.
 func (l *LevelDBPersistence) Drop(k proto.Message) error {
 	buf, _ := buffers.Get()
 	defer buffers.Give(buf)
@@ -343,29 +354,31 @@ func (l *LevelDBPersistence) Drop(k proto.Message) error {
 	return l.storage.Delete(l.writeOptions, buf.Bytes())
 }
 
-func (l *LevelDBPersistence) Put(key, value proto.Message) error {
+// Put implements raw.Persistence.
+func (l *LevelDBPersistence) Put(k, v proto.Message) error {
 	keyBuf, _ := buffers.Get()
 	defer buffers.Give(keyBuf)
 
-	if err := keyBuf.Marshal(key); err != nil {
+	if err := keyBuf.Marshal(k); err != nil {
 		panic(err)
 	}
 
 	valBuf, _ := buffers.Get()
 	defer buffers.Give(valBuf)
 
-	if err := valBuf.Marshal(value); err != nil {
+	if err := valBuf.Marshal(v); err != nil {
 		panic(err)
 	}
 
 	return l.storage.Put(l.writeOptions, keyBuf.Bytes(), valBuf.Bytes())
 }
 
+// Commit implements raw.Persistence.
 func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
-	// XXX: This is a wart to clean up later.  Ideally, after doing extensive
-	//      tests, we could create a Batch struct that journals pending
-	//      operations which the given Persistence implementation could convert
-	//      to its specific commit requirements.
+	// XXX: This is a wart to clean up later.  Ideally, after doing
+	// extensive tests, we could create a Batch struct that journals pending
+	// operations which the given Persistence implementation could convert
+	// to its specific commit requirements.
 	batch, ok := b.(*batch)
 	if !ok {
 		panic("leveldb.batch expected")
@@ -374,7 +387,7 @@ func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 	return l.storage.Write(l.writeOptions, batch.batch)
 }
 
-// CompactKeyspace compacts the entire database's keyspace.
+// Prune implements raw.Pruner. It compacts the entire keyspace of the database.
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
@@ -389,6 +402,8 @@ func (l *LevelDBPersistence) Prune() {
 	l.storage.CompactRange(keyspace)
 }
 
+// Size returns the approximate size the entire database takes on disk (in
+// bytes). It implements the raw.Database interface.
 func (l *LevelDBPersistence) Size() (uint64, error) {
 	iterator, err := l.NewIterator(false)
 	if err != nil {
@@ -459,6 +474,7 @@ func (l *LevelDBPersistence) NewIterator(snapshotted bool) (Iterator, error) {
 	}, nil
 }
 
+// ForEach implements raw.ForEacher.
 func (l *LevelDBPersistence) ForEach(decoder storage.RecordDecoder, filter storage.RecordFilter, operator storage.RecordOperator) (scannedEntireCorpus bool, err error) {
 	iterator, err := l.NewIterator(true)
 	if err != nil {

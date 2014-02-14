@@ -34,7 +34,7 @@ func (l *dtoSampleKeyList) Get() (*dto.SampleKey, bool) {
 		return v.(*dto.SampleKey), ok
 	}
 
-	return new(dto.SampleKey), false
+	return &dto.SampleKey{}, false
 }
 
 func (l *dtoSampleKeyList) Give(v *dto.SampleKey) bool {
@@ -51,7 +51,7 @@ type sampleKeyList struct {
 	l utility.FreeList
 }
 
-var defaultSampleKey = new(SampleKey)
+var defaultSampleKey = &SampleKey{}
 
 func newSampleKeyList(cap int) *sampleKeyList {
 	return &sampleKeyList{
@@ -64,7 +64,7 @@ func (l *sampleKeyList) Get() (*SampleKey, bool) {
 		return v.(*SampleKey), ok
 	}
 
-	return new(SampleKey), false
+	return &SampleKey{}, false
 }
 
 func (l *sampleKeyList) Give(v *SampleKey) bool {
@@ -86,10 +86,10 @@ func (l *valueAtTimeList) Get() (*getValuesAtTimeOp, bool) {
 		return v.(*getValuesAtTimeOp), ok
 	}
 
-	return new(getValuesAtTimeOp), false
+	return &getValuesAtTimeOp{}, false
 }
 
-var pGetValuesAtTimeOp = new(getValuesAtTimeOp)
+var pGetValuesAtTimeOp = &getValuesAtTimeOp{}
 
 func (l *valueAtTimeList) Give(v *getValuesAtTimeOp) bool {
 	*v = *pGetValuesAtTimeOp
@@ -112,10 +112,10 @@ func (l *valueAtIntervalList) Get() (*getValuesAtIntervalOp, bool) {
 		return v.(*getValuesAtIntervalOp), ok
 	}
 
-	return new(getValuesAtIntervalOp), false
+	return &getValuesAtIntervalOp{}, false
 }
 
-var pGetValuesAtIntervalOp = new(getValuesAtIntervalOp)
+var pGetValuesAtIntervalOp = &getValuesAtIntervalOp{}
 
 func (l *valueAtIntervalList) Give(v *getValuesAtIntervalOp) bool {
 	*v = *pGetValuesAtIntervalOp
@@ -138,10 +138,10 @@ func (l *valueAlongRangeList) Get() (*getValuesAlongRangeOp, bool) {
 		return v.(*getValuesAlongRangeOp), ok
 	}
 
-	return new(getValuesAlongRangeOp), false
+	return &getValuesAlongRangeOp{}, false
 }
 
-var pGetValuesAlongRangeOp = new(getValuesAlongRangeOp)
+var pGetValuesAlongRangeOp = &getValuesAlongRangeOp{}
 
 func (l *valueAlongRangeList) Give(v *getValuesAlongRangeOp) bool {
 	*v = *pGetValuesAlongRangeOp
@@ -164,10 +164,10 @@ func (l *valueAtIntervalAlongRangeList) Get() (*getValueRangeAtIntervalOp, bool)
 		return v.(*getValueRangeAtIntervalOp), ok
 	}
 
-	return new(getValueRangeAtIntervalOp), false
+	return &getValueRangeAtIntervalOp{}, false
 }
 
-var pGetValueRangeAtIntervalOp = new(getValueRangeAtIntervalOp)
+var pGetValueRangeAtIntervalOp = &getValueRangeAtIntervalOp{}
 
 func (l *valueAtIntervalAlongRangeList) Give(v *getValueRangeAtIntervalOp) bool {
 	*v = *pGetValueRangeAtIntervalOp

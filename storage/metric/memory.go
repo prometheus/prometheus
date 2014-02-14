@@ -22,18 +22,19 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
-// Assuming sample rate of 1 / 15Hz, this allows for one hour's worth of
-// storage per metric without any major reallocations.
+// An initialSeriesArenaSize of 4*60 allows for one hour's worth of storage per
+// metric without any major reallocations - assuming a sample rate of 1 / 15Hz.
 const initialSeriesArenaSize = 4 * 60
 
-// Models a given sample entry stored in the in-memory arena.
+// value models a given sample entry stored in the in-memory arena.
 type value interface {
 	// Gets the given value.
 	get() clientmodel.SampleValue
 }
 
-// Models a single sample value.  It presumes that there is either no subsequent
-// value seen or that any subsequent values are of a different value.
+// singletonValue models a single sample value.  It presumes that there is
+// either no subsequent value seen or that any subsequent values are of a
+// different value.
 type singletonValue clientmodel.SampleValue
 
 func (v singletonValue) get() clientmodel.SampleValue {
@@ -194,9 +195,10 @@ type memorySeriesStorage struct {
 	labelNameToFingerprints map[clientmodel.LabelName]clientmodel.Fingerprints
 }
 
+// MemorySeriesOptions bundles options for NewMemorySeriesStorage.
 type MemorySeriesOptions struct {
-	// If provided, this WatermarkCache will be updated for any samples that are
-	// appended to the memorySeriesStorage.
+	// If provided, this WatermarkCache will be updated for any samples that
+	// are appended to the memorySeriesStorage.
 	WatermarkCache *watermarkCache
 }
 
@@ -485,6 +487,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelNa
 	return
 }
 
+// NewMemorySeriesStorage returns a memory series storage ready to use.
 func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[clientmodel.Fingerprint]stream),

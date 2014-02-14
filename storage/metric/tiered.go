@@ -114,10 +114,11 @@ const (
 
 const watermarkCacheLimit = 1024 * 1024
 
+// NewTieredStorage returns a TieredStorage object ready to use.
 func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryInterval time.Duration, memoryTTL time.Duration, rootDirectory string) (*TieredStorage, error) {
 	if isDir, _ := utility.IsDir(rootDirectory); !isDir {
 		if err := os.MkdirAll(rootDirectory, 0755); err != nil {
-			return nil, fmt.Errorf("Could not find or create metrics directory %s: %s", rootDirectory, err)
+			return nil, fmt.Errorf("could not find or create metrics directory %s: %s", rootDirectory, err)
 		}
 	}
 
@@ -160,12 +161,12 @@ func NewTieredStorage(appendToDiskQueueDepth, viewQueueDepth uint, flushMemoryIn
 	return s, nil
 }
 
-// Enqueues Samples for storage.
+// AppendSamples enqueues Samples for storage.
 func (t *TieredStorage) AppendSamples(samples clientmodel.Samples) (err error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.state != tieredStorageServing {
-		return fmt.Errorf("Storage is not serving.")
+		return fmt.Errorf("storage is not serving")
 	}
 
 	t.memoryArena.AppendSamples(samples)
@@ -174,7 +175,7 @@ func (t *TieredStorage) AppendSamples(samples clientmodel.Samples) (err error) {
 	return
 }
 
-// Stops the storage subsystem, flushing all pending operations.
+// Drain stops the storage subsystem, flushing all pending operations.
 func (t *TieredStorage) Drain(drained chan<- bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -193,20 +194,22 @@ func (t *TieredStorage) drain(drained chan<- bool) {
 	t.draining <- (drained)
 }
 
-// Materializes a View according to a ViewRequestBuilder, subject to a timeout.
+// MakeView materializes a View according to a ViewRequestBuilder, subject to a
+// timeout.
 func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration, queryStats *stats.TimerGroup) (View, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.state != tieredStorageServing {
-		return nil, fmt.Errorf("Storage is not serving")
+		return nil, fmt.Errorf("storage is not serving")
 	}
 
-	// The result channel needs a one-element buffer in case we have timed out in
-	// MakeView, but the view rendering still completes afterwards and writes to
-	// the channel.
+	// The result channel needs a one-element buffer in case we have timed
+	// out in MakeView, but the view rendering still completes afterwards
+	// and writes to the channel.
 	result := make(chan View, 1)
-	// The abort channel needs a one-element buffer in case the view rendering
-	// has already exited and doesn't consume from the channel anymore.
+	// The abort channel needs a one-element buffer in case the view
+	// rendering has already exited and doesn't consume from the channel
+	// anymore.
 	abortChan := make(chan bool, 1)
 	errChan := make(chan error)
 	queryStats.GetTimer(stats.ViewQueueTime).Start()
@@ -225,11 +228,11 @@ func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 		return nil, err
 	case <-time.After(deadline):
 		abortChan <- true
-		return nil, fmt.Errorf("MakeView timed out after %s.", deadline)
+		return nil, fmt.Errorf("MakeView timed out after %s", deadline)
 	}
 }
 
-// Starts serving requests.
+// Serve starts serving requests.
 func (t *TieredStorage) Serve(started chan<- bool) {
 	t.mu.Lock()
 	if t.state != tieredStorageStarting {
@@ -284,6 +287,7 @@ func (t *TieredStorage) reportQueues() {
 	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "capacity"}, float64(cap(t.ViewQueue)))
 }
 
+// Flush flushes all samples to disk.
 func (t *TieredStorage) Flush() {
 	t.flushSema <- true
 	t.flushMemory(0)
@@ -311,6 +315,7 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 	glog.Info("Done flushing.")
 }
 
+// Close stops serving, flushes all pending operations, and frees all resources.
 func (t *TieredStorage) Close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -329,8 +334,8 @@ func (t *TieredStorage) close() {
 
 	t.memoryArena.Close()
 	t.DiskStorage.Close()
-	// BUG(matt): There is a probability that pending items may hang here and not
-	//            get flushed.
+	// BUG(matt): There is a probability that pending items may hang here
+	// and not get flushed.
 	close(t.appendToDiskQueue)
 	close(t.ViewQueue)
 	t.wmCache.Clear()
@@ -639,7 +644,8 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 	panic("illegal state: violated sort invariant")
 }
 
-// Get all label values that are associated with the provided label name.
+// GetAllValuesForLabel gets all label values that are associated with the
+// provided label name.
 func (t *TieredStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -669,8 +675,8 @@ func (t *TieredStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (c
 	return values, nil
 }
 
-// Get all of the metric fingerprints that are associated with the provided
-// label set.
+// GetFingerprintsForLabelSet gets all of the metric fingerprints that are
+// associated with the provided label set.
 func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet) (clientmodel.Fingerprints, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -700,7 +706,8 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet
 	return fingerprints, nil
 }
 
-// Get the metric associated with the provided fingerprint.
+// GetMetricForFingerprint gets the metric associated with the provided
+// fingerprint.
 func (t *TieredStorage) GetMetricForFingerprint(f *clientmodel.Fingerprint) (clientmodel.Metric, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()

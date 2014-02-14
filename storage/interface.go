@@ -26,11 +26,11 @@ type RecordDecoder interface {
 type FilterResult int
 
 const (
-	// Stop scanning the database.
+	// STOP scanning the database.
 	STOP FilterResult = iota
-	// Skip this record but continue scanning.
+	// SKIP this record but continue scanning.
 	SKIP
-	// Accept this record for the Operator.
+	// ACCEPT this record for the Operator.
 	ACCEPT
 )
 
@@ -47,14 +47,14 @@ func (f FilterResult) String() string {
 	panic("unknown")
 }
 
-type OperatorErrorType int
-
+// OperatorError is used for storage operations upon errors that may or may not
+// be continuable.
 type OperatorError struct {
 	Error       error
 	Continuable bool
 }
 
-// Filter is responsible for controlling the behavior of the database scan
+// RecordFilter is responsible for controlling the behavior of the database scan
 // process and determines the disposition of various records.
 //
 // The protocol around it makes the assumption that the underlying
