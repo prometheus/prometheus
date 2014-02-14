@@ -27,34 +27,34 @@ type FilterResult int
 
 const (
 	// Stop scanning the database.
-	STOP FilterResult = iota
+	Stop FilterResult = iota
 	// Skip this record but continue scanning.
-	SKIP
+	Skip
 	// Accept this record for the Operator.
-	ACCEPT
+	Accept
 )
 
 func (f FilterResult) String() string {
 	switch f {
-	case STOP:
+	case Stop:
 		return "STOP"
-	case SKIP:
+	case Skip:
 		return "SKIP"
-	case ACCEPT:
+	case Accept:
 		return "ACCEPT"
 	}
 
 	panic("unknown")
 }
 
-type OperatorErrorType int
-
+// OperatorError is used for storage operations upon errors that may or may not
+// be continuable.
 type OperatorError struct {
 	Error       error
 	Continuable bool
 }
 
-// Filter is responsible for controlling the behavior of the database scan
+// RecordFilter is responsible for controlling the behavior of the database scan
 // process and determines the disposition of various records.
 //
 // The protocol around it makes the assumption that the underlying

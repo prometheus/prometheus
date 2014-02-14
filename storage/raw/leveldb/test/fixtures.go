@@ -23,8 +23,8 @@ import (
 const cacheCapacity = 0
 
 type (
-	// Pair models a prospective (key, value) double that will be committed to
-	// a database.
+	// Pair models a prospective (key, value) double that will be committed
+	// to a database.
 	Pair interface {
 		Get() (key, value proto.Message)
 	}
@@ -32,17 +32,18 @@ type (
 	// Pairs models a list of Pair for disk committing.
 	Pairs []Pair
 
-	// Preparer readies a LevelDB store for a given raw state given the fixtures
-	// definitions passed into it.
+	// Preparer readies a LevelDB store for a given raw state given the
+	// fixtures definitions passed into it.
 	Preparer interface {
-		// Prepare furnishes the database and returns its path along with any
-		// encountered anomalies.
+		// Prepare furnishes the database and returns its path along
+		// with any encountered anomalies.
 		Prepare(namespace string, f FixtureFactory) test.TemporaryDirectory
 	}
 
+	// FixtureFactory is an iterator emitting fixture data.
 	FixtureFactory interface {
-		// HasNext indicates whether the FixtureFactory has more pending fixture
-		// data to build.
+		// HasNext indicates whether the FixtureFactory has more pending
+		// fixture data to build.
 		HasNext() (has bool)
 		// Next emits the next (key, value) double for storage.
 		Next() (key, value proto.Message)
@@ -85,10 +86,12 @@ func (p preparer) Prepare(n string, f FixtureFactory) (t test.TemporaryDirectory
 	return
 }
 
+// HasNext implements FixtureFactory.
 func (f cassetteFactory) HasNext() bool {
 	return f.index < f.count
 }
 
+// Next implements FixtureFactory.
 func (f *cassetteFactory) Next() (key, value proto.Message) {
 	key, value = f.pairs[f.index].Get()
 
