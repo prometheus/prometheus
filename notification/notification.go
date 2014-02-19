@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	alertmanagerApiEventsPath = "/api/events"
+	alertmanagerApiEventsPath = "/api/alerts"
 	contentTypeJson           = "application/json"
 )
 
