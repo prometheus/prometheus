@@ -116,7 +116,7 @@ label_assign       : IDENTIFIER '=' STRING
 rule_expr          : '(' rule_expr ')'
                      { $$ = $2 }
                    | IDENTIFIER rule_labels
-                     { $2[clientmodel.MetricNameLabel] = clientmodel.LabelValue($1); $$ = ast.NewVectorLiteral($2) }
+                     { $2[clientmodel.MetricNameLabel] = clientmodel.LabelValue($1); $$ = ast.NewVectorSelector($2) }
                    | IDENTIFIER '(' func_arg_list ')'
                      {
                        var err error
@@ -132,7 +132,7 @@ rule_expr          : '(' rule_expr ')'
                    | rule_expr '[' DURATION ']'
                      {
                        var err error
-                       $$, err = NewMatrix($1, $3)
+                       $$, err = NewMatrixSelector($1, $3)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
                    | AGGR_OP '(' rule_expr ')' grouping_opts extra_labels_opts

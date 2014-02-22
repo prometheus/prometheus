@@ -245,7 +245,7 @@ out:
 		c = yyTok2[1] /* unknown char */
 	}
 	if yyDebug >= 3 {
-		__yyfmt__.Printf("lex %U %s\n", uint(char), yyTokname(c))
+		__yyfmt__.Printf("lex %s(%d)\n", yyTokname(c), uint(char))
 	}
 	return c
 }
@@ -342,7 +342,7 @@ yydefault:
 			Nerrs++
 			if yyDebug >= 1 {
 				__yyfmt__.Printf("%s", yyStatname(yystate))
-				__yyfmt__.Printf("saw %s\n", yyTokname(yychar))
+				__yyfmt__.Printf(" saw %s\n", yyTokname(yychar))
 			}
 			fallthrough
 
@@ -460,7 +460,7 @@ yydefault:
 		{ yyVAL.ruleNode = yyS[yypt-1].ruleNode }
 	case 19:
 		//line parser.y:119
-		{ yyS[yypt-0].labelSet[clientmodel.MetricNameLabel] = clientmodel.LabelValue(yyS[yypt-1].str); yyVAL.ruleNode = ast.NewVectorLiteral(yyS[yypt-0].labelSet) }
+		{ yyS[yypt-0].labelSet[clientmodel.MetricNameLabel] = clientmodel.LabelValue(yyS[yypt-1].str); yyVAL.ruleNode = ast.NewVectorSelector(yyS[yypt-0].labelSet) }
 	case 20:
 		//line parser.y:121
 		{
@@ -479,7 +479,7 @@ yydefault:
 		//line parser.y:133
 		{
 	                       var err error
-	                       yyVAL.ruleNode, err = NewMatrix(yyS[yypt-3].ruleNode, yyS[yypt-1].str)
+	                       yyVAL.ruleNode, err = NewMatrixSelector(yyS[yypt-3].ruleNode, yyS[yypt-1].str)
 	                       if err != nil { yylex.Error(err.Error()); return 1 }
 	                     }
 	case 23:

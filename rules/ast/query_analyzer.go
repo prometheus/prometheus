@@ -25,7 +25,7 @@ import (
 )
 
 // FullRangeMap maps the fingerprint of a full range to the duration
-// of the matrix literal it resulted from.
+// of the matrix selector it resulted from.
 type FullRangeMap map[clientmodel.Fingerprint]time.Duration
 
 // IntervalRangeMap is a set of fingerprints of interval ranges.
@@ -41,7 +41,7 @@ type QueryAnalyzer struct {
 	// - start: query interval start - duration
 	// - end:   query interval end
 	//
-	// This is because full ranges can only result from matrix literals (like
+	// This is because full ranges can only result from matrix selectors (like
 	// "foo[5m]"), which have said time-spanning behavior during a ranged query.
 	FullRanges FullRangeMap
 	// Interval ranges always implicitly span the whole query range.
@@ -65,7 +65,7 @@ func NewQueryAnalyzer(storage *metric.TieredStorage) *QueryAnalyzer {
 // Visit implements the Visitor interface.
 func (analyzer *QueryAnalyzer) Visit(node Node) {
 	switch n := node.(type) {
-	case *VectorLiteral:
+	case *VectorSelector:
 		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
 		if err != nil {
 			glog.Errorf("Error getting fingerprints for labelset %v: %v", n.labels, err)
@@ -79,7 +79,7 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 				analyzer.IntervalRanges[*fingerprint] = true
 			}
 		}
-	case *MatrixLiteral:
+	case *MatrixSelector:
 		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
 		if err != nil {
 			glog.Errorf("Error getting fingerprints for labelset %v: %v", n.labels, err)

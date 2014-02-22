@@ -237,8 +237,8 @@ func (node *ScalarArithExpr) NodeTreeToDotGraph() string {
 	return graph
 }
 
-// NodeTreeToDotGraph returns a DOT representation of the vector literal.
-func (node *VectorLiteral) NodeTreeToDotGraph() string {
+// NodeTreeToDotGraph returns a DOT representation of the vector selector.
+func (node *VectorSelector) NodeTreeToDotGraph() string {
 	return fmt.Sprintf("%#p[label=\"%s\"];\n", node, node)
 }
 
@@ -280,8 +280,8 @@ func (node *VectorArithExpr) NodeTreeToDotGraph() string {
 }
 
 // NodeTreeToDotGraph returns a DOT representation of the matrix
-// literal.
-func (node *MatrixLiteral) NodeTreeToDotGraph() string {
+// selector.
+func (node *MatrixSelector) NodeTreeToDotGraph() string {
 	return fmt.Sprintf("%#p[label=\"%s\"];\n", node, node)
 }
 
@@ -319,7 +319,7 @@ func (node *ScalarArithExpr) String() string {
 	return fmt.Sprintf("(%s %s %s)", node.lhs, node.opType, node.rhs)
 }
 
-func (node *VectorLiteral) String() string {
+func (node *VectorSelector) String() string {
 	metricName, ok := node.labels[clientmodel.MetricNameLabel]
 	if !ok {
 		panic("Tried to print vector without metric name")
@@ -356,8 +356,8 @@ func (node *VectorArithExpr) String() string {
 	return fmt.Sprintf("(%s %s %s)", node.lhs, node.opType, node.rhs)
 }
 
-func (node *MatrixLiteral) String() string {
-	vectorString := (&VectorLiteral{labels: node.labels}).String()
+func (node *MatrixSelector) String() string {
+	vectorString := (&VectorSelector{labels: node.labels}).String()
 	intervalString := fmt.Sprintf("[%s]", utility.DurationToString(node.interval))
 	return vectorString + intervalString
 }
