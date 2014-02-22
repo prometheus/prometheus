@@ -70,7 +70,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyMaxDepth = 200
 
-//line parser.y:197
+//line parser.y:196
 
 
 //line yacctab:1
@@ -245,7 +245,7 @@ out:
 		c = yyTok2[1] /* unknown char */
 	}
 	if yyDebug >= 3 {
-		__yyfmt__.Printf("lex %U %s\n", uint(char), yyTokname(c))
+		__yyfmt__.Printf("lex %s(%d)\n", yyTokname(c), uint(char))
 	}
 	return c
 }
@@ -342,7 +342,7 @@ yydefault:
 			Nerrs++
 			if yyDebug >= 1 {
 				__yyfmt__.Printf("%s", yyStatname(yystate))
-				__yyfmt__.Printf("saw %s\n", yyTokname(yychar))
+				__yyfmt__.Printf(" saw %s\n", yyTokname(yychar))
 			}
 			fallthrough
 
@@ -456,92 +456,92 @@ yydefault:
 		//line parser.y:112
 		{ yyVAL.labelSet = clientmodel.LabelSet{ clientmodel.LabelName(yyS[yypt-2].str): clientmodel.LabelValue(yyS[yypt-0].str) } }
 	case 18:
-		//line parser.y:117
+		//line parser.y:116
 		{ yyVAL.ruleNode = yyS[yypt-1].ruleNode }
 	case 19:
-		//line parser.y:119
-		{ yyS[yypt-0].labelSet[clientmodel.MetricNameLabel] = clientmodel.LabelValue(yyS[yypt-1].str); yyVAL.ruleNode = ast.NewVectorLiteral(yyS[yypt-0].labelSet) }
+		//line parser.y:118
+		{ yyS[yypt-0].labelSet[clientmodel.MetricNameLabel] = clientmodel.LabelValue(yyS[yypt-1].str); yyVAL.ruleNode = ast.NewVectorSelector(yyS[yypt-0].labelSet) }
 	case 20:
-		//line parser.y:121
+		//line parser.y:120
 		{
 	                       var err error
 	                       yyVAL.ruleNode, err = NewFunctionCall(yyS[yypt-3].str, yyS[yypt-1].ruleNodeSlice)
 	                       if err != nil { yylex.Error(err.Error()); return 1 }
 	                     }
 	case 21:
-		//line parser.y:127
+		//line parser.y:126
 		{
 	                       var err error
 	                       yyVAL.ruleNode, err = NewFunctionCall(yyS[yypt-2].str, []ast.Node{})
 	                       if err != nil { yylex.Error(err.Error()); return 1 }
 	                     }
 	case 22:
-		//line parser.y:133
+		//line parser.y:132
 		{
 	                       var err error
 	                       yyVAL.ruleNode, err = NewMatrix(yyS[yypt-3].ruleNode, yyS[yypt-1].str)
 	                       if err != nil { yylex.Error(err.Error()); return 1 }
 	                     }
 	case 23:
-		//line parser.y:139
+		//line parser.y:138
 		{
 	                       var err error
 	                       yyVAL.ruleNode, err = NewVectorAggregation(yyS[yypt-5].str, yyS[yypt-3].ruleNode, yyS[yypt-1].labelNameSlice, yyS[yypt-0].boolean)
 	                       if err != nil { yylex.Error(err.Error()); return 1 }
 	                     }
 	case 24:
-		//line parser.y:147
+		//line parser.y:146
 		{
 	                       var err error
 	                       yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
 	                       if err != nil { yylex.Error(err.Error()); return 1 }
 	                     }
 	case 25:
-		//line parser.y:153
+		//line parser.y:152
 		{
 	                       var err error
 	                       yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
 	                       if err != nil { yylex.Error(err.Error()); return 1 }
 	                     }
 	case 26:
-		//line parser.y:159
+		//line parser.y:158
 		{
 	                       var err error
 	                       yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
 	                       if err != nil { yylex.Error(err.Error()); return 1 }
 	                     }
 	case 27:
-		//line parser.y:165
+		//line parser.y:164
 		{ yyVAL.ruleNode = ast.NewScalarLiteral(yyS[yypt-0].num)}
 	case 28:
-		//line parser.y:169
+		//line parser.y:168
 		{ yyVAL.boolean = false }
 	case 29:
-		//line parser.y:171
+		//line parser.y:170
 		{ yyVAL.boolean = true }
 	case 30:
-		//line parser.y:175
+		//line parser.y:174
 		{ yyVAL.labelNameSlice = clientmodel.LabelNames{} }
 	case 31:
-		//line parser.y:177
+		//line parser.y:176
 		{ yyVAL.labelNameSlice = yyS[yypt-1].labelNameSlice }
 	case 32:
-		//line parser.y:181
+		//line parser.y:180
 		{ yyVAL.labelNameSlice = clientmodel.LabelNames{clientmodel.LabelName(yyS[yypt-0].str)} }
 	case 33:
-		//line parser.y:183
+		//line parser.y:182
 		{ yyVAL.labelNameSlice = append(yyVAL.labelNameSlice, clientmodel.LabelName(yyS[yypt-0].str)) }
 	case 34:
-		//line parser.y:187
+		//line parser.y:186
 		{ yyVAL.ruleNodeSlice = []ast.Node{yyS[yypt-0].ruleNode} }
 	case 35:
-		//line parser.y:189
+		//line parser.y:188
 		{ yyVAL.ruleNodeSlice = append(yyVAL.ruleNodeSlice, yyS[yypt-0].ruleNode) }
 	case 36:
-		//line parser.y:193
+		//line parser.y:192
 		{ yyVAL.ruleNode = yyS[yypt-0].ruleNode }
 	case 37:
-		//line parser.y:195
+		//line parser.y:194
 		{ yyVAL.ruleNode = ast.NewStringLiteral(yyS[yypt-0].str) }
 	}
 	goto yystack /* stack new state and value */

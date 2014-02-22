@@ -110,7 +110,7 @@ func deltaImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) 
 		}
 		resultValue := lastValue - samples.Values[0].Value + counterCorrection
 
-		targetInterval := args[0].(*MatrixLiteral).interval
+		targetInterval := args[0].(*MatrixSelector).interval
 		sampledInterval := samples.Values[len(samples.Values)-1].Timestamp.Sub(samples.Values[0].Timestamp)
 		if sampledInterval == 0 {
 			// Only found one sample. Cannot compute a rate from this.
@@ -143,9 +143,9 @@ func rateImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) i
 	vector := deltaImpl(timestamp, view, args).(Vector)
 
 	// TODO: could be other type of MatrixNode in the future (right now, only
-	// MatrixLiteral exists). Find a better way of getting the duration of a
+	// MatrixSelector exists). Find a better way of getting the duration of a
 	// matrix, such as looking at the samples themselves.
-	interval := args[0].(*MatrixLiteral).interval
+	interval := args[0].(*MatrixSelector).interval
 	for i := range vector {
 		vector[i].Value /= clientmodel.SampleValue(interval / time.Second)
 	}

@@ -148,7 +148,7 @@ type StringNode interface {
 // ScalarNode types.
 
 type (
-	// ScalarLiteral represents a numeric literal.
+	// ScalarLiteral represents a numeric selector.
 	ScalarLiteral struct {
 		value clientmodel.SampleValue
 	}
@@ -173,8 +173,8 @@ type (
 // VectorNode types.
 
 type (
-	// A VectorLiteral represents a metric name plus labelset.
-	VectorLiteral struct {
+	// A VectorSelector represents a metric name plus labelset.
+	VectorSelector struct {
 		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query analysis time.
 		fingerprints clientmodel.Fingerprints
@@ -208,9 +208,9 @@ type (
 // MatrixNode types.
 
 type (
-	// A MatrixLiteral represents a metric name plus labelset and
+	// A MatrixSelector represents a metric name plus labelset and
 	// timerange.
-	MatrixLiteral struct {
+	MatrixSelector struct {
 		labels clientmodel.LabelSet
 		// Fingerprints are populated from labels at query
 		// analysis time.
@@ -249,7 +249,7 @@ func (node ScalarFunctionCall) Type() ExprType { return SCALAR }
 func (node ScalarArithExpr) Type() ExprType { return SCALAR }
 
 // Type implements the Node interface.
-func (node VectorLiteral) Type() ExprType { return VECTOR }
+func (node VectorSelector) Type() ExprType { return VECTOR }
 
 // Type implements the Node interface.
 func (node VectorFunctionCall) Type() ExprType { return VECTOR }
@@ -261,7 +261,7 @@ func (node VectorAggregation) Type() ExprType { return VECTOR }
 func (node VectorArithExpr) Type() ExprType { return VECTOR }
 
 // Type implements the Node interface.
-func (node MatrixLiteral) Type() ExprType { return MATRIX }
+func (node MatrixSelector) Type() ExprType { return MATRIX }
 
 // Type implements the Node interface.
 func (node StringLiteral) Type() ExprType { return STRING }
@@ -281,7 +281,7 @@ func (node ScalarFunctionCall) Children() Nodes { return node.args }
 func (node ScalarArithExpr) Children() Nodes { return Nodes{node.lhs, node.rhs} }
 
 // Children implements the Node interface and returns an empty slice.
-func (node VectorLiteral) Children() Nodes { return Nodes{} }
+func (node VectorSelector) Children() Nodes { return Nodes{} }
 
 // Children implements the Node interface and returns the args of the
 // function call.
@@ -296,7 +296,7 @@ func (node VectorAggregation) Children() Nodes { return Nodes{node.vector} }
 func (node VectorArithExpr) Children() Nodes { return Nodes{node.lhs, node.rhs} }
 
 // Children implements the Node interface and returns an empty slice.
-func (node MatrixLiteral) Children() Nodes { return Nodes{} }
+func (node MatrixSelector) Children() Nodes { return Nodes{} }
 
 // Children implements the Node interface and returns an empty slice.
 func (node StringLiteral) Children() Nodes { return Nodes{} }
@@ -305,7 +305,7 @@ func (node StringLiteral) Children() Nodes { return Nodes{} }
 // function call.
 func (node StringFunctionCall) Children() Nodes { return node.args }
 
-// Eval implements the ScalarNode interface and returns the literal
+// Eval implements the ScalarNode interface and returns the selector
 // value.
 func (node *ScalarLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
 	return node.value
@@ -496,8 +496,8 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp, view *viewA
 }
 
 // Eval implements the VectorNode interface and returns the value of
-// the literal.
-func (node *VectorLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
+// the selector.
+func (node *VectorSelector) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
 	values, err := view.GetValueAtTime(node.fingerprints, timestamp)
 	if err != nil {
 		glog.Error("Unable to get vector values: ", err)
@@ -670,8 +670,8 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAda
 }
 
 // Eval implements the MatrixNode interface and returns the value of
-// the literal.
-func (node *MatrixLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
+// the selector.
+func (node *MatrixSelector) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
 	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
@@ -685,8 +685,8 @@ func (node *MatrixLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapt
 }
 
 // EvalBoundaries implements the MatrixNode interface and returns the
-// boundary values of the literal.
-func (node *MatrixLiteral) EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
+// boundary values of the selector.
+func (node *MatrixSelector) EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
 	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
@@ -715,7 +715,7 @@ func (matrix Matrix) Swap(i, j int) {
 }
 
 // Eval implements the StringNode interface and returns the value of
-// the literal.
+// the selector.
 func (node *StringLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string {
 	return node.str
 }
@@ -736,10 +736,10 @@ func NewScalarLiteral(value clientmodel.SampleValue) *ScalarLiteral {
 	}
 }
 
-// NewVectorLiteral returns a (not yet evaluated) VectorLiteral with
+// NewVectorSelector returns a (not yet evaluated) VectorSelector with
 // the given LabelSet.
-func NewVectorLiteral(labels clientmodel.LabelSet) *VectorLiteral {
-	return &VectorLiteral{
+func NewVectorSelector(labels clientmodel.LabelSet) *VectorSelector {
+	return &VectorSelector{
 		labels: labels,
 	}
 }
@@ -829,10 +829,10 @@ func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
 	}, nil
 }
 
-// NewMatrixLiteral returns a (not yet evaluated) MatrixLiteral with
-// the given VectorLiteral and Duration.
-func NewMatrixLiteral(vector *VectorLiteral, interval time.Duration) *MatrixLiteral {
-	return &MatrixLiteral{
+// NewMatrixSelector returns a (not yet evaluated) MatrixSelector with
+// the given VectorSelector and Duration.
+func NewMatrixSelector(vector *VectorSelector, interval time.Duration) *MatrixSelector {
+	return &MatrixSelector{
 		labels:   vector.labels,
 		interval: interval,
 	}

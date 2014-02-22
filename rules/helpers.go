@@ -99,21 +99,21 @@ func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node) (ast.Node, error
 	return expr, nil
 }
 
-func NewMatrix(vector ast.Node, intervalStr string) (ast.MatrixNode, error) {
+func NewMatrixSelector(vector ast.Node, intervalStr string) (ast.MatrixNode, error) {
 	switch vector.(type) {
-	case *ast.VectorLiteral:
+	case *ast.VectorSelector:
 		{
 			break
 		}
 	default:
-		return nil, fmt.Errorf("Intervals are currently only supported for vector literals.")
+		return nil, fmt.Errorf("Intervals are currently only supported for vector selectors.")
 	}
 	interval, err := utility.StringToDuration(intervalStr)
 	if err != nil {
 		return nil, err
 	}
-	vectorLiteral := vector.(*ast.VectorLiteral)
-	return ast.NewMatrixLiteral(vectorLiteral, interval), nil
+	vectorSelector := vector.(*ast.VectorSelector)
+	return ast.NewMatrixSelector(vectorSelector, interval), nil
 }
 
 func ConsoleLinkForExpression(expr string) string {
