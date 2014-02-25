@@ -90,8 +90,9 @@ Great!  Look at this list and now think about the definitions above for
 _Counter_ and _Gauge_.  Can you identify what instruments are what?  (Again,
 I'll wait for you.)
 
-  * Tachometer: Counter.  Tricky.  The vehicle's sensors observe how quickly the
-    flywheel rotates and updates the instrument's value on frequent intervals.
+  * Tachometer: Counter.  Tricky.  The vehicle's sensors observe how quickly
+    the flywheel rotates and updates the instrument's value on frequent
+    intervals by counting revolutions.
   * Clock: Gauge.  It is an external value, and we cannot watch the clock's
     internal events.
   * Thermometer: Gauge.  It measures an external value, and there is no way to
@@ -117,8 +118,8 @@ following information:
   * the count of events that have been observed.
 
 This is quite convenient, for if you are interested in tracking latencies of an
-operation in real time, you three types of information reported for free with
-one metric.
+operation in real time, you get three types of information reported for free
+with one metric.
 
 # Acknowledgements
 Robert Bray: Vehicle Instrument Panel
