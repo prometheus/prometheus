@@ -52,8 +52,8 @@ var (
 	diskAppendQueueCapacity   = flag.Int("storage.queue.diskAppendCapacity", 1000000, "The size of the queue for items that are pending writing to disk.")
 	memoryAppendQueueCapacity = flag.Int("storage.queue.memoryAppendCapacity", 10000, "The size of the queue for items that are pending writing to memory.")
 
-	compactInterval = flag.Duration("compact.interval", 3*time.Hour, "The amount of time between compactions.")
-	compactGroupSize = flag.Int("compact.groupSize", 500, "The minimum group size for compacted samples.")
+	compactInterval         = flag.Duration("compact.interval", 3*time.Hour, "The amount of time between compactions.")
+	compactGroupSize        = flag.Int("compact.groupSize", 500, "The minimum group size for compacted samples.")
 	compactAgeInclusiveness = flag.Duration("compact.ageInclusiveness", 5*time.Minute, "The age beyond which samples should be compacted.")
 
 	deleteInterval = flag.Duration("delete.interval", 11*time.Hour, "The amount of time between deletion of old values.")
@@ -72,7 +72,7 @@ var (
 
 type prometheus struct {
 	compactionTimer *time.Ticker
-	deletionTimer       *time.Ticker
+	deletionTimer   *time.Ticker
 
 	curationSema             chan bool
 	stopBackgroundOperations chan bool
