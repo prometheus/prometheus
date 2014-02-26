@@ -26,7 +26,7 @@ type (
 	// Pair models a prospective (key, value) double that will be committed
 	// to a database.
 	Pair interface {
-		Get() (key, value proto.Message)
+		Get() (key proto.Message, value interface{})
 	}
 
 	// Pairs models a list of Pair for disk committing.
@@ -46,7 +46,7 @@ type (
 		// fixture data to build.
 		HasNext() (has bool)
 		// Next emits the next (key, value) double for storage.
-		Next() (key, value proto.Message)
+		Next() (key proto.Message, value interface{})
 	}
 
 	preparer struct {
@@ -76,7 +76,14 @@ func (p preparer) Prepare(n string, f FixtureFactory) (t test.TemporaryDirectory
 	for f.HasNext() {
 		key, value := f.Next()
 
-		err = persistence.Put(key, value)
+		switch v := value.(type) {
+		case proto.Message:
+			err = persistence.Put(key, v)
+		case []byte:
+			err = persistence.PutRaw(key, v)
+		default:
+			panic("illegal value type")
+		}
 		if err != nil {
 			defer t.Close()
 			p.tester.Fatal(err)
@@ -92,7 +99,7 @@ func (f cassetteFactory) HasNext() bool {
 }
 
 // Next implements FixtureFactory.
-func (f *cassetteFactory) Next() (key, value proto.Message) {
+func (f *cassetteFactory) Next() (key proto.Message, value interface{}) {
 	key, value = f.pairs[f.index].Get()
 
 	f.index++

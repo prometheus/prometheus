@@ -2,6 +2,27 @@
 // source: data.proto
 // DO NOT EDIT!
 
+/*
+Package io_prometheus is a generated protocol buffer package.
+
+It is generated from these files:
+	data.proto
+
+It has these top-level messages:
+	LabelPair
+	LabelName
+	Metric
+	Fingerprint
+	FingerprintCollection
+	LabelSet
+	SampleKey
+	MembershipIndexValue
+	MetricHighWatermark
+	CompactionProcessorDefinition
+	CurationKey
+	CurationValue
+	DeletionProcessorDefinition
+*/
 package io_prometheus
 
 import proto "code.google.com/p/goprotobuf/proto"
@@ -119,6 +140,9 @@ func (m *LabelSet) GetMember() []*LabelPair {
 	return nil
 }
 
+// The default LevelDB comparator sorts not only lexicographically, but also by
+// key length (which takes precedence). Thus, no variable-length fields may be
+// introduced into the key definition below.
 type SampleKey struct {
 	Fingerprint      *Fingerprint `protobuf:"bytes,1,opt,name=fingerprint" json:"fingerprint,omitempty"`
 	Timestamp        []byte       `protobuf:"bytes,2,opt,name=timestamp" json:"timestamp,omitempty"`
@@ -159,46 +183,6 @@ func (m *SampleKey) GetSampleCount() uint32 {
 	return 0
 }
 
-type SampleValueSeries struct {
-	Value            []*SampleValueSeries_Value `protobuf:"bytes,1,rep,name=value" json:"value,omitempty"`
-	XXX_unrecognized []byte                     `json:"-"`
-}
-
-func (m *SampleValueSeries) Reset()         { *m = SampleValueSeries{} }
-func (m *SampleValueSeries) String() string { return proto.CompactTextString(m) }
-func (*SampleValueSeries) ProtoMessage()    {}
-
-func (m *SampleValueSeries) GetValue() []*SampleValueSeries_Value {
-	if m != nil {
-		return m.Value
-	}
-	return nil
-}
-
-type SampleValueSeries_Value struct {
-	Timestamp        *int64   `protobuf:"varint,1,opt,name=timestamp" json:"timestamp,omitempty"`
-	Value            *float64 `protobuf:"fixed64,2,opt,name=value" json:"value,omitempty"`
-	XXX_unrecognized []byte   `json:"-"`
-}
-
-func (m *SampleValueSeries_Value) Reset()         { *m = SampleValueSeries_Value{} }
-func (m *SampleValueSeries_Value) String() string { return proto.CompactTextString(m) }
-func (*SampleValueSeries_Value) ProtoMessage()    {}
-
-func (m *SampleValueSeries_Value) GetTimestamp() int64 {
-	if m != nil && m.Timestamp != nil {
-		return *m.Timestamp
-	}
-	return 0
-}
-
-func (m *SampleValueSeries_Value) GetValue() float64 {
-	if m != nil && m.Value != nil {
-		return *m.Value
-	}
-	return 0
-}
-
 type MembershipIndexValue struct {
 	XXX_unrecognized []byte `json:"-"`
 }
@@ -223,7 +207,11 @@ func (m *MetricHighWatermark) GetTimestamp() int64 {
 	return 0
 }
 
+// CompactionProcessorDefinition models a curation process across the sample
+// corpus that ensures that sparse samples.
 type CompactionProcessorDefinition struct {
+	// minimum_group_size identifies how minimally samples should be grouped
+	// together to write a new samples chunk.
 	MinimumGroupSize *uint32 `protobuf:"varint,1,opt,name=minimum_group_size" json:"minimum_group_size,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
@@ -239,12 +227,38 @@ func (m *CompactionProcessorDefinition) GetMinimumGroupSize() uint32 {
 	return 0
 }
 
+// CurationKey models the state of curation for a given metric fingerprint and
+// its associated samples.  The time series database only knows about compaction
+// and resampling behaviors that are explicitly defined to it in its runtime
+// configuration, meaning it never scans on-disk tables for CurationKey
+// policies; rather, it looks up via the CurationKey tuple to find out what the
+// effectuation state for a given metric fingerprint is.
+//
+// For instance, how far along as a rule for (Fingerprint A, Samples Older Than
+// B, and Curation Processor) has been effectuated on-disk.
 type CurationKey struct {
-	Fingerprint              *Fingerprint `protobuf:"bytes,1,opt,name=fingerprint" json:"fingerprint,omitempty"`
-	ProcessorMessageTypeName *string      `protobuf:"bytes,2,opt,name=processor_message_type_name" json:"processor_message_type_name,omitempty"`
-	ProcessorMessageRaw      []byte       `protobuf:"bytes,3,opt,name=processor_message_raw" json:"processor_message_raw,omitempty"`
-	IgnoreYoungerThan        *int64       `protobuf:"varint,4,opt,name=ignore_younger_than" json:"ignore_younger_than,omitempty"`
-	XXX_unrecognized         []byte       `json:"-"`
+	// fingerprint identifies the fingerprint for the given policy.
+	Fingerprint *Fingerprint `protobuf:"bytes,1,opt,name=fingerprint" json:"fingerprint,omitempty"`
+	// processor_message_type_name identifies the underlying message type that
+	// was used to encode processor_message_raw.
+	ProcessorMessageTypeName *string `protobuf:"bytes,2,opt,name=processor_message_type_name" json:"processor_message_type_name,omitempty"`
+	// processor_message_raw identifies the serialized ProcessorSignature for this
+	// operation.
+	ProcessorMessageRaw []byte `protobuf:"bytes,3,opt,name=processor_message_raw" json:"processor_message_raw,omitempty"`
+	// ignore_younger_than represents in seconds relative to when the curation
+	// cycle start when the curator should stop operating.  For instance, if
+	// the curation cycle starts at time T and the curation remark dictates that
+	// the curation should starts processing samples at time S, the curator should
+	// work from S until ignore_younger_than seconds before T:
+	//
+	// PAST                        NOW               FUTURE
+	//
+	// S--------------->|----------T
+	//                  |---IYT----|
+	//
+	// [Curation Resumption Time (S), T - IYT)
+	IgnoreYoungerThan *int64 `protobuf:"varint,4,opt,name=ignore_younger_than" json:"ignore_younger_than,omitempty"`
+	XXX_unrecognized  []byte `json:"-"`
 }
 
 func (m *CurationKey) Reset()         { *m = CurationKey{} }
@@ -279,7 +293,11 @@ func (m *CurationKey) GetIgnoreYoungerThan() int64 {
 	return 0
 }
 
+// CurationValue models the progress for a given CurationKey.
 type CurationValue struct {
+	// last_completion_timestamp represents the seconds since the epoch UTC at
+	// which the curator last completed its duty cycle for a given metric
+	// fingerprint.
 	LastCompletionTimestamp *int64 `protobuf:"varint,1,opt,name=last_completion_timestamp" json:"last_completion_timestamp,omitempty"`
 	XXX_unrecognized        []byte `json:"-"`
 }
@@ -295,6 +313,8 @@ func (m *CurationValue) GetLastCompletionTimestamp() int64 {
 	return 0
 }
 
+// DeletionProcessorDefinition models a curation process across the sample
+// corpus that deletes old values.
 type DeletionProcessorDefinition struct {
 	XXX_unrecognized []byte `json:"-"`
 }

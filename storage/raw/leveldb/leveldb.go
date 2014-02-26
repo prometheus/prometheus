@@ -163,10 +163,6 @@ func (i *levigoIterator) rawKey() (key []byte) {
 	return i.iterator.Key()
 }
 
-func (i *levigoIterator) rawValue() (value []byte) {
-	return i.iterator.Value()
-}
-
 func (i *levigoIterator) Error() (err error) {
 	return i.iterator.GetError()
 }
@@ -180,13 +176,8 @@ func (i *levigoIterator) Key(m proto.Message) error {
 	return buf.Unmarshal(m)
 }
 
-func (i *levigoIterator) Value(m proto.Message) error {
-	buf, _ := buffers.Get()
-	defer buffers.Give(buf)
-
-	buf.SetBuf(i.iterator.Value())
-
-	return buf.Unmarshal(m)
+func (i *levigoIterator) RawValue() []byte {
+	return i.iterator.Value()
 }
 
 func (i *levigoIterator) Valid() bool {
@@ -373,6 +364,18 @@ func (l *LevelDBPersistence) Put(k, v proto.Message) error {
 	return l.storage.Put(l.writeOptions, keyBuf.Bytes(), valBuf.Bytes())
 }
 
+// PutRaw implements raw.Persistence.
+func (l *LevelDBPersistence) PutRaw(key proto.Message, value []byte) error {
+	keyBuf, _ := buffers.Get()
+	defer buffers.Give(keyBuf)
+
+	if err := keyBuf.Marshal(key); err != nil {
+		panic(err)
+	}
+
+	return l.storage.Put(l.writeOptions, keyBuf.Bytes(), value)
+}
+
 // Commit implements raw.Persistence.
 func (l *LevelDBPersistence) Commit(b raw.Batch) (err error) {
 	// XXX: This is a wart to clean up later.  Ideally, after doing
@@ -492,7 +495,7 @@ func (l *LevelDBPersistence) ForEach(decoder storage.RecordDecoder, filter stora
 		if decodeErr != nil {
 			continue
 		}
-		decodedValue, decodeErr := decoder.DecodeValue(iterator.rawValue())
+		decodedValue, decodeErr := decoder.DecodeValue(iterator.RawValue())
 		if decodeErr != nil {
 			continue
 		}
