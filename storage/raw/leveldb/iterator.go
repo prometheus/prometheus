@@ -33,10 +33,9 @@ type Iterator interface {
 	Previous() bool
 
 	Key(proto.Message) error
-	Value(proto.Message) error
+	RawValue() []byte
 
 	Close() error
 
 	rawKey() []byte
-	rawValue() []byte
 }
