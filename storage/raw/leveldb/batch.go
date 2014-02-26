@@ -18,6 +18,8 @@ import (
 
 	"code.google.com/p/goprotobuf/proto"
 	"github.com/jmhodges/levigo"
+
+	"github.com/prometheus/prometheus/storage/raw"
 )
 
 type batch struct {
@@ -64,7 +66,19 @@ func (b *batch) Put(key, value proto.Message) {
 	b.batch.Put(keyBuf.Bytes(), valBuf.Bytes())
 
 	b.puts++
+}
 
+func (b *batch) PutRaw(key proto.Message, value []byte) {
+	keyBuf, _ := buffers.Get()
+	defer buffers.Give(keyBuf)
+
+	if err := keyBuf.Marshal(key); err != nil {
+		panic(err)
+	}
+
+	b.batch.Put(keyBuf.Bytes(), value)
+
+	b.puts++
 }
 
 func (b *batch) Close() {

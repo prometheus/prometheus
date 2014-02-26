@@ -596,7 +596,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 		//
 		// Only do the rewind if there is another chunk before this one.
 		if !seekingKey.MayContain(ts) {
-			postValues, _ := extractSampleValues(iterator)
+			postValues := unmarshalValues(iterator.RawValue())
 			if !seekingKey.Equal(firstBlock) {
 				if !iterator.Previous() {
 					panic("This should never return false.")
@@ -611,13 +611,13 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 					return postValues, false
 				}
 
-				foundValues, _ = extractSampleValues(iterator)
+				foundValues = unmarshalValues(iterator.RawValue())
 				foundValues = append(foundValues, postValues...)
 				return foundValues, false
 			}
 		}
 
-		foundValues, _ = extractSampleValues(iterator)
+		foundValues = unmarshalValues(iterator.RawValue())
 		return foundValues, false
 	}
 
@@ -636,7 +636,7 @@ func (t *TieredStorage) loadChunkAroundTime(iterator leveldb.Iterator, fingerpri
 				return nil, false
 			}
 
-			foundValues, _ = extractSampleValues(iterator)
+			foundValues = unmarshalValues(iterator.RawValue())
 			return foundValues, false
 		}
 	}
