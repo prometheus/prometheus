@@ -323,12 +323,11 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 
 	key := &SampleKey{}
 	keyDto := &dto.SampleKey{}
-	value := &dto.SampleValueSeries{}
+	values := make(Values, 0, *leveldbChunkSize)
 
 	for fingerprint, group := range fingerprintToSamples {
 		for {
-			value.Reset()
-
+			values := values[:0]
 			lengthOfGroup := len(group)
 
 			if lengthOfGroup == 0 {
@@ -348,16 +347,16 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			key.LastTimestamp = chunk[take-1].Timestamp
 			key.SampleCount = uint32(take)
 
+			key.Dump(keyDto)
+
 			for _, sample := range chunk {
-				// XXX: Candidate for allocation reduction.
-				value.Value = append(value.Value, &dto.SampleValueSeries_Value{
-					Timestamp: proto.Int64(sample.Timestamp.Unix()),
-					Value:     proto.Float64(float64(sample.Value)),
+				values = append(values, &SamplePair{
+					Timestamp: sample.Timestamp,
+					Value:     sample.Value,
 				})
 			}
-
-			key.Dump(keyDto)
-			samplesBatch.Put(keyDto, value)
+			val := values.marshal()
+			samplesBatch.PutRaw(keyDto, val)
 		}
 	}
 
@@ -389,15 +388,6 @@ func extractSampleKey(i leveldb.Iterator) (*SampleKey, error) {
 	key.Load(k)
 
 	return key, nil
-}
-
-func extractSampleValues(i leveldb.Iterator) (Values, error) {
-	v := &dto.SampleValueSeries{}
-	if err := i.Value(v); err != nil {
-		return nil, err
-	}
-
-	return NewValuesFromDTO(v), nil
 }
 
 func (l *LevelDBMetricPersistence) hasIndexMetric(m clientmodel.Metric) (value bool, err error) {
@@ -625,13 +615,7 @@ func (d *MetricSamplesDecoder) DecodeKey(in interface{}) (interface{}, error) {
 // DecodeValue implements storage.RecordDecoder. It requires 'in' to be a
 // SampleValueSeries protobuf. 'out' is of type metric.Values.
 func (d *MetricSamplesDecoder) DecodeValue(in interface{}) (interface{}, error) {
-	values := &dto.SampleValueSeries{}
-	err := proto.Unmarshal(in.([]byte), values)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewValuesFromDTO(values), nil
+	return unmarshalValues(in.([]byte)), nil
 }
 
 // AcceptAllFilter implements storage.RecordFilter and accepts all records.

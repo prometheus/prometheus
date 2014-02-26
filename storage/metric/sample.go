@@ -15,15 +15,16 @@ package metric
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"math"
 	"sort"
 
-	"code.google.com/p/goprotobuf/proto"
-
 	clientmodel "github.com/prometheus/client_golang/model"
-
-	dto "github.com/prometheus/prometheus/model/generated"
 )
+
+// bytesPerSample is the number of bytes per sample in marshalled format.
+const bytesPerSample = 16
 
 // MarshalJSON implements json.Marshaler.
 func (s SamplePair) MarshalJSON() ([]byte, error) {
@@ -32,8 +33,8 @@ func (s SamplePair) MarshalJSON() ([]byte, error) {
 
 // SamplePair pairs a SampleValue with a Timestamp.
 type SamplePair struct {
-	Value     clientmodel.SampleValue
 	Timestamp clientmodel.Timestamp
+	Value     clientmodel.SampleValue
 }
 
 // Equal returns true if this SamplePair and o have equal Values and equal
@@ -44,14 +45,6 @@ func (s *SamplePair) Equal(o *SamplePair) bool {
 	}
 
 	return s.Value.Equal(o.Value) && s.Timestamp.Equal(o.Timestamp)
-}
-
-func (s *SamplePair) dump(d *dto.SampleValueSeries_Value) {
-	d.Reset()
-
-	d.Timestamp = proto.Int64(s.Timestamp.Unix())
-	d.Value = proto.Float64(float64(s.Value))
-
 }
 
 func (s *SamplePair) String() string {
@@ -133,16 +126,6 @@ func (v Values) TruncateBefore(t clientmodel.Timestamp) Values {
 	return v[index:]
 }
 
-func (v Values) dump(d *dto.SampleValueSeries) {
-	d.Reset()
-
-	for _, value := range v {
-		element := &dto.SampleValueSeries_Value{}
-		value.dump(element)
-		d.Value = append(d.Value, element)
-	}
-}
-
 // ToSampleKey returns the SampleKey for these Values.
 func (v Values) ToSampleKey(f *clientmodel.Fingerprint) *SampleKey {
 	return &SampleKey{
@@ -168,19 +151,32 @@ func (v Values) String() string {
 	return buffer.String()
 }
 
-// NewValuesFromDTO deserializes Values from a DTO.
-func NewValuesFromDTO(d *dto.SampleValueSeries) Values {
-	// BUG(matt): Incogruent from the other load/dump API types, but much
-	// more performant.
-	v := make(Values, 0, len(d.Value))
-
-	for _, value := range d.Value {
-		v = append(v, &SamplePair{
-			Timestamp: clientmodel.TimestampFromUnix(value.GetTimestamp()),
-			Value:     clientmodel.SampleValue(value.GetValue()),
-		})
+// marshal marshals a group of samples for being written to disk.
+func (v Values) marshal() []byte {
+	buf := make([]byte, len(v)*bytesPerSample)
+	for i, val := range v {
+		offset := i * 16
+		binary.LittleEndian.PutUint64(buf[offset:], uint64(val.Timestamp.Unix()))
+		binary.LittleEndian.PutUint64(buf[offset+8:], math.Float64bits(float64(val.Value)))
 	}
+	return buf
+}
 
+// unmarshalValues decodes marshalled samples and returns them as Values.
+func unmarshalValues(buf []byte) Values {
+	n := len(buf) / bytesPerSample
+	// Setting the value of a given slice index is around 15% faster than doing
+	// an append, even if the slice already has the required capacity. For this
+	// reason, we already set the full target length here.
+	v := make(Values, n)
+
+	for i := 0; i < n; i++ {
+		offset := i * 16
+		v[i] = &SamplePair{
+			Timestamp: clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:]))),
+			Value:     clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:]))),
+		}
+	}
 	return v
 }
 

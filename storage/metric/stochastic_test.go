@@ -183,10 +183,7 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerpr
 			break
 		}
 
-		retrievedValues, err := extractSampleValues(iterator)
-		if err != nil {
-			return nil, err
-		}
+		retrievedValues := unmarshalValues(iterator.RawValue())
 		samples = append(samples, retrievedValues...)
 	}
 

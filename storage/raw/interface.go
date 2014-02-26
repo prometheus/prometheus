@@ -67,6 +67,8 @@ type Persistence interface {
 	Drop(key proto.Message) error
 	// Put sets the key to a given value.
 	Put(key, value proto.Message) error
+	// PutRaw sets the key to a given raw bytes value.
+	PutRaw(key proto.Message, value []byte) error
 	// Commit applies the Batch operations to the database.
 	Commit(Batch) error
 }
@@ -80,6 +82,8 @@ type Batch interface {
 	Close()
 	// Put follows the same protocol as Persistence.Put.
 	Put(key, value proto.Message)
+	// PutRaw follows the same protocol as Persistence.PutRaw.
+	PutRaw(key proto.Message, value []byte)
 	// Drop follows the same protocol as Persistence.Drop.
 	Drop(key proto.Message)
 }

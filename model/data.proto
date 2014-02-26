@@ -50,14 +50,6 @@ message SampleKey {
   optional fixed32     sample_count   = 4;
 }
 
-message SampleValueSeries {
-  message Value {
-    optional int64  timestamp = 1;
-    optional double value     = 2;
-  }
-  repeated Value value = 1;
-}
-
 message MembershipIndexValue {
 }
 
@@ -69,7 +61,7 @@ message MetricHighWatermark {
 // corpus that ensures that sparse samples.
 message CompactionProcessorDefinition {
   // minimum_group_size identifies how minimally samples should be grouped
-  // together to write a new SampleValueSeries chunk.
+  // together to write a new samples chunk.
   optional uint32 minimum_group_size = 1;
 }
 

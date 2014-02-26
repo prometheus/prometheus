@@ -59,7 +59,7 @@ type out struct {
 	sampleGroups   []sampleGroup
 }
 
-func (c curationState) Get() (key, value proto.Message) {
+func (c curationState) Get() (key proto.Message, value interface{}) {
 	signature := c.processor.Signature()
 	fingerprint := &clientmodel.Fingerprint{}
 	fingerprint.LoadFromString(c.fingerprint)
@@ -80,7 +80,7 @@ func (c curationState) Get() (key, value proto.Message) {
 	return k, v
 }
 
-func (w watermarkState) Get() (key, value proto.Message) {
+func (w watermarkState) Get() (key proto.Message, value interface{}) {
 	fingerprint := &clientmodel.Fingerprint{}
 	fingerprint.LoadFromString(w.fingerprint)
 	k := &dto.Fingerprint{}
@@ -94,7 +94,7 @@ func (w watermarkState) Get() (key, value proto.Message) {
 	return k, v
 }
 
-func (s sampleGroup) Get() (key, value proto.Message) {
+func (s sampleGroup) Get() (key proto.Message, value interface{}) {
 	fingerprint := &clientmodel.Fingerprint{}
 	fingerprint.LoadFromString(s.fingerprint)
 	keyRaw := SampleKey{
@@ -106,10 +106,7 @@ func (s sampleGroup) Get() (key, value proto.Message) {
 	k := &dto.SampleKey{}
 	keyRaw.Dump(k)
 
-	v := &dto.SampleValueSeries{}
-	s.values.dump(v)
-
-	return k, v
+	return k, s.values.marshal()
 }
 
 type noopUpdater struct{}
@@ -963,10 +960,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d.%d. error %s", i, j, err)
 			}
-			sampleValues, err := extractSampleValues(iterator)
-			if err != nil {
-				t.Fatalf("%d.%d. error %s", i, j, err)
-			}
+			sampleValues := unmarshalValues(iterator.RawValue())
 
 			expectedFingerprint := &clientmodel.Fingerprint{}
 			expectedFingerprint.LoadFromString(expected.fingerprint)
@@ -1493,10 +1487,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d.%d. error %s", i, j, err)
 			}
-			sampleValues, err := extractSampleValues(iterator)
-			if err != nil {
-				t.Fatalf("%d.%d. error %s", i, j, err)
-			}
+			sampleValues := unmarshalValues(iterator.RawValue())
 
 			expectedFingerprint := &clientmodel.Fingerprint{}
 			expectedFingerprint.LoadFromString(expected.fingerprint)
