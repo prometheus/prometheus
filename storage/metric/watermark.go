@@ -104,14 +104,9 @@ func (w *LevelDBHighWatermarker) UpdateBatch(m FingerprintHighWatermarkMapping) 
 	return w.LevelDBPersistence.Commit(batch)
 }
 
-// LevelDBHighWatermarkerOptions just wraps leveldb.LevelDBOptions.
-type LevelDBHighWatermarkerOptions struct {
-	leveldb.LevelDBOptions
-}
-
 // NewLevelDBHighWatermarker returns a LevelDBHighWatermarker ready to use.
-func NewLevelDBHighWatermarker(o LevelDBHighWatermarkerOptions) (*LevelDBHighWatermarker, error) {
-	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
+func NewLevelDBHighWatermarker(o leveldb.LevelDBOptions) (*LevelDBHighWatermarker, error) {
+	s, err := leveldb.NewLevelDBPersistence(o)
 	if err != nil {
 		return nil, err
 	}
@@ -134,11 +129,6 @@ type CurationRemarker interface {
 // leveldb.
 type LevelDBCurationRemarker struct {
 	*leveldb.LevelDBPersistence
-}
-
-// LevelDBCurationRemarkerOptions just wraps leveldb.LevelDBOptions.
-type LevelDBCurationRemarkerOptions struct {
-	leveldb.LevelDBOptions
 }
 
 // Get implements CurationRemarker.
@@ -166,8 +156,8 @@ func (w *LevelDBCurationRemarker) Update(pair *curationKey, t clientmodel.Timest
 }
 
 // NewLevelDBCurationRemarker returns a LevelDBCurationRemarker ready to use.
-func NewLevelDBCurationRemarker(o LevelDBCurationRemarkerOptions) (*LevelDBCurationRemarker, error) {
-	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
+func NewLevelDBCurationRemarker(o leveldb.LevelDBOptions) (*LevelDBCurationRemarker, error) {
+	s, err := leveldb.NewLevelDBPersistence(o)
 	if err != nil {
 		return nil, err
 	}
