@@ -23,6 +23,11 @@ const (
 	sstablesKey = "leveldb.sstables"
 )
 
+// State returns the DatabaseState. It implements the raw.Database interface and
+// sets the following Supplemental entries:
+//     "Low Level": leveldb property value for "leveldb.stats"
+//     "SSTable": leveldb property value for "leveldb.sstables"
+//     "Errors": only set if an error has occurred determining the size
 func (l *LevelDBPersistence) State() *raw.DatabaseState {
 	databaseState := &raw.DatabaseState{
 		Location:     l.path,

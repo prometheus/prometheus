@@ -26,43 +26,51 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 )
 
-// processor models a post-processing agent that performs work given a sample
+// Processor models a post-processing agent that performs work given a sample
 // corpus.
 type Processor interface {
-	// Name emits the name of this processor's signature encoder.  It must be
-	// fully-qualified in the sense that it could be used via a Protocol Buffer
-	// registry to extract the descriptor to reassemble this message.
+	// Name emits the name of this processor's signature encoder.  It must
+	// be fully-qualified in the sense that it could be used via a Protocol
+	// Buffer registry to extract the descriptor to reassemble this message.
 	Name() string
 	// Signature emits a byte signature for this process for the purpose of
 	// remarking how far along it has been applied to the database.
 	Signature() []byte
-	// Apply runs this processor against the sample set.  sampleIterator expects
-	// to be pre-seeked to the initial starting position.  The processor will
-	// run until up until stopAt has been reached.  It is imperative that the
-	// provided stopAt is within the interval of the series frontier.
+	// Apply runs this processor against the sample set.  sampleIterator
+	// expects to be pre-seeked to the initial starting position.  The
+	// processor will run until up until stopAt has been reached.  It is
+	// imperative that the provided stopAt is within the interval of the
+	// series frontier.
 	//
-	// Upon completion or error, the last time at which the processor finished
-	// shall be emitted in addition to any errors.
+	// Upon completion or error, the last time at which the processor
+	// finished shall be emitted in addition to any errors.
 	Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt clientmodel.Timestamp, fingerprint *clientmodel.Fingerprint) (lastCurated clientmodel.Timestamp, err error)
+	// Close reaps all of the underlying system resources associated with
+	// this processor.
+	Close()
 }
 
-// CompactionProcessor combines sparse values in the database together such
-// that at least MinimumGroupSize-sized chunks are grouped together.
+// CompactionProcessor combines sparse values in the database together such that
+// at least MinimumGroupSize-sized chunks are grouped together. It implements
+// the Processor interface.
 type CompactionProcessor struct {
 	maximumMutationPoolBatch int
 	minimumGroupSize         int
-	// signature is the byte representation of the CompactionProcessor's settings,
-	// used for purely memoization purposes across an instance.
+	// signature is the byte representation of the CompactionProcessor's
+	// settings, used for purely memoization purposes across an instance.
 	signature []byte
 
 	dtoSampleKeys *dtoSampleKeyList
 	sampleKeys    *sampleKeyList
 }
 
+// Name implements the Processor interface. It returns
+// "io.prometheus.CompactionProcessorDefinition".
 func (p *CompactionProcessor) Name() string {
 	return "io.prometheus.CompactionProcessorDefinition"
 }
 
+// Signature implements the Processor interface.
 func (p *CompactionProcessor) Signature() []byte {
 	if len(p.signature) == 0 {
 		out, err := proto.Marshal(&dto.CompactionProcessorDefinition{
@@ -82,8 +90,9 @@ func (p *CompactionProcessor) String() string {
 	return fmt.Sprintf("compactionProcessor for minimum group size %d", p.minimumGroupSize)
 }
 
+// Apply implements the Processor interface.
 func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt clientmodel.Timestamp, fingerprint *clientmodel.Fingerprint) (lastCurated clientmodel.Timestamp, err error) {
-	var pendingBatch raw.Batch = nil
+	var pendingBatch raw.Batch
 
 	defer func() {
 		if pendingBatch != nil {
@@ -125,7 +134,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 		// block would prevent us from going into unsafe territory.
 		case len(unactedSamples) == 0:
 			if !sampleIterator.Next() {
-				return lastCurated, fmt.Errorf("Illegal Condition: Invalid Iterator on Continuation")
+				return lastCurated, fmt.Errorf("illegal condition: invalid iterator on continuation")
 			}
 
 			keyDropped = false
@@ -163,7 +172,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		case len(pendingSamples)+len(unactedSamples) < p.minimumGroupSize:
 			if !keyDropped {
-				k := new(dto.SampleKey)
+				k := &dto.SampleKey{}
 				sampleKey.Dump(k)
 				pendingBatch.Drop(k)
 
@@ -176,10 +185,10 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		// If the number of pending writes equals the target group size
 		case len(pendingSamples) == p.minimumGroupSize:
-			k := new(dto.SampleKey)
+			k := &dto.SampleKey{}
 			newSampleKey := pendingSamples.ToSampleKey(fingerprint)
 			newSampleKey.Dump(k)
-			b := new(dto.SampleValueSeries)
+			b := &dto.SampleValueSeries{}
 			pendingSamples.dump(b)
 			pendingBatch.Put(k, b)
 
@@ -205,7 +214,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		case len(pendingSamples)+len(unactedSamples) >= p.minimumGroupSize:
 			if !keyDropped {
-				k := new(dto.SampleKey)
+				k := &dto.SampleKey{}
 				sampleKey.Dump(k)
 				pendingBatch.Drop(k)
 				keyDropped = true
@@ -220,16 +229,16 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			}
 			pendingMutations++
 		default:
-			err = fmt.Errorf("Unhandled processing case.")
+			err = fmt.Errorf("unhandled processing case")
 		}
 	}
 
 	if len(unactedSamples) > 0 || len(pendingSamples) > 0 {
 		pendingSamples = append(pendingSamples, unactedSamples...)
-		k := new(dto.SampleKey)
+		k := &dto.SampleKey{}
 		newSampleKey := pendingSamples.ToSampleKey(fingerprint)
 		newSampleKey.Dump(k)
-		b := new(dto.SampleValueSeries)
+		b := &dto.SampleValueSeries{}
 		pendingSamples.dump(b)
 		pendingBatch.Put(k, b)
 		pendingSamples = Values{}
@@ -249,11 +258,14 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 	return
 }
 
+// Close implements the Processor interface.
 func (p *CompactionProcessor) Close() {
 	p.dtoSampleKeys.Close()
 	p.sampleKeys.Close()
 }
 
+// CompactionProcessorOptions are used for connstruction of a
+// CompactionProcessor.
 type CompactionProcessorOptions struct {
 	// MaximumMutationPoolBatch represents approximately the largest pending
 	// batch of mutation operations for the database before pausing to
@@ -266,6 +278,7 @@ type CompactionProcessorOptions struct {
 	MinimumGroupSize int
 }
 
+// NewCompactionProcessor returns a CompactionProcessor ready to use.
 func NewCompactionProcessor(o *CompactionProcessorOptions) *CompactionProcessor {
 	return &CompactionProcessor{
 		maximumMutationPoolBatch: o.MaximumMutationPoolBatch,
@@ -276,7 +289,8 @@ func NewCompactionProcessor(o *CompactionProcessorOptions) *CompactionProcessor 
 	}
 }
 
-// DeletionProcessor deletes sample blocks older than a defined value.
+// DeletionProcessor deletes sample blocks older than a defined value. It
+// implements the Processor interface.
 type DeletionProcessor struct {
 	maximumMutationPoolBatch int
 	// signature is the byte representation of the DeletionProcessor's settings,
@@ -287,10 +301,13 @@ type DeletionProcessor struct {
 	sampleKeys    *sampleKeyList
 }
 
+// Name implements the Processor interface. It returns
+// "io.prometheus.DeletionProcessorDefinition".
 func (p *DeletionProcessor) Name() string {
 	return "io.prometheus.DeletionProcessorDefinition"
 }
 
+// Signature implements the Processor interface.
 func (p *DeletionProcessor) Signature() []byte {
 	if len(p.signature) == 0 {
 		out, err := proto.Marshal(&dto.DeletionProcessorDefinition{})
@@ -309,8 +326,9 @@ func (p *DeletionProcessor) String() string {
 	return "deletionProcessor"
 }
 
+// Apply implements the Processor interface.
 func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersistence raw.Persistence, stopAt clientmodel.Timestamp, fingerprint *clientmodel.Fingerprint) (lastCurated clientmodel.Timestamp, err error) {
-	var pendingBatch raw.Batch = nil
+	var pendingBatch raw.Batch
 
 	defer func() {
 		if pendingBatch != nil {
@@ -342,12 +360,13 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 		case pendingBatch == nil:
 			pendingBatch = leveldb.NewBatch()
 
-		// If there are no sample values to extract from the datastore, let's
-		// continue extracting more values to use.  We know that the time.Before()
-		// block would prevent us from going into unsafe territory.
+		// If there are no sample values to extract from the datastore,
+		// let's continue extracting more values to use.  We know that
+		// the time.Before() block would prevent us from going into
+		// unsafe territory.
 		case len(sampleValues) == 0:
 			if !sampleIterator.Next() {
-				return lastCurated, fmt.Errorf("Illegal Condition: Invalid Iterator on Continuation")
+				return lastCurated, fmt.Errorf("illegal condition: invalid iterator on continuation")
 			}
 
 			if err = sampleIterator.Key(sampleKeyDto); err != nil {
@@ -360,9 +379,9 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 				return
 			}
 
-		// If the number of pending mutations exceeds the allowed batch amount,
-		// commit to disk and delete the batch.  A new one will be recreated if
-		// necessary.
+		// If the number of pending mutations exceeds the allowed batch
+		// amount, commit to disk and delete the batch.  A new one will
+		// be recreated if necessary.
 		case pendingMutations >= p.maximumMutationPoolBatch:
 			err = samplesPersistence.Commit(pendingBatch)
 			if err != nil {
@@ -403,7 +422,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 			}
 
 		default:
-			err = fmt.Errorf("Unhandled processing case.")
+			err = fmt.Errorf("unhandled processing case")
 		}
 	}
 
@@ -419,11 +438,13 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 	return
 }
 
+// Close implements the Processor interface.
 func (p *DeletionProcessor) Close() {
 	p.dtoSampleKeys.Close()
 	p.sampleKeys.Close()
 }
 
+// DeletionProcessorOptions are used for connstruction of a DeletionProcessor.
 type DeletionProcessorOptions struct {
 	// MaximumMutationPoolBatch represents approximately the largest pending
 	// batch of mutation operations for the database before pausing to
@@ -431,6 +452,7 @@ type DeletionProcessorOptions struct {
 	MaximumMutationPoolBatch int
 }
 
+// NewDeletionProcessor returns a DeletionProcessor ready to use.
 func NewDeletionProcessor(o *DeletionProcessorOptions) *DeletionProcessor {
 	return &DeletionProcessor{
 		maximumMutationPoolBatch: o.MaximumMutationPoolBatch,

@@ -47,7 +47,7 @@ type TSDBQueueManager struct {
 	drained        chan bool
 }
 
-// Build a new TSDBQueueManager.
+// NewTSDBQueueManager builds a new TSDBQueueManager.
 func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 	return &TSDBQueueManager{
 		tsdb:          tsdb,
@@ -57,8 +57,8 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 	}
 }
 
-// Queue a sample batch to be sent to the TSDB. This drops the most recently
-// queued samples on the floor if the queue is full.
+// Queue queues a sample batch to be sent to the TSDB. It drops the most
+// recently queued samples on the floor if the queue is full.
 func (t *TSDBQueueManager) Queue(s clientmodel.Samples) {
 	select {
 	case t.queue <- s:
@@ -85,13 +85,13 @@ func (t *TSDBQueueManager) sendSamples(s clientmodel.Samples) {
 	}
 }
 
-// Report notification queue occupancy and capacity.
+// reportQueues reports notification queue occupancy and capacity.
 func (t *TSDBQueueManager) reportQueues() {
 	queueSize.Set(map[string]string{facet: occupancy}, float64(len(t.queue)))
 	queueSize.Set(map[string]string{facet: capacity}, float64(cap(t.queue)))
 }
 
-// Continuously send samples to the TSDB.
+// Run continuously sends samples to the TSDB.
 func (t *TSDBQueueManager) Run() {
 	defer func() {
 		close(t.drained)
@@ -129,7 +129,7 @@ func (t *TSDBQueueManager) Run() {
 	}
 }
 
-// Flush remaining queued samples.
+// Flush flushes remaining queued samples.
 func (t *TSDBQueueManager) flush() {
 	if len(t.pendingSamples) > 0 {
 		go t.sendSamples(t.pendingSamples)
@@ -137,7 +137,8 @@ func (t *TSDBQueueManager) flush() {
 	t.pendingSamples = t.pendingSamples[:0]
 }
 
-// Stop sending samples to the TSDB and wait for pending sends to complete.
+// Close stops sending samples to the TSDB and waits for pending sends to
+// complete.
 func (t *TSDBQueueManager) Close() {
 	glog.Infof("TSDB queue manager shutting down...")
 	close(t.queue)

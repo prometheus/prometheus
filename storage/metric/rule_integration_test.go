@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 )
 
-func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
+func GetValueAtTimeTests(persistenceMaker func() (ViewableMetricPersistence, test.Closer), t test.Tester) {
 	type value struct {
 		year  int
 		month time.Month
@@ -355,7 +355,7 @@ func GetValueAtTimeTests(persistenceMaker func() (MetricPersistence, test.Closer
 	}
 }
 
-func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer), onlyBoundaries bool, t test.Tester) {
+func GetRangeValuesTests(persistenceMaker func() (ViewableMetricPersistence, test.Closer), onlyBoundaries bool, t test.Tester) {
 	type value struct {
 		year  int
 		month time.Month
@@ -854,7 +854,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 				}
 
 				if actualValues == nil && len(expectedValues) != 0 {
-					t.Fatalf("%d.%d(%s). Expected %s but got: %s\n", i, j, behavior.name, expectedValues, actualValues)
+					t.Fatalf("%d.%d(%s). Expected %v but got: %v\n", i, j, behavior.name, expectedValues, actualValues)
 				}
 
 				if expectedValues == nil {
@@ -899,7 +899,7 @@ func GetRangeValuesTests(persistenceMaker func() (MetricPersistence, test.Closer
 // Test Definitions Follow
 
 func testMemoryGetValueAtTime(t test.Tester) {
-	persistenceMaker := func() (MetricPersistence, test.Closer) {
+	persistenceMaker := func() (ViewableMetricPersistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 
@@ -927,7 +927,7 @@ func BenchmarkMemoryGetBoundaryValues(b *testing.B) {
 }
 
 func testMemoryGetRangeValues(t test.Tester) {
-	persistenceMaker := func() (MetricPersistence, test.Closer) {
+	persistenceMaker := func() (ViewableMetricPersistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 
@@ -935,7 +935,7 @@ func testMemoryGetRangeValues(t test.Tester) {
 }
 
 func testMemoryGetBoundaryValues(t test.Tester) {
-	persistenceMaker := func() (MetricPersistence, test.Closer) {
+	persistenceMaker := func() (ViewableMetricPersistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 

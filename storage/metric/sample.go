@@ -25,15 +25,19 @@ import (
 	dto "github.com/prometheus/prometheus/model/generated"
 )
 
+// MarshalJSON implements json.Marshaler.
 func (s SamplePair) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("{\"Value\": \"%f\", \"Timestamp\": %d}", s.Value, s.Timestamp)), nil
 }
 
+// SamplePair pairs a SampleValue with a Timestamp.
 type SamplePair struct {
 	Value     clientmodel.SampleValue
 	Timestamp clientmodel.Timestamp
 }
 
+// Equal returns true if this SamplePair and o have equal Values and equal
+// Timestamps.
 func (s *SamplePair) Equal(o *SamplePair) bool {
 	if s == o {
 		return true
@@ -54,20 +58,27 @@ func (s *SamplePair) String() string {
 	return fmt.Sprintf("SamplePair at %s of %s", s.Timestamp, s.Value)
 }
 
+// Values is a sortable slice of SamplePair pointers (as in: it implements
+// sort.Interface). Sorting happens by Timestamp.
 type Values []*SamplePair
 
+// Len implements sort.Interface.
 func (v Values) Len() int {
 	return len(v)
 }
 
+// Less implements sort.Interface.
 func (v Values) Less(i, j int) bool {
 	return v[i].Timestamp.Before(v[j].Timestamp)
 }
 
+// Swap implements sort.Interface.
 func (v Values) Swap(i, j int) {
 	v[i], v[j] = v[j], v[i]
 }
 
+// Equal returns true if these Values are of the same length as o, and each
+// value is equal to the corresponding value in o (i.e. at the same index).
 func (v Values) Equal(o Values) bool {
 	if len(v) != len(o) {
 		return false
@@ -132,6 +143,7 @@ func (v Values) dump(d *dto.SampleValueSeries) {
 	}
 }
 
+// ToSampleKey returns the SampleKey for these Values.
 func (v Values) ToSampleKey(f *clientmodel.Fingerprint) *SampleKey {
 	return &SampleKey{
 		Fingerprint:    f,
@@ -156,9 +168,10 @@ func (v Values) String() string {
 	return buffer.String()
 }
 
+// NewValuesFromDTO deserializes Values from a DTO.
 func NewValuesFromDTO(d *dto.SampleValueSeries) Values {
-	// BUG(matt): Incogruent from the other load/dump API types, but much more
-	// performant.
+	// BUG(matt): Incogruent from the other load/dump API types, but much
+	// more performant.
 	v := make(Values, 0, len(d.Value))
 
 	for _, value := range d.Value {
@@ -171,11 +184,13 @@ func NewValuesFromDTO(d *dto.SampleValueSeries) Values {
 	return v
 }
 
+// SampleSet is Values with a Metric attached.
 type SampleSet struct {
 	Metric clientmodel.Metric
 	Values Values
 }
 
+// Interval describes the inclusive interval between two Timestamps.
 type Interval struct {
 	OldestInclusive clientmodel.Timestamp
 	NewestInclusive clientmodel.Timestamp

@@ -34,7 +34,7 @@ import (
 
 const curationYieldPeriod = 250 * time.Millisecond
 
-var errIllegalIterator = errors.New("Iterator invalid.")
+var errIllegalIterator = errors.New("iterator invalid")
 
 // CurationStateUpdater receives updates about the curation state.
 type CurationStateUpdater interface {
@@ -50,6 +50,7 @@ type CurationState struct {
 	Fingerprint *clientmodel.Fingerprint
 }
 
+// CuratorOptions bundles the parameters needed to create a Curator.
 type CuratorOptions struct {
 	// Stop functions as a channel that when empty allows the curator to operate.
 	// The moment a value is ingested inside of it, the curator goes into drain
@@ -59,7 +60,7 @@ type CuratorOptions struct {
 	ViewQueue chan viewJob
 }
 
-// curator is responsible for effectuating a given curation policy across the
+// Curator is responsible for effectuating a given curation policy across the
 // stored samples on-disk.  This is useful to compact sparse sample values into
 // single sample entities to reduce keyspace load on the datastore.
 type Curator struct {
@@ -71,6 +72,7 @@ type Curator struct {
 	sampleKeys    *sampleKeyList
 }
 
+// NewCurator returns an initialized Curator.
 func NewCurator(o *CuratorOptions) *Curator {
 	return &Curator{
 		stop: o.Stop,
@@ -122,7 +124,7 @@ type watermarkScanner struct {
 	sampleKeys    *sampleKeyList
 }
 
-// run facilitates the curation lifecycle.
+// Run facilitates the curation lifecycle.
 //
 // recencyThreshold represents the most recent time up to which values will be
 // curated.
@@ -214,7 +216,7 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant clientmodel.Times
 	return
 }
 
-// drain instructs the curator to stop at the next convenient moment as to not
+// Drain instructs the curator to stop at the next convenient moment as to not
 // introduce data inconsistencies.
 func (c *Curator) Drain() {
 	if len(c.stop) == 0 {
@@ -222,34 +224,35 @@ func (c *Curator) Drain() {
 	}
 }
 
+// Close needs to be called to cleanly dispose of a curator.
 func (c *Curator) Close() {
 	c.dtoSampleKeys.Close()
 	c.sampleKeys.Close()
 }
 
 func (w *watermarkScanner) DecodeKey(in interface{}) (interface{}, error) {
-	key := new(dto.Fingerprint)
+	key := &dto.Fingerprint{}
 	bytes := in.([]byte)
 
 	if err := proto.Unmarshal(bytes, key); err != nil {
 		return nil, err
 	}
 
-	fingerprint := new(clientmodel.Fingerprint)
+	fingerprint := &clientmodel.Fingerprint{}
 	loadFingerprint(fingerprint, key)
 
 	return fingerprint, nil
 }
 
 func (w *watermarkScanner) DecodeValue(in interface{}) (interface{}, error) {
-	value := new(dto.MetricHighWatermark)
+	value := &dto.MetricHighWatermark{}
 	bytes := in.([]byte)
 
 	if err := proto.Unmarshal(bytes, value); err != nil {
 		return nil, err
 	}
 
-	watermark := new(watermarks)
+	watermark := &watermarks{}
 	watermark.load(value)
 
 	return watermark, nil
@@ -280,7 +283,7 @@ func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResul
 	}()
 
 	if w.shouldStop() {
-		return storage.STOP
+		return storage.Stop
 	}
 
 	k := &curationKey{
@@ -295,24 +298,24 @@ func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResul
 		return
 	}
 	if !present {
-		return storage.ACCEPT
+		return storage.Accept
 	}
 	if !curationRemark.Before(w.stopAt) {
-		return storage.SKIP
+		return storage.Skip
 	}
 	watermark := value.(*watermarks)
 	if !curationRemark.Before(watermark.High) {
-		return storage.SKIP
+		return storage.Skip
 	}
 	curationConsistent, err := w.curationConsistent(fingerprint, watermark)
 	if err != nil {
 		return
 	}
 	if curationConsistent {
-		return storage.SKIP
+		return storage.Skip
 	}
 
-	return storage.ACCEPT
+	return storage.Accept
 }
 
 // curationConsistent determines whether the given metric is in a dirty state

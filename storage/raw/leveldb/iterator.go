@@ -20,6 +20,7 @@ import (
 // TODO: Evaluate whether to use coding.Encoder for the key and values instead
 //       raw bytes for consistency reasons.
 
+// Iterator provides method to iterate through a leveldb.
 type Iterator interface {
 	Error() error
 	Valid() bool

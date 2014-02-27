@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
+// DatabaseState contains some fundamental attributes of a database.
 type DatabaseState struct {
 	Name string
 
@@ -28,12 +29,17 @@ type DatabaseState struct {
 	Supplemental map[string]string
 }
 
+// DatabaseStates is a sortable slice of DatabaseState pointers. It implements
+// sort.Interface.
 type DatabaseStates []*DatabaseState
 
+// Len implements sort.Interface.
 func (s DatabaseStates) Len() int {
 	return len(s)
 }
 
+// Less implements sort.Interface. The primary sorting criterion is the Name,
+// the secondary criterion is the Size.
 func (s DatabaseStates) Less(i, j int) bool {
 	l := s[i]
 	r := s[j]
@@ -48,6 +54,7 @@ func (s DatabaseStates) Less(i, j int) bool {
 	return l.Size < r.Size
 }
 
+// Swap implements sort.Interface.
 func (s DatabaseStates) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
