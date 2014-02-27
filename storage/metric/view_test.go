@@ -106,6 +106,12 @@ func testBuilder(t test.Tester) {
 					fingerprint: "00000000000000000000-a-4-a",
 				},
 				{
+					fingerprint: "00000000000000000000-a-4-a",
+				},
+				{
+					fingerprint: "00000000000000001111-a-4-a",
+				},
+				{
 					fingerprint: "00000000000000001111-a-4-a",
 				},
 			},
@@ -136,14 +142,18 @@ func testBuilder(t test.Tester) {
 				{
 					fingerprint: "00000000000000001111-a-4-a",
 				},
+				{
+					fingerprint: "00000000000000001111-a-4-a",
+				},
+				{
+					fingerprint: "00000000000000001111-a-4-a",
+				},
 			},
 		},
 	}
 
 	for i, scenario := range scenarios {
-		builder := viewRequestBuilder{
-			operations: map[clientmodel.Fingerprint]ops{},
-		}
+		builder := NewViewRequestBuilder()
 
 		for _, atTime := range scenario.in.atTimes {
 			fingerprint := &clientmodel.Fingerprint{}
@@ -163,16 +173,14 @@ func testBuilder(t test.Tester) {
 			builder.GetMetricRange(fingerprint, atRange.from, atRange.through)
 		}
 
-		jobs := builder.ScanJobs()
-
-		if len(scenario.out) != len(jobs) {
-			t.Fatalf("%d. expected job length of %d, got %d", i, len(scenario.out), len(jobs))
-		}
-
 		for j, job := range scenario.out {
-			if jobs[j].fingerprint.String() != job.fingerprint {
-				t.Fatalf("%d.%d. expected fingerprint %s, got %s", i, j, job.fingerprint, jobs[j].fingerprint)
+			got := builder.PopOp()
+			if got.Fingerprint().String() != job.fingerprint {
+				t.Errorf("%d.%d. expected fingerprint %s, got %s", i, j, job.fingerprint, got.Fingerprint())
 			}
+		}
+		if builder.HasOp() {
+			t.Error("Expected builder to have no scan jobs left.")
 		}
 	}
 }

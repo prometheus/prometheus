@@ -38,12 +38,12 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 				},
 				out: ops{
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 				},
 			},
@@ -51,13 +51,13 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 				},
@@ -66,14 +66,14 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
@@ -83,15 +83,15 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 				},
 				out: ops{
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 				},
 			},
@@ -99,17 +99,17 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 				},
@@ -118,19 +118,19 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
@@ -140,19 +140,19 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 5,
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 5,
 					},
@@ -162,17 +162,17 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(2 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(2 * time.Minute),
 					},
 				},
@@ -181,24 +181,24 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 10,
 					},
@@ -208,34 +208,34 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 5,
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 5,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 10,
 					},
@@ -246,23 +246,23 @@ func testOptimizeTimeGroups(t test.Tester) {
 				{
 					in: ops{
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(2 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(1 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(30 * time.Second),
 						},
 					},
 					out: ops{
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(30 * time.Second),
 						},
 						&getValuesAtIntervalOp{
@@ -276,18 +276,18 @@ func testOptimizeTimeGroups(t test.Tester) {
 				{
 					in: ops{
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(3 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(2 * time.Minute),
 						},
 					},
 					out: ops{
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(2 * time.Minute),
 						},
 						&getValuesAtIntervalOp{
@@ -301,18 +301,18 @@ func testOptimizeTimeGroups(t test.Tester) {
 				{
 					in: ops{
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(3 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(2 * time.Minute),
 						},
 					},
 					out: ops{
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(2 * time.Minute),
 						},
 						&getValuesAtIntervalOp{
@@ -328,38 +328,38 @@ func testOptimizeTimeGroups(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(5 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(15 * time.Second),
-						through: testInstant.Add(15 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(15 * time.Second)},
+						through: testInstant.Add(15*time.Second + 5*time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(30 * time.Second),
-						through: testInstant.Add(30 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(30 * time.Second)},
+						through: testInstant.Add(30*time.Second + 5*time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(45 * time.Second),
-						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(45 * time.Second)},
+						through: testInstant.Add(45*time.Second + 5*time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(5 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(15 * time.Second),
-						through: testInstant.Add(15 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(15 * time.Second)},
+						through: testInstant.Add(15*time.Second + 5*time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(30 * time.Second),
-						through: testInstant.Add(30 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(30 * time.Second)},
+						through: testInstant.Add(30*time.Second + 5*time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(45 * time.Second),
-						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(45 * time.Second)},
+						through: testInstant.Add(45*time.Second + 5*time.Minute),
 					},
 				},
 			},
@@ -368,7 +368,7 @@ func testOptimizeTimeGroups(t test.Tester) {
 
 	for i, scenario := range scenarios {
 		// The compaction system assumes that values are sorted on input.
-		sort.Sort(startsAtSort{scenario.in})
+		sort.Sort(currentTimeSort{scenario.in})
 
 		out = optimizeTimeGroups(scenario.in)
 
@@ -381,8 +381,8 @@ func testOptimizeTimeGroups(t test.Tester) {
 			if actual, ok := op.(*getValuesAtTimeOp); ok {
 
 				if expected, ok := scenario.out[j].(*getValuesAtTimeOp); ok {
-					if expected.time.Unix() != actual.time.Unix() {
-						t.Fatalf("%d.%d. expected time %s, got %s", i, j, expected.time, actual.time)
+					if expected.current.Unix() != actual.current.Unix() {
+						t.Fatalf("%d.%d. expected time %s, got %s", i, j, expected.current, actual.current)
 					}
 				} else {
 					t.Fatalf("%d.%d. expected getValuesAtTimeOp, got %s", i, j, actual)
@@ -392,8 +392,8 @@ func testOptimizeTimeGroups(t test.Tester) {
 
 				if expected, ok := scenario.out[j].(*getValuesAtIntervalOp); ok {
 					// Shaving off nanoseconds.
-					if expected.from.Unix() != actual.from.Unix() {
-						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.from, actual.from)
+					if expected.current.Unix() != actual.current.Unix() {
+						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.current, actual.current)
 					}
 					if expected.through.Unix() != actual.through.Unix() {
 						t.Fatalf("%d.%d. expected through %s, got %s", i, j, expected.through, actual.through)
@@ -408,8 +408,8 @@ func testOptimizeTimeGroups(t test.Tester) {
 			} else if actual, ok := op.(*getValuesAlongRangeOp); ok {
 
 				if expected, ok := scenario.out[j].(*getValuesAlongRangeOp); ok {
-					if expected.from.Unix() != actual.from.Unix() {
-						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.from, actual.from)
+					if expected.current.Unix() != actual.current.Unix() {
+						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.current, actual.current)
 					}
 					if expected.through.Unix() != actual.through.Unix() {
 						t.Fatalf("%d.%d. expected through %s, got %s", i, j, expected.through, actual.through)
@@ -446,18 +446,18 @@ func testOptimizeForward(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant.Add(1 * time.Minute),
+						baseOp:   baseOp{current: testInstant.Add(1 * time.Minute)},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
@@ -466,17 +466,17 @@ func testOptimizeForward(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(1 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(1 * time.Minute)},
 						through: testInstant.Add(2 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
@@ -485,29 +485,29 @@ func testOptimizeForward(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(5 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(2 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(2 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
 						through: testInstant.Add(3 * time.Minute),
 					},
 					&getValuesAtIntervalOp{
 						// Since the range operation consumes Now() + 3 Minutes, we start
 						// an additional ten seconds later.
-						from:     testInstant.Add(3 * time.Minute).Add(10 * time.Second),
+						baseOp:   baseOp{current: testInstant.Add(3*time.Minute + 10*time.Second)},
 						through:  testInstant.Add(5 * time.Minute),
 						interval: time.Second * 10,
 					},
@@ -519,44 +519,44 @@ func testOptimizeForward(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtTimeOp{
-						time: testInstant.Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(30 * time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(1 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(1*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(2 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(2*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(3 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(3*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(4 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(4*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(5 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(5*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(6 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(6*time.Minute + 30*time.Second)},
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(1 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(1 * time.Minute)},
 						through: testInstant.Add(5 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAtTimeOp{
-						time: testInstant.Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(30 * time.Second)},
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(1 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(1 * time.Minute)},
 						through: testInstant.Add(5 * time.Minute),
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(5 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(5*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(6 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(6*time.Minute + 30*time.Second)},
 					},
 				},
 			},
@@ -565,26 +565,26 @@ func testOptimizeForward(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(5 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(15 * time.Second),
-						through: testInstant.Add(15 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(15 * time.Second)},
+						through: testInstant.Add(15*time.Second + 5*time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(30 * time.Second),
-						through: testInstant.Add(30 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(30 * time.Second)},
+						through: testInstant.Add(30*time.Second + 5*time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(45 * time.Second),
-						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(45 * time.Second)},
+						through: testInstant.Add(45*time.Second + 5*time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant},
+						through: testInstant.Add(45*time.Second + 5*time.Minute),
 					},
 				},
 			},
@@ -592,22 +592,22 @@ func testOptimizeForward(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant.Add(1 * time.Minute),
+						baseOp:   baseOp{current: testInstant.Add(1 * time.Minute)},
 						through:  testInstant.Add(4 * time.Minute),
 						interval: time.Second * 10,
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant.Add(3*time.Minute + 10*time.Second),
+						baseOp:   baseOp{current: testInstant.Add(3*time.Minute + 10*time.Second)},
 						through:  testInstant.Add(4 * time.Minute),
 						interval: time.Second * 10,
 					},
@@ -618,7 +618,7 @@ func testOptimizeForward(t test.Tester) {
 
 	for i, scenario := range scenarios {
 		// The compaction system assumes that values are sorted on input.
-		sort.Sort(startsAtSort{scenario.in})
+		sort.Sort(currentTimeSort{scenario.in})
 
 		out = optimizeForward(scenario.in)
 
@@ -631,8 +631,8 @@ func testOptimizeForward(t test.Tester) {
 			if actual, ok := op.(*getValuesAtTimeOp); ok {
 
 				if expected, ok := scenario.out[j].(*getValuesAtTimeOp); ok {
-					if expected.time.Unix() != actual.time.Unix() {
-						t.Fatalf("%d.%d. expected time %s, got %s", i, j, expected.time, actual.time)
+					if expected.current.Unix() != actual.current.Unix() {
+						t.Fatalf("%d.%d. expected time %s, got %s", i, j, expected.current, actual.current)
 					}
 				} else {
 					t.Fatalf("%d.%d. expected getValuesAtTimeOp, got %s", i, j, actual)
@@ -642,8 +642,8 @@ func testOptimizeForward(t test.Tester) {
 
 				if expected, ok := scenario.out[j].(*getValuesAtIntervalOp); ok {
 					// Shaving off nanoseconds.
-					if expected.from.Unix() != actual.from.Unix() {
-						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.from, actual.from)
+					if expected.current.Unix() != actual.current.Unix() {
+						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.current, actual.current)
 					}
 					if expected.through.Unix() != actual.through.Unix() {
 						t.Fatalf("%d.%d. expected through %s, got %s", i, j, expected.through, actual.through)
@@ -658,8 +658,8 @@ func testOptimizeForward(t test.Tester) {
 			} else if actual, ok := op.(*getValuesAlongRangeOp); ok {
 
 				if expected, ok := scenario.out[j].(*getValuesAlongRangeOp); ok {
-					if expected.from.Unix() != actual.from.Unix() {
-						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.from, actual.from)
+					if expected.current.Unix() != actual.current.Unix() {
+						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.current, actual.current)
 					}
 					if expected.through.Unix() != actual.through.Unix() {
 						t.Fatalf("%d.%d. expected through %s, got %s", i, j, expected.through, actual.through)
@@ -701,12 +701,12 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 				},
 				out: ops{
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 				},
 			},
@@ -714,13 +714,13 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 				},
@@ -729,14 +729,14 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
@@ -746,15 +746,15 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 				},
 				out: ops{
 					&getValuesAtTimeOp{
-						time: testInstant,
+						baseOp: baseOp{current: testInstant},
 					},
 				},
 			},
@@ -762,17 +762,17 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 				},
@@ -781,19 +781,19 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
@@ -803,19 +803,19 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 5,
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 5,
 					},
@@ -825,17 +825,17 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(1 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(2 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(2 * time.Minute),
 					},
 				},
@@ -844,24 +844,24 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 5,
 					},
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(1 * time.Minute),
 						interval: time.Second * 10,
 					},
@@ -872,34 +872,34 @@ func testOptimize(t test.Tester) {
 				{
 					in: ops{
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(2 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(1 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(1 * time.Minute),
 							interval: time.Second * 5,
 						},
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(2 * time.Minute),
 							interval: time.Second * 5,
 						},
 					},
 					out: ops{
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(2 * time.Minute),
 							interval: time.Second * 5,
 						},
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(2 * time.Minute),
 							interval: time.Second * 10,
 						},
@@ -909,23 +909,23 @@ func testOptimize(t test.Tester) {
 				{
 					in: ops{
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(2 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(1 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(30 * time.Second),
 						},
 					},
 					out: ops{
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(30 * time.Second),
 						},
 						&getValuesAtIntervalOp{
@@ -939,18 +939,18 @@ func testOptimize(t test.Tester) {
 				{
 					in: ops{
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(3 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(2 * time.Minute),
 						},
 					},
 					out: ops{
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(2 * time.Minute),
 						},
 						&getValuesAtIntervalOp{
@@ -964,18 +964,18 @@ func testOptimize(t test.Tester) {
 				{
 					in: ops{
 						&getValuesAtIntervalOp{
-							from:     testInstant,
+							baseOp: baseOp{current: testInstant},
 							through:  testInstant.Add(3 * time.Minute),
 							interval: time.Second * 10,
 						},
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(2 * time.Minute),
 						},
 					},
 					out: ops{
 						&getValuesAlongRangeOp{
-							from:    testInstant,
+							baseOp: baseOp{current: testInstant},
 							through: testInstant.Add(2 * time.Minute),
 						},
 						&getValuesAtIntervalOp{
@@ -990,18 +990,18 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant.Add(1 * time.Minute),
+						baseOp:   baseOp{current: testInstant.Add(1 * time.Minute)},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
@@ -1010,17 +1010,17 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(1 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(1 * time.Minute)},
 						through: testInstant.Add(2 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
@@ -1029,29 +1029,29 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(5 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(2 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
 						through: testInstant.Add(3 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAtIntervalOp{
-						from:     testInstant,
+						baseOp:   baseOp{current: testInstant},
 						through:  testInstant.Add(2 * time.Minute),
 						interval: time.Second * 10,
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(2 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
 						through: testInstant.Add(3 * time.Minute),
 					},
 					&getValuesAtIntervalOp{
 						// Since the range operation consumes Now() + 3 Minutes, we start
 						// an additional ten seconds later.
-						from:     testInstant.Add(3 * time.Minute).Add(10 * time.Second),
+						baseOp:   baseOp{current: testInstant.Add(3*time.Minute + 10*time.Second)},
 						through:  testInstant.Add(5 * time.Minute),
 						interval: time.Second * 10,
 					},
@@ -1063,44 +1063,44 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAtTimeOp{
-						time: testInstant.Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(30 * time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(1 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(1*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(2 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(2*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(3 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(3*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(4 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(4*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(5 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(5*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(6 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(6*time.Minute + 30*time.Second)},
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(1 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(1 * time.Minute)},
 						through: testInstant.Add(5 * time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAtTimeOp{
-						time: testInstant.Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(30 * time.Second)},
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(1 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(1 * time.Minute)},
 						through: testInstant.Add(5 * time.Minute),
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(5 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(5*time.Minute + 30*time.Second)},
 					},
 					&getValuesAtTimeOp{
-						time: testInstant.Add(6 * time.Minute).Add(30 * time.Second),
+						baseOp: baseOp{current: testInstant.Add(6*time.Minute + 30*time.Second)},
 					},
 				},
 			},
@@ -1109,26 +1109,26 @@ func testOptimize(t test.Tester) {
 			{
 				in: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
+						baseOp:  baseOp{current: testInstant},
 						through: testInstant.Add(5 * time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(15 * time.Second),
-						through: testInstant.Add(15 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(15 * time.Second)},
+						through: testInstant.Add(15*time.Second + 5*time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(30 * time.Second),
-						through: testInstant.Add(30 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(30 * time.Second)},
+						through: testInstant.Add(30*time.Second + 5*time.Minute),
 					},
 					&getValuesAlongRangeOp{
-						from:    testInstant.Add(45 * time.Second),
-						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant.Add(45 * time.Second)},
+						through: testInstant.Add(45*time.Second + 5*time.Minute),
 					},
 				},
 				out: ops{
 					&getValuesAlongRangeOp{
-						from:    testInstant,
-						through: testInstant.Add(45 * time.Second).Add(5 * time.Minute),
+						baseOp:  baseOp{current: testInstant},
+						through: testInstant.Add(45*time.Second + 5*time.Minute),
 					},
 				},
 			},
@@ -1137,7 +1137,7 @@ func testOptimize(t test.Tester) {
 
 	for i, scenario := range scenarios {
 		// The compaction system assumes that values are sorted on input.
-		sort.Sort(startsAtSort{scenario.in})
+		sort.Sort(currentTimeSort{scenario.in})
 
 		out = optimize(scenario.in)
 
@@ -1150,8 +1150,8 @@ func testOptimize(t test.Tester) {
 			if actual, ok := op.(*getValuesAtTimeOp); ok {
 
 				if expected, ok := scenario.out[j].(*getValuesAtTimeOp); ok {
-					if expected.time.Unix() != actual.time.Unix() {
-						t.Fatalf("%d.%d. expected time %s, got %s", i, j, expected.time, actual.time)
+					if expected.current.Unix() != actual.current.Unix() {
+						t.Fatalf("%d.%d. expected time %s, got %s", i, j, expected.current, actual.current)
 					}
 				} else {
 					t.Fatalf("%d.%d. expected getValuesAtTimeOp, got %s", i, j, actual)
@@ -1161,8 +1161,8 @@ func testOptimize(t test.Tester) {
 
 				if expected, ok := scenario.out[j].(*getValuesAtIntervalOp); ok {
 					// Shaving off nanoseconds.
-					if expected.from.Unix() != actual.from.Unix() {
-						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.from, actual.from)
+					if expected.current.Unix() != actual.current.Unix() {
+						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.current, actual.current)
 					}
 					if expected.through.Unix() != actual.through.Unix() {
 						t.Fatalf("%d.%d. expected through %s, got %s", i, j, expected.through, actual.through)
@@ -1177,8 +1177,8 @@ func testOptimize(t test.Tester) {
 			} else if actual, ok := op.(*getValuesAlongRangeOp); ok {
 
 				if expected, ok := scenario.out[j].(*getValuesAlongRangeOp); ok {
-					if expected.from.Unix() != actual.from.Unix() {
-						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.from, actual.from)
+					if expected.current.Unix() != actual.current.Unix() {
+						t.Fatalf("%d.%d. expected from %s, got %s", i, j, expected.current, actual.current)
 					}
 					if expected.through.Unix() != actual.through.Unix() {
 						t.Fatalf("%d.%d. expected through %s, got %s", i, j, expected.through, actual.through)
@@ -1212,13 +1212,13 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 		// No values.
 		{
 			op: getValuesAtTimeOp{
-				time: testInstant,
+				baseOp: baseOp{current: testInstant},
 			},
 		},
 		// Operator time before single value.
 		{
 			op: getValuesAtTimeOp{
-				time: testInstant,
+				baseOp: baseOp{current: testInstant},
 			},
 			in: Values{
 				{
@@ -1236,7 +1236,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 		// Operator time exactly at single value.
 		{
 			op: getValuesAtTimeOp{
-				time: testInstant.Add(1 * time.Minute),
+				baseOp: baseOp{current: testInstant.Add(1 * time.Minute)},
 			},
 			in: Values{
 				{
@@ -1254,7 +1254,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 		// Operator time after single value.
 		{
 			op: getValuesAtTimeOp{
-				time: testInstant.Add(2 * time.Minute),
+				baseOp: baseOp{current: testInstant.Add(2 * time.Minute)},
 			},
 			in: Values{
 				{
@@ -1272,7 +1272,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 		// Operator time before two values.
 		{
 			op: getValuesAtTimeOp{
-				time: testInstant,
+				baseOp: baseOp{current: testInstant},
 			},
 			in: Values{
 				{
@@ -1294,7 +1294,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 		// Operator time at first of two values.
 		{
 			op: getValuesAtTimeOp{
-				time: testInstant.Add(1 * time.Minute),
+				baseOp: baseOp{current: testInstant.Add(1 * time.Minute)},
 			},
 			in: Values{
 				{
@@ -1316,7 +1316,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 		// Operator time between first and second of two values.
 		{
 			op: getValuesAtTimeOp{
-				time: testInstant.Add(90 * time.Second),
+				baseOp: baseOp{current: testInstant.Add(90 * time.Second)},
 			},
 			in: Values{
 				{
@@ -1342,7 +1342,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 		// Operator time at second of two values.
 		{
 			op: getValuesAtTimeOp{
-				time: testInstant.Add(2 * time.Minute),
+				baseOp: baseOp{current: testInstant.Add(2 * time.Minute)},
 			},
 			in: Values{
 				{
@@ -1368,7 +1368,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 		// Operator time after second of two values.
 		{
 			op: getValuesAtTimeOp{
-				time: testInstant.Add(3 * time.Minute),
+				baseOp: baseOp{current: testInstant.Add(3 * time.Minute)},
 			},
 			in: Values{
 				{
@@ -1412,7 +1412,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// No values.
 		{
 			op: getValuesAtIntervalOp{
-				from:     testInstant,
+				baseOp:   baseOp{current: testInstant},
 				through:  testInstant.Add(1 * time.Minute),
 				interval: 30 * time.Second,
 			},
@@ -1420,7 +1420,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Entire operator range before first value.
 		{
 			op: getValuesAtIntervalOp{
-				from:     testInstant,
+				baseOp:   baseOp{current: testInstant},
 				through:  testInstant.Add(1 * time.Minute),
 				interval: 30 * time.Second,
 			},
@@ -1444,7 +1444,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Operator range starts before first value, ends within available values.
 		{
 			op: getValuesAtIntervalOp{
-				from:     testInstant,
+				baseOp:   baseOp{current: testInstant},
 				through:  testInstant.Add(2 * time.Minute),
 				interval: 30 * time.Second,
 			},
@@ -1472,7 +1472,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Entire operator range is within available values.
 		{
 			op: getValuesAtIntervalOp{
-				from:     testInstant.Add(1 * time.Minute),
+				baseOp:   baseOp{current: testInstant.Add(1 * time.Minute)},
 				through:  testInstant.Add(2 * time.Minute),
 				interval: 30 * time.Second,
 			},
@@ -1504,7 +1504,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Operator range begins before first value, ends after last.
 		{
 			op: getValuesAtIntervalOp{
-				from:     testInstant,
+				baseOp:   baseOp{current: testInstant},
 				through:  testInstant.Add(3 * time.Minute),
 				interval: 30 * time.Second,
 			},
@@ -1532,7 +1532,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Operator range begins within available values, ends after the last value.
 		{
 			op: getValuesAtIntervalOp{
-				from:     testInstant.Add(2 * time.Minute),
+				baseOp:   baseOp{current: testInstant.Add(2 * time.Minute)},
 				through:  testInstant.Add(4 * time.Minute),
 				interval: 30 * time.Second,
 			},
@@ -1568,7 +1568,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Entire operator range after the last available value.
 		{
 			op: getValuesAtIntervalOp{
-				from:     testInstant.Add(2 * time.Minute),
+				baseOp:   baseOp{current: testInstant.Add(2 * time.Minute)},
 				through:  testInstant.Add(3 * time.Minute),
 				interval: 30 * time.Second,
 			},
@@ -1596,7 +1596,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// skip over values for the test).
 		{
 			op: getValuesAtIntervalOp{
-				from:     testInstant.Add(30 * time.Second),
+				baseOp:   baseOp{current: testInstant.Add(30 * time.Second)},
 				through:  testInstant.Add(4 * time.Minute),
 				interval: 3 * time.Minute,
 			},
@@ -1665,14 +1665,14 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// No values.
 		{
 			op: getValuesAlongRangeOp{
-				from:    testInstant,
+				baseOp:  baseOp{current: testInstant},
 				through: testInstant.Add(1 * time.Minute),
 			},
 		},
 		// Entire operator range before first value.
 		{
 			op: getValuesAlongRangeOp{
-				from:    testInstant,
+				baseOp:  baseOp{current: testInstant},
 				through: testInstant.Add(1 * time.Minute),
 			},
 			in: Values{
@@ -1690,7 +1690,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Operator range starts before first value, ends within available values.
 		{
 			op: getValuesAlongRangeOp{
-				from:    testInstant,
+				baseOp:  baseOp{current: testInstant},
 				through: testInstant.Add(2 * time.Minute),
 			},
 			in: Values{
@@ -1713,7 +1713,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Entire operator range is within available values.
 		{
 			op: getValuesAlongRangeOp{
-				from:    testInstant.Add(1 * time.Minute),
+				baseOp:  baseOp{current: testInstant.Add(1 * time.Minute)},
 				through: testInstant.Add(2 * time.Minute),
 			},
 			in: Values{
@@ -1740,7 +1740,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Operator range begins before first value, ends after last.
 		{
 			op: getValuesAlongRangeOp{
-				from:    testInstant,
+				baseOp:  baseOp{current: testInstant},
 				through: testInstant.Add(3 * time.Minute),
 			},
 			in: Values{
@@ -1767,7 +1767,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Operator range begins within available values, ends after the last value.
 		{
 			op: getValuesAlongRangeOp{
-				from:    testInstant.Add(2 * time.Minute),
+				baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
 				through: testInstant.Add(4 * time.Minute),
 			},
 			in: Values{
@@ -1802,7 +1802,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 		// Entire operator range after the last available value.
 		{
 			op: getValuesAlongRangeOp{
-				from:    testInstant.Add(2 * time.Minute),
+				baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
 				through: testInstant.Add(3 * time.Minute),
 			},
 			in: Values{
@@ -1833,7 +1833,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 
 func TestGetValueRangeAtIntervalOp(t *testing.T) {
 	testOp := getValueRangeAtIntervalOp{
-		rangeFrom:     testInstant.Add(-2 * time.Minute),
+		baseOp:        baseOp{current: testInstant.Add(-2 * time.Minute)},
 		rangeThrough:  testInstant,
 		rangeDuration: 2 * time.Minute,
 		interval:      10 * time.Minute,

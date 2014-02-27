@@ -14,8 +14,10 @@
 package metric
 
 import (
+	"time"
 	"github.com/prometheus/prometheus/utility"
 
+	clientmodel "github.com/prometheus/client_golang/model"
 	dto "github.com/prometheus/prometheus/model/generated"
 )
 
@@ -81,12 +83,17 @@ type valueAtTimeList struct {
 	l utility.FreeList
 }
 
-func (l *valueAtTimeList) Get() (*getValuesAtTimeOp, bool) {
-	if v, ok := l.l.Get(); ok {
-		return v.(*getValuesAtTimeOp), ok
+func (l *valueAtTimeList) Get(fp *clientmodel.Fingerprint, time clientmodel.Timestamp) *getValuesAtTimeOp {
+	var op *getValuesAtTimeOp
+	v, ok := l.l.Get()
+	if ok {
+		op = v.(*getValuesAtTimeOp)
+	} else {
+		op = &getValuesAtTimeOp{}
 	}
-
-	return &getValuesAtTimeOp{}, false
+	op.fp = *fp
+	op.current = time
+	return op
 }
 
 var pGetValuesAtTimeOp = &getValuesAtTimeOp{}
@@ -107,12 +114,19 @@ type valueAtIntervalList struct {
 	l utility.FreeList
 }
 
-func (l *valueAtIntervalList) Get() (*getValuesAtIntervalOp, bool) {
-	if v, ok := l.l.Get(); ok {
-		return v.(*getValuesAtIntervalOp), ok
+func (l *valueAtIntervalList) Get(fp *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration) *getValuesAtIntervalOp {
+	var op *getValuesAtIntervalOp
+	v, ok := l.l.Get()
+	if ok {
+		op = v.(*getValuesAtIntervalOp)
+	} else {
+		op = &getValuesAtIntervalOp{}
 	}
-
-	return &getValuesAtIntervalOp{}, false
+	op.fp = *fp
+	op.current = from
+	op.through = through
+	op.interval = interval
+	return op
 }
 
 var pGetValuesAtIntervalOp = &getValuesAtIntervalOp{}
@@ -133,12 +147,18 @@ type valueAlongRangeList struct {
 	l utility.FreeList
 }
 
-func (l *valueAlongRangeList) Get() (*getValuesAlongRangeOp, bool) {
-	if v, ok := l.l.Get(); ok {
-		return v.(*getValuesAlongRangeOp), ok
+func (l *valueAlongRangeList) Get(fp *clientmodel.Fingerprint, from, through clientmodel.Timestamp) *getValuesAlongRangeOp {
+	var op *getValuesAlongRangeOp
+	v, ok := l.l.Get()
+	if ok {
+		op = v.(*getValuesAlongRangeOp)
+	} else {
+		op = &getValuesAlongRangeOp{}
 	}
-
-	return &getValuesAlongRangeOp{}, false
+	op.fp = *fp
+	op.current = from
+	op.through = through
+	return op
 }
 
 var pGetValuesAlongRangeOp = &getValuesAlongRangeOp{}
@@ -159,12 +179,21 @@ type valueAtIntervalAlongRangeList struct {
 	l utility.FreeList
 }
 
-func (l *valueAtIntervalAlongRangeList) Get() (*getValueRangeAtIntervalOp, bool) {
-	if v, ok := l.l.Get(); ok {
-		return v.(*getValueRangeAtIntervalOp), ok
+func (l *valueAtIntervalAlongRangeList) Get(fp *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration) *getValueRangeAtIntervalOp {
+	var op *getValueRangeAtIntervalOp
+	v, ok := l.l.Get()
+	if ok {
+		op = v.(*getValueRangeAtIntervalOp)
+	} else {
+		op = &getValueRangeAtIntervalOp{}
 	}
-
-	return &getValueRangeAtIntervalOp{}, false
+	op.fp = *fp
+	op.current = from
+	op.rangeThrough = from.Add(rangeDuration)
+	op.rangeDuration = rangeDuration
+	op.interval = interval
+	op.through = through
+	return op
 }
 
 var pGetValueRangeAtIntervalOp = &getValueRangeAtIntervalOp{}
