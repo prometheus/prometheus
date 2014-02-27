@@ -68,7 +68,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant,
+							baseOp: baseOp{current: instant},
 						},
 					},
 				},
@@ -88,7 +88,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant,
+							baseOp: baseOp{current: instant},
 						},
 					},
 				},
@@ -120,7 +120,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant,
+							baseOp: baseOp{current: instant},
 						},
 					},
 				},
@@ -147,7 +147,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second),
+							baseOp: baseOp{current: instant.Add(time.Second)},
 						},
 					},
 				},
@@ -179,7 +179,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant,
+							baseOp: baseOp{current: instant},
 						},
 					},
 				},
@@ -216,7 +216,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second),
+							baseOp: baseOp{current: instant.Add(time.Second)},
 						},
 					},
 				},
@@ -253,7 +253,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second),
+							baseOp: baseOp{current: instant.Add(time.Second)},
 						},
 					},
 				},
@@ -294,7 +294,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second * 3),
+							baseOp: baseOp{current: instant.Add(time.Second * 3)},
 						},
 					},
 				},
@@ -319,7 +319,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
-							time: instant.Add(time.Second*time.Duration(*leveldbChunkSize*2) + clientmodel.MinimumTick),
+							baseOp: baseOp{current: instant.Add(time.Second*time.Duration(*leveldbChunkSize*2) + clientmodel.MinimumTick)},
 						},
 					},
 				},
@@ -356,15 +356,15 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 		requestBuilder := NewViewRequestBuilder()
 
 		for _, atTime := range scenario.in.atTime {
-			requestBuilder.GetMetricAtTime(fingerprint, atTime.time)
+			requestBuilder.GetMetricAtTime(fingerprint, atTime.current)
 		}
 
 		for _, atInterval := range scenario.in.atInterval {
-			requestBuilder.GetMetricAtInterval(fingerprint, atInterval.from, atInterval.through, atInterval.interval)
+			requestBuilder.GetMetricAtInterval(fingerprint, atInterval.current, atInterval.through, atInterval.interval)
 		}
 
 		for _, alongRange := range scenario.in.alongRange {
-			requestBuilder.GetMetricRange(fingerprint, alongRange.from, alongRange.through)
+			requestBuilder.GetMetricRange(fingerprint, alongRange.current, alongRange.through)
 		}
 
 		v, err := tiered.MakeView(requestBuilder, time.Second*5, stats.NewTimerGroup())
@@ -374,7 +374,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 		}
 
 		for j, atTime := range scenario.in.atTime {
-			actual := v.GetValueAtTime(fingerprint, atTime.time)
+			actual := v.GetValueAtTime(fingerprint, atTime.current)
 
 			if len(actual) != len(scenario.out.atTime[j]) {
 				t.Fatalf("%d.%d. expected %d output, got %d", i, j, len(scenario.out.atTime[j]), len(actual))

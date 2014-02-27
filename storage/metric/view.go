@@ -14,7 +14,7 @@
 package metric
 
 import (
-	"sort"
+	"container/heap"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -28,110 +28,87 @@ var (
 )
 
 // ViewRequestBuilder represents the summation of all datastore queries that
-// shall be performed to extract values.  Each operation mutates the state of
-// the builder.
+// shall be performed to extract values. Call the Get... methods to record the
+// queries. Once done, use HasOp and PopOp to retrieve the resulting
+// operations. The operations are sorted by their fingerprint (and, for equal
+// fingerprints, by the StartsAt timestamp of their operation).
 type ViewRequestBuilder interface {
+	// GetMetricAtTime records a query to get, for the given Fingerprint,
+	// either the value at that time if there is a match or the one or two
+	// values adjacent thereto.
 	GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time clientmodel.Timestamp)
+	// GetMetricAtInterval records a query to get, for the given
+	// Fingerprint, either the value at that interval from From through
+	// Through if there is a match or the one or two values adjacent for
+	// each point.
 	GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration)
+	// GetMetricRange records a query to get, for the given Fingerprint, the
+	// values that occur inclusively from From through Through.
 	GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp)
-	ScanJobs() scanJobs
+	// GetMetricRangeAtInterval records a query to get value ranges at
+	// intervals for the given Fingerprint:
+	//
+	//   |----|       |----|       |----|       |----|
+	//   ^    ^            ^       ^    ^            ^
+	//   |    \------------/       \----/            |
+	//  from     interval       rangeDuration     through
+	GetMetricRangeAtInterval(fp *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration)
+	// PopOp emits the next operation in the queue (sorted by
+	// fingerprint). If called while HasOps returns false, the
+	// behavior is undefined.
+	PopOp() op
+	// HasOp returns true if there is at least one more operation in the
+	// queue.
+	HasOp() bool
 }
 
-// viewRequestBuilder contains the various unoptimized requests for data.
+// viewRequestBuilder contains the various requests for data.
 type viewRequestBuilder struct {
-	operations map[clientmodel.Fingerprint]ops
+	operations ops
 }
 
 // NewViewRequestBuilder furnishes a ViewRequestBuilder for remarking what types
 // of queries to perform.
 func NewViewRequestBuilder() *viewRequestBuilder {
-	return &viewRequestBuilder{
-		operations: make(map[clientmodel.Fingerprint]ops),
-	}
+	return &viewRequestBuilder{}
 }
 
 var getValuesAtTimes = newValueAtTimeList(10 * 1024)
 
-// GetMetricAtTime gets for the given Fingerprint either the value at that time
-// if there is an match or the one or two values adjacent thereto.
-func (v *viewRequestBuilder) GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time clientmodel.Timestamp) {
-	ops := v.operations[*fingerprint]
-	op, _ := getValuesAtTimes.Get()
-	op.time = time
-	ops = append(ops, op)
-	v.operations[*fingerprint] = ops
+// GetMetricAtTime implements ViewRequestBuilder.
+func (v *viewRequestBuilder) GetMetricAtTime(fp *clientmodel.Fingerprint, time clientmodel.Timestamp) {
+	heap.Push(&v.operations, getValuesAtTimes.Get(fp, time))
 }
 
 var getValuesAtIntervals = newValueAtIntervalList(10 * 1024)
 
-// GetMetricAtInterval gets for the given Fingerprint either the value at that
-// interval from From through Through if there is an match or the one or two
-// values adjacent for each point.
-func (v *viewRequestBuilder) GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration) {
-	ops := v.operations[*fingerprint]
-	op, _ := getValuesAtIntervals.Get()
-	op.from = from
-	op.through = through
-	op.interval = interval
-	ops = append(ops, op)
-	v.operations[*fingerprint] = ops
+// GetMetricAtInterval implements ViewRequestBuilder.
+func (v *viewRequestBuilder) GetMetricAtInterval(fp *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration) {
+	heap.Push(&v.operations, getValuesAtIntervals.Get(fp, from, through, interval))
 }
 
 var getValuesAlongRanges = newValueAlongRangeList(10 * 1024)
 
-// GetMetricRange gets for the given Fingerprint the values that occur
-// inclusively from From through Through.
-func (v *viewRequestBuilder) GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp) {
-	ops := v.operations[*fingerprint]
-	op, _ := getValuesAlongRanges.Get()
-	op.from = from
-	op.through = through
-	ops = append(ops, op)
-	v.operations[*fingerprint] = ops
+// GetMetricRange implements ViewRequestBuilder.
+func (v *viewRequestBuilder) GetMetricRange(fp *clientmodel.Fingerprint, from, through clientmodel.Timestamp) {
+	heap.Push(&v.operations, getValuesAlongRanges.Get(fp, from, through))
 }
 
 var getValuesAtIntervalAlongRanges = newValueAtIntervalAlongRangeList(10 * 1024)
 
-// GetMetricRangeAtInterval gets value ranges at intervals for the given
-// Fingerprint:
-//
-//   |----|       |----|       |----|       |----|
-//   ^    ^            ^       ^    ^            ^
-//   |    \------------/       \----/            |
-//  from     interval       rangeDuration     through
-func (v *viewRequestBuilder) GetMetricRangeAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration) {
-	ops := v.operations[*fingerprint]
-	op, _ := getValuesAtIntervalAlongRanges.Get()
-	op.rangeFrom = from
-	op.rangeThrough = from.Add(rangeDuration)
-	op.rangeDuration = rangeDuration
-	op.interval = interval
-	op.through = through
-	ops = append(ops, op)
-	v.operations[*fingerprint] = ops
+// GetMetricRangeAtInterval implements ViewRequestBuilder.
+func (v *viewRequestBuilder) GetMetricRangeAtInterval(fp *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration) {
+	heap.Push(&v.operations, getValuesAtIntervalAlongRanges.Get(fp, from, through, interval, rangeDuration))
 }
 
-// ScanJobs emits the optimized scans that will occur in the data store.  This
-// effectively resets the ViewRequestBuilder back to a pristine state.
-func (v *viewRequestBuilder) ScanJobs() (j scanJobs) {
-	for fingerprint, operations := range v.operations {
-		sort.Sort(startsAtSort{operations})
+// PopOp implements ViewRequestBuilder.
+func (v *viewRequestBuilder) PopOp() op {
+	return heap.Pop(&v.operations).(op)
+}
 
-		fpCopy := fingerprint
-		j = append(j, scanJob{
-			fingerprint: &fpCopy,
-			// BUG: Evaluate whether we need to implement an optimize() working also
-			// for getValueRangeAtIntervalOp and use it here instead of just passing
-			// through the list of ops as-is.
-			operations: operations,
-		})
-
-		delete(v.operations, fingerprint)
-	}
-
-	sort.Sort(j)
-
-	return
+// HasOp implements ViewRequestBuilder.
+func (v *viewRequestBuilder) HasOp() bool {
+	return v.operations.Len() > 0
 }
 
 type view struct {
