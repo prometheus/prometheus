@@ -50,6 +50,10 @@ A good example is of an elevator that tracks how many times it has been used in
 its duty cycle.  Each time someone hits the button to dispatch it, the elevator
 can update its tally; and this is a tally it keeps!
 
+See also the Prometheus Java client library's implementation of counters for
+further documentation and concrete code examples.
+https://github.com/prometheus/client_java/blob/master/client/src/main/java/io/prometheus/client/metrics/Counter.java
+
 ## Gauges
 
 A _Gauge_ reports instantaneous values based on external state.  This is
@@ -65,6 +69,10 @@ The following are good examples or applications of gauges:
 
 Unlike a _Counter_, you don't have direct access to the events that brought the
 _Gauge_ to its value today.  This is a white-box and black-box distinction.
+
+See also the Prometheus Java client library's implementation of gauges for
+further documentation and concrete code examples.
+https://github.com/prometheus/client_java/blob/master/client/src/main/java/io/prometheus/client/metrics/Gauge.java
 
 ## Which to use: Counter or Gauge?
 Knowing whether to use a _Counter_ or a _Gauge_ can be tough.  Let's perform a
@@ -120,6 +128,10 @@ following information:
 This is quite convenient, for if you are interested in tracking latencies of an
 operation in real time, you get three types of information reported for free
 with one metric.
+
+See also the Prometheus Java client library's implementation of summaries for
+further documentation and concrete code examples.
+https://github.com/prometheus/client_java/blob/master/client/src/main/java/io/prometheus/client/metrics/Summary.java
 
 # Acknowledgements
 Robert Bray: Vehicle Instrument Panel
