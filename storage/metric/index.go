@@ -46,11 +46,6 @@ type LevelDBFingerprintMetricIndex struct {
 	*leveldb.LevelDBPersistence
 }
 
-// LevelDBFingerprintMetricIndexOptions just wraps leveldb.LevelDBOptions.
-type LevelDBFingerprintMetricIndexOptions struct {
-	leveldb.LevelDBOptions
-}
-
 // IndexBatch implements FingerprintMetricIndex.
 func (i *LevelDBFingerprintMetricIndex) IndexBatch(mapping FingerprintMetricMapping) error {
 	b := leveldb.NewBatch()
@@ -90,8 +85,8 @@ func (i *LevelDBFingerprintMetricIndex) Lookup(f *clientmodel.Fingerprint) (m cl
 
 // NewLevelDBFingerprintMetricIndex returns a LevelDBFingerprintMetricIndex
 // object ready to use.
-func NewLevelDBFingerprintMetricIndex(o LevelDBFingerprintMetricIndexOptions) (*LevelDBFingerprintMetricIndex, error) {
-	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
+func NewLevelDBFingerprintMetricIndex(o leveldb.LevelDBOptions) (*LevelDBFingerprintMetricIndex, error) {
+	s, err := leveldb.NewLevelDBPersistence(o)
 	if err != nil {
 		return nil, err
 	}
@@ -175,15 +170,10 @@ func (i *LevelDBLabelNameFingerprintIndex) Has(l clientmodel.LabelName) (ok bool
 	})
 }
 
-// LevelDBLabelNameFingerprintIndexOptions just wraps leveldb.LevelDBOptions.
-type LevelDBLabelNameFingerprintIndexOptions struct {
-	leveldb.LevelDBOptions
-}
-
 // NewLevelLabelNameFingerprintIndex returns a LevelDBLabelNameFingerprintIndex
 // ready to use.
-func NewLevelLabelNameFingerprintIndex(o LevelDBLabelNameFingerprintIndexOptions) (*LevelDBLabelNameFingerprintIndex, error) {
-	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
+func NewLevelLabelNameFingerprintIndex(o leveldb.LevelDBOptions) (*LevelDBLabelNameFingerprintIndex, error) {
+	s, err := leveldb.NewLevelDBPersistence(o)
 	if err != nil {
 		return nil, err
 	}
@@ -213,11 +203,6 @@ type LabelPairFingerprintIndex interface {
 // leveldb.
 type LevelDBLabelPairFingerprintIndex struct {
 	*leveldb.LevelDBPersistence
-}
-
-// LevelDBLabelSetFingerprintIndexOptions just wraps leveldb.LevelDBOptions.
-type LevelDBLabelSetFingerprintIndexOptions struct {
-	leveldb.LevelDBOptions
 }
 
 // IndexBatch implements LabelPairFingerprintMapping.
@@ -283,8 +268,8 @@ func (i *LevelDBLabelPairFingerprintIndex) Has(p *LabelPair) (ok bool, err error
 
 // NewLevelDBLabelSetFingerprintIndex returns a LevelDBLabelPairFingerprintIndex
 // object ready to use.
-func NewLevelDBLabelSetFingerprintIndex(o LevelDBLabelSetFingerprintIndexOptions) (*LevelDBLabelPairFingerprintIndex, error) {
-	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
+func NewLevelDBLabelSetFingerprintIndex(o leveldb.LevelDBOptions) (*LevelDBLabelPairFingerprintIndex, error) {
+	s, err := leveldb.NewLevelDBPersistence(o)
 	if err != nil {
 		return nil, err
 	}
@@ -332,15 +317,10 @@ func (i *LevelDBMetricMembershipIndex) Has(m clientmodel.Metric) (ok bool, err e
 	return i.LevelDBPersistence.Has(k)
 }
 
-// LevelDBMetricMembershipIndexOptions just wraps leveldb.LevelDBOptions
-type LevelDBMetricMembershipIndexOptions struct {
-	leveldb.LevelDBOptions
-}
-
 // NewLevelDBMetricMembershipIndex returns a LevelDBMetricMembershipIndex object
 // ready to use.
-func NewLevelDBMetricMembershipIndex(o LevelDBMetricMembershipIndexOptions) (*LevelDBMetricMembershipIndex, error) {
-	s, err := leveldb.NewLevelDBPersistence(o.LevelDBOptions)
+func NewLevelDBMetricMembershipIndex(o leveldb.LevelDBOptions) (*LevelDBMetricMembershipIndex, error) {
+	s, err := leveldb.NewLevelDBPersistence(o)
 	if err != nil {
 		return nil, err
 	}

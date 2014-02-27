@@ -122,14 +122,14 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Label Names and Value Pairs by Fingerprint",
 			func() {
 				var err error
-				emission.FingerprintToMetrics, err = NewLevelDBFingerprintMetricIndex(LevelDBFingerprintMetricIndexOptions{
-					LevelDBOptions: leveldb.LevelDBOptions{
+				emission.FingerprintToMetrics, err = NewLevelDBFingerprintMetricIndex(
+					leveldb.LevelDBOptions{
 						Name:           "Metrics by Fingerprint",
 						Purpose:        "Index",
 						Path:           baseDirectory + "/label_name_and_value_pairs_by_fingerprint",
 						CacheSizeBytes: *fingerprintsToLabelPairCacheSize,
 					},
-				})
+				)
 				workers.MayFail(err)
 			},
 		},
@@ -150,13 +150,14 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"High Watermarks by Fingerprint",
 			func() {
 				var err error
-				emission.MetricHighWatermarks, err = NewLevelDBHighWatermarker(LevelDBHighWatermarkerOptions{
-					LevelDBOptions: leveldb.LevelDBOptions{
+				emission.MetricHighWatermarks, err = NewLevelDBHighWatermarker(
+					leveldb.LevelDBOptions{
 						Name:           "High Watermarks",
 						Purpose:        "The youngest sample in the database per metric.",
 						Path:           baseDirectory + "/high_watermarks_by_fingerprint",
 						CacheSizeBytes: *highWatermarkCacheSize,
-					}})
+					},
+				)
 				workers.MayFail(err)
 			},
 		},
@@ -164,14 +165,14 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Fingerprints by Label Name",
 			func() {
 				var err error
-				emission.LabelNameToFingerprints, err = NewLevelLabelNameFingerprintIndex(LevelDBLabelNameFingerprintIndexOptions{
-					LevelDBOptions: leveldb.LevelDBOptions{
+				emission.LabelNameToFingerprints, err = NewLevelLabelNameFingerprintIndex(
+					leveldb.LevelDBOptions{
 						Name:           "Fingerprints by Label Name",
 						Purpose:        "Index",
 						Path:           baseDirectory + "/fingerprints_by_label_name",
 						CacheSizeBytes: *labelNameToFingerprintsCacheSize,
 					},
-				})
+				)
 				workers.MayFail(err)
 			},
 		},
@@ -179,14 +180,14 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Fingerprints by Label Name and Value Pair",
 			func() {
 				var err error
-				emission.LabelPairToFingerprints, err = NewLevelDBLabelSetFingerprintIndex(LevelDBLabelSetFingerprintIndexOptions{
-					LevelDBOptions: leveldb.LevelDBOptions{
+				emission.LabelPairToFingerprints, err = NewLevelDBLabelSetFingerprintIndex(
+					leveldb.LevelDBOptions{
 						Name:           "Fingerprints by Label Pair",
 						Purpose:        "Index",
 						Path:           baseDirectory + "/fingerprints_by_label_name_and_value_pair",
 						CacheSizeBytes: *labelPairToFingerprintsCacheSize,
 					},
-				})
+				)
 				workers.MayFail(err)
 			},
 		},
@@ -195,14 +196,13 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			func() {
 				var err error
 				emission.MetricMembershipIndex, err = NewLevelDBMetricMembershipIndex(
-					LevelDBMetricMembershipIndexOptions{
-						LevelDBOptions: leveldb.LevelDBOptions{
-							Name:           "Metric Membership",
-							Purpose:        "Index",
-							Path:           baseDirectory + "/metric_membership_index",
-							CacheSizeBytes: *metricMembershipIndexCacheSize,
-						},
-					})
+					leveldb.LevelDBOptions{
+						Name:           "Metric Membership",
+						Purpose:        "Index",
+						Path:           baseDirectory + "/metric_membership_index",
+						CacheSizeBytes: *metricMembershipIndexCacheSize,
+					},
+				)
 				workers.MayFail(err)
 			},
 		},
@@ -210,14 +210,14 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 			"Sample Curation Remarks",
 			func() {
 				var err error
-				emission.CurationRemarks, err = NewLevelDBCurationRemarker(LevelDBCurationRemarkerOptions{
-					LevelDBOptions: leveldb.LevelDBOptions{
+				emission.CurationRemarks, err = NewLevelDBCurationRemarker(
+					leveldb.LevelDBOptions{
 						Name:           "Sample Curation Remarks",
 						Purpose:        "Ledger of Progress for Various Curators",
 						Path:           baseDirectory + "/curation_remarks",
 						CacheSizeBytes: *curationRemarksCacheSize,
 					},
-				})
+				)
 				workers.MayFail(err)
 			},
 		},
