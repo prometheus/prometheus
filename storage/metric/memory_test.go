@@ -93,3 +93,61 @@ func BenchmarkAppendSample100(b *testing.B) {
 func BenchmarkAppendSample1000(b *testing.B) {
 	benchmarkAppendSamples(b, 1000)
 }
+
+// Regression test for https://github.com/prometheus/prometheus/issues/381.
+func TestDroppedSeriesIndexRegression(t *testing.T) {
+	// 1. Create samples for two timeseries with one common labelpair.
+	// 2. Flush memory storage such that only one timeseries is dropped from memory.
+	// 3. Get fingerprints for common labelpair.
+	// 4. Check that len(fingerprints) == 1.
+	samples := clientmodel.Samples{
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testmetric",
+				"different":                 "differentvalue1",
+				"common":                    "samevalue",
+			},
+			Value:     1,
+			Timestamp: clientmodel.TimestampFromTime(time.Date(2000, 0, 0, 0, 0, 0, 0, time.UTC)),
+		},
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testmetric",
+				"different":                 "differentvalue2",
+				"common":                    "samevalue",
+			},
+			Value:     2,
+			Timestamp: clientmodel.TimestampFromTime(time.Date(2002, 0, 0, 0, 0, 0, 0, time.UTC)),
+		},
+	}
+
+	s := NewMemorySeriesStorage(MemorySeriesOptions{})
+	s.AppendSamples(samples)
+
+	common := clientmodel.LabelSet{"common": "samevalue"}
+	fps, err := s.GetFingerprintsForLabelSet(common)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fps) != 2 {
+		t.Fatalf("Got %d fingerprints, expected 2", len(fps))
+	}
+
+	toDisk := make(chan clientmodel.Samples, 2)
+	s.Flush(clientmodel.TimestampFromTime(time.Date(2001, 0, 0, 0, 0, 0, 0, time.UTC)), toDisk)
+	if len(toDisk) != 1 {
+		t.Fatalf("Got %d disk sample lists, expected 1", len(toDisk))
+	}
+	diskSamples := <-toDisk
+	if len(diskSamples) != 1 {
+		t.Fatalf("Got %d disk samples, expected 1", len(diskSamples))
+	}
+
+	fps, err = s.GetFingerprintsForLabelSet(common)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fps) != 1 {
+		t.Fatalf("Got %d fingerprints, expected 1", len(fps))
+	}
+}
