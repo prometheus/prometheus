@@ -176,7 +176,7 @@ type memorySeriesStorage struct {
 
 	wmCache                 *watermarkCache
 	fingerprintToSeries     map[clientmodel.Fingerprint]stream
-	labelPairToFingerprints map[LabelPair]clientmodel.Fingerprints
+	labelPairToFingerprints map[LabelPair]utility.Set
 }
 
 // MemorySeriesOptions bundles options used by NewMemorySeriesStorage to create
@@ -240,9 +240,13 @@ func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, finge
 				Name:  k,
 				Value: v,
 			}
-			labelPairValues := s.labelPairToFingerprints[labelPair]
-			labelPairValues = append(labelPairValues, fingerprint)
-			s.labelPairToFingerprints[labelPair] = labelPairValues
+
+			set, ok := s.labelPairToFingerprints[labelPair]
+			if !ok {
+				set = utility.Set{}
+				s.labelPairToFingerprints[labelPair] = set
+			}
+			set.Add(*fingerprint)
 		}
 	}
 	return series
@@ -267,7 +271,9 @@ func (s *memorySeriesStorage) Flush(flushOlderThan clientmodel.Timestamp, queue 
 		// BUG(all): this can deadlock if the queue is full, as we only ever clear
 		// the queue after calling this method:
 		// https://github.com/prometheus/prometheus/issues/275
-		queue <- queued
+		if len(queued) > 0 {
+			queue <- queued
+		}
 
 		if stream.size() == 0 {
 			emptySeries = append(emptySeries, fingerprint)
@@ -280,7 +286,6 @@ func (s *memorySeriesStorage) Flush(flushOlderThan clientmodel.Timestamp, queue 
 			s.Lock()
 			s.dropSeries(&fingerprint)
 			s.Unlock()
-
 		}
 	}
 }
@@ -291,12 +296,14 @@ func (s *memorySeriesStorage) dropSeries(fingerprint *clientmodel.Fingerprint) {
 	if !ok {
 		return
 	}
+
 	for k, v := range series.metric() {
 		labelPair := LabelPair{
 			Name:  k,
 			Value: v,
 		}
-		delete(s.labelPairToFingerprints, labelPair)
+		// TODO(julius): Drop keys when their sets become empty.
+		s.labelPairToFingerprints[labelPair].Remove(*fingerprint)
 	}
 	delete(s.fingerprintToSeries, *fingerprint)
 }
@@ -317,32 +324,31 @@ func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmo
 	series.add(samples...)
 }
 
-func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l clientmodel.LabelSet) (fingerprints clientmodel.Fingerprints, err error) {
+func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l clientmodel.LabelSet) (clientmodel.Fingerprints, error) {
 	s.RLock()
 	defer s.RUnlock()
 
 	sets := []utility.Set{}
 	for k, v := range l {
-		values := s.labelPairToFingerprints[LabelPair{
+		if set, ok := s.labelPairToFingerprints[LabelPair{
 			Name:  k,
 			Value: v,
-		}]
-		set := utility.Set{}
-		for _, fingerprint := range values {
-			set.Add(*fingerprint)
+		}]; ok {
+			sets = append(sets, set)
 		}
-		sets = append(sets, set)
 	}
 
 	setCount := len(sets)
 	if setCount == 0 {
-		return fingerprints, nil
+		return nil, nil
 	}
 
 	base := sets[0]
 	for i := 1; i < setCount; i++ {
 		base = base.Intersection(sets[i])
 	}
+
+	fingerprints := clientmodel.Fingerprints{}
 	for _, e := range base.Elements() {
 		fingerprint := e.(clientmodel.Fingerprint)
 		fingerprints = append(fingerprints, &fingerprint)
@@ -430,8 +436,8 @@ func (s *memorySeriesStorage) Close() {
 	s.Lock()
 	defer s.Unlock()
 
-	s.fingerprintToSeries = map[clientmodel.Fingerprint]stream{}
-	s.labelPairToFingerprints = map[LabelPair]clientmodel.Fingerprints{}
+	s.fingerprintToSeries = nil
+	s.labelPairToFingerprints = nil
 }
 
 func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (values clientmodel.LabelValues, err error) {
@@ -455,7 +461,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelNa
 func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[clientmodel.Fingerprint]stream),
-		labelPairToFingerprints: make(map[LabelPair]clientmodel.Fingerprints),
+		labelPairToFingerprints: make(map[LabelPair]utility.Set),
 		wmCache:                 o.WatermarkCache,
 	}
 }
