@@ -170,19 +170,6 @@ func (i *LevelDBLabelNameFingerprintIndex) Has(l clientmodel.LabelName) (ok bool
 	})
 }
 
-// NewLevelLabelNameFingerprintIndex returns a LevelDBLabelNameFingerprintIndex
-// ready to use.
-func NewLevelLabelNameFingerprintIndex(o leveldb.LevelDBOptions) (*LevelDBLabelNameFingerprintIndex, error) {
-	s, err := leveldb.NewLevelDBPersistence(o)
-	if err != nil {
-		return nil, err
-	}
-
-	return &LevelDBLabelNameFingerprintIndex{
-		LevelDBPersistence: s,
-	}, nil
-}
-
 // LabelPairFingerprintMapping is an in-memory map of LabelPairs to
 // Fingerprints.
 type LabelPairFingerprintMapping map[LabelPair]clientmodel.Fingerprints
@@ -557,7 +544,6 @@ func NewBufferedIndexer(i MetricIndexer, limit int) *BufferedIndexer {
 // locking semantics to enforce this.
 type TotalIndexer struct {
 	FingerprintToMetric    FingerprintMetricIndex
-	LabelNameToFingerprint LabelNameFingerprintIndex
 	LabelPairToFingerprint LabelPairFingerprintIndex
 	MetricMembership       MetricMembershipIndex
 }
@@ -576,45 +562,6 @@ func findUnindexed(i MetricMembershipIndex, b FingerprintMetricMapping) (Fingerp
 	}
 
 	return out, nil
-}
-
-func extendLabelNameIndex(i LabelNameFingerprintIndex, b FingerprintMetricMapping) (LabelNameFingerprintMapping, error) {
-	collection := map[clientmodel.LabelName]utility.Set{}
-
-	for fp, m := range b {
-		for l := range m {
-			set, ok := collection[l]
-			if !ok {
-				baseFps, _, err := i.Lookup(l)
-				if err != nil {
-					return nil, err
-				}
-
-				set = utility.Set{}
-
-				for _, baseFp := range baseFps {
-					set.Add(*baseFp)
-				}
-
-				collection[l] = set
-			}
-
-			set.Add(fp)
-		}
-	}
-
-	batch := LabelNameFingerprintMapping{}
-	for l, set := range collection {
-		fps := clientmodel.Fingerprints{}
-		for e := range set {
-			fp := e.(clientmodel.Fingerprint)
-			fps = append(fps, &fp)
-		}
-
-		batch[l] = fps
-	}
-
-	return batch, nil
 }
 
 func extendLabelPairIndex(i LabelPairFingerprintIndex, b FingerprintMetricMapping) (LabelPairFingerprintMapping, error) {
@@ -664,14 +611,6 @@ func extendLabelPairIndex(i LabelPairFingerprintIndex, b FingerprintMetricMappin
 func (i *TotalIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 	unindexed, err := findUnindexed(i.MetricMembership, b)
 	if err != nil {
-		return err
-	}
-
-	labelNames, err := extendLabelNameIndex(i.LabelNameToFingerprint, unindexed)
-	if err != nil {
-		return err
-	}
-	if err := i.LabelNameToFingerprint.IndexBatch(labelNames); err != nil {
 		return err
 	}
 

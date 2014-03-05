@@ -78,72 +78,6 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 	}
 }
 
-func GetFingerprintsForLabelNameTests(p MetricPersistence, t test.Tester) {
-	testAppendSamples(p, &clientmodel.Sample{
-		Value:     0,
-		Timestamp: 0,
-		Metric: clientmodel.Metric{
-			clientmodel.MetricNameLabel: "my_metric",
-			"request_type":              "your_mom",
-			"language":                  "english",
-		},
-	}, t)
-
-	testAppendSamples(p, &clientmodel.Sample{
-		Value:     0,
-		Timestamp: 0,
-		Metric: clientmodel.Metric{
-			clientmodel.MetricNameLabel: "my_metric",
-			"request_type":              "your_dad",
-			"sprache":                   "deutsch",
-		},
-	}, t)
-
-	b := clientmodel.MetricNameLabel
-	result, err := p.GetFingerprintsForLabelName(b)
-
-	if err != nil {
-		t.Error(err)
-	}
-
-	if len(result) != 2 {
-		t.Errorf("Expected two elements.")
-	}
-
-	b = clientmodel.LabelName("request_type")
-	result, err = p.GetFingerprintsForLabelName(b)
-
-	if err != nil {
-		t.Error(err)
-	}
-
-	if len(result) != 2 {
-		t.Errorf("Expected two elements.")
-	}
-
-	b = clientmodel.LabelName("language")
-	result, err = p.GetFingerprintsForLabelName(b)
-
-	if err != nil {
-		t.Error(err)
-	}
-
-	if len(result) != 1 {
-		t.Errorf("Expected one element.")
-	}
-
-	b = clientmodel.LabelName("sprache")
-	result, err = p.GetFingerprintsForLabelName(b)
-
-	if err != nil {
-		t.Error(err)
-	}
-
-	if len(result) != 1 {
-		t.Errorf("Expected one element.")
-	}
-}
-
 func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
@@ -388,18 +322,6 @@ func BenchmarkLevelDBGetFingerprintsForLabelSet(b *testing.B) {
 	}
 }
 
-var testLevelDBGetFingerprintsForLabelName = buildLevelDBTestPersistence("get_fingerprints_for_labelname", GetFingerprintsForLabelNameTests)
-
-func TestLevelDBGetFingerprintsForLabelName(t *testing.T) {
-	testLevelDBGetFingerprintsForLabelName(t)
-}
-
-func BenchmarkLevelDBGetFingerprintsForLabelName(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testLevelDBGetFingerprintsForLabelName(b)
-	}
-}
-
 var testLevelDBGetMetricForFingerprint = buildLevelDBTestPersistence("get_metric_for_fingerprint", GetMetricForFingerprintTests)
 
 func TestLevelDBGetMetricForFingerprint(t *testing.T) {
@@ -445,18 +367,6 @@ func TestMemoryGetFingerprintsForLabelSet(t *testing.T) {
 func BenchmarkMemoryGetFingerprintsForLabelSet(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		testMemoryGetFingerprintsForLabelSet(b)
-	}
-}
-
-var testMemoryGetFingerprintsForLabelName = buildMemoryTestPersistence(GetFingerprintsForLabelNameTests)
-
-func TestMemoryGetFingerprintsForLabelName(t *testing.T) {
-	testMemoryGetFingerprintsForLabelName(t)
-}
-
-func BenchmarkMemoryGetFingerprintsForLabelName(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		testMemoryGetFingerprintsForLabelName(b)
 	}
 }
 
