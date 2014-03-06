@@ -93,3 +93,62 @@ func BenchmarkAppendSample100(b *testing.B) {
 func BenchmarkAppendSample1000(b *testing.B) {
 	benchmarkAppendSamples(b, 1000)
 }
+
+// Regression test for https://github.com/prometheus/prometheus/issues/381.
+//
+// 1. Creates samples for two timeseries with one common labelpair.
+// 2. Flushes memory storage such that only one series is dropped from memory.
+// 3. Gets fingerprints for common labelpair.
+// 4. Checks that exactly one fingerprint remains.
+func TestDroppedSeriesIndexRegression(t *testing.T) {
+	samples := clientmodel.Samples{
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testmetric",
+				"different":                 "differentvalue1",
+				"common":                    "samevalue",
+			},
+			Value:     1,
+			Timestamp: clientmodel.TimestampFromTime(time.Date(2000, 0, 0, 0, 0, 0, 0, time.UTC)),
+		},
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testmetric",
+				"different":                 "differentvalue2",
+				"common":                    "samevalue",
+			},
+			Value:     2,
+			Timestamp: clientmodel.TimestampFromTime(time.Date(2002, 0, 0, 0, 0, 0, 0, time.UTC)),
+		},
+	}
+
+	s := NewMemorySeriesStorage(MemorySeriesOptions{})
+	s.AppendSamples(samples)
+
+	common := clientmodel.LabelSet{"common": "samevalue"}
+	fps, err := s.GetFingerprintsForLabelSet(common)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fps) != 2 {
+		t.Fatalf("Got %d fingerprints, expected 2", len(fps))
+	}
+
+	toDisk := make(chan clientmodel.Samples, 2)
+	s.Flush(clientmodel.TimestampFromTime(time.Date(2001, 0, 0, 0, 0, 0, 0, time.UTC)), toDisk)
+	if len(toDisk) != 1 {
+		t.Fatalf("Got %d disk sample lists, expected 1", len(toDisk))
+	}
+	diskSamples := <-toDisk
+	if len(diskSamples) != 1 {
+		t.Fatalf("Got %d disk samples, expected 1", len(diskSamples))
+	}
+
+	fps, err = s.GetFingerprintsForLabelSet(common)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fps) != 1 {
+		t.Fatalf("Got %d fingerprints, expected 1", len(fps))
+	}
+}
