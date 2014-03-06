@@ -66,29 +66,6 @@ func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 		t.Error(err)
 		return
 	}
-
-	hasLabelName := func(x int) (success bool) {
-		labelName := clientmodel.LabelName(string(x))
-
-		fingerprints, err := p.GetFingerprintsForLabelName(labelName)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-
-		success = len(fingerprints) == 0
-		if !success {
-			t.Errorf("unexpected fingerprint length %d, got %d", 0, len(fingerprints))
-		}
-
-		return
-	}
-
-	err = quick.Check(hasLabelName, nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
 }
 
 func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
@@ -140,17 +117,7 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 			return
 		}
 
-		fingerprints, err := p.GetFingerprintsForLabelName(labelName)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if len(fingerprints) != 1 {
-			t.Errorf("expected fingerprint count of %d, got %d", 1, len(fingerprints))
-			return
-		}
-
-		fingerprints, err = p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
+		fingerprints, err := p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
 			labelName: labelValue,
 		})
 		if err != nil {
@@ -345,31 +312,6 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 					t.Errorf("expected fingerprint count of %d, got %d", 0, len(fingerprints))
 					return
 				}
-
-				labelName := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex))
-				fingerprints, err = p.GetFingerprintsForLabelName(labelName)
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				if len(fingerprints) == 0 {
-					t.Errorf("expected fingerprint count of %d, got %d", 0, len(fingerprints))
-					return
-				}
-			}
-		}
-
-		for sharedIndex := 0; sharedIndex < numberOfSharedLabels; sharedIndex++ {
-			labelName := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedIndex))
-			fingerprints, err := p.GetFingerprintsForLabelName(labelName)
-			if err != nil {
-				t.Error(err)
-				return
-			}
-
-			if len(fingerprints) != numberOfMetrics {
-				t.Errorf("expected fingerprint count of %d, got %d", numberOfMetrics, len(fingerprints))
-				return
 			}
 		}
 
@@ -382,16 +324,6 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				}
 
 				fingerprints, err := p.GetFingerprintsForLabelSet(labelSet)
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				if len(fingerprints) != 1 {
-					t.Errorf("expected fingerprint count of %d, got %d", 1, len(fingerprints))
-					return
-				}
-
-				fingerprints, err = p.GetFingerprintsForLabelName(labelName)
 				if err != nil {
 					t.Error(err)
 					return
