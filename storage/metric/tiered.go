@@ -434,91 +434,98 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 
 		memValues := t.memoryArena.CloneSamples(fp)
 
-		// Abort the view rendering if the caller (MakeView) has timed out.
-		if len(viewJob.abort) > 0 {
-			return
-		}
+		for !op.Consumed() {
+			// Abort the view rendering if the caller (MakeView) has timed out.
+			if len(viewJob.abort) > 0 {
+				return
+			}
 
-		// Load data value chunk(s) around the current time.
-		targetTime := op.CurrentTime()
+			// Load data value chunk(s) around the current time.
+			targetTime := op.CurrentTime()
 
-		currentChunk := chunk{}
-		// If we aimed before the oldest value in memory, load more data from disk.
-		if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && diskPresent {
-			if iterator == nil {
-				// Get a single iterator that will be used for all data extraction
-				// below.
-				iterator, _ = t.DiskStorage.MetricSamples.NewIterator(true)
-				defer iterator.Close()
-				if diskPresent = iterator.SeekToLast(); diskPresent {
-					if err := iterator.Key(sampleKeyDto); err != nil {
-						panic(err)
-					}
-
-					lastBlock.Load(sampleKeyDto)
-
-					if !iterator.SeekToFirst() {
-						diskPresent = false
-					} else {
+			currentChunk := chunk{}
+			// If we aimed before the oldest value in memory, load more data from disk.
+			if (len(memValues) == 0 || memValues.FirstTimeAfter(targetTime)) && diskPresent {
+				if iterator == nil {
+					// Get a single iterator that will be used for all data extraction
+					// below.
+					iterator, _ = t.DiskStorage.MetricSamples.NewIterator(true)
+					defer iterator.Close()
+					if diskPresent = iterator.SeekToLast(); diskPresent {
 						if err := iterator.Key(sampleKeyDto); err != nil {
 							panic(err)
 						}
 
-						firstBlock.Load(sampleKeyDto)
+						lastBlock.Load(sampleKeyDto)
+
+						if !iterator.SeekToFirst() {
+							diskPresent = false
+						} else {
+							if err := iterator.Key(sampleKeyDto); err != nil {
+								panic(err)
+							}
+
+							firstBlock.Load(sampleKeyDto)
+						}
 					}
 				}
-			}
 
-			if diskPresent {
-				diskTimer := viewJob.stats.GetTimer(stats.ViewDiskExtractionTime).Start()
-				diskValues, expired := t.loadChunkAroundTime(
-					iterator,
-					fp,
-					targetTime,
-					firstBlock,
-					lastBlock,
-				)
-				if expired {
-					diskPresent = false
-				}
-				diskTimer.Stop()
+				if diskPresent {
+					diskTimer := viewJob.stats.GetTimer(stats.ViewDiskExtractionTime).Start()
+					diskValues, expired := t.loadChunkAroundTime(
+						iterator,
+						fp,
+						targetTime,
+						firstBlock,
+						lastBlock,
+					)
+					if expired {
+						diskPresent = false
+					}
+					diskTimer.Stop()
 
-				// If we aimed past the newest value on disk,
-				// combine it with the next value from memory.
-				if len(diskValues) == 0 {
-					currentChunk = chunk(memValues)
-				} else {
-					if len(memValues) > 0 && diskValues.LastTimeBefore(targetTime) {
-						latestDiskValue := diskValues[len(diskValues)-1:]
-						currentChunk = append(chunk(latestDiskValue), chunk(memValues)...)
+					// If we aimed past the newest value on disk,
+					// combine it with the next value from memory.
+					if len(diskValues) == 0 {
+						currentChunk = chunk(memValues)
 					} else {
-						currentChunk = chunk(diskValues)
+						if len(memValues) > 0 && diskValues.LastTimeBefore(targetTime) {
+							latestDiskValue := diskValues[len(diskValues)-1:]
+							currentChunk = append(chunk(latestDiskValue), chunk(memValues)...)
+						} else {
+							currentChunk = chunk(diskValues)
+						}
 					}
+				} else {
+					currentChunk = chunk(memValues)
 				}
 			} else {
 				currentChunk = chunk(memValues)
 			}
-		} else {
-			currentChunk = chunk(memValues)
-		}
 
-		// There's no data at all for this fingerprint, so stop processing.
-		if len(currentChunk) == 0 {
-			continue
-		}
+			// There's no data at all for this fingerprint, so stop processing.
+			if len(currentChunk) == 0 {
+				break
+			}
 
-		currentChunk = currentChunk.TruncateBefore(targetTime)
+			currentChunk = currentChunk.TruncateBefore(targetTime)
 
-		lastChunkTime := currentChunk[len(currentChunk)-1].Timestamp
-		if lastChunkTime.After(targetTime) {
-			targetTime = lastChunkTime
-		}
+			lastChunkTime := currentChunk[len(currentChunk)-1].Timestamp
+			if lastChunkTime.After(targetTime) {
+				targetTime = lastChunkTime
+			}
 
-		// Extract all needed data from the current chunk and append the
-		// extracted samples to the materialized view.
-		for !op.Consumed() && !op.CurrentTime().After(targetTime) {
-			view.appendSamples(fp, op.ExtractSamples(Values(currentChunk)))
+			if op.CurrentTime().After(targetTime) {
+				break
+			}
+
+			// Extract all needed data from the current chunk and append the
+			// extracted samples to the materialized view.
+			for !op.Consumed() && !op.CurrentTime().After(targetTime) {
+				view.appendSamples(fp, op.ExtractSamples(Values(currentChunk)))
+			}
 		}
+		giveBackOp(op)
 	}
 	extractionTimer.Stop()
 
