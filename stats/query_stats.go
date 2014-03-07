@@ -33,7 +33,6 @@ const (
 	GetRangeValuesTime
 	ViewQueueTime
 	ViewDiskPreparationTime
-	ViewScanJobsTime
 	ViewDataExtractionTime
 	ViewDiskExtractionTime
 )
@@ -67,8 +66,6 @@ func (s QueryTiming) String() string {
 		return "GetRangeValues() time"
 	case ViewQueueTime:
 		return "View queue wait time"
-	case ViewScanJobsTime:
-		return "View building job scanning time"
 	case ViewDiskPreparationTime:
 		return "View building disk preparation time"
 	case ViewDataExtractionTime:

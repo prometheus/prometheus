@@ -403,8 +403,6 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 		)
 	}()
 
-	scanJobsTimer := viewJob.stats.GetTimer(stats.ViewScanJobsTime).Start()
-	scanJobsTimer.Stop()
 	view := newView()
 
 	var iterator leveldb.Iterator
