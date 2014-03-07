@@ -422,6 +422,8 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	extractionTimer := viewJob.stats.GetTimer(stats.ViewDataExtractionTime).Start()
 	for viewJob.builder.HasOp() {
 		op := viewJob.builder.PopOp()
+		defer giveBackOp(op)
+
 		fp := op.Fingerprint()
 		old, err := t.seriesTooOld(fp, op.CurrentTime())
 		if err != nil {
@@ -525,7 +527,6 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 				view.appendSamples(fp, op.ExtractSamples(Values(currentChunk)))
 			}
 		}
-		giveBackOp(op)
 	}
 	extractionTimer.Stop()
 
