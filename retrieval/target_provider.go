@@ -15,8 +15,8 @@ package retrieval
 
 import (
 	"fmt"
+	"net"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -106,18 +106,13 @@ func lookupSRV(name string) (*dns.Msg, error) {
 		return nil, fmt.Errorf("Couldn't load resolv.conf: %s", err)
 	}
 
-	port, err := strconv.Atoi(conf.Port)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid dns port in %s", resolvConf)
-	}
-
 	client := &dns.Client{}
 	response := &dns.Msg{}
 
 	for _, server := range conf.Servers {
-		servAddr := addrFromServer(server)
+		servAddr := net.JoinHostPort(server, conf.Port)
 		for _, suffix := range conf.Search {
-			response, err = lookup(name, dns.TypeSRV, client, servAddr, port, suffix, false)
+			response, err = lookup(name, dns.TypeSRV, client, servAddr, suffix, false)
 			if err == nil {
 				if len(response.Answer) > 0 {
 					return response, nil
@@ -126,7 +121,7 @@ func lookupSRV(name string) (*dns.Msg, error) {
 				glog.Warningf("Resolving %s.%s failed: %s", name, suffix, err)
 			}
 		}
-		response, err = lookup(name, dns.TypeSRV, client, servAddr, port, "", false)
+		response, err = lookup(name, dns.TypeSRV, client, servAddr, "", false)
 		if err == nil {
 			return response, nil
 		}
@@ -134,15 +129,7 @@ func lookupSRV(name string) (*dns.Msg, error) {
 	return response, fmt.Errorf("Couldn't resolve %s: No server responded", name)
 }
 
-func addrFromServer(s string) string {
-	if strings.ContainsRune(s, ':') {
-		return fmt.Sprintf("[%s]:%d")
-	} else {
-		return fmt.Sprintf("%s:%d")
-	}
-}
-
-func lookup(name string, queryType uint16, client *dns.Client, servAddr string, port int, suffix string, edns bool) (*dns.Msg, error) {
+func lookup(name string, queryType uint16, client *dns.Client, servAddr string, suffix string, edns bool) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	lname := strings.Join([]string{name, suffix}, ".")
 	msg.SetQuestion(dns.Fqdn(lname), queryType)
@@ -176,7 +163,7 @@ func lookup(name string, queryType uint16, client *dns.Client, servAddr string, 
 			client.Net = "tcp"
 		}
 
-		return lookup(name, queryType, client, servAddr, port, suffix, !edns)
+		return lookup(name, queryType, client, servAddr, suffix, !edns)
 	}
 
 	return response, nil
