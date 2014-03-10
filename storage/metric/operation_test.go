@@ -227,16 +227,20 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// No values.
 		{
 			op: getValuesAtIntervalOp{
-				baseOp:   baseOp{current: testInstant},
-				through:  testInstant.Add(1 * time.Minute),
+				getValuesAlongRangeOp: getValuesAlongRangeOp{
+					baseOp:  baseOp{current: testInstant},
+					through: testInstant.Add(1 * time.Minute),
+				},
 				interval: 30 * time.Second,
 			},
 		},
 		// Entire operator range before first value.
 		{
 			op: getValuesAtIntervalOp{
-				baseOp:   baseOp{current: testInstant},
-				through:  testInstant.Add(1 * time.Minute),
+				getValuesAlongRangeOp: getValuesAlongRangeOp{
+					baseOp:  baseOp{current: testInstant},
+					through: testInstant.Add(1 * time.Minute),
+				},
 				interval: 30 * time.Second,
 			},
 			in: Values{
@@ -259,8 +263,10 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Operator range starts before first value, ends within available values.
 		{
 			op: getValuesAtIntervalOp{
-				baseOp:   baseOp{current: testInstant},
-				through:  testInstant.Add(2 * time.Minute),
+				getValuesAlongRangeOp: getValuesAlongRangeOp{
+					baseOp:  baseOp{current: testInstant},
+					through: testInstant.Add(2 * time.Minute),
+				},
 				interval: 30 * time.Second,
 			},
 			in: Values{
@@ -287,8 +293,10 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Entire operator range is within available values.
 		{
 			op: getValuesAtIntervalOp{
-				baseOp:   baseOp{current: testInstant.Add(1 * time.Minute)},
-				through:  testInstant.Add(2 * time.Minute),
+				getValuesAlongRangeOp: getValuesAlongRangeOp{
+					baseOp:  baseOp{current: testInstant.Add(1 * time.Minute)},
+					through: testInstant.Add(2 * time.Minute),
+				},
 				interval: 30 * time.Second,
 			},
 			in: Values{
@@ -319,8 +327,10 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Operator range begins before first value, ends after last.
 		{
 			op: getValuesAtIntervalOp{
-				baseOp:   baseOp{current: testInstant},
-				through:  testInstant.Add(3 * time.Minute),
+				getValuesAlongRangeOp: getValuesAlongRangeOp{
+					baseOp:  baseOp{current: testInstant},
+					through: testInstant.Add(3 * time.Minute),
+				},
 				interval: 30 * time.Second,
 			},
 			in: Values{
@@ -347,8 +357,10 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Operator range begins within available values, ends after the last value.
 		{
 			op: getValuesAtIntervalOp{
-				baseOp:   baseOp{current: testInstant.Add(2 * time.Minute)},
-				through:  testInstant.Add(4 * time.Minute),
+				getValuesAlongRangeOp: getValuesAlongRangeOp{
+					baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
+					through: testInstant.Add(4 * time.Minute),
+				},
 				interval: 30 * time.Second,
 			},
 			in: Values{
@@ -383,8 +395,10 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// Entire operator range after the last available value.
 		{
 			op: getValuesAtIntervalOp{
-				baseOp:   baseOp{current: testInstant.Add(2 * time.Minute)},
-				through:  testInstant.Add(3 * time.Minute),
+				getValuesAlongRangeOp: getValuesAlongRangeOp{
+					baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
+					through: testInstant.Add(3 * time.Minute),
+				},
 				interval: 30 * time.Second,
 			},
 			in: Values{
@@ -411,8 +425,10 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 		// skip over values for the test).
 		{
 			op: getValuesAtIntervalOp{
-				baseOp:   baseOp{current: testInstant.Add(30 * time.Second)},
-				through:  testInstant.Add(4 * time.Minute),
+				getValuesAlongRangeOp: getValuesAlongRangeOp{
+					baseOp:  baseOp{current: testInstant.Add(30 * time.Second)},
+					through: testInstant.Add(4 * time.Minute),
+				},
 				interval: 3 * time.Minute,
 			},
 			in: Values{
@@ -648,11 +664,15 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 
 func TestGetValueRangeAtIntervalOp(t *testing.T) {
 	testOp := getValueRangeAtIntervalOp{
-		baseOp:        baseOp{current: testInstant.Add(-2 * time.Minute)},
+		getValuesAtIntervalOp: getValuesAtIntervalOp{
+			getValuesAlongRangeOp: getValuesAlongRangeOp{
+				baseOp:  baseOp{current: testInstant.Add(-2 * time.Minute)},
+				through: testInstant.Add(20 * time.Minute),
+			},
+			interval: 10 * time.Minute,
+		},
 		rangeThrough:  testInstant,
 		rangeDuration: 2 * time.Minute,
-		interval:      10 * time.Minute,
-		through:       testInstant.Add(20 * time.Minute),
 	}
 
 	var scenarios = []struct {

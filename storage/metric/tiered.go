@@ -417,6 +417,13 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 	sampleKeyDto, _ := t.dtoSampleKeys.Get()
 	defer t.dtoSampleKeys.Give(sampleKeyDto)
 
+	defer func() {
+		// Give back all ops not yet popped.
+		for viewJob.builder.HasOp() {
+			giveBackOp(viewJob.builder.PopOp())
+		}
+	}()
+
 	extractionTimer := viewJob.stats.GetTimer(stats.ViewDataExtractionTime).Start()
 	for viewJob.builder.HasOp() {
 		op := viewJob.builder.PopOp()

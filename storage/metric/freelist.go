@@ -94,7 +94,6 @@ func (l *valueAtTimeList) Get(fp *clientmodel.Fingerprint, time clientmodel.Time
 	}
 	op.fp = *fp
 	op.current = time
-	op.consumed = false
 	return op
 }
 
