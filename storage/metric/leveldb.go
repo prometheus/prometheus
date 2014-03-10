@@ -350,7 +350,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			key.Dump(keyDto)
 
 			for _, sample := range chunk {
-				values = append(values, &SamplePair{
+				values = append(values, SamplePair{
 					Timestamp: sample.Timestamp,
 					Value:     sample.Value,
 				})

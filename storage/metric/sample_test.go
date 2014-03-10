@@ -17,7 +17,7 @@ func TestValuesMarshalAndUnmarshal(t *testing.T) {
 
 	for i, expected := range values {
 		actual := unmarshalled[i]
-		if !actual.Equal(expected) {
+		if !actual.Equal(&expected) {
 			t.Fatalf("%d. got: %v, expected: %v", i, actual, expected)
 		}
 	}
@@ -26,7 +26,7 @@ func TestValuesMarshalAndUnmarshal(t *testing.T) {
 func randomValues(numSamples int) Values {
 	v := make(Values, 0, numSamples)
 	for i := 0; i < numSamples; i++ {
-		v = append(v, &SamplePair{
+		v = append(v, SamplePair{
 			Timestamp: clientmodel.Timestamp(rand.Int63()),
 			Value:     clientmodel.SampleValue(rand.NormFloat64()),
 		})
