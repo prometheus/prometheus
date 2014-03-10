@@ -27,7 +27,7 @@ func BenchmarkStreamAdd(b *testing.B) {
 	s := newArrayStream(clientmodel.Metric{})
 	samples := make(Values, b.N)
 	for i := 0; i < b.N; i++ {
-		samples = append(samples, &SamplePair{
+		samples = append(samples, SamplePair{
 			Timestamp: clientmodel.TimestampFromTime(time.Date(i, 0, 0, 0, 0, 0, 0, time.UTC)),
 			Value:     clientmodel.SampleValue(i),
 		})
@@ -38,7 +38,7 @@ func BenchmarkStreamAdd(b *testing.B) {
 	var pre runtime.MemStats
 	runtime.ReadMemStats(&pre)
 
-	s.add(samples...)
+	s.add(samples)
 
 	var post runtime.MemStats
 	runtime.ReadMemStats(&post)

@@ -82,7 +82,7 @@ func (v *viewAdapter) chooseClosestSample(samples metric.Values, timestamp clien
 				continue
 			}
 			sample := candidate
-			closestBefore = sample
+			closestBefore = &sample
 		}
 
 		// Samples after target time.
@@ -96,7 +96,7 @@ func (v *viewAdapter) chooseClosestSample(samples metric.Values, timestamp clien
 				continue
 			}
 			sample := candidate
-			closestAfter = sample
+			closestAfter = &sample
 		}
 	}
 
