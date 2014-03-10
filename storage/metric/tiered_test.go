@@ -719,7 +719,7 @@ func testTruncateBefore(t test.Tester) {
 		}
 
 		for j, actualValue := range actual {
-			if !actualValue.Equal(scenario.out[j]) {
+			if !actualValue.Equal(&scenario.out[j]) {
 				t.Fatalf("%d.%d. expected %s, got %s", i, j, scenario.out[j], actualValue)
 			}
 		}

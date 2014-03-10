@@ -57,9 +57,9 @@ func (s *SamplePair) String() string {
 	return fmt.Sprintf("SamplePair at %s of %s", s.Timestamp, s.Value)
 }
 
-// Values is a sortable slice of SamplePair pointers (as in: it implements
+// Values is a sortable slice of SamplePairs (as in: it implements
 // sort.Interface). Sorting happens by Timestamp.
-type Values []*SamplePair
+type Values []SamplePair
 
 // Len implements sort.Interface.
 func (v Values) Len() int {
@@ -84,7 +84,7 @@ func (v Values) Equal(o Values) bool {
 	}
 
 	for i, expected := range v {
-		if !expected.Equal(o[i]) {
+		if !expected.Equal(&o[i]) {
 			return false
 		}
 	}
@@ -182,10 +182,8 @@ func unmarshalValues(buf []byte) Values {
 	}
 	for i := 0; i < n; i++ {
 		offset := formatVersionSize + i*sampleSize
-		v[i] = &SamplePair{
-			Timestamp: clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:]))),
-			Value:     clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:]))),
-		}
+		v[i].Timestamp = clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:])))
+		v[i].Value = clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:])))
 	}
 	return v
 }

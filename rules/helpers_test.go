@@ -28,7 +28,7 @@ var testStartTime = clientmodel.Timestamp(0)
 func getTestValueStream(startVal clientmodel.SampleValue, endVal clientmodel.SampleValue, stepVal clientmodel.SampleValue, startTime clientmodel.Timestamp) (resultValues metric.Values) {
 	currentTime := startTime
 	for currentVal := startVal; currentVal <= endVal; currentVal += stepVal {
-		sample := &metric.SamplePair{
+		sample := metric.SamplePair{
 			Value:     currentVal,
 			Timestamp: currentTime,
 		}
