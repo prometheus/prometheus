@@ -137,50 +137,6 @@ func (g getValuesAtTimeOp) Consumed() bool {
 	return g.consumed
 }
 
-// getValuesAtIntervalOp encapsulates getting values at a given interval over a
-// duration.
-type getValuesAtIntervalOp struct {
-	baseOp
-	through  clientmodel.Timestamp
-	interval time.Duration
-}
-
-func (g *getValuesAtIntervalOp) String() string {
-	return fmt.Sprintf("getValuesAtIntervalOp from %s each %s through %s", g.current, g.interval, g.through)
-}
-
-func (g *getValuesAtIntervalOp) Through() clientmodel.Timestamp {
-	return g.through
-}
-
-func (g *getValuesAtIntervalOp) ExtractSamples(in Values) (out Values) {
-	if len(in) == 0 {
-		return
-	}
-	lastChunkTime := in[len(in)-1].Timestamp
-	for len(in) > 0 {
-		out = append(out, extractValuesAroundTime(g.current, in)...)
-		lastExtractedTime := out[len(out)-1].Timestamp
-		in = in.TruncateBefore(lastExtractedTime.Add(
-			clientmodel.MinimumTick))
-		g.current = g.current.Add(g.interval)
-		for !g.current.After(lastExtractedTime) {
-			g.current = g.current.Add(g.interval)
-		}
-		if lastExtractedTime.Equal(lastChunkTime) {
-			break
-		}
-		if g.current.After(g.through) {
-			break
-		}
-	}
-	return
-}
-
-func (g *getValuesAtIntervalOp) Consumed() bool {
-	return g.current.After(g.through)
-}
-
 // getValuesAlongRangeOp encapsulates getting all values in a given range.
 type getValuesAlongRangeOp struct {
 	baseOp
@@ -232,6 +188,41 @@ func (g *getValuesAlongRangeOp) Consumed() bool {
 	return g.current.After(g.through)
 }
 
+// getValuesAtIntervalOp encapsulates getting values at a given interval over a
+// duration.
+type getValuesAtIntervalOp struct {
+	getValuesAlongRangeOp
+	interval time.Duration
+}
+
+func (g *getValuesAtIntervalOp) String() string {
+	return fmt.Sprintf("getValuesAtIntervalOp from %s each %s through %s", g.current, g.interval, g.through)
+}
+
+func (g *getValuesAtIntervalOp) ExtractSamples(in Values) (out Values) {
+	if len(in) == 0 {
+		return
+	}
+	lastChunkTime := in[len(in)-1].Timestamp
+	for len(in) > 0 {
+		out = append(out, extractValuesAroundTime(g.current, in)...)
+		lastExtractedTime := out[len(out)-1].Timestamp
+		in = in.TruncateBefore(lastExtractedTime.Add(
+			clientmodel.MinimumTick))
+		g.current = g.current.Add(g.interval)
+		for !g.current.After(lastExtractedTime) {
+			g.current = g.current.Add(g.interval)
+		}
+		if lastExtractedTime.Equal(lastChunkTime) {
+			break
+		}
+		if g.current.After(g.through) {
+			break
+		}
+	}
+	return
+}
+
 // getValueRangeAtIntervalOp encapsulates getting all values from ranges along
 // intervals.
 //
@@ -239,17 +230,16 @@ func (g *getValuesAlongRangeOp) Consumed() bool {
 // incremented by interval and from is reset to through-rangeDuration. Returns
 // current time nil when from > totalThrough.
 type getValueRangeAtIntervalOp struct {
-	baseOp
+	getValuesAtIntervalOp
 	rangeThrough  clientmodel.Timestamp
 	rangeDuration time.Duration
-	interval      time.Duration
-	through       clientmodel.Timestamp
 }
 
 func (g *getValueRangeAtIntervalOp) String() string {
 	return fmt.Sprintf("getValueRangeAtIntervalOp range %s from %s each %s through %s", g.rangeDuration, g.current, g.interval, g.through)
 }
 
+// Through panics because the notion of 'through' is ambiguous for this op.
 func (g *getValueRangeAtIntervalOp) Through() clientmodel.Timestamp {
 	panic("not implemented")
 }
@@ -295,10 +285,6 @@ func (g *getValueRangeAtIntervalOp) ExtractSamples(in Values) (out Values) {
 		g.advanceToNextInterval()
 	}
 	return in[firstIdx:lastIdx]
-}
-
-func (g *getValueRangeAtIntervalOp) Consumed() bool {
-	return g.current.After(g.through)
 }
 
 // getValuesAtIntervalOps contains getValuesAtIntervalOp operations. It

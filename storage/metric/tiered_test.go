@@ -14,6 +14,7 @@
 package metric
 
 import (
+	"math"
 	"sort"
 	"testing"
 	"time"
@@ -36,6 +37,20 @@ func buildSamples(from, to clientmodel.Timestamp, interval time.Duration, m clie
 
 		from = from.Add(interval)
 		i++
+	}
+
+	return
+}
+
+func buildValues(firstValue clientmodel.SampleValue, from, to clientmodel.Timestamp, interval time.Duration) (v Values) {
+	for from.Before(to) {
+		v = append(v, SamplePair{
+			Value:     firstValue,
+			Timestamp: from,
+		})
+
+		from = from.Add(interval)
+		firstValue++
 	}
 
 	return
@@ -313,9 +328,14 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 			},
-			// Two chunks of samples, query asks for values from first chunk.
+			// Two chunks of samples, query asks for values from second chunk.
 			{
-				data: buildSamples(instant, instant.Add(time.Duration(*leveldbChunkSize*4)*time.Second), 2*time.Second, metric),
+				data: buildSamples(
+					instant,
+					instant.Add(time.Duration(*leveldbChunkSize*4)*time.Second),
+					2*time.Second,
+					metric,
+				),
 				in: in{
 					atTime: []getValuesAtTimeOp{
 						{
@@ -336,6 +356,103 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 							},
 						},
 					},
+				},
+			},
+			// Two chunks of samples, query asks for values between both chunks.
+			{
+				data: buildSamples(
+					instant,
+					instant.Add(time.Duration(*leveldbChunkSize*4)*time.Second),
+					2*time.Second,
+					metric,
+				),
+				in: in{
+					atTime: []getValuesAtTimeOp{
+						{
+							baseOp: baseOp{current: instant.Add(time.Second*time.Duration(*leveldbChunkSize*2) - clientmodel.MinimumTick)},
+						},
+					},
+				},
+				out: out{
+					atTime: []Values{
+						{
+							{
+								Timestamp: instant.Add(time.Second * (time.Duration(*leveldbChunkSize*2) - 2)),
+								Value:     199,
+							},
+							{
+								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize*2)),
+								Value:     200,
+							},
+						},
+					},
+				},
+			},
+			// Two chunks of samples, getValuesAtIntervalOp spanning both.
+			{
+				data: buildSamples(
+					instant,
+					instant.Add(time.Duration(*leveldbChunkSize*6)*time.Second),
+					2*time.Second,
+					metric,
+				),
+				in: in{
+					atInterval: []getValuesAtIntervalOp{
+						{
+							getValuesAlongRangeOp: getValuesAlongRangeOp{
+								baseOp:  baseOp{current: instant.Add(time.Second*time.Duration(*leveldbChunkSize*2-4) - clientmodel.MinimumTick)},
+								through: instant.Add(time.Second*time.Duration(*leveldbChunkSize*2+4) + clientmodel.MinimumTick),
+							},
+							interval: time.Second * 6,
+						},
+					},
+				},
+				out: out{
+					atInterval: []Values{
+						{
+							{
+								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize*2-6)),
+								Value:     197,
+							},
+							{
+								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize*2-4)),
+								Value:     198,
+							},
+							{
+								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize*2)),
+								Value:     200,
+							},
+							{
+								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize*2+2)),
+								Value:     201,
+							},
+						},
+					},
+				},
+			},
+			// Three chunks of samples, getValuesAlongRangeOp spanning all of them.
+			{
+				data: buildSamples(
+					instant,
+					instant.Add(time.Duration(*leveldbChunkSize*6)*time.Second),
+					2*time.Second,
+					metric,
+				),
+				in: in{
+					alongRange: []getValuesAlongRangeOp{
+						{
+							baseOp:  baseOp{current: instant.Add(time.Second*time.Duration(*leveldbChunkSize*2-4) - clientmodel.MinimumTick)},
+							through: instant.Add(time.Second*time.Duration(*leveldbChunkSize*4+2) + clientmodel.MinimumTick),
+						},
+					},
+				},
+				out: out{
+					alongRange: []Values{buildValues(
+						clientmodel.SampleValue(198),
+						instant.Add(time.Second*time.Duration(*leveldbChunkSize*2-4)),
+						instant.Add(time.Second*time.Duration(*leveldbChunkSize*4+2)+clientmodel.MinimumTick),
+						2*time.Second,
+					)},
 				},
 			},
 		}
@@ -373,14 +490,52 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			t.Fatalf("%d. failed due to %s", i, err)
 		}
 
-		for j, atTime := range scenario.in.atTime {
-			actual := v.GetValueAtTime(fingerprint, atTime.current)
+		// To get all values in the View, ask for the 'forever' interval.
+		interval := Interval{OldestInclusive: math.MinInt64, NewestInclusive: math.MaxInt64}
 
-			if len(actual) != len(scenario.out.atTime[j]) {
-				t.Fatalf("%d.%d. expected %d output, got %d", i, j, len(scenario.out.atTime[j]), len(actual))
+		for j, atTime := range scenario.out.atTime {
+			actual := v.GetRangeValues(fingerprint, interval)
+			//actual := v.GetValueAtTime(fingerprint, atTime.current)
+
+			if len(actual) != len(atTime) {
+				t.Fatalf("%d.%d. expected %d output, got %d", i, j, len(atTime), len(actual))
 			}
 
-			for k, value := range scenario.out.atTime[j] {
+			for k, value := range atTime {
+				if value.Value != actual[k].Value {
+					t.Errorf("%d.%d.%d expected %v value, got %v", i, j, k, value.Value, actual[k].Value)
+				}
+				if !value.Timestamp.Equal(actual[k].Timestamp) {
+					t.Errorf("%d.%d.%d expected %s timestamp, got %s", i, j, k, value.Timestamp, actual[k].Timestamp)
+				}
+			}
+		}
+
+		for j, atInterval := range scenario.out.atInterval {
+			actual := v.GetRangeValues(fingerprint, interval)
+
+			if len(actual) != len(atInterval) {
+				t.Fatalf("%d.%d. expected %d output, got %d", i, j, len(atInterval), len(actual))
+			}
+
+			for k, value := range atInterval {
+				if value.Value != actual[k].Value {
+					t.Errorf("%d.%d.%d expected %v value, got %v", i, j, k, value.Value, actual[k].Value)
+				}
+				if !value.Timestamp.Equal(actual[k].Timestamp) {
+					t.Errorf("%d.%d.%d expected %s timestamp, got %s", i, j, k, value.Timestamp, actual[k].Timestamp)
+				}
+			}
+		}
+
+		for j, alongRange := range scenario.out.alongRange {
+			actual := v.GetRangeValues(fingerprint, interval)
+
+			if len(actual) != len(alongRange) {
+				t.Fatalf("%d.%d. expected %d output, got %d", i, j, len(alongRange), len(actual))
+			}
+
+			for k, value := range alongRange {
 				if value.Value != actual[k].Value {
 					t.Fatalf("%d.%d.%d expected %v value, got %v", i, j, k, value.Value, actual[k].Value)
 				}
@@ -571,7 +726,7 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 	}
 }
 
-func testTruncateBefore(t test.Tester) {
+func TestTruncateBefore(t *testing.T) {
 	type in struct {
 		values Values
 		time   clientmodel.Timestamp
@@ -724,10 +879,6 @@ func testTruncateBefore(t test.Tester) {
 			}
 		}
 	}
-}
-
-func TestTruncateBefore(t *testing.T) {
-	testTruncateBefore(t)
 }
 
 func TestGetMetricForFingerprintCachesCopyOfMetric(t *testing.T) {
