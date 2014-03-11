@@ -20,6 +20,7 @@ import (
 // Build information. Populated by Makefile.
 var (
 	buildVersion    string
+	buildRevision   string
 	buildBranch     string
 	buildUser       string
 	buildDate       string
@@ -33,6 +34,7 @@ var (
 // via go tool ld such that this can be reported on-demand.
 var BuildInfo = map[string]string{
 	"version":          buildVersion,
+	"revision":         buildRevision,
 	"branch":           buildBranch,
 	"user":             buildUser,
 	"date":             buildDate,
@@ -43,7 +45,7 @@ var BuildInfo = map[string]string{
 }
 
 var versionInfoTmpl = template.Must(template.New("version").Parse(
-	`prometheus, version {{.version}} ({{.branch}})
+	`prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
   build user:       {{.user}}
   build date:       {{.date}}
   go version:       {{.go_version}}
