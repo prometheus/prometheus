@@ -384,7 +384,7 @@ func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmod
 	for t := start; t.Before(end); t = t.Add(interval) {
 		vector := node.Eval(t, viewAdapter)
 		for _, sample := range vector {
-			samplePair := &metric.SamplePair{
+			samplePair := metric.SamplePair{
 				Value:     sample.Value,
 				Timestamp: sample.Timestamp,
 			}

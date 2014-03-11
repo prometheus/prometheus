@@ -27,7 +27,7 @@ import (
 const initialSeriesArenaSize = 4 * 60
 
 type stream interface {
-	add(...*SamplePair)
+	add(Values)
 
 	clone() Values
 	expunge(age clientmodel.Timestamp) Values
@@ -53,7 +53,7 @@ func (s *arrayStream) metric() clientmodel.Metric {
 	return s.m
 }
 
-func (s *arrayStream) add(v ...*SamplePair) {
+func (s *arrayStream) add(v Values) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -202,9 +202,11 @@ func (s *memorySeriesStorage) AppendSample(sample *clientmodel.Sample) error {
 	fingerprint := &clientmodel.Fingerprint{}
 	fingerprint.LoadFromMetric(sample.Metric)
 	series := s.getOrCreateSeries(sample.Metric, fingerprint)
-	series.add(&SamplePair{
-		Value:     sample.Value,
-		Timestamp: sample.Timestamp,
+	series.add(Values{
+		SamplePair{
+			Value:     sample.Value,
+			Timestamp: sample.Timestamp,
+		},
 	})
 
 	if s.wmCache != nil {
@@ -325,7 +327,7 @@ func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmo
 		s.fingerprintToSeries[*fingerprint] = series
 	}
 
-	series.add(samples...)
+	series.add(samples)
 }
 
 func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l clientmodel.LabelSet) (clientmodel.Fingerprints, error) {
