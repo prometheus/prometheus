@@ -34,8 +34,19 @@ build: config dependencies model preparation tools web
 docker: build
 	docker build -t prometheus:$(REV) .
 
-tarball: build
-	tar -C $(BUILD_PATH)/package -czf prometheus.tar.gz .
+tarball: $(ARCHIVE)
+
+$(ARCHIVE): build
+	tar -C $(BUILD_PATH)/package -czf $(ARCHIVE) .
+
+release: REMOTE     ?= $(error "can't upload, REMOTE not set")
+release: REMOTE_DIR ?= $(error "can't upload, REMOTE_DIR not set")
+release: $(ARCHIVE)
+	scp $< $(REMOTE):$(REMOTE_DIR)/
+
+tag:
+	git tag $(VERSION)
+	git push --tags
 
 $(BUILD_PATH)/cache/$(GOPKG):
 	curl -o $@ $(GOURL)/$(GOPKG)
@@ -101,4 +112,4 @@ update:
 web: config dependencies model preparation
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean config dependencies documentation format model package preparation race_condition_binary race_condition_run run search_index tarball test tools update
+.PHONY: advice binary build clean config dependencies documentation format model preparation race_condition_binary race_condition_run release run search_index tag tarball test tools update
