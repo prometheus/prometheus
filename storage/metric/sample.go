@@ -23,8 +23,14 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-// bytesPerSample is the number of bytes per sample in marshalled format.
-const bytesPerSample = 16
+const (
+	// sampleSize is the number of bytes per sample in marshalled format.
+	sampleSize = 16
+	// formatVersion is used as a version marker in the marshalled format.
+	formatVersion = 1
+	// formatVersionSize is the number of bytes used by the serialized formatVersion.
+	formatVersionSize = 1
+)
 
 // MarshalJSON implements json.Marshaler.
 func (s SamplePair) MarshalJSON() ([]byte, error) {
@@ -153,9 +159,10 @@ func (v Values) String() string {
 
 // marshal marshals a group of samples for being written to disk.
 func (v Values) marshal() []byte {
-	buf := make([]byte, len(v)*bytesPerSample)
+	buf := make([]byte, formatVersionSize+len(v)*sampleSize)
+	buf[0] = formatVersion
 	for i, val := range v {
-		offset := i * 16
+		offset := formatVersionSize + i*sampleSize
 		binary.LittleEndian.PutUint64(buf[offset:], uint64(val.Timestamp.Unix()))
 		binary.LittleEndian.PutUint64(buf[offset+8:], math.Float64bits(float64(val.Value)))
 	}
@@ -164,14 +171,17 @@ func (v Values) marshal() []byte {
 
 // unmarshalValues decodes marshalled samples and returns them as Values.
 func unmarshalValues(buf []byte) Values {
-	n := len(buf) / bytesPerSample
+	n := len(buf) / sampleSize
 	// Setting the value of a given slice index is around 15% faster than doing
 	// an append, even if the slice already has the required capacity. For this
 	// reason, we already set the full target length here.
 	v := make(Values, n)
 
+	if buf[0] != formatVersion {
+		panic("unsupported format version")
+	}
 	for i := 0; i < n; i++ {
-		offset := i * 16
+		offset := formatVersionSize + i*sampleSize
 		v[i] = &SamplePair{
 			Timestamp: clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:]))),
 			Value:     clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:]))),
