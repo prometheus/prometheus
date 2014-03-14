@@ -341,7 +341,7 @@ Prometheus.Graph.prototype.updateRefresh = function() {
 Prometheus.Graph.prototype.renderLabels = function(labels) {
   var labelStrings = [];
   for (label in labels) {
-    if (label != "name") {
+    if (label != "__name__") {
       labelStrings.push("<strong>" + label + "</strong>: " + labels[label]);
     }
   }
@@ -349,10 +349,10 @@ Prometheus.Graph.prototype.renderLabels = function(labels) {
 }
 
 Prometheus.Graph.prototype.metricToTsName = function(labels) {
-  var tsName = labels["name"] + "{";
+  var tsName = labels["__name__"] + "{";
   var labelStrings = [];
    for (label in labels) {
-     if (label != "name") {
+     if (label != "__name__") {
       labelStrings.push(label + "=\"" + labels[label] + "\"");
      }
    }
@@ -437,7 +437,7 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
     graph: self.rickshawGraph,
     formatter: function(series, x, y) {
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
-      var content = swatch + series.labels["name"] + ": <strong>" + y + '</strong><br>';
+      var content = swatch + series.labels["__name__"] + ": <strong>" + y + '</strong><br>';
       return content + self.renderLabels(series.labels);
     },
     onRender: function() {
