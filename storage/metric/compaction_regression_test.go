@@ -34,7 +34,7 @@ func generateTestSamples(endTime clientmodel.Timestamp, numTs int, samplesPerTs 
 	startTime := endTime.Add(-interval * time.Duration(samplesPerTs-1))
 	for ts := 0; ts < numTs; ts++ {
 		metric := clientmodel.Metric{}
-		metric["name"] = clientmodel.LabelValue(fmt.Sprintf("metric_%d", ts))
+		metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(fmt.Sprintf("metric_%d", ts))
 		for i := 0; i < samplesPerTs; i++ {
 			sample := &clientmodel.Sample{
 				Metric:    metric,
