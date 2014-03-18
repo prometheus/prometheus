@@ -206,6 +206,9 @@ func (g *getValuesAtIntervalOp) ExtractSamples(in Values) (out Values) {
 	lastChunkTime := in[len(in)-1].Timestamp
 	for len(in) > 0 {
 		out = append(out, extractValuesAroundTime(g.current, in)...)
+		if g.current.After(lastChunkTime) {
+			break
+		}
 		lastExtractedTime := out[len(out)-1].Timestamp
 		in = in.TruncateBefore(lastExtractedTime.Add(
 			clientmodel.MinimumTick))

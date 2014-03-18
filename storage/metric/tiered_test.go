@@ -74,9 +74,10 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 	var (
 		instant   = clientmodel.TimestampFromTime(time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local))
 		scenarios = []struct {
-			data clientmodel.Samples
-			in   in
-			out  out
+			data     clientmodel.Samples
+			in       in
+			out      out
+			diskOnly bool
 		}{
 			// No sample, but query asks for one.
 			{
@@ -455,10 +456,82 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					)},
 				},
 			},
+			// Three chunks of samples and a getValuesAlongIntervalOp with an
+			// interval larger than the natural sample interval, spanning the gap
+			// between the second and third chunks. To test two consecutive
+			// ExtractSamples() calls for the same op, we need three on-disk chunks,
+			// because the first two chunks are loaded from disk together and passed
+			// as one unit into ExtractSamples(). Especially, we want to test that
+			// the first sample of the last chunk is included in the result.
+			//
+			// This is a regression test for an interval operator advancing too far
+			// past the end of the currently available chunk, effectively skipping
+			// over a value which is only available in the next chunk passed to
+			// ExtractSamples().
+			//
+			// Chunk and operator layout, assuming 200 samples per chunk:
+			//
+			//         Chunk 1      Chunk 2        Chunk 3
+			// Values: 0......199   200......399   400......599
+			// Times:  0......398   400......798   800......1198
+			//              |                          |
+			//              |_________ Operator _______|
+			//             395 399 ......  795  799  803
+			{
+				data: buildSamples(
+					instant,
+					instant.Add(time.Duration(*leveldbChunkSize*6)*time.Second),
+					2*time.Second,
+					metric,
+				),
+				in: in{
+					atInterval: []getValuesAtIntervalOp{
+						{
+							getValuesAlongRangeOp: getValuesAlongRangeOp{
+								baseOp:  baseOp{current: instant.Add(time.Second * time.Duration(*leveldbChunkSize*2-5))},
+								through: instant.Add(time.Second * time.Duration(*leveldbChunkSize*4+3)),
+							},
+							interval: time.Second * 4,
+						},
+					},
+				},
+				out: out{
+					atInterval: []Values{
+						// We need two overlapping buildValues() calls here since the last
+						// value of the second chunk is extracted twice (value 399, time
+						// offset 798s).
+						append(
+							// Values 197...399.
+							// Times  394...798.
+							buildValues(
+								clientmodel.SampleValue(197),
+								instant.Add(time.Second*time.Duration(*leveldbChunkSize*2-6)),
+								instant.Add(time.Second*time.Duration(*leveldbChunkSize*4)),
+								2*time.Second,
+							),
+							// Values 399...402.
+							// Times  798...804.
+							buildValues(
+								clientmodel.SampleValue(399),
+								instant.Add(time.Second*time.Duration(*leveldbChunkSize*4-2)),
+								instant.Add(time.Second*time.Duration(*leveldbChunkSize*4+6)),
+								2*time.Second,
+							)...,
+						),
+					},
+				},
+				// This example only works with on-disk chunks due to the repeatedly
+				// extracted value at the end of the second chunk.
+				diskOnly: true,
+			},
 		}
 	)
 
 	for i, scenario := range scenarios {
+		if scenario.diskOnly && !flushToDisk {
+			continue
+		}
+
 		tiered, closer := NewTestTieredStorage(t)
 
 		err := tiered.AppendSamples(scenario.data)
@@ -505,7 +578,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					t.Errorf("%d.%d.%d expected %v value, got %v", i, j, k, value.Value, actual[k].Value)
 				}
 				if !value.Timestamp.Equal(actual[k].Timestamp) {
-					t.Errorf("%d.%d.%d expected %s timestamp, got %s", i, j, k, value.Timestamp, actual[k].Timestamp)
+					t.Errorf("%d.%d.%d expected %s (offset %ss) timestamp, got %s (offset %ss)", i, j, k, value.Timestamp, value.Timestamp.Sub(instant), actual[k].Timestamp, actual[k].Timestamp.Sub(instant))
 				}
 			}
 		}
@@ -522,7 +595,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					t.Errorf("%d.%d.%d expected %v value, got %v", i, j, k, value.Value, actual[k].Value)
 				}
 				if !value.Timestamp.Equal(actual[k].Timestamp) {
-					t.Errorf("%d.%d.%d expected %s timestamp, got %s", i, j, k, value.Timestamp, actual[k].Timestamp)
+					t.Errorf("%d.%d.%d expected %s (offset %ds) timestamp, got %s (offset %ds, value %s)", i, j, k, value.Timestamp, int(value.Timestamp.Sub(instant)/time.Second), actual[k].Timestamp, int(actual[k].Timestamp.Sub(instant)/time.Second), actual[k].Value)
 				}
 			}
 		}
@@ -539,7 +612,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					t.Fatalf("%d.%d.%d expected %v value, got %v", i, j, k, value.Value, actual[k].Value)
 				}
 				if !value.Timestamp.Equal(actual[k].Timestamp) {
-					t.Fatalf("%d.%d.%d expected %s timestamp, got %s", i, j, k, value.Timestamp, actual[k].Timestamp)
+					t.Fatalf("%d.%d.%d expected %s (offset %ss) timestamp, got %s (offset %ss)", i, j, k, value.Timestamp, value.Timestamp.Sub(instant), actual[k].Timestamp, actual[k].Timestamp.Sub(instant))
 				}
 			}
 		}
