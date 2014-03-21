@@ -37,7 +37,7 @@
    */
 %token START_RULES START_EXPRESSION
 
-%token <str> IDENTIFIER STRING DURATION
+%token <str> IDENTIFIER STRING DURATION METRICNAME
 %token <num> NUMBER
 %token PERMANENT GROUP_OP KEEPING_EXTRA
 %token <str> AGGR_OP CMP_OP ADDITIVE_OP MULT_OP
@@ -48,7 +48,7 @@
 %type <labelSet> label_assign label_assign_list rule_labels
 %type <ruleNode> rule_expr func_arg
 %type <boolean> qualifier extra_labels_opts
-%type <str> for_duration
+%type <str> for_duration metric_name
 
 %right '='
 %left CMP_OP
@@ -69,7 +69,8 @@ saved_rule_expr    : rule_expr
                      { yylex.(*RulesLexer).parsedExpr = $1 }
                    ;
 
-rules_stat         : qualifier IDENTIFIER rule_labels '=' rule_expr
+
+rules_stat         : qualifier metric_name rule_labels '=' rule_expr
                      {
                        rule, err := CreateRecordingRule($2, $3, $5, $1)
                        if err != nil { yylex.Error(err.Error()); return 1 }
@@ -95,6 +96,12 @@ qualifier          : /* empty */
                      { $$ = true }
                    ;
 
+metric_name        : METRICNAME
+                     { $$ = $1 }
+                   | IDENTIFIER
+                     { $$ = $1 }
+                   ;
+
 rule_labels        : /* empty */
                      { $$ = clientmodel.LabelSet{} }
                    | '{' label_assign_list '}'
@@ -115,7 +122,7 @@ label_assign       : IDENTIFIER '=' STRING
 
 rule_expr          : '(' rule_expr ')'
                      { $$ = $2 }
-                   | IDENTIFIER rule_labels
+                   | metric_name rule_labels
                      { $2[clientmodel.MetricNameLabel] = clientmodel.LabelValue($1); $$ = ast.NewVectorSelector($2) }
                    | IDENTIFIER '(' func_arg_list ')'
                      {
