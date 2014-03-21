@@ -14,28 +14,62 @@
 package opentsdb
 
 import (
+	"bytes"
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-func TestTagsFromMetric(t *testing.T) {
-	input := clientmodel.Metric{
-		clientmodel.MetricNameLabel: "testmetric",
-		"test:label":                "test:value",
+var (
+	metric = clientmodel.Metric{
+		clientmodel.MetricNameLabel: "test:metric",
+		"testlabel":                 "test:value",
 		"many_chars":                "abc!ABC:012-3!45ö67~89./",
 	}
-	expected := map[string]string{
-		"test:label": "test_value",
-		"many_chars": "abc_ABC_012-3_45_67_89./",
+)
+
+func TestTagsFromMetric(t *testing.T) {
+	expected := map[string]TagValue{
+		"testlabel":  TagValue("test:value"),
+		"many_chars": TagValue("abc!ABC:012-3!45ö67~89./"),
 	}
-	actual := tagsFromMetric(input)
-	if len(actual) != len(expected) {
-		t.Fatalf("Expected %v, got %v", expected, actual)
+	actual := tagsFromMetric(metric)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %#v, got %#v", expected, actual)
 	}
-	for k, v := range expected {
-		if v != actual[k] {
-			t.Fatalf("Expected %s => %s, got %s => %s", k, v, k, actual[k])
-		}
+}
+
+func TestMarshalStoreSamplesRequest(t *testing.T) {
+	request := StoreSamplesRequest{
+		Metric:    TagValue("test:metric"),
+		Timestamp: 4711,
+		Value:     3.1415,
+		Tags:      tagsFromMetric(metric),
+	}
+	expectedJSON := []byte(`{"metric":"test_.metric","timestamp":4711,"value":3.1415,"tags":{"many_chars":"abc_21ABC_.012-3_2145_C3_B667_7E89./","testlabel":"test_.value"}}`)
+
+	resultingJSON, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("Marshal(request) resulted in err: %s", err)
+	}
+	if !bytes.Equal(resultingJSON, expectedJSON) {
+		t.Errorf(
+			"Marshal(request) => %q, want %q",
+			resultingJSON, expectedJSON,
+		)
+	}
+
+	var unmarshaledRequest StoreSamplesRequest
+	err = json.Unmarshal(expectedJSON, &unmarshaledRequest)
+	if err != nil {
+		t.Fatalf("Unarshal(expectedJSON, &unmarshaledRequest) resulted in err: %s", err)
+	}
+	if !reflect.DeepEqual(unmarshaledRequest, request) {
+		t.Errorf(
+			"Unarshal(expectedJSON, &unmarshaledRequest) => %#v, want %#v",
+			unmarshaledRequest, request,
+		)
 	}
 }
