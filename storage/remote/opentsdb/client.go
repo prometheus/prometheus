@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
 	"time"
 
+	"github.com/golang/glog"
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/utility"
@@ -41,26 +43,20 @@ func NewClient(url string, timeout time.Duration) *Client {
 // StoreSamplesRequest is used for building a JSON request for storing samples
 // via the OpenTSDB.
 type StoreSamplesRequest struct {
-	Metric    string                  `json:"metric"`
-	Timestamp int64                   `json:"timestamp"`
-	Value     clientmodel.SampleValue `json:"value"`
-	Tags      map[string]string       `json:"tags"`
-}
-
-// escapeTagValue escapes Prometheus label values to valid tag values for
-// OpenTSDB.
-func escapeTagValue(l clientmodel.LabelValue) string {
-	return illegalCharsRE.ReplaceAllString(string(l), "_")
+	Metric    TagValue            `json:"metric"`
+	Timestamp int64               `json:"timestamp"`
+	Value     float64             `json:"value"`
+	Tags      map[string]TagValue `json:"tags"`
 }
 
 // tagsFromMetric translates Prometheus metric into OpenTSDB tags.
-func tagsFromMetric(m clientmodel.Metric) map[string]string {
-	tags := make(map[string]string, len(m)-1)
+func tagsFromMetric(m clientmodel.Metric) map[string]TagValue {
+	tags := make(map[string]TagValue, len(m)-1)
 	for l, v := range m {
 		if l == clientmodel.MetricNameLabel {
 			continue
 		}
-		tags[string(l)] = escapeTagValue(v)
+		tags[string(l)] = TagValue(v)
 	}
 	return tags
 }
@@ -69,11 +65,16 @@ func tagsFromMetric(m clientmodel.Metric) map[string]string {
 func (c *Client) Store(samples clientmodel.Samples) error {
 	reqs := make([]StoreSamplesRequest, 0, len(samples))
 	for _, s := range samples {
-		metric := escapeTagValue(s.Metric[clientmodel.MetricNameLabel])
+		v := float64(s.Value)
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			glog.Warningf("cannot send value %d to OpenTSDB, skipping sample %#v", v, s)
+			continue
+		}
+		metric := TagValue(s.Metric[clientmodel.MetricNameLabel])
 		reqs = append(reqs, StoreSamplesRequest{
 			Metric:    metric,
 			Timestamp: s.Timestamp.Unix(),
-			Value:     s.Value,
+			Value:     v,
 			Tags:      tagsFromMetric(s.Metric),
 		})
 	}
