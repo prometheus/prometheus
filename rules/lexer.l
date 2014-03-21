@@ -51,7 +51,8 @@ func (lexer *RulesLexer) Lex(lval *yySymType) int {
 %}
 
 D                       [0-9]
-L                       [a-zA-Z_:]
+L                       [a-zA-Z_]
+M                       [a-zA-Z_:]
 U                       [smhdwy]
 
 %x S_COMMENTS
@@ -88,6 +89,7 @@ avg|sum|max|min|count    lval.str = strings.ToUpper(lexer.token()); return AGGR_
 
 {D}+{U}                  lval.str = lexer.token(); return DURATION
 {L}({L}|{D})*            lval.str = lexer.token(); return IDENTIFIER
+{M}({M}|{D})*            lval.str = lexer.token(); return METRICNAME
 
 \-?{D}+(\.{D}*)?         num, err := strconv.ParseFloat(lexer.token(), 64);
                          if (err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax) {
