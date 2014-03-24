@@ -66,6 +66,29 @@ func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 		t.Error(err)
 		return
 	}
+
+	hasLabelName := func(x int) (success bool) {
+		labelName := clientmodel.LabelName(string(x))
+
+		values, err := p.GetLabelValuesForLabelName(labelName)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		success = len(values) == 0
+		if !success {
+			t.Errorf("unexpected values length %d, got %d", 0, len(values))
+		}
+
+		return
+	}
+
+	err = quick.Check(hasLabelName, nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
 }
 
 func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
@@ -114,6 +137,16 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 		err := p.AppendSamples(clientmodel.Samples{sample})
 		if err != nil {
 			t.Error(err)
+			return
+		}
+
+		values, err := p.GetLabelValuesForLabelName(labelName)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if len(values) != 1 {
+			t.Errorf("expected label values count of %d, got %d", 1, len(values))
 			return
 		}
 
