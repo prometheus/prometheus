@@ -177,6 +177,7 @@ type memorySeriesStorage struct {
 	wmCache                 *watermarkCache
 	fingerprintToSeries     map[clientmodel.Fingerprint]stream
 	labelPairToFingerprints map[LabelPair]utility.Set
+	labelNameToLabelValues  map[clientmodel.LabelName]utility.Set
 }
 
 // MemorySeriesOptions bundles options used by NewMemorySeriesStorage to create
@@ -243,12 +244,19 @@ func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, finge
 				Value: v,
 			}
 
-			set, ok := s.labelPairToFingerprints[labelPair]
+			fps, ok := s.labelPairToFingerprints[labelPair]
 			if !ok {
-				set = utility.Set{}
-				s.labelPairToFingerprints[labelPair] = set
+				fps = utility.Set{}
+				s.labelPairToFingerprints[labelPair] = fps
 			}
-			set.Add(*fingerprint)
+			fps.Add(*fingerprint)
+
+			values, ok := s.labelNameToLabelValues[k]
+			if !ok {
+				values = utility.Set{}
+				s.labelNameToLabelValues[k] = values
+			}
+			values.Add(v)
 		}
 	}
 	return series
@@ -292,6 +300,16 @@ func (s *memorySeriesStorage) Flush(flushOlderThan clientmodel.Timestamp, queue 
 	}
 }
 
+// Drop a label value from the label names to label values index.
+func (s *memorySeriesStorage) dropLabelValue(l clientmodel.LabelName, v clientmodel.LabelValue) {
+	if set, ok := s.labelNameToLabelValues[l]; ok {
+		set.Remove(v)
+		if len(set) == 0 {
+			delete(s.labelNameToLabelValues, l)
+		}
+	}
+}
+
 // Drop all references to a series, including any samples.
 func (s *memorySeriesStorage) dropSeries(fingerprint *clientmodel.Fingerprint) {
 	series, ok := s.fingerprintToSeries[*fingerprint]
@@ -308,6 +326,7 @@ func (s *memorySeriesStorage) dropSeries(fingerprint *clientmodel.Fingerprint) {
 			set.Remove(*fingerprint)
 			if len(set) == 0 {
 				delete(s.labelPairToFingerprints, labelPair)
+				s.dropLabelValue(k, v)
 			}
 		}
 	}
@@ -363,6 +382,23 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l clientmodel.LabelSet)
 	}
 
 	return fingerprints, nil
+}
+
+func (s *memorySeriesStorage) GetLabelValuesForLabelName(labelName clientmodel.LabelName) (clientmodel.LabelValues, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	set, ok := s.labelNameToLabelValues[labelName]
+	if !ok {
+		return nil, nil
+	}
+
+	values := make(clientmodel.LabelValues, 0, len(set))
+	for e := range set {
+		val := e.(clientmodel.LabelValue)
+		values = append(values, val)
+	}
+	return values, nil
 }
 
 func (s *memorySeriesStorage) GetMetricForFingerprint(f *clientmodel.Fingerprint) (clientmodel.Metric, error) {
@@ -446,6 +482,7 @@ func (s *memorySeriesStorage) Close() {
 
 	s.fingerprintToSeries = nil
 	s.labelPairToFingerprints = nil
+	s.labelNameToLabelValues = nil
 }
 
 func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (values clientmodel.LabelValues, err error) {
@@ -470,6 +507,7 @@ func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[clientmodel.Fingerprint]stream),
 		labelPairToFingerprints: make(map[LabelPair]utility.Set),
+		labelNameToLabelValues:  make(map[clientmodel.LabelName]utility.Set),
 		wmCache:                 o.WatermarkCache,
 	}
 }
