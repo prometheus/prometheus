@@ -39,6 +39,7 @@ const sortConcurrency = 2
 type LevelDBMetricPersistence struct {
 	CurationRemarks         CurationRemarker
 	FingerprintToMetrics    FingerprintMetricIndex
+	LabelNameToLabelValues  LabelNameLabelValuesIndex
 	LabelPairToFingerprints LabelPairFingerprintIndex
 	MetricHighWatermarks    HighWatermarker
 	MetricMembershipIndex   MetricMembershipIndex
@@ -67,6 +68,7 @@ var (
 	curationRemarksCacheSize         = flag.Int("curationRemarksCacheSize", 5*1024*1024, "The size for the curation remarks cache (bytes).")
 	fingerprintsToLabelPairCacheSize = flag.Int("fingerprintsToLabelPairCacheSizeBytes", 25*1024*1024, "The size for the fingerprint to label pair index (bytes).")
 	highWatermarkCacheSize           = flag.Int("highWatermarksByFingerprintSizeBytes", 5*1024*1024, "The size for the metric high watermarks (bytes).")
+	labelNameToLabelValuesCacheSize  = flag.Int("labelNameToLabelValuesCacheSizeBytes", 25*1024*1024, "The size for the label name to label values index (bytes).")
 	labelPairToFingerprintsCacheSize = flag.Int("labelPairToFingerprintsCacheSizeBytes", 25*1024*1024, "The size for the label pair to metric fingerprint index (bytes).")
 	metricMembershipIndexCacheSize   = flag.Int("metricMembershipCacheSizeBytes", 5*1024*1024, "The size for the metric membership index (bytes).")
 	samplesByFingerprintCacheSize    = flag.Int("samplesByFingerprintCacheSizeBytes", 50*1024*1024, "The size for the samples database (bytes).")
@@ -80,6 +82,7 @@ func (l *LevelDBMetricPersistence) Close() {
 	var persistences = []raw.Database{
 		l.CurationRemarks,
 		l.FingerprintToMetrics,
+		l.LabelNameToLabelValues,
 		l.LabelPairToFingerprints,
 		l.MetricHighWatermarks,
 		l.MetricMembershipIndex,
@@ -106,7 +109,7 @@ func (l *LevelDBMetricPersistence) Close() {
 // NewLevelDBMetricPersistence returns a LevelDBMetricPersistence object ready
 // to use.
 func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistence, error) {
-	workers := utility.NewUncertaintyGroup(6)
+	workers := utility.NewUncertaintyGroup(7)
 
 	emission := &LevelDBMetricPersistence{}
 
@@ -152,6 +155,21 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 						Purpose:        "The youngest sample in the database per metric.",
 						Path:           baseDirectory + "/high_watermarks_by_fingerprint",
 						CacheSizeBytes: *highWatermarkCacheSize,
+					},
+				)
+				workers.MayFail(err)
+			},
+		},
+		{
+			"Fingerprints by Label Name",
+			func() {
+				var err error
+				emission.LabelNameToLabelValues, err = NewLevelDBLabelNameLabelValuesIndex(
+					leveldb.LevelDBOptions{
+						Name:           "Label Values by Label Name",
+						Purpose:        "Index",
+						Path:           baseDirectory + "/label_values_by_label_name",
+						CacheSizeBytes: *labelNameToLabelValuesCacheSize,
 					},
 				)
 				workers.MayFail(err)
@@ -219,6 +237,7 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 
 	emission.Indexer = &TotalIndexer{
 		FingerprintToMetric:    emission.FingerprintToMetrics,
+		LabelNameToLabelValues: emission.LabelNameToLabelValues,
 		LabelPairToFingerprint: emission.LabelPairToFingerprints,
 		MetricMembership:       emission.MetricMembershipIndex,
 	}
@@ -400,18 +419,6 @@ func (l *LevelDBMetricPersistence) hasIndexMetric(m clientmodel.Metric) (value b
 	return l.MetricMembershipIndex.Has(m)
 }
 
-// HasLabelPair returns true if the given LabelPair is present in the underlying
-// LabelPair index.
-func (l *LevelDBMetricPersistence) HasLabelPair(p *LabelPair) (value bool, err error) {
-	defer func(begin time.Time) {
-		duration := time.Since(begin)
-
-		recordOutcome(duration, err, map[string]string{operation: hasLabelPair, result: success}, map[string]string{operation: hasLabelPair, result: failure})
-	}(time.Now())
-
-	return l.LabelPairToFingerprints.Has(p)
-}
-
 // GetFingerprintsForLabelSet returns the Fingerprints for the given LabelSet by
 // querying the underlying LabelPairFingerprintIndex for each LabelPair
 // contained in LabelSet.  It implements the MetricPersistence interface.
@@ -459,6 +466,22 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet clientmod
 	return fps, nil
 }
 
+// GetLabelValuesForLabelName returns the LabelValues for the given LabelName
+// from the underlying LabelNameLabelValuesIndex. It implements the
+// MetricPersistence interface.
+func (l *LevelDBMetricPersistence) GetLabelValuesForLabelName(labelName clientmodel.LabelName) (clientmodel.LabelValues, error) {
+	var err error
+	defer func(begin time.Time) {
+		duration := time.Since(begin)
+
+		recordOutcome(duration, err, map[string]string{operation: getLabelValuesForLabelName, result: success}, map[string]string{operation: getLabelValuesForLabelName, result: failure})
+	}(time.Now())
+
+	values, _, err := l.LabelNameToLabelValues.Lookup(labelName)
+
+	return values, err
+}
+
 // GetMetricForFingerprint returns the Metric for the given Fingerprint from the
 // underlying FingerprintMetricIndex. It implements the MetricPersistence
 // interface.
@@ -499,6 +522,7 @@ func (l *LevelDBMetricPersistence) GetAllValuesForLabel(labelName clientmodel.La
 func (l *LevelDBMetricPersistence) Prune() {
 	l.CurationRemarks.Prune()
 	l.FingerprintToMetrics.Prune()
+	l.LabelNameToLabelValues.Prune()
 	l.LabelPairToFingerprints.Prune()
 	l.MetricHighWatermarks.Prune()
 	l.MetricMembershipIndex.Prune()
@@ -515,6 +539,11 @@ func (l *LevelDBMetricPersistence) Sizes() (total uint64, err error) {
 	total += size
 
 	if size, err = l.FingerprintToMetrics.Size(); err != nil {
+		return 0, err
+	}
+	total += size
+
+	if size, err = l.LabelNameToLabelValues.Size(); err != nil {
 		return 0, err
 	}
 	total += size
@@ -547,6 +576,7 @@ func (l *LevelDBMetricPersistence) States() raw.DatabaseStates {
 	return raw.DatabaseStates{
 		l.CurationRemarks.State(),
 		l.FingerprintToMetrics.State(),
+		l.LabelNameToLabelValues.State(),
 		l.LabelPairToFingerprints.State(),
 		l.MetricHighWatermarks.State(),
 		l.MetricMembershipIndex.State(),

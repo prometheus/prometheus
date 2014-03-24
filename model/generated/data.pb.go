@@ -11,6 +11,7 @@ It is generated from these files:
 It has these top-level messages:
 	LabelPair
 	LabelName
+	LabelValueCollection
 	Metric
 	Fingerprint
 	FingerprintCollection
@@ -74,6 +75,22 @@ func (m *LabelName) GetName() string {
 		return *m.Name
 	}
 	return ""
+}
+
+type LabelValueCollection struct {
+	Member           []string `protobuf:"bytes,1,rep,name=member" json:"member,omitempty"`
+	XXX_unrecognized []byte   `json:"-"`
+}
+
+func (m *LabelValueCollection) Reset()         { *m = LabelValueCollection{} }
+func (m *LabelValueCollection) String() string { return proto.CompactTextString(m) }
+func (*LabelValueCollection) ProtoMessage()    {}
+
+func (m *LabelValueCollection) GetMember() []string {
+	if m != nil {
+		return m.Member
+	}
+	return nil
 }
 
 type Metric struct {
