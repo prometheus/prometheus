@@ -524,6 +524,72 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 				// extracted value at the end of the second chunk.
 				diskOnly: true,
 			},
+			// Single sample, getValuesAtIntervalOp starting after the sample.
+			{
+				data: clientmodel.Samples{
+					{
+						Metric:    metric,
+						Value:     0,
+						Timestamp: instant,
+					},
+				},
+				in: in{
+					atInterval: []getValuesAtIntervalOp{
+						{
+							getValuesAlongRangeOp: getValuesAlongRangeOp{
+								baseOp:  baseOp{current: instant.Add(time.Second)},
+								through: instant.Add(time.Second * 2),
+							},
+							interval: time.Second,
+						},
+					},
+				},
+				out: out{
+					atInterval: []Values{
+						{
+							{
+								Timestamp: instant,
+								Value:     0,
+							},
+						},
+					},
+				},
+			},
+			// Single sample, getValuesAtIntervalOp starting before the sample.
+			{
+				data: clientmodel.Samples{
+					{
+						Metric:    metric,
+						Value:     0,
+						Timestamp: instant.Add(time.Second),
+					},
+				},
+				in: in{
+					atInterval: []getValuesAtIntervalOp{
+						{
+							getValuesAlongRangeOp: getValuesAlongRangeOp{
+								baseOp:  baseOp{current: instant.Add(time.Second)},
+								through: instant.Add(time.Second * 2),
+							},
+							interval: time.Second,
+						},
+					},
+				},
+				out: out{
+					atInterval: []Values{
+						{
+							{
+								Timestamp: instant.Add(time.Second),
+								Value:     0,
+							},
+							{
+								Timestamp: instant.Add(time.Second),
+								Value:     0,
+							},
+						},
+					},
+				},
+			},
 		}
 	)
 
