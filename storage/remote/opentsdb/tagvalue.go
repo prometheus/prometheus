@@ -51,7 +51,7 @@ type TagValue clientmodel.LabelValue
 func (tv TagValue) MarshalJSON() ([]byte, error) {
 	length := len(tv)
 	// Need at least two more bytes than in tv.
-	result := bytes.NewBuffer(make([]byte, 1, length+2))
+	result := bytes.NewBuffer(make([]byte, 0, length+2))
 	result.WriteByte('"')
 	for i := 0; i < length; i++ {
 		b := tv[i]
