@@ -175,8 +175,8 @@ type (
 type (
 	// A VectorSelector represents a metric name plus labelset.
 	VectorSelector struct {
-		labels clientmodel.LabelSet
-		// Fingerprints are populated from labels at query analysis time.
+		labelMatchers metric.LabelMatchers
+		// Fingerprints are populated from label matchers at query analysis time.
 		fingerprints clientmodel.Fingerprints
 	}
 
@@ -211,8 +211,8 @@ type (
 	// A MatrixSelector represents a metric name plus labelset and
 	// timerange.
 	MatrixSelector struct {
-		labels clientmodel.LabelSet
-		// Fingerprints are populated from labels at query
+		labelMatchers metric.LabelMatchers
+		// Fingerprints are populated from label matchers at query
 		// analysis time.
 		fingerprints clientmodel.Fingerprints
 		interval     time.Duration
@@ -738,9 +738,9 @@ func NewScalarLiteral(value clientmodel.SampleValue) *ScalarLiteral {
 
 // NewVectorSelector returns a (not yet evaluated) VectorSelector with
 // the given LabelSet.
-func NewVectorSelector(labels clientmodel.LabelSet) *VectorSelector {
+func NewVectorSelector(m metric.LabelMatchers) *VectorSelector {
 	return &VectorSelector{
-		labels: labels,
+		labelMatchers: m,
 	}
 }
 
@@ -833,8 +833,8 @@ func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
 // the given VectorSelector and Duration.
 func NewMatrixSelector(vector *VectorSelector, interval time.Duration) *MatrixSelector {
 	return &MatrixSelector{
-		labels:   vector.labels,
-		interval: interval,
+		labelMatchers: vector.labelMatchers,
+		interval:      interval,
 	}
 }
 

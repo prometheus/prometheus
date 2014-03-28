@@ -155,7 +155,7 @@ c = lexer.getChar()
 switch {
 default:
 goto yyabort
-case c == '=':
+case c == '=' || c == '~':
 goto yystate4
 }
 
@@ -326,7 +326,7 @@ c = lexer.getChar()
 switch {
 default:
 goto yyrule26
-case c == '=':
+case c == '=' || c == '~':
 goto yystate4
 }
 
@@ -2068,9 +2068,9 @@ yyrule16: // \<|>|AND|OR|and|or
       lval.str = strings.ToUpper(lexer.token()); return CMP_OP
 goto yystate0
 }
-yyrule17: // ==|!=|>=|<=
+yyrule17: // ==|!=|>=|<=|!=|=~|!~
 {
-             lval.str = lexer.token(); return CMP_OP
+    lval.str = lexer.token(); return CMP_OP
 goto yystate0
 }
 yyrule18: // [+\-]

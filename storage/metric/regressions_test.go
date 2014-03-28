@@ -49,7 +49,7 @@ func GetFingerprintsForLabelSetUsesAndForLabelMatchingTests(p MetricPersistence,
 		"percentile":                "0.010000",
 	}
 
-	fingerprints, err := p.GetFingerprintsForLabelSet(labelSet)
+	fingerprints, err := p.GetFingerprintsForLabelMatchers(labelMatchersFromLabelSet(labelSet))
 	if err != nil {
 		t.Errorf("could not get labels: %s", err)
 	}

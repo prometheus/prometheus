@@ -52,7 +52,7 @@ type LevelDBMetricPersistence struct {
 	//
 	// type FingerprintResolver interface {
 	// 	GetFingerprintForMetric(clientmodel.Metric) (*clientmodel.Fingerprint, bool, error)
-	// 	GetFingerprintsForLabelSet(LabelPair) (clientmodel.Fingerprints, bool, error)
+	// 	GetFingerprintsForLabelMatchers(LabelPair) (clientmodel.Fingerprints, bool, error)
 	// }
 
 	// type MetricResolver interface {
@@ -419,33 +419,57 @@ func (l *LevelDBMetricPersistence) hasIndexMetric(m clientmodel.Metric) (value b
 	return l.MetricMembershipIndex.Has(m)
 }
 
-// GetFingerprintsForLabelSet returns the Fingerprints for the given LabelSet by
-// querying the underlying LabelPairFingerprintIndex for each LabelPair
-// contained in LabelSet.  It implements the MetricPersistence interface.
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet) (fps clientmodel.Fingerprints, err error) {
+// GetFingerprintsForLabelMatchers returns the Fingerprints for the given
+// LabelMatchers by querying the underlying LabelPairFingerprintIndex and
+// possibly the LabelNameLabelValuesIndex for each matcher. It implements the
+// MetricPersistence interface.
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelMatchers(labelMatchers LabelMatchers) (fps clientmodel.Fingerprints, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
-		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelSet, result: success}, map[string]string{operation: getFingerprintsForLabelSet, result: failure})
+		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelMatchers, result: success}, map[string]string{operation: getFingerprintsForLabelMatchers, result: failure})
 	}(time.Now())
 
 	sets := []utility.Set{}
 
-	for name, value := range labelSet {
-		fps, _, err := l.LabelPairToFingerprints.Lookup(&LabelPair{
-			Name:  name,
-			Value: value,
-		})
-		if err != nil {
-			return nil, err
-		}
-
+	for _, matcher := range labelMatchers {
 		set := utility.Set{}
 
-		for _, fp := range fps {
-			set.Add(*fp)
-		}
+		switch matcher.Type {
+		case Equal:
+			fps, _, err := l.LabelPairToFingerprints.Lookup(&LabelPair{
+				Name:  matcher.Name,
+				Value: matcher.Value,
+			})
+			if err != nil {
+				return nil, err
+			}
 
+			for _, fp := range fps {
+				set.Add(*fp)
+			}
+		default:
+			values, err := l.GetLabelValuesForLabelName(matcher.Name)
+			if err != nil {
+				return nil, err
+			}
+			matches := matcher.Filter(values)
+			if len(matches) == 0 {
+				return nil, nil
+			}
+			for _, v := range matches {
+				fps, _, err := l.LabelPairToFingerprints.Lookup(&LabelPair{
+					Name:  matcher.Name,
+					Value: v,
+				})
+				if err != nil {
+					return nil, err
+				}
+				for _, fp := range fps {
+					set.Add(*fp)
+				}
+			}
+		}
 		sets = append(sets, set)
 	}
 

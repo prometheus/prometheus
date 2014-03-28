@@ -673,9 +673,9 @@ func (t *TieredStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (c
 	return values, nil
 }
 
-// GetFingerprintsForLabelSet gets all of the metric fingerprints that are
-// associated with the provided label set.
-func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet) (clientmodel.Fingerprints, error) {
+// GetFingerprintsForLabelMatchers gets all of the metric fingerprints that are
+// associated with the provided label matchers.
+func (t *TieredStorage) GetFingerprintsForLabelMatchers(matchers LabelMatchers) (clientmodel.Fingerprints, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -683,11 +683,11 @@ func (t *TieredStorage) GetFingerprintsForLabelSet(labelSet clientmodel.LabelSet
 		panic("Illegal State: Attempted to query non-running TieredStorage.")
 	}
 
-	memFingerprints, err := t.memoryArena.GetFingerprintsForLabelSet(labelSet)
+	memFingerprints, err := t.memoryArena.GetFingerprintsForLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
-	diskFingerprints, err := t.DiskStorage.GetFingerprintsForLabelSet(labelSet)
+	diskFingerprints, err := t.DiskStorage.GetFingerprintsForLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
