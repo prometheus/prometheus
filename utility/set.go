@@ -13,16 +13,20 @@
 
 package utility
 
+// Set is a type which models a set.
 type Set map[interface{}]bool
 
+// Add adds an item to the set.
 func (s Set) Add(v interface{}) {
 	s[v] = true
 }
 
+// Remove removes an item from the set.
 func (s Set) Remove(v interface{}) {
 	delete(s, v)
 }
 
+// Elements returns a slice containing all elements in the set.
 func (s Set) Elements() []interface{} {
 	result := make([]interface{}, 0, len(s))
 
@@ -33,19 +37,35 @@ func (s Set) Elements() []interface{} {
 	return result
 }
 
+// Has returns true if an element is contained in the set.
 func (s Set) Has(v interface{}) bool {
 	_, p := s[v]
 
 	return p
 }
 
+// Intersection returns a new set with items that exist in both sets.
 func (s Set) Intersection(o Set) Set {
-	result := make(Set)
+	result := Set{}
 
 	for k := range s {
 		if o.Has(k) {
 			result[k] = true
 		}
+	}
+
+	return result
+}
+
+// Union returns a new set with all items in both sets.
+func (s Set) Union(o Set) Set {
+	result := Set{}
+
+	for k := range s {
+		result[k] = true
+	}
+	for k := range o {
+		result[k] = true
 	}
 
 	return result

@@ -40,14 +40,11 @@ func BasicLifecycleTests(p MetricPersistence, t test.Tester) {
 
 func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 	hasLabelPair := func(x int) (success bool) {
-		name := clientmodel.LabelName(string(x))
-		value := clientmodel.LabelValue(string(x))
-
-		labelSet := clientmodel.LabelSet{
-			name: value,
-		}
-
-		fingerprints, err := p.GetFingerprintsForLabelSet(labelSet)
+		fingerprints, err := p.GetFingerprintsForLabelMatchers(LabelMatchers{{
+			Type:  Equal,
+			Name:  clientmodel.LabelName(string(x)),
+			Value: clientmodel.LabelValue(string(x)),
+		}})
 		if err != nil {
 			t.Error(err)
 			return
@@ -150,9 +147,11 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 			return
 		}
 
-		fingerprints, err := p.GetFingerprintsForLabelSet(clientmodel.LabelSet{
-			labelName: labelValue,
-		})
+		fingerprints, err := p.GetFingerprintsForLabelMatchers(LabelMatchers{{
+			Type:  Equal,
+			Name:  labelName,
+			Value: labelValue,
+		}})
 		if err != nil {
 			t.Error(err)
 			return
@@ -329,11 +328,13 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 			metricNewestSample[metricIndex] = newestSample
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
-				labelPair := clientmodel.LabelSet{
-					clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex)): clientmodel.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex)),
-				}
+				matchers := LabelMatchers{{
+					Type:  Equal,
+					Name:  clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex)),
+					Value: clientmodel.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex)),
+				}}
 
-				fingerprints, err := p.GetFingerprintsForLabelSet(labelPair)
+				fingerprints, err := p.GetFingerprintsForLabelMatchers(matchers)
 				if err != nil {
 					t.Error(err)
 					return
@@ -349,11 +350,13 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 			for unsharedLabelIndex := 0; unsharedLabelIndex < numberOfUnsharedLabels; unsharedLabelIndex++ {
 				labelName := clientmodel.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
 				labelValue := clientmodel.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
-				labelSet := clientmodel.LabelSet{
-					labelName: labelValue,
-				}
+				matchers := LabelMatchers{{
+					Type:  Equal,
+					Name:  labelName,
+					Value: labelValue,
+				}}
 
-				fingerprints, err := p.GetFingerprintsForLabelSet(labelSet)
+				fingerprints, err := p.GetFingerprintsForLabelMatchers(matchers)
 				if err != nil {
 					t.Error(err)
 					return

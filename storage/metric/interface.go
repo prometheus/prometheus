@@ -29,8 +29,8 @@ type MetricPersistence interface {
 	AppendSamples(clientmodel.Samples) error
 
 	// Get all of the metric fingerprints that are associated with the
-	// provided label set.
-	GetFingerprintsForLabelSet(clientmodel.LabelSet) (clientmodel.Fingerprints, error)
+	// provided label matchers.
+	GetFingerprintsForLabelMatchers(LabelMatchers) (clientmodel.Fingerprints, error)
 
 	// Get all of the label values that are associated with a given label name.
 	GetLabelValuesForLabelName(clientmodel.LabelName) (clientmodel.LabelValues, error)
