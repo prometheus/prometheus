@@ -126,7 +126,7 @@ func TestDroppedSeriesIndexRegression(t *testing.T) {
 	s.AppendSamples(samples)
 
 	common := clientmodel.LabelSet{"common": "samevalue"}
-	fps, err := s.GetFingerprintsForLabelSet(common)
+	fps, err := s.GetFingerprintsForLabelMatchers(labelMatchersFromLabelSet(common))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestDroppedSeriesIndexRegression(t *testing.T) {
 		t.Fatalf("Got %d disk samples, expected 1", len(diskSamples))
 	}
 
-	fps, err = s.GetFingerprintsForLabelSet(common)
+	fps, err = s.GetFingerprintsForLabelMatchers(labelMatchersFromLabelSet(common))
 	if err != nil {
 		t.Fatal(err)
 	}

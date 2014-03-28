@@ -18,6 +18,7 @@
           clientmodel "github.com/prometheus/client_golang/model"
 
           "github.com/prometheus/prometheus/rules/ast"
+          "github.com/prometheus/prometheus/storage/metric"
         )
 %}
 
@@ -29,6 +30,8 @@
         boolean bool
         labelNameSlice clientmodel.LabelNames
         labelSet clientmodel.LabelSet
+        labelMatcher *metric.LabelMatcher
+        labelMatchers metric.LabelMatchers
 }
 
 /* We simulate multiple start symbols for closely-related grammars via dummy tokens. See
@@ -46,9 +49,11 @@
 %type <ruleNodeSlice> func_arg_list
 %type <labelNameSlice> label_list grouping_opts
 %type <labelSet> label_assign label_assign_list rule_labels
+%type <labelMatcher> label_match
+%type <labelMatchers> label_match_list label_matches
 %type <ruleNode> rule_expr func_arg
 %type <boolean> qualifier extra_labels_opts
-%type <str> for_duration metric_name
+%type <str> for_duration metric_name label_match_type
 
 %right '='
 %left CMP_OP
@@ -119,11 +124,44 @@ label_assign       : IDENTIFIER '=' STRING
                      { $$ = clientmodel.LabelSet{ clientmodel.LabelName($1): clientmodel.LabelValue($3) } }
                    ;
 
+label_matches      : /* empty */
+                     { $$ = metric.LabelMatchers{} }
+                   | '{' '}'
+                     { $$ = metric.LabelMatchers{} }
+                   | '{' label_match_list '}'
+                     { $$ = $2 }
+                   ;
+
+label_match_list   : label_match
+                     { $$ = metric.LabelMatchers{$1} }
+                   | label_match_list ',' label_match
+                     { $$ = append($$, $3) }
+                   ;
+
+label_match        : IDENTIFIER label_match_type STRING
+                     {
+                       var err error
+                       $$, err = newLabelMatcher($2, clientmodel.LabelName($1), clientmodel.LabelValue($3))
+                       if err != nil { yylex.Error(err.Error()); return 1 }
+                     }
+                   ;
+
+label_match_type   : '='
+                     { $$ = "=" }
+                   | CMP_OP
+                     { $$ = $1 }
+                   ;
 
 rule_expr          : '(' rule_expr ')'
                      { $$ = $2 }
-                   | metric_name rule_labels
-                     { $2[clientmodel.MetricNameLabel] = clientmodel.LabelValue($1); $$ = ast.NewVectorSelector($2) }
+                   | metric_name label_matches
+                     {
+                       var err error
+                       m, err := metric.NewLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, clientmodel.LabelValue($1))
+                       if err != nil { yylex.Error(err.Error()); return 1 }
+                       $2 = append($2, m)
+                       $$ = ast.NewVectorSelector($2)
+                     }
                    | IDENTIFIER '(' func_arg_list ')'
                      {
                        var err error

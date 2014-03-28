@@ -320,14 +320,13 @@ func (node *ScalarArithExpr) String() string {
 }
 
 func (node *VectorSelector) String() string {
-	metricName, ok := node.labels[clientmodel.MetricNameLabel]
-	if !ok {
-		panic("Tried to print vector without metric name")
-	}
-	labelStrings := make([]string, 0, len(node.labels)-1)
-	for label, value := range node.labels {
-		if label != clientmodel.MetricNameLabel {
-			labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))
+	labelStrings := make([]string, 0, len(node.labelMatchers)-1)
+	var metricName clientmodel.LabelValue
+	for _, matcher := range node.labelMatchers {
+		if matcher.Name != clientmodel.MetricNameLabel {
+			labelStrings = append(labelStrings, fmt.Sprintf("%s%s%q", matcher.Name, matcher.Type, matcher.Value))
+		} else {
+			metricName = matcher.Value
 		}
 	}
 
@@ -357,7 +356,7 @@ func (node *VectorArithExpr) String() string {
 }
 
 func (node *MatrixSelector) String() string {
-	vectorString := (&VectorSelector{labels: node.labels}).String()
+	vectorString := (&VectorSelector{labelMatchers: node.labelMatchers}).String()
 	intervalString := fmt.Sprintf("[%s]", utility.DurationToString(node.interval))
 	return vectorString + intervalString
 }

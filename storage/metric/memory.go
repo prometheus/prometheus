@@ -349,20 +349,45 @@ func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmo
 	series.add(samples)
 }
 
-func (s *memorySeriesStorage) GetFingerprintsForLabelSet(l clientmodel.LabelSet) (clientmodel.Fingerprints, error) {
+func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers LabelMatchers) (clientmodel.Fingerprints, error) {
 	s.RLock()
 	defer s.RUnlock()
 
 	sets := []utility.Set{}
-	for k, v := range l {
-		set, ok := s.labelPairToFingerprints[LabelPair{
-			Name:  k,
-			Value: v,
-		}]
-		if !ok {
-			return nil, nil
+	for _, matcher := range labelMatchers {
+		switch matcher.Type {
+		case Equal:
+			set, ok := s.labelPairToFingerprints[LabelPair{
+				Name:  matcher.Name,
+				Value: matcher.Value,
+			}]
+			if !ok {
+				return nil, nil
+			}
+			sets = append(sets, set)
+		default:
+			values, err := s.GetLabelValuesForLabelName(matcher.Name)
+			if err != nil {
+				return nil, err
+			}
+
+			matches := matcher.Filter(values)
+			if len(matches) == 0 {
+				return nil, nil
+			}
+			set := utility.Set{}
+			for _, v := range matches {
+				subset, ok := s.labelPairToFingerprints[LabelPair{
+					Name:  matcher.Name,
+					Value: v,
+				}]
+				if !ok {
+					return nil, nil
+				}
+				set = set.Union(subset)
+			}
+			sets = append(sets, set)
 		}
-		sets = append(sets, set)
 	}
 
 	setCount := len(sets)
