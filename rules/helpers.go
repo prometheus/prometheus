@@ -21,6 +21,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -114,6 +115,20 @@ func NewMatrixSelector(vector ast.Node, intervalStr string) (ast.MatrixNode, err
 	}
 	vectorSelector := vector.(*ast.VectorSelector)
 	return ast.NewMatrixSelector(vectorSelector, interval), nil
+}
+
+func newLabelMatcher(matchTypeStr string, name clientmodel.LabelName, value clientmodel.LabelValue) (*metric.LabelMatcher, error) {
+	matchTypes := map[string]metric.MatchType{
+		"=":  metric.Equal,
+		"!=": metric.NotEqual,
+		"=~": metric.RegexMatch,
+		"!~": metric.RegexNoMatch,
+	}
+	matchType, ok := matchTypes[matchTypeStr]
+	if !ok {
+		return nil, fmt.Errorf("Invalid label matching operator \"%v\"", matchTypeStr)
+	}
+	return metric.NewLabelMatcher(matchType, name, value)
 }
 
 func ConsoleLinkForExpression(expr string) string {

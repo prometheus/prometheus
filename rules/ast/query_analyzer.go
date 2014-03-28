@@ -66,9 +66,9 @@ func NewQueryAnalyzer(storage *metric.TieredStorage) *QueryAnalyzer {
 func (analyzer *QueryAnalyzer) Visit(node Node) {
 	switch n := node.(type) {
 	case *VectorSelector:
-		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
+		fingerprints, err := analyzer.storage.GetFingerprintsForLabelMatchers(n.labelMatchers)
 		if err != nil {
-			glog.Errorf("Error getting fingerprints for labelset %v: %v", n.labels, err)
+			glog.Errorf("Error getting fingerprints for label matchers %v: %v", n.labelMatchers, err)
 			return
 		}
 		n.fingerprints = fingerprints
@@ -80,9 +80,9 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 			}
 		}
 	case *MatrixSelector:
-		fingerprints, err := analyzer.storage.GetFingerprintsForLabelSet(n.labels)
+		fingerprints, err := analyzer.storage.GetFingerprintsForLabelMatchers(n.labelMatchers)
 		if err != nil {
-			glog.Errorf("Error getting fingerprints for labelset %v: %v", n.labels, err)
+			glog.Errorf("Error getting fingerprints for label matchers %v: %v", n.labelMatchers, err)
 			return
 		}
 		n.fingerprints = fingerprints

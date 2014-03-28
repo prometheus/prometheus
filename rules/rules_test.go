@@ -406,6 +406,47 @@ func TestExpressions(t *testing.T) {
 			// Interval durations can"t be in quotes.
 			expr:       `http_requests["1m"]`,
 			shouldFail: true,
+		}, {
+			expr: `http_requests{group!="canary"}`,
+			output: []string{
+				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+				`http_requests{group="production", instance="0", job="app-server"} => 500 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 4,
+		}, {
+			expr: `http_requests{job=~"server",group!="canary"}`,
+			output: []string{
+				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+				`http_requests{group="production", instance="0", job="app-server"} => 500 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 4,
+		}, {
+			expr: `http_requests{job!~"api",group!="canary"}`,
+			output: []string{
+				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+				`http_requests{group="production", instance="0", job="app-server"} => 500 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 2,
+		}, {
+			expr:           `count_scalar(http_requests{job=~"^server$"})`,
+			output:         []string{`scalar: 0 @[%v]`},
+			fullRanges:     0,
+			intervalRanges: 0,
+		}, {
+			expr: `http_requests{group="production",job=~"^api"}`,
+			output: []string{
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 2,
 		},
 	}
 

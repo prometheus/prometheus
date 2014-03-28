@@ -803,7 +803,7 @@ func TestGetAllValuesForLabel(t *testing.T) {
 	}
 }
 
-func TestGetFingerprintsForLabelSet(t *testing.T) {
+func TestGetFingerprintsForLabelMatchers(t *testing.T) {
 	tiered, closer := NewTestTieredStorage(t)
 	defer closer.Close()
 	memorySample := &clientmodel.Sample{
@@ -821,40 +821,65 @@ func TestGetFingerprintsForLabelSet(t *testing.T) {
 	tiered.Flush()
 
 	scenarios := []struct {
-		labels  clientmodel.LabelSet
-		fpCount int
+		matchers LabelMatchers
+		fpCount  int
 	}{
 		{
-			labels:  clientmodel.LabelSet{},
-			fpCount: 0,
+			matchers: LabelMatchers{},
+			fpCount:  0,
 		}, {
-			labels: clientmodel.LabelSet{
-				clientmodel.MetricNameLabel: "http_requests",
+			matchers: LabelMatchers{
+				{
+					Type:  Equal,
+					Name:  clientmodel.MetricNameLabel,
+					Value: "http_requests",
+				},
 			},
 			fpCount: 2,
 		}, {
-			labels: clientmodel.LabelSet{
-				clientmodel.MetricNameLabel: "http_requests",
-				"method":                    "/foo",
+			matchers: LabelMatchers{
+				{
+					Type:  Equal,
+					Name:  clientmodel.MetricNameLabel,
+					Value: "http_requests",
+				}, {
+					Type:  Equal,
+					Name:  "method",
+					Value: "/foo",
+				},
 			},
 			fpCount: 1,
 		}, {
-			labels: clientmodel.LabelSet{
-				clientmodel.MetricNameLabel: "http_requests",
-				"method":                    "/bar",
+			matchers: LabelMatchers{
+				{
+					Type:  Equal,
+					Name:  clientmodel.MetricNameLabel,
+					Value: "http_requests",
+				}, {
+					Type:  Equal,
+					Name:  "method",
+					Value: "/bar",
+				},
 			},
 			fpCount: 1,
 		}, {
-			labels: clientmodel.LabelSet{
-				clientmodel.MetricNameLabel: "http_requests",
-				"method":                    "/baz",
+			matchers: LabelMatchers{
+				{
+					Type:  Equal,
+					Name:  clientmodel.MetricNameLabel,
+					Value: "http_requests",
+				}, {
+					Type:  Equal,
+					Name:  "method",
+					Value: "/baz",
+				},
 			},
 			fpCount: 0,
 		},
 	}
 
 	for i, scenario := range scenarios {
-		fingerprints, err := tiered.GetFingerprintsForLabelSet(scenario.labels)
+		fingerprints, err := tiered.GetFingerprintsForLabelMatchers(scenario.matchers)
 		if err != nil {
 			t.Fatalf("%d. Error getting metric names: %s", i, err)
 		}
