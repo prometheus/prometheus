@@ -210,6 +210,22 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
+			expr: `2 - SUM(http_requests) BY (job)`,
+			output: []string{
+				`http_requests{job="api-server"} => -998 @[%v]`,
+				`http_requests{job="app-server"} => -2598 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 8,
+		}, {
+			expr: `1000 / SUM(http_requests) BY (job)`,
+			output: []string{
+				`http_requests{job="api-server"} => 1 @[%v]`,
+				`http_requests{job="app-server"} => 0.38461538461538464 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 8,
+		}, {
 			expr: `SUM(http_requests) BY (job) - 2`,
 			output: []string{
 				`http_requests{job="api-server"} => 998 @[%v]`,
@@ -237,6 +253,13 @@ func TestExpressions(t *testing.T) {
 			expr: `SUM(http_requests) BY (job) > 1000`,
 			output: []string{
 				`http_requests{job="app-server"} => 2600 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 8,
+		}, {
+			expr: `1000 < SUM(http_requests) BY (job)`,
+			output: []string{
+				`http_requests{job="app-server"} => 1000 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 8,
@@ -397,10 +420,6 @@ func TestExpressions(t *testing.T) {
 		}, {
 			// Empty expressions shouldn"t parse.
 			expr:       ``,
-			shouldFail: true,
-		}, {
-			// Subtracting a vector from a scalar is not supported.
-			expr:       `1 - http_requests`,
 			shouldFail: true,
 		}, {
 			// Interval durations can"t be in quotes.

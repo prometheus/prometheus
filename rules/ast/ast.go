@@ -199,7 +199,7 @@ type (
 	// vector type.
 	VectorArithExpr struct {
 		opType BinOpType
-		lhs    VectorNode
+		lhs    Node
 		rhs    Node
 	}
 )
@@ -639,9 +639,20 @@ func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
 // Eval implements the VectorNode interface and returns the result of
 // the expression.
 func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
-	lhs := node.lhs.Eval(timestamp, view)
 	result := Vector{}
-	if node.rhs.Type() == SCALAR {
+	if node.lhs.Type() == SCALAR && node.rhs.Type() == VECTOR {
+		lhs := node.lhs.(ScalarNode).Eval(timestamp, view)
+		rhs := node.rhs.(VectorNode).Eval(timestamp, view)
+		for _, rhsSample := range rhs {
+			value, keep := evalVectorBinop(node.opType, lhs, rhsSample.Value)
+			if keep {
+				rhsSample.Value = value
+				result = append(result, rhsSample)
+			}
+		}
+		return result
+	} else if node.lhs.Type() == VECTOR && node.rhs.Type() == SCALAR {
+		lhs := node.lhs.(VectorNode).Eval(timestamp, view)
 		rhs := node.rhs.(ScalarNode).Eval(timestamp, view)
 		for _, lhsSample := range lhs {
 			value, keep := evalVectorBinop(node.opType, lhsSample.Value, rhs)
@@ -651,7 +662,8 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAda
 			}
 		}
 		return result
-	} else if node.rhs.Type() == VECTOR {
+	} else if node.lhs.Type() == VECTOR && node.rhs.Type() == VECTOR {
+		lhs := node.lhs.(VectorNode).Eval(timestamp, view)
 		rhs := node.rhs.(VectorNode).Eval(timestamp, view)
 		for _, lhsSample := range lhs {
 			for _, rhsSample := range rhs {
@@ -804,9 +816,6 @@ func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
 	if !nodesHaveTypes(Nodes{lhs, rhs}, []ExprType{SCALAR, VECTOR}) {
 		return nil, errors.New("binary operands must be of vector or scalar type")
 	}
-	if lhs.Type() == SCALAR && rhs.Type() == VECTOR {
-		return nil, errors.New("left side of vector binary operation must be of vector type")
-	}
 
 	if opType == AND || opType == OR {
 		if lhs.Type() == SCALAR || rhs.Type() == SCALAR {
@@ -817,7 +826,7 @@ func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
 	if lhs.Type() == VECTOR || rhs.Type() == VECTOR {
 		return &VectorArithExpr{
 			opType: opType,
-			lhs:    lhs.(VectorNode),
+			lhs:    lhs,
 			rhs:    rhs,
 		}, nil
 	}
