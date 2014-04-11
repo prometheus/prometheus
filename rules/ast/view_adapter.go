@@ -39,7 +39,7 @@ type viewAdapter struct {
 	stalenessPolicy StalenessPolicy
 	// AST-global storage to use for operations that are not supported by views
 	// (i.e. fingerprint->metric lookups).
-	storage *metric.TieredStorage
+	storage metric.MetricPersistence
 	// The materialized view which contains all timeseries data required for
 	// executing a query.
 	view metric.View
@@ -184,7 +184,7 @@ func (v *viewAdapter) GetRangeValues(fingerprints clientmodel.Fingerprints, inte
 
 // NewViewAdapter returns an initialized view adapter with a default
 // staleness policy (based on the --defaultStalenessDelta flag).
-func NewViewAdapter(view metric.View, storage *metric.TieredStorage, queryStats *stats.TimerGroup) *viewAdapter {
+func NewViewAdapter(view metric.View, storage metric.MetricPersistence, queryStats *stats.TimerGroup) *viewAdapter {
 	stalenessPolicy := StalenessPolicy{
 		DeltaAllowance: time.Duration(*defaultStalenessDelta) * time.Second,
 	}

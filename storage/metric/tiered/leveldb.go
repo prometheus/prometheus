@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"flag"
@@ -26,6 +26,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
@@ -52,7 +53,7 @@ type LevelDBMetricPersistence struct {
 	//
 	// type FingerprintResolver interface {
 	// 	GetFingerprintForMetric(clientmodel.Metric) (*clientmodel.Fingerprint, bool, error)
-	// 	GetFingerprintsForLabelMatchers(LabelPair) (clientmodel.Fingerprints, bool, error)
+	// 	GetFingerprintsForLabelMatchers(metric.LabelPair) (clientmodel.Fingerprints, bool, error)
 	// }
 
 	// type MetricResolver interface {
@@ -342,7 +343,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 
 	key := &SampleKey{}
 	keyDto := &dto.SampleKey{}
-	values := make(Values, 0, *leveldbChunkSize)
+	values := make(metric.Values, 0, *leveldbChunkSize)
 
 	for fingerprint, group := range fingerprintToSamples {
 		for {
@@ -369,12 +370,12 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			key.Dump(keyDto)
 
 			for _, sample := range chunk {
-				values = append(values, SamplePair{
+				values = append(values, metric.SamplePair{
 					Timestamp: sample.Timestamp,
 					Value:     sample.Value,
 				})
 			}
-			val := values.marshal()
+			val := marshalValues(values)
 			samplesBatch.PutRaw(keyDto, val)
 		}
 	}
@@ -423,7 +424,7 @@ func (l *LevelDBMetricPersistence) hasIndexMetric(m clientmodel.Metric) (value b
 // LabelMatchers by querying the underlying LabelPairFingerprintIndex and
 // possibly the LabelNameLabelValuesIndex for each matcher. It implements the
 // MetricPersistence interface.
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelMatchers(labelMatchers LabelMatchers) (fps clientmodel.Fingerprints, err error) {
+func (l *LevelDBMetricPersistence) GetFingerprintsForLabelMatchers(labelMatchers metric.LabelMatchers) (fps clientmodel.Fingerprints, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -436,8 +437,8 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelMatchers(labelMatchers
 		set := utility.Set{}
 
 		switch matcher.Type {
-		case Equal:
-			fps, _, err := l.LabelPairToFingerprints.Lookup(&LabelPair{
+		case metric.Equal:
+			fps, _, err := l.LabelPairToFingerprints.Lookup(&metric.LabelPair{
 				Name:  matcher.Name,
 				Value: matcher.Value,
 			})
@@ -458,7 +459,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelMatchers(labelMatchers
 				return nil, nil
 			}
 			for _, v := range matches {
-				fps, _, err := l.LabelPairToFingerprints.Lookup(&LabelPair{
+				fps, _, err := l.LabelPairToFingerprints.Lookup(&metric.LabelPair{
 					Name:  matcher.Name,
 					Value: v,
 				})
@@ -617,7 +618,7 @@ type CollectLabelValuesOp struct {
 // Operate implements storage.RecordOperator. 'key' is required to be a
 // LabelPair. Its Value is appended to a slice of collected LabelValues.
 func (op *CollectLabelValuesOp) Operate(key, value interface{}) (err *storage.OperatorError) {
-	labelPair := key.(LabelPair)
+	labelPair := key.(metric.LabelPair)
 	op.labelValues = append(op.labelValues, labelPair.Value)
 	return
 }
@@ -634,7 +635,7 @@ func (d *MetricKeyDecoder) DecodeKey(in interface{}) (out interface{}, err error
 		return
 	}
 
-	out = LabelPair{
+	out = metric.LabelPair{
 		Name:  clientmodel.LabelName(*unmarshaled.Name),
 		Value: clientmodel.LabelValue(*unmarshaled.Value),
 	}
@@ -690,7 +691,7 @@ type LabelNameFilter struct {
 // LabelPair. The result is ACCEPT if the Name of the LabelPair matches the
 // LabelName of this LabelNameFilter.
 func (f LabelNameFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
-	labelPair, ok := key.(LabelPair)
+	labelPair, ok := key.(metric.LabelPair)
 	if ok && labelPair.Name == f.labelName {
 		return storage.Accept
 	}

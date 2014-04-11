@@ -11,13 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"testing"
+
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 func TestInterfaceAdherence(t *testing.T) {
-	var _ MetricPersistence = &LevelDBMetricPersistence{}
-	var _ MetricPersistence = NewMemorySeriesStorage(MemorySeriesOptions{})
+	var _ metric.MetricPersistence = &LevelDBMetricPersistence{}
+	var _ metric.MetricPersistence = NewMemorySeriesStorage(MemorySeriesOptions{})
 }

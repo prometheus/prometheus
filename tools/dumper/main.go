@@ -29,6 +29,7 @@ import (
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/metric/tiered"
 )
 
 var (
@@ -41,7 +42,7 @@ type SamplesDumper struct {
 }
 
 func (d *SamplesDumper) Operate(key, value interface{}) *storage.OperatorError {
-	sampleKey := key.(*metric.SampleKey)
+	sampleKey := key.(*tiered.SampleKey)
 	if *dieOnBadChunk && sampleKey.FirstTimestamp.After(sampleKey.LastTimestamp) {
 		glog.Fatalf("Chunk: First time (%v) after last time (%v): %v\n", sampleKey.FirstTimestamp.Unix(), sampleKey.LastTimestamp.Unix(), sampleKey)
 	}
@@ -75,7 +76,7 @@ func main() {
 		glog.Fatal("Must provide a path...")
 	}
 
-	persistence, err := metric.NewLevelDBMetricPersistence(*storageRoot)
+	persistence, err := tiered.NewLevelDBMetricPersistence(*storageRoot)
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -85,7 +86,7 @@ func main() {
 		csv.NewWriter(os.Stdout),
 	}
 
-	entire, err := persistence.MetricSamples.ForEach(&metric.MetricSamplesDecoder{}, &metric.AcceptAllFilter{}, dumper)
+	entire, err := persistence.MetricSamples.ForEach(&tiered.MetricSamplesDecoder{}, &tiered.AcceptAllFilter{}, dumper)
 	if err != nil {
 		glog.Fatal("Error dumping samples: ", err)
 	}
