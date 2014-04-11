@@ -15,21 +15,10 @@ package metric
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
-	"math"
 	"sort"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-)
-
-const (
-	// sampleSize is the number of bytes per sample in marshalled format.
-	sampleSize = 16
-	// formatVersion is used as a version marker in the marshalled format.
-	formatVersion = 1
-	// formatVersionSize is the number of bytes used by the serialized formatVersion.
-	formatVersionSize = 1
 )
 
 // MarshalJSON implements json.Marshaler.
@@ -121,7 +110,7 @@ func (v Values) InsideInterval(t clientmodel.Timestamp) bool {
 
 // TruncateBefore returns a subslice of the original such that extraneous
 // samples in the collection that occur before the provided time are
-// dropped.  The original slice is not mutated
+// dropped. The original slice is not mutated.
 func (v Values) TruncateBefore(t clientmodel.Timestamp) Values {
 	index := sort.Search(len(v), func(i int) bool {
 		timestamp := v[i].Timestamp
@@ -130,16 +119,6 @@ func (v Values) TruncateBefore(t clientmodel.Timestamp) Values {
 	})
 
 	return v[index:]
-}
-
-// ToSampleKey returns the SampleKey for these Values.
-func (v Values) ToSampleKey(f *clientmodel.Fingerprint) *SampleKey {
-	return &SampleKey{
-		Fingerprint:    f,
-		FirstTimestamp: v[0].Timestamp,
-		LastTimestamp:  v[len(v)-1].Timestamp,
-		SampleCount:    uint32(len(v)),
-	}
 }
 
 func (v Values) String() string {
@@ -155,48 +134,6 @@ func (v Values) String() string {
 	fmt.Fprintf(&buffer, "]")
 
 	return buffer.String()
-}
-
-// marshal marshals a group of samples for being written to disk into dest or a
-// new slice if dest is insufficiently small.
-func (v Values) marshal(dest []byte) []byte {
-	sz := formatVersionSize + len(v)*sampleSize
-	if cap(dest) < sz {
-		dest = make([]byte, sz)
-	} else {
-		dest = dest[0:sz]
-	}
-
-	dest[0] = formatVersion
-	for i, val := range v {
-		offset := formatVersionSize + i*sampleSize
-		binary.LittleEndian.PutUint64(dest[offset:], uint64(val.Timestamp.Unix()))
-		binary.LittleEndian.PutUint64(dest[offset+8:], math.Float64bits(float64(val.Value)))
-	}
-	return dest
-}
-
-// unmarshalValues decodes marshalled samples into dest and returns either dest
-// or a new slice containing those values if dest is insufficiently small.
-func unmarshalValues(buf []byte, dest Values) Values {
-	if buf[0] != formatVersion {
-		panic("unsupported format version")
-	}
-
-	n := (len(buf) - formatVersionSize) / sampleSize
-
-	if cap(dest) < n {
-		dest = make(Values, n)
-	} else {
-		dest = dest[0:n]
-	}
-
-	for i := 0; i < n; i++ {
-		offset := formatVersionSize + i*sampleSize
-		dest[i].Timestamp = clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:])))
-		dest[i].Value = clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:])))
-	}
-	return dest
 }
 
 // SampleSet is Values with a Metric attached.

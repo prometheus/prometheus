@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"fmt"
@@ -19,35 +19,19 @@ import (
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-)
 
-// op encapsulates a primitive query operation.
-type op interface {
-	// Fingerprint returns the fingerprint of the metric this operation
-	// operates on.
-	Fingerprint() *clientmodel.Fingerprint
-	// ExtractSamples extracts samples from a stream of values and advances
-	// the operation time.
-	ExtractSamples(Values) Values
-	// Consumed returns whether the operator has consumed all data it needs.
-	Consumed() bool
-	// CurrentTime gets the current operation time. In a newly created op,
-	// this is the starting time of the operation. During ongoing execution
-	// of the op, the current time is advanced accordingly. Once no
-	// subsequent work associated with the operation remains, nil is
-	// returned.
-	CurrentTime() clientmodel.Timestamp
-}
+	"github.com/prometheus/prometheus/storage/metric"
+)
 
 // durationOperator encapsulates a general operation that occurs over a
 // duration.
 type durationOperator interface {
-	op
+	metric.Op
 	Through() clientmodel.Timestamp
 }
 
 // ops is a heap of operations, primary sorting key is the fingerprint.
-type ops []op
+type ops []metric.Op
 
 // Len implements sort.Interface and heap.Interface.
 func (o ops) Len() int {
@@ -75,7 +59,7 @@ func (o ops) Swap(i, j int) {
 func (o *ops) Push(x interface{}) {
 	// Push and Pop use pointer receivers because they modify the slice's
 	// length, not just its contents.
-	*o = append(*o, x.(op))
+	*o = append(*o, x.(metric.Op))
 }
 
 // Push implements heap.Interface.
@@ -124,7 +108,7 @@ func (g *getValuesAtTimeOp) String() string {
 	return fmt.Sprintf("getValuesAtTimeOp at %s", g.current)
 }
 
-func (g *getValuesAtTimeOp) ExtractSamples(in Values) (out Values) {
+func (g *getValuesAtTimeOp) ExtractSamples(in metric.Values) (out metric.Values) {
 	if len(in) == 0 {
 		return
 	}
@@ -151,7 +135,7 @@ func (g *getValuesAlongRangeOp) Through() clientmodel.Timestamp {
 	return g.through
 }
 
-func (g *getValuesAlongRangeOp) ExtractSamples(in Values) (out Values) {
+func (g *getValuesAlongRangeOp) ExtractSamples(in metric.Values) (out metric.Values) {
 	if len(in) == 0 {
 		return
 	}
@@ -199,7 +183,7 @@ func (g *getValuesAtIntervalOp) String() string {
 	return fmt.Sprintf("getValuesAtIntervalOp from %s each %s through %s", g.current, g.interval, g.through)
 }
 
-func (g *getValuesAtIntervalOp) ExtractSamples(in Values) (out Values) {
+func (g *getValuesAtIntervalOp) ExtractSamples(in metric.Values) (out metric.Values) {
 	if len(in) == 0 {
 		return
 	}
@@ -208,7 +192,7 @@ func (g *getValuesAtIntervalOp) ExtractSamples(in Values) (out Values) {
 
 	if g.current.After(lastChunkTime) {
 		g.current = g.through.Add(clientmodel.MinimumTick)
-		return Values{in[len(in)-1]}
+		return metric.Values{in[len(in)-1]}
 	}
 
 	for len(in) > 0 {
@@ -259,7 +243,7 @@ func (g *getValueRangeAtIntervalOp) advanceToNextInterval() {
 	g.current = g.rangeThrough.Add(-g.rangeDuration)
 }
 
-func (g *getValueRangeAtIntervalOp) ExtractSamples(in Values) (out Values) {
+func (g *getValueRangeAtIntervalOp) ExtractSamples(in metric.Values) (out metric.Values) {
 	if len(in) == 0 {
 		return
 	}
@@ -319,7 +303,7 @@ func (s getValuesAtIntervalOps) Less(i, j int) bool {
 // are adjacent to it.
 //
 // An assumption of this is that the provided samples are already sorted!
-func extractValuesAroundTime(t clientmodel.Timestamp, in Values) Values {
+func extractValuesAroundTime(t clientmodel.Timestamp, in metric.Values) metric.Values {
 	i := sort.Search(len(in), func(i int) bool {
 		return !in[i].Timestamp.Before(t)
 	})

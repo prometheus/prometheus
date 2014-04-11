@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"fmt"
@@ -22,6 +22,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 
 	dto "github.com/prometheus/prometheus/model/generated"
@@ -42,7 +43,7 @@ type watermarkState struct {
 
 type sampleGroup struct {
 	fingerprint string
-	values      Values
+	values      metric.Values
 }
 
 type in struct {
@@ -106,12 +107,12 @@ func (s sampleGroup) Get() (key proto.Message, value interface{}) {
 	k := &dto.SampleKey{}
 	keyRaw.Dump(k)
 
-	return k, s.values.marshal(nil)
+	return k, marshalValues(s.values, nil)
 }
 
 type noopUpdater struct{}
 
-func (noopUpdater) UpdateCurationState(*CurationState) {}
+func (noopUpdater) UpdateCurationState(*metric.CurationState) {}
 
 func TestCuratorCompactionProcessor(t *testing.T) {
 	scenarios := []struct {
@@ -169,7 +170,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 				sampleGroups: fixture.Pairs{
 					sampleGroup{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
 								Value:     0,
@@ -194,7 +195,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
 								Value:     0.25,
@@ -219,7 +220,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 40 * time.Minute),
 								Value:     0.50,
@@ -236,7 +237,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 25 * time.Minute),
 								Value:     0.75,
@@ -245,7 +246,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 20 * time.Minute),
 								Value:     -2,
@@ -254,7 +255,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 15 * time.Minute),
 								Value:     -3,
@@ -264,7 +265,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 1
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
 								Value:     0,
@@ -274,7 +275,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 1
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 89 * time.Minute),
 								Value:     1,
@@ -284,7 +285,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 1
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 88 * time.Minute),
 								Value:     2,
@@ -294,7 +295,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 1
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 87 * time.Minute),
 								Value:     3,
@@ -304,7 +305,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 1
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 86 * time.Minute),
 								Value:     4,
@@ -314,7 +315,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 2
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 85 * time.Minute),
 								Value:     5,
@@ -324,7 +325,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 2
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 84 * time.Minute),
 								Value:     6,
@@ -334,7 +335,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 2
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 83 * time.Minute),
 								Value:     7,
@@ -344,7 +345,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 2
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 82 * time.Minute),
 								Value:     8,
@@ -354,7 +355,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 2
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 81 * time.Minute),
 								Value:     9,
@@ -364,7 +365,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 3
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 80 * time.Minute),
 								Value:     10,
@@ -374,7 +375,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 3
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 79 * time.Minute),
 								Value:     11,
@@ -384,7 +385,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 3
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 78 * time.Minute),
 								Value:     12,
@@ -394,7 +395,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 3
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 77 * time.Minute),
 								Value:     13,
@@ -404,7 +405,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Blocks 3 and 4 and 5
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								// Block 3
 								Timestamp: testInstant.Add(-1 * 76 * time.Minute),
@@ -445,7 +446,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 5
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 69 * time.Minute),
 								Value:     21,
@@ -455,7 +456,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 5
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 68 * time.Minute),
 								Value:     22,
@@ -465,7 +466,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 5
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 67 * time.Minute),
 								Value:     23,
@@ -475,7 +476,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 5
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 66 * time.Minute),
 								Value:     24,
@@ -485,7 +486,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 6
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
 								Value:     25,
@@ -495,7 +496,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 6
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 64 * time.Minute),
 								Value:     26,
@@ -505,7 +506,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 6
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 63 * time.Minute),
 								Value:     27,
@@ -515,7 +516,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 6
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 62 * time.Minute),
 								Value:     28,
@@ -525,7 +526,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 6
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 61 * time.Minute),
 								Value:     29,
@@ -535,7 +536,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					sampleGroup{
 						// Moved into Block 7
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
 								Value:     30,
@@ -577,7 +578,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 				sampleGroups: []sampleGroup{
 					{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
 								Value:     0,
@@ -602,7 +603,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
 								Value:     0.25,
@@ -627,7 +628,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 40 * time.Minute),
 								Value:     0.50,
@@ -644,7 +645,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 25 * time.Minute),
 								Value:     0.75,
@@ -653,7 +654,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 20 * time.Minute),
 								Value:     -2,
@@ -662,7 +663,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 15 * time.Minute),
 								Value:     -3,
@@ -672,7 +673,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					{
 						// Block 1
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
 								Value:     0,
@@ -698,7 +699,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					{
 						// Block 2
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 85 * time.Minute),
 								Value:     5,
@@ -724,7 +725,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					{
 						// Block 3
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 80 * time.Minute),
 								Value:     10,
@@ -749,7 +750,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 75 * time.Minute),
 								Value:     15,
@@ -774,7 +775,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 70 * time.Minute),
 								Value:     20,
@@ -799,7 +800,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
 								Value:     25,
@@ -824,7 +825,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
 								Value:     30,
@@ -1040,7 +1041,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 				sampleGroups: fixture.Pairs{
 					sampleGroup{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
 								Value:     90,
@@ -1053,7 +1054,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 15 * time.Minute),
 								Value:     15,
@@ -1062,7 +1063,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 90 * time.Minute),
 								Value:     0,
@@ -1071,7 +1072,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 89 * time.Minute),
 								Value:     1,
@@ -1080,7 +1081,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 88 * time.Minute),
 								Value:     2,
@@ -1089,7 +1090,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 87 * time.Minute),
 								Value:     3,
@@ -1098,7 +1099,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 86 * time.Minute),
 								Value:     4,
@@ -1107,7 +1108,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 85 * time.Minute),
 								Value:     5,
@@ -1116,7 +1117,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 84 * time.Minute),
 								Value:     6,
@@ -1125,7 +1126,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 83 * time.Minute),
 								Value:     7,
@@ -1134,7 +1135,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 82 * time.Minute),
 								Value:     8,
@@ -1143,7 +1144,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 81 * time.Minute),
 								Value:     9,
@@ -1152,7 +1153,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 80 * time.Minute),
 								Value:     10,
@@ -1161,7 +1162,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 79 * time.Minute),
 								Value:     11,
@@ -1170,7 +1171,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 78 * time.Minute),
 								Value:     12,
@@ -1179,7 +1180,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 77 * time.Minute),
 								Value:     13,
@@ -1188,7 +1189,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 76 * time.Minute),
 								Value:     14,
@@ -1221,7 +1222,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 69 * time.Minute),
 								Value:     21,
@@ -1230,7 +1231,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 68 * time.Minute),
 								Value:     22,
@@ -1239,7 +1240,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 67 * time.Minute),
 								Value:     23,
@@ -1248,7 +1249,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 66 * time.Minute),
 								Value:     24,
@@ -1257,7 +1258,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 65 * time.Minute),
 								Value:     25,
@@ -1266,7 +1267,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 64 * time.Minute),
 								Value:     26,
@@ -1275,7 +1276,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 63 * time.Minute),
 								Value:     27,
@@ -1284,7 +1285,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 62 * time.Minute),
 								Value:     28,
@@ -1293,7 +1294,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 61 * time.Minute),
 								Value:     29,
@@ -1302,7 +1303,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					sampleGroup{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
 								Value:     30,
@@ -1333,7 +1334,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 				sampleGroups: []sampleGroup{
 					{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 30 * time.Minute),
 								Value:     30,
@@ -1342,7 +1343,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0001-A-1-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 15 * time.Minute),
 								Value:     15,
@@ -1351,7 +1352,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 					},
 					{
 						fingerprint: "0002-A-2-Z",
-						values: Values{
+						values: metric.Values{
 							{
 								Timestamp: testInstant.Add(-1 * 60 * time.Minute),
 								Value:     30,

@@ -11,18 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 func TestGetValuesAtTimeOp(t *testing.T) {
 	var scenarios = []struct {
 		op  getValuesAtTimeOp
-		in  Values
-		out Values
+		in  metric.Values
+		out metric.Values
 	}{
 		// No values.
 		{
@@ -35,13 +37,13 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				baseOp: baseOp{current: testInstant},
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -53,13 +55,13 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				baseOp: baseOp{current: testInstant.Add(1 * time.Minute)},
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -71,13 +73,13 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				baseOp: baseOp{current: testInstant.Add(2 * time.Minute)},
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -89,7 +91,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				baseOp: baseOp{current: testInstant},
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -99,7 +101,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -111,7 +113,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				baseOp: baseOp{current: testInstant.Add(1 * time.Minute)},
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -121,7 +123,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -133,7 +135,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				baseOp: baseOp{current: testInstant.Add(90 * time.Second)},
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -143,7 +145,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -159,7 +161,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				baseOp: baseOp{current: testInstant.Add(2 * time.Minute)},
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -169,7 +171,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -185,7 +187,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 			op: getValuesAtTimeOp{
 				baseOp: baseOp{current: testInstant.Add(3 * time.Minute)},
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -195,7 +197,7 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -221,8 +223,8 @@ func TestGetValuesAtTimeOp(t *testing.T) {
 func TestGetValuesAtIntervalOp(t *testing.T) {
 	var scenarios = []struct {
 		op  getValuesAtIntervalOp
-		in  Values
-		out Values
+		in  metric.Values
+		out metric.Values
 	}{
 		// No values.
 		{
@@ -243,7 +245,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				},
 				interval: 30 * time.Second,
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -253,7 +255,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -269,7 +271,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				},
 				interval: 30 * time.Second,
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -279,7 +281,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -299,7 +301,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				},
 				interval: 30 * time.Second,
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -313,7 +315,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -333,7 +335,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				},
 				interval: 30 * time.Second,
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -343,7 +345,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -363,7 +365,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				},
 				interval: 30 * time.Second,
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -381,7 +383,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -401,7 +403,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				},
 				interval: 30 * time.Second,
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -411,7 +413,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -431,7 +433,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 				},
 				interval: 3 * time.Minute,
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -449,7 +451,7 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -490,8 +492,8 @@ func TestGetValuesAtIntervalOp(t *testing.T) {
 func TestGetValuesAlongRangeOp(t *testing.T) {
 	var scenarios = []struct {
 		op  getValuesAlongRangeOp
-		in  Values
-		out Values
+		in  metric.Values
+		out metric.Values
 	}{
 		// No values.
 		{
@@ -506,7 +508,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				baseOp:  baseOp{current: testInstant},
 				through: testInstant.Add(1 * time.Minute),
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -516,7 +518,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{},
+			out: metric.Values{},
 		},
 		// Operator range starts before first value, ends within available values.
 		{
@@ -524,7 +526,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				baseOp:  baseOp{current: testInstant},
 				through: testInstant.Add(2 * time.Minute),
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -534,7 +536,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -547,7 +549,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				baseOp:  baseOp{current: testInstant.Add(1 * time.Minute)},
 				through: testInstant.Add(2 * time.Minute),
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -561,7 +563,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -574,7 +576,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				baseOp:  baseOp{current: testInstant},
 				through: testInstant.Add(3 * time.Minute),
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -584,7 +586,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(1 * time.Minute),
 					Value:     1,
@@ -601,7 +603,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
 				through: testInstant.Add(4 * time.Minute),
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -619,7 +621,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(2 * time.Minute),
 					Value:     1,
@@ -636,7 +638,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 				baseOp:  baseOp{current: testInstant.Add(2 * time.Minute)},
 				through: testInstant.Add(3 * time.Minute),
 			},
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant,
 					Value:     1,
@@ -646,7 +648,7 @@ func TestGetValuesAlongRangeOp(t *testing.T) {
 					Value:     1,
 				},
 			},
-			out: Values{},
+			out: metric.Values{},
 		},
 	}
 	for i, scenario := range scenarios {
@@ -677,13 +679,13 @@ func TestGetValueRangeAtIntervalOp(t *testing.T) {
 
 	var scenarios = []struct {
 		op  getValueRangeAtIntervalOp
-		in  Values
-		out Values
+		in  metric.Values
+		out metric.Values
 	}{
 		// All values before the first range.
 		{
 			op: testOp,
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(-4 * time.Minute),
 					Value:     1,
@@ -693,12 +695,12 @@ func TestGetValueRangeAtIntervalOp(t *testing.T) {
 					Value:     2,
 				},
 			},
-			out: Values{},
+			out: metric.Values{},
 		},
-		// Values starting before first range, ending after last.
+		// metric.Values starting before first range, ending after last.
 		{
 			op: testOp,
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(-4 * time.Minute),
 					Value:     1,
@@ -756,7 +758,7 @@ func TestGetValueRangeAtIntervalOp(t *testing.T) {
 					Value:     14,
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Timestamp: testInstant.Add(-2 * time.Minute),
 					Value:     3,
@@ -795,20 +797,20 @@ func TestGetValueRangeAtIntervalOp(t *testing.T) {
 				},
 			},
 		},
-		// Values starting after last range.
+		// metric.Values starting after last range.
 		{
 			op: testOp,
-			in: Values{
+			in: metric.Values{
 				{
 					Timestamp: testInstant.Add(21 * time.Minute),
 					Value:     14,
 				},
 			},
-			out: Values{},
+			out: metric.Values{},
 		},
 	}
 	for i, scenario := range scenarios {
-		actual := Values{}
+		actual := metric.Values{}
 		for !scenario.op.Consumed() {
 			actual = append(actual, scenario.op.ExtractSamples(scenario.in)...)
 		}

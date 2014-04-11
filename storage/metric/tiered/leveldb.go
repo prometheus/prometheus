@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"flag"
@@ -26,6 +26,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
@@ -35,8 +36,8 @@ import (
 
 const sortConcurrency = 2
 
-// LevelDBMetricPersistence is a leveldb-backed persistence layer for metrics.
-type LevelDBMetricPersistence struct {
+// LevelDBPersistence is a leveldb-backed persistence layer for metrics.
+type LevelDBPersistence struct {
 	CurationRemarks         CurationRemarker
 	FingerprintToMetrics    FingerprintMetricIndex
 	LabelNameToLabelValues  LabelNameLabelValuesIndex
@@ -52,7 +53,7 @@ type LevelDBMetricPersistence struct {
 	//
 	// type FingerprintResolver interface {
 	// 	GetFingerprintForMetric(clientmodel.Metric) (*clientmodel.Fingerprint, bool, error)
-	// 	GetFingerprintsForLabelMatchers(LabelPair) (clientmodel.Fingerprints, bool, error)
+	// 	GetFingerprintsForLabelMatchers(metric.LabelPair) (clientmodel.Fingerprints, bool, error)
 	// }
 
 	// type MetricResolver interface {
@@ -77,8 +78,8 @@ var (
 type leveldbOpener func()
 
 // Close closes all the underlying persistence layers. It implements the
-// MetricPersistence interface.
-func (l *LevelDBMetricPersistence) Close() {
+// Persistence interface.
+func (l *LevelDBPersistence) Close() {
 	var persistences = []raw.Database{
 		l.CurationRemarks,
 		l.FingerprintToMetrics,
@@ -106,12 +107,12 @@ func (l *LevelDBMetricPersistence) Close() {
 	closerGroup.Wait()
 }
 
-// NewLevelDBMetricPersistence returns a LevelDBMetricPersistence object ready
+// NewLevelDBPersistence returns a LevelDBPersistence object ready
 // to use.
-func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistence, error) {
+func NewLevelDBPersistence(baseDirectory string) (*LevelDBPersistence, error) {
 	workers := utility.NewUncertaintyGroup(7)
 
-	emission := &LevelDBMetricPersistence{}
+	emission := &LevelDBPersistence{}
 
 	var subsystemOpeners = []struct {
 		name   string
@@ -245,8 +246,8 @@ func NewLevelDBMetricPersistence(baseDirectory string) (*LevelDBMetricPersistenc
 	return emission, nil
 }
 
-// AppendSample implements the MetricPersistence interface.
-func (l *LevelDBMetricPersistence) AppendSample(sample *clientmodel.Sample) (err error) {
+// AppendSample implements the Persistence interface.
+func (l *LevelDBPersistence) AppendSample(sample *clientmodel.Sample) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -292,7 +293,7 @@ func groupByFingerprint(samples clientmodel.Samples) map[clientmodel.Fingerprint
 	return fingerprintToSamples
 }
 
-func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[clientmodel.Fingerprint]clientmodel.Samples) (err error) {
+func (l *LevelDBPersistence) refreshHighWatermarks(groups map[clientmodel.Fingerprint]clientmodel.Samples) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -312,7 +313,7 @@ func (l *LevelDBMetricPersistence) refreshHighWatermarks(groups map[clientmodel.
 }
 
 // AppendSamples appends the given Samples to the database and indexes them.
-func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (err error) {
+func (l *LevelDBPersistence) AppendSamples(samples clientmodel.Samples) (err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -342,7 +343,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 
 	key := &SampleKey{}
 	keyDto := &dto.SampleKey{}
-	values := make(Values, 0, *leveldbChunkSize)
+	values := make(metric.Values, 0, *leveldbChunkSize)
 
 	for fingerprint, group := range fingerprintToSamples {
 		for {
@@ -369,12 +370,12 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 			key.Dump(keyDto)
 
 			for _, sample := range chunk {
-				values = append(values, SamplePair{
+				values = append(values, metric.SamplePair{
 					Timestamp: sample.Timestamp,
 					Value:     sample.Value,
 				})
 			}
-			val := values.marshal(nil)
+			val := marshalValues(values, nil)
 			samplesBatch.PutRaw(keyDto, val)
 		}
 	}
@@ -409,7 +410,7 @@ func extractSampleKey(i leveldb.Iterator) (*SampleKey, error) {
 	return key, nil
 }
 
-func (l *LevelDBMetricPersistence) hasIndexMetric(m clientmodel.Metric) (value bool, err error) {
+func (l *LevelDBPersistence) hasIndexMetric(m clientmodel.Metric) (value bool, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -422,8 +423,8 @@ func (l *LevelDBMetricPersistence) hasIndexMetric(m clientmodel.Metric) (value b
 // GetFingerprintsForLabelMatchers returns the Fingerprints for the given
 // LabelMatchers by querying the underlying LabelPairFingerprintIndex and
 // possibly the LabelNameLabelValuesIndex for each matcher. It implements the
-// MetricPersistence interface.
-func (l *LevelDBMetricPersistence) GetFingerprintsForLabelMatchers(labelMatchers LabelMatchers) (fps clientmodel.Fingerprints, err error) {
+// Persistence interface.
+func (l *LevelDBPersistence) GetFingerprintsForLabelMatchers(labelMatchers metric.LabelMatchers) (fps clientmodel.Fingerprints, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -436,8 +437,8 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelMatchers(labelMatchers
 		set := utility.Set{}
 
 		switch matcher.Type {
-		case Equal:
-			fps, _, err := l.LabelPairToFingerprints.Lookup(&LabelPair{
+		case metric.Equal:
+			fps, _, err := l.LabelPairToFingerprints.Lookup(&metric.LabelPair{
 				Name:  matcher.Name,
 				Value: matcher.Value,
 			})
@@ -458,7 +459,7 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelMatchers(labelMatchers
 				return nil, nil
 			}
 			for _, v := range matches {
-				fps, _, err := l.LabelPairToFingerprints.Lookup(&LabelPair{
+				fps, _, err := l.LabelPairToFingerprints.Lookup(&metric.LabelPair{
 					Name:  matcher.Name,
 					Value: v,
 				})
@@ -492,8 +493,8 @@ func (l *LevelDBMetricPersistence) GetFingerprintsForLabelMatchers(labelMatchers
 
 // GetLabelValuesForLabelName returns the LabelValues for the given LabelName
 // from the underlying LabelNameLabelValuesIndex. It implements the
-// MetricPersistence interface.
-func (l *LevelDBMetricPersistence) GetLabelValuesForLabelName(labelName clientmodel.LabelName) (clientmodel.LabelValues, error) {
+// Persistence interface.
+func (l *LevelDBPersistence) GetLabelValuesForLabelName(labelName clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	var err error
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
@@ -507,9 +508,9 @@ func (l *LevelDBMetricPersistence) GetLabelValuesForLabelName(labelName clientmo
 }
 
 // GetMetricForFingerprint returns the Metric for the given Fingerprint from the
-// underlying FingerprintMetricIndex. It implements the MetricPersistence
+// underlying FingerprintMetricIndex. It implements the Persistence
 // interface.
-func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *clientmodel.Fingerprint) (m clientmodel.Metric, err error) {
+func (l *LevelDBPersistence) GetMetricForFingerprint(f *clientmodel.Fingerprint) (m clientmodel.Metric, err error) {
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
@@ -524,7 +525,7 @@ func (l *LevelDBMetricPersistence) GetMetricForFingerprint(f *clientmodel.Finger
 
 // GetAllValuesForLabel gets all label values that are associated with the
 // provided label name.
-func (l *LevelDBMetricPersistence) GetAllValuesForLabel(labelName clientmodel.LabelName) (values clientmodel.LabelValues, err error) {
+func (l *LevelDBPersistence) GetAllValuesForLabel(labelName clientmodel.LabelName) (values clientmodel.LabelValues, err error) {
 	filter := &LabelNameFilter{
 		labelName: labelName,
 	}
@@ -543,7 +544,7 @@ func (l *LevelDBMetricPersistence) GetAllValuesForLabel(labelName clientmodel.La
 //
 // Beware that it would probably be imprudent to run this on a live user-facing
 // server due to latency implications.
-func (l *LevelDBMetricPersistence) Prune() {
+func (l *LevelDBPersistence) Prune() {
 	l.CurationRemarks.Prune()
 	l.FingerprintToMetrics.Prune()
 	l.LabelNameToLabelValues.Prune()
@@ -554,7 +555,7 @@ func (l *LevelDBMetricPersistence) Prune() {
 }
 
 // Sizes returns the sum of all sizes of the underlying databases.
-func (l *LevelDBMetricPersistence) Sizes() (total uint64, err error) {
+func (l *LevelDBPersistence) Sizes() (total uint64, err error) {
 	size := uint64(0)
 
 	if size, err = l.CurationRemarks.Size(); err != nil {
@@ -596,7 +597,7 @@ func (l *LevelDBMetricPersistence) Sizes() (total uint64, err error) {
 }
 
 // States returns the DatabaseStates of all underlying databases.
-func (l *LevelDBMetricPersistence) States() raw.DatabaseStates {
+func (l *LevelDBPersistence) States() raw.DatabaseStates {
 	return raw.DatabaseStates{
 		l.CurationRemarks.State(),
 		l.FingerprintToMetrics.State(),
@@ -617,7 +618,7 @@ type CollectLabelValuesOp struct {
 // Operate implements storage.RecordOperator. 'key' is required to be a
 // LabelPair. Its Value is appended to a slice of collected LabelValues.
 func (op *CollectLabelValuesOp) Operate(key, value interface{}) (err *storage.OperatorError) {
-	labelPair := key.(LabelPair)
+	labelPair := key.(metric.LabelPair)
 	op.labelValues = append(op.labelValues, labelPair.Value)
 	return
 }
@@ -634,7 +635,7 @@ func (d *MetricKeyDecoder) DecodeKey(in interface{}) (out interface{}, err error
 		return
 	}
 
-	out = LabelPair{
+	out = metric.LabelPair{
 		Name:  clientmodel.LabelName(*unmarshaled.Name),
 		Value: clientmodel.LabelValue(*unmarshaled.Value),
 	}
@@ -690,7 +691,7 @@ type LabelNameFilter struct {
 // LabelPair. The result is ACCEPT if the Name of the LabelPair matches the
 // LabelName of this LabelNameFilter.
 func (f LabelNameFilter) Filter(key, value interface{}) (filterResult storage.FilterResult) {
-	labelPair, ok := key.(LabelPair)
+	labelPair, ok := key.(metric.LabelPair)
 	if ok && labelPair.Name == f.labelName {
 		return storage.Accept
 	}

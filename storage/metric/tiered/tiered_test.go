@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"math"
@@ -22,6 +22,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/stats"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
 )
 
@@ -42,9 +43,9 @@ func buildSamples(from, to clientmodel.Timestamp, interval time.Duration, m clie
 	return
 }
 
-func buildValues(firstValue clientmodel.SampleValue, from, to clientmodel.Timestamp, interval time.Duration) (v Values) {
+func buildValues(firstValue clientmodel.SampleValue, from, to clientmodel.Timestamp, interval time.Duration) (v metric.Values) {
 	for from.Before(to) {
-		v = append(v, SamplePair{
+		v = append(v, metric.SamplePair{
 			Value:     firstValue,
 			Timestamp: from,
 		})
@@ -64,13 +65,13 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 	}
 
 	type out struct {
-		atTime     []Values
-		atInterval []Values
-		alongRange []Values
+		atTime     []metric.Values
+		atInterval []metric.Values
+		alongRange []metric.Values
 	}
-	metric := clientmodel.Metric{clientmodel.MetricNameLabel: "request_count"}
+	m := clientmodel.Metric{clientmodel.MetricNameLabel: "request_count"}
 	fingerprint := &clientmodel.Fingerprint{}
-	fingerprint.LoadFromMetric(metric)
+	fingerprint.LoadFromMetric(m)
 	var (
 		instant   = clientmodel.TimestampFromTime(time.Date(1984, 3, 30, 0, 0, 0, 0, time.Local))
 		scenarios = []struct {
@@ -89,14 +90,14 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{{}},
+					atTime: []metric.Values{{}},
 				},
 			},
 			// Single sample, query asks for exact sample time.
 			{
 				data: clientmodel.Samples{
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     0,
 						Timestamp: instant,
 					},
@@ -109,7 +110,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{
+					atTime: []metric.Values{
 						{
 							{
 								Timestamp: instant,
@@ -123,12 +124,12 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			{
 				data: clientmodel.Samples{
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     0,
 						Timestamp: instant.Add(time.Second),
 					},
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     1,
 						Timestamp: instant.Add(time.Second * 2),
 					},
@@ -141,7 +142,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{
+					atTime: []metric.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second),
@@ -155,7 +156,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			{
 				data: clientmodel.Samples{
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     0,
 						Timestamp: instant,
 					},
@@ -168,7 +169,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{
+					atTime: []metric.Values{
 						{
 							{
 								Timestamp: instant,
@@ -182,12 +183,12 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			{
 				data: clientmodel.Samples{
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     0,
 						Timestamp: instant,
 					},
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     1,
 						Timestamp: instant.Add(time.Second),
 					},
@@ -200,7 +201,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{
+					atTime: []metric.Values{
 						{
 							{
 								Timestamp: instant,
@@ -214,17 +215,17 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			{
 				data: clientmodel.Samples{
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     0,
 						Timestamp: instant,
 					},
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     1,
 						Timestamp: instant.Add(time.Second),
 					},
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     2,
 						Timestamp: instant.Add(time.Second * 2),
 					},
@@ -237,7 +238,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{
+					atTime: []metric.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second),
@@ -251,17 +252,17 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			{
 				data: clientmodel.Samples{
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     0,
 						Timestamp: instant,
 					},
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     1,
 						Timestamp: instant.Add(time.Second * 2),
 					},
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     2,
 						Timestamp: instant.Add(time.Second * 4),
 					},
@@ -274,7 +275,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{
+					atTime: []metric.Values{
 						{
 							{
 								Timestamp: instant,
@@ -292,17 +293,17 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			{
 				data: clientmodel.Samples{
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     0,
 						Timestamp: instant,
 					},
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     1,
 						Timestamp: instant.Add(time.Second * 2),
 					},
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     2,
 						Timestamp: instant.Add(time.Second * 4),
 					},
@@ -315,7 +316,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{
+					atTime: []metric.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second * 2),
@@ -335,7 +336,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					instant,
 					instant.Add(time.Duration(*leveldbChunkSize*4)*time.Second),
 					2*time.Second,
-					metric,
+					m,
 				),
 				in: in{
 					atTime: []getValuesAtTimeOp{
@@ -345,7 +346,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{
+					atTime: []metric.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize*2)),
@@ -365,7 +366,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					instant,
 					instant.Add(time.Duration(*leveldbChunkSize*4)*time.Second),
 					2*time.Second,
-					metric,
+					m,
 				),
 				in: in{
 					atTime: []getValuesAtTimeOp{
@@ -375,7 +376,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atTime: []Values{
+					atTime: []metric.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second * (time.Duration(*leveldbChunkSize*2) - 2)),
@@ -395,7 +396,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					instant,
 					instant.Add(time.Duration(*leveldbChunkSize*6)*time.Second),
 					2*time.Second,
-					metric,
+					m,
 				),
 				in: in{
 					atInterval: []getValuesAtIntervalOp{
@@ -409,7 +410,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atInterval: []Values{
+					atInterval: []metric.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second * time.Duration(*leveldbChunkSize*2-6)),
@@ -437,7 +438,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					instant,
 					instant.Add(time.Duration(*leveldbChunkSize*6)*time.Second),
 					2*time.Second,
-					metric,
+					m,
 				),
 				in: in{
 					alongRange: []getValuesAlongRangeOp{
@@ -448,7 +449,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					alongRange: []Values{buildValues(
+					alongRange: []metric.Values{buildValues(
 						clientmodel.SampleValue(198),
 						instant.Add(time.Second*time.Duration(*leveldbChunkSize*2-4)),
 						instant.Add(time.Second*time.Duration(*leveldbChunkSize*4+2)+clientmodel.MinimumTick),
@@ -482,7 +483,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					instant,
 					instant.Add(time.Duration(*leveldbChunkSize*6)*time.Second),
 					2*time.Second,
-					metric,
+					m,
 				),
 				in: in{
 					atInterval: []getValuesAtIntervalOp{
@@ -496,7 +497,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atInterval: []Values{
+					atInterval: []metric.Values{
 						// We need two overlapping buildValues() calls here since the last
 						// value of the second chunk is extracted twice (value 399, time
 						// offset 798s).
@@ -528,7 +529,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			{
 				data: clientmodel.Samples{
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     0,
 						Timestamp: instant,
 					},
@@ -545,7 +546,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atInterval: []Values{
+					atInterval: []metric.Values{
 						{
 							{
 								Timestamp: instant,
@@ -559,7 +560,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			{
 				data: clientmodel.Samples{
 					{
-						Metric:    metric,
+						Metric:    m,
 						Value:     0,
 						Timestamp: instant.Add(time.Second),
 					},
@@ -576,7 +577,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 					},
 				},
 				out: out{
-					atInterval: []Values{
+					atInterval: []metric.Values{
 						{
 							{
 								Timestamp: instant.Add(time.Second),
@@ -609,7 +610,7 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			tiered.Flush()
 		}
 
-		requestBuilder := NewViewRequestBuilder()
+		requestBuilder := tiered.NewViewRequestBuilder()
 
 		for _, atTime := range scenario.in.atTime {
 			requestBuilder.GetMetricAtTime(fingerprint, atTime.current)
@@ -623,14 +624,14 @@ func testMakeView(t test.Tester, flushToDisk bool) {
 			requestBuilder.GetMetricRange(fingerprint, alongRange.current, alongRange.through)
 		}
 
-		v, err := tiered.MakeView(requestBuilder, time.Second*5, stats.NewTimerGroup())
+		v, err := requestBuilder.Execute(time.Second*5, stats.NewTimerGroup())
 
 		if err != nil {
 			t.Fatalf("%d. failed due to %s", i, err)
 		}
 
 		// To get all values in the View, ask for the 'forever' interval.
-		interval := Interval{OldestInclusive: math.MinInt64, NewestInclusive: math.MaxInt64}
+		interval := metric.Interval{OldestInclusive: math.MinInt64, NewestInclusive: math.MaxInt64}
 
 		for j, atTime := range scenario.out.atTime {
 			actual := v.GetRangeValues(fingerprint, interval)
@@ -821,55 +822,55 @@ func TestGetFingerprintsForLabelMatchers(t *testing.T) {
 	tiered.Flush()
 
 	scenarios := []struct {
-		matchers LabelMatchers
+		matchers metric.LabelMatchers
 		fpCount  int
 	}{
 		{
-			matchers: LabelMatchers{},
+			matchers: metric.LabelMatchers{},
 			fpCount:  0,
 		}, {
-			matchers: LabelMatchers{
+			matchers: metric.LabelMatchers{
 				{
-					Type:  Equal,
+					Type:  metric.Equal,
 					Name:  clientmodel.MetricNameLabel,
 					Value: "http_requests",
 				},
 			},
 			fpCount: 2,
 		}, {
-			matchers: LabelMatchers{
+			matchers: metric.LabelMatchers{
 				{
-					Type:  Equal,
+					Type:  metric.Equal,
 					Name:  clientmodel.MetricNameLabel,
 					Value: "http_requests",
 				}, {
-					Type:  Equal,
+					Type:  metric.Equal,
 					Name:  "method",
 					Value: "/foo",
 				},
 			},
 			fpCount: 1,
 		}, {
-			matchers: LabelMatchers{
+			matchers: metric.LabelMatchers{
 				{
-					Type:  Equal,
+					Type:  metric.Equal,
 					Name:  clientmodel.MetricNameLabel,
 					Value: "http_requests",
 				}, {
-					Type:  Equal,
+					Type:  metric.Equal,
 					Name:  "method",
 					Value: "/bar",
 				},
 			},
 			fpCount: 1,
 		}, {
-			matchers: LabelMatchers{
+			matchers: metric.LabelMatchers{
 				{
-					Type:  Equal,
+					Type:  metric.Equal,
 					Name:  clientmodel.MetricNameLabel,
 					Value: "http_requests",
 				}, {
-					Type:  Equal,
+					Type:  metric.Equal,
 					Name:  "method",
 					Value: "/baz",
 				},
@@ -891,18 +892,18 @@ func TestGetFingerprintsForLabelMatchers(t *testing.T) {
 
 func TestTruncateBefore(t *testing.T) {
 	type in struct {
-		values Values
+		values metric.Values
 		time   clientmodel.Timestamp
 	}
 	instant := clientmodel.Now()
 	var scenarios = []struct {
 		in  in
-		out Values
+		out metric.Values
 	}{
 		{
 			in: in{
 				time: instant,
-				values: Values{
+				values: metric.Values{
 					{
 						Value:     0,
 						Timestamp: instant,
@@ -925,7 +926,7 @@ func TestTruncateBefore(t *testing.T) {
 					},
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Value:     0,
 					Timestamp: instant,
@@ -951,7 +952,7 @@ func TestTruncateBefore(t *testing.T) {
 		{
 			in: in{
 				time: instant.Add(2 * time.Second),
-				values: Values{
+				values: metric.Values{
 					{
 						Value:     0,
 						Timestamp: instant,
@@ -974,7 +975,7 @@ func TestTruncateBefore(t *testing.T) {
 					},
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				{
 					Value:     1,
 					Timestamp: instant.Add(time.Second),
@@ -996,7 +997,7 @@ func TestTruncateBefore(t *testing.T) {
 		{
 			in: in{
 				time: instant.Add(5 * time.Second),
-				values: Values{
+				values: metric.Values{
 					{
 						Value:     0,
 						Timestamp: instant,
@@ -1019,7 +1020,7 @@ func TestTruncateBefore(t *testing.T) {
 					},
 				},
 			},
-			out: Values{
+			out: metric.Values{
 				// Preserve the last value in case it needs to be used for the next set.
 				{
 					Value:     4,

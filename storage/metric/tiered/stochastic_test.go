@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"fmt"
@@ -24,6 +24,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/coding/indexable"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
 
 	dto "github.com/prometheus/prometheus/model/generated"
@@ -31,17 +32,17 @@ import (
 
 const stochasticMaximumVariance = 8
 
-func BasicLifecycleTests(p MetricPersistence, t test.Tester) {
+func BasicLifecycleTests(p metric.Persistence, t test.Tester) {
 	if p == nil {
 		t.Errorf("Received nil Metric Persistence.\n")
 		return
 	}
 }
 
-func ReadEmptyTests(p MetricPersistence, t test.Tester) {
+func ReadEmptyTests(p metric.Persistence, t test.Tester) {
 	hasLabelPair := func(x int) (success bool) {
-		fingerprints, err := p.GetFingerprintsForLabelMatchers(LabelMatchers{{
-			Type:  Equal,
+		fingerprints, err := p.GetFingerprintsForLabelMatchers(metric.LabelMatchers{{
+			Type:  metric.Equal,
 			Name:  clientmodel.LabelName(string(x)),
 			Value: clientmodel.LabelValue(string(x)),
 		}})
@@ -88,7 +89,7 @@ func ReadEmptyTests(p MetricPersistence, t test.Tester) {
 	}
 }
 
-func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
+func AppendSampleAsPureSparseAppendTests(p metric.Persistence, t test.Tester) {
 	appendSample := func(x int) (success bool) {
 		v := clientmodel.SampleValue(x)
 		ts := clientmodel.TimestampFromUnix(int64(x))
@@ -117,7 +118,7 @@ func AppendSampleAsPureSparseAppendTests(p MetricPersistence, t test.Tester) {
 	}
 }
 
-func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester) {
+func AppendSampleAsSparseAppendWithReadsTests(p metric.Persistence, t test.Tester) {
 	appendSample := func(x int) (success bool) {
 		v := clientmodel.SampleValue(x)
 		ts := clientmodel.TimestampFromUnix(int64(x))
@@ -147,8 +148,8 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 			return
 		}
 
-		fingerprints, err := p.GetFingerprintsForLabelMatchers(LabelMatchers{{
-			Type:  Equal,
+		fingerprints, err := p.GetFingerprintsForLabelMatchers(metric.LabelMatchers{{
+			Type:  metric.Equal,
 			Name:  labelName,
 			Value: labelValue,
 		}})
@@ -169,7 +170,7 @@ func AppendSampleAsSparseAppendWithReadsTests(p MetricPersistence, t test.Tester
 	}
 }
 
-func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Tester) {
+func AppendSampleAsPureSingleEntityAppendTests(p metric.Persistence, t test.Tester) {
 	appendSample := func(x int) bool {
 		sample := &clientmodel.Sample{
 			Value:     clientmodel.SampleValue(x),
@@ -187,7 +188,7 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	}
 }
 
-func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerprint, i Interval) (samples Values, err error) {
+func levelDBGetRangeValues(l *LevelDBPersistence, fp *clientmodel.Fingerprint, i metric.Interval) (samples metric.Values, err error) {
 	fpDto := &dto.Fingerprint{}
 	dumpFingerprint(fpDto, fp)
 	k := &dto.SampleKey{
@@ -236,7 +237,7 @@ func (t timeslice) Less(i, j int) bool {
 	return t[i].Before(t[j])
 }
 
-func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t test.Tester) {
+func StochasticTests(persistenceMaker func() (metric.Persistence, test.Closer), t test.Tester) {
 	stochastic := func(x int) (success bool) {
 		p, closer := persistenceMaker()
 		defer closer.Close()
@@ -328,8 +329,8 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 			metricNewestSample[metricIndex] = newestSample
 
 			for sharedLabelIndex := 0; sharedLabelIndex < numberOfSharedLabels; sharedLabelIndex++ {
-				matchers := LabelMatchers{{
-					Type:  Equal,
+				matchers := metric.LabelMatchers{{
+					Type:  metric.Equal,
 					Name:  clientmodel.LabelName(fmt.Sprintf("shared_label_%d", sharedLabelIndex)),
 					Value: clientmodel.LabelValue(fmt.Sprintf("label_%d", sharedLabelIndex)),
 				}}
@@ -350,8 +351,8 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 			for unsharedLabelIndex := 0; unsharedLabelIndex < numberOfUnsharedLabels; unsharedLabelIndex++ {
 				labelName := clientmodel.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, unsharedLabelIndex))
 				labelValue := clientmodel.LabelValue(fmt.Sprintf("private_label_%d", unsharedLabelIndex))
-				matchers := LabelMatchers{{
-					Type:  Equal,
+				matchers := metric.LabelMatchers{{
+					Type:  metric.Equal,
 					Name:  labelName,
 					Value: labelValue,
 				}}
@@ -367,21 +368,21 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 				}
 			}
 
-			metric := clientmodel.Metric{}
-			metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
+			m := clientmodel.Metric{}
+			m[clientmodel.MetricNameLabel] = clientmodel.LabelValue(fmt.Sprintf("metric_index_%d", metricIndex))
 
 			for i := 0; i < numberOfSharedLabels; i++ {
 				l := clientmodel.LabelName(fmt.Sprintf("shared_label_%d", i))
 				v := clientmodel.LabelValue(fmt.Sprintf("label_%d", i))
 
-				metric[l] = v
+				m[l] = v
 			}
 
 			for i := 0; i < numberOfUnsharedLabels; i++ {
 				l := clientmodel.LabelName(fmt.Sprintf("metric_index_%d_private_label_%d", metricIndex, i))
 				v := clientmodel.LabelValue(fmt.Sprintf("private_label_%d", i))
 
-				metric[l] = v
+				m[l] = v
 			}
 
 			for i := 0; i < numberOfRangeScans; i++ {
@@ -428,21 +429,21 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 					begin, end = second, first
 				}
 
-				interval := Interval{
+				interval := metric.Interval{
 					OldestInclusive: clientmodel.TimestampFromUnix(begin),
 					NewestInclusive: clientmodel.TimestampFromUnix(end),
 				}
 
-				samples := Values{}
+				samples := metric.Values{}
 				fp := &clientmodel.Fingerprint{}
-				fp.LoadFromMetric(metric)
+				fp.LoadFromMetric(m)
 				switch persistence := p.(type) {
-				case View:
+				case metric.View:
 					samples = persistence.GetRangeValues(fp, interval)
 					if len(samples) < 2 {
 						t.Fatalf("expected sample count greater than %d, got %d", 2, len(samples))
 					}
-				case *LevelDBMetricPersistence:
+				case *LevelDBPersistence:
 					var err error
 					samples, err = levelDBGetRangeValues(persistence, fp, interval)
 					if err != nil {
@@ -452,7 +453,7 @@ func StochasticTests(persistenceMaker func() (MetricPersistence, test.Closer), t
 						t.Fatalf("expected sample count greater than %d, got %d", 2, len(samples))
 					}
 				default:
-					t.Error("Unexpected type of MetricPersistence.")
+					t.Error("Unexpected type of metric.Persistence.")
 				}
 			}
 		}
@@ -528,10 +529,10 @@ func BenchmarkLevelDBAppendSampleAsPureSingleEntityAppend(b *testing.B) {
 }
 
 func testLevelDBStochastic(t test.Tester) {
-	persistenceMaker := func() (MetricPersistence, test.Closer) {
+	persistenceMaker := func() (metric.Persistence, test.Closer) {
 		temporaryDirectory := test.NewTemporaryDirectory("test_leveldb_stochastic", t)
 
-		p, err := NewLevelDBMetricPersistence(temporaryDirectory.Path())
+		p, err := NewLevelDBPersistence(temporaryDirectory.Path())
 		if err != nil {
 			t.Errorf("Could not start up LevelDB: %q\n", err)
 		}
@@ -613,7 +614,7 @@ func BenchmarkMemoryAppendSampleAsPureSingleEntityAppend(b *testing.B) {
 }
 
 func testMemoryStochastic(t test.Tester) {
-	persistenceMaker := func() (MetricPersistence, test.Closer) {
+	persistenceMaker := func() (metric.Persistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 

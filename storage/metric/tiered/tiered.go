@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"fmt"
@@ -26,11 +26,12 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/stats"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
 )
 
-type chunk Values
+type chunk metric.Values
 
 // TruncateBefore returns a subslice of the original such that extraneous
 // samples in the collection that occur before the provided time are
@@ -73,7 +74,7 @@ type TieredStorage struct {
 	mu sync.RWMutex
 
 	// BUG(matt): This introduces a Law of Demeter violation.  Ugh.
-	DiskStorage *LevelDBMetricPersistence
+	DiskStorage *LevelDBPersistence
 
 	appendToDiskQueue chan clientmodel.Samples
 
@@ -101,8 +102,8 @@ type TieredStorage struct {
 
 // viewJob encapsulates a request to extract sample values from the datastore.
 type viewJob struct {
-	builder ViewRequestBuilder
-	output  chan View
+	builder metric.ViewRequestBuilder
+	output  chan metric.View
 	abort   chan bool
 	err     chan error
 	stats   *stats.TimerGroup
@@ -128,7 +129,7 @@ func NewTieredStorage(
 		}
 	}
 
-	diskStorage, err := NewLevelDBMetricPersistence(rootDirectory)
+	diskStorage, err := NewLevelDBPersistence(rootDirectory)
 	if err != nil {
 		return nil, err
 	}
@@ -200,9 +201,15 @@ func (t *TieredStorage) drain(drained chan<- bool) {
 	t.draining <- (drained)
 }
 
-// MakeView materializes a View according to a ViewRequestBuilder, subject to a
+// NewViewRequestBuilder furnishes a ViewRequestBuilder for remarking what types
+// of queries to perform.
+func (t *TieredStorage) NewViewRequestBuilder() metric.ViewRequestBuilder {
+	return &viewRequestBuilder{storage: t}
+}
+
+// makeView materializes a View according to a ViewRequestBuilder, subject to a
 // timeout.
-func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Duration, queryStats *stats.TimerGroup) (View, error) {
+func (t *TieredStorage) makeView(builder metric.ViewRequestBuilder, deadline time.Duration, queryStats *stats.TimerGroup) (metric.View, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.state != tieredStorageServing {
@@ -210,9 +217,9 @@ func (t *TieredStorage) MakeView(builder ViewRequestBuilder, deadline time.Durat
 	}
 
 	// The result channel needs a one-element buffer in case we have timed
-	// out in MakeView, but the view rendering still completes afterwards
+	// out in makeView, but the view rendering still completes afterwards
 	// and writes to the channel.
-	result := make(chan View, 1)
+	result := make(chan metric.View, 1)
 	// The abort channel needs a one-element buffer in case the view
 	// rendering has already exited and doesn't consume from the channel
 	// anymore.
@@ -442,7 +449,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 		memValues := t.memoryArena.CloneSamples(fp)
 
 		for !op.Consumed() {
-			// Abort the view rendering if the caller (MakeView) has timed out.
+			// Abort the view rendering if the caller (makeView) has timed out.
 			if len(viewJob.abort) > 0 {
 				return
 			}
@@ -529,7 +536,7 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 			// Extract all needed data from the current chunk and append the
 			// extracted samples to the materialized view.
 			for !op.Consumed() && !op.CurrentTime().After(targetTime) {
-				view.appendSamples(fp, op.ExtractSamples(Values(currentChunk)))
+				view.appendSamples(fp, op.ExtractSamples(metric.Values(currentChunk)))
 			}
 		}
 	}
@@ -545,7 +552,7 @@ func (t *TieredStorage) loadChunkAroundTime(
 	ts clientmodel.Timestamp,
 	firstBlock,
 	lastBlock *SampleKey,
-) (chunk Values, expired bool) {
+) (chunk metric.Values, expired bool) {
 	if fingerprint.Less(firstBlock.Fingerprint) {
 		return nil, false
 	}
@@ -574,7 +581,7 @@ func (t *TieredStorage) loadChunkAroundTime(
 		return chunk, true
 	}
 
-	var foundValues Values
+	var foundValues metric.Values
 
 	if err := iterator.Key(dto); err != nil {
 		panic(err)
@@ -675,7 +682,7 @@ func (t *TieredStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) (c
 
 // GetFingerprintsForLabelMatchers gets all of the metric fingerprints that are
 // associated with the provided label matchers.
-func (t *TieredStorage) GetFingerprintsForLabelMatchers(matchers LabelMatchers) (clientmodel.Fingerprints, error) {
+func (t *TieredStorage) GetFingerprintsForLabelMatchers(matchers metric.LabelMatchers) (clientmodel.Fingerprints, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -702,6 +709,15 @@ func (t *TieredStorage) GetFingerprintsForLabelMatchers(matchers LabelMatchers) 
 	}
 
 	return fingerprints, nil
+}
+
+// Get all of the label values that are associated with a given label name.
+func (t *TieredStorage) GetLabelValuesForLabelName(clientmodel.LabelName) (clientmodel.LabelValues, error) {
+	// TODO(julius): Implement this or decide what to do with this
+	// Persistence interface method. It's currently unused on the
+	// TieredStorage, but used on the LevelDBPersistence and the
+	// memorySeriesStorage.
+	panic("not implemented")
 }
 
 // GetMetricForFingerprint gets the metric associated with the provided

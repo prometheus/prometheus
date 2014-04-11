@@ -29,7 +29,7 @@ type MetricsService struct {
 	time          utility.Time
 	Config        *config.Config
 	TargetManager retrieval.TargetManager
-	Storage       *metric.TieredStorage
+	Storage       metric.PreloadingPersistence
 }
 
 func (msrv *MetricsService) RegisterHandler() {

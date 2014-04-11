@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"bytes"
@@ -26,6 +26,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 
@@ -38,16 +39,7 @@ var errIllegalIterator = errors.New("iterator invalid")
 
 // CurationStateUpdater receives updates about the curation state.
 type CurationStateUpdater interface {
-	UpdateCurationState(*CurationState)
-}
-
-// CurationState contains high-level curation state information for the
-// heads-up-display.
-type CurationState struct {
-	Active      bool
-	Name        string
-	Limit       time.Duration
-	Fingerprint *clientmodel.Fingerprint
+	UpdateCurationState(*metric.CurationState)
 }
 
 // CuratorOptions bundles the parameters needed to create a Curator.
@@ -144,7 +136,7 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant clientmodel.Times
 		curationDurations.Add(labels, duration)
 	}(time.Now())
 
-	defer status.UpdateCurationState(&CurationState{Active: false})
+	defer status.UpdateCurationState(&metric.CurationState{Active: false})
 
 	iterator, err := samples.NewIterator(true)
 	if err != nil {
@@ -271,7 +263,7 @@ func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResul
 
 		curationFilterOperations.Increment(labels)
 
-		w.status.UpdateCurationState(&CurationState{
+		w.status.UpdateCurationState(&metric.CurationState{
 			Active:      true,
 			Name:        w.processor.Name(),
 			Limit:       w.ignoreYoungerThan,

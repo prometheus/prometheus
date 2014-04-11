@@ -357,7 +357,7 @@ func labelsToKey(labels clientmodel.Metric) uint64 {
 }
 
 // EvalVectorInstant evaluates a VectorNode with an instant query.
-func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (vector Vector, err error) {
+func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (vector Vector, err error) {
 	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
 	if err != nil {
 		return
@@ -367,7 +367,7 @@ func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage
 }
 
 // EvalVectorRange evaluates a VectorNode with a range query.
-func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (Matrix, error) {
+func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (Matrix, error) {
 	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
 	// null in JSON.
 	matrix := Matrix{}

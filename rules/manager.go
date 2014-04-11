@@ -49,7 +49,7 @@ type ruleManager struct {
 	done chan bool
 
 	interval time.Duration
-	storage  *metric.TieredStorage
+	storage  metric.PreloadingPersistence
 
 	results       chan<- *extraction.Result
 	notifications chan<- notification.NotificationReqs
@@ -59,7 +59,7 @@ type ruleManager struct {
 
 type RuleManagerOptions struct {
 	EvaluationInterval time.Duration
-	Storage            *metric.TieredStorage
+	Storage            metric.PreloadingPersistence
 
 	Notifications chan<- notification.NotificationReqs
 	Results       chan<- *extraction.Result

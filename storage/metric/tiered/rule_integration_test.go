@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"testing"
@@ -19,10 +19,11 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
 )
 
-func GetValueAtTimeTests(persistenceMaker func() (ViewableMetricPersistence, test.Closer), t test.Tester) {
+func GetValueAtTimeTests(persistenceMaker func() (metric.ViewablePersistence, test.Closer), t test.Tester) {
 	type value struct {
 		year  int
 		month time.Month
@@ -355,7 +356,7 @@ func GetValueAtTimeTests(persistenceMaker func() (ViewableMetricPersistence, tes
 	}
 }
 
-func GetRangeValuesTests(persistenceMaker func() (ViewableMetricPersistence, test.Closer), onlyBoundaries bool, t test.Tester) {
+func GetRangeValuesTests(persistenceMaker func() (metric.ViewablePersistence, test.Closer), onlyBoundaries bool, t test.Tester) {
 	type value struct {
 		year  int
 		month time.Month
@@ -830,12 +831,12 @@ func GetRangeValuesTests(persistenceMaker func() (ViewableMetricPersistence, tes
 				input := behavior.input
 				open := clientmodel.TimestampFromTime(time.Date(input.openYear, input.openMonth, input.openDay, input.openHour, 0, 0, 0, time.UTC))
 				end := clientmodel.TimestampFromTime(time.Date(input.endYear, input.endMonth, input.endDay, input.endHour, 0, 0, 0, time.UTC))
-				in := Interval{
+				in := metric.Interval{
 					OldestInclusive: open,
 					NewestInclusive: end,
 				}
 
-				actualValues := Values{}
+				actualValues := metric.Values{}
 				expectedValues := []output{}
 				fp := &clientmodel.Fingerprint{}
 				fp.LoadFromMetric(m)
@@ -899,7 +900,7 @@ func GetRangeValuesTests(persistenceMaker func() (ViewableMetricPersistence, tes
 // Test Definitions Follow
 
 func testMemoryGetValueAtTime(t test.Tester) {
-	persistenceMaker := func() (ViewableMetricPersistence, test.Closer) {
+	persistenceMaker := func() (metric.ViewablePersistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 
@@ -927,7 +928,7 @@ func BenchmarkMemoryGetBoundaryValues(b *testing.B) {
 }
 
 func testMemoryGetRangeValues(t test.Tester) {
-	persistenceMaker := func() (ViewableMetricPersistence, test.Closer) {
+	persistenceMaker := func() (metric.ViewablePersistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 
@@ -935,7 +936,7 @@ func testMemoryGetRangeValues(t test.Tester) {
 }
 
 func testMemoryGetBoundaryValues(t test.Tester) {
-	persistenceMaker := func() (ViewableMetricPersistence, test.Closer) {
+	persistenceMaker := func() (metric.ViewablePersistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
 

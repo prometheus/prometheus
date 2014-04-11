@@ -1,10 +1,12 @@
-package metric
+package tiered
 
 import (
 	"math/rand"
 	"testing"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 const numTestValues = 5000
@@ -12,7 +14,7 @@ const numTestValues = 5000
 func TestValuesMarshalAndUnmarshal(t *testing.T) {
 	values := randomValues(numTestValues)
 
-	marshalled := values.marshal(nil)
+	marshalled := marshalValues(values, nil)
 	unmarshalled := unmarshalValues(marshalled, nil)
 
 	for i, expected := range values {
@@ -23,10 +25,10 @@ func TestValuesMarshalAndUnmarshal(t *testing.T) {
 	}
 }
 
-func randomValues(numSamples int) Values {
-	v := make(Values, 0, numSamples)
+func randomValues(numSamples int) metric.Values {
+	v := make(metric.Values, 0, numSamples)
 	for i := 0; i < numSamples; i++ {
-		v = append(v, SamplePair{
+		v = append(v, metric.SamplePair{
 			Timestamp: clientmodel.Timestamp(rand.Int63()),
 			Value:     clientmodel.SampleValue(rand.NormFloat64()),
 		})
@@ -42,7 +44,7 @@ func benchmarkMarshal(b *testing.B, n int) {
 	// TODO: Reuse buffer to compare performance.
 	//       - Delta is -30 percent time overhead.
 	for i := 0; i < b.N; i++ {
-		v.marshal(nil)
+		marshalValues(v, nil)
 	}
 }
 
@@ -68,7 +70,7 @@ func BenchmarkMarshal10000(b *testing.B) {
 
 func benchmarkUnmarshal(b *testing.B, n int) {
 	v := randomValues(numTestValues)
-	marshalled := v.marshal(nil)
+	marshalled := marshalValues(v, nil)
 	b.ResetTimer()
 
 	// TODO: Reuse buffer to compare performance.

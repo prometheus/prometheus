@@ -18,7 +18,7 @@ package main
 
 import (
 	"flag"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/metric/tiered"
 	"time"
 
 	"github.com/golang/glog"
@@ -35,7 +35,7 @@ func main() {
 		glog.Fatal("Must provide a path...")
 	}
 
-	persistences, err := metric.NewLevelDBMetricPersistence(*storageRoot)
+	persistences, err := tiered.NewLevelDBMetricPersistence(*storageRoot)
 	if err != nil {
 		glog.Fatal(err)
 	}

@@ -48,13 +48,13 @@ type QueryAnalyzer struct {
 	IntervalRanges IntervalRangeMap
 	// The underlying storage to which the query will be applied. Needed for
 	// extracting timeseries fingerprint information during query analysis.
-	storage *metric.TieredStorage
+	storage metric.Persistence
 }
 
 // NewQueryAnalyzer returns a pointer to a newly instantiated
 // QueryAnalyzer. The storage is needed to extract timeseries
 // fingerprint information during query analysis.
-func NewQueryAnalyzer(storage *metric.TieredStorage) *QueryAnalyzer {
+func NewQueryAnalyzer(storage metric.Persistence) *QueryAnalyzer {
 	return &QueryAnalyzer{
 		FullRanges:     FullRangeMap{},
 		IntervalRanges: IntervalRangeMap{},
@@ -104,14 +104,14 @@ func (analyzer *QueryAnalyzer) AnalyzeQueries(node Node) {
 	Walk(analyzer, node)
 }
 
-func viewAdapterForInstantQuery(node Node, timestamp clientmodel.Timestamp, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (*viewAdapter, error) {
+func viewAdapterForInstantQuery(node Node, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (*viewAdapter, error) {
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)
 	analyzeTimer.Stop()
 
 	requestBuildTimer := queryStats.GetTimer(stats.ViewRequestBuildTime).Start()
-	viewBuilder := metric.NewViewRequestBuilder()
+	viewBuilder := storage.NewViewRequestBuilder()
 	for fingerprint, rangeDuration := range analyzer.FullRanges {
 		viewBuilder.GetMetricRange(&fingerprint, timestamp.Add(-rangeDuration), timestamp)
 	}
@@ -121,8 +121,7 @@ func viewAdapterForInstantQuery(node Node, timestamp clientmodel.Timestamp, stor
 	requestBuildTimer.Stop()
 
 	buildTimer := queryStats.GetTimer(stats.InnerViewBuildingTime).Start()
-	// BUG(julius): Clear Law of Demeter violation.
-	view, err := analyzer.storage.MakeView(viewBuilder, 60*time.Second, queryStats)
+	view, err := viewBuilder.Execute(60*time.Second, queryStats)
 	buildTimer.Stop()
 	if err != nil {
 		return nil, err
@@ -130,14 +129,14 @@ func viewAdapterForInstantQuery(node Node, timestamp clientmodel.Timestamp, stor
 	return NewViewAdapter(view, storage, queryStats), nil
 }
 
-func viewAdapterForRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage *metric.TieredStorage, queryStats *stats.TimerGroup) (*viewAdapter, error) {
+func viewAdapterForRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (*viewAdapter, error) {
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	analyzer.AnalyzeQueries(node)
 	analyzeTimer.Stop()
 
 	requestBuildTimer := queryStats.GetTimer(stats.ViewRequestBuildTime).Start()
-	viewBuilder := metric.NewViewRequestBuilder()
+	viewBuilder := storage.NewViewRequestBuilder()
 	for fingerprint, rangeDuration := range analyzer.FullRanges {
 		if interval < rangeDuration {
 			viewBuilder.GetMetricRange(&fingerprint, start.Add(-rangeDuration), end)
@@ -151,7 +150,7 @@ func viewAdapterForRangeQuery(node Node, start clientmodel.Timestamp, end client
 	requestBuildTimer.Stop()
 
 	buildTimer := queryStats.GetTimer(stats.InnerViewBuildingTime).Start()
-	view, err := analyzer.storage.MakeView(viewBuilder, time.Duration(60)*time.Second, queryStats)
+	view, err := viewBuilder.Execute(time.Duration(60)*time.Second, queryStats)
 	buildTimer.Stop()
 	if err != nil {
 		return nil, err

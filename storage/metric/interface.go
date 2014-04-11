@@ -13,14 +13,17 @@
 
 package metric
 
-import clientmodel "github.com/prometheus/client_golang/model"
+import (
+	"time"
 
-// AppendBatch models a batch of samples to be stored.
-type AppendBatch map[clientmodel.Fingerprint]SampleSet
+	clientmodel "github.com/prometheus/client_golang/model"
 
-// MetricPersistence is a system for storing metric samples in a persistence
+	"github.com/prometheus/prometheus/stats"
+)
+
+// Persistence is a system for storing metric samples in a persistence
 // layer.
-type MetricPersistence interface {
+type Persistence interface {
 	// A storage system may rely on external resources and thusly should be
 	// closed when finished.
 	Close()
@@ -42,6 +45,15 @@ type MetricPersistence interface {
 	GetAllValuesForLabel(clientmodel.LabelName) (clientmodel.LabelValues, error)
 }
 
+// PreloadingPersistence is a Persistence which supports building
+// preloaded views.
+type PreloadingPersistence interface {
+	Persistence
+	// NewViewRequestBuilder furnishes a ViewRequestBuilder for remarking what
+	// types of queries to perform.
+	NewViewRequestBuilder() ViewRequestBuilder
+}
+
 // View provides a view of the values in the datastore subject to the request
 // of a preloading operation.
 type View interface {
@@ -55,9 +67,73 @@ type View interface {
 	GetRangeValues(*clientmodel.Fingerprint, Interval) Values
 }
 
-// ViewableMetricPersistence is a MetricPersistence that is able to present the
+// ViewablePersistence is a Persistence that is able to present the
 // samples it has stored as a View.
-type ViewableMetricPersistence interface {
-	MetricPersistence
+type ViewablePersistence interface {
+	Persistence
 	View
+}
+
+// ViewRequestBuilder represents the summation of all datastore queries that
+// shall be performed to extract values. Call the Get... methods to record the
+// queries. Once done, use HasOp and PopOp to retrieve the resulting
+// operations. The operations are sorted by their fingerprint (and, for equal
+// fingerprints, by the StartsAt timestamp of their operation).
+type ViewRequestBuilder interface {
+	// GetMetricAtTime records a query to get, for the given Fingerprint,
+	// either the value at that time if there is a match or the one or two
+	// values adjacent thereto.
+	GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time clientmodel.Timestamp)
+	// GetMetricAtInterval records a query to get, for the given
+	// Fingerprint, either the value at that interval from From through
+	// Through if there is a match or the one or two values adjacent for
+	// each point.
+	GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration)
+	// GetMetricRange records a query to get, for the given Fingerprint, the
+	// values that occur inclusively from From through Through.
+	GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp)
+	// GetMetricRangeAtInterval records a query to get value ranges at
+	// intervals for the given Fingerprint:
+	//
+	//   |----|       |----|       |----|       |----|
+	//   ^    ^            ^       ^    ^            ^
+	//   |    \------------/       \----/            |
+	//  from     interval       rangeDuration     through
+	GetMetricRangeAtInterval(fp *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration)
+	// Execute materializes a View, subject to a timeout.
+	Execute(deadline time.Duration, queryStats *stats.TimerGroup) (View, error)
+	// PopOp emits the next operation in the queue (sorted by
+	// fingerprint). If called while HasOps returns false, the
+	// behavior is undefined.
+	PopOp() Op
+	// HasOp returns true if there is at least one more operation in the
+	// queue.
+	HasOp() bool
+}
+
+// Op encapsulates a primitive query operation.
+type Op interface {
+	// Fingerprint returns the fingerprint of the metric this operation
+	// operates on.
+	Fingerprint() *clientmodel.Fingerprint
+	// ExtractSamples extracts samples from a stream of values and advances
+	// the operation time.
+	ExtractSamples(Values) Values
+	// Consumed returns whether the operator has consumed all data it needs.
+	Consumed() bool
+	// CurrentTime gets the current operation time. In a newly created op,
+	// this is the starting time of the operation. During ongoing execution
+	// of the op, the current time is advanced accordingly. Once no
+	// subsequent work associated with the operation remains, nil is
+	// returned.
+	CurrentTime() clientmodel.Timestamp
+}
+
+// CurationState contains high-level curation state information for the
+// heads-up-display.
+type CurationState struct {
+	Active      bool
+	Name        string
+	Limit       time.Duration
+	Fingerprint *clientmodel.Fingerprint
 }

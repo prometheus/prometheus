@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"sort"
@@ -19,6 +19,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -27,50 +28,50 @@ import (
 const initialSeriesArenaSize = 4 * 60
 
 type stream interface {
-	add(Values)
+	add(metric.Values)
 
-	clone() Values
-	expunge(age clientmodel.Timestamp) Values
+	clone() metric.Values
+	expunge(age clientmodel.Timestamp) metric.Values
 
 	size() int
 	clear()
 
 	metric() clientmodel.Metric
 
-	getValueAtTime(t clientmodel.Timestamp) Values
-	getBoundaryValues(in Interval) Values
-	getRangeValues(in Interval) Values
+	getValueAtTime(t clientmodel.Timestamp) metric.Values
+	getBoundaryValues(in metric.Interval) metric.Values
+	getRangeValues(in metric.Interval) metric.Values
 }
 
 type arrayStream struct {
 	sync.RWMutex
 
 	m      clientmodel.Metric
-	values Values
+	values metric.Values
 }
 
 func (s *arrayStream) metric() clientmodel.Metric {
 	return s.m
 }
 
-func (s *arrayStream) add(v Values) {
+func (s *arrayStream) add(v metric.Values) {
 	s.Lock()
 	defer s.Unlock()
 
 	s.values = append(s.values, v...)
 }
 
-func (s *arrayStream) clone() Values {
+func (s *arrayStream) clone() metric.Values {
 	s.RLock()
 	defer s.RUnlock()
 
-	clone := make(Values, len(s.values))
+	clone := make(metric.Values, len(s.values))
 	copy(clone, s.values)
 
 	return clone
 }
 
-func (s *arrayStream) expunge(t clientmodel.Timestamp) Values {
+func (s *arrayStream) expunge(t clientmodel.Timestamp) metric.Values {
 	s.Lock()
 	defer s.Unlock()
 
@@ -85,7 +86,7 @@ func (s *arrayStream) expunge(t clientmodel.Timestamp) Values {
 	return expunged
 }
 
-func (s *arrayStream) getValueAtTime(t clientmodel.Timestamp) Values {
+func (s *arrayStream) getValueAtTime(t clientmodel.Timestamp) metric.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -93,29 +94,29 @@ func (s *arrayStream) getValueAtTime(t clientmodel.Timestamp) Values {
 	l := len(s.values)
 	switch l {
 	case 0:
-		return Values{}
+		return metric.Values{}
 	case 1:
-		return Values{s.values[0]}
+		return metric.Values{s.values[0]}
 	default:
 		index := sort.Search(l, func(i int) bool {
 			return !s.values[i].Timestamp.Before(t)
 		})
 
 		if index == 0 {
-			return Values{s.values[0]}
+			return metric.Values{s.values[0]}
 		}
 		if index == l {
-			return Values{s.values[l-1]}
+			return metric.Values{s.values[l-1]}
 		}
 
 		if s.values[index].Timestamp.Equal(t) {
-			return Values{s.values[index]}
+			return metric.Values{s.values[index]}
 		}
-		return Values{s.values[index-1], s.values[index]}
+		return metric.Values{s.values[index-1], s.values[index]}
 	}
 }
 
-func (s *arrayStream) getBoundaryValues(in Interval) Values {
+func (s *arrayStream) getBoundaryValues(in metric.Interval) metric.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -130,15 +131,15 @@ func (s *arrayStream) getBoundaryValues(in Interval) Values {
 	resultRange := s.values[oldest:newest]
 	switch len(resultRange) {
 	case 0:
-		return Values{}
+		return metric.Values{}
 	case 1:
-		return Values{resultRange[0]}
+		return metric.Values{resultRange[0]}
 	default:
-		return Values{resultRange[0], resultRange[len(resultRange)-1]}
+		return metric.Values{resultRange[0], resultRange[len(resultRange)-1]}
 	}
 }
 
-func (s *arrayStream) getRangeValues(in Interval) Values {
+func (s *arrayStream) getRangeValues(in metric.Interval) metric.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -150,7 +151,7 @@ func (s *arrayStream) getRangeValues(in Interval) Values {
 		return s.values[i].Timestamp.After(in.NewestInclusive)
 	})
 
-	result := make(Values, newest-oldest)
+	result := make(metric.Values, newest-oldest)
 	copy(result, s.values[oldest:newest])
 
 	return result
@@ -161,13 +162,13 @@ func (s *arrayStream) size() int {
 }
 
 func (s *arrayStream) clear() {
-	s.values = Values{}
+	s.values = metric.Values{}
 }
 
-func newArrayStream(metric clientmodel.Metric) *arrayStream {
+func newArrayStream(m clientmodel.Metric) *arrayStream {
 	return &arrayStream{
-		m:      metric,
-		values: make(Values, 0, initialSeriesArenaSize),
+		m:      m,
+		values: make(metric.Values, 0, initialSeriesArenaSize),
 	}
 }
 
@@ -176,7 +177,7 @@ type memorySeriesStorage struct {
 
 	wmCache                 *watermarkCache
 	fingerprintToSeries     map[clientmodel.Fingerprint]stream
-	labelPairToFingerprints map[LabelPair]utility.Set
+	labelPairToFingerprints map[metric.LabelPair]utility.Set
 	labelNameToLabelValues  map[clientmodel.LabelName]utility.Set
 }
 
@@ -203,8 +204,8 @@ func (s *memorySeriesStorage) AppendSample(sample *clientmodel.Sample) error {
 	fingerprint := &clientmodel.Fingerprint{}
 	fingerprint.LoadFromMetric(sample.Metric)
 	series := s.getOrCreateSeries(sample.Metric, fingerprint)
-	series.add(Values{
-		SamplePair{
+	series.add(metric.Values{
+		metric.SamplePair{
 			Value:     sample.Value,
 			Timestamp: sample.Timestamp,
 		},
@@ -231,15 +232,15 @@ func (s *memorySeriesStorage) CreateEmptySeries(metric clientmodel.Metric) {
 	s.getOrCreateSeries(m, fingerprint)
 }
 
-func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, fingerprint *clientmodel.Fingerprint) stream {
-	series, ok := s.fingerprintToSeries[*fingerprint]
+func (s *memorySeriesStorage) getOrCreateSeries(m clientmodel.Metric, fp *clientmodel.Fingerprint) stream {
+	series, ok := s.fingerprintToSeries[*fp]
 
 	if !ok {
-		series = newArrayStream(metric)
-		s.fingerprintToSeries[*fingerprint] = series
+		series = newArrayStream(m)
+		s.fingerprintToSeries[*fp] = series
 
-		for k, v := range metric {
-			labelPair := LabelPair{
+		for k, v := range m {
+			labelPair := metric.LabelPair{
 				Name:  k,
 				Value: v,
 			}
@@ -249,7 +250,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(metric clientmodel.Metric, finge
 				fps = utility.Set{}
 				s.labelPairToFingerprints[labelPair] = fps
 			}
-			fps.Add(*fingerprint)
+			fps.Add(*fp)
 
 			values, ok := s.labelNameToLabelValues[k]
 			if !ok {
@@ -318,7 +319,7 @@ func (s *memorySeriesStorage) dropSeries(fingerprint *clientmodel.Fingerprint) {
 	}
 
 	for k, v := range series.metric() {
-		labelPair := LabelPair{
+		labelPair := metric.LabelPair{
 			Name:  k,
 			Value: v,
 		}
@@ -335,7 +336,7 @@ func (s *memorySeriesStorage) dropSeries(fingerprint *clientmodel.Fingerprint) {
 
 // Append raw samples, bypassing indexing. Only used to add data to views,
 // which don't need to lookup by metric.
-func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmodel.Fingerprint, samples Values) {
+func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmodel.Fingerprint, samples metric.Values) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -349,15 +350,15 @@ func (s *memorySeriesStorage) appendSamplesWithoutIndexing(fingerprint *clientmo
 	series.add(samples)
 }
 
-func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers LabelMatchers) (clientmodel.Fingerprints, error) {
+func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metric.LabelMatchers) (clientmodel.Fingerprints, error) {
 	s.RLock()
 	defer s.RUnlock()
 
 	sets := []utility.Set{}
 	for _, matcher := range labelMatchers {
 		switch matcher.Type {
-		case Equal:
-			set, ok := s.labelPairToFingerprints[LabelPair{
+		case metric.Equal:
+			set, ok := s.labelPairToFingerprints[metric.LabelPair{
 				Name:  matcher.Name,
 				Value: matcher.Value,
 			}]
@@ -377,7 +378,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers Labe
 			}
 			set := utility.Set{}
 			for _, v := range matches {
-				subset, ok := s.labelPairToFingerprints[LabelPair{
+				subset, ok := s.labelPairToFingerprints[metric.LabelPair{
 					Name:  matcher.Name,
 					Value: v,
 				}]
@@ -452,7 +453,7 @@ func (s *memorySeriesStorage) HasFingerprint(f *clientmodel.Fingerprint) bool {
 	return has
 }
 
-func (s *memorySeriesStorage) CloneSamples(f *clientmodel.Fingerprint) Values {
+func (s *memorySeriesStorage) CloneSamples(f *clientmodel.Fingerprint) metric.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -464,7 +465,7 @@ func (s *memorySeriesStorage) CloneSamples(f *clientmodel.Fingerprint) Values {
 	return series.clone()
 }
 
-func (s *memorySeriesStorage) GetValueAtTime(f *clientmodel.Fingerprint, t clientmodel.Timestamp) Values {
+func (s *memorySeriesStorage) GetValueAtTime(f *clientmodel.Fingerprint, t clientmodel.Timestamp) metric.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -476,7 +477,7 @@ func (s *memorySeriesStorage) GetValueAtTime(f *clientmodel.Fingerprint, t clien
 	return series.getValueAtTime(t)
 }
 
-func (s *memorySeriesStorage) GetBoundaryValues(f *clientmodel.Fingerprint, i Interval) Values {
+func (s *memorySeriesStorage) GetBoundaryValues(f *clientmodel.Fingerprint, i metric.Interval) metric.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -488,7 +489,7 @@ func (s *memorySeriesStorage) GetBoundaryValues(f *clientmodel.Fingerprint, i In
 	return series.getBoundaryValues(i)
 }
 
-func (s *memorySeriesStorage) GetRangeValues(f *clientmodel.Fingerprint, i Interval) Values {
+func (s *memorySeriesStorage) GetRangeValues(f *clientmodel.Fingerprint, i metric.Interval) metric.Values {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -531,7 +532,7 @@ func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelNa
 func NewMemorySeriesStorage(o MemorySeriesOptions) *memorySeriesStorage {
 	return &memorySeriesStorage{
 		fingerprintToSeries:     make(map[clientmodel.Fingerprint]stream),
-		labelPairToFingerprints: make(map[LabelPair]utility.Set),
+		labelPairToFingerprints: make(map[metric.LabelPair]utility.Set),
 		labelNameToLabelValues:  make(map[clientmodel.LabelName]utility.Set),
 		wmCache:                 o.WatermarkCache,
 	}

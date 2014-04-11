@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"flag"
@@ -21,13 +21,14 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/metric"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 type nopCurationStateUpdater struct{}
 
-func (n *nopCurationStateUpdater) UpdateCurationState(*CurationState) {}
+func (n *nopCurationStateUpdater) UpdateCurationState(*metric.CurationState) {}
 
 func generateTestSamples(endTime clientmodel.Timestamp, numTs int, samplesPerTs int, interval time.Duration) clientmodel.Samples {
 	samples := make(clientmodel.Samples, 0, numTs*samplesPerTs)
@@ -63,7 +64,7 @@ func (c *compactionChecker) Operate(key, value interface{}) *storage.OperatorErr
 		c.t.Fatalf("Chunk FirstTimestamp (%v) is after LastTimestamp (%v): %v", sampleKey.FirstTimestamp.Unix(), sampleKey.LastTimestamp.Unix(), sampleKey)
 	}
 	fp := &clientmodel.Fingerprint{}
-	for _, sample := range value.(Values) {
+	for _, sample := range value.(metric.Values) {
 		if sample.Timestamp.Before(sampleKey.FirstTimestamp) || sample.Timestamp.After(sampleKey.LastTimestamp) {
 			c.t.Fatalf("Sample not within chunk boundaries: chunk FirstTimestamp (%v), chunk LastTimestamp (%v) vs. sample Timestamp (%v)", sampleKey.FirstTimestamp.Unix(), sampleKey.LastTimestamp.Unix(), sample.Timestamp)
 		}
@@ -75,7 +76,7 @@ func (c *compactionChecker) Operate(key, value interface{}) *storage.OperatorErr
 			c.t.Fatalf("%d. Expected fingerprint %s, got %s", c.sampleIdx, fp, sampleKey.Fingerprint)
 		}
 
-		sp := &SamplePair{
+		sp := &metric.SamplePair{
 			Value:     expected.Value,
 			Timestamp: expected.Timestamp,
 		}
