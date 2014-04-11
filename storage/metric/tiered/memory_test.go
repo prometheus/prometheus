@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"fmt"
@@ -20,14 +20,16 @@ import (
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 func BenchmarkStreamAdd(b *testing.B) {
 	b.StopTimer()
 	s := newArrayStream(clientmodel.Metric{})
-	samples := make(Values, b.N)
+	samples := make(metric.Values, b.N)
 	for i := 0; i < b.N; i++ {
-		samples = append(samples, SamplePair{
+		samples = append(samples, metric.SamplePair{
 			Timestamp: clientmodel.TimestampFromTime(time.Date(i, 0, 0, 0, 0, 0, 0, time.UTC)),
 			Value:     clientmodel.SampleValue(i),
 		})

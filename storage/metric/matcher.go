@@ -98,15 +98,3 @@ func (m *LabelMatcher) Filter(in clientmodel.LabelValues) clientmodel.LabelValue
 	}
 	return out
 }
-
-func labelMatchersFromLabelSet(l clientmodel.LabelSet) LabelMatchers {
-	m := make(LabelMatchers, 0, len(l))
-	for k, v := range l {
-		m = append(m, &LabelMatcher{
-			Type:  Equal,
-			Name:  k,
-			Value: v,
-		})
-	}
-	return m
-}

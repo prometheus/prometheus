@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"fmt"
@@ -21,6 +21,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/coding/indexable"
+	"github.com/prometheus/prometheus/storage/metric"
 
 	dto "github.com/prometheus/prometheus/model/generated"
 )
@@ -127,4 +128,14 @@ func (s *SampleKey) Load(d *dto.SampleKey) {
 	s.FirstTimestamp = indexable.DecodeTime(d.Timestamp)
 	s.LastTimestamp = clientmodel.TimestampFromUnix(d.GetLastTimestamp())
 	s.SampleCount = d.GetSampleCount()
+}
+
+// ToSampleKey returns the SampleKey for these Values.
+func sampleKeyForValues(f *clientmodel.Fingerprint, v metric.Values) *SampleKey {
+	return &SampleKey{
+		Fingerprint:    f,
+		FirstTimestamp: v[0].Timestamp,
+		LastTimestamp:  v[len(v)-1].Timestamp,
+		SampleCount:    uint32(len(v)),
+	}
 }

@@ -11,66 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"container/heap"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-)
 
-var (
-	// firstSupertime is the smallest valid supertime that may be seeked to.
-	firstSupertime = []byte{0, 0, 0, 0, 0, 0, 0, 0}
-	// lastSupertime is the largest valid supertime that may be seeked to.
-	lastSupertime = []byte{127, 255, 255, 255, 255, 255, 255, 255}
+	"github.com/prometheus/prometheus/storage/metric"
 )
-
-// ViewRequestBuilder represents the summation of all datastore queries that
-// shall be performed to extract values. Call the Get... methods to record the
-// queries. Once done, use HasOp and PopOp to retrieve the resulting
-// operations. The operations are sorted by their fingerprint (and, for equal
-// fingerprints, by the StartsAt timestamp of their operation).
-type ViewRequestBuilder interface {
-	// GetMetricAtTime records a query to get, for the given Fingerprint,
-	// either the value at that time if there is a match or the one or two
-	// values adjacent thereto.
-	GetMetricAtTime(fingerprint *clientmodel.Fingerprint, time clientmodel.Timestamp)
-	// GetMetricAtInterval records a query to get, for the given
-	// Fingerprint, either the value at that interval from From through
-	// Through if there is a match or the one or two values adjacent for
-	// each point.
-	GetMetricAtInterval(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration)
-	// GetMetricRange records a query to get, for the given Fingerprint, the
-	// values that occur inclusively from From through Through.
-	GetMetricRange(fingerprint *clientmodel.Fingerprint, from, through clientmodel.Timestamp)
-	// GetMetricRangeAtInterval records a query to get value ranges at
-	// intervals for the given Fingerprint:
-	//
-	//   |----|       |----|       |----|       |----|
-	//   ^    ^            ^       ^    ^            ^
-	//   |    \------------/       \----/            |
-	//  from     interval       rangeDuration     through
-	GetMetricRangeAtInterval(fp *clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration)
-	// PopOp emits the next operation in the queue (sorted by
-	// fingerprint). If called while HasOps returns false, the
-	// behavior is undefined.
-	PopOp() op
-	// HasOp returns true if there is at least one more operation in the
-	// queue.
-	HasOp() bool
-}
 
 // viewRequestBuilder contains the various requests for data.
 type viewRequestBuilder struct {
 	operations ops
-}
-
-// NewViewRequestBuilder furnishes a ViewRequestBuilder for remarking what types
-// of queries to perform.
-func NewViewRequestBuilder() *viewRequestBuilder {
-	return &viewRequestBuilder{}
 }
 
 var getValuesAtTimes = newValueAtTimeList(10 * 1024)
@@ -102,8 +56,8 @@ func (v *viewRequestBuilder) GetMetricRangeAtInterval(fp *clientmodel.Fingerprin
 }
 
 // PopOp implements ViewRequestBuilder.
-func (v *viewRequestBuilder) PopOp() op {
-	return heap.Pop(&v.operations).(op)
+func (v *viewRequestBuilder) PopOp() metric.Op {
+	return heap.Pop(&v.operations).(metric.Op)
 }
 
 // HasOp implements ViewRequestBuilder.
@@ -115,7 +69,7 @@ type view struct {
 	*memorySeriesStorage
 }
 
-func (v view) appendSamples(fingerprint *clientmodel.Fingerprint, samples Values) {
+func (v view) appendSamples(fingerprint *clientmodel.Fingerprint, samples metric.Values) {
 	v.memorySeriesStorage.appendSamplesWithoutIndexing(fingerprint, samples)
 }
 

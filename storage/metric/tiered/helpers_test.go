@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"fmt"
@@ -19,6 +19,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
 )
 
@@ -28,15 +29,15 @@ var (
 	testInstant  = clientmodel.TimestampFromTime(time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern).In(time.UTC))
 )
 
-func testAppendSamples(p MetricPersistence, s *clientmodel.Sample, t test.Tester) {
+func testAppendSamples(p metric.MetricPersistence, s *clientmodel.Sample, t test.Tester) {
 	err := p.AppendSamples(clientmodel.Samples{s})
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
-func buildLevelDBTestPersistencesMaker(name string, t test.Tester) func() (MetricPersistence, test.Closer) {
-	return func() (MetricPersistence, test.Closer) {
+func buildLevelDBTestPersistencesMaker(name string, t test.Tester) func() (metric.MetricPersistence, test.Closer) {
+	return func() (metric.MetricPersistence, test.Closer) {
 		temporaryDirectory := test.NewTemporaryDirectory("get_value_at_time", t)
 
 		p, err := NewLevelDBMetricPersistence(temporaryDirectory.Path())
@@ -48,7 +49,7 @@ func buildLevelDBTestPersistencesMaker(name string, t test.Tester) func() (Metri
 	}
 }
 
-func buildLevelDBTestPersistence(name string, f func(p MetricPersistence, t test.Tester)) func(t test.Tester) {
+func buildLevelDBTestPersistence(name string, f func(p metric.MetricPersistence, t test.Tester)) func(t test.Tester) {
 	return func(t test.Tester) {
 
 		temporaryDirectory := test.NewTemporaryDirectory(fmt.Sprintf("test_leveldb_%s", name), t)
@@ -66,7 +67,7 @@ func buildLevelDBTestPersistence(name string, f func(p MetricPersistence, t test
 	}
 }
 
-func buildMemoryTestPersistence(f func(p MetricPersistence, t test.Tester)) func(t test.Tester) {
+func buildMemoryTestPersistence(f func(p metric.MetricPersistence, t test.Tester)) func(t test.Tester) {
 	return func(t test.Tester) {
 
 		p := NewMemorySeriesStorage(MemorySeriesOptions{})
@@ -114,4 +115,16 @@ func NewTestTieredStorage(t test.Tester) (*TieredStorage, test.Closer) {
 	}
 
 	return storage, closer
+}
+
+func labelMatchersFromLabelSet(l clientmodel.LabelSet) metric.LabelMatchers {
+	m := make(metric.LabelMatchers, 0, len(l))
+	for k, v := range l {
+		m = append(m, &metric.LabelMatcher{
+			Type:  metric.Equal,
+			Name:  k,
+			Value: v,
+		})
+	}
+	return m
 }
