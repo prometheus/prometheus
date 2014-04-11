@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/metric/tiered"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 	"github.com/prometheus/prometheus/web"
@@ -82,10 +82,10 @@ type prometheus struct {
 	ruleManager     rules.RuleManager
 	targetManager   retrieval.TargetManager
 	notifications   chan notification.NotificationReqs
-	storage         *metric.TieredStorage
+	storage         *tiered.TieredStorage
 	remoteTSDBQueue *remote.TSDBQueueManager
 
-	curationState metric.CurationStateUpdater
+	curationState tiered.CurationStateUpdater
 }
 
 func (p *prometheus) interruptHandler() {
@@ -112,13 +112,13 @@ func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
 		<-p.curationSema
 	}()
 
-	processor := metric.NewCompactionProcessor(&metric.CompactionProcessorOptions{
+	processor := tiered.NewCompactionProcessor(&tiered.CompactionProcessorOptions{
 		MaximumMutationPoolBatch: groupSize * 3,
 		MinimumGroupSize:         groupSize,
 	})
 	defer processor.Close()
 
-	curator := metric.NewCurator(&metric.CuratorOptions{
+	curator := tiered.NewCurator(&tiered.CuratorOptions{
 		Stop: p.stopBackgroundOperations,
 
 		ViewQueue: p.storage.ViewQueue,
@@ -137,12 +137,12 @@ func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
 		return nil
 	}
 
-	processor := metric.NewDeletionProcessor(&metric.DeletionProcessorOptions{
+	processor := tiered.NewDeletionProcessor(&tiered.DeletionProcessorOptions{
 		MaximumMutationPoolBatch: batchSize,
 	})
 	defer processor.Close()
 
-	curator := metric.NewCurator(&metric.CuratorOptions{
+	curator := tiered.NewCurator(&tiered.CuratorOptions{
 		Stop: p.stopBackgroundOperations,
 
 		ViewQueue: p.storage.ViewQueue,
@@ -201,7 +201,7 @@ func main() {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	ts, err := metric.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, *arenaTTL, *metricsStoragePath)
+	ts, err := tiered.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, *arenaTTL, *metricsStoragePath)
 	if err != nil {
 		glog.Fatal("Error opening storage: ", err)
 	}

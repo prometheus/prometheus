@@ -150,7 +150,7 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 }
 
 // EvalToString evaluates the given node into a string of the given format.
-func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputFormat, storage *metric.TieredStorage, queryStats *stats.TimerGroup) string {
+func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputFormat, storage metric.PreloadingMetricPersistence, queryStats *stats.TimerGroup) string {
 	viewTimer := queryStats.GetTimer(stats.TotalViewBuildingTime).Start()
 	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
 	viewTimer.Stop()

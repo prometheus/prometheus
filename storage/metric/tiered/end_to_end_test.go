@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"sort"
@@ -20,10 +20,11 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
 )
 
-func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
+func GetFingerprintsForLabelSetTests(p metric.MetricPersistence, t test.Tester) {
 	metrics := []clientmodel.Metric{
 		{
 			clientmodel.MetricNameLabel: "test_metric",
@@ -47,8 +48,8 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 		},
 	}
 
-	newTestLabelMatcher := func(matchType MatchType, name clientmodel.LabelName, value clientmodel.LabelValue) *LabelMatcher {
-		m, err := NewLabelMatcher(matchType, name, value)
+	newTestLabelMatcher := func(matchType metric.MatchType, name clientmodel.LabelName, value clientmodel.LabelValue) *metric.LabelMatcher {
+		m, err := metric.NewLabelMatcher(matchType, name, value)
 		if err != nil {
 			t.Fatalf("Couldn't create label matcher: %v", err)
 		}
@@ -56,61 +57,61 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 	}
 
 	scenarios := []struct {
-		in         LabelMatchers
+		in         metric.LabelMatchers
 		outIndexes []int
 	}{
 		{
-			in: LabelMatchers{
-				newTestLabelMatcher(Equal, clientmodel.MetricNameLabel, "test_metric"),
+			in: metric.LabelMatchers{
+				newTestLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, "test_metric"),
 			},
 			outIndexes: []int{0, 1, 2, 3},
 		},
 		{
-			in: LabelMatchers{
-				newTestLabelMatcher(Equal, clientmodel.MetricNameLabel, "non_existent_metric"),
+			in: metric.LabelMatchers{
+				newTestLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, "non_existent_metric"),
 			},
 			outIndexes: []int{},
 		},
 		{
-			in: LabelMatchers{
-				newTestLabelMatcher(Equal, clientmodel.MetricNameLabel, "non_existent_metric"),
-				newTestLabelMatcher(Equal, "result", "success"),
+			in: metric.LabelMatchers{
+				newTestLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, "non_existent_metric"),
+				newTestLabelMatcher(metric.Equal, "result", "success"),
 			},
 			outIndexes: []int{},
 		},
 		{
-			in: LabelMatchers{
-				newTestLabelMatcher(Equal, clientmodel.MetricNameLabel, "test_metric"),
-				newTestLabelMatcher(Equal, "result", "success"),
+			in: metric.LabelMatchers{
+				newTestLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, "test_metric"),
+				newTestLabelMatcher(metric.Equal, "result", "success"),
 			},
 			outIndexes: []int{0, 2},
 		},
 		{
-			in: LabelMatchers{
-				newTestLabelMatcher(Equal, clientmodel.MetricNameLabel, "test_metric"),
-				newTestLabelMatcher(NotEqual, "result", "success"),
+			in: metric.LabelMatchers{
+				newTestLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, "test_metric"),
+				newTestLabelMatcher(metric.NotEqual, "result", "success"),
 			},
 			outIndexes: []int{1, 3},
 		},
 		{
-			in: LabelMatchers{
-				newTestLabelMatcher(Equal, clientmodel.MetricNameLabel, "test_metric"),
-				newTestLabelMatcher(RegexMatch, "result", "foo|success|bar"),
+			in: metric.LabelMatchers{
+				newTestLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, "test_metric"),
+				newTestLabelMatcher(metric.RegexMatch, "result", "foo|success|bar"),
 			},
 			outIndexes: []int{0, 2},
 		},
 		{
-			in: LabelMatchers{
-				newTestLabelMatcher(Equal, clientmodel.MetricNameLabel, "test_metric"),
-				newTestLabelMatcher(RegexNoMatch, "result", "foo|success|bar"),
+			in: metric.LabelMatchers{
+				newTestLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, "test_metric"),
+				newTestLabelMatcher(metric.RegexNoMatch, "result", "foo|success|bar"),
 			},
 			outIndexes: []int{1, 3},
 		},
 		{
-			in: LabelMatchers{
-				newTestLabelMatcher(Equal, clientmodel.MetricNameLabel, "test_metric"),
-				newTestLabelMatcher(RegexNoMatch, "result", "foo|success|bar"),
-				newTestLabelMatcher(RegexMatch, "method", "os"),
+			in: metric.LabelMatchers{
+				newTestLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, "test_metric"),
+				newTestLabelMatcher(metric.RegexNoMatch, "result", "foo|success|bar"),
+				newTestLabelMatcher(metric.RegexMatch, "method", "os"),
 			},
 			outIndexes: []int{3},
 		},
@@ -152,7 +153,7 @@ func GetFingerprintsForLabelSetTests(p MetricPersistence, t test.Tester) {
 	}
 }
 
-func GetLabelValuesForLabelNameTests(p MetricPersistence, t test.Tester) {
+func GetLabelValuesForLabelNameTests(p metric.MetricPersistence, t test.Tester) {
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: 0,
@@ -196,7 +197,7 @@ func GetLabelValuesForLabelNameTests(p MetricPersistence, t test.Tester) {
 	}
 }
 
-func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
+func GetMetricForFingerprintTests(p metric.MetricPersistence, t test.Tester) {
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: 0,
@@ -214,8 +215,8 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		},
 	}, t)
 
-	result, err := p.GetFingerprintsForLabelMatchers(LabelMatchers{{
-		Type:  Equal,
+	result, err := p.GetFingerprintsForLabelMatchers(metric.LabelMatchers{{
+		Type:  metric.Equal,
 		Name:  "request_type",
 		Value: "your_mom",
 	}})
@@ -228,25 +229,25 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	metric, err := p.GetMetricForFingerprint(result[0])
+	m, err := p.GetMetricForFingerprint(result[0])
 	if err != nil {
 		t.Error(err)
 	}
 
-	if metric == nil {
+	if m == nil {
 		t.Fatal("Did not expect nil.")
 	}
 
-	if len(metric) != 1 {
+	if len(m) != 1 {
 		t.Errorf("Expected one-dimensional metric.")
 	}
 
-	if metric["request_type"] != "your_mom" {
+	if m["request_type"] != "your_mom" {
 		t.Errorf("Expected metric to match.")
 	}
 
-	result, err = p.GetFingerprintsForLabelMatchers(LabelMatchers{{
-		Type:  Equal,
+	result, err = p.GetFingerprintsForLabelMatchers(metric.LabelMatchers{{
+		Type:  metric.Equal,
 		Name:  "request_type",
 		Value: "your_dad",
 	}})
@@ -259,9 +260,9 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Errorf("Expected one element.")
 	}
 
-	metric, err = p.GetMetricForFingerprint(result[0])
+	m, err = p.GetMetricForFingerprint(result[0])
 
-	if metric == nil {
+	if m == nil {
 		t.Fatal("Did not expect nil.")
 	}
 
@@ -269,24 +270,24 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Error(err)
 	}
 
-	if len(metric) != 2 {
+	if len(m) != 2 {
 		t.Errorf("Expected two-dimensional metric.")
 	}
 
-	if metric["request_type"] != "your_dad" {
+	if m["request_type"] != "your_dad" {
 		t.Errorf("Expected metric to match.")
 	}
 
-	if metric["one-off"] != "value" {
+	if m["one-off"] != "value" {
 		t.Errorf("Expected metric to match.")
 	}
 
 	// Verify that mutating a returned metric does not result in the mutated
 	// metric to be returned at the next GetMetricForFingerprint() call.
-	metric["one-off"] = "new value"
-	metric, err = p.GetMetricForFingerprint(result[0])
+	m["one-off"] = "new value"
+	m, err = p.GetMetricForFingerprint(result[0])
 
-	if metric == nil {
+	if m == nil {
 		t.Fatal("Did not expect nil.")
 	}
 
@@ -294,21 +295,21 @@ func GetMetricForFingerprintTests(p MetricPersistence, t test.Tester) {
 		t.Error(err)
 	}
 
-	if len(metric) != 2 {
+	if len(m) != 2 {
 		t.Errorf("Expected two-dimensional metric.")
 	}
 
-	if metric["request_type"] != "your_dad" {
+	if m["request_type"] != "your_dad" {
 		t.Errorf("Expected metric to match.")
 	}
 
-	if metric["one-off"] != "value" {
+	if m["one-off"] != "value" {
 		t.Errorf("Expected metric to match.")
 	}
 }
 
-func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
-	metric := clientmodel.Metric{
+func AppendRepeatingValuesTests(p metric.MetricPersistence, t test.Tester) {
+	m := clientmodel.Metric{
 		clientmodel.MetricNameLabel: "errors_total",
 		"controller":                "foo",
 		"operation":                 "bar",
@@ -323,12 +324,12 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 			testAppendSamples(p, &clientmodel.Sample{
 				Value:     clientmodel.SampleValue(i),
 				Timestamp: time,
-				Metric:    metric,
+				Metric:    m,
 			}, t)
 		}
 	}
 
-	v, ok := p.(View)
+	v, ok := p.(metric.View)
 	if !ok {
 		// It's purely a benchmark for a MetricPersistence that is not viewable.
 		return
@@ -367,8 +368,8 @@ func AppendRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 	}
 }
 
-func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
-	metric := clientmodel.Metric{
+func AppendsRepeatingValuesTests(p metric.MetricPersistence, t test.Tester) {
+	m := clientmodel.Metric{
 		clientmodel.MetricNameLabel: "errors_total",
 		"controller":                "foo",
 		"operation":                 "bar",
@@ -384,14 +385,14 @@ func AppendsRepeatingValuesTests(p MetricPersistence, t test.Tester) {
 			s = append(s, &clientmodel.Sample{
 				Value:     clientmodel.SampleValue(i),
 				Timestamp: time,
-				Metric:    metric,
+				Metric:    m,
 			})
 		}
 	}
 
 	p.AppendSamples(s)
 
-	v, ok := p.(View)
+	v, ok := p.(metric.View)
 	if !ok {
 		// It's purely a benchmark for a MetricPersistance that is not viewable.
 		return

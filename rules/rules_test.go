@@ -24,7 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/metric/tiered"
 	"github.com/prometheus/prometheus/utility/test"
 )
 
@@ -53,7 +53,7 @@ func vectorComparisonString(expected []string, actual []string) string {
 }
 
 type testTieredStorageCloser struct {
-	storage   *metric.TieredStorage
+	storage   *tiered.TieredStorage
 	directory test.Closer
 }
 
@@ -64,10 +64,10 @@ func (t testTieredStorageCloser) Close() {
 
 // This is copied from storage/metric/helpers_test.go, which is unfortunate but
 // presently required to make things work.
-func NewTestTieredStorage(t test.Tester) (storage *metric.TieredStorage, closer test.Closer) {
+func NewTestTieredStorage(t test.Tester) (storage *tiered.TieredStorage, closer test.Closer) {
 	var directory test.TemporaryDirectory
 	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
-	storage, err := metric.NewTieredStorage(2500, 1000, 5*time.Second, 0*time.Second, directory.Path())
+	storage, err := tiered.NewTieredStorage(2500, 1000, 5*time.Second, 0*time.Second, directory.Path())
 
 	if err != nil {
 		if storage != nil {
@@ -91,12 +91,12 @@ func NewTestTieredStorage(t test.Tester) (storage *metric.TieredStorage, closer 
 	return
 }
 
-func newTestStorage(t test.Tester) (storage *metric.TieredStorage, closer test.Closer) {
+func newTestStorage(t test.Tester) (storage *tiered.TieredStorage, closer test.Closer) {
 	storage, closer = NewTestTieredStorage(t)
 	if storage == nil {
 		t.Fatal("storage == nil")
 	}
-	storeMatrix(*storage, testMatrix)
+	storeMatrix(storage, testMatrix)
 	return
 }
 

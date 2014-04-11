@@ -15,21 +15,10 @@ package metric
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
-	"math"
 	"sort"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-)
-
-const (
-	// sampleSize is the number of bytes per sample in marshalled format.
-	sampleSize = 16
-	// formatVersion is used as a version marker in the marshalled format.
-	formatVersion = 1
-	// formatVersionSize is the number of bytes used by the serialized formatVersion.
-	formatVersionSize = 1
 )
 
 // MarshalJSON implements json.Marshaler.
@@ -121,7 +110,7 @@ func (v Values) InsideInterval(t clientmodel.Timestamp) bool {
 
 // TruncateBefore returns a subslice of the original such that extraneous
 // samples in the collection that occur before the provided time are
-// dropped.  The original slice is not mutated
+// dropped. The original slice is not mutated.
 func (v Values) TruncateBefore(t clientmodel.Timestamp) Values {
 	index := sort.Search(len(v), func(i int) bool {
 		timestamp := v[i].Timestamp
@@ -130,16 +119,6 @@ func (v Values) TruncateBefore(t clientmodel.Timestamp) Values {
 	})
 
 	return v[index:]
-}
-
-// ToSampleKey returns the SampleKey for these Values.
-func (v Values) ToSampleKey(f *clientmodel.Fingerprint) *SampleKey {
-	return &SampleKey{
-		Fingerprint:    f,
-		FirstTimestamp: v[0].Timestamp,
-		LastTimestamp:  v[len(v)-1].Timestamp,
-		SampleCount:    uint32(len(v)),
-	}
 }
 
 func (v Values) String() string {
@@ -155,37 +134,6 @@ func (v Values) String() string {
 	fmt.Fprintf(&buffer, "]")
 
 	return buffer.String()
-}
-
-// marshal marshals a group of samples for being written to disk.
-func (v Values) marshal() []byte {
-	buf := make([]byte, formatVersionSize+len(v)*sampleSize)
-	buf[0] = formatVersion
-	for i, val := range v {
-		offset := formatVersionSize + i*sampleSize
-		binary.LittleEndian.PutUint64(buf[offset:], uint64(val.Timestamp.Unix()))
-		binary.LittleEndian.PutUint64(buf[offset+8:], math.Float64bits(float64(val.Value)))
-	}
-	return buf
-}
-
-// unmarshalValues decodes marshalled samples and returns them as Values.
-func unmarshalValues(buf []byte) Values {
-	n := len(buf) / sampleSize
-	// Setting the value of a given slice index is around 15% faster than doing
-	// an append, even if the slice already has the required capacity. For this
-	// reason, we already set the full target length here.
-	v := make(Values, n)
-
-	if buf[0] != formatVersion {
-		panic("unsupported format version")
-	}
-	for i := 0; i < n; i++ {
-		offset := formatVersionSize + i*sampleSize
-		v[i].Timestamp = clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:])))
-		v[i].Value = clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:])))
-	}
-	return v
 }
 
 // SampleSet is Values with a Metric attached.

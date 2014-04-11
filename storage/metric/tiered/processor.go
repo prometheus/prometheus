@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"fmt"
@@ -20,6 +20,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 
@@ -101,8 +102,8 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 	}()
 
 	var pendingMutations = 0
-	var pendingSamples Values
-	var unactedSamples Values
+	var pendingSamples metric.Values
+	var unactedSamples metric.Values
 	var lastTouchedTime clientmodel.Timestamp
 	var keyDropped bool
 
@@ -162,7 +163,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		case len(pendingSamples) == 0 && len(unactedSamples) >= p.minimumGroupSize:
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
-			unactedSamples = Values{}
+			unactedSamples = metric.Values{}
 
 		case len(pendingSamples)+len(unactedSamples) < p.minimumGroupSize:
 			if !keyDropped {
@@ -174,15 +175,15 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			}
 			pendingSamples = append(pendingSamples, unactedSamples...)
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
-			unactedSamples = Values{}
+			unactedSamples = metric.Values{}
 			pendingMutations++
 
 		// If the number of pending writes equals the target group size
 		case len(pendingSamples) == p.minimumGroupSize:
 			k := &dto.SampleKey{}
-			newSampleKey := pendingSamples.ToSampleKey(fingerprint)
+			newSampleKey := sampleKeyForValues(fingerprint, pendingSamples)
 			newSampleKey.Dump(k)
-			b := pendingSamples.marshal()
+			b := marshalValues(pendingSamples)
 			pendingBatch.PutRaw(k, b)
 
 			pendingMutations++
@@ -201,7 +202,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 				} else {
 					pendingSamples = unactedSamples
 					lastTouchedTime = pendingSamples[len(pendingSamples)-1].Timestamp
-					unactedSamples = Values{}
+					unactedSamples = metric.Values{}
 				}
 			}
 
@@ -229,11 +230,11 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 	if len(unactedSamples) > 0 || len(pendingSamples) > 0 {
 		pendingSamples = append(pendingSamples, unactedSamples...)
 		k := &dto.SampleKey{}
-		newSampleKey := pendingSamples.ToSampleKey(fingerprint)
+		newSampleKey := sampleKeyForValues(fingerprint, pendingSamples)
 		newSampleKey.Dump(k)
-		b := pendingSamples.marshal()
+		b := marshalValues(pendingSamples)
 		pendingBatch.PutRaw(k, b)
-		pendingSamples = Values{}
+		pendingSamples = metric.Values{}
 		pendingMutations++
 		lastCurated = newSampleKey.FirstTimestamp
 	}
@@ -384,7 +385,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 			sampleKey.Dump(k)
 			pendingBatch.Drop(k)
 			lastCurated = sampleKey.LastTimestamp
-			sampleValues = Values{}
+			sampleValues = metric.Values{}
 			pendingMutations++
 
 		case sampleKey.MayContain(stopAt):
@@ -396,10 +397,10 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 			sampleValues = sampleValues.TruncateBefore(stopAt)
 			if len(sampleValues) > 0 {
 				k := &dto.SampleKey{}
-				sampleKey = sampleValues.ToSampleKey(fingerprint)
+				sampleKey = sampleKeyForValues(fingerprint, sampleValues)
 				sampleKey.Dump(k)
 				lastCurated = sampleKey.FirstTimestamp
-				v := sampleValues.marshal()
+				v := marshalValues(sampleValues)
 				pendingBatch.PutRaw(k, v)
 				pendingMutations++
 			} else {

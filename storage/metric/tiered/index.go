@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"io"
@@ -21,6 +21,7 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/raw"
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
 	"github.com/prometheus/prometheus/utility"
@@ -182,7 +183,7 @@ func NewLevelDBLabelNameLabelValuesIndex(o leveldb.LevelDBOptions) (*LevelDBLabe
 
 // LabelPairFingerprintMapping is an in-memory map of LabelPairs to
 // Fingerprints.
-type LabelPairFingerprintMapping map[LabelPair]clientmodel.Fingerprints
+type LabelPairFingerprintMapping map[metric.LabelPair]clientmodel.Fingerprints
 
 // LabelPairFingerprintIndex models a database mapping LabelPairs to
 // Fingerprints.
@@ -192,8 +193,8 @@ type LabelPairFingerprintIndex interface {
 	raw.Pruner
 
 	IndexBatch(LabelPairFingerprintMapping) error
-	Lookup(*LabelPair) (m clientmodel.Fingerprints, ok bool, err error)
-	Has(*LabelPair) (ok bool, err error)
+	Lookup(*metric.LabelPair) (m clientmodel.Fingerprints, ok bool, err error)
+	Has(*metric.LabelPair) (ok bool, err error)
 }
 
 // LevelDBLabelPairFingerprintIndex implements LabelPairFingerprintIndex using
@@ -228,7 +229,7 @@ func (i *LevelDBLabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintMapp
 }
 
 // Lookup implements LabelPairFingerprintMapping.
-func (i *LevelDBLabelPairFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.Fingerprints, ok bool, err error) {
+func (i *LevelDBLabelPairFingerprintIndex) Lookup(p *metric.LabelPair) (m clientmodel.Fingerprints, ok bool, err error) {
 	k := &dto.LabelPair{
 		Name:  proto.String(string(p.Name)),
 		Value: proto.String(string(p.Value)),
@@ -254,7 +255,7 @@ func (i *LevelDBLabelPairFingerprintIndex) Lookup(p *LabelPair) (m clientmodel.F
 }
 
 // Has implements LabelPairFingerprintMapping.
-func (i *LevelDBLabelPairFingerprintIndex) Has(p *LabelPair) (ok bool, err error) {
+func (i *LevelDBLabelPairFingerprintIndex) Has(p *metric.LabelPair) (ok bool, err error) {
 	k := &dto.LabelPair{
 		Name:  proto.String(string(p.Name)),
 		Value: proto.String(string(p.Value)),
@@ -615,11 +616,11 @@ func extendLabelNameToLabelValuesIndex(i LabelNameLabelValuesIndex, b Fingerprin
 }
 
 func extendLabelPairIndex(i LabelPairFingerprintIndex, b FingerprintMetricMapping) (LabelPairFingerprintMapping, error) {
-	collection := map[LabelPair]utility.Set{}
+	collection := map[metric.LabelPair]utility.Set{}
 
 	for fp, m := range b {
 		for n, v := range m {
-			pair := LabelPair{
+			pair := metric.LabelPair{
 				Name:  n,
 				Value: v,
 			}

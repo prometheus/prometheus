@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package tiered
 
 import (
 	"testing"
@@ -153,7 +153,7 @@ func testBuilder(t test.Tester) {
 	}
 
 	for i, scenario := range scenarios {
-		builder := NewViewRequestBuilder()
+		builder := &viewRequestBuilder{}
 
 		for _, atTime := range scenario.in.atTimes {
 			fingerprint := &clientmodel.Fingerprint{}
