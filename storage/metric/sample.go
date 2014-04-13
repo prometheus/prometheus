@@ -32,15 +32,10 @@ const (
 	formatVersionSize = 1
 )
 
-// MarshalJSON implements json.Marshaler.
-func (s SamplePair) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("{\"Value\": \"%f\", \"Timestamp\": %d}", s.Value, s.Timestamp)), nil
-}
-
 // SamplePair pairs a SampleValue with a Timestamp.
 type SamplePair struct {
-	Timestamp clientmodel.Timestamp
-	Value     clientmodel.SampleValue
+	Timestamp clientmodel.Timestamp   `json:"timestamp"`
+	Value     clientmodel.SampleValue `json:"value"`
 }
 
 // Equal returns true if this SamplePair and o have equal Values and equal
