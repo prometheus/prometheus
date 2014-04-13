@@ -136,8 +136,8 @@ func ErrorToJSON(err error) string {
 // 'vector', or 'matrix' into its JSON representation.
 func TypedValueToJSON(data interface{}, typeStr string) string {
 	dataStruct := struct {
-		Type  string
-		Value interface{}
+		Type  string      `json:"type"`
+		Value interface{} `json:"value"`
 	}{
 		Type:  typeStr,
 		Value: data,
