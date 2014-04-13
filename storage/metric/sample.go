@@ -190,8 +190,8 @@ func unmarshalValues(buf []byte) Values {
 
 // SampleSet is Values with a Metric attached.
 type SampleSet struct {
-	Metric clientmodel.Metric
-	Values Values
+	Metric clientmodel.Metric `json:"metric"`
+	Values Values             `json:"values"`
 }
 
 // Interval describes the inclusive interval between two Timestamps.
