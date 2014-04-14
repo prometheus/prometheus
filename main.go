@@ -17,6 +17,7 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -68,6 +69,8 @@ var (
 	concurrentRetrievalAllowance = flag.Int("concurrentRetrievalAllowance", 15, "The number of concurrent metrics retrieval requests allowed.")
 
 	printVersion = flag.Bool("version", false, "print version information")
+
+	shutdownTimeout = flag.Duration("shutdownGracePeriod", 0*time.Second, "The amount of time Prometheus gives background services to finish running when shutdown is requested.")
 )
 
 type prometheus struct {
@@ -86,6 +89,8 @@ type prometheus struct {
 	remoteTSDBQueue *remote.TSDBQueueManager
 
 	curationState metric.CurationStateUpdater
+
+	closeOnce sync.Once
 }
 
 func (p *prometheus) interruptHandler() {
@@ -95,7 +100,9 @@ func (p *prometheus) interruptHandler() {
 	<-notifier
 
 	glog.Warning("Received SIGINT/SIGTERM; Exiting gracefully...")
-	p.close()
+
+	p.Close()
+
 	os.Exit(0)
 }
 
@@ -166,7 +173,23 @@ func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
 	return curator.Run(olderThan, clientmodel.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
 }
 
+func (p *prometheus) Close() {
+	p.closeOnce.Do(p.close)
+}
+
 func (p *prometheus) close() {
+	// The "Done" remarks are a misnomer for some subsystems due to lack of
+	// blocking and synchronization.
+	glog.Info("Shutdown has been requested; subsytems are closing:")
+	p.targetManager.Stop()
+	glog.Info("Remote Target Manager: Done")
+	p.ruleManager.Stop()
+	glog.Info("Rule Executor: Done")
+
+	// Stop any currently active curation (deletion or compaction).
+	close(p.stopBackgroundOperations)
+	glog.Info("Current Curation Workers: Requested")
+
 	// Disallow further curation work.
 	close(p.curationSema)
 
@@ -177,21 +200,27 @@ func (p *prometheus) close() {
 	if p.deletionTimer != nil {
 		p.deletionTimer.Stop()
 	}
+	glog.Info("Future Curation Workers: Done")
 
-	// Stop any currently active curation (deletion or compaction).
-	close(p.stopBackgroundOperations)
+	glog.Infof("Waiting %s for background systems to exit and flush before finalizing (DO NOT INTERRUPT THE PROCESS) ...", *shutdownTimeout)
 
-	p.ruleManager.Stop()
-	p.targetManager.Stop()
+	// Wart: We should have a concrete form of synchronization for this, not a
+	//       hokey sleep statement.
+	time.Sleep(*shutdownTimeout)
+
 	close(p.unwrittenSamples)
 
 	p.storage.Close()
+	glog.Info("Local Storage: Done")
 
 	if p.remoteTSDBQueue != nil {
 		p.remoteTSDBQueue.Close()
+		glog.Info("Remote Storage: Done")
 	}
 
 	close(p.notifications)
+	glog.Info("Sundry Queues: Done")
+	glog.Info("See you next time!")
 }
 
 func main() {
@@ -288,13 +317,6 @@ func main() {
 		Storage:       ts,
 	}
 
-	webService := &web.WebService{
-		StatusHandler:    prometheusStatus,
-		MetricsHandler:   metricsService,
-		DatabasesHandler: databasesHandler,
-		AlertsHandler:    alertsHandler,
-	}
-
 	prometheus := &prometheus{
 		compactionTimer: compactionTimer,
 
@@ -313,7 +335,16 @@ func main() {
 		storage:         ts,
 		remoteTSDBQueue: remoteTSDBQueue,
 	}
-	defer prometheus.close()
+	defer prometheus.Close()
+
+	webService := &web.WebService{
+		StatusHandler:    prometheusStatus,
+		MetricsHandler:   metricsService,
+		DatabasesHandler: databasesHandler,
+		AlertsHandler:    alertsHandler,
+
+		QuitDelegate: prometheus.Close,
+	}
 
 	prometheus.curationSema <- struct{}{}
 
