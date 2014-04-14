@@ -38,6 +38,7 @@ var (
 	listenAddress  = flag.String("listenAddress", ":9090", "Address to listen on for web interface.")
 	useLocalAssets = flag.Bool("useLocalAssets", false, "Read assets/templates from file instead of binary.")
 	userAssetsPath = flag.String("userAssets", "", "Path to static asset directory, available at /user")
+	enableQuit     = flag.Bool("web.enableRemoteShutdown", false, "Enable remote service shutdown")
 )
 
 type WebService struct {
@@ -45,6 +46,8 @@ type WebService struct {
 	DatabasesHandler *DatabasesHandler
 	MetricsHandler   *api.MetricsService
 	AlertsHandler    *AlertsHandler
+
+	QuitDelegate func()
 }
 
 func (w WebService) ServeForever() error {
@@ -77,9 +80,19 @@ func (w WebService) ServeForever() error {
 		exp.Handle("/user/", http.StripPrefix("/user/", http.FileServer(http.Dir(*userAssetsPath))))
 	}
 
+	if *enableQuit {
+		exp.HandleFunc("/___attempt_graceful_exit___", w.quitHandler)
+	}
+
 	glog.Info("listening on ", *listenAddress)
 
 	return http.ListenAndServe(*listenAddress, exp.DefaultCoarseMux)
+}
+
+func (s WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Requesting termination... Goodbye!")
+
+	s.QuitDelegate()
 }
 
 func getLocalTemplate(name string) (*template.Template, error) {
