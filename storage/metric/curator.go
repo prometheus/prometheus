@@ -249,7 +249,7 @@ func (w *watermarkScanner) DecodeValue(in interface{}) (interface{}, error) {
 
 func (w *watermarkScanner) shouldStop() bool {
 	select {
-	case _, ok := <- w.stop:
+	case _, ok := <-w.stop:
 		return !ok
 	default:
 		return false
