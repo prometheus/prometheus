@@ -170,22 +170,25 @@ func (v Values) marshal() []byte {
 }
 
 // unmarshalValues decodes marshalled samples and returns them as Values.
-func unmarshalValues(buf []byte) Values {
-	n := len(buf) / sampleSize
+func unmarshalValues(buf []byte, dest Values) Values {
+	n := (len(buf) - formatVersionSize) / sampleSize
 	// Setting the value of a given slice index is around 15% faster than doing
 	// an append, even if the slice already has the required capacity. For this
 	// reason, we already set the full target length here.
-	v := make(Values, n)
-
+	if n > cap(dest) {
+		dest = make(Values, n)
+	} else {
+		dest = dest[0:n]
+	}
 	if buf[0] != formatVersion {
 		panic("unsupported format version")
 	}
 	for i := 0; i < n; i++ {
 		offset := formatVersionSize + i*sampleSize
-		v[i].Timestamp = clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:])))
-		v[i].Value = clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:])))
+		dest[i].Timestamp = clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:])))
+		dest[i].Value = clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:])))
 	}
-	return v
+	return dest
 }
 
 // SampleSet is Values with a Metric attached.

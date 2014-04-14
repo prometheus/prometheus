@@ -960,7 +960,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d.%d. error %s", i, j, err)
 			}
-			sampleValues := unmarshalValues(iterator.RawValue())
+			sampleValues := unmarshalValues(iterator.RawValue(), Values{})
 
 			expectedFingerprint := &clientmodel.Fingerprint{}
 			expectedFingerprint.LoadFromString(expected.fingerprint)
@@ -1487,7 +1487,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d.%d. error %s", i, j, err)
 			}
-			sampleValues := unmarshalValues(iterator.RawValue())
+			sampleValues := unmarshalValues(iterator.RawValue(), Values{})
 
 			expectedFingerprint := &clientmodel.Fingerprint{}
 			expectedFingerprint.LoadFromString(expected.fingerprint)

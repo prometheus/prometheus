@@ -649,7 +649,9 @@ func (d *MetricKeyDecoder) DecodeValue(in interface{}) (out interface{}, err err
 }
 
 // MetricSamplesDecoder implements storage.RecordDecoder for SampleKeys.
-type MetricSamplesDecoder struct{}
+type MetricSamplesDecoder struct{
+	buf Values
+}
 
 // DecodeKey implements storage.RecordDecoder. It requires 'in' to be a
 // SampleKey protobuf. 'out' is a metric.SampleKey.
@@ -669,7 +671,9 @@ func (d *MetricSamplesDecoder) DecodeKey(in interface{}) (interface{}, error) {
 // DecodeValue implements storage.RecordDecoder. It requires 'in' to be a
 // SampleValueSeries protobuf. 'out' is of type metric.Values.
 func (d *MetricSamplesDecoder) DecodeValue(in interface{}) (interface{}, error) {
-	return unmarshalValues(in.([]byte)), nil
+	d.buf = unmarshalValues(in.([]byte), d.buf)
+
+	return d.buf, nil
 }
 
 // AcceptAllFilter implements storage.RecordFilter and accepts all records.

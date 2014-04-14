@@ -13,7 +13,7 @@ func TestValuesMarshalAndUnmarshal(t *testing.T) {
 	values := randomValues(numTestValues)
 
 	marshalled := values.marshal()
-	unmarshalled := unmarshalValues(marshalled)
+	unmarshalled := unmarshalValues(marshalled, Values{})
 
 	for i, expected := range values {
 		actual := unmarshalled[i]
@@ -46,8 +46,9 @@ func BenchmarkMarshal(b *testing.B) {
 func BenchmarkUnmarshal(b *testing.B) {
 	v := randomValues(numTestValues)
 	marshalled := v.marshal()
+	var buf Values
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		unmarshalValues(marshalled)
+		unmarshalValues(marshalled, buf)
 	}
 }

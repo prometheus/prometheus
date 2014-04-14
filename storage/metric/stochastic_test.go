@@ -187,7 +187,7 @@ func AppendSampleAsPureSingleEntityAppendTests(p MetricPersistence, t test.Teste
 	}
 }
 
-func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerprint, i Interval) (samples Values, err error) {
+func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerprint, i Interval) ( Values, error) {
 	fpDto := &dto.Fingerprint{}
 	dumpFingerprint(fpDto, fp)
 	k := &dto.SampleKey{
@@ -200,6 +200,8 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerpr
 		panic(err)
 	}
 	defer iterator.Close()
+
+	var buf, samples Values
 
 	for valid := iterator.Seek(k); valid; valid = iterator.Next() {
 		retrievedKey, err := extractSampleKey(iterator)
@@ -215,11 +217,11 @@ func levelDBGetRangeValues(l *LevelDBMetricPersistence, fp *clientmodel.Fingerpr
 			break
 		}
 
-		retrievedValues := unmarshalValues(iterator.RawValue())
-		samples = append(samples, retrievedValues...)
+		buf = unmarshalValues(iterator.RawValue(), buf)
+		samples = append(samples, buf...)
 	}
 
-	return
+	return samples, nil
 }
 
 type timeslice []clientmodel.Timestamp

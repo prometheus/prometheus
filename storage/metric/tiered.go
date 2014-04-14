@@ -581,6 +581,8 @@ func (t *TieredStorage) loadChunkAroundTime(
 	}
 	seekingKey.Load(dto)
 
+	var buf Values
+
 	if seekingKey.Fingerprint.Equal(fingerprint) {
 		// Figure out if we need to rewind by one block.
 		// Imagine the following supertime blocks with time ranges:
@@ -594,7 +596,9 @@ func (t *TieredStorage) loadChunkAroundTime(
 		//
 		// Only do the rewind if there is another chunk before this one.
 		if !seekingKey.MayContain(ts) {
-			postValues := unmarshalValues(iterator.RawValue())
+			// TODO: Allow the user to inject a destination buffer.
+			buf = unmarshalValues(iterator.RawValue(), buf)
+			postValues := buf
 			if !seekingKey.Equal(firstBlock) {
 				if !iterator.Previous() {
 					panic("This should never return false.")
@@ -609,13 +613,16 @@ func (t *TieredStorage) loadChunkAroundTime(
 					return postValues, false
 				}
 
-				foundValues = unmarshalValues(iterator.RawValue())
+				postValues = make(Values, len(buf))
+				copy(postValues, buf)  // Buf would be overwritten by the following.
+				buf = unmarshalValues(iterator.RawValue(), buf)
+				foundValues = buf
 				foundValues = append(foundValues, postValues...)
 				return foundValues, false
 			}
 		}
 
-		foundValues = unmarshalValues(iterator.RawValue())
+		foundValues = unmarshalValues(iterator.RawValue(), buf)
 		return foundValues, false
 	}
 
@@ -634,7 +641,7 @@ func (t *TieredStorage) loadChunkAroundTime(
 				return nil, false
 			}
 
-			foundValues = unmarshalValues(iterator.RawValue())
+			foundValues = unmarshalValues(iterator.RawValue(), buf)
 			return foundValues, false
 		}
 	}

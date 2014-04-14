@@ -117,8 +117,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 	}
 
 	sampleKey.Load(sampleKeyDto)
-
-	unactedSamples = unmarshalValues(sampleIterator.RawValue())
+	unactedSamples = unmarshalValues(sampleIterator.RawValue(), unactedSamples)
 
 	for lastCurated.Before(stopAt) && lastTouchedTime.Before(stopAt) && sampleKey.Fingerprint.Equal(fingerprint) {
 		switch {
@@ -144,10 +143,10 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 				break
 			}
 
-			unactedSamples = unmarshalValues(sampleIterator.RawValue())
+			unactedSamples = unmarshalValues(sampleIterator.RawValue(), Values{})
 
-		// If the number of pending mutations exceeds the allowed batch amount,
-		// commit to disk and delete the batch.  A new one will be recreated if
+	  // If the number of pending mutations exceeds the allowed batch amount,
+	  // commit to disk and delete the batch.  A new one will be recreated if
 		// necessary.
 		case pendingMutations >= p.maximumMutationPoolBatch:
 			err = samplesPersistence.Commit(pendingBatch)
@@ -162,7 +161,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 
 		case len(pendingSamples) == 0 && len(unactedSamples) >= p.minimumGroupSize:
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
-			unactedSamples = Values{}
+			unactedSamples = unactedSamples[0:0]
 
 		case len(pendingSamples)+len(unactedSamples) < p.minimumGroupSize:
 			if !keyDropped {
@@ -174,7 +173,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 			}
 			pendingSamples = append(pendingSamples, unactedSamples...)
 			lastTouchedTime = unactedSamples[len(unactedSamples)-1].Timestamp
-			unactedSamples = Values{}
+			unactedSamples = unactedSamples[0:0]
 			pendingMutations++
 
 		// If the number of pending writes equals the target group size
@@ -201,7 +200,7 @@ func (p *CompactionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPers
 				} else {
 					pendingSamples = unactedSamples
 					lastTouchedTime = pendingSamples[len(pendingSamples)-1].Timestamp
-					unactedSamples = Values{}
+					unactedSamples = unactedSamples[0:0]
 				}
 			}
 
@@ -339,7 +338,9 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 	}
 	sampleKey.Load(sampleKeyDto)
 
-	sampleValues := unmarshalValues(sampleIterator.RawValue())
+	var sampleValues Values
+
+	sampleValues = unmarshalValues(sampleIterator.RawValue(), Values{})
 
 	pendingMutations := 0
 
@@ -363,7 +364,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 			}
 			sampleKey.Load(sampleKeyDto)
 
-			sampleValues = unmarshalValues(sampleIterator.RawValue())
+			sampleValues = unmarshalValues(sampleIterator.RawValue(), Values{})
 
 		// If the number of pending mutations exceeds the allowed batch
 		// amount, commit to disk and delete the batch.  A new one will
@@ -384,7 +385,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 			sampleKey.Dump(k)
 			pendingBatch.Drop(k)
 			lastCurated = sampleKey.LastTimestamp
-			sampleValues = Values{}
+			sampleValues = sampleValues[0:0]
 			pendingMutations++
 
 		case sampleKey.MayContain(stopAt):
