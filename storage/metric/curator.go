@@ -52,10 +52,7 @@ type CurationState struct {
 
 // CuratorOptions bundles the parameters needed to create a Curator.
 type CuratorOptions struct {
-	// Stop functions as a channel that when empty allows the curator to operate.
-	// The moment a value is ingested inside of it, the curator goes into drain
-	// mode.
-	Stop chan bool
+	Stop chan struct{}
 
 	ViewQueue chan viewJob
 }
@@ -64,7 +61,7 @@ type CuratorOptions struct {
 // stored samples on-disk.  This is useful to compact sparse sample values into
 // single sample entities to reduce keyspace load on the datastore.
 type Curator struct {
-	stop chan bool
+	stop chan struct{}
 
 	viewQueue chan viewJob
 
@@ -112,7 +109,7 @@ type watermarkScanner struct {
 	stopAt clientmodel.Timestamp
 
 	// stop functions as the global stop channel for all future operations.
-	stop chan bool
+	stop chan struct{}
 	// status is the outbound channel for notifying the status page of its state.
 	status CurationStateUpdater
 
@@ -216,14 +213,6 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant clientmodel.Times
 	return
 }
 
-// Drain instructs the curator to stop at the next convenient moment as to not
-// introduce data inconsistencies.
-func (c *Curator) Drain() {
-	if len(c.stop) == 0 {
-		c.stop <- true
-	}
-}
-
 // Close needs to be called to cleanly dispose of a curator.
 func (c *Curator) Close() {
 	c.dtoSampleKeys.Close()
@@ -259,7 +248,12 @@ func (w *watermarkScanner) DecodeValue(in interface{}) (interface{}, error) {
 }
 
 func (w *watermarkScanner) shouldStop() bool {
-	return len(w.stop) != 0
+	select {
+	case _, ok := <- w.stop:
+		return !ok
+	default:
+		return false
+	}
 }
 
 func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResult) {

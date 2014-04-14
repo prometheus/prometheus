@@ -140,7 +140,7 @@ func (s compactionTestScenario) test(t *testing.T) {
 	defer processor.Close()
 
 	curator := NewCurator(&CuratorOptions{
-		Stop:      make(chan bool),
+		Stop:      make(chan struct{}),
 		ViewQueue: ts.ViewQueue,
 	})
 	defer curator.Close()

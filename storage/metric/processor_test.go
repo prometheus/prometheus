@@ -875,7 +875,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 
 		updates := &noopUpdater{}
 
-		stop := make(chan bool)
+		stop := make(chan struct{})
 		defer close(stop)
 
 		c := NewCurator(&CuratorOptions{
@@ -1401,7 +1401,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 
 		updates := &noopUpdater{}
 
-		stop := make(chan bool)
+		stop := make(chan struct{})
 		defer close(stop)
 
 		c := NewCurator(&CuratorOptions{
