@@ -75,7 +75,7 @@ type prometheus struct {
 	deletionTimer   *time.Ticker
 
 	curationSema             chan struct{}
-	stopBackgroundOperations chan bool
+	stopBackgroundOperations chan struct{}
 
 	unwrittenSamples chan *extraction.Result
 
@@ -167,8 +167,10 @@ func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
 }
 
 func (p *prometheus) close() {
+	// Disallow further curation work.
 	close(p.curationSema)
 
+	// Stop curation timers.
 	if p.compactionTimer != nil {
 		p.compactionTimer.Stop()
 	}
@@ -177,9 +179,7 @@ func (p *prometheus) close() {
 	}
 
 	// Stop any currently active curation (deletion or compaction).
-	if len(p.stopBackgroundOperations) == 0 {
-		p.stopBackgroundOperations <- true
-	}
+	close(p.stopBackgroundOperations)
 
 	p.ruleManager.Stop()
 	p.targetManager.Stop()
@@ -192,7 +192,6 @@ func (p *prometheus) close() {
 	}
 
 	close(p.notifications)
-	close(p.stopBackgroundOperations)
 }
 
 func main() {
@@ -306,7 +305,7 @@ func main() {
 
 		unwrittenSamples: unwrittenSamples,
 
-		stopBackgroundOperations: make(chan bool, 1),
+		stopBackgroundOperations: make(chan struct{}),
 
 		ruleManager:     ruleManager,
 		targetManager:   targetManager,
