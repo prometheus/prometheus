@@ -106,7 +106,7 @@ func (s sampleGroup) Get() (key proto.Message, value interface{}) {
 	k := &dto.SampleKey{}
 	keyRaw.Dump(k)
 
-	return k, s.values.marshal()
+	return k, s.values.marshal(nil)
 }
 
 type noopUpdater struct{}
@@ -960,7 +960,7 @@ func TestCuratorCompactionProcessor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d.%d. error %s", i, j, err)
 			}
-			sampleValues := unmarshalValues(iterator.RawValue())
+			sampleValues := unmarshalValues(iterator.RawValue(), nil)
 
 			expectedFingerprint := &clientmodel.Fingerprint{}
 			expectedFingerprint.LoadFromString(expected.fingerprint)
@@ -1487,7 +1487,7 @@ func TestCuratorDeletionProcessor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d.%d. error %s", i, j, err)
 			}
-			sampleValues := unmarshalValues(iterator.RawValue())
+			sampleValues := unmarshalValues(iterator.RawValue(), nil)
 
 			expectedFingerprint := &clientmodel.Fingerprint{}
 			expectedFingerprint.LoadFromString(expected.fingerprint)

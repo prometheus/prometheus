@@ -51,6 +51,9 @@ tag:
 $(BUILD_PATH)/cache/$(GOPKG):
 	curl -o $@ $(GOURL)/$(GOPKG)
 
+benchmark: test
+	$(GO) test $(GO_TEST_FLAGS) -test.bench='Benchmark' ./...
+
 clean:
 	$(MAKE) -C $(BUILD_PATH) clean
 	$(MAKE) -C tools clean

@@ -374,7 +374,7 @@ func (l *LevelDBMetricPersistence) AppendSamples(samples clientmodel.Samples) (e
 					Value:     sample.Value,
 				})
 			}
-			val := values.marshal()
+			val := values.marshal(nil)
 			samplesBatch.PutRaw(keyDto, val)
 		}
 	}
@@ -669,7 +669,7 @@ func (d *MetricSamplesDecoder) DecodeKey(in interface{}) (interface{}, error) {
 // DecodeValue implements storage.RecordDecoder. It requires 'in' to be a
 // SampleValueSeries protobuf. 'out' is of type metric.Values.
 func (d *MetricSamplesDecoder) DecodeValue(in interface{}) (interface{}, error) {
-	return unmarshalValues(in.([]byte)), nil
+	return unmarshalValues(in.([]byte), nil), nil
 }
 
 // AcceptAllFilter implements storage.RecordFilter and accepts all records.
