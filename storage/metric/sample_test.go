@@ -48,7 +48,8 @@ func BenchmarkUnmarshal(b *testing.B) {
 	marshalled := v.marshal()
 	var buf Values
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
-		unmarshalValues(marshalled, buf)
+		buf = unmarshalValues(marshalled, buf)
 	}
 }

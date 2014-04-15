@@ -364,7 +364,7 @@ func (p *DeletionProcessor) Apply(sampleIterator leveldb.Iterator, samplesPersis
 			}
 			sampleKey.Load(sampleKeyDto)
 
-			sampleValues = unmarshalValues(sampleIterator.RawValue(), Values{})
+			sampleValues = unmarshalValues(sampleIterator.RawValue(), sampleValues)
 
 		// If the number of pending mutations exceeds the allowed batch
 		// amount, commit to disk and delete the batch.  A new one will
