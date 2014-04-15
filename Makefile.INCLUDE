@@ -78,7 +78,7 @@ export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 export CGO_CFLAGS = $(CFLAGS)
 export CGO_LDFLAGS = $(LDFLAGS)
 
-export GO_TEST_FLAGS := "-v"
+export GO_TEST_FLAGS ?= "-v"
 
 GO_GET := $(GO) get -u -v -x
 APT_GET_INSTALL := sudo apt-get install -y
