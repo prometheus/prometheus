@@ -171,7 +171,7 @@ func (v Values) marshal() []byte {
 
 // unmarshalValues decodes marshalled samples and returns them as Values.
 func unmarshalValues(buf []byte) Values {
-	n := len(buf) / sampleSize
+	n := (len(buf) - formatVersionSize) / sampleSize
 	// Setting the value of a given slice index is around 15% faster than doing
 	// an append, even if the slice already has the required capacity. For this
 	// reason, we already set the full target length here.
