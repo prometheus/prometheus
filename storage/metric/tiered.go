@@ -594,7 +594,7 @@ func (t *TieredStorage) loadChunkAroundTime(
 		//
 		// Only do the rewind if there is another chunk before this one.
 		if !seekingKey.MayContain(ts) {
-			postValues := unmarshalValues(iterator.RawValue())
+			postValues := unmarshalValues(iterator.RawValue(), nil)
 			if !seekingKey.Equal(firstBlock) {
 				if !iterator.Previous() {
 					panic("This should never return false.")
@@ -609,13 +609,13 @@ func (t *TieredStorage) loadChunkAroundTime(
 					return postValues, false
 				}
 
-				foundValues = unmarshalValues(iterator.RawValue())
+				foundValues = unmarshalValues(iterator.RawValue(), nil)
 				foundValues = append(foundValues, postValues...)
 				return foundValues, false
 			}
 		}
 
-		foundValues = unmarshalValues(iterator.RawValue())
+		foundValues = unmarshalValues(iterator.RawValue(), nil)
 		return foundValues, false
 	}
 
@@ -634,7 +634,7 @@ func (t *TieredStorage) loadChunkAroundTime(
 				return nil, false
 			}
 
-			foundValues = unmarshalValues(iterator.RawValue())
+			foundValues = unmarshalValues(iterator.RawValue(), nil)
 			return foundValues, false
 		}
 	}

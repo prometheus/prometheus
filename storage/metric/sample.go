@@ -157,35 +157,46 @@ func (v Values) String() string {
 	return buffer.String()
 }
 
-// marshal marshals a group of samples for being written to disk.
-func (v Values) marshal() []byte {
-	buf := make([]byte, formatVersionSize+len(v)*sampleSize)
-	buf[0] = formatVersion
+// marshal marshals a group of samples for being written to disk into dest or a
+// new slice if dest is insufficiently small.
+func (v Values) marshal(dest []byte) []byte {
+	sz := formatVersionSize + len(v)*sampleSize
+	if cap(dest) < sz {
+		dest = make([]byte, sz)
+	} else {
+		dest = dest[0:sz]
+	}
+
+	dest[0] = formatVersion
 	for i, val := range v {
 		offset := formatVersionSize + i*sampleSize
-		binary.LittleEndian.PutUint64(buf[offset:], uint64(val.Timestamp.Unix()))
-		binary.LittleEndian.PutUint64(buf[offset+8:], math.Float64bits(float64(val.Value)))
+		binary.LittleEndian.PutUint64(dest[offset:], uint64(val.Timestamp.Unix()))
+		binary.LittleEndian.PutUint64(dest[offset+8:], math.Float64bits(float64(val.Value)))
 	}
-	return buf
+	return dest
 }
 
-// unmarshalValues decodes marshalled samples and returns them as Values.
-func unmarshalValues(buf []byte) Values {
-	n := len(buf) / sampleSize
-	// Setting the value of a given slice index is around 15% faster than doing
-	// an append, even if the slice already has the required capacity. For this
-	// reason, we already set the full target length here.
-	v := make(Values, n)
-
+// unmarshalValues decodes marshalled samples into dest and returns either dest
+// or a new slice containing those values if dest is insufficiently small.
+func unmarshalValues(buf []byte, dest Values) Values {
 	if buf[0] != formatVersion {
 		panic("unsupported format version")
 	}
+
+	n := (len(buf) - formatVersionSize) / sampleSize
+
+	if cap(dest) < n {
+		dest = make(Values, n)
+	} else {
+		dest = dest[0:n]
+	}
+
 	for i := 0; i < n; i++ {
 		offset := formatVersionSize + i*sampleSize
-		v[i].Timestamp = clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:])))
-		v[i].Value = clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:])))
+		dest[i].Timestamp = clientmodel.TimestampFromUnix(int64(binary.LittleEndian.Uint64(buf[offset:])))
+		dest[i].Value = clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(buf[offset+8:])))
 	}
-	return v
+	return dest
 }
 
 // SampleSet is Values with a Metric attached.
