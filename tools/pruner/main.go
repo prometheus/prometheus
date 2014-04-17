@@ -35,7 +35,7 @@ func main() {
 		glog.Fatal("Must provide a path...")
 	}
 
-	persistences, err := tiered.NewLevelDBMetricPersistence(*storageRoot)
+	persistences, err := tiered.NewLevelDBPersistence(*storageRoot)
 	if err != nil {
 		glog.Fatal(err)
 	}

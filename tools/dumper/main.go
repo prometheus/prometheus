@@ -76,7 +76,7 @@ func main() {
 		glog.Fatal("Must provide a path...")
 	}
 
-	persistence, err := tiered.NewLevelDBMetricPersistence(*storageRoot)
+	persistence, err := tiered.NewLevelDBPersistence(*storageRoot)
 	if err != nil {
 		glog.Fatal(err)
 	}
