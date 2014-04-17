@@ -367,7 +367,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 			}
 			sets = append(sets, set)
 		default:
-			values, err := s.GetLabelValuesForLabelName(matcher.Name)
+			values, err := s.getLabelValuesForLabelName(matcher.Name)
 			if err != nil {
 				return nil, err
 			}
@@ -414,6 +414,10 @@ func (s *memorySeriesStorage) GetLabelValuesForLabelName(labelName clientmodel.L
 	s.RLock()
 	defer s.RUnlock()
 
+	return s.getLabelValuesForLabelName(labelName)
+}
+
+func (s *memorySeriesStorage) getLabelValuesForLabelName(labelName clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	set, ok := s.labelNameToLabelValues[labelName]
 	if !ok {
 		return nil, nil
