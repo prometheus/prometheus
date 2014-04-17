@@ -16,6 +16,7 @@ package tiered
 import (
 	"fmt"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -152,5 +153,67 @@ func TestDroppedSeriesIndexRegression(t *testing.T) {
 	}
 	if len(fps) != 1 {
 		t.Fatalf("Got %d fingerprints, expected 1", len(fps))
+	}
+}
+
+func TestReaderWriterDeadlockRegression(t *testing.T) {
+	mp := runtime.GOMAXPROCS(2)
+	defer func(mp int) {
+		runtime.GOMAXPROCS(mp)
+	}(mp)
+
+	s := NewMemorySeriesStorage(MemorySeriesOptions{})
+	lms := metric.LabelMatchers{}
+
+	for i := 0; i < 100; i++ {
+		lm, err := metric.NewLabelMatcher(metric.NotEqual, clientmodel.MetricNameLabel, "testmetric")
+		if err != nil {
+			t.Fatal(err)
+		}
+		lms = append(lms, lm)
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	start := time.Now()
+	runDuration := 250 * time.Millisecond
+
+	writer := func() {
+		for time.Since(start) < runDuration {
+			s.AppendSamples(clientmodel.Samples{
+				&clientmodel.Sample{
+					Metric: clientmodel.Metric{
+						clientmodel.MetricNameLabel: "testmetric",
+					},
+					Value:     1,
+					Timestamp: 0,
+				},
+			})
+		}
+		wg.Done()
+	}
+
+	reader := func() {
+		for time.Since(start) < runDuration {
+			s.GetFingerprintsForLabelMatchers(lms)
+		}
+		wg.Done()
+	}
+
+	go reader()
+	go writer()
+
+	allDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		allDone <- struct{}{}
+	}()
+
+	select {
+	case <-allDone:
+		break
+	case <-time.NewTimer(5 * time.Second).C:
+		t.Fatalf("Deadlock timeout")
 	}
 }
