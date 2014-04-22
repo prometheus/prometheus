@@ -200,7 +200,7 @@ func (t *target) Scrape(earliest time.Time, ingester extraction.Ingester) error 
 	return err
 }
 
-const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/json;schema=prometheus/telemetry;version=0.0.2;q=0.2,*/*;q=0.1`
+const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema=prometheus/telemetry;version=0.0.2;q=0.2,*/*;q=0.1`
 
 func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ingester) (err error) {
 	defer func(start time.Time) {
