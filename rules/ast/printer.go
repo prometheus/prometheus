@@ -125,7 +125,7 @@ func ErrorToJSON(err error) string {
 		Value: err.Error(),
 	}
 
-	errorJSON, err := json.MarshalIndent(errorStruct, "", "\t")
+	errorJSON, err := json.Marshal(errorStruct)
 	if err != nil {
 		return ""
 	}
@@ -142,7 +142,7 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 		Type:  typeStr,
 		Value: data,
 	}
-	dataJSON, err := json.MarshalIndent(dataStruct, "", "\t")
+	dataJSON, err := json.Marshal(dataStruct)
 	if err != nil {
 		return ErrorToJSON(err)
 	}
