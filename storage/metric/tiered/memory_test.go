@@ -15,6 +15,7 @@ package tiered
 
 import (
 	"fmt"
+	"reflect"
 	"runtime"
 	"sync"
 	"testing"
@@ -47,6 +48,55 @@ func BenchmarkStreamAdd(b *testing.B) {
 	runtime.ReadMemStats(&post)
 
 	b.Logf("%d cycles with %f bytes per cycle, totalling %d", b.N, float32(post.TotalAlloc-pre.TotalAlloc)/float32(b.N), post.TotalAlloc-pre.TotalAlloc)
+}
+
+func TestStreamAdd(t *testing.T) {
+	s := newArrayStream(clientmodel.Metric{})
+	// Add empty to empty.
+	v := metric.Values{}
+	expected := metric.Values{}
+	s.add(v)
+	if got := s.values; !reflect.DeepEqual(expected, got) {
+		t.Fatalf("Expected values %#v in stream, got %#v.", expected, got)
+	}
+	// Add something to empty.
+	v = metric.Values{
+		metric.SamplePair{Timestamp: 1, Value: -1},
+	}
+	expected = append(expected, v...)
+	s.add(v)
+	if got := s.values; !reflect.DeepEqual(expected, got) {
+		t.Fatalf("Expected values %#v in stream, got %#v.", expected, got)
+	}
+	// Add something to something.
+	v = metric.Values{
+		metric.SamplePair{Timestamp: 2, Value: -2},
+		metric.SamplePair{Timestamp: 5, Value: -5},
+	}
+	expected = append(expected, v...)
+	s.add(v)
+	if got := s.values; !reflect.DeepEqual(expected, got) {
+		t.Fatalf("Expected values %#v in stream, got %#v.", expected, got)
+	}
+	// Add something outdated to something.
+	v = metric.Values{
+		metric.SamplePair{Timestamp: 3, Value: -3},
+		metric.SamplePair{Timestamp: 4, Value: -4},
+	}
+	s.add(v)
+	if got := s.values; !reflect.DeepEqual(expected, got) {
+		t.Fatalf("Expected values %#v in stream, got %#v.", expected, got)
+	}
+	// Add something partially outdated to something.
+	v = metric.Values{
+		metric.SamplePair{Timestamp: 3, Value: -3},
+		metric.SamplePair{Timestamp: 6, Value: -6},
+	}
+	expected = append(expected, metric.SamplePair{Timestamp: 6, Value: -6})
+	s.add(v)
+	if got := s.values; !reflect.DeepEqual(expected, got) {
+		t.Fatalf("Expected values %#v in stream, got %#v.", expected, got)
+	}
 }
 
 func benchmarkAppendSamples(b *testing.B, labels int) {

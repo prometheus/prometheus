@@ -17,6 +17,8 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/golang/glog"
+
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
@@ -54,10 +56,26 @@ func (s *arrayStream) metric() clientmodel.Metric {
 	return s.m
 }
 
+// add implemetns the stream interface. This implementation requires both
+// s.values and the passed in v to be sorted already. Values in v that have a
+// timestamp older than the most recent value in s.values are skipped.
 func (s *arrayStream) add(v metric.Values) {
 	s.Lock()
 	defer s.Unlock()
-
+	// Skip over values that are older than the most recent value in s.
+	if len(s.values) > 0 {
+		i := 0
+		mostRecentTimestamp := s.values[len(s.values)-1].Timestamp
+		for ; i < len(v) && mostRecentTimestamp > v[i].Timestamp; i++ {
+		}
+		if i > 0 {
+			glog.Warningf(
+				"Skipped out-of-order values while adding to %#v: %#v",
+				s.m, v[:i],
+			)
+			v = v[i:]
+		}
+	}
 	s.values = append(s.values, v...)
 }
 
