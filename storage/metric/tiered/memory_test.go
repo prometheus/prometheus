@@ -267,3 +267,42 @@ func TestReaderWriterDeadlockRegression(t *testing.T) {
 		t.Fatalf("Deadlock timeout")
 	}
 }
+
+func BenchmarkGetFingerprintsForNotEqualMatcher(b *testing.B) {
+	numSeries := 1000
+	samples := make(clientmodel.Samples, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		samples = append(samples, &clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testmetric",
+				"instance":                  clientmodel.LabelValue(fmt.Sprint("instance_", i)),
+			},
+			Value:     1,
+			Timestamp: clientmodel.TimestampFromTime(time.Date(2000, 0, 0, 0, 0, 0, 0, time.UTC)),
+		})
+	}
+
+	s := NewMemorySeriesStorage(MemorySeriesOptions{})
+	if err := s.AppendSamples(samples); err != nil {
+		b.Fatal(err)
+	}
+
+	m, err := metric.NewLabelMatcher(metric.NotEqual, "instance", "foo")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	pre := runtime.MemStats{}
+	runtime.ReadMemStats(&pre)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s.GetFingerprintsForLabelMatchers(metric.LabelMatchers{m})
+	}
+	b.StopTimer()
+
+	post := runtime.MemStats{}
+	runtime.ReadMemStats(&post)
+
+	b.Logf("%d cycles with %f bytes per cycle, totalling %d", b.N, float32(post.TotalAlloc-pre.TotalAlloc)/float32(b.N), post.TotalAlloc-pre.TotalAlloc)
+}
