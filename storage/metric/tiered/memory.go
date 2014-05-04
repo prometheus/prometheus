@@ -403,7 +403,9 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 				if !ok {
 					return nil, nil
 				}
-				set = set.Union(subset)
+				for fp := range subset {
+					set.Add(fp)
+				}
 			}
 			sets = append(sets, set)
 		}

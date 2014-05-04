@@ -56,17 +56,3 @@ func (s Set) Intersection(o Set) Set {
 
 	return result
 }
-
-// Union returns a new set with all items in both sets.
-func (s Set) Union(o Set) Set {
-	result := Set{}
-
-	for k := range s {
-		result[k] = struct{}{}
-	}
-	for k := range o {
-		result[k] = struct{}{}
-	}
-
-	return result
-}
