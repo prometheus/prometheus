@@ -5,6 +5,6 @@ VOLUME     [ "/prometheus" ]
 WORKDIR    /prometheus
 
 ENTRYPOINT [ "/prometheus-src/.build/package/run_prometheus.sh" ]
-RUN        apt-get update && apt-get install -yq make git curl sudo mercurial
+RUN        apt-get update && apt-get install -yq make git curl sudo mercurial vim-common
 ADD        . /prometheus-src
 RUN        cd /prometheus-src && make binary
