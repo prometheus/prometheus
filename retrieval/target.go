@@ -267,7 +267,7 @@ func (t *target) ScheduledFor() time.Time {
 }
 
 func (t *target) EstimatedTimeToExecute() time.Duration {
-	return t.scheduler.ScheduledFor().Sub(time.Now())
+	return time.Now().Sub(t.scheduler.ScheduledFor())
 }
 
 func (t *target) LastError() error {
