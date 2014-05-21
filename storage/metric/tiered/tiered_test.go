@@ -23,7 +23,6 @@ import (
 
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility/test"
 )
 
 func buildSamples(from, to clientmodel.Timestamp, interval time.Duration, m clientmodel.Metric) (v clientmodel.Samples) {
@@ -57,7 +56,7 @@ func buildValues(firstValue clientmodel.SampleValue, from, to clientmodel.Timest
 	return
 }
 
-func testMakeView(t test.Tester, flushToDisk bool) {
+func testMakeView(t testing.TB, flushToDisk bool) {
 	type in struct {
 		atTime     []getValuesAtTimeOp
 		atInterval []getValuesAtIntervalOp

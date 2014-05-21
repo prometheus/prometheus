@@ -15,6 +15,7 @@ package tiered
 
 import (
 	"fmt"
+	"testing"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -29,14 +30,14 @@ var (
 	testInstant  = clientmodel.TimestampFromTime(time.Date(1972, 7, 18, 19, 5, 45, 0, usEastern).In(time.UTC))
 )
 
-func testAppendSamples(p metric.Persistence, s *clientmodel.Sample, t test.Tester) {
+func testAppendSamples(p metric.Persistence, s *clientmodel.Sample, t testing.TB) {
 	err := p.AppendSamples(clientmodel.Samples{s})
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
-func buildLevelDBTestPersistencesMaker(name string, t test.Tester) func() (metric.Persistence, test.Closer) {
+func buildLevelDBTestPersistencesMaker(name string, t testing.TB) func() (metric.Persistence, test.Closer) {
 	return func() (metric.Persistence, test.Closer) {
 		temporaryDirectory := test.NewTemporaryDirectory("get_value_at_time", t)
 
@@ -49,8 +50,8 @@ func buildLevelDBTestPersistencesMaker(name string, t test.Tester) func() (metri
 	}
 }
 
-func buildLevelDBTestPersistence(name string, f func(p metric.Persistence, t test.Tester)) func(t test.Tester) {
-	return func(t test.Tester) {
+func buildLevelDBTestPersistence(name string, f func(p metric.Persistence, t testing.TB)) func(t testing.TB) {
+	return func(t testing.TB) {
 
 		temporaryDirectory := test.NewTemporaryDirectory(fmt.Sprintf("test_leveldb_%s", name), t)
 		defer temporaryDirectory.Close()
@@ -67,8 +68,8 @@ func buildLevelDBTestPersistence(name string, f func(p metric.Persistence, t tes
 	}
 }
 
-func buildMemoryTestPersistence(f func(p metric.Persistence, t test.Tester)) func(t test.Tester) {
-	return func(t test.Tester) {
+func buildMemoryTestPersistence(f func(p metric.Persistence, t testing.TB)) func(t testing.TB) {
+	return func(t testing.TB) {
 
 		p := NewMemorySeriesStorage(MemorySeriesOptions{})
 
@@ -88,7 +89,7 @@ func (t *testTieredStorageCloser) Close() {
 	t.directory.Close()
 }
 
-func NewTestTieredStorage(t test.Tester) (*TieredStorage, test.Closer) {
+func NewTestTieredStorage(t testing.TB) (*TieredStorage, test.Closer) {
 	directory := test.NewTemporaryDirectory("test_tiered_storage", t)
 	storage, err := NewTieredStorage(2500, 1000, 5*time.Second, 0, directory.Path())
 

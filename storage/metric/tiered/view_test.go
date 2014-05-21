@@ -18,11 +18,9 @@ import (
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/utility/test"
 )
 
-func testBuilder(t test.Tester) {
+func testBuilder(t testing.TB) {
 	type atTime struct {
 		fingerprint string
 		time        clientmodel.Timestamp

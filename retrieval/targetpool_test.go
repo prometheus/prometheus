@@ -17,11 +17,9 @@ import (
 	"sort"
 	"testing"
 	"time"
-
-	"github.com/prometheus/prometheus/utility/test"
 )
 
-func testTargetPool(t test.Tester) {
+func testTargetPool(t testing.TB) {
 	type expectation struct {
 		size int
 	}

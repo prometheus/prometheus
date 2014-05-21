@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 )
 
-func GetValueAtTimeTests(persistenceMaker func() (metric.ViewablePersistence, test.Closer), t test.Tester) {
+func GetValueAtTimeTests(persistenceMaker func() (metric.ViewablePersistence, test.Closer), t testing.TB) {
 	type value struct {
 		year  int
 		month time.Month
@@ -356,7 +356,7 @@ func GetValueAtTimeTests(persistenceMaker func() (metric.ViewablePersistence, te
 	}
 }
 
-func GetRangeValuesTests(persistenceMaker func() (metric.ViewablePersistence, test.Closer), onlyBoundaries bool, t test.Tester) {
+func GetRangeValuesTests(persistenceMaker func() (metric.ViewablePersistence, test.Closer), onlyBoundaries bool, t testing.TB) {
 	type value struct {
 		year  int
 		month time.Month
@@ -899,7 +899,7 @@ func GetRangeValuesTests(persistenceMaker func() (metric.ViewablePersistence, te
 
 // Test Definitions Follow
 
-func testMemoryGetValueAtTime(t test.Tester) {
+func testMemoryGetValueAtTime(t testing.TB) {
 	persistenceMaker := func() (metric.ViewablePersistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
@@ -927,7 +927,7 @@ func BenchmarkMemoryGetBoundaryValues(b *testing.B) {
 	}
 }
 
-func testMemoryGetRangeValues(t test.Tester) {
+func testMemoryGetRangeValues(t testing.TB) {
 	persistenceMaker := func() (metric.ViewablePersistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}
@@ -935,7 +935,7 @@ func testMemoryGetRangeValues(t test.Tester) {
 	GetRangeValuesTests(persistenceMaker, false, t)
 }
 
-func testMemoryGetBoundaryValues(t test.Tester) {
+func testMemoryGetBoundaryValues(t testing.TB) {
 	persistenceMaker := func() (metric.ViewablePersistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}

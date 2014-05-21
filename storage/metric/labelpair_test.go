@@ -16,11 +16,9 @@ package metric
 import (
 	"sort"
 	"testing"
-
-	"github.com/prometheus/prometheus/utility/test"
 )
 
-func testLabelPairs(t test.Tester) {
+func testLabelPairs(t testing.TB) {
 	var scenarios = []struct {
 		in  LabelPairs
 		out LabelPairs

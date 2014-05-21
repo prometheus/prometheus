@@ -16,6 +16,7 @@ package test
 import (
 	"io/ioutil"
 	"os"
+	"testing"
 )
 
 const (
@@ -50,7 +51,7 @@ type (
 	// their interactions.
 	temporaryDirectory struct {
 		path   string
-		tester Tester
+		tester testing.TB
 	}
 )
 
@@ -75,7 +76,7 @@ func (t temporaryDirectory) Path() string {
 
 // NewTemporaryDirectory creates a new temporary directory for transient POSIX
 // activities.
-func NewTemporaryDirectory(name string, t Tester) (handler TemporaryDirectory) {
+func NewTemporaryDirectory(name string, t testing.TB) (handler TemporaryDirectory) {
 	var (
 		directory string
 		err       error

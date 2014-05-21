@@ -26,7 +26,6 @@ import (
 	pb "github.com/prometheus/prometheus/config/generated"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/utility/test"
 )
 
 type fakeTarget struct {
@@ -77,7 +76,7 @@ func (t *fakeTarget) Merge(newTarget Target) {}
 
 func (t *fakeTarget) EstimatedTimeToExecute() time.Duration { return 0 }
 
-func testTargetManager(t test.Tester) {
+func testTargetManager(t testing.TB) {
 	targetManager := NewTargetManager(nopIngester{}, 3)
 	testJob1 := config.JobConfig{
 		JobConfig: pb.JobConfig{

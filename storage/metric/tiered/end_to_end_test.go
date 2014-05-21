@@ -21,10 +21,9 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility/test"
 )
 
-func GetFingerprintsForLabelSetTests(p metric.Persistence, t test.Tester) {
+func GetFingerprintsForLabelSetTests(p metric.Persistence, t testing.TB) {
 	metrics := []clientmodel.Metric{
 		{
 			clientmodel.MetricNameLabel: "test_metric",
@@ -153,7 +152,7 @@ func GetFingerprintsForLabelSetTests(p metric.Persistence, t test.Tester) {
 	}
 }
 
-func GetLabelValuesForLabelNameTests(p metric.Persistence, t test.Tester) {
+func GetLabelValuesForLabelNameTests(p metric.Persistence, t testing.TB) {
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: 0,
@@ -197,7 +196,7 @@ func GetLabelValuesForLabelNameTests(p metric.Persistence, t test.Tester) {
 	}
 }
 
-func GetMetricForFingerprintTests(p metric.Persistence, t test.Tester) {
+func GetMetricForFingerprintTests(p metric.Persistence, t testing.TB) {
 	testAppendSamples(p, &clientmodel.Sample{
 		Value:     0,
 		Timestamp: 0,
@@ -308,7 +307,7 @@ func GetMetricForFingerprintTests(p metric.Persistence, t test.Tester) {
 	}
 }
 
-func AppendRepeatingValuesTests(p metric.Persistence, t test.Tester) {
+func AppendRepeatingValuesTests(p metric.Persistence, t testing.TB) {
 	m := clientmodel.Metric{
 		clientmodel.MetricNameLabel: "errors_total",
 		"controller":                "foo",
@@ -368,7 +367,7 @@ func AppendRepeatingValuesTests(p metric.Persistence, t test.Tester) {
 	}
 }
 
-func AppendsRepeatingValuesTests(p metric.Persistence, t test.Tester) {
+func AppendsRepeatingValuesTests(p metric.Persistence, t testing.TB) {
 	m := clientmodel.Metric{
 		clientmodel.MetricNameLabel: "errors_total",
 		"controller":                "foo",

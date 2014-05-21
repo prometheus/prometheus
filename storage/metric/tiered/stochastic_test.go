@@ -32,14 +32,14 @@ import (
 
 const stochasticMaximumVariance = 8
 
-func BasicLifecycleTests(p metric.Persistence, t test.Tester) {
+func BasicLifecycleTests(p metric.Persistence, t testing.TB) {
 	if p == nil {
 		t.Errorf("Received nil Metric Persistence.\n")
 		return
 	}
 }
 
-func ReadEmptyTests(p metric.Persistence, t test.Tester) {
+func ReadEmptyTests(p metric.Persistence, t testing.TB) {
 	hasLabelPair := func(x int) (success bool) {
 		fingerprints, err := p.GetFingerprintsForLabelMatchers(metric.LabelMatchers{{
 			Type:  metric.Equal,
@@ -89,7 +89,7 @@ func ReadEmptyTests(p metric.Persistence, t test.Tester) {
 	}
 }
 
-func AppendSampleAsPureSparseAppendTests(p metric.Persistence, t test.Tester) {
+func AppendSampleAsPureSparseAppendTests(p metric.Persistence, t testing.TB) {
 	appendSample := func(x int) (success bool) {
 		v := clientmodel.SampleValue(x)
 		ts := clientmodel.TimestampFromUnix(int64(x))
@@ -118,7 +118,7 @@ func AppendSampleAsPureSparseAppendTests(p metric.Persistence, t test.Tester) {
 	}
 }
 
-func AppendSampleAsSparseAppendWithReadsTests(p metric.Persistence, t test.Tester) {
+func AppendSampleAsSparseAppendWithReadsTests(p metric.Persistence, t testing.TB) {
 	appendSample := func(x int) (success bool) {
 		v := clientmodel.SampleValue(x)
 		ts := clientmodel.TimestampFromUnix(int64(x))
@@ -170,7 +170,7 @@ func AppendSampleAsSparseAppendWithReadsTests(p metric.Persistence, t test.Teste
 	}
 }
 
-func AppendSampleAsPureSingleEntityAppendTests(p metric.Persistence, t test.Tester) {
+func AppendSampleAsPureSingleEntityAppendTests(p metric.Persistence, t testing.TB) {
 	appendSample := func(x int) bool {
 		sample := &clientmodel.Sample{
 			Value:     clientmodel.SampleValue(x),
@@ -237,7 +237,7 @@ func (t timeslice) Less(i, j int) bool {
 	return t[i].Before(t[j])
 }
 
-func StochasticTests(persistenceMaker func() (metric.Persistence, test.Closer), t test.Tester) {
+func StochasticTests(persistenceMaker func() (metric.Persistence, test.Closer), t testing.TB) {
 	stochastic := func(x int) (success bool) {
 		p, closer := persistenceMaker()
 		defer closer.Close()
@@ -528,7 +528,7 @@ func BenchmarkLevelDBAppendSampleAsPureSingleEntityAppend(b *testing.B) {
 	}
 }
 
-func testLevelDBStochastic(t test.Tester) {
+func testLevelDBStochastic(t testing.TB) {
 	persistenceMaker := func() (metric.Persistence, test.Closer) {
 		temporaryDirectory := test.NewTemporaryDirectory("test_leveldb_stochastic", t)
 
@@ -613,7 +613,7 @@ func BenchmarkMemoryAppendSampleAsPureSingleEntityAppend(b *testing.B) {
 	}
 }
 
-func testMemoryStochastic(t test.Tester) {
+func testMemoryStochastic(t testing.TB) {
 	persistenceMaker := func() (metric.Persistence, test.Closer) {
 		return NewMemorySeriesStorage(MemorySeriesOptions{}), test.NilCloser
 	}

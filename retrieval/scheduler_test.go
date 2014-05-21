@@ -14,10 +14,11 @@
 package retrieval
 
 import (
-	"github.com/prometheus/prometheus/utility"
-	"github.com/prometheus/prometheus/utility/test"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/utility/test"
 )
 
 type fakeHealthReporter struct {
@@ -33,7 +34,7 @@ func (h fakeHealthReporter) State() (state TargetState) {
 	return
 }
 
-func testHealthScheduler(t test.Tester) {
+func testHealthScheduler(t testing.TB) {
 	now := time.Now()
 	var scenarios = []struct {
 		futureHealthState []TargetState

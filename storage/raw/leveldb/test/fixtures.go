@@ -14,6 +14,7 @@
 package test
 
 import (
+	"testing"
 	"code.google.com/p/goprotobuf/proto"
 
 	"github.com/prometheus/prometheus/storage/raw/leveldb"
@@ -50,7 +51,7 @@ type (
 	}
 
 	preparer struct {
-		tester test.Tester
+		tester testing.TB
 	}
 
 	cassetteFactory struct {
@@ -108,7 +109,7 @@ func (f *cassetteFactory) Next() (key proto.Message, value interface{}) {
 }
 
 // NewPreparer creates a new Preparer for use in testing scenarios.
-func NewPreparer(t test.Tester) Preparer {
+func NewPreparer(t testing.TB) Preparer {
 	return preparer{t}
 }
 
