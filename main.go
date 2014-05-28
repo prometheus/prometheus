@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/rules/manager"
 	"github.com/prometheus/prometheus/storage/metric/tiered"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
@@ -82,7 +82,7 @@ type prometheus struct {
 
 	unwrittenSamples chan *extraction.Result
 
-	ruleManager     rules.RuleManager
+	ruleManager     manager.RuleManager
 	targetManager   retrieval.TargetManager
 	notifications   chan notification.NotificationReqs
 	storage         *tiered.TieredStorage
@@ -272,7 +272,7 @@ func main() {
 	notifications := make(chan notification.NotificationReqs, *notificationQueueCapacity)
 
 	// Queue depth will need to be exposed
-	ruleManager := rules.NewRuleManager(&rules.RuleManagerOptions{
+	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
 		Results:            unwrittenSamples,
 		Notifications:      notifications,
 		EvaluationInterval: conf.EvaluationInterval(),
@@ -304,6 +304,10 @@ func main() {
 
 	alertsHandler := &web.AlertsHandler{
 		RuleManager: ruleManager,
+	}
+
+	consolesHandler := &web.ConsolesHandler{
+		Storage: ts,
 	}
 
 	databasesHandler := &web.DatabasesHandler{
@@ -341,6 +345,7 @@ func main() {
 		StatusHandler:    prometheusStatus,
 		MetricsHandler:   metricsService,
 		DatabasesHandler: databasesHandler,
+		ConsolesHandler:  consolesHandler,
 		AlertsHandler:    alertsHandler,
 
 		QuitDelegate: prometheus.Close,

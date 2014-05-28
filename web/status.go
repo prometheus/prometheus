@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/rules/manager"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -30,7 +30,7 @@ type PrometheusStatusHandler struct {
 	Config      string
 	Curation    metric.CurationState
 	Flags       map[string]string
-	RuleManager rules.RuleManager
+	RuleManager manager.RuleManager
 	TargetPools map[string]*retrieval.TargetPool
 
 	Birth time.Time
