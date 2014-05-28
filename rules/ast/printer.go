@@ -15,6 +15,7 @@ package ast
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -196,6 +197,36 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 		case JSON:
 			return TypedValueToJSON(str, "string")
 		}
+	}
+	panic("Switch didn't cover all node types")
+}
+
+// EvalToVector evaluates the given node into a Vector, Matrixes aren't supported.
+func EvalToVector(node Node, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (Vector, error) {
+	viewTimer := queryStats.GetTimer(stats.TotalViewBuildingTime).Start()
+	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
+	viewTimer.Stop()
+	if err != nil {
+		panic(err)
+	}
+
+	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
+	switch node.Type() {
+	case SCALAR:
+		scalar := node.(ScalarNode).Eval(timestamp, viewAdapter)
+		evalTimer.Stop()
+		return Vector{&clientmodel.Sample{Value: scalar}}, nil
+	case VECTOR:
+		vector := node.(VectorNode).Eval(timestamp, viewAdapter)
+		evalTimer.Stop()
+		return vector, nil
+	case MATRIX:
+		return nil, errors.New("Matrices not supported by EvalToVector")
+	case STRING:
+		str := node.(StringNode).Eval(timestamp, viewAdapter)
+		evalTimer.Stop()
+		return Vector{&clientmodel.Sample{
+			Metric: clientmodel.Metric{"__value__": clientmodel.LabelValue(str)}}}, nil
 	}
 	panic("Switch didn't cover all node types")
 }

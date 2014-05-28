@@ -15,6 +15,7 @@ package web
 
 import (
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/rules/manager"
 	"net/http"
 	"sort"
 	"sync"
@@ -26,7 +27,7 @@ type AlertStatus struct {
 }
 
 type AlertsHandler struct {
-	RuleManager rules.RuleManager
+	RuleManager manager.RuleManager
 
 	mutex sync.Mutex
 }
