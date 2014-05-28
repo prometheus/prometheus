@@ -14,8 +14,11 @@
 package rules
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/golang/glog"
@@ -25,6 +28,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
+	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -105,7 +110,51 @@ func (m *ruleManager) Stop() {
 	}
 }
 
-func (m *ruleManager) queueAlertNotifications(rule *AlertingRule) {
+func expandTemplate(text string, name string, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) string {
+        funcMap := template.FuncMap{
+                "query": func(q string) (ast.Vector, error) {
+                        exprNode, _ := LoadExprFromString(q)
+                        queryStats := stats.NewTimerGroup()
+                        result, _ := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
+                        return result, nil
+                },
+                "first": func(v ast.Vector) (*clientmodel.Sample, error) {
+                        if len(v) > 0 {
+                                return v[0], nil
+                        } else {
+                                return nil, errors.New("first() called on vector with no elements")
+                        }
+                },
+                "label": func(label string, s clientmodel.Sample) string {
+                        return string(s.Metric[clientmodel.LabelName(label)])
+                },
+                "value": func(s clientmodel.Sample) float64 {
+                        return float64(s.Value)
+                },
+                "strvalue": func(s clientmodel.Sample) string {
+                        return string(s.Metric["__value__"])
+                },
+                "timestamp": func(s clientmodel.Sample) float64 {
+                        return float64(s.Timestamp)
+                },
+        }
+
+        var buffer bytes.Buffer
+        tmpl, err := template.New(name).Funcs(funcMap).Parse(text)
+        if err != nil {
+                return fmt.Sprintf("Error parsing alert template: %v", err)
+                glog.Warning(fmt.Sprintf("Error parsing alert template for %v: %v", name, err))
+        } else {
+                err := tmpl.Execute(&buffer, nil)
+                if err != nil {
+                        return fmt.Sprintf("Error executing alert template: %v", err)
+                        glog.Warning(fmt.Sprintf("Error executing alert template for %v: %v", name, err))
+                }
+        }
+        return buffer.String()
+}
+
+func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clientmodel.Timestamp) {
 	activeAlerts := rule.ActiveAlerts()
 	if len(activeAlerts) == 0 {
 		return
@@ -118,9 +167,10 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule) {
 			continue
 		}
 
+
 		notifications = append(notifications, &notification.NotificationReq{
-			Summary:     rule.Summary,
-			Description: rule.Description,
+			Summary: expandTemplate(rule.Summary, "__alert_" + rule.Name(), timestamp, m.storage),
+			Description: expandTemplate(rule.Description, "__alert_" + rule.Name(), timestamp, m.storage),
 			Labels: aa.Labels.Merge(clientmodel.LabelSet{
 				AlertNameLabel: clientmodel.LabelValue(rule.Name()),
 			}),
@@ -161,7 +211,7 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 
 			switch r := rule.(type) {
 			case *AlertingRule:
-				m.queueAlertNotifications(r)
+				m.queueAlertNotifications(r, now)
 				recordOutcome(alertingRuleType, duration)
 			case *RecordingRule:
 				recordOutcome(recordingRuleType, duration)
