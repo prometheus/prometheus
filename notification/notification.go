@@ -20,7 +20,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"text/template"
 	"time"
 
 	"github.com/golang/glog"
@@ -84,49 +83,13 @@ func NewNotificationHandler(alertmanagerUrl string, notificationReqs <-chan Noti
 	}
 }
 
-// Interpolate alert information into summary/description templates.
-func interpolateMessage(msg string, labels clientmodel.LabelSet, value clientmodel.SampleValue) string {
-	t := template.New("message")
-
-	// Inject some convenience variables that are easier to remember for users
-	// who are not used to Go's templating system.
-	defs :=
-		"{{$labels := .Labels}}" +
-			"{{$value := .Value}}"
-
-	if _, err := t.Parse(defs + msg); err != nil {
-		glog.Warning("Error parsing template: ", err)
-		return msg
-	}
-
-	l := map[string]string{}
-	for k, v := range labels {
-		l[string(k)] = string(v)
-	}
-
-	tmplData := struct {
-		Labels map[string]string
-		Value  clientmodel.SampleValue
-	}{
-		Labels: l,
-		Value:  value,
-	}
-
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, &tmplData); err != nil {
-		glog.Warning("Error executing template: ", err)
-		return msg
-	}
-	return buf.String()
-}
-
 // Send a list of notifications to the configured alert manager.
 func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	alerts := make([]map[string]interface{}, 0, len(reqs))
 	for _, req := range reqs {
 		alerts = append(alerts, map[string]interface{}{
-			"Summary":     interpolateMessage(req.Summary, req.Labels, req.Value),
-			"Description": interpolateMessage(req.Description, req.Labels, req.Value),
+			"Summary":     req.Summary,
+			"Description": req.Description,
 			"Labels":      req.Labels,
 			"Payload": map[string]interface{}{
 				"Value":        req.Value,
@@ -140,6 +103,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	if err != nil {
 		return err
 	}
+	glog.V(1).Infoln("Sending notifications to alertmanager:", string(buf))
 	resp, err := n.httpClient.Post(
 		n.alertmanagerUrl+alertmanagerApiEventsPath,
 		contentTypeJson,
