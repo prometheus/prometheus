@@ -14,10 +14,12 @@
 package web
 
 import (
-	"github.com/prometheus/prometheus/rules"
 	"net/http"
 	"sort"
 	"sync"
+
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/rules/manager"
 )
 
 type AlertStatus struct {
@@ -26,7 +28,7 @@ type AlertStatus struct {
 }
 
 type AlertsHandler struct {
-	RuleManager rules.RuleManager
+	RuleManager manager.RuleManager
 
 	mutex sync.Mutex
 }

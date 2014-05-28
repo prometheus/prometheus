@@ -15,6 +15,7 @@ package test
 
 import (
 	"testing"
+
 	"code.google.com/p/goprotobuf/proto"
 
 	"github.com/prometheus/prometheus/storage/raw/leveldb"

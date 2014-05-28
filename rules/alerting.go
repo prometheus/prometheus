@@ -96,7 +96,7 @@ type AlertingRule struct {
 	// The name of the alert.
 	name string
 	// The vector expression from which to generate alerts.
-	vector ast.VectorNode
+	Vector ast.VectorNode
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from PENDING to FIRING state.
 	holdDuration time.Duration
@@ -119,7 +119,7 @@ func (rule *AlertingRule) Name() string {
 }
 
 func (rule *AlertingRule) EvalRaw(timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (ast.Vector, error) {
-	return ast.EvalVectorInstant(rule.vector, timestamp, storage, stats.NewTimerGroup())
+	return ast.EvalVectorInstant(rule.Vector, timestamp, storage, stats.NewTimerGroup())
 }
 
 func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (ast.Vector, error) {
@@ -185,12 +185,12 @@ func (rule *AlertingRule) ToDotGraph() string {
 	  %#p[shape="box",label="ALERT %s IF FOR %s"];
 		%#p -> %#p;
 		%s
-	}`, &rule, rule.name, utility.DurationToString(rule.holdDuration), &rule, rule.vector, rule.vector.NodeTreeToDotGraph())
+	}`, &rule, rule.name, utility.DurationToString(rule.holdDuration), &rule, rule.Vector, rule.Vector.NodeTreeToDotGraph())
 	return graph
 }
 
 func (rule *AlertingRule) String() string {
-	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.vector, utility.DurationToString(rule.holdDuration), rule.Labels)
+	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.Vector, utility.DurationToString(rule.holdDuration), rule.Labels)
 }
 
 func (rule *AlertingRule) HTMLSnippet() template.HTML {
@@ -202,8 +202,8 @@ func (rule *AlertingRule) HTMLSnippet() template.HTML {
 		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
 		ConsoleLinkForExpression(alertMetric.String()),
 		rule.name,
-		ConsoleLinkForExpression(rule.vector.String()),
-		rule.vector,
+		ConsoleLinkForExpression(rule.Vector.String()),
+		rule.Vector,
 		utility.DurationToString(rule.holdDuration),
 		rule.Labels))
 }
@@ -236,7 +236,7 @@ func (rule *AlertingRule) ActiveAlerts() []Alert {
 func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels clientmodel.LabelSet, summary string, description string) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
-		vector:       vector,
+		Vector:       vector,
 		holdDuration: holdDuration,
 		Labels:       labels,
 		Summary:      summary,

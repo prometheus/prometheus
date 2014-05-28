@@ -62,37 +62,8 @@ func (t testTieredStorageCloser) Close() {
 	t.directory.Close()
 }
 
-// This is copied from storage/metric/helpers_test.go, which is unfortunate but
-// presently required to make things work.
-func NewTestTieredStorage(t testing.TB) (storage *tiered.TieredStorage, closer test.Closer) {
-	var directory test.TemporaryDirectory
-	directory = test.NewTemporaryDirectory("test_tiered_storage", t)
-	storage, err := tiered.NewTieredStorage(2500, 1000, 5*time.Second, 0*time.Second, directory.Path())
-
-	if err != nil {
-		if storage != nil {
-			storage.Close()
-		}
-		directory.Close()
-		t.Fatalf("Error creating storage: %s", err)
-	}
-
-	if storage == nil {
-		directory.Close()
-		t.Fatalf("storage == nil")
-	}
-	started := make(chan bool)
-	go storage.Serve(started)
-	<-started
-	closer = &testTieredStorageCloser{
-		storage:   storage,
-		directory: directory,
-	}
-	return
-}
-
 func newTestStorage(t testing.TB) (storage *tiered.TieredStorage, closer test.Closer) {
-	storage, closer = NewTestTieredStorage(t)
+	storage, closer = tiered.NewTestTieredStorage(t)
 	if storage == nil {
 		t.Fatal("storage == nil")
 	}
