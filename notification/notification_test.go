@@ -80,27 +80,9 @@ func TestNotificationHandler(t *testing.T) {
 	scenarios := []testNotificationScenario{
 		{
 			// Correct message.
-			summary:     "{{$labels.instance}} = {{$value}}",
-			description: "The alert value for {{$labels.instance}} is {{$value}}",
-			message:     `[{"Description":"The alert value for testinstance is 0.3333333333333333","Labels":{"instance":"testinstance"},"Payload":{"ActiveSince":"0001-01-01T00:00:00Z","AlertingRule":"Test rule string","GeneratorUrl":"prometheus_url","Value":"0.333333"},"Summary":"testinstance = 0.3333333333333333"}]`,
-		},
-		{
-			// Bad message referring to unknown label.
-			summary:     "{{$labels.badlabel}} = {{$value}}",
-			description: "The alert value for {{$labels.badlabel}} is {{$value}}",
-			message:     `[{"Description":"The alert value for \u003cno value\u003e is 0.3333333333333333","Labels":{"instance":"testinstance"},"Payload":{"ActiveSince":"0001-01-01T00:00:00Z","AlertingRule":"Test rule string","GeneratorUrl":"prometheus_url","Value":"0.333333"},"Summary":"\u003cno value\u003e = 0.3333333333333333"}]`,
-		},
-		{
-			// Bad message referring to unknown variable.
-			summary:     "{{$labels.instance}} = {{$badvar}}",
-			description: "The alert value for {{$labels.instance}} is {{$badvar}}",
-			message:     `[{"Description":"The alert value for {{$labels.instance}} is {{$badvar}}","Labels":{"instance":"testinstance"},"Payload":{"ActiveSince":"0001-01-01T00:00:00Z","AlertingRule":"Test rule string","GeneratorUrl":"prometheus_url","Value":"0.333333"},"Summary":"{{$labels.instance}} = {{$badvar}}"}]`,
-		},
-		{
-			// Bad message referring to unknown struct field.
-			summary:     "{{$labels.instance}} = {{.Val}}",
-			description: "The alert value for {{$labels.instance}} is {{.Val}}",
-			message:     `[{"Description":"The alert value for {{$labels.instance}} is {{.Val}}","Labels":{"instance":"testinstance"},"Payload":{"ActiveSince":"0001-01-01T00:00:00Z","AlertingRule":"Test rule string","GeneratorUrl":"prometheus_url","Value":"0.333333"},"Summary":"{{$labels.instance}} = {{.Val}}"}]`,
+			summary:     "Summary",
+			description: "Description",
+			message:     `[{"Description":"Description","Labels":{"instance":"testinstance"},"Payload":{"ActiveSince":"0001-01-01T00:00:00Z","AlertingRule":"Test rule string","GeneratorUrl":"prometheus_url","Value":"0.333333"},"Summary":"Summary"}]`,
 		},
 	}
 
