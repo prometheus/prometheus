@@ -306,6 +306,10 @@ func main() {
 		RuleManager: ruleManager,
 	}
 
+	consolesHandler := &web.ConsolesHandler{
+		Storage: ts,
+	}
+
 	databasesHandler := &web.DatabasesHandler{
 		Provider:        ts.DiskStorage,
 		RefreshInterval: 5 * time.Minute,
@@ -341,6 +345,7 @@ func main() {
 		StatusHandler:    prometheusStatus,
 		MetricsHandler:   metricsService,
 		DatabasesHandler: databasesHandler,
+		ConsolesHandler:  consolesHandler,
 		AlertsHandler:    alertsHandler,
 
 		QuitDelegate: prometheus.Close,

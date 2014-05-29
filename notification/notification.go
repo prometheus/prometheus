@@ -103,7 +103,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	if err != nil {
 		return err
 	}
-        glog.V(1).Infoln("Sending notifications to alertmanager:", string(buf))
+	glog.V(1).Infoln("Sending notifications to alertmanager:", string(buf))
 	resp, err := n.httpClient.Post(
 		n.alertmanagerUrl+alertmanagerApiEventsPath,
 		contentTypeJson,
