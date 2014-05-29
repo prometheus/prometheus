@@ -70,5 +70,10 @@ func (h *ConsolesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := clientmodel.Now()
-	io.WriteString(w, templates.Expand(string(text), "__console_"+r.URL.Path, data, now, h.Storage))
+	result, err := templates.Expand(string(text), "__console_"+r.URL.Path, data, now, h.Storage)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	io.WriteString(w, result)
 }

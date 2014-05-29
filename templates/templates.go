@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"text/template"
 
-	"github.com/golang/glog"
-
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/rules"
@@ -29,13 +27,23 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-func Expand(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) string {
+func Expand(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (result string, result_err error) {
+
+	// It'd better to have no alert description than to kill the whole process
+	// if there's a bug in the template. Similarly with console templates.
+	defer func() {
+		if r := recover(); r != nil {
+			var ok bool
+			result_err, ok = r.(error)
+			if !ok {
+				result_err = fmt.Errorf("Panic expanding template: %v", r)
+			}
+		}
+	}()
+
 	funcMap := template.FuncMap{
 		"query": func(q string) (ast.Vector, error) {
-			exprNode, _ := rules.LoadExprFromString(q)
-			queryStats := stats.NewTimerGroup()
-			result, _ := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
-			return result, nil
+			return query(q, timestamp, storage)
 		},
 		"first": func(v ast.Vector) (*clientmodel.Sample, error) {
 			if len(v) > 0 {
@@ -61,14 +69,25 @@ func Expand(text string, name string, data interface{}, timestamp clientmodel.Ti
 	var buffer bytes.Buffer
 	tmpl, err := template.New(name).Funcs(funcMap).Parse(text)
 	if err != nil {
-		return fmt.Sprintf("Error parsing alert template: %v", err)
-		glog.Warning(fmt.Sprintf("Error parsing alert template for %v: %v", name, err))
+		return "", fmt.Errorf("Error parsing template %v: %v", name, err)
 	} else {
 		err := tmpl.Execute(&buffer, data)
 		if err != nil {
-			return fmt.Sprintf("Error executing alert template: %v", err)
-			glog.Warning(fmt.Sprintf("Error executing alert template for %v: %v", name, err))
+			return "", fmt.Errorf("Error executing template %v: %v", name, err)
 		}
 	}
-	return buffer.String()
+	return buffer.String(), nil
+}
+
+func query(q string, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (ast.Vector, error) {
+	exprNode, err := rules.LoadExprFromString(q)
+	if err != nil {
+		return nil, err
+	}
+	queryStats := stats.NewTimerGroup()
+	result, err := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
