@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/templates"
 )
 
 type RuleManager interface {
@@ -110,50 +111,6 @@ func (m *ruleManager) Stop() {
 	}
 }
 
-func expandTemplate(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) string {
-	funcMap := template.FuncMap{
-		"query": func(q string) (ast.Vector, error) {
-			exprNode, _ := LoadExprFromString(q)
-			queryStats := stats.NewTimerGroup()
-			result, _ := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
-			return result, nil
-		},
-		"first": func(v ast.Vector) (*clientmodel.Sample, error) {
-			if len(v) > 0 {
-				return v[0], nil
-			} else {
-				return nil, errors.New("first() called on vector with no elements")
-			}
-		},
-		"label": func(label string, s clientmodel.Sample) string {
-			return string(s.Metric[clientmodel.LabelName(label)])
-		},
-		"value": func(s clientmodel.Sample) float64 {
-			return float64(s.Value)
-		},
-		"strvalue": func(s clientmodel.Sample) string {
-			return string(s.Metric["__value__"])
-		},
-		"timestamp": func(s clientmodel.Sample) float64 {
-			return float64(s.Timestamp)
-		},
-	}
-
-	var buffer bytes.Buffer
-	tmpl, err := template.New(name).Funcs(funcMap).Parse(text)
-	if err != nil {
-		return fmt.Sprintf("Error parsing alert template: %v", err)
-		glog.Warning(fmt.Sprintf("Error parsing alert template for %v: %v", name, err))
-	} else {
-		err := tmpl.Execute(&buffer, data)
-		if err != nil {
-			return fmt.Sprintf("Error executing alert template: %v", err)
-			glog.Warning(fmt.Sprintf("Error executing alert template for %v: %v", name, err))
-		}
-	}
-	return buffer.String()
-}
-
 func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clientmodel.Timestamp) {
 	activeAlerts := rule.ActiveAlerts()
 	if len(activeAlerts) == 0 {
@@ -184,7 +141,7 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clie
 		defs := "{{$labels := .Labels}}{{$value := .Value}}"
 
 		expand := func(text, name string) string {
-			return expandTemplate(defs+text, "__alert_"+name, tmplData, timestamp, m.storage)
+			return templates.Expand(defs+text, "__alert_"+name, tmplData, timestamp, m.storage)
 		}
 
 		notifications = append(notifications, &notification.NotificationReq{
