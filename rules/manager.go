@@ -110,48 +110,48 @@ func (m *ruleManager) Stop() {
 	}
 }
 
-func expandTemplate(text string, name string, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) string {
-        funcMap := template.FuncMap{
-                "query": func(q string) (ast.Vector, error) {
-                        exprNode, _ := LoadExprFromString(q)
-                        queryStats := stats.NewTimerGroup()
-                        result, _ := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
-                        return result, nil
-                },
-                "first": func(v ast.Vector) (*clientmodel.Sample, error) {
-                        if len(v) > 0 {
-                                return v[0], nil
-                        } else {
-                                return nil, errors.New("first() called on vector with no elements")
-                        }
-                },
-                "label": func(label string, s clientmodel.Sample) string {
-                        return string(s.Metric[clientmodel.LabelName(label)])
-                },
-                "value": func(s clientmodel.Sample) float64 {
-                        return float64(s.Value)
-                },
-                "strvalue": func(s clientmodel.Sample) string {
-                        return string(s.Metric["__value__"])
-                },
-                "timestamp": func(s clientmodel.Sample) float64 {
-                        return float64(s.Timestamp)
-                },
-        }
+func expandTemplate(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) string {
+	funcMap := template.FuncMap{
+		"query": func(q string) (ast.Vector, error) {
+			exprNode, _ := LoadExprFromString(q)
+			queryStats := stats.NewTimerGroup()
+			result, _ := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
+			return result, nil
+		},
+		"first": func(v ast.Vector) (*clientmodel.Sample, error) {
+			if len(v) > 0 {
+				return v[0], nil
+			} else {
+				return nil, errors.New("first() called on vector with no elements")
+			}
+		},
+		"label": func(label string, s clientmodel.Sample) string {
+			return string(s.Metric[clientmodel.LabelName(label)])
+		},
+		"value": func(s clientmodel.Sample) float64 {
+			return float64(s.Value)
+		},
+		"strvalue": func(s clientmodel.Sample) string {
+			return string(s.Metric["__value__"])
+		},
+		"timestamp": func(s clientmodel.Sample) float64 {
+			return float64(s.Timestamp)
+		},
+	}
 
-        var buffer bytes.Buffer
-        tmpl, err := template.New(name).Funcs(funcMap).Parse(text)
-        if err != nil {
-                return fmt.Sprintf("Error parsing alert template: %v", err)
-                glog.Warning(fmt.Sprintf("Error parsing alert template for %v: %v", name, err))
-        } else {
-                err := tmpl.Execute(&buffer, nil)
-                if err != nil {
-                        return fmt.Sprintf("Error executing alert template: %v", err)
-                        glog.Warning(fmt.Sprintf("Error executing alert template for %v: %v", name, err))
-                }
-        }
-        return buffer.String()
+	var buffer bytes.Buffer
+	tmpl, err := template.New(name).Funcs(funcMap).Parse(text)
+	if err != nil {
+		return fmt.Sprintf("Error parsing alert template: %v", err)
+		glog.Warning(fmt.Sprintf("Error parsing alert template for %v: %v", name, err))
+	} else {
+		err := tmpl.Execute(&buffer, data)
+		if err != nil {
+			return fmt.Sprintf("Error executing alert template: %v", err)
+			glog.Warning(fmt.Sprintf("Error executing alert template for %v: %v", name, err))
+		}
+	}
+	return buffer.String()
 }
 
 func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clientmodel.Timestamp) {
@@ -167,10 +167,29 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clie
 			continue
 		}
 
+		// Provide the alert infromation to the template
+		l := map[string]string{}
+		for k, v := range aa.Labels {
+			l[string(k)] = string(v)
+		}
+		tmplData := struct {
+			Labels map[string]string
+			Value  clientmodel.SampleValue
+		}{
+			Labels: l,
+			Value:  aa.Value,
+		}
+		// Inject some convenience variables that are easier to remember for users
+		// who are not used to Go's templating system.
+		defs := "{{$labels := .Labels}}{{$value := .Value}}"
+
+		expand := func(text, name string) string {
+			return expandTemplate(defs+text, "__alert_"+name, tmplData, timestamp, m.storage)
+		}
 
 		notifications = append(notifications, &notification.NotificationReq{
-			Summary: expandTemplate(rule.Summary, "__alert_" + rule.Name(), timestamp, m.storage),
-			Description: expandTemplate(rule.Description, "__alert_" + rule.Name(), timestamp, m.storage),
+			Summary:     expand(rule.Summary, rule.Name()),
+			Description: expand(rule.Description, rule.Name()),
 			Labels: aa.Labels.Merge(clientmodel.LabelSet{
 				AlertNameLabel: clientmodel.LabelValue(rule.Name()),
 			}),
