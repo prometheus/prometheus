@@ -11,14 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package rules
+package manager
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"sync"
-	"text/template"
 	"time"
 
 	"github.com/golang/glog"
@@ -28,8 +25,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
-	"github.com/prometheus/prometheus/rules/ast"
-	"github.com/prometheus/prometheus/stats"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/templates"
 )
@@ -42,15 +38,15 @@ type RuleManager interface {
 	// Stop the rule manager's rule evaluation cycles.
 	Stop()
 	// Return all rules.
-	Rules() []Rule
+	Rules() []rules.Rule
 	// Return all alerting rules.
-	AlertingRules() []*AlertingRule
+	AlertingRules() []*rules.AlertingRule
 }
 
 type ruleManager struct {
 	// Protects the rules list.
 	sync.Mutex
-	rules []Rule
+	rules []rules.Rule
 
 	done chan bool
 
@@ -75,7 +71,7 @@ type RuleManagerOptions struct {
 
 func NewRuleManager(o *RuleManagerOptions) RuleManager {
 	manager := &ruleManager{
-		rules: []Rule{},
+		rules: []rules.Rule{},
 		done:  make(chan bool),
 
 		interval:      o.EvaluationInterval,
@@ -98,7 +94,7 @@ func (m *ruleManager) Run() {
 			m.runIteration(m.results)
 			iterationDuration.Add(map[string]string{intervalLabel: m.interval.String()}, float64(time.Since(start)/time.Millisecond))
 		case <-m.done:
-			glog.Info("Rule manager exiting...")
+			glog.Info("rules.Rule manager exiting...")
 			return
 		}
 	}
@@ -111,7 +107,7 @@ func (m *ruleManager) Stop() {
 	}
 }
 
-func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clientmodel.Timestamp) {
+func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestamp clientmodel.Timestamp) {
 	activeAlerts := rule.ActiveAlerts()
 	if len(activeAlerts) == 0 {
 		return
@@ -119,7 +115,7 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clie
 
 	notifications := make(notification.NotificationReqs, 0, len(activeAlerts))
 	for _, aa := range activeAlerts {
-		if aa.State != FIRING {
+		if aa.State != rules.FIRING {
 			// BUG: In the future, make AlertManager support pending alerts?
 			continue
 		}
@@ -148,12 +144,12 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clie
 			Summary:     expand(rule.Summary, rule.Name()),
 			Description: expand(rule.Description, rule.Name()),
 			Labels: aa.Labels.Merge(clientmodel.LabelSet{
-				AlertNameLabel: clientmodel.LabelValue(rule.Name()),
+				rules.AlertNameLabel: clientmodel.LabelValue(rule.Name()),
 			}),
 			Value:        aa.Value,
 			ActiveSince:  aa.ActiveSince.Time(),
 			RuleString:   rule.String(),
-			GeneratorUrl: m.prometheusUrl + ConsoleLinkForExpression(rule.vector.String()),
+			GeneratorUrl: m.prometheusUrl + rules.ConsoleLinkForExpression(rule.Vector.String()),
 		})
 	}
 	m.notifications <- notifications
@@ -164,14 +160,14 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 	wg := sync.WaitGroup{}
 
 	m.Lock()
-	rules := make([]Rule, len(m.rules))
-	copy(rules, m.rules)
+	rules_snapshot := make([]rules.Rule, len(m.rules))
+	copy(rules_snapshot, m.rules)
 	m.Unlock()
 
-	for _, rule := range rules {
+	for _, rule := range rules_snapshot {
 		wg.Add(1)
 		// BUG(julius): Look at fixing thundering herd.
-		go func(rule Rule) {
+		go func(rule rules.Rule) {
 			defer wg.Done()
 
 			start := time.Now()
@@ -186,10 +182,10 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 			}
 
 			switch r := rule.(type) {
-			case *AlertingRule:
+			case *rules.AlertingRule:
 				m.queueAlertNotifications(r, now)
 				recordOutcome(alertingRuleType, duration)
-			case *RecordingRule:
+			case *rules.RecordingRule:
 				recordOutcome(recordingRuleType, duration)
 			default:
 				panic(fmt.Sprintf("Unknown rule type: %T", rule))
@@ -202,7 +198,7 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 
 func (m *ruleManager) AddRulesFromConfig(config config.Config) error {
 	for _, ruleFile := range config.Global.RuleFile {
-		newRules, err := LoadRulesFromFile(ruleFile)
+		newRules, err := rules.LoadRulesFromFile(ruleFile)
 		if err != nil {
 			return fmt.Errorf("%s: %s", ruleFile, err)
 		}
@@ -213,22 +209,22 @@ func (m *ruleManager) AddRulesFromConfig(config config.Config) error {
 	return nil
 }
 
-func (m *ruleManager) Rules() []Rule {
+func (m *ruleManager) Rules() []rules.Rule {
 	m.Lock()
 	defer m.Unlock()
 
-	rules := make([]Rule, len(m.rules))
+	rules := make([]rules.Rule, len(m.rules))
 	copy(rules, m.rules)
 	return rules
 }
 
-func (m *ruleManager) AlertingRules() []*AlertingRule {
+func (m *ruleManager) AlertingRules() []*rules.AlertingRule {
 	m.Lock()
 	defer m.Unlock()
 
-	alerts := []*AlertingRule{}
+	alerts := []*rules.AlertingRule{}
 	for _, rule := range m.rules {
-		if alertingRule, ok := rule.(*AlertingRule); ok {
+		if alertingRule, ok := rule.(*rules.AlertingRule); ok {
 			alerts = append(alerts, alertingRule)
 		}
 	}

@@ -23,6 +23,7 @@ import (
 
         clientmodel "github.com/prometheus/client_golang/model"
 
+        "github.com/prometheus/prometheus/rules"
         "github.com/prometheus/prometheus/rules/ast"
         "github.com/prometheus/prometheus/stats"
         "github.com/prometheus/prometheus/storage/metric"
@@ -31,7 +32,7 @@ import (
 func Expand(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) string {
         funcMap := template.FuncMap{
                 "query": func(q string) (ast.Vector, error) {
-                        exprNode, _ := LoadExprFromString(q)
+                        exprNode, _ := rules.LoadExprFromString(q)
                         queryStats := stats.NewTimerGroup()
                         result, _ := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
                         return result, nil
