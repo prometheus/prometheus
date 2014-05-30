@@ -27,6 +27,14 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
+// A version of vector that's easier to use from templates
+type sample struct {
+	Labels    map[string]string
+	Value     float64
+	Timestamp float64
+}
+type queryResult []*sample
+
 func Expand(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (result string, result_err error) {
 
 	// It'd better to have no alert description than to kill the whole process
@@ -42,27 +50,27 @@ func Expand(text string, name string, data interface{}, timestamp clientmodel.Ti
 	}()
 
 	funcMap := template.FuncMap{
-		"query": func(q string) (ast.Vector, error) {
+		"query": func(q string) (queryResult, error) {
 			return query(q, timestamp, storage)
 		},
-		"first": func(v ast.Vector) (*clientmodel.Sample, error) {
+		"first": func(v queryResult) (*sample, error) {
 			if len(v) > 0 {
 				return v[0], nil
 			} else {
 				return nil, errors.New("first() called on vector with no elements")
 			}
 		},
-		"label": func(label string, s clientmodel.Sample) string {
-			return string(s.Metric[clientmodel.LabelName(label)])
+		"label": func(label string, s *sample) string {
+			return s.Labels[label]
 		},
-		"value": func(s clientmodel.Sample) float64 {
-			return float64(s.Value)
+		"value": func(s *sample) float64 {
+			return s.Value
 		},
-		"strvalue": func(s clientmodel.Sample) string {
-			return string(s.Metric["__value__"])
+		"strvalue": func(s *sample) string {
+			return s.Labels["__value__"]
 		},
-		"timestamp": func(s clientmodel.Sample) float64 {
-			return float64(s.Timestamp)
+		"timestamp": func(s *sample) float64 {
+			return s.Timestamp
 		},
 	}
 
@@ -79,15 +87,30 @@ func Expand(text string, name string, data interface{}, timestamp clientmodel.Ti
 	return buffer.String(), nil
 }
 
-func query(q string, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (ast.Vector, error) {
+func query(q string, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (queryResult, error) {
 	exprNode, err := rules.LoadExprFromString(q)
 	if err != nil {
 		return nil, err
 	}
 	queryStats := stats.NewTimerGroup()
-	result, err := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
+	vector, err := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
 	if err != nil {
 		return nil, err
+	}
+
+	// ast.Vector is hard to work with in templates, so convert to
+	// base data types.
+	var result queryResult = make(queryResult, len(vector))
+	for n, v := range vector {
+		s := sample{
+			Value:     float64(v.Value),
+			Timestamp: float64(v.Timestamp),
+			Labels:    make(map[string]string),
+		}
+		for label, value := range v.Metric {
+			s.Labels[string(label)] = string(value)
+		}
+		result[n] = &s
 	}
 	return result, nil
 }
