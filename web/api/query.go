@@ -67,7 +67,7 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 
 	queryStats := stats.NewTimerGroup()
 	result := ast.EvalToString(exprNode, timestamp, format, serv.Storage, queryStats)
-	glog.Infof("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
+	glog.V(1).Infof("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
 	fmt.Fprint(w, result)
 }
 
@@ -130,7 +130,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	result := ast.TypedValueToJSON(matrix, "matrix")
 	jsonTimer.Stop()
 
-	glog.Infof("Range query: %s\nQuery stats:\n%s\n", expr, queryStats)
+	glog.V(1).Infof("Range query: %s\nQuery stats:\n%s\n", expr, queryStats)
 	fmt.Fprint(w, result)
 }
 
