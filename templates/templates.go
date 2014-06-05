@@ -17,6 +17,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
+	"regexp"
+	"sort"
 	"text/template"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -33,6 +36,23 @@ type sample struct {
 	Value  float64
 }
 type queryResult []*sample
+
+type queryResultByLabelSorter struct {
+	results queryResult
+	by      string
+}
+
+func (q queryResultByLabelSorter) Len() int {
+	return len(q.results)
+}
+
+func (q queryResultByLabelSorter) Less(i, j int) bool {
+	return q.results[i].Labels[q.by] < q.results[j].Labels[q.by]
+}
+
+func (q queryResultByLabelSorter) Swap(i, j int) {
+	q.results[i], q.results[j] = q.results[j], q.results[i]
+}
 
 // Expand a template, using the given data, time and storage.
 func Expand(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (result string, resultErr error) {
@@ -67,6 +87,55 @@ func Expand(text string, name string, data interface{}, timestamp clientmodel.Ti
 		},
 		"strvalue": func(s *sample) string {
 			return s.Labels["__value__"]
+		},
+		"reReplaceAll": func(pattern, repl, text string) string {
+			re := regexp.MustCompile(pattern)
+			return re.ReplaceAllString(text, repl)
+		},
+		"sortByLabel": func(label string, v queryResult) queryResult {
+			sorter := queryResultByLabelSorter{v[:], label}
+			sort.Stable(sorter)
+			return v
+		},
+		"humanize": func(v float64) string {
+			if v == 0 {
+				return fmt.Sprintf("%.4g ", v)
+			}
+			if math.Abs(v) >= 1 {
+				prefix := ""
+				for _, p := range []string{"k", "M", "G", "T", "P", "E", "Z", "Y"} {
+					if math.Abs(v) < 1000 {
+						break
+					}
+					prefix = p
+					v /= 1000
+				}
+				return fmt.Sprintf("%.4g %s", v, prefix)
+			} else {
+				prefix := ""
+				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
+					if math.Abs(v) >= 1 {
+						break
+					}
+					prefix = p
+					v *= 1000
+				}
+				return fmt.Sprintf("%.4g %s", v, prefix)
+			}
+		},
+		"humanize1024": func(v float64) string {
+			if math.Abs(v) <= 1 {
+				return fmt.Sprintf("%.4g ", v)
+			}
+			prefix := ""
+			for _, p := range []string{"ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi", "Yi"} {
+				if math.Abs(v) < 1024 {
+					break
+				}
+				prefix = p
+				v /= 1024
+			}
+			return fmt.Sprintf("%.4g %s", v, prefix)
 		},
 	}
 
