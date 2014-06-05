@@ -69,6 +69,26 @@ func TestTemplateExpansion(t *testing.T) {
 			text:       "{{ (query \"missing\").banana }}",
 			shouldFail: true,
 		},
+		{
+			// Regex replacement.
+			text:   "{{ reReplaceAll \"(a)b\" \"x$1\" \"ab\" }}",
+			output: "xa",
+		},
+		{
+			// Sorting.
+			text:   "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}} {{end}}",
+			output: "a b ",
+		},
+		{
+			// Humanize.
+			text:   "{{ 0.0 | humanize }}:{{ 1.0 | humanize }}:{{ 1234567.0 | humanize }}:{{ .12 | humanize }}",
+			output: "0 :1 :1.235 M:120 m",
+		},
+		{
+			// Humanize1024.
+			text:   "{{ 0.0 | humanize1024 }}:{{ 1.0 | humanize1024 }}:{{ 1048576.0 | humanize1024 }}:{{ .12 | humanize1024}}",
+			output: "0 :1 :1 Mi:0.12 ",
+		},
 	}
 
 	time := clientmodel.Timestamp(0)
