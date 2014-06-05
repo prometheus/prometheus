@@ -89,6 +89,16 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ 0.0 | humanize1024 }}:{{ 1.0 | humanize1024 }}:{{ 1048576.0 | humanize1024 }}:{{ .12 | humanize1024}}",
 			output: "0 :1 :1 Mi:0.12 ",
 		},
+		{
+			// Title.
+			text:   "{{ \"aa bb CC\" | title }}",
+			output: "Aa Bb CC",
+		},
+		{
+			// Match.
+			text:   "{{ match \"a+\" \"aa\" }} {{ match \"a+\" \"b\" }}",
+			output: "true false",
+		},
 	}
 
 	time := clientmodel.Timestamp(0)
