@@ -20,6 +20,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strings"
 	"text/template"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -92,6 +93,8 @@ func Expand(text string, name string, data interface{}, timestamp clientmodel.Ti
 			re := regexp.MustCompile(pattern)
 			return re.ReplaceAllString(text, repl)
 		},
+		"match": regexp.MatchString,
+		"title": strings.Title,
 		"sortByLabel": func(label string, v queryResult) queryResult {
 			sorter := queryResultByLabelSorter{v[:], label}
 			sort.Stable(sorter)
