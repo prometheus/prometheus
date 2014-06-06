@@ -137,13 +137,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 
-	metricNames, err := serv.Storage.GetAllValuesForLabel(clientmodel.MetricNameLabel)
-	w.Header().Set("Content-Type", "application/json")
-	if err != nil {
-		glog.Error("Error loading metric names: ", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	metricNames := serv.Storage.GetAllValuesForLabel(clientmodel.MetricNameLabel)
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
@@ -151,5 +145,6 @@ func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.Write(resultBytes)
 }

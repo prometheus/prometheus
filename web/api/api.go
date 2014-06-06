@@ -20,7 +20,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/utility"
 	"github.com/prometheus/prometheus/web/http_utils"
 )
@@ -29,7 +29,7 @@ type MetricsService struct {
 	time          utility.Time
 	Config        *config.Config
 	TargetManager retrieval.TargetManager
-	Storage       metric.PreloadingPersistence
+	Storage       storage_ng.Storage
 }
 
 func (msrv *MetricsService) RegisterHandler() {

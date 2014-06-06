@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-all: dumper pruner rule_checker
+all: dumper rule_checker
 
 SUFFIXES:
 
@@ -20,15 +20,11 @@ include ../Makefile.INCLUDE
 dumper:
 	$(MAKE) -C dumper
 
-pruner:
-	$(MAKE) -C pruner
-
 rule_checker:
 	$(MAKE) -C rule_checker
 
 clean:
 	$(MAKE) -C dumper clean
-	$(MAKE) -C pruner clean
 	$(MAKE) -C rule_checker clean
 
-.PHONY: clean dumper pruner rule_checker
+.PHONY: clean dumper rule_checker

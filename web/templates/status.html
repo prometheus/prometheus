@@ -69,28 +69,6 @@
         </table>
       {{end}}
 
-    <h2>Curation</h2>
-    <table class="table table-condensed table-bordered table-striped table-hover">
-      <tr>
-        <th>Active</th>
-        <td>{{.Curation.Active}}</td>
-      </tr>
-      {{if .Curation.Active}}
-      <tr>
-        <th>Processor Name</th>
-        <td>{{.Curation.Name}}</td>
-      </tr>
-      <tr>
-        <th>Recency Limit</th>
-        <td>{{.Curation.Limit}}</td>
-      </tr>
-      <tr>
-        <th>Current Fingerprint</th>
-        <td>{{.Curation.Fingerprint}}</td>
-      </tr>
-      {{end}}
-    </table>
-
     <h2>Startup Flags</h2>
     <table class="table table-condensed table-bordered table-striped table-hover">
       <tbody>

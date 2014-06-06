@@ -42,11 +42,10 @@ var (
 )
 
 type WebService struct {
-	StatusHandler    *PrometheusStatusHandler
-	DatabasesHandler *DatabasesHandler
-	MetricsHandler   *api.MetricsService
-	AlertsHandler    *AlertsHandler
-	ConsolesHandler  *ConsolesHandler
+	StatusHandler   *PrometheusStatusHandler
+	MetricsHandler  *api.MetricsService
+	AlertsHandler   *AlertsHandler
+	ConsolesHandler *ConsolesHandler
 
 	QuitDelegate func()
 }
@@ -58,9 +57,6 @@ func (w WebService) ServeForever() error {
 
 	http.Handle("/", prometheus.InstrumentHandler(
 		"/", w.StatusHandler,
-	))
-	http.Handle("/databases", prometheus.InstrumentHandler(
-		"/databases", w.DatabasesHandler,
 	))
 	http.Handle("/alerts", prometheus.InstrumentHandler(
 		"/alerts", w.AlertsHandler,

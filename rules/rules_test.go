@@ -24,7 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric/tiered"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/utility/test"
 )
 
@@ -52,23 +52,10 @@ func vectorComparisonString(expected []string, actual []string) string {
 		separator)
 }
 
-type testTieredStorageCloser struct {
-	storage   *tiered.TieredStorage
-	directory test.Closer
-}
-
-func (t testTieredStorageCloser) Close() {
-	t.storage.Close()
-	t.directory.Close()
-}
-
-func newTestStorage(t testing.TB) (storage *tiered.TieredStorage, closer test.Closer) {
-	storage, closer = tiered.NewTestTieredStorage(t)
-	if storage == nil {
-		t.Fatal("storage == nil")
-	}
+func newTestStorage(t testing.TB) (storage storage_ng.Storage, closer test.Closer) {
+	storage, closer = storage_ng.NewTestStorage(t)
 	storeMatrix(storage, testMatrix)
-	return
+	return storage, closer
 }
 
 func TestExpressions(t *testing.T) {
@@ -551,9 +538,8 @@ func TestExpressions(t *testing.T) {
 		},
 	}
 
-	tieredStorage, closer := newTestStorage(t)
+	storage, closer := newTestStorage(t)
 	defer closer.Close()
-	tieredStorage.Flush()
 
 	for i, exprTest := range expressionTests {
 		expectedLines := annotateWithTime(exprTest.output, testEvalTime)
@@ -571,7 +557,7 @@ func TestExpressions(t *testing.T) {
 				t.Errorf("%d. Test should fail, but didn't", i)
 			}
 			failed := false
-			resultStr := ast.EvalToString(testExpr, testEvalTime, ast.TEXT, tieredStorage, stats.NewTimerGroup())
+			resultStr := ast.EvalToString(testExpr, testEvalTime, ast.TEXT, storage, stats.NewTimerGroup())
 			resultLines := strings.Split(resultStr, "\n")
 
 			if len(exprTest.output) != len(resultLines) {
@@ -601,8 +587,8 @@ func TestExpressions(t *testing.T) {
 				}
 			}
 
-			analyzer := ast.NewQueryAnalyzer(tieredStorage)
-			analyzer.AnalyzeQueries(testExpr)
+			analyzer := ast.NewQueryAnalyzer(storage)
+			ast.Walk(analyzer, testExpr)
 			if exprTest.fullRanges != len(analyzer.FullRanges) {
 				t.Errorf("%d. Count of full ranges didn't match: %v vs %v", i, exprTest.fullRanges, len(analyzer.FullRanges))
 				failed = true
@@ -711,9 +697,8 @@ func TestAlertingRule(t *testing.T) {
 		},
 	}
 
-	tieredStorage, closer := newTestStorage(t)
+	storage, closer := newTestStorage(t)
 	defer closer.Close()
-	tieredStorage.Flush()
 
 	alertExpr, err := LoadExprFromString(`http_requests{group="canary", job="app-server"} < 100`)
 	if err != nil {
@@ -727,7 +712,7 @@ func TestAlertingRule(t *testing.T) {
 
 	for i, expected := range evalOutputs {
 		evalTime := testStartTime.Add(testSampleInterval * time.Duration(i))
-		actual, err := rule.Eval(evalTime, tieredStorage)
+		actual, err := rule.Eval(evalTime, storage)
 		if err != nil {
 			t.Fatalf("Error during alerting rule evaluation: %s", err)
 		}

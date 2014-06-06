@@ -19,6 +19,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -51,7 +52,7 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 	return vector
 }
 
-func storeMatrix(storage metric.Persistence, matrix ast.Matrix) (err error) {
+func storeMatrix(storage storage_ng.Storage, matrix ast.Matrix) {
 	pendingSamples := clientmodel.Samples{}
 	for _, sampleSet := range matrix {
 		for _, sample := range sampleSet.Values {
@@ -62,8 +63,7 @@ func storeMatrix(storage metric.Persistence, matrix ast.Matrix) (err error) {
 			})
 		}
 	}
-	err = storage.AppendSamples(pendingSamples)
-	return
+	storage.AppendSamples(pendingSamples)
 }
 
 var testMatrix = ast.Matrix{

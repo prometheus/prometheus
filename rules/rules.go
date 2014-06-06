@@ -19,7 +19,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/rules/ast"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/local"
 )
 
 // A Rule encapsulates a vector expression which is evaluated at a specified
@@ -29,9 +29,9 @@ type Rule interface {
 	Name() string
 	// EvalRaw evaluates the rule's vector expression without triggering any
 	// other actions, like recording or alerting.
-	EvalRaw(timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (ast.Vector, error)
+	EvalRaw(timestamp clientmodel.Timestamp, storage storage_ng.Storage) (ast.Vector, error)
 	// Eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (ast.Vector, error)
+	Eval(timestamp clientmodel.Timestamp, storage storage_ng.Storage) (ast.Vector, error)
 	// ToDotGraph returns a Graphviz dot graph of the rule.
 	ToDotGraph() string
 	// String returns a human-readable string representation of the rule.
