@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/templates"
 )
 
@@ -32,7 +32,7 @@ var (
 )
 
 type ConsolesHandler struct {
-	Storage metric.PreloadingPersistence
+	Storage storage_ng.Storage
 }
 
 func (h *ConsolesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

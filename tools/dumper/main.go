@@ -18,6 +18,7 @@
 // <fingerprint>,<chunk_first_time>,<chunk_last_time>,<chunk_sample_count>,<chunk_index>,<timestamp>,<value>
 package main
 
+/*
 import (
 	"encoding/csv"
 	"flag"
@@ -97,4 +98,8 @@ func main() {
 	if err = dumper.Error(); err != nil {
 		glog.Fatal("Error flushing CSV: ", err)
 	}
+}
+*/
+
+func main() {
 }

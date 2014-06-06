@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/local"
 )
 
 // A version of vector that's easier to use from templates.
@@ -57,7 +57,7 @@ func (q queryResultByLabelSorter) Swap(i, j int) {
 	q.results[i], q.results[j] = q.results[j], q.results[i]
 }
 
-func query(q string, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) (queryResult, error) {
+func query(q string, timestamp clientmodel.Timestamp, storage storage_ng.Storage) (queryResult, error) {
 	exprNode, err := rules.LoadExprFromString(q)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ type templateExpander struct {
 	funcMap text_template.FuncMap
 }
 
-func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence) *templateExpander {
+func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage storage_ng.Storage) *templateExpander {
 	return &templateExpander{
 		text: text,
 		name: name,

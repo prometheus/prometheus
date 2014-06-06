@@ -16,12 +16,10 @@ package ast
 import (
 	"time"
 
-	"github.com/golang/glog"
-
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/local"
 )
 
 // FullRangeMap maps the fingerprint of a full range to the duration
@@ -48,13 +46,13 @@ type QueryAnalyzer struct {
 	IntervalRanges IntervalRangeMap
 	// The underlying storage to which the query will be applied. Needed for
 	// extracting timeseries fingerprint information during query analysis.
-	storage metric.Persistence
+	storage storage_ng.Storage
 }
 
 // NewQueryAnalyzer returns a pointer to a newly instantiated
 // QueryAnalyzer. The storage is needed to extract timeseries
 // fingerprint information during query analysis.
-func NewQueryAnalyzer(storage metric.Persistence) *QueryAnalyzer {
+func NewQueryAnalyzer(storage storage_ng.Storage) *QueryAnalyzer {
 	return &QueryAnalyzer{
 		FullRanges:     FullRangeMap{},
 		IntervalRanges: IntervalRangeMap{},
@@ -66,94 +64,122 @@ func NewQueryAnalyzer(storage metric.Persistence) *QueryAnalyzer {
 func (analyzer *QueryAnalyzer) Visit(node Node) {
 	switch n := node.(type) {
 	case *VectorSelector:
-		fingerprints, err := analyzer.storage.GetFingerprintsForLabelMatchers(n.labelMatchers)
-		if err != nil {
-			glog.Errorf("Error getting fingerprints for label matchers %v: %v", n.labelMatchers, err)
-			return
-		}
+		fingerprints := analyzer.storage.GetFingerprintsForLabelMatchers(n.labelMatchers)
 		n.fingerprints = fingerprints
-		for _, fingerprint := range fingerprints {
+		for _, fp := range fingerprints {
 			// Only add the fingerprint to IntervalRanges if not yet present in FullRanges.
 			// Full ranges always contain more points and span more time than interval ranges.
-			if _, alreadyInFullRanges := analyzer.FullRanges[*fingerprint]; !alreadyInFullRanges {
-				analyzer.IntervalRanges[*fingerprint] = true
+			if _, alreadyInFullRanges := analyzer.FullRanges[fp]; !alreadyInFullRanges {
+				analyzer.IntervalRanges[fp] = true
 			}
+
+			n.metrics[fp] = analyzer.storage.GetMetricForFingerprint(fp)
 		}
 	case *MatrixSelector:
-		fingerprints, err := analyzer.storage.GetFingerprintsForLabelMatchers(n.labelMatchers)
-		if err != nil {
-			glog.Errorf("Error getting fingerprints for label matchers %v: %v", n.labelMatchers, err)
-			return
-		}
+		fingerprints := analyzer.storage.GetFingerprintsForLabelMatchers(n.labelMatchers)
 		n.fingerprints = fingerprints
-		for _, fingerprint := range fingerprints {
-			if analyzer.FullRanges[*fingerprint] < n.interval {
-				analyzer.FullRanges[*fingerprint] = n.interval
+		for _, fp := range fingerprints {
+			if analyzer.FullRanges[fp] < n.interval {
+				analyzer.FullRanges[fp] = n.interval
 				// Delete the fingerprint from IntervalRanges. Full ranges always contain
 				// more points and span more time than interval ranges, so we don't need
 				// an interval range for the same fingerprint, should we have one.
-				delete(analyzer.IntervalRanges, *fingerprint)
+				delete(analyzer.IntervalRanges, fp)
 			}
+
+			n.metrics[fp] = analyzer.storage.GetMetricForFingerprint(fp)
 		}
 	}
 }
 
-// AnalyzeQueries walks the AST, starting at node, calling Visit on
-// each node to collect fingerprints.
-func (analyzer *QueryAnalyzer) AnalyzeQueries(node Node) {
+type iteratorInitializer struct {
+	storage storage_ng.Storage
+}
+
+func (i *iteratorInitializer) Visit(node Node) {
+	switch n := node.(type) {
+	case *VectorSelector:
+		for _, fp := range n.fingerprints {
+			n.iterators[fp] = i.storage.NewIterator(fp)
+		}
+	case *MatrixSelector:
+		for _, fp := range n.fingerprints {
+			n.iterators[fp] = i.storage.NewIterator(fp)
+		}
+	}
+}
+
+func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage storage_ng.Storage, queryStats *stats.TimerGroup) (storage_ng.Closer, error) {
+	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
+	analyzer := NewQueryAnalyzer(storage)
 	Walk(analyzer, node)
-}
-
-func viewAdapterForInstantQuery(node Node, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (*viewAdapter, error) {
-	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
-	analyzer := NewQueryAnalyzer(storage)
-	analyzer.AnalyzeQueries(node)
 	analyzeTimer.Stop()
 
-	requestBuildTimer := queryStats.GetTimer(stats.ViewRequestBuildTime).Start()
-	viewBuilder := storage.NewViewRequestBuilder()
-	for fingerprint, rangeDuration := range analyzer.FullRanges {
-		viewBuilder.GetMetricRange(&fingerprint, timestamp.Add(-rangeDuration), timestamp)
-	}
-	for fingerprint := range analyzer.IntervalRanges {
-		viewBuilder.GetMetricAtTime(&fingerprint, timestamp)
-	}
-	requestBuildTimer.Stop()
-
-	buildTimer := queryStats.GetTimer(stats.InnerViewBuildingTime).Start()
-	view, err := viewBuilder.Execute(60*time.Second, queryStats)
-	buildTimer.Stop()
-	if err != nil {
-		return nil, err
-	}
-	return NewViewAdapter(view, storage, queryStats), nil
-}
-
-func viewAdapterForRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (*viewAdapter, error) {
-	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
-	analyzer := NewQueryAnalyzer(storage)
-	analyzer.AnalyzeQueries(node)
-	analyzeTimer.Stop()
-
-	requestBuildTimer := queryStats.GetTimer(stats.ViewRequestBuildTime).Start()
-	viewBuilder := storage.NewViewRequestBuilder()
-	for fingerprint, rangeDuration := range analyzer.FullRanges {
-		if interval < rangeDuration {
-			viewBuilder.GetMetricRange(&fingerprint, start.Add(-rangeDuration), end)
-		} else {
-			viewBuilder.GetMetricRangeAtInterval(&fingerprint, start.Add(-rangeDuration), end, interval, rangeDuration)
+	// TODO: Preloading should time out after a given duration.
+	preloadTimer := queryStats.GetTimer(stats.PreloadTime).Start()
+	p := storage.NewPreloader()
+	for fp, rangeDuration := range analyzer.FullRanges {
+		if err := p.PreloadRange(fp, timestamp.Add(-rangeDuration), timestamp); err != nil {
+			p.Close()
+			return nil, err
 		}
 	}
-	for fingerprint := range analyzer.IntervalRanges {
-		viewBuilder.GetMetricAtInterval(&fingerprint, start, end, interval)
+	for fp := range analyzer.IntervalRanges {
+		if err := p.PreloadRange(fp, timestamp, timestamp); err != nil {
+			p.Close()
+			return nil, err
+		}
 	}
-	requestBuildTimer.Stop()
+	preloadTimer.Stop()
 
-	buildTimer := queryStats.GetTimer(stats.InnerViewBuildingTime).Start()
-	view, err := viewBuilder.Execute(time.Duration(60)*time.Second, queryStats)
-	buildTimer.Stop()
-	if err != nil {
-		return nil, err
+	ii := &iteratorInitializer{
+		storage: storage,
 	}
-	return NewViewAdapter(view, storage, queryStats), nil
+	Walk(ii, node)
+
+	return p, nil
+}
+
+func prepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage storage_ng.Storage, queryStats *stats.TimerGroup) (storage_ng.Closer, error) {
+	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
+	analyzer := NewQueryAnalyzer(storage)
+	Walk(analyzer, node)
+	analyzeTimer.Stop()
+
+	// TODO: Preloading should time out after a given duration.
+	preloadTimer := queryStats.GetTimer(stats.PreloadTime).Start()
+	p := storage.NewPreloader()
+	for fp, rangeDuration := range analyzer.FullRanges {
+		if err := p.PreloadRange(fp, start.Add(-rangeDuration), end); err != nil {
+			p.Close()
+			return nil, err
+		}
+		/*
+			if interval < rangeDuration {
+				if err := p.GetMetricRange(fp, end, end.Sub(start)+rangeDuration); err != nil {
+					p.Close()
+					return nil, err
+				}
+			} else {
+				if err := p.GetMetricRangeAtInterval(fp, start, end, interval, rangeDuration); err != nil {
+					p.Close()
+					return nil, err
+				}
+			}
+		*/
+	}
+	for fp := range analyzer.IntervalRanges {
+		if err := p.PreloadRange(fp, start, end); err != nil {
+			p.Close()
+			return nil, err
+		}
+	}
+	preloadTimer.Stop()
+
+	ii := &iteratorInitializer{
+		storage: storage,
+	}
+	Walk(ii, node)
+
+	return p, nil
 }

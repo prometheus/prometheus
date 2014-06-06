@@ -31,7 +31,7 @@ type Function struct {
 	name       string
 	argTypes   []ExprType
 	returnType ExprType
-	callFn     func(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{}
+	callFn     func(timestamp clientmodel.Timestamp, args []Node) interface{}
 }
 
 // CheckArgTypes returns a non-nil error if the number or types of
@@ -74,14 +74,14 @@ func (function *Function) CheckArgTypes(args []Node) error {
 }
 
 // === time() clientmodel.SampleValue ===
-func timeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+func timeImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	return clientmodel.SampleValue(timestamp.Unix())
 }
 
 // === delta(matrix MatrixNode, isCounter ScalarNode) Vector ===
-func deltaImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+func deltaImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
-	isCounter := args[1].(ScalarNode).Eval(timestamp, view) > 0
+	isCounter := args[1].(ScalarNode).Eval(timestamp) > 0
 	resultVector := Vector{}
 
 	// If we treat these metrics as counters, we need to fetch all values
@@ -89,9 +89,9 @@ func deltaImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) 
 	// I.e. if a counter resets, we want to ignore that reset.
 	var matrixValue Matrix
 	if isCounter {
-		matrixValue = matrixNode.Eval(timestamp, view)
+		matrixValue = matrixNode.Eval(timestamp)
 	} else {
-		matrixValue = matrixNode.EvalBoundaries(timestamp, view)
+		matrixValue = matrixNode.EvalBoundaries(timestamp)
 	}
 	for _, samples := range matrixValue {
 		// No sense in trying to compute a delta without at least two points. Drop
@@ -139,9 +139,9 @@ func deltaImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) 
 }
 
 // === rate(node MatrixNode) Vector ===
-func rateImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+func rateImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	args = append(args, &ScalarLiteral{value: 1})
-	vector := deltaImpl(timestamp, view, args).(Vector)
+	vector := deltaImpl(timestamp, args).(Vector)
 
 	// TODO: could be other type of MatrixNode in the future (right now, only
 	// MatrixSelector exists). Find a better way of getting the duration of a
@@ -188,28 +188,28 @@ func (s reverseHeap) Less(i, j int) bool {
 }
 
 // === sort(node VectorNode) Vector ===
-func sortImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	byValueSorter := vectorByValueHeap(args[0].(VectorNode).Eval(timestamp, view))
+func sortImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	byValueSorter := vectorByValueHeap(args[0].(VectorNode).Eval(timestamp))
 	sort.Sort(byValueSorter)
 	return Vector(byValueSorter)
 }
 
 // === sortDesc(node VectorNode) Vector ===
-func sortDescImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	byValueSorter := vectorByValueHeap(args[0].(VectorNode).Eval(timestamp, view))
+func sortDescImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	byValueSorter := vectorByValueHeap(args[0].(VectorNode).Eval(timestamp))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter)
 }
 
 // === topk(k ScalarNode, node VectorNode) Vector ===
-func topkImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	k := int(args[0].(ScalarNode).Eval(timestamp, view))
+func topkImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	k := int(args[0].(ScalarNode).Eval(timestamp))
 	if k < 1 {
 		return Vector{}
 	}
 
 	topk := make(vectorByValueHeap, 0, k)
-	vector := args[1].(VectorNode).Eval(timestamp, view)
+	vector := args[1].(VectorNode).Eval(timestamp)
 
 	for _, el := range vector {
 		if len(topk) < k || topk[0].Value < el.Value {
@@ -224,15 +224,15 @@ func topkImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) i
 }
 
 // === bottomk(k ScalarNode, node VectorNode) Vector ===
-func bottomkImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	k := int(args[0].(ScalarNode).Eval(timestamp, view))
+func bottomkImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	k := int(args[0].(ScalarNode).Eval(timestamp))
 	if k < 1 {
 		return Vector{}
 	}
 
 	bottomk := make(vectorByValueHeap, 0, k)
 	bkHeap := reverseHeap{Interface: &bottomk}
-	vector := args[1].(VectorNode).Eval(timestamp, view)
+	vector := args[1].(VectorNode).Eval(timestamp)
 
 	for _, el := range vector {
 		if len(bottomk) < k || bottomk[0].Value > el.Value {
@@ -247,8 +247,8 @@ func bottomkImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node
 }
 
 // === drop_common_labels(node VectorNode) Vector ===
-func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	vector := args[0].(VectorNode).Eval(timestamp, view)
+func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	vector := args[0].(VectorNode).Eval(timestamp)
 	if len(vector) < 1 {
 		return Vector{}
 	}
@@ -285,7 +285,7 @@ func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, view *viewAdapter, ar
 }
 
 // === sampleVectorImpl() Vector ===
-func sampleVectorImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+func sampleVectorImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	return Vector{
 		&clientmodel.Sample{
 			Metric: clientmodel.Metric{
@@ -358,8 +358,8 @@ func sampleVectorImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args [
 }
 
 // === scalar(node VectorNode) Scalar ===
-func scalarImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	v := args[0].(VectorNode).Eval(timestamp, view)
+func scalarImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	v := args[0].(VectorNode).Eval(timestamp)
 	if len(v) != 1 {
 		return clientmodel.SampleValue(math.NaN())
 	}
@@ -367,13 +367,13 @@ func scalarImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node)
 }
 
 // === count_scalar(vector VectorNode) model.SampleValue ===
-func countScalarImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	return clientmodel.SampleValue(len(args[0].(VectorNode).Eval(timestamp, view)))
+func countScalarImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	return clientmodel.SampleValue(len(args[0].(VectorNode).Eval(timestamp)))
 }
 
-func aggrOverTime(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node, aggrFn func(metric.Values) clientmodel.SampleValue) interface{} {
+func aggrOverTime(timestamp clientmodel.Timestamp, args []Node, aggrFn func(metric.Values) clientmodel.SampleValue) interface{} {
 	n := args[0].(MatrixNode)
-	matrixVal := n.Eval(timestamp, view)
+	matrixVal := n.Eval(timestamp)
 	resultVector := Vector{}
 
 	for _, el := range matrixVal {
@@ -391,8 +391,8 @@ func aggrOverTime(timestamp clientmodel.Timestamp, view *viewAdapter, args []Nod
 }
 
 // === avg_over_time(matrix MatrixNode) Vector ===
-func avgOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+func avgOverTimeImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	return aggrOverTime(timestamp, args, func(values metric.Values) clientmodel.SampleValue {
 		var sum clientmodel.SampleValue
 		for _, v := range values {
 			sum += v.Value
@@ -402,15 +402,15 @@ func avgOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []
 }
 
 // === count_over_time(matrix MatrixNode) Vector ===
-func countOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+func countOverTimeImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	return aggrOverTime(timestamp, args, func(values metric.Values) clientmodel.SampleValue {
 		return clientmodel.SampleValue(len(values))
 	})
 }
 
 // === max_over_time(matrix MatrixNode) Vector ===
-func maxOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+func maxOverTimeImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	return aggrOverTime(timestamp, args, func(values metric.Values) clientmodel.SampleValue {
 		max := math.Inf(-1)
 		for _, v := range values {
 			max = math.Max(max, float64(v.Value))
@@ -420,8 +420,8 @@ func maxOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []
 }
 
 // === min_over_time(matrix MatrixNode) Vector ===
-func minOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+func minOverTimeImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	return aggrOverTime(timestamp, args, func(values metric.Values) clientmodel.SampleValue {
 		min := math.Inf(1)
 		for _, v := range values {
 			min = math.Min(min, float64(v.Value))
@@ -431,8 +431,8 @@ func minOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []
 }
 
 // === sum_over_time(matrix MatrixNode) Vector ===
-func sumOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+func sumOverTimeImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	return aggrOverTime(timestamp, args, func(values metric.Values) clientmodel.SampleValue {
 		var sum clientmodel.SampleValue
 		for _, v := range values {
 			sum += v.Value
@@ -442,9 +442,9 @@ func sumOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []
 }
 
 // === abs(vector VectorNode) Vector ===
-func absImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+func absImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	n := args[0].(VectorNode)
-	vector := n.Eval(timestamp, view)
+	vector := n.Eval(timestamp)
 	for _, el := range vector {
 		el.Value = clientmodel.SampleValue(math.Abs(float64(el.Value)))
 	}

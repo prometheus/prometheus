@@ -28,7 +28,7 @@ func (node emptyRangeNode) NodeTreeToDotGraph() string { return "" }
 func (node emptyRangeNode) String() string             { return "" }
 func (node emptyRangeNode) Children() Nodes            { return Nodes{} }
 
-func (node emptyRangeNode) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
+func (node emptyRangeNode) Eval(timestamp clientmodel.Timestamp) Matrix {
 	return Matrix{
 		metric.SampleSet{
 			Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
@@ -37,7 +37,7 @@ func (node emptyRangeNode) Eval(timestamp clientmodel.Timestamp, view *viewAdapt
 	}
 }
 
-func (node emptyRangeNode) EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
+func (node emptyRangeNode) EvalBoundaries(timestamp clientmodel.Timestamp) Matrix {
 	return Matrix{
 		metric.SampleSet{
 			Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
@@ -48,11 +48,11 @@ func (node emptyRangeNode) EvalBoundaries(timestamp clientmodel.Timestamp, view 
 
 func TestDeltaWithEmptyElementDoesNotCrash(t *testing.T) {
 	now := clientmodel.Now()
-	vector := deltaImpl(now, nil, []Node{emptyRangeNode{}, &ScalarLiteral{value: 0}}).(Vector)
+	vector := deltaImpl(now, []Node{emptyRangeNode{}, &ScalarLiteral{value: 0}}).(Vector)
 	if len(vector) != 0 {
 		t.Fatalf("Expected empty result vector, got: %v", vector)
 	}
-	vector = deltaImpl(now, nil, []Node{emptyRangeNode{}, &ScalarLiteral{value: 1}}).(Vector)
+	vector = deltaImpl(now, []Node{emptyRangeNode{}, &ScalarLiteral{value: 1}}).(Vector)
 	if len(vector) != 0 {
 		t.Fatalf("Expected empty result vector, got: %v", vector)
 	}

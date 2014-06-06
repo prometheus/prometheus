@@ -23,7 +23,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -151,18 +151,19 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 }
 
 // EvalToString evaluates the given node into a string of the given format.
-func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputFormat, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) string {
-	viewTimer := queryStats.GetTimer(stats.TotalViewBuildingTime).Start()
-	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
-	viewTimer.Stop()
+func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputFormat, storage storage_ng.Storage, queryStats *stats.TimerGroup) string {
+	prepareTimer := queryStats.GetTimer(stats.TotalQueryPreparationTime).Start()
+	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
+	prepareTimer.Stop()
 	if err != nil {
 		panic(err)
 	}
+	defer closer.Close()
 
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
 	switch node.Type() {
 	case SCALAR:
-		scalar := node.(ScalarNode).Eval(timestamp, viewAdapter)
+		scalar := node.(ScalarNode).Eval(timestamp)
 		evalTimer.Stop()
 		switch format {
 		case TEXT:
@@ -171,7 +172,7 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 			return TypedValueToJSON(scalar, "scalar")
 		}
 	case VECTOR:
-		vector := node.(VectorNode).Eval(timestamp, viewAdapter)
+		vector := node.(VectorNode).Eval(timestamp)
 		evalTimer.Stop()
 		switch format {
 		case TEXT:
@@ -180,7 +181,7 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 			return TypedValueToJSON(vector, "vector")
 		}
 	case MATRIX:
-		matrix := node.(MatrixNode).Eval(timestamp, viewAdapter)
+		matrix := node.(MatrixNode).Eval(timestamp)
 		evalTimer.Stop()
 		switch format {
 		case TEXT:
@@ -189,7 +190,7 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 			return TypedValueToJSON(matrix, "matrix")
 		}
 	case STRING:
-		str := node.(StringNode).Eval(timestamp, viewAdapter)
+		str := node.(StringNode).Eval(timestamp)
 		evalTimer.Stop()
 		switch format {
 		case TEXT:
@@ -202,28 +203,29 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 }
 
 // EvalToVector evaluates the given node into a Vector. Matrices aren't supported.
-func EvalToVector(node Node, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (Vector, error) {
-	viewTimer := queryStats.GetTimer(stats.TotalViewBuildingTime).Start()
-	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
-	viewTimer.Stop()
+func EvalToVector(node Node, timestamp clientmodel.Timestamp, storage storage_ng.Storage, queryStats *stats.TimerGroup) (Vector, error) {
+	prepareTimer := queryStats.GetTimer(stats.TotalQueryPreparationTime).Start()
+	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
+	prepareTimer.Stop()
 	if err != nil {
 		panic(err)
 	}
+	defer closer.Close()
 
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
 	switch node.Type() {
 	case SCALAR:
-		scalar := node.(ScalarNode).Eval(timestamp, viewAdapter)
+		scalar := node.(ScalarNode).Eval(timestamp)
 		evalTimer.Stop()
 		return Vector{&clientmodel.Sample{Value: scalar}}, nil
 	case VECTOR:
-		vector := node.(VectorNode).Eval(timestamp, viewAdapter)
+		vector := node.(VectorNode).Eval(timestamp)
 		evalTimer.Stop()
 		return vector, nil
 	case MATRIX:
 		return nil, errors.New("Matrices not supported by EvalToVector")
 	case STRING:
-		str := node.(StringNode).Eval(timestamp, viewAdapter)
+		str := node.(StringNode).Eval(timestamp)
 		evalTimer.Stop()
 		return Vector{&clientmodel.Sample{
 			Metric: clientmodel.Metric{"__value__": clientmodel.LabelValue(str)}}}, nil

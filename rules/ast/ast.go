@@ -15,19 +15,21 @@ package ast
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"hash/fnv"
 	"math"
 	"sort"
 	"time"
 
-	"github.com/golang/glog"
-
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/local"
 )
+
+var defaultStalenessDelta = flag.Duration("defaultStalenessDelta", 300*time.Second, "Default staleness delta allowance in seconds during expression evaluations.")
 
 // ----------------------------------------------------------------------------
 // Raw data value types.
@@ -114,7 +116,7 @@ type Node interface {
 type ScalarNode interface {
 	Node
 	// Eval evaluates and returns the value of the scalar represented by this node.
-	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue
+	Eval(timestamp clientmodel.Timestamp) clientmodel.SampleValue
 }
 
 // VectorNode is a Node for vector values.
@@ -123,17 +125,17 @@ type VectorNode interface {
 	// Eval evaluates the node recursively and returns the result
 	// as a Vector (i.e. a slice of Samples all at the given
 	// Timestamp).
-	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector
+	Eval(timestamp clientmodel.Timestamp) Vector
 }
 
 // MatrixNode is a Node for matrix values.
 type MatrixNode interface {
 	Node
 	// Eval evaluates the node recursively and returns the result as a Matrix.
-	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix
+	Eval(timestamp clientmodel.Timestamp) Matrix
 	// Eval evaluates the node recursively and returns the result
 	// as a Matrix that only contains the boundary values.
-	EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix
+	EvalBoundaries(timestamp clientmodel.Timestamp) Matrix
 }
 
 // StringNode is a Node for string values.
@@ -141,7 +143,7 @@ type StringNode interface {
 	Node
 	// Eval evaluates and returns the value of the string
 	// represented by this node.
-	Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string
+	Eval(timestamp clientmodel.Timestamp) string
 }
 
 // ----------------------------------------------------------------------------
@@ -176,7 +178,11 @@ type (
 	// A VectorSelector represents a metric name plus labelset.
 	VectorSelector struct {
 		labelMatchers metric.LabelMatchers
+		// The series iterators are populated at query analysis time.
+		iterators map[clientmodel.Fingerprint]storage_ng.SeriesIterator
+		metrics   map[clientmodel.Fingerprint]clientmodel.Metric
 		// Fingerprints are populated from label matchers at query analysis time.
+		// TODO: do we still need these?
 		fingerprints clientmodel.Fingerprints
 	}
 
@@ -213,8 +219,11 @@ type (
 	// timerange.
 	MatrixSelector struct {
 		labelMatchers metric.LabelMatchers
-		// Fingerprints are populated from label matchers at query
-		// analysis time.
+		// The series iterators are populated at query analysis time.
+		iterators map[clientmodel.Fingerprint]storage_ng.SeriesIterator
+		metrics   map[clientmodel.Fingerprint]clientmodel.Metric
+		// Fingerprints are populated from label matchers at query analysis time.
+		// TODO: do we still need these?
 		fingerprints clientmodel.Fingerprints
 		interval     time.Duration
 	}
@@ -308,22 +317,22 @@ func (node StringFunctionCall) Children() Nodes { return node.args }
 
 // Eval implements the ScalarNode interface and returns the selector
 // value.
-func (node *ScalarLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
+func (node *ScalarLiteral) Eval(timestamp clientmodel.Timestamp) clientmodel.SampleValue {
 	return node.value
 }
 
 // Eval implements the ScalarNode interface and returns the result of
 // the expression.
-func (node *ScalarArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
-	lhs := node.lhs.Eval(timestamp, view)
-	rhs := node.rhs.Eval(timestamp, view)
+func (node *ScalarArithExpr) Eval(timestamp clientmodel.Timestamp) clientmodel.SampleValue {
+	lhs := node.lhs.Eval(timestamp)
+	rhs := node.rhs.Eval(timestamp)
 	return evalScalarBinop(node.opType, lhs, rhs)
 }
 
 // Eval implements the ScalarNode interface and returns the result of
 // the function call.
-func (node *ScalarFunctionCall) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) clientmodel.SampleValue {
-	return node.function.callFn(timestamp, view, node.args).(clientmodel.SampleValue)
+func (node *ScalarFunctionCall) Eval(timestamp clientmodel.Timestamp) clientmodel.SampleValue {
+	return node.function.callFn(timestamp, node.args).(clientmodel.SampleValue)
 }
 
 func (node *VectorAggregation) labelsToGroupingKey(labels clientmodel.Metric) uint64 {
@@ -357,33 +366,34 @@ func labelsToKey(labels clientmodel.Metric) uint64 {
 }
 
 // EvalVectorInstant evaluates a VectorNode with an instant query.
-func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (vector Vector, err error) {
-	viewAdapter, err := viewAdapterForInstantQuery(node, timestamp, storage, queryStats)
+func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage storage_ng.Storage, queryStats *stats.TimerGroup) (Vector, error) {
+	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
 	if err != nil {
-		return
+		return nil, err
 	}
-	vector = node.Eval(timestamp, viewAdapter)
-	return
+	defer closer.Close()
+	return node.Eval(timestamp), nil
 }
 
 // EvalVectorRange evaluates a VectorNode with a range query.
-func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage metric.PreloadingPersistence, queryStats *stats.TimerGroup) (Matrix, error) {
+func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage storage_ng.Storage, queryStats *stats.TimerGroup) (Matrix, error) {
 	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
 	// null in JSON.
 	matrix := Matrix{}
 
-	viewTimer := queryStats.GetTimer(stats.TotalViewBuildingTime).Start()
-	viewAdapter, err := viewAdapterForRangeQuery(node, start, end, interval, storage, queryStats)
-	viewTimer.Stop()
+	prepareTimer := queryStats.GetTimer(stats.TotalQueryPreparationTime).Start()
+	closer, err := prepareRangeQuery(node, start, end, interval, storage, queryStats)
+	prepareTimer.Stop()
 	if err != nil {
 		return nil, err
 	}
+	defer closer.Close()
 
 	// TODO implement watchdog timer for long-running queries.
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
 	sampleSets := map[uint64]*metric.SampleSet{}
 	for t := start; t.Before(end); t = t.Add(interval) {
-		vector := node.Eval(t, viewAdapter)
+		vector := node.Eval(t)
 		for _, sample := range vector {
 			samplePair := metric.SamplePair{
 				Value:     sample.Value,
@@ -444,8 +454,8 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[uint
 
 // Eval implements the VectorNode interface and returns the aggregated
 // Vector.
-func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
-	vector := node.vector.Eval(timestamp, view)
+func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp) Vector {
+	vector := node.vector.Eval(timestamp)
 	result := map[uint64]*groupedAggregation{}
 	for _, sample := range vector {
 		groupingKey := node.labelsToGroupingKey(sample.Metric)
@@ -498,19 +508,91 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp, view *viewA
 
 // Eval implements the VectorNode interface and returns the value of
 // the selector.
-func (node *VectorSelector) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
-	values, err := view.GetValueAtTime(node.fingerprints, timestamp)
-	if err != nil {
-		glog.Error("Unable to get vector values: ", err)
-		return Vector{}
+func (node *VectorSelector) Eval(timestamp clientmodel.Timestamp) Vector {
+	//// timer := v.stats.GetTimer(stats.GetValueAtTimeTime).Start()
+	samples := Vector{}
+	for fp, it := range node.iterators {
+		sampleCandidates := it.GetValueAtTime(timestamp)
+		samplePair := chooseClosestSample(sampleCandidates, timestamp)
+		if samplePair != nil {
+			samples = append(samples, &clientmodel.Sample{
+				Metric:    node.metrics[fp], // TODO: need copy here because downstream can modify!
+				Value:     samplePair.Value,
+				Timestamp: timestamp,
+			})
+		}
 	}
-	return values
+	//// timer.Stop()
+	return samples
+}
+
+// chooseClosestSample chooses the closest sample of a list of samples
+// surrounding a given target time. If samples are found both before and after
+// the target time, the sample value is interpolated between these. Otherwise,
+// the single closest sample is returned verbatim.
+func chooseClosestSample(samples metric.Values, timestamp clientmodel.Timestamp) *metric.SamplePair {
+	var closestBefore *metric.SamplePair
+	var closestAfter *metric.SamplePair
+	for _, candidate := range samples {
+		delta := candidate.Timestamp.Sub(timestamp)
+		// Samples before target time.
+		if delta < 0 {
+			// Ignore samples outside of staleness policy window.
+			if -delta > *defaultStalenessDelta {
+				continue
+			}
+			// Ignore samples that are farther away than what we've seen before.
+			if closestBefore != nil && candidate.Timestamp.Before(closestBefore.Timestamp) {
+				continue
+			}
+			sample := candidate
+			closestBefore = &sample
+		}
+
+		// Samples after target time.
+		if delta >= 0 {
+			// Ignore samples outside of staleness policy window.
+			if delta > *defaultStalenessDelta {
+				continue
+			}
+			// Ignore samples that are farther away than samples we've seen before.
+			if closestAfter != nil && candidate.Timestamp.After(closestAfter.Timestamp) {
+				continue
+			}
+			sample := candidate
+			closestAfter = &sample
+		}
+	}
+
+	switch {
+	case closestBefore != nil && closestAfter != nil:
+		return interpolateSamples(closestBefore, closestAfter, timestamp)
+	case closestBefore != nil:
+		return closestBefore
+	default:
+		return closestAfter
+	}
+}
+
+// interpolateSamples interpolates a value at a target time between two
+// provided sample pairs.
+func interpolateSamples(first, second *metric.SamplePair, timestamp clientmodel.Timestamp) *metric.SamplePair {
+	dv := second.Value - first.Value
+	dt := second.Timestamp.Sub(first.Timestamp)
+
+	dDt := dv / clientmodel.SampleValue(dt)
+	offset := clientmodel.SampleValue(timestamp.Sub(first.Timestamp))
+
+	return &metric.SamplePair{
+		Value:     first.Value + (offset * dDt),
+		Timestamp: timestamp,
+	}
 }
 
 // Eval implements the VectorNode interface and returns the result of
 // the function call.
-func (node *VectorFunctionCall) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
-	return node.function.callFn(timestamp, view, node.args).(Vector)
+func (node *VectorFunctionCall) Eval(timestamp clientmodel.Timestamp) Vector {
+	return node.function.callFn(timestamp, node.args).(Vector)
 }
 
 func evalScalarBinop(opType BinOpType,
@@ -639,11 +721,11 @@ func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
 
 // Eval implements the VectorNode interface and returns the result of
 // the expression.
-func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Vector {
+func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp) Vector {
 	result := Vector{}
 	if node.lhs.Type() == SCALAR && node.rhs.Type() == VECTOR {
-		lhs := node.lhs.(ScalarNode).Eval(timestamp, view)
-		rhs := node.rhs.(VectorNode).Eval(timestamp, view)
+		lhs := node.lhs.(ScalarNode).Eval(timestamp)
+		rhs := node.rhs.(VectorNode).Eval(timestamp)
 		for _, rhsSample := range rhs {
 			value, keep := evalVectorBinop(node.opType, lhs, rhsSample.Value)
 			if keep {
@@ -653,8 +735,8 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAda
 		}
 		return result
 	} else if node.lhs.Type() == VECTOR && node.rhs.Type() == SCALAR {
-		lhs := node.lhs.(VectorNode).Eval(timestamp, view)
-		rhs := node.rhs.(ScalarNode).Eval(timestamp, view)
+		lhs := node.lhs.(VectorNode).Eval(timestamp)
+		rhs := node.rhs.(ScalarNode).Eval(timestamp)
 		for _, lhsSample := range lhs {
 			value, keep := evalVectorBinop(node.opType, lhsSample.Value, rhs)
 			if keep {
@@ -664,8 +746,8 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAda
 		}
 		return result
 	} else if node.lhs.Type() == VECTOR && node.rhs.Type() == VECTOR {
-		lhs := node.lhs.(VectorNode).Eval(timestamp, view)
-		rhs := node.rhs.(VectorNode).Eval(timestamp, view)
+		lhs := node.lhs.(VectorNode).Eval(timestamp)
+		rhs := node.rhs.(VectorNode).Eval(timestamp)
 		for _, lhsSample := range lhs {
 			for _, rhsSample := range rhs {
 				if labelsEqual(lhsSample.Metric, rhsSample.Metric) {
@@ -684,32 +766,54 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp, view *viewAda
 
 // Eval implements the MatrixNode interface and returns the value of
 // the selector.
-func (node *MatrixSelector) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
+func (node *MatrixSelector) Eval(timestamp clientmodel.Timestamp) Matrix {
 	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
 	}
-	values, err := view.GetRangeValues(node.fingerprints, interval)
-	if err != nil {
-		glog.Error("Unable to get values for vector interval: ", err)
-		return Matrix{}
+
+	//// timer := v.stats.GetTimer(stats.GetRangeValuesTime).Start()
+	sampleSets := []metric.SampleSet{}
+	for fp, it := range node.iterators {
+		samplePairs := it.GetRangeValues(*interval)
+		if len(samplePairs) == 0 {
+			continue
+		}
+
+		sampleSet := metric.SampleSet{
+			Metric: node.metrics[fp], // TODO: need copy here because downstream can modify!
+			Values: samplePairs,
+		}
+		sampleSets = append(sampleSets, sampleSet)
 	}
-	return values
+	//// timer.Stop()
+	return sampleSets
 }
 
 // EvalBoundaries implements the MatrixNode interface and returns the
 // boundary values of the selector.
-func (node *MatrixSelector) EvalBoundaries(timestamp clientmodel.Timestamp, view *viewAdapter) Matrix {
+func (node *MatrixSelector) EvalBoundaries(timestamp clientmodel.Timestamp) Matrix {
 	interval := &metric.Interval{
 		OldestInclusive: timestamp.Add(-node.interval),
 		NewestInclusive: timestamp,
 	}
-	values, err := view.GetBoundaryValues(node.fingerprints, interval)
-	if err != nil {
-		glog.Error("Unable to get boundary values for vector interval: ", err)
-		return Matrix{}
+
+	//// timer := v.stats.GetTimer(stats.GetBoundaryValuesTime).Start()
+	sampleSets := []metric.SampleSet{}
+	for fp, it := range node.iterators {
+		samplePairs := it.GetBoundaryValues(*interval)
+		if len(samplePairs) == 0 {
+			continue
+		}
+
+		sampleSet := metric.SampleSet{
+			Metric: node.metrics[fp], // TODO: make copy of metric.
+			Values: samplePairs,
+		}
+		sampleSets = append(sampleSets, sampleSet)
 	}
-	return values
+	//// timer.Stop()
+	return sampleSets
 }
 
 // Len implements sort.Interface.
@@ -729,14 +833,14 @@ func (matrix Matrix) Swap(i, j int) {
 
 // Eval implements the StringNode interface and returns the value of
 // the selector.
-func (node *StringLiteral) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string {
+func (node *StringLiteral) Eval(timestamp clientmodel.Timestamp) string {
 	return node.str
 }
 
 // Eval implements the StringNode interface and returns the result of
 // the function call.
-func (node *StringFunctionCall) Eval(timestamp clientmodel.Timestamp, view *viewAdapter) string {
-	return node.function.callFn(timestamp, view, node.args).(string)
+func (node *StringFunctionCall) Eval(timestamp clientmodel.Timestamp) string {
+	return node.function.callFn(timestamp, node.args).(string)
 }
 
 // ----------------------------------------------------------------------------
@@ -754,6 +858,8 @@ func NewScalarLiteral(value clientmodel.SampleValue) *ScalarLiteral {
 func NewVectorSelector(m metric.LabelMatchers) *VectorSelector {
 	return &VectorSelector{
 		labelMatchers: m,
+		iterators:     map[clientmodel.Fingerprint]storage_ng.SeriesIterator{},
+		metrics:       map[clientmodel.Fingerprint]clientmodel.Metric{},
 	}
 }
 
@@ -845,6 +951,8 @@ func NewMatrixSelector(vector *VectorSelector, interval time.Duration) *MatrixSe
 	return &MatrixSelector{
 		labelMatchers: vector.labelMatchers,
 		interval:      interval,
+		iterators:     map[clientmodel.Fingerprint]storage_ng.SeriesIterator{},
+		metrics:       map[clientmodel.Fingerprint]clientmodel.Metric{},
 	}
 }
 

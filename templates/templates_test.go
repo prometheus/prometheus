@@ -18,7 +18,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/storage/metric/tiered"
+	"github.com/prometheus/prometheus/storage/local"
 )
 
 type testTemplatesScenario struct {
@@ -152,8 +152,9 @@ func TestTemplateExpansion(t *testing.T) {
 
 	time := clientmodel.Timestamp(0)
 
-	ts, _ := tiered.NewTestTieredStorage(t)
-	ts.AppendSamples(clientmodel.Samples{
+	storage, closer := storage_ng.NewTestStorage(t)
+	defer closer.Close()
+	storage.AppendSamples(clientmodel.Samples{
 		{
 			Metric: clientmodel.Metric{
 				clientmodel.MetricNameLabel: "metric",
@@ -171,7 +172,7 @@ func TestTemplateExpansion(t *testing.T) {
 	for _, s := range scenarios {
 		var result string
 		var err error
-		expander := NewTemplateExpander(s.text, "test", s.input, time, ts)
+		expander := NewTemplateExpander(s.text, "test", s.input, time, storage)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
