@@ -137,7 +137,8 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 		defs := "{{$labels := .Labels}}{{$value := .Value}}"
 
 		expand := func(text string) string {
-			result, err := templates.Expand(defs+text, "__alert_"+rule.Name(), tmplData, timestamp, m.storage)
+			template := templates.NewTemplateExpander(defs+text, "__alert_"+rule.Name(), tmplData, timestamp, m.storage)
+			result, err := template.Expand()
 			if err != nil {
 				result = err.Error()
 				glog.Warningf("Error expanding alert template %v with data '%v': %v", rule.Name(), tmplData, err)
