@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path/filepath"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -27,6 +28,7 @@ import (
 
 var (
 	consoleTemplatesPath = flag.String("consoleTemplates", "consoles", "Path to console template directory, available at /console")
+	consoleLibrariesPath = flag.String("consoleLibraries", "console_libraries", "Path to console library directory")
 )
 
 type ConsolesHandler struct {
@@ -64,8 +66,13 @@ func (h *ConsolesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Params:    params,
 	}
 
-	now := clientmodel.Now()
-	result, err := templates.Expand(string(text), "__console_"+r.URL.Path, data, now, h.Storage)
+	template := templates.NewTemplateExpander(string(text), "__console_"+r.URL.Path, data, clientmodel.Now(), h.Storage)
+	filenames, err := filepath.Glob(*consoleLibrariesPath + "/*.lib")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	result, err := template.ExpandHTML(filenames)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
