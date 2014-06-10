@@ -25,6 +25,7 @@ type testTemplatesScenario struct {
 	text       string
 	output     string
 	shouldFail bool
+	html       bool
 }
 
 func TestTemplateExpansion(t *testing.T) {
@@ -38,6 +39,28 @@ func TestTemplateExpansion(t *testing.T) {
 			// Simple value.
 			text:   "{{ 1 }}",
 			output: "1",
+		},
+		{
+			// HTML escaping.
+			text:   "{{ \"<b>\" }}",
+			output: "&lt;b&gt;",
+			html:   true,
+		},
+		{
+			// Disabling HTML escaping.
+			text:   "{{ \"<b>\" | safeHtml }}",
+			output: "<b>",
+			html:   true,
+		},
+		{
+			// HTML escaping doesn't apply to non-html.
+			text:   "{{ \"<b>\" }}",
+			output: "<b>",
+		},
+		{
+			// Pass multiple arguments to templates.
+			text:   "{{define \"x\"}}{{.arg0}} {{.arg1}}{{end}}{{template \"x\" (args 1 \"2\")}}",
+			output: "1 2",
 		},
 		{
 			// Get value from query.
@@ -120,7 +143,14 @@ func TestTemplateExpansion(t *testing.T) {
 	})
 
 	for _, s := range scenarios {
-		result, err := Expand(s.text, "test", nil, time, ts)
+		var result string
+		var err error
+		expander := NewTemplateExpander(s.text, "test", nil, time, ts)
+		if s.html {
+			result, err = expander.ExpandHTML(nil)
+		} else {
+			result, err = expander.Expand()
+		}
 		if s.shouldFail {
 			if err == nil {
 				t.Fatalf("Error not returned from %v", s.text)
