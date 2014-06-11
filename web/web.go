@@ -141,11 +141,6 @@ func getTemplate(name string) (t *template.Template, err error) {
 		return
 	}
 
-	if *userAssetsPath != "" {
-		// replace "user_dashboard_link" template
-		t.Parse(`{{define "user_dashboard_link"}}<a href="/user">User Dashboard{{end}}`)
-	}
-
 	return
 }
 
