@@ -138,7 +138,7 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 			},
 			"humanize": func(v float64) string {
 				if v == 0 {
-					return fmt.Sprintf("%.4g ", v)
+					return fmt.Sprintf("%.4g", v)
 				}
 				if math.Abs(v) >= 1 {
 					prefix := ""
@@ -149,7 +149,7 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 						prefix = p
 						v /= 1000
 					}
-					return fmt.Sprintf("%.4g %s", v, prefix)
+					return fmt.Sprintf("%.4g%s", v, prefix)
 				} else {
 					prefix := ""
 					for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
@@ -159,12 +159,12 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 						prefix = p
 						v *= 1000
 					}
-					return fmt.Sprintf("%.4g %s", v, prefix)
+					return fmt.Sprintf("%.4g%s", v, prefix)
 				}
 			},
 			"humanize1024": func(v float64) string {
 				if math.Abs(v) <= 1 {
-					return fmt.Sprintf("%.4g ", v)
+					return fmt.Sprintf("%.4g", v)
 				}
 				prefix := ""
 				for _, p := range []string{"ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi", "Yi"} {
@@ -174,7 +174,45 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 					prefix = p
 					v /= 1024
 				}
-				return fmt.Sprintf("%.4g %s", v, prefix)
+				return fmt.Sprintf("%.4g%s", v, prefix)
+			},
+			"humanizeDuration": func(v float64) string {
+				if v == 0 {
+					return fmt.Sprintf("%.4gs", v)
+				}
+				if math.Abs(v) >= 1 {
+					sign := ""
+					if v < 0 {
+						sign = "-"
+						v = -v
+					}
+					seconds := math.Mod(v, 60)
+					minutes := (int64(v) / 60) % 60
+					hours := (int64(v) / 60 / 60) % 24
+					days := (int64(v) / 60 / 60 / 24)
+					// For days to minutes, we display seconds as an integer.
+					if days != 0 {
+						return fmt.Sprintf("%s%dd %dh %dm %.0fs", sign, days, hours, minutes, seconds)
+					}
+					if hours != 0 {
+						return fmt.Sprintf("%s%dh %dm %.0fs", sign, hours, minutes, seconds)
+					}
+					if minutes != 0 {
+						return fmt.Sprintf("%s%dm %.0fs", sign, minutes, seconds)
+					}
+					// For seconds, we display 4 significant digts.
+					return fmt.Sprintf("%s%.4gs", sign, math.Floor(seconds*1000+.5)/1000)
+				} else {
+					prefix := ""
+					for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
+						if math.Abs(v) >= 1 {
+							break
+						}
+						prefix = p
+						v *= 1000
+					}
+					return fmt.Sprintf("%.4g%ss", v, prefix)
+				}
 			},
 		},
 	}

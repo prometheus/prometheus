@@ -24,6 +24,7 @@ import (
 type testTemplatesScenario struct {
 	text       string
 	output     string
+	input      interface{}
 	shouldFail bool
 	html       bool
 }
@@ -104,13 +105,27 @@ func TestTemplateExpansion(t *testing.T) {
 		},
 		{
 			// Humanize.
-			text:   "{{ 0.0 | humanize }}:{{ 1.0 | humanize }}:{{ 1234567.0 | humanize }}:{{ .12 | humanize }}",
-			output: "0 :1 :1.235 M:120 m",
+			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
+			input:  []float64{0.0, 1.0, 1234567.0, .12},
+			output: "0:1:1.235M:120m:",
 		},
 		{
 			// Humanize1024.
-			text:   "{{ 0.0 | humanize1024 }}:{{ 1.0 | humanize1024 }}:{{ 1048576.0 | humanize1024 }}:{{ .12 | humanize1024}}",
-			output: "0 :1 :1 Mi:0.12 ",
+			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
+			input:  []float64{0.0, 1.0, 1048576.0, .12},
+			output: "0:1:1Mi:0.12:",
+		},
+		{
+			// HumanizeDuration - seconds.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []float64{0, 1, 60, 3600, 86400, 86400 + 3600, -(86400*2 + 3600*3 + 60*4 + 5)},
+			output: "0s:1s:1m 0s:1h 0m 0s:1d 0h 0m 0s:1d 1h 0m 0s:-2d 3h 4m 5s:",
+		},
+		{
+			// HumanizeDuration - subsecond and fractional seconds.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []float64{.1, .0001, .12345, 60.1, 60.5, 1.2345, 12.345},
+			output: "100ms:100us:123.5ms:1m 0s:1m 0s:1.235s:12.35s:",
 		},
 		{
 			// Title.
@@ -145,7 +160,7 @@ func TestTemplateExpansion(t *testing.T) {
 	for _, s := range scenarios {
 		var result string
 		var err error
-		expander := NewTemplateExpander(s.text, "test", nil, time, ts)
+		expander := NewTemplateExpander(s.text, "test", s.input, time, ts)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
