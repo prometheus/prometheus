@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -125,5 +126,22 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	signal <- true
 	if err := testTarget.Scrape(time.Now(), ingester); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTargetScrape404(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	defer server.Close()
+
+	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
+	ingester := nopIngester{}
+
+	want := errors.New("server returned HTTP status 404 Not Found")
+	got := testTarget.Scrape(time.Now(), ingester)
+	if got == nil || want.Error() != got.Error() {
+		t.Fatalf("want err %q, got %q", want, got)
 	}
 }

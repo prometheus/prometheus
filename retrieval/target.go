@@ -224,6 +224,9 @@ func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ing
 	if err != nil {
 		return err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned HTTP status %s", resp.Status)
+	}
 	defer resp.Body.Close()
 
 	processor, err := extraction.ProcessorForRequestHeader(resp.Header)
