@@ -27,22 +27,29 @@ const (
 )
 
 var (
-	evalDuration      = prometheus.NewDefaultHistogram()
-	evalCount         = prometheus.NewCounter()
-	iterationDuration = prometheus.NewHistogram(&prometheus.HistogramSpecification{
-		Starts:                prometheus.LogarithmicSizedBucketsFor(0, 10000),
-		BucketBuilder:         prometheus.AccumulatingBucketBuilder(prometheus.EvictAndReplaceWith(10, prometheus.AverageReducer), 100),
-		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99}})
+	evalDuration = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name: "prometheus_rule_evaluation_duration_ms",
+			Help: "The duration for a rule to execute.",
+		},
+		[]string{ruleTypeLabel},
+	)
+	iterationDuration = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_evaluator_duration_ms",
+			Help:       "The duration for each evaluation pool to execute.",
+			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+		},
+		[]string{intervalLabel},
+	)
 )
 
 func recordOutcome(ruleType string, duration time.Duration) {
 	millisecondDuration := float64(duration / time.Millisecond)
-	evalCount.Increment(map[string]string{ruleTypeLabel: ruleType})
-	evalDuration.Add(map[string]string{ruleTypeLabel: ruleType}, millisecondDuration)
+	evalDuration.WithLabelValues(ruleType).Observe(millisecondDuration)
 }
 
 func init() {
-	prometheus.Register("prometheus_evaluator_duration_ms", "The duration for each evaluation pool to execute.", prometheus.NilLabels, iterationDuration)
-	prometheus.Register("prometheus_rule_evaluation_duration_ms", "The duration for a rule to execute.", prometheus.NilLabels, evalDuration)
-	prometheus.Register("prometheus_rule_evaluation_count", "The number of rules evaluated.", prometheus.NilLabels, evalCount)
+	prometheus.MustRegister(iterationDuration)
+	prometheus.MustRegister(evalDuration)
 }

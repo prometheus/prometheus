@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -98,6 +98,8 @@ type TieredStorage struct {
 
 	dtoSampleKeys *dtoSampleKeyList
 	sampleKeys    *sampleKeyList
+
+	queueSizes *prometheus.GaugeVec
 }
 
 // viewJob encapsulates a request to extract sample values from the datastore.
@@ -159,6 +161,14 @@ func NewTieredStorage(
 
 		dtoSampleKeys: newDtoSampleKeyList(10),
 		sampleKeys:    newSampleKeyList(10),
+
+		queueSizes: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "prometheus_storage_queue_sizes_total",
+				Help: "The various sizes and capacities of the storage queues.",
+			},
+			[]string{},
+		),
 	}
 
 	for i := 0; i < tieredMemorySemaphores; i++ {
@@ -177,7 +187,7 @@ func (t *TieredStorage) AppendSamples(samples clientmodel.Samples) (err error) {
 	}
 
 	t.memoryArena.AppendSamples(samples)
-	storedSamplesCount.IncrementBy(prometheus.NilLabels, float64(len(samples)))
+	storedSamplesCount.Add(float64(len(samples)))
 
 	return
 }
@@ -257,14 +267,6 @@ func (t *TieredStorage) Serve(started chan<- bool) {
 
 	flushMemoryTicker := time.NewTicker(t.flushMemoryInterval)
 	defer flushMemoryTicker.Stop()
-	queueReportTicker := time.NewTicker(time.Second)
-	defer queueReportTicker.Stop()
-
-	go func() {
-		for _ = range queueReportTicker.C {
-			t.reportQueues()
-		}
-	}()
 
 	started <- true
 	for {
@@ -290,14 +292,6 @@ func (t *TieredStorage) Serve(started chan<- bool) {
 			return
 		}
 	}
-}
-
-func (t *TieredStorage) reportQueues() {
-	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "occupancy"}, float64(len(t.appendToDiskQueue)))
-	queueSizes.Set(map[string]string{"queue": "append_to_disk", "facet": "capacity"}, float64(cap(t.appendToDiskQueue)))
-
-	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "occupancy"}, float64(len(t.ViewQueue)))
-	queueSizes.Set(map[string]string{"queue": "view_generation", "facet": "capacity"}, float64(cap(t.ViewQueue)))
 }
 
 // Flush flushes all samples to disk.
@@ -405,8 +399,8 @@ func (t *TieredStorage) renderView(viewJob viewJob) {
 		recordOutcome(
 			duration,
 			err,
-			map[string]string{operation: renderView, result: success},
-			map[string]string{operation: renderView, result: failure},
+			prometheus.Labels{operation: renderView, result: success},
+			prometheus.Labels{operation: renderView, result: failure},
 		)
 	}()
 
@@ -739,4 +733,27 @@ func (t *TieredStorage) GetMetricForFingerprint(f *clientmodel.Fingerprint) (cli
 		t.memoryArena.CreateEmptySeries(m)
 	}
 	return m, err
+}
+
+// Describe implements prometheus.Collector.
+func (t *TieredStorage) Describe(ch chan<- *prometheus.Desc) {
+	t.queueSizes.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (t *TieredStorage) Collect(ch chan<- prometheus.Metric) {
+	t.queueSizes.With(prometheus.Labels{
+		"queue": "append_to_disk", "facet": "occupancy",
+	}).Set(float64(len(t.appendToDiskQueue)))
+	t.queueSizes.With(prometheus.Labels{
+		"queue": "append_to_disk", "facet": "capacity",
+	}).Set(float64(cap(t.appendToDiskQueue)))
+	t.queueSizes.With(prometheus.Labels{
+		"queue": "view_generation", "facet": "occupancy",
+	}).Set(float64(len(t.ViewQueue)))
+	t.queueSizes.With(prometheus.Labels{
+		"queue": "view_generation", "facet": "capacity",
+	}).Set(float64(cap(t.ViewQueue)))
+
+	t.queueSizes.Collect(ch)
 }

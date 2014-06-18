@@ -24,6 +24,7 @@ import (
 	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -251,7 +252,7 @@ func (l *LevelDBPersistence) AppendSample(sample *clientmodel.Sample) (err error
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
-		recordOutcome(duration, err, map[string]string{operation: appendSample, result: success}, map[string]string{operation: appendSample, result: failure})
+		recordOutcome(duration, err, prometheus.Labels{operation: appendSample, result: success}, map[string]string{operation: appendSample, result: failure})
 	}(time.Now())
 
 	err = l.AppendSamples(clientmodel.Samples{sample})
@@ -297,7 +298,7 @@ func (l *LevelDBPersistence) refreshHighWatermarks(groups map[clientmodel.Finger
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
-		recordOutcome(duration, err, map[string]string{operation: refreshHighWatermarks, result: success}, map[string]string{operation: refreshHighWatermarks, result: failure})
+		recordOutcome(duration, err, prometheus.Labels{operation: refreshHighWatermarks, result: success}, prometheus.Labels{operation: refreshHighWatermarks, result: failure})
 	}(time.Now())
 
 	b := FingerprintHighWatermarkMapping{}
@@ -317,7 +318,7 @@ func (l *LevelDBPersistence) AppendSamples(samples clientmodel.Samples) (err err
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
-		recordOutcome(duration, err, map[string]string{operation: appendSamples, result: success}, map[string]string{operation: appendSamples, result: failure})
+		recordOutcome(duration, err, prometheus.Labels{operation: appendSamples, result: success}, prometheus.Labels{operation: appendSamples, result: failure})
 	}(time.Now())
 
 	fingerprintToSamples := groupByFingerprint(samples)
@@ -414,7 +415,7 @@ func (l *LevelDBPersistence) hasIndexMetric(m clientmodel.Metric) (value bool, e
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
-		recordOutcome(duration, err, map[string]string{operation: hasIndexMetric, result: success}, map[string]string{operation: hasIndexMetric, result: failure})
+		recordOutcome(duration, err, prometheus.Labels{operation: hasIndexMetric, result: success}, prometheus.Labels{operation: hasIndexMetric, result: failure})
 	}(time.Now())
 
 	return l.MetricMembershipIndex.Has(m)
@@ -428,7 +429,7 @@ func (l *LevelDBPersistence) GetFingerprintsForLabelMatchers(labelMatchers metri
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
-		recordOutcome(duration, err, map[string]string{operation: getFingerprintsForLabelMatchers, result: success}, map[string]string{operation: getFingerprintsForLabelMatchers, result: failure})
+		recordOutcome(duration, err, prometheus.Labels{operation: getFingerprintsForLabelMatchers, result: success}, prometheus.Labels{operation: getFingerprintsForLabelMatchers, result: failure})
 	}(time.Now())
 
 	sets := []utility.Set{}
@@ -499,7 +500,7 @@ func (l *LevelDBPersistence) GetLabelValuesForLabelName(labelName clientmodel.La
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
-		recordOutcome(duration, err, map[string]string{operation: getLabelValuesForLabelName, result: success}, map[string]string{operation: getLabelValuesForLabelName, result: failure})
+		recordOutcome(duration, err, prometheus.Labels{operation: getLabelValuesForLabelName, result: success}, prometheus.Labels{operation: getLabelValuesForLabelName, result: failure})
 	}(time.Now())
 
 	values, _, err := l.LabelNameToLabelValues.Lookup(labelName)
@@ -514,7 +515,7 @@ func (l *LevelDBPersistence) GetMetricForFingerprint(f *clientmodel.Fingerprint)
 	defer func(begin time.Time) {
 		duration := time.Since(begin)
 
-		recordOutcome(duration, err, map[string]string{operation: getMetricForFingerprint, result: success}, map[string]string{operation: getMetricForFingerprint, result: failure})
+		recordOutcome(duration, err, prometheus.Labels{operation: getMetricForFingerprint, result: success}, prometheus.Labels{operation: getMetricForFingerprint, result: failure})
 	}(time.Now())
 
 	// TODO(matt): Update signature to work with ok.

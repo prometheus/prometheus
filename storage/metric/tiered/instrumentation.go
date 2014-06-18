@@ -40,41 +40,47 @@ const (
 )
 
 var (
-	diskLatencyHistogram = &prometheus.HistogramSpecification{
-		Starts:                prometheus.LogarithmicSizedBucketsFor(0, 5000),
-		BucketBuilder:         prometheus.AccumulatingBucketBuilder(prometheus.EvictAndReplaceWith(10, prometheus.AverageReducer), 100),
-		ReportablePercentiles: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
-	}
-
-	curationDuration          = prometheus.NewCounter()
-	curationDurations         = prometheus.NewHistogram(diskLatencyHistogram)
-	curationFilterOperations  = prometheus.NewCounter()
-	storageOperations         = prometheus.NewCounter()
-	storageOperationDurations = prometheus.NewCounter()
-	storageLatency            = prometheus.NewHistogram(diskLatencyHistogram)
-	queueSizes                = prometheus.NewGauge()
-	storedSamplesCount        = prometheus.NewCounter()
+	curationDurations = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_curation_durations_ms",
+			Help:       "Histogram of time spent in curation (ms).",
+			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+		},
+		[]string{cutOff, processorName, result},
+	)
+	curationFilterOperations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_curation_filter_operations_total",
+			Help: "The number of curation filter operations completed.",
+		},
+		[]string{cutOff, processorName, result},
+	)
+	storageLatency = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_metric_disk_latency_microseconds",
+			Help:       "Latency for metric disk operations in microseconds.",
+			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+		},
+		[]string{operation, result},
+	)
+	storedSamplesCount = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_stored_samples_total",
+		Help: "The number of samples that have been stored.",
+	})
 )
 
-func recordOutcome(duration time.Duration, err error, success, failure map[string]string) {
+func recordOutcome(duration time.Duration, err error, success, failure prometheus.Labels) {
 	labels := success
 	if err != nil {
 		labels = failure
 	}
 
-	storageOperations.Increment(labels)
-	asFloat := float64(duration / time.Microsecond)
-	storageLatency.Add(labels, asFloat)
-	storageOperationDurations.IncrementBy(labels, asFloat)
+	storageLatency.With(labels).Observe(float64(duration / time.Microsecond))
 }
 
 func init() {
-	prometheus.Register("prometheus_metric_disk_operations_total", "Total number of metric-related disk operations.", prometheus.NilLabels, storageOperations)
-	prometheus.Register("prometheus_metric_disk_latency_microseconds", "Latency for metric disk operations in microseconds.", prometheus.NilLabels, storageLatency)
-	prometheus.Register("prometheus_storage_operation_time_total_microseconds", "The total time spent performing a given storage operation.", prometheus.NilLabels, storageOperationDurations)
-	prometheus.Register("prometheus_storage_queue_sizes_total", "The various sizes and capacities of the storage queues.", prometheus.NilLabels, queueSizes)
-	prometheus.Register("prometheus_curation_filter_operations_total", "The number of curation filter operations completed.", prometheus.NilLabels, curationFilterOperations)
-	prometheus.Register("prometheus_curation_duration_ms_total", "The total time spent in curation (ms).", prometheus.NilLabels, curationDuration)
-	prometheus.Register("prometheus_curation_durations_ms", "Histogram of time spent in curation (ms).", prometheus.NilLabels, curationDurations)
-	prometheus.Register("prometheus_stored_samples_total", "The number of samples that have been stored.", prometheus.NilLabels, storedSamplesCount)
+	prometheus.MustRegister(curationDurations)
+	prometheus.MustRegister(curationFilterOperations)
+	prometheus.MustRegister(storageLatency)
+	prometheus.MustRegister(storedSamplesCount)
 }

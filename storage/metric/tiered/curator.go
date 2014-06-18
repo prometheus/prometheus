@@ -22,6 +22,7 @@ import (
 
 	"code.google.com/p/goprotobuf/proto"
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -123,7 +124,7 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant clientmodel.Times
 	defer func(t time.Time) {
 		duration := float64(time.Since(t) / time.Millisecond)
 
-		labels := map[string]string{
+		labels := prometheus.Labels{
 			cutOff:        fmt.Sprint(ignoreYoungerThan),
 			processorName: processor.Name(),
 			result:        success,
@@ -132,8 +133,7 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant clientmodel.Times
 			labels[result] = failure
 		}
 
-		curationDuration.IncrementBy(labels, duration)
-		curationDurations.Add(labels, duration)
+		curationDurations.With(labels).Observe(duration)
 	}(time.Now())
 
 	defer status.UpdateCurationState(&metric.CurationState{Active: false})
@@ -255,13 +255,13 @@ func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResul
 	fingerprint := key.(*clientmodel.Fingerprint)
 
 	defer func() {
-		labels := map[string]string{
+		labels := prometheus.Labels{
 			cutOff:        fmt.Sprint(w.ignoreYoungerThan),
 			result:        strings.ToLower(r.String()),
 			processorName: w.processor.Name(),
 		}
 
-		curationFilterOperations.Increment(labels)
+		curationFilterOperations.With(labels).Inc()
 
 		w.status.UpdateCurationState(&metric.CurationState{
 			Active:      true,

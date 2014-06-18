@@ -25,6 +25,7 @@ import (
 	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/utility"
 )
@@ -32,6 +33,18 @@ import (
 const (
 	alertmanagerApiEventsPath = "/api/alerts"
 	contentTypeJson           = "application/json"
+)
+
+// String constants for instrumentation.
+const (
+	result  = "result"
+	success = "success"
+	failure = "failure"
+	dropped = "dropped"
+
+	facet     = "facet"
+	occupancy = "occupancy"
+	capacity  = "capacity"
 )
 
 var (
@@ -72,6 +85,9 @@ type NotificationHandler struct {
 	pendingNotifications <-chan NotificationReqs
 	// HTTP client with custom timeout settings.
 	httpClient httpPoster
+
+	notificationLatency    *prometheus.SummaryVec
+	notificationsQueueSize *prometheus.GaugeVec
 }
 
 // Construct a new NotificationHandler.
@@ -80,6 +96,21 @@ func NewNotificationHandler(alertmanagerUrl string, notificationReqs <-chan Noti
 		alertmanagerUrl:      alertmanagerUrl,
 		pendingNotifications: notificationReqs,
 		httpClient:           utility.NewDeadlineClient(*deadline),
+
+		notificationLatency: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name: "prometheus_notifications_latency_ms",
+				Help: "Latency quantiles for sending alert notifications in milliseconds.",
+			},
+			[]string{result},
+		),
+		notificationsQueueSize: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "prometheus_notifications_queue_size_total",
+				Help: "The size and capacity of the alert notification queue.",
+			},
+			[]string{result},
+		),
 	}
 }
 
@@ -122,35 +153,40 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	return nil
 }
 
-// Report notification queue occupancy and capacity.
-func (n *NotificationHandler) reportQueues() {
-	notificationsQueueSize.Set(map[string]string{facet: occupancy}, float64(len(n.pendingNotifications)))
-	notificationsQueueSize.Set(map[string]string{facet: capacity}, float64(cap(n.pendingNotifications)))
-}
-
 // Continuously dispatch notifications.
 func (n *NotificationHandler) Run() {
-	queueReportTicker := time.NewTicker(time.Second)
-	go func() {
-		for _ = range queueReportTicker.C {
-			n.reportQueues()
-		}
-	}()
-	defer queueReportTicker.Stop()
-
 	for reqs := range n.pendingNotifications {
 		if n.alertmanagerUrl == "" {
 			glog.Warning("No alert manager configured, not dispatching notification")
-			notificationsCount.Increment(map[string]string{result: dropped})
+			n.notificationLatency.WithLabelValues(dropped).Observe(0)
 			continue
 		}
 
 		begin := time.Now()
 		err := n.sendNotifications(reqs)
-		recordOutcome(time.Since(begin), err)
+		labelValue := success
 
 		if err != nil {
 			glog.Error("Error sending notification: ", err)
+			labelValue = failure
 		}
+
+		n.notificationLatency.WithLabelValues(labelValue).Observe(
+			float64(time.Since(begin) / time.Millisecond),
+		)
 	}
+}
+
+// Describe implements prometheus.Collector.
+func (n *NotificationHandler) Describe(ch chan<- *prometheus.Desc) {
+	n.notificationLatency.Describe(ch)
+	n.notificationsQueueSize.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (n *NotificationHandler) Collect(ch chan<- prometheus.Metric) {
+	n.notificationLatency.Collect(ch)
+	n.notificationsQueueSize.WithLabelValues(occupancy).Set(float64(len(n.pendingNotifications)))
+	n.notificationsQueueSize.WithLabelValues(capacity).Set(float64(cap(n.pendingNotifications)))
+	n.notificationsQueueSize.Collect(ch)
 }

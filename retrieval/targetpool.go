@@ -23,8 +23,6 @@ import (
 )
 
 const (
-	intervalKey = "interval"
-
 	targetAddQueueSize     = 100
 	targetReplaceQueueSize = 1
 )
@@ -164,7 +162,7 @@ func (p *TargetPool) runIteration(ingester extraction.Ingester, interval time.Du
 	wait.Wait()
 
 	duration := float64(time.Since(begin) / time.Millisecond)
-	retrievalDurations.Add(map[string]string{intervalKey: interval.String()}, duration)
+	retrievalDurations.WithLabelValues(interval.String()).Observe(duration)
 }
 
 func (p *TargetPool) Targets() []Target {

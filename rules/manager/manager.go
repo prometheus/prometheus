@@ -92,7 +92,7 @@ func (m *ruleManager) Run() {
 		case <-ticker.C:
 			start := time.Now()
 			m.runIteration(m.results)
-			iterationDuration.Add(map[string]string{intervalLabel: m.interval.String()}, float64(time.Since(start)/time.Millisecond))
+			iterationDuration.WithLabelValues(m.interval.String()).Observe(float64(time.Since(start) / time.Millisecond))
 		case <-m.done:
 			glog.Info("rules.Rule manager exiting...")
 			return

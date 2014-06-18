@@ -23,6 +23,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
+	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -205,13 +206,12 @@ const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client
 func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ingester) (err error) {
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
-		labels := map[string]string{address: t.Address(), outcome: success}
+		labels := prometheus.Labels{address: t.Address(), outcome: success}
 		if err != nil {
 			labels[outcome] = failure
 		}
 
-		targetOperationLatencies.Add(labels, ms)
-		targetOperations.Increment(labels)
+		targetOperationLatencies.With(labels).Observe(ms)
 	}(time.Now())
 
 	req, err := http.NewRequest("GET", t.Address(), nil)
