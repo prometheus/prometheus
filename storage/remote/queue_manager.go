@@ -19,6 +19,7 @@ import (
 	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -29,6 +30,18 @@ const (
 	// The deadline after which to send queued samples even if the maximum batch
 	// size has not been reached.
 	batchSendDeadline = 5 * time.Second
+)
+
+// String constants for instrumentation.
+const (
+	result  = "result"
+	success = "success"
+	failure = "failure"
+	dropped = "dropped"
+
+	facet     = "facet"
+	occupancy = "occupancy"
+	capacity  = "capacity"
 )
 
 // TSDBClient defines an interface for sending a batch of samples to an
@@ -45,6 +58,10 @@ type TSDBQueueManager struct {
 	pendingSamples clientmodel.Samples
 	sendSemaphore  chan bool
 	drained        chan bool
+
+	samplesCount *prometheus.CounterVec
+	sendLatency  *prometheus.SummaryVec
+	queueSize    *prometheus.GaugeVec
 }
 
 // NewTSDBQueueManager builds a new TSDBQueueManager.
@@ -54,6 +71,28 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 		queue:         make(chan clientmodel.Samples, queueCapacity),
 		sendSemaphore: make(chan bool, maxConcurrentSends),
 		drained:       make(chan bool),
+
+		samplesCount: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "prometheus_remote_tsdb_sent_samples_total",
+				Help: "Total number of samples processed to be sent to remote TSDB.",
+			},
+			[]string{result},
+		),
+		sendLatency: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name: "prometheus_remote_tsdb_latency_ms",
+				Help: "Latency quantiles for sending samples to the remote TSDB in milliseconds.",
+			},
+			[]string{result},
+		),
+		queueSize: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "prometheus_remote_tsdb_queue_size_total",
+				Help: "The size and capacity of the queue of samples to be sent to the remote TSDB.",
+			},
+			[]string{facet},
+		),
 	}
 }
 
@@ -63,9 +102,36 @@ func (t *TSDBQueueManager) Queue(s clientmodel.Samples) {
 	select {
 	case t.queue <- s:
 	default:
-		samplesCount.IncrementBy(map[string]string{result: dropped}, float64(len(s)))
+		t.samplesCount.WithLabelValues(dropped).Add(float64(len(s)))
 		glog.Warningf("TSDB queue full, discarding %d samples", len(s))
 	}
+}
+
+// Close stops sending samples to the TSDB and waits for pending sends to
+// complete.
+func (t *TSDBQueueManager) Close() {
+	glog.Infof("TSDB queue manager shutting down...")
+	close(t.queue)
+	<-t.drained
+	for i := 0; i < maxConcurrentSends; i++ {
+		t.sendSemaphore <- true
+	}
+}
+
+// Describe implements prometheus.Collector.
+func (t *TSDBQueueManager) Describe(ch chan<- *prometheus.Desc) {
+	t.samplesCount.Describe(ch)
+	t.sendLatency.Describe(ch)
+	t.queueSize.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (t *TSDBQueueManager) Collect(ch chan<- prometheus.Metric) {
+	t.samplesCount.Collect(ch)
+	t.sendLatency.Collect(ch)
+	t.queueSize.WithLabelValues(occupancy).Set(float64(len(t.queue)))
+	t.queueSize.WithLabelValues(capacity).Set(float64(cap(t.queue)))
+	t.queueSize.Collect(ch)
 }
 
 func (t *TSDBQueueManager) sendSamples(s clientmodel.Samples) {
@@ -78,17 +144,15 @@ func (t *TSDBQueueManager) sendSamples(s clientmodel.Samples) {
 	// sent correctly the first time, it's simply dropped on the floor.
 	begin := time.Now()
 	err := t.tsdb.Store(s)
-	recordOutcome(time.Since(begin), len(s), err)
+	duration := time.Since(begin) / time.Millisecond
 
+	labelValue := success
 	if err != nil {
 		glog.Warningf("error sending %d samples to TSDB: %s", len(s), err)
+		labelValue = failure
 	}
-}
-
-// reportQueues reports notification queue occupancy and capacity.
-func (t *TSDBQueueManager) reportQueues() {
-	queueSize.Set(map[string]string{facet: occupancy}, float64(len(t.queue)))
-	queueSize.Set(map[string]string{facet: capacity}, float64(cap(t.queue)))
+	t.samplesCount.WithLabelValues(labelValue).Add(float64(len(s)))
+	t.sendLatency.WithLabelValues(labelValue).Observe(float64(duration))
 }
 
 // Run continuously sends samples to the TSDB.
@@ -96,14 +160,6 @@ func (t *TSDBQueueManager) Run() {
 	defer func() {
 		close(t.drained)
 	}()
-
-	queueReportTicker := time.NewTicker(time.Second)
-	go func() {
-		for _ = range queueReportTicker.C {
-			t.reportQueues()
-		}
-	}()
-	defer queueReportTicker.Stop()
 
 	// Send batches of at most maxSamplesPerSend samples to the TSDB. If we
 	// have fewer samples than that, flush them out after a deadline anyways.
@@ -135,15 +191,4 @@ func (t *TSDBQueueManager) flush() {
 		go t.sendSamples(t.pendingSamples)
 	}
 	t.pendingSamples = t.pendingSamples[:0]
-}
-
-// Close stops sending samples to the TSDB and waits for pending sends to
-// complete.
-func (t *TSDBQueueManager) Close() {
-	glog.Infof("TSDB queue manager shutting down...")
-	close(t.queue)
-	<-t.drained
-	for i := 0; i < maxConcurrentSends; i++ {
-		t.sendSemaphore <- true
-	}
 }

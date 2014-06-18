@@ -20,6 +20,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
+	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -29,6 +30,37 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/templates"
 )
+
+// Constants for instrumentation.
+const (
+	intervalLabel     = "interval"
+	ruleTypeLabel     = "rule_type"
+	alertingRuleType  = "alerting"
+	recordingRuleType = "recording"
+)
+
+var (
+	evalDuration = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name: "prometheus_rule_evaluation_duration_ms",
+			Help: "The duration for a rule to execute.",
+		},
+		[]string{ruleTypeLabel},
+	)
+	iterationDuration = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_evaluator_duration_ms",
+			Help:       "The duration for each evaluation pool to execute.",
+			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+		},
+		[]string{intervalLabel},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(iterationDuration)
+	prometheus.MustRegister(evalDuration)
+}
 
 type RuleManager interface {
 	// Load and add rules from rule files specified in the configuration.
@@ -92,7 +124,7 @@ func (m *ruleManager) Run() {
 		case <-ticker.C:
 			start := time.Now()
 			m.runIteration(m.results)
-			iterationDuration.Add(map[string]string{intervalLabel: m.interval.String()}, float64(time.Since(start)/time.Millisecond))
+			iterationDuration.WithLabelValues(m.interval.String()).Observe(float64(time.Since(start) / time.Millisecond))
 		case <-m.done:
 			glog.Info("rules.Rule manager exiting...")
 			return
@@ -190,9 +222,13 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 			switch r := rule.(type) {
 			case *rules.AlertingRule:
 				m.queueAlertNotifications(r, now)
-				recordOutcome(alertingRuleType, duration)
+				evalDuration.WithLabelValues(alertingRuleType).Observe(
+					float64(duration / time.Millisecond),
+				)
 			case *rules.RecordingRule:
-				recordOutcome(recordingRuleType, duration)
+				evalDuration.WithLabelValues(recordingRuleType).Observe(
+					float64(duration / time.Millisecond),
+				)
 			default:
 				panic(fmt.Sprintf("Unknown rule type: %T", rule))
 			}

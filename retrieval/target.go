@@ -23,6 +23,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
+	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -33,9 +34,33 @@ const (
 	InstanceLabel clientmodel.LabelName = "instance"
 	// The metric name for the synthetic health variable.
 	ScrapeHealthMetricName clientmodel.LabelValue = "up"
+
+	// Constants for instrumentation.
+	address     = "instance"
+	alive       = "alive"
+	failure     = "failure"
+	outcome     = "outcome"
+	state       = "state"
+	success     = "success"
+	unreachable = "unreachable"
 )
 
-var localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
+var (
+	localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
+
+	targetOperationLatencies = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_target_operation_latency_ms",
+			Help:       "The latencies for various target operations.",
+			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+		},
+		[]string{address, outcome},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(targetOperationLatencies)
+}
 
 // The state of the given Target.
 type TargetState int
@@ -205,13 +230,12 @@ const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client
 func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ingester) (err error) {
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
-		labels := map[string]string{address: t.Address(), outcome: success}
+		labels := prometheus.Labels{address: t.Address(), outcome: success}
 		if err != nil {
 			labels[outcome] = failure
 		}
 
-		targetOperationLatencies.Add(labels, ms)
-		targetOperations.Increment(labels)
+		targetOperationLatencies.With(labels).Observe(ms)
 	}(time.Now())
 
 	req, err := http.NewRequest("GET", t.Address(), nil)

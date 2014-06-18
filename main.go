@@ -23,6 +23,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
+	registry "github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -244,13 +245,15 @@ func main() {
 	if err != nil {
 		glog.Fatal("Error opening storage: ", err)
 	}
+	registry.MustRegister(ts)
 
-	var remoteTSDBQueue *remote.TSDBQueueManager = nil
+	var remoteTSDBQueue *remote.TSDBQueueManager
 	if *remoteTSDBUrl == "" {
 		glog.Warningf("No TSDB URL provided; not sending any samples to long-term storage")
 	} else {
 		openTSDB := opentsdb.NewClient(*remoteTSDBUrl, *remoteTSDBTimeout)
 		remoteTSDBQueue = remote.NewTSDBQueueManager(openTSDB, 512)
+		registry.MustRegister(remoteTSDBQueue)
 		go remoteTSDBQueue.Run()
 	}
 
@@ -285,6 +288,7 @@ func main() {
 	go ruleManager.Run()
 
 	notificationHandler := notification.NewNotificationHandler(*alertmanagerUrl, notifications)
+	registry.MustRegister(notificationHandler)
 	go notificationHandler.Run()
 
 	flags := map[string]string{}

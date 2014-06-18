@@ -22,6 +22,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/miekg/dns"
+	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -30,6 +31,20 @@ import (
 )
 
 const resolvConf = "/etc/resolv.conf"
+
+var (
+	dnsSDLookupsCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_dns_sd_lookups_total",
+			Help: "The number of DNS-SD lookup successes/failures per pool.",
+		},
+		[]string{outcome},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(dnsSDLookupsCount)
+}
 
 // TargetProvider encapsulates retrieving all targets for a job.
 type TargetProvider interface {
@@ -60,7 +75,13 @@ func NewSdTargetProvider(job config.JobConfig) *sdTargetProvider {
 
 func (p *sdTargetProvider) Targets() ([]Target, error) {
 	var err error
-	defer func() { recordOutcome(err) }()
+	defer func() {
+		message := success
+		if err != nil {
+			message = failure
+		}
+		dnsSDLookupsCount.WithLabelValues(message).Inc()
+	}()
 
 	if time.Since(p.lastRefresh) < p.refreshInterval {
 		return p.targets, nil

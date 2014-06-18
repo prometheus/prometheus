@@ -15,8 +15,7 @@ package api
 
 import (
 	"net/http"
-
-	"github.com/prometheus/client_golang/prometheus/exp"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
@@ -38,8 +37,16 @@ func (msrv *MetricsService) RegisterHandler() {
 			Handler: http.HandlerFunc(h),
 		}
 	}
-	exp.Handle("/api/query", handler(msrv.Query))
-	exp.Handle("/api/query_range", handler(msrv.QueryRange))
-	exp.Handle("/api/metrics", handler(msrv.Metrics))
-	exp.Handle("/api/targets", handler(msrv.SetTargets))
+	http.Handle("/api/query", prometheus.InstrumentHandler(
+		"/api/query", handler(msrv.Query),
+	))
+	http.Handle("/api/query_range", prometheus.InstrumentHandler(
+		"/api/query_range", handler(msrv.QueryRange),
+	))
+	http.Handle("/api/metrics", prometheus.InstrumentHandler(
+		"/api/metrics", handler(msrv.Metrics),
+	))
+	http.Handle("/api/targets", prometheus.InstrumentHandler(
+		"/api/targets", handler(msrv.SetTargets),
+	))
 }
