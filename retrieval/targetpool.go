@@ -20,14 +20,30 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
-	intervalKey = "interval"
-
 	targetAddQueueSize     = 100
 	targetReplaceQueueSize = 1
+
+	intervalKey = "interval"
 )
+
+var (
+	retrievalDurations = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_targetpool_duration_ms",
+			Help:       "The durations for each TargetPool to retrieve state from all included entities.",
+			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+		},
+		[]string{intervalKey},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(retrievalDurations)
+}
 
 type TargetPool struct {
 	sync.RWMutex
@@ -164,7 +180,7 @@ func (p *TargetPool) runIteration(ingester extraction.Ingester, interval time.Du
 	wait.Wait()
 
 	duration := float64(time.Since(begin) / time.Millisecond)
-	retrievalDurations.Add(map[string]string{intervalKey: interval.String()}, duration)
+	retrievalDurations.WithLabelValues(interval.String()).Observe(duration)
 }
 
 func (p *TargetPool) Targets() []Target {

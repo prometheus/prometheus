@@ -19,7 +19,7 @@ import (
 	"html/template"
 	"net"
 	"net/http"
-	"net/http/pprof"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -27,7 +27,6 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/exp"
 
 	"github.com/prometheus/prometheus/web/api"
 	"github.com/prometheus/prometheus/web/blob"
@@ -52,43 +51,54 @@ type WebService struct {
 }
 
 func (w WebService) ServeForever() error {
-	exp.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", 404)
 	}))
 
-	// TODO(julius): This will need to be rewritten once the exp package provides
-	// the coarse mux behaviors via a wrapper function.
-	exp.Handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
-	exp.Handle("/debug/pprof/cmdline", http.HandlerFunc(pprof.Cmdline))
-	exp.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
-	exp.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
-
-	exp.Handle("/", w.StatusHandler)
-	exp.Handle("/databases", w.DatabasesHandler)
-	exp.Handle("/alerts", w.AlertsHandler)
-	exp.Handle("/consoles/", http.StripPrefix("/consoles/", w.ConsolesHandler))
-	exp.HandleFunc("/graph", graphHandler)
-	exp.HandleFunc("/heap", dumpHeap)
+	http.Handle("/", prometheus.InstrumentHandler(
+		"/", w.StatusHandler,
+	))
+	http.Handle("/databases", prometheus.InstrumentHandler(
+		"/databases", w.DatabasesHandler,
+	))
+	http.Handle("/alerts", prometheus.InstrumentHandler(
+		"/alerts", w.AlertsHandler,
+	))
+	http.Handle("/consoles/", prometheus.InstrumentHandler(
+		"/consoles/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))),
+	))
+	http.Handle("/graph", prometheus.InstrumentHandler(
+		"/graph", http.HandlerFunc(graphHandler),
+	))
+	http.Handle("/heap", prometheus.InstrumentHandler(
+		"/heap", http.HandlerFunc(dumpHeap),
+	))
 
 	w.MetricsHandler.RegisterHandler()
-	exp.Handle("/metrics", prometheus.DefaultHandler)
+	http.Handle("/metrics", prometheus.Handler())
 	if *useLocalAssets {
-		exp.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+		http.Handle("/static/", prometheus.InstrumentHandler(
+			"/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))),
+		))
 	} else {
-		exp.Handle("/static/", http.StripPrefix("/static/", new(blob.Handler)))
+		http.Handle("/static/", prometheus.InstrumentHandler(
+			"/static/", http.StripPrefix("/static/", new(blob.Handler)),
+		))
 	}
 
 	if *userAssetsPath != "" {
-		exp.Handle("/user/", http.StripPrefix("/user/", http.FileServer(http.Dir(*userAssetsPath))))
+		http.Handle("/user/", prometheus.InstrumentHandler(
+			"/user/", http.StripPrefix("/user/", http.FileServer(http.Dir(*userAssetsPath))),
+		))
 	}
 
 	if *enableQuit {
-		exp.HandleFunc("/-/quit", w.quitHandler)
+		http.Handle("/-/quit", http.HandlerFunc(w.quitHandler))
 	}
 
 	glog.Info("listening on ", *listenAddress)
 
-	return http.ListenAndServe(*listenAddress, exp.DefaultCoarseMux)
+	return http.ListenAndServe(*listenAddress, nil)
 }
 
 func (s WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
