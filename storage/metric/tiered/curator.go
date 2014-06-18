@@ -22,6 +22,7 @@ import (
 
 	"code.google.com/p/goprotobuf/proto"
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -36,6 +37,35 @@ import (
 const curationYieldPeriod = 250 * time.Millisecond
 
 var errIllegalIterator = errors.New("iterator invalid")
+
+// Constants for instrumentation.
+const (
+	cutOff        = "recency_threshold"
+	processorName = "processor"
+)
+
+var (
+	curationDurations = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_curation_durations_ms",
+			Help:       "Histogram of time spent in curation (ms).",
+			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+		},
+		[]string{cutOff, processorName, result},
+	)
+	curationFilterOperations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_curation_filter_operations_total",
+			Help: "The number of curation filter operations completed.",
+		},
+		[]string{cutOff, processorName, result},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(curationDurations)
+	prometheus.MustRegister(curationFilterOperations)
+}
 
 // CurationStateUpdater receives updates about the curation state.
 type CurationStateUpdater interface {
@@ -123,7 +153,7 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant clientmodel.Times
 	defer func(t time.Time) {
 		duration := float64(time.Since(t) / time.Millisecond)
 
-		labels := map[string]string{
+		labels := prometheus.Labels{
 			cutOff:        fmt.Sprint(ignoreYoungerThan),
 			processorName: processor.Name(),
 			result:        success,
@@ -132,8 +162,7 @@ func (c *Curator) Run(ignoreYoungerThan time.Duration, instant clientmodel.Times
 			labels[result] = failure
 		}
 
-		curationDuration.IncrementBy(labels, duration)
-		curationDurations.Add(labels, duration)
+		curationDurations.With(labels).Observe(duration)
 	}(time.Now())
 
 	defer status.UpdateCurationState(&metric.CurationState{Active: false})
@@ -255,13 +284,13 @@ func (w *watermarkScanner) Filter(key, value interface{}) (r storage.FilterResul
 	fingerprint := key.(*clientmodel.Fingerprint)
 
 	defer func() {
-		labels := map[string]string{
+		labels := prometheus.Labels{
 			cutOff:        fmt.Sprint(w.ignoreYoungerThan),
 			result:        strings.ToLower(r.String()),
 			processorName: w.processor.Name(),
 		}
 
-		curationFilterOperations.Increment(labels)
+		curationFilterOperations.With(labels).Inc()
 
 		w.status.UpdateCurationState(&metric.CurationState{
 			Active:      true,
