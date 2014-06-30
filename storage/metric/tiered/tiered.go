@@ -364,6 +364,7 @@ func (t *TieredStorage) flushMemory(ttl time.Duration) {
 		glog.Infof("Writing %d samples...", len(samples))
 		t.DiskStorage.AppendSamples(samples)
 	}
+	t.memoryArena.Evict(flushOlderThan)
 
 	glog.Info("Done flushing.")
 }
