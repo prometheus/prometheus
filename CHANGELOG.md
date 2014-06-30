@@ -1,3 +1,13 @@
+## 0.6.0 / 2014-06-30
+[FEATURE] Added console and alert templates support, along with various template functions.
+[PERFORMANCE] Much faster and more memory-efficient flushing to disk.
+[ENHANCEMENT] Query results are now only logged when debugging.
+[ENHANCEMENT] Upgraded to new Prometheus client library for exposing metrics.
+[BUGFIX] Samples are now kept in memory until fully flushed to disk.
+[BUGFIX] Non-200 target scrapes are now treated as an error.
+[BUGFIX] Added installation step for missing dependency to Dockerfile.
+[BUGFIX] Removed broken and unused "User Dashboard" link.
+
 ## 0.5.0 / 2014-05-28
 
 * [BUGFIX] Fixed next retrieval time display on status page.
