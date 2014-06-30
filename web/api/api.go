@@ -14,8 +14,8 @@
 package api
 
 import (
-	"net/http"
 	"github.com/prometheus/client_golang/prometheus"
+	"net/http"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
