@@ -171,7 +171,8 @@ func TestDroppedSeriesIndexRegression(t *testing.T) {
 	}
 
 	toDisk := make(chan clientmodel.Samples, 2)
-	s.Flush(clientmodel.TimestampFromTime(time.Date(2001, 0, 0, 0, 0, 0, 0, time.UTC)), toDisk)
+	flushOlderThan := clientmodel.TimestampFromTime(time.Date(2001, 0, 0, 0, 0, 0, 0, time.UTC))
+	s.Flush(flushOlderThan, toDisk)
 	if len(toDisk) != 1 {
 		t.Fatalf("Got %d disk sample lists, expected 1", len(toDisk))
 	}
@@ -179,6 +180,7 @@ func TestDroppedSeriesIndexRegression(t *testing.T) {
 	if len(diskSamples) != 1 {
 		t.Fatalf("Got %d disk samples, expected 1", len(diskSamples))
 	}
+	s.Evict(flushOlderThan)
 
 	fps, err = s.GetFingerprintsForLabelMatchers(labelMatchersFromLabelSet(common))
 	if err != nil {
