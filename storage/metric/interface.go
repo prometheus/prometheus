@@ -28,7 +28,10 @@ type Persistence interface {
 	// closed when finished.
 	Close()
 
-	// Record a group of new samples in the storage layer.
+	// Record a group of new samples in the storage layer. Multiple samples for
+	// the same fingerprint need to be submitted in chronological order, from
+	// oldest to newest (both in the same call to AppendSamples and across
+	// multiple calls).
 	AppendSamples(clientmodel.Samples) error
 
 	// Get all of the metric fingerprints that are associated with the

@@ -16,7 +16,6 @@ package tiered
 import (
 	"flag"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -258,9 +257,8 @@ func (l *LevelDBPersistence) AppendSample(sample *clientmodel.Sample) (err error
 	return
 }
 
-// groupByFingerprint collects all of the provided samples, groups them
-// together by their respective metric fingerprint, and finally sorts
-// them chronologically.
+// groupByFingerprint collects all of the provided samples and groups them
+// together by their respective metric fingerprint.
 func groupByFingerprint(samples clientmodel.Samples) map[clientmodel.Fingerprint]clientmodel.Samples {
 	fingerprintToSamples := map[clientmodel.Fingerprint]clientmodel.Samples{}
 
@@ -271,23 +269,6 @@ func groupByFingerprint(samples clientmodel.Samples) map[clientmodel.Fingerprint
 		samples = append(samples, sample)
 		fingerprintToSamples[*fingerprint] = samples
 	}
-
-	sortingSemaphore := make(chan bool, sortConcurrency)
-	doneSorting := sync.WaitGroup{}
-
-	for _, samples := range fingerprintToSamples {
-		doneSorting.Add(1)
-
-		sortingSemaphore <- true
-		go func(samples clientmodel.Samples) {
-			sort.Sort(samples)
-
-			<-sortingSemaphore
-			doneSorting.Done()
-		}(samples)
-	}
-
-	doneSorting.Wait()
 
 	return fingerprintToSamples
 }
