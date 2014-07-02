@@ -14,7 +14,6 @@
 package retrieval
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"os"
@@ -264,14 +263,6 @@ func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ing
 		baseLabels[baseLabel] = baseValue
 	}
 
-	// N.B. - It is explicitly required to extract the entire payload before
-	//        attempting to deserialize, as the underlying reader will interpret
-	//        pending data as a truncated message.
-	buf := new(bytes.Buffer)
-	if _, err := buf.ReadFrom(resp.Body); err != nil {
-		return err
-	}
-
 	i := &MergeLabelsIngester{
 		Labels:          baseLabels,
 		CollisionPrefix: clientmodel.ExporterLabelPrefix,
@@ -281,7 +272,7 @@ func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ing
 	processOptions := &extraction.ProcessOptions{
 		Timestamp: timestamp,
 	}
-	return processor.ProcessSingle(buf, i, processOptions)
+	return processor.ProcessSingle(resp.Body, i, processOptions)
 }
 
 func (t *target) State() TargetState {
