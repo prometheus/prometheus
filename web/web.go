@@ -65,7 +65,7 @@ func (w WebService) ServeForever() error {
 		"/alerts", w.AlertsHandler,
 	))
 	http.Handle("/consoles/", prometheus.InstrumentHandler(
-		"/consoles/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))),
+		"/consoles/", http.StripPrefix("/consoles/", w.ConsolesHandler),
 	))
 	http.Handle("/graph", prometheus.InstrumentHandler(
 		"/graph", http.HandlerFunc(graphHandler),
