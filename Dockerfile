@@ -7,4 +7,4 @@ WORKDIR    /prometheus
 ENTRYPOINT [ "/prometheus-src/.build/package/run_prometheus.sh" ]
 RUN        apt-get update && apt-get install -yq make git curl sudo mercurial vim-common
 ADD        . /prometheus-src
-RUN        cd /prometheus-src && make binary
+RUN        cd /prometheus-src && make tools binary
