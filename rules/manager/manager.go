@@ -195,7 +195,6 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 
 func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 	now := clientmodel.Now()
-	wg := sync.WaitGroup{}
 
 	m.Lock()
 	rulesSnapshot := make([]rules.Rule, len(m.rules))
@@ -203,39 +202,31 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 	m.Unlock()
 
 	for _, rule := range rulesSnapshot {
-		wg.Add(1)
-		// BUG(julius): Look at fixing thundering herd.
-		go func(rule rules.Rule) {
-			defer wg.Done()
+		start := time.Now()
+		vector, err := rule.Eval(now, m.storage)
+		duration := time.Since(start)
 
-			start := time.Now()
-			vector, err := rule.Eval(now, m.storage)
-			duration := time.Since(start)
+		samples := make(clientmodel.Samples, len(vector))
+		copy(samples, vector)
+		m.results <- &extraction.Result{
+			Samples: samples,
+			Err:     err,
+		}
 
-			samples := make(clientmodel.Samples, len(vector))
-			copy(samples, vector)
-			m.results <- &extraction.Result{
-				Samples: samples,
-				Err:     err,
-			}
-
-			switch r := rule.(type) {
-			case *rules.AlertingRule:
-				m.queueAlertNotifications(r, now)
-				evalDuration.WithLabelValues(alertingRuleType).Observe(
-					float64(duration / time.Millisecond),
-				)
-			case *rules.RecordingRule:
-				evalDuration.WithLabelValues(recordingRuleType).Observe(
-					float64(duration / time.Millisecond),
-				)
-			default:
-				panic(fmt.Sprintf("Unknown rule type: %T", rule))
-			}
-		}(rule)
+		switch r := rule.(type) {
+		case *rules.AlertingRule:
+			m.queueAlertNotifications(r, now)
+			evalDuration.WithLabelValues(alertingRuleType).Observe(
+				float64(duration / time.Millisecond),
+			)
+		case *rules.RecordingRule:
+			evalDuration.WithLabelValues(recordingRuleType).Observe(
+				float64(duration / time.Millisecond),
+			)
+		default:
+			panic(fmt.Sprintf("Unknown rule type: %T", rule))
+		}
 	}
-
-	wg.Wait()
 }
 
 func (m *ruleManager) AddRulesFromConfig(config config.Config) error {
