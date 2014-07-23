@@ -35,12 +35,11 @@ const (
 	ScrapeHealthMetricName clientmodel.LabelValue = "up"
 
 	// Constants for instrumentation.
-	address = "instance"
-	alive   = "alive"
-	failure = "failure"
-	outcome = "outcome"
-	state   = "state"
-	success = "success"
+	namespace = "prometheus"
+	address   = "instance"
+	failure   = "failure"
+	outcome   = "outcome"
+	success   = "success"
 )
 
 var (
@@ -48,8 +47,9 @@ var (
 
 	targetOperationLatencies = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name:       "prometheus_target_operation_latency_ms",
-			Help:       "The latencies for various target operations.",
+			Namespace:  namespace,
+			Name:       "target_operation_latency_milliseconds",
+			Help:       "The latencies for target operations.",
 			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
 		},
 		[]string{address, outcome},

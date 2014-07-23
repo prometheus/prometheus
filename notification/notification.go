@@ -37,14 +37,13 @@ const (
 
 // String constants for instrumentation.
 const (
+	namespace = "prometheus"
+	subsystem = "notifications"
+
 	result  = "result"
 	success = "success"
 	failure = "failure"
 	dropped = "dropped"
-
-	facet     = "facet"
-	occupancy = "occupancy"
-	capacity  = "capacity"
 )
 
 var (
@@ -87,7 +86,7 @@ type NotificationHandler struct {
 	httpClient httpPoster
 
 	notificationLatency    *prometheus.SummaryVec
-	notificationsQueueSize *prometheus.GaugeVec
+	notificationsQueueSize prometheus.Gauge
 }
 
 // Construct a new NotificationHandler.
@@ -99,18 +98,19 @@ func NewNotificationHandler(alertmanagerUrl string, notificationReqs <-chan Noti
 
 		notificationLatency: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Name: "prometheus_notifications_latency_ms",
-				Help: "Latency quantiles for sending alert notifications in milliseconds.",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "latency_milliseconds",
+				Help:      "Latency quantiles for sending alert notifications.",
 			},
 			[]string{result},
 		),
-		notificationsQueueSize: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "prometheus_notifications_queue_size_total",
-				Help: "The size and capacity of the alert notification queue.",
-			},
-			[]string{facet},
-		),
+		notificationsQueueSize: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queue_size",
+			Help:      "The size of the alert notification queue.",
+		}),
 	}
 }
 
@@ -186,7 +186,6 @@ func (n *NotificationHandler) Describe(ch chan<- *prometheus.Desc) {
 // Collect implements prometheus.Collector.
 func (n *NotificationHandler) Collect(ch chan<- prometheus.Metric) {
 	n.notificationLatency.Collect(ch)
-	n.notificationsQueueSize.WithLabelValues(occupancy).Set(float64(len(n.pendingNotifications)))
-	n.notificationsQueueSize.WithLabelValues(capacity).Set(float64(cap(n.pendingNotifications)))
+	n.notificationsQueueSize.Set(float64(len(n.pendingNotifications)))
 	n.notificationsQueueSize.Collect(ch)
 }

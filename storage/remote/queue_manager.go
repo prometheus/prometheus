@@ -34,6 +34,9 @@ const (
 
 // String constants for instrumentation.
 const (
+	namespace = "prometheus"
+	subsystem = "remote_tsdb"
+
 	result  = "result"
 	success = "success"
 	failure = "failure"
@@ -74,22 +77,28 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 
 		samplesCount: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "prometheus_remote_tsdb_sent_samples_total",
-				Help: "Total number of samples processed to be sent to remote TSDB.",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "sent_samples_total",
+				Help:      "Total number of processed samples to be sent to remote TSDB.",
 			},
 			[]string{result},
 		),
 		sendLatency: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Name: "prometheus_remote_tsdb_latency_ms",
-				Help: "Latency quantiles for sending samples to the remote TSDB in milliseconds.",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "latency_milliseconds",
+				Help:      "Latency quantiles for sending samples to the remote TSDB.",
 			},
 			[]string{result},
 		),
 		queueSize: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "prometheus_remote_tsdb_queue_size_total",
-				Help: "The size and capacity of the queue of samples to be sent to the remote TSDB.",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "queue_size",
+				Help:      "The size and capacity of the queue of processed samples to be sent to the remote TSDB.",
 			},
 			[]string{facet},
 		),

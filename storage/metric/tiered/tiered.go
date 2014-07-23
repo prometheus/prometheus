@@ -33,6 +33,8 @@ import (
 
 // Constants for instrumentation.
 const (
+	namespace = "prometheus"
+
 	operation = "operation"
 	success   = "success"
 	failure   = "failure"
@@ -51,24 +53,22 @@ const (
 	queue          = "queue"
 	appendToDisk   = "append_to_disk"
 	viewGeneration = "view_generation"
-
-	facet     = "facet"
-	occupancy = "occupancy"
-	capacity  = "capacity"
 )
 
 var (
 	storageLatency = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name:       "prometheus_metric_disk_latency_microseconds",
+			Namespace:  namespace,
+			Name:       "metric_disk_latency_microseconds",
 			Help:       "Latency for metric disk operations in microseconds.",
 			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
 		},
 		[]string{operation, result},
 	)
 	storedSamplesCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_stored_samples_total",
-		Help: "The number of samples that have been stored.",
+		Namespace: namespace,
+		Name:      "stored_samples_total",
+		Help:      "The number of samples that have been stored.",
 	})
 )
 
@@ -210,10 +210,11 @@ func NewTieredStorage(
 
 		queueSizes: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "prometheus_storage_queue_sizes_total",
-				Help: "The various sizes and capacities of the storage queues.",
+				Namespace: namespace,
+				Name:      "storage_queue_size",
+				Help:      "The various sizes and capacities of the storage queue.",
 			},
-			[]string{queue, facet},
+			[]string{queue},
 		),
 	}
 
@@ -793,18 +794,8 @@ func (t *TieredStorage) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector.
 func (t *TieredStorage) Collect(ch chan<- prometheus.Metric) {
-	t.queueSizes.With(prometheus.Labels{
-		queue: appendToDisk, facet: occupancy,
-	}).Set(float64(len(t.appendToDiskQueue)))
-	t.queueSizes.With(prometheus.Labels{
-		queue: appendToDisk, facet: capacity,
-	}).Set(float64(cap(t.appendToDiskQueue)))
-	t.queueSizes.With(prometheus.Labels{
-		queue: viewGeneration, facet: occupancy,
-	}).Set(float64(len(t.ViewQueue)))
-	t.queueSizes.With(prometheus.Labels{
-		queue: viewGeneration, facet: capacity,
-	}).Set(float64(cap(t.ViewQueue)))
+	t.queueSizes.WithLabelValues(appendToDisk).Set(float64(len(t.appendToDiskQueue)))
+	t.queueSizes.WithLabelValues(viewGeneration).Set(float64(len(t.ViewQueue)))
 
 	t.queueSizes.Collect(ch)
 }
