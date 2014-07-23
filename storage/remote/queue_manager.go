@@ -34,14 +34,13 @@ const (
 
 // String constants for instrumentation.
 const (
+	namespace = "prometheus"
+	subsystem = "remote_tsdb"
+
 	result  = "result"
 	success = "success"
 	failure = "failure"
 	dropped = "dropped"
-
-	facet     = "facet"
-	occupancy = "occupancy"
-	capacity  = "capacity"
 )
 
 // TSDBClient defines an interface for sending a batch of samples to an
@@ -59,9 +58,10 @@ type TSDBQueueManager struct {
 	sendSemaphore  chan bool
 	drained        chan bool
 
-	samplesCount *prometheus.CounterVec
-	sendLatency  *prometheus.SummaryVec
-	queueSize    *prometheus.GaugeVec
+	samplesCount  *prometheus.CounterVec
+	sendLatency   *prometheus.SummaryVec
+	queueLength   prometheus.Gauge
+	queueCapacity prometheus.Metric
 }
 
 // NewTSDBQueueManager builds a new TSDBQueueManager.
@@ -74,24 +74,36 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 
 		samplesCount: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "prometheus_remote_tsdb_sent_samples_total",
-				Help: "Total number of samples processed to be sent to remote TSDB.",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "sent_samples_total",
+				Help:      "Total number of processed samples to be sent to remote TSDB.",
 			},
 			[]string{result},
 		),
 		sendLatency: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Name: "prometheus_remote_tsdb_latency_ms",
-				Help: "Latency quantiles for sending samples to the remote TSDB in milliseconds.",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "latency_milliseconds",
+				Help:      "Latency quantiles for sending samples to the remote TSDB.",
 			},
 			[]string{result},
 		),
-		queueSize: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "prometheus_remote_tsdb_queue_size_total",
-				Help: "The size and capacity of the queue of samples to be sent to the remote TSDB.",
-			},
-			[]string{facet},
+		queueLength: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queue_length",
+			Help:      "The number of processed samples queued to be sent to the remote TSDB.",
+		}),
+		queueCapacity: prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, subsystem, "queue_capacity"),
+				"The capacity of the queue of samples to be sent to the remote TSDB.",
+				nil, nil,
+			),
+			prometheus.GaugeValue,
+			float64(queueCapacity),
 		),
 	}
 }
@@ -122,16 +134,17 @@ func (t *TSDBQueueManager) Close() {
 func (t *TSDBQueueManager) Describe(ch chan<- *prometheus.Desc) {
 	t.samplesCount.Describe(ch)
 	t.sendLatency.Describe(ch)
-	t.queueSize.Describe(ch)
+	ch <- t.queueLength.Desc()
+	ch <- t.queueCapacity.Desc()
 }
 
 // Collect implements prometheus.Collector.
 func (t *TSDBQueueManager) Collect(ch chan<- prometheus.Metric) {
 	t.samplesCount.Collect(ch)
 	t.sendLatency.Collect(ch)
-	t.queueSize.WithLabelValues(occupancy).Set(float64(len(t.queue)))
-	t.queueSize.WithLabelValues(capacity).Set(float64(cap(t.queue)))
-	t.queueSize.Collect(ch)
+	t.queueLength.Set(float64(len(t.queue)))
+	ch <- t.queueLength
+	ch <- t.queueCapacity
 }
 
 func (t *TSDBQueueManager) sendSamples(s clientmodel.Samples) {

@@ -35,8 +35,9 @@ const resolvConf = "/etc/resolv.conf"
 var (
 	dnsSDLookupsCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "prometheus_dns_sd_lookups_total",
-			Help: "The number of DNS-SD lookup successes/failures per pool.",
+			Namespace: namespace,
+			Name:      "dns_sd_lookups_total",
+			Help:      "The number of DNS-SD lookup successes/failures per pool.",
 		},
 		[]string{outcome},
 	)
