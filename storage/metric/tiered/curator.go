@@ -47,16 +47,18 @@ const (
 var (
 	curationDurations = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name:       "prometheus_curation_durations_ms",
-			Help:       "Histogram of time spent in curation (ms).",
+			Namespace:  namespace,
+			Name:       "curation_durations_milliseconds",
+			Help:       "Histogram of time spent in curation.",
 			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
 		},
 		[]string{cutOff, processorName, result},
 	)
 	curationFilterOperations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "prometheus_curation_filter_operations_total",
-			Help: "The number of curation filter operations completed.",
+			Namespace: namespace,
+			Name:      "curation_filter_operations_total",
+			Help:      "The number of curation filter operations completed.",
 		},
 		[]string{cutOff, processorName, result},
 	)
