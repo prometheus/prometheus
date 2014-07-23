@@ -33,7 +33,8 @@ import (
 
 // Constants for instrumentation.
 const (
-	intervalLabel     = "interval"
+	namespace = "prometheus"
+
 	ruleTypeLabel     = "rule_type"
 	alertingRuleType  = "alerting"
 	recordingRuleType = "recording"
@@ -42,19 +43,18 @@ const (
 var (
 	evalDuration = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name: "prometheus_rule_evaluation_duration_ms",
-			Help: "The duration for a rule to execute.",
+			Namespace: namespace,
+			Name:      "rule_evaluation_duration_milliseconds",
+			Help:      "The duration for a rule to execute.",
 		},
 		[]string{ruleTypeLabel},
 	)
-	iterationDuration = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Name:       "prometheus_evaluator_duration_ms",
-			Help:       "The duration for each evaluation pool to execute.",
-			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
-		},
-		[]string{intervalLabel},
-	)
+	iterationDuration = prometheus.NewSummary(prometheus.SummaryOpts{
+		Namespace:  namespace,
+		Name:       "evaluator_duration_milliseconds",
+		Help:       "The duration for all evaluations to execute.",
+		Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+	})
 )
 
 func init() {
@@ -124,7 +124,7 @@ func (m *ruleManager) Run() {
 		case <-ticker.C:
 			start := time.Now()
 			m.runIteration(m.results)
-			iterationDuration.WithLabelValues(m.interval.String()).Observe(float64(time.Since(start) / time.Millisecond))
+			iterationDuration.Observe(float64(time.Since(start) / time.Millisecond))
 		case <-m.done:
 			glog.Info("rules.Rule manager exiting...")
 			return
