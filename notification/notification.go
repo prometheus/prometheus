@@ -37,14 +37,13 @@ const (
 
 // String constants for instrumentation.
 const (
+	namespace = "prometheus"
+	subsystem = "notifications"
+
 	result  = "result"
 	success = "success"
 	failure = "failure"
 	dropped = "dropped"
-
-	facet     = "facet"
-	occupancy = "occupancy"
-	capacity  = "capacity"
 )
 
 var (
@@ -86,8 +85,9 @@ type NotificationHandler struct {
 	// HTTP client with custom timeout settings.
 	httpClient httpPoster
 
-	notificationLatency    *prometheus.SummaryVec
-	notificationsQueueSize *prometheus.GaugeVec
+	notificationLatency        *prometheus.SummaryVec
+	notificationsQueueLength   prometheus.Gauge
+	notificationsQueueCapacity prometheus.Metric
 }
 
 // Construct a new NotificationHandler.
@@ -99,17 +99,27 @@ func NewNotificationHandler(alertmanagerUrl string, notificationReqs <-chan Noti
 
 		notificationLatency: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Name: "prometheus_notifications_latency_ms",
-				Help: "Latency quantiles for sending alert notifications in milliseconds.",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "latency_milliseconds",
+				Help:      "Latency quantiles for sending alert notifications.",
 			},
 			[]string{result},
 		),
-		notificationsQueueSize: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "prometheus_notifications_queue_size_total",
-				Help: "The size and capacity of the alert notification queue.",
-			},
-			[]string{facet},
+		notificationsQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queue_length",
+			Help:      "The number of alert notifications in the queue.",
+		}),
+		notificationsQueueCapacity: prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, subsystem, "queue_capacity"),
+				"The capacity of the alert notifications queue.",
+				nil, nil,
+			),
+			prometheus.GaugeValue,
+			float64(cap(notificationReqs)),
 		),
 	}
 }
@@ -180,13 +190,14 @@ func (n *NotificationHandler) Run() {
 // Describe implements prometheus.Collector.
 func (n *NotificationHandler) Describe(ch chan<- *prometheus.Desc) {
 	n.notificationLatency.Describe(ch)
-	n.notificationsQueueSize.Describe(ch)
+	ch <- n.notificationsQueueLength.Desc()
+	ch <- n.notificationsQueueCapacity.Desc()
 }
 
 // Collect implements prometheus.Collector.
 func (n *NotificationHandler) Collect(ch chan<- prometheus.Metric) {
 	n.notificationLatency.Collect(ch)
-	n.notificationsQueueSize.WithLabelValues(occupancy).Set(float64(len(n.pendingNotifications)))
-	n.notificationsQueueSize.WithLabelValues(capacity).Set(float64(cap(n.pendingNotifications)))
-	n.notificationsQueueSize.Collect(ch)
+	n.notificationsQueueLength.Set(float64(len(n.pendingNotifications)))
+	ch <- n.notificationsQueueLength
+	ch <- n.notificationsQueueCapacity
 }
