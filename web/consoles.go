@@ -61,9 +61,11 @@ func (h *ConsolesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		RawParams url.Values
 		Params    map[string]string
+		Path      string
 	}{
 		RawParams: rawParams,
 		Params:    params,
+		Path:      r.URL.Path,
 	}
 
 	template := templates.NewTemplateExpander(string(text), "__console_"+r.URL.Path, data, clientmodel.Now(), h.Storage)
