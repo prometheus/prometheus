@@ -200,9 +200,9 @@ func (rule *AlertingRule) HTMLSnippet() template.HTML {
 	}
 	return template.HTML(fmt.Sprintf(
 		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
-		ConsoleLinkForExpression(alertMetric.String()),
+		GraphLinkForExpression(alertMetric.String()),
 		rule.name,
-		ConsoleLinkForExpression(rule.Vector.String()),
+		GraphLinkForExpression(rule.Vector.String()),
 		rule.Vector,
 		utility.DurationToString(rule.holdDuration),
 		rule.Labels))

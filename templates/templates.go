@@ -129,8 +129,10 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 			"safeHtml": func(text string) html_template.HTML {
 				return html_template.HTML(text)
 			},
-			"match": regexp.MatchString,
-			"title": strings.Title,
+			"match":     regexp.MatchString,
+			"title":     strings.Title,
+			"graphLink": rules.GraphLinkForExpression,
+			"tableLink": rules.TableLinkForExpression,
 			"sortByLabel": func(label string, v queryResult) queryResult {
 				sorter := queryResultByLabelSorter{v[:], label}
 				sort.Stable(sorter)

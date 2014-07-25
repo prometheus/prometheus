@@ -553,7 +553,7 @@ function parseGraphOptionsFromUrl() {
   return options;
 }
 
-// NOTE: This needs to be kept in sync with rules/helpers.go:ConsoleLinkForExpression!
+// NOTE: This needs to be kept in sync with rules/helpers.go:GraphLinkForExpression!
 function storeGraphOptionsInUrl() {
   var allGraphsOptions = [];
   for (var i = 0; i < graphs.length; i++) {

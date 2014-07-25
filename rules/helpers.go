@@ -131,7 +131,7 @@ func newLabelMatcher(matchTypeStr string, name clientmodel.LabelName, value clie
 	return metric.NewLabelMatcher(matchType, name, value)
 }
 
-func ConsoleLinkForExpression(expr string) string {
+func TableLinkForExpression(expr string) string {
 	// url.QueryEscape percent-escapes everything except spaces, for which it
 	// uses "+". However, in the non-query part of a URI, only percent-escaped
 	// spaces are legal, so we need to manually replace "+" with "%20" after
@@ -140,5 +140,10 @@ func ConsoleLinkForExpression(expr string) string {
 	// See also:
 	// http://stackoverflow.com/questions/1634271/url-encoding-the-space-character-or-20.
 	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q,"tab":1}]`, expr))
+	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))
+}
+
+func GraphLinkForExpression(expr string) string {
+	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q}]`, expr))
 	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))
 }
