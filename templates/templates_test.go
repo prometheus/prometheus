@@ -147,6 +147,12 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ tableLink \"up\" }}",
 			output: "/graph#%5B%7B%22expr%22%3A%22up%22%2C%22tab%22%3A1%7D%5D",
 		},
+		{
+			// tmpl.
+			text:   "{{ define \"a\" }}x{{ end }}{{ $name := \"a\"}}{{ tmpl $name . }}",
+			output: "x",
+			html:   true,
+		},
 	}
 
 	time := clientmodel.Timestamp(0)
