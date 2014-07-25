@@ -77,10 +77,10 @@ func (rule RecordingRule) HTMLSnippet() template.HTML {
 	ruleExpr := rule.vector.String()
 	return template.HTML(fmt.Sprintf(
 		`<a href="%s">%s</a>%s = <a href="%s">%s</a>`,
-		ConsoleLinkForExpression(rule.name),
+		GraphLinkForExpression(rule.name),
 		rule.name,
 		rule.labels,
-		ConsoleLinkForExpression(ruleExpr),
+		GraphLinkForExpression(ruleExpr),
 		ruleExpr))
 }
 
