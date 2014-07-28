@@ -436,11 +436,65 @@ func TestExpressions(t *testing.T) {
 		}, {
 			expr: `http_requests{group="production",job=~"^api"}`,
 			output: []string{
-				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
 				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 2,
+		},
+		{
+			expr: `abs(-1 * http_requests{group="production",job="api-server"})`,
+			output: []string{
+				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 2,
+		},
+		{
+			expr: `avg_over_time(http_requests{group="production",job="api-server"}[1h])`,
+			output: []string{
+				`http_requests{group="production", instance="0", job="api-server"} => 50 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 100 @[%v]`,
+			},
+			fullRanges:     2,
+			intervalRanges: 0,
+		},
+		{
+			expr: `count_over_time(http_requests{group="production",job="api-server"}[1h])`,
+			output: []string{
+				`http_requests{group="production", instance="0", job="api-server"} => 11 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 11 @[%v]`,
+			},
+			fullRanges:     2,
+			intervalRanges: 0,
+		},
+		{
+			expr: `max_over_time(http_requests{group="production",job="api-server"}[1h])`,
+			output: []string{
+				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+			},
+			fullRanges:     2,
+			intervalRanges: 0,
+		},
+		{
+			expr: `min_over_time(http_requests{group="production",job="api-server"}[1h])`,
+			output: []string{
+				`http_requests{group="production", instance="0", job="api-server"} => 0 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 0 @[%v]`,
+			},
+			fullRanges:     2,
+			intervalRanges: 0,
+		},
+		{
+			expr: `sum_over_time(http_requests{group="production",job="api-server"}[1h])`,
+			output: []string{
+				`http_requests{group="production", instance="0", job="api-server"} => 550 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 1100 @[%v]`,
+			},
+			fullRanges:     2,
+			intervalRanges: 0,
 		},
 	}
 
