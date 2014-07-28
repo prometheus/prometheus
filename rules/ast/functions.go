@@ -75,7 +75,7 @@ func (function *Function) CheckArgTypes(args []Node) error {
 
 // === time() clientmodel.SampleValue ===
 func timeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	return clientmodel.SampleValue(time.Now().Unix())
+	return clientmodel.SampleValue(timestamp.Unix())
 }
 
 // === delta(matrix MatrixNode, isCounter ScalarNode) Vector ===

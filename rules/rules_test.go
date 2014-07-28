@@ -496,6 +496,12 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     2,
 			intervalRanges: 0,
 		},
+		{
+			expr:           `time()`,
+			output:         []string{`scalar: 3000 @[%v]`},
+			fullRanges:     0,
+			intervalRanges: 0,
+		},
 	}
 
 	tieredStorage, closer := newTestStorage(t)
