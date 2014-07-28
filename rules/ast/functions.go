@@ -316,26 +316,22 @@ func countOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args 
 // === max_over_time(matrix MatrixNode) Vector ===
 func maxOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
 	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
-		max := clientmodel.SampleValue(math.Inf(-1))
+		max := math.Inf(-1)
 		for _, v := range values {
-			if max < v.Value {
-				max = v.Value
-			}
+			max = math.Max(max, float64(v.Value))
 		}
-		return max
+		return clientmodel.SampleValue(max)
 	})
 }
 
 // === min_over_time(matrix MatrixNode) Vector ===
 func minOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
 	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
-		min := clientmodel.SampleValue(math.Inf(1))
+		min := math.Inf(1)
 		for _, v := range values {
-			if min > v.Value {
-				min = v.Value
-			}
+			min = math.Min(min, float64(v.Value))
 		}
-		return min
+		return clientmodel.SampleValue(min)
 	})
 }
 
