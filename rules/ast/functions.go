@@ -21,6 +21,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -275,7 +276,109 @@ func countScalarImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []
 	return clientmodel.SampleValue(len(args[0].(VectorNode).Eval(timestamp, view)))
 }
 
+func aggrOverTime(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node, aggrFn func(metric.Values) clientmodel.SampleValue) interface{} {
+	n := args[0].(MatrixNode)
+	matrixVal := n.Eval(timestamp, view)
+	resultVector := Vector{}
+
+	for _, el := range matrixVal {
+		if len(el.Values) == 0 {
+			continue
+		}
+
+		resultVector = append(resultVector, &clientmodel.Sample{
+			Metric:    el.Metric,
+			Value:     aggrFn(el.Values),
+			Timestamp: timestamp,
+		})
+	}
+	return resultVector
+}
+
+// === avg_over_time(matrix MatrixNode) Vector ===
+func avgOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+		var sum clientmodel.SampleValue
+		for _, v := range values {
+			sum += v.Value
+		}
+		return sum / clientmodel.SampleValue(len(values))
+	})
+}
+
+// === count_over_time(matrix MatrixNode) Vector ===
+func countOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+		return clientmodel.SampleValue(len(values))
+	})
+}
+
+// === max_over_time(matrix MatrixNode) Vector ===
+func maxOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+		max := clientmodel.SampleValue(math.Inf(-1))
+		for _, v := range values {
+			if max < v.Value {
+				max = v.Value
+			}
+		}
+		return max
+	})
+}
+
+// === min_over_time(matrix MatrixNode) Vector ===
+func minOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+		min := clientmodel.SampleValue(math.Inf(1))
+		for _, v := range values {
+			if min > v.Value {
+				min = v.Value
+			}
+		}
+		return min
+	})
+}
+
+// === sum_over_time(matrix MatrixNode) Vector ===
+func sumOverTimeImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	return aggrOverTime(timestamp, view, args, func(values metric.Values) clientmodel.SampleValue {
+		var sum clientmodel.SampleValue
+		for _, v := range values {
+			sum += v.Value
+		}
+		return sum
+	})
+}
+
+// === abs(vector VectorNode) Vector ===
+func absImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	n := args[0].(VectorNode)
+	vector := n.Eval(timestamp, view)
+	for _, el := range vector {
+		el.Value = clientmodel.SampleValue(math.Abs(float64(el.Value)))
+	}
+	return vector
+}
+
 var functions = map[string]*Function{
+	"abs": {
+		name:       "abs",
+		argTypes:   []ExprType{VECTOR},
+		returnType: VECTOR,
+		callFn:     absImpl,
+	},
+	"avg_over_time": {
+		name:       "avg_over_time",
+		argTypes:   []ExprType{MATRIX},
+		returnType: VECTOR,
+		callFn:     avgOverTimeImpl,
+	},
+	"count_over_time": {
+		name:       "count_over_time",
+		argTypes:   []ExprType{MATRIX},
+		returnType: VECTOR,
+		callFn:     countOverTimeImpl,
+	},
 	"count_scalar": {
 		name:       "count_scalar",
 		argTypes:   []ExprType{VECTOR},
@@ -287,6 +390,18 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{MATRIX, SCALAR},
 		returnType: VECTOR,
 		callFn:     deltaImpl,
+	},
+	"max_over_time": {
+		name:       "max_over_time",
+		argTypes:   []ExprType{MATRIX},
+		returnType: VECTOR,
+		callFn:     maxOverTimeImpl,
+	},
+	"min_over_time": {
+		name:       "min_over_time",
+		argTypes:   []ExprType{MATRIX},
+		returnType: VECTOR,
+		callFn:     minOverTimeImpl,
 	},
 	"rate": {
 		name:       "rate",
@@ -317,6 +432,12 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{VECTOR},
 		returnType: VECTOR,
 		callFn:     sortDescImpl,
+	},
+	"sum_over_time": {
+		name:       "sum_over_time",
+		argTypes:   []ExprType{MATRIX},
+		returnType: VECTOR,
+		callFn:     sumOverTimeImpl,
 	},
 	"time": {
 		name:       "time",
