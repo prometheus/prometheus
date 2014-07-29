@@ -19,75 +19,69 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/utility"
 )
 
 const (
 	targetAddQueueSize     = 100
 	targetReplaceQueueSize = 1
-
-	intervalKey = "interval"
 )
-
-var (
-	retrievalDurations = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "targetpool_retrieve_time_milliseconds",
-			Help:       "The time needed for each TargetPool to retrieve state from all included entities.",
-			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
-		},
-		[]string{intervalKey},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(retrievalDurations)
-}
 
 type TargetPool struct {
 	sync.RWMutex
 
-	done                chan bool
-	manager             TargetManager
-	targets             targets
-	addTargetQueue      chan Target
-	replaceTargetsQueue chan targets
+	done             chan chan bool
+	manager          TargetManager
+	targetsByAddress map[string]Target
+	interval         time.Duration
+	ingester         extraction.Ingester
+	addTargetQueue   chan Target
 
 	targetProvider TargetProvider
 }
 
-func NewTargetPool(m TargetManager, p TargetProvider) *TargetPool {
+func NewTargetPool(m TargetManager, p TargetProvider, ing extraction.Ingester, i time.Duration) *TargetPool {
 	return &TargetPool{
-		manager:             m,
-		addTargetQueue:      make(chan Target, targetAddQueueSize),
-		replaceTargetsQueue: make(chan targets, targetReplaceQueueSize),
-		targetProvider:      p,
-		done:                make(chan bool),
+		manager:          m,
+		interval:         i,
+		ingester:         ing,
+		targetsByAddress: make(map[string]Target),
+		addTargetQueue:   make(chan Target, targetAddQueueSize),
+		targetProvider:   p,
+		done:             make(chan chan bool),
 	}
 }
 
-func (p *TargetPool) Run(ingester extraction.Ingester, interval time.Duration) {
-	ticker := time.NewTicker(interval)
+func (p *TargetPool) Run() {
+	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			p.runIteration(ingester, interval)
+			if p.targetProvider != nil {
+				targets, err := p.targetProvider.Targets()
+				if err != nil {
+					glog.Warningf("Error looking up targets, keeping old list: %s", err)
+				} else {
+					p.ReplaceTargets(targets)
+				}
+			}
 		case newTarget := <-p.addTargetQueue:
 			p.addTarget(newTarget)
-		case newTargets := <-p.replaceTargetsQueue:
-			p.replaceTargets(newTargets)
-		case <-p.done:
+		case stopped := <-p.done:
+			p.ReplaceTargets([]Target{})
 			glog.Info("TargetPool exiting...")
+			stopped <- true
 			return
 		}
 	}
 }
 
 func (p TargetPool) Stop() {
-	p.done <- true
+	stopped := make(chan bool)
+	p.done <- stopped
+	<-stopped
 }
 
 func (p *TargetPool) AddTarget(target Target) {
@@ -98,85 +92,52 @@ func (p *TargetPool) addTarget(target Target) {
 	p.Lock()
 	defer p.Unlock()
 
-	p.targets = append(p.targets, target)
+	p.targetsByAddress[target.Address()] = target
+	go target.RunScraper(p.ingester, p.interval)
 }
 
 func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 	p.Lock()
 	defer p.Unlock()
 
-	// If there is anything remaining in the queue for effectuation, clear it out,
-	// because the last mutation should win.
-	select {
-	case <-p.replaceTargetsQueue:
-	default:
-		p.replaceTargetsQueue <- newTargets
-	}
-}
-
-func (p *TargetPool) replaceTargets(newTargets []Target) {
-	p.Lock()
-	defer p.Unlock()
-
 	// Replace old target list by new one, but reuse those targets from the old
 	// list of targets which are also in the new list (to preserve scheduling and
 	// health state).
-	for j, newTarget := range newTargets {
-		for _, oldTarget := range p.targets {
-			if oldTarget.Address() == newTarget.Address() {
-				oldTarget.Merge(newTargets[j])
-				newTargets[j] = oldTarget
-			}
-		}
-	}
-
-	p.targets = newTargets
-}
-
-func (p *TargetPool) runSingle(ingester extraction.Ingester, t Target) {
-	p.manager.acquire()
-	defer p.manager.release()
-
-	t.Scrape(ingester)
-}
-
-func (p *TargetPool) runIteration(ingester extraction.Ingester, interval time.Duration) {
-	if p.targetProvider != nil {
-		targets, err := p.targetProvider.Targets()
-		if err != nil {
-			glog.Warningf("Error looking up targets, keeping old list: %s", err)
+	newTargetAddresses := make(utility.Set)
+	for _, newTarget := range newTargets {
+		newTargetAddresses.Add(newTarget.Address())
+		oldTarget, ok := p.targetsByAddress[newTarget.Address()]
+		if ok {
+			oldTarget.Merge(newTarget)
 		} else {
-			p.ReplaceTargets(targets)
+			p.targetsByAddress[newTarget.Address()] = newTarget
+			go newTarget.RunScraper(p.ingester, p.interval)
 		}
 	}
-
-	p.RLock()
-	defer p.RUnlock()
-
-	begin := time.Now()
-	wait := sync.WaitGroup{}
-
-	for _, target := range p.targets {
-		wait.Add(1)
-
-		go func(t Target) {
-			p.runSingle(ingester, t)
-			wait.Done()
-		}(target)
+	// Stop any targets no longer present.
+	oldTargetsStopped := make([]chan bool, 0)
+	for k, oldTarget := range p.targetsByAddress {
+		if !newTargetAddresses.Has(k) {
+			glog.V(1).Info("Stopping scraper for target ", k)
+			done := make(chan bool)
+			oldTarget.StopScraper(done)
+			oldTargetsStopped = append(oldTargetsStopped, done)
+			delete(p.targetsByAddress, k)
+		}
 	}
-
-	wait.Wait()
-
-	duration := float64(time.Since(begin) / time.Millisecond)
-	retrievalDurations.WithLabelValues(interval.String()).Observe(duration)
+	// Wait for them to stop.
+	for _, done := range oldTargetsStopped {
+		<-done
+	}
 }
 
 func (p *TargetPool) Targets() []Target {
 	p.RLock()
 	defer p.RUnlock()
 
-	targets := make([]Target, len(p.targets))
-	copy(targets, p.targets)
-
+	targets := make([]Target, 0, len(p.targetsByAddress))
+	for _, v := range p.targetsByAddress {
+		targets = append(targets, v)
+	}
 	return targets
 }

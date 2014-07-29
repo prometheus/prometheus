@@ -67,8 +67,6 @@ var (
 
 	notificationQueueCapacity = flag.Int("alertmanager.notificationQueueCapacity", 100, "The size of the queue for pending alert manager notifications.")
 
-	concurrentRetrievalAllowance = flag.Int("concurrentRetrievalAllowance", 15, "The number of concurrent metrics retrieval requests allowed.")
-
 	printVersion = flag.Bool("version", false, "print version information")
 
 	shutdownTimeout = flag.Duration("shutdownGracePeriod", 0*time.Second, "The amount of time Prometheus gives background services to finish running when shutdown is requested.")
@@ -269,7 +267,7 @@ func main() {
 	deletionTimer := time.NewTicker(*deleteInterval)
 
 	// Queue depth will need to be exposed
-	targetManager := retrieval.NewTargetManager(ingester, *concurrentRetrievalAllowance)
+	targetManager := retrieval.NewTargetManager(ingester)
 	targetManager.AddTargetsFromConfig(conf)
 
 	notifications := make(chan notification.NotificationReqs, *notificationQueueCapacity)
