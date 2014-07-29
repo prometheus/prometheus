@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -35,12 +36,13 @@ const (
 	ScrapeHealthMetricName clientmodel.LabelValue = "up"
 
 	// Constants for instrumentation.
-	address = "instance"
-	alive   = "alive"
-	failure = "failure"
-	outcome = "outcome"
-	state   = "state"
-	success = "success"
+	address  = "instance"
+	alive    = "alive"
+	failure  = "failure"
+	outcome  = "outcome"
+	state    = "state"
+	success  = "success"
+	interval = "interval"
 )
 
 var (
@@ -54,10 +56,19 @@ var (
 		},
 		[]string{address, outcome},
 	)
+	targetIntervalLength = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_target_interval_length_seconds",
+			Help:       "Actual intervals between scrapes.",
+			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+		},
+		[]string{interval},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(targetOperationLatencies)
+	prometheus.MustRegister(targetIntervalLength)
 }
 
 // The state of the given Target.
@@ -98,8 +109,6 @@ const (
 // metrics are retrieved and deserialized from the given instance to which it
 // refers.
 type Target interface {
-	// Retrieve values from this target.
-	Scrape(ingester extraction.Ingester) error
 	// Return the last encountered scrape error, if any.
 	LastError() error
 	// Return the health of the target.
@@ -119,6 +128,12 @@ type Target interface {
 	// labels) into an old target definition for the same endpoint. Preserve
 	// remaining information - like health state - from the old target.
 	Merge(newTarget Target)
+	// Scrape target at the specified interval.
+	RunScraper(extraction.Ingester, time.Duration)
+	// Signal the scraper to stop.
+	StopScraper()
+	// Do a single scrape.
+	scrape(ingester extraction.Ingester) error
 }
 
 // target is a Target that refers to a singular HTTP or HTTPS endpoint.
@@ -129,6 +144,12 @@ type target struct {
 	lastError error
 	// The last time a scrape was attempted.
 	lastScrape time.Time
+	// The time of the next scrape.
+	nextScrape time.Time
+	// The interval between scrapes.
+	interval time.Duration
+	// If set, don't do any more scrapes.
+	stopScraping bool
 
 	address string
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
@@ -176,32 +197,61 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clie
 	})
 }
 
-func (t *target) Scrape(ingester extraction.Ingester) error {
-	now := clientmodel.Now()
-	err := t.scrape(now, ingester)
-	if err == nil {
-		t.state = ALIVE
-		t.recordScrapeHealth(ingester, now, true)
-	} else {
-		t.state = UNREACHABLE
-		t.recordScrapeHealth(ingester, now, false)
+func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration) {
+	t.nextScrape = time.Now().Truncate(interval)
+	jitter := interval.Seconds() * rand.Float64()
+	t.nextScrape = t.nextScrape.Add(time.Duration(jitter) * time.Second)
+	// Might be in the past, so go forward one if needed.
+	if t.nextScrape.Before(time.Now()) {
+		t.nextScrape = t.nextScrape.Add(interval)
 	}
-	t.lastScrape = time.Now()
-	t.lastError = err
-	return err
+
+	for {
+		time.Sleep(t.nextScrape.Sub(time.Now()))
+		if t.stopScraping {
+			glog.V(1).Infof("Scraper stopped for %s", t.address)
+			break
+		}
+		if !t.lastScrape.IsZero() {
+			targetIntervalLength.WithLabelValues(t.interval.String()).Observe(float64(time.Since(t.lastScrape)))
+		}
+		t.lastScrape = time.Now()
+		t.scrape(ingester)
+
+		t.nextScrape = t.nextScrape.Add(interval)
+		for {
+			if t.nextScrape.Before(time.Now()) {
+				glog.Infof("Have skipped scrape for %s", t.address)
+				t.nextScrape = t.nextScrape.Add(interval)
+			} else {
+				break
+			}
+		}
+	}
+
+}
+
+func (t *target) StopScraper() {
+	t.stopScraping = true
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema=prometheus/telemetry;version=0.0.2;q=0.2,*/*;q=0.1`
 
-func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ingester) (err error) {
+func (t *target) scrape(ingester extraction.Ingester) (err error) {
+	timestamp := clientmodel.Now()
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
 		labels := prometheus.Labels{address: t.Address(), outcome: success}
-		if err != nil {
+		if err == nil {
+			t.state = ALIVE
+			t.recordScrapeHealth(ingester, timestamp, true)
 			labels[outcome] = failure
+		} else {
+			t.state = UNREACHABLE
+			t.recordScrapeHealth(ingester, timestamp, false)
 		}
-
 		targetOperationLatencies.With(labels).Observe(ms)
+		t.lastError = err
 	}(time.Now())
 
 	req, err := http.NewRequest("GET", t.Address(), nil)
@@ -287,7 +337,3 @@ func (t *target) Merge(newTarget Target) {
 }
 
 type targets []Target
-
-func (t targets) Len() int {
-	return len(t)
-}
