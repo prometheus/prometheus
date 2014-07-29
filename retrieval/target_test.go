@@ -42,7 +42,7 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 		address:    "bad schema",
 		httpClient: utility.NewDeadlineClient(0),
 	}
-	testTarget.Scrape(nopIngester{})
+	testTarget.scrape(nopIngester{})
 	if testTarget.state != UNREACHABLE {
 		t.Errorf("Expected target state %v, actual: %v", UNREACHABLE, testTarget.state)
 	}
@@ -100,7 +100,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// scrape once without timeout
 	signal <- true
-	if err := testTarget.Scrape(ingester); err != nil {
+	if err := testTarget.scrape(ingester); err != nil {
 		t.Fatal(err)
 	}
 
@@ -109,12 +109,12 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again
 	signal <- true
-	if err := testTarget.Scrape(ingester); err != nil {
+	if err := testTarget.scrape(ingester); err != nil {
 		t.Fatal(err)
 	}
 
 	// now timeout
-	if err := testTarget.Scrape(ingester); err == nil {
+	if err := testTarget.scrape(ingester); err == nil {
 		t.Fatal("expected scrape to timeout")
 	} else {
 		signal <- true // let handler continue
@@ -122,7 +122,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again without timeout
 	signal <- true
-	if err := testTarget.Scrape(ingester); err != nil {
+	if err := testTarget.scrape(ingester); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -138,8 +138,57 @@ func TestTargetScrape404(t *testing.T) {
 	ingester := nopIngester{}
 
 	want := errors.New("server returned HTTP status 404 Not Found")
-	got := testTarget.Scrape(ingester)
+	got := testTarget.scrape(ingester)
 	if got == nil || want.Error() != got.Error() {
 		t.Fatalf("want err %q, got %q", want, got)
+	}
+}
+
+func TestTargetRunScraperScrapes(t *testing.T) {
+	testTarget := target{
+		state:      UNKNOWN,
+		address:    "bad schema",
+		httpClient: utility.NewDeadlineClient(0),
+	}
+	defer testTarget.StopScraper()
+	go testTarget.RunScraper(nopIngester{}, time.Duration(time.Millisecond))
+
+	// Enough time for a scrape to happen.
+	time.Sleep(2 * time.Millisecond)
+	if testTarget.lastScrape.IsZero() {
+		t.Errorf("Scrape hasn't occured.")
+	}
+
+	testTarget.StopScraper()
+	// Wait for it to take effect.
+	time.Sleep(2 * time.Millisecond)
+	last := testTarget.lastScrape
+	// Enough time for a scrape to happen.
+	time.Sleep(2 * time.Millisecond)
+	if testTarget.lastScrape != last {
+		t.Errorf("Scrape occured after it was stopped.")
+	}
+}
+
+func TestTargetRunScraperSpreadsScrapes(t *testing.T) {
+	testTarget1 := target{
+		state:      UNKNOWN,
+		address:    "1",
+		httpClient: utility.NewDeadlineClient(0),
+	}
+	testTarget1.StopScraper()
+	testTarget2 := target{
+		state:      UNKNOWN,
+		address:    "1",
+		httpClient: utility.NewDeadlineClient(0),
+	}
+	testTarget2.StopScraper()
+
+	testTarget1.RunScraper(nopIngester{}, time.Duration(time.Second))
+	testTarget2.RunScraper(nopIngester{}, time.Duration(time.Second))
+
+	// There's a tiny chance they'll be the same and produce a false positive.
+	if testTarget1.nextScrape == testTarget2.nextScrape {
+		t.Errorf("Both targets had same scrape time.")
 	}
 }

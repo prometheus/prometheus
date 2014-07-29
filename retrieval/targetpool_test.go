@@ -77,21 +77,22 @@ func testTargetPool(t testing.TB) {
 	}
 
 	for i, scenario := range scenarios {
-		pool := TargetPool{}
+		pool := NewTargetPool(nil, nil, nil, time.Duration(1))
 
 		for _, input := range scenario.inputs {
 			target := target{
 				address: input.address,
 			}
 
+			target.StopScraper()
 			pool.addTarget(&target)
 		}
 
-		if pool.targets.Len() != len(scenario.outputs) {
-			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), pool.targets.Len())
+		if len(pool.targets) != len(scenario.outputs) {
+			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), len(pool.targets))
 		} else {
 			for j, output := range scenario.outputs {
-				target := pool.targets[j]
+				target := pool.Targets()[j]
 
 				if target.Address() != output.address {
 					t.Errorf("%s %d.%d. expected Target address to be %s but was %s", scenario.name, i, j, output.address, target.Address())
@@ -99,8 +100,8 @@ func testTargetPool(t testing.TB) {
 				}
 			}
 
-			if pool.targets.Len() != len(scenario.outputs) {
-				t.Errorf("%s %d. expected to repopulated with %d elements, got %d", scenario.name, i, len(scenario.outputs), pool.targets.Len())
+			if len(pool.targets) != len(scenario.outputs) {
+				t.Errorf("%s %d. expected to repopulated with %d elements, got %d", scenario.name, i, len(scenario.outputs), len(pool.targets))
 			}
 		}
 	}
@@ -111,38 +112,42 @@ func TestTargetPool(t *testing.T) {
 }
 
 func TestTargetPoolReplaceTargets(t *testing.T) {
-	pool := TargetPool{}
+	pool := NewTargetPool(nil, nil, nil, time.Duration(1))
 	oldTarget1 := &target{
 		address: "http://example1.com/metrics.json",
 		state:   UNREACHABLE,
 	}
+	oldTarget1.StopScraper()
 	oldTarget2 := &target{
 		address: "http://example2.com/metrics.json",
 		state:   UNREACHABLE,
 	}
+	oldTarget2.StopScraper()
 	newTarget1 := &target{
 		address: "http://example1.com/metrics.json",
 		state:   ALIVE,
 	}
+	newTarget1.StopScraper()
 	newTarget2 := &target{
 		address: "http://example3.com/metrics.json",
 		state:   ALIVE,
 	}
+	newTarget2.StopScraper()
 
 	pool.addTarget(oldTarget1)
 	pool.addTarget(oldTarget2)
 
 	pool.replaceTargets([]Target{newTarget1, newTarget2})
 
-	if pool.targets.Len() != 2 {
-		t.Errorf("Expected 2 elements in pool, had %d", pool.targets.Len())
+	if len(pool.targets) != 2 {
+		t.Errorf("Expected 2 elements in pool, had %d", len(pool.targets))
 	}
 
-	target1 := pool.targets[0].(*target)
+	target1 := pool.Targets()[0].(*target)
 	if target1.state != oldTarget1.state {
 		t.Errorf("Wrong first target returned from pool, expected %v, got %v", oldTarget1, target1)
 	}
-	target2 := pool.targets[1].(*target)
+	target2 := pool.Targets()[1].(*target)
 	if target2.state != newTarget2.state {
 		t.Errorf("Wrong second target returned from pool, expected %v, got %v", newTarget2, target2)
 	}
