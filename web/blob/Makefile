@@ -18,7 +18,7 @@ all: files.go
 SUFFIXES:
 
 files.go: $(shell find ../templates/ ../static/ -type f)
-	../../utility/embed-static.sh ../static ../templates | $(GOFMT) > $@
+	../../utility/embed-static.sh ../static ../templates | gofmt > $@
 
 clean:
 	-rm  files.go

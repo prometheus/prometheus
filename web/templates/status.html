@@ -39,7 +39,7 @@
               <th>Endpoint</th>
               <th>State</th>
               <th>Base Labels</th>
-              <th>Next Retrieval</th>
+              <th>Last Scrape</th>
               <th>Error</th>
             </tr>
           </thead>
@@ -56,7 +56,7 @@
                 {{.BaseLabels}}
               </td>
               <td>
-                {{.EstimatedTimeToExecute}}
+                {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
               </td>
               <td>
                 {{if .LastError}}
