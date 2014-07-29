@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -41,6 +42,7 @@ const (
 	failure   = "failure"
 	outcome   = "outcome"
 	success   = "success"
+	interval  = "interval"
 )
 
 var (
@@ -55,10 +57,19 @@ var (
 		},
 		[]string{job, instance, outcome},
 	)
+	targetIntervalLength = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_target_interval_length_seconds",
+			Help:       "Actual intervals between scrapes.",
+			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+		},
+		[]string{interval},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(targetOperationLatencies)
+	prometheus.MustRegister(targetIntervalLength)
 }
 
 // The state of the given Target.
@@ -99,8 +110,6 @@ const (
 // metrics are retrieved and deserialized from the given instance to which it
 // refers.
 type Target interface {
-	// Retrieve values from this target.
-	Scrape(ingester extraction.Ingester) error
 	// Return the last encountered scrape error, if any.
 	LastError() error
 	// Return the health of the target.
@@ -120,6 +129,10 @@ type Target interface {
 	// labels) into an old target definition for the same endpoint. Preserve
 	// remaining information - like health state - from the old target.
 	Merge(newTarget Target)
+	// Scrape target at the specified interval.
+	RunScraper(extraction.Ingester, time.Duration, chan bool)
+	// Do a single scrape.
+	scrape(ingester extraction.Ingester) error
 }
 
 // target is a Target that refers to a singular HTTP or HTTPS endpoint.
@@ -130,6 +143,10 @@ type target struct {
 	lastError error
 	// The last time a scrape was attempted.
 	lastScrape time.Time
+	// The interval between scrapes.
+	interval time.Duration
+	// If set, don't do any more scrapes.
+	stopScraping bool
 
 	address string
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
@@ -177,24 +194,34 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clie
 	})
 }
 
-func (t *target) Scrape(ingester extraction.Ingester) error {
-	now := clientmodel.Now()
-	err := t.scrape(now, ingester)
-	if err == nil {
-		t.state = ALIVE
-		t.recordScrapeHealth(ingester, now, true)
-	} else {
-		t.state = UNREACHABLE
-		t.recordScrapeHealth(ingester, now, false)
+func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration, stop chan bool) {
+	jitter_timer := time.NewTimer(time.Duration(interval.Seconds() * rand.Float64()))
+	select {
+	case <-jitter_timer.C:
+	case <-stop:
+		return
 	}
-	t.lastScrape = time.Now()
-	t.lastError = err
-	return err
+	jitter_timer.Stop()
+
+	tick := time.Tick(interval)
+	for {
+		select {
+		case <-tick:
+			if !t.lastScrape.IsZero() {
+				targetIntervalLength.WithLabelValues(t.interval.String()).Observe(float64(time.Since(t.lastScrape)))
+			}
+			t.lastScrape = time.Now()
+			t.scrape(ingester)
+		case <-stop:
+			return
+		}
+	}
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema=prometheus/telemetry;version=0.0.2;q=0.2,*/*;q=0.1`
 
-func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ingester) (err error) {
+func (t *target) scrape(ingester extraction.Ingester) (err error) {
+	timestamp := clientmodel.Now()
 	defer func(start time.Time) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
 		labels := prometheus.Labels{
@@ -202,11 +229,16 @@ func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ing
 			instance: t.Address(),
 			outcome:  success,
 		}
-		if err != nil {
+		if err == nil {
+			t.state = ALIVE
+			t.recordScrapeHealth(ingester, timestamp, true)
 			labels[outcome] = failure
+		} else {
+			t.state = UNREACHABLE
+			t.recordScrapeHealth(ingester, timestamp, false)
 		}
-
 		targetOperationLatencies.With(labels).Observe(ms)
+		t.lastError = err
 	}(time.Now())
 
 	req, err := http.NewRequest("GET", t.Address(), nil)
@@ -292,7 +324,3 @@ func (t *target) Merge(newTarget Target) {
 }
 
 type targets []Target
-
-func (t targets) Len() int {
-	return len(t)
-}

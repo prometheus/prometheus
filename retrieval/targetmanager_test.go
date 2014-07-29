@@ -29,10 +29,9 @@ import (
 )
 
 type fakeTarget struct {
-	scrapeCount   int
-	schedules     []time.Time
-	interval      time.Duration
-	scheduleIndex int
+	scrapeCount int
+	lastScrape  time.Time
+	interval    time.Duration
 }
 
 func (t fakeTarget) LastError() error {
@@ -55,30 +54,29 @@ func (t fakeTarget) Interval() time.Duration {
 	return t.interval
 }
 
-func (t *fakeTarget) Scrape(i extraction.Ingester) error {
+func (t fakeTarget) LastScrape() time.Time {
+	return t.lastScrape
+}
+
+func (t fakeTarget) scrape(i extraction.Ingester) error {
 	t.scrapeCount++
 
 	return nil
+}
+
+func (t fakeTarget) RunScraper(ingester extraction.Ingester, interval time.Duration, stop chan bool) {
+	return
+}
+
+func (t fakeTarget) StopScraper() {
+	return
 }
 
 func (t fakeTarget) State() TargetState {
 	return ALIVE
 }
 
-func (t fakeTarget) LastScrape() time.Time {
-	return time.Now()
-}
-
-func (t *fakeTarget) ScheduledFor() (time time.Time) {
-	time = t.schedules[t.scheduleIndex]
-	t.scheduleIndex++
-
-	return
-}
-
 func (t *fakeTarget) Merge(newTarget Target) {}
-
-func (t *fakeTarget) EstimatedTimeToExecute() time.Duration { return 0 }
 
 func testTargetManager(t testing.TB) {
 	targetManager := NewTargetManager(nopIngester{}, 3)
@@ -96,20 +94,17 @@ func testTargetManager(t testing.TB) {
 	}
 
 	target1GroupA := &fakeTarget{
-		schedules: []time.Time{time.Now()},
-		interval:  time.Minute,
+		interval: time.Minute,
 	}
 	target2GroupA := &fakeTarget{
-		schedules: []time.Time{time.Now()},
-		interval:  time.Minute,
+		interval: time.Minute,
 	}
 
 	targetManager.AddTarget(testJob1, target1GroupA)
 	targetManager.AddTarget(testJob1, target2GroupA)
 
 	target1GroupB := &fakeTarget{
-		schedules: []time.Time{time.Now()},
-		interval:  time.Minute * 2,
+		interval: time.Minute * 2,
 	}
 
 	targetManager.AddTarget(testJob2, target1GroupB)
