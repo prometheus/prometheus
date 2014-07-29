@@ -23,8 +23,6 @@ import (
 )
 
 type TargetManager interface {
-	acquire()
-	release()
 	AddTarget(job config.JobConfig, t Target)
 	ReplaceTargets(job config.JobConfig, newTargets []Target)
 	Remove(t Target)
@@ -34,25 +32,15 @@ type TargetManager interface {
 }
 
 type targetManager struct {
-	requestAllowance chan bool
-	poolsByJob       map[string]*TargetPool
-	ingester         extraction.Ingester
+	poolsByJob map[string]*TargetPool
+	ingester   extraction.Ingester
 }
 
-func NewTargetManager(ingester extraction.Ingester, requestAllowance int) TargetManager {
+func NewTargetManager(ingester extraction.Ingester) TargetManager {
 	return &targetManager{
-		requestAllowance: make(chan bool, requestAllowance),
-		ingester:         ingester,
-		poolsByJob:       make(map[string]*TargetPool),
+		ingester:   ingester,
+		poolsByJob: make(map[string]*TargetPool),
 	}
-}
-
-func (m *targetManager) acquire() {
-	m.requestAllowance <- true
-}
-
-func (m *targetManager) release() {
-	<-m.requestAllowance
 }
 
 func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
@@ -64,13 +52,13 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
 			provider = NewSdTargetProvider(job)
 		}
 
-		targetPool = NewTargetPool(m, provider)
+		interval := job.ScrapeInterval()
+		targetPool = NewTargetPool(m, provider, m.ingester, interval)
 		glog.Infof("Pool for job %s does not exist; creating and starting...", job.GetName())
 
-		interval := job.ScrapeInterval()
 		m.poolsByJob[job.GetName()] = targetPool
 		// BUG(all): Investigate whether this auto-goroutine creation is desired.
-		go targetPool.Run(m.ingester, interval)
+		go targetPool.Run()
 	}
 
 	return targetPool
@@ -84,7 +72,7 @@ func (m *targetManager) AddTarget(job config.JobConfig, t Target) {
 
 func (m *targetManager) ReplaceTargets(job config.JobConfig, newTargets []Target) {
 	targetPool := m.TargetPoolForJob(job)
-	targetPool.replaceTargets(newTargets)
+	targetPool.ReplaceTargets(newTargets)
 }
 
 func (m targetManager) Remove(t Target) {

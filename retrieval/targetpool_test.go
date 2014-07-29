@@ -77,7 +77,7 @@ func testTargetPool(t testing.TB) {
 	}
 
 	for i, scenario := range scenarios {
-		pool := TargetPool{}
+		pool := NewTargetPool(nil, nil, nopIngester{}, time.Duration(1))
 
 		for _, input := range scenario.inputs {
 			target := target{
@@ -87,11 +87,11 @@ func testTargetPool(t testing.TB) {
 			pool.addTarget(&target)
 		}
 
-		if pool.targets.Len() != len(scenario.outputs) {
-			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), pool.targets.Len())
+		if len(pool.targetsByAddress) != len(scenario.outputs) {
+			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), len(pool.targetsByAddress))
 		} else {
 			for j, output := range scenario.outputs {
-				target := pool.targets[j]
+				target := pool.Targets()[j]
 
 				if target.Address() != output.address {
 					t.Errorf("%s %d.%d. expected Target address to be %s but was %s", scenario.name, i, j, output.address, target.Address())
@@ -99,8 +99,8 @@ func testTargetPool(t testing.TB) {
 				}
 			}
 
-			if pool.targets.Len() != len(scenario.outputs) {
-				t.Errorf("%s %d. expected to repopulated with %d elements, got %d", scenario.name, i, len(scenario.outputs), pool.targets.Len())
+			if len(pool.targetsByAddress) != len(scenario.outputs) {
+				t.Errorf("%s %d. expected to repopulated with %d elements, got %d", scenario.name, i, len(scenario.outputs), len(pool.targetsByAddress))
 			}
 		}
 	}
@@ -111,41 +111,48 @@ func TestTargetPool(t *testing.T) {
 }
 
 func TestTargetPoolReplaceTargets(t *testing.T) {
-	pool := TargetPool{}
+	pool := NewTargetPool(nil, nil, nopIngester{}, time.Duration(1))
 	oldTarget1 := &target{
-		address: "http://example1.com/metrics.json",
-		state:   UNREACHABLE,
+		address:     "example1",
+		state:       UNREACHABLE,
+		stopScraper: make(chan bool, 1),
 	}
 	oldTarget2 := &target{
-		address: "http://example2.com/metrics.json",
-		state:   UNREACHABLE,
+		address:     "example2",
+		state:       UNREACHABLE,
+		stopScraper: make(chan bool, 1),
 	}
 	newTarget1 := &target{
-		address: "http://example1.com/metrics.json",
-		state:   ALIVE,
+		address:     "example1",
+		state:       ALIVE,
+		stopScraper: make(chan bool, 1),
 	}
 	newTarget2 := &target{
-		address: "http://example3.com/metrics.json",
-		state:   ALIVE,
+		address:     "example3",
+		state:       ALIVE,
+		stopScraper: make(chan bool, 1),
 	}
+
+	oldTarget1.StopScraper()
+	oldTarget2.StopScraper()
+	newTarget2.StopScraper()
 
 	pool.addTarget(oldTarget1)
 	pool.addTarget(oldTarget2)
 
-	pool.replaceTargets([]Target{newTarget1, newTarget2})
+	pool.ReplaceTargets([]Target{newTarget1, newTarget2})
 
-	if pool.targets.Len() != 2 {
-		t.Errorf("Expected 2 elements in pool, had %d", pool.targets.Len())
+	if len(pool.targetsByAddress) != 2 {
+		t.Errorf("Expected 2 elements in pool, had %d", len(pool.targetsByAddress))
 	}
 
-	target1 := pool.targets[0].(*target)
-	if target1.state != oldTarget1.state {
-		t.Errorf("Wrong first target returned from pool, expected %v, got %v", oldTarget1, target1)
+	if pool.targetsByAddress["example1"].State() != oldTarget1.State() {
+		t.Errorf("target1 channel has changed")
 	}
-	target2 := pool.targets[1].(*target)
-	if target2.state != newTarget2.state {
-		t.Errorf("Wrong second target returned from pool, expected %v, got %v", newTarget2, target2)
+	if pool.targetsByAddress["example3"].State() == oldTarget2.State() {
+		t.Errorf("newTarget2 channel same as oldTarget2's")
 	}
+
 }
 
 func BenchmarkTargetPool(b *testing.B) {
