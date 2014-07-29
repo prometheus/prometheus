@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io/ioutil"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -113,44 +114,42 @@ func (s WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
 	s.QuitDelegate()
 }
 
-func getLocalTemplate(name string) (*template.Template, error) {
-	return template.ParseFiles(
-		"web/templates/_base.html",
-		fmt.Sprintf("web/templates/%s.html", name),
-	)
+func getTemplateFile(name string) (string, error) {
+	if *useLocalAssets {
+		file, err := ioutil.ReadFile(fmt.Sprintf("web/templates/%s.html", name))
+		if err != nil {
+			glog.Errorf("Could not read %s template: %s", name, err)
+			return "", err
+		}
+		return string(file), nil
+	} else {
+		file, err := blob.GetFile(blob.TemplateFiles, name+".html")
+		if err != nil {
+			glog.Errorf("Could not read %s template: %s", name, err)
+			return "", err
+		}
+		return string(file), nil
+	}
 }
 
-func getEmbeddedTemplate(name string) (*template.Template, error) {
-	t := template.New("_base")
-
-	file, err := blob.GetFile(blob.TemplateFiles, "_base.html")
+func getTemplate(name string) (t *template.Template, err error) {
+	t = template.New("_base")
+	t.Funcs(template.FuncMap{
+		"since": time.Since,
+	})
+	file, err := getTemplateFile("_base")
 	if err != nil {
 		glog.Error("Could not read base template: ", err)
 		return nil, err
 	}
-	t.Parse(string(file))
+	t.Parse(file)
 
-	file, err = blob.GetFile(blob.TemplateFiles, name+".html")
+	file, err = getTemplateFile(name)
 	if err != nil {
-		glog.Errorf("Could not read %s template: %s", name, err)
+		glog.Error("Could not read base template: ", err)
 		return nil, err
 	}
-	t.Parse(string(file))
-
-	return t, nil
-}
-
-func getTemplate(name string) (t *template.Template, err error) {
-	if *useLocalAssets {
-		t, err = getLocalTemplate(name)
-	} else {
-		t, err = getEmbeddedTemplate(name)
-	}
-
-	if err != nil {
-		return
-	}
-
+	t.Parse(file)
 	return
 }
 

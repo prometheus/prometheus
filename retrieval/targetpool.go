@@ -14,7 +14,6 @@
 package retrieval
 
 import (
-	"sort"
 	"sync"
 	"time"
 
@@ -133,11 +132,11 @@ func (p *TargetPool) replaceTargets(newTargets []Target) {
 	p.targets = newTargets
 }
 
-func (p *TargetPool) runSingle(earliest time.Time, ingester extraction.Ingester, t Target) {
+func (p *TargetPool) runSingle(ingester extraction.Ingester, t Target) {
 	p.manager.acquire()
 	defer p.manager.release()
 
-	t.Scrape(earliest, ingester)
+	t.Scrape(ingester)
 }
 
 func (p *TargetPool) runIteration(ingester extraction.Ingester, interval time.Duration) {
@@ -156,23 +155,11 @@ func (p *TargetPool) runIteration(ingester extraction.Ingester, interval time.Du
 	begin := time.Now()
 	wait := sync.WaitGroup{}
 
-	// Sort p.targets by next scheduling time so we can process the earliest
-	// targets first.
-	sort.Sort(p.targets)
-
 	for _, target := range p.targets {
-		now := time.Now()
-
-		if target.ScheduledFor().After(now) {
-			// None of the remaining targets are ready to be scheduled. Signal that
-			// we're done processing them in this scrape iteration.
-			continue
-		}
-
 		wait.Add(1)
 
 		go func(t Target) {
-			p.runSingle(now, ingester, t)
+			p.runSingle(ingester, t)
 			wait.Done()
 		}(target)
 	}

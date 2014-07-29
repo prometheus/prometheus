@@ -55,7 +55,7 @@ func (t fakeTarget) Interval() time.Duration {
 	return t.interval
 }
 
-func (t *fakeTarget) Scrape(e time.Time, i extraction.Ingester) error {
+func (t *fakeTarget) Scrape(i extraction.Ingester) error {
 	t.scrapeCount++
 
 	return nil
@@ -63,6 +63,10 @@ func (t *fakeTarget) Scrape(e time.Time, i extraction.Ingester) error {
 
 func (t fakeTarget) State() TargetState {
 	return ALIVE
+}
+
+func (t fakeTarget) LastScrape() time.Time {
+	return time.Now()
 }
 
 func (t *fakeTarget) ScheduledFor() (time time.Time) {

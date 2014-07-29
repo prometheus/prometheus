@@ -260,14 +260,14 @@ func (te templateExpander) ExpandHTML(templateFiles []string) (result string, re
 
 	var buffer bytes.Buffer
 	tmpl := html_template.New(te.name).Funcs(html_template.FuncMap(te.funcMap))
-        tmpl.Funcs(html_template.FuncMap{
-          "tmpl": func(name string, data interface{}) (html_template.HTML, error) {
-             var buffer bytes.Buffer
-             err := tmpl.ExecuteTemplate(&buffer, name, data)
-             return html_template.HTML(buffer.String()), err
-          },
-        })
-        tmpl, err := tmpl.Parse(te.text)
+	tmpl.Funcs(html_template.FuncMap{
+		"tmpl": func(name string, data interface{}) (html_template.HTML, error) {
+			var buffer bytes.Buffer
+			err := tmpl.ExecuteTemplate(&buffer, name, data)
+			return html_template.HTML(buffer.String()), err
+		},
+	})
+	tmpl, err := tmpl.Parse(te.text)
 	if err != nil {
 		return "", fmt.Errorf("Error parsing template %v: %v", te.name, err)
 	}

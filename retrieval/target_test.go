@@ -38,12 +38,11 @@ func (i *collectResultIngester) Ingest(r *extraction.Result) error {
 
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := target{
-		scheduler:  literalScheduler{},
 		state:      UNKNOWN,
 		address:    "bad schema",
 		httpClient: utility.NewDeadlineClient(0),
 	}
-	testTarget.Scrape(time.Time{}, nopIngester{})
+	testTarget.Scrape(nopIngester{})
 	if testTarget.state != UNREACHABLE {
 		t.Errorf("Expected target state %v, actual: %v", UNREACHABLE, testTarget.state)
 	}
@@ -51,7 +50,6 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
 	testTarget := target{
-		scheduler:  literalScheduler{},
 		address:    "http://example.url",
 		baseLabels: clientmodel.LabelSet{clientmodel.JobLabel: "testjob"},
 		httpClient: utility.NewDeadlineClient(0),
@@ -102,7 +100,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// scrape once without timeout
 	signal <- true
-	if err := testTarget.Scrape(time.Now(), ingester); err != nil {
+	if err := testTarget.Scrape(ingester); err != nil {
 		t.Fatal(err)
 	}
 
@@ -111,12 +109,12 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again
 	signal <- true
-	if err := testTarget.Scrape(time.Now(), ingester); err != nil {
+	if err := testTarget.Scrape(ingester); err != nil {
 		t.Fatal(err)
 	}
 
 	// now timeout
-	if err := testTarget.Scrape(time.Now(), ingester); err == nil {
+	if err := testTarget.Scrape(ingester); err == nil {
 		t.Fatal("expected scrape to timeout")
 	} else {
 		signal <- true // let handler continue
@@ -124,7 +122,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again without timeout
 	signal <- true
-	if err := testTarget.Scrape(time.Now(), ingester); err != nil {
+	if err := testTarget.Scrape(ingester); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -140,7 +138,7 @@ func TestTargetScrape404(t *testing.T) {
 	ingester := nopIngester{}
 
 	want := errors.New("server returned HTTP status 404 Not Found")
-	got := testTarget.Scrape(time.Now(), ingester)
+	got := testTarget.Scrape(ingester)
 	if got == nil || want.Error() != got.Error() {
 		t.Fatalf("want err %q, got %q", want, got)
 	}
