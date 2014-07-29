@@ -14,7 +14,6 @@
 package retrieval
 
 import (
-	"sort"
 	"testing"
 	"time"
 )
@@ -57,44 +56,21 @@ func testTargetPool(t testing.TB) {
 			},
 		},
 		{
-			name: "plural descending schedules",
+			name: "plural schedules",
 			inputs: []input{
 				{
-					address:      "http://plural-descending.com",
-					scheduledFor: time.Date(2013, 1, 4, 12, 0, 0, 0, time.UTC),
+					address: "http://plural.net",
 				},
 				{
-					address:      "http://plural-descending.net",
-					scheduledFor: time.Date(2013, 1, 4, 11, 0, 0, 0, time.UTC),
+					address: "http://plural.com",
 				},
 			},
 			outputs: []output{
 				{
-					address: "http://plural-descending.net",
+					address: "http://plural.net",
 				},
 				{
-					address: "http://plural-descending.com",
-				},
-			},
-		},
-		{
-			name: "plural ascending schedules",
-			inputs: []input{
-				{
-					address:      "http://plural-ascending.net",
-					scheduledFor: time.Date(2013, 1, 4, 11, 0, 0, 0, time.UTC),
-				},
-				{
-					address:      "http://plural-ascending.com",
-					scheduledFor: time.Date(2013, 1, 4, 12, 0, 0, 0, time.UTC),
-				},
-			},
-			outputs: []output{
-				{
-					address: "http://plural-ascending.net",
-				},
-				{
-					address: "http://plural-ascending.com",
+					address: "http://plural.com",
 				},
 			},
 		},
@@ -105,13 +81,11 @@ func testTargetPool(t testing.TB) {
 
 		for _, input := range scenario.inputs {
 			target := target{
-				address:   input.address,
-				scheduler: literalScheduler(input.scheduledFor),
+				address: input.address,
 			}
 
 			pool.addTarget(&target)
 		}
-		sort.Sort(pool.targets)
 
 		if pool.targets.Len() != len(scenario.outputs) {
 			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), pool.targets.Len())
@@ -136,68 +110,41 @@ func TestTargetPool(t *testing.T) {
 	testTargetPool(t)
 }
 
-func TestTargetPoolIterationWithUnhealthyTargetsFinishes(t *testing.T) {
-	pool := TargetPool{}
-	target := &target{
-		address:   "http://example.com/metrics.json",
-		scheduler: literalScheduler(time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)),
-	}
-	pool.addTarget(target)
-
-	done := make(chan bool)
-	go func() {
-		pool.runIteration(nopIngester{}, time.Duration(0))
-		done <- true
-	}()
-
-	select {
-	case <-done:
-		break
-	case <-time.After(time.Duration(1) * time.Second):
-		t.Fatalf("Targetpool iteration is stuck")
-	}
-}
-
 func TestTargetPoolReplaceTargets(t *testing.T) {
 	pool := TargetPool{}
 	oldTarget1 := &target{
-		address:   "http://example1.com/metrics.json",
-		scheduler: literalScheduler(time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)),
-		state:     UNREACHABLE,
+		address: "http://example1.com/metrics.json",
+		state:   UNREACHABLE,
 	}
 	oldTarget2 := &target{
-		address:   "http://example2.com/metrics.json",
-		scheduler: literalScheduler(time.Date(7500, 1, 1, 0, 0, 0, 0, time.UTC)),
-		state:     UNREACHABLE,
+		address: "http://example2.com/metrics.json",
+		state:   UNREACHABLE,
 	}
 	newTarget1 := &target{
-		address:   "http://example1.com/metrics.json",
-		scheduler: literalScheduler(time.Date(5000, 1, 1, 0, 0, 0, 0, time.UTC)),
-		state:     ALIVE,
+		address: "http://example1.com/metrics.json",
+		state:   ALIVE,
 	}
 	newTarget2 := &target{
-		address:   "http://example3.com/metrics.json",
-		scheduler: literalScheduler(time.Date(2500, 1, 1, 0, 0, 0, 0, time.UTC)),
-		state:     ALIVE,
+		address: "http://example3.com/metrics.json",
+		state:   ALIVE,
 	}
 
 	pool.addTarget(oldTarget1)
 	pool.addTarget(oldTarget2)
 
 	pool.replaceTargets([]Target{newTarget1, newTarget2})
-	sort.Sort(pool.targets)
 
 	if pool.targets.Len() != 2 {
 		t.Errorf("Expected 2 elements in pool, had %d", pool.targets.Len())
 	}
 
 	target1 := pool.targets[0].(*target)
-	if target1.state != newTarget1.state {
-		t.Errorf("Wrong first target returned from pool, expected %v, got %v", newTarget2, target1)
+	if target1.state != oldTarget1.state {
+		t.Errorf("Wrong first target returned from pool, expected %v, got %v", oldTarget1, target1)
 	}
 	target2 := pool.targets[1].(*target)
-	if target2.state != oldTarget1.state {
-		t.Errorf("Wrong second target returned from pool, expected %v, got %v", oldTarget1, target2)
+	if target2.state != newTarget2.state {
+		t.Errorf("Wrong second target returned from pool, expected %v, got %v", newTarget2, target2)
 	}
 }
 
