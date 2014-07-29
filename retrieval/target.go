@@ -87,15 +87,6 @@ const (
 	UNREACHABLE
 )
 
-// A healthReporter is a type that can provide insight into its health state.
-//
-// It mainly exists for testability reasons to decouple the scheduler behaviors
-// from fully-fledged Target and other types.
-type healthReporter interface {
-	// Report the last-known health state for this target.
-	State() TargetState
-}
-
 // A Target represents an endpoint that should be interrogated for metrics.
 //
 // The protocol described by this type will likely change in future iterations,
@@ -108,26 +99,13 @@ type healthReporter interface {
 // refers.
 type Target interface {
 	// Retrieve values from this target.
-	//
-	// earliest refers to the soonest available opportunity to reschedule the
-	// target for a future retrieval.  It is up to the underlying scheduler type,
-	// alluded to in the scheduledFor function, to use this as it wants to.  The
-	// current use case is to create a common batching time for scraping multiple
-	// Targets in the future through the TargetPool.
-	Scrape(earliest time.Time, ingester extraction.Ingester) error
-	// Fulfill the healthReporter interface.
-	State() TargetState
-	// Report the soonest time at which this Target may be scheduled for
-	// retrieval.  This value needn't convey that the operation occurs at this
-	// time, but it should occur no sooner than it.
-	//
-	// Right now, this is used as the sorting key in TargetPool.
-	ScheduledFor() time.Time
-	// EstimatedTimeToExecute emits the amount of time until the next prospective
-	// scheduling opportunity for this target.
-	EstimatedTimeToExecute() time.Duration
+	Scrape(ingester extraction.Ingester) error
 	// Return the last encountered scrape error, if any.
 	LastError() error
+	// Return the health of the target.
+	State() TargetState
+	// Return the last time a scrape was attempted.
+	LastScrape() time.Time
 	// The address to which the Target corresponds.  Out of all of the available
 	// points in this interface, this one is the best candidate to change given
 	// the ways to express the endpoint.
@@ -145,13 +123,12 @@ type Target interface {
 
 // target is a Target that refers to a singular HTTP or HTTPS endpoint.
 type target struct {
-	// scheduler provides the scheduling strategy that is used to formulate what
-	// is returned in Target.scheduledFor.
-	scheduler scheduler
 	// The current health state of the target.
 	state TargetState
 	// The last encountered scrape error, if any.
 	lastError error
+	// The last time a scrape was attempted.
+	lastScrape time.Time
 
 	address string
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
@@ -170,11 +147,6 @@ func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.La
 		baseLabels: baseLabels,
 		httpClient: utility.NewDeadlineClient(deadline),
 	}
-
-	scheduler := &healthScheduler{
-		target: target,
-	}
-	target.scheduler = scheduler
 
 	return target
 }
@@ -204,22 +176,18 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clie
 	})
 }
 
-func (t *target) Scrape(earliest time.Time, ingester extraction.Ingester) error {
+func (t *target) Scrape(ingester extraction.Ingester) error {
 	now := clientmodel.Now()
-	futureState := t.state
 	err := t.scrape(now, ingester)
-	if err != nil {
-		t.recordScrapeHealth(ingester, now, false)
-		futureState = UNREACHABLE
-	} else {
+	if err == nil {
+		t.state = ALIVE
 		t.recordScrapeHealth(ingester, now, true)
-		futureState = ALIVE
+	} else {
+		t.state = UNREACHABLE
+		t.recordScrapeHealth(ingester, now, false)
 	}
-
-	t.scheduler.Reschedule(earliest, futureState)
-	t.state = futureState
+	t.lastScrape = time.Now()
 	t.lastError = err
-
 	return err
 }
 
@@ -275,20 +243,16 @@ func (t *target) scrape(timestamp clientmodel.Timestamp, ingester extraction.Ing
 	return processor.ProcessSingle(resp.Body, i, processOptions)
 }
 
+func (t *target) LastError() error {
+	return t.lastError
+}
+
 func (t *target) State() TargetState {
 	return t.state
 }
 
-func (t *target) ScheduledFor() time.Time {
-	return t.scheduler.ScheduledFor()
-}
-
-func (t *target) EstimatedTimeToExecute() time.Duration {
-	return time.Now().Sub(t.scheduler.ScheduledFor())
-}
-
-func (t *target) LastError() error {
-	return t.lastError
+func (t *target) LastScrape() time.Time {
+	return t.lastScrape
 }
 
 func (t *target) Address() string {
@@ -326,12 +290,4 @@ type targets []Target
 
 func (t targets) Len() int {
 	return len(t)
-}
-
-func (t targets) Less(i, j int) bool {
-	return t[i].ScheduledFor().Before(t[j].ScheduledFor())
-}
-
-func (t targets) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
 }
