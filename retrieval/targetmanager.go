@@ -64,13 +64,13 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
 			provider = NewSdTargetProvider(job)
 		}
 
-		targetPool = NewTargetPool(m, provider)
+		interval := job.ScrapeInterval()
+		targetPool = NewTargetPool(m, provider, m.ingester, interval)
 		glog.Infof("Pool for job %s does not exist; creating and starting...", job.GetName())
 
-		interval := job.ScrapeInterval()
 		m.poolsByJob[job.GetName()] = targetPool
 		// BUG(all): Investigate whether this auto-goroutine creation is desired.
-		go targetPool.Run(m.ingester, interval)
+		go targetPool.Run()
 	}
 
 	return targetPool
@@ -84,7 +84,7 @@ func (m *targetManager) AddTarget(job config.JobConfig, t Target) {
 
 func (m *targetManager) ReplaceTargets(job config.JobConfig, newTargets []Target) {
 	targetPool := m.TargetPoolForJob(job)
-	targetPool.replaceTargets(newTargets)
+	targetPool.ReplaceTargets(newTargets)
 }
 
 func (m targetManager) Remove(t Target) {
