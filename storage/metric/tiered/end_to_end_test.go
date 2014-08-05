@@ -189,8 +189,15 @@ func GetLabelValuesForLabelNameTests(p metric.Persistence, t testing.TB) {
 			t.Fatalf("Number of values don't match for label %s: got %d; want %d", name, len(actual), len(expected))
 		}
 		for i := range expected {
-			if actual[i] != expected[i] {
-				t.Fatalf("%d. Got %s; want %s", i, actual[i], expected[i])
+			inActual := false
+			for _, a := range actual {
+				if expected[i] == a {
+					inActual = true
+					break
+				}
+			}
+			if !inActual {
+				t.Fatalf("%d. Expected label %s not in output", i, expected[i])
 			}
 		}
 	}
