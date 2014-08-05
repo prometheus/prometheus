@@ -540,6 +540,15 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 0,
 		},
+		{
+			expr: `drop_common_labels(http_requests{group="production",job="api-server"})`,
+			output: []string{
+				`http_requests{instance="0"} => 100 @[%v]`,
+				`http_requests{instance="1"} => 200 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 2,
+		},
 	}
 
 	tieredStorage, closer := newTestStorage(t)

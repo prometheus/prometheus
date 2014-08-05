@@ -246,6 +246,44 @@ func bottomkImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node
 	return Vector(bottomk)
 }
 
+// === drop_common_labels(node VectorNode) Vector ===
+func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	vector := args[0].(VectorNode).Eval(timestamp, view)
+	if len(vector) < 1 {
+		return Vector{}
+	}
+	common := clientmodel.LabelSet{}
+	for k, v := range vector[0].Metric {
+		// TODO(julius): Revisit this when https://github.com/prometheus/prometheus/issues/380
+		// is implemented.
+		if k == clientmodel.MetricNameLabel {
+			continue
+		}
+		common[k] = v
+	}
+
+	for _, el := range vector[1:] {
+		for k, v := range common {
+			if el.Metric[k] != v {
+				// Deletion of map entries while iterating over them is safe.
+				// From http://golang.org/ref/spec#For_statements:
+				// "If map entries that have not yet been reached are deleted during
+				// iteration, the corresponding iteration values will not be produced."
+				delete(common, k)
+			}
+		}
+	}
+
+	for _, el := range vector {
+		for k, _ := range el.Metric {
+			if _, ok := common[k]; ok {
+				delete(el.Metric, k)
+			}
+		}
+	}
+	return vector
+}
+
 // === sampleVectorImpl() Vector ===
 func sampleVectorImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
 	return Vector{
@@ -449,6 +487,12 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{MATRIX, SCALAR},
 		returnType: VECTOR,
 		callFn:     deltaImpl,
+	},
+	"drop_common_labels": {
+		name:       "drop_common_labels",
+		argTypes:   []ExprType{VECTOR},
+		returnType: VECTOR,
+		callFn:     dropCommonLabelsImpl,
 	},
 	"max_over_time": {
 		name:       "max_over_time",
