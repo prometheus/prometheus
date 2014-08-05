@@ -324,6 +324,26 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
+			expr: `topk(3, http_requests)`,
+			output: []string{
+				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
+				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
+				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+			},
+			checkOrder:     true,
+			fullRanges:     0,
+			intervalRanges: 8,
+		}, {
+			expr: `bottomk(3, http_requests)`,
+			output: []string{
+				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+				`http_requests{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
+			},
+			checkOrder:     true,
+			fullRanges:     0,
+			intervalRanges: 8,
+		}, {
 			// Single-letter label names and values.
 			expr: `x{y="testvalue"}`,
 			output: []string{

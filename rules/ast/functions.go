@@ -14,6 +14,7 @@
 package ast
 
 import (
+	"container/heap"
 	"fmt"
 	"math"
 	"sort"
@@ -22,7 +23,6 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility"
 )
 
 // Function represents a function of the expression language and is
@@ -138,7 +138,7 @@ func deltaImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) 
 	return resultVector
 }
 
-// === rate(node *MatrixNode) Vector ===
+// === rate(node MatrixNode) Vector ===
 func rateImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
 	args = append(args, &ScalarLiteral{value: 1})
 	vector := deltaImpl(timestamp, view, args).(Vector)
@@ -153,40 +153,97 @@ func rateImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) i
 	return vector
 }
 
-type vectorByValueSorter struct {
-	vector Vector
+type vectorByValueHeap Vector
+
+func (s vectorByValueHeap) Len() int {
+	return len(s)
 }
 
-func (sorter vectorByValueSorter) Len() int {
-	return len(sorter.vector)
+func (s vectorByValueHeap) Less(i, j int) bool {
+	return s[i].Value < s[j].Value
 }
 
-func (sorter vectorByValueSorter) Less(i, j int) bool {
-	return sorter.vector[i].Value < sorter.vector[j].Value
+func (s vectorByValueHeap) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
 }
 
-func (sorter vectorByValueSorter) Swap(i, j int) {
-	sorter.vector[i], sorter.vector[j] = sorter.vector[j], sorter.vector[i]
+func (s *vectorByValueHeap) Push(x interface{}) {
+	*s = append(*s, x.(*clientmodel.Sample))
 }
 
-// === sort(node *VectorNode) Vector ===
+func (s *vectorByValueHeap) Pop() interface{} {
+	old := *s
+	n := len(old)
+	el := old[n-1]
+	*s = old[0 : n-1]
+	return el
+}
+
+type reverseHeap struct {
+	heap.Interface
+}
+
+func (s reverseHeap) Less(i, j int) bool {
+	return s.Interface.Less(j, i)
+}
+
+// === sort(node VectorNode) Vector ===
 func sortImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	byValueSorter := vectorByValueSorter{
-		vector: args[0].(VectorNode).Eval(timestamp, view),
-	}
+	byValueSorter := vectorByValueHeap(args[0].(VectorNode).Eval(timestamp, view))
 	sort.Sort(byValueSorter)
-	return byValueSorter.vector
+	return Vector(byValueSorter)
 }
 
-// === sortDesc(node *VectorNode) Vector ===
+// === sortDesc(node VectorNode) Vector ===
 func sortDescImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
-	descByValueSorter := utility.ReverseSorter{
-		Interface: vectorByValueSorter{
-			vector: args[0].(VectorNode).Eval(timestamp, view),
-		},
+	byValueSorter := vectorByValueHeap(args[0].(VectorNode).Eval(timestamp, view))
+	sort.Sort(sort.Reverse(byValueSorter))
+	return Vector(byValueSorter)
+}
+
+// === topk(k ScalarNode, node VectorNode) Vector ===
+func topkImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	k := int(args[0].(ScalarNode).Eval(timestamp, view))
+	if k < 1 {
+		return Vector{}
 	}
-	sort.Sort(descByValueSorter)
-	return descByValueSorter.Interface.(vectorByValueSorter).vector
+
+	topk := make(vectorByValueHeap, 0, k)
+	vector := args[1].(VectorNode).Eval(timestamp, view)
+
+	for _, el := range vector {
+		if len(topk) < k || topk[0].Value < el.Value {
+			if len(topk) == k {
+				heap.Pop(&topk)
+			}
+			heap.Push(&topk, el)
+		}
+	}
+	sort.Sort(sort.Reverse(topk))
+	return Vector(topk)
+}
+
+// === bottomk(k ScalarNode, node VectorNode) Vector ===
+func bottomkImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
+	k := int(args[0].(ScalarNode).Eval(timestamp, view))
+	if k < 1 {
+		return Vector{}
+	}
+
+	bottomk := make(vectorByValueHeap, 0, k)
+	bkHeap := reverseHeap{Interface: &bottomk}
+	vector := args[1].(VectorNode).Eval(timestamp, view)
+
+	for _, el := range vector {
+		if len(bottomk) < k || bottomk[0].Value > el.Value {
+			if len(bottomk) == k {
+				heap.Pop(&bkHeap)
+			}
+			heap.Push(&bkHeap, el)
+		}
+	}
+	sort.Sort(bottomk)
+	return Vector(bottomk)
 }
 
 // === sampleVectorImpl() Vector ===
@@ -262,7 +319,7 @@ func sampleVectorImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args [
 	}
 }
 
-// === scalar(node *VectorNode) Scalar ===
+// === scalar(node VectorNode) Scalar ===
 func scalarImpl(timestamp clientmodel.Timestamp, view *viewAdapter, args []Node) interface{} {
 	v := args[0].(VectorNode).Eval(timestamp, view)
 	if len(v) != 1 {
@@ -369,6 +426,12 @@ var functions = map[string]*Function{
 		returnType: VECTOR,
 		callFn:     avgOverTimeImpl,
 	},
+	"bottomk": {
+		name:       "bottomk",
+		argTypes:   []ExprType{SCALAR, VECTOR},
+		returnType: VECTOR,
+		callFn:     bottomkImpl,
+	},
 	"count_over_time": {
 		name:       "count_over_time",
 		argTypes:   []ExprType{MATRIX},
@@ -440,6 +503,12 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{},
 		returnType: SCALAR,
 		callFn:     timeImpl,
+	},
+	"topk": {
+		name:       "topk",
+		argTypes:   []ExprType{SCALAR, VECTOR},
+		returnType: VECTOR,
+		callFn:     topkImpl,
 	},
 }
 
