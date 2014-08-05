@@ -334,6 +334,15 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 8,
 		}, {
+			expr: `topk(5, http_requests{group="canary",job="app-server"})`,
+			output: []string{
+				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
+				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
+			},
+			checkOrder:     true,
+			fullRanges:     0,
+			intervalRanges: 2,
+		}, {
 			expr: `bottomk(3, http_requests)`,
 			output: []string{
 				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
@@ -343,6 +352,15 @@ func TestExpressions(t *testing.T) {
 			checkOrder:     true,
 			fullRanges:     0,
 			intervalRanges: 8,
+		}, {
+			expr: `bottomk(5, http_requests{group="canary",job="app-server"})`,
+			output: []string{
+				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
+				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
+			},
+			checkOrder:     true,
+			fullRanges:     0,
+			intervalRanges: 2,
 		}, {
 			// Single-letter label names and values.
 			expr: `x{y="testvalue"}`,
@@ -409,11 +427,11 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 0,
 		}, {
-			// Empty expressions shouldn"t parse.
+			// Empty expressions shouldn't parse.
 			expr:       ``,
 			shouldFail: true,
 		}, {
-			// Interval durations can"t be in quotes.
+			// Interval durations can't be in quotes.
 			expr:       `http_requests["1m"]`,
 			shouldFail: true,
 		}, {
