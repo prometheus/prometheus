@@ -49,7 +49,7 @@ tag:
 	git push --tags
 
 $(BUILD_PATH)/cache/$(GOPKG):
-	curl -o $@ $(GOURL)/$(GOPKG)
+	curl -o $@ -L $(GOURL)/$(GOPKG)
 
 benchmark: test
 	$(GO) test $(GO_TEST_FLAGS) -test.bench='Benchmark' ./...

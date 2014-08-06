@@ -74,8 +74,8 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "a",
 		},
 		{
-			// Range over query.
-			text:   "{{ range query \"metric\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
+			// Range over query and sort by label.
+			text:   "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
 			output: "a:11: b:21: ",
 		},
 		{
@@ -97,11 +97,6 @@ func TestTemplateExpansion(t *testing.T) {
 			// Regex replacement.
 			text:   "{{ reReplaceAll \"(a)b\" \"x$1\" \"ab\" }}",
 			output: "xa",
-		},
-		{
-			// Sorting.
-			text:   "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}} {{end}}",
-			output: "a b ",
 		},
 		{
 			// Humanize.
