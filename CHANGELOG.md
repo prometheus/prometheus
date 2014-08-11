@@ -1,26 +1,26 @@
 ## 0.7.0 / 2014-08-06
-[FEATURE] Added new functions: abs(), topk(), bottomk(), drop_common_labels().
-[FEATURE] Let console templates get graph links from expressions.
-[FEATURE] Allow console templates to dynamically include other templates.
-[FEATURE] Template consoles now have access to their URL.
-[BUGFIX] Fixed time() function to return evaluation time, not wallclock time.
-[BUGFIX] Fixed HTTP connection leak when targets returned a non-200 status.
-[BUGFIX] Fixed link to console templates in UI.
-[PERFORMANCE] Removed extra memory copies while scraping targets.
-[ENHANCEMENT] Switched from Go 1.2.1 to Go 1.3.
-[ENHANCEMENT] Made metrics exported by Prometheus itself more consistent.
-[ENHANCEMENT] Removed incremental backoffs for unhealthy targets.
-[ENHANCEMENT] Dockerfile also builds Prometheus support tools now.
+* [FEATURE] Added new functions: abs(), topk(), bottomk(), drop_common_labels().
+* [FEATURE] Let console templates get graph links from expressions.
+* [FEATURE] Allow console templates to dynamically include other templates.
+* [FEATURE] Template consoles now have access to their URL.
+* [BUGFIX] Fixed time() function to return evaluation time, not wallclock time.
+* [BUGFIX] Fixed HTTP connection leak when targets returned a non-200 status.
+* [BUGFIX] Fixed link to console templates in UI.
+* [PERFORMANCE] Removed extra memory copies while scraping targets.
+* [ENHANCEMENT] Switched from Go 1.2.1 to Go 1.3.
+* [ENHANCEMENT] Made metrics exported by Prometheus itself more consistent.
+* [ENHANCEMENT] Removed incremental backoffs for unhealthy targets.
+* [ENHANCEMENT] Dockerfile also builds Prometheus support tools now.
 
 ## 0.6.0 / 2014-06-30
-[FEATURE] Added console and alert templates support, along with various template functions.
-[PERFORMANCE] Much faster and more memory-efficient flushing to disk.
-[ENHANCEMENT] Query results are now only logged when debugging.
-[ENHANCEMENT] Upgraded to new Prometheus client library for exposing metrics.
-[BUGFIX] Samples are now kept in memory until fully flushed to disk.
-[BUGFIX] Non-200 target scrapes are now treated as an error.
-[BUGFIX] Added installation step for missing dependency to Dockerfile.
-[BUGFIX] Removed broken and unused "User Dashboard" link.
+* [FEATURE] Added console and alert templates support, along with various template functions.
+* [PERFORMANCE] Much faster and more memory-efficient flushing to disk.
+* [ENHANCEMENT] Query results are now only logged when debugging.
+* [ENHANCEMENT] Upgraded to new Prometheus client library for exposing metrics.
+* [BUGFIX] Samples are now kept in memory until fully flushed to disk.
+* [BUGFIX] Non-200 target scrapes are now treated as an error.
+* [BUGFIX] Added installation step for missing dependency to Dockerfile.
+* [BUGFIX] Removed broken and unused "User Dashboard" link.
 
 ## 0.5.0 / 2014-05-28
 
