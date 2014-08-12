@@ -362,11 +362,11 @@ func (it *deltaEncodedChunkIterator) getValueAtTime(t clientmodel.Timestamp) met
 	case it.chunk.len():
 		return metric.Values{*it.chunk.valueAtIndex(it.chunk.len() - 1)}
 	default:
-		if v := it.chunk.valueAtIndex(i); v.Timestamp.Equal(t) {
+		v := it.chunk.valueAtIndex(i)
+		if v.Timestamp.Equal(t) {
 			return metric.Values{*v}
-		} else {
-			return metric.Values{*it.chunk.valueAtIndex(i - 1), *v}
 		}
+		return metric.Values{*it.chunk.valueAtIndex(i - 1), *v}
 	}
 }
 
