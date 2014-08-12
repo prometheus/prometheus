@@ -1,8 +1,6 @@
 package storage_ng
 
 import (
-	"bytes"
-	"encoding/gob"
 	"sort"
 	"sync"
 
@@ -355,30 +353,6 @@ func (s *memorySeries) values() metric.Values {
 	return values
 }
 
-var gobWriter bytes.Buffer
-var seriesEncoder *gob.Encoder
-
-func (s *memorySeries) GobEncode() ([]byte, error) {
-	gobWriter.Reset()
-	if seriesEncoder == nil {
-		seriesEncoder = gob.NewEncoder(&gobWriter)
-	}
-	err := seriesEncoder.Encode(s.metric)
-	return gobWriter.Bytes(), err
-}
-
-var gobReader bytes.Reader
-var seriesDecoder *gob.Decoder
-
-func (s *memorySeries) GobDecode(buf []byte) error {
-	gobReader = *bytes.NewReader(buf)
-	if seriesDecoder == nil {
-		seriesDecoder = gob.NewDecoder(&gobReader)
-	}
-	err := seriesDecoder.Decode(&s.metric)
-	return err
-}
-
 func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.Values {
 	it.mtx.Lock()
 	defer it.mtx.Unlock()
@@ -419,12 +393,11 @@ func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.V
 			it.chunks[i-1].newIterator().getValueAtTime(t)[0],
 			it.chunks[i].newIterator().getValueAtTime(t)[0],
 		}
-	} else {
-		// We ended up in the middle of a chunk. We might stay there for a while,
-		// so save it as the current chunk iterator.
-		it.chunkIt = it.chunks[i].newIterator()
-		return it.chunkIt.getValueAtTime(t)
 	}
+	// We ended up in the middle of a chunk. We might stay there for a while,
+	// so save it as the current chunk iterator.
+	it.chunkIt = it.chunks[i].newIterator()
+	return it.chunkIt.getValueAtTime(t)
 }
 
 func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Values {

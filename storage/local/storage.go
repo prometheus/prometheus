@@ -282,7 +282,7 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 			glog.Info("Purging old series data...")
 			s.mtx.RLock()
 			fps := make([]clientmodel.Fingerprint, 0, len(s.fingerprintToSeries))
-			for fp, _ := range s.fingerprintToSeries {
+			for fp := range s.fingerprintToSeries {
 				fps = append(fps, fp)
 			}
 			s.mtx.RUnlock()

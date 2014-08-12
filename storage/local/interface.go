@@ -47,7 +47,9 @@ type SeriesIterator interface {
 type Persistence interface {
 	// PersistChunk persists a single chunk of a series.
 	PersistChunk(clientmodel.Fingerprint, chunk) error
-	// PersistIndexes persists a Prometheus server's timeseries indexes.
+	// PersistIndexes persists a Prometheus server's timeseries indexes. It
+	// is the caller's responsibility to not modify indexes while persisting
+	// is underway, and to not call this method multiple times concurrently.
 	PersistIndexes(i *Indexes) error
 	// PersistHeads persists all open (non-full) head chunks.
 	PersistHeads(map[clientmodel.Fingerprint]*memorySeries) error
@@ -64,7 +66,9 @@ type Persistence interface {
 	LoadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (chunkDescs, error)
 	// LoadHeads loads all open (non-full) head chunks.
 	LoadHeads(map[clientmodel.Fingerprint]*memorySeries) error
-	// LoadIndexes loads and returns all timeseries indexes.
+	// LoadIndexes loads and returns all timeseries indexes. It is the
+	// caller's responsibility to not modify indexes while loading is
+	// underway, and to not call this method multiple times concurrently.
 	LoadIndexes() (*Indexes, error)
 }
 
