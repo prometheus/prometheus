@@ -24,9 +24,11 @@ func NewTestStorage(t testing.TB) (Storage, test.Closer) {
 		t.Fatal("Error opening disk persistence: ", err)
 	}
 	o := &MemorySeriesStorageOptions{
-		Persistence:            persistence,
-		MemoryEvictionInterval: time.Minute,
-		MemoryRetentionPeriod:  time.Hour,
+		Persistence:                persistence,
+		MemoryEvictionInterval:     time.Minute,
+		MemoryRetentionPeriod:      time.Hour,
+		PersistencePurgeInterval:   time.Hour,
+		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
 	}
 	storage, err := NewMemorySeriesStorage(o)
 	if err != nil {
