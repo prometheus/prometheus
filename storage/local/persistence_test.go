@@ -122,7 +122,7 @@ func TestIndexPersistence(t *testing.T) {
 	for fp, actualSeries := range actual.FingerprintToSeries {
 		expectedSeries := indexes.FingerprintToSeries[fp]
 		if !expectedSeries.metric.Equal(actualSeries.metric) {
-			t.Fatalf("%s: Got %s; want %s", fp, actualSeries.metric, expectedSeries.metric)
+			t.Fatalf("%v: Got %s; want %s", fp, actualSeries.metric, expectedSeries.metric)
 		}
 	}
 
