@@ -38,7 +38,7 @@ func TestChunk(t *testing.T) {
 }
 
 func TestGetValueAtTime(t *testing.T) {
-	samples := make(clientmodel.Samples, 50000)
+	samples := make(clientmodel.Samples, 1000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
 			Timestamp: clientmodel.Timestamp(2 * i),
@@ -120,7 +120,7 @@ func TestGetValueAtTime(t *testing.T) {
 }
 
 func TestGetRangeValues(t *testing.T) {
-	samples := make(clientmodel.Samples, 50000)
+	samples := make(clientmodel.Samples, 1000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
 			Timestamp: clientmodel.Timestamp(2 * i),
@@ -366,7 +366,6 @@ func createRandomSamples(r *rand.Rand) clientmodel.Samples {
 	}
 
 	for n := r.Intn(maxCycles); n >= 0; n-- {
-
 		// Pick a metric for this cycle.
 		metric := metrics[r.Intn(len(metrics))]
 		timeDelta := r.Intn(maxTimeDelta) + 1
