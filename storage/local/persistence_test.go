@@ -244,7 +244,7 @@ func TestPersistChunk(t *testing.T) {
 
 	for fp, expectedChunks := range fpToChunks {
 		indexes := make([]int, 0, len(expectedChunks))
-		for i, _ := range expectedChunks {
+		for i := range expectedChunks {
 			indexes = append(indexes, i)
 		}
 		actualChunks, err := p.LoadChunks(fp, indexes)
