@@ -2,7 +2,6 @@ package storage_ng
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 	"testing"
 	"testing/quick"
@@ -434,7 +433,7 @@ func verifyStorage(t *testing.T, s Storage, samples clientmodel.Samples, r *rand
 		}
 		want := float64(sample.Value)
 		got := float64(found[0].Value)
-		if want != got && (want == 0. || math.Abs(want-got)/want > 0.000001) {
+		if want != got {
 			t.Errorf("Value mismatch, want %f, got %f.", want, got)
 			result = false
 		}
