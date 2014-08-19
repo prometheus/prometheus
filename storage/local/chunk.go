@@ -60,7 +60,7 @@ func chunkType(c chunk) byte {
 func chunkForType(chunkType byte) chunk {
 	switch chunkType {
 	case 0:
-		return newDeltaEncodedChunk(1, 1, false)
+		return newDeltaEncodedChunk(d1, d0, true)
 	default:
 		panic("unknown chunk type")
 	}

@@ -324,9 +324,8 @@ func createRandomSamples(r *rand.Rand) clientmodel.Samples {
 				},
 			},
 			{ // Integer with int deltas of various byte length.
-				// TODO: Using larger ints yields even worse results. Improve!
 				createValue: func() clientmodel.SampleValue {
-					return clientmodel.SampleValue(r.Int31() - 1<<30)
+					return clientmodel.SampleValue(r.Int63() - 1<<62)
 				},
 				applyDelta: []deltaApplier{
 					func(v clientmodel.SampleValue) clientmodel.SampleValue {
@@ -435,8 +434,7 @@ func verifyStorage(t *testing.T, s Storage, samples clientmodel.Samples, r *rand
 		}
 		want := float64(sample.Value)
 		got := float64(found[0].Value)
-		// TODO: 0.01 is a horribly large deviation. Improve!
-		if want != got && (want == 0. || math.Abs(want-got)/want > 0.01) {
+		if want != got && (want == 0. || math.Abs(want-got)/want > 0.000001) {
 			t.Errorf("Value mismatch, want %f, got %f.", want, got)
 			result = false
 		}
