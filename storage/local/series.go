@@ -226,7 +226,12 @@ func (s *memorySeries) preloadChunks(indexes []int, p Persistence) (chunkDescs, 
 		fp := s.metric.Fingerprint()
 		chunks, err := p.LoadChunks(fp, loadIndexes)
 		if err != nil {
-			// TODO: unpin all chunks that were already loaded before.
+			// Unpin any pinned chunks that were already loaded.
+			for _, cd := range pinnedChunkDescs {
+				if cd.chunk != nil {
+					cd.unpin()
+				}
+			}
 			return nil, err
 		}
 		for i, c := range chunks {
