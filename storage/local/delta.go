@@ -326,7 +326,9 @@ func (c *deltaEncodedChunk) lastTime() clientmodel.Timestamp {
 }
 
 func (c *deltaEncodedChunk) marshal(w io.Writer) error {
-	// TODO: check somewhere that configured buf len cannot overflow 16 bit.
+	if len(c.buf) > math.MaxUint16 {
+		panic("chunk buffer length would overflow a 16 bit uint.")
+	}
 	binary.LittleEndian.PutUint16(c.buf[deltaHeaderBufLenOffset:], uint16(len(c.buf)))
 
 	n, err := w.Write(c.buf[:cap(c.buf)])
