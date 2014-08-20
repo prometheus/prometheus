@@ -83,13 +83,13 @@ func (c *deltaEncodedChunk) clone() chunk {
 
 func neededDeltaBytes(deltaT clientmodel.Timestamp, deltaV clientmodel.SampleValue, isInt bool) (dtb, dvb deltaBytes) {
 	dtb = d1
-	if deltaT >= 256 {
+	if deltaT > math.MaxUint8 {
 		dtb = d2
 	}
-	if deltaT >= 256*256 {
+	if deltaT > math.MaxUint16 {
 		dtb = d4
 	}
-	if deltaT >= 256*256*256*256 {
+	if deltaT > math.MaxUint32 {
 		dtb = d8
 	}
 
@@ -98,13 +98,13 @@ func neededDeltaBytes(deltaT clientmodel.Timestamp, deltaV clientmodel.SampleVal
 		if deltaV != 0 {
 			dvb = d1
 		}
-		if deltaV < -(256/2) || deltaV > (256/2)-1 {
+		if deltaV < math.MinInt8 || deltaV > math.MaxInt8 {
 			dvb = d2
 		}
-		if deltaV < -(256*256/2) || deltaV > (256*256/2)-1 {
+		if deltaV < math.MinInt16 || deltaV > math.MaxInt16 {
 			dvb = d4
 		}
-		if deltaV < -(256*256*256*256/2) || deltaV > (256*256*256*256/2)-1 {
+		if deltaV < math.MinInt32 || deltaV > math.MaxInt32 {
 			dvb = d8
 		}
 	} else {
