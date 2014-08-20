@@ -18,7 +18,6 @@ type chunk interface {
 	newIterator() chunkIterator
 	marshal(io.Writer) error
 	unmarshal(io.Reader) error
-	close()
 
 	// TODO: remove?
 	values() <-chan *metric.SamplePair
@@ -33,7 +32,6 @@ type chunkIterator interface {
 
 func transcodeAndAdd(dst chunk, src chunk, s *metric.SamplePair) chunks {
 	numTranscodes.Inc()
-	defer src.close()
 
 	head := dst
 	body := chunks{}

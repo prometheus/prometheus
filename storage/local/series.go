@@ -93,7 +93,6 @@ func (cd *chunkDesc) evictOnUnpin() {
 func (cd *chunkDesc) evictNow() {
 	cd.firstTimeField = cd.chunk.firstTime()
 	cd.lastTimeField = cd.chunk.lastTime()
-	cd.chunk.close()
 	cd.chunk = nil
 }
 

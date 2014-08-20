@@ -51,8 +51,7 @@ type deltaEncodedChunk struct {
 }
 
 func newDeltaEncodedChunk(tb, vb deltaBytes, isInt bool) *deltaEncodedChunk {
-	buf := chunkBufs.Get()
-	buf = buf[:deltaHeaderIsIntOffset+1]
+	buf := make([]byte, deltaHeaderIsIntOffset+1, 1024)
 
 	buf[deltaHeaderTimeBytesOffset] = byte(tb)
 	buf[deltaHeaderValueBytesOffset] = byte(vb)
@@ -73,8 +72,7 @@ func (c *deltaEncodedChunk) newFollowupChunk() chunk {
 }
 
 func (c *deltaEncodedChunk) clone() chunk {
-	buf := chunkBufs.Get()
-	buf = buf[:len(c.buf)]
+	buf := make([]byte, len(c.buf), 1024)
 	copy(buf, c.buf)
 	return &deltaEncodedChunk{
 		buf: buf,
@@ -234,11 +232,6 @@ func (c *deltaEncodedChunk) add(s *metric.SamplePair) chunks {
 		}
 	}
 	return chunks{c}
-}
-
-func (c *deltaEncodedChunk) close() {
-	//fmt.Println("returning chunk")
-	chunkBufs.Give(c.buf)
 }
 
 func (c *deltaEncodedChunk) sampleSize() int {

@@ -148,9 +148,6 @@ func (p *diskPersistence) LoadChunks(fp clientmodel.Fingerprint, indexes []int) 
 		if err == nil {
 			return
 		}
-		for _, c := range chunks {
-			c.close()
-		}
 	}()
 
 	typeBuf := make([]byte, 1)
