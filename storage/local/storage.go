@@ -52,20 +52,17 @@ type MemorySeriesStorageOptions struct {
 }
 
 func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (*memorySeriesStorage, error) { // TODO: change to return Storage?
-	glog.Info("Loading indexes...")
-	i, err := o.Persistence.LoadIndexes()
-	if err != nil {
-		return nil, err
-	}
 	glog.Info("Loading series head chunks...")
-	if err := o.Persistence.LoadHeads(i.FingerprintToSeries); err != nil {
-		return nil, err
-	}
-	numSeries.Set(float64(len(i.FingerprintToSeries)))
+	/*
+			if err := o.Persistence.LoadHeads(i.FingerprintToSeries); err != nil {
+				return nil, err
+			}
+		numSeries.Set(float64(len(i.FingerprintToSeries)))
+	*/
 	return &memorySeriesStorage{
-		fingerprintToSeries:     i.FingerprintToSeries,
-		labelPairToFingerprints: i.LabelPairToFingerprints,
-		labelNameToLabelValues:  i.LabelNameToLabelValues,
+		fingerprintToSeries:     map[clientmodel.Fingerprint]*memorySeries{},
+		labelPairToFingerprints: map[metric.LabelPair]utility.Set{},
+		labelNameToLabelValues:  map[clientmodel.LabelName]utility.Set{},
 
 		persistDone: make(chan bool),
 		stopServing: make(chan chan<- bool),
@@ -241,12 +238,6 @@ func (s *memorySeriesStorage) Close() error {
 	}
 	glog.Info("Done persisting head chunks.")
 
-	glog.Info("Persisting indexes...")
-	if err := s.persistIndexes(); err != nil {
-		return err
-	}
-	glog.Info("Done persisting indexes.")
-
 	for _, series := range s.fingerprintToSeries {
 		series.close()
 	}
@@ -259,15 +250,6 @@ func (s *memorySeriesStorage) Close() error {
 
 func (s *memorySeriesStorage) persistHeads() error {
 	return s.persistence.PersistHeads(s.fingerprintToSeries)
-}
-
-func (s *memorySeriesStorage) persistIndexes() error {
-	err := s.persistence.PersistIndexes(&Indexes{
-		FingerprintToSeries:     s.fingerprintToSeries,
-		LabelPairToFingerprints: s.labelPairToFingerprints,
-		LabelNameToLabelValues:  s.labelNameToLabelValues,
-	})
-	return err
 }
 
 func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {

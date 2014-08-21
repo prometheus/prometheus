@@ -45,7 +45,7 @@ cc-implementation-Linux-stamp:
 	[ -x "$$(which cc)" ] || $(APT_GET_INSTALL) build-essential
 	touch $@
 
-dependencies-stamp: cache-stamp cc-stamp leveldb-stamp snappy-stamp godns-stamp
+dependencies-stamp: cache-stamp cc-stamp leveldb-stamp snappy-stamp godns-stamp goleveldb-stamp
 	touch $@
 
 goprotobuf-protoc-gen-go-stamp: protoc-stamp goprotobuf-stamp
@@ -58,6 +58,10 @@ goprotobuf-stamp: protoc-stamp
 
 godns-stamp:
 	$(GO_GET) github.com/miekg/dns $(THIRD_PARTY_BUILD_OUTPUT)
+	touch $@
+
+goleveldb-stamp:
+	$(GO_GET) github.com/syndtr/goleveldb/leveldb $(THIRD_PARTY_BUILD_OUTPUT)
 	touch $@
 
 leveldb-stamp: cache-stamp cache/leveldb-$(LEVELDB_VERSION).tar.gz cc-stamp rsync-stamp snappy-stamp

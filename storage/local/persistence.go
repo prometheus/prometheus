@@ -3,7 +3,7 @@ package storage_ng
 import (
 	"bufio"
 	"encoding/binary"
-	"encoding/gob"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -11,25 +11,23 @@ import (
 
 	"github.com/golang/glog"
 
-	//"github.com/prometheus/prometheus/storage/metric"
-
 	//"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/storage/local/index"
 )
 
 const (
 	seriesFileName     = "series.db"
 	seriesTempFileName = "series.db.tmp"
 	headsFileName      = "heads.db"
-	indexFileName      = "index.db"
+	indexDirName       = "index"
 
-	indexFormatVersion = 1
-	indexMagicString   = "PrometheusIndexes"
-	indexBufSize       = 1 << 15 // 32kiB. TODO: Tweak.
+	fingerprintToMetricDir     = "fingerprint_to_metric"
+	labelNameToLabelValuesDir  = "labelname_to_labelvalues"
+	labelPairToFingerprintsDir = "labelpair_to_fingerprints"
+	fingerprintMembershipDir   = "fingerprint_membership"
 
 	chunkHeaderLen             = 17
 	chunkHeaderTypeOffset      = 0
@@ -41,24 +39,73 @@ const (
 	headsHeaderTypeOffset        = 8
 )
 
+var (
+	fingerprintToMetricCacheSize     = flag.Int("storage.fingerprintToMetricCacheSizeBytes", 25*1024*1024, "The size in bytes for the fingerprint to metric index cache.")
+	labelNameToLabelValuesCacheSize  = flag.Int("storage.labelNameToLabelValuesCacheSizeBytes", 25*1024*1024, "The size in bytes for the label name to label values index.")
+	labelPairToFingerprintsCacheSize = flag.Int("storage.labelPairToFingerprintsCacheSizeBytes", 25*1024*1024, "The size in bytes for the label pair to fingerprints index.")
+	fingerprintMembershipCacheSize   = flag.Int("storage.fingerprintMembershipCacheSizeBytes", 5*1024*1024, "The size in bytes for the metric membership index.")
+)
+
 type diskPersistence struct {
+	index.MetricIndexer
+	indexDBs []index.KeyValueStore
+
 	basePath string
 	chunkLen int
 	buf      []byte // Staging space for persisting indexes.
 }
 
 func NewDiskPersistence(basePath string, chunkLen int) (Persistence, error) {
-	gob.Register(clientmodel.Fingerprint(0))
-	gob.Register(clientmodel.LabelValue(""))
-
 	err := os.MkdirAll(basePath, 0700)
 	if err != nil {
 		return nil, err
 	}
+
+	fingerprintToMetricDB, err := index.NewLevelDB(index.LevelDBOptions{
+		Path:           path.Join(basePath, fingerprintToMetricDir),
+		CacheSizeBytes: *fingerprintToMetricCacheSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	labelNameToLabelValuesDB, err := index.NewLevelDB(index.LevelDBOptions{
+		Path:           path.Join(basePath, labelNameToLabelValuesDir),
+		CacheSizeBytes: *labelNameToLabelValuesCacheSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	labelPairToFingerprintsDB, err := index.NewLevelDB(index.LevelDBOptions{
+		Path:           path.Join(basePath, labelPairToFingerprintsDir),
+		CacheSizeBytes: *labelPairToFingerprintsCacheSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	fingerprintMembershipDB, err := index.NewLevelDB(index.LevelDBOptions{
+		Path:           path.Join(basePath, fingerprintMembershipDir),
+		CacheSizeBytes: *fingerprintMembershipCacheSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &diskPersistence{
 		basePath: basePath,
 		chunkLen: chunkLen,
 		buf:      make([]byte, binary.MaxVarintLen64), // Also sufficient for uint64.
+		MetricIndexer: &index.TotalIndexer{
+			FingerprintToMetric:     index.NewFingerprintMetricIndex(fingerprintToMetricDB),
+			LabelNameToLabelValues:  index.NewLabelNameLabelValuesIndex(labelNameToLabelValuesDB),
+			LabelPairToFingerprints: index.NewLabelPairFingerprintIndex(labelPairToFingerprintsDB),
+			FingerprintMembership:   index.NewFingerprintMembershipIndex(fingerprintMembershipDB),
+		},
+		indexDBs: []index.KeyValueStore{
+			fingerprintToMetricDB,
+			labelNameToLabelValuesDB,
+			labelPairToFingerprintsDB,
+			fingerprintMembershipDB,
+		},
 	}, nil
 }
 
@@ -231,340 +278,6 @@ func (p *diskPersistence) LoadChunkDescs(fp clientmodel.Fingerprint, beforeTime 
 	return cds, nil
 }
 
-func (p *diskPersistence) indexPath() string {
-	return path.Join(p.basePath, indexFileName)
-}
-
-// PersistIndexes persists the indexes to disk. Do not call it concurrently with
-// LoadIndexes as they share a buffer for staging. This method depends on the
-// following type conversions being possible:
-//     clientmodel.LabelName -> string
-//     clientmodel.LabelValue -> string
-//     clientmodel.Fingerprint -> uint64
-//
-// Description of the on-disk format:
-//
-// Label names and label values are encoded as their varint-encoded length
-// followed by their byte sequence.
-//
-// Fingerprints are encoded as big-endian uint64.
-//
-// The file starts with the 'magic' byte sequence "PrometheusIndexes", followed
-// by a varint-encoded version number (currently 1).
-//
-// The indexes follow one after another in the order FingerprintToSeries,
-// LabelPairToFingerprints, LabelNameToLabelValues. Each index starts with the
-// varint-encoded number of entries in that index, followed by the corresponding
-// number of entries.
-//
-// An entry in FingerprintToSeries consists of a fingerprint, followed by the
-// number of label pairs, followed by those label pairs, each in order label
-// name and then label value.
-//
-// An entry in LabelPairToFingerprints consists of a label name, then a label
-// value, then a varint-encoded number of fingerprints, followed by those
-// fingerprints.
-//
-// An entry in LabelNameToLabelValues consists of a label name, followed by the
-// varint-encoded number of label values, followed by those label values.
-func (p *diskPersistence) PersistIndexes(i *Indexes) error {
-	f, err := os.OpenFile(p.indexPath(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	p.setBufLen(binary.MaxVarintLen64)
-
-	w := bufio.NewWriterSize(f, indexBufSize)
-	if _, err := w.WriteString(indexMagicString); err != nil {
-		return err
-	}
-	if err := p.persistVarint(w, indexFormatVersion); err != nil {
-		return err
-	}
-
-	if err := p.persistFingerprintToSeries(w, i.FingerprintToSeries); err != nil {
-		return err
-	}
-	if err := p.persistLabelPairToFingerprints(w, i.LabelPairToFingerprints); err != nil {
-		return err
-	}
-	if err := p.persistLabelNameToLabelValues(w, i.LabelNameToLabelValues); err != nil {
-		return err
-	}
-
-	return w.Flush()
-}
-
-func (p *diskPersistence) persistVarint(w io.Writer, i int) error {
-	bytesWritten := binary.PutVarint(p.buf, int64(i))
-	_, err := w.Write(p.buf[:bytesWritten])
-	return err
-}
-
-// persistFingerprint depends on clientmodel.Fingerprint to be convertible to
-// uint64.
-func (p *diskPersistence) persistFingerprint(w io.Writer, fp clientmodel.Fingerprint) error {
-	binary.BigEndian.PutUint64(p.buf, uint64(fp))
-	_, err := w.Write(p.buf[:8])
-	return err
-}
-
-func (p *diskPersistence) persistString(w *bufio.Writer, s string) error {
-	if err := p.persistVarint(w, len(s)); err != nil {
-		return err
-	}
-	_, err := w.WriteString(s)
-	return err
-}
-
-// persistFingerprintToSeries depends on clientmodel.LabelName and
-// clientmodel.LabelValue to be convertible to string.
-func (p *diskPersistence) persistFingerprintToSeries(w *bufio.Writer, index map[clientmodel.Fingerprint]*memorySeries) error {
-	if err := p.persistVarint(w, len(index)); err != nil {
-		return err
-	}
-	for fp, ms := range index {
-		if err := p.persistFingerprint(w, fp); err != nil {
-			return err
-		}
-		if err := p.persistVarint(w, len(ms.metric)); err != nil {
-			return err
-		}
-		for n, v := range ms.metric {
-			if err := p.persistString(w, string(n)); err != nil {
-				return err
-			}
-			if err := p.persistString(w, string(v)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// persistLabelPairToFingerprints depends on clientmodel.LabelName and
-// clientmodel.LabelValue to be convertible to string.
-func (p *diskPersistence) persistLabelPairToFingerprints(w *bufio.Writer, index map[metric.LabelPair]utility.Set) error {
-	if err := p.persistVarint(w, len(index)); err != nil {
-		return err
-	}
-	for lp, fps := range index {
-		if err := p.persistString(w, string(lp.Name)); err != nil {
-			return err
-		}
-		if err := p.persistString(w, string(lp.Value)); err != nil {
-			return err
-		}
-		if err := p.persistVarint(w, len(fps)); err != nil {
-			return err
-		}
-		for fp := range fps {
-			if err := p.persistFingerprint(w, fp.(clientmodel.Fingerprint)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// persistLabelNameToLabelValues depends on clientmodel.LabelValue to be convertible to string.
-func (p *diskPersistence) persistLabelNameToLabelValues(w *bufio.Writer, index map[clientmodel.LabelName]utility.Set) error {
-	if err := p.persistVarint(w, len(index)); err != nil {
-		return err
-	}
-	for ln, lvs := range index {
-		if err := p.persistString(w, string(ln)); err != nil {
-			return err
-		}
-		if err := p.persistVarint(w, len(lvs)); err != nil {
-			return err
-		}
-		for lv := range lvs {
-			if err := p.persistString(w, string(lv.(clientmodel.LabelValue))); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// LoadIndexes loads the indexes from disk. See PersistIndexes for details about
-// the disk format. Do not call LoadIndexes and PersistIndexes concurrently as
-// they share a buffer for staging.
-func (p *diskPersistence) LoadIndexes() (*Indexes, error) {
-	f, err := os.Open(p.indexPath())
-	if os.IsNotExist(err) {
-		return &Indexes{
-			FingerprintToSeries:     map[clientmodel.Fingerprint]*memorySeries{},
-			LabelPairToFingerprints: map[metric.LabelPair]utility.Set{},
-			LabelNameToLabelValues:  map[clientmodel.LabelName]utility.Set{},
-		}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	r := bufio.NewReaderSize(f, indexBufSize)
-
-	p.setBufLen(len(indexMagicString))
-	if _, err := io.ReadFull(r, p.buf); err != nil {
-		return nil, err
-	}
-	magic := string(p.buf)
-	if magic != indexMagicString {
-		return nil, fmt.Errorf(
-			"unexpected magic string, want %q, got %q",
-			indexMagicString, magic,
-		)
-	}
-	if version, err := binary.ReadVarint(r); version != indexFormatVersion || err != nil {
-		return nil, fmt.Errorf("unknown index format version, want %d", indexFormatVersion)
-	}
-
-	i := &Indexes{}
-
-	if err := p.loadFingerprintToSeries(r, i); err != nil {
-		return nil, err
-	}
-	if err := p.loadLabelPairToFingerprints(r, i); err != nil {
-		return nil, err
-	}
-	if err := p.loadLabelNameToLabelValues(r, i); err != nil {
-		return nil, err
-	}
-
-	return i, nil
-}
-
-func (p *diskPersistence) loadFingerprintToSeries(r *bufio.Reader, i *Indexes) error {
-	length, err := binary.ReadVarint(r)
-	if err != nil {
-		return err
-	}
-	i.FingerprintToSeries = make(map[clientmodel.Fingerprint]*memorySeries, length)
-
-	for ; length > 0; length-- {
-		fp, err := p.loadFingerprint(r)
-		if err != nil {
-			return err
-		}
-		numLabelPairs, err := binary.ReadVarint(r)
-		if err != nil {
-			return err
-		}
-		m := make(clientmodel.Metric, numLabelPairs)
-		i.FingerprintToSeries[fp] = &memorySeries{metric: m}
-		for ; numLabelPairs > 0; numLabelPairs-- {
-			ln, err := p.loadString(r)
-			if err != nil {
-				return err
-			}
-			lv, err := p.loadString(r)
-			if err != nil {
-				return err
-			}
-			m[clientmodel.LabelName(ln)] = clientmodel.LabelValue(lv)
-		}
-	}
-	return nil
-}
-
-func (p *diskPersistence) loadLabelPairToFingerprints(r *bufio.Reader, i *Indexes) error {
-	length, err := binary.ReadVarint(r)
-	if err != nil {
-		return err
-	}
-	i.LabelPairToFingerprints = make(map[metric.LabelPair]utility.Set, length)
-
-	for ; length > 0; length-- {
-		ln, err := p.loadString(r)
-		if err != nil {
-			return err
-		}
-		lv, err := p.loadString(r)
-		if err != nil {
-			return err
-		}
-		numFPs, err := binary.ReadVarint(r)
-		if err != nil {
-			return err
-		}
-		s := make(utility.Set, numFPs)
-		i.LabelPairToFingerprints[metric.LabelPair{
-			Name:  clientmodel.LabelName(ln),
-			Value: clientmodel.LabelValue(lv),
-		}] = s
-		for ; numFPs > 0; numFPs-- {
-			fp, err := p.loadFingerprint(r)
-			if err != nil {
-				return err
-			}
-			s.Add(fp)
-		}
-	}
-	return nil
-}
-
-func (p *diskPersistence) loadLabelNameToLabelValues(r *bufio.Reader, i *Indexes) error {
-	length, err := binary.ReadVarint(r)
-	if err != nil {
-		return err
-	}
-	i.LabelNameToLabelValues = make(map[clientmodel.LabelName]utility.Set, length)
-
-	for ; length > 0; length-- {
-		ln, err := p.loadString(r)
-		if err != nil {
-			return err
-		}
-		numLVs, err := binary.ReadVarint(r)
-		if err != nil {
-			return err
-		}
-		s := make(utility.Set, numLVs)
-		i.LabelNameToLabelValues[clientmodel.LabelName(ln)] = s
-		for ; numLVs > 0; numLVs-- {
-			lv, err := p.loadString(r)
-			if err != nil {
-				return err
-			}
-			s.Add(clientmodel.LabelValue(lv))
-		}
-	}
-	return nil
-}
-
-func (p *diskPersistence) loadFingerprint(r io.Reader) (clientmodel.Fingerprint, error) {
-	p.setBufLen(8)
-	if _, err := io.ReadFull(r, p.buf); err != nil {
-		return 0, err
-	}
-	return clientmodel.Fingerprint(binary.BigEndian.Uint64(p.buf)), nil
-}
-
-func (p *diskPersistence) loadString(r *bufio.Reader) (string, error) {
-	length, err := binary.ReadVarint(r)
-	if err != nil {
-		return "", err
-	}
-	p.setBufLen(int(length))
-	if _, err := io.ReadFull(r, p.buf); err != nil {
-		return "", err
-	}
-	return string(p.buf), nil
-}
-
-func (p *diskPersistence) setBufLen(l int) {
-	if cap(p.buf) >= l {
-		p.buf = p.buf[:l]
-	} else {
-		p.buf = make([]byte, l)
-	}
-}
-
 func (p *diskPersistence) headsPath() string {
 	return path.Join(p.basePath, headsFileName)
 }
@@ -680,4 +393,27 @@ func (p *diskPersistence) LoadHeads(fpToSeries map[clientmodel.Fingerprint]*memo
 		})
 	}
 	return nil
+}
+
+func (d *diskPersistence) Close() {
+	for _, db := range d.indexDBs {
+		if err := db.Close(); err != nil {
+			glog.Error("Error closing index DB: ", err)
+		}
+	}
+}
+
+// Get all of the label values that are associated with a given label name.
+func (d *diskPersistence) GetFingerprintsForLabelPair(l clientmodel.LabelName, v clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
+	return nil, nil
+}
+
+// Get all label values that are associated with a given label name.
+func (d *diskPersistence) GetLabelValuesForLabelName(clientmodel.LabelName) (clientmodel.LabelValues, error) {
+	return nil, nil
+}
+
+// Get the metric associated with the provided fingerprint.
+func (d *diskPersistence) GetMetricForFingerprint(clientmodel.Fingerprint) (clientmodel.Metric, error) {
+	return nil, nil
 }

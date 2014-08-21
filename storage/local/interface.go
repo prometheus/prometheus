@@ -3,8 +3,8 @@ package storage_ng
 import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility"
 )
 
 type Storage interface {
@@ -47,10 +47,6 @@ type SeriesIterator interface {
 type Persistence interface {
 	// PersistChunk persists a single chunk of a series.
 	PersistChunk(clientmodel.Fingerprint, chunk) error
-	// PersistIndexes persists a Prometheus server's timeseries indexes. It
-	// is the caller's responsibility to not modify indexes while persisting
-	// is underway, and to not call this method multiple times concurrently.
-	PersistIndexes(i *Indexes) error
 	// PersistHeads persists all open (non-full) head chunks.
 	PersistHeads(map[clientmodel.Fingerprint]*memorySeries) error
 
@@ -66,10 +62,11 @@ type Persistence interface {
 	LoadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (chunkDescs, error)
 	// LoadHeads loads all open (non-full) head chunks.
 	LoadHeads(map[clientmodel.Fingerprint]*memorySeries) error
-	// LoadIndexes loads and returns all timeseries indexes. It is the
-	// caller's responsibility to not modify indexes while loading is
-	// underway, and to not call this method multiple times concurrently.
-	LoadIndexes() (*Indexes, error)
+
+	// Close releases any held resources.
+	Close()
+
+	index.MetricIndexer
 }
 
 // A Preloader preloads series data necessary for a query into memory and pins
@@ -93,10 +90,4 @@ type Preloader interface {
 type Closer interface {
 	// Close cleans up any used resources.
 	Close()
-}
-
-type Indexes struct {
-	FingerprintToSeries     map[clientmodel.Fingerprint]*memorySeries
-	LabelPairToFingerprints map[metric.LabelPair]utility.Set
-	LabelNameToLabelValues  map[clientmodel.LabelName]utility.Set
 }
