@@ -1,7 +1,6 @@
 package index
 
 import (
-	"io"
 	"sync"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -207,100 +206,6 @@ func (i *SynchronizedIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 	defer i.mu.Unlock()
 
 	return i.i.IndexMetrics(b)
-}
-
-type flusher interface {
-	Flush() error
-}
-
-// Flush calls Flush of the wrapped MetricIndexer after acquiring a lock. If the
-// wrapped MetricIndexer has no Flush method, this is a no-op.
-func (i *SynchronizedIndexer) Flush() error {
-	if flusher, ok := i.i.(flusher); ok {
-		i.mu.Lock()
-		defer i.mu.Unlock()
-
-		return flusher.Flush()
-	}
-
-	return nil
-}
-
-// Close calls Close of the wrapped MetricIndexer after acquiring a lock. If the
-// wrapped MetricIndexer has no Close method, this is a no-op.
-func (i *SynchronizedIndexer) Close() error {
-	if closer, ok := i.i.(io.Closer); ok {
-		i.mu.Lock()
-		defer i.mu.Unlock()
-
-		return closer.Close()
-	}
-
-	return nil
-}
-
-// NewSynchronizedIndexer returns a SynchronizedIndexer wrapping the given
-// MetricIndexer.
-func NewSynchronizedIndexer(i MetricIndexer) *SynchronizedIndexer {
-	return &SynchronizedIndexer{
-		i: i,
-	}
-}
-
-// BufferedIndexer provides unsynchronized index buffering.
-type BufferedIndexer struct {
-	i     MetricIndexer
-	limit int
-	buf   []FingerprintMetricMapping
-}
-
-// IndexMetrics writes the entries in the given FingerprintMetricMapping to the
-// index.
-func (i *BufferedIndexer) IndexMetrics(b FingerprintMetricMapping) error {
-	if len(i.buf) < i.limit {
-		i.buf = append(i.buf, b)
-		return nil
-	}
-	return i.Flush()
-}
-
-// Flush writes all pending entries to the index.
-func (i *BufferedIndexer) Flush() error {
-	if len(i.buf) == 0 {
-		return nil
-	}
-
-	union := FingerprintMetricMapping{}
-	for _, b := range i.buf {
-		for fp, m := range b {
-			union[fp] = m
-		}
-	}
-
-	i.buf = make([]FingerprintMetricMapping, 0, i.limit)
-	return i.i.IndexMetrics(union)
-}
-
-// Close flushes and closes the underlying buffer.
-func (i *BufferedIndexer) Close() error {
-	if err := i.Flush(); err != nil {
-		return err
-	}
-
-	if closer, ok := i.i.(io.Closer); ok {
-		return closer.Close()
-	}
-
-	return nil
-}
-
-// NewBufferedIndexer returns a BufferedIndexer ready to use.
-func NewBufferedIndexer(i MetricIndexer, limit int) *BufferedIndexer {
-	return &BufferedIndexer{
-		i:     i,
-		limit: limit,
-		buf:   make([]FingerprintMetricMapping, 0, limit),
-	}
 }
 
 // TotalIndexer is a MetricIndexer that indexes all standard facets of a metric
@@ -537,15 +442,18 @@ func (i *TotalIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
 }
 
 // GetMetricForFingerprint returns the metric associated with the provided fingerprint.
-func (i *TotalIndexer) GetMetricForFingerprint(clientmodel.Fingerprint) (clientmodel.Metric, error) {
-	// TODO: implement.
-	return nil, nil
+func (i *TotalIndexer) GetMetricForFingerprint(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
+	m, _, err := i.FingerprintToMetric.Lookup(fp)
+	return m, err
 }
 
 // GetFingerprintsForLabelPair returns all fingerprints for the provided label pair.
 func (i *TotalIndexer) GetFingerprintsForLabelPair(l clientmodel.LabelName, v clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
-	// TODO: implement.
-	return nil, nil
+	fps, _, err := i.LabelPairToFingerprints.Lookup(&metric.LabelPair{
+		Name:  l,
+		Value: v,
+	})
+	return fps, err
 }
 
 // GetLabelValuesForLabelName returns all label values associated with a given label name.
