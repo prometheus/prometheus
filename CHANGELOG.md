@@ -1,3 +1,7 @@
+## 0.8.0 / 2014-09-04
+* [ENHANCEMENT] Stagger scrapes to spread out load.
+* [BUGFIX] Correctly quote HTTP Accept header.
+
 ## 0.7.0 / 2014-08-06
 * [FEATURE] Added new functions: abs(), topk(), bottomk(), drop_common_labels().
 * [FEATURE] Let console templates get graph links from expressions.
