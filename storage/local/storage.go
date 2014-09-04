@@ -243,9 +243,6 @@ func (s *memorySeriesStorage) Close() error {
 	}
 	s.fingerprintToSeries = nil
 
-	// TODO: Close() persistence either here or in main (where it got created -
-	// probably better in main).
-
 	s.state = storageStopping
 
 	return nil

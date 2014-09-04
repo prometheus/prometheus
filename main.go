@@ -145,6 +145,7 @@ func main() {
 	if err != nil {
 		glog.Fatal("Error opening disk persistence: ", err)
 	}
+	defer persistence.Close()
 
 	o := &storage_ng.MemorySeriesStorageOptions{
 		Persistence:                persistence,
@@ -157,6 +158,7 @@ func main() {
 	if err != nil {
 		glog.Fatal("Error opening memory series storage: ", err)
 	}
+	defer memStorage.Close()
 	//registry.MustRegister(memStorage)
 
 	var remoteTSDBQueue *remote.TSDBQueueManager

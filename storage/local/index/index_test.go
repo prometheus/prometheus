@@ -42,7 +42,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 			t.Fatalf("%d. fingerprint %v not found", i, fp)
 		}
 		if !mOut.Equal(m) {
-			t.Fatalf("%i. %v: Got: %s; want %s", i, fp, mOut, m)
+			t.Fatalf("%d. %v: Got: %s; want %s", i, fp, mOut, m)
 		}
 
 		// Check that indexed metrics are in membership index.

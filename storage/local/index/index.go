@@ -448,22 +448,21 @@ func (i *TotalIndexer) GetMetricForFingerprint(fp clientmodel.Fingerprint) (clie
 }
 
 // GetFingerprintsForLabelPair returns all fingerprints for the provided label pair.
-func (i *TotalIndexer) GetFingerprintsForLabelPair(l clientmodel.LabelName, v clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
+func (i *TotalIndexer) GetFingerprintsForLabelPair(ln clientmodel.LabelName, lv clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
 	fps, _, err := i.LabelPairToFingerprints.Lookup(&metric.LabelPair{
-		Name:  l,
-		Value: v,
+		Name:  ln,
+		Value: lv,
 	})
 	return fps, err
 }
 
 // GetLabelValuesForLabelName returns all label values associated with a given label name.
-func (i *TotalIndexer) GetLabelValuesForLabelName(clientmodel.LabelName) (clientmodel.LabelValues, error) {
-	// TODO: implement.
-	return nil, nil
+func (i *TotalIndexer) GetLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
+	lvs, _, err := i.LabelNameToLabelValues.Lookup(ln)
+	return lvs, err
 }
 
 // HasFingerprint returns true if a metric with the given fingerprint has been indexed.
-func (i *TotalIndexer) HasFingerprint(clientmodel.Fingerprint) (bool, error) {
-	// TODO: implement.
-	return false, nil
+func (i *TotalIndexer) HasFingerprint(fp clientmodel.Fingerprint) (bool, error) {
+	return i.FingerprintMembership.Has(fp)
 }
