@@ -1,6 +1,8 @@
 package index
 
 import (
+	"encoding"
+
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/cache"
 	"github.com/syndtr/goleveldb/leveldb/filter"
@@ -48,31 +50,46 @@ func (l *LevelDB) Close() error {
 	return l.storage.Close()
 }
 
-func (l *LevelDB) Get(k encodable, v decodable) (bool, error) {
-	raw, err := l.storage.Get(k.encode(), l.readOpts)
+func (l *LevelDB) Get(key encoding.BinaryMarshaler, value encoding.BinaryUnmarshaler) (bool, error) {
+	k, err := key.MarshalBinary()
+	if err != nil {
+		return false, nil
+	}
+	raw, err := l.storage.Get(k, l.readOpts)
 	if err == leveldb.ErrNotFound {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	if v == nil {
+	if value == nil {
 		return true, nil
 	}
-	v.decode(raw)
-	return true, err
+	return true, value.UnmarshalBinary(raw)
 }
 
-func (l *LevelDB) Has(k encodable) (has bool, err error) {
-	return l.Get(k, nil)
+func (l *LevelDB) Has(key encoding.BinaryMarshaler) (has bool, err error) {
+	return l.Get(key, nil)
 }
 
-func (l *LevelDB) Delete(k encodable) error {
-	return l.storage.Delete(k.encode(), l.writeOpts)
+func (l *LevelDB) Delete(key encoding.BinaryMarshaler) error {
+	k, err := key.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	return l.storage.Delete(k, l.writeOpts)
 }
 
-func (l *LevelDB) Put(key, value encodable) error {
-	return l.storage.Put(key.encode(), value.encode(), l.writeOpts)
+func (l *LevelDB) Put(key, value encoding.BinaryMarshaler) error {
+	k, err := key.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	v, err := value.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	return l.storage.Put(k, v, l.writeOpts)
 }
 
 func (l *LevelDB) Commit(b Batch) error {

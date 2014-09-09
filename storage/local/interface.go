@@ -2,8 +2,6 @@ package storage_ng
 
 import (
 	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -64,9 +62,7 @@ type Persistence interface {
 	LoadHeads(map[clientmodel.Fingerprint]*memorySeries) error
 
 	// Close releases any held resources.
-	Close()
-
-	index.MetricIndexer
+	Close() error
 }
 
 // A Preloader preloads series data necessary for a query into memory and pins
@@ -84,10 +80,5 @@ type Preloader interface {
 		GetMetricRangeAtInterval(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration) error
 	*/
 	// Close unpins any previously requested series data from memory.
-	Close()
-}
-
-type Closer interface {
-	// Close cleans up any used resources.
 	Close()
 }

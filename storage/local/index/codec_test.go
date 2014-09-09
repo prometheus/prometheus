@@ -103,10 +103,15 @@ func TestCodec(t *testing.T) {
 	}
 
 	for i, s := range scenarios {
-		encoded := s.in.encode()
-		s.out.decode(encoded)
+		encoded, err := s.in.MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.out.UnmarshalBinary(encoded); err != nil {
+			t.Fatal(err)
+		}
 		if !s.equal(s.in, s.out) {
-			t.Fatalf("%d. Got: %v; want %v; encoded bytes are: %v", i, s.out, s.in, encoded)
+			t.Errorf("%d. Got: %v; want %v; encoded bytes are: %v", i, s.out, s.in, encoded)
 		}
 	}
 }

@@ -208,7 +208,7 @@ func (i *SynchronizedIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 	return i.i.IndexMetrics(b)
 }
 
-// TotalIndexer is a MetricIndexer that indexes all standard facets of a metric
+// DiskIndexer is a MetricIndexer that indexes all standard facets of a metric
 // that a user or the Prometheus subsystem would want to query against:
 //
 //    <Fingerprint> -> <existence marker>
@@ -218,7 +218,7 @@ func (i *SynchronizedIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 //
 // This type supports concurrent queries, but only single writes, and it has no
 // locking semantics to enforce this.
-type TotalIndexer struct {
+type DiskIndexer struct {
 	FingerprintToMetric     *FingerprintMetricIndex
 	LabelNameToLabelValues  *LabelNameLabelValuesIndex
 	LabelPairToFingerprints *LabelPairFingerprintIndex
@@ -384,7 +384,7 @@ func extendLabelPairIndex(i *LabelPairFingerprintIndex, b FingerprintMetricMappi
 
 // IndexMetrics adds the facets of all unindexed metrics found in the given
 // FingerprintMetricMapping to the corresponding indices.
-func (i *TotalIndexer) IndexMetrics(b FingerprintMetricMapping) error {
+func (i *DiskIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 	unindexed, err := findUnindexed(i.FingerprintMembership, b)
 	if err != nil {
 		return err
@@ -413,9 +413,8 @@ func (i *TotalIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 	return i.FingerprintMembership.IndexBatch(unindexed)
 }
 
-// UnindexMetrics removes the facets of all indexed metrics found in the given
-// FingerprintMetricMapping to the corresponding indices.
-func (i *TotalIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
+// UnindexMetrics implements MetricIndexer.
+func (i *DiskIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
 	indexed, err := findIndexed(i.FingerprintMembership, b)
 	if err != nil {
 		return err
@@ -441,14 +440,19 @@ func (i *TotalIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
 	return i.FingerprintMembership.UnindexBatch(indexed)
 }
 
-// GetMetricForFingerprint returns the metric associated with the provided fingerprint.
-func (i *TotalIndexer) GetMetricForFingerprint(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
+func (i *DiskIndexer) ArchiveMetrics(fp clientmodel.Fingerprint, first, last clientmodel.Timestamp) error {
+	// TODO: implement.
+	return nil
+}
+
+// GetMetricForFingerprint implements MetricIndexer.
+func (i *DiskIndexer) GetMetricForFingerprint(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
 	m, _, err := i.FingerprintToMetric.Lookup(fp)
 	return m, err
 }
 
-// GetFingerprintsForLabelPair returns all fingerprints for the provided label pair.
-func (i *TotalIndexer) GetFingerprintsForLabelPair(ln clientmodel.LabelName, lv clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
+// GetFingerprintsForLabelPair implements MetricIndexer.
+func (i *DiskIndexer) GetFingerprintsForLabelPair(ln clientmodel.LabelName, lv clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
 	fps, _, err := i.LabelPairToFingerprints.Lookup(&metric.LabelPair{
 		Name:  ln,
 		Value: lv,
@@ -456,13 +460,24 @@ func (i *TotalIndexer) GetFingerprintsForLabelPair(ln clientmodel.LabelName, lv 
 	return fps, err
 }
 
-// GetLabelValuesForLabelName returns all label values associated with a given label name.
-func (i *TotalIndexer) GetLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
+// GetLabelValuesForLabelName implements MetricIndexer.
+func (i *DiskIndexer) GetLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	lvs, _, err := i.LabelNameToLabelValues.Lookup(ln)
 	return lvs, err
 }
 
-// HasFingerprint returns true if a metric with the given fingerprint has been indexed.
-func (i *TotalIndexer) HasFingerprint(fp clientmodel.Fingerprint) (bool, error) {
+// HasFingerprint implements MetricIndexer.
+func (i *DiskIndexer) HasFingerprint(fp clientmodel.Fingerprint) (bool, error) {
+	// TODO: modify.
 	return i.FingerprintMembership.Has(fp)
+}
+
+func (i *DiskIndexer) HasArchivedFingerprint(clientmodel.Fingerprint) (present bool, first, last clientmodel.Timestamp, err error) {
+	// TODO: implement.
+	return false, 0, 0, nil
+}
+
+func (i *DiskIndexer) Close() error {
+	// TODO: implement
+	return nil
 }

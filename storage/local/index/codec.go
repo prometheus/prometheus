@@ -2,6 +2,7 @@ package index
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/binary"
 	"io"
 	"sync"
@@ -12,16 +13,8 @@ import (
 )
 
 type codable interface {
-	encodable
-	decodable
-}
-
-type encodable interface {
-	encode() []byte
-}
-
-type decodable interface {
-	decode([]byte)
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
 }
 
 // TODO: yeah, this ain't ideal. A lot of locking and possibly even contention.
@@ -36,27 +29,29 @@ func setTmpBufLen(l int) {
 	}
 }
 
-func encodeVarint(b *bytes.Buffer, i int) {
+func encodeVarint(b *bytes.Buffer, i int) error {
 	tmpBufMtx.Lock()
 	defer tmpBufMtx.Unlock()
 
 	bytesWritten := binary.PutVarint(tmpBuf, int64(i))
 	if _, err := b.Write(tmpBuf[:bytesWritten]); err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
 
-func encodeString(b *bytes.Buffer, s string) {
+func encodeString(b *bytes.Buffer, s string) error {
 	encodeVarint(b, len(s))
 	if _, err := b.WriteString(s); err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
 
-func decodeString(b *bytes.Reader) string {
+func decodeString(b *bytes.Reader) (string, error) {
 	length, err := binary.ReadVarint(b)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	tmpBufMtx.Lock()
@@ -64,51 +59,59 @@ func decodeString(b *bytes.Reader) string {
 
 	setTmpBufLen(int(length))
 	if _, err := io.ReadFull(b, tmpBuf); err != nil {
-		panic(err)
+		return "", err
 	}
-	return string(tmpBuf)
+	return string(tmpBuf), nil
 }
 
 type codableMetric clientmodel.Metric
 
-func (m codableMetric) encode() []byte {
+func (m codableMetric) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	encodeVarint(buf, len(m))
 	for l, v := range m {
 		encodeString(buf, string(l))
 		encodeString(buf, string(v))
 	}
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
-func (m codableMetric) decode(buf []byte) {
+func (m codableMetric) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	numLabelPairs, err := binary.ReadVarint(r)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	for ; numLabelPairs > 0; numLabelPairs-- {
-		ln := decodeString(r)
-		lv := decodeString(r)
+		ln, err := decodeString(r)
+		if err != nil {
+			return err
+		}
+		lv, err := decodeString(r)
+		if err != nil {
+			return err
+		}
 		m[clientmodel.LabelName(ln)] = clientmodel.LabelValue(lv)
 	}
+	return nil
 }
 
 type codableFingerprint clientmodel.Fingerprint
 
-func (fp codableFingerprint) encode() []byte {
+func (fp codableFingerprint) MarshalBinary() ([]byte, error) {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(fp))
-	return b
+	return b, nil
 }
 
-func (fp *codableFingerprint) decode(buf []byte) {
+func (fp *codableFingerprint) UnmarshalBinary(buf []byte) error {
 	*fp = codableFingerprint(binary.BigEndian.Uint64(buf))
+	return nil
 }
 
 type codableFingerprints clientmodel.Fingerprints
 
-func (fps codableFingerprints) encode() []byte {
+func (fps codableFingerprints) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, binary.MaxVarintLen64+len(fps)*8))
 	encodeVarint(buf, len(fps))
 
@@ -119,17 +122,17 @@ func (fps codableFingerprints) encode() []byte {
 	for _, fp := range fps {
 		binary.BigEndian.PutUint64(tmpBuf, uint64(fp))
 		if _, err := buf.Write(tmpBuf[:8]); err != nil {
-			panic(err)
+			return nil, err
 		}
 	}
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
-func (fps *codableFingerprints) decode(buf []byte) {
+func (fps *codableFingerprints) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	numFPs, err := binary.ReadVarint(r)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	*fps = make(codableFingerprints, numFPs)
 
@@ -137,64 +140,84 @@ func (fps *codableFingerprints) decode(buf []byte) {
 	for i, _ := range *fps {
 		(*fps)[i] = clientmodel.Fingerprint(binary.BigEndian.Uint64(buf[offset+i*8:]))
 	}
+	return nil
 }
 
 type codableLabelPair metric.LabelPair
 
-func (lp codableLabelPair) encode() []byte {
+func (lp codableLabelPair) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	encodeString(buf, string(lp.Name))
 	encodeString(buf, string(lp.Value))
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
-func (lp *codableLabelPair) decode(buf []byte) {
+func (lp *codableLabelPair) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
-	lp.Name = clientmodel.LabelName(decodeString(r))
-	lp.Value = clientmodel.LabelValue(decodeString(r))
+	n, err := decodeString(r)
+	if err != nil {
+		return err
+	}
+	v, err := decodeString(r)
+	if err != nil {
+		return err
+	}
+	lp.Name = clientmodel.LabelName(n)
+	lp.Value = clientmodel.LabelValue(v)
+	return nil
 }
 
 type codableLabelName clientmodel.LabelName
 
-func (l codableLabelName) encode() []byte {
+func (l codableLabelName) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	encodeString(buf, string(l))
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
-func (l *codableLabelName) decode(buf []byte) {
+func (l *codableLabelName) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
-	*l = codableLabelName(decodeString(r))
+	n, err := decodeString(r)
+	if err != nil {
+		return err
+	}
+	*l = codableLabelName(n)
+	return nil
 }
 
 type codableLabelValues clientmodel.LabelValues
 
-func (vs codableLabelValues) encode() []byte {
+func (vs codableLabelValues) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	encodeVarint(buf, len(vs))
 	for _, v := range vs {
 		encodeString(buf, string(v))
 	}
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
-func (vs *codableLabelValues) decode(buf []byte) {
+func (vs *codableLabelValues) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	numValues, err := binary.ReadVarint(r)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	*vs = make(codableLabelValues, numValues)
 
 	for i, _ := range *vs {
-		(*vs)[i] = clientmodel.LabelValue(decodeString(r))
+		v, err := decodeString(r)
+		if err != nil {
+			return err
+		}
+		(*vs)[i] = clientmodel.LabelValue(v)
 	}
+	return nil
 }
 
 type codableMembership struct{}
 
-func (m codableMembership) encode() []byte {
-	return []byte{}
+func (m codableMembership) MarshalBinary() ([]byte, error) {
+	return []byte{}, nil
 }
 
-func (m codableMembership) decode(buf []byte) {}
+func (m codableMembership) UnmarshalBinary(buf []byte) error { return nil }

@@ -41,9 +41,9 @@ const (
 
 var (
 	fingerprintToMetricCacheSize     = flag.Int("storage.fingerprintToMetricCacheSizeBytes", 25*1024*1024, "The size in bytes for the fingerprint to metric index cache.")
-	labelNameToLabelValuesCacheSize  = flag.Int("storage.labelNameToLabelValuesCacheSizeBytes", 25*1024*1024, "The size in bytes for the label name to label values index.")
-	labelPairToFingerprintsCacheSize = flag.Int("storage.labelPairToFingerprintsCacheSizeBytes", 25*1024*1024, "The size in bytes for the label pair to fingerprints index.")
-	fingerprintMembershipCacheSize   = flag.Int("storage.fingerprintMembershipCacheSizeBytes", 5*1024*1024, "The size in bytes for the metric membership index.")
+	labelNameToLabelValuesCacheSize  = flag.Int("storage.labelNameToLabelValuesCacheSizeBytes", 25*1024*1024, "The size in bytes for the label name to label values index cache.")
+	labelPairToFingerprintsCacheSize = flag.Int("storage.labelPairToFingerprintsCacheSizeBytes", 25*1024*1024, "The size in bytes for the label pair to fingerprints index cache.")
+	fingerprintMembershipCacheSize   = flag.Int("storage.fingerprintMembershipCacheSizeBytes", 5*1024*1024, "The size in bytes for the metric membership index cache.")
 )
 
 type diskPersistence struct {
@@ -94,7 +94,7 @@ func NewDiskPersistence(basePath string, chunkLen int) (Persistence, error) {
 		basePath: basePath,
 		chunkLen: chunkLen,
 		buf:      make([]byte, binary.MaxVarintLen64), // Also sufficient for uint64.
-		MetricIndexer: &index.TotalIndexer{
+		MetricIndexer: &index.DiskIndexer{
 			FingerprintToMetric:     index.NewFingerprintMetricIndex(fingerprintToMetricDB),
 			LabelNameToLabelValues:  index.NewLabelNameLabelValuesIndex(labelNameToLabelValuesDB),
 			LabelPairToFingerprints: index.NewLabelPairFingerprintIndex(labelPairToFingerprintsDB),
@@ -395,25 +395,13 @@ func (p *diskPersistence) LoadHeads(fpToSeries map[clientmodel.Fingerprint]*memo
 	return nil
 }
 
-func (d *diskPersistence) Close() {
+func (d *diskPersistence) Close() error {
+	var lastError error
 	for _, db := range d.indexDBs {
 		if err := db.Close(); err != nil {
 			glog.Error("Error closing index DB: ", err)
+			lastError = err
 		}
 	}
-}
-
-// Get all of the label values that are associated with a given label name.
-func (d *diskPersistence) GetFingerprintsForLabelPair(l clientmodel.LabelName, v clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
-	return nil, nil
-}
-
-// Get all label values that are associated with a given label name.
-func (d *diskPersistence) GetLabelValuesForLabelName(clientmodel.LabelName) (clientmodel.LabelValues, error) {
-	return nil, nil
-}
-
-// Get the metric associated with the provided fingerprint.
-func (d *diskPersistence) GetMetricForFingerprint(clientmodel.Fingerprint) (clientmodel.Metric, error) {
-	return nil, nil
+	return lastError
 }
