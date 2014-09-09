@@ -1,12 +1,30 @@
 package index
 
 import (
+	"flag"
+	"os"
+	"path"
 	"sync"
 
+	"github.com/golang/glog"
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
+)
+
+const (
+	fingerprintToMetricDir     = "fingerprint_to_metric"
+	labelNameToLabelValuesDir  = "labelname_to_labelvalues"
+	labelPairToFingerprintsDir = "labelpair_to_fingerprints"
+	fingerprintMembershipDir   = "fingerprint_membership"
+)
+
+var (
+	fingerprintToMetricCacheSize     = flag.Int("storage.fingerprintToMetricCacheSizeBytes", 25*1024*1024, "The size in bytes for the fingerprint to metric index cache.")
+	labelNameToLabelValuesCacheSize  = flag.Int("storage.labelNameToLabelValuesCacheSizeBytes", 25*1024*1024, "The size in bytes for the label name to label values index cache.")
+	labelPairToFingerprintsCacheSize = flag.Int("storage.labelPairToFingerprintsCacheSizeBytes", 25*1024*1024, "The size in bytes for the label pair to fingerprints index cache.")
+	fingerprintMembershipCacheSize   = flag.Int("storage.fingerprintMembershipCacheSizeBytes", 5*1024*1024, "The size in bytes for the metric membership index cache.")
 )
 
 // FingerprintMetricMapping is an in-memory map of fingerprints to metrics.
@@ -208,21 +226,59 @@ func (i *SynchronizedIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 	return i.i.IndexMetrics(b)
 }
 
-// DiskIndexer is a MetricIndexer that indexes all standard facets of a metric
-// that a user or the Prometheus subsystem would want to query against:
+// diskIndexer is a MetricIndexer that keeps all indexes in levelDBs except the
+// fingerprint-to-metric index for non-archived metrics (which is kept in a
+// normal in-memory map, but serialized to disk at shutdown and deserialized at
+// startup).
 //
-//    <Fingerprint> -> <existence marker>
-//    <Label Name> -> {<Label Value>, ...}
-//    <Label Name> <Label Value> -> {<Fingerprint>, ...}
-//    <Fingerprint> -> <Metric>
-//
-// This type supports concurrent queries, but only single writes, and it has no
-// locking semantics to enforce this.
-type DiskIndexer struct {
+// TODO: Talk about concurrency!
+type diskIndexer struct {
 	FingerprintToMetric     *FingerprintMetricIndex
 	LabelNameToLabelValues  *LabelNameLabelValuesIndex
 	LabelPairToFingerprints *LabelPairFingerprintIndex
 	FingerprintMembership   *FingerprintMembershipIndex
+}
+
+func NewDiskIndexer(basePath string) (MetricIndexer, error) {
+	err := os.MkdirAll(basePath, 0700)
+	if err != nil {
+		return nil, err
+	}
+
+	fingerprintToMetricDB, err := NewLevelDB(LevelDBOptions{
+		Path:           path.Join(basePath, fingerprintToMetricDir),
+		CacheSizeBytes: *fingerprintToMetricCacheSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	labelNameToLabelValuesDB, err := NewLevelDB(LevelDBOptions{
+		Path:           path.Join(basePath, labelNameToLabelValuesDir),
+		CacheSizeBytes: *labelNameToLabelValuesCacheSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	labelPairToFingerprintsDB, err := NewLevelDB(LevelDBOptions{
+		Path:           path.Join(basePath, labelPairToFingerprintsDir),
+		CacheSizeBytes: *labelPairToFingerprintsCacheSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	fingerprintMembershipDB, err := NewLevelDB(LevelDBOptions{
+		Path:           path.Join(basePath, fingerprintMembershipDir),
+		CacheSizeBytes: *fingerprintMembershipCacheSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &diskIndexer{
+		FingerprintToMetric:     NewFingerprintMetricIndex(fingerprintToMetricDB),
+		LabelNameToLabelValues:  NewLabelNameLabelValuesIndex(labelNameToLabelValuesDB),
+		LabelPairToFingerprints: NewLabelPairFingerprintIndex(labelPairToFingerprintsDB),
+		FingerprintMembership:   NewFingerprintMembershipIndex(fingerprintMembershipDB),
+	}, nil
 }
 
 func findUnindexed(i *FingerprintMembershipIndex, b FingerprintMetricMapping) (FingerprintMetricMapping, error) {
@@ -384,7 +440,7 @@ func extendLabelPairIndex(i *LabelPairFingerprintIndex, b FingerprintMetricMappi
 
 // IndexMetrics adds the facets of all unindexed metrics found in the given
 // FingerprintMetricMapping to the corresponding indices.
-func (i *DiskIndexer) IndexMetrics(b FingerprintMetricMapping) error {
+func (i *diskIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 	unindexed, err := findUnindexed(i.FingerprintMembership, b)
 	if err != nil {
 		return err
@@ -414,7 +470,7 @@ func (i *DiskIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 }
 
 // UnindexMetrics implements MetricIndexer.
-func (i *DiskIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
+func (i *diskIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
 	indexed, err := findIndexed(i.FingerprintMembership, b)
 	if err != nil {
 		return err
@@ -440,19 +496,19 @@ func (i *DiskIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
 	return i.FingerprintMembership.UnindexBatch(indexed)
 }
 
-func (i *DiskIndexer) ArchiveMetrics(fp clientmodel.Fingerprint, first, last clientmodel.Timestamp) error {
+func (i *diskIndexer) ArchiveMetrics(fp clientmodel.Fingerprint, first, last clientmodel.Timestamp) error {
 	// TODO: implement.
 	return nil
 }
 
 // GetMetricForFingerprint implements MetricIndexer.
-func (i *DiskIndexer) GetMetricForFingerprint(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
+func (i *diskIndexer) GetMetricForFingerprint(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
 	m, _, err := i.FingerprintToMetric.Lookup(fp)
 	return m, err
 }
 
 // GetFingerprintsForLabelPair implements MetricIndexer.
-func (i *DiskIndexer) GetFingerprintsForLabelPair(ln clientmodel.LabelName, lv clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
+func (i *diskIndexer) GetFingerprintsForLabelPair(ln clientmodel.LabelName, lv clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
 	fps, _, err := i.LabelPairToFingerprints.Lookup(&metric.LabelPair{
 		Name:  ln,
 		Value: lv,
@@ -461,23 +517,39 @@ func (i *DiskIndexer) GetFingerprintsForLabelPair(ln clientmodel.LabelName, lv c
 }
 
 // GetLabelValuesForLabelName implements MetricIndexer.
-func (i *DiskIndexer) GetLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
+func (i *diskIndexer) GetLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	lvs, _, err := i.LabelNameToLabelValues.Lookup(ln)
 	return lvs, err
 }
 
 // HasFingerprint implements MetricIndexer.
-func (i *DiskIndexer) HasFingerprint(fp clientmodel.Fingerprint) (bool, error) {
+func (i *diskIndexer) HasFingerprint(fp clientmodel.Fingerprint) (bool, error) {
 	// TODO: modify.
 	return i.FingerprintMembership.Has(fp)
 }
 
-func (i *DiskIndexer) HasArchivedFingerprint(clientmodel.Fingerprint) (present bool, first, last clientmodel.Timestamp, err error) {
+func (i *diskIndexer) HasArchivedFingerprint(clientmodel.Fingerprint) (present bool, first, last clientmodel.Timestamp, err error) {
 	// TODO: implement.
 	return false, 0, 0, nil
 }
 
-func (i *DiskIndexer) Close() error {
-	// TODO: implement
-	return nil
+func (i *diskIndexer) Close() error {
+	var lastError error
+	if err := i.FingerprintToMetric.Close(); err != nil {
+		glog.Error("Error closing FingerprintToMetric index DB: ", err)
+		lastError = err
+	}
+	if err := i.LabelNameToLabelValues.Close(); err != nil {
+		glog.Error("Error closing LabelNameToLabelValues index DB: ", err)
+		lastError = err
+	}
+	if err := i.LabelPairToFingerprints.Close(); err != nil {
+		glog.Error("Error closing LabelPairToFingerprints index DB: ", err)
+		lastError = err
+	}
+	if err := i.FingerprintMembership.Close(); err != nil {
+		glog.Error("Error closing FingerprintMembership index DB: ", err)
+		lastError = err
+	}
+	return lastError
 }

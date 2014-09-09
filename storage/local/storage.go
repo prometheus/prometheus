@@ -29,6 +29,7 @@ type memorySeriesStorage struct {
 	persistDone chan bool
 	stopServing chan chan<- bool
 
+	// TODO: These have to go to persistence.
 	fingerprintToSeries     map[clientmodel.Fingerprint]*memorySeries
 	labelPairToFingerprints map[metric.LabelPair]utility.Set
 	labelNameToLabelValues  map[clientmodel.LabelName]utility.Set

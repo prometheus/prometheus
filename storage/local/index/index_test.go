@@ -31,7 +31,7 @@ func newTestDB(t *testing.T) (KeyValueStore, test.Closer) {
 	})
 }
 
-func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMetrics FingerprintMetricMapping, indexer *DiskIndexer) {
+func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMetrics FingerprintMetricMapping, indexer *diskIndexer) {
 	for fp, m := range indexedFpsToMetrics {
 		// Compare indexed metrics with input metrics.
 		mOut, ok, err := indexer.FingerprintToMetric.Lookup(fp)
@@ -224,7 +224,7 @@ func TestIndexing(t *testing.T) {
 	fpMsDB, fpMsCloser := newTestDB(t)
 	defer fpMsCloser.Close()
 
-	indexer := DiskIndexer{
+	indexer := diskIndexer{
 		FingerprintToMetric:     NewFingerprintMetricIndex(fpToMetricDB),
 		LabelNameToLabelValues:  NewLabelNameLabelValuesIndex(lnToLvsDB),
 		LabelPairToFingerprints: NewLabelPairFingerprintIndex(lpToFpDB),

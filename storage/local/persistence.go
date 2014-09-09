@@ -3,15 +3,12 @@ package storage_ng
 import (
 	"bufio"
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path"
 
 	"github.com/golang/glog"
-
-	//"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -24,11 +21,6 @@ const (
 	headsFileName      = "heads.db"
 	indexDirName       = "index"
 
-	fingerprintToMetricDir     = "fingerprint_to_metric"
-	labelNameToLabelValuesDir  = "labelname_to_labelvalues"
-	labelPairToFingerprintsDir = "labelpair_to_fingerprints"
-	fingerprintMembershipDir   = "fingerprint_membership"
-
 	chunkHeaderLen             = 17
 	chunkHeaderTypeOffset      = 0
 	chunkHeaderFirstTimeOffset = 1
@@ -39,16 +31,8 @@ const (
 	headsHeaderTypeOffset        = 8
 )
 
-var (
-	fingerprintToMetricCacheSize     = flag.Int("storage.fingerprintToMetricCacheSizeBytes", 25*1024*1024, "The size in bytes for the fingerprint to metric index cache.")
-	labelNameToLabelValuesCacheSize  = flag.Int("storage.labelNameToLabelValuesCacheSizeBytes", 25*1024*1024, "The size in bytes for the label name to label values index cache.")
-	labelPairToFingerprintsCacheSize = flag.Int("storage.labelPairToFingerprintsCacheSizeBytes", 25*1024*1024, "The size in bytes for the label pair to fingerprints index cache.")
-	fingerprintMembershipCacheSize   = flag.Int("storage.fingerprintMembershipCacheSizeBytes", 5*1024*1024, "The size in bytes for the metric membership index cache.")
-)
-
 type diskPersistence struct {
 	index.MetricIndexer
-	indexDBs []index.KeyValueStore
 
 	basePath string
 	chunkLen int
@@ -56,56 +40,16 @@ type diskPersistence struct {
 }
 
 func NewDiskPersistence(basePath string, chunkLen int) (Persistence, error) {
-	err := os.MkdirAll(basePath, 0700)
-	if err != nil {
-		return nil, err
-	}
-
-	fingerprintToMetricDB, err := index.NewLevelDB(index.LevelDBOptions{
-		Path:           path.Join(basePath, fingerprintToMetricDir),
-		CacheSizeBytes: *fingerprintToMetricCacheSize,
-	})
-	if err != nil {
-		return nil, err
-	}
-	labelNameToLabelValuesDB, err := index.NewLevelDB(index.LevelDBOptions{
-		Path:           path.Join(basePath, labelNameToLabelValuesDir),
-		CacheSizeBytes: *labelNameToLabelValuesCacheSize,
-	})
-	if err != nil {
-		return nil, err
-	}
-	labelPairToFingerprintsDB, err := index.NewLevelDB(index.LevelDBOptions{
-		Path:           path.Join(basePath, labelPairToFingerprintsDir),
-		CacheSizeBytes: *labelPairToFingerprintsCacheSize,
-	})
-	if err != nil {
-		return nil, err
-	}
-	fingerprintMembershipDB, err := index.NewLevelDB(index.LevelDBOptions{
-		Path:           path.Join(basePath, fingerprintMembershipDir),
-		CacheSizeBytes: *fingerprintMembershipCacheSize,
-	})
+	metricIndexer, err := index.NewDiskIndexer(basePath)
 	if err != nil {
 		return nil, err
 	}
 
 	return &diskPersistence{
-		basePath: basePath,
-		chunkLen: chunkLen,
-		buf:      make([]byte, binary.MaxVarintLen64), // Also sufficient for uint64.
-		MetricIndexer: &index.DiskIndexer{
-			FingerprintToMetric:     index.NewFingerprintMetricIndex(fingerprintToMetricDB),
-			LabelNameToLabelValues:  index.NewLabelNameLabelValuesIndex(labelNameToLabelValuesDB),
-			LabelPairToFingerprints: index.NewLabelPairFingerprintIndex(labelPairToFingerprintsDB),
-			FingerprintMembership:   index.NewFingerprintMembershipIndex(fingerprintMembershipDB),
-		},
-		indexDBs: []index.KeyValueStore{
-			fingerprintToMetricDB,
-			labelNameToLabelValuesDB,
-			labelPairToFingerprintsDB,
-			fingerprintMembershipDB,
-		},
+		basePath:      basePath,
+		chunkLen:      chunkLen,
+		buf:           make([]byte, binary.MaxVarintLen64), // Also sufficient for uint64.
+		MetricIndexer: metricIndexer,
 	}, nil
 }
 
@@ -396,12 +340,6 @@ func (p *diskPersistence) LoadHeads(fpToSeries map[clientmodel.Fingerprint]*memo
 }
 
 func (d *diskPersistence) Close() error {
-	var lastError error
-	for _, db := range d.indexDBs {
-		if err := db.Close(); err != nil {
-			glog.Error("Error closing index DB: ", err)
-			lastError = err
-		}
-	}
-	return lastError
+	// TODO: Move persistHeads here once fingerprintToSeries map is here.
+	return d.MetricIndexer.Close()
 }
