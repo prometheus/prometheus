@@ -17,24 +17,30 @@ type codable interface {
 	encoding.BinaryUnmarshaler
 }
 
-// TODO: yeah, this ain't ideal. A lot of locking and possibly even contention.
-var tmpBufMtx sync.Mutex
-var tmpBuf = make([]byte, binary.MaxVarintLen64)
+var bufPool sync.Pool
 
-func setTmpBufLen(l int) {
-	if cap(tmpBuf) >= l {
-		tmpBuf = tmpBuf[:l]
-	} else {
-		tmpBuf = make([]byte, l)
+func getBuf(l int) []byte {
+	x := bufPool.Get()
+	if x == nil {
+		return make([]byte, l)
 	}
+	buf := x.([]byte)
+	if cap(buf) < l {
+		return make([]byte, l)
+	}
+	return buf[:l]
+}
+
+func putBuf(buf []byte) {
+	bufPool.Put(buf)
 }
 
 func encodeVarint(b *bytes.Buffer, i int) error {
-	tmpBufMtx.Lock()
-	defer tmpBufMtx.Unlock()
+	buf := getBuf(binary.MaxVarintLen64)
+	defer putBuf(buf)
 
-	bytesWritten := binary.PutVarint(tmpBuf, int64(i))
-	if _, err := b.Write(tmpBuf[:bytesWritten]); err != nil {
+	bytesWritten := binary.PutVarint(buf, int64(i))
+	if _, err := b.Write(buf[:bytesWritten]); err != nil {
 		return err
 	}
 	return nil
@@ -54,14 +60,13 @@ func decodeString(b *bytes.Reader) (string, error) {
 		return "", err
 	}
 
-	tmpBufMtx.Lock()
-	defer tmpBufMtx.Unlock()
+	buf := getBuf(int(length))
+	defer putBuf(buf)
 
-	setTmpBufLen(int(length))
-	if _, err := io.ReadFull(b, tmpBuf); err != nil {
+	if _, err := io.ReadFull(b, buf); err != nil {
 		return "", err
 	}
-	return string(tmpBuf), nil
+	return string(buf), nil
 }
 
 type codableMetric clientmodel.Metric
@@ -112,20 +117,19 @@ func (fp *codableFingerprint) UnmarshalBinary(buf []byte) error {
 type codableFingerprints clientmodel.Fingerprints
 
 func (fps codableFingerprints) MarshalBinary() ([]byte, error) {
-	buf := bytes.NewBuffer(make([]byte, 0, binary.MaxVarintLen64+len(fps)*8))
-	encodeVarint(buf, len(fps))
+	b := bytes.NewBuffer(make([]byte, 0, binary.MaxVarintLen64+len(fps)*8))
+	encodeVarint(b, len(fps))
 
-	tmpBufMtx.Lock()
-	defer tmpBufMtx.Unlock()
+	buf := getBuf(8)
+	defer putBuf(buf)
 
-	setTmpBufLen(8)
 	for _, fp := range fps {
-		binary.BigEndian.PutUint64(tmpBuf, uint64(fp))
-		if _, err := buf.Write(tmpBuf[:8]); err != nil {
+		binary.BigEndian.PutUint64(buf, uint64(fp))
+		if _, err := b.Write(buf[:8]); err != nil {
 			return nil, err
 		}
 	}
-	return buf.Bytes(), nil
+	return b.Bytes(), nil
 }
 
 func (fps *codableFingerprints) UnmarshalBinary(buf []byte) error {
