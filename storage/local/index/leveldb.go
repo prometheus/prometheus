@@ -9,7 +9,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
-// LevelDB is a LevelDB-backed sorted key-value store.
+// LevelDB is a LevelDB-backed sorted KeyValueStore.
 type LevelDB struct {
 	storage   *leveldb.DB
 	readOpts  *opt.ReadOptions
@@ -21,7 +21,7 @@ type LevelDBOptions struct {
 	CacheSizeBytes int
 }
 
-func NewLevelDB(o LevelDBOptions) (*LevelDB, error) {
+func NewLevelDB(o LevelDBOptions) (KeyValueStore, error) {
 	options := &opt.Options{
 		Compression: opt.SnappyCompression,
 		BlockCache:  cache.NewLRUCache(o.CacheSizeBytes),
@@ -41,7 +41,7 @@ func NewLevelDB(o LevelDBOptions) (*LevelDB, error) {
 }
 
 func (l *LevelDB) NewBatch() Batch {
-	return &batch{
+	return &LevelDBBatch{
 		batch: &leveldb.Batch{},
 	}
 }
@@ -93,5 +93,36 @@ func (l *LevelDB) Put(key, value encoding.BinaryMarshaler) error {
 }
 
 func (l *LevelDB) Commit(b Batch) error {
-	return l.storage.Write(b.(*batch).batch, l.writeOpts)
+	return l.storage.Write(b.(*LevelDBBatch).batch, l.writeOpts)
+}
+
+// LevelDBBatch is a Batch implementation for LevelDB.
+type LevelDBBatch struct {
+	batch *leveldb.Batch
+}
+
+func (b *LevelDBBatch) Put(key, value encoding.BinaryMarshaler) error {
+	k, err := key.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	v, err := value.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	b.batch.Put(k, v)
+	return nil
+}
+
+func (b *LevelDBBatch) Delete(key encoding.BinaryMarshaler) error {
+	k, err := key.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	b.batch.Delete(k)
+	return nil
+}
+
+func (b *LevelDBBatch) Reset() {
+	b.batch.Reset()
 }

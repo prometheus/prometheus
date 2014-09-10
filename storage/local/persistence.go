@@ -12,91 +12,80 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/local/codec"
 	"github.com/prometheus/prometheus/storage/local/index"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 const (
 	seriesFileName     = "series.db"
 	seriesTempFileName = "series.db.tmp"
+
 	headsFileName      = "heads.db"
-	indexDirName       = "index"
+	headsFormatVersion = 1
+	headsMagicString   = "PrometheusHeads"
+
+	fileBufSize = 1 << 16 // 64kiB. TODO: Tweak.
 
 	chunkHeaderLen             = 17
 	chunkHeaderTypeOffset      = 0
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
-
-	headsHeaderLen               = 9
-	headsHeaderFingerprintOffset = 0
-	headsHeaderTypeOffset        = 8
 )
 
 type diskPersistence struct {
-	index.MetricIndexer
-
 	basePath string
 	chunkLen int
-	buf      []byte // Staging space for persisting indexes.
+
+	archivedFingerprintToMetrics   *index.FingerprintMetricIndex
+	archivedFingerprintToTimeRange *index.FingerprintTimeRangeIndex
+	labelPairToFingerprints        *index.LabelPairFingerprintIndex
+	labelNameToLabelValues         *index.LabelNameLabelValuesIndex
 }
 
 func NewDiskPersistence(basePath string, chunkLen int) (Persistence, error) {
-	metricIndexer, err := index.NewDiskIndexer(basePath)
+	if err := os.MkdirAll(basePath, 0700); err != nil {
+		return nil, err
+	}
+	dp := &diskPersistence{
+		basePath: basePath,
+		chunkLen: chunkLen,
+	}
+	var err error
+	dp.archivedFingerprintToMetrics, err = index.NewFingerprintMetricIndex(basePath)
+	if err != nil {
+		return nil, err
+	}
+	dp.archivedFingerprintToTimeRange, err = index.NewFingerprintTimeRangeIndex(basePath)
+	if err != nil {
+		return nil, err
+	}
+	dp.labelPairToFingerprints, err = index.NewLabelPairFingerprintIndex(basePath)
+	if err != nil {
+		return nil, err
+	}
+	dp.labelNameToLabelValues, err = index.NewLabelNameLabelValuesIndex(basePath)
 	if err != nil {
 		return nil, err
 	}
 
-	return &diskPersistence{
-		basePath:      basePath,
-		chunkLen:      chunkLen,
-		buf:           make([]byte, binary.MaxVarintLen64), // Also sufficient for uint64.
-		MetricIndexer: metricIndexer,
-	}, nil
+	return dp, nil
 }
 
-func (p *diskPersistence) dirForFingerprint(fp clientmodel.Fingerprint) string {
-	fpStr := fp.String()
-	return fmt.Sprintf("%s/%c%c/%s", p.basePath, fpStr[0], fpStr[1], fpStr[2:])
-}
-
-// exists returns true when the given file or directory exists.
-func exists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-
-	return false, err
-}
-
-func (p *diskPersistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.File, error) {
-	dirname := p.dirForFingerprint(fp)
-	ex, err := exists(dirname)
+func (p *diskPersistence) GetFingerprintsForLabelPair(lp metric.LabelPair) (clientmodel.Fingerprints, error) {
+	fps, _, err := p.labelPairToFingerprints.Lookup(lp)
 	if err != nil {
 		return nil, err
 	}
-	if !ex {
-		if err := os.MkdirAll(dirname, 0700); err != nil {
-			return nil, err
-		}
+	return fps, nil
+}
+
+func (p *diskPersistence) GetLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
+	lvs, _, err := p.labelNameToLabelValues.Lookup(ln)
+	if err != nil {
+		return nil, err
 	}
-	return os.OpenFile(path.Join(dirname, seriesFileName), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
-}
-
-func (p *diskPersistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.File, error) {
-	dirname := p.dirForFingerprint(fp)
-	return os.Open(path.Join(dirname, seriesFileName))
-}
-
-func writeChunkHeader(w io.Writer, c chunk) error {
-	header := make([]byte, chunkHeaderLen)
-	header[chunkHeaderTypeOffset] = chunkType(c)
-	binary.LittleEndian.PutUint64(header[chunkHeaderFirstTimeOffset:], uint64(c.firstTime()))
-	binary.LittleEndian.PutUint64(header[chunkHeaderLastTimeOffset:], uint64(c.lastTime()))
-	_, err := w.Write(header)
-	return err
+	return lvs, nil
 }
 
 func (p *diskPersistence) PersistChunk(fp clientmodel.Fingerprint, c chunk) error {
@@ -118,10 +107,6 @@ func (p *diskPersistence) PersistChunk(fp clientmodel.Fingerprint, c chunk) erro
 
 	// 3. Write chunk into file.
 	return c.marshal(b)
-}
-
-func (p *diskPersistence) offsetForChunkIndex(i int) int64 {
-	return int64(i * (chunkHeaderLen + p.chunkLen))
 }
 
 func (p *diskPersistence) LoadChunks(fp clientmodel.Fingerprint, indexes []int) (chunks, error) {
@@ -222,40 +207,149 @@ func (p *diskPersistence) LoadChunkDescs(fp clientmodel.Fingerprint, beforeTime 
 	return cds, nil
 }
 
-func (p *diskPersistence) headsPath() string {
-	return path.Join(p.basePath, headsFileName)
-}
-
-func (p *diskPersistence) PersistHeads(fpToSeries map[clientmodel.Fingerprint]*memorySeries) error {
+func (p *diskPersistence) PersistSeriesMapAndHeads(fingerprintToSeries SeriesMap) error {
 	f, err := os.OpenFile(p.headsPath(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
 		return err
 	}
-	header := make([]byte, 9)
-	for fp, series := range fpToSeries {
-		head := series.head().chunk
+	defer f.Close()
+	w := bufio.NewWriterSize(f, fileBufSize)
 
-		binary.LittleEndian.PutUint64(header[headsHeaderFingerprintOffset:], uint64(fp))
-		header[headsHeaderTypeOffset] = chunkType(head)
-		_, err := f.Write(header)
+	if _, err := w.WriteString(headsMagicString); err != nil {
+		return err
+	}
+	if err := codec.EncodeVarint(w, headsFormatVersion); err != nil {
+		return err
+	}
+	if err := codec.EncodeVarint(w, int64(len(fingerprintToSeries))); err != nil {
+		return err
+	}
+
+	for fp, series := range fingerprintToSeries {
+		if err := codec.EncodeUint64(w, uint64(fp)); err != nil {
+			return err
+		}
+		buf, err := codec.CodableMetric(series.metric).MarshalBinary()
 		if err != nil {
 			return err
 		}
-		err = head.marshal(f)
-		if err != nil {
+		w.Write(buf)
+		if err := codec.EncodeVarint(w, int64(len(series.chunkDescs))); err != nil {
 			return err
+		}
+		for i, chunkDesc := range series.chunkDescs {
+			if i < len(series.chunkDescs)-1 {
+				if err := codec.EncodeVarint(w, int64(chunkDesc.firstTime())); err != nil {
+					return err
+				}
+				if err := codec.EncodeVarint(w, int64(chunkDesc.lastTime())); err != nil {
+					return err
+				}
+			} else {
+				// This is the head chunk. Fully marshal it.
+				if err := w.WriteByte(chunkType(chunkDesc.chunk)); err != nil {
+					return err
+				}
+				if err := chunkDesc.chunk.marshal(w); err != nil {
+					return err
+				}
+			}
 		}
 	}
-	return nil
+	return w.Flush()
 }
 
-func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) error {
-	f, err := p.openChunkFileForReading(fp)
+func (p *diskPersistence) LoadSeriesMapAndHeads() (SeriesMap, error) {
+	f, err := os.Open(p.headsPath())
 	if os.IsNotExist(err) {
-		return nil
+		return SeriesMap{}, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, fileBufSize)
+
+	buf := make([]byte, len(headsMagicString))
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return nil, err
+	}
+	magic := string(buf)
+	if magic != headsMagicString {
+		return nil, fmt.Errorf(
+			"unexpected magic string, want %q, got %q",
+			headsMagicString, magic,
+		)
+	}
+	if version, err := binary.ReadVarint(r); version != headsFormatVersion || err != nil {
+		return nil, fmt.Errorf("unknown heads format version, want %d", headsFormatVersion)
+	}
+	numSeries, err := binary.ReadVarint(r)
+	if err != nil {
+		return nil, err
+	}
+	fingerprintToSeries := make(SeriesMap, numSeries)
+
+	for ; numSeries > 0; numSeries-- {
+		fp, err := codec.DecodeUint64(r)
+		if err != nil {
+			return nil, err
+		}
+		var metric codec.CodableMetric
+		if err := metric.UnmarshalFromReader(r); err != nil {
+			return nil, err
+		}
+		numChunkDescs, err := binary.ReadVarint(r)
+		if err != nil {
+			return nil, err
+		}
+		chunkDescs := make(chunkDescs, numChunkDescs)
+
+		for i := int64(0); i < numChunkDescs-1; i++ {
+			firstTime, err := binary.ReadVarint(r)
+			if err != nil {
+				return nil, err
+			}
+			lastTime, err := binary.ReadVarint(r)
+			if err != nil {
+				return nil, err
+			}
+			chunkDescs[i] = &chunkDesc{
+				firstTimeField: clientmodel.Timestamp(firstTime),
+				lastTimeField:  clientmodel.Timestamp(lastTime),
+			}
+		}
+
+		// Head chunk.
+		chunkType, err := r.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		chunk := chunkForType(chunkType)
+		if err := chunk.unmarshal(r); err != nil {
+			return nil, err
+		}
+		chunkDescs[numChunkDescs-1] = &chunkDesc{
+			chunk:    chunk,
+			refCount: 1,
+		}
+
+		fingerprintToSeries[clientmodel.Fingerprint(fp)] = &memorySeries{
+			metric:           clientmodel.Metric(metric),
+			chunkDescs:       chunkDescs,
+			chunkDescsLoaded: true,
+		}
+	}
+	return fingerprintToSeries, nil
+}
+
+func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (bool, error) {
+	f, err := p.openChunkFileForReading(fp)
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
 	}
 	defer f.Close()
 
@@ -263,7 +357,7 @@ func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clie
 	for i := 0; ; i++ {
 		_, err := f.Seek(p.offsetForChunkIndex(i)+chunkHeaderLastTimeOffset, os.SEEK_SET)
 		if err != nil {
-			return err
+			return false, err
 		}
 		lastTimeBuf := make([]byte, 8)
 		_, err = io.ReadAtLeast(f, lastTimeBuf, 8)
@@ -271,12 +365,12 @@ func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clie
 			// We ran into the end of the file without finding any chunks that should
 			// be kept. Remove the whole file.
 			if err := os.Remove(f.Name()); err != nil {
-				return err
+				return true, err
 			}
-			return nil
+			return true, nil
 		}
 		if err != nil {
-			return err
+			return false, err
 		}
 		lastTime := clientmodel.Timestamp(binary.LittleEndian.Uint64(lastTimeBuf))
 		if !lastTime.Before(beforeTime) {
@@ -289,57 +383,135 @@ func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clie
 	// file.
 	_, err = f.Seek(-(chunkHeaderLastTimeOffset + 8), os.SEEK_CUR)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	dirname := p.dirForFingerprint(fp)
 	temp, err := os.OpenFile(path.Join(dirname, seriesTempFileName), os.O_WRONLY|os.O_CREATE, 0640)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer temp.Close()
 
 	if _, err := io.Copy(temp, f); err != nil {
-		return err
+		return false, err
 	}
 
 	os.Rename(path.Join(dirname, seriesTempFileName), path.Join(dirname, seriesFileName))
+	return false, nil
+}
+
+func (d *diskPersistence) IndexMetric(m clientmodel.Metric) error {
+	// TODO: Implement. Possibly in a queue (which needs to be drained before shutdown).
 	return nil
 }
 
-func (p *diskPersistence) LoadHeads(fpToSeries map[clientmodel.Fingerprint]*memorySeries) error {
-	f, err := os.Open(p.headsPath())
-	if os.IsNotExist(err) {
-		// TODO: this should only happen if there never was a shutdown before. In
-		// that case, all heads should be in order already, since the series got
-		// created during this process' runtime.
-		// Still, make this more robust.
-		return nil
-	}
-
-	header := make([]byte, headsHeaderLen)
-	for {
-		_, err := io.ReadAtLeast(f, header, headsHeaderLen)
-		if err == io.ErrUnexpectedEOF {
-			// TODO: this should only be ok if n is 0.
-			break
-		}
-		if err != nil {
-			return nil
-		}
-		// TODO: this relies on the implementation (uint64) of Fingerprint.
-		fp := clientmodel.Fingerprint(binary.LittleEndian.Uint64(header[headsHeaderFingerprintOffset:]))
-		chunk := chunkForType(header[headsHeaderTypeOffset])
-		chunk.unmarshal(f)
-		fpToSeries[fp].chunkDescs = append(fpToSeries[fp].chunkDescs, &chunkDesc{
-			chunk:    chunk,
-			refCount: 1,
-		})
-	}
+func (d *diskPersistence) UnindexMetric(m clientmodel.Metric) error {
+	// TODO: Implement. Possibly in a queue (which needs to be drained before shutdown).
 	return nil
+}
+
+func (d *diskPersistence) ArchiveMetric(
+	fingerprint clientmodel.Fingerprint, metric clientmodel.Metric,
+	firstTime, lastTime clientmodel.Timestamp,
+) error {
+	// TODO: Implement.
+	return nil
+}
+
+func (d *diskPersistence) HasArchivedMetric(clientmodel.Fingerprint) (
+	hasMetric bool, firstTime, lastTime clientmodel.Timestamp, err error,
+) {
+	// TODO: Implement.
+	return
+}
+
+func (d *diskPersistence) GetArchivedMetric(clientmodel.Fingerprint) (clientmodel.Metric, error) {
+	// TODO: Implement.
+	return nil, nil
+}
+
+func (d *diskPersistence) DropArchivedMetric(clientmodel.Fingerprint) error {
+	// TODO: Implement. Unindex after drop!
+	return nil
+}
+
+func (d *diskPersistence) UnarchiveMetric(clientmodel.Fingerprint) (bool, error) {
+	// TODO: Implement.
+	return false, nil
 }
 
 func (d *diskPersistence) Close() error {
-	// TODO: Move persistHeads here once fingerprintToSeries map is here.
-	return d.MetricIndexer.Close()
+	var lastError error
+	if err := d.archivedFingerprintToMetrics.Close(); err != nil {
+		lastError = err
+		glog.Error("Error closing archivedFingerprintToMetric index DB: ", err)
+	}
+	if err := d.archivedFingerprintToTimeRange.Close(); err != nil {
+		lastError = err
+		glog.Error("Error closing archivedFingerprintToTimeRange index DB: ", err)
+	}
+	if err := d.labelPairToFingerprints.Close(); err != nil {
+		lastError = err
+		glog.Error("Error closing labelPairToFingerprints index DB: ", err)
+	}
+	if err := d.labelNameToLabelValues.Close(); err != nil {
+		lastError = err
+		glog.Error("Error closing labelNameToLabelValues index DB: ", err)
+	}
+	return lastError
+}
+
+func (p *diskPersistence) dirForFingerprint(fp clientmodel.Fingerprint) string {
+	fpStr := fp.String()
+	return fmt.Sprintf("%s/%c%c/%s", p.basePath, fpStr[0], fpStr[1], fpStr[2:])
+}
+
+func (p *diskPersistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.File, error) {
+	dirname := p.dirForFingerprint(fp)
+	ex, err := exists(dirname)
+	if err != nil {
+		return nil, err
+	}
+	if !ex {
+		if err := os.MkdirAll(dirname, 0700); err != nil {
+			return nil, err
+		}
+	}
+	return os.OpenFile(path.Join(dirname, seriesFileName), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
+}
+
+func (p *diskPersistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.File, error) {
+	dirname := p.dirForFingerprint(fp)
+	return os.Open(path.Join(dirname, seriesFileName))
+}
+
+func writeChunkHeader(w io.Writer, c chunk) error {
+	header := make([]byte, chunkHeaderLen)
+	header[chunkHeaderTypeOffset] = chunkType(c)
+	binary.LittleEndian.PutUint64(header[chunkHeaderFirstTimeOffset:], uint64(c.firstTime()))
+	binary.LittleEndian.PutUint64(header[chunkHeaderLastTimeOffset:], uint64(c.lastTime()))
+	_, err := w.Write(header)
+	return err
+}
+
+func (p *diskPersistence) offsetForChunkIndex(i int) int64 {
+	return int64(i * (chunkHeaderLen + p.chunkLen))
+}
+
+func (p *diskPersistence) headsPath() string {
+	return path.Join(p.basePath, headsFileName)
+}
+
+// exists returns true when the given file or directory exists.
+func exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+
+	return false, err
 }

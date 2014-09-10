@@ -7,9 +7,7 @@ import (
 	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility"
 )
 
 const persistQueueCap = 1024
@@ -29,10 +27,7 @@ type memorySeriesStorage struct {
 	persistDone chan bool
 	stopServing chan chan<- bool
 
-	// TODO: These have to go to persistence.
-	fingerprintToSeries     map[clientmodel.Fingerprint]*memorySeries
-	labelPairToFingerprints map[metric.LabelPair]utility.Set
-	labelNameToLabelValues  map[clientmodel.LabelName]utility.Set
+	fingerprintToSeries SeriesMap
 
 	memoryEvictionInterval time.Duration
 	memoryRetentionPeriod  time.Duration
@@ -52,21 +47,18 @@ type MemorySeriesStorageOptions struct {
 	PersistenceRetentionPeriod time.Duration
 }
 
-func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (*memorySeriesStorage, error) { // TODO: change to return Storage?
-	glog.Info("Loading series head chunks...")
-	/*
-			if err := o.Persistence.LoadHeads(i.FingerprintToSeries); err != nil {
-				return nil, err
-			}
-		numSeries.Set(float64(len(i.FingerprintToSeries)))
-	*/
-	return &memorySeriesStorage{
-		fingerprintToSeries:     map[clientmodel.Fingerprint]*memorySeries{},
-		labelPairToFingerprints: map[metric.LabelPair]utility.Set{},
-		labelNameToLabelValues:  map[clientmodel.LabelName]utility.Set{},
+func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
+	glog.Info("Loading series map and head chunks...")
+	fingerprintToSeries, err := o.Persistence.LoadSeriesMapAndHeads()
+	if err != nil {
+		return nil, err
+	}
+	numSeries.Set(float64(len(fingerprintToSeries)))
 
-		persistDone: make(chan bool),
-		stopServing: make(chan chan<- bool),
+	return &memorySeriesStorage{
+		fingerprintToSeries: fingerprintToSeries,
+		persistDone:         make(chan bool),
+		stopServing:         make(chan chan<- bool),
 
 		memoryEvictionInterval: o.MemoryEvictionInterval,
 		memoryRetentionPeriod:  o.MemoryRetentionPeriod,
@@ -121,25 +113,22 @@ func (s *memorySeriesStorage) getOrCreateSeries(m clientmodel.Metric) *memorySer
 		s.fingerprintToSeries[fp] = series
 		numSeries.Set(float64(len(s.fingerprintToSeries)))
 
-		for k, v := range m {
-			labelPair := metric.LabelPair{
-				Name:  k,
-				Value: v,
-			}
+		unarchived, err := s.persistence.UnarchiveMetric(fp)
+		if err != nil {
+			glog.Errorf("Error unarchiving fingerprint %v: %v", fp, err)
+		}
 
-			fps, ok := s.labelPairToFingerprints[labelPair]
-			if !ok {
-				fps = utility.Set{}
-				s.labelPairToFingerprints[labelPair] = fps
+		if unarchived {
+			// The series existed before, had been archived at some
+			// point, and has now been unarchived, i.e. it has
+			// chunks on disk. Set chunkDescsLoaded accordingly so
+			// that they will be looked at later.
+			series.chunkDescsLoaded = false
+		} else {
+			// This was a genuinely new series, so index the metric.
+			if err := s.persistence.IndexMetric(m); err != nil {
+				glog.Errorf("Error indexing metric %v: %v", m, err)
 			}
-			fps.Add(fp)
-
-			values, ok := s.labelNameToLabelValues[k]
-			if !ok {
-				values = utility.Set{}
-				s.labelNameToLabelValues[k] = values
-			}
-			values.Add(v)
 		}
 	}
 	return series
@@ -195,6 +184,7 @@ func recordPersist(start time.Time, err error) {
 }
 
 func (s *memorySeriesStorage) handlePersistQueue() {
+	// TODO: Perhaps move this into Persistence?
 	for req := range s.persistQueue {
 		// TODO: Make this thread-safe?
 		persistQueueLength.Set(float64(len(s.persistQueue)))
@@ -234,23 +224,18 @@ func (s *memorySeriesStorage) Close() error {
 	glog.Info("Persist loop stopped.")
 
 	glog.Info("Persisting head chunks...")
-	if err := s.persistHeads(); err != nil {
+	if err := s.persistence.PersistSeriesMapAndHeads(s.fingerprintToSeries); err != nil {
 		return err
 	}
 	glog.Info("Done persisting head chunks.")
 
-	for _, series := range s.fingerprintToSeries {
-		series.close()
-	}
 	s.fingerprintToSeries = nil
+	if err := s.persistence.Close(); err != nil {
+		return err
+	}
 
 	s.state = storageStopping
-
 	return nil
-}
-
-func (s *memorySeriesStorage) persistHeads() error {
-	return s.persistence.PersistHeads(s.fingerprintToSeries)
 }
 
 func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
@@ -276,7 +261,7 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 					glog.Info("Interrupted running series purge.")
 					return
 				default:
-					s.purgeSeries(&fp)
+					s.purgeSeries(fp)
 				}
 			}
 			glog.Info("Done purging old series data.")
@@ -284,57 +269,51 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 	}
 }
 
-func (s *memorySeriesStorage) purgeSeries(fp *clientmodel.Fingerprint) {
-	s.mtx.RLock()
-	series, ok := s.fingerprintToSeries[*fp]
-	if !ok {
-		return
-	}
-	s.mtx.RUnlock()
+// purgeSeries purges chunks older than persistenceRetentionPeriod from a
+// series. If the series contains no chunks after the purge, it is dropped
+// entirely.
+func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint) {
+	ts := clientmodel.TimestampFromTime(time.Now()).Add(-1 * s.persistenceRetentionPeriod)
 
-	drop, err := series.purgeOlderThan(clientmodel.TimestampFromTime(time.Now()).Add(-1*s.persistenceRetentionPeriod), s.persistence)
-	if err != nil {
-		glog.Error("Error purging series data: ", err)
-	}
-	if drop {
-		s.dropSeries(fp)
-	}
-}
-
-// Drop a label value from the label names to label values index.
-func (s *memorySeriesStorage) dropLabelValue(l clientmodel.LabelName, v clientmodel.LabelValue) {
-	if set, ok := s.labelNameToLabelValues[l]; ok {
-		set.Remove(v)
-		if len(set) == 0 {
-			delete(s.labelNameToLabelValues, l)
-		}
-	}
-}
-
-// Drop all references to a series, including any samples.
-func (s *memorySeriesStorage) dropSeries(fp *clientmodel.Fingerprint) {
 	s.mtx.Lock()
+	// TODO: This is a lock FAR to coarse! However, we cannot lock using the
+	// memorySeries since we might have none (for series that are on disk
+	// only). And we really don't want to un-archive a series from disk
+	// while we are at the same time purging it. A locking per fingerprint
+	// would be nice. Or something... Have to think about it... Careful,
+	// more race conditions lurk below. Also unsolved: If there are chunks
+	// in the persist queue. persistence.DropChunks and
+	// persistence.PersistChunck needs to be locked on fp level, or
+	// something. And even then, what happens if everything is dropped, but
+	// there are still chunks hung in the persist queue? They would later
+	// re-create a file for a series that doesn't exist anymore...
 	defer s.mtx.Unlock()
 
-	series, ok := s.fingerprintToSeries[*fp]
-	if !ok {
+	// First purge persisted chunks. We need to do that anyway.
+	allDropped, err := s.persistence.DropChunks(fp, ts)
+	if err != nil {
+		glog.Error("Error purging persisted chunks: ", err)
+	}
+
+	// Purge chunks from memory accordingly.
+	if series, ok := s.fingerprintToSeries[fp]; ok {
+		if series.purgeOlderThan(ts) {
+			delete(s.fingerprintToSeries, fp)
+			if err := s.persistence.UnindexMetric(series.metric); err != nil {
+				glog.Errorf("Error unindexing metric %v: %v", series.metric, err)
+			}
+		}
 		return
 	}
 
-	for k, v := range series.metric {
-		labelPair := metric.LabelPair{
-			Name:  k,
-			Value: v,
-		}
-		if set, ok := s.labelPairToFingerprints[labelPair]; ok {
-			set.Remove(*fp)
-			if len(set) == 0 {
-				delete(s.labelPairToFingerprints, labelPair)
-				s.dropLabelValue(k, v)
-			}
-		}
+	// If nothing was in memory, the metric must have been archived. Drop
+	// the archived metric if there are no persisted chunks left.
+	if !allDropped {
+		return
 	}
-	delete(s.fingerprintToSeries, *fp)
+	if err := s.persistence.DropArchivedMetric(fp); err != nil {
+		glog.Errorf("Error dropping archived metric for fingerprint %v: %v", fp, err)
+	}
 }
 
 func (s *memorySeriesStorage) Serve(started chan<- bool) {
@@ -376,78 +355,76 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
-	sets := []utility.Set{}
+	var result map[clientmodel.Fingerprint]struct{}
 	for _, matcher := range labelMatchers {
+		intersection := map[clientmodel.Fingerprint]struct{}{}
 		switch matcher.Type {
 		case metric.Equal:
-			set, ok := s.labelPairToFingerprints[metric.LabelPair{
-				Name:  matcher.Name,
-				Value: matcher.Value,
-			}]
-			if !ok {
+			fps, err := s.persistence.GetFingerprintsForLabelPair(
+				metric.LabelPair{
+					Name:  matcher.Name,
+					Value: matcher.Value,
+				},
+			)
+			if err != nil {
+				glog.Error("Error getting fingerprints for label pair: ", err)
+			}
+			if len(fps) == 0 {
 				return nil
 			}
-			sets = append(sets, set)
+			for _, fp := range fps {
+				if _, ok := result[fp]; ok || result == nil {
+					intersection[fp] = struct{}{}
+				}
+			}
 		default:
-			values := s.getLabelValuesForLabelName(matcher.Name)
+			values, err := s.persistence.GetLabelValuesForLabelName(matcher.Name)
+			if err != nil {
+				glog.Errorf("Error getting label values for label name %q: %v", matcher.Name, err)
+			}
 			matches := matcher.Filter(values)
 			if len(matches) == 0 {
 				return nil
 			}
-			set := utility.Set{}
 			for _, v := range matches {
-				subset, ok := s.labelPairToFingerprints[metric.LabelPair{
-					Name:  matcher.Name,
-					Value: v,
-				}]
-				if !ok {
-					return nil
+				fps, err := s.persistence.GetFingerprintsForLabelPair(
+					metric.LabelPair{
+						Name:  matcher.Name,
+						Value: v,
+					},
+				)
+				if err != nil {
+					glog.Error("Error getting fingerprints for label pair: ", err)
 				}
-				for fp := range subset {
-					set.Add(fp)
+				for _, fp := range fps {
+					if _, ok := result[fp]; ok || result == nil {
+						intersection[fp] = struct{}{}
+					}
 				}
 			}
-			sets = append(sets, set)
 		}
+		if len(intersection) == 0 {
+			return nil
+		}
+		result = intersection
 	}
 
-	setCount := len(sets)
-	if setCount == 0 {
-		return nil
+	fps := make(clientmodel.Fingerprints, 0, len(result))
+	for fp := range result {
+		fps = append(fps, fp)
 	}
-
-	base := sets[0]
-	for i := 1; i < setCount; i++ {
-		base = base.Intersection(sets[i])
-	}
-
-	fingerprints := clientmodel.Fingerprints{}
-	for _, e := range base.Elements() {
-		fingerprints = append(fingerprints, e.(clientmodel.Fingerprint))
-	}
-
-	return fingerprints
+	return fps
 }
 
 func (s *memorySeriesStorage) GetLabelValuesForLabelName(labelName clientmodel.LabelName) clientmodel.LabelValues {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
-	return s.getLabelValuesForLabelName(labelName)
-}
-
-func (s *memorySeriesStorage) getLabelValuesForLabelName(labelName clientmodel.LabelName) clientmodel.LabelValues {
-	set, ok := s.labelNameToLabelValues[labelName]
-	if !ok {
-		return nil
+	lvs, err := s.persistence.GetLabelValuesForLabelName(labelName)
+	if err != nil {
+		glog.Errorf("Error getting label values for label name %q: %v", labelName, err)
 	}
-
-	values := make(clientmodel.LabelValues, 0, len(set))
-	for e := range set {
-		val := e.(clientmodel.LabelValue)
-		values = append(values, val)
-	}
-	return values
+	return lvs
 }
 
 func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint) clientmodel.Metric {
@@ -455,15 +432,14 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 	defer s.mtx.RUnlock()
 
 	series, ok := s.fingerprintToSeries[fp]
-	if !ok {
-		return nil
+	if ok {
+		// TODO: Does this have to be a copy? Ask Julius!
+		return series.metric
 	}
-
-	metric := clientmodel.Metric{}
-	for label, value := range series.metric {
-		metric[label] = value
+	metric, err := s.persistence.GetArchivedMetric(fp)
+	if err != nil {
+		glog.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
 	}
-
 	return metric
 }
 

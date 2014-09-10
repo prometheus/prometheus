@@ -2,29 +2,27 @@ package index
 
 import (
 	"flag"
-	"os"
 	"path"
-	"sync"
 
-	"github.com/golang/glog"
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/local/codec"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 )
 
 const (
-	fingerprintToMetricDir     = "fingerprint_to_metric"
+	fingerprintToMetricDir     = "archived_fingerprint_to_metric"
+	fingerprintTimeRangeDir    = "archived_fingerprint_to_timerange"
 	labelNameToLabelValuesDir  = "labelname_to_labelvalues"
 	labelPairToFingerprintsDir = "labelpair_to_fingerprints"
-	fingerprintMembershipDir   = "fingerprint_membership"
 )
 
 var (
 	fingerprintToMetricCacheSize     = flag.Int("storage.fingerprintToMetricCacheSizeBytes", 25*1024*1024, "The size in bytes for the fingerprint to metric index cache.")
 	labelNameToLabelValuesCacheSize  = flag.Int("storage.labelNameToLabelValuesCacheSizeBytes", 25*1024*1024, "The size in bytes for the label name to label values index cache.")
 	labelPairToFingerprintsCacheSize = flag.Int("storage.labelPairToFingerprintsCacheSizeBytes", 25*1024*1024, "The size in bytes for the label pair to fingerprints index cache.")
-	fingerprintMembershipCacheSize   = flag.Int("storage.fingerprintMembershipCacheSizeBytes", 5*1024*1024, "The size in bytes for the metric membership index cache.")
+	fingerprintTimeRangeCacheSize    = flag.Int("storage.fingerprintTimeRangeCacheSizeBytes", 5*1024*1024, "The size in bytes for the metric time range index cache.")
 )
 
 // FingerprintMetricMapping is an in-memory map of fingerprints to metrics.
@@ -40,7 +38,7 @@ func (i *FingerprintMetricIndex) IndexBatch(mapping FingerprintMetricMapping) er
 	b := i.NewBatch()
 
 	for fp, m := range mapping {
-		b.Put(codableFingerprint(fp), codableMetric(m))
+		b.Put(codec.CodableFingerprint(fp), codec.CodableMetric(m))
 	}
 
 	return i.Commit(b)
@@ -51,30 +49,37 @@ func (i *FingerprintMetricIndex) UnindexBatch(mapping FingerprintMetricMapping) 
 	b := i.NewBatch()
 
 	for fp, _ := range mapping {
-		b.Delete(codableFingerprint(fp))
+		b.Delete(codec.CodableFingerprint(fp))
 	}
 
 	return i.Commit(b)
 }
 
 // Lookup looks up a metric by fingerprint.
-func (i *FingerprintMetricIndex) Lookup(fp clientmodel.Fingerprint) (m clientmodel.Metric, ok bool, err error) {
-	m = clientmodel.Metric{}
-	if ok, err := i.Get(codableFingerprint(fp), codableMetric(m)); !ok {
+func (i *FingerprintMetricIndex) Lookup(fp clientmodel.Fingerprint) (clientmodel.Metric, bool, error) {
+	m := codec.CodableMetric{}
+	if ok, err := i.Get(codec.CodableFingerprint(fp), &m); !ok {
 		return nil, false, nil
 	} else if err != nil {
 		return nil, false, err
 	}
 
-	return m, true, nil
+	return clientmodel.Metric(m), true, nil
 }
 
 // NewFingerprintMetricIndex returns a FingerprintMetricIndex
 // object ready to use.
-func NewFingerprintMetricIndex(db KeyValueStore) *FingerprintMetricIndex {
-	return &FingerprintMetricIndex{
-		KeyValueStore: db,
+func NewFingerprintMetricIndex(basePath string) (*FingerprintMetricIndex, error) {
+	fingerprintToMetricDB, err := NewLevelDB(LevelDBOptions{
+		Path:           path.Join(basePath, fingerprintToMetricDir),
+		CacheSizeBytes: *fingerprintToMetricCacheSize,
+	})
+	if err != nil {
+		return nil, err
 	}
+	return &FingerprintMetricIndex{
+		KeyValueStore: fingerprintToMetricDB,
+	}, nil
 }
 
 // LabelNameLabelValuesMapping is an in-memory map of label names to
@@ -93,9 +98,9 @@ func (i *LabelNameLabelValuesIndex) IndexBatch(b LabelNameLabelValuesMapping) er
 
 	for name, values := range b {
 		if len(values) == 0 {
-			batch.Delete(codableLabelName(name))
+			batch.Delete(codec.CodableLabelName(name))
 		} else {
-			batch.Put(codableLabelName(name), codableLabelValues(values))
+			batch.Put(codec.CodableLabelName(name), codec.CodableLabelValues(values))
 		}
 	}
 
@@ -104,7 +109,7 @@ func (i *LabelNameLabelValuesIndex) IndexBatch(b LabelNameLabelValuesMapping) er
 
 // Lookup looks up all label values for a given label name.
 func (i *LabelNameLabelValuesIndex) Lookup(l clientmodel.LabelName) (values clientmodel.LabelValues, ok bool, err error) {
-	ok, err = i.Get(codableLabelName(l), (*codableLabelValues)(&values))
+	ok, err = i.Get(codec.CodableLabelName(l), (*codec.CodableLabelValues)(&values))
 	if err != nil {
 		return nil, false, err
 	}
@@ -117,10 +122,17 @@ func (i *LabelNameLabelValuesIndex) Lookup(l clientmodel.LabelName) (values clie
 
 // NewLabelNameLabelValuesIndex returns a LabelNameLabelValuesIndex
 // ready to use.
-func NewLabelNameLabelValuesIndex(db KeyValueStore) *LabelNameLabelValuesIndex {
-	return &LabelNameLabelValuesIndex{
-		KeyValueStore: db,
+func NewLabelNameLabelValuesIndex(basePath string) (*LabelNameLabelValuesIndex, error) {
+	labelNameToLabelValuesDB, err := NewLevelDB(LevelDBOptions{
+		Path:           path.Join(basePath, labelNameToLabelValuesDir),
+		CacheSizeBytes: *labelNameToLabelValuesCacheSize,
+	})
+	if err != nil {
+		return nil, err
 	}
+	return &LabelNameLabelValuesIndex{
+		KeyValueStore: labelNameToLabelValuesDB,
+	}, nil
 }
 
 // LabelPairFingerprintsMapping is an in-memory map of label pairs to
@@ -139,9 +151,9 @@ func (i *LabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintsMapping) e
 
 	for pair, fps := range m {
 		if len(fps) == 0 {
-			batch.Delete(codableLabelPair(pair))
+			batch.Delete(codec.CodableLabelPair(pair))
 		} else {
-			batch.Put(codableLabelPair(pair), codableFingerprints(fps))
+			batch.Put(codec.CodableLabelPair(pair), codec.CodableFingerprints(fps))
 		}
 	}
 
@@ -149,8 +161,8 @@ func (i *LabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintsMapping) e
 }
 
 // Lookup looks up all fingerprints for a given label pair.
-func (i *LabelPairFingerprintIndex) Lookup(p *metric.LabelPair) (fps clientmodel.Fingerprints, ok bool, err error) {
-	ok, err = i.Get((*codableLabelPair)(p), (*codableFingerprints)(&fps))
+func (i *LabelPairFingerprintIndex) Lookup(p metric.LabelPair) (fps clientmodel.Fingerprints, ok bool, err error) {
+	ok, err = i.Get((codec.CodableLabelPair)(p), (*codec.CodableFingerprints)(&fps))
 	if !ok {
 		return nil, false, nil
 	}
@@ -163,102 +175,7 @@ func (i *LabelPairFingerprintIndex) Lookup(p *metric.LabelPair) (fps clientmodel
 
 // NewLabelPairFingerprintIndex returns a LabelPairFingerprintIndex
 // object ready to use.
-func NewLabelPairFingerprintIndex(db KeyValueStore) *LabelPairFingerprintIndex {
-	return &LabelPairFingerprintIndex{
-		KeyValueStore: db,
-	}
-}
-
-// FingerprintMembershipIndex models a database tracking the existence
-// of metrics by their fingerprints.
-type FingerprintMembershipIndex struct {
-	KeyValueStore
-}
-
-// IndexBatch indexes a batch of fingerprints.
-func (i *FingerprintMembershipIndex) IndexBatch(b FingerprintMetricMapping) error {
-	batch := i.NewBatch()
-
-	for fp, _ := range b {
-		batch.Put(codableFingerprint(fp), codableMembership{})
-	}
-
-	return i.Commit(batch)
-}
-
-// UnindexBatch unindexes a batch of fingerprints.
-func (i *FingerprintMembershipIndex) UnindexBatch(b FingerprintMetricMapping) error {
-	batch := i.NewBatch()
-
-	for fp, _ := range b {
-		batch.Delete(codableFingerprint(fp))
-	}
-
-	return i.Commit(batch)
-}
-
-// Has returns true if the given fingerprint is present.
-func (i *FingerprintMembershipIndex) Has(fp clientmodel.Fingerprint) (ok bool, err error) {
-	return i.KeyValueStore.Has(codableFingerprint(fp))
-}
-
-// NewFingerprintMembershipIndex returns a FingerprintMembershipIndex object
-// ready to use.
-func NewFingerprintMembershipIndex(db KeyValueStore) *FingerprintMembershipIndex {
-	return &FingerprintMembershipIndex{
-		KeyValueStore: db,
-	}
-}
-
-// TODO(julius): Currently unused, is it needed?
-// SynchronizedIndexer provides naive locking for any MetricIndexer.
-type SynchronizedIndexer struct {
-	mu sync.Mutex
-	i  MetricIndexer
-}
-
-// IndexMetrics calls IndexMetrics of the wrapped MetricIndexer after acquiring
-// a lock.
-func (i *SynchronizedIndexer) IndexMetrics(b FingerprintMetricMapping) error {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-
-	return i.i.IndexMetrics(b)
-}
-
-// diskIndexer is a MetricIndexer that keeps all indexes in levelDBs except the
-// fingerprint-to-metric index for non-archived metrics (which is kept in a
-// normal in-memory map, but serialized to disk at shutdown and deserialized at
-// startup).
-//
-// TODO: Talk about concurrency!
-type diskIndexer struct {
-	FingerprintToMetric     *FingerprintMetricIndex
-	LabelNameToLabelValues  *LabelNameLabelValuesIndex
-	LabelPairToFingerprints *LabelPairFingerprintIndex
-	FingerprintMembership   *FingerprintMembershipIndex
-}
-
-func NewDiskIndexer(basePath string) (MetricIndexer, error) {
-	err := os.MkdirAll(basePath, 0700)
-	if err != nil {
-		return nil, err
-	}
-
-	fingerprintToMetricDB, err := NewLevelDB(LevelDBOptions{
-		Path:           path.Join(basePath, fingerprintToMetricDir),
-		CacheSizeBytes: *fingerprintToMetricCacheSize,
-	})
-	if err != nil {
-		return nil, err
-	}
-	labelNameToLabelValuesDB, err := NewLevelDB(LevelDBOptions{
-		Path:           path.Join(basePath, labelNameToLabelValuesDir),
-		CacheSizeBytes: *labelNameToLabelValuesCacheSize,
-	})
-	if err != nil {
-		return nil, err
-	}
+func NewLabelPairFingerprintIndex(basePath string) (*LabelPairFingerprintIndex, error) {
 	labelPairToFingerprintsDB, err := NewLevelDB(LevelDBOptions{
 		Path:           path.Join(basePath, labelPairToFingerprintsDir),
 		CacheSizeBytes: *labelPairToFingerprintsCacheSize,
@@ -266,22 +183,50 @@ func NewDiskIndexer(basePath string) (MetricIndexer, error) {
 	if err != nil {
 		return nil, err
 	}
-	fingerprintMembershipDB, err := NewLevelDB(LevelDBOptions{
-		Path:           path.Join(basePath, fingerprintMembershipDir),
-		CacheSizeBytes: *fingerprintMembershipCacheSize,
+	return &LabelPairFingerprintIndex{
+		KeyValueStore: labelPairToFingerprintsDB,
+	}, nil
+}
+
+// FingerprintTimeRangeIndex models a database tracking the time ranges
+// of metrics by their fingerprints.
+type FingerprintTimeRangeIndex struct {
+	KeyValueStore
+}
+
+// UnindexBatch unindexes a batch of fingerprints.
+func (i *FingerprintTimeRangeIndex) UnindexBatch(b FingerprintMetricMapping) error {
+	batch := i.NewBatch()
+
+	for fp, _ := range b {
+		batch.Delete(codec.CodableFingerprint(fp))
+	}
+
+	return i.Commit(batch)
+}
+
+// Has returns true if the given fingerprint is present.
+func (i *FingerprintTimeRangeIndex) Has(fp clientmodel.Fingerprint) (ok bool, err error) {
+	return i.KeyValueStore.Has(codec.CodableFingerprint(fp))
+}
+
+// NewFingerprintTimeRangeIndex returns a FingerprintTimeRangeIndex object
+// ready to use.
+func NewFingerprintTimeRangeIndex(basePath string) (*FingerprintTimeRangeIndex, error) {
+	fingerprintTimeRangeDB, err := NewLevelDB(LevelDBOptions{
+		Path:           path.Join(basePath, fingerprintTimeRangeDir),
+		CacheSizeBytes: *fingerprintTimeRangeCacheSize,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &diskIndexer{
-		FingerprintToMetric:     NewFingerprintMetricIndex(fingerprintToMetricDB),
-		LabelNameToLabelValues:  NewLabelNameLabelValuesIndex(labelNameToLabelValuesDB),
-		LabelPairToFingerprints: NewLabelPairFingerprintIndex(labelPairToFingerprintsDB),
-		FingerprintMembership:   NewFingerprintMembershipIndex(fingerprintMembershipDB),
+	return &FingerprintTimeRangeIndex{
+		KeyValueStore: fingerprintTimeRangeDB,
 	}, nil
 }
 
-func findUnindexed(i *FingerprintMembershipIndex, b FingerprintMetricMapping) (FingerprintMetricMapping, error) {
+func findUnindexed(i *FingerprintTimeRangeIndex, b FingerprintMetricMapping) (FingerprintMetricMapping, error) {
+	// TODO: Move up? Need to include fp->ts map?
 	out := FingerprintMetricMapping{}
 
 	for fp, m := range b {
@@ -297,7 +242,8 @@ func findUnindexed(i *FingerprintMembershipIndex, b FingerprintMetricMapping) (F
 	return out, nil
 }
 
-func findIndexed(i *FingerprintMembershipIndex, b FingerprintMetricMapping) (FingerprintMetricMapping, error) {
+func findIndexed(i *FingerprintTimeRangeIndex, b FingerprintMetricMapping) (FingerprintMetricMapping, error) {
+	// TODO: Move up? Need to include fp->ts map?
 	out := FingerprintMetricMapping{}
 
 	for fp, m := range b {
@@ -314,6 +260,7 @@ func findIndexed(i *FingerprintMembershipIndex, b FingerprintMetricMapping) (Fin
 }
 
 func extendLabelNameToLabelValuesIndex(i *LabelNameLabelValuesIndex, b FingerprintMetricMapping) (LabelNameLabelValuesMapping, error) {
+	// TODO: Move up? Need to include fp->ts map?
 	collection := map[clientmodel.LabelName]utility.Set{}
 
 	for _, m := range b {
@@ -353,6 +300,7 @@ func extendLabelNameToLabelValuesIndex(i *LabelNameLabelValuesIndex, b Fingerpri
 }
 
 func reduceLabelNameToLabelValuesIndex(i *LabelNameLabelValuesIndex, m LabelPairFingerprintsMapping) (LabelNameLabelValuesMapping, error) {
+	// TODO: Move up? Need to include fp->ts map?
 	collection := map[clientmodel.LabelName]utility.Set{}
 
 	for lp, fps := range m {
@@ -393,6 +341,7 @@ func reduceLabelNameToLabelValuesIndex(i *LabelNameLabelValuesIndex, m LabelPair
 }
 
 func extendLabelPairIndex(i *LabelPairFingerprintIndex, b FingerprintMetricMapping, remove bool) (LabelPairFingerprintsMapping, error) {
+	// TODO: Move up? Need to include fp->ts map?
 	collection := map[metric.LabelPair]utility.Set{}
 
 	for fp, m := range b {
@@ -403,7 +352,7 @@ func extendLabelPairIndex(i *LabelPairFingerprintIndex, b FingerprintMetricMappi
 			}
 			set, ok := collection[pair]
 			if !ok {
-				baseFps, _, err := i.Lookup(&pair)
+				baseFps, _, err := i.Lookup(pair)
 				if err != nil {
 					return nil, err
 				}
@@ -438,10 +387,13 @@ func extendLabelPairIndex(i *LabelPairFingerprintIndex, b FingerprintMetricMappi
 	return batch, nil
 }
 
+// TODO: Move IndexMetrics and UndindexMetrics into storage.go.
+
+/*
 // IndexMetrics adds the facets of all unindexed metrics found in the given
 // FingerprintMetricMapping to the corresponding indices.
 func (i *diskIndexer) IndexMetrics(b FingerprintMetricMapping) error {
-	unindexed, err := findUnindexed(i.FingerprintMembership, b)
+	unindexed, err := findUnindexed(i.FingerprintTimeRange, b)
 	if err != nil {
 		return err
 	}
@@ -466,12 +418,12 @@ func (i *diskIndexer) IndexMetrics(b FingerprintMetricMapping) error {
 		return err
 	}
 
-	return i.FingerprintMembership.IndexBatch(unindexed)
+	return i.FingerprintTimeRange.IndexBatch(unindexed)
 }
 
 // UnindexMetrics implements MetricIndexer.
 func (i *diskIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
-	indexed, err := findIndexed(i.FingerprintMembership, b)
+	indexed, err := findIndexed(i.FingerprintTimeRange, b)
 	if err != nil {
 		return err
 	}
@@ -493,63 +445,6 @@ func (i *diskIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
 		return err
 	}
 
-	return i.FingerprintMembership.UnindexBatch(indexed)
+	return i.FingerprintTimeRange.UnindexBatch(indexed)
 }
-
-func (i *diskIndexer) ArchiveMetrics(fp clientmodel.Fingerprint, first, last clientmodel.Timestamp) error {
-	// TODO: implement.
-	return nil
-}
-
-// GetMetricForFingerprint implements MetricIndexer.
-func (i *diskIndexer) GetMetricForFingerprint(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
-	m, _, err := i.FingerprintToMetric.Lookup(fp)
-	return m, err
-}
-
-// GetFingerprintsForLabelPair implements MetricIndexer.
-func (i *diskIndexer) GetFingerprintsForLabelPair(ln clientmodel.LabelName, lv clientmodel.LabelValue) (clientmodel.Fingerprints, error) {
-	fps, _, err := i.LabelPairToFingerprints.Lookup(&metric.LabelPair{
-		Name:  ln,
-		Value: lv,
-	})
-	return fps, err
-}
-
-// GetLabelValuesForLabelName implements MetricIndexer.
-func (i *diskIndexer) GetLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
-	lvs, _, err := i.LabelNameToLabelValues.Lookup(ln)
-	return lvs, err
-}
-
-// HasFingerprint implements MetricIndexer.
-func (i *diskIndexer) HasFingerprint(fp clientmodel.Fingerprint) (bool, error) {
-	// TODO: modify.
-	return i.FingerprintMembership.Has(fp)
-}
-
-func (i *diskIndexer) HasArchivedFingerprint(clientmodel.Fingerprint) (present bool, first, last clientmodel.Timestamp, err error) {
-	// TODO: implement.
-	return false, 0, 0, nil
-}
-
-func (i *diskIndexer) Close() error {
-	var lastError error
-	if err := i.FingerprintToMetric.Close(); err != nil {
-		glog.Error("Error closing FingerprintToMetric index DB: ", err)
-		lastError = err
-	}
-	if err := i.LabelNameToLabelValues.Close(); err != nil {
-		glog.Error("Error closing LabelNameToLabelValues index DB: ", err)
-		lastError = err
-	}
-	if err := i.LabelPairToFingerprints.Close(); err != nil {
-		glog.Error("Error closing LabelPairToFingerprints index DB: ", err)
-		lastError = err
-	}
-	if err := i.FingerprintMembership.Close(); err != nil {
-		glog.Error("Error closing FingerprintMembership index DB: ", err)
-		lastError = err
-	}
-	return lastError
-}
+*/

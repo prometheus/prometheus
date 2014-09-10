@@ -1,4 +1,4 @@
-package index
+package codec
 
 import (
 	"testing"
@@ -6,13 +6,13 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-func newCodableFingerprint(fp int64) *codableFingerprint {
-	cfp := codableFingerprint(fp)
+func newCodableFingerprint(fp int64) *CodableFingerprint {
+	cfp := CodableFingerprint(fp)
 	return &cfp
 }
 
-func newCodableLabelName(ln string) *codableLabelName {
-	cln := codableLabelName(ln)
+func newCodableLabelName(ln string) *CodableLabelName {
+	cln := CodableLabelName(ln)
 	return &cln
 }
 
@@ -23,29 +23,29 @@ func TestCodec(t *testing.T) {
 		equal func(in, out codable) bool
 	}{
 		{
-			in: codableMetric{
+			in: CodableMetric{
 				"label_1": "value_2",
 				"label_2": "value_2",
 				"label_3": "value_3",
 			},
-			out: codableMetric{},
+			out: CodableMetric{},
 			equal: func(in, out codable) bool {
-				m1 := clientmodel.Metric(in.(codableMetric))
-				m2 := clientmodel.Metric(out.(codableMetric))
+				m1 := clientmodel.Metric(in.(CodableMetric))
+				m2 := clientmodel.Metric(out.(CodableMetric))
 				return m1.Equal(m2)
 			},
 		}, {
 			in:  newCodableFingerprint(12345),
 			out: newCodableFingerprint(0),
 			equal: func(in, out codable) bool {
-				return *in.(*codableFingerprint) == *out.(*codableFingerprint)
+				return *in.(*CodableFingerprint) == *out.(*CodableFingerprint)
 			},
 		}, {
-			in:  &codableFingerprints{1, 2, 56, 1234},
-			out: &codableFingerprints{},
+			in:  &CodableFingerprints{1, 2, 56, 1234},
+			out: &CodableFingerprints{},
 			equal: func(in, out codable) bool {
-				fps1 := *in.(*codableFingerprints)
-				fps2 := *out.(*codableFingerprints)
+				fps1 := *in.(*CodableFingerprints)
+				fps2 := *out.(*CodableFingerprints)
 				if len(fps1) != len(fps2) {
 					return false
 				}
@@ -57,30 +57,30 @@ func TestCodec(t *testing.T) {
 				return true
 			},
 		}, {
-			in: &codableLabelPair{
+			in: &CodableLabelPair{
 				Name:  "label_name",
 				Value: "label_value",
 			},
-			out: &codableLabelPair{},
+			out: &CodableLabelPair{},
 			equal: func(in, out codable) bool {
-				lp1 := *in.(*codableLabelPair)
-				lp2 := *out.(*codableLabelPair)
+				lp1 := *in.(*CodableLabelPair)
+				lp2 := *out.(*CodableLabelPair)
 				return lp1 == lp2
 			},
 		}, {
 			in:  newCodableLabelName("label_name"),
 			out: newCodableLabelName(""),
 			equal: func(in, out codable) bool {
-				ln1 := *in.(*codableLabelName)
-				ln2 := *out.(*codableLabelName)
+				ln1 := *in.(*CodableLabelName)
+				ln2 := *out.(*CodableLabelName)
 				return ln1 == ln2
 			},
 		}, {
-			in:  &codableLabelValues{"value_1", "value_2", "value_3"},
-			out: &codableLabelValues{},
+			in:  &CodableLabelValues{"value_1", "value_2", "value_3"},
+			out: &CodableLabelValues{},
 			equal: func(in, out codable) bool {
-				lvs1 := *in.(*codableLabelValues)
-				lvs2 := *out.(*codableLabelValues)
+				lvs1 := *in.(*CodableLabelValues)
+				lvs2 := *out.(*CodableLabelValues)
 				if len(lvs1) != len(lvs2) {
 					return false
 				}
@@ -92,12 +92,12 @@ func TestCodec(t *testing.T) {
 				return true
 			},
 		}, {
-			in:  &codableMembership{},
-			out: &codableMembership{},
+			in:  &CodableTimeRange{42, 2001},
+			out: &CodableTimeRange{},
 			equal: func(in, out codable) bool {
-				// We don't care about the membership value. Just test if the
-				// encoding/decoding works at all.
-				return true
+				ln1 := *in.(*CodableTimeRange)
+				ln2 := *out.(*CodableTimeRange)
+				return ln1 == ln2
 			},
 		},
 	}
