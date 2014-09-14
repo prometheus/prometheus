@@ -56,15 +56,9 @@ func (i *FingerprintMetricIndex) UnindexBatch(mapping FingerprintMetricMapping) 
 }
 
 // Lookup looks up a metric by fingerprint.
-func (i *FingerprintMetricIndex) Lookup(fp clientmodel.Fingerprint) (clientmodel.Metric, bool, error) {
-	m := codec.CodableMetric{}
-	if ok, err := i.Get(codec.CodableFingerprint(fp), &m); !ok {
-		return nil, false, nil
-	} else if err != nil {
-		return nil, false, err
-	}
-
-	return clientmodel.Metric(m), true, nil
+func (i *FingerprintMetricIndex) Lookup(fp clientmodel.Fingerprint) (metric clientmodel.Metric, ok bool, err error) {
+	ok, err = i.Get(codec.CodableFingerprint(fp), (*codec.CodableMetric)(&metric))
+	return
 }
 
 // NewFingerprintMetricIndex returns a FingerprintMetricIndex
@@ -110,14 +104,64 @@ func (i *LabelNameLabelValuesIndex) IndexBatch(b LabelNameLabelValuesMapping) er
 // Lookup looks up all label values for a given label name.
 func (i *LabelNameLabelValuesIndex) Lookup(l clientmodel.LabelName) (values clientmodel.LabelValues, ok bool, err error) {
 	ok, err = i.Get(codec.CodableLabelName(l), (*codec.CodableLabelValues)(&values))
-	if err != nil {
-		return nil, false, err
-	}
-	if !ok {
-		return nil, false, nil
-	}
+	return
+}
 
-	return values, true, nil
+func (i *LabelNameLabelValuesIndex) Extend(m clientmodel.Metric) error {
+	b := make(LabelNameLabelValuesMapping, len(m))
+	for ln, lv := range m {
+		baseLVs, _, err := i.Lookup(ln)
+		if err != nil {
+			return err
+		}
+		lvSet := utility.Set{}
+		for _, baseLV := range baseLVs {
+			lvSet.Add(baseLV)
+		}
+		lvSet.Add(lv)
+		if len(lvSet) == len(baseLVs) {
+			continue
+		}
+		lvs := make(clientmodel.LabelValues, 0, len(lvSet))
+		for v := range lvSet {
+			lvs = append(lvs, v.(clientmodel.LabelValue))
+		}
+		b[ln] = lvs
+	}
+	return i.IndexBatch(b)
+}
+
+func (i *LabelNameLabelValuesIndex) Reduce(m LabelPairFingerprintsMapping) error {
+	b := make(LabelNameLabelValuesMapping, len(m))
+	for lp, fps := range m {
+		if len(fps) != 0 {
+			continue
+		}
+		ln := lp.Name
+		lv := lp.Value
+		baseValues, ok := b[ln]
+		if !ok {
+			var err error
+			baseValues, _, err = i.Lookup(ln)
+			if err != nil {
+				return err
+			}
+		}
+		lvSet := utility.Set{}
+		for _, baseValue := range baseValues {
+			lvSet.Add(baseValue)
+		}
+		lvSet.Remove(lv)
+		if len(lvSet) == len(baseValues) {
+			continue
+		}
+		lvs := make(clientmodel.LabelValues, 0, len(lvSet))
+		for v := range lvSet {
+			lvs = append(lvs, v.(clientmodel.LabelValue))
+		}
+		b[ln] = lvs
+	}
+	return i.IndexBatch(b)
 }
 
 // NewLabelNameLabelValuesIndex returns a LabelNameLabelValuesIndex
@@ -163,14 +207,59 @@ func (i *LabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintsMapping) e
 // Lookup looks up all fingerprints for a given label pair.
 func (i *LabelPairFingerprintIndex) Lookup(p metric.LabelPair) (fps clientmodel.Fingerprints, ok bool, err error) {
 	ok, err = i.Get((codec.CodableLabelPair)(p), (*codec.CodableFingerprints)(&fps))
-	if !ok {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
+	return
+}
 
-	return fps, true, nil
+func (i *LabelPairFingerprintIndex) Extend(m clientmodel.Metric, fp clientmodel.Fingerprint) error {
+	b := make(LabelPairFingerprintsMapping, len(m))
+	for ln, lv := range m {
+		lp := metric.LabelPair{Name: ln, Value: lv}
+		baseFPs, _, err := i.Lookup(lp)
+		if err != nil {
+			return err
+		}
+		fpSet := utility.Set{}
+		for _, baseFP := range baseFPs {
+			fpSet.Add(baseFP)
+		}
+		fpSet.Add(fp)
+		if len(fpSet) == len(baseFPs) {
+			continue
+		}
+		fps := make(clientmodel.Fingerprints, 0, len(fpSet))
+		for f := range fpSet {
+			fps = append(fps, f.(clientmodel.Fingerprint))
+		}
+		b[lp] = fps
+
+	}
+	return i.IndexBatch(b)
+}
+
+func (i *LabelPairFingerprintIndex) Reduce(m clientmodel.Metric, fp clientmodel.Fingerprint) (LabelPairFingerprintsMapping, error) {
+	b := make(LabelPairFingerprintsMapping, len(m))
+	for ln, lv := range m {
+		lp := metric.LabelPair{Name: ln, Value: lv}
+		baseFPs, _, err := i.Lookup(lp)
+		if err != nil {
+			return nil, err
+		}
+		fpSet := utility.Set{}
+		for _, baseFP := range baseFPs {
+			fpSet.Add(baseFP)
+		}
+		fpSet.Remove(fp)
+		if len(fpSet) == len(baseFPs) {
+			continue
+		}
+		fps := make(clientmodel.Fingerprints, 0, len(fpSet))
+		for f := range fpSet {
+			fps = append(fps, f.(clientmodel.Fingerprint))
+		}
+		b[lp] = fps
+
+	}
+	return b, i.IndexBatch(b)
 }
 
 // NewLabelPairFingerprintIndex returns a LabelPairFingerprintIndex
@@ -194,15 +283,11 @@ type FingerprintTimeRangeIndex struct {
 	KeyValueStore
 }
 
-// UnindexBatch unindexes a batch of fingerprints.
-func (i *FingerprintTimeRangeIndex) UnindexBatch(b FingerprintMetricMapping) error {
-	batch := i.NewBatch()
-
-	for fp, _ := range b {
-		batch.Delete(codec.CodableFingerprint(fp))
-	}
-
-	return i.Commit(batch)
+// Lookup returns the time range for the given fingerprint.
+func (i *FingerprintTimeRangeIndex) Lookup(fp clientmodel.Fingerprint) (firstTime, lastTime clientmodel.Timestamp, ok bool, err error) {
+	var tr codec.CodableTimeRange
+	ok, err = i.Get(codec.CodableFingerprint(fp), &tr)
+	return tr.First, tr.Last, ok, err
 }
 
 // Has returns true if the given fingerprint is present.
@@ -224,227 +309,3 @@ func NewFingerprintTimeRangeIndex(basePath string) (*FingerprintTimeRangeIndex, 
 		KeyValueStore: fingerprintTimeRangeDB,
 	}, nil
 }
-
-func findUnindexed(i *FingerprintTimeRangeIndex, b FingerprintMetricMapping) (FingerprintMetricMapping, error) {
-	// TODO: Move up? Need to include fp->ts map?
-	out := FingerprintMetricMapping{}
-
-	for fp, m := range b {
-		has, err := i.Has(fp)
-		if err != nil {
-			return nil, err
-		}
-		if !has {
-			out[fp] = m
-		}
-	}
-
-	return out, nil
-}
-
-func findIndexed(i *FingerprintTimeRangeIndex, b FingerprintMetricMapping) (FingerprintMetricMapping, error) {
-	// TODO: Move up? Need to include fp->ts map?
-	out := FingerprintMetricMapping{}
-
-	for fp, m := range b {
-		has, err := i.Has(fp)
-		if err != nil {
-			return nil, err
-		}
-		if has {
-			out[fp] = m
-		}
-	}
-
-	return out, nil
-}
-
-func extendLabelNameToLabelValuesIndex(i *LabelNameLabelValuesIndex, b FingerprintMetricMapping) (LabelNameLabelValuesMapping, error) {
-	// TODO: Move up? Need to include fp->ts map?
-	collection := map[clientmodel.LabelName]utility.Set{}
-
-	for _, m := range b {
-		for l, v := range m {
-			set, ok := collection[l]
-			if !ok {
-				baseValues, _, err := i.Lookup(l)
-				if err != nil {
-					return nil, err
-				}
-
-				set = utility.Set{}
-
-				for _, baseValue := range baseValues {
-					set.Add(baseValue)
-				}
-
-				collection[l] = set
-			}
-
-			set.Add(v)
-		}
-	}
-
-	batch := LabelNameLabelValuesMapping{}
-	for l, set := range collection {
-		values := make(clientmodel.LabelValues, 0, len(set))
-		for e := range set {
-			val := e.(clientmodel.LabelValue)
-			values = append(values, val)
-		}
-
-		batch[l] = values
-	}
-
-	return batch, nil
-}
-
-func reduceLabelNameToLabelValuesIndex(i *LabelNameLabelValuesIndex, m LabelPairFingerprintsMapping) (LabelNameLabelValuesMapping, error) {
-	// TODO: Move up? Need to include fp->ts map?
-	collection := map[clientmodel.LabelName]utility.Set{}
-
-	for lp, fps := range m {
-		if len(fps) != 0 {
-			continue
-		}
-
-		set, ok := collection[lp.Name]
-		if !ok {
-			baseValues, _, err := i.Lookup(lp.Name)
-			if err != nil {
-				return nil, err
-			}
-
-			set = utility.Set{}
-
-			for _, baseValue := range baseValues {
-				set.Add(baseValue)
-			}
-
-			collection[lp.Name] = set
-		}
-
-		set.Remove(lp.Value)
-	}
-
-	batch := LabelNameLabelValuesMapping{}
-	for l, set := range collection {
-		values := make(clientmodel.LabelValues, 0, len(set))
-		for e := range set {
-			val := e.(clientmodel.LabelValue)
-			values = append(values, val)
-		}
-
-		batch[l] = values
-	}
-	return batch, nil
-}
-
-func extendLabelPairIndex(i *LabelPairFingerprintIndex, b FingerprintMetricMapping, remove bool) (LabelPairFingerprintsMapping, error) {
-	// TODO: Move up? Need to include fp->ts map?
-	collection := map[metric.LabelPair]utility.Set{}
-
-	for fp, m := range b {
-		for n, v := range m {
-			pair := metric.LabelPair{
-				Name:  n,
-				Value: v,
-			}
-			set, ok := collection[pair]
-			if !ok {
-				baseFps, _, err := i.Lookup(pair)
-				if err != nil {
-					return nil, err
-				}
-
-				set = utility.Set{}
-				for _, baseFp := range baseFps {
-					set.Add(baseFp)
-				}
-
-				collection[pair] = set
-			}
-
-			if remove {
-				set.Remove(fp)
-			} else {
-				set.Add(fp)
-			}
-		}
-	}
-
-	batch := LabelPairFingerprintsMapping{}
-
-	for pair, set := range collection {
-		fps := batch[pair]
-		for element := range set {
-			fp := element.(clientmodel.Fingerprint)
-			fps = append(fps, fp)
-		}
-		batch[pair] = fps
-	}
-
-	return batch, nil
-}
-
-// TODO: Move IndexMetrics and UndindexMetrics into storage.go.
-
-/*
-// IndexMetrics adds the facets of all unindexed metrics found in the given
-// FingerprintMetricMapping to the corresponding indices.
-func (i *diskIndexer) IndexMetrics(b FingerprintMetricMapping) error {
-	unindexed, err := findUnindexed(i.FingerprintTimeRange, b)
-	if err != nil {
-		return err
-	}
-
-	labelNames, err := extendLabelNameToLabelValuesIndex(i.LabelNameToLabelValues, unindexed)
-	if err != nil {
-		return err
-	}
-	if err := i.LabelNameToLabelValues.IndexBatch(labelNames); err != nil {
-		return err
-	}
-
-	labelPairs, err := extendLabelPairIndex(i.LabelPairToFingerprints, unindexed, false)
-	if err != nil {
-		return err
-	}
-	if err := i.LabelPairToFingerprints.IndexBatch(labelPairs); err != nil {
-		return err
-	}
-
-	if err := i.FingerprintToMetric.IndexBatch(unindexed); err != nil {
-		return err
-	}
-
-	return i.FingerprintTimeRange.IndexBatch(unindexed)
-}
-
-// UnindexMetrics implements MetricIndexer.
-func (i *diskIndexer) UnindexMetrics(b FingerprintMetricMapping) error {
-	indexed, err := findIndexed(i.FingerprintTimeRange, b)
-	if err != nil {
-		return err
-	}
-
-	labelPairs, err := extendLabelPairIndex(i.LabelPairToFingerprints, indexed, true)
-	if err != nil {
-		return err
-	}
-	if err := i.LabelPairToFingerprints.IndexBatch(labelPairs); err != nil {
-		return err
-	}
-
-	labelNames, err := reduceLabelNameToLabelValuesIndex(i.LabelNameToLabelValues, labelPairs)
-	if err := i.LabelNameToLabelValues.IndexBatch(labelNames); err != nil {
-		return err
-	}
-
-	if err := i.FingerprintToMetric.UnindexBatch(indexed); err != nil {
-		return err
-	}
-
-	return i.FingerprintTimeRange.UnindexBatch(indexed)
-}
-*/

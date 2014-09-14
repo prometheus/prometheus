@@ -23,16 +23,16 @@ func TestCodec(t *testing.T) {
 		equal func(in, out codable) bool
 	}{
 		{
-			in: CodableMetric{
+			in: &CodableMetric{
 				"label_1": "value_2",
 				"label_2": "value_2",
 				"label_3": "value_3",
 			},
-			out: CodableMetric{},
+			out: &CodableMetric{},
 			equal: func(in, out codable) bool {
-				m1 := clientmodel.Metric(in.(CodableMetric))
-				m2 := clientmodel.Metric(out.(CodableMetric))
-				return m1.Equal(m2)
+				m1 := (*clientmodel.Metric)(in.(*CodableMetric))
+				m2 := (*clientmodel.Metric)(out.(*CodableMetric))
+				return m1.Equal(*m2)
 			},
 		}, {
 			in:  newCodableFingerprint(12345),

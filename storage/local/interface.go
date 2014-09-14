@@ -75,14 +75,14 @@ type Persistence interface {
 
 	// IndexMetric indexes the given metric for the needs of
 	// GetFingerprintsForLabelPair and GetLabelValuesForLabelName.
-	IndexMetric(clientmodel.Metric) error
+	IndexMetric(clientmodel.Metric, clientmodel.Fingerprint) error
 	// UnindexMetric removes references to the given metric from the indexes
 	// used for GetFingerprintsForLabelPair and
 	// GetLabelValuesForLabelName. The index of fingerprints to archived
 	// metrics is not affected by this method. (In fact, never call this
 	// method for an archived metric. To drop an archived metric, call
 	// DropArchivedFingerprint.)
-	UnindexMetric(clientmodel.Metric) error
+	UnindexMetric(clientmodel.Metric, clientmodel.Fingerprint) error
 
 	// ArchiveMetric persists the mapping of the given fingerprint to the
 	// given metric, together with the first and last timestamp of the

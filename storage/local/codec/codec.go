@@ -266,15 +266,15 @@ func (vs *CodableLabelValues) UnmarshalBinary(buf []byte) error {
 }
 
 type CodableTimeRange struct {
-	first, last clientmodel.Timestamp
+	First, Last clientmodel.Timestamp
 }
 
 func (tr CodableTimeRange) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
-	if err := EncodeVarint(buf, int64(tr.first)); err != nil {
+	if err := EncodeVarint(buf, int64(tr.First)); err != nil {
 		return nil, err
 	}
-	if err := EncodeVarint(buf, int64(tr.last)); err != nil {
+	if err := EncodeVarint(buf, int64(tr.Last)); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -290,7 +290,7 @@ func (tr *CodableTimeRange) UnmarshalBinary(buf []byte) error {
 	if err != nil {
 		return err
 	}
-	tr.first = clientmodel.Timestamp(first)
-	tr.last = clientmodel.Timestamp(last)
+	tr.First = clientmodel.Timestamp(first)
+	tr.Last = clientmodel.Timestamp(last)
 	return nil
 }

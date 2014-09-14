@@ -401,44 +401,80 @@ func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clie
 	return false, nil
 }
 
-func (d *diskPersistence) IndexMetric(m clientmodel.Metric) error {
-	// TODO: Implement. Possibly in a queue (which needs to be drained before shutdown).
-	return nil
+func (d *diskPersistence) IndexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) error {
+	// TODO: Don't do it directly, but add it to a queue (which needs to be
+	// drained before shutdown). Queuing would make this asynchronously, and
+	// then batches could be created easily.
+	if err := d.labelNameToLabelValues.Extend(m); err != nil {
+		return err
+	}
+	return d.labelPairToFingerprints.Extend(m, fp)
 }
 
-func (d *diskPersistence) UnindexMetric(m clientmodel.Metric) error {
-	// TODO: Implement. Possibly in a queue (which needs to be drained before shutdown).
-	return nil
+func (d *diskPersistence) UnindexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) error {
+	// TODO: Don't do it directly, but add it to a queue (which needs to be
+	// drained before shutdown). Queuing would make this asynchronously, and
+	// then batches could be created easily.
+	labelPairs, err := d.labelPairToFingerprints.Reduce(m, fp)
+	if err != nil {
+		return err
+	}
+	return d.labelNameToLabelValues.Reduce(labelPairs)
 }
 
 func (d *diskPersistence) ArchiveMetric(
-	fingerprint clientmodel.Fingerprint, metric clientmodel.Metric,
-	firstTime, lastTime clientmodel.Timestamp,
+	// TODO: Two step process, make sure this happens atomically.
+	fp clientmodel.Fingerprint, m clientmodel.Metric, first, last clientmodel.Timestamp,
 ) error {
-	// TODO: Implement.
+	if err := d.archivedFingerprintToMetrics.Put(codec.CodableFingerprint(fp), codec.CodableMetric(m)); err != nil {
+		return err
+	}
+	if err := d.archivedFingerprintToTimeRange.Put(codec.CodableFingerprint(fp), codec.CodableTimeRange{First: first, Last: last}); err != nil {
+		return err
+	}
 	return nil
 }
 
-func (d *diskPersistence) HasArchivedMetric(clientmodel.Fingerprint) (
+func (d *diskPersistence) HasArchivedMetric(fp clientmodel.Fingerprint) (
 	hasMetric bool, firstTime, lastTime clientmodel.Timestamp, err error,
 ) {
-	// TODO: Implement.
+	firstTime, lastTime, hasMetric, err = d.archivedFingerprintToTimeRange.Lookup(fp)
 	return
 }
 
-func (d *diskPersistence) GetArchivedMetric(clientmodel.Fingerprint) (clientmodel.Metric, error) {
-	// TODO: Implement.
-	return nil, nil
+func (d *diskPersistence) GetArchivedMetric(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
+	metric, _, err := d.archivedFingerprintToMetrics.Lookup(fp)
+	return metric, err
 }
 
-func (d *diskPersistence) DropArchivedMetric(clientmodel.Fingerprint) error {
-	// TODO: Implement. Unindex after drop!
-	return nil
+func (d *diskPersistence) DropArchivedMetric(fp clientmodel.Fingerprint) error {
+	// TODO: Multi-step process, make sure this happens atomically.
+	metric, err := d.GetArchivedMetric(fp)
+	if err != nil || metric == nil {
+		return err
+	}
+	if err := d.archivedFingerprintToMetrics.Delete(codec.CodableFingerprint(fp)); err != nil {
+		return err
+	}
+	if err := d.archivedFingerprintToTimeRange.Delete(codec.CodableFingerprint(fp)); err != nil {
+		return err
+	}
+	return d.UnindexMetric(metric, fp)
 }
 
-func (d *diskPersistence) UnarchiveMetric(clientmodel.Fingerprint) (bool, error) {
-	// TODO: Implement.
-	return false, nil
+func (d *diskPersistence) UnarchiveMetric(fp clientmodel.Fingerprint) (bool, error) {
+	// TODO: Multi-step process, make sure this happens atomically.
+	has, err := d.archivedFingerprintToTimeRange.Has(fp)
+	if err != nil || !has {
+		return false, err
+	}
+	if err := d.archivedFingerprintToMetrics.Delete(codec.CodableFingerprint(fp)); err != nil {
+		return false, err
+	}
+	if err := d.archivedFingerprintToTimeRange.Delete(codec.CodableFingerprint(fp)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (d *diskPersistence) Close() error {

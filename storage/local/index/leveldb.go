@@ -53,7 +53,7 @@ func (l *LevelDB) Close() error {
 func (l *LevelDB) Get(key encoding.BinaryMarshaler, value encoding.BinaryUnmarshaler) (bool, error) {
 	k, err := key.MarshalBinary()
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 	raw, err := l.storage.Get(k, l.readOpts)
 	if err == leveldb.ErrNotFound {
