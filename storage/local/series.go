@@ -158,20 +158,21 @@ func (s *memorySeries) add(v *metric.SamplePair, persistQueue chan *persistReque
 	}
 }
 
-func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) {
+func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	// For now, always drop the entire range from oldest to t.
 	for _, cd := range s.chunkDescs {
 		if !cd.lastTime().Before(t) {
-			break
+			return false
 		}
 		if cd.chunk == nil {
 			continue
 		}
 		cd.evictOnUnpin()
 	}
+	return true
 }
 
 // purgeOlderThan returns true if all chunks have been purged.
@@ -345,6 +346,14 @@ func (s *memorySeries) values() metric.Values {
 		}
 	}
 	return values
+}
+
+func (s *memorySeries) firstTime() clientmodel.Timestamp {
+	return s.chunkDescs[0].firstTime()
+}
+
+func (s *memorySeries) lastTime() clientmodel.Timestamp {
+	return s.head().lastTime()
 }
 
 func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.Values {

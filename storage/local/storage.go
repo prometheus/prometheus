@@ -170,8 +170,19 @@ func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
-	for _, series := range s.fingerprintToSeries {
-		series.evictOlderThan(clientmodel.TimestampFromTime(time.Now()).Add(-1 * ttl))
+	for fp, series := range s.fingerprintToSeries {
+		if series.evictOlderThan(clientmodel.TimestampFromTime(time.Now()).Add(-1 * ttl)) {
+			if err := s.persistence.ArchiveMetric(
+				fp, series.metric, series.firstTime(), series.lastTime(),
+			); err != nil {
+				glog.Errorf("Error archiving metric %v: %v", series.metric, err)
+			}
+			delete(s.fingerprintToSeries, fp)
+			s.persistQueue <- &persistRequest{
+				fingerprint: fp,
+				chunkDesc:   series.head(),
+			}
+		}
 	}
 }
 
@@ -436,8 +447,13 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 
 	series, ok := s.fingerprintToSeries[fp]
 	if ok {
-		// TODO: Does this have to be a copy? Ask Julius!
-		return series.metric
+		// Copy required here because caller might mutate the returned
+		// metric.
+		m := make(clientmodel.Metric, len(series.metric))
+		for ln, lv := range series.metric {
+			m[ln] = lv
+		}
+		return m
 	}
 	metric, err := s.persistence.GetArchivedMetric(fp)
 	if err != nil {
