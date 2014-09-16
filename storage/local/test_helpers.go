@@ -1,4 +1,4 @@
-package storage_ng
+package local
 
 import (
 	"testing"
@@ -17,6 +17,9 @@ func (t *testStorageCloser) Close() {
 	t.directory.Close()
 }
 
+// NewTestStorage creates a storage instance backed by files in a temporary
+// directory. The returned storage is already in serving state. Upon closing the
+// returned test.Closer, the temporary directory is cleaned up.
 func NewTestStorage(t testing.TB) (Storage, test.Closer) {
 	directory := test.NewTemporaryDirectory("test_storage", t)
 	persistence, err := NewDiskPersistence(directory.Path(), 1024)

@@ -118,11 +118,11 @@ func (rule *AlertingRule) Name() string {
 	return rule.name
 }
 
-func (rule *AlertingRule) EvalRaw(timestamp clientmodel.Timestamp, storage storage_ng.Storage) (ast.Vector, error) {
+func (rule *AlertingRule) EvalRaw(timestamp clientmodel.Timestamp, storage local.Storage) (ast.Vector, error) {
 	return ast.EvalVectorInstant(rule.Vector, timestamp, storage, stats.NewTimerGroup())
 }
 
-func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage storage_ng.Storage) (ast.Vector, error) {
+func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage local.Storage) (ast.Vector, error) {
 	// Get the raw value of the rule expression.
 	exprResult, err := rule.EvalRaw(timestamp, storage)
 	if err != nil {

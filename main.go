@@ -71,7 +71,7 @@ type prometheus struct {
 	ruleManager     manager.RuleManager
 	targetManager   retrieval.TargetManager
 	notifications   chan notification.NotificationReqs
-	storage         storage_ng.Storage
+	storage         local.Storage
 	remoteTSDBQueue *remote.TSDBQueueManager
 
 	closeOnce sync.Once
@@ -137,20 +137,19 @@ func main() {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	persistence, err := storage_ng.NewDiskPersistence(*metricsStoragePath, 1024)
+	persistence, err := local.NewDiskPersistence(*metricsStoragePath, 1024)
 	if err != nil {
 		glog.Fatal("Error opening disk persistence: ", err)
 	}
-	defer persistence.Close()
 
-	o := &storage_ng.MemorySeriesStorageOptions{
+	o := &local.MemorySeriesStorageOptions{
 		Persistence:                persistence,
 		MemoryEvictionInterval:     *memoryEvictionInterval,
 		MemoryRetentionPeriod:      *memoryRetentionPeriod,
 		PersistencePurgeInterval:   *storagePurgeInterval,
 		PersistenceRetentionPeriod: *storageRetentionPeriod,
 	}
-	memStorage, err := storage_ng.NewMemorySeriesStorage(o)
+	memStorage, err := local.NewMemorySeriesStorage(o)
 	if err != nil {
 		glog.Fatal("Error opening memory series storage: ", err)
 	}

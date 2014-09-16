@@ -1,4 +1,4 @@
-package storage_ng
+package local
 
 import (
 	"sort"
@@ -287,7 +287,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 		if len(lvs) != len(outLvs) {
 			t.Errorf("%d. different number of label values. Got: %d; want %d", i, len(outLvs), len(lvs))
 		}
-		for j, _ := range lvs {
+		for j := range lvs {
 			if lvs[j] != outLvs[j] {
 				t.Errorf("%d.%d. label values don't match. Got: %s; want %s", i, j, outLvs[j], lvs[j])
 			}
@@ -307,7 +307,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 		if len(fps) != len(outFps) {
 			t.Errorf("%d. %v: different number of fingerprints. Got: %d; want %d", i, lp, len(outFps), len(fps))
 		}
-		for j, _ := range fps {
+		for j := range fps {
 			if fps[j] != outFps[j] {
 				t.Errorf("%d.%d. %v: fingerprints don't match. Got: %d; want %d", i, j, lp, outFps[j], fps[j])
 			}

@@ -32,7 +32,7 @@ var (
 )
 
 type ConsolesHandler struct {
-	Storage storage_ng.Storage
+	Storage local.Storage
 }
 
 func (h *ConsolesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

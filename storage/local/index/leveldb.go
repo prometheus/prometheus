@@ -16,11 +16,14 @@ type LevelDB struct {
 	writeOpts *opt.WriteOptions
 }
 
+// LevelDBOptions provides options for a LevelDB.
 type LevelDBOptions struct {
-	Path           string
+	Path           string // Base path to store files.
 	CacheSizeBytes int
 }
 
+// NewLevelDB returns a newly allocated LevelDB-backed KeyValueStore ready to
+// use.
 func NewLevelDB(o LevelDBOptions) (KeyValueStore, error) {
 	options := &opt.Options{
 		Compression: opt.SnappyCompression,
@@ -40,16 +43,19 @@ func NewLevelDB(o LevelDBOptions) (KeyValueStore, error) {
 	}, nil
 }
 
+// NewBatch implements KeyValueStore.
 func (l *LevelDB) NewBatch() Batch {
 	return &LevelDBBatch{
 		batch: &leveldb.Batch{},
 	}
 }
 
+// Close implements KeyValueStore.
 func (l *LevelDB) Close() error {
 	return l.storage.Close()
 }
 
+// Get implements KeyValueStore.
 func (l *LevelDB) Get(key encoding.BinaryMarshaler, value encoding.BinaryUnmarshaler) (bool, error) {
 	k, err := key.MarshalBinary()
 	if err != nil {
@@ -68,10 +74,12 @@ func (l *LevelDB) Get(key encoding.BinaryMarshaler, value encoding.BinaryUnmarsh
 	return true, value.UnmarshalBinary(raw)
 }
 
+// Has implements KeyValueStore.
 func (l *LevelDB) Has(key encoding.BinaryMarshaler) (has bool, err error) {
 	return l.Get(key, nil)
 }
 
+// Delete implements KeyValueStore.
 func (l *LevelDB) Delete(key encoding.BinaryMarshaler) error {
 	k, err := key.MarshalBinary()
 	if err != nil {
@@ -80,6 +88,7 @@ func (l *LevelDB) Delete(key encoding.BinaryMarshaler) error {
 	return l.storage.Delete(k, l.writeOpts)
 }
 
+// Put implements KeyValueStore.
 func (l *LevelDB) Put(key, value encoding.BinaryMarshaler) error {
 	k, err := key.MarshalBinary()
 	if err != nil {
@@ -92,6 +101,7 @@ func (l *LevelDB) Put(key, value encoding.BinaryMarshaler) error {
 	return l.storage.Put(k, v, l.writeOpts)
 }
 
+// Commit implements KeyValueStore.
 func (l *LevelDB) Commit(b Batch) error {
 	return l.storage.Write(b.(*LevelDBBatch).batch, l.writeOpts)
 }
@@ -101,6 +111,7 @@ type LevelDBBatch struct {
 	batch *leveldb.Batch
 }
 
+// Put implements Batch.
 func (b *LevelDBBatch) Put(key, value encoding.BinaryMarshaler) error {
 	k, err := key.MarshalBinary()
 	if err != nil {
@@ -114,6 +125,7 @@ func (b *LevelDBBatch) Put(key, value encoding.BinaryMarshaler) error {
 	return nil
 }
 
+// Delete implements Batch.
 func (b *LevelDBBatch) Delete(key encoding.BinaryMarshaler) error {
 	k, err := key.MarshalBinary()
 	if err != nil {
@@ -123,6 +135,7 @@ func (b *LevelDBBatch) Delete(key encoding.BinaryMarshaler) error {
 	return nil
 }
 
+// Reset implements Batch.
 func (b *LevelDBBatch) Reset() {
 	b.batch.Reset()
 }

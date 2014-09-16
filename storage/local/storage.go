@@ -1,6 +1,8 @@
-package storage_ng
+// Package local contains the local time series storage used by Prometheus.
+package local
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -39,14 +41,19 @@ type memorySeriesStorage struct {
 	persistence  Persistence
 }
 
+// MemorySeriesStorageOptions contains options needed by
+// NewMemorySeriesStorage. It is not safe to leave any of those at their zero
+// values.
 type MemorySeriesStorageOptions struct {
-	Persistence                Persistence
-	MemoryEvictionInterval     time.Duration
-	MemoryRetentionPeriod      time.Duration
-	PersistencePurgeInterval   time.Duration
-	PersistenceRetentionPeriod time.Duration
+	Persistence                Persistence   // Used to persist storage content across restarts.
+	MemoryEvictionInterval     time.Duration // How often to check for memory eviction.
+	MemoryRetentionPeriod      time.Duration // Chunks at least that old are evicted from memory.
+	PersistencePurgeInterval   time.Duration // How often to check for purging.
+	PersistenceRetentionPeriod time.Duration // Chunks at least that old are purged.
 }
 
+// NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
+// has to be called to start the storage.
 func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 	glog.Info("Loading series map and head chunks...")
 	fingerprintToSeries, err := o.Persistence.LoadSeriesMapAndHeads()
@@ -122,8 +129,10 @@ func (s *memorySeriesStorage) getOrCreateSeries(m clientmodel.Metric) *memorySer
 			// The series existed before, had been archived at some
 			// point, and has now been unarchived, i.e. it has
 			// chunks on disk. Set chunkDescsLoaded accordingly so
-			// that they will be looked at later.
+			// that they will be looked at later. Also, an
+			// unarchived series comes with a persisted head chunk.
 			series.chunkDescsLoaded = false
+			series.headChunkPersisted = true
 		} else {
 			// This was a genuinely new series, so index the metric.
 			if err := s.persistence.IndexMetric(m, fp); err != nil {
@@ -145,12 +154,27 @@ func (s *memorySeriesStorage) preloadChunksAtTime(fp clientmodel.Fingerprint, ts
 */
 
 func (s *memorySeriesStorage) preloadChunksForRange(fp clientmodel.Fingerprint, from clientmodel.Timestamp, through clientmodel.Timestamp) (chunkDescs, error) {
+	stalenessDelta := 300 * time.Second // TODO: Turn into parameter.
+
 	s.mtx.RLock()
 	series, ok := s.fingerprintToSeries[fp]
 	s.mtx.RUnlock()
 
 	if !ok {
-		panic("requested preload for non-existent series")
+		has, first, last, err := s.persistence.HasArchivedMetric(fp)
+		if err != nil {
+			return nil, err
+		}
+		if !has {
+			return nil, fmt.Errorf("requested preload for non-existent series %v", fp)
+		}
+		if from.Add(-stalenessDelta).Before(last) && through.Add(stalenessDelta).After(first) {
+			metric, err := s.persistence.GetArchivedMetric(fp)
+			if err != nil {
+				return nil, err
+			}
+			series = s.getOrCreateSeries(metric)
+		}
 	}
 	return series.preloadChunksForRange(from, through, s.persistence)
 }
@@ -195,7 +219,6 @@ func recordPersist(start time.Time, err error) {
 }
 
 func (s *memorySeriesStorage) handlePersistQueue() {
-	// TODO: Perhaps move this into Persistence?
 	for req := range s.persistQueue {
 		// TODO: Make this thread-safe?
 		persistQueueLength.Set(float64(len(s.persistQueue)))
@@ -266,13 +289,20 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 			}
 			s.mtx.RUnlock()
 
+			ts := clientmodel.TimestampFromTime(time.Now()).Add(-1 * s.persistenceRetentionPeriod)
+
+			// TODO: Add archived fps:
+			// - Add iterator interface for KeyValueStore.
+			// - Iterate over s.persistence.archivedFingerprintToTimeRange.
+			// - If timeRange extends before ts, add fp to fps.
+
 			for _, fp := range fps {
 				select {
 				case <-stop:
 					glog.Info("Interrupted running series purge.")
 					return
 				default:
-					s.purgeSeries(fp)
+					s.purgeSeries(fp, ts)
 				}
 			}
 			glog.Info("Done purging old series data.")
@@ -283,9 +313,7 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 // purgeSeries purges chunks older than persistenceRetentionPeriod from a
 // series. If the series contains no chunks after the purge, it is dropped
 // entirely.
-func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint) {
-	ts := clientmodel.TimestampFromTime(time.Now()).Add(-1 * s.persistenceRetentionPeriod)
-
+func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) {
 	s.mtx.Lock()
 	// TODO: This is a lock FAR to coarse! However, we cannot lock using the
 	// memorySeries since we might have none (for series that are on disk
@@ -303,14 +331,14 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint) {
 	defer s.mtx.Unlock()
 
 	// First purge persisted chunks. We need to do that anyway.
-	allDropped, err := s.persistence.DropChunks(fp, ts)
+	allDropped, err := s.persistence.DropChunks(fp, beforeTime)
 	if err != nil {
 		glog.Error("Error purging persisted chunks: ", err)
 	}
 
 	// Purge chunks from memory accordingly.
 	if series, ok := s.fingerprintToSeries[fp]; ok {
-		if series.purgeOlderThan(ts) {
+		if series.purgeOlderThan(beforeTime) {
 			delete(s.fingerprintToSeries, fp)
 			if err := s.persistence.UnindexMetric(series.metric, fp); err != nil {
 				glog.Errorf("Error unindexing metric %v: %v", series.metric, err)

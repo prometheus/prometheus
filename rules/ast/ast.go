@@ -25,11 +25,11 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
-var defaultStalenessDelta = flag.Duration("defaultStalenessDelta", 300*time.Second, "Default staleness delta allowance in seconds during expression evaluations.")
+var stalenessDelta = flag.Duration("stalenessDelta", 300*time.Second, "Staleness delta allowance during expression evaluations.")
 
 // ----------------------------------------------------------------------------
 // Raw data value types.
@@ -179,7 +179,7 @@ type (
 	VectorSelector struct {
 		labelMatchers metric.LabelMatchers
 		// The series iterators are populated at query analysis time.
-		iterators map[clientmodel.Fingerprint]storage_ng.SeriesIterator
+		iterators map[clientmodel.Fingerprint]local.SeriesIterator
 		metrics   map[clientmodel.Fingerprint]clientmodel.Metric
 		// Fingerprints are populated from label matchers at query analysis time.
 		// TODO: do we still need these?
@@ -220,7 +220,7 @@ type (
 	MatrixSelector struct {
 		labelMatchers metric.LabelMatchers
 		// The series iterators are populated at query analysis time.
-		iterators map[clientmodel.Fingerprint]storage_ng.SeriesIterator
+		iterators map[clientmodel.Fingerprint]local.SeriesIterator
 		metrics   map[clientmodel.Fingerprint]clientmodel.Metric
 		// Fingerprints are populated from label matchers at query analysis time.
 		// TODO: do we still need these?
@@ -366,7 +366,7 @@ func labelsToKey(labels clientmodel.Metric) uint64 {
 }
 
 // EvalVectorInstant evaluates a VectorNode with an instant query.
-func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage storage_ng.Storage, queryStats *stats.TimerGroup) (Vector, error) {
+func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage local.Storage, queryStats *stats.TimerGroup) (Vector, error) {
 	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
 	if err != nil {
 		return nil, err
@@ -376,7 +376,7 @@ func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage
 }
 
 // EvalVectorRange evaluates a VectorNode with a range query.
-func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage storage_ng.Storage, queryStats *stats.TimerGroup) (Matrix, error) {
+func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage local.Storage, queryStats *stats.TimerGroup) (Matrix, error) {
 	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
 	// null in JSON.
 	matrix := Matrix{}
@@ -538,7 +538,7 @@ func chooseClosestSample(samples metric.Values, timestamp clientmodel.Timestamp)
 		// Samples before target time.
 		if delta < 0 {
 			// Ignore samples outside of staleness policy window.
-			if -delta > *defaultStalenessDelta {
+			if -delta > *stalenessDelta {
 				continue
 			}
 			// Ignore samples that are farther away than what we've seen before.
@@ -552,7 +552,7 @@ func chooseClosestSample(samples metric.Values, timestamp clientmodel.Timestamp)
 		// Samples after target time.
 		if delta >= 0 {
 			// Ignore samples outside of staleness policy window.
-			if delta > *defaultStalenessDelta {
+			if delta > *stalenessDelta {
 				continue
 			}
 			// Ignore samples that are farther away than samples we've seen before.
@@ -858,7 +858,7 @@ func NewScalarLiteral(value clientmodel.SampleValue) *ScalarLiteral {
 func NewVectorSelector(m metric.LabelMatchers) *VectorSelector {
 	return &VectorSelector{
 		labelMatchers: m,
-		iterators:     map[clientmodel.Fingerprint]storage_ng.SeriesIterator{},
+		iterators:     map[clientmodel.Fingerprint]local.SeriesIterator{},
 		metrics:       map[clientmodel.Fingerprint]clientmodel.Metric{},
 	}
 }
@@ -951,7 +951,7 @@ func NewMatrixSelector(vector *VectorSelector, interval time.Duration) *MatrixSe
 	return &MatrixSelector{
 		labelMatchers: vector.labelMatchers,
 		interval:      interval,
-		iterators:     map[clientmodel.Fingerprint]storage_ng.SeriesIterator{},
+		iterators:     map[clientmodel.Fingerprint]local.SeriesIterator{},
 		metrics:       map[clientmodel.Fingerprint]clientmodel.Metric{},
 	}
 }

@@ -1,4 +1,4 @@
-package storage_ng
+package local
 
 import (
 	"fmt"

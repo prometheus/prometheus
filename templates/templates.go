@@ -57,7 +57,7 @@ func (q queryResultByLabelSorter) Swap(i, j int) {
 	q.results[i], q.results[j] = q.results[j], q.results[i]
 }
 
-func query(q string, timestamp clientmodel.Timestamp, storage storage_ng.Storage) (queryResult, error) {
+func query(q string, timestamp clientmodel.Timestamp, storage local.Storage) (queryResult, error) {
 	exprNode, err := rules.LoadExprFromString(q)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ type templateExpander struct {
 	funcMap text_template.FuncMap
 }
 
-func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage storage_ng.Storage) *templateExpander {
+func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage local.Storage) *templateExpander {
 	return &templateExpander{
 		text: text,
 		name: name,

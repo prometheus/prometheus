@@ -83,7 +83,7 @@ type ruleManager struct {
 	done chan bool
 
 	interval time.Duration
-	storage  storage_ng.Storage
+	storage  local.Storage
 
 	results       chan<- *extraction.Result
 	notifications chan<- notification.NotificationReqs
@@ -93,7 +93,7 @@ type ruleManager struct {
 
 type RuleManagerOptions struct {
 	EvaluationInterval time.Duration
-	Storage            storage_ng.Storage
+	Storage            local.Storage
 
 	Notifications chan<- notification.NotificationReqs
 	Results       chan<- *extraction.Result

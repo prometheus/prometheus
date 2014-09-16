@@ -46,13 +46,13 @@ type QueryAnalyzer struct {
 	IntervalRanges IntervalRangeMap
 	// The underlying storage to which the query will be applied. Needed for
 	// extracting timeseries fingerprint information during query analysis.
-	storage storage_ng.Storage
+	storage local.Storage
 }
 
 // NewQueryAnalyzer returns a pointer to a newly instantiated
 // QueryAnalyzer. The storage is needed to extract timeseries
 // fingerprint information during query analysis.
-func NewQueryAnalyzer(storage storage_ng.Storage) *QueryAnalyzer {
+func NewQueryAnalyzer(storage local.Storage) *QueryAnalyzer {
 	return &QueryAnalyzer{
 		FullRanges:     FullRangeMap{},
 		IntervalRanges: IntervalRangeMap{},
@@ -93,7 +93,7 @@ func (analyzer *QueryAnalyzer) Visit(node Node) {
 }
 
 type iteratorInitializer struct {
-	storage storage_ng.Storage
+	storage local.Storage
 }
 
 func (i *iteratorInitializer) Visit(node Node) {
@@ -109,7 +109,7 @@ func (i *iteratorInitializer) Visit(node Node) {
 	}
 }
 
-func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage storage_ng.Storage, queryStats *stats.TimerGroup) (storage_ng.Closer, error) {
+func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage local.Storage, queryStats *stats.TimerGroup) (local.Preloader, error) {
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	Walk(analyzer, node)
@@ -140,7 +140,7 @@ func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage sto
 	return p, nil
 }
 
-func prepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage storage_ng.Storage, queryStats *stats.TimerGroup) (storage_ng.Closer, error) {
+func prepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage local.Storage, queryStats *stats.TimerGroup) (local.Preloader, error) {
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	Walk(analyzer, node)

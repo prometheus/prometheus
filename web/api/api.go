@@ -29,7 +29,7 @@ type MetricsService struct {
 	time          utility.Time
 	Config        *config.Config
 	TargetManager retrieval.TargetManager
-	Storage       storage_ng.Storage
+	Storage       local.Storage
 }
 
 func (msrv *MetricsService) RegisterHandler() {

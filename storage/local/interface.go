@@ -1,4 +1,4 @@
-package storage_ng
+package local
 
 import (
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -8,6 +8,7 @@ import (
 // SeriesMap maps fingerprints to memory series.
 type SeriesMap map[clientmodel.Fingerprint]*memorySeries
 
+// Storage ingests and manages samples, along with various indexes.
 type Storage interface {
 	// AppendSamples stores a group of new samples. Multiple samples for the same
 	// fingerprint need to be submitted in chronological order, from oldest to
@@ -33,18 +34,23 @@ type Storage interface {
 	Close() error
 }
 
+// SeriesIterator enables efficient access of sample values in a series
 type SeriesIterator interface {
-	// Get the two values that are immediately adjacent to a given time.
+	// Gets the two values that are immediately adjacent to a given time. In
+	// case a value exist at precisely the given time, only that single
+	// value is returned. Only the first or last value is returned (as a
+	// single value), if the given time is before or after the first or last
+	// value, respectively.
 	GetValueAtTime(clientmodel.Timestamp) metric.Values
-	// Get the boundary values of an interval: the first value older than
-	// the interval start, and the first value younger than the interval
-	// end.
+	// Gets the boundary values of an interval: the first and last value
+	// within a given interval.
 	GetBoundaryValues(metric.Interval) metric.Values
-	// Get all values contained within a provided interval.
+	// Gets all values contained within a given interval.
 	GetRangeValues(metric.Interval) metric.Values
 }
 
-// A Persistence stores samples persistently across restarts.
+// A Persistence is used by a Storage implementation to store samples
+// persistently across restarts.
 type Persistence interface {
 	// PersistChunk persists a single chunk of a series.
 	PersistChunk(clientmodel.Fingerprint, chunk) error

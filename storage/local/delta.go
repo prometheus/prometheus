@@ -1,4 +1,4 @@
-package storage_ng
+package local
 
 import (
 	"encoding/binary"
@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-type deltaBytes int
+type deltaBytes byte
 
 const (
 	d0 deltaBytes = 0
@@ -45,11 +45,12 @@ const (
 // delta encoding of various types (int, float) and bit width. However, once 8
 // bytes would be needed to encode a delta value, a fall-back to the absolute
 // numbers happens (so that timestamps are saved directly as int64 and values as
-// float64).
+// float64). It implements the chunk interface.
 type deltaEncodedChunk struct {
 	buf []byte
 }
 
+// newDeltaEncodedChunk returns a newly allocated deltaEncodedChunk.
 func newDeltaEncodedChunk(tb, vb deltaBytes, isInt bool) *deltaEncodedChunk {
 	buf := make([]byte, deltaHeaderIsIntOffset+1, 1024)
 
@@ -71,6 +72,7 @@ func (c *deltaEncodedChunk) newFollowupChunk() chunk {
 	//return newDeltaEncodedChunk(c.timeBytes(), c.valueBytes(), c.isInt())
 }
 
+// clone implements chunk.
 func (c *deltaEncodedChunk) clone() chunk {
 	buf := make([]byte, len(c.buf), 1024)
 	copy(buf, c.buf)
@@ -141,6 +143,7 @@ func (c *deltaEncodedChunk) baseValue() clientmodel.SampleValue {
 	return clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(c.buf[deltaHeaderBaseValueOffset:])))
 }
 
+// add implements chunk.
 func (c *deltaEncodedChunk) add(s *metric.SamplePair) chunks {
 	if len(c.buf) < deltaHeaderBytes {
 		c.buf = c.buf[:deltaHeaderBytes]
@@ -245,7 +248,7 @@ func (c *deltaEncodedChunk) len() int {
 	return (len(c.buf) - deltaHeaderBytes) / c.sampleSize()
 }
 
-// TODO: remove?
+// values implements chunk.
 func (c *deltaEncodedChunk) values() <-chan *metric.SamplePair {
 	n := c.len()
 	valuesChan := make(chan *metric.SamplePair)
@@ -310,14 +313,17 @@ func (c *deltaEncodedChunk) valueAtIndex(idx int) *metric.SamplePair {
 	}
 }
 
+// firstTime implements chunk.
 func (c *deltaEncodedChunk) firstTime() clientmodel.Timestamp {
 	return c.valueAtIndex(0).Timestamp
 }
 
+// lastTime implements chunk.
 func (c *deltaEncodedChunk) lastTime() clientmodel.Timestamp {
 	return c.valueAtIndex(c.len() - 1).Timestamp
 }
 
+// marshal implements chunk.
 func (c *deltaEncodedChunk) marshal(w io.Writer) error {
 	if len(c.buf) > math.MaxUint16 {
 		panic("chunk buffer length would overflow a 16 bit uint.")
@@ -334,6 +340,7 @@ func (c *deltaEncodedChunk) marshal(w io.Writer) error {
 	return nil
 }
 
+// unmarshal implements chunk.
 func (c *deltaEncodedChunk) unmarshal(r io.Reader) error {
 	c.buf = c.buf[:cap(c.buf)]
 	readBytes := 0
@@ -348,17 +355,20 @@ func (c *deltaEncodedChunk) unmarshal(r io.Reader) error {
 	return nil
 }
 
+// deltaEncodedChunkIterator implements chunkIterator.
 type deltaEncodedChunkIterator struct {
 	chunk *deltaEncodedChunk
 	// TODO: add more fields here to keep track of last position.
 }
 
+// newIterator implements chunk.
 func (c *deltaEncodedChunk) newIterator() chunkIterator {
 	return &deltaEncodedChunkIterator{
 		chunk: c,
 	}
 }
 
+// getValueAtTime implements chunkIterator.
 func (it *deltaEncodedChunkIterator) getValueAtTime(t clientmodel.Timestamp) metric.Values {
 	i := sort.Search(it.chunk.len(), func(i int) bool {
 		return !it.chunk.valueAtIndex(i).Timestamp.Before(t)
@@ -378,10 +388,7 @@ func (it *deltaEncodedChunkIterator) getValueAtTime(t clientmodel.Timestamp) met
 	}
 }
 
-func (it *deltaEncodedChunkIterator) getBoundaryValues(in metric.Interval) metric.Values {
-	return nil
-}
-
+// getRangeValues implements chunkIterator.
 func (it *deltaEncodedChunkIterator) getRangeValues(in metric.Interval) metric.Values {
 	oldest := sort.Search(it.chunk.len(), func(i int) bool {
 		return !it.chunk.valueAtIndex(i).Timestamp.Before(in.OldestInclusive)
@@ -402,6 +409,7 @@ func (it *deltaEncodedChunkIterator) getRangeValues(in metric.Interval) metric.V
 	return result
 }
 
+// contains implements chunkIterator.
 func (it *deltaEncodedChunkIterator) contains(t clientmodel.Timestamp) bool {
 	return !t.Before(it.chunk.firstTime()) && !t.After(it.chunk.lastTime())
 }

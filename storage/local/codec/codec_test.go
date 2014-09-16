@@ -49,7 +49,7 @@ func TestCodec(t *testing.T) {
 				if len(fps1) != len(fps2) {
 					return false
 				}
-				for i, _ := range fps1 {
+				for i := range fps1 {
 					if fps1[i] != fps2[i] {
 						return false
 					}
@@ -84,7 +84,7 @@ func TestCodec(t *testing.T) {
 				if len(lvs1) != len(lvs2) {
 					return false
 				}
-				for i, _ := range lvs1 {
+				for i := range lvs1 {
 					if lvs1[i] != lvs2[i] {
 						return false
 					}
