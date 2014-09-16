@@ -134,7 +134,6 @@ Prometheus.Graph.prototype.initialize = function() {
     self.expr.selection("replace", {text: self.insertMetric.val(), mode: "before"});
     self.insertMetric.focus(); // refocusing
   });
-  self.insertMetric.click(function() { self.expr.focus() });
 
   self.expr.focus(); // TODO: move to external Graph method.
 
