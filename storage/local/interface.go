@@ -78,6 +78,9 @@ type Persistence interface {
 	// GetLabelValuesForLabelName returns the label values for the given
 	// label name.
 	GetLabelValuesForLabelName(clientmodel.LabelName) (clientmodel.LabelValues, error)
+	// GetFingerprintsModifiedBefore returns the fingerprints whose timeseries
+	// have live samples before the provided timestamp.
+	GetFingerprintsModifiedBefore(clientmodel.Timestamp) ([]clientmodel.Fingerprint, error)
 
 	// IndexMetric indexes the given metric for the needs of
 	// GetFingerprintsForLabelPair and GetLabelValuesForLabelName.

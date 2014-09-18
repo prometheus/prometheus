@@ -95,6 +95,25 @@ func (p *diskPersistence) GetLabelValuesForLabelName(ln clientmodel.LabelName) (
 	return lvs, nil
 }
 
+func (p *diskPersistence) GetFingerprintsModifiedBefore(beforeTime clientmodel.Timestamp) ([]clientmodel.Fingerprint, error) {
+	var fp codec.CodableFingerprint
+	var tr codec.CodableTimeRange
+	fps := []clientmodel.Fingerprint{}
+	p.archivedFingerprintToTimeRange.ForEach(func(kv index.KeyValueAccessor) error {
+		if err := kv.Value(&tr); err != nil {
+			return err
+		}
+		if tr.First.Before(beforeTime) {
+			if err := kv.Key(&fp); err != nil {
+				return err
+			}
+			fps = append(fps, clientmodel.Fingerprint(fp))
+		}
+		return nil
+	})
+	return fps, nil
+}
+
 func (p *diskPersistence) PersistChunk(fp clientmodel.Fingerprint, c chunk) error {
 	// 1. Open chunk file.
 	f, err := p.openChunkFileForWriting(fp)

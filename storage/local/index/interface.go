@@ -21,6 +21,7 @@ type KeyValueStore interface {
 
 	NewBatch() Batch
 	Commit(b Batch) error
+	ForEach(func(kv KeyValueAccessor) error) error
 
 	Close() error
 }

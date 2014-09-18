@@ -291,10 +291,15 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 
 			ts := clientmodel.TimestampFromTime(time.Now()).Add(-1 * s.persistenceRetentionPeriod)
 
-			// TODO: Add archived fps:
-			// - Add iterator interface for KeyValueStore.
-			// - Iterate over s.persistence.archivedFingerprintToTimeRange.
-			// - If timeRange extends before ts, add fp to fps.
+			// TODO: If we decide not to remove entries from the timerange disk index
+			// upon unarchival, we could remove the memory copy above and only use
+			// the fingerprints from the disk index.
+			persistedFPs, err := s.persistence.GetFingerprintsModifiedBefore(ts)
+			if err != nil {
+				glog.Error("Failed to lookup persisted fingerprint ranges: ", err)
+				break
+			}
+			fps = append(fps, persistedFPs...)
 
 			for _, fp := range fps {
 				select {
@@ -302,6 +307,9 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 					glog.Info("Interrupted running series purge.")
 					return
 				default:
+					// TODO: Decide whether we also want to adjust the timerange index
+					// entries here. Not updating them shouldn't break anything, but will
+					// make some scenarios less efficient.
 					s.purgeSeries(fp, ts)
 				}
 			}
