@@ -346,7 +346,7 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 
 	// Purge chunks from memory accordingly.
 	if series, ok := s.fingerprintToSeries[fp]; ok {
-		if series.purgeOlderThan(beforeTime) {
+		if series.purgeOlderThan(beforeTime) && allDropped {
 			delete(s.fingerprintToSeries, fp)
 			if err := s.persistence.UnindexMetric(series.metric, fp); err != nil {
 				glog.Errorf("Error unindexing metric %v: %v", series.metric, err)
