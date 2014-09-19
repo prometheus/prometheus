@@ -137,7 +137,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 
-	metricNames := serv.Storage.GetAllValuesForLabel(clientmodel.MetricNameLabel)
+	metricNames := serv.Storage.GetLabelValuesForLabelName(clientmodel.MetricNameLabel)
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {

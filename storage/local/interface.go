@@ -1,3 +1,16 @@
+// Copyright 2014 Prometheus Team
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package local
 
 import (
@@ -8,7 +21,8 @@ import (
 // SeriesMap maps fingerprints to memory series.
 type SeriesMap map[clientmodel.Fingerprint]*memorySeries
 
-// Storage ingests and manages samples, along with various indexes.
+// Storage ingests and manages samples, along with various indexes. All methods
+// are goroutine-safe.
 type Storage interface {
 	// AppendSamples stores a group of new samples. Multiple samples for the same
 	// fingerprint need to be submitted in chronological order, from oldest to
@@ -24,8 +38,6 @@ type Storage interface {
 	GetLabelValuesForLabelName(clientmodel.LabelName) clientmodel.LabelValues
 	// Get the metric associated with the provided fingerprint.
 	GetMetricForFingerprint(clientmodel.Fingerprint) clientmodel.Metric
-	// Get all label values that are associated with a given label name.
-	GetAllValuesForLabel(clientmodel.LabelName) clientmodel.LabelValues
 	// Construct an iterator for a given fingerprint.
 	NewIterator(clientmodel.Fingerprint) SeriesIterator
 	// Run the request-serving and maintenance loop.
@@ -34,7 +46,7 @@ type Storage interface {
 	Close() error
 }
 
-// SeriesIterator enables efficient access of sample values in a series
+// SeriesIterator enables efficient access of sample values in a series.
 type SeriesIterator interface {
 	// Gets the two values that are immediately adjacent to a given time. In
 	// case a value exist at precisely the given time, only that single

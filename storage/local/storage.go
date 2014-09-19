@@ -1,3 +1,16 @@
+// Copyright 2014 Prometheus Team
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package local contains the local time series storage used by Prometheus.
 package local
 
@@ -83,6 +96,7 @@ type persistRequest struct {
 	chunkDesc   *chunkDesc
 }
 
+// AppendSamples implements Storage.
 func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
 	/*
 		s.mtx.Lock()
@@ -395,13 +409,16 @@ func (s *memorySeriesStorage) Serve(started chan<- bool) {
 	}
 }
 
+// NewPreloader implements Storage.
 func (s *memorySeriesStorage) NewPreloader() Preloader {
 	return &memorySeriesPreloader{
 		storage: s,
 	}
 }
 
+// GetFingerprintsForLabelMatchers implements Storage.
 func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metric.LabelMatchers) clientmodel.Fingerprints {
+	// TODO: Is this lock needed?
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
@@ -466,7 +483,9 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 	return fps
 }
 
+// GetLabelValuesForLabelName implements Storage.
 func (s *memorySeriesStorage) GetLabelValuesForLabelName(labelName clientmodel.LabelName) clientmodel.LabelValues {
+	// TODO: Is this lock needed?
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
@@ -477,6 +496,7 @@ func (s *memorySeriesStorage) GetLabelValuesForLabelName(labelName clientmodel.L
 	return lvs
 }
 
+// GetMetricForFingerprint implements Storage.
 func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint) clientmodel.Metric {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
@@ -496,22 +516,4 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 		glog.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
 	}
 	return metric
-}
-
-func (s *memorySeriesStorage) GetAllValuesForLabel(labelName clientmodel.LabelName) clientmodel.LabelValues {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-
-	var values clientmodel.LabelValues
-	valueSet := map[clientmodel.LabelValue]struct{}{}
-	for _, series := range s.fingerprintToSeries {
-		if value, ok := series.metric[labelName]; ok {
-			if _, ok := valueSet[value]; !ok {
-				values = append(values, value)
-				valueSet[value] = struct{}{}
-			}
-		}
-	}
-
-	return values
 }
