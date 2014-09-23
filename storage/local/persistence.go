@@ -20,12 +20,13 @@ import (
 	"io"
 	"os"
 	"path"
+	"time"
 
 	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/storage/local/codec"
+	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -44,6 +45,10 @@ const (
 	chunkHeaderTypeOffset      = 0
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
+
+	indexingMaxBatchSize  = 1024
+	indexingBatchTimeout  = 500 * time.Millisecond    // Commit batch when idle for that long.
+	indexingQueueCapacity = 10 * indexingMaxBatchSize // TODO: Export as metric.
 )
 
 const (
@@ -51,6 +56,19 @@ const (
 	flagChunkDescsLoaded byte = 1 << iota
 	flagHeadChunkPersisted
 )
+
+type indexingOpType byte
+
+const (
+	add indexingOpType = iota
+	remove
+)
+
+type indexingOp struct {
+	fingerprint clientmodel.Fingerprint
+	metric      clientmodel.Metric
+	opType      indexingOpType
+}
 
 type diskPersistence struct {
 	basePath string
@@ -60,6 +78,9 @@ type diskPersistence struct {
 	archivedFingerprintToTimeRange *index.FingerprintTimeRangeIndex
 	labelPairToFingerprints        *index.LabelPairFingerprintIndex
 	labelNameToLabelValues         *index.LabelNameLabelValuesIndex
+
+	indexingQueue   chan indexingOp
+	indexingStopped chan struct{}
 }
 
 // NewDiskPersistence returns a newly allocated Persistence backed by local disk storage, ready to use.
@@ -67,29 +88,38 @@ func NewDiskPersistence(basePath string, chunkLen int) (Persistence, error) {
 	if err := os.MkdirAll(basePath, 0700); err != nil {
 		return nil, err
 	}
-	dp := &diskPersistence{
-		basePath: basePath,
-		chunkLen: chunkLen,
-	}
 	var err error
-	dp.archivedFingerprintToMetrics, err = index.NewFingerprintMetricIndex(basePath)
+	archivedFingerprintToMetrics, err := index.NewFingerprintMetricIndex(basePath)
 	if err != nil {
 		return nil, err
 	}
-	dp.archivedFingerprintToTimeRange, err = index.NewFingerprintTimeRangeIndex(basePath)
+	archivedFingerprintToTimeRange, err := index.NewFingerprintTimeRangeIndex(basePath)
 	if err != nil {
 		return nil, err
 	}
-	dp.labelPairToFingerprints, err = index.NewLabelPairFingerprintIndex(basePath)
+	labelPairToFingerprints, err := index.NewLabelPairFingerprintIndex(basePath)
 	if err != nil {
 		return nil, err
 	}
-	dp.labelNameToLabelValues, err = index.NewLabelNameLabelValuesIndex(basePath)
+	labelNameToLabelValues, err := index.NewLabelNameLabelValuesIndex(basePath)
 	if err != nil {
 		return nil, err
 	}
 
-	return dp, nil
+	p := &diskPersistence{
+		basePath: basePath,
+		chunkLen: chunkLen,
+
+		archivedFingerprintToMetrics:   archivedFingerprintToMetrics,
+		archivedFingerprintToTimeRange: archivedFingerprintToTimeRange,
+		labelPairToFingerprints:        labelPairToFingerprints,
+		labelNameToLabelValues:         labelNameToLabelValues,
+
+		indexingQueue:   make(chan indexingOp, indexingQueueCapacity),
+		indexingStopped: make(chan struct{}),
+	}
+	go p.processIndexingQueue()
+	return p, nil
 }
 
 func (p *diskPersistence) GetFingerprintsForLabelPair(lp metric.LabelPair) (clientmodel.Fingerprints, error) {
@@ -109,8 +139,8 @@ func (p *diskPersistence) GetLabelValuesForLabelName(ln clientmodel.LabelName) (
 }
 
 func (p *diskPersistence) GetFingerprintsModifiedBefore(beforeTime clientmodel.Timestamp) ([]clientmodel.Fingerprint, error) {
-	var fp codec.CodableFingerprint
-	var tr codec.CodableTimeRange
+	var fp codable.Fingerprint
+	var tr codable.TimeRange
 	fps := []clientmodel.Fingerprint{}
 	p.archivedFingerprintToTimeRange.ForEach(func(kv index.KeyValueAccessor) error {
 		if err := kv.Value(&tr); err != nil {
@@ -257,10 +287,10 @@ func (p *diskPersistence) PersistSeriesMapAndHeads(fingerprintToSeries SeriesMap
 	if _, err := w.WriteString(headsMagicString); err != nil {
 		return err
 	}
-	if err := codec.EncodeVarint(w, headsFormatVersion); err != nil {
+	if err := codable.EncodeVarint(w, headsFormatVersion); err != nil {
 		return err
 	}
-	if err := codec.EncodeVarint(w, int64(len(fingerprintToSeries))); err != nil {
+	if err := codable.EncodeVarint(w, int64(len(fingerprintToSeries))); err != nil {
 		return err
 	}
 
@@ -275,23 +305,23 @@ func (p *diskPersistence) PersistSeriesMapAndHeads(fingerprintToSeries SeriesMap
 		if err := w.WriteByte(seriesFlags); err != nil {
 			return err
 		}
-		if err := codec.EncodeUint64(w, uint64(fp)); err != nil {
+		if err := codable.EncodeUint64(w, uint64(fp)); err != nil {
 			return err
 		}
-		buf, err := codec.CodableMetric(series.metric).MarshalBinary()
+		buf, err := codable.Metric(series.metric).MarshalBinary()
 		if err != nil {
 			return err
 		}
 		w.Write(buf)
-		if err := codec.EncodeVarint(w, int64(len(series.chunkDescs))); err != nil {
+		if err := codable.EncodeVarint(w, int64(len(series.chunkDescs))); err != nil {
 			return err
 		}
 		for i, chunkDesc := range series.chunkDescs {
 			if series.headChunkPersisted || i < len(series.chunkDescs)-1 {
-				if err := codec.EncodeVarint(w, int64(chunkDesc.firstTime())); err != nil {
+				if err := codable.EncodeVarint(w, int64(chunkDesc.firstTime())); err != nil {
 					return err
 				}
-				if err := codec.EncodeVarint(w, int64(chunkDesc.lastTime())); err != nil {
+				if err := codable.EncodeVarint(w, int64(chunkDesc.lastTime())); err != nil {
 					return err
 				}
 			} else {
@@ -345,11 +375,11 @@ func (p *diskPersistence) LoadSeriesMapAndHeads() (SeriesMap, error) {
 			return nil, err
 		}
 		headChunkPersisted := seriesFlags&flagHeadChunkPersisted != 0
-		fp, err := codec.DecodeUint64(r)
+		fp, err := codable.DecodeUint64(r)
 		if err != nil {
 			return nil, err
 		}
-		var metric codec.CodableMetric
+		var metric codable.Metric
 		if err := metric.UnmarshalFromReader(r); err != nil {
 			return nil, err
 		}
@@ -458,35 +488,24 @@ func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clie
 	return false, nil
 }
 
-func (p *diskPersistence) IndexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) error {
-	// TODO: Don't do it directly, but add it to a queue (which needs to be
-	// drained before shutdown). Queuing would make this asynchronously, and
-	// then batches could be created easily.
-	if err := p.labelNameToLabelValues.Extend(m); err != nil {
-		return err
-	}
-	return p.labelPairToFingerprints.Extend(m, fp)
+// IndexMetric implements Persistence.
+func (p *diskPersistence) IndexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) {
+	p.indexingQueue <- indexingOp{fp, m, add}
 }
 
-func (p *diskPersistence) UnindexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) error {
-	// TODO: Don't do it directly, but add it to a queue (which needs to be
-	// drained before shutdown). Queuing would make this asynchronously, and
-	// then batches could be created easily.
-	labelPairs, err := p.labelPairToFingerprints.Reduce(m, fp)
-	if err != nil {
-		return err
-	}
-	return p.labelNameToLabelValues.Reduce(labelPairs)
+// UnindexMetric implements Persistence.
+func (p *diskPersistence) UnindexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) {
+	p.indexingQueue <- indexingOp{fp, m, remove}
 }
 
 func (p *diskPersistence) ArchiveMetric(
 	// TODO: Two step process, make sure this happens atomically.
 	fp clientmodel.Fingerprint, m clientmodel.Metric, first, last clientmodel.Timestamp,
 ) error {
-	if err := p.archivedFingerprintToMetrics.Put(codec.CodableFingerprint(fp), codec.CodableMetric(m)); err != nil {
+	if err := p.archivedFingerprintToMetrics.Put(codable.Fingerprint(fp), codable.Metric(m)); err != nil {
 		return err
 	}
-	if err := p.archivedFingerprintToTimeRange.Put(codec.CodableFingerprint(fp), codec.CodableTimeRange{First: first, Last: last}); err != nil {
+	if err := p.archivedFingerprintToTimeRange.Put(codable.Fingerprint(fp), codable.TimeRange{First: first, Last: last}); err != nil {
 		return err
 	}
 	return nil
@@ -510,13 +529,14 @@ func (p *diskPersistence) DropArchivedMetric(fp clientmodel.Fingerprint) error {
 	if err != nil || metric == nil {
 		return err
 	}
-	if err := p.archivedFingerprintToMetrics.Delete(codec.CodableFingerprint(fp)); err != nil {
+	if err := p.archivedFingerprintToMetrics.Delete(codable.Fingerprint(fp)); err != nil {
 		return err
 	}
-	if err := p.archivedFingerprintToTimeRange.Delete(codec.CodableFingerprint(fp)); err != nil {
+	if err := p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp)); err != nil {
 		return err
 	}
-	return p.UnindexMetric(metric, fp)
+	p.UnindexMetric(metric, fp)
+	return nil
 }
 
 func (p *diskPersistence) UnarchiveMetric(fp clientmodel.Fingerprint) (bool, error) {
@@ -525,16 +545,19 @@ func (p *diskPersistence) UnarchiveMetric(fp clientmodel.Fingerprint) (bool, err
 	if err != nil || !has {
 		return false, err
 	}
-	if err := p.archivedFingerprintToMetrics.Delete(codec.CodableFingerprint(fp)); err != nil {
+	if err := p.archivedFingerprintToMetrics.Delete(codable.Fingerprint(fp)); err != nil {
 		return false, err
 	}
-	if err := p.archivedFingerprintToTimeRange.Delete(codec.CodableFingerprint(fp)); err != nil {
+	if err := p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp)); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
 func (p *diskPersistence) Close() error {
+	close(p.indexingQueue)
+	<-p.indexingStopped
+
 	var lastError error
 	if err := p.archivedFingerprintToMetrics.Close(); err != nil {
 		lastError = err
@@ -594,6 +617,89 @@ func (p *diskPersistence) offsetForChunkIndex(i int) int64 {
 
 func (p *diskPersistence) headsPath() string {
 	return path.Join(p.basePath, headsFileName)
+}
+
+func (p *diskPersistence) processIndexingQueue() {
+	batchSize := 0
+	nameToValues := index.LabelNameLabelValuesMapping{}
+	pairToFPs := index.LabelPairFingerprintsMapping{}
+	batchTimeout := time.NewTimer(indexingBatchTimeout)
+	defer batchTimeout.Stop()
+
+	commitBatch := func() {
+		if err := p.labelPairToFingerprints.IndexBatch(pairToFPs); err != nil {
+			glog.Error("Error indexing label pair to fingerprints batch: ", err)
+		}
+		if err := p.labelNameToLabelValues.IndexBatch(nameToValues); err != nil {
+			glog.Error("Error indexing label name to label values batch: ", err)
+		}
+		batchSize = 0
+		nameToValues = index.LabelNameLabelValuesMapping{}
+		pairToFPs = index.LabelPairFingerprintsMapping{}
+	}
+
+loop:
+	for {
+		select {
+		case <-batchTimeout.C:
+			if batchSize > 0 {
+				commitBatch()
+			}
+			batchTimeout.Reset(indexingBatchTimeout)
+		case op, ok := <-p.indexingQueue:
+			batchTimeout.Stop()
+
+			if !ok {
+				if batchSize > 0 {
+					commitBatch()
+				}
+				break loop
+			}
+
+			batchSize++
+			for ln, lv := range op.metric {
+				lp := metric.LabelPair{Name: ln, Value: lv}
+				baseFPs, ok := pairToFPs[lp]
+				if !ok {
+					var err error
+					baseFPs, _, err = p.labelPairToFingerprints.LookupSet(lp)
+					if err != nil {
+						glog.Errorf("Error looking up label pair %v: %s", lp, err)
+						continue
+					}
+					pairToFPs[lp] = baseFPs
+				}
+				baseValues, ok := nameToValues[ln]
+				if !ok {
+					var err error
+					baseValues, _, err = p.labelNameToLabelValues.LookupSet(ln)
+					if err != nil {
+						glog.Errorf("Error looking up label name %v: %s", ln, err)
+						continue
+					}
+					nameToValues[ln] = baseValues
+				}
+				switch op.opType {
+				case add:
+					baseFPs[op.fingerprint] = struct{}{}
+					baseValues[lv] = struct{}{}
+				case remove:
+					delete(baseFPs, op.fingerprint)
+					if len(baseFPs) == 0 {
+						delete(baseValues, lv)
+					}
+				default:
+					panic("unknown op type")
+				}
+			}
+
+			if batchSize >= indexingMaxBatchSize {
+				commitBatch()
+			}
+			batchTimeout.Reset(indexingBatchTimeout)
+		}
+	}
+	close(p.indexingStopped)
 }
 
 // exists returns true when the given file or directory exists.

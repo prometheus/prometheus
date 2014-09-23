@@ -149,9 +149,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(m clientmodel.Metric) *memorySer
 			series.headChunkPersisted = true
 		} else {
 			// This was a genuinely new series, so index the metric.
-			if err := s.persistence.IndexMetric(m, fp); err != nil {
-				glog.Errorf("Error indexing metric %v: %v", m, err)
-			}
+			s.persistence.IndexMetric(m, fp)
 		}
 	}
 	return series
@@ -362,9 +360,7 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 	if series, ok := s.fingerprintToSeries[fp]; ok {
 		if series.purgeOlderThan(beforeTime) && allDropped {
 			delete(s.fingerprintToSeries, fp)
-			if err := s.persistence.UnindexMetric(series.metric, fp); err != nil {
-				glog.Errorf("Error unindexing metric %v: %v", series.metric, err)
-			}
+			s.persistence.UnindexMetric(series.metric, fp)
 		}
 		return
 	}

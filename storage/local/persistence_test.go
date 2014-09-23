@@ -14,11 +14,13 @@
 package local
 
 import (
-	"sort"
+	"reflect"
 	"testing"
+	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
@@ -130,36 +132,46 @@ func TestIndexing(t *testing.T) {
 				},
 			},
 			expectedLnToLvs: index.LabelNameLabelValuesMapping{
-				clientmodel.MetricNameLabel: clientmodel.LabelValues{"metric_0", "metric_1"},
-				"label_1":                   clientmodel.LabelValues{"value_1", "value_2"},
-				"label_2":                   clientmodel.LabelValues{"value_2"},
-				"label_3":                   clientmodel.LabelValues{"value_3"},
+				clientmodel.MetricNameLabel: codable.LabelValueSet{
+					"metric_0": struct{}{},
+					"metric_1": struct{}{},
+				},
+				"label_1": codable.LabelValueSet{
+					"value_1": struct{}{},
+					"value_2": struct{}{},
+				},
+				"label_2": codable.LabelValueSet{
+					"value_2": struct{}{},
+				},
+				"label_3": codable.LabelValueSet{
+					"value_3": struct{}{},
+				},
 			},
 			expectedLpToFps: index.LabelPairFingerprintsMapping{
 				metric.LabelPair{
 					Name:  clientmodel.MetricNameLabel,
 					Value: "metric_0",
-				}: {0, 1},
+				}: codable.FingerprintSet{0: struct{}{}, 1: struct{}{}},
 				metric.LabelPair{
 					Name:  clientmodel.MetricNameLabel,
 					Value: "metric_1",
-				}: {2},
+				}: codable.FingerprintSet{2: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_1",
 					Value: "value_1",
-				}: {0},
+				}: codable.FingerprintSet{0: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_1",
 					Value: "value_2",
-				}: {2},
+				}: codable.FingerprintSet{2: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_2",
 					Value: "value_2",
-				}: {1},
+				}: codable.FingerprintSet{1: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_3",
 					Value: "value_3",
-				}: {1},
+				}: codable.FingerprintSet{1: struct{}{}},
 			},
 		}, {
 			fpToMetric: index.FingerprintMetricMapping{
@@ -178,48 +190,61 @@ func TestIndexing(t *testing.T) {
 				},
 			},
 			expectedLnToLvs: index.LabelNameLabelValuesMapping{
-				clientmodel.MetricNameLabel: clientmodel.LabelValues{"metric_0", "metric_1", "metric_2"},
-				"label_1":                   clientmodel.LabelValues{"value_1", "value_2", "value_3"},
-				"label_2":                   clientmodel.LabelValues{"value_2"},
-				"label_3":                   clientmodel.LabelValues{"value_1", "value_3"},
+				clientmodel.MetricNameLabel: codable.LabelValueSet{
+					"metric_0": struct{}{},
+					"metric_1": struct{}{},
+					"metric_2": struct{}{},
+				},
+				"label_1": codable.LabelValueSet{
+					"value_1": struct{}{},
+					"value_2": struct{}{},
+					"value_3": struct{}{},
+				},
+				"label_2": codable.LabelValueSet{
+					"value_2": struct{}{},
+				},
+				"label_3": codable.LabelValueSet{
+					"value_1": struct{}{},
+					"value_3": struct{}{},
+				},
 			},
 			expectedLpToFps: index.LabelPairFingerprintsMapping{
 				metric.LabelPair{
 					Name:  clientmodel.MetricNameLabel,
 					Value: "metric_0",
-				}: {0, 1, 3},
+				}: codable.FingerprintSet{0: struct{}{}, 1: struct{}{}, 3: struct{}{}},
 				metric.LabelPair{
 					Name:  clientmodel.MetricNameLabel,
 					Value: "metric_1",
-				}: {2, 5},
+				}: codable.FingerprintSet{2: struct{}{}, 5: struct{}{}},
 				metric.LabelPair{
 					Name:  clientmodel.MetricNameLabel,
 					Value: "metric_2",
-				}: {4},
+				}: codable.FingerprintSet{4: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_1",
 					Value: "value_1",
-				}: {0},
+				}: codable.FingerprintSet{0: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_1",
 					Value: "value_2",
-				}: {2},
+				}: codable.FingerprintSet{2: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_1",
 					Value: "value_3",
-				}: {3, 5},
+				}: codable.FingerprintSet{3: struct{}{}, 5: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_2",
 					Value: "value_2",
-				}: {1, 4},
+				}: codable.FingerprintSet{1: struct{}{}, 4: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_3",
 					Value: "value_1",
-				}: {4},
+				}: codable.FingerprintSet{4: struct{}{}},
 				metric.LabelPair{
 					Name:  "label_3",
 					Value: "value_3",
-				}: {1},
+				}: codable.FingerprintSet{1: struct{}{}},
 			},
 		},
 	}
@@ -230,24 +255,24 @@ func TestIndexing(t *testing.T) {
 	indexedFpsToMetrics := index.FingerprintMetricMapping{}
 	for i, b := range batches {
 		for fp, m := range b.fpToMetric {
-			if err := p.IndexMetric(m, fp); err != nil {
-				t.Fatal(err)
-			}
+			p.IndexMetric(m, fp)
 			if err := p.ArchiveMetric(fp, m, 1, 2); err != nil {
 				t.Fatal(err)
 			}
 			indexedFpsToMetrics[fp] = m
 		}
+		// TODO: Find a better solution than sleeping.
+		time.Sleep(2 * indexingBatchTimeout)
 		verifyIndexedState(i, t, b, indexedFpsToMetrics, p.(*diskPersistence))
 	}
 
 	for i := len(batches) - 1; i >= 0; i-- {
 		b := batches[i]
+		// TODO: Find a better solution than sleeping.
+		time.Sleep(2 * indexingBatchTimeout)
 		verifyIndexedState(i, t, batches[i], indexedFpsToMetrics, p.(*diskPersistence))
 		for fp, m := range b.fpToMetric {
-			if err := p.UnindexMetric(m, fp); err != nil {
-				t.Fatal(err)
-			}
+			p.UnindexMetric(m, fp)
 			unarchived, err := p.UnarchiveMetric(fp)
 			if err != nil {
 				t.Fatal(err)
@@ -294,16 +319,13 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 			t.Fatal(err)
 		}
 
-		sort.Sort(lvs)
-		sort.Sort(outLvs)
-
-		if len(lvs) != len(outLvs) {
-			t.Errorf("%d. different number of label values. Got: %d; want %d", i, len(outLvs), len(lvs))
+		outSet := codable.LabelValueSet{}
+		for _, lv := range outLvs {
+			outSet[lv] = struct{}{}
 		}
-		for j := range lvs {
-			if lvs[j] != outLvs[j] {
-				t.Errorf("%d.%d. label values don't match. Got: %s; want %s", i, j, outLvs[j], lvs[j])
-			}
+
+		if !reflect.DeepEqual(lvs, outSet) {
+			t.Errorf("%d. label values don't match. Got: %v; want %v", i, outSet, lvs)
 		}
 	}
 
@@ -314,16 +336,13 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 			t.Fatal(err)
 		}
 
-		sort.Sort(fps)
-		sort.Sort(outFps)
-
-		if len(fps) != len(outFps) {
-			t.Errorf("%d. %v: different number of fingerprints. Got: %d; want %d", i, lp, len(outFps), len(fps))
+		outSet := codable.FingerprintSet{}
+		for _, fp := range outFps {
+			outSet[fp] = struct{}{}
 		}
-		for j := range fps {
-			if fps[j] != outFps[j] {
-				t.Errorf("%d.%d. %v: fingerprints don't match. Got: %d; want %d", i, j, lp, outFps[j], fps[j])
-			}
+
+		if !reflect.DeepEqual(fps, outSet) {
+			t.Errorf("%d. %v: fingerprints don't match. Got: %v; want %v", i, lp, outSet, fps)
 		}
 	}
 }

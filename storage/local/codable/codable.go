@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package codec provides types that implement encoding.BinaryMarshaler and
+// Package codable provides types that implement encoding.BinaryMarshaler and
 // encoding.BinaryUnmarshaler and functions that help to encode and decode
 // primitives. The Prometheus storage backend uses them to persist objects to
 // files and to save objects in LevelDB.
@@ -28,11 +28,10 @@
 //
 // Maps are encoded as the number of mappings as a varint, followed by the
 // mappings, each of which consists of the key followed by the value.
-package codec
+package codable
 
 import (
 	"bytes"
-	"encoding"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -42,14 +41,6 @@ import (
 
 	"github.com/prometheus/prometheus/storage/metric"
 )
-
-// codable implements both, encoding.BinaryMarshaler and
-// encoding.BinaryUnmarshaler, which is only needed internally and therefore not
-// exported for now.
-type codable interface {
-	encoding.BinaryMarshaler
-	encoding.BinaryUnmarshaler
-}
 
 // A byteReader is an io.ByteReader that also implements the vanilla io.Reader
 // interface.
@@ -145,12 +136,12 @@ func decodeString(b byteReader) (string, error) {
 	return string(buf), nil
 }
 
-// A CodableMetric is a clientmodel.Metric that implements
+// A Metric is a clientmodel.Metric that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
-type CodableMetric clientmodel.Metric
+type Metric clientmodel.Metric
 
 // MarshalBinary implements encoding.BinaryMarshaler.
-func (m CodableMetric) MarshalBinary() ([]byte, error) {
+func (m Metric) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := EncodeVarint(buf, int64(len(m))); err != nil {
 		return nil, err
@@ -167,20 +158,20 @@ func (m CodableMetric) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler. It can be used with the
-// zero value of CodableMetric.
-func (m *CodableMetric) UnmarshalBinary(buf []byte) error {
+// zero value of Metric.
+func (m *Metric) UnmarshalBinary(buf []byte) error {
 	return m.UnmarshalFromReader(bytes.NewReader(buf))
 }
 
-// UnmarshalFromReader unmarshals a CodableMetric from a reader that implements
+// UnmarshalFromReader unmarshals a Metric from a reader that implements
 // both, io.Reader and io.ByteReader. It can be used with the zero value of
-// CodableMetric.
-func (m *CodableMetric) UnmarshalFromReader(r byteReader) error {
+// Metric.
+func (m *Metric) UnmarshalFromReader(r byteReader) error {
 	numLabelPairs, err := binary.ReadVarint(r)
 	if err != nil {
 		return err
 	}
-	*m = make(CodableMetric, numLabelPairs)
+	*m = make(Metric, numLabelPairs)
 
 	for ; numLabelPairs > 0; numLabelPairs-- {
 		ln, err := decodeString(r)
@@ -196,31 +187,64 @@ func (m *CodableMetric) UnmarshalFromReader(r byteReader) error {
 	return nil
 }
 
-// A CodableFingerprint is a clientmodel.Fingerprint that implements
+// A Fingerprint is a clientmodel.Fingerprint that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. The implementation
 // depends on clientmodel.Fingerprint to be convertible to uint64. It encodes
 // the fingerprint as a big-endian uint64.
-type CodableFingerprint clientmodel.Fingerprint
+type Fingerprint clientmodel.Fingerprint
 
 // MarshalBinary implements encoding.BinaryMarshaler.
-func (fp CodableFingerprint) MarshalBinary() ([]byte, error) {
+func (fp Fingerprint) MarshalBinary() ([]byte, error) {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(fp))
 	return b, nil
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.
-func (fp *CodableFingerprint) UnmarshalBinary(buf []byte) error {
-	*fp = CodableFingerprint(binary.BigEndian.Uint64(buf))
+func (fp *Fingerprint) UnmarshalBinary(buf []byte) error {
+	*fp = Fingerprint(binary.BigEndian.Uint64(buf))
 	return nil
 }
 
-// CodableFingerprints is a clientmodel.Fingerprints that implements
-// encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
-type CodableFingerprints clientmodel.Fingerprints
+// FingerprintSet is a map[clientmodel.Fingerprint]struct{} that
+// implements encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. Its
+// binary form is identical to that of Fingerprints.
+type FingerprintSet map[clientmodel.Fingerprint]struct{}
 
 // MarshalBinary implements encoding.BinaryMarshaler.
-func (fps CodableFingerprints) MarshalBinary() ([]byte, error) {
+func (fps FingerprintSet) MarshalBinary() ([]byte, error) {
+	b := make([]byte, binary.MaxVarintLen64+len(fps)*8)
+	lenBytes := binary.PutVarint(b, int64(len(fps)))
+	offset := lenBytes
+
+	for fp := range fps {
+		binary.BigEndian.PutUint64(b[offset:], uint64(fp))
+		offset += 8
+	}
+	return b[:len(fps)*8+lenBytes], nil
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler.
+func (fps *FingerprintSet) UnmarshalBinary(buf []byte) error {
+	numFPs, offset := binary.Varint(buf)
+	if offset <= 0 {
+		return fmt.Errorf("could not decode length of Fingerprints, varint decoding returned %d", offset)
+	}
+	*fps = make(FingerprintSet, numFPs)
+
+	for i := 0; i < int(numFPs); i++ {
+		(*fps)[clientmodel.Fingerprint(binary.BigEndian.Uint64(buf[offset+i*8:]))] = struct{}{}
+	}
+	return nil
+}
+
+// Fingerprints is a clientmodel.Fingerprints that implements
+// encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. Its binary form is
+// identical to that of FingerprintSet.
+type Fingerprints clientmodel.Fingerprints
+
+// MarshalBinary implements encoding.BinaryMarshaler.
+func (fps Fingerprints) MarshalBinary() ([]byte, error) {
 	b := make([]byte, binary.MaxVarintLen64+len(fps)*8)
 	lenBytes := binary.PutVarint(b, int64(len(fps)))
 
@@ -231,12 +255,12 @@ func (fps CodableFingerprints) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.
-func (fps *CodableFingerprints) UnmarshalBinary(buf []byte) error {
+func (fps *Fingerprints) UnmarshalBinary(buf []byte) error {
 	numFPs, offset := binary.Varint(buf)
 	if offset <= 0 {
-		return fmt.Errorf("could not decode length of CodableFingerprints, varint decoding returned %d", offset)
+		return fmt.Errorf("could not decode length of Fingerprints, varint decoding returned %d", offset)
 	}
-	*fps = make(CodableFingerprints, numFPs)
+	*fps = make(Fingerprints, numFPs)
 
 	for i := range *fps {
 		(*fps)[i] = clientmodel.Fingerprint(binary.BigEndian.Uint64(buf[offset+i*8:]))
@@ -244,12 +268,12 @@ func (fps *CodableFingerprints) UnmarshalBinary(buf []byte) error {
 	return nil
 }
 
-// CodableLabelPair is a metric.LabelPair that implements
+// LabelPair is a metric.LabelPair that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
-type CodableLabelPair metric.LabelPair
+type LabelPair metric.LabelPair
 
 // MarshalBinary implements encoding.BinaryMarshaler.
-func (lp CodableLabelPair) MarshalBinary() ([]byte, error) {
+func (lp LabelPair) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := encodeString(buf, string(lp.Name)); err != nil {
 		return nil, err
@@ -261,7 +285,7 @@ func (lp CodableLabelPair) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.
-func (lp *CodableLabelPair) UnmarshalBinary(buf []byte) error {
+func (lp *LabelPair) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	n, err := decodeString(r)
 	if err != nil {
@@ -276,12 +300,12 @@ func (lp *CodableLabelPair) UnmarshalBinary(buf []byte) error {
 	return nil
 }
 
-// CodableLabelName is a clientmodel.LabelName that implements
+// LabelName is a clientmodel.LabelName that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
-type CodableLabelName clientmodel.LabelName
+type LabelName clientmodel.LabelName
 
 // MarshalBinary implements encoding.BinaryMarshaler.
-func (l CodableLabelName) MarshalBinary() ([]byte, error) {
+func (l LabelName) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := encodeString(buf, string(l)); err != nil {
 		return nil, err
@@ -290,22 +314,61 @@ func (l CodableLabelName) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.
-func (l *CodableLabelName) UnmarshalBinary(buf []byte) error {
+func (l *LabelName) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	n, err := decodeString(r)
 	if err != nil {
 		return err
 	}
-	*l = CodableLabelName(n)
+	*l = LabelName(n)
 	return nil
 }
 
-// CodableLabelValues is a clientmodel.LabelValues that implements
-// encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
-type CodableLabelValues clientmodel.LabelValues
+// LabelValueSet is a map[clientmodel.LabelValue]struct{} that implements
+// encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. Its binary form is
+// identical to that of LabelValues.
+type LabelValueSet map[clientmodel.LabelValue]struct{}
 
 // MarshalBinary implements encoding.BinaryMarshaler.
-func (vs CodableLabelValues) MarshalBinary() ([]byte, error) {
+func (vs LabelValueSet) MarshalBinary() ([]byte, error) {
+	buf := &bytes.Buffer{}
+	if err := EncodeVarint(buf, int64(len(vs))); err != nil {
+		return nil, err
+	}
+	for v := range vs {
+		if err := encodeString(buf, string(v)); err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler.
+func (vs *LabelValueSet) UnmarshalBinary(buf []byte) error {
+	r := bytes.NewReader(buf)
+	numValues, err := binary.ReadVarint(r)
+	if err != nil {
+		return err
+	}
+	*vs = make(LabelValueSet, numValues)
+
+	for i := int64(0); i < numValues; i++ {
+		v, err := decodeString(r)
+		if err != nil {
+			return err
+		}
+		(*vs)[clientmodel.LabelValue(v)] = struct{}{}
+	}
+	return nil
+}
+
+// LabelValues is a clientmodel.LabelValues that implements
+// encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. Its binary form is
+// identical to that of LabelValueSet.
+type LabelValues clientmodel.LabelValues
+
+// MarshalBinary implements encoding.BinaryMarshaler.
+func (vs LabelValues) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := EncodeVarint(buf, int64(len(vs))); err != nil {
 		return nil, err
@@ -319,13 +382,13 @@ func (vs CodableLabelValues) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.
-func (vs *CodableLabelValues) UnmarshalBinary(buf []byte) error {
+func (vs *LabelValues) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	numValues, err := binary.ReadVarint(r)
 	if err != nil {
 		return err
 	}
-	*vs = make(CodableLabelValues, numValues)
+	*vs = make(LabelValues, numValues)
 
 	for i := range *vs {
 		v, err := decodeString(r)
@@ -337,14 +400,14 @@ func (vs *CodableLabelValues) UnmarshalBinary(buf []byte) error {
 	return nil
 }
 
-// CodableTimeRange is used to define a time range and implements
+// TimeRange is used to define a time range and implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
-type CodableTimeRange struct {
+type TimeRange struct {
 	First, Last clientmodel.Timestamp
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler.
-func (tr CodableTimeRange) MarshalBinary() ([]byte, error) {
+func (tr TimeRange) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := EncodeVarint(buf, int64(tr.First)); err != nil {
 		return nil, err
@@ -356,7 +419,7 @@ func (tr CodableTimeRange) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.
-func (tr *CodableTimeRange) UnmarshalBinary(buf []byte) error {
+func (tr *TimeRange) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	first, err := binary.ReadVarint(r)
 	if err != nil {

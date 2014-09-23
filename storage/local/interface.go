@@ -90,20 +90,20 @@ type Persistence interface {
 	// GetLabelValuesForLabelName returns the label values for the given
 	// label name.
 	GetLabelValuesForLabelName(clientmodel.LabelName) (clientmodel.LabelValues, error)
-	// GetFingerprintsModifiedBefore returns the fingerprints whose timeseries
-	// have live samples before the provided timestamp.
-	GetFingerprintsModifiedBefore(clientmodel.Timestamp) ([]clientmodel.Fingerprint, error)
 
-	// IndexMetric indexes the given metric for the needs of
-	// GetFingerprintsForLabelPair and GetLabelValuesForLabelName.
-	IndexMetric(clientmodel.Metric, clientmodel.Fingerprint) error
-	// UnindexMetric removes references to the given metric from the indexes
-	// used for GetFingerprintsForLabelPair and
+	// IndexMetric queues the given metric for addition to the indexes
+	// needed by GetFingerprintsForLabelPair and GetLabelValuesForLabelName.
+	// If the queue is full, this method blocks until the metric can be queued.
+	// This method is goroutine-safe.
+	IndexMetric(clientmodel.Metric, clientmodel.Fingerprint)
+	// UnindexMetric queues references to the given metric for removal from
+	// the indexes used for GetFingerprintsForLabelPair and
 	// GetLabelValuesForLabelName. The index of fingerprints to archived
-	// metrics is not affected by this method. (In fact, never call this
+	// metrics is not affected by this removal. (In fact, never call this
 	// method for an archived metric. To drop an archived metric, call
-	// DropArchivedFingerprint.)
-	UnindexMetric(clientmodel.Metric, clientmodel.Fingerprint) error
+	// DropArchivedFingerprint.)  If the queue is full, this method blocks
+	// until the metric can be queued. This method is goroutine-safe.
+	UnindexMetric(clientmodel.Metric, clientmodel.Fingerprint)
 
 	// ArchiveMetric persists the mapping of the given fingerprint to the
 	// given metric, together with the first and last timestamp of the
@@ -118,12 +118,15 @@ type Persistence interface {
 	HasArchivedMetric(clientmodel.Fingerprint) (
 		hasMetric bool, firstTime, lastTime clientmodel.Timestamp, err error,
 	)
+	// GetFingerprintsModifiedBefore returns the fingerprints of archived
+	// timeseries that have live samples before the provided timestamp.
+	GetFingerprintsModifiedBefore(clientmodel.Timestamp) ([]clientmodel.Fingerprint, error)
 	// GetArchivedMetric retrieves the archived metric with the given
 	// fingerprint.
 	GetArchivedMetric(clientmodel.Fingerprint) (clientmodel.Metric, error)
 	// DropArchivedMetric deletes an archived fingerprint and its
-	// corresponding metric entirely. It also un-indexes the metric (no need
-	// to call UnindexMetric for the deleted metric.)
+	// corresponding metric entirely. It also queues the metric for
+	// un-indexing (no need to call UnindexMetric for the deleted metric.)
 	DropArchivedMetric(clientmodel.Fingerprint) error
 	// UnarchiveMetric deletes an archived fingerprint and its metric, but
 	// (in contrast to DropArchivedMetric) does not un-index the metric.
