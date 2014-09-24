@@ -275,7 +275,7 @@ func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, args []Node) interfac
 	}
 
 	for _, el := range vector {
-		for k, _ := range el.Metric {
+		for k := range el.Metric {
 			if _, ok := common[k]; ok {
 				delete(el.Metric, k)
 			}
