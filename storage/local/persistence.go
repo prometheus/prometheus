@@ -124,6 +124,7 @@ func NewDiskPersistence(basePath string, chunkLen int) (Persistence, error) {
 	return p, nil
 }
 
+// GetFingerprintsForLabelPair implements persistence.
 func (p *diskPersistence) GetFingerprintsForLabelPair(lp metric.LabelPair) (clientmodel.Fingerprints, error) {
 	fps, _, err := p.labelPairToFingerprints.Lookup(lp)
 	if err != nil {
@@ -132,6 +133,7 @@ func (p *diskPersistence) GetFingerprintsForLabelPair(lp metric.LabelPair) (clie
 	return fps, nil
 }
 
+// GetLabelValuesForLabelName implements persistence.
 func (p *diskPersistence) GetLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	lvs, _, err := p.labelNameToLabelValues.Lookup(ln)
 	if err != nil {
@@ -140,25 +142,7 @@ func (p *diskPersistence) GetLabelValuesForLabelName(ln clientmodel.LabelName) (
 	return lvs, nil
 }
 
-func (p *diskPersistence) GetFingerprintsModifiedBefore(beforeTime clientmodel.Timestamp) ([]clientmodel.Fingerprint, error) {
-	var fp codable.Fingerprint
-	var tr codable.TimeRange
-	fps := []clientmodel.Fingerprint{}
-	p.archivedFingerprintToTimeRange.ForEach(func(kv index.KeyValueAccessor) error {
-		if err := kv.Value(&tr); err != nil {
-			return err
-		}
-		if tr.First.Before(beforeTime) {
-			if err := kv.Key(&fp); err != nil {
-				return err
-			}
-			fps = append(fps, clientmodel.Fingerprint(fp))
-		}
-		return nil
-	})
-	return fps, nil
-}
-
+// PersistChunk implements Persistence.
 func (p *diskPersistence) PersistChunk(fp clientmodel.Fingerprint, c chunk) error {
 	// 1. Open chunk file.
 	f, err := p.openChunkFileForWriting(fp)
@@ -180,6 +164,7 @@ func (p *diskPersistence) PersistChunk(fp clientmodel.Fingerprint, c chunk) erro
 	return c.marshal(b)
 }
 
+// LoadChunks implements Persistence.
 func (p *diskPersistence) LoadChunks(fp clientmodel.Fingerprint, indexes []int) (chunks, error) {
 	// TODO: we need to verify at some point that file length is a multiple of
 	// the chunk size. When is the best time to do this, and where to remember
@@ -278,6 +263,7 @@ func (p *diskPersistence) LoadChunkDescs(fp clientmodel.Fingerprint, beforeTime 
 	return cds, nil
 }
 
+// PersistSeriesMapAndHeads implements Persistence.
 func (p *diskPersistence) PersistSeriesMapAndHeads(fingerprintToSeries SeriesMap) error {
 	f, err := os.OpenFile(p.headsPath(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
@@ -340,6 +326,7 @@ func (p *diskPersistence) PersistSeriesMapAndHeads(fingerprintToSeries SeriesMap
 	return w.Flush()
 }
 
+// LoadSeriesMapAndHeads implements Persistence.
 func (p *diskPersistence) LoadSeriesMapAndHeads() (SeriesMap, error) {
 	f, err := os.Open(p.headsPath())
 	if os.IsNotExist(err) {
@@ -432,6 +419,7 @@ func (p *diskPersistence) LoadSeriesMapAndHeads() (SeriesMap, error) {
 	return fingerprintToSeries, nil
 }
 
+// DropChunks implements persistence.
 func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (bool, error) {
 	f, err := p.openChunkFileForReading(fp)
 	if os.IsNotExist(err) {
@@ -500,8 +488,19 @@ func (p *diskPersistence) UnindexMetric(m clientmodel.Metric, fp clientmodel.Fin
 	p.indexingQueue <- indexingOp{fp, m, remove}
 }
 
+// WaitForIndexing implements Persistence.
+func (p *diskPersistence) WaitForIndexing() {
+	wait := make(chan int)
+	for {
+		p.indexingFlush <- wait
+		if <-wait == 0 {
+			break
+		}
+	}
+}
+
+// ArchiveMetric implements Persistence.
 func (p *diskPersistence) ArchiveMetric(
-	// TODO: Two step process, make sure this happens atomically.
 	fp clientmodel.Fingerprint, m clientmodel.Metric, first, last clientmodel.Timestamp,
 ) error {
 	if err := p.archivedFingerprintToMetrics.Put(codable.Fingerprint(fp), codable.Metric(m)); err != nil {
@@ -513,17 +512,7 @@ func (p *diskPersistence) ArchiveMetric(
 	return nil
 }
 
-// WaitForIndexing implements persistence.
-func (p *diskPersistence) WaitForIndexing() {
-	wait := make(chan int)
-	for {
-		p.indexingFlush <- wait
-		if <-wait == 0 {
-			break
-		}
-	}
-}
-
+// HasArchivedMetric implements Persistence.
 func (p *diskPersistence) HasArchivedMetric(fp clientmodel.Fingerprint) (
 	hasMetric bool, firstTime, lastTime clientmodel.Timestamp, err error,
 ) {
@@ -531,13 +520,34 @@ func (p *diskPersistence) HasArchivedMetric(fp clientmodel.Fingerprint) (
 	return
 }
 
+// GetFingerprintsModifiedBefore implements Persistence.
+func (p *diskPersistence) GetFingerprintsModifiedBefore(beforeTime clientmodel.Timestamp) ([]clientmodel.Fingerprint, error) {
+	var fp codable.Fingerprint
+	var tr codable.TimeRange
+	fps := []clientmodel.Fingerprint{}
+	p.archivedFingerprintToTimeRange.ForEach(func(kv index.KeyValueAccessor) error {
+		if err := kv.Value(&tr); err != nil {
+			return err
+		}
+		if tr.First.Before(beforeTime) {
+			if err := kv.Key(&fp); err != nil {
+				return err
+			}
+			fps = append(fps, clientmodel.Fingerprint(fp))
+		}
+		return nil
+	})
+	return fps, nil
+}
+
+// GetArchivedMetric implements Persistence.
 func (p *diskPersistence) GetArchivedMetric(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
 	metric, _, err := p.archivedFingerprintToMetrics.Lookup(fp)
 	return metric, err
 }
 
+// DropArchivedMetric implements Persistence.
 func (p *diskPersistence) DropArchivedMetric(fp clientmodel.Fingerprint) error {
-	// TODO: Multi-step process, make sure this happens atomically.
 	metric, err := p.GetArchivedMetric(fp)
 	if err != nil || metric == nil {
 		return err
@@ -552,8 +562,8 @@ func (p *diskPersistence) DropArchivedMetric(fp clientmodel.Fingerprint) error {
 	return nil
 }
 
+// UnarchiveMetric implements Persistence.
 func (p *diskPersistence) UnarchiveMetric(fp clientmodel.Fingerprint) (bool, error) {
-	// TODO: Multi-step process, make sure this happens atomically.
 	has, err := p.archivedFingerprintToTimeRange.Has(fp)
 	if err != nil || !has {
 		return false, err
@@ -567,6 +577,7 @@ func (p *diskPersistence) UnarchiveMetric(fp clientmodel.Fingerprint) (bool, err
 	return true, nil
 }
 
+// Close implements Persistence.
 func (p *diskPersistence) Close() error {
 	close(p.indexingQueue)
 	<-p.indexingStopped

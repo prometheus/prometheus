@@ -191,6 +191,7 @@ func (s *memorySeriesStorage) preloadChunksForRange(fp clientmodel.Fingerprint, 
 	return series.preloadChunksForRange(from, through, s.persistence)
 }
 
+// NewIterator implements storage.
 func (s *memorySeriesStorage) NewIterator(fp clientmodel.Fingerprint) SeriesIterator {
 	s.mtx.RLock()
 	series, ok := s.fingerprintToSeries[fp]
@@ -249,7 +250,8 @@ func (s *memorySeriesStorage) handlePersistQueue() {
 	s.persistDone <- true
 }
 
-// Close stops serving, flushes all pending operations, and frees all resources.
+// Close stops serving, flushes all pending operations, and frees all
+// resources. It implements Storage.
 func (s *memorySeriesStorage) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -376,6 +378,7 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 	}
 }
 
+// Serve implements Storage.
 func (s *memorySeriesStorage) Serve(started chan<- bool) {
 	s.mtx.Lock()
 	if s.state != storageStarting {

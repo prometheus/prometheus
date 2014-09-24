@@ -46,7 +46,11 @@ type Storage interface {
 	Close() error
 }
 
-// SeriesIterator enables efficient access of sample values in a series.
+// SeriesIterator enables efficient access of sample values in a series. All
+// methods are goroutine-safe. A SeriesIterator iterates over a snapshot of a
+// series, i.e. it is safe to continue using a SeriesIterator after modifying
+// the corresponding series, but the iterator will represent the state of the
+// series prior the modification.
 type SeriesIterator interface {
 	// Gets the two values that are immediately adjacent to a given time. In
 	// case a value exist at precisely the given time, only that single
@@ -62,33 +66,47 @@ type SeriesIterator interface {
 }
 
 // A Persistence is used by a Storage implementation to store samples
-// persistently across restarts.
+// persistently across restarts. The methods are generally not goroutine-safe
+// unless marked otherwise. The chunk-related methods PersistChunk, DropChunks,
+// LoadChunks, and LoadChunkDescs can be called concurrently with each other if
+// each call refers to a different fingerprint.
+//
+// TODO: As a Persistence is really only used within this package, consider not
+// exporting it.
 type Persistence interface {
-	// PersistChunk persists a single chunk of a series.
+	// PersistChunk persists a single chunk of a series. It is the caller's
+	// responsibility to not modify chunk concurrently.
 	PersistChunk(clientmodel.Fingerprint, chunk) error
-	// PersistSeriesMapAndHeads persists the fingerprint to memory-series
-	// mapping and all open (non-full) head chunks.
-	PersistSeriesMapAndHeads(SeriesMap) error
-
-	// DropChunks deletes all chunks from a timeseries whose last sample time is
-	// before beforeTime.
+	// DropChunks deletes all chunks from a series whose last sample time is
+	// before beforeTime. It returns true if all chunks of the series have
+	// been deleted.
 	DropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (allDropped bool, err error)
-
 	// LoadChunks loads a group of chunks of a timeseries by their index. The
 	// chunk with the earliest time will have index 0, the following ones will
 	// have incrementally larger indexes.
 	LoadChunks(fp clientmodel.Fingerprint, indexes []int) (chunks, error)
 	// LoadChunkDescs loads chunkDescs for a series up until a given time.
 	LoadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (chunkDescs, error)
+
+	// PersistSeriesMapAndHeads persists the fingerprint to memory-series
+	// mapping and all open (non-full) head chunks. It is the caller's
+	// responsibility to not modify SeriesMap concurrently. Do not call
+	// concurrently with LoadSeriesMapAndHeads.
+	PersistSeriesMapAndHeads(SeriesMap) error
 	// LoadSeriesMapAndHeads loads the fingerprint to memory-series mapping
-	// and all open (non-full) head chunks.
+	// and all open (non-full) head chunks. Do not call
+	// concurrently with PersistSeriesMapAndHeads.
 	LoadSeriesMapAndHeads() (SeriesMap, error)
 
 	// GetFingerprintsForLabelPair returns the fingerprints for the given
-	// label pair.
+	// label pair. This method is goroutine-safe but take into account that
+	// metrics queued for indexing with IndexMetric might not yet made it
+	// into the index. (Same applies correspondingly to UnindexMetric.)
 	GetFingerprintsForLabelPair(metric.LabelPair) (clientmodel.Fingerprints, error)
 	// GetLabelValuesForLabelName returns the label values for the given
-	// label name.
+	// label name. This method is goroutine-safe but take into account that
+	// metrics queued for indexing with IndexMetric might not yet made it
+	// into the index. (Same applies correspondingly to UnindexMetric.)
 	GetLabelValuesForLabelName(clientmodel.LabelName) (clientmodel.LabelValues, error)
 
 	// IndexMetric queues the given metric for addition to the indexes
@@ -107,43 +125,51 @@ type Persistence interface {
 	// WaitForIndexing waits until all items in the indexing queue are
 	// processed. If queue processing is currently on hold (to gather more
 	// ops for batching), this method will trigger an immediate start of
-	// processing.
+	// processing. This method is goroutine-safe.
 	WaitForIndexing()
 
 	// ArchiveMetric persists the mapping of the given fingerprint to the
 	// given metric, together with the first and last timestamp of the
-	// series belonging to the metric.
+	// series belonging to the metric. Do not call concurrently with
+	// UnarchiveMetric or DropArchivedMetric.
 	ArchiveMetric(
 		fingerprint clientmodel.Fingerprint, metric clientmodel.Metric,
 		firstTime, lastTime clientmodel.Timestamp,
 	) error
 	// HasArchivedMetric returns whether the archived metric for the given
 	// fingerprint exists and if yes, what the first and last timestamp in
-	// the corresponding series is.
+	// the corresponding series is. This method is goroutine-safe.
 	HasArchivedMetric(clientmodel.Fingerprint) (
 		hasMetric bool, firstTime, lastTime clientmodel.Timestamp, err error,
 	)
 	// GetFingerprintsModifiedBefore returns the fingerprints of archived
-	// timeseries that have live samples before the provided timestamp.
+	// timeseries that have live samples before the provided timestamp. This
+	// method is goroutine-safe (but behavior during concurrent modification
+	// via ArchiveMetric, UnarchiveMetric, or DropArchivedMetric is
+	// undefined).
 	GetFingerprintsModifiedBefore(clientmodel.Timestamp) ([]clientmodel.Fingerprint, error)
 	// GetArchivedMetric retrieves the archived metric with the given
-	// fingerprint.
+	// fingerprint. This method is goroutine-safe.
 	GetArchivedMetric(clientmodel.Fingerprint) (clientmodel.Metric, error)
 	// DropArchivedMetric deletes an archived fingerprint and its
 	// corresponding metric entirely. It also queues the metric for
 	// un-indexing (no need to call UnindexMetric for the deleted metric.)
+	// Do not call concurrently with UnarchiveMetric or ArchiveMetric.
 	DropArchivedMetric(clientmodel.Fingerprint) error
 	// UnarchiveMetric deletes an archived fingerprint and its metric, but
 	// (in contrast to DropArchivedMetric) does not un-index the metric.
-	// The method returns true if a metric was actually deleted.
+	// The method returns true if a metric was actually deleted. Do not call
+	// concurrently with DropArchivedMetric or ArchiveMetric.
 	UnarchiveMetric(clientmodel.Fingerprint) (bool, error)
 
-	// Close flushes buffered data and releases any held resources.
+	// Close flushes the indexing queue and other buffered data and releases
+	// any held resources.
 	Close() error
 }
 
 // A Preloader preloads series data necessary for a query into memory and pins
-// them until released via Close().
+// them until released via Close(). Its methods are generally not
+// goroutine-safe.
 type Preloader interface {
 	PreloadRange(fp clientmodel.Fingerprint, from clientmodel.Timestamp, through clientmodel.Timestamp) error
 	/*

@@ -23,6 +23,7 @@ type memorySeriesPreloader struct {
 	pinnedChunkDescs chunkDescs
 }
 
+// PreloadRange implements Preloader.
 func (p *memorySeriesPreloader) PreloadRange(fp clientmodel.Fingerprint, from clientmodel.Timestamp, through clientmodel.Timestamp) error {
 	cds, err := p.storage.preloadChunksForRange(fp, from, through)
 	if err != nil {

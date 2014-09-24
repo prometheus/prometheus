@@ -325,6 +325,7 @@ func (s *memorySeries) preloadChunksForRange(from clientmodel.Timestamp, through
 	return s.preloadChunks(pinIndexes, p)
 }
 
+// memorySeriesIterator implements SeriesIterator.
 type memorySeriesIterator struct {
 	mtx     *sync.Mutex
 	chunkIt chunkIterator
@@ -332,6 +333,9 @@ type memorySeriesIterator struct {
 }
 
 func (s *memorySeries) newIterator() SeriesIterator {
+	// TODO: Possible concurrency issue if series is modified while this is
+	// running. Only caller at the moment is in NewIterator() in storage.go,
+	// where there is no locking.
 	chunks := make(chunks, 0, len(s.chunkDescs))
 	for i, cd := range s.chunkDescs {
 		if cd.chunk != nil {
@@ -419,6 +423,7 @@ func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.V
 	return it.chunkIt.getValueAtTime(t)
 }
 
+// GetBoundaryValues implements SeriesIterator.
 func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Values {
 	it.mtx.Lock()
 	defer it.mtx.Unlock()
@@ -468,6 +473,7 @@ func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Val
 	return values
 }
 
+// GetRangeValues implements SeriesIterator.
 func (it *memorySeriesIterator) GetRangeValues(in metric.Interval) metric.Values {
 	it.mtx.Lock()
 	defer it.mtx.Unlock()
