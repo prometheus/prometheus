@@ -104,6 +104,11 @@ type Persistence interface {
 	// DropArchivedFingerprint.)  If the queue is full, this method blocks
 	// until the metric can be queued. This method is goroutine-safe.
 	UnindexMetric(clientmodel.Metric, clientmodel.Fingerprint)
+	// WaitForIndexing waits until all items in the indexing queue are
+	// processed. If queue processing is currently on hold (to gather more
+	// ops for batching), this method will trigger an immediate start of
+	// processing.
+	WaitForIndexing()
 
 	// ArchiveMetric persists the mapping of the given fingerprint to the
 	// given metric, together with the first and last timestamp of the

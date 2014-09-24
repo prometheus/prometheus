@@ -81,6 +81,7 @@ type diskPersistence struct {
 
 	indexingQueue   chan indexingOp
 	indexingStopped chan struct{}
+	indexingFlush   chan chan int
 }
 
 // NewDiskPersistence returns a newly allocated Persistence backed by local disk storage, ready to use.
@@ -117,6 +118,7 @@ func NewDiskPersistence(basePath string, chunkLen int) (Persistence, error) {
 
 		indexingQueue:   make(chan indexingOp, indexingQueueCapacity),
 		indexingStopped: make(chan struct{}),
+		indexingFlush:   make(chan chan int),
 	}
 	go p.processIndexingQueue()
 	return p, nil
@@ -511,6 +513,17 @@ func (p *diskPersistence) ArchiveMetric(
 	return nil
 }
 
+// WaitForIndexing implements persistence.
+func (p *diskPersistence) WaitForIndexing() {
+	wait := make(chan int)
+	for {
+		p.indexingFlush <- wait
+		if <-wait == 0 {
+			break
+		}
+	}
+}
+
 func (p *diskPersistence) HasArchivedMetric(fp clientmodel.Fingerprint) (
 	hasMetric bool, firstTime, lastTime clientmodel.Timestamp, err error,
 ) {
@@ -636,19 +649,31 @@ func (p *diskPersistence) processIndexingQueue() {
 		batchSize = 0
 		nameToValues = index.LabelNameLabelValuesMapping{}
 		pairToFPs = index.LabelPairFingerprintsMapping{}
+		batchTimeout.Reset(indexingBatchTimeout)
 	}
 
+	var flush chan chan int
 loop:
 	for {
+		// Only process flush requests if the queue is currently empty.
+		if len(p.indexingQueue) == 0 {
+			flush = p.indexingFlush
+		} else {
+			flush = nil
+		}
 		select {
 		case <-batchTimeout.C:
 			if batchSize > 0 {
 				commitBatch()
+			} else {
+				batchTimeout.Reset(indexingBatchTimeout)
 			}
-			batchTimeout.Reset(indexingBatchTimeout)
+		case r := <-flush:
+			if batchSize > 0 {
+				commitBatch()
+			}
+			r <- len(p.indexingQueue)
 		case op, ok := <-p.indexingQueue:
-			batchTimeout.Stop()
-
 			if !ok {
 				if batchSize > 0 {
 					commitBatch()
@@ -696,7 +721,6 @@ loop:
 			if batchSize >= indexingMaxBatchSize {
 				commitBatch()
 			}
-			batchTimeout.Reset(indexingBatchTimeout)
 		}
 	}
 	close(p.indexingStopped)

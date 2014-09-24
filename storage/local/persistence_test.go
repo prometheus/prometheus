@@ -16,7 +16,6 @@ package local
 import (
 	"reflect"
 	"testing"
-	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -261,15 +260,11 @@ func TestIndexing(t *testing.T) {
 			}
 			indexedFpsToMetrics[fp] = m
 		}
-		// TODO: Find a better solution than sleeping.
-		time.Sleep(2 * indexingBatchTimeout)
 		verifyIndexedState(i, t, b, indexedFpsToMetrics, p.(*diskPersistence))
 	}
 
 	for i := len(batches) - 1; i >= 0; i-- {
 		b := batches[i]
-		// TODO: Find a better solution than sleeping.
-		time.Sleep(2 * indexingBatchTimeout)
 		verifyIndexedState(i, t, batches[i], indexedFpsToMetrics, p.(*diskPersistence))
 		for fp, m := range b.fpToMetric {
 			p.UnindexMetric(m, fp)
@@ -286,6 +281,7 @@ func TestIndexing(t *testing.T) {
 }
 
 func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMetrics index.FingerprintMetricMapping, p *diskPersistence) {
+	p.WaitForIndexing()
 	for fp, m := range indexedFpsToMetrics {
 		// Compare archived metrics with input metrics.
 		mOut, err := p.GetArchivedMetric(fp)
