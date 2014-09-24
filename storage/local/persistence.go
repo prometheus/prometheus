@@ -710,9 +710,10 @@ func (p *diskPersistence) processIndexingQueue() {
 	defer batchTimeout.Stop()
 
 	commitBatch := func() {
-		begin := time.Now()
-		defer p.indexingBatchLatency.Observe(float64(time.Since(begin) / time.Millisecond))
 		p.indexingBatchSizes.Observe(float64(batchSize))
+		defer func(begin time.Time) {
+			p.indexingBatchLatency.Observe(float64(time.Since(begin) / time.Millisecond))
+		}(time.Now())
 
 		if err := p.labelPairToFingerprints.IndexBatch(pairToFPs); err != nil {
 			glog.Error("Error indexing label pair to fingerprints batch: ", err)
