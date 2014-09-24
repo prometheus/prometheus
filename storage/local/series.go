@@ -131,7 +131,7 @@ func newMemorySeries(m clientmodel.Metric) *memorySeries {
 	}
 }
 
-func (s *memorySeries) add(v *metric.SamplePair, persistQueue chan *persistRequest) {
+func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, persistQueue chan *persistRequest) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -148,8 +148,6 @@ func (s *memorySeries) add(v *metric.SamplePair, persistQueue chan *persistReque
 
 	s.head().chunk = chunks[0]
 	if len(chunks) > 1 {
-		fp := s.metric.Fingerprint()
-
 		queuePersist := func(cd *chunkDesc) {
 			persistQueue <- &persistRequest{
 				fingerprint: fp,

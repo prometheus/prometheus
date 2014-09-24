@@ -98,15 +98,6 @@ type persistRequest struct {
 
 // AppendSamples implements Storage.
 func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
-	/*
-		s.mtx.Lock()
-		defer s.mtx.Unlock()
-		if s.state != storageServing {
-			panic("storage is not serving")
-		}
-		s.mtx.Unlock()
-	*/
-
 	for _, sample := range samples {
 		s.appendSample(sample)
 	}
@@ -118,15 +109,20 @@ func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	series := s.getOrCreateSeries(sample.Metric)
-	series.add(&metric.SamplePair{
+	if s.state != storageServing {
+		panic("storage is not serving")
+	}
+
+	fp := sample.Metric.Fingerprint()
+	series := s.getOrCreateSeries(fp, sample.Metric)
+	// TODO: Can we release s.mtx here already?
+	series.add(fp, &metric.SamplePair{
 		Value:     sample.Value,
 		Timestamp: sample.Timestamp,
 	}, s.persistQueue)
 }
 
-func (s *memorySeriesStorage) getOrCreateSeries(m clientmodel.Metric) *memorySeries {
-	fp := m.Fingerprint()
+func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m clientmodel.Metric) *memorySeries {
 	series, ok := s.fingerprintToSeries[fp]
 
 	if !ok {
@@ -185,7 +181,7 @@ func (s *memorySeriesStorage) preloadChunksForRange(fp clientmodel.Fingerprint, 
 			if err != nil {
 				return nil, err
 			}
-			series = s.getOrCreateSeries(metric)
+			series = s.getOrCreateSeries(fp, metric)
 		}
 	}
 	return series.preloadChunksForRange(from, through, s.persistence)
