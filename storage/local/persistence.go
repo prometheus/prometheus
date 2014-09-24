@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -32,6 +33,9 @@ import (
 )
 
 const (
+	namespace = "prometheus"
+	subsystem = "persistence"
+
 	seriesFileName     = "series.db"
 	seriesTempFileName = "series.db.tmp"
 
@@ -82,10 +86,15 @@ type diskPersistence struct {
 	indexingQueue   chan indexingOp
 	indexingStopped chan struct{}
 	indexingFlush   chan chan int
+
+	indexingQueueLength   prometheus.Gauge
+	indexingQueueCapacity prometheus.Metric
+	indexingBatchSizes    prometheus.Summary
+	indexingBatchLatency  prometheus.Summary
 }
 
 // NewDiskPersistence returns a newly allocated Persistence backed by local disk storage, ready to use.
-func NewDiskPersistence(basePath string, chunkLen int) (Persistence, error) {
+func NewDiskPersistence(basePath string, chunkLen int) (*diskPersistence, error) {
 	if err := os.MkdirAll(basePath, 0700); err != nil {
 		return nil, err
 	}
@@ -119,9 +128,59 @@ func NewDiskPersistence(basePath string, chunkLen int) (Persistence, error) {
 		indexingQueue:   make(chan indexingOp, indexingQueueCapacity),
 		indexingStopped: make(chan struct{}),
 		indexingFlush:   make(chan chan int),
+
+		indexingQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "indexing_queue_length",
+			Help:      "The number of metrics waiting to be indexed.",
+		}),
+		indexingQueueCapacity: prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, subsystem, "indexing_queue_capacity"),
+				"The capacity of the indexing queue.",
+				nil, nil,
+			),
+			prometheus.GaugeValue,
+			float64(indexingQueueCapacity),
+		),
+		indexingBatchSizes: prometheus.NewSummary(
+			prometheus.SummaryOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "indexing_batch_sizes",
+				Help:      "Quantiles for indexing batch sizes (number of metrics per batch).",
+			},
+		),
+		indexingBatchLatency: prometheus.NewSummary(
+			prometheus.SummaryOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "indexing_batch_latency_milliseconds",
+				Help:      "Quantiles for batch indexing latencies in milliseconds.",
+			},
+		),
 	}
 	go p.processIndexingQueue()
 	return p, nil
+}
+
+// Describe implements prometheus.Collector.
+func (p *diskPersistence) Describe(ch chan<- *prometheus.Desc) {
+	ch <- p.indexingQueueLength.Desc()
+	ch <- p.indexingQueueCapacity.Desc()
+	p.indexingBatchSizes.Describe(ch)
+	p.indexingBatchLatency.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (p *diskPersistence) Collect(ch chan<- prometheus.Metric) {
+	p.indexingQueueLength.Set(float64(len(p.indexingQueue)))
+
+	ch <- p.indexingQueueLength
+	ch <- p.indexingQueueCapacity
+	p.indexingBatchSizes.Collect(ch)
+	p.indexingBatchLatency.Collect(ch)
 }
 
 // GetFingerprintsForLabelPair implements persistence.
@@ -651,6 +710,10 @@ func (p *diskPersistence) processIndexingQueue() {
 	defer batchTimeout.Stop()
 
 	commitBatch := func() {
+		begin := time.Now()
+		defer p.indexingBatchLatency.Observe(float64(time.Since(begin) / time.Millisecond))
+		p.indexingBatchSizes.Observe(float64(batchSize))
+
 		if err := p.labelPairToFingerprints.IndexBatch(pairToFPs); err != nil {
 			glog.Error("Error indexing label pair to fingerprints batch: ", err)
 		}

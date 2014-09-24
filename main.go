@@ -141,6 +141,7 @@ func main() {
 	if err != nil {
 		glog.Fatal("Error opening disk persistence: ", err)
 	}
+	registry.MustRegister(persistence)
 
 	o := &local.MemorySeriesStorageOptions{
 		Persistence:                persistence,
