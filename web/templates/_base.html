@@ -17,6 +17,10 @@
         <div class="container-fluid">
           <a class="brand" href="/">Prometheus</a>
           <ul class="nav">
+            {{$consoles := getConsoles}}
+            {{if $consoles}}
+            <li><a href="{{$consoles}}">Consoles</a></li>
+            {{ end }}
             <li><a href="/alerts">Alerts</a></li>
             <li><a href="/graph">Graph</a></li>
             <li><a href="/">Status</a></li>
