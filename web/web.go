@@ -128,10 +128,23 @@ func getTemplateFile(name string) (string, error) {
 	}
 }
 
+func getConsoles() string {
+	if _, err := os.Stat(*consoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
+		return "/consoles/index.html"
+	}
+	if *userAssetsPath != "" {
+		if _, err := os.Stat(*userAssetsPath + "/index.html"); !os.IsNotExist(err) {
+			return "/user/index.html"
+		}
+	}
+	return ""
+}
+
 func getTemplate(name string) (t *template.Template, err error) {
 	t = template.New("_base")
 	t.Funcs(template.FuncMap{
-		"since": time.Since,
+		"since":       time.Since,
+		"getConsoles": getConsoles,
 	})
 	file, err := getTemplateFile("_base")
 	if err != nil {
