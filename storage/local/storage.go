@@ -115,7 +115,6 @@ func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
 
 	fp := sample.Metric.Fingerprint()
 	series := s.getOrCreateSeries(fp, sample.Metric)
-	// TODO: Can we release s.mtx here already?
 	series.add(fp, &metric.SamplePair{
 		Value:     sample.Value,
 		Timestamp: sample.Timestamp,
@@ -181,7 +180,9 @@ func (s *memorySeriesStorage) preloadChunksForRange(fp clientmodel.Fingerprint, 
 			if err != nil {
 				return nil, err
 			}
+			s.mtx.Lock()
 			series = s.getOrCreateSeries(fp, metric)
+			defer s.mtx.Unlock() // Ugh.
 		}
 	}
 	return series.preloadChunksForRange(from, through, s.persistence)
