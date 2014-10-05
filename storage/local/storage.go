@@ -204,6 +204,10 @@ func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
+	defer func(begin time.Time) {
+		evictionDuration.Set(float64(time.Since(begin) / time.Millisecond))
+	}(time.Now())
+
 	for fp, series := range s.fingerprintToSeries {
 		if series.evictOlderThan(clientmodel.TimestampFromTime(time.Now()).Add(-1 * ttl)) {
 			if err := s.persistence.ArchiveMetric(
@@ -294,6 +298,9 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 		case <-purgeTicker.C:
 			glog.Info("Purging old series data...")
 			s.mtx.RLock()
+
+			begin := time.Now()
+
 			fps := make([]clientmodel.Fingerprint, 0, len(s.fingerprintToSeries))
 			for fp := range s.fingerprintToSeries {
 				fps = append(fps, fp)
@@ -324,6 +331,7 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 					s.purgeSeries(fp, ts)
 				}
 			}
+			purgeDuration.Set(float64(time.Since(begin) / time.Millisecond))
 			glog.Info("Done purging old series data.")
 		}
 	}

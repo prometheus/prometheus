@@ -36,6 +36,14 @@ var (
 		Name: "prometheus_stored_samples_total",
 		Help: "The total number of stored samples.",
 	})
+	evictionDuration = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_memory_eviction_duration_milliseconds",
+		Help: "The duration of the last memory eviction iteration in milliseconds.",
+	})
+	purgeDuration = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_storage_purge_duration_milliseconds",
+		Help: "The duration of the last storage purge iteration in milliseconds.",
+	})
 
 	numChunks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_used_chunks_count",
@@ -59,7 +67,7 @@ var (
 	})
 
 	persistLatencies = prometheus.NewSummaryVec(prometheus.SummaryOpts{
-		Name: "prometheus_persist_latency_ms",
+		Name: "prometheus_persist_latency_milliseconds",
 		Help: "A summary of latencies for persisting each chunk.",
 	}, []string{outcome})
 	persistQueueLength = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -75,6 +83,8 @@ var (
 func init() {
 	prometheus.MustRegister(numSeries)
 	prometheus.MustRegister(numSamples)
+	prometheus.MustRegister(evictionDuration)
+	prometheus.MustRegister(purgeDuration)
 	prometheus.MustRegister(numChunks)
 	prometheus.MustRegister(numChunkGives)
 	prometheus.MustRegister(numChunkGets)
