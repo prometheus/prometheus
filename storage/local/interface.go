@@ -21,6 +21,12 @@ import (
 // SeriesMap maps fingerprints to memory series.
 type SeriesMap map[clientmodel.Fingerprint]*memorySeries
 
+// FingerprintSeriesPair is a fingerprint paired with a memory series.
+type FingerprintSeriesPair struct {
+	Fingerprint clientmodel.Fingerprint
+	Series      *memorySeries
+}
+
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe.
 type Storage interface {

@@ -50,9 +50,10 @@ const (
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
 
-	indexingMaxBatchSize  = 1024
-	indexingBatchTimeout  = 500 * time.Millisecond    // Commit batch when idle for that long.
-	indexingQueueCapacity = 10 * indexingMaxBatchSize // TODO: Export as metric.
+	// TODO: Consider making any of these configurable?
+	indexingMaxBatchSize  = 1024 * 1024
+	indexingBatchTimeout  = 500 * time.Millisecond // Commit batch when idle for that long.
+	indexingQueueCapacity = 1024
 )
 
 const (

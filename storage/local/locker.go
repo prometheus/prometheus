@@ -17,6 +17,12 @@ type fingerprintLock struct {
 // fingerprintLocker allows locking individual fingerprints in such a manner
 // that the lock only exists and uses memory while it is being held (or waiting
 // to be acquired) by at least one party.
+//
+// TODO: This could be implemented as just a fixed number n of locks, assigned
+// based on the fingerprint % n. There can be collisons, but they would
+// statistically rarely matter (if n is much larger than the number of
+// goroutines requiring locks concurrently). Only problem is locking of two
+// different fingerprints by the same goroutine.
 type fingerprintLocker struct {
 	mtx        sync.Mutex
 	fpLocks    map[clientmodel.Fingerprint]*fingerprintLock
@@ -24,8 +30,8 @@ type fingerprintLocker struct {
 }
 
 // newFingerprintLocker returns a new fingerprintLocker ready for use.
-func newFingerprintLocker() *fingerprintLocker {
-	lockPool := make([]*fingerprintLock, 100)
+func newFingerprintLocker(preallocatedMutexes int) *fingerprintLocker {
+	lockPool := make([]*fingerprintLock, preallocatedMutexes)
 	for i := range lockPool {
 		lockPool[i] = &fingerprintLock{}
 	}

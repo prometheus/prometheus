@@ -201,26 +201,45 @@ func (s *memorySeriesStorage) NewIterator(fp clientmodel.Fingerprint) SeriesIter
 }
 
 func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
+	fspsToArchive := []FingerprintSeriesPair{}
 
 	defer func(begin time.Time) {
 		evictionDuration.Set(float64(time.Since(begin) / time.Millisecond))
 	}(time.Now())
 
+	s.mtx.RLock()
 	for fp, series := range s.fingerprintToSeries {
 		if series.evictOlderThan(clientmodel.TimestampFromTime(time.Now()).Add(-1 * ttl)) {
-			if err := s.persistence.ArchiveMetric(
-				fp, series.metric, series.firstTime(), series.lastTime(),
-			); err != nil {
-				glog.Errorf("Error archiving metric %v: %v", series.metric, err)
-			}
-			delete(s.fingerprintToSeries, fp)
-			s.persistQueue <- &persistRequest{
-				fingerprint: fp,
-				chunkDesc:   series.head(),
-			}
+			fspsToArchive = append(fspsToArchive, FingerprintSeriesPair{
+				Fingerprint: fp,
+				Series:      series,
+			})
 		}
+		series.persistHeadChunk(fp, s.persistQueue)
+	}
+	s.mtx.RUnlock()
+
+	if len(fspsToArchive) == 0 {
+		return
+	}
+
+	// If we are here, we have metrics to archive. For that, we need the write lock.
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	for _, fsp := range fspsToArchive {
+		// TODO: Need series lock (or later FP lock)?
+		if !fsp.Series.headChunkPersisted {
+			// Oops. The series has received new samples all of a
+			// sudden, giving it a new head chunk. Leave it alone.
+			return
+		}
+		if err := s.persistence.ArchiveMetric(
+			fsp.Fingerprint, fsp.Series.metric, fsp.Series.firstTime(), fsp.Series.lastTime(),
+		); err != nil {
+			glog.Errorf("Error archiving metric %v: %v", fsp.Series.metric, err)
+		}
+		delete(s.fingerprintToSeries, fsp.Fingerprint)
 	}
 }
 

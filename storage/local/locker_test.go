@@ -7,13 +7,11 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-var httpServerStarted bool
-
 func BenchmarkFingerprintLockerParallel(b *testing.B) {
 	numGoroutines := 10
 	numFingerprints := 10
 	numLockOps := b.N
-	locker := newFingerprintLocker()
+	locker := newFingerprintLocker(100)
 
 	wg := sync.WaitGroup{}
 	b.ResetTimer()
@@ -36,7 +34,7 @@ func BenchmarkFingerprintLockerParallel(b *testing.B) {
 
 func BenchmarkFingerprintLockerSerial(b *testing.B) {
 	numFingerprints := 10
-	locker := newFingerprintLocker()
+	locker := newFingerprintLocker(100)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

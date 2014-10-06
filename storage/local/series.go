@@ -119,8 +119,9 @@ type memorySeries struct {
 	// (or all) chunkDescs are only on disk. These chunks are all contiguous
 	// and at the tail end.
 	chunkDescsLoaded bool
-	// Whether the current head chunk has already been persisted. If true,
-	// the current head chunk must not be modified anymore.
+	// Whether the current head chunk has already been persisted (or at
+	// least has been scheduled to be persisted). If true, the current head
+	// chunk must not be modified anymore.
 	headChunkPersisted bool
 }
 
@@ -168,6 +169,19 @@ func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, per
 				queuePersist(cd)
 			}
 		}
+	}
+}
+
+func (s *memorySeries) persistHeadChunk(fp clientmodel.Fingerprint, persistQueue chan *persistRequest) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	if s.headChunkPersisted {
+		return
+	}
+	s.headChunkPersisted = true
+	persistQueue <- &persistRequest{
+		fingerprint: fp,
+		chunkDesc:   s.head(),
 	}
 }
 
