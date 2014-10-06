@@ -201,7 +201,7 @@ func (s *memorySeriesStorage) NewIterator(fp clientmodel.Fingerprint) SeriesIter
 }
 
 func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
-	fspsToArchive := []FingerprintSeriesPair{}
+	fpsToArchive := []clientmodel.Fingerprint{}
 
 	defer func(begin time.Time) {
 		evictionDuration.Set(float64(time.Since(begin) / time.Millisecond))
@@ -210,16 +210,13 @@ func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
 	s.mtx.RLock()
 	for fp, series := range s.fingerprintToSeries {
 		if series.evictOlderThan(clientmodel.TimestampFromTime(time.Now()).Add(-1 * ttl)) {
-			fspsToArchive = append(fspsToArchive, FingerprintSeriesPair{
-				Fingerprint: fp,
-				Series:      series,
-			})
+			fpsToArchive = append(fpsToArchive, fp)
+			series.persistHeadChunk(fp, s.persistQueue)
 		}
-		series.persistHeadChunk(fp, s.persistQueue)
 	}
 	s.mtx.RUnlock()
 
-	if len(fspsToArchive) == 0 {
+	if len(fpsToArchive) == 0 {
 		return
 	}
 
@@ -227,19 +224,24 @@ func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	for _, fsp := range fspsToArchive {
+	for _, fp := range fpsToArchive {
+		series, ok := s.fingerprintToSeries[fp]
+		if !ok {
+			// Oops, perhaps another evict run happening in parallel?
+			continue
+		}
 		// TODO: Need series lock (or later FP lock)?
-		if !fsp.Series.headChunkPersisted {
+		if !series.headChunkPersisted {
 			// Oops. The series has received new samples all of a
 			// sudden, giving it a new head chunk. Leave it alone.
-			return
+			continue
 		}
 		if err := s.persistence.ArchiveMetric(
-			fsp.Fingerprint, fsp.Series.metric, fsp.Series.firstTime(), fsp.Series.lastTime(),
+			fp, series.metric, series.firstTime(), series.lastTime(),
 		); err != nil {
-			glog.Errorf("Error archiving metric %v: %v", fsp.Series.metric, err)
+			glog.Errorf("Error archiving metric %v: %v", series.metric, err)
 		}
-		delete(s.fingerprintToSeries, fsp.Fingerprint)
+		delete(s.fingerprintToSeries, fp)
 	}
 }
 
