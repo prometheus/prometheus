@@ -79,8 +79,10 @@ func (sm seriesMap) del(fp clientmodel.Fingerprint) {
 // iter returns a channel that produces all mappings in the seriesMap. The
 // channel will be closed once all fingerprints have been received. Not
 // consuming all fingerprints from the channel will leak a goroutine. The
-// semantics of concurrent modification of seriesMap is the same as for
-// iterating over a map with a 'range' clause.
+// semantics of concurrent modification of seriesMap is the similar as the one
+// for iterating over a map with a 'range' clause. However, if the next element
+// in iteration order is removed after the current element has been received
+// from the channel, it will still be produced by the channel.
 func (sm seriesMap) iter() <-chan fingerprintSeriesPair {
 	ch := make(chan fingerprintSeriesPair)
 	go func() {
@@ -91,6 +93,7 @@ func (sm seriesMap) iter() <-chan fingerprintSeriesPair {
 			sm.mtx.RLock()
 		}
 		sm.mtx.RUnlock()
+		close(ch)
 	}()
 	return ch
 }
@@ -98,8 +101,10 @@ func (sm seriesMap) iter() <-chan fingerprintSeriesPair {
 // fpIter returns a channel that produces all fingerprints in the seriesMap. The
 // channel will be closed once all fingerprints have been received. Not
 // consuming all fingerprints from the channel will leak a goroutine. The
-// semantics of concurrent modification of seriesMap is the same as for
-// iterating over a map with a 'range' clause.
+// semantics of concurrent modification of seriesMap is the similar as the one
+// for iterating over a map with a 'range' clause. However, if the next element
+// in iteration order is removed after the current element has been received
+// from the channel, it will still be produced by the channel.
 func (sm seriesMap) fpIter() <-chan clientmodel.Fingerprint {
 	ch := make(chan clientmodel.Fingerprint)
 	go func() {
@@ -110,6 +115,7 @@ func (sm seriesMap) fpIter() <-chan clientmodel.Fingerprint {
 			sm.mtx.RLock()
 		}
 		sm.mtx.RUnlock()
+		close(ch)
 	}()
 	return ch
 }
