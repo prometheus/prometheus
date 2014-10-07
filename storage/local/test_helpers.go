@@ -35,16 +35,12 @@ func (t *testStorageCloser) Close() {
 // returned test.Closer, the temporary directory is cleaned up.
 func NewTestStorage(t testing.TB) (Storage, test.Closer) {
 	directory := test.NewTemporaryDirectory("test_storage", t)
-	persistence, err := NewDiskPersistence(directory.Path(), 1024)
-	if err != nil {
-		t.Fatal("Error opening disk persistence: ", err)
-	}
 	o := &MemorySeriesStorageOptions{
-		Persistence:                persistence,
 		MemoryEvictionInterval:     time.Minute,
 		MemoryRetentionPeriod:      time.Hour,
 		PersistencePurgeInterval:   time.Hour,
 		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
+		PersistenceStoragePath:     directory.Path(),
 	}
 	storage, err := NewMemorySeriesStorage(o)
 	if err != nil {

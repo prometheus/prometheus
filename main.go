@@ -137,16 +137,10 @@ func main() {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	persistence, err := local.NewDiskPersistence(*metricsStoragePath, 1024)
-	if err != nil {
-		glog.Fatal("Error opening disk persistence: ", err)
-	}
-	registry.MustRegister(persistence)
-
 	o := &local.MemorySeriesStorageOptions{
-		Persistence:                persistence,
 		MemoryEvictionInterval:     *memoryEvictionInterval,
 		MemoryRetentionPeriod:      *memoryRetentionPeriod,
+		PersistenceStoragePath:     *metricsStoragePath,
 		PersistencePurgeInterval:   *storagePurgeInterval,
 		PersistenceRetentionPeriod: *storageRetentionPeriod,
 	}
@@ -155,7 +149,7 @@ func main() {
 		glog.Fatal("Error opening memory series storage: ", err)
 	}
 	defer memStorage.Close()
-	//registry.MustRegister(memStorage)
+	registry.MustRegister(memStorage)
 
 	var remoteTSDBQueue *remote.TSDBQueueManager
 	if *remoteTSDBUrl == "" {

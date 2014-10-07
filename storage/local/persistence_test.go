@@ -25,15 +25,15 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 )
 
-func newTestPersistence(t *testing.T) (Persistence, test.Closer) {
+func newTestPersistence(t *testing.T) (*persistence, test.Closer) {
 	dir := test.NewTemporaryDirectory("test_persistence", t)
-	p, err := NewDiskPersistence(dir.Path(), 1024)
+	p, err := newPersistence(dir.Path(), 1024)
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
 	}
 	return p, test.NewCallbackCloser(func() {
-		p.Close()
+		p.close()
 		dir.Close()
 	})
 }
@@ -83,7 +83,7 @@ func TestPersistChunk(t *testing.T) {
 
 	for fp, chunks := range fpToChunks {
 		for _, c := range chunks {
-			if err := p.PersistChunk(fp, c); err != nil {
+			if err := p.persistChunk(fp, c); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -94,7 +94,7 @@ func TestPersistChunk(t *testing.T) {
 		for i := range expectedChunks {
 			indexes = append(indexes, i)
 		}
-		actualChunks, err := p.LoadChunks(fp, indexes)
+		actualChunks, err := p.loadChunks(fp, indexes)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -254,21 +254,21 @@ func TestIndexing(t *testing.T) {
 	indexedFpsToMetrics := index.FingerprintMetricMapping{}
 	for i, b := range batches {
 		for fp, m := range b.fpToMetric {
-			p.IndexMetric(m, fp)
-			if err := p.ArchiveMetric(fp, m, 1, 2); err != nil {
+			p.indexMetric(m, fp)
+			if err := p.archiveMetric(fp, m, 1, 2); err != nil {
 				t.Fatal(err)
 			}
 			indexedFpsToMetrics[fp] = m
 		}
-		verifyIndexedState(i, t, b, indexedFpsToMetrics, p.(*diskPersistence))
+		verifyIndexedState(i, t, b, indexedFpsToMetrics, p)
 	}
 
 	for i := len(batches) - 1; i >= 0; i-- {
 		b := batches[i]
-		verifyIndexedState(i, t, batches[i], indexedFpsToMetrics, p.(*diskPersistence))
+		verifyIndexedState(i, t, batches[i], indexedFpsToMetrics, p)
 		for fp, m := range b.fpToMetric {
-			p.UnindexMetric(m, fp)
-			unarchived, err := p.UnarchiveMetric(fp)
+			p.unindexMetric(m, fp)
+			unarchived, err := p.unarchiveMetric(fp)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -280,11 +280,11 @@ func TestIndexing(t *testing.T) {
 	}
 }
 
-func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMetrics index.FingerprintMetricMapping, p *diskPersistence) {
-	p.WaitForIndexing()
+func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMetrics index.FingerprintMetricMapping, p *persistence) {
+	p.waitForIndexing()
 	for fp, m := range indexedFpsToMetrics {
 		// Compare archived metrics with input metrics.
-		mOut, err := p.GetArchivedMetric(fp)
+		mOut, err := p.getArchivedMetric(fp)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -293,7 +293,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 		}
 
 		// Check that archived metrics are in membership index.
-		has, first, last, err := p.HasArchivedMetric(fp)
+		has, first, last, err := p.hasArchivedMetric(fp)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -310,7 +310,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label name -> label values mappings.
 	for ln, lvs := range b.expectedLnToLvs {
-		outLvs, err := p.GetLabelValuesForLabelName(ln)
+		outLvs, err := p.getLabelValuesForLabelName(ln)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -327,7 +327,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label pair -> fingerprints mappings.
 	for lp, fps := range b.expectedLpToFps {
-		outFps, err := p.GetFingerprintsForLabelPair(lp)
+		outFps, err := p.getFingerprintsForLabelPair(lp)
 		if err != nil {
 			t.Fatal(err)
 		}

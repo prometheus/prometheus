@@ -22,6 +22,98 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
+// fingerprintSeriesPair pairs a fingerprint with a memorySeries pointer.
+type fingerprintSeriesPair struct {
+	fp     clientmodel.Fingerprint
+	series *memorySeries
+}
+
+// seriesMap maps fingerprints to memory series. All its methods are
+// goroutine-safe. A SeriesMap is effectively is a goroutine-safe version of
+// map[clientmodel.Fingerprint]*memorySeries.
+type seriesMap struct {
+	mtx sync.RWMutex
+	m   map[clientmodel.Fingerprint]*memorySeries
+}
+
+// newSeriesMap returns a newly allocated empty seriesMap. To create a seriesMap
+// based on a prefilled map, use an explicit initializer.
+func newSeriesMap() seriesMap {
+	return seriesMap{m: make(map[clientmodel.Fingerprint]*memorySeries)}
+}
+
+// length returns the number of mappings in the seriesMap.
+func (sm seriesMap) length() int {
+	sm.mtx.RLock()
+	defer sm.mtx.RUnlock()
+
+	return len(sm.m)
+}
+
+// get returns a memorySeries for a fingerprint. Return values have the same
+// semantics as the native Go map.
+func (sm seriesMap) get(fp clientmodel.Fingerprint) (s *memorySeries, ok bool) {
+	sm.mtx.RLock()
+	defer sm.mtx.RUnlock()
+
+	s, ok = sm.m[fp]
+	return
+}
+
+// put adds a mapping to the seriesMap.
+func (sm seriesMap) put(fp clientmodel.Fingerprint, s *memorySeries) {
+	sm.mtx.Lock()
+	defer sm.mtx.Unlock()
+
+	sm.m[fp] = s
+}
+
+// del removes a mapping from the series Map.
+func (sm seriesMap) del(fp clientmodel.Fingerprint) {
+	sm.mtx.Lock()
+	defer sm.mtx.Unlock()
+
+	delete(sm.m, fp)
+}
+
+// iter returns a channel that produces all mappings in the seriesMap. The
+// channel will be closed once all fingerprints have been received. Not
+// consuming all fingerprints from the channel will leak a goroutine. The
+// semantics of concurrent modification of seriesMap is the same as for
+// iterating over a map with a 'range' clause.
+func (sm seriesMap) iter() <-chan fingerprintSeriesPair {
+	ch := make(chan fingerprintSeriesPair)
+	go func() {
+		sm.mtx.RLock()
+		for fp, s := range sm.m {
+			sm.mtx.RUnlock()
+			ch <- fingerprintSeriesPair{fp, s}
+			sm.mtx.RLock()
+		}
+		sm.mtx.RUnlock()
+	}()
+	return ch
+}
+
+// fpIter returns a channel that produces all fingerprints in the seriesMap. The
+// channel will be closed once all fingerprints have been received. Not
+// consuming all fingerprints from the channel will leak a goroutine. The
+// semantics of concurrent modification of seriesMap is the same as for
+// iterating over a map with a 'range' clause.
+func (sm seriesMap) fpIter() <-chan clientmodel.Fingerprint {
+	ch := make(chan clientmodel.Fingerprint)
+	go func() {
+		sm.mtx.RLock()
+		for fp := range sm.m {
+			sm.mtx.RUnlock()
+			ch <- fp
+			sm.mtx.RLock()
+		}
+		sm.mtx.RUnlock()
+	}()
+	return ch
+}
+
 type chunkDescs []*chunkDesc
 
 type chunkDesc struct {
@@ -110,8 +202,6 @@ func (cd *chunkDesc) evictNow() {
 }
 
 type memorySeries struct {
-	mtx sync.Mutex
-
 	metric clientmodel.Metric
 	// Sorted by start time, overlapping chunk ranges are forbidden.
 	chunkDescs chunkDescs
@@ -125,17 +215,21 @@ type memorySeries struct {
 	headChunkPersisted bool
 }
 
-func newMemorySeries(m clientmodel.Metric) *memorySeries {
+// newMemorySeries returns a pointer to a newly allocated memorySeries for the
+// given metric. reallyNew defines if the memorySeries is a genuinely new series
+// or (if false) a series for a metric being unarchived, i.e. a series that
+// existed before but has been evicted from memory.
+func newMemorySeries(m clientmodel.Metric, reallyNew bool) *memorySeries {
 	return &memorySeries{
-		metric:           m,
-		chunkDescsLoaded: true,
+		metric:             m,
+		chunkDescsLoaded:   reallyNew,
+		headChunkPersisted: !reallyNew,
 	}
 }
 
+// add adds a sample pair to the series.
+// The caller must have locked the fingerprint of the series.
 func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, persistQueue chan *persistRequest) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
 	if len(s.chunkDescs) == 0 || s.headChunkPersisted {
 		newHead := &chunkDesc{
 			chunk:    newDeltaEncodedChunk(d1, d0, true),
@@ -172,9 +266,9 @@ func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, per
 	}
 }
 
+// persistHeadChunk queues the head chunk for persisting if not already done.
+// The caller must have locked the fingerprint of the series.
 func (s *memorySeries) persistHeadChunk(fp clientmodel.Fingerprint, persistQueue chan *persistRequest) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
 	if s.headChunkPersisted {
 		return
 	}
@@ -185,10 +279,9 @@ func (s *memorySeries) persistHeadChunk(fp clientmodel.Fingerprint, persistQueue
 	}
 }
 
+// evictOlderThan evicts chunks whose latest sample is older than the given timestamp.
+// The caller must have locked the fingerprint of the series.
 func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
 	// For now, always drop the entire range from oldest to t.
 	for _, cd := range s.chunkDescs {
 		if !cd.lastTime().Before(t) {
@@ -203,10 +296,8 @@ func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool)
 }
 
 // purgeOlderThan returns true if all chunks have been purged.
+// The caller must have locked the fingerprint of the series.
 func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) bool {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
 	keepIdx := len(s.chunkDescs)
 	for i, cd := range s.chunkDescs {
 		if !cd.lastTime().Before(t) {
@@ -224,10 +315,11 @@ func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) bool {
 	return len(s.chunkDescs) == 0
 }
 
+// preloadChunks is an internal helper method.
 // TODO: in this method (and other places), we just fudge around with chunkDesc
 // internals without grabbing the chunkDesc lock. Study how this needs to be
-// protected against other accesses that don't hold the series lock.
-func (s *memorySeries) preloadChunks(indexes []int, p Persistence) (chunkDescs, error) {
+// protected against other accesses that don't hold the fp lock.
+func (s *memorySeries) preloadChunks(indexes []int, p *persistence) (chunkDescs, error) {
 	loadIndexes := []int{}
 	pinnedChunkDescs := make(chunkDescs, 0, len(indexes))
 	for _, idx := range indexes {
@@ -241,7 +333,7 @@ func (s *memorySeries) preloadChunks(indexes []int, p Persistence) (chunkDescs, 
 
 	if len(loadIndexes) > 0 {
 		fp := s.metric.Fingerprint()
-		chunks, err := p.LoadChunks(fp, loadIndexes)
+		chunks, err := p.loadChunks(fp, loadIndexes)
 		if err != nil {
 			// Unpin any pinned chunks that were already loaded.
 			for _, cd := range pinnedChunkDescs {
@@ -261,7 +353,7 @@ func (s *memorySeries) preloadChunks(indexes []int, p Persistence) (chunkDescs, 
 }
 
 /*
-func (s *memorySeries) preloadChunksAtTime(t clientmodel.Timestamp, p Persistence) (chunkDescs, error) {
+func (s *memorySeries) preloadChunksAtTime(t clientmodel.Timestamp, p *persistence) (chunkDescs, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -291,8 +383,9 @@ func (s *memorySeries) preloadChunksAtTime(t clientmodel.Timestamp, p Persistenc
 }
 */
 
-func (s *memorySeries) loadChunkDescs(p Persistence) error {
-	cds, err := p.LoadChunkDescs(s.metric.Fingerprint(), s.chunkDescs[0].firstTime())
+// loadChunkDescs is an internal helper method.
+func (s *memorySeries) loadChunkDescs(p *persistence) error {
+	cds, err := p.loadChunkDescs(s.metric.Fingerprint(), s.chunkDescs[0].firstTime())
 	if err != nil {
 		return err
 	}
@@ -301,10 +394,9 @@ func (s *memorySeries) loadChunkDescs(p Persistence) error {
 	return nil
 }
 
-func (s *memorySeries) preloadChunksForRange(from clientmodel.Timestamp, through clientmodel.Timestamp, p Persistence) (chunkDescs, error) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
+// preloadChunksForRange loads chunks for the given range from the persistence.
+// The caller must have locked the fingerprint of the series.
+func (s *memorySeries) preloadChunksForRange(from clientmodel.Timestamp, through clientmodel.Timestamp, p *persistence) (chunkDescs, error) {
 	if !s.chunkDescsLoaded && from.Before(s.chunkDescs[0].firstTime()) {
 		if err := s.loadChunkDescs(p); err != nil {
 			return nil, err
@@ -339,15 +431,12 @@ func (s *memorySeries) preloadChunksForRange(from clientmodel.Timestamp, through
 
 // memorySeriesIterator implements SeriesIterator.
 type memorySeriesIterator struct {
-	mtx     *sync.Mutex
-	chunkIt chunkIterator
-	chunks  chunks
+	lock, unlock func()
+	chunkIt      chunkIterator
+	chunks       chunks
 }
 
-func (s *memorySeries) newIterator() SeriesIterator {
-	// TODO: Possible concurrency issue if series is modified while this is
-	// running. Only caller at the moment is in NewIterator() in storage.go,
-	// where there is no locking.
+func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
 	chunks := make(chunks, 0, len(s.chunkDescs))
 	for i, cd := range s.chunkDescs {
 		if cd.chunk != nil {
@@ -360,7 +449,8 @@ func (s *memorySeries) newIterator() SeriesIterator {
 	}
 
 	return &memorySeriesIterator{
-		mtx:    &s.mtx,
+		lock:   lockFunc,
+		unlock: unlockFunc,
 		chunks: chunks,
 	}
 }
@@ -389,8 +479,8 @@ func (s *memorySeries) lastTime() clientmodel.Timestamp {
 
 // GetValueAtTime implements SeriesIterator.
 func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.Values {
-	it.mtx.Lock()
-	defer it.mtx.Unlock()
+	it.lock()
+	defer it.unlock()
 
 	// The most common case. We are iterating through a chunk.
 	if it.chunkIt != nil && it.chunkIt.contains(t) {
@@ -437,8 +527,8 @@ func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.V
 
 // GetBoundaryValues implements SeriesIterator.
 func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Values {
-	it.mtx.Lock()
-	defer it.mtx.Unlock()
+	it.lock()
+	defer it.unlock()
 
 	// Find the first relevant chunk.
 	i := sort.Search(len(it.chunks), func(i int) bool {
@@ -487,8 +577,8 @@ func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Val
 
 // GetRangeValues implements SeriesIterator.
 func (it *memorySeriesIterator) GetRangeValues(in metric.Interval) metric.Values {
-	it.mtx.Lock()
-	defer it.mtx.Unlock()
+	it.lock()
+	defer it.unlock()
 
 	// Find the first relevant chunk.
 	i := sort.Search(len(it.chunks), func(i int) bool {

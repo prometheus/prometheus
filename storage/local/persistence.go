@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -75,9 +76,19 @@ type indexingOp struct {
 	opType      indexingOpType
 }
 
-type diskPersistence struct {
+// A Persistence is used by a Storage implementation to store samples
+// persistently across restarts. The methods are only goroutine-safe if
+// explicitly marked as such below. The chunk-related methods PersistChunk,
+// DropChunks, LoadChunks, and LoadChunkDescs can be called concurrently with
+// each other if each call refers to a different fingerprint.
+type persistence struct {
 	basePath string
 	chunkLen int
+
+	// archiveMtx protects the archiving-related methods ArchiveMetric,
+	// UnarchiveMetric, DropArchiveMetric, and GetFingerprintsModifiedBefore
+	// from concurrent calls.
+	archiveMtx sync.Mutex
 
 	archivedFingerprintToMetrics   *index.FingerprintMetricIndex
 	archivedFingerprintToTimeRange *index.FingerprintTimeRangeIndex
@@ -94,8 +105,8 @@ type diskPersistence struct {
 	indexingBatchLatency  prometheus.Summary
 }
 
-// NewDiskPersistence returns a newly allocated Persistence backed by local disk storage, ready to use.
-func NewDiskPersistence(basePath string, chunkLen int) (*diskPersistence, error) {
+// newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
+func newPersistence(basePath string, chunkLen int) (*persistence, error) {
 	if err := os.MkdirAll(basePath, 0700); err != nil {
 		return nil, err
 	}
@@ -117,7 +128,7 @@ func NewDiskPersistence(basePath string, chunkLen int) (*diskPersistence, error)
 		return nil, err
 	}
 
-	p := &diskPersistence{
+	p := &persistence{
 		basePath: basePath,
 		chunkLen: chunkLen,
 
@@ -167,7 +178,7 @@ func NewDiskPersistence(basePath string, chunkLen int) (*diskPersistence, error)
 }
 
 // Describe implements prometheus.Collector.
-func (p *diskPersistence) Describe(ch chan<- *prometheus.Desc) {
+func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	ch <- p.indexingQueueLength.Desc()
 	ch <- p.indexingQueueCapacity.Desc()
 	p.indexingBatchSizes.Describe(ch)
@@ -175,7 +186,7 @@ func (p *diskPersistence) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements prometheus.Collector.
-func (p *diskPersistence) Collect(ch chan<- prometheus.Metric) {
+func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	p.indexingQueueLength.Set(float64(len(p.indexingQueue)))
 
 	ch <- p.indexingQueueLength
@@ -184,8 +195,11 @@ func (p *diskPersistence) Collect(ch chan<- prometheus.Metric) {
 	p.indexingBatchLatency.Collect(ch)
 }
 
-// GetFingerprintsForLabelPair implements persistence.
-func (p *diskPersistence) GetFingerprintsForLabelPair(lp metric.LabelPair) (clientmodel.Fingerprints, error) {
+// getFingerprintsForLabelPair returns the fingerprints for the given label
+// pair. This method is goroutine-safe but take into account that metrics queued
+// for indexing with IndexMetric might not yet made it into the index. (Same
+// applies correspondingly to UnindexMetric.)
+func (p *persistence) getFingerprintsForLabelPair(lp metric.LabelPair) (clientmodel.Fingerprints, error) {
 	fps, _, err := p.labelPairToFingerprints.Lookup(lp)
 	if err != nil {
 		return nil, err
@@ -193,8 +207,11 @@ func (p *diskPersistence) GetFingerprintsForLabelPair(lp metric.LabelPair) (clie
 	return fps, nil
 }
 
-// GetLabelValuesForLabelName implements persistence.
-func (p *diskPersistence) GetLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
+// getLabelValuesForLabelName returns the label values for the given label
+// name. This method is goroutine-safe but take into account that metrics queued
+// for indexing with IndexMetric might not yet made it into the index. (Same
+// applies correspondingly to UnindexMetric.)
+func (p *persistence) getLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	lvs, _, err := p.labelNameToLabelValues.Lookup(ln)
 	if err != nil {
 		return nil, err
@@ -202,8 +219,10 @@ func (p *diskPersistence) GetLabelValuesForLabelName(ln clientmodel.LabelName) (
 	return lvs, nil
 }
 
-// PersistChunk implements Persistence.
-func (p *diskPersistence) PersistChunk(fp clientmodel.Fingerprint, c chunk) error {
+// persistChunk persists a single chunk of a series. It is the caller's
+// responsibility to not modify chunk concurrently and to not persist or drop anything
+// for the same fingerprint concurrently.
+func (p *persistence) persistChunk(fp clientmodel.Fingerprint, c chunk) error {
 	// 1. Open chunk file.
 	f, err := p.openChunkFileForWriting(fp)
 	if err != nil {
@@ -224,8 +243,11 @@ func (p *diskPersistence) PersistChunk(fp clientmodel.Fingerprint, c chunk) erro
 	return c.marshal(b)
 }
 
-// LoadChunks implements Persistence.
-func (p *diskPersistence) LoadChunks(fp clientmodel.Fingerprint, indexes []int) (chunks, error) {
+// loadChunks loads a group of chunks of a timeseries by their index. The chunk
+// with the earliest time will have index 0, the following ones will have
+// incrementally larger indexes. It is the caller's responsibility to not
+// persist or drop anything for the same fingerprint concurrently.
+func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int) (chunks, error) {
 	// TODO: we need to verify at some point that file length is a multiple of
 	// the chunk size. When is the best time to do this, and where to remember
 	// it? Right now, we only do it when loading chunkDescs.
@@ -270,7 +292,10 @@ func (p *diskPersistence) LoadChunks(fp clientmodel.Fingerprint, indexes []int) 
 	return chunks, nil
 }
 
-func (p *diskPersistence) LoadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (chunkDescs, error) {
+// loadChunkDescs loads chunkDescs for a series up until a given time.  It is
+// the caller's responsibility to not persist or drop anything for the same
+// fingerprint concurrently.
+func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (chunkDescs, error) {
 	f, err := p.openChunkFileForReading(fp)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -323,8 +348,17 @@ func (p *diskPersistence) LoadChunkDescs(fp clientmodel.Fingerprint, beforeTime 
 	return cds, nil
 }
 
-// PersistSeriesMapAndHeads implements Persistence.
-func (p *diskPersistence) PersistSeriesMapAndHeads(fingerprintToSeries SeriesMap) error {
+// persistSeriesMapAndHeads persists the fingerprint to memory-series mapping
+// and all open (non-full) head chunks. Do not call concurrently with
+// LoadSeriesMapAndHeads.
+//
+// TODO: Currently, this method assumes to be called while nothing else is going
+// on in the storage concurrently. To make this method callable during normal
+// operations, certain things have to be done:
+// - Make sure the length of the seriesMap doesn't change during the runtime.
+// - Lock the fingerprints while persisting unpersisted head chunks.
+// - Write to temporary file and only rename after successfully finishing.
+func (p *persistence) persistSeriesMapAndHeads(fingerprintToSeries seriesMap) error {
 	f, err := os.OpenFile(p.headsPath(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
 		return err
@@ -338,34 +372,41 @@ func (p *diskPersistence) PersistSeriesMapAndHeads(fingerprintToSeries SeriesMap
 	if err := codable.EncodeVarint(w, headsFormatVersion); err != nil {
 		return err
 	}
-	if err := codable.EncodeVarint(w, int64(len(fingerprintToSeries))); err != nil {
+	if err := codable.EncodeVarint(w, int64(fingerprintToSeries.length())); err != nil {
 		return err
 	}
 
-	for fp, series := range fingerprintToSeries {
+	iter := fingerprintToSeries.iter()
+	defer func() {
+		// Consume the iterator in any case to not leak goroutines.
+		for _ = range iter {
+		}
+	}()
+
+	for m := range iter {
 		var seriesFlags byte
-		if series.chunkDescsLoaded {
+		if m.series.chunkDescsLoaded {
 			seriesFlags |= flagChunkDescsLoaded
 		}
-		if series.headChunkPersisted {
+		if m.series.headChunkPersisted {
 			seriesFlags |= flagHeadChunkPersisted
 		}
 		if err := w.WriteByte(seriesFlags); err != nil {
 			return err
 		}
-		if err := codable.EncodeUint64(w, uint64(fp)); err != nil {
+		if err := codable.EncodeUint64(w, uint64(m.fp)); err != nil {
 			return err
 		}
-		buf, err := codable.Metric(series.metric).MarshalBinary()
+		buf, err := codable.Metric(m.series.metric).MarshalBinary()
 		if err != nil {
 			return err
 		}
 		w.Write(buf)
-		if err := codable.EncodeVarint(w, int64(len(series.chunkDescs))); err != nil {
+		if err := codable.EncodeVarint(w, int64(len(m.series.chunkDescs))); err != nil {
 			return err
 		}
-		for i, chunkDesc := range series.chunkDescs {
-			if series.headChunkPersisted || i < len(series.chunkDescs)-1 {
+		for i, chunkDesc := range m.series.chunkDescs {
+			if m.series.headChunkPersisted || i < len(m.series.chunkDescs)-1 {
 				if err := codable.EncodeVarint(w, int64(chunkDesc.firstTime())); err != nil {
 					return err
 				}
@@ -386,55 +427,58 @@ func (p *diskPersistence) PersistSeriesMapAndHeads(fingerprintToSeries SeriesMap
 	return w.Flush()
 }
 
-// LoadSeriesMapAndHeads implements Persistence.
-func (p *diskPersistence) LoadSeriesMapAndHeads() (SeriesMap, error) {
+// loadSeriesMapAndHeads loads the fingerprint to memory-series mapping and all
+// open (non-full) head chunks. Only call this method during start-up while
+// nothing else is running in storage land. This method is utterly
+// goroutine-unsafe.
+func (p *persistence) loadSeriesMapAndHeads() (seriesMap, error) {
 	f, err := os.Open(p.headsPath())
 	if os.IsNotExist(err) {
-		return SeriesMap{}, nil
+		return newSeriesMap(), nil
 	}
 	if err != nil {
-		return nil, err
+		return seriesMap{}, err
 	}
 	defer f.Close()
 	r := bufio.NewReaderSize(f, fileBufSize)
 
 	buf := make([]byte, len(headsMagicString))
 	if _, err := io.ReadFull(r, buf); err != nil {
-		return nil, err
+		return seriesMap{}, err
 	}
 	magic := string(buf)
 	if magic != headsMagicString {
-		return nil, fmt.Errorf(
+		return seriesMap{}, fmt.Errorf(
 			"unexpected magic string, want %q, got %q",
 			headsMagicString, magic,
 		)
 	}
 	if version, err := binary.ReadVarint(r); version != headsFormatVersion || err != nil {
-		return nil, fmt.Errorf("unknown heads format version, want %d", headsFormatVersion)
+		return seriesMap{}, fmt.Errorf("unknown heads format version, want %d", headsFormatVersion)
 	}
 	numSeries, err := binary.ReadVarint(r)
 	if err != nil {
-		return nil, err
+		return seriesMap{}, err
 	}
-	fingerprintToSeries := make(SeriesMap, numSeries)
+	fingerprintToSeries := make(map[clientmodel.Fingerprint]*memorySeries, numSeries)
 
 	for ; numSeries > 0; numSeries-- {
 		seriesFlags, err := r.ReadByte()
 		if err != nil {
-			return nil, err
+			return seriesMap{}, err
 		}
 		headChunkPersisted := seriesFlags&flagHeadChunkPersisted != 0
 		fp, err := codable.DecodeUint64(r)
 		if err != nil {
-			return nil, err
+			return seriesMap{}, err
 		}
 		var metric codable.Metric
 		if err := metric.UnmarshalFromReader(r); err != nil {
-			return nil, err
+			return seriesMap{}, err
 		}
 		numChunkDescs, err := binary.ReadVarint(r)
 		if err != nil {
-			return nil, err
+			return seriesMap{}, err
 		}
 		chunkDescs := make(chunkDescs, numChunkDescs)
 
@@ -442,11 +486,11 @@ func (p *diskPersistence) LoadSeriesMapAndHeads() (SeriesMap, error) {
 			if headChunkPersisted || i < numChunkDescs-1 {
 				firstTime, err := binary.ReadVarint(r)
 				if err != nil {
-					return nil, err
+					return seriesMap{}, err
 				}
 				lastTime, err := binary.ReadVarint(r)
 				if err != nil {
-					return nil, err
+					return seriesMap{}, err
 				}
 				chunkDescs[i] = &chunkDesc{
 					firstTimeField: clientmodel.Timestamp(firstTime),
@@ -456,11 +500,11 @@ func (p *diskPersistence) LoadSeriesMapAndHeads() (SeriesMap, error) {
 				// Non-persisted head chunk.
 				chunkType, err := r.ReadByte()
 				if err != nil {
-					return nil, err
+					return seriesMap{}, err
 				}
 				chunk := chunkForType(chunkType)
 				if err := chunk.unmarshal(r); err != nil {
-					return nil, err
+					return seriesMap{}, err
 				}
 				chunkDescs[i] = &chunkDesc{
 					chunk:    chunk,
@@ -476,11 +520,14 @@ func (p *diskPersistence) LoadSeriesMapAndHeads() (SeriesMap, error) {
 			headChunkPersisted: headChunkPersisted,
 		}
 	}
-	return fingerprintToSeries, nil
+	return seriesMap{m: fingerprintToSeries}, nil
 }
 
-// DropChunks implements persistence.
-func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (bool, error) {
+// dropChunks deletes all chunks from a series whose last sample time is before
+// beforeTime. It returns true if all chunks of the series have been deleted.
+// It is the caller's responsibility to make sure nothing is persisted or loaded
+// for the same fingerprint concurrently.
+func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (bool, error) {
 	f, err := p.openChunkFileForReading(fp)
 	if os.IsNotExist(err) {
 		return true, nil
@@ -538,18 +585,30 @@ func (p *diskPersistence) DropChunks(fp clientmodel.Fingerprint, beforeTime clie
 	return false, nil
 }
 
-// IndexMetric implements Persistence.
-func (p *diskPersistence) IndexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) {
+// indexMetric queues the given metric for addition to the indexes needed by
+// getFingerprintsForLabelPair, getLabelValuesForLabelName, and
+// getFingerprintsModifiedBefore.  If the queue is full, this method blocks
+// until the metric can be queued.  This method is goroutine-safe.
+func (p *persistence) indexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) {
 	p.indexingQueue <- indexingOp{fp, m, add}
 }
 
-// UnindexMetric implements Persistence.
-func (p *diskPersistence) UnindexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) {
+// unindexMetric queues references to the given metric for removal from the
+// indexes used for getFingerprintsForLabelPair, getLabelValuesForLabelName, and
+// getFingerprintsModifiedBefore. The index of fingerprints to archived metrics
+// is not affected by this removal. (In fact, never call this method for an
+// archived metric. To drop an archived metric, call dropArchivedFingerprint.)
+// If the queue is full, this method blocks until the metric can be queued. This
+// method is goroutine-safe.
+func (p *persistence) unindexMetric(m clientmodel.Metric, fp clientmodel.Fingerprint) {
 	p.indexingQueue <- indexingOp{fp, m, remove}
 }
 
-// WaitForIndexing implements Persistence.
-func (p *diskPersistence) WaitForIndexing() {
+// waitForIndexing waits until all items in the indexing queue are processed. If
+// queue processing is currently on hold (to gather more ops for batching), this
+// method will trigger an immediate start of processing. This method is
+// goroutine-safe.
+func (p *persistence) waitForIndexing() {
 	wait := make(chan int)
 	for {
 		p.indexingFlush <- wait
@@ -559,10 +618,15 @@ func (p *diskPersistence) WaitForIndexing() {
 	}
 }
 
-// ArchiveMetric implements Persistence.
-func (p *diskPersistence) ArchiveMetric(
+// archiveMetric persists the mapping of the given fingerprint to the given
+// metric, together with the first and last timestamp of the series belonging to
+// the metric. This method is goroutine-safe.
+func (p *persistence) archiveMetric(
 	fp clientmodel.Fingerprint, m clientmodel.Metric, first, last clientmodel.Timestamp,
 ) error {
+	p.archiveMtx.Lock()
+	defer p.archiveMtx.Unlock()
+
 	if err := p.archivedFingerprintToMetrics.Put(codable.Fingerprint(fp), codable.Metric(m)); err != nil {
 		return err
 	}
@@ -572,16 +636,26 @@ func (p *diskPersistence) ArchiveMetric(
 	return nil
 }
 
-// HasArchivedMetric implements Persistence.
-func (p *diskPersistence) HasArchivedMetric(fp clientmodel.Fingerprint) (
+// hasArchivedMetric returns whether the archived metric for the given
+// fingerprint exists and if yes, what the first and last timestamp in the
+// corresponding series is. This method is goroutine-safe.
+func (p *persistence) hasArchivedMetric(fp clientmodel.Fingerprint) (
 	hasMetric bool, firstTime, lastTime clientmodel.Timestamp, err error,
 ) {
 	firstTime, lastTime, hasMetric, err = p.archivedFingerprintToTimeRange.Lookup(fp)
 	return
 }
 
-// GetFingerprintsModifiedBefore implements Persistence.
-func (p *diskPersistence) GetFingerprintsModifiedBefore(beforeTime clientmodel.Timestamp) ([]clientmodel.Fingerprint, error) {
+// getFingerprintsModifiedBefore returns the fingerprints of archived timeseries
+// that have live samples before the provided timestamp. This method is
+// goroutine-safe.
+func (p *persistence) getFingerprintsModifiedBefore(beforeTime clientmodel.Timestamp) ([]clientmodel.Fingerprint, error) {
+	// The locking makes sure archivedFingerprintToTimeRange won't be
+	// mutated while being iterated over (which will probably not result in
+	// races, but might still yield weird results).
+	p.archiveMtx.Lock()
+	defer p.archiveMtx.Unlock()
+
 	var fp codable.Fingerprint
 	var tr codable.TimeRange
 	fps := []clientmodel.Fingerprint{}
@@ -600,15 +674,21 @@ func (p *diskPersistence) GetFingerprintsModifiedBefore(beforeTime clientmodel.T
 	return fps, nil
 }
 
-// GetArchivedMetric implements Persistence.
-func (p *diskPersistence) GetArchivedMetric(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
+// getArchivedMetric retrieves the archived metric with the given
+// fingerprint. This method is goroutine-safe.
+func (p *persistence) getArchivedMetric(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
 	metric, _, err := p.archivedFingerprintToMetrics.Lookup(fp)
 	return metric, err
 }
 
-// DropArchivedMetric implements Persistence.
-func (p *diskPersistence) DropArchivedMetric(fp clientmodel.Fingerprint) error {
-	metric, err := p.GetArchivedMetric(fp)
+// dropArchivedMetric deletes an archived fingerprint and its corresponding
+// metric entirely. It also queues the metric for un-indexing (no need to call
+// unindexMetric for the deleted metric.)  This method is goroutine-safe.
+func (p *persistence) dropArchivedMetric(fp clientmodel.Fingerprint) error {
+	p.archiveMtx.Lock()
+	defer p.archiveMtx.Unlock()
+
+	metric, err := p.getArchivedMetric(fp)
 	if err != nil || metric == nil {
 		return err
 	}
@@ -618,12 +698,17 @@ func (p *diskPersistence) DropArchivedMetric(fp clientmodel.Fingerprint) error {
 	if err := p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp)); err != nil {
 		return err
 	}
-	p.UnindexMetric(metric, fp)
+	p.unindexMetric(metric, fp)
 	return nil
 }
 
-// UnarchiveMetric implements Persistence.
-func (p *diskPersistence) UnarchiveMetric(fp clientmodel.Fingerprint) (bool, error) {
+// unarchiveMetric deletes an archived fingerprint and its metric, but (in
+// contrast to dropArchivedMetric) does not un-index the metric.  The method
+// returns true if a metric was actually deleted. This method is goroutine-safe.
+func (p *persistence) unarchiveMetric(fp clientmodel.Fingerprint) (bool, error) {
+	p.archiveMtx.Lock()
+	defer p.archiveMtx.Unlock()
+
 	has, err := p.archivedFingerprintToTimeRange.Has(fp)
 	if err != nil || !has {
 		return false, err
@@ -637,8 +722,9 @@ func (p *diskPersistence) UnarchiveMetric(fp clientmodel.Fingerprint) (bool, err
 	return true, nil
 }
 
-// Close implements Persistence.
-func (p *diskPersistence) Close() error {
+// close flushes the indexing queue and other buffered data and releases any
+// held resources.
+func (p *persistence) close() error {
 	close(p.indexingQueue)
 	<-p.indexingStopped
 
@@ -662,12 +748,12 @@ func (p *diskPersistence) Close() error {
 	return lastError
 }
 
-func (p *diskPersistence) dirForFingerprint(fp clientmodel.Fingerprint) string {
+func (p *persistence) dirForFingerprint(fp clientmodel.Fingerprint) string {
 	fpStr := fp.String()
 	return fmt.Sprintf("%s/%c%c/%s", p.basePath, fpStr[0], fpStr[1], fpStr[2:])
 }
 
-func (p *diskPersistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.File, error) {
+func (p *persistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.File, error) {
 	dirname := p.dirForFingerprint(fp)
 	ex, err := exists(dirname)
 	if err != nil {
@@ -681,7 +767,7 @@ func (p *diskPersistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*
 	return os.OpenFile(path.Join(dirname, seriesFileName), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
 }
 
-func (p *diskPersistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.File, error) {
+func (p *persistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.File, error) {
 	dirname := p.dirForFingerprint(fp)
 	return os.Open(path.Join(dirname, seriesFileName))
 }
@@ -695,15 +781,15 @@ func writeChunkHeader(w io.Writer, c chunk) error {
 	return err
 }
 
-func (p *diskPersistence) offsetForChunkIndex(i int) int64 {
+func (p *persistence) offsetForChunkIndex(i int) int64 {
 	return int64(i * (chunkHeaderLen + p.chunkLen))
 }
 
-func (p *diskPersistence) headsPath() string {
+func (p *persistence) headsPath() string {
 	return path.Join(p.basePath, headsFileName)
 }
 
-func (p *diskPersistence) processIndexingQueue() {
+func (p *persistence) processIndexingQueue() {
 	batchSize := 0
 	nameToValues := index.LabelNameLabelValuesMapping{}
 	pairToFPs := index.LabelPairFingerprintsMapping{}
