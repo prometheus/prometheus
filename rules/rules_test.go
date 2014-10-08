@@ -52,8 +52,8 @@ func vectorComparisonString(expected []string, actual []string) string {
 		separator)
 }
 
-func newTestStorage(t testing.TB) (storage storage_ng.Storage, closer test.Closer) {
-	storage, closer = storage_ng.NewTestStorage(t)
+func newTestStorage(t testing.TB) (storage local.Storage, closer test.Closer) {
+	storage, closer = local.NewTestStorage(t)
 	storeMatrix(storage, testMatrix)
 	return storage, closer
 }

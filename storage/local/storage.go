@@ -41,7 +41,7 @@ type memorySeriesStorage struct {
 	persistDone chan bool
 	stopServing chan chan<- bool
 
-	fingerprintToSeries seriesMap
+	fingerprintToSeries *seriesMap
 
 	memoryEvictionInterval time.Duration
 	memoryRetentionPeriod  time.Duration

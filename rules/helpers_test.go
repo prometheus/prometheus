@@ -52,7 +52,7 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 	return vector
 }
 
-func storeMatrix(storage storage_ng.Storage, matrix ast.Matrix) {
+func storeMatrix(storage local.Storage, matrix ast.Matrix) {
 	pendingSamples := clientmodel.Samples{}
 	for _, sampleSet := range matrix {
 		for _, sample := range sampleSet.Values {

@@ -358,7 +358,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 // - Make sure the length of the seriesMap doesn't change during the runtime.
 // - Lock the fingerprints while persisting unpersisted head chunks.
 // - Write to temporary file and only rename after successfully finishing.
-func (p *persistence) persistSeriesMapAndHeads(fingerprintToSeries seriesMap) error {
+func (p *persistence) persistSeriesMapAndHeads(fingerprintToSeries *seriesMap) error {
 	f, err := os.OpenFile(p.headsPath(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
 		return err
@@ -431,54 +431,54 @@ func (p *persistence) persistSeriesMapAndHeads(fingerprintToSeries seriesMap) er
 // open (non-full) head chunks. Only call this method during start-up while
 // nothing else is running in storage land. This method is utterly
 // goroutine-unsafe.
-func (p *persistence) loadSeriesMapAndHeads() (seriesMap, error) {
+func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 	f, err := os.Open(p.headsPath())
 	if os.IsNotExist(err) {
 		return newSeriesMap(), nil
 	}
 	if err != nil {
-		return seriesMap{}, err
+		return nil, err
 	}
 	defer f.Close()
 	r := bufio.NewReaderSize(f, fileBufSize)
 
 	buf := make([]byte, len(headsMagicString))
 	if _, err := io.ReadFull(r, buf); err != nil {
-		return seriesMap{}, err
+		return nil, err
 	}
 	magic := string(buf)
 	if magic != headsMagicString {
-		return seriesMap{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"unexpected magic string, want %q, got %q",
 			headsMagicString, magic,
 		)
 	}
 	if version, err := binary.ReadVarint(r); version != headsFormatVersion || err != nil {
-		return seriesMap{}, fmt.Errorf("unknown heads format version, want %d", headsFormatVersion)
+		return nil, fmt.Errorf("unknown heads format version, want %d", headsFormatVersion)
 	}
 	numSeries, err := binary.ReadVarint(r)
 	if err != nil {
-		return seriesMap{}, err
+		return nil, err
 	}
 	fingerprintToSeries := make(map[clientmodel.Fingerprint]*memorySeries, numSeries)
 
 	for ; numSeries > 0; numSeries-- {
 		seriesFlags, err := r.ReadByte()
 		if err != nil {
-			return seriesMap{}, err
+			return nil, err
 		}
 		headChunkPersisted := seriesFlags&flagHeadChunkPersisted != 0
 		fp, err := codable.DecodeUint64(r)
 		if err != nil {
-			return seriesMap{}, err
+			return nil, err
 		}
 		var metric codable.Metric
 		if err := metric.UnmarshalFromReader(r); err != nil {
-			return seriesMap{}, err
+			return nil, err
 		}
 		numChunkDescs, err := binary.ReadVarint(r)
 		if err != nil {
-			return seriesMap{}, err
+			return nil, err
 		}
 		chunkDescs := make(chunkDescs, numChunkDescs)
 
@@ -486,11 +486,11 @@ func (p *persistence) loadSeriesMapAndHeads() (seriesMap, error) {
 			if headChunkPersisted || i < numChunkDescs-1 {
 				firstTime, err := binary.ReadVarint(r)
 				if err != nil {
-					return seriesMap{}, err
+					return nil, err
 				}
 				lastTime, err := binary.ReadVarint(r)
 				if err != nil {
-					return seriesMap{}, err
+					return nil, err
 				}
 				chunkDescs[i] = &chunkDesc{
 					firstTimeField: clientmodel.Timestamp(firstTime),
@@ -500,11 +500,11 @@ func (p *persistence) loadSeriesMapAndHeads() (seriesMap, error) {
 				// Non-persisted head chunk.
 				chunkType, err := r.ReadByte()
 				if err != nil {
-					return seriesMap{}, err
+					return nil, err
 				}
 				chunk := chunkForType(chunkType)
 				if err := chunk.unmarshal(r); err != nil {
-					return seriesMap{}, err
+					return nil, err
 				}
 				chunkDescs[i] = &chunkDesc{
 					chunk:    chunk,
@@ -520,7 +520,7 @@ func (p *persistence) loadSeriesMapAndHeads() (seriesMap, error) {
 			headChunkPersisted: headChunkPersisted,
 		}
 	}
-	return seriesMap{m: fingerprintToSeries}, nil
+	return &seriesMap{m: fingerprintToSeries}, nil
 }
 
 // dropChunks deletes all chunks from a series whose last sample time is before

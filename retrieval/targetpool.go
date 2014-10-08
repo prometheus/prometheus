@@ -78,7 +78,7 @@ func (p *TargetPool) Run() {
 	}
 }
 
-func (p TargetPool) Stop() {
+func (p *TargetPool) Stop() {
 	stopped := make(chan bool)
 	p.done <- stopped
 	<-stopped

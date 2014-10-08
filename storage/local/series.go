@@ -38,12 +38,12 @@ type seriesMap struct {
 
 // newSeriesMap returns a newly allocated empty seriesMap. To create a seriesMap
 // based on a prefilled map, use an explicit initializer.
-func newSeriesMap() seriesMap {
-	return seriesMap{m: make(map[clientmodel.Fingerprint]*memorySeries)}
+func newSeriesMap() *seriesMap {
+	return &seriesMap{m: make(map[clientmodel.Fingerprint]*memorySeries)}
 }
 
 // length returns the number of mappings in the seriesMap.
-func (sm seriesMap) length() int {
+func (sm *seriesMap) length() int {
 	sm.mtx.RLock()
 	defer sm.mtx.RUnlock()
 
@@ -52,7 +52,7 @@ func (sm seriesMap) length() int {
 
 // get returns a memorySeries for a fingerprint. Return values have the same
 // semantics as the native Go map.
-func (sm seriesMap) get(fp clientmodel.Fingerprint) (s *memorySeries, ok bool) {
+func (sm *seriesMap) get(fp clientmodel.Fingerprint) (s *memorySeries, ok bool) {
 	sm.mtx.RLock()
 	defer sm.mtx.RUnlock()
 
@@ -61,7 +61,7 @@ func (sm seriesMap) get(fp clientmodel.Fingerprint) (s *memorySeries, ok bool) {
 }
 
 // put adds a mapping to the seriesMap.
-func (sm seriesMap) put(fp clientmodel.Fingerprint, s *memorySeries) {
+func (sm *seriesMap) put(fp clientmodel.Fingerprint, s *memorySeries) {
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
@@ -69,7 +69,7 @@ func (sm seriesMap) put(fp clientmodel.Fingerprint, s *memorySeries) {
 }
 
 // del removes a mapping from the series Map.
-func (sm seriesMap) del(fp clientmodel.Fingerprint) {
+func (sm *seriesMap) del(fp clientmodel.Fingerprint) {
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
@@ -83,7 +83,7 @@ func (sm seriesMap) del(fp clientmodel.Fingerprint) {
 // for iterating over a map with a 'range' clause. However, if the next element
 // in iteration order is removed after the current element has been received
 // from the channel, it will still be produced by the channel.
-func (sm seriesMap) iter() <-chan fingerprintSeriesPair {
+func (sm *seriesMap) iter() <-chan fingerprintSeriesPair {
 	ch := make(chan fingerprintSeriesPair)
 	go func() {
 		sm.mtx.RLock()
@@ -105,7 +105,7 @@ func (sm seriesMap) iter() <-chan fingerprintSeriesPair {
 // for iterating over a map with a 'range' clause. However, if the next element
 // in iteration order is removed after the current element has been received
 // from the channel, it will still be produced by the channel.
-func (sm seriesMap) fpIter() <-chan clientmodel.Fingerprint {
+func (sm *seriesMap) fpIter() <-chan clientmodel.Fingerprint {
 	ch := make(chan clientmodel.Fingerprint)
 	go func() {
 		sm.mtx.RLock()
