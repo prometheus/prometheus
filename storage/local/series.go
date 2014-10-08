@@ -533,6 +533,9 @@ func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.V
 
 // GetBoundaryValues implements SeriesIterator.
 func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Values {
+	return it.GetRangeValues(in)
+
+	// TODO: The following doesn't work as expected. Fix it.
 	it.lock()
 	defer it.unlock()
 

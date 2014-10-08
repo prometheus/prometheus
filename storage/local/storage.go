@@ -238,6 +238,11 @@ func (s *memorySeriesStorage) handlePersistQueue() {
 	s.persistDone <- true
 }
 
+// WaitForIndexing implements Storage.
+func (s *memorySeriesStorage) WaitForIndexing() {
+	s.persistence.waitForIndexing()
+}
+
 // Close stops serving, flushes all pending operations, and frees all
 // resources. It implements Storage.
 func (s *memorySeriesStorage) Close() error {

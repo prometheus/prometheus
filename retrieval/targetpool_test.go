@@ -91,11 +91,8 @@ func testTargetPool(t testing.TB) {
 			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), len(pool.targetsByAddress))
 		} else {
 			for j, output := range scenario.outputs {
-				target := pool.Targets()[j]
-
-				if target.Address() != output.address {
+				if target, ok := pool.targetsByAddress[output.address]; !ok {
 					t.Errorf("%s %d.%d. expected Target address to be %s but was %s", scenario.name, i, j, output.address, target.Address())
-
 				}
 			}
 

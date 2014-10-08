@@ -44,6 +44,10 @@ type Storage interface {
 	Serve(started chan<- bool)
 	// Close the MetricsStorage and releases all resources.
 	Close() error
+	// WaitForIndexing returns once all samples in the storage are
+	// indexed. Indexing is needed for GetFingerprintsForLabelMatchers and
+	// GetLabelValuesForLabelName and may lag behind.
+	WaitForIndexing()
 }
 
 // SeriesIterator enables efficient access of sample values in a series. All

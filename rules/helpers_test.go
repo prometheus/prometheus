@@ -64,6 +64,7 @@ func storeMatrix(storage local.Storage, matrix ast.Matrix) {
 		}
 	}
 	storage.AppendSamples(pendingSamples)
+	storage.WaitForIndexing()
 }
 
 var testMatrix = ast.Matrix{
