@@ -161,6 +161,9 @@ func (cd *chunkDesc) unpin() {
 }
 
 func (cd *chunkDesc) firstTime() clientmodel.Timestamp {
+	cd.Lock()
+	defer cd.Unlock()
+
 	if cd.chunk == nil {
 		return cd.firstTimeField
 	}
@@ -168,6 +171,9 @@ func (cd *chunkDesc) firstTime() clientmodel.Timestamp {
 }
 
 func (cd *chunkDesc) lastTime() clientmodel.Timestamp {
+	cd.Lock()
+	defer cd.Unlock()
+
 	if cd.chunk == nil {
 		return cd.lastTimeField
 	}
@@ -201,6 +207,7 @@ func (cd *chunkDesc) evictOnUnpin() {
 	cd.evict = true
 }
 
+// evictNow is an internal helper method.
 func (cd *chunkDesc) evictNow() {
 	cd.firstTimeField = cd.chunk.firstTime()
 	cd.lastTimeField = cd.chunk.lastTime()
