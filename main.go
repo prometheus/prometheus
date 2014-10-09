@@ -104,20 +104,10 @@ func (p *prometheus) close() {
 	glog.Info("Rule Executor: Done")
 
 	close(p.unwrittenSamples)
-
-	if err := p.storage.Close(); err != nil {
-		glog.Error("Error closing local storage: ", err)
-	}
-	glog.Info("Local Storage: Done")
-
-	if p.remoteTSDBQueue != nil {
-		p.remoteTSDBQueue.Close()
-		glog.Info("Remote Storage: Done")
-	}
-
-	close(p.notifications)
-	glog.Info("Sundry Queues: Done")
-	glog.Info("See you next time!")
+	// Note: Before closing the remaining subsystems (storage, ...), we have
+	// to wait until p.unwrittenSamples is actually drained. Therefore,
+	// things are closed in main(), after the loop consuming
+	// p.unwrittenSamples has finished.
 }
 
 func main() {
@@ -263,4 +253,21 @@ func main() {
 			}
 		}
 	}
+
+	// Note: It might appear tempting to move the code below into
+	// prometheus.Close(), but we have to wait for the unwrittenSamples loop
+	// above to exit before we can do the below.
+	if err := prometheus.storage.Close(); err != nil {
+		glog.Error("Error closing local storage: ", err)
+	}
+	glog.Info("Local Storage: Done")
+
+	if prometheus.remoteTSDBQueue != nil {
+		prometheus.remoteTSDBQueue.Close()
+		glog.Info("Remote Storage: Done")
+	}
+
+	close(prometheus.notifications)
+	glog.Info("Sundry Queues: Done")
+	glog.Info("See you next time!")
 }
