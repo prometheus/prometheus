@@ -249,8 +249,8 @@ func (s *memorySeriesStorage) Close() error {
 	stopped := make(chan bool)
 	glog.Info("Waiting for storage to stop serving...")
 	s.stopServing <- stopped
-	glog.Info("Serving stopped.")
 	<-stopped
+	glog.Info("Serving stopped.")
 
 	glog.Info("Stopping persist loop...")
 	close(s.persistQueue)
@@ -276,6 +276,7 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 	for {
 		select {
 		case <-stop:
+			glog.Info("Purging loop stopped.")
 			return
 		case <-purgeTicker.C:
 			glog.Info("Purging old series data...")

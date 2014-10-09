@@ -86,8 +86,6 @@ func (p *prometheus) interruptHandler() {
 	glog.Warning("Received SIGINT/SIGTERM; Exiting gracefully...")
 
 	p.Close()
-
-	os.Exit(0)
 }
 
 func (p *prometheus) Close() {
@@ -138,7 +136,6 @@ func main() {
 	if err != nil {
 		glog.Fatal("Error opening memory series storage: ", err)
 	}
-	defer memStorage.Close()
 	registry.MustRegister(memStorage)
 
 	var remoteTSDBQueue *remote.TSDBQueueManager
@@ -220,7 +217,6 @@ func main() {
 		storage:         memStorage,
 		remoteTSDBQueue: remoteTSDBQueue,
 	}
-	defer prometheus.Close()
 
 	webService := &web.WebService{
 		StatusHandler:   prometheusStatus,

@@ -108,7 +108,7 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 		newTargetAddresses.Add(newTarget.Address())
 		oldTarget, ok := p.targetsByAddress[newTarget.Address()]
 		if ok {
-			oldTarget.Merge(newTarget)
+			oldTarget.SetBaseLabelsFrom(newTarget)
 		} else {
 			p.targetsByAddress[newTarget.Address()] = newTarget
 			go newTarget.RunScraper(p.ingester, p.interval)
