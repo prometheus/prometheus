@@ -403,7 +403,7 @@ func (s *memorySeries) loadChunkDescs(p *persistence) error {
 // preloadChunksForRange loads chunks for the given range from the persistence.
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) preloadChunksForRange(from clientmodel.Timestamp, through clientmodel.Timestamp, p *persistence) (chunkDescs, error) {
-	if !s.chunkDescsLoaded && from.Before(s.chunkDescs[0].firstTime()) {
+	if !s.chunkDescsLoaded && (len(s.chunkDescs) == 0 || from.Before(s.chunkDescs[0].firstTime())) {
 		if err := s.loadChunkDescs(p); err != nil {
 			return nil, err
 		}
