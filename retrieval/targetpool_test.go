@@ -14,8 +14,11 @@
 package retrieval
 
 import (
+	"net/http"
 	"testing"
 	"time"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 func testTargetPool(t testing.TB) {
@@ -46,12 +49,12 @@ func testTargetPool(t testing.TB) {
 			name: "single element",
 			inputs: []input{
 				{
-					address: "http://single.com",
+					address: "single1",
 				},
 			},
 			outputs: []output{
 				{
-					address: "http://single.com",
+					address: "single1",
 				},
 			},
 		},
@@ -59,18 +62,18 @@ func testTargetPool(t testing.TB) {
 			name: "plural schedules",
 			inputs: []input{
 				{
-					address: "http://plural.net",
+					address: "plural1",
 				},
 				{
-					address: "http://plural.com",
+					address: "plural2",
 				},
 			},
 			outputs: []output{
 				{
-					address: "http://plural.net",
+					address: "plural1",
 				},
 				{
-					address: "http://plural.com",
+					address: "plural2",
 				},
 			},
 		},
@@ -81,9 +84,10 @@ func testTargetPool(t testing.TB) {
 
 		for _, input := range scenario.inputs {
 			target := target{
-				address: input.address,
+				address:       input.address,
+				newBaseLabels: make(chan clientmodel.LabelSet, 1),
+				httpClient:    &http.Client{},
 			}
-
 			pool.addTarget(&target)
 		}
 
@@ -110,29 +114,33 @@ func TestTargetPool(t *testing.T) {
 func TestTargetPoolReplaceTargets(t *testing.T) {
 	pool := NewTargetPool(nil, nil, nopIngester{}, time.Duration(1))
 	oldTarget1 := &target{
-		address:     "example1",
-		state:       UNREACHABLE,
-		stopScraper: make(chan bool, 1),
+		address:       "example1",
+		state:         UNREACHABLE,
+		stopScraper:   make(chan bool, 1),
+		newBaseLabels: make(chan clientmodel.LabelSet, 1),
+		httpClient:    &http.Client{},
 	}
 	oldTarget2 := &target{
-		address:     "example2",
-		state:       UNREACHABLE,
-		stopScraper: make(chan bool, 1),
+		address:       "example2",
+		state:         UNREACHABLE,
+		stopScraper:   make(chan bool, 1),
+		newBaseLabels: make(chan clientmodel.LabelSet, 1),
+		httpClient:    &http.Client{},
 	}
 	newTarget1 := &target{
-		address:     "example1",
-		state:       ALIVE,
-		stopScraper: make(chan bool, 1),
+		address:       "example1",
+		state:         ALIVE,
+		stopScraper:   make(chan bool, 1),
+		newBaseLabels: make(chan clientmodel.LabelSet, 1),
+		httpClient:    &http.Client{},
 	}
 	newTarget2 := &target{
-		address:     "example3",
-		state:       ALIVE,
-		stopScraper: make(chan bool, 1),
+		address:       "example3",
+		state:         ALIVE,
+		stopScraper:   make(chan bool, 1),
+		newBaseLabels: make(chan clientmodel.LabelSet, 1),
+		httpClient:    &http.Client{},
 	}
-
-	oldTarget1.StopScraper()
-	oldTarget2.StopScraper()
-	newTarget2.StopScraper()
 
 	pool.addTarget(oldTarget1)
 	pool.addTarget(oldTarget2)
