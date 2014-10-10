@@ -60,11 +60,14 @@ func (sm *seriesMap) get(fp clientmodel.Fingerprint) (s *memorySeries, ok bool) 
 	return
 }
 
-// put adds a mapping to the seriesMap.
+// put adds a mapping to the seriesMap. It panics if s == nil.
 func (sm *seriesMap) put(fp clientmodel.Fingerprint, s *memorySeries) {
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
+	if s == nil {
+		panic("tried to add nil pointer to seriesMap")
+	}
 	sm.m[fp] = s
 }
 
