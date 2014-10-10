@@ -30,7 +30,7 @@ const (
 type TargetPool struct {
 	sync.RWMutex
 
-	done             chan chan bool
+	done             chan chan struct{}
 	manager          TargetManager
 	targetsByAddress map[string]Target
 	interval         time.Duration
@@ -48,7 +48,7 @@ func NewTargetPool(m TargetManager, p TargetProvider, ing extraction.Ingester, i
 		targetsByAddress: make(map[string]Target),
 		addTargetQueue:   make(chan Target, targetAddQueueSize),
 		targetProvider:   p,
-		done:             make(chan chan bool),
+		done:             make(chan chan struct{}),
 	}
 }
 
@@ -72,14 +72,14 @@ func (p *TargetPool) Run() {
 		case stopped := <-p.done:
 			p.ReplaceTargets([]Target{})
 			glog.Info("TargetPool exiting...")
-			stopped <- true
+			close(stopped)
 			return
 		}
 	}
 }
 
 func (p *TargetPool) Stop() {
-	stopped := make(chan bool)
+	stopped := make(chan struct{})
 	p.done <- stopped
 	<-stopped
 }

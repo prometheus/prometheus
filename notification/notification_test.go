@@ -46,9 +46,8 @@ type testNotificationScenario struct {
 }
 
 func (s *testNotificationScenario) test(i int, t *testing.T) {
-	notifications := make(chan NotificationReqs)
-	defer close(notifications)
-	h := NewNotificationHandler("alertmanager_url", notifications)
+	h := NewNotificationHandler("alertmanager_url", 0)
+	defer h.Stop()
 
 	receivedPost := make(chan bool, 1)
 	poster := testHttpPoster{receivedPost: receivedPost}
@@ -56,7 +55,7 @@ func (s *testNotificationScenario) test(i int, t *testing.T) {
 
 	go h.Run()
 
-	notifications <- NotificationReqs{
+	h.SubmitReqs(NotificationReqs{
 		{
 			Summary:     s.summary,
 			Description: s.description,
@@ -68,7 +67,7 @@ func (s *testNotificationScenario) test(i int, t *testing.T) {
 			RuleString:   "Test rule string",
 			GeneratorUrl: "prometheus_url",
 		},
-	}
+	})
 
 	<-receivedPost
 	if poster.message != s.message {

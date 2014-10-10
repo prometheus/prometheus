@@ -85,8 +85,8 @@ type ruleManager struct {
 	interval time.Duration
 	storage  local.Storage
 
-	results       chan<- *extraction.Result
-	notifications chan<- notification.NotificationReqs
+	results             chan<- *extraction.Result
+	notificationHandler *notification.NotificationHandler
 
 	prometheusUrl string
 }
@@ -95,8 +95,8 @@ type RuleManagerOptions struct {
 	EvaluationInterval time.Duration
 	Storage            local.Storage
 
-	Notifications chan<- notification.NotificationReqs
-	Results       chan<- *extraction.Result
+	NotificationHandler *notification.NotificationHandler
+	Results             chan<- *extraction.Result
 
 	PrometheusUrl string
 }
@@ -106,11 +106,11 @@ func NewRuleManager(o *RuleManagerOptions) RuleManager {
 		rules: []rules.Rule{},
 		done:  make(chan bool),
 
-		interval:      o.EvaluationInterval,
-		storage:       o.Storage,
-		results:       o.Results,
-		notifications: o.Notifications,
-		prometheusUrl: o.PrometheusUrl,
+		interval:            o.EvaluationInterval,
+		storage:             o.Storage,
+		results:             o.Results,
+		notificationHandler: o.NotificationHandler,
+		prometheusUrl:       o.PrometheusUrl,
 	}
 	return manager
 }
@@ -187,7 +187,7 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 			GeneratorUrl: m.prometheusUrl + rules.GraphLinkForExpression(rule.Vector.String()),
 		})
 	}
-	m.notifications <- notifications
+	m.notificationHandler.SubmitReqs(notifications)
 }
 
 func (m *ruleManager) runIteration(results chan<- *extraction.Result) {

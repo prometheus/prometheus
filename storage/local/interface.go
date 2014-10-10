@@ -41,7 +41,7 @@ type Storage interface {
 	// Construct an iterator for a given fingerprint.
 	NewIterator(clientmodel.Fingerprint) SeriesIterator
 	// Run the request-serving and maintenance loop.
-	Serve(started chan<- bool)
+	Serve(started chan struct{})
 	// Close the MetricsStorage and releases all resources.
 	Close() error
 	// WaitForIndexing returns once all samples in the storage are

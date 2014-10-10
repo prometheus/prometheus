@@ -68,62 +68,37 @@ var (
 type prometheus struct {
 	unwrittenSamples chan *extraction.Result
 
-	ruleManager     manager.RuleManager
-	targetManager   retrieval.TargetManager
-	notifications   chan notification.NotificationReqs
-	storage         local.Storage
-	remoteTSDBQueue *remote.TSDBQueueManager
+	ruleManager         manager.RuleManager
+	targetManager       retrieval.TargetManager
+	notificationHandler *notification.NotificationHandler
+	storage             local.Storage
+	remoteTSDBQueue     *remote.TSDBQueueManager
+
+	webService *web.WebService
 
 	closeOnce sync.Once
 }
 
-func (p *prometheus) interruptHandler() {
-	notifier := make(chan os.Signal)
-	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
-
-	<-notifier
-
-	glog.Warning("Received SIGINT/SIGTERM; Exiting gracefully...")
-
-	p.Close()
-}
-
-func (p *prometheus) Close() {
-	p.closeOnce.Do(p.close)
-}
-
-func (p *prometheus) close() {
-	// The "Done" remarks are a misnomer for some subsystems due to lack of
-	// blocking and synchronization.
-	glog.Info("Shutdown has been requested; subsytems are closing:")
-	p.targetManager.Stop()
-	glog.Info("Remote Target Manager: Done")
-	p.ruleManager.Stop()
-	glog.Info("Rule Executor: Done")
-
-	close(p.unwrittenSamples)
-	// Note: Before closing the remaining subsystems (storage, ...), we have
-	// to wait until p.unwrittenSamples is actually drained. Therefore,
-	// things are closed in main(), after the loop consuming
-	// p.unwrittenSamples has finished.
-}
-
-func main() {
-	// TODO(all): Future additions to main should be, where applicable, glumped
-	// into the prometheus struct above---at least where the scoping of the entire
-	// server is concerned.
-	flag.Parse()
-
-	versionInfoTmpl.Execute(os.Stdout, BuildInfo)
-
-	if *printVersion {
-		os.Exit(0)
-	}
-
+// NewPrometheus creates a new prometheus object based on flag values.
+// Call Serve() to start serving and Close() for clean shutdown.
+func NewPrometheus() *prometheus {
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
+
+	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
+
+	ingester := &retrieval.MergeLabelsIngester{
+		Labels:          conf.GlobalLabels(),
+		CollisionPrefix: clientmodel.ExporterLabelPrefix,
+		Ingester:        retrieval.ChannelIngester(unwrittenSamples),
+	}
+	targetManager := retrieval.NewTargetManager(ingester)
+	targetManager.AddTargetsFromConfig(conf)
+
+	notificationHandler := notification.NewNotificationHandler(*alertmanagerUrl, *notificationQueueCapacity)
+	registry.MustRegister(notificationHandler)
 
 	o := &local.MemorySeriesStorageOptions{
 		MemoryEvictionInterval:     *memoryEvictionInterval,
@@ -138,6 +113,17 @@ func main() {
 	}
 	registry.MustRegister(memStorage)
 
+	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
+		Results:             unwrittenSamples,
+		NotificationHandler: notificationHandler,
+		EvaluationInterval:  conf.EvaluationInterval(),
+		Storage:             memStorage,
+		PrometheusUrl:       web.MustBuildServerUrl(),
+	})
+	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
+		glog.Fatal("Error loading rule files: ", err)
+	}
+
 	var remoteTSDBQueue *remote.TSDBQueueManager
 	if *remoteTSDBUrl == "" {
 		glog.Warningf("No TSDB URL provided; not sending any samples to long-term storage")
@@ -145,46 +131,12 @@ func main() {
 		openTSDB := opentsdb.NewClient(*remoteTSDBUrl, *remoteTSDBTimeout)
 		remoteTSDBQueue = remote.NewTSDBQueueManager(openTSDB, 512)
 		registry.MustRegister(remoteTSDBQueue)
-		go remoteTSDBQueue.Run()
 	}
-
-	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
-	ingester := &retrieval.MergeLabelsIngester{
-		Labels:          conf.GlobalLabels(),
-		CollisionPrefix: clientmodel.ExporterLabelPrefix,
-
-		Ingester: retrieval.ChannelIngester(unwrittenSamples),
-	}
-
-	// Queue depth will need to be exposed
-	targetManager := retrieval.NewTargetManager(ingester)
-	targetManager.AddTargetsFromConfig(conf)
-
-	notifications := make(chan notification.NotificationReqs, *notificationQueueCapacity)
-
-	// Queue depth will need to be exposed
-	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
-		Results:            unwrittenSamples,
-		Notifications:      notifications,
-		EvaluationInterval: conf.EvaluationInterval(),
-		Storage:            memStorage,
-		PrometheusUrl:      web.MustBuildServerUrl(),
-	})
-	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
-		glog.Fatal("Error loading rule files: ", err)
-	}
-	go ruleManager.Run()
-
-	notificationHandler := notification.NewNotificationHandler(*alertmanagerUrl, notifications)
-	registry.MustRegister(notificationHandler)
-	go notificationHandler.Run()
 
 	flags := map[string]string{}
-
 	flag.VisitAll(func(f *flag.Flag) {
 		flags[f.Name] = f.Value.String()
 	})
-
 	prometheusStatus := &web.PrometheusStatusHandler{
 		BuildInfo:   BuildInfo,
 		Config:      conf.String(),
@@ -208,62 +160,110 @@ func main() {
 		Storage:       memStorage,
 	}
 
-	prometheus := &prometheus{
-		unwrittenSamples: unwrittenSamples,
-
-		ruleManager:     ruleManager,
-		targetManager:   targetManager,
-		notifications:   notifications,
-		storage:         memStorage,
-		remoteTSDBQueue: remoteTSDBQueue,
-	}
-
 	webService := &web.WebService{
 		StatusHandler:   prometheusStatus,
 		MetricsHandler:  metricsService,
 		ConsolesHandler: consolesHandler,
 		AlertsHandler:   alertsHandler,
-
-		QuitDelegate: prometheus.Close,
 	}
 
-	storageStarted := make(chan bool)
-	go memStorage.Serve(storageStarted)
+	p := &prometheus{
+		unwrittenSamples: unwrittenSamples,
+
+		ruleManager:         ruleManager,
+		targetManager:       targetManager,
+		notificationHandler: notificationHandler,
+		storage:             memStorage,
+		remoteTSDBQueue:     remoteTSDBQueue,
+
+		webService: webService,
+	}
+	webService.QuitDelegate = p.Close
+	return p
+}
+
+// Serve starts the Prometheus server. It returns after the server has been shut
+// down. The method installs an interrupt handler, allowing to trigger a
+// shutdown by sending SIGTERM to the process.
+func (p *prometheus) Serve() {
+	if p.remoteTSDBQueue != nil {
+		go p.remoteTSDBQueue.Run()
+	}
+	go p.ruleManager.Run()
+	go p.notificationHandler.Run()
+	go p.interruptHandler()
+
+	storageStarted := make(chan struct{})
+	go p.storage.Serve(storageStarted)
 	<-storageStarted
 
-	go prometheus.interruptHandler()
-
 	go func() {
-		err := webService.ServeForever()
+		err := p.webService.ServeForever()
 		if err != nil {
 			glog.Fatal(err)
 		}
 	}()
 
-	// TODO(all): Migrate this into prometheus.serve().
-	for block := range unwrittenSamples {
+	for block := range p.unwrittenSamples {
 		if block.Err == nil && len(block.Samples) > 0 {
-			memStorage.AppendSamples(block.Samples)
-			if remoteTSDBQueue != nil {
-				remoteTSDBQueue.Queue(block.Samples)
+			p.storage.AppendSamples(block.Samples)
+			if p.remoteTSDBQueue != nil {
+				p.remoteTSDBQueue.Queue(block.Samples)
 			}
 		}
 	}
 
-	// Note: It might appear tempting to move the code below into
-	// prometheus.Close(), but we have to wait for the unwrittenSamples loop
-	// above to exit before we can do the below.
-	if err := prometheus.storage.Close(); err != nil {
+	// The following shut-down operations have to happen after
+	// unwrittenSamples is drained. So do not move them into close().
+	if err := p.storage.Close(); err != nil {
 		glog.Error("Error closing local storage: ", err)
 	}
 	glog.Info("Local Storage: Done")
 
-	if prometheus.remoteTSDBQueue != nil {
-		prometheus.remoteTSDBQueue.Close()
+	if p.remoteTSDBQueue != nil {
+		p.remoteTSDBQueue.Stop()
 		glog.Info("Remote Storage: Done")
 	}
 
-	close(prometheus.notifications)
+	p.notificationHandler.Stop()
 	glog.Info("Sundry Queues: Done")
 	glog.Info("See you next time!")
+}
+
+// Close cleanly shuts down the Prometheus server.
+func (p *prometheus) Close() {
+	p.closeOnce.Do(p.close)
+}
+
+func (p *prometheus) interruptHandler() {
+	notifier := make(chan os.Signal)
+	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
+	<-notifier
+
+	glog.Warning("Received SIGTERM, exiting gracefully...")
+	p.Close()
+}
+
+func (p *prometheus) close() {
+	glog.Info("Shutdown has been requested; subsytems are closing:")
+	p.targetManager.Stop()
+	glog.Info("Remote Target Manager: Done")
+	p.ruleManager.Stop()
+	glog.Info("Rule Executor: Done")
+
+	close(p.unwrittenSamples)
+	// Note: Before closing the remaining subsystems (storage, ...), we have
+	// to wait until p.unwrittenSamples is actually drained. Therefore,
+	// remaining shut-downs happen in Serve().
+}
+
+func main() {
+	flag.Parse()
+	versionInfoTmpl.Execute(os.Stdout, BuildInfo)
+
+	if *printVersion {
+		os.Exit(0)
+	}
+
+	NewPrometheus().Serve()
 }

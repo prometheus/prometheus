@@ -48,7 +48,7 @@ func NewTestStorage(t testing.TB) (Storage, test.Closer) {
 		t.Fatalf("Error creating storage: %s", err)
 	}
 
-	storageStarted := make(chan bool)
+	storageStarted := make(chan struct{})
 	go storage.Serve(storageStarted)
 	<-storageStarted
 

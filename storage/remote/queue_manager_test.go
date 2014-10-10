@@ -71,7 +71,7 @@ func TestSampleDelivery(t *testing.T) {
 	m.Queue(samples[len(samples)/2:])
 
 	go m.Run()
-	defer m.Close()
+	defer m.Stop()
 
 	c.waitForExpectedSamples(t)
 }

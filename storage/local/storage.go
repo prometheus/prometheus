@@ -350,7 +350,7 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 }
 
 // Serve implements Storage.
-func (s *memorySeriesStorage) Serve(started chan<- bool) {
+func (s *memorySeriesStorage) Serve(started chan struct{}) {
 	evictMemoryTicker := time.NewTicker(s.memoryEvictionInterval)
 	defer evictMemoryTicker.Stop()
 
@@ -359,7 +359,7 @@ func (s *memorySeriesStorage) Serve(started chan<- bool) {
 	stopPurge := make(chan bool)
 	go s.purgePeriodically(stopPurge)
 
-	started <- true
+	close(started)
 	for {
 		select {
 		case <-evictMemoryTicker.C:

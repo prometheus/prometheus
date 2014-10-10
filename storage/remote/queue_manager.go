@@ -119,9 +119,9 @@ func (t *TSDBQueueManager) Queue(s clientmodel.Samples) {
 	}
 }
 
-// Close stops sending samples to the TSDB and waits for pending sends to
+// Stop stops sending samples to the TSDB and waits for pending sends to
 // complete.
-func (t *TSDBQueueManager) Close() {
+func (t *TSDBQueueManager) Stop() {
 	glog.Infof("TSDB queue manager shutting down...")
 	close(t.queue)
 	<-t.drained

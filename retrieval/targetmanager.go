@@ -57,7 +57,7 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
 		glog.Infof("Pool for job %s does not exist; creating and starting...", job.GetName())
 
 		m.poolsByJob[job.GetName()] = targetPool
-		// BUG(all): Investigate whether this auto-goroutine creation is desired.
+		// TODO: Investigate whether this auto-goroutine creation is desired.
 		go targetPool.Run()
 	}
 
@@ -111,7 +111,7 @@ func (m *targetManager) Stop() {
 	}
 }
 
-// XXX: Not really thread-safe. Only used in /status page for now.
+// TODO: Not really thread-safe. Only used in /status page for now.
 func (m *targetManager) Pools() map[string]*TargetPool {
 	return m.poolsByJob
 }
