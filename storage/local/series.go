@@ -540,9 +540,6 @@ func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.V
 
 // GetBoundaryValues implements SeriesIterator.
 func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Values {
-	return it.GetRangeValues(in)
-
-	// TODO: The following doesn't work as expected. Fix it.
 	it.lock()
 	defer it.unlock()
 
@@ -550,9 +547,8 @@ func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Val
 	i := sort.Search(len(it.chunks), func(i int) bool {
 		return !it.chunks[i].lastTime().Before(in.OldestInclusive)
 	})
-	values := metric.Values{}
-	for ; i < len(it.chunks); i++ {
-		c := it.chunks[i]
+	values := make(metric.Values, 0, 2)
+	for i, c := range it.chunks[i:] {
 		var chunkIt chunkIterator
 		if c.firstTime().After(in.NewestInclusive) {
 			if len(values) == 1 {
@@ -584,6 +580,13 @@ func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Val
 			values = append(values, chunkIt.getValueAtTime(in.NewestInclusive)[0])
 			break
 		}
+	}
+	if len(values) == 1 {
+		// We found exactly one value. In that case, add the most recent we know.
+		values = append(
+			values,
+			it.chunks[len(it.chunks)-1].newIterator().getValueAtTime(in.NewestInclusive)[0],
+		)
 	}
 	if len(values) == 2 && values[0].Equal(&values[1]) {
 		return values[:1]

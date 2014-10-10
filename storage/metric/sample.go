@@ -32,7 +32,6 @@ type SamplePair struct {
 
 // Equal returns true if this SamplePair and o have equal Values and equal
 // Timestamps.
-// TODO: can this method be deleted, or is it used in tests?
 func (s *SamplePair) Equal(o *SamplePair) bool {
 	if s == o {
 		return true
