@@ -200,14 +200,18 @@ func (cd *chunkDesc) open(c chunk) {
 	cd.refCount++
 }
 
-func (cd *chunkDesc) evictOnUnpin() {
+// evictOnUnpin evicts the chunk once unpinned. If it is not pinned when this
+// method is called, it evicts the chunk immediately and returns true.
+func (cd *chunkDesc) evictOnUnpin() bool {
 	cd.Lock()
 	defer cd.Unlock()
 
 	if cd.refCount == 0 {
 		cd.evictNow()
+		return true
 	}
 	cd.evict = true
+	return false
 }
 
 // evictNow is an internal helper method.
@@ -295,9 +299,14 @@ func (s *memorySeries) persistHeadChunk(fp clientmodel.Fingerprint, persistQueue
 	}
 }
 
-// evictOlderThan evicts chunks whose latest sample is older than the given timestamp.
+// evictOlderThan evicts chunks whose latest sample is older than the given
+// timestamp.  It returns true if all chunks in the series were immediately
+// evicted (i.e. all chunks are older than the timestamp, and none of the chunks
+// was pinned).
+//
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool) {
+func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) bool {
+	allEvicted := true
 	// For now, always drop the entire range from oldest to t.
 	for _, cd := range s.chunkDescs {
 		if !cd.lastTime().Before(t) {
@@ -306,9 +315,11 @@ func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool)
 		if cd.chunk == nil {
 			continue
 		}
-		cd.evictOnUnpin()
+		if !cd.evictOnUnpin() {
+			allEvicted = false
+		}
 	}
-	return true
+	return allEvicted
 }
 
 // purgeOlderThan returns true if all chunks have been purged.
