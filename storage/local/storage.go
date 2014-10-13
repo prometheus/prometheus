@@ -171,6 +171,8 @@ func (s *memorySeriesStorage) preloadChunksForRange(fp clientmodel.Fingerprint, 
 				return nil, err
 			}
 			series = s.getOrCreateSeries(fp, metric)
+		} else {
+			return nil, nil
 		}
 	}
 	return series.preloadChunksForRange(from, through, s.persistence)
