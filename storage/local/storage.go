@@ -185,8 +185,12 @@ func (s *memorySeriesStorage) NewIterator(fp clientmodel.Fingerprint) SeriesIter
 
 	series, ok := s.fingerprintToSeries.get(fp)
 	if !ok {
-		// TODO: Could this legitimately happen? Series just got purged?
-		panic("requested iterator for non-existent series")
+		// Oops, no series for fp found. That happens if, after
+		// preloading is done, the whole series is identified as old
+		// enough for purging and hence purged for good. As there is no
+		// data left to iterate over, return an iterator that will never
+		// return any values.
+		return nopSeriesIterator{}
 	}
 	return series.newIterator(
 		func() { s.fpLocker.Lock(fp) },

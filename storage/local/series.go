@@ -456,13 +456,6 @@ func (s *memorySeries) preloadChunksForRange(from clientmodel.Timestamp, through
 	return s.preloadChunks(pinIndexes, p)
 }
 
-// memorySeriesIterator implements SeriesIterator.
-type memorySeriesIterator struct {
-	lock, unlock func()
-	chunkIt      chunkIterator
-	chunks       chunks
-}
-
 func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
 	chunks := make(chunks, 0, len(s.chunkDescs))
 	for i, cd := range s.chunkDescs {
@@ -502,6 +495,13 @@ func (s *memorySeries) firstTime() clientmodel.Timestamp {
 
 func (s *memorySeries) lastTime() clientmodel.Timestamp {
 	return s.head().lastTime()
+}
+
+// memorySeriesIterator implements SeriesIterator.
+type memorySeriesIterator struct {
+	lock, unlock func()
+	chunkIt      chunkIterator
+	chunks       chunks
 }
 
 // GetValueAtTime implements SeriesIterator.
@@ -627,4 +627,22 @@ func (it *memorySeriesIterator) GetRangeValues(in metric.Interval) metric.Values
 		values = append(values, c.newIterator().getRangeValues(in)...)
 	}
 	return values
+}
+
+// nopSeriesIterator implements Series Iterator. It never returns any values.
+type nopSeriesIterator struct{}
+
+// GetValueAtTime implements SeriesIterator.
+func (_ nopSeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.Values {
+	return metric.Values{}
+}
+
+// GetBoundaryValues implements SeriesIterator.
+func (_ nopSeriesIterator) GetBoundaryValues(in metric.Interval) metric.Values {
+	return metric.Values{}
+}
+
+// GetRangeValues implements SeriesIterator.
+func (_ nopSeriesIterator) GetRangeValues(in metric.Interval) metric.Values {
+	return metric.Values{}
 }
