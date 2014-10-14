@@ -154,6 +154,8 @@ label_match_type   : '='
 
 rule_expr          : '(' rule_expr ')'
                      { $$ = $2 }
+                   | '{' label_match_list '}'
+                     { $$ = ast.NewVectorSelector($2) }
                    | metric_name label_matches
                      {
                        var err error
