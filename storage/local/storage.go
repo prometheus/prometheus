@@ -205,8 +205,10 @@ func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
 
 	for m := range s.fingerprintToSeries.iter() {
 		s.fpLocker.Lock(m.fp)
-		if m.series.evictOlderThan(clientmodel.TimestampFromTime(time.Now()).Add(-1 * ttl)) {
-			m.series.persistHeadChunk(m.fp, s.persistQueue)
+		if m.series.evictOlderThan(
+			clientmodel.TimestampFromTime(time.Now()).Add(-1*ttl),
+			m.fp, s.persistQueue,
+		) {
 			s.fingerprintToSeries.del(m.fp)
 			if err := s.persistence.archiveMetric(
 				m.fp, m.series.metric, m.series.firstTime(), m.series.lastTime(),
