@@ -45,18 +45,6 @@ var (
 		Help: "The duration of the last storage purge iteration in milliseconds.",
 	})
 
-	numChunks = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_used_chunks_count",
-		Help: "The current number of chunks in use.",
-	})
-	numChunkGives = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_chunk_gives_total",
-		Help: "The total number of returned (freed) chunks.",
-	})
-	numChunkGets = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_chunk_gets_total",
-		Help: "The total number of retrieved chunks.",
-	})
 	numTranscodes = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_chunk_transcodes_total",
 		Help: "The total number of chunk transcodes.",
@@ -85,9 +73,6 @@ func init() {
 	prometheus.MustRegister(numSamples)
 	prometheus.MustRegister(evictionDuration)
 	prometheus.MustRegister(purgeDuration)
-	prometheus.MustRegister(numChunks)
-	prometheus.MustRegister(numChunkGives)
-	prometheus.MustRegister(numChunkGets)
 	prometheus.MustRegister(numTranscodes)
 	prometheus.MustRegister(numPinnedChunks)
 	prometheus.MustRegister(persistLatencies)

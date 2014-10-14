@@ -141,6 +141,9 @@ type Target interface {
 }
 
 // target is a Target that refers to a singular HTTP or HTTPS endpoint.
+//
+// TODO: The implementation is not yet goroutine safe, but for the web status,
+// methods are called concurrently.
 type target struct {
 	// The current health state of the target.
 	state TargetState
