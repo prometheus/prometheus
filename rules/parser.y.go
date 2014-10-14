@@ -1,28 +1,28 @@
-
 //line parser.y:15
-        package rules
+package rules
+
 import __yyfmt__ "fmt"
-//line parser.y:15
-		
-        import (
-          clientmodel "github.com/prometheus/client_golang/model"
 
-          "github.com/prometheus/prometheus/rules/ast"
-          "github.com/prometheus/prometheus/storage/metric"
-        )
+//line parser.y:15
+import (
+	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/rules/ast"
+	"github.com/prometheus/prometheus/storage/metric"
+)
 
 //line parser.y:25
 type yySymType struct {
-	yys int
-        num clientmodel.SampleValue
-        str string
-        ruleNode ast.Node
-        ruleNodeSlice []ast.Node
-        boolean bool
-        labelNameSlice clientmodel.LabelNames
-        labelSet clientmodel.LabelSet
-        labelMatcher *metric.LabelMatcher
-        labelMatchers metric.LabelMatchers
+	yys            int
+	num            clientmodel.SampleValue
+	str            string
+	ruleNode       ast.Node
+	ruleNodeSlice  []ast.Node
+	boolean        bool
+	labelNameSlice clientmodel.LabelNames
+	labelSet       clientmodel.LabelSet
+	labelMatcher   *metric.LabelMatcher
+	labelMatchers  metric.LabelMatchers
 }
 
 const START_RULES = 57346
@@ -75,8 +75,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyMaxDepth = 200
 
-//line parser.y:242
-
+//line parser.y:244
 
 //line yacctab:1
 var yyExca = []int{
@@ -88,87 +87,90 @@ var yyExca = []int{
 	-2, 10,
 }
 
-const yyNprod = 48
+const yyNprod = 49
 const yyPrivate = 57344
 
 var yyTokenNames []string
 var yyStates []string
 
-const yyLast = 121
+const yyLast = 127
 
 var yyAct = []int{
 
-	44, 59, 41, 40, 36, 47, 6, 17, 9, 42,
-	21, 12, 11, 18, 19, 84, 10, 83, 20, 18,
-	19, 30, 31, 32, 20, 18, 19, 17, 43, 72,
-	7, 39, 55, 17, 75, 25, 20, 18, 19, 17,
-	20, 18, 19, 24, 9, 42, 70, 12, 11, 61,
-	33, 17, 10, 9, 62, 17, 12, 11, 64, 67,
-	19, 10, 54, 60, 53, 37, 7, 68, 69, 45,
-	23, 76, 56, 17, 88, 7, 48, 49, 52, 82,
-	85, 78, 16, 58, 46, 34, 8, 51, 74, 15,
-	66, 27, 79, 89, 12, 29, 87, 77, 63, 86,
-	81, 26, 60, 37, 28, 2, 3, 13, 5, 4,
-	1, 50, 71, 73, 14, 22, 35, 57, 65, 80,
-	38,
+	51, 64, 48, 47, 24, 54, 6, 20, 10, 49,
+	22, 13, 12, 21, 19, 20, 11, 18, 75, 87,
+	18, 86, 34, 35, 36, 78, 23, 8, 18, 29,
+	7, 46, 50, 10, 49, 28, 13, 12, 21, 19,
+	20, 11, 52, 55, 21, 19, 20, 21, 19, 20,
+	71, 72, 8, 18, 44, 7, 66, 73, 60, 18,
+	27, 37, 18, 67, 70, 10, 19, 20, 13, 12,
+	59, 65, 58, 11, 79, 57, 38, 39, 38, 25,
+	18, 42, 85, 91, 8, 61, 88, 7, 81, 53,
+	41, 63, 9, 17, 77, 69, 82, 33, 31, 43,
+	16, 13, 92, 90, 80, 56, 89, 84, 30, 65,
+	25, 32, 2, 3, 14, 5, 4, 1, 40, 74,
+	76, 15, 26, 62, 68, 83, 45,
 }
 var yyPact = []int{
 
-	101, -1000, -1000, 47, 71, -1000, 25, 47, 45, 15,
-	7, -1000, -1000, -1000, 85, 98, -1000, 87, 47, 47,
-	47, 21, -1000, 59, 2, 47, 44, -1000, 65, -26,
-	43, -23, -3, -1000, -1000, 50, -1000, 63, 35, -1000,
-	-1000, 25, -1000, 3, 48, 57, 47, -1000, -1000, 97,
-	91, -1000, -1000, -1000, 38, 78, 47, 41, -1000, -1000,
-	22, 9, -1000, -1000, -1000, 75, 6, 25, -1000, 96,
-	90, 60, 84, -1000, -1000, 94, -1000, -1000, 44, -1000,
-	-12, -1000, 58, -1000, 93, 89, -1000, 51, 86, -1000,
+	108, -1000, -1000, 59, 82, -1000, 23, 59, 104, 35,
+	7, 1, -1000, -1000, -1000, 92, 105, -1000, 89, 59,
+	59, 59, 32, 51, -1000, 66, -1000, 73, 2, 59,
+	17, -1000, 70, -26, -10, -13, 50, -1000, 104, -1000,
+	98, -1000, -1000, -1000, 49, 43, -1000, -1000, 23, -1000,
+	29, 61, 65, 59, -1000, -1000, -1000, -1000, -1000, 27,
+	83, 59, 24, -1000, -1000, 33, -2, -1000, 81, -3,
+	23, -1000, 103, 97, 67, 88, -1000, -1000, 101, -1000,
+	-1000, 17, -1000, -8, -1000, 64, -1000, 100, 96, -1000,
+	60, 95, -1000,
 }
 var yyPgo = []int{
 
-	0, 120, 119, 118, 1, 117, 0, 4, 116, 115,
-	2, 3, 114, 113, 112, 86, 111, 110, 109, 108,
-	107,
+	0, 126, 125, 124, 1, 123, 0, 4, 26, 122,
+	2, 3, 121, 120, 119, 92, 118, 117, 116, 115,
+	114,
 }
 var yyR1 = []int{
 
 	0, 17, 17, 18, 18, 19, 20, 20, 14, 14,
 	12, 12, 15, 15, 6, 6, 6, 5, 5, 4,
 	9, 9, 9, 8, 8, 7, 16, 16, 10, 10,
-	10, 10, 10, 10, 10, 10, 10, 10, 13, 13,
-	3, 3, 2, 2, 1, 1, 11, 11,
+	10, 10, 10, 10, 10, 10, 10, 10, 10, 13,
+	13, 3, 3, 2, 2, 1, 1, 11, 11,
 }
 var yyR2 = []int{
 
 	0, 2, 2, 0, 2, 1, 5, 11, 0, 2,
 	0, 1, 1, 1, 0, 3, 2, 1, 3, 3,
-	0, 2, 3, 1, 3, 3, 1, 1, 3, 2,
-	4, 3, 4, 6, 3, 3, 3, 1, 0, 1,
-	0, 4, 1, 3, 1, 3, 1, 1,
+	0, 2, 3, 1, 3, 3, 1, 1, 3, 3,
+	2, 4, 3, 4, 6, 3, 3, 3, 1, 0,
+	1, 0, 4, 1, 3, 1, 3, 1, 1,
 }
 var yyChk = []int{
 
-	-1000, -17, 4, 5, -18, -19, -10, 28, -15, 6,
-	14, 10, 9, -20, -12, 18, 11, 30, 16, 17,
-	15, -10, -9, 25, 28, 28, -15, 6, 6, 8,
-	-10, -10, -10, 29, 26, -8, -7, 6, -1, 29,
-	-11, -10, 7, -10, -6, 25, 19, 31, 26, 27,
-	-16, 24, 15, 29, 27, 29, 24, -5, 26, -4,
-	6, -10, -7, 7, -11, -3, 12, -10, 26, 27,
-	24, -14, 20, -13, 13, 28, -4, 7, 21, 8,
-	-2, 6, -6, 29, 27, 22, 6, 7, 23, 7,
+	-1000, -17, 4, 5, -18, -19, -10, 28, 25, -15,
+	6, 14, 10, 9, -20, -12, 18, 11, 30, 16,
+	17, 15, -10, -8, -7, 6, -9, 25, 28, 28,
+	-15, 6, 6, 8, -10, -10, -10, 29, 27, 26,
+	-16, 24, 15, 26, -8, -1, 29, -11, -10, 7,
+	-10, -6, 25, 19, 31, -7, 7, 26, 29, 27,
+	29, 24, -5, 26, -4, 6, -10, -11, -3, 12,
+	-10, 26, 27, 24, -14, 20, -13, 13, 28, -4,
+	7, 21, 8, -2, 6, -6, 29, 27, 22, 6,
+	7, 23, 7,
 }
 var yyDef = []int{
 
-	0, -2, 3, 0, -2, 2, 5, 0, 20, 13,
-	0, 37, 12, 4, 0, 0, 11, 0, 0, 0,
-	0, 0, 29, 0, 0, 0, 14, 13, 0, 0,
-	34, 35, 36, 28, 21, 0, 23, 0, 0, 31,
-	44, 46, 47, 0, 0, 0, 0, 32, 22, 0,
-	0, 26, 27, 30, 0, 40, 0, 0, 16, 17,
-	0, 8, 24, 25, 45, 38, 0, 6, 15, 0,
-	0, 0, 0, 33, 39, 0, 18, 19, 14, 9,
-	0, 42, 0, 41, 0, 0, 43, 0, 0, 7,
+	0, -2, 3, 0, -2, 2, 5, 0, 0, 20,
+	13, 0, 38, 12, 4, 0, 0, 11, 0, 0,
+	0, 0, 0, 0, 23, 0, 30, 0, 0, 0,
+	14, 13, 0, 0, 35, 36, 37, 28, 0, 29,
+	0, 26, 27, 21, 0, 0, 32, 45, 47, 48,
+	0, 0, 0, 0, 33, 24, 25, 22, 31, 0,
+	41, 0, 0, 16, 17, 0, 8, 46, 39, 0,
+	6, 15, 0, 0, 0, 0, 34, 40, 0, 18,
+	19, 14, 9, 0, 43, 0, 42, 0, 0, 44,
+	0, 0, 7,
 }
 var yyTok1 = []int{
 
@@ -423,179 +425,283 @@ yydefault:
 
 	case 5:
 		//line parser.y:74
-		{ yylex.(*RulesLexer).parsedExpr = yyS[yypt-0].ruleNode }
+		{
+			yylex.(*RulesLexer).parsedExpr = yyS[yypt-0].ruleNode
+		}
 	case 6:
 		//line parser.y:79
 		{
-	                       rule, err := CreateRecordingRule(yyS[yypt-3].str, yyS[yypt-2].labelSet, yyS[yypt-0].ruleNode, yyS[yypt-4].boolean)
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                       yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
-	                     }
+			rule, err := CreateRecordingRule(yyS[yypt-3].str, yyS[yypt-2].labelSet, yyS[yypt-0].ruleNode, yyS[yypt-4].boolean)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+			yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
+		}
 	case 7:
 		//line parser.y:85
 		{
-	                       rule, err := CreateAlertingRule(yyS[yypt-9].str, yyS[yypt-7].ruleNode, yyS[yypt-6].str, yyS[yypt-4].labelSet, yyS[yypt-2].str, yyS[yypt-0].str)
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                       yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
-	                     }
+			rule, err := CreateAlertingRule(yyS[yypt-9].str, yyS[yypt-7].ruleNode, yyS[yypt-6].str, yyS[yypt-4].labelSet, yyS[yypt-2].str, yyS[yypt-0].str)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+			yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
+		}
 	case 8:
 		//line parser.y:93
-		{ yyVAL.str = "0s" }
+		{
+			yyVAL.str = "0s"
+		}
 	case 9:
 		//line parser.y:95
-		{ yyVAL.str = yyS[yypt-0].str }
+		{
+			yyVAL.str = yyS[yypt-0].str
+		}
 	case 10:
 		//line parser.y:99
-		{ yyVAL.boolean = false }
+		{
+			yyVAL.boolean = false
+		}
 	case 11:
 		//line parser.y:101
-		{ yyVAL.boolean = true }
+		{
+			yyVAL.boolean = true
+		}
 	case 12:
 		//line parser.y:105
-		{ yyVAL.str = yyS[yypt-0].str }
+		{
+			yyVAL.str = yyS[yypt-0].str
+		}
 	case 13:
 		//line parser.y:107
-		{ yyVAL.str = yyS[yypt-0].str }
+		{
+			yyVAL.str = yyS[yypt-0].str
+		}
 	case 14:
 		//line parser.y:111
-		{ yyVAL.labelSet = clientmodel.LabelSet{} }
+		{
+			yyVAL.labelSet = clientmodel.LabelSet{}
+		}
 	case 15:
 		//line parser.y:113
-		{ yyVAL.labelSet = yyS[yypt-1].labelSet  }
+		{
+			yyVAL.labelSet = yyS[yypt-1].labelSet
+		}
 	case 16:
 		//line parser.y:115
-		{ yyVAL.labelSet = clientmodel.LabelSet{} }
+		{
+			yyVAL.labelSet = clientmodel.LabelSet{}
+		}
 	case 17:
 		//line parser.y:118
-		{ yyVAL.labelSet = yyS[yypt-0].labelSet }
+		{
+			yyVAL.labelSet = yyS[yypt-0].labelSet
+		}
 	case 18:
 		//line parser.y:120
-		{ for k, v := range yyS[yypt-0].labelSet { yyVAL.labelSet[k] = v } }
+		{
+			for k, v := range yyS[yypt-0].labelSet {
+				yyVAL.labelSet[k] = v
+			}
+		}
 	case 19:
 		//line parser.y:124
-		{ yyVAL.labelSet = clientmodel.LabelSet{ clientmodel.LabelName(yyS[yypt-2].str): clientmodel.LabelValue(yyS[yypt-0].str) } }
+		{
+			yyVAL.labelSet = clientmodel.LabelSet{clientmodel.LabelName(yyS[yypt-2].str): clientmodel.LabelValue(yyS[yypt-0].str)}
+		}
 	case 20:
 		//line parser.y:128
-		{ yyVAL.labelMatchers = metric.LabelMatchers{} }
+		{
+			yyVAL.labelMatchers = metric.LabelMatchers{}
+		}
 	case 21:
 		//line parser.y:130
-		{ yyVAL.labelMatchers = metric.LabelMatchers{} }
+		{
+			yyVAL.labelMatchers = metric.LabelMatchers{}
+		}
 	case 22:
 		//line parser.y:132
-		{ yyVAL.labelMatchers = yyS[yypt-1].labelMatchers }
+		{
+			yyVAL.labelMatchers = yyS[yypt-1].labelMatchers
+		}
 	case 23:
 		//line parser.y:136
-		{ yyVAL.labelMatchers = metric.LabelMatchers{yyS[yypt-0].labelMatcher} }
+		{
+			yyVAL.labelMatchers = metric.LabelMatchers{yyS[yypt-0].labelMatcher}
+		}
 	case 24:
 		//line parser.y:138
-		{ yyVAL.labelMatchers = append(yyVAL.labelMatchers, yyS[yypt-0].labelMatcher) }
+		{
+			yyVAL.labelMatchers = append(yyVAL.labelMatchers, yyS[yypt-0].labelMatcher)
+		}
 	case 25:
 		//line parser.y:142
 		{
-	                       var err error
-	                       yyVAL.labelMatcher, err = newLabelMatcher(yyS[yypt-1].str, clientmodel.LabelName(yyS[yypt-2].str), clientmodel.LabelValue(yyS[yypt-0].str))
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                     }
+			var err error
+			yyVAL.labelMatcher, err = newLabelMatcher(yyS[yypt-1].str, clientmodel.LabelName(yyS[yypt-2].str), clientmodel.LabelValue(yyS[yypt-0].str))
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
 	case 26:
 		//line parser.y:150
-		{ yyVAL.str = "=" }
+		{
+			yyVAL.str = "="
+		}
 	case 27:
 		//line parser.y:152
-		{ yyVAL.str = yyS[yypt-0].str }
+		{
+			yyVAL.str = yyS[yypt-0].str
+		}
 	case 28:
 		//line parser.y:156
-		{ yyVAL.ruleNode = yyS[yypt-1].ruleNode }
+		{
+			yyVAL.ruleNode = yyS[yypt-1].ruleNode
+		}
 	case 29:
 		//line parser.y:158
 		{
-	                       var err error
-	                       m, err := metric.NewLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, clientmodel.LabelValue(yyS[yypt-1].str))
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                       yyS[yypt-0].labelMatchers = append(yyS[yypt-0].labelMatchers, m)
-	                       yyVAL.ruleNode = ast.NewVectorSelector(yyS[yypt-0].labelMatchers)
-	                     }
+			yyVAL.ruleNode = ast.NewVectorSelector(yyS[yypt-1].labelMatchers)
+		}
 	case 30:
-		//line parser.y:166
+		//line parser.y:160
 		{
-	                       var err error
-	                       yyVAL.ruleNode, err = NewFunctionCall(yyS[yypt-3].str, yyS[yypt-1].ruleNodeSlice)
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                     }
+			var err error
+			m, err := metric.NewLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, clientmodel.LabelValue(yyS[yypt-1].str))
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+			yyS[yypt-0].labelMatchers = append(yyS[yypt-0].labelMatchers, m)
+			yyVAL.ruleNode = ast.NewVectorSelector(yyS[yypt-0].labelMatchers)
+		}
 	case 31:
-		//line parser.y:172
+		//line parser.y:168
 		{
-	                       var err error
-	                       yyVAL.ruleNode, err = NewFunctionCall(yyS[yypt-2].str, []ast.Node{})
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                     }
+			var err error
+			yyVAL.ruleNode, err = NewFunctionCall(yyS[yypt-3].str, yyS[yypt-1].ruleNodeSlice)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
 	case 32:
-		//line parser.y:178
+		//line parser.y:174
 		{
-	                       var err error
-	                       yyVAL.ruleNode, err = NewMatrixSelector(yyS[yypt-3].ruleNode, yyS[yypt-1].str)
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                     }
+			var err error
+			yyVAL.ruleNode, err = NewFunctionCall(yyS[yypt-2].str, []ast.Node{})
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
 	case 33:
-		//line parser.y:184
+		//line parser.y:180
 		{
-	                       var err error
-	                       yyVAL.ruleNode, err = NewVectorAggregation(yyS[yypt-5].str, yyS[yypt-3].ruleNode, yyS[yypt-1].labelNameSlice, yyS[yypt-0].boolean)
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                     }
+			var err error
+			yyVAL.ruleNode, err = NewMatrixSelector(yyS[yypt-3].ruleNode, yyS[yypt-1].str)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
 	case 34:
-		//line parser.y:192
+		//line parser.y:186
 		{
-	                       var err error
-	                       yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                     }
+			var err error
+			yyVAL.ruleNode, err = NewVectorAggregation(yyS[yypt-5].str, yyS[yypt-3].ruleNode, yyS[yypt-1].labelNameSlice, yyS[yypt-0].boolean)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
 	case 35:
-		//line parser.y:198
+		//line parser.y:194
 		{
-	                       var err error
-	                       yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                     }
+			var err error
+			yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
 	case 36:
-		//line parser.y:204
+		//line parser.y:200
 		{
-	                       var err error
-	                       yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
-	                       if err != nil { yylex.Error(err.Error()); return 1 }
-	                     }
+			var err error
+			yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
 	case 37:
-		//line parser.y:210
-		{ yyVAL.ruleNode = ast.NewScalarLiteral(yyS[yypt-0].num)}
+		//line parser.y:206
+		{
+			var err error
+			yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
 	case 38:
-		//line parser.y:214
-		{ yyVAL.boolean = false }
+		//line parser.y:212
+		{
+			yyVAL.ruleNode = ast.NewScalarLiteral(yyS[yypt-0].num)
+		}
 	case 39:
 		//line parser.y:216
-		{ yyVAL.boolean = true }
+		{
+			yyVAL.boolean = false
+		}
 	case 40:
-		//line parser.y:220
-		{ yyVAL.labelNameSlice = clientmodel.LabelNames{} }
+		//line parser.y:218
+		{
+			yyVAL.boolean = true
+		}
 	case 41:
 		//line parser.y:222
-		{ yyVAL.labelNameSlice = yyS[yypt-1].labelNameSlice }
+		{
+			yyVAL.labelNameSlice = clientmodel.LabelNames{}
+		}
 	case 42:
-		//line parser.y:226
-		{ yyVAL.labelNameSlice = clientmodel.LabelNames{clientmodel.LabelName(yyS[yypt-0].str)} }
+		//line parser.y:224
+		{
+			yyVAL.labelNameSlice = yyS[yypt-1].labelNameSlice
+		}
 	case 43:
 		//line parser.y:228
-		{ yyVAL.labelNameSlice = append(yyVAL.labelNameSlice, clientmodel.LabelName(yyS[yypt-0].str)) }
+		{
+			yyVAL.labelNameSlice = clientmodel.LabelNames{clientmodel.LabelName(yyS[yypt-0].str)}
+		}
 	case 44:
-		//line parser.y:232
-		{ yyVAL.ruleNodeSlice = []ast.Node{yyS[yypt-0].ruleNode} }
+		//line parser.y:230
+		{
+			yyVAL.labelNameSlice = append(yyVAL.labelNameSlice, clientmodel.LabelName(yyS[yypt-0].str))
+		}
 	case 45:
 		//line parser.y:234
-		{ yyVAL.ruleNodeSlice = append(yyVAL.ruleNodeSlice, yyS[yypt-0].ruleNode) }
+		{
+			yyVAL.ruleNodeSlice = []ast.Node{yyS[yypt-0].ruleNode}
+		}
 	case 46:
-		//line parser.y:238
-		{ yyVAL.ruleNode = yyS[yypt-0].ruleNode }
+		//line parser.y:236
+		{
+			yyVAL.ruleNodeSlice = append(yyVAL.ruleNodeSlice, yyS[yypt-0].ruleNode)
+		}
 	case 47:
 		//line parser.y:240
-		{ yyVAL.ruleNode = ast.NewStringLiteral(yyS[yypt-0].str) }
+		{
+			yyVAL.ruleNode = yyS[yypt-0].ruleNode
+		}
+	case 48:
+		//line parser.y:242
+		{
+			yyVAL.ruleNode = ast.NewStringLiteral(yyS[yypt-0].str)
+		}
 	}
 	goto yystack /* stack new state and value */
 }
