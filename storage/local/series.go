@@ -431,24 +431,23 @@ func (s *memorySeries) preloadChunksAtTime(t clientmodel.Timestamp, p *persisten
 }
 */
 
-// loadChunkDescs is an internal helper method.
-func (s *memorySeries) loadChunkDescs(p *persistence) error {
-	cds, err := p.loadChunkDescs(s.metric.Fingerprint(), s.chunkDescs[0].firstTime())
-	if err != nil {
-		return err
-	}
-	s.chunkDescs = append(cds, s.chunkDescs...)
-	s.chunkDescsLoaded = true
-	return nil
-}
-
 // preloadChunksForRange loads chunks for the given range from the persistence.
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) preloadChunksForRange(from clientmodel.Timestamp, through clientmodel.Timestamp, p *persistence) (chunkDescs, error) {
-	if !s.chunkDescsLoaded && (len(s.chunkDescs) == 0 || from.Before(s.chunkDescs[0].firstTime())) {
-		if err := s.loadChunkDescs(p); err != nil {
+func (s *memorySeries) preloadChunksForRange(
+	from clientmodel.Timestamp, through clientmodel.Timestamp,
+	fp clientmodel.Fingerprint, p *persistence,
+) (chunkDescs, error) {
+	firstChunkDescTime := through
+	if len(s.chunkDescs) > 0 {
+		firstChunkDescTime = s.chunkDescs[0].firstTime()
+	}
+	if !s.chunkDescsLoaded && from.Before(firstChunkDescTime) {
+		cds, err := p.loadChunkDescs(fp, firstChunkDescTime)
+		if err != nil {
 			return nil, err
 		}
+		s.chunkDescs = append(cds, s.chunkDescs...)
+		s.chunkDescsLoaded = true
 	}
 
 	if len(s.chunkDescs) == 0 {

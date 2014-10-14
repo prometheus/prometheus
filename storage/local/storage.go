@@ -175,7 +175,7 @@ func (s *memorySeriesStorage) preloadChunksForRange(fp clientmodel.Fingerprint, 
 			return nil, nil
 		}
 	}
-	return series.preloadChunksForRange(from, through, s.persistence)
+	return series.preloadChunksForRange(from, through, fp, s.persistence)
 }
 
 // NewIterator implements storage.
