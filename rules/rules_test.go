@@ -596,6 +596,46 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 4,
 		},
+		{
+			expr: `absent(nonexistent)`,
+			output: []string{
+				`{} => 1 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 0,
+		},
+		{
+			expr: `absent(nonexistent{job="testjob", instance="testinstance", method=~".*"})`,
+			output: []string{
+				`{instance="testinstance", job="testjob"} => 1 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 0,
+		},
+		{
+			expr: `count_scalar(absent(http_requests))`,
+			output: []string{
+				`scalar: 0 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 8,
+		},
+		{
+			expr: `count_scalar(absent(sum(http_requests)))`,
+			output: []string{
+				`scalar: 0 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 8,
+		},
+		{
+			expr: `absent(sum(nonexistent{job="testjob", instance="testinstance"}))`,
+			output: []string{
+				`{} => 1 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 0,
+		},
 	}
 
 	storage, closer := newTestStorage(t)

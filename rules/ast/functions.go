@@ -454,12 +454,41 @@ func absImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	return vector
 }
 
+// === absent(vector VectorNode) Vector ===
+func absentImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	n := args[0].(VectorNode)
+	if len(n.Eval(timestamp)) > 0 {
+		return Vector{}
+	}
+	m := clientmodel.Metric{}
+	if vs, ok := n.(*VectorSelector); ok {
+		for _, matcher := range vs.labelMatchers {
+			if matcher.Type == metric.Equal && matcher.Name != clientmodel.MetricNameLabel {
+				m[matcher.Name] = matcher.Value
+			}
+		}
+	}
+	return Vector{
+		&clientmodel.Sample{
+			Metric:    m,
+			Value:     1,
+			Timestamp: timestamp,
+		},
+	}
+}
+
 var functions = map[string]*Function{
 	"abs": {
 		name:       "abs",
 		argTypes:   []ExprType{VECTOR},
 		returnType: VECTOR,
 		callFn:     absImpl,
+	},
+	"absent": {
+		name:       "absent",
+		argTypes:   []ExprType{VECTOR},
+		returnType: VECTOR,
+		callFn:     absentImpl,
 	},
 	"avg_over_time": {
 		name:       "avg_over_time",
