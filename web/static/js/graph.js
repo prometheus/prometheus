@@ -311,7 +311,9 @@ Prometheus.Graph.prototype.submitQuery = function() {
       data: self.queryForm.serialize(),
       success: success,
       error: function(xhr, resp) {
-        alert("Error executing query: " + resp);
+        if (resp != "abort") {
+          alert("Error executing query: " + resp);
+        }
       },
       complete: function() {
         var duration = new Date().getTime() - startTime;
