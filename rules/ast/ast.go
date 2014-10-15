@@ -83,6 +83,17 @@ const (
 	OR
 )
 
+// shouldDropMetric indicates whether the metric name should be dropped after
+// applying this operator to a vector.
+func (opType BinOpType) shouldDropMetric() bool {
+	switch opType {
+	case ADD, SUB, MUL, DIV, MOD:
+		return true
+	default:
+		return false
+	}
+}
+
 // AggrType is an enum for aggregation types.
 type AggrType int
 
@@ -487,8 +498,8 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp) Vector {
 			m := clientmodel.Metric{}
 			if node.keepExtraLabels {
 				m = sample.Metric
+				delete(m, clientmodel.MetricNameLabel)
 			} else {
-				m[clientmodel.MetricNameLabel] = sample.Metric[clientmodel.MetricNameLabel]
 				for _, l := range node.groupBy {
 					if v, ok := sample.Metric[l]; ok {
 						m[l] = v
@@ -708,9 +719,6 @@ func evalVectorBinop(opType BinOpType,
 }
 
 func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
-	if len(labels1) != len(labels2) {
-		return false
-	}
 	for label, value := range labels1 {
 		if labels2[label] != value && label != clientmodel.MetricNameLabel {
 			return false
@@ -730,6 +738,9 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp) Vector {
 			value, keep := evalVectorBinop(node.opType, lhs, rhsSample.Value)
 			if keep {
 				rhsSample.Value = value
+				if node.opType.shouldDropMetric() {
+					delete(rhsSample.Metric, clientmodel.MetricNameLabel)
+				}
 				result = append(result, rhsSample)
 			}
 		}
@@ -741,6 +752,9 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp) Vector {
 			value, keep := evalVectorBinop(node.opType, lhsSample.Value, rhs)
 			if keep {
 				lhsSample.Value = value
+				if node.opType.shouldDropMetric() {
+					delete(lhsSample.Metric, clientmodel.MetricNameLabel)
+				}
 				result = append(result, lhsSample)
 			}
 		}
@@ -754,6 +768,9 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp) Vector {
 					value, keep := evalVectorBinop(node.opType, lhsSample.Value, rhsSample.Value)
 					if keep {
 						lhsSample.Value = value
+						if node.opType.shouldDropMetric() {
+							delete(lhsSample.Metric, clientmodel.MetricNameLabel)
+						}
 						result = append(result, lhsSample)
 					}
 				}

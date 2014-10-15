@@ -350,7 +350,7 @@ Prometheus.Graph.prototype.renderLabels = function(labels) {
 }
 
 Prometheus.Graph.prototype.metricToTsName = function(labels) {
-  var tsName = labels["__name__"] + "{";
+  var tsName = (labels["__name__"] || '') + "{";
   var labelStrings = [];
    for (label in labels) {
      if (label != "__name__") {
@@ -378,7 +378,7 @@ Prometheus.Graph.prototype.transformData = function(json) {
   }
   var data = json.Value.map(function(ts) {
     return {
-      name: self.metricToTsName(ts.Metric),
+      name: escapeHTML(self.metricToTsName(ts.Metric)),
       labels: ts.Metric,
       data: ts.Values.map(function(value) {
         return {
@@ -438,7 +438,7 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
     graph: self.rickshawGraph,
     formatter: function(series, x, y) {
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
-      var content = swatch + series.labels["__name__"] + ": <strong>" + y + '</strong><br>';
+      var content = swatch + (series.labels["__name__"] || 'value') + ": <strong>" + y + '</strong><br>';
       return content + self.renderLabels(series.labels);
     },
     onRender: function() {
@@ -518,7 +518,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     for (var i = 0; i < data.Value.length; i++) {
       var v = data.Value[i];
       var tsName = self.metricToTsName(v.Metric);
-      tBody.append("<tr><td>" + tsName + "</td><td>" + v.Value + "</td></tr>")
+      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + v.Value + "</td></tr>")
     }
     break;
   case "matrix":
@@ -529,7 +529,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
       for (var j = 0; j < v.Values.length; j++) {
         valueText += v.Values[j].Value + " @" + v.Values[j].Timestamp + "<br/>";
       }
-      tBody.append("<tr><td>" + tsName + "</td><td>" + valueText + "</td></tr>")
+      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + valueText + "</td></tr>")
     }
     break;
   case "scalar":
@@ -572,6 +572,21 @@ function addGraph(options) {
   });
   $(window).resize(function() {
     graph.resizeGraph();
+  });
+}
+
+function escapeHTML(string) {
+  var entityMap = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': '&quot;',
+    "'": '&#39;',
+    "/": '&#x2F;'
+  };
+
+  return String(string).replace(/[&<>"'\/]/g, function (s) {
+    return entityMap[s];
   });
 }
 

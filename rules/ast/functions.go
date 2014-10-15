@@ -133,6 +133,7 @@ func deltaImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 			Value:     resultValue,
 			Timestamp: timestamp,
 		}
+		delete(resultSample.Metric, clientmodel.MetricNameLabel)
 		resultVector = append(resultVector, resultSample)
 	}
 	return resultVector
@@ -381,6 +382,7 @@ func aggrOverTime(timestamp clientmodel.Timestamp, args []Node, aggrFn func(metr
 			continue
 		}
 
+		delete(el.Metric, clientmodel.MetricNameLabel)
 		resultVector = append(resultVector, &clientmodel.Sample{
 			Metric:    el.Metric,
 			Value:     aggrFn(el.Values),
@@ -446,6 +448,7 @@ func absImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	n := args[0].(VectorNode)
 	vector := n.Eval(timestamp)
 	for _, el := range vector {
+		delete(el.Metric, clientmodel.MetricNameLabel)
 		el.Value = clientmodel.SampleValue(math.Abs(float64(el.Value)))
 	}
 	return vector
