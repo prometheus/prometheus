@@ -37,8 +37,8 @@ const (
 	namespace = "prometheus"
 	subsystem = "persistence"
 
-	seriesFileName     = "series.db"
-	seriesTempFileName = "series.db.tmp"
+	seriesFileSuffix     = ".db"
+	seriesTempFileSuffix = ".db.tmp"
 
 	headsFileName      = "heads.db"
 	headsFormatVersion = 1
@@ -51,14 +51,14 @@ const (
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
 
-	// TODO: Consider making any of these configurable?
+	// TODO: Consider making any of these configurable? At least tweak
+	// them. As of now, these are educated guesses.
 	indexingMaxBatchSize  = 1024 * 1024
 	indexingBatchTimeout  = 500 * time.Millisecond // Commit batch when idle for that long.
 	indexingQueueCapacity = 1024
 )
 
 const (
-	_                         = iota
 	flagChunkDescsLoaded byte = 1 << iota
 	flagHeadChunkPersisted
 )
@@ -568,8 +568,7 @@ func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmo
 		return false, err
 	}
 
-	dirname := p.dirForFingerprint(fp)
-	temp, err := os.OpenFile(path.Join(dirname, seriesTempFileName), os.O_WRONLY|os.O_CREATE, 0640)
+	temp, err := os.OpenFile(p.tempFileNameForFingerprint(fp), os.O_WRONLY|os.O_CREATE, 0640)
 	if err != nil {
 		return false, err
 	}
@@ -579,7 +578,7 @@ func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmo
 		return false, err
 	}
 
-	os.Rename(path.Join(dirname, seriesTempFileName), path.Join(dirname, seriesFileName))
+	os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp))
 	return false, nil
 }
 
@@ -746,28 +745,30 @@ func (p *persistence) close() error {
 	return lastError
 }
 
-func (p *persistence) dirForFingerprint(fp clientmodel.Fingerprint) string {
+func (p *persistence) dirNameForFingerprint(fp clientmodel.Fingerprint) string {
 	fpStr := fp.String()
-	return fmt.Sprintf("%s/%c%c/%s", p.basePath, fpStr[0], fpStr[1], fpStr[2:])
+	return fmt.Sprintf("%s/%c%c", p.basePath, fpStr[0], fpStr[1])
+}
+
+func (p *persistence) fileNameForFingerprint(fp clientmodel.Fingerprint) string {
+	fpStr := fp.String()
+	return fmt.Sprintf("%s/%c%c/%s%s", p.basePath, fpStr[0], fpStr[1], fpStr[2:], seriesFileSuffix)
+}
+
+func (p *persistence) tempFileNameForFingerprint(fp clientmodel.Fingerprint) string {
+	fpStr := fp.String()
+	return fmt.Sprintf("%s/%c%c/%s%s", p.basePath, fpStr[0], fpStr[1], fpStr[2:], seriesTempFileSuffix)
 }
 
 func (p *persistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.File, error) {
-	dirname := p.dirForFingerprint(fp)
-	ex, err := exists(dirname)
-	if err != nil {
+	if err := os.MkdirAll(p.dirNameForFingerprint(fp), 0700); err != nil {
 		return nil, err
 	}
-	if !ex {
-		if err := os.MkdirAll(dirname, 0700); err != nil {
-			return nil, err
-		}
-	}
-	return os.OpenFile(path.Join(dirname, seriesFileName), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
+	return os.OpenFile(p.fileNameForFingerprint(fp), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
 }
 
 func (p *persistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.File, error) {
-	dirname := p.dirForFingerprint(fp)
-	return os.Open(path.Join(dirname, seriesFileName))
+	return os.Open(p.fileNameForFingerprint(fp))
 }
 
 func writeChunkHeader(w io.Writer, c chunk) error {
