@@ -21,12 +21,6 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// chunks is just a chunk slice. No methods are defined for this named type.
-// TODO: Perhaps we should remove it? It might avoid errors if it's
-// syntactically clear that we are dealing with a vanilly slice and not some
-// kind of more complex collection.
-type chunks []chunk
-
 // chunk is the interface for all chunks. Chunks are generally not
 // goroutine-safe.
 type chunk interface {
@@ -36,7 +30,7 @@ type chunk interface {
 	// any. The first chunk returned might be the same as the original one
 	// or a newly allocated version. In any case, take the returned chunk as
 	// the relevant one and discard the orginal chunk.
-	add(*metric.SamplePair) chunks
+	add(*metric.SamplePair) []chunk
 	clone() chunk
 	firstTime() clientmodel.Timestamp
 	lastTime() clientmodel.Timestamp
@@ -67,11 +61,11 @@ type chunkIterator interface {
 	contains(clientmodel.Timestamp) bool
 }
 
-func transcodeAndAdd(dst chunk, src chunk, s *metric.SamplePair) chunks {
+func transcodeAndAdd(dst chunk, src chunk, s *metric.SamplePair) []chunk {
 	numTranscodes.Inc()
 
 	head := dst
-	body := chunks{}
+	body := []chunk{}
 	for v := range src.values() {
 		newChunks := head.add(v)
 		body = append(body, newChunks[:len(newChunks)-1]...)

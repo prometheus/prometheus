@@ -247,7 +247,7 @@ func (p *persistence) persistChunk(fp clientmodel.Fingerprint, c chunk) error {
 // with the earliest time will have index 0, the following ones will have
 // incrementally larger indexes. It is the caller's responsibility to not
 // persist or drop anything for the same fingerprint concurrently.
-func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int) (chunks, error) {
+func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int) ([]chunk, error) {
 	// TODO: we need to verify at some point that file length is a multiple of
 	// the chunk size. When is the best time to do this, and where to remember
 	// it? Right now, we only do it when loading chunkDescs.
@@ -257,7 +257,7 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int) (chu
 	}
 	defer f.Close()
 
-	chunks := make(chunks, 0, len(indexes))
+	chunks := make([]chunk, 0, len(indexes))
 	defer func() {
 		if err == nil {
 			return
@@ -270,14 +270,12 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int) (chu
 		if err != nil {
 			return nil, err
 		}
-		// TODO: check seek offset too?
 
 		n, err := f.Read(typeBuf)
 		if err != nil {
 			return nil, err
 		}
 		if n != 1 {
-			// Shouldn't happen?
 			panic("read returned != 1 bytes")
 		}
 
@@ -295,7 +293,7 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int) (chu
 // loadChunkDescs loads chunkDescs for a series up until a given time.  It is
 // the caller's responsibility to not persist or drop anything for the same
 // fingerprint concurrently.
-func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (chunkDescs, error) {
+func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) ([]*chunkDesc, error) {
 	f, err := p.openChunkFileForReading(fp)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -323,7 +321,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 	}
 
 	numChunks := int(fi.Size()) / totalChunkLen
-	cds := make(chunkDescs, 0, numChunks)
+	cds := make([]*chunkDesc, 0, numChunks)
 	for i := 0; i < numChunks; i++ {
 		_, err := f.Seek(p.offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, os.SEEK_SET)
 		if err != nil {
@@ -336,8 +334,8 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 			return nil, err
 		}
 		cd := &chunkDesc{
-			firstTimeField: clientmodel.Timestamp(binary.LittleEndian.Uint64(chunkTimesBuf)),
-			lastTimeField:  clientmodel.Timestamp(binary.LittleEndian.Uint64(chunkTimesBuf[8:])),
+			chunkFirstTime: clientmodel.Timestamp(binary.LittleEndian.Uint64(chunkTimesBuf)),
+			chunkLastTime:  clientmodel.Timestamp(binary.LittleEndian.Uint64(chunkTimesBuf[8:])),
 		}
 		if !cd.firstTime().Before(beforeTime) {
 			// From here on, we have chunkDescs in memory already.
@@ -480,7 +478,7 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 		if err != nil {
 			return nil, err
 		}
-		chunkDescs := make(chunkDescs, numChunkDescs)
+		chunkDescs := make([]*chunkDesc, numChunkDescs)
 
 		for i := int64(0); i < numChunkDescs; i++ {
 			if headChunkPersisted || i < numChunkDescs-1 {
@@ -493,8 +491,8 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 					return nil, err
 				}
 				chunkDescs[i] = &chunkDesc{
-					firstTimeField: clientmodel.Timestamp(firstTime),
-					lastTimeField:  clientmodel.Timestamp(lastTime),
+					chunkFirstTime: clientmodel.Timestamp(firstTime),
+					chunkLastTime:  clientmodel.Timestamp(lastTime),
 				}
 			} else {
 				// Non-persisted head chunk.

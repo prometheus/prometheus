@@ -157,7 +157,7 @@ func (c *deltaEncodedChunk) baseValue() clientmodel.SampleValue {
 }
 
 // add implements chunk.
-func (c *deltaEncodedChunk) add(s *metric.SamplePair) chunks {
+func (c *deltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 	if len(c.buf) < deltaHeaderBytes {
 		c.buf = c.buf[:deltaHeaderBytes]
 		binary.LittleEndian.PutUint64(c.buf[deltaHeaderBaseTimeOffset:], uint64(s.Timestamp))
@@ -172,7 +172,7 @@ func (c *deltaEncodedChunk) add(s *metric.SamplePair) chunks {
 	if remainingBytes < sampleSize {
 		//fmt.Println("overflow")
 		overflowChunks := c.newFollowupChunk().add(s)
-		return chunks{c, overflowChunks[0]}
+		return []chunk{c, overflowChunks[0]}
 	}
 
 	dt := s.Timestamp - c.baseTime()
@@ -184,7 +184,7 @@ func (c *deltaEncodedChunk) add(s *metric.SamplePair) chunks {
 	// existing chunk data into new chunk(s).
 	//
 	// int->float.
-	// TODO: compare speed with Math.Modf.
+	// Note: Using math.Modf is slower than the conversion approach below.
 	if c.isInt() && clientmodel.SampleValue(int64(dv)) != dv {
 		//fmt.Println("int->float", len(c.buf), cap(c.buf), dv)
 		return transcodeAndAdd(newDeltaEncodedChunk(tb, d4, false), c, s)
@@ -247,7 +247,7 @@ func (c *deltaEncodedChunk) add(s *metric.SamplePair) chunks {
 			panic("invalid number of bytes for floating point delta")
 		}
 	}
-	return chunks{c}
+	return []chunk{c}
 }
 
 func (c *deltaEncodedChunk) sampleSize() int {

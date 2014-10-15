@@ -119,13 +119,13 @@ func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage loc
 	preloadTimer := queryStats.GetTimer(stats.PreloadTime).Start()
 	p := storage.NewPreloader()
 	for fp, rangeDuration := range analyzer.FullRanges {
-		if err := p.PreloadRange(fp, timestamp.Add(-rangeDuration), timestamp); err != nil {
+		if err := p.PreloadRange(fp, timestamp.Add(-rangeDuration), timestamp, *stalenessDelta); err != nil {
 			p.Close()
 			return nil, err
 		}
 	}
 	for fp := range analyzer.IntervalRanges {
-		if err := p.PreloadRange(fp, timestamp, timestamp); err != nil {
+		if err := p.PreloadRange(fp, timestamp, timestamp, *stalenessDelta); err != nil {
 			p.Close()
 			return nil, err
 		}
@@ -150,7 +150,7 @@ func prepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.T
 	preloadTimer := queryStats.GetTimer(stats.PreloadTime).Start()
 	p := storage.NewPreloader()
 	for fp, rangeDuration := range analyzer.FullRanges {
-		if err := p.PreloadRange(fp, start.Add(-rangeDuration), end); err != nil {
+		if err := p.PreloadRange(fp, start.Add(-rangeDuration), end, *stalenessDelta); err != nil {
 			p.Close()
 			return nil, err
 		}
@@ -169,7 +169,7 @@ func prepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.T
 		*/
 	}
 	for fp := range analyzer.IntervalRanges {
-		if err := p.PreloadRange(fp, start, end); err != nil {
+		if err := p.PreloadRange(fp, start, end, *stalenessDelta); err != nil {
 			p.Close()
 			return nil, err
 		}

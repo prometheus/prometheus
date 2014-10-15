@@ -14,18 +14,24 @@
 package local
 
 import (
+	"time"
+
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 // memorySeriesPreloader is a Preloader for the memorySeriesStorage.
 type memorySeriesPreloader struct {
 	storage          *memorySeriesStorage
-	pinnedChunkDescs chunkDescs
+	pinnedChunkDescs []*chunkDesc
 }
 
 // PreloadRange implements Preloader.
-func (p *memorySeriesPreloader) PreloadRange(fp clientmodel.Fingerprint, from clientmodel.Timestamp, through clientmodel.Timestamp) error {
-	cds, err := p.storage.preloadChunksForRange(fp, from, through)
+func (p *memorySeriesPreloader) PreloadRange(
+	fp clientmodel.Fingerprint,
+	from clientmodel.Timestamp, through clientmodel.Timestamp,
+	stalenessDelta time.Duration,
+) error {
+	cds, err := p.storage.preloadChunksForRange(fp, from, through, stalenessDelta)
 	if err != nil {
 		return err
 	}
@@ -93,11 +99,11 @@ func (p *memorySeriesPreloader) GetMetricRangeAtInterval(fp clientmodel.Fingerpr
 
 // Close implements Preloader.
 func (p *memorySeriesPreloader) Close() {
+	// TODO: Idea about a primitive but almost free heuristic to not evict
+	// "recently used" chunks: Do not unpin the chunks right here, but hand
+	// over the pinnedChunkDescs to a manager that will delay the unpinning
+	// based on time and memory pressure.
 	for _, cd := range p.pinnedChunkDescs {
-		// TODO: unpinning may synchronously cause closing of chunks if they have
-		// been marked to be evicted. This could interfere with other parts of the
-		// storage that check whether a chunk is swapped in or not. Is it a good
-		// idea / sufficient to take the storage lock here?
 		cd.unpin()
 	}
 }

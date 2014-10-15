@@ -151,8 +151,11 @@ func (s *memorySeriesStorage) preloadChunksAtTime(fp clientmodel.Fingerprint, ts
 }
 */
 
-func (s *memorySeriesStorage) preloadChunksForRange(fp clientmodel.Fingerprint, from clientmodel.Timestamp, through clientmodel.Timestamp) (chunkDescs, error) {
-	stalenessDelta := 300 * time.Second // TODO: Turn into parameter.
+func (s *memorySeriesStorage) preloadChunksForRange(
+	fp clientmodel.Fingerprint,
+	from clientmodel.Timestamp, through clientmodel.Timestamp,
+	stalenessDelta time.Duration,
+) ([]*chunkDesc, error) {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
@@ -312,9 +315,6 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 					glog.Info("Interrupted running series purge.")
 					return
 				default:
-					// TODO: Decide whether we also want to adjust the timerange index
-					// entries here. Not updating them shouldn't break anything, but will
-					// make some scenarios less efficient.
 					s.purgeSeries(fp, ts)
 				}
 			}
@@ -348,12 +348,14 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 
 	// If we arrive here, nothing was in memory, so the metric must have
 	// been archived. Drop the archived metric if there are no persisted
-	// chunks left.
-	if !allDropped {
-		return
-	}
-	if err := s.persistence.dropArchivedMetric(fp); err != nil {
-		glog.Errorf("Error dropping archived metric for fingerprint %v: %v", fp, err)
+	// chunks left. If we do drop the archived metric, we should update the
+	// archivedFingerprintToTimeRange index according to the remaining
+	// chunks, but it's probably not worth the effort. Queries going beyond
+	// the purge cut-off can be truncated in a more direct fashion.
+	if allDropped {
+		if err := s.persistence.dropArchivedMetric(fp); err != nil {
+			glog.Errorf("Error dropping archived metric for fingerprint %v: %v", fp, err)
+		}
 	}
 }
 

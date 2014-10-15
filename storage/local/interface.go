@@ -14,6 +14,7 @@
 package local
 
 import (
+	"time"
 	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -73,7 +74,11 @@ type SeriesIterator interface {
 // them until released via Close(). Its methods are generally not
 // goroutine-safe.
 type Preloader interface {
-	PreloadRange(fp clientmodel.Fingerprint, from clientmodel.Timestamp, through clientmodel.Timestamp) error
+	PreloadRange(
+		fp clientmodel.Fingerprint,
+		from clientmodel.Timestamp, through clientmodel.Timestamp,
+		stalenessDelta time.Duration,
+	) error
 	/*
 		// GetMetricAtTime loads and pins samples around a given time.
 		GetMetricAtTime(clientmodel.Fingerprint, clientmodel.Timestamp) error

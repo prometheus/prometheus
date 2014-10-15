@@ -123,18 +123,16 @@ func (sm *seriesMap) fpIter() <-chan clientmodel.Fingerprint {
 	return ch
 }
 
-type chunkDescs []*chunkDesc
-
 type chunkDesc struct {
 	sync.Mutex
 	chunk          chunk
 	refCount       int
 	evict          bool
-	firstTimeField clientmodel.Timestamp // TODO: stupid name, reorganize.
-	lastTimeField  clientmodel.Timestamp
+	chunkFirstTime clientmodel.Timestamp // Used if chunk is evicted.
+	chunkLastTime  clientmodel.Timestamp // Used if chunk is evicted.
 }
 
-func (cd *chunkDesc) add(s *metric.SamplePair) chunks {
+func (cd *chunkDesc) add(s *metric.SamplePair) []chunk {
 	cd.Lock()
 	defer cd.Unlock()
 
@@ -168,7 +166,7 @@ func (cd *chunkDesc) firstTime() clientmodel.Timestamp {
 	defer cd.Unlock()
 
 	if cd.chunk == nil {
-		return cd.firstTimeField
+		return cd.chunkFirstTime
 	}
 	return cd.chunk.firstTime()
 }
@@ -178,7 +176,7 @@ func (cd *chunkDesc) lastTime() clientmodel.Timestamp {
 	defer cd.Unlock()
 
 	if cd.chunk == nil {
-		return cd.lastTimeField
+		return cd.chunkLastTime
 	}
 	return cd.chunk.lastTime()
 }
@@ -228,15 +226,15 @@ func (cd *chunkDesc) evictOnUnpin() bool {
 
 // evictNow is an internal helper method.
 func (cd *chunkDesc) evictNow() {
-	cd.firstTimeField = cd.chunk.firstTime()
-	cd.lastTimeField = cd.chunk.lastTime()
+	cd.chunkFirstTime = cd.chunk.firstTime()
+	cd.chunkLastTime = cd.chunk.lastTime()
 	cd.chunk = nil
 }
 
 type memorySeries struct {
 	metric clientmodel.Metric
 	// Sorted by start time, overlapping chunk ranges are forbidden.
-	chunkDescs chunkDescs
+	chunkDescs []*chunkDesc
 	// Whether chunkDescs for chunks on disk are all loaded.  If false, some
 	// (or all) chunkDescs are only on disk. These chunks are all contiguous
 	// and at the tail end.
@@ -367,9 +365,9 @@ func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) bool {
 }
 
 // preloadChunks is an internal helper method.
-func (s *memorySeries) preloadChunks(indexes []int, p *persistence) (chunkDescs, error) {
+func (s *memorySeries) preloadChunks(indexes []int, p *persistence) ([]*chunkDesc, error) {
 	loadIndexes := []int{}
-	pinnedChunkDescs := make(chunkDescs, 0, len(indexes))
+	pinnedChunkDescs := make([]*chunkDesc, 0, len(indexes))
 	for _, idx := range indexes {
 		pinnedChunkDescs = append(pinnedChunkDescs, s.chunkDescs[idx])
 		if s.chunkDescs[idx].isEvicted() {
@@ -436,7 +434,7 @@ func (s *memorySeries) preloadChunksAtTime(t clientmodel.Timestamp, p *persisten
 func (s *memorySeries) preloadChunksForRange(
 	from clientmodel.Timestamp, through clientmodel.Timestamp,
 	fp clientmodel.Fingerprint, p *persistence,
-) (chunkDescs, error) {
+) ([]*chunkDesc, error) {
 	firstChunkDescTime := through
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
@@ -477,7 +475,7 @@ func (s *memorySeries) preloadChunksForRange(
 }
 
 func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
-	chunks := make(chunks, 0, len(s.chunkDescs))
+	chunks := make([]chunk, 0, len(s.chunkDescs))
 	for i, cd := range s.chunkDescs {
 		if !cd.isEvicted() {
 			if i == len(s.chunkDescs)-1 {
@@ -521,7 +519,7 @@ func (s *memorySeries) lastTime() clientmodel.Timestamp {
 type memorySeriesIterator struct {
 	lock, unlock func()
 	chunkIt      chunkIterator
-	chunks       chunks
+	chunks       []chunk
 }
 
 // GetValueAtTime implements SeriesIterator.

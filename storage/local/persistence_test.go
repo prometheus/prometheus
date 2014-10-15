@@ -38,7 +38,7 @@ func newTestPersistence(t *testing.T) (*persistence, test.Closer) {
 	})
 }
 
-func buildTestChunks() map[clientmodel.Fingerprint]chunks {
+func buildTestChunks() map[clientmodel.Fingerprint][]chunk {
 	fps := clientmodel.Fingerprints{
 		clientmodel.Metric{
 			"label": "value1",
@@ -50,10 +50,10 @@ func buildTestChunks() map[clientmodel.Fingerprint]chunks {
 			"label": "value3",
 		}.Fingerprint(),
 	}
-	fpToChunks := map[clientmodel.Fingerprint]chunks{}
+	fpToChunks := map[clientmodel.Fingerprint][]chunk{}
 
 	for _, fp := range fps {
-		fpToChunks[fp] = make(chunks, 0, 10)
+		fpToChunks[fp] = make([]chunk, 0, 10)
 		for i := 0; i < 10; i++ {
 			fpToChunks[fp] = append(fpToChunks[fp], newDeltaEncodedChunk(d1, d1, true).add(&metric.SamplePair{
 				Timestamp: clientmodel.Timestamp(i),
