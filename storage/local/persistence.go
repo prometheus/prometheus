@@ -824,7 +824,11 @@ loop:
 		}
 		select {
 		case <-batchTimeout.C:
-			if batchSize > 0 {
+			// Only commit if we have something to commit _and_
+			// nothing is waiting in the queue to be picked up. That
+			// prevents a death spiral if the LookupSet calls below
+			// are slow for some reason.
+			if batchSize > 0 && len(p.indexingQueue) == 0 {
 				commitBatch()
 			} else {
 				batchTimeout.Reset(indexingBatchTimeout)
