@@ -77,9 +77,14 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 
 	params := http_utils.GetQueryParams(r)
 	expr := params.Get("expr")
-	end, _ := strconv.ParseInt(params.Get("end"), 0, 64)
-	duration, _ := strconv.ParseInt(params.Get("range"), 0, 64)
-	step, _ := strconv.ParseInt(params.Get("step"), 0, 64)
+
+	// Gracefully handle decimal input, by truncating it.
+	endFloat, _ := strconv.ParseFloat(params.Get("end"), 64)
+	durationFloat, _ := strconv.ParseFloat(params.Get("range"), 64)
+	stepFloat, _ := strconv.ParseFloat(params.Get("step"), 64)
+	end := int64(endFloat)
+	duration := int64(durationFloat)
+	step := int64(stepFloat)
 
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
@@ -101,6 +106,13 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 
 	if end-duration < 0 {
 		duration = end
+	}
+
+	// For safety, limit the number of returned points per timeseries.
+	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
+	if duration/step > 11000 {
+		fmt.Fprint(w, ast.ErrorToJSON(errors.New("Exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX).")))
+		return
 	}
 
 	// Align the start to step "tick" boundary.
