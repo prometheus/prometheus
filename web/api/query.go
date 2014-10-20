@@ -77,9 +77,14 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 
 	params := http_utils.GetQueryParams(r)
 	expr := params.Get("expr")
-	end, _ := strconv.ParseInt(params.Get("end"), 0, 64)
-	duration, _ := strconv.ParseInt(params.Get("range"), 0, 64)
-	step, _ := strconv.ParseInt(params.Get("step"), 0, 64)
+
+	// Gracefully handle decimal input, by truncating it.
+	end_float, _ := strconv.ParseFloat(params.Get("end"), 64)
+	duration_float, _ := strconv.ParseFloat(params.Get("range"), 64)
+	step_float, _ := strconv.ParseFloat(params.Get("step"), 64)
+	end := int64(end_float)
+	duration := int64(duration_float)
+	step := int64(step_float)
 
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
@@ -101,6 +106,13 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 
 	if end-duration < 0 {
 		duration = end
+	}
+
+        // For safety limit returned points, this is enough for 60s granularity
+        // data for a week or 1h data for over a a year.
+	if duration/step > 11000 {
+		fmt.Fprint(w, ast.ErrorToJSON(errors.New("Exceeded limit of 11,000 steps. Try increasing the step parameter.")))
+		return
 	}
 
 	// Align the start to step "tick" boundary.
