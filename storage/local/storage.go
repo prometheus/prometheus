@@ -76,6 +76,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 	if err != nil {
 		return nil, err
 	}
+	glog.Infof("%d series loaded.", fingerprintToSeries.length())
 	numSeries.Set(float64(fingerprintToSeries.length()))
 
 	return &memorySeriesStorage{
