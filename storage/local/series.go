@@ -22,6 +22,13 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
+// chunkDescEvictionFactor is a factor used for chunkDesc eviction (as opposed
+// to evictions of chunks, see method evictOlderThan. A chunk takes about 20x
+// more memory than a chunkDesc. With a chunkDescEvictionFactor of 10, not more
+// than a third of the total memory taken by a series will be used for
+// chunkDescs.
+const chunkDescEvictionFactor = 10
+
 // fingerprintSeriesPair pairs a fingerprint with a memorySeries pointer.
 type fingerprintSeriesPair struct {
 	fp     clientmodel.Fingerprint
@@ -301,6 +308,12 @@ func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, per
 // immediately evicted (i.e. all chunks are older than the timestamp, and none
 // of the chunks was pinned).
 //
+// The method also evicts chunkDescs if there are chunkDescEvictionFactor times
+// more chunkDescs in the series than unevicted chunks. (The number of unevicted
+// chunks is considered the number of chunks between (and including) the oldest
+// chunk that could not be evicted immediately and the newest chunk in the
+// series, even if chunks in between were evicted.)
+//
 // Special considerations for the head chunk: If it has not been scheduled to be
 // persisted yet but is old enough for eviction, the scheduling happens now. (To
 // do that, the method neets the fingerprint and the persist queue.) It is
@@ -321,9 +334,30 @@ func (s *memorySeries) evictOlderThan(
 	persistQueue chan *persistRequest,
 ) bool {
 	allEvicted := true
+	iOldestNotEvicted := -1
+
+	defer func() {
+		// Evict chunkDescs if there are chunkDescEvictionFactor times
+		// more than non-evicted chunks and we are not going to archive
+		// the whole series anyway.
+		if iOldestNotEvicted != -1 {
+			lenToKeep := chunkDescEvictionFactor * (len(s.chunkDescs) - iOldestNotEvicted)
+			if lenToKeep < len(s.chunkDescs) {
+				s.chunkDescsLoaded = false
+				s.chunkDescs = append(
+					make([]*chunkDesc, 0, lenToKeep),
+					s.chunkDescs[len(s.chunkDescs)-lenToKeep:]...,
+				)
+			}
+		}
+	}()
+
 	// For now, always drop the entire range from oldest to t.
 	for i, cd := range s.chunkDescs {
 		if !cd.lastTime().Before(t) {
+			if iOldestNotEvicted == -1 {
+				iOldestNotEvicted = i
+			}
 			return false
 		}
 		if cd.isEvicted() {
@@ -339,6 +373,9 @@ func (s *memorySeries) evictOlderThan(
 			}
 		}
 		if !cd.evictOnUnpin() {
+			if iOldestNotEvicted == -1 {
+				iOldestNotEvicted = i
+			}
 			allEvicted = false
 		}
 	}
