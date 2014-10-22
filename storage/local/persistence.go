@@ -34,9 +34,6 @@ import (
 )
 
 const (
-	namespace = "prometheus"
-	subsystem = "persistence"
-
 	seriesFileSuffix     = ".db"
 	seriesTempFileSuffix = ".db.tmp"
 
@@ -258,12 +255,6 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int) ([]c
 	defer f.Close()
 
 	chunks := make([]chunk, 0, len(indexes))
-	defer func() {
-		if err == nil {
-			return
-		}
-	}()
-
 	typeBuf := make([]byte, 1)
 	for _, idx := range indexes {
 		_, err := f.Seek(p.offsetForChunkIndex(idx), os.SEEK_SET)
@@ -343,6 +334,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 		}
 		cds = append(cds, cd)
 	}
+	chunkDescOps.WithLabelValues(load).Add(float64(len(cds)))
 	return cds, nil
 }
 
@@ -504,10 +496,7 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 				if err := chunk.unmarshal(r); err != nil {
 					return nil, err
 				}
-				chunkDescs[i] = &chunkDesc{
-					chunk:    chunk,
-					refCount: 1,
-				}
+				chunkDescs[i] = newChunkDesc(chunk)
 			}
 		}
 
@@ -546,6 +535,7 @@ func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmo
 		if err == io.EOF {
 			// We ran into the end of the file without finding any chunks that should
 			// be kept. Remove the whole file.
+			chunkOps.WithLabelValues(purge).Add(float64(i))
 			if err := os.Remove(f.Name()); err != nil {
 				return true, err
 			}
@@ -556,6 +546,7 @@ func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmo
 		}
 		lastTime := clientmodel.Timestamp(binary.LittleEndian.Uint64(lastTimeBuf))
 		if !lastTime.Before(beforeTime) {
+			chunkOps.WithLabelValues(purge).Add(float64(i))
 			break
 		}
 	}

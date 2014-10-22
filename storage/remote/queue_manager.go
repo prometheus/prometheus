@@ -35,7 +35,7 @@ const (
 // String constants for instrumentation.
 const (
 	namespace = "prometheus"
-	subsystem = "remote_tsdb"
+	subsystem = "remote_storage"
 
 	result  = "result"
 	success = "success"

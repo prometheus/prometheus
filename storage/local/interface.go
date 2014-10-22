@@ -21,6 +21,15 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
+// String constants for instrumentation.
+const (
+	namespace = "prometheus"
+	subsystem = "local_storage"
+
+	errorLabel  = "error"
+	opTypeLabel = "type"
+)
+
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe.
 type Storage interface {

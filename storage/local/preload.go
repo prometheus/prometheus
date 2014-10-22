@@ -106,4 +106,6 @@ func (p *memorySeriesPreloader) Close() {
 	for _, cd := range p.pinnedChunkDescs {
 		cd.unpin()
 	}
+	chunkOps.WithLabelValues(unpin).Add(float64(len(p.pinnedChunkDescs)))
+
 }

@@ -14,6 +14,7 @@
 package local
 
 import (
+	"math"
 	"sort"
 	"sync"
 
@@ -130,114 +131,6 @@ func (sm *seriesMap) fpIter() <-chan clientmodel.Fingerprint {
 	return ch
 }
 
-type chunkDesc struct {
-	sync.Mutex
-	chunk          chunk
-	refCount       int
-	evict          bool
-	chunkFirstTime clientmodel.Timestamp // Used if chunk is evicted.
-	chunkLastTime  clientmodel.Timestamp // Used if chunk is evicted.
-}
-
-func (cd *chunkDesc) add(s *metric.SamplePair) []chunk {
-	cd.Lock()
-	defer cd.Unlock()
-
-	return cd.chunk.add(s)
-}
-
-func (cd *chunkDesc) pin() {
-	cd.Lock()
-	defer cd.Unlock()
-
-	numPinnedChunks.Inc()
-	cd.refCount++
-}
-
-func (cd *chunkDesc) unpin() {
-	cd.Lock()
-	defer cd.Unlock()
-
-	if cd.refCount == 0 {
-		panic("cannot unpin already unpinned chunk")
-	}
-	numPinnedChunks.Dec()
-	cd.refCount--
-	if cd.refCount == 0 && cd.evict {
-		cd.evictNow()
-	}
-}
-
-func (cd *chunkDesc) firstTime() clientmodel.Timestamp {
-	cd.Lock()
-	defer cd.Unlock()
-
-	if cd.chunk == nil {
-		return cd.chunkFirstTime
-	}
-	return cd.chunk.firstTime()
-}
-
-func (cd *chunkDesc) lastTime() clientmodel.Timestamp {
-	cd.Lock()
-	defer cd.Unlock()
-
-	if cd.chunk == nil {
-		return cd.chunkLastTime
-	}
-	return cd.chunk.lastTime()
-}
-
-func (cd *chunkDesc) isEvicted() bool {
-	cd.Lock()
-	defer cd.Unlock()
-
-	return cd.chunk == nil
-}
-
-func (cd *chunkDesc) contains(t clientmodel.Timestamp) bool {
-	return !t.Before(cd.firstTime()) && !t.After(cd.lastTime())
-}
-
-func (cd *chunkDesc) open(c chunk) {
-	cd.Lock()
-	defer cd.Unlock()
-
-	if cd.refCount != 0 || cd.chunk != nil {
-		panic("cannot open already pinned chunk")
-	}
-	cd.evict = false
-	cd.chunk = c
-	numPinnedChunks.Inc()
-	cd.refCount++
-}
-
-// evictOnUnpin evicts the chunk once unpinned. If it is not pinned when this
-// method is called, it evicts the chunk immediately and returns true. If the
-// chunk is already evicted when this method is called, it returns true, too.
-func (cd *chunkDesc) evictOnUnpin() bool {
-	cd.Lock()
-	defer cd.Unlock()
-
-	if cd.chunk == nil {
-		// Already evicted.
-		return true
-	}
-	cd.evict = true
-	if cd.refCount == 0 {
-		cd.evictNow()
-		return true
-	}
-	return false
-}
-
-// evictNow is an internal helper method.
-func (cd *chunkDesc) evictNow() {
-	cd.chunkFirstTime = cd.chunk.firstTime()
-	cd.chunkLastTime = cd.chunk.lastTime()
-	cd.chunk = nil
-}
-
 type memorySeries struct {
 	metric clientmodel.Metric
 	// Sorted by start time, overlapping chunk ranges are forbidden.
@@ -268,10 +161,7 @@ func newMemorySeries(m clientmodel.Metric, reallyNew bool) *memorySeries {
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, persistQueue chan *persistRequest) {
 	if len(s.chunkDescs) == 0 || s.headChunkPersisted {
-		newHead := &chunkDesc{
-			chunk:    newDeltaEncodedChunk(d1, d0, true),
-			refCount: 1,
-		}
+		newHead := newChunkDesc(newDeltaEncodedChunk(d1, d0, true))
 		s.chunkDescs = append(s.chunkDescs, newHead)
 		s.headChunkPersisted = false
 	}
@@ -290,10 +180,7 @@ func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, per
 		queuePersist(s.head())
 
 		for i, c := range chunks[1:] {
-			cd := &chunkDesc{
-				chunk:    c,
-				refCount: 1,
-			}
+			cd := newChunkDesc(c)
 			s.chunkDescs = append(s.chunkDescs, cd)
 			// The last chunk is still growing.
 			if i < len(chunks[1:])-1 {
@@ -344,6 +231,7 @@ func (s *memorySeries) evictOlderThan(
 			lenToKeep := chunkDescEvictionFactor * (len(s.chunkDescs) - iOldestNotEvicted)
 			if lenToKeep < len(s.chunkDescs) {
 				s.chunkDescsLoaded = false
+				chunkDescOps.WithLabelValues(evict).Add(float64(len(s.chunkDescs) - lenToKeep))
 				s.chunkDescs = append(
 					make([]*chunkDesc, 0, lenToKeep),
 					s.chunkDescs[len(s.chunkDescs)-lenToKeep:]...,
@@ -397,7 +285,7 @@ func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) bool {
 	for i := 0; i < keepIdx; i++ {
 		s.chunkDescs[i].evictOnUnpin()
 	}
-	s.chunkDescs = s.chunkDescs[keepIdx:]
+	s.chunkDescs = append(make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx), s.chunkDescs[keepIdx:]...)
 	return len(s.chunkDescs) == 0
 }
 
@@ -406,30 +294,30 @@ func (s *memorySeries) preloadChunks(indexes []int, p *persistence) ([]*chunkDes
 	loadIndexes := []int{}
 	pinnedChunkDescs := make([]*chunkDesc, 0, len(indexes))
 	for _, idx := range indexes {
-		pinnedChunkDescs = append(pinnedChunkDescs, s.chunkDescs[idx])
-		if s.chunkDescs[idx].isEvicted() {
+		cd := s.chunkDescs[idx]
+		pinnedChunkDescs = append(pinnedChunkDescs, cd)
+		cd.pin() // Have to pin everything first to prevent concurrent evictOnUnpin later.
+		if cd.isEvicted() {
 			loadIndexes = append(loadIndexes, idx)
-		} else {
-			s.chunkDescs[idx].pin()
 		}
 	}
+	chunkOps.WithLabelValues(pin).Add(float64(len(pinnedChunkDescs)))
 
 	if len(loadIndexes) > 0 {
 		fp := s.metric.Fingerprint()
 		chunks, err := p.loadChunks(fp, loadIndexes)
 		if err != nil {
-			// Unpin any pinned chunks that were already loaded.
+			// Unpin the chunks since we won't return them as pinned chunks now.
 			for _, cd := range pinnedChunkDescs {
-				if !cd.isEvicted() {
-					cd.unpin()
-				}
+				cd.unpin()
 			}
+			chunkOps.WithLabelValues(unpin).Add(float64(len(pinnedChunkDescs)))
 			return nil, err
 		}
 		for i, c := range chunks {
-			cd := s.chunkDescs[loadIndexes[i]]
-			cd.open(c)
+			s.chunkDescs[loadIndexes[i]].setChunk(c)
 		}
+		chunkOps.WithLabelValues(load).Add(float64(len(chunks)))
 	}
 
 	return pinnedChunkDescs, nil
@@ -472,7 +360,7 @@ func (s *memorySeries) preloadChunksForRange(
 	from clientmodel.Timestamp, through clientmodel.Timestamp,
 	fp clientmodel.Fingerprint, p *persistence,
 ) ([]*chunkDesc, error) {
-	firstChunkDescTime := through
+	firstChunkDescTime := clientmodel.Timestamp(math.MaxInt64)
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
 	}
@@ -516,6 +404,7 @@ func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
 	for i, cd := range s.chunkDescs {
 		if !cd.isEvicted() {
 			if i == len(s.chunkDescs)-1 {
+				chunkOps.WithLabelValues(clone).Inc()
 				chunks = append(chunks, cd.chunk.clone())
 			} else {
 				chunks = append(chunks, cd.chunk)
