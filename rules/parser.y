@@ -188,6 +188,12 @@ rule_expr          : '(' rule_expr ')'
                        $$, err = NewVectorAggregation($1, $3, $5, $6)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
+                   | AGGR_OP grouping_opts extra_labels_opts '(' rule_expr ')'
+                     {
+                       var err error
+                       $$, err = NewVectorAggregation($1, $5, $2, $3)
+                       if err != nil { yylex.Error(err.Error()); return 1 }
+                     }
                    /* Yacc can only attach associativity to terminals, so we
                     * have to list all operators here. */
                    | rule_expr ADDITIVE_OP rule_expr
