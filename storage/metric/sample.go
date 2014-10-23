@@ -21,7 +21,7 @@ import (
 
 // MarshalJSON implements json.Marshaler.
 func (s SamplePair) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("{\"Value\": \"%f\", \"Timestamp\": %d}", s.Value, s.Timestamp)), nil
+	return []byte(fmt.Sprintf("{\"Value\": \"%f\", \"Timestamp\": %s}", s.Value, s.Timestamp.String())), nil
 }
 
 // SamplePair pairs a SampleValue with a Timestamp.

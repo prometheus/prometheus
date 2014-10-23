@@ -78,13 +78,14 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	params := http_utils.GetQueryParams(r)
 	expr := params.Get("expr")
 
-	// Gracefully handle decimal input, by truncating it.
+	// Input times and durations are in seconds and get converted to nanoseconds.
 	endFloat, _ := strconv.ParseFloat(params.Get("end"), 64)
 	durationFloat, _ := strconv.ParseFloat(params.Get("range"), 64)
 	stepFloat, _ := strconv.ParseFloat(params.Get("step"), 64)
-	end := int64(endFloat)
-	duration := int64(durationFloat)
-	step := int64(stepFloat)
+	nanosPerSecond := int64(time.Second / time.Nanosecond)
+	end := int64(endFloat) * nanosPerSecond
+	duration := int64(durationFloat) * nanosPerSecond
+	step := int64(stepFloat) * nanosPerSecond
 
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
@@ -97,11 +98,11 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if end == 0 {
-		end = clientmodel.Now().Unix()
+		end = clientmodel.Now().UnixNano()
 	}
 
-	if step < 1 {
-		step = 1
+	if step <= 0 {
+		step = nanosPerSecond
 	}
 
 	if end-duration < 0 {
@@ -123,9 +124,9 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	evalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
 	matrix, err := ast.EvalVectorRange(
 		exprNode.(ast.VectorNode),
-		clientmodel.TimestampFromUnix(end-duration),
-		clientmodel.TimestampFromUnix(end),
-		time.Duration(step)*time.Second,
+		clientmodel.TimestampFromUnixNano(end-duration),
+		clientmodel.TimestampFromUnixNano(end),
+		time.Duration(step),
 		serv.Storage,
 		queryStats)
 	if err != nil {

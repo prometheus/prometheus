@@ -389,7 +389,7 @@ func createRandomSamples(r *rand.Rand) clientmodel.Samples {
 			result = append(result, &clientmodel.Sample{
 				Metric:    metric,
 				Value:     createValue(),
-				Timestamp: clientmodel.Timestamp(timestamp),
+				Timestamp: clientmodel.TimestampFromUnix(timestamp),
 			})
 			incTimestamp()
 		case 1: // A streak of random sample values.
@@ -397,7 +397,7 @@ func createRandomSamples(r *rand.Rand) clientmodel.Samples {
 				result = append(result, &clientmodel.Sample{
 					Metric:    metric,
 					Value:     createValue(),
-					Timestamp: clientmodel.Timestamp(timestamp),
+					Timestamp: clientmodel.TimestampFromUnix(timestamp),
 				})
 				incTimestamp()
 			}
@@ -407,7 +407,7 @@ func createRandomSamples(r *rand.Rand) clientmodel.Samples {
 				result = append(result, &clientmodel.Sample{
 					Metric:    metric,
 					Value:     value,
-					Timestamp: clientmodel.Timestamp(timestamp),
+					Timestamp: clientmodel.TimestampFromUnix(timestamp),
 				})
 				incTimestamp()
 				value = applyDelta(value)
@@ -418,7 +418,7 @@ func createRandomSamples(r *rand.Rand) clientmodel.Samples {
 				result = append(result, &clientmodel.Sample{
 					Metric:    metric,
 					Value:     value,
-					Timestamp: clientmodel.Timestamp(timestamp),
+					Timestamp: clientmodel.TimestampFromUnix(timestamp),
 				})
 				incTimestamp()
 			}
