@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
@@ -335,6 +336,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 		cds = append(cds, cd)
 	}
 	chunkDescOps.WithLabelValues(load).Add(float64(len(cds)))
+	atomic.AddInt64(&numMemChunkDescs, int64(len(cds)))
 	return cds, nil
 }
 
@@ -422,6 +424,8 @@ func (p *persistence) persistSeriesMapAndHeads(fingerprintToSeries *seriesMap) e
 // nothing else is running in storage land. This method is utterly
 // goroutine-unsafe.
 func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
+	var chunksTotal, chunkDescsTotal int64
+
 	f, err := os.Open(p.headsPath())
 	if os.IsNotExist(err) {
 		return newSeriesMap(), nil
@@ -471,6 +475,7 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 			return nil, err
 		}
 		chunkDescs := make([]*chunkDesc, numChunkDescs)
+		chunkDescsTotal += numChunkDescs
 
 		for i := int64(0); i < numChunkDescs; i++ {
 			if headChunkPersisted || i < numChunkDescs-1 {
@@ -488,6 +493,7 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 				}
 			} else {
 				// Non-persisted head chunk.
+				chunksTotal++
 				chunkType, err := r.ReadByte()
 				if err != nil {
 					return nil, err
@@ -507,6 +513,8 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 			headChunkPersisted: headChunkPersisted,
 		}
 	}
+	atomic.AddInt64(&numMemChunks, chunksTotal)
+	atomic.AddInt64(&numMemChunkDescs, chunkDescsTotal)
 	return &seriesMap{m: fingerprintToSeries}, nil
 }
 

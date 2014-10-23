@@ -16,6 +16,7 @@ package local
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
@@ -27,93 +28,6 @@ import (
 )
 
 const persistQueueCap = 1024
-
-// Instrumentation.
-var (
-	persistLatency = prometheus.NewSummary(prometheus.SummaryOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "persist_latency_microseconds",
-		Help:      "A summary of latencies for persisting each chunk.",
-	})
-	persistErrors = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "persist_errors_total",
-			Help:      "A counter of errors persisting chunks.",
-		},
-		[]string{errorLabel},
-	)
-	persistQueueLength = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "persist_queue_length",
-		Help:      "The current number of chunks waiting in the persist queue.",
-	})
-	persistQueueCapacity = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "persist_queue_capacity",
-		Help:      "The total capacity of the persist queue.",
-	})
-	numSeries = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "memory_series",
-		Help:      "The current number of series in memory.",
-	})
-	seriesOps = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "series_ops_total",
-			Help:      "The total number of series operations by their type.",
-		},
-		[]string{opTypeLabel},
-	)
-	ingestedSamplesCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "ingested_samples_total",
-		Help:      "The total number of samples ingested.",
-	})
-	purgeDuration = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "purge_duration_milliseconds",
-		Help:      "The duration of the last storage purge iteration in milliseconds.",
-	})
-	evictionDuration = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "eviction_duration_milliseconds",
-		Help:      "The duration of the last memory eviction iteration in milliseconds.",
-	})
-)
-
-const (
-	// Op-types for seriesOps.
-	create       = "create"
-	archive      = "archive"
-	unarchive    = "unarchive"
-	memoryPurge  = "purge_from_memory"
-	archivePurge = "purge_from_archive"
-)
-
-func init() {
-	prometheus.MustRegister(persistLatency)
-	prometheus.MustRegister(persistErrors)
-	prometheus.MustRegister(persistQueueLength)
-	prometheus.MustRegister(persistQueueCapacity)
-	prometheus.MustRegister(numSeries)
-	prometheus.MustRegister(seriesOps)
-	prometheus.MustRegister(ingestedSamplesCount)
-	prometheus.MustRegister(purgeDuration)
-	prometheus.MustRegister(evictionDuration)
-
-	persistQueueCapacity.Set(float64(persistQueueCap))
-}
 
 type storageState uint
 
@@ -139,6 +53,14 @@ type memorySeriesStorage struct {
 
 	persistQueue chan *persistRequest
 	persistence  *persistence
+
+	persistLatency                  prometheus.Summary
+	persistErrors                   *prometheus.CounterVec
+	persistQueueLength              prometheus.Gauge
+	numSeries                       prometheus.Gauge
+	seriesOps                       *prometheus.CounterVec
+	ingestedSamplesCount            prometheus.Counter
+	purgeDuration, evictionDuration prometheus.Gauge
 }
 
 // MemorySeriesStorageOptions contains options needed by
@@ -165,6 +87,12 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		return nil, err
 	}
 	glog.Infof("%d series loaded.", fingerprintToSeries.length())
+	numSeries := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "memory_series",
+		Help:      "The current number of series in memory.",
+	})
 	numSeries.Set(float64(fingerprintToSeries.length()))
 
 	return &memorySeriesStorage{
@@ -182,6 +110,56 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 
 		persistQueue: make(chan *persistRequest, persistQueueCap),
 		persistence:  p,
+
+		persistLatency: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "persist_latency_microseconds",
+			Help:      "A summary of latencies for persisting each chunk.",
+		}),
+		persistErrors: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "persist_errors_total",
+				Help:      "A counter of errors persisting chunks.",
+			},
+			[]string{"error"},
+		),
+		persistQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "persist_queue_length",
+			Help:      "The current number of chunks waiting in the persist queue.",
+		}),
+		numSeries: numSeries,
+		seriesOps: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "series_ops_total",
+				Help:      "The total number of series operations by their type.",
+			},
+			[]string{opTypeLabel},
+		),
+		ingestedSamplesCount: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "ingested_samples_total",
+			Help:      "The total number of samples ingested.",
+		}),
+		purgeDuration: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "purge_duration_milliseconds",
+			Help:      "The duration of the last storage purge iteration in milliseconds.",
+		}),
+		evictionDuration: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "eviction_duration_milliseconds",
+			Help:      "The duration of the last memory eviction iteration in milliseconds.",
+		}),
 	}, nil
 }
 
@@ -196,7 +174,7 @@ func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
 		s.appendSample(sample)
 	}
 
-	ingestedSamplesCount.Add(float64(len(samples)))
+	s.ingestedSamplesCount.Add(float64(len(samples)))
 }
 
 func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
@@ -219,15 +197,15 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m cl
 			glog.Errorf("Error unarchiving fingerprint %v: %v", fp, err)
 		}
 		if unarchived {
-			seriesOps.WithLabelValues(unarchive).Inc()
+			s.seriesOps.WithLabelValues(unarchive).Inc()
 		} else {
 			// This was a genuinely new series, so index the metric.
 			s.persistence.indexMetric(m, fp)
-			seriesOps.WithLabelValues(create).Inc()
+			s.seriesOps.WithLabelValues(create).Inc()
 		}
 		series = newMemorySeries(m, !unarchived)
 		s.fingerprintToSeries.put(fp, series)
-		numSeries.Inc()
+		s.numSeries.Inc()
 	}
 	return series
 }
@@ -294,7 +272,7 @@ func (s *memorySeriesStorage) NewIterator(fp clientmodel.Fingerprint) SeriesIter
 
 func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
 	defer func(begin time.Time) {
-		evictionDuration.Set(float64(time.Since(begin)) / float64(time.Millisecond))
+		s.evictionDuration.Set(float64(time.Since(begin)) / float64(time.Millisecond))
 	}(time.Now())
 
 	for m := range s.fingerprintToSeries.iter() {
@@ -304,13 +282,13 @@ func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
 			m.fp, s.persistQueue,
 		) {
 			s.fingerprintToSeries.del(m.fp)
-			numSeries.Dec()
+			s.numSeries.Dec()
 			if err := s.persistence.archiveMetric(
 				m.fp, m.series.metric, m.series.firstTime(), m.series.lastTime(),
 			); err != nil {
 				glog.Errorf("Error archiving metric %v: %v", m.series.metric, err)
 			} else {
-				seriesOps.WithLabelValues(archive).Inc()
+				s.seriesOps.WithLabelValues(archive).Inc()
 			}
 		}
 		s.fpLocker.Unlock(m.fp)
@@ -319,12 +297,12 @@ func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
 
 func (s *memorySeriesStorage) handlePersistQueue() {
 	for req := range s.persistQueue {
-		persistQueueLength.Set(float64(len(s.persistQueue)))
+		s.persistQueueLength.Set(float64(len(s.persistQueue)))
 		start := time.Now()
 		err := s.persistence.persistChunk(req.fingerprint, req.chunkDesc.chunk)
-		persistLatency.Observe(float64(time.Since(start)) / float64(time.Microsecond))
+		s.persistLatency.Observe(float64(time.Since(start)) / float64(time.Microsecond))
 		if err != nil {
-			persistErrors.WithLabelValues(err.Error()).Inc()
+			s.persistErrors.WithLabelValues(err.Error()).Inc()
 			glog.Error("Error persisting chunk, requeuing: ", err)
 			s.persistQueue <- req
 			continue
@@ -404,7 +382,7 @@ func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
 					s.purgeSeries(fp, ts)
 				}
 			}
-			purgeDuration.Set(float64(time.Since(begin)) / float64(time.Millisecond))
+			s.purgeDuration.Set(float64(time.Since(begin)) / float64(time.Millisecond))
 			glog.Info("Done purging old series data.")
 		}
 	}
@@ -427,8 +405,8 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 	if series, ok := s.fingerprintToSeries.get(fp); ok {
 		if series.purgeOlderThan(beforeTime) && allDropped {
 			s.fingerprintToSeries.del(fp)
-			numSeries.Dec()
-			seriesOps.WithLabelValues(memoryPurge).Inc()
+			s.numSeries.Dec()
+			s.seriesOps.WithLabelValues(memoryPurge).Inc()
 			s.persistence.unindexMetric(series.metric, fp)
 		}
 		return
@@ -444,7 +422,7 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 		if err := s.persistence.dropArchivedMetric(fp); err != nil {
 			glog.Errorf("Error dropping archived metric for fingerprint %v: %v", fp, err)
 		} else {
-			seriesOps.WithLabelValues(archivePurge).Inc()
+			s.seriesOps.WithLabelValues(archivePurge).Inc()
 		}
 	}
 }
@@ -573,12 +551,54 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 	return metric
 }
 
+// To expose persistQueueCap as metric:
+var (
+	persistQueueCapDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, subsystem, "persist_queue_capacity"),
+		"The total capacity of the persist queue.",
+		nil, nil,
+	)
+	persistQueueCapGauge = prometheus.MustNewConstMetric(
+		persistQueueCapDesc, prometheus.GaugeValue, persistQueueCap,
+	)
+)
+
 // Describe implements prometheus.Collector.
 func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.persistence.Describe(ch)
+
+	ch <- s.persistLatency.Desc()
+	s.persistErrors.Describe(ch)
+	ch <- s.persistQueueLength.Desc()
+	ch <- s.numSeries.Desc()
+	s.seriesOps.Describe(ch)
+	ch <- s.ingestedSamplesCount.Desc()
+	ch <- s.purgeDuration.Desc()
+	ch <- s.evictionDuration.Desc()
+
+	ch <- persistQueueCapDesc
+
+	ch <- numMemChunksDesc
+	ch <- numMemChunkDescsDesc
 }
 
 // Collect implements prometheus.Collector.
 func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.persistence.Collect(ch)
+
+	ch <- s.persistLatency
+	s.persistErrors.Collect(ch)
+	ch <- s.persistQueueLength
+	ch <- s.numSeries
+	s.seriesOps.Collect(ch)
+	ch <- s.ingestedSamplesCount
+	ch <- s.purgeDuration
+	ch <- s.evictionDuration
+
+	ch <- persistQueueCapGauge
+
+	count := atomic.LoadInt64(&numMemChunks)
+	ch <- prometheus.MustNewConstMetric(numMemChunksDesc, prometheus.GaugeValue, float64(count))
+	count = atomic.LoadInt64(&numMemChunkDescs)
+	ch <- prometheus.MustNewConstMetric(numMemChunkDescsDesc, prometheus.GaugeValue, float64(count))
 }

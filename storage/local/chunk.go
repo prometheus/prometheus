@@ -16,56 +16,12 @@ package local
 import (
 	"io"
 	"sync"
+	"sync/atomic"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/storage/metric"
 )
-
-// Instrumentation.
-// Note that the metrics are often set in bulk by the caller
-// for performance reasons.
-var (
-	chunkOps = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "chunk_ops_total",
-			Help:      "The total number of chunk operations by their type.",
-		},
-		[]string{opTypeLabel},
-	)
-	chunkDescOps = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "chunkdesc_ops_total",
-			Help:      "The total number of chunk descriptor operations by their type.",
-		},
-		[]string{opTypeLabel},
-	)
-)
-
-const (
-	// Op-types for chunkOps.
-	createAndPin    = "create" // A chunkDesc creation with refCount=1.
-	persistAndUnpin = "persist"
-	pin             = "pin"   // Excluding the pin on creation.
-	unpin           = "unpin" // Excluding the unpin on persisting.
-	clone           = "clone"
-	transcode       = "transcode"
-	purge           = "purge"
-
-	// Op-types for chunkOps and chunkDescOps.
-	evict = "evict"
-	load  = "load"
-)
-
-func init() {
-	prometheus.MustRegister(chunkOps)
-	prometheus.MustRegister(chunkDescOps)
-}
 
 type chunkDesc struct {
 	sync.Mutex
@@ -76,10 +32,12 @@ type chunkDesc struct {
 	chunkLastTime  clientmodel.Timestamp // Used if chunk is evicted.
 }
 
-// newChunkDesc creates a new chunkDesc pointing to the given chunk (may be
-// nil). The refCount of the new chunkDesc is 1.
+// newChunkDesc creates a new chunkDesc pointing to the given chunk. The
+// refCount of the new chunkDesc is 1.
 func newChunkDesc(c chunk) *chunkDesc {
 	chunkOps.WithLabelValues(createAndPin).Inc()
+	atomic.AddInt64(&numMemChunks, 1)
+	atomic.AddInt64(&numMemChunkDescs, 1)
 	return &chunkDesc{chunk: c, refCount: 1}
 }
 
@@ -179,6 +137,7 @@ func (cd *chunkDesc) evictNow() {
 	cd.chunkLastTime = cd.chunk.lastTime()
 	cd.chunk = nil
 	chunkOps.WithLabelValues(evict).Inc()
+	atomic.AddInt64(&numMemChunks, -1)
 }
 
 // chunk is the interface for all chunks. Chunks are generally not

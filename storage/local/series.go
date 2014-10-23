@@ -17,6 +17,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -231,10 +232,12 @@ func (s *memorySeries) evictOlderThan(
 			lenToKeep := chunkDescEvictionFactor * (len(s.chunkDescs) - iOldestNotEvicted)
 			if lenToKeep < len(s.chunkDescs) {
 				s.chunkDescsLoaded = false
-				chunkDescOps.WithLabelValues(evict).Add(float64(len(s.chunkDescs) - lenToKeep))
+				lenEvicted := len(s.chunkDescs) - lenToKeep
+				chunkDescOps.WithLabelValues(evict).Add(float64(lenEvicted))
+				atomic.AddInt64(&numMemChunkDescs, -int64(lenEvicted))
 				s.chunkDescs = append(
 					make([]*chunkDesc, 0, lenToKeep),
-					s.chunkDescs[len(s.chunkDescs)-lenToKeep:]...,
+					s.chunkDescs[lenEvicted:]...,
 				)
 			}
 		}
@@ -280,12 +283,10 @@ func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) bool {
 			keepIdx = i
 			break
 		}
-	}
-
-	for i := 0; i < keepIdx; i++ {
 		s.chunkDescs[i].evictOnUnpin()
 	}
 	s.chunkDescs = append(make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx), s.chunkDescs[keepIdx:]...)
+	atomic.AddInt64(&numMemChunkDescs, -int64(keepIdx))
 	return len(s.chunkDescs) == 0
 }
 
@@ -318,6 +319,7 @@ func (s *memorySeries) preloadChunks(indexes []int, p *persistence) ([]*chunkDes
 			s.chunkDescs[loadIndexes[i]].setChunk(c)
 		}
 		chunkOps.WithLabelValues(load).Add(float64(len(chunks)))
+		atomic.AddInt64(&numMemChunks, int64(len(chunks)))
 	}
 
 	return pinnedChunkDescs, nil
