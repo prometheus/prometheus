@@ -26,7 +26,7 @@ type testStorageCloser struct {
 }
 
 func (t *testStorageCloser) Close() {
-	t.storage.Close()
+	t.storage.Stop()
 	t.directory.Close()
 }
 
@@ -41,6 +41,7 @@ func NewTestStorage(t testing.TB) (Storage, test.Closer) {
 		PersistencePurgeInterval:   time.Hour,
 		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
 		PersistenceStoragePath:     directory.Path(),
+		CheckpointInterval:         time.Hour,
 	}
 	storage, err := NewMemorySeriesStorage(o)
 	if err != nil {
@@ -48,9 +49,7 @@ func NewTestStorage(t testing.TB) (Storage, test.Closer) {
 		t.Fatalf("Error creating storage: %s", err)
 	}
 
-	storageStarted := make(chan struct{})
-	go storage.Serve(storageStarted)
-	<-storageStarted
+	storage.Start()
 
 	closer := &testStorageCloser{
 		storage:   storage,

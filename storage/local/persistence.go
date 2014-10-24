@@ -39,6 +39,7 @@ const (
 	seriesTempFileSuffix = ".db.tmp"
 
 	headsFileName      = "heads.db"
+	headsTempFileName  = "heads.db.tmp"
 	headsFormatVersion = 1
 	headsMagicString   = "PrometheusHeads"
 
@@ -101,6 +102,7 @@ type persistence struct {
 	indexingQueueCapacity prometheus.Metric
 	indexingBatchSizes    prometheus.Summary
 	indexingBatchLatency  prometheus.Summary
+	checkpointDuration    prometheus.Gauge
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
@@ -170,6 +172,12 @@ func newPersistence(basePath string, chunkLen int) (*persistence, error) {
 				Help:      "Quantiles for batch indexing latencies in milliseconds.",
 			},
 		),
+		checkpointDuration: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "checkpoint_duration_milliseconds",
+			Help:      "The duration (in milliseconds) it took to checkpoint in-memory metrics and head chunks.",
+		}),
 	}
 	go p.processIndexingQueue()
 	return p, nil
@@ -181,6 +189,7 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	ch <- p.indexingQueueCapacity.Desc()
 	p.indexingBatchSizes.Describe(ch)
 	p.indexingBatchLatency.Describe(ch)
+	ch <- p.checkpointDuration.Desc()
 }
 
 // Collect implements prometheus.Collector.
@@ -191,6 +200,7 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	ch <- p.indexingQueueCapacity
 	p.indexingBatchSizes.Collect(ch)
 	p.indexingBatchLatency.Collect(ch)
+	ch <- p.checkpointDuration
 }
 
 // getFingerprintsForLabelPair returns the fingerprints for the given label
@@ -340,32 +350,47 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 	return cds, nil
 }
 
-// persistSeriesMapAndHeads persists the fingerprint to memory-series mapping
+// checkpointSeriesMapAndHeads persists the fingerprint to memory-series mapping
 // and all open (non-full) head chunks. Do not call concurrently with
 // LoadSeriesMapAndHeads.
-//
-// TODO: Currently, this method assumes to be called while nothing else is going
-// on in the storage concurrently. To make this method callable during normal
-// operations, certain things have to be done:
-// - Make sure the length of the seriesMap doesn't change during the runtime.
-// - Lock the fingerprints while persisting unpersisted head chunks.
-// - Write to temporary file and only rename after successfully finishing.
-func (p *persistence) persistSeriesMapAndHeads(fingerprintToSeries *seriesMap) error {
-	f, err := os.OpenFile(p.headsPath(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
+func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap, fpLocker *fingerprintLocker) (err error) {
+	glog.Info("Checkpointing in-memory metrics and head chunks...")
+	begin := time.Now()
+	f, err := os.OpenFile(p.headsTempFileName(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
-		return err
+		return
 	}
-	defer f.Close()
+
+	defer func() {
+		closeErr := f.Close()
+		if err != nil {
+			return
+		}
+		err = closeErr
+		if err != nil {
+			return
+		}
+		err = os.Rename(p.headsTempFileName(), p.headsFileName())
+		duration := time.Since(begin)
+		p.checkpointDuration.Set(float64(duration) / float64(time.Millisecond))
+		glog.Infof("Done checkpointing in-memory metrics and head chunks in %v.", duration)
+	}()
+
 	w := bufio.NewWriterSize(f, fileBufSize)
 
-	if _, err := w.WriteString(headsMagicString); err != nil {
-		return err
+	if _, err = w.WriteString(headsMagicString); err != nil {
+		return
 	}
-	if err := codable.EncodeVarint(w, headsFormatVersion); err != nil {
-		return err
+	var numberOfSeriesOffset int
+	if numberOfSeriesOffset, err = codable.EncodeVarint(w, headsFormatVersion); err != nil {
+		return
 	}
-	if err := codable.EncodeVarint(w, int64(fingerprintToSeries.length())); err != nil {
-		return err
+	numberOfSeriesOffset += len(headsMagicString)
+	numberOfSeriesInHeader := uint64(fingerprintToSeries.length())
+	// We have to write the number of series as uint64 because we might need
+	// to overwrite it later, and a varint might change byte width then.
+	if err = codable.EncodeUint64(w, numberOfSeriesInHeader); err != nil {
+		return
 	}
 
 	iter := fingerprintToSeries.iter()
@@ -375,48 +400,76 @@ func (p *persistence) persistSeriesMapAndHeads(fingerprintToSeries *seriesMap) e
 		}
 	}()
 
+	var realNumberOfSeries uint64
 	for m := range iter {
-		var seriesFlags byte
-		if m.series.chunkDescsLoaded {
-			seriesFlags |= flagChunkDescsLoaded
-		}
-		if m.series.headChunkPersisted {
-			seriesFlags |= flagHeadChunkPersisted
-		}
-		if err := w.WriteByte(seriesFlags); err != nil {
-			return err
-		}
-		if err := codable.EncodeUint64(w, uint64(m.fp)); err != nil {
-			return err
-		}
-		buf, err := codable.Metric(m.series.metric).MarshalBinary()
-		if err != nil {
-			return err
-		}
-		w.Write(buf)
-		if err := codable.EncodeVarint(w, int64(len(m.series.chunkDescs))); err != nil {
-			return err
-		}
-		for i, chunkDesc := range m.series.chunkDescs {
-			if m.series.headChunkPersisted || i < len(m.series.chunkDescs)-1 {
-				if err := codable.EncodeVarint(w, int64(chunkDesc.firstTime())); err != nil {
-					return err
-				}
-				if err := codable.EncodeVarint(w, int64(chunkDesc.lastTime())); err != nil {
-					return err
-				}
-			} else {
-				// This is the non-persisted head chunk. Fully marshal it.
-				if err := w.WriteByte(chunkType(chunkDesc.chunk)); err != nil {
-					return err
-				}
-				if err := chunkDesc.chunk.marshal(w); err != nil {
-					return err
+		func() { // Wrapped in function to use defer for unlocking the fp.
+			fpLocker.Lock(m.fp)
+			defer fpLocker.Unlock(m.fp)
+
+			if len(m.series.chunkDescs) == 0 {
+				// This series was completely purged or archived in the meantime. Ignore.
+				return
+			}
+			realNumberOfSeries++
+			var seriesFlags byte
+			if m.series.chunkDescsLoaded {
+				seriesFlags |= flagChunkDescsLoaded
+			}
+			if m.series.headChunkPersisted {
+				seriesFlags |= flagHeadChunkPersisted
+			}
+			if err = w.WriteByte(seriesFlags); err != nil {
+				return
+			}
+			if err = codable.EncodeUint64(w, uint64(m.fp)); err != nil {
+				return
+			}
+			var buf []byte
+			buf, err = codable.Metric(m.series.metric).MarshalBinary()
+			if err != nil {
+				return
+			}
+			w.Write(buf)
+			if _, err = codable.EncodeVarint(w, int64(len(m.series.chunkDescs))); err != nil {
+				return
+			}
+			for i, chunkDesc := range m.series.chunkDescs {
+				if m.series.headChunkPersisted || i < len(m.series.chunkDescs)-1 {
+					if _, err = codable.EncodeVarint(w, int64(chunkDesc.firstTime())); err != nil {
+						return
+					}
+					if _, err = codable.EncodeVarint(w, int64(chunkDesc.lastTime())); err != nil {
+						return
+					}
+				} else {
+					// This is the non-persisted head chunk. Fully marshal it.
+					if err = w.WriteByte(chunkType(chunkDesc.chunk)); err != nil {
+						return
+					}
+					if err = chunkDesc.chunk.marshal(w); err != nil {
+						return
+					}
 				}
 			}
+		}()
+		if err != nil {
+			return
 		}
 	}
-	return w.Flush()
+	if err = w.Flush(); err != nil {
+		return
+	}
+	if realNumberOfSeries != numberOfSeriesInHeader {
+		// The number of series has changed in the meantime.
+		// Rewrite it in the header.
+		if _, err = f.Seek(int64(numberOfSeriesOffset), os.SEEK_SET); err != nil {
+			return
+		}
+		if err = codable.EncodeUint64(f, realNumberOfSeries); err != nil {
+			return
+		}
+	}
+	return
 }
 
 // loadSeriesMapAndHeads loads the fingerprint to memory-series mapping and all
@@ -426,7 +479,7 @@ func (p *persistence) persistSeriesMapAndHeads(fingerprintToSeries *seriesMap) e
 func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 	var chunksTotal, chunkDescsTotal int64
 
-	f, err := os.Open(p.headsPath())
+	f, err := os.Open(p.headsFileName())
 	if os.IsNotExist(err) {
 		return newSeriesMap(), nil
 	}
@@ -450,7 +503,7 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 	if version, err := binary.ReadVarint(r); version != headsFormatVersion || err != nil {
 		return nil, fmt.Errorf("unknown heads format version, want %d", headsFormatVersion)
 	}
-	numSeries, err := binary.ReadVarint(r)
+	numSeries, err := codable.DecodeUint64(r)
 	if err != nil {
 		return nil, err
 	}
@@ -783,8 +836,12 @@ func (p *persistence) offsetForChunkIndex(i int) int64 {
 	return int64(i * (chunkHeaderLen + p.chunkLen))
 }
 
-func (p *persistence) headsPath() string {
+func (p *persistence) headsFileName() string {
 	return path.Join(p.basePath, headsFileName)
+}
+
+func (p *persistence) headsTempFileName() string {
+	return path.Join(p.basePath, headsTempFileName)
 }
 
 func (p *persistence) processIndexingQueue() {

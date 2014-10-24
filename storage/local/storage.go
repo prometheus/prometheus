@@ -37,30 +37,31 @@ const (
 	storageStopping
 )
 
+type persistRequest struct {
+	fingerprint clientmodel.Fingerprint
+	chunkDesc   *chunkDesc
+}
+
 type memorySeriesStorage struct {
-	fpLocker *fingerprintLocker
-
-	persistDone chan bool
-	stopServing chan chan<- bool
-
+	fpLocker            *fingerprintLocker
 	fingerprintToSeries *seriesMap
 
-	memoryEvictionInterval time.Duration
-	memoryRetentionPeriod  time.Duration
+	loopStopping, loopStopped chan struct{}
+	evictInterval, evictAfter time.Duration
+	purgeInterval, purgeAfter time.Duration
+	checkpointInterval        time.Duration
 
-	persistencePurgeInterval   time.Duration
-	persistenceRetentionPeriod time.Duration
+	persistQueue   chan *persistRequest
+	persistStopped chan struct{}
+	persistence    *persistence
 
-	persistQueue chan *persistRequest
-	persistence  *persistence
-
-	persistLatency                  prometheus.Summary
-	persistErrors                   *prometheus.CounterVec
-	persistQueueLength              prometheus.Gauge
-	numSeries                       prometheus.Gauge
-	seriesOps                       *prometheus.CounterVec
-	ingestedSamplesCount            prometheus.Counter
-	purgeDuration, evictionDuration prometheus.Gauge
+	persistLatency               prometheus.Summary
+	persistErrors                *prometheus.CounterVec
+	persistQueueLength           prometheus.Gauge
+	numSeries                    prometheus.Gauge
+	seriesOps                    *prometheus.CounterVec
+	ingestedSamplesCount         prometheus.Counter
+	purgeDuration, evictDuration prometheus.Gauge
 }
 
 // MemorySeriesStorageOptions contains options needed by
@@ -72,6 +73,7 @@ type MemorySeriesStorageOptions struct {
 	PersistenceStoragePath     string        // Location of persistence files.
 	PersistencePurgeInterval   time.Duration // How often to check for purging.
 	PersistenceRetentionPeriod time.Duration // Chunks at least that old are purged.
+	CheckpointInterval         time.Duration // How often to checkpoint the series map and head chunks.
 }
 
 // NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
@@ -96,20 +98,20 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 	numSeries.Set(float64(fingerprintToSeries.length()))
 
 	return &memorySeriesStorage{
-		fpLocker: newFingerprintLocker(100), // TODO: Tweak value.
-
+		fpLocker:            newFingerprintLocker(100), // TODO: Tweak value.
 		fingerprintToSeries: fingerprintToSeries,
-		persistDone:         make(chan bool),
-		stopServing:         make(chan chan<- bool),
 
-		memoryEvictionInterval: o.MemoryEvictionInterval,
-		memoryRetentionPeriod:  o.MemoryRetentionPeriod,
+		loopStopping:       make(chan struct{}),
+		loopStopped:        make(chan struct{}),
+		evictInterval:      o.MemoryEvictionInterval,
+		evictAfter:         o.MemoryRetentionPeriod,
+		purgeInterval:      o.PersistencePurgeInterval,
+		purgeAfter:         o.PersistenceRetentionPeriod,
+		checkpointInterval: o.CheckpointInterval,
 
-		persistencePurgeInterval:   o.PersistencePurgeInterval,
-		persistenceRetentionPeriod: o.PersistenceRetentionPeriod,
-
-		persistQueue: make(chan *persistRequest, persistQueueCap),
-		persistence:  p,
+		persistQueue:   make(chan *persistRequest, persistQueueCap),
+		persistStopped: make(chan struct{}),
+		persistence:    p,
 
 		persistLatency: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace: namespace,
@@ -154,100 +156,45 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			Name:      "purge_duration_milliseconds",
 			Help:      "The duration of the last storage purge iteration in milliseconds.",
 		}),
-		evictionDuration: prometheus.NewGauge(prometheus.GaugeOpts{
+		evictDuration: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "eviction_duration_milliseconds",
+			Name:      "evict_duration_milliseconds",
 			Help:      "The duration of the last memory eviction iteration in milliseconds.",
 		}),
 	}, nil
 }
 
-type persistRequest struct {
-	fingerprint clientmodel.Fingerprint
-	chunkDesc   *chunkDesc
+// Start implements Storage.
+func (s *memorySeriesStorage) Start() {
+	go s.handlePersistQueue()
+	go s.loop()
 }
 
-// AppendSamples implements Storage.
-func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
-	for _, sample := range samples {
-		s.appendSample(sample)
+// Stop implements Storage.
+func (s *memorySeriesStorage) Stop() error {
+	glog.Info("Stopping maintenance loop...")
+	close(s.loopStopping)
+	<-s.loopStopped
+
+	glog.Info("Stopping persist loop...")
+	close(s.persistQueue)
+	<-s.persistStopped
+
+	// One final checkpoint of the series map and the head chunks.
+	if err := s.persistence.checkpointSeriesMapAndHeads(s.fingerprintToSeries, s.fpLocker); err != nil {
+		return err
 	}
 
-	s.ingestedSamplesCount.Add(float64(len(samples)))
-}
-
-func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
-	fp := sample.Metric.Fingerprint()
-	s.fpLocker.Lock(fp)
-	defer s.fpLocker.Unlock(fp)
-
-	series := s.getOrCreateSeries(fp, sample.Metric)
-	series.add(fp, &metric.SamplePair{
-		Value:     sample.Value,
-		Timestamp: sample.Timestamp,
-	}, s.persistQueue)
-}
-
-func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m clientmodel.Metric) *memorySeries {
-	series, ok := s.fingerprintToSeries.get(fp)
-	if !ok {
-		unarchived, err := s.persistence.unarchiveMetric(fp)
-		if err != nil {
-			glog.Errorf("Error unarchiving fingerprint %v: %v", fp, err)
-		}
-		if unarchived {
-			s.seriesOps.WithLabelValues(unarchive).Inc()
-		} else {
-			// This was a genuinely new series, so index the metric.
-			s.persistence.indexMetric(m, fp)
-			s.seriesOps.WithLabelValues(create).Inc()
-		}
-		series = newMemorySeries(m, !unarchived)
-		s.fingerprintToSeries.put(fp, series)
-		s.numSeries.Inc()
+	if err := s.persistence.close(); err != nil {
+		return err
 	}
-	return series
+	return nil
 }
 
-/*
-func (s *memorySeriesStorage) preloadChunksAtTime(fp clientmodel.Fingerprint, ts clientmodel.Timestamp) (chunkDescs, error) {
-	series, ok := s.fingerprintToSeries.get(fp)
-	if !ok {
-		panic("requested preload for non-existent series")
-	}
-	return series.preloadChunksAtTime(ts, s.persistence)
-}
-*/
-
-func (s *memorySeriesStorage) preloadChunksForRange(
-	fp clientmodel.Fingerprint,
-	from clientmodel.Timestamp, through clientmodel.Timestamp,
-	stalenessDelta time.Duration,
-) ([]*chunkDesc, error) {
-	s.fpLocker.Lock(fp)
-	defer s.fpLocker.Unlock(fp)
-
-	series, ok := s.fingerprintToSeries.get(fp)
-	if !ok {
-		has, first, last, err := s.persistence.hasArchivedMetric(fp)
-		if err != nil {
-			return nil, err
-		}
-		if !has {
-			return nil, fmt.Errorf("requested preload for non-existent series %v", fp)
-		}
-		if from.Add(-stalenessDelta).Before(last) && through.Add(stalenessDelta).After(first) {
-			metric, err := s.persistence.getArchivedMetric(fp)
-			if err != nil {
-				return nil, err
-			}
-			series = s.getOrCreateSeries(fp, metric)
-		} else {
-			return nil, nil
-		}
-	}
-	return series.preloadChunksForRange(from, through, fp, s.persistence)
+// WaitForIndexing implements Storage.
+func (s *memorySeriesStorage) WaitForIndexing() {
+	s.persistence.waitForIndexing()
 }
 
 // NewIterator implements storage.
@@ -268,186 +215,6 @@ func (s *memorySeriesStorage) NewIterator(fp clientmodel.Fingerprint) SeriesIter
 		func() { s.fpLocker.Lock(fp) },
 		func() { s.fpLocker.Unlock(fp) },
 	)
-}
-
-func (s *memorySeriesStorage) evictMemoryChunks(ttl time.Duration) {
-	defer func(begin time.Time) {
-		s.evictionDuration.Set(float64(time.Since(begin)) / float64(time.Millisecond))
-	}(time.Now())
-
-	for m := range s.fingerprintToSeries.iter() {
-		s.fpLocker.Lock(m.fp)
-		if m.series.evictOlderThan(
-			clientmodel.TimestampFromTime(time.Now()).Add(-1*ttl),
-			m.fp, s.persistQueue,
-		) {
-			s.fingerprintToSeries.del(m.fp)
-			s.numSeries.Dec()
-			if err := s.persistence.archiveMetric(
-				m.fp, m.series.metric, m.series.firstTime(), m.series.lastTime(),
-			); err != nil {
-				glog.Errorf("Error archiving metric %v: %v", m.series.metric, err)
-			} else {
-				s.seriesOps.WithLabelValues(archive).Inc()
-			}
-		}
-		s.fpLocker.Unlock(m.fp)
-	}
-}
-
-func (s *memorySeriesStorage) handlePersistQueue() {
-	for req := range s.persistQueue {
-		s.persistQueueLength.Set(float64(len(s.persistQueue)))
-		start := time.Now()
-		err := s.persistence.persistChunk(req.fingerprint, req.chunkDesc.chunk)
-		s.persistLatency.Observe(float64(time.Since(start)) / float64(time.Microsecond))
-		if err != nil {
-			s.persistErrors.WithLabelValues(err.Error()).Inc()
-			glog.Error("Error persisting chunk, requeuing: ", err)
-			s.persistQueue <- req
-			continue
-		}
-		req.chunkDesc.unpin()
-		chunkOps.WithLabelValues(persistAndUnpin).Inc()
-	}
-	s.persistDone <- true
-}
-
-// WaitForIndexing implements Storage.
-func (s *memorySeriesStorage) WaitForIndexing() {
-	s.persistence.waitForIndexing()
-}
-
-// Close stops serving, flushes all pending operations, and frees all
-// resources. It implements Storage.
-func (s *memorySeriesStorage) Close() error {
-	stopped := make(chan bool)
-	glog.Info("Waiting for storage to stop serving...")
-	s.stopServing <- stopped
-	<-stopped
-	glog.Info("Serving stopped.")
-
-	glog.Info("Stopping persist loop...")
-	close(s.persistQueue)
-	<-s.persistDone
-	glog.Info("Persist loop stopped.")
-
-	glog.Info("Persisting head chunks...")
-	if err := s.persistence.persistSeriesMapAndHeads(s.fingerprintToSeries); err != nil {
-		return err
-	}
-	glog.Info("Done persisting head chunks.")
-
-	if err := s.persistence.close(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *memorySeriesStorage) purgePeriodically(stop <-chan bool) {
-	purgeTicker := time.NewTicker(s.persistencePurgeInterval)
-	defer purgeTicker.Stop()
-
-	for {
-		select {
-		case <-stop:
-			glog.Info("Purging loop stopped.")
-			return
-		case <-purgeTicker.C:
-			glog.Info("Purging old series data...")
-			ts := clientmodel.TimestampFromTime(time.Now()).Add(-1 * s.persistenceRetentionPeriod)
-			begin := time.Now()
-
-			for fp := range s.fingerprintToSeries.fpIter() {
-				select {
-				case <-stop:
-					glog.Info("Interrupted running series purge.")
-					return
-				default:
-					s.purgeSeries(fp, ts)
-				}
-			}
-
-			persistedFPs, err := s.persistence.getFingerprintsModifiedBefore(ts)
-			if err != nil {
-				glog.Error("Failed to lookup persisted fingerprint ranges: ", err)
-				break
-			}
-			for _, fp := range persistedFPs {
-				select {
-				case <-stop:
-					glog.Info("Interrupted running series purge.")
-					return
-				default:
-					s.purgeSeries(fp, ts)
-				}
-			}
-			s.purgeDuration.Set(float64(time.Since(begin)) / float64(time.Millisecond))
-			glog.Info("Done purging old series data.")
-		}
-	}
-}
-
-// purgeSeries purges chunks older than persistenceRetentionPeriod from a
-// series. If the series contains no chunks after the purge, it is dropped
-// entirely.
-func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) {
-	s.fpLocker.Lock(fp)
-	defer s.fpLocker.Unlock(fp)
-
-	// First purge persisted chunks. We need to do that anyway.
-	allDropped, err := s.persistence.dropChunks(fp, beforeTime)
-	if err != nil {
-		glog.Error("Error purging persisted chunks: ", err)
-	}
-
-	// Purge chunks from memory accordingly.
-	if series, ok := s.fingerprintToSeries.get(fp); ok {
-		if series.purgeOlderThan(beforeTime) && allDropped {
-			s.fingerprintToSeries.del(fp)
-			s.numSeries.Dec()
-			s.seriesOps.WithLabelValues(memoryPurge).Inc()
-			s.persistence.unindexMetric(series.metric, fp)
-		}
-		return
-	}
-
-	// If we arrive here, nothing was in memory, so the metric must have
-	// been archived. Drop the archived metric if there are no persisted
-	// chunks left. If we don't drop the archived metric, we should update
-	// the archivedFingerprintToTimeRange index according to the remaining
-	// chunks, but it's probably not worth the effort. Queries going beyond
-	// the purge cut-off can be truncated in a more direct fashion.
-	if allDropped {
-		if err := s.persistence.dropArchivedMetric(fp); err != nil {
-			glog.Errorf("Error dropping archived metric for fingerprint %v: %v", fp, err)
-		} else {
-			s.seriesOps.WithLabelValues(archivePurge).Inc()
-		}
-	}
-}
-
-// Serve implements Storage.
-func (s *memorySeriesStorage) Serve(started chan struct{}) {
-	evictMemoryTicker := time.NewTicker(s.memoryEvictionInterval)
-	defer evictMemoryTicker.Stop()
-
-	go s.handlePersistQueue()
-
-	stopPurge := make(chan bool)
-	go s.purgePeriodically(stopPurge)
-
-	close(started)
-	for {
-		select {
-		case <-evictMemoryTicker.C:
-			s.evictMemoryChunks(s.memoryRetentionPeriod)
-		case stopped := <-s.stopServing:
-			stopPurge <- true
-			stopped <- true
-			return
-		}
-	}
 }
 
 // NewPreloader implements Storage.
@@ -551,6 +318,234 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 	return metric
 }
 
+// AppendSamples implements Storage.
+func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
+	for _, sample := range samples {
+		s.appendSample(sample)
+	}
+
+	s.ingestedSamplesCount.Add(float64(len(samples)))
+}
+
+func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
+	fp := sample.Metric.Fingerprint()
+	s.fpLocker.Lock(fp)
+	defer s.fpLocker.Unlock(fp)
+
+	series := s.getOrCreateSeries(fp, sample.Metric)
+	series.add(fp, &metric.SamplePair{
+		Value:     sample.Value,
+		Timestamp: sample.Timestamp,
+	}, s.persistQueue)
+}
+
+func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m clientmodel.Metric) *memorySeries {
+	series, ok := s.fingerprintToSeries.get(fp)
+	if !ok {
+		unarchived, err := s.persistence.unarchiveMetric(fp)
+		if err != nil {
+			glog.Errorf("Error unarchiving fingerprint %v: %v", fp, err)
+		}
+		if unarchived {
+			s.seriesOps.WithLabelValues(unarchive).Inc()
+		} else {
+			// This was a genuinely new series, so index the metric.
+			s.persistence.indexMetric(m, fp)
+			s.seriesOps.WithLabelValues(create).Inc()
+		}
+		series = newMemorySeries(m, !unarchived)
+		s.fingerprintToSeries.put(fp, series)
+		s.numSeries.Inc()
+	}
+	return series
+}
+
+/*
+func (s *memorySeriesStorage) preloadChunksAtTime(fp clientmodel.Fingerprint, ts clientmodel.Timestamp) (chunkDescs, error) {
+	series, ok := s.fingerprintToSeries.get(fp)
+	if !ok {
+		panic("requested preload for non-existent series")
+	}
+	return series.preloadChunksAtTime(ts, s.persistence)
+}
+*/
+
+func (s *memorySeriesStorage) preloadChunksForRange(
+	fp clientmodel.Fingerprint,
+	from clientmodel.Timestamp, through clientmodel.Timestamp,
+	stalenessDelta time.Duration,
+) ([]*chunkDesc, error) {
+	s.fpLocker.Lock(fp)
+	defer s.fpLocker.Unlock(fp)
+
+	series, ok := s.fingerprintToSeries.get(fp)
+	if !ok {
+		has, first, last, err := s.persistence.hasArchivedMetric(fp)
+		if err != nil {
+			return nil, err
+		}
+		if !has {
+			return nil, fmt.Errorf("requested preload for non-existent series %v", fp)
+		}
+		if from.Add(-stalenessDelta).Before(last) && through.Add(stalenessDelta).After(first) {
+			metric, err := s.persistence.getArchivedMetric(fp)
+			if err != nil {
+				return nil, err
+			}
+			series = s.getOrCreateSeries(fp, metric)
+		} else {
+			return nil, nil
+		}
+	}
+	return series.preloadChunksForRange(from, through, fp, s.persistence)
+}
+
+func (s *memorySeriesStorage) handlePersistQueue() {
+	for req := range s.persistQueue {
+		s.persistQueueLength.Set(float64(len(s.persistQueue)))
+		start := time.Now()
+		err := s.persistence.persistChunk(req.fingerprint, req.chunkDesc.chunk)
+		s.persistLatency.Observe(float64(time.Since(start)) / float64(time.Microsecond))
+		if err != nil {
+			s.persistErrors.WithLabelValues(err.Error()).Inc()
+			glog.Error("Error persisting chunk, requeuing: ", err)
+			s.persistQueue <- req
+			continue
+		}
+		req.chunkDesc.unpin()
+		chunkOps.WithLabelValues(persistAndUnpin).Inc()
+	}
+	glog.Info("Persist loop stopped.")
+	close(s.persistStopped)
+}
+
+func (s *memorySeriesStorage) loop() {
+	evictTicker := time.NewTicker(s.evictInterval)
+	purgeTicker := time.NewTicker(s.purgeInterval)
+	checkpointTicker := time.NewTicker(s.checkpointInterval)
+	defer func() {
+		evictTicker.Stop()
+		purgeTicker.Stop()
+		checkpointTicker.Stop()
+		glog.Info("Maintenance loop stopped.")
+		close(s.loopStopped)
+	}()
+
+	for {
+		select {
+		case <-s.loopStopping:
+			return
+		case <-checkpointTicker.C:
+			s.persistence.checkpointSeriesMapAndHeads(s.fingerprintToSeries, s.fpLocker)
+		case <-evictTicker.C:
+			// TODO: Change this to be based on number of chunks in memory.
+			glog.Info("Evicting chunks...")
+			begin := time.Now()
+
+			for m := range s.fingerprintToSeries.iter() {
+				select {
+				case <-s.loopStopping:
+					glog.Info("Interrupted evicting chunks.")
+					return
+				default:
+					// Keep going.
+				}
+				s.fpLocker.Lock(m.fp)
+				if m.series.evictOlderThan(
+					clientmodel.TimestampFromTime(time.Now()).Add(-1*s.evictAfter),
+					m.fp, s.persistQueue,
+				) {
+					s.fingerprintToSeries.del(m.fp)
+					s.numSeries.Dec()
+					if err := s.persistence.archiveMetric(
+						m.fp, m.series.metric, m.series.firstTime(), m.series.lastTime(),
+					); err != nil {
+						glog.Errorf("Error archiving metric %v: %v", m.series.metric, err)
+					} else {
+						s.seriesOps.WithLabelValues(archive).Inc()
+					}
+				}
+				s.fpLocker.Unlock(m.fp)
+			}
+
+			duration := time.Since(begin)
+			s.evictDuration.Set(float64(duration) / float64(time.Millisecond))
+			glog.Infof("Done evicting chunks in %v.", duration)
+		case <-purgeTicker.C:
+			glog.Info("Purging old series data...")
+			ts := clientmodel.TimestampFromTime(time.Now()).Add(-1 * s.purgeAfter)
+			begin := time.Now()
+
+			for fp := range s.fingerprintToSeries.fpIter() {
+				select {
+				case <-s.loopStopping:
+					glog.Info("Interrupted purging series.")
+					return
+				default:
+					s.purgeSeries(fp, ts)
+				}
+			}
+
+			persistedFPs, err := s.persistence.getFingerprintsModifiedBefore(ts)
+			if err != nil {
+				glog.Error("Failed to lookup persisted fingerprint ranges: ", err)
+				break
+			}
+			for _, fp := range persistedFPs {
+				select {
+				case <-s.loopStopping:
+					glog.Info("Interrupted purnging series.")
+					return
+				default:
+					s.purgeSeries(fp, ts)
+				}
+			}
+			duration := time.Since(begin)
+			s.purgeDuration.Set(float64(duration) / float64(time.Millisecond))
+			glog.Infof("Done purging old series data in %v.", duration)
+		}
+	}
+}
+
+// purgeSeries purges chunks older than persistenceRetentionPeriod from a
+// series. If the series contains no chunks after the purge, it is dropped
+// entirely.
+func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) {
+	s.fpLocker.Lock(fp)
+	defer s.fpLocker.Unlock(fp)
+
+	// First purge persisted chunks. We need to do that anyway.
+	allDropped, err := s.persistence.dropChunks(fp, beforeTime)
+	if err != nil {
+		glog.Error("Error purging persisted chunks: ", err)
+	}
+
+	// Purge chunks from memory accordingly.
+	if series, ok := s.fingerprintToSeries.get(fp); ok {
+		if series.purgeOlderThan(beforeTime) && allDropped {
+			s.fingerprintToSeries.del(fp)
+			s.numSeries.Dec()
+			s.seriesOps.WithLabelValues(memoryPurge).Inc()
+			s.persistence.unindexMetric(series.metric, fp)
+		}
+		return
+	}
+
+	// If we arrive here, nothing was in memory, so the metric must have
+	// been archived. Drop the archived metric if there are no persisted
+	// chunks left. If we don't drop the archived metric, we should update
+	// the archivedFingerprintToTimeRange index according to the remaining
+	// chunks, but it's probably not worth the effort. Queries going beyond
+	// the purge cut-off can be truncated in a more direct fashion.
+	if allDropped {
+		if err := s.persistence.dropArchivedMetric(fp); err != nil {
+			glog.Errorf("Error dropping archived metric for fingerprint %v: %v", fp, err)
+		} else {
+			s.seriesOps.WithLabelValues(archivePurge).Inc()
+		}
+	}
+}
+
 // To expose persistQueueCap as metric:
 var (
 	persistQueueCapDesc = prometheus.NewDesc(
@@ -574,7 +569,7 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
 	ch <- s.purgeDuration.Desc()
-	ch <- s.evictionDuration.Desc()
+	ch <- s.evictDuration.Desc()
 
 	ch <- persistQueueCapDesc
 
@@ -593,7 +588,7 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.seriesOps.Collect(ch)
 	ch <- s.ingestedSamplesCount
 	ch <- s.purgeDuration
-	ch <- s.evictionDuration
+	ch <- s.evictDuration
 
 	ch <- persistQueueCapGauge
 

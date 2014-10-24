@@ -58,6 +58,8 @@ var (
 	storagePurgeInterval   = flag.Duration("storage.purgeInterval", time.Hour, "The period at which old data is deleted completely from storage.")
 	storageRetentionPeriod = flag.Duration("storage.retentionPeriod", 15*24*time.Hour, "The period of time to retain in storage.")
 
+	checkpointInterval = flag.Duration("storage.checkpointInterval", 5*time.Minute, "The period at which the in-memory index of time series is checkpointed.")
+
 	notificationQueueCapacity = flag.Int("alertmanager.notificationQueueCapacity", 100, "The size of the queue for pending alert manager notifications.")
 
 	printVersion = flag.Bool("version", false, "print version information")
@@ -104,6 +106,7 @@ func NewPrometheus() *prometheus {
 		PersistenceStoragePath:     *metricsStoragePath,
 		PersistencePurgeInterval:   *storagePurgeInterval,
 		PersistenceRetentionPeriod: *storageRetentionPeriod,
+		CheckpointInterval:         *checkpointInterval,
 	}
 	memStorage, err := local.NewMemorySeriesStorage(o)
 	if err != nil {
@@ -191,9 +194,7 @@ func (p *prometheus) Serve() {
 	go p.notificationHandler.Run()
 	go p.interruptHandler()
 
-	storageStarted := make(chan struct{})
-	go p.storage.Serve(storageStarted)
-	<-storageStarted
+	p.storage.Start()
 
 	go func() {
 		err := p.webService.ServeForever()
@@ -213,8 +214,8 @@ func (p *prometheus) Serve() {
 
 	// The following shut-down operations have to happen after
 	// unwrittenSamples is drained. So do not move them into close().
-	if err := p.storage.Close(); err != nil {
-		glog.Error("Error closing local storage: ", err)
+	if err := p.storage.Stop(); err != nil {
+		glog.Error("Error stopping local storage: ", err)
 	}
 	glog.Info("Local Storage: Done")
 

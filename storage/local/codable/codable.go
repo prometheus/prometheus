@@ -72,15 +72,16 @@ func putBuf(buf []byte) {
 }
 
 // EncodeVarint encodes an int64 as a varint and writes it to an io.Writer.
+// It returns the number of bytes written.
 // This is a GC-friendly implementation that takes the required staging buffer
 // from a buffer pool.
-func EncodeVarint(w io.Writer, i int64) error {
+func EncodeVarint(w io.Writer, i int64) (int, error) {
 	buf := getBuf(binary.MaxVarintLen64)
 	defer putBuf(buf)
 
 	bytesWritten := binary.PutVarint(buf, i)
 	_, err := w.Write(buf[:bytesWritten])
-	return err
+	return bytesWritten, err
 }
 
 // EncodeUint64 writes an uint64 to an io.Writer in big-endian byte-order.
@@ -111,7 +112,7 @@ func DecodeUint64(r io.Reader) (uint64, error) {
 // encodeString writes the varint encoded length followed by the bytes of s to
 // b.
 func encodeString(b *bytes.Buffer, s string) error {
-	if err := EncodeVarint(b, int64(len(s))); err != nil {
+	if _, err := EncodeVarint(b, int64(len(s))); err != nil {
 		return err
 	}
 	if _, err := b.WriteString(s); err != nil {
@@ -143,7 +144,7 @@ type Metric clientmodel.Metric
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (m Metric) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
-	if err := EncodeVarint(buf, int64(len(m))); err != nil {
+	if _, err := EncodeVarint(buf, int64(len(m))); err != nil {
 		return nil, err
 	}
 	for l, v := range m {
@@ -332,7 +333,7 @@ type LabelValueSet map[clientmodel.LabelValue]struct{}
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (vs LabelValueSet) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
-	if err := EncodeVarint(buf, int64(len(vs))); err != nil {
+	if _, err := EncodeVarint(buf, int64(len(vs))); err != nil {
 		return nil, err
 	}
 	for v := range vs {
@@ -370,7 +371,7 @@ type LabelValues clientmodel.LabelValues
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (vs LabelValues) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
-	if err := EncodeVarint(buf, int64(len(vs))); err != nil {
+	if _, err := EncodeVarint(buf, int64(len(vs))); err != nil {
 		return nil, err
 	}
 	for _, v := range vs {
@@ -409,10 +410,10 @@ type TimeRange struct {
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (tr TimeRange) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
-	if err := EncodeVarint(buf, int64(tr.First)); err != nil {
+	if _, err := EncodeVarint(buf, int64(tr.First)); err != nil {
 		return nil, err
 	}
-	if err := EncodeVarint(buf, int64(tr.Last)); err != nil {
+	if _, err := EncodeVarint(buf, int64(tr.Last)); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

@@ -41,10 +41,13 @@ type Storage interface {
 	GetMetricForFingerprint(clientmodel.Fingerprint) clientmodel.Metric
 	// Construct an iterator for a given fingerprint.
 	NewIterator(clientmodel.Fingerprint) SeriesIterator
-	// Run the request-serving and maintenance loop.
-	Serve(started chan struct{})
-	// Close the MetricsStorage and releases all resources.
-	Close() error
+	// Run the various maintenance loops in goroutines. Returns when the
+	// storage is ready to use. Keeps everything running in the background
+	// until Close is called.
+	Start()
+	// Stop shuts down the Storage gracefully, flushes all pending
+	// operations, stops all maintenance loops,and frees all resources.
+	Stop() error
 	// WaitForIndexing returns once all samples in the storage are
 	// indexed. Indexing is needed for GetFingerprintsForLabelMatchers and
 	// GetLabelValuesForLabelName and may lag behind.
