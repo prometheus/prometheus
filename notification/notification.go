@@ -66,7 +66,7 @@ type NotificationReq struct {
 	// A textual representation of the rule that triggered the alert.
 	RuleString string
 	// Prometheus console link to alert expression.
-	GeneratorUrl string
+	GeneratorURL string
 }
 
 type NotificationReqs []*NotificationReq
@@ -139,7 +139,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 			"Payload": map[string]interface{}{
 				"Value":        req.Value,
 				"ActiveSince":  req.ActiveSince,
-				"GeneratorUrl": req.GeneratorUrl,
+				"GeneratorURL": req.GeneratorURL,
 				"AlertingRule": req.RuleString,
 			},
 		})

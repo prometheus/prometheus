@@ -185,7 +185,7 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 			Value:        aa.Value,
 			ActiveSince:  aa.ActiveSince.Time(),
 			RuleString:   rule.String(),
-			GeneratorUrl: m.prometheusUrl + rules.GraphLinkForExpression(rule.Vector.String()),
+			GeneratorURL: m.prometheusUrl + rules.GraphLinkForExpression(rule.Vector.String()),
 		})
 	}
 	m.notificationHandler.SubmitReqs(notifications)
