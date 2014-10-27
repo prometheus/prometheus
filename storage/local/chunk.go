@@ -68,6 +68,13 @@ func (cd *chunkDesc) unpin() {
 	}
 }
 
+func (cd *chunkDesc) getRefCount() int {
+	cd.Lock()
+	defer cd.Unlock()
+
+	return cd.refCount
+}
+
 func (cd *chunkDesc) firstTime() clientmodel.Timestamp {
 	cd.Lock()
 	defer cd.Unlock()
