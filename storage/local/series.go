@@ -136,10 +136,16 @@ type memorySeries struct {
 	metric clientmodel.Metric
 	// Sorted by start time, overlapping chunk ranges are forbidden.
 	chunkDescs []*chunkDesc
-	// Whether chunkDescs for chunks on disk are all loaded.  If false, some
-	// (or all) chunkDescs are only on disk. These chunks are all contiguous
-	// and at the tail end.
-	chunkDescsLoaded bool
+	// The chunkDescs in memory might not have all the chunkDescs for the
+	// chunks that are persisted to disk. The missing chunkDescs are all
+	// contiguous and at the tail end. chunkDescsOffset is the index of the
+	// chunk on disk that corresponds to the first chunkDesc in memory. If
+	// it is 0, the chunkDescs are all loaded. A value of -1 denotes a
+	// special case: There are chunks on disk, but the offset to the
+	// chunkDescs in memory is unknown. Also, there is no overlap between
+	// chunks on disk and chunks in memory (implying that upon first
+	// persiting of a chunk in memory, the offset has to be set).
+	chunkDescsOffset int
 	// Whether the current head chunk has already been scheduled to be
 	// persisted. If true, the current head chunk must not be modified
 	// anymore.
@@ -155,16 +161,20 @@ type memorySeries struct {
 // or (if false) a series for a metric being unarchived, i.e. a series that
 // existed before but has been evicted from memory.
 func newMemorySeries(m clientmodel.Metric, reallyNew bool) *memorySeries {
-	return &memorySeries{
+	s := memorySeries{
 		metric:             m,
-		chunkDescsLoaded:   reallyNew,
 		headChunkPersisted: !reallyNew,
 	}
+	if !reallyNew {
+		s.chunkDescsOffset = -1
+	}
+	return &s
 }
 
 // add adds a sample pair to the series.
+// It returns chunkDescs that must be queued to be persisted.
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, persistQueue chan *persistRequest) {
+func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair) []*chunkDesc {
 	if len(s.chunkDescs) == 0 || s.headChunkPersisted {
 		newHead := newChunkDesc(newDeltaEncodedChunk(d1, d0, true))
 		s.chunkDescs = append(s.chunkDescs, newHead)
@@ -187,33 +197,27 @@ func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, per
 	}
 
 	chunks := s.head().add(v)
-
 	s.head().chunk = chunks[0]
+
+	var chunkDescsToPersist []*chunkDesc
 	if len(chunks) > 1 {
-		queuePersist := func(cd *chunkDesc) {
-			persistQueue <- &persistRequest{
-				fingerprint: fp,
-				chunkDesc:   cd,
-			}
-		}
-
-		queuePersist(s.head())
-
+		chunkDescsToPersist = append(chunkDescsToPersist, s.head())
 		for i, c := range chunks[1:] {
 			cd := newChunkDesc(c)
 			s.chunkDescs = append(s.chunkDescs, cd)
 			// The last chunk is still growing.
 			if i < len(chunks[1:])-1 {
-				queuePersist(cd)
+				chunkDescsToPersist = append(chunkDescsToPersist, cd)
 			}
 		}
 	}
+	return chunkDescsToPersist
 }
 
 // evictOlderThan marks for eviction all chunks whose latest sample is older
-// than the given timestamp. It returns true if all chunks in the series were
-// immediately evicted (i.e. all chunks are older than the timestamp, and none
-// of the chunks was pinned).
+// than the given timestamp. It returns allEvicted as true if all chunks in the
+// series were immediately evicted (i.e. all chunks are older than the
+// timestamp, and none of the chunks was pinned).
 //
 // The method also evicts chunkDescs if there are chunkDescEvictionFactor times
 // more chunkDescs in the series than unevicted chunks. (The number of unevicted
@@ -222,25 +226,22 @@ func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair, per
 // series, even if chunks in between were evicted.)
 //
 // Special considerations for the head chunk: If it has not been scheduled to be
-// persisted yet but is old enough for eviction, the scheduling happens now. (To
-// do that, the method neets the fingerprint and the persist queue.) It is
-// likely that the actual persisting will not happen soon enough to immediately
-// evict the head chunk, though. Thus, calling evictOlderThan for a series with
-// a non-persisted head chunk will most likely return false, even if no chunk is
-// pinned for other reasons. A series old enough for archiving will usually
+// persisted yet but is old enough for eviction, this method returns
+// persistHeadChunk as true. The caller is then responsible for persisting the
+// head chunk. The internal state of this memorySeries is already set
+// accordingly by this method. Calling evictOlderThan for a series with a
+// non-persisted head chunk that is old enough for eviction will never evict all
+// chunks immediately, even if no chunk is pinned for other reasons, because the
+// head chunk is not persisted yet. A series old enough for archiving will
 // require at least two eviction runs to become ready for archiving: In the
-// first run, its head chunk is scheduled to be persisted. The next call of
+// first run, its head chunk is requested to be persisted. The next call of
 // evictOlderThan will then return true, provided that the series hasn't
 // received new samples in the meantime, the head chunk has now been persisted,
 // and no chunk is pinned for other reasons.
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) evictOlderThan(
-	t clientmodel.Timestamp,
-	fp clientmodel.Fingerprint,
-	persistQueue chan *persistRequest,
-) bool {
-	allEvicted := true
+func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool, persistHeadChunk bool) {
+	allEvicted = true
 	iOldestNotEvicted := -1
 
 	defer func() {
@@ -250,8 +251,8 @@ func (s *memorySeries) evictOlderThan(
 		if iOldestNotEvicted != -1 {
 			lenToKeep := chunkDescEvictionFactor * (len(s.chunkDescs) - iOldestNotEvicted)
 			if lenToKeep < len(s.chunkDescs) {
-				s.chunkDescsLoaded = false
 				lenEvicted := len(s.chunkDescs) - lenToKeep
+				s.chunkDescsOffset += lenEvicted
 				chunkDescOps.WithLabelValues(evict).Add(float64(lenEvicted))
 				atomic.AddInt64(&numMemChunkDescs, -int64(lenEvicted))
 				s.chunkDescs = append(
@@ -268,22 +269,19 @@ func (s *memorySeries) evictOlderThan(
 			if iOldestNotEvicted == -1 {
 				iOldestNotEvicted = i
 			}
-			return false
+			return false, false
 		}
 		if cd.isEvicted() {
 			continue
 		}
 		if !s.headChunkPersisted && i == len(s.chunkDescs)-1 {
 			// This is a non-persisted head chunk that is old enough
-			// for eviction. Queue it to be persisted:
+			// for eviction. Request it to be persisted:
+			persistHeadChunk = true
 			s.headChunkPersisted = true
 			// Since we cannot modify the head chunk from now on, we
 			// don't need to bother with cloning anymore.
 			s.headChunkUsedByIterator = false
-			persistQueue <- &persistRequest{
-				fingerprint: fp,
-				chunkDesc:   cd,
-			}
 		}
 		if !cd.evictOnUnpin() {
 			if iOldestNotEvicted == -1 {
@@ -292,13 +290,15 @@ func (s *memorySeries) evictOlderThan(
 			allEvicted = false
 		}
 	}
-	return allEvicted
+	return allEvicted, persistHeadChunk
 }
 
-// purgeOlderThan returns true if all chunks have been purged.
+// purgeOlderThan removes chunkDescs older than t. It also evicts the chunks of
+// those chunkDescs (although that's probably not even necessary). It returns
+// the number of purged chunkDescs and true if all chunkDescs have been purged.
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) bool {
+func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) (int, bool) {
 	keepIdx := len(s.chunkDescs)
 	for i, cd := range s.chunkDescs {
 		if !cd.lastTime().Before(t) {
@@ -307,9 +307,11 @@ func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) bool {
 		}
 		s.chunkDescs[i].evictOnUnpin()
 	}
-	s.chunkDescs = append(make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx), s.chunkDescs[keepIdx:]...)
-	atomic.AddInt64(&numMemChunkDescs, -int64(keepIdx))
-	return len(s.chunkDescs) == 0
+	if keepIdx > 0 {
+		s.chunkDescs = append(make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx), s.chunkDescs[keepIdx:]...)
+		atomic.AddInt64(&numMemChunkDescs, -int64(keepIdx))
+	}
+	return keepIdx, len(s.chunkDescs) == 0
 }
 
 // preloadChunks is an internal helper method.
@@ -327,8 +329,11 @@ func (s *memorySeries) preloadChunks(indexes []int, p *persistence) ([]*chunkDes
 	chunkOps.WithLabelValues(pin).Add(float64(len(pinnedChunkDescs)))
 
 	if len(loadIndexes) > 0 {
+		if s.chunkDescsOffset == -1 {
+			panic("requested loading chunks from persistence in a situation where we must not have persisted data for chunk descriptors in memory")
+		}
 		fp := s.metric.Fingerprint()
-		chunks, err := p.loadChunks(fp, loadIndexes)
+		chunks, err := p.loadChunks(fp, loadIndexes, s.chunkDescsOffset)
 		if err != nil {
 			// Unpin the chunks since we won't return them as pinned chunks now.
 			for _, cd := range pinnedChunkDescs {
@@ -388,13 +393,13 @@ func (s *memorySeries) preloadChunksForRange(
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
 	}
-	if !s.chunkDescsLoaded && from.Before(firstChunkDescTime) {
+	if s.chunkDescsOffset != 0 && from.Before(firstChunkDescTime) {
 		cds, err := p.loadChunkDescs(fp, firstChunkDescTime)
 		if err != nil {
 			return nil, err
 		}
 		s.chunkDescs = append(cds, s.chunkDescs...)
-		s.chunkDescsLoaded = true
+		s.chunkDescsOffset = 0
 	}
 
 	if len(s.chunkDescs) == 0 {

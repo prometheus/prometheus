@@ -82,9 +82,13 @@ func TestPersistChunk(t *testing.T) {
 	fpToChunks := buildTestChunks()
 
 	for fp, chunks := range fpToChunks {
-		for _, c := range chunks {
-			if err := p.persistChunk(fp, c); err != nil {
+		for i, c := range chunks {
+			index, err := p.persistChunk(fp, c)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if i != index {
+				t.Errorf("Want chunk index %d, got %d.", i, index)
 			}
 		}
 	}
@@ -94,7 +98,7 @@ func TestPersistChunk(t *testing.T) {
 		for i := range expectedChunks {
 			indexes = append(indexes, i)
 		}
-		actualChunks, err := p.loadChunks(fp, indexes)
+		actualChunks, err := p.loadChunks(fp, indexes, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

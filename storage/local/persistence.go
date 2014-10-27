@@ -58,8 +58,10 @@ const (
 )
 
 const (
-	flagChunkDescsLoaded byte = 1 << iota
-	flagHeadChunkPersisted
+	flagHeadChunkPersisted byte = 1 << iota
+	// Add more flags here like:
+	// flagFoo
+	// flagBar
 )
 
 type indexingOpType byte
@@ -228,34 +230,53 @@ func (p *persistence) getLabelValuesForLabelName(ln clientmodel.LabelName) (clie
 }
 
 // persistChunk persists a single chunk of a series. It is the caller's
-// responsibility to not modify chunk concurrently and to not persist or drop anything
-// for the same fingerprint concurrently.
-func (p *persistence) persistChunk(fp clientmodel.Fingerprint, c chunk) error {
+// responsibility to not modify chunk concurrently and to not persist or drop
+// anything for the same fingerprint concurrently. It returns the (zero-based)
+// index of the persisted chunk within the series file. In case of an error, the
+// returned index is -1 (to avoid the misconception that the chunk was written
+// at position 0).
+func (p *persistence) persistChunk(fp clientmodel.Fingerprint, c chunk) (int, error) {
 	// 1. Open chunk file.
 	f, err := p.openChunkFileForWriting(fp)
 	if err != nil {
-		return err
+		return -1, err
 	}
 	defer f.Close()
 
 	b := bufio.NewWriterSize(f, chunkHeaderLen+p.chunkLen)
-	defer b.Flush()
 
 	// 2. Write the header (chunk type and first/last times).
 	err = writeChunkHeader(b, c)
 	if err != nil {
-		return err
+		return -1, err
 	}
 
 	// 3. Write chunk into file.
-	return c.marshal(b)
+	err = c.marshal(b)
+	if err != nil {
+		return -1, err
+	}
+
+	// 4. Determine index within the file.
+	b.Flush()
+	offset, err := f.Seek(0, os.SEEK_CUR)
+	if err != nil {
+		return -1, err
+	}
+	index, err := p.chunkIndexForOffset(offset)
+	if err != nil {
+		return -1, err
+	}
+
+	return index - 1, err
 }
 
 // loadChunks loads a group of chunks of a timeseries by their index. The chunk
 // with the earliest time will have index 0, the following ones will have
-// incrementally larger indexes. It is the caller's responsibility to not
-// persist or drop anything for the same fingerprint concurrently.
-func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int) ([]chunk, error) {
+// incrementally larger indexes. The indexOffset denotes the offset to be added to
+// each index in indexes. It is the caller's responsibility to not persist or
+// drop anything for the same fingerprint concurrently.
+func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int, indexOffset int) ([]chunk, error) {
 	// TODO: we need to verify at some point that file length is a multiple of
 	// the chunk size. When is the best time to do this, and where to remember
 	// it? Right now, we only do it when loading chunkDescs.
@@ -268,7 +289,7 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int) ([]c
 	chunks := make([]chunk, 0, len(indexes))
 	typeBuf := make([]byte, 1)
 	for _, idx := range indexes {
-		_, err := f.Seek(p.offsetForChunkIndex(idx), os.SEEK_SET)
+		_, err := f.Seek(p.offsetForChunkIndex(idx+indexOffset), os.SEEK_SET)
 		if err != nil {
 			return nil, err
 		}
@@ -339,7 +360,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 			chunkFirstTime: clientmodel.Timestamp(binary.LittleEndian.Uint64(chunkTimesBuf)),
 			chunkLastTime:  clientmodel.Timestamp(binary.LittleEndian.Uint64(chunkTimesBuf[8:])),
 		}
-		if !cd.firstTime().Before(beforeTime) {
+		if cd.chunkLastTime.After(beforeTime) {
 			// From here on, we have chunkDescs in memory already.
 			break
 		}
@@ -412,9 +433,6 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			}
 			realNumberOfSeries++
 			var seriesFlags byte
-			if m.series.chunkDescsLoaded {
-				seriesFlags |= flagChunkDescsLoaded
-			}
 			if m.series.headChunkPersisted {
 				seriesFlags |= flagHeadChunkPersisted
 			}
@@ -430,6 +448,9 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 				return
 			}
 			w.Write(buf)
+			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset)); err != nil {
+				return
+			}
 			if _, err = codable.EncodeVarint(w, int64(len(m.series.chunkDescs))); err != nil {
 				return
 			}
@@ -523,6 +544,10 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 		if err := metric.UnmarshalFromReader(r); err != nil {
 			return nil, err
 		}
+		chunkDescsOffset, err := binary.ReadVarint(r)
+		if err != nil {
+			return nil, err
+		}
 		numChunkDescs, err := binary.ReadVarint(r)
 		if err != nil {
 			return nil, err
@@ -562,7 +587,7 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 		fingerprintToSeries[clientmodel.Fingerprint(fp)] = &memorySeries{
 			metric:             clientmodel.Metric(metric),
 			chunkDescs:         chunkDescs,
-			chunkDescsLoaded:   seriesFlags&flagChunkDescsLoaded != 0,
+			chunkDescsOffset:   int(chunkDescsOffset),
 			headChunkPersisted: headChunkPersisted,
 		}
 	}
@@ -572,24 +597,25 @@ func (p *persistence) loadSeriesMapAndHeads() (*seriesMap, error) {
 }
 
 // dropChunks deletes all chunks from a series whose last sample time is before
-// beforeTime. It returns true if all chunks of the series have been deleted.
-// It is the caller's responsibility to make sure nothing is persisted or loaded
-// for the same fingerprint concurrently.
-func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (bool, error) {
+// beforeTime. It returns the number of deleted chunks and true if all chunks of
+// the series have been deleted.  It is the caller's responsibility to make sure
+// nothing is persisted or loaded for the same fingerprint concurrently.
+func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (int, bool, error) {
 	f, err := p.openChunkFileForReading(fp)
 	if os.IsNotExist(err) {
-		return true, nil
+		return 0, true, nil
 	}
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	defer f.Close()
 
 	// Find the first chunk that should be kept.
-	for i := 0; ; i++ {
+	var i int
+	for ; ; i++ {
 		_, err := f.Seek(p.offsetForChunkIndex(i)+chunkHeaderLastTimeOffset, os.SEEK_SET)
 		if err != nil {
-			return false, err
+			return 0, false, err
 		}
 		lastTimeBuf := make([]byte, 8)
 		_, err = io.ReadAtLeast(f, lastTimeBuf, 8)
@@ -598,12 +624,12 @@ func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmo
 			// be kept. Remove the whole file.
 			chunkOps.WithLabelValues(purge).Add(float64(i))
 			if err := os.Remove(f.Name()); err != nil {
-				return true, err
+				return 0, true, err
 			}
-			return true, nil
+			return i, true, nil
 		}
 		if err != nil {
-			return false, err
+			return 0, false, err
 		}
 		lastTime := clientmodel.Timestamp(binary.LittleEndian.Uint64(lastTimeBuf))
 		if !lastTime.Before(beforeTime) {
@@ -617,21 +643,23 @@ func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmo
 	// file.
 	_, err = f.Seek(-(chunkHeaderLastTimeOffset + 8), os.SEEK_CUR)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 
 	temp, err := os.OpenFile(p.tempFileNameForFingerprint(fp), os.O_WRONLY|os.O_CREATE, 0640)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	defer temp.Close()
 
 	if _, err := io.Copy(temp, f); err != nil {
-		return false, err
+		return 0, false, err
 	}
 
-	os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp))
-	return false, nil
+	if err := os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp)); err != nil {
+		return 0, false, err
+	}
+	return i, false, nil
 }
 
 // indexMetric queues the given metric for addition to the indexes needed by
@@ -834,6 +862,16 @@ func writeChunkHeader(w io.Writer, c chunk) error {
 
 func (p *persistence) offsetForChunkIndex(i int) int64 {
 	return int64(i * (chunkHeaderLen + p.chunkLen))
+}
+
+func (p *persistence) chunkIndexForOffset(offset int64) (int, error) {
+	if int(offset)%(chunkHeaderLen+p.chunkLen) != 0 {
+		return -1, fmt.Errorf(
+			"offset %d is not a multiple of on-disk chunk length %d",
+			offset, chunkHeaderLen+p.chunkLen,
+		)
+	}
+	return int(offset) / (chunkHeaderLen + p.chunkLen), nil
 }
 
 func (p *persistence) headsFileName() string {

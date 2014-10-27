@@ -37,7 +37,7 @@ func TestChunk(t *testing.T) {
 
 	s.AppendSamples(samples)
 
-	for m := range s.(*memorySeriesStorage).fingerprintToSeries.iter() {
+	for m := range s.(*memorySeriesStorage).fpToSeries.iter() {
 		for i, v := range m.series.values() {
 			if samples[i].Timestamp != v.Timestamp {
 				t.Fatalf("%d. Got %v; want %v", i, v.Timestamp, samples[i].Timestamp)
