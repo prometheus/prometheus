@@ -25,6 +25,12 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 )
 
+var (
+	m1 = clientmodel.Metric{"label": "value1"}
+	m2 = clientmodel.Metric{"label": "value2"}
+	m3 = clientmodel.Metric{"label": "value3"}
+)
+
 func newTestPersistence(t *testing.T) (*persistence, test.Closer) {
 	dir := test.NewTemporaryDirectory("test_persistence", t)
 	p, err := newPersistence(dir.Path(), 1024)
@@ -40,15 +46,9 @@ func newTestPersistence(t *testing.T) (*persistence, test.Closer) {
 
 func buildTestChunks() map[clientmodel.Fingerprint][]chunk {
 	fps := clientmodel.Fingerprints{
-		clientmodel.Metric{
-			"label": "value1",
-		}.Fingerprint(),
-		clientmodel.Metric{
-			"label": "value2",
-		}.Fingerprint(),
-		clientmodel.Metric{
-			"label": "value3",
-		}.Fingerprint(),
+		m1.Fingerprint(),
+		m2.Fingerprint(),
+		m3.Fingerprint(),
 	}
 	fpToChunks := map[clientmodel.Fingerprint][]chunk{}
 
@@ -75,7 +75,7 @@ func chunksEqual(c1, c2 chunk) bool {
 	return true
 }
 
-func TestPersistChunk(t *testing.T) {
+func TestPersistLoadDropChunks(t *testing.T) {
 	p, closer := newTestPersistence(t)
 	defer closer.Close()
 
@@ -104,9 +104,272 @@ func TestPersistChunk(t *testing.T) {
 		}
 		for _, i := range indexes {
 			if !chunksEqual(expectedChunks[i], actualChunks[i]) {
-				t.Fatalf("%d. Chunks not equal.", i)
+				t.Errorf("%d. Chunks not equal.", i)
 			}
 		}
+		// Load all chunk descs.
+		actualChunkDescs, err := p.loadChunkDescs(fp, 10)
+		if len(actualChunkDescs) != 10 {
+			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 10)
+		}
+		for i, cd := range actualChunkDescs {
+			if cd.firstTime() != clientmodel.Timestamp(i) || cd.lastTime() != clientmodel.Timestamp(i) {
+				t.Errorf(
+					"Want ts=%v, got firstTime=%v, lastTime=%v.",
+					i, cd.firstTime(), cd.lastTime(),
+				)
+			}
+
+		}
+		// Load chunk descs partially.
+		actualChunkDescs, err = p.loadChunkDescs(fp, 5)
+		if len(actualChunkDescs) != 5 {
+			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 5)
+		}
+		for i, cd := range actualChunkDescs {
+			if cd.firstTime() != clientmodel.Timestamp(i) || cd.lastTime() != clientmodel.Timestamp(i) {
+				t.Errorf(
+					"Want ts=%v, got firstTime=%v, lastTime=%v.",
+					i, cd.firstTime(), cd.lastTime(),
+				)
+			}
+
+		}
+	}
+	// Drop half of the chunks.
+	for fp, expectedChunks := range fpToChunks {
+		numDropped, allDropped, err := p.dropChunks(fp, 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if numDropped != 5 {
+			t.Errorf("want 5 dropped chunks, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+		indexes := make([]int, 5)
+		for i := range indexes {
+			indexes[i] = i
+		}
+		actualChunks, err := p.loadChunks(fp, indexes, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, i := range indexes {
+			if !chunksEqual(expectedChunks[i+5], actualChunks[i]) {
+				t.Errorf("%d. Chunks not equal.", i)
+			}
+		}
+	}
+	// Drop all the chunks.
+	for fp := range fpToChunks {
+		numDropped, allDropped, err := p.dropChunks(fp, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if numDropped != 5 {
+			t.Errorf("want 5 dropped chunks, got %v", numDropped)
+		}
+		if !allDropped {
+			t.Error("not all chunks dropped")
+		}
+	}
+}
+
+func TestCheckpointAndLoadSeriesMapAndHeads(t *testing.T) {
+	p, closer := newTestPersistence(t)
+	defer closer.Close()
+
+	fpLocker := newFingerprintLocker(10)
+	sm := newSeriesMap()
+	s1 := newMemorySeries(m1, true)
+	s2 := newMemorySeries(m2, false)
+	s3 := newMemorySeries(m3, false)
+	s1.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 1, Value: 3.14})
+	s3.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 2, Value: 2.7})
+	s3.headChunkPersisted = true
+	sm.put(m1.Fingerprint(), s1)
+	sm.put(m2.Fingerprint(), s2)
+	sm.put(m3.Fingerprint(), s3)
+
+	if err := p.checkpointSeriesMapAndHeads(sm, fpLocker); err != nil {
+		t.Fatal(err)
+	}
+
+	loadedSM, err := p.loadSeriesMapAndHeads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loadedSM.length() != 2 {
+		t.Errorf("want 2 series in map, got %d", loadedSM.length())
+	}
+	if loadedS1, ok := loadedSM.get(m1.Fingerprint()); ok {
+		if !reflect.DeepEqual(loadedS1.metric, m1) {
+			t.Errorf("want metric %v, got %v", m1, loadedS1.metric)
+		}
+		if !reflect.DeepEqual(loadedS1.head().chunk, s1.head().chunk) {
+			t.Error("head chunks differ")
+		}
+		if loadedS1.chunkDescsOffset != 0 {
+			t.Errorf("want chunkDescsOffset 0, got %d", loadedS1.chunkDescsOffset)
+		}
+		if loadedS1.headChunkPersisted {
+			t.Error("headChunkPersisted is true")
+		}
+	} else {
+		t.Errorf("couldn't find %v in loaded map", m1)
+	}
+	if loadedS3, ok := loadedSM.get(m3.Fingerprint()); ok {
+		if !reflect.DeepEqual(loadedS3.metric, m3) {
+			t.Errorf("want metric %v, got %v", m3, loadedS3.metric)
+		}
+		if loadedS3.head().chunk != nil {
+			t.Error("head chunk not evicted")
+		}
+		if loadedS3.chunkDescsOffset != -1 {
+			t.Errorf("want chunkDescsOffset -1, got %d", loadedS3.chunkDescsOffset)
+		}
+		if !loadedS3.headChunkPersisted {
+			t.Error("headChunkPersisted is false")
+		}
+	} else {
+		t.Errorf("couldn't find %v in loaded map", m1)
+	}
+}
+
+func TestGetFingerprintsModifiedBefore(t *testing.T) {
+	p, closer := newTestPersistence(t)
+	defer closer.Close()
+
+	m1 := clientmodel.Metric{"n1": "v1"}
+	m2 := clientmodel.Metric{"n2": "v2"}
+	m3 := clientmodel.Metric{"n1": "v2"}
+	p.archiveMetric(1, m1, 2, 4)
+	p.archiveMetric(2, m2, 1, 6)
+	p.archiveMetric(3, m3, 5, 5)
+
+	expectedFPs := map[clientmodel.Timestamp][]clientmodel.Fingerprint{
+		0: {},
+		1: {},
+		2: {2},
+		3: {1, 2},
+		4: {1, 2},
+		5: {1, 2},
+		6: {1, 2, 3},
+	}
+
+	for ts, want := range expectedFPs {
+		got, err := p.getFingerprintsModifiedBefore(ts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("timestamp: %v, want FPs %v, got %v", ts, want, got)
+		}
+	}
+
+	unarchived, err := p.unarchiveMetric(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !unarchived {
+		t.Fatal("expected actual unarchival")
+	}
+	unarchived, err = p.unarchiveMetric(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unarchived {
+		t.Fatal("expected no unarchival")
+	}
+
+	expectedFPs = map[clientmodel.Timestamp][]clientmodel.Fingerprint{
+		0: {},
+		1: {},
+		2: {2},
+		3: {2},
+		4: {2},
+		5: {2},
+		6: {2, 3},
+	}
+
+	for ts, want := range expectedFPs {
+		got, err := p.getFingerprintsModifiedBefore(ts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("timestamp: %v, want FPs %v, got %v", ts, want, got)
+		}
+	}
+}
+
+func TestDropArchivedMetric(t *testing.T) {
+	p, closer := newTestPersistence(t)
+	defer closer.Close()
+
+	m1 := clientmodel.Metric{"n1": "v1"}
+	m2 := clientmodel.Metric{"n2": "v2"}
+	p.archiveMetric(1, m1, 2, 4)
+	p.archiveMetric(2, m2, 1, 6)
+	p.indexMetric(1, m1)
+	p.indexMetric(2, m2)
+	p.waitForIndexing()
+
+	outFPs, err := p.getFingerprintsForLabelPair(metric.LabelPair{Name: "n1", Value: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := clientmodel.Fingerprints{1}
+	if !reflect.DeepEqual(outFPs, want) {
+		t.Errorf("want %#v, got %#v", want, outFPs)
+	}
+	outFPs, err = p.getFingerprintsForLabelPair(metric.LabelPair{Name: "n2", Value: "v2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = clientmodel.Fingerprints{2}
+	if !reflect.DeepEqual(outFPs, want) {
+		t.Errorf("want %#v, got %#v", want, outFPs)
+	}
+	if archived, _, _, err := p.hasArchivedMetric(1); err != nil || !archived {
+		t.Error("want FP 1 archived")
+	}
+	if archived, _, _, err := p.hasArchivedMetric(2); err != nil || !archived {
+		t.Error("want FP 2 archived")
+	}
+
+	if err != p.dropArchivedMetric(1) {
+		t.Fatal(err)
+	}
+	if err != p.dropArchivedMetric(3) {
+		// Dropping something that has not beet archived is not an error.
+		t.Fatal(err)
+	}
+	p.waitForIndexing()
+
+	outFPs, err = p.getFingerprintsForLabelPair(metric.LabelPair{Name: "n1", Value: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = nil
+	if !reflect.DeepEqual(outFPs, want) {
+		t.Errorf("want %#v, got %#v", want, outFPs)
+	}
+	outFPs, err = p.getFingerprintsForLabelPair(metric.LabelPair{Name: "n2", Value: "v2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = clientmodel.Fingerprints{2}
+	if !reflect.DeepEqual(outFPs, want) {
+		t.Errorf("want %#v, got %#v", want, outFPs)
+	}
+	if archived, _, _, err := p.hasArchivedMetric(1); err != nil || archived {
+		t.Error("want FP 1 not archived")
+	}
+	if archived, _, _, err := p.hasArchivedMetric(2); err != nil || !archived {
+		t.Error("want FP 2 archived")
 	}
 }
 
@@ -258,7 +521,7 @@ func TestIndexing(t *testing.T) {
 	indexedFpsToMetrics := index.FingerprintMetricMapping{}
 	for i, b := range batches {
 		for fp, m := range b.fpToMetric {
-			p.indexMetric(m, fp)
+			p.indexMetric(fp, m)
 			if err := p.archiveMetric(fp, m, 1, 2); err != nil {
 				t.Fatal(err)
 			}
@@ -271,7 +534,7 @@ func TestIndexing(t *testing.T) {
 		b := batches[i]
 		verifyIndexedState(i, t, batches[i], indexedFpsToMetrics, p)
 		for fp, m := range b.fpToMetric {
-			p.unindexMetric(m, fp)
+			p.unindexMetric(fp, m)
 			unarchived, err := p.unarchiveMetric(fp)
 			if err != nil {
 				t.Fatal(err)
@@ -331,13 +594,13 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label pair -> fingerprints mappings.
 	for lp, fps := range b.expectedLpToFps {
-		outFps, err := p.getFingerprintsForLabelPair(lp)
+		outFPs, err := p.getFingerprintsForLabelPair(lp)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		outSet := codable.FingerprintSet{}
-		for _, fp := range outFps {
+		for _, fp := range outFPs {
 			outSet[fp] = struct{}{}
 		}
 

@@ -226,21 +226,22 @@ func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair) []*
 // series, even if chunks in between were evicted.)
 //
 // Special considerations for the head chunk: If it has not been scheduled to be
-// persisted yet but is old enough for eviction, this method returns
-// persistHeadChunk as true. The caller is then responsible for persisting the
-// head chunk. The internal state of this memorySeries is already set
-// accordingly by this method. Calling evictOlderThan for a series with a
-// non-persisted head chunk that is old enough for eviction will never evict all
-// chunks immediately, even if no chunk is pinned for other reasons, because the
-// head chunk is not persisted yet. A series old enough for archiving will
-// require at least two eviction runs to become ready for archiving: In the
-// first run, its head chunk is requested to be persisted. The next call of
-// evictOlderThan will then return true, provided that the series hasn't
-// received new samples in the meantime, the head chunk has now been persisted,
-// and no chunk is pinned for other reasons.
+// persisted yet but is old enough for eviction, this method returns a pointer
+// to the descriptor of the head chunk to be persisted. (Otherwise, the method
+// returns nil.) The caller is then responsible for persisting the head
+// chunk. The internal state of this memorySeries is already set accordingly by
+// this method. Calling evictOlderThan for a series with a non-persisted head
+// chunk that is old enough for eviction will never evict all chunks
+// immediately, even if no chunk is pinned for other reasons, because the head
+// chunk is not persisted yet. A series old enough for archiving will require at
+// least two eviction runs to become ready for archiving: In the first run, its
+// head chunk is requested to be persisted. The next call of evictOlderThan will
+// then return true, provided that the series hasn't received new samples in the
+// meantime, the head chunk has now been persisted, and no chunk is pinned for
+// other reasons.
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool, persistHeadChunk bool) {
+func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool, headChunkToPersist *chunkDesc) {
 	allEvicted = true
 	iOldestNotEvicted := -1
 
@@ -269,7 +270,7 @@ func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool,
 			if iOldestNotEvicted == -1 {
 				iOldestNotEvicted = i
 			}
-			return false, false
+			return false, nil
 		}
 		if cd.isEvicted() {
 			continue
@@ -277,7 +278,7 @@ func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool,
 		if !s.headChunkPersisted && i == len(s.chunkDescs)-1 {
 			// This is a non-persisted head chunk that is old enough
 			// for eviction. Request it to be persisted:
-			persistHeadChunk = true
+			headChunkToPersist = cd
 			s.headChunkPersisted = true
 			// Since we cannot modify the head chunk from now on, we
 			// don't need to bother with cloning anymore.
@@ -290,7 +291,7 @@ func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool,
 			allEvicted = false
 		}
 	}
-	return allEvicted, persistHeadChunk
+	return allEvicted, headChunkToPersist
 }
 
 // purgeOlderThan removes chunkDescs older than t. It also evicts the chunks of
@@ -448,10 +449,14 @@ func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
 	}
 }
 
+// head returns a pointer to the head chunk descriptor. The caller must have
+// locked the fingerprint of the memorySeries.
 func (s *memorySeries) head() *chunkDesc {
 	return s.chunkDescs[len(s.chunkDescs)-1]
 }
 
+// values returns all values in the series. The caller must have locked the
+// fingerprint of the memorySeries.
 func (s *memorySeries) values() metric.Values {
 	var values metric.Values
 	for _, cd := range s.chunkDescs {
@@ -462,10 +467,14 @@ func (s *memorySeries) values() metric.Values {
 	return values
 }
 
+// firstTime returns the timestamp of the first sample in the series. The caller
+// must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) firstTime() clientmodel.Timestamp {
 	return s.chunkDescs[0].firstTime()
 }
 
+// lastTime returns the timestamp of the last sample in the series. The caller
+// must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) lastTime() clientmodel.Timestamp {
 	return s.head().lastTime()
 }
@@ -539,7 +548,7 @@ func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Val
 		var chunkIt chunkIterator
 		if c.firstTime().After(in.NewestInclusive) {
 			if len(values) == 1 {
-				// We found the first value already, but are now
+				// We found the first value before, but are now
 				// already past the last value. The value we
 				// want must be the last value of the previous
 				// chunk. So backtrack...

@@ -354,7 +354,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m cl
 			s.seriesOps.WithLabelValues(unarchive).Inc()
 		} else {
 			// This was a genuinely new series, so index the metric.
-			s.persistence.indexMetric(m, fp)
+			s.persistence.indexMetric(fp, m)
 			s.seriesOps.WithLabelValues(create).Inc()
 		}
 		series = newMemorySeries(m, !unarchived)
@@ -464,7 +464,7 @@ func (s *memorySeriesStorage) loop() {
 					// Keep going.
 				}
 				s.fpLocker.Lock(m.fp)
-				allEvicted, persistHeadChunk := m.series.evictOlderThan(
+				allEvicted, headChunkToPersist := m.series.evictOlderThan(
 					clientmodel.TimestampFromTime(time.Now()).Add(-1 * s.evictAfter),
 				)
 				if allEvicted {
@@ -480,8 +480,8 @@ func (s *memorySeriesStorage) loop() {
 				}
 				s.fpLocker.Unlock(m.fp)
 				// Queue outside of lock!
-				if persistHeadChunk {
-					s.persistQueue <- persistRequest{m.fp, m.series.head()}
+				if headChunkToPersist != nil {
+					s.persistQueue <- persistRequest{m.fp, headChunkToPersist}
 				}
 			}
 
@@ -544,7 +544,7 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 			s.fpToSeries.del(fp)
 			s.numSeries.Dec()
 			s.seriesOps.WithLabelValues(memoryPurge).Inc()
-			s.persistence.unindexMetric(series.metric, fp)
+			s.persistence.unindexMetric(fp, series.metric)
 		} else if series.chunkDescsOffset != -1 {
 			series.chunkDescsOffset += numPurged - numDropped
 			if series.chunkDescsOffset < 0 {
