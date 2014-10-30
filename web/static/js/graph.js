@@ -58,7 +58,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.options["id"] = self.id;
   self.options["range_input"] = self.options["range_input"] || "1h";
   self.options["stacked_checked"] = self.options["stacked"] ? "checked" : "";
-  self.options["tab"] = self.options["tab"] || 0;
+  self.options["tab"] = self.options["tab"] || 1;
 
   // Draw graph controls and container from Handlebars template.
 
