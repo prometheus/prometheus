@@ -99,6 +99,7 @@ Prometheus.Graph.prototype.initialize = function() {
     return e.preventDefault();
   })
 
+  self.error = graphWrapper.find(".error");
   self.graph = graphWrapper.find(".graph");
   self.yAxis = graphWrapper.find(".y_axis");
   self.legend = graphWrapper.find(".legend");
@@ -159,7 +160,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
         self.expr.autocomplete({source: availableMetrics});
       },
       error: function() {
-        alert("Error loading available metrics!");
+        self.showError("Error loading available metrics!");
       },
   });
 };
@@ -275,6 +276,7 @@ Prometheus.Graph.prototype.decreaseEnd = function() {
 
 Prometheus.Graph.prototype.submitQuery = function() {
   var self = this;
+  self.clearError();
   if (!self.expr.val()) {
     return;
   }
@@ -312,7 +314,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
       success: success,
       error: function(xhr, resp) {
         if (resp != "abort") {
-          alert("Error executing query: " + resp);
+          self.showError("Error executing query: " + resp);
         }
       },
       complete: function() {
@@ -322,6 +324,18 @@ Prometheus.Graph.prototype.submitQuery = function() {
       }
   });
 };
+
+Prometheus.Graph.prototype.showError = function(msg) {
+  var self = this;
+  self.error.text(msg);
+  self.error.show();
+}
+
+Prometheus.Graph.prototype.clearError = function(msg) {
+  var self = this;
+  self.error.text('');
+  self.error.hide();
+}
 
 Prometheus.Graph.prototype.updateRefresh = function() {
   var self = this;
@@ -373,7 +387,7 @@ Prometheus.Graph.prototype.transformData = function(json) {
   self = this;
   var palette = new Rickshaw.Color.Palette();
   if (json.Type != "matrix") {
-    alert("Result is not of matrix type! Please enter a correct expression.");
+    self.showError("Result is not of matrix type! Please enter a correct expression.");
     return [];
   }
   var data = json.Value.map(function(ts) {
@@ -494,12 +508,12 @@ Prometheus.Graph.prototype.resizeGraph = function() {
 Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
   var self = this
   if (json.Type == "error") {
-    alert(json.Value);
+    self.showError(json.Value);
     return;
   }
   self.data = self.transformData(json);
   if (self.data.length == 0) {
-    alert("No datapoints found.");
+    self.showError("No datapoints found.");
     return;
   }
   self.graphTab.removeClass("reload");
@@ -536,10 +550,10 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     tBody.append("<tr><td>scalar</td><td>" + data.Value + "</td></tr>");
     break;
   case "error":
-    alert(data.Value);
+    self.showError(data.Value);
     break;
   default:
-    alert("Unsupported value type!");
+    self.showError("Unsupported value type!");
     break;
   }
 }
