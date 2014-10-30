@@ -14,6 +14,7 @@
               </div>
               <div class="eval_stats"></div>
               <img src="/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
+              <div class="error alert alert-error hide"></div>
             </div>
             <!--
               TODO: Convert this to Bootstrap navbar.  This requires Javascript
