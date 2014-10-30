@@ -201,3 +201,7 @@ input[name="end_input"], input[name="range_input"] {
   margin-left: -4px;
   margin-right: -4px;
 }
+
+.error {
+  margin: 2px;
+}
