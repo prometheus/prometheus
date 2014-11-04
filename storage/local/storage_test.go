@@ -492,7 +492,7 @@ func BenchmarkFuzz(b *testing.B) {
 	o := &MemorySeriesStorageOptions{
 		MemoryEvictionInterval:     time.Second,
 		MemoryRetentionPeriod:      10 * time.Minute,
-		PersistencePurgeInterval:   10 * time.Second,
+le		PersistencePurgeInterval:   10 * time.Second,
 		PersistenceRetentionPeriod: time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         3 * time.Second,

@@ -43,15 +43,13 @@ const (
 	headsFormatVersion = 1
 	headsMagicString   = "PrometheusHeads"
 
-	fileBufSize = 1 << 16 // 64kiB. TODO: Tweak.
+	fileBufSize = 1 << 16 // 64kiB.
 
 	chunkHeaderLen             = 17
 	chunkHeaderTypeOffset      = 0
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
 
-	// TODO: Consider making any of these configurable? At least tweak
-	// them. As of now, these are educated guesses.
 	indexingMaxBatchSize  = 1024 * 1024
 	indexingBatchTimeout  = 500 * time.Millisecond // Commit batch when idle for that long.
 	indexingQueueCapacity = 1024

@@ -98,7 +98,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 	numSeries.Set(float64(fpToSeries.length()))
 
 	return &memorySeriesStorage{
-		fpLocker:   newFingerprintLocker(100), // TODO: Tweak value.
+		fpLocker:   newFingerprintLocker(256),
 		fpToSeries: fpToSeries,
 
 		loopStopping:       make(chan struct{}),
