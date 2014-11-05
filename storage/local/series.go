@@ -144,8 +144,13 @@ type memorySeries struct {
 	// special case: There are chunks on disk, but the offset to the
 	// chunkDescs in memory is unknown. Also, there is no overlap between
 	// chunks on disk and chunks in memory (implying that upon first
-	// persiting of a chunk in memory, the offset has to be set).
+	// persisting of a chunk in memory, the offset has to be set).
 	chunkDescsOffset int
+	// The savedFirstTime field is used as a fallback when the
+	// chunkDescsOffset is not 0. It can be used to save the firstTime of the
+	// first chunk before its chunk desc is evicted. In doubt, this field is
+	// just set to the oldest possible timestamp.
+	savedFirstTime clientmodel.Timestamp
 	// Whether the current head chunk has already been scheduled to be
 	// persisted. If true, the current head chunk must not be modified
 	// anymore.
@@ -159,11 +164,17 @@ type memorySeries struct {
 // newMemorySeries returns a pointer to a newly allocated memorySeries for the
 // given metric. reallyNew defines if the memorySeries is a genuinely new series
 // or (if false) a series for a metric being unarchived, i.e. a series that
-// existed before but has been evicted from memory.
-func newMemorySeries(m clientmodel.Metric, reallyNew bool) *memorySeries {
+// existed before but has been evicted from memory. If reallyNew is false,
+// firstTime is ignored (and set to the lowest possible timestamp instead - it
+// will be set properly upon the first eviction of chunkDescs).
+func newMemorySeries(m clientmodel.Metric, reallyNew bool, firstTime clientmodel.Timestamp) *memorySeries {
+	if reallyNew {
+		firstTime = math.MinInt64
+	}
 	s := memorySeries{
 		metric:             m,
 		headChunkPersisted: !reallyNew,
+		savedFirstTime:     firstTime,
 	}
 	if !reallyNew {
 		s.chunkDescsOffset = -1
@@ -252,6 +263,7 @@ func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool,
 		if iOldestNotEvicted != -1 {
 			lenToKeep := chunkDescEvictionFactor * (len(s.chunkDescs) - iOldestNotEvicted)
 			if lenToKeep < len(s.chunkDescs) {
+				s.savedFirstTime = s.firstTime()
 				lenEvicted := len(s.chunkDescs) - lenToKeep
 				s.chunkDescsOffset += lenEvicted
 				chunkDescOps.WithLabelValues(evict).Add(float64(lenEvicted))
@@ -470,7 +482,10 @@ func (s *memorySeries) values() metric.Values {
 // firstTime returns the timestamp of the first sample in the series. The caller
 // must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) firstTime() clientmodel.Timestamp {
-	return s.chunkDescs[0].firstTime()
+	if s.chunkDescsOffset == 0 && len(s.chunkDescs) > 0 {
+		return s.chunkDescs[0].firstTime()
+	}
+	return s.savedFirstTime
 }
 
 // lastTime returns the timestamp of the last sample in the series. The caller

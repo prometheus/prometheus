@@ -33,7 +33,7 @@ var (
 
 func newTestPersistence(t *testing.T) (*persistence, test.Closer) {
 	dir := test.NewTemporaryDirectory("test_persistence", t)
-	p, err := newPersistence(dir.Path(), 1024)
+	p, err := newPersistence(dir.Path(), 1024, false)
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
@@ -183,9 +183,9 @@ func TestCheckpointAndLoadSeriesMapAndHeads(t *testing.T) {
 
 	fpLocker := newFingerprintLocker(10)
 	sm := newSeriesMap()
-	s1 := newMemorySeries(m1, true)
-	s2 := newMemorySeries(m2, false)
-	s3 := newMemorySeries(m3, false)
+	s1 := newMemorySeries(m1, true, 0)
+	s2 := newMemorySeries(m2, false, 0)
+	s3 := newMemorySeries(m3, false, 0)
 	s1.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 1, Value: 3.14})
 	s3.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 2, Value: 2.7})
 	s3.headChunkPersisted = true
@@ -269,14 +269,17 @@ func TestGetFingerprintsModifiedBefore(t *testing.T) {
 		}
 	}
 
-	unarchived, err := p.unarchiveMetric(1)
+	unarchived, firstTime, err := p.unarchiveMetric(1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !unarchived {
 		t.Fatal("expected actual unarchival")
 	}
-	unarchived, err = p.unarchiveMetric(1)
+	if firstTime != 2 {
+		t.Errorf("expected first time 2, got %v", firstTime)
+	}
+	unarchived, firstTime, err = p.unarchiveMetric(1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,12 +538,15 @@ func TestIndexing(t *testing.T) {
 		verifyIndexedState(i, t, batches[i], indexedFpsToMetrics, p)
 		for fp, m := range b.fpToMetric {
 			p.unindexMetric(fp, m)
-			unarchived, err := p.unarchiveMetric(fp)
+			unarchived, firstTime, err := p.unarchiveMetric(fp)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !unarchived {
 				t.Errorf("%d. metric not unarchived", i)
+			}
+			if firstTime != 1 {
+				t.Errorf("%d. expected firstTime=1, got %v", i, firstTime)
 			}
 			delete(indexedFpsToMetrics, fp)
 		}

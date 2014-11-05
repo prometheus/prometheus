@@ -60,6 +60,8 @@ var (
 
 	checkpointInterval = flag.Duration("storage.checkpointInterval", 5*time.Minute, "The period at which the in-memory index of time series is checkpointed.")
 
+	storageDirty = flag.Bool("storage.dirty", false, "If set, the storage layer will perform crash recovery even if the last shutdown appears to be clean.")
+
 	notificationQueueCapacity = flag.Int("alertmanager.notificationQueueCapacity", 100, "The size of the queue for pending alert manager notifications.")
 
 	printVersion = flag.Bool("version", false, "print version information")
@@ -107,6 +109,7 @@ func NewPrometheus() *prometheus {
 		PersistencePurgeInterval:   *storagePurgeInterval,
 		PersistenceRetentionPeriod: *storageRetentionPeriod,
 		CheckpointInterval:         *checkpointInterval,
+		Dirty:                      *storageDirty,
 	}
 	memStorage, err := local.NewMemorySeriesStorage(o)
 	if err != nil {

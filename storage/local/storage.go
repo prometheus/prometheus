@@ -15,7 +15,6 @@
 package local
 
 import (
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -27,7 +26,10 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-const persistQueueCap = 1024
+const (
+	persistQueueCap = 1024
+	chunkLen        = 1024
+)
 
 type storageState uint
 
@@ -61,6 +63,7 @@ type memorySeriesStorage struct {
 	numSeries                    prometheus.Gauge
 	seriesOps                    *prometheus.CounterVec
 	ingestedSamplesCount         prometheus.Counter
+	invalidPreloadRequestsCount  prometheus.Counter
 	purgeDuration, evictDuration prometheus.Gauge
 }
 
@@ -74,12 +77,13 @@ type MemorySeriesStorageOptions struct {
 	PersistencePurgeInterval   time.Duration // How often to check for purging.
 	PersistenceRetentionPeriod time.Duration // Chunks at least that old are purged.
 	CheckpointInterval         time.Duration // How often to checkpoint the series map and head chunks.
+	Dirty                      bool          // Force the storage to consider itself dirty on startup.
 }
 
 // NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
 // has to be called to start the storage.
 func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
-	p, err := newPersistence(o.PersistenceStoragePath, 1024)
+	p, err := newPersistence(o.PersistenceStoragePath, chunkLen, o.Dirty)
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +153,12 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			Subsystem: subsystem,
 			Name:      "ingested_samples_total",
 			Help:      "The total number of samples ingested.",
+		}),
+		invalidPreloadRequestsCount: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "invalid_preload_requests_total",
+			Help:      "The total number of preload requests referring to a non-existent series. This is an indication of outdated label indexes.",
 		}),
 		purgeDuration: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -346,9 +356,10 @@ func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
 func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m clientmodel.Metric) *memorySeries {
 	series, ok := s.fpToSeries.get(fp)
 	if !ok {
-		unarchived, err := s.persistence.unarchiveMetric(fp)
+		unarchived, firstTime, err := s.persistence.unarchiveMetric(fp)
 		if err != nil {
 			glog.Errorf("Error unarchiving fingerprint %v: %v", fp, err)
+			s.persistence.setDirty(true)
 		}
 		if unarchived {
 			s.seriesOps.WithLabelValues(unarchive).Inc()
@@ -357,7 +368,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m cl
 			s.persistence.indexMetric(fp, m)
 			s.seriesOps.WithLabelValues(create).Inc()
 		}
-		series = newMemorySeries(m, !unarchived)
+		series = newMemorySeries(m, !unarchived, firstTime)
 		s.fpToSeries.put(fp, series)
 		s.numSeries.Inc()
 	}
@@ -389,7 +400,8 @@ func (s *memorySeriesStorage) preloadChunksForRange(
 			return nil, err
 		}
 		if !has {
-			return nil, fmt.Errorf("requested preload for non-existent series %v", fp)
+			s.invalidPreloadRequestsCount.Inc()
+			return nil, nil
 		}
 		if from.Add(-stalenessDelta).Before(last) && through.Add(stalenessDelta).After(first) {
 			metric, err := s.persistence.getArchivedMetric(fp)
@@ -421,8 +433,7 @@ func (s *memorySeriesStorage) handlePersistQueue() {
 		if err != nil {
 			s.persistErrors.WithLabelValues(err.Error()).Inc()
 			glog.Error("Error persisting chunk: ", err)
-			glog.Error("The storage is now inconsistent. Prepare for disaster.")
-			// TODO: Remove respective chunkDesc to at least be consistent?
+			s.persistence.setDirty(true)
 			continue
 		}
 		req.chunkDesc.unpin()
@@ -474,6 +485,7 @@ func (s *memorySeriesStorage) loop() {
 						m.fp, m.series.metric, m.series.firstTime(), m.series.lastTime(),
 					); err != nil {
 						glog.Errorf("Error archiving metric %v: %v", m.series.metric, err)
+						s.persistence.setDirty(true)
 					} else {
 						s.seriesOps.WithLabelValues(archive).Inc()
 					}
@@ -535,6 +547,7 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 	numDropped, allDropped, err := s.persistence.dropChunks(fp, beforeTime)
 	if err != nil {
 		glog.Error("Error purging persisted chunks: ", err)
+		s.persistence.setDirty(true)
 	}
 
 	// Purge chunks from memory accordingly.
@@ -563,6 +576,7 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 	if allDropped {
 		if err := s.persistence.dropArchivedMetric(fp); err != nil {
 			glog.Errorf("Error dropping archived metric for fingerprint %v: %v", fp, err)
+			s.persistence.setDirty(true)
 		} else {
 			s.seriesOps.WithLabelValues(archivePurge).Inc()
 		}
@@ -591,6 +605,7 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	ch <- s.numSeries.Desc()
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
+	ch <- s.invalidPreloadRequestsCount.Desc()
 	ch <- s.purgeDuration.Desc()
 	ch <- s.evictDuration.Desc()
 
@@ -610,6 +625,7 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	ch <- s.numSeries
 	s.seriesOps.Collect(ch)
 	ch <- s.ingestedSamplesCount
+	ch <- s.invalidPreloadRequestsCount
 	ch <- s.purgeDuration
 	ch <- s.evictDuration
 
