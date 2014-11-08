@@ -841,6 +841,9 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset)); err != nil {
 				return
 			}
+			if _, err = codable.EncodeVarint(w, int64(m.series.savedFirstTime)); err != nil {
+				return
+			}
 			if _, err = codable.EncodeVarint(w, int64(len(m.series.chunkDescs))); err != nil {
 				return
 			}
@@ -973,6 +976,12 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 			p.dirty = true
 			return sm, nil
 		}
+		savedFirstTime, err := binary.ReadVarint(r)
+		if err != nil {
+			glog.Warning("Could not decode saved first time:", err)
+			p.dirty = true
+			return sm, nil
+		}
 		numChunkDescs, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode number of chunk descriptors:", err)
@@ -1023,6 +1032,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 			metric:             clientmodel.Metric(metric),
 			chunkDescs:         chunkDescs,
 			chunkDescsOffset:   int(chunkDescsOffset),
+			savedFirstTime:     clientmodel.Timestamp(savedFirstTime),
 			headChunkPersisted: headChunkPersisted,
 		}
 	}
