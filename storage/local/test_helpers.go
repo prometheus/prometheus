@@ -38,7 +38,6 @@ func NewTestStorage(t testing.TB) (Storage, test.Closer) {
 	o := &MemorySeriesStorageOptions{
 		MemoryEvictionInterval:     time.Minute,
 		MemoryRetentionPeriod:      time.Hour,
-		PersistencePurgeInterval:   time.Hour,
 		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         time.Hour,

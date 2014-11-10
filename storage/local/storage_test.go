@@ -44,7 +44,6 @@ func TestLoop(t *testing.T) {
 	o := &MemorySeriesStorageOptions{
 		MemoryEvictionInterval:     100 * time.Millisecond,
 		MemoryRetentionPeriod:      time.Hour,
-		PersistencePurgeInterval:   150 * time.Millisecond,
 		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         250 * time.Millisecond,
@@ -492,7 +491,6 @@ func BenchmarkFuzz(b *testing.B) {
 	o := &MemorySeriesStorageOptions{
 		MemoryEvictionInterval:     time.Second,
 		MemoryRetentionPeriod:      10 * time.Minute,
-		PersistencePurgeInterval:   10 * time.Second,
 		PersistenceRetentionPeriod: time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         3 * time.Second,

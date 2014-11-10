@@ -55,7 +55,6 @@ var (
 	memoryEvictionInterval = flag.Duration("storage.memory.evictionInterval", 15*time.Minute, "The period at which old data is evicted from memory.")
 	memoryRetentionPeriod  = flag.Duration("storage.memory.retentionPeriod", time.Hour, "The period of time to retain in memory during evictions.")
 
-	storagePurgeInterval   = flag.Duration("storage.purgeInterval", time.Hour, "The period at which old data is deleted completely from storage.")
 	storageRetentionPeriod = flag.Duration("storage.retentionPeriod", 15*24*time.Hour, "The period of time to retain in storage.")
 
 	checkpointInterval = flag.Duration("storage.checkpointInterval", 5*time.Minute, "The period at which the in-memory index of time series is checkpointed.")
@@ -119,7 +118,6 @@ func NewPrometheus() *prometheus {
 		MemoryEvictionInterval:     *memoryEvictionInterval,
 		MemoryRetentionPeriod:      *memoryRetentionPeriod,
 		PersistenceStoragePath:     *metricsStoragePath,
-		PersistencePurgeInterval:   *storagePurgeInterval,
 		PersistenceRetentionPeriod: *storageRetentionPeriod,
 		CheckpointInterval:         *checkpointInterval,
 		Dirty:                      *storageDirty,
