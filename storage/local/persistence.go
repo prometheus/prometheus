@@ -86,11 +86,6 @@ type persistence struct {
 	basePath string
 	chunkLen int
 
-	// archiveMtx protects the archiving-related methods archiveMetric,
-	// unarchiveMetric, dropArchiveMetric, and getFingerprintsModifiedBefore
-	// from concurrent calls.
-	archiveMtx sync.Mutex
-
 	archivedFingerprintToMetrics   *index.FingerprintMetricIndex
 	archivedFingerprintToTimeRange *index.FingerprintTimeRangeIndex
 	labelPairToFingerprints        *index.LabelPairFingerprintIndex
@@ -1155,13 +1150,10 @@ func (p *persistence) waitForIndexing() {
 
 // archiveMetric persists the mapping of the given fingerprint to the given
 // metric, together with the first and last timestamp of the series belonging to
-// the metric. This method is goroutine-safe.
+// the metric. The caller must have locked the fingerprint.
 func (p *persistence) archiveMetric(
 	fp clientmodel.Fingerprint, m clientmodel.Metric, first, last clientmodel.Timestamp,
 ) error {
-	p.archiveMtx.Lock()
-	defer p.archiveMtx.Unlock()
-
 	if err := p.archivedFingerprintToMetrics.Put(codable.Fingerprint(fp), codable.Metric(m)); err != nil {
 		p.setDirty(true)
 		return err
@@ -1196,12 +1188,6 @@ func (p *persistence) updateArchivedTimeRange(
 // that have live samples before the provided timestamp. This method is
 // goroutine-safe.
 func (p *persistence) getFingerprintsModifiedBefore(beforeTime clientmodel.Timestamp) ([]clientmodel.Fingerprint, error) {
-	// The locking makes sure archivedFingerprintToTimeRange won't be
-	// mutated while being iterated over (which will probably not result in
-	// races, but might still yield weird results).
-	p.archiveMtx.Lock()
-	defer p.archiveMtx.Unlock()
-
 	var fp codable.Fingerprint
 	var tr codable.TimeRange
 	fps := []clientmodel.Fingerprint{}
@@ -1229,16 +1215,14 @@ func (p *persistence) getArchivedMetric(fp clientmodel.Fingerprint) (clientmodel
 
 // dropArchivedMetric deletes an archived fingerprint and its corresponding
 // metric entirely. It also queues the metric for un-indexing (no need to call
-// unindexMetric for the deleted metric.)  This method is goroutine-safe.
+// unindexMetric for the deleted metric.)  The caller must have locked the
+// fingerprint.
 func (p *persistence) dropArchivedMetric(fp clientmodel.Fingerprint) (err error) {
 	defer func() {
 		if err != nil {
 			p.setDirty(true)
 		}
 	}()
-
-	p.archiveMtx.Lock()
-	defer p.archiveMtx.Unlock()
 
 	metric, err := p.getArchivedMetric(fp)
 	if err != nil || metric == nil {
@@ -1257,10 +1241,17 @@ func (p *persistence) dropArchivedMetric(fp clientmodel.Fingerprint) (err error)
 // unarchiveMetric deletes an archived fingerprint and its metric, but (in
 // contrast to dropArchivedMetric) does not un-index the metric.  If a metric
 // was actually deleted, the method returns true and the first time of the
-// deleted metric. This method is goroutine-safe.
-func (p *persistence) unarchiveMetric(fp clientmodel.Fingerprint) (bool, clientmodel.Timestamp, error) {
-	p.archiveMtx.Lock()
-	defer p.archiveMtx.Unlock()
+// deleted metric. The caller must have locked the fingerprint.
+func (p *persistence) unarchiveMetric(fp clientmodel.Fingerprint) (
+	deletedAnything bool,
+	firstDeletedTime clientmodel.Timestamp,
+	err error,
+) {
+	defer func() {
+		if err != nil {
+			p.setDirty(true)
+		}
+	}()
 
 	firstTime, _, has, err := p.archivedFingerprintToTimeRange.Lookup(fp)
 	if err != nil || !has {

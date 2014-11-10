@@ -359,7 +359,6 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m cl
 		unarchived, firstTime, err := s.persistence.unarchiveMetric(fp)
 		if err != nil {
 			glog.Errorf("Error unarchiving fingerprint %v: %v", fp, err)
-			s.persistence.setDirty(true)
 		}
 		if unarchived {
 			s.seriesOps.WithLabelValues(unarchive).Inc()
@@ -374,16 +373,6 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m cl
 	}
 	return series
 }
-
-/*
-func (s *memorySeriesStorage) preloadChunksAtTime(fp clientmodel.Fingerprint, ts clientmodel.Timestamp) (chunkDescs, error) {
-	series, ok := s.fpToSeries.get(fp)
-	if !ok {
-		panic("requested preload for non-existent series")
-	}
-	return series.preloadChunksAtTime(ts, s.persistence)
-}
-*/
 
 func (s *memorySeriesStorage) preloadChunksForRange(
 	fp clientmodel.Fingerprint,
