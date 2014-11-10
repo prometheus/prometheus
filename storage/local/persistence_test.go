@@ -138,9 +138,12 @@ func TestPersistLoadDropChunks(t *testing.T) {
 	}
 	// Drop half of the chunks.
 	for fp, expectedChunks := range fpToChunks {
-		numDropped, allDropped, err := p.dropChunks(fp, 5)
+		firstTime, numDropped, allDropped, err := p.dropChunks(fp, 5)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if firstTime != 5 {
+			t.Errorf("want first time 5, got %d", firstTime)
 		}
 		if numDropped != 5 {
 			t.Errorf("want 5 dropped chunks, got %v", numDropped)
@@ -164,7 +167,10 @@ func TestPersistLoadDropChunks(t *testing.T) {
 	}
 	// Drop all the chunks.
 	for fp := range fpToChunks {
-		numDropped, allDropped, err := p.dropChunks(fp, 100)
+		firstTime, numDropped, allDropped, err := p.dropChunks(fp, 100)
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -259,7 +259,8 @@ func (p *persistence) setDirty(dirty bool) {
 
 // crashRecovery is called by loadSeriesMapAndHeads if the persistence appears
 // to be dirty after the loading (either because the loading resulted in an
-// error or because the persistence was dirty from the start).
+// error or because the persistence was dirty from the start). Not goroutine
+// safe. Only call before anything else is running.
 func (p *persistence) crashRecovery(fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) error {
 	glog.Warning("Starting crash recovery. Prometheus is inoperational until complete.")
 
@@ -1040,42 +1041,56 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 }
 
 // dropChunks deletes all chunks from a series whose last sample time is before
-// beforeTime. It returns the number of deleted chunks and true if all chunks of
-// the series have been deleted.  It is the caller's responsibility to make sure
-// nothing is persisted or loaded for the same fingerprint concurrently.
-func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (int, bool, error) {
+// beforeTime. It returns the timestamp of the first sample in the oldest chunk
+// _not_ dropped, the number of deleted chunks, and true if all chunks of the
+// series have been deleted (in which case the returned timestamp will be 0 and
+// must be ignored).  It is the caller's responsibility to make sure nothing is
+// persisted or loaded for the same fingerprint concurrently.
+func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (
+	firstTimeNotDropped clientmodel.Timestamp,
+	numDropped int,
+	allDropped bool,
+	err error,
+) {
+	defer func() {
+		if err != nil {
+			p.setDirty(true)
+		}
+	}()
 	f, err := p.openChunkFileForReading(fp)
 	if os.IsNotExist(err) {
-		return 0, true, nil
+		return 0, 0, true, nil
 	}
 	if err != nil {
-		return 0, false, err
+		return 0, 0, false, err
 	}
 	defer f.Close()
 
 	// Find the first chunk that should be kept.
 	var i int
+	var firstTime clientmodel.Timestamp
 	for ; ; i++ {
-		_, err := f.Seek(p.offsetForChunkIndex(i)+chunkHeaderLastTimeOffset, os.SEEK_SET)
+		_, err := f.Seek(p.offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, os.SEEK_SET)
 		if err != nil {
-			return 0, false, err
+			return 0, 0, false, err
 		}
-		lastTimeBuf := make([]byte, 8)
-		_, err = io.ReadAtLeast(f, lastTimeBuf, 8)
+		timeBuf := make([]byte, 16)
+		_, err = io.ReadAtLeast(f, timeBuf, 16)
 		if err == io.EOF {
 			// We ran into the end of the file without finding any chunks that should
 			// be kept. Remove the whole file.
 			chunkOps.WithLabelValues(purge).Add(float64(i))
 			if err := os.Remove(f.Name()); err != nil {
-				return 0, true, err
+				return 0, 0, true, err
 			}
-			return i, true, nil
+			return 0, i, true, nil
 		}
 		if err != nil {
-			return 0, false, err
+			return 0, 0, false, err
 		}
-		lastTime := clientmodel.Timestamp(binary.LittleEndian.Uint64(lastTimeBuf))
+		lastTime := clientmodel.Timestamp(binary.LittleEndian.Uint64(timeBuf[8:]))
 		if !lastTime.Before(beforeTime) {
+			firstTime = clientmodel.Timestamp(binary.LittleEndian.Uint64(timeBuf))
 			chunkOps.WithLabelValues(purge).Add(float64(i))
 			break
 		}
@@ -1084,25 +1099,25 @@ func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmo
 	// We've found the first chunk that should be kept. Seek backwards to the
 	// beginning of its header and start copying everything from there into a new
 	// file.
-	_, err = f.Seek(-(chunkHeaderLastTimeOffset + 8), os.SEEK_CUR)
+	_, err = f.Seek(-(chunkHeaderFirstTimeOffset + 16), os.SEEK_CUR)
 	if err != nil {
-		return 0, false, err
+		return 0, 0, false, err
 	}
 
 	temp, err := os.OpenFile(p.tempFileNameForFingerprint(fp), os.O_WRONLY|os.O_CREATE, 0640)
 	if err != nil {
-		return 0, false, err
+		return 0, 0, false, err
 	}
 	defer temp.Close()
 
 	if _, err := io.Copy(temp, f); err != nil {
-		return 0, false, err
+		return 0, 0, false, err
 	}
 
 	if err := os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp)); err != nil {
-		return 0, false, err
+		return 0, 0, false, err
 	}
-	return i, false, nil
+	return firstTime, i, false, nil
 }
 
 // indexMetric queues the given metric for addition to the indexes needed by
@@ -1148,9 +1163,11 @@ func (p *persistence) archiveMetric(
 	defer p.archiveMtx.Unlock()
 
 	if err := p.archivedFingerprintToMetrics.Put(codable.Fingerprint(fp), codable.Metric(m)); err != nil {
+		p.setDirty(true)
 		return err
 	}
 	if err := p.archivedFingerprintToTimeRange.Put(codable.Fingerprint(fp), codable.TimeRange{First: first, Last: last}); err != nil {
+		p.setDirty(true)
 		return err
 	}
 	return nil
@@ -1164,6 +1181,15 @@ func (p *persistence) hasArchivedMetric(fp clientmodel.Fingerprint) (
 ) {
 	firstTime, lastTime, hasMetric, err = p.archivedFingerprintToTimeRange.Lookup(fp)
 	return
+}
+
+// updateArchivedTimeRange updates an archived time range. The caller must make
+// sure that the fingerprint is currently archived (the time range will
+// otherwise be added without the corresponding metric in the archive).
+func (p *persistence) updateArchivedTimeRange(
+	fp clientmodel.Fingerprint, first, last clientmodel.Timestamp,
+) error {
+	return p.archivedFingerprintToTimeRange.Put(codable.Fingerprint(fp), codable.TimeRange{First: first, Last: last})
 }
 
 // getFingerprintsModifiedBefore returns the fingerprints of archived timeseries
@@ -1204,7 +1230,13 @@ func (p *persistence) getArchivedMetric(fp clientmodel.Fingerprint) (clientmodel
 // dropArchivedMetric deletes an archived fingerprint and its corresponding
 // metric entirely. It also queues the metric for un-indexing (no need to call
 // unindexMetric for the deleted metric.)  This method is goroutine-safe.
-func (p *persistence) dropArchivedMetric(fp clientmodel.Fingerprint) error {
+func (p *persistence) dropArchivedMetric(fp clientmodel.Fingerprint) (err error) {
+	defer func() {
+		if err != nil {
+			p.setDirty(true)
+		}
+	}()
+
 	p.archiveMtx.Lock()
 	defer p.archiveMtx.Unlock()
 

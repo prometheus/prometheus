@@ -471,8 +471,8 @@ func TestFuzz(t *testing.T) {
 	}
 }
 
-// BenchmarkFuzz is the benchmark version TestFuzz. However, it will run several
-// append and verify operations in parallel, if GOMAXPROC is set
+// BenchmarkFuzz is the benchmark version of TestFuzz. However, it will run
+// several append and verify operations in parallel, if GOMAXPROC is set
 // accordingly. Also, the storage options are set such that evictions,
 // checkpoints, and purging will happen concurrently, too. This benchmark will
 // have a very long runtime (up to minutes). You can use it as an actual

@@ -485,7 +485,6 @@ func (s *memorySeriesStorage) loop() {
 						m.fp, m.series.metric, m.series.firstTime(), m.series.lastTime(),
 					); err != nil {
 						glog.Errorf("Error archiving metric %v: %v", m.series.metric, err)
-						s.persistence.setDirty(true)
 					} else {
 						s.seriesOps.WithLabelValues(archive).Inc()
 					}
@@ -523,7 +522,7 @@ func (s *memorySeriesStorage) loop() {
 			for _, fp := range persistedFPs {
 				select {
 				case <-s.loopStopping:
-					glog.Info("Interrupted purnging series.")
+					glog.Info("Interrupted purging series.")
 					return
 				default:
 					s.purgeSeries(fp, ts)
@@ -536,22 +535,22 @@ func (s *memorySeriesStorage) loop() {
 	}
 }
 
-// purgeSeries purges chunks older than persistenceRetentionPeriod from a
-// series. If the series contains no chunks after the purge, it is dropped
-// entirely.
+// purgeSeries purges chunks older than beforeTime from a series. If the series
+// contains no chunks after the purge, it is dropped entirely.
 func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
-	// First purge persisted chunks. We need to do that anyway.
-	numDropped, allDropped, err := s.persistence.dropChunks(fp, beforeTime)
-	if err != nil {
-		glog.Error("Error purging persisted chunks: ", err)
-		s.persistence.setDirty(true)
-	}
-
-	// Purge chunks from memory accordingly.
 	if series, ok := s.fpToSeries.get(fp); ok {
+		// Deal with series in memory.
+		if !series.firstTime().Before(beforeTime) {
+			// Oldest sample not old enough.
+			return
+		}
+		newFirstTime, numDropped, allDropped, err := s.persistence.dropChunks(fp, beforeTime)
+		if err != nil {
+			glog.Error("Error purging persisted chunks: ", err)
+		}
 		numPurged, allPurged := series.purgeOlderThan(beforeTime)
 		if allPurged && allDropped {
 			s.fpToSeries.del(fp)
@@ -559,6 +558,7 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 			s.seriesOps.WithLabelValues(memoryPurge).Inc()
 			s.persistence.unindexMetric(fp, series.metric)
 		} else if series.chunkDescsOffset != -1 {
+			series.savedFirstTime = newFirstTime
 			series.chunkDescsOffset += numPurged - numDropped
 			if series.chunkDescsOffset < 0 {
 				panic("dropped more chunks from persistence than from memory")
@@ -567,20 +567,30 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 		return
 	}
 
-	// If we arrive here, nothing was in memory, so the metric must have
-	// been archived. Drop the archived metric if there are no persisted
-	// chunks left. If we don't drop the archived metric, we should update
-	// the archivedFingerprintToTimeRange index according to the remaining
-	// chunks, but it's probably not worth the effort. Queries going beyond
-	// the purge cut-off can be truncated in a more direct fashion.
+	// Deal with archived series.
+	has, firstTime, lastTime, err := s.persistence.hasArchivedMetric(fp)
+	if err != nil {
+		glog.Error("Error looking up archived time range: ", err)
+		return
+	}
+	if !has || !firstTime.Before(beforeTime) {
+		// Oldest sample not old enough, or metric purged or unarchived in the meantime.
+		return
+	}
+
+	newFirstTime, _, allDropped, err := s.persistence.dropChunks(fp, beforeTime)
+	if err != nil {
+		glog.Error("Error purging persisted chunks: ", err)
+	}
 	if allDropped {
 		if err := s.persistence.dropArchivedMetric(fp); err != nil {
 			glog.Errorf("Error dropping archived metric for fingerprint %v: %v", fp, err)
-			s.persistence.setDirty(true)
-		} else {
-			s.seriesOps.WithLabelValues(archivePurge).Inc()
+			return
 		}
+		s.seriesOps.WithLabelValues(archivePurge).Inc()
+		return
 	}
+	s.persistence.updateArchivedTimeRange(fp, newFirstTime, lastTime)
 }
 
 // To expose persistQueueCap as metric:
