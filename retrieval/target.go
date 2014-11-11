@@ -207,6 +207,18 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clie
 
 // RunScraper implements Target.
 func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration) {
+	defer func() {
+		// Need to drain t.newBaseLabels to not make senders block during shutdown.
+		for {
+			select {
+			case <-t.newBaseLabels:
+				// Do nothing.
+			default:
+				return
+			}
+		}
+	}()
+
 	jitterTimer := time.NewTimer(time.Duration(float64(interval) * rand.Float64()))
 	select {
 	case <-jitterTimer.C:
