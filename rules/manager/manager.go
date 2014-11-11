@@ -126,13 +126,14 @@ func (m *ruleManager) Run() {
 			m.runIteration(m.results)
 			iterationDuration.Observe(float64(time.Since(start) / time.Millisecond))
 		case <-m.done:
-			glog.Info("Rule manager exiting...")
+			glog.Info("Rule manager stopped.")
 			return
 		}
 	}
 }
 
 func (m *ruleManager) Stop() {
+	glog.Info("Stopping rule manager...")
 	m.done <- true
 }
 

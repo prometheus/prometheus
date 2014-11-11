@@ -229,15 +229,12 @@ func (p *prometheus) Serve() {
 	if err := p.storage.Stop(); err != nil {
 		glog.Error("Error stopping local storage: ", err)
 	}
-	glog.Info("Local Storage: Done")
 
 	if p.remoteTSDBQueue != nil {
 		p.remoteTSDBQueue.Stop()
-		glog.Info("Remote Storage: Done")
 	}
 
 	p.notificationHandler.Stop()
-	glog.Info("Sundry Queues: Done")
 	glog.Info("See you next time!")
 }
 
@@ -258,9 +255,7 @@ func (p *prometheus) interruptHandler() {
 func (p *prometheus) close() {
 	glog.Info("Shutdown has been requested; subsytems are closing:")
 	p.targetManager.Stop()
-	glog.Info("Remote Target Manager: Done")
 	p.ruleManager.Stop()
-	glog.Info("Rule Executor: Done")
 
 	close(p.unwrittenSamples)
 	// Note: Before closing the remaining subsystems (storage, ...), we have

@@ -199,8 +199,10 @@ func (n *NotificationHandler) SubmitReqs(reqs NotificationReqs) {
 
 // Stop shuts down the notification handler.
 func (n *NotificationHandler) Stop() {
+	glog.Info("Stopping notification handler...")
 	close(n.pendingNotifications)
 	<-n.stopped
+	glog.Info("Notification handler stopped.")
 }
 
 // Describe implements prometheus.Collector.

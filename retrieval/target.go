@@ -223,6 +223,7 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 	select {
 	case <-jitterTimer.C:
 	case <-t.stopScraper:
+		jitterTimer.Stop()
 		return
 	}
 	jitterTimer.Stop()
@@ -232,16 +233,32 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 
 	t.lastScrape = time.Now()
 	t.scrape(ingester)
+
+	// Explanation of the contraption below:
+	//
+	// In case t.newBaseLabels or t.stopScraper have something to receive,
+	// we want to read from those channels rather than starting a new scrape
+	// (which might take very long). That's why the outer select has no
+	// ticker.C. Should neither t.newBaseLabels nor t.stopScraper have
+	// anything to receive, we go into the inner select, where ticker.C is
+	// in the mix.
 	for {
 		select {
-		case <-ticker.C:
-			targetIntervalLength.WithLabelValues(interval.String()).Observe(float64(time.Since(t.lastScrape) / time.Second))
-			t.lastScrape = time.Now()
-			t.scrape(ingester)
 		case newBaseLabels := <-t.newBaseLabels:
 			t.baseLabels = newBaseLabels
 		case <-t.stopScraper:
 			return
+		default:
+			select {
+			case newBaseLabels := <-t.newBaseLabels:
+				t.baseLabels = newBaseLabels
+			case <-t.stopScraper:
+				return
+			case <-ticker.C:
+				targetIntervalLength.WithLabelValues(interval.String()).Observe(float64(time.Since(t.lastScrape) / time.Second))
+				t.lastScrape = time.Now()
+				t.scrape(ingester)
+			}
 		}
 	}
 }

@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"sync"
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
 
@@ -105,13 +106,22 @@ func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 }
 
 func (m *targetManager) Stop() {
-	glog.Info("Target manager exiting...")
-	for _, p := range m.poolsByJob {
-		p.Stop()
+	glog.Info("Stopping target manager...")
+	var wg sync.WaitGroup
+	for j, p := range m.poolsByJob {
+		wg.Add(1)
+		go func(j string, p *TargetPool) {
+			defer wg.Done()
+			glog.Infof("Stopping target pool %q...", j)
+			p.Stop()
+			glog.Infof("Target pool %q stopped.", j)
+		}(j, p)
 	}
+	wg.Wait()
+	glog.Info("Target manager stopped.")
 }
 
-// TODO: Not really thread-safe. Only used in /status page for now.
+// TODO: Not goroutine-safe. Only used in /status page for now.
 func (m *targetManager) Pools() map[string]*TargetPool {
 	return m.poolsByJob
 }

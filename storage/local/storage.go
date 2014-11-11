@@ -181,6 +181,7 @@ func (s *memorySeriesStorage) Start() {
 
 // Stop implements Storage.
 func (s *memorySeriesStorage) Stop() error {
+	glog.Info("Stopping local storage...")
 	glog.Info("Stopping maintenance loop...")
 	close(s.loopStopping)
 	<-s.loopStopped
@@ -197,6 +198,7 @@ func (s *memorySeriesStorage) Stop() error {
 	if err := s.persistence.close(); err != nil {
 		return err
 	}
+	glog.Info("Local storage stopped.")
 	return nil
 }
 

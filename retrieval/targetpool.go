@@ -71,7 +71,6 @@ func (p *TargetPool) Run() {
 			p.addTarget(newTarget)
 		case stopped := <-p.done:
 			p.ReplaceTargets([]Target{})
-			glog.Info("TargetPool exiting...")
 			close(stopped)
 			return
 		}
@@ -115,13 +114,20 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 		}
 	}
 	// Stop any targets no longer present.
+	var wg sync.WaitGroup
 	for k, oldTarget := range p.targetsByAddress {
 		if !newTargetAddresses.Has(k) {
-			glog.V(1).Info("Stopping scraper for target ", k)
-			oldTarget.StopScraper()
-			delete(p.targetsByAddress, k)
+			wg.Add(1)
+			go func(k string, oldTarget Target) {
+				defer wg.Done()
+				glog.V(1).Infof("Stopping scraper for target %s...", k)
+				oldTarget.StopScraper()
+				delete(p.targetsByAddress, k)
+				glog.V(1).Infof("Scraper for target %s stopped.", k)
+			}(k, oldTarget)
 		}
 	}
+	wg.Wait()
 }
 
 func (p *TargetPool) Targets() []Target {

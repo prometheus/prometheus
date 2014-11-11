@@ -122,12 +122,13 @@ func (t *TSDBQueueManager) Queue(s clientmodel.Samples) {
 // Stop stops sending samples to the TSDB and waits for pending sends to
 // complete.
 func (t *TSDBQueueManager) Stop() {
-	glog.Infof("TSDB queue manager shutting down...")
+	glog.Infof("Stopping remote storage...")
 	close(t.queue)
 	<-t.drained
 	for i := 0; i < maxConcurrentSends; i++ {
 		t.sendSemaphore <- true
 	}
+	glog.Info("Remote storage stopped.")
 }
 
 // Describe implements prometheus.Collector.
