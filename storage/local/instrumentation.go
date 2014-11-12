@@ -46,11 +46,13 @@ const (
 	opTypeLabel = "type"
 
 	// Op-types for seriesOps.
-	create       = "create"
-	archive      = "archive"
-	unarchive    = "unarchive"
-	memoryPurge  = "purge_from_memory"
-	archivePurge = "purge_from_archive"
+	create             = "create"
+	archive            = "archive"
+	unarchive          = "unarchive"
+	memoryPurge        = "purge_from_memory"
+	archivePurge       = "purge_from_archive"
+	memoryMaintenance  = "maintenance_in_memory"
+	archiveMaintenance = "maintenance_in_archive"
 
 	// Op-types for chunkOps.
 	createAndPin    = "create" // A chunkDesc creation with refCount=1.

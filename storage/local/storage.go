@@ -580,8 +580,10 @@ loop:
 		case fp := <-memoryFingerprints:
 			s.purgeSeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-1*s.purgeAfter))
 			// TODO: Move chunkdesc eviction and archiving here.
+			s.seriesOps.WithLabelValues(memoryMaintenance).Inc()
 		case fp := <-archivedFingerprints:
 			s.purgeSeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-1*s.purgeAfter))
+			s.seriesOps.WithLabelValues(archiveMaintenance).Inc()
 		}
 	}
 	// Wait until both channels are closed.
