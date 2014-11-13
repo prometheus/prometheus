@@ -72,6 +72,7 @@ func TestChunk(t *testing.T) {
 	s.AppendSamples(samples)
 
 	for m := range s.(*memorySeriesStorage).fpToSeries.iter() {
+		s.(*memorySeriesStorage).fpLocker.Lock(m.fp)
 		for i, v := range m.series.values() {
 			if samples[i].Timestamp != v.Timestamp {
 				t.Fatalf("%d. Got %v; want %v", i, v.Timestamp, samples[i].Timestamp)
@@ -80,6 +81,7 @@ func TestChunk(t *testing.T) {
 				t.Fatalf("%d. Got %v; want %v", i, v.Value, samples[i].Value)
 			}
 		}
+		s.(*memorySeriesStorage).fpLocker.Unlock(m.fp)
 	}
 }
 
