@@ -29,6 +29,11 @@ import (
 const (
 	persistQueueCap = 1024
 	chunkLen        = 1024
+
+	// See waitForNextFP.
+	fpMaxWaitDuration = 10 * time.Second
+	fpMinWaitDuration = 5 * time.Millisecond // ~ hard disk seek time.
+	fpMaxSweepTime    = 6 * time.Hour
 )
 
 type storageState uint
@@ -434,20 +439,26 @@ func (s *memorySeriesStorage) handlePersistQueue() {
 
 // waitForNextFP waits an estimated duration, after which we want to process
 // another fingerprint so that we will process all fingerprints in a tenth of
-// s.purgeAfter, e.g. if we want to purge after 10d, we want to cycle through
-// all fingerprints within 1d. However, this method will always wait for at
-// least 10ms and never longer than 1m. If s.loopStopped is closed, it will
-// return false immediately. The estimation is based on the total number of
-// fingerprints as passed in.
+// s.purgeAfter assuming that the system is doing nothing else, e.g. if we want
+// to purge after 40h, we want to cycle through all fingerprints within
+// 4h. However, the maximum sweep time is capped at fpMaxSweepTime. Furthermore,
+// this method will always wait for at least fpMinWaitDuration and never longer
+// than fpMaxWaitDuration. If s.loopStopped is closed, it will return false
+// immediately. The estimation is based on the total number of fingerprints as
+// passed in.
 func (s *memorySeriesStorage) waitForNextFP(numberOfFPs int) bool {
-	d := time.Minute
+	d := fpMaxWaitDuration
 	if numberOfFPs != 0 {
-		d = s.purgeAfter / time.Duration(numberOfFPs*10)
-		if d < 10*time.Millisecond {
-			d = 10 * time.Millisecond
+		sweepTime := s.purgeAfter / 10
+		if sweepTime > fpMaxSweepTime {
+			sweepTime = fpMaxSweepTime
 		}
-		if d > time.Minute {
-			d = time.Minute
+		d = sweepTime / time.Duration(numberOfFPs)
+		if d < fpMinWaitDuration {
+			d = fpMinWaitDuration
+		}
+		if d > fpMaxWaitDuration {
+			d = fpMaxWaitDuration
 		}
 	}
 	t := time.NewTimer(d)
@@ -579,7 +590,7 @@ loop:
 			glog.Infof("Done evicting chunks in %v.", duration)
 		case fp := <-memoryFingerprints:
 			s.purgeSeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-1*s.purgeAfter))
-			// TODO: Move chunkdesc eviction and archiving here.
+			// TODO: Move chunkdesc eviction, head chunk closing, and archiving here.
 			s.seriesOps.WithLabelValues(memoryMaintenance).Inc()
 		case fp := <-archivedFingerprints:
 			s.purgeSeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-1*s.purgeAfter))
