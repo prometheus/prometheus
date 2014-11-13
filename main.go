@@ -42,18 +42,18 @@ const deletionBatchSize = 100
 
 // Commandline flags.
 var (
-	configFile         = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
-	metricsStoragePath = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
+	configFile = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
 
 	alertmanagerURL = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
+
+	metricsStoragePath = flag.String("storage.path", "/tmp/metrics", "Base path for metrics storage.")
 
 	remoteTSDBUrl     = flag.String("storage.remote.url", "", "The URL of the OpenTSDB instance to send samples to.")
 	remoteTSDBTimeout = flag.Duration("storage.remote.timeout", 30*time.Second, "The timeout to use when sending samples to OpenTSDB.")
 
 	samplesQueueCapacity = flag.Int("storage.queue.samplesCapacity", 4096, "The size of the unwritten samples queue.")
 
-	memoryEvictionInterval = flag.Duration("storage.memory.evictionInterval", 15*time.Minute, "The period at which old data is evicted from memory.")
-	memoryRetentionPeriod  = flag.Duration("storage.memory.retentionPeriod", time.Hour, "The period of time to retain in memory during evictions.")
+	numMemoryChunks = flag.Int("storage.memoryChunks", 1024*1024, "How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.")
 
 	storageRetentionPeriod = flag.Duration("storage.retentionPeriod", 15*24*time.Hour, "The period of time to retain in storage.")
 
@@ -115,8 +115,7 @@ func NewPrometheus() *prometheus {
 	notificationHandler := notification.NewNotificationHandler(*alertmanagerURL, *notificationQueueCapacity)
 
 	o := &local.MemorySeriesStorageOptions{
-		MemoryEvictionInterval:     *memoryEvictionInterval,
-		MemoryRetentionPeriod:      *memoryRetentionPeriod,
+		MemoryChunks:               *numMemoryChunks,
 		PersistenceStoragePath:     *metricsStoragePath,
 		PersistenceRetentionPeriod: *storageRetentionPeriod,
 		CheckpointInterval:         *checkpointInterval,

@@ -225,90 +225,26 @@ func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair) []*
 	return chunkDescsToPersist
 }
 
-// evictOlderThan marks for eviction all chunks whose latest sample is older
-// than the given timestamp. It returns allEvicted as true if all chunks in the
-// series were immediately evicted (i.e. all chunks are older than the
-// timestamp, and none of the chunks was pinned).
-//
-// The method also evicts chunkDescs if there are chunkDescEvictionFactor times
-// more chunkDescs in the series than unevicted chunks. (The number of unevicted
-// chunks is considered the number of chunks between (and including) the oldest
-// chunk that could not be evicted immediately and the newest chunk in the
-// series, even if chunks in between were evicted.)
-//
-// Special considerations for the head chunk: If it has not been scheduled to be
-// persisted yet but is old enough for eviction, this method returns a pointer
-// to the descriptor of the head chunk to be persisted. (Otherwise, the method
-// returns nil.) The caller is then responsible for persisting the head
-// chunk. The internal state of this memorySeries is already set accordingly by
-// this method. Calling evictOlderThan for a series with a non-persisted head
-// chunk that is old enough for eviction will never evict all chunks
-// immediately, even if no chunk is pinned for other reasons, because the head
-// chunk is not persisted yet. A series old enough for archiving will require at
-// least two eviction runs to become ready for archiving: In the first run, its
-// head chunk is requested to be persisted. The next call of evictOlderThan will
-// then return true, provided that the series hasn't received new samples in the
-// meantime, the head chunk has now been persisted, and no chunk is pinned for
-// other reasons.
-//
-// The caller must have locked the fingerprint of the series.
-func (s *memorySeries) evictOlderThan(t clientmodel.Timestamp) (allEvicted bool, headChunkToPersist *chunkDesc) {
-	allEvicted = true
-	iOldestNotEvicted := -1
-
-	defer func() {
-		// Evict chunkDescs if there are chunkDescEvictionFactor times
-		// more than non-evicted chunks and we are not going to archive
-		// the whole series anyway.
-		if iOldestNotEvicted != -1 {
-			lenToKeep := chunkDescEvictionFactor * (len(s.chunkDescs) - iOldestNotEvicted)
-			if lenToKeep < len(s.chunkDescs) {
-				s.savedFirstTime = s.firstTime()
-				lenEvicted := len(s.chunkDescs) - lenToKeep
-				s.chunkDescsOffset += lenEvicted
-				chunkDescOps.WithLabelValues(evict).Add(float64(lenEvicted))
-				atomic.AddInt64(&numMemChunkDescs, -int64(lenEvicted))
-				s.chunkDescs = append(
-					make([]*chunkDesc, 0, lenToKeep),
-					s.chunkDescs[lenEvicted:]...,
-				)
-			}
-		}
-	}()
-
-	// For now, always drop the entire range from oldest to t.
-	for i, cd := range s.chunkDescs {
-		if !cd.lastTime().Before(t) {
-			if iOldestNotEvicted == -1 {
-				iOldestNotEvicted = i
-			}
-			return false, nil
-		}
-		if cd.isEvicted() {
-			continue
-		}
-		if !s.headChunkPersisted && i == len(s.chunkDescs)-1 {
-			// This is a non-persisted head chunk that is old enough
-			// for eviction. Request it to be persisted:
-			headChunkToPersist = cd
-			s.headChunkPersisted = true
-			// Since we cannot modify the head chunk from now on, we
-			// don't need to bother with cloning anymore.
-			s.headChunkUsedByIterator = false
-		}
-		if !cd.evictOnUnpin() {
-			if iOldestNotEvicted == -1 {
-				iOldestNotEvicted = i
-			}
-			allEvicted = false
-		}
+// evictChunkDescs evicts chunkDescs if there are chunkDescEvictionFactor times
+// more than non-evicted chunks. iOldestNotEvicted is the index within the
+// current chunkDescs of the oldest chunk that is not evicted.
+func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
+	lenToKeep := chunkDescEvictionFactor * (len(s.chunkDescs) - iOldestNotEvicted)
+	if lenToKeep < len(s.chunkDescs) {
+		s.savedFirstTime = s.firstTime()
+		lenEvicted := len(s.chunkDescs) - lenToKeep
+		s.chunkDescsOffset += lenEvicted
+		chunkDescOps.WithLabelValues(evict).Add(float64(lenEvicted))
+		atomic.AddInt64(&numMemChunkDescs, -int64(lenEvicted))
+		s.chunkDescs = append(
+			make([]*chunkDesc, 0, lenToKeep),
+			s.chunkDescs[lenEvicted:]...,
+		)
 	}
-	return allEvicted, headChunkToPersist
 }
 
-// purgeOlderThan removes chunkDescs older than t. It also evicts the chunks of
-// those chunkDescs (although that's probably not even necessary). It returns
-// the number of purged chunkDescs and true if all chunkDescs have been purged.
+// purgeOlderThan removes chunkDescs older than t. It returns the number of
+// purged chunkDescs and true if all chunkDescs have been purged.
 //
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) (int, bool) {
@@ -318,7 +254,6 @@ func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) (int, bool) {
 			keepIdx = i
 			break
 		}
-		s.chunkDescs[i].evictOnUnpin()
 	}
 	if keepIdx > 0 {
 		s.chunkDescs = append(make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx), s.chunkDescs[keepIdx:]...)
@@ -328,13 +263,13 @@ func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) (int, bool) {
 }
 
 // preloadChunks is an internal helper method.
-func (s *memorySeries) preloadChunks(indexes []int, p *persistence) ([]*chunkDesc, error) {
+func (s *memorySeries) preloadChunks(indexes []int, mss *memorySeriesStorage) ([]*chunkDesc, error) {
 	loadIndexes := []int{}
 	pinnedChunkDescs := make([]*chunkDesc, 0, len(indexes))
 	for _, idx := range indexes {
 		cd := s.chunkDescs[idx]
 		pinnedChunkDescs = append(pinnedChunkDescs, cd)
-		cd.pin() // Have to pin everything first to prevent concurrent evictOnUnpin later.
+		cd.pin(mss.evictRequests) // Have to pin everything first to prevent immediate eviction on chunk loading.
 		if cd.isEvicted() {
 			loadIndexes = append(loadIndexes, idx)
 		}
@@ -346,11 +281,12 @@ func (s *memorySeries) preloadChunks(indexes []int, p *persistence) ([]*chunkDes
 			panic("requested loading chunks from persistence in a situation where we must not have persisted data for chunk descriptors in memory")
 		}
 		fp := s.metric.Fingerprint()
-		chunks, err := p.loadChunks(fp, loadIndexes, s.chunkDescsOffset)
+		// TODO: Remove law-of-Demeter violation?
+		chunks, err := mss.persistence.loadChunks(fp, loadIndexes, s.chunkDescsOffset)
 		if err != nil {
 			// Unpin the chunks since we won't return them as pinned chunks now.
 			for _, cd := range pinnedChunkDescs {
-				cd.unpin()
+				cd.unpin(mss.evictRequests)
 			}
 			chunkOps.WithLabelValues(unpin).Add(float64(len(pinnedChunkDescs)))
 			return nil, err
@@ -400,14 +336,15 @@ func (s *memorySeries) preloadChunksAtTime(t clientmodel.Timestamp, p *persisten
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) preloadChunksForRange(
 	from clientmodel.Timestamp, through clientmodel.Timestamp,
-	fp clientmodel.Fingerprint, p *persistence,
+	fp clientmodel.Fingerprint, mss *memorySeriesStorage,
 ) ([]*chunkDesc, error) {
 	firstChunkDescTime := clientmodel.Timestamp(math.MaxInt64)
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
 	}
 	if s.chunkDescsOffset != 0 && from.Before(firstChunkDescTime) {
-		cds, err := p.loadChunkDescs(fp, firstChunkDescTime)
+		// TODO: Remove law-of-demeter violation?
+		cds, err := mss.persistence.loadChunkDescs(fp, firstChunkDescTime)
 		if err != nil {
 			return nil, err
 		}
@@ -438,7 +375,7 @@ func (s *memorySeries) preloadChunksForRange(
 	for i := fromIdx; i <= throughIdx; i++ {
 		pinIndexes = append(pinIndexes, i)
 	}
-	return s.preloadChunks(pinIndexes, p)
+	return s.preloadChunks(pinIndexes, mss)
 }
 
 // newIterator returns a new SeriesIterator. The caller must have locked the
@@ -465,18 +402,6 @@ func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
 // locked the fingerprint of the memorySeries.
 func (s *memorySeries) head() *chunkDesc {
 	return s.chunkDescs[len(s.chunkDescs)-1]
-}
-
-// values returns all values in the series. The caller must have locked the
-// fingerprint of the memorySeries.
-func (s *memorySeries) values() metric.Values {
-	var values metric.Values
-	for _, cd := range s.chunkDescs {
-		for sample := range cd.chunk.values() {
-			values = append(values, *sample)
-		}
-	}
-	return values
 }
 
 // firstTime returns the timestamp of the first sample in the series. The caller

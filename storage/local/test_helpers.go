@@ -36,8 +36,7 @@ func (t *testStorageCloser) Close() {
 func NewTestStorage(t testing.TB) (Storage, test.Closer) {
 	directory := test.NewTemporaryDirectory("test_storage", t)
 	o := &MemorySeriesStorageOptions{
-		MemoryEvictionInterval:     time.Minute,
-		MemoryRetentionPeriod:      time.Hour,
+		MemoryChunks:               1000000,
 		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         time.Hour,

@@ -20,6 +20,7 @@ import (
 	"testing/quick"
 	"time"
 
+	"github.com/golang/glog"
 	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
@@ -42,8 +43,7 @@ func TestLoop(t *testing.T) {
 	directory := test.NewTemporaryDirectory("test_storage", t)
 	defer directory.Close()
 	o := &MemorySeriesStorageOptions{
-		MemoryEvictionInterval:     100 * time.Millisecond,
-		MemoryRetentionPeriod:      time.Hour,
+		MemoryChunks:               50,
 		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         250 * time.Millisecond,
@@ -73,16 +73,28 @@ func TestChunk(t *testing.T) {
 
 	for m := range s.(*memorySeriesStorage).fpToSeries.iter() {
 		s.(*memorySeriesStorage).fpLocker.Lock(m.fp)
-		for i, v := range m.series.values() {
+
+		var values metric.Values
+		for _, cd := range m.series.chunkDescs {
+			if cd.isEvicted() {
+				continue
+			}
+			for sample := range cd.chunk.values() {
+				values = append(values, *sample)
+			}
+		}
+
+		for i, v := range values {
 			if samples[i].Timestamp != v.Timestamp {
-				t.Fatalf("%d. Got %v; want %v", i, v.Timestamp, samples[i].Timestamp)
+				t.Errorf("%d. Got %v; want %v", i, v.Timestamp, samples[i].Timestamp)
 			}
 			if samples[i].Value != v.Value {
-				t.Fatalf("%d. Got %v; want %v", i, v.Value, samples[i].Value)
+				t.Errorf("%d. Got %v; want %v", i, v.Value, samples[i].Value)
 			}
 		}
 		s.(*memorySeriesStorage).fpLocker.Unlock(m.fp)
 	}
+	glog.Info("test done, closing")
 }
 
 func TestGetValueAtTime(t *testing.T) {
@@ -362,37 +374,12 @@ func TestEvictAndPurgeSeries(t *testing.T) {
 		t.Fatal("could not find series")
 	}
 
-	// Evict everything except head chunk.
-	allEvicted, headChunkToPersist := series.evictOlderThan(1998)
-	// Head chunk not yet old enough, should get false, false:
-	if allEvicted {
-		t.Error("allEvicted with head chunk not yet old enough")
-	}
-	if headChunkToPersist != nil {
-		t.Error("persistHeadChunk is not nil although head chunk is not old enough")
-	}
-	// Evict everything.
-	allEvicted, headChunkToPersist = series.evictOlderThan(10000)
-	// Since the head chunk is not yet persisted, we should get false, true:
-	if allEvicted {
-		t.Error("allEvicted with head chuk not yet persisted")
-	}
-	if headChunkToPersist == nil {
-		t.Error("headChunkToPersist is nil although head chunk is old enough")
-	}
-	// Persist head chunk as requested.
+	// Persist head chunk so we can safely archive.
+	series.headChunkPersisted = true
 	ms.persistQueue <- persistRequest{fp, series.head()}
 	time.Sleep(time.Second) // Give time for persisting to happen.
-	allEvicted, headChunkToPersist = series.evictOlderThan(10000)
-	// Now we should really see everything gone.
-	if !allEvicted {
-		t.Error("not allEvicted")
-	}
-	if headChunkToPersist != nil {
-		t.Error("headChunkToPersist is not nil although already persisted")
-	}
 
-	// Now archive as it would usually be done in the evictTicker loop.
+	// Archive metrics.
 	ms.fpToSeries.del(fp)
 	if err := ms.persistence.archiveMetric(
 		fp, series.metric, series.firstTime(), series.lastTime(),
@@ -491,8 +478,7 @@ func BenchmarkFuzz(b *testing.B) {
 	directory := test.NewTemporaryDirectory("test_storage", b)
 	defer directory.Close()
 	o := &MemorySeriesStorageOptions{
-		MemoryEvictionInterval:     time.Second,
-		MemoryRetentionPeriod:      10 * time.Minute,
+		MemoryChunks:               100,
 		PersistenceRetentionPeriod: time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         3 * time.Second,

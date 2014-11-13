@@ -104,7 +104,7 @@ func (p *memorySeriesPreloader) Close() {
 	// over the pinnedChunkDescs to a manager that will delay the unpinning
 	// based on time and memory pressure.
 	for _, cd := range p.pinnedChunkDescs {
-		cd.unpin()
+		cd.unpin(p.storage.evictRequests)
 	}
 	chunkOps.WithLabelValues(unpin).Add(float64(len(p.pinnedChunkDescs)))
 

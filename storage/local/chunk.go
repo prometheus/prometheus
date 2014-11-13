@@ -14,6 +14,7 @@
 package local
 
 import (
+	"container/list"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -27,9 +28,13 @@ type chunkDesc struct {
 	sync.Mutex
 	chunk          chunk
 	refCount       int
-	evict          bool
 	chunkFirstTime clientmodel.Timestamp // Used if chunk is evicted.
 	chunkLastTime  clientmodel.Timestamp // Used if chunk is evicted.
+
+	// evictListElement is nil if the chunk is not in the evict list.
+	// evictListElement is _not_ protected by the chunkDesc mutex.
+	// It must only be touched by the evict list handler in memorySeriesStorage.
+	evictListElement *list.Element
 }
 
 // newChunkDesc creates a new chunkDesc pointing to the given chunk. The
@@ -48,14 +53,18 @@ func (cd *chunkDesc) add(s *metric.SamplePair) []chunk {
 	return cd.chunk.add(s)
 }
 
-func (cd *chunkDesc) pin() {
+func (cd *chunkDesc) pin(evictRequests chan<- evictRequest) {
 	cd.Lock()
 	defer cd.Unlock()
 
+	if cd.refCount == 0 {
+		// Remove ourselves from the evict list.
+		evictRequests <- evictRequest{cd, false}
+	}
 	cd.refCount++
 }
 
-func (cd *chunkDesc) unpin() {
+func (cd *chunkDesc) unpin(evictRequests chan<- evictRequest) {
 	cd.Lock()
 	defer cd.Unlock()
 
@@ -63,8 +72,9 @@ func (cd *chunkDesc) unpin() {
 		panic("cannot unpin already unpinned chunk")
 	}
 	cd.refCount--
-	if cd.refCount == 0 && cd.evict {
-		cd.evictNow()
+	if cd.refCount == 0 {
+		// Add ourselves to the back of the evict list.
+		evictRequests <- evictRequest{cd, true}
 	}
 }
 
@@ -115,36 +125,28 @@ func (cd *chunkDesc) setChunk(c chunk) {
 	if cd.chunk != nil {
 		panic("chunk already set")
 	}
-	cd.evict = false
 	cd.chunk = c
 }
 
-// evictOnUnpin evicts the chunk once unpinned. If it is not pinned when this
-// method is called, it evicts the chunk immediately and returns true. If the
-// chunk is already evicted when this method is called, it returns true, too.
-func (cd *chunkDesc) evictOnUnpin() bool {
+// maybeEvict evicts the chunk if the refCount is 0. It returns wether the chunk
+// is now evicted, which includes the case that the chunk was evicted even
+// before this method was called.
+func (cd *chunkDesc) maybeEvict() bool {
 	cd.Lock()
 	defer cd.Unlock()
 
 	if cd.chunk == nil {
-		// Already evicted.
 		return true
 	}
-	cd.evict = true
-	if cd.refCount == 0 {
-		cd.evictNow()
-		return true
+	if cd.refCount != 0 {
+		return false
 	}
-	return false
-}
-
-// evictNow is an internal helper method.
-func (cd *chunkDesc) evictNow() {
 	cd.chunkFirstTime = cd.chunk.firstTime()
 	cd.chunkLastTime = cd.chunk.lastTime()
 	cd.chunk = nil
 	chunkOps.WithLabelValues(evict).Inc()
 	atomic.AddInt64(&numMemChunks, -1)
+	return true
 }
 
 // chunk is the interface for all chunks. Chunks are generally not
