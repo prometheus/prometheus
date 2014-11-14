@@ -744,7 +744,6 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 	}
 
 	newFirstTime, _, allDropped, err := s.persistence.dropChunks(fp, beforeTime)
-	glog.Infoln("DEBUG:", newFirstTime, allDropped)
 	if err != nil {
 		glog.Error("Error purging persisted chunks: ", err)
 	}
