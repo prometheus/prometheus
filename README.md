@@ -14,17 +14,16 @@ intervals, evaluate rule expressions, display the results, and trigger an
 action if some condition is observed to be true.
 
 ## Prerequisites
-If you read below in the _Getting Started_ section, the build infrastructure
-will take care of the following things for you in most cases:
 
-  1. Go 1.1.
-  2. LevelDB: [https://code.google.com/p/leveldb/](https://code.google.com/p/leveldb/).
-  3. Protocol Buffers Compiler: [http://code.google.com/p/protobuf/](http://code.google.com/p/protobuf/).
-  4. goprotobuf: the code generator and runtime library: [http://code.google.com/p/goprotobuf/](http://code.google.com/p/goprotobuf/).
-  5. Levigo, a Go-wrapper around LevelDB's C library: [https://github.com/jmhodges/levigo](https://github.com/jmhodges/levigo).
-  6. GoRest, a RESTful style web-services framework: [http://code.google.com/p/gorest/](http://code.google.com/p/gorest/).
-  7. Prometheus Client, Prometheus in Prometheus [https://github.com/prometheus/client_golang](https://github.com/prometheus/client_golang).
-  8. Snappy, a compression library for LevelDB and Levigo [http://code.google.com/p/snappy/](http://code.google.com/p/snappy/).
+In your `PATH`, you must have the following binaries available:
+- `curl`
+- `xxd`
+- `sed`
+- `gzip`
+
+If you change any of the `*.proto` files, you need to install [`protoc`, the protobuf compiler](http://code.google.com/p/protobuf/](http://code.google.com/p/protobuf/), v2.5.0 or higher.
+
+TODO: lexer, golex
 
 ## Getting Started
 

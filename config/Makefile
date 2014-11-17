@@ -17,12 +17,6 @@ SUFFIXES:
 
 include ../Makefile.INCLUDE
 
-# In order to build the generated targets in this directory, run the
-# following:
-#
-#     make -C build goprotobuf-protoc-gen-go-stamp
-
-
 generated/config.pb.go: config.proto
-	$(MAKE) -C ../.build goprotobuf-protoc-gen-go-stamp
+	$(GO_GET) code.google.com/p/goprotobuf/protoc-gen-go
 	$(PROTOC) --proto_path=$(PREFIX)/include:. --go_out=generated/ config.proto

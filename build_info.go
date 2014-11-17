@@ -19,29 +19,23 @@ import (
 
 // Build information. Populated by Makefile.
 var (
-	buildVersion    string
-	buildRevision   string
-	buildBranch     string
-	buildUser       string
-	buildDate       string
-	goVersion       string
-	leveldbVersion  string
-	protobufVersion string
-	snappyVersion   string
+	buildVersion  string
+	buildRevision string
+	buildBranch   string
+	buildUser     string
+	buildDate     string
+	goVersion     string
 )
 
 // BuildInfo encapsulates compile-time metadata about Prometheus made available
 // via go tool ld such that this can be reported on-demand.
 var BuildInfo = map[string]string{
-	"version":          buildVersion,
-	"revision":         buildRevision,
-	"branch":           buildBranch,
-	"user":             buildUser,
-	"date":             buildDate,
-	"go_version":       goVersion,
-	"leveldb_version":  leveldbVersion,
-	"protobuf_version": protobufVersion,
-	"snappy_version":   snappyVersion,
+	"version":    buildVersion,
+	"revision":   buildRevision,
+	"branch":     buildBranch,
+	"user":       buildUser,
+	"date":       buildDate,
+	"go_version": goVersion,
 }
 
 var versionInfoTmpl = template.Must(template.New("version").Parse(
@@ -49,7 +43,4 @@ var versionInfoTmpl = template.Must(template.New("version").Parse(
   build user:       {{.user}}
   build date:       {{.date}}
   go version:       {{.go_version}}
-  leveldb version:  {{.leveldb_version}}
-  protobuf version: {{.protobuf_version}}
-  snappy version:   {{.snappy_version}}
 `))

@@ -22,6 +22,5 @@ files.go: $(shell find ../templates/ ../static/ -type f)
 
 clean:
 	-rm  files.go
-	-rm -rf generated
 
 .PHONY: clean
