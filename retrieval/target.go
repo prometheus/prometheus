@@ -153,7 +153,7 @@ type target struct {
 	lastScrape time.Time
 	// Channel to signal RunScraper should stop, holds a channel
 	// to notify once stopped.
-	stopScraper chan bool
+	stopScraper chan struct{}
 	// Channel to queue base labels to be replaced.
 	newBaseLabels chan clientmodel.LabelSet
 
@@ -173,7 +173,7 @@ func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.La
 		Deadline:      deadline,
 		baseLabels:    baseLabels,
 		httpClient:    utility.NewDeadlineClient(deadline),
-		stopScraper:   make(chan bool),
+		stopScraper:   make(chan struct{}),
 		newBaseLabels: make(chan clientmodel.LabelSet, 1),
 	}
 
@@ -265,7 +265,7 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 
 // StopScraper implements Target.
 func (t *target) StopScraper() {
-	t.stopScraper <- true
+	t.stopScraper <- struct{}{}
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
