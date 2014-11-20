@@ -35,10 +35,11 @@ const (
 )
 
 var (
-	fingerprintToMetricCacheSize     = flag.Int("storage.fingerprintToMetricCacheSizeBytes", 25*1024*1024, "The size in bytes for the fingerprint to metric index cache.")
-	labelNameToLabelValuesCacheSize  = flag.Int("storage.labelNameToLabelValuesCacheSizeBytes", 25*1024*1024, "The size in bytes for the label name to label values index cache.")
-	labelPairToFingerprintsCacheSize = flag.Int("storage.labelPairToFingerprintsCacheSizeBytes", 25*1024*1024, "The size in bytes for the label pair to fingerprints index cache.")
-	fingerprintTimeRangeCacheSize    = flag.Int("storage.fingerprintTimeRangeCacheSizeBytes", 5*1024*1024, "The size in bytes for the metric time range index cache.")
+	// TODO: Tweak default values.
+	fingerprintToMetricCacheSize     = flag.Int("storage.local.index-cache-size.fingerprint-to-metric", 10*1024*1024, "The size in bytes for the fingerprint to metric index cache.")
+	fingerprintTimeRangeCacheSize    = flag.Int("storage.local.index-cache-size.fingerprint-to-timerange", 5*1024*1024, "The size in bytes for the metric time range index cache.")
+	labelNameToLabelValuesCacheSize  = flag.Int("storage.local.index-cache-size.label-name-to-label-values", 10*1024*1024, "The size in bytes for the label name to label values index cache.")
+	labelPairToFingerprintsCacheSize = flag.Int("storage.local.index-cache-size.label-pair-to-fingerprints", 20*1024*1024, "The size in bytes for the label pair to fingerprints index cache.")
 )
 
 // FingerprintMetricMapping is an in-memory map of fingerprints to metrics.
@@ -53,7 +54,7 @@ type FingerprintMetricIndex struct {
 //
 // This method is goroutine-safe, but note that no specific order of execution
 // can be guaranteed (especially critical if IndexBatch and UnindexBatch are
-// called concurrently).
+// called concurrently for the same fingerprint).
 func (i *FingerprintMetricIndex) IndexBatch(mapping FingerprintMetricMapping) error {
 	b := i.NewBatch()
 
@@ -68,7 +69,7 @@ func (i *FingerprintMetricIndex) IndexBatch(mapping FingerprintMetricMapping) er
 //
 // This method is goroutine-safe, but note that no specific order of execution
 // can be guaranteed (especially critical if IndexBatch and UnindexBatch are
-// called concurrently).
+// called concurrently for the same fingerprint).
 func (i *FingerprintMetricIndex) UnindexBatch(mapping FingerprintMetricMapping) error {
 	b := i.NewBatch()
 
@@ -137,9 +138,9 @@ func (i *LabelNameLabelValuesIndex) IndexBatch(b LabelNameLabelValuesMapping) er
 	return i.Commit(batch)
 }
 
-// Lookup looks up all label values for a given label name. Looking up a
-// non-existing label name is not an error. In that case, (nil, false, nil) is
-// returned.
+// Lookup looks up all label values for a given label name and returns them as
+// clientmodel.LabelValues (which is a slice). Looking up a non-existing label
+// name is not an error. In that case, (nil, false, nil) is returned.
 //
 // This method is goroutine-safe.
 func (i *LabelNameLabelValuesIndex) Lookup(l clientmodel.LabelName) (values clientmodel.LabelValues, ok bool, err error) {
@@ -147,9 +148,9 @@ func (i *LabelNameLabelValuesIndex) Lookup(l clientmodel.LabelName) (values clie
 	return
 }
 
-// LookupSet looks up all label values for a given label name. Looking up a
-// non-existing label name is not an error. In that case, (nil, false, nil) is
-// returned.
+// LookupSet looks up all label values for a given label name and returns them
+// as a set. Looking up a non-existing label name is not an error. In that case,
+// (nil, false, nil) is returned.
 //
 // This method is goroutine-safe.
 func (i *LabelNameLabelValuesIndex) LookupSet(l clientmodel.LabelName) (values map[clientmodel.LabelValue]struct{}, ok bool, err error) {

@@ -16,7 +16,7 @@ package local
 import "github.com/prometheus/client_golang/prometheus"
 
 // Usually, a separate file for instrumentation is frowned upon. Metrics should
-// be close to where they are used. However,the metrics below are set all over
+// be close to where they are used. However, the metrics below are set all over
 // the place, so we go for a separate instrumentation file in this case.
 var (
 	chunkOps = prometheus.NewCounterVec(

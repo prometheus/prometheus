@@ -428,7 +428,7 @@ loop:
 	for {
 		// To batch up evictions a bit, this tries evictions at least
 		// once per evict interval, but earlier if the number of evict
-		// requests with evict==true that has happened since the last
+		// requests with evict==true that have happened since the last
 		// evict run is more than maxMemoryChunks/1000.
 		select {
 		case req := <-s.evictRequests:
@@ -482,7 +482,7 @@ func (s *memorySeriesStorage) maybeEvict() {
 	// currently locked the chunk and tries to send the evict request (to
 	// remove the chunk from the evict list) to the evictRequests
 	// channel. The send blocks because evictRequests is full. However, the
-	// goroutine that is supposed to empty the channel is wating for the
+	// goroutine that is supposed to empty the channel is waiting for the
 	// chunkDesc lock to try to evict the chunk.
 	go func() {
 		for _, cd := range chunkDescsToEvict {
@@ -557,15 +557,10 @@ func (s *memorySeriesStorage) waitForNextFP(numberOfFPs int) bool {
 	}
 }
 
-func (s *memorySeriesStorage) loop() {
-	checkpointTicker := time.NewTicker(s.checkpointInterval)
-
-	defer func() {
-		checkpointTicker.Stop()
-		glog.Info("Maintenance loop stopped.")
-		close(s.loopStopped)
-	}()
-
+// cycleThroughMemoryFingerprints returns a channel that emits fingerprints for
+// series in memory in a throttled fashion. It continues to cycle through all
+// fingerprints in memory until s.loopStopping is closed.
+func (s *memorySeriesStorage) cycleThroughMemoryFingerprints() chan clientmodel.Fingerprint {
 	memoryFingerprints := make(chan clientmodel.Fingerprint)
 	go func() {
 		var fpIter <-chan clientmodel.Fingerprint
@@ -584,7 +579,7 @@ func (s *memorySeriesStorage) loop() {
 			if !s.waitForNextFP(s.fpToSeries.length()) {
 				return
 			}
-			begun := time.Now()
+			begin := time.Now()
 			fpIter = s.fpToSeries.fpIter()
 			for fp := range fpIter {
 				select {
@@ -594,10 +589,17 @@ func (s *memorySeriesStorage) loop() {
 				}
 				s.waitForNextFP(s.fpToSeries.length())
 			}
-			glog.Infof("Completed maintenance sweep through in-memory fingerprints in %v.", time.Since(begun))
+			glog.Infof("Completed maintenance sweep through in-memory fingerprints in %v.", time.Since(begin))
 		}
 	}()
 
+	return memoryFingerprints
+}
+
+// cycleThroughArchivedFingerprints returns a channel that emits fingerprints
+// for archived series in a throttled fashion. It continues to cycle through all
+// archived fingerprints until s.loopStopping is closed.
+func (s *memorySeriesStorage) cycleThroughArchivedFingerprints() chan clientmodel.Fingerprint {
 	archivedFingerprints := make(chan clientmodel.Fingerprint)
 	go func() {
 		defer close(archivedFingerprints)
@@ -615,7 +617,7 @@ func (s *memorySeriesStorage) loop() {
 			if !s.waitForNextFP(len(archivedFPs)) {
 				return
 			}
-			begun := time.Now()
+			begin := time.Now()
 			for _, fp := range archivedFPs {
 				select {
 				case archivedFingerprints <- fp:
@@ -624,9 +626,23 @@ func (s *memorySeriesStorage) loop() {
 				}
 				s.waitForNextFP(len(archivedFPs))
 			}
-			glog.Infof("Completed maintenance sweep through archived fingerprints in %v.", time.Since(begun))
+			glog.Infof("Completed maintenance sweep through archived fingerprints in %v.", time.Since(begin))
 		}
 	}()
+	return archivedFingerprints
+}
+
+func (s *memorySeriesStorage) loop() {
+	checkpointTicker := time.NewTicker(s.checkpointInterval)
+
+	defer func() {
+		checkpointTicker.Stop()
+		glog.Info("Maintenance loop stopped.")
+		close(s.loopStopped)
+	}()
+
+	memoryFingerprints := s.cycleThroughMemoryFingerprints()
+	archivedFingerprints := s.cycleThroughArchivedFingerprints()
 
 loop:
 	for {
@@ -645,9 +661,9 @@ loop:
 		}
 	}
 	// Wait until both channels are closed.
-	for channelStillOpen := true; channelStillOpen; _, channelStillOpen = <-memoryFingerprints {
+	for _ = range memoryFingerprints {
 	}
-	for channelStillOpen := true; channelStillOpen; _, channelStillOpen = <-archivedFingerprints {
+	for _ = range archivedFingerprints {
 	}
 }
 

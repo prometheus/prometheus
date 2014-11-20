@@ -116,28 +116,28 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 	oldTarget1 := &target{
 		address:       "example1",
 		state:         UNREACHABLE,
-		stopScraper:   make(chan bool, 1),
+		stopScraper:   make(chan struct{}),
 		newBaseLabels: make(chan clientmodel.LabelSet, 1),
 		httpClient:    &http.Client{},
 	}
 	oldTarget2 := &target{
 		address:       "example2",
 		state:         UNREACHABLE,
-		stopScraper:   make(chan bool, 1),
+		stopScraper:   make(chan struct{}),
 		newBaseLabels: make(chan clientmodel.LabelSet, 1),
 		httpClient:    &http.Client{},
 	}
 	newTarget1 := &target{
 		address:       "example1",
 		state:         ALIVE,
-		stopScraper:   make(chan bool, 1),
+		stopScraper:   make(chan struct{}),
 		newBaseLabels: make(chan clientmodel.LabelSet, 1),
 		httpClient:    &http.Client{},
 	}
 	newTarget2 := &target{
 		address:       "example3",
 		state:         ALIVE,
-		stopScraper:   make(chan bool, 1),
+		stopScraper:   make(chan struct{}),
 		newBaseLabels: make(chan clientmodel.LabelSet, 1),
 		httpClient:    &http.Client{},
 	}

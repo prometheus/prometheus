@@ -81,8 +81,7 @@ func newDeltaEncodedChunk(tb, vb deltaBytes, isInt bool) *deltaEncodedChunk {
 }
 
 func (c *deltaEncodedChunk) newFollowupChunk() chunk {
-	return newDeltaEncodedChunk(d1, d1, true)
-	//return newDeltaEncodedChunk(c.timeBytes(), c.valueBytes(), c.isInt())
+	return newDeltaEncodedChunk(d1, d0, true)
 }
 
 // clone implements chunk.
@@ -170,7 +169,6 @@ func (c *deltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 	// Do we generally have space for another sample in this chunk? If not,
 	// overflow into a new one.
 	if remainingBytes < sampleSize {
-		//fmt.Println("overflow")
 		overflowChunks := c.newFollowupChunk().add(s)
 		return []chunk{c, overflowChunks[0]}
 	}
@@ -186,18 +184,15 @@ func (c *deltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 	// int->float.
 	// Note: Using math.Modf is slower than the conversion approach below.
 	if c.isInt() && clientmodel.SampleValue(int64(dv)) != dv {
-		//fmt.Println("int->float", len(c.buf), cap(c.buf), dv)
 		return transcodeAndAdd(newDeltaEncodedChunk(tb, d4, false), c, s)
 	}
 	// float32->float64.
 	if !c.isInt() && vb == d4 && clientmodel.SampleValue(float32(dv)) != dv {
-		//fmt.Println("float32->float64", float32(dv), dv, len(c.buf), cap(c.buf))
 		return transcodeAndAdd(newDeltaEncodedChunk(tb, d8, false), c, s)
 	}
 	if tb < d8 || vb < d8 {
 		// Maybe more bytes per sample.
 		if ntb, nvb := neededDeltaBytes(dt, dv, c.isInt()); ntb > tb || nvb > vb {
-			//fmt.Printf("transcoding T: %v->%v, V: %v->%v, I: %v; len %v, cap %v\n", tb, ntb, vb, nvb, c.isInt(), len(c.buf), cap(c.buf))
 			ntb = max(ntb, tb)
 			nvb = max(nvb, vb)
 			return transcodeAndAdd(newDeltaEncodedChunk(ntb, nvb, c.isInt()), c, s)

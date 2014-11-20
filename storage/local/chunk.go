@@ -24,9 +24,11 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
+// chunkDesc contains meta-data for a chunk. Many of its methods are
+// goroutine-safe proxies for chunk methods.
 type chunkDesc struct {
 	sync.Mutex
-	chunk          chunk
+	chunk          chunk // nil if chunk is evicted.
 	refCount       int
 	chunkFirstTime clientmodel.Timestamp // Used if chunk is evicted.
 	chunkLastTime  clientmodel.Timestamp // Used if chunk is evicted.
@@ -37,11 +39,14 @@ type chunkDesc struct {
 	evictListElement *list.Element
 }
 
-// newChunkDesc creates a new chunkDesc pointing to the given chunk. The
-// refCount of the new chunkDesc is 1.
+// newChunkDesc creates a new chunkDesc pointing to the provided chunk. The
+// provided chunk is assumed to be not persisted yet. Therefore, the refCount of
+// the new chunkDesc is 1 (preventing eviction prior to persisting).
 func newChunkDesc(c chunk) *chunkDesc {
 	chunkOps.WithLabelValues(createAndPin).Inc()
 	atomic.AddInt64(&numMemChunks, 1)
+	// TODO: numMemChunkDescs is actually never read except during metrics
+	// collection. Turn it into a real metric.
 	atomic.AddInt64(&numMemChunkDescs, 1)
 	return &chunkDesc{chunk: c, refCount: 1}
 }
@@ -53,6 +58,9 @@ func (cd *chunkDesc) add(s *metric.SamplePair) []chunk {
 	return cd.chunk.add(s)
 }
 
+// pin increments the refCount by one. Upon increment from 0 to 1, this
+// chunkDesc is removed from the evict list. To enable the latter, the
+// evictRequests channel has to be provided.
 func (cd *chunkDesc) pin(evictRequests chan<- evictRequest) {
 	cd.Lock()
 	defer cd.Unlock()
@@ -64,6 +72,9 @@ func (cd *chunkDesc) pin(evictRequests chan<- evictRequest) {
 	cd.refCount++
 }
 
+// unpin decrements the refCount by one. Upon decrement from 1 to 0, this
+// chunkDesc is added to the evict list. To enable the latter, the evictRequests
+// channel has to be provided.
 func (cd *chunkDesc) unpin(evictRequests chan<- evictRequest) {
 	cd.Lock()
 	defer cd.Unlock()
@@ -116,8 +127,6 @@ func (cd *chunkDesc) contains(t clientmodel.Timestamp) bool {
 	return !t.Before(cd.firstTime()) && !t.After(cd.lastTime())
 }
 
-// setChunk points this chunkDesc to the given chunk. It panics if
-// this chunkDesc already has a chunk set.
 func (cd *chunkDesc) setChunk(c chunk) {
 	cd.Lock()
 	defer cd.Unlock()
@@ -128,7 +137,7 @@ func (cd *chunkDesc) setChunk(c chunk) {
 	cd.chunk = c
 }
 
-// maybeEvict evicts the chunk if the refCount is 0. It returns wether the chunk
+// maybeEvict evicts the chunk if the refCount is 0. It returns whether the chunk
 // is now evicted, which includes the case that the chunk was evicted even
 // before this method was called.
 func (cd *chunkDesc) maybeEvict() bool {

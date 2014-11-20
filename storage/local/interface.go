@@ -43,7 +43,7 @@ type Storage interface {
 	NewIterator(clientmodel.Fingerprint) SeriesIterator
 	// Run the various maintenance loops in goroutines. Returns when the
 	// storage is ready to use. Keeps everything running in the background
-	// until Close is called.
+	// until Stop is called.
 	Start()
 	// Stop shuts down the Storage gracefully, flushes all pending
 	// operations, stops all maintenance loops,and frees all resources.
@@ -82,16 +82,6 @@ type Preloader interface {
 		from clientmodel.Timestamp, through clientmodel.Timestamp,
 		stalenessDelta time.Duration,
 	) error
-	/*
-		// GetMetricAtTime loads and pins samples around a given time.
-		GetMetricAtTime(clientmodel.Fingerprint, clientmodel.Timestamp) error
-		// GetMetricAtInterval loads and pins samples at intervals.
-		GetMetricAtInterval(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration) error
-		// GetMetricRange loads and pins a given range of samples.
-		GetMetricRange(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp) error
-		// GetMetricRangeAtInterval loads and pins sample ranges at intervals.
-		GetMetricRangeAtInterval(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration) error
-	*/
 	// Close unpins any previously requested series data from memory.
 	Close()
 }

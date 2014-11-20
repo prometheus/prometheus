@@ -39,11 +39,14 @@ import (
 const (
 	seriesFileSuffix     = ".db"
 	seriesTempFileSuffix = ".db.tmp"
+	seriesDirNameLen     = 2 // How many bytes of the fingerprint in dir name.
 
 	headsFileName      = "heads.db"
 	headsTempFileName  = "heads.db.tmp"
 	headsFormatVersion = 1
 	headsMagicString   = "PrometheusHeads"
+
+	dirtyFileName = "DIRTY"
 
 	fileBufSize = 1 << 16 // 64kiB.
 
@@ -56,6 +59,8 @@ const (
 	indexingBatchTimeout  = 500 * time.Millisecond // Commit batch when idle for that long.
 	indexingQueueCapacity = 1024 * 16
 )
+
+var fpLen = len(clientmodel.Fingerprint(0).String()) // Length of a fingerprint as string.
 
 const (
 	flagHeadChunkPersisted byte = 1 << iota
@@ -101,9 +106,9 @@ type persistence struct {
 	indexingBatchLatency  prometheus.Summary
 	checkpointDuration    prometheus.Gauge
 
-	dirtyMtx sync.Mutex // Protects dirty and becameDirty.
-
-	dirty, becameDirty bool
+	dirtyMtx    sync.Mutex // Protects dirty and becameDirty.
+	dirty       bool       // true if persistence was started in dirty state.
+	becameDirty bool       // true if an inconsistency came up during runtime.
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
@@ -225,7 +230,7 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 // dirtyFileName returns the name of the (empty) file used to mark the
 // persistency layer as dirty.
 func (p *persistence) dirtyFileName() string {
-	return path.Join(p.basePath, "DIRTY")
+	return path.Join(p.basePath, dirtyFileName)
 }
 
 // isDirty returns the dirty flag in a goroutine-safe way.
@@ -252,19 +257,21 @@ func (p *persistence) setDirty(dirty bool) {
 	}
 }
 
-// crashRecovery is called by loadSeriesMapAndHeads if the persistence appears
-// to be dirty after the loading (either because the loading resulted in an
-// error or because the persistence was dirty from the start). Not goroutine
-// safe. Only call before anything else is running.
-func (p *persistence) crashRecovery(fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) error {
+// recoverFromCrash is called by loadSeriesMapAndHeads if the persistence
+// appears to be dirty after the loading (either because the loading resulted in
+// an error or because the persistence was dirty from the start). Not goroutine
+// safe. Only call before anything else is running (except index processing
+// queue as started by newPersistence).
+func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) error {
 	glog.Warning("Starting crash recovery. Prometheus is inoperational until complete.")
 
 	fpsSeen := map[clientmodel.Fingerprint]struct{}{}
 	count := 0
+	seriesDirNameFmt := fmt.Sprintf("0%dx", seriesDirNameLen)
 
 	glog.Info("Scanning files.")
-	for i := 0; i < 256; i++ {
-		dirname := path.Join(p.basePath, fmt.Sprintf("%02x", i))
+	for i := 0; i < 1<<(seriesDirNameLen*4); i++ {
+		dirname := path.Join(p.basePath, fmt.Sprintf(seriesDirNameFmt, i))
 		dir, err := os.Open(dirname)
 		if os.IsNotExist(err) {
 			continue
@@ -273,8 +280,7 @@ func (p *persistence) crashRecovery(fingerprintToSeries map[clientmodel.Fingerpr
 			return err
 		}
 		defer dir.Close()
-		var fis []os.FileInfo
-		for ; err != io.EOF; fis, err = dir.Readdir(1024) {
+		for fis := []os.FileInfo{}; err != io.EOF; fis, err = dir.Readdir(1024) {
 			if err != nil {
 				return err
 			}
@@ -290,7 +296,7 @@ func (p *persistence) crashRecovery(fingerprintToSeries map[clientmodel.Fingerpr
 			}
 		}
 	}
-	glog.Infof("File scan complete. %d fingerprints found.", len(fpsSeen))
+	glog.Infof("File scan complete. %d series found.", len(fpsSeen))
 
 	glog.Info("Checking for series without series file.")
 	for fp, s := range fingerprintToSeries {
@@ -311,11 +317,18 @@ func (p *persistence) crashRecovery(fingerprintToSeries map[clientmodel.Fingerpr
 			// If we are here, the only chunk we have is the head chunk.
 			// Adjust things accordingly.
 			if len(s.chunkDescs) > 1 || s.chunkDescsOffset != 0 {
-				glog.Warningf(
-					"Lost at least %d chunks for fingerprint %v, metric %v.",
-					len(s.chunkDescs)+s.chunkDescsOffset-1, fp, s.metric,
-					// If chunkDescsOffset is -1, this will underreport. Oh well...
-				)
+				minLostChunks := len(s.chunkDescs) + s.chunkDescsOffset - 1
+				if minLostChunks <= 0 {
+					glog.Warningf(
+						"Possible loss of chunks for fingerprint %v, metric %v.",
+						fp, s.metric,
+					)
+				} else {
+					glog.Warningf(
+						"Lost at least %d chunks for fingerprint %v, metric %v.",
+						minLostChunks, fp, s.metric,
+					)
+				}
 				s.chunkDescs = s.chunkDescs[len(s.chunkDescs)-1:]
 				s.chunkDescsOffset = 0
 			}
@@ -345,12 +358,13 @@ func (p *persistence) sanitizeSeries(dirname string, fi os.FileInfo, fingerprint
 	}
 
 	var fp clientmodel.Fingerprint
-	if len(fi.Name()) != 17 || !strings.HasSuffix(fi.Name(), ".db") {
+	if len(fi.Name()) != fpLen-seriesDirNameLen+len(seriesFileSuffix) ||
+		!strings.HasSuffix(fi.Name(), seriesFileSuffix) {
 		glog.Warningf("Unexpected series file name %s.", filename)
 		purge()
 		return fp, false
 	}
-	fp.LoadFromString(path.Base(dirname) + fi.Name()[:14]) // TODO: Panics if that doesn't parse as hex.
+	fp.LoadFromString(path.Base(dirname) + fi.Name()[:fpLen-seriesDirNameLen]) // TODO: Panics if that doesn't parse as hex.
 
 	bytesToTrim := fi.Size() % int64(p.chunkLen+chunkHeaderLen)
 	chunksInFile := int(fi.Size()) / (p.chunkLen + chunkHeaderLen)
@@ -378,8 +392,7 @@ func (p *persistence) sanitizeSeries(dirname string, fi os.FileInfo, fingerprint
 	}
 
 	s, ok := fingerprintToSeries[fp]
-	if ok {
-		// This series is supposed to not be archived.
+	if ok { // This series is supposed to not be archived.
 		if s == nil {
 			panic("fingerprint mapped to nil pointer")
 		}
@@ -396,7 +409,7 @@ func (p *persistence) sanitizeSeries(dirname string, fi os.FileInfo, fingerprint
 			// unarchived one. No chunks or chunkDescs in memory, no
 			// current head chunk.
 			glog.Warningf(
-				"Treating recovered metric %v, fingerprint %v, as freshly unarchvied, with %d chunks in series file.",
+				"Treating recovered metric %v, fingerprint %v, as freshly unarchived, with %d chunks in series file.",
 				s.metric, fp, chunksInFile,
 			)
 			s.chunkDescs = nil
@@ -593,8 +606,8 @@ func (p *persistence) rebuildLabelIndexes(
 
 // getFingerprintsForLabelPair returns the fingerprints for the given label
 // pair. This method is goroutine-safe but take into account that metrics queued
-// for indexing with IndexMetric might not yet made it into the index. (Same
-// applies correspondingly to UnindexMetric.)
+// for indexing with IndexMetric might not have made it into the index
+// yet. (Same applies correspondingly to UnindexMetric.)
 func (p *persistence) getFingerprintsForLabelPair(lp metric.LabelPair) (clientmodel.Fingerprints, error) {
 	fps, _, err := p.labelPairToFingerprints.Lookup(lp)
 	if err != nil {
@@ -605,8 +618,8 @@ func (p *persistence) getFingerprintsForLabelPair(lp metric.LabelPair) (clientmo
 
 // getLabelValuesForLabelName returns the label values for the given label
 // name. This method is goroutine-safe but take into account that metrics queued
-// for indexing with IndexMetric might not yet made it into the index. (Same
-// applies correspondingly to UnindexMetric.)
+// for indexing with IndexMetric might not have made it into the index
+// yet. (Same applies correspondingly to UnindexMetric.)
 func (p *persistence) getLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	lvs, _, err := p.labelNameToLabelValues.Lookup(ln)
 	if err != nil {
@@ -616,11 +629,11 @@ func (p *persistence) getLabelValuesForLabelName(ln clientmodel.LabelName) (clie
 }
 
 // persistChunk persists a single chunk of a series. It is the caller's
-// responsibility to not modify chunk concurrently and to not persist or drop
-// anything for the same fingerprint concurrently. It returns the (zero-based)
-// index of the persisted chunk within the series file. In case of an error, the
-// returned index is -1 (to avoid the misconception that the chunk was written
-// at position 0).
+// responsibility to not modify the chunk concurrently and to not persist or
+// drop anything for the same fingerprint concurrently. It returns the
+// (zero-based) index of the persisted chunk within the series file. In case of
+// an error, the returned index is -1 (to avoid the misconception that the chunk
+// was written at position 0).
 func (p *persistence) persistChunk(fp clientmodel.Fingerprint, c chunk) (int, error) {
 	// 1. Open chunk file.
 	f, err := p.openChunkFileForWriting(fp)
@@ -896,7 +909,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 	defer func() {
 		if sm != nil && p.dirty {
 			glog.Warning("Persistence layer appears dirty.")
-			err = p.crashRecovery(fingerprintToSeries)
+			err = p.recoverFromCrash(fingerprintToSeries)
 			if err != nil {
 				sm = nil
 			}
@@ -1298,17 +1311,17 @@ func (p *persistence) close() error {
 
 func (p *persistence) dirNameForFingerprint(fp clientmodel.Fingerprint) string {
 	fpStr := fp.String()
-	return path.Join(p.basePath, fpStr[0:2])
+	return path.Join(p.basePath, fpStr[0:seriesDirNameLen])
 }
 
 func (p *persistence) fileNameForFingerprint(fp clientmodel.Fingerprint) string {
 	fpStr := fp.String()
-	return path.Join(p.basePath, fpStr[0:2], fpStr[2:]+seriesFileSuffix)
+	return path.Join(p.basePath, fpStr[0:seriesDirNameLen], fpStr[seriesDirNameLen:]+seriesFileSuffix)
 }
 
 func (p *persistence) tempFileNameForFingerprint(fp clientmodel.Fingerprint) string {
 	fpStr := fp.String()
-	return path.Join(p.basePath, fpStr[0:2], fpStr[2:]+seriesTempFileSuffix)
+	return path.Join(p.basePath, fpStr[0:seriesDirNameLen], fpStr[seriesDirNameLen:]+seriesTempFileSuffix)
 }
 
 func (p *persistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.File, error) {

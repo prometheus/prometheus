@@ -47,7 +47,7 @@ const (
 )
 
 var (
-	deadline = flag.Duration("alertmanager.httpDeadline", 10*time.Second, "Alert manager HTTP API timeout.")
+	deadline = flag.Duration("alertmanager.http-deadline", 10*time.Second, "Alert manager HTTP API timeout.")
 )
 
 // A request for sending a notification to the alert manager for a single alert

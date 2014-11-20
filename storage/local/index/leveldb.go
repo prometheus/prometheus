@@ -133,19 +133,22 @@ func (l *LevelDB) Commit(b Batch) error {
 }
 
 func (l *LevelDB) ForEach(cb func(kv KeyValueAccessor) error) error {
-	it, err := l.NewIterator(true)
+	snap, err := l.storage.GetSnapshot()
 	if err != nil {
 		return err
 	}
+	defer snap.Release()
 
-	defer it.Close()
+	iter := snap.NewIterator(keyspace, iteratorOpts)
 
-	for valid := it.SeekToFirst(); valid; valid = it.Next() {
-		if err = it.Error(); err != nil {
+	kv := &levelDBKeyValueAccessor{it: iter}
+
+	for valid := iter.First(); valid; valid = iter.Next() {
+		if err = iter.Error(); err != nil {
 			return err
 		}
 
-		if err := cb(it); err != nil {
+		if err := cb(kv); err != nil {
 			return err
 		}
 	}
@@ -186,88 +189,15 @@ func (b *LevelDBBatch) Reset() {
 	b.batch.Reset()
 }
 
-// levelDBIterator implements Iterator.
-type levelDBIterator struct {
+// levelDBKeyValueAccessor implements KeyValueAccessor.
+type levelDBKeyValueAccessor struct {
 	it leveldb_iterator.Iterator
 }
 
-func (i *levelDBIterator) Error() error {
-	return i.it.Error()
-}
-
-func (i *levelDBIterator) Valid() bool {
-	return i.it.Valid()
-}
-
-func (i *levelDBIterator) SeekToFirst() bool {
-	return i.it.First()
-}
-
-func (i *levelDBIterator) SeekToLast() bool {
-	return i.it.Last()
-}
-
-func (i *levelDBIterator) Seek(k encoding.BinaryMarshaler) bool {
-	key, err := k.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	return i.it.Seek(key)
-}
-
-func (i *levelDBIterator) Next() bool {
-	return i.it.Next()
-}
-
-func (i *levelDBIterator) Previous() bool {
-	return i.it.Prev()
-}
-
-func (i *levelDBIterator) Key(key encoding.BinaryUnmarshaler) error {
+func (i *levelDBKeyValueAccessor) Key(key encoding.BinaryUnmarshaler) error {
 	return key.UnmarshalBinary(i.it.Key())
 }
 
-func (i *levelDBIterator) Value(value encoding.BinaryUnmarshaler) error {
+func (i *levelDBKeyValueAccessor) Value(value encoding.BinaryUnmarshaler) error {
 	return value.UnmarshalBinary(i.it.Value())
-}
-
-func (*levelDBIterator) Close() error {
-	return nil
-}
-
-type snapshottedIterator struct {
-	levelDBIterator
-	snap *leveldb.Snapshot
-}
-
-func (i *snapshottedIterator) Close() error {
-	i.snap.Release()
-
-	return nil
-}
-
-// newIterator creates a new LevelDB iterator which is optionally based on a
-// snapshot of the current DB state.
-//
-// For each of the iterator methods that have a return signature of (ok bool),
-// if ok == false, the iterator may not be used any further and must be closed.
-// Further work with the database requires the creation of a new iterator.
-func (l *LevelDB) NewIterator(snapshotted bool) (Iterator, error) {
-	if !snapshotted {
-		return &levelDBIterator{
-			it: l.storage.NewIterator(keyspace, iteratorOpts),
-		}, nil
-	}
-
-	snap, err := l.storage.GetSnapshot()
-	if err != nil {
-		return nil, err
-	}
-
-	return &snapshottedIterator{
-		levelDBIterator: levelDBIterator{
-			it: snap.NewIterator(keyspace, iteratorOpts),
-		},
-		snap: snap,
-	}, nil
 }

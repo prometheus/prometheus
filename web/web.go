@@ -35,10 +35,10 @@ import (
 
 // Commandline flags.
 var (
-	listenAddress  = flag.String("listenAddress", ":9090", "Address to listen on for web interface.")
-	useLocalAssets = flag.Bool("useLocalAssets", false, "Read assets/templates from file instead of binary.")
-	userAssetsPath = flag.String("userAssets", "", "Path to static asset directory, available at /user")
-	enableQuit     = flag.Bool("web.enableRemoteShutdown", false, "Enable remote service shutdown")
+	listenAddress  = flag.String("web.listen-address", ":9090", "Address to listen on for web interface.")
+	useLocalAssets = flag.Bool("web.use-local-assets", false, "Read assets/templates from file instead of binary.")
+	userAssetsPath = flag.String("web.user-assets", "", "Path to static asset directory, available at /user.")
+	enableQuit     = flag.Bool("web.enable-remote-shutdown", false, "Enable remote service shutdown.")
 )
 
 type WebService struct {

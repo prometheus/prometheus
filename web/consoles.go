@@ -27,8 +27,8 @@ import (
 )
 
 var (
-	consoleTemplatesPath = flag.String("consoleTemplates", "consoles", "Path to console template directory, available at /console")
-	consoleLibrariesPath = flag.String("consoleLibraries", "console_libraries", "Path to console library directory")
+	consoleTemplatesPath = flag.String("web.console.templates", "consoles", "Path to the console template directory, available at /console.")
+	consoleLibrariesPath = flag.String("web.console.libraries", "console_libraries", "Path to the console library directory.")
 )
 
 type ConsolesHandler struct {

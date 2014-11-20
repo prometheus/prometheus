@@ -151,8 +151,7 @@ type target struct {
 	lastError error
 	// The last time a scrape was attempted.
 	lastScrape time.Time
-	// Channel to signal RunScraper should stop, holds a channel
-	// to notify once stopped.
+	// Closing stopScraper signals that scraping should stop.
 	stopScraper chan struct{}
 	// Channel to queue base labels to be replaced.
 	newBaseLabels chan clientmodel.LabelSet
@@ -265,7 +264,7 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 
 // StopScraper implements Target.
 func (t *target) StopScraper() {
-	t.stopScraper <- struct{}{}
+	close(t.stopScraper)
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`

@@ -42,28 +42,27 @@ const deletionBatchSize = 100
 
 // Commandline flags.
 var (
-	configFile = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
+	configFile = flag.String("config.file", "prometheus.conf", "Prometheus configuration file name.")
 
-	alertmanagerURL = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
+	alertmanagerURL           = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
+	notificationQueueCapacity = flag.Int("alertmanager.notification-queue-capacity", 100, "The capacity of the queue for pending alert manager notifications.")
 
-	metricsStoragePath = flag.String("storage.path", "/tmp/metrics", "Base path for metrics storage.")
+	metricsStoragePath = flag.String("storage.local.path", "/tmp/metrics", "Base path for metrics storage.")
 
 	remoteTSDBUrl     = flag.String("storage.remote.url", "", "The URL of the OpenTSDB instance to send samples to.")
 	remoteTSDBTimeout = flag.Duration("storage.remote.timeout", 30*time.Second, "The timeout to use when sending samples to OpenTSDB.")
 
-	samplesQueueCapacity = flag.Int("storage.queue.samplesCapacity", 4096, "The size of the unwritten samples queue.")
+	samplesQueueCapacity = flag.Int("storage.incoming-samples-queue-capacity", 4096, "The capacity of the queue of samples to be stored.")
 
-	numMemoryChunks = flag.Int("storage.memoryChunks", 1024*1024, "How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.")
+	numMemoryChunks = flag.Int("storage.local.memory-chunks", 1024*1024, "How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.")
 
-	storageRetentionPeriod = flag.Duration("storage.retentionPeriod", 15*24*time.Hour, "The period of time to retain in storage.")
+	storageRetentionPeriod = flag.Duration("storage.local.retention", 15*24*time.Hour, "How long to retain samples in the local storage.")
 
-	checkpointInterval = flag.Duration("storage.checkpointInterval", 5*time.Minute, "The period at which the in-memory index of time series is checkpointed.")
+	checkpointInterval = flag.Duration("storage.local.checkpoint-interval", 5*time.Minute, "The period at which the in-memory index of time series is checkpointed.")
 
-	storageDirty = flag.Bool("storage.dirty", false, "If set, the storage layer will perform crash recovery even if the last shutdown appears to be clean.")
+	storageDirty = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
 
-	notificationQueueCapacity = flag.Int("alertmanager.notificationQueueCapacity", 100, "The size of the queue for pending alert manager notifications.")
-
-	printVersion = flag.Bool("version", false, "print version information")
+	printVersion = flag.Bool("version", false, "Print version information.")
 )
 
 // Instrumentation.

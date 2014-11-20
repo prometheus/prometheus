@@ -21,7 +21,7 @@ import "encoding"
 // UnmarshalBinary methods of the keys and values). For example, if you call the
 // Put method of a KeyValueStore implementation, but the key or the value are
 // modified concurrently while being marshaled into its binary representation,
-// you obviously have a problem. Methods of KeyValueStore only return after
+// you obviously have a problem. Methods of KeyValueStore return only after
 // (un)marshaling is complete.
 type KeyValueStore interface {
 	Put(key, value encoding.BinaryMarshaler) error
@@ -34,9 +34,19 @@ type KeyValueStore interface {
 
 	NewBatch() Batch
 	Commit(b Batch) error
+
+	// ForEach iterates through the complete KeyValueStore and calls the
+	// supplied function for each mapping.
 	ForEach(func(kv KeyValueAccessor) error) error
 
 	Close() error
+}
+
+// KeyValueAccessor allows access to the key and value of an entry in a
+// KeyValueStore.
+type KeyValueAccessor interface {
+	Key(encoding.BinaryUnmarshaler) error
+	Value(encoding.BinaryUnmarshaler) error
 }
 
 // Batch allows KeyValueStore mutations to be pooled and committed together. An

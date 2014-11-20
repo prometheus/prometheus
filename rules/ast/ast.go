@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-var stalenessDelta = flag.Duration("stalenessDelta", 300*time.Second, "Staleness delta allowance during expression evaluations.")
+var stalenessDelta = flag.Duration("query.staleness-delta", 300*time.Second, "Staleness delta allowance during expression evaluations.")
 
 // ----------------------------------------------------------------------------
 // Raw data value types.
