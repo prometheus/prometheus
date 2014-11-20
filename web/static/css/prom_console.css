@@ -1,0 +1,178 @@
+div.prom_lhs_menu {
+  float: left;
+  margin-right: 2ex;
+  background: #000000;
+  min-height: 100%;
+  overflow: auto;
+}
+.prom_lhs_menu ul {
+  list-style: none;
+  padding-left: .5ex;
+  margin-left: .5ex;
+}
+.prom_lhs_menu li {
+  padding-right: 1ex;
+  padding-left: 1ex;
+}
+.prom_lhs_menu a,
+.prom_lhs_menu li {
+  color: #999999;
+  display: block;
+}
+.prom_lhs_menu a {
+  text-decoration: none;
+}
+.prom_lhs_menu_selected a {
+  pointer-events: none;
+  cursor: default;
+}
+li.prom_lhs_menu_selected {
+  background: #555555;
+  background-clip: padding-box;
+}
+.prom_lhs_menu span:hover,
+.prom_lhs_menu a:hover {
+  background: #666666;
+}
+
+.prom_console_rhs {
+  float: right;
+  margin-left: 1ex;
+  height: 100%;
+}
+.prom_console_rhs table {
+  margin-top: 1ex;
+  margin-bottom: 32px;  /* Space for time control. */
+}
+.prom_console_rhs th {
+  text-align: center;
+}
+.prom_console_rhs td:nth-child(2) {
+  text-align: right;
+}
+
+.prom_console_content {
+  overflow: visible;
+  margin-bottom: 32px;  /* Space for time control. */
+}
+
+a.prom_query_drilldown {
+  text-decoration: none;
+  color: black;
+}
+a.prom_query_drilldown:hover, a.prom_query_drilldown:active {
+  text-decoration: underline;
+}
+
+
+.prom_graph_table {
+}
+.rickshaw_legend {
+ padding: 2px;
+ margin-top: 1px;
+}
+.rickshaw_legend li {
+ min-width: 0;
+}
+.rickshaw_legend ul li {
+ list-style-type: none;
+ display: inline-block;
+}
+.rickshaw_graph {
+  width: 100%;
+  padding: 0;
+}
+.prom_graph_hover_flipped.x_label {
+  right: 0;
+}
+.prom_graph_hover_flipped.item {
+  right: 10px;
+}
+.rickshaw_graph .detail .prom_graph_hover_flipped.item:before {
+  content: "\25b8";
+  left: auto;
+  right: 1px;
+  font-size: 0.8em;
+}
+.prom_graph_ytitle {
+  -webkit-transform: rotate(-90deg);
+  -moz-transform: rotate(-90deg);
+  font-size: 11px;
+  font-family: Arial;
+  max-width: 13px;
+  white-space: nowrap;
+}
+.prom_graph_xtitle {
+  text-align: center;
+  font-size: 11px;
+  font-family: Arial;
+}
+.prom_graph_loading {
+  position: absolute;
+  top: 0px;
+  left: 0px;
+}
+.prom_graph_error {
+  font-family: Arial;
+  text-align: center;
+}
+a.prom_graph_link {
+  text-decoration: none;
+  color: black;
+}
+
+
+.prom_graph_timecontrol {
+  background: #000000;
+  position: fixed;
+  padding: 2px;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  z-index: 2;
+}
+.prom_graph_timecontrol_inner {
+  display: inline-block;
+}
+.prom_graph_timecontrol button {
+  font-size: 10pt;
+  margin-right: .3em;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.prom_graph_timecontrol_refresh button {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  border-top: 0;
+}
+.prom_graph_timecontrol_refresh .dropdown-menu {
+  min-width: 70px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.prom_graph_timecontrol input {
+  font-size: 10pt;
+  margin-left: -4px;
+  margin-right: -4px;
+  text-align: center;
+}
+.prom_graph_timecontrol label {
+  display: inline;
+  color: #999999;
+}
+.prom_graph_timecontrol .input-append {
+  margin: 2px;
+}
+.prom_graph_timecontrol .input-append .btn:first-child i {
+  margin-right: 4px;
+  margin-left: 2px;
+}
+.prom_graph_timecontrol .input-append .btn:last-child i {
+  margin-left: 6px;
+}
+.prom_graph_timecontrol .input-append i {
+  padding-top: -4px;
+  margin-top: 0;
+}
