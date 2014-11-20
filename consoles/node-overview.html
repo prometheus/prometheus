@@ -1,0 +1,122 @@
+{{template "head" .}}
+
+{{template "prom_right_table_head"}}
+  <tr><th colspan="2">Overview</th></tr>
+  <tr>
+    <td>User CPU</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "sum(rate(node_cpu{job='node',instance='%s',mode='user'}[5m])) * 100 / count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.3g") }}</td>
+  </tr>
+  <tr>
+    <td>System CPU</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "sum(rate(node_cpu{job='node',instance='%s',mode='system'}[5m])) * 100 / count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.3g") }}</td>
+  </tr>
+  <tr>
+    <td>Memory Total</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "node_memory_MemTotal{job='node',instance='%s'}" .Params.instance) "B" "humanize1024") }}</td>
+  </tr>
+  <tr>
+    <td>Memory Free</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "node_memory_MemFree{job='node',instance='%s'}" .Params.instance) "B" "humanize1024") }}</td>
+  </tr>
+<tr>
+  <th colspan="2">Network</th>
+</tr>
+{{ range printf "node_network_receive_bytes{job='node',instance='%s',device!='lo'}" .Params.instance | query | sortByLabel "device"}}
+  <tr>
+    <td>{{ .Labels.device }} Received</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_network_receive_bytes{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device) "B/s" "humanize") }}</td>
+  </tr>
+  <tr>
+    <td>{{ .Labels.device }} Transmitted</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_network_transmit_bytes{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device) "B/s" "humanize") }}</td>
+  </tr>
+{{ end }}
+</tr>
+<tr>
+  <th colspan="2">Disks</th>
+</tr>
+{{ range printf "node_disk_io_time_ms{job='node',instance='%s',device!~'^(md\\d+$|dm-)'}" .Params.instance | query | sortByLabel "device"}}
+  <tr>
+    <td>{{ .Labels.device }} Utilization</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_disk_io_time_ms{job='node',instance='%s',device='%s'}[5m]) / 1000 * 100" .Labels.instance .Labels.device) "%" "printf.3g") }}</td>
+  </tr>
+{{ end }}
+{{ range printf "node_disk_io_time_ms{job='node',instance='%s'}" .Params.instance | query | sortByLabel "device"}}
+  <tr>
+    <td>{{ .Labels.device }} Throughput</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_disk_sectors_read{job='node',instance='%s',device='%s'}[5m]) * 512 + rate(node_disk_sectors_written{job='node',instance='%s',device='%s'}[5m]) * 512" .Labels.instance .Labels.device .Labels.instance .Labels.device) "B/s" "humanize") }}</td>
+  </tr>
+{{ end }}
+<tr>
+  <th colspan="2">Filesystem Fullness</th>
+</tr>
+{{ define "roughlyNearZero"}}
+{{ if gt .1 . }}~0{{ else }}{{ printf "%.3g" . }}{{ end }}
+{{ end }}
+{{ range printf "node_filesystem_size{job='node',instance='%s'}" .Params.instance | query | sortByLabel "filesystem"}}
+  <tr>
+    <td>{{.Labels.filesystem}}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "100 - node_filesystem_free{job='node',instance='%s',filesystem='%s'} / node_filesystem_size{job='node'} * 100" .Labels.instance .Labels.filesystem) "%" "roughlyNearZero") }}</td>
+  </tr>
+{{ end }}
+</tr>
+{{template "prom_right_table_tail"}}
+
+{{template "prom_content_head" .}}
+  <h1>Node Overview - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
+
+  <h3>CPU Usage</h3>
+  <div id="cpuGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#cpuGraph"),
+    expr: "sum by (mode)(rate(node_cpu{job='node',instance='{{.Params.instance}}',mode!='idle'}[5m]))",
+    renderer: 'area',
+    max: {{ with printf "count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value}}{{else}}undefined{{end}},
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: 'Cores'
+  })
+  </script>
+
+  <h3>Disk I/O Utilization</h3>
+  <div id="diskioGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#diskioGraph"),
+    expr: [
+      "rate(node_disk_io_time_ms{job='node',instance='{{.Params.instance}}',device!~'^(md\\d+$|dm-)'}[5m]) / 1000 * 100",
+    ],
+    min: 0,
+    name: '[[ device ]]',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yUnits: "%",
+    yTitle: 'Disk I/O Utilization'
+  })
+  </script>
+
+  <h3>Memory</h3>
+  <div id="memoryGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#memoryGraph"),
+    renderer: 'area',
+    expr: [
+      "node_memory_Cached{job='node',instance='{{.Params.instance}}'}",
+      "node_memory_Buffers{job='node',instance='{{.Params.instance}}'}",
+      "node_memory_MemTotal{job='node',instance='{{.Params.instance}}'} - node_memory_MemFree{job='node',instance='{{.Params.instance}}'} - node_memory_Buffers{job='node',instance='{{.Params.instance}}'} - node_memory_Cached{job='node',instance='{{.Params.instance}}'}",
+      "node_memory_MemFree{job='node',instance='{{.Params.instance}}'}",
+    ],
+    name: function(metric) {
+      return !metric.__name__ ? 'Used' : metric.__name__.split('_', 3)[2] },
+    min: 0,
+    yUnits: "B",
+    yAxisFormatter: PromConsole.NumberFormatter.humanize1024,
+    yHoverFormatter: PromConsole.NumberFormatter.humanize1024,
+    yTitle: 'Memory'
+  })
+  </script>
+{{template "prom_content_tail" .}}
+
+{{template "tail"}}
