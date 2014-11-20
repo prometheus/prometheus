@@ -1,0 +1,16 @@
+{{template "head" .}}
+
+{{template "prom_right_table_head"}}
+<tr>
+  <th>Node</th>
+  <th>{{ template "prom_query_drilldown" (args "sum(up{job='node'})") }} / {{ template "prom_query_drilldown" (args "count(up{job='node'})") }}</th>
+</tr>
+{{template "prom_right_table_tail"}}
+
+{{template "prom_content_head" .}}
+<h1>Node</h1>
+
+Choose an instance on the left.
+{{template "prom_content_tail" .}}
+
+{{template "tail"}}
