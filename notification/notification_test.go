@@ -65,7 +65,7 @@ func (s *testNotificationScenario) test(i int, t *testing.T) {
 			Value:        clientmodel.SampleValue(1.0 / 3.0),
 			ActiveSince:  time.Time{},
 			RuleString:   "Test rule string",
-			GeneratorUrl: "prometheus_url",
+			GeneratorURL: "prometheus_url",
 		},
 	})
 
@@ -81,7 +81,7 @@ func TestNotificationHandler(t *testing.T) {
 			// Correct message.
 			summary:     "Summary",
 			description: "Description",
-			message:     `[{"Description":"Description","Labels":{"instance":"testinstance"},"Payload":{"ActiveSince":"0001-01-01T00:00:00Z","AlertingRule":"Test rule string","GeneratorUrl":"prometheus_url","Value":"0.333333"},"Summary":"Summary"}]`,
+			message:     `[{"Description":"Description","Labels":{"instance":"testinstance"},"Payload":{"ActiveSince":"0001-01-01T00:00:00Z","AlertingRule":"Test rule string","GeneratorURL":"prometheus_url","Value":"0.333333"},"Summary":"Summary"}]`,
 		},
 	}
 
