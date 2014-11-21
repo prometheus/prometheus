@@ -72,7 +72,7 @@ export LD_LIBRARY_PATH := $(PREFIX)/lib:$(LD_LIBRARY_PATH)
 export CFLAGS := $(CFLAGS) -I$(PREFIX)/include -O3
 export CXXFLAGS := $(CXXFLAGS) -I$(PREFIX)/include -O3
 export CPPFLAGS := $(CPPFLAGS) -I$(PREFIX)/include -O3
-export LDFLAGS := $(LDFLAGS) -L$(PREFIX)/lib
+export LDFLAGS := $(LDFLAGS) -L$(PREFIX)/lib -L$(PREFIX)/lib64
 export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 
 export CGO_CFLAGS = $(CFLAGS)
