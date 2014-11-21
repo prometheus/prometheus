@@ -13,87 +13,67 @@ The system is designed to collect telemetry from named targets on given
 intervals, evaluate rule expressions, display the results, and trigger an
 action if some condition is observed to be true.
 
-## Prerequisites
+TODO: The above description is somewhat esoteric. Rephrase it into
+somethith that tells normal people how they will usually benefit from
+using Prometheus.
 
-In your `PATH`, you must have the following binaries available:
-- `curl`
-- `xxd`
-- `sed`
-- `gzip`
+## Install
 
-If you change any of the `*.proto` files, you need to install [`protoc`, the protobuf compiler](http://code.google.com/p/protobuf/](http://code.google.com/p/protobuf/), v2.5.0 or higher.
+There are various ways of installing Prometheus.
 
-TODO: lexer, golex
+### Precompiled packages
 
-## Getting Started
+We plan to provide precompiled binaries for various platforms and even
+packages for common Linux distribution soon. Once those are offered,
+it will be the recommended way of installing Prometheus.
 
-For basic help how to get started:
+### Use `make`
 
-  * The source code is periodically indexed: [Prometheus Core](http://godoc.org/github.com/prometheus/prometheus).
-  * For UNIX-like environment users, please consult the Travis CI configuration in _.travis.yml_ and _Makefile_.
-  * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers).
-
-### General
-
-For first time users, simply run the following:
+In most cirumstances, the following should work:
 
     $ make
-    $ ARGUMENTS="-configFile=documentation/examples/prometheus.conf" make run
+    $ ARGUMENTS="-config.file=documentation/examples/prometheus.conf" make run
 
-``${ARGUMENTS}`` is passed verbatim into the makefile and thusly Prometheus as
-``$(ARGUMENTS)``.  This is useful for quick one-off invocations and smoke
-testing.
+``${ARGUMENTS}`` is passed verbatim to the commandline starting the Prometheus binary.
+This is useful for quick one-off invocations and smoke testing.
 
-If you run into problems, try the following:
+The above requires a number of common tools to be installed, namely
+`curl`, `git`, `gzip`, `hg` (Mercurial CLI), `sed`, `xxd`. Should you
+need to change any of the protocol buffer definition files
+(`*.proto`), you also need the protocol buffer compiler
+[`protoc`](http://code.google.com/p/protobuf/](http://code.google.com/p/protobuf/),
+v2.5.0 or higher, in your `$PATH`.
 
-    $ SILENCE_THIRD_PARTY_BUILDS=false make
+Everything else will be downloaded and installed into a staging
+environment in the `.build` sub-directory. That includes a Go
+development environment of the appropriate version.
 
-Upon having a satisfactory build, it's possible to create an artifact for
-end-user distribution:
+The `Makefile` offers a number of useful targets. Some examples:
 
-    $ make package
-    $ find build/package
+* `make test` runs tests.
+* `make tarball` creates a tar ball with the binary for distribution.
+* `make race_condition_run` compiles and runs a binary with the race detector enabled.
 
-``build/package`` will be sufficient for whatever archiving mechanism you
-choose.  The important thing to note is that Go presently does not
-staticly link against C dependency libraries, so including the ``lib``
-directory is paramount.  Providing ``LD_LIBRARY_PATH`` or
-``DYLD_LIBRARY_PATH`` in a scaffolding shell script is advised.
+### Use your own Go development environment
 
+Using your own Go development environment with the usual tooling is
+possible, too, but you have to take care of various generated files
+(usually by running `make` in the respective sub-directory):
 
-### Problems
-If at any point you run into an error with the ``make`` build system in terms of
-its not properly scaffolding things on a given environment, please file a bug or
-open a pull request with your changes if you can fix it yourself.
+* Compiling the protocol buffer definitions in `config` (only if you have changed them).
+* Generating the parser and lexer code in `rules` (only if you have changed `parser.y` or `lexer.l`).
+* The `files.go` blob in `web/blob`, which embeds the static web content into the binary.
 
-Please note that we're explicitly shooting for stable runtime environments and
-not the latest-whiz bang releases; thusly, we ask you to provide ample
-architecture and release identification remarks for us.
+Furthermore, the build info (see `build_info.go`) will not be
+populated if you simply run `go build`. You have to pass in command
+line flags as defined in `Makefile.INCLUDE` (see `${BUILDFLAGS}`) to
+do that.
 
-## Testing
+## More information
 
-    $ make test
-
-## Packaging
-
-    $ make package
-
-### Race Detector
-
-Go 1.1 includes a [race detector](http://tip.golang.org/doc/articles/race_detector.html)
-which can be enabled at build time. Here's how to use it with Prometheus
-(assumes that you've already run a successful build).
-
-To run the tests with race detection:
-
-    $ GORACE="log_path=/tmp/foo" go test -race ./...
-
-To run the server with race detection:
-
-    $ go build -race .
-    $ GORACE="log_path=/tmp/foo" ./prometheus
-
-[![Build Status](https://travis-ci.org/prometheus/prometheus.png)](https://travis-ci.org/prometheus/prometheus)
+  * The source code is periodically indexed: [Prometheus Core](http://godoc.org/github.com/prometheus/prometheus).
+  * You will find a Travis CI configuration in `.travis.yml`.
+  * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers).
 
 ## Contributing
 
@@ -101,4 +81,4 @@ Refer to [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 
-Apache License 2.0
+Apache License 2.0, see [LICENSE](LICENSE).
