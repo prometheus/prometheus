@@ -569,8 +569,8 @@ func TestExpressions(t *testing.T) {
 			// Test alternative "by"-clause order.
 			expr: `sum by (group) (http_requests{job="api-server"})`,
 			output: []string{
-				`http_requests{group="canary"} => 700 @[%v]`,
-				`http_requests{group="production"} => 300 @[%v]`,
+				`{group="canary"} => 700 @[%v]`,
+				`{group="production"} => 300 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 4,
@@ -579,8 +579,8 @@ func TestExpressions(t *testing.T) {
 			// Test alternative "by"-clause order with "keeping_extra".
 			expr: `sum by (group) keeping_extra (http_requests{job="api-server"})`,
 			output: []string{
-				`http_requests{group="canary", job="api-server"} => 700 @[%v]`,
-				`http_requests{group="production", job="api-server"} => 300 @[%v]`,
+				`{group="canary", job="api-server"} => 700 @[%v]`,
+				`{group="production", job="api-server"} => 300 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 4,
@@ -591,7 +591,7 @@ func TestExpressions(t *testing.T) {
 			// in an organization), or risk serious user confusion.
 			expr: `sum(sum by (group) keeping_extra (http_requests{job="api-server"})) by (job)`,
 			output: []string{
-				`http_requests{job="api-server"} => 1000 @[%v]`,
+				`{job="api-server"} => 1000 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 4,
