@@ -26,12 +26,13 @@ import (
 	registry "github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+	registry "github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules/manager"
-	"github.com/prometheus/prometheus/storage/metric/tiered"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 	"github.com/prometheus/prometheus/web"
@@ -42,208 +43,99 @@ const deletionBatchSize = 100
 
 // Commandline flags.
 var (
-	configFile         = flag.String("configFile", "prometheus.conf", "Prometheus configuration file name.")
-	metricsStoragePath = flag.String("metricsStoragePath", "/tmp/metrics", "Base path for metrics storage.")
+	configFile = flag.String("config.file", "prometheus.conf", "Prometheus configuration file name.")
 
-	alertmanagerUrl = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
+	alertmanagerURL           = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
+	notificationQueueCapacity = flag.Int("alertmanager.notification-queue-capacity", 100, "The capacity of the queue for pending alert manager notifications.")
+
+	metricsStoragePath = flag.String("storage.local.path", "/tmp/metrics", "Base path for metrics storage.")
 
 	remoteTSDBUrl     = flag.String("storage.remote.url", "", "The URL of the OpenTSDB instance to send samples to.")
 	remoteTSDBTimeout = flag.Duration("storage.remote.timeout", 30*time.Second, "The timeout to use when sending samples to OpenTSDB.")
 
-	samplesQueueCapacity      = flag.Int("storage.queue.samplesCapacity", 4096, "The size of the unwritten samples queue.")
-	diskAppendQueueCapacity   = flag.Int("storage.queue.diskAppendCapacity", 1000000, "The size of the queue for items that are pending writing to disk.")
-	memoryAppendQueueCapacity = flag.Int("storage.queue.memoryAppendCapacity", 10000, "The size of the queue for items that are pending writing to memory.")
+	samplesQueueCapacity = flag.Int("storage.incoming-samples-queue-capacity", 4096, "The capacity of the queue of samples to be stored.")
 
-	compactInterval         = flag.Duration("compact.interval", 3*time.Hour, "The amount of time between compactions.")
-	compactGroupSize        = flag.Int("compact.groupSize", 500, "The minimum group size for compacted samples.")
-	compactAgeInclusiveness = flag.Duration("compact.ageInclusiveness", 5*time.Minute, "The age beyond which samples should be compacted.")
+	numMemoryChunks = flag.Int("storage.local.memory-chunks", 1024*1024, "How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.")
 
-	deleteInterval = flag.Duration("delete.interval", 11*time.Hour, "The amount of time between deletion of old values.")
+	storageRetentionPeriod = flag.Duration("storage.local.retention", 15*24*time.Hour, "How long to retain samples in the local storage.")
 
-	deleteAge = flag.Duration("delete.ageMaximum", 15*24*time.Hour, "The relative maximum age for values before they are deleted.")
+	checkpointInterval = flag.Duration("storage.local.checkpoint-interval", 5*time.Minute, "The period at which the in-memory index of time series is checkpointed.")
 
-	arenaFlushInterval = flag.Duration("arena.flushInterval", 15*time.Minute, "The period at which the in-memory arena is flushed to disk.")
-	arenaTTL           = flag.Duration("arena.ttl", 10*time.Minute, "The relative age of values to purge to disk from memory.")
+	storageDirty = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
 
-	notificationQueueCapacity = flag.Int("alertmanager.notificationQueueCapacity", 100, "The size of the queue for pending alert manager notifications.")
+	printVersion = flag.Bool("version", false, "Print version information.")
+)
 
-	printVersion = flag.Bool("version", false, "print version information")
-
-	shutdownTimeout = flag.Duration("shutdownGracePeriod", 0*time.Second, "The amount of time Prometheus gives background services to finish running when shutdown is requested.")
+// Instrumentation.
+var (
+	samplesQueueCapDesc = registry.NewDesc(
+		"prometheus_samples_queue_capacity",
+		"Capacity of the queue for unwritten samples.",
+		nil, nil,
+	)
+	samplesQueueLenDesc = registry.NewDesc(
+		"prometheus_samples_queue_length",
+		"Current number of items in the queue for unwritten samples. Each item comprises all samples exposed by one target as one metric family (i.e. metrics of the same name).",
+		nil, nil,
+	)
 )
 
 type prometheus struct {
-	compactionTimer *time.Ticker
-	deletionTimer   *time.Ticker
-
-	curationSema             chan struct{}
-	stopBackgroundOperations chan struct{}
-
 	unwrittenSamples chan *extraction.Result
 
-	ruleManager     manager.RuleManager
-	targetManager   retrieval.TargetManager
-	notifications   chan notification.NotificationReqs
-	storage         *tiered.TieredStorage
-	remoteTSDBQueue *remote.TSDBQueueManager
+	ruleManager         manager.RuleManager
+	targetManager       retrieval.TargetManager
+	notificationHandler *notification.NotificationHandler
+	storage             local.Storage
+	remoteTSDBQueue     *remote.TSDBQueueManager
 
-	curationState tiered.CurationStateUpdater
+	webService *web.WebService
 
 	closeOnce sync.Once
 }
 
-func (p *prometheus) interruptHandler() {
-	notifier := make(chan os.Signal)
-	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
-
-	<-notifier
-
-	glog.Warning("Received SIGINT/SIGTERM; Exiting gracefully...")
-
-	p.Close()
-
-	os.Exit(0)
-}
-
-func (p *prometheus) compact(olderThan time.Duration, groupSize int) error {
-	select {
-	case s, ok := <-p.curationSema:
-		if !ok {
-			glog.Warning("Prometheus is shutting down; no more curation runs are allowed.")
-			return nil
-		}
-
-		defer func() {
-			p.curationSema <- s
-		}()
-
-	default:
-		glog.Warningf("Deferred compaction for %s and %s due to existing operation.", olderThan, groupSize)
-
-		return nil
-	}
-
-	processor := tiered.NewCompactionProcessor(&tiered.CompactionProcessorOptions{
-		MaximumMutationPoolBatch: groupSize * 3,
-		MinimumGroupSize:         groupSize,
-	})
-	defer processor.Close()
-
-	curator := tiered.NewCurator(&tiered.CuratorOptions{
-		Stop: p.stopBackgroundOperations,
-
-		ViewQueue: p.storage.ViewQueue,
-	})
-	defer curator.Close()
-
-	return curator.Run(olderThan, clientmodel.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
-}
-
-func (p *prometheus) delete(olderThan time.Duration, batchSize int) error {
-	select {
-	case s, ok := <-p.curationSema:
-		if !ok {
-			glog.Warning("Prometheus is shutting down; no more curation runs are allowed.")
-			return nil
-		}
-
-		defer func() {
-			p.curationSema <- s
-		}()
-
-	default:
-		glog.Warningf("Deferred deletion for %s due to existing operation.", olderThan)
-
-		return nil
-	}
-
-	processor := tiered.NewDeletionProcessor(&tiered.DeletionProcessorOptions{
-		MaximumMutationPoolBatch: batchSize,
-	})
-	defer processor.Close()
-
-	curator := tiered.NewCurator(&tiered.CuratorOptions{
-		Stop: p.stopBackgroundOperations,
-
-		ViewQueue: p.storage.ViewQueue,
-	})
-	defer curator.Close()
-
-	return curator.Run(olderThan, clientmodel.Now(), processor, p.storage.DiskStorage.CurationRemarks, p.storage.DiskStorage.MetricSamples, p.storage.DiskStorage.MetricHighWatermarks, p.curationState)
-}
-
-func (p *prometheus) Close() {
-	p.closeOnce.Do(p.close)
-}
-
-func (p *prometheus) close() {
-	// The "Done" remarks are a misnomer for some subsystems due to lack of
-	// blocking and synchronization.
-	glog.Info("Shutdown has been requested; subsytems are closing:")
-	p.targetManager.Stop()
-	glog.Info("Remote Target Manager: Done")
-	p.ruleManager.Stop()
-	glog.Info("Rule Executor: Done")
-
-	// Stop any currently active curation (deletion or compaction).
-	close(p.stopBackgroundOperations)
-	glog.Info("Current Curation Workers: Requested")
-
-	// Disallow further curation work.
-	close(p.curationSema)
-
-	// Stop curation timers.
-	if p.compactionTimer != nil {
-		p.compactionTimer.Stop()
-	}
-	if p.deletionTimer != nil {
-		p.deletionTimer.Stop()
-	}
-	glog.Info("Future Curation Workers: Done")
-
-	glog.Infof("Waiting %s for background systems to exit and flush before finalizing (DO NOT INTERRUPT THE PROCESS) ...", *shutdownTimeout)
-
-	// Wart: We should have a concrete form of synchronization for this, not a
-	//       hokey sleep statement.
-	time.Sleep(*shutdownTimeout)
-
-	close(p.unwrittenSamples)
-
-	p.storage.Close()
-	glog.Info("Local Storage: Done")
-
-	if p.remoteTSDBQueue != nil {
-		p.remoteTSDBQueue.Close()
-		glog.Info("Remote Storage: Done")
-	}
-
-	close(p.notifications)
-	glog.Info("Sundry Queues: Done")
-	glog.Info("See you next time!")
-}
-
-func main() {
-	// TODO(all): Future additions to main should be, where applicable, glumped
-	// into the prometheus struct above---at least where the scoping of the entire
-	// server is concerned.
-	flag.Parse()
-
-	versionInfoTmpl.Execute(os.Stdout, BuildInfo)
-
-	if *printVersion {
-		os.Exit(0)
-	}
-
+// NewPrometheus creates a new prometheus object based on flag values.
+// Call Serve() to start serving and Close() for clean shutdown.
+func NewPrometheus() *prometheus {
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	ts, err := tiered.NewTieredStorage(uint(*diskAppendQueueCapacity), 100, *arenaFlushInterval, *arenaTTL, *metricsStoragePath)
-	if err != nil {
-		glog.Fatal("Error opening storage: ", err)
+	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
+
+	ingester := &retrieval.MergeLabelsIngester{
+		Labels:          conf.GlobalLabels(),
+		CollisionPrefix: clientmodel.ExporterLabelPrefix,
+		Ingester:        retrieval.ChannelIngester(unwrittenSamples),
 	}
-	registry.MustRegister(ts)
+	targetManager := retrieval.NewTargetManager(ingester)
+	targetManager.AddTargetsFromConfig(conf)
+
+	notificationHandler := notification.NewNotificationHandler(*alertmanagerURL, *notificationQueueCapacity)
+
+	o := &local.MemorySeriesStorageOptions{
+		MemoryChunks:               *numMemoryChunks,
+		PersistenceStoragePath:     *metricsStoragePath,
+		PersistenceRetentionPeriod: *storageRetentionPeriod,
+		CheckpointInterval:         *checkpointInterval,
+		Dirty:                      *storageDirty,
+	}
+	memStorage, err := local.NewMemorySeriesStorage(o)
+	if err != nil {
+		glog.Fatal("Error opening memory series storage: ", err)
+	}
+
+	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
+		Results:             unwrittenSamples,
+		NotificationHandler: notificationHandler,
+		EvaluationInterval:  conf.EvaluationInterval(),
+		Storage:             memStorage,
+		PrometheusUrl:       web.MustBuildServerUrl(),
+	})
+	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
+		glog.Fatal("Error loading rule files: ", err)
+	}
 
 	var remoteTSDBQueue *remote.TSDBQueueManager
 	if *remoteTSDBUrl == "" {
@@ -251,50 +143,12 @@ func main() {
 	} else {
 		openTSDB := opentsdb.NewClient(*remoteTSDBUrl, *remoteTSDBTimeout)
 		remoteTSDBQueue = remote.NewTSDBQueueManager(openTSDB, 512)
-		registry.MustRegister(remoteTSDBQueue)
-		go remoteTSDBQueue.Run()
 	}
-
-	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
-	ingester := &retrieval.MergeLabelsIngester{
-		Labels:          conf.GlobalLabels(),
-		CollisionPrefix: clientmodel.ExporterLabelPrefix,
-
-		Ingester: retrieval.ChannelIngester(unwrittenSamples),
-	}
-
-	compactionTimer := time.NewTicker(*compactInterval)
-	deletionTimer := time.NewTicker(*deleteInterval)
-
-	// Queue depth will need to be exposed
-	targetManager := retrieval.NewTargetManager(ingester)
-	targetManager.AddTargetsFromConfig(conf)
-
-	notifications := make(chan notification.NotificationReqs, *notificationQueueCapacity)
-
-	// Queue depth will need to be exposed
-	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
-		Results:            unwrittenSamples,
-		Notifications:      notifications,
-		EvaluationInterval: conf.EvaluationInterval(),
-		Storage:            ts,
-		PrometheusUrl:      web.MustBuildServerUrl(),
-	})
-	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
-		glog.Fatal("Error loading rule files: ", err)
-	}
-	go ruleManager.Run()
-
-	notificationHandler := notification.NewNotificationHandler(*alertmanagerUrl, notifications)
-	registry.MustRegister(notificationHandler)
-	go notificationHandler.Run()
 
 	flags := map[string]string{}
-
 	flag.VisitAll(func(f *flag.Flag) {
 		flags[f.Name] = f.Value.String()
 	})
-
 	prometheusStatus := &web.PrometheusStatusHandler{
 		BuildInfo:   BuildInfo,
 		Config:      conf.String(),
@@ -309,96 +163,144 @@ func main() {
 	}
 
 	consolesHandler := &web.ConsolesHandler{
-		Storage: ts,
-	}
-
-	databasesHandler := &web.DatabasesHandler{
-		Provider:        ts.DiskStorage,
-		RefreshInterval: 5 * time.Minute,
+		Storage: memStorage,
 	}
 
 	metricsService := &api.MetricsService{
 		Config:        &conf,
 		TargetManager: targetManager,
-		Storage:       ts,
+		Storage:       memStorage,
 	}
-
-	prometheus := &prometheus{
-		compactionTimer: compactionTimer,
-
-		deletionTimer: deletionTimer,
-
-		curationState: prometheusStatus,
-		curationSema:  make(chan struct{}, 1),
-
-		unwrittenSamples: unwrittenSamples,
-
-		stopBackgroundOperations: make(chan struct{}),
-
-		ruleManager:     ruleManager,
-		targetManager:   targetManager,
-		notifications:   notifications,
-		storage:         ts,
-		remoteTSDBQueue: remoteTSDBQueue,
-	}
-	defer prometheus.Close()
 
 	webService := &web.WebService{
-		StatusHandler:    prometheusStatus,
-		MetricsHandler:   metricsService,
-		DatabasesHandler: databasesHandler,
-		ConsolesHandler:  consolesHandler,
-		AlertsHandler:    alertsHandler,
-
-		QuitDelegate: prometheus.Close,
+		StatusHandler:   prometheusStatus,
+		MetricsHandler:  metricsService,
+		ConsolesHandler: consolesHandler,
+		AlertsHandler:   alertsHandler,
 	}
 
-	prometheus.curationSema <- struct{}{}
+	p := &prometheus{
+		unwrittenSamples: unwrittenSamples,
 
-	storageStarted := make(chan bool)
-	go ts.Serve(storageStarted)
-	<-storageStarted
+		ruleManager:         ruleManager,
+		targetManager:       targetManager,
+		notificationHandler: notificationHandler,
+		storage:             memStorage,
+		remoteTSDBQueue:     remoteTSDBQueue,
 
-	go prometheus.interruptHandler()
+		webService: webService,
+	}
+	webService.QuitDelegate = p.Close
+	return p
+}
 
-	go func() {
-		for _ = range prometheus.compactionTimer.C {
-			glog.Info("Starting compaction...")
-			err := prometheus.compact(*compactAgeInclusiveness, *compactGroupSize)
+// Serve starts the Prometheus server. It returns after the server has been shut
+// down. The method installs an interrupt handler, allowing to trigger a
+// shutdown by sending SIGTERM to the process.
+func (p *prometheus) Serve() {
+	if p.remoteTSDBQueue != nil {
+		go p.remoteTSDBQueue.Run()
+	}
+	go p.ruleManager.Run()
+	go p.notificationHandler.Run()
+	go p.interruptHandler()
 
-			if err != nil {
-				glog.Error("could not compact: ", err)
-			}
-			glog.Info("Done")
-		}
-	}()
-
-	go func() {
-		for _ = range prometheus.deletionTimer.C {
-			glog.Info("Starting deletion of stale values...")
-			err := prometheus.delete(*deleteAge, deletionBatchSize)
-
-			if err != nil {
-				glog.Error("could not delete: ", err)
-			}
-			glog.Info("Done")
-		}
-	}()
+	p.storage.Start()
 
 	go func() {
-		err := webService.ServeForever()
+		err := p.webService.ServeForever()
 		if err != nil {
 			glog.Fatal(err)
 		}
 	}()
 
-	// TODO(all): Migrate this into prometheus.serve().
-	for block := range unwrittenSamples {
+	for block := range p.unwrittenSamples {
 		if block.Err == nil && len(block.Samples) > 0 {
-			ts.AppendSamples(block.Samples)
-			if remoteTSDBQueue != nil {
-				remoteTSDBQueue.Queue(block.Samples)
+			p.storage.AppendSamples(block.Samples)
+			if p.remoteTSDBQueue != nil {
+				p.remoteTSDBQueue.Queue(block.Samples)
 			}
 		}
 	}
+
+	// The following shut-down operations have to happen after
+	// unwrittenSamples is drained. So do not move them into close().
+	if err := p.storage.Stop(); err != nil {
+		glog.Error("Error stopping local storage: ", err)
+	}
+
+	if p.remoteTSDBQueue != nil {
+		p.remoteTSDBQueue.Stop()
+	}
+
+	p.notificationHandler.Stop()
+	glog.Info("See you next time!")
+}
+
+// Close cleanly shuts down the Prometheus server.
+func (p *prometheus) Close() {
+	p.closeOnce.Do(p.close)
+}
+
+func (p *prometheus) interruptHandler() {
+	notifier := make(chan os.Signal)
+	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
+	<-notifier
+
+	glog.Warning("Received SIGTERM, exiting gracefully...")
+	p.Close()
+}
+
+func (p *prometheus) close() {
+	glog.Info("Shutdown has been requested; subsytems are closing:")
+	p.targetManager.Stop()
+	p.ruleManager.Stop()
+
+	close(p.unwrittenSamples)
+	// Note: Before closing the remaining subsystems (storage, ...), we have
+	// to wait until p.unwrittenSamples is actually drained. Therefore,
+	// remaining shut-downs happen in Serve().
+}
+
+// Describe implements registry.Collector.
+func (p *prometheus) Describe(ch chan<- *registry.Desc) {
+	ch <- samplesQueueCapDesc
+	ch <- samplesQueueLenDesc
+	p.notificationHandler.Describe(ch)
+	p.storage.Describe(ch)
+	if p.remoteTSDBQueue != nil {
+		p.remoteTSDBQueue.Describe(ch)
+	}
+}
+
+// Collect implements registry.Collector.
+func (p *prometheus) Collect(ch chan<- registry.Metric) {
+	ch <- registry.MustNewConstMetric(
+		samplesQueueCapDesc,
+		registry.GaugeValue,
+		float64(cap(p.unwrittenSamples)),
+	)
+	ch <- registry.MustNewConstMetric(
+		samplesQueueLenDesc,
+		registry.GaugeValue,
+		float64(len(p.unwrittenSamples)),
+	)
+	p.notificationHandler.Collect(ch)
+	p.storage.Collect(ch)
+	if p.remoteTSDBQueue != nil {
+		p.remoteTSDBQueue.Collect(ch)
+	}
+}
+
+func main() {
+	flag.Parse()
+	versionInfoTmpl.Execute(os.Stdout, BuildInfo)
+
+	if *printVersion {
+		os.Exit(0)
+	}
+
+	p := NewPrometheus()
+	registry.MustRegister(p)
+	p.Serve()
 }

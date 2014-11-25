@@ -35,7 +35,7 @@ const (
 // String constants for instrumentation.
 const (
 	namespace = "prometheus"
-	subsystem = "remote_tsdb"
+	subsystem = "remote_storage"
 
 	result  = "result"
 	success = "success"
@@ -119,15 +119,16 @@ func (t *TSDBQueueManager) Queue(s clientmodel.Samples) {
 	}
 }
 
-// Close stops sending samples to the TSDB and waits for pending sends to
+// Stop stops sending samples to the TSDB and waits for pending sends to
 // complete.
-func (t *TSDBQueueManager) Close() {
-	glog.Infof("TSDB queue manager shutting down...")
+func (t *TSDBQueueManager) Stop() {
+	glog.Infof("Stopping remote storage...")
 	close(t.queue)
 	<-t.drained
 	for i := 0; i < maxConcurrentSends; i++ {
 		t.sendSemaphore <- true
 	}
+	glog.Info("Remote storage stopped.")
 }
 
 // Describe implements prometheus.Collector.

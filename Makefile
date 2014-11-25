@@ -22,14 +22,12 @@ $(GOCC): $(BUILD_PATH)/cache/$(GOPKG) $(FULL_GOPATH)
 	touch $@
 
 advice:
-	$(GO) tool vet .
+	$(GO) vet ./...
 
 binary: build
 
-build: config dependencies model preparation tools web
+build: config dependencies tools web
 	$(GO) build -o prometheus $(BUILDFLAGS) .
-	cp prometheus $(BUILD_PATH)/package/prometheus
-	rsync -av --delete $(BUILD_PATH)/root/lib/ $(BUILD_PATH)/package/lib/
 
 docker: build
 	docker build -t prometheus:$(REV) .
@@ -37,7 +35,7 @@ docker: build
 tarball: $(ARCHIVE)
 
 $(ARCHIVE): build
-	tar -C $(BUILD_PATH)/package -czf $(ARCHIVE) .
+	tar -czf $(ARCHIVE) prometheus
 
 release: REMOTE     ?= $(error "can't upload, REMOTE not set")
 release: REMOTE_DIR ?= $(error "can't upload, REMOTE_DIR not set")
@@ -49,7 +47,7 @@ tag:
 	git push --tags
 
 $(BUILD_PATH)/cache/$(GOPKG):
-	curl -o $@ -L $(GOURL)/$(GOPKG)
+	$(CURL) -o $@ -L $(GOURL)/$(GOPKG)
 
 benchmark: test
 	$(GO) test $(GO_TEST_FLAGS) -test.bench='Benchmark' ./...
@@ -59,15 +57,15 @@ clean:
 	$(MAKE) -C tools clean
 	$(MAKE) -C web clean
 	rm -rf $(TEST_ARTIFACTS)
-	-rm prometheus.tar.gz
-	-find . -type f -iname '*~' -exec rm '{}' ';'
-	-find . -type f -iname '*#' -exec rm '{}' ';'
-	-find . -type f -iname '.#*' -exec rm '{}' ';'
+	-rm $(ARCHIVE)
+	-find . -type f -name '*~' -exec rm '{}' ';'
+	-find . -type f -name '*#' -exec rm '{}' ';'
+	-find . -type f -name '.#*' -exec rm '{}' ';'
 
-config: dependencies preparation
+config: dependencies
 	$(MAKE) -C config
 
-dependencies: preparation
+dependencies: $(GOCC) $(FULL_GOPATH)
 	$(GO) get -d
 
 documentation: search_index
@@ -76,14 +74,8 @@ documentation: search_index
 format:
 	find . -iname '*.go' | egrep -v "^\./\.build|./generated|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
 
-model: dependencies preparation
-	$(MAKE) -C model
-
-preparation: $(GOCC) $(FULL_GOPATH)
-	$(MAKE) -C $(BUILD_PATH)
-
 race_condition_binary: build
-	CGO_CFLAGS="-I$(BUILD_PATH)/root/include" CGO_LDFLAGS="-L$(BUILD_PATH)/root/lib" $(GO) build -race -o prometheus.race $(BUILDFLAGS) .
+	$(GO) build -race -o prometheus.race $(BUILDFLAGS) .
 
 race_condition_run: race_condition_binary
 	./prometheus.race $(ARGUMENTS)
@@ -94,7 +86,7 @@ run: binary
 search_index:
 	godoc -index -write_index -index_files='search_index'
 
-server: config dependencies model preparation
+server: config dependencies
 	$(MAKE) -C server
 
 # $(FULL_GOPATH) is responsible for ensuring that the builder has not done anything
@@ -103,16 +95,13 @@ $(FULL_GOPATH):
 	-[ -d "$(FULL_GOPATH)" ] || { mkdir -vp $(FULL_GOPATH_BASE) ; ln -s "$(PWD)" "$(FULL_GOPATH)" ; }
 	[ -d "$(FULL_GOPATH)" ]
 
-test: config dependencies model preparation tools web
+test: config dependencies tools web
 	$(GO) test $(GO_TEST_FLAGS) ./...
 
-tools: dependencies preparation
+tools: dependencies
 	$(MAKE) -C tools
 
-update:
-	$(GO) get -d
-
-web: config dependencies model preparation
+web: config dependencies
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean config dependencies documentation format model preparation race_condition_binary race_condition_run release run search_index tag tarball test tools update
+.PHONY: advice binary build clean config dependencies documentation format race_condition_binary race_condition_run release run search_index tag tarball test tools

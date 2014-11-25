@@ -53,9 +53,23 @@ type (
 		path   string
 		tester testing.TB
 	}
+
+	callbackCloser struct {
+		fn func()
+	}
 )
 
 func (c nilCloser) Close() {
+}
+
+func (c callbackCloser) Close() {
+	c.fn()
+}
+
+func NewCallbackCloser(fn func()) *callbackCloser {
+	return &callbackCloser{
+		fn: fn,
+	}
 }
 
 func (t temporaryDirectory) Close() {

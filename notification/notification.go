@@ -23,9 +23,9 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/utility"
 )
@@ -47,7 +47,7 @@ const (
 )
 
 var (
-	deadline = flag.Duration("alertmanager.httpDeadline", 10*time.Second, "Alert manager HTTP API timeout.")
+	deadline = flag.Duration("alertmanager.http-deadline", 10*time.Second, "Alert manager HTTP API timeout.")
 )
 
 // A request for sending a notification to the alert manager for a single alert
@@ -81,21 +81,24 @@ type NotificationHandler struct {
 	// The URL of the alert manager to send notifications to.
 	alertmanagerUrl string
 	// Buffer of notifications that have not yet been sent.
-	pendingNotifications <-chan NotificationReqs
+	pendingNotifications chan NotificationReqs
 	// HTTP client with custom timeout settings.
 	httpClient httpPoster
 
 	notificationLatency        *prometheus.SummaryVec
 	notificationsQueueLength   prometheus.Gauge
 	notificationsQueueCapacity prometheus.Metric
+
+	stopped chan struct{}
 }
 
 // Construct a new NotificationHandler.
-func NewNotificationHandler(alertmanagerUrl string, notificationReqs <-chan NotificationReqs) *NotificationHandler {
+func NewNotificationHandler(alertmanagerUrl string, notificationQueueCapacity int) *NotificationHandler {
 	return &NotificationHandler{
 		alertmanagerUrl:      alertmanagerUrl,
-		pendingNotifications: notificationReqs,
-		httpClient:           utility.NewDeadlineClient(*deadline),
+		pendingNotifications: make(chan NotificationReqs, notificationQueueCapacity),
+
+		httpClient: utility.NewDeadlineClient(*deadline),
 
 		notificationLatency: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
@@ -119,8 +122,9 @@ func NewNotificationHandler(alertmanagerUrl string, notificationReqs <-chan Noti
 				nil, nil,
 			),
 			prometheus.GaugeValue,
-			float64(cap(notificationReqs)),
+			float64(notificationQueueCapacity),
 		),
+		stopped: make(chan struct{}),
 	}
 }
 
@@ -163,7 +167,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	return nil
 }
 
-// Continuously dispatch notifications.
+// Run dispatches notifications continuously.
 func (n *NotificationHandler) Run() {
 	for reqs := range n.pendingNotifications {
 		if n.alertmanagerUrl == "" {
@@ -185,6 +189,35 @@ func (n *NotificationHandler) Run() {
 			float64(time.Since(begin) / time.Millisecond),
 		)
 	}
+	close(n.stopped)
+}
+
+// SubmitReqs queues the given notification requests for processing.
+func (n *NotificationHandler) SubmitReqs(reqs NotificationReqs) {
+	n.pendingNotifications <- reqs
+}
+
+// Stop shuts down the notification handler.
+func (n *NotificationHandler) Stop() {
+	glog.Info("Stopping notification handler...")
+	close(n.pendingNotifications)
+	<-n.stopped
+	glog.Info("Notification handler stopped.")
+}
+
+// Describe implements prometheus.Collector.
+func (n *NotificationHandler) Describe(ch chan<- *prometheus.Desc) {
+	n.notificationLatency.Describe(ch)
+	ch <- n.notificationsQueueLength.Desc()
+	ch <- n.notificationsQueueCapacity.Desc()
+}
+
+// Collect implements prometheus.Collector.
+func (n *NotificationHandler) Collect(ch chan<- prometheus.Metric) {
+	n.notificationLatency.Collect(ch)
+	n.notificationsQueueLength.Set(float64(len(n.pendingNotifications)))
+	ch <- n.notificationsQueueLength
+	ch <- n.notificationsQueueCapacity
 }
 
 // Describe implements prometheus.Collector.

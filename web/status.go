@@ -20,7 +20,6 @@ import (
 
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules/manager"
-	"github.com/prometheus/prometheus/storage/metric"
 )
 
 type PrometheusStatusHandler struct {
@@ -28,7 +27,6 @@ type PrometheusStatusHandler struct {
 
 	BuildInfo   map[string]string
 	Config      string
-	Curation    metric.CurationState
 	Flags       map[string]string
 	RuleManager manager.RuleManager
 	TargetPools map[string]*retrieval.TargetPool
@@ -36,16 +34,6 @@ type PrometheusStatusHandler struct {
 	Birth time.Time
 }
 
-func (h *PrometheusStatusHandler) UpdateCurationState(c *metric.CurationState) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	h.Curation = *c
-}
-
 func (h *PrometheusStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	executeTemplate(w, "status", h)
 }

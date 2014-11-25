@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/templates"
 )
 
@@ -83,20 +83,20 @@ type ruleManager struct {
 	done chan bool
 
 	interval time.Duration
-	storage  metric.PreloadingPersistence
+	storage  local.Storage
 
-	results       chan<- *extraction.Result
-	notifications chan<- notification.NotificationReqs
+	results             chan<- *extraction.Result
+	notificationHandler *notification.NotificationHandler
 
 	prometheusUrl string
 }
 
 type RuleManagerOptions struct {
 	EvaluationInterval time.Duration
-	Storage            metric.PreloadingPersistence
+	Storage            local.Storage
 
-	Notifications chan<- notification.NotificationReqs
-	Results       chan<- *extraction.Result
+	NotificationHandler *notification.NotificationHandler
+	Results             chan<- *extraction.Result
 
 	PrometheusUrl string
 }
@@ -106,11 +106,11 @@ func NewRuleManager(o *RuleManagerOptions) RuleManager {
 		rules: []rules.Rule{},
 		done:  make(chan bool),
 
-		interval:      o.EvaluationInterval,
-		storage:       o.Storage,
-		results:       o.Results,
-		notifications: o.Notifications,
-		prometheusUrl: o.PrometheusUrl,
+		interval:            o.EvaluationInterval,
+		storage:             o.Storage,
+		results:             o.Results,
+		notificationHandler: o.NotificationHandler,
+		prometheusUrl:       o.PrometheusUrl,
 	}
 	return manager
 }
@@ -126,17 +126,15 @@ func (m *ruleManager) Run() {
 			m.runIteration(m.results)
 			iterationDuration.Observe(float64(time.Since(start) / time.Millisecond))
 		case <-m.done:
-			glog.Info("rules.Rule manager exiting...")
+			glog.Info("Rule manager stopped.")
 			return
 		}
 	}
 }
 
 func (m *ruleManager) Stop() {
-	select {
-	case m.done <- true:
-	default:
-	}
+	glog.Info("Stopping rule manager...")
+	m.done <- true
 }
 
 func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestamp clientmodel.Timestamp) {
@@ -190,7 +188,7 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 			GeneratorURL: m.prometheusUrl + rules.GraphLinkForExpression(rule.Vector.String()),
 		})
 	}
-	m.notifications <- notifications
+	m.notificationHandler.SubmitReqs(notifications)
 }
 
 func (m *ruleManager) runIteration(results chan<- *extraction.Result) {

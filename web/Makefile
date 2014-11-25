@@ -13,18 +13,12 @@
 
 all: blob-stamp
 
-blob-stamp: static/generated/protocol_buffer.descriptor templates/*
+blob-stamp: templates/*
 	$(MAKE) -C blob
 	touch $@
 
 clean:
 	$(MAKE) -C blob clean
 	-rm -f *-stamp
-
-static/generated:
-	mkdir -vp static/generated
-
-static/generated/protocol_buffer.descriptor: static/generated ../model/generated/descriptor.blob
-	cp -f ../model/generated/descriptor.blob $@
 
 .PHONY: clean

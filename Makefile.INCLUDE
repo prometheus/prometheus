@@ -15,15 +15,7 @@
 
 .SUFFIXES:
 
-# Set this to "false" to provide verbose builds of third-party components,
-# namely C and C++ dependencies.
-export SILENCE_THIRD_PARTY_BUILDS := true
-
-ifeq ($(SILENCE_THIRD_PARTY_BUILDS), true)
-export THIRD_PARTY_BUILD_OUTPUT := >/dev/null 2>&1
-else
-export THIRD_PARTY_BUILD_OUTPUT :=
-endif
+VERSION=0.8.0
 
 OS=$(shell uname)
 ARCH=$(shell uname -m)
@@ -34,7 +26,7 @@ MAC_OS_X_VERSION ?= 10.8
 
 BUILD_PATH = $(PWD)/.build
 
-GO_VERSION	 := 1.3
+GO_VERSION	 := 1.3.3
 GOOS		  = $(subst Darwin,darwin,$(subst Linux,linux,$(OS)))
 
 ifeq ($(GOOS),darwin)
@@ -54,42 +46,18 @@ GOENV		  = TMPDIR=$(TMPDIR) GOROOT=$(GOROOT) GOPATH=$(GOPATH)
 GO	          = $(GOENV) $(GOCC)
 GOFMT		  = $(GOROOT)/bin/gofmt
 
-LEVELDB_VERSION := 1.14.0
-PROTOCOL_BUFFERS_VERSION := 2.5.0
-SNAPPY_VERSION := 1.1.0
-
 UNAME := $(shell uname)
 FULL_GOPATH := $(GOPATH)/src/github.com/prometheus/prometheus
 FULL_GOPATH_BASE := $(GOPATH)/src/github.com/prometheus
 
 export PREFIX=$(BUILD_PATH)/root
 
-export LOCAL_BINARIES=$(PREFIX)/bin
+export PATH := $(GOPATH)/bin:$(PATH)
 
-export PATH := $(LOCAL_BINARIES):$(GOPATH)/bin:$(PATH)
-export LD_LIBRARY_PATH := $(PREFIX)/lib:$(LD_LIBRARY_PATH)
-
-export CFLAGS := $(CFLAGS) -I$(PREFIX)/include -O3
-export CXXFLAGS := $(CXXFLAGS) -I$(PREFIX)/include -O3
-export CPPFLAGS := $(CPPFLAGS) -I$(PREFIX)/include -O3
-export LDFLAGS := $(LDFLAGS) -L$(PREFIX)/lib
-export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
-
-export CGO_CFLAGS = $(CFLAGS)
-export CGO_LDFLAGS = $(LDFLAGS)
-
-export GO_TEST_FLAGS ?= "-v"
+export GO_TEST_FLAGS ?= "-v -short"
 
 GO_GET := $(GO) get -u -v -x
-APT_GET_INSTALL := sudo apt-get install -y
-BREW_INSTALL := brew install
-# By default, wget sets the creation time to match the server's, which throws
-# off Make.  :-(
-#
-# Set WGET_OPTIONS to include ``--no-use-server-timestamps`` to alleviate this.
-WGET := wget $(WGET_OPTIONS) -c
 
-VERSION    := $(shell cat VERSION)
 REV        := $(shell git rev-parse --short HEAD)
 BRANCH     := $(shell git rev-parse --abbrev-ref HEAD)
 HOSTNAME   := $(shell hostname -f)
@@ -100,11 +68,8 @@ BUILDFLAGS := -ldflags \
 		-X main.buildBranch $(BRANCH)\
 		-X main.buildUser $(USER)@$(HOSTNAME)\
 		-X main.buildDate $(BUILD_DATE)\
-		-X main.goVersion $(GO_VERSION)\
-		-X main.leveldbVersion $(LEVELDB_VERSION)\
-		-X main.protobufVersion $(PROTOCOL_BUFFERS_VERSION)\
-		-X main.snappyVersion $(SNAPPY_VERSION)"
-
-PROTOC := $(LOCAL_BINARIES)/protoc
+		-X main.goVersion $(GO_VERSION)"
+PROTOC := protoc
+CURL := curl
 
 ARCHIVE := prometheus-$(VERSION).$(GOOS)-$(GOARCH).tar.gz

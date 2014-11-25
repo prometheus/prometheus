@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"sync"
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
 
@@ -57,7 +58,7 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
 		glog.Infof("Pool for job %s does not exist; creating and starting...", job.GetName())
 
 		m.poolsByJob[job.GetName()] = targetPool
-		// BUG(all): Investigate whether this auto-goroutine creation is desired.
+		// TODO: Investigate whether this auto-goroutine creation is desired.
 		go targetPool.Run()
 	}
 
@@ -105,13 +106,22 @@ func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 }
 
 func (m *targetManager) Stop() {
-	glog.Info("Target manager exiting...")
-	for _, p := range m.poolsByJob {
-		p.Stop()
+	glog.Info("Stopping target manager...")
+	var wg sync.WaitGroup
+	for j, p := range m.poolsByJob {
+		wg.Add(1)
+		go func(j string, p *TargetPool) {
+			defer wg.Done()
+			glog.Infof("Stopping target pool %q...", j)
+			p.Stop()
+			glog.Infof("Target pool %q stopped.", j)
+		}(j, p)
 	}
+	wg.Wait()
+	glog.Info("Target manager stopped.")
 }
 
-// XXX: Not really thread-safe. Only used in /status page for now.
+// TODO: Not goroutine-safe. Only used in /status page for now.
 func (m *targetManager) Pools() map[string]*TargetPool {
 	return m.poolsByJob
 }

@@ -18,7 +18,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/storage/metric/tiered"
+	"github.com/prometheus/prometheus/storage/local"
 )
 
 type testTemplatesScenario struct {
@@ -152,8 +152,9 @@ func TestTemplateExpansion(t *testing.T) {
 
 	time := clientmodel.Timestamp(0)
 
-	ts, _ := tiered.NewTestTieredStorage(t)
-	ts.AppendSamples(clientmodel.Samples{
+	storage, closer := local.NewTestStorage(t)
+	defer closer.Close()
+	storage.AppendSamples(clientmodel.Samples{
 		{
 			Metric: clientmodel.Metric{
 				clientmodel.MetricNameLabel: "metric",
@@ -167,11 +168,12 @@ func TestTemplateExpansion(t *testing.T) {
 			Value: 21,
 		},
 	})
+	storage.WaitForIndexing()
 
-	for _, s := range scenarios {
+	for i, s := range scenarios {
 		var result string
 		var err error
-		expander := NewTemplateExpander(s.text, "test", s.input, time, ts)
+		expander := NewTemplateExpander(s.text, "test", s.input, time, storage)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
@@ -179,16 +181,16 @@ func TestTemplateExpansion(t *testing.T) {
 		}
 		if s.shouldFail {
 			if err == nil {
-				t.Fatalf("Error not returned from %v", s.text)
+				t.Fatalf("%d. Error not returned from %v", i, s.text)
 			}
 			continue
 		}
 		if err != nil {
-			t.Fatalf("Error returned from %v: %v", s.text, err)
+			t.Fatalf("%d. Error returned from %v: %v", i, s.text, err)
 			continue
 		}
 		if result != s.output {
-			t.Fatalf("Error in result from %v: Expected '%v' Got '%v'", s.text, s.output, result)
+			t.Fatalf("%d. Error in result from %v: Expected '%v' Got '%v'", i, s.text, s.output, result)
 			continue
 		}
 	}

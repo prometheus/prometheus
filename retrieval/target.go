@@ -126,10 +126,12 @@ type Target interface {
 	GlobalAddress() string
 	// Return the target's base labels.
 	BaseLabels() clientmodel.LabelSet
-	// Merge a new externally supplied target definition (e.g. with changed base
-	// labels) into an old target definition for the same endpoint. Preserve
-	// remaining information - like health state - from the old target.
-	Merge(newTarget Target)
+	// SetBaseLabelsFrom queues a replacement of the current base labels by
+	// the labels of the given target. The method returns immediately after
+	// queuing. The actual replacement of the base labels happens
+	// asynchronously (but most likely before the next scrape for the target
+	// begins).
+	SetBaseLabelsFrom(Target)
 	// Scrape target at the specified interval.
 	RunScraper(extraction.Ingester, time.Duration)
 	// Stop scraping, synchronous.
@@ -139,6 +141,9 @@ type Target interface {
 }
 
 // target is a Target that refers to a singular HTTP or HTTPS endpoint.
+//
+// TODO: The implementation is not yet goroutine safe, but for the web status,
+// methods are called concurrently.
 type target struct {
 	// The current health state of the target.
 	state TargetState
@@ -146,9 +151,10 @@ type target struct {
 	lastError error
 	// The last time a scrape was attempted.
 	lastScrape time.Time
-	// Channel to signal RunScraper should stop, holds a channel
-	// to notify once stopped.
-	stopScraper chan bool
+	// Closing stopScraper signals that scraping should stop.
+	stopScraper chan struct{}
+	// Channel to queue base labels to be replaced.
+	newBaseLabels chan clientmodel.LabelSet
 
 	address string
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
@@ -162,11 +168,12 @@ type target struct {
 // Furnish a reasonably configured target for querying.
 func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.LabelSet) Target {
 	target := &target{
-		address:     address,
-		Deadline:    deadline,
-		baseLabels:  baseLabels,
-		httpClient:  utility.NewDeadlineClient(deadline),
-		stopScraper: make(chan bool),
+		address:       address,
+		Deadline:      deadline,
+		baseLabels:    baseLabels,
+		httpClient:    utility.NewDeadlineClient(deadline),
+		stopScraper:   make(chan struct{}),
+		newBaseLabels: make(chan clientmodel.LabelSet, 1),
 	}
 
 	return target
@@ -197,11 +204,25 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clie
 	})
 }
 
+// RunScraper implements Target.
 func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration) {
+	defer func() {
+		// Need to drain t.newBaseLabels to not make senders block during shutdown.
+		for {
+			select {
+			case <-t.newBaseLabels:
+				// Do nothing.
+			default:
+				return
+			}
+		}
+	}()
+
 	jitterTimer := time.NewTimer(time.Duration(float64(interval) * rand.Float64()))
 	select {
 	case <-jitterTimer.C:
 	case <-t.stopScraper:
+		jitterTimer.Stop()
 		return
 	}
 	jitterTimer.Stop()
@@ -211,20 +232,39 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 
 	t.lastScrape = time.Now()
 	t.scrape(ingester)
+
+	// Explanation of the contraption below:
+	//
+	// In case t.newBaseLabels or t.stopScraper have something to receive,
+	// we want to read from those channels rather than starting a new scrape
+	// (which might take very long). That's why the outer select has no
+	// ticker.C. Should neither t.newBaseLabels nor t.stopScraper have
+	// anything to receive, we go into the inner select, where ticker.C is
+	// in the mix.
 	for {
 		select {
-		case <-ticker.C:
-			targetIntervalLength.WithLabelValues(interval.String()).Observe(float64(time.Since(t.lastScrape) / time.Second))
-			t.lastScrape = time.Now()
-			t.scrape(ingester)
+		case newBaseLabels := <-t.newBaseLabels:
+			t.baseLabels = newBaseLabels
 		case <-t.stopScraper:
 			return
+		default:
+			select {
+			case newBaseLabels := <-t.newBaseLabels:
+				t.baseLabels = newBaseLabels
+			case <-t.stopScraper:
+				return
+			case <-ticker.C:
+				targetIntervalLength.WithLabelValues(interval.String()).Observe(float64(time.Since(t.lastScrape) / time.Second))
+				t.lastScrape = time.Now()
+				t.scrape(ingester)
+			}
 		}
 	}
 }
 
+// StopScraper implements Target.
 func (t *target) StopScraper() {
-	t.stopScraper <- true
+	close(t.stopScraper)
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
@@ -270,8 +310,8 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		return err
 	}
 
-	// XXX: This is a wart; we need to handle this more gracefully down the
-	//      road, especially once we have service discovery support.
+	// TODO: This is a wart; we need to handle this more gracefully down the
+	// road, especially once we have service discovery support.
 	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.Address())}
 	for baseLabel, baseValue := range t.baseLabels {
 		baseLabels[baseLabel] = baseValue
@@ -289,22 +329,27 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 	return processor.ProcessSingle(resp.Body, i, processOptions)
 }
 
+// LastError implements Target.
 func (t *target) LastError() error {
 	return t.lastError
 }
 
+// State implements Target.
 func (t *target) State() TargetState {
 	return t.state
 }
 
+// LastScrape implements Target.
 func (t *target) LastScrape() time.Time {
 	return t.lastScrape
 }
 
+// Address implements Target.
 func (t *target) Address() string {
 	return t.address
 }
 
+// GlobalAddress implements Target.
 func (t *target) GlobalAddress() string {
 	address := t.address
 	hostname, err := os.Hostname()
@@ -318,18 +363,17 @@ func (t *target) GlobalAddress() string {
 	return address
 }
 
+// BaseLabels implements Target.
 func (t *target) BaseLabels() clientmodel.LabelSet {
 	return t.baseLabels
 }
 
-// Merge a new externally supplied target definition (e.g. with changed base
-// labels) into an old target definition for the same endpoint. Preserve
-// remaining information - like health state - from the old target.
-func (t *target) Merge(newTarget Target) {
+// SetBaseLabelsFrom implements Target.
+func (t *target) SetBaseLabelsFrom(newTarget Target) {
 	if t.Address() != newTarget.Address() {
 		panic("targets don't refer to the same endpoint")
 	}
-	t.baseLabels = newTarget.BaseLabels()
+	t.newBaseLabels <- newTarget.BaseLabels()
 }
 
 type targets []Target

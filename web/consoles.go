@@ -22,17 +22,17 @@ import (
 	"path/filepath"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/templates"
 )
 
 var (
-	consoleTemplatesPath = flag.String("consoleTemplates", "consoles", "Path to console template directory, available at /console")
-	consoleLibrariesPath = flag.String("consoleLibraries", "console_libraries", "Path to console library directory")
+	consoleTemplatesPath = flag.String("web.console.templates", "consoles", "Path to the console template directory, available at /console.")
+	consoleLibrariesPath = flag.String("web.console.libraries", "console_libraries", "Path to the console library directory.")
 )
 
 type ConsolesHandler struct {
-	Storage metric.PreloadingPersistence
+	Storage local.Storage
 }
 
 func (h *ConsolesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

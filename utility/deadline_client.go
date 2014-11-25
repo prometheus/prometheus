@@ -24,7 +24,7 @@ import (
 func NewDeadlineClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
-			// We need to disable keepalive, becasue we set a deadline on the
+			// We need to disable keepalive, because we set a deadline on the
 			// underlying connection.
 			DisableKeepAlives: true,
 			Dial: func(netw, addr string) (c net.Conn, err error) {

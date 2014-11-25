@@ -149,7 +149,7 @@ func TestTargetRunScraperScrapes(t *testing.T) {
 		state:       UNKNOWN,
 		address:     "bad schema",
 		httpClient:  utility.NewDeadlineClient(0),
-		stopScraper: make(chan bool, 1),
+		stopScraper: make(chan struct{}),
 	}
 	go testTarget.RunScraper(nopIngester{}, time.Duration(time.Millisecond))
 

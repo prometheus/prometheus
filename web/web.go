@@ -35,18 +35,17 @@ import (
 
 // Commandline flags.
 var (
-	listenAddress  = flag.String("listenAddress", ":9090", "Address to listen on for web interface.")
-	useLocalAssets = flag.Bool("useLocalAssets", false, "Read assets/templates from file instead of binary.")
-	userAssetsPath = flag.String("userAssets", "", "Path to static asset directory, available at /user")
-	enableQuit     = flag.Bool("web.enableRemoteShutdown", false, "Enable remote service shutdown")
+	listenAddress  = flag.String("web.listen-address", ":9090", "Address to listen on for web interface.")
+	useLocalAssets = flag.Bool("web.use-local-assets", false, "Read assets/templates from file instead of binary.")
+	userAssetsPath = flag.String("web.user-assets", "", "Path to static asset directory, available at /user.")
+	enableQuit     = flag.Bool("web.enable-remote-shutdown", false, "Enable remote service shutdown.")
 )
 
 type WebService struct {
-	StatusHandler    *PrometheusStatusHandler
-	DatabasesHandler *DatabasesHandler
-	MetricsHandler   *api.MetricsService
-	AlertsHandler    *AlertsHandler
-	ConsolesHandler  *ConsolesHandler
+	StatusHandler   *PrometheusStatusHandler
+	MetricsHandler  *api.MetricsService
+	AlertsHandler   *AlertsHandler
+	ConsolesHandler *ConsolesHandler
 
 	QuitDelegate func()
 }
@@ -58,9 +57,6 @@ func (w WebService) ServeForever() error {
 
 	http.Handle("/", prometheus.InstrumentHandler(
 		"/", w.StatusHandler,
-	))
-	http.Handle("/databases", prometheus.InstrumentHandler(
-		"/databases", w.DatabasesHandler,
 	))
 	http.Handle("/alerts", prometheus.InstrumentHandler(
 		"/alerts", w.AlertsHandler,

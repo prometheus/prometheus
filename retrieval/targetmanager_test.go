@@ -76,7 +76,7 @@ func (t fakeTarget) State() TargetState {
 	return ALIVE
 }
 
-func (t *fakeTarget) Merge(newTarget Target) {}
+func (t *fakeTarget) SetBaseLabelsFrom(newTarget Target) {}
 
 func testTargetManager(t testing.TB) {
 	targetManager := NewTargetManager(nopIngester{})

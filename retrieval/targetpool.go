@@ -30,7 +30,7 @@ const (
 type TargetPool struct {
 	sync.RWMutex
 
-	done             chan chan bool
+	done             chan chan struct{}
 	manager          TargetManager
 	targetsByAddress map[string]Target
 	interval         time.Duration
@@ -48,7 +48,7 @@ func NewTargetPool(m TargetManager, p TargetProvider, ing extraction.Ingester, i
 		targetsByAddress: make(map[string]Target),
 		addTargetQueue:   make(chan Target, targetAddQueueSize),
 		targetProvider:   p,
-		done:             make(chan chan bool),
+		done:             make(chan chan struct{}),
 	}
 }
 
@@ -71,15 +71,14 @@ func (p *TargetPool) Run() {
 			p.addTarget(newTarget)
 		case stopped := <-p.done:
 			p.ReplaceTargets([]Target{})
-			glog.Info("TargetPool exiting...")
-			stopped <- true
+			close(stopped)
 			return
 		}
 	}
 }
 
-func (p TargetPool) Stop() {
-	stopped := make(chan bool)
+func (p *TargetPool) Stop() {
+	stopped := make(chan struct{})
 	p.done <- stopped
 	<-stopped
 }
@@ -108,20 +107,27 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 		newTargetAddresses.Add(newTarget.Address())
 		oldTarget, ok := p.targetsByAddress[newTarget.Address()]
 		if ok {
-			oldTarget.Merge(newTarget)
+			oldTarget.SetBaseLabelsFrom(newTarget)
 		} else {
 			p.targetsByAddress[newTarget.Address()] = newTarget
 			go newTarget.RunScraper(p.ingester, p.interval)
 		}
 	}
 	// Stop any targets no longer present.
+	var wg sync.WaitGroup
 	for k, oldTarget := range p.targetsByAddress {
 		if !newTargetAddresses.Has(k) {
-			glog.V(1).Info("Stopping scraper for target ", k)
-			oldTarget.StopScraper()
-			delete(p.targetsByAddress, k)
+			wg.Add(1)
+			go func(k string, oldTarget Target) {
+				defer wg.Done()
+				glog.V(1).Infof("Stopping scraper for target %s...", k)
+				oldTarget.StopScraper()
+				delete(p.targetsByAddress, k)
+				glog.V(1).Infof("Scraper for target %s stopped.", k)
+			}(k, oldTarget)
 		}
 	}
+	wg.Wait()
 }
 
 func (p *TargetPool) Targets() []Target {

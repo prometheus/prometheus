@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 )
 
-var ruleFile = flag.String("ruleFile", "", "The path to the rule file to check.")
+var ruleFile = flag.String("rule-file", "", "The path to the rule file to check.")
 
 func main() {
 	flag.Parse()
