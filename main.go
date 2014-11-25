@@ -23,7 +23,6 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
-	registry "github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 	registry "github.com/prometheus/client_golang/prometheus"

@@ -219,18 +219,3 @@ func (n *NotificationHandler) Collect(ch chan<- prometheus.Metric) {
 	ch <- n.notificationsQueueLength
 	ch <- n.notificationsQueueCapacity
 }
-
-// Describe implements prometheus.Collector.
-func (n *NotificationHandler) Describe(ch chan<- *prometheus.Desc) {
-	n.notificationLatency.Describe(ch)
-	ch <- n.notificationsQueueLength.Desc()
-	ch <- n.notificationsQueueCapacity.Desc()
-}
-
-// Collect implements prometheus.Collector.
-func (n *NotificationHandler) Collect(ch chan<- prometheus.Metric) {
-	n.notificationLatency.Collect(ch)
-	n.notificationsQueueLength.Set(float64(len(n.pendingNotifications)))
-	ch <- n.notificationsQueueLength
-	ch <- n.notificationsQueueCapacity
-}
