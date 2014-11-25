@@ -132,6 +132,7 @@ func (l *LevelDB) Commit(b Batch) error {
 	return l.storage.Write(b.(*LevelDBBatch).batch, l.writeOpts)
 }
 
+// ForEach implements KeyValueStore.
 func (l *LevelDB) ForEach(cb func(kv KeyValueAccessor) error) error {
 	snap, err := l.storage.GetSnapshot()
 	if err != nil {
