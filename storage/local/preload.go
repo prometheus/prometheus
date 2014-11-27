@@ -99,10 +99,6 @@ func (p *memorySeriesPreloader) GetMetricRangeAtInterval(fp clientmodel.Fingerpr
 
 // Close implements Preloader.
 func (p *memorySeriesPreloader) Close() {
-	// TODO: Idea about a primitive but almost free heuristic to not evict
-	// "recently used" chunks: Do not unpin the chunks right here, but hand
-	// over the pinnedChunkDescs to a manager that will delay the unpinning
-	// based on time and memory pressure.
 	for _, cd := range p.pinnedChunkDescs {
 		cd.unpin(p.storage.evictRequests)
 	}

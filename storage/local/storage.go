@@ -774,6 +774,16 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 	s.persistence.updateArchivedTimeRange(fp, newFirstTime, lastTime)
 }
 
+// See persistence.loadChunks for detailed explanation.
+func (s *memorySeriesStorage) loadChunks(fp clientmodel.Fingerprint, indexes []int, indexOffset int) ([]chunk, error) {
+	return s.persistence.loadChunks(fp, indexes, indexOffset)
+}
+
+// See persistence.loadChunkDescs for detailed explanation.
+func (s *memorySeriesStorage) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) ([]*chunkDesc, error) {
+	return s.persistence.loadChunkDescs(fp, beforeTime)
+}
+
 // To expose persistQueueCap as metric:
 var (
 	persistQueueCapDesc = prometheus.NewDesc(
