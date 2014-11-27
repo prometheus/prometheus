@@ -801,7 +801,6 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	ch <- persistQueueCapDesc
 
 	ch <- numMemChunksDesc
-	ch <- numMemChunkDescsDesc
 }
 
 // Collect implements prometheus.Collector.
@@ -820,6 +819,4 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 
 	count := atomic.LoadInt64(&numMemChunks)
 	ch <- prometheus.MustNewConstMetric(numMemChunksDesc, prometheus.GaugeValue, float64(count))
-	count = atomic.LoadInt64(&numMemChunkDescs)
-	ch <- prometheus.MustNewConstMetric(numMemChunkDescsDesc, prometheus.GaugeValue, float64(count))
 }

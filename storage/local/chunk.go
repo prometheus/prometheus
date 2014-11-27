@@ -45,9 +45,7 @@ type chunkDesc struct {
 func newChunkDesc(c chunk) *chunkDesc {
 	chunkOps.WithLabelValues(createAndPin).Inc()
 	atomic.AddInt64(&numMemChunks, 1)
-	// TODO: numMemChunkDescs is actually never read except during metrics
-	// collection. Turn it into a real metric.
-	atomic.AddInt64(&numMemChunkDescs, 1)
+	numMemChunkDescs.Inc()
 	return &chunkDesc{chunk: c, refCount: 1}
 }
 

@@ -37,6 +37,12 @@ var (
 		},
 		[]string{opTypeLabel},
 	)
+	numMemChunkDescs = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "memory_chunkdescs",
+		Help:      "The current number of chunk descriptors in memory.",
+	})
 )
 
 const (
@@ -71,22 +77,18 @@ const (
 func init() {
 	prometheus.MustRegister(chunkOps)
 	prometheus.MustRegister(chunkDescOps)
+	prometheus.MustRegister(numMemChunkDescs)
 }
 
 var (
-	// Global counters, also used internally, so not implemented as
+	// Global counter, also used internally, so not implemented as
 	// metrics. Collected in memorySeriesStorage.Collect.
-	numMemChunks, numMemChunkDescs int64
+	numMemChunks int64
 
 	// Metric descriptors for the above.
 	numMemChunksDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(namespace, subsystem, "memory_chunks"),
 		"The current number of chunks in memory, excluding cloned chunks (i.e. chunks without a descriptor).",
-		nil, nil,
-	)
-	numMemChunkDescsDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, subsystem, "memory_chunkdescs"),
-		"The current number of chunk descriptors in memory.",
 		nil, nil,
 	)
 )

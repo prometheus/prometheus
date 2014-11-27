@@ -766,7 +766,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 		cds = append(cds, cd)
 	}
 	chunkDescOps.WithLabelValues(load).Add(float64(len(cds)))
-	atomic.AddInt64(&numMemChunkDescs, int64(len(cds)))
+	numMemChunkDescs.Add(float64(len(cds)))
 	return cds, nil
 }
 
@@ -916,7 +916,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 		}
 		if err == nil {
 			atomic.AddInt64(&numMemChunks, chunksTotal)
-			atomic.AddInt64(&numMemChunkDescs, chunkDescsTotal)
+			numMemChunkDescs.Add(float64(chunkDescsTotal))
 		}
 	}()
 

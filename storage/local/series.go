@@ -235,7 +235,7 @@ func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
 		lenEvicted := len(s.chunkDescs) - lenToKeep
 		s.chunkDescsOffset += lenEvicted
 		chunkDescOps.WithLabelValues(evict).Add(float64(lenEvicted))
-		atomic.AddInt64(&numMemChunkDescs, -int64(lenEvicted))
+		numMemChunkDescs.Sub(float64(lenEvicted))
 		s.chunkDescs = append(
 			make([]*chunkDesc, 0, lenToKeep),
 			s.chunkDescs[lenEvicted:]...,
@@ -257,7 +257,7 @@ func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) (int, bool) {
 	}
 	if keepIdx > 0 {
 		s.chunkDescs = append(make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx), s.chunkDescs[keepIdx:]...)
-		atomic.AddInt64(&numMemChunkDescs, -int64(keepIdx))
+		numMemChunkDescs.Sub(float64(keepIdx))
 	}
 	return keepIdx, len(s.chunkDescs) == 0
 }
