@@ -351,7 +351,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 
 // sanitizeSeries sanitizes a series based on its series file as defined by the provided directory and FileInfo.
 // The method returns the fingerprint as derived from the directory and file name, and whether the provided
-// file has been sanatizide. A file that failed to be sanitized is deleted, if possible.
+// file has been sanitized. A file that failed to be sanitized is deleted, if possible.
 //
 // The following steps are performed:
 //
