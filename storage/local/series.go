@@ -235,7 +235,7 @@ func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
 		lenEvicted := len(s.chunkDescs) - lenToKeep
 		s.chunkDescsOffset += lenEvicted
 		chunkDescOps.WithLabelValues(evict).Add(float64(lenEvicted))
-		atomic.AddInt64(&numMemChunkDescs, -int64(lenEvicted))
+		numMemChunkDescs.Sub(float64(lenEvicted))
 		s.chunkDescs = append(
 			make([]*chunkDesc, 0, lenToKeep),
 			s.chunkDescs[lenEvicted:]...,
@@ -257,7 +257,7 @@ func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) (int, bool) {
 	}
 	if keepIdx > 0 {
 		s.chunkDescs = append(make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx), s.chunkDescs[keepIdx:]...)
-		atomic.AddInt64(&numMemChunkDescs, -int64(keepIdx))
+		numMemChunkDescs.Sub(float64(keepIdx))
 	}
 	return keepIdx, len(s.chunkDescs) == 0
 }
@@ -281,8 +281,7 @@ func (s *memorySeries) preloadChunks(indexes []int, mss *memorySeriesStorage) ([
 			panic("requested loading chunks from persistence in a situation where we must not have persisted data for chunk descriptors in memory")
 		}
 		fp := s.metric.Fingerprint()
-		// TODO: Remove law-of-Demeter violation?
-		chunks, err := mss.persistence.loadChunks(fp, loadIndexes, s.chunkDescsOffset)
+		chunks, err := mss.loadChunks(fp, loadIndexes, s.chunkDescsOffset)
 		if err != nil {
 			// Unpin the chunks since we won't return them as pinned chunks now.
 			for _, cd := range pinnedChunkDescs {
@@ -343,8 +342,7 @@ func (s *memorySeries) preloadChunksForRange(
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
 	}
 	if s.chunkDescsOffset != 0 && from.Before(firstChunkDescTime) {
-		// TODO: Remove law-of-demeter violation?
-		cds, err := mss.persistence.loadChunkDescs(fp, firstChunkDescTime)
+		cds, err := mss.loadChunkDescs(fp, firstChunkDescTime)
 		if err != nil {
 			return nil, err
 		}

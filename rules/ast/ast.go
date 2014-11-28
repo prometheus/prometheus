@@ -193,7 +193,6 @@ type (
 		iterators map[clientmodel.Fingerprint]local.SeriesIterator
 		metrics   map[clientmodel.Fingerprint]clientmodel.Metric
 		// Fingerprints are populated from label matchers at query analysis time.
-		// TODO: do we still need these?
 		fingerprints clientmodel.Fingerprints
 	}
 
@@ -234,7 +233,6 @@ type (
 		iterators map[clientmodel.Fingerprint]local.SeriesIterator
 		metrics   map[clientmodel.Fingerprint]clientmodel.Metric
 		// Fingerprints are populated from label matchers at query analysis time.
-		// TODO: do we still need these?
 		fingerprints clientmodel.Fingerprints
 		interval     time.Duration
 	}

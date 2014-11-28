@@ -16,7 +16,6 @@ package test
 import (
 	"io/ioutil"
 	"os"
-	"testing"
 )
 
 const (
@@ -51,11 +50,20 @@ type (
 	// their interactions.
 	temporaryDirectory struct {
 		path   string
-		tester testing.TB
+		tester T
 	}
 
 	callbackCloser struct {
 		fn func()
+	}
+
+	// T implements the needed methods of testing.TB so that we do not need
+	// to actually import testing (which has the side affect of adding all
+	// the test flags, which we do not want in non-test binaries even if
+	// they make use of these utilities for some reason).
+	T interface {
+		Fatal(args ...interface{})
+		Fatalf(format string, args ...interface{})
 	}
 )
 
@@ -90,7 +98,7 @@ func (t temporaryDirectory) Path() string {
 
 // NewTemporaryDirectory creates a new temporary directory for transient POSIX
 // activities.
-func NewTemporaryDirectory(name string, t testing.TB) (handler TemporaryDirectory) {
+func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 	var (
 		directory string
 		err       error

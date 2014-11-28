@@ -11,10 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// NOTE ON FILENAME: Do not rename this file helpers_test.go (which might appear
+// an obvious choice). We need NewTestStorage in tests outside of the local
+// package, too. On the other hand, moving NewTestStorage in its own package
+// would cause circular dependencies in the tests in packages local.
+
 package local
 
 import (
-	"testing"
 	"time"
 
 	"github.com/prometheus/prometheus/utility/test"
@@ -33,7 +37,7 @@ func (t *testStorageCloser) Close() {
 // NewTestStorage creates a storage instance backed by files in a temporary
 // directory. The returned storage is already in serving state. Upon closing the
 // returned test.Closer, the temporary directory is cleaned up.
-func NewTestStorage(t testing.TB) (Storage, test.Closer) {
+func NewTestStorage(t test.T) (Storage, test.Closer) {
 	directory := test.NewTemporaryDirectory("test_storage", t)
 	o := &MemorySeriesStorageOptions{
 		MemoryChunks:               1000000,

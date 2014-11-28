@@ -774,6 +774,16 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 	s.persistence.updateArchivedTimeRange(fp, newFirstTime, lastTime)
 }
 
+// See persistence.loadChunks for detailed explanation.
+func (s *memorySeriesStorage) loadChunks(fp clientmodel.Fingerprint, indexes []int, indexOffset int) ([]chunk, error) {
+	return s.persistence.loadChunks(fp, indexes, indexOffset)
+}
+
+// See persistence.loadChunkDescs for detailed explanation.
+func (s *memorySeriesStorage) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) ([]*chunkDesc, error) {
+	return s.persistence.loadChunkDescs(fp, beforeTime)
+}
+
 // To expose persistQueueCap as metric:
 var (
 	persistQueueCapDesc = prometheus.NewDesc(
@@ -801,7 +811,6 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	ch <- persistQueueCapDesc
 
 	ch <- numMemChunksDesc
-	ch <- numMemChunkDescsDesc
 }
 
 // Collect implements prometheus.Collector.
@@ -820,6 +829,4 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 
 	count := atomic.LoadInt64(&numMemChunks)
 	ch <- prometheus.MustNewConstMetric(numMemChunksDesc, prometheus.GaugeValue, float64(count))
-	count = atomic.LoadInt64(&numMemChunkDescs)
-	ch <- prometheus.MustNewConstMetric(numMemChunkDescsDesc, prometheus.GaugeValue, float64(count))
 }
