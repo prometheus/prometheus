@@ -9,4 +9,3 @@ RUN        apt-get update && apt-get install -yq make git curl sudo mercurial vi
 ADD        . /prometheus-src
 RUN        cd /prometheus-src && make tools binary
 ADD        ./documentation/examples/prometheus.conf /prometheus.conf
-
