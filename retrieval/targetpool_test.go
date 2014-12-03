@@ -114,32 +114,36 @@ func TestTargetPool(t *testing.T) {
 func TestTargetPoolReplaceTargets(t *testing.T) {
 	pool := NewTargetPool(nil, nil, nopIngester{}, time.Duration(1))
 	oldTarget1 := &target{
-		address:       "example1",
-		state:         UNREACHABLE,
-		stopScraper:   make(chan struct{}),
-		newBaseLabels: make(chan clientmodel.LabelSet, 1),
-		httpClient:    &http.Client{},
+		address:         "example1",
+		state:           UNREACHABLE,
+		scraperStopping: make(chan struct{}),
+		scraperStopped:  make(chan struct{}),
+		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
+		httpClient:      &http.Client{},
 	}
 	oldTarget2 := &target{
-		address:       "example2",
-		state:         UNREACHABLE,
-		stopScraper:   make(chan struct{}),
-		newBaseLabels: make(chan clientmodel.LabelSet, 1),
-		httpClient:    &http.Client{},
+		address:         "example2",
+		state:           UNREACHABLE,
+		scraperStopping: make(chan struct{}),
+		scraperStopped:  make(chan struct{}),
+		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
+		httpClient:      &http.Client{},
 	}
 	newTarget1 := &target{
-		address:       "example1",
-		state:         ALIVE,
-		stopScraper:   make(chan struct{}),
-		newBaseLabels: make(chan clientmodel.LabelSet, 1),
-		httpClient:    &http.Client{},
+		address:         "example1",
+		state:           ALIVE,
+		scraperStopping: make(chan struct{}),
+		scraperStopped:  make(chan struct{}),
+		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
+		httpClient:      &http.Client{},
 	}
 	newTarget2 := &target{
-		address:       "example3",
-		state:         ALIVE,
-		stopScraper:   make(chan struct{}),
-		newBaseLabels: make(chan clientmodel.LabelSet, 1),
-		httpClient:    &http.Client{},
+		address:         "example3",
+		state:           ALIVE,
+		scraperStopping: make(chan struct{}),
+		scraperStopped:  make(chan struct{}),
+		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
+		httpClient:      &http.Client{},
 	}
 
 	pool.addTarget(oldTarget1)

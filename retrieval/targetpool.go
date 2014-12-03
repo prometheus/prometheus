@@ -122,9 +122,9 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 				defer wg.Done()
 				glog.V(1).Infof("Stopping scraper for target %s...", k)
 				oldTarget.StopScraper()
-				delete(p.targetsByAddress, k)
 				glog.V(1).Infof("Scraper for target %s stopped.", k)
 			}(k, oldTarget)
+			delete(p.targetsByAddress, k)
 		}
 	}
 	wg.Wait()

@@ -14,7 +14,7 @@ intervals, evaluate rule expressions, display the results, and trigger an
 action if some condition is observed to be true.
 
 TODO: The above description is somewhat esoteric. Rephrase it into
-somethith that tells normal people how they will usually benefit from
+something that tells normal people how they will usually benefit from
 using Prometheus.
 
 ## Install
