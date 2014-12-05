@@ -297,15 +297,14 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		t.Lock() // Writing t.state and t.lastError requires the lock.
 		if err == nil {
 			t.state = ALIVE
-			t.recordScrapeHealth(ingester, timestamp, true)
 			labels[outcome] = failure
 		} else {
 			t.state = UNREACHABLE
-			t.recordScrapeHealth(ingester, timestamp, false)
 		}
-		targetOperationLatencies.With(labels).Observe(ms)
 		t.lastError = err
 		t.Unlock()
+		targetOperationLatencies.With(labels).Observe(ms)
+		t.recordScrapeHealth(ingester, timestamp, err == nil)
 	}(time.Now())
 
 	req, err := http.NewRequest("GET", t.Address(), nil)
