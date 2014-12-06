@@ -31,11 +31,8 @@ it will be the recommended way of installing Prometheus.
 
 In most cirumstances, the following should work:
 
-    $ make
-    $ ARGUMENTS="-config.file=documentation/examples/prometheus.conf" make run
-
-``${ARGUMENTS}`` is passed verbatim to the commandline starting the Prometheus binary.
-This is useful for quick one-off invocations and smoke testing.
+    $ make build
+    $ ./prometheus -config.file=documentation/examples/prometheus.conf
 
 The above requires a number of common tools to be installed, namely
 `curl`, `git`, `gzip`, `hg` (Mercurial CLI), `sed`, `xxd`. Should you
@@ -51,8 +48,8 @@ development environment of the appropriate version.
 The `Makefile` offers a number of useful targets. Some examples:
 
 * `make test` runs tests.
-* `make tarball` creates a tar ball with the binary for distribution.
-* `make race_condition_run` compiles and runs a binary with the race detector enabled.
+* `make tarball` creates a tarball with the binary for distribution.
+* `make race_condition_run` compiles and runs a binary with the race detector enabled. To pass arguments when running Prometheus this way, set the `ARGUMENTS` environment variable (e.g. `ARGUMENTS=-config.file=./prometheus.conf make race_condition_run`).
 
 ### Use your own Go development environment
 
@@ -73,7 +70,7 @@ do that.
 
   * The source code is periodically indexed: [Prometheus Core](http://godoc.org/github.com/prometheus/prometheus).
   * You will find a Travis CI configuration in `.travis.yml`.
-  * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers).
+  * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers) and the `#prometheus` channel on `irc.freenode.net`.
 
 ## Contributing
 
