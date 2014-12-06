@@ -23,7 +23,7 @@ There are various ways of installing Prometheus.
 ### Precompiled packages
 
 We plan to provide precompiled binaries for various platforms and even
-packages for common Linux distribution soon. Once those are offered,
+packages for common Linux distributions soon. Once those are offered,
 it will be the recommended way of installing Prometheus.
 
 ### Use `make`
