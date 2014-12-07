@@ -1,7 +1,11 @@
 # Prometheus
 
-Prometheus is a systems and service monitoring system. Prometheus' main
-distinguishing features as compared to other monitoring systems are:
+Prometheus is a systems and service monitoring system. It collects metrics
+from configured targets at given intervals, evaluates rule expressions,
+displays the results, and can trigger alerts if some condition is observed
+to be true.
+
+Prometheus' main distinguishing features as compared to other monitoring systems are:
 
 - a **multi-dimensional** data model (timeseries defined by metric name and set of key/value dimensions)
 - a **flexible query language** to leverage this dimensionality
@@ -12,9 +16,9 @@ distinguishing features as compared to other monitoring systems are:
 - multiple modes of **graphing and dashboarding support**
 - **federation support** coming soon
 
-Prometheus collects metrics from configured targets at given intervals,
-evaluates rule expressions, displays the results, and can trigger alerts
-if some condition is observed to be true.
+This diagram gives a simplified view of Prometheus' architecture:
+
+![](https://github.com/prometheus/prometheus/blob/master/documentation/images/architecture.svg)
 
 ## Install
 
