@@ -52,7 +52,7 @@ The `Makefile` offers a number of useful targets. Some examples:
 
 * `make test` runs tests.
 * `make tarball` creates a tarball with the binary for distribution.
-* `make race_condition_run` compiles and runs a binary with the race detector enabled. To pass arguments when running Prometheus this way, set the `ARGUMENTS` environment variable (e.g. `ARGUMENTS=-config.file=./prometheus.conf make race_condition_run`).
+* `make race_condition_run` compiles and runs a binary with the race detector enabled. To pass arguments when running Prometheus this way, set the `ARGUMENTS` environment variable (e.g. `ARGUMENTS="-config.file=./prometheus.conf" make race_condition_run`).
 
 ### Use your own Go development environment
 
