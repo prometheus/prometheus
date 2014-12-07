@@ -41,8 +41,8 @@ The above requires a number of common tools to be installed, namely
 `curl`, `git`, `gzip`, `hg` (Mercurial CLI), `sed`, `xxd`. Should you
 need to change any of the protocol buffer definition files
 (`*.proto`), you also need the protocol buffer compiler
-[`protoc`](http://code.google.com/p/protobuf/](http://code.google.com/p/protobuf/),
-v2.5.0 or higher, in your `$PATH`.
+[`protoc`](http://code.google.com/p/protobuf/), v2.5.0 or higher,
+in your `$PATH`.
 
 Everything else will be downloaded and installed into a staging
 environment in the `.build` sub-directory. That includes a Go
