@@ -14,9 +14,9 @@
 package local
 
 import (
-	"time"
 	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/prometheus"
+	"time"
 
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -38,7 +38,7 @@ type Storage interface {
 	// Get all of the label values that are associated with a given label name.
 	GetLabelValuesForLabelName(clientmodel.LabelName) clientmodel.LabelValues
 	// Get the metric associated with the provided fingerprint.
-	GetMetricForFingerprint(clientmodel.Fingerprint) clientmodel.Metric
+	GetMetricForFingerprint(clientmodel.Fingerprint) clientmodel.COWMetric
 	// Construct an iterator for a given fingerprint.
 	NewIterator(clientmodel.Fingerprint) SeriesIterator
 	// Run the various maintenance loops in goroutines. Returns when the

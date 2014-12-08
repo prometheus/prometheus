@@ -128,12 +128,12 @@ func deltaImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 		intervalCorrection := clientmodel.SampleValue(targetInterval) / clientmodel.SampleValue(sampledInterval)
 		resultValue *= intervalCorrection
 
-		resultSample := &clientmodel.Sample{
+		resultSample := &Sample{
 			Metric:    samples.Metric,
 			Value:     resultValue,
 			Timestamp: timestamp,
 		}
-		delete(resultSample.Metric, clientmodel.MetricNameLabel)
+		resultSample.Metric.Delete(clientmodel.MetricNameLabel)
 		resultVector = append(resultVector, resultSample)
 	}
 	return resultVector
@@ -169,7 +169,7 @@ func (s vectorByValueHeap) Swap(i, j int) {
 }
 
 func (s *vectorByValueHeap) Push(x interface{}) {
-	*s = append(*s, x.(*clientmodel.Sample))
+	*s = append(*s, x.(*Sample))
 }
 
 func (s *vectorByValueHeap) Pop() interface{} {
@@ -254,7 +254,7 @@ func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, args []Node) interfac
 		return Vector{}
 	}
 	common := clientmodel.LabelSet{}
-	for k, v := range vector[0].Metric {
+	for k, v := range vector[0].Metric.Metric {
 		// TODO(julius): Should we also drop common metric names?
 		if k == clientmodel.MetricNameLabel {
 			continue
@@ -264,7 +264,7 @@ func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, args []Node) interfac
 
 	for _, el := range vector[1:] {
 		for k, v := range common {
-			if el.Metric[k] != v {
+			if el.Metric.Metric[k] != v {
 				// Deletion of map entries while iterating over them is safe.
 				// From http://golang.org/ref/spec#For_statements:
 				// "If map entries that have not yet been reached are deleted during
@@ -275,86 +275,13 @@ func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, args []Node) interfac
 	}
 
 	for _, el := range vector {
-		for k := range el.Metric {
+		for k := range el.Metric.Metric {
 			if _, ok := common[k]; ok {
-				delete(el.Metric, k)
+				el.Metric.Delete(k)
 			}
 		}
 	}
 	return vector
-}
-
-// === sampleVectorImpl() Vector ===
-func sampleVectorImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
-	return Vector{
-		&clientmodel.Sample{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "api-server",
-				"instance":                  "0",
-			},
-			Value:     10,
-			Timestamp: timestamp,
-		},
-		&clientmodel.Sample{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "api-server",
-				"instance":                  "1",
-			},
-			Value:     20,
-			Timestamp: timestamp,
-		},
-		&clientmodel.Sample{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "api-server",
-				"instance":                  "2",
-			},
-			Value:     30,
-			Timestamp: timestamp,
-		},
-		&clientmodel.Sample{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "api-server",
-				"instance":                  "3",
-				"group":                     "canary",
-			},
-			Value:     40,
-			Timestamp: timestamp,
-		},
-		&clientmodel.Sample{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "api-server",
-				"instance":                  "2",
-				"group":                     "canary",
-			},
-			Value:     40,
-			Timestamp: timestamp,
-		},
-		&clientmodel.Sample{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "api-server",
-				"instance":                  "3",
-				"group":                     "mytest",
-			},
-			Value:     40,
-			Timestamp: timestamp,
-		},
-		&clientmodel.Sample{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "api-server",
-				"instance":                  "3",
-				"group":                     "mytest",
-			},
-			Value:     40,
-			Timestamp: timestamp,
-		},
-	}
 }
 
 // === scalar(node VectorNode) Scalar ===
@@ -381,8 +308,8 @@ func aggrOverTime(timestamp clientmodel.Timestamp, args []Node, aggrFn func(metr
 			continue
 		}
 
-		delete(el.Metric, clientmodel.MetricNameLabel)
-		resultVector = append(resultVector, &clientmodel.Sample{
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		resultVector = append(resultVector, &Sample{
 			Metric:    el.Metric,
 			Value:     aggrFn(el.Values),
 			Timestamp: timestamp,
@@ -447,7 +374,7 @@ func absImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	n := args[0].(VectorNode)
 	vector := n.Eval(timestamp)
 	for _, el := range vector {
-		delete(el.Metric, clientmodel.MetricNameLabel)
+		el.Metric.Delete(clientmodel.MetricNameLabel)
 		el.Value = clientmodel.SampleValue(math.Abs(float64(el.Value)))
 	}
 	return vector
@@ -468,8 +395,11 @@ func absentImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 		}
 	}
 	return Vector{
-		&clientmodel.Sample{
-			Metric:    m,
+		&Sample{
+			Metric: clientmodel.COWMetric{
+				Metric: m,
+				Copied: true,
+			},
 			Value:     1,
 			Timestamp: timestamp,
 		},
@@ -542,12 +472,6 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{MATRIX},
 		returnType: VECTOR,
 		callFn:     rateImpl,
-	},
-	"sampleVector": {
-		name:       "sampleVector",
-		argTypes:   []ExprType{},
-		returnType: VECTOR,
-		callFn:     sampleVectorImpl,
 	},
 	"scalar": {
 		name:       "scalar",

@@ -47,12 +47,6 @@ func (s *SamplePair) String() string {
 // Values is a slice of SamplePairs.
 type Values []SamplePair
 
-// SampleSet is Values with a Metric attached.
-type SampleSet struct {
-	Metric clientmodel.Metric
-	Values Values
-}
-
 // Interval describes the inclusive interval between two Timestamps.
 type Interval struct {
 	OldestInclusive clientmodel.Timestamp

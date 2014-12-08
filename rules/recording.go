@@ -50,12 +50,12 @@ func (rule RecordingRule) Eval(timestamp clientmodel.Timestamp, storage local.St
 
 	// Override the metric name and labels.
 	for _, sample := range vector {
-		sample.Metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(rule.name)
+		sample.Metric.Set(clientmodel.MetricNameLabel, clientmodel.LabelValue(rule.name))
 		for label, value := range rule.labels {
 			if value == "" {
-				delete(sample.Metric, label)
+				sample.Metric.Delete(label)
 			} else {
-				sample.Metric[label] = value
+				sample.Metric.Set(label, value)
 			}
 		}
 	}

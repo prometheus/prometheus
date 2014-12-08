@@ -90,20 +90,20 @@ func (vector Vector) String() string {
 
 func (matrix Matrix) String() string {
 	metricStrings := make([]string, 0, len(matrix))
-	for _, sampleSet := range matrix {
-		metricName, ok := sampleSet.Metric[clientmodel.MetricNameLabel]
+	for _, sampleStream := range matrix {
+		metricName, ok := sampleStream.Metric.Metric[clientmodel.MetricNameLabel]
 		if !ok {
 			panic("Tried to print matrix without metric name")
 		}
-		labelStrings := make([]string, 0, len(sampleSet.Metric)-1)
-		for label, value := range sampleSet.Metric {
+		labelStrings := make([]string, 0, len(sampleStream.Metric.Metric)-1)
+		for label, value := range sampleStream.Metric.Metric {
 			if label != clientmodel.MetricNameLabel {
 				labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))
 			}
 		}
 		sort.Strings(labelStrings)
-		valueStrings := make([]string, 0, len(sampleSet.Values))
-		for _, value := range sampleSet.Values {
+		valueStrings := make([]string, 0, len(sampleStream.Values))
+		for _, value := range sampleStream.Values {
 			valueStrings = append(valueStrings,
 				fmt.Sprintf("\n%v @[%v]", value.Value, value.Timestamp))
 		}
@@ -218,7 +218,7 @@ func EvalToVector(node Node, timestamp clientmodel.Timestamp, storage local.Stor
 	case SCALAR:
 		scalar := node.(ScalarNode).Eval(timestamp)
 		evalTimer.Stop()
-		return Vector{&clientmodel.Sample{Value: scalar}}, nil
+		return Vector{&Sample{Value: scalar}}, nil
 	case VECTOR:
 		vector := node.(VectorNode).Eval(timestamp)
 		evalTimer.Stop()
@@ -228,8 +228,16 @@ func EvalToVector(node Node, timestamp clientmodel.Timestamp, storage local.Stor
 	case STRING:
 		str := node.(StringNode).Eval(timestamp)
 		evalTimer.Stop()
-		return Vector{&clientmodel.Sample{
-			Metric: clientmodel.Metric{"__value__": clientmodel.LabelValue(str)}}}, nil
+		return Vector{
+			&Sample{
+				Metric: clientmodel.COWMetric{
+					Metric: clientmodel.Metric{
+						"__value__": clientmodel.LabelValue(str),
+					},
+					Copied: true,
+				},
+			},
+		}, nil
 	}
 	panic("Switch didn't cover all node types")
 }
