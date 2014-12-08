@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -136,14 +137,9 @@ type Target interface {
 	RunScraper(extraction.Ingester, time.Duration)
 	// Stop scraping, synchronous.
 	StopScraper()
-	// Do a single scrape.
-	scrape(ingester extraction.Ingester) error
 }
 
 // target is a Target that refers to a singular HTTP or HTTPS endpoint.
-//
-// TODO: The implementation is not yet goroutine safe, but for the web status,
-// methods are called concurrently.
 type target struct {
 	// The current health state of the target.
 	state TargetState
@@ -151,8 +147,10 @@ type target struct {
 	lastError error
 	// The last time a scrape was attempted.
 	lastScrape time.Time
-	// Closing stopScraper signals that scraping should stop.
-	stopScraper chan struct{}
+	// Closing scraperStopping signals that scraping should stop.
+	scraperStopping chan struct{}
+	// Closing scraperStopped signals that scraping has been stopped.
+	scraperStopped chan struct{}
 	// Channel to queue base labels to be replaced.
 	newBaseLabels chan clientmodel.LabelSet
 
@@ -163,17 +161,25 @@ type target struct {
 	baseLabels clientmodel.LabelSet
 	// The HTTP client used to scrape the target's endpoint.
 	httpClient *http.Client
+
+	// Mutex protects lastError, lastScrape, state, and baseLabels.  Writing
+	// the above must only happen in the goroutine running the RunScraper
+	// loop, and it must happen under the lock. In that way, no mutex lock
+	// is required for reading the above in the goroutine running the
+	// RunScraper loop, but only for reading in other goroutines.
+	sync.Mutex
 }
 
 // Furnish a reasonably configured target for querying.
 func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.LabelSet) Target {
 	target := &target{
-		address:       address,
-		Deadline:      deadline,
-		baseLabels:    baseLabels,
-		httpClient:    utility.NewDeadlineClient(deadline),
-		stopScraper:   make(chan struct{}),
-		newBaseLabels: make(chan clientmodel.LabelSet, 1),
+		address:         address,
+		Deadline:        deadline,
+		baseLabels:      baseLabels,
+		httpClient:      utility.NewDeadlineClient(deadline),
+		scraperStopping: make(chan struct{}),
+		scraperStopped:  make(chan struct{}),
+		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
 	}
 
 	return target
@@ -213,6 +219,7 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 			case <-t.newBaseLabels:
 				// Do nothing.
 			default:
+				close(t.scraperStopped)
 				return
 			}
 		}
@@ -221,7 +228,7 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 	jitterTimer := time.NewTimer(time.Duration(float64(interval) * rand.Float64()))
 	select {
 	case <-jitterTimer.C:
-	case <-t.stopScraper:
+	case <-t.scraperStopping:
 		jitterTimer.Stop()
 		return
 	}
@@ -230,32 +237,40 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	t.Lock() // Writing t.lastScrape requires the lock.
 	t.lastScrape = time.Now()
+	t.Unlock()
 	t.scrape(ingester)
 
 	// Explanation of the contraption below:
 	//
-	// In case t.newBaseLabels or t.stopScraper have something to receive,
+	// In case t.newBaseLabels or t.scraperStopping have something to receive,
 	// we want to read from those channels rather than starting a new scrape
 	// (which might take very long). That's why the outer select has no
-	// ticker.C. Should neither t.newBaseLabels nor t.stopScraper have
+	// ticker.C. Should neither t.newBaseLabels nor t.scraperStopping have
 	// anything to receive, we go into the inner select, where ticker.C is
 	// in the mix.
 	for {
 		select {
 		case newBaseLabels := <-t.newBaseLabels:
+			t.Lock() // Writing t.baseLabels requires the lock.
 			t.baseLabels = newBaseLabels
-		case <-t.stopScraper:
+			t.Unlock()
+		case <-t.scraperStopping:
 			return
 		default:
 			select {
 			case newBaseLabels := <-t.newBaseLabels:
+				t.Lock() // Writing t.baseLabels requires the lock.
 				t.baseLabels = newBaseLabels
-			case <-t.stopScraper:
+				t.Unlock()
+			case <-t.scraperStopping:
 				return
 			case <-ticker.C:
 				targetIntervalLength.WithLabelValues(interval.String()).Observe(float64(time.Since(t.lastScrape) / time.Second))
+				t.Lock() // Write t.lastScrape requires locking.
 				t.lastScrape = time.Now()
+				t.Unlock()
 				t.scrape(ingester)
 			}
 		}
@@ -264,7 +279,8 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 
 // StopScraper implements Target.
 func (t *target) StopScraper() {
-	close(t.stopScraper)
+	close(t.scraperStopping)
+	<-t.scraperStopped
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
@@ -278,16 +294,17 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 			instance: t.Address(),
 			outcome:  success,
 		}
+		t.Lock() // Writing t.state and t.lastError requires the lock.
 		if err == nil {
 			t.state = ALIVE
-			t.recordScrapeHealth(ingester, timestamp, true)
 			labels[outcome] = failure
 		} else {
 			t.state = UNREACHABLE
-			t.recordScrapeHealth(ingester, timestamp, false)
 		}
-		targetOperationLatencies.With(labels).Observe(ms)
 		t.lastError = err
+		t.Unlock()
+		targetOperationLatencies.With(labels).Observe(ms)
+		t.recordScrapeHealth(ingester, timestamp, err == nil)
 	}(time.Now())
 
 	req, err := http.NewRequest("GET", t.Address(), nil)
@@ -310,8 +327,6 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		return err
 	}
 
-	// TODO: This is a wart; we need to handle this more gracefully down the
-	// road, especially once we have service discovery support.
 	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.Address())}
 	for baseLabel, baseValue := range t.baseLabels {
 		baseLabels[baseLabel] = baseValue
@@ -331,16 +346,22 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 
 // LastError implements Target.
 func (t *target) LastError() error {
+	t.Lock()
+	defer t.Unlock()
 	return t.lastError
 }
 
 // State implements Target.
 func (t *target) State() TargetState {
+	t.Lock()
+	defer t.Unlock()
 	return t.state
 }
 
 // LastScrape implements Target.
 func (t *target) LastScrape() time.Time {
+	t.Lock()
+	defer t.Unlock()
 	return t.lastScrape
 }
 
@@ -365,6 +386,8 @@ func (t *target) GlobalAddress() string {
 
 // BaseLabels implements Target.
 func (t *target) BaseLabels() clientmodel.LabelSet {
+	t.Lock()
+	defer t.Unlock()
 	return t.baseLabels
 }
 
@@ -375,5 +398,3 @@ func (t *target) SetBaseLabelsFrom(newTarget Target) {
 	}
 	t.newBaseLabels <- newTarget.BaseLabels()
 }
-
-type targets []Target

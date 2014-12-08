@@ -125,6 +125,13 @@ func (cd *chunkDesc) contains(t clientmodel.Timestamp) bool {
 	return !t.Before(cd.firstTime()) && !t.After(cd.lastTime())
 }
 
+func (cd *chunkDesc) getChunk() chunk {
+	cd.Lock()
+	defer cd.Unlock()
+
+	return cd.chunk
+}
+
 func (cd *chunkDesc) setChunk(c chunk) {
 	cd.Lock()
 	defer cd.Unlock()

@@ -255,8 +255,7 @@ func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, args []Node) interfac
 	}
 	common := clientmodel.LabelSet{}
 	for k, v := range vector[0].Metric {
-		// TODO(julius): Revisit this when https://github.com/prometheus/prometheus/issues/380
-		// is implemented.
+		// TODO(julius): Should we also drop common metric names?
 		if k == clientmodel.MetricNameLabel {
 			continue
 		}

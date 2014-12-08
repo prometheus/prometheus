@@ -23,16 +23,18 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
+// TargetManager manages all scrape targets. All methods are goroutine-safe.
 type TargetManager interface {
 	AddTarget(job config.JobConfig, t Target)
 	ReplaceTargets(job config.JobConfig, newTargets []Target)
 	Remove(t Target)
 	AddTargetsFromConfig(config config.Config)
 	Stop()
-	Pools() map[string]*TargetPool
+	Pools() map[string]*TargetPool // Returns a copy of the name -> TargetPool mapping.
 }
 
 type targetManager struct {
+	sync.Mutex // Protects poolByJob.
 	poolsByJob map[string]*TargetPool
 	ingester   extraction.Ingester
 }
@@ -44,7 +46,7 @@ func NewTargetManager(ingester extraction.Ingester) TargetManager {
 	}
 }
 
-func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
+func (m *targetManager) targetPoolForJob(job config.JobConfig) *TargetPool {
 	targetPool, ok := m.poolsByJob[job.GetName()]
 
 	if !ok {
@@ -58,7 +60,6 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
 		glog.Infof("Pool for job %s does not exist; creating and starting...", job.GetName())
 
 		m.poolsByJob[job.GetName()] = targetPool
-		// TODO: Investigate whether this auto-goroutine creation is desired.
 		go targetPool.Run()
 	}
 
@@ -66,24 +67,32 @@ func (m *targetManager) TargetPoolForJob(job config.JobConfig) *TargetPool {
 }
 
 func (m *targetManager) AddTarget(job config.JobConfig, t Target) {
-	targetPool := m.TargetPoolForJob(job)
+	m.Lock()
+	defer m.Unlock()
+
+	targetPool := m.targetPoolForJob(job)
 	targetPool.AddTarget(t)
 	m.poolsByJob[job.GetName()] = targetPool
 }
 
 func (m *targetManager) ReplaceTargets(job config.JobConfig, newTargets []Target) {
-	targetPool := m.TargetPoolForJob(job)
+	m.Lock()
+	defer m.Unlock()
+
+	targetPool := m.targetPoolForJob(job)
 	targetPool.ReplaceTargets(newTargets)
 }
 
-func (m targetManager) Remove(t Target) {
+func (m *targetManager) Remove(t Target) {
 	panic("not implemented")
 }
 
 func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 	for _, job := range config.Jobs() {
 		if job.SdName != nil {
-			m.TargetPoolForJob(job)
+			m.Lock()
+			m.targetPoolForJob(job)
+			m.Unlock()
 			continue
 		}
 
@@ -106,6 +115,9 @@ func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 }
 
 func (m *targetManager) Stop() {
+	m.Lock()
+	defer m.Unlock()
+
 	glog.Info("Stopping target manager...")
 	var wg sync.WaitGroup
 	for j, p := range m.poolsByJob {
@@ -121,7 +133,13 @@ func (m *targetManager) Stop() {
 	glog.Info("Target manager stopped.")
 }
 
-// TODO: Not goroutine-safe. Only used in /status page for now.
 func (m *targetManager) Pools() map[string]*TargetPool {
-	return m.poolsByJob
+	m.Lock()
+	defer m.Unlock()
+
+	result := make(map[string]*TargetPool, len(m.poolsByJob))
+	for k, v := range m.poolsByJob {
+		result[k] = v
+	}
+	return result
 }

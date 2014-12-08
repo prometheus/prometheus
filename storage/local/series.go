@@ -381,11 +381,11 @@ func (s *memorySeries) preloadChunksForRange(
 func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
 	chunks := make([]chunk, 0, len(s.chunkDescs))
 	for i, cd := range s.chunkDescs {
-		if !cd.isEvicted() {
+		if chunk := cd.getChunk(); chunk != nil {
 			if i == len(s.chunkDescs)-1 && !s.headChunkPersisted {
 				s.headChunkUsedByIterator = true
 			}
-			chunks = append(chunks, cd.chunk)
+			chunks = append(chunks, chunk)
 		}
 	}
 
