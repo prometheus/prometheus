@@ -1,4 +1,4 @@
-# We use native code; sue me.
+# We use native code.
 
 language: go
 
@@ -7,4 +7,4 @@ go:
 
 script:
  - cd ${TRAVIS_BUILD_DIR}
- - bash -l ./tests-for-die-in-a-fire-travis.sh
+ - bash -l ./travis-helper.sh
