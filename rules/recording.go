@@ -16,6 +16,7 @@ package rules
 import (
 	"fmt"
 	"html/template"
+	"reflect"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -32,14 +33,16 @@ type RecordingRule struct {
 	permanent bool
 }
 
+// Name returns the rule name.
 func (rule RecordingRule) Name() string { return rule.name }
 
+// EvalRaw returns the raw value of the rule expression.
 func (rule RecordingRule) EvalRaw(timestamp clientmodel.Timestamp, storage local.Storage) (ast.Vector, error) {
 	return ast.EvalVectorInstant(rule.vector, timestamp, storage, stats.NewTimerGroup())
 }
 
+// Eval evaluates the rule and then overrides the metric names and labels accordingly.
 func (rule RecordingRule) Eval(timestamp clientmodel.Timestamp, storage local.Storage) (ast.Vector, error) {
-	// Get the raw value of the rule expression.
 	vector, err := rule.EvalRaw(timestamp, storage)
 	if err != nil {
 		return nil, err
@@ -60,12 +63,18 @@ func (rule RecordingRule) Eval(timestamp clientmodel.Timestamp, storage local.St
 	return vector, nil
 }
 
+// ToDotGraph returns the text representation of a dot graph.
 func (rule RecordingRule) ToDotGraph() string {
-	graph := fmt.Sprintf(`digraph "Rules" {
+	graph := fmt.Sprintf(
+		`digraph "Rules" {
 	  %#p[shape="box",label="%s = "];
-		%#p -> %#p;
+		%#p -> %x;
 		%s
-	}`, &rule, rule.name, &rule, rule.vector, rule.vector.NodeTreeToDotGraph())
+	}`,
+		&rule, rule.name,
+		&rule, reflect.ValueOf(rule.vector).Pointer(),
+		rule.vector.NodeTreeToDotGraph(),
+	)
 	return graph
 }
 
@@ -73,6 +82,7 @@ func (rule RecordingRule) String() string {
 	return fmt.Sprintf("%s%s = %s\n", rule.name, rule.labels, rule.vector)
 }
 
+// HTMLSnippet returns an HTML snippet representing this rule.
 func (rule RecordingRule) HTMLSnippet() template.HTML {
 	ruleExpr := rule.vector.String()
 	return template.HTML(fmt.Sprintf(
@@ -82,14 +92,4 @@ func (rule RecordingRule) HTMLSnippet() template.HTML {
 		rule.labels,
 		GraphLinkForExpression(ruleExpr),
 		ruleExpr))
-}
-
-// Construct a new RecordingRule.
-func NewRecordingRule(name string, labels clientmodel.LabelSet, vector ast.VectorNode, permanent bool) *RecordingRule {
-	return &RecordingRule{
-		name:      name,
-		labels:    labels,
-		vector:    vector,
-		permanent: permanent,
-	}
 }

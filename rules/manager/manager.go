@@ -62,6 +62,8 @@ func init() {
 	prometheus.MustRegister(evalDuration)
 }
 
+// A RuleManager manages recording and alerting rules. Create instances with
+// NewRuleManager.
 type RuleManager interface {
 	// Load and add rules from rule files specified in the configuration.
 	AddRulesFromConfig(config config.Config) error
@@ -88,9 +90,10 @@ type ruleManager struct {
 	results             chan<- *extraction.Result
 	notificationHandler *notification.NotificationHandler
 
-	prometheusUrl string
+	prometheusURL string
 }
 
+// RuleManagerOptions bundles options for the RuleManager.
 type RuleManagerOptions struct {
 	EvaluationInterval time.Duration
 	Storage            local.Storage
@@ -98,9 +101,11 @@ type RuleManagerOptions struct {
 	NotificationHandler *notification.NotificationHandler
 	Results             chan<- *extraction.Result
 
-	PrometheusUrl string
+	PrometheusURL string
 }
 
+// NewRuleManager returns an implementation of RuleManager, ready to be started
+// by calling the Run method.
 func NewRuleManager(o *RuleManagerOptions) RuleManager {
 	manager := &ruleManager{
 		rules: []rules.Rule{},
@@ -110,7 +115,7 @@ func NewRuleManager(o *RuleManagerOptions) RuleManager {
 		storage:             o.Storage,
 		results:             o.Results,
 		notificationHandler: o.NotificationHandler,
-		prometheusUrl:       o.PrometheusUrl,
+		prometheusURL:       o.PrometheusURL,
 	}
 	return manager
 }
@@ -120,6 +125,12 @@ func (m *ruleManager) Run() {
 	defer ticker.Stop()
 
 	for {
+		// TODO(beorn): This has the same problem as the scraper had
+		// before. If rule evaluation takes longer than the interval,
+		// there is a 50% chance per iteration that - after stopping the
+		// ruleManager - a new evaluation will be started rather than
+		// the ruleManager actually stopped. We need a similar
+		// contraption here as in the scraper.
 		select {
 		case <-ticker.C:
 			start := time.Now()
@@ -145,7 +156,7 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 
 	notifications := make(notification.NotificationReqs, 0, len(activeAlerts))
 	for _, aa := range activeAlerts {
-		if aa.State != rules.FIRING {
+		if aa.State != rules.Firing {
 			// BUG: In the future, make AlertManager support pending alerts?
 			continue
 		}
@@ -185,7 +196,7 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 			Value:        aa.Value,
 			ActiveSince:  aa.ActiveSince.Time(),
 			RuleString:   rule.String(),
-			GeneratorURL: m.prometheusUrl + rules.GraphLinkForExpression(rule.Vector.String()),
+			GeneratorURL: m.prometheusURL + rules.GraphLinkForExpression(rule.Vector.String()),
 		})
 	}
 	m.notificationHandler.SubmitReqs(notifications)

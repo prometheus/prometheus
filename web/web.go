@@ -20,7 +20,6 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -41,6 +40,7 @@ var (
 	enableQuit     = flag.Bool("web.enable-remote-shutdown", false, "Enable remote service shutdown.")
 )
 
+// WebService handles the HTTP endpoints with the exception of /api.
 type WebService struct {
 	StatusHandler   *PrometheusStatusHandler
 	MetricsHandler  *api.MetricsService
@@ -50,19 +50,20 @@ type WebService struct {
 	QuitDelegate func()
 }
 
-func (w WebService) ServeForever() error {
+// ServeForever serves the HTTP endpoints and only returns upon errors.
+func (ws WebService) ServeForever() error {
 	http.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", 404)
 	}))
 
 	http.Handle("/", prometheus.InstrumentHandler(
-		"/", w.StatusHandler,
+		"/", ws.StatusHandler,
 	))
 	http.Handle("/alerts", prometheus.InstrumentHandler(
-		"/alerts", w.AlertsHandler,
+		"/alerts", ws.AlertsHandler,
 	))
 	http.Handle("/consoles/", prometheus.InstrumentHandler(
-		"/consoles/", http.StripPrefix("/consoles/", w.ConsolesHandler),
+		"/consoles/", http.StripPrefix("/consoles/", ws.ConsolesHandler),
 	))
 	http.Handle("/graph", prometheus.InstrumentHandler(
 		"/graph", http.HandlerFunc(graphHandler),
@@ -71,7 +72,7 @@ func (w WebService) ServeForever() error {
 		"/heap", http.HandlerFunc(dumpHeap),
 	))
 
-	w.MetricsHandler.RegisterHandler()
+	ws.MetricsHandler.RegisterHandler()
 	http.Handle("/metrics", prometheus.Handler())
 	if *useLocalAssets {
 		http.Handle("/static/", prometheus.InstrumentHandler(
@@ -90,7 +91,7 @@ func (w WebService) ServeForever() error {
 	}
 
 	if *enableQuit {
-		http.Handle("/-/quit", http.HandlerFunc(w.quitHandler))
+		http.Handle("/-/quit", http.HandlerFunc(ws.quitHandler))
 	}
 
 	glog.Info("listening on ", *listenAddress)
@@ -98,7 +99,7 @@ func (w WebService) ServeForever() error {
 	return http.ListenAndServe(*listenAddress, nil)
 }
 
-func (s WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
+func (ws WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		w.Header().Add("Allow", "POST")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -107,7 +108,7 @@ func (s WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "Requesting termination... Goodbye!")
 
-	s.QuitDelegate()
+	ws.QuitDelegate()
 }
 
 func getTemplateFile(name string) (string, error) {
@@ -118,14 +119,13 @@ func getTemplateFile(name string) (string, error) {
 			return "", err
 		}
 		return string(file), nil
-	} else {
-		file, err := blob.GetFile(blob.TemplateFiles, name+".html")
-		if err != nil {
-			glog.Errorf("Could not read %s template: %s", name, err)
-			return "", err
-		}
-		return string(file), nil
 	}
+	file, err := blob.GetFile(blob.TemplateFiles, name+".html")
+	if err != nil {
+		glog.Errorf("Could not read %s template: %s", name, err)
+		return "", err
+	}
+	return string(file), nil
 }
 
 func getConsoles() string {
@@ -186,7 +186,8 @@ func dumpHeap(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Done")
 }
 
-func MustBuildServerUrl() string {
+// MustBuildServerURL returns the server URL and panics in case an error occurs.
+func MustBuildServerURL() string {
 	_, port, err := net.SplitHostPort(*listenAddress)
 	if err != nil {
 		panic(err)

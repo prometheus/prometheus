@@ -31,8 +31,8 @@ import (
 )
 
 const (
-	alertmanagerApiEventsPath = "/api/alerts"
-	contentTypeJson           = "application/json"
+	alertmanagerAPIEventsPath = "/api/alerts"
+	contentTypeJSON           = "application/json"
 )
 
 // String constants for instrumentation.
@@ -50,8 +50,8 @@ var (
 	deadline = flag.Duration("alertmanager.http-deadline", 10*time.Second, "Alert manager HTTP API timeout.")
 )
 
-// A request for sending a notification to the alert manager for a single alert
-// vector element.
+// NotificationReq is a request for sending a notification to the alert manager
+// for a single alert vector element.
 type NotificationReq struct {
 	// Short-form alert summary. May contain text/template-style interpolations.
 	Summary string
@@ -69,6 +69,9 @@ type NotificationReq struct {
 	GeneratorURL string
 }
 
+// NotificationReqs is just a short-hand for []*NotificationReq. No methods
+// attached. Arguably, it's more confusing than helpful. Perhaps we should
+// remove it...
 type NotificationReqs []*NotificationReq
 
 type httpPoster interface {
@@ -79,7 +82,7 @@ type httpPoster interface {
 // alert manager service.
 type NotificationHandler struct {
 	// The URL of the alert manager to send notifications to.
-	alertmanagerUrl string
+	alertmanagerURL string
 	// Buffer of notifications that have not yet been sent.
 	pendingNotifications chan NotificationReqs
 	// HTTP client with custom timeout settings.
@@ -92,10 +95,10 @@ type NotificationHandler struct {
 	stopped chan struct{}
 }
 
-// Construct a new NotificationHandler.
-func NewNotificationHandler(alertmanagerUrl string, notificationQueueCapacity int) *NotificationHandler {
+// NewNotificationHandler constructs a new NotificationHandler.
+func NewNotificationHandler(alertmanagerURL string, notificationQueueCapacity int) *NotificationHandler {
 	return &NotificationHandler{
-		alertmanagerUrl:      alertmanagerUrl,
+		alertmanagerURL:      alertmanagerURL,
 		pendingNotifications: make(chan NotificationReqs, notificationQueueCapacity),
 
 		httpClient: utility.NewDeadlineClient(*deadline),
@@ -150,8 +153,8 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	}
 	glog.V(1).Infoln("Sending notifications to alertmanager:", string(buf))
 	resp, err := n.httpClient.Post(
-		n.alertmanagerUrl+alertmanagerApiEventsPath,
-		contentTypeJson,
+		n.alertmanagerURL+alertmanagerAPIEventsPath,
+		contentTypeJSON,
 		bytes.NewBuffer(buf),
 	)
 	if err != nil {
@@ -170,7 +173,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 // Run dispatches notifications continuously.
 func (n *NotificationHandler) Run() {
 	for reqs := range n.pendingNotifications {
-		if n.alertmanagerUrl == "" {
+		if n.alertmanagerURL == "" {
 			glog.Warning("No alert manager configured, not dispatching notification")
 			n.notificationLatency.WithLabelValues(dropped).Observe(0)
 			continue

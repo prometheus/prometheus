@@ -25,16 +25,23 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
+// CreateRecordingRule is a convenience function to create a recording rule.
 func CreateRecordingRule(name string, labels clientmodel.LabelSet, expr ast.Node, permanent bool) (*RecordingRule, error) {
 	if _, ok := expr.(ast.VectorNode); !ok {
-		return nil, fmt.Errorf("Recording rule expression %v does not evaluate to vector type", expr)
+		return nil, fmt.Errorf("recording rule expression %v does not evaluate to vector type", expr)
 	}
-	return NewRecordingRule(name, labels, expr.(ast.VectorNode), permanent), nil
+	return &RecordingRule{
+		name:      name,
+		labels:    labels,
+		vector:    expr.(ast.VectorNode),
+		permanent: permanent,
+	}, nil
 }
 
+// CreateAlertingRule is a convenience function to create a new alerting rule.
 func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labels clientmodel.LabelSet, summary string, description string) (*AlertingRule, error) {
 	if _, ok := expr.(ast.VectorNode); !ok {
-		return nil, fmt.Errorf("Alert rule expression %v does not evaluate to vector type", expr)
+		return nil, fmt.Errorf("alert rule expression %v does not evaluate to vector type", expr)
 	}
 	holdDuration, err := utility.StringToDuration(holdDurationStr)
 	if err != nil {
@@ -43,10 +50,11 @@ func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labe
 	return NewAlertingRule(name, expr.(ast.VectorNode), holdDuration, labels, summary, description), nil
 }
 
+// NewFunctionCall is a convenience function to create a new AST function-call node.
 func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {
 	function, err := ast.GetFunction(name)
 	if err != nil {
-		return nil, fmt.Errorf("Unknown function \"%v\"", name)
+		return nil, fmt.Errorf("unknown function %q", name)
 	}
 	functionCall, err := ast.NewFunctionCall(function, args)
 	if err != nil {
@@ -55,9 +63,10 @@ func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {
 	return functionCall, nil
 }
 
+// NewVectorAggregation is a convenience function to create a new AST vector aggregation.
 func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy clientmodel.LabelNames, keepExtraLabels bool) (*ast.VectorAggregation, error) {
 	if _, ok := vector.(ast.VectorNode); !ok {
-		return nil, fmt.Errorf("Operand of %v aggregation must be of vector type", aggrTypeStr)
+		return nil, fmt.Errorf("operand of %v aggregation must be of vector type", aggrTypeStr)
 	}
 	var aggrTypes = map[string]ast.AggrType{
 		"SUM":   ast.SUM,
@@ -68,11 +77,12 @@ func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy clientmod
 	}
 	aggrType, ok := aggrTypes[aggrTypeStr]
 	if !ok {
-		return nil, fmt.Errorf("Unknown aggregation type '%v'", aggrTypeStr)
+		return nil, fmt.Errorf("unknown aggregation type %q", aggrTypeStr)
 	}
 	return ast.NewVectorAggregation(aggrType, vector.(ast.VectorNode), groupBy, keepExtraLabels), nil
 }
 
+// NewArithExpr is a convenience function to create a new AST arithmetic expression.
 func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node) (ast.Node, error) {
 	var opTypes = map[string]ast.BinOpType{
 		"+":   ast.ADD,
@@ -91,7 +101,7 @@ func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node) (ast.Node, error
 	}
 	opType, ok := opTypes[opTypeStr]
 	if !ok {
-		return nil, fmt.Errorf("Invalid binary operator \"%v\"", opTypeStr)
+		return nil, fmt.Errorf("invalid binary operator %q", opTypeStr)
 	}
 	expr, err := ast.NewArithExpr(opType, lhs, rhs)
 	if err != nil {
@@ -100,6 +110,7 @@ func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node) (ast.Node, error
 	return expr, nil
 }
 
+// NewMatrixSelector is a convenience function to create a new AST matrix selector.
 func NewMatrixSelector(vector ast.Node, intervalStr string) (ast.MatrixNode, error) {
 	switch vector.(type) {
 	case *ast.VectorSelector:
@@ -107,7 +118,7 @@ func NewMatrixSelector(vector ast.Node, intervalStr string) (ast.MatrixNode, err
 			break
 		}
 	default:
-		return nil, fmt.Errorf("Intervals are currently only supported for vector selectors.")
+		return nil, fmt.Errorf("intervals are currently only supported for vector selectors")
 	}
 	interval, err := utility.StringToDuration(intervalStr)
 	if err != nil {
@@ -126,11 +137,13 @@ func newLabelMatcher(matchTypeStr string, name clientmodel.LabelName, value clie
 	}
 	matchType, ok := matchTypes[matchTypeStr]
 	if !ok {
-		return nil, fmt.Errorf("Invalid label matching operator \"%v\"", matchTypeStr)
+		return nil, fmt.Errorf("invalid label matching operator %q", matchTypeStr)
 	}
 	return metric.NewLabelMatcher(matchType, name, value)
 }
 
+// TableLinkForExpression creates an escaped relative link to the table view of
+// the provided expression.
 func TableLinkForExpression(expr string) string {
 	// url.QueryEscape percent-escapes everything except spaces, for which it
 	// uses "+". However, in the non-query part of a URI, only percent-escaped
@@ -143,6 +156,8 @@ func TableLinkForExpression(expr string) string {
 	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))
 }
 
+// GraphLinkForExpression creates an escaped relative link to the graph view of
+// the provided expression.
 func GraphLinkForExpression(expr string) string {
 	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q}]`, expr))
 	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))

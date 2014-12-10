@@ -16,6 +16,7 @@ package rules
 import (
 	"fmt"
 	"html/template"
+	"reflect"
 	"sync"
 	"time"
 
@@ -28,25 +29,25 @@ import (
 )
 
 const (
-	// The metric name for synthetic alert timeseries.
+	// AlertMetricName is the metric name for synthetic alert timeseries.
 	AlertMetricName clientmodel.LabelValue = "ALERTS"
 
-	// The label name indicating the name of an alert.
+	// AlertNameLabel is the label name indicating the name of an alert.
 	AlertNameLabel clientmodel.LabelName = "alertname"
-	// The label name indicating the state of an alert.
+	// AlertStateLabel is the label name indicating the state of an alert.
 	AlertStateLabel clientmodel.LabelName = "alertstate"
 )
 
-// States that active alerts can be in.
+// AlertState denotes the state of an active alert.
 type AlertState int
 
 func (s AlertState) String() string {
 	switch s {
-	case INACTIVE:
+	case Inactive:
 		return "inactive"
-	case PENDING:
+	case Pending:
 		return "pending"
-	case FIRING:
+	case Firing:
 		return "firing"
 	default:
 		panic("undefined")
@@ -54,9 +55,14 @@ func (s AlertState) String() string {
 }
 
 const (
-	INACTIVE AlertState = iota
-	PENDING
-	FIRING
+	// Inactive alerts are neither firing nor pending.
+	Inactive AlertState = iota
+	// Pending alerts have been active for less than the configured
+	// threshold duration.
+	Pending
+	// Firing alerts have been active for longer than the configured
+	// threshold duration.
+	Firing
 )
 
 // Alert is used to track active (pending/firing) alerts over time.
@@ -65,9 +71,9 @@ type Alert struct {
 	Name string
 	// The vector element labelset triggering this alert.
 	Labels clientmodel.LabelSet
-	// The state of the alert (PENDING or FIRING).
+	// The state of the alert (Pending or Firing).
 	State AlertState
-	// The time when the alert first transitioned into PENDING state.
+	// The time when the alert first transitioned into Pending state.
 	ActiveSince clientmodel.Timestamp
 	// The value of the alert expression for this vector element.
 	Value clientmodel.SampleValue
@@ -91,14 +97,14 @@ func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleV
 	}
 }
 
-// An alerting rule generates alerts from its vector expression.
+// An AlertingRule generates alerts from its vector expression.
 type AlertingRule struct {
 	// The name of the alert.
 	name string
 	// The vector expression from which to generate alerts.
 	Vector ast.VectorNode
 	// The duration for which a labelset needs to persist in the expression
-	// output vector before an alert transitions from PENDING to FIRING state.
+	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
 	Labels clientmodel.LabelSet
@@ -109,21 +115,24 @@ type AlertingRule struct {
 
 	// Protects the below.
 	mutex sync.Mutex
-	// A map of alerts which are currently active (PENDING or FIRING), keyed by
+	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
 	activeAlerts map[clientmodel.Fingerprint]*Alert
 }
 
+// Name returns the name of the alert.
 func (rule *AlertingRule) Name() string {
 	return rule.name
 }
 
+// EvalRaw returns the raw value of the rule expression, without creating alerts.
 func (rule *AlertingRule) EvalRaw(timestamp clientmodel.Timestamp, storage local.Storage) (ast.Vector, error) {
 	return ast.EvalVectorInstant(rule.Vector, timestamp, storage, stats.NewTimerGroup())
 }
 
+// Eval evaluates the rule expression and then creates pending alerts and fires
+// or removes previously pending alerts accordingly.
 func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage local.Storage) (ast.Vector, error) {
-	// Get the raw value of the rule expression.
 	exprResult, err := rule.EvalRaw(timestamp, storage)
 	if err != nil {
 		return nil, err
@@ -150,7 +159,7 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage local.St
 			rule.activeAlerts[*fp] = &Alert{
 				Name:        rule.name,
 				Labels:      labels,
-				State:       PENDING,
+				State:       Pending,
 				ActiveSince: timestamp,
 				Value:       sample.Value,
 			}
@@ -169,9 +178,9 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage local.St
 			continue
 		}
 
-		if activeAlert.State == PENDING && timestamp.Sub(activeAlert.ActiveSince) >= rule.holdDuration {
+		if activeAlert.State == Pending && timestamp.Sub(activeAlert.ActiveSince) >= rule.holdDuration {
 			vector = append(vector, activeAlert.sample(timestamp, 0))
-			activeAlert.State = FIRING
+			activeAlert.State = Firing
 		}
 
 		vector = append(vector, activeAlert.sample(timestamp, 1))
@@ -180,12 +189,17 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage local.St
 	return vector, nil
 }
 
+// ToDotGraph returns the text representation of a dot graph.
 func (rule *AlertingRule) ToDotGraph() string {
-	graph := fmt.Sprintf(`digraph "Rules" {
+	graph := fmt.Sprintf(
+		`digraph "Rules" {
 	  %#p[shape="box",label="ALERT %s IF FOR %s"];
-		%#p -> %#p;
+		%#p -> %x;
 		%s
-	}`, &rule, rule.name, utility.DurationToString(rule.holdDuration), &rule, rule.Vector, rule.Vector.NodeTreeToDotGraph())
+	}`,
+		&rule, rule.name, utility.DurationToString(rule.holdDuration),
+		&rule, reflect.ValueOf(rule.Vector).Pointer(),
+		rule.Vector.NodeTreeToDotGraph())
 	return graph
 }
 
@@ -193,6 +207,7 @@ func (rule *AlertingRule) String() string {
 	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.Vector, utility.DurationToString(rule.holdDuration), rule.Labels)
 }
 
+// HTMLSnippet returns an HTML snippet representing this alerting rule.
 func (rule *AlertingRule) HTMLSnippet() template.HTML {
 	alertMetric := clientmodel.Metric{
 		clientmodel.MetricNameLabel: AlertMetricName,
@@ -208,11 +223,12 @@ func (rule *AlertingRule) HTMLSnippet() template.HTML {
 		rule.Labels))
 }
 
+// State returns the "maximum" state: firing > pending > inactive.
 func (rule *AlertingRule) State() AlertState {
 	rule.mutex.Lock()
 	defer rule.mutex.Unlock()
 
-	maxState := INACTIVE
+	maxState := Inactive
 	for _, activeAlert := range rule.activeAlerts {
 		if activeAlert.State > maxState {
 			maxState = activeAlert.State
@@ -221,6 +237,7 @@ func (rule *AlertingRule) State() AlertState {
 	return maxState
 }
 
+// ActiveAlerts returns a slice of active alerts.
 func (rule *AlertingRule) ActiveAlerts() []Alert {
 	rule.mutex.Lock()
 	defer rule.mutex.Unlock()
@@ -232,7 +249,7 @@ func (rule *AlertingRule) ActiveAlerts() []Alert {
 	return alerts
 }
 
-// Construct a new AlertingRule.
+// NewAlertingRule constructs a new AlertingRule.
 func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels clientmodel.LabelSet, summary string, description string) *AlertingRule {
 	return &AlertingRule{
 		name:         name,

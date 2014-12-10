@@ -62,7 +62,7 @@ type sdTargetProvider struct {
 	refreshInterval time.Duration
 }
 
-// Constructs a new sdTargetProvider for a job.
+// NewSdTargetProvider constructs a new sdTargetProvider for a job.
 func NewSdTargetProvider(job config.JobConfig) *sdTargetProvider {
 	i, err := utility.StringToDuration(job.GetSdRefreshInterval())
 	if err != nil {
@@ -125,7 +125,7 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 func lookupSRV(name string) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
-		return nil, fmt.Errorf("Couldn't load resolv.conf: %s", err)
+		return nil, fmt.Errorf("couldn't load resolv.conf: %s", err)
 	}
 
 	client := &dns.Client{}
@@ -140,7 +140,7 @@ func lookupSRV(name string) (*dns.Msg, error) {
 					return response, nil
 				}
 			} else {
-				glog.Warningf("Resolving %s.%s failed: %s", name, suffix, err)
+				glog.Warningf("resolving %s.%s failed: %s", name, suffix, err)
 			}
 		}
 		response, err = lookup(name, dns.TypeSRV, client, servAddr, "", false)
@@ -148,7 +148,7 @@ func lookupSRV(name string) (*dns.Msg, error) {
 			return response, nil
 		}
 	}
-	return response, fmt.Errorf("Couldn't resolve %s: No server responded", name)
+	return response, fmt.Errorf("couldn't resolve %s: No server responded", name)
 }
 
 func lookup(name string, queryType uint16, client *dns.Client, servAddr string, suffix string, edns bool) (*dns.Msg, error) {
@@ -178,7 +178,7 @@ func lookup(name string, queryType uint16, client *dns.Client, servAddr string, 
 
 	if response.MsgHdr.Truncated {
 		if client.Net == "tcp" {
-			return nil, fmt.Errorf("Got truncated message on tcp")
+			return nil, fmt.Errorf("got truncated message on tcp")
 		}
 
 		if edns { // Truncated even though EDNS is used

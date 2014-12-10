@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/rules/ast"
 )
 
+// RulesLexer is the lexer for rule expressions.
 type RulesLexer struct {
 	// Errors encountered during parsing.
 	errors []string
@@ -94,38 +95,37 @@ func newRulesLexer(src io.Reader, singleExpr bool) *RulesLexer {
 	return lexer
 }
 
-func LoadFromReader(rulesReader io.Reader, singleExpr bool) (interface{}, error) {
+func lexAndParse(rulesReader io.Reader, singleExpr bool) (*RulesLexer, error) {
 	lexer := newRulesLexer(rulesReader, singleExpr)
 	ret := yyParse(lexer)
 	if ret != 0 && len(lexer.errors) == 0 {
-		lexer.Error("Unknown parser error")
+		lexer.Error("unknown parser error")
 	}
 
 	if len(lexer.errors) > 0 {
 		err := errors.New(strings.Join(lexer.errors, "\n"))
 		return nil, err
 	}
-
-	if singleExpr {
-		return lexer.parsedExpr, nil
-	} else {
-		return lexer.parsedRules, nil
-	}
+	return lexer, nil
 }
 
+// LoadRulesFromReader parses rules from the provided reader and returns them.
 func LoadRulesFromReader(rulesReader io.Reader) ([]Rule, error) {
-	expr, err := LoadFromReader(rulesReader, false)
+	lexer, err := lexAndParse(rulesReader, false)
 	if err != nil {
 		return nil, err
 	}
-	return expr.([]Rule), err
+	return lexer.parsedRules, err
 }
 
+// LoadRulesFromString parses rules from the provided string returns them.
 func LoadRulesFromString(rulesString string) ([]Rule, error) {
 	rulesReader := strings.NewReader(rulesString)
 	return LoadRulesFromReader(rulesReader)
 }
 
+// LoadRulesFromFile parses rules from the file of the provided name and returns
+// them.
 func LoadRulesFromFile(fileName string) ([]Rule, error) {
 	rulesReader, err := os.Open(fileName)
 	if err != nil {
@@ -135,19 +135,25 @@ func LoadRulesFromFile(fileName string) ([]Rule, error) {
 	return LoadRulesFromReader(rulesReader)
 }
 
+// LoadExprFromReader parses a single expression from the provided reader and
+// returns it as an AST node.
 func LoadExprFromReader(exprReader io.Reader) (ast.Node, error) {
-	expr, err := LoadFromReader(exprReader, true)
+	lexer, err := lexAndParse(exprReader, true)
 	if err != nil {
 		return nil, err
 	}
-	return expr.(ast.Node), err
+	return lexer.parsedExpr, err
 }
 
+// LoadExprFromString parses a single expression from the provided string and
+// returns it as an AST node.
 func LoadExprFromString(exprString string) (ast.Node, error) {
 	exprReader := strings.NewReader(exprString)
 	return LoadExprFromReader(exprReader)
 }
 
+// LoadExprFromFile parses a single expression from the file of the provided
+// name and returns it as an AST node.
 func LoadExprFromFile(fileName string) (ast.Node, error) {
 	exprReader, err := os.Open(fileName)
 	if err != nil {

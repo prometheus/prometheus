@@ -24,11 +24,12 @@ const (
 	// environment variable.
 	defaultDirectory = ""
 
-	// A NO-OP Closer.
+	// NilCloser is a no-op Closer.
 	NilCloser = nilCloser(true)
 )
 
 type (
+	// Closer is the interface that wraps the Close method.
 	Closer interface {
 		// Close reaps the underlying directory and its children.  The directory
 		// could be deleted by its users already.
@@ -74,6 +75,8 @@ func (c callbackCloser) Close() {
 	c.fn()
 }
 
+// NewCallbackCloser returns a Closer that calls the provided function upon
+// closing.
 func NewCallbackCloser(fn func()) *callbackCloser {
 	return &callbackCloser{
 		fn: fn,

@@ -17,8 +17,8 @@ import (
 	"time"
 )
 
-// A basic interface only useful in testing contexts for dispensing the time
-// in a controlled manner.
+// InstantProvider is a basic interface only useful in testing contexts for
+// dispensing the time in a controlled manner.
 type InstantProvider interface {
 	// The current instant.
 	Now() time.Time
@@ -35,7 +35,7 @@ type Time struct {
 	Provider InstantProvider
 }
 
-// Emit the current instant.
+// Now emits the current instant.
 func (t Time) Now() time.Time {
 	if t.Provider == nil {
 		return time.Now()

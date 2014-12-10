@@ -11,13 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package http_utils
+package httputils
 
 import (
 	"net/http"
 	"net/url"
 )
 
+// GetQueryParams calls r.ParseForm and returns r.Form.
 func GetQueryParams(r *http.Request) url.Values {
 	r.ParseForm()
 	return r.Form

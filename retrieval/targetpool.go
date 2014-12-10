@@ -27,10 +27,10 @@ const (
 	targetReplaceQueueSize = 1
 )
 
+// TargetPool is a pool of targets for the same job.
 type TargetPool struct {
 	sync.RWMutex
 
-	done             chan chan struct{}
 	manager          TargetManager
 	targetsByAddress map[string]Target
 	interval         time.Duration
@@ -38,8 +38,11 @@ type TargetPool struct {
 	addTargetQueue   chan Target
 
 	targetProvider TargetProvider
+
+	stopping, stopped chan struct{}
 }
 
+// NewTargetPool creates a TargetPool, ready to be started by calling Run.
 func NewTargetPool(m TargetManager, p TargetProvider, ing extraction.Ingester, i time.Duration) *TargetPool {
 	return &TargetPool{
 		manager:          m,
@@ -48,10 +51,13 @@ func NewTargetPool(m TargetManager, p TargetProvider, ing extraction.Ingester, i
 		targetsByAddress: make(map[string]Target),
 		addTargetQueue:   make(chan Target, targetAddQueueSize),
 		targetProvider:   p,
-		done:             make(chan chan struct{}),
+		stopping:         make(chan struct{}),
+		stopped:          make(chan struct{}),
 	}
 }
 
+// Run starts the target pool. It returns when the target pool has stopped
+// (after calling Stop). Run is usually called as a goroutine.
 func (p *TargetPool) Run() {
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
@@ -69,20 +75,21 @@ func (p *TargetPool) Run() {
 			}
 		case newTarget := <-p.addTargetQueue:
 			p.addTarget(newTarget)
-		case stopped := <-p.done:
+		case <-p.stopping:
 			p.ReplaceTargets([]Target{})
-			close(stopped)
+			close(p.stopped)
 			return
 		}
 	}
 }
 
+// Stop stops the target pool and returns once the shutdown is complete.
 func (p *TargetPool) Stop() {
-	stopped := make(chan struct{})
-	p.done <- stopped
-	<-stopped
+	close(p.stopping)
+	<-p.stopped
 }
 
+// AddTarget adds a target by queuing it in the target queue.
 func (p *TargetPool) AddTarget(target Target) {
 	p.addTargetQueue <- target
 }
@@ -95,13 +102,13 @@ func (p *TargetPool) addTarget(target Target) {
 	go target.RunScraper(p.ingester, p.interval)
 }
 
+// ReplaceTargets replaces the old targets by the provided new ones but reuses
+// old targets that are also present in newTargets to preserve scheduling and
+// health state. Targets no longer present are stopped.
 func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 	p.Lock()
 	defer p.Unlock()
 
-	// Replace old target list by new one, but reuse those targets from the old
-	// list of targets which are also in the new list (to preserve scheduling and
-	// health state).
 	newTargetAddresses := make(utility.Set)
 	for _, newTarget := range newTargets {
 		newTargetAddresses.Add(newTarget.Address())
@@ -113,7 +120,7 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 			go newTarget.RunScraper(p.ingester, p.interval)
 		}
 	}
-	// Stop any targets no longer present.
+
 	var wg sync.WaitGroup
 	for k, oldTarget := range p.targetsByAddress {
 		if !newTargetAddresses.Has(k) {
@@ -130,6 +137,7 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 	wg.Wait()
 }
 
+// Targets returns a copy of the current target list.
 func (p *TargetPool) Targets() []Target {
 	p.RLock()
 	defer p.RUnlock()

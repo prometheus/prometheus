@@ -11,6 +11,7 @@ import (
 	"github.com/golang/glog"
 )
 
+// Sub-directories for templates and static content.
 const (
 	TemplateFiles = "templates"
 	StaticFiles   = "static"
@@ -22,10 +23,11 @@ var mimeMap = map[string]string{
 	"descriptor": "application/vnd.google.protobuf;proto=google.protobuf.FileDescriptorSet",
 }
 
+// GetFile retrieves the content of an embedded file.
 func GetFile(bucket string, name string) ([]byte, error) {
 	blob, ok := files[bucket][name]
 	if !ok {
-		return nil, fmt.Errorf("Could not find %s/%s. Missing/updated files.go?", bucket, name)
+		return nil, fmt.Errorf("could not find %s/%s (missing or updated files.go?)", bucket, name)
 	}
 	reader := bytes.NewReader(blob)
 	gz, err := gzip.NewReader(reader)
@@ -40,6 +42,7 @@ func GetFile(bucket string, name string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// Handler implements http.Handler.
 type Handler struct{}
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

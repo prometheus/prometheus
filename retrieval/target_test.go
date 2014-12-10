@@ -38,13 +38,13 @@ func (i *collectResultIngester) Ingest(r *extraction.Result) error {
 
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := target{
-		state:      UNKNOWN,
+		state:      Unknown,
 		address:    "bad schema",
 		httpClient: utility.NewDeadlineClient(0),
 	}
 	testTarget.scrape(nopIngester{})
-	if testTarget.state != UNREACHABLE {
-		t.Errorf("Expected target state %v, actual: %v", UNREACHABLE, testTarget.state)
+	if testTarget.state != Unreachable {
+		t.Errorf("Expected target state %v, actual: %v", Unreachable, testTarget.state)
 	}
 }
 
@@ -146,7 +146,7 @@ func TestTargetScrape404(t *testing.T) {
 
 func TestTargetRunScraperScrapes(t *testing.T) {
 	testTarget := target{
-		state:           UNKNOWN,
+		state:           Unknown,
 		address:         "bad schema",
 		httpClient:      utility.NewDeadlineClient(0),
 		scraperStopping: make(chan struct{}),
