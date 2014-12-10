@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/rules/manager"
 )
 
+// PrometheusStatusHandler implements http.Handler.
 type PrometheusStatusHandler struct {
 	mu sync.RWMutex
 

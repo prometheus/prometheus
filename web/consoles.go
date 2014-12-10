@@ -31,6 +31,7 @@ var (
 	consoleLibrariesPath = flag.String("web.console.libraries", "console_libraries", "Path to the console library directory.")
 )
 
+// ConsolesHandler implements http.Handler.
 type ConsolesHandler struct {
 	Storage local.Storage
 }

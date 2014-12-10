@@ -21,7 +21,7 @@ type QueryTiming int
 const (
 	TotalEvalTime QueryTiming = iota
 	ResultSortTime
-	JsonEncodeTime
+	JSONEncodeTime
 	PreloadTime
 	TotalQueryPreparationTime
 	InnerViewBuildingTime
@@ -44,7 +44,7 @@ func (s QueryTiming) String() string {
 		return "Total eval time"
 	case ResultSortTime:
 		return "Result sorting time"
-	case JsonEncodeTime:
+	case JSONEncodeTime:
 		return "JSON encoding time"
 	case PreloadTime:
 		return "Query preloading time"

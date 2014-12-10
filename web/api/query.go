@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/web/http_utils"
+	"github.com/prometheus/prometheus/web/httputils"
 )
 
 // Enables cross-site script calls.
@@ -40,10 +40,11 @@ func setAccessControlHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Expose-Headers", "Date")
 }
 
+// Query handles the /api/query endpoint.
 func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 
-	params := http_utils.GetQueryParams(r)
+	params := httputils.GetQueryParams(r)
 	expr := params.Get("expr")
 	asText := params.Get("asText")
 
@@ -71,11 +72,12 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, result)
 }
 
+// QueryRange handles the /api/query_range endpoint.
 func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
-	params := http_utils.GetQueryParams(r)
+	params := httputils.GetQueryParams(r)
 	expr := params.Get("expr")
 
 	// Input times and durations are in seconds and get converted to nanoseconds.
@@ -93,7 +95,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if exprNode.Type() != ast.VECTOR {
-		fmt.Fprint(w, ast.ErrorToJSON(errors.New("Expression does not evaluate to vector type")))
+		fmt.Fprint(w, ast.ErrorToJSON(errors.New("expression does not evaluate to vector type")))
 		return
 	}
 
@@ -112,7 +114,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	// For safety, limit the number of returned points per timeseries.
 	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
 	if duration/step > 11000 {
-		fmt.Fprint(w, ast.ErrorToJSON(errors.New("Exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX).")))
+		fmt.Fprint(w, ast.ErrorToJSON(errors.New("exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")))
 		return
 	}
 
@@ -139,7 +141,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	sort.Sort(matrix)
 	sortTimer.Stop()
 
-	jsonTimer := queryStats.GetTimer(stats.JsonEncodeTime).Start()
+	jsonTimer := queryStats.GetTimer(stats.JSONEncodeTime).Start()
 	result := ast.TypedValueToJSON(matrix, "matrix")
 	jsonTimer.Stop()
 
@@ -147,6 +149,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, result)
 }
 
+// Metrics handles the /api/metrics endpaint.
 func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 

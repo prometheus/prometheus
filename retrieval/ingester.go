@@ -29,6 +29,8 @@ type MergeLabelsIngester struct {
 	Ingester extraction.Ingester
 }
 
+// Ingest ingests the provided extraction result by merging in i.Labels and then
+// handing it over to i.Ingester.
 func (i *MergeLabelsIngester) Ingest(r *extraction.Result) error {
 	for _, s := range r.Samples {
 		s.Metric.MergeFromLabelSet(i.Labels, i.CollisionPrefix)
@@ -40,6 +42,7 @@ func (i *MergeLabelsIngester) Ingest(r *extraction.Result) error {
 // ChannelIngester feeds results into a channel without modifying them.
 type ChannelIngester chan<- *extraction.Result
 
+// Ingest ingests the provided extraction result by sending it to i.
 func (i ChannelIngester) Ingest(r *extraction.Result) error {
 	i <- r
 	return nil

@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-// A timer that can be started and stopped and accumulates the total time it
+// A Timer that can be started and stopped and accumulates the total time it
 // was running (the time between Start() and Stop()).
 type Timer struct {
 	name     fmt.Stringer
@@ -51,12 +51,12 @@ type TimerGroup struct {
 	child  *TimerGroup
 }
 
-// Construct a new TimerGroup.
+// NewTimerGroup constructs a new TimerGroup.
 func NewTimerGroup() *TimerGroup {
 	return &TimerGroup{timers: map[fmt.Stringer]*Timer{}}
 }
 
-// Get (and create, if necessary) the Timer for a given code section.
+// GetTimer gets (and creates, if necessary) the Timer for a given code section.
 func (t *TimerGroup) GetTimer(name fmt.Stringer) *Timer {
 	if timer, exists := t.timers[name]; exists {
 		return timer
@@ -69,14 +69,18 @@ func (t *TimerGroup) GetTimer(name fmt.Stringer) *Timer {
 	return timer
 }
 
+// Timers is a slice of Timer pointers that implements Len and Swap from
+// sort.Interface.
 type Timers []*Timer
 
 type byCreationTimeSorter struct{ Timers }
 
+// Len implements sort.Interface.
 func (t Timers) Len() int {
 	return len(t)
 }
 
+// Swap implements sort.Interface.
 func (t Timers) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }

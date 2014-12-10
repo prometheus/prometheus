@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -223,7 +224,7 @@ func EvalToVector(node Node, timestamp clientmodel.Timestamp, storage local.Stor
 		evalTimer.Stop()
 		return vector, nil
 	case MATRIX:
-		return nil, errors.New("Matrices not supported by EvalToVector")
+		return nil, errors.New("matrices not supported by EvalToVector")
 	case STRING:
 		str := node.(StringNode).Eval(timestamp)
 		evalTimer.Stop()
@@ -242,7 +243,7 @@ func (node *ScalarLiteral) NodeTreeToDotGraph() string {
 func functionArgsToDotGraph(node Node, args []Node) string {
 	graph := ""
 	for _, arg := range args {
-		graph += fmt.Sprintf("%#p -> %#p;\n", node, arg)
+		graph += fmt.Sprintf("%x -> %x;\n", reflect.ValueOf(node).Pointer(), reflect.ValueOf(arg).Pointer())
 	}
 	for _, arg := range args {
 		graph += arg.NodeTreeToDotGraph()
@@ -260,13 +261,21 @@ func (node *ScalarFunctionCall) NodeTreeToDotGraph() string {
 
 // NodeTreeToDotGraph returns a DOT representation of the expression.
 func (node *ScalarArithExpr) NodeTreeToDotGraph() string {
-	graph := fmt.Sprintf(`
-		%#p[label="%s"];
-		%#p -> %#p;
-		%#p -> %#p;
+	nodeAddr := reflect.ValueOf(node).Pointer()
+	graph := fmt.Sprintf(
+		`
+		%x[label="%s"];
+		%x -> %x;
+		%x -> %x;
 		%s
 		%s
-	}`, node, node.opType, node, node.lhs, node, node.rhs, node.lhs.NodeTreeToDotGraph(), node.rhs.NodeTreeToDotGraph())
+	}`,
+		nodeAddr, node.opType,
+		nodeAddr, reflect.ValueOf(node.lhs).Pointer(),
+		nodeAddr, reflect.ValueOf(node.rhs).Pointer(),
+		node.lhs.NodeTreeToDotGraph(),
+		node.rhs.NodeTreeToDotGraph(),
+	)
 	return graph
 }
 
@@ -295,20 +304,28 @@ func (node *VectorAggregation) NodeTreeToDotGraph() string {
 		node,
 		node.aggrType,
 		strings.Join(groupByStrings, ", "))
-	graph += fmt.Sprintf("%#p -> %#p;\n", node, node.vector)
+	graph += fmt.Sprintf("%#p -> %x;\n", node, reflect.ValueOf(node.vector).Pointer())
 	graph += node.vector.NodeTreeToDotGraph()
 	return graph
 }
 
 // NodeTreeToDotGraph returns a DOT representation of the expression.
 func (node *VectorArithExpr) NodeTreeToDotGraph() string {
-	graph := fmt.Sprintf(`
-		%#p[label="%s"];
-		%#p -> %#p;
-		%#p -> %#p;
+	nodeAddr := reflect.ValueOf(node).Pointer()
+	graph := fmt.Sprintf(
+		`
+		%x[label="%s"];
+		%x -> %x;
+		%x -> %x;
 		%s
 		%s
-	`, node, node.opType, node, node.lhs, node, node.rhs, node.lhs.NodeTreeToDotGraph(), node.rhs.NodeTreeToDotGraph())
+	}`,
+		nodeAddr, node.opType,
+		nodeAddr, reflect.ValueOf(node.lhs).Pointer(),
+		nodeAddr, reflect.ValueOf(node.rhs).Pointer(),
+		node.lhs.NodeTreeToDotGraph(),
+		node.rhs.NodeTreeToDotGraph(),
+	)
 	return graph
 }
 

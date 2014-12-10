@@ -24,12 +24,12 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-type testHttpPoster struct {
+type testHTTPPoster struct {
 	message      string
 	receivedPost chan<- bool
 }
 
-func (p *testHttpPoster) Post(url string, bodyType string, body io.Reader) (*http.Response, error) {
+func (p *testHTTPPoster) Post(url string, bodyType string, body io.Reader) (*http.Response, error) {
 	var buf bytes.Buffer
 	buf.ReadFrom(body)
 	p.message = buf.String()
@@ -50,7 +50,7 @@ func (s *testNotificationScenario) test(i int, t *testing.T) {
 	defer h.Stop()
 
 	receivedPost := make(chan bool, 1)
-	poster := testHttpPoster{receivedPost: receivedPost}
+	poster := testHTTPPoster{receivedPost: receivedPost}
 	h.httpClient = &poster
 
 	go h.Run()

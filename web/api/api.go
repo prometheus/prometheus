@@ -22,9 +22,10 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/utility"
-	"github.com/prometheus/prometheus/web/http_utils"
+	"github.com/prometheus/prometheus/web/httputils"
 )
 
+// MetricsService manages the /api HTTP endpoint.
 type MetricsService struct {
 	time          utility.Time
 	Config        *config.Config
@@ -32,9 +33,10 @@ type MetricsService struct {
 	Storage       local.Storage
 }
 
+// RegisterHandler registers the handler for the various endpoints below /api.
 func (msrv *MetricsService) RegisterHandler() {
 	handler := func(h func(http.ResponseWriter, *http.Request)) http.Handler {
-		return http_utils.CompressionHandler{
+		return httputils.CompressionHandler{
 			Handler: http.HandlerFunc(h),
 		}
 	}

@@ -91,6 +91,7 @@ type templateExpander struct {
 	funcMap text_template.FuncMap
 }
 
+// NewTemplateExpander returns a template expander ready to use.
 func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage local.Storage) *templateExpander {
 	return &templateExpander{
 		text: text,
@@ -152,17 +153,16 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 						v /= 1000
 					}
 					return fmt.Sprintf("%.4g%s", v, prefix)
-				} else {
-					prefix := ""
-					for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
-						if math.Abs(v) >= 1 {
-							break
-						}
-						prefix = p
-						v *= 1000
-					}
-					return fmt.Sprintf("%.4g%s", v, prefix)
 				}
+				prefix := ""
+				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
+					if math.Abs(v) >= 1 {
+						break
+					}
+					prefix = p
+					v *= 1000
+				}
+				return fmt.Sprintf("%.4g%s", v, prefix)
 			},
 			"humanize1024": func(v float64) string {
 				if math.Abs(v) <= 1 {
@@ -204,17 +204,16 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 					}
 					// For seconds, we display 4 significant digts.
 					return fmt.Sprintf("%s%.4gs", sign, math.Floor(seconds*1000+.5)/1000)
-				} else {
-					prefix := ""
-					for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
-						if math.Abs(v) >= 1 {
-							break
-						}
-						prefix = p
-						v *= 1000
-					}
-					return fmt.Sprintf("%.4g%ss", v, prefix)
 				}
+				prefix := ""
+				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
+					if math.Abs(v) >= 1 {
+						break
+					}
+					prefix = p
+					v *= 1000
+				}
+				return fmt.Sprintf("%.4g%ss", v, prefix)
 			},
 		},
 	}
@@ -229,7 +228,7 @@ func (te templateExpander) Expand() (result string, resultErr error) {
 			var ok bool
 			resultErr, ok = r.(error)
 			if !ok {
-				resultErr = fmt.Errorf("Panic expanding template %v: %v", te.name, r)
+				resultErr = fmt.Errorf("panic expanding template %v: %v", te.name, r)
 			}
 		}
 	}()
@@ -237,11 +236,11 @@ func (te templateExpander) Expand() (result string, resultErr error) {
 	var buffer bytes.Buffer
 	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Parse(te.text)
 	if err != nil {
-		return "", fmt.Errorf("Error parsing template %v: %v", te.name, err)
+		return "", fmt.Errorf("error parsing template %v: %v", te.name, err)
 	}
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
-		return "", fmt.Errorf("Error executing template %v: %v", te.name, err)
+		return "", fmt.Errorf("error executing template %v: %v", te.name, err)
 	}
 	return buffer.String(), nil
 }
@@ -253,7 +252,7 @@ func (te templateExpander) ExpandHTML(templateFiles []string) (result string, re
 			var ok bool
 			resultErr, ok = r.(error)
 			if !ok {
-				resultErr = fmt.Errorf("Panic expanding template %v: %v", te.name, r)
+				resultErr = fmt.Errorf("panic expanding template %v: %v", te.name, r)
 			}
 		}
 	}()
@@ -269,17 +268,17 @@ func (te templateExpander) ExpandHTML(templateFiles []string) (result string, re
 	})
 	tmpl, err := tmpl.Parse(te.text)
 	if err != nil {
-		return "", fmt.Errorf("Error parsing template %v: %v", te.name, err)
+		return "", fmt.Errorf("error parsing template %v: %v", te.name, err)
 	}
 	if len(templateFiles) > 0 {
 		_, err = tmpl.ParseFiles(templateFiles...)
 		if err != nil {
-			return "", fmt.Errorf("Error parsing template files for %v: %v", te.name, err)
+			return "", fmt.Errorf("error parsing template files for %v: %v", te.name, err)
 		}
 	}
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
-		return "", fmt.Errorf("Error executing template %v: %v", te.name, err)
+		return "", fmt.Errorf("error executing template %v: %v", te.name, err)
 	}
 	return buffer.String(), nil
 }

@@ -22,6 +22,11 @@ import (
 
 var durationRE = regexp.MustCompile("^([0-9]+)([ywdhms]+)$")
 
+// DurationToString formats a time.Duration as a string with the assumption that
+// a year always has 365 days and a day always has 24h. (The former doesn't work
+// in leap years, the latter is broken by DST switches, not to speak about leap
+// seconds, but those are not even treated properly by the duration strings in
+// the standard library.)
 func DurationToString(duration time.Duration) string {
 	seconds := int64(duration / time.Second)
 	factors := map[string]int64{
@@ -45,10 +50,13 @@ func DurationToString(duration time.Duration) string {
 	return fmt.Sprintf("%v%v", seconds/factors[unit], unit)
 }
 
+// StringToDuration parses a string into a time.Duration, assuming that a year
+// always has 265d, a week 7d, a day 24h. See DurationToString for problems with
+// that.
 func StringToDuration(durationStr string) (duration time.Duration, err error) {
 	matches := durationRE.FindStringSubmatch(durationStr)
 	if len(matches) != 3 {
-		err = fmt.Errorf("Not a valid duration string: '%v'", durationStr)
+		err = fmt.Errorf("not a valid duration string: %q", durationStr)
 		return
 	}
 	durationSeconds, _ := strconv.Atoi(matches[1])

@@ -15,6 +15,7 @@ package main
 
 import (
 	"flag"
+	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
 	"sync"
@@ -130,7 +131,7 @@ func NewPrometheus() *prometheus {
 		NotificationHandler: notificationHandler,
 		EvaluationInterval:  conf.EvaluationInterval(),
 		Storage:             memStorage,
-		PrometheusUrl:       web.MustBuildServerUrl(),
+		PrometheusURL:       web.MustBuildServerURL(),
 	})
 	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
 		glog.Fatal("Error loading rule files: ", err)

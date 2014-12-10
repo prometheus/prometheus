@@ -22,15 +22,11 @@ import (
 	"github.com/prometheus/prometheus/rules/manager"
 )
 
+// AlertStatus bundles alerting rules and the mapping of alert states to row
+// classes.
 type AlertStatus struct {
 	AlertingRules        []*rules.AlertingRule
 	AlertStateToRowClass map[rules.AlertState]string
-}
-
-type AlertsHandler struct {
-	RuleManager manager.RuleManager
-
-	mutex sync.Mutex
 }
 
 type byAlertStateSorter struct {
@@ -49,6 +45,13 @@ func (s byAlertStateSorter) Swap(i, j int) {
 	s.alerts[i], s.alerts[j] = s.alerts[j], s.alerts[i]
 }
 
+// AlertsHandler implements http.Handler.
+type AlertsHandler struct {
+	RuleManager manager.RuleManager
+
+	mutex sync.Mutex
+}
+
 func (h *AlertsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
@@ -60,9 +63,9 @@ func (h *AlertsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	alertStatus := AlertStatus{
 		AlertingRules: alertsSorter.alerts,
 		AlertStateToRowClass: map[rules.AlertState]string{
-			rules.INACTIVE: "success",
-			rules.PENDING:  "warning",
-			rules.FIRING:   "error",
+			rules.Inactive: "success",
+			rules.Pending:  "warning",
+			rules.Firing:   "error",
 		},
 	}
 	executeTemplate(w, "alerts", alertStatus)

@@ -20,16 +20,19 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/web/http_utils"
+	"github.com/prometheus/prometheus/web/httputils"
 )
 
+// TargetGroup bundles endpaints and base labels with appropriate JSON
+// annotations.
 type TargetGroup struct {
 	Endpoints  []string          `json:"endpoints"`
 	BaseLabels map[string]string `json:"baseLabels"`
 }
 
+// SetTargets handles the /api/targets endpoint.
 func (serv MetricsService) SetTargets(w http.ResponseWriter, r *http.Request) {
-	params := http_utils.GetQueryParams(r)
+	params := httputils.GetQueryParams(r)
 	jobName := params.Get("job")
 
 	decoder := json.NewDecoder(r.Body)

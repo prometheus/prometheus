@@ -43,27 +43,27 @@ var configTests = []struct {
 	{
 		inputFile:   "invalid_scrape_interval.conf.input",
 		shouldFail:  true,
-		errContains: "Invalid global scrape interval",
+		errContains: "invalid global scrape interval",
 	},
 	{
 		inputFile:   "invalid_job_name.conf.input",
 		shouldFail:  true,
-		errContains: "Invalid job name",
+		errContains: "invalid job name",
 	},
 	{
 		inputFile:   "invalid_label_name.conf.input",
 		shouldFail:  true,
-		errContains: "Invalid label name",
+		errContains: "invalid label name",
 	},
 	{
 		inputFile:   "mixing_sd_and_manual_targets.conf.input",
 		shouldFail:  true,
-		errContains: "Specified both DNS-SD name and target group",
+		errContains: "specified both DNS-SD name and target group",
 	},
 	{
 		inputFile:   "repeated_job_name.conf.input",
 		shouldFail:  true,
-		errContains: "Found multiple jobs configured with the same name: 'testjob1'",
+		errContains: "found multiple jobs configured with the same name: 'testjob1'",
 	},
 }
 

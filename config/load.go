@@ -14,11 +14,13 @@
 package config
 
 import (
+	"io/ioutil"
+
 	"code.google.com/p/goprotobuf/proto"
 	pb "github.com/prometheus/prometheus/config/generated"
-	"io/ioutil"
 )
 
+// LoadFromString returns a config parsed from the provided string.
 func LoadFromString(configStr string) (Config, error) {
 	configProto := pb.PrometheusConfig{}
 	if err := proto.UnmarshalText(configStr, &configProto); err != nil {
@@ -39,6 +41,7 @@ func LoadFromString(configStr string) (Config, error) {
 	return config, err
 }
 
+// LoadFromFile returns a config parsed from the file of teh provided name.
 func LoadFromFile(fileName string) (Config, error) {
 	configStr, err := ioutil.ReadFile(fileName)
 	if err != nil {

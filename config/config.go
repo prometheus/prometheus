@@ -14,10 +14,10 @@
 package config
 
 import (
-	"code.google.com/p/goprotobuf/proto"
 	"fmt"
 	"regexp"
 	"time"
+	"code.google.com/p/goprotobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -48,7 +48,7 @@ func (c Config) validateLabels(labels *pb.LabelPairs) error {
 	}
 	for _, label := range labels.Label {
 		if !labelNameRE.MatchString(label.GetName()) {
-			return fmt.Errorf("Invalid label name '%s'", label.GetName())
+			return fmt.Errorf("invalid label name '%s'", label.GetName())
 		}
 	}
 	return nil
@@ -59,42 +59,42 @@ func (c Config) Validate() error {
 	// Check the global configuration section for validity.
 	global := c.Global
 	if _, err := utility.StringToDuration(global.GetScrapeInterval()); err != nil {
-		return fmt.Errorf("Invalid global scrape interval: %s", err)
+		return fmt.Errorf("invalid global scrape interval: %s", err)
 	}
 	if _, err := utility.StringToDuration(global.GetEvaluationInterval()); err != nil {
-		return fmt.Errorf("Invalid rule evaluation interval: %s", err)
+		return fmt.Errorf("invalid rule evaluation interval: %s", err)
 	}
 	if err := c.validateLabels(global.Labels); err != nil {
-		return fmt.Errorf("Invalid global labels: %s", err)
+		return fmt.Errorf("invalid global labels: %s", err)
 	}
 
 	// Check each job configuration for validity.
 	jobNames := map[string]bool{}
 	for _, job := range c.Job {
 		if jobNames[job.GetName()] {
-			return fmt.Errorf("Found multiple jobs configured with the same name: '%s'", job.GetName())
+			return fmt.Errorf("found multiple jobs configured with the same name: '%s'", job.GetName())
 		}
 		jobNames[job.GetName()] = true
 
 		if !jobNameRE.MatchString(job.GetName()) {
-			return fmt.Errorf("Invalid job name '%s'", job.GetName())
+			return fmt.Errorf("invalid job name '%s'", job.GetName())
 		}
 		if _, err := utility.StringToDuration(job.GetScrapeInterval()); err != nil {
-			return fmt.Errorf("Invalid scrape interval for job '%s': %s", job.GetName(), err)
+			return fmt.Errorf("invalid scrape interval for job '%s': %s", job.GetName(), err)
 		}
 		if _, err := utility.StringToDuration(job.GetSdRefreshInterval()); err != nil {
-			return fmt.Errorf("Invalid SD refresh interval for job '%s': %s", job.GetName(), err)
+			return fmt.Errorf("invalid SD refresh interval for job '%s': %s", job.GetName(), err)
 		}
 		if _, err := utility.StringToDuration(job.GetScrapeTimeout()); err != nil {
-			return fmt.Errorf("Invalid scrape timeout for job '%s': %s", job.GetName(), err)
+			return fmt.Errorf("invalid scrape timeout for job '%s': %s", job.GetName(), err)
 		}
 		for _, targetGroup := range job.TargetGroup {
 			if err := c.validateLabels(targetGroup.Labels); err != nil {
-				return fmt.Errorf("Invalid labels for job '%s': %s", job.GetName(), err)
+				return fmt.Errorf("invalid labels for job '%s': %s", job.GetName(), err)
 			}
 		}
 		if job.SdName != nil && len(job.TargetGroup) > 0 {
-			return fmt.Errorf("Specified both DNS-SD name and target group for job: %s", job.GetName())
+			return fmt.Errorf("specified both DNS-SD name and target group for job: %s", job.GetName())
 		}
 	}
 
@@ -111,7 +111,7 @@ func (c Config) GetJobByName(name string) *JobConfig {
 	return nil
 }
 
-// Return the global labels as a LabelSet.
+// GlobalLabels returns the global labels as a LabelSet.
 func (c Config) GlobalLabels() clientmodel.LabelSet {
 	labels := clientmodel.LabelSet{}
 	if c.Global.Labels != nil {
@@ -155,12 +155,12 @@ type JobConfig struct {
 	pb.JobConfig
 }
 
-// EvaluationInterval gets the scrape interval for a job.
+// ScrapeInterval gets the scrape interval for a job.
 func (c JobConfig) ScrapeInterval() time.Duration {
 	return stringToDuration(c.GetScrapeInterval())
 }
 
-// EvaluationInterval gets the scrape interval for a job.
+// ScrapeTimeout gets the scrape timeout for a job.
 func (c JobConfig) ScrapeTimeout() time.Duration {
 	return stringToDuration(c.GetScrapeInterval())
 }

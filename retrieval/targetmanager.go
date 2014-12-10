@@ -39,6 +39,7 @@ type targetManager struct {
 	ingester   extraction.Ingester
 }
 
+// NewTargetManager returns a newly initialized TargetManager ready to use.
 func NewTargetManager(ingester extraction.Ingester) TargetManager {
 	return &targetManager{
 		ingester:   ingester,
@@ -50,7 +51,7 @@ func (m *targetManager) targetPoolForJob(job config.JobConfig) *TargetPool {
 	targetPool, ok := m.poolsByJob[job.GetName()]
 
 	if !ok {
-		var provider TargetProvider = nil
+		var provider TargetProvider
 		if job.SdName != nil {
 			provider = NewSdTargetProvider(job)
 		}
