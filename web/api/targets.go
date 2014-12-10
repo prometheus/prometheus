@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/web/httputils"
 )
 
-// TargetGroup bundles endpaints and base labels with appropriate JSON
+// TargetGroup bundles endpoints and base labels with appropriate JSON
 // annotations.
 type TargetGroup struct {
 	Endpoints  []string          `json:"endpoints"`

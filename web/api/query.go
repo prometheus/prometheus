@@ -149,7 +149,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, result)
 }
 
-// Metrics handles the /api/metrics endpaint.
+// Metrics handles the /api/metrics endpoint.
 func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 

@@ -17,13 +17,14 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+
 	"code.google.com/p/goprotobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	pb "github.com/prometheus/prometheus/config/generated"
-
 	"github.com/prometheus/prometheus/utility"
+
+	pb "github.com/prometheus/prometheus/config/generated"
 )
 
 var jobNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_-]*$")

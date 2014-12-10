@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 
 	"code.google.com/p/goprotobuf/proto"
+
 	pb "github.com/prometheus/prometheus/config/generated"
 )
 
@@ -41,7 +42,7 @@ func LoadFromString(configStr string) (Config, error) {
 	return config, err
 }
 
-// LoadFromFile returns a config parsed from the file of teh provided name.
+// LoadFromFile returns a config parsed from the file of the provided name.
 func LoadFromFile(fileName string) (Config, error) {
 	configStr, err := ioutil.ReadFile(fileName)
 	if err != nil {

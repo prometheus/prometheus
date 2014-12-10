@@ -51,7 +51,7 @@ func DurationToString(duration time.Duration) string {
 }
 
 // StringToDuration parses a string into a time.Duration, assuming that a year
-// always has 265d, a week 7d, a day 24h. See DurationToString for problems with
+// always has 365d, a week 7d, a day 24h. See DurationToString for problems with
 // that.
 func StringToDuration(durationStr string) (duration time.Duration, err error) {
 	matches := durationRE.FindStringSubmatch(durationStr)
