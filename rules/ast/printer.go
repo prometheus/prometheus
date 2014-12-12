@@ -91,11 +91,12 @@ func (vector Vector) String() string {
 func (matrix Matrix) String() string {
 	metricStrings := make([]string, 0, len(matrix))
 	for _, sampleStream := range matrix {
-		metricName, ok := sampleStream.Metric.Metric[clientmodel.MetricNameLabel]
-		if !ok {
-			panic("Tried to print matrix without metric name")
+		metricName, hasName := sampleStream.Metric.Metric[clientmodel.MetricNameLabel]
+		numLabels := len(sampleStream.Metric.Metric)
+		if hasName {
+			numLabels--
 		}
-		labelStrings := make([]string, 0, len(sampleStream.Metric.Metric)-1)
+		labelStrings := make([]string, 0, numLabels)
 		for label, value := range sampleStream.Metric.Metric {
 			if label != clientmodel.MetricNameLabel {
 				labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))

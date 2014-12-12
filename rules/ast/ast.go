@@ -40,6 +40,7 @@ type SampleStream struct {
 	Values metric.Values
 }
 
+// Sample is a single sample belonging to a COWMetric.
 type Sample struct {
 	Metric    clientmodel.COWMetric
 	Value     clientmodel.SampleValue
@@ -413,7 +414,7 @@ func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmod
 	// TODO implement watchdog timer for long-running queries.
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
 	sampleStreams := map[uint64]*SampleStream{}
-	for t := start; t.Before(end); t = t.Add(interval) {
+	for t := start; !t.After(end); t = t.Add(interval) {
 		vector := node.Eval(t)
 		for _, sample := range vector {
 			samplePair := metric.SamplePair{
