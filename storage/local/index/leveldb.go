@@ -17,7 +17,6 @@ import (
 	"encoding"
 
 	"github.com/syndtr/goleveldb/leveldb"
-	leveldb_cache "github.com/syndtr/goleveldb/leveldb/cache"
 	leveldb_filter "github.com/syndtr/goleveldb/leveldb/filter"
 	leveldb_iterator "github.com/syndtr/goleveldb/leveldb/iterator"
 	leveldb_opt "github.com/syndtr/goleveldb/leveldb/opt"
@@ -52,9 +51,8 @@ type LevelDBOptions struct {
 // use.
 func NewLevelDB(o LevelDBOptions) (KeyValueStore, error) {
 	options := &leveldb_opt.Options{
-		Compression: leveldb_opt.SnappyCompression,
-		BlockCache:  leveldb_cache.NewLRUCache(o.CacheSizeBytes),
-		Filter:      leveldb_filter.NewBloomFilter(10),
+		BlockCacheCapacity: o.CacheSizeBytes,
+		Filter:             leveldb_filter.NewBloomFilter(10),
 	}
 
 	storage, err := leveldb.OpenFile(o.Path, options)
