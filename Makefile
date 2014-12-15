@@ -49,8 +49,8 @@ tag:
 $(BUILD_PATH)/cache/$(GOPKG):
 	$(CURL) -o $@ -L $(GOURL)/$(GOPKG)
 
-benchmark: test
-	$(GO) test $(GO_TEST_FLAGS) -test.bench='Benchmark' ./...
+benchmark: config dependencies tools
+	$(GO) test $(GO_TEST_FLAGS) -test.run='NONE' -test.bench='.*' -test.benchmem ./... | tee benchmark.txt
 
 clean:
 	$(MAKE) -C $(BUILD_PATH) clean
