@@ -27,6 +27,7 @@ core
 
 *-stamp
 prometheus
+benchmark.txt
 
 .#*
 command-line-arguments.test

@@ -26,7 +26,7 @@ MAC_OS_X_VERSION ?= 10.8
 
 BUILD_PATH = $(PWD)/.build
 
-GO_VERSION	 := 1.3.3
+GO_VERSION	 := 1.4
 GOOS		  = $(subst Darwin,darwin,$(subst Linux,linux,$(OS)))
 
 ifeq ($(GOOS),darwin)
