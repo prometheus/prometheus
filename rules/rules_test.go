@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
 )
 
@@ -60,7 +61,7 @@ func newTestStorage(t testing.TB) (storage local.Storage, closer test.Closer) {
 
 func TestExpressions(t *testing.T) {
 	// Labels in expected output need to be alphabetically sorted.
-	var expressionTests = []struct {
+	expressionTests := []struct {
 		expr           string
 		output         []string
 		shouldFail     bool
@@ -702,6 +703,188 @@ func TestExpressions(t *testing.T) {
 				t.Errorf("%d. Expression: %v\n%v", i, exprTest.expr, vectorComparisonString(expectedLines, resultLines))
 			}
 		}
+	}
+}
+
+func TestRangedEvaluationRegressions(t *testing.T) {
+	scenarios := []struct {
+		in   ast.Matrix
+		out  ast.Matrix
+		expr string
+	}{
+		{
+			// Testing COWMetric behavior in drop_common_labels.
+			in: ast.Matrix{
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"testlabel":                 "1",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime,
+							Value:     1,
+						},
+						{
+							Timestamp: testStartTime.Add(time.Hour),
+							Value:     1,
+						},
+					},
+				},
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"testlabel":                 "2",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime.Add(time.Hour),
+							Value:     2,
+						},
+					},
+				},
+			},
+			out: ast.Matrix{
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime,
+							Value:     1,
+						},
+					},
+				},
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"testlabel":                 "1",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime.Add(time.Hour),
+							Value:     1,
+						},
+					},
+				},
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"testlabel":                 "2",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime.Add(time.Hour),
+							Value:     2,
+						},
+					},
+				},
+			},
+			expr: "drop_common_labels(testmetric)",
+		},
+		{
+			// Testing COWMetric behavior in vector aggregation.
+			in: ast.Matrix{
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"testlabel":                 "1",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime,
+							Value:     1,
+						},
+						{
+							Timestamp: testStartTime.Add(time.Hour),
+							Value:     1,
+						},
+					},
+				},
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"testlabel":                 "2",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime,
+							Value:     2,
+						},
+					},
+				},
+			},
+			out: ast.Matrix{
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime,
+							Value:     3,
+						},
+					},
+				},
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							"testlabel": "1",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime.Add(time.Hour),
+							Value:     1,
+						},
+					},
+				},
+			},
+			expr: "sum(testmetric) keeping_extra",
+		},
+	}
+
+	for i, s := range scenarios {
+		storage, closer := local.NewTestStorage(t)
+		storeMatrix(storage, s.in)
+
+		expr, err := LoadExprFromString(s.expr)
+		if err != nil {
+			t.Fatalf("%d. Error parsing expression: %v", i, err)
+		}
+
+		got, err := ast.EvalVectorRange(
+			expr.(ast.VectorNode),
+			testStartTime,
+			testStartTime.Add(time.Hour),
+			time.Hour,
+			storage,
+			stats.NewTimerGroup(),
+		)
+		if err != nil {
+			t.Fatalf("%d. Error evaluating expression: %v", i, err)
+		}
+
+		if got.String() != s.out.String() {
+			t.Fatalf("%d. Expression: %s\n\ngot:\n=====\n%v\n====\n\nwant:\n=====\n%v\n=====\n", i, s.expr, got.String(), s.out.String())
+		}
+
+		closer.Close()
 	}
 }
 

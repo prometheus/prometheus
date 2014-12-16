@@ -30,8 +30,10 @@ func (node emptyRangeNode) Children() Nodes            { return Nodes{} }
 
 func (node emptyRangeNode) Eval(timestamp clientmodel.Timestamp) Matrix {
 	return Matrix{
-		metric.SampleSet{
-			Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
+		SampleStream{
+			Metric: clientmodel.COWMetric{
+				Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
+			},
 			Values: metric.Values{},
 		},
 	}
@@ -39,8 +41,10 @@ func (node emptyRangeNode) Eval(timestamp clientmodel.Timestamp) Matrix {
 
 func (node emptyRangeNode) EvalBoundaries(timestamp clientmodel.Timestamp) Matrix {
 	return Matrix{
-		metric.SampleSet{
-			Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
+		SampleStream{
+			Metric: clientmodel.COWMetric{
+				Metric: clientmodel.Metric{clientmodel.MetricNameLabel: "empty_metric"},
+			},
 			Values: metric.Values{},
 		},
 	}

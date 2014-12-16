@@ -222,7 +222,13 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 			duration := time.Since(start)
 
 			samples := make(clientmodel.Samples, len(vector))
-			copy(samples, vector)
+			for i, s := range vector {
+				samples[i] = &clientmodel.Sample{
+					Metric:    s.Metric.Metric,
+					Value:     s.Value,
+					Timestamp: s.Timestamp,
+				}
+			}
 			m.results <- &extraction.Result{
 				Samples: samples,
 				Err:     err,

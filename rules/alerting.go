@@ -80,7 +80,7 @@ type Alert struct {
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleValue) *clientmodel.Sample {
+func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleValue) *ast.Sample {
 	recordedMetric := clientmodel.Metric{}
 	for label, value := range a.Labels {
 		recordedMetric[label] = value
@@ -90,8 +90,11 @@ func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleV
 	recordedMetric[AlertNameLabel] = clientmodel.LabelValue(a.Name)
 	recordedMetric[AlertStateLabel] = clientmodel.LabelValue(a.State.String())
 
-	return &clientmodel.Sample{
-		Metric:    recordedMetric,
+	return &ast.Sample{
+		Metric: clientmodel.COWMetric{
+			Metric: recordedMetric,
+			Copied: true,
+		},
 		Value:     value,
 		Timestamp: timestamp,
 	}
@@ -145,18 +148,17 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage local.St
 	// or update the expression value for existing elements.
 	resultFingerprints := utility.Set{}
 	for _, sample := range exprResult {
-		fp := new(clientmodel.Fingerprint)
-		fp.LoadFromMetric(sample.Metric)
-		resultFingerprints.Add(*fp)
+		fp := sample.Metric.Metric.Fingerprint()
+		resultFingerprints.Add(fp)
 
-		if alert, ok := rule.activeAlerts[*fp]; !ok {
+		if alert, ok := rule.activeAlerts[fp]; !ok {
 			labels := clientmodel.LabelSet{}
-			labels.MergeFromMetric(sample.Metric)
+			labels.MergeFromMetric(sample.Metric.Metric)
 			labels = labels.Merge(rule.Labels)
 			if _, ok := labels[clientmodel.MetricNameLabel]; ok {
 				delete(labels, clientmodel.MetricNameLabel)
 			}
-			rule.activeAlerts[*fp] = &Alert{
+			rule.activeAlerts[fp] = &Alert{
 				Name:        rule.name,
 				Labels:      labels,
 				State:       Pending,

@@ -76,7 +76,7 @@ func query(q string, timestamp clientmodel.Timestamp, storage local.Storage) (qu
 			Value:  float64(v.Value),
 			Labels: make(map[string]string),
 		}
-		for label, value := range v.Metric {
+		for label, value := range v.Metric.Metric {
 			s.Labels[string(label)] = string(value)
 		}
 		result[n] = &s

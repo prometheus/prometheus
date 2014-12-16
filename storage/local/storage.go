@@ -323,25 +323,25 @@ func (s *memorySeriesStorage) GetLabelValuesForLabelName(labelName clientmodel.L
 }
 
 // GetMetricForFingerprint implements Storage.
-func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint) clientmodel.Metric {
+func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint) clientmodel.COWMetric {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
 	series, ok := s.fpToSeries.get(fp)
 	if ok {
-		// Copy required here because caller might mutate the returned
-		// metric.
-		m := make(clientmodel.Metric, len(series.metric))
-		for ln, lv := range series.metric {
-			m[ln] = lv
+		// Wrap the returned metric in a copy-on-write (COW) metric here because
+		// the caller might mutate it.
+		return clientmodel.COWMetric{
+			Metric: series.metric,
 		}
-		return m
 	}
 	metric, err := s.persistence.getArchivedMetric(fp)
 	if err != nil {
 		glog.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
 	}
-	return metric
+	return clientmodel.COWMetric{
+		Metric: metric,
+	}
 }
 
 // AppendSamples implements Storage.
