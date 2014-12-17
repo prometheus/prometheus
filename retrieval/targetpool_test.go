@@ -27,12 +27,12 @@ func testTargetPool(t testing.TB) {
 	}
 
 	type input struct {
-		address      string
+		url      string
 		scheduledFor time.Time
 	}
 
 	type output struct {
-		address string
+		url string
 	}
 
 	var scenarios = []struct {
@@ -49,12 +49,12 @@ func testTargetPool(t testing.TB) {
 			name: "single element",
 			inputs: []input{
 				{
-					address: "single1",
+					url: "single1",
 				},
 			},
 			outputs: []output{
 				{
-					address: "single1",
+					url: "single1",
 				},
 			},
 		},
@@ -62,18 +62,18 @@ func testTargetPool(t testing.TB) {
 			name: "plural schedules",
 			inputs: []input{
 				{
-					address: "plural1",
+					url: "plural1",
 				},
 				{
-					address: "plural2",
+					url: "plural2",
 				},
 			},
 			outputs: []output{
 				{
-					address: "plural1",
+					url: "plural1",
 				},
 				{
-					address: "plural2",
+					url: "plural2",
 				},
 			},
 		},
@@ -84,24 +84,24 @@ func testTargetPool(t testing.TB) {
 
 		for _, input := range scenario.inputs {
 			target := target{
-				address:       input.address,
+				url:       input.url,
 				newBaseLabels: make(chan clientmodel.LabelSet, 1),
 				httpClient:    &http.Client{},
 			}
 			pool.addTarget(&target)
 		}
 
-		if len(pool.targetsByAddress) != len(scenario.outputs) {
-			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), len(pool.targetsByAddress))
+		if len(pool.targetsByURL) != len(scenario.outputs) {
+			t.Errorf("%s %d. expected TargetPool size to be %d but was %d", scenario.name, i, len(scenario.outputs), len(pool.targetsByURL))
 		} else {
 			for j, output := range scenario.outputs {
-				if target, ok := pool.targetsByAddress[output.address]; !ok {
-					t.Errorf("%s %d.%d. expected Target address to be %s but was %s", scenario.name, i, j, output.address, target.Address())
+				if target, ok := pool.targetsByURL[output.url]; !ok {
+					t.Errorf("%s %d.%d. expected Target url to be %s but was %s", scenario.name, i, j, output.url, target.URL())
 				}
 			}
 
-			if len(pool.targetsByAddress) != len(scenario.outputs) {
-				t.Errorf("%s %d. expected to repopulated with %d elements, got %d", scenario.name, i, len(scenario.outputs), len(pool.targetsByAddress))
+			if len(pool.targetsByURL) != len(scenario.outputs) {
+				t.Errorf("%s %d. expected to repopulated with %d elements, got %d", scenario.name, i, len(scenario.outputs), len(pool.targetsByURL))
 			}
 		}
 	}
@@ -114,7 +114,7 @@ func TestTargetPool(t *testing.T) {
 func TestTargetPoolReplaceTargets(t *testing.T) {
 	pool := NewTargetPool(nil, nil, nopIngester{}, time.Duration(1))
 	oldTarget1 := &target{
-		address:         "example1",
+		url:         "example1",
 		state:           Unreachable,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
@@ -122,7 +122,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		httpClient:      &http.Client{},
 	}
 	oldTarget2 := &target{
-		address:         "example2",
+		url:         "example2",
 		state:           Unreachable,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
@@ -130,7 +130,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		httpClient:      &http.Client{},
 	}
 	newTarget1 := &target{
-		address:         "example1",
+		url:         "example1",
 		state:           Alive,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
@@ -138,7 +138,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		httpClient:      &http.Client{},
 	}
 	newTarget2 := &target{
-		address:         "example3",
+		url:         "example3",
 		state:           Alive,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
@@ -151,14 +151,14 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 
 	pool.ReplaceTargets([]Target{newTarget1, newTarget2})
 
-	if len(pool.targetsByAddress) != 2 {
-		t.Errorf("Expected 2 elements in pool, had %d", len(pool.targetsByAddress))
+	if len(pool.targetsByURL) != 2 {
+		t.Errorf("Expected 2 elements in pool, had %d", len(pool.targetsByURL))
 	}
 
-	if pool.targetsByAddress["example1"].State() != oldTarget1.State() {
+	if pool.targetsByURL["example1"].State() != oldTarget1.State() {
 		t.Errorf("target1 channel has changed")
 	}
-	if pool.targetsByAddress["example3"].State() == oldTarget2.State() {
+	if pool.targetsByURL["example3"].State() == oldTarget2.State() {
 		t.Errorf("newTarget2 channel same as oldTarget2's")
 	}
 

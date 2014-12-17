@@ -38,12 +38,12 @@ func (t fakeTarget) LastError() error {
 	return nil
 }
 
-func (t fakeTarget) Address() string {
+func (t fakeTarget) URL() string {
 	return "fake"
 }
 
-func (t fakeTarget) GlobalAddress() string {
-	return t.Address()
+func (t fakeTarget) GlobalURL() string {
+	return t.URL()
 }
 
 func (t fakeTarget) BaseLabels() clientmodel.LabelSet {

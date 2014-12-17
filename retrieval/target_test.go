@@ -39,7 +39,7 @@ func (i *collectResultIngester) Ingest(r *extraction.Result) error {
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := target{
 		state:      Unknown,
-		address:    "bad schema",
+		url:    "bad schema",
 		httpClient: utility.NewDeadlineClient(0),
 	}
 	testTarget.scrape(nopIngester{})
@@ -50,7 +50,7 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
 	testTarget := target{
-		address:    "http://example.url",
+		url:    "http://example.url",
 		baseLabels: clientmodel.LabelSet{clientmodel.JobLabel: "testjob"},
 		httpClient: utility.NewDeadlineClient(0),
 	}
@@ -147,7 +147,7 @@ func TestTargetScrape404(t *testing.T) {
 func TestTargetRunScraperScrapes(t *testing.T) {
 	testTarget := target{
 		state:           Unknown,
-		address:         "bad schema",
+		url:         "bad schema",
 		httpClient:      utility.NewDeadlineClient(0),
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
