@@ -263,11 +263,12 @@ func (p *persistence) setDirty(dirty bool) {
 // safe. Only call before anything else is running (except index processing
 // queue as started by newPersistence).
 func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) error {
+	// TODO(beorn): We need proper tests for the crash recovery.
 	glog.Warning("Starting crash recovery. Prometheus is inoperational until complete.")
 
 	fpsSeen := map[clientmodel.Fingerprint]struct{}{}
 	count := 0
-	seriesDirNameFmt := fmt.Sprintf("0%dx", seriesDirNameLen)
+	seriesDirNameFmt := fmt.Sprintf("%%0%dx", seriesDirNameLen)
 
 	glog.Info("Scanning files.")
 	for i := 0; i < 1<<(seriesDirNameLen*4); i++ {
