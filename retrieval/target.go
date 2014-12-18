@@ -122,13 +122,13 @@ type Target interface {
 	State() TargetState
 	// Return the last time a scrape was attempted.
 	LastScrape() time.Time
-	// The address to which the Target corresponds.  Out of all of the available
+	// The URL to which the Target corresponds.  Out of all of the available
 	// points in this interface, this one is the best candidate to change given
 	// the ways to express the endpoint.
-	Address() string
-	// The address as seen from other hosts. References to localhost are resolved
+	URL() string
+	// The URL as seen from other hosts. References to localhost are resolved
 	// to the address of the prometheus server.
-	GlobalAddress() string
+	GlobalURL() string
 	// Return the target's base labels.
 	BaseLabels() clientmodel.LabelSet
 	// SetBaseLabelsFrom queues a replacement of the current base labels by
@@ -158,7 +158,7 @@ type target struct {
 	// Channel to queue base labels to be replaced.
 	newBaseLabels chan clientmodel.LabelSet
 
-	address string
+	url string
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
 	Deadline time.Duration
 	// Any base labels that are added to this target and its metrics.
@@ -175,9 +175,9 @@ type target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(address string, deadline time.Duration, baseLabels clientmodel.LabelSet) Target {
+func NewTarget(url string, deadline time.Duration, baseLabels clientmodel.LabelSet) Target {
 	target := &target{
-		address:         address,
+		url:             url,
 		Deadline:        deadline,
 		baseLabels:      baseLabels,
 		httpClient:      utility.NewDeadlineClient(deadline),
@@ -195,7 +195,7 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clie
 		metric[label] = value
 	}
 	metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(ScrapeHealthMetricName)
-	metric[InstanceLabel] = clientmodel.LabelValue(t.Address())
+	metric[InstanceLabel] = clientmodel.LabelValue(t.URL())
 
 	healthValue := clientmodel.SampleValue(0)
 	if healthy {
@@ -295,7 +295,7 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		ms := float64(time.Since(start)) / float64(time.Millisecond)
 		labels := prometheus.Labels{
 			job:      string(t.baseLabels[clientmodel.JobLabel]),
-			instance: t.Address(),
+			instance: t.URL(),
 			outcome:  success,
 		}
 		t.Lock() // Writing t.state and t.lastError requires the lock.
@@ -311,7 +311,7 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		t.recordScrapeHealth(ingester, timestamp, err == nil)
 	}(time.Now())
 
-	req, err := http.NewRequest("GET", t.Address(), nil)
+	req, err := http.NewRequest("GET", t.URL(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -331,7 +331,7 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		return err
 	}
 
-	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.Address())}
+	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.URL())}
 	for baseLabel, baseValue := range t.baseLabels {
 		baseLabels[baseLabel] = baseValue
 	}
@@ -369,23 +369,23 @@ func (t *target) LastScrape() time.Time {
 	return t.lastScrape
 }
 
-// Address implements Target.
-func (t *target) Address() string {
-	return t.address
+// URL implements Target.
+func (t *target) URL() string {
+	return t.url
 }
 
-// GlobalAddress implements Target.
-func (t *target) GlobalAddress() string {
-	address := t.address
+// GlobalURL implements Target.
+func (t *target) GlobalURL() string {
+	url := t.url
 	hostname, err := os.Hostname()
 	if err != nil {
-		glog.Warningf("Couldn't get hostname: %s, returning target.Address()", err)
-		return address
+		glog.Warningf("Couldn't get hostname: %s, returning target.URL()", err)
+		return url
 	}
 	for _, localhostRepresentation := range localhostRepresentations {
-		address = strings.Replace(address, localhostRepresentation, fmt.Sprintf("http://%s", hostname), -1)
+		url = strings.Replace(url, localhostRepresentation, fmt.Sprintf("http://%s", hostname), -1)
 	}
-	return address
+	return url
 }
 
 // BaseLabels implements Target.
@@ -397,7 +397,7 @@ func (t *target) BaseLabels() clientmodel.LabelSet {
 
 // SetBaseLabelsFrom implements Target.
 func (t *target) SetBaseLabelsFrom(newTarget Target) {
-	if t.Address() != newTarget.Address() {
+	if t.URL() != newTarget.URL() {
 		panic("targets don't refer to the same endpoint")
 	}
 	t.newBaseLabels <- newTarget.BaseLabels()

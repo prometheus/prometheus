@@ -31,11 +31,11 @@ const (
 type TargetPool struct {
 	sync.RWMutex
 
-	manager          TargetManager
-	targetsByAddress map[string]Target
-	interval         time.Duration
-	ingester         extraction.Ingester
-	addTargetQueue   chan Target
+	manager        TargetManager
+	targetsByURL   map[string]Target
+	interval       time.Duration
+	ingester       extraction.Ingester
+	addTargetQueue chan Target
 
 	targetProvider TargetProvider
 
@@ -45,14 +45,14 @@ type TargetPool struct {
 // NewTargetPool creates a TargetPool, ready to be started by calling Run.
 func NewTargetPool(m TargetManager, p TargetProvider, ing extraction.Ingester, i time.Duration) *TargetPool {
 	return &TargetPool{
-		manager:          m,
-		interval:         i,
-		ingester:         ing,
-		targetsByAddress: make(map[string]Target),
-		addTargetQueue:   make(chan Target, targetAddQueueSize),
-		targetProvider:   p,
-		stopping:         make(chan struct{}),
-		stopped:          make(chan struct{}),
+		manager:        m,
+		interval:       i,
+		ingester:       ing,
+		targetsByURL:   make(map[string]Target),
+		addTargetQueue: make(chan Target, targetAddQueueSize),
+		targetProvider: p,
+		stopping:       make(chan struct{}),
+		stopped:        make(chan struct{}),
 	}
 }
 
@@ -98,7 +98,7 @@ func (p *TargetPool) addTarget(target Target) {
 	p.Lock()
 	defer p.Unlock()
 
-	p.targetsByAddress[target.Address()] = target
+	p.targetsByURL[target.URL()] = target
 	go target.RunScraper(p.ingester, p.interval)
 }
 
@@ -109,21 +109,21 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 	p.Lock()
 	defer p.Unlock()
 
-	newTargetAddresses := make(utility.Set)
+	newTargetURLs := make(utility.Set)
 	for _, newTarget := range newTargets {
-		newTargetAddresses.Add(newTarget.Address())
-		oldTarget, ok := p.targetsByAddress[newTarget.Address()]
+		newTargetURLs.Add(newTarget.URL())
+		oldTarget, ok := p.targetsByURL[newTarget.URL()]
 		if ok {
 			oldTarget.SetBaseLabelsFrom(newTarget)
 		} else {
-			p.targetsByAddress[newTarget.Address()] = newTarget
+			p.targetsByURL[newTarget.URL()] = newTarget
 			go newTarget.RunScraper(p.ingester, p.interval)
 		}
 	}
 
 	var wg sync.WaitGroup
-	for k, oldTarget := range p.targetsByAddress {
-		if !newTargetAddresses.Has(k) {
+	for k, oldTarget := range p.targetsByURL {
+		if !newTargetURLs.Has(k) {
 			wg.Add(1)
 			go func(k string, oldTarget Target) {
 				defer wg.Done()
@@ -131,7 +131,7 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 				oldTarget.StopScraper()
 				glog.V(1).Infof("Scraper for target %s stopped.", k)
 			}(k, oldTarget)
-			delete(p.targetsByAddress, k)
+			delete(p.targetsByURL, k)
 		}
 	}
 	wg.Wait()
@@ -142,8 +142,8 @@ func (p *TargetPool) Targets() []Target {
 	p.RLock()
 	defer p.RUnlock()
 
-	targets := make([]Target, 0, len(p.targetsByAddress))
-	for _, v := range p.targetsByAddress {
+	targets := make([]Target, 0, len(p.targetsByURL))
+	for _, v := range p.targetsByURL {
 		targets = append(targets, v)
 	}
 	return targets
