@@ -1,0 +1,11 @@
+{{ template "head" . }}
+
+{{template "prom_right_table_head"}}
+{{template "prom_right_table_tail"}}
+
+{{template "prom_content_head" .}}
+<h1>Overview</h1>
+<p>These are example consoles for Prometheus, they are still under development.</p>
+{{template "prom_content_tail" .}}
+
+{{template "tail"}}
