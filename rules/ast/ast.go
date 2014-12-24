@@ -68,7 +68,9 @@ type groupedAggregation struct {
 // ExprType is an enum for the rule language expression types.
 type ExprType int
 
-// Possible language expression types.
+// Possible language expression types. We define these as integer constants
+// because sometimes we need to pass around just the type without an object of
+// that type.
 const (
 	SCALAR ExprType = iota
 	VECTOR
