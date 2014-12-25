@@ -3,9 +3,11 @@
             <div class="grouping_box">
               <div class="head">
                 <div class="expr">
-                  <span class="input-append">
-                    <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" value="{{expr}}" class="input-xxlarge">
-                    <input class="btn btn-primary" type="submit" value="Execute" name="submit">
+                  <span class="input-group">
+                    <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" value="{{expr}}" class="form-control">
+                    <span class="input-group-btn">
+                      <input class="btn btn-primary" type="submit" value="Execute" name="submit">
+                    </span>
                   </span>
                   <select name="insert_metric">
                       <option value="">- Insert Metric at Cursor -</option>
