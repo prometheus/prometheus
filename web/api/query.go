@@ -54,7 +54,7 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 		format = ast.JSON
 		w.Header().Set("Content-Type", "application/json")
 	} else {
-		format = ast.TEXT
+		format = ast.Text
 		w.Header().Set("Content-Type", "text/plain")
 	}
 
@@ -94,7 +94,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, ast.ErrorToJSON(err))
 		return
 	}
-	if exprNode.Type() != ast.VECTOR {
+	if exprNode.Type() != ast.VectorType {
 		fmt.Fprint(w, ast.ErrorToJSON(errors.New("expression does not evaluate to vector type")))
 		return
 	}

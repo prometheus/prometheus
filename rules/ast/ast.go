@@ -72,10 +72,10 @@ type ExprType int
 // because sometimes we need to pass around just the type without an object of
 // that type.
 const (
-	SCALAR ExprType = iota
-	VECTOR
-	MATRIX
-	STRING
+	ScalarType ExprType = iota
+	VectorType
+	MatrixType
+	StringType
 )
 
 // BinOpType is an enum for binary operator types.
@@ -83,26 +83,26 @@ type BinOpType int
 
 // Possible binary operator types.
 const (
-	ADD BinOpType = iota
-	SUB
-	MUL
-	DIV
-	MOD
+	Add BinOpType = iota
+	Sub
+	Mul
+	Div
+	Mod
 	NE
 	EQ
 	GT
 	LT
 	GE
 	LE
-	AND
-	OR
+	And
+	Or
 )
 
 // shouldDropMetric indicates whether the metric name should be dropped after
 // applying this operator to a vector.
 func (opType BinOpType) shouldDropMetric() bool {
 	switch opType {
-	case ADD, SUB, MUL, DIV, MOD:
+	case Add, Sub, Mul, Div, Mod:
 		return true
 	default:
 		return false
@@ -114,11 +114,11 @@ type AggrType int
 
 // Possible aggregation types.
 const (
-	SUM AggrType = iota
-	AVG
-	MIN
-	MAX
-	COUNT
+	Sum AggrType = iota
+	Avg
+	Min
+	Max
+	Count
 )
 
 // ----------------------------------------------------------------------------
@@ -274,34 +274,34 @@ type (
 // Implementations.
 
 // Type implements the Node interface.
-func (node ScalarLiteral) Type() ExprType { return SCALAR }
+func (node ScalarLiteral) Type() ExprType { return ScalarType }
 
 // Type implements the Node interface.
-func (node ScalarFunctionCall) Type() ExprType { return SCALAR }
+func (node ScalarFunctionCall) Type() ExprType { return ScalarType }
 
 // Type implements the Node interface.
-func (node ScalarArithExpr) Type() ExprType { return SCALAR }
+func (node ScalarArithExpr) Type() ExprType { return ScalarType }
 
 // Type implements the Node interface.
-func (node VectorSelector) Type() ExprType { return VECTOR }
+func (node VectorSelector) Type() ExprType { return VectorType }
 
 // Type implements the Node interface.
-func (node VectorFunctionCall) Type() ExprType { return VECTOR }
+func (node VectorFunctionCall) Type() ExprType { return VectorType }
 
 // Type implements the Node interface.
-func (node VectorAggregation) Type() ExprType { return VECTOR }
+func (node VectorAggregation) Type() ExprType { return VectorType }
 
 // Type implements the Node interface.
-func (node VectorArithExpr) Type() ExprType { return VECTOR }
+func (node VectorArithExpr) Type() ExprType { return VectorType }
 
 // Type implements the Node interface.
-func (node MatrixSelector) Type() ExprType { return MATRIX }
+func (node MatrixSelector) Type() ExprType { return MatrixType }
 
 // Type implements the Node interface.
-func (node StringLiteral) Type() ExprType { return STRING }
+func (node StringLiteral) Type() ExprType { return StringType }
 
 // Type implements the Node interface.
-func (node StringFunctionCall) Type() ExprType { return STRING }
+func (node StringFunctionCall) Type() ExprType { return StringType }
 
 // Children implements the Node interface and returns an empty slice.
 func (node ScalarLiteral) Children() Nodes { return Nodes{} }
@@ -458,9 +458,9 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[uint
 	vector := Vector{}
 	for _, aggregation := range aggregations {
 		switch node.aggrType {
-		case AVG:
+		case Avg:
 			aggregation.value = aggregation.value / clientmodel.SampleValue(aggregation.groupCount)
-		case COUNT:
+		case Count:
 			aggregation.value = clientmodel.SampleValue(aggregation.groupCount)
 		default:
 			// For other aggregations, we already have the right value.
@@ -488,20 +488,20 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp) Vector {
 			}
 
 			switch node.aggrType {
-			case SUM:
+			case Sum:
 				groupedResult.value += sample.Value
-			case AVG:
+			case Avg:
 				groupedResult.value += sample.Value
 				groupedResult.groupCount++
-			case MAX:
+			case Max:
 				if groupedResult.value < sample.Value {
 					groupedResult.value = sample.Value
 				}
-			case MIN:
+			case Min:
 				if groupedResult.value > sample.Value {
 					groupedResult.value = sample.Value
 				}
-			case COUNT:
+			case Count:
 				groupedResult.groupCount++
 			default:
 				panic("Unknown aggregation type")
@@ -626,18 +626,18 @@ func evalScalarBinop(opType BinOpType,
 	lhs clientmodel.SampleValue,
 	rhs clientmodel.SampleValue) clientmodel.SampleValue {
 	switch opType {
-	case ADD:
+	case Add:
 		return lhs + rhs
-	case SUB:
+	case Sub:
 		return lhs - rhs
-	case MUL:
+	case Mul:
 		return lhs * rhs
-	case DIV:
+	case Div:
 		if rhs != 0 {
 			return lhs / rhs
 		}
 		return clientmodel.SampleValue(math.Inf(int(rhs)))
-	case MOD:
+	case Mod:
 		if rhs != 0 {
 			return clientmodel.SampleValue(int(lhs) % int(rhs))
 		}
@@ -680,18 +680,18 @@ func evalVectorBinop(opType BinOpType,
 	lhs clientmodel.SampleValue,
 	rhs clientmodel.SampleValue) (clientmodel.SampleValue, bool) {
 	switch opType {
-	case ADD:
+	case Add:
 		return lhs + rhs, true
-	case SUB:
+	case Sub:
 		return lhs - rhs, true
-	case MUL:
+	case Mul:
 		return lhs * rhs, true
-	case DIV:
+	case Div:
 		if rhs != 0 {
 			return lhs / rhs, true
 		}
 		return clientmodel.SampleValue(math.Inf(int(rhs))), true
-	case MOD:
+	case Mod:
 		if rhs != 0 {
 			return clientmodel.SampleValue(int(lhs) % int(rhs)), true
 		}
@@ -726,9 +726,9 @@ func evalVectorBinop(opType BinOpType,
 			return lhs, true
 		}
 		return 0, false
-	case AND:
+	case And:
 		return lhs, true
-	case OR:
+	case Or:
 		return lhs, true // TODO: implement OR
 	}
 	panic("Not all enum values enumerated in switch")
@@ -747,7 +747,7 @@ func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
 // the expression.
 func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp) Vector {
 	result := Vector{}
-	if node.lhs.Type() == SCALAR && node.rhs.Type() == VECTOR {
+	if node.lhs.Type() == ScalarType && node.rhs.Type() == VectorType {
 		lhs := node.lhs.(ScalarNode).Eval(timestamp)
 		rhs := node.rhs.(VectorNode).Eval(timestamp)
 		for _, rhsSample := range rhs {
@@ -761,7 +761,7 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp) Vector {
 			}
 		}
 		return result
-	} else if node.lhs.Type() == VECTOR && node.rhs.Type() == SCALAR {
+	} else if node.lhs.Type() == VectorType && node.rhs.Type() == ScalarType {
 		lhs := node.lhs.(VectorNode).Eval(timestamp)
 		rhs := node.rhs.(ScalarNode).Eval(timestamp)
 		for _, lhsSample := range lhs {
@@ -775,7 +775,7 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp) Vector {
 			}
 		}
 		return result
-	} else if node.lhs.Type() == VECTOR && node.rhs.Type() == VECTOR {
+	} else if node.lhs.Type() == VectorType && node.rhs.Type() == VectorType {
 		lhs := node.lhs.(VectorNode).Eval(timestamp)
 		rhs := node.rhs.(VectorNode).Eval(timestamp)
 		for _, lhsSample := range lhs {
@@ -916,17 +916,17 @@ func NewFunctionCall(function *Function, args Nodes) (Node, error) {
 		return nil, err
 	}
 	switch function.returnType {
-	case SCALAR:
+	case ScalarType:
 		return &ScalarFunctionCall{
 			function: function,
 			args:     args,
 		}, nil
-	case VECTOR:
+	case VectorType:
 		return &VectorFunctionCall{
 			function: function,
 			args:     args,
 		}, nil
-	case STRING:
+	case StringType:
 		return &StringFunctionCall{
 			function: function,
 			args:     args,
@@ -953,17 +953,17 @@ func nodesHaveTypes(nodes Nodes, exprTypes []ExprType) bool {
 // NewArithExpr returns a (not yet evaluated) expression node (of type
 // VectorArithExpr or ScalarArithExpr).
 func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
-	if !nodesHaveTypes(Nodes{lhs, rhs}, []ExprType{SCALAR, VECTOR}) {
+	if !nodesHaveTypes(Nodes{lhs, rhs}, []ExprType{ScalarType, VectorType}) {
 		return nil, errors.New("binary operands must be of vector or scalar type")
 	}
 
-	if opType == AND || opType == OR {
-		if lhs.Type() == SCALAR || rhs.Type() == SCALAR {
+	if opType == And || opType == Or {
+		if lhs.Type() == ScalarType || rhs.Type() == ScalarType {
 			return nil, errors.New("AND and OR operators may only be used between vectors")
 		}
 	}
 
-	if lhs.Type() == VECTOR || rhs.Type() == VECTOR {
+	if lhs.Type() == VectorType || rhs.Type() == VectorType {
 		return &VectorArithExpr{
 			opType: opType,
 			lhs:    lhs,

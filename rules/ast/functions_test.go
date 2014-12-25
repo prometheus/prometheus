@@ -23,7 +23,7 @@ import (
 
 type emptyRangeNode struct{}
 
-func (node emptyRangeNode) Type() ExprType             { return MATRIX }
+func (node emptyRangeNode) Type() ExprType             { return MatrixType }
 func (node emptyRangeNode) NodeTreeToDotGraph() string { return "" }
 func (node emptyRangeNode) String() string             { return "" }
 func (node emptyRangeNode) Children() Nodes            { return Nodes{} }

@@ -69,11 +69,11 @@ func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy clientmod
 		return nil, fmt.Errorf("operand of %v aggregation must be of vector type", aggrTypeStr)
 	}
 	var aggrTypes = map[string]ast.AggrType{
-		"SUM":   ast.SUM,
-		"MAX":   ast.MAX,
-		"MIN":   ast.MIN,
-		"AVG":   ast.AVG,
-		"COUNT": ast.COUNT,
+		"SUM":   ast.Sum,
+		"MAX":   ast.Max,
+		"MIN":   ast.Min,
+		"AVG":   ast.Avg,
+		"COUNT": ast.Count,
 	}
 	aggrType, ok := aggrTypes[aggrTypeStr]
 	if !ok {
@@ -85,19 +85,19 @@ func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy clientmod
 // NewArithExpr is a convenience function to create a new AST arithmetic expression.
 func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node) (ast.Node, error) {
 	var opTypes = map[string]ast.BinOpType{
-		"+":   ast.ADD,
-		"-":   ast.SUB,
-		"*":   ast.MUL,
-		"/":   ast.DIV,
-		"%":   ast.MOD,
+		"+":   ast.Add,
+		"-":   ast.Sub,
+		"*":   ast.Mul,
+		"/":   ast.Div,
+		"%":   ast.Mod,
 		">":   ast.GT,
 		"<":   ast.LT,
 		"==":  ast.EQ,
 		"!=":  ast.NE,
 		">=":  ast.GE,
 		"<=":  ast.LE,
-		"AND": ast.AND,
-		"OR":  ast.OR,
+		"AND": ast.And,
+		"OR":  ast.Or,
 	}
 	opType, ok := opTypes[opTypeStr]
 	if !ok {

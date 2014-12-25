@@ -46,19 +46,19 @@ func (function *Function) CheckArgTypes(args []Node) error {
 	for idx, argType := range function.argTypes {
 		invalidType := false
 		var expectedType string
-		if _, ok := args[idx].(ScalarNode); argType == SCALAR && !ok {
+		if _, ok := args[idx].(ScalarNode); argType == ScalarType && !ok {
 			invalidType = true
 			expectedType = "scalar"
 		}
-		if _, ok := args[idx].(VectorNode); argType == VECTOR && !ok {
+		if _, ok := args[idx].(VectorNode); argType == VectorType && !ok {
 			invalidType = true
 			expectedType = "vector"
 		}
-		if _, ok := args[idx].(MatrixNode); argType == MATRIX && !ok {
+		if _, ok := args[idx].(MatrixNode); argType == MatrixType && !ok {
 			invalidType = true
 			expectedType = "matrix"
 		}
-		if _, ok := args[idx].(StringNode); argType == STRING && !ok {
+		if _, ok := args[idx].(StringNode); argType == StringType && !ok {
 			invalidType = true
 			expectedType = "string"
 		}
@@ -409,104 +409,104 @@ func absentImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 var functions = map[string]*Function{
 	"abs": {
 		name:       "abs",
-		argTypes:   []ExprType{VECTOR},
-		returnType: VECTOR,
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
 		callFn:     absImpl,
 	},
 	"absent": {
 		name:       "absent",
-		argTypes:   []ExprType{VECTOR},
-		returnType: VECTOR,
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
 		callFn:     absentImpl,
 	},
 	"avg_over_time": {
 		name:       "avg_over_time",
-		argTypes:   []ExprType{MATRIX},
-		returnType: VECTOR,
+		argTypes:   []ExprType{MatrixType},
+		returnType: VectorType,
 		callFn:     avgOverTimeImpl,
 	},
 	"bottomk": {
 		name:       "bottomk",
-		argTypes:   []ExprType{SCALAR, VECTOR},
-		returnType: VECTOR,
+		argTypes:   []ExprType{ScalarType, VectorType},
+		returnType: VectorType,
 		callFn:     bottomkImpl,
 	},
 	"count_over_time": {
 		name:       "count_over_time",
-		argTypes:   []ExprType{MATRIX},
-		returnType: VECTOR,
+		argTypes:   []ExprType{MatrixType},
+		returnType: VectorType,
 		callFn:     countOverTimeImpl,
 	},
 	"count_scalar": {
 		name:       "count_scalar",
-		argTypes:   []ExprType{VECTOR},
-		returnType: SCALAR,
+		argTypes:   []ExprType{VectorType},
+		returnType: ScalarType,
 		callFn:     countScalarImpl,
 	},
 	"delta": {
 		name:       "delta",
-		argTypes:   []ExprType{MATRIX, SCALAR},
-		returnType: VECTOR,
+		argTypes:   []ExprType{MatrixType, ScalarType},
+		returnType: VectorType,
 		callFn:     deltaImpl,
 	},
 	"drop_common_labels": {
 		name:       "drop_common_labels",
-		argTypes:   []ExprType{VECTOR},
-		returnType: VECTOR,
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
 		callFn:     dropCommonLabelsImpl,
 	},
 	"max_over_time": {
 		name:       "max_over_time",
-		argTypes:   []ExprType{MATRIX},
-		returnType: VECTOR,
+		argTypes:   []ExprType{MatrixType},
+		returnType: VectorType,
 		callFn:     maxOverTimeImpl,
 	},
 	"min_over_time": {
 		name:       "min_over_time",
-		argTypes:   []ExprType{MATRIX},
-		returnType: VECTOR,
+		argTypes:   []ExprType{MatrixType},
+		returnType: VectorType,
 		callFn:     minOverTimeImpl,
 	},
 	"rate": {
 		name:       "rate",
-		argTypes:   []ExprType{MATRIX},
-		returnType: VECTOR,
+		argTypes:   []ExprType{MatrixType},
+		returnType: VectorType,
 		callFn:     rateImpl,
 	},
 	"scalar": {
 		name:       "scalar",
-		argTypes:   []ExprType{VECTOR},
-		returnType: SCALAR,
+		argTypes:   []ExprType{VectorType},
+		returnType: ScalarType,
 		callFn:     scalarImpl,
 	},
 	"sort": {
 		name:       "sort",
-		argTypes:   []ExprType{VECTOR},
-		returnType: VECTOR,
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
 		callFn:     sortImpl,
 	},
 	"sort_desc": {
 		name:       "sort_desc",
-		argTypes:   []ExprType{VECTOR},
-		returnType: VECTOR,
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
 		callFn:     sortDescImpl,
 	},
 	"sum_over_time": {
 		name:       "sum_over_time",
-		argTypes:   []ExprType{MATRIX},
-		returnType: VECTOR,
+		argTypes:   []ExprType{MatrixType},
+		returnType: VectorType,
 		callFn:     sumOverTimeImpl,
 	},
 	"time": {
 		name:       "time",
 		argTypes:   []ExprType{},
-		returnType: SCALAR,
+		returnType: ScalarType,
 		callFn:     timeImpl,
 	},
 	"topk": {
 		name:       "topk",
-		argTypes:   []ExprType{SCALAR, VECTOR},
-		returnType: VECTOR,
+		argTypes:   []ExprType{ScalarType, VectorType},
+		returnType: VectorType,
 		callFn:     topkImpl,
 	},
 }

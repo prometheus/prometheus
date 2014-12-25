@@ -67,7 +67,7 @@ var yyToknames = []string{
 	"WITH",
 	"SUMMARY",
 	"DESCRIPTION",
-	" =",
+	"'='",
 }
 var yyStatenames = []string{}
 

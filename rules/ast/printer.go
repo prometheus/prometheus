@@ -33,46 +33,46 @@ type OutputFormat int
 
 // Possible output formats.
 const (
-	TEXT OutputFormat = iota
+	Text OutputFormat = iota
 	JSON
 )
 
 func (opType BinOpType) String() string {
 	opTypeMap := map[BinOpType]string{
-		ADD: "+",
-		SUB: "-",
-		MUL: "*",
-		DIV: "/",
-		MOD: "%",
+		Add: "+",
+		Sub: "-",
+		Mul: "*",
+		Div: "/",
+		Mod: "%",
 		GT:  ">",
 		LT:  "<",
 		EQ:  "==",
 		NE:  "!=",
 		GE:  ">=",
 		LE:  "<=",
-		AND: "AND",
-		OR:  "OR",
+		And: "AND",
+		Or:  "OR",
 	}
 	return opTypeMap[opType]
 }
 
 func (aggrType AggrType) String() string {
 	aggrTypeMap := map[AggrType]string{
-		SUM:   "SUM",
-		AVG:   "AVG",
-		MIN:   "MIN",
-		MAX:   "MAX",
-		COUNT: "COUNT",
+		Sum:   "SUM",
+		Avg:   "AVG",
+		Min:   "MIN",
+		Max:   "MAX",
+		Count: "COUNT",
 	}
 	return aggrTypeMap[aggrType]
 }
 
 func (exprType ExprType) String() string {
 	exprTypeMap := map[ExprType]string{
-		SCALAR: "scalar",
-		VECTOR: "vector",
-		MATRIX: "matrix",
-		STRING: "string",
+		ScalarType: "scalar",
+		VectorType: "vector",
+		MatrixType: "matrix",
+		StringType: "string",
 	}
 	return exprTypeMap[exprType]
 }
@@ -164,38 +164,38 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
 	switch node.Type() {
-	case SCALAR:
+	case ScalarType:
 		scalar := node.(ScalarNode).Eval(timestamp)
 		evalTimer.Stop()
 		switch format {
-		case TEXT:
+		case Text:
 			return fmt.Sprintf("scalar: %v @[%v]", scalar, timestamp)
 		case JSON:
 			return TypedValueToJSON(scalar, "scalar")
 		}
-	case VECTOR:
+	case VectorType:
 		vector := node.(VectorNode).Eval(timestamp)
 		evalTimer.Stop()
 		switch format {
-		case TEXT:
+		case Text:
 			return vector.String()
 		case JSON:
 			return TypedValueToJSON(vector, "vector")
 		}
-	case MATRIX:
+	case MatrixType:
 		matrix := node.(MatrixNode).Eval(timestamp)
 		evalTimer.Stop()
 		switch format {
-		case TEXT:
+		case Text:
 			return matrix.String()
 		case JSON:
 			return TypedValueToJSON(matrix, "matrix")
 		}
-	case STRING:
+	case StringType:
 		str := node.(StringNode).Eval(timestamp)
 		evalTimer.Stop()
 		switch format {
-		case TEXT:
+		case Text:
 			return str
 		case JSON:
 			return TypedValueToJSON(str, "string")
@@ -216,17 +216,17 @@ func EvalToVector(node Node, timestamp clientmodel.Timestamp, storage local.Stor
 
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
 	switch node.Type() {
-	case SCALAR:
+	case ScalarType:
 		scalar := node.(ScalarNode).Eval(timestamp)
 		evalTimer.Stop()
 		return Vector{&Sample{Value: scalar}}, nil
-	case VECTOR:
+	case VectorType:
 		vector := node.(VectorNode).Eval(timestamp)
 		evalTimer.Stop()
 		return vector, nil
-	case MATRIX:
+	case MatrixType:
 		return nil, errors.New("matrices not supported by EvalToVector")
-	case STRING:
+	case StringType:
 		str := node.(StringNode).Eval(timestamp)
 		evalTimer.Stop()
 		return Vector{
