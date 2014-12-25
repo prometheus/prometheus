@@ -13,6 +13,8 @@
 
 all: parser.y.go lexer.l.go
 
+include ../Makefile.INCLUDE
+
 parser.y.go: parser.y
 	$(GOCC) tool yacc -o parser.y.go -v "" parser.y
 
