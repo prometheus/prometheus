@@ -527,6 +527,14 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   var tBody = self.consoleTab.find(".console_table tbody");
   tBody.empty();
 
+  if (data.Type == "vector" || data.Type == "matrix") {
+    data.Value.sort(function (a, b) {
+      var aName = self.metricToTsName(a.Metric);
+      var bName = self.metricToTsName(b.Metric);
+      return aName.localeCompare(bName);
+    });
+  }
+
   switch(data.Type) {
   case "vector":
     for (var i = 0; i < data.Value.length; i++) {
