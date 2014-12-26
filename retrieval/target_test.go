@@ -39,7 +39,7 @@ func (i *collectResultIngester) Ingest(r *extraction.Result) error {
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := target{
 		state:      Unknown,
-		url:    "bad schema",
+		url:        "bad schema",
 		httpClient: utility.NewDeadlineClient(0),
 	}
 	testTarget.scrape(nopIngester{})
@@ -50,30 +50,49 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
 	testTarget := target{
-		url:    "http://example.url",
+		url:        "http://example.url",
 		baseLabels: clientmodel.LabelSet{clientmodel.JobLabel: "testjob"},
 		httpClient: utility.NewDeadlineClient(0),
 	}
 
 	now := clientmodel.Now()
 	ingester := &collectResultIngester{}
-	testTarget.recordScrapeHealth(ingester, now, true)
+	testTarget.recordScrapeHealth(ingester, now, true, 2 * time.Second)
 
 	result := ingester.result
 
-	if len(result.Samples) != 1 {
-		t.Fatalf("Expected one sample, got %d", len(result.Samples))
+	if len(result.Samples) != 2 {
+		t.Fatalf("Expected two samples, got %d", len(result.Samples))
 	}
 
 	actual := result.Samples[0]
 	expected := &clientmodel.Sample{
 		Metric: clientmodel.Metric{
-			clientmodel.MetricNameLabel: ScrapeHealthMetricName,
+			clientmodel.MetricNameLabel: scrapeHealthMetricName,
 			InstanceLabel:               "http://example.url",
 			clientmodel.JobLabel:        "testjob",
 		},
 		Timestamp: now,
 		Value:     1,
+	}
+
+	if result.Err != nil {
+		t.Fatalf("Got unexpected error: %v", result.Err)
+	}
+
+	if !actual.Equal(expected) {
+		t.Fatalf("Expected and actual samples not equal. Expected: %v, actual: %v", expected, actual)
+	}
+
+	actual = result.Samples[1]
+	expected = &clientmodel.Sample{
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: scrapeDurationMetricName,
+			InstanceLabel:               "http://example.url",
+			clientmodel.JobLabel:        "testjob",
+		},
+		Timestamp: now,
+		Value:     2.0,
 	}
 
 	if result.Err != nil {
@@ -147,7 +166,7 @@ func TestTargetScrape404(t *testing.T) {
 func TestTargetRunScraperScrapes(t *testing.T) {
 	testTarget := target{
 		state:           Unknown,
-		url:         "bad schema",
+		url:             "bad schema",
 		httpClient:      utility.NewDeadlineClient(0),
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),

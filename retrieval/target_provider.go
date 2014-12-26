@@ -33,17 +33,22 @@ import (
 const resolvConf = "/etc/resolv.conf"
 
 var (
-	dnsSDLookupsCount = prometheus.NewCounterVec(
+	dnsSDLookupsCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "dns_sd_lookups_total",
-			Help:      "The number of DNS-SD lookup successes/failures per pool.",
-		},
-		[]string{outcome},
-	)
+			Help:      "The number of DNS-SD lookups.",
+		})
+	dnsSDLookupFailuresCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "dns_sd_lookup_failures_total",
+			Help:      "The number of DNS-SD lookup failures.",
+		})
 )
 
 func init() {
+	prometheus.MustRegister(dnsSDLookupFailuresCount)
 	prometheus.MustRegister(dnsSDLookupsCount)
 }
 
@@ -77,11 +82,10 @@ func NewSdTargetProvider(job config.JobConfig) *sdTargetProvider {
 func (p *sdTargetProvider) Targets() ([]Target, error) {
 	var err error
 	defer func() {
-		message := success
+		dnsSDLookupsCount.Inc()
 		if err != nil {
-			message = failure
+			dnsSDLookupFailuresCount.Inc()
 		}
-		dnsSDLookupsCount.WithLabelValues(message).Inc()
 	}()
 
 	if time.Since(p.lastRefresh) < p.refreshInterval {

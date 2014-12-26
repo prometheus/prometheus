@@ -36,30 +36,19 @@ const (
 	InstanceLabel clientmodel.LabelName = "instance"
 	// ScrapeHealthMetricName is the metric name for the synthetic health
 	// variable.
-	ScrapeHealthMetricName clientmodel.LabelValue = "up"
+	scrapeHealthMetricName clientmodel.LabelValue = "up"
+	// ScrapeTimeMetricName is the metric name for the synthetic scrape duration
+	// variable.
+	scrapeDurationMetricName clientmodel.LabelValue = "scrape_duration_seconds"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
-	job       = "target_job"
-	instance  = "target_instance"
-	failure   = "failure"
-	outcome   = "outcome"
-	success   = "success"
 	interval  = "interval"
 )
 
 var (
 	localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
 
-	targetOperationLatencies = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "target_operation_latency_milliseconds",
-			Help:       "The latencies for target operations.",
-			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
-		},
-		[]string{job, instance, outcome},
-	)
 	targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Namespace:  namespace,
@@ -72,7 +61,6 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(targetOperationLatencies)
 	prometheus.MustRegister(targetIntervalLength)
 }
 
@@ -189,28 +177,37 @@ func NewTarget(url string, deadline time.Duration, baseLabels clientmodel.LabelS
 	return target
 }
 
-func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clientmodel.Timestamp, healthy bool) {
-	metric := clientmodel.Metric{}
+func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clientmodel.Timestamp, healthy bool, scrapeDuration time.Duration) {
+	healthMetric := clientmodel.Metric{}
+	durationMetric := clientmodel.Metric{}
 	for label, value := range t.baseLabels {
-		metric[label] = value
+		healthMetric[label] = value
+		durationMetric[label] = value
 	}
-	metric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(ScrapeHealthMetricName)
-	metric[InstanceLabel] = clientmodel.LabelValue(t.URL())
+	healthMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeHealthMetricName)
+	durationMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeDurationMetricName)
+	healthMetric[InstanceLabel] = clientmodel.LabelValue(t.URL())
+	durationMetric[InstanceLabel] = clientmodel.LabelValue(t.URL())
 
 	healthValue := clientmodel.SampleValue(0)
 	if healthy {
 		healthValue = clientmodel.SampleValue(1)
 	}
 
-	sample := &clientmodel.Sample{
-		Metric:    metric,
+	healthSample := &clientmodel.Sample{
+		Metric:    healthMetric,
 		Timestamp: timestamp,
 		Value:     healthValue,
+	}
+	durationSample := &clientmodel.Sample{
+		Metric:    durationMetric,
+		Timestamp: timestamp,
+		Value:     clientmodel.SampleValue(float64(scrapeDuration) / float64(time.Second)),
 	}
 
 	ingester.Ingest(&extraction.Result{
 		Err:     nil,
-		Samples: clientmodel.Samples{sample},
+		Samples: clientmodel.Samples{healthSample, durationSample},
 	})
 }
 
@@ -292,23 +289,15 @@ const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client
 func (t *target) scrape(ingester extraction.Ingester) (err error) {
 	timestamp := clientmodel.Now()
 	defer func(start time.Time) {
-		ms := float64(time.Since(start)) / float64(time.Millisecond)
-		labels := prometheus.Labels{
-			job:      string(t.baseLabels[clientmodel.JobLabel]),
-			instance: t.URL(),
-			outcome:  success,
-		}
 		t.Lock() // Writing t.state and t.lastError requires the lock.
 		if err == nil {
 			t.state = Alive
-			labels[outcome] = failure
 		} else {
 			t.state = Unreachable
 		}
 		t.lastError = err
 		t.Unlock()
-		targetOperationLatencies.With(labels).Observe(ms)
-		t.recordScrapeHealth(ingester, timestamp, err == nil)
+		t.recordScrapeHealth(ingester, timestamp, err == nil, time.Since(start))
 	}(time.Now())
 
 	req, err := http.NewRequest("GET", t.URL(), nil)
