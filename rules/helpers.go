@@ -159,6 +159,6 @@ func TableLinkForExpression(expr string) string {
 // GraphLinkForExpression creates an escaped relative link to the graph view of
 // the provided expression.
 func GraphLinkForExpression(expr string) string {
-	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q}]`, expr))
+	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q,"tab":0}]`, expr))
 	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))
 }

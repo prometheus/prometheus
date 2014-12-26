@@ -577,7 +577,7 @@ PromConsole._chooseNameFunction = function(data) {
 PromConsole._graphsToSlashGraphURL = function(exprs) {
   var data = [];
   for (var i = 0; i < exprs.length; ++i) {
-    data.push({'expr' : exprs[i]});
+    data.push({'expr': exprs[i], 'tab': 0});
   }
   return '/graph#' + encodeURIComponent(JSON.stringify(data));
 

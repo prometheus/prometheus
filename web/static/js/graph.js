@@ -58,7 +58,9 @@ Prometheus.Graph.prototype.initialize = function() {
   self.options["id"] = self.id;
   self.options["range_input"] = self.options["range_input"] || "1h";
   self.options["stacked_checked"] = self.options["stacked"] ? "checked" : "";
-  self.options["tab"] = self.options["tab"] || 1;
+  if (self.options["tab"] === undefined) {
+    self.options["tab"] = 1;
+  }
 
   // Draw graph controls and container from Handlebars template.
 
@@ -78,13 +80,13 @@ Prometheus.Graph.prototype.initialize = function() {
   self.consoleTab = graphWrapper.find(".console");
   self.graphTab   = graphWrapper.find(".graph_container");
   self.tabs = graphWrapper.find(".tabs");
-  self.tab  = $(self.tabs.find("> div")[self.options["tab"]]); // active tab
+  self.tab = $(self.tabs.find("> div")[self.options["tab"]]); // active tab
 
   self.tabs.tabs({
     active: self.options["tab"],
     activate: function(e, ui) {
       storeGraphOptionsInUrl();
-      self.tab = ui.newPanel
+      self.tab = ui.newPanel;
       if (self.tab.hasClass("reload")) { // reload if flagged with class "reload"
         self.submitQuery();
       }
