@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"sort"
 	"sync"
 	"time"
 
@@ -137,14 +138,27 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 	wg.Wait()
 }
 
-// Targets returns a copy of the current target list.
+type targetsByURL []Target
+
+func (s targetsByURL) Len() int {
+	return len(s)
+}
+func (s targetsByURL) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+func (s targetsByURL) Less(i, j int) bool {
+	return s[i].URL() < s[j].URL()
+}
+
+// Targets returns a sorted copy of the current target list.
 func (p *TargetPool) Targets() []Target {
 	p.RLock()
 	defer p.RUnlock()
 
-	targets := make([]Target, 0, len(p.targetsByURL))
+	targets := make(targetsByURL, 0, len(p.targetsByURL))
 	for _, v := range p.targetsByURL {
 		targets = append(targets, v)
 	}
+	sort.Sort(targets)
 	return targets
 }
