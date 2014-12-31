@@ -49,6 +49,13 @@ var (
 		},
 		[]string{ruleTypeLabel},
 	)
+	evalFailures = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "rule_evaluation_failures_total",
+			Help:      "The total number of rule evaluation failures.",
+		},
+	)
 	iterationDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Namespace:  namespace,
 		Name:       "evaluator_duration_milliseconds",
@@ -59,6 +66,7 @@ var (
 
 func init() {
 	prometheus.MustRegister(iterationDuration)
+	prometheus.MustRegister(evalFailures)
 	prometheus.MustRegister(evalDuration)
 }
 
@@ -229,6 +237,11 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 					Timestamp: s.Timestamp,
 				}
 			}
+
+			if err != nil {
+				evalFailures.Inc()
+			}
+
 			m.results <- &extraction.Result{
 				Samples: samples,
 				Err:     err,
