@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/prometheus/client_golang/extraction"
 	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -95,7 +94,7 @@ type ruleManager struct {
 	interval time.Duration
 	storage  local.Storage
 
-	results             chan<- *extraction.Result
+	results             chan<- clientmodel.Samples
 	notificationHandler *notification.NotificationHandler
 
 	prometheusURL string
@@ -107,7 +106,7 @@ type RuleManagerOptions struct {
 	Storage            local.Storage
 
 	NotificationHandler *notification.NotificationHandler
-	Results             chan<- *extraction.Result
+	Results             chan<- clientmodel.Samples
 
 	PrometheusURL string
 }
@@ -210,7 +209,7 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 	m.notificationHandler.SubmitReqs(notifications)
 }
 
-func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
+func (m *ruleManager) runIteration(results chan<- clientmodel.Samples) {
 	now := clientmodel.Now()
 	wg := sync.WaitGroup{}
 
@@ -240,11 +239,8 @@ func (m *ruleManager) runIteration(results chan<- *extraction.Result) {
 
 			if err != nil {
 				evalFailures.Inc()
-			}
-
-			m.results <- &extraction.Result{
-				Samples: samples,
-				Err:     err,
+			} else {
+				m.results <- samples
 			}
 
 			switch r := rule.(type) {
