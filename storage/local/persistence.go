@@ -869,7 +869,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 	iter := fingerprintToSeries.iter()
 	defer func() {
 		// Consume the iterator in any case to not leak goroutines.
-		for _ = range iter {
+		for range iter {
 		}
 	}()
 

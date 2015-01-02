@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"sync"
+
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
 

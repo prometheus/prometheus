@@ -567,7 +567,7 @@ func (s *memorySeriesStorage) cycleThroughMemoryFingerprints() chan clientmodel.
 
 		defer func() {
 			if fpIter != nil {
-				for _ = range fpIter {
+				for range fpIter {
 					// Consume the iterator.
 				}
 			}
@@ -661,9 +661,9 @@ loop:
 		}
 	}
 	// Wait until both channels are closed.
-	for _ = range memoryFingerprints {
+	for range memoryFingerprints {
 	}
-	for _ = range archivedFingerprints {
+	for range archivedFingerprints {
 	}
 }
 

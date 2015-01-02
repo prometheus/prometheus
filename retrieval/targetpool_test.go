@@ -27,7 +27,7 @@ func testTargetPool(t testing.TB) {
 	}
 
 	type input struct {
-		url      string
+		url          string
 		scheduledFor time.Time
 	}
 
@@ -84,7 +84,7 @@ func testTargetPool(t testing.TB) {
 
 		for _, input := range scenario.inputs {
 			target := target{
-				url:       input.url,
+				url:           input.url,
 				newBaseLabels: make(chan clientmodel.LabelSet, 1),
 				httpClient:    &http.Client{},
 			}
@@ -114,7 +114,7 @@ func TestTargetPool(t *testing.T) {
 func TestTargetPoolReplaceTargets(t *testing.T) {
 	pool := NewTargetPool(nil, nil, nopIngester{}, time.Duration(1))
 	oldTarget1 := &target{
-		url:         "example1",
+		url:             "example1",
 		state:           Unreachable,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
@@ -122,7 +122,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		httpClient:      &http.Client{},
 	}
 	oldTarget2 := &target{
-		url:         "example2",
+		url:             "example2",
 		state:           Unreachable,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
@@ -130,7 +130,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		httpClient:      &http.Client{},
 	}
 	newTarget1 := &target{
-		url:         "example1",
+		url:             "example1",
 		state:           Alive,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
@@ -138,7 +138,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		httpClient:      &http.Client{},
 	}
 	newTarget2 := &target{
-		url:         "example3",
+		url:             "example3",
 		state:           Alive,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
