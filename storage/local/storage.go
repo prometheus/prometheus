@@ -424,7 +424,7 @@ func (s *memorySeriesStorage) preloadChunksForRange(
 func (s *memorySeriesStorage) handleEvictList() {
 	ticker := time.NewTicker(maxEvictInterval)
 	count := 0
-loop:
+
 	for {
 		// To batch up evictions a bit, this tries evictions at least
 		// once per evict interval, but earlier if the number of evict
@@ -450,12 +450,20 @@ loop:
 				s.maybeEvict()
 			}
 		case <-s.evictStopping:
-			break loop
+			// Drain evictRequests to not let requesters hang.
+			for {
+				select {
+				case <-s.evictRequests:
+					// Do nothing.
+				default:
+					ticker.Stop()
+					glog.Info("Chunk eviction stopped.")
+					close(s.evictStopped)
+					return
+				}
+			}
 		}
 	}
-	ticker.Stop()
-	glog.Info("Chunk eviction stopped.")
-	close(s.evictStopped)
 }
 
 // maybeEvict is a local helper method. Must only be called by handleEvictList.
