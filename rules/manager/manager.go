@@ -239,6 +239,7 @@ func (m *ruleManager) runIteration(results chan<- clientmodel.Samples) {
 
 			if err != nil {
 				evalFailures.Inc()
+				glog.Warningf("Error while evaluating rule %q: %s", rule, err)
 			} else {
 				m.results <- samples
 			}
