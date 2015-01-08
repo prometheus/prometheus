@@ -16,6 +16,7 @@ package local
 
 import (
 	"container/list"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -704,13 +705,23 @@ func (s *memorySeriesStorage) maintainSeries(fp clientmodel.Fingerprint) {
 	if iOldestNotEvicted == -1 {
 		s.fpToSeries.del(fp)
 		s.numSeries.Dec()
+		// Make sure we have a head chunk descriptor (a freshly
+		// unarchived series has none).
+		if len(series.chunkDescs) == 0 {
+			cds, err := s.loadChunkDescs(fp, math.MaxInt64)
+			if err != nil {
+				glog.Errorf("Could not load chunk descriptors prior to archiving metric %v, metric will not be archived: %v", series.metric, err)
+				return
+			}
+			series.chunkDescs = cds
+		}
 		if err := s.persistence.archiveMetric(
-			fp, series.metric, series.firstTime(), series.lastTime(),
+			fp, series.metric, series.firstTime(), series.head().lastTime(),
 		); err != nil {
 			glog.Errorf("Error archiving metric %v: %v", series.metric, err)
-		} else {
-			s.seriesOps.WithLabelValues(archive).Inc()
+			return
 		}
+		s.seriesOps.WithLabelValues(archive).Inc()
 		return
 	}
 	// If we are here, the series is not archived, so check for chunkDesc

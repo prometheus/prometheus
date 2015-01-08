@@ -85,7 +85,7 @@ type indexingOp struct {
 // A Persistence is used by a Storage implementation to store samples
 // persistently across restarts. The methods are only goroutine-safe if
 // explicitly marked as such below. The chunk-related methods PersistChunk,
-// DropChunks, LoadChunks, and LoadChunkDescs can be called concurrently with
+// dropChunks, loadChunks, and loadChunkDescs can be called concurrently with
 // each other if each call refers to a different fingerprint.
 type persistence struct {
 	basePath string
@@ -350,26 +350,31 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 	return nil
 }
 
-// sanitizeSeries sanitizes a series based on its series file as defined by the provided directory and FileInfo.
-// The method returns the fingerprint as derived from the directory and file name, and whether the provided
-// file has been sanitized. A file that failed to be sanitized is deleted, if possible.
+// sanitizeSeries sanitizes a series based on its series file as defined by the
+// provided directory and FileInfo.  The method returns the fingerprint as
+// derived from the directory and file name, and whether the provided file has
+// been sanitized. A file that failed to be sanitized is deleted, if possible.
 //
 // The following steps are performed:
 //
-// - A file whose name doesn't comply with the naming scheme of a series file is simply deleted.
+// - A file whose name doesn't comply with the naming scheme of a series file is
+//   simply deleted.
 //
-// - If the size of the series file isn't a multiple of the chunk size, extraneous bytes are truncated.
-//   If the truncation fails, the file is deleted instead.
+// - If the size of the series file isn't a multiple of the chunk size,
+//   extraneous bytes are truncated.  If the truncation fails, the file is
+//   deleted instead.
 //
 // - A file that is empty (after truncation) is deleted.
 //
-// - A series that is not archived (i.e. it is in the fingerprintToSeries map) is checked for consistency of
-//   its various parameters (like head-chunk persistence state, offset of chunkDescs etc.). In particular,
-//   overlap between an in-memory head chunk with the most recent persisted chunk is checked. Inconsistencies
-//   are rectified.
+// - A series that is not archived (i.e. it is in the fingerprintToSeries map)
+//   is checked for consistency of its various parameters (like head-chunk
+//   persistence state, offset of chunkDescs etc.). In particular, overlap
+//   between an in-memory head chunk with the most recent persisted chunk is
+//   checked. Inconsistencies are rectified.
 //
-// - A series this in archived (i.e. it is not in the fingerprintToSeries map) is checked for its presence
-//   in the index of archived series. If it cannot be found there, it is deleted.
+// - A series this in archived (i.e. it is not in the fingerprintToSeries map)
+//   is checked for its presence in the index of archived series. If it cannot
+//   be found there, it is deleted.
 func (p *persistence) sanitizeSeries(dirname string, fi os.FileInfo, fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) (clientmodel.Fingerprint, bool) {
 	filename := path.Join(dirname, fi.Name())
 	purge := func() {
