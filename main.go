@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/prometheus/client_golang/extraction"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 	registry "github.com/prometheus/client_golang/prometheus"
@@ -81,7 +80,7 @@ var (
 )
 
 type prometheus struct {
-	unwrittenSamples chan *extraction.Result
+	unwrittenSamples chan clientmodel.Samples
 
 	ruleManager         manager.RuleManager
 	targetManager       retrieval.TargetManager
@@ -102,7 +101,7 @@ func NewPrometheus() *prometheus {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	unwrittenSamples := make(chan *extraction.Result, *samplesQueueCapacity)
+	unwrittenSamples := make(chan clientmodel.Samples, *samplesQueueCapacity)
 
 	ingester := &retrieval.MergeLabelsIngester{
 		Labels:          conf.GlobalLabels(),
@@ -214,11 +213,11 @@ func (p *prometheus) Serve() {
 		}
 	}()
 
-	for block := range p.unwrittenSamples {
-		if block.Err == nil && len(block.Samples) > 0 {
-			p.storage.AppendSamples(block.Samples)
+	for samples := range p.unwrittenSamples {
+		if len(samples) > 0 {
+			p.storage.AppendSamples(samples)
 			if p.remoteTSDBQueue != nil {
-				p.remoteTSDBQueue.Queue(block.Samples)
+				p.remoteTSDBQueue.Queue(samples)
 			}
 		}
 	}

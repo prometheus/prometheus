@@ -205,10 +205,7 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clie
 		Value:     clientmodel.SampleValue(float64(scrapeDuration) / float64(time.Second)),
 	}
 
-	ingester.Ingest(&extraction.Result{
-		Err:     nil,
-		Samples: clientmodel.Samples{healthSample, durationSample},
-	})
+	ingester.Ingest(clientmodel.Samples{healthSample, durationSample})
 }
 
 // RunScraper implements Target.

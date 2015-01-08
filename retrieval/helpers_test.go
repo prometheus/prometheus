@@ -14,11 +14,11 @@
 package retrieval
 
 import (
-	"github.com/prometheus/client_golang/extraction"
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 type nopIngester struct{}
 
-func (i nopIngester) Ingest(*extraction.Result) error {
+func (i nopIngester) Ingest(clientmodel.Samples) error {
 	return nil
 }

@@ -22,17 +22,15 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/client_golang/extraction"
-
 	"github.com/prometheus/prometheus/utility"
 )
 
 type collectResultIngester struct {
-	result *extraction.Result
+	result clientmodel.Samples
 }
 
-func (i *collectResultIngester) Ingest(r *extraction.Result) error {
-	i.result = r
+func (i *collectResultIngester) Ingest(s clientmodel.Samples) error {
+	i.result = s
 	return nil
 }
 
@@ -57,15 +55,15 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 
 	now := clientmodel.Now()
 	ingester := &collectResultIngester{}
-	testTarget.recordScrapeHealth(ingester, now, true, 2 * time.Second)
+	testTarget.recordScrapeHealth(ingester, now, true, 2*time.Second)
 
 	result := ingester.result
 
-	if len(result.Samples) != 2 {
-		t.Fatalf("Expected two samples, got %d", len(result.Samples))
+	if len(result) != 2 {
+		t.Fatalf("Expected two samples, got %d", len(result))
 	}
 
-	actual := result.Samples[0]
+	actual := result[0]
 	expected := &clientmodel.Sample{
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: scrapeHealthMetricName,
@@ -76,15 +74,11 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 		Value:     1,
 	}
 
-	if result.Err != nil {
-		t.Fatalf("Got unexpected error: %v", result.Err)
-	}
-
 	if !actual.Equal(expected) {
 		t.Fatalf("Expected and actual samples not equal. Expected: %v, actual: %v", expected, actual)
 	}
 
-	actual = result.Samples[1]
+	actual = result[1]
 	expected = &clientmodel.Sample{
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: scrapeDurationMetricName,
@@ -93,10 +87,6 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 		},
 		Timestamp: now,
 		Value:     2.0,
-	}
-
-	if result.Err != nil {
-		t.Fatalf("Got unexpected error: %v", result.Err)
 	}
 
 	if !actual.Equal(expected) {
