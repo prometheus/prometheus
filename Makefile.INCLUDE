@@ -41,6 +41,7 @@ GOURL		 ?= http://golang.org/dl
 GOROOT		  = $(BUILD_PATH)/root/go
 GOPATH		  = $(BUILD_PATH)/root/gopath
 GOCC		  = $(GOROOT)/bin/go
+GODEP     = $(GOPATH)/bin/godep
 TMPDIR		  = /tmp
 GOENV		  = TMPDIR=$(TMPDIR) GOROOT=$(GOROOT) GOPATH=$(GOPATH)
 GO	          = $(GOENV) $(GOCC)
