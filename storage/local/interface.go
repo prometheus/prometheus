@@ -15,8 +15,10 @@ package local
 
 import (
 	"time"
-	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/client_golang/prometheus"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
 )

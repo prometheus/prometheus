@@ -666,7 +666,7 @@ func (s *memorySeriesStorage) loop() {
 	// checkpoint or for which the fact that the head chunk has been
 	// persisted is not reflected in the most recent checkpoint. This count
 	// could overestimate the number of dirty series, but it's good enough
-	// as a heuristics.
+	// as a heuristic.
 	headChunksPersistedSinceLastCheckpoint := 0
 
 	defer func() {
