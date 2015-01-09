@@ -242,3 +242,11 @@ input[name="end_input"], input[name="range_input"] {
 .prometheus_input_group .date_input {
   width: 200px;
 }
+
+.form-group .input-group .expression_input {
+  width: 450px;
+}
+
+.expression_select {
+  max-width: 350px;
+}

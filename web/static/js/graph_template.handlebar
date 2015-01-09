@@ -1,16 +1,18 @@
         <div id="graph_wrapper{{id}}" class="graph_wrapper">
-          <form action="/api/query_range" method="GET" class="query_form">
+          <form action="/api/query_range" method="GET" class="query_form form-inline">
             <div class="grouping_box">
               <div class="head">
-                <div class="expr">
+                <div class="form-group">
                   <span class="input-group">
-                    <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" value="{{expr}}" class="form-control">
+                    <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" value="{{expr}}" class="form-control expression_input">
                     <span class="input-group-btn">
                       <input class="btn btn-primary" type="submit" value="Execute" name="submit">
                     </span>
                   </span>
-                  <select name="insert_metric">
-                      <option value="">- Insert Metric at Cursor -</option>
+                </div>
+                <div class="form-group">
+                  <select class="form-control expression_select" name="insert_metric">
+                    <option value="">- Insert Metric at Cursor -</option>
                   </select>
                 </div>
               </div>
@@ -93,7 +95,7 @@
                     <input type="hidden" name="step">
                   </div>
 
-                  <div class="prometheus_input_group checkbox">
+                  <div class="prometheus_input_group">
                     <label class="prometheus_checkbox">
                       <input type="checkbox" name="stacked" {{stacked_checked}}>
                       Stacked
