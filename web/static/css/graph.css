@@ -255,3 +255,8 @@ input[name="end_input"], input[name="range_input"] {
 .expression_select {
   max-width: 350px;
 }
+
+.graph_container .rickshaw_legend {
+  background-color: #222222;
+  border-radius: 0;
+}
