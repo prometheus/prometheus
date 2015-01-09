@@ -321,7 +321,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
       },
       complete: function() {
         var duration = new Date().getTime() - startTime;
-        self.evalStats.html("Load time: " + duration + "ms, resolution: " + resolution + "s");
+        self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s");
         self.spinner.hide();
       }
   });

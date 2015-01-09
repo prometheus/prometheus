@@ -8,6 +8,7 @@ a:active { color: black; }
 
 .eval_stats {
   float: right;
+  font-size: 11px;
 }
 
 .graph_wrapper {
