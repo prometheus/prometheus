@@ -1,6 +1,6 @@
         <div id="graph_wrapper{{id}}" class="graph_wrapper">
           <form action="/api/query_range" method="GET" class="query_form form-inline">
-            <div class="grouping_box">
+            <div class="grouping_box square_corners">
               <div class="head">
                 <div class="form-group">
                   <span class="input-group">
@@ -24,10 +24,10 @@
               TODO: Convert this to Bootstrap navbar.  This requires Javascript
                     refresh.
               -->
-            <div class="grouping_box tabs">
-              <ul>
-                <li><a href="#graph{{id}}">Graph</a></li>
-                <li><a href="#console{{id}}">Tabular</a></li>
+            <div class="grouping_box tabs square_corners">
+              <ul class="square_corners">
+                <li class="square_corners"><a href="#graph{{id}}">Graph</a></li>
+                <li class="square_corners"><a href="#console{{id}}">Tabular</a></li>
               </ul>
               <div id="graph{{id}}" class="graph_container reload">
                 <div>
@@ -88,7 +88,6 @@
                       <i class="glyphicon glyphicon-forward"></i>
                     </button>
                   </div>
-
 
                   <div class="prometheus_input_group">
                     <input class="input" title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">

@@ -207,7 +207,11 @@ input[name="end_input"], input[name="range_input"] {
   margin: 2px;
 }
 
-.btn {
+.btn, .form-control {
+  border-radius: 0;
+}
+
+.square_corners {
   border-radius: 0;
 }
 
