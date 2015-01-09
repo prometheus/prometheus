@@ -382,7 +382,7 @@ func TestEvictAndPurgeSeries(t *testing.T) {
 	// Archive metrics.
 	ms.fpToSeries.del(fp)
 	if err := ms.persistence.archiveMetric(
-		fp, series.metric, series.firstTime(), series.lastTime(),
+		fp, series.metric, series.firstTime(), series.head().lastTime(),
 	); err != nil {
 		t.Fatal(err)
 	}

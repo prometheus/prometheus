@@ -397,7 +397,8 @@ func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
 }
 
 // head returns a pointer to the head chunk descriptor. The caller must have
-// locked the fingerprint of the memorySeries.
+// locked the fingerprint of the memorySeries. This method will panic if this
+// series has no chunk descriptors.
 func (s *memorySeries) head() *chunkDesc {
 	return s.chunkDescs[len(s.chunkDescs)-1]
 }
@@ -409,12 +410,6 @@ func (s *memorySeries) firstTime() clientmodel.Timestamp {
 		return s.chunkDescs[0].firstTime()
 	}
 	return s.savedFirstTime
-}
-
-// lastTime returns the timestamp of the last sample in the series. The caller
-// must have locked the fingerprint of the memorySeries.
-func (s *memorySeries) lastTime() clientmodel.Timestamp {
-	return s.head().lastTime()
 }
 
 // memorySeriesIterator implements SeriesIterator.

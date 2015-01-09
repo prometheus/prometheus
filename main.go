@@ -58,7 +58,8 @@ var (
 
 	storageRetentionPeriod = flag.Duration("storage.local.retention", 15*24*time.Hour, "How long to retain samples in the local storage.")
 
-	checkpointInterval = flag.Duration("storage.local.checkpoint-interval", 5*time.Minute, "The period at which the in-memory index of time series is checkpointed.")
+	checkpointInterval         = flag.Duration("storage.local.checkpoint-interval", 5*time.Minute, "The period at which the in-memory index of time series is checkpointed.")
+	checkpointDirtySeriesLimit = flag.Int("storage.local.checkpoint-dirty-series-limit", 5000, "If approx. that many time series are in a state that would require a recovery operation after a crash, a checkpoint is triggered, even if the checkpoint interval hasn't passed yet. A recovery operation requires a disk seek. The default limit intends to keep the recovery time below 1min even on spinning disks. With SSD, recovery is much faster, so you might want to increase this value in that case to avoid overly frequent checkpoints.")
 
 	storageDirty = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
 
@@ -118,7 +119,8 @@ func NewPrometheus() *prometheus {
 		PersistenceStoragePath:     *metricsStoragePath,
 		PersistenceRetentionPeriod: *storageRetentionPeriod,
 		CheckpointInterval:         *checkpointInterval,
-		Dirty:                      *storageDirty,
+		CheckpointDirtySeriesLimit: *checkpointDirtySeriesLimit,
+		Dirty: *storageDirty,
 	}
 	memStorage, err := local.NewMemorySeriesStorage(o)
 	if err != nil {
