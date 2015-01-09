@@ -15,7 +15,7 @@
 
 .SUFFIXES:
 
-VERSION=0.9.0rc2
+VERSION=0.9.0rc3
 
 OS=$(shell uname)
 ARCH=$(shell uname -m)
