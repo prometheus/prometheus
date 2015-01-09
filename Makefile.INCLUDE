@@ -41,10 +41,10 @@ GOURL		 ?= http://golang.org/dl
 GOROOT		  = $(BUILD_PATH)/root/go
 GOPATH		  = $(BUILD_PATH)/root/gopath
 GOCC		  = $(GOROOT)/bin/go
-GODEP     = $(GOPATH)/bin/godep
 TMPDIR		  = /tmp
 GOENV		  = TMPDIR=$(TMPDIR) GOROOT=$(GOROOT) GOPATH=$(GOPATH)
 GO	          = $(GOENV) $(GOCC)
+GODEP		  = $(GOENV) $(GOPATH)/bin/godep
 GOFMT		  = $(GOROOT)/bin/gofmt
 
 UNAME := $(shell uname)
@@ -53,7 +53,7 @@ FULL_GOPATH_BASE := $(GOPATH)/src/github.com/prometheus
 
 export PREFIX=$(BUILD_PATH)/root
 
-export PATH := $(GOPATH)/bin:$(PATH)
+export PATH := $(GOPATH)/bin:$(GOROOT)/bin:$(PATH)
 
 export GO_TEST_FLAGS ?= -v -short
 
