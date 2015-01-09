@@ -51,6 +51,7 @@ a:active { color: black; }
 }
 
 .y_axis {
+  overflow: hidden;
   position: absolute;
   top: 1px;
   bottom: 0;
@@ -198,10 +199,46 @@ select name="insert_metric" {
 }
 
 input[name="end_input"], input[name="range_input"] {
-  margin-left: -4px;
-  margin-right: -4px;
+  margin-left: 4px;
+  margin-right: 4px;
 }
 
 .error {
   margin: 2px;
+}
+
+.btn {
+  border-radius: 0;
+}
+
+.prometheus_input_group {
+  display: inline-block;
+  margin: 10px 0;
+  overflow: auto;
+}
+
+.prometheus_input_group .prometheus_checkbox {
+  height: 25px;
+  line-height: 2;
+}
+
+.prometheus_input_group .input {
+  width: 100px;
+  height: 29px;
+  padding: 6px 12px;
+  font-size: 14px;
+  line-height: 1.42857143;
+  color: #555;
+  background-color: #fff;
+  background-image: none;
+  border: 1px solid #ccc;
+  -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, .075);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, .075);
+  -webkit-transition: border-color ease-in-out .15s, -webkit-box-shadow ease-in-out .15s;
+  -o-transition: border-color ease-in-out .15s, box-shadow ease-in-out .15s;
+  transition: border-color ease-in-out .15s, box-shadow ease-in-out .15s;
+}
+
+.prometheus_input_group .date_input {
+  width: 200px;
 }

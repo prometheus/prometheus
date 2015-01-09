@@ -28,52 +28,48 @@
                 <li><a href="#console{{id}}">Tabular</a></li>
               </ul>
               <div id="graph{{id}}" class="graph_container reload">
-                <div class="config">
-                  <label for="range_input{{id}}">Range:</label>
+                <div>
                   <!-- Extracted to force grouped inputs. -->
                   <input type="hidden" name="range">
-                  <div class="input-prepend input-append">
-
+                  <div class="prometheus_input_group">
                     <button
-                        class="btn btn-mini"
-                        type="button"
-                        name="dec_range"
-                        title="Shrink the time range.">
-                      <i class="icon-minus"></i>
+                      class="btn btn-default pull-left"
+                      type="button"
+                      name="dec_range"
+                      title="Shrink the time range.">
+                      <i class="glyphicon glyphicon-minus"></i>
                     </button>
-
                     <input
-                        class="input-mini"
-                        id="range_input{{id}}"
-                        title="Time range of graph"
-                        type="text"
-                        name="range_input"
-                        size="3"
-                        value="{{range_input}}">
-
+                      class="pull-left input"
+                      id="range_input{{id}}"
+                      title="Time range of graph"
+                      type="text"
+                      name="range_input"
+                      size="3"
+                      value="{{range_input}}">
                     <button
-                        class="btn btn-mini"
+                        class="btn btn-default pull-left"
                         type="button"
                         name="inc_range"
                         title="Grow the time range.">
-                      <i class="icon-plus"></i>
+                      <i class="glyphicon glyphicon-plus"></i>
                     </button>
                   </div>
 
                   <!-- Extracted to force grouped inputs. -->
                   <input type="hidden" name="end">
-                  <div class="input-prepend input-append">
+                  <div class="prometheus_input_group">
 
                     <button
-                        class="btn btn-mini"
+                        class="btn btn-default pull-left"
                         type="button"
                         name="dec_end"
                         title="Rewind the end time.">
-                      <i class="icon-backward"></i>
+                      <i class="glyphicon glyphicon-backward"></i>
                     </button>
 
                     <input
-                        class="input-medium"
+                        class="pull-left date_input input"
                         id="end{{id}}"
                         title="End time of graph"
                         placeholder="Until"
@@ -83,22 +79,26 @@
                         value="{{end}}">
 
                     <button
-                        class="btn btn-mini"
+                        class="btn btn-default pull-left"
                         type="button"
                         name="inc_end"
                         title="Advance the end time.">
-                      <i class="icon-forward"></i>
+                      <i class="glyphicon glyphicon-forward"></i>
                     </button>
                   </div>
 
 
-                  <input class="input-small" title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
-                  <input type="hidden" name="step">
+                  <div class="prometheus_input_group">
+                    <input class="input" title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
+                    <input type="hidden" name="step">
+                  </div>
 
-                  <label class="checkbox inline">
-                    <input type="checkbox" name="stacked" {{stacked_checked}}>
-                    Stacked
-                  </label>
+                  <div class="prometheus_input_group checkbox">
+                    <label class="prometheus_checkbox">
+                      <input type="checkbox" name="stacked" {{stacked_checked}}>
+                      Stacked
+                    </label>
+                  </div>
                 </div>
 
                 <div class="graph_area">
