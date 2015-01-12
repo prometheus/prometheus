@@ -75,6 +75,7 @@
                         id="end{{id}}"
                         title="End time of graph"
                         placeholder="Until"
+                        data-format="yyyy-MM-dd"
                         type="text"
                         name="end_input"
                         size="16"

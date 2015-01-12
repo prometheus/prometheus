@@ -109,11 +109,13 @@ Prometheus.Graph.prototype.initialize = function() {
   self.evalStats = graphWrapper.find(".eval_stats");
 
   self.endDate = graphWrapper.find("input[name=end_input]");
+  self.endDate.datetimepicker({
+    language: 'en',
+    pickSeconds: false,
+  });
+  // can we remove this conditional now?
   if (self.options["end_input"]) {
-    self.endDate.appendDtpicker({"current": self.options["end_input"]});
-  } else {
-    self.endDate.appendDtpicker();
-    self.endDate.val("");
+    self.endDate.data('datetimepicker').setValue(self.options["end_input"]);
   }
   self.endDate.change(function() { self.submitQuery() });
   self.refreshInterval.change(function() { self.updateRefresh() });
@@ -242,6 +244,13 @@ Prometheus.Graph.prototype.getEndDate = function() {
   if (!self.endDate || !self.endDate.val()) {
     return null;
   }
+  //
+  // This is returning the time set according to the system clock,
+  // but the datetimepicker is converting this to UTC, which is
+  // causing the time to decrease instead of increase. It should
+  // be increasing by 30min, but UTC is one hour behind berlin time,
+  // so incrementing UTC by 30min e.g. decrements the time the user sees by 30min.
+  //
   return new Date(self.endDate.val()).getTime();
 };
 
@@ -258,10 +267,7 @@ Prometheus.Graph.prototype.getOrSetEndDate = function() {
 
 Prometheus.Graph.prototype.setEndDate = function(date) {
   var self = this;
-  dateString = date.getFullYear() + "-" + (date.getMonth()+1) + "-" + date.getDate() + " " +
-               date.getHours() + ":" + date.getMinutes();
-  self.endDate.val("");
-  self.endDate.appendDtpicker({"current": dateString});
+  self.endDate.data('datetimepicker').setValue(date);
 };
 
 Prometheus.Graph.prototype.increaseEnd = function() {
