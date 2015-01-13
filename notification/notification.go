@@ -116,7 +116,7 @@ func NewNotificationHandler(alertmanagerURL string, notificationQueueCapacity in
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "dropped_total",
-			Help:      "Total number of dropped alert notifications.",
+			Help:      "Total number of alert notifications dropped due to alert manager missing in configuration.",
 		}),
 		notificationsQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
