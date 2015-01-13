@@ -39,11 +39,6 @@ const (
 const (
 	namespace = "prometheus"
 	subsystem = "notifications"
-
-	result  = "result"
-	success = "success"
-	failure = "failure"
-	dropped = "dropped"
 )
 
 var (
@@ -88,7 +83,9 @@ type NotificationHandler struct {
 	// HTTP client with custom timeout settings.
 	httpClient httpPoster
 
-	notificationLatency        *prometheus.SummaryVec
+	notificationLatency        prometheus.Summary
+	notificationErrors         prometheus.Counter
+	notificationDropped        prometheus.Counter
 	notificationsQueueLength   prometheus.Gauge
 	notificationsQueueCapacity prometheus.Metric
 
@@ -103,15 +100,24 @@ func NewNotificationHandler(alertmanagerURL string, notificationQueueCapacity in
 
 		httpClient: utility.NewDeadlineClient(*deadline),
 
-		notificationLatency: prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "latency_milliseconds",
-				Help:      "Latency quantiles for sending alert notifications.",
-			},
-			[]string{result},
-		),
+		notificationLatency: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "latency_milliseconds",
+			Help:      "Latency quantiles for sending alert notifications (not including dropped notifications).",
+		}),
+		notificationErrors: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "errors_total",
+			Help:      "Total number of errors sending alert notifications.",
+		}),
+		notificationDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "dropped_total",
+			Help:      "Total number of alert notifications dropped due to alert manager missing in configuration.",
+		}),
 		notificationsQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -175,22 +181,19 @@ func (n *NotificationHandler) Run() {
 	for reqs := range n.pendingNotifications {
 		if n.alertmanagerURL == "" {
 			glog.Warning("No alert manager configured, not dispatching notification")
-			n.notificationLatency.WithLabelValues(dropped).Observe(0)
+			n.notificationDropped.Inc()
 			continue
 		}
 
 		begin := time.Now()
 		err := n.sendNotifications(reqs)
-		labelValue := success
 
 		if err != nil {
 			glog.Error("Error sending notification: ", err)
-			labelValue = failure
+			n.notificationErrors.Inc()
 		}
 
-		n.notificationLatency.WithLabelValues(labelValue).Observe(
-			float64(time.Since(begin) / time.Millisecond),
-		)
+		n.notificationLatency.Observe(float64(time.Since(begin) / time.Millisecond))
 	}
 	close(n.stopped)
 }
