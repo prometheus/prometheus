@@ -59,7 +59,8 @@ type TSDBQueueManager struct {
 	drained        chan bool
 
 	samplesCount  *prometheus.CounterVec
-	sendLatency   *prometheus.SummaryVec
+	sendLatency   prometheus.Summary
+	sendErrors    prometheus.Counter
 	queueLength   prometheus.Gauge
 	queueCapacity prometheus.Metric
 }
@@ -81,15 +82,18 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 			},
 			[]string{result},
 		),
-		sendLatency: prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "sent_latency_milliseconds",
-				Help:      "Latency quantiles for sending samples to the remote TSDB.",
-			},
-			[]string{result},
-		),
+		sendLatency: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "sent_latency_milliseconds",
+			Help:      "Latency quantiles for sending sample batches to the remote TSDB.",
+		}),
+		sendErrors: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "sent_errors_total",
+			Help:      "Total number of errors sending sample batches to the remote TSDB.",
+		}),
 		queueLength: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -164,9 +168,10 @@ func (t *TSDBQueueManager) sendSamples(s clientmodel.Samples) {
 	if err != nil {
 		glog.Warningf("error sending %d samples to TSDB: %s", len(s), err)
 		labelValue = failure
+		t.sendErrors.Inc()
 	}
 	t.samplesCount.WithLabelValues(labelValue).Add(float64(len(s)))
-	t.sendLatency.WithLabelValues(labelValue).Observe(float64(duration))
+	t.sendLatency.Observe(float64(duration))
 }
 
 // Run continuously sends samples to the TSDB.
