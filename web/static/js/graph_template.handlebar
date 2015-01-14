@@ -1,123 +1,133 @@
         <div id="graph_wrapper{{id}}" class="graph_wrapper">
           <form action="/api/query_range" method="GET" class="query_form form-inline">
-            <div class="grouping_box square_corners">
-              <div class="head">
-                <div class="form-group">
-                  <span class="input-group">
-                    <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" value="{{expr}}" class="form-control expression_input">
-                    <span class="input-group-btn">
-                      <input class="btn btn-primary" type="submit" value="Execute" name="submit">
-                    </span>
+            <div class="row">
+              <div class="col-lg-10">
+                <span class="input-group expression_input_group">
+                  <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" value="{{expr}}" class="form-control expression_input" data-provide="typeahead" autocomplete="off">
+                  <span class="input-group-btn">
+                    <input class="btn btn-primary execute_btn" type="submit" value="Execute" name="submit">
                   </span>
-                </div>
-                <div class="form-group">
-                  <select class="form-control expression_select" name="insert_metric">
-                    <option value="">- Insert Metric at Cursor -</option>
-                  </select>
-                </div>
+                </span>
+                <select class="form-control expression_select" name="insert_metric">
+                  <option value="">- Insert Metric at Cursor -</option>
+                </select>
               </div>
-              <div class="eval_stats"></div>
-              <img src="/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
-              <div class="error alert alert-error hide"></div>
+              <div class="col-lg-2">
+                <div class="eval_stats pull-right"></div>
+                <img src="/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
+              </div>
             </div>
+            <div class="row">
+              <div class="col-lg-12">
+                <div class="error alert alert-danger"></div>
+              </div>
+            </div>
+
             <!--
               TODO: Convert this to Bootstrap navbar.  This requires Javascript
                     refresh.
               -->
-            <div class="grouping_box tabs square_corners">
-              <ul class="square_corners">
-                <li class="square_corners"><a href="#graph{{id}}">Graph</a></li>
-                <li class="square_corners"><a href="#console{{id}}">Tabular</a></li>
-              </ul>
-              <div id="graph{{id}}" class="graph_container reload">
-                <div>
-                  <!-- Extracted to force grouped inputs. -->
-                  <input type="hidden" name="range">
-                  <div class="prometheus_input_group">
-                    <button
-                      class="btn btn-default pull-left"
-                      type="button"
-                      name="dec_range"
-                      title="Shrink the time range.">
-                      <i class="glyphicon glyphicon-minus"></i>
-                    </button>
-                    <input
-                      class="pull-left input"
-                      id="range_input{{id}}"
-                      title="Time range of graph"
-                      type="text"
-                      name="range_input"
-                      size="3"
-                      value="{{range_input}}">
-                    <button
-                        class="btn btn-default pull-left"
-                        type="button"
-                        name="inc_range"
-                        title="Grow the time range.">
-                      <i class="glyphicon glyphicon-plus"></i>
-                    </button>
-                  </div>
+            <div class="row">
+              <div class="col-lg-12">
+                <div role="tabpanel">
+                  <ul class="nav nav-tabs" role="tablist">
+                    <li role="presentation"><a href="#graph{{id}}" aria-controls="graph{{id}}" role="tab" data-toggle="tab">Graph</a></li>
+                    <li role="presentation" class="active"><a href="#console{{id}}" aria-controls="console{{id}}" role="tab" data-toggle="tab">Console</a></li>
+                  </ul>
+                  <div class="tab-content">
+                    <div role="tabpanel" class="tab-pane graph_container reload" id="graph{{id}}">
+                      <div>
+                        <!-- Extracted to force grouped inputs. -->
+                        <input type="hidden" name="range">
+                        <div class="prometheus_input_group">
+                          <button
+                            class="btn btn-default pull-left"
+                            type="button"
+                            name="dec_range"
+                            title="Shrink the time range.">
+                            <i class="glyphicon glyphicon-minus"></i>
+                          </button>
+                          <input
+                            class="pull-left input"
+                            id="range_input{{id}}"
+                            title="Time range of graph"
+                            type="text"
+                            name="range_input"
+                            size="3"
+                            value="{{range_input}}">
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="inc_range"
+                              title="Grow the time range.">
+                            <i class="glyphicon glyphicon-plus"></i>
+                          </button>
+                        </div>
 
-                  <!-- Extracted to force grouped inputs. -->
-                  <input type="hidden" name="end">
-                  <div class="prometheus_input_group">
+                        <!-- Extracted to force grouped inputs. -->
+                        <input type="hidden" name="end">
+                        <div class="prometheus_input_group">
 
-                    <button
-                        class="btn btn-default pull-left"
-                        type="button"
-                        name="dec_end"
-                        title="Rewind the end time.">
-                      <i class="glyphicon glyphicon-backward"></i>
-                    </button>
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="dec_end"
+                              title="Rewind the end time.">
+                            <i class="glyphicon glyphicon-backward"></i>
+                          </button>
 
-                    <input
-                        class="pull-left date_input input"
-                        id="end{{id}}"
-                        title="End time of graph"
-                        placeholder="Until"
-                        data-format="yyyy-MM-dd"
-                        type="text"
-                        name="end_input"
-                        size="16"
-                        value="{{end}}">
+                          <input
+                              class="pull-left date_input input"
+                              id="end{{id}}"
+                              title="End time of graph"
+                              placeholder="Until"
+                              data-format="yyyy-MM-dd"
+                              type="text"
+                              name="end_input"
+                              size="16"
+                              value="{{end}}">
 
-                    <button
-                        class="btn btn-default pull-left"
-                        type="button"
-                        name="inc_end"
-                        title="Advance the end time.">
-                      <i class="glyphicon glyphicon-forward"></i>
-                    </button>
-                  </div>
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="inc_end"
+                              title="Advance the end time.">
+                            <i class="glyphicon glyphicon-forward"></i>
+                          </button>
+                        </div>
 
-                  <div class="prometheus_input_group">
-                    <input class="input" title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
-                    <input type="hidden" name="step">
-                  </div>
+                        <div class="prometheus_input_group">
+                          <input class="input" title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
+                          <input type="hidden" name="step">
+                        </div>
 
-                  <div class="prometheus_input_group">
-                    <label class="prometheus_checkbox">
-                      <input type="checkbox" name="stacked" {{stacked_checked}}>
-                      Stacked
-                    </label>
+                        <div class="prometheus_input_group">
+                          <button type="button" class="btn btn-default stacked_btn">
+                            <i class="glyphicon"></i> stacked
+                          </button>
+                          <input type="hidden" name="stacked" value="{{stacked}}">
+                        </div>
+                      </div>
+
+                      <div class="graph_area">
+                        <div class="y_axis"></div>
+                        <div class="graph"></div>
+                      </div>
+                      <div class="legend"></div>
+                    </div>
+                    <div role="tabpanel" class="tab-pane active console reload" id="console{{id}}">
+                      <table class="table table-condensed table-hover console_table">
+                        <thead>
+                          <th>Element</th>
+                          <th>Value</th>
+                        </thead>
+                        <tbody>
+                          <tr><td colspan="2"><i>no data</i></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-
-                <div class="graph_area">
-                  <div class="y_axis"></div>
-                  <div class="graph"></div>
-                </div>
-                <div class="legend"></div>
-              </div>
-              <div id="console{{id}}" class="console reload">
-                <table class="table table-condensed table-bordered table-hover console_table">
-                  <thead>
-                    <th>Element</th>
-                    <th>Value</th>
-                  </thead>
-                  <tbody>
-                  </tbody>
-                </table>
               </div>
             </div>
           </form>

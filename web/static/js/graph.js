@@ -1,23 +1,3 @@
-// Graph options we might want:
-//  Grid off/on
-//  Stacked off/on
-//  Area off/on
-//  Legend position
-//  Short link
-//  Graph title
-//  Palette
-//  Background
-//  Enable tooltips
-//  width/height
-//  Axis options
-//  Y-Range min/max
-//  (X-Range min/max)
-//  X-Axis format
-//  Y-Axis format
-//  Y-Axis title
-//  X-Axis title
-//  Log scale
-
 var Prometheus = Prometheus || {};
 var graphs = [];
 var graphTemplate;
@@ -57,7 +37,6 @@ Prometheus.Graph.prototype.initialize = function() {
   // Set default options.
   self.options["id"] = self.id;
   self.options["range_input"] = self.options["range_input"] || "1h";
-  self.options["stacked_checked"] = self.options["stacked"] ? "checked" : "";
   if (self.options["tab"] === undefined) {
     self.options["tab"] = 1;
   }
@@ -72,24 +51,24 @@ Prometheus.Graph.prototype.initialize = function() {
   var graphWrapper = self.el.find("#graph_wrapper" + self.id);
   self.queryForm = graphWrapper.find(".query_form");
   self.expr = graphWrapper.find("input[name=expr]");
+  self.expr.change(storeGraphOptionsInURL);
   self.rangeInput = self.queryForm.find("input[name=range_input]");
+  self.stackedBtn = self.queryForm.find(".stacked_btn");
   self.stacked = self.queryForm.find("input[name=stacked]");
   self.insertMetric = self.queryForm.find("select[name=insert_metric]");
   self.refreshInterval = self.queryForm.find("select[name=refresh]");
 
   self.consoleTab = graphWrapper.find(".console");
   self.graphTab   = graphWrapper.find(".graph_container");
-  self.tabs = graphWrapper.find(".tabs");
-  self.tab = $(self.tabs.find("> div")[self.options["tab"]]); // active tab
 
-  self.tabs.tabs({
-    active: self.options["tab"],
-    activate: function(e, ui) {
-      storeGraphOptionsInUrl();
-      self.tab = ui.newPanel;
-      if (self.tab.hasClass("reload")) { // reload if flagged with class "reload"
-        self.submitQuery();
-      }
+  self.tabs = graphWrapper.find("a[data-toggle='tab']");
+  self.tabs.eq(self.options["tab"]).tab("show");
+  self.tabs.on("shown.bs.tab", function(e) {
+    var target = $(e.target);
+    self.options["tab"] = target.parent().index();
+    storeGraphOptionsInURL();
+    if ($("#" + target.attr("aria-controls")).hasClass("reload")) {
+      self.submitQuery();
     }
   });
 
@@ -101,7 +80,7 @@ Prometheus.Graph.prototype.initialize = function() {
     return e.preventDefault();
   })
 
-  self.error = graphWrapper.find(".error");
+  self.error = graphWrapper.find(".error").hide();
   self.graph = graphWrapper.find(".graph");
   self.yAxis = graphWrapper.find(".y_axis");
   self.legend = graphWrapper.find(".legend");
@@ -120,7 +99,30 @@ Prometheus.Graph.prototype.initialize = function() {
   self.endDate.change(function() { self.submitQuery() });
   self.refreshInterval.change(function() { self.updateRefresh() });
 
-  self.stacked.change(function() { self.updateGraph(); });
+  self.isStacked = function() {
+    return self.stacked.val() === '1';
+  };
+
+  var styleStackBtn = function() {
+    var icon = self.stackedBtn.find('.glyphicon');
+    if (self.isStacked()) {
+      self.stackedBtn.addClass("btn-primary");
+      icon.addClass("glyphicon-check");
+      icon.removeClass("glyphicon-unchecked");
+    } else {
+      self.stackedBtn.removeClass("btn-primary");
+      icon.addClass("glyphicon-unchecked");
+      icon.removeClass("glyphicon-check");
+    }
+  };
+  styleStackBtn();
+
+  self.stackedBtn.click(function() {
+    self.stacked.val(self.isStacked() ? '0' : '1');
+    styleStackBtn();
+    self.updateGraph();
+  });
+
   self.queryForm.submit(function() {
     self.consoleTab.addClass("reload");
     self.graphTab.addClass("reload");
@@ -161,7 +163,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           self.insertMetric[0].options.add(new Option(json[i], json[i]));
           availableMetrics.push(json[i]);
         }
-        self.expr.autocomplete({source: availableMetrics});
+        self.expr.typeahead({source: availableMetrics});
       },
       error: function() {
         self.showError("Error loading available metrics!");
@@ -188,14 +190,10 @@ Prometheus.Graph.prototype.getOptions = function() {
   self.queryForm.find("input").each(function(index, element) {
       var name = element.name;
       if ($.inArray(name, optionInputs) >= 0) {
-        if (name == "stacked") {
-          options[name] = element.checked;
-        } else {
-          options[name] = element.value;
-        }
+        options[name] = element.value;
       }
   });
-  options["tab"] = self.tabs.tabs("option", "active");
+  options["tab"] = self.options["tab"];
   return options;
 };
 
@@ -299,7 +297,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
   }
   var url;
   var success;
-  if (self.tab[0] == self.graphTab[0]) {
+  if (self.options["tab"] === 0) {
     url  = self.queryForm.attr("action");
     success = function(json, textStatus) { self.handleGraphResponse(json, textStatus); };
   } else {
@@ -414,7 +412,7 @@ Prometheus.Graph.prototype.showGraph = function() {
     element: self.graph[0],
     height: Math.max(self.graph.innerHeight(), 100),
     width: Math.max(self.graph.innerWidth() - 80, 200),
-    renderer: (self.stacked.is(":checked") ? "stack" : "line"),
+    renderer: (self.isStacked() ? "stack" : "line"),
     interpolation: "linear",
     series: self.data,
     min: "auto",
@@ -442,7 +440,7 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
     self.showGraph();
   } else {
     self.rickshawGraph.configure({
-      renderer: (self.stacked.is(":checked") ? "stack" : "line"),
+      renderer: (self.isStacked() ? "stack" : "line"),
       interpolation: "linear",
       series: self.data
     });
@@ -530,13 +528,21 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
 
   switch(data.Type) {
   case "vector":
+    if (data.Value.length === 0) {
+      tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>")
+      return;
+    }
     for (var i = 0; i < data.Value.length; i++) {
       var v = data.Value[i];
       var tsName = self.metricToTsName(v.Metric);
-      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + v.Value + "</td></tr>")
+      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + v.Value + "</td></tr>");
     }
     break;
   case "matrix":
+    if (data.Value.length === 0) {
+      tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>")
+      return;
+    }
     for (var i = 0; i < data.Value.length; i++) {
       var v = data.Value[i];
       var tsName = self.metricToTsName(v.Metric);
@@ -559,7 +565,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   }
 }
 
-function parseGraphOptionsFromUrl() {
+function parseGraphOptionsFromURL() {
   var hashOptions = window.location.hash.slice(1);
   if (!hashOptions) {
     return [];
@@ -570,7 +576,7 @@ function parseGraphOptionsFromUrl() {
 }
 
 // NOTE: This needs to be kept in sync with rules/helpers.go:GraphLinkForExpression!
-function storeGraphOptionsInUrl() {
+function storeGraphOptionsInURL() {
   var allGraphsOptions = [];
   for (var i = 0; i < graphs.length; i++) {
     allGraphsOptions.push(graphs[i].getOptions());
@@ -583,7 +589,7 @@ function addGraph(options) {
   var graph = new Prometheus.Graph($("#graph_container"), options);
   graphs.push(graph);
   graph.onChange(function() {
-    storeGraphOptionsInUrl();
+    storeGraphOptionsInURL();
   });
   $(window).resize(function() {
     graph.resizeGraph();
@@ -614,7 +620,7 @@ function init() {
     url: "/static/js/graph_template.handlebar",
     success: function(data) {
       graphTemplate = Handlebars.compile(data);
-      var options = parseGraphOptionsFromUrl();
+      var options = parseGraphOptionsFromURL();
       if (options.length == 0) {
         options.push({});
       }
