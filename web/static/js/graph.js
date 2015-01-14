@@ -244,14 +244,7 @@ Prometheus.Graph.prototype.getEndDate = function() {
   if (!self.endDate || !self.endDate.val()) {
     return null;
   }
-  //
-  // This is returning the time set according to the system clock,
-  // but the datetimepicker is converting this to UTC, which is
-  // causing the time to decrease instead of increase. It should
-  // be increasing by 30min, but UTC is one hour behind berlin time,
-  // so incrementing UTC by 30min e.g. decrements the time the user sees by 30min.
-  //
-  return new Date(self.endDate.val()).getTime();
+  return self.endDate.data('datetimepicker').getDate().getTime();
 };
 
 Prometheus.Graph.prototype.getOrSetEndDate = function() {
