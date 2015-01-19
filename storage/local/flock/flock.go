@@ -16,22 +16,18 @@ type Releaser interface {
 }
 
 // New locks the file with the provided name. If the file does not exist, it is
-// created. The returned Releaser is used to release the lock. The returned
-// boolean is true if the file to lock already existed. A non-nil error is
-// returned if the locking has failed. Neither this function nor the returned
-// Releaser is goroutine-safe.
-func New(fileName string) (Releaser, bool, error) {
-	if err := os.MkdirAll(filepath.Dir(fileName), 0755); err != nil {
-		return nil, false, err
+// created. The returned Releaser is used to release the lock. existed is true
+// if the file to lock already existed. A non-nil error is returned if the
+// locking has failed. Neither this function nor the returned Releaser is
+// goroutine-safe.
+func New(fileName string) (r Releaser, existed bool, err error) {
+	if err = os.MkdirAll(filepath.Dir(fileName), 0755); err != nil {
+		return
 	}
 
-	_, err := os.Stat(fileName)
-	existed := err == nil
+	_, err = os.Stat(fileName)
+	existed = err == nil
 
-	lock, err := newLock(fileName)
-	if err != nil {
-		return nil, existed, err
-	}
-
-	return lock, existed, nil
+	r, err = newLock(fileName)
+	return
 }
