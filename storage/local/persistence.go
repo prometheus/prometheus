@@ -21,6 +21,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/local/codable"
+	"github.com/prometheus/prometheus/storage/local/flock"
 	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -106,9 +108,11 @@ type persistence struct {
 	indexingBatchLatency  prometheus.Summary
 	checkpointDuration    prometheus.Gauge
 
-	dirtyMtx    sync.Mutex // Protects dirty and becameDirty.
-	dirty       bool       // true if persistence was started in dirty state.
-	becameDirty bool       // true if an inconsistency came up during runtime.
+	dirtyMtx      sync.Mutex     // Protects dirty and becameDirty.
+	dirty         bool           // true if persistence was started in dirty state.
+	becameDirty   bool           // true if an inconsistency came up during runtime.
+	dirtyFileName string         // The file used for locking and to mark dirty state.
+	fLock         flock.Releaser // The file lock to protect against concurrent usage.
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
@@ -116,6 +120,17 @@ func newPersistence(basePath string, chunkLen int, dirty bool) (*persistence, er
 	if err := os.MkdirAll(basePath, 0700); err != nil {
 		return nil, err
 	}
+	dirtyPath := filepath.Join(basePath, dirtyFileName)
+
+	fLock, dirtyfileExisted, err := flock.New(dirtyPath)
+	if err != nil {
+		glog.Errorf("Could not lock %s, Prometheus already running?", dirtyPath)
+		return nil, err
+	}
+	if dirtyfileExisted {
+		dirty = true
+	}
+
 	archivedFingerprintToMetrics, err := index.NewFingerprintMetricIndex(basePath)
 	if err != nil {
 		return nil, err
@@ -173,14 +188,9 @@ func newPersistence(basePath string, chunkLen int, dirty bool) (*persistence, er
 			Name:      "checkpoint_duration_milliseconds",
 			Help:      "The duration (in milliseconds) it took to checkpoint in-memory metrics and head chunks.",
 		}),
-		dirty: dirty,
-	}
-	if dirtyFile, err := os.OpenFile(p.dirtyFileName(), os.O_CREATE|os.O_EXCL, 0666); err == nil {
-		dirtyFile.Close()
-	} else if os.IsExist(err) {
-		p.dirty = true
-	} else {
-		return nil, err
+		dirty:         dirty,
+		dirtyFileName: dirtyPath,
+		fLock:         fLock,
 	}
 
 	if p.dirty {
@@ -225,12 +235,6 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	p.indexingBatchSizes.Collect(ch)
 	p.indexingBatchLatency.Collect(ch)
 	ch <- p.checkpointDuration
-}
-
-// dirtyFileName returns the name of the (empty) file used to mark the
-// persistency layer as dirty.
-func (p *persistence) dirtyFileName() string {
-	return path.Join(p.basePath, dirtyFileName)
 }
 
 // isDirty returns the dirty flag in a goroutine-safe way.
@@ -1344,7 +1348,7 @@ func (p *persistence) close() error {
 	close(p.indexingQueue)
 	<-p.indexingStopped
 
-	var lastError error
+	var lastError, dirtyFileRemoveError error
 	if err := p.archivedFingerprintToMetrics.Close(); err != nil {
 		lastError = err
 		glog.Error("Error closing archivedFingerprintToMetric index DB: ", err)
@@ -1362,7 +1366,16 @@ func (p *persistence) close() error {
 		glog.Error("Error closing labelNameToLabelValues index DB: ", err)
 	}
 	if lastError == nil && !p.isDirty() {
-		lastError = os.Remove(p.dirtyFileName())
+		dirtyFileRemoveError = os.Remove(p.dirtyFileName)
+	}
+	if err := p.fLock.Release(); err != nil {
+		lastError = err
+		glog.Error("Error releasing file lock: ", err)
+	}
+	if dirtyFileRemoveError != nil {
+		// On Windows, removing the dirty file before unlocking is not
+		// possible.  So remove it here if it failed above.
+		lastError = os.Remove(p.dirtyFileName)
 	}
 	return lastError
 }
