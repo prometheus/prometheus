@@ -142,8 +142,6 @@ Prometheus.Graph.prototype.initialize = function() {
     self.expr.focus(); // refocusing
   });
 
-  self.expr.focus(); // TODO: move to external Graph method.
-
   self.populateInsertableMetrics();
 
   if (self.expr.val()) {
@@ -164,6 +162,9 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           availableMetrics.push(json[i]);
         }
         self.expr.typeahead({source: availableMetrics});
+        // This needs to happen after attaching the typeahead plugin, as it
+        // otherwise breaks the typeahead functionality.
+        self.expr.focus();
       },
       error: function() {
         self.showError("Error loading available metrics!");
