@@ -1,17 +1,16 @@
 {{define "head"}}
-    <script src="/static/vendor/jqueryui/jquery-ui.min.js"></script>
-    <link rel="stylesheet" href="/static/vendor/jqueryui/themes/base/jquery-ui.css" />
+    <script src="/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"></script>
 
     <link type="text/css" rel="stylesheet" href="/static/css/graph.css">
 
-    <script src="/static/vendor/jquery-simple-datetimepicker/jquery.simple-dtpicker.js"></script>
-    <link type="text/css" rel="stylesheet" href="/static/vendor/jquery-simple-datetimepicker/jquery.simple-dtpicker.css">
-
     <link type="text/css" rel="stylesheet" href="/static/vendor/rickshaw/rickshaw.min.css">
+    <link type="text/css" rel="stylesheet" href="/static/vendor/bootstrap-datetimepicker/bootstrap-datetimepicker.min.css">
 
     <script src="/static/vendor/rickshaw/vendor/d3.min.js"></script>
     <script src="/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
     <script src="/static/vendor/rickshaw/rickshaw.min.js"></script>
+    <script src="/static/vendor/bootstrap-datetimepicker/bootstrap-datetimepicker.js"></script>
+    <script src="/static/vendor/bootstrap3-typeahead/bootstrap3-typeahead.min.js"></script>
 
     <script src="/static/vendor/js/handlebars.js"></script>
     <script src="/static/vendor/js/jquery.selection.js"></script>
@@ -23,7 +22,9 @@
 {{end}}
 
 {{define "content"}}
-    <div id="graph_container">
+    <div id="graph_container" class="container-fluid">
     </div>
-    <div><input class="btn btn-primary" type="submit" value="Add Graph" id="add_graph"></div>
+    <div class="container-fluid">
+      <div><input class="btn btn-primary" type="submit" value="Add Graph" id="add_graph"></div>
+    </div>
 {{end}}

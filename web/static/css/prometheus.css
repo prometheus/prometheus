@@ -1,5 +1,7 @@
+/* Move down content because we have a fixed navbar that is 50px tall */
 body {
-  padding-top: 40px;
+  padding-top: 50px;
+  padding-bottom: 20px;
 }
 
 th.job_header {
@@ -10,13 +12,6 @@ th.job_header {
 
 .error_text {
   padding: 0 4px 0 4px;
-}
-
-/*
- * This reduces the spacing between the bootstrap navbar and the content below.
- */
-div.navbar {
-  margin-bottom: 2px;
 }
 
 .literal_output td {

@@ -2,24 +2,12 @@ body {
   margin: 0;
 }
 
-a { color: black; }
-a:hover { color: gray; }
-a:active { color: black; }
-
 .eval_stats {
-  float: right;
+  font-size: 11px;
 }
 
 .graph_wrapper {
-  margin-top: 8px;
-}
-
-.graph_wrapper .input-append, .graph_wrapper select {
-  margin: 2px;
-}
-
-.graph_container {
-  font-family: Arial, Helvetica, sans-serif;
+  margin-top: 12px;
 }
 
 .graph {
@@ -28,14 +16,29 @@ a:active { color: black; }
   min-height: 400px;
 }
 
+#add_graph {
+  margin-top: 10px;
+}
+
+.nav-tabs {
+  margin-top: 10px;
+}
+
+.nav-tabs > li > a {
+  padding: 5px 10px;
+}
+
+.tab-pane {
+  border-left: 1px solid #ddd;
+  border-right: 1px solid #ddd;
+  border-bottom: 1px solid #ddd;
+  padding: 5px;
+}
+
 .graph svg {
   border-top: 1px solid #aaa;
   border-right: 1px solid #aaa;
   border-bottom: 1px solid #aaa;
-}
-
-#add_graph {
-    margin-left: 8px;
 }
 
 .legend {
@@ -51,6 +54,7 @@ a:active { color: black; }
 }
 
 .y_axis {
+  overflow: hidden;
   position: absolute;
   top: 1px;
   bottom: 0;
@@ -90,10 +94,6 @@ a:active { color: black; }
   margin: 2px 2px 0 8px;
  }
 
-.refresh_interval {
-  width: 102px
-}
-
 input[title=*]:hover:after {
   content: attr(title);
 }
@@ -108,36 +108,12 @@ input[title=*]:hover:after {
 }
 
 .console_table {
-  margin-top: 5px;
-}
-
-.ui-widget {
+  margin: 5px 0px;
   font-size: 0.8em;
-}
-
-span.input-append {
-  margin-bottom: 0;
 }
 
 select name="insert_metric" {
   margin-bottom: 0px;
-}
-
-.ui-tabs .ui-tabs-panel {
-  display: block;
-  border-width: 0;
-  padding: .5em 1em;
-  background: none;
-}
-
-.ui-tabs .ui-tabs-nav li {
-  font-family:  "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-size: 11pt;
-  border-bottom: 0;
-}
-
-#graph_container .grouping_box {
-  padding: 2px;
 }
 
 /* Buttons */
@@ -173,35 +149,71 @@ select name="insert_metric" {
   font-size: 10pt;
 }
 
-.config label.checkbox {
-  padding-top: 0;
-}
-
-.grouping_box {
-  position: relative;
-  padding: 0 5px 0 5px;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  -webkit-border-radius: 4px;
-     -moz-border-radius: 4px;
-          border-radius: 4px;
-  margin: 0 8px 2px 8px;
-}
-
-.grouping_box .head, .eval_stats {
-  display: inline-block;
-  vertical-align: top;
-}
-
-.grouping_box .head .opts {
-  float: right;
-}
-
 input[name="end_input"], input[name="range_input"] {
-  margin-left: -4px;
-  margin-right: -4px;
+  margin-left: -1px;
+  margin-right: -1px;
 }
 
 .error {
+  padding: 5px;
   margin: 2px;
+}
+
+.btn, .form-control, .nav-tabs > li > a {
+  border-radius: 0;
+}
+
+.prometheus_input_group {
+  display: inline-block;
+  margin: 10px 5px;
+  overflow: auto;
+}
+
+.prometheus_input_group .btn {
+  font-size: 0.8em;
+}
+
+.prometheus_input_group .input {
+  width: 100px;
+  height: 29px;
+  padding: 6px 12px;
+  font-size: 14px;
+  line-height: 1.42857143;
+  color: #555;
+  background-color: #fff;
+  background-image: none;
+  border: 1px solid #ccc;
+  -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, .075);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, .075);
+  -webkit-transition: border-color ease-in-out .15s, -webkit-box-shadow ease-in-out .15s;
+  -o-transition: border-color ease-in-out .15s, box-shadow ease-in-out .15s;
+  transition: border-color ease-in-out .15s, box-shadow ease-in-out .15s;
+}
+
+.prometheus_input_group .date_input {
+  width: 200px;
+}
+
+.expression_input_group {
+  width: 80%;
+}
+
+.expression_input_group .input-group-btn {
+  /* Without this, the .input-group-btn has "width: auto" and extends to the
+   * right past the contained button's width */
+  width: 1px !important;
+}
+
+.form-group .input-group .expression_input {
+  width: auto;
+}
+
+.expression_select {
+  width: 210px !important;
+  margin-left: 7px;
+}
+
+.graph_container .rickshaw_legend {
+  background-color: #222222;
+  border-radius: 0;
 }
