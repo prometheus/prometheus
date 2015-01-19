@@ -7,7 +7,7 @@ body {
 }
 
 .graph_wrapper {
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 .graph {
@@ -21,7 +21,7 @@ body {
 }
 
 .nav-tabs {
-  margin-top: 5px;
+  margin-top: 10px;
 }
 
 .nav-tabs > li > a {
@@ -210,6 +210,7 @@ input[name="end_input"], input[name="range_input"] {
 
 .expression_select {
   width: 210px !important;
+  margin-left: 7px;
 }
 
 .graph_container .rickshaw_legend {

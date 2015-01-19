@@ -92,7 +92,6 @@ Prometheus.Graph.prototype.initialize = function() {
     language: 'en',
     pickSeconds: false,
   });
-  // can we remove this conditional now?
   if (self.options["end_input"]) {
     self.endDate.data('datetimepicker').setValue(self.options["end_input"]);
   }
@@ -530,7 +529,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   switch(data.Type) {
   case "vector":
     if (data.Value.length === 0) {
-      tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>")
+      tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>");
       return;
     }
     for (var i = 0; i < data.Value.length; i++) {
@@ -541,7 +540,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     break;
   case "matrix":
     if (data.Value.length === 0) {
-      tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>")
+      tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>");
       return;
     }
     for (var i = 0; i < data.Value.length; i++) {
