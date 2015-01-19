@@ -165,7 +165,7 @@ input[name="end_input"], input[name="range_input"] {
 
 .prometheus_input_group {
   display: inline-block;
-  margin: 10px 10px;
+  margin: 10px 5px;
   overflow: auto;
 }
 
