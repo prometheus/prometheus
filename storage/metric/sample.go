@@ -15,13 +15,14 @@ package metric
 
 import (
 	"fmt"
+	"strconv"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 // MarshalJSON implements json.Marshaler.
 func (s SamplePair) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("{\"Value\": \"%f\", \"Timestamp\": %s}", s.Value, s.Timestamp.String())), nil
+	return []byte(fmt.Sprintf("[%s, \"%s\"]", s.Timestamp.String(), strconv.FormatFloat(float64(s.Value), 'f', -1, 64))), nil
 }
 
 // SamplePair pairs a SampleValue with a Timestamp.

@@ -37,6 +37,8 @@ const (
 	JSON
 )
 
+const jsonFormatVersion = 1
+
 func (opType BinOpType) String() string {
 	opTypeMap := map[BinOpType]string{
 		Add: "+",
@@ -121,11 +123,13 @@ func (matrix Matrix) String() string {
 // ErrorToJSON converts the given error into JSON.
 func ErrorToJSON(err error) string {
 	errorStruct := struct {
-		Type  string
-		Value string
+		Type    string `json:"type"`
+		Value   string `json:"value"`
+		Version int    `json:"version"`
 	}{
-		Type:  "error",
-		Value: err.Error(),
+		Type:    "error",
+		Value:   err.Error(),
+		Version: jsonFormatVersion,
 	}
 
 	errorJSON, err := json.Marshal(errorStruct)
@@ -139,11 +143,13 @@ func ErrorToJSON(err error) string {
 // 'vector', or 'matrix' into its JSON representation.
 func TypedValueToJSON(data interface{}, typeStr string) string {
 	dataStruct := struct {
-		Type  string
-		Value interface{}
+		Type    string      `json:"type"`
+		Value   interface{} `json:"value"`
+		Version int         `json:"version"`
 	}{
-		Type:  typeStr,
-		Value: data,
+		Type:    typeStr,
+		Value:   data,
+		Version: jsonFormatVersion,
 	}
 	dataJSON, err := json.Marshal(dataStruct)
 	if err != nil {

@@ -36,15 +36,15 @@ var stalenessDelta = flag.Duration("query.staleness-delta", 300*time.Second, "St
 
 // SampleStream is a stream of Values belonging to an attached COWMetric.
 type SampleStream struct {
-	Metric clientmodel.COWMetric
-	Values metric.Values
+	Metric clientmodel.COWMetric `json:"metric"`
+	Values metric.Values         `json:"values"`
 }
 
 // Sample is a single sample belonging to a COWMetric.
 type Sample struct {
-	Metric    clientmodel.COWMetric
-	Value     clientmodel.SampleValue
-	Timestamp clientmodel.Timestamp
+	Metric    clientmodel.COWMetric   `json:"metric"`
+	Value     clientmodel.SampleValue `json:"value"`
+	Timestamp clientmodel.Timestamp   `json:"timestamp"`
 }
 
 // Vector is basically only an alias for clientmodel.Samples, but the
