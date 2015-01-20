@@ -39,7 +39,7 @@
                       <div>
                         <!-- Extracted to force grouped inputs. -->
                         <input type="hidden" name="range">
-                        <div class="prometheus_input_group">
+                        <div class="prometheus_input_group range_input">
                           <button
                             class="btn btn-default pull-left"
                             type="button"

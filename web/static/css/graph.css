@@ -169,6 +169,10 @@ input[name="end_input"], input[name="range_input"] {
   overflow: auto;
 }
 
+.prometheus_input_group.range_input {
+  margin-left: 39px;
+}
+
 .prometheus_input_group .btn {
   font-size: 0.8em;
 }
