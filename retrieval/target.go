@@ -54,7 +54,7 @@ var (
 			Namespace:  namespace,
 			Name:       "target_interval_length_seconds",
 			Help:       "Actual intervals between scrapes.",
-			Objectives: []float64{0.01, 0.05, 0.5, 0.90, 0.99},
+			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
 		[]string{interval},
 	)
