@@ -1,5 +1,5 @@
 FROM       golang:1.4
-MAINTAINER Prometheus Team <prometheus-developers@googlegroups.com>
+MAINTAINER The Prometheus Authors <prometheus-developers@googlegroups.com>
 RUN        apt-get -qy update && apt-get -qy install vim-common gcc mercurial && \
            go get github.com/tools/godep
 
