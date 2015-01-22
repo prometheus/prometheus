@@ -36,10 +36,10 @@
                   </ul>
                   <div class="tab-content">
                     <div role="tabpanel" class="tab-pane graph_container reload" id="graph{{id}}">
-                      <div>
+                      <div class="clearfix">
                         <!-- Extracted to force grouped inputs. -->
                         <input type="hidden" name="range">
-                        <div class="prometheus_input_group range_input">
+                        <div class="prometheus_input_group range_input pull-left">
                           <button
                             class="btn btn-default pull-left"
                             type="button"
@@ -66,7 +66,7 @@
 
                         <!-- Extracted to force grouped inputs. -->
                         <input type="hidden" name="end">
-                        <div class="prometheus_input_group">
+                        <div class="prometheus_input_group pull-left">
 
                           <button
                               class="btn btn-default pull-left"
@@ -96,12 +96,12 @@
                           </button>
                         </div>
 
-                        <div class="prometheus_input_group">
+                        <div class="prometheus_input_group pull-left">
                           <input class="input" title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
                           <input type="hidden" name="step">
                         </div>
 
-                        <div class="prometheus_input_group">
+                        <div class="prometheus_input_group pull-left">
                           <button type="button" class="btn btn-default stacked_btn">
                             <i class="glyphicon"></i> stacked
                           </button>
