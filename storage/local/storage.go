@@ -467,18 +467,17 @@ func (s *memorySeriesStorage) handleEvictList() {
 				s.maybeEvict()
 			}
 		case <-s.evictStopping:
-			// Drain evictRequests to not let requesters hang.
-			for {
-				select {
-				case <-s.evictRequests:
-					// Do nothing.
-				default:
-					ticker.Stop()
-					glog.Info("Chunk eviction stopped.")
-					close(s.evictStopped)
-					return
+			// Drain evictRequests forever in a goroutine to not let
+			// requesters hang.
+			go func() {
+				for {
+					<-s.evictRequests
 				}
-			}
+			}()
+			ticker.Stop()
+			glog.Info("Chunk eviction stopped.")
+			close(s.evictStopped)
+			return
 		}
 	}
 }
