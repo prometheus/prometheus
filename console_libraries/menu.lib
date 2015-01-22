@@ -2,29 +2,38 @@
 
 {{/* Navbar, should be passed . */}}
 {{ define "navbar" }}
-<div class="navbar navbar-inverse navbar-static-top">
-  <div class="navbar-inner">
-    <ul class="navbar-nav nav">
-      <a class="brand" href="/">Prometheus</a>
-      <li><a href="/alerts">Alerts</a></li>
-      <!-- Add in navbar links here -->
-      <li><a href="https://pagerduty.com/">PagerDuty</a></li>
+<nav class="navbar navbar-inverse navbar-static-top">
+  <div class="container-fluid">
+    <!-- Brand and toggle get grouped for better mobile display -->
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">Prometheus</a>
+    </div>
+
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li><a href="/alerts">Alerts</a></li>
+        <li><a href="https://www.pagerduty.com/">PagerDuty</a></li>
+      </div>
     </ul>
   </div>
-</div>
+</nav>
 {{ end }}
 
 {{/* LHS menu, should be passed . */}}
 {{ define "menu" }}
 <div class="prom_lhs_menu">
 <ul>
-{{ $dot := . }}
-
 {{ template "_menuItem" (args . "index.html.example" "Overview") }}
 {{ template "_menuItem" (args . "node.html" "Node") }}
 {{ if match "^node" .Path }}
-  <ul>
   {{ if .Params.instance }}
+  <ul>
     <li {{ if eq .Path "node-overview.html" }}class="prom_lhs_menu_selected"{{end}}>
       <a href="node-overview.html?instance={{ .Params.instance }}">{{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</a>
     </li>
@@ -36,12 +45,8 @@
         <a href="node-disk.html?instance={{ .Params.instance }}">Disk</a>
       </li>
     </ul>
-  {{ else }}
-    {{ range query "up{job='node'}" | sortByLabel "instance" }}
-    <li><a href="node-overview.html?instance={{ .Labels.instance }}">{{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Labels.instance }}</a></li>
-    {{ end }}
-  {{ end }}
   </ul>
+  {{ end }}
 {{ end }}
 
 

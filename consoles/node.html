@@ -10,7 +10,25 @@
 {{template "prom_content_head" .}}
 <h1>Node</h1>
 
-Choose an instance on the left.
+<table class="table table-condensed table-striped table-bordered" style="width: 0%">
+<tr>
+  <th>Node</th>
+  <th>Up</th>
+  <th>CPU<br/>Used</th>
+  <th>Memory<br/> Available</th>
+</tr>
+{{ range query "up{job='node'}" | sortByLabel "instance" }}
+<tr>
+  <td><a href="node-overview.html?instance={{ .Labels.instance }}">{{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Labels.instance }}</a></td>
+  <td{{ if eq (. | value) 1.0 }}>Yes{{ else }} class="alert-danger">No{{ end }}</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "100 * (1 - avg by(instance)(rate(node_cpu{job='node',mode='idle',instance='%s'}[5m])))" .Labels.instance) "%" "printf.3g") }}</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "node_memory_MemTotal{job='node',instance='%s'} - node_memory_MemFree{job='node',instance='%s'} - node_memory_Cached{job='node',instance='%s'}" .Labels.instance .Labels.instance .Labels.instance) "B" "humanize1024") }}</td>
+</tr>
+{{ else }}
+<tr><td colspan=4>No nodes found.</td></tr>
+{{ end }}
+
+
 {{template "prom_content_tail" .}}
 
 {{template "tail"}}
