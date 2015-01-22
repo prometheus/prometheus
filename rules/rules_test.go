@@ -260,12 +260,26 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 2,
 		}, {
-			expr: `http_requests{job="api-server", group="canary"} + delta(http_requests{job="api-server"}[5m], 1)`,
+			expr: `http_requests{job="api-server", group="canary"} + rate(http_requests{job="api-server"}[5m]) * 5 * 60`,
 			output: []string{
 				`{group="canary", instance="0", job="api-server"} => 330 @[%v]`,
 				`{group="canary", instance="1", job="api-server"} => 440 @[%v]`,
 			},
 			fullRanges:     4,
+			intervalRanges: 0,
+		}, {
+			expr: `rate(http_requests[25m]) * 25 * 60`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => 150 @[%v]`,
+				`{group="canary", instance="0", job="app-server"} => 350 @[%v]`,
+				`{group="canary", instance="1", job="api-server"} => 200 @[%v]`,
+				`{group="canary", instance="1", job="app-server"} => 400 @[%v]`,
+				`{group="production", instance="0", job="api-server"} => 50 @[%v]`,
+				`{group="production", instance="0", job="app-server"} => 249.99999999999997 @[%v]`,
+				`{group="production", instance="1", job="api-server"} => 100 @[%v]`,
+				`{group="production", instance="1", job="app-server"} => 300 @[%v]`,
+			},
+			fullRanges:     8,
 			intervalRanges: 0,
 		}, {
 			expr: `delta(http_requests[25m], 1)`,
@@ -368,38 +382,44 @@ func TestExpressions(t *testing.T) {
 			intervalRanges: 8,
 		}, {
 			// Deltas should be adjusted for target interval vs. samples under target interval.
-			expr:           `delta(http_requests{group="canary", instance="1", job="app-server"}[18m], 1)`,
+			expr:           `delta(http_requests{group="canary", instance="1", job="app-server"}[18m])`,
 			output:         []string{`{group="canary", instance="1", job="app-server"} => 288 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
-			// Rates should transform per-interval deltas to per-second rates.
-			expr:           `rate(http_requests{group="canary", instance="1", job="app-server"}[10m])`,
+			// Deltas should perform the same operation when 2nd argument is 0.
+			expr:           `delta(http_requests{group="canary", instance="1", job="app-server"}[18m], 0)`,
+			output:         []string{`{group="canary", instance="1", job="app-server"} => 288 @[%v]`},
+			fullRanges:     1,
+			intervalRanges: 0,
+		}, {
+			// Rates should calculate per-second rates.
+			expr:           `rate(http_requests{group="canary", instance="1", job="app-server"}[60m])`,
 			output:         []string{`{group="canary", instance="1", job="app-server"} => 0.26666666666666666 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
-			// Counter resets in middle of range are ignored by delta() if counter == 1.
-			expr:           `delta(testcounter_reset_middle[50m], 1)`,
-			output:         []string{`{} => 90 @[%v]`},
+			// Deriv should return the same as rate in simple cases.
+			expr:           `deriv(http_requests{group="canary", instance="1", job="app-server"}[60m])`,
+			output:         []string{`{group="canary", instance="1", job="app-server"} => 0.26666666666666666 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
-			// Counter resets in middle of range are not ignored by delta() if counter == 0.
-			expr:           `delta(testcounter_reset_middle[50m], 0)`,
-			output:         []string{`{} => 50 @[%v]`},
+			// Counter resets at in the middle of range are handled correctly by rate().
+			expr:           `rate(testcounter_reset_middle[60m])`,
+			output:         []string{`{} => 0.03 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
-			// Counter resets at end of range are ignored by delta() if counter == 1.
-			expr:           `delta(testcounter_reset_end[5m], 1)`,
+			// Counter resets at end of range are ignored by rate().
+			expr:           `rate(testcounter_reset_end[5m])`,
 			output:         []string{`{} => 0 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
-			// Counter resets at end of range are not ignored by delta() if counter == 0.
-			expr:           `delta(testcounter_reset_end[5m], 0)`,
-			output:         []string{`{} => -90 @[%v]`},
+			// Deriv should return correct result.
+			expr:           `deriv(testcounter_reset_middle[100m])`,
+			output:         []string{`{} => 0.010606060606060607 @[%v]`},
 			fullRanges:     1,
 			intervalRanges: 0,
 		}, {
