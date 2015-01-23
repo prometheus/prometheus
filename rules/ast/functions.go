@@ -28,37 +28,44 @@ import (
 // Function represents a function of the expression language and is
 // used by function nodes.
 type Function struct {
-	name       string
-	argTypes   []ExprType
-	returnType ExprType
-	callFn     func(timestamp clientmodel.Timestamp, args []Node) interface{}
+	name         string
+	argTypes     []ExprType
+	optionalArgs int
+	returnType   ExprType
+	callFn       func(timestamp clientmodel.Timestamp, args []Node) interface{}
 }
 
 // CheckArgTypes returns a non-nil error if the number or types of
 // passed in arg nodes do not match the function's expectations.
 func (function *Function) CheckArgTypes(args []Node) error {
-	if len(function.argTypes) != len(args) {
+	if len(function.argTypes) < len(args) {
 		return fmt.Errorf(
-			"wrong number of arguments to function %v(): %v expected, %v given",
+			"too many arguments to function %v(): %v expected at most, %v given",
 			function.name, len(function.argTypes), len(args),
 		)
 	}
-	for idx, argType := range function.argTypes {
+	if len(function.argTypes) - function.optionalArgs > len(args) {
+		return fmt.Errorf(
+			"too few arguments to function %v(): %v expected at least, %v given",
+			function.name, len(function.argTypes)-function.optionalArgs, len(args),
+		)
+	}
+	for idx, arg := range args {
 		invalidType := false
 		var expectedType string
-		if _, ok := args[idx].(ScalarNode); argType == ScalarType && !ok {
+		if _, ok := arg.(ScalarNode); function.argTypes[idx] == ScalarType && !ok {
 			invalidType = true
 			expectedType = "scalar"
 		}
-		if _, ok := args[idx].(VectorNode); argType == VectorType && !ok {
+		if _, ok := arg.(VectorNode); function.argTypes[idx] == VectorType && !ok {
 			invalidType = true
 			expectedType = "vector"
 		}
-		if _, ok := args[idx].(MatrixNode); argType == MatrixType && !ok {
+		if _, ok := arg.(MatrixNode); function.argTypes[idx] == MatrixType && !ok {
 			invalidType = true
 			expectedType = "matrix"
 		}
-		if _, ok := args[idx].(StringNode); argType == StringType && !ok {
+		if _, ok := arg.(StringNode); function.argTypes[idx] == StringType && !ok {
 			invalidType = true
 			expectedType = "string"
 		}
@@ -78,10 +85,10 @@ func timeImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	return clientmodel.SampleValue(timestamp.Unix())
 }
 
-// === delta(matrix MatrixNode, isCounter ScalarNode) Vector ===
+// === delta(matrix MatrixNode, isCounter=0 ScalarNode) Vector ===
 func deltaImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
-	isCounter := args[1].(ScalarNode).Eval(timestamp) > 0
+	isCounter := len(args) >= 2 && args[1].(ScalarNode).Eval(timestamp) > 0
 	resultVector := Vector{}
 
 	// If we treat these metrics as counters, we need to fetch all values
@@ -406,6 +413,49 @@ func absentImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	}
 }
 
+// === deriv(node MatrixNode) Vector ===
+func derivImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	matrixNode := args[0].(MatrixNode)
+	resultVector := Vector{}
+
+	matrixValue := matrixNode.Eval(timestamp)
+	for _, samples := range matrixValue {
+		// No sense in trying to compute a derivative without at least two points.
+		// Drop this vector element.
+		if len(samples.Values) < 2 {
+			continue
+		}
+
+		// Least squares.
+		n := clientmodel.SampleValue(0)
+		sumY := clientmodel.SampleValue(0)
+		sumX := clientmodel.SampleValue(0)
+		sumXY := clientmodel.SampleValue(0)
+		sumX2 := clientmodel.SampleValue(0)
+		for _, sample := range samples.Values {
+			x := clientmodel.SampleValue(sample.Timestamp.UnixNano() / 1e9)
+			n += 1.0
+			sumY += sample.Value
+			sumX += x
+			sumXY += x * sample.Value
+			sumX2 += x * x
+		}
+		numerator := sumXY - sumX*sumY/n
+		denominator := sumX2 - (sumX*sumX)/n
+
+		resultValue := numerator / denominator
+
+		resultSample := &Sample{
+			Metric:    samples.Metric,
+			Value:     resultValue,
+			Timestamp: timestamp,
+		}
+		resultSample.Metric.Delete(clientmodel.MetricNameLabel)
+		resultVector = append(resultVector, resultSample)
+	}
+	return resultVector
+}
+
 var functions = map[string]*Function{
 	"abs": {
 		name:       "abs",
@@ -444,10 +494,11 @@ var functions = map[string]*Function{
 		callFn:     countScalarImpl,
 	},
 	"delta": {
-		name:       "delta",
-		argTypes:   []ExprType{MatrixType, ScalarType},
-		returnType: VectorType,
-		callFn:     deltaImpl,
+		name:         "delta",
+		argTypes:     []ExprType{MatrixType, ScalarType},
+		optionalArgs: 1, // The 2nd argument is deprecated.
+		returnType:   VectorType,
+		callFn:       deltaImpl,
 	},
 	"drop_common_labels": {
 		name:       "drop_common_labels",
@@ -508,6 +559,12 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{ScalarType, VectorType},
 		returnType: VectorType,
 		callFn:     topkImpl,
+	},
+	"deriv": {
+		name:       "deriv",
+		argTypes:   []ExprType{MatrixType},
+		returnType: VectorType,
+		callFn:     derivImpl,
 	},
 }
 
