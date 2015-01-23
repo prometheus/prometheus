@@ -1,0 +1,83 @@
+{{ template "head" . }}
+
+{{ template "prom_right_table_head" }}
+<tr>
+  <td>Nodes</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "count(aws_redshift_percentage_disk_space_used_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier)) }}</td>
+</tr>
+<tr>
+  <td>Healthy</td>
+  <td>{{ with printf "aws_redshift_health_status_average{job='aws_redshift',cluster_identifier='%s'}" .Params.cluster_identifier | query }}{{ if eq (. | first | value) 1.0 }}Yes{{ else }}No{{ end }} {{ end }}</td>
+</tr>
+<tr>
+  <td>Maintenance mode</td>
+  <td>{{ with printf "aws_redshift_maintenance_mode_average{job='aws_redshift',cluster_identifier='%s'}" .Params.cluster_identifier | query }}{{ if eq (. | first | value) 1.0 }}Yes{{ else }}No{{ end }} {{ end }}</td>
+</tr>
+<tr>
+  <td>Connections</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "aws_redshift_database_connections_average{job='aws_redshift',cluster_identifier='%s'}" .Params.cluster_identifier)) }}</td>
+</tr>
+<tr>
+  <td>CPU</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "avg(aws_redshift_cpuutilization_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "%" "printf.3g") }}</td>
+</tr>
+<tr>
+  <td>Disk Used</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "max(aws_redshift_percentage_disk_space_used_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "%" "printf.3g") }}</td>
+</tr>
+<tr>
+  <td>Network Transmitted</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "avg(aws_redshift_network_transmit_throughput_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "B/s" "humanize") }}</td>
+</tr>
+<tr>
+  <td>Network Received</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "avg(aws_redshift_network_receive_throughput_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "B/s" "humanize") }}</td>
+</tr>
+<tr>
+  <td>Read Throughput</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "avg(aws_redshift_read_throughput_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "B/s" "humanize") }}</td>
+</tr>
+<tr>
+  <td>Read IOPS</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "avg(aws_redshift_read_iops_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "/s" "humanizeNoSmallPrefix") }}</td>
+</tr>
+<tr>
+  <td>Read Latency</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "avg(aws_redshift_read_latency_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "s" "humanize") }}</td>
+</tr>
+<tr>
+  <td>Write Throughput</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "avg(aws_redshift_write_throughput_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "B/s" "humanize") }}</td>
+</tr>
+<tr>
+  <td>Write IOPS</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "avg(aws_redshift_write_iops_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "/s" "humanizeNoSmallPrefix") }}</td>
+</tr>
+<tr>
+  <td>Write Latency</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "avg(aws_redshift_write_latency_average{job='aws_redshift',cluster_identifier='%s'})" .Params.cluster_identifier) "s" "humanize") }}</td>
+</tr>
+{{ template "prom_right_table_tail" }}
+
+{{ template "prom_content_head" . }}
+<h1>AWS Redshift</h1>
+  <p><strong>Cluster:</strong> {{ .Params.cluster_identifier }}</p>
+
+  <h3>CPU Usage</h3>
+  <div id="cpuGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#cpuGraph"),
+    expr: "aws_redshift_cpuutilization_average{job='aws_redshift',cluster_identifier='{{ .Params.cluster_identifier }}'}",
+    name: '[[ node_id ]]',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yUnits: "%",
+    yTitle: 'CPU'
+  })
+  </script>
+
+
+{{ template "prom_content_tail" . }}
+
+{{ template "tail" }}
