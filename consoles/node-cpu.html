@@ -1,8 +1,8 @@
-{{template "head" .}}
+{{ template "head" . }}
 
-{{template "prom_right_table_head"}}
+{{ template "prom_right_table_head" }}
   <tr><th colspan="2">CPU</th></tr>
-{{ range printf "sum by (mode)(rate(node_cpu{job='node',instance='%s'}[5m])) * 100 / scalar(count(count by (cpu)(node_cpu{job='node',instance='%s'})))" .Params.instance .Params.instance | query | sortByLabel "mode"}}
+{{ range printf "sum by (mode)(rate(node_cpu{job='node',instance='%s'}[5m])) * 100 / scalar(count(count by (cpu)(node_cpu{job='node',instance='%s'})))" .Params.instance .Params.instance | query | sortByLabel "mode" }}
   <tr>
     <td>{{ .Labels.mode | title }} CPU</td>
     <td>{{ .Value | printf "%.3g" }}%</td>
@@ -35,9 +35,9 @@
   </tr>
 <tr>
 </tr>
-{{template "prom_right_table_tail"}}
+{{ template "prom_right_table_tail" }}
 
-{{template "prom_content_head" .}}
+{{ template "prom_content_head" . }}
   <h1>Node CPU - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
 
   <h3>CPU Usage</h3>
@@ -45,14 +45,14 @@
   <script>
   new PromConsole.Graph({
     node: document.querySelector("#cpuGraph"),
-    expr: "sum by (mode)(rate(node_cpu{job='node',instance='{{.Params.instance}}',mode!='idle'}[5m]))",
+    expr: "sum by (mode)(rate(node_cpu{job='node',instance='{{ .Params.instance }}',mode!='idle'}[5m]))",
     renderer: 'area',
-    max: {{ with printf "count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value}}{{else}}undefined{{end}},
+    max: {{ with printf "count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value }}{{ else}}undefined{{end}},
     yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yTitle: 'Cores'
   })
   </script>
-{{template "prom_content_tail" .}}
+{{ template "prom_content_tail" . }}
 
-{{template "tail"}}
+{{ template "tail" }}

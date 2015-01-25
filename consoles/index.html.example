@@ -1,11 +1,32 @@
 {{ template "head" . }}
 
-{{template "prom_right_table_head"}}
-{{template "prom_right_table_tail"}}
+{{ template "prom_right_table_head" }}
+{{ template "prom_right_table_tail" }}
 
-{{template "prom_content_head" .}}
+{{ template "prom_content_head" . }}
 <h1>Overview</h1>
 <p>These are example consoles for Prometheus, they are still under development.</p>
-{{template "prom_content_tail" .}}
 
-{{template "tail"}}
+<p>These consoles expect exporters to have the following job labels:</p>
+<table class="table table-condensed table-striped table-bordered" style="width: 0%">
+<tr>
+  <th>Exporter</th>
+  <th>Job label</th>
+</tr>
+<tr>
+  <td>Node Exporter</td>
+  <td><code>node</code></td>
+</tr>
+<tr>
+  <td>HAProxy Exporter</td>
+  <td><code>haproxy</code></td>
+</tr>
+<tr>
+  <td>CloudWatch Exporter</td>
+  <td><code>cloudwatch</code></td>
+</tr>
+</table>
+
+{{ template "prom_content_tail" . }}
+
+{{ template "tail" }}

@@ -1,9 +1,9 @@
-{{template "head" .}}
+{{ template "head" . }}
 
-{{template "prom_right_table_head"}}
+{{ template "prom_right_table_head" }}
   <th colspan="2">Disks</th>
 </tr>
-{{ range printf "node_disk_io_time_ms{job='node',instance='%s'}" .Params.instance | query | sortByLabel "device"}}
+{{ range printf "node_disk_io_time_ms{job='node',instance='%s'}" .Params.instance | query | sortByLabel "device" }}
   <th colspan="2">{{ .Labels.device }}</th>
   <tr>
     <td>Utilization</td>
@@ -24,20 +24,20 @@
 {{ end }}
   <th colspan="2">Filesystem Fullness</th>
 </tr>
-{{ define "roughlyNearZero"}}
+{{ define "roughlyNearZero" }}
 {{ if gt .1 . }}~0{{ else }}{{ printf "%.3g" . }}{{ end }}
 {{ end }}
-{{ range printf "node_filesystem_size{job='node',instance='%s'}" .Params.instance | query | sortByLabel "filesystem"}}
+{{ range printf "node_filesystem_size{job='node',instance='%s'}" .Params.instance | query | sortByLabel "filesystem" }}
   <tr>
-    <td>{{.Labels.filesystem}}</td>
+    <td>{{ .Labels.filesystem }}</td>
     <td>{{ template "prom_query_drilldown" (args (printf "100 - node_filesystem_free{job='node',instance='%s',filesystem='%s'} / node_filesystem_size{job='node'} * 100" .Labels.instance .Labels.filesystem) "%" "roughlyNearZero") }}</td>
   </tr>
 {{ end }}
 <tr>
 </tr>
-{{template "prom_right_table_tail"}}
+{{ template "prom_right_table_tail" }}
 
-{{template "prom_content_head" .}}
+{{ template "prom_content_head" . }}
   <h1>Node Disk - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
 
   <h3>Disk I/O Utilization</h3>
@@ -46,7 +46,7 @@
   new PromConsole.Graph({
     node: document.querySelector("#diskioGraph"),
     expr: [
-      "rate(node_disk_io_time_ms{job='node',instance='{{.Params.instance}}',device!~'^(md\\d+$|dm-)'}[5m]) / 1000 * 100",
+      "rate(node_disk_io_time_ms{job='node',instance='{{ .Params.instance }}',device!~'^(md\\d+$|dm-)'}[5m]) / 1000 * 100",
     ],
     min: 0,
     name: '[[ device ]]',
@@ -71,6 +71,6 @@
     yTitle: 'Filesystem Fullness'
   })
   </script>
-{{template "prom_content_tail" .}}
+{{ template "prom_content_tail" . }}
 
-{{template "tail"}}
+{{ template "tail" }}

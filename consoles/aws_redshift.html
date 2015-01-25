@@ -1,0 +1,28 @@
+{{ template "head" . }}
+
+{{ template "prom_content_head" . }}
+<h1>AWS Redshift</h1>
+
+<h3>Overview</h3>
+<table class="table table-condensed table-striped table-bordered" style="width: 0%">
+<tr>
+  <th>Cluster</th>
+  <th>Healthy</th>
+  <th>Maintenance Mode</th>
+  <th>Nodes</th>
+  <th>Disk Used</th>
+</tr>
+{{ range printf "sum by (cluster_identifier)(aws_redshift_health_status_average{job='aws_redshift'})" | query | sortByLabel "cluster_identifier" }}
+<tr>
+  <td><a href="aws_redshift-cluster.html?cluster_identifier={{ .Labels.cluster_identifier }}">{{ .Labels.cluster_identifier }}</a></td>
+  <td>{{ with printf "aws_redshift_health_status_average{job='aws_redshift',cluster_identifier='%s'}" .Labels.cluster_identifier | query }}{{ if eq (. | first | value) 1.0 }}Yes{{ else }}No{{ end }} {{ end }}</td>
+  <td>{{ with printf "aws_redshift_maintenance_mode_average{job='aws_redshift',cluster_identifier='%s'}" .Labels.cluster_identifier | query }}{{ if eq (. | first | value) 1.0 }}Yes{{ else }}No{{ end }} {{ end }}</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "count(aws_redshift_percentage_disk_space_used_average{job='aws_redshift',cluster_identifier='%s'})" .Labels.cluster_identifier)) }}</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "max(aws_redshift_percentage_disk_space_used_average{job='aws_redshift',cluster_identifier='%s'})" .Labels.cluster_identifier) "%" "printf.3g") }}</td>
+</tr>
+{{ end }}
+</table>
+
+{{ template "prom_content_tail" . }}
+
+{{ template "tail" }}
