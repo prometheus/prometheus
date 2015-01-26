@@ -26,7 +26,6 @@
 
 {{ template "prom_content_head" . }}
 <h1>AWS Elastic Load Balancer</h1>
-{{ template "prom_content_tail" . }}
 <p><em>This console assumes that <code>period_seconds</code>  in the CloudWatch Exporter is the default of 60s.</em></p>
 
 <h3>Queries</h3>
@@ -42,5 +41,6 @@ new PromConsole.Graph({
   yTitle: "Queries"
 })
 </script>
+{{ template "prom_content_tail" . }}
 
 {{ template "tail" }}

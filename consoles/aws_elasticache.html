@@ -26,7 +26,6 @@
 
 {{ template "prom_content_head" . }}
 <h1>AWS ElastiCache</h1>
-{{ template "prom_content_tail" . }}
 
 <h3>CPU</h3>
 <div id="queryGraph"></div>
@@ -41,5 +40,6 @@ new PromConsole.Graph({
   yTitle: "CPU"
 })
 </script>
+{{ template "prom_content_tail" . }}
 
 {{ template "tail" }}
