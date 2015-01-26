@@ -395,10 +395,10 @@ PromConsole.Graph.prototype._render = function(data) {
   }
 
   // Get the data into the right format.
+  var seriesLen = 0;
   for (var e = 0; e < data.length; e++) {
-    var len = 0;
     for (var i = 0; i < data[e].Value.length; i++) {
-      series[len++] = {
+      series[seriesLen++] = {
             data: data[e].Value[i].Values.map(function(s) {return {x: s.Timestamp, y: parseFloat(s.Value)} }),
             color: palette.color(),
             name: nameFunc(data[e].Value[i].Metric),
