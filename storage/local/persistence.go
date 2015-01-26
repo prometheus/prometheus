@@ -1399,18 +1399,12 @@ func (p *persistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.F
 	if err := os.MkdirAll(p.dirNameForFingerprint(fp), 0700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(p.fileNameForFingerprint(fp), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
-	if err != nil {
-		return f, err
-	}
-	offset, err := f.Seek(0, os.SEEK_CUR)
-	if offset%int64(chunkHeaderLen+p.chunkLen) != 0 {
-		return f, fmt.Errorf(
-			"size of series file for fingerprint %v is %d, which is not a multiple of the chunk length %d",
-			fp, offset, chunkHeaderLen+p.chunkLen,
-		)
-	}
-	return f, err
+	return os.OpenFile(p.fileNameForFingerprint(fp), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
+	// NOTE: Although the file was opened for append,
+	//     f.Seek(0, os.SEEK_CUR)
+	// would now return '0, nil', so we cannot check for a consistent file length right now.
+	// However, the chunkIndexForOffset method is doing that check, so a wrong file length
+	// would still be detected.
 }
 
 func (p *persistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.File, error) {
