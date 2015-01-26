@@ -17,6 +17,7 @@ all: files.go
 
 SUFFIXES:
 
+# Do not embed map files and the non-minified bootstrap files.
 files.go: $(shell find ../templates/ ../static/ -type f)
 	../../utility/embed-static.sh ../static ../templates | $(GOFMT) > $@
 

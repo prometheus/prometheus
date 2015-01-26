@@ -11,14 +11,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-all: blob-stamp
+all: blob
 
-blob-stamp: templates/*
+blob:
 	$(MAKE) -C blob
-	touch $@
 
 clean:
 	$(MAKE) -C blob clean
-	-rm -f *-stamp
 
-.PHONY: clean
+.PHONY: clean blob

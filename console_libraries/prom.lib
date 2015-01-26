@@ -2,7 +2,7 @@
 {{/* Load Prometheus console library JS/CSS. Should go in <head> */}}
 {{ define "prom_console_head" }}
 <link type="text/css" rel="stylesheet" href="/static/vendor/rickshaw/rickshaw.min.css">
-<link type="text/css" rel="stylesheet" href="/static/vendor/bootstrap-3.3.1/css/bootstrap.css">
+<link type="text/css" rel="stylesheet" href="/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css">
 <link type="text/css" rel="stylesheet" href="/static/css/prom_console.css">
 <script src="/static/vendor/rickshaw/vendor/d3.min.js"></script>
 <script src="/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>

@@ -14,7 +14,8 @@ do
   cd "${dir}"
   echo "\"$(basename ${dir})\": {"
 
-  find . -type f | while read file
+  # Do not embed map files and the non-minified bootstrap files.
+  find . -type f \! -name \*.map \! -name bootstrap.js \! -name bootstrap-theme.css \! -name bootstrap.css | while read file
   do
     name=$(echo "${file}"|sed 's|\.\/||')
     echo "\"$name\": {"
