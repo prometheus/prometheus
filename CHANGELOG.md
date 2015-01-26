@@ -1,3 +1,15 @@
+## 0.10.0 / 2015-01-26
+* [CHANGE] More efficient JSON result format in query API. This requires
+  up-to-date versions of PromDash and prometheus_cli, too.
+* [ENHANCEMENT] Excluded non-minified Bootstrap assets and the Bootstrap maps
+  from embedding into the binary. Those files are only used for debugging,
+  and then you can use -web.use-local-assets. By including fewer files, the
+  RAM usage during compilation is much more manageable.
+* [ENHANCEMENT] Help link points to http://prometheus.github.io now.
+* [FEATURE] Consoles for haproxy and cloudwatch.
+* [BUGFIX] Several fixes to graphs in consoles.
+* [CLEANUP] Removed a file size check that did not check anything.
+
 ## 0.9.0 / 2015-01-23
 * [CHANGE] Reworked command line flags, now more consistent and taking into
   account needs of the new storage backend (see below).
