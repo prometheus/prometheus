@@ -385,18 +385,18 @@ Prometheus.Graph.prototype.parseValue = function(value) {
 Prometheus.Graph.prototype.transformData = function(json) {
   self = this;
   var palette = new Rickshaw.Color.Palette();
-  if (json.Type != "matrix") {
+  if (json.type != "matrix") {
     self.showError("Result is not of matrix type! Please enter a correct expression.");
     return [];
   }
-  var data = json.Value.map(function(ts) {
+  var data = json.value.map(function(ts) {
     return {
-      name: escapeHTML(self.metricToTsName(ts.Metric)),
-      labels: ts.Metric,
-      data: ts.Values.map(function(value) {
+      name: escapeHTML(self.metricToTsName(ts.metric)),
+      labels: ts.metric,
+      data: ts.values.map(function(value) {
         return {
-          x: value.Timestamp,
-          y: self.parseValue(value.Value)
+          x: value[0],
+          y: self.parseValue(value[1])
         }
       }),
       color: palette.color()
@@ -506,8 +506,8 @@ Prometheus.Graph.prototype.resizeGraph = function() {
 
 Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
   var self = this
-  if (json.Type == "error") {
-    self.showError(json.Value);
+  if (json.type == "error") {
+    self.showError(json.value);
     return;
   }
   self.data = self.transformData(json);
@@ -526,38 +526,38 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   var tBody = self.consoleTab.find(".console_table tbody");
   tBody.empty();
 
-  switch(data.Type) {
+  switch(data.type) {
   case "vector":
-    if (data.Value.length === 0) {
+    if (data.value.length === 0) {
       tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>");
       return;
     }
-    for (var i = 0; i < data.Value.length; i++) {
-      var v = data.Value[i];
-      var tsName = self.metricToTsName(v.Metric);
-      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + v.Value + "</td></tr>");
+    for (var i = 0; i < data.value.length; i++) {
+      var v = data.value[i];
+      var tsName = self.metricToTsName(v.metric);
+      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + v.value + "</td></tr>");
     }
     break;
   case "matrix":
-    if (data.Value.length === 0) {
+    if (data.value.length === 0) {
       tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>");
       return;
     }
-    for (var i = 0; i < data.Value.length; i++) {
-      var v = data.Value[i];
-      var tsName = self.metricToTsName(v.Metric);
+    for (var i = 0; i < data.value.length; i++) {
+      var v = data.value[i];
+      var tsName = self.metricToTsName(v.metric);
       var valueText = "";
-      for (var j = 0; j < v.Values.length; j++) {
-        valueText += v.Values[j].Value + " @" + v.Values[j].Timestamp + "<br/>";
+      for (var j = 0; j < v.values.length; j++) {
+        valueText += v.values[j][1] + " @" + v.values[j][0] + "<br/>";
       }
       tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + valueText + "</td></tr>")
     }
     break;
   case "scalar":
-    tBody.append("<tr><td>scalar</td><td>" + data.Value + "</td></tr>");
+    tBody.append("<tr><td>scalar</td><td>" + data.value + "</td></tr>");
     break;
   case "error":
-    self.showError(data.Value);
+    self.showError(data.value);
     break;
   default:
     self.showError("Unsupported value type!");

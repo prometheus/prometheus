@@ -397,11 +397,11 @@ PromConsole.Graph.prototype._render = function(data) {
   // Get the data into the right format.
   var seriesLen = 0;
   for (var e = 0; e < data.length; e++) {
-    for (var i = 0; i < data[e].Value.length; i++) {
+    for (var i = 0; i < data[e].value.length; i++) {
       series[seriesLen++] = {
-            data: data[e].Value[i].Values.map(function(s) {return {x: s.Timestamp, y: parseFloat(s.Value)} }),
+            data: data[e].value[i].values.map(function(s) {return {x: s[0], y: parseFloat(s[1])} }),
             color: palette.color(),
-            name: nameFunc(data[e].Value[i].Metric),
+            name: nameFunc(data[e].value[i].metric),
       };
     }
   }
@@ -549,12 +549,12 @@ PromConsole._chooseNameFunction = function(data) {
   // If only one label varies, use that value.
   var labelValues = {};
   for (var e = 0; e < data.length; e++) {
-    for (var i = 0; i < data[e].Value.length; i++) {
-      for (var label in data[e].Value[i].Metric) {
+    for (var i = 0; i < data[e].value.length; i++) {
+      for (var label in data[e].value[i].metric) {
         if (!(label in labelValues)) {
           labelValues[label] = {};
         }
-        labelValues[label][data[e].Value[i].Metric[label]] = 1;
+        labelValues[label][data[e].value[i].metric[label]] = 1;
       }
     }
   }
