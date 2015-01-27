@@ -1,4 +1,4 @@
-# Prometheus ![](https://api.travis-ci.org/prometheus/prometheus.svg)
+# Prometheus [![Build Status](https://travis-ci.org/prometheus/prometheus.svg)](https://travis-ci.org/prometheus/prometheus)
 
 Prometheus is a systems and service monitoring system. It collects metrics
 from configured targets at given intervals, evaluates rule expressions,
