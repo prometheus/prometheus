@@ -24,4 +24,6 @@ EXPOSE     9090
 VOLUME     [ "/prometheus" ]
 WORKDIR    /prometheus
 ENTRYPOINT [ "/go/src/github.com/prometheus/prometheus/prometheus" ]
-CMD        [ "-logtostderr", "-config.file=/prometheus.conf" ]
+CMD        [ "-logtostderr", "-config.file=/prometheus.conf", \
+             "-web.console.libraries=/go/src/github.com/prometheus/prometheus/console_libraries", \
+             "-web.console.templates=/go/src/github.com/prometheus/prometheus/consoles" ]
