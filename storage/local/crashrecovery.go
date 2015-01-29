@@ -125,16 +125,17 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 // sanitizeSeries sanitizes a series based on its series file as defined by the
 // provided directory and FileInfo.  The method returns the fingerprint as
 // derived from the directory and file name, and whether the provided file has
-// been sanitized. A file that failed to be sanitized is deleted, if possible.
+// been sanitized. A file that failed to be sanitized is moved into the
+// "orphaned" sub-directory, if possible.
 //
 // The following steps are performed:
 //
 // - A file whose name doesn't comply with the naming scheme of a series file is
-//   simply deleted.
+//   simply moved into the orphaned directory.
 //
 // - If the size of the series file isn't a multiple of the chunk size,
 //   extraneous bytes are truncated.  If the truncation fails, the file is
-//   deleted instead.
+//   moved into the orphaned directory.
 //
 // - A file that is empty (after truncation) is deleted.
 //
@@ -144,14 +145,28 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 //   between an in-memory head chunk with the most recent persisted chunk is
 //   checked. Inconsistencies are rectified.
 //
-// - A series this in archived (i.e. it is not in the fingerprintToSeries map)
+// - A series that is archived (i.e. it is not in the fingerprintToSeries map)
 //   is checked for its presence in the index of archived series. If it cannot
-//   be found there, it is deleted.
+//   be found there, it is moved into the orphaned directory.
 func (p *persistence) sanitizeSeries(dirname string, fi os.FileInfo, fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) (clientmodel.Fingerprint, bool) {
 	filename := path.Join(dirname, fi.Name())
 	purge := func() {
-		glog.Warningf("Deleting lost series file %s.", filename) // TODO: Move to lost+found directory?
-		os.Remove(filename)
+		var err error
+		defer func() {
+			if err != nil {
+				glog.Errorf("Failed to move lost series file %s to orphaned directory, deleting it instead. Error was: %s", filename, err)
+				if err = os.Remove(filename); err != nil {
+					glog.Errorf("Even deleting file %s did not work: %s", filename, err)
+				}
+			}
+		}()
+		orphanedDir := path.Join(p.basePath, "orphaned", path.Base(dirname))
+		if err = os.MkdirAll(orphanedDir, 0700); err != nil {
+			return
+		}
+		if err = os.Rename(filename, path.Join(orphanedDir, fi.Name())); err != nil {
+			return
+		}
 	}
 
 	var fp clientmodel.Fingerprint
