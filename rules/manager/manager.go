@@ -128,24 +128,28 @@ func NewRuleManager(o *RuleManagerOptions) RuleManager {
 }
 
 func (m *ruleManager) Run() {
+	defer glog.Info("Rule manager stopped.")
+
 	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
 
 	for {
-		// TODO(beorn): This has the same problem as the scraper had
-		// before. If rule evaluation takes longer than the interval,
-		// there is a 50% chance per iteration that - after stopping the
-		// ruleManager - a new evaluation will be started rather than
-		// the ruleManager actually stopped. We need a similar
-		// contraption here as in the scraper.
+		// The outer select clause makes sure that m.done is looked at
+		// first. Otherwise, if m.runIteration takes longer than
+		// m.interval, there is only a 50% chance that m.done will be
+		// looked at before the next m.runIteration call happens.
 		select {
-		case <-ticker.C:
-			start := time.Now()
-			m.runIteration(m.results)
-			iterationDuration.Observe(float64(time.Since(start) / time.Millisecond))
 		case <-m.done:
-			glog.Info("Rule manager stopped.")
 			return
+		default:
+			select {
+			case <-ticker.C:
+				start := time.Now()
+				m.runIteration(m.results)
+				iterationDuration.Observe(float64(time.Since(start) / time.Millisecond))
+			case <-m.done:
+				return
+			}
 		}
 	}
 }
