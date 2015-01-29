@@ -35,7 +35,6 @@ const (
 )
 
 var (
-	// TODO: Tweak default values.
 	fingerprintToMetricCacheSize     = flag.Int("storage.local.index-cache-size.fingerprint-to-metric", 10*1024*1024, "The size in bytes for the fingerprint to metric index cache.")
 	fingerprintTimeRangeCacheSize    = flag.Int("storage.local.index-cache-size.fingerprint-to-timerange", 5*1024*1024, "The size in bytes for the metric time range index cache.")
 	labelNameToLabelValuesCacheSize  = flag.Int("storage.local.index-cache-size.label-name-to-label-values", 10*1024*1024, "The size in bytes for the label name to label values index cache.")

@@ -104,12 +104,19 @@ func (l *LevelDB) Has(key encoding.BinaryMarshaler) (has bool, err error) {
 }
 
 // Delete implements KeyValueStore.
-func (l *LevelDB) Delete(key encoding.BinaryMarshaler) error {
+func (l *LevelDB) Delete(key encoding.BinaryMarshaler) (bool, error) {
 	k, err := key.MarshalBinary()
 	if err != nil {
-		return err
+		return false, err
 	}
-	return l.storage.Delete(k, l.writeOpts)
+	err = l.storage.Delete(k, l.writeOpts)
+	if err == leveldb.ErrNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // Put implements KeyValueStore.
