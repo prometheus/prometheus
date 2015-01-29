@@ -29,8 +29,8 @@ type KeyValueStore interface {
 	// could be found for key. If value is nil, Get behaves like Has.
 	Get(key encoding.BinaryMarshaler, value encoding.BinaryUnmarshaler) (bool, error)
 	Has(key encoding.BinaryMarshaler) (bool, error)
-	// Delete returns an error if key does not exist.
-	Delete(key encoding.BinaryMarshaler) error
+	// Delete returns (false, nil) if key does not exist.
+	Delete(key encoding.BinaryMarshaler) (bool, error)
 
 	NewBatch() Batch
 	Commit(b Batch) error

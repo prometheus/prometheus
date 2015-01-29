@@ -535,16 +535,13 @@ func (p *persistence) cleanUpArchiveIndexes(
 			if !fpSeen {
 				glog.Warningf("Archive clean-up: Fingerprint %v is unknown. Purging from archive indexes.", clientmodel.Fingerprint(fp))
 			}
-			if err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
+			// It's fine if the fp is not in the archive indexes.
+			if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
 				return err
 			}
 			// Delete from timerange index, too.
-			p.archivedFingerprintToTimeRange.Delete(fp)
-			// TODO: Ignoring errors here as fp might not be in
-			// timerange index (which is good) but which would
-			// return an error. Delete signature could be changed
-			// like the Get signature to detect a real error.
-			return nil
+			_, err := p.archivedFingerprintToTimeRange.Delete(fp)
+			return err
 		}
 		// fp is legitimately archived. Make sure it is in timerange index, too.
 		has, err := p.archivedFingerprintToTimeRange.Has(fp)
@@ -555,7 +552,8 @@ func (p *persistence) cleanUpArchiveIndexes(
 			return nil // All good.
 		}
 		glog.Warningf("Archive clean-up: Fingerprint %v is not in time-range index. Unarchiving it for recovery.")
-		if err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
+		// Again, it's fine if fp is not in the archive index.
+		if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
 			return err
 		}
 		if err := kv.Value(&m); err != nil {
@@ -590,8 +588,12 @@ func (p *persistence) cleanUpArchiveIndexes(
 			return nil // All good.
 		}
 		glog.Warningf("Archive clean-up: Purging unknown fingerprint %v in time-range index.", fp)
-		if err := p.archivedFingerprintToTimeRange.Delete(fp); err != nil {
+		deleted, err := p.archivedFingerprintToTimeRange.Delete(fp)
+		if err != nil {
 			return err
+		}
+		if !deleted {
+			glog.Errorf("Fingerprint %s to be deleted from archivedFingerprintToTimeRange not found. This should never happen.", fp)
 		}
 		return nil
 	}); err != nil {
@@ -1303,11 +1305,19 @@ func (p *persistence) dropArchivedMetric(fp clientmodel.Fingerprint) (err error)
 	if err != nil || metric == nil {
 		return err
 	}
-	if err := p.archivedFingerprintToMetrics.Delete(codable.Fingerprint(fp)); err != nil {
+	deleted, err := p.archivedFingerprintToMetrics.Delete(codable.Fingerprint(fp))
+	if err != nil {
 		return err
 	}
-	if err := p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp)); err != nil {
+	if !deleted {
+		glog.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToMetrics index. This should never happen.", fp)
+	}
+	deleted, err = p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp))
+	if err != nil {
 		return err
+	}
+	if !deleted {
+		glog.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToTimeRange index. This should never happen.", fp)
 	}
 	p.unindexMetric(fp, metric)
 	return nil
@@ -1332,11 +1342,19 @@ func (p *persistence) unarchiveMetric(fp clientmodel.Fingerprint) (
 	if err != nil || !has {
 		return false, firstTime, err
 	}
-	if err := p.archivedFingerprintToMetrics.Delete(codable.Fingerprint(fp)); err != nil {
+	deleted, err := p.archivedFingerprintToMetrics.Delete(codable.Fingerprint(fp))
+	if err != nil {
 		return false, firstTime, err
 	}
-	if err := p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp)); err != nil {
+	if !deleted {
+		glog.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToMetrics index. This should never happen.", fp)
+	}
+	deleted, err = p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp))
+	if err != nil {
 		return false, firstTime, err
+	}
+	if !deleted {
+		glog.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToTimeRange index. This should never happen.", fp)
 	}
 	return true, firstTime, nil
 }
