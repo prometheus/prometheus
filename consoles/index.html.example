@@ -25,6 +25,10 @@
   <td>CloudWatch Exporter</td>
   <td><code>cloudwatch</code></td>
 </tr>
+<tr>
+  <td>Cassandra (JMX Exporter)</td>
+  <td><code>cassandra</code></td>
+</tr>
 </table>
 
 {{ template "prom_content_tail" . }}
