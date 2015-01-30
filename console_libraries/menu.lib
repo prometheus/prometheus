@@ -57,6 +57,9 @@
 {{ end }}
 {{ end }}
 
+{{ if query "up{job='cassandra'}" }}
+{{ template "_menuItem" (args . "cassandra.html" "Cassandra") }}
+{{ end }}
 
 {{ if query "up{job='node'}" }}
 {{ template "_menuItem" (args . "node.html" "Node") }}

@@ -36,11 +36,11 @@ Displays the result of the expression, with a link to /graph for it.
 renderTemplate is the name of the template to use to render the value.
 */}}
 {{ define "prom_query_drilldown" }}
-{{ $expr := .arg0 }}{{ $suffix := (or .arg1 "")}}{{ $renderTemplate := (or .arg2 "__prom_query_drilldown_noop")}}
-<a class="prom_query_drilldown" href="{{ graphLink $expr }}">{{ with query $expr }}{{ tmpl $renderTemplate ( . | first | value ) }}{{ $suffix }}{{else}}-{{ end }}</a>
+{{ $expr := .arg0 }}{{ $suffix := (or .arg1 "") }}{{ $renderTemplate := (or .arg2 "__prom_query_drilldown_noop") }}
+<a class="prom_query_drilldown" href="{{ graphLink $expr }}">{{ with query $expr }}{{tmpl $renderTemplate ( . | first | value )}}{{ $suffix }}{{ else }}-{{ end }}</a>
 {{ end }}
 
-{{ define "prom_path" }}/consoles/{{ .Path }}?{{range $param, $value := .Params}}{{$param}}={{$value}}&amp;{{end}}{{ end }}"
+{{ define "prom_path" }}/consoles/{{ .Path }}?{{ range $param, $value := .Params }}{{ $param }}={{ $value }}&amp;{{ end }}{{ end }}"
 
 {{ define "prom_right_table_head" }}
 <div class="prom_console_rhs">
@@ -49,8 +49,24 @@ renderTemplate is the name of the template to use to render the value.
 {{ define "prom_right_table_tail" }}
 </table>
 </div>
-
 {{ end }}
+
+{{/* RHS table head, pass job name. Should be used after prom_right_table_head. */}}
+{{ define "prom_right_table_job_head" }}
+<tr>
+  <th>{{  .  }}</th>
+  <th>{{  template "prom_query_drilldown" (args (printf "sum(up{job='%s'})" .))  }} / {{ template "prom_query_drilldown" (args (printf "count(up{job='%s'})" .)) }}</th>
+</tr>
+<tr>
+  <td>CPU</td>
+  <td>{{  template "prom_query_drilldown" (args (printf "avg by(job)(rate(process_cpu_seconds_total{job='%s'}[5m]))" .) "s/s" "humanizeNoSmallPrefix") }}</td>
+</tr>
+<tr>
+  <td>Memory</td>
+  <td>{{  template "prom_query_drilldown" (args (printf "avg by(job)(process_resident_memory_bytes{job='%s'})" .) "B" "humanize1024") }}</td>
+</tr>
+{{ end }}
+
 
 {{ define "prom_content_head" }}
 <div class="prom_console_content">
@@ -83,7 +99,7 @@ renderTemplate is the name of the template to use to render the value.
       <button class="btn btn-default pull-left" type="button" id="prom_graph_time_forward" title="Advance the end time.">
         <i class="glyphicon glyphicon-forward"></i>
       </button>
-   </div>
+    </div>
 
     <div class="prom_graph_timecontrol_group">
       <div class="btn-group dropup prom_graph_timecontrol_refresh pull-left">
