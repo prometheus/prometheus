@@ -35,6 +35,9 @@ else
 RELEASE_SUFFIX ?=
 endif
 
+# Never honor GOBIN, should it be set at all.
+unexport GOBIN
+
 GOARCH		  = $(subst x86_64,amd64,$(ARCH))
 GOPKG		 ?= go$(GO_VERSION).$(GOOS)-$(GOARCH)$(RELEASE_SUFFIX).tar.gz
 GOURL		 ?= http://golang.org/dl
