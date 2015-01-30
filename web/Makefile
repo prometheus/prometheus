@@ -11,12 +11,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-all: blob
+include ../Makefile.INCLUDE
 
-blob:
-	$(MAKE) -C blob
+all: blob/files.go
+
+SUFFIXES:
+
+# Do not embed map files and the non-minified bootstrap files.
+blob/files.go: $(shell find templates/ static/ -type f)
+	../utility/embed-static.sh static templates | $(GOFMT) > $@
 
 clean:
-	$(MAKE) -C blob clean
+	-rm -f blob/files.go
 
-.PHONY: clean blob
+.PHONY: clean
