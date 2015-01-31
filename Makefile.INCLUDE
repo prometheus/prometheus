@@ -40,7 +40,7 @@ unexport GOBIN
 
 GOARCH		  = $(subst x86_64,amd64,$(ARCH))
 GOPKG		 ?= go$(GO_VERSION).$(GOOS)-$(GOARCH)$(RELEASE_SUFFIX).tar.gz
-GOURL		 ?= http://golang.org/dl
+GOURL		 ?= https://golang.org/dl
 GOROOT		  = $(BUILD_PATH)/root/go
 GOPATH		  = $(BUILD_PATH)/root/gopath
 GOCC		  = $(GOROOT)/bin/go
