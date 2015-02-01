@@ -81,7 +81,7 @@ type memorySeriesStorage struct {
 	evictStopping, evictStopped chan struct{}
 
 	persistLatency              prometheus.Summary
-	persistErrors               *prometheus.CounterVec
+	persistErrors               prometheus.Counter
 	persistQueueLength          prometheus.Gauge
 	numSeries                   prometheus.Gauge
 	seriesOps                   *prometheus.CounterVec
@@ -151,15 +151,12 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			Name:      "persist_latency_microseconds",
 			Help:      "A summary of latencies for persisting each chunk.",
 		}),
-		persistErrors: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "persist_errors_total",
-				Help:      "A counter of errors persisting chunks.",
-			},
-			[]string{"error"},
-		),
+		persistErrors: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "persist_errors_total",
+			Help:      "The total number of errors while persisting chunks.",
+		}),
 		persistQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -536,7 +533,7 @@ func (s *memorySeriesStorage) handlePersistQueue() {
 		s.fpLocker.Unlock(req.fingerprint)
 		s.persistLatency.Observe(float64(time.Since(start)) / float64(time.Microsecond))
 		if err != nil {
-			s.persistErrors.WithLabelValues(err.Error()).Inc()
+			s.persistErrors.Inc()
 			glog.Error("Error persisting chunk: ", err)
 			s.persistence.setDirty(true)
 			continue
@@ -857,7 +854,7 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.persistence.Describe(ch)
 
 	ch <- s.persistLatency.Desc()
-	s.persistErrors.Describe(ch)
+	ch <- s.persistErrors.Desc()
 	ch <- s.persistQueueLength.Desc()
 	ch <- s.numSeries.Desc()
 	s.seriesOps.Describe(ch)
@@ -874,7 +871,7 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.persistence.Collect(ch)
 
 	ch <- s.persistLatency
-	s.persistErrors.Collect(ch)
+	ch <- s.persistErrors
 	ch <- s.persistQueueLength
 	ch <- s.numSeries
 	s.seriesOps.Collect(ch)
