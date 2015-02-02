@@ -4,7 +4,7 @@
 <link type="text/css" rel="stylesheet" href="/static/vendor/rickshaw/rickshaw.min.css">
 <link type="text/css" rel="stylesheet" href="/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css">
 <link type="text/css" rel="stylesheet" href="/static/css/prom_console.css">
-<script src="/static/vendor/rickshaw/vendor/d3.min.js"></script>
+<script src="/static/vendor/rickshaw/vendor/d3.v3.js"></script>
 <script src="/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
 <script src="/static/vendor/rickshaw/rickshaw.min.js"></script>
 <script src="/static/vendor/js/jquery.min.js"></script>
