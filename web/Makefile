@@ -17,8 +17,9 @@ all: blob/files.go
 
 SUFFIXES:
 
-# Do not embed map files and the non-minified bootstrap files.
 blob/files.go: $(shell find templates/ static/ -type f)
+	# Note that embed-static.sh excludes map files and the
+	# non-minified bootstrap files.
 	../utility/embed-static.sh static templates | $(GOFMT) > $@
 
 clean:
