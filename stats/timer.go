@@ -40,6 +40,11 @@ func (t *Timer) Stop() {
 	t.duration += time.Since(t.start)
 }
 
+// ElapsedTime returns the time that passed since starting the timer.
+func (t *Timer) ElapsedTime() time.Duration {
+	return time.Since(t.start)
+}
+
 // Return a string representation of the Timer.
 func (t *Timer) String() string {
 	return fmt.Sprintf("%s: %s", t.name, t.duration)

@@ -160,6 +160,9 @@ func TypedValueToJSON(data interface{}, typeStr string) string {
 
 // EvalToString evaluates the given node into a string of the given format.
 func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputFormat, storage local.Storage, queryStats *stats.TimerGroup) string {
+	totalEvalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
+	defer totalEvalTimer.Stop()
+
 	prepareTimer := queryStats.GetTimer(stats.TotalQueryPreparationTime).Start()
 	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
 	prepareTimer.Stop()
@@ -212,6 +215,9 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 
 // EvalToVector evaluates the given node into a Vector. Matrices aren't supported.
 func EvalToVector(node Node, timestamp clientmodel.Timestamp, storage local.Storage, queryStats *stats.TimerGroup) (Vector, error) {
+	totalEvalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
+	defer totalEvalTimer.Stop()
+
 	prepareTimer := queryStats.GetTimer(stats.TotalQueryPreparationTime).Start()
 	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
 	prepareTimer.Stop()

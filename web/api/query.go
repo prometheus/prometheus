@@ -65,7 +65,6 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	}
 
 	timestamp := clientmodel.TimestampFromTime(serv.time.Now())
-
 	queryStats := stats.NewTimerGroup()
 	result := ast.EvalToString(exprNode, timestamp, format, serv.Storage, queryStats)
 	glog.V(1).Infof("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
@@ -123,7 +122,6 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 
 	queryStats := stats.NewTimerGroup()
 
-	evalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
 	matrix, err := ast.EvalVectorRange(
 		exprNode.(ast.VectorNode),
 		clientmodel.TimestampFromUnixNano(end-duration),
@@ -135,7 +133,6 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, ast.ErrorToJSON(err))
 		return
 	}
-	evalTimer.Stop()
 
 	sortTimer := queryStats.GetTimer(stats.ResultSortTime).Start()
 	sort.Sort(matrix)
