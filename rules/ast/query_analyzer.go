@@ -110,22 +110,35 @@ func (i *iteratorInitializer) Visit(node Node) {
 }
 
 func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage local.Storage, queryStats *stats.TimerGroup) (local.Preloader, error) {
+	totalTimer := queryStats.GetTimer(stats.TotalEvalTime)
+
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	Walk(analyzer, node)
 	analyzeTimer.Stop()
 
-	// TODO: Preloading should time out after a given duration.
 	preloadTimer := queryStats.GetTimer(stats.PreloadTime).Start()
 	p := storage.NewPreloader()
 	for fp, rangeDuration := range analyzer.FullRanges {
+		if et := totalTimer.ElapsedTime(); et > *queryTimeout {
+			preloadTimer.Stop()
+			p.Close()
+			return nil, queryTimeoutError{et}
+		}
 		if err := p.PreloadRange(fp, timestamp.Add(-rangeDuration), timestamp, *stalenessDelta); err != nil {
+			preloadTimer.Stop()
 			p.Close()
 			return nil, err
 		}
 	}
 	for fp := range analyzer.IntervalRanges {
+		if et := totalTimer.ElapsedTime(); et > *queryTimeout {
+			preloadTimer.Stop()
+			p.Close()
+			return nil, queryTimeoutError{et}
+		}
 		if err := p.PreloadRange(fp, timestamp, timestamp, *stalenessDelta); err != nil {
+			preloadTimer.Stop()
 			p.Close()
 			return nil, err
 		}
@@ -141,16 +154,23 @@ func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage loc
 }
 
 func prepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage local.Storage, queryStats *stats.TimerGroup) (local.Preloader, error) {
+	totalTimer := queryStats.GetTimer(stats.TotalEvalTime)
+
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
 	analyzer := NewQueryAnalyzer(storage)
 	Walk(analyzer, node)
 	analyzeTimer.Stop()
 
-	// TODO: Preloading should time out after a given duration.
 	preloadTimer := queryStats.GetTimer(stats.PreloadTime).Start()
 	p := storage.NewPreloader()
 	for fp, rangeDuration := range analyzer.FullRanges {
+		if et := totalTimer.ElapsedTime(); et > *queryTimeout {
+			preloadTimer.Stop()
+			p.Close()
+			return nil, queryTimeoutError{et}
+		}
 		if err := p.PreloadRange(fp, start.Add(-rangeDuration), end, *stalenessDelta); err != nil {
+			preloadTimer.Stop()
 			p.Close()
 			return nil, err
 		}
@@ -169,7 +189,13 @@ func prepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.T
 		*/
 	}
 	for fp := range analyzer.IntervalRanges {
+		if et := totalTimer.ElapsedTime(); et > *queryTimeout {
+			preloadTimer.Stop()
+			p.Close()
+			return nil, queryTimeoutError{et}
+		}
 		if err := p.PreloadRange(fp, start, end, *stalenessDelta); err != nil {
+			preloadTimer.Stop()
 			p.Close()
 			return nil, err
 		}

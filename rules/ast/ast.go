@@ -29,7 +29,16 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-var stalenessDelta = flag.Duration("query.staleness-delta", 300*time.Second, "Staleness delta allowance during expression evaluations.")
+var (
+	stalenessDelta = flag.Duration("query.staleness-delta", 300*time.Second, "Staleness delta allowance during expression evaluations.")
+	queryTimeout = flag.Duration("query.timeout", 2*time.Minute, "Maximum time a query may take before being aborted.")
+)
+
+type queryTimeoutError struct {
+	timeoutAfter time.Duration
+}
+
+func (e queryTimeoutError) Error() string { return fmt.Sprintf("query timeout after %v", e.timeoutAfter) }
 
 // ----------------------------------------------------------------------------
 // Raw data value types.
@@ -391,16 +400,24 @@ func labelsToKey(labels clientmodel.Metric) uint64 {
 
 // EvalVectorInstant evaluates a VectorNode with an instant query.
 func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage local.Storage, queryStats *stats.TimerGroup) (Vector, error) {
+	totalEvalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
+	defer totalEvalTimer.Stop()
+
 	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
 	if err != nil {
 		return nil, err
 	}
 	defer closer.Close()
+	if et := totalEvalTimer.ElapsedTime(); et > *queryTimeout {
+		return nil, queryTimeoutError{et}
+	}
 	return node.Eval(timestamp), nil
 }
 
 // EvalVectorRange evaluates a VectorNode with a range query.
 func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage local.Storage, queryStats *stats.TimerGroup) (Matrix, error) {
+	totalEvalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
+	defer totalEvalTimer.Stop()
 	// Explicitly initialize to an empty matrix since a nil Matrix encodes to
 	// null in JSON.
 	matrix := Matrix{}
@@ -413,10 +430,13 @@ func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmod
 	}
 	defer closer.Close()
 
-	// TODO implement watchdog timer for long-running queries.
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
 	sampleStreams := map[uint64]*SampleStream{}
 	for t := start; !t.After(end); t = t.Add(interval) {
+		if et := totalEvalTimer.ElapsedTime(); et > *queryTimeout {
+			evalTimer.Stop()
+			return nil, queryTimeoutError{et}
+		}
 		vector := node.Eval(t)
 		for _, sample := range vector {
 			samplePair := metric.SamplePair{
