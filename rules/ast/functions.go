@@ -44,7 +44,7 @@ func (function *Function) CheckArgTypes(args []Node) error {
 			function.name, len(function.argTypes), len(args),
 		)
 	}
-	if len(function.argTypes) - function.optionalArgs > len(args) {
+	if len(function.argTypes)-function.optionalArgs > len(args) {
 		return fmt.Errorf(
 			"too few arguments to function %v(): %v expected at least, %v given",
 			function.name, len(function.argTypes)-function.optionalArgs, len(args),
@@ -291,6 +291,32 @@ func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, args []Node) interfac
 	return vector
 }
 
+// === round(vector VectorNode) Vector ===
+func roundImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	// round returns a number rounded to nearest integer.
+	// Ties are solved by rounding towards the even integer.
+	round := func(n float64) float64 {
+		if n-math.Floor(n) == 0.5 && int64(n)%2 == 0 {
+			n += math.Copysign(0.5, -n)
+		}
+		return math.Copysign(math.Floor(math.Abs(n)+0.5), n)
+	}
+
+	places := float64(0)
+	if len(args) >= 2 {
+		places = float64(args[1].(ScalarNode).Eval(timestamp))
+	}
+	pow := math.Pow(10, float64(places))
+
+	n := args[0].(VectorNode)
+	vector := n.Eval(timestamp)
+	for _, el := range vector {
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		el.Value = clientmodel.SampleValue(round(pow*float64(el.Value)) / pow)
+	}
+	return vector
+}
+
 // === scalar(node VectorNode) Scalar ===
 func scalarImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	v := args[0].(VectorNode).Eval(timestamp)
@@ -341,6 +367,17 @@ func countOverTimeImpl(timestamp clientmodel.Timestamp, args []Node) interface{}
 	return aggrOverTime(timestamp, args, func(values metric.Values) clientmodel.SampleValue {
 		return clientmodel.SampleValue(len(values))
 	})
+}
+
+// === floor(vector VectorNode) Vector ===
+func floorImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	n := args[0].(VectorNode)
+	vector := n.Eval(timestamp)
+	for _, el := range vector {
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		el.Value = clientmodel.SampleValue(math.Floor(float64(el.Value)))
+	}
+	return vector
 }
 
 // === max_over_time(matrix MatrixNode) Vector ===
@@ -413,6 +450,17 @@ func absentImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	}
 }
 
+// === ceil(vector VectorNode) Vector ===
+func ceilImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	n := args[0].(VectorNode)
+	vector := n.Eval(timestamp)
+	for _, el := range vector {
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		el.Value = clientmodel.SampleValue(math.Ceil(float64(el.Value)))
+	}
+	return vector
+}
+
 // === deriv(node MatrixNode) Vector ===
 func derivImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
@@ -481,6 +529,12 @@ var functions = map[string]*Function{
 		returnType: VectorType,
 		callFn:     bottomkImpl,
 	},
+	"ceil": {
+		name:       "ceil",
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
+		callFn:     ceilImpl,
+	},
 	"count_over_time": {
 		name:       "count_over_time",
 		argTypes:   []ExprType{MatrixType},
@@ -506,6 +560,12 @@ var functions = map[string]*Function{
 		returnType: VectorType,
 		callFn:     dropCommonLabelsImpl,
 	},
+	"floor": {
+		name:       "floor",
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
+		callFn:     floorImpl,
+	},
 	"max_over_time": {
 		name:       "max_over_time",
 		argTypes:   []ExprType{MatrixType},
@@ -523,6 +583,13 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{MatrixType},
 		returnType: VectorType,
 		callFn:     rateImpl,
+	},
+	"round": {
+		name:         "round",
+		argTypes:     []ExprType{VectorType, ScalarType},
+		optionalArgs: 1,
+		returnType:   VectorType,
+		callFn:       roundImpl,
 	},
 	"scalar": {
 		name:       "scalar",
