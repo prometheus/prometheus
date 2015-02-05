@@ -306,7 +306,7 @@ func roundImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	if len(args) >= 2 {
 		places = float64(args[1].(ScalarNode).Eval(timestamp))
 	}
-	pow := math.Pow(10, float64(places))
+	pow := math.Pow(10, places)
 
 	n := args[0].(VectorNode)
 	vector := n.Eval(timestamp)
