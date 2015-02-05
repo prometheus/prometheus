@@ -31,14 +31,16 @@ import (
 
 var (
 	stalenessDelta = flag.Duration("query.staleness-delta", 300*time.Second, "Staleness delta allowance during expression evaluations.")
-	queryTimeout = flag.Duration("query.timeout", 2*time.Minute, "Maximum time a query may take before being aborted.")
+	queryTimeout   = flag.Duration("query.timeout", 2*time.Minute, "Maximum time a query may take before being aborted.")
 )
 
 type queryTimeoutError struct {
 	timeoutAfter time.Duration
 }
 
-func (e queryTimeoutError) Error() string { return fmt.Sprintf("query timeout after %v", e.timeoutAfter) }
+func (e queryTimeoutError) Error() string {
+	return fmt.Sprintf("query timeout after %v", e.timeoutAfter)
+}
 
 // ----------------------------------------------------------------------------
 // Raw data value types.

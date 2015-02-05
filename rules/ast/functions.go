@@ -291,28 +291,22 @@ func dropCommonLabelsImpl(timestamp clientmodel.Timestamp, args []Node) interfac
 	return vector
 }
 
-// === round(vector VectorNode) Vector ===
+// === round(vector VectorNode, toNearest=1 Scalar) Vector ===
 func roundImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
-	// round returns a number rounded to nearest integer.
-	// Ties are solved by rounding towards the even integer.
-	round := func(n float64) float64 {
-		if n-math.Floor(n) == 0.5 && int64(n)%2 == 0 {
-			n += math.Copysign(0.5, -n)
-		}
-		return math.Copysign(math.Floor(math.Abs(n)+0.5), n)
-	}
-
-	places := float64(0)
+	// round returns a number rounded to toNearest.
+	// Ties are solved by rounding up.
+	toNearest := float64(1)
 	if len(args) >= 2 {
-		places = float64(args[1].(ScalarNode).Eval(timestamp))
+		toNearest = float64(args[1].(ScalarNode).Eval(timestamp))
 	}
-	pow := math.Pow(10, places)
+	// Invert as it seems to cause fewer floating point accuracy issues.
+	toNearestInverse := 1.0 / toNearest
 
 	n := args[0].(VectorNode)
 	vector := n.Eval(timestamp)
 	for _, el := range vector {
 		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(round(pow*float64(el.Value)) / pow)
+		el.Value = clientmodel.SampleValue(math.Floor(float64(el.Value)*toNearestInverse+0.5) / toNearestInverse)
 	}
 	return vector
 }

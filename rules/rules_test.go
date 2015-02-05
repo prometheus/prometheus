@@ -527,16 +527,16 @@ func TestExpressions(t *testing.T) {
 		{ // Round should correctly handle negative numbers.
 			expr: `round(-1 * (0.004 * http_requests{group="production",job="api-server"}))`,
 			output: []string{
-				`{group="production", instance="0", job="api-server"} => -0 @[%v]`,
+				`{group="production", instance="0", job="api-server"} => 0 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => -1 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 2,
 		},
-		{ // Round should round half to even.
+		{ // Round should round half up.
 			expr: `round(0.005 * http_requests{group="production",job="api-server"})`,
 			output: []string{
-				`{group="production", instance="0", job="api-server"} => 0 @[%v]`,
+				`{group="production", instance="0", job="api-server"} => 1 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 1 @[%v]`,
 			},
 			fullRanges:     0,
@@ -551,7 +551,7 @@ func TestExpressions(t *testing.T) {
 			fullRanges:     0,
 			intervalRanges: 2,
 		},
-		{ // Round should round half to even.
+		{
 			expr: `round(1 + 0.005 * http_requests{group="production",job="api-server"})`,
 			output: []string{
 				`{group="production", instance="0", job="api-server"} => 2 @[%v]`,
@@ -563,23 +563,23 @@ func TestExpressions(t *testing.T) {
 		{
 			expr: `round(-1 * (1 + 0.005 * http_requests{group="production",job="api-server"}))`,
 			output: []string{
-				`{group="production", instance="0", job="api-server"} => -2 @[%v]`,
+				`{group="production", instance="0", job="api-server"} => -1 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => -2 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 2,
 		},
-		{ // Round should accept a number of decimal places to round to.
-			expr: `round(0.0005 * http_requests{group="production",job="api-server"}, 1)`,
+		{ // Round should accept the number to round nearest to.
+			expr: `round(0.0005 * http_requests{group="production",job="api-server"}, 0.1)`,
 			output: []string{
-				`{group="production", instance="0", job="api-server"} => 0 @[%v]`,
+				`{group="production", instance="0", job="api-server"} => 0.1 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 0.1 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 2,
 		},
-		{ // Round should look at last decimal place parity.
-			expr: `round(2.1 + 0.0005 * http_requests{group="production",job="api-server"}, 1)`,
+		{
+			expr: `round(2.1 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)`,
 			output: []string{
 				`{group="production", instance="0", job="api-server"} => 2.2 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 2.2 @[%v]`,
@@ -588,19 +588,37 @@ func TestExpressions(t *testing.T) {
 			intervalRanges: 2,
 		},
 		{
-			expr: `round(5.2 + 0.0005 * http_requests{group="production",job="api-server"}, 1)`,
+			expr: `round(5.2 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)`,
 			output: []string{
-				`{group="production", instance="0", job="api-server"} => 5.2 @[%v]`,
+				`{group="production", instance="0", job="api-server"} => 5.3 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 5.3 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 2,
 		},
 		{ // Round should work correctly with negative numbers and multiple decimal places.
-			expr: `round(-1 * (5.2 + 0.0005 * http_requests{group="production",job="api-server"}), 1)`,
+			expr: `round(-1 * (5.2 + 0.0005 * http_requests{group="production",job="api-server"}), 0.1)`,
 			output: []string{
 				`{group="production", instance="0", job="api-server"} => -5.2 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => -5.3 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 2,
+		},
+		{ // Round should work correctly with big toNearests.
+			expr: `round(0.025 * http_requests{group="production",job="api-server"}, 5)`,
+			output: []string{
+				`{group="production", instance="0", job="api-server"} => 5 @[%v]`,
+				`{group="production", instance="1", job="api-server"} => 5 @[%v]`,
+			},
+			fullRanges:     0,
+			intervalRanges: 2,
+		},
+		{
+			expr: `round(0.045 * http_requests{group="production",job="api-server"}, 5)`,
+			output: []string{
+				`{group="production", instance="0", job="api-server"} => 5 @[%v]`,
+				`{group="production", instance="1", job="api-server"} => 10 @[%v]`,
 			},
 			fullRanges:     0,
 			intervalRanges: 2,
