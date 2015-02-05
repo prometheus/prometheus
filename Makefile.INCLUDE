@@ -27,7 +27,7 @@ MAC_OS_X_VERSION ?= 10.8
 BUILD_PATH = $(PWD)/.build
 
 GO_VERSION	 := 1.4
-GOOS		  = $(subst Darwin,darwin,$(subst Linux,linux,$(OS)))
+GOOS		  = $(subst Darwin,darwin,$(subst Linux,linux,$(subst FreeBSD,freebsd,$(OS))))
 
 ifeq ($(GOOS),darwin)
 RELEASE_SUFFIX ?= -osx$(MAC_OS_X_VERSION)
