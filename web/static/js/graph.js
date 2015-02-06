@@ -119,7 +119,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.stackedBtn.click(function() {
     self.stacked.val(self.isStacked() ? '0' : '1');
     styleStackBtn();
-    self.updateGraph();
+    self.updateGraph(true);
   });
 
   self.queryForm.submit(function() {
