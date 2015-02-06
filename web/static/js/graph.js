@@ -81,8 +81,9 @@ Prometheus.Graph.prototype.initialize = function() {
   })
 
   self.error = graphWrapper.find(".error").hide();
-  self.graph = graphWrapper.find(".graph");
-  self.yAxis = graphWrapper.find(".y_axis");
+  self.graphArea = graphWrapper.find(".graph_area");
+  self.graph = self.graphArea.find(".graph");
+  self.yAxis = self.graphArea.find(".y_axis");
   self.legend = graphWrapper.find(".legend");
   self.spinner = graphWrapper.find(".spinner");
   self.evalStats = graphWrapper.find(".eval_stats");
@@ -117,6 +118,11 @@ Prometheus.Graph.prototype.initialize = function() {
   styleStackBtn();
 
   self.stackedBtn.click(function() {
+    if (self.isStacked() && self.graphJSON) {
+      // If the graph was stacked, the original series data got mutated
+      // (scaled) and we need to reconstruct it from the original JSON data.
+      self.data = self.transformData(self.graphJSON);
+    }
     self.stacked.val(self.isStacked() ? '0' : '1');
     styleStackBtn();
     self.updateGraph();
@@ -409,8 +415,22 @@ Prometheus.Graph.prototype.transformData = function(json) {
   return data;
 };
 
-Prometheus.Graph.prototype.showGraph = function() {
+Prometheus.Graph.prototype.updateGraph = function() {
   var self = this;
+  if (self.data.length == 0) { return; }
+
+  // Remove any traces of an existing graph.
+  self.legend.empty();
+  if (self.graphArea.children().length > 0) {
+    self.graph.remove();
+    self.yAxis.remove();
+  }
+  self.graph = $('<div class="graph"></div>');
+  self.yAxis = $('<div class="y_axis"></div>');
+  self.graphArea.append(self.graph);
+  self.graphArea.append(self.yAxis);
+
+  // Now create the new graph.
   self.rickshawGraph = new Rickshaw.Graph({
     element: self.graph[0],
     height: Math.max(self.graph.innerHeight(), 100),
@@ -431,24 +451,6 @@ Prometheus.Graph.prototype.showGraph = function() {
   });
 
   self.rickshawGraph.render();
-};
-
-Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
-  var self = this;
-  if (self.data.length == 0) { return; }
-  self.legend.empty();
-  if (self.rickshawGraph == null || reloadGraph) {
-    self.yAxis.empty();
-    self.graph.empty();
-    self.showGraph();
-  } else {
-    self.rickshawGraph.configure({
-      renderer: (self.isStacked() ? "stack" : "line"),
-      interpolation: "linear",
-      series: self.data
-    });
-    self.rickshawGraph.render();
-  }
 
   var hoverDetail = new Rickshaw.Graph.HoverDetail({
     graph: self.rickshawGraph,
@@ -493,18 +495,23 @@ Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
     self.showError(json.value);
     return;
   }
+  // Rickshaw mutates passed series data for stacked graphs, so we need to save
+  // the original AJAX response in order to re-transform it into series data
+  // when the user disables the stacking.
+  self.graphJSON = json;
   self.data = self.transformData(json);
   if (self.data.length == 0) {
     self.showError("No datapoints found.");
     return;
   }
   self.graphTab.removeClass("reload");
-  self.updateGraph(true);
+  self.updateGraph();
 }
 
 Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   var self = this;
   self.consoleTab.removeClass("reload");
+  self.graphJSON = null;
 
   var tBody = self.consoleTab.find(".console_table tbody");
   tBody.empty();

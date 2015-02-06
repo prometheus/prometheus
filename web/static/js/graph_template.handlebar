@@ -109,10 +109,7 @@
                         </div>
                       </div>
 
-                      <div class="graph_area">
-                        <div class="y_axis"></div>
-                        <div class="graph"></div>
-                      </div>
+                      <div class="graph_area"></div>
                       <div class="legend"></div>
                     </div>
                     <div role="tabpanel" class="tab-pane active console reload" id="console{{id}}">
