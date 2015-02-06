@@ -160,7 +160,10 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           self.insertMetric[0].options.add(new Option(json[i], json[i]));
           availableMetrics.push(json[i]);
         }
-        self.expr.typeahead({source: availableMetrics});
+        self.expr.typeahead({
+          source: availableMetrics,
+          items: "all"
+        });
         // This needs to happen after attaching the typeahead plugin, as it
         // otherwise breaks the typeahead functionality.
         self.expr.focus();
