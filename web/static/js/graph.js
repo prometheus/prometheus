@@ -456,27 +456,7 @@ Prometheus.Graph.prototype.updateGraph = function(reloadGraph) {
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
       var content = swatch + (series.labels["__name__"] || 'value') + ": <strong>" + y + '</strong><br>';
       return content + self.renderLabels(series.labels);
-    },
-    onRender: function() {
-      var width = this.graph.width;
-      var element = $(this.element);
-
-      $(".x_label", element).each(function() {
-        if ($(this).outerWidth() + element.offset().left > width) {
-          $(this).addClass("flipped");
-        } else {
-          $(this).removeClass("flipped");
-        }
-      })
-
-      $(".item", element).each(function() {
-        if ($(this).outerWidth() + element.offset().left > width) {
-          $(this).addClass("flipped");
-        } else {
-          $(this).removeClass("flipped");
-        }
-      })
-    },
+    }
   });
 
   var legend = new Rickshaw.Graph.Legend({
