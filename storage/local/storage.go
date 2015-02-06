@@ -29,7 +29,6 @@ import (
 )
 
 const (
-	persistQueueCap  = 1024
 	evictRequestsCap = 1024
 	chunkLen         = 1024
 
@@ -82,6 +81,7 @@ type memorySeriesStorage struct {
 
 	persistLatency              prometheus.Summary
 	persistErrors               prometheus.Counter
+	persistQueueCapacity        prometheus.Metric
 	persistQueueLength          prometheus.Gauge
 	numSeries                   prometheus.Gauge
 	seriesOps                   *prometheus.CounterVec
@@ -97,6 +97,7 @@ type MemorySeriesStorageOptions struct {
 	MemoryChunks               int           // How many chunks to keep in memory.
 	PersistenceStoragePath     string        // Location of persistence files.
 	PersistenceRetentionPeriod time.Duration // Chunks at least that old are purged.
+	PersistenceQueueCapacity   int           // Capacity of queue for chunks to be persisted.
 	CheckpointInterval         time.Duration // How often to checkpoint the series map and head chunks.
 	CheckpointDirtySeriesLimit int           // How many dirty series will trigger an early checkpoint.
 	Dirty                      bool          // Force the storage to consider itself dirty on startup.
@@ -134,7 +135,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		checkpointInterval:         o.CheckpointInterval,
 		checkpointDirtySeriesLimit: o.CheckpointDirtySeriesLimit,
 
-		persistQueue:   make(chan persistRequest, persistQueueCap),
+		persistQueue:   make(chan persistRequest, o.PersistenceQueueCapacity),
 		persistStopped: make(chan struct{}),
 		persistence:    p,
 
@@ -157,6 +158,14 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			Name:      "persist_errors_total",
 			Help:      "The total number of errors while persisting chunks.",
 		}),
+		persistQueueCapacity: prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, subsystem, "persist_queue_capacity"),
+				"The total capacity of the persist queue.",
+				nil, nil,
+			),
+			prometheus.GaugeValue, float64(o.PersistenceQueueCapacity),
+		),
 		persistQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -837,31 +846,18 @@ func (s *memorySeriesStorage) loadChunkDescs(fp clientmodel.Fingerprint, beforeT
 	return s.persistence.loadChunkDescs(fp, beforeTime)
 }
 
-// To expose persistQueueCap as metric:
-var (
-	persistQueueCapDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, subsystem, "persist_queue_capacity"),
-		"The total capacity of the persist queue.",
-		nil, nil,
-	)
-	persistQueueCapGauge = prometheus.MustNewConstMetric(
-		persistQueueCapDesc, prometheus.GaugeValue, persistQueueCap,
-	)
-)
-
 // Describe implements prometheus.Collector.
 func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.persistence.Describe(ch)
 
 	ch <- s.persistLatency.Desc()
 	ch <- s.persistErrors.Desc()
+	ch <- s.persistQueueCapacity.Desc()
 	ch <- s.persistQueueLength.Desc()
 	ch <- s.numSeries.Desc()
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
 	ch <- s.invalidPreloadRequestsCount.Desc()
-
-	ch <- persistQueueCapDesc
 
 	ch <- numMemChunksDesc
 }
@@ -872,13 +868,12 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 
 	ch <- s.persistLatency
 	ch <- s.persistErrors
+	ch <- s.persistQueueCapacity
 	ch <- s.persistQueueLength
 	ch <- s.numSeries
 	s.seriesOps.Collect(ch)
 	ch <- s.ingestedSamplesCount
 	ch <- s.invalidPreloadRequestsCount
-
-	ch <- persistQueueCapGauge
 
 	count := atomic.LoadInt64(&numMemChunks)
 	ch <- prometheus.MustNewConstMetric(numMemChunksDesc, prometheus.GaugeValue, float64(count))
