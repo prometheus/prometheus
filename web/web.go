@@ -34,7 +34,8 @@ import (
 
 // Commandline flags.
 var (
-	listenAddress  = flag.String("web.listen-address", ":9090", "Address to listen on for web interface.")
+	listenAddress  = flag.String("web.listen-address", ":9090", "Address to listen on for the web interface, API, and telemetry.")
+	metricsPath    = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
 	useLocalAssets = flag.Bool("web.use-local-assets", false, "Read assets/templates from file instead of binary.")
 	userAssetsPath = flag.String("web.user-assets", "", "Path to static asset directory, available at /user.")
 	enableQuit     = flag.Bool("web.enable-remote-shutdown", false, "Enable remote service shutdown.")
@@ -73,7 +74,7 @@ func (ws WebService) ServeForever() error {
 	))
 
 	ws.MetricsHandler.RegisterHandler()
-	http.Handle("/metrics", prometheus.Handler())
+	http.Handle(*metricsPath, prometheus.Handler())
 	if *useLocalAssets {
 		http.Handle("/static/", prometheus.InstrumentHandler(
 			"/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))),
