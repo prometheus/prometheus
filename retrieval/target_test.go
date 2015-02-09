@@ -46,6 +46,32 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 	}
 }
 
+func TestTargetScrapeWithFullChannel(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte("test_metric{foo=\"bar\"} 123.456\n"))
+			},
+		),
+	)
+	defer server.Close()
+
+	testTarget := NewTarget(
+		server.URL,
+		100*time.Millisecond,
+		clientmodel.LabelSet{"dings": "bums"},
+	).(*target)
+
+	testTarget.scrape(ChannelIngester(make(chan clientmodel.Samples))) // Capacity 0.
+	if testTarget.state != Unreachable {
+		t.Errorf("Expected target state %v, actual: %v", Unreachable, testTarget.state)
+	}
+	if testTarget.lastError != errIngestChannelFull {
+		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.lastError)
+	}
+}
+
 func TestTargetRecordScrapeHealth(t *testing.T) {
 	testTarget := target{
 		url:        "http://example.url",
@@ -96,12 +122,15 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 
 func TestTargetScrapeTimeout(t *testing.T) {
 	signal := make(chan bool, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-signal
-		w.Header().Set("Content-Type", `application/json; schema="prometheus/telemetry"; version=0.0.2`)
-		w.Write([]byte(`[]`))
-	}))
-
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				<-signal
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte{})
+			},
+		),
+	)
 	defer server.Close()
 
 	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
@@ -137,10 +166,13 @@ func TestTargetScrapeTimeout(t *testing.T) {
 }
 
 func TestTargetScrape404(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	}))
-
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+			},
+		),
+	)
 	defer server.Close()
 
 	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
@@ -177,5 +209,31 @@ func TestTargetRunScraperScrapes(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	if testTarget.lastScrape != last {
 		t.Errorf("Scrape occured after it was stopped.")
+	}
+}
+
+func BenchmarkScrape(b *testing.B) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte("test_metric{foo=\"bar\"} 123.456\n"))
+			},
+		),
+	)
+	defer server.Close()
+
+	testTarget := NewTarget(
+		server.URL,
+		100*time.Millisecond,
+		clientmodel.LabelSet{"dings": "bums"},
+	)
+	ingester := nopIngester{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := testTarget.(*target).scrape(ingester); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

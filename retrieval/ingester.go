@@ -14,10 +14,14 @@
 package retrieval
 
 import (
+	"errors"
+
 	"github.com/prometheus/client_golang/extraction"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 )
+
+var errIngestChannelFull = errors.New("ingestion channel full")
 
 // MergeLabelsIngester merges a labelset ontop of a given extraction result and
 // passes the result on to another ingester. Label collisions are avoided by
@@ -42,8 +46,14 @@ func (i *MergeLabelsIngester) Ingest(samples clientmodel.Samples) error {
 // ChannelIngester feeds results into a channel without modifying them.
 type ChannelIngester chan<- clientmodel.Samples
 
-// Ingest ingests the provided extraction result by sending it to i.
+// Ingest ingests the provided extraction result by sending it to its channel.
+// It returns an error if the channel is not ready to receive. This is important
+// to fail fast and to not pile up ingestion requests in case of overload.
 func (i ChannelIngester) Ingest(s clientmodel.Samples) error {
-	i <- s
-	return nil
+	select {
+	case i <- s:
+		return nil
+	default:
+		return errIngestChannelFull
+	}
 }
