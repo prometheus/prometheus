@@ -272,18 +272,6 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 				targetIntervalLength.WithLabelValues(interval.String()).Observe(
 					float64(took) / float64(time.Second), // Sub-second precision.
 				)
-				// Throttle the scrape if it took longer than interval - by
-				// sleeping for the time it took longer. This will make the
-				// actual scrape interval increase as long as a scrape takes
-				// longer than the interval we are aiming for.
-				time.Sleep(took - interval)
-				// After the sleep, we should check again if we have been stopped.
-				select {
-				case <-t.scraperStopping:
-					return
-				default:
-					// Do nothing.
-				}
 				t.scrape(ingester)
 			}
 		}

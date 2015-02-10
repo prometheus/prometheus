@@ -14,10 +14,17 @@
 package retrieval
 
 import (
+	"errors"
+	"time"
+
 	"github.com/prometheus/client_golang/extraction"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 )
+
+const ingestTimeout = 100 * time.Millisecond // TODO(beorn7): Adjust this to a fraction of the actual HTTP timeout.
+
+var errIngestChannelFull = errors.New("ingestion channel full")
 
 // MergeLabelsIngester merges a labelset ontop of a given extraction result and
 // passes the result on to another ingester. Label collisions are avoided by
@@ -42,8 +49,23 @@ func (i *MergeLabelsIngester) Ingest(samples clientmodel.Samples) error {
 // ChannelIngester feeds results into a channel without modifying them.
 type ChannelIngester chan<- clientmodel.Samples
 
-// Ingest ingests the provided extraction result by sending it to i.
+// Ingest ingests the provided extraction result by sending it to its channel.
+// If the channel was not able to receive the samples within the ingestTimeout,
+// an error is returned. This is important to fail fast and to not pile up
+// ingestion requests in case of overload.
 func (i ChannelIngester) Ingest(s clientmodel.Samples) error {
-	i <- s
-	return nil
+	// Since the regular case is that i is ready to receive, first try
+	// without setting a timeout so that we don't need to allocate a timer
+	// most of the time.
+	select {
+	case i <- s:
+		return nil
+	default:
+		select {
+		case i <- s:
+			return nil
+		case <-time.After(ingestTimeout):
+			return errIngestChannelFull
+		}
+	}
 }
