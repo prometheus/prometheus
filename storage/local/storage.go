@@ -16,7 +16,7 @@ package local
 
 import (
 	"container/list"
-	"math"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,7 +34,7 @@ const (
 
 	// See waitForNextFP.
 	fpMaxWaitDuration = 10 * time.Second
-	fpMinWaitDuration = 5 * time.Millisecond // ~ hard disk seek time.
+	fpMinWaitDuration = 20 * time.Millisecond // A small multiple of disk seek time.
 	fpMaxSweepTime    = 6 * time.Hour
 
 	maxEvictInterval = time.Minute
@@ -68,6 +68,12 @@ type memorySeriesStorage struct {
 	purgeAfter                 time.Duration
 	checkpointInterval         time.Duration
 	checkpointDirtySeriesLimit int
+
+	// The timestamp of the last sample appended.
+	lastTimestampAppended clientmodel.Timestamp
+	// Wait group for goroutines appending samples with the same timestamp.
+	appendWaitGroup sync.WaitGroup
+	appendMtx       sync.Mutex
 
 	persistQueue   chan persistRequest
 	persistStopped chan struct{}
@@ -125,7 +131,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 	numSeries.Set(float64(fpToSeries.length()))
 
 	return &memorySeriesStorage{
-		fpLocker:   newFingerprintLocker(256),
+		fpLocker:   newFingerprintLocker(1024),
 		fpToSeries: fpToSeries,
 
 		loopStopping:               make(chan struct{}),
@@ -134,6 +140,8 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		purgeAfter:                 o.PersistenceRetentionPeriod,
 		checkpointInterval:         o.CheckpointInterval,
 		checkpointDirtySeriesLimit: o.CheckpointDirtySeriesLimit,
+
+		lastTimestampAppended: clientmodel.Earliest,
 
 		persistQueue:   make(chan persistRequest, o.PersistenceQueueCapacity),
 		persistStopped: make(chan struct{}),
@@ -234,6 +242,9 @@ func (s *memorySeriesStorage) Stop() error {
 
 // WaitForIndexing implements Storage.
 func (s *memorySeriesStorage) WaitForIndexing() {
+	// First let all goroutines appending samples stop.
+	s.appendWaitGroup.Wait()
+	// Only then wait for the persistence to index them.
 	s.persistence.waitForIndexing()
 }
 
@@ -360,11 +371,28 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 
 // AppendSamples implements Storage.
 func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
-	for _, sample := range samples {
-		s.appendSample(sample)
+	if len(samples) == 0 {
+		return
 	}
 
-	s.ingestedSamplesCount.Add(float64(len(samples)))
+	s.appendMtx.Lock()
+	defer s.appendMtx.Unlock()
+
+	for _, sample := range samples {
+		if sample.Timestamp != s.lastTimestampAppended {
+			// Timestamp has changed. We have to wait for all
+			// appendSample to complete before proceeding.
+			s.appendWaitGroup.Wait()
+			s.lastTimestampAppended = sample.Timestamp
+		}
+
+		s.appendWaitGroup.Add(1)
+		go func(sample *clientmodel.Sample) {
+			s.appendSample(sample)
+			s.appendWaitGroup.Done()
+		}(sample)
+	}
+
 }
 
 func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
@@ -376,6 +404,8 @@ func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
 		Timestamp: sample.Timestamp,
 	})
 	s.fpLocker.Unlock(fp)
+	s.ingestedSamplesCount.Inc()
+
 	if len(chunkDescsToPersist) == 0 {
 		return
 	}
@@ -700,7 +730,16 @@ loop:
 			s.seriesOps.WithLabelValues(archiveMaintenance).Inc()
 		case <-s.countPersistedHeadChunks:
 			headChunksPersistedSinceLastCheckpoint++
-			if headChunksPersistedSinceLastCheckpoint >= s.checkpointDirtySeriesLimit {
+			// Check if we have enough "dirty" series so that we need an early checkpoint.
+			// As described above, we take the headChunksPersistedSinceLastCheckpoint as a
+			// heuristic for "dirty" series. However, if we are already backlogging
+			// chunks to be persisted, creating a checkpoint would be counterproductive,
+			// as it would slow down chunk persisting even more, while in a situation like
+			// that, the best we can do for crash recovery is to work through the persist
+			// queue as quickly as possible. So only checkpoint if s.persistQueue is
+			// at most 20% full.
+			if headChunksPersistedSinceLastCheckpoint >= s.checkpointDirtySeriesLimit &&
+				len(s.persistQueue) < cap(s.persistQueue)/5 {
 				checkpointTimer.Reset(0)
 			}
 		}
@@ -751,7 +790,7 @@ func (s *memorySeriesStorage) maintainSeries(fp clientmodel.Fingerprint) {
 		// Make sure we have a head chunk descriptor (a freshly
 		// unarchived series has none).
 		if len(series.chunkDescs) == 0 {
-			cds, err := s.loadChunkDescs(fp, math.MaxInt64)
+			cds, err := s.loadChunkDescs(fp, clientmodel.Latest)
 			if err != nil {
 				glog.Errorf("Could not load chunk descriptors prior to archiving metric %v, metric will not be archived: %v", series.metric, err)
 				return

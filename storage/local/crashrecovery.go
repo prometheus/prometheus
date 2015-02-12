@@ -16,7 +16,6 @@ package local
 import (
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path"
 	"strings"
@@ -342,7 +341,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if err := kv.Value(&m); err != nil {
 			return err
 		}
-		series := newMemorySeries(clientmodel.Metric(m), false, math.MinInt64)
+		series := newMemorySeries(clientmodel.Metric(m), false, clientmodel.Earliest)
 		cds, err := p.loadChunkDescs(clientmodel.Fingerprint(fp), clientmodel.Now())
 		if err != nil {
 			return err

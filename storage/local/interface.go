@@ -27,9 +27,12 @@ import (
 // are goroutine-safe.
 type Storage interface {
 	prometheus.Collector
-	// AppendSamples stores a group of new samples. Multiple samples for the same
-	// fingerprint need to be submitted in chronological order, from oldest to
-	// newest (both in the same call to AppendSamples and across multiple calls).
+	// AppendSamples stores a group of new samples. Multiple samples for the
+	// same fingerprint need to be submitted in chronological order, from
+	// oldest to newest (both in the same call to AppendSamples and across
+	// multiple calls).  When AppendSamples has returned, the appended
+	// samples might not be queryable immediately. (Use WaitForIndexing to
+	// wait for complete processing.)
 	AppendSamples(clientmodel.Samples)
 	// NewPreloader returns a new Preloader which allows preloading and pinning
 	// series data into memory for use within a query.

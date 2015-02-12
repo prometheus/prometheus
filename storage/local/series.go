@@ -14,7 +14,6 @@
 package local
 
 import (
-	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -169,7 +168,7 @@ type memorySeries struct {
 // will be set properly upon the first eviction of chunkDescs).
 func newMemorySeries(m clientmodel.Metric, reallyNew bool, firstTime clientmodel.Timestamp) *memorySeries {
 	if reallyNew {
-		firstTime = math.MinInt64
+		firstTime = clientmodel.Earliest
 	}
 	s := memorySeries{
 		metric:             m,
@@ -337,7 +336,7 @@ func (s *memorySeries) preloadChunksForRange(
 	from clientmodel.Timestamp, through clientmodel.Timestamp,
 	fp clientmodel.Fingerprint, mss *memorySeriesStorage,
 ) ([]*chunkDesc, error) {
-	firstChunkDescTime := clientmodel.Timestamp(math.MaxInt64)
+	firstChunkDescTime := clientmodel.Latest
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
 	}
