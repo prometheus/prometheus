@@ -1,7 +1,7 @@
 FROM       golang:1.4
 MAINTAINER The Prometheus Authors <prometheus-developers@googlegroups.com>
-RUN        apt-get -qy update && apt-get -qy install vim-common gcc mercurial && apt-get clean && \
-           go get github.com/tools/godep
+RUN        apt-get -qy update && apt-get -qq upgrade && apt-get -qy install vim-common gcc mercurial \
+           && apt-get clean && go get github.com/tools/godep
 
 WORKDIR    /go/src/github.com/prometheus/prometheus
 ADD        . /go/src/github.com/prometheus/prometheus
