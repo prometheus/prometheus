@@ -66,8 +66,7 @@ config: dependencies
 	$(MAKE) -C config
 
 dependencies: $(GOCC) $(FULL_GOPATH)
-	$(GO) get github.com/tools/godep
-	$(GODEP) restore
+	cp -a $(CURDIR)/Godeps/_workspace/src/* $(GOPATH)/src
 	$(GO) get -d
 
 documentation: search_index

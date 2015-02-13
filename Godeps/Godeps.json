@@ -1,11 +1,10 @@
 {
 	"ImportPath": "github.com/prometheus/prometheus",
-	"GoVersion": "go1.4",
+	"GoVersion": "go1.4.1",
 	"Deps": [
 		{
-			"ImportPath": "code.google.com/p/goprotobuf/proto",
-			"Comment": "go.r60-152",
-			"Rev": "36be16571e14f67e114bb0af619e5de2c1591679"
+			"ImportPath": "github.com/golang/protobuf/proto",
+			"Rev": "5677a0e3d5e89854c9974e1256839ee23f8233ca"
 		},
 		{
 			"ImportPath": "github.com/golang/glog",
@@ -13,7 +12,7 @@
 		},
 		{
 			"ImportPath": "github.com/matttproud/golang_protobuf_extensions/ext",
-			"Rev": "7a864a042e844af638df17ebbabf8183dace556a"
+			"Rev": "ba7d65ac66e9da93a714ca18f6d1bc7a0c09100c"
 		},
 		{
 			"ImportPath": "github.com/miekg/dns",

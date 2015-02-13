@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"code.google.com/p/goprotobuf/proto"
+	"github.com/golang/protobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 

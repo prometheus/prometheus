@@ -18,5 +18,5 @@ SUFFIXES:
 include ../Makefile.INCLUDE
 
 generated/config.pb.go: config.proto
-	$(GO_GET) code.google.com/p/goprotobuf/protoc-gen-go
+	$(GO) get github.com/golang/protobuf/protoc-gen-go
 	$(PROTOC) --proto_path=$(PREFIX)/include:. --go_out=generated/ config.proto

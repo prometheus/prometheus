@@ -16,7 +16,7 @@ package config
 import (
 	"io/ioutil"
 
-	"code.google.com/p/goprotobuf/proto"
+	"github.com/golang/protobuf/proto"
 
 	pb "github.com/prometheus/prometheus/config/generated"
 )

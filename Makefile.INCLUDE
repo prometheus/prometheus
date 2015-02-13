@@ -47,7 +47,6 @@ GOCC		  = $(GOROOT)/bin/go
 TMPDIR		  = /tmp
 GOENV		  = TMPDIR=$(TMPDIR) GOROOT=$(GOROOT) GOPATH=$(GOPATH)
 GO	          = $(GOENV) $(GOCC)
-GODEP		  = $(GOENV) $(GOPATH)/bin/godep
 GOFMT		  = $(GOROOT)/bin/gofmt
 
 UNAME := $(shell uname)
