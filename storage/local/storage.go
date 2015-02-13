@@ -73,7 +73,6 @@ type memorySeriesStorage struct {
 	lastTimestampAppended clientmodel.Timestamp
 	// Wait group for goroutines appending samples with the same timestamp.
 	appendWaitGroup sync.WaitGroup
-	appendMtx       sync.Mutex
 
 	persistQueue   chan persistRequest
 	persistStopped chan struct{}
@@ -371,13 +370,6 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 
 // AppendSamples implements Storage.
 func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
-	if len(samples) == 0 {
-		return
-	}
-
-	s.appendMtx.Lock()
-	defer s.appendMtx.Unlock()
-
 	for _, sample := range samples {
 		if sample.Timestamp != s.lastTimestampAppended {
 			// Timestamp has changed. We have to wait for all
@@ -392,7 +384,6 @@ func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
 			s.appendWaitGroup.Done()
 		}(sample)
 	}
-
 }
 
 func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
