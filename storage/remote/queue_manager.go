@@ -115,6 +115,9 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 // Queue queues a sample batch to be sent to the TSDB. It drops the most
 // recently queued samples on the floor if the queue is full.
 func (t *TSDBQueueManager) Queue(s clientmodel.Samples) {
+	if len(s) == 0 {
+		return
+	}
 	select {
 	case t.queue <- s:
 	default:

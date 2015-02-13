@@ -70,6 +70,7 @@ func TestChunk(t *testing.T) {
 	defer closer.Close()
 
 	s.AppendSamples(samples)
+	s.WaitForIndexing()
 
 	for m := range s.(*memorySeriesStorage).fpToSeries.iter() {
 		s.(*memorySeriesStorage).fpLocker.Lock(m.fp)
@@ -109,6 +110,7 @@ func TestGetValueAtTime(t *testing.T) {
 	defer closer.Close()
 
 	s.AppendSamples(samples)
+	s.WaitForIndexing()
 
 	fp := clientmodel.Metric{}.Fingerprint()
 
@@ -191,6 +193,7 @@ func TestGetRangeValues(t *testing.T) {
 	defer closer.Close()
 
 	s.AppendSamples(samples)
+	s.WaitForIndexing()
 
 	fp := clientmodel.Metric{}.Fingerprint()
 
@@ -334,6 +337,7 @@ func TestEvictAndPurgeSeries(t *testing.T) {
 	ms := s.(*memorySeriesStorage) // Going to test the internal purgeSeries method.
 
 	s.AppendSamples(samples)
+	s.WaitForIndexing()
 
 	fp := clientmodel.Metric{}.Fingerprint()
 
@@ -368,6 +372,7 @@ func TestEvictAndPurgeSeries(t *testing.T) {
 
 	// Recreate series.
 	s.AppendSamples(samples)
+	s.WaitForIndexing()
 
 	series, ok := ms.fpToSeries.get(fp)
 	if !ok {
@@ -450,6 +455,7 @@ func TestFuzz(t *testing.T) {
 
 		samples := createRandomSamples()
 		s.AppendSamples(samples)
+		s.WaitForIndexing()
 
 		return verifyStorage(t, s, samples, 24*7*time.Hour)
 	}

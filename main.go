@@ -218,11 +218,9 @@ func (p *prometheus) Serve() {
 	}()
 
 	for samples := range p.unwrittenSamples {
-		if len(samples) > 0 {
-			p.storage.AppendSamples(samples)
-			if p.remoteTSDBQueue != nil {
-				p.remoteTSDBQueue.Queue(samples)
-			}
+		p.storage.AppendSamples(samples)
+		if p.remoteTSDBQueue != nil {
+			p.remoteTSDBQueue.Queue(samples)
 		}
 	}
 
