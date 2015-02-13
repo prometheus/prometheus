@@ -41,7 +41,7 @@ func NewTestStorage(t test.T) (Storage, test.Closer) {
 	directory := test.NewTemporaryDirectory("test_storage", t)
 	o := &MemorySeriesStorageOptions{
 		MemoryChunks:               1000000,
-		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
+		PersistenceRetentionPeriod: 24 * time.Hour * 365 * 100, // Enough to never trigger purging.
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         time.Hour,
 	}
