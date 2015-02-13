@@ -84,7 +84,7 @@ type indexingOp struct {
 
 // A Persistence is used by a Storage implementation to store samples
 // persistently across restarts. The methods are only goroutine-safe if
-// explicitly marked as such below. The chunk-related methods PersistChunk,
+// explicitly marked as such below. The chunk-related methods persistChunk,
 // dropChunks, loadChunks, and loadChunkDescs can be called concurrently with
 // each other if each call refers to a different fingerprint.
 type persistence struct {
