@@ -476,7 +476,7 @@ PromConsole.Graph.prototype.dispatch = function() {
   var pending_requests = this.params.expr.length;
   for (var i = 0; i < this.params.expr.length; ++i) {
     var endTime = this.params.endTime;
-    var url = "/api/query_range?expr=" + encodeURIComponent(this.params.expr[i])
+    var url = "../api/query_range?expr=" + encodeURIComponent(this.params.expr[i])
       + "&step=" + this.params.duration / this.graphTd.offsetWidth
       + "&range=" + this.params.duration + "&end=" + endTime;
     var xhr = new XMLHttpRequest();
@@ -513,7 +513,7 @@ PromConsole.Graph.prototype.dispatch = function() {
   }
 
   var loadingImg = document.createElement("img");
-  loadingImg.src = '/static/img/ajax-loader.gif';
+  loadingImg.src = '../static/img/ajax-loader.gif';
   loadingImg.alt = 'Loading...';
   loadingImg.className = 'prom_graph_loading';
   this.graphTd.appendChild(loadingImg);
@@ -579,6 +579,6 @@ PromConsole._graphsToSlashGraphURL = function(exprs) {
   for (var i = 0; i < exprs.length; ++i) {
     data.push({'expr': exprs[i], 'tab': 0});
   }
-  return '/graph#' + encodeURIComponent(JSON.stringify(data));
+  return '../graph#' + encodeURIComponent(JSON.stringify(data));
 
 };

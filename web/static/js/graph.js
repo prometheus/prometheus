@@ -158,7 +158,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
   var self = this;
   $.ajax({
       method: "GET",
-      url: "/api/metrics",
+      url: "api/metrics",
       dataType: "json",
       success: function(json, textStatus) {
         var availableMetrics = [];
@@ -310,7 +310,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
     url  = self.queryForm.attr("action");
     success = function(json, textStatus) { self.handleGraphResponse(json, textStatus); };
   } else {
-    url  = "/api/query";
+    url  = "api/query";
     success = function(text, textStatus) { self.handleConsoleResponse(text, textStatus); };
   }
 
@@ -607,7 +607,7 @@ function init() {
   });
 
   $.ajax({
-    url: "/static/js/graph_template.handlebar",
+    url: "static/js/graph_template.handlebar",
     success: function(data) {
       graphTemplate = Handlebars.compile(data);
       var options = parseGraphOptionsFromURL();

@@ -1,15 +1,15 @@
 {{/* vim: set ft=html: */}}
 {{/* Load Prometheus console library JS/CSS. Should go in <head> */}}
 {{ define "prom_console_head" }}
-<link type="text/css" rel="stylesheet" href="/static/vendor/rickshaw/rickshaw.min.css">
-<link type="text/css" rel="stylesheet" href="/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css">
-<link type="text/css" rel="stylesheet" href="/static/css/prom_console.css">
-<script src="/static/vendor/rickshaw/vendor/d3.v3.js"></script>
-<script src="/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
-<script src="/static/vendor/rickshaw/rickshaw.min.js"></script>
-<script src="/static/vendor/js/jquery.min.js"></script>
-<script src="/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"></script>
-<script src="/static/js/prom_console.js"></script>
+<link type="text/css" rel="stylesheet" href="../static/vendor/rickshaw/rickshaw.min.css">
+<link type="text/css" rel="stylesheet" href="../static/vendor/bootstrap-3.3.1/css/bootstrap.min.css">
+<link type="text/css" rel="stylesheet" href="../static/css/prom_console.css">
+<script src="../static/vendor/rickshaw/vendor/d3.v3.js"></script>
+<script src="../static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
+<script src="../static/vendor/rickshaw/rickshaw.min.js"></script>
+<script src="../static/vendor/js/jquery.min.js"></script>
+<script src="../static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"></script>
+<script src="../static/js/prom_console.js"></script>
 {{ end }}
 
 {{/* Top of all pages. */}}
@@ -38,7 +38,7 @@ renderTemplate is the name of the template to use to render the value.
 */}}
 {{ define "prom_query_drilldown" }}
 {{ $expr := .arg0 }}{{ $suffix := (or .arg1 "") }}{{ $renderTemplate := (or .arg2 "__prom_query_drilldown_noop") }}
-<a class="prom_query_drilldown" href="{{ graphLink $expr }}">{{ with query $expr }}{{tmpl $renderTemplate ( . | first | value )}}{{ $suffix }}{{ else }}-{{ end }}</a>
+<a class="prom_query_drilldown" href="../{{ graphLink $expr }}">{{ with query $expr }}{{tmpl $renderTemplate ( . | first | value )}}{{ $suffix }}{{ else }}-{{ end }}</a>
 {{ end }}
 
 {{ define "prom_path" }}/consoles/{{ .Path }}?{{ range $param, $value := .Params }}{{ $param }}={{ $value }}&amp;{{ end }}{{ end }}"
