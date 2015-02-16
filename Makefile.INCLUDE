@@ -26,8 +26,8 @@ MAC_OS_X_VERSION ?= 10.8
 
 BUILD_PATH = $(PWD)/.build
 
-GO_VERSION	 := 1.4
-GOOS		  = $(subst Darwin,darwin,$(subst Linux,linux,$(subst FreeBSD,freebsd,$(OS))))
+GO_VERSION := 1.4
+GOOS = $(subst Darwin,darwin,$(subst Linux,linux,$(subst FreeBSD,freebsd,$(OS))))
 
 ifeq ($(GOOS),darwin)
 RELEASE_SUFFIX ?= -osx$(MAC_OS_X_VERSION)
@@ -38,16 +38,16 @@ endif
 # Never honor GOBIN, should it be set at all.
 unexport GOBIN
 
-GOARCH		  = $(subst x86_64,amd64,$(patsubst i%86,386,$(ARCH)))
-GOPKG		 ?= go$(GO_VERSION).$(GOOS)-$(GOARCH)$(RELEASE_SUFFIX).tar.gz
-GOURL		 ?= https://golang.org/dl
-GOROOT		  = $(BUILD_PATH)/root/go
-GOPATH		  = $(BUILD_PATH)/root/gopath
-GOCC		  = $(GOROOT)/bin/go
-TMPDIR		  = /tmp
-GOENV		  = TMPDIR=$(TMPDIR) GOROOT=$(GOROOT) GOPATH=$(GOPATH)
-GO	          = $(GOENV) $(GOCC)
-GOFMT		  = $(GOROOT)/bin/gofmt
+GOARCH  = $(subst x86_64,amd64,$(patsubst i%86,386,$(ARCH)))
+GOPKG  ?= go$(GO_VERSION).$(GOOS)-$(GOARCH)$(RELEASE_SUFFIX).tar.gz
+GOURL  ?= https://golang.org/dl
+GOROOT  = $(BUILD_PATH)/root/go
+GOPATH  = $(BUILD_PATH)/root/gopath
+GOCC    = $(GOROOT)/bin/go
+TMPDIR  = /tmp
+GOENV   = TMPDIR=$(TMPDIR) GOROOT=$(GOROOT) GOPATH=$(GOPATH)
+GO      = $(GOENV) $(GOCC)
+GOFMT   = $(GOROOT)/bin/gofmt
 
 UNAME := $(shell uname)
 FULL_GOPATH := $(GOPATH)/src/github.com/prometheus/prometheus
@@ -66,7 +66,7 @@ BRANCH     := $(shell git rev-parse --abbrev-ref HEAD)
 HOSTNAME   := $(shell hostname -f)
 BUILD_DATE := $(shell date +%Y%m%d-%H:%M:%S)
 BUILDFLAGS := -ldflags \
-	      " -X main.buildVersion $(VERSION)\
+  " -X main.buildVersion $(VERSION)\
 		-X main.buildRevision $(REV)\
 		-X main.buildBranch $(BRANCH)\
 		-X main.buildUser $(USER)@$(HOSTNAME)\
