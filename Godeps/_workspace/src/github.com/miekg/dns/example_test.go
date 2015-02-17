@@ -49,7 +49,7 @@ func ExampleDS(zone string) {
 	}
 	for _, k := range r.Answer {
 		if key, ok := k.(*dns.DNSKEY); ok {
-			for _, alg := range []int{dns.SHA1, dns.SHA256, dns.SHA384} {
+			for _, alg := range []uint8{dns.SHA1, dns.SHA256, dns.SHA384} {
 				fmt.Printf("%s; %d\n", key.ToDS(alg).String(), key.Flags)
 			}
 		}

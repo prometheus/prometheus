@@ -102,12 +102,13 @@ type Token struct {
 	Comment string      // a potential comment positioned after the RR and on the same line
 }
 
-// NewRR reads the RR contained in the string s. Only the first RR is returned.
-// The class defaults to IN and TTL defaults to 3600. The full zone file
-// syntax like $TTL, $ORIGIN, etc. is supported.
-// All fields of the returned RR are set, except RR.Header().Rdlength which is set to 0.
+// NewRR reads the RR contained in the string s. Only the first RR is
+// returned. If s contains no RR, return nil with no error. The class
+// defaults to IN and TTL defaults to 3600. The full zone file syntax
+// like $TTL, $ORIGIN, etc. is supported. All fields of the returned
+// RR are set, except RR.Header().Rdlength which is set to 0.
 func NewRR(s string) (RR, error) {
-	if s[len(s)-1] != '\n' { // We need a closing newline
+	if len(s) > 0 && s[len(s)-1] != '\n' { // We need a closing newline
 		return ReadRR(strings.NewReader(s+"\n"), "")
 	}
 	return ReadRR(strings.NewReader(s), "")
@@ -117,6 +118,10 @@ func NewRR(s string) (RR, error) {
 // See NewRR for more documentation.
 func ReadRR(q io.Reader, filename string) (RR, error) {
 	r := <-parseZoneHelper(q, ".", filename, 1)
+	if r == nil {
+		return nil, nil
+	}
+
 	if r.Error != nil {
 		return nil, r.Error
 	}
@@ -899,9 +904,9 @@ func appendOrigin(name, origin string) string {
 func locCheckNorth(token string, latitude uint32) (uint32, bool) {
 	switch token {
 	case "n", "N":
-		return _LOC_EQUATOR + latitude, true
+		return LOC_EQUATOR + latitude, true
 	case "s", "S":
-		return _LOC_EQUATOR - latitude, true
+		return LOC_EQUATOR - latitude, true
 	}
 	return latitude, false
 }
@@ -910,9 +915,9 @@ func locCheckNorth(token string, latitude uint32) (uint32, bool) {
 func locCheckEast(token string, longitude uint32) (uint32, bool) {
 	switch token {
 	case "e", "E":
-		return _LOC_EQUATOR + longitude, true
+		return LOC_EQUATOR + longitude, true
 	case "w", "W":
-		return _LOC_EQUATOR - longitude, true
+		return LOC_EQUATOR - longitude, true
 	}
 	return longitude, false
 }

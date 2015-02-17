@@ -34,6 +34,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/skynetservices/skydns
 * https://github.com/DevelopersPL/godnsagent
 * https://github.com/duedil-ltd/discodns
+* https://github.com/StalkR/dns-reverse-proxy
 
 Send pull request if you want to be listed here.
 
@@ -49,7 +50,7 @@ Send pull request if you want to be listed here.
 * DNSSEC: signing, validating and key generation for DSA, RSA and ECDSA;
 * EDNS0, NSID;
 * AXFR/IXFR;
-* TSIG;
+* TSIG, SIG(0);
 * DNS name compression;
 * Depends only on the standard library.
 
@@ -95,7 +96,8 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 3225 - DO bit (DNSSEC OK)
 * 340{1,2,3} - NAPTR record
 * 3445 - Limiting the scope of (DNS)KEY
-* 3597 - Unkown RRs
+* 3597 - Unknown RRs
+* 4025 - IPSECKEY
 * 403{3,4,5} - DNSSEC + validation functions
 * 4255 - SSHFP record
 * 4343 - Case insensitivity
@@ -112,6 +114,7 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 5936 - AXFR
 * 5966 - TCP implementation recommendations
 * 6605 - ECDSA
+* 6725 - IANA Registry Update
 * 6742 - ILNP DNS
 * 6891 - EDNS0 update
 * 6895 - DNS IANA considerations
@@ -131,10 +134,8 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 ## TODO
 
 * privatekey.Precompute() when signing?
-* Last remaining RRs: APL, ATMA, A6 and NXT;
+* Last remaining RRs: APL, ATMA, A6 and NXT and IPSECKEY;
 * Missing in parsing: ISDN, UNSPEC, ATMA;
 * CAA parsing is broken;
 * NSEC(3) cover/match/closest enclose;
 * Replies with TC bit are not parsed to the end;
-* SIG(0);
-* Create IsMsg to validate a message before fully parsing it.

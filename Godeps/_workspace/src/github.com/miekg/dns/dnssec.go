@@ -20,7 +20,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/md5"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -36,31 +35,34 @@ import (
 
 // DNSSEC encryption algorithm codes.
 const (
-	RSAMD5           = 1
-	DH               = 2
-	DSA              = 3
-	ECC              = 4
-	RSASHA1          = 5
-	DSANSEC3SHA1     = 6
-	RSASHA1NSEC3SHA1 = 7
-	RSASHA256        = 8
-	RSASHA512        = 10
-	ECCGOST          = 12
-	ECDSAP256SHA256  = 13
-	ECDSAP384SHA384  = 14
-	INDIRECT         = 252
-	PRIVATEDNS       = 253 // Private (experimental keys)
-	PRIVATEOID       = 254
+	_ uint8 = iota
+	RSAMD5
+	DH
+	DSA
+	_ // Skip 4, RFC 6725, section 2.1
+	RSASHA1
+	DSANSEC3SHA1
+	RSASHA1NSEC3SHA1
+	RSASHA256
+	_ // Skip 9, RFC 6725, section 2.1
+	RSASHA512
+	_ // Skip 11, RFC 6725, section 2.1
+	ECCGOST
+	ECDSAP256SHA256
+	ECDSAP384SHA384
+	INDIRECT   uint8 = 252
+	PRIVATEDNS uint8 = 253 // Private (experimental keys)
+	PRIVATEOID uint8 = 254
 )
 
 // DNSSEC hashing algorithm codes.
 const (
-	_      = iota
-	SHA1   // RFC 4034
-	SHA256 // RFC 4509
-	GOST94 // RFC 5933
-	SHA384 // Experimental
-	SHA512 // Experimental
+	_      uint8 = iota
+	SHA1         // RFC 4034
+	SHA256       // RFC 4509
+	GOST94       // RFC 5933
+	SHA384       // Experimental
+	SHA512       // Experimental
 )
 
 // DNSKEY flag values.
@@ -94,6 +96,10 @@ type dnskeyWireFmt struct {
 	/* Nothing is left out */
 }
 
+func divRoundUp(a, b int) int {
+	return (a + b - 1) / b
+}
+
 // KeyTag calculates the keytag (or key-id) of the DNSKEY.
 func (k *DNSKEY) KeyTag() uint16 {
 	if k == nil {
@@ -105,7 +111,7 @@ func (k *DNSKEY) KeyTag() uint16 {
 		// Look at the bottom two bytes of the modules, which the last
 		// item in the pubkey. We could do this faster by looking directly
 		// at the base64 values. But I'm lazy.
-		modulus, _ := packBase64([]byte(k.PublicKey))
+		modulus, _ := fromBase64([]byte(k.PublicKey))
 		if len(modulus) > 1 {
 			x, _ := unpackUint16(modulus, len(modulus)-2)
 			keytag = int(x)
@@ -136,7 +142,7 @@ func (k *DNSKEY) KeyTag() uint16 {
 }
 
 // ToDS converts a DNSKEY record to a DS record.
-func (k *DNSKEY) ToDS(h int) *DS {
+func (k *DNSKEY) ToDS(h uint8) *DS {
 	if k == nil {
 		return nil
 	}
@@ -146,7 +152,7 @@ func (k *DNSKEY) ToDS(h int) *DS {
 	ds.Hdr.Rrtype = TypeDS
 	ds.Hdr.Ttl = k.Hdr.Ttl
 	ds.Algorithm = k.Algorithm
-	ds.DigestType = uint8(h)
+	ds.DigestType = h
 	ds.KeyTag = k.KeyTag()
 
 	keywire := new(dnskeyWireFmt)
@@ -249,60 +255,36 @@ func (rr *RRSIG) Sign(k PrivateKey, rrset []RR) error {
 	}
 	signdata = append(signdata, wire...)
 
-	var sighash []byte
 	var h hash.Hash
-	var ch crypto.Hash // Only need for RSA
 	switch rr.Algorithm {
 	case DSA, DSANSEC3SHA1:
-		// Implicit in the ParameterSizes
+		// TODO: this seems bugged, will panic
 	case RSASHA1, RSASHA1NSEC3SHA1:
 		h = sha1.New()
-		ch = crypto.SHA1
 	case RSASHA256, ECDSAP256SHA256:
 		h = sha256.New()
-		ch = crypto.SHA256
 	case ECDSAP384SHA384:
 		h = sha512.New384()
 	case RSASHA512:
 		h = sha512.New()
-		ch = crypto.SHA512
 	case RSAMD5:
 		fallthrough // Deprecated in RFC 6725
 	default:
 		return ErrAlg
 	}
-	io.WriteString(h, string(signdata))
-	sighash = h.Sum(nil)
 
-	switch p := k.(type) {
-	case *dsa.PrivateKey:
-		r1, s1, err := dsa.Sign(rand.Reader, p, sighash)
-		if err != nil {
-			return err
-		}
-		signature := []byte{0x4D} // T value, here the ASCII M for Miek (not used in DNSSEC)
-		signature = append(signature, r1.Bytes()...)
-		signature = append(signature, s1.Bytes()...)
-		rr.Signature = unpackBase64(signature)
-	case *rsa.PrivateKey:
-		// We can use nil as rand.Reader here (says AGL)
-		signature, err := rsa.SignPKCS1v15(nil, p, ch, sighash)
-		if err != nil {
-			return err
-		}
-		rr.Signature = unpackBase64(signature)
-	case *ecdsa.PrivateKey:
-		r1, s1, err := ecdsa.Sign(rand.Reader, p, sighash)
-		if err != nil {
-			return err
-		}
-		signature := r1.Bytes()
-		signature = append(signature, s1.Bytes()...)
-		rr.Signature = unpackBase64(signature)
-	default:
-		// Not given the correct key
-		return ErrKeyAlg
+	_, err = h.Write(signdata)
+	if err != nil {
+		return err
 	}
+	sighash := h.Sum(nil)
+
+	signature, err := k.Sign(sighash, rr.Algorithm)
+	if err != nil {
+		return err
+	}
+	rr.Signature = toBase64(signature)
+
 	return nil
 }
 
@@ -395,7 +377,7 @@ func (rr *RRSIG) Verify(k *DNSKEY, rrset []RR) error {
 		sighash := h.Sum(nil)
 		return rsa.VerifyPKCS1v15(pubkey, ch, sighash, sigbuf)
 	case ECDSAP256SHA256, ECDSAP384SHA384:
-		pubkey := k.publicKeyCurve()
+		pubkey := k.publicKeyECDSA()
 		if pubkey == nil {
 			return ErrKey
 		}
@@ -441,41 +423,16 @@ func (rr *RRSIG) ValidityPeriod(t time.Time) bool {
 
 // Return the signatures base64 encodedig sigdata as a byte slice.
 func (s *RRSIG) sigBuf() []byte {
-	sigbuf, err := packBase64([]byte(s.Signature))
+	sigbuf, err := fromBase64([]byte(s.Signature))
 	if err != nil {
 		return nil
 	}
 	return sigbuf
 }
 
-// setPublicKeyInPrivate sets the public key in the private key.
-func (k *DNSKEY) setPublicKeyInPrivate(p PrivateKey) bool {
-	switch t := p.(type) {
-	case *dsa.PrivateKey:
-		x := k.publicKeyDSA()
-		if x == nil {
-			return false
-		}
-		t.PublicKey = *x
-	case *rsa.PrivateKey:
-		x := k.publicKeyRSA()
-		if x == nil {
-			return false
-		}
-		t.PublicKey = *x
-	case *ecdsa.PrivateKey:
-		x := k.publicKeyCurve()
-		if x == nil {
-			return false
-		}
-		t.PublicKey = *x
-	}
-	return true
-}
-
 // publicKeyRSA returns the RSA public key from a DNSKEY record.
 func (k *DNSKEY) publicKeyRSA() *rsa.PublicKey {
-	keybuf, err := packBase64([]byte(k.PublicKey))
+	keybuf, err := fromBase64([]byte(k.PublicKey))
 	if err != nil {
 		return nil
 	}
@@ -511,9 +468,9 @@ func (k *DNSKEY) publicKeyRSA() *rsa.PublicKey {
 	return pubkey
 }
 
-// publicKeyCurve returns the Curve public key from the DNSKEY record.
-func (k *DNSKEY) publicKeyCurve() *ecdsa.PublicKey {
-	keybuf, err := packBase64([]byte(k.PublicKey))
+// publicKeyECDSA returns the Curve public key from the DNSKEY record.
+func (k *DNSKEY) publicKeyECDSA() *ecdsa.PublicKey {
+	keybuf, err := fromBase64([]byte(k.PublicKey))
 	if err != nil {
 		return nil
 	}
@@ -540,95 +497,27 @@ func (k *DNSKEY) publicKeyCurve() *ecdsa.PublicKey {
 }
 
 func (k *DNSKEY) publicKeyDSA() *dsa.PublicKey {
-	keybuf, err := packBase64([]byte(k.PublicKey))
+	keybuf, err := fromBase64([]byte(k.PublicKey))
 	if err != nil {
 		return nil
 	}
-	if len(keybuf) < 22 { // TODO: check
+	if len(keybuf) < 22 {
 		return nil
 	}
-	t := int(keybuf[0])
+	t, keybuf := int(keybuf[0]), keybuf[1:]
 	size := 64 + t*8
+	q, keybuf := keybuf[:20], keybuf[20:]
+	if len(keybuf) != 3*size {
+		return nil
+	}
+	p, keybuf := keybuf[:size], keybuf[size:]
+	g, y := keybuf[:size], keybuf[size:]
 	pubkey := new(dsa.PublicKey)
-	pubkey.Parameters.Q = big.NewInt(0)
-	pubkey.Parameters.Q.SetBytes(keybuf[1:21]) // +/- 1 ?
-	pubkey.Parameters.P = big.NewInt(0)
-	pubkey.Parameters.P.SetBytes(keybuf[22 : 22+size])
-	pubkey.Parameters.G = big.NewInt(0)
-	pubkey.Parameters.G.SetBytes(keybuf[22+size+1 : 22+size*2])
-	pubkey.Y = big.NewInt(0)
-	pubkey.Y.SetBytes(keybuf[22+size*2+1 : 22+size*3])
+	pubkey.Parameters.Q = big.NewInt(0).SetBytes(q)
+	pubkey.Parameters.P = big.NewInt(0).SetBytes(p)
+	pubkey.Parameters.G = big.NewInt(0).SetBytes(g)
+	pubkey.Y = big.NewInt(0).SetBytes(y)
 	return pubkey
-}
-
-// Set the public key (the value E and N)
-func (k *DNSKEY) setPublicKeyRSA(_E int, _N *big.Int) bool {
-	if _E == 0 || _N == nil {
-		return false
-	}
-	buf := exponentToBuf(_E)
-	buf = append(buf, _N.Bytes()...)
-	k.PublicKey = unpackBase64(buf)
-	return true
-}
-
-// Set the public key for Elliptic Curves
-func (k *DNSKEY) setPublicKeyCurve(_X, _Y *big.Int) bool {
-	if _X == nil || _Y == nil {
-		return false
-	}
-	buf := curveToBuf(_X, _Y)
-	// Check the length of the buffer, either 64 or 92 bytes
-	k.PublicKey = unpackBase64(buf)
-	return true
-}
-
-// Set the public key for DSA
-func (k *DNSKEY) setPublicKeyDSA(_Q, _P, _G, _Y *big.Int) bool {
-	if _Q == nil || _P == nil || _G == nil || _Y == nil {
-		return false
-	}
-	buf := dsaToBuf(_Q, _P, _G, _Y)
-	k.PublicKey = unpackBase64(buf)
-	return true
-}
-
-// Set the public key (the values E and N) for RSA
-// RFC 3110: Section 2. RSA Public KEY Resource Records
-func exponentToBuf(_E int) []byte {
-	var buf []byte
-	i := big.NewInt(int64(_E))
-	if len(i.Bytes()) < 256 {
-		buf = make([]byte, 1)
-		buf[0] = uint8(len(i.Bytes()))
-	} else {
-		buf = make([]byte, 3)
-		buf[0] = 0
-		buf[1] = uint8(len(i.Bytes()) >> 8)
-		buf[2] = uint8(len(i.Bytes()))
-	}
-	buf = append(buf, i.Bytes()...)
-	return buf
-}
-
-// Set the public key for X and Y for Curve. The two
-// values are just concatenated.
-func curveToBuf(_X, _Y *big.Int) []byte {
-	buf := _X.Bytes()
-	buf = append(buf, _Y.Bytes()...)
-	return buf
-}
-
-// Set the public key for X and Y for Curve. The two
-// values are just concatenated.
-func dsaToBuf(_Q, _P, _G, _Y *big.Int) []byte {
-	t := byte((len(_G.Bytes()) - 64) / 8)
-	buf := []byte{t}
-	buf = append(buf, _Q.Bytes()...)
-	buf = append(buf, _P.Bytes()...)
-	buf = append(buf, _G.Bytes()...)
-	buf = append(buf, _Y.Bytes()...)
-	return buf
 }
 
 type wireSlice [][]byte

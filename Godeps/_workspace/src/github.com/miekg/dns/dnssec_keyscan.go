@@ -18,8 +18,8 @@ func (k *DNSKEY) NewPrivateKey(s string) (PrivateKey, error) {
 
 // ReadPrivateKey reads a private key from the io.Reader q. The string file is
 // only used in error reporting.
-// The public key must be
-// known, because some cryptographic algorithms embed the public inside the privatekey.
+// The public key must be known, because some cryptographic algorithms embed
+// the public inside the privatekey.
 func (k *DNSKEY) ReadPrivateKey(q io.Reader, file string) (PrivateKey, error) {
 	m, e := parseKey(q, file)
 	if m == nil {
@@ -34,14 +34,16 @@ func (k *DNSKEY) ReadPrivateKey(q io.Reader, file string) (PrivateKey, error) {
 	// TODO(mg): check if the pubkey matches the private key
 	switch m["algorithm"] {
 	case "3 (DSA)":
-		p, e := readPrivateKeyDSA(m)
+		priv, e := readPrivateKeyDSA(m)
 		if e != nil {
 			return nil, e
 		}
-		if !k.setPublicKeyInPrivate(p) {
-			return nil, ErrPrivKey
+		pub := k.publicKeyDSA()
+		if pub == nil {
+			return nil, ErrKey
 		}
-		return p, e
+		priv.PublicKey = *pub
+		return (*DSAPrivateKey)(priv), e
 	case "1 (RSAMD5)":
 		fallthrough
 	case "5 (RSASHA1)":
@@ -51,44 +53,44 @@ func (k *DNSKEY) ReadPrivateKey(q io.Reader, file string) (PrivateKey, error) {
 	case "8 (RSASHA256)":
 		fallthrough
 	case "10 (RSASHA512)":
-		p, e := readPrivateKeyRSA(m)
+		priv, e := readPrivateKeyRSA(m)
 		if e != nil {
 			return nil, e
 		}
-		if !k.setPublicKeyInPrivate(p) {
-			return nil, ErrPrivKey
+		pub := k.publicKeyRSA()
+		if pub == nil {
+			return nil, ErrKey
 		}
-		return p, e
+		priv.PublicKey = *pub
+		return (*RSAPrivateKey)(priv), e
 	case "12 (ECC-GOST)":
-		p, e := readPrivateKeyGOST(m)
-		if e != nil {
-			return nil, e
-		}
-		// setPublicKeyInPrivate(p)
-		return p, e
+		return nil, ErrPrivKey
 	case "13 (ECDSAP256SHA256)":
 		fallthrough
 	case "14 (ECDSAP384SHA384)":
-		p, e := readPrivateKeyECDSA(m)
+		priv, e := readPrivateKeyECDSA(m)
 		if e != nil {
 			return nil, e
 		}
-		if !k.setPublicKeyInPrivate(p) {
-			return nil, ErrPrivKey
+		pub := k.publicKeyECDSA()
+		if pub == nil {
+			return nil, ErrKey
 		}
-		return p, e
+		priv.PublicKey = *pub
+		return (*ECDSAPrivateKey)(priv), e
+	default:
+		return nil, ErrPrivKey
 	}
-	return nil, ErrPrivKey
 }
 
 // Read a private key (file) string and create a public key. Return the private key.
-func readPrivateKeyRSA(m map[string]string) (PrivateKey, error) {
+func readPrivateKeyRSA(m map[string]string) (*rsa.PrivateKey, error) {
 	p := new(rsa.PrivateKey)
 	p.Primes = []*big.Int{nil, nil}
 	for k, v := range m {
 		switch k {
 		case "modulus", "publicexponent", "privateexponent", "prime1", "prime2":
-			v1, err := packBase64([]byte(v))
+			v1, err := fromBase64([]byte(v))
 			if err != nil {
 				return nil, err
 			}
@@ -119,13 +121,13 @@ func readPrivateKeyRSA(m map[string]string) (PrivateKey, error) {
 	return p, nil
 }
 
-func readPrivateKeyDSA(m map[string]string) (PrivateKey, error) {
+func readPrivateKeyDSA(m map[string]string) (*dsa.PrivateKey, error) {
 	p := new(dsa.PrivateKey)
 	p.X = big.NewInt(0)
 	for k, v := range m {
 		switch k {
 		case "private_value(x)":
-			v1, err := packBase64([]byte(v))
+			v1, err := fromBase64([]byte(v))
 			if err != nil {
 				return nil, err
 			}
@@ -137,14 +139,14 @@ func readPrivateKeyDSA(m map[string]string) (PrivateKey, error) {
 	return p, nil
 }
 
-func readPrivateKeyECDSA(m map[string]string) (PrivateKey, error) {
+func readPrivateKeyECDSA(m map[string]string) (*ecdsa.PrivateKey, error) {
 	p := new(ecdsa.PrivateKey)
 	p.D = big.NewInt(0)
 	// TODO: validate that the required flags are present
 	for k, v := range m {
 		switch k {
 		case "privatekey":
-			v1, err := packBase64([]byte(v))
+			v1, err := fromBase64([]byte(v))
 			if err != nil {
 				return nil, err
 			}
@@ -154,11 +156,6 @@ func readPrivateKeyECDSA(m map[string]string) (PrivateKey, error) {
 		}
 	}
 	return p, nil
-}
-
-func readPrivateKeyGOST(m map[string]string) (PrivateKey, error) {
-	// TODO(miek)
-	return nil, nil
 }
 
 // parseKey reads a private key from r. It returns a map[string]string,
