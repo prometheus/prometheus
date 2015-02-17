@@ -16,12 +16,15 @@ package local
 import (
 	"fmt"
 	"math/rand"
+	"reflect"
 	"testing"
 	"testing/quick"
 	"time"
 
 	"github.com/golang/glog"
+
 	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
 )
@@ -661,4 +664,94 @@ func verifyStorage(t testing.TB, s Storage, samples clientmodel.Samples, maxAge 
 		p.Close()
 	}
 	return result
+}
+
+func TestChunkMaps(t *testing.T) {
+	cm := chunkMaps{}
+
+	cd1 := &chunkDesc{refCount: 1} // Abuse refCount as identifier.
+	cd21 := &chunkDesc{refCount: 21}
+	cd22 := &chunkDesc{refCount: 22}
+	cd31 := &chunkDesc{refCount: 31}
+	cd32 := &chunkDesc{refCount: 32}
+	cd33 := &chunkDesc{refCount: 33}
+	cd41 := &chunkDesc{refCount: 41}
+	cd42 := &chunkDesc{refCount: 42}
+	cd43 := &chunkDesc{refCount: 43}
+	cd44 := &chunkDesc{refCount: 44}
+	cd51 := &chunkDesc{refCount: 51}
+	cd52 := &chunkDesc{refCount: 52}
+	cd53 := &chunkDesc{refCount: 53}
+	cd54 := &chunkDesc{refCount: 54}
+	cd55 := &chunkDesc{refCount: 55}
+
+	cm.add(5, cd51)
+	cm.add(3, cd31)
+	cm.add(5, cd52)
+	cm.add(1, cd1)
+	cm.add(4, cd41)
+	cm.add(4, cd42)
+	cm.add(5, cd53)
+	cm.add(3, cd32)
+	cm.add(2, cd21)
+	cm.add(5, cd54)
+	cm.add(3, cd33)
+	cm.add(4, cd43)
+	cm.add(2, cd22)
+	cm.add(4, cd44)
+	cm.add(5, cd55)
+
+	var fpWant, fpGot clientmodel.Fingerprint
+	var cdsWant, cdsGot []*chunkDesc
+
+	fpWant = 5
+	cdsWant = []*chunkDesc{cd51, cd52, cd53, cd54, cd55}
+	fpGot, cdsGot = cm.pop()
+	if fpWant != fpGot {
+		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
+	}
+	if !reflect.DeepEqual(cdsWant, cdsGot) {
+		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
+	}
+
+	fpWant = 4
+	cdsWant = []*chunkDesc{cd41, cd42, cd43, cd44}
+	fpGot, cdsGot = cm.pop()
+	if fpWant != fpGot {
+		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
+	}
+	if !reflect.DeepEqual(cdsWant, cdsGot) {
+		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
+	}
+
+	fpWant = 3
+	cdsWant = []*chunkDesc{cd31, cd32, cd33}
+	fpGot, cdsGot = cm.pop()
+	if fpWant != fpGot {
+		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
+	}
+	if !reflect.DeepEqual(cdsWant, cdsGot) {
+		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
+	}
+
+	fpWant = 2
+	cdsWant = []*chunkDesc{cd21, cd22}
+	fpGot, cdsGot = cm.pop()
+	if fpWant != fpGot {
+		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
+	}
+	if !reflect.DeepEqual(cdsWant, cdsGot) {
+		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
+	}
+
+	fpWant = 1
+	cdsWant = []*chunkDesc{cd1}
+	fpGot, cdsGot = cm.pop()
+	if fpWant != fpGot {
+		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
+	}
+	if !reflect.DeepEqual(cdsWant, cdsGot) {
+		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
+	}
+
 }

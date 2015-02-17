@@ -83,7 +83,7 @@ func TestPersistLoadDropChunks(t *testing.T) {
 
 	for fp, chunks := range fpToChunks {
 		for i, c := range chunks {
-			index, err := p.persistChunk(fp, c)
+			index, err := p.persistChunks(fp, []chunk{c})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -84,7 +84,7 @@ type indexingOp struct {
 
 // A Persistence is used by a Storage implementation to store samples
 // persistently across restarts. The methods are only goroutine-safe if
-// explicitly marked as such below. The chunk-related methods persistChunk,
+// explicitly marked as such below. The chunk-related methods persistChunks,
 // dropChunks, loadChunks, and loadChunkDescs can be called concurrently with
 // each other if each call refers to a different fingerprint.
 type persistence struct {
@@ -283,35 +283,35 @@ func (p *persistence) getLabelValuesForLabelName(ln clientmodel.LabelName) (clie
 	return lvs, nil
 }
 
-// persistChunk persists a single chunk of a series. It is the caller's
-// responsibility to not modify the chunk concurrently and to not persist or
-// drop anything for the same fingerprint concurrently. It returns the
-// (zero-based) index of the persisted chunk within the series file. In case of
-// an error, the returned index is -1 (to avoid the misconception that the chunk
-// was written at position 0).
-func (p *persistence) persistChunk(fp clientmodel.Fingerprint, c chunk) (int, error) {
-	// 1. Open chunk file.
+// persistChunks persists a number of consecutive chunks of a series. It is the
+// caller's responsibility to not modify the chunks concurrently and to not
+// persist or drop anything for the same fingerprint concurrently. It returns
+// the (zero-based) index of the first persisted chunk within the series
+// file. In case of an error, the returned index is -1 (to avoid the
+// misconception that the chunk was written at position 0).
+func (p *persistence) persistChunks(fp clientmodel.Fingerprint, chunks []chunk) (int, error) {
+
 	f, err := p.openChunkFileForWriting(fp)
 	if err != nil {
 		return -1, err
 	}
 	defer f.Close()
 
-	b := bufio.NewWriterSize(f, chunkHeaderLen+p.chunkLen)
+	b := bufio.NewWriterSize(f, len(chunks)*(chunkHeaderLen+p.chunkLen))
 
-	// 2. Write the header (chunk type and first/last times).
-	err = writeChunkHeader(b, c)
-	if err != nil {
-		return -1, err
+	for _, c := range chunks {
+		err = writeChunkHeader(b, c)
+		if err != nil {
+			return -1, err
+		}
+
+		err = c.marshal(b)
+		if err != nil {
+			return -1, err
+		}
 	}
 
-	// 3. Write chunk into file.
-	err = c.marshal(b)
-	if err != nil {
-		return -1, err
-	}
-
-	// 4. Determine index within the file.
+	// Determine index within the file.
 	b.Flush()
 	offset, err := f.Seek(0, os.SEEK_CUR)
 	if err != nil {
@@ -322,7 +322,7 @@ func (p *persistence) persistChunk(fp clientmodel.Fingerprint, c chunk) (int, er
 		return -1, err
 	}
 
-	return index - 1, err
+	return index - len(chunks), err
 }
 
 // loadChunks loads a group of chunks of a timeseries by their index. The chunk

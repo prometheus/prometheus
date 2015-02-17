@@ -76,9 +76,11 @@ type memorySeriesStorage struct {
 	appendLastTimestamp clientmodel.Timestamp // The timestamp of the last sample sent to the append queue.
 	appendWaitGroup     sync.WaitGroup        // To wait for all appended samples to be processed.
 
-	persistQueue   chan persistRequest
-	persistStopped chan struct{}
-	persistence    *persistence
+	persistQueue    chan persistRequest
+	persistQueueCap int // Not actually the cap of above channel. See handlePersistQueue.
+	persistStopped  chan struct{}
+
+	persistence *persistence
 
 	countPersistedHeadChunks chan struct{}
 
@@ -145,9 +147,13 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		appendLastTimestamp: clientmodel.Earliest,
 		appendQueue:         make(chan *clientmodel.Sample, appendQueueCap),
 
-		persistQueue:   make(chan persistRequest, o.PersistenceQueueCapacity),
-		persistStopped: make(chan struct{}),
-		persistence:    p,
+		// The actual buffering happens within handlePersistQueue, so
+		// cap of persistQueue just has to be enough to not block while
+		// handlePersistQueue is writing to disk (20ms or so).
+		persistQueue:    make(chan persistRequest, 1024),
+		persistQueueCap: o.PersistenceQueueCapacity,
+		persistStopped:  make(chan struct{}),
+		persistence:     p,
 
 		countPersistedHeadChunks: make(chan struct{}, 1024),
 
@@ -568,30 +574,98 @@ func (s *memorySeriesStorage) maybeEvict() {
 }
 
 func (s *memorySeriesStorage) handlePersistQueue() {
-	for req := range s.persistQueue {
-		s.persistQueueLength.Set(float64(len(s.persistQueue)))
-		start := time.Now()
-		s.fpLocker.Lock(req.fingerprint)
-		offset, err := s.persistence.persistChunk(req.fingerprint, req.chunkDesc.chunk)
-		if series, seriesInMemory := s.fpToSeries.get(req.fingerprint); err == nil && seriesInMemory && series.chunkDescsOffset == -1 {
-			// This is the first chunk persisted for a newly created
-			// series that had prior chunks on disk. Finally, we can
-			// set the chunkDescsOffset.
-			series.chunkDescsOffset = offset
+	chunkMaps := chunkMaps{}
+	chunkCount := 0
+
+	persistMostConsecutiveChunks := func() {
+		fp, cds := chunkMaps.pop()
+		if err := s.persistChunks(fp, cds); err != nil {
+			// Need to put chunks back for retry.
+			for _, cd := range cds {
+				chunkMaps.add(fp, cd)
+			}
+			return
 		}
-		s.fpLocker.Unlock(req.fingerprint)
-		s.persistLatency.Observe(float64(time.Since(start)) / float64(time.Microsecond))
-		if err != nil {
-			s.persistErrors.Inc()
-			glog.Error("Error persisting chunk: ", err)
-			s.persistence.setDirty(true)
-			continue
-		}
-		req.chunkDesc.unpin(s.evictRequests)
-		chunkOps.WithLabelValues(persistAndUnpin).Inc()
+		chunkCount -= len(cds)
 	}
+
+loop:
+	for {
+		if chunkCount >= s.persistQueueCap && chunkCount > 0 {
+			glog.Warningf("%d chunks queued for persistence. Ingestion pipeline will backlog.", chunkCount)
+			persistMostConsecutiveChunks()
+		}
+		select {
+		case req, ok := <-s.persistQueue:
+			if !ok {
+				break loop
+			}
+			chunkMaps.add(req.fingerprint, req.chunkDesc)
+			chunkCount++
+		default:
+			if chunkCount > 0 {
+				persistMostConsecutiveChunks()
+				continue loop
+			}
+			// If we are here, there is nothing to do right now. So
+			// just wait for a persist request to come in.
+			req, ok := <-s.persistQueue
+			if !ok {
+				break loop
+			}
+			chunkMaps.add(req.fingerprint, req.chunkDesc)
+			chunkCount++
+		}
+		s.persistQueueLength.Set(float64(chunkCount))
+	}
+
+	// Drain all requests.
+	for _, m := range chunkMaps {
+		for fp, cds := range m {
+			if s.persistChunks(fp, cds) == nil {
+				chunkCount -= len(cds)
+				if (chunkCount+len(cds))/1000 > chunkCount/1000 {
+					glog.Infof(
+						"Still draining persist queue, %d chunks left to persist...",
+						chunkCount,
+					)
+				}
+				s.persistQueueLength.Set(float64(chunkCount))
+			}
+		}
+	}
+
 	glog.Info("Persist queue drained and stopped.")
 	close(s.persistStopped)
+}
+
+func (s *memorySeriesStorage) persistChunks(fp clientmodel.Fingerprint, cds []*chunkDesc) error {
+	start := time.Now()
+	chunks := make([]chunk, len(cds))
+	for i, cd := range cds {
+		chunks[i] = cd.chunk
+	}
+	s.fpLocker.Lock(fp)
+	offset, err := s.persistence.persistChunks(fp, chunks)
+	if series, seriesInMemory := s.fpToSeries.get(fp); err == nil && seriesInMemory && series.chunkDescsOffset == -1 {
+		// This is the first chunk persisted for a newly created
+		// series that had prior chunks on disk. Finally, we can
+		// set the chunkDescsOffset.
+		series.chunkDescsOffset = offset
+	}
+	s.fpLocker.Unlock(fp)
+	s.persistLatency.Observe(float64(time.Since(start)) / float64(time.Microsecond))
+	if err != nil {
+		s.persistErrors.Inc()
+		glog.Error("Error persisting chunks: ", err)
+		s.persistence.setDirty(true)
+		return err
+	}
+	for _, cd := range cds {
+		cd.unpin(s.evictRequests)
+	}
+	chunkOps.WithLabelValues(persistAndUnpin).Add(float64(len(cds)))
+	return nil
 }
 
 // waitForNextFP waits an estimated duration, after which we want to process
@@ -926,4 +1000,53 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 
 	count := atomic.LoadInt64(&numMemChunks)
 	ch <- prometheus.MustNewConstMetric(numMemChunksDesc, prometheus.GaugeValue, float64(count))
+}
+
+// chunkMaps is a slice of maps with chunkDescs to be persisted.
+// Each chunk map contains n consecutive chunks to persist, where
+// n is the index+1.
+type chunkMaps []map[clientmodel.Fingerprint][]*chunkDesc
+
+// add adds a chunk to chunkMaps.
+func (cm *chunkMaps) add(fp clientmodel.Fingerprint, cd *chunkDesc) {
+	// Runtime of this method is linear with the number of
+	// chunkMaps. However, we expect only ever very few maps.
+	numMaps := len(*cm)
+	for i, m := range *cm {
+		if cds, ok := m[fp]; ok {
+			// Found our fp! Add cd and level up.
+			cds = append(cds, cd)
+			delete(m, fp)
+			if i == numMaps-1 {
+				*cm = append(*cm, map[clientmodel.Fingerprint][]*chunkDesc{})
+			}
+			(*cm)[i+1][fp] = cds
+			return
+		}
+	}
+	// Our fp isn't contained in cm yet. Add it to the first map (and add a
+	// first map if there is none).
+	if numMaps == 0 {
+		*cm = chunkMaps{map[clientmodel.Fingerprint][]*chunkDesc{}}
+	}
+	(*cm)[0][fp] = []*chunkDesc{cd}
+}
+
+// pop retrieves and removes a fingerprint with all its chunks. It chooses one
+// of the fingerprints with the most chunks. It panics if cm has no entries.
+func (cm *chunkMaps) pop() (clientmodel.Fingerprint, []*chunkDesc) {
+	m := (*cm)[len(*cm)-1]
+	for fp, cds := range m {
+		delete(m, fp)
+		// Prune empty maps from top level.
+		for len(m) == 0 {
+			*cm = (*cm)[:len(*cm)-1]
+			if len(*cm) == 0 {
+				break
+			}
+			m = (*cm)[len(*cm)-1]
+		}
+		return fp, cds
+	}
+	panic("popped from empty chunkMaps")
 }
