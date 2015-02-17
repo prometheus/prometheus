@@ -83,9 +83,6 @@ func (c Config) Validate() error {
 		if _, err := utility.StringToDuration(job.GetScrapeInterval()); err != nil {
 			return fmt.Errorf("invalid scrape interval for job '%s': %s", job.GetName(), err)
 		}
-		if _, err := utility.StringToDuration(job.GetSdRefreshInterval()); err != nil {
-			return fmt.Errorf("invalid SD refresh interval for job '%s': %s", job.GetName(), err)
-		}
 		if _, err := utility.StringToDuration(job.GetScrapeTimeout()); err != nil {
 			return fmt.Errorf("invalid scrape timeout for job '%s': %s", job.GetName(), err)
 		}
@@ -94,8 +91,13 @@ func (c Config) Validate() error {
 				return fmt.Errorf("invalid labels for job '%s': %s", job.GetName(), err)
 			}
 		}
-		if job.SdName != nil && len(job.TargetGroup) > 0 {
-			return fmt.Errorf("specified both DNS-SD name and target group for job: %s", job.GetName())
+		if sd := job.GetServiceDiscovery(); sd != nil {
+			if len(job.TargetGroup) > 0 {
+				return fmt.Errorf("specified both service discovery and target group for job: %s", job.GetName())
+			}
+			if _, err := utility.StringToDuration(sd.GetRefreshInterval()); err != nil {
+				return fmt.Errorf("invalid refresh interval for job '%s': %s", job.GetName(), err)
+			}
 		}
 	}
 
@@ -164,4 +166,20 @@ func (c JobConfig) ScrapeInterval() time.Duration {
 // ScrapeTimeout gets the scrape timeout for a job.
 func (c JobConfig) ScrapeTimeout() time.Duration {
 	return stringToDuration(c.GetScrapeInterval())
+}
+
+// ServiceDiscovery returns the job's service discovery configuration.
+func (c JobConfig) ServiceDiscoveryConfig() ServiceDiscoveryConfig {
+	if c.ServiceDiscovery == nil {
+		panic("no service discovery config")
+	}
+	return ServiceDiscoveryConfig{*c.ServiceDiscovery}
+}
+
+type ServiceDiscoveryConfig struct {
+	pb.ServiceDiscovery
+}
+
+func (c ServiceDiscoveryConfig) RefreshInterval() time.Duration {
+	return stringToDuration(c.GetRefreshInterval())
 }
