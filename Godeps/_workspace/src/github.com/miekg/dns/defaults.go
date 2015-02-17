@@ -73,13 +73,15 @@ func (dns *Msg) SetUpdate(z string) *Msg {
 }
 
 // SetIxfr creates message for requesting an IXFR.
-func (dns *Msg) SetIxfr(z string, serial uint32) *Msg {
+func (dns *Msg) SetIxfr(z string, serial uint32, ns, mbox string) *Msg {
 	dns.Id = Id()
 	dns.Question = make([]Question, 1)
 	dns.Ns = make([]RR, 1)
 	s := new(SOA)
 	s.Hdr = RR_Header{z, TypeSOA, ClassINET, defaultTtl, 0}
 	s.Serial = serial
+	s.Ns = ns
+	s.Mbox = mbox
 	dns.Question[0] = Question{z, TypeIXFR, ClassINET}
 	dns.Ns[0] = s
 	return dns
@@ -169,7 +171,7 @@ func IsMsg(buf []byte) error {
 		return errors.New("dns: bad message header")
 	}
 	// Header: Opcode
-
+	// TODO(miek): more checks here, e.g. check all header bits.
 	return nil
 }
 

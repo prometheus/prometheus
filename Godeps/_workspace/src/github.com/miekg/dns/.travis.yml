@@ -16,4 +16,6 @@ script:
   - GOARCH=$BUILD_GOARCH GOOS=$BUILD_GOOS go build
 
   # only test on linux
-  - if [ $BUILD_GOOS == "linux" ]; then GOARCH=$BUILD_GOARCH GOOS=$BUILD_GOOS go test -bench=.; fi
+  # also specify -short; the crypto tests fail in weird ways *sometimes*
+  # See issue #151
+  - if [ $BUILD_GOOS == "linux" ]; then GOARCH=$BUILD_GOARCH GOOS=$BUILD_GOOS go test -short -bench=.; fi

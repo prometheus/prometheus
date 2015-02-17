@@ -47,7 +47,7 @@ func HashName(label string, ha uint8, iter uint16, salt string) string {
 		io.WriteString(s, string(nsec3))
 		nsec3 = s.Sum(nil)
 	}
-	return unpackBase32(nsec3)
+	return toBase32(nsec3)
 }
 
 type Denialer interface {

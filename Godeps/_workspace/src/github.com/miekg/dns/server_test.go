@@ -32,10 +32,37 @@ func RunLocalUDPServer(laddr string) (*Server, string, error) {
 		return nil, "", err
 	}
 	server := &Server{PacketConn: pc}
+
+	waitLock := sync.Mutex{}
+	waitLock.Lock()
+	server.NotifyStartedFunc = waitLock.Unlock
+
 	go func() {
 		server.ActivateAndServe()
 		pc.Close()
 	}()
+
+	waitLock.Lock()
+	return server, pc.LocalAddr().String(), nil
+}
+
+func RunLocalUDPServerUnsafe(laddr string) (*Server, string, error) {
+	pc, err := net.ListenPacket("udp", laddr)
+	if err != nil {
+		return nil, "", err
+	}
+	server := &Server{PacketConn: pc, Unsafe: true}
+
+	waitLock := sync.Mutex{}
+	waitLock.Lock()
+	server.NotifyStartedFunc = waitLock.Unlock
+
+	go func() {
+		server.ActivateAndServe()
+		pc.Close()
+	}()
+
+	waitLock.Lock()
 	return server, pc.LocalAddr().String(), nil
 }
 
@@ -44,11 +71,19 @@ func RunLocalTCPServer(laddr string) (*Server, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+
 	server := &Server{Listener: l}
+
+	waitLock := sync.Mutex{}
+	waitLock.Lock()
+	server.NotifyStartedFunc = waitLock.Unlock
+
 	go func() {
 		server.ActivateAndServe()
 		l.Close()
 	}()
+
+	waitLock.Lock()
 	return server, l.Addr().String(), nil
 }
 
@@ -68,7 +103,7 @@ func TestServing(t *testing.T) {
 	m := new(Msg)
 	m.SetQuestion("miek.nl.", TypeTXT)
 	r, _, err := c.Exchange(m, addrstr)
-	if err != nil {
+	if err != nil || len(r.Extra) == 0 {
 		t.Log("failed to exchange miek.nl", err)
 		t.Fatal()
 	}
@@ -302,14 +337,52 @@ func TestServingLargeResponses(t *testing.T) {
 	}
 }
 
+func TestServingResponse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	HandleFunc("miek.nl.", HelloServer)
+	s, addrstr, err := RunLocalUDPServer("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Unable to run test server: %s", err)
+	}
+
+	c := new(Client)
+	m := new(Msg)
+	m.SetQuestion("miek.nl.", TypeTXT)
+	m.Response = false
+	_, _, err = c.Exchange(m, addrstr)
+	if err != nil {
+		t.Log("failed to exchange", err)
+		t.Fatal()
+	}
+	m.Response = true
+	_, _, err = c.Exchange(m, addrstr)
+	if err == nil {
+		t.Log("exchanged response message")
+		t.Fatal()
+	}
+
+	s.Shutdown()
+	s, addrstr, err = RunLocalUDPServerUnsafe("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Unable to run test server: %s", err)
+	}
+	defer s.Shutdown()
+
+	m.Response = true
+	_, _, err = c.Exchange(m, addrstr)
+	if err != nil {
+		t.Log("could exchanged response message in Unsafe mode")
+		t.Fatal()
+	}
+}
+
 func TestShutdownTCP(t *testing.T) {
 	s, _, err := RunLocalTCPServer("127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Unable to run test server: %s", err)
 	}
-	// it normally is too early to shutting down because server
-	// activates in goroutine.
-	runtime.Gosched()
 	err = s.Shutdown()
 	if err != nil {
 		t.Errorf("Could not shutdown test TCP server, %s", err)
@@ -321,9 +394,6 @@ func TestShutdownUDP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to run test server: %s", err)
 	}
-	// it normally is too early to shutting down because server
-	// activates in goroutine.
-	runtime.Gosched()
 	err = s.Shutdown()
 	if err != nil {
 		t.Errorf("Could not shutdown test UDP server, %s", err)

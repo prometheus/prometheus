@@ -38,7 +38,7 @@ Copyright jQuery Foundation and other contributors
 Licensed under the MIT License
 
 Go support for Protocol Buffers - Google's data interchange format
-http://code.google.com/p/goprotobuf/
+http://github.com/golang/protobuf/
 Copyright 2010 The Go Authors
 See source code for license details.
 

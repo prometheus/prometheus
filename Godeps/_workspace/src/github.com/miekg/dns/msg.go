@@ -12,7 +12,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
+	"math/big"
 	"math/rand"
 	"net"
 	"reflect"
@@ -91,6 +91,7 @@ var TypeToString = map[uint16]string{
 	TypeATMA:       "ATMA",
 	TypeAXFR:       "AXFR", // Meta RR
 	TypeCAA:        "CAA",
+	TypeCDNSKEY:    "CDNSKEY",
 	TypeCDS:        "CDS",
 	TypeCERT:       "CERT",
 	TypeCNAME:      "CNAME",
@@ -109,6 +110,7 @@ var TypeToString = map[uint16]string{
 	TypeIPSECKEY:   "IPSECKEY",
 	TypeISDN:       "ISDN",
 	TypeIXFR:       "IXFR", // Meta RR
+	TypeKEY:        "KEY",
 	TypeKX:         "KX",
 	TypeL32:        "L32",
 	TypeL64:        "L64",
@@ -139,6 +141,7 @@ var TypeToString = map[uint16]string{
 	TypeRP:         "RP",
 	TypeRRSIG:      "RRSIG",
 	TypeRT:         "RT",
+	TypeSIG:        "SIG",
 	TypeSOA:        "SOA",
 	TypeSPF:        "SPF",
 	TypeSRV:        "SRV",
@@ -419,7 +422,15 @@ Loop:
 					s = append(s, '\\', 'r')
 				default:
 					if b < 32 || b >= 127 { // unprintable use \DDD
-						s = append(s, fmt.Sprintf("\\%03d", b)...)
+						var buf [3]byte
+						bufs := strconv.AppendInt(buf[:0], int64(b), 10)
+						s = append(s, '\\')
+						for i := 0; i < 3-len(bufs); i++ {
+							s = append(s, '0')
+						}
+						for _, r := range bufs {
+							s = append(s, r)
+						}
 					} else {
 						s = append(s, b)
 					}
@@ -554,7 +565,15 @@ func unpackTxtString(msg []byte, offset int) (string, int, error) {
 			s = append(s, `\n`...)
 		default:
 			if b < 32 || b > 127 { // unprintable
-				s = append(s, fmt.Sprintf("\\%03d", b)...)
+				var buf [3]byte
+				bufs := strconv.AppendInt(buf[:0], int64(b), 10)
+				s = append(s, '\\')
+				for i := 0; i < 3-len(bufs); i++ {
+					s = append(s, '0')
+				}
+				for _, r := range bufs {
+					s = append(s, r)
+				}
 			} else {
 				s = append(s, b)
 			}
@@ -633,6 +652,12 @@ func packStructValue(val reflect.Value, msg []byte, off int, compression map[str
 					off += len(b)
 				}
 			case `dns:"a"`:
+				if val.Type().String() == "dns.IPSECKEY" {
+					// Field(2) is GatewayType, must be 1
+					if val.Field(2).Uint() != 1 {
+						continue
+					}
+				}
 				// It must be a slice of 4, even if it is 16, we encode
 				// only the first 4
 				if off+net.IPv4len > lenmsg {
@@ -657,6 +682,12 @@ func packStructValue(val reflect.Value, msg []byte, off int, compression map[str
 					return lenmsg, &Error{err: "overflow packing a"}
 				}
 			case `dns:"aaaa"`:
+				if val.Type().String() == "dns.IPSECKEY" {
+					// Field(2) is GatewayType, must be 2
+					if val.Field(2).Uint() != 2 {
+						continue
+					}
+				}
 				if fv.Len() == 0 {
 					break
 				}
@@ -668,6 +699,7 @@ func packStructValue(val reflect.Value, msg []byte, off int, compression map[str
 					off++
 				}
 			case `dns:"wks"`:
+				// TODO(miek): this is wrong should be lenrd
 				if off == lenmsg {
 					break // dyn. updates
 				}
@@ -794,13 +826,20 @@ func packStructValue(val reflect.Value, msg []byte, off int, compression map[str
 			default:
 				return lenmsg, &Error{"bad tag packing string: " + typefield.Tag.Get("dns")}
 			case `dns:"base64"`:
-				b64, e := packBase64([]byte(s))
+				b64, e := fromBase64([]byte(s))
 				if e != nil {
 					return lenmsg, e
 				}
 				copy(msg[off:off+len(b64)], b64)
 				off += len(b64)
 			case `dns:"domain-name"`:
+				if val.Type().String() == "dns.IPSECKEY" {
+					// Field(2) is GatewayType, 1 and 2 or used for addresses
+					x := val.Field(2).Uint()
+					if x == 1 || x == 2 {
+						continue
+					}
+				}
 				if off, err = PackDomainName(s, msg, off, compression, false && compress); err != nil {
 					return lenmsg, err
 				}
@@ -815,7 +854,7 @@ func packStructValue(val reflect.Value, msg []byte, off int, compression map[str
 				msg[off-1] = 20
 				fallthrough
 			case `dns:"base32"`:
-				b32, e := packBase32([]byte(s))
+				b32, e := fromBase32([]byte(s))
 				if e != nil {
 					return lenmsg, e
 				}
@@ -875,9 +914,12 @@ func packStructCompress(any interface{}, msg []byte, off int, compression map[st
 // Unpack a reflect.StructValue from msg.
 // Same restrictions as packStructValue.
 func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err error) {
-	var rdend int
+	var lenrd int
 	lenmsg := len(msg)
 	for i := 0; i < val.NumField(); i++ {
+		if lenrd != 0 && lenrd == off {
+			break
+		}
 		if off > lenmsg {
 			return lenmsg, &Error{"bad offset unpacking"}
 		}
@@ -889,7 +931,7 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 			// therefore it's expected that this interface would be PrivateRdata
 			switch data := fv.Interface().(type) {
 			case PrivateRdata:
-				n, err := data.Unpack(msg[off:rdend])
+				n, err := data.Unpack(msg[off:lenrd])
 				if err != nil {
 					return lenmsg, err
 				}
@@ -905,7 +947,7 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 				// HIP record slice of name (or none)
 				servers := make([]string, 0)
 				var s string
-				for off < rdend {
+				for off < lenrd {
 					s, off, err = UnpackDomainName(msg, off)
 					if err != nil {
 						return lenmsg, err
@@ -914,17 +956,17 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 				}
 				fv.Set(reflect.ValueOf(servers))
 			case `dns:"txt"`:
-				if off == lenmsg || rdend == off {
+				if off == lenmsg || lenrd == off {
 					break
 				}
 				var txt []string
-				txt, off, err = unpackTxt(msg, off, rdend)
+				txt, off, err = unpackTxt(msg, off, lenrd)
 				if err != nil {
 					return lenmsg, err
 				}
 				fv.Set(reflect.ValueOf(txt))
 			case `dns:"opt"`: // edns0
-				if off == rdend {
+				if off == lenrd {
 					// This is an EDNS0 (OPT Record) with no rdata
 					// We can safely return here.
 					break
@@ -937,7 +979,7 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 				}
 				code, off = unpackUint16(msg, off)
 				optlen, off1 := unpackUint16(msg, off)
-				if off1+int(optlen) > rdend {
+				if off1+int(optlen) > lenrd {
 					return lenmsg, &Error{err: "overflow unpacking opt"}
 				}
 				switch code {
@@ -997,24 +1039,36 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 					// do nothing?
 					off = off1 + int(optlen)
 				}
-				if off < rdend {
+				if off < lenrd {
 					goto Option
 				}
 				fv.Set(reflect.ValueOf(edns))
 			case `dns:"a"`:
-				if off == lenmsg {
+				if val.Type().String() == "dns.IPSECKEY" {
+					// Field(2) is GatewayType, must be 1
+					if val.Field(2).Uint() != 1 {
+						continue
+					}
+				}
+				if off == lenrd {
 					break // dyn. update
 				}
-				if off+net.IPv4len > rdend {
+				if off+net.IPv4len > lenrd || off+net.IPv4len > lenmsg {
 					return lenmsg, &Error{err: "overflow unpacking a"}
 				}
 				fv.Set(reflect.ValueOf(net.IPv4(msg[off], msg[off+1], msg[off+2], msg[off+3])))
 				off += net.IPv4len
 			case `dns:"aaaa"`:
-				if off == rdend {
+				if val.Type().String() == "dns.IPSECKEY" {
+					// Field(2) is GatewayType, must be 2
+					if val.Field(2).Uint() != 2 {
+						continue
+					}
+				}
+				if off == lenrd {
 					break
 				}
-				if off+net.IPv6len > rdend || off+net.IPv6len > lenmsg {
+				if off+net.IPv6len > lenrd || off+net.IPv6len > lenmsg {
 					return lenmsg, &Error{err: "overflow unpacking aaaa"}
 				}
 				fv.Set(reflect.ValueOf(net.IP{msg[off], msg[off+1], msg[off+2], msg[off+3], msg[off+4],
@@ -1025,7 +1079,7 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 				// Rest of the record is the bitmap
 				serv := make([]uint16, 0)
 				j := 0
-				for off < rdend {
+				for off < lenrd {
 					if off+1 > lenmsg {
 						return lenmsg, &Error{err: "overflow unpacking wks"}
 					}
@@ -1060,17 +1114,17 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 				}
 				fv.Set(reflect.ValueOf(serv))
 			case `dns:"nsec"`: // NSEC/NSEC3
-				if off == rdend {
+				if off == lenrd {
 					break
 				}
 				// Rest of the record is the type bitmap
-				if off+2 > rdend || off+2 > lenmsg {
+				if off+2 > lenrd || off+2 > lenmsg {
 					return lenmsg, &Error{err: "overflow unpacking nsecx"}
 				}
 				nsec := make([]uint16, 0)
 				length := 0
 				window := 0
-				for off+2 < rdend {
+				for off+2 < lenrd {
 					window = int(msg[off])
 					length = int(msg[off+1])
 					//println("off, windows, length, end", off, window, length, endrr)
@@ -1127,7 +1181,7 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 				return lenmsg, err
 			}
 			if val.Type().Field(i).Name == "Hdr" {
-				rdend = off + int(val.FieldByName("Hdr").FieldByName("Rdlength").Uint())
+				lenrd = off + int(val.FieldByName("Hdr").FieldByName("Rdlength").Uint())
 			}
 		case reflect.Uint8:
 			if off == lenmsg {
@@ -1184,29 +1238,36 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 			default:
 				return lenmsg, &Error{"bad tag unpacking string: " + val.Type().Field(i).Tag.Get("dns")}
 			case `dns:"hex"`:
-				hexend := rdend
+				hexend := lenrd
 				if val.FieldByName("Hdr").FieldByName("Rrtype").Uint() == uint64(TypeHIP) {
 					hexend = off + int(val.FieldByName("HitLength").Uint())
 				}
-				if hexend > rdend || hexend > lenmsg {
+				if hexend > lenrd || hexend > lenmsg {
 					return lenmsg, &Error{err: "overflow unpacking hex"}
 				}
 				s = hex.EncodeToString(msg[off:hexend])
 				off = hexend
 			case `dns:"base64"`:
 				// Rest of the RR is base64 encoded value
-				b64end := rdend
+				b64end := lenrd
 				if val.FieldByName("Hdr").FieldByName("Rrtype").Uint() == uint64(TypeHIP) {
 					b64end = off + int(val.FieldByName("PublicKeyLength").Uint())
 				}
-				if b64end > rdend || b64end > lenmsg {
+				if b64end > lenrd || b64end > lenmsg {
 					return lenmsg, &Error{err: "overflow unpacking base64"}
 				}
-				s = unpackBase64(msg[off:b64end])
+				s = toBase64(msg[off:b64end])
 				off = b64end
 			case `dns:"cdomain-name"`:
 				fallthrough
 			case `dns:"domain-name"`:
+				if val.Type().String() == "dns.IPSECKEY" {
+					// Field(2) is GatewayType, 1 and 2 or used for addresses
+					x := val.Field(2).Uint()
+					if x == 1 || x == 2 {
+						continue
+					}
+				}
 				if off == lenmsg {
 					// zero rdata foo, OK for dyn. updates
 					break
@@ -1228,7 +1289,7 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 				if off+size > lenmsg {
 					return lenmsg, &Error{err: "overflow unpacking base32"}
 				}
-				s = unpackBase32(msg[off : off+size])
+				s = toBase32(msg[off : off+size])
 				off += size
 			case `dns:"size-hex"`:
 				// a "size" string, but it must be encoded in hex in the string
@@ -1276,58 +1337,53 @@ func dddToByte(s []byte) byte {
 	return byte((s[0]-'0')*100 + (s[1]-'0')*10 + (s[2] - '0'))
 }
 
-// Helper function for unpacking
-func unpackUint16(msg []byte, off int) (v uint16, off1 int) {
-	v = uint16(msg[off])<<8 | uint16(msg[off+1])
-	off1 = off + 2
-	return
-}
-
 // UnpackStruct unpacks a binary message from offset off to the interface
 // value given.
-func UnpackStruct(any interface{}, msg []byte, off int) (off1 int, err error) {
-	off, err = unpackStructValue(structValue(any), msg, off)
-	return off, err
+func UnpackStruct(any interface{}, msg []byte, off int) (int, error) {
+	return unpackStructValue(structValue(any), msg, off)
 }
 
-func unpackBase32(b []byte) string {
-	b32 := make([]byte, base32.HexEncoding.EncodedLen(len(b)))
-	base32.HexEncoding.Encode(b32, b)
-	return string(b32)
+// Helper function for packing and unpacking
+func intToBytes(i *big.Int, length int) []byte {
+	buf := i.Bytes()
+	if len(buf) < length {
+		b := make([]byte, length)
+		copy(b[length-len(buf):], buf)
+		return b
+	}
+	return buf
 }
 
-func unpackBase64(b []byte) string {
-	b64 := make([]byte, base64.StdEncoding.EncodedLen(len(b)))
-	base64.StdEncoding.Encode(b64, b)
-	return string(b64)
+func unpackUint16(msg []byte, off int) (uint16, int) {
+	return uint16(msg[off])<<8 | uint16(msg[off+1]), off + 2
 }
 
-// Helper function for packing
 func packUint16(i uint16) (byte, byte) {
 	return byte(i >> 8), byte(i)
 }
 
-func packBase64(s []byte) ([]byte, error) {
-	b64len := base64.StdEncoding.DecodedLen(len(s))
-	buf := make([]byte, b64len)
-	n, err := base64.StdEncoding.Decode(buf, []byte(s))
-	if err != nil {
-		return nil, err
-	}
-	buf = buf[:n]
-	return buf, nil
+func toBase32(b []byte) string {
+	return base32.HexEncoding.EncodeToString(b)
 }
 
-// Helper function for packing, mostly used in dnssec.go
-func packBase32(s []byte) ([]byte, error) {
-	b32len := base32.HexEncoding.DecodedLen(len(s))
-	buf := make([]byte, b32len)
-	n, err := base32.HexEncoding.Decode(buf, []byte(s))
-	if err != nil {
-		return nil, err
-	}
+func fromBase32(s []byte) (buf []byte, err error) {
+	buflen := base32.HexEncoding.DecodedLen(len(s))
+	buf = make([]byte, buflen)
+	n, err := base32.HexEncoding.Decode(buf, s)
 	buf = buf[:n]
-	return buf, nil
+	return
+}
+
+func toBase64(b []byte) string {
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func fromBase64(s []byte) (buf []byte, err error) {
+	buflen := base64.StdEncoding.DecodedLen(len(s))
+	buf = make([]byte, buflen)
+	n, err := base64.StdEncoding.Decode(buf, s)
+	buf = buf[:n]
+	return
 }
 
 // PackRR packs a resource record rr into msg[off:].
@@ -1856,25 +1912,34 @@ func (dns *Msg) Copy() *Msg {
 		copy(r1.Question, dns.Question) // TODO(miek): Question is an immutable value, ok to do a shallow-copy
 	}
 
+	rrArr := make([]RR, len(dns.Answer)+len(dns.Ns)+len(dns.Extra))
+	var rri int
+
 	if len(dns.Answer) > 0 {
-		r1.Answer = make([]RR, len(dns.Answer))
+		rrbegin := rri
 		for i := 0; i < len(dns.Answer); i++ {
-			r1.Answer[i] = dns.Answer[i].copy()
+			rrArr[rri] = dns.Answer[i].copy()
+			rri++
 		}
+		r1.Answer = rrArr[rrbegin:rri:rri]
 	}
 
 	if len(dns.Ns) > 0 {
-		r1.Ns = make([]RR, len(dns.Ns))
+		rrbegin := rri
 		for i := 0; i < len(dns.Ns); i++ {
-			r1.Ns[i] = dns.Ns[i].copy()
+			rrArr[rri] = dns.Ns[i].copy()
+			rri++
 		}
+		r1.Ns = rrArr[rrbegin:rri:rri]
 	}
 
 	if len(dns.Extra) > 0 {
-		r1.Extra = make([]RR, len(dns.Extra))
+		rrbegin := rri
 		for i := 0; i < len(dns.Extra); i++ {
-			r1.Extra[i] = dns.Extra[i].copy()
+			rrArr[rri] = dns.Extra[i].copy()
+			rri++
 		}
+		r1.Extra = rrArr[rrbegin:rri:rri]
 	}
 
 	return r1

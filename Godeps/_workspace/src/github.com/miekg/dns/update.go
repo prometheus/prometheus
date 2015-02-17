@@ -106,10 +106,7 @@ func (u *Msg) Insert(rr []RR) {
 func (u *Msg) RemoveRRset(rr []RR) {
 	u.Ns = make([]RR, len(rr))
 	for i, r := range rr {
-		u.Ns[i] = r
-		u.Ns[i].Header().Class = ClassANY
-		u.Ns[i].Header().Rdlength = 0
-		u.Ns[i].Header().Ttl = 0
+		u.Ns[i] = &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: r.Header().Rrtype, Class: ClassANY}}
 	}
 }
 

@@ -287,7 +287,7 @@ func (e *EDNS0_SUBNET) unpack(b []byte) error {
 	case 1:
 		addr := make([]byte, 4)
 		for i := 0; i < int(e.SourceNetmask/8); i++ {
-			if 4+i > len(b) {
+			if i >= len(addr) || 4+i >= len(b) {
 				return ErrBuf
 			}
 			addr[i] = b[4+i]
@@ -296,7 +296,7 @@ func (e *EDNS0_SUBNET) unpack(b []byte) error {
 	case 2:
 		addr := make([]byte, 16)
 		for i := 0; i < int(e.SourceNetmask/8); i++ {
-			if 4+i > len(b) {
+			if i >= len(addr) || 4+i >= len(b) {
 				return ErrBuf
 			}
 			addr[i] = b[4+i]

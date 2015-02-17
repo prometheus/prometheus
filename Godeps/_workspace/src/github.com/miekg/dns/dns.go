@@ -93,9 +93,7 @@
 // spaces, semicolons and the at symbol are escaped.
 package dns
 
-import (
-	"strconv"
-)
+import "strconv"
 
 const (
 	year68         = 1 << 31 // For RFC1982 (Serial Arithmetic) calculations in 32 bits.
@@ -124,7 +122,7 @@ type RR interface {
 	String() string
 	// copy returns a copy of the RR
 	copy() RR
-	// len returns the length (in octects) of the uncompressed RR in wire format.
+	// len returns the length (in octets) of the uncompressed RR in wire format.
 	len() int
 }
 
