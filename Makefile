@@ -17,16 +17,16 @@ include Makefile.INCLUDE
 
 all: binary test
 
-$(GOCC): $(BUILD_PATH)/cache/$(GOPKG) $(FULL_GOPATH)
+$(GOCC): $(BUILD_PATH)/cache/$(GOPKG)
 	tar -C $(BUILD_PATH)/root -xzf $<
 	touch $@
 
-advice:
+advice: $(GOCC)
 	$(GO) vet ./...
 
 binary: build
 
-build: config dependencies tools web
+build: config tools web $(GOPATH)
 	$(GO) build -o prometheus $(BUILDFLAGS) .
 
 docker: build
@@ -49,7 +49,7 @@ tag:
 $(BUILD_PATH)/cache/$(GOPKG):
 	$(CURL) -o $@ -L $(GOURL)/$(GOPKG)
 
-benchmark: config dependencies tools
+benchmark: config dependencies tools web
 	$(GO) test $(GO_TEST_FLAGS) -test.run='NONE' -test.bench='.*' -test.benchmem ./... | tee benchmark.txt
 
 clean:
@@ -62,17 +62,21 @@ clean:
 	-find . -type f -name '*#' -exec rm '{}' ';'
 	-find . -type f -name '.#*' -exec rm '{}' ';'
 
-config: dependencies
+config:
 	$(MAKE) -C config
 
-dependencies: $(GOCC) $(FULL_GOPATH)
-	cp -a $(CURDIR)/Godeps/_workspace/src/* $(GOPATH)/src
-	$(GO) get -d
+$(SELFLINK): $(GOPATH)
+	ln -s $(CURDIR) $@
+
+$(GOPATH):
+	cp -a $(CURDIR)/Godeps/_workspace $(GOPATH)
+
+dependencies: $(GOCC) | $(SELFLINK)
 
 documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
-format:
+format: dependencies
 	find . -iname '*.go' | egrep -v "^\./\.build|./generated|\./Godeps|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
 
 race_condition_binary: build
@@ -87,22 +91,16 @@ run: binary
 search_index:
 	godoc -index -write_index -index_files='search_index'
 
-server: config dependencies
-	$(MAKE) -C server
-
-# $(FULL_GOPATH) is responsible for ensuring that the builder has not done anything
-# stupid like working on Prometheus outside of ${GOPATH}.
-$(FULL_GOPATH):
-	-[ -d "$(FULL_GOPATH)" ] || { mkdir -vp $(FULL_GOPATH_BASE) ; ln -s "$(PWD)" "$(FULL_GOPATH)" ; }
-	[ -d "$(FULL_GOPATH)" ]
-
 test: config dependencies tools web
 	$(GO) test $(GO_TEST_FLAGS) ./...
 
 tools: dependencies
 	$(MAKE) -C tools
 
-web: config dependencies
+web: dependencies
 	$(MAKE) -C web
+
+rules: dependencies
+	$(MAKE) -C rules
 
 .PHONY: advice binary build clean config dependencies documentation format race_condition_binary race_condition_run release run search_index tag tarball test tools

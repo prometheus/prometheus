@@ -49,9 +49,8 @@ GOENV   = TMPDIR=$(TMPDIR) GOROOT=$(GOROOT) GOPATH=$(GOPATH)
 GO      = $(GOENV) $(GOCC)
 GOFMT   = $(GOROOT)/bin/gofmt
 
-UNAME := $(shell uname)
-FULL_GOPATH := $(GOPATH)/src/github.com/prometheus/prometheus
-FULL_GOPATH_BASE := $(GOPATH)/src/github.com/prometheus
+UNAME    := $(shell uname)
+SELFLINK  = $(GOPATH)/src/github.com/prometheus/prometheus
 
 export PREFIX=$(BUILD_PATH)/root
 
