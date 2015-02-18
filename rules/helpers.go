@@ -110,22 +110,30 @@ func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node) (ast.Node, error
 	return expr, nil
 }
 
-// NewMatrixSelector is a convenience function to create a new AST matrix selector.
-func NewMatrixSelector(vector ast.Node, intervalStr string) (ast.MatrixNode, error) {
-	switch vector.(type) {
-	case *ast.VectorSelector:
-		{
-			break
-		}
-	default:
-		return nil, fmt.Errorf("intervals are currently only supported for vector selectors")
+// NewVectorSelector is a convenience function to create a new AST vector selector.
+func NewVectorSelector(m metric.LabelMatchers, offsetStr string) (ast.VectorNode, error) {
+	offset, err := utility.StringToDuration(offsetStr)
+	if err != nil {
+		return nil, err
 	}
+	return ast.NewVectorSelector(m, offset), nil
+}
+
+// NewMatrixSelector is a convenience function to create a new AST matrix selector.
+func NewMatrixSelector(vector ast.Node, intervalStr string, offsetStr string) (ast.MatrixNode, error) {
 	interval, err := utility.StringToDuration(intervalStr)
 	if err != nil {
 		return nil, err
 	}
-	vectorSelector := vector.(*ast.VectorSelector)
-	return ast.NewMatrixSelector(vectorSelector, interval), nil
+	offset, err := utility.StringToDuration(offsetStr)
+	if err != nil {
+		return nil, err
+	}
+	vectorSelector, ok := vector.(*ast.VectorSelector)
+	if !ok {
+		return nil, fmt.Errorf("intervals are currently only supported for vector selectors")
+	}
+	return ast.NewMatrixSelector(vectorSelector, interval, offset), nil
 }
 
 func newLabelMatcher(matchTypeStr string, name clientmodel.LabelName, value clientmodel.LabelValue) (*metric.LabelMatcher, error) {

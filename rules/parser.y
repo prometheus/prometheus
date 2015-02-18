@@ -42,7 +42,7 @@
 
 %token <str> IDENTIFIER STRING DURATION METRICNAME
 %token <num> NUMBER
-%token PERMANENT GROUP_OP KEEPING_EXTRA
+%token PERMANENT GROUP_OP KEEPING_EXTRA OFFSET
 %token <str> AGGR_OP CMP_OP ADDITIVE_OP MULT_OP
 %token ALERT IF FOR WITH SUMMARY DESCRIPTION
 
@@ -53,7 +53,7 @@
 %type <labelMatchers> label_match_list label_matches
 %type <ruleNode> rule_expr func_arg
 %type <boolean> qualifier extra_labels_opts
-%type <str> for_duration metric_name label_match_type
+%type <str> for_duration metric_name label_match_type offset_opts
 
 %right '='
 %left CMP_OP
@@ -152,17 +152,28 @@ label_match_type   : '='
                      { $$ = $1 }
                    ;
 
+offset_opts        : /* empty */
+                     { $$ = "0s" }
+                   | OFFSET DURATION
+                     { $$ = $2 }
+                   ;
+
 rule_expr          : '(' rule_expr ')'
                      { $$ = $2 }
-                   | '{' label_match_list '}'
-                     { $$ = ast.NewVectorSelector($2) }
-                   | metric_name label_matches
+                   | '{' label_match_list '}' offset_opts
+                     {
+                       var err error
+                       $$, err = NewVectorSelector($2, $4)
+                       if err != nil { yylex.Error(err.Error()); return 1 }
+                     }
+                   | metric_name label_matches offset_opts
                      {
                        var err error
                        m, err := metric.NewLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, clientmodel.LabelValue($1))
                        if err != nil { yylex.Error(err.Error()); return 1 }
                        $2 = append($2, m)
-                       $$ = ast.NewVectorSelector($2)
+                       $$, err = NewVectorSelector($2, $3)
+                       if err != nil { yylex.Error(err.Error()); return 1 }
                      }
                    | IDENTIFIER '(' func_arg_list ')'
                      {
@@ -176,10 +187,10 @@ rule_expr          : '(' rule_expr ')'
                        $$, err = NewFunctionCall($1, []ast.Node{})
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
-                   | rule_expr '[' DURATION ']'
+                   | rule_expr '[' DURATION ']' offset_opts
                      {
                        var err error
-                       $$, err = NewMatrixSelector($1, $3)
+                       $$, err = NewMatrixSelector($1, $3, $5)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
                    | AGGR_OP '(' rule_expr ')' grouping_opts extra_labels_opts
