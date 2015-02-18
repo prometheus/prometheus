@@ -36,10 +36,10 @@ type preloadTimes struct {
 	ranges map[clientmodel.Fingerprint]time.Duration
 }
 
-// A QueryAnalyzer recursively traverses the AST to look for any nodes
+// A queryAnalyzer recursively traverses the AST to look for any nodes
 // which will need data from the datastore. Instantiate with
-// NewQueryAnalyzer.
-type QueryAnalyzer struct {
+// newQueryAnalyzer.
+type queryAnalyzer struct {
 	// Tracks one set of times to preload per offset that occurs in the query
 	// expression.
 	offsetPreloadTimes map[time.Duration]preloadTimes
@@ -48,17 +48,17 @@ type QueryAnalyzer struct {
 	storage local.Storage
 }
 
-// NewQueryAnalyzer returns a pointer to a newly instantiated
-// QueryAnalyzer. The storage is needed to extract timeseries
+// newQueryAnalyzer returns a pointer to a newly instantiated
+// queryAnalyzer. The storage is needed to extract timeseries
 // fingerprint information during query analysis.
-func NewQueryAnalyzer(storage local.Storage) *QueryAnalyzer {
-	return &QueryAnalyzer{
+func newQueryAnalyzer(storage local.Storage) *queryAnalyzer {
+	return &queryAnalyzer{
 		offsetPreloadTimes: map[time.Duration]preloadTimes{},
 		storage:            storage,
 	}
 }
 
-func (analyzer *QueryAnalyzer) getPreloadTimes(offset time.Duration) preloadTimes {
+func (analyzer *queryAnalyzer) getPreloadTimes(offset time.Duration) preloadTimes {
 	if _, ok := analyzer.offsetPreloadTimes[offset]; !ok {
 		analyzer.offsetPreloadTimes[offset] = preloadTimes{
 			instants: map[clientmodel.Fingerprint]struct{}{},
@@ -68,8 +68,8 @@ func (analyzer *QueryAnalyzer) getPreloadTimes(offset time.Duration) preloadTime
 	return analyzer.offsetPreloadTimes[offset]
 }
 
-// Visit implements the Visitor interface.
-func (analyzer *QueryAnalyzer) Visit(node Node) {
+// visit implements the visitor interface.
+func (analyzer *queryAnalyzer) visit(node Node) {
 	switch n := node.(type) {
 	case *VectorSelector:
 		pt := analyzer.getPreloadTimes(n.offset)
@@ -107,7 +107,7 @@ type iteratorInitializer struct {
 	storage local.Storage
 }
 
-func (i *iteratorInitializer) Visit(node Node) {
+func (i *iteratorInitializer) visit(node Node) {
 	switch n := node.(type) {
 	case *VectorSelector:
 		for _, fp := range n.fingerprints {
@@ -124,7 +124,7 @@ func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage loc
 	totalTimer := queryStats.GetTimer(stats.TotalEvalTime)
 
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
-	analyzer := NewQueryAnalyzer(storage)
+	analyzer := newQueryAnalyzer(storage)
 	Walk(analyzer, node)
 	analyzeTimer.Stop()
 
@@ -171,7 +171,7 @@ func prepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.T
 	totalTimer := queryStats.GetTimer(stats.TotalEvalTime)
 
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
-	analyzer := NewQueryAnalyzer(storage)
+	analyzer := newQueryAnalyzer(storage)
 	Walk(analyzer, node)
 	analyzeTimer.Stop()
 

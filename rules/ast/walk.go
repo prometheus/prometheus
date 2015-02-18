@@ -13,16 +13,16 @@
 
 package ast
 
-// Visitor is the interface for a Node visitor.
-type Visitor interface {
-	Visit(node Node)
+// visitor is the interface for a Node visitor.
+type visitor interface {
+	visit(node Node)
 }
 
 // Walk does a depth-first traversal of the AST, starting at node,
-// calling visitor.Visit for each encountered Node in the tree.
-func Walk(visitor Visitor, node Node) {
-	visitor.Visit(node)
+// calling visitor.visit for each encountered Node in the tree.
+func Walk(v visitor, node Node) {
+	v.visit(node)
 	for _, childNode := range node.Children() {
-		Walk(visitor, childNode)
+		Walk(v, childNode)
 	}
 }
