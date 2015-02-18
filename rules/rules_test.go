@@ -633,6 +633,14 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="1", job="api-server"} => 0.06666666666666667 @[%v]`,
 			},
 		},
+		{
+			expr:       `rate(http_requests[10m]) offset 5m`,
+			shouldFail: true,
+		},
+		{
+			expr:       `sum(http_requests) offset 5m`,
+			shouldFail: true,
+		},
 	}
 
 	storage, closer := newTestStorage(t)
