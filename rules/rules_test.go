@@ -62,42 +62,32 @@ func newTestStorage(t testing.TB) (storage local.Storage, closer test.Closer) {
 func TestExpressions(t *testing.T) {
 	// Labels in expected output need to be alphabetically sorted.
 	expressionTests := []struct {
-		expr           string
-		output         []string
-		shouldFail     bool
-		checkOrder     bool
-		fullRanges     int
-		intervalRanges int
+		expr       string
+		output     []string
+		shouldFail bool
+		checkOrder bool
 	}{
 		{
-			expr:           `SUM(http_requests)`,
-			output:         []string{`{} => 3600 @[%v]`},
-			fullRanges:     0,
-			intervalRanges: 8,
+			expr:   `SUM(http_requests)`,
+			output: []string{`{} => 3600 @[%v]`},
 		}, {
 			expr: `SUM(http_requests{instance="0"}) BY(job)`,
 			output: []string{
 				`{job="api-server"} => 400 @[%v]`,
 				`{job="app-server"} => 1200 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 4,
 		}, {
 			expr: `SUM(http_requests{instance="0"}) BY(job) KEEPING_EXTRA`,
 			output: []string{
 				`{instance="0", job="api-server"} => 400 @[%v]`,
 				`{instance="0", job="app-server"} => 1200 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 4,
 		}, {
 			expr: `SUM(http_requests) BY (job)`,
 			output: []string{
 				`{job="api-server"} => 1000 @[%v]`,
 				`{job="app-server"} => 2600 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			// Non-existent labels mentioned in BY-clauses shouldn't propagate to output.
 			expr: `SUM(http_requests) BY (job, nonexistent)`,
@@ -105,8 +95,6 @@ func TestExpressions(t *testing.T) {
 				`{job="api-server"} => 1000 @[%v]`,
 				`{job="app-server"} => 2600 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `
 				// Test comment.
@@ -116,16 +104,12 @@ func TestExpressions(t *testing.T) {
 				`{job="api-server"} => 1000 @[%v]`,
 				`{job="app-server"} => 2600 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `COUNT(http_requests) BY (job)`,
 			output: []string{
 				`{job="api-server"} => 4 @[%v]`,
 				`{job="app-server"} => 4 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job, group)`,
 			output: []string{
@@ -134,139 +118,103 @@ func TestExpressions(t *testing.T) {
 				`{group="production", job="api-server"} => 300 @[%v]`,
 				`{group="production", job="app-server"} => 1100 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `AVG(http_requests) BY (job)`,
 			output: []string{
 				`{job="api-server"} => 250 @[%v]`,
 				`{job="app-server"} => 650 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `MIN(http_requests) BY (job)`,
 			output: []string{
 				`{job="api-server"} => 100 @[%v]`,
 				`{job="app-server"} => 500 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `MAX(http_requests) BY (job)`,
 			output: []string{
 				`{job="api-server"} => 400 @[%v]`,
 				`{job="app-server"} => 800 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job) - COUNT(http_requests) BY (job)`,
 			output: []string{
 				`{job="api-server"} => 996 @[%v]`,
 				`{job="app-server"} => 2596 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `2 - SUM(http_requests) BY (job)`,
 			output: []string{
 				`{job="api-server"} => -998 @[%v]`,
 				`{job="app-server"} => -2598 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `1000 / SUM(http_requests) BY (job)`,
 			output: []string{
 				`{job="api-server"} => 1 @[%v]`,
 				`{job="app-server"} => 0.38461538461538464 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job) - 2`,
 			output: []string{
 				`{job="api-server"} => 998 @[%v]`,
 				`{job="app-server"} => 2598 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job) % 3`,
 			output: []string{
 				`{job="api-server"} => 1 @[%v]`,
 				`{job="app-server"} => 2 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job) / 0`,
 			output: []string{
 				`{job="api-server"} => +Inf @[%v]`,
 				`{job="app-server"} => +Inf @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job) > 1000`,
 			output: []string{
 				`{job="app-server"} => 2600 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `1000 < SUM(http_requests) BY (job)`,
 			output: []string{
 				`{job="app-server"} => 1000 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job) <= 1000`,
 			output: []string{
 				`{job="api-server"} => 1000 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job) != 1000`,
 			output: []string{
 				`{job="app-server"} => 2600 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job) == 1000`,
 			output: []string{
 				`{job="api-server"} => 1000 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `SUM(http_requests) BY (job) + SUM(http_requests) BY (job)`,
 			output: []string{
 				`{job="api-server"} => 2000 @[%v]`,
 				`{job="app-server"} => 5200 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			expr: `http_requests{job="api-server", group="canary"}`,
 			output: []string{
 				`http_requests{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
 				`http_requests{group="canary", instance="1", job="api-server"} => 400 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		}, {
 			expr: `http_requests{job="api-server", group="canary"} + rate(http_requests{job="api-server"}[5m]) * 5 * 60`,
 			output: []string{
 				`{group="canary", instance="0", job="api-server"} => 330 @[%v]`,
 				`{group="canary", instance="1", job="api-server"} => 440 @[%v]`,
 			},
-			fullRanges:     4,
-			intervalRanges: 0,
 		}, {
 			expr: `rate(http_requests[25m]) * 25 * 60`,
 			output: []string{
@@ -279,8 +227,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="1", job="api-server"} => 100 @[%v]`,
 				`{group="production", instance="1", job="app-server"} => 300 @[%v]`,
 			},
-			fullRanges:     8,
-			intervalRanges: 0,
 		}, {
 			expr: `delta(http_requests[25m], 1)`,
 			output: []string{
@@ -293,8 +239,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="1", job="api-server"} => 100 @[%v]`,
 				`{group="production", instance="1", job="app-server"} => 300 @[%v]`,
 			},
-			fullRanges:     8,
-			intervalRanges: 0,
 		}, {
 			expr: `sort(http_requests)`,
 			output: []string{
@@ -307,9 +251,7 @@ func TestExpressions(t *testing.T) {
 				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
 				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
 			},
-			checkOrder:     true,
-			fullRanges:     0,
-			intervalRanges: 8,
+			checkOrder: true,
 		}, {
 			expr: `sort_desc(http_requests)`,
 			output: []string{
@@ -322,9 +264,7 @@ func TestExpressions(t *testing.T) {
 				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
 				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
 			},
-			checkOrder:     true,
-			fullRanges:     0,
-			intervalRanges: 8,
+			checkOrder: true,
 		}, {
 			expr: `topk(3, http_requests)`,
 			output: []string{
@@ -332,18 +272,14 @@ func TestExpressions(t *testing.T) {
 				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
 				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
 			},
-			checkOrder:     true,
-			fullRanges:     0,
-			intervalRanges: 8,
+			checkOrder: true,
 		}, {
 			expr: `topk(5, http_requests{group="canary",job="app-server"})`,
 			output: []string{
 				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
 				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
 			},
-			checkOrder:     true,
-			fullRanges:     0,
-			intervalRanges: 2,
+			checkOrder: true,
 		}, {
 			expr: `bottomk(3, http_requests)`,
 			output: []string{
@@ -351,26 +287,20 @@ func TestExpressions(t *testing.T) {
 				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
 				`http_requests{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
 			},
-			checkOrder:     true,
-			fullRanges:     0,
-			intervalRanges: 8,
+			checkOrder: true,
 		}, {
 			expr: `bottomk(5, http_requests{group="canary",job="app-server"})`,
 			output: []string{
 				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
 				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
 			},
-			checkOrder:     true,
-			fullRanges:     0,
-			intervalRanges: 2,
+			checkOrder: true,
 		}, {
 			// Single-letter label names and values.
 			expr: `x{y="testvalue"}`,
 			output: []string{
 				`x{y="testvalue"} => 100 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 1,
 		}, {
 			// Lower-cased aggregation operators should work too.
 			expr: `sum(http_requests) by (job) + min(http_requests) by (job) + max(http_requests) by (job) + avg(http_requests) by (job)`,
@@ -378,62 +308,42 @@ func TestExpressions(t *testing.T) {
 				`{job="app-server"} => 4550 @[%v]`,
 				`{job="api-server"} => 1750 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		}, {
 			// Deltas should be adjusted for target interval vs. samples under target interval.
-			expr:           `delta(http_requests{group="canary", instance="1", job="app-server"}[18m])`,
-			output:         []string{`{group="canary", instance="1", job="app-server"} => 288 @[%v]`},
-			fullRanges:     1,
-			intervalRanges: 0,
+			expr:   `delta(http_requests{group="canary", instance="1", job="app-server"}[18m])`,
+			output: []string{`{group="canary", instance="1", job="app-server"} => 288 @[%v]`},
 		}, {
 			// Deltas should perform the same operation when 2nd argument is 0.
-			expr:           `delta(http_requests{group="canary", instance="1", job="app-server"}[18m], 0)`,
-			output:         []string{`{group="canary", instance="1", job="app-server"} => 288 @[%v]`},
-			fullRanges:     1,
-			intervalRanges: 0,
+			expr:   `delta(http_requests{group="canary", instance="1", job="app-server"}[18m], 0)`,
+			output: []string{`{group="canary", instance="1", job="app-server"} => 288 @[%v]`},
 		}, {
 			// Rates should calculate per-second rates.
-			expr:           `rate(http_requests{group="canary", instance="1", job="app-server"}[60m])`,
-			output:         []string{`{group="canary", instance="1", job="app-server"} => 0.26666666666666666 @[%v]`},
-			fullRanges:     1,
-			intervalRanges: 0,
+			expr:   `rate(http_requests{group="canary", instance="1", job="app-server"}[60m])`,
+			output: []string{`{group="canary", instance="1", job="app-server"} => 0.26666666666666666 @[%v]`},
 		}, {
 			// Deriv should return the same as rate in simple cases.
-			expr:           `deriv(http_requests{group="canary", instance="1", job="app-server"}[60m])`,
-			output:         []string{`{group="canary", instance="1", job="app-server"} => 0.26666666666666666 @[%v]`},
-			fullRanges:     1,
-			intervalRanges: 0,
+			expr:   `deriv(http_requests{group="canary", instance="1", job="app-server"}[60m])`,
+			output: []string{`{group="canary", instance="1", job="app-server"} => 0.26666666666666666 @[%v]`},
 		}, {
 			// Counter resets at in the middle of range are handled correctly by rate().
-			expr:           `rate(testcounter_reset_middle[60m])`,
-			output:         []string{`{} => 0.03 @[%v]`},
-			fullRanges:     1,
-			intervalRanges: 0,
+			expr:   `rate(testcounter_reset_middle[60m])`,
+			output: []string{`{} => 0.03 @[%v]`},
 		}, {
 			// Counter resets at end of range are ignored by rate().
-			expr:           `rate(testcounter_reset_end[5m])`,
-			output:         []string{`{} => 0 @[%v]`},
-			fullRanges:     1,
-			intervalRanges: 0,
+			expr:   `rate(testcounter_reset_end[5m])`,
+			output: []string{`{} => 0 @[%v]`},
 		}, {
 			// Deriv should return correct result.
-			expr:           `deriv(testcounter_reset_middle[100m])`,
-			output:         []string{`{} => 0.010606060606060607 @[%v]`},
-			fullRanges:     1,
-			intervalRanges: 0,
+			expr:   `deriv(testcounter_reset_middle[100m])`,
+			output: []string{`{} => 0.010606060606060607 @[%v]`},
 		}, {
 			// count_scalar for a non-empty vector should return scalar element count.
-			expr:           `count_scalar(http_requests)`,
-			output:         []string{`scalar: 8 @[%v]`},
-			fullRanges:     0,
-			intervalRanges: 8,
+			expr:   `count_scalar(http_requests)`,
+			output: []string{`scalar: 8 @[%v]`},
 		}, {
 			// count_scalar for an empty vector should return scalar 0.
-			expr:           `count_scalar(nonexistent)`,
-			output:         []string{`scalar: 0 @[%v]`},
-			fullRanges:     0,
-			intervalRanges: 0,
+			expr:   `count_scalar(nonexistent)`,
+			output: []string{`scalar: 0 @[%v]`},
 		}, {
 			// Empty expressions shouldn't parse.
 			expr:       ``,
@@ -454,8 +364,6 @@ func TestExpressions(t *testing.T) {
 				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
 				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 4,
 		}, {
 			expr: `http_requests{job=~"server",group!="canary"}`,
 			output: []string{
@@ -464,29 +372,21 @@ func TestExpressions(t *testing.T) {
 				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
 				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 4,
 		}, {
 			expr: `http_requests{job!~"api",group!="canary"}`,
 			output: []string{
 				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
 				`http_requests{group="production", instance="0", job="app-server"} => 500 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		}, {
-			expr:           `count_scalar(http_requests{job=~"^server$"})`,
-			output:         []string{`scalar: 0 @[%v]`},
-			fullRanges:     0,
-			intervalRanges: 0,
+			expr:   `count_scalar(http_requests{job=~"^server$"})`,
+			output: []string{`scalar: 0 @[%v]`},
 		}, {
 			expr: `http_requests{group="production",job=~"^api"}`,
 			output: []string{
 				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
 				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `abs(-1 * http_requests{group="production",job="api-server"})`,
@@ -494,8 +394,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 100 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 200 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `floor(0.004 * http_requests{group="production",job="api-server"})`,
@@ -503,8 +401,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 0 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 0 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `ceil(0.004 * http_requests{group="production",job="api-server"})`,
@@ -512,8 +408,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 1 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 1 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `round(0.004 * http_requests{group="production",job="api-server"})`,
@@ -521,8 +415,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 0 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 1 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{ // Round should correctly handle negative numbers.
 			expr: `round(-1 * (0.004 * http_requests{group="production",job="api-server"}))`,
@@ -530,8 +422,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 0 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => -1 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{ // Round should round half up.
 			expr: `round(0.005 * http_requests{group="production",job="api-server"})`,
@@ -539,8 +429,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 1 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 1 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `round(-1 * (0.005 * http_requests{group="production",job="api-server"}))`,
@@ -548,8 +436,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 0 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => -1 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `round(1 + 0.005 * http_requests{group="production",job="api-server"})`,
@@ -557,8 +443,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 2 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 2 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `round(-1 * (1 + 0.005 * http_requests{group="production",job="api-server"}))`,
@@ -566,8 +450,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => -1 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => -2 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{ // Round should accept the number to round nearest to.
 			expr: `round(0.0005 * http_requests{group="production",job="api-server"}, 0.1)`,
@@ -575,8 +457,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 0.1 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 0.1 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `round(2.1 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)`,
@@ -584,8 +464,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 2.2 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 2.2 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `round(5.2 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)`,
@@ -593,8 +471,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 5.3 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 5.3 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{ // Round should work correctly with negative numbers and multiple decimal places.
 			expr: `round(-1 * (5.2 + 0.0005 * http_requests{group="production",job="api-server"}), 0.1)`,
@@ -602,8 +478,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => -5.2 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => -5.3 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{ // Round should work correctly with big toNearests.
 			expr: `round(0.025 * http_requests{group="production",job="api-server"}, 5)`,
@@ -611,8 +485,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 5 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 5 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `round(0.045 * http_requests{group="production",job="api-server"}, 5)`,
@@ -620,8 +492,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 5 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 10 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `avg_over_time(http_requests{group="production",job="api-server"}[1h])`,
@@ -629,8 +499,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 50 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 100 @[%v]`,
 			},
-			fullRanges:     2,
-			intervalRanges: 0,
 		},
 		{
 			expr: `count_over_time(http_requests{group="production",job="api-server"}[1h])`,
@@ -638,8 +506,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 11 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 11 @[%v]`,
 			},
-			fullRanges:     2,
-			intervalRanges: 0,
 		},
 		{
 			expr: `max_over_time(http_requests{group="production",job="api-server"}[1h])`,
@@ -647,8 +513,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 100 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 200 @[%v]`,
 			},
-			fullRanges:     2,
-			intervalRanges: 0,
 		},
 		{
 			expr: `min_over_time(http_requests{group="production",job="api-server"}[1h])`,
@@ -656,8 +520,6 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 0 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 0 @[%v]`,
 			},
-			fullRanges:     2,
-			intervalRanges: 0,
 		},
 		{
 			expr: `sum_over_time(http_requests{group="production",job="api-server"}[1h])`,
@@ -665,14 +527,10 @@ func TestExpressions(t *testing.T) {
 				`{group="production", instance="0", job="api-server"} => 550 @[%v]`,
 				`{group="production", instance="1", job="api-server"} => 1100 @[%v]`,
 			},
-			fullRanges:     2,
-			intervalRanges: 0,
 		},
 		{
-			expr:           `time()`,
-			output:         []string{`scalar: 3000 @[%v]`},
-			fullRanges:     0,
-			intervalRanges: 0,
+			expr:   `time()`,
+			output: []string{`scalar: 3000 @[%v]`},
 		},
 		{
 			expr: `drop_common_labels(http_requests{group="production",job="api-server"})`,
@@ -680,8 +538,6 @@ func TestExpressions(t *testing.T) {
 				`http_requests{instance="0"} => 100 @[%v]`,
 				`http_requests{instance="1"} => 200 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 2,
 		},
 		{
 			expr: `{` + string(clientmodel.MetricNameLabel) + `=~".*"}`,
@@ -698,8 +554,6 @@ func TestExpressions(t *testing.T) {
 				`testcounter_reset_middle => 50 @[%v]`,
 				`x{y="testvalue"} => 100 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 11,
 		},
 		{
 			expr: `{job=~"server", job!~"api"}`,
@@ -709,8 +563,6 @@ func TestExpressions(t *testing.T) {
 				`http_requests{group="production", instance="0", job="app-server"} => 500 @[%v]`,
 				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 4,
 		},
 		{
 			// Test alternative "by"-clause order.
@@ -719,8 +571,6 @@ func TestExpressions(t *testing.T) {
 				`{group="canary"} => 700 @[%v]`,
 				`{group="production"} => 300 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 4,
 		},
 		{
 			// Test alternative "by"-clause order with "keeping_extra".
@@ -729,8 +579,6 @@ func TestExpressions(t *testing.T) {
 				`{group="canary", job="api-server"} => 700 @[%v]`,
 				`{group="production", job="api-server"} => 300 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 4,
 		},
 		{
 			// Test both alternative "by"-clause orders in one expression.
@@ -740,48 +588,50 @@ func TestExpressions(t *testing.T) {
 			output: []string{
 				`{job="api-server"} => 1000 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 4,
 		},
 		{
 			expr: `absent(nonexistent)`,
 			output: []string{
 				`{} => 1 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 0,
 		},
 		{
 			expr: `absent(nonexistent{job="testjob", instance="testinstance", method=~".*"})`,
 			output: []string{
 				`{instance="testinstance", job="testjob"} => 1 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 0,
 		},
 		{
 			expr: `count_scalar(absent(http_requests))`,
 			output: []string{
 				`scalar: 0 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		},
 		{
 			expr: `count_scalar(absent(sum(http_requests)))`,
 			output: []string{
 				`scalar: 0 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 8,
 		},
 		{
 			expr: `absent(sum(nonexistent{job="testjob", instance="testinstance"}))`,
 			output: []string{
 				`{} => 1 @[%v]`,
 			},
-			fullRanges:     0,
-			intervalRanges: 0,
+		},
+		{
+			expr: `http_requests{group="production",job="api-server"} offset 5m`,
+			output: []string{
+				`http_requests{group="production", instance="0", job="api-server"} => 90 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 180 @[%v]`,
+			},
+		},
+		{
+			expr: `rate(http_requests{group="production",job="api-server"}[10m] offset 5m)`,
+			output: []string{
+				`{group="production", instance="0", job="api-server"} => 0.03333333333333333 @[%v]`,
+				`{group="production", instance="1", job="api-server"} => 0.06666666666666667 @[%v]`,
+			},
 		},
 	}
 
@@ -832,17 +682,6 @@ func TestExpressions(t *testing.T) {
 						failed = true
 					}
 				}
-			}
-
-			analyzer := ast.NewQueryAnalyzer(storage)
-			ast.Walk(analyzer, testExpr)
-			if exprTest.fullRanges != len(analyzer.FullRanges) {
-				t.Errorf("%d. Count of full ranges didn't match: %v vs %v", i, exprTest.fullRanges, len(analyzer.FullRanges))
-				failed = true
-			}
-			if exprTest.intervalRanges != len(analyzer.IntervalRanges) {
-				t.Errorf("%d. Count of interval ranges didn't match: %v vs %v", i, exprTest.intervalRanges, len(analyzer.IntervalRanges))
-				failed = true
 			}
 
 			if failed {

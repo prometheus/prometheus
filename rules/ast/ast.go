@@ -215,6 +215,7 @@ type (
 	// A VectorSelector represents a metric name plus labelset.
 	VectorSelector struct {
 		labelMatchers metric.LabelMatchers
+		offset        time.Duration
 		// The series iterators are populated at query analysis time.
 		iterators map[clientmodel.Fingerprint]local.SeriesIterator
 		metrics   map[clientmodel.Fingerprint]clientmodel.COWMetric
@@ -261,6 +262,7 @@ type (
 		// Fingerprints are populated from label matchers at query analysis time.
 		fingerprints clientmodel.Fingerprints
 		interval     time.Duration
+		offset       time.Duration
 	}
 )
 
@@ -561,8 +563,8 @@ func (node *VectorSelector) Eval(timestamp clientmodel.Timestamp) Vector {
 	//// timer := v.stats.GetTimer(stats.GetValueAtTimeTime).Start()
 	samples := Vector{}
 	for fp, it := range node.iterators {
-		sampleCandidates := it.GetValueAtTime(timestamp)
-		samplePair := chooseClosestSample(sampleCandidates, timestamp)
+		sampleCandidates := it.GetValueAtTime(timestamp.Add(-node.offset))
+		samplePair := chooseClosestSample(sampleCandidates, timestamp.Add(-node.offset))
 		if samplePair != nil {
 			samples = append(samples, &Sample{
 				Metric:    node.metrics[fp],
@@ -823,8 +825,8 @@ func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp) Vector {
 // the selector.
 func (node *MatrixSelector) Eval(timestamp clientmodel.Timestamp) Matrix {
 	interval := &metric.Interval{
-		OldestInclusive: timestamp.Add(-node.interval),
-		NewestInclusive: timestamp,
+		OldestInclusive: timestamp.Add(-node.interval - node.offset),
+		NewestInclusive: timestamp.Add(-node.offset),
 	}
 
 	//// timer := v.stats.GetTimer(stats.GetRangeValuesTime).Start()
@@ -833,6 +835,12 @@ func (node *MatrixSelector) Eval(timestamp clientmodel.Timestamp) Matrix {
 		samplePairs := it.GetRangeValues(*interval)
 		if len(samplePairs) == 0 {
 			continue
+		}
+
+		if node.offset != 0 {
+			for _, sp := range samplePairs {
+				sp.Timestamp = sp.Timestamp.Add(node.offset)
+			}
 		}
 
 		sampleStream := SampleStream{
@@ -910,9 +918,10 @@ func NewScalarLiteral(value clientmodel.SampleValue) *ScalarLiteral {
 
 // NewVectorSelector returns a (not yet evaluated) VectorSelector with
 // the given LabelSet.
-func NewVectorSelector(m metric.LabelMatchers) *VectorSelector {
+func NewVectorSelector(m metric.LabelMatchers, offset time.Duration) *VectorSelector {
 	return &VectorSelector{
 		labelMatchers: m,
+		offset:        offset,
 		iterators:     map[clientmodel.Fingerprint]local.SeriesIterator{},
 		metrics:       map[clientmodel.Fingerprint]clientmodel.COWMetric{},
 	}
@@ -1002,10 +1011,11 @@ func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
 
 // NewMatrixSelector returns a (not yet evaluated) MatrixSelector with
 // the given VectorSelector and Duration.
-func NewMatrixSelector(vector *VectorSelector, interval time.Duration) *MatrixSelector {
+func NewMatrixSelector(vector *VectorSelector, interval time.Duration, offset time.Duration) *MatrixSelector {
 	return &MatrixSelector{
 		labelMatchers: vector.labelMatchers,
 		interval:      interval,
+		offset:        offset,
 		iterators:     map[clientmodel.Fingerprint]local.SeriesIterator{},
 		metrics:       map[clientmodel.Fingerprint]clientmodel.COWMetric{},
 	}
