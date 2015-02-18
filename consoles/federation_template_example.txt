@@ -1,0 +1,3 @@
+{{/* Adjust the query below to select the samples to expose. */}}
+{{ range query "{__name__=~'^job:.*'}" }}
+{{ .Labels.__name__ }}{{ "{" }}{{ range $k, $v := .Labels }}{{ if ne "__name__" $k }}{{ $k }}="{{ $v | reReplaceAll "([\\\\\"])" "\\$1" | reReplaceAll "\n" "\\n"| safeHtml }}",{{ end }}{{ end }}{{ "}" }} {{ print .Value | safeHtml }}{{ end }}
