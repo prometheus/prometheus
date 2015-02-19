@@ -34,6 +34,19 @@ func (i *collectResultIngester) Ingest(s clientmodel.Samples) error {
 	return nil
 }
 
+func TestTargetHidesURLAuth(t *testing.T) {
+	testTarget := target{
+		state:      Unknown,
+		url:        "http://secret:data@host.com/query?args#fragment",
+		httpClient: utility.NewDeadlineClient(0),
+	}
+	expected := "http://host.com/query?args#fragment"
+	u := testTarget.PublicURL()
+	if u != expected {
+		t.Errorf("Expected PublicURL to be %v, actual %v", expected, u)
+	}
+}
+
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := target{
 		state:      Unknown,

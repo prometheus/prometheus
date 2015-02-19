@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -114,6 +115,8 @@ type Target interface {
 	// points in this interface, this one is the best candidate to change given
 	// the ways to express the endpoint.
 	URL() string
+	// The URL without any auth data in it, used to label data
+	PublicURL() string
 	// The URL as seen from other hosts. References to localhost are resolved
 	// to the address of the prometheus server.
 	GlobalURL() string
@@ -186,8 +189,8 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clie
 	}
 	healthMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeHealthMetricName)
 	durationMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeDurationMetricName)
-	healthMetric[InstanceLabel] = clientmodel.LabelValue(t.URL())
-	durationMetric[InstanceLabel] = clientmodel.LabelValue(t.URL())
+	healthMetric[InstanceLabel] = clientmodel.LabelValue(t.PublicURL())
+	durationMetric[InstanceLabel] = clientmodel.LabelValue(t.PublicURL())
 
 	healthValue := clientmodel.SampleValue(0)
 	if healthy {
@@ -320,7 +323,7 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		return err
 	}
 
-	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.URL())}
+	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.PublicURL())}
 	for baseLabel, baseValue := range t.baseLabels {
 		baseLabels[baseLabel] = baseValue
 	}
@@ -361,6 +364,17 @@ func (t *target) LastScrape() time.Time {
 // URL implements Target.
 func (t *target) URL() string {
 	return t.url
+}
+
+// PublicURL implements Target.
+func (t *target) PublicURL() string {
+	u, err := url.Parse(t.url)
+	if err != nil {
+		glog.Warning("Could not parse URL for auth stripping (%s), returning it unchanged", err)
+		return t.url
+	}
+	u.User = nil
+	return u.String()
 }
 
 // GlobalURL implements Target.
