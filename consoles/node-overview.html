@@ -4,11 +4,11 @@
   <tr><th colspan="2">Overview</th></tr>
   <tr>
     <td>User CPU</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "sum(rate(node_cpu{job='node',instance='%s',mode='user'}[5m])) * 100 / count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.3g") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "sum(rate(node_cpu{job='node',instance='%s',mode='user'}[5m])) * 100 / count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.1f") }}</td>
   </tr>
   <tr>
     <td>System CPU</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "sum(rate(node_cpu{job='node',instance='%s',mode='system'}[5m])) * 100 / count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.3g") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "sum(rate(node_cpu{job='node',instance='%s',mode='system'}[5m])) * 100 / count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.1f") }}</td>
   </tr>
   <tr>
     <td>Memory Total</td>
@@ -38,7 +38,7 @@
 {{ range printf "node_disk_io_time_ms{job='node',instance='%s',device!~'^(md\\d+$|dm-)'}" .Params.instance | query | sortByLabel "device" }}
   <tr>
     <td>{{ .Labels.device }} Utilization</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_disk_io_time_ms{job='node',instance='%s',device='%s'}[5m]) / 1000 * 100" .Labels.instance .Labels.device) "%" "printf.3g") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_disk_io_time_ms{job='node',instance='%s',device='%s'}[5m]) / 1000 * 100" .Labels.instance .Labels.device) "%" "printf.1f") }}</td>
   </tr>
 {{ end }}
 {{ range printf "node_disk_io_time_ms{job='node',instance='%s'}" .Params.instance | query | sortByLabel "device" }}
@@ -51,7 +51,7 @@
   <th colspan="2">Filesystem Fullness</th>
 </tr>
 {{ define "roughlyNearZero" }}
-{{ if gt .1 . }}~0{{ else }}{{ printf "%.3g" . }}{{ end }}
+{{ if gt .1 . }}~0{{ else }}{{ printf "%.1f" . }}{{ end }}
 {{ end }}
 {{ range printf "node_filesystem_size{job='node',instance='%s'}" .Params.instance | query | sortByLabel "filesystem" }}
   <tr>

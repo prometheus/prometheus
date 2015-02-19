@@ -7,7 +7,7 @@
   <th colspan="2">{{ .Labels.device }}</th>
   <tr>
     <td>Utilization</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_disk_io_time_ms{job='node',instance='%s',device='%s'}[5m]) / 1000 * 100" .Labels.instance .Labels.device) "%" "printf.3g") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_disk_io_time_ms{job='node',instance='%s',device='%s'}[5m]) / 1000 * 100" .Labels.instance .Labels.device) "%" "printf.1f") }}</td>
   </tr>
   <tr>
     <td>Throughput</td>
@@ -25,7 +25,7 @@
   <th colspan="2">Filesystem Fullness</th>
 </tr>
 {{ define "roughlyNearZero" }}
-{{ if gt .1 . }}~0{{ else }}{{ printf "%.3g" . }}{{ end }}
+{{ if gt .1 . }}~0{{ else }}{{ printf "%.1f" . }}{{ end }}
 {{ end }}
 {{ range printf "node_filesystem_size{job='node',instance='%s'}" .Params.instance | query | sortByLabel "filesystem" }}
   <tr>
