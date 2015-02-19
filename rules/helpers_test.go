@@ -205,6 +205,224 @@ var testMatrix = ast.Matrix{
 		},
 		Values: getTestValueStream(0, 200, 20, testStartTime),
 	},
+	// Two histogram with 4 buckets each (*_sum and *_count not included,
+	// only buckets). Lowest bucket for one histogram < 0, for the other >
+	// 0. They have the same name, just separated by label. Not useful in
+	// practice, but can happen (if clients change bucketing), and the
+	// server has to cope with it.
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testhistogram_bucket",
+				"le":    "0.1",
+				"start": "positive",
+			},
+		},
+		Values: getTestValueStream(0, 50, 5, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testhistogram_bucket",
+				"le":    ".2",
+				"start": "positive",
+			},
+		},
+		Values: getTestValueStream(0, 70, 7, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testhistogram_bucket",
+				"le":    "1e0",
+				"start": "positive",
+			},
+		},
+		Values: getTestValueStream(0, 110, 11, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testhistogram_bucket",
+				"le":    "+Inf",
+				"start": "positive",
+			},
+		},
+		Values: getTestValueStream(0, 120, 12, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testhistogram_bucket",
+				"le":    "-.2",
+				"start": "negative",
+			},
+		},
+		Values: getTestValueStream(0, 10, 1, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testhistogram_bucket",
+				"le":    "-0.1",
+				"start": "negative",
+			},
+		},
+		Values: getTestValueStream(0, 20, 2, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testhistogram_bucket",
+				"le":    "0.3",
+				"start": "negative",
+			},
+		},
+		Values: getTestValueStream(0, 20, 2, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testhistogram_bucket",
+				"le":    "+Inf",
+				"start": "negative",
+			},
+		},
+		Values: getTestValueStream(0, 30, 3, testStartTime),
+	},
+	// Now a more realistic histogram per job and instance to test aggregation.
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job1",
+				"instance":                  "ins1",
+				"le":                        "0.1",
+			},
+		},
+		Values: getTestValueStream(0, 10, 1, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job1",
+				"instance":                  "ins1",
+				"le":                        "0.2",
+			},
+		},
+		Values: getTestValueStream(0, 30, 3, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job1",
+				"instance":                  "ins1",
+				"le":                        "+Inf",
+			},
+		},
+		Values: getTestValueStream(0, 40, 4, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job1",
+				"instance":                  "ins2",
+				"le":                        "0.1",
+			},
+		},
+		Values: getTestValueStream(0, 20, 2, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job1",
+				"instance":                  "ins2",
+				"le":                        "0.2",
+			},
+		},
+		Values: getTestValueStream(0, 50, 5, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job1",
+				"instance":                  "ins2",
+				"le":                        "+Inf",
+			},
+		},
+		Values: getTestValueStream(0, 60, 6, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job2",
+				"instance":                  "ins1",
+				"le":                        "0.1",
+			},
+		},
+		Values: getTestValueStream(0, 30, 3, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job2",
+				"instance":                  "ins1",
+				"le":                        "0.2",
+			},
+		},
+		Values: getTestValueStream(0, 40, 4, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job2",
+				"instance":                  "ins1",
+				"le":                        "+Inf",
+			},
+		},
+		Values: getTestValueStream(0, 60, 6, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job2",
+				"instance":                  "ins2",
+				"le":                        "0.1",
+			},
+		},
+		Values: getTestValueStream(0, 40, 4, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job2",
+				"instance":                  "ins2",
+				"le":                        "0.2",
+			},
+		},
+		Values: getTestValueStream(0, 70, 7, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "request_duration_seconds_bucket",
+				clientmodel.JobLabel:        "job2",
+				"instance":                  "ins2",
+				"le":                        "+Inf",
+			},
+		},
+		Values: getTestValueStream(0, 90, 9, testStartTime),
+	},
 }
 
 var testVector = getTestVectorFromTestMatrix(testMatrix)

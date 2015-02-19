@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -498,6 +499,44 @@ func derivImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	return resultVector
 }
 
+// === histogram_quantile(k ScalarNode, vector VectorNode) Vector ===
+func histogramQuantileImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	q := args[0].(ScalarNode).Eval(timestamp)
+	inVec := args[1].(VectorNode).Eval(timestamp)
+	outVec := Vector{}
+	fpToMetricWithBuckets := map[clientmodel.Fingerprint]*metricWithBuckets{}
+	for _, el := range inVec {
+		upperBound, err := strconv.ParseFloat(
+			string(el.Metric.Metric[clientmodel.BucketLabel]), 64,
+		)
+		if err != nil {
+			// Oops, no bucket label or malformed label value. Skip.
+			// TODO(beorn7): Issue a warning somehow.
+			continue
+		}
+		// TODO avoid copying each time by using a custom fingerprint
+		el.Metric.Delete(clientmodel.BucketLabel)
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		fp := el.Metric.Metric.Fingerprint()
+		mb, ok := fpToMetricWithBuckets[fp]
+		if !ok {
+			mb = &metricWithBuckets{el.Metric, nil}
+			fpToMetricWithBuckets[fp] = mb
+		}
+		mb.buckets = append(mb.buckets, bucket{upperBound, el.Value})
+	}
+
+	for _, mb := range fpToMetricWithBuckets {
+		outVec = append(outVec, &Sample{
+			Metric:    mb.metric,
+			Value:     clientmodel.SampleValue(quantile(q, mb.buckets)),
+			Timestamp: timestamp,
+		})
+	}
+
+	return outVec
+}
+
 var functions = map[string]*Function{
 	"abs": {
 		name:       "abs",
@@ -548,6 +587,12 @@ var functions = map[string]*Function{
 		returnType:   VectorType,
 		callFn:       deltaImpl,
 	},
+	"deriv": {
+		name:       "deriv",
+		argTypes:   []ExprType{MatrixType},
+		returnType: VectorType,
+		callFn:     derivImpl,
+	},
 	"drop_common_labels": {
 		name:       "drop_common_labels",
 		argTypes:   []ExprType{VectorType},
@@ -559,6 +604,12 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{VectorType},
 		returnType: VectorType,
 		callFn:     floorImpl,
+	},
+	"histogram_quantile": {
+		name:       "histogram_quantile",
+		argTypes:   []ExprType{ScalarType, VectorType},
+		returnType: VectorType,
+		callFn:     histogramQuantileImpl,
 	},
 	"max_over_time": {
 		name:       "max_over_time",
@@ -620,12 +671,6 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{ScalarType, VectorType},
 		returnType: VectorType,
 		callFn:     topkImpl,
-	},
-	"deriv": {
-		name:       "deriv",
-		argTypes:   []ExprType{MatrixType},
-		returnType: VectorType,
-		callFn:     derivImpl,
 	},
 }
 
