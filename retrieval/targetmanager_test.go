@@ -42,6 +42,10 @@ func (t fakeTarget) URL() string {
 	return "fake"
 }
 
+func (t fakeTarget) InstanceIdentifier() string {
+	return "fake"
+}
+
 func (t fakeTarget) GlobalURL() string {
 	return t.URL()
 }

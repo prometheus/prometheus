@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -114,6 +115,8 @@ type Target interface {
 	// points in this interface, this one is the best candidate to change given
 	// the ways to express the endpoint.
 	URL() string
+	// Used to populate the `instance` label in metrics.
+	InstanceIdentifier() string
 	// The URL as seen from other hosts. References to localhost are resolved
 	// to the address of the prometheus server.
 	GlobalURL() string
@@ -186,8 +189,8 @@ func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clie
 	}
 	healthMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeHealthMetricName)
 	durationMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeDurationMetricName)
-	healthMetric[InstanceLabel] = clientmodel.LabelValue(t.URL())
-	durationMetric[InstanceLabel] = clientmodel.LabelValue(t.URL())
+	healthMetric[InstanceLabel] = clientmodel.LabelValue(t.InstanceIdentifier())
+	durationMetric[InstanceLabel] = clientmodel.LabelValue(t.InstanceIdentifier())
 
 	healthValue := clientmodel.SampleValue(0)
 	if healthy {
@@ -320,7 +323,7 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		return err
 	}
 
-	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.URL())}
+	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.InstanceIdentifier())}
 	for baseLabel, baseValue := range t.baseLabels {
 		baseLabels[baseLabel] = baseValue
 	}
@@ -360,6 +363,28 @@ func (t *target) LastScrape() time.Time {
 
 // URL implements Target.
 func (t *target) URL() string {
+	return t.url
+}
+
+// InstanceIdentifier implements Target.
+func (t *target) InstanceIdentifier() string {
+	u, err := url.Parse(t.url)
+	if err != nil {
+		glog.Warningf("Could not parse instance URL when generating identifier, using raw URL: %s", err)
+		return t.url
+	}
+	// If we are given a port in the host port, use that.
+	if strings.Contains(u.Host, ":") {
+		return u.Host
+	}
+	// Otherwise, deduce port based on protocol.
+	if u.Scheme == "http" {
+		return fmt.Sprintf("%s:80", u.Host)
+	} else if u.Scheme == "https" {
+		return fmt.Sprintf("%s:443", u.Host)
+	}
+
+	glog.Warningf("Unknown scheme %s when generating identifier, using raw URL.", u.Scheme)
 	return t.url
 }
 
