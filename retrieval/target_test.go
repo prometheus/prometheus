@@ -35,15 +35,22 @@ func (i *collectResultIngester) Ingest(s clientmodel.Samples) error {
 }
 
 func TestTargetHidesURLAuth(t *testing.T) {
-	testTarget := target{
-		state:      Unknown,
-		url:        "http://secret:data@host.com/query?args#fragment",
-		httpClient: utility.NewDeadlineClient(0),
+	testVectors := []string{"http://secret:data@host.com/query?args#fragment", "https://example.net/foo", "http://foo.com:31337/bar"}
+	testResults := []string{"host.com:80", "example.net:443", "foo.com:31337"}
+	if len(testVectors) != len(testResults) {
+		t.Errorf("Test vector length does not match test result length.")
 	}
-	expected := "http://host.com/query?args#fragment"
-	u := testTarget.PublicURL()
-	if u != expected {
-		t.Errorf("Expected PublicURL to be %v, actual %v", expected, u)
+
+	for i := 0; i < len(testVectors); i++ {
+		testTarget := target{
+			state:      Unknown,
+			url:        testVectors[i],
+			httpClient: utility.NewDeadlineClient(0),
+		}
+		u := testTarget.InstanceIdentifier()
+		if u != testResults[i] {
+			t.Errorf("Expected InstanceIdentifier to be %v, actual %v", testResults[i], u)
+		}
 	}
 }
 
@@ -106,7 +113,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	expected := &clientmodel.Sample{
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: scrapeHealthMetricName,
-			InstanceLabel:               "http://example.url",
+			InstanceLabel:               "example.url:80",
 			clientmodel.JobLabel:        "testjob",
 		},
 		Timestamp: now,
@@ -121,7 +128,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	expected = &clientmodel.Sample{
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: scrapeDurationMetricName,
-			InstanceLabel:               "http://example.url",
+			InstanceLabel:               "example.url:80",
 			clientmodel.JobLabel:        "testjob",
 		},
 		Timestamp: now,

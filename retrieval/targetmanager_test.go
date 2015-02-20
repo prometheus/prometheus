@@ -42,7 +42,7 @@ func (t fakeTarget) URL() string {
 	return "fake"
 }
 
-func (t fakeTarget) PublicURL() string {
+func (t fakeTarget) InstanceIdentifier() string {
 	return "fake"
 }
 
