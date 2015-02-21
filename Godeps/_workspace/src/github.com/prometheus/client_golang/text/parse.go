@@ -274,8 +274,8 @@ func (p *Parser) startLabelName() stateFn {
 	}
 	// Special summary/histogram treatment. Don't add 'quantile' and 'le'
 	// labels to 'real' labels.
-	if !(p.currentMF.GetType() == dto.MetricType_SUMMARY && p.currentLabelPair.GetName() == "quantile") &&
-		!(p.currentMF.GetType() == dto.MetricType_HISTOGRAM && p.currentLabelPair.GetName() == "le") {
+	if !(p.currentMF.GetType() == dto.MetricType_SUMMARY && p.currentLabelPair.GetName() == model.QuantileLabel) &&
+		!(p.currentMF.GetType() == dto.MetricType_HISTOGRAM && p.currentLabelPair.GetName() == model.BucketLabel) {
 		p.currentMetric.Label = append(p.currentMetric.Label, p.currentLabelPair)
 	}
 	if p.skipBlankTabIfCurrentBlankTab(); p.err != nil {
@@ -306,7 +306,7 @@ func (p *Parser) startLabelValue() stateFn {
 	// - Quantile labels are special, will result in dto.Quantile later.
 	// - Other labels have to be added to currentLabels for signature calculation.
 	if p.currentMF.GetType() == dto.MetricType_SUMMARY {
-		if p.currentLabelPair.GetName() == "quantile" {
+		if p.currentLabelPair.GetName() == model.QuantileLabel {
 			if p.currentQuantile, p.err = strconv.ParseFloat(p.currentLabelPair.GetValue(), 64); p.err != nil {
 				// Create a more helpful error message.
 				p.parseError(fmt.Sprintf("expected float as value for 'quantile' label, got %q", p.currentLabelPair.GetValue()))
@@ -318,7 +318,7 @@ func (p *Parser) startLabelValue() stateFn {
 	}
 	// Similar special treatment of histograms.
 	if p.currentMF.GetType() == dto.MetricType_HISTOGRAM {
-		if p.currentLabelPair.GetName() == "le" {
+		if p.currentLabelPair.GetName() == model.BucketLabel {
 			if p.currentBucket, p.err = strconv.ParseFloat(p.currentLabelPair.GetValue(), 64); p.err != nil {
 				// Create a more helpful error message.
 				p.parseError(fmt.Sprintf("expected float as value for 'le' label, got %q", p.currentLabelPair.GetValue()))
