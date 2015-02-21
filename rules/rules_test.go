@@ -860,6 +860,70 @@ func TestRangedEvaluationRegressions(t *testing.T) {
 			},
 			expr: "sum(testmetric) keeping_extra",
 		},
+		{
+			// Testing metric fingerprint grouping behavior.
+			in: ast.Matrix{
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"aa": "bb",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime,
+							Value:     1,
+						},
+					},
+				},
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"a": "abb",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime,
+							Value:     2,
+						},
+					},
+				},
+			},
+			out: ast.Matrix{
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"aa": "bb",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime,
+							Value:     1,
+						},
+					},
+				},
+				{
+					Metric: clientmodel.COWMetric{
+						Metric: clientmodel.Metric{
+							clientmodel.MetricNameLabel: "testmetric",
+							"a": "abb",
+						},
+					},
+					Values: metric.Values{
+						{
+							Timestamp: testStartTime,
+							Value:     2,
+						},
+					},
+				},
+			},
+			expr: "testmetric",
+		},
 	}
 
 	for i, s := range scenarios {
