@@ -376,6 +376,7 @@ func (node *VectorAggregation) labelsToGroupingKey(labels clientmodel.Metric) ui
 	summer := fnv.New64a()
 	for _, label := range node.groupBy {
 		fmt.Fprint(summer, labels[label])
+		fmt.Fprint(summer, []byte{0})
 	}
 
 	return summer.Sum64()

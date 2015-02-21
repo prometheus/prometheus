@@ -184,6 +184,27 @@ var testMatrix = ast.Matrix{
 		},
 		Values: append(getTestValueStream(0, 90, 10, testStartTime), getTestValueStream(0, 0, 10, testStartTime.Add(testSampleInterval*10))...),
 	},
+	// For label-key grouping regression test.
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "label_grouping_test",
+				"a": "aa",
+				"b": "bb",
+			},
+		},
+		Values: getTestValueStream(0, 100, 10, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "label_grouping_test",
+				"a": "a",
+				"b": "abb",
+			},
+		},
+		Values: getTestValueStream(0, 200, 20, testStartTime),
+	},
 }
 
 var testVector = getTestVectorFromTestMatrix(testMatrix)

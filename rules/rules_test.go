@@ -553,6 +553,8 @@ func TestExpressions(t *testing.T) {
 				`testcounter_reset_end => 0 @[%v]`,
 				`testcounter_reset_middle => 50 @[%v]`,
 				`x{y="testvalue"} => 100 @[%v]`,
+				`label_grouping_test{a="a", b="abb"} => 200 @[%v]`,
+				`label_grouping_test{a="aa", b="bb"} => 100 @[%v]`,
 			},
 		},
 		{
@@ -640,6 +642,14 @@ func TestExpressions(t *testing.T) {
 		{
 			expr:       `sum(http_requests) offset 5m`,
 			shouldFail: true,
+		},
+		// Regression test for missing separator byte in labelsToGroupingKey.
+		{
+			expr: `sum(label_grouping_test) by (a, b)`,
+			output: []string{
+				`{a="a", b="abb"} => 200 @[%v]`,
+				`{a="aa", b="bb"} => 100 @[%v]`,
+			},
 		},
 	}
 
