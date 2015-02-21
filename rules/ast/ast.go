@@ -375,8 +375,8 @@ func (node *ScalarFunctionCall) Eval(timestamp clientmodel.Timestamp) clientmode
 func (node *VectorAggregation) labelsToGroupingKey(labels clientmodel.Metric) uint64 {
 	summer := fnv.New64a()
 	for _, label := range node.groupBy {
-		fmt.Fprint(summer, labels[label])
-		fmt.Fprint(summer, []byte{0})
+		summer.Write([]byte(labels[label]))
+		summer.Write([]byte{clientmodel.SeparatorByte})
 	}
 
 	return summer.Sum64()
