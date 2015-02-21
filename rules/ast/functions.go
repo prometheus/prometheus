@@ -514,12 +514,11 @@ func histogramQuantileImpl(timestamp clientmodel.Timestamp, args []Node) interfa
 			// TODO(beorn7): Issue a warning somehow.
 			continue
 		}
-		// TODO avoid copying each time by using a custom fingerprint
-		el.Metric.Delete(clientmodel.BucketLabel)
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		fp := el.Metric.Metric.Fingerprint()
+		fp := bucketFingerprint(el.Metric.Metric)
 		mb, ok := fpToMetricWithBuckets[fp]
 		if !ok {
+			el.Metric.Delete(clientmodel.BucketLabel)
+			el.Metric.Delete(clientmodel.MetricNameLabel)
 			mb = &metricWithBuckets{el.Metric, nil}
 			fpToMetricWithBuckets[fp] = mb
 		}
