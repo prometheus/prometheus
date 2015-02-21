@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
-	"sort"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -375,28 +374,8 @@ func (node *ScalarFunctionCall) Eval(timestamp clientmodel.Timestamp) clientmode
 func (node *VectorAggregation) labelsToGroupingKey(labels clientmodel.Metric) uint64 {
 	summer := fnv.New64a()
 	for _, label := range node.groupBy {
-		fmt.Fprint(summer, labels[label])
-	}
-
-	return summer.Sum64()
-}
-
-func labelsToKey(labels clientmodel.Metric) uint64 {
-	pairs := metric.LabelPairs{}
-
-	for label, value := range labels {
-		pairs = append(pairs, &metric.LabelPair{
-			Name:  label,
-			Value: value,
-		})
-	}
-
-	sort.Sort(pairs)
-
-	summer := fnv.New64a()
-
-	for _, pair := range pairs {
-		fmt.Fprint(summer, pair.Name, pair.Value)
+		summer.Write([]byte(labels[label]))
+		summer.Write([]byte{clientmodel.SeparatorByte})
 	}
 
 	return summer.Sum64()
@@ -435,7 +414,7 @@ func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmod
 	defer closer.Close()
 
 	evalTimer := queryStats.GetTimer(stats.InnerEvalTime).Start()
-	sampleStreams := map[uint64]*SampleStream{}
+	sampleStreams := map[clientmodel.Fingerprint]*SampleStream{}
 	for t := start; !t.After(end); t = t.Add(interval) {
 		if et := totalEvalTimer.ElapsedTime(); et > *queryTimeout {
 			evalTimer.Stop()
@@ -447,14 +426,14 @@ func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmod
 				Value:     sample.Value,
 				Timestamp: sample.Timestamp,
 			}
-			groupingKey := labelsToKey(sample.Metric.Metric)
-			if sampleStreams[groupingKey] == nil {
-				sampleStreams[groupingKey] = &SampleStream{
+			fp := sample.Metric.Metric.Fingerprint()
+			if sampleStreams[fp] == nil {
+				sampleStreams[fp] = &SampleStream{
 					Metric: sample.Metric,
 					Values: metric.Values{samplePair},
 				}
 			} else {
-				sampleStreams[groupingKey].Values = append(sampleStreams[groupingKey].Values, samplePair)
+				sampleStreams[fp].Values = append(sampleStreams[fp].Values, samplePair)
 			}
 		}
 	}
