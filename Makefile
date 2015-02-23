@@ -66,10 +66,10 @@ config:
 	$(MAKE) -C config
 
 $(SELFLINK): $(GOPATH)
-	ln -s $(CURDIR) $@
+	ln -s $(MAKEFILE_DIR) $@
 
 $(GOPATH):
-	cp -a $(CURDIR)/Godeps/_workspace $(GOPATH)
+	cp -a $(MAKEFILE_DIR)/Godeps/_workspace $(GOPATH)
 
 dependencies: $(GOCC) | $(SELFLINK)
 
