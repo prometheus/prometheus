@@ -1,3 +1,27 @@
+## 0.11.0 / 2015-02-23
+* [FEATURE] Introduce new metric type Histogram with server-side aggregation.
+* [FEATURE] Add offset operator.
+* [FEATURE] Add floor, ceil and round functions.
+* [CHANGE] Change instance identifiers to be host:port.
+* [CHANGE] Dependency management and vendoring changed/improved.
+* [CHANGE] Flag name changes to create consistency between various Prometheus
+  binaries.
+* [CHANGE] Show unlimited number of metrics in autocomplete.
+* [CHANGE] Add query timeout.
+* [CHANGE] Remove labels on persist error counter.
+* [ENHANCEMENT] Various performance improvements for sample ingestion.
+* [ENHANCEMENT] Various Makefile improvements.
+* [ENHANCEMENT] Various console template improvements, including
+  proof-of-concept for federation via console templates.
+* [ENHANCEMENT] Fix graph JS glitches and simplify graphing code.
+* [ENHANCEMENT] Dramatically decrease resources for file embedding.
+* [ENHANCEMENT] Crash recovery saves lost series data in 'orphaned' directory.
+* [BUGFIX] Fix aggregation grouping key calculation.
+* [BUGFIX] Fix Go download path for various architectures.
+* [BUGFIX] Fixed the link of the Travis build status image.
+* [BUGFIX] Fix Rickshaw/D3 version mismatch.
+* [CLEANUP] Various code cleanups.
+
 ## 0.10.0 / 2015-01-26
 * [CHANGE] More efficient JSON result format in query API. This requires
   up-to-date versions of PromDash and prometheus_cli, too.
