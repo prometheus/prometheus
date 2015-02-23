@@ -205,7 +205,7 @@ var testMatrix = ast.Matrix{
 		},
 		Values: getTestValueStream(0, 200, 20, testStartTime),
 	},
-	// Two histogram with 4 buckets each (*_sum and *_count not included,
+	// Two histograms with 4 buckets each (*_sum and *_count not included,
 	// only buckets). Lowest bucket for one histogram < 0, for the other >
 	// 0. They have the same name, just separated by label. Not useful in
 	// practice, but can happen (if clients change bucketing), and the
