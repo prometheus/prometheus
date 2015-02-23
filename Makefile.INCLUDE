@@ -24,7 +24,7 @@ ARCH=$(shell uname -m)
 # Mac OS X release family.
 MAC_OS_X_VERSION ?= 10.8
 
-BUILD_PATH = $(PWD)/.build
+BUILD_PATH = $(CURDIR)/.build
 
 GO_VERSION := 1.4
 GOOS = $(subst Darwin,darwin,$(subst Linux,linux,$(subst FreeBSD,freebsd,$(OS))))
