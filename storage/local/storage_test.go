@@ -36,6 +36,9 @@ func TestGetFingerprintsForLabelMatchers(t *testing.T) {
 // TestLoop is just a smoke test for the loop method, if we can switch it on and
 // off without disaster.
 func TestLoop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping test in short mode.")
+	}
 	samples := make(clientmodel.Samples, 1000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -57,8 +60,18 @@ func TestLoop(t *testing.T) {
 	}
 	storage.Start()
 	storage.AppendSamples(samples)
-	time.Sleep(time.Second)
+	storage.WaitForIndexing()
+	series, _ := storage.(*memorySeriesStorage).fpToSeries.get(clientmodel.Metric{}.Fingerprint())
+	cdsBefore := len(series.chunkDescs)
+	time.Sleep(fpMaxWaitDuration + time.Second) // TODO(beorn7): Ugh, need to wait for maintenance to kick in.
+	cdsAfter := len(series.chunkDescs)
 	storage.Stop()
+	if cdsBefore <= cdsAfter {
+		t.Errorf(
+			"Number of chunk descriptors should have gone down by now. Got before %d, after %d.",
+			cdsBefore, cdsAfter,
+		)
+	}
 }
 
 func TestChunk(t *testing.T) {
@@ -337,15 +350,15 @@ func TestEvictAndPurgeSeries(t *testing.T) {
 	s, closer := NewTestStorage(t)
 	defer closer.Close()
 
-	ms := s.(*memorySeriesStorage) // Going to test the internal purgeSeries method.
+	ms := s.(*memorySeriesStorage) // Going to test the internal maintain.*Series methods.
 
 	s.AppendSamples(samples)
 	s.WaitForIndexing()
 
 	fp := clientmodel.Metric{}.Fingerprint()
 
-	// Purge ~half of the chunks.
-	ms.purgeSeries(fp, 1000)
+	// Drop ~half of the chunks.
+	ms.maintainMemorySeries(fp, 1000)
 	it := s.NewIterator(fp)
 	actual := it.GetBoundaryValues(metric.Interval{
 		OldestInclusive: 0,
@@ -362,8 +375,8 @@ func TestEvictAndPurgeSeries(t *testing.T) {
 		t.Errorf("2nd timestamp: want %v, got %v", want, actual[1].Timestamp)
 	}
 
-	// Purge everything.
-	ms.purgeSeries(fp, 10000)
+	// Drop everything.
+	ms.maintainMemorySeries(fp, 10000)
 	it = s.NewIterator(fp)
 	actual = it.GetBoundaryValues(metric.Interval{
 		OldestInclusive: 0,
@@ -403,18 +416,18 @@ func TestEvictAndPurgeSeries(t *testing.T) {
 		t.Fatal("not archived")
 	}
 
-	// Purge ~half of the chunks of an archived series.
-	ms.purgeSeries(fp, 1000)
+	// Drop ~half of the chunks of an archived series.
+	ms.maintainArchivedSeries(fp, 1000)
 	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !archived {
-		t.Fatal("archived series dropped although only half of the chunks purged")
+		t.Fatal("archived series purged although only half of the chunks dropped")
 	}
 
-	// Purge everything.
-	ms.purgeSeries(fp, 10000)
+	// Drop everything.
+	ms.maintainArchivedSeries(fp, 10000)
 	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)

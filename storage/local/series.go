@@ -242,11 +242,11 @@ func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
 	}
 }
 
-// purgeOlderThan removes chunkDescs older than t. It returns the number of
-// purged chunkDescs and true if all chunkDescs have been purged.
+// dropChunks removes chunkDescs older than t. It returns the number of dropped
+// chunkDescs and true if all chunkDescs have been dropped.
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) purgeOlderThan(t clientmodel.Timestamp) (int, bool) {
+func (s *memorySeries) dropChunks(t clientmodel.Timestamp) (int, bool) {
 	keepIdx := len(s.chunkDescs)
 	for i, cd := range s.chunkDescs {
 		if !cd.lastTime().Before(t) {

@@ -349,11 +349,11 @@ func TestDropArchivedMetric(t *testing.T) {
 		t.Error("want FP 2 archived")
 	}
 
-	if err != p.dropArchivedMetric(1) {
+	if err != p.purgeArchivedMetric(1) {
 		t.Fatal(err)
 	}
-	if err != p.dropArchivedMetric(3) {
-		// Dropping something that has not beet archived is not an error.
+	if err != p.purgeArchivedMetric(3) {
+		// Purging something that has not beet archived is not an error.
 		t.Fatal(err)
 	}
 	p.waitForIndexing()
