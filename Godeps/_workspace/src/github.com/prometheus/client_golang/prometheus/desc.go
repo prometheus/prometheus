@@ -11,9 +11,8 @@ import (
 
 	"github.com/prometheus/client_golang/model"
 
-	dto "github.com/prometheus/client_model/go"
-
 	"github.com/golang/protobuf/proto"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var (

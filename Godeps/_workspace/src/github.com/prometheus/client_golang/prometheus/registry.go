@@ -33,13 +33,11 @@ import (
 	"strings"
 	"sync"
 
-	dto "github.com/prometheus/client_model/go"
-
+	"bitbucket.org/ww/goautoneg"
 	"github.com/golang/protobuf/proto"
-
-	"github.com/prometheus/client_golang/_vendor/goautoneg"
 	"github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/text"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var (

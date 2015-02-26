@@ -1,7 +1,16 @@
 {
 	"ImportPath": "github.com/prometheus/prometheus",
-	"GoVersion": "go1.4.1",
+	"GoVersion": "go1.4",
 	"Deps": [
+		{
+			"ImportPath": "bitbucket.org/ww/goautoneg",
+			"Comment": "null-5",
+			"Rev": "75cd24fc2f2c2a2088577d12123ddee5f54e0675"
+		},
+		{
+			"ImportPath": "github.com/beorn7/perks/quantile",
+			"Rev": "b965b613227fddccbfffe13eae360ed3fa822f8d"
+		},
 		{
 			"ImportPath": "github.com/golang/glog",
 			"Rev": "44145f04b68cf362d9c4df2182967c2275eaefed"
@@ -19,34 +28,24 @@
 			"Rev": "b65f52f3f0dd1afa25cbbf63f8e7eb15fb5c0641"
 		},
 		{
-			"ImportPath": "github.com/prometheus/client_golang/_vendor/goautoneg",
-			"Comment": "0.2.0",
-			"Rev": "39e4bc83f974fb141a9e67c042b26322bacc917b"
-		},
-		{
-			"ImportPath": "github.com/prometheus/client_golang/_vendor/perks/quantile",
-			"Comment": "0.2.0",
-			"Rev": "39e4bc83f974fb141a9e67c042b26322bacc917b"
-		},
-		{
 			"ImportPath": "github.com/prometheus/client_golang/extraction",
-			"Comment": "0.2.0",
-			"Rev": "39e4bc83f974fb141a9e67c042b26322bacc917b"
+			"Comment": "0.2.0-3-ga6c5e0f",
+			"Rev": "a6c5e0f955686b0e7bbfd791edecfc65aa72593a"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/model",
-			"Comment": "0.2.0",
-			"Rev": "39e4bc83f974fb141a9e67c042b26322bacc917b"
+			"Comment": "0.2.0-3-ga6c5e0f",
+			"Rev": "a6c5e0f955686b0e7bbfd791edecfc65aa72593a"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/prometheus",
-			"Comment": "0.2.0",
-			"Rev": "39e4bc83f974fb141a9e67c042b26322bacc917b"
+			"Comment": "0.2.0-3-ga6c5e0f",
+			"Rev": "a6c5e0f955686b0e7bbfd791edecfc65aa72593a"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/text",
-			"Comment": "0.2.0",
-			"Rev": "39e4bc83f974fb141a9e67c042b26322bacc917b"
+			"Comment": "0.2.0-3-ga6c5e0f",
+			"Rev": "a6c5e0f955686b0e7bbfd791edecfc65aa72593a"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_model/go",

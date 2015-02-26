@@ -17,10 +17,8 @@ import (
 	"runtime"
 
 	"github.com/golang/protobuf/proto"
-
-	dto "github.com/prometheus/client_model/go"
-
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func NewCallbackMetric(desc *prometheus.Desc, callback func() float64) *CallbackMetric {

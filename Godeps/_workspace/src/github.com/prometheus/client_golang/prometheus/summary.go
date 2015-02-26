@@ -20,12 +20,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/beorn7/perks/quantile"
 	"github.com/golang/protobuf/proto"
-
-	dto "github.com/prometheus/client_model/go"
-
-	"github.com/prometheus/client_golang/_vendor/perks/quantile"
 	"github.com/prometheus/client_golang/model"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // A Summary captures individual observations from an event or sample stream and

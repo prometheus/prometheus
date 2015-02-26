@@ -20,8 +20,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/prometheus/utility/test"
-
 	"github.com/prometheus/client_golang/model"
 )
 
@@ -47,7 +45,8 @@ func (s *testProcessor001ProcessScenario) test(t testing.TB, set int) {
 	options := &ProcessOptions{
 		Timestamp: test001Time,
 	}
-	if err := Processor001.ProcessSingle(reader, s, options); !test.ErrorEqual(s.err, err) {
+	err = Processor001.ProcessSingle(reader, s, options)
+	if s.err != err && (s.err == nil || err == nil || err.Error() != s.err.Error()) {
 		t.Fatalf("%d. expected err of %s, got %s", set, s.err, err)
 	}
 

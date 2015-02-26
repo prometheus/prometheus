@@ -21,7 +21,6 @@ import (
 	"sync/atomic"
 
 	"github.com/golang/protobuf/proto"
-
 	"github.com/prometheus/client_golang/model"
 	dto "github.com/prometheus/client_model/go"
 )

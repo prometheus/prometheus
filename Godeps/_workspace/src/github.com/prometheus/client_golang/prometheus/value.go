@@ -20,9 +20,8 @@ import (
 	"sort"
 	"sync/atomic"
 
-	dto "github.com/prometheus/client_model/go"
-
 	"github.com/golang/protobuf/proto"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // ValueType is an enumeration of metric types that represent a simple value.
