@@ -915,7 +915,7 @@ func (s *memorySeriesStorage) maintainMemorySeries(fp clientmodel.Fingerprint, b
 	// If we are here, the series is not archived, so check for chunkDesc
 	// eviction next and then if the head chunk needs to be persisted.
 	series.evictChunkDescs(iOldestNotEvicted)
-	if !series.headChunkPersisted && time.Now().Sub(series.head().firstTime().Time()) > headChunkTimeout {
+	if !series.headChunkPersisted && time.Now().Sub(series.head().lastTime().Time()) > headChunkTimeout {
 		series.headChunkPersisted = true
 		// Since we cannot modify the head chunk from now on, we
 		// don't need to bother with cloning anymore.
