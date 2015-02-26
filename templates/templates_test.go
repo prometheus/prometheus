@@ -113,14 +113,14 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// HumanizeDuration - seconds.
 			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
-			input:  []float64{0, 1, 60, 3600, 86400, 86400 + 3600, -(86400*2 + 3600*3 + 60*4 + 5)},
-			output: "0s:1s:1m 0s:1h 0m 0s:1d 0h 0m 0s:1d 1h 0m 0s:-2d 3h 4m 5s:",
+			input:  []float64{0, 1, 60, 3600, 86400, 86400 + 3600, -(86400*2 + 3600*3 + 60*4 + 5), 899.99},
+			output: "0s:1s:1m 0s:1h 0m 0s:1d 0h 0m 0s:1d 1h 0m 0s:-2d 3h 4m 5s:14m 59s:",
 		},
 		{
 			// HumanizeDuration - subsecond and fractional seconds.
 			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
 			input:  []float64{.1, .0001, .12345, 60.1, 60.5, 1.2345, 12.345},
-			output: "100ms:100us:123.5ms:1m 0s:1m 0s:1.235s:12.35s:",
+			output: "100ms:100us:123.5ms:1m 0s:1m 0s:1.234s:12.35s:",
 		},
 		{
 			// Title.

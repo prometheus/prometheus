@@ -188,22 +188,22 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 						sign = "-"
 						v = -v
 					}
-					seconds := math.Mod(v, 60)
+					seconds := int64(v) % 60
 					minutes := (int64(v) / 60) % 60
 					hours := (int64(v) / 60 / 60) % 24
 					days := (int64(v) / 60 / 60 / 24)
 					// For days to minutes, we display seconds as an integer.
 					if days != 0 {
-						return fmt.Sprintf("%s%dd %dh %dm %.0fs", sign, days, hours, minutes, seconds)
+						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds)
 					}
 					if hours != 0 {
-						return fmt.Sprintf("%s%dh %dm %.0fs", sign, hours, minutes, seconds)
+						return fmt.Sprintf("%s%dh %dm %ds", sign, hours, minutes, seconds)
 					}
 					if minutes != 0 {
-						return fmt.Sprintf("%s%dm %.0fs", sign, minutes, seconds)
+						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds)
 					}
 					// For seconds, we display 4 significant digts.
-					return fmt.Sprintf("%s%.4gs", sign, math.Floor(seconds*1000+.5)/1000)
+					return fmt.Sprintf("%s%.4gs", sign, v)
 				}
 				prefix := ""
 				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
