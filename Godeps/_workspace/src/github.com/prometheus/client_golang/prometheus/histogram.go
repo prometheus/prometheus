@@ -20,9 +20,9 @@ import (
 	"sort"
 	"sync/atomic"
 
-	"github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/golang/protobuf/proto"
-	dto "github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/prometheus/client_model/go"
+	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/model"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // A Histogram counts individual observations from an event or sample stream in

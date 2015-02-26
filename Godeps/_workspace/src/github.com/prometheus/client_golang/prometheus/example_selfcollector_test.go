@@ -16,9 +16,9 @@ package prometheus_test
 import (
 	"runtime"
 
-	"github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/golang/protobuf/proto"
-	dto "github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/prometheus/client_model/go"
+	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func NewCallbackMetric(desc *prometheus.Desc, callback func() float64) *CallbackMetric {

@@ -16,7 +16,7 @@ package prometheus
 import (
 	"strings"
 
-	dto "github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/prometheus/client_model/go"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // A Metric models a single sample value with its meta data being exported to

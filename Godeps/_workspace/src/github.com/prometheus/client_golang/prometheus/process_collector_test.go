@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/prometheus/procfs"
+	"github.com/prometheus/procfs"
 )
 
 func TestProcessCollector(t *testing.T) {
