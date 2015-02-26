@@ -1027,8 +1027,10 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	ch <- s.ingestedSamplesCount
 	ch <- s.invalidPreloadRequestsCount
 
-	count := atomic.LoadInt64(&numMemChunks)
-	ch <- prometheus.MustNewConstMetric(numMemChunksDesc, prometheus.GaugeValue, float64(count))
+	ch <- prometheus.MustNewConstMetric(
+		numMemChunksDesc,
+		prometheus.GaugeValue,
+		float64(atomic.LoadInt64(&numMemChunks)))
 }
 
 // chunkMaps is a slice of maps with chunkDescs to be persisted.
