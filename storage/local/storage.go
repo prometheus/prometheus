@@ -154,7 +154,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		persistStopped:  make(chan struct{}),
 		persistence:     p,
 
-		countPersistedHeadChunks: make(chan struct{}, 1024),
+		countPersistedHeadChunks: make(chan struct{}, 100),
 
 		evictList:     list.New(),
 		evictRequests: make(chan evictRequest, evictRequestsCap),
