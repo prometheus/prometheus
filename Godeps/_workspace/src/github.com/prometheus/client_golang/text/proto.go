@@ -17,10 +17,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/matttproud/golang_protobuf_extensions/ext"
-
-	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/golang/protobuf/proto"
+	"github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/matttproud/golang_protobuf_extensions/ext"
+	dto "github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/prometheus/client_model/go"
 )
 
 // WriteProtoDelimited writes the MetricFamily to the writer in delimited

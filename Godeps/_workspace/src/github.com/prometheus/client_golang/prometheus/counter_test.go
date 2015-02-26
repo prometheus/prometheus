@@ -17,7 +17,7 @@ import (
 	"math"
 	"testing"
 
-	dto "github.com/prometheus/client_model/go"
+	dto "github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/prometheus/client_model/go"
 )
 
 func TestCounterAdd(t *testing.T) {

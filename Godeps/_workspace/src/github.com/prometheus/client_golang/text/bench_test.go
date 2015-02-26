@@ -16,12 +16,11 @@ package text
 import (
 	"bytes"
 	"compress/gzip"
+	"github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/matttproud/golang_protobuf_extensions/ext"
+	dto "github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/prometheus/client_model/go"
 	"io"
 	"io/ioutil"
 	"testing"
-	dto "github.com/prometheus/client_model/go"
-
-	"github.com/matttproud/golang_protobuf_extensions/ext"
 )
 
 // Benchmarks to show how much penalty text format parsing actually inflicts.

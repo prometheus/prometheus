@@ -18,8 +18,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
-	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/golang/protobuf/proto"
+	dto "github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/prometheus/client_model/go"
 )
 
 var parser Parser
@@ -385,7 +385,7 @@ request_duration_microseconds_count 2693
 					},
 				},
 			},
-                },
+		},
 	}
 
 	for i, scenario := range scenarios {

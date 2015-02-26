@@ -16,10 +16,8 @@ package prometheus_test
 import (
 	"runtime"
 
-	"github.com/golang/protobuf/proto"
-
-	dto "github.com/prometheus/client_model/go"
-
+	"github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/golang/protobuf/proto"
+	dto "github.com/prometheus/client_golang/Godeps/_workspace/src/github.com/prometheus/client_model/go"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
