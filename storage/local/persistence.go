@@ -771,7 +771,7 @@ func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmo
 		if err == io.EOF {
 			// We ran into the end of the file without finding any chunks that should
 			// be kept. Remove the whole file.
-			chunkOps.WithLabelValues(purge).Add(float64(i))
+			chunkOps.WithLabelValues(drop).Add(float64(i))
 			if err := os.Remove(f.Name()); err != nil {
 				return 0, 0, true, err
 			}
@@ -783,7 +783,7 @@ func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmo
 		lastTime := clientmodel.Timestamp(binary.LittleEndian.Uint64(timeBuf[8:]))
 		if !lastTime.Before(beforeTime) {
 			firstTime = clientmodel.Timestamp(binary.LittleEndian.Uint64(timeBuf))
-			chunkOps.WithLabelValues(purge).Add(float64(i))
+			chunkOps.WithLabelValues(drop).Add(float64(i))
 			break
 		}
 	}
@@ -824,7 +824,7 @@ func (p *persistence) indexMetric(fp clientmodel.Fingerprint, m clientmodel.Metr
 // indexes used for getFingerprintsForLabelPair, getLabelValuesForLabelName, and
 // getFingerprintsModifiedBefore. The index of fingerprints to archived metrics
 // is not affected by this removal. (In fact, never call this method for an
-// archived metric. To drop an archived metric, call dropArchivedFingerprint.)
+// archived metric. To purge an archived metric, call purgeArchivedFingerprint.)
 // If the queue is full, this method blocks until the metric can be queued. This
 // method is goroutine-safe.
 func (p *persistence) unindexMetric(fp clientmodel.Fingerprint, m clientmodel.Metric) {
@@ -910,11 +910,11 @@ func (p *persistence) getArchivedMetric(fp clientmodel.Fingerprint) (clientmodel
 	return metric, err
 }
 
-// dropArchivedMetric deletes an archived fingerprint and its corresponding
+// purgeArchivedMetric deletes an archived fingerprint and its corresponding
 // metric entirely. It also queues the metric for un-indexing (no need to call
-// unindexMetric for the deleted metric.)  The caller must have locked the
-// fingerprint.
-func (p *persistence) dropArchivedMetric(fp clientmodel.Fingerprint) (err error) {
+// unindexMetric for the deleted metric.) It does not touch the series file,
+// though. The caller must have locked the fingerprint.
+func (p *persistence) purgeArchivedMetric(fp clientmodel.Fingerprint) (err error) {
 	defer func() {
 		if err != nil {
 			p.setDirty(true)
@@ -944,7 +944,7 @@ func (p *persistence) dropArchivedMetric(fp clientmodel.Fingerprint) (err error)
 }
 
 // unarchiveMetric deletes an archived fingerprint and its metric, but (in
-// contrast to dropArchivedMetric) does not un-index the metric.  If a metric
+// contrast to purgeArchivedMetric) does not un-index the metric.  If a metric
 // was actually deleted, the method returns true and the first time of the
 // deleted metric. The caller must have locked the fingerprint.
 func (p *persistence) unarchiveMetric(fp clientmodel.Fingerprint) (

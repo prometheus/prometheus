@@ -68,7 +68,7 @@ type memorySeriesStorage struct {
 
 	loopStopping, loopStopped  chan struct{}
 	maxMemoryChunks            int
-	purgeAfter                 time.Duration
+	dropAfter                  time.Duration
 	checkpointInterval         time.Duration
 	checkpointDirtySeriesLimit int
 
@@ -96,7 +96,6 @@ type memorySeriesStorage struct {
 	seriesOps                   *prometheus.CounterVec
 	ingestedSamplesCount        prometheus.Counter
 	invalidPreloadRequestsCount prometheus.Counter
-	purgeDuration               prometheus.Gauge
 }
 
 // MemorySeriesStorageOptions contains options needed by
@@ -105,7 +104,7 @@ type memorySeriesStorage struct {
 type MemorySeriesStorageOptions struct {
 	MemoryChunks               int           // How many chunks to keep in memory.
 	PersistenceStoragePath     string        // Location of persistence files.
-	PersistenceRetentionPeriod time.Duration // Chunks at least that old are purged.
+	PersistenceRetentionPeriod time.Duration // Chunks at least that old are dropped.
 	PersistenceQueueCapacity   int           // Capacity of queue for chunks to be persisted.
 	CheckpointInterval         time.Duration // How often to checkpoint the series map and head chunks.
 	CheckpointDirtySeriesLimit int           // How many dirty series will trigger an early checkpoint.
@@ -140,7 +139,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		loopStopping:               make(chan struct{}),
 		loopStopped:                make(chan struct{}),
 		maxMemoryChunks:            o.MemoryChunks,
-		purgeAfter:                 o.PersistenceRetentionPeriod,
+		dropAfter:                  o.PersistenceRetentionPeriod,
 		checkpointInterval:         o.CheckpointInterval,
 		checkpointDirtySeriesLimit: o.CheckpointDirtySeriesLimit,
 
@@ -670,8 +669,8 @@ func (s *memorySeriesStorage) persistChunks(fp clientmodel.Fingerprint, cds []*c
 
 // waitForNextFP waits an estimated duration, after which we want to process
 // another fingerprint so that we will process all fingerprints in a tenth of
-// s.purgeAfter assuming that the system is doing nothing else, e.g. if we want
-// to purge after 40h, we want to cycle through all fingerprints within
+// s.dropAfter assuming that the system is doing nothing else, e.g. if we want
+// to drop chunks after 40h, we want to cycle through all fingerprints within
 // 4h. However, the maximum sweep time is capped at fpMaxSweepTime. Furthermore,
 // this method will always wait for at least fpMinWaitDuration and never longer
 // than fpMaxWaitDuration. If s.loopStopped is closed, it will return false
@@ -680,7 +679,7 @@ func (s *memorySeriesStorage) persistChunks(fp clientmodel.Fingerprint, cds []*c
 func (s *memorySeriesStorage) waitForNextFP(numberOfFPs int) bool {
 	d := fpMaxWaitDuration
 	if numberOfFPs != 0 {
-		sweepTime := s.purgeAfter / 10
+		sweepTime := s.dropAfter / 10
 		if sweepTime > fpMaxSweepTime {
 			sweepTime = fpMaxSweepTime
 		}
@@ -725,6 +724,7 @@ func (s *memorySeriesStorage) cycleThroughMemoryFingerprints() chan clientmodel.
 			}
 			begin := time.Now()
 			fpIter = s.fpToSeries.fpIter()
+			count := 0
 			for fp := range fpIter {
 				select {
 				case memoryFingerprints <- fp:
@@ -732,8 +732,14 @@ func (s *memorySeriesStorage) cycleThroughMemoryFingerprints() chan clientmodel.
 					return
 				}
 				s.waitForNextFP(s.fpToSeries.length())
+				count++
 			}
-			glog.Infof("Completed maintenance sweep through in-memory fingerprints in %v.", time.Since(begin))
+			if count > 0 {
+				glog.Infof(
+					"Completed maintenance sweep through %d in-memory fingerprints in %v.",
+					count, time.Since(begin),
+				)
+			}
 		}
 	}()
 
@@ -750,7 +756,7 @@ func (s *memorySeriesStorage) cycleThroughArchivedFingerprints() chan clientmode
 
 		for {
 			archivedFPs, err := s.persistence.getFingerprintsModifiedBefore(
-				clientmodel.TimestampFromTime(time.Now()).Add(-1 * s.purgeAfter),
+				clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter),
 			)
 			if err != nil {
 				glog.Error("Failed to lookup archived fingerprint ranges: ", err)
@@ -770,7 +776,12 @@ func (s *memorySeriesStorage) cycleThroughArchivedFingerprints() chan clientmode
 				}
 				s.waitForNextFP(len(archivedFPs))
 			}
-			glog.Infof("Completed maintenance sweep through archived fingerprints in %v.", time.Since(begin))
+			if len(archivedFPs) > 0 {
+				glog.Infof(
+					"Completed maintenance sweep through %d archived fingerprints in %v.",
+					len(archivedFPs), time.Since(begin),
+				)
+			}
 		}
 	}()
 	return archivedFingerprints
@@ -807,11 +818,9 @@ loop:
 			headChunksPersistedSinceLastCheckpoint = 0
 			checkpointTimer.Reset(s.checkpointInterval)
 		case fp := <-memoryFingerprints:
-			s.purgeSeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-1*s.purgeAfter))
-			s.seriesOps.WithLabelValues(memoryMaintenance).Inc()
+			s.maintainMemorySeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter))
 		case fp := <-archivedFingerprints:
-			s.purgeSeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-1*s.purgeAfter))
-			s.seriesOps.WithLabelValues(archiveMaintenance).Inc()
+			s.maintainArchivedSeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter))
 		case <-s.countPersistedHeadChunks:
 			headChunksPersistedSinceLastCheckpoint++
 			// Check if we have enough "dirty" series so that we need an early checkpoint.
@@ -835,10 +844,11 @@ loop:
 	}
 }
 
-// maintainSeries closes the head chunk if not touched in a while. It archives a
-// series if all chunks are evicted. It evicts chunkDescs if there are too
-// many.
-func (s *memorySeriesStorage) maintainSeries(fp clientmodel.Fingerprint) {
+// maintainMemorySeries first purges the series from old chunks. If the series
+// still exists after that, it proceeds with the following steps: It closes the
+// head chunk if it was not touched in a while. It archives a series if all
+// chunks are evicted. It evicts chunkDescs if there are too many.
+func (s *memorySeriesStorage) maintainMemorySeries(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) {
 	var headChunkToPersist *chunkDesc
 	s.fpLocker.Lock(fp)
 	defer func() {
@@ -846,19 +856,28 @@ func (s *memorySeriesStorage) maintainSeries(fp clientmodel.Fingerprint) {
 		// Queue outside of lock!
 		if headChunkToPersist != nil {
 			s.persistQueue <- persistRequest{fp, headChunkToPersist}
-		}
-		// Count that a head chunk was persisted, but only best effort, i.e. we
-		// don't want to block here.
-		select {
-		case s.countPersistedHeadChunks <- struct{}{}: // Counted.
-		default: // Meh...
+			// Count that a head chunk was persisted, but only best effort, i.e. we
+			// don't want to block here.
+			select {
+			case s.countPersistedHeadChunks <- struct{}{}: // Counted.
+			default: // Meh...
+			}
 		}
 	}()
 
 	series, ok := s.fpToSeries.get(fp)
 	if !ok {
+		// Series is actually not in memory, perhaps archived or dropped in the meantime.
 		return
 	}
+
+	defer s.seriesOps.WithLabelValues(memoryMaintenance).Inc()
+
+	if s.purgeMemorySeries(fp, series, beforeTime) {
+		// Series is gone now, we are done.
+		return
+	}
+
 	iOldestNotEvicted := -1
 	for i, cd := range series.chunkDescs {
 		if !cd.isEvicted() {
@@ -876,7 +895,10 @@ func (s *memorySeriesStorage) maintainSeries(fp clientmodel.Fingerprint) {
 		if len(series.chunkDescs) == 0 {
 			cds, err := s.loadChunkDescs(fp, clientmodel.Latest)
 			if err != nil {
-				glog.Errorf("Could not load chunk descriptors prior to archiving metric %v, metric will not be archived: %v", series.metric, err)
+				glog.Errorf(
+					"Could not load chunk descriptors prior to archiving metric %v, metric will not be archived: %v",
+					series.metric, err,
+				)
 				return
 			}
 			series.chunkDescs = cds
@@ -902,38 +924,43 @@ func (s *memorySeriesStorage) maintainSeries(fp clientmodel.Fingerprint) {
 	}
 }
 
-// purgeSeries purges chunks older than beforeTime from a series. If the series
-// contains no chunks after the purge, it is dropped entirely.
-func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) {
+// purgeMemorySeries drops chunks older than beforeTime from the provided memory
+// series. The caller must have locked fp. If the series contains no chunks
+// after dropping old chunks, it is purged entirely. In that case, the method
+// returns true.
+func (s *memorySeriesStorage) purgeMemorySeries(fp clientmodel.Fingerprint, series *memorySeries, beforeTime clientmodel.Timestamp) bool {
+	if !series.firstTime().Before(beforeTime) {
+		// Oldest sample not old enough.
+		return false
+	}
+	newFirstTime, numDroppedFromPersistence, allDroppedFromPersistence, err := s.persistence.dropChunks(fp, beforeTime)
+	if err != nil {
+		glog.Error("Error dropping persisted chunks: ", err)
+	}
+	numDroppedFromMemory, allDroppedFromMemory := series.dropChunks(beforeTime)
+	if allDroppedFromPersistence && allDroppedFromMemory {
+		s.fpToSeries.del(fp)
+		s.numSeries.Dec()
+		s.seriesOps.WithLabelValues(memoryPurge).Inc()
+		s.persistence.unindexMetric(fp, series.metric)
+		return true
+	}
+	if series.chunkDescsOffset != -1 {
+		series.savedFirstTime = newFirstTime
+		series.chunkDescsOffset += numDroppedFromMemory - numDroppedFromPersistence
+		if series.chunkDescsOffset < 0 {
+			panic("dropped more chunks from persistence than from memory")
+		}
+	}
+	return false
+}
+
+// maintainArchivedSeries drops chunks older than beforeTime from an archived
+// series. If the series contains no chunks after that, it is purged entirely.
+func (s *memorySeriesStorage) maintainArchivedSeries(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
-	if series, ok := s.fpToSeries.get(fp); ok {
-		// Deal with series in memory.
-		if !series.firstTime().Before(beforeTime) {
-			// Oldest sample not old enough.
-			return
-		}
-		newFirstTime, numDropped, allDropped, err := s.persistence.dropChunks(fp, beforeTime)
-		if err != nil {
-			glog.Error("Error purging persisted chunks: ", err)
-		}
-		numPurged, allPurged := series.purgeOlderThan(beforeTime)
-		if allPurged && allDropped {
-			s.fpToSeries.del(fp)
-			s.numSeries.Dec()
-			s.seriesOps.WithLabelValues(memoryPurge).Inc()
-			s.persistence.unindexMetric(fp, series.metric)
-		} else if series.chunkDescsOffset != -1 {
-			series.savedFirstTime = newFirstTime
-			series.chunkDescsOffset += numPurged - numDropped
-			if series.chunkDescsOffset < 0 {
-				panic("dropped more chunks from persistence than from memory")
-			}
-		}
-		return
-	}
-	// Deal with archived series.
 	has, firstTime, lastTime, err := s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		glog.Error("Error looking up archived time range: ", err)
@@ -944,13 +971,15 @@ func (s *memorySeriesStorage) purgeSeries(fp clientmodel.Fingerprint, beforeTime
 		return
 	}
 
+	defer s.seriesOps.WithLabelValues(archiveMaintenance).Inc()
+
 	newFirstTime, _, allDropped, err := s.persistence.dropChunks(fp, beforeTime)
 	if err != nil {
-		glog.Error("Error purging persisted chunks: ", err)
+		glog.Error("Error dropping persisted chunks: ", err)
 	}
 	if allDropped {
-		if err := s.persistence.dropArchivedMetric(fp); err != nil {
-			glog.Errorf("Error dropping archived metric for fingerprint %v: %v", fp, err)
+		if err := s.persistence.purgeArchivedMetric(fp); err != nil {
+			glog.Errorf("Error purging archived metric for fingerprint %v: %v", fp, err)
 			return
 		}
 		s.seriesOps.WithLabelValues(archivePurge).Inc()

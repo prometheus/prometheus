@@ -67,7 +67,7 @@ const (
 	unpin           = "unpin" // Excluding the unpin on persisting.
 	clone           = "clone"
 	transcode       = "transcode"
-	purge           = "purge"
+	drop            = "drop"
 
 	// Op-types for chunkOps and chunkDescOps.
 	evict = "evict"

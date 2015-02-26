@@ -78,8 +78,8 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 				// Oops, head chunk was persisted, but nothing on disk.
 				// Thus, we lost that series completely. Clean up the remnants.
 				delete(fingerprintToSeries, fp)
-				if err := p.dropArchivedMetric(fp); err != nil {
-					// Dropping the archived metric didn't work, so try
+				if err := p.purgeArchivedMetric(fp); err != nil {
+					// Purging the archived metric didn't work, so try
 					// to unindex it, just in case it's in the indexes.
 					p.unindexMetric(fp, s.metric)
 				}
