@@ -28,7 +28,7 @@ MAKEFILE_DIR ?= $(realpath $(dir $(lastword $(MAKEFILE_LIST))))
 
 BUILD_PATH = $(MAKEFILE_DIR)/.build
 
-GO_VERSION := 1.4
+GO_VERSION := 1.4.2
 GOOS = $(subst Darwin,darwin,$(subst Linux,linux,$(subst FreeBSD,freebsd,$(OS))))
 
 ifeq ($(GOOS),darwin)
