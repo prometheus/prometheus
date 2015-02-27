@@ -1,3 +1,15 @@
+## 0.11.1 / 2015-02-27
+* [BUGFIX] Make series maintenance complete again. (Ever since 0.9.0rc4,
+  or commit 0851945, series would not be archived, chunk descriptors would
+  not be evicted, and stale head chunks would never be closed. This happened
+  due to accidental deletion of a line calling a (well tested :) function.
+* [BUGFIX] Do not double count head chunks read from checkpoint on startup.
+  Also fix a related but less severe bug in counting chunk descriptors.
+* [BUGFIX] Check last time in head chunk for head chunk timeout, not first.
+* [CHANGE] Update vendoring due to vendoring changes in client_golang.
+* [CLEANUP] Code cleanups.
+* [ENHANCEMENT] Limit the number of 'dirty' series counted during checkpointing.
+  
 ## 0.11.0 / 2015-02-23
 * [FEATURE] Introduce new metric type Histogram with server-side aggregation.
 * [FEATURE] Add offset operator.
