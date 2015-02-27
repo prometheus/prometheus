@@ -680,7 +680,6 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 			return sm, nil
 		}
 		chunkDescs := make([]*chunkDesc, numChunkDescs)
-		chunkDescsTotal += numChunkDescs
 
 		for i := int64(0); i < numChunkDescs; i++ {
 			if headChunkPersisted || i < numChunkDescs-1 {
@@ -715,10 +714,16 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 					return sm, nil
 				}
 				chunkDescs[i] = newChunkDesc(chunk)
-				chunkDescsTotal-- // Avoid double-counting by newChunkDesc.
 			}
 		}
 
+		chunkDescsTotal += numChunkDescs
+		if !headChunkPersisted {
+			// In this case, we have created a chunkDesc with
+			// newChunkDesc, which will count itself automatically.
+			// Correct for that by decrementing the count.
+			chunkDescsTotal--
+		}
 		fingerprintToSeries[clientmodel.Fingerprint(fp)] = &memorySeries{
 			metric:             clientmodel.Metric(metric),
 			chunkDescs:         chunkDescs,
