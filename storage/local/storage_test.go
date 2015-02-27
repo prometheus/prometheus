@@ -30,7 +30,114 @@ import (
 )
 
 func TestGetFingerprintsForLabelMatchers(t *testing.T) {
+	storage, closer := NewTestStorage(t)
+	defer closer.Close()
 
+	samples := make([]*clientmodel.Sample, 100)
+	fingerprints := make(clientmodel.Fingerprints, 100)
+
+	for i := range samples {
+		metric := clientmodel.Metric{
+			clientmodel.MetricNameLabel: clientmodel.LabelValue(fmt.Sprintf("test_metric_%d", i)),
+			"label1":                    clientmodel.LabelValue(fmt.Sprintf("test_%d", i/10)),
+			"label2":                    clientmodel.LabelValue(fmt.Sprintf("test_%d", (i+5)/10)),
+		}
+		samples[i] = &clientmodel.Sample{
+			Metric:    metric,
+			Timestamp: clientmodel.Timestamp(i),
+			Value:     clientmodel.SampleValue(i),
+		}
+		fingerprints[i] = metric.Fingerprint()
+	}
+
+	storage.AppendSamples(samples)
+	storage.WaitForIndexing()
+
+	newMatcher := func(matchType metric.MatchType, name clientmodel.LabelName, value clientmodel.LabelValue) *metric.LabelMatcher {
+		lm, err := metric.NewLabelMatcher(matchType, name, value)
+		if err != nil {
+			t.Fatalf("error creating label matcher: %s", err)
+		}
+		return lm
+	}
+
+	var matcherTests = []struct {
+		matchers metric.LabelMatchers
+		expected clientmodel.Fingerprints
+	}{
+		{
+			matchers: metric.LabelMatchers{newMatcher(metric.Equal, "label1", "x")},
+			expected: fingerprints[:0],
+		},
+		{
+			matchers: metric.LabelMatchers{newMatcher(metric.Equal, "label1", "test_0")},
+			expected: fingerprints[:10],
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.Equal, "label1", "test_0"),
+				newMatcher(metric.Equal, "label2", "test_1"),
+			},
+			expected: fingerprints[5:10],
+		},
+		{
+			matchers: metric.LabelMatchers{newMatcher(metric.NotEqual, "label1", "x")},
+			expected: fingerprints,
+		},
+		{
+			matchers: metric.LabelMatchers{newMatcher(metric.NotEqual, "label1", "test_0")},
+			expected: fingerprints[10:],
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.NotEqual, "label1", "test_0"),
+				newMatcher(metric.NotEqual, "label1", "test_1"),
+				newMatcher(metric.NotEqual, "label1", "test_2"),
+			},
+			expected: fingerprints[30:],
+		},
+		{
+			matchers: metric.LabelMatchers{newMatcher(metric.RegexMatch, "label1", `test_[3-5]`)},
+			expected: fingerprints[30:60],
+		},
+		{
+			matchers: metric.LabelMatchers{newMatcher(metric.RegexNoMatch, "label1", `test_[3-5]`)},
+			expected: append(append(clientmodel.Fingerprints{}, fingerprints[:30]...), fingerprints[60:]...),
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.RegexMatch, "label1", `test_[3-5]`),
+				newMatcher(metric.RegexMatch, "label2", `test_[4-6]`),
+			},
+			expected: fingerprints[35:60],
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.RegexMatch, "label1", `test_[3-5]`),
+				newMatcher(metric.NotEqual, "label2", `test_4`),
+			},
+			expected: append(append(clientmodel.Fingerprints{}, fingerprints[30:35]...), fingerprints[45:60]...),
+		},
+	}
+
+	for _, mt := range matcherTests {
+		resfps := storage.GetFingerprintsForLabelMatchers(mt.matchers)
+		if len(mt.expected) != len(resfps) {
+			t.Fatalf("expected %d matches for %q, found %d", len(mt.expected), mt.matchers, len(resfps))
+		}
+		for _, fp1 := range resfps {
+			found := false
+			for _, fp2 := range mt.expected {
+				if fp1 == fp2 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected fingerprint %s for %q not in result", fp1, mt.matchers)
+			}
+		}
+	}
 }
 
 // TestLoop is just a smoke test for the loop method, if we can switch it on and
