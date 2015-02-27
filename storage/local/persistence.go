@@ -22,7 +22,6 @@ import (
 	"path"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
@@ -586,7 +585,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 // this method during start-up while nothing else is running in storage
 // land. This method is utterly goroutine-unsafe.
 func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
-	var chunksTotal, chunkDescsTotal int64
+	var chunkDescsTotal int64
 	fingerprintToSeries := make(map[clientmodel.Fingerprint]*memorySeries)
 	sm = &seriesMap{m: fingerprintToSeries}
 
@@ -599,7 +598,6 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 			}
 		}
 		if err == nil {
-			atomic.AddInt64(&numMemChunks, chunksTotal)
 			numMemChunkDescs.Add(float64(chunkDescsTotal))
 		}
 	}()
@@ -682,7 +680,6 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 			return sm, nil
 		}
 		chunkDescs := make([]*chunkDesc, numChunkDescs)
-		chunkDescsTotal += numChunkDescs
 
 		for i := int64(0); i < numChunkDescs; i++ {
 			if headChunkPersisted || i < numChunkDescs-1 {
@@ -704,7 +701,6 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 				}
 			} else {
 				// Non-persisted head chunk.
-				chunksTotal++
 				chunkType, err := r.ReadByte()
 				if err != nil {
 					glog.Warning("Could not decode chunk type:", err)
@@ -721,6 +717,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 			}
 		}
 
+		chunkDescsTotal += numChunkDescs
+		if !headChunkPersisted {
+			// In this case, we have created a chunkDesc with
+			// newChunkDesc, which will count itself automatically.
+			// Correct for that by decrementing the count.
+			chunkDescsTotal--
+		}
 		fingerprintToSeries[clientmodel.Fingerprint(fp)] = &memorySeries{
 			metric:             clientmodel.Metric(metric),
 			chunkDescs:         chunkDescs,

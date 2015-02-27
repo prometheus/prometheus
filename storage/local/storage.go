@@ -154,7 +154,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		persistStopped:  make(chan struct{}),
 		persistence:     p,
 
-		countPersistedHeadChunks: make(chan struct{}, 1024),
+		countPersistedHeadChunks: make(chan struct{}, 100),
 
 		evictList:     list.New(),
 		evictRequests: make(chan evictRequest, evictRequestsCap),
@@ -915,7 +915,7 @@ func (s *memorySeriesStorage) maintainMemorySeries(fp clientmodel.Fingerprint, b
 	// If we are here, the series is not archived, so check for chunkDesc
 	// eviction next and then if the head chunk needs to be persisted.
 	series.evictChunkDescs(iOldestNotEvicted)
-	if !series.headChunkPersisted && time.Now().Sub(series.head().firstTime().Time()) > headChunkTimeout {
+	if !series.headChunkPersisted && time.Now().Sub(series.head().lastTime().Time()) > headChunkTimeout {
 		series.headChunkPersisted = true
 		// Since we cannot modify the head chunk from now on, we
 		// don't need to bother with cloning anymore.
@@ -1027,8 +1027,10 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	ch <- s.ingestedSamplesCount
 	ch <- s.invalidPreloadRequestsCount
 
-	count := atomic.LoadInt64(&numMemChunks)
-	ch <- prometheus.MustNewConstMetric(numMemChunksDesc, prometheus.GaugeValue, float64(count))
+	ch <- prometheus.MustNewConstMetric(
+		numMemChunksDesc,
+		prometheus.GaugeValue,
+		float64(atomic.LoadInt64(&numMemChunks)))
 }
 
 // chunkMaps is a slice of maps with chunkDescs to be persisted.
