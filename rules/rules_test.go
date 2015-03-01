@@ -36,7 +36,7 @@ var (
 	testEvalTime = testStartTime.Add(testSampleInterval * 10)
 	fixturesPath = "fixtures"
 
-	reSample  = regexp.MustCompile(`^(.*) \=\> (\-?\d+\.?\d*e?\d*|[+-]Inf|NaN) \@\[(\d+)\]$`)
+	reSample  = regexp.MustCompile(`^(.*)( \=\>|:) (\-?\d+\.?\d*e?\d*|[+-]Inf|NaN) \@\[(\d+)\]$`)
 	minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
 )
 
@@ -81,16 +81,16 @@ func samplesAlmostEqual(a, b string) bool {
 	if aMatches[1] != bMatches[1] {
 		return false // Labels don't match.
 	}
-	if aMatches[3] != bMatches[3] {
+	if aMatches[4] != bMatches[4] {
 		return false // Timestamps don't match.
 	}
 	// If we are here, we have the diff in the floats.
 	// We have to check if they are almost equal.
-	aVal, err := strconv.ParseFloat(aMatches[2], 64)
+	aVal, err := strconv.ParseFloat(aMatches[3], 64)
 	if err != nil {
 		panic(err)
 	}
-	bVal, err := strconv.ParseFloat(bMatches[2], 64)
+	bVal, err := strconv.ParseFloat(bMatches[3], 64)
 	if err != nil {
 		panic(err)
 	}
@@ -901,6 +901,58 @@ func TestExpressions(t *testing.T) {
 				`{instance="ins1", job="job2"} => 0.1 @[%v]`,
 				`{instance="ins2", job="job2"} => 0.11666666666666667 @[%v]`,
 			},
+		},
+		{
+			expr:   `12.34e6`,
+			output: []string{`scalar: 12340000 @[%v]`},
+		},
+		{
+			expr:   `12.34e+6`,
+			output: []string{`scalar: 12340000 @[%v]`},
+		},
+		{
+			expr:   `12.34e-6`,
+			output: []string{`scalar: 0.00001234 @[%v]`},
+		},
+		{
+			expr:   `.2`,
+			output: []string{`scalar: 0.2 @[%v]`},
+		},
+		{
+			expr:   `+0.2`,
+			output: []string{`scalar: 0.2 @[%v]`},
+		},
+		{
+			expr:   `-0.2e-6`,
+			output: []string{`scalar: -0.0000002 @[%v]`},
+		},
+		{
+			expr:   `+Inf`,
+			output: []string{`scalar: +Inf @[%v]`},
+		},
+		{
+			expr:   `inF`,
+			output: []string{`scalar: +Inf @[%v]`},
+		},
+		{
+			expr:   `-inf`,
+			output: []string{`scalar: -Inf @[%v]`},
+		},
+		{
+			expr:   `NaN`,
+			output: []string{`scalar: NaN @[%v]`},
+		},
+		{
+			expr:   `nan`,
+			output: []string{`scalar: NaN @[%v]`},
+		},
+		{
+			expr:       `2.`,
+			shouldFail: true,
+		},
+		{
+			expr:   `999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999`,
+			output: []string{`scalar: +Inf @[%v]`},
 		},
 	}
 
