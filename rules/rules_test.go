@@ -36,7 +36,7 @@ var (
 	testEvalTime = testStartTime.Add(testSampleInterval * 10)
 	fixturesPath = "fixtures"
 
-	reSample  = regexp.MustCompile(`^(.*)( \=\>|:) (\-?\d+\.?\d*e?\d*|[+-]Inf|NaN) \@\[(\d+)\]$`)
+	reSample  = regexp.MustCompile(`^(.*)(?: \=\>|:) (\-?\d+\.?\d*e?\d*|[+-]Inf|NaN) \@\[(\d+)\]$`)
 	minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
 )
 
@@ -81,16 +81,16 @@ func samplesAlmostEqual(a, b string) bool {
 	if aMatches[1] != bMatches[1] {
 		return false // Labels don't match.
 	}
-	if aMatches[4] != bMatches[4] {
+	if aMatches[3] != bMatches[3] {
 		return false // Timestamps don't match.
 	}
 	// If we are here, we have the diff in the floats.
 	// We have to check if they are almost equal.
-	aVal, err := strconv.ParseFloat(aMatches[3], 64)
+	aVal, err := strconv.ParseFloat(aMatches[2], 64)
 	if err != nil {
 		panic(err)
 	}
-	bVal, err := strconv.ParseFloat(bMatches[3], 64)
+	bVal, err := strconv.ParseFloat(bMatches[2], 64)
 	if err != nil {
 		panic(err)
 	}
@@ -947,8 +947,8 @@ func TestExpressions(t *testing.T) {
 			output: []string{`scalar: NaN @[%v]`},
 		},
 		{
-			expr:       `2.`,
-			shouldFail: true,
+			expr:   `2.`,
+			output: []string{`scalar: 2 @[%v]`},
 		},
 		{
 			expr:   `999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999`,

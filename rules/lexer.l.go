@@ -288,7 +288,7 @@ yystate18:
 	default:
 		goto yyrule21
 	case c == '.':
-		goto yystate13
+		goto yystate14
 	case c == 'E' || c == 'e':
 		goto yystate15
 	case c >= '0' && c <= '9':
@@ -353,7 +353,7 @@ yystate26:
 	default:
 		goto yyrule21
 	case c == '.':
-		goto yystate13
+		goto yystate14
 	case c == 'E' || c == 'e':
 		goto yystate15
 	case c == 'd' || c == 'h' || c == 'm' || c == 's' || c == 'w' || c == 'y':

@@ -55,7 +55,7 @@ L                       [a-zA-Z_]
 M                       [a-zA-Z_:]
 U                       [smhdwy]
 
-FLOAT                   [-+]?{D}*\.?{D}+{EXPONENT}?|[+-]?[iI][nN][fF]|[nN][aA][nN]
+FLOAT                   [-+]?({D}*\.?{D}+|{D}+\.?{D}*){EXPONENT}?|[+-]?[iI][nN][fF]|[nN][aA][nN]
 EXPONENT                [eE][-+]?[0-9]+
 
 STR                     \"(\\.|[^\\"])*\"|\'(\\.|[^\\'])*\'
