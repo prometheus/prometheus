@@ -55,6 +55,11 @@ L                       [a-zA-Z_]
 M                       [a-zA-Z_:]
 U                       [smhdwy]
 
+FLOAT                   [-+]?({D}*\.?{D}+|{D}+\.?{D}*){EXPONENT}?|[+-]?[iI][nN][fF]|[nN][aA][nN]
+EXPONENT                [eE][-+]?[0-9]+
+
+STR                     \"(\\.|[^\\"])*\"|\'(\\.|[^\\'])*\'
+
 %x S_COMMENTS
 
 %yyc c
@@ -88,19 +93,18 @@ avg|sum|max|min|count    lval.str = strings.ToUpper(lexer.token()); return AGGR_
 [+\-]                    lval.str = lexer.token(); return ADDITIVE_OP
 [*/%]                    lval.str = lexer.token(); return MULT_OP
 
-{D}+{U}                  lval.str = lexer.token(); return DURATION
-{L}({L}|{D})*            lval.str = lexer.token(); return IDENTIFIER
-{M}({M}|{D})*            lval.str = lexer.token(); return METRICNAME
-
-\-?{D}+(\.{D}*)?         num, err := strconv.ParseFloat(lexer.token(), 64);
+{FLOAT}                  num, err := strconv.ParseFloat(lexer.token(), 64);
                          if (err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax) {
                            panic("Invalid float")
                          }
                          lval.num = clientmodel.SampleValue(num)
                          return NUMBER
 
-\"(\\.|[^\\"])*\"        lval.str = lexer.token()[1:len(lexer.token()) - 1]; return STRING
-\'(\\.|[^\\'])*\'        lval.str = lexer.token()[1:len(lexer.token()) - 1]; return STRING
+{D}+{U}                  lval.str = lexer.token(); return DURATION
+{L}({L}|{D})*            lval.str = lexer.token(); return IDENTIFIER
+{M}({M}|{D})*            lval.str = lexer.token(); return METRICNAME
+
+{STR}                    lval.str = lexer.token()[1:len(lexer.token()) - 1]; return STRING
 
 [{}\[\]()=,]             return int(lexer.buf[0])
 [\t\n\r ]                /* gobble up any whitespace */

@@ -56,7 +56,7 @@ yystate0:
 	case 0: // start condition: INITIAL
 		goto yystart1
 	case 1: // start condition: S_COMMENTS
-		goto yystart162
+		goto yystart171
 	}
 
 	goto yystate0 // silence unused label error
@@ -74,80 +74,82 @@ yystart1:
 	case c == '%' || c == '*':
 		goto yystate8
 	case c == '(' || c == ')' || c == ',' || c == '[' || c == ']' || c == '{' || c == '}':
+		goto yystate11
+	case c == '+' || c == '-':
 		goto yystate12
-	case c == '+':
+	case c == '.':
 		goto yystate13
-	case c == '-':
-		goto yystate14
 	case c == '/':
-		goto yystate17
+		goto yystate22
 	case c == ':':
-		goto yystate23
+		goto yystate28
 	case c == '<' || c == '>':
-		goto yystate24
+		goto yystate29
 	case c == '=':
-		goto yystate25
+		goto yystate30
 	case c == 'A':
-		goto yystate26
+		goto yystate31
 	case c == 'B':
-		goto yystate36
+		goto yystate41
 	case c == 'C':
-		goto yystate38
+		goto yystate43
 	case c == 'D':
-		goto yystate42
-	case c == 'E' || c == 'G' || c == 'H' || c == 'J' || c == 'L' || c == 'N' || c == 'Q' || c == 'R' || c >= 'T' && c <= 'V' || c >= 'X' && c <= 'Z' || c == '_' || c == 'e' || c == 'g' || c == 'h' || c == 'j' || c == 'l' || c == 'n' || c == 'q' || c == 'r' || c >= 't' && c <= 'v' || c >= 'x' && c <= 'z':
-		goto yystate27
+		goto yystate47
+	case c == 'E' || c == 'G' || c == 'H' || c == 'J' || c == 'L' || c == 'Q' || c == 'R' || c >= 'T' && c <= 'V' || c >= 'X' && c <= 'Z' || c == '_' || c == 'e' || c == 'g' || c == 'h' || c == 'j' || c == 'l' || c == 'q' || c == 'r' || c >= 't' && c <= 'v' || c >= 'x' && c <= 'z':
+		goto yystate32
 	case c == 'F':
-		goto yystate53
-	case c == 'I':
-		goto yystate56
-	case c == 'K':
 		goto yystate58
+	case c == 'I':
+		goto yystate61
+	case c == 'K':
+		goto yystate65
 	case c == 'M':
-		goto yystate71
+		goto yystate78
+	case c == 'N' || c == 'n':
+		goto yystate81
 	case c == 'O':
-		goto yystate74
+		goto yystate83
 	case c == 'P':
-		goto yystate80
-	case c == 'S':
 		goto yystate89
+	case c == 'S':
+		goto yystate98
 	case c == 'W':
-		goto yystate96
+		goto yystate105
 	case c == '\'':
 		goto yystate9
 	case c == '\t' || c == '\n' || c == '\r' || c == ' ':
 		goto yystate2
 	case c == 'a':
-		goto yystate100
+		goto yystate109
 	case c == 'b':
-		goto yystate107
+		goto yystate116
 	case c == 'c':
-		goto yystate108
+		goto yystate117
 	case c == 'd':
-		goto yystate112
+		goto yystate121
 	case c == 'f':
-		goto yystate122
+		goto yystate131
 	case c == 'i':
-		goto yystate124
+		goto yystate133
 	case c == 'k':
-		goto yystate125
+		goto yystate134
 	case c == 'm':
-		goto yystate137
+		goto yystate146
 	case c == 'o':
-		goto yystate140
+		goto yystate149
 	case c == 'p':
-		goto yystate145
+		goto yystate154
 	case c == 's':
-		goto yystate153
+		goto yystate162
 	case c == 'w':
-		goto yystate159
+		goto yystate168
 	case c >= '0' && c <= '9':
-		goto yystate21
+		goto yystate26
 	}
 
 yystate2:
 	c = lexer.getChar()
-	goto yyrule28
+	goto yyrule27
 
 yystate3:
 	c = lexer.getChar()
@@ -198,18 +200,14 @@ yystate9:
 	default:
 		goto yyabort
 	case c == '\'':
-		goto yystate10
+		goto yystate6
 	case c == '\\':
-		goto yystate11
+		goto yystate10
 	case c >= '\x01' && c <= '&' || c >= '(' && c <= '[' || c >= ']' && c <= 'ÿ':
 		goto yystate9
 	}
 
 yystate10:
-	c = lexer.getChar()
-	goto yyrule26
-
-yystate11:
 	c = lexer.getChar()
 	switch {
 	default:
@@ -218,100 +216,166 @@ yystate11:
 		goto yystate9
 	}
 
+yystate11:
+	c = lexer.getChar()
+	goto yyrule26
+
 yystate12:
 	c = lexer.getChar()
-	goto yyrule27
+	switch {
+	default:
+		goto yyrule19
+	case c == '.':
+		goto yystate13
+	case c == 'I' || c == 'i':
+		goto yystate19
+	case c >= '0' && c <= '9':
+		goto yystate18
+	}
 
 yystate13:
 	c = lexer.getChar()
-	goto yyrule19
+	switch {
+	default:
+		goto yyabort
+	case c >= '0' && c <= '9':
+		goto yystate14
+	}
 
 yystate14:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule19
-	case c >= '0' && c <= '9':
+		goto yyrule21
+	case c == 'E' || c == 'e':
 		goto yystate15
+	case c >= '0' && c <= '9':
+		goto yystate14
 	}
 
 yystate15:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule24
-	case c == '.':
+		goto yyabort
+	case c == '+' || c == '-':
 		goto yystate16
 	case c >= '0' && c <= '9':
-		goto yystate15
+		goto yystate17
 	}
 
 yystate16:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule24
+		goto yyabort
 	case c >= '0' && c <= '9':
-		goto yystate16
+		goto yystate17
 	}
 
 yystate17:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule20
-	case c == '*':
-		goto yystate18
-	case c == '/':
-		goto yystate19
+		goto yyrule21
+	case c >= '0' && c <= '9':
+		goto yystate17
 	}
 
 yystate18:
 	c = lexer.getChar()
-	goto yyrule1
+	switch {
+	default:
+		goto yyrule21
+	case c == '.':
+		goto yystate14
+	case c == 'E' || c == 'e':
+		goto yystate15
+	case c >= '0' && c <= '9':
+		goto yystate18
+	}
 
 yystate19:
 	c = lexer.getChar()
 	switch {
 	default:
 		goto yyabort
-	case c == '\n':
+	case c == 'N' || c == 'n':
 		goto yystate20
-	case c >= '\x01' && c <= '\t' || c == '\v' || c == '\f' || c >= '\x0e' && c <= 'ÿ':
-		goto yystate19
 	}
 
 yystate20:
 	c = lexer.getChar()
-	goto yyrule4
+	switch {
+	default:
+		goto yyabort
+	case c == 'F' || c == 'f':
+		goto yystate21
+	}
 
 yystate21:
+	c = lexer.getChar()
+	goto yyrule21
+
+yystate22:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyrule20
+	case c == '*':
+		goto yystate23
+	case c == '/':
+		goto yystate24
+	}
+
+yystate23:
+	c = lexer.getChar()
+	goto yyrule1
+
+yystate24:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyabort
+	case c == '\n':
+		goto yystate25
+	case c >= '\x01' && c <= '\t' || c == '\v' || c == '\f' || c >= '\x0e' && c <= 'ÿ':
+		goto yystate24
+	}
+
+yystate25:
+	c = lexer.getChar()
+	goto yyrule4
+
+yystate26:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyrule21
+	case c == '.':
+		goto yystate14
+	case c == 'E' || c == 'e':
+		goto yystate15
+	case c == 'd' || c == 'h' || c == 'm' || c == 's' || c == 'w' || c == 'y':
+		goto yystate27
+	case c >= '0' && c <= '9':
+		goto yystate26
+	}
+
+yystate27:
+	c = lexer.getChar()
+	goto yyrule22
+
+yystate28:
 	c = lexer.getChar()
 	switch {
 	default:
 		goto yyrule24
-	case c == '.':
-		goto yystate16
-	case c == 'd' || c == 'h' || c == 'm' || c == 's' || c == 'w' || c == 'y':
-		goto yystate22
-	case c >= '0' && c <= '9':
-		goto yystate21
-	}
-
-yystate22:
-	c = lexer.getChar()
-	goto yyrule21
-
-yystate23:
-	c = lexer.getChar()
-	switch {
-	default:
-		goto yyrule23
 	case c >= '0' && c <= ':' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate23
+		goto yystate28
 	}
 
-yystate24:
+yystate29:
 	c = lexer.getChar()
 	switch {
 	default:
@@ -320,1798 +384,1852 @@ yystate24:
 		goto yystate4
 	}
 
-yystate25:
-	c = lexer.getChar()
-	switch {
-	default:
-		goto yyrule27
-	case c == '=' || c == '~':
-		goto yystate4
-	}
-
-yystate26:
-	c = lexer.getChar()
-	switch {
-	default:
-		goto yyrule22
-	case c == ':':
-		goto yystate23
-	case c == 'L':
-		goto yystate28
-	case c == 'N':
-		goto yystate32
-	case c == 'V':
-		goto yystate34
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'K' || c == 'M' || c >= 'O' && c <= 'U' || c >= 'W' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
-	}
-
-yystate27:
-	c = lexer.getChar()
-	switch {
-	default:
-		goto yyrule22
-	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
-	}
-
-yystate28:
-	c = lexer.getChar()
-	switch {
-	default:
-		goto yyrule22
-	case c == ':':
-		goto yystate23
-	case c == 'E':
-		goto yystate29
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
-	}
-
-yystate29:
-	c = lexer.getChar()
-	switch {
-	default:
-		goto yyrule22
-	case c == ':':
-		goto yystate23
-	case c == 'R':
-		goto yystate30
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
-	}
-
 yystate30:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
-	case c == ':':
-		goto yystate23
-	case c == 'T':
-		goto yystate31
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yyrule26
+	case c == '=' || c == '~':
+		goto yystate4
 	}
 
 yystate31:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule5
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'L':
+		goto yystate33
+	case c == 'N':
+		goto yystate37
+	case c == 'V':
+		goto yystate39
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'K' || c == 'M' || c >= 'O' && c <= 'U' || c >= 'W' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate32:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'D':
-		goto yystate33
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'C' || c >= 'E' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate33:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule17
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'E':
+		goto yystate34
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate34:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'G':
+		goto yystate28
+	case c == 'R':
 		goto yystate35
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'F' || c >= 'H' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate35:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule15
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'T':
+		goto yystate36
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate36:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule5
 	case c == ':':
-		goto yystate23
-	case c == 'Y':
-		goto yystate37
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'X' || c == 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate37:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule12
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'D':
+		goto yystate38
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'C' || c >= 'E' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate38:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule17
 	case c == ':':
-		goto yystate23
-	case c == 'O':
-		goto yystate39
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'N' || c >= 'P' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate39:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'U':
+		goto yystate28
+	case c == 'G':
 		goto yystate40
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'T' || c >= 'V' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'F' || c >= 'H' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate40:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule15
 	case c == ':':
-		goto yystate23
-	case c == 'N':
-		goto yystate41
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate41:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'T':
-		goto yystate35
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'Y':
+		goto yystate42
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'X' || c == 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate42:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule12
 	case c == ':':
-		goto yystate23
-	case c == 'E':
-		goto yystate43
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate43:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'S':
+		goto yystate28
+	case c == 'O':
 		goto yystate44
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'R' || c >= 'T' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'N' || c >= 'P' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate44:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'C':
+		goto yystate28
+	case c == 'U':
 		goto yystate45
-	case c >= '0' && c <= '9' || c == 'A' || c == 'B' || c >= 'D' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'T' || c >= 'V' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate45:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'R':
+		goto yystate28
+	case c == 'N':
 		goto yystate46
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate46:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'I':
-		goto yystate47
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'T':
+		goto yystate40
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate47:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'P':
+		goto yystate28
+	case c == 'E':
 		goto yystate48
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'O' || c >= 'Q' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate48:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'T':
+		goto yystate28
+	case c == 'S':
 		goto yystate49
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'R' || c >= 'T' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate49:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'I':
+		goto yystate28
+	case c == 'C':
 		goto yystate50
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c == 'A' || c == 'B' || c >= 'D' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate50:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'O':
+		goto yystate28
+	case c == 'R':
 		goto yystate51
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'N' || c >= 'P' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate51:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'N':
+		goto yystate28
+	case c == 'I':
 		goto yystate52
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate52:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule10
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'P':
+		goto yystate53
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'O' || c >= 'Q' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate53:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'O':
+		goto yystate28
+	case c == 'T':
 		goto yystate54
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'N' || c >= 'P' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate54:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'R':
+		goto yystate28
+	case c == 'I':
 		goto yystate55
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate55:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule7
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'O':
+		goto yystate56
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'N' || c >= 'P' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate56:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'F':
+		goto yystate28
+	case c == 'N':
 		goto yystate57
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'E' || c >= 'G' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate57:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule6
+		goto yyrule10
 	case c == ':':
-		goto yystate23
+		goto yystate28
 	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate32
 	}
 
 yystate58:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'E':
+		goto yystate28
+	case c == 'O':
 		goto yystate59
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'N' || c >= 'P' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate59:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'E':
+		goto yystate28
+	case c == 'R':
 		goto yystate60
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate60:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule7
 	case c == ':':
-		goto yystate23
-	case c == 'P':
-		goto yystate61
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'O' || c >= 'Q' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate61:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'I':
+		goto yystate28
+	case c == 'F':
 		goto yystate62
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c == 'N' || c == 'n':
+		goto yystate63
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'E' || c >= 'G' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
+		goto yystate32
 	}
 
 yystate62:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule6
 	case c == ':':
-		goto yystate23
-	case c == 'N':
-		goto yystate63
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate63:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'G':
+		goto yystate28
+	case c == 'F' || c == 'f':
 		goto yystate64
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'F' || c >= 'H' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'E' || c >= 'G' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'e' || c >= 'g' && c <= 'z':
+		goto yystate32
 	}
 
 yystate64:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule21
 	case c == ':':
-		goto yystate23
-	case c == '_':
-		goto yystate65
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate65:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
+		goto yystate28
 	case c == 'E':
 		goto yystate66
 	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate32
 	}
 
 yystate66:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'X':
+		goto yystate28
+	case c == 'E':
 		goto yystate67
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'W' || c == 'Y' || c == 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate67:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'T':
+		goto yystate28
+	case c == 'P':
 		goto yystate68
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'O' || c >= 'Q' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate68:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'R':
+		goto yystate28
+	case c == 'I':
 		goto yystate69
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate69:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'A':
+		goto yystate28
+	case c == 'N':
 		goto yystate70
-	case c >= '0' && c <= '9' || c >= 'B' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate70:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule13
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'G':
+		goto yystate71
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'F' || c >= 'H' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate71:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'A':
+		goto yystate28
+	case c == '_':
 		goto yystate72
-	case c == 'I':
-		goto yystate73
-	case c >= '0' && c <= '9' || c >= 'B' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate72:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'X':
-		goto yystate35
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'W' || c == 'Y' || c == 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'E':
+		goto yystate73
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate73:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'N':
-		goto yystate35
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'X':
+		goto yystate74
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'W' || c == 'Y' || c == 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate74:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'F':
+		goto yystate28
+	case c == 'T':
 		goto yystate75
-	case c == 'R':
-		goto yystate33
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'E' || c >= 'G' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate75:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'F':
+		goto yystate28
+	case c == 'R':
 		goto yystate76
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'E' || c >= 'G' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate76:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'S':
+		goto yystate28
+	case c == 'A':
 		goto yystate77
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'R' || c >= 'T' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'B' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate77:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule13
 	case c == ':':
-		goto yystate23
-	case c == 'E':
-		goto yystate78
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate78:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'T':
+		goto yystate28
+	case c == 'A':
 		goto yystate79
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c == 'I':
+		goto yystate80
+	case c >= '0' && c <= '9' || c >= 'B' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate79:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule14
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'X':
+		goto yystate40
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'W' || c == 'Y' || c == 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate80:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'E':
-		goto yystate81
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'N':
+		goto yystate40
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate81:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'R':
+		goto yystate28
+	case c == 'A' || c == 'a':
 		goto yystate82
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'B' && c <= 'Z' || c == '_' || c >= 'b' && c <= 'z':
+		goto yystate32
 	}
 
 yystate82:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'M':
-		goto yystate83
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'L' || c >= 'N' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'N' || c == 'n':
+		goto yystate64
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
+		goto yystate32
 	}
 
 yystate83:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'A':
+		goto yystate28
+	case c == 'F':
 		goto yystate84
-	case c >= '0' && c <= '9' || c >= 'B' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c == 'R':
+		goto yystate38
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'E' || c >= 'G' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate84:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'N':
+		goto yystate28
+	case c == 'F':
 		goto yystate85
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'E' || c >= 'G' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate85:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'E':
+		goto yystate28
+	case c == 'S':
 		goto yystate86
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'R' || c >= 'T' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate86:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'N':
+		goto yystate28
+	case c == 'E':
 		goto yystate87
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate87:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
+		goto yystate28
 	case c == 'T':
 		goto yystate88
 	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate32
 	}
 
 yystate88:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule11
+		goto yyrule14
 	case c == ':':
-		goto yystate23
+		goto yystate28
 	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate32
 	}
 
 yystate89:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'U':
+		goto yystate28
+	case c == 'E':
 		goto yystate90
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'T' || c >= 'V' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate90:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'M':
+		goto yystate28
+	case c == 'R':
 		goto yystate91
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'L' || c >= 'N' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate91:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule15
+		goto yyrule23
 	case c == ':':
-		goto yystate23
+		goto yystate28
 	case c == 'M':
 		goto yystate92
 	case c >= '0' && c <= '9' || c >= 'A' && c <= 'L' || c >= 'N' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate32
 	}
 
 yystate92:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
+		goto yystate28
 	case c == 'A':
 		goto yystate93
 	case c >= '0' && c <= '9' || c >= 'B' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate32
 	}
 
 yystate93:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'R':
+		goto yystate28
+	case c == 'N':
 		goto yystate94
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate94:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'Y':
+		goto yystate28
+	case c == 'E':
 		goto yystate95
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'X' || c == 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'D' || c >= 'F' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate95:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule9
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'N':
+		goto yystate96
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate96:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'I':
+		goto yystate28
+	case c == 'T':
 		goto yystate97
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate97:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule11
 	case c == ':':
-		goto yystate23
-	case c == 'T':
-		goto yystate98
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate98:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'H':
+		goto yystate28
+	case c == 'U':
 		goto yystate99
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'G' || c >= 'I' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'T' || c >= 'V' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate99:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule8
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'M':
+		goto yystate100
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'L' || c >= 'N' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate100:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule15
 	case c == ':':
-		goto yystate23
-	case c == 'l':
+		goto yystate28
+	case c == 'M':
 		goto yystate101
-	case c == 'n':
-		goto yystate104
-	case c == 'v':
-		goto yystate105
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'k' || c == 'm' || c >= 'o' && c <= 'u' || c >= 'w' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'L' || c >= 'N' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate101:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'e':
+		goto yystate28
+	case c == 'A':
 		goto yystate102
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'B' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate102:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'r':
+		goto yystate28
+	case c == 'R':
 		goto yystate103
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Q' || c >= 'S' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate103:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 't':
-		goto yystate31
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'Y':
+		goto yystate104
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'X' || c == 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate104:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule9
 	case c == ':':
-		goto yystate23
-	case c == 'd':
-		goto yystate33
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'c' || c >= 'e' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate105:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'g':
+		goto yystate28
+	case c == 'I':
 		goto yystate106
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'f' || c >= 'h' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'H' || c >= 'J' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate106:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule16
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'T':
+		goto yystate107
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'S' || c >= 'U' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate107:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'y':
-		goto yystate37
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'x' || c == 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'H':
+		goto yystate108
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'G' || c >= 'I' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate108:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule8
 	case c == ':':
-		goto yystate23
-	case c == 'o':
-		goto yystate109
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'n' || c >= 'p' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate109:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'u':
+		goto yystate28
+	case c == 'l':
 		goto yystate110
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 't' || c >= 'v' && c <= 'z':
-		goto yystate27
+	case c == 'n':
+		goto yystate113
+	case c == 'v':
+		goto yystate114
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'k' || c == 'm' || c >= 'o' && c <= 'u' || c >= 'w' && c <= 'z':
+		goto yystate32
 	}
 
 yystate110:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'n':
+		goto yystate28
+	case c == 'e':
 		goto yystate111
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
+		goto yystate32
 	}
 
 yystate111:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 't':
-		goto yystate106
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'r':
+		goto yystate112
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
+		goto yystate32
 	}
 
 yystate112:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'e':
-		goto yystate113
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 't':
+		goto yystate36
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
+		goto yystate32
 	}
 
 yystate113:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 's':
-		goto yystate114
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'r' || c >= 't' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'd':
+		goto yystate38
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'c' || c >= 'e' && c <= 'z':
+		goto yystate32
 	}
 
 yystate114:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'c':
+		goto yystate28
+	case c == 'g':
 		goto yystate115
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c == 'a' || c == 'b' || c >= 'd' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'f' || c >= 'h' && c <= 'z':
+		goto yystate32
 	}
 
 yystate115:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule16
 	case c == ':':
-		goto yystate23
-	case c == 'r':
-		goto yystate116
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate116:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'i':
-		goto yystate117
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'h' || c >= 'j' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'y':
+		goto yystate42
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'x' || c == 'z':
+		goto yystate32
 	}
 
 yystate117:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'p':
+		goto yystate28
+	case c == 'o':
 		goto yystate118
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'o' || c >= 'q' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'n' || c >= 'p' && c <= 'z':
+		goto yystate32
 	}
 
 yystate118:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 't':
+		goto yystate28
+	case c == 'u':
 		goto yystate119
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 't' || c >= 'v' && c <= 'z':
+		goto yystate32
 	}
 
 yystate119:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'i':
+		goto yystate28
+	case c == 'n':
 		goto yystate120
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'h' || c >= 'j' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
+		goto yystate32
 	}
 
 yystate120:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'o':
-		goto yystate121
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'n' || c >= 'p' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 't':
+		goto yystate115
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
+		goto yystate32
 	}
 
 yystate121:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'n':
-		goto yystate52
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'e':
+		goto yystate122
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
+		goto yystate32
 	}
 
 yystate122:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'o':
+		goto yystate28
+	case c == 's':
 		goto yystate123
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'n' || c >= 'p' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'r' || c >= 't' && c <= 'z':
+		goto yystate32
 	}
 
 yystate123:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'r':
-		goto yystate55
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'c':
+		goto yystate124
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c == 'a' || c == 'b' || c >= 'd' && c <= 'z':
+		goto yystate32
 	}
 
 yystate124:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'f':
-		goto yystate57
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'e' || c >= 'g' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'r':
+		goto yystate125
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
+		goto yystate32
 	}
 
 yystate125:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'e':
+		goto yystate28
+	case c == 'i':
 		goto yystate126
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'h' || c >= 'j' && c <= 'z':
+		goto yystate32
 	}
 
 yystate126:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'e':
+		goto yystate28
+	case c == 'p':
 		goto yystate127
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'o' || c >= 'q' && c <= 'z':
+		goto yystate32
 	}
 
 yystate127:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'p':
+		goto yystate28
+	case c == 't':
 		goto yystate128
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'o' || c >= 'q' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
+		goto yystate32
 	}
 
 yystate128:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
+		goto yystate28
 	case c == 'i':
 		goto yystate129
 	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'h' || c >= 'j' && c <= 'z':
-		goto yystate27
+		goto yystate32
 	}
 
 yystate129:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'n':
+		goto yystate28
+	case c == 'o':
 		goto yystate130
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'n' || c >= 'p' && c <= 'z':
+		goto yystate32
 	}
 
 yystate130:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'g':
-		goto yystate131
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'f' || c >= 'h' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'n':
+		goto yystate57
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
+		goto yystate32
 	}
 
 yystate131:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == '_':
+		goto yystate28
+	case c == 'o':
 		goto yystate132
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'n' || c >= 'p' && c <= 'z':
+		goto yystate32
 	}
 
 yystate132:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'e':
-		goto yystate133
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'r':
+		goto yystate60
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
+		goto yystate32
 	}
 
 yystate133:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'x':
-		goto yystate134
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'w' || c == 'y' || c == 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'N' || c == 'n':
+		goto yystate63
+	case c == 'f':
+		goto yystate62
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'M' || c >= 'O' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'e' || c >= 'g' && c <= 'm' || c >= 'o' && c <= 'z':
+		goto yystate32
 	}
 
 yystate134:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 't':
+		goto yystate28
+	case c == 'e':
 		goto yystate135
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
+		goto yystate32
 	}
 
 yystate135:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'r':
+		goto yystate28
+	case c == 'e':
 		goto yystate136
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
+		goto yystate32
 	}
 
 yystate136:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'a':
-		goto yystate70
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'b' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'p':
+		goto yystate137
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'o' || c >= 'q' && c <= 'z':
+		goto yystate32
 	}
 
 yystate137:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'a':
-		goto yystate138
+		goto yystate28
 	case c == 'i':
-		goto yystate139
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'b' && c <= 'h' || c >= 'j' && c <= 'z':
-		goto yystate27
+		goto yystate138
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'h' || c >= 'j' && c <= 'z':
+		goto yystate32
 	}
 
 yystate138:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'x':
-		goto yystate106
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'w' || c == 'y' || c == 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'n':
+		goto yystate139
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
+		goto yystate32
 	}
 
 yystate139:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'n':
-		goto yystate106
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'g':
+		goto yystate140
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'f' || c >= 'h' && c <= 'z':
+		goto yystate32
 	}
 
 yystate140:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'f':
+		goto yystate28
+	case c == '_':
 		goto yystate141
-	case c == 'r':
-		goto yystate33
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'e' || c >= 'g' && c <= 'q' || c >= 's' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z':
+		goto yystate32
 	}
 
 yystate141:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'f':
+		goto yystate28
+	case c == 'e':
 		goto yystate142
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'e' || c >= 'g' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
+		goto yystate32
 	}
 
 yystate142:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 's':
+		goto yystate28
+	case c == 'x':
 		goto yystate143
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'r' || c >= 't' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'w' || c == 'y' || c == 'z':
+		goto yystate32
 	}
 
 yystate143:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'e':
+		goto yystate28
+	case c == 't':
 		goto yystate144
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
+		goto yystate32
 	}
 
 yystate144:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 't':
-		goto yystate79
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'r':
+		goto yystate145
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
+		goto yystate32
 	}
 
 yystate145:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'e':
-		goto yystate146
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'a':
+		goto yystate77
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'b' && c <= 'z':
+		goto yystate32
 	}
 
 yystate146:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'r':
+		goto yystate28
+	case c == 'a':
 		goto yystate147
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
-		goto yystate27
+	case c == 'i':
+		goto yystate148
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'b' && c <= 'h' || c >= 'j' && c <= 'z':
+		goto yystate32
 	}
 
 yystate147:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'm':
-		goto yystate148
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'l' || c >= 'n' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'x':
+		goto yystate115
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'w' || c == 'y' || c == 'z':
+		goto yystate32
 	}
 
 yystate148:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'a':
-		goto yystate149
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'b' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'n':
+		goto yystate115
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
+		goto yystate32
 	}
 
 yystate149:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'n':
+		goto yystate28
+	case c == 'f':
 		goto yystate150
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
-		goto yystate27
+	case c == 'r':
+		goto yystate38
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'e' || c >= 'g' && c <= 'q' || c >= 's' && c <= 'z':
+		goto yystate32
 	}
 
 yystate150:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'e':
+		goto yystate28
+	case c == 'f':
 		goto yystate151
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'e' || c >= 'g' && c <= 'z':
+		goto yystate32
 	}
 
 yystate151:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'n':
+		goto yystate28
+	case c == 's':
 		goto yystate152
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'r' || c >= 't' && c <= 'z':
+		goto yystate32
 	}
 
 yystate152:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 't':
-		goto yystate88
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'e':
+		goto yystate153
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
+		goto yystate32
 	}
 
 yystate153:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'u':
-		goto yystate154
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 't' || c >= 'v' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 't':
+		goto yystate88
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
+		goto yystate32
 	}
 
 yystate154:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'm':
+		goto yystate28
+	case c == 'e':
 		goto yystate155
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'l' || c >= 'n' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
+		goto yystate32
 	}
 
 yystate155:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule16
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'm':
+		goto yystate28
+	case c == 'r':
 		goto yystate156
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'l' || c >= 'n' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
+		goto yystate32
 	}
 
 yystate156:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'a':
+		goto yystate28
+	case c == 'm':
 		goto yystate157
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'b' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'l' || c >= 'n' && c <= 'z':
+		goto yystate32
 	}
 
 yystate157:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'r':
+		goto yystate28
+	case c == 'a':
 		goto yystate158
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'b' && c <= 'z':
+		goto yystate32
 	}
 
 yystate158:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'y':
-		goto yystate95
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'x' || c == 'z':
-		goto yystate27
+		goto yystate28
+	case c == 'n':
+		goto yystate159
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
+		goto yystate32
 	}
 
 yystate159:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'i':
+		goto yystate28
+	case c == 'e':
 		goto yystate160
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'h' || c >= 'j' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'd' || c >= 'f' && c <= 'z':
+		goto yystate32
 	}
 
 yystate160:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 't':
+		goto yystate28
+	case c == 'n':
 		goto yystate161
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
-		goto yystate27
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'm' || c >= 'o' && c <= 'z':
+		goto yystate32
 	}
 
 yystate161:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule22
+		goto yyrule23
 	case c == ':':
-		goto yystate23
-	case c == 'h':
-		goto yystate99
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'g' || c >= 'i' && c <= 'z':
-		goto yystate27
+		goto yystate28
+	case c == 't':
+		goto yystate97
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
+		goto yystate32
 	}
 
-	goto yystate162 // silence unused label error
 yystate162:
 	c = lexer.getChar()
-yystart162:
 	switch {
 	default:
-		goto yyabort
-	case c == '*':
-		goto yystate164
-	case c >= '\x01' && c <= ')' || c >= '+' && c <= 'ÿ':
+		goto yyrule23
+	case c == ':':
+		goto yystate28
+	case c == 'u':
 		goto yystate163
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 't' || c >= 'v' && c <= 'z':
+		goto yystate32
 	}
 
 yystate163:
 	c = lexer.getChar()
-	goto yyrule3
+	switch {
+	default:
+		goto yyrule23
+	case c == ':':
+		goto yystate28
+	case c == 'm':
+		goto yystate164
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'l' || c >= 'n' && c <= 'z':
+		goto yystate32
+	}
 
 yystate164:
 	c = lexer.getChar()
 	switch {
 	default:
-		goto yyrule3
-	case c == '/':
+		goto yyrule16
+	case c == ':':
+		goto yystate28
+	case c == 'm':
 		goto yystate165
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'l' || c >= 'n' && c <= 'z':
+		goto yystate32
 	}
 
 yystate165:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyrule23
+	case c == ':':
+		goto yystate28
+	case c == 'a':
+		goto yystate166
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'b' && c <= 'z':
+		goto yystate32
+	}
+
+yystate166:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyrule23
+	case c == ':':
+		goto yystate28
+	case c == 'r':
+		goto yystate167
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'q' || c >= 's' && c <= 'z':
+		goto yystate32
+	}
+
+yystate167:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyrule23
+	case c == ':':
+		goto yystate28
+	case c == 'y':
+		goto yystate104
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'x' || c == 'z':
+		goto yystate32
+	}
+
+yystate168:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyrule23
+	case c == ':':
+		goto yystate28
+	case c == 'i':
+		goto yystate169
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'h' || c >= 'j' && c <= 'z':
+		goto yystate32
+	}
+
+yystate169:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyrule23
+	case c == ':':
+		goto yystate28
+	case c == 't':
+		goto yystate170
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 's' || c >= 'u' && c <= 'z':
+		goto yystate32
+	}
+
+yystate170:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyrule23
+	case c == ':':
+		goto yystate28
+	case c == 'h':
+		goto yystate108
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'g' || c >= 'i' && c <= 'z':
+		goto yystate32
+	}
+
+	goto yystate171 // silence unused label error
+yystate171:
+	c = lexer.getChar()
+yystart171:
+	switch {
+	default:
+		goto yyabort
+	case c == '*':
+		goto yystate173
+	case c >= '\x01' && c <= ')' || c >= '+' && c <= 'ÿ':
+		goto yystate172
+	}
+
+yystate172:
+	c = lexer.getChar()
+	goto yyrule3
+
+yystate173:
+	c = lexer.getChar()
+	switch {
+	default:
+		goto yyrule3
+	case c == '/':
+		goto yystate174
+	}
+
+yystate174:
 	c = lexer.getChar()
 	goto yyrule2
 
@@ -2211,25 +2329,7 @@ yyrule20: // [*/%]
 		return MULT_OP
 		goto yystate0
 	}
-yyrule21: // {D}+{U}
-	{
-		lval.str = lexer.token()
-		return DURATION
-		goto yystate0
-	}
-yyrule22: // {L}({L}|{D})*
-	{
-		lval.str = lexer.token()
-		return IDENTIFIER
-		goto yystate0
-	}
-yyrule23: // {M}({M}|{D})*
-	{
-		lval.str = lexer.token()
-		return METRICNAME
-		goto yystate0
-	}
-yyrule24: // \-?{D}+(\.{D}*)?
+yyrule21: // {FLOAT}
 	{
 		num, err := strconv.ParseFloat(lexer.token(), 64)
 		if err != nil && err.(*strconv.NumError).Err == strconv.ErrSyntax {
@@ -2238,23 +2338,35 @@ yyrule24: // \-?{D}+(\.{D}*)?
 		lval.num = clientmodel.SampleValue(num)
 		return NUMBER
 	}
-yyrule25: // \"(\\.|[^\\"])*\"
+yyrule22: // {D}+{U}
+	{
+		lval.str = lexer.token()
+		return DURATION
+		goto yystate0
+	}
+yyrule23: // {L}({L}|{D})*
+	{
+		lval.str = lexer.token()
+		return IDENTIFIER
+		goto yystate0
+	}
+yyrule24: // {M}({M}|{D})*
+	{
+		lval.str = lexer.token()
+		return METRICNAME
+		goto yystate0
+	}
+yyrule25: // {STR}
 	{
 		lval.str = lexer.token()[1 : len(lexer.token())-1]
 		return STRING
 		goto yystate0
 	}
-yyrule26: // \'(\\.|[^\\'])*\'
-	{
-		lval.str = lexer.token()[1 : len(lexer.token())-1]
-		return STRING
-		goto yystate0
-	}
-yyrule27: // [{}\[\]()=,]
+yyrule26: // [{}\[\]()=,]
 	{
 		return int(lexer.buf[0])
 	}
-yyrule28: // [\t\n\r ]
+yyrule27: // [\t\n\r ]
 	{
 		/* gobble up any whitespace */
 		goto yystate0
