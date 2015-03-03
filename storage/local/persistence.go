@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -38,8 +39,8 @@ import (
 )
 
 const (
-	// Version of the storage, as it can be found in the version file.
-	// Increment to protect against icompatible changes.
+	// Version of the storage as it can be found in the version file.
+	// Increment to protect against incompatible changes.
 	Version         = 1
 	versionFileName = "VERSION"
 
@@ -124,15 +125,9 @@ func newPersistence(basePath string, chunkLen int, dirty bool) (*persistence, er
 	dirtyPath := filepath.Join(basePath, dirtyFileName)
 	versionPath := filepath.Join(basePath, versionFileName)
 
-	if file, err := os.Open(versionPath); err == nil {
-		defer file.Close()
-		data := make([]byte, 8)
-		n, err := file.Read(data)
-		if err != nil {
-			return nil, err
-		}
-		if persistedVersion, err := strconv.Atoi(strings.TrimSpace(string(data[:n]))); err != nil {
-			return nil, fmt.Errorf("cannot parse content of %s: %s", versionPath, data[:n])
+	if versionData, err := ioutil.ReadFile(versionPath); err == nil {
+		if persistedVersion, err := strconv.Atoi(strings.TrimSpace(string(versionData))); err != nil {
+			return nil, fmt.Errorf("cannot parse content of %s: %s", versionPath, versionData)
 		} else if persistedVersion != Version {
 			return nil, fmt.Errorf("found storage version %d on disk, need version %d - please wipe storage or run a version of Prometheus compatible with storage version %d", persistedVersion, Version, persistedVersion)
 		}
@@ -144,12 +139,11 @@ func newPersistence(basePath string, chunkLen int, dirty bool) (*persistence, er
 		if err := os.MkdirAll(basePath, 0700); err != nil {
 			return nil, err
 		}
-		d, err := os.Open(basePath)
+		fis, err := ioutil.ReadDir(basePath)
 		if err != nil {
 			return nil, err
 		}
-		defer d.Close()
-		if fis, _ := d.Readdir(1); len(fis) > 0 {
+		if len(fis) > 0 {
 			return nil, fmt.Errorf("could not detect storage version on disk, assuming version 0, need version %d - please wipe storage or run a version of Prometheus compatible with storage version 0", Version)
 		}
 		// Finally we can write our own version into a new version file.
