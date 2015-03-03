@@ -17,7 +17,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"hash/fnv"
 	"math"
 	"time"
 
@@ -383,23 +382,6 @@ func (node *ScalarFunctionCall) Eval(timestamp clientmodel.Timestamp) clientmode
 	return node.function.callFn(timestamp, node.args).(clientmodel.SampleValue)
 }
 
-// hashForLabels returns a hash value taken from the label/value pairs of the
-// specified labels in the metric.
-func hashForLabels(metric clientmodel.Metric, labels clientmodel.LabelNames) uint64 {
-	var result uint64
-	s := fnv.New64a()
-
-	for _, label := range labels {
-		s.Write([]byte(label))
-		s.Write([]byte{clientmodel.SeparatorByte})
-		s.Write([]byte(metric[label]))
-		result ^= s.Sum64()
-		s.Reset()
-	}
-
-	return result
-}
-
 // EvalVectorInstant evaluates a VectorNode with an instant query.
 func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage local.Storage, queryStats *stats.TimerGroup) (Vector, error) {
 	totalEvalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
@@ -503,7 +485,7 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp) Vector {
 	vector := node.vector.Eval(timestamp)
 	result := map[uint64]*groupedAggregation{}
 	for _, sample := range vector {
-		groupingKey := hashForLabels(sample.Metric.Metric, node.groupBy)
+		groupingKey := clientmodel.SignatureForLabels(sample.Metric.Metric, node.groupBy)
 		if groupedResult, ok := result[groupingKey]; ok {
 			if node.keepExtraLabels {
 				groupedResult.labels = labelIntersection(groupedResult.labels, sample.Metric)
@@ -879,7 +861,7 @@ func (node *VectorArithExpr) evalVectors(timestamp clientmodel.Timestamp, lhs, r
 			metric := node.resultMetric(ls, rs)
 			// Check if the same label set has been added for a many-to-one matching before.
 			if node.matchCardinality == MatchManyToOne || node.matchCardinality == MatchOneToMany {
-				insHash := hashForLabels(metric.Metric, node.includeLabels)
+				insHash := clientmodel.SignatureForLabels(metric.Metric, node.includeLabels)
 				if ihs, exists := added[hash]; exists {
 					for _, ih := range ihs {
 						if ih == insHash {
@@ -971,7 +953,7 @@ func (node *VectorArithExpr) hashForMetric(metric clientmodel.Metric) uint64 {
 			}
 		}
 	}
-	return hashForLabels(metric, labels)
+	return clientmodel.SignatureForLabels(metric, labels)
 }
 
 // Eval implements the MatrixNode interface and returns the value of
