@@ -50,6 +50,15 @@ func CreateAlertingRule(name string, expr ast.Node, holdDurationStr string, labe
 	return NewAlertingRule(name, expr.(ast.VectorNode), holdDuration, labels, summary, description), nil
 }
 
+// NewScalarLiteral returns a ScalarLiteral with the given value. If sign is "-"
+// the value is negated.
+func NewScalarLiteral(value clientmodel.SampleValue, sign string) *ast.ScalarLiteral {
+	if sign == "-" {
+		value = -value
+	}
+	return ast.NewScalarLiteral(value)
+}
+
 // NewFunctionCall is a convenience function to create a new AST function-call node.
 func NewFunctionCall(name string, args []ast.Node) (ast.Node, error) {
 	function, err := ast.GetFunction(name)
