@@ -241,10 +241,22 @@ type (
 	// least one of the two operand Nodes must be a VectorNode. The other may be
 	// a VectorNode or ScalarNode. Both criteria are checked at runtime.
 	VectorArithExpr struct {
-		opType BinOpType
-		lhs    Node
-		rhs    Node
+		opType           BinOpType
+		lhs              Node
+		rhs              Node
+		matchCardinality VectorMatchCardinality
+		matchOn          clientmodel.LabelNames
+		includeLabels    clientmodel.LabelNames
 	}
+)
+
+type VectorMatchCardinality int
+
+const (
+	MatchOneToOne VectorMatchCardinality = iota
+	MatchManyToOne
+	MatchOneToMany
+	MatchManyToMany
 )
 
 // ----------------------------------------------------------------------------
@@ -371,14 +383,21 @@ func (node *ScalarFunctionCall) Eval(timestamp clientmodel.Timestamp) clientmode
 	return node.function.callFn(timestamp, node.args).(clientmodel.SampleValue)
 }
 
-func (node *VectorAggregation) labelsToGroupingKey(labels clientmodel.Metric) uint64 {
-	summer := fnv.New64a()
-	for _, label := range node.groupBy {
-		summer.Write([]byte(labels[label]))
-		summer.Write([]byte{clientmodel.SeparatorByte})
+// hashForLabels returns a hash value taken from the label/value pairs of the
+// specified labels in the metric.
+func hashForLabels(metric clientmodel.Metric, labels clientmodel.LabelNames) uint64 {
+	var result uint64
+	s := fnv.New64a()
+
+	for _, label := range labels {
+		s.Write([]byte(label))
+		s.Write([]byte{clientmodel.SeparatorByte})
+		s.Write([]byte(metric[label]))
+		result ^= s.Sum64()
+		s.Reset()
 	}
 
-	return summer.Sum64()
+	return result
 }
 
 // EvalVectorInstant evaluates a VectorNode with an instant query.
@@ -484,7 +503,7 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp) Vector {
 	vector := node.vector.Eval(timestamp)
 	result := map[uint64]*groupedAggregation{}
 	for _, sample := range vector {
-		groupingKey := node.labelsToGroupingKey(sample.Metric.Metric)
+		groupingKey := hashForLabels(sample.Metric.Metric, node.groupBy)
 		if groupedResult, ok := result[groupingKey]; ok {
 			if node.keepExtraLabels {
 				groupedResult.labels = labelIntersection(groupedResult.labels, sample.Metric)
@@ -729,10 +748,6 @@ func evalVectorBinop(opType BinOpType,
 			return lhs, true
 		}
 		return 0, false
-	case And:
-		return lhs, true
-	case Or:
-		return lhs, true // TODO: implement OR
 	}
 	panic("Not all enum values enumerated in switch")
 }
@@ -749,55 +764,214 @@ func labelsEqual(labels1, labels2 clientmodel.Metric) bool {
 // Eval implements the VectorNode interface and returns the result of
 // the expression.
 func (node *VectorArithExpr) Eval(timestamp clientmodel.Timestamp) Vector {
-	result := Vector{}
-	if node.lhs.Type() == ScalarType && node.rhs.Type() == VectorType {
-		lhs := node.lhs.(ScalarNode).Eval(timestamp)
-		rhs := node.rhs.(VectorNode).Eval(timestamp)
-		for _, rhsSample := range rhs {
-			value, keep := evalVectorBinop(node.opType, lhs, rhsSample.Value)
-			if keep {
-				rhsSample.Value = value
-				if node.opType.shouldDropMetric() {
-					rhsSample.Metric.Delete(clientmodel.MetricNameLabel)
-				}
-				result = append(result, rhsSample)
-			}
-		}
-		return result
-	} else if node.lhs.Type() == VectorType && node.rhs.Type() == ScalarType {
-		lhs := node.lhs.(VectorNode).Eval(timestamp)
-		rhs := node.rhs.(ScalarNode).Eval(timestamp)
-		for _, lhsSample := range lhs {
-			value, keep := evalVectorBinop(node.opType, lhsSample.Value, rhs)
-			if keep {
-				lhsSample.Value = value
-				if node.opType.shouldDropMetric() {
-					lhsSample.Metric.Delete(clientmodel.MetricNameLabel)
-				}
-				result = append(result, lhsSample)
-			}
-		}
-		return result
-	} else if node.lhs.Type() == VectorType && node.rhs.Type() == VectorType {
+	// Calculate vector-to-vector operation.
+	if node.lhs.Type() == VectorType && node.rhs.Type() == VectorType {
 		lhs := node.lhs.(VectorNode).Eval(timestamp)
 		rhs := node.rhs.(VectorNode).Eval(timestamp)
-		for _, lhsSample := range lhs {
-			for _, rhsSample := range rhs {
-				if labelsEqual(lhsSample.Metric.Metric, rhsSample.Metric.Metric) {
-					value, keep := evalVectorBinop(node.opType, lhsSample.Value, rhsSample.Value)
-					if keep {
-						lhsSample.Value = value
-						if node.opType.shouldDropMetric() {
-							lhsSample.Metric.Delete(clientmodel.MetricNameLabel)
-						}
-						result = append(result, lhsSample)
-					}
-				}
-			}
-		}
-		return result
+
+		return node.evalVectors(timestamp, lhs, rhs)
 	}
-	panic("Invalid vector arithmetic expression operands")
+
+	// Calculate vector-to-scalar operation.
+	var lhs Vector
+	var rhs clientmodel.SampleValue
+	swap := false
+
+	if node.lhs.Type() == ScalarType && node.rhs.Type() == VectorType {
+		lhs = node.rhs.(VectorNode).Eval(timestamp)
+		rhs = node.lhs.(ScalarNode).Eval(timestamp)
+		swap = true
+	} else {
+		lhs = node.lhs.(VectorNode).Eval(timestamp)
+		rhs = node.rhs.(ScalarNode).Eval(timestamp)
+	}
+
+	result := make(Vector, 0, len(lhs))
+
+	for _, lhsSample := range lhs {
+		lv, rv := lhsSample.Value, rhs
+		// lhs always contains the vector. If the original position was different
+		// swap for calculating the value.
+		if swap {
+			lv, rv = rv, lv
+		}
+		value, keep := evalVectorBinop(node.opType, lv, rv)
+		if keep {
+			lhsSample.Value = value
+			if node.opType.shouldDropMetric() {
+				lhsSample.Metric.Delete(clientmodel.MetricNameLabel)
+			}
+			result = append(result, lhsSample)
+		}
+	}
+	return result
+}
+
+// evalVectors evaluates the binary operation for the given vectors.
+func (node *VectorArithExpr) evalVectors(timestamp clientmodel.Timestamp, lhs, rhs Vector) Vector {
+	result := make(Vector, 0, len(rhs))
+	// The control flow below handles one-to-one or many-to-one matching.
+	// For one-to-many, swap sidedness and account for the swap when calculating
+	// values.
+	if node.matchCardinality == MatchOneToMany {
+		lhs, rhs = rhs, lhs
+	}
+	// All samples from the rhs hashed by the matching label/values.
+	rm := make(map[uint64]*Sample)
+	// Maps the hash of the label values used for matching to the hashes of the label
+	// values of the include labels (if any). It is used to keep track of already
+	// inserted samples.
+	added := make(map[uint64][]uint64)
+
+	// Add all rhs samples to a map so we can easily find matches later.
+	for _, rs := range rhs {
+		hash := node.hashForMetric(rs.Metric.Metric)
+		// The rhs is guaranteed to be the 'one' side. Having multiple samples
+		// with the same hash means that the matching is many-to-many,
+		// which is not supported.
+		if _, found := rm[hash]; node.matchCardinality != MatchManyToMany && found {
+			// Many-to-many matching not allowed.
+			// TODO(fabxc): Return a query error here once AST nodes support that.
+			return Vector{}
+		}
+		// In many-to-many matching the entry is simply overwritten. It can thus only
+		// be used to check whether any matching rhs entry exists but not retrieve them all.
+		rm[hash] = rs
+	}
+
+	// For all lhs samples find a respective rhs sample and perform
+	// the binary operation.
+	for _, ls := range lhs {
+		hash := node.hashForMetric(ls.Metric.Metric)
+		// Any lhs sample we encounter in an OR operation belongs to the result.
+		if node.opType == Or {
+			ls.Metric = node.resultMetric(ls, nil)
+			result = append(result, ls)
+			added[hash] = nil // Ensure matching rhs sample is not added later.
+			continue
+		}
+
+		rs, found := rm[hash] // Look for a match in the rhs vector.
+		if !found {
+			continue
+		}
+		var value clientmodel.SampleValue
+		var keep bool
+
+		if node.opType == And {
+			value = ls.Value
+			keep = true
+		} else {
+			if _, exists := added[hash]; node.matchCardinality == MatchOneToOne && exists {
+				// Many-to-one matching must be explicit.
+				// TODO(fabxc): Return a query error here once AST nodes support that.
+				return Vector{}
+			}
+			// Account for potentially swapped sidedness.
+			vl, vr := ls.Value, rs.Value
+			if node.matchCardinality == MatchOneToMany {
+				vl, vr = vr, vl
+			}
+			value, keep = evalVectorBinop(node.opType, vl, vr)
+		}
+
+		if keep {
+			metric := node.resultMetric(ls, rs)
+			// Check if the same label set has been added for a many-to-one matching before.
+			if node.matchCardinality == MatchManyToOne || node.matchCardinality == MatchOneToMany {
+				insHash := hashForLabels(metric.Metric, node.includeLabels)
+				if ihs, exists := added[hash]; exists {
+					for _, ih := range ihs {
+						if ih == insHash {
+							// TODO(fabxc): Return a query error here once AST nodes support that.
+							return Vector{}
+						}
+					}
+					added[hash] = append(ihs, insHash)
+				} else {
+					added[hash] = []uint64{insHash}
+				}
+			}
+			ns := &Sample{
+				Metric:    metric,
+				Value:     value,
+				Timestamp: timestamp,
+			}
+			result = append(result, ns)
+			added[hash] = added[hash] // Set existance to true.
+		}
+	}
+
+	// Add all remaining samples in the rhs in an OR operation if they
+	// have not been matched up with a lhs sample.
+	if node.opType == Or {
+		for hash, rs := range rm {
+			if _, exists := added[hash]; !exists {
+				rs.Metric = node.resultMetric(rs, nil)
+				result = append(result, rs)
+			}
+		}
+	}
+	return result
+}
+
+// resultMetric returns the metric for the given sample(s) based on the vector
+// binary operation and the matching options. If a label that has to be included is set on
+// both sides an error is returned.
+func (node *VectorArithExpr) resultMetric(ls, rs *Sample) clientmodel.COWMetric {
+	if len(node.matchOn) == 0 || node.opType == Or || node.opType == And {
+		if node.opType.shouldDropMetric() {
+			ls.Metric.Delete(clientmodel.MetricNameLabel)
+		}
+		return ls.Metric
+	}
+
+	m := clientmodel.Metric{}
+	for _, ln := range node.matchOn {
+		m[ln] = ls.Metric.Metric[ln]
+	}
+
+	for _, ln := range node.includeLabels {
+		// Included labels from the `group_x` modifier are taken from the "many"-side.
+		v, ok := ls.Metric.Metric[ln]
+		if ok {
+			m[ln] = v
+		}
+	}
+	return clientmodel.COWMetric{false, m}
+}
+
+// hashForMetric calculates a hash value for the given metric based on the matching
+// options for the binary operation.
+func (node *VectorArithExpr) hashForMetric(metric clientmodel.Metric) uint64 {
+	var labels clientmodel.LabelNames
+
+	if len(node.matchOn) > 0 {
+		var match bool
+		for _, ln := range node.matchOn {
+			if _, match = metric[ln]; !match {
+				break
+			}
+		}
+		// If the metric does not contain the labels to match on, build the hash
+		// over the whole metric to give it a unique hash.
+		if !match {
+			labels = make(clientmodel.LabelNames, 0, len(metric))
+			for ln := range metric {
+				labels = append(labels, ln)
+			}
+		} else {
+			labels = node.matchOn
+		}
+	} else {
+		labels = make(clientmodel.LabelNames, 0, len(metric))
+		for ln := range metric {
+			if ln != clientmodel.MetricNameLabel {
+				labels = append(labels, ln)
+			}
+		}
+	}
+	return hashForLabels(metric, labels)
 }
 
 // Eval implements the MatrixNode interface and returns the value of
@@ -962,7 +1136,7 @@ func nodesHaveTypes(nodes Nodes, exprTypes []ExprType) bool {
 
 // NewArithExpr returns a (not yet evaluated) expression node (of type
 // VectorArithExpr or ScalarArithExpr).
-func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
+func NewArithExpr(opType BinOpType, lhs Node, rhs Node, matchCard VectorMatchCardinality, matchOn, include clientmodel.LabelNames) (Node, error) {
 	if !nodesHaveTypes(Nodes{lhs, rhs}, []ExprType{ScalarType, VectorType}) {
 		return nil, errors.New("binary operands must be of vector or scalar type")
 	}
@@ -971,13 +1145,25 @@ func NewArithExpr(opType BinOpType, lhs Node, rhs Node) (Node, error) {
 		if lhs.Type() == ScalarType || rhs.Type() == ScalarType {
 			return nil, errors.New("AND and OR operators may only be used between vectors")
 		}
+		// Logical operations must never be used with group modifiers.
+		if len(include) > 0 {
+			return nil, errors.New("AND and OR operators must not have a group modifier")
+		}
+	}
+	if lhs.Type() != VectorType || rhs.Type() != VectorType {
+		if matchCard != MatchOneToOne || matchOn != nil || include != nil {
+			return nil, errors.New("binary scalar expressions cannot have vector matching options")
+		}
 	}
 
 	if lhs.Type() == VectorType || rhs.Type() == VectorType {
 		return &VectorArithExpr{
-			opType: opType,
-			lhs:    lhs,
-			rhs:    rhs,
+			opType:           opType,
+			lhs:              lhs,
+			rhs:              rhs,
+			matchCardinality: matchCard,
+			matchOn:          matchOn,
+			includeLabels:    include,
 		}, nil
 	}
 

@@ -423,6 +423,63 @@ var testMatrix = ast.Matrix{
 		},
 		Values: getTestValueStream(0, 90, 9, testStartTime),
 	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "vector_matching_a",
+				"l": "x",
+			},
+		},
+		Values: getTestValueStream(0, 100, 1, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "vector_matching_a",
+				"l": "y",
+			},
+		},
+		Values: getTestValueStream(0, 100, 2, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "vector_matching_b",
+				"l": "x",
+			},
+		},
+		Values: getTestValueStream(0, 100, 4, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "cpu_count",
+				"instance":                  "0",
+				"type":                      "numa",
+			},
+		},
+		Values: getTestValueStream(0, 500, 30, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "cpu_count",
+				"instance":                  "0",
+				"type":                      "smp",
+			},
+		},
+		Values: getTestValueStream(0, 200, 10, testStartTime),
+	},
+	{
+		Metric: clientmodel.COWMetric{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "cpu_count",
+				"instance":                  "1",
+				"type":                      "smp",
+			},
+		},
+		Values: getTestValueStream(0, 200, 20, testStartTime),
+	},
 }
 
 var testVector = getTestVectorFromTestMatrix(testMatrix)

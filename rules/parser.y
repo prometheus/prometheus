@@ -32,6 +32,7 @@
         labelSet clientmodel.LabelSet
         labelMatcher *metric.LabelMatcher
         labelMatchers metric.LabelMatchers
+        vectorMatching *vectorMatching
 }
 
 /* We simulate multiple start symbols for closely-related grammars via dummy tokens. See
@@ -42,8 +43,8 @@
 
 %token <str> IDENTIFIER STRING DURATION METRICNAME
 %token <num> NUMBER
-%token PERMANENT GROUP_OP KEEPING_EXTRA OFFSET
-%token <str> AGGR_OP CMP_OP ADDITIVE_OP MULT_OP
+%token PERMANENT GROUP_OP KEEPING_EXTRA OFFSET MATCH_OP
+%token <str> AGGR_OP CMP_OP ADDITIVE_OP MULT_OP MATCH_MOD
 %token ALERT IF FOR WITH SUMMARY DESCRIPTION
 
 %type <ruleNodeSlice> func_arg_list
@@ -51,6 +52,7 @@
 %type <labelSet> label_assign label_assign_list rule_labels
 %type <labelMatcher> label_match
 %type <labelMatchers> label_match_list label_matches
+%type <vectorMatching> vector_matching
 %type <ruleNode> rule_expr func_arg
 %type <boolean> qualifier extra_labels_opts
 %type <str> for_duration metric_name label_match_type offset_opts
@@ -207,32 +209,48 @@ rule_expr          : '(' rule_expr ')'
                      }
                    /* Yacc can only attach associativity to terminals, so we
                     * have to list all operators here. */
-                   | rule_expr ADDITIVE_OP rule_expr
+                   | rule_expr ADDITIVE_OP vector_matching rule_expr
                      {
                        var err error
-                       $$, err = NewArithExpr($2, $1, $3)
+                       $$, err = NewArithExpr($2, $1, $4, $3)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
-                   | rule_expr MULT_OP rule_expr
+                   | rule_expr MULT_OP vector_matching rule_expr
                      {
                        var err error
-                       $$, err = NewArithExpr($2, $1, $3)
+                       $$, err = NewArithExpr($2, $1, $4, $3)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
-                   | rule_expr CMP_OP rule_expr
+                   | rule_expr CMP_OP vector_matching rule_expr
                      {
                        var err error
-                       $$, err = NewArithExpr($2, $1, $3)
+                       $$, err = NewArithExpr($2, $1, $4, $3)
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
                    | NUMBER
                      { $$ = ast.NewScalarLiteral($1)}
                    ;
 
-extra_labels_opts  :
+extra_labels_opts  : /* empty */
                      { $$ = false }
                    | KEEPING_EXTRA
                      { $$ = true }
+                   ;
+
+vector_matching    : /* empty */
+                     { $$ = nil }
+                   | MATCH_OP '(' label_list ')'
+                     {
+                       var err error
+                       $$, err = newVectorMatching("", $3, nil)
+                       if err != nil { yylex.Error(err.Error()); return 1 }
+                     }
+                   | MATCH_OP '(' label_list ')' MATCH_MOD '(' label_list ')'
+                     {
+                       var err error
+                       $$, err = newVectorMatching($5, $3, $7)
+                       if err != nil { yylex.Error(err.Error()); return 1 }
+                     }
                    ;
 
 grouping_opts      :

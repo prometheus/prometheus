@@ -630,6 +630,12 @@ func TestExpressions(t *testing.T) {
 				`request_duration_seconds_bucket{instance="ins2", job="job2", le="0.1"} => 40 @[%v]`,
 				`request_duration_seconds_bucket{instance="ins2", job="job2", le="0.2"} => 70 @[%v]`,
 				`request_duration_seconds_bucket{instance="ins2", job="job2", le="+Inf"} => 90 @[%v]`,
+				`vector_matching_a{l="x"} => 10 @[%v]`,
+				`vector_matching_a{l="y"} => 20 @[%v]`,
+				`vector_matching_b{l="x"} => 40 @[%v]`,
+				`cpu_count{instance="1", type="smp"} => 200 @[%v]`,
+				`cpu_count{instance="0", type="smp"} => 100 @[%v]`,
+				`cpu_count{instance="0", type="numa"} => 300 @[%v]`,
 			},
 		},
 		{
@@ -664,6 +670,191 @@ func TestExpressions(t *testing.T) {
 			expr: `sum(sum by (group) keeping_extra (http_requests{job="api-server"})) by (job)`,
 			output: []string{
 				`{job="api-server"} => 1000 @[%v]`,
+			},
+		},
+		{
+			expr: `http_requests{group="canary"} and http_requests{instance="0"}`,
+			output: []string{
+				`http_requests{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
+				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
+			},
+		},
+		{
+			expr: `(http_requests{group="canary"} + 1) and http_requests{instance="0"}`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => 301 @[%v]`,
+				`{group="canary", instance="0", job="app-server"} => 701 @[%v]`,
+			},
+		},
+		{
+			expr: `(http_requests{group="canary"} + 1) and on(instance, job) http_requests{instance="0", group="production"}`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => 301 @[%v]`,
+				`{group="canary", instance="0", job="app-server"} => 701 @[%v]`,
+			},
+		},
+		{
+			expr: `(http_requests{group="canary"} + 1) and on(instance) http_requests{instance="0", group="production"}`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => 301 @[%v]`,
+				`{group="canary", instance="0", job="app-server"} => 701 @[%v]`,
+			},
+		},
+		{
+			expr: `http_requests{group="canary"} or http_requests{group="production"}`,
+			output: []string{
+				`http_requests{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
+				`http_requests{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
+				`http_requests{group="canary", instance="1", job="api-server"} => 400 @[%v]`,
+				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
+				`http_requests{group="production", instance="0", job="api-server"} => 100 @[%v]`,
+				`http_requests{group="production", instance="0", job="app-server"} => 500 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+			},
+		},
+		{
+			// On overlap the rhs samples must be dropped.
+			expr: `(http_requests{group="canary"} + 1) or http_requests{instance="1"}`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => 301 @[%v]`,
+				`{group="canary", instance="0", job="app-server"} => 701 @[%v]`,
+				`{group="canary", instance="1", job="api-server"} => 401 @[%v]`,
+				`{group="canary", instance="1", job="app-server"} => 801 @[%v]`,
+				`http_requests{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+				`http_requests{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+			},
+		},
+		{
+			// Matching only on instance excludes everything that has instance=0/1 but includes
+			// entries without the instance label.
+			expr: `(http_requests{group="canary"} + 1) or on(instance) (http_requests or cpu_count or vector_matching_a)`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => 301 @[%v]`,
+				`{group="canary", instance="0", job="app-server"} => 701 @[%v]`,
+				`{group="canary", instance="1", job="api-server"} => 401 @[%v]`,
+				`{group="canary", instance="1", job="app-server"} => 801 @[%v]`,
+				`vector_matching_a{l="x"} => 10 @[%v]`,
+				`vector_matching_a{l="y"} => 20 @[%v]`,
+			},
+		},
+		{
+			expr: `http_requests{group="canary"} / on(instance,job) http_requests{group="production"}`,
+			output: []string{
+				`{instance="0", job="api-server"} => 3 @[%v]`,
+				`{instance="0", job="app-server"} => 1.4 @[%v]`,
+				`{instance="1", job="api-server"} => 2 @[%v]`,
+				`{instance="1", job="app-server"} => 1.3333333333333333 @[%v]`,
+			},
+		},
+		{
+			// Include labels must guarantee uniquely identifiable time series.
+			expr:   `http_requests{group="production"} / on(instance) group_left(group) cpu_count{type="smp"}`,
+			output: []string{}, // Empty result returned on error (see TODOs).
+		},
+		{
+			// Many-to-many matching is not allowed.
+			expr:   `http_requests{group="production"} / on(instance) group_left(job,type) cpu_count`,
+			output: []string{}, // Empty result returned on error (see TODOs).
+		},
+		{
+			// Many-to-one matching must be explicit.
+			expr:   `http_requests{group="production"} / on(instance) cpu_count{type="smp"}`,
+			output: []string{}, // Empty result returned on error (see TODOs).
+		},
+		{
+			expr: `http_requests{group="production"} / on(instance) group_left(job) cpu_count{type="smp"}`,
+			output: []string{
+				`{instance="1", job="api-server"} => 1 @[%v]`,
+				`{instance="0", job="app-server"} => 5 @[%v]`,
+				`{instance="1", job="app-server"} => 3 @[%v]`,
+				`{instance="0", job="api-server"} => 1 @[%v]`,
+			},
+		},
+		{
+			// Ensure sidedness of grouping preserves operand sides.
+			expr: `cpu_count{type="smp"} / on(instance) group_right(job) http_requests{group="production"}`,
+			output: []string{
+				`{instance="1", job="app-server"} => 0.3333333333333333 @[%v]`,
+				`{instance="0", job="app-server"} => 0.2 @[%v]`,
+				`{instance="1", job="api-server"} => 1 @[%v]`,
+				`{instance="0", job="api-server"} => 1 @[%v]`,
+			},
+		},
+		{
+			// Include labels from both sides.
+			expr: `http_requests{group="production"} / on(instance) group_left(job) cpu_count{type="smp"}`,
+			output: []string{
+				`{instance="1", job="api-server"} => 1 @[%v]`,
+				`{instance="0", job="app-server"} => 5 @[%v]`,
+				`{instance="1", job="app-server"} => 3 @[%v]`,
+				`{instance="0", job="api-server"} => 1 @[%v]`,
+			},
+		},
+		{
+			expr: `http_requests{group="production"} < on(instance,job) http_requests{group="canary"}`,
+			output: []string{
+				`{instance="1", job="app-server"} => 600 @[%v]`,
+				`{instance="0", job="app-server"} => 500 @[%v]`,
+				`{instance="1", job="api-server"} => 200 @[%v]`,
+				`{instance="0", job="api-server"} => 100 @[%v]`,
+			},
+		},
+		{
+			expr:   `http_requests{group="production"} > on(instance,job) http_requests{group="canary"}`,
+			output: []string{},
+		},
+		{
+			expr:   `http_requests{group="production"} == on(instance,job) http_requests{group="canary"}`,
+			output: []string{},
+		},
+		{
+			expr: `http_requests > on(instance) group_left(group,job) cpu_count{type="smp"}`,
+			output: []string{
+				`{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
+				`{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
+				`{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
+				`{group="canary", instance="1", job="api-server"} => 400 @[%v]`,
+				`{group="production", instance="0", job="app-server"} => 500 @[%v]`,
+				`{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+			},
+		},
+		{
+			expr:       `http_requests / on(instance) 3`,
+			shouldFail: true,
+		},
+		{
+			expr:       `3 / on(instance) http_requests_total`,
+			shouldFail: true,
+		},
+		{
+			expr:       `3 / on(instance) 3`,
+			shouldFail: true,
+		},
+		{
+			// Missing label list for grouping mod.
+			expr:       `http_requests{group="production"} / on(instance) group_left cpu_count{type="smp"}`,
+			shouldFail: true,
+		},
+		{
+			// No group mod allowed for logical operations.
+			expr:       `http_requests{group="production"} or on(instance) group_left(type) cpu_count{type="smp"}`,
+			shouldFail: true,
+		},
+		{
+			// No group mod allowed for logical operations.
+			expr:       `http_requests{group="production"} and on(instance) group_left(type) cpu_count{type="smp"}`,
+			shouldFail: true,
+		},
+		{
+			// No duplicate use of label.
+			expr:       `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
+			shouldFail: true,
+		},
+		{
+			expr: `{l="x"} + on(__name__) {l="y"}`,
+			output: []string{
+				`vector_matching_a => 30 @[%v]`,
 			},
 		},
 		{
@@ -975,10 +1166,14 @@ func TestExpressions(t *testing.T) {
 				t.Errorf("%d. Test should fail, but didn't", i)
 			}
 			failed := false
+
 			resultStr := ast.EvalToString(testExpr, testEvalTime, ast.Text, storage, stats.NewTimerGroup())
 			resultLines := strings.Split(resultStr, "\n")
 
-			if len(exprTest.output) != len(resultLines) {
+			if len(exprTest.output) == 0 && strings.Trim(resultStr, "\n") == "" {
+				// expected and received empty vector, everything is fine
+				continue
+			} else if len(exprTest.output) != len(resultLines) {
 				t.Errorf("%d. Number of samples in expected and actual output don't match", i)
 				failed = true
 			}
