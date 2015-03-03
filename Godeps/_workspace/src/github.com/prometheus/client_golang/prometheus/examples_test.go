@@ -21,9 +21,11 @@ import (
 	"runtime"
 	"sort"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+
+	"github.com/golang/protobuf/proto"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func ExampleGauge() {

@@ -18,9 +18,11 @@ import (
 	"io"
 	"math"
 
-	"github.com/matttproud/golang_protobuf_extensions/ext"
-	"github.com/prometheus/client_golang/model"
 	dto "github.com/prometheus/client_model/go"
+
+	"github.com/matttproud/golang_protobuf_extensions/ext"
+
+	"github.com/prometheus/client_golang/model"
 )
 
 type metricFamilyProcessor struct{}

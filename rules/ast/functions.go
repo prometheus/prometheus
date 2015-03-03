@@ -504,7 +504,7 @@ func histogramQuantileImpl(timestamp clientmodel.Timestamp, args []Node) interfa
 	q := args[0].(ScalarNode).Eval(timestamp)
 	inVec := args[1].(VectorNode).Eval(timestamp)
 	outVec := Vector{}
-	fpToMetricWithBuckets := map[clientmodel.Fingerprint]*metricWithBuckets{}
+	signatureToMetricWithBuckets := map[uint64]*metricWithBuckets{}
 	for _, el := range inVec {
 		upperBound, err := strconv.ParseFloat(
 			string(el.Metric.Metric[clientmodel.BucketLabel]), 64,
@@ -514,18 +514,18 @@ func histogramQuantileImpl(timestamp clientmodel.Timestamp, args []Node) interfa
 			// TODO(beorn7): Issue a warning somehow.
 			continue
 		}
-		fp := bucketFingerprint(el.Metric.Metric)
-		mb, ok := fpToMetricWithBuckets[fp]
+		signature := clientmodel.SignatureWithoutLabels(el.Metric.Metric, excludedLabels)
+		mb, ok := signatureToMetricWithBuckets[signature]
 		if !ok {
 			el.Metric.Delete(clientmodel.BucketLabel)
 			el.Metric.Delete(clientmodel.MetricNameLabel)
 			mb = &metricWithBuckets{el.Metric, nil}
-			fpToMetricWithBuckets[fp] = mb
+			signatureToMetricWithBuckets[signature] = mb
 		}
 		mb.buckets = append(mb.buckets, bucket{upperBound, el.Value})
 	}
 
-	for _, mb := range fpToMetricWithBuckets {
+	for _, mb := range signatureToMetricWithBuckets {
 		outVec = append(outVec, &Sample{
 			Metric:    mb.metric,
 			Value:     clientmodel.SampleValue(quantile(q, mb.buckets)),

@@ -14,8 +14,6 @@
 package ast
 
 import (
-	"encoding/binary"
-	"hash/fnv"
 	"math"
 	"sort"
 
@@ -23,6 +21,13 @@ import (
 )
 
 // Helpers to calculate quantiles.
+
+// excludedLabels are the labels to exclude from signature calculation for
+// quantiles.
+var excludedLabels = map[clientmodel.LabelName]struct{}{
+	clientmodel.MetricNameLabel: struct{}{},
+	clientmodel.BucketLabel:     struct{}{},
+}
 
 type bucket struct {
 	upperBound float64
@@ -98,47 +103,4 @@ func quantile(q clientmodel.SampleValue, buckets buckets) float64 {
 		rank -= buckets[b-1].count
 	}
 	return bucketStart + (bucketEnd-bucketStart)*float64(rank/count)
-}
-
-// bucketFingerprint works like the Fingerprint method of Metric, but ignores
-// the name and the bucket label.
-func bucketFingerprint(m clientmodel.Metric) clientmodel.Fingerprint {
-	numLabels := 0
-	if len(m) > 2 {
-		numLabels = len(m) - 2
-	}
-	labelNames := make([]string, 0, numLabels)
-	maxLength := 0
-
-	for labelName, labelValue := range m {
-		if labelName == clientmodel.MetricNameLabel || labelName == clientmodel.BucketLabel {
-			continue
-		}
-		labelNames = append(labelNames, string(labelName))
-		if len(labelName) > maxLength {
-			maxLength = len(labelName)
-		}
-		if len(labelValue) > maxLength {
-			maxLength = len(labelValue)
-		}
-	}
-
-	sort.Strings(labelNames)
-
-	summer := fnv.New64a()
-	buf := make([]byte, maxLength)
-
-	for _, labelName := range labelNames {
-		labelValue := m[clientmodel.LabelName(labelName)]
-
-		copy(buf, labelName)
-		summer.Write(buf[:len(labelName)])
-		summer.Write([]byte{clientmodel.SeparatorByte})
-
-		copy(buf, labelValue)
-		summer.Write(buf[:len(labelValue)])
-		summer.Write([]byte{clientmodel.SeparatorByte})
-	}
-
-	return clientmodel.Fingerprint(binary.LittleEndian.Uint64(summer.Sum(nil)))
 }

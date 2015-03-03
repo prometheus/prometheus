@@ -18,9 +18,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +39,11 @@ import (
 )
 
 const (
+	// Version of the storage as it can be found in the version file.
+	// Increment to protect against incompatible changes.
+	Version         = 1
+	versionFileName = "VERSION"
+
 	seriesFileSuffix     = ".db"
 	seriesTempFileSuffix = ".db.tmp"
 	seriesDirNameLen     = 2 // How many bytes of the fingerprint in dir name.
@@ -114,10 +122,42 @@ type persistence struct {
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
 func newPersistence(basePath string, chunkLen int, dirty bool) (*persistence, error) {
-	if err := os.MkdirAll(basePath, 0700); err != nil {
+	dirtyPath := filepath.Join(basePath, dirtyFileName)
+	versionPath := filepath.Join(basePath, versionFileName)
+
+	if versionData, err := ioutil.ReadFile(versionPath); err == nil {
+		if persistedVersion, err := strconv.Atoi(strings.TrimSpace(string(versionData))); err != nil {
+			return nil, fmt.Errorf("cannot parse content of %s: %s", versionPath, versionData)
+		} else if persistedVersion != Version {
+			return nil, fmt.Errorf("found storage version %d on disk, need version %d - please wipe storage or run a version of Prometheus compatible with storage version %d", persistedVersion, Version, persistedVersion)
+		}
+	} else if os.IsNotExist(err) {
+		// No version file found. Let's create the directory (in case
+		// it's not there yet) and then check if it is actually
+		// empty. If not, we have found an old storage directory without
+		// version file, so we have to bail out.
+		if err := os.MkdirAll(basePath, 0700); err != nil {
+			return nil, err
+		}
+		fis, err := ioutil.ReadDir(basePath)
+		if err != nil {
+			return nil, err
+		}
+		if len(fis) > 0 {
+			return nil, fmt.Errorf("could not detect storage version on disk, assuming version 0, need version %d - please wipe storage or run a version of Prometheus compatible with storage version 0", Version)
+		}
+		// Finally we can write our own version into a new version file.
+		file, err := os.Create(versionPath)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		if _, err := fmt.Fprintf(file, "%d\n", Version); err != nil {
+			return nil, err
+		}
+	} else {
 		return nil, err
 	}
-	dirtyPath := filepath.Join(basePath, dirtyFileName)
 
 	fLock, dirtyfileExisted, err := flock.New(dirtyPath)
 	if err != nil {
