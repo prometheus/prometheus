@@ -23,6 +23,7 @@ type yySymType struct {
 	labelSet       clientmodel.LabelSet
 	labelMatcher   *metric.LabelMatcher
 	labelMatchers  metric.LabelMatchers
+	vectorMatching *vectorMatching
 }
 
 const START_RULES = 57346
@@ -36,16 +37,18 @@ const PERMANENT = 57353
 const GROUP_OP = 57354
 const KEEPING_EXTRA = 57355
 const OFFSET = 57356
-const AGGR_OP = 57357
-const CMP_OP = 57358
-const ADDITIVE_OP = 57359
-const MULT_OP = 57360
-const ALERT = 57361
-const IF = 57362
-const FOR = 57363
-const WITH = 57364
-const SUMMARY = 57365
-const DESCRIPTION = 57366
+const MATCH_OP = 57357
+const AGGR_OP = 57358
+const CMP_OP = 57359
+const ADDITIVE_OP = 57360
+const MULT_OP = 57361
+const MATCH_MOD = 57362
+const ALERT = 57363
+const IF = 57364
+const FOR = 57365
+const WITH = 57366
+const SUMMARY = 57367
+const DESCRIPTION = 57368
 
 var yyToknames = []string{
 	"START_RULES",
@@ -59,10 +62,12 @@ var yyToknames = []string{
 	"GROUP_OP",
 	"KEEPING_EXTRA",
 	"OFFSET",
+	"MATCH_OP",
 	"AGGR_OP",
 	"CMP_OP",
 	"ADDITIVE_OP",
 	"MULT_OP",
+	"MATCH_MOD",
 	"ALERT",
 	"IF",
 	"FOR",
@@ -77,7 +82,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyMaxDepth = 200
 
-//line parser.y:261
+//line parser.y:279
 
 //line yacctab:1
 var yyExca = []int{
@@ -89,97 +94,101 @@ var yyExca = []int{
 	-2, 10,
 }
 
-const yyNprod = 52
+const yyNprod = 55
 const yyPrivate = 57344
 
 var yyTokenNames []string
 var yyStates []string
 
-const yyLast = 142
+const yyLast = 155
 
 var yyAct = []int{
 
-	58, 76, 55, 52, 51, 30, 45, 6, 24, 20,
-	61, 22, 10, 53, 18, 13, 12, 84, 68, 83,
-	67, 11, 18, 36, 37, 38, 21, 19, 20, 21,
-	19, 20, 8, 54, 90, 7, 50, 21, 19, 20,
-	92, 18, 10, 53, 18, 13, 12, 70, 63, 62,
-	88, 11, 18, 57, 31, 21, 19, 20, 86, 87,
-	66, 40, 8, 10, 78, 7, 13, 12, 79, 69,
-	18, 29, 11, 80, 82, 81, 28, 85, 21, 19,
-	20, 19, 20, 8, 91, 77, 7, 41, 40, 94,
-	25, 23, 39, 18, 59, 18, 44, 98, 27, 73,
-	101, 99, 60, 96, 17, 43, 75, 9, 46, 56,
-	31, 47, 16, 33, 97, 102, 13, 65, 35, 48,
-	100, 95, 64, 32, 77, 93, 72, 25, 34, 2,
-	3, 14, 5, 4, 1, 42, 89, 15, 26, 74,
-	71, 49,
+	76, 59, 81, 56, 53, 52, 30, 46, 6, 24,
+	10, 54, 22, 13, 12, 21, 19, 20, 19, 20,
+	11, 62, 21, 19, 20, 20, 18, 90, 96, 111,
+	99, 18, 8, 18, 55, 7, 51, 60, 18, 18,
+	90, 63, 97, 65, 66, 21, 19, 20, 107, 75,
+	68, 67, 10, 54, 64, 13, 12, 21, 19, 20,
+	74, 18, 11, 31, 58, 85, 83, 90, 94, 89,
+	84, 27, 40, 18, 8, 28, 23, 7, 112, 86,
+	88, 87, 29, 91, 21, 19, 20, 82, 73, 10,
+	72, 98, 13, 12, 92, 93, 101, 71, 41, 11,
+	18, 42, 41, 25, 49, 106, 45, 78, 109, 108,
+	80, 8, 103, 36, 7, 61, 44, 17, 105, 37,
+	9, 47, 57, 31, 104, 33, 48, 16, 13, 70,
+	35, 113, 110, 102, 38, 39, 32, 69, 77, 82,
+	100, 25, 34, 2, 3, 14, 5, 4, 1, 43,
+	95, 15, 26, 79, 50,
 }
 var yyPact = []int{
 
-	125, -1000, -1000, 57, 93, -1000, 21, 57, 121, 72,
-	47, 42, -1000, -1000, -1000, 107, 122, -1000, 110, 57,
-	57, 57, 62, 60, -1000, 80, 94, 84, 6, 57,
-	96, 24, 68, -1000, 82, -22, -9, -17, 64, -1000,
-	121, 94, 115, -1000, -1000, -1000, 109, -1000, 33, -10,
-	-1000, -1000, 21, -1000, 39, 18, -1000, 120, 74, 79,
-	57, 94, -1000, -1000, -1000, -1000, -1000, -1000, 36, 98,
-	57, -11, -1000, 57, 31, -1000, -1000, 25, 13, -1000,
-	-1000, 96, 10, -1000, 119, 21, -1000, 118, 114, 81,
-	106, -1000, -1000, -1000, -1000, -1000, 68, -1000, 78, 113,
-	76, 108, -1000,
+	139, -1000, -1000, 83, 106, -1000, 67, 83, 135, 43,
+	44, 51, -1000, -1000, -1000, 119, 136, -1000, 122, 104,
+	104, 104, 40, 72, -1000, 89, 107, 97, 4, 83,
+	109, 33, 9, -1000, 93, -13, 83, 23, 83, 83,
+	-1000, 135, 107, 130, -1000, -1000, -1000, 121, -1000, 68,
+	58, -1000, -1000, 67, -1000, 28, 18, -1000, 132, 80,
+	81, 83, 107, 6, 132, -7, 0, -1000, -1000, -1000,
+	-1000, -1000, -1000, 46, 111, 83, 37, -1000, 83, 65,
+	-1000, -1000, 41, 5, -1000, 10, -1000, 109, -2, -1000,
+	134, 67, -1000, 133, 126, 88, 116, 98, -1000, -1000,
+	-1000, -1000, -1000, 9, -1000, 17, 84, 132, 125, -3,
+	52, -1000, 124, -1000,
 }
 var yyPgo = []int{
 
-	0, 141, 140, 5, 1, 139, 0, 8, 91, 138,
-	3, 4, 137, 2, 136, 107, 135, 6, 134, 133,
-	132, 131,
+	0, 154, 0, 6, 2, 153, 1, 9, 76, 152,
+	113, 4, 5, 151, 3, 150, 120, 149, 7, 148,
+	147, 146, 145,
 }
 var yyR1 = []int{
 
-	0, 18, 18, 19, 19, 20, 21, 21, 14, 14,
-	12, 12, 15, 15, 6, 6, 6, 5, 5, 4,
-	9, 9, 9, 8, 8, 7, 16, 16, 17, 17,
-	10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-	10, 10, 13, 13, 3, 3, 2, 2, 1, 1,
-	11, 11,
+	0, 19, 19, 20, 20, 21, 22, 22, 15, 15,
+	13, 13, 16, 16, 6, 6, 6, 5, 5, 4,
+	9, 9, 9, 8, 8, 7, 17, 17, 18, 18,
+	11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
+	11, 11, 14, 14, 10, 10, 10, 3, 3, 2,
+	2, 1, 1, 12, 12,
 }
 var yyR2 = []int{
 
 	0, 2, 2, 0, 2, 1, 5, 11, 0, 2,
 	0, 1, 1, 1, 0, 3, 2, 1, 3, 3,
 	0, 2, 3, 1, 3, 3, 1, 1, 0, 2,
-	3, 4, 3, 4, 3, 5, 6, 6, 3, 3,
-	3, 1, 0, 1, 0, 4, 1, 3, 1, 3,
-	1, 1,
+	3, 4, 3, 4, 3, 5, 6, 6, 4, 4,
+	4, 1, 0, 1, 0, 4, 8, 0, 4, 1,
+	3, 1, 3, 1, 1,
 }
 var yyChk = []int{
 
-	-1000, -18, 4, 5, -19, -20, -10, 29, 26, -15,
-	6, 15, 10, 9, -21, -12, 19, 11, 31, 17,
-	18, 16, -10, -8, -7, 6, -9, 26, 29, 29,
-	-3, 12, -15, 6, 6, 8, -10, -10, -10, 30,
-	28, 27, -16, 25, 16, -17, 14, 27, -8, -1,
-	30, -11, -10, 7, -10, -13, 13, 29, -6, 26,
-	20, 32, -7, -17, 7, 8, 27, 30, 28, 30,
-	29, -2, 6, 25, -5, 27, -4, 6, -10, -17,
-	-11, -3, -10, 30, 28, -10, 27, 28, 25, -14,
-	21, -13, 30, 6, -4, 7, 22, 8, -6, 23,
-	7, 24, 7,
+	-1000, -19, 4, 5, -20, -21, -11, 31, 28, -16,
+	6, 16, 10, 9, -22, -13, 21, 11, 33, 18,
+	19, 17, -11, -8, -7, 6, -9, 28, 31, 31,
+	-3, 12, -16, 6, 6, 8, -10, 15, -10, -10,
+	32, 30, 29, -17, 27, 17, -18, 14, 29, -8,
+	-1, 32, -12, -11, 7, -11, -14, 13, 31, -6,
+	28, 22, 34, -11, 31, -11, -11, -7, -18, 7,
+	8, 29, 32, 30, 32, 31, -2, 6, 27, -5,
+	29, -4, 6, -11, -18, -2, -12, -3, -11, 32,
+	30, -11, 29, 30, 27, -15, 23, 32, -14, 32,
+	6, -4, 7, 24, 8, 20, -6, 31, 25, -2,
+	7, 32, 26, 7,
 }
 var yyDef = []int{
 
 	0, -2, 3, 0, -2, 2, 5, 0, 0, 20,
-	13, 44, 41, 12, 4, 0, 0, 11, 0, 0,
-	0, 0, 0, 0, 23, 0, 28, 0, 0, 0,
-	42, 0, 14, 13, 0, 0, 38, 39, 40, 30,
-	0, 28, 0, 26, 27, 32, 0, 21, 0, 0,
-	34, 48, 50, 51, 0, 0, 43, 0, 0, 0,
-	0, 28, 24, 31, 25, 29, 22, 33, 0, 44,
-	0, 0, 46, 0, 0, 16, 17, 0, 8, 35,
-	49, 42, 0, 45, 0, 6, 15, 0, 0, 0,
-	0, 36, 37, 47, 18, 19, 14, 9, 0, 0,
-	0, 0, 7,
+	13, 47, 41, 12, 4, 0, 0, 11, 0, 44,
+	44, 44, 0, 0, 23, 0, 28, 0, 0, 0,
+	42, 0, 14, 13, 0, 0, 0, 0, 0, 0,
+	30, 0, 28, 0, 26, 27, 32, 0, 21, 0,
+	0, 34, 51, 53, 54, 0, 0, 43, 0, 0,
+	0, 0, 28, 38, 0, 39, 40, 24, 31, 25,
+	29, 22, 33, 0, 47, 0, 0, 49, 0, 0,
+	16, 17, 0, 8, 35, 0, 52, 42, 0, 48,
+	0, 6, 15, 0, 0, 0, 0, 45, 36, 37,
+	50, 18, 19, 14, 9, 0, 0, 0, 0, 0,
+	0, 46, 0, 7,
 }
 var yyTok1 = []int{
 
@@ -187,21 +196,21 @@ var yyTok1 = []int{
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	29, 30, 3, 3, 28, 3, 3, 3, 3, 3,
+	31, 32, 3, 3, 30, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 25, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 31, 3, 32, 3, 3, 3, 3, 3, 3,
+	3, 27, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 26, 3, 27,
+	3, 33, 3, 34, 3, 3, 3, 3, 3, 3,
+	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+	3, 3, 3, 28, 3, 29,
 }
 var yyTok2 = []int{
 
 	2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
 	12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-	22, 23, 24,
+	22, 23, 24, 25, 26,
 }
 var yyTok3 = []int{
 	0,
@@ -433,12 +442,12 @@ yydefault:
 	switch yynt {
 
 	case 5:
-		//line parser.y:74
+		//line parser.y:76
 		{
 			yylex.(*RulesLexer).parsedExpr = yyS[yypt-0].ruleNode
 		}
 	case 6:
-		//line parser.y:79
+		//line parser.y:81
 		{
 			rule, err := CreateRecordingRule(yyS[yypt-3].str, yyS[yypt-2].labelSet, yyS[yypt-0].ruleNode, yyS[yypt-4].boolean)
 			if err != nil {
@@ -448,7 +457,7 @@ yydefault:
 			yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
 		}
 	case 7:
-		//line parser.y:85
+		//line parser.y:87
 		{
 			rule, err := CreateAlertingRule(yyS[yypt-9].str, yyS[yypt-7].ruleNode, yyS[yypt-6].str, yyS[yypt-4].labelSet, yyS[yypt-2].str, yyS[yypt-0].str)
 			if err != nil {
@@ -458,94 +467,94 @@ yydefault:
 			yylex.(*RulesLexer).parsedRules = append(yylex.(*RulesLexer).parsedRules, rule)
 		}
 	case 8:
-		//line parser.y:93
+		//line parser.y:95
 		{
 			yyVAL.str = "0s"
 		}
 	case 9:
-		//line parser.y:95
+		//line parser.y:97
 		{
 			yyVAL.str = yyS[yypt-0].str
 		}
 	case 10:
-		//line parser.y:99
+		//line parser.y:101
 		{
 			yyVAL.boolean = false
 		}
 	case 11:
-		//line parser.y:101
+		//line parser.y:103
 		{
 			yyVAL.boolean = true
 		}
 	case 12:
-		//line parser.y:105
-		{
-			yyVAL.str = yyS[yypt-0].str
-		}
-	case 13:
 		//line parser.y:107
 		{
 			yyVAL.str = yyS[yypt-0].str
 		}
+	case 13:
+		//line parser.y:109
+		{
+			yyVAL.str = yyS[yypt-0].str
+		}
 	case 14:
-		//line parser.y:111
+		//line parser.y:113
 		{
 			yyVAL.labelSet = clientmodel.LabelSet{}
 		}
 	case 15:
-		//line parser.y:113
+		//line parser.y:115
 		{
 			yyVAL.labelSet = yyS[yypt-1].labelSet
 		}
 	case 16:
-		//line parser.y:115
+		//line parser.y:117
 		{
 			yyVAL.labelSet = clientmodel.LabelSet{}
 		}
 	case 17:
-		//line parser.y:118
+		//line parser.y:120
 		{
 			yyVAL.labelSet = yyS[yypt-0].labelSet
 		}
 	case 18:
-		//line parser.y:120
+		//line parser.y:122
 		{
 			for k, v := range yyS[yypt-0].labelSet {
 				yyVAL.labelSet[k] = v
 			}
 		}
 	case 19:
-		//line parser.y:124
+		//line parser.y:126
 		{
 			yyVAL.labelSet = clientmodel.LabelSet{clientmodel.LabelName(yyS[yypt-2].str): clientmodel.LabelValue(yyS[yypt-0].str)}
 		}
 	case 20:
-		//line parser.y:128
-		{
-			yyVAL.labelMatchers = metric.LabelMatchers{}
-		}
-	case 21:
 		//line parser.y:130
 		{
 			yyVAL.labelMatchers = metric.LabelMatchers{}
 		}
-	case 22:
+	case 21:
 		//line parser.y:132
+		{
+			yyVAL.labelMatchers = metric.LabelMatchers{}
+		}
+	case 22:
+		//line parser.y:134
 		{
 			yyVAL.labelMatchers = yyS[yypt-1].labelMatchers
 		}
 	case 23:
-		//line parser.y:136
+		//line parser.y:138
 		{
 			yyVAL.labelMatchers = metric.LabelMatchers{yyS[yypt-0].labelMatcher}
 		}
 	case 24:
-		//line parser.y:138
+		//line parser.y:140
 		{
 			yyVAL.labelMatchers = append(yyVAL.labelMatchers, yyS[yypt-0].labelMatcher)
 		}
 	case 25:
-		//line parser.y:142
+		//line parser.y:144
 		{
 			var err error
 			yyVAL.labelMatcher, err = newLabelMatcher(yyS[yypt-1].str, clientmodel.LabelName(yyS[yypt-2].str), clientmodel.LabelValue(yyS[yypt-0].str))
@@ -555,32 +564,32 @@ yydefault:
 			}
 		}
 	case 26:
-		//line parser.y:150
+		//line parser.y:152
 		{
 			yyVAL.str = "="
 		}
 	case 27:
-		//line parser.y:152
+		//line parser.y:154
 		{
 			yyVAL.str = yyS[yypt-0].str
 		}
 	case 28:
-		//line parser.y:156
+		//line parser.y:158
 		{
 			yyVAL.str = "0s"
 		}
 	case 29:
-		//line parser.y:158
+		//line parser.y:160
 		{
 			yyVAL.str = yyS[yypt-0].str
 		}
 	case 30:
-		//line parser.y:162
+		//line parser.y:164
 		{
 			yyVAL.ruleNode = yyS[yypt-1].ruleNode
 		}
 	case 31:
-		//line parser.y:164
+		//line parser.y:166
 		{
 			var err error
 			yyVAL.ruleNode, err = NewVectorSelector(yyS[yypt-2].labelMatchers, yyS[yypt-0].str)
@@ -590,7 +599,7 @@ yydefault:
 			}
 		}
 	case 32:
-		//line parser.y:170
+		//line parser.y:172
 		{
 			var err error
 			m, err := metric.NewLabelMatcher(metric.Equal, clientmodel.MetricNameLabel, clientmodel.LabelValue(yyS[yypt-2].str))
@@ -606,7 +615,7 @@ yydefault:
 			}
 		}
 	case 33:
-		//line parser.y:179
+		//line parser.y:181
 		{
 			var err error
 			yyVAL.ruleNode, err = NewFunctionCall(yyS[yypt-3].str, yyS[yypt-1].ruleNodeSlice)
@@ -616,7 +625,7 @@ yydefault:
 			}
 		}
 	case 34:
-		//line parser.y:185
+		//line parser.y:187
 		{
 			var err error
 			yyVAL.ruleNode, err = NewFunctionCall(yyS[yypt-2].str, []ast.Node{})
@@ -626,7 +635,7 @@ yydefault:
 			}
 		}
 	case 35:
-		//line parser.y:191
+		//line parser.y:193
 		{
 			var err error
 			yyVAL.ruleNode, err = NewMatrixSelector(yyS[yypt-4].ruleNode, yyS[yypt-2].str, yyS[yypt-0].str)
@@ -636,7 +645,7 @@ yydefault:
 			}
 		}
 	case 36:
-		//line parser.y:197
+		//line parser.y:199
 		{
 			var err error
 			yyVAL.ruleNode, err = NewVectorAggregation(yyS[yypt-5].str, yyS[yypt-3].ruleNode, yyS[yypt-1].labelNameSlice, yyS[yypt-0].boolean)
@@ -646,7 +655,7 @@ yydefault:
 			}
 		}
 	case 37:
-		//line parser.y:203
+		//line parser.y:205
 		{
 			var err error
 			yyVAL.ruleNode, err = NewVectorAggregation(yyS[yypt-5].str, yyS[yypt-1].ruleNode, yyS[yypt-4].labelNameSlice, yyS[yypt-3].boolean)
@@ -656,87 +665,112 @@ yydefault:
 			}
 		}
 	case 38:
-		//line parser.y:211
+		//line parser.y:213
 		{
 			var err error
-			yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
+			yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-2].str, yyS[yypt-3].ruleNode, yyS[yypt-0].ruleNode, yyS[yypt-1].vectorMatching)
 			if err != nil {
 				yylex.Error(err.Error())
 				return 1
 			}
 		}
 	case 39:
-		//line parser.y:217
+		//line parser.y:219
 		{
 			var err error
-			yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
+			yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-2].str, yyS[yypt-3].ruleNode, yyS[yypt-0].ruleNode, yyS[yypt-1].vectorMatching)
 			if err != nil {
 				yylex.Error(err.Error())
 				return 1
 			}
 		}
 	case 40:
-		//line parser.y:223
+		//line parser.y:225
 		{
 			var err error
-			yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-1].str, yyS[yypt-2].ruleNode, yyS[yypt-0].ruleNode)
+			yyVAL.ruleNode, err = NewArithExpr(yyS[yypt-2].str, yyS[yypt-3].ruleNode, yyS[yypt-0].ruleNode, yyS[yypt-1].vectorMatching)
 			if err != nil {
 				yylex.Error(err.Error())
 				return 1
 			}
 		}
 	case 41:
-		//line parser.y:229
+		//line parser.y:231
 		{
 			yyVAL.ruleNode = ast.NewScalarLiteral(yyS[yypt-0].num)
 		}
 	case 42:
-		//line parser.y:233
+		//line parser.y:235
 		{
 			yyVAL.boolean = false
 		}
 	case 43:
-		//line parser.y:235
+		//line parser.y:237
 		{
 			yyVAL.boolean = true
 		}
 	case 44:
-		//line parser.y:239
+		//line parser.y:241
+		{
+			yyVAL.vectorMatching = nil
+		}
+	case 45:
+		//line parser.y:243
+		{
+			var err error
+			yyVAL.vectorMatching, err = newVectorMatching("", yyS[yypt-1].labelNameSlice, nil)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
+	case 46:
+		//line parser.y:249
+		{
+			var err error
+			yyVAL.vectorMatching, err = newVectorMatching(yyS[yypt-3].str, yyS[yypt-5].labelNameSlice, yyS[yypt-1].labelNameSlice)
+			if err != nil {
+				yylex.Error(err.Error())
+				return 1
+			}
+		}
+	case 47:
+		//line parser.y:257
 		{
 			yyVAL.labelNameSlice = clientmodel.LabelNames{}
 		}
-	case 45:
-		//line parser.y:241
+	case 48:
+		//line parser.y:259
 		{
 			yyVAL.labelNameSlice = yyS[yypt-1].labelNameSlice
 		}
-	case 46:
-		//line parser.y:245
+	case 49:
+		//line parser.y:263
 		{
 			yyVAL.labelNameSlice = clientmodel.LabelNames{clientmodel.LabelName(yyS[yypt-0].str)}
 		}
-	case 47:
-		//line parser.y:247
+	case 50:
+		//line parser.y:265
 		{
 			yyVAL.labelNameSlice = append(yyVAL.labelNameSlice, clientmodel.LabelName(yyS[yypt-0].str))
 		}
-	case 48:
-		//line parser.y:251
+	case 51:
+		//line parser.y:269
 		{
 			yyVAL.ruleNodeSlice = []ast.Node{yyS[yypt-0].ruleNode}
 		}
-	case 49:
-		//line parser.y:253
+	case 52:
+		//line parser.y:271
 		{
 			yyVAL.ruleNodeSlice = append(yyVAL.ruleNodeSlice, yyS[yypt-0].ruleNode)
 		}
-	case 50:
-		//line parser.y:257
+	case 53:
+		//line parser.y:275
 		{
 			yyVAL.ruleNode = yyS[yypt-0].ruleNode
 		}
-	case 51:
-		//line parser.y:259
+	case 54:
+		//line parser.y:277
 		{
 			yyVAL.ruleNode = ast.NewStringLiteral(yyS[yypt-0].str)
 		}

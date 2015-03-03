@@ -82,8 +82,40 @@ func NewVectorAggregation(aggrTypeStr string, vector ast.Node, groupBy clientmod
 	return ast.NewVectorAggregation(aggrType, vector.(ast.VectorNode), groupBy, keepExtraLabels), nil
 }
 
+// vectorMatching combines data used to match samples between vectors.
+type vectorMatching struct {
+	matchCardinality ast.VectorMatchCardinality
+	matchOn          clientmodel.LabelNames
+	includeLabels    clientmodel.LabelNames
+}
+
+// newVectorMatching is a convenience function to create a new vectorMatching.
+func newVectorMatching(card string, matchOn, include clientmodel.LabelNames) (*vectorMatching, error) {
+	var matchCardinalities = map[string]ast.VectorMatchCardinality{
+		"":            ast.MatchOneToOne,
+		"GROUP_LEFT":  ast.MatchManyToOne,
+		"GROUP_RIGHT": ast.MatchOneToMany,
+	}
+	matchCard, ok := matchCardinalities[card]
+	if !ok {
+		return nil, fmt.Errorf("invalid vector match cardinality %q", card)
+	}
+	if matchCard != ast.MatchOneToOne && len(include) == 0 {
+		return nil, fmt.Errorf("grouped vector matching must provide labels")
+	}
+	// There must be no overlap between both labelname lists.
+	for _, matchLabel := range matchOn {
+		for _, incLabel := range include {
+			if matchLabel == incLabel {
+				return nil, fmt.Errorf("use of label %s in ON and %s clauses not allowed", incLabel, card)
+			}
+		}
+	}
+	return &vectorMatching{matchCard, matchOn, include}, nil
+}
+
 // NewArithExpr is a convenience function to create a new AST arithmetic expression.
-func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node) (ast.Node, error) {
+func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node, vecMatching *vectorMatching) (ast.Node, error) {
 	var opTypes = map[string]ast.BinOpType{
 		"+":   ast.Add,
 		"-":   ast.Sub,
@@ -103,7 +135,15 @@ func NewArithExpr(opTypeStr string, lhs ast.Node, rhs ast.Node) (ast.Node, error
 	if !ok {
 		return nil, fmt.Errorf("invalid binary operator %q", opTypeStr)
 	}
-	expr, err := ast.NewArithExpr(opType, lhs, rhs)
+	var vm vectorMatching
+	if vecMatching != nil {
+		vm = *vecMatching
+		// And/or always do many-to-many matching.
+		if opType == ast.And || opType == ast.Or {
+			vm.matchCardinality = ast.MatchManyToMany
+		}
+	}
+	expr, err := ast.NewArithExpr(opType, lhs, rhs, vm.matchCardinality, vm.matchOn, vm.includeLabels)
 	if err != nil {
 		return nil, fmt.Errorf(err.Error())
 	}

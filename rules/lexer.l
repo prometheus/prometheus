@@ -84,6 +84,9 @@ DESCRIPTION|description  return DESCRIPTION
 
 PERMANENT|permanent      return PERMANENT
 BY|by                    return GROUP_OP
+ON|on                    return MATCH_OP
+GROUP_LEFT|GROUP_RIGHT   lval.str = lexer.token(); return MATCH_MOD
+group_left|group_right   lval.str = strings.ToUpper(lexer.token()); return MATCH_MOD
 KEEPING_EXTRA|keeping_extra return KEEPING_EXTRA
 OFFSET|offset            return OFFSET
 AVG|SUM|MAX|MIN|COUNT    lval.str = lexer.token(); return AGGR_OP
