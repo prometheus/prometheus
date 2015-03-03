@@ -228,7 +228,9 @@ rule_expr          : '(' rule_expr ')'
                        if err != nil { yylex.Error(err.Error()); return 1 }
                      }
                    | NUMBER
-                     { $$ = ast.NewScalarLiteral($1)}
+                     { $$ = NewScalarLiteral($1, "+")}
+                   | ADDITIVE_OP NUMBER
+                     { $$ = NewScalarLiteral($2, $1)}
                    ;
 
 extra_labels_opts  : /* empty */

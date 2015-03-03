@@ -1106,6 +1106,18 @@ func TestExpressions(t *testing.T) {
 			output: []string{`scalar: 0.00001234 @[%v]`},
 		},
 		{
+			expr:   `1+1`,
+			output: []string{`scalar: 2 @[%v]`},
+		},
+		{
+			expr:   `1-1`,
+			output: []string{`scalar: 0 @[%v]`},
+		},
+		{
+			expr:   `1 - -1`,
+			output: []string{`scalar: 2 @[%v]`},
+		},
+		{
 			expr:   `.2`,
 			output: []string{`scalar: 0.2 @[%v]`},
 		},
