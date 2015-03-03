@@ -35,9 +35,11 @@ import (
 
 	"bitbucket.org/ww/goautoneg"
 	"github.com/golang/protobuf/proto"
+
+	dto "github.com/prometheus/client_model/go"
+
 	"github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/text"
-	dto "github.com/prometheus/client_model/go"
 )
 
 var (
