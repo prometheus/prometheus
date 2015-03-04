@@ -586,6 +586,7 @@ func (s *memorySeriesStorage) handlePersistQueue() {
 			return
 		}
 		chunkCount -= len(cds)
+		s.persistQueueLength.Set(float64(chunkCount))
 	}
 
 loop:
