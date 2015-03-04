@@ -15,6 +15,7 @@ package model
 
 import (
 	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -215,4 +216,41 @@ func TestEmptyLabelSignature(t *testing.T) {
 	if got := ms.Alloc; alloc != got {
 		t.Fatal("expected LabelsToSignature with empty labels not to perform allocations")
 	}
+}
+
+func benchmarkMetricToFingerprintConc(b *testing.B, m Metric, e Fingerprint, concLevel int) {
+	var start, end sync.WaitGroup
+	start.Add(1)
+	end.Add(concLevel)
+
+	for i := 0; i < concLevel; i++ {
+		go func() {
+			start.Wait()
+			for j := b.N / concLevel; j >= 0; j-- {
+				if a := metricToFingerprint(m); a != e {
+					b.Fatalf("expected signature of %d for %s, got %d", e, m, a)
+				}
+			}
+			end.Done()
+		}()
+	}
+	b.ResetTimer()
+	start.Done()
+	end.Wait()
+}
+
+func BenchmarkMetricToFingerprintTripleConc1(b *testing.B) {
+	benchmarkMetricToFingerprintConc(b, Metric{"first-label": "first-label-value", "second-label": "second-label-value", "third-label": "third-label-value"}, 15738406913934009676, 1)
+}
+
+func BenchmarkMetricToFingerprintTripleConc2(b *testing.B) {
+	benchmarkMetricToFingerprintConc(b, Metric{"first-label": "first-label-value", "second-label": "second-label-value", "third-label": "third-label-value"}, 15738406913934009676, 2)
+}
+
+func BenchmarkMetricToFingerprintTripleConc4(b *testing.B) {
+	benchmarkMetricToFingerprintConc(b, Metric{"first-label": "first-label-value", "second-label": "second-label-value", "third-label": "third-label-value"}, 15738406913934009676, 4)
+}
+
+func BenchmarkMetricToFingerprintTripleConc8(b *testing.B) {
+	benchmarkMetricToFingerprintConc(b, Metric{"first-label": "first-label-value", "second-label": "second-label-value", "third-label": "third-label-value"}, 15738406913934009676, 8)
 }

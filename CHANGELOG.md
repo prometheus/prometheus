@@ -1,3 +1,18 @@
+## 0.12.0 / 2015-03-04
+* [CHANGE] Use client_golang v0.3.1. THIS CHANGES FINGERPRINTING AND INVALIDATES
+  ALL PERSISTED FINGERPRINTS. You have to wipe your storage to use this or
+  later versions. There is a version guard in place that will prevent you to
+  run Prometheus with the stored data of an older Prometheus.
+* [BUGFIX] The change above fixes a weakness in the fingerprinting algorithm.
+* [ENHANCEMENT] The change above makes fingerprinting faster and less allocation
+  intensive.
+* [FEATURE] OR operator and vector matching options. See docs for details.
+* [ENHANCEMENT] Scientific notation and special float values (Inf, NaN) now
+  supported by the expression language.
+* [CHANGE] Dockerfile makes Prometheus use the Docker volume to store data
+  (rather than /tmp/metrics).
+* [CHANGE] Makefile uses Go 1.4.2.
+
 ## 0.11.1 / 2015-02-27
 * [BUGFIX] Make series maintenance complete again. (Ever since 0.9.0rc4,
   or commit 0851945, series would not be archived, chunk descriptors would

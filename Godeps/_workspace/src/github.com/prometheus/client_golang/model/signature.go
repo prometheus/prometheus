@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"hash"
 	"hash/fnv"
+	"sync"
 )
 
 // SeparatorByte is a byte that cannot occur in valid UTF-8 sequences and is
@@ -28,7 +29,7 @@ var (
 	// cache the signature of an empty label set.
 	emptyLabelSignature = fnv.New64a().Sum64()
 
-	hashAndBufPool = make(chan *hashAndBuf, 1024)
+	hashAndBufPool sync.Pool
 )
 
 type hashAndBuf struct {
@@ -37,19 +38,15 @@ type hashAndBuf struct {
 }
 
 func getHashAndBuf() *hashAndBuf {
-	select {
-	case hb := <-hashAndBufPool:
-		return hb
-	default:
+	hb := hashAndBufPool.Get()
+	if hb == nil {
 		return &hashAndBuf{h: fnv.New64a()}
 	}
+	return hb.(*hashAndBuf)
 }
 
 func putHashAndBuf(hb *hashAndBuf) {
-	select {
-	case hashAndBufPool <- hb:
-	default:
-	}
+	hashAndBufPool.Put(hb)
 }
 
 // LabelsToSignature returns a unique signature (i.e., fingerprint) for a given
