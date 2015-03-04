@@ -181,8 +181,8 @@ func (p *persistence) sanitizeSeries(dirname string, fi os.FileInfo, fingerprint
 		return fp, false
 	}
 
-	bytesToTrim := fi.Size() % int64(p.chunkLen+chunkHeaderLen)
-	chunksInFile := int(fi.Size()) / (p.chunkLen + chunkHeaderLen)
+	bytesToTrim := fi.Size() % int64(chunkLen+chunkHeaderLen)
+	chunksInFile := int(fi.Size()) / (chunkLen + chunkHeaderLen)
 	if bytesToTrim != 0 {
 		glog.Warningf(
 			"Truncating file %s to exactly %d chunks, trimming %d extraneous bytes.",
@@ -341,7 +341,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if err := kv.Value(&m); err != nil {
 			return err
 		}
-		series := newMemorySeries(clientmodel.Metric(m), false, clientmodel.Earliest)
+		series := newMemorySeries(clientmodel.Metric(m), false, clientmodel.Earliest, p.chunkType)
 		cds, err := p.loadChunkDescs(clientmodel.Fingerprint(fp), clientmodel.Now())
 		if err != nil {
 			return err

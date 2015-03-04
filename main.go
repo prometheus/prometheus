@@ -54,6 +54,7 @@ var (
 
 	samplesQueueCapacity = flag.Int("storage.incoming-samples-queue-capacity", 64*1024, "The capacity of the queue of samples to be stored. Note that each slot in the queue takes a whole slice of samples whose size depends on details of the scrape process.")
 
+	chunkType       = flag.Int("storage.local.chunk-type", 1, "Which chunk encoding version to use. Currently supported is 0 and 1.")
 	numMemoryChunks = flag.Int("storage.local.memory-chunks", 1024*1024, "How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.")
 
 	persistenceRetentionPeriod = flag.Duration("storage.local.retention", 15*24*time.Hour, "How long to retain samples in the local storage.")
@@ -122,7 +123,8 @@ func NewPrometheus() *prometheus {
 		PersistenceQueueCapacity:   *persistenceQueueCapacity,
 		CheckpointInterval:         *checkpointInterval,
 		CheckpointDirtySeriesLimit: *checkpointDirtySeriesLimit,
-		Dirty: *storageDirty,
+		ChunkType:                  byte(*chunkType),
+		Dirty:                      *storageDirty,
 	}
 	memStorage, err := local.NewMemorySeriesStorage(o)
 	if err != nil {

@@ -31,9 +31,9 @@ var (
 	m3 = clientmodel.Metric{"label": "value3"}
 )
 
-func newTestPersistence(t *testing.T) (*persistence, test.Closer) {
+func newTestPersistence(t *testing.T, chunkType byte) (*persistence, test.Closer) {
 	dir := test.NewTemporaryDirectory("test_persistence", t)
-	p, err := newPersistence(dir.Path(), 1024, false)
+	p, err := newPersistence(dir.Path(), chunkType, false)
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func newTestPersistence(t *testing.T) (*persistence, test.Closer) {
 	})
 }
 
-func buildTestChunks() map[clientmodel.Fingerprint][]chunk {
+func buildTestChunks(chunkType byte) map[clientmodel.Fingerprint][]chunk {
 	fps := clientmodel.Fingerprints{
 		m1.Fingerprint(),
 		m2.Fingerprint(),
@@ -55,7 +55,7 @@ func buildTestChunks() map[clientmodel.Fingerprint][]chunk {
 	for _, fp := range fps {
 		fpToChunks[fp] = make([]chunk, 0, 10)
 		for i := 0; i < 10; i++ {
-			fpToChunks[fp] = append(fpToChunks[fp], newDeltaEncodedChunk(d1, d1, true).add(&metric.SamplePair{
+			fpToChunks[fp] = append(fpToChunks[fp], chunkForType(chunkType).add(&metric.SamplePair{
 				Timestamp: clientmodel.Timestamp(i),
 				Value:     clientmodel.SampleValue(fp),
 			})[0])
@@ -75,11 +75,11 @@ func chunksEqual(c1, c2 chunk) bool {
 	return true
 }
 
-func TestPersistLoadDropChunks(t *testing.T) {
-	p, closer := newTestPersistence(t)
+func testPersistLoadDropChunks(t *testing.T, chunkType byte) {
+	p, closer := newTestPersistence(t, chunkType)
 	defer closer.Close()
 
-	fpToChunks := buildTestChunks()
+	fpToChunks := buildTestChunks(chunkType)
 
 	for fp, chunks := range fpToChunks {
 		for i, c := range chunks {
@@ -183,15 +183,23 @@ func TestPersistLoadDropChunks(t *testing.T) {
 	}
 }
 
-func TestCheckpointAndLoadSeriesMapAndHeads(t *testing.T) {
-	p, closer := newTestPersistence(t)
+func TestPersistLoadDropChunksType0(t *testing.T) {
+	testPersistLoadDropChunks(t, 0)
+}
+
+func TestPersistLoadDropChunksType1(t *testing.T) {
+	testPersistLoadDropChunks(t, 1)
+}
+
+func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, chunkType byte) {
+	p, closer := newTestPersistence(t, chunkType)
 	defer closer.Close()
 
 	fpLocker := newFingerprintLocker(10)
 	sm := newSeriesMap()
-	s1 := newMemorySeries(m1, true, 0)
-	s2 := newMemorySeries(m2, false, 0)
-	s3 := newMemorySeries(m3, false, 0)
+	s1 := newMemorySeries(m1, true, 0, chunkType)
+	s2 := newMemorySeries(m2, false, 0, chunkType)
+	s3 := newMemorySeries(m3, false, 0, chunkType)
 	s1.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 1, Value: 3.14})
 	s3.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 2, Value: 2.7})
 	s3.headChunkPersisted = true
@@ -244,8 +252,16 @@ func TestCheckpointAndLoadSeriesMapAndHeads(t *testing.T) {
 	}
 }
 
-func TestGetFingerprintsModifiedBefore(t *testing.T) {
-	p, closer := newTestPersistence(t)
+func TestCheckpointAndLoadSeriesMapAndHeadsChunkType0(t *testing.T) {
+	testCheckpointAndLoadSeriesMapAndHeads(t, 0)
+}
+
+func TestCheckpointAndLoadSeriesMapAndHeadsChunkType1(t *testing.T) {
+	testCheckpointAndLoadSeriesMapAndHeads(t, 1)
+}
+
+func testGetFingerprintsModifiedBefore(t *testing.T, chunkType byte) {
+	p, closer := newTestPersistence(t, chunkType)
 	defer closer.Close()
 
 	m1 := clientmodel.Metric{"n1": "v1"}
@@ -314,8 +330,16 @@ func TestGetFingerprintsModifiedBefore(t *testing.T) {
 	}
 }
 
-func TestDropArchivedMetric(t *testing.T) {
-	p, closer := newTestPersistence(t)
+func TestGetFingerprintsModifiedBeforeChunkType0(t *testing.T) {
+	testGetFingerprintsModifiedBefore(t, 0)
+}
+
+func TestGetFingerprintsModifiedBeforeChunkType1(t *testing.T) {
+	testGetFingerprintsModifiedBefore(t, 1)
+}
+
+func testDropArchivedMetric(t *testing.T, chunkType byte) {
+	p, closer := newTestPersistence(t, chunkType)
 	defer closer.Close()
 
 	m1 := clientmodel.Metric{"n1": "v1"}
@@ -382,13 +406,21 @@ func TestDropArchivedMetric(t *testing.T) {
 	}
 }
 
+func TestDropArchivedMetricChunkType0(t *testing.T) {
+	testDropArchivedMetric(t, 0)
+}
+
+func TestDropArchivedMetricChunkType1(t *testing.T) {
+	testDropArchivedMetric(t, 1)
+}
+
 type incrementalBatch struct {
 	fpToMetric      index.FingerprintMetricMapping
 	expectedLnToLvs index.LabelNameLabelValuesMapping
 	expectedLpToFps index.LabelPairFingerprintsMapping
 }
 
-func TestIndexing(t *testing.T) {
+func testIndexing(t *testing.T, chunkType byte) {
 	batches := []incrementalBatch{
 		{
 			fpToMetric: index.FingerprintMetricMapping{
@@ -524,7 +556,7 @@ func TestIndexing(t *testing.T) {
 		},
 	}
 
-	p, closer := newTestPersistence(t)
+	p, closer := newTestPersistence(t, chunkType)
 	defer closer.Close()
 
 	indexedFpsToMetrics := index.FingerprintMetricMapping{}
@@ -557,6 +589,14 @@ func TestIndexing(t *testing.T) {
 			delete(indexedFpsToMetrics, fp)
 		}
 	}
+}
+
+func TestIndexingChunkType0(t *testing.T) {
+	testIndexing(t, 1)
+}
+
+func TestIndexingChunkType1(t *testing.T) {
+	testIndexing(t, 1)
 }
 
 func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMetrics index.FingerprintMetricMapping, p *persistence) {
