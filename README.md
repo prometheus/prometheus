@@ -32,7 +32,7 @@ it will be the recommended way of installing Prometheus.
 
 ### Use `make`
 
-In most cirumstances, the following should work:
+In most circumstances, the following should work:
 
     $ make build
     $ ./prometheus -config.file=documentation/examples/prometheus.conf
