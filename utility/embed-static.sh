@@ -11,7 +11,7 @@ ORIGINAL_PWD=${PWD}
 
 for dir in $@
 do
-  cd "${dir}"
+  cd "${dir}" > /dev/null
   echo "\"$(basename ${dir})\": {"
 
   # Do not embed map files and the non-minified bootstrap files.
