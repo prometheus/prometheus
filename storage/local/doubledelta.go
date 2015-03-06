@@ -171,40 +171,49 @@ func (c doubleDeltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 		return []chunk{&c, overflowChunks[0]}
 	}
 
-	dt := s.Timestamp - c.baseTime() - clientmodel.Timestamp(c.len())*c.baseTimeDelta()
-	dv := s.Value - c.baseValue() - clientmodel.SampleValue(c.len())*c.baseValueDelta()
+	projectedTime := c.baseTime() + clientmodel.Timestamp(c.len())*c.baseTimeDelta()
+	ddt := s.Timestamp - projectedTime
+
+	projectedValue := c.baseValue() + clientmodel.SampleValue(c.len())*c.baseValueDelta()
+	ddv := s.Value - projectedValue
 
 	// If the new sample is incompatible with the current encoding, reencode the
 	// existing chunk data into new chunk(s).
 	//
 	// int->float.
-	if c.isInt() && !isInt64(dv) {
+	if c.isInt() && !isInt64(ddv) {
 		return transcodeAndAdd(newDoubleDeltaEncodedChunk(tb, d4, false, cap(c)), &c, s)
 	}
 	// float32->float64.
-	if !c.isInt() && vb == d4 && !isFloat32(dv) {
+	if !c.isInt() && vb == d4 && projectedValue+clientmodel.SampleValue(float32(ddv)) != s.Value {
 		return transcodeAndAdd(newDoubleDeltaEncodedChunk(tb, d8, false, cap(c)), &c, s)
 	}
-	if tb < d8 || vb < d8 {
-		// Maybe more bytes per sample.
-		ntb := bytesNeededForSignedTimestampDelta(dt)
-		nvb := bytesNeededForSampleValueDelta(dv, c.isInt())
-		if ntb > tb || nvb > vb {
-			ntb = max(ntb, tb)
-			nvb = max(nvb, vb)
-			return transcodeAndAdd(newDoubleDeltaEncodedChunk(ntb, nvb, c.isInt(), cap(c)), &c, s)
-		}
+
+	var ntb, nvb deltaBytes
+	if tb < d8 {
+		// Maybe more bytes for timestamp.
+		ntb = bytesNeededForSignedTimestampDelta(ddt)
 	}
+	if c.isInt() && vb < d8 {
+		// Maybe more bytes for sample value.
+		nvb = bytesNeededForIntegerSampleValueDelta(ddv)
+	}
+	if ntb > tb || nvb > vb {
+		ntb = max(ntb, tb)
+		nvb = max(nvb, vb)
+		return transcodeAndAdd(newDeltaEncodedChunk(ntb, nvb, c.isInt(), cap(c)), &c, s)
+	}
+
 	offset := len(c)
 	c = c[:offset+sampleSize]
 
 	switch tb {
 	case d1:
-		c[offset] = byte(dt)
+		c[offset] = byte(ddt)
 	case d2:
-		binary.LittleEndian.PutUint16(c[offset:], uint16(dt))
+		binary.LittleEndian.PutUint16(c[offset:], uint16(ddt))
 	case d4:
-		binary.LittleEndian.PutUint32(c[offset:], uint32(dt))
+		binary.LittleEndian.PutUint32(c[offset:], uint32(ddt))
 	case d8:
 		// Store the absolute value (no delta) in case of d8.
 		binary.LittleEndian.PutUint64(c[offset:], uint64(s.Timestamp))
@@ -219,11 +228,11 @@ func (c doubleDeltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 		case d0:
 			// No-op. Constant delta is stored as base value.
 		case d1:
-			c[offset] = byte(dv)
+			c[offset] = byte(ddv)
 		case d2:
-			binary.LittleEndian.PutUint16(c[offset:], uint16(dv))
+			binary.LittleEndian.PutUint16(c[offset:], uint16(ddv))
 		case d4:
-			binary.LittleEndian.PutUint32(c[offset:], uint32(dv))
+			binary.LittleEndian.PutUint32(c[offset:], uint32(ddv))
 		// d8 must not happen. Those samples are encoded as float64.
 		default:
 			panic("invalid number of bytes for integer delta")
@@ -231,7 +240,7 @@ func (c doubleDeltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 	} else {
 		switch vb {
 		case d4:
-			binary.LittleEndian.PutUint32(c[offset:], math.Float32bits(float32(dv)))
+			binary.LittleEndian.PutUint32(c[offset:], math.Float32bits(float32(ddv)))
 		case d8:
 			// Store the absolute value (no delta) in case of d8.
 			binary.LittleEndian.PutUint64(c[offset:], math.Float64bits(float64(s.Value)))

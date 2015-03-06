@@ -15,7 +15,6 @@ package local
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -28,14 +27,6 @@ import (
 
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility/test"
-)
-
-const (
-	epsilon = 0.000001 // Relative error allowed for sample values.
-)
-
-var (
-	minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
 )
 
 func TestGetFingerprintsForLabelMatchers(t *testing.T) {
@@ -221,7 +212,7 @@ func testChunk(t *testing.T, chunkType byte) {
 			if samples[i].Timestamp != v.Timestamp {
 				t.Errorf("%d. Got %v; want %v", i, v.Timestamp, samples[i].Timestamp)
 			}
-			if !almostEqual(samples[i].Value, v.Value) {
+			if samples[i].Value != v.Value {
 				t.Errorf("%d. Got %v; want %v", i, v.Value, samples[i].Value)
 			}
 		}
@@ -655,7 +646,7 @@ func TestFuzzChunkType1(t *testing.T) {
 //
 // go test -race -cpu 8 -test=short -bench BenchmarkFuzzChunkType
 func benchmarkFuzz(b *testing.B, chunkType byte) {
-	const samplesPerRun = 20000
+	const samplesPerRun = 100000
 	rand.Seed(42)
 	directory := test.NewTemporaryDirectory("test_storage", b)
 	defer directory.Close()
@@ -837,7 +828,7 @@ func verifyStorage(t testing.TB, s Storage, samples clientmodel.Samples, maxAge 
 		}
 		want := sample.Value
 		got := found[0].Value
-		if !almostEqual(want, got) || sample.Timestamp != found[0].Timestamp {
+		if want != got || sample.Timestamp != found[0].Timestamp {
 			t.Errorf(
 				"Value (or timestamp) mismatch, want %f (at time %v), got %f (at time %v).",
 				want, sample.Timestamp, got, found[0].Timestamp,
@@ -937,16 +928,4 @@ func TestChunkMaps(t *testing.T) {
 		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
 	}
 
-}
-
-func almostEqual(a, b clientmodel.SampleValue) bool {
-	// Cf. http://floating-point-gui.de/errors/comparison/
-	if a == b {
-		return true
-	}
-	diff := math.Abs(float64(a - b))
-	if a == 0 || b == 0 || diff < minNormal {
-		return diff < epsilon*minNormal
-	}
-	return diff/(math.Abs(float64(a))+math.Abs(float64(b))) < epsilon
 }

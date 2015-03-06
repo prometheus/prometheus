@@ -124,10 +124,11 @@ func (c deltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 		return []chunk{&c, overflowChunks[0]}
 	}
 
+	baseValue := c.baseValue()
 	// TODO(beorn7): Once https://github.com/prometheus/prometheus/issues/481 is
 	// fixed, we should panic here if dt is negative.
 	dt := s.Timestamp - c.baseTime()
-	dv := s.Value - c.baseValue()
+	dv := s.Value - baseValue
 	tb := c.timeBytes()
 	vb := c.valueBytes()
 
@@ -139,18 +140,23 @@ func (c deltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 		return transcodeAndAdd(newDeltaEncodedChunk(tb, d4, false, cap(c)), &c, s)
 	}
 	// float32->float64.
-	if !c.isInt() && vb == d4 && !isFloat32(dv) {
+	if !c.isInt() && vb == d4 && baseValue+clientmodel.SampleValue(float32(dv)) != s.Value {
 		return transcodeAndAdd(newDeltaEncodedChunk(tb, d8, false, cap(c)), &c, s)
 	}
-	if tb < d8 || vb < d8 {
-		// Maybe more bytes per sample.
-		ntb := bytesNeededForUnsignedTimestampDelta(dt)
-		nvb := bytesNeededForSampleValueDelta(dv, c.isInt())
-		if ntb > tb || nvb > vb {
-			ntb = max(ntb, tb)
-			nvb = max(nvb, vb)
-			return transcodeAndAdd(newDeltaEncodedChunk(ntb, nvb, c.isInt(), cap(c)), &c, s)
-		}
+
+	var ntb, nvb deltaBytes
+	if tb < d8 {
+		// Maybe more bytes for timestamp.
+		ntb = bytesNeededForUnsignedTimestampDelta(dt)
+	}
+	if c.isInt() && vb < d8 {
+		// Maybe more bytes for sample value.
+		nvb = bytesNeededForIntegerSampleValueDelta(dv)
+	}
+	if ntb > tb || nvb > vb {
+		ntb = max(ntb, tb)
+		nvb = max(nvb, vb)
+		return transcodeAndAdd(newDeltaEncodedChunk(ntb, nvb, c.isInt(), cap(c)), &c, s)
 	}
 	offset := len(c)
 	c = c[:offset+sampleSize]

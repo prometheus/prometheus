@@ -55,25 +55,19 @@ func bytesNeededForSignedTimestampDelta(deltaT clientmodel.Timestamp) deltaBytes
 	}
 }
 
-func bytesNeededForSampleValueDelta(deltaV clientmodel.SampleValue, isInt bool) deltaBytes {
-	if isInt {
-		switch {
-		case deltaV < math.MinInt32 || deltaV > math.MaxInt32:
-			return d8
-		case deltaV < math.MinInt16 || deltaV > math.MaxInt16:
-			return d4
-		case deltaV < math.MinInt8 || deltaV > math.MaxInt8:
-			return d2
-		case deltaV != 0:
-			return d1
-		default:
-			return d0
-		}
-	}
-	if clientmodel.SampleValue(float32(deltaV)) != deltaV {
+func bytesNeededForIntegerSampleValueDelta(deltaV clientmodel.SampleValue) deltaBytes {
+	switch {
+	case deltaV < math.MinInt32 || deltaV > math.MaxInt32:
 		return d8
+	case deltaV < math.MinInt16 || deltaV > math.MaxInt16:
+		return d4
+	case deltaV < math.MinInt8 || deltaV > math.MaxInt8:
+		return d2
+	case deltaV != 0:
+		return d1
+	default:
+		return d0
 	}
-	return d4
 }
 
 func max(a, b deltaBytes) deltaBytes {
@@ -87,9 +81,4 @@ func max(a, b deltaBytes) deltaBytes {
 func isInt64(v clientmodel.SampleValue) bool {
 	// Note: Using math.Modf is slower than the conversion approach below.
 	return clientmodel.SampleValue(int64(v)) == v
-}
-
-// isFloat32 returns true if v can be represented as an float32.
-func isFloat32(v clientmodel.SampleValue) bool {
-	return clientmodel.SampleValue(float32(v)) == v
 }
