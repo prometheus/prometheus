@@ -592,7 +592,7 @@ func testIndexing(t *testing.T, chunkType byte) {
 }
 
 func TestIndexingChunkType0(t *testing.T) {
-	testIndexing(t, 1)
+	testIndexing(t, 0)
 }
 
 func TestIndexingChunkType1(t *testing.T) {

@@ -108,7 +108,7 @@ func (c deltaEncodedChunk) baseValue() clientmodel.SampleValue {
 
 // add implements chunk.
 func (c deltaEncodedChunk) add(s *metric.SamplePair) []chunk {
-	if len(c) < deltaHeaderBytes {
+	if c.len() == 0 {
 		c = c[:deltaHeaderBytes]
 		binary.LittleEndian.PutUint64(c[deltaHeaderBaseTimeOffset:], uint64(s.Timestamp))
 		binary.LittleEndian.PutUint64(c[deltaHeaderBaseValueOffset:], math.Float64bits(float64(s.Value)))
