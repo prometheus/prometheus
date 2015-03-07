@@ -115,7 +115,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 	pool := NewTargetPool(nil, nil, nopIngester{}, time.Duration(1))
 	oldTarget1 := &target{
 		url:             "example1",
-		state:           Unreachable,
+		state:           Unhealthy,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
@@ -123,7 +123,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 	}
 	oldTarget2 := &target{
 		url:             "example2",
-		state:           Unreachable,
+		state:           Unhealthy,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
@@ -131,7 +131,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 	}
 	newTarget1 := &target{
 		url:             "example1",
-		state:           Alive,
+		state:           Healthy,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
@@ -139,7 +139,7 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 	}
 	newTarget2 := &target{
 		url:             "example3",
-		state:           Alive,
+		state:           Healthy,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 		newBaseLabels:   make(chan clientmodel.LabelSet, 1),

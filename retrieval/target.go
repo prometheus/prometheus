@@ -72,26 +72,22 @@ func (t TargetState) String() string {
 	switch t {
 	case Unknown:
 		return "UNKNOWN"
-	case Alive:
-		return "ALIVE"
-	case Unreachable:
-		return "UNREACHABLE"
+	case Healthy:
+		return "HEALTHY"
+	case Unhealthy:
+		return "UNHEALTHY"
 	}
 
 	panic("unknown state")
 }
 
 const (
-	// Unknown is the state of a Target that has not been seen; we know
-	// nothing about it, except that it is on our docket for examination.
+	// Unknown is the state of a Target before it is first scraped.
 	Unknown TargetState = iota
-	// Alive is the state of a Target that has been found and successfully
-	// queried.
-	Alive
-	// Unreachable is the state of a Target that was either historically
-	// found or not found and then determined to be unhealthy by either not
-	// responding or disappearing.
-	Unreachable
+	// Healthy is the state of a Target that has been successfully scraped.
+	Healthy
+	// Unhealthy is the state of a Target that was scraped unsuccessfully.
+	Unhealthy
 )
 
 // A Target represents an endpoint that should be interrogated for metrics.
@@ -294,9 +290,9 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 	defer func(start time.Time) {
 		t.Lock() // Writing t.state and t.lastError requires the lock.
 		if err == nil {
-			t.state = Alive
+			t.state = Healthy
 		} else {
-			t.state = Unreachable
+			t.state = Unhealthy
 		}
 		t.lastError = err
 		t.Unlock()
