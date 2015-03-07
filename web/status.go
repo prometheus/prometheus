@@ -35,6 +35,14 @@ type PrometheusStatusHandler struct {
 	Birth time.Time
 }
 
+func (h *PrometheusStatusHandler) TargetStateToClass() map[retrieval.TargetState]string {
+	return map[retrieval.TargetState]string{
+		retrieval.Unknown:   "warning",
+		retrieval.Healthy:   "success",
+		retrieval.Unhealthy: "danger",
+	}
+}
+
 func (h *PrometheusStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	executeTemplate(w, "status", h)
 }

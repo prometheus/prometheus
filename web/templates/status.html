@@ -31,8 +31,9 @@
     <pre>{{range .RuleManager.Rules}}{{.HTMLSnippet}}<br/>{{end}}</pre>
 
     <h2>Targets</h2>
-      {{range $job, $pool := .TargetPools}}
-        <table class="table table-condensed table-bordered table-striped table-hover">
+      <table class="table table-condensed table-bordered table-striped table-hover">
+        {{$stateToClass := .TargetStateToClass}}
+        {{range $job, $pool := .TargetPools}}
           <thead>
             <tr><th colspan="5" class="job_header">{{$job}}</th></tr>
             <tr>
@@ -50,7 +51,9 @@
                 <a href="{{.GlobalURL}}">{{.URL}}</a>
               </td>
               <td>
-                {{.State}}
+                <span class="alert alert-{{index $stateToClass .State}} target_status_alert">
+                  {{.State}}
+                </span>
               </td>
               <td>
                 {{.BaseLabels}}
@@ -60,14 +63,14 @@
               </td>
               <td>
                 {{if .LastError}}
-                <span class="alert alert-error error_text">{{.LastError}}</span>
+                <span class="alert alert-danger target_status_alert">{{.LastError}}</span>
                 {{end}}
               </td>
             </tr>
           {{end}}
           </tbody>
-        </table>
-      {{end}}
+        {{end}}
+      </table>
 
     <h2>Startup Flags</h2>
     <table class="table table-condensed table-bordered table-striped table-hover">
