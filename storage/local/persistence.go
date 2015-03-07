@@ -95,8 +95,8 @@ type indexingOp struct {
 // dropChunks, loadChunks, and loadChunkDescs can be called concurrently with
 // each other if each call refers to a different fingerprint.
 type persistence struct {
-	basePath string
-	chunkLen int
+	basePath  string
+	chunkType byte
 
 	archivedFingerprintToMetrics   *index.FingerprintMetricIndex
 	archivedFingerprintToTimeRange *index.FingerprintTimeRangeIndex
@@ -121,7 +121,7 @@ type persistence struct {
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
-func newPersistence(basePath string, chunkLen int, dirty bool) (*persistence, error) {
+func newPersistence(basePath string, chunkType byte, dirty bool) (*persistence, error) {
 	dirtyPath := filepath.Join(basePath, dirtyFileName)
 	versionPath := filepath.Join(basePath, versionFileName)
 
@@ -178,8 +178,8 @@ func newPersistence(basePath string, chunkLen int, dirty bool) (*persistence, er
 	}
 
 	p := &persistence{
-		basePath: basePath,
-		chunkLen: chunkLen,
+		basePath:  basePath,
+		chunkType: chunkType,
 
 		archivedFingerprintToMetrics:   archivedFingerprintToMetrics,
 		archivedFingerprintToTimeRange: archivedFingerprintToTimeRange,
@@ -336,7 +336,7 @@ func (p *persistence) persistChunks(fp clientmodel.Fingerprint, chunks []chunk) 
 	}
 	defer f.Close()
 
-	b := bufio.NewWriterSize(f, len(chunks)*(chunkHeaderLen+p.chunkLen))
+	b := bufio.NewWriterSize(f, len(chunks)*(chunkHeaderLen+chunkLen))
 
 	for _, c := range chunks {
 		err = writeChunkHeader(b, c)
@@ -420,7 +420,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 	if err != nil {
 		return nil, err
 	}
-	totalChunkLen := chunkHeaderLen + p.chunkLen
+	totalChunkLen := chunkHeaderLen + chunkLen
 	if fi.Size()%int64(totalChunkLen) != 0 {
 		p.setDirty(true)
 		return nil, fmt.Errorf(
@@ -770,6 +770,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 			chunkDescsOffset:   int(chunkDescsOffset),
 			savedFirstTime:     clientmodel.Timestamp(savedFirstTime),
 			headChunkPersisted: headChunkPersisted,
+			chunkType:          p.chunkType,
 		}
 	}
 	return sm, nil
@@ -1102,17 +1103,17 @@ func writeChunkHeader(w io.Writer, c chunk) error {
 }
 
 func (p *persistence) offsetForChunkIndex(i int) int64 {
-	return int64(i * (chunkHeaderLen + p.chunkLen))
+	return int64(i * (chunkHeaderLen + chunkLen))
 }
 
 func (p *persistence) chunkIndexForOffset(offset int64) (int, error) {
-	if int(offset)%(chunkHeaderLen+p.chunkLen) != 0 {
+	if int(offset)%(chunkHeaderLen+chunkLen) != 0 {
 		return -1, fmt.Errorf(
 			"offset %d is not a multiple of on-disk chunk length %d",
-			offset, chunkHeaderLen+p.chunkLen,
+			offset, chunkHeaderLen+chunkLen,
 		)
 	}
-	return int(offset) / (chunkHeaderLen + p.chunkLen), nil
+	return int(offset) / (chunkHeaderLen + chunkLen), nil
 }
 
 func (p *persistence) headsFileName() string {

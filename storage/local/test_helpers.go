@@ -37,13 +37,14 @@ func (t *testStorageCloser) Close() {
 // NewTestStorage creates a storage instance backed by files in a temporary
 // directory. The returned storage is already in serving state. Upon closing the
 // returned test.Closer, the temporary directory is cleaned up.
-func NewTestStorage(t test.T) (Storage, test.Closer) {
+func NewTestStorage(t test.T, chunkType byte) (Storage, test.Closer) {
 	directory := test.NewTemporaryDirectory("test_storage", t)
 	o := &MemorySeriesStorageOptions{
 		MemoryChunks:               1000000,
 		PersistenceRetentionPeriod: 24 * time.Hour * 365 * 100, // Enough to never trigger purging.
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         time.Hour,
+		ChunkType:                  chunkType,
 	}
 	storage, err := NewMemorySeriesStorage(o)
 	if err != nil {

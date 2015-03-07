@@ -30,7 +30,7 @@ import (
 )
 
 func TestGetFingerprintsForLabelMatchers(t *testing.T) {
-	storage, closer := NewTestStorage(t)
+	storage, closer := NewTestStorage(t, 1)
 	defer closer.Close()
 
 	samples := make([]*clientmodel.Sample, 100)
@@ -181,7 +181,7 @@ func TestLoop(t *testing.T) {
 	}
 }
 
-func TestChunk(t *testing.T) {
+func testChunk(t *testing.T, chunkType byte) {
 	samples := make(clientmodel.Samples, 500000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -189,7 +189,7 @@ func TestChunk(t *testing.T) {
 			Value:     clientmodel.SampleValue(float64(i) * 0.2),
 		}
 	}
-	s, closer := NewTestStorage(t)
+	s, closer := NewTestStorage(t, chunkType)
 	defer closer.Close()
 
 	s.AppendSamples(samples)
@@ -221,7 +221,15 @@ func TestChunk(t *testing.T) {
 	glog.Info("test done, closing")
 }
 
-func TestGetValueAtTime(t *testing.T) {
+func TestChunkType0(t *testing.T) {
+	testChunk(t, 0)
+}
+
+func TestChunkType1(t *testing.T) {
+	testChunk(t, 1)
+}
+
+func testGetValueAtTime(t *testing.T, chunkType byte) {
 	samples := make(clientmodel.Samples, 1000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -229,7 +237,7 @@ func TestGetValueAtTime(t *testing.T) {
 			Value:     clientmodel.SampleValue(float64(i) * 0.2),
 		}
 	}
-	s, closer := NewTestStorage(t)
+	s, closer := NewTestStorage(t, chunkType)
 	defer closer.Close()
 
 	s.AppendSamples(samples)
@@ -304,7 +312,15 @@ func TestGetValueAtTime(t *testing.T) {
 	}
 }
 
-func TestGetRangeValues(t *testing.T) {
+func TestGetValueAtTimeChunkType0(t *testing.T) {
+	testGetValueAtTime(t, 0)
+}
+
+func TestGetValueAtTimeChunkType1(t *testing.T) {
+	testGetValueAtTime(t, 1)
+}
+
+func testGetRangeValues(t *testing.T, chunkType byte) {
 	samples := make(clientmodel.Samples, 1000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -312,7 +328,7 @@ func TestGetRangeValues(t *testing.T) {
 			Value:     clientmodel.SampleValue(float64(i) * 0.2),
 		}
 	}
-	s, closer := NewTestStorage(t)
+	s, closer := NewTestStorage(t, chunkType)
 	defer closer.Close()
 
 	s.AppendSamples(samples)
@@ -446,15 +462,23 @@ func TestGetRangeValues(t *testing.T) {
 	}
 }
 
-func TestEvictAndPurgeSeries(t *testing.T) {
+func TestGetRangeValuesChunkType0(t *testing.T) {
+	testGetRangeValues(t, 0)
+}
+
+func TestGetRangeValuesChunkType1(t *testing.T) {
+	testGetRangeValues(t, 1)
+}
+
+func testEvictAndPurgeSeries(t *testing.T, chunkType byte) {
 	samples := make(clientmodel.Samples, 1000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
 			Timestamp: clientmodel.Timestamp(2 * i),
-			Value:     clientmodel.SampleValue(float64(i) * 0.2),
+			Value:     clientmodel.SampleValue(float64(i * i)),
 		}
 	}
-	s, closer := NewTestStorage(t)
+	s, closer := NewTestStorage(t, chunkType)
 	defer closer.Close()
 
 	ms := s.(*memorySeriesStorage) // Going to test the internal maintain.*Series methods.
@@ -474,7 +498,7 @@ func TestEvictAndPurgeSeries(t *testing.T) {
 	if len(actual) != 2 {
 		t.Fatal("expected two results after purging half of series")
 	}
-	if actual[0].Timestamp < 800 || actual[0].Timestamp > 1000 {
+	if actual[0].Timestamp < 600 || actual[0].Timestamp > 1000 {
 		t.Errorf("1st timestamp out of expected range: %v", actual[0].Timestamp)
 	}
 	want := clientmodel.Timestamp(1998)
@@ -544,7 +568,15 @@ func TestEvictAndPurgeSeries(t *testing.T) {
 	}
 }
 
-func BenchmarkAppend(b *testing.B) {
+func TestEvictAndPurgeSeriesChunkType0(t *testing.T) {
+	testEvictAndPurgeSeries(t, 0)
+}
+
+func TestEvictAndPurgeSeriesChunkType1(t *testing.T) {
+	testEvictAndPurgeSeries(t, 1)
+}
+
+func benchmarkAppend(b *testing.B, chunkType byte) {
 	samples := make(clientmodel.Samples, b.N)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -558,28 +590,34 @@ func BenchmarkAppend(b *testing.B) {
 		}
 	}
 	b.ResetTimer()
-	s, closer := NewTestStorage(b)
+	s, closer := NewTestStorage(b, chunkType)
 	defer closer.Close()
 
 	s.AppendSamples(samples)
 }
 
+func BenchmarkAppendType0(b *testing.B) {
+	benchmarkAppend(b, 0)
+}
+
+func BenchmarkAppendType1(b *testing.B) {
+	benchmarkAppend(b, 1)
+}
+
 // Append a large number of random samples and then check if we can get them out
 // of the storage alright.
-func TestFuzz(t *testing.T) {
+func testFuzz(t *testing.T, chunkType byte) {
 	if testing.Short() {
 		t.Skip("Skipping test in short mode.")
 	}
 
 	check := func(seed int64) bool {
 		rand.Seed(seed)
-		s, c := NewTestStorage(t)
+		s, c := NewTestStorage(t, chunkType)
 		defer c.Close()
 
-		samples := createRandomSamples()
+		samples := createRandomSamples("test_fuzz", 1000)
 		s.AppendSamples(samples)
-		s.WaitForIndexing()
-
 		return verifyStorage(t, s, samples, 24*7*time.Hour)
 	}
 
@@ -588,21 +626,27 @@ func TestFuzz(t *testing.T) {
 	}
 }
 
-// BenchmarkFuzz is the benchmark version of TestFuzz. However, it will run
-// several append and verify operations in parallel, if GOMAXPROC is set
-// accordingly. Also, the storage options are set such that evictions,
-// checkpoints, and purging will happen concurrently, too. This benchmark will
-// have a very long runtime (up to minutes). You can use it as an actual
-// benchmark. Run it like this:
+func TestFuzzChunkType0(t *testing.T) {
+	testFuzz(t, 0)
+}
+
+func TestFuzzChunkType1(t *testing.T) {
+	testFuzz(t, 1)
+}
+
+// benchmarkFuzz is the benchmark version of testFuzz. The storage options are
+// set such that evictions, checkpoints, and purging will happen concurrently,
+// too. This benchmark will have a very long runtime (up to minutes). You can
+// use it as an actual benchmark. Run it like this:
 //
-// go test -cpu 1,2,4,8 -short -bench BenchmarkFuzz -benchmem
+// go test -cpu 1,2,4,8 -test=NONE -bench BenchmarkFuzzChunkType -benchmem
 //
 // You can also use it as a test for races. In that case, run it like this (will
 // make things even slower):
 //
-// go test -race -cpu 8 -short -bench BenchmarkFuzz
-func BenchmarkFuzz(b *testing.B) {
-	b.StopTimer()
+// go test -race -cpu 8 -test=short -bench BenchmarkFuzzChunkType
+func benchmarkFuzz(b *testing.B, chunkType byte) {
+	const samplesPerRun = 100000
 	rand.Seed(42)
 	directory := test.NewTemporaryDirectory("test_storage", b)
 	defer directory.Close()
@@ -610,7 +654,8 @@ func BenchmarkFuzz(b *testing.B) {
 		MemoryChunks:               100,
 		PersistenceRetentionPeriod: time.Hour,
 		PersistenceStoragePath:     directory.Path(),
-		CheckpointInterval:         3 * time.Second,
+		CheckpointInterval:         time.Second,
+		ChunkType:                  chunkType,
 	}
 	s, err := NewMemorySeriesStorage(o)
 	if err != nil {
@@ -618,33 +663,40 @@ func BenchmarkFuzz(b *testing.B) {
 	}
 	s.Start()
 	defer s.Stop()
-	b.StartTimer()
 
-	b.RunParallel(func(pb *testing.PB) {
-		var allSamples clientmodel.Samples
-		for pb.Next() {
-			newSamples := createRandomSamples()
-			allSamples = append(allSamples, newSamples[:len(newSamples)/2]...)
-			s.AppendSamples(newSamples[:len(newSamples)/2])
-			verifyStorage(b, s, allSamples, o.PersistenceRetentionPeriod)
-			allSamples = append(allSamples, newSamples[len(newSamples)/2:]...)
-			s.AppendSamples(newSamples[len(newSamples)/2:])
-			verifyStorage(b, s, allSamples, o.PersistenceRetentionPeriod)
-		}
-	})
+	samples := createRandomSamples("benchmark_fuzz", samplesPerRun*b.N)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		start := samplesPerRun * i
+		end := samplesPerRun * (i + 1)
+		middle := (start + end) / 2
+		s.AppendSamples(samples[start:middle])
+		verifyStorage(b, s, samples[:middle], o.PersistenceRetentionPeriod)
+		s.AppendSamples(samples[middle:end])
+		verifyStorage(b, s, samples[:end], o.PersistenceRetentionPeriod)
+	}
 }
 
-func createRandomSamples() clientmodel.Samples {
+func BenchmarkFuzzChunkType0(b *testing.B) {
+	benchmarkFuzz(b, 0)
+}
+
+func BenchmarkFuzzChunkType1(b *testing.B) {
+	benchmarkFuzz(b, 1)
+}
+
+func createRandomSamples(metricName string, minLen int) clientmodel.Samples {
 	type valueCreator func() clientmodel.SampleValue
 	type deltaApplier func(clientmodel.SampleValue) clientmodel.SampleValue
 
 	var (
 		maxMetrics         = 5
-		maxCycles          = 500
 		maxStreakLength    = 500
-		maxTimeDelta       = 1000
+		maxTimeDelta       = 10000
 		maxTimeDeltaFactor = 10
-		timestamp          = clientmodel.Now() - clientmodel.Timestamp(maxTimeDelta*maxTimeDeltaFactor*maxCycles*maxStreakLength/16) // So that some timestamps are in the future.
+		timestamp          = clientmodel.Now() - clientmodel.Timestamp(maxTimeDelta*maxTimeDeltaFactor*minLen/4) // So that some timestamps are in the future.
 		generators         = []struct {
 			createValue valueCreator
 			applyDelta  []deltaApplier
@@ -696,11 +748,12 @@ func createRandomSamples() clientmodel.Samples {
 	metrics := []clientmodel.Metric{}
 	for n := rand.Intn(maxMetrics); n >= 0; n-- {
 		metrics = append(metrics, clientmodel.Metric{
+			clientmodel.MetricNameLabel:                             clientmodel.LabelValue(metricName),
 			clientmodel.LabelName(fmt.Sprintf("labelname_%d", n+1)): clientmodel.LabelValue(fmt.Sprintf("labelvalue_%d", rand.Int())),
 		})
 	}
 
-	for n := rand.Intn(maxCycles); n >= 0; n-- {
+	for len(result) < minLen {
 		// Pick a metric for this cycle.
 		metric := metrics[rand.Intn(len(metrics))]
 		timeDelta := rand.Intn(maxTimeDelta) + 1
@@ -753,6 +806,7 @@ func createRandomSamples() clientmodel.Samples {
 }
 
 func verifyStorage(t testing.TB, s Storage, samples clientmodel.Samples, maxAge time.Duration) bool {
+	s.WaitForIndexing()
 	result := true
 	for _, i := range rand.Perm(len(samples)) {
 		sample := samples[i]
@@ -772,8 +826,8 @@ func verifyStorage(t testing.TB, s Storage, samples clientmodel.Samples, maxAge 
 			p.Close()
 			continue
 		}
-		want := float64(sample.Value)
-		got := float64(found[0].Value)
+		want := sample.Value
+		got := found[0].Value
 		if want != got || sample.Timestamp != found[0].Timestamp {
 			t.Errorf(
 				"Value (or timestamp) mismatch, want %f (at time %v), got %f (at time %v).",

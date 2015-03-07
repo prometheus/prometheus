@@ -15,6 +15,7 @@ package local
 
 import (
 	"container/list"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -223,16 +224,20 @@ func chunkType(c chunk) byte {
 	switch c.(type) {
 	case *deltaEncodedChunk:
 		return 0
+	case *doubleDeltaEncodedChunk:
+		return 1
 	default:
-		panic("unknown chunk type")
+		panic(fmt.Errorf("unknown chunk type: %T", c))
 	}
 }
 
 func chunkForType(chunkType byte) chunk {
 	switch chunkType {
 	case 0:
-		return newDeltaEncodedChunk(d1, d0, true)
+		return newDeltaEncodedChunk(d1, d0, true, chunkLen)
+	case 1:
+		return newDoubleDeltaEncodedChunk(d1, d0, true, chunkLen)
 	default:
-		panic("unknown chunk type")
+		panic(fmt.Errorf("unknown chunk type: %d", chunkType))
 	}
 }

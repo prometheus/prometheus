@@ -109,7 +109,7 @@ func samplesAlmostEqual(a, b string) bool {
 }
 
 func newTestStorage(t testing.TB) (storage local.Storage, closer test.Closer) {
-	storage, closer = local.NewTestStorage(t)
+	storage, closer = local.NewTestStorage(t, 1)
 	storeMatrix(storage, testMatrix)
 	return storage, closer
 }
@@ -1437,7 +1437,7 @@ func TestRangedEvaluationRegressions(t *testing.T) {
 	}
 
 	for i, s := range scenarios {
-		storage, closer := local.NewTestStorage(t)
+		storage, closer := local.NewTestStorage(t, 1)
 		storeMatrix(storage, s.in)
 
 		expr, err := LoadExprFromString(s.expr)

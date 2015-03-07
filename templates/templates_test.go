@@ -152,7 +152,7 @@ func TestTemplateExpansion(t *testing.T) {
 
 	time := clientmodel.Timestamp(0)
 
-	storage, closer := local.NewTestStorage(t)
+	storage, closer := local.NewTestStorage(t, 1)
 	defer closer.Close()
 	storage.AppendSamples(clientmodel.Samples{
 		{

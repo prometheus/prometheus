@@ -158,6 +158,8 @@ type memorySeries struct {
 	// a non-persisted head chunk has to be cloned before more samples are
 	// appended.
 	headChunkUsedByIterator bool
+	// Which type of chunk to create if a new chunk is needed.
+	chunkType byte
 }
 
 // newMemorySeries returns a pointer to a newly allocated memorySeries for the
@@ -165,8 +167,14 @@ type memorySeries struct {
 // or (if false) a series for a metric being unarchived, i.e. a series that
 // existed before but has been evicted from memory. If reallyNew is false,
 // firstTime is ignored (and set to the lowest possible timestamp instead - it
-// will be set properly upon the first eviction of chunkDescs).
-func newMemorySeries(m clientmodel.Metric, reallyNew bool, firstTime clientmodel.Timestamp) *memorySeries {
+// will be set properly upon the first eviction of chunkDescs). chunkType is the
+// type of chunks newly created by this memorySeries.
+func newMemorySeries(
+	m clientmodel.Metric,
+	reallyNew bool,
+	firstTime clientmodel.Timestamp,
+	chunkType byte,
+) *memorySeries {
 	if reallyNew {
 		firstTime = clientmodel.Earliest
 	}
@@ -174,6 +182,7 @@ func newMemorySeries(m clientmodel.Metric, reallyNew bool, firstTime clientmodel
 		metric:             m,
 		headChunkPersisted: !reallyNew,
 		savedFirstTime:     firstTime,
+		chunkType:          chunkType,
 	}
 	if !reallyNew {
 		s.chunkDescsOffset = -1
@@ -186,7 +195,7 @@ func newMemorySeries(m clientmodel.Metric, reallyNew bool, firstTime clientmodel
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) add(fp clientmodel.Fingerprint, v *metric.SamplePair) []*chunkDesc {
 	if len(s.chunkDescs) == 0 || s.headChunkPersisted {
-		newHead := newChunkDesc(newDeltaEncodedChunk(d1, d0, true))
+		newHead := newChunkDesc(chunkForType(s.chunkType))
 		s.chunkDescs = append(s.chunkDescs, newHead)
 		s.headChunkPersisted = false
 	} else if s.headChunkUsedByIterator && s.head().getRefCount() > 1 {
