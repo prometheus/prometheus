@@ -61,8 +61,8 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 		httpClient: utility.NewDeadlineClient(0),
 	}
 	testTarget.scrape(nopIngester{})
-	if testTarget.state != Unreachable {
-		t.Errorf("Expected target state %v, actual: %v", Unreachable, testTarget.state)
+	if testTarget.state != Unhealthy {
+		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
 	}
 }
 
@@ -84,8 +84,8 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	).(*target)
 
 	testTarget.scrape(ChannelIngester(make(chan clientmodel.Samples))) // Capacity 0.
-	if testTarget.state != Unreachable {
-		t.Errorf("Expected target state %v, actual: %v", Unreachable, testTarget.state)
+	if testTarget.state != Unhealthy {
+		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
 	}
 	if testTarget.lastError != errIngestChannelFull {
 		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.lastError)

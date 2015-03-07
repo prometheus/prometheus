@@ -77,7 +77,7 @@ func (t fakeTarget) StopScraper() {
 }
 
 func (t fakeTarget) State() TargetState {
-	return Alive
+	return Healthy
 }
 
 func (t *fakeTarget) SetBaseLabelsFrom(newTarget Target) {}
