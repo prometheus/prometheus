@@ -29,6 +29,8 @@ var (
 	m1 = clientmodel.Metric{"label": "value1"}
 	m2 = clientmodel.Metric{"label": "value2"}
 	m3 = clientmodel.Metric{"label": "value3"}
+	m4 = clientmodel.Metric{"label": "value4"}
+	m5 = clientmodel.Metric{"label": "value5"}
 )
 
 func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, test.Closer) {
@@ -83,14 +85,22 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 	fpToChunks := buildTestChunks(encoding)
 
 	for fp, chunks := range fpToChunks {
-		for i, c := range chunks {
-			index, err := p.persistChunks(fp, []chunk{c})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if i != index {
-				t.Errorf("Want chunk index %d, got %d.", i, index)
-			}
+		firstTimeNotDropped, offset, numDropped, allDropped, err :=
+			p.dropAndPersistChunks(fp, clientmodel.Earliest, chunks)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := firstTimeNotDropped, clientmodel.Timestamp(0); got != want {
+			t.Errorf("Want firstTimeNotDropped %v, got %v.", got, want)
+		}
+		if got, want := offset, 0; got != want {
+			t.Errorf("Want offset %v, got %v.", got, want)
+		}
+		if got, want := numDropped, 0; got != want {
+			t.Errorf("Want numDropped %v, got %v.", got, want)
+		}
+		if allDropped {
+			t.Error("All dropped.")
 		}
 	}
 
@@ -139,9 +149,12 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 	}
 	// Drop half of the chunks.
 	for fp, expectedChunks := range fpToChunks {
-		firstTime, numDropped, allDropped, err := p.dropChunks(fp, 5)
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 5, nil)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if offset != 5 {
+			t.Errorf("want offset 5, got %d", offset)
 		}
 		if firstTime != 5 {
 			t.Errorf("want first time 5, got %d", firstTime)
@@ -168,15 +181,156 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 	}
 	// Drop all the chunks.
 	for fp := range fpToChunks {
-		firstTime, numDropped, allDropped, err := p.dropChunks(fp, 100)
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 100, nil)
 		if firstTime != 0 {
 			t.Errorf("want first time 0, got %d", firstTime)
 		}
 		if err != nil {
 			t.Fatal(err)
 		}
+		if offset != 0 {
+			t.Errorf("want offset 0, got %d", offset)
+		}
 		if numDropped != 5 {
 			t.Errorf("want 5 dropped chunks, got %v", numDropped)
+		}
+		if !allDropped {
+			t.Error("not all chunks dropped")
+		}
+	}
+	// Re-add first two of the chunks.
+	for fp, chunks := range fpToChunks {
+		firstTimeNotDropped, offset, numDropped, allDropped, err :=
+			p.dropAndPersistChunks(fp, clientmodel.Earliest, chunks[:2])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := firstTimeNotDropped, clientmodel.Timestamp(0); got != want {
+			t.Errorf("Want firstTimeNotDropped %v, got %v.", got, want)
+		}
+		if got, want := offset, 0; got != want {
+			t.Errorf("Want offset %v, got %v.", got, want)
+		}
+		if got, want := numDropped, 0; got != want {
+			t.Errorf("Want numDropped %v, got %v.", got, want)
+		}
+		if allDropped {
+			t.Error("All dropped.")
+		}
+	}
+	// Drop the first of the chunks while adding two more.
+	for fp, chunks := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 1, chunks[2:4])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 1 {
+			t.Errorf("want offset 1, got %d", offset)
+		}
+		if firstTime != 1 {
+			t.Errorf("want first time 1, got %d", firstTime)
+		}
+		if numDropped != 1 {
+			t.Errorf("want 1 dropped chunk, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+		wantChunks := chunks[1:4]
+		indexes := make([]int, len(wantChunks))
+		for i := range indexes {
+			indexes[i] = i
+		}
+		gotChunks, err := p.loadChunks(fp, indexes, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, wantChunk := range wantChunks {
+			if !chunksEqual(wantChunk, gotChunks[i]) {
+				t.Errorf("%d. Chunks not equal.", i)
+			}
+		}
+	}
+	// Drop all the chunks while adding two more.
+	for fp, chunks := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 4, chunks[4:6])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 0 {
+			t.Errorf("want offset 0, got %d", offset)
+		}
+		if firstTime != 4 {
+			t.Errorf("want first time 4, got %d", firstTime)
+		}
+		if numDropped != 3 {
+			t.Errorf("want 3 dropped chunks, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+		wantChunks := chunks[4:6]
+		indexes := make([]int, len(wantChunks))
+		for i := range indexes {
+			indexes[i] = i
+		}
+		gotChunks, err := p.loadChunks(fp, indexes, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, wantChunk := range wantChunks {
+			if !chunksEqual(wantChunk, gotChunks[i]) {
+				t.Errorf("%d. Chunks not equal.", i)
+			}
+		}
+	}
+	// While adding two more, drop all but one of the added ones.
+	for fp, chunks := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 7, chunks[6:8])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 0 {
+			t.Errorf("want offset 0, got %d", offset)
+		}
+		if firstTime != 7 {
+			t.Errorf("want first time 7, got %d", firstTime)
+		}
+		if numDropped != 3 {
+			t.Errorf("want 3 dropped chunks, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+		wantChunks := chunks[7:8]
+		indexes := make([]int, len(wantChunks))
+		for i := range indexes {
+			indexes[i] = i
+		}
+		gotChunks, err := p.loadChunks(fp, indexes, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, wantChunk := range wantChunks {
+			if !chunksEqual(wantChunk, gotChunks[i]) {
+				t.Errorf("%d. Chunks not equal.", i)
+			}
+		}
+	}
+	// While adding two more, drop all chunks including the added ones.
+	for fp, chunks := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 10, chunks[8:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 0 {
+			t.Errorf("want offset 0, got %d", offset)
+		}
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
+		if numDropped != 3 {
+			t.Errorf("want 3 dropped chunks, got %v", numDropped)
 		}
 		if !allDropped {
 			t.Error("not all chunks dropped")
@@ -201,23 +355,41 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 	s1 := newMemorySeries(m1, true, 0)
 	s2 := newMemorySeries(m2, false, 0)
 	s3 := newMemorySeries(m3, false, 0)
-	s1.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 1, Value: 3.14})
-	s3.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 2, Value: 2.7})
-	s3.headChunkPersisted = true
+	s4 := newMemorySeries(m4, true, 0)
+	s5 := newMemorySeries(m5, true, 0)
+	s1.add(&metric.SamplePair{Timestamp: 1, Value: 3.14})
+	s3.add(&metric.SamplePair{Timestamp: 2, Value: 2.7})
+	s3.headChunkClosed = true
+	s3.persistWatermark = 1
+	for i := 0; i < 10000; i++ {
+		s4.add(&metric.SamplePair{
+			Timestamp: clientmodel.Timestamp(i),
+			Value:     clientmodel.SampleValue(i) / 2,
+		})
+		s5.add(&metric.SamplePair{
+			Timestamp: clientmodel.Timestamp(i),
+			Value:     clientmodel.SampleValue(i * i),
+		})
+	}
+	s5.persistWatermark = 3
+	chunkCountS4 := len(s4.chunkDescs)
+	chunkCountS5 := len(s5.chunkDescs)
 	sm.put(m1.Fingerprint(), s1)
 	sm.put(m2.Fingerprint(), s2)
 	sm.put(m3.Fingerprint(), s3)
+	sm.put(m4.Fingerprint(), s4)
+	sm.put(m5.Fingerprint(), s5)
 
 	if err := p.checkpointSeriesMapAndHeads(sm, fpLocker); err != nil {
 		t.Fatal(err)
 	}
 
-	loadedSM, err := p.loadSeriesMapAndHeads()
+	loadedSM, _, err := p.loadSeriesMapAndHeads()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loadedSM.length() != 2 {
-		t.Errorf("want 2 series in map, got %d", loadedSM.length())
+	if loadedSM.length() != 4 {
+		t.Errorf("want 4 series in map, got %d", loadedSM.length())
 	}
 	if loadedS1, ok := loadedSM.get(m1.Fingerprint()); ok {
 		if !reflect.DeepEqual(loadedS1.metric, m1) {
@@ -229,8 +401,8 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if loadedS1.chunkDescsOffset != 0 {
 			t.Errorf("want chunkDescsOffset 0, got %d", loadedS1.chunkDescsOffset)
 		}
-		if loadedS1.headChunkPersisted {
-			t.Error("headChunkPersisted is true")
+		if loadedS1.headChunkClosed {
+			t.Error("headChunkClosed is true")
 		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m1)
@@ -245,11 +417,61 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if loadedS3.chunkDescsOffset != -1 {
 			t.Errorf("want chunkDescsOffset -1, got %d", loadedS3.chunkDescsOffset)
 		}
-		if !loadedS3.headChunkPersisted {
-			t.Error("headChunkPersisted is false")
+		if !loadedS3.headChunkClosed {
+			t.Error("headChunkClosed is false")
 		}
 	} else {
-		t.Errorf("couldn't find %v in loaded map", m1)
+		t.Errorf("couldn't find %v in loaded map", m3)
+	}
+	if loadedS4, ok := loadedSM.get(m4.Fingerprint()); ok {
+		if !reflect.DeepEqual(loadedS4.metric, m4) {
+			t.Errorf("want metric %v, got %v", m4, loadedS4.metric)
+		}
+		if got, want := len(loadedS4.chunkDescs), chunkCountS4; got != want {
+			t.Errorf("got %d chunkDescs, want %d", got, want)
+		}
+		if got, want := loadedS4.persistWatermark, 0; got != want {
+			t.Errorf("got persistWatermark %d, want %d", got, want)
+		}
+		if loadedS4.chunkDescs[2].isEvicted() {
+			t.Error("3rd chunk evicted")
+		}
+		if loadedS4.chunkDescs[3].isEvicted() {
+			t.Error("4th chunk evicted")
+		}
+		if loadedS4.chunkDescsOffset != 0 {
+			t.Errorf("want chunkDescsOffset 0, got %d", loadedS4.chunkDescsOffset)
+		}
+		if loadedS4.headChunkClosed {
+			t.Error("headChunkClosed is true")
+		}
+	} else {
+		t.Errorf("couldn't find %v in loaded map", m4)
+	}
+	if loadedS5, ok := loadedSM.get(m5.Fingerprint()); ok {
+		if !reflect.DeepEqual(loadedS5.metric, m5) {
+			t.Errorf("want metric %v, got %v", m5, loadedS5.metric)
+		}
+		if got, want := len(loadedS5.chunkDescs), chunkCountS5; got != want {
+			t.Errorf("got %d chunkDescs, want %d", got, want)
+		}
+		if got, want := loadedS5.persistWatermark, 3; got != want {
+			t.Errorf("got persistWatermark %d, want %d", got, want)
+		}
+		if !loadedS5.chunkDescs[2].isEvicted() {
+			t.Error("3rd chunk not evicted")
+		}
+		if loadedS5.chunkDescs[3].isEvicted() {
+			t.Error("4th chunk evicted")
+		}
+		if loadedS5.chunkDescsOffset != 0 {
+			t.Errorf("want chunkDescsOffset 0, got %d", loadedS5.chunkDescsOffset)
+		}
+		if loadedS5.headChunkClosed {
+			t.Error("headChunkClosed is true")
+		}
+	} else {
+		t.Errorf("couldn't find %v in loaded map", m5)
 	}
 }
 

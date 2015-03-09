@@ -34,28 +34,21 @@ const (
 
 	// See waitForNextFP.
 	fpMaxWaitDuration = 10 * time.Second
-	fpMinWaitDuration = 20 * time.Millisecond // A small multiple of disk seek time.
 	fpMaxSweepTime    = 6 * time.Hour
 
 	maxEvictInterval = time.Minute
-	headChunkTimeout = time.Hour // Close head chunk if not touched for that long.
 
-	appendWorkers  = 8 // Should be enough to not make appending a bottleneck.
+	appendWorkers  = 16 // Should be enough to not make appending samples a bottleneck.
 	appendQueueCap = 2 * appendWorkers
 )
 
-type storageState uint
-
-const (
-	storageStarting storageState = iota
-	storageServing
-	storageStopping
+var (
+	persistQueueLengthDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, subsystem, "persist_queue_length"),
+		"The current number of chunks waiting in the persist queue.",
+		nil, nil,
+	)
 )
-
-type persistRequest struct {
-	fingerprint clientmodel.Fingerprint
-	chunkDesc   *chunkDesc
-}
 
 type evictRequest struct {
 	cd    *chunkDesc
@@ -76,9 +69,10 @@ type memorySeriesStorage struct {
 	appendLastTimestamp clientmodel.Timestamp // The timestamp of the last sample sent to the append queue.
 	appendWaitGroup     sync.WaitGroup        // To wait for all appended samples to be processed.
 
-	persistQueue    chan persistRequest
-	persistQueueCap int // Not actually the cap of above channel. See handlePersistQueue.
-	persistStopped  chan struct{}
+	persistQueueLen int64 // The number of chunks that need persistence.
+	persistQueueCap int   // If persistQueueLen reaches this threshold, ingestion will stall.
+	// Note that internally, the chunks to persist are not organized in a queue-like data structure,
+	// but handled in a more sophisticated way (see maintainMemorySeries).
 
 	persistence *persistence
 
@@ -88,10 +82,8 @@ type memorySeriesStorage struct {
 	evictRequests               chan evictRequest
 	evictStopping, evictStopped chan struct{}
 
-	persistLatency              prometheus.Summary
 	persistErrors               prometheus.Counter
 	persistQueueCapacity        prometheus.Metric
-	persistQueueLength          prometheus.Gauge
 	numSeries                   prometheus.Gauge
 	seriesOps                   *prometheus.CounterVec
 	ingestedSamplesCount        prometheus.Counter
@@ -119,7 +111,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		return nil, err
 	}
 	glog.Info("Loading series map and head chunks...")
-	fpToSeries, err := p.loadSeriesMapAndHeads()
+	fpToSeries, persistQueueLen, err := p.loadSeriesMapAndHeads()
 	if err != nil {
 		return nil, err
 	}
@@ -146,12 +138,8 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		appendLastTimestamp: clientmodel.Earliest,
 		appendQueue:         make(chan *clientmodel.Sample, appendQueueCap),
 
-		// The actual buffering happens within handlePersistQueue, so
-		// cap of persistQueue just has to be enough to not block while
-		// handlePersistQueue is writing to disk (20ms or so).
-		persistQueue:    make(chan persistRequest, 1024),
+		persistQueueLen: persistQueueLen,
 		persistQueueCap: o.PersistenceQueueCapacity,
-		persistStopped:  make(chan struct{}),
 		persistence:     p,
 
 		countPersistedHeadChunks: make(chan struct{}, 100),
@@ -161,12 +149,6 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		evictStopping: make(chan struct{}),
 		evictStopped:  make(chan struct{}),
 
-		persistLatency: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "persist_latency_microseconds",
-			Help:      "A summary of latencies for persisting each chunk.",
-		}),
 		persistErrors: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -181,12 +163,6 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			),
 			prometheus.GaugeValue, float64(o.PersistenceQueueCapacity),
 		),
-		persistQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "persist_queue_length",
-			Help:      "The current number of chunks waiting in the persist queue.",
-		}),
 		numSeries: numSeries,
 		seriesOps: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -226,7 +202,6 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 // Start implements Storage.
 func (s *memorySeriesStorage) Start() {
 	go s.handleEvictList()
-	go s.handlePersistQueue()
 	go s.loop()
 }
 
@@ -242,10 +217,6 @@ func (s *memorySeriesStorage) Stop() error {
 	glog.Info("Stopping maintenance loop...")
 	close(s.loopStopping)
 	<-s.loopStopped
-
-	glog.Info("Stopping persist queue...")
-	close(s.persistQueue)
-	<-s.persistStopped
 
 	glog.Info("Stopping chunk eviction...")
 	close(s.evictStopping)
@@ -395,6 +366,13 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 // AppendSamples implements Storage.
 func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
 	for _, sample := range samples {
+		if s.getPersistQueueLen() >= s.persistQueueCap {
+			glog.Warningf("%d chunks waiting for persistence, sample ingestion suspended.", s.getPersistQueueLen())
+			for s.getPersistQueueLen() >= s.persistQueueCap {
+				time.Sleep(time.Second)
+			}
+			glog.Warning("Sample ingestion resumed.")
+		}
 		if sample.Timestamp != s.appendLastTimestamp {
 			// Timestamp has changed. We have to wait for processing
 			// of all appended samples before proceeding. Otherwise,
@@ -414,27 +392,13 @@ func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
 	fp := sample.Metric.Fingerprint()
 	s.fpLocker.Lock(fp)
 	series := s.getOrCreateSeries(fp, sample.Metric)
-	chunkDescsToPersist := series.add(fp, &metric.SamplePair{
+	completedChunksCount := series.add(&metric.SamplePair{
 		Value:     sample.Value,
 		Timestamp: sample.Timestamp,
 	})
 	s.fpLocker.Unlock(fp)
 	s.ingestedSamplesCount.Inc()
-
-	if len(chunkDescsToPersist) == 0 {
-		return
-	}
-	// Queue only outside of the locked area, processing the persistQueue
-	// requires the same lock!
-	for _, cd := range chunkDescsToPersist {
-		s.persistQueue <- persistRequest{fp, cd}
-	}
-	// Count that a head chunk was persisted, but only best effort, i.e. we
-	// don't want to block here.
-	select {
-	case s.countPersistedHeadChunks <- struct{}{}: // Counted.
-	default: // Meh...
-	}
+	s.incPersistQueueLen(completedChunksCount)
 }
 
 func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m clientmodel.Metric) *memorySeries {
@@ -572,111 +536,13 @@ func (s *memorySeriesStorage) maybeEvict() {
 	}()
 }
 
-func (s *memorySeriesStorage) handlePersistQueue() {
-	chunkMaps := chunkMaps{}
-	chunkCount := 0
-
-	persistMostConsecutiveChunks := func() {
-		fp, cds := chunkMaps.pop()
-		if err := s.persistChunks(fp, cds); err != nil {
-			// Need to put chunks back for retry.
-			for _, cd := range cds {
-				chunkMaps.add(fp, cd)
-			}
-			return
-		}
-		chunkCount -= len(cds)
-		s.persistQueueLength.Set(float64(chunkCount))
-	}
-
-loop:
-	for {
-		if chunkCount >= s.persistQueueCap && chunkCount > 0 {
-			glog.Warningf("%d chunks queued for persistence. Ingestion pipeline will backlog.", chunkCount)
-			persistMostConsecutiveChunks()
-		}
-		select {
-		case req, ok := <-s.persistQueue:
-			if !ok {
-				break loop
-			}
-			chunkMaps.add(req.fingerprint, req.chunkDesc)
-			chunkCount++
-		default:
-			if chunkCount > 0 {
-				persistMostConsecutiveChunks()
-				continue loop
-			}
-			// If we are here, there is nothing to do right now. So
-			// just wait for a persist request to come in.
-			req, ok := <-s.persistQueue
-			if !ok {
-				break loop
-			}
-			chunkMaps.add(req.fingerprint, req.chunkDesc)
-			chunkCount++
-		}
-		s.persistQueueLength.Set(float64(chunkCount))
-	}
-
-	// Drain all requests.
-	for _, m := range chunkMaps {
-		for fp, cds := range m {
-			if s.persistChunks(fp, cds) == nil {
-				chunkCount -= len(cds)
-				if (chunkCount+len(cds))/1000 > chunkCount/1000 {
-					glog.Infof(
-						"Still draining persist queue, %d chunks left to persist...",
-						chunkCount,
-					)
-				}
-				s.persistQueueLength.Set(float64(chunkCount))
-			}
-		}
-	}
-
-	glog.Info("Persist queue drained and stopped.")
-	close(s.persistStopped)
-}
-
-func (s *memorySeriesStorage) persistChunks(fp clientmodel.Fingerprint, cds []*chunkDesc) error {
-	start := time.Now()
-	chunks := make([]chunk, len(cds))
-	for i, cd := range cds {
-		chunks[i] = cd.chunk
-	}
-	s.fpLocker.Lock(fp)
-	offset, err := s.persistence.persistChunks(fp, chunks)
-	if series, seriesInMemory := s.fpToSeries.get(fp); err == nil && seriesInMemory && series.chunkDescsOffset == -1 {
-		// This is the first chunk persisted for a newly created
-		// series that had prior chunks on disk. Finally, we can
-		// set the chunkDescsOffset.
-		series.chunkDescsOffset = offset
-	}
-	s.fpLocker.Unlock(fp)
-	s.persistLatency.Observe(float64(time.Since(start)) / float64(time.Microsecond))
-	if err != nil {
-		s.persistErrors.Inc()
-		glog.Error("Error persisting chunks: ", err)
-		s.persistence.setDirty(true)
-		return err
-	}
-	for _, cd := range cds {
-		cd.unpin(s.evictRequests)
-	}
-	chunkOps.WithLabelValues(persistAndUnpin).Add(float64(len(cds)))
-	return nil
-}
-
 // waitForNextFP waits an estimated duration, after which we want to process
 // another fingerprint so that we will process all fingerprints in a tenth of
 // s.dropAfter assuming that the system is doing nothing else, e.g. if we want
 // to drop chunks after 40h, we want to cycle through all fingerprints within
-// 4h. However, the maximum sweep time is capped at fpMaxSweepTime. Furthermore,
-// this method will always wait for at least fpMinWaitDuration and never longer
-// than fpMaxWaitDuration. If s.loopStopped is closed, it will return false
-// immediately. The estimation is based on the total number of fingerprints as
-// passed in.
+// 4h. However, the maximum sweep time is capped at fpMaxSweepTime. If
+// s.loopStopped is closed, it will return false immediately. The estimation is
+// based on the total number of fingerprints as passed in.
 func (s *memorySeriesStorage) waitForNextFP(numberOfFPs int) bool {
 	d := fpMaxWaitDuration
 	if numberOfFPs != 0 {
@@ -685,9 +551,6 @@ func (s *memorySeriesStorage) waitForNextFP(numberOfFPs int) bool {
 			sweepTime = fpMaxSweepTime
 		}
 		d = sweepTime / time.Duration(numberOfFPs)
-		if d < fpMinWaitDuration {
-			d = fpMinWaitDuration
-		}
 		if d > fpMaxWaitDuration {
 			d = fpMaxWaitDuration
 		}
@@ -791,14 +654,7 @@ func (s *memorySeriesStorage) cycleThroughArchivedFingerprints() chan clientmode
 func (s *memorySeriesStorage) loop() {
 	checkpointTimer := time.NewTimer(s.checkpointInterval)
 
-	// We take the number of head chunks persisted since the last checkpoint
-	// as an approximation for the number of series that are "dirty",
-	// i.e. whose head chunk is different from the one in the most recent
-	// checkpoint or for which the fact that the head chunk has been
-	// persisted is not reflected in the most recent checkpoint. This count
-	// could overestimate the number of dirty series, but it's good enough
-	// as a heuristic.
-	headChunksPersistedSinceLastCheckpoint := 0
+	dirtySeriesCount := 0
 
 	defer func() {
 		checkpointTimer.Stop()
@@ -816,26 +672,30 @@ loop:
 			break loop
 		case <-checkpointTimer.C:
 			s.persistence.checkpointSeriesMapAndHeads(s.fpToSeries, s.fpLocker)
-			headChunksPersistedSinceLastCheckpoint = 0
+			dirtySeriesCount = 0
 			checkpointTimer.Reset(s.checkpointInterval)
 		case fp := <-memoryFingerprints:
-			s.maintainMemorySeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter))
+			if s.maintainMemorySeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter)) {
+				dirtySeriesCount++
+				// Check if we have enough "dirty" series so
+				// that we need an early checkpoint.  However,
+				// if we are already at 90% capacity of the
+				// persist queue, creating a checkpoint would be
+				// counterproductive, as it would slow down
+				// chunk persisting even more, while in a
+				// situation like that, where we are clearly
+				// lacking speed of disk maintenance, the best
+				// we can do for crash recovery is to work
+				// through the persist queue as quickly as
+				// possible. So only checkpoint if the persist
+				// queue is at most 90% full.
+				if dirtySeriesCount >= s.checkpointDirtySeriesLimit &&
+					s.getPersistQueueLen() < s.persistQueueCap*9/10 {
+					checkpointTimer.Reset(0)
+				}
+			}
 		case fp := <-archivedFingerprints:
 			s.maintainArchivedSeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter))
-		case <-s.countPersistedHeadChunks:
-			headChunksPersistedSinceLastCheckpoint++
-			// Check if we have enough "dirty" series so that we need an early checkpoint.
-			// As described above, we take the headChunksPersistedSinceLastCheckpoint as a
-			// heuristic for "dirty" series. However, if we are already backlogging
-			// chunks to be persisted, creating a checkpoint would be counterproductive,
-			// as it would slow down chunk persisting even more, while in a situation like
-			// that, the best we can do for crash recovery is to work through the persist
-			// queue as quickly as possible. So only checkpoint if s.persistQueue is
-			// at most 20% full.
-			if headChunksPersistedSinceLastCheckpoint >= s.checkpointDirtySeriesLimit &&
-				len(s.persistQueue) < cap(s.persistQueue)/5 {
-				checkpointTimer.Reset(0)
-			}
 		}
 	}
 	// Wait until both channels are closed.
@@ -845,38 +705,60 @@ loop:
 	}
 }
 
-// maintainMemorySeries first purges the series from old chunks. If the series
-// still exists after that, it proceeds with the following steps: It closes the
-// head chunk if it was not touched in a while. It archives a series if all
-// chunks are evicted. It evicts chunkDescs if there are too many.
-func (s *memorySeriesStorage) maintainMemorySeries(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) {
-	var headChunkToPersist *chunkDesc
+// maintainMemorySeries maintains a series that is in memory (i.e. not
+// archived). It returns true if the method has changed from clean to dirty
+// (i.e. it is inconsistent with the latest checkpoint now so that in case of a
+// crash a recovery operation that requires a disk seek needed to be applied).
+//
+// The method first closes the head chunk if it was not touched for the duration
+// of headChunkTimeout.
+//
+// Then it determines the chunks that need to be purged and the chunks that need
+// to be persisted. Depending on the result, it does the following:
+//
+// - If all chunks of a series need to be purged, the whole series is deleted
+// for good and the method returns false. (Detecting non-existence of a series
+// file does not require a disk seek.)
+//
+// - If any chunks need to be purged (but not all of them), it purges those
+// chunks from memory and rewrites the series file on disk, leaving out the
+// purged chunks and appending all chunks not yet persisted (with the exception
+// of a still open head chunk).
+//
+// - If no chunks on disk need to be purged, but chunks need to be persisted,
+// those chunks are simply appended to the existing series file (or the file is
+// created if it does not exist yet).
+//
+// - If no chunks need to be purged and no chunks need to be persisted, nothing
+// happens in this step.
+//
+// Next, the method checks if all chunks in the series are evicted. In that
+// case, it archives the series and returns true.
+//
+// Finally, it evicts chunkDescs if there are too many.
+func (s *memorySeriesStorage) maintainMemorySeries(
+	fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp,
+) (becameDirty bool) {
 	s.fpLocker.Lock(fp)
-	defer func() {
-		s.fpLocker.Unlock(fp)
-		// Queue outside of lock!
-		if headChunkToPersist != nil {
-			s.persistQueue <- persistRequest{fp, headChunkToPersist}
-			// Count that a head chunk was persisted, but only best effort, i.e. we
-			// don't want to block here.
-			select {
-			case s.countPersistedHeadChunks <- struct{}{}: // Counted.
-			default: // Meh...
-			}
-		}
-	}()
+	defer s.fpLocker.Unlock(fp)
 
 	series, ok := s.fpToSeries.get(fp)
 	if !ok {
 		// Series is actually not in memory, perhaps archived or dropped in the meantime.
-		return
+		return false
 	}
 
 	defer s.seriesOps.WithLabelValues(memoryMaintenance).Inc()
 
-	if s.purgeMemorySeries(fp, series, beforeTime) {
+	if series.maybeCloseHeadChunk() {
+		s.incPersistQueueLen(1)
+	}
+
+	seriesWasDirty := series.dirty
+
+	if s.writeMemorySeries(fp, series, beforeTime) {
 		// Series is gone now, we are done.
-		return
+		return false
 	}
 
 	iOldestNotEvicted := -1
@@ -914,41 +796,80 @@ func (s *memorySeriesStorage) maintainMemorySeries(fp clientmodel.Fingerprint, b
 		return
 	}
 	// If we are here, the series is not archived, so check for chunkDesc
-	// eviction next and then if the head chunk needs to be persisted.
+	// eviction next
 	series.evictChunkDescs(iOldestNotEvicted)
-	if !series.headChunkPersisted && time.Now().Sub(series.head().lastTime().Time()) > headChunkTimeout {
-		series.headChunkPersisted = true
-		// Since we cannot modify the head chunk from now on, we
-		// don't need to bother with cloning anymore.
-		series.headChunkUsedByIterator = false
-		headChunkToPersist = series.head()
-	}
+
+	return series.dirty && !seriesWasDirty
 }
 
-// purgeMemorySeries drops chunks older than beforeTime from the provided memory
-// series. The caller must have locked fp. If the series contains no chunks
-// after dropping old chunks, it is purged entirely. In that case, the method
-// returns true.
-func (s *memorySeriesStorage) purgeMemorySeries(fp clientmodel.Fingerprint, series *memorySeries, beforeTime clientmodel.Timestamp) bool {
+// writeMemorySeries (re-)writes a memory series file. While doing so, it drops
+// chunks older than beforeTime from both, the series file (if it exists) as
+// well as from memory. The provided chunksToPersist are appended to the newly
+// written series file. If no chunks need to be purged, but chunksToPersist is
+// not empty, those chunks are simply appended to the series file. If the series
+// contains no chunks after dropping old chunks, it is purged entirely. In that
+// case, the method returns true.
+//
+// The caller must have locked the fp.
+func (s *memorySeriesStorage) writeMemorySeries(
+	fp clientmodel.Fingerprint, series *memorySeries, beforeTime clientmodel.Timestamp,
+) bool {
+	cds := series.getChunksToPersist()
+	defer func() {
+		for _, cd := range cds {
+			cd.unpin(s.evictRequests)
+		}
+		s.incPersistQueueLen(-len(cds))
+		chunkOps.WithLabelValues(persistAndUnpin).Add(float64(len(cds)))
+	}()
+
+	// Get the actual chunks from underneath the chunkDescs.
+	chunks := make([]chunk, len(cds))
+	for i, cd := range cds {
+		chunks[i] = cd.chunk
+	}
+
 	if !series.firstTime().Before(beforeTime) {
-		// Oldest sample not old enough.
+		// Oldest sample not old enough, just append chunks, if any.
+		if len(cds) == 0 {
+			return false
+		}
+		offset, err := s.persistence.persistChunks(fp, chunks)
+		if err != nil {
+			s.persistErrors.Inc()
+			return false
+		}
+		if series.chunkDescsOffset == -1 {
+			// This is the first chunk persisted for a newly created
+			// series that had prior chunks on disk. Finally, we can
+			// set the chunkDescsOffset.
+			series.chunkDescsOffset = offset
+		}
 		return false
 	}
-	newFirstTime, numDroppedFromPersistence, allDroppedFromPersistence, err := s.persistence.dropChunks(fp, beforeTime)
+
+	newFirstTime, offset, numDroppedFromPersistence, allDroppedFromPersistence, err :=
+		s.persistence.dropAndPersistChunks(fp, beforeTime, chunks)
 	if err != nil {
-		glog.Error("Error dropping persisted chunks: ", err)
+		s.persistErrors.Inc()
+		return false
 	}
-	numDroppedFromMemory, allDroppedFromMemory := series.dropChunks(beforeTime)
-	if allDroppedFromPersistence && allDroppedFromMemory {
+	series.dropChunks(beforeTime)
+	if len(series.chunkDescs) == 0 { // All chunks dropped from memory series.
+		if !allDroppedFromPersistence {
+			panic("all chunks dropped from memory but chunks left in persistence")
+		}
 		s.fpToSeries.del(fp)
 		s.numSeries.Dec()
 		s.seriesOps.WithLabelValues(memoryPurge).Inc()
 		s.persistence.unindexMetric(fp, series.metric)
 		return true
 	}
-	if series.chunkDescsOffset != -1 {
-		series.savedFirstTime = newFirstTime
-		series.chunkDescsOffset += numDroppedFromMemory - numDroppedFromPersistence
+	series.savedFirstTime = newFirstTime
+	if series.chunkDescsOffset == -1 {
+		series.chunkDescsOffset = offset
+	} else {
+		series.chunkDescsOffset -= numDroppedFromPersistence
 		if series.chunkDescsOffset < 0 {
 			panic("dropped more chunks from persistence than from memory")
 		}
@@ -974,7 +895,7 @@ func (s *memorySeriesStorage) maintainArchivedSeries(fp clientmodel.Fingerprint,
 
 	defer s.seriesOps.WithLabelValues(archiveMaintenance).Inc()
 
-	newFirstTime, _, allDropped, err := s.persistence.dropChunks(fp, beforeTime)
+	newFirstTime, _, _, allDropped, err := s.persistence.dropAndPersistChunks(fp, beforeTime, nil)
 	if err != nil {
 		glog.Error("Error dropping persisted chunks: ", err)
 	}
@@ -999,14 +920,24 @@ func (s *memorySeriesStorage) loadChunkDescs(fp clientmodel.Fingerprint, beforeT
 	return s.persistence.loadChunkDescs(fp, beforeTime)
 }
 
+// getPersistQueueLen returns persistQueueLen in a goroutine-safe way.
+func (s *memorySeriesStorage) getPersistQueueLen() int {
+	return int(atomic.LoadInt64(&s.persistQueueLen))
+}
+
+// incPersistQueueLen increments persistQueueLen in a goroutine-safe way. Use a
+// negative 'by' to decrement.
+func (s *memorySeriesStorage) incPersistQueueLen(by int) {
+	atomic.AddInt64(&s.persistQueueLen, int64(by))
+}
+
 // Describe implements prometheus.Collector.
 func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.persistence.Describe(ch)
 
-	ch <- s.persistLatency.Desc()
 	ch <- s.persistErrors.Desc()
 	ch <- s.persistQueueCapacity.Desc()
-	ch <- s.persistQueueLength.Desc()
+	ch <- persistQueueLengthDesc
 	ch <- s.numSeries.Desc()
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
@@ -1019,10 +950,13 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.persistence.Collect(ch)
 
-	ch <- s.persistLatency
 	ch <- s.persistErrors
 	ch <- s.persistQueueCapacity
-	ch <- s.persistQueueLength
+	ch <- prometheus.MustNewConstMetric(
+		persistQueueLengthDesc,
+		prometheus.GaugeValue,
+		float64(s.getPersistQueueLen()),
+	)
 	ch <- s.numSeries
 	s.seriesOps.Collect(ch)
 	ch <- s.ingestedSamplesCount
@@ -1031,54 +965,6 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(
 		numMemChunksDesc,
 		prometheus.GaugeValue,
-		float64(atomic.LoadInt64(&numMemChunks)))
-}
-
-// chunkMaps is a slice of maps with chunkDescs to be persisted.
-// Each chunk map contains n consecutive chunks to persist, where
-// n is the index+1.
-type chunkMaps []map[clientmodel.Fingerprint][]*chunkDesc
-
-// add adds a chunk to chunkMaps.
-func (cm *chunkMaps) add(fp clientmodel.Fingerprint, cd *chunkDesc) {
-	// Runtime of this method is linear with the number of
-	// chunkMaps. However, we expect only ever very few maps.
-	numMaps := len(*cm)
-	for i, m := range *cm {
-		if cds, ok := m[fp]; ok {
-			// Found our fp! Add cd and level up.
-			cds = append(cds, cd)
-			delete(m, fp)
-			if i == numMaps-1 {
-				*cm = append(*cm, map[clientmodel.Fingerprint][]*chunkDesc{})
-			}
-			(*cm)[i+1][fp] = cds
-			return
-		}
-	}
-	// Our fp isn't contained in cm yet. Add it to the first map (and add a
-	// first map if there is none).
-	if numMaps == 0 {
-		*cm = chunkMaps{map[clientmodel.Fingerprint][]*chunkDesc{}}
-	}
-	(*cm)[0][fp] = []*chunkDesc{cd}
-}
-
-// pop retrieves and removes a fingerprint with all its chunks. It chooses one
-// of the fingerprints with the most chunks. It panics if cm has no entries.
-func (cm *chunkMaps) pop() (clientmodel.Fingerprint, []*chunkDesc) {
-	m := (*cm)[len(*cm)-1]
-	for fp, cds := range m {
-		delete(m, fp)
-		// Prune empty maps from top level.
-		for len(m) == 0 {
-			*cm = (*cm)[:len(*cm)-1]
-			if len(*cm) == 0 {
-				break
-			}
-			m = (*cm)[len(*cm)-1]
-		}
-		return fp, cds
-	}
-	panic("popped from empty chunkMaps")
+		float64(atomic.LoadInt64(&numMemChunks)),
+	)
 }
