@@ -505,6 +505,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 	}
 
 	defer func() {
+		f.Sync()
 		closeErr := f.Close()
 		if err != nil {
 			return
