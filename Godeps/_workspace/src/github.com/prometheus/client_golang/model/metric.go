@@ -101,7 +101,7 @@ type COWMetric struct {
 
 // Set sets a label name in the wrapped Metric to a given value and copies the
 // Metric initially, if it is not already a copy.
-func (m COWMetric) Set(ln LabelName, lv LabelValue) {
+func (m *COWMetric) Set(ln LabelName, lv LabelValue) {
 	m.doCOW()
 	m.Metric[ln] = lv
 }
