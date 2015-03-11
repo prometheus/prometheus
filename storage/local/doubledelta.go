@@ -201,7 +201,7 @@ func (c doubleDeltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 	if ntb > tb || nvb > vb {
 		ntb = max(ntb, tb)
 		nvb = max(nvb, vb)
-		return transcodeAndAdd(newDeltaEncodedChunk(ntb, nvb, c.isInt(), cap(c)), &c, s)
+		return transcodeAndAdd(newDoubleDeltaEncodedChunk(ntb, nvb, c.isInt(), cap(c)), &c, s)
 	}
 
 	offset := len(c)
