@@ -385,7 +385,8 @@ Prometheus.Graph.prototype.metricToTsName = function(labels) {
 
 Prometheus.Graph.prototype.parseValue = function(value) {
   if (value == "NaN" || value == "Inf" || value == "-Inf") {
-    return 0; // TODO: what should we really do here?
+    // Can't display these values on a graph, so display a gap instead.
+    return null;
   } else {
     return parseFloat(value);
   }
