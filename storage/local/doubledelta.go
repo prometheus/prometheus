@@ -82,9 +82,182 @@ func newDoubleDeltaEncodedChunk(tb, vb deltaBytes, isInt bool, length int) *doub
 	return &c
 }
 
-func (c doubleDeltaEncodedChunk) newFollowupChunk() chunk {
-	return newDoubleDeltaEncodedChunk(d1, d0, true, cap(c))
+// add implements chunk.
+func (c doubleDeltaEncodedChunk) add(s *metric.SamplePair) []chunk {
+	if c.len() == 0 {
+		return c.addFirstSample(s)
+	}
+
+	tb := c.timeBytes()
+	vb := c.valueBytes()
+
+	if c.len() == 1 {
+		return c.addSecondSample(s, tb, vb)
+	}
+
+	remainingBytes := cap(c) - len(c)
+	sampleSize := c.sampleSize()
+
+	// Do we generally have space for another sample in this chunk? If not,
+	// overflow into a new one.
+	if remainingBytes < sampleSize {
+		overflowChunks := newChunk().add(s)
+		return []chunk{&c, overflowChunks[0]}
+	}
+
+	projectedTime := c.baseTime() + clientmodel.Timestamp(c.len())*c.baseTimeDelta()
+	ddt := s.Timestamp - projectedTime
+
+	projectedValue := c.baseValue() + clientmodel.SampleValue(c.len())*c.baseValueDelta()
+	ddv := s.Value - projectedValue
+
+	ntb, nvb, nInt := tb, vb, c.isInt()
+	// If the new sample is incompatible with the current encoding, reencode the
+	// existing chunk data into new chunk(s).
+	if c.isInt() && !isInt64(ddv) {
+		// int->float.
+		nvb = d4
+		nInt = false
+	} else if !c.isInt() && vb == d4 && projectedValue+clientmodel.SampleValue(float32(ddv)) != s.Value {
+		// float32->float64.
+		nvb = d8
+	} else {
+		if tb < d8 {
+			// Maybe more bytes for timestamp.
+			ntb = max(tb, bytesNeededForSignedTimestampDelta(ddt))
+		}
+		if c.isInt() && vb < d8 {
+			// Maybe more bytes for sample value.
+			nvb = max(vb, bytesNeededForIntegerSampleValueDelta(ddv))
+		}
+	}
+	if tb != ntb || vb != nvb || c.isInt() != nInt {
+		if len(c)*2 < cap(c) {
+			return transcodeAndAdd(newDoubleDeltaEncodedChunk(ntb, nvb, nInt, cap(c)), &c, s)
+		}
+		// Chunk is already half full. Better create a new one and save the transcoding efforts.
+		overflowChunks := newChunk().add(s)
+		return []chunk{&c, overflowChunks[0]}
+	}
+
+	offset := len(c)
+	c = c[:offset+sampleSize]
+
+	switch tb {
+	case d1:
+		c[offset] = byte(ddt)
+	case d2:
+		binary.LittleEndian.PutUint16(c[offset:], uint16(ddt))
+	case d4:
+		binary.LittleEndian.PutUint32(c[offset:], uint32(ddt))
+	case d8:
+		// Store the absolute value (no delta) in case of d8.
+		binary.LittleEndian.PutUint64(c[offset:], uint64(s.Timestamp))
+	default:
+		panic("invalid number of bytes for time delta")
+	}
+
+	offset += int(tb)
+
+	if c.isInt() {
+		switch vb {
+		case d0:
+			// No-op. Constant delta is stored as base value.
+		case d1:
+			c[offset] = byte(ddv)
+		case d2:
+			binary.LittleEndian.PutUint16(c[offset:], uint16(ddv))
+		case d4:
+			binary.LittleEndian.PutUint32(c[offset:], uint32(ddv))
+		// d8 must not happen. Those samples are encoded as float64.
+		default:
+			panic("invalid number of bytes for integer delta")
+		}
+	} else {
+		switch vb {
+		case d4:
+			binary.LittleEndian.PutUint32(c[offset:], math.Float32bits(float32(ddv)))
+		case d8:
+			// Store the absolute value (no delta) in case of d8.
+			binary.LittleEndian.PutUint64(c[offset:], math.Float64bits(float64(s.Value)))
+		default:
+			panic("invalid number of bytes for floating point delta")
+		}
+	}
+	return []chunk{&c}
 }
+
+// clone implements chunk.
+func (c doubleDeltaEncodedChunk) clone() chunk {
+	clone := make(doubleDeltaEncodedChunk, len(c), cap(c))
+	copy(clone, c)
+	return &clone
+}
+
+// firstTime implements chunk.
+func (c doubleDeltaEncodedChunk) firstTime() clientmodel.Timestamp {
+	return c.baseTime()
+}
+
+// lastTime implements chunk.
+func (c doubleDeltaEncodedChunk) lastTime() clientmodel.Timestamp {
+	return c.valueAtIndex(c.len() - 1).Timestamp
+}
+
+// newIterator implements chunk.
+func (c *doubleDeltaEncodedChunk) newIterator() chunkIterator {
+	return &doubleDeltaEncodedChunkIterator{
+		chunk: c,
+	}
+}
+
+// marshal implements chunk.
+func (c doubleDeltaEncodedChunk) marshal(w io.Writer) error {
+	if len(c) > math.MaxUint16 {
+		panic("chunk buffer length would overflow a 16 bit uint.")
+	}
+	binary.LittleEndian.PutUint16(c[doubleDeltaHeaderBufLenOffset:], uint16(len(c)))
+
+	n, err := w.Write(c[:cap(c)])
+	if err != nil {
+		return err
+	}
+	if n != cap(c) {
+		return fmt.Errorf("wanted to write %d bytes, wrote %d", len(c), n)
+	}
+	return nil
+}
+
+// unmarshal implements chunk.
+func (c *doubleDeltaEncodedChunk) unmarshal(r io.Reader) error {
+	*c = (*c)[:cap(*c)]
+	readBytes := 0
+	for readBytes < len(*c) {
+		n, err := r.Read((*c)[readBytes:])
+		if err != nil {
+			return err
+		}
+		readBytes += n
+	}
+	*c = (*c)[:binary.LittleEndian.Uint16((*c)[doubleDeltaHeaderBufLenOffset:])]
+	return nil
+}
+
+// values implements chunk.
+func (c doubleDeltaEncodedChunk) values() <-chan *metric.SamplePair {
+	n := c.len()
+	valuesChan := make(chan *metric.SamplePair)
+	go func() {
+		for i := 0; i < n; i++ {
+			valuesChan <- c.valueAtIndex(i)
+		}
+		close(valuesChan)
+	}()
+	return valuesChan
+}
+
+// encoding implements chunk.
+func (c doubleDeltaEncodedChunk) encoding() chunkEncoding { return doubleDelta }
 
 func (c doubleDeltaEncodedChunk) baseTime() clientmodel.Timestamp {
 	return clientmodel.Timestamp(
@@ -146,109 +319,6 @@ func (c doubleDeltaEncodedChunk) len() int {
 
 func (c doubleDeltaEncodedChunk) isInt() bool {
 	return c[doubleDeltaHeaderIsIntOffset] == 1
-}
-
-// add implements chunk.
-func (c doubleDeltaEncodedChunk) add(s *metric.SamplePair) []chunk {
-	if c.len() == 0 {
-		return c.addFirstSample(s)
-	}
-
-	tb := c.timeBytes()
-	vb := c.valueBytes()
-
-	if c.len() == 1 {
-		return c.addSecondSample(s, tb, vb)
-	}
-
-	remainingBytes := cap(c) - len(c)
-	sampleSize := c.sampleSize()
-
-	// Do we generally have space for another sample in this chunk? If not,
-	// overflow into a new one.
-	if remainingBytes < sampleSize {
-		overflowChunks := c.newFollowupChunk().add(s)
-		return []chunk{&c, overflowChunks[0]}
-	}
-
-	projectedTime := c.baseTime() + clientmodel.Timestamp(c.len())*c.baseTimeDelta()
-	ddt := s.Timestamp - projectedTime
-
-	projectedValue := c.baseValue() + clientmodel.SampleValue(c.len())*c.baseValueDelta()
-	ddv := s.Value - projectedValue
-
-	// If the new sample is incompatible with the current encoding, reencode the
-	// existing chunk data into new chunk(s).
-	//
-	// int->float.
-	if c.isInt() && !isInt64(ddv) {
-		return transcodeAndAdd(newDoubleDeltaEncodedChunk(tb, d4, false, cap(c)), &c, s)
-	}
-	// float32->float64.
-	if !c.isInt() && vb == d4 && projectedValue+clientmodel.SampleValue(float32(ddv)) != s.Value {
-		return transcodeAndAdd(newDoubleDeltaEncodedChunk(tb, d8, false, cap(c)), &c, s)
-	}
-
-	var ntb, nvb deltaBytes
-	if tb < d8 {
-		// Maybe more bytes for timestamp.
-		ntb = bytesNeededForSignedTimestampDelta(ddt)
-	}
-	if c.isInt() && vb < d8 {
-		// Maybe more bytes for sample value.
-		nvb = bytesNeededForIntegerSampleValueDelta(ddv)
-	}
-	if ntb > tb || nvb > vb {
-		ntb = max(ntb, tb)
-		nvb = max(nvb, vb)
-		return transcodeAndAdd(newDoubleDeltaEncodedChunk(ntb, nvb, c.isInt(), cap(c)), &c, s)
-	}
-
-	offset := len(c)
-	c = c[:offset+sampleSize]
-
-	switch tb {
-	case d1:
-		c[offset] = byte(ddt)
-	case d2:
-		binary.LittleEndian.PutUint16(c[offset:], uint16(ddt))
-	case d4:
-		binary.LittleEndian.PutUint32(c[offset:], uint32(ddt))
-	case d8:
-		// Store the absolute value (no delta) in case of d8.
-		binary.LittleEndian.PutUint64(c[offset:], uint64(s.Timestamp))
-	default:
-		panic("invalid number of bytes for time delta")
-	}
-
-	offset += int(tb)
-
-	if c.isInt() {
-		switch vb {
-		case d0:
-			// No-op. Constant delta is stored as base value.
-		case d1:
-			c[offset] = byte(ddv)
-		case d2:
-			binary.LittleEndian.PutUint16(c[offset:], uint16(ddv))
-		case d4:
-			binary.LittleEndian.PutUint32(c[offset:], uint32(ddv))
-		// d8 must not happen. Those samples are encoded as float64.
-		default:
-			panic("invalid number of bytes for integer delta")
-		}
-	} else {
-		switch vb {
-		case d4:
-			binary.LittleEndian.PutUint32(c[offset:], math.Float32bits(float32(ddv)))
-		case d8:
-			// Store the absolute value (no delta) in case of d8.
-			binary.LittleEndian.PutUint64(c[offset:], math.Float64bits(float64(s.Value)))
-		default:
-			panic("invalid number of bytes for floating point delta")
-		}
-	}
-	return []chunk{&c}
 }
 
 // addFirstSample is a helper method only used by c.add(). It adds timestamp and
@@ -313,26 +383,6 @@ func (c doubleDeltaEncodedChunk) addSecondSample(s *metric.SamplePair, tb, vb de
 		)
 	}
 	return []chunk{&c}
-}
-
-// clone implements chunk.
-func (c doubleDeltaEncodedChunk) clone() chunk {
-	clone := make(doubleDeltaEncodedChunk, len(c), cap(c))
-	copy(clone, c)
-	return &clone
-}
-
-// values implements chunk.
-func (c doubleDeltaEncodedChunk) values() <-chan *metric.SamplePair {
-	n := c.len()
-	valuesChan := make(chan *metric.SamplePair)
-	go func() {
-		for i := 0; i < n; i++ {
-			valuesChan <- c.valueAtIndex(i)
-		}
-		close(valuesChan)
-	}()
-	return valuesChan
 }
 
 func (c doubleDeltaEncodedChunk) valueAtIndex(idx int) *metric.SamplePair {
@@ -424,59 +474,10 @@ func (c doubleDeltaEncodedChunk) valueAtIndex(idx int) *metric.SamplePair {
 	}
 }
 
-// firstTime implements chunk.
-func (c doubleDeltaEncodedChunk) firstTime() clientmodel.Timestamp {
-	return c.baseTime()
-}
-
-// lastTime implements chunk.
-func (c doubleDeltaEncodedChunk) lastTime() clientmodel.Timestamp {
-	return c.valueAtIndex(c.len() - 1).Timestamp
-}
-
-// marshal implements chunk.
-func (c doubleDeltaEncodedChunk) marshal(w io.Writer) error {
-	if len(c) > math.MaxUint16 {
-		panic("chunk buffer length would overflow a 16 bit uint.")
-	}
-	binary.LittleEndian.PutUint16(c[doubleDeltaHeaderBufLenOffset:], uint16(len(c)))
-
-	n, err := w.Write(c[:cap(c)])
-	if err != nil {
-		return err
-	}
-	if n != cap(c) {
-		return fmt.Errorf("wanted to write %d bytes, wrote %d", len(c), n)
-	}
-	return nil
-}
-
-// unmarshal implements chunk.
-func (c *doubleDeltaEncodedChunk) unmarshal(r io.Reader) error {
-	*c = (*c)[:cap(*c)]
-	readBytes := 0
-	for readBytes < len(*c) {
-		n, err := r.Read((*c)[readBytes:])
-		if err != nil {
-			return err
-		}
-		readBytes += n
-	}
-	*c = (*c)[:binary.LittleEndian.Uint16((*c)[doubleDeltaHeaderBufLenOffset:])]
-	return nil
-}
-
 // doubleDeltaEncodedChunkIterator implements chunkIterator.
 type doubleDeltaEncodedChunkIterator struct {
 	chunk *doubleDeltaEncodedChunk
 	// TODO(beorn7): add more fields here to keep track of last position.
-}
-
-// newIterator implements chunk.
-func (c *doubleDeltaEncodedChunk) newIterator() chunkIterator {
-	return &doubleDeltaEncodedChunkIterator{
-		chunk: c,
-	}
 }
 
 // getValueAtTime implements chunkIterator.

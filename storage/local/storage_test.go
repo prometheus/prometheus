@@ -181,7 +181,7 @@ func TestLoop(t *testing.T) {
 	}
 }
 
-func testChunk(t *testing.T, chunkType byte) {
+func testChunk(t *testing.T, encoding chunkEncoding) {
 	samples := make(clientmodel.Samples, 500000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -189,7 +189,7 @@ func testChunk(t *testing.T, chunkType byte) {
 			Value:     clientmodel.SampleValue(float64(i) * 0.2),
 		}
 	}
-	s, closer := NewTestStorage(t, chunkType)
+	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
 	s.AppendSamples(samples)
@@ -229,7 +229,7 @@ func TestChunkType1(t *testing.T) {
 	testChunk(t, 1)
 }
 
-func testGetValueAtTime(t *testing.T, chunkType byte) {
+func testGetValueAtTime(t *testing.T, encoding chunkEncoding) {
 	samples := make(clientmodel.Samples, 1000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -237,7 +237,7 @@ func testGetValueAtTime(t *testing.T, chunkType byte) {
 			Value:     clientmodel.SampleValue(float64(i) * 0.2),
 		}
 	}
-	s, closer := NewTestStorage(t, chunkType)
+	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
 	s.AppendSamples(samples)
@@ -320,7 +320,7 @@ func TestGetValueAtTimeChunkType1(t *testing.T) {
 	testGetValueAtTime(t, 1)
 }
 
-func testGetRangeValues(t *testing.T, chunkType byte) {
+func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 	samples := make(clientmodel.Samples, 1000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -328,7 +328,7 @@ func testGetRangeValues(t *testing.T, chunkType byte) {
 			Value:     clientmodel.SampleValue(float64(i) * 0.2),
 		}
 	}
-	s, closer := NewTestStorage(t, chunkType)
+	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
 	s.AppendSamples(samples)
@@ -470,7 +470,7 @@ func TestGetRangeValuesChunkType1(t *testing.T) {
 	testGetRangeValues(t, 1)
 }
 
-func testEvictAndPurgeSeries(t *testing.T, chunkType byte) {
+func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	samples := make(clientmodel.Samples, 1000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -478,7 +478,7 @@ func testEvictAndPurgeSeries(t *testing.T, chunkType byte) {
 			Value:     clientmodel.SampleValue(float64(i * i)),
 		}
 	}
-	s, closer := NewTestStorage(t, chunkType)
+	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
 	ms := s.(*memorySeriesStorage) // Going to test the internal maintain.*Series methods.
@@ -576,7 +576,7 @@ func TestEvictAndPurgeSeriesChunkType1(t *testing.T) {
 	testEvictAndPurgeSeries(t, 1)
 }
 
-func benchmarkAppend(b *testing.B, chunkType byte) {
+func benchmarkAppend(b *testing.B, encoding chunkEncoding) {
 	samples := make(clientmodel.Samples, b.N)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
@@ -590,7 +590,7 @@ func benchmarkAppend(b *testing.B, chunkType byte) {
 		}
 	}
 	b.ResetTimer()
-	s, closer := NewTestStorage(b, chunkType)
+	s, closer := NewTestStorage(b, encoding)
 	defer closer.Close()
 
 	s.AppendSamples(samples)
@@ -606,14 +606,14 @@ func BenchmarkAppendType1(b *testing.B) {
 
 // Append a large number of random samples and then check if we can get them out
 // of the storage alright.
-func testFuzz(t *testing.T, chunkType byte) {
+func testFuzz(t *testing.T, encoding chunkEncoding) {
 	if testing.Short() {
 		t.Skip("Skipping test in short mode.")
 	}
 
 	check := func(seed int64) bool {
 		rand.Seed(seed)
-		s, c := NewTestStorage(t, chunkType)
+		s, c := NewTestStorage(t, encoding)
 		defer c.Close()
 
 		samples := createRandomSamples("test_fuzz", 1000)
@@ -645,7 +645,8 @@ func TestFuzzChunkType1(t *testing.T) {
 // make things even slower):
 //
 // go test -race -cpu 8 -test=short -bench BenchmarkFuzzChunkType
-func benchmarkFuzz(b *testing.B, chunkType byte) {
+func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
+	*defaultChunkEncoding = int(encoding)
 	const samplesPerRun = 100000
 	rand.Seed(42)
 	directory := test.NewTemporaryDirectory("test_storage", b)
@@ -655,7 +656,6 @@ func benchmarkFuzz(b *testing.B, chunkType byte) {
 		PersistenceRetentionPeriod: time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         time.Second,
-		ChunkType:                  chunkType,
 	}
 	s, err := NewMemorySeriesStorage(o)
 	if err != nil {

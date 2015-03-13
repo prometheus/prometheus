@@ -95,8 +95,7 @@ type indexingOp struct {
 // dropChunks, loadChunks, and loadChunkDescs can be called concurrently with
 // each other if each call refers to a different fingerprint.
 type persistence struct {
-	basePath  string
-	chunkType byte
+	basePath string
 
 	archivedFingerprintToMetrics   *index.FingerprintMetricIndex
 	archivedFingerprintToTimeRange *index.FingerprintTimeRangeIndex
@@ -121,7 +120,7 @@ type persistence struct {
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
-func newPersistence(basePath string, chunkType byte, dirty bool) (*persistence, error) {
+func newPersistence(basePath string, dirty bool) (*persistence, error) {
 	dirtyPath := filepath.Join(basePath, dirtyFileName)
 	versionPath := filepath.Join(basePath, versionFileName)
 
@@ -178,8 +177,7 @@ func newPersistence(basePath string, chunkType byte, dirty bool) (*persistence, 
 	}
 
 	p := &persistence{
-		basePath:  basePath,
-		chunkType: chunkType,
+		basePath: basePath,
 
 		archivedFingerprintToMetrics:   archivedFingerprintToMetrics,
 		archivedFingerprintToTimeRange: archivedFingerprintToTimeRange,
@@ -396,7 +394,7 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int, inde
 		if err != nil {
 			return nil, err
 		}
-		chunk := chunkForType(typeBuf[0])
+		chunk := newChunkForEncoding(chunkEncoding(typeBuf[0]))
 		chunk.unmarshal(f)
 		chunks = append(chunks, chunk)
 	}
@@ -590,7 +588,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 					}
 				} else {
 					// This is the non-persisted head chunk. Fully marshal it.
-					if err = w.WriteByte(chunkType(chunkDesc.chunk)); err != nil {
+					if err = w.WriteByte(byte(chunkDesc.chunk.encoding())); err != nil {
 						return
 					}
 					if err = chunkDesc.chunk.marshal(w); err != nil {
@@ -742,13 +740,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 				}
 			} else {
 				// Non-persisted head chunk.
-				chunkType, err := r.ReadByte()
+				encoding, err := r.ReadByte()
 				if err != nil {
 					glog.Warning("Could not decode chunk type:", err)
 					p.dirty = true
 					return sm, nil
 				}
-				chunk := chunkForType(chunkType)
+				chunk := newChunkForEncoding(chunkEncoding(encoding))
 				if err := chunk.unmarshal(r); err != nil {
 					glog.Warning("Could not decode chunk type:", err)
 					p.dirty = true
@@ -771,7 +769,6 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 			chunkDescsOffset:   int(chunkDescsOffset),
 			savedFirstTime:     clientmodel.Timestamp(savedFirstTime),
 			headChunkPersisted: headChunkPersisted,
-			chunkType:          p.chunkType,
 		}
 	}
 	return sm, nil
@@ -1096,7 +1093,7 @@ func (p *persistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.F
 
 func writeChunkHeader(w io.Writer, c chunk) error {
 	header := make([]byte, chunkHeaderLen)
-	header[chunkHeaderTypeOffset] = chunkType(c)
+	header[chunkHeaderTypeOffset] = byte(c.encoding())
 	binary.LittleEndian.PutUint64(header[chunkHeaderFirstTimeOffset:], uint64(c.firstTime()))
 	binary.LittleEndian.PutUint64(header[chunkHeaderLastTimeOffset:], uint64(c.lastTime()))
 	_, err := w.Write(header)

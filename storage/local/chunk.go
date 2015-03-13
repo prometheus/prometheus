@@ -15,6 +15,7 @@ package local
 
 import (
 	"container/list"
+	"flag"
 	"fmt"
 	"io"
 	"sync"
@@ -23,6 +24,17 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
+)
+
+var (
+	defaultChunkEncoding = flag.Int("storage.local.chunk-encoding-version", 1, "Which chunk encoding version to use for newly created chunks. Currently supported is 0 (delta encoding) and 1 (double-delta encoding).")
+)
+
+type chunkEncoding byte
+
+const (
+	delta chunkEncoding = iota
+	doubleDelta
 )
 
 // chunkDesc contains meta-data for a chunk. Many of its methods are
@@ -173,13 +185,14 @@ type chunk interface {
 	// any. The first chunk returned might be the same as the original one
 	// or a newly allocated version. In any case, take the returned chunk as
 	// the relevant one and discard the orginal chunk.
-	add(*metric.SamplePair) []chunk
+	add(sample *metric.SamplePair) []chunk
 	clone() chunk
 	firstTime() clientmodel.Timestamp
 	lastTime() clientmodel.Timestamp
 	newIterator() chunkIterator
 	marshal(io.Writer) error
 	unmarshal(io.Reader) error
+	encoding() chunkEncoding
 	// values returns a channel, from which all sample values in the chunk
 	// can be received in order. The channel is closed after the last
 	// one. It is generally not safe to mutate the chunk while the channel
@@ -215,29 +228,22 @@ func transcodeAndAdd(dst chunk, src chunk, s *metric.SamplePair) []chunk {
 		head = newChunks[len(newChunks)-1]
 	}
 	newChunks := head.add(s)
-	body = append(body, newChunks[:len(newChunks)-1]...)
-	head = newChunks[len(newChunks)-1]
-	return append(body, head)
+	return append(body, newChunks...)
 }
 
-func chunkType(c chunk) byte {
-	switch c.(type) {
-	case *deltaEncodedChunk:
-		return 0
-	case *doubleDeltaEncodedChunk:
-		return 1
-	default:
-		panic(fmt.Errorf("unknown chunk type: %T", c))
-	}
+// newChunk creates a new chunk according to the encoding set by the
+// defaultChunkEncoding flag.
+func newChunk() chunk {
+	return newChunkForEncoding(chunkEncoding(*defaultChunkEncoding))
 }
 
-func chunkForType(chunkType byte) chunk {
-	switch chunkType {
-	case 0:
+func newChunkForEncoding(encoding chunkEncoding) chunk {
+	switch encoding {
+	case delta:
 		return newDeltaEncodedChunk(d1, d0, true, chunkLen)
-	case 1:
+	case doubleDelta:
 		return newDoubleDeltaEncodedChunk(d1, d0, true, chunkLen)
 	default:
-		panic(fmt.Errorf("unknown chunk type: %d", chunkType))
+		panic(fmt.Errorf("unknown chunk encoding: %v", encoding))
 	}
 }
