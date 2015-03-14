@@ -376,6 +376,15 @@ PromConsole.Graph = function(params) {
 
 };
 
+PromConsole.Graph.prototype._parseValue = function(value) {
+  if (value == "NaN" || value == "Inf" || value == "-Inf") {
+    // Can't display these values on a graph, so display a gap instead.
+    return null;
+  } else {
+    return parseFloat(value);
+  }
+}
+
 PromConsole.Graph.prototype._render = function(data) {
   var palette = new Rickshaw.Color.Palette();
   var series = [];
@@ -399,7 +408,7 @@ PromConsole.Graph.prototype._render = function(data) {
   for (var e = 0; e < data.length; e++) {
     for (var i = 0; i < data[e].value.length; i++) {
       series[seriesLen++] = {
-            data: data[e].value[i].values.map(function(s) {return {x: s[0], y: parseFloat(s[1])} }),
+            data: data[e].value[i].values.map(function(s) {return {x: s[0], y: self._parseValue(s[1])} }),
             color: palette.color(),
             name: nameFunc(data[e].value[i].metric),
       };
