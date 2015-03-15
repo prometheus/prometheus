@@ -24,13 +24,13 @@ import (
 
 	"github.com/golang/glog"
 
-	clientmodel "github.com/prometheus/client_golang/model"
 	registry "github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules/manager"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
@@ -52,7 +52,7 @@ var (
 	remoteTSDBUrl     = flag.String("storage.remote.url", "", "The URL of the OpenTSDB instance to send samples to.")
 	remoteTSDBTimeout = flag.Duration("storage.remote.timeout", 30*time.Second, "The timeout to use when sending samples to OpenTSDB.")
 
-	samplesQueueCapacity = flag.Int("storage.incoming-samples-queue-capacity", 64*1024, "The capacity of the queue of samples to be stored. Note that each slot in the queue takes a whole slice of samples whose size depends on details of the scrape process.")
+	samplesQueueCapacity = flag.Int("storage.incoming-samples-queue-capacity", 0, "Deprecated. Has no effect anymore.")
 
 	numMemoryChunks = flag.Int("storage.local.memory-chunks", 1024*1024, "How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.")
 
@@ -67,23 +67,7 @@ var (
 	printVersion = flag.Bool("version", false, "Print version information.")
 )
 
-// Instrumentation.
-var (
-	samplesQueueCapDesc = registry.NewDesc(
-		"prometheus_samples_queue_capacity",
-		"Capacity of the queue for unwritten samples.",
-		nil, nil,
-	)
-	samplesQueueLenDesc = registry.NewDesc(
-		"prometheus_samples_queue_length",
-		"Current number of items in the queue for unwritten samples. Each item comprises all samples exposed by one target as one metric family (i.e. metrics of the same name).",
-		nil, nil,
-	)
-)
-
 type prometheus struct {
-	incomingSamples chan clientmodel.Samples
-
 	ruleManager         manager.RuleManager
 	targetManager       retrieval.TargetManager
 	notificationHandler *notification.NotificationHandler
@@ -103,16 +87,6 @@ func NewPrometheus() *prometheus {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	incomingSamples := make(chan clientmodel.Samples, *samplesQueueCapacity)
-
-	ingester := &retrieval.MergeLabelsIngester{
-		Labels:          conf.GlobalLabels(),
-		CollisionPrefix: clientmodel.ExporterLabelPrefix,
-		Ingester:        retrieval.ChannelIngester(incomingSamples),
-	}
-	targetManager := retrieval.NewTargetManager(ingester)
-	targetManager.AddTargetsFromConfig(conf)
-
 	notificationHandler := notification.NewNotificationHandler(*alertmanagerURL, *notificationQueueCapacity)
 
 	o := &local.MemorySeriesStorageOptions{
@@ -129,8 +103,25 @@ func NewPrometheus() *prometheus {
 		glog.Fatal("Error opening memory series storage: ", err)
 	}
 
+	var sampleAppender storage.SampleAppender
+	var remoteTSDBQueue *remote.TSDBQueueManager
+	if *remoteTSDBUrl == "" {
+		glog.Warningf("No TSDB URL provided; not sending any samples to long-term storage")
+		sampleAppender = memStorage
+	} else {
+		openTSDB := opentsdb.NewClient(*remoteTSDBUrl, *remoteTSDBTimeout)
+		remoteTSDBQueue = remote.NewTSDBQueueManager(openTSDB, 100*1024)
+		sampleAppender = storage.Tee{
+			Appender1: remoteTSDBQueue,
+			Appender2: memStorage,
+		}
+	}
+
+	targetManager := retrieval.NewTargetManager(sampleAppender, conf.GlobalLabels())
+	targetManager.AddTargetsFromConfig(conf)
+
 	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
-		Results:             incomingSamples,
+		SampleAppender:      sampleAppender,
 		NotificationHandler: notificationHandler,
 		EvaluationInterval:  conf.EvaluationInterval(),
 		Storage:             memStorage,
@@ -138,14 +129,6 @@ func NewPrometheus() *prometheus {
 	})
 	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
 		glog.Fatal("Error loading rule files: ", err)
-	}
-
-	var remoteTSDBQueue *remote.TSDBQueueManager
-	if *remoteTSDBUrl == "" {
-		glog.Warningf("No TSDB URL provided; not sending any samples to long-term storage")
-	} else {
-		openTSDB := opentsdb.NewClient(*remoteTSDBUrl, *remoteTSDBTimeout)
-		remoteTSDBQueue = remote.NewTSDBQueueManager(openTSDB, 512)
 	}
 
 	flags := map[string]string{}
@@ -183,8 +166,6 @@ func NewPrometheus() *prometheus {
 	}
 
 	p := &prometheus{
-		incomingSamples: incomingSamples,
-
 		ruleManager:         ruleManager,
 		targetManager:       targetManager,
 		notificationHandler: notificationHandler,
@@ -193,7 +174,7 @@ func NewPrometheus() *prometheus {
 
 		webService: webService,
 	}
-	webService.QuitDelegate = p.Close
+	webService.QuitChan = make(chan struct{})
 	return p
 }
 
@@ -206,7 +187,6 @@ func (p *prometheus) Serve() {
 	}
 	go p.ruleManager.Run()
 	go p.notificationHandler.Run()
-	go p.interruptHandler()
 
 	p.storage.Start()
 
@@ -217,15 +197,18 @@ func (p *prometheus) Serve() {
 		}
 	}()
 
-	for samples := range p.incomingSamples {
-		p.storage.AppendSamples(samples)
-		if p.remoteTSDBQueue != nil {
-			p.remoteTSDBQueue.Queue(samples)
-		}
+	notifier := make(chan os.Signal)
+	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
+	select {
+	case <-notifier:
+		glog.Warning("Received SIGTERM, exiting gracefully...")
+	case <-p.webService.QuitChan:
+		glog.Warning("Received termination request via web service, exiting gracefully...")
 	}
 
-	// The following shut-down operations have to happen after
-	// incomingSamples is drained. So do not move them into close().
+	p.targetManager.Stop()
+	p.ruleManager.Stop()
+
 	if err := p.storage.Stop(); err != nil {
 		glog.Error("Error stopping local storage: ", err)
 	}
@@ -238,35 +221,8 @@ func (p *prometheus) Serve() {
 	glog.Info("See you next time!")
 }
 
-// Close cleanly shuts down the Prometheus server.
-func (p *prometheus) Close() {
-	p.closeOnce.Do(p.close)
-}
-
-func (p *prometheus) interruptHandler() {
-	notifier := make(chan os.Signal)
-	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
-	<-notifier
-
-	glog.Warning("Received SIGTERM, exiting gracefully...")
-	p.Close()
-}
-
-func (p *prometheus) close() {
-	glog.Info("Shutdown has been requested; subsytems are closing:")
-	p.targetManager.Stop()
-	p.ruleManager.Stop()
-
-	close(p.incomingSamples)
-	// Note: Before closing the remaining subsystems (storage, ...), we have
-	// to wait until p.incomingSamples is actually drained. Therefore,
-	// remaining shut-downs happen in Serve().
-}
-
 // Describe implements registry.Collector.
 func (p *prometheus) Describe(ch chan<- *registry.Desc) {
-	ch <- samplesQueueCapDesc
-	ch <- samplesQueueLenDesc
 	p.notificationHandler.Describe(ch)
 	p.storage.Describe(ch)
 	if p.remoteTSDBQueue != nil {
@@ -276,16 +232,6 @@ func (p *prometheus) Describe(ch chan<- *registry.Desc) {
 
 // Collect implements registry.Collector.
 func (p *prometheus) Collect(ch chan<- registry.Metric) {
-	ch <- registry.MustNewConstMetric(
-		samplesQueueCapDesc,
-		registry.GaugeValue,
-		float64(cap(p.incomingSamples)),
-	)
-	ch <- registry.MustNewConstMetric(
-		samplesQueueLenDesc,
-		registry.GaugeValue,
-		float64(len(p.incomingSamples)),
-	)
 	p.notificationHandler.Collect(ch)
 	p.storage.Collect(ch)
 	if p.remoteTSDBQueue != nil {

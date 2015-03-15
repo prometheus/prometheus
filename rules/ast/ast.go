@@ -249,8 +249,10 @@ type (
 	}
 )
 
+// VectorMatchCardinality is an enum describing vector matches (1:1, n:1, 1:n, n:m).
 type VectorMatchCardinality int
 
+// Constants for VectorMatchCardinality enum.
 const (
 	MatchOneToOne VectorMatchCardinality = iota
 	MatchManyToOne
@@ -880,7 +882,9 @@ func (node *VectorArithExpr) evalVectors(timestamp clientmodel.Timestamp, lhs, r
 				Timestamp: timestamp,
 			}
 			result = append(result, ns)
-			added[hash] = added[hash] // Set existance to true.
+			if _, ok := added[hash]; !ok {
+				added[hash] = nil // Set existence to true.
+			}
 		}
 	}
 

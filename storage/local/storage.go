@@ -16,7 +16,6 @@ package local
 
 import (
 	"container/list"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,9 +36,6 @@ const (
 	fpMaxSweepTime    = 6 * time.Hour
 
 	maxEvictInterval = time.Minute
-
-	appendWorkers  = 16 // Should be enough to not make appending samples a bottleneck.
-	appendQueueCap = 2 * appendWorkers
 )
 
 var (
@@ -64,10 +60,6 @@ type memorySeriesStorage struct {
 	dropAfter                  time.Duration
 	checkpointInterval         time.Duration
 	checkpointDirtySeriesLimit int
-
-	appendQueue         chan *clientmodel.Sample
-	appendLastTimestamp clientmodel.Timestamp // The timestamp of the last sample sent to the append queue.
-	appendWaitGroup     sync.WaitGroup        // To wait for all appended samples to be processed.
 
 	persistQueueLen int64 // The number of chunks that need persistence.
 	persistQueueCap int   // If persistQueueLen reaches this threshold, ingestion will stall.
@@ -135,9 +127,6 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		checkpointInterval:         o.CheckpointInterval,
 		checkpointDirtySeriesLimit: o.CheckpointDirtySeriesLimit,
 
-		appendLastTimestamp: clientmodel.Earliest,
-		appendQueue:         make(chan *clientmodel.Sample, appendQueueCap),
-
 		persistQueueLen: persistQueueLen,
 		persistQueueCap: o.PersistenceQueueCapacity,
 		persistence:     p,
@@ -187,15 +176,6 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		}),
 	}
 
-	for i := 0; i < appendWorkers; i++ {
-		go func() {
-			for sample := range s.appendQueue {
-				s.appendSample(sample)
-				s.appendWaitGroup.Done()
-			}
-		}()
-	}
-
 	return s, nil
 }
 
@@ -208,11 +188,6 @@ func (s *memorySeriesStorage) Start() {
 // Stop implements Storage.
 func (s *memorySeriesStorage) Stop() error {
 	glog.Info("Stopping local storage...")
-
-	glog.Info("Draining append queue...")
-	close(s.appendQueue)
-	s.appendWaitGroup.Wait()
-	glog.Info("Append queue drained.")
 
 	glog.Info("Stopping maintenance loop...")
 	close(s.loopStopping)
@@ -236,9 +211,6 @@ func (s *memorySeriesStorage) Stop() error {
 
 // WaitForIndexing implements Storage.
 func (s *memorySeriesStorage) WaitForIndexing() {
-	// First let all goroutines appending samples stop.
-	s.appendWaitGroup.Wait()
-	// Only then wait for the persistence to index them.
 	s.persistence.waitForIndexing()
 }
 
@@ -363,32 +335,18 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 	}
 }
 
-// AppendSamples implements Storage.
-func (s *memorySeriesStorage) AppendSamples(samples clientmodel.Samples) {
-	for _, sample := range samples {
-		if s.getPersistQueueLen() >= s.persistQueueCap {
-			glog.Warningf("%d chunks waiting for persistence, sample ingestion suspended.", s.getPersistQueueLen())
-			for s.getPersistQueueLen() >= s.persistQueueCap {
-				time.Sleep(time.Second)
-			}
-			glog.Warning("Sample ingestion resumed.")
+// Append implements Storage.
+func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
+	if s.getPersistQueueLen() >= s.persistQueueCap {
+		glog.Warningf(
+			"%d chunks waiting for persistence, sample ingestion suspended.",
+			s.getPersistQueueLen(),
+		)
+		for s.getPersistQueueLen() >= s.persistQueueCap {
+			time.Sleep(time.Second)
 		}
-		if sample.Timestamp != s.appendLastTimestamp {
-			// Timestamp has changed. We have to wait for processing
-			// of all appended samples before proceeding. Otherwise,
-			// we might violate the storage contract that each
-			// sample appended to a given series has to have a
-			// timestamp greater or equal to the previous sample
-			// appended to that series.
-			s.appendWaitGroup.Wait()
-			s.appendLastTimestamp = sample.Timestamp
-		}
-		s.appendWaitGroup.Add(1)
-		s.appendQueue <- sample
+		glog.Warning("Sample ingestion resumed.")
 	}
-}
-
-func (s *memorySeriesStorage) appendSample(sample *clientmodel.Sample) {
 	fp := sample.Metric.Fingerprint()
 	s.fpLocker.Lock(fp)
 	series := s.getOrCreateSeries(fp, sample.Metric)

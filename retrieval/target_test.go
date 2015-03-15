@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,15 +25,6 @@ import (
 
 	"github.com/prometheus/prometheus/utility"
 )
-
-type collectResultIngester struct {
-	result clientmodel.Samples
-}
-
-func (i *collectResultIngester) Ingest(s clientmodel.Samples) error {
-	i.result = s
-	return nil
-}
 
 func TestTargetHidesURLAuth(t *testing.T) {
 	testVectors := []string{"http://secret:data@host.com/query?args#fragment", "https://example.net/foo", "http://foo.com:31337/bar"}
@@ -60,7 +52,7 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 		url:        "bad schema",
 		httpClient: utility.NewDeadlineClient(0),
 	}
-	testTarget.scrape(nopIngester{})
+	testTarget.scrape(nopAppender{})
 	if testTarget.state != Unhealthy {
 		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
 	}
@@ -71,7 +63,11 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-				w.Write([]byte("test_metric{foo=\"bar\"} 123.456\n"))
+				for i := 0; i < 2*ingestedSamplesCap; i++ {
+					w.Write([]byte(
+						fmt.Sprintf("test_metric_%d{foo=\"bar\"} 123.456\n", i),
+					))
+				}
 			},
 		),
 	)
@@ -79,11 +75,11 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 
 	testTarget := NewTarget(
 		server.URL,
-		100*time.Millisecond,
+		10*time.Millisecond,
 		clientmodel.LabelSet{"dings": "bums"},
 	).(*target)
 
-	testTarget.scrape(ChannelIngester(make(chan clientmodel.Samples))) // Capacity 0.
+	testTarget.scrape(slowAppender{})
 	if testTarget.state != Unhealthy {
 		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
 	}
@@ -93,17 +89,15 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 }
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
-	testTarget := target{
-		url:        "http://example.url",
-		baseLabels: clientmodel.LabelSet{clientmodel.JobLabel: "testjob"},
-		httpClient: utility.NewDeadlineClient(0),
-	}
+	testTarget := NewTarget(
+		"http://example.url", 0, clientmodel.LabelSet{clientmodel.JobLabel: "testjob"},
+	).(*target)
 
 	now := clientmodel.Now()
-	ingester := &collectResultIngester{}
-	testTarget.recordScrapeHealth(ingester, now, true, 2*time.Second)
+	appender := &collectResultAppender{}
+	testTarget.recordScrapeHealth(appender, now, true, 2*time.Second)
 
-	result := ingester.result
+	result := appender.result
 
 	if len(result) != 2 {
 		t.Fatalf("Expected two samples, got %d", len(result))
@@ -154,11 +148,11 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	defer server.Close()
 
 	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
-	ingester := nopIngester{}
+	appender := nopAppender{}
 
 	// scrape once without timeout
 	signal <- true
-	if err := testTarget.(*target).scrape(ingester); err != nil {
+	if err := testTarget.(*target).scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 
@@ -167,12 +161,12 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again
 	signal <- true
-	if err := testTarget.(*target).scrape(ingester); err != nil {
+	if err := testTarget.(*target).scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 
 	// now timeout
-	if err := testTarget.(*target).scrape(ingester); err == nil {
+	if err := testTarget.(*target).scrape(appender); err == nil {
 		t.Fatal("expected scrape to timeout")
 	} else {
 		signal <- true // let handler continue
@@ -180,7 +174,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again without timeout
 	signal <- true
-	if err := testTarget.(*target).scrape(ingester); err != nil {
+	if err := testTarget.(*target).scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -196,10 +190,10 @@ func TestTargetScrape404(t *testing.T) {
 	defer server.Close()
 
 	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
-	ingester := nopIngester{}
+	appender := nopAppender{}
 
 	want := errors.New("server returned HTTP status 404 Not Found")
-	got := testTarget.(*target).scrape(ingester)
+	got := testTarget.(*target).scrape(appender)
 	if got == nil || want.Error() != got.Error() {
 		t.Fatalf("want err %q, got %q", want, got)
 	}
@@ -213,7 +207,7 @@ func TestTargetRunScraperScrapes(t *testing.T) {
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 	}
-	go testTarget.RunScraper(nopIngester{}, time.Duration(time.Millisecond))
+	go testTarget.RunScraper(nopAppender{}, time.Duration(time.Millisecond))
 
 	// Enough time for a scrape to happen.
 	time.Sleep(2 * time.Millisecond)
@@ -248,11 +242,11 @@ func BenchmarkScrape(b *testing.B) {
 		100*time.Millisecond,
 		clientmodel.LabelSet{"dings": "bums"},
 	)
-	ingester := nopIngester{}
+	appender := nopAppender{}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := testTarget.(*target).scrape(ingester); err != nil {
+		if err := testTarget.(*target).scrape(appender); err != nil {
 			b.Fatal(err)
 		}
 	}

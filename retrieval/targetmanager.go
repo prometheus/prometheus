@@ -17,11 +17,11 @@ import (
 	"sync"
 
 	"github.com/golang/glog"
-	"github.com/prometheus/client_golang/extraction"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // TargetManager manages all scrape targets. All methods are goroutine-safe.
@@ -35,16 +35,18 @@ type TargetManager interface {
 }
 
 type targetManager struct {
-	sync.Mutex // Protects poolByJob.
-	poolsByJob map[string]*TargetPool
-	ingester   extraction.Ingester
+	sync.Mutex     // Protects poolByJob.
+	globalLabels   clientmodel.LabelSet
+	sampleAppender storage.SampleAppender
+	poolsByJob     map[string]*TargetPool
 }
 
 // NewTargetManager returns a newly initialized TargetManager ready to use.
-func NewTargetManager(ingester extraction.Ingester) TargetManager {
+func NewTargetManager(sampleAppender storage.SampleAppender, globalLabels clientmodel.LabelSet) TargetManager {
 	return &targetManager{
-		ingester:   ingester,
-		poolsByJob: make(map[string]*TargetPool),
+		sampleAppender: sampleAppender,
+		globalLabels:   globalLabels,
+		poolsByJob:     make(map[string]*TargetPool),
 	}
 }
 
@@ -54,11 +56,11 @@ func (m *targetManager) targetPoolForJob(job config.JobConfig) *TargetPool {
 	if !ok {
 		var provider TargetProvider
 		if job.SdName != nil {
-			provider = NewSdTargetProvider(job)
+			provider = NewSdTargetProvider(job, m.globalLabels)
 		}
 
 		interval := job.ScrapeInterval()
-		targetPool = NewTargetPool(m, provider, m.ingester, interval)
+		targetPool = NewTargetPool(provider, m.sampleAppender, interval)
 		glog.Infof("Pool for job %s does not exist; creating and starting...", job.GetName())
 
 		m.poolsByJob[job.GetName()] = targetPool
@@ -101,6 +103,9 @@ func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 		for _, targetGroup := range job.TargetGroup {
 			baseLabels := clientmodel.LabelSet{
 				clientmodel.JobLabel: clientmodel.LabelValue(job.GetName()),
+			}
+			for n, v := range m.globalLabels {
+				baseLabels[n] = v
 			}
 			if targetGroup.Labels != nil {
 				for _, label := range targetGroup.Labels.Label {

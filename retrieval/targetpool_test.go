@@ -80,7 +80,7 @@ func testTargetPool(t testing.TB) {
 	}
 
 	for i, scenario := range scenarios {
-		pool := NewTargetPool(nil, nil, nopIngester{}, time.Duration(1))
+		pool := NewTargetPool(nil, nopAppender{}, time.Duration(1))
 
 		for _, input := range scenario.inputs {
 			target := target{
@@ -112,7 +112,7 @@ func TestTargetPool(t *testing.T) {
 }
 
 func TestTargetPoolReplaceTargets(t *testing.T) {
-	pool := NewTargetPool(nil, nil, nopIngester{}, time.Duration(1))
+	pool := NewTargetPool(nil, nopAppender{}, time.Duration(1))
 	oldTarget1 := &target{
 		url:             "example1",
 		state:           Unhealthy,

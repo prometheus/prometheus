@@ -48,8 +48,9 @@ func TestGetFingerprintsForLabelMatchers(t *testing.T) {
 		}
 		fingerprints[i] = metric.Fingerprint()
 	}
-
-	storage.AppendSamples(samples)
+	for _, s := range samples {
+		storage.Append(s)
+	}
 	storage.WaitForIndexing()
 
 	newMatcher := func(matchType metric.MatchType, name clientmodel.LabelName, value clientmodel.LabelValue) *metric.LabelMatcher {
@@ -166,7 +167,9 @@ func TestLoop(t *testing.T) {
 		t.Fatalf("Error creating storage: %s", err)
 	}
 	storage.Start()
-	storage.AppendSamples(samples)
+	for _, s := range samples {
+		storage.Append(s)
+	}
 	storage.WaitForIndexing()
 	series, _ := storage.(*memorySeriesStorage).fpToSeries.get(clientmodel.Metric{}.Fingerprint())
 	cdsBefore := len(series.chunkDescs)
@@ -192,7 +195,9 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
-	s.AppendSamples(samples)
+	for _, sample := range samples {
+		s.Append(sample)
+	}
 	s.WaitForIndexing()
 
 	for m := range s.(*memorySeriesStorage).fpToSeries.iter() {
@@ -240,7 +245,9 @@ func testGetValueAtTime(t *testing.T, encoding chunkEncoding) {
 	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
-	s.AppendSamples(samples)
+	for _, sample := range samples {
+		s.Append(sample)
+	}
 	s.WaitForIndexing()
 
 	fp := clientmodel.Metric{}.Fingerprint()
@@ -331,7 +338,9 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
-	s.AppendSamples(samples)
+	for _, sample := range samples {
+		s.Append(sample)
+	}
 	s.WaitForIndexing()
 
 	fp := clientmodel.Metric{}.Fingerprint()
@@ -483,7 +492,9 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	ms := s.(*memorySeriesStorage) // Going to test the internal maintain.*Series methods.
 
-	s.AppendSamples(samples)
+	for _, sample := range samples {
+		s.Append(sample)
+	}
 	s.WaitForIndexing()
 
 	fp := clientmodel.Metric{}.Fingerprint()
@@ -518,7 +529,9 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 
 	// Recreate series.
-	s.AppendSamples(samples)
+	for _, sample := range samples {
+		s.Append(sample)
+	}
 	s.WaitForIndexing()
 
 	series, ok := ms.fpToSeries.get(fp)
@@ -592,7 +605,9 @@ func benchmarkAppend(b *testing.B, encoding chunkEncoding) {
 	s, closer := NewTestStorage(b, encoding)
 	defer closer.Close()
 
-	s.AppendSamples(samples)
+	for _, sample := range samples {
+		s.Append(sample)
+	}
 }
 
 func BenchmarkAppendType0(b *testing.B) {
@@ -616,7 +631,9 @@ func testFuzz(t *testing.T, encoding chunkEncoding) {
 		defer c.Close()
 
 		samples := createRandomSamples("test_fuzz", 1000)
-		s.AppendSamples(samples)
+		for _, sample := range samples {
+			s.Append(sample)
+		}
 		return verifyStorage(t, s, samples, 24*7*time.Hour)
 	}
 
@@ -672,9 +689,13 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 		start := samplesPerRun * i
 		end := samplesPerRun * (i + 1)
 		middle := (start + end) / 2
-		s.AppendSamples(samples[start:middle])
+		for _, sample := range samples[start:middle] {
+			s.Append(sample)
+		}
 		verifyStorage(b, s, samples[:middle], o.PersistenceRetentionPeriod)
-		s.AppendSamples(samples[middle:end])
+		for _, sample := range samples[middle:end] {
+			s.Append(sample)
+		}
 		verifyStorage(b, s, samples[:end], o.PersistenceRetentionPeriod)
 	}
 }

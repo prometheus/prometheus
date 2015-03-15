@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/templates"
 )
@@ -94,7 +95,7 @@ type ruleManager struct {
 	interval time.Duration
 	storage  local.Storage
 
-	results             chan<- clientmodel.Samples
+	sampleAppender      storage.SampleAppender
 	notificationHandler *notification.NotificationHandler
 
 	prometheusURL string
@@ -106,7 +107,7 @@ type RuleManagerOptions struct {
 	Storage            local.Storage
 
 	NotificationHandler *notification.NotificationHandler
-	Results             chan<- clientmodel.Samples
+	SampleAppender      storage.SampleAppender
 
 	PrometheusURL string
 }
@@ -120,7 +121,7 @@ func NewRuleManager(o *RuleManagerOptions) RuleManager {
 
 		interval:            o.EvaluationInterval,
 		storage:             o.Storage,
-		results:             o.Results,
+		sampleAppender:      o.SampleAppender,
 		notificationHandler: o.NotificationHandler,
 		prometheusURL:       o.PrometheusURL,
 	}
@@ -145,7 +146,7 @@ func (m *ruleManager) Run() {
 			select {
 			case <-ticker.C:
 				start := time.Now()
-				m.runIteration(m.results)
+				m.runIteration()
 				iterationDuration.Observe(float64(time.Since(start) / time.Millisecond))
 			case <-m.done:
 				return
@@ -213,7 +214,7 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 	m.notificationHandler.SubmitReqs(notifications)
 }
 
-func (m *ruleManager) runIteration(results chan<- clientmodel.Samples) {
+func (m *ruleManager) runIteration() {
 	now := clientmodel.Now()
 	wg := sync.WaitGroup{}
 
@@ -232,20 +233,10 @@ func (m *ruleManager) runIteration(results chan<- clientmodel.Samples) {
 			vector, err := rule.Eval(now, m.storage)
 			duration := time.Since(start)
 
-			samples := make(clientmodel.Samples, len(vector))
-			for i, s := range vector {
-				samples[i] = &clientmodel.Sample{
-					Metric:    s.Metric.Metric,
-					Value:     s.Value,
-					Timestamp: s.Timestamp,
-				}
-			}
-
 			if err != nil {
 				evalFailures.Inc()
 				glog.Warningf("Error while evaluating rule %q: %s", rule, err)
-			} else {
-				m.results <- samples
+				return
 			}
 
 			switch r := rule.(type) {
@@ -261,9 +252,16 @@ func (m *ruleManager) runIteration(results chan<- clientmodel.Samples) {
 			default:
 				panic(fmt.Sprintf("Unknown rule type: %T", rule))
 			}
+
+			for _, s := range vector {
+				m.sampleAppender.Append(&clientmodel.Sample{
+					Metric:    s.Metric.Metric,
+					Value:     s.Value,
+					Timestamp: s.Timestamp,
+				})
+			}
 		}(rule)
 	}
-
 	wg.Wait()
 }
 

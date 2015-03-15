@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -41,6 +43,8 @@ const (
 	// ScrapeTimeMetricName is the metric name for the synthetic scrape duration
 	// variable.
 	scrapeDurationMetricName clientmodel.LabelValue = "scrape_duration_seconds"
+	// Capacity of the channel to buffer samples during ingestion.
+	ingestedSamplesCap = 256
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -48,6 +52,8 @@ const (
 )
 
 var (
+	errIngestChannelFull = errors.New("ingestion channel full")
+
 	localhostRepresentations = []string{"http://127.0.0.1", "http://localhost"}
 
 	targetIntervalLength = prometheus.NewSummaryVec(
@@ -100,6 +106,8 @@ const (
 // For the future, the Target protocol will abstract away the exact means that
 // metrics are retrieved and deserialized from the given instance to which it
 // refers.
+//
+// Target implements extraction.Ingester.
 type Target interface {
 	// Return the last encountered scrape error, if any.
 	LastError() error
@@ -125,9 +133,11 @@ type Target interface {
 	// begins).
 	SetBaseLabelsFrom(Target)
 	// Scrape target at the specified interval.
-	RunScraper(extraction.Ingester, time.Duration)
+	RunScraper(storage.SampleAppender, time.Duration)
 	// Stop scraping, synchronous.
 	StopScraper()
+	// Ingest implements extraction.Ingester.
+	Ingest(clientmodel.Samples) error
 }
 
 // target is a Target that refers to a singular HTTP or HTTPS endpoint.
@@ -144,10 +154,12 @@ type target struct {
 	scraperStopped chan struct{}
 	// Channel to queue base labels to be replaced.
 	newBaseLabels chan clientmodel.LabelSet
+	// Channel to buffer ingested samples.
+	ingestedSamples chan clientmodel.Samples
 
 	url string
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
-	Deadline time.Duration
+	deadline time.Duration
 	// Any base labels that are added to this target and its metrics.
 	baseLabels clientmodel.LabelSet
 	// The HTTP client used to scrape the target's endpoint.
@@ -163,52 +175,42 @@ type target struct {
 
 // NewTarget creates a reasonably configured target for querying.
 func NewTarget(url string, deadline time.Duration, baseLabels clientmodel.LabelSet) Target {
-	target := &target{
+	t := &target{
 		url:             url,
-		Deadline:        deadline,
-		baseLabels:      baseLabels,
+		deadline:        deadline,
 		httpClient:      utility.NewDeadlineClient(deadline),
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
 	}
-
-	return target
+	labels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.InstanceIdentifier())}
+	for baseLabel, baseValue := range baseLabels {
+		labels[baseLabel] = baseValue
+	}
+	t.baseLabels = labels
+	return t
 }
 
-func (t *target) recordScrapeHealth(ingester extraction.Ingester, timestamp clientmodel.Timestamp, healthy bool, scrapeDuration time.Duration) {
-	healthMetric := clientmodel.Metric{}
-	durationMetric := clientmodel.Metric{}
-	for label, value := range t.baseLabels {
-		healthMetric[label] = value
-		durationMetric[label] = value
+// Ingest implements Target and extraction.Ingester.
+func (t *target) Ingest(s clientmodel.Samples) error {
+	// Since the regular case is that ingestedSamples is ready to receive,
+	// first try without setting a timeout so that we don't need to allocate
+	// a timer most of the time.
+	select {
+	case t.ingestedSamples <- s:
+		return nil
+	default:
+		select {
+		case t.ingestedSamples <- s:
+			return nil
+		case <-time.After(t.deadline / 10):
+			return errIngestChannelFull
+		}
 	}
-	healthMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeHealthMetricName)
-	durationMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeDurationMetricName)
-	healthMetric[InstanceLabel] = clientmodel.LabelValue(t.InstanceIdentifier())
-	durationMetric[InstanceLabel] = clientmodel.LabelValue(t.InstanceIdentifier())
-
-	healthValue := clientmodel.SampleValue(0)
-	if healthy {
-		healthValue = clientmodel.SampleValue(1)
-	}
-
-	healthSample := &clientmodel.Sample{
-		Metric:    healthMetric,
-		Timestamp: timestamp,
-		Value:     healthValue,
-	}
-	durationSample := &clientmodel.Sample{
-		Metric:    durationMetric,
-		Timestamp: timestamp,
-		Value:     clientmodel.SampleValue(float64(scrapeDuration) / float64(time.Second)),
-	}
-
-	ingester.Ingest(clientmodel.Samples{healthSample, durationSample})
 }
 
 // RunScraper implements Target.
-func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration) {
+func (t *target) RunScraper(sampleAppender storage.SampleAppender, interval time.Duration) {
 	defer func() {
 		// Need to drain t.newBaseLabels to not make senders block during shutdown.
 		for {
@@ -237,7 +239,7 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 	t.Lock() // Writing t.lastScrape requires the lock.
 	t.lastScrape = time.Now()
 	t.Unlock()
-	t.scrape(ingester)
+	t.scrape(sampleAppender)
 
 	// Explanation of the contraption below:
 	//
@@ -271,7 +273,7 @@ func (t *target) RunScraper(ingester extraction.Ingester, interval time.Duration
 				targetIntervalLength.WithLabelValues(interval.String()).Observe(
 					float64(took) / float64(time.Second), // Sub-second precision.
 				)
-				t.scrape(ingester)
+				t.scrape(sampleAppender)
 			}
 		}
 	}
@@ -285,7 +287,7 @@ func (t *target) StopScraper() {
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
 
-func (t *target) scrape(ingester extraction.Ingester) (err error) {
+func (t *target) scrape(sampleAppender storage.SampleAppender) (err error) {
 	timestamp := clientmodel.Now()
 	defer func(start time.Time) {
 		t.Lock() // Writing t.state and t.lastError requires the lock.
@@ -296,7 +298,7 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		}
 		t.lastError = err
 		t.Unlock()
-		t.recordScrapeHealth(ingester, timestamp, err == nil, time.Since(start))
+		t.recordScrapeHealth(sampleAppender, timestamp, err == nil, time.Since(start))
 	}(time.Now())
 
 	req, err := http.NewRequest("GET", t.URL(), nil)
@@ -319,21 +321,23 @@ func (t *target) scrape(ingester extraction.Ingester) (err error) {
 		return err
 	}
 
-	baseLabels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.InstanceIdentifier())}
-	for baseLabel, baseValue := range t.baseLabels {
-		baseLabels[baseLabel] = baseValue
-	}
+	t.ingestedSamples = make(chan clientmodel.Samples, ingestedSamplesCap)
 
-	i := &MergeLabelsIngester{
-		Labels:          baseLabels,
-		CollisionPrefix: clientmodel.ExporterLabelPrefix,
-
-		Ingester: ingester,
-	}
 	processOptions := &extraction.ProcessOptions{
 		Timestamp: timestamp,
 	}
-	return processor.ProcessSingle(resp.Body, i, processOptions)
+	go func() {
+		err = processor.ProcessSingle(resp.Body, t, processOptions)
+		close(t.ingestedSamples)
+	}()
+
+	for samples := range t.ingestedSamples {
+		for _, s := range samples {
+			s.Metric.MergeFromLabelSet(t.baseLabels, clientmodel.ExporterLabelPrefix)
+			sampleAppender.Append(s)
+		}
+	}
+	return err
 }
 
 // LastError implements Target.
@@ -411,4 +415,34 @@ func (t *target) SetBaseLabelsFrom(newTarget Target) {
 		panic("targets don't refer to the same endpoint")
 	}
 	t.newBaseLabels <- newTarget.BaseLabels()
+}
+
+func (t *target) recordScrapeHealth(sampleAppender storage.SampleAppender, timestamp clientmodel.Timestamp, healthy bool, scrapeDuration time.Duration) {
+	healthMetric := clientmodel.Metric{}
+	durationMetric := clientmodel.Metric{}
+	for label, value := range t.baseLabels {
+		healthMetric[label] = value
+		durationMetric[label] = value
+	}
+	healthMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeHealthMetricName)
+	durationMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeDurationMetricName)
+
+	healthValue := clientmodel.SampleValue(0)
+	if healthy {
+		healthValue = clientmodel.SampleValue(1)
+	}
+
+	healthSample := &clientmodel.Sample{
+		Metric:    healthMetric,
+		Timestamp: timestamp,
+		Value:     healthValue,
+	}
+	durationSample := &clientmodel.Sample{
+		Metric:    durationMetric,
+		Timestamp: timestamp,
+		Value:     clientmodel.SampleValue(float64(scrapeDuration) / float64(time.Second)),
+	}
+
+	sampleAppender.Append(healthSample)
+	sampleAppender.Append(durationSample)
 }

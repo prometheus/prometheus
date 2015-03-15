@@ -63,7 +63,9 @@ func storeMatrix(storage local.Storage, matrix ast.Matrix) {
 			})
 		}
 	}
-	storage.AppendSamples(pendingSamples)
+	for _, s := range pendingSamples {
+		storage.Append(s)
+	}
 	storage.WaitForIndexing()
 }
 
