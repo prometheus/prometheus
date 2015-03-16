@@ -16,7 +16,6 @@ package local
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -72,7 +71,6 @@ type memorySeriesStorage struct {
 	dropAfter                  time.Duration
 	checkpointInterval         time.Duration
 	checkpointDirtySeriesLimit int
-	chunkType                  byte
 
 	appendQueue         chan *clientmodel.Sample
 	appendLastTimestamp clientmodel.Timestamp // The timestamp of the last sample sent to the append queue.
@@ -110,17 +108,13 @@ type MemorySeriesStorageOptions struct {
 	PersistenceQueueCapacity   int           // Capacity of queue for chunks to be persisted.
 	CheckpointInterval         time.Duration // How often to checkpoint the series map and head chunks.
 	CheckpointDirtySeriesLimit int           // How many dirty series will trigger an early checkpoint.
-	ChunkType                  byte          // Chunk type for newly created chunks.
 	Dirty                      bool          // Force the storage to consider itself dirty on startup.
 }
 
 // NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
 // has to be called to start the storage.
 func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
-	if o.ChunkType > 1 {
-		return nil, fmt.Errorf("unsupported chunk type %d", o.ChunkType)
-	}
-	p, err := newPersistence(o.PersistenceStoragePath, o.ChunkType, o.Dirty)
+	p, err := newPersistence(o.PersistenceStoragePath, o.Dirty)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +142,6 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		dropAfter:                  o.PersistenceRetentionPeriod,
 		checkpointInterval:         o.CheckpointInterval,
 		checkpointDirtySeriesLimit: o.CheckpointDirtySeriesLimit,
-		chunkType:                  o.ChunkType,
 
 		appendLastTimestamp: clientmodel.Earliest,
 		appendQueue:         make(chan *clientmodel.Sample, appendQueueCap),
@@ -458,7 +451,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m cl
 			s.persistence.indexMetric(fp, m)
 			s.seriesOps.WithLabelValues(create).Inc()
 		}
-		series = newMemorySeries(m, !unarchived, firstTime, s.chunkType)
+		series = newMemorySeries(m, !unarchived, firstTime)
 		s.fpToSeries.put(fp, series)
 		s.numSeries.Inc()
 	}

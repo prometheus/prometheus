@@ -31,9 +31,10 @@ var (
 	m3 = clientmodel.Metric{"label": "value3"}
 )
 
-func newTestPersistence(t *testing.T, chunkType byte) (*persistence, test.Closer) {
+func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, test.Closer) {
+	*defaultChunkEncoding = int(encoding)
 	dir := test.NewTemporaryDirectory("test_persistence", t)
-	p, err := newPersistence(dir.Path(), chunkType, false)
+	p, err := newPersistence(dir.Path(), false)
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
@@ -44,7 +45,7 @@ func newTestPersistence(t *testing.T, chunkType byte) (*persistence, test.Closer
 	})
 }
 
-func buildTestChunks(chunkType byte) map[clientmodel.Fingerprint][]chunk {
+func buildTestChunks(encoding chunkEncoding) map[clientmodel.Fingerprint][]chunk {
 	fps := clientmodel.Fingerprints{
 		m1.Fingerprint(),
 		m2.Fingerprint(),
@@ -55,7 +56,7 @@ func buildTestChunks(chunkType byte) map[clientmodel.Fingerprint][]chunk {
 	for _, fp := range fps {
 		fpToChunks[fp] = make([]chunk, 0, 10)
 		for i := 0; i < 10; i++ {
-			fpToChunks[fp] = append(fpToChunks[fp], chunkForType(chunkType).add(&metric.SamplePair{
+			fpToChunks[fp] = append(fpToChunks[fp], newChunkForEncoding(encoding).add(&metric.SamplePair{
 				Timestamp: clientmodel.Timestamp(i),
 				Value:     clientmodel.SampleValue(fp),
 			})[0])
@@ -75,11 +76,11 @@ func chunksEqual(c1, c2 chunk) bool {
 	return true
 }
 
-func testPersistLoadDropChunks(t *testing.T, chunkType byte) {
-	p, closer := newTestPersistence(t, chunkType)
+func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
+	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
-	fpToChunks := buildTestChunks(chunkType)
+	fpToChunks := buildTestChunks(encoding)
 
 	for fp, chunks := range fpToChunks {
 		for i, c := range chunks {
@@ -191,15 +192,15 @@ func TestPersistLoadDropChunksType1(t *testing.T) {
 	testPersistLoadDropChunks(t, 1)
 }
 
-func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, chunkType byte) {
-	p, closer := newTestPersistence(t, chunkType)
+func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding) {
+	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
 	fpLocker := newFingerprintLocker(10)
 	sm := newSeriesMap()
-	s1 := newMemorySeries(m1, true, 0, chunkType)
-	s2 := newMemorySeries(m2, false, 0, chunkType)
-	s3 := newMemorySeries(m3, false, 0, chunkType)
+	s1 := newMemorySeries(m1, true, 0)
+	s2 := newMemorySeries(m2, false, 0)
+	s3 := newMemorySeries(m3, false, 0)
 	s1.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 1, Value: 3.14})
 	s3.add(m1.Fingerprint(), &metric.SamplePair{Timestamp: 2, Value: 2.7})
 	s3.headChunkPersisted = true
@@ -260,8 +261,8 @@ func TestCheckpointAndLoadSeriesMapAndHeadsChunkType1(t *testing.T) {
 	testCheckpointAndLoadSeriesMapAndHeads(t, 1)
 }
 
-func testGetFingerprintsModifiedBefore(t *testing.T, chunkType byte) {
-	p, closer := newTestPersistence(t, chunkType)
+func testGetFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
+	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
 	m1 := clientmodel.Metric{"n1": "v1"}
@@ -338,8 +339,8 @@ func TestGetFingerprintsModifiedBeforeChunkType1(t *testing.T) {
 	testGetFingerprintsModifiedBefore(t, 1)
 }
 
-func testDropArchivedMetric(t *testing.T, chunkType byte) {
-	p, closer := newTestPersistence(t, chunkType)
+func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
+	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
 	m1 := clientmodel.Metric{"n1": "v1"}
@@ -420,7 +421,7 @@ type incrementalBatch struct {
 	expectedLpToFps index.LabelPairFingerprintsMapping
 }
 
-func testIndexing(t *testing.T, chunkType byte) {
+func testIndexing(t *testing.T, encoding chunkEncoding) {
 	batches := []incrementalBatch{
 		{
 			fpToMetric: index.FingerprintMetricMapping{
@@ -556,7 +557,7 @@ func testIndexing(t *testing.T, chunkType byte) {
 		},
 	}
 
-	p, closer := newTestPersistence(t, chunkType)
+	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
 	indexedFpsToMetrics := index.FingerprintMetricMapping{}
