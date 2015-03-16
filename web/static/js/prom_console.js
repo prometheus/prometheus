@@ -377,15 +377,17 @@ PromConsole.Graph = function(params) {
 };
 
 PromConsole.Graph.prototype._parseValue = function(value) {
-  if (value == "NaN" || value == "Inf" || value == "-Inf") {
-    // Can't display these values on a graph, so display a gap instead.
-    return null;
-  } else {
-    return parseFloat(value);
+  var val = parseFloat(value);
+  if (isNaN(val)) {
+    // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). The
+    // can't be graphed, so show them as gaps (null).
+    return null
   }
+  return val;
 }
 
 PromConsole.Graph.prototype._render = function(data) {
+  var self = this;
   var palette = new Rickshaw.Color.Palette();
   var series = [];
 
