@@ -637,15 +637,12 @@ func evalScalarBinop(opType BinOpType,
 	case Mul:
 		return lhs * rhs
 	case Div:
-		if rhs != 0 {
-			return lhs / rhs
-		}
-		return clientmodel.SampleValue(math.Inf(int(rhs)))
+		return lhs / rhs
 	case Mod:
 		if rhs != 0 {
 			return clientmodel.SampleValue(int(lhs) % int(rhs))
 		}
-		return clientmodel.SampleValue(math.Inf(int(rhs)))
+		return clientmodel.SampleValue(math.NaN())
 	case EQ:
 		if lhs == rhs {
 			return 1
@@ -691,15 +688,12 @@ func evalVectorBinop(opType BinOpType,
 	case Mul:
 		return lhs * rhs, true
 	case Div:
-		if rhs != 0 {
-			return lhs / rhs, true
-		}
-		return clientmodel.SampleValue(math.Inf(int(rhs))), true
+		return lhs / rhs, true
 	case Mod:
 		if rhs != 0 {
 			return clientmodel.SampleValue(int(lhs) % int(rhs)), true
 		}
-		return clientmodel.SampleValue(math.Inf(int(rhs))), true
+		return clientmodel.SampleValue(math.NaN()), true
 	case EQ:
 		if lhs == rhs {
 			return lhs, true

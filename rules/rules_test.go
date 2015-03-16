@@ -1157,6 +1157,46 @@ func TestExpressions(t *testing.T) {
 			expr:   `999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999`,
 			output: []string{`scalar: +Inf @[%v]`},
 		},
+		{
+			expr:   `1 / 0`,
+			output: []string{`scalar: +Inf @[%v]`},
+		},
+		{
+			expr:   `-1 / 0`,
+			output: []string{`scalar: -Inf @[%v]`},
+		},
+		{
+			expr:   `0 / 0`,
+			output: []string{`scalar: NaN @[%v]`},
+		},
+		{
+			expr:   `1 % 0`,
+			output: []string{`scalar: NaN @[%v]`},
+		},
+		{
+			expr: `http_requests{group="canary", instance="0", job="api-server"} / 0`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => +Inf @[%v]`,
+			},
+		},
+		{
+			expr: `-1 * http_requests{group="canary", instance="0", job="api-server"} / 0`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => -Inf @[%v]`,
+			},
+		},
+		{
+			expr: `0 * http_requests{group="canary", instance="0", job="api-server"} / 0`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => NaN @[%v]`,
+			},
+		},
+		{
+			expr: `0 * http_requests{group="canary", instance="0", job="api-server"} % 0`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => NaN @[%v]`,
+			},
+		},
 	}
 
 	storage, closer := newTestStorage(t)
