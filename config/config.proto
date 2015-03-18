@@ -48,9 +48,24 @@ message TargetGroup {
 	optional LabelPairs labels = 2;
 }
 
+// Information about the service discovery.
+message ServiceDiscovery {
+	// The name by which the service information can be found for
+	// the specified discovery service.
+	required string name = 1;
+	// The type of discovery to be used.
+	required string type = 2;
+	// Path to a configuration file that is used for setting up
+	// the discovery.
+	optional string config_file = 3;
+	// Discovery refresh period when using DNS-SD to discover targets. Must be a
+	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
+	optional string refresh_interval = 4 [default = "30s"];
+}
+
 // The configuration for a Prometheus job to scrape.
 //
-// The next field no. is 8.
+// The next field no. is 7.
 message JobConfig {
 	// The job name. Must adhere to the regex "[a-zA-Z_][a-zA-Z0-9_-]*".
 	required string name = 1;
@@ -60,14 +75,10 @@ message JobConfig {
 	optional string scrape_interval = 2;
 	// Per-target timeout when scraping this job. Must be a valid Prometheus
 	// duration string in the form "[0-9]+[smhdwy]".
-	optional string scrape_timeout = 7 [default = "10s"];
-	// The DNS-SD service name pointing to SRV records containing endpoint
-	// information for a job. When this field is provided, no target_group
-	// elements may be set.
-	optional string sd_name = 3;
-	// Discovery refresh period when using DNS-SD to discover targets. Must be a
-	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
-	optional string sd_refresh_interval = 4 [default = "30s"];
+	optional string scrape_timeout = 3 [default = "10s"];
+	// The service discovery information for a job.
+	// When this field is provided, no target_group elements may be set.
+	optional ServiceDiscovery service_discovery = 4;
 	// List of labeled target groups for this job. Only legal when DNS-SD isn't
 	// used for a job.
 	repeated TargetGroup target_group = 5;

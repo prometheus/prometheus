@@ -13,6 +13,7 @@ It has these top-level messages:
 	LabelPairs
 	GlobalConfig
 	TargetGroup
+	ServiceDiscovery
 	JobConfig
 	PrometheusConfig
 */
@@ -146,9 +147,59 @@ func (m *TargetGroup) GetLabels() *LabelPairs {
 	return nil
 }
 
+// Information about the service discovery.
+type ServiceDiscovery struct {
+	// The name by which the service information can be found for
+	// the specified discovery service.
+	Name *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	// The type of discovery to be used.
+	Type *string `protobuf:"bytes,2,req,name=type" json:"type,omitempty"`
+	// Path to a configuration file that is used for setting up
+	// the discovery.
+	ConfigFile *string `protobuf:"bytes,3,opt,name=config_file" json:"config_file,omitempty"`
+	// Discovery refresh period when using DNS-SD to discover targets. Must be a
+	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
+	RefreshInterval  *string `protobuf:"bytes,4,opt,name=refresh_interval,def=30s" json:"refresh_interval,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *ServiceDiscovery) Reset()         { *m = ServiceDiscovery{} }
+func (m *ServiceDiscovery) String() string { return proto.CompactTextString(m) }
+func (*ServiceDiscovery) ProtoMessage()    {}
+
+const Default_ServiceDiscovery_RefreshInterval string = "30s"
+
+func (m *ServiceDiscovery) GetName() string {
+	if m != nil && m.Name != nil {
+		return *m.Name
+	}
+	return ""
+}
+
+func (m *ServiceDiscovery) GetType() string {
+	if m != nil && m.Type != nil {
+		return *m.Type
+	}
+	return ""
+}
+
+func (m *ServiceDiscovery) GetConfigFile() string {
+	if m != nil && m.ConfigFile != nil {
+		return *m.ConfigFile
+	}
+	return ""
+}
+
+func (m *ServiceDiscovery) GetRefreshInterval() string {
+	if m != nil && m.RefreshInterval != nil {
+		return *m.RefreshInterval
+	}
+	return Default_ServiceDiscovery_RefreshInterval
+}
+
 // The configuration for a Prometheus job to scrape.
 //
-// The next field no. is 8.
+// The next field no. is 7.
 type JobConfig struct {
 	// The job name. Must adhere to the regex "[a-zA-Z_][a-zA-Z0-9_-]*".
 	Name *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
@@ -158,14 +209,10 @@ type JobConfig struct {
 	ScrapeInterval *string `protobuf:"bytes,2,opt,name=scrape_interval" json:"scrape_interval,omitempty"`
 	// Per-target timeout when scraping this job. Must be a valid Prometheus
 	// duration string in the form "[0-9]+[smhdwy]".
-	ScrapeTimeout *string `protobuf:"bytes,7,opt,name=scrape_timeout,def=10s" json:"scrape_timeout,omitempty"`
-	// The DNS-SD service name pointing to SRV records containing endpoint
-	// information for a job. When this field is provided, no target_group
-	// elements may be set.
-	SdName *string `protobuf:"bytes,3,opt,name=sd_name" json:"sd_name,omitempty"`
-	// Discovery refresh period when using DNS-SD to discover targets. Must be a
-	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
-	SdRefreshInterval *string `protobuf:"bytes,4,opt,name=sd_refresh_interval,def=30s" json:"sd_refresh_interval,omitempty"`
+	ScrapeTimeout *string `protobuf:"bytes,3,opt,name=scrape_timeout,def=10s" json:"scrape_timeout,omitempty"`
+	// The service discovery information for a job.
+	// When this field is provided, no target_group elements may be set.
+	ServiceDiscovery *ServiceDiscovery `protobuf:"bytes,4,opt,name=service_discovery" json:"service_discovery,omitempty"`
 	// List of labeled target groups for this job. Only legal when DNS-SD isn't
 	// used for a job.
 	TargetGroup []*TargetGroup `protobuf:"bytes,5,rep,name=target_group" json:"target_group,omitempty"`
@@ -179,7 +226,6 @@ func (m *JobConfig) String() string { return proto.CompactTextString(m) }
 func (*JobConfig) ProtoMessage()    {}
 
 const Default_JobConfig_ScrapeTimeout string = "10s"
-const Default_JobConfig_SdRefreshInterval string = "30s"
 const Default_JobConfig_MetricsPath string = "/metrics"
 
 func (m *JobConfig) GetName() string {
@@ -203,18 +249,11 @@ func (m *JobConfig) GetScrapeTimeout() string {
 	return Default_JobConfig_ScrapeTimeout
 }
 
-func (m *JobConfig) GetSdName() string {
-	if m != nil && m.SdName != nil {
-		return *m.SdName
+func (m *JobConfig) GetServiceDiscovery() *ServiceDiscovery {
+	if m != nil {
+		return m.ServiceDiscovery
 	}
-	return ""
-}
-
-func (m *JobConfig) GetSdRefreshInterval() string {
-	if m != nil && m.SdRefreshInterval != nil {
-		return *m.SdRefreshInterval
-	}
-	return Default_JobConfig_SdRefreshInterval
+	return nil
 }
 
 func (m *JobConfig) GetTargetGroup() []*TargetGroup {

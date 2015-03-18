@@ -53,8 +53,8 @@ func (m *targetManager) targetPoolForJob(job config.JobConfig) *TargetPool {
 
 	if !ok {
 		var provider TargetProvider
-		if job.SdName != nil {
-			provider = NewSdTargetProvider(job)
+		if job.ServiceDiscovery != nil {
+			provider = NewSDTargetProvider(job)
 		}
 
 		interval := job.ScrapeInterval()
@@ -91,7 +91,7 @@ func (m *targetManager) Remove(t Target) {
 
 func (m *targetManager) AddTargetsFromConfig(config config.Config) {
 	for _, job := range config.Jobs() {
-		if job.SdName != nil {
+		if job.ServiceDiscovery != nil {
 			m.Lock()
 			m.targetPoolForJob(job)
 			m.Unlock()
