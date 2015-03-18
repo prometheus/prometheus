@@ -809,7 +809,8 @@ func (s *memorySeriesStorage) writeMemorySeries(
 	series.dropChunks(beforeTime)
 	if len(series.chunkDescs) == 0 { // All chunks dropped from memory series.
 		if !allDroppedFromPersistence {
-			panic("all chunks dropped from memory but chunks left in persistence")
+			glog.Errorf("All chunks dropped from memory but chunks left in persistence for fingerprint %v, series %v.", fp, series)
+			s.persistence.setDirty(true)
 		}
 		s.fpToSeries.del(fp)
 		s.numSeries.Dec()
@@ -823,7 +824,9 @@ func (s *memorySeriesStorage) writeMemorySeries(
 	} else {
 		series.chunkDescsOffset -= numDroppedFromPersistence
 		if series.chunkDescsOffset < 0 {
-			panic("dropped more chunks from persistence than from memory")
+			glog.Errorf("Dropped more chunks from persistence than from memory for fingerprint %v, series %v.", fp, series)
+			s.persistence.setDirty(true)
+			series.chunkDescsOffset = -1 // Makes sure it will be looked at during crash recovery.
 		}
 	}
 	return false
