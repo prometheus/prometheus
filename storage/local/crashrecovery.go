@@ -225,7 +225,9 @@ func (p *persistence) sanitizeSeries(
 			// Everything is consistent. We are good.
 			return fp, true
 		}
-		// If we are here, something's fishy.
+		// If we are here, we cannot be sure the series file is
+		// consistent with the checkpoint, so we have to take a closer
+		// look.
 		if s.headChunkClosed {
 			// This is the easy case as we don't have any chunks in
 			// heads.db. Treat this series as a freshly unarchived
