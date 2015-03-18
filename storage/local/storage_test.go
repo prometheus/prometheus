@@ -157,9 +157,9 @@ func TestLoop(t *testing.T) {
 	defer directory.Close()
 	o := &MemorySeriesStorageOptions{
 		MemoryChunks:               50,
+		MaxChunksToPersist:         1000000,
 		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
 		PersistenceStoragePath:     directory.Path(),
-		PersistenceQueueCapacity:   1000000,
 		CheckpointInterval:         250 * time.Millisecond,
 	}
 	storage, err := NewMemorySeriesStorage(o)
@@ -669,9 +669,9 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 	defer directory.Close()
 	o := &MemorySeriesStorageOptions{
 		MemoryChunks:               100,
+		MaxChunksToPersist:         1000000,
 		PersistenceRetentionPeriod: time.Hour,
 		PersistenceStoragePath:     directory.Path(),
-		PersistenceQueueCapacity:   1000000,
 		CheckpointInterval:         time.Second,
 	}
 	s, err := NewMemorySeriesStorage(o)

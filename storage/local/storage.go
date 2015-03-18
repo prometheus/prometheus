@@ -39,9 +39,14 @@ const (
 )
 
 var (
-	persistQueueLengthDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, subsystem, "persist_queue_length"),
-		"The current number of chunks waiting in the persist queue.",
+	numChunksToPersistDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, subsystem, "chunks_to_persist"),
+		"The current number of chunks waiting for persistence.",
+		nil, nil,
+	)
+	maxChunksToPersistDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, subsystem, "max_chunks_to_persist"),
+		"The maximum number of chunks that can be waiting for persistence before sample ingestion will stop.",
 		nil, nil,
 	)
 )
@@ -61,10 +66,8 @@ type memorySeriesStorage struct {
 	checkpointInterval         time.Duration
 	checkpointDirtySeriesLimit int
 
-	persistQueueLen int64 // The number of chunks that need persistence.
-	persistQueueCap int   // If persistQueueLen reaches this threshold, ingestion will stall.
-	// Note that internally, the chunks to persist are not organized in a queue-like data structure,
-	// but handled in a more sophisticated way (see maintainMemorySeries).
+	numChunksToPersist int64 // The number of chunks waiting for persistence.
+	maxChunksToPersist int   // If numChunksToPersist reaches this threshold, ingestion will stall.
 
 	persistence *persistence
 
@@ -75,7 +78,6 @@ type memorySeriesStorage struct {
 	evictStopping, evictStopped chan struct{}
 
 	persistErrors               prometheus.Counter
-	persistQueueCapacity        prometheus.Metric
 	numSeries                   prometheus.Gauge
 	seriesOps                   *prometheus.CounterVec
 	ingestedSamplesCount        prometheus.Counter
@@ -87,9 +89,9 @@ type memorySeriesStorage struct {
 // values.
 type MemorySeriesStorageOptions struct {
 	MemoryChunks               int           // How many chunks to keep in memory.
+	MaxChunksToPersist         int           // Max number of chunks waiting to be persisted.
 	PersistenceStoragePath     string        // Location of persistence files.
 	PersistenceRetentionPeriod time.Duration // Chunks at least that old are dropped.
-	PersistenceQueueCapacity   int           // Capacity of queue for chunks to be persisted.
 	CheckpointInterval         time.Duration // How often to checkpoint the series map and head chunks.
 	CheckpointDirtySeriesLimit int           // How many dirty series will trigger an early checkpoint.
 	Dirty                      bool          // Force the storage to consider itself dirty on startup.
@@ -103,7 +105,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		return nil, err
 	}
 	glog.Info("Loading series map and head chunks...")
-	fpToSeries, persistQueueLen, err := p.loadSeriesMapAndHeads()
+	fpToSeries, numChunksToPersist, err := p.loadSeriesMapAndHeads()
 	if err != nil {
 		return nil, err
 	}
@@ -127,9 +129,9 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		checkpointInterval:         o.CheckpointInterval,
 		checkpointDirtySeriesLimit: o.CheckpointDirtySeriesLimit,
 
-		persistQueueLen: persistQueueLen,
-		persistQueueCap: o.PersistenceQueueCapacity,
-		persistence:     p,
+		maxChunksToPersist: o.MaxChunksToPersist,
+		numChunksToPersist: numChunksToPersist,
+		persistence:        p,
 
 		countPersistedHeadChunks: make(chan struct{}, 100),
 
@@ -144,14 +146,6 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			Name:      "persist_errors_total",
 			Help:      "The total number of errors while persisting chunks.",
 		}),
-		persistQueueCapacity: prometheus.MustNewConstMetric(
-			prometheus.NewDesc(
-				prometheus.BuildFQName(namespace, subsystem, "persist_queue_capacity"),
-				"The total capacity of the persist queue.",
-				nil, nil,
-			),
-			prometheus.GaugeValue, float64(o.PersistenceQueueCapacity),
-		),
 		numSeries: numSeries,
 		seriesOps: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -337,12 +331,12 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 
 // Append implements Storage.
 func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
-	if s.getPersistQueueLen() >= s.persistQueueCap {
+	if s.getNumChunksToPersist() >= s.maxChunksToPersist {
 		glog.Warningf(
 			"%d chunks waiting for persistence, sample ingestion suspended.",
-			s.getPersistQueueLen(),
+			s.getNumChunksToPersist(),
 		)
-		for s.getPersistQueueLen() >= s.persistQueueCap {
+		for s.getNumChunksToPersist() >= s.maxChunksToPersist {
 			time.Sleep(time.Second)
 		}
 		glog.Warning("Sample ingestion resumed.")
@@ -356,7 +350,7 @@ func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
 	})
 	s.fpLocker.Unlock(fp)
 	s.ingestedSamplesCount.Inc()
-	s.incPersistQueueLen(completedChunksCount)
+	s.incNumChunksToPersist(completedChunksCount)
 }
 
 func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m clientmodel.Metric) *memorySeries {
@@ -648,7 +642,7 @@ loop:
 				// possible. So only checkpoint if the persist
 				// queue is at most 90% full.
 				if dirtySeriesCount >= s.checkpointDirtySeriesLimit &&
-					s.getPersistQueueLen() < s.persistQueueCap*9/10 {
+					s.getNumChunksToPersist() < s.maxChunksToPersist*9/10 {
 					checkpointTimer.Reset(0)
 				}
 			}
@@ -709,7 +703,7 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 	defer s.seriesOps.WithLabelValues(memoryMaintenance).Inc()
 
 	if series.maybeCloseHeadChunk() {
-		s.incPersistQueueLen(1)
+		s.incNumChunksToPersist(1)
 	}
 
 	seriesWasDirty := series.dirty
@@ -777,7 +771,7 @@ func (s *memorySeriesStorage) writeMemorySeries(
 		for _, cd := range cds {
 			cd.unpin(s.evictRequests)
 		}
-		s.incPersistQueueLen(-len(cds))
+		s.incNumChunksToPersist(-len(cds))
 		chunkOps.WithLabelValues(persistAndUnpin).Add(float64(len(cds)))
 	}()
 
@@ -878,15 +872,15 @@ func (s *memorySeriesStorage) loadChunkDescs(fp clientmodel.Fingerprint, beforeT
 	return s.persistence.loadChunkDescs(fp, beforeTime)
 }
 
-// getPersistQueueLen returns persistQueueLen in a goroutine-safe way.
-func (s *memorySeriesStorage) getPersistQueueLen() int {
-	return int(atomic.LoadInt64(&s.persistQueueLen))
+// getNumChunksToPersist returns numChunksToPersist in a goroutine-safe way.
+func (s *memorySeriesStorage) getNumChunksToPersist() int {
+	return int(atomic.LoadInt64(&s.numChunksToPersist))
 }
 
-// incPersistQueueLen increments persistQueueLen in a goroutine-safe way. Use a
+// incNumChunksToPersist increments numChunksToPersist in a goroutine-safe way. Use a
 // negative 'by' to decrement.
-func (s *memorySeriesStorage) incPersistQueueLen(by int) {
-	atomic.AddInt64(&s.persistQueueLen, int64(by))
+func (s *memorySeriesStorage) incNumChunksToPersist(by int) {
+	atomic.AddInt64(&s.numChunksToPersist, int64(by))
 }
 
 // Describe implements prometheus.Collector.
@@ -894,8 +888,8 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.persistence.Describe(ch)
 
 	ch <- s.persistErrors.Desc()
-	ch <- s.persistQueueCapacity.Desc()
-	ch <- persistQueueLengthDesc
+	ch <- maxChunksToPersistDesc
+	ch <- numChunksToPersistDesc
 	ch <- s.numSeries.Desc()
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
@@ -909,11 +903,15 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.persistence.Collect(ch)
 
 	ch <- s.persistErrors
-	ch <- s.persistQueueCapacity
 	ch <- prometheus.MustNewConstMetric(
-		persistQueueLengthDesc,
+		maxChunksToPersistDesc,
 		prometheus.GaugeValue,
-		float64(s.getPersistQueueLen()),
+		float64(s.maxChunksToPersist),
+	)
+	ch <- prometheus.MustNewConstMetric(
+		numChunksToPersistDesc,
+		prometheus.GaugeValue,
+		float64(s.getNumChunksToPersist()),
 	)
 	ch <- s.numSeries
 	s.seriesOps.Collect(ch)

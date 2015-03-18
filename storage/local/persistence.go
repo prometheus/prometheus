@@ -627,7 +627,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 // unrecoverable error is encountered, it is returned. Call this method during
 // start-up while nothing else is running in storage land. This method is
 // utterly goroutine-unsafe.
-func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen int64, err error) {
+func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist int64, err error) {
 	var chunkDescsTotal int64
 	fingerprintToSeries := make(map[clientmodel.Fingerprint]*memorySeries)
 	sm = &seriesMap{m: fingerprintToSeries}
@@ -690,20 +690,20 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen in
 		if err != nil {
 			glog.Warning("Could not read series flags:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		headChunkPersisted := seriesFlags&flagHeadChunkPersisted != 0
 		fp, err := codable.DecodeUint64(r)
 		if err != nil {
 			glog.Warning("Could not decode fingerprint:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		var metric codable.Metric
 		if err := metric.UnmarshalFromReader(r); err != nil {
 			glog.Warning("Could not decode metric:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		var persistWatermark int64
 		if version != headsFormatLegacyVersion {
@@ -712,26 +712,26 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen in
 			if err != nil {
 				glog.Warning("Could not decode persist watermark:", err)
 				p.dirty = true
-				return sm, persistQueueLen, nil
+				return sm, chunksToPersist, nil
 			}
 		}
 		chunkDescsOffset, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode chunk descriptor offset:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		savedFirstTime, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode saved first time:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		numChunkDescs, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode number of chunk descriptors:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		chunkDescs := make([]*chunkDesc, numChunkDescs)
 		if version == headsFormatLegacyVersion {
@@ -748,13 +748,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen in
 				if err != nil {
 					glog.Warning("Could not decode first time:", err)
 					p.dirty = true
-					return sm, persistQueueLen, nil
+					return sm, chunksToPersist, nil
 				}
 				lastTime, err := binary.ReadVarint(r)
 				if err != nil {
 					glog.Warning("Could not decode last time:", err)
 					p.dirty = true
-					return sm, persistQueueLen, nil
+					return sm, chunksToPersist, nil
 				}
 				chunkDescs[i] = &chunkDesc{
 					chunkFirstTime: clientmodel.Timestamp(firstTime),
@@ -767,16 +767,16 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen in
 				if err != nil {
 					glog.Warning("Could not decode chunk type:", err)
 					p.dirty = true
-					return sm, persistQueueLen, nil
+					return sm, chunksToPersist, nil
 				}
 				chunk := newChunkForEncoding(chunkEncoding(encoding))
 				if err := chunk.unmarshal(r); err != nil {
 					glog.Warning("Could not decode chunk type:", err)
 					p.dirty = true
-					return sm, persistQueueLen, nil
+					return sm, chunksToPersist, nil
 				}
 				chunkDescs[i] = newChunkDesc(chunk)
-				persistQueueLen++
+				chunksToPersist++
 			}
 		}
 
@@ -789,7 +789,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen in
 			headChunkClosed:  persistWatermark >= numChunkDescs,
 		}
 	}
-	return sm, persistQueueLen, nil
+	return sm, chunksToPersist, nil
 }
 
 // dropAndPersistChunks deletes all chunks from a series file whose last sample
