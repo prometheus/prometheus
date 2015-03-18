@@ -53,6 +53,10 @@ func (t fakeTarget) BaseLabels() clientmodel.LabelSet {
 	return clientmodel.LabelSet{}
 }
 
+func (t fakeTarget) BaseLabelsWithoutJobAndInstance() clientmodel.LabelSet {
+	return clientmodel.LabelSet{}
+}
+
 func (t fakeTarget) Interval() time.Duration {
 	return t.interval
 }

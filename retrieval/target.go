@@ -126,6 +126,9 @@ type Target interface {
 	GlobalURL() string
 	// Return the target's base labels.
 	BaseLabels() clientmodel.LabelSet
+	// Return the target's base labels without job and instance label. That's
+	// useful for display purposes.
+	BaseLabelsWithoutJobAndInstance() clientmodel.LabelSet
 	// SetBaseLabelsFrom queues a replacement of the current base labels by
 	// the labels of the given target. The method returns immediately after
 	// queuing. The actual replacement of the base labels happens
@@ -183,11 +186,10 @@ func NewTarget(url string, deadline time.Duration, baseLabels clientmodel.LabelS
 		scraperStopped:  make(chan struct{}),
 		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
 	}
-	labels := clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.InstanceIdentifier())}
+	t.baseLabels = clientmodel.LabelSet{InstanceLabel: clientmodel.LabelValue(t.InstanceIdentifier())}
 	for baseLabel, baseValue := range baseLabels {
-		labels[baseLabel] = baseValue
+		t.baseLabels[baseLabel] = baseValue
 	}
-	t.baseLabels = labels
 	return t
 }
 
@@ -407,6 +409,17 @@ func (t *target) BaseLabels() clientmodel.LabelSet {
 	t.Lock()
 	defer t.Unlock()
 	return t.baseLabels
+}
+
+// BaseLabelsWithoutJobAndInstance implements Target.
+func (t *target) BaseLabelsWithoutJobAndInstance() clientmodel.LabelSet {
+	ls := clientmodel.LabelSet{}
+	for ln, lv := range t.BaseLabels() {
+		if ln != clientmodel.JobLabel && ln != InstanceLabel {
+			ls[ln] = lv
+		}
+	}
+	return ls
 }
 
 // SetBaseLabelsFrom implements Target.

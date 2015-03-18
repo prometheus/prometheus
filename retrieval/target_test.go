@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -25,6 +26,21 @@ import (
 
 	"github.com/prometheus/prometheus/utility"
 )
+
+func TestBaseLabels(t *testing.T) {
+	target := NewTarget("http://example.com/metrics", 0, clientmodel.LabelSet{"job": "some_job", "foo": "bar"})
+	want := clientmodel.LabelSet{"job": "some_job", "foo": "bar", "instance": "example.com:80"}
+	got := target.BaseLabels()
+	if !reflect.DeepEqual(want, got) {
+		t.Errorf("want base labels %v, got %v", want, got)
+	}
+	delete(want, "job")
+	delete(want, "instance")
+	got = target.BaseLabelsWithoutJobAndInstance()
+	if !reflect.DeepEqual(want, got) {
+		t.Errorf("want base labels %v, got %v", want, got)
+	}
+}
 
 func TestTargetHidesURLAuth(t *testing.T) {
 	testVectors := []string{"http://secret:data@host.com/query?args#fragment", "https://example.net/foo", "http://foo.com:31337/bar"}

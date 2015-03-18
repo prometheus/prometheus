@@ -35,6 +35,7 @@ type PrometheusStatusHandler struct {
 	Birth time.Time
 }
 
+// TargetStateToClass returns a map of TargetState to the name of a Bootstrap CSS class.
 func (h *PrometheusStatusHandler) TargetStateToClass() map[retrieval.TargetState]string {
 	return map[retrieval.TargetState]string{
 		retrieval.Unknown:   "warning",
