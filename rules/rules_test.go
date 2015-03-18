@@ -36,7 +36,7 @@ var (
 	testEvalTime = testStartTime.Add(testSampleInterval * 10)
 	fixturesPath = "fixtures"
 
-	reSample  = regexp.MustCompile(`^(.*)(?: \=\>|:) (\-?\d+\.?\d*e?\d*|[+-]Inf|NaN) \@\[(\d+)\]$`)
+	reSample  = regexp.MustCompile(`^(.*)(?: \=\>|:) (\-?\d+\.?\d*(?:e-?\d*)?|[+-]Inf|NaN) \@\[(\d+)\]$`)
 	minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
 )
 
@@ -1156,6 +1156,137 @@ func TestExpressions(t *testing.T) {
 		{
 			expr:   `999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999`,
 			output: []string{`scalar: +Inf @[%v]`},
+		},
+		{
+			expr:   `1 / 0`,
+			output: []string{`scalar: +Inf @[%v]`},
+		},
+		{
+			expr:   `-1 / 0`,
+			output: []string{`scalar: -Inf @[%v]`},
+		},
+		{
+			expr:   `0 / 0`,
+			output: []string{`scalar: NaN @[%v]`},
+		},
+		{
+			expr:   `1 % 0`,
+			output: []string{`scalar: NaN @[%v]`},
+		},
+		{
+			expr: `http_requests{group="canary", instance="0", job="api-server"} / 0`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => +Inf @[%v]`,
+			},
+		},
+		{
+			expr: `-1 * http_requests{group="canary", instance="0", job="api-server"} / 0`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => -Inf @[%v]`,
+			},
+		},
+		{
+			expr: `0 * http_requests{group="canary", instance="0", job="api-server"} / 0`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => NaN @[%v]`,
+			},
+		},
+		{
+			expr: `0 * http_requests{group="canary", instance="0", job="api-server"} % 0`,
+			output: []string{
+				`{group="canary", instance="0", job="api-server"} => NaN @[%v]`,
+			},
+		},
+		{
+			expr: `exp(vector_matching_a)`,
+			output: []string{
+				`{l="x"} => 22026.465794806718 @[%v]`,
+				`{l="y"} => 485165195.4097903 @[%v]`,
+			},
+		},
+		{
+			expr: `exp(vector_matching_a - 10)`,
+			output: []string{
+				`{l="y"} => 22026.465794806718 @[%v]`,
+				`{l="x"} => 1 @[%v]`,
+			},
+		},
+		{
+			expr: `exp(vector_matching_a - 20)`,
+			output: []string{
+				`{l="x"} => 4.5399929762484854e-05 @[%v]`,
+				`{l="y"} => 1 @[%v]`,
+			},
+		},
+		{
+			expr: `ln(vector_matching_a)`,
+			output: []string{
+				`{l="x"} => 2.302585092994046 @[%v]`,
+				`{l="y"} => 2.995732273553991 @[%v]`,
+			},
+		},
+		{
+			expr: `ln(vector_matching_a - 10)`,
+			output: []string{
+				`{l="y"} => 2.302585092994046 @[%v]`,
+				`{l="x"} => -Inf @[%v]`,
+			},
+		},
+		{
+			expr: `ln(vector_matching_a - 20)`,
+			output: []string{
+				`{l="y"} => -Inf @[%v]`,
+				`{l="x"} => NaN @[%v]`,
+			},
+		},
+		{
+			expr: `exp(ln(vector_matching_a))`,
+			output: []string{
+				`{l="y"} => 20 @[%v]`,
+				`{l="x"} => 10 @[%v]`,
+			},
+		},
+		{
+			expr: `log2(vector_matching_a)`,
+			output: []string{
+				`{l="x"} => 3.3219280948873626 @[%v]`,
+				`{l="y"} => 4.321928094887363 @[%v]`,
+			},
+		},
+		{
+			expr: `log2(vector_matching_a - 10)`,
+			output: []string{
+				`{l="y"} => 3.3219280948873626 @[%v]`,
+				`{l="x"} => -Inf @[%v]`,
+			},
+		},
+		{
+			expr: `log2(vector_matching_a - 20)`,
+			output: []string{
+				`{l="x"} => NaN @[%v]`,
+				`{l="y"} => -Inf @[%v]`,
+			},
+		},
+		{
+			expr: `log10(vector_matching_a)`,
+			output: []string{
+				`{l="x"} => 1 @[%v]`,
+				`{l="y"} => 1.301029995663981 @[%v]`,
+			},
+		},
+		{
+			expr: `log10(vector_matching_a - 10)`,
+			output: []string{
+				`{l="y"} => 1 @[%v]`,
+				`{l="x"} => -Inf @[%v]`,
+			},
+		},
+		{
+			expr: `log10(vector_matching_a - 20)`,
+			output: []string{
+				`{l="x"} => NaN @[%v]`,
+				`{l="y"} => -Inf @[%v]`,
+			},
 		},
 	}
 

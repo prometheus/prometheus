@@ -32,7 +32,6 @@ const (
 	chunkDescEvictionFactor = 10
 
 	headChunkTimeout = time.Hour // Close head chunk if not touched for that long.
-
 )
 
 // fingerprintSeriesPair pairs a fingerprint with a memorySeries pointer.
@@ -168,7 +167,7 @@ type memorySeries struct {
 	// appended.
 	headChunkUsedByIterator bool
 	// Whether the series is inconsistent with the last checkpoint in a way
-	// that would require a desk seek during crash recovery.
+	// that would require a disk seek during crash recovery.
 	dirty bool
 }
 
@@ -233,7 +232,7 @@ func (s *memorySeries) add(v *metric.SamplePair) int {
 }
 
 // maybeCloseHeadChunk closes the head chunk if it has not been touched for the
-// duration of headChunkTimeout. It returns wether the head chunk was closed.
+// duration of headChunkTimeout. It returns whether the head chunk was closed.
 // If the head chunk is already closed, the method is a no-op and returns false.
 //
 // The caller must have locked the fingerprint of the series.

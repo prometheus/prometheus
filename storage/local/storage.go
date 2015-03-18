@@ -761,8 +761,8 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 }
 
 // writeMemorySeries (re-)writes a memory series file. While doing so, it drops
-// chunks older than beforeTime from both, the series file (if it exists) as
-// well as from memory. The provided chunksToPersist are appended to the newly
+// chunks older than beforeTime from both the series file (if it exists) as well
+// as from memory. The provided chunksToPersist are appended to the newly
 // written series file. If no chunks need to be purged, but chunksToPersist is
 // not empty, those chunks are simply appended to the series file. If the series
 // contains no chunks after dropping old chunks, it is purged entirely. In that

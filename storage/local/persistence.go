@@ -911,7 +911,7 @@ func (p *persistence) dropAndPersistChunks(
 	// Otherwise, seek backwards to the beginning of its header and start
 	// copying everything from there into a new file. Then append the chunks
 	// to the new file.
-	_, err = f.Seek(-(chunkHeaderLen), os.SEEK_CUR)
+	_, err = f.Seek(-chunkHeaderLen, os.SEEK_CUR)
 	if err != nil {
 		return
 	}

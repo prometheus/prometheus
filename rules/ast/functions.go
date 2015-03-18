@@ -456,6 +456,50 @@ func ceilImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	return vector
 }
 
+// === exp(vector VectorNode) Vector ===
+func expImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	n := args[0].(VectorNode)
+	vector := n.Eval(timestamp)
+	for _, el := range vector {
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		el.Value = clientmodel.SampleValue(math.Exp(float64(el.Value)))
+	}
+	return vector
+}
+
+// === ln(vector VectorNode) Vector ===
+func lnImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	n := args[0].(VectorNode)
+	vector := n.Eval(timestamp)
+	for _, el := range vector {
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		el.Value = clientmodel.SampleValue(math.Log(float64(el.Value)))
+	}
+	return vector
+}
+
+// === log2(vector VectorNode) Vector ===
+func log2Impl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	n := args[0].(VectorNode)
+	vector := n.Eval(timestamp)
+	for _, el := range vector {
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		el.Value = clientmodel.SampleValue(math.Log2(float64(el.Value)))
+	}
+	return vector
+}
+
+// === log10(vector VectorNode) Vector ===
+func log10Impl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	n := args[0].(VectorNode)
+	vector := n.Eval(timestamp)
+	for _, el := range vector {
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		el.Value = clientmodel.SampleValue(math.Log10(float64(el.Value)))
+	}
+	return vector
+}
+
 // === deriv(node MatrixNode) Vector ===
 func derivImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
@@ -598,6 +642,12 @@ var functions = map[string]*Function{
 		returnType: VectorType,
 		callFn:     dropCommonLabelsImpl,
 	},
+	"exp": {
+		name:       "exp",
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
+		callFn:     expImpl,
+	},
 	"floor": {
 		name:       "floor",
 		argTypes:   []ExprType{VectorType},
@@ -609,6 +659,24 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{ScalarType, VectorType},
 		returnType: VectorType,
 		callFn:     histogramQuantileImpl,
+	},
+	"ln": {
+		name:       "ln",
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
+		callFn:     lnImpl,
+	},
+	"log10": {
+		name:       "log10",
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
+		callFn:     log10Impl,
+	},
+	"log2": {
+		name:       "log2",
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
+		callFn:     log2Impl,
 	},
 	"max_over_time": {
 		name:       "max_over_time",
