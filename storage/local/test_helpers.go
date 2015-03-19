@@ -44,6 +44,7 @@ func NewTestStorage(t test.T, encoding chunkEncoding) (Storage, test.Closer) {
 		MemoryChunks:               1000000,
 		PersistenceRetentionPeriod: 24 * time.Hour * 365 * 100, // Enough to never trigger purging.
 		PersistenceStoragePath:     directory.Path(),
+		PersistenceQueueCapacity:   1000000,
 		CheckpointInterval:         time.Hour,
 	}
 	storage, err := NewMemorySeriesStorage(o)

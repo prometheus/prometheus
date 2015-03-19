@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync/atomic"
 
 	"github.com/golang/glog"
 
@@ -74,9 +75,11 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 	for fp, s := range fingerprintToSeries {
 		if _, seen := fpsSeen[fp]; !seen {
 			// fp exists in fingerprintToSeries, but has no representation on disk.
-			if s.headChunkPersisted {
-				// Oops, head chunk was persisted, but nothing on disk.
-				// Thus, we lost that series completely. Clean up the remnants.
+			if s.headChunkClosed {
+				// Oops, everything including the head chunk was
+				// already persisted, but nothing on disk.
+				// Thus, we lost that series completely. Clean
+				// up the remnants.
 				delete(fingerprintToSeries, fp)
 				if err := p.purgeArchivedMetric(fp); err != nil {
 					// Purging the archived metric didn't work, so try
@@ -86,10 +89,10 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 				glog.Warningf("Lost series detected: fingerprint %v, metric %v.", fp, s.metric)
 				continue
 			}
-			// If we are here, the only chunk we have is the head chunk.
+			// If we are here, the only chunks we have are the chunks in the checkpoint.
 			// Adjust things accordingly.
-			if len(s.chunkDescs) > 1 || s.chunkDescsOffset != 0 {
-				minLostChunks := len(s.chunkDescs) + s.chunkDescsOffset - 1
+			if s.persistWatermark > 0 || s.chunkDescsOffset != 0 {
+				minLostChunks := s.persistWatermark + s.chunkDescsOffset
 				if minLostChunks <= 0 {
 					glog.Warningf(
 						"Possible loss of chunks for fingerprint %v, metric %v.",
@@ -101,7 +104,12 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 						minLostChunks, fp, s.metric,
 					)
 				}
-				s.chunkDescs = s.chunkDescs[len(s.chunkDescs)-1:]
+				s.chunkDescs = append(
+					make([]*chunkDesc, 0, len(s.chunkDescs)-s.persistWatermark),
+					s.chunkDescs[s.persistWatermark:]...,
+				)
+				numMemChunkDescs.Sub(float64(s.persistWatermark))
+				s.persistWatermark = 0
 				s.chunkDescsOffset = 0
 			}
 			fpsSeen[fp] = struct{}{} // Add so that fpsSeen is complete.
@@ -139,15 +147,17 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 // - A file that is empty (after truncation) is deleted.
 //
 // - A series that is not archived (i.e. it is in the fingerprintToSeries map)
-//   is checked for consistency of its various parameters (like head-chunk
-//   persistence state, offset of chunkDescs etc.). In particular, overlap
-//   between an in-memory head chunk with the most recent persisted chunk is
+//   is checked for consistency of its various parameters (like persist
+//   watermark, offset of chunkDescs etc.). In particular, overlap between an
+//   in-memory head chunk with the most recent persisted chunk is
 //   checked. Inconsistencies are rectified.
 //
 // - A series that is archived (i.e. it is not in the fingerprintToSeries map)
 //   is checked for its presence in the index of archived series. If it cannot
 //   be found there, it is moved into the orphaned directory.
-func (p *persistence) sanitizeSeries(dirname string, fi os.FileInfo, fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) (clientmodel.Fingerprint, bool) {
+func (p *persistence) sanitizeSeries(
+	dirname string, fi os.FileInfo, fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries,
+) (clientmodel.Fingerprint, bool) {
 	filename := path.Join(dirname, fi.Name())
 	purge := func() {
 		var err error
@@ -211,35 +221,38 @@ func (p *persistence) sanitizeSeries(dirname string, fi os.FileInfo, fingerprint
 		if s == nil {
 			panic("fingerprint mapped to nil pointer")
 		}
-		if bytesToTrim == 0 && s.chunkDescsOffset != -1 &&
-			((s.headChunkPersisted && chunksInFile == s.chunkDescsOffset+len(s.chunkDescs)) ||
-				(!s.headChunkPersisted && chunksInFile == s.chunkDescsOffset+len(s.chunkDescs)-1)) {
+		if bytesToTrim == 0 && s.chunkDescsOffset != -1 && chunksInFile == s.chunkDescsOffset+s.persistWatermark {
 			// Everything is consistent. We are good.
 			return fp, true
 		}
-		// If we are here, something's fishy.
-		if s.headChunkPersisted {
-			// This is the easy case as we don't have a head chunk
-			// in heads.db. Treat this series as a freshly
-			// unarchived one. No chunks or chunkDescs in memory, no
-			// current head chunk.
+		// If we are here, we cannot be sure the series file is
+		// consistent with the checkpoint, so we have to take a closer
+		// look.
+		if s.headChunkClosed {
+			// This is the easy case as we don't have any chunks in
+			// heads.db. Treat this series as a freshly unarchived
+			// one. No chunks or chunkDescs in memory, no current
+			// head chunk.
 			glog.Warningf(
 				"Treating recovered metric %v, fingerprint %v, as freshly unarchived, with %d chunks in series file.",
 				s.metric, fp, chunksInFile,
 			)
 			s.chunkDescs = nil
 			s.chunkDescsOffset = -1
+			s.persistWatermark = 0
 			return fp, true
 		}
-		// This is the tricky one: We have a head chunk from heads.db,
-		// but the very same head chunk might already be in the series
-		// file. Strategy: Check the first time of both. If it is the
-		// same or newer, assume the latest chunk in the series file
-		// is the most recent head chunk. If not, keep the head chunk
-		// we got from heads.db.
-		// First, assume the head chunk is not yet persisted.
-		s.chunkDescs = s.chunkDescs[len(s.chunkDescs)-1:]
-		s.chunkDescsOffset = -1
+		// This is the tricky one: We have chunks from heads.db, but
+		// some of those chunks might already be in the series
+		// file. Strategy: Take the last time of the most recent chunk
+		// in the series file. Then find the oldest chunk among those
+		// from heads.db that has a first time later or equal to the
+		// last time from the series file. Throw away the older chunks
+		// from heads.db and stitch the parts together.
+
+		// First, throw away the chunkDescs without chunks.
+		s.chunkDescs = s.chunkDescs[s.persistWatermark:]
+		numMemChunkDescs.Sub(float64(s.persistWatermark))
 		// Load all the chunk descs (which assumes we have none from the future).
 		cds, err := p.loadChunkDescs(fp, clientmodel.Now())
 		if err != nil {
@@ -250,21 +263,35 @@ func (p *persistence) sanitizeSeries(dirname string, fi os.FileInfo, fingerprint
 			purge()
 			return fp, false
 		}
-		if cds[len(cds)-1].firstTime().Before(s.head().firstTime()) {
-			s.chunkDescs = append(cds, s.chunkDescs...)
-			glog.Warningf(
-				"Recovered metric %v, fingerprint %v: recovered %d chunks from series file, recovered head chunk from checkpoint.",
-				s.metric, fp, chunksInFile,
-			)
-		} else {
-			glog.Warningf(
-				"Recovered metric %v, fingerprint %v: head chunk found among the %d recovered chunks in series file.",
-				s.metric, fp, chunksInFile,
-			)
-			s.chunkDescs = cds
-			s.headChunkPersisted = true
-		}
+		s.persistWatermark = len(cds)
 		s.chunkDescsOffset = 0
+
+		lastTime := cds[len(cds)-1].lastTime()
+		keepIdx := -1
+		for i, cd := range s.chunkDescs {
+			if cd.firstTime() >= lastTime {
+				keepIdx = i
+				break
+			}
+		}
+		if keepIdx == -1 {
+			glog.Warningf(
+				"Recovered metric %v, fingerprint %v: all %d chunks recovered from series file.",
+				s.metric, fp, chunksInFile,
+			)
+			numMemChunkDescs.Sub(float64(len(s.chunkDescs)))
+			atomic.AddInt64(&numMemChunks, int64(-len(s.chunkDescs)))
+			s.chunkDescs = cds
+			s.headChunkClosed = true
+			return fp, true
+		}
+		glog.Warningf(
+			"Recovered metric %v, fingerprint %v: recovered %d chunks from series file, recovered %d chunks from checkpoint.",
+			s.metric, fp, chunksInFile, len(s.chunkDescs)-keepIdx,
+		)
+		numMemChunkDescs.Sub(float64(keepIdx))
+		atomic.AddInt64(&numMemChunks, int64(-keepIdx))
+		s.chunkDescs = append(cds, s.chunkDescs[keepIdx:]...)
 		return fp, true
 	}
 	// This series is supposed to be archived.
@@ -348,6 +375,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 		}
 		series.chunkDescs = cds
 		series.chunkDescsOffset = 0
+		series.persistWatermark = len(cds)
 		fpToSeries[clientmodel.Fingerprint(fp)] = series
 		return nil
 	}); err != nil {

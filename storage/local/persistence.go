@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
@@ -48,10 +49,11 @@ const (
 	seriesTempFileSuffix = ".db.tmp"
 	seriesDirNameLen     = 2 // How many bytes of the fingerprint in dir name.
 
-	headsFileName      = "heads.db"
-	headsTempFileName  = "heads.db.tmp"
-	headsFormatVersion = 1
-	headsMagicString   = "PrometheusHeads"
+	headsFileName            = "heads.db"
+	headsTempFileName        = "heads.db.tmp"
+	headsFormatVersion       = 2
+	headsFormatLegacyVersion = 1 // Can read, but will never write.
+	headsMagicString         = "PrometheusHeads"
 
 	dirtyFileName = "DIRTY"
 
@@ -326,7 +328,13 @@ func (p *persistence) getLabelValuesForLabelName(ln clientmodel.LabelName) (clie
 // the (zero-based) index of the first persisted chunk within the series
 // file. In case of an error, the returned index is -1 (to avoid the
 // misconception that the chunk was written at position 0).
-func (p *persistence) persistChunks(fp clientmodel.Fingerprint, chunks []chunk) (int, error) {
+func (p *persistence) persistChunks(fp clientmodel.Fingerprint, chunks []chunk) (index int, err error) {
+	defer func() {
+		if err != nil {
+			glog.Error("Error persisting chunks: ", err)
+			p.setDirty(true)
+		}
+	}()
 
 	f, err := p.openChunkFileForWriting(fp)
 	if err != nil {
@@ -334,27 +342,16 @@ func (p *persistence) persistChunks(fp clientmodel.Fingerprint, chunks []chunk) 
 	}
 	defer f.Close()
 
-	b := bufio.NewWriterSize(f, len(chunks)*(chunkHeaderLen+chunkLen))
-
-	for _, c := range chunks {
-		err = writeChunkHeader(b, c)
-		if err != nil {
-			return -1, err
-		}
-
-		err = c.marshal(b)
-		if err != nil {
-			return -1, err
-		}
+	if err := writeChunks(f, chunks); err != nil {
+		return -1, err
 	}
 
 	// Determine index within the file.
-	b.Flush()
 	offset, err := f.Seek(0, os.SEEK_CUR)
 	if err != nil {
 		return -1, err
 	}
-	index, err := p.chunkIndexForOffset(offset)
+	index, err = chunkIndexForOffset(offset)
 	if err != nil {
 		return -1, err
 	}
@@ -377,7 +374,7 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int, inde
 	chunks := make([]chunk, 0, len(indexes))
 	typeBuf := make([]byte, 1)
 	for _, idx := range indexes {
-		_, err := f.Seek(p.offsetForChunkIndex(idx+indexOffset), os.SEEK_SET)
+		_, err := f.Seek(offsetForChunkIndex(idx+indexOffset), os.SEEK_SET)
 		if err != nil {
 			return nil, err
 		}
@@ -398,6 +395,8 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int, inde
 		chunk.unmarshal(f)
 		chunks = append(chunks, chunk)
 	}
+	chunkOps.WithLabelValues(load).Add(float64(len(chunks)))
+	atomic.AddInt64(&numMemChunks, int64(len(chunks)))
 	return chunks, nil
 }
 
@@ -430,7 +429,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 	numChunks := int(fi.Size()) / totalChunkLen
 	cds := make([]*chunkDesc, 0, numChunks)
 	for i := 0; i < numChunks; i++ {
-		_, err := f.Seek(p.offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, os.SEEK_SET)
+		_, err := f.Seek(offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, os.SEEK_SET)
 		if err != nil {
 			return nil, err
 		}
@@ -456,10 +455,11 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 }
 
 // checkpointSeriesMapAndHeads persists the fingerprint to memory-series mapping
-// and all open (non-full) head chunks. Do not call concurrently with
-// loadSeriesMapAndHeads.
+// and all non persisted chunks. Do not call concurrently with
+// loadSeriesMapAndHeads. This method will only write heads format v2, but
+// loadSeriesMapAndHeads can also understand v1.
 //
-// Description of the file format:
+// Description of the file format (for both, v1 and v2):
 //
 // (1) Magic string (const headsMagicString).
 //
@@ -469,33 +469,33 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 //
 // (4) Repeated once per series:
 //
-// (4.1) A flag byte, see flag constants above.
+// (4.1) A flag byte, see flag constants above. (Present but unused in v2.)
 //
 // (4.2) The fingerprint as big-endian uint64.
 //
 // (4.3) The metric as defined by codable.Metric.
 //
-// (4.4) The varint-encoded chunkDescsOffset.
+// (4.4) The varint-encoded persistWatermark. (Missing in v1.)
 //
-// (4.5) The varint-encoded savedFirstTime.
+// (4.5) The varint-encoded chunkDescsOffset.
 //
-// (4.6) The varint-encoded number of chunk descriptors.
+// (4.6) The varint-encoded savedFirstTime.
 //
-// (4.7) Repeated once per chunk descriptor, oldest to most recent:
+// (4.7) The varint-encoded number of chunk descriptors.
 //
-// (4.7.1) The varint-encoded first time.
+// (4.8) Repeated once per chunk descriptor, oldest to most recent, either
+// variant 4.8.1 (if index < persistWatermark) or variant 4.8.2 (if index >=
+// persistWatermark). In v1, everything is variant 4.8.1 except for a
+// non-persisted head-chunk (determined by the flags).
 //
-// (4.7.2) The varint-encoded last time.
+// (4.8.1.1) The varint-encoded first time.
+// (4.8.1.2) The varint-encoded last time.
 //
-// (4.8) Exception to 4.7: If the most recent chunk is a non-persisted head chunk,
-// the following is persisted instead of the most recent chunk descriptor:
-//
-// (4.8.1) A byte defining the chunk type.
-//
-// (4.8.2) The head chunk itself, marshaled with the marshal() method.
+// (4.8.2.1) A byte defining the chunk type.
+// (4.8.2.2) The chunk itself, marshaled with the marshal() method.
 //
 func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap, fpLocker *fingerprintLocker) (err error) {
-	glog.Info("Checkpointing in-memory metrics and head chunks...")
+	glog.Info("Checkpointing in-memory metrics and chunks...")
 	begin := time.Now()
 	f, err := os.OpenFile(p.headsTempFileName(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
@@ -515,7 +515,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 		err = os.Rename(p.headsTempFileName(), p.headsFileName())
 		duration := time.Since(begin)
 		p.checkpointDuration.Set(float64(duration) / float64(time.Millisecond))
-		glog.Infof("Done checkpointing in-memory metrics and head chunks in %v.", duration)
+		glog.Infof("Done checkpointing in-memory metrics and chunks in %v.", duration)
 	}()
 
 	w := bufio.NewWriterSize(f, fileBufSize)
@@ -553,11 +553,8 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 				return
 			}
 			realNumberOfSeries++
-			var seriesFlags byte
-			if m.series.headChunkPersisted {
-				seriesFlags |= flagHeadChunkPersisted
-			}
-			if err = w.WriteByte(seriesFlags); err != nil {
+			// seriesFlags left empty in v2.
+			if err = w.WriteByte(0); err != nil {
 				return
 			}
 			if err = codable.EncodeUint64(w, uint64(m.fp)); err != nil {
@@ -569,6 +566,9 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 				return
 			}
 			w.Write(buf)
+			if _, err = codable.EncodeVarint(w, int64(m.series.persistWatermark)); err != nil {
+				return
+			}
 			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset)); err != nil {
 				return
 			}
@@ -579,7 +579,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 				return
 			}
 			for i, chunkDesc := range m.series.chunkDescs {
-				if m.series.headChunkPersisted || i < len(m.series.chunkDescs)-1 {
+				if i < m.series.persistWatermark {
 					if _, err = codable.EncodeVarint(w, int64(chunkDesc.firstTime())); err != nil {
 						return
 					}
@@ -596,6 +596,8 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 					}
 				}
 			}
+			// Series is checkpointed now, so declare it clean.
+			m.series.dirty = false
 		}()
 		if err != nil {
 			return
@@ -618,12 +620,14 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 }
 
 // loadSeriesMapAndHeads loads the fingerprint to memory-series mapping and all
-// open (non-full) head chunks. If recoverable corruption is detected, or if the
-// dirty flag was set from the beginning, crash recovery is run, which might
-// take a while. If an unrecoverable error is encountered, it is returned. Call
-// this method during start-up while nothing else is running in storage
-// land. This method is utterly goroutine-unsafe.
-func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
+// the chunks contained in the checkpoint (and thus not yet persisted to series
+// files). The method is capable of loading the checkpoint format v1 and v2. If
+// recoverable corruption is detected, or if the dirty flag was set from the
+// beginning, crash recovery is run, which might take a while. If an
+// unrecoverable error is encountered, it is returned. Call this method during
+// start-up while nothing else is running in storage land. This method is
+// utterly goroutine-unsafe.
+func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen int64, err error) {
 	var chunkDescsTotal int64
 	fingerprintToSeries := make(map[clientmodel.Fingerprint]*memorySeries)
 	sm = &seriesMap{m: fingerprintToSeries}
@@ -643,7 +647,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 
 	f, err := os.Open(p.headsFileName())
 	if os.IsNotExist(err) {
-		return sm, nil
+		return sm, 0, nil
 	}
 	if err != nil {
 		glog.Warning("Could not open heads file:", err)
@@ -657,7 +661,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 	if _, err := io.ReadFull(r, buf); err != nil {
 		glog.Warning("Could not read from heads file:", err)
 		p.dirty = true
-		return sm, nil
+		return sm, 0, nil
 	}
 	magic := string(buf)
 	if magic != headsMagicString {
@@ -668,16 +672,17 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 		p.dirty = true
 		return
 	}
-	if version, err := binary.ReadVarint(r); version != headsFormatVersion || err != nil {
+	version, err := binary.ReadVarint(r)
+	if (version != headsFormatVersion && version != headsFormatLegacyVersion) || err != nil {
 		glog.Warningf("unknown heads format version, want %d", headsFormatVersion)
 		p.dirty = true
-		return sm, nil
+		return sm, 0, nil
 	}
 	numSeries, err := codable.DecodeUint64(r)
 	if err != nil {
 		glog.Warning("Could not decode number of series:", err)
 		p.dirty = true
-		return sm, nil
+		return sm, 0, nil
 	}
 
 	for ; numSeries > 0; numSeries-- {
@@ -685,173 +690,276 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, err error) {
 		if err != nil {
 			glog.Warning("Could not read series flags:", err)
 			p.dirty = true
-			return sm, nil
+			return sm, persistQueueLen, nil
 		}
 		headChunkPersisted := seriesFlags&flagHeadChunkPersisted != 0
 		fp, err := codable.DecodeUint64(r)
 		if err != nil {
 			glog.Warning("Could not decode fingerprint:", err)
 			p.dirty = true
-			return sm, nil
+			return sm, persistQueueLen, nil
 		}
 		var metric codable.Metric
 		if err := metric.UnmarshalFromReader(r); err != nil {
 			glog.Warning("Could not decode metric:", err)
 			p.dirty = true
-			return sm, nil
+			return sm, persistQueueLen, nil
+		}
+		var persistWatermark int64
+		if version != headsFormatLegacyVersion {
+			// persistWatermark only present in v2.
+			persistWatermark, err = binary.ReadVarint(r)
+			if err != nil {
+				glog.Warning("Could not decode persist watermark:", err)
+				p.dirty = true
+				return sm, persistQueueLen, nil
+			}
 		}
 		chunkDescsOffset, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode chunk descriptor offset:", err)
 			p.dirty = true
-			return sm, nil
+			return sm, persistQueueLen, nil
 		}
 		savedFirstTime, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode saved first time:", err)
 			p.dirty = true
-			return sm, nil
+			return sm, persistQueueLen, nil
 		}
 		numChunkDescs, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode number of chunk descriptors:", err)
 			p.dirty = true
-			return sm, nil
+			return sm, persistQueueLen, nil
 		}
 		chunkDescs := make([]*chunkDesc, numChunkDescs)
+		if version == headsFormatLegacyVersion {
+			if headChunkPersisted {
+				persistWatermark = numChunkDescs
+			} else {
+				persistWatermark = numChunkDescs - 1
+			}
+		}
 
 		for i := int64(0); i < numChunkDescs; i++ {
-			if headChunkPersisted || i < numChunkDescs-1 {
+			if i < persistWatermark {
 				firstTime, err := binary.ReadVarint(r)
 				if err != nil {
 					glog.Warning("Could not decode first time:", err)
 					p.dirty = true
-					return sm, nil
+					return sm, persistQueueLen, nil
 				}
 				lastTime, err := binary.ReadVarint(r)
 				if err != nil {
 					glog.Warning("Could not decode last time:", err)
 					p.dirty = true
-					return sm, nil
+					return sm, persistQueueLen, nil
 				}
 				chunkDescs[i] = &chunkDesc{
 					chunkFirstTime: clientmodel.Timestamp(firstTime),
 					chunkLastTime:  clientmodel.Timestamp(lastTime),
 				}
+				chunkDescsTotal++
 			} else {
-				// Non-persisted head chunk.
+				// Non-persisted chunk.
 				encoding, err := r.ReadByte()
 				if err != nil {
 					glog.Warning("Could not decode chunk type:", err)
 					p.dirty = true
-					return sm, nil
+					return sm, persistQueueLen, nil
 				}
 				chunk := newChunkForEncoding(chunkEncoding(encoding))
 				if err := chunk.unmarshal(r); err != nil {
 					glog.Warning("Could not decode chunk type:", err)
 					p.dirty = true
-					return sm, nil
+					return sm, persistQueueLen, nil
 				}
 				chunkDescs[i] = newChunkDesc(chunk)
+				persistQueueLen++
 			}
 		}
 
-		chunkDescsTotal += numChunkDescs
-		if !headChunkPersisted {
-			// In this case, we have created a chunkDesc with
-			// newChunkDesc, which will count itself automatically.
-			// Correct for that by decrementing the count.
-			chunkDescsTotal--
-		}
 		fingerprintToSeries[clientmodel.Fingerprint(fp)] = &memorySeries{
-			metric:             clientmodel.Metric(metric),
-			chunkDescs:         chunkDescs,
-			chunkDescsOffset:   int(chunkDescsOffset),
-			savedFirstTime:     clientmodel.Timestamp(savedFirstTime),
-			headChunkPersisted: headChunkPersisted,
+			metric:           clientmodel.Metric(metric),
+			chunkDescs:       chunkDescs,
+			persistWatermark: int(persistWatermark),
+			chunkDescsOffset: int(chunkDescsOffset),
+			savedFirstTime:   clientmodel.Timestamp(savedFirstTime),
+			headChunkClosed:  persistWatermark >= numChunkDescs,
 		}
 	}
-	return sm, nil
+	return sm, persistQueueLen, nil
 }
 
-// dropChunks deletes all chunks from a series whose last sample time is before
-// beforeTime. It returns the timestamp of the first sample in the oldest chunk
-// _not_ dropped, the number of deleted chunks, and true if all chunks of the
-// series have been deleted (in which case the returned timestamp will be 0 and
-// must be ignored).  It is the caller's responsibility to make sure nothing is
-// persisted or loaded for the same fingerprint concurrently.
-func (p *persistence) dropChunks(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) (
+// dropAndPersistChunks deletes all chunks from a series file whose last sample
+// time is before beforeTime, and then appends the provided chunks, leaving out
+// those whose last sample time is before beforeTime. It returns the timestamp
+// of the first sample in the oldest chunk _not_ dropped, the offset within the
+// series file of the first chunk persisted (out of the provided chunks), the
+// number of deleted chunks, and true if all chunks of the series have been
+// deleted (in which case the returned timestamp will be 0 and must be ignored).
+// It is the caller's responsibility to make sure nothing is persisted or loaded
+// for the same fingerprint concurrently.
+func (p *persistence) dropAndPersistChunks(
+	fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp, chunks []chunk,
+) (
 	firstTimeNotDropped clientmodel.Timestamp,
+	offset int,
 	numDropped int,
 	allDropped bool,
 	err error,
 ) {
+	// Style note: With the many return values, it was decided to use naked
+	// returns in this method. They make the method more readable, but
+	// please handle with care!
 	defer func() {
 		if err != nil {
+			glog.Error("Error dropping and/or persisting chunks: ", err)
 			p.setDirty(true)
 		}
 	}()
+
+	if len(chunks) > 0 {
+		// We have chunks to persist. First check if those are already
+		// too old. If that's the case, the chunks in the series file
+		// are all too old, too.
+		i := 0
+		for ; i < len(chunks) && chunks[i].lastTime().Before(beforeTime); i++ {
+		}
+		if i < len(chunks) {
+			firstTimeNotDropped = chunks[i].firstTime()
+		}
+		if i > 0 || firstTimeNotDropped.Before(beforeTime) {
+			// Series file has to go.
+			if numDropped, err = p.deleteSeriesFile(fp); err != nil {
+				return
+			}
+			numDropped += i
+			if i == len(chunks) {
+				allDropped = true
+				return
+			}
+			// Now simply persist what has to be persisted to a new file.
+			_, err = p.persistChunks(fp, chunks[i:])
+			return
+		}
+	}
+
+	// If we are here, we have to check the series file itself.
 	f, err := p.openChunkFileForReading(fp)
 	if os.IsNotExist(err) {
-		return 0, 0, true, nil
+		// No series file. Only need to create new file with chunks to
+		// persist, if there are any.
+		if len(chunks) == 0 {
+			allDropped = true
+			err = nil // Do not report not-exist err.
+			return
+		}
+		offset, err = p.persistChunks(fp, chunks)
+		return
 	}
 	if err != nil {
-		return 0, 0, false, err
+		return
 	}
 	defer f.Close()
 
-	// Find the first chunk that should be kept.
-	var i int
-	var firstTime clientmodel.Timestamp
-	for ; ; i++ {
-		_, err := f.Seek(p.offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, os.SEEK_SET)
+	// Find the first chunk in the file that should be kept.
+	for ; ; numDropped++ {
+		_, err = f.Seek(offsetForChunkIndex(numDropped), os.SEEK_SET)
 		if err != nil {
-			return 0, 0, false, err
+			return
 		}
-		timeBuf := make([]byte, 16)
-		_, err = io.ReadAtLeast(f, timeBuf, 16)
+		headerBuf := make([]byte, chunkHeaderLen)
+		_, err = io.ReadAtLeast(f, headerBuf, chunkHeaderLen)
 		if err == io.EOF {
 			// We ran into the end of the file without finding any chunks that should
 			// be kept. Remove the whole file.
-			chunkOps.WithLabelValues(drop).Add(float64(i))
-			if err := os.Remove(f.Name()); err != nil {
-				return 0, 0, true, err
+			if numDropped, err = p.deleteSeriesFile(fp); err != nil {
+				return
 			}
-			return 0, i, true, nil
+			if len(chunks) == 0 {
+				allDropped = true
+				return
+			}
+			offset, err = p.persistChunks(fp, chunks)
+			return
 		}
 		if err != nil {
-			return 0, 0, false, err
+			return
 		}
-		lastTime := clientmodel.Timestamp(binary.LittleEndian.Uint64(timeBuf[8:]))
+		lastTime := clientmodel.Timestamp(
+			binary.LittleEndian.Uint64(headerBuf[chunkHeaderLastTimeOffset:]),
+		)
 		if !lastTime.Before(beforeTime) {
-			firstTime = clientmodel.Timestamp(binary.LittleEndian.Uint64(timeBuf))
-			chunkOps.WithLabelValues(drop).Add(float64(i))
+			firstTimeNotDropped = clientmodel.Timestamp(
+				binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
+			)
+			chunkOps.WithLabelValues(drop).Add(float64(numDropped))
 			break
 		}
 	}
 
-	// We've found the first chunk that should be kept. Seek backwards to the
-	// beginning of its header and start copying everything from there into a new
-	// file.
-	_, err = f.Seek(-(chunkHeaderFirstTimeOffset + 16), os.SEEK_CUR)
+	// We've found the first chunk that should be kept. If it is the first
+	// one, just append the chunks.
+	if numDropped == 0 {
+		if len(chunks) > 0 {
+			offset, err = p.persistChunks(fp, chunks)
+		}
+		return
+	}
+	// Otherwise, seek backwards to the beginning of its header and start
+	// copying everything from there into a new file. Then append the chunks
+	// to the new file.
+	_, err = f.Seek(-chunkHeaderLen, os.SEEK_CUR)
 	if err != nil {
-		return 0, 0, false, err
+		return
 	}
 
 	temp, err := os.OpenFile(p.tempFileNameForFingerprint(fp), os.O_WRONLY|os.O_CREATE, 0640)
 	if err != nil {
-		return 0, 0, false, err
+		return
 	}
-	defer temp.Close()
+	defer func() {
+		temp.Close()
+		if err == nil {
+			err = os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp))
+		}
+	}()
 
-	if _, err := io.Copy(temp, f); err != nil {
-		return 0, 0, false, err
+	written, err := io.Copy(temp, f)
+	if err != nil {
+		return
 	}
+	offset = int(written / (chunkHeaderLen + chunkLen))
 
-	if err := os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp)); err != nil {
-		return 0, 0, false, err
+	if len(chunks) > 0 {
+		if err = writeChunks(temp, chunks); err != nil {
+			return
+		}
 	}
-	return firstTime, i, false, nil
+	return
+}
+
+// deleteSeriesFile deletes a series file belonging to the provided
+// fingerprint. It returns the number of chunks that were contained in the
+// deleted file.
+func (p *persistence) deleteSeriesFile(fp clientmodel.Fingerprint) (int, error) {
+	fname := p.fileNameForFingerprint(fp)
+	fi, err := os.Stat(fname)
+	if os.IsNotExist(err) {
+		// Great. The file is already gone.
+		return 0, nil
+	}
+	if err != nil {
+		return -1, err
+	}
+	numChunks := int(fi.Size() / (chunkHeaderLen + chunkLen))
+	if err := os.Remove(fname); err != nil {
+		return -1, err
+	}
+	chunkOps.WithLabelValues(drop).Add(float64(numChunks))
+	return numChunks, nil
 }
 
 // indexMetric queues the given metric for addition to the indexes needed by
@@ -1083,35 +1191,12 @@ func (p *persistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.F
 	// NOTE: Although the file was opened for append,
 	//     f.Seek(0, os.SEEK_CUR)
 	// would now return '0, nil', so we cannot check for a consistent file length right now.
-	// However, the chunkIndexForOffset method is doing that check, so a wrong file length
+	// However, the chunkIndexForOffset function is doing that check, so a wrong file length
 	// would still be detected.
 }
 
 func (p *persistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.File, error) {
 	return os.Open(p.fileNameForFingerprint(fp))
-}
-
-func writeChunkHeader(w io.Writer, c chunk) error {
-	header := make([]byte, chunkHeaderLen)
-	header[chunkHeaderTypeOffset] = byte(c.encoding())
-	binary.LittleEndian.PutUint64(header[chunkHeaderFirstTimeOffset:], uint64(c.firstTime()))
-	binary.LittleEndian.PutUint64(header[chunkHeaderLastTimeOffset:], uint64(c.lastTime()))
-	_, err := w.Write(header)
-	return err
-}
-
-func (p *persistence) offsetForChunkIndex(i int) int64 {
-	return int64(i * (chunkHeaderLen + chunkLen))
-}
-
-func (p *persistence) chunkIndexForOffset(offset int64) (int, error) {
-	if int(offset)%(chunkHeaderLen+chunkLen) != 0 {
-		return -1, fmt.Errorf(
-			"offset %d is not a multiple of on-disk chunk length %d",
-			offset, chunkHeaderLen+chunkLen,
-		)
-	}
-	return int(offset) / (chunkHeaderLen + chunkLen), nil
 }
 
 func (p *persistence) headsFileName() string {
@@ -1223,4 +1308,41 @@ loop:
 		}
 	}
 	close(p.indexingStopped)
+}
+
+func offsetForChunkIndex(i int) int64 {
+	return int64(i * (chunkHeaderLen + chunkLen))
+}
+
+func chunkIndexForOffset(offset int64) (int, error) {
+	if int(offset)%(chunkHeaderLen+chunkLen) != 0 {
+		return -1, fmt.Errorf(
+			"offset %d is not a multiple of on-disk chunk length %d",
+			offset, chunkHeaderLen+chunkLen,
+		)
+	}
+	return int(offset) / (chunkHeaderLen + chunkLen), nil
+}
+
+func writeChunkHeader(w io.Writer, c chunk) error {
+	header := make([]byte, chunkHeaderLen)
+	header[chunkHeaderTypeOffset] = byte(c.encoding())
+	binary.LittleEndian.PutUint64(header[chunkHeaderFirstTimeOffset:], uint64(c.firstTime()))
+	binary.LittleEndian.PutUint64(header[chunkHeaderLastTimeOffset:], uint64(c.lastTime()))
+	_, err := w.Write(header)
+	return err
+}
+
+func writeChunks(w io.Writer, chunks []chunk) error {
+	b := bufio.NewWriterSize(w, len(chunks)*(chunkHeaderLen+chunkLen))
+	for _, chunk := range chunks {
+		if err := writeChunkHeader(b, chunk); err != nil {
+			return err
+		}
+
+		if err := chunk.marshal(b); err != nil {
+			return err
+		}
+	}
+	return b.Flush()
 }

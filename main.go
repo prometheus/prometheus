@@ -57,9 +57,9 @@ var (
 	numMemoryChunks = flag.Int("storage.local.memory-chunks", 1024*1024, "How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.")
 
 	persistenceRetentionPeriod = flag.Duration("storage.local.retention", 15*24*time.Hour, "How long to retain samples in the local storage.")
-	persistenceQueueCapacity   = flag.Int("storage.local.persistence-queue-capacity", 32*1024, "How many chunks can be waiting for being persisted before sample ingestion will stop.")
+	persistenceQueueCapacity   = flag.Int("storage.local.persistence-queue-capacity", 1024*1024, "How many chunks can be waiting for being persisted before sample ingestion will stop. Many chunks waiting to be persisted will increase the checkpoint size.")
 
-	checkpointInterval         = flag.Duration("storage.local.checkpoint-interval", 5*time.Minute, "The period at which the in-memory index of time series is checkpointed.")
+	checkpointInterval         = flag.Duration("storage.local.checkpoint-interval", 5*time.Minute, "The period at which the in-memory metrics and the chunks not yet persisted to series files are checkpointed.")
 	checkpointDirtySeriesLimit = flag.Int("storage.local.checkpoint-dirty-series-limit", 5000, "If approx. that many time series are in a state that would require a recovery operation after a crash, a checkpoint is triggered, even if the checkpoint interval hasn't passed yet. A recovery operation requires a disk seek. The default limit intends to keep the recovery time below 1min even on spinning disks. With SSD, recovery is much faster, so you might want to increase this value in that case to avoid overly frequent checkpoints.")
 
 	storageDirty = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
@@ -82,7 +82,7 @@ var (
 )
 
 type prometheus struct {
-	unwrittenSamples chan clientmodel.Samples
+	incomingSamples chan clientmodel.Samples
 
 	ruleManager         manager.RuleManager
 	targetManager       retrieval.TargetManager
@@ -103,12 +103,12 @@ func NewPrometheus() *prometheus {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	unwrittenSamples := make(chan clientmodel.Samples, *samplesQueueCapacity)
+	incomingSamples := make(chan clientmodel.Samples, *samplesQueueCapacity)
 
 	ingester := &retrieval.MergeLabelsIngester{
 		Labels:          conf.GlobalLabels(),
 		CollisionPrefix: clientmodel.ExporterLabelPrefix,
-		Ingester:        retrieval.ChannelIngester(unwrittenSamples),
+		Ingester:        retrieval.ChannelIngester(incomingSamples),
 	}
 	targetManager := retrieval.NewTargetManager(ingester)
 	targetManager.AddTargetsFromConfig(conf)
@@ -130,7 +130,7 @@ func NewPrometheus() *prometheus {
 	}
 
 	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
-		Results:             unwrittenSamples,
+		Results:             incomingSamples,
 		NotificationHandler: notificationHandler,
 		EvaluationInterval:  conf.EvaluationInterval(),
 		Storage:             memStorage,
@@ -183,7 +183,7 @@ func NewPrometheus() *prometheus {
 	}
 
 	p := &prometheus{
-		unwrittenSamples: unwrittenSamples,
+		incomingSamples: incomingSamples,
 
 		ruleManager:         ruleManager,
 		targetManager:       targetManager,
@@ -217,7 +217,7 @@ func (p *prometheus) Serve() {
 		}
 	}()
 
-	for samples := range p.unwrittenSamples {
+	for samples := range p.incomingSamples {
 		p.storage.AppendSamples(samples)
 		if p.remoteTSDBQueue != nil {
 			p.remoteTSDBQueue.Queue(samples)
@@ -225,7 +225,7 @@ func (p *prometheus) Serve() {
 	}
 
 	// The following shut-down operations have to happen after
-	// unwrittenSamples is drained. So do not move them into close().
+	// incomingSamples is drained. So do not move them into close().
 	if err := p.storage.Stop(); err != nil {
 		glog.Error("Error stopping local storage: ", err)
 	}
@@ -257,9 +257,9 @@ func (p *prometheus) close() {
 	p.targetManager.Stop()
 	p.ruleManager.Stop()
 
-	close(p.unwrittenSamples)
+	close(p.incomingSamples)
 	// Note: Before closing the remaining subsystems (storage, ...), we have
-	// to wait until p.unwrittenSamples is actually drained. Therefore,
+	// to wait until p.incomingSamples is actually drained. Therefore,
 	// remaining shut-downs happen in Serve().
 }
 
@@ -279,12 +279,12 @@ func (p *prometheus) Collect(ch chan<- registry.Metric) {
 	ch <- registry.MustNewConstMetric(
 		samplesQueueCapDesc,
 		registry.GaugeValue,
-		float64(cap(p.unwrittenSamples)),
+		float64(cap(p.incomingSamples)),
 	)
 	ch <- registry.MustNewConstMetric(
 		samplesQueueLenDesc,
 		registry.GaugeValue,
-		float64(len(p.unwrittenSamples)),
+		float64(len(p.incomingSamples)),
 	)
 	p.notificationHandler.Collect(ch)
 	p.storage.Collect(ch)

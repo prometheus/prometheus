@@ -16,7 +16,6 @@ package local
 import (
 	"fmt"
 	"math/rand"
-	"reflect"
 	"testing"
 	"testing/quick"
 	"time"
@@ -159,6 +158,7 @@ func TestLoop(t *testing.T) {
 		MemoryChunks:               50,
 		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
 		PersistenceStoragePath:     directory.Path(),
+		PersistenceQueueCapacity:   1000000,
 		CheckpointInterval:         250 * time.Millisecond,
 	}
 	storage, err := NewMemorySeriesStorage(o)
@@ -527,9 +527,8 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 
 	// Persist head chunk so we can safely archive.
-	series.headChunkPersisted = true
-	ms.persistQueue <- persistRequest{fp, series.head()}
-	time.Sleep(time.Second) // Give time for persisting to happen.
+	series.headChunkClosed = true
+	ms.maintainMemorySeries(fp, clientmodel.Earliest)
 
 	// Archive metrics.
 	ms.fpToSeries.del(fp)
@@ -639,12 +638,12 @@ func TestFuzzChunkType1(t *testing.T) {
 // too. This benchmark will have a very long runtime (up to minutes). You can
 // use it as an actual benchmark. Run it like this:
 //
-// go test -cpu 1,2,4,8 -test=NONE -bench BenchmarkFuzzChunkType -benchmem
+// go test -cpu 1,2,4,8 -run=NONE -bench BenchmarkFuzzChunkType -benchmem
 //
 // You can also use it as a test for races. In that case, run it like this (will
 // make things even slower):
 //
-// go test -race -cpu 8 -test=short -bench BenchmarkFuzzChunkType
+// go test -race -cpu 8 -short -bench BenchmarkFuzzChunkType
 func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 	*defaultChunkEncoding = int(encoding)
 	const samplesPerRun = 100000
@@ -655,6 +654,7 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 		MemoryChunks:               100,
 		PersistenceRetentionPeriod: time.Hour,
 		PersistenceStoragePath:     directory.Path(),
+		PersistenceQueueCapacity:   1000000,
 		CheckpointInterval:         time.Second,
 	}
 	s, err := NewMemorySeriesStorage(o)
@@ -838,94 +838,4 @@ func verifyStorage(t testing.TB, s Storage, samples clientmodel.Samples, maxAge 
 		p.Close()
 	}
 	return result
-}
-
-func TestChunkMaps(t *testing.T) {
-	cm := chunkMaps{}
-
-	cd1 := &chunkDesc{refCount: 1} // Abuse refCount as identifier.
-	cd21 := &chunkDesc{refCount: 21}
-	cd22 := &chunkDesc{refCount: 22}
-	cd31 := &chunkDesc{refCount: 31}
-	cd32 := &chunkDesc{refCount: 32}
-	cd33 := &chunkDesc{refCount: 33}
-	cd41 := &chunkDesc{refCount: 41}
-	cd42 := &chunkDesc{refCount: 42}
-	cd43 := &chunkDesc{refCount: 43}
-	cd44 := &chunkDesc{refCount: 44}
-	cd51 := &chunkDesc{refCount: 51}
-	cd52 := &chunkDesc{refCount: 52}
-	cd53 := &chunkDesc{refCount: 53}
-	cd54 := &chunkDesc{refCount: 54}
-	cd55 := &chunkDesc{refCount: 55}
-
-	cm.add(5, cd51)
-	cm.add(3, cd31)
-	cm.add(5, cd52)
-	cm.add(1, cd1)
-	cm.add(4, cd41)
-	cm.add(4, cd42)
-	cm.add(5, cd53)
-	cm.add(3, cd32)
-	cm.add(2, cd21)
-	cm.add(5, cd54)
-	cm.add(3, cd33)
-	cm.add(4, cd43)
-	cm.add(2, cd22)
-	cm.add(4, cd44)
-	cm.add(5, cd55)
-
-	var fpWant, fpGot clientmodel.Fingerprint
-	var cdsWant, cdsGot []*chunkDesc
-
-	fpWant = 5
-	cdsWant = []*chunkDesc{cd51, cd52, cd53, cd54, cd55}
-	fpGot, cdsGot = cm.pop()
-	if fpWant != fpGot {
-		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
-	}
-	if !reflect.DeepEqual(cdsWant, cdsGot) {
-		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
-	}
-
-	fpWant = 4
-	cdsWant = []*chunkDesc{cd41, cd42, cd43, cd44}
-	fpGot, cdsGot = cm.pop()
-	if fpWant != fpGot {
-		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
-	}
-	if !reflect.DeepEqual(cdsWant, cdsGot) {
-		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
-	}
-
-	fpWant = 3
-	cdsWant = []*chunkDesc{cd31, cd32, cd33}
-	fpGot, cdsGot = cm.pop()
-	if fpWant != fpGot {
-		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
-	}
-	if !reflect.DeepEqual(cdsWant, cdsGot) {
-		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
-	}
-
-	fpWant = 2
-	cdsWant = []*chunkDesc{cd21, cd22}
-	fpGot, cdsGot = cm.pop()
-	if fpWant != fpGot {
-		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
-	}
-	if !reflect.DeepEqual(cdsWant, cdsGot) {
-		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
-	}
-
-	fpWant = 1
-	cdsWant = []*chunkDesc{cd1}
-	fpGot, cdsGot = cm.pop()
-	if fpWant != fpGot {
-		t.Errorf("Want fingerprint %s, got %s.", fpWant, fpGot)
-	}
-	if !reflect.DeepEqual(cdsWant, cdsGot) {
-		t.Errorf("Want chunk descriptors %v, got %v.", cdsWant, cdsGot)
-	}
-
 }
