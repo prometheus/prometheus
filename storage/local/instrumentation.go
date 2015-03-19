@@ -72,6 +72,12 @@ const (
 	// Op-types for chunkOps and chunkDescOps.
 	evict = "evict"
 	load  = "load"
+
+	seriesLocationLabel = "location"
+
+	// Maintenance types for maintainSeriesDuration.
+	maintainInMemory = "memory"
+	maintainArchived = "archived"
 )
 
 func init() {

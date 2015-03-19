@@ -111,18 +111,21 @@ type persistence struct {
 	indexingQueueLength   prometheus.Gauge
 	indexingQueueCapacity prometheus.Metric
 	indexingBatchSizes    prometheus.Summary
-	indexingBatchLatency  prometheus.Summary
+	indexingBatchDuration prometheus.Summary
 	checkpointDuration    prometheus.Gauge
 
-	dirtyMtx      sync.Mutex     // Protects dirty and becameDirty.
-	dirty         bool           // true if persistence was started in dirty state.
-	becameDirty   bool           // true if an inconsistency came up during runtime.
-	dirtyFileName string         // The file used for locking and to mark dirty state.
-	fLock         flock.Releaser // The file lock to protect against concurrent usage.
+	dirtyMtx       sync.Mutex     // Protects dirty and becameDirty.
+	dirty          bool           // true if persistence was started in dirty state.
+	becameDirty    bool           // true if an inconsistency came up during runtime.
+	pedanticChecks bool           // true if crash recovery should check each series.
+	dirtyFileName  string         // The file used for locking and to mark dirty state.
+	fLock          flock.Releaser // The file lock to protect against concurrent usage.
+
+	shouldSync syncStrategy
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
-func newPersistence(basePath string, dirty bool) (*persistence, error) {
+func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync syncStrategy) (*persistence, error) {
 	dirtyPath := filepath.Join(basePath, dirtyFileName)
 	versionPath := filepath.Join(basePath, versionFileName)
 
@@ -211,12 +214,12 @@ func newPersistence(basePath string, dirty bool) (*persistence, error) {
 				Help:      "Quantiles for indexing batch sizes (number of metrics per batch).",
 			},
 		),
-		indexingBatchLatency: prometheus.NewSummary(
+		indexingBatchDuration: prometheus.NewSummary(
 			prometheus.SummaryOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "indexing_batch_latency_milliseconds",
-				Help:      "Quantiles for batch indexing latencies in milliseconds.",
+				Name:      "indexing_batch_duration_milliseconds",
+				Help:      "Quantiles for batch indexing duration in milliseconds.",
 			},
 		),
 		checkpointDuration: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -225,9 +228,11 @@ func newPersistence(basePath string, dirty bool) (*persistence, error) {
 			Name:      "checkpoint_duration_milliseconds",
 			Help:      "The duration (in milliseconds) it took to checkpoint in-memory metrics and head chunks.",
 		}),
-		dirty:         dirty,
-		dirtyFileName: dirtyPath,
-		fLock:         fLock,
+		dirty:          dirty,
+		pedanticChecks: pedanticChecks,
+		dirtyFileName:  dirtyPath,
+		fLock:          fLock,
+		shouldSync:     shouldSync,
 	}
 
 	if p.dirty {
@@ -259,7 +264,7 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	ch <- p.indexingQueueLength.Desc()
 	ch <- p.indexingQueueCapacity.Desc()
 	p.indexingBatchSizes.Describe(ch)
-	p.indexingBatchLatency.Describe(ch)
+	p.indexingBatchDuration.Describe(ch)
 	ch <- p.checkpointDuration.Desc()
 }
 
@@ -270,7 +275,7 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	ch <- p.indexingQueueLength
 	ch <- p.indexingQueueCapacity
 	p.indexingBatchSizes.Collect(ch)
-	p.indexingBatchLatency.Collect(ch)
+	p.indexingBatchDuration.Collect(ch)
 	ch <- p.checkpointDuration
 }
 
@@ -340,7 +345,7 @@ func (p *persistence) persistChunks(fp clientmodel.Fingerprint, chunks []chunk) 
 	if err != nil {
 		return -1, err
 	}
-	defer f.Close()
+	defer p.closeChunkFile(f)
 
 	if err := writeChunks(f, chunks); err != nil {
 		return -1, err
@@ -477,7 +482,11 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 //
 // (4.4) The varint-encoded persistWatermark. (Missing in v1.)
 //
-// (4.5) The varint-encoded chunkDescsOffset.
+// (4.5) The modification time of the series file as nanoseconds elapsed since
+// January 1, 1970 UTC. -1 if the modification time is unknown or no series file
+// exists yet. (Missing in v1.)
+//
+// (4.6) The varint-encoded chunkDescsOffset.
 //
 // (4.6) The varint-encoded savedFirstTime.
 //
@@ -569,6 +578,15 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			if _, err = codable.EncodeVarint(w, int64(m.series.persistWatermark)); err != nil {
 				return
 			}
+			if m.series.modTime.IsZero() {
+				if _, err = codable.EncodeVarint(w, -1); err != nil {
+					return
+				}
+			} else {
+				if _, err = codable.EncodeVarint(w, m.series.modTime.UnixNano()); err != nil {
+					return
+				}
+			}
 			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset)); err != nil {
 				return
 			}
@@ -627,7 +645,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 // unrecoverable error is encountered, it is returned. Call this method during
 // start-up while nothing else is running in storage land. This method is
 // utterly goroutine-unsafe.
-func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen int64, err error) {
+func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist int64, err error) {
 	var chunkDescsTotal int64
 	fingerprintToSeries := make(map[clientmodel.Fingerprint]*memorySeries)
 	sm = &seriesMap{m: fingerprintToSeries}
@@ -690,48 +708,58 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen in
 		if err != nil {
 			glog.Warning("Could not read series flags:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		headChunkPersisted := seriesFlags&flagHeadChunkPersisted != 0
 		fp, err := codable.DecodeUint64(r)
 		if err != nil {
 			glog.Warning("Could not decode fingerprint:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		var metric codable.Metric
 		if err := metric.UnmarshalFromReader(r); err != nil {
 			glog.Warning("Could not decode metric:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		var persistWatermark int64
+		var modTime time.Time
 		if version != headsFormatLegacyVersion {
 			// persistWatermark only present in v2.
 			persistWatermark, err = binary.ReadVarint(r)
 			if err != nil {
 				glog.Warning("Could not decode persist watermark:", err)
 				p.dirty = true
-				return sm, persistQueueLen, nil
+				return sm, chunksToPersist, nil
+			}
+			modTimeNano, err := binary.ReadVarint(r)
+			if err != nil {
+				glog.Warning("Could not decode modification time:", err)
+				p.dirty = true
+				return sm, chunksToPersist, nil
+			}
+			if modTimeNano != -1 {
+				modTime = time.Unix(0, modTimeNano)
 			}
 		}
 		chunkDescsOffset, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode chunk descriptor offset:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		savedFirstTime, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode saved first time:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		numChunkDescs, err := binary.ReadVarint(r)
 		if err != nil {
 			glog.Warning("Could not decode number of chunk descriptors:", err)
 			p.dirty = true
-			return sm, persistQueueLen, nil
+			return sm, chunksToPersist, nil
 		}
 		chunkDescs := make([]*chunkDesc, numChunkDescs)
 		if version == headsFormatLegacyVersion {
@@ -748,13 +776,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen in
 				if err != nil {
 					glog.Warning("Could not decode first time:", err)
 					p.dirty = true
-					return sm, persistQueueLen, nil
+					return sm, chunksToPersist, nil
 				}
 				lastTime, err := binary.ReadVarint(r)
 				if err != nil {
 					glog.Warning("Could not decode last time:", err)
 					p.dirty = true
-					return sm, persistQueueLen, nil
+					return sm, chunksToPersist, nil
 				}
 				chunkDescs[i] = &chunkDesc{
 					chunkFirstTime: clientmodel.Timestamp(firstTime),
@@ -767,16 +795,16 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen in
 				if err != nil {
 					glog.Warning("Could not decode chunk type:", err)
 					p.dirty = true
-					return sm, persistQueueLen, nil
+					return sm, chunksToPersist, nil
 				}
 				chunk := newChunkForEncoding(chunkEncoding(encoding))
 				if err := chunk.unmarshal(r); err != nil {
 					glog.Warning("Could not decode chunk type:", err)
 					p.dirty = true
-					return sm, persistQueueLen, nil
+					return sm, chunksToPersist, nil
 				}
 				chunkDescs[i] = newChunkDesc(chunk)
-				persistQueueLen++
+				chunksToPersist++
 			}
 		}
 
@@ -784,12 +812,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, persistQueueLen in
 			metric:           clientmodel.Metric(metric),
 			chunkDescs:       chunkDescs,
 			persistWatermark: int(persistWatermark),
+			modTime:          modTime,
 			chunkDescsOffset: int(chunkDescsOffset),
 			savedFirstTime:   clientmodel.Timestamp(savedFirstTime),
 			headChunkClosed:  persistWatermark >= numChunkDescs,
 		}
 	}
-	return sm, persistQueueLen, nil
+	return sm, chunksToPersist, nil
 }
 
 // dropAndPersistChunks deletes all chunks from a series file whose last sample
@@ -921,7 +950,7 @@ func (p *persistence) dropAndPersistChunks(
 		return
 	}
 	defer func() {
-		temp.Close()
+		p.closeChunkFile(temp)
 		if err == nil {
 			err = os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp))
 		}
@@ -960,6 +989,17 @@ func (p *persistence) deleteSeriesFile(fp clientmodel.Fingerprint) (int, error) 
 	}
 	chunkOps.WithLabelValues(drop).Add(float64(numChunks))
 	return numChunks, nil
+}
+
+// getSeriesFileModTime returns the modification time of the series file
+// belonging to the provided fingerprint. In case of an error, the zero value of
+// time.Time is returned.
+func (p *persistence) getSeriesFileModTime(fp clientmodel.Fingerprint) time.Time {
+	var modTime time.Time
+	if fi, err := os.Stat(p.fileNameForFingerprint(fp)); err == nil {
+		return fi.ModTime()
+	}
+	return modTime
 }
 
 // indexMetric queues the given metric for addition to the indexes needed by
@@ -1195,6 +1235,19 @@ func (p *persistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.F
 	// would still be detected.
 }
 
+// closeChunkFile first syncs the provided file if mandated so by the sync
+// strategy. Then it closes the file. Errors are logged.
+func (p *persistence) closeChunkFile(f *os.File) {
+	if p.shouldSync() {
+		if err := f.Sync(); err != nil {
+			glog.Error("Error syncing file:", err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		glog.Error("Error closing chunk file:", err)
+	}
+}
+
 func (p *persistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.File, error) {
 	return os.Open(p.fileNameForFingerprint(fp))
 }
@@ -1217,7 +1270,9 @@ func (p *persistence) processIndexingQueue() {
 	commitBatch := func() {
 		p.indexingBatchSizes.Observe(float64(batchSize))
 		defer func(begin time.Time) {
-			p.indexingBatchLatency.Observe(float64(time.Since(begin) / time.Millisecond))
+			p.indexingBatchDuration.Observe(
+				float64(time.Since(begin)) / float64(time.Millisecond),
+			)
 		}(time.Now())
 
 		if err := p.labelPairToFingerprints.IndexBatch(pairToFPs); err != nil {
