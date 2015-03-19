@@ -102,6 +102,7 @@ type memorySeriesStorage struct {
 	seriesOps                   *prometheus.CounterVec
 	ingestedSamplesCount        prometheus.Counter
 	invalidPreloadRequestsCount prometheus.Counter
+	maintainSeriesDuration      *prometheus.SummaryVec
 }
 
 // MemorySeriesStorageOptions contains options needed by
@@ -172,6 +173,15 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			Name:      "invalid_preload_requests_total",
 			Help:      "The total number of preload requests referring to a non-existent series. This is an indication of outdated label indexes.",
 		}),
+		maintainSeriesDuration: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "maintain_series_duration_milliseconds",
+				Help:      "The duration (in milliseconds) it took to perform maintenance on a series.",
+			},
+			[]string{seriesLocationLabel},
+		),
 	}
 
 	var syncStrategy syncStrategy
@@ -715,6 +725,12 @@ loop:
 func (s *memorySeriesStorage) maintainMemorySeries(
 	fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp,
 ) (becameDirty bool) {
+	defer func(begin time.Time) {
+		s.maintainSeriesDuration.WithLabelValues(maintainInMemory).Observe(
+			float64(time.Since(begin)) / float64(time.Millisecond),
+		)
+	}(time.Now())
+
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
@@ -860,6 +876,12 @@ func (s *memorySeriesStorage) writeMemorySeries(
 // maintainArchivedSeries drops chunks older than beforeTime from an archived
 // series. If the series contains no chunks after that, it is purged entirely.
 func (s *memorySeriesStorage) maintainArchivedSeries(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) {
+	defer func(begin time.Time) {
+		s.maintainSeriesDuration.WithLabelValues(maintainArchived).Observe(
+			float64(time.Since(begin)) / float64(time.Millisecond),
+		)
+	}(time.Now())
+
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
@@ -939,8 +961,8 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
 	ch <- s.invalidPreloadRequestsCount.Desc()
-
 	ch <- numMemChunksDesc
+	s.maintainSeriesDuration.Describe(ch)
 }
 
 // Collect implements prometheus.Collector.
@@ -962,10 +984,10 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.seriesOps.Collect(ch)
 	ch <- s.ingestedSamplesCount
 	ch <- s.invalidPreloadRequestsCount
-
 	ch <- prometheus.MustNewConstMetric(
 		numMemChunksDesc,
 		prometheus.GaugeValue,
 		float64(atomic.LoadInt64(&numMemChunks)),
 	)
+	s.maintainSeriesDuration.Collect(ch)
 }

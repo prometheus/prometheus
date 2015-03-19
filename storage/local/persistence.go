@@ -111,7 +111,7 @@ type persistence struct {
 	indexingQueueLength   prometheus.Gauge
 	indexingQueueCapacity prometheus.Metric
 	indexingBatchSizes    prometheus.Summary
-	indexingBatchLatency  prometheus.Summary
+	indexingBatchDuration prometheus.Summary
 	checkpointDuration    prometheus.Gauge
 
 	dirtyMtx       sync.Mutex     // Protects dirty and becameDirty.
@@ -214,12 +214,12 @@ func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync sync
 				Help:      "Quantiles for indexing batch sizes (number of metrics per batch).",
 			},
 		),
-		indexingBatchLatency: prometheus.NewSummary(
+		indexingBatchDuration: prometheus.NewSummary(
 			prometheus.SummaryOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "indexing_batch_latency_milliseconds",
-				Help:      "Quantiles for batch indexing latencies in milliseconds.",
+				Name:      "indexing_batch_duration_milliseconds",
+				Help:      "Quantiles for batch indexing duration in milliseconds.",
 			},
 		),
 		checkpointDuration: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -264,7 +264,7 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	ch <- p.indexingQueueLength.Desc()
 	ch <- p.indexingQueueCapacity.Desc()
 	p.indexingBatchSizes.Describe(ch)
-	p.indexingBatchLatency.Describe(ch)
+	p.indexingBatchDuration.Describe(ch)
 	ch <- p.checkpointDuration.Desc()
 }
 
@@ -275,7 +275,7 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	ch <- p.indexingQueueLength
 	ch <- p.indexingQueueCapacity
 	p.indexingBatchSizes.Collect(ch)
-	p.indexingBatchLatency.Collect(ch)
+	p.indexingBatchDuration.Collect(ch)
 	ch <- p.checkpointDuration
 }
 
@@ -1270,7 +1270,9 @@ func (p *persistence) processIndexingQueue() {
 	commitBatch := func() {
 		p.indexingBatchSizes.Observe(float64(batchSize))
 		defer func(begin time.Time) {
-			p.indexingBatchLatency.Observe(float64(time.Since(begin) / time.Millisecond))
+			p.indexingBatchDuration.Observe(
+				float64(time.Since(begin)) / float64(time.Millisecond),
+			)
 		}(time.Now())
 
 		if err := p.labelPairToFingerprints.IndexBatch(pairToFPs); err != nil {
