@@ -482,7 +482,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 //
 // (4.4) The varint-encoded persistWatermark. (Missing in v1.)
 //
-// (4.5) The modification time of the series file as nanoceconds elapsed since
+// (4.5) The modification time of the series file as nanoseconds elapsed since
 // January 1, 1970 UTC. -1 if the modification time is unknown or no series file
 // exists yet. (Missing in v1.)
 //
@@ -1235,12 +1235,12 @@ func (p *persistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.F
 	// would still be detected.
 }
 
-// closeChunkFile first sync's the provided file if mandated so by the sync
+// closeChunkFile first syncs the provided file if mandated so by the sync
 // strategy. Then it closes the file. Errors are logged.
 func (p *persistence) closeChunkFile(f *os.File) {
 	if p.shouldSync() {
 		if err := f.Sync(); err != nil {
-			glog.Error("Error sync'ing file:", err)
+			glog.Error("Error syncing file:", err)
 		}
 	}
 	if err := f.Close(); err != nil {

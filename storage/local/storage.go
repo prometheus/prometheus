@@ -73,8 +73,8 @@ const (
 	Adaptive
 )
 
-// A syncStrategy is a function that returns if series files should be sync'd or
-// not. It does not need to be goroutine safe.
+// A syncStrategy is a function that returns whether series files should be
+// synced or not. It does not need to be goroutine safe.
 type syncStrategy func() bool
 
 type memorySeriesStorage struct {
@@ -935,16 +935,21 @@ func (s *memorySeriesStorage) incNumChunksToPersist(by int) {
 
 // isDegraded returns whether the storage is in "graceful degradation mode",
 // which is the case if the number of chunks waiting for persistence has reached
-// a percentage of maxChunksToPersist that exceepds
+// a percentage of maxChunksToPersist that exceeds
 // percentChunksToPersistForDegradation. The method is not goroutine safe (but
 // only ever called from the goroutine dealing with series maintenance).
 // Changes of degradation mode are logged.
 func (s *memorySeriesStorage) isDegraded() bool {
 	nowDegraded := s.getNumChunksToPersist() > s.maxChunksToPersist*percentChunksToPersistForDegradation/100
 	if s.degraded && !nowDegraded {
-		glog.Warning("Storage has left graceful degradation mode.")
+		glog.Warning("Storage has left graceful degradation mode. Things are back to normal.")
 	} else if !s.degraded && nowDegraded {
-		glog.Warning("%d chunks waiting for persistence (allowed maximum %d). Storage is now in graceful degradation mode. Series files are not sync'd anymore. Checkpoints will not be performed more often then every %v.", s.getNumChunksToPersist, s.maxChunksToPersist, s.checkpointInterval)
+		glog.Warningf(
+			"%d chunks waiting for persistence (%d%% of the allowed maximum %d). Storage is now in graceful degradation mode. Series files are not synced anymore if following the adaptive strategy. Checkpoints are not performed more often than every %v.",
+			s.getNumChunksToPersist(),
+			s.getNumChunksToPersist()*100/s.maxChunksToPersist,
+			s.maxChunksToPersist,
+			s.checkpointInterval)
 	}
 	s.degraded = nowDegraded
 	return s.degraded
