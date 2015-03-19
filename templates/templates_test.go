@@ -154,19 +154,17 @@ func TestTemplateExpansion(t *testing.T) {
 
 	storage, closer := local.NewTestStorage(t, 1)
 	defer closer.Close()
-	storage.AppendSamples(clientmodel.Samples{
-		{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "metric",
-				"instance":                  "a"},
-			Value: 11,
-		},
-		{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "metric",
-				"instance":                  "b"},
-			Value: 21,
-		},
+	storage.Append(&clientmodel.Sample{
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "metric",
+			"instance":                  "a"},
+		Value: 11,
+	})
+	storage.Append(&clientmodel.Sample{
+		Metric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "metric",
+			"instance":                  "b"},
+		Value: 21,
 	})
 	storage.WaitForIndexing()
 

@@ -24,13 +24,13 @@ import (
 
 	"github.com/golang/glog"
 
-	clientmodel "github.com/prometheus/client_golang/model"
 	registry "github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules/manager"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
@@ -52,38 +52,22 @@ var (
 	remoteTSDBUrl     = flag.String("storage.remote.url", "", "The URL of the OpenTSDB instance to send samples to.")
 	remoteTSDBTimeout = flag.Duration("storage.remote.timeout", 30*time.Second, "The timeout to use when sending samples to OpenTSDB.")
 
-	samplesQueueCapacity = flag.Int("storage.incoming-samples-queue-capacity", 64*1024, "The capacity of the queue of samples to be stored. Note that each slot in the queue takes a whole slice of samples whose size depends on details of the scrape process.")
-
 	numMemoryChunks = flag.Int("storage.local.memory-chunks", 1024*1024, "How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.")
 
 	persistenceRetentionPeriod = flag.Duration("storage.local.retention", 15*24*time.Hour, "How long to retain samples in the local storage.")
-	persistenceQueueCapacity   = flag.Int("storage.local.persistence-queue-capacity", 1024*1024, "How many chunks can be waiting for being persisted before sample ingestion will stop. Many chunks waiting to be persisted will increase the checkpoint size.")
+	maxChunksToPersist         = flag.Int("storage.local.max-chunks-to-persist", 1024*1024, "How many chunks can be waiting for persistence before sample ingestion will stop. Many chunks waiting to be persisted will increase the checkpoint size.")
 
 	checkpointInterval         = flag.Duration("storage.local.checkpoint-interval", 5*time.Minute, "The period at which the in-memory metrics and the chunks not yet persisted to series files are checkpointed.")
 	checkpointDirtySeriesLimit = flag.Int("storage.local.checkpoint-dirty-series-limit", 5000, "If approx. that many time series are in a state that would require a recovery operation after a crash, a checkpoint is triggered, even if the checkpoint interval hasn't passed yet. A recovery operation requires a disk seek. The default limit intends to keep the recovery time below 1min even on spinning disks. With SSD, recovery is much faster, so you might want to increase this value in that case to avoid overly frequent checkpoints.")
+	seriesSyncStrategy         = flag.String("storage.local.series-sync-strategy", "adaptive", "When to sync series files after modification. Possible values: 'never', 'always', 'adaptive'. Sync'ing slows down storage performance but reduces the risk of data loss in case of an OS crash. With the 'adaptive' strategy, series files are sync'd for as long as the storage is not too much behind on chunk persistence.")
 
-	storageDirty = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
+	storageDirty          = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
+	storagePedanticChecks = flag.Bool("storage.local.pedantic-checks", false, "If set, a crash recovery will perform checks on each series file. This might take a very long time.")
 
 	printVersion = flag.Bool("version", false, "Print version information.")
 )
 
-// Instrumentation.
-var (
-	samplesQueueCapDesc = registry.NewDesc(
-		"prometheus_samples_queue_capacity",
-		"Capacity of the queue for unwritten samples.",
-		nil, nil,
-	)
-	samplesQueueLenDesc = registry.NewDesc(
-		"prometheus_samples_queue_length",
-		"Current number of items in the queue for unwritten samples. Each item comprises all samples exposed by one target as one metric family (i.e. metrics of the same name).",
-		nil, nil,
-	)
-)
-
 type prometheus struct {
-	incomingSamples chan clientmodel.Samples
-
 	ruleManager         manager.RuleManager
 	targetManager       retrieval.TargetManager
 	notificationHandler *notification.NotificationHandler
@@ -103,34 +87,55 @@ func NewPrometheus() *prometheus {
 		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
 	}
 
-	incomingSamples := make(chan clientmodel.Samples, *samplesQueueCapacity)
-
-	ingester := &retrieval.MergeLabelsIngester{
-		Labels:          conf.GlobalLabels(),
-		CollisionPrefix: clientmodel.ExporterLabelPrefix,
-		Ingester:        retrieval.ChannelIngester(incomingSamples),
-	}
-	targetManager := retrieval.NewTargetManager(ingester)
-	targetManager.AddTargetsFromConfig(conf)
-
 	notificationHandler := notification.NewNotificationHandler(*alertmanagerURL, *notificationQueueCapacity)
+
+	var syncStrategy local.SyncStrategy
+	switch *seriesSyncStrategy {
+	case "never":
+		syncStrategy = local.Never
+	case "always":
+		syncStrategy = local.Always
+	case "adaptive":
+		syncStrategy = local.Adaptive
+	default:
+		glog.Fatalf("Invalid flag value for 'storage.local.series-sync-strategy': %s", *seriesSyncStrategy)
+	}
 
 	o := &local.MemorySeriesStorageOptions{
 		MemoryChunks:               *numMemoryChunks,
+		MaxChunksToPersist:         *maxChunksToPersist,
 		PersistenceStoragePath:     *persistenceStoragePath,
 		PersistenceRetentionPeriod: *persistenceRetentionPeriod,
-		PersistenceQueueCapacity:   *persistenceQueueCapacity,
 		CheckpointInterval:         *checkpointInterval,
 		CheckpointDirtySeriesLimit: *checkpointDirtySeriesLimit,
-		Dirty: *storageDirty,
+		Dirty:          *storageDirty,
+		PedanticChecks: *storagePedanticChecks,
+		SyncStrategy:   syncStrategy,
 	}
 	memStorage, err := local.NewMemorySeriesStorage(o)
 	if err != nil {
 		glog.Fatal("Error opening memory series storage: ", err)
 	}
 
+	var sampleAppender storage.SampleAppender
+	var remoteTSDBQueue *remote.TSDBQueueManager
+	if *remoteTSDBUrl == "" {
+		glog.Warningf("No TSDB URL provided; not sending any samples to long-term storage")
+		sampleAppender = memStorage
+	} else {
+		openTSDB := opentsdb.NewClient(*remoteTSDBUrl, *remoteTSDBTimeout)
+		remoteTSDBQueue = remote.NewTSDBQueueManager(openTSDB, 100*1024)
+		sampleAppender = storage.Tee{
+			Appender1: remoteTSDBQueue,
+			Appender2: memStorage,
+		}
+	}
+
+	targetManager := retrieval.NewTargetManager(sampleAppender, conf.GlobalLabels())
+	targetManager.AddTargetsFromConfig(conf)
+
 	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
-		Results:             incomingSamples,
+		SampleAppender:      sampleAppender,
 		NotificationHandler: notificationHandler,
 		EvaluationInterval:  conf.EvaluationInterval(),
 		Storage:             memStorage,
@@ -138,14 +143,6 @@ func NewPrometheus() *prometheus {
 	})
 	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
 		glog.Fatal("Error loading rule files: ", err)
-	}
-
-	var remoteTSDBQueue *remote.TSDBQueueManager
-	if *remoteTSDBUrl == "" {
-		glog.Warningf("No TSDB URL provided; not sending any samples to long-term storage")
-	} else {
-		openTSDB := opentsdb.NewClient(*remoteTSDBUrl, *remoteTSDBTimeout)
-		remoteTSDBQueue = remote.NewTSDBQueueManager(openTSDB, 512)
 	}
 
 	flags := map[string]string{}
@@ -183,8 +180,6 @@ func NewPrometheus() *prometheus {
 	}
 
 	p := &prometheus{
-		incomingSamples: incomingSamples,
-
 		ruleManager:         ruleManager,
 		targetManager:       targetManager,
 		notificationHandler: notificationHandler,
@@ -193,7 +188,7 @@ func NewPrometheus() *prometheus {
 
 		webService: webService,
 	}
-	webService.QuitDelegate = p.Close
+	webService.QuitChan = make(chan struct{})
 	return p
 }
 
@@ -206,7 +201,6 @@ func (p *prometheus) Serve() {
 	}
 	go p.ruleManager.Run()
 	go p.notificationHandler.Run()
-	go p.interruptHandler()
 
 	p.storage.Start()
 
@@ -217,15 +211,18 @@ func (p *prometheus) Serve() {
 		}
 	}()
 
-	for samples := range p.incomingSamples {
-		p.storage.AppendSamples(samples)
-		if p.remoteTSDBQueue != nil {
-			p.remoteTSDBQueue.Queue(samples)
-		}
+	notifier := make(chan os.Signal)
+	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
+	select {
+	case <-notifier:
+		glog.Warning("Received SIGTERM, exiting gracefully...")
+	case <-p.webService.QuitChan:
+		glog.Warning("Received termination request via web service, exiting gracefully...")
 	}
 
-	// The following shut-down operations have to happen after
-	// incomingSamples is drained. So do not move them into close().
+	p.targetManager.Stop()
+	p.ruleManager.Stop()
+
 	if err := p.storage.Stop(); err != nil {
 		glog.Error("Error stopping local storage: ", err)
 	}
@@ -238,35 +235,8 @@ func (p *prometheus) Serve() {
 	glog.Info("See you next time!")
 }
 
-// Close cleanly shuts down the Prometheus server.
-func (p *prometheus) Close() {
-	p.closeOnce.Do(p.close)
-}
-
-func (p *prometheus) interruptHandler() {
-	notifier := make(chan os.Signal)
-	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
-	<-notifier
-
-	glog.Warning("Received SIGTERM, exiting gracefully...")
-	p.Close()
-}
-
-func (p *prometheus) close() {
-	glog.Info("Shutdown has been requested; subsytems are closing:")
-	p.targetManager.Stop()
-	p.ruleManager.Stop()
-
-	close(p.incomingSamples)
-	// Note: Before closing the remaining subsystems (storage, ...), we have
-	// to wait until p.incomingSamples is actually drained. Therefore,
-	// remaining shut-downs happen in Serve().
-}
-
 // Describe implements registry.Collector.
 func (p *prometheus) Describe(ch chan<- *registry.Desc) {
-	ch <- samplesQueueCapDesc
-	ch <- samplesQueueLenDesc
 	p.notificationHandler.Describe(ch)
 	p.storage.Describe(ch)
 	if p.remoteTSDBQueue != nil {
@@ -276,16 +246,6 @@ func (p *prometheus) Describe(ch chan<- *registry.Desc) {
 
 // Collect implements registry.Collector.
 func (p *prometheus) Collect(ch chan<- registry.Metric) {
-	ch <- registry.MustNewConstMetric(
-		samplesQueueCapDesc,
-		registry.GaugeValue,
-		float64(cap(p.incomingSamples)),
-	)
-	ch <- registry.MustNewConstMetric(
-		samplesQueueLenDesc,
-		registry.GaugeValue,
-		float64(len(p.incomingSamples)),
-	)
 	p.notificationHandler.Collect(ch)
 	p.storage.Collect(ch)
 	if p.remoteTSDBQueue != nil {

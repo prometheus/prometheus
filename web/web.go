@@ -48,7 +48,7 @@ type WebService struct {
 	AlertsHandler   *AlertsHandler
 	ConsolesHandler *ConsolesHandler
 
-	QuitDelegate func()
+	QuitChan chan struct{}
 }
 
 // ServeForever serves the HTTP endpoints and only returns upon errors.
@@ -109,7 +109,7 @@ func (ws WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "Requesting termination... Goodbye!")
 
-	ws.QuitDelegate()
+	close(ws.QuitChan)
 }
 
 func getTemplateFile(name string) (string, error) {

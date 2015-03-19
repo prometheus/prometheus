@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright 2015 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,30 +11,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package storage
 
 import (
-	"time"
-
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-type nopAppender struct{}
-
-func (a nopAppender) Append(*clientmodel.Sample) {
+// SampleAppender is the interface to append samples to both, local and remote
+// storage.
+type SampleAppender interface {
+	Append(*clientmodel.Sample)
 }
 
-type slowAppender struct{}
-
-func (a slowAppender) Append(*clientmodel.Sample) {
-	time.Sleep(time.Millisecond)
-	return
+// Tee is a SampleAppender that appends every sample to two other
+// SampleAppenders.
+type Tee struct {
+	Appender1, Appender2 SampleAppender
 }
 
-type collectResultAppender struct {
-	result clientmodel.Samples
-}
-
-func (a *collectResultAppender) Append(s *clientmodel.Sample) {
-	a.result = append(a.result, s)
+// Append implements SampleAppender. It appends the provided sample first
+// to Appender1, then to Appender2, waiting for each to return before
+// proceeding.
+func (t Tee) Append(s *clientmodel.Sample) {
+	t.Appender1.Append(s)
+	t.Appender2.Append(s)
 }

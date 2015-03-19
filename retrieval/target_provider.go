@@ -59,22 +59,23 @@ type TargetProvider interface {
 }
 
 type sdTargetProvider struct {
-	job config.JobConfig
-
-	targets []Target
+	job          config.JobConfig
+	globalLabels clientmodel.LabelSet
+	targets      []Target
 
 	lastRefresh     time.Time
 	refreshInterval time.Duration
 }
 
 // NewSdTargetProvider constructs a new sdTargetProvider for a job.
-func NewSdTargetProvider(job config.JobConfig) *sdTargetProvider {
+func NewSdTargetProvider(job config.JobConfig, globalLabels clientmodel.LabelSet) *sdTargetProvider {
 	i, err := utility.StringToDuration(job.GetSdRefreshInterval())
 	if err != nil {
 		panic(fmt.Sprintf("illegal refresh duration string %s: %s", job.GetSdRefreshInterval(), err))
 	}
 	return &sdTargetProvider{
 		job:             job,
+		globalLabels:    globalLabels,
 		refreshInterval: i,
 	}
 }
@@ -100,6 +101,9 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 
 	baseLabels := clientmodel.LabelSet{
 		clientmodel.JobLabel: clientmodel.LabelValue(p.job.GetName()),
+	}
+	for n, v := range p.globalLabels {
+		baseLabels[n] = v
 	}
 
 	targets := make([]Target, 0, len(response.Answer))

@@ -24,16 +24,15 @@ import (
 )
 
 // Storage ingests and manages samples, along with various indexes. All methods
-// except AppendSamples are goroutine-safe.
+// are goroutine-safe. Storage implements storage.SampleAppender.
 type Storage interface {
 	prometheus.Collector
-	// AppendSamples stores a group of new samples. Multiple samples for the
-	// same fingerprint need to be submitted in chronological order, from
-	// oldest to newest (both in the same call to AppendSamples and across
-	// multiple calls).  When AppendSamples has returned, the appended
-	// samples might not be queryable immediately. (Use WaitForIndexing to
-	// wait for complete processing.) This method is not goroutine-safe.
-	AppendSamples(clientmodel.Samples)
+	// Append stores a sample in the Storage. Multiple samples for the same
+	// fingerprint need to be submitted in chronological order, from oldest
+	// to newest. When Append has returned, the appended sample might not be
+	// queryable immediately. (Use WaitForIndexing to wait for complete
+	// processing.)
+	Append(*clientmodel.Sample)
 	// NewPreloader returns a new Preloader which allows preloading and pinning
 	// series data into memory for use within a query.
 	NewPreloader() Preloader

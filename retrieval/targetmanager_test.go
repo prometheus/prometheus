@@ -21,9 +21,8 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/client_golang/extraction"
-
 	pb "github.com/prometheus/prometheus/config/generated"
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -54,6 +53,10 @@ func (t fakeTarget) BaseLabels() clientmodel.LabelSet {
 	return clientmodel.LabelSet{}
 }
 
+func (t fakeTarget) BaseLabelsWithoutJobAndInstance() clientmodel.LabelSet {
+	return clientmodel.LabelSet{}
+}
+
 func (t fakeTarget) Interval() time.Duration {
 	return t.interval
 }
@@ -62,13 +65,13 @@ func (t fakeTarget) LastScrape() time.Time {
 	return t.lastScrape
 }
 
-func (t fakeTarget) scrape(i extraction.Ingester) error {
+func (t fakeTarget) scrape(storage.SampleAppender) error {
 	t.scrapeCount++
 
 	return nil
 }
 
-func (t fakeTarget) RunScraper(ingester extraction.Ingester, interval time.Duration) {
+func (t fakeTarget) RunScraper(storage.SampleAppender, time.Duration) {
 	return
 }
 
@@ -82,8 +85,10 @@ func (t fakeTarget) State() TargetState {
 
 func (t *fakeTarget) SetBaseLabelsFrom(newTarget Target) {}
 
+func (t *fakeTarget) Ingest(clientmodel.Samples) error { return nil }
+
 func testTargetManager(t testing.TB) {
-	targetManager := NewTargetManager(nopIngester{})
+	targetManager := NewTargetManager(nopAppender{}, nil)
 	testJob1 := config.JobConfig{
 		JobConfig: pb.JobConfig{
 			Name:           proto.String("test_job1"),

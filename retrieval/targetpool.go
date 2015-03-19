@@ -19,7 +19,8 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/prometheus/client_golang/extraction"
+
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -35,7 +36,7 @@ type TargetPool struct {
 	manager        TargetManager
 	targetsByURL   map[string]Target
 	interval       time.Duration
-	ingester       extraction.Ingester
+	sampleAppender storage.SampleAppender
 	addTargetQueue chan Target
 
 	targetProvider TargetProvider
@@ -44,11 +45,10 @@ type TargetPool struct {
 }
 
 // NewTargetPool creates a TargetPool, ready to be started by calling Run.
-func NewTargetPool(m TargetManager, p TargetProvider, ing extraction.Ingester, i time.Duration) *TargetPool {
+func NewTargetPool(p TargetProvider, app storage.SampleAppender, i time.Duration) *TargetPool {
 	return &TargetPool{
-		manager:        m,
 		interval:       i,
-		ingester:       ing,
+		sampleAppender: app,
 		targetsByURL:   make(map[string]Target),
 		addTargetQueue: make(chan Target, targetAddQueueSize),
 		targetProvider: p,
@@ -100,7 +100,7 @@ func (p *TargetPool) addTarget(target Target) {
 	defer p.Unlock()
 
 	p.targetsByURL[target.URL()] = target
-	go target.RunScraper(p.ingester, p.interval)
+	go target.RunScraper(p.sampleAppender, p.interval)
 }
 
 // ReplaceTargets replaces the old targets by the provided new ones but reuses
@@ -118,7 +118,7 @@ func (p *TargetPool) ReplaceTargets(newTargets []Target) {
 			oldTarget.SetBaseLabelsFrom(newTarget)
 		} else {
 			p.targetsByURL[newTarget.URL()] = newTarget
-			go newTarget.RunScraper(p.ingester, p.interval)
+			go newTarget.RunScraper(p.sampleAppender, p.interval)
 		}
 	}
 

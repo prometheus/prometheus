@@ -63,13 +63,16 @@ func TestSampleDelivery(t *testing.T) {
 
 	c := &TestTSDBClient{}
 	c.expectSamples(samples[:len(samples)/2])
-	m := NewTSDBQueueManager(c, 1)
+	m := NewTSDBQueueManager(c, len(samples)/2)
 
 	// These should be received by the client.
-	m.Queue(samples[:len(samples)/2])
+	for _, s := range samples[:len(samples)/2] {
+		m.Append(s)
+	}
 	// These will be dropped because the queue is full.
-	m.Queue(samples[len(samples)/2:])
-
+	for _, s := range samples[len(samples)/2:] {
+		m.Append(s)
+	}
 	go m.Run()
 	defer m.Stop()
 

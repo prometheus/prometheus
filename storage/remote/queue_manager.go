@@ -53,7 +53,7 @@ type TSDBClient interface {
 // by the provided TSDBClient.
 type TSDBQueueManager struct {
 	tsdb           TSDBClient
-	queue          chan clientmodel.Samples
+	queue          chan *clientmodel.Sample
 	pendingSamples clientmodel.Samples
 	sendSemaphore  chan bool
 	drained        chan bool
@@ -69,7 +69,7 @@ type TSDBQueueManager struct {
 func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 	return &TSDBQueueManager{
 		tsdb:          tsdb,
-		queue:         make(chan clientmodel.Samples, queueCapacity),
+		queue:         make(chan *clientmodel.Sample, queueCapacity),
 		sendSemaphore: make(chan bool, maxConcurrentSends),
 		drained:       make(chan bool),
 
@@ -112,17 +112,14 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 	}
 }
 
-// Queue queues a sample batch to be sent to the TSDB. It drops the most
-// recently queued samples on the floor if the queue is full.
-func (t *TSDBQueueManager) Queue(s clientmodel.Samples) {
-	if len(s) == 0 {
-		return
-	}
+// Append queues a sample to be sent to the TSDB. It drops the sample on the
+// floor if the queue is full. It implements storage.SampleAppender.
+func (t *TSDBQueueManager) Append(s *clientmodel.Sample) {
 	select {
 	case t.queue <- s:
 	default:
-		t.samplesCount.WithLabelValues(dropped).Add(float64(len(s)))
-		glog.Warningf("TSDB queue full, discarding %d samples", len(s))
+		t.samplesCount.WithLabelValues(dropped).Inc()
+		glog.Warning("TSDB queue full, discarding sample.")
 	}
 }
 
@@ -195,7 +192,7 @@ func (t *TSDBQueueManager) Run() {
 				return
 			}
 
-			t.pendingSamples = append(t.pendingSamples, s...)
+			t.pendingSamples = append(t.pendingSamples, s)
 
 			for len(t.pendingSamples) >= maxSamplesPerSend {
 				go t.sendSamples(t.pendingSamples[:maxSamplesPerSend])

@@ -56,7 +56,7 @@
                 </span>
               </td>
               <td>
-                {{.BaseLabels}}
+                {{.BaseLabelsWithoutJobAndInstance}}
               </td>
               <td>
                 {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
