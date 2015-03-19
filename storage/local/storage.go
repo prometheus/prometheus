@@ -36,6 +36,12 @@ const (
 	fpMaxSweepTime    = 6 * time.Hour
 
 	maxEvictInterval = time.Minute
+
+	// If numChunskToPersist is this percentage of maxChunksToPersist, we
+	// consider the storage in "graceful degradation mode", i.e. we do not
+	// checkpoint anymore based on the dirty series count, and we do not
+	// sync series files anymore if using the adaptive sync strategy.
+	percentChunksToPersistForDegradation = 80
 )
 
 var (
@@ -56,6 +62,21 @@ type evictRequest struct {
 	evict bool
 }
 
+// SyncStrategy is an enum to select a sync strategy for series files.
+type SyncStrategy int
+
+// Possible values for SyncStrategy.
+const (
+	_ SyncStrategy = iota
+	Never
+	Always
+	Adaptive
+)
+
+// A syncStrategy is a function that returns if series files should be sync'd or
+// not. It does not need to be goroutine safe.
+type syncStrategy func() bool
+
 type memorySeriesStorage struct {
 	fpLocker   *fingerprintLocker
 	fpToSeries *seriesMap
@@ -68,6 +89,7 @@ type memorySeriesStorage struct {
 
 	numChunksToPersist int64 // The number of chunks waiting for persistence.
 	maxChunksToPersist int   // If numChunksToPersist reaches this threshold, ingestion will stall.
+	degraded           bool
 
 	persistence *persistence
 
@@ -94,32 +116,14 @@ type MemorySeriesStorageOptions struct {
 	CheckpointDirtySeriesLimit int           // How many dirty series will trigger an early checkpoint.
 	Dirty                      bool          // Force the storage to consider itself dirty on startup.
 	PedanticChecks             bool          // If dirty, perform crash-recovery checks on each series file.
+	SyncStrategy               SyncStrategy  // Which sync strategy to apply to series files.
 }
 
 // NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
 // has to be called to start the storage.
 func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
-	p, err := newPersistence(o.PersistenceStoragePath, o.Dirty, o.PedanticChecks)
-	if err != nil {
-		return nil, err
-	}
-	glog.Info("Loading series map and head chunks...")
-	fpToSeries, numChunksToPersist, err := p.loadSeriesMapAndHeads()
-	if err != nil {
-		return nil, err
-	}
-	glog.Infof("%d series loaded.", fpToSeries.length())
-	numSeries := prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "memory_series",
-		Help:      "The current number of series in memory.",
-	})
-	numSeries.Set(float64(fpToSeries.length()))
-
 	s := &memorySeriesStorage{
-		fpLocker:   newFingerprintLocker(1024),
-		fpToSeries: fpToSeries,
+		fpLocker: newFingerprintLocker(1024),
 
 		loopStopping:               make(chan struct{}),
 		loopStopped:                make(chan struct{}),
@@ -129,8 +133,6 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		checkpointDirtySeriesLimit: o.CheckpointDirtySeriesLimit,
 
 		maxChunksToPersist: o.MaxChunksToPersist,
-		numChunksToPersist: numChunksToPersist,
-		persistence:        p,
 
 		evictList:     list.New(),
 		evictRequests: make(chan evictRequest, evictRequestsCap),
@@ -143,7 +145,12 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			Name:      "persist_errors_total",
 			Help:      "The total number of errors while persisting chunks.",
 		}),
-		numSeries: numSeries,
+		numSeries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "memory_series",
+			Help:      "The current number of series in memory.",
+		}),
 		seriesOps: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: namespace,
@@ -166,6 +173,32 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			Help:      "The total number of preload requests referring to a non-existent series. This is an indication of outdated label indexes.",
 		}),
 	}
+
+	var syncStrategy syncStrategy
+	switch o.SyncStrategy {
+	case Never:
+		syncStrategy = func() bool { return false }
+	case Always:
+		syncStrategy = func() bool { return true }
+	case Adaptive:
+		syncStrategy = func() bool { return !s.isDegraded() }
+	default:
+		panic("unknown sync strategy")
+	}
+
+	p, err := newPersistence(o.PersistenceStoragePath, o.Dirty, o.PedanticChecks, syncStrategy)
+	if err != nil {
+		return nil, err
+	}
+	s.persistence = p
+
+	glog.Info("Loading series map and head chunks...")
+	s.fpToSeries, s.numChunksToPersist, err = p.loadSeriesMapAndHeads()
+	if err != nil {
+		return nil, err
+	}
+	glog.Infof("%d series loaded.", s.fpToSeries.length())
+	s.numSeries.Set(float64(s.fpToSeries.length()))
 
 	return s, nil
 }
@@ -626,20 +659,14 @@ loop:
 		case fp := <-memoryFingerprints:
 			if s.maintainMemorySeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter)) {
 				dirtySeriesCount++
-				// Check if we have enough "dirty" series so
-				// that we need an early checkpoint.  However,
-				// if we are already at 90% capacity of the
-				// persist queue, creating a checkpoint would be
-				// counterproductive, as it would slow down
-				// chunk persisting even more, while in a
-				// situation like that, where we are clearly
-				// lacking speed of disk maintenance, the best
-				// we can do for crash recovery is to work
-				// through the persist queue as quickly as
-				// possible. So only checkpoint if the persist
-				// queue is at most 90% full.
-				if dirtySeriesCount >= s.checkpointDirtySeriesLimit &&
-					s.getNumChunksToPersist() < s.maxChunksToPersist*9/10 {
+				// Check if we have enough "dirty" series so that we need an early checkpoint.
+				// However, if we are already behind persisting chunks, creating a checkpoint
+				// would be counterproductive, as it would slow down chunk persisting even more,
+				// while in a situation like that, where we are clearly lacking speed of disk
+				// maintenance, the best we can do for crash recovery is to persist chunks as
+				// quickly as possible. So only checkpoint if the storage is not in "graceful
+				// degratadion mode".
+				if dirtySeriesCount >= s.checkpointDirtySeriesLimit && !s.isDegraded() {
 					checkpointTimer.Reset(0)
 				}
 			}
@@ -882,6 +909,23 @@ func (s *memorySeriesStorage) getNumChunksToPersist() int {
 // negative 'by' to decrement.
 func (s *memorySeriesStorage) incNumChunksToPersist(by int) {
 	atomic.AddInt64(&s.numChunksToPersist, int64(by))
+}
+
+// isDegraded returns whether the storage is in "graceful degradation mode",
+// which is the case if the number of chunks waiting for persistence has reached
+// a percentage of maxChunksToPersist that exceepds
+// percentChunksToPersistForDegradation. The method is not goroutine safe (but
+// only ever called from the goroutine dealing with series maintenance).
+// Changes of degradation mode are logged.
+func (s *memorySeriesStorage) isDegraded() bool {
+	nowDegraded := s.getNumChunksToPersist() > s.maxChunksToPersist*percentChunksToPersistForDegradation/100
+	if s.degraded && !nowDegraded {
+		glog.Warning("Storage has left graceful degradation mode.")
+	} else if !s.degraded && nowDegraded {
+		glog.Warning("%d chunks waiting for persistence (allowed maximum %d). Storage is now in graceful degradation mode. Series files are not sync'd anymore. Checkpoints will not be performed more often then every %v.", s.getNumChunksToPersist, s.maxChunksToPersist, s.checkpointInterval)
+	}
+	s.degraded = nowDegraded
+	return s.degraded
 }
 
 // Describe implements prometheus.Collector.

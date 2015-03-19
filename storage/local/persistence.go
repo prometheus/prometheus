@@ -120,10 +120,12 @@ type persistence struct {
 	pedanticChecks bool           // true if crash recovery should check each series.
 	dirtyFileName  string         // The file used for locking and to mark dirty state.
 	fLock          flock.Releaser // The file lock to protect against concurrent usage.
+
+	shouldSync syncStrategy
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
-func newPersistence(basePath string, dirty, pedanticChecks bool) (*persistence, error) {
+func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync syncStrategy) (*persistence, error) {
 	dirtyPath := filepath.Join(basePath, dirtyFileName)
 	versionPath := filepath.Join(basePath, versionFileName)
 
@@ -230,6 +232,7 @@ func newPersistence(basePath string, dirty, pedanticChecks bool) (*persistence, 
 		pedanticChecks: pedanticChecks,
 		dirtyFileName:  dirtyPath,
 		fLock:          fLock,
+		shouldSync:     shouldSync,
 	}
 
 	if p.dirty {
@@ -342,7 +345,7 @@ func (p *persistence) persistChunks(fp clientmodel.Fingerprint, chunks []chunk) 
 	if err != nil {
 		return -1, err
 	}
-	defer f.Close()
+	defer p.closeChunkFile(f)
 
 	if err := writeChunks(f, chunks); err != nil {
 		return -1, err
@@ -947,7 +950,7 @@ func (p *persistence) dropAndPersistChunks(
 		return
 	}
 	defer func() {
-		temp.Close()
+		p.closeChunkFile(temp)
 		if err == nil {
 			err = os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp))
 		}
@@ -1230,6 +1233,19 @@ func (p *persistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.F
 	// would now return '0, nil', so we cannot check for a consistent file length right now.
 	// However, the chunkIndexForOffset function is doing that check, so a wrong file length
 	// would still be detected.
+}
+
+// closeChunkFile first sync's the provided file if mandated so by the sync
+// strategy. Then it closes the file. Errors are logged.
+func (p *persistence) closeChunkFile(f *os.File) {
+	if p.shouldSync() {
+		if err := f.Sync(); err != nil {
+			glog.Error("Error sync'ing file:", err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		glog.Error("Error closing chunk file:", err)
+	}
 }
 
 func (p *persistence) openChunkFileForReading(fp clientmodel.Fingerprint) (*os.File, error) {
