@@ -71,8 +71,6 @@ type memorySeriesStorage struct {
 
 	persistence *persistence
 
-	countPersistedHeadChunks chan struct{}
-
 	evictList                   *list.List
 	evictRequests               chan evictRequest
 	evictStopping, evictStopped chan struct{}
@@ -95,12 +93,13 @@ type MemorySeriesStorageOptions struct {
 	CheckpointInterval         time.Duration // How often to checkpoint the series map and head chunks.
 	CheckpointDirtySeriesLimit int           // How many dirty series will trigger an early checkpoint.
 	Dirty                      bool          // Force the storage to consider itself dirty on startup.
+	PedanticChecks             bool          // If dirty, perform crash-recovery checks on each series file.
 }
 
 // NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
 // has to be called to start the storage.
 func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
-	p, err := newPersistence(o.PersistenceStoragePath, o.Dirty)
+	p, err := newPersistence(o.PersistenceStoragePath, o.Dirty, o.PedanticChecks)
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +131,6 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		maxChunksToPersist: o.MaxChunksToPersist,
 		numChunksToPersist: numChunksToPersist,
 		persistence:        p,
-
-		countPersistedHeadChunks: make(chan struct{}, 100),
 
 		evictList:     list.New(),
 		evictRequests: make(chan evictRequest, evictRequestsCap),

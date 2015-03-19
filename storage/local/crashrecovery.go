@@ -221,7 +221,10 @@ func (p *persistence) sanitizeSeries(
 		if s == nil {
 			panic("fingerprint mapped to nil pointer")
 		}
-		if bytesToTrim == 0 && s.chunkDescsOffset != -1 && chunksInFile == s.chunkDescsOffset+s.persistWatermark {
+		if !p.pedanticChecks &&
+			bytesToTrim == 0 &&
+			s.chunkDescsOffset != -1 &&
+			chunksInFile == s.chunkDescsOffset+s.persistWatermark {
 			// Everything is consistent. We are good.
 			return fp, true
 		}

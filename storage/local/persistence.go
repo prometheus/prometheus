@@ -114,15 +114,16 @@ type persistence struct {
 	indexingBatchLatency  prometheus.Summary
 	checkpointDuration    prometheus.Gauge
 
-	dirtyMtx      sync.Mutex     // Protects dirty and becameDirty.
-	dirty         bool           // true if persistence was started in dirty state.
-	becameDirty   bool           // true if an inconsistency came up during runtime.
-	dirtyFileName string         // The file used for locking and to mark dirty state.
-	fLock         flock.Releaser // The file lock to protect against concurrent usage.
+	dirtyMtx       sync.Mutex     // Protects dirty and becameDirty.
+	dirty          bool           // true if persistence was started in dirty state.
+	becameDirty    bool           // true if an inconsistency came up during runtime.
+	pedanticChecks bool           // true if crash recovery should check each series.
+	dirtyFileName  string         // The file used for locking and to mark dirty state.
+	fLock          flock.Releaser // The file lock to protect against concurrent usage.
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
-func newPersistence(basePath string, dirty bool) (*persistence, error) {
+func newPersistence(basePath string, dirty, pedanticChecks bool) (*persistence, error) {
 	dirtyPath := filepath.Join(basePath, dirtyFileName)
 	versionPath := filepath.Join(basePath, versionFileName)
 
@@ -225,9 +226,10 @@ func newPersistence(basePath string, dirty bool) (*persistence, error) {
 			Name:      "checkpoint_duration_milliseconds",
 			Help:      "The duration (in milliseconds) it took to checkpoint in-memory metrics and head chunks.",
 		}),
-		dirty:         dirty,
-		dirtyFileName: dirtyPath,
-		fLock:         fLock,
+		dirty:          dirty,
+		pedanticChecks: pedanticChecks,
+		dirtyFileName:  dirtyPath,
+		fLock:          fLock,
 	}
 
 	if p.dirty {
