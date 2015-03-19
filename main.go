@@ -59,8 +59,10 @@ var (
 
 	checkpointInterval         = flag.Duration("storage.local.checkpoint-interval", 5*time.Minute, "The period at which the in-memory metrics and the chunks not yet persisted to series files are checkpointed.")
 	checkpointDirtySeriesLimit = flag.Int("storage.local.checkpoint-dirty-series-limit", 5000, "If approx. that many time series are in a state that would require a recovery operation after a crash, a checkpoint is triggered, even if the checkpoint interval hasn't passed yet. A recovery operation requires a disk seek. The default limit intends to keep the recovery time below 1min even on spinning disks. With SSD, recovery is much faster, so you might want to increase this value in that case to avoid overly frequent checkpoints.")
+	seriesSyncStrategy         = flag.String("storage.local.series-sync-strategy", "adaptive", "When to sync series files after modification. Possible values: 'never', 'always', 'adaptive'. Sync'ing slows down storage performance but reduces the risk of data loss in case of an OS crash. With the 'adaptive' strategy, series files are sync'd for as long as the storage is not too much behind on chunk persistence.")
 
-	storageDirty = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
+	storageDirty          = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
+	storagePedanticChecks = flag.Bool("storage.local.pedantic-checks", false, "If set, a crash recovery will perform checks on each series file. This might take a very long time.")
 
 	printVersion = flag.Bool("version", false, "Print version information.")
 )
@@ -87,6 +89,18 @@ func NewPrometheus() *prometheus {
 
 	notificationHandler := notification.NewNotificationHandler(*alertmanagerURL, *notificationQueueCapacity)
 
+	var syncStrategy local.SyncStrategy
+	switch *seriesSyncStrategy {
+	case "never":
+		syncStrategy = local.Never
+	case "always":
+		syncStrategy = local.Always
+	case "adaptive":
+		syncStrategy = local.Adaptive
+	default:
+		glog.Fatalf("Invalid flag value for 'storage.local.series-sync-strategy': %s", *seriesSyncStrategy)
+	}
+
 	o := &local.MemorySeriesStorageOptions{
 		MemoryChunks:               *numMemoryChunks,
 		MaxChunksToPersist:         *maxChunksToPersist,
@@ -94,7 +108,9 @@ func NewPrometheus() *prometheus {
 		PersistenceRetentionPeriod: *persistenceRetentionPeriod,
 		CheckpointInterval:         *checkpointInterval,
 		CheckpointDirtySeriesLimit: *checkpointDirtySeriesLimit,
-		Dirty: *storageDirty,
+		Dirty:          *storageDirty,
+		PedanticChecks: *storagePedanticChecks,
+		SyncStrategy:   syncStrategy,
 	}
 	memStorage, err := local.NewMemorySeriesStorage(o)
 	if err != nil {

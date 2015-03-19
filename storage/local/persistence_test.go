@@ -36,7 +36,7 @@ var (
 func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, test.Closer) {
 	*defaultChunkEncoding = int(encoding)
 	dir := test.NewTemporaryDirectory("test_persistence", t)
-	p, err := newPersistence(dir.Path(), false)
+	p, err := newPersistence(dir.Path(), false, false, func() bool { return false })
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
