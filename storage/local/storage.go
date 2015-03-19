@@ -770,6 +770,7 @@ func (s *memorySeriesStorage) writeMemorySeries(
 		}
 		s.incNumChunksToPersist(-len(cds))
 		chunkOps.WithLabelValues(persistAndUnpin).Add(float64(len(cds)))
+		series.modTime = s.persistence.getSeriesFileModTime(fp)
 	}()
 
 	// Get the actual chunks from underneath the chunkDescs.

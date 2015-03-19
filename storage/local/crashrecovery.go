@@ -193,6 +193,7 @@ func (p *persistence) sanitizeSeries(
 
 	bytesToTrim := fi.Size() % int64(chunkLen+chunkHeaderLen)
 	chunksInFile := int(fi.Size()) / (chunkLen + chunkHeaderLen)
+	modTime := fi.ModTime()
 	if bytesToTrim != 0 {
 		glog.Warningf(
 			"Truncating file %s to exactly %d chunks, trimming %d extraneous bytes.",
@@ -224,7 +225,8 @@ func (p *persistence) sanitizeSeries(
 		if !p.pedanticChecks &&
 			bytesToTrim == 0 &&
 			s.chunkDescsOffset != -1 &&
-			chunksInFile == s.chunkDescsOffset+s.persistWatermark {
+			chunksInFile == s.chunkDescsOffset+s.persistWatermark &&
+			modTime.Equal(s.modTime) {
 			// Everything is consistent. We are good.
 			return fp, true
 		}
@@ -241,8 +243,9 @@ func (p *persistence) sanitizeSeries(
 				s.metric, fp, chunksInFile,
 			)
 			s.chunkDescs = nil
-			s.chunkDescsOffset = -1
+			s.chunkDescsOffset = chunksInFile
 			s.persistWatermark = 0
+			s.modTime = modTime
 			return fp, true
 		}
 		// This is the tricky one: We have chunks from heads.db, but
@@ -268,6 +271,7 @@ func (p *persistence) sanitizeSeries(
 		}
 		s.persistWatermark = len(cds)
 		s.chunkDescsOffset = 0
+		s.modTime = modTime
 
 		lastTime := cds[len(cds)-1].lastTime()
 		keepIdx := -1

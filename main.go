@@ -95,7 +95,8 @@ func NewPrometheus() *prometheus {
 		PersistenceRetentionPeriod: *persistenceRetentionPeriod,
 		CheckpointInterval:         *checkpointInterval,
 		CheckpointDirtySeriesLimit: *checkpointDirtySeriesLimit,
-		Dirty: *storageDirty,
+		Dirty:          *storageDirty,
+		PedanticChecks: *storagePedanticChecks,
 	}
 	memStorage, err := local.NewMemorySeriesStorage(o)
 	if err != nil {

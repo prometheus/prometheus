@@ -143,6 +143,9 @@ type memorySeries struct {
 	// points to a non-persisted chunk. If all chunks are persisted, then
 	// persistWatermark == len(chunkDescs).
 	persistWatermark int
+	// The modification time of the series file. The zero value of time.Time
+	// is used to mark an unknown modification time.
+	modTime time.Time
 	// The chunkDescs in memory might not have all the chunkDescs for the
 	// chunks that are persisted to disk. The missing chunkDescs are all
 	// contiguous and at the tail end. chunkDescsOffset is the index of the

@@ -479,7 +479,11 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 //
 // (4.4) The varint-encoded persistWatermark. (Missing in v1.)
 //
-// (4.5) The varint-encoded chunkDescsOffset.
+// (4.5) The modification time of the series file as nanoceconds elapsed since
+// January 1, 1970 UTC. -1 if the modification time is unknown or no series file
+// exists yet. (Missing in v1.)
+//
+// (4.6) The varint-encoded chunkDescsOffset.
 //
 // (4.6) The varint-encoded savedFirstTime.
 //
@@ -570,6 +574,15 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			w.Write(buf)
 			if _, err = codable.EncodeVarint(w, int64(m.series.persistWatermark)); err != nil {
 				return
+			}
+			if m.series.modTime.IsZero() {
+				if _, err = codable.EncodeVarint(w, -1); err != nil {
+					return
+				}
+			} else {
+				if _, err = codable.EncodeVarint(w, m.series.modTime.UnixNano()); err != nil {
+					return
+				}
 			}
 			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset)); err != nil {
 				return
@@ -708,6 +721,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 			return sm, chunksToPersist, nil
 		}
 		var persistWatermark int64
+		var modTime time.Time
 		if version != headsFormatLegacyVersion {
 			// persistWatermark only present in v2.
 			persistWatermark, err = binary.ReadVarint(r)
@@ -715,6 +729,15 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 				glog.Warning("Could not decode persist watermark:", err)
 				p.dirty = true
 				return sm, chunksToPersist, nil
+			}
+			modTimeNano, err := binary.ReadVarint(r)
+			if err != nil {
+				glog.Warning("Could not decode modification time:", err)
+				p.dirty = true
+				return sm, chunksToPersist, nil
+			}
+			if modTimeNano != -1 {
+				modTime = time.Unix(0, modTimeNano)
 			}
 		}
 		chunkDescsOffset, err := binary.ReadVarint(r)
@@ -786,6 +809,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 			metric:           clientmodel.Metric(metric),
 			chunkDescs:       chunkDescs,
 			persistWatermark: int(persistWatermark),
+			modTime:          modTime,
 			chunkDescsOffset: int(chunkDescsOffset),
 			savedFirstTime:   clientmodel.Timestamp(savedFirstTime),
 			headChunkClosed:  persistWatermark >= numChunkDescs,
@@ -962,6 +986,17 @@ func (p *persistence) deleteSeriesFile(fp clientmodel.Fingerprint) (int, error) 
 	}
 	chunkOps.WithLabelValues(drop).Add(float64(numChunks))
 	return numChunks, nil
+}
+
+// getSeriesFileModTime returns the modification time of the series file
+// belonging to the provided fingerprint. In case of an error, the zero value of
+// time.Time is returned.
+func (p *persistence) getSeriesFileModTime(fp clientmodel.Fingerprint) time.Time {
+	var modTime time.Time
+	if fi, err := os.Stat(p.fileNameForFingerprint(fp)); err == nil {
+		return fi.ModTime()
+	}
+	return modTime
 }
 
 // indexMetric queues the given metric for addition to the indexes needed by
