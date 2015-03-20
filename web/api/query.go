@@ -47,6 +47,14 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	params := httputils.GetQueryParams(r)
 	expr := params.Get("expr")
 	asText := params.Get("asText")
+	tsFloat, _ := strconv.ParseFloat(params.Get("timestamp"), 64)
+
+	var timestamp clientmodel.Timestamp
+	if tsFloat == 0 {
+		timestamp = clientmodel.Now()
+	} else {
+		timestamp = clientmodel.TimestampFromUnixNano(int64(tsFloat) * int64(time.Second/time.Nanosecond))
+	}
 
 	var format ast.OutputFormat
 	// BUG(julius): Use Content-Type negotiation.
@@ -64,7 +72,6 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timestamp := clientmodel.TimestampFromTime(serv.time.Now())
 	queryStats := stats.NewTimerGroup()
 	result := ast.EvalToString(exprNode, timestamp, format, serv.Storage, queryStats)
 	glog.V(1).Infof("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
