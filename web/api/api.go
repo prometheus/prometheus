@@ -49,4 +49,7 @@ func (msrv *MetricsService) RegisterHandler() {
 	http.Handle("/api/metrics", prometheus.InstrumentHandler(
 		"/api/metrics", handler(msrv.Metrics),
 	))
+	http.Handle("/api/import", prometheus.InstrumentHandler(
+		"/api/import", handler(msrv.Import),
+	))
 }
