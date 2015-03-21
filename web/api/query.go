@@ -43,13 +43,13 @@ func setAccessControlHeaders(w http.ResponseWriter) {
 func parseTimestampOrNow(t string) (clientmodel.Timestamp, error) {
 	if t == "" {
 		return clientmodel.Now(), nil
-	} else {
-		tFloat, err := strconv.ParseFloat(t, 64)
-		if err != nil {
-			return 0, err
-		}
-		return clientmodel.TimestampFromUnixNano(int64(tFloat * float64(time.Second/time.Nanosecond))), nil
 	}
+
+	tFloat, err := strconv.ParseFloat(t, 64)
+	if err != nil {
+		return 0, err
+	}
+	return clientmodel.TimestampFromUnixNano(int64(tFloat * float64(time.Second/time.Nanosecond))), nil
 }
 
 func parseDuration(d string) (time.Duration, error) {
