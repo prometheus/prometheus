@@ -40,6 +40,26 @@ func setAccessControlHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Expose-Headers", "Date")
 }
 
+func parseTimestampOrNow(t string) (clientmodel.Timestamp, error) {
+	if t == "" {
+		return clientmodel.Now(), nil
+	} else {
+		tFloat, err := strconv.ParseFloat(t, 64)
+		if err != nil {
+			return 0, err
+		}
+		return clientmodel.TimestampFromUnixNano(int64(tFloat) * int64(time.Second/time.Nanosecond)), nil
+	}
+}
+
+func parseDuration(d string) (time.Duration, error) {
+	dFloat, err := strconv.ParseFloat(d, 64)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(dFloat) * (time.Second / time.Nanosecond), nil
+}
+
 // Query handles the /api/query endpoint.
 func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
@@ -47,13 +67,11 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	params := httputils.GetQueryParams(r)
 	expr := params.Get("expr")
 	asText := params.Get("asText")
-	tsFloat, _ := strconv.ParseFloat(params.Get("timestamp"), 64)
 
-	var timestamp clientmodel.Timestamp
-	if tsFloat == 0 {
-		timestamp = clientmodel.Now()
-	} else {
-		timestamp = clientmodel.TimestampFromUnixNano(int64(tsFloat) * int64(time.Second/time.Nanosecond))
+	timestamp, err := parseTimestampOrNow(params.Get("timestamp"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid query timestamp %s", err), http.StatusBadRequest)
+		return
 	}
 
 	var format ast.OutputFormat
@@ -86,14 +104,30 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	params := httputils.GetQueryParams(r)
 	expr := params.Get("expr")
 
-	// Input times and durations are in seconds and get converted to nanoseconds.
-	endFloat, _ := strconv.ParseFloat(params.Get("end"), 64)
-	durationFloat, _ := strconv.ParseFloat(params.Get("range"), 64)
-	stepFloat, _ := strconv.ParseFloat(params.Get("step"), 64)
-	nanosPerSecond := int64(time.Second / time.Nanosecond)
-	end := int64(endFloat) * nanosPerSecond
-	duration := int64(durationFloat) * nanosPerSecond
-	step := int64(stepFloat) * nanosPerSecond
+	duration, err := parseDuration(params.Get("range"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid query range: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	step, err := parseDuration(params.Get("step"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid query resolution: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	end, err := parseTimestampOrNow(params.Get("end"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid query timestamp: %s", err), http.StatusBadRequest)
+		return
+	}
+	// TODO(julius): Remove this special-case handling a while after PromDash and
+	// other API consumers have been changed to no longer set "end=0" for setting
+	// the current time as the end time. Instead, the "end" parameter should
+	// simply be omitted or set to an empty string for that case.
+	if end == 0 {
+		end = clientmodel.Now()
+	}
 
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
@@ -105,18 +139,6 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if end == 0 {
-		end = clientmodel.Now().UnixNano()
-	}
-
-	if step <= 0 {
-		step = nanosPerSecond
-	}
-
-	if end-duration < 0 {
-		duration = end
-	}
-
 	// For safety, limit the number of returned points per timeseries.
 	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
 	if duration/step > 11000 {
@@ -125,15 +147,15 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Align the start to step "tick" boundary.
-	end -= end % step
+	end = end.Add(-time.Duration(end.UnixNano() % int64(step)))
 
 	queryStats := stats.NewTimerGroup()
 
 	matrix, err := ast.EvalVectorRange(
 		exprNode.(ast.VectorNode),
-		clientmodel.TimestampFromUnixNano(end-duration),
-		clientmodel.TimestampFromUnixNano(end),
-		time.Duration(step),
+		end.Add(-duration),
+		end,
+		step,
 		serv.Storage,
 		queryStats)
 	if err != nil {
