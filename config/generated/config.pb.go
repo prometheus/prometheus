@@ -170,7 +170,9 @@ type JobConfig struct {
 	// used for a job.
 	TargetGroup []*TargetGroup `protobuf:"bytes,5,rep,name=target_group" json:"target_group,omitempty"`
 	// The HTTP resource path to fetch metrics from on targets.
-	MetricsPath      *string `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics" json:"metrics_path,omitempty"`
+	MetricsPath *string `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics" json:"metrics_path,omitempty"`
+	// Should DNS lookups for SD use UDP (Default) or TCP?
+	SdLookupType     *string `protobuf:"bytes,8,opt,name=sd_lookup_type,def=udp" json:"sd_lookup_type,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -181,6 +183,7 @@ func (*JobConfig) ProtoMessage()    {}
 const Default_JobConfig_ScrapeTimeout string = "10s"
 const Default_JobConfig_SdRefreshInterval string = "30s"
 const Default_JobConfig_MetricsPath string = "/metrics"
+const Default_JobConfig_SdLookupType string = "udp"
 
 func (m *JobConfig) GetName() string {
 	if m != nil && m.Name != nil {
@@ -229,6 +232,13 @@ func (m *JobConfig) GetMetricsPath() string {
 		return *m.MetricsPath
 	}
 	return Default_JobConfig_MetricsPath
+}
+
+func (m *JobConfig) GetSdLookupType() string {
+	if m != nil && m.SdLookupType != nil {
+		return *m.SdLookupType
+	}
+	return Default_JobConfig_SdLookupType
 }
 
 // The top-level Prometheus configuration.
