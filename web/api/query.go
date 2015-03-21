@@ -48,7 +48,7 @@ func parseTimestampOrNow(t string) (clientmodel.Timestamp, error) {
 		if err != nil {
 			return 0, err
 		}
-		return clientmodel.TimestampFromUnixNano(int64(tFloat) * int64(time.Second/time.Nanosecond)), nil
+		return clientmodel.TimestampFromUnixNano(int64(tFloat * float64(time.Second/time.Nanosecond))), nil
 	}
 }
 
@@ -57,7 +57,7 @@ func parseDuration(d string) (time.Duration, error) {
 	if err != nil {
 		return 0, err
 	}
-	return time.Duration(dFloat) * (time.Second / time.Nanosecond), nil
+	return time.Duration(dFloat * float64(time.Second/time.Nanosecond)), nil
 }
 
 // Query handles the /api/query endpoint.
