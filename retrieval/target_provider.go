@@ -130,14 +130,14 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 	return targets, nil
 }
 
-func lookupSRV(name, lookup_type string) (*dns.Msg, error) {
+func lookupSRV(name, lookupType string) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load resolv.conf: %s", err)
 	}
 
 	client := &dns.Client{
-		Net: lookup_type,
+		Net: lookupType,
 	}
 	response := &dns.Msg{}
 
