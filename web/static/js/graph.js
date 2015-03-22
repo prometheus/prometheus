@@ -365,7 +365,7 @@ Prometheus.Graph.prototype.renderLabels = function(labels) {
   var labelStrings = [];
   for (label in labels) {
     if (label != "__name__") {
-      labelStrings.push("<strong>" + label + "</strong>: " + labels[label]);
+      labelStrings.push("<strong>" + label + "</strong>: " + escapeHTML(labels[label]));
     }
   }
   return labels = "<div class=\"labels\">" + labelStrings.join("<br>") + "</div>";
