@@ -386,6 +386,21 @@ PromConsole.Graph.prototype._parseValue = function(value) {
   return val;
 }
 
+PromConsole.Graph.prototype._escapeHTML = function(string) {
+  var entityMap = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': '&quot;',
+    "'": '&#39;',
+    "/": '&#x2F;'
+  };
+
+  return string.replace(/[&<>"'\/]/g, function (s) {
+    return entityMap[s];
+  });
+}
+
 PromConsole.Graph.prototype._render = function(data) {
   var self = this;
   var palette = new Rickshaw.Color.Palette();
@@ -412,7 +427,7 @@ PromConsole.Graph.prototype._render = function(data) {
       series[seriesLen++] = {
             data: data[e].value[i].values.map(function(s) {return {x: s[0], y: self._parseValue(s[1])} }),
             color: palette.color(),
-            name: nameFunc(data[e].value[i].metric),
+            name: self._escapeHTML(nameFunc(data[e].value[i].metric)),
       };
     }
   }
@@ -530,7 +545,7 @@ PromConsole.Graph.prototype.dispatch = function() {
   this.graphTd.appendChild(loadingImg);
 };
 
-// Substitue the value of 'label' for [[ label ]].
+// Substitute the value of 'label' for [[ label ]].
 PromConsole._interpolateName = function(name, metric) {
   var re = /(.*?)\[\[\s*(\w+)+\s*\]\](.*?)/g;
   var result = '';
