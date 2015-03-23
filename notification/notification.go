@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -95,7 +96,7 @@ type NotificationHandler struct {
 // NewNotificationHandler constructs a new NotificationHandler.
 func NewNotificationHandler(alertmanagerURL string, notificationQueueCapacity int) *NotificationHandler {
 	return &NotificationHandler{
-		alertmanagerURL:      alertmanagerURL,
+		alertmanagerURL:      strings.TrimRight(alertmanagerURL, "/"),
 		pendingNotifications: make(chan NotificationReqs, notificationQueueCapacity),
 
 		httpClient: utility.NewDeadlineClient(*deadline),
