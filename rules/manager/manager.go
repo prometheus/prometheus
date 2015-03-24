@@ -99,6 +99,7 @@ type ruleManager struct {
 	notificationHandler *notification.NotificationHandler
 
 	prometheusURL string
+	pathPrefix string
 }
 
 // RuleManagerOptions bundles options for the RuleManager.
@@ -110,6 +111,7 @@ type RuleManagerOptions struct {
 	SampleAppender      storage.SampleAppender
 
 	PrometheusURL string
+	PathPrefix string
 }
 
 // NewRuleManager returns an implementation of RuleManager, ready to be started
@@ -190,7 +192,7 @@ func (m *ruleManager) queueAlertNotifications(rule *rules.AlertingRule, timestam
 		defs := "{{$labels := .Labels}}{{$value := .Value}}"
 
 		expand := func(text string) string {
-			template := templates.NewTemplateExpander(defs+text, "__alert_"+rule.Name(), tmplData, timestamp, m.storage)
+			template := templates.NewTemplateExpander(defs+text, "__alert_"+rule.Name(), tmplData, timestamp, m.storage, m.pathPrefix)
 			result, err := template.Expand()
 			if err != nil {
 				result = err.Error()

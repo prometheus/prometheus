@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	pprof_runtime "runtime/pprof"
@@ -47,52 +48,60 @@ type WebService struct {
 	MetricsHandler  *api.MetricsService
 	AlertsHandler   *AlertsHandler
 	ConsolesHandler *ConsolesHandler
+	GraphsHandler   *GraphsHandler
 
 	QuitChan chan struct{}
 }
 
 // ServeForever serves the HTTP endpoints and only returns upon errors.
-func (ws WebService) ServeForever() error {
+func (ws WebService) ServeForever(pathPrefix string) error {
+
 	http.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", 404)
 	}))
 
-	http.Handle("/", prometheus.InstrumentHandler(
-		"/", ws.StatusHandler,
+	http.Handle(pathPrefix, prometheus.InstrumentHandler(
+		pathPrefix, ws.StatusHandler,
 	))
-	http.Handle("/alerts", prometheus.InstrumentHandler(
-		"/alerts", ws.AlertsHandler,
+	http.Handle(pathPrefix + "alerts", prometheus.InstrumentHandler(
+		pathPrefix + "alerts", ws.AlertsHandler,
 	))
-	http.Handle("/consoles/", prometheus.InstrumentHandler(
-		"/consoles/", http.StripPrefix("/consoles/", ws.ConsolesHandler),
+	http.Handle(pathPrefix + "consoles/", prometheus.InstrumentHandler(
+		pathPrefix + "consoles/", http.StripPrefix(pathPrefix + "consoles/", ws.ConsolesHandler),
 	))
-	http.Handle("/graph", prometheus.InstrumentHandler(
-		"/graph", http.HandlerFunc(graphHandler),
+	http.Handle(pathPrefix + "graph", prometheus.InstrumentHandler(
+		pathPrefix + "graph", ws.GraphsHandler,
 	))
-	http.Handle("/heap", prometheus.InstrumentHandler(
-		"/heap", http.HandlerFunc(dumpHeap),
+	http.Handle(pathPrefix + "heap", prometheus.InstrumentHandler(
+		pathPrefix + "heap", http.HandlerFunc(dumpHeap),
 	))
 
-	ws.MetricsHandler.RegisterHandler()
-	http.Handle(*metricsPath, prometheus.Handler())
+	ws.MetricsHandler.RegisterHandler(pathPrefix)
+	http.Handle(pathPrefix + strings.TrimLeft(*metricsPath, "/"), prometheus.Handler())
 	if *useLocalAssets {
-		http.Handle("/static/", prometheus.InstrumentHandler(
-			"/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))),
+		http.Handle(pathPrefix + "static/", prometheus.InstrumentHandler(
+			pathPrefix + "static/", http.StripPrefix(pathPrefix + "static/", http.FileServer(http.Dir("web/static"))),
 		))
 	} else {
-		http.Handle("/static/", prometheus.InstrumentHandler(
-			"/static/", http.StripPrefix("/static/", new(blob.Handler)),
+		http.Handle(pathPrefix + "static/", prometheus.InstrumentHandler(
+			pathPrefix + "static/", http.StripPrefix(pathPrefix + "static/", new(blob.Handler)),
 		))
 	}
 
 	if *userAssetsPath != "" {
-		http.Handle("/user/", prometheus.InstrumentHandler(
-			"/user/", http.StripPrefix("/user/", http.FileServer(http.Dir(*userAssetsPath))),
+		http.Handle(pathPrefix + "user/", prometheus.InstrumentHandler(
+			pathPrefix + "user/", http.StripPrefix(pathPrefix + "user/", http.FileServer(http.Dir(*userAssetsPath))),
 		))
 	}
 
 	if *enableQuit {
-		http.Handle("/-/quit", http.HandlerFunc(ws.quitHandler))
+		http.Handle(pathPrefix + "-/quit", http.HandlerFunc(ws.quitHandler))
+	}
+
+	if pathPrefix != "/" {
+		http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, pathPrefix, http.StatusFound)
+		}))
 	}
 
 	glog.Info("listening on ", *listenAddress)
@@ -129,23 +138,25 @@ func getTemplateFile(name string) (string, error) {
 	return string(file), nil
 }
 
-func getConsoles() string {
-	if _, err := os.Stat(*consoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
-		return "/consoles/index.html"
+func getConsoles(pathPrefix string) string {
+	if _, err := os.Stat(pathPrefix + *consoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
+		return pathPrefix + "consoles/index.html"
 	}
 	if *userAssetsPath != "" {
-		if _, err := os.Stat(*userAssetsPath + "/index.html"); !os.IsNotExist(err) {
-			return "/user/index.html"
+		if _, err := os.Stat(pathPrefix + *userAssetsPath + "/index.html"); !os.IsNotExist(err) {
+			return pathPrefix + "user/index.html"
 		}
 	}
 	return ""
 }
 
-func getTemplate(name string) (t *template.Template, err error) {
+func getTemplate(name string, pathPrefix string) (t *template.Template, err error) {
 	t = template.New("_base")
+
 	t.Funcs(template.FuncMap{
 		"since":       time.Since,
-		"getConsoles": getConsoles,
+		"getConsoles": func() string { return getConsoles(pathPrefix) },
+		"pathPrefix":  func() string { return pathPrefix },
 	})
 	file, err := getTemplateFile("_base")
 	if err != nil {
@@ -163,8 +174,8 @@ func getTemplate(name string) (t *template.Template, err error) {
 	return
 }
 
-func executeTemplate(w http.ResponseWriter, name string, data interface{}) {
-	tpl, err := getTemplate(name)
+func executeTemplate(w http.ResponseWriter, name string, data interface{}, pathPrefix string) {
+	tpl, err := getTemplate(name, pathPrefix)
 	if err != nil {
 		glog.Error("Error preparing layout template: ", err)
 		return
@@ -188,7 +199,7 @@ func dumpHeap(w http.ResponseWriter, r *http.Request) {
 }
 
 // MustBuildServerURL returns the server URL and panics in case an error occurs.
-func MustBuildServerURL() string {
+func MustBuildServerURL(pathPrefix string) string {
 	_, port, err := net.SplitHostPort(*listenAddress)
 	if err != nil {
 		panic(err)
@@ -197,5 +208,5 @@ func MustBuildServerURL() string {
 	if err != nil {
 		panic(err)
 	}
-	return fmt.Sprintf("http://%s:%s", hostname, port)
+	return fmt.Sprintf("http://%s:%s%s", hostname, port, pathPrefix)
 }

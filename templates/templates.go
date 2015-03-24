@@ -92,7 +92,7 @@ type templateExpander struct {
 }
 
 // NewTemplateExpander returns a template expander ready to use.
-func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage local.Storage) *templateExpander {
+func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage local.Storage, pathPrefix string) *templateExpander {
 	return &templateExpander{
 		text: text,
 		name: name,
@@ -217,6 +217,9 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 					v *= 1000
 				}
 				return fmt.Sprintf("%.4g%ss", v, prefix)
+			},
+			"pathPrefix": func() string {
+				return pathPrefix;
 			},
 		},
 	}

@@ -178,7 +178,7 @@ func TestTemplateExpansion(t *testing.T) {
 	for i, s := range scenarios {
 		var result string
 		var err error
-		expander := NewTemplateExpander(s.text, "test", s.input, time, storage)
+		expander := NewTemplateExpander(s.text, "test", s.input, time, storage, "/")
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {

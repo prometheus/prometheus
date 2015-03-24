@@ -17,6 +17,11 @@ import (
 	"net/http"
 )
 
-func graphHandler(w http.ResponseWriter, r *http.Request) {
-	executeTemplate(w, "graph", nil)
+// GraphsHandler implements http.Handler.
+type GraphsHandler struct {
+	PathPrefix string
+}
+
+func (h *GraphsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	executeTemplate(w, "graph", nil, h.PathPrefix)
 }

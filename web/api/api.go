@@ -31,19 +31,19 @@ type MetricsService struct {
 }
 
 // RegisterHandler registers the handler for the various endpoints below /api.
-func (msrv *MetricsService) RegisterHandler() {
+func (msrv *MetricsService) RegisterHandler(pathPrefix string) {
 	handler := func(h func(http.ResponseWriter, *http.Request)) http.Handler {
 		return httputils.CompressionHandler{
 			Handler: http.HandlerFunc(h),
 		}
 	}
-	http.Handle("/api/query", prometheus.InstrumentHandler(
-		"/api/query", handler(msrv.Query),
+	http.Handle(pathPrefix + "api/query", prometheus.InstrumentHandler(
+		pathPrefix + "api/query", handler(msrv.Query),
 	))
-	http.Handle("/api/query_range", prometheus.InstrumentHandler(
-		"/api/query_range", handler(msrv.QueryRange),
+	http.Handle(pathPrefix + "api/query_range", prometheus.InstrumentHandler(
+		pathPrefix + "api/query_range", handler(msrv.QueryRange),
 	))
-	http.Handle("/api/metrics", prometheus.InstrumentHandler(
-		"/api/metrics", handler(msrv.Metrics),
+	http.Handle(pathPrefix + "api/metrics", prometheus.InstrumentHandler(
+		pathPrefix + "api/metrics", handler(msrv.Metrics),
 	))
 }

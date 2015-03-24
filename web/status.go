@@ -33,6 +33,7 @@ type PrometheusStatusHandler struct {
 	TargetPools map[string]*retrieval.TargetPool
 
 	Birth time.Time
+	PathPrefix string
 }
 
 // TargetStateToClass returns a map of TargetState to the name of a Bootstrap CSS class.
@@ -45,5 +46,5 @@ func (h *PrometheusStatusHandler) TargetStateToClass() map[retrieval.TargetState
 }
 
 func (h *PrometheusStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	executeTemplate(w, "status", h)
+	executeTemplate(w, "status", h, h.PathPrefix)
 }

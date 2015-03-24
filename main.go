@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -64,6 +65,8 @@ var (
 
 	storageDirty          = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
 	storagePedanticChecks = flag.Bool("storage.local.pedantic-checks", false, "If set, a crash recovery will perform checks on each series file. This might take a very long time.")
+
+	pathPrefix = flag.String("web.path-prefix", "/", "Prefix for all web paths.")
 
 	printVersion = flag.Bool("version", false, "Print version information.")
 )
@@ -140,7 +143,8 @@ func NewPrometheus() *prometheus {
 		NotificationHandler: notificationHandler,
 		EvaluationInterval:  conf.EvaluationInterval(),
 		Storage:             memStorage,
-		PrometheusURL:       web.MustBuildServerURL(),
+		PrometheusURL:       web.MustBuildServerURL(*pathPrefix),
+		PathPrefix:          *pathPrefix,
 	})
 	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
 		glog.Fatal("Error loading rule files: ", err)
@@ -157,14 +161,21 @@ func NewPrometheus() *prometheus {
 		TargetPools: targetManager.Pools(),
 		Flags:       flags,
 		Birth:       time.Now(),
+		PathPrefix:  *pathPrefix,
 	}
 
 	alertsHandler := &web.AlertsHandler{
 		RuleManager: ruleManager,
+		PathPrefix:  *pathPrefix,
 	}
 
 	consolesHandler := &web.ConsolesHandler{
 		Storage: memStorage,
+		PathPrefix: *pathPrefix,
+	}
+
+	graphsHandler := &web.GraphsHandler{
+		PathPrefix: *pathPrefix,
 	}
 
 	metricsService := &api.MetricsService{
@@ -177,6 +188,7 @@ func NewPrometheus() *prometheus {
 		MetricsHandler:  metricsService,
 		ConsolesHandler: consolesHandler,
 		AlertsHandler:   alertsHandler,
+		GraphsHandler:   graphsHandler,
 	}
 
 	p := &prometheus{
@@ -205,7 +217,7 @@ func (p *prometheus) Serve() {
 	p.storage.Start()
 
 	go func() {
-		err := p.webService.ServeForever()
+		err := p.webService.ServeForever(*pathPrefix)
 		if err != nil {
 			glog.Fatal(err)
 		}
@@ -255,6 +267,14 @@ func (p *prometheus) Collect(ch chan<- registry.Metric) {
 
 func main() {
 	flag.Parse()
+
+	if !strings.HasPrefix(*pathPrefix, "/") {
+		*pathPrefix = "/" + *pathPrefix
+	}
+	if !strings.HasSuffix(*pathPrefix, "/") {
+		*pathPrefix = *pathPrefix + "/"
+	}
+
 	versionInfoTmpl.Execute(os.Stdout, BuildInfo)
 
 	if *printVersion {

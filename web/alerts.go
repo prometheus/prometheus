@@ -47,9 +47,9 @@ func (s byAlertStateSorter) Swap(i, j int) {
 
 // AlertsHandler implements http.Handler.
 type AlertsHandler struct {
+	mutex       sync.Mutex
 	RuleManager manager.RuleManager
-
-	mutex sync.Mutex
+	PathPrefix  string
 }
 
 func (h *AlertsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -68,5 +68,5 @@ func (h *AlertsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rules.Firing:   "danger",
 		},
 	}
-	executeTemplate(w, "alerts", alertStatus)
+	executeTemplate(w, "alerts", alertStatus, h.PathPrefix)
 }
