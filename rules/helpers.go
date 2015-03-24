@@ -210,12 +210,12 @@ func TableLinkForExpression(expr string) string {
 	// See also:
 	// http://stackoverflow.com/questions/1634271/url-encoding-the-space-character-or-20.
 	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q,"tab":1}]`, expr))
-	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))
+	return fmt.Sprintf("graph#%s", strings.Replace(urlData, "+", "%20", -1))
 }
 
 // GraphLinkForExpression creates an escaped relative link to the graph view of
 // the provided expression.
 func GraphLinkForExpression(expr string) string {
 	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q,"tab":0}]`, expr))
-	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))
+	return fmt.Sprintf("graph#%s", strings.Replace(urlData, "+", "%20", -1))
 }
