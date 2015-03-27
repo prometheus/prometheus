@@ -167,9 +167,7 @@ func NewPrometheus() *prometheus {
 	}
 
 	metricsService := &api.MetricsService{
-		Config:        &conf,
-		TargetManager: targetManager,
-		Storage:       memStorage,
+		Storage: memStorage,
 	}
 
 	webService := &web.WebService{

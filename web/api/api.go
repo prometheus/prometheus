@@ -18,17 +18,13 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/web/httputils"
 )
 
 // MetricsService manages the /api HTTP endpoint.
 type MetricsService struct {
-	Config        *config.Config
-	TargetManager retrieval.TargetManager
-	Storage       local.Storage
+	Storage local.Storage
 }
 
 // RegisterHandler registers the handler for the various endpoints below /api.
