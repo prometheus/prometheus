@@ -40,22 +40,44 @@ func setAccessControlHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Expose-Headers", "Date")
 }
 
+func httpJSONError(w http.ResponseWriter, err error, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	fmt.Fprintln(w, ast.ErrorToJSON(err))
+}
+
+func parseTimestampOrNow(t string) (clientmodel.Timestamp, error) {
+	if t == "" {
+		return clientmodel.Now(), nil
+	}
+
+	tFloat, err := strconv.ParseFloat(t, 64)
+	if err != nil {
+		return 0, err
+	}
+	return clientmodel.TimestampFromUnixNano(int64(tFloat * float64(time.Second/time.Nanosecond))), nil
+}
+
+func parseDuration(d string) (time.Duration, error) {
+	dFloat, err := strconv.ParseFloat(d, 64)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(dFloat * float64(time.Second/time.Nanosecond)), nil
+}
+
 // Query handles the /api/query endpoint.
 func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
 
 	params := httputils.GetQueryParams(r)
 	expr := params.Get("expr")
-	asText := params.Get("asText")
 
-	var format ast.OutputFormat
-	// BUG(julius): Use Content-Type negotiation.
-	if asText == "" {
-		format = ast.JSON
-		w.Header().Set("Content-Type", "application/json")
-	} else {
-		format = ast.Text
-		w.Header().Set("Content-Type", "text/plain")
+	timestamp, err := parseTimestampOrNow(params.Get("timestamp"))
+	if err != nil {
+		httpJSONError(w, fmt.Errorf("invalid query timestamp %s", err), http.StatusBadRequest)
+		return
 	}
 
 	exprNode, err := rules.LoadExprFromString(expr)
@@ -64,9 +86,8 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timestamp := clientmodel.TimestampFromTime(serv.time.Now())
 	queryStats := stats.NewTimerGroup()
-	result := ast.EvalToString(exprNode, timestamp, format, serv.Storage, queryStats)
+	result := ast.EvalToString(exprNode, timestamp, ast.JSON, serv.Storage, queryStats)
 	glog.V(1).Infof("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
 	fmt.Fprint(w, result)
 }
@@ -79,14 +100,30 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	params := httputils.GetQueryParams(r)
 	expr := params.Get("expr")
 
-	// Input times and durations are in seconds and get converted to nanoseconds.
-	endFloat, _ := strconv.ParseFloat(params.Get("end"), 64)
-	durationFloat, _ := strconv.ParseFloat(params.Get("range"), 64)
-	stepFloat, _ := strconv.ParseFloat(params.Get("step"), 64)
-	nanosPerSecond := int64(time.Second / time.Nanosecond)
-	end := int64(endFloat) * nanosPerSecond
-	duration := int64(durationFloat) * nanosPerSecond
-	step := int64(stepFloat) * nanosPerSecond
+	duration, err := parseDuration(params.Get("range"))
+	if err != nil {
+		httpJSONError(w, fmt.Errorf("invalid query range: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	step, err := parseDuration(params.Get("step"))
+	if err != nil {
+		httpJSONError(w, fmt.Errorf("invalid query resolution: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	end, err := parseTimestampOrNow(params.Get("end"))
+	if err != nil {
+		httpJSONError(w, fmt.Errorf("invalid query timestamp: %s", err), http.StatusBadRequest)
+		return
+	}
+	// TODO(julius): Remove this special-case handling a while after PromDash and
+	// other API consumers have been changed to no longer set "end=0" for setting
+	// the current time as the end time. Instead, the "end" parameter should
+	// simply be omitted or set to an empty string for that case.
+	if end == 0 {
+		end = clientmodel.Now()
+	}
 
 	exprNode, err := rules.LoadExprFromString(expr)
 	if err != nil {
@@ -98,18 +135,6 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if end == 0 {
-		end = clientmodel.Now().UnixNano()
-	}
-
-	if step <= 0 {
-		step = nanosPerSecond
-	}
-
-	if end-duration < 0 {
-		duration = end
-	}
-
 	// For safety, limit the number of returned points per timeseries.
 	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
 	if duration/step > 11000 {
@@ -118,15 +143,15 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Align the start to step "tick" boundary.
-	end -= end % step
+	end = end.Add(-time.Duration(end.UnixNano() % int64(step)))
 
 	queryStats := stats.NewTimerGroup()
 
 	matrix, err := ast.EvalVectorRange(
 		exprNode.(ast.VectorNode),
-		clientmodel.TimestampFromUnixNano(end-duration),
-		clientmodel.TimestampFromUnixNano(end),
-		time.Duration(step),
+		end.Add(-duration),
+		end,
+		step,
 		serv.Storage,
 		queryStats)
 	if err != nil {
@@ -149,15 +174,15 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 // Metrics handles the /api/metrics endpoint.
 func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
 
 	metricNames := serv.Storage.GetLabelValuesForLabelName(clientmodel.MetricNameLabel)
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
 		glog.Error("Error marshalling metric names: ", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpJSONError(w, fmt.Errorf("Error marshalling metric names: %s", err), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.Write(resultBytes)
 }
