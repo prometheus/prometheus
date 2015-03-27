@@ -21,16 +21,16 @@ import (
 )
 
 func TestParseTimestampOrNow(t *testing.T) {
-	ts, err := parseTimestampOrNow("")
+	ts, err := parseTimestampOrNow("", testNower)
 	if err != nil {
 		t.Fatalf("err = %s; want nil", err)
 	}
-	now := clientmodel.Now()
-	if now.Sub(ts) > time.Second || now.Sub(ts) < 0 {
-		t.Fatalf("ts = %v; want %v <= ts <= %v", ts, now.Sub(ts), now)
+	now := clientmodel.TimestampFromTime(testNower.Now())
+	if !now.Equal(ts) {
+		t.Fatalf("ts = %v; want ts = %v", ts, now)
 	}
 
-	ts, err = parseTimestampOrNow("1426956073.12345")
+	ts, err = parseTimestampOrNow("1426956073.12345", testNower)
 	if err != nil {
 		t.Fatalf("err = %s; want nil", err)
 	}
@@ -39,7 +39,7 @@ func TestParseTimestampOrNow(t *testing.T) {
 		t.Fatalf("ts = %v; want %v", ts, expTS)
 	}
 
-	_, err = parseTimestampOrNow("123.45foo")
+	_, err = parseTimestampOrNow("123.45foo", testNower)
 	if err == nil {
 		t.Fatalf("err = nil; want %s", err)
 	}
