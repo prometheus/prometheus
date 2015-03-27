@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/utility"
 	"github.com/prometheus/prometheus/web/httputils"
 )
 
@@ -47,9 +46,9 @@ func httpJSONError(w http.ResponseWriter, err error, code int) {
 	fmt.Fprintln(w, ast.ErrorToJSON(err))
 }
 
-func parseTimestampOrNow(t string, nower utility.Time) (clientmodel.Timestamp, error) {
+func parseTimestampOrNow(t string, now clientmodel.Timestamp) (clientmodel.Timestamp, error) {
 	if t == "" {
-		return clientmodel.TimestampFromTime(nower.Now()), nil
+		return now, nil
 	}
 
 	tFloat, err := strconv.ParseFloat(t, 64)
@@ -75,7 +74,7 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	params := httputils.GetQueryParams(r)
 	expr := params.Get("expr")
 
-	timestamp, err := parseTimestampOrNow(params.Get("timestamp"), serv.nower)
+	timestamp, err := parseTimestampOrNow(params.Get("timestamp"), serv.Now())
 	if err != nil {
 		httpJSONError(w, fmt.Errorf("invalid query timestamp %s", err), http.StatusBadRequest)
 		return
@@ -113,7 +112,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	end, err := parseTimestampOrNow(params.Get("end"), serv.nower)
+	end, err := parseTimestampOrNow(params.Get("end"), serv.Now())
 	if err != nil {
 		httpJSONError(w, fmt.Errorf("invalid query timestamp: %s", err), http.StatusBadRequest)
 		return
@@ -123,7 +122,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	// the current time as the end time. Instead, the "end" parameter should
 	// simply be omitted or set to an empty string for that case.
 	if end == 0 {
-		end = clientmodel.TimestampFromTime(serv.nower.Now())
+		end = serv.Now()
 	}
 
 	exprNode, err := rules.LoadExprFromString(expr)

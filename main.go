@@ -24,6 +24,7 @@ import (
 
 	"github.com/golang/glog"
 
+	clientmodel "github.com/prometheus/client_golang/model"
 	registry "github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
@@ -167,6 +168,7 @@ func NewPrometheus() *prometheus {
 	}
 
 	metricsService := &api.MetricsService{
+		Now:     clientmodel.Now,
 		Storage: memStorage,
 	}
 

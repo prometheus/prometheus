@@ -24,16 +24,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/utility"
 )
-
-type testInstantProvider struct {
-	now time.Time
-}
-
-func (p testInstantProvider) Now() time.Time {
-	return p.now
-}
 
 // This is a bit annoying. On one hand, we have to choose a current timestamp
 // because the storage doesn't have a mocked-out time yet and would otherwise
@@ -44,10 +35,8 @@ func (p testInstantProvider) Now() time.Time {
 // parsing/re-formatting.
 var testTimestamp = clientmodel.TimestampFromTime(time.Now().Round(time.Second)).Add(124 * time.Millisecond)
 
-var testNower = utility.Time{
-	Provider: testInstantProvider{
-		now: testTimestamp.Time(),
-	},
+func testNow() clientmodel.Timestamp {
+	return testTimestamp
 }
 
 func TestQuery(t *testing.T) {
@@ -103,6 +92,7 @@ func TestQuery(t *testing.T) {
 	storage.WaitForIndexing()
 
 	api := MetricsService{
+		Now:     testNow,
 		Storage: storage,
 	}
 	api.RegisterHandler()

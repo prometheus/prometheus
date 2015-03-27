@@ -18,14 +18,15 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/utility"
 	"github.com/prometheus/prometheus/web/httputils"
 )
 
 // MetricsService manages the /api HTTP endpoint.
 type MetricsService struct {
-	nower   utility.Time
+	Now     func() clientmodel.Timestamp
 	Storage local.Storage
 }
 
