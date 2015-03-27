@@ -40,6 +40,12 @@ func setAccessControlHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Expose-Headers", "Date")
 }
 
+func httpJSONError(w http.ResponseWriter, err error, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	fmt.Fprintln(w, ast.ErrorToJSON(err))
+}
+
 func parseTimestampOrNow(t string) (clientmodel.Timestamp, error) {
 	if t == "" {
 		return clientmodel.Now(), nil
@@ -63,25 +69,15 @@ func parseDuration(d string) (time.Duration, error) {
 // Query handles the /api/query endpoint.
 func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
 
 	params := httputils.GetQueryParams(r)
 	expr := params.Get("expr")
-	asText := params.Get("asText")
 
 	timestamp, err := parseTimestampOrNow(params.Get("timestamp"))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid query timestamp %s", err), http.StatusBadRequest)
+		httpJSONError(w, fmt.Errorf("invalid query timestamp %s", err), http.StatusBadRequest)
 		return
-	}
-
-	var format ast.OutputFormat
-	// BUG(julius): Use Content-Type negotiation.
-	if asText == "" {
-		format = ast.JSON
-		w.Header().Set("Content-Type", "application/json")
-	} else {
-		format = ast.Text
-		w.Header().Set("Content-Type", "text/plain")
 	}
 
 	exprNode, err := rules.LoadExprFromString(expr)
@@ -91,7 +87,7 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queryStats := stats.NewTimerGroup()
-	result := ast.EvalToString(exprNode, timestamp, format, serv.Storage, queryStats)
+	result := ast.EvalToString(exprNode, timestamp, ast.JSON, serv.Storage, queryStats)
 	glog.V(1).Infof("Instant query: %s\nQuery stats:\n%s\n", expr, queryStats)
 	fmt.Fprint(w, result)
 }
@@ -106,19 +102,19 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 
 	duration, err := parseDuration(params.Get("range"))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid query range: %s", err), http.StatusBadRequest)
+		httpJSONError(w, fmt.Errorf("invalid query range: %s", err), http.StatusBadRequest)
 		return
 	}
 
 	step, err := parseDuration(params.Get("step"))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid query resolution: %s", err), http.StatusBadRequest)
+		httpJSONError(w, fmt.Errorf("invalid query resolution: %s", err), http.StatusBadRequest)
 		return
 	}
 
 	end, err := parseTimestampOrNow(params.Get("end"))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid query timestamp: %s", err), http.StatusBadRequest)
+		httpJSONError(w, fmt.Errorf("invalid query timestamp: %s", err), http.StatusBadRequest)
 		return
 	}
 	// TODO(julius): Remove this special-case handling a while after PromDash and
@@ -178,15 +174,15 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 // Metrics handles the /api/metrics endpoint.
 func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
 
 	metricNames := serv.Storage.GetLabelValuesForLabelName(clientmodel.MetricNameLabel)
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
 		glog.Error("Error marshalling metric names: ", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpJSONError(w, fmt.Errorf("Error marshalling metric names: %s", err), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.Write(resultBytes)
 }
