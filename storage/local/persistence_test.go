@@ -884,3 +884,74 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 		}
 	}
 }
+
+var fpStrings = []string{
+	"b004b821ca50ba26",
+	"b037c21e884e4fc5",
+	"b037de1e884e5469",
+}
+
+func BenchmarkLoadChunksSequentially(b *testing.B) {
+	p := persistence{
+		basePath: "fixtures",
+	}
+	sequentialIndexes := make([]int, 47)
+	for i := range sequentialIndexes {
+		sequentialIndexes[i] = i
+	}
+
+	var fp clientmodel.Fingerprint
+	for i := 0; i < b.N; i++ {
+		for _, s := range fpStrings {
+			fp.LoadFromString(s)
+			cds, err := p.loadChunks(fp, sequentialIndexes, 0)
+			if err != nil {
+				b.Error(err)
+			}
+			if len(cds) == 0 {
+				b.Error("could not read any chunks")
+			}
+		}
+	}
+}
+
+func BenchmarkLoadChunksRandomly(b *testing.B) {
+	p := persistence{
+		basePath: "fixtures",
+	}
+	randomIndexes := []int{1, 5, 6, 8, 11, 14, 18, 23, 29, 33, 42, 46}
+
+	var fp clientmodel.Fingerprint
+	for i := 0; i < b.N; i++ {
+		for _, s := range fpStrings {
+			fp.LoadFromString(s)
+			cds, err := p.loadChunks(fp, randomIndexes, 0)
+			if err != nil {
+				b.Error(err)
+			}
+			if len(cds) == 0 {
+				b.Error("could not read any chunks")
+			}
+		}
+	}
+}
+
+func BenchmarkLoadChunkDescs(b *testing.B) {
+	p := persistence{
+		basePath: "fixtures",
+	}
+
+	var fp clientmodel.Fingerprint
+	for i := 0; i < b.N; i++ {
+		for _, s := range fpStrings {
+			fp.LoadFromString(s)
+			cds, err := p.loadChunkDescs(fp, clientmodel.Latest)
+			if err != nil {
+				b.Error(err)
+			}
+			if len(cds) == 0 {
+				b.Error("could not read any chunk descs")
+			}
+		}
+	}
+}
