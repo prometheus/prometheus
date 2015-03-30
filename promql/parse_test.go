@@ -1069,7 +1069,7 @@ func mustLabelMatcher(mt metric.MatchType, name clientmodel.LabelName, val clien
 }
 
 func mustGetFunction(name string) *Function {
-	f, ok := GetFunction(name)
+	f, ok := getFunction(name)
 	if !ok {
 		panic(fmt.Errorf("function %q does not exist", name))
 	}
