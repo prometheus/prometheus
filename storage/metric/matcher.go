@@ -14,6 +14,7 @@
 package metric
 
 import (
+	"fmt"
 	"regexp"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -69,6 +70,10 @@ func NewLabelMatcher(matchType MatchType, name clientmodel.LabelName, value clie
 		m.re = re
 	}
 	return m, nil
+}
+
+func (m *LabelMatcher) String() string {
+	return fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value)
 }
 
 // Match returns true if the label matcher matches the supplied label value.
