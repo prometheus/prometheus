@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 	"github.com/prometheus/prometheus/web"
 	"github.com/prometheus/prometheus/web/api"
@@ -50,8 +51,10 @@ var (
 
 	persistenceStoragePath = flag.String("storage.local.path", "/tmp/metrics", "Base path for metrics storage.")
 
-	remoteTSDBUrl     = flag.String("storage.remote.url", "", "The URL of the OpenTSDB instance to send samples to.")
-	remoteTSDBTimeout = flag.Duration("storage.remote.timeout", 30*time.Second, "The timeout to use when sending samples to OpenTSDB.")
+	remoteStorageType    = flag.String("storage.remote.type", "", "The type of remote storage to use. Valid values: 'opentsdb', 'influxdb'. If this flag is left empty, no remote storage is used.")
+	opentsdbURL          = flag.String("storage.remote.opentsdb-url", "", "The URL of the remote OpenTSDB server to send samples to.")
+	influxdbURL          = flag.String("storage.remote.influxdb-url", "", "The URL of the remote InfluxDB server to send samples to.")
+	remoteStorageTimeout = flag.Duration("storage.remote.timeout", 30*time.Second, "The timeout to use when sending samples to the remote storage.")
 
 	numMemoryChunks = flag.Int("storage.local.memory-chunks", 1024*1024, "How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.")
 
@@ -73,7 +76,7 @@ type prometheus struct {
 	targetManager       retrieval.TargetManager
 	notificationHandler *notification.NotificationHandler
 	storage             local.Storage
-	remoteTSDBQueue     *remote.TSDBQueueManager
+	remoteStorageQueue  *remote.StorageQueueManager
 
 	webService *web.WebService
 
@@ -119,15 +122,24 @@ func NewPrometheus() *prometheus {
 	}
 
 	var sampleAppender storage.SampleAppender
-	var remoteTSDBQueue *remote.TSDBQueueManager
-	if *remoteTSDBUrl == "" {
-		glog.Warningf("No TSDB URL provided; not sending any samples to long-term storage")
+	var remoteStorageQueue *remote.StorageQueueManager
+	if *remoteStorageType == "" {
+		glog.Warningf("No remote storage implementation selected; not sending any samples to long-term storage")
 		sampleAppender = memStorage
 	} else {
-		openTSDB := opentsdb.NewClient(*remoteTSDBUrl, *remoteTSDBTimeout)
-		remoteTSDBQueue = remote.NewTSDBQueueManager(openTSDB, 100*1024)
+		var c remote.StorageClient
+		switch *remoteStorageType {
+		case "opentsdb":
+			c = opentsdb.NewClient(*opentsdbURL, *remoteStorageTimeout)
+		case "influxdb":
+			c = influxdb.NewClient(*influxdbURL, *remoteStorageTimeout)
+		default:
+			glog.Fatalf("Invalid flag value for 'storage.remote.type': %s", *remoteStorageType)
+		}
+
+		remoteStorageQueue = remote.NewStorageQueueManager(c, 100*1024)
 		sampleAppender = storage.Tee{
-			Appender1: remoteTSDBQueue,
+			Appender1: remoteStorageQueue,
 			Appender2: memStorage,
 		}
 	}
@@ -184,7 +196,7 @@ func NewPrometheus() *prometheus {
 		targetManager:       targetManager,
 		notificationHandler: notificationHandler,
 		storage:             memStorage,
-		remoteTSDBQueue:     remoteTSDBQueue,
+		remoteStorageQueue:  remoteStorageQueue,
 
 		webService: webService,
 	}
@@ -196,8 +208,8 @@ func NewPrometheus() *prometheus {
 // down. The method installs an interrupt handler, allowing to trigger a
 // shutdown by sending SIGTERM to the process.
 func (p *prometheus) Serve() {
-	if p.remoteTSDBQueue != nil {
-		go p.remoteTSDBQueue.Run()
+	if p.remoteStorageQueue != nil {
+		go p.remoteStorageQueue.Run()
 	}
 	go p.ruleManager.Run()
 	go p.notificationHandler.Run()
@@ -227,8 +239,8 @@ func (p *prometheus) Serve() {
 		glog.Error("Error stopping local storage: ", err)
 	}
 
-	if p.remoteTSDBQueue != nil {
-		p.remoteTSDBQueue.Stop()
+	if p.remoteStorageQueue != nil {
+		p.remoteStorageQueue.Stop()
 	}
 
 	p.notificationHandler.Stop()
@@ -239,8 +251,8 @@ func (p *prometheus) Serve() {
 func (p *prometheus) Describe(ch chan<- *registry.Desc) {
 	p.notificationHandler.Describe(ch)
 	p.storage.Describe(ch)
-	if p.remoteTSDBQueue != nil {
-		p.remoteTSDBQueue.Describe(ch)
+	if p.remoteStorageQueue != nil {
+		p.remoteStorageQueue.Describe(ch)
 	}
 }
 
@@ -248,8 +260,8 @@ func (p *prometheus) Describe(ch chan<- *registry.Desc) {
 func (p *prometheus) Collect(ch chan<- registry.Metric) {
 	p.notificationHandler.Collect(ch)
 	p.storage.Collect(ch)
-	if p.remoteTSDBQueue != nil {
-		p.remoteTSDBQueue.Collect(ch)
+	if p.remoteStorageQueue != nil {
+		p.remoteStorageQueue.Collect(ch)
 	}
 }
 

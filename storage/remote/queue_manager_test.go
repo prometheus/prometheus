@@ -20,18 +20,18 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-type TestTSDBClient struct {
+type TestStorageClient struct {
 	receivedSamples clientmodel.Samples
 	expectedSamples clientmodel.Samples
 	wg              sync.WaitGroup
 }
 
-func (c *TestTSDBClient) expectSamples(s clientmodel.Samples) {
+func (c *TestStorageClient) expectSamples(s clientmodel.Samples) {
 	c.expectedSamples = append(c.expectedSamples, s...)
 	c.wg.Add(len(s))
 }
 
-func (c *TestTSDBClient) waitForExpectedSamples(t *testing.T) {
+func (c *TestStorageClient) waitForExpectedSamples(t *testing.T) {
 	c.wg.Wait()
 	for i, expected := range c.expectedSamples {
 		if !expected.Equal(c.receivedSamples[i]) {
@@ -40,7 +40,7 @@ func (c *TestTSDBClient) waitForExpectedSamples(t *testing.T) {
 	}
 }
 
-func (c *TestTSDBClient) Store(s clientmodel.Samples) error {
+func (c *TestStorageClient) Store(s clientmodel.Samples) error {
 	c.receivedSamples = append(c.receivedSamples, s...)
 	c.wg.Add(-len(s))
 	return nil
@@ -61,9 +61,9 @@ func TestSampleDelivery(t *testing.T) {
 		})
 	}
 
-	c := &TestTSDBClient{}
+	c := &TestStorageClient{}
 	c.expectSamples(samples[:len(samples)/2])
-	m := NewTSDBQueueManager(c, len(samples)/2)
+	m := NewStorageQueueManager(c, len(samples)/2)
 
 	// These should be received by the client.
 	for _, s := range samples[:len(samples)/2] {

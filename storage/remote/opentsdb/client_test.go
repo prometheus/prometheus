@@ -64,11 +64,11 @@ func TestMarshalStoreSamplesRequest(t *testing.T) {
 	var unmarshaledRequest StoreSamplesRequest
 	err = json.Unmarshal(expectedJSON, &unmarshaledRequest)
 	if err != nil {
-		t.Fatalf("Unarshal(expectedJSON, &unmarshaledRequest) resulted in err: %s", err)
+		t.Fatalf("Unmarshal(expectedJSON, &unmarshaledRequest) resulted in err: %s", err)
 	}
 	if !reflect.DeepEqual(unmarshaledRequest, request) {
 		t.Errorf(
-			"Unarshal(expectedJSON, &unmarshaledRequest) => %#v, want %#v",
+			"Unmarshal(expectedJSON, &unmarshaledRequest) => %#v, want %#v",
 			unmarshaledRequest, request,
 		)
 	}

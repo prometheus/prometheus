@@ -23,9 +23,9 @@ import (
 )
 
 const (
-	// The maximum number of concurrent send requests to the TSDB.
+	// The maximum number of concurrent send requests to the remote storage.
 	maxConcurrentSends = 10
-	// The maximum number of samples to fit into a single request to the TSDB.
+	// The maximum number of samples to fit into a single request to the remote storage.
 	maxSamplesPerSend = 100
 	// The deadline after which to send queued samples even if the maximum batch
 	// size has not been reached.
@@ -43,16 +43,16 @@ const (
 	dropped = "dropped"
 )
 
-// TSDBClient defines an interface for sending a batch of samples to an
-// external timeseries database (TSDB).
-type TSDBClient interface {
+// StorageClient defines an interface for sending a batch of samples to an
+// external timeseries database.
+type StorageClient interface {
 	Store(clientmodel.Samples) error
 }
 
-// TSDBQueueManager manages a queue of samples to be sent to the TSDB indicated
-// by the provided TSDBClient.
-type TSDBQueueManager struct {
-	tsdb           TSDBClient
+// StorageQueueManager manages a queue of samples to be sent to the Storage
+// indicated by the provided StorageClient.
+type StorageQueueManager struct {
+	tsdb           StorageClient
 	queue          chan *clientmodel.Sample
 	pendingSamples clientmodel.Samples
 	sendSemaphore  chan bool
@@ -65,9 +65,9 @@ type TSDBQueueManager struct {
 	queueCapacity prometheus.Metric
 }
 
-// NewTSDBQueueManager builds a new TSDBQueueManager.
-func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
-	return &TSDBQueueManager{
+// NewStorageQueueManager builds a new StorageQueueManager.
+func NewStorageQueueManager(tsdb StorageClient, queueCapacity int) *StorageQueueManager {
+	return &StorageQueueManager{
 		tsdb:          tsdb,
 		queue:         make(chan *clientmodel.Sample, queueCapacity),
 		sendSemaphore: make(chan bool, maxConcurrentSends),
@@ -78,7 +78,7 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 				Namespace: namespace,
 				Subsystem: subsystem,
 				Name:      "sent_samples_total",
-				Help:      "Total number of processed samples to be sent to remote TSDB.",
+				Help:      "Total number of processed samples to be sent to remote storage.",
 			},
 			[]string{result},
 		),
@@ -86,24 +86,24 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "sent_latency_milliseconds",
-			Help:      "Latency quantiles for sending sample batches to the remote TSDB.",
+			Help:      "Latency quantiles for sending sample batches to the remote storage.",
 		}),
 		sendErrors: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "sent_errors_total",
-			Help:      "Total number of errors sending sample batches to the remote TSDB.",
+			Help:      "Total number of errors sending sample batches to the remote storage.",
 		}),
 		queueLength: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queue_length",
-			Help:      "The number of processed samples queued to be sent to the remote TSDB.",
+			Help:      "The number of processed samples queued to be sent to the remote storage.",
 		}),
 		queueCapacity: prometheus.MustNewConstMetric(
 			prometheus.NewDesc(
 				prometheus.BuildFQName(namespace, subsystem, "queue_capacity"),
-				"The capacity of the queue of samples to be sent to the remote TSDB.",
+				"The capacity of the queue of samples to be sent to the remote storage.",
 				nil, nil,
 			),
 			prometheus.GaugeValue,
@@ -112,20 +112,21 @@ func NewTSDBQueueManager(tsdb TSDBClient, queueCapacity int) *TSDBQueueManager {
 	}
 }
 
-// Append queues a sample to be sent to the TSDB. It drops the sample on the
-// floor if the queue is full. It implements storage.SampleAppender.
-func (t *TSDBQueueManager) Append(s *clientmodel.Sample) {
+// Append queues a sample to be sent to the remote storage. It drops the
+// sample on the floor if the queue is full. It implements
+// storage.SampleAppender.
+func (t *StorageQueueManager) Append(s *clientmodel.Sample) {
 	select {
 	case t.queue <- s:
 	default:
 		t.samplesCount.WithLabelValues(dropped).Inc()
-		glog.Warning("TSDB queue full, discarding sample.")
+		glog.Warning("Remote storage queue full, discarding sample.")
 	}
 }
 
-// Stop stops sending samples to the TSDB and waits for pending sends to
-// complete.
-func (t *TSDBQueueManager) Stop() {
+// Stop stops sending samples to the remote storage and waits for pending
+// sends to complete.
+func (t *StorageQueueManager) Stop() {
 	glog.Infof("Stopping remote storage...")
 	close(t.queue)
 	<-t.drained
@@ -136,7 +137,7 @@ func (t *TSDBQueueManager) Stop() {
 }
 
 // Describe implements prometheus.Collector.
-func (t *TSDBQueueManager) Describe(ch chan<- *prometheus.Desc) {
+func (t *StorageQueueManager) Describe(ch chan<- *prometheus.Desc) {
 	t.samplesCount.Describe(ch)
 	t.sendLatency.Describe(ch)
 	ch <- t.queueLength.Desc()
@@ -144,7 +145,7 @@ func (t *TSDBQueueManager) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements prometheus.Collector.
-func (t *TSDBQueueManager) Collect(ch chan<- prometheus.Metric) {
+func (t *StorageQueueManager) Collect(ch chan<- prometheus.Metric) {
 	t.samplesCount.Collect(ch)
 	t.sendLatency.Collect(ch)
 	t.queueLength.Set(float64(len(t.queue)))
@@ -152,21 +153,22 @@ func (t *TSDBQueueManager) Collect(ch chan<- prometheus.Metric) {
 	ch <- t.queueCapacity
 }
 
-func (t *TSDBQueueManager) sendSamples(s clientmodel.Samples) {
+func (t *StorageQueueManager) sendSamples(s clientmodel.Samples) {
 	t.sendSemaphore <- true
 	defer func() {
 		<-t.sendSemaphore
 	}()
 
-	// Samples are sent to the TSDB on a best-effort basis. If a sample isn't
-	// sent correctly the first time, it's simply dropped on the floor.
+	// Samples are sent to the remote storage on a best-effort basis. If a
+	// sample isn't sent correctly the first time, it's simply dropped on the
+	// floor.
 	begin := time.Now()
 	err := t.tsdb.Store(s)
 	duration := time.Since(begin) / time.Millisecond
 
 	labelValue := success
 	if err != nil {
-		glog.Warningf("error sending %d samples to TSDB: %s", len(s), err)
+		glog.Warningf("error sending %d samples to remote storage: %s", len(s), err)
 		labelValue = failure
 		t.sendErrors.Inc()
 	}
@@ -174,19 +176,20 @@ func (t *TSDBQueueManager) sendSamples(s clientmodel.Samples) {
 	t.sendLatency.Observe(float64(duration))
 }
 
-// Run continuously sends samples to the TSDB.
-func (t *TSDBQueueManager) Run() {
+// Run continuously sends samples to the remote storage.
+func (t *StorageQueueManager) Run() {
 	defer func() {
 		close(t.drained)
 	}()
 
-	// Send batches of at most maxSamplesPerSend samples to the TSDB. If we
-	// have fewer samples than that, flush them out after a deadline anyways.
+	// Send batches of at most maxSamplesPerSend samples to the remote storage.
+	// If we have fewer samples than that, flush them out after a deadline
+	// anyways.
 	for {
 		select {
 		case s, ok := <-t.queue:
 			if !ok {
-				glog.Infof("Flushing %d samples to OpenTSDB...", len(t.pendingSamples))
+				glog.Infof("Flushing %d samples to remote storage...", len(t.pendingSamples))
 				t.flush()
 				glog.Infof("Done flushing.")
 				return
@@ -205,7 +208,7 @@ func (t *TSDBQueueManager) Run() {
 }
 
 // Flush flushes remaining queued samples.
-func (t *TSDBQueueManager) flush() {
+func (t *StorageQueueManager) flush() {
 	if len(t.pendingSamples) > 0 {
 		go t.sendSamples(t.pendingSamples)
 	}
