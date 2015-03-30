@@ -32,8 +32,9 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/rules/manager"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -76,7 +77,8 @@ var (
 )
 
 type prometheus struct {
-	ruleManager         manager.RuleManager
+	queryEngine         *promql.Engine
+	ruleManager         rules.RuleManager
 	targetManager       retrieval.TargetManager
 	notificationHandler *notification.NotificationHandler
 	storage             local.Storage
@@ -155,17 +157,26 @@ func NewPrometheus() *prometheus {
 	targetManager := retrieval.NewTargetManager(sampleAppender, conf.GlobalLabels())
 	targetManager.AddTargetsFromConfig(conf)
 
-	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
+	queryEngine := promql.NewEngine(memStorage)
+
+	ruleManager := rules.NewRuleManager(&rules.RuleManagerOptions{
 		SampleAppender:      sampleAppender,
 		NotificationHandler: notificationHandler,
 		EvaluationInterval:  conf.EvaluationInterval(),
-		Storage:             memStorage,
+		QueryEngine:         queryEngine,
 		PrometheusURL:       web.MustBuildServerURL(*pathPrefix),
 		PathPrefix:          *pathPrefix,
 	})
-	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
-		glog.Error("Error loading rule files: ", err)
-		os.Exit(1)
+	for _, rf := range conf.Global.GetRuleFile() {
+		query, err := queryEngine.NewQueryFromFile(rf)
+		if err != nil {
+			glog.Errorf("Error loading rule file %q: %s", rf, err)
+			os.Exit(1)
+		}
+		if res := query.Exec(); res.Err != nil {
+			glog.Errorf("Error initializing rules: %s", res.Err)
+			os.Exit(1)
+		}
 	}
 
 	flags := map[string]string{}
@@ -188,8 +199,8 @@ func NewPrometheus() *prometheus {
 	}
 
 	consolesHandler := &web.ConsolesHandler{
-		Storage:    memStorage,
-		PathPrefix: *pathPrefix,
+		QueryEngine: queryEngine,
+		PathPrefix:  *pathPrefix,
 	}
 
 	graphsHandler := &web.GraphsHandler{
@@ -197,8 +208,9 @@ func NewPrometheus() *prometheus {
 	}
 
 	metricsService := &api.MetricsService{
-		Now:     clientmodel.Now,
-		Storage: memStorage,
+		Now:         clientmodel.Now,
+		Storage:     memStorage,
+		QueryEngine: queryEngine,
 	}
 
 	webService := &web.WebService{
@@ -210,6 +222,7 @@ func NewPrometheus() *prometheus {
 	}
 
 	p := &prometheus{
+		queryEngine:         queryEngine,
 		ruleManager:         ruleManager,
 		targetManager:       targetManager,
 		notificationHandler: notificationHandler,
@@ -252,6 +265,7 @@ func (p *prometheus) Serve() {
 
 	p.targetManager.Stop()
 	p.ruleManager.Stop()
+	p.queryEngine.Stop()
 
 	if err := p.storage.Stop(); err != nil {
 		glog.Error("Error stopping local storage: ", err)

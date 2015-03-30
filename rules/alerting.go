@@ -22,9 +22,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/rules/ast"
-	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -80,7 +78,7 @@ type Alert struct {
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleValue) *ast.Sample {
+func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleValue) *promql.Sample {
 	recordedMetric := clientmodel.Metric{}
 	for label, value := range a.Labels {
 		recordedMetric[label] = value
@@ -90,7 +88,7 @@ func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleV
 	recordedMetric[AlertNameLabel] = clientmodel.LabelValue(a.Name)
 	recordedMetric[AlertStateLabel] = clientmodel.LabelValue(a.State.String())
 
-	return &ast.Sample{
+	return &promql.Sample{
 		Metric: clientmodel.COWMetric{
 			Metric: recordedMetric,
 			Copied: true,
@@ -105,7 +103,7 @@ type AlertingRule struct {
 	// The name of the alert.
 	name string
 	// The vector expression from which to generate alerts.
-	Vector ast.VectorNode
+	Vector promql.Expr
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
@@ -129,14 +127,18 @@ func (rule *AlertingRule) Name() string {
 }
 
 // EvalRaw returns the raw value of the rule expression, without creating alerts.
-func (rule *AlertingRule) EvalRaw(timestamp clientmodel.Timestamp, storage local.Storage) (ast.Vector, error) {
-	return ast.EvalVectorInstant(rule.Vector, timestamp, storage, stats.NewTimerGroup())
+func (rule *AlertingRule) EvalRaw(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
+	query, err := engine.NewInstantQuery(rule.Vector.String(), timestamp)
+	if err != nil {
+		return nil, err
+	}
+	return query.Exec().Vector()
 }
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage local.Storage) (ast.Vector, error) {
-	exprResult, err := rule.EvalRaw(timestamp, storage)
+func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
+	exprResult, err := rule.EvalRaw(timestamp, engine)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +172,7 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage local.St
 		}
 	}
 
-	vector := ast.Vector{}
+	vector := promql.Vector{}
 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, activeAlert := range rule.activeAlerts {
@@ -191,8 +193,8 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, storage local.St
 	return vector, nil
 }
 
-// ToDotGraph returns the text representation of a dot graph.
-func (rule *AlertingRule) ToDotGraph() string {
+// DotGraph returns the text representation of a dot graph.
+func (rule *AlertingRule) DotGraph() string {
 	graph := fmt.Sprintf(
 		`digraph "Rules" {
 	  %#p[shape="box",label="ALERT %s IF FOR %s"];
@@ -201,7 +203,8 @@ func (rule *AlertingRule) ToDotGraph() string {
 	}`,
 		&rule, rule.name, utility.DurationToString(rule.holdDuration),
 		&rule, reflect.ValueOf(rule.Vector).Pointer(),
-		rule.Vector.NodeTreeToDotGraph())
+		rule.Vector.DotGraph(),
+	)
 	return graph
 }
 
@@ -217,9 +220,9 @@ func (rule *AlertingRule) HTMLSnippet() template.HTML {
 	}
 	return template.HTML(fmt.Sprintf(
 		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
-		GraphLinkForExpression(alertMetric.String()),
+		utility.GraphLinkForExpression(alertMetric.String()),
 		rule.name,
-		GraphLinkForExpression(rule.Vector.String()),
+		utility.GraphLinkForExpression(rule.Vector.String()),
 		rule.Vector,
 		utility.DurationToString(rule.holdDuration),
 		rule.Labels))
@@ -252,7 +255,7 @@ func (rule *AlertingRule) ActiveAlerts() []Alert {
 }
 
 // NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(name string, vector ast.VectorNode, holdDuration time.Duration, labels clientmodel.LabelSet, summary string, description string) *AlertingRule {
+func NewAlertingRule(name string, vector promql.Expr, holdDuration time.Duration, labels clientmodel.LabelSet, summary string, description string) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
 		Vector:       vector,
