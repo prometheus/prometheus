@@ -19,29 +19,82 @@ package main
 import (
 	"flag"
 	"fmt"
-
-	"github.com/golang/glog"
+	"io"
+	"os"
 
 	"github.com/prometheus/prometheus/rules"
 )
 
-var ruleFile = flag.String("rule-file", "", "The path to the rule file to check.")
+var (
+	flagset  = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	ruleFile = flagset.String("rule-file", "", "The path to the rule file to check. (Deprecated)")
+)
+
+// checkRules reads rules from in. Sucessfully read rules
+// are printed to out.
+func checkRules(filename string, in io.Reader, out io.Writer) error {
+	rules, err := rules.LoadRulesFromReader(in)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "%s: successfully loaded %d rules:\n", filename, len(rules))
+	for _, rule := range rules {
+		fmt.Fprint(out, rule.String())
+		fmt.Fprint(out, "\n")
+	}
+	return nil
+}
+
+func usage() {
+	fmt.Fprintf(os.Stderr, "usage: rule_checker [path ...]\n")
+
+	flagset.PrintDefaults()
+	os.Exit(2)
+}
 
 func main() {
-	flag.Parse()
+	flagset.Usage = usage
+	flagset.Parse(os.Args[1:])
 
-	if *ruleFile == "" {
-		glog.Fatal("Must provide a rule file path")
+	if flagset.NArg() == 0 && *ruleFile == "" {
+		if err := checkRules("<stdin>", os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "error checking standard input: %s\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 
-	rules, err := rules.LoadRulesFromFile(*ruleFile)
-	if err != nil {
-		glog.Fatalf("Error loading rule file %s: %s", *ruleFile, err)
+	paths := flagset.Args()
+	if *ruleFile != "" {
+		paths = []string{*ruleFile}
+
+		fmt.Fprint(os.Stderr, "warning: usage of -rule-file is deprecated.\n")
 	}
 
-	fmt.Printf("Successfully loaded %d rules:\n\n", len(rules))
+	failed := false
+	for _, path := range paths {
+		switch dir, err := os.Stat(path); {
+		case err != nil:
+			fmt.Fprintf(os.Stderr, "%s: error checking path: %s\n", path, err)
+			os.Exit(2)
+		case dir.IsDir():
+			fmt.Fprintf(os.Stderr, "%s: error checking path: directories not allowed\n", path)
+			os.Exit(2)
+		default:
+			f, err := os.Open(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: error opening file: %s\n", path, err)
+				failed = true
+			} else if err := checkRules(path, f, os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "%s: error checking rules: %s\n", path, err)
+				failed = true
+			}
+			f.Close()
+		}
+	}
 
-	for _, rule := range rules {
-		fmt.Println(rule)
+	if failed {
+		os.Exit(1)
 	}
 }
