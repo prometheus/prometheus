@@ -157,3 +157,8 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 	}
 	return fmt.Errorf("failed to write samples into InfluxDB. Error: %s", r["error"])
 }
+
+// Name identifies the client as an InfluxDB client.
+func (c Client) Name() string {
+	return "influxdb"
+}

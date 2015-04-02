@@ -46,6 +46,10 @@ func (c *TestStorageClient) Store(s clientmodel.Samples) error {
 	return nil
 }
 
+func (c TestStorageClient) Name() string {
+	return "teststorageclient"
+}
+
 func TestSampleDelivery(t *testing.T) {
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.

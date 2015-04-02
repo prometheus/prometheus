@@ -134,3 +134,8 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 	}
 	return fmt.Errorf("failed to write %d samples to OpenTSDB, %d succeeded", r["failed"], r["success"])
 }
+
+// Name identifies the client as an OpenTSDB client.
+func (c Client) Name() string {
+	return "opentsdb"
+}

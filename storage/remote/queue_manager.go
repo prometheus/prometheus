@@ -46,7 +46,10 @@ const (
 // StorageClient defines an interface for sending a batch of samples to an
 // external timeseries database.
 type StorageClient interface {
+	// Store stores the given samples in the remote storage.
 	Store(clientmodel.Samples) error
+	// Name identifies the remote storage implementation.
+	Name() string
 }
 
 // StorageQueueManager manages a queue of samples to be sent to the Storage
@@ -67,6 +70,10 @@ type StorageQueueManager struct {
 
 // NewStorageQueueManager builds a new StorageQueueManager.
 func NewStorageQueueManager(tsdb StorageClient, queueCapacity int) *StorageQueueManager {
+	constLabels := prometheus.Labels{
+		"type": tsdb.Name(),
+	}
+
 	return &StorageQueueManager{
 		tsdb:          tsdb,
 		queue:         make(chan *clientmodel.Sample, queueCapacity),
@@ -75,36 +82,41 @@ func NewStorageQueueManager(tsdb StorageClient, queueCapacity int) *StorageQueue
 
 		samplesCount: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "sent_samples_total",
-				Help:      "Total number of processed samples to be sent to remote storage.",
+				Namespace:   namespace,
+				Subsystem:   subsystem,
+				Name:        "sent_samples_total",
+				Help:        "Total number of processed samples to be sent to remote storage.",
+				ConstLabels: constLabels,
 			},
 			[]string{result},
 		),
 		sendLatency: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "sent_latency_milliseconds",
-			Help:      "Latency quantiles for sending sample batches to the remote storage.",
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "sent_latency_milliseconds",
+			Help:        "Latency quantiles for sending sample batches to the remote storage.",
+			ConstLabels: constLabels,
 		}),
 		sendErrors: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "sent_errors_total",
-			Help:      "Total number of errors sending sample batches to the remote storage.",
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "sent_errors_total",
+			Help:        "Total number of errors sending sample batches to the remote storage.",
+			ConstLabels: constLabels,
 		}),
 		queueLength: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "queue_length",
-			Help:      "The number of processed samples queued to be sent to the remote storage.",
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "queue_length",
+			Help:        "The number of processed samples queued to be sent to the remote storage.",
+			ConstLabels: constLabels,
 		}),
 		queueCapacity: prometheus.MustNewConstMetric(
 			prometheus.NewDesc(
 				prometheus.BuildFQName(namespace, subsystem, "queue_capacity"),
 				"The capacity of the queue of samples to be sent to the remote storage.",
-				nil, nil,
+				nil,
+				constLabels,
 			),
 			prometheus.GaugeValue,
 			float64(queueCapacity),

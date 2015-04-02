@@ -23,16 +23,15 @@ type SampleAppender interface {
 	Append(*clientmodel.Sample)
 }
 
-// Tee is a SampleAppender that appends every sample to two other
+// Fanout is a SampleAppender that appends every sample to a list of other
 // SampleAppenders.
-type Tee struct {
-	Appender1, Appender2 SampleAppender
-}
+type Fanout []SampleAppender
 
-// Append implements SampleAppender. It appends the provided sample first
-// to Appender1, then to Appender2, waiting for each to return before
-// proceeding.
-func (t Tee) Append(s *clientmodel.Sample) {
-	t.Appender1.Append(s)
-	t.Appender2.Append(s)
+// Append implements SampleAppender. It appends the provided sample to all
+// SampleAppenders in the Fanout slice and waits for each append to complete
+// before proceeding with the next.
+func (f Fanout) Append(s *clientmodel.Sample) {
+	for _, a := range f {
+		a.Append(s)
+	}
 }
