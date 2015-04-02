@@ -95,7 +95,7 @@ func TestQuery(t *testing.T) {
 		Now:     testNow,
 		Storage: storage,
 	}
-	api.RegisterHandler()
+	api.RegisterHandler("/")
 
 	server := httptest.NewServer(http.DefaultServeMux)
 	defer server.Close()

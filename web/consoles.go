@@ -34,6 +34,7 @@ var (
 // ConsolesHandler implements http.Handler.
 type ConsolesHandler struct {
 	Storage local.Storage
+	PathPrefix string
 }
 
 func (h *ConsolesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +70,7 @@ func (h *ConsolesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Path:      r.URL.Path,
 	}
 
-	template := templates.NewTemplateExpander(string(text), "__console_"+r.URL.Path, data, clientmodel.Now(), h.Storage)
+	template := templates.NewTemplateExpander(string(text), "__console_"+r.URL.Path, data, clientmodel.Now(), h.Storage, h.PathPrefix)
 	filenames, err := filepath.Glob(*consoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -4,6 +4,8 @@ var graphTemplate;
 
 var SECOND = 1000;
 
+Handlebars.registerHelper('pathPrefix', function() { return PATH_PREFIX; });
+
 Prometheus.Graph = function(element, options) {
   this.el = element;
   this.options = options;
@@ -158,7 +160,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
   var self = this;
   $.ajax({
       method: "GET",
-      url: "/api/metrics",
+      url: PATH_PREFIX + "api/metrics",
       dataType: "json",
       success: function(json, textStatus) {
         var availableMetrics = [];
@@ -310,7 +312,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
     url  = self.queryForm.attr("action");
     success = function(json, textStatus) { self.handleGraphResponse(json, textStatus); };
   } else {
-    url  = "/api/query";
+    url  = PATH_PREFIX + "api/query";
     success = function(text, textStatus) { self.handleConsoleResponse(text, textStatus); };
   }
 
@@ -609,7 +611,7 @@ function init() {
   });
 
   $.ajax({
-    url: "/static/js/graph_template.handlebar",
+    url: PATH_PREFIX + "static/js/graph_template.handlebar",
     success: function(data) {
       graphTemplate = Handlebars.compile(data);
       var options = parseGraphOptionsFromURL();
