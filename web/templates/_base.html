@@ -29,7 +29,7 @@
           <ul class="nav navbar-nav navbar-left">
             {{$consoles := getConsoles}}
             {{if $consoles}}
-            <li><a href="{{ pathPrefix }}{{$consoles}}">Consoles</a></li>
+            <li><a href="{{$consoles}}">Consoles</a></li>
             {{ end }}
             <li><a href="{{ pathPrefix }}alerts">Alerts</a></li>
             <li><a href="{{ pathPrefix }}graph">Graph</a></li>
