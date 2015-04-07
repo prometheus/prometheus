@@ -15,12 +15,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
+	"sort"
+	"strings"
 	"sync"
 	"syscall"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -90,7 +92,8 @@ type prometheus struct {
 func NewPrometheus() *prometheus {
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
-		glog.Fatalf("Error loading configuration from %s: %v", *configFile, err)
+		glog.Errorf("Error loading configuration from %s: %v\n", *configFile, err)
+		os.Exit(2)
 	}
 
 	notificationHandler := notification.NewNotificationHandler(*alertmanagerURL, *notificationQueueCapacity)
@@ -104,7 +107,8 @@ func NewPrometheus() *prometheus {
 	case "adaptive":
 		syncStrategy = local.Adaptive
 	default:
-		glog.Fatalf("Invalid flag value for 'storage.local.series-sync-strategy': %s", *seriesSyncStrategy)
+		glog.Errorf("Invalid flag value for 'storage.local.series-sync-strategy': %s\n", *seriesSyncStrategy)
+		os.Exit(2)
 	}
 
 	o := &local.MemorySeriesStorageOptions{
@@ -120,7 +124,8 @@ func NewPrometheus() *prometheus {
 	}
 	memStorage, err := local.NewMemorySeriesStorage(o)
 	if err != nil {
-		glog.Fatal("Error opening memory series storage: ", err)
+		glog.Error("Error opening memory series storage: ", err)
+		os.Exit(1)
 	}
 
 	var sampleAppender storage.SampleAppender
@@ -159,7 +164,8 @@ func NewPrometheus() *prometheus {
 		PathPrefix:          *pathPrefix,
 	})
 	if err := ruleManager.AddRulesFromConfig(conf); err != nil {
-		glog.Fatal("Error loading rule files: ", err)
+		glog.Error("Error loading rule files: ", err)
+		os.Exit(1)
 	}
 
 	flags := map[string]string{}
@@ -182,7 +188,7 @@ func NewPrometheus() *prometheus {
 	}
 
 	consolesHandler := &web.ConsolesHandler{
-		Storage: memStorage,
+		Storage:    memStorage,
 		PathPrefix: *pathPrefix,
 	}
 
@@ -277,8 +283,72 @@ func (p *prometheus) Collect(ch chan<- registry.Metric) {
 	}
 }
 
+func usage() {
+	groups := make(map[string][]*flag.Flag)
+	// Set a default group for ungrouped flags.
+	groups["."] = make([]*flag.Flag, 0)
+
+	// Bucket flags into groups based on the first of their dot-separated levels.
+	flag.VisitAll(func(fl *flag.Flag) {
+		parts := strings.SplitN(fl.Name, ".", 2)
+		if len(parts) == 1 {
+			groups["."] = append(groups["."], fl)
+		} else {
+			name := parts[0]
+			groups[name] = append(groups[name], fl)
+		}
+	})
+
+	groupsOrdered := make(sort.StringSlice, 0, len(groups))
+	for groupName := range groups {
+		groupsOrdered = append(groupsOrdered, groupName)
+	}
+	sort.Sort(groupsOrdered)
+
+	fmt.Fprintf(os.Stderr, "Usage: %s [options ...] -config.file=<config_file>:\n\n", os.Args[0])
+
+	const (
+		maxLineLength = 80
+		lineSep       = "\n      "
+	)
+	for _, groupName := range groupsOrdered {
+		if groupName != "." {
+			fmt.Fprintf(os.Stderr, "\n%s:\n", strings.Title(groupName))
+		}
+
+		for _, fl := range groups[groupName] {
+			format := "  -%s=%s: "
+			if strings.Contains(fl.DefValue, " ") || fl.DefValue == "" {
+				format = "  -%s=%q: "
+			}
+			flagUsage := fmt.Sprintf(format, fl.Name, fl.DefValue)
+
+			// Format the usage text to not exceed maxLineLength characters per line.
+			words := strings.SplitAfter(fl.Usage, " ")
+			lineLength := len(flagUsage)
+			for _, w := range words {
+				if lineLength+len(w) > maxLineLength {
+					flagUsage += lineSep
+					lineLength = len(lineSep) - 1
+				}
+				flagUsage += w
+				lineLength += len(w)
+			}
+			fmt.Fprintf(os.Stderr, "%s\n", flagUsage)
+		}
+	}
+}
+
 func main() {
-	flag.Parse()
+	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.Usage = usage
+
+	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+		if err != flag.ErrHelp {
+			glog.Errorf("Invalid command line arguments. Help: %s -h", os.Args[0])
+		}
+		os.Exit(2)
+	}
 
 	if !strings.HasPrefix(*pathPrefix, "/") {
 		*pathPrefix = "/" + *pathPrefix
