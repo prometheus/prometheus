@@ -139,11 +139,11 @@ func getTemplateFile(name string) (string, error) {
 }
 
 func getConsoles(pathPrefix string) string {
-	if _, err := os.Stat(pathPrefix + *consoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
+	if _, err := os.Stat(*consoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
 		return pathPrefix + "consoles/index.html"
 	}
 	if *userAssetsPath != "" {
-		if _, err := os.Stat(pathPrefix + *userAssetsPath + "/index.html"); !os.IsNotExist(err) {
+		if _, err := os.Stat(*userAssetsPath + "/index.html"); !os.IsNotExist(err) {
 			return pathPrefix + "user/index.html"
 		}
 	}
