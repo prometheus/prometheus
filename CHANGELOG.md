@@ -1,3 +1,30 @@
+## 0.13.0 / 2015-04-08
+* [ENHANCEMENT] Double-delta encoding for chunks, saving typically 40% of
+  space, both in RAM and on disk.
+* [ENHANCEMENT] Redesign of chunk persistence queuing, increasing performance
+  on spinning disks significantly.
+* [ENHANCEMENT] Redesign of sample ingestion, increasing ingestion performance.
+* [FEATURE] Added ln, log2, log10 and exp functions to the query language.
+* [FEATURE] Experimental write support to InfluxDB.
+* [FEATURE] Allow custom timestamps in instant query API.
+* [FEATURE] Configurable path prefix for URLs to support proxies.
+* [ENHANCEMENT] Increase of rule_checker CLI usability.
+* [CHANGE] Show special float values as gaps.
+* [ENHANCEMENT] Made usage output more readable.
+* [ENHANCEMENT] Increased resilience of the storage against data corruption.
+* [ENHANCEMENT] Various improvements around chunk encoding.
+* [ENHANCEMENT] Nicer formatting of target health table on /status.
+* [CHANGE] Rename UNREACHABLE to UNHEALTHY, ALIVE to HEALTHY.
+* [BUGFIX] Strip trailing slash in alertmanager URL.
+* [BUGFIX] Avoid +InfYs and similar, just display +Inf.
+* [BUGFIX] Fixed HTML-escaping at various places.
+* [BUGFIX] Fixed special value handling in division and modulo of the query
+  language.
+* [BUGFIX] Fix embed-static.sh.
+* [CLEANUP] Added intial HTTP API tests.
+* [CLEANUP] Misc. other code cleanups.
+* [MAINTENANCE] Updated vendored dependcies to their newest versions.
+
 ## 0.12.0 / 2015-03-04
 * [CHANGE] Use client_golang v0.3.1. THIS CHANGES FINGERPRINTING AND INVALIDATES
   ALL PERSISTED FINGERPRINTS. You have to wipe your storage to use this or
@@ -24,7 +51,7 @@
 * [CHANGE] Update vendoring due to vendoring changes in client_golang.
 * [CLEANUP] Code cleanups.
 * [ENHANCEMENT] Limit the number of 'dirty' series counted during checkpointing.
-  
+
 ## 0.11.0 / 2015-02-23
 * [FEATURE] Introduce new metric type Histogram with server-side aggregation.
 * [FEATURE] Add offset operator.
