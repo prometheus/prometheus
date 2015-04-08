@@ -92,7 +92,7 @@ type prometheus struct {
 func NewPrometheus() *prometheus {
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
-		glog.Errorf("Error loading configuration from %s: %v\n", *configFile, err)
+		glog.Errorf("Couldn't load configuration (-config.file=%s): %v\n", *configFile, err)
 		os.Exit(2)
 	}
 
@@ -305,7 +305,7 @@ func usage() {
 	}
 	sort.Sort(groupsOrdered)
 
-	fmt.Fprintf(os.Stderr, "Usage: %s [options ...] -config.file=<config_file>:\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s [options ...]:\n\n", os.Args[0])
 
 	const (
 		maxLineLength = 80
