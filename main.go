@@ -317,15 +317,15 @@ func usage() {
 		}
 
 		for _, fl := range groups[groupName] {
-			format := "  -%s=%s: "
+			format := "  -%s=%s"
 			if strings.Contains(fl.DefValue, " ") || fl.DefValue == "" {
-				format = "  -%s=%q: "
+				format = "  -%s=%q"
 			}
-			flagUsage := fmt.Sprintf(format, fl.Name, fl.DefValue)
+			flagUsage := fmt.Sprintf(format+lineSep, fl.Name, fl.DefValue)
 
 			// Format the usage text to not exceed maxLineLength characters per line.
 			words := strings.SplitAfter(fl.Usage, " ")
-			lineLength := len(flagUsage)
+			lineLength := len(lineSep) - 1
 			for _, w := range words {
 				if lineLength+len(w) > maxLineLength {
 					flagUsage += lineSep
