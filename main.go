@@ -92,7 +92,7 @@ type prometheus struct {
 func NewPrometheus() *prometheus {
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
-		glog.Errorf("Error loading configuration from %s: %v\n", *configFile, err)
+		glog.Errorf("Couldn't load configuration (-config.file=%s): %v\n", *configFile, err)
 		os.Exit(2)
 	}
 
@@ -305,7 +305,7 @@ func usage() {
 	}
 	sort.Sort(groupsOrdered)
 
-	fmt.Fprintf(os.Stderr, "Usage: %s [options ...] -config.file=<config_file>:\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s [options ...]:\n\n", os.Args[0])
 
 	const (
 		maxLineLength = 80
@@ -317,15 +317,15 @@ func usage() {
 		}
 
 		for _, fl := range groups[groupName] {
-			format := "  -%s=%s: "
+			format := "  -%s=%s"
 			if strings.Contains(fl.DefValue, " ") || fl.DefValue == "" {
-				format = "  -%s=%q: "
+				format = "  -%s=%q"
 			}
-			flagUsage := fmt.Sprintf(format, fl.Name, fl.DefValue)
+			flagUsage := fmt.Sprintf(format+lineSep, fl.Name, fl.DefValue)
 
 			// Format the usage text to not exceed maxLineLength characters per line.
 			words := strings.SplitAfter(fl.Usage, " ")
-			lineLength := len(flagUsage)
+			lineLength := len(lineSep) - 1
 			for _, w := range words {
 				if lineLength+len(w) > maxLineLength {
 					flagUsage += lineSep
