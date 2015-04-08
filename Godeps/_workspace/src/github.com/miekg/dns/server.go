@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// Handler is implemented by any value that implements ServeDNS.
 type Handler interface {
 	ServeDNS(w ResponseWriter, r *Msg)
 }
@@ -44,7 +45,7 @@ type response struct {
 	tsigSecret     map[string]string // the tsig secrets
 	udp            *net.UDPConn      // i/o connection if UDP was used
 	tcp            *net.TCPConn      // i/o connection if TCP was used
-	udpSession     *sessionUDP       // oob data to get egress interface right
+	udpSession     *SessionUDP       // oob data to get egress interface right
 	remoteAddr     net.Addr          // address of the client
 }
 
@@ -72,12 +73,12 @@ var DefaultServeMux = NewServeMux()
 // Handler object that calls f.
 type HandlerFunc func(ResponseWriter, *Msg)
 
-// ServerDNS calls f(w, r)
+// ServeDNS calls f(w, r).
 func (f HandlerFunc) ServeDNS(w ResponseWriter, r *Msg) {
 	f(w, r)
 }
 
-// FailedHandler returns a HandlerFunc that returns SERVFAIL for every request it gets.
+// HandleFailed returns a HandlerFunc that returns SERVFAIL for every request it gets.
 func HandleFailed(w ResponseWriter, r *Msg) {
 	m := new(Msg)
 	m.SetRcode(r, RcodeServerFailure)
@@ -121,10 +122,9 @@ func (mux *ServeMux) match(q string, t uint16) Handler {
 		if h, ok := mux.z[string(b[:l])]; ok { // 'causes garbage, might want to change the map key
 			if t != TypeDS {
 				return h
-			} else {
-				// Continue for DS to see if we have a parent too, if so delegeate to the parent
-				handler = h
 			}
+			// Continue for DS to see if we have a parent too, if so delegeate to the parent
+			handler = h
 		}
 		off, end = NextLabel(q, off)
 		if end {
@@ -148,7 +148,7 @@ func (mux *ServeMux) Handle(pattern string, handler Handler) {
 	mux.m.Unlock()
 }
 
-// Handle adds a handler to the ServeMux for pattern.
+// HandleFunc adds a handler function to the ServeMux for pattern.
 func (mux *ServeMux) HandleFunc(pattern string, handler func(ResponseWriter, *Msg)) {
 	mux.Handle(pattern, HandlerFunc(handler))
 }
@@ -372,7 +372,7 @@ func (srv *Server) getReadTimeout() time.Duration {
 }
 
 // serveTCP starts a TCP listener for the server.
-// Each request is handled in a seperate goroutine.
+// Each request is handled in a separate goroutine.
 func (srv *Server) serveTCP(l *net.TCPListener) error {
 	defer l.Close()
 
@@ -407,7 +407,7 @@ func (srv *Server) serveTCP(l *net.TCPListener) error {
 }
 
 // serveUDP starts a UDP listener for the server.
-// Each request is handled in a seperate goroutine.
+// Each request is handled in a separate goroutine.
 func (srv *Server) serveUDP(l *net.UDPConn) error {
 	defer l.Close()
 
@@ -438,7 +438,7 @@ func (srv *Server) serveUDP(l *net.UDPConn) error {
 }
 
 // Serve a new connection.
-func (srv *Server) serve(a net.Addr, h Handler, m []byte, u *net.UDPConn, s *sessionUDP, t *net.TCPConn) {
+func (srv *Server) serve(a net.Addr, h Handler, m []byte, u *net.UDPConn, s *SessionUDP, t *net.TCPConn) {
 	w := &response{tsigSecret: srv.TsigSecret, udp: u, tcp: t, remoteAddr: a, udpSession: s}
 	q := 0
 	defer func() {
@@ -537,10 +537,10 @@ func (srv *Server) readTCP(conn *net.TCPConn, timeout time.Duration) ([]byte, er
 	return m, nil
 }
 
-func (srv *Server) readUDP(conn *net.UDPConn, timeout time.Duration) ([]byte, *sessionUDP, error) {
+func (srv *Server) readUDP(conn *net.UDPConn, timeout time.Duration) ([]byte, *SessionUDP, error) {
 	conn.SetReadDeadline(time.Now().Add(timeout))
 	m := make([]byte, srv.UDPSize)
-	n, s, e := readFromSessionUDP(conn, m)
+	n, s, e := ReadFromSessionUDP(conn, m)
 	if e != nil || n == 0 {
 		if e != nil {
 			return nil, nil, e
@@ -576,7 +576,7 @@ func (w *response) WriteMsg(m *Msg) (err error) {
 func (w *response) Write(m []byte) (int, error) {
 	switch {
 	case w.udp != nil:
-		n, err := writeToSessionUDP(w.udp, m, w.udpSession)
+		n, err := WriteToSessionUDP(w.udp, m, w.udpSession)
 		return n, err
 	case w.tcp != nil:
 		lm := len(m)

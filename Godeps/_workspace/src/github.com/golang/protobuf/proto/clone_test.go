@@ -36,7 +36,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
-	pb "./testdata"
+	pb "github.com/golang/protobuf/proto/testdata"
 )
 
 var cloneTestMessage = &pb.MyMessage{

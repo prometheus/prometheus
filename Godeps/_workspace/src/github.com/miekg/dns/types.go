@@ -10,9 +10,12 @@ import (
 )
 
 type (
-	Type  uint16 // Type is a DNS type.
-	Class uint16 // Class is a DNS class.
-	Name  string // Name is a DNS domain name.
+	// Type is a DNS type.
+	Type uint16
+	// Class is a DNS class.
+	Class uint16
+	// Name is a DNS domain name.
+	Name string
 )
 
 // Packet formats
@@ -20,6 +23,7 @@ type (
 // Wire constants and supported types.
 const (
 	// valid RR_Header.Rrtype and Question.qtype
+
 	TypeNone       uint16 = 0
 	TypeA          uint16 = 1
 	TypeNS         uint16 = 2
@@ -91,7 +95,9 @@ const (
 
 	TypeTKEY uint16 = 249
 	TypeTSIG uint16 = 250
+
 	// valid Question.Qtype only
+
 	TypeIXFR  uint16 = 251
 	TypeAXFR  uint16 = 252
 	TypeMAILB uint16 = 253
@@ -105,6 +111,7 @@ const (
 	TypeReserved uint16 = 65535
 
 	// valid Question.Qclass
+
 	ClassINET   = 1
 	ClassCSNET  = 2
 	ClassCHAOS  = 3
@@ -113,6 +120,7 @@ const (
 	ClassANY    = 255
 
 	// Msg.rcode
+
 	RcodeSuccess        = 0
 	RcodeFormatError    = 1
 	RcodeServerFailure  = 2
@@ -133,11 +141,11 @@ const (
 	RcodeBadAlg         = 21
 	RcodeBadTrunc       = 22 // TSIG
 
-	// Opcode
+	// Opcode, there is no 3
+
 	OpcodeQuery  = 0
 	OpcodeIQuery = 1
 	OpcodeStatus = 2
-	// There is no 3
 	OpcodeNotify = 4
 	OpcodeUpdate = 5
 )
@@ -198,7 +206,8 @@ var CertTypeToString = map[uint16]string{
 
 var StringToCertType = reverseInt16(CertTypeToString)
 
-// DNS queries.
+// Question holds a DNS question. There can be multiple questions in the
+// question section of a message. Usually there is just one.
 type Question struct {
 	Name   string `dns:"cdomain-name"` // "cdomain-name" specifies encoding (and may be compressed)
 	Qtype  uint16
@@ -801,7 +810,7 @@ func cmToM(m, e uint8) string {
 	s := fmt.Sprintf("%d", m)
 	for e > 2 {
 		s += "0"
-		e -= 1
+		e--
 	}
 	return s
 }
@@ -838,7 +847,7 @@ func (rr *LOC) String() string {
 	lon = lon % LOC_HOURS
 	s += fmt.Sprintf("%02d %02d %0.3f %s ", h, m, (float64(lon) / 1000), ew)
 
-	var alt float64 = float64(rr.Altitude) / 100
+	var alt = float64(rr.Altitude) / 100
 	alt -= LOC_ALTITUDEBASE
 	if rr.Altitude%100 != 0 {
 		s += fmt.Sprintf("%.2fm ", alt)

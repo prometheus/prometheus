@@ -193,6 +193,7 @@ func (t *Transfer) ReadMsg() (*Msg, error) {
 		}
 		// Need to work on the original message p, as that was used to calculate the tsig.
 		err = TsigVerify(p, t.TsigSecret[ts.Hdr.Name], t.tsigRequestMAC, t.tsigTimersOnly)
+		t.tsigRequestMAC = ts.MAC
 	}
 	return m, err
 }

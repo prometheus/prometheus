@@ -35,6 +35,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/DevelopersPL/godnsagent
 * https://github.com/duedil-ltd/discodns
 * https://github.com/StalkR/dns-reverse-proxy
+* https://github.com/tianon/rawdns
 
 Send pull request if you want to be listed here.
 
@@ -68,7 +69,7 @@ correctly, the following should work:
 
 ## Examples
 
-A short "how to use the API" is at the beginning of dns.go (this also will show
+A short "how to use the API" is at the beginning of doc.go (this also will show
 when you call `godoc github.com/miekg/dns`).
 
 Example programs can be found in the `github.com/miekg/exdns` repository.

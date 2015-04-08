@@ -34,8 +34,8 @@ package proto_test
 import (
 	"testing"
 
-	pb "./testdata"
 	. "github.com/golang/protobuf/proto"
+	pb "github.com/golang/protobuf/proto/testdata"
 )
 
 // Four identical base messages.

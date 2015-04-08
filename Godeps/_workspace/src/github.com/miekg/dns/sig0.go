@@ -1,18 +1,3 @@
-// SIG(0)
-//
-// From RFC 2931:
-//
-//     SIG(0) provides protection for DNS transactions and requests ....
-//     ... protection for glue records, DNS requests, protection for message headers
-//     on requests and responses, and protection of the overall integrity of a response.
-//
-// It works like TSIG, except that SIG(0) uses public key cryptography, instead of the shared
-// secret approach in TSIG.
-// Supported algorithms: DSA, ECDSAP256SHA256, ECDSAP384SHA384, RSASHA1, RSASHA256 and
-// RSASHA512.
-//
-// Signing subsequent messages in multi-message sessions is not implemented.
-//
 package dns
 
 import (
@@ -92,7 +77,7 @@ func (rr *SIG) Sign(k PrivateKey, m *Msg) ([]byte, error) {
 	buf[rdoff], buf[rdoff+1] = packUint16(rdlen)
 	// Adjust additional count
 	adc, _ := unpackUint16(buf, 10)
-	adc += 1
+	adc++
 	buf[10], buf[11] = packUint16(adc)
 	return buf, nil
 }

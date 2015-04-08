@@ -34,8 +34,8 @@ package proto_test
 import (
 	"testing"
 
-	pb "./testdata"
 	"github.com/golang/protobuf/proto"
+	pb "github.com/golang/protobuf/proto/testdata"
 )
 
 func TestGetExtensionsWithMissingExtensions(t *testing.T) {
@@ -134,4 +134,20 @@ func TestExtensionsRoundTrip(t *testing.T) {
 	if err := proto.SetExtension(msg, pb.E_Ext_More, 12); err == nil {
 		t.Error("expected some sort of type mismatch error, got nil")
 	}
+}
+
+func TestNilExtension(t *testing.T) {
+	msg := &pb.MyMessage{
+		Count: proto.Int32(1),
+	}
+	if err := proto.SetExtension(msg, pb.E_Ext_Text, proto.String("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if err := proto.SetExtension(msg, pb.E_Ext_More, (*pb.Ext)(nil)); err == nil {
+		t.Error("expected SetExtension to fail due to a nil extension")
+	} else if want := "proto: SetExtension called with nil value of type *testdata.Ext"; err.Error() != want {
+		t.Errorf("expected error %v, got %v", want, err)
+	}
+	// Note: if the behavior of Marshal is ever changed to ignore nil extensions, update
+	// this test to verify that E_Ext_Text is properly propagated through marshal->unmarshal.
 }
