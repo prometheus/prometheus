@@ -33,11 +33,12 @@ package proto_test
 
 import (
 	"log"
+	"strings"
 	"testing"
 
-	proto3pb "./proto3_proto"
-	pb "./testdata"
 	. "github.com/golang/protobuf/proto"
+	proto3pb "github.com/golang/protobuf/proto/proto3_proto"
+	pb "github.com/golang/protobuf/proto/testdata"
 )
 
 var messageWithExtension1 = &pb.MyMessage{Count: Int32(7)}
@@ -113,10 +114,16 @@ var SizeTests = []struct {
 	{"proto3 bytes", &proto3pb.Message{Data: []byte("wowsa")}},
 	{"proto3 bytes, empty", &proto3pb.Message{Data: []byte{}}},
 	{"proto3 enum", &proto3pb.Message{Hilarity: proto3pb.Message_PUNS}},
+	{"proto3 map field with empty bytes", &proto3pb.MessageWithMap{ByteMapping: map[bool][]byte{false: []byte{}}}},
 
 	{"map field", &pb.MessageWithMap{NameMapping: map[int32]string{1: "Rob", 7: "Andrew"}}},
 	{"map field with message", &pb.MessageWithMap{MsgMapping: map[int64]*pb.FloatingPoint{0x7001: &pb.FloatingPoint{F: Float64(2.0)}}}},
 	{"map field with bytes", &pb.MessageWithMap{ByteMapping: map[bool][]byte{true: []byte("this time for sure")}}},
+	{"map field with empty bytes", &pb.MessageWithMap{ByteMapping: map[bool][]byte{true: []byte{}}}},
+
+	{"map field with big entry", &pb.MessageWithMap{NameMapping: map[int32]string{8: strings.Repeat("x", 125)}}},
+	{"map field with big key and val", &pb.MessageWithMap{StrToStr: map[string]string{strings.Repeat("x", 70): strings.Repeat("y", 70)}}},
+	{"map field with big numeric key", &pb.MessageWithMap{NameMapping: map[int32]string{0xf00d: "om nom nom"}}},
 }
 
 func TestSize(t *testing.T) {

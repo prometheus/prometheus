@@ -32,7 +32,7 @@ func testConfig(t *testing.T, data string) {
 	}
 	cc, err := ClientConfigFromFile(path)
 	if err != nil {
-		t.Errorf("error parsing resolv.conf: %s", err)
+		t.Errorf("error parsing resolv.conf: %v", err)
 	}
 	if l := len(cc.Servers); l != 2 {
 		t.Errorf("incorrect number of nameservers detected: %d", l)

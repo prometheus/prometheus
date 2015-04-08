@@ -1,6 +1,6 @@
 {
 	"ImportPath": "github.com/prometheus/prometheus",
-	"GoVersion": "go1.4",
+	"GoVersion": "go1.4.2",
 	"Deps": [
 		{
 			"ImportPath": "bitbucket.org/ww/goautoneg",
@@ -17,35 +17,35 @@
 		},
 		{
 			"ImportPath": "github.com/golang/protobuf/proto",
-			"Rev": "5677a0e3d5e89854c9974e1256839ee23f8233ca"
+			"Rev": "655cdfa588ea190e901bc5590e65d5621688847c"
 		},
 		{
-			"ImportPath": "github.com/matttproud/golang_protobuf_extensions/ext",
-			"Rev": "ba7d65ac66e9da93a714ca18f6d1bc7a0c09100c"
+			"ImportPath": "github.com/matttproud/golang_protobuf_extensions/pbutil",
+			"Rev": "fc2b8d3a73c4867e51861bbdd5ae3c1f0869dd6a"
 		},
 		{
 			"ImportPath": "github.com/miekg/dns",
-			"Rev": "b65f52f3f0dd1afa25cbbf63f8e7eb15fb5c0641"
+			"Rev": "e6898c8f30b5d002db962043a62db90552e90bf7"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/extraction",
-			"Comment": "0.3.2",
-			"Rev": "1cf6d4b964951c63779ba7513c57fe389b609014"
+			"Comment": "0.4.0-1-g692492e",
+			"Rev": "692492e54b553a81013254cc1fba4b6dd76fad30"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/model",
-			"Comment": "0.3.2",
-			"Rev": "1cf6d4b964951c63779ba7513c57fe389b609014"
+			"Comment": "0.4.0-1-g692492e",
+			"Rev": "692492e54b553a81013254cc1fba4b6dd76fad30"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/prometheus",
-			"Comment": "0.3.2",
-			"Rev": "1cf6d4b964951c63779ba7513c57fe389b609014"
+			"Comment": "0.4.0-1-g692492e",
+			"Rev": "692492e54b553a81013254cc1fba4b6dd76fad30"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/text",
-			"Comment": "0.3.2",
-			"Rev": "1cf6d4b964951c63779ba7513c57fe389b609014"
+			"Comment": "0.4.0-1-g692492e",
+			"Rev": "692492e54b553a81013254cc1fba4b6dd76fad30"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_model/go",
@@ -54,15 +54,15 @@
 		},
 		{
 			"ImportPath": "github.com/prometheus/procfs",
-			"Rev": "92faa308558161acab0ada1db048e9996ecec160"
+			"Rev": "490cc6eb5fa45bf8a8b7b73c8bc82a8160e8531d"
 		},
 		{
 			"ImportPath": "github.com/syndtr/goleveldb/leveldb",
-			"Rev": "e9e2c8f6d3b9c313fb4acaac5ab06285bcf30b04"
+			"Rev": "4875955338b0a434238a31165cb87255ab6e9e4a"
 		},
 		{
 			"ImportPath": "github.com/syndtr/gosnappy/snappy",
-			"Rev": "ce8acff4829e0c2458a67ead32390ac0a381c862"
+			"Rev": "156a073208e131d7d2e212cb749feae7c339e846"
 		}
 	]
 }

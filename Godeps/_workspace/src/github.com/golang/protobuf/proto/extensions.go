@@ -37,6 +37,7 @@ package proto
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strconv"
 	"sync"
@@ -320,6 +321,14 @@ func SetExtension(pb extendableProto, extension *ExtensionDesc, value interface{
 	typ := reflect.TypeOf(extension.ExtensionType)
 	if typ != reflect.TypeOf(value) {
 		return errors.New("proto: bad extension value type")
+	}
+	// nil extension values need to be caught early, because the
+	// encoder can't distinguish an ErrNil due to a nil extension
+	// from an ErrNil due to a missing field. Extensions are
+	// always optional, so the encoder would just swallow the error
+	// and drop all the extensions from the encoded message.
+	if reflect.ValueOf(value).IsNil() {
+		return fmt.Errorf("proto: SetExtension called with nil value of type %T", value)
 	}
 
 	pb.ExtensionMap()[extension.Field] = Extension{desc: extension, value: value}

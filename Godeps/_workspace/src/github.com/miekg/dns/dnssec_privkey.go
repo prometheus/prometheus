@@ -10,8 +10,9 @@ import (
 	"strconv"
 )
 
-const _FORMAT = "Private-key-format: v1.3\n"
+const format = "Private-key-format: v1.3\n"
 
+// PrivateKey ... TODO(miek)
 type PrivateKey interface {
 	Sign([]byte, uint8) ([]byte, error)
 	String(uint8) string
@@ -53,17 +54,17 @@ func (p *RSAPrivateKey) String(alg uint8) string {
 	// Calculate Exponent1/2 and Coefficient as per: http://en.wikipedia.org/wiki/RSA#Using_the_Chinese_remainder_algorithm
 	// and from: http://code.google.com/p/go/issues/detail?id=987
 	one := big.NewInt(1)
-	p_1 := big.NewInt(0).Sub(p.Primes[0], one)
-	q_1 := big.NewInt(0).Sub(p.Primes[1], one)
-	exp1 := big.NewInt(0).Mod(p.D, p_1)
-	exp2 := big.NewInt(0).Mod(p.D, q_1)
+	p1 := big.NewInt(0).Sub(p.Primes[0], one)
+	q1 := big.NewInt(0).Sub(p.Primes[1], one)
+	exp1 := big.NewInt(0).Mod(p.D, p1)
+	exp2 := big.NewInt(0).Mod(p.D, q1)
 	coeff := big.NewInt(0).ModInverse(p.Primes[1], p.Primes[0])
 
 	exponent1 := toBase64(exp1.Bytes())
 	exponent2 := toBase64(exp2.Bytes())
 	coefficient := toBase64(coeff.Bytes())
 
-	return _FORMAT +
+	return format +
 		"Algorithm: " + algorithm + "\n" +
 		"Modulus: " + modulus + "\n" +
 		"PublicExponent: " + publicExponent + "\n" +
@@ -106,7 +107,7 @@ func (p *ECDSAPrivateKey) String(alg uint8) string {
 		intlen = 48
 	}
 	private := toBase64(intToBytes(p.D, intlen))
-	return _FORMAT +
+	return format +
 		"Algorithm: " + algorithm + "\n" +
 		"PrivateKey: " + private + "\n"
 }
@@ -133,7 +134,7 @@ func (p *DSAPrivateKey) String(alg uint8) string {
 	base := toBase64(intToBytes(p.PublicKey.Parameters.G, 64+T*8))
 	priv := toBase64(intToBytes(p.X, 20))
 	pub := toBase64(intToBytes(p.PublicKey.Y, 64+T*8))
-	return _FORMAT +
+	return format +
 		"Algorithm: " + algorithm + "\n" +
 		"Prime(p): " + prime + "\n" +
 		"Subprime(q): " + subprime + "\n" +

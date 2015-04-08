@@ -48,6 +48,15 @@ func (db *DB) addSeq(delta uint64) {
 	atomic.AddUint64(&db.seq, delta)
 }
 
+func (db *DB) sampleSeek(ikey iKey) {
+	v := db.s.version()
+	if v.sampleSeek(ikey) {
+		// Trigger table compaction.
+		db.compSendTrigger(db.tcompCmdC)
+	}
+	v.release()
+}
+
 func (db *DB) mpoolPut(mem *memdb.DB) {
 	defer func() {
 		recover()

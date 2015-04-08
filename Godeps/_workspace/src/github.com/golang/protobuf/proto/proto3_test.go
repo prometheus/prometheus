@@ -34,8 +34,9 @@ package proto_test
 import (
 	"testing"
 
-	pb "./proto3_proto"
 	"github.com/golang/protobuf/proto"
+	pb "github.com/golang/protobuf/proto/proto3_proto"
+	tpb "github.com/golang/protobuf/proto/testdata"
 )
 
 func TestProto3ZeroValues(t *testing.T) {
@@ -89,5 +90,36 @@ func TestRoundTripProto3(t *testing.T) {
 
 	if !proto.Equal(m, m2) {
 		t.Errorf("proto.Equal returned false:\n m: %v\nm2: %v", m, m2)
+	}
+}
+
+func TestProto3SetDefaults(t *testing.T) {
+	in := &pb.Message{
+		Terrain: map[string]*pb.Nested{
+			"meadow": new(pb.Nested),
+		},
+		Proto2Field: new(tpb.SubDefaults),
+		Proto2Value: map[string]*tpb.SubDefaults{
+			"badlands": new(tpb.SubDefaults),
+		},
+	}
+
+	got := proto.Clone(in).(*pb.Message)
+	proto.SetDefaults(got)
+
+	// There are no defaults in proto3.  Everything should be the zero value, but
+	// we need to remember to set defaults for nested proto2 messages.
+	want := &pb.Message{
+		Terrain: map[string]*pb.Nested{
+			"meadow": new(pb.Nested),
+		},
+		Proto2Field: &tpb.SubDefaults{N: proto.Int64(7)},
+		Proto2Value: map[string]*tpb.SubDefaults{
+			"badlands": &tpb.SubDefaults{N: proto.Int64(7)},
+		},
+	}
+
+	if !proto.Equal(got, want) {
+		t.Errorf("with in = %v\nproto.SetDefaults(in) =>\ngot %v\nwant %v", in, got, want)
 	}
 }

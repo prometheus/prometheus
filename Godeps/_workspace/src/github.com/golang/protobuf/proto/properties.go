@@ -440,7 +440,12 @@ func (p *Properties) setEncAndDec(typ reflect.Type, f *reflect.StructField, lock
 			p.enc = (*Buffer).enc_slice_byte
 			p.dec = (*Buffer).dec_slice_byte
 			p.size = size_slice_byte
-			if p.proto3 {
+			// This is a []byte, which is either a bytes field,
+			// or the value of a map field. In the latter case,
+			// we always encode an empty []byte, so we should not
+			// use the proto3 enc/size funcs.
+			// f == nil iff this is the key/value of a map field.
+			if p.proto3 && f != nil {
 				p.enc = (*Buffer).enc_proto3_slice_byte
 				p.size = size_proto3_slice_byte
 			}
@@ -595,7 +600,7 @@ func (p *Properties) init(typ reflect.Type, name, tag string, f *reflect.StructF
 }
 
 var (
-	mutex         sync.Mutex
+	propertiesMu  sync.RWMutex
 	propertiesMap = make(map[reflect.Type]*StructProperties)
 )
 
@@ -605,13 +610,26 @@ func GetProperties(t reflect.Type) *StructProperties {
 	if t.Kind() != reflect.Struct {
 		panic("proto: type must have kind struct")
 	}
-	mutex.Lock()
-	sprop := getPropertiesLocked(t)
-	mutex.Unlock()
+
+	// Most calls to GetProperties in a long-running program will be
+	// retrieving details for types we have seen before.
+	propertiesMu.RLock()
+	sprop, ok := propertiesMap[t]
+	propertiesMu.RUnlock()
+	if ok {
+		if collectStats {
+			stats.Chit++
+		}
+		return sprop
+	}
+
+	propertiesMu.Lock()
+	sprop = getPropertiesLocked(t)
+	propertiesMu.Unlock()
 	return sprop
 }
 
-// getPropertiesLocked requires that mutex is held.
+// getPropertiesLocked requires that propertiesMu is held.
 func getPropertiesLocked(t reflect.Type) *StructProperties {
 	if prop, ok := propertiesMap[t]; ok {
 		if collectStats {

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Wraps the contents of the /etc/resolv.conf.
+// ClientConfig wraps the contents of the /etc/resolv.conf file.
 type ClientConfig struct {
 	Servers  []string // servers to use
 	Search   []string // suffixes to append to local name

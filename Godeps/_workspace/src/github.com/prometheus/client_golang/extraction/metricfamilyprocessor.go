@@ -20,7 +20,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/matttproud/golang_protobuf_extensions/ext"
+	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 
 	"github.com/prometheus/client_golang/model"
 )
@@ -40,7 +40,7 @@ func (m *metricFamilyProcessor) ProcessSingle(i io.Reader, out Ingester, o *Proc
 	for {
 		family.Reset()
 
-		if _, err := ext.ReadDelimited(i, family); err != nil {
+		if _, err := pbutil.ReadDelimited(i, family); err != nil {
 			if err == io.EOF {
 				return nil
 			}
