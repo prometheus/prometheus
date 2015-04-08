@@ -29,6 +29,7 @@ import (
 
 var jobNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_-]*$")
 var labelNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
+var sdLookupTypeRE = regexp.MustCompile("^(?:tcp|udp)$")
 
 // Config encapsulates the configuration of a Prometheus instance. It wraps the
 // raw configuration protocol buffer to be able to add custom methods to it.
@@ -96,6 +97,10 @@ func (c Config) Validate() error {
 		}
 		if job.SdName != nil && len(job.TargetGroup) > 0 {
 			return fmt.Errorf("specified both DNS-SD name and target group for job: %s", job.GetName())
+		}
+
+		if !sdLookupTypeRE.MatchString(job.GetSdLookupType()) {
+			return fmt.Errorf("invalid SD lookup type for job '%s': %s", job.GetName(), job.GetSdLookupType())
 		}
 	}
 

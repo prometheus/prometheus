@@ -73,6 +73,8 @@ message JobConfig {
 	repeated TargetGroup target_group = 5;
 	// The HTTP resource path to fetch metrics from on targets.
 	optional string metrics_path = 6 [default = "/metrics"];
+	// Should DNS lookups for SD use UDP (Default) or TCP?
+	optional string sd_lookup_type = 8 [default = "udp"];
 }
 
 // The top-level Prometheus configuration.
