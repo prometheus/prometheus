@@ -1,3 +1,7 @@
+## 0.13.1 / 2015-04-09
+* [BUGFIX] Treat memory series with zero chunks correctly in series maintenance.
+* [ENHANCEMENT] Improve readability of usage text even more.
+
 ## 0.13.0 / 2015-04-08
 * [ENHANCEMENT] Double-delta encoding for chunks, saving typically 40% of
   space, both in RAM and on disk.
