@@ -579,6 +579,64 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if archived {
 		t.Fatal("archived series not dropped")
 	}
+
+	// Recreate series.
+	for _, sample := range samples {
+		s.Append(sample)
+	}
+	s.WaitForIndexing()
+
+	series, ok = ms.fpToSeries.get(fp)
+	if !ok {
+		t.Fatal("could not find series")
+	}
+
+	// Persist head chunk so we can safely archive.
+	series.headChunkClosed = true
+	ms.maintainMemorySeries(fp, clientmodel.Earliest)
+
+	// Archive metrics.
+	ms.fpToSeries.del(fp)
+	if err := ms.persistence.archiveMetric(
+		fp, series.metric, series.firstTime(), series.head().lastTime(),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !archived {
+		t.Fatal("not archived")
+	}
+
+	// Unarchive metrics.
+	ms.getOrCreateSeries(fp, clientmodel.Metric{})
+
+	series, ok = ms.fpToSeries.get(fp)
+	if !ok {
+		t.Fatal("could not find series")
+	}
+	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived {
+		t.Fatal("archived")
+	}
+	fmt.Println(series.headChunkClosed, len(series.chunkDescs))
+
+	// This will archive again, but must not drop it completely, despite the
+	// memorySeries being empty.
+	ms.maintainMemorySeries(fp, 1000)
+	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !archived {
+		t.Fatal("series purged completely")
+	}
 }
 
 func TestEvictAndPurgeSeriesChunkType0(t *testing.T) {

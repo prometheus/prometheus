@@ -861,11 +861,8 @@ func (s *memorySeriesStorage) writeMemorySeries(
 		return false
 	}
 	series.dropChunks(beforeTime)
-	if len(series.chunkDescs) == 0 { // All chunks dropped from memory series.
-		if !allDroppedFromPersistence {
-			glog.Errorf("All chunks dropped from memory but chunks left in persistence for fingerprint %v, series %v.", fp, series)
-			s.persistence.setDirty(true)
-		}
+	if len(series.chunkDescs) == 0 && allDroppedFromPersistence {
+		// All chunks dropped from both memory and persistence. Delete the series for good.
 		s.fpToSeries.del(fp)
 		s.numSeries.Dec()
 		s.seriesOps.WithLabelValues(memoryPurge).Inc()
