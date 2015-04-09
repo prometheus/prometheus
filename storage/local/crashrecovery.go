@@ -410,7 +410,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 			return err
 		}
 		if !deleted {
-			glog.Errorf("Fingerprint %s to be deleted from archivedFingerprintToTimeRange not found. This should never happen.", fp)
+			glog.Errorf("Fingerprint %v to be deleted from archivedFingerprintToTimeRange not found. This should never happen.", fp)
 		}
 		return nil
 	}); err != nil {
