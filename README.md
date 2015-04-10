@@ -32,6 +32,11 @@ it will be the recommended way of installing Prometheus.
 
 ### Use `make`
 
+Clone the repository in the usual way with `git clone`. _Do not
+download and unpack the source archives provided by GitHub._ (The
+makefile depends on running in a git repository. This will be fixed
+eventually.)
+
 In most circumstances, the following should work:
 
     $ make build
