@@ -625,7 +625,6 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if archived {
 		t.Fatal("archived")
 	}
-	fmt.Println(series.headChunkClosed, len(series.chunkDescs))
 
 	// This will archive again, but must not drop it completely, despite the
 	// memorySeries being empty.
