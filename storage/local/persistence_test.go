@@ -15,6 +15,7 @@ package local
 
 import (
 	"reflect"
+	"sync"
 	"testing"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -894,6 +895,7 @@ var fpStrings = []string{
 func BenchmarkLoadChunksSequentially(b *testing.B) {
 	p := persistence{
 		basePath: "fixtures",
+		bufPool:  sync.Pool{New: func() interface{} { return make([]byte, 0, 3*chunkLenWithHeader) }},
 	}
 	sequentialIndexes := make([]int, 47)
 	for i := range sequentialIndexes {
@@ -918,6 +920,7 @@ func BenchmarkLoadChunksSequentially(b *testing.B) {
 func BenchmarkLoadChunksRandomly(b *testing.B) {
 	p := persistence{
 		basePath: "fixtures",
+		bufPool:  sync.Pool{New: func() interface{} { return make([]byte, 0, 3*chunkLenWithHeader) }},
 	}
 	randomIndexes := []int{1, 5, 6, 8, 11, 14, 18, 23, 29, 33, 42, 46}
 

@@ -71,11 +71,7 @@ const (
 	indexingQueueCapacity = 1024 * 16
 )
 
-var (
-	fpLen = len(clientmodel.Fingerprint(0).String()) // Length of a fingerprint as string.
-
-	byteBufPool = sync.Pool{New: func() interface{} { return make([]byte, 0, 3*chunkLenWithHeader) }}
-)
+var fpLen = len(clientmodel.Fingerprint(0).String()) // Length of a fingerprint as string.
 
 const (
 	flagHeadChunkPersisted byte = 1 << iota
@@ -128,6 +124,8 @@ type persistence struct {
 	fLock          flock.Releaser // The file lock to protect against concurrent usage.
 
 	shouldSync syncStrategy
+
+	bufPool sync.Pool
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
@@ -239,6 +237,10 @@ func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync sync
 		dirtyFileName:  dirtyPath,
 		fLock:          fLock,
 		shouldSync:     shouldSync,
+		// Create buffers of length 3*chunkLenWithHeader by default because that is still reasonably small
+		// and at the same time enough for many uses. The contract is to never return buffer smaller than
+		// that to the pool so that callers can rely on a minimum buffer size.
+		bufPool: sync.Pool{New: func() interface{} { return make([]byte, 0, 3*chunkLenWithHeader) }},
 	}
 
 	if p.dirty {
@@ -383,9 +385,9 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int, inde
 	defer f.Close()
 
 	chunks := make([]chunk, 0, len(indexes))
-	buf := byteBufPool.Get().([]byte)
+	buf := p.bufPool.Get().([]byte)
 	defer func() {
-		byteBufPool.Put(buf)
+		p.bufPool.Put(buf)
 	}()
 
 	for i := 0; i < len(indexes); i++ {
