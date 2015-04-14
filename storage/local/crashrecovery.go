@@ -191,8 +191,8 @@ func (p *persistence) sanitizeSeries(
 		return fp, false
 	}
 
-	bytesToTrim := fi.Size() % int64(chunkLen+chunkHeaderLen)
-	chunksInFile := int(fi.Size()) / (chunkLen + chunkHeaderLen)
+	bytesToTrim := fi.Size() % int64(chunkLenWithHeader)
+	chunksInFile := int(fi.Size()) / chunkLenWithHeader
 	modTime := fi.ModTime()
 	if bytesToTrim != 0 {
 		glog.Warningf(

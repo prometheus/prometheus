@@ -192,6 +192,7 @@ type chunk interface {
 	newIterator() chunkIterator
 	marshal(io.Writer) error
 	unmarshal(io.Reader) error
+	unmarshalFromBuf([]byte)
 	encoding() chunkEncoding
 	// values returns a channel, from which all sample values in the chunk
 	// can be received in order. The channel is closed after the last

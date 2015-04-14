@@ -63,6 +63,8 @@ const (
 	chunkHeaderTypeOffset      = 0
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
+	chunkLenWithHeader         = chunkLen + chunkHeaderLen
+	chunkMaxBatchSize          = 64 // How many chunks to load at most in one batch.
 
 	indexingMaxBatchSize  = 1024 * 1024
 	indexingBatchTimeout  = 500 * time.Millisecond // Commit batch when idle for that long.
@@ -122,6 +124,8 @@ type persistence struct {
 	fLock          flock.Releaser // The file lock to protect against concurrent usage.
 
 	shouldSync syncStrategy
+
+	bufPool sync.Pool
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
@@ -233,6 +237,10 @@ func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync sync
 		dirtyFileName:  dirtyPath,
 		fLock:          fLock,
 		shouldSync:     shouldSync,
+		// Create buffers of length 3*chunkLenWithHeader by default because that is still reasonably small
+		// and at the same time enough for many uses. The contract is to never return buffer smaller than
+		// that to the pool so that callers can rely on a minimum buffer size.
+		bufPool: sync.Pool{New: func() interface{} { return make([]byte, 0, 3*chunkLenWithHeader) }},
 	}
 
 	if p.dirty {
@@ -377,28 +385,39 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int, inde
 	defer f.Close()
 
 	chunks := make([]chunk, 0, len(indexes))
-	typeBuf := make([]byte, 1)
-	for _, idx := range indexes {
-		_, err := f.Seek(offsetForChunkIndex(idx+indexOffset), os.SEEK_SET)
-		if err != nil {
+	buf := p.bufPool.Get().([]byte)
+	defer func() {
+		// buf may change below, so wrap returning to the pool in a function.
+		// A simple 'defer p.bufPool.Put(buf)' would only return the original buf.
+		p.bufPool.Put(buf)
+	}()
+
+	for i := 0; i < len(indexes); i++ {
+		// This loads chunks in batches. A batch is a streak of
+		// consecutive chunks, read from disk in one go.
+		batchSize := 1
+		if _, err := f.Seek(offsetForChunkIndex(indexes[i]+indexOffset), os.SEEK_SET); err != nil {
 			return nil, err
 		}
 
-		n, err := f.Read(typeBuf)
-		if err != nil {
-			return nil, err
+		for ; batchSize < chunkMaxBatchSize &&
+			i+1 < len(indexes) &&
+			indexes[i]+1 == indexes[i+1]; i, batchSize = i+1, batchSize+1 {
 		}
-		if n != 1 {
-			panic("read returned != 1 bytes")
+		readSize := batchSize * chunkLenWithHeader
+		if cap(buf) < readSize {
+			buf = make([]byte, readSize)
 		}
+		buf = buf[:readSize]
 
-		_, err = f.Seek(chunkHeaderLen-1, os.SEEK_CUR)
-		if err != nil {
+		if _, err := io.ReadFull(f, buf); err != nil {
 			return nil, err
 		}
-		chunk := newChunkForEncoding(chunkEncoding(typeBuf[0]))
-		chunk.unmarshal(f)
-		chunks = append(chunks, chunk)
+		for c := 0; c < batchSize; c++ {
+			chunk := newChunkForEncoding(chunkEncoding(buf[c*chunkLenWithHeader+chunkHeaderTypeOffset]))
+			chunk.unmarshalFromBuf(buf[c*chunkLenWithHeader+chunkHeaderLen:])
+			chunks = append(chunks, chunk)
+		}
 	}
 	chunkOps.WithLabelValues(load).Add(float64(len(chunks)))
 	atomic.AddInt64(&numMemChunks, int64(len(chunks)))
@@ -422,24 +441,23 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 	if err != nil {
 		return nil, err
 	}
-	totalChunkLen := chunkHeaderLen + chunkLen
-	if fi.Size()%int64(totalChunkLen) != 0 {
+	if fi.Size()%int64(chunkLenWithHeader) != 0 {
 		p.setDirty(true)
 		return nil, fmt.Errorf(
 			"size of series file for fingerprint %v is %d, which is not a multiple of the chunk length %d",
-			fp, fi.Size(), totalChunkLen,
+			fp, fi.Size(), chunkLenWithHeader,
 		)
 	}
 
-	numChunks := int(fi.Size()) / totalChunkLen
+	numChunks := int(fi.Size()) / chunkLenWithHeader
 	cds := make([]*chunkDesc, 0, numChunks)
+	chunkTimesBuf := make([]byte, 16)
 	for i := 0; i < numChunks; i++ {
 		_, err := f.Seek(offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, os.SEEK_SET)
 		if err != nil {
 			return nil, err
 		}
 
-		chunkTimesBuf := make([]byte, 16)
 		_, err = io.ReadAtLeast(f, chunkTimesBuf, 16)
 		if err != nil {
 			return nil, err
@@ -799,7 +817,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 				}
 				chunk := newChunkForEncoding(chunkEncoding(encoding))
 				if err := chunk.unmarshal(r); err != nil {
-					glog.Warning("Could not decode chunk type:", err)
+					glog.Warning("Could not decode chunk:", err)
 					p.dirty = true
 					return sm, chunksToPersist, nil
 				}
@@ -900,7 +918,7 @@ func (p *persistence) dropAndPersistChunks(
 			return
 		}
 		headerBuf := make([]byte, chunkHeaderLen)
-		_, err = io.ReadAtLeast(f, headerBuf, chunkHeaderLen)
+		_, err = io.ReadFull(f, headerBuf)
 		if err == io.EOF {
 			// We ran into the end of the file without finding any chunks that should
 			// be kept. Remove the whole file.
@@ -960,7 +978,7 @@ func (p *persistence) dropAndPersistChunks(
 	if err != nil {
 		return
 	}
-	offset = int(written / (chunkHeaderLen + chunkLen))
+	offset = int(written / chunkLenWithHeader)
 
 	if len(chunks) > 0 {
 		if err = writeChunks(temp, chunks); err != nil {
@@ -983,7 +1001,7 @@ func (p *persistence) deleteSeriesFile(fp clientmodel.Fingerprint) (int, error) 
 	if err != nil {
 		return -1, err
 	}
-	numChunks := int(fi.Size() / (chunkHeaderLen + chunkLen))
+	numChunks := int(fi.Size() / chunkLenWithHeader)
 	if err := os.Remove(fname); err != nil {
 		return -1, err
 	}
@@ -1366,17 +1384,17 @@ loop:
 }
 
 func offsetForChunkIndex(i int) int64 {
-	return int64(i * (chunkHeaderLen + chunkLen))
+	return int64(i * chunkLenWithHeader)
 }
 
 func chunkIndexForOffset(offset int64) (int, error) {
-	if int(offset)%(chunkHeaderLen+chunkLen) != 0 {
+	if int(offset)%chunkLenWithHeader != 0 {
 		return -1, fmt.Errorf(
 			"offset %d is not a multiple of on-disk chunk length %d",
-			offset, chunkHeaderLen+chunkLen,
+			offset, chunkLenWithHeader,
 		)
 	}
-	return int(offset) / (chunkHeaderLen + chunkLen), nil
+	return int(offset) / chunkLenWithHeader, nil
 }
 
 func writeChunkHeader(w io.Writer, c chunk) error {
@@ -1389,7 +1407,7 @@ func writeChunkHeader(w io.Writer, c chunk) error {
 }
 
 func writeChunks(w io.Writer, chunks []chunk) error {
-	b := bufio.NewWriterSize(w, len(chunks)*(chunkHeaderLen+chunkLen))
+	b := bufio.NewWriterSize(w, len(chunks)*chunkLenWithHeader)
 	for _, chunk := range chunks {
 		if err := writeChunkHeader(b, chunk); err != nil {
 			return err

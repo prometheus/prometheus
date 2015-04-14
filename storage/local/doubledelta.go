@@ -231,16 +231,18 @@ func (c doubleDeltaEncodedChunk) marshal(w io.Writer) error {
 // unmarshal implements chunk.
 func (c *doubleDeltaEncodedChunk) unmarshal(r io.Reader) error {
 	*c = (*c)[:cap(*c)]
-	readBytes := 0
-	for readBytes < len(*c) {
-		n, err := r.Read((*c)[readBytes:])
-		if err != nil {
-			return err
-		}
-		readBytes += n
+	if _, err := io.ReadFull(r, *c); err != nil {
+		return err
 	}
 	*c = (*c)[:binary.LittleEndian.Uint16((*c)[doubleDeltaHeaderBufLenOffset:])]
 	return nil
+}
+
+// unmarshalFromBuf implements chunk.
+func (c *doubleDeltaEncodedChunk) unmarshalFromBuf(buf []byte) {
+	*c = (*c)[:cap(*c)]
+	copy(*c, buf)
+	*c = (*c)[:binary.LittleEndian.Uint16((*c)[doubleDeltaHeaderBufLenOffset:])]
 }
 
 // values implements chunk.
