@@ -387,6 +387,8 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int, inde
 	chunks := make([]chunk, 0, len(indexes))
 	buf := p.bufPool.Get().([]byte)
 	defer func() {
+		// buf may change below, so wrap returning to the pool in a function.
+		// A simple 'defer p.bufPool.Put(buf)' would only return the original buf.
 		p.bufPool.Put(buf)
 	}()
 
