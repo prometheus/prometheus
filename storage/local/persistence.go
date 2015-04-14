@@ -880,7 +880,7 @@ func (p *persistence) dropAndPersistChunks(
 		// too old. If that's the case, the chunks in the series file
 		// are all too old, too.
 		i := 0
-		for ; i < len(chunks) && chunks[i].lastTime().Before(beforeTime); i++ {
+		for ; i < len(chunks) && chunks[i].newIterator().getLastTimestamp().Before(beforeTime); i++ {
 		}
 		if i < len(chunks) {
 			firstTimeNotDropped = chunks[i].firstTime()
@@ -1567,8 +1567,14 @@ func chunkIndexForOffset(offset int64) (int, error) {
 func writeChunkHeader(w io.Writer, c chunk) error {
 	header := make([]byte, chunkHeaderLen)
 	header[chunkHeaderTypeOffset] = byte(c.encoding())
-	binary.LittleEndian.PutUint64(header[chunkHeaderFirstTimeOffset:], uint64(c.firstTime()))
-	binary.LittleEndian.PutUint64(header[chunkHeaderLastTimeOffset:], uint64(c.lastTime()))
+	binary.LittleEndian.PutUint64(
+		header[chunkHeaderFirstTimeOffset:],
+		uint64(c.firstTime()),
+	)
+	binary.LittleEndian.PutUint64(
+		header[chunkHeaderLastTimeOffset:],
+		uint64(c.newIterator().getLastTimestamp()),
+	)
 	_, err := w.Write(header)
 	return err
 }

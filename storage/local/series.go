@@ -486,41 +486,57 @@ func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.V
 		return it.chunkIt.getValueAtTime(t)
 	}
 
-	it.chunkIt = nil
-
 	if len(it.chunks) == 0 {
 		return nil
 	}
 
 	// Before or exactly on the first sample of the series.
-	if !t.After(it.chunks[0].firstTime()) {
+	it.chunkIt = it.chunks[0].newIterator()
+	ts := it.chunkIt.getTimestampAtIndex(0)
+	if !t.After(ts) {
 		// return first value of first chunk
-		return it.chunks[0].newIterator().getValueAtTime(t)
-	}
-	// After or exactly on the last sample of the series.
-	if !t.Before(it.chunks[len(it.chunks)-1].lastTime()) {
-		// return last value of last chunk
-		return it.chunks[len(it.chunks)-1].newIterator().getValueAtTime(t)
+		return metric.Values{metric.SamplePair{
+			Timestamp: ts,
+			Value:     it.chunkIt.getSampleValueAtIndex(0),
+		}}
 	}
 
-	// Find first chunk where lastTime() is after or equal to t.
+	// After or exactly on the last sample of the series.
+	it.chunkIt = it.chunks[len(it.chunks)-1].newIterator()
+	ts = it.chunkIt.getLastTimestamp()
+	if !t.Before(ts) {
+		// return last value of last chunk
+		return metric.Values{metric.SamplePair{
+			Timestamp: ts,
+			Value:     it.chunkIt.getSampleValueAtIndex(it.chunkIt.length() - 1),
+		}}
+	}
+
+	// Find last chunk where firstTime() is before or equal to t.
+	l := len(it.chunks) - 1
 	i := sort.Search(len(it.chunks), func(i int) bool {
-		return !it.chunks[i].lastTime().Before(t)
+		return !it.chunks[l-i].firstTime().After(t)
 	})
 	if i == len(it.chunks) {
 		panic("out of bounds")
 	}
-
-	if t.Before(it.chunks[i].firstTime()) {
+	it.chunkIt = it.chunks[l-i].newIterator()
+	ts = it.chunkIt.getLastTimestamp()
+	if t.After(ts) {
 		// We ended up between two chunks.
+		sp1 := metric.SamplePair{
+			Timestamp: ts,
+			Value:     it.chunkIt.getSampleValueAtIndex(it.chunkIt.length() - 1),
+		}
+		it.chunkIt = it.chunks[l-i+1].newIterator()
 		return metric.Values{
-			it.chunks[i-1].newIterator().getValueAtTime(t)[0],
-			it.chunks[i].newIterator().getValueAtTime(t)[0],
+			sp1,
+			metric.SamplePair{
+				it.chunkIt.getTimestampAtIndex(0),
+				it.chunkIt.getSampleValueAtIndex(0),
+			},
 		}
 	}
-	// We ended up in the middle of a chunk. We might stay there for a while,
-	// so save it as the current chunk iterator.
-	it.chunkIt = it.chunks[i].newIterator()
 	return it.chunkIt.getValueAtTime(t)
 }
 
@@ -529,26 +545,34 @@ func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Val
 	it.lock()
 	defer it.unlock()
 
-	// Find the first relevant chunk.
+	// Find the first chunk for which the first sample is within the interval.
 	i := sort.Search(len(it.chunks), func(i int) bool {
-		return !it.chunks[i].lastTime().Before(in.OldestInclusive)
+		return !it.chunks[i].firstTime().Before(in.OldestInclusive)
 	})
+	// Only now check the last timestamp of the previous chunk (which is
+	// fairly expensive).
+	if i > 0 && !it.chunks[i-1].newIterator().getLastTimestamp().Before(in.OldestInclusive) {
+		i--
+	}
+
 	values := make(metric.Values, 0, 2)
-	for i, c := range it.chunks[i:] {
-		var chunkIt chunkIterator
+	for j, c := range it.chunks[i:] {
 		if c.firstTime().After(in.NewestInclusive) {
 			if len(values) == 1 {
-				// We found the first value before, but are now
+				// We found the first value before but are now
 				// already past the last value. The value we
 				// want must be the last value of the previous
 				// chunk. So backtrack...
-				chunkIt = it.chunks[i-1].newIterator()
-				values = append(values, chunkIt.getValueAtTime(in.NewestInclusive)[0])
+				chunkIt := it.chunks[j-1].newIterator()
+				values = append(values, metric.SamplePair{
+					Timestamp: chunkIt.getLastTimestamp(),
+					Value:     chunkIt.getLastSampleValue(),
+				})
 			}
 			break
 		}
+		chunkIt := c.newIterator()
 		if len(values) == 0 {
-			chunkIt = c.newIterator()
 			firstValues := chunkIt.getValueAtTime(in.OldestInclusive)
 			switch len(firstValues) {
 			case 2:
@@ -559,20 +583,18 @@ func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Val
 				panic("unexpected return from getValueAtTime")
 			}
 		}
-		if c.lastTime().After(in.NewestInclusive) {
-			if chunkIt == nil {
-				chunkIt = c.newIterator()
-			}
+		if chunkIt.getLastTimestamp().After(in.NewestInclusive) {
 			values = append(values, chunkIt.getValueAtTime(in.NewestInclusive)[0])
 			break
 		}
 	}
 	if len(values) == 1 {
 		// We found exactly one value. In that case, add the most recent we know.
-		values = append(
-			values,
-			it.chunks[len(it.chunks)-1].newIterator().getValueAtTime(in.NewestInclusive)[0],
-		)
+		chunkIt := it.chunks[len(it.chunks)-1].newIterator()
+		values = append(values, metric.SamplePair{
+			Timestamp: chunkIt.getLastTimestamp(),
+			Value:     chunkIt.getLastSampleValue(),
+		})
 	}
 	if len(values) == 2 && values[0].Equal(&values[1]) {
 		return values[:1]
@@ -585,10 +607,17 @@ func (it *memorySeriesIterator) GetRangeValues(in metric.Interval) metric.Values
 	it.lock()
 	defer it.unlock()
 
-	// Find the first relevant chunk.
+	// Find the first chunk for which the first sample is within the interval.
 	i := sort.Search(len(it.chunks), func(i int) bool {
-		return !it.chunks[i].lastTime().Before(in.OldestInclusive)
+		// TODO: Avoid the expensive newIterator().getLastTimestamp() call.
+		return !it.chunks[i].firstTime().Before(in.OldestInclusive)
 	})
+	// Only now check the last timestamp of the previous chunk (which is
+	// fairly expensive).
+	if i > 0 && !it.chunks[i-1].newIterator().getLastTimestamp().Before(in.OldestInclusive) {
+		i--
+	}
+
 	values := metric.Values{}
 	for _, c := range it.chunks[i:] {
 		if c.firstTime().After(in.NewestInclusive) {

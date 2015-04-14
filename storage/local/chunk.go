@@ -124,7 +124,7 @@ func (cd *chunkDesc) lastTime() clientmodel.Timestamp {
 	if cd.chunk == nil {
 		return cd.chunkLastTime
 	}
-	return cd.chunk.lastTime()
+	return cd.chunk.newIterator().getLastTimestamp()
 }
 
 func (cd *chunkDesc) isEvicted() bool {
@@ -169,7 +169,7 @@ func (cd *chunkDesc) maybeEvict() bool {
 		return false
 	}
 	cd.chunkFirstTime = cd.chunk.firstTime()
-	cd.chunkLastTime = cd.chunk.lastTime()
+	cd.chunkLastTime = cd.chunk.newIterator().getLastTimestamp()
 	cd.chunk = nil
 	chunkOps.WithLabelValues(evict).Inc()
 	atomic.AddInt64(&numMemChunks, -1)
@@ -188,23 +188,27 @@ type chunk interface {
 	add(sample *metric.SamplePair) []chunk
 	clone() chunk
 	firstTime() clientmodel.Timestamp
-	lastTime() clientmodel.Timestamp
 	newIterator() chunkIterator
 	marshal(io.Writer) error
 	unmarshal(io.Reader) error
 	unmarshalFromBuf([]byte)
 	encoding() chunkEncoding
-	// values returns a channel, from which all sample values in the chunk
-	// can be received in order. The channel is closed after the last
-	// one. It is generally not safe to mutate the chunk while the channel
-	// is still open.
-	values() <-chan *metric.SamplePair
 }
 
 // A chunkIterator enables efficient access to the content of a chunk. It is
 // generally not safe to use a chunkIterator concurrently with or after chunk
 // mutation.
 type chunkIterator interface {
+	// length returns the number of samples in the chunk.
+	length() int
+	// Gets the timestamp of the n-th sample in the chunk.
+	getTimestampAtIndex(int) clientmodel.Timestamp
+	// Gets the last timestamp in the chunk.
+	getLastTimestamp() clientmodel.Timestamp
+	// Gets the sample value of the n-th sample in the chunk.
+	getSampleValueAtIndex(int) clientmodel.SampleValue
+	// Gets the last sample value in the chunk.
+	getLastSampleValue() clientmodel.SampleValue
 	// Gets the two values that are immediately adjacent to a given time. In
 	// case a value exist at precisely the given time, only that single
 	// value is returned. Only the first or last value is returned (as a
@@ -216,6 +220,11 @@ type chunkIterator interface {
 	// Whether a given timestamp is contained between first and last value
 	// in the chunk.
 	contains(clientmodel.Timestamp) bool
+	// values returns a channel, from which all sample values in the chunk
+	// can be received in order. The channel is closed after the last
+	// one. It is generally not safe to mutate the chunk while the channel
+	// is still open.
+	values() <-chan *metric.SamplePair
 }
 
 func transcodeAndAdd(dst chunk, src chunk, s *metric.SamplePair) []chunk {
@@ -223,7 +232,7 @@ func transcodeAndAdd(dst chunk, src chunk, s *metric.SamplePair) []chunk {
 
 	head := dst
 	body := []chunk{}
-	for v := range src.values() {
+	for v := range src.newIterator().values() {
 		newChunks := head.add(v)
 		body = append(body, newChunks[:len(newChunks)-1]...)
 		head = newChunks[len(newChunks)-1]

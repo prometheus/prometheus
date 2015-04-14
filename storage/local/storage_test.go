@@ -208,7 +208,7 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 			if cd.isEvicted() {
 				continue
 			}
-			for sample := range cd.chunk.values() {
+			for sample := range cd.chunk.newIterator().values() {
 				values = append(values, *sample)
 			}
 		}

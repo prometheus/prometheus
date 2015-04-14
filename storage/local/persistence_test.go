@@ -70,8 +70,8 @@ func buildTestChunks(encoding chunkEncoding) map[clientmodel.Fingerprint][]chunk
 }
 
 func chunksEqual(c1, c2 chunk) bool {
-	values2 := c2.values()
-	for v1 := range c1.values() {
+	values2 := c2.newIterator().values()
+	for v1 := range c1.newIterator().values() {
 		v2 := <-values2
 		if !v1.Equal(v2) {
 			return false
