@@ -163,5 +163,5 @@ func (c JobConfig) ScrapeInterval() time.Duration {
 
 // ScrapeTimeout gets the scrape timeout for a job.
 func (c JobConfig) ScrapeTimeout() time.Duration {
-	return stringToDuration(c.GetScrapeInterval())
+	return stringToDuration(c.GetScrapeTimeout())
 }
