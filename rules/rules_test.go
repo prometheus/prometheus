@@ -1197,13 +1197,13 @@ func TestExpressions(t *testing.T) {
 				`{group="canary", instance="0", job="api-server"} => NaN @[%v]`,
 			},
 		},
-    {
+		{
 			expr: `sqrt(vector_matching_a)`,
 			output: []string{
 				`{l="x"} => 3.1622776601683795 @[%v]`,
 				`{l="y"} => 4.47213595499958 @[%v]`,
 			},
-    },
+		},
 		{
 			expr: `exp(vector_matching_a)`,
 			output: []string{
@@ -1293,6 +1293,32 @@ func TestExpressions(t *testing.T) {
 			output: []string{
 				`{l="x"} => NaN @[%v]`,
 				`{l="y"} => -Inf @[%v]`,
+			},
+		},
+		{
+			expr: `stddev(http_requests)`,
+			output: []string{
+				`{} => 229.12878474779 @[%v]`,
+			},
+		},
+		{
+			expr: `stddev by (instance)(http_requests)`,
+			output: []string{
+				`{instance="0"} => 223.60679774998 @[%v]`,
+				`{instance="1"} => 223.60679774998 @[%v]`,
+			},
+		},
+		{
+			expr: `stdvar(http_requests)`,
+			output: []string{
+				`{} => 52500 @[%v]`,
+			},
+		},
+		{
+			expr: `stdvar by (instance)(http_requests)`,
+			output: []string{
+				`{instance="0"} => 50000 @[%v]`,
+				`{instance="1"} => 50000 @[%v]`,
 			},
 		},
 	}

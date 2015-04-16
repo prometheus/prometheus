@@ -89,8 +89,8 @@ GROUP_LEFT|GROUP_RIGHT   lval.str = lexer.token(); return MATCH_MOD
 group_left|group_right   lval.str = strings.ToUpper(lexer.token()); return MATCH_MOD
 KEEPING_EXTRA|keeping_extra return KEEPING_EXTRA
 OFFSET|offset            return OFFSET
-AVG|SUM|MAX|MIN|COUNT    lval.str = lexer.token(); return AGGR_OP
-avg|sum|max|min|count    lval.str = strings.ToUpper(lexer.token()); return AGGR_OP
+AVG|SUM|MAX|MIN|COUNT|STDVAR|STDDEV    lval.str = lexer.token(); return AGGR_OP
+avg|sum|max|min|count|stdvar|stddev    lval.str = strings.ToUpper(lexer.token()); return AGGR_OP
 \<|>|AND|OR|and|or       lval.str = strings.ToUpper(lexer.token()); return CMP_OP
 ==|!=|>=|<=|=~|!~        lval.str = lexer.token(); return CMP_OP
 [+\-]                    lval.str = lexer.token(); return ADDITIVE_OP

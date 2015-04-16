@@ -60,11 +60,13 @@ func (opType BinOpType) String() string {
 
 func (aggrType AggrType) String() string {
 	aggrTypeMap := map[AggrType]string{
-		Sum:   "SUM",
-		Avg:   "AVG",
-		Min:   "MIN",
-		Max:   "MAX",
-		Count: "COUNT",
+		Sum:    "SUM",
+		Avg:    "AVG",
+		Min:    "MIN",
+		Max:    "MAX",
+		Count:  "COUNT",
+		Stdvar: "STDVAR",
+		Stddev: "STDDEV",
 	}
 	return aggrTypeMap[aggrType]
 }

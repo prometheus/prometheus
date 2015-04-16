@@ -66,9 +66,10 @@ type Vector []*Sample
 type Matrix []SampleStream
 
 type groupedAggregation struct {
-	labels     clientmodel.COWMetric
-	value      clientmodel.SampleValue
-	groupCount int
+	labels           clientmodel.COWMetric
+	value            clientmodel.SampleValue
+	valuesSquaredSum clientmodel.SampleValue
+	groupCount       int
 }
 
 // ----------------------------------------------------------------------------
@@ -128,6 +129,8 @@ const (
 	Min
 	Max
 	Count
+	Stdvar
+	Stddev
 )
 
 // ----------------------------------------------------------------------------
@@ -468,6 +471,12 @@ func (node *VectorAggregation) groupedAggregationsToVector(aggregations map[uint
 			aggregation.value = aggregation.value / clientmodel.SampleValue(aggregation.groupCount)
 		case Count:
 			aggregation.value = clientmodel.SampleValue(aggregation.groupCount)
+		case Stdvar:
+			avg := float64(aggregation.value) / float64(aggregation.groupCount)
+			aggregation.value = clientmodel.SampleValue(float64(aggregation.valuesSquaredSum)/float64(aggregation.groupCount) - avg*avg)
+		case Stddev:
+			avg := float64(aggregation.value) / float64(aggregation.groupCount)
+			aggregation.value = clientmodel.SampleValue(math.Sqrt(float64(aggregation.valuesSquaredSum)/float64(aggregation.groupCount) - avg*avg))
 		default:
 			// For other aggregations, we already have the right value.
 		}
@@ -509,6 +518,10 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp) Vector {
 				}
 			case Count:
 				groupedResult.groupCount++
+			case Stdvar, Stddev:
+				groupedResult.value += sample.Value
+				groupedResult.valuesSquaredSum += sample.Value * sample.Value
+				groupedResult.groupCount++
 			default:
 				panic("Unknown aggregation type")
 			}
@@ -529,9 +542,10 @@ func (node *VectorAggregation) Eval(timestamp clientmodel.Timestamp) Vector {
 				}
 			}
 			result[groupingKey] = &groupedAggregation{
-				labels:     m,
-				value:      sample.Value,
-				groupCount: 1,
+				labels:           m,
+				value:            sample.Value,
+				valuesSquaredSum: sample.Value * sample.Value,
+				groupCount:       1,
 			}
 		}
 	}

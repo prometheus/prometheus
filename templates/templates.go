@@ -219,7 +219,7 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 				return fmt.Sprintf("%.4g%ss", v, prefix)
 			},
 			"pathPrefix": func() string {
-				return pathPrefix;
+				return pathPrefix
 			},
 		},
 	}
