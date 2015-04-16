@@ -1197,6 +1197,13 @@ func TestExpressions(t *testing.T) {
 				`{group="canary", instance="0", job="api-server"} => NaN @[%v]`,
 			},
 		},
+    {
+			expr: `sqrt(vector_matching_a)`,
+			output: []string{
+				`{l="x"} => 3.1622776601683795 @[%v]`,
+				`{l="y"} => 4.47213595499958 @[%v]`,
+			},
+    },
 		{
 			expr: `exp(vector_matching_a)`,
 			output: []string{
