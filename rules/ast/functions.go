@@ -500,6 +500,17 @@ func log10Impl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	return vector
 }
 
+// === sqrt(vector VectorNode) Vector ===
+func sqrtImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
+	n := args[0].(VectorNode)
+	vector := n.Eval(timestamp)
+	for _, el := range vector {
+		el.Metric.Delete(clientmodel.MetricNameLabel)
+		el.Value = clientmodel.SampleValue(math.Sqrt(float64(el.Value)))
+	}
+	return vector
+}
+
 // === deriv(node MatrixNode) Vector ===
 func derivImpl(timestamp clientmodel.Timestamp, args []Node) interface{} {
 	matrixNode := args[0].(MatrixNode)
@@ -720,6 +731,12 @@ var functions = map[string]*Function{
 		argTypes:   []ExprType{VectorType},
 		returnType: VectorType,
 		callFn:     sortDescImpl,
+	},
+	"sqrt": {
+		name:       "sqrt",
+		argTypes:   []ExprType{VectorType},
+		returnType: VectorType,
+		callFn:     sqrtImpl,
 	},
 	"sum_over_time": {
 		name:       "sum_over_time",
