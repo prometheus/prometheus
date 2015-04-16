@@ -99,7 +99,7 @@ type ruleManager struct {
 	notificationHandler *notification.NotificationHandler
 
 	prometheusURL string
-	pathPrefix string
+	pathPrefix    string
 }
 
 // RuleManagerOptions bundles options for the RuleManager.
@@ -111,7 +111,7 @@ type RuleManagerOptions struct {
 	SampleAppender      storage.SampleAppender
 
 	PrometheusURL string
-	PathPrefix string
+	PathPrefix    string
 }
 
 // NewRuleManager returns an implementation of RuleManager, ready to be started

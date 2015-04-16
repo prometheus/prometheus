@@ -33,7 +33,7 @@ var (
 
 // ConsolesHandler implements http.Handler.
 type ConsolesHandler struct {
-	Storage local.Storage
+	Storage    local.Storage
 	PathPrefix string
 }
 
