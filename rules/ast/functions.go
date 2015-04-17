@@ -169,6 +169,9 @@ func (s vectorByValueHeap) Len() int {
 }
 
 func (s vectorByValueHeap) Less(i, j int) bool {
+	if math.IsNaN(float64(s[i].Value)) {
+		return true
+	}
 	return s[i].Value < s[j].Value
 }
 
