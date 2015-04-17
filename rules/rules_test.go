@@ -308,6 +308,19 @@ func TestExpressions(t *testing.T) {
 			},
 			checkOrder: true,
 		}, {
+			expr: `sort(0 / round(http_requests, 400) + http_requests)`,
+			output: []string{
+				`{group="production", instance="0", job="api-server"} => NaN @[%v]`,
+				`{group="production", instance="1", job="api-server"} => 200 @[%v]`,
+				`{group="canary", instance="0", job="api-server"} => 300 @[%v]`,
+				`{group="canary", instance="1", job="api-server"} => 400 @[%v]`,
+				`{group="production", instance="0", job="app-server"} => 500 @[%v]`,
+				`{group="production", instance="1", job="app-server"} => 600 @[%v]`,
+				`{group="canary", instance="0", job="app-server"} => 700 @[%v]`,
+				`{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
+			},
+			checkOrder: true,
+		}, {
 			expr: `sort_desc(http_requests)`,
 			output: []string{
 				`http_requests{group="canary", instance="1", job="app-server"} => 800 @[%v]`,
