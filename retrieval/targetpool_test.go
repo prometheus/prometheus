@@ -17,8 +17,6 @@ import (
 	"net/http"
 	"testing"
 	"time"
-
-	clientmodel "github.com/prometheus/client_golang/model"
 )
 
 func testTargetPool(t testing.TB) {
@@ -84,9 +82,8 @@ func testTargetPool(t testing.TB) {
 
 		for _, input := range scenario.inputs {
 			target := target{
-				url:           input.url,
-				newBaseLabels: make(chan clientmodel.LabelSet, 1),
-				httpClient:    &http.Client{},
+				url:        input.url,
+				httpClient: &http.Client{},
 			}
 			pool.addTarget(&target)
 		}
@@ -118,7 +115,6 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		state:           Unhealthy,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
-		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
 		httpClient:      &http.Client{},
 	}
 	oldTarget2 := &target{
@@ -126,7 +122,6 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		state:           Unhealthy,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
-		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
 		httpClient:      &http.Client{},
 	}
 	newTarget1 := &target{
@@ -134,7 +129,6 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		state:           Healthy,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
-		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
 		httpClient:      &http.Client{},
 	}
 	newTarget2 := &target{
@@ -142,7 +136,6 @@ func TestTargetPoolReplaceTargets(t *testing.T) {
 		state:           Healthy,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
-		newBaseLabels:   make(chan clientmodel.LabelSet, 1),
 		httpClient:      &http.Client{},
 	}
 

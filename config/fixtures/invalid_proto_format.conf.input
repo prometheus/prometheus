@@ -1,11 +1,11 @@
 global <
-	scrape_interval: "30s"
-	evaluation_interval: "30s"
+  scrape_interval: "30s"
+  evaluation_interval: "30s"
   unknown_field: "foo"
-	labels: <
+  labels: <
     label: <
       name: "monitor"
       value: "test"
     >
-	>
+  >
 >
