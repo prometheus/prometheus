@@ -169,8 +169,10 @@ type JobConfig struct {
 	// List of labeled target groups for this job. Only legal when DNS-SD isn't
 	// used for a job.
 	TargetGroup []*TargetGroup `protobuf:"bytes,5,rep,name=target_group" json:"target_group,omitempty"`
-	// The HTTP resource path to fetch metrics from on targets.
-	MetricsPath      *string `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics" json:"metrics_path,omitempty"`
+	// The HTTP resource path on which to fetch metrics from targets.
+	MetricsPath *string `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics" json:"metrics_path,omitempty"`
+	// The URL scheme with which to fetch metrics from targets.
+	Scheme           *string `protobuf:"bytes,8,opt,name=scheme,def=http" json:"scheme,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -181,6 +183,7 @@ func (*JobConfig) ProtoMessage()    {}
 const Default_JobConfig_ScrapeTimeout string = "10s"
 const Default_JobConfig_SdRefreshInterval string = "30s"
 const Default_JobConfig_MetricsPath string = "/metrics"
+const Default_JobConfig_Scheme string = "http"
 
 func (m *JobConfig) GetName() string {
 	if m != nil && m.Name != nil {
@@ -229,6 +232,13 @@ func (m *JobConfig) GetMetricsPath() string {
 		return *m.MetricsPath
 	}
 	return Default_JobConfig_MetricsPath
+}
+
+func (m *JobConfig) GetScheme() string {
+	if m != nil && m.Scheme != nil {
+		return *m.Scheme
+	}
+	return Default_JobConfig_Scheme
 }
 
 // The top-level Prometheus configuration.

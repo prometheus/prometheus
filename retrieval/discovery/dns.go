@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright 2015 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,13 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package discovery
 
 import (
 	"fmt"
 	"net"
-	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -25,12 +25,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/utility"
 )
 
-const resolvConf = "/etc/resolv.conf"
+const (
+	resolvConf = "/etc/resolv.conf"
+
+	dnsSourcePrefix = "dns"
+
+	// Constants for instrumentation.
+	namespace = "prometheus"
+	interval  = "interval"
+)
 
 var (
 	dnsSDLookupsCount = prometheus.NewCounter(
@@ -52,65 +58,70 @@ func init() {
 	prometheus.MustRegister(dnsSDLookupsCount)
 }
 
-// TargetProvider encapsulates retrieving all targets for a job.
-type TargetProvider interface {
-	// Retrieves the current list of targets for this provider.
-	Targets() ([]Target, error)
+// DNSDiscovery periodically performs DNS-SD requests. It implements
+// the TargetProvider interface.
+type DNSDiscovery struct {
+	name string
+
+	done   chan struct{}
+	ticker *time.Ticker
+	m      sync.RWMutex
 }
 
-type sdTargetProvider struct {
-	job          config.JobConfig
-	globalLabels clientmodel.LabelSet
-	targets      []Target
-
-	lastRefresh     time.Time
-	refreshInterval time.Duration
-}
-
-// NewSdTargetProvider constructs a new sdTargetProvider for a job.
-func NewSdTargetProvider(job config.JobConfig, globalLabels clientmodel.LabelSet) *sdTargetProvider {
-	i, err := utility.StringToDuration(job.GetSdRefreshInterval())
-	if err != nil {
-		panic(fmt.Sprintf("illegal refresh duration string %s: %s", job.GetSdRefreshInterval(), err))
-	}
-	return &sdTargetProvider{
-		job:             job,
-		globalLabels:    globalLabels,
-		refreshInterval: i,
+// NewDNSDiscovery returns a new DNSDiscovery which periodically refreshes its targets.
+func NewDNSDiscovery(name string, refreshInterval time.Duration) *DNSDiscovery {
+	return &DNSDiscovery{
+		name:   name,
+		done:   make(chan struct{}),
+		ticker: time.NewTicker(refreshInterval),
 	}
 }
 
-func (p *sdTargetProvider) Targets() ([]Target, error) {
-	var err error
-	defer func() {
-		dnsSDLookupsCount.Inc()
-		if err != nil {
-			dnsSDLookupFailuresCount.Inc()
+// Run implements the TargetProvider interface.
+func (dd *DNSDiscovery) Run(ch chan<- *config.TargetGroup) {
+	defer close(ch)
+
+	// Get an initial set right away.
+	if err := dd.refresh(ch); err != nil {
+		glog.Errorf("Error refreshing DNS targets: %s", err)
+	}
+
+	for {
+		select {
+		case <-dd.ticker.C:
+			if err := dd.refresh(ch); err != nil {
+				glog.Errorf("Error refreshing DNS targets: %s", err)
+			}
+		case <-dd.done:
+			return
 		}
-	}()
-
-	if time.Since(p.lastRefresh) < p.refreshInterval {
-		return p.targets, nil
 	}
+}
 
-	response, err := lookupSRV(p.job.GetSdName())
+// Stop implements the TargetProvider interface.
+func (dd *DNSDiscovery) Stop() {
+	glog.V(1).Info("Stopping DNS discovery for %s...", dd.name)
 
+	dd.ticker.Stop()
+	dd.done <- struct{}{}
+
+	glog.V(1).Info("DNS discovery for %s stopped.", dd.name)
+}
+
+// Sources implements the TargetProvider interface.
+func (dd *DNSDiscovery) Sources() []string {
+	return []string{dnsSourcePrefix + ":" + dd.name}
+}
+
+func (dd *DNSDiscovery) refresh(ch chan<- *config.TargetGroup) error {
+	response, err := lookupSRV(dd.name)
+	dnsSDLookupsCount.Inc()
 	if err != nil {
-		return nil, err
+		dnsSDLookupFailuresCount.Inc()
+		return err
 	}
 
-	baseLabels := clientmodel.LabelSet{
-		clientmodel.JobLabel: clientmodel.LabelValue(p.job.GetName()),
-	}
-	for n, v := range p.globalLabels {
-		baseLabels[n] = v
-	}
-
-	targets := make([]Target, 0, len(response.Answer))
-	endpoint := &url.URL{
-		Scheme: "http",
-		Path:   p.job.GetMetricsPath(),
-	}
+	tg := &config.TargetGroup{}
 	for _, record := range response.Answer {
 		addr, ok := record.(*dns.SRV)
 		if !ok {
@@ -118,22 +129,24 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 			continue
 		}
 		// Remove the final dot from rooted DNS names to make them look more usual.
-		if addr.Target[len(addr.Target)-1] == '.' {
-			addr.Target = addr.Target[:len(addr.Target)-1]
-		}
-		endpoint.Host = fmt.Sprintf("%s:%d", addr.Target, addr.Port)
-		t := NewTarget(endpoint.String(), p.job.ScrapeTimeout(), baseLabels)
-		targets = append(targets, t)
+		addr.Target = strings.TrimRight(addr.Target, ".")
+
+		target := clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.Target, addr.Port))
+		tg.Targets = append(tg.Targets, clientmodel.LabelSet{
+			clientmodel.AddressLabel: target,
+		})
 	}
 
-	p.targets = targets
-	return targets, nil
+	tg.Source = dnsSourcePrefix + ":" + dd.name
+	ch <- tg
+
+	return nil
 }
 
 func lookupSRV(name string) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't load resolv.conf: %s", err)
+		return nil, fmt.Errorf("could not load resolv.conf: %s", err)
 	}
 
 	client := &dns.Client{}
@@ -143,12 +156,12 @@ func lookupSRV(name string) (*dns.Msg, error) {
 		servAddr := net.JoinHostPort(server, conf.Port)
 		for _, suffix := range conf.Search {
 			response, err = lookup(name, dns.TypeSRV, client, servAddr, suffix, false)
-			if err == nil {
-				if len(response.Answer) > 0 {
-					return response, nil
-				}
-			} else {
+			if err != nil {
 				glog.Warningf("resolving %s.%s failed: %s", name, suffix, err)
+				continue
+			}
+			if len(response.Answer) > 0 {
+				return response, nil
 			}
 		}
 		response, err = lookup(name, dns.TypeSRV, client, servAddr, "", false)
@@ -156,7 +169,7 @@ func lookupSRV(name string) (*dns.Msg, error) {
 			return response, nil
 		}
 	}
-	return response, fmt.Errorf("couldn't resolve %s: No server responded", name)
+	return response, fmt.Errorf("could not resolve %s: No server responded", name)
 }
 
 func lookup(name string, queryType uint16, client *dns.Client, servAddr string, suffix string, edns bool) (*dns.Msg, error) {
@@ -179,7 +192,6 @@ func lookup(name string, queryType uint16, client *dns.Client, servAddr string, 
 	if err != nil {
 		return nil, err
 	}
-
 	if msg.Id != response.Id {
 		return nil, fmt.Errorf("DNS ID mismatch, request: %d, response: %d", msg.Id, response.Id)
 	}
@@ -188,11 +200,9 @@ func lookup(name string, queryType uint16, client *dns.Client, servAddr string, 
 		if client.Net == "tcp" {
 			return nil, fmt.Errorf("got truncated message on tcp")
 		}
-
 		if edns { // Truncated even though EDNS is used
 			client.Net = "tcp"
 		}
-
 		return lookup(name, queryType, client, servAddr, suffix, !edns)
 	}
 

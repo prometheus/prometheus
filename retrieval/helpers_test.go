@@ -17,6 +17,8 @@ import (
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 type nopAppender struct{}
@@ -37,4 +39,26 @@ type collectResultAppender struct {
 
 func (a *collectResultAppender) Append(s *clientmodel.Sample) {
 	a.result = append(a.result, s)
+}
+
+// fakeTargetProvider implements a TargetProvider and allows manual injection
+// of TargetGroups through the update channel.
+type fakeTargetProvider struct {
+	sources []string
+	update  chan *config.TargetGroup
+}
+
+func (tp *fakeTargetProvider) Run(ch chan<- *config.TargetGroup) {
+	defer close(ch)
+	for tg := range tp.update {
+		ch <- tg
+	}
+}
+
+func (tp *fakeTargetProvider) Stop() {
+	close(tp.update)
+}
+
+func (tp *fakeTargetProvider) Sources() []string {
+	return tp.sources
 }
