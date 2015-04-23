@@ -166,7 +166,7 @@ func EvalToString(node Node, timestamp clientmodel.Timestamp, format OutputForma
 	defer totalEvalTimer.Stop()
 
 	prepareTimer := queryStats.GetTimer(stats.TotalQueryPreparationTime).Start()
-	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
+	closer, err := PrepareInstantQuery(node, timestamp, storage, queryStats)
 	prepareTimer.Stop()
 	if err != nil {
 		panic(err)
@@ -221,7 +221,7 @@ func EvalToVector(node Node, timestamp clientmodel.Timestamp, storage local.Stor
 	defer totalEvalTimer.Stop()
 
 	prepareTimer := queryStats.GetTimer(stats.TotalQueryPreparationTime).Start()
-	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
+	closer, err := PrepareInstantQuery(node, timestamp, storage, queryStats)
 	prepareTimer.Stop()
 	if err != nil {
 		panic(err)

@@ -120,7 +120,8 @@ func (i *iteratorInitializer) visit(node Node) {
 	}
 }
 
-func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage local.Storage, queryStats *stats.TimerGroup) (local.Preloader, error) {
+// PrepareInstantQuery analyzes the query and preloads the necessary time range for each series.
+func PrepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage local.Storage, queryStats *stats.TimerGroup) (local.Preloader, error) {
 	totalTimer := queryStats.GetTimer(stats.TotalEvalTime)
 
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()
@@ -167,7 +168,8 @@ func prepareInstantQuery(node Node, timestamp clientmodel.Timestamp, storage loc
 	return p, nil
 }
 
-func prepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage local.Storage, queryStats *stats.TimerGroup) (local.Preloader, error) {
+// PrepareRangeQuery analyzes the query and preloads the necessary time range for each series.
+func PrepareRangeQuery(node Node, start clientmodel.Timestamp, end clientmodel.Timestamp, interval time.Duration, storage local.Storage, queryStats *stats.TimerGroup) (local.Preloader, error) {
 	totalTimer := queryStats.GetTimer(stats.TotalEvalTime)
 
 	analyzeTimer := queryStats.GetTimer(stats.QueryAnalysisTime).Start()

@@ -392,7 +392,7 @@ func EvalVectorInstant(node VectorNode, timestamp clientmodel.Timestamp, storage
 	totalEvalTimer := queryStats.GetTimer(stats.TotalEvalTime).Start()
 	defer totalEvalTimer.Stop()
 
-	closer, err := prepareInstantQuery(node, timestamp, storage, queryStats)
+	closer, err := PrepareInstantQuery(node, timestamp, storage, queryStats)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +412,7 @@ func EvalVectorRange(node VectorNode, start clientmodel.Timestamp, end clientmod
 	matrix := Matrix{}
 
 	prepareTimer := queryStats.GetTimer(stats.TotalQueryPreparationTime).Start()
-	closer, err := prepareRangeQuery(node, start, end, interval, storage, queryStats)
+	closer, err := PrepareRangeQuery(node, start, end, interval, storage, queryStats)
 	prepareTimer.Stop()
 	if err != nil {
 		return nil, err
