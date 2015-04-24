@@ -18,7 +18,7 @@ RUN apk add --update -t build-deps go git mercurial vim \
             -X main.buildDate     $(date +%Y%m%d-%H:%M:%S) \
             -X main.goVersion     $(go version | awk '{print substr($3,3)}') \
         " -o /bin/prometheus \
-    && cd tools/rule_checker && go build && cd ../.. \
+    && cd tools/rule_checker && go build -o /bin/rule_checker && cd ../.. \
     && mkdir -p /etc/prometheus \
     && mv ./documentation/examples/prometheus.conf /etc/prometheus/prometheus.conf \
     && mv ./console_libraries/ ./consoles/ /etc/prometheus/ \
