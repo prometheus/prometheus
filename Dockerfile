@@ -26,7 +26,7 @@ RUN apk add --update -t build-deps go git mercurial vim \
     && apk del --purge build-deps
 
 EXPOSE     9090
-VOLUME     [ "/prometheus", "/etc/prometheus" ]
+VOLUME     [ "/prometheus" ]
 WORKDIR    /prometheus
 ENTRYPOINT [ "/bin/prometheus" ]
 CMD        [ "-logtostderr", "-config.file=/etc/prometheus/prometheus.conf", \
