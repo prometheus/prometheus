@@ -30,6 +30,10 @@ const (
 	// a scrape target.
 	AddressLabel LabelName = "__address__"
 
+	// MetricsPathLabel is the name of the label that holds the path on which to
+	// scrape a target.
+	MetricsPathLabel LabelName = "__metrics_path__"
+
 	// ReservedLabelPrefix is a prefix which is not legal in user-supplied
 	// label names.
 	ReservedLabelPrefix = "__"

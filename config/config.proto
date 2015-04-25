@@ -48,12 +48,22 @@ message TargetGroup {
 	optional LabelPairs labels = 2;
 }
 
+// The configuration for DNS based service discovery.
+message DNSConfig {
+	// The list of DNS-SD service names pointing to SRV records
+	// containing endpoint information.
+	repeated string name = 1;
+	// Discovery refresh period when using DNS-SD to discover targets. Must be a
+	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
+	optional string refresh_interval = 2 [default = "30s"];
+}
+
 // The configuration for a Prometheus job to scrape.
 //
-// The next field no. is 8.
-message JobConfig {
+// The next field no. is 10.
+message ScrapeConfig {
 	// The job name. Must adhere to the regex "[a-zA-Z_][a-zA-Z0-9_-]*".
-	required string name = 1;
+	required string job_name = 1;
 	// How frequently to scrape targets from this job. Overrides the global
 	// default. Must be a valid Prometheus duration string in the form
 	// "[0-9]+[smhdwy]".
@@ -61,15 +71,9 @@ message JobConfig {
 	// Per-target timeout when scraping this job. Must be a valid Prometheus
 	// duration string in the form "[0-9]+[smhdwy]".
 	optional string scrape_timeout = 7 [default = "10s"];
-	// The DNS-SD service name pointing to SRV records containing endpoint
-	// information for a job. When this field is provided, no target_group
-	// elements may be set.
-	optional string sd_name = 3;
-	// Discovery refresh period when using DNS-SD to discover targets. Must be a
-	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
-	optional string sd_refresh_interval = 4 [default = "30s"];
-	// List of labeled target groups for this job. Only legal when DNS-SD isn't
-	// used for a job.
+	// List of DNS service discovery configurations.
+	repeated DNSConfig dns_config = 9;
+	// List of labeled target groups for this job.
 	repeated TargetGroup target_group = 5;
 	// The HTTP resource path on which to fetch metrics from targets.
 	optional string metrics_path = 6 [default = "/metrics"];
@@ -83,6 +87,6 @@ message PrometheusConfig {
 	// configuration with default values (see GlobalConfig definition) will be
 	// created.
 	optional GlobalConfig global = 1;
-	// The list of jobs to scrape.
-	repeated JobConfig job = 2;
+	// The list of scrape configs.
+	repeated ScrapeConfig scrape_config = 3;
 }

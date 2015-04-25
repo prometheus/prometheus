@@ -61,7 +61,7 @@ func init() {
 // DNSDiscovery periodically performs DNS-SD requests. It implements
 // the TargetProvider interface.
 type DNSDiscovery struct {
-	name string
+	names []string
 
 	done   chan struct{}
 	ticker *time.Ticker
@@ -69,9 +69,9 @@ type DNSDiscovery struct {
 }
 
 // NewDNSDiscovery returns a new DNSDiscovery which periodically refreshes its targets.
-func NewDNSDiscovery(name string, refreshInterval time.Duration) *DNSDiscovery {
+func NewDNSDiscovery(names []string, refreshInterval time.Duration) *DNSDiscovery {
 	return &DNSDiscovery{
-		name:   name,
+		names:  names,
 		done:   make(chan struct{}),
 		ticker: time.NewTicker(refreshInterval),
 	}
@@ -82,16 +82,12 @@ func (dd *DNSDiscovery) Run(ch chan<- *config.TargetGroup) {
 	defer close(ch)
 
 	// Get an initial set right away.
-	if err := dd.refresh(ch); err != nil {
-		glog.Errorf("Error refreshing DNS targets: %s", err)
-	}
+	dd.refreshAll(ch)
 
 	for {
 		select {
 		case <-dd.ticker.C:
-			if err := dd.refresh(ch); err != nil {
-				glog.Errorf("Error refreshing DNS targets: %s", err)
-			}
+			dd.refreshAll(ch)
 		case <-dd.done:
 			return
 		}
@@ -100,21 +96,39 @@ func (dd *DNSDiscovery) Run(ch chan<- *config.TargetGroup) {
 
 // Stop implements the TargetProvider interface.
 func (dd *DNSDiscovery) Stop() {
-	glog.V(1).Info("Stopping DNS discovery for %s...", dd.name)
+	glog.V(1).Info("Stopping DNS discovery for %s...", dd.names)
 
 	dd.ticker.Stop()
 	dd.done <- struct{}{}
 
-	glog.V(1).Info("DNS discovery for %s stopped.", dd.name)
+	glog.V(1).Info("DNS discovery for %s stopped.", dd.names)
 }
 
 // Sources implements the TargetProvider interface.
 func (dd *DNSDiscovery) Sources() []string {
-	return []string{dnsSourcePrefix + ":" + dd.name}
+	var srcs []string
+	for _, name := range dd.names {
+		srcs = append(srcs, dnsSourcePrefix+":"+name)
+	}
+	return srcs
 }
 
-func (dd *DNSDiscovery) refresh(ch chan<- *config.TargetGroup) error {
-	response, err := lookupSRV(dd.name)
+func (dd *DNSDiscovery) refreshAll(ch chan<- *config.TargetGroup) {
+	var wg sync.WaitGroup
+	wg.Add(len(dd.names))
+	for _, name := range dd.names {
+		go func(n string) {
+			if err := dd.refresh(n, ch); err != nil {
+				glog.Errorf("Error refreshing DNS targets: %s", err)
+			}
+			wg.Done()
+		}(name)
+	}
+	wg.Wait()
+}
+
+func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) error {
+	response, err := lookupSRV(name)
 	dnsSDLookupsCount.Inc()
 	if err != nil {
 		dnsSDLookupFailuresCount.Inc()
@@ -137,7 +151,7 @@ func (dd *DNSDiscovery) refresh(ch chan<- *config.TargetGroup) error {
 		})
 	}
 
-	tg.Source = dnsSourcePrefix + ":" + dd.name
+	tg.Source = dnsSourcePrefix + ":" + name
 	ch <- tg
 
 	return nil

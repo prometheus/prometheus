@@ -13,7 +13,8 @@ It has these top-level messages:
 	LabelPairs
 	GlobalConfig
 	TargetGroup
-	JobConfig
+	DNSConfig
+	ScrapeConfig
 	PrometheusConfig
 */
 package io_prometheus
@@ -146,12 +147,43 @@ func (m *TargetGroup) GetLabels() *LabelPairs {
 	return nil
 }
 
+// The configuration for DNS based service discovery.
+type DNSConfig struct {
+	// The list of  DNS-SD service names pointing to SRV records
+	// containing endpoint information.
+	Name []string `protobuf:"bytes,1,rep,name=name" json:"name,omitempty"`
+	// Discovery refresh period when using DNS-SD to discover targets. Must be a
+	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
+	RefreshInterval  *string `protobuf:"bytes,2,opt,name=refresh_interval,def=30s" json:"refresh_interval,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *DNSConfig) Reset()         { *m = DNSConfig{} }
+func (m *DNSConfig) String() string { return proto.CompactTextString(m) }
+func (*DNSConfig) ProtoMessage()    {}
+
+const Default_DNSConfig_RefreshInterval string = "30s"
+
+func (m *DNSConfig) GetName() []string {
+	if m != nil {
+		return m.Name
+	}
+	return nil
+}
+
+func (m *DNSConfig) GetRefreshInterval() string {
+	if m != nil && m.RefreshInterval != nil {
+		return *m.RefreshInterval
+	}
+	return Default_DNSConfig_RefreshInterval
+}
+
 // The configuration for a Prometheus job to scrape.
 //
-// The next field no. is 8.
-type JobConfig struct {
+// The next field no. is 10.
+type ScrapeConfig struct {
 	// The job name. Must adhere to the regex "[a-zA-Z_][a-zA-Z0-9_-]*".
-	Name *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	JobName *string `protobuf:"bytes,1,req,name=job_name" json:"job_name,omitempty"`
 	// How frequently to scrape targets from this job. Overrides the global
 	// default. Must be a valid Prometheus duration string in the form
 	// "[0-9]+[smhdwy]".
@@ -159,15 +191,9 @@ type JobConfig struct {
 	// Per-target timeout when scraping this job. Must be a valid Prometheus
 	// duration string in the form "[0-9]+[smhdwy]".
 	ScrapeTimeout *string `protobuf:"bytes,7,opt,name=scrape_timeout,def=10s" json:"scrape_timeout,omitempty"`
-	// The DNS-SD service name pointing to SRV records containing endpoint
-	// information for a job. When this field is provided, no target_group
-	// elements may be set.
-	SdName *string `protobuf:"bytes,3,opt,name=sd_name" json:"sd_name,omitempty"`
-	// Discovery refresh period when using DNS-SD to discover targets. Must be a
-	// valid Prometheus duration string in the form "[0-9]+[smhdwy]".
-	SdRefreshInterval *string `protobuf:"bytes,4,opt,name=sd_refresh_interval,def=30s" json:"sd_refresh_interval,omitempty"`
-	// List of labeled target groups for this job. Only legal when DNS-SD isn't
-	// used for a job.
+	// List of DNS service discovery configurations.
+	DnsConfig []*DNSConfig `protobuf:"bytes,9,rep,name=dns_config" json:"dns_config,omitempty"`
+	// List of labeled target groups for this job.
 	TargetGroup []*TargetGroup `protobuf:"bytes,5,rep,name=target_group" json:"target_group,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
 	MetricsPath *string `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics" json:"metrics_path,omitempty"`
@@ -176,69 +202,61 @@ type JobConfig struct {
 	XXX_unrecognized []byte  `json:"-"`
 }
 
-func (m *JobConfig) Reset()         { *m = JobConfig{} }
-func (m *JobConfig) String() string { return proto.CompactTextString(m) }
-func (*JobConfig) ProtoMessage()    {}
+func (m *ScrapeConfig) Reset()         { *m = ScrapeConfig{} }
+func (m *ScrapeConfig) String() string { return proto.CompactTextString(m) }
+func (*ScrapeConfig) ProtoMessage()    {}
 
-const Default_JobConfig_ScrapeTimeout string = "10s"
-const Default_JobConfig_SdRefreshInterval string = "30s"
-const Default_JobConfig_MetricsPath string = "/metrics"
-const Default_JobConfig_Scheme string = "http"
+const Default_ScrapeConfig_ScrapeTimeout string = "10s"
+const Default_ScrapeConfig_MetricsPath string = "/metrics"
+const Default_ScrapeConfig_Scheme string = "http"
 
-func (m *JobConfig) GetName() string {
-	if m != nil && m.Name != nil {
-		return *m.Name
+func (m *ScrapeConfig) GetJobName() string {
+	if m != nil && m.JobName != nil {
+		return *m.JobName
 	}
 	return ""
 }
 
-func (m *JobConfig) GetScrapeInterval() string {
+func (m *ScrapeConfig) GetScrapeInterval() string {
 	if m != nil && m.ScrapeInterval != nil {
 		return *m.ScrapeInterval
 	}
 	return ""
 }
 
-func (m *JobConfig) GetScrapeTimeout() string {
+func (m *ScrapeConfig) GetScrapeTimeout() string {
 	if m != nil && m.ScrapeTimeout != nil {
 		return *m.ScrapeTimeout
 	}
-	return Default_JobConfig_ScrapeTimeout
+	return Default_ScrapeConfig_ScrapeTimeout
 }
 
-func (m *JobConfig) GetSdName() string {
-	if m != nil && m.SdName != nil {
-		return *m.SdName
+func (m *ScrapeConfig) GetDnsConfig() []*DNSConfig {
+	if m != nil {
+		return m.DnsConfig
 	}
-	return ""
+	return nil
 }
 
-func (m *JobConfig) GetSdRefreshInterval() string {
-	if m != nil && m.SdRefreshInterval != nil {
-		return *m.SdRefreshInterval
-	}
-	return Default_JobConfig_SdRefreshInterval
-}
-
-func (m *JobConfig) GetTargetGroup() []*TargetGroup {
+func (m *ScrapeConfig) GetTargetGroup() []*TargetGroup {
 	if m != nil {
 		return m.TargetGroup
 	}
 	return nil
 }
 
-func (m *JobConfig) GetMetricsPath() string {
+func (m *ScrapeConfig) GetMetricsPath() string {
 	if m != nil && m.MetricsPath != nil {
 		return *m.MetricsPath
 	}
-	return Default_JobConfig_MetricsPath
+	return Default_ScrapeConfig_MetricsPath
 }
 
-func (m *JobConfig) GetScheme() string {
+func (m *ScrapeConfig) GetScheme() string {
 	if m != nil && m.Scheme != nil {
 		return *m.Scheme
 	}
-	return Default_JobConfig_Scheme
+	return Default_ScrapeConfig_Scheme
 }
 
 // The top-level Prometheus configuration.
@@ -247,9 +265,9 @@ type PrometheusConfig struct {
 	// configuration with default values (see GlobalConfig definition) will be
 	// created.
 	Global *GlobalConfig `protobuf:"bytes,1,opt,name=global" json:"global,omitempty"`
-	// The list of jobs to scrape.
-	Job              []*JobConfig `protobuf:"bytes,2,rep,name=job" json:"job,omitempty"`
-	XXX_unrecognized []byte       `json:"-"`
+	// The list of scrape configs.
+	ScrapeConfig     []*ScrapeConfig `protobuf:"bytes,3,rep,name=scrape_config" json:"scrape_config,omitempty"`
+	XXX_unrecognized []byte          `json:"-"`
 }
 
 func (m *PrometheusConfig) Reset()         { *m = PrometheusConfig{} }
@@ -263,9 +281,9 @@ func (m *PrometheusConfig) GetGlobal() *GlobalConfig {
 	return nil
 }
 
-func (m *PrometheusConfig) GetJob() []*JobConfig {
+func (m *PrometheusConfig) GetScrapeConfig() []*ScrapeConfig {
 	if m != nil {
-		return m.Job
+		return m.ScrapeConfig
 	}
 	return nil
 }
