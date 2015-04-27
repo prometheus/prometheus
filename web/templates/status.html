@@ -33,7 +33,7 @@
     <h2>Targets</h2>
       <table class="table table-condensed table-bordered table-striped table-hover">
         {{$stateToClass := .TargetStateToClass}}
-        {{range $job, $pool := .TargetPools}}
+        {{range $job, $pool := call .TargetPools}}
           <thead>
             <tr><th colspan="5" class="job_header">{{$job}}</th></tr>
             <tr>
@@ -45,7 +45,7 @@
             </tr>
           </thead>
           <tbody>
-          {{range $pool.Targets}}
+          {{range $pool}}
             <tr>
               <td>
                 <a href="{{.GlobalURL}}">{{.URL}}</a>

@@ -13,8 +13,10 @@ global <
 job: <
   name: "prometheus"
   scrape_interval: "15s"
+  metrics_path: "/metrics"
+  scheme: "http"
 
   target_group: <
-    target: "http://localhost:9090/metrics.json"
+    target: "localhost:9090"
   >
 >

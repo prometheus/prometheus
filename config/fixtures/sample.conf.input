@@ -15,7 +15,7 @@ job: <
   scrape_interval: "15s"
 
   target_group: <
-    target: "http://localhost:9090/metrics.json"
+    target: "localhost:9090"
     labels: <
       label: <
         name: "group"
@@ -30,11 +30,12 @@ job: <
   scrape_interval: "30s"
 
   target_group: <
-    target: "http://random.com:8080/metrics.json"
-    target: "http://random.com:8081/metrics.json"
-    target: "http://random.com:8082/metrics.json"
-    target: "http://random.com:8083/metrics.json"
-    target: "http://random.com:8084/metrics.json"
+    target: "random.com:8080"
+    target: "random.com:8081"
+    target: "random.com:8082"
+    target: "random.com:8083"
+    target: "random.com:8084"
+
     labels: <
       label: <
         name: "group"
@@ -43,8 +44,9 @@ job: <
     >
   >
   target_group: <
-    target: "http://random.com:8085/metrics.json"
-    target: "http://random.com:8086/metrics.json"
+    target: "random.com:8085"
+    target: "random.com:8086"
+    
     labels: <
       label: <
         name: "group"

@@ -71,8 +71,10 @@ message JobConfig {
 	// List of labeled target groups for this job. Only legal when DNS-SD isn't
 	// used for a job.
 	repeated TargetGroup target_group = 5;
-	// The HTTP resource path to fetch metrics from on targets.
+	// The HTTP resource path on which to fetch metrics from targets.
 	optional string metrics_path = 6 [default = "/metrics"];
+	// The URL scheme with which to fetch metrics from targets.
+	optional string scheme = 8 [default = "http"];
 }
 
 // The top-level Prometheus configuration.
