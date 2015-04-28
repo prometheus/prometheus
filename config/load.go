@@ -30,9 +30,9 @@ func LoadFromString(configStr string) (Config, error) {
 	if configProto.Global == nil {
 		configProto.Global = &pb.GlobalConfig{}
 	}
-	for _, job := range configProto.Job {
-		if job.ScrapeInterval == nil {
-			job.ScrapeInterval = proto.String(configProto.Global.GetScrapeInterval())
+	for _, scfg := range configProto.GetScrapeConfig() {
+		if scfg.ScrapeInterval == nil {
+			scfg.ScrapeInterval = proto.String(configProto.Global.GetScrapeInterval())
 		}
 	}
 

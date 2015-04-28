@@ -56,14 +56,9 @@ var configTests = []struct {
 		errContains: "invalid label name",
 	},
 	{
-		inputFile:   "mixing_sd_and_manual_targets.conf.input",
-		shouldFail:  true,
-		errContains: "specified both DNS-SD name and target group",
-	},
-	{
 		inputFile:   "repeated_job_name.conf.input",
 		shouldFail:  true,
-		errContains: "found multiple jobs configured with the same name: 'testjob1'",
+		errContains: "found multiple scrape configs configured with the same job name: \"testjob1\"",
 	},
 }
 

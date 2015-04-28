@@ -91,8 +91,8 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 }
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
-	jcfg := config.JobConfig{}
-	proto.SetDefaults(&jcfg.JobConfig)
+	scfg := &config.ScrapeConfig{}
+	proto.SetDefaults(&scfg.ScrapeConfig)
 
 	testTarget := newTestTarget("example.url", 0, clientmodel.LabelSet{clientmodel.JobLabel: "testjob"})
 
@@ -150,8 +150,8 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	)
 	defer server.Close()
 
-	jcfg := config.JobConfig{}
-	proto.SetDefaults(&jcfg.JobConfig)
+	scfg := &config.ScrapeConfig{}
+	proto.SetDefaults(&scfg.ScrapeConfig)
 
 	var testTarget Target = newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
 

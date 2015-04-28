@@ -39,12 +39,12 @@ type Config struct {
 }
 
 // String returns an ASCII serialization of the loaded configuration protobuf.
-func (c Config) String() string {
+func (c *Config) String() string {
 	return proto.MarshalTextString(&c.PrometheusConfig)
 }
 
 // validateLabels validates whether label names have the correct format.
-func (c Config) validateLabels(labels *pb.LabelPairs) error {
+func validateLabels(labels *pb.LabelPairs) error {
 	if labels == nil {
 		return nil
 	}
@@ -57,7 +57,7 @@ func (c Config) validateLabels(labels *pb.LabelPairs) error {
 }
 
 // validateHosts validates whether a target group contains valid hosts.
-func (c Config) validateHosts(hosts []string) error {
+func validateHosts(hosts []string) error {
 	if hosts == nil {
 		return nil
 	}
@@ -72,7 +72,7 @@ func (c Config) validateHosts(hosts []string) error {
 }
 
 // Validate checks an entire parsed Config for the validity of its fields.
-func (c Config) Validate() error {
+func (c *Config) Validate() error {
 	// Check the global configuration section for validity.
 	global := c.Global
 	if _, err := utility.StringToDuration(global.GetScrapeInterval()); err != nil {
@@ -81,58 +81,30 @@ func (c Config) Validate() error {
 	if _, err := utility.StringToDuration(global.GetEvaluationInterval()); err != nil {
 		return fmt.Errorf("invalid rule evaluation interval: %s", err)
 	}
-	if err := c.validateLabels(global.Labels); err != nil {
+	if err := validateLabels(global.Labels); err != nil {
 		return fmt.Errorf("invalid global labels: %s", err)
 	}
 
-	// Check each job configuration for validity.
-	jobNames := map[string]bool{}
-	for _, job := range c.Job {
-		if jobNames[job.GetName()] {
-			return fmt.Errorf("found multiple jobs configured with the same name: '%s'", job.GetName())
-		}
-		jobNames[job.GetName()] = true
+	// Check each scrape configuration for validity.
+	jobNames := map[string]struct{}{}
+	for _, sc := range c.ScrapeConfigs() {
+		name := sc.GetJobName()
 
-		if !jobNameRE.MatchString(job.GetName()) {
-			return fmt.Errorf("invalid job name '%s'", job.GetName())
+		if _, ok := jobNames[name]; ok {
+			return fmt.Errorf("found multiple scrape configs configured with the same job name: %q", name)
 		}
-		if _, err := utility.StringToDuration(job.GetScrapeInterval()); err != nil {
-			return fmt.Errorf("invalid scrape interval for job '%s': %s", job.GetName(), err)
-		}
-		if _, err := utility.StringToDuration(job.GetSdRefreshInterval()); err != nil {
-			return fmt.Errorf("invalid SD refresh interval for job '%s': %s", job.GetName(), err)
-		}
-		if _, err := utility.StringToDuration(job.GetScrapeTimeout()); err != nil {
-			return fmt.Errorf("invalid scrape timeout for job '%s': %s", job.GetName(), err)
-		}
-		for _, targetGroup := range job.TargetGroup {
-			if err := c.validateLabels(targetGroup.Labels); err != nil {
-				return fmt.Errorf("invalid labels for job '%s': %s", job.GetName(), err)
-			}
-			if err := c.validateHosts(targetGroup.Target); err != nil {
-				return fmt.Errorf("invalid targets for job '%s': %s", job.GetName(), err)
-			}
-		}
-		if job.SdName != nil && len(job.TargetGroup) > 0 {
-			return fmt.Errorf("specified both DNS-SD name and target group for job: %s", job.GetName())
+		jobNames[name] = struct{}{}
+
+		if err := sc.Validate(); err != nil {
+			return fmt.Errorf("error in scrape config %q: %s", name, err)
 		}
 	}
 
-	return nil
-}
-
-// GetJobByName finds a job by its name in a Config object.
-func (c Config) GetJobByName(name string) *JobConfig {
-	for _, job := range c.Job {
-		if job.GetName() == name {
-			return &JobConfig{*job}
-		}
-	}
 	return nil
 }
 
 // GlobalLabels returns the global labels as a LabelSet.
-func (c Config) GlobalLabels() clientmodel.LabelSet {
+func (c *Config) GlobalLabels() clientmodel.LabelSet {
 	labels := clientmodel.LabelSet{}
 	if c.Global != nil && c.Global.Labels != nil {
 		for _, label := range c.Global.Labels.Label {
@@ -142,10 +114,10 @@ func (c Config) GlobalLabels() clientmodel.LabelSet {
 	return labels
 }
 
-// Jobs returns all the jobs in a Config object.
-func (c Config) Jobs() (jobs []JobConfig) {
-	for _, job := range c.Job {
-		jobs = append(jobs, JobConfig{*job})
+// ScrapeConfigs returns all scrape configurations.
+func (c *Config) ScrapeConfigs() (cfgs []*ScrapeConfig) {
+	for _, sc := range c.GetScrapeConfig() {
+		cfgs = append(cfgs, &ScrapeConfig{*sc})
 	}
 	return
 }
@@ -160,34 +132,94 @@ func stringToDuration(intervalStr string) time.Duration {
 }
 
 // ScrapeInterval gets the default scrape interval for a Config.
-func (c Config) ScrapeInterval() time.Duration {
+func (c *Config) ScrapeInterval() time.Duration {
 	return stringToDuration(c.Global.GetScrapeInterval())
 }
 
 // EvaluationInterval gets the default evaluation interval for a Config.
-func (c Config) EvaluationInterval() time.Duration {
+func (c *Config) EvaluationInterval() time.Duration {
 	return stringToDuration(c.Global.GetEvaluationInterval())
 }
 
-// JobConfig encapsulates the configuration of a single job. It wraps the raw
-// job protocol buffer to be able to add custom methods to it.
-type JobConfig struct {
-	pb.JobConfig
+// ScrapeConfig encapsulates a protobuf scrape configuration.
+type ScrapeConfig struct {
+	pb.ScrapeConfig
 }
 
-// SDRefreshInterval gets the the SD refresh interval for a job.
-func (c JobConfig) SDRefreshInterval() time.Duration {
-	return stringToDuration(c.GetSdRefreshInterval())
-}
-
-// ScrapeInterval gets the scrape interval for a job.
-func (c JobConfig) ScrapeInterval() time.Duration {
+// ScrapeInterval gets the scrape interval for the scrape config.
+func (c *ScrapeConfig) ScrapeInterval() time.Duration {
 	return stringToDuration(c.GetScrapeInterval())
 }
 
-// ScrapeTimeout gets the scrape timeout for a job.
-func (c JobConfig) ScrapeTimeout() time.Duration {
+// ScrapeTimeout gets the scrape timeout for the scrape config.
+func (c *ScrapeConfig) ScrapeTimeout() time.Duration {
 	return stringToDuration(c.GetScrapeTimeout())
+}
+
+// Labels returns a label set for the targets that is implied by the scrape config.
+func (c *ScrapeConfig) Labels() clientmodel.LabelSet {
+	return clientmodel.LabelSet{
+		clientmodel.MetricsPathLabel: clientmodel.LabelValue(c.GetMetricsPath()),
+		clientmodel.JobLabel:         clientmodel.LabelValue(c.GetJobName()),
+	}
+}
+
+// Validate checks the ScrapeConfig for the validity of its fields
+func (c *ScrapeConfig) Validate() error {
+	name := c.GetJobName()
+
+	if !jobNameRE.MatchString(name) {
+		return fmt.Errorf("invalid job name %q", name)
+	}
+	if _, err := utility.StringToDuration(c.GetScrapeInterval()); err != nil {
+		return fmt.Errorf("invalid scrape interval: %s", err)
+	}
+	if _, err := utility.StringToDuration(c.GetScrapeTimeout()); err != nil {
+		return fmt.Errorf("invalid scrape timeout: %s", err)
+	}
+	for _, tgroup := range c.GetTargetGroup() {
+		if err := validateLabels(tgroup.Labels); err != nil {
+			return fmt.Errorf("invalid labels: %s", err)
+		}
+		if err := validateHosts(tgroup.Target); err != nil {
+			return fmt.Errorf("invalid targets: %s", err)
+		}
+	}
+	for _, dnscfg := range c.DNSConfigs() {
+		if err := dnscfg.Validate(); err != nil {
+			return fmt.Errorf("invalid DNS config: %s", err)
+		}
+	}
+	return nil
+}
+
+// DNSConfigs returns the list of DNS service discovery configurations
+// for the scrape config.
+func (c *ScrapeConfig) DNSConfigs() []*DNSConfig {
+	var dnscfgs []*DNSConfig
+	for _, dc := range c.GetDnsConfig() {
+		dnscfgs = append(dnscfgs, &DNSConfig{*dc})
+	}
+	return dnscfgs
+}
+
+// DNSConfig encapsulates the protobuf configuration object for DNS based
+// service discovery.
+type DNSConfig struct {
+	pb.DNSConfig
+}
+
+// Validate checks the DNSConfig for the validity of its fields.
+func (c *DNSConfig) Validate() error {
+	if _, err := utility.StringToDuration(c.GetRefreshInterval()); err != nil {
+		return fmt.Errorf("invalid refresh interval: %s", err)
+	}
+	return nil
+}
+
+// SDRefreshInterval gets the the SD refresh interval for the scrape config.
+func (c *DNSConfig) RefreshInterval() time.Duration {
+	return stringToDuration(c.GetRefreshInterval())
 }
 
 // TargetGroup is derived from a protobuf TargetGroup and attaches a source to it

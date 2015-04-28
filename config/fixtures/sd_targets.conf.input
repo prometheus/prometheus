@@ -1,4 +1,6 @@
-job: <
-  name: "testjob"
-  sd_name: "sd_name"
+scrape_config: <
+  job_name: "testjob"
+  dns_config: <
+  	name: "sd_name"
+  >
 >

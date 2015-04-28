@@ -30,7 +30,7 @@ import (
 
 // A TargetProvider provides information about target groups. It maintains a set
 // of sources from which TargetGroups can originate. Whenever a target provider
-// detects a potential change it sends the TargetGroup through its provided channel.
+// detects a potential change, it sends the TargetGroup through its provided channel.
 //
 // The TargetProvider does not have to guarantee that an actual change happened.
 // It does guarantee that it sends the new TargetGroup whenever a change happens.
@@ -58,10 +58,8 @@ type TargetManager struct {
 
 	// Targets by their source ID.
 	targets map[string][]Target
-	// Providers and configs by their job name.
-	// TODO(fabxc): turn this into map[*ScrapeConfig][]TargetProvider eventually.
-	providers map[string][]TargetProvider
-	configs   map[string]config.JobConfig
+	// Providers by the scrape configs they are derived from.
+	providers map[*config.ScrapeConfig][]TargetProvider
 }
 
 // NewTargetManager creates a new TargetManager based on the given config.
@@ -82,15 +80,13 @@ func (tm *TargetManager) Run() {
 
 	sources := map[string]struct{}{}
 
-	for name, provs := range tm.providers {
+	for scfg, provs := range tm.providers {
 		for _, p := range provs {
-			jcfg := tm.configs[name]
-
 			ch := make(chan *config.TargetGroup)
-			go tm.handleTargetUpdates(tm.configs[name], ch)
+			go tm.handleTargetUpdates(scfg, ch)
 
 			for _, src := range p.Sources() {
-				src = fullSource(jcfg, src)
+				src = fullSource(scfg, src)
 				sources[src] = struct{}{}
 			}
 
@@ -113,7 +109,7 @@ func (tm *TargetManager) Run() {
 
 // handleTargetUpdates receives target group updates and handles them in the
 // context of the given job config.
-func (tm *TargetManager) handleTargetUpdates(cfg config.JobConfig, ch <-chan *config.TargetGroup) {
+func (tm *TargetManager) handleTargetUpdates(cfg *config.ScrapeConfig, ch <-chan *config.TargetGroup) {
 	for tg := range ch {
 		glog.V(1).Infof("Received potential update for target group %q", tg.Source)
 
@@ -127,8 +123,8 @@ func (tm *TargetManager) handleTargetUpdates(cfg config.JobConfig, ch <-chan *co
 //
 // Thus, oscilliating label sets for targets with the same source,
 // but providers from different configs, are prevented.
-func fullSource(cfg config.JobConfig, src string) string {
-	return cfg.GetName() + ":" + src
+func fullSource(cfg *config.ScrapeConfig, src string) string {
+	return cfg.GetJobName() + ":" + src
 }
 
 // Stop all background processing.
@@ -187,7 +183,7 @@ func (tm *TargetManager) removeTargets(f func(string) bool) {
 
 // updateTargetGroup creates new targets for the group and replaces the old targets
 // for the source ID.
-func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg config.JobConfig) error {
+func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *config.ScrapeConfig) error {
 	newTargets, err := tm.targetsFromGroup(tgroup, cfg)
 	if err != nil {
 		return err
@@ -196,6 +192,10 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg confi
 
 	tm.m.Lock()
 	defer tm.m.Unlock()
+
+	if !tm.running {
+		return nil
+	}
 
 	oldTargets, ok := tm.targets[src]
 	if ok {
@@ -221,7 +221,7 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg confi
 				// to build up.
 				wg.Add(1)
 				go func(t Target) {
-					match.Update(cfg, t.BaseLabels())
+					match.Update(cfg, t.Labels())
 					wg.Done()
 				}(tnew)
 				newTargets[i] = match
@@ -287,71 +287,72 @@ func (tm *TargetManager) ApplyConfig(cfg config.Config) error {
 
 func (tm *TargetManager) applyConfig(cfg config.Config) error {
 	// Only apply changes if everything was successful.
-	providers := map[string][]TargetProvider{}
-	configs := map[string]config.JobConfig{}
+	providers := map[*config.ScrapeConfig][]TargetProvider{}
 
-	for _, jcfg := range cfg.Jobs() {
-		provs, err := ProvidersFromConfig(jcfg)
+	for _, scfg := range cfg.ScrapeConfigs() {
+		provs, err := ProvidersFromConfig(scfg)
 		if err != nil {
 			return err
 		}
-		configs[jcfg.GetName()] = jcfg
-		providers[jcfg.GetName()] = provs
+		providers[scfg] = provs
 	}
 	tm.m.Lock()
 	defer tm.m.Unlock()
 
 	tm.globalLabels = cfg.GlobalLabels()
 	tm.providers = providers
-	tm.configs = configs
 	return nil
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
-func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg config.JobConfig) ([]Target, error) {
+func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]Target, error) {
 	tm.m.RLock()
 	defer tm.m.RUnlock()
 
 	targets := make([]Target, 0, len(tg.Targets))
 	for i, labels := range tg.Targets {
-		for ln, lv := range tg.Labels {
-			if _, ok := labels[ln]; !ok {
-				labels[ln] = lv
+		// Copy labels into the labelset for the target if they are not
+		// set already. Apply the labelsets in order of decreasing precedence.
+		labelsets := []clientmodel.LabelSet{
+			tg.Labels,
+			cfg.Labels(),
+			tm.globalLabels,
+		}
+		for _, lset := range labelsets {
+			for ln, lv := range lset {
+				if _, ok := labels[ln]; !ok {
+					labels[ln] = lv
+				}
 			}
 		}
-		for ln, lv := range tm.globalLabels {
-			if _, ok := labels[ln]; !ok {
-				labels[ln] = lv
-			}
-		}
+
 		address, ok := labels[clientmodel.AddressLabel]
 		if !ok {
 			return nil, fmt.Errorf("Instance %d in target group %s has no address", i, tg)
 		}
-		if _, ok := labels[clientmodel.JobLabel]; !ok {
-			labels[clientmodel.JobLabel] = clientmodel.LabelValue(cfg.GetName())
-		}
 
 		for ln := range labels {
-			// There are currently no internal labels we want to take over to time series.
-			if strings.HasPrefix(string(ln), clientmodel.ReservedLabelPrefix) {
+			// Meta labels are deleted after relabelling. Other internal labels propagate to
+			// the target which decides whether they will be part of their label set.
+			if strings.HasPrefix(string(ln), clientmodel.MetaLabelPrefix) {
 				delete(labels, ln)
 			}
 		}
 		targets = append(targets, NewTarget(string(address), cfg, labels))
+
 	}
+
 	return targets, nil
 }
 
 // ProvidersFromConfig returns all TargetProviders configured in cfg.
-func ProvidersFromConfig(cfg config.JobConfig) ([]TargetProvider, error) {
+func ProvidersFromConfig(cfg *config.ScrapeConfig) ([]TargetProvider, error) {
 	var providers []TargetProvider
 
-	if name := cfg.GetSdName(); name != "" {
-		dnsSD := discovery.NewDNSDiscovery(name, cfg.SDRefreshInterval())
+	for _, dnscfg := range cfg.DNSConfigs() {
+		dnsSD := discovery.NewDNSDiscovery(dnscfg.GetName(), dnscfg.RefreshInterval())
 		providers = append(providers, dnsSD)
 	}
-
 	if tgs := cfg.GetTargetGroup(); tgs != nil {
 		static := NewStaticProvider(tgs)
 		providers = append(providers, static)

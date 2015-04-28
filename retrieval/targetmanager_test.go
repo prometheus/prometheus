@@ -27,12 +27,12 @@ import (
 )
 
 func TestTargetManagerChan(t *testing.T) {
-	testJob1 := pb.JobConfig{
-		Name:           proto.String("test_job1"),
+	testJob1 := &config.ScrapeConfig{pb.ScrapeConfig{
+		JobName:        proto.String("test_job1"),
 		ScrapeInterval: proto.String("1m"),
 		TargetGroup: []*pb.TargetGroup{
 			{Target: []string{"example.org:80", "example.com:80"}},
-		},
+		}},
 	}
 	prov1 := &fakeTargetProvider{
 		sources: []string{"src1", "src2"},
@@ -41,11 +41,8 @@ func TestTargetManagerChan(t *testing.T) {
 
 	targetManager := &TargetManager{
 		sampleAppender: nopAppender{},
-		providers: map[string][]TargetProvider{
-			*testJob1.Name: []TargetProvider{prov1},
-		},
-		configs: map[string]config.JobConfig{
-			*testJob1.Name: config.JobConfig{testJob1},
+		providers: map[*config.ScrapeConfig][]TargetProvider{
+			testJob1: []TargetProvider{prov1},
 		},
 		targets: make(map[string][]Target),
 	}
@@ -156,15 +153,15 @@ func TestTargetManagerChan(t *testing.T) {
 }
 
 func TestTargetManagerConfigUpdate(t *testing.T) {
-	testJob1 := &pb.JobConfig{
-		Name:           proto.String("test_job1"),
+	testJob1 := &pb.ScrapeConfig{
+		JobName:        proto.String("test_job1"),
 		ScrapeInterval: proto.String("1m"),
 		TargetGroup: []*pb.TargetGroup{
 			{Target: []string{"example.org:80", "example.com:80"}},
 		},
 	}
-	testJob2 := &pb.JobConfig{
-		Name:           proto.String("test_job2"),
+	testJob2 := &pb.ScrapeConfig{
+		JobName:        proto.String("test_job2"),
 		ScrapeInterval: proto.String("1m"),
 		TargetGroup: []*pb.TargetGroup{
 			{Target: []string{"example.org:8080", "example.com:8081"}},
@@ -173,11 +170,11 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 	}
 
 	sequence := []struct {
-		jobConfigs []*pb.JobConfig
-		expected   map[string][]clientmodel.LabelSet
+		scrapeConfigs []*pb.ScrapeConfig
+		expected      map[string][]clientmodel.LabelSet
 	}{
 		{
-			jobConfigs: []*pb.JobConfig{testJob1},
+			scrapeConfigs: []*pb.ScrapeConfig{testJob1},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job1:static:0": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80"},
@@ -185,7 +182,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				},
 			},
 		}, {
-			jobConfigs: []*pb.JobConfig{testJob1},
+			scrapeConfigs: []*pb.ScrapeConfig{testJob1},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job1:static:0": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80"},
@@ -193,7 +190,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				},
 			},
 		}, {
-			jobConfigs: []*pb.JobConfig{testJob1, testJob2},
+			scrapeConfigs: []*pb.ScrapeConfig{testJob1, testJob2},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job1:static:0": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80"},
@@ -208,10 +205,10 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				},
 			},
 		}, {
-			jobConfigs: []*pb.JobConfig{},
-			expected:   map[string][]clientmodel.LabelSet{},
+			scrapeConfigs: []*pb.ScrapeConfig{},
+			expected:      map[string][]clientmodel.LabelSet{},
 		}, {
-			jobConfigs: []*pb.JobConfig{testJob2},
+			scrapeConfigs: []*pb.ScrapeConfig{testJob2},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job2:static:0": {
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.org:8080"},
@@ -233,7 +230,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 
 	for i, step := range sequence {
 		cfg := pb.PrometheusConfig{
-			Job: step.jobConfigs,
+			ScrapeConfig: step.scrapeConfigs,
 		}
 		err := targetManager.ApplyConfig(config.Config{cfg})
 		if err != nil {

@@ -125,6 +125,9 @@ type Target interface {
 	// The URL as seen from other hosts. References to localhost are resolved
 	// to the address of the prometheus server.
 	GlobalURL() string
+	// Return the labels describing the targets. These are the base labels
+	// as well as internal labels.
+	Labels() clientmodel.LabelSet
 	// Return the target's base labels.
 	BaseLabels() clientmodel.LabelSet
 	// Return the target's base labels without job and instance label. That's
@@ -135,7 +138,7 @@ type Target interface {
 	// Stop scraping, synchronous.
 	StopScraper()
 	// Update the target's state.
-	Update(config.JobConfig, clientmodel.LabelSet)
+	Update(*config.ScrapeConfig, clientmodel.LabelSet)
 }
 
 // target is a Target that refers to a singular HTTP or HTTPS endpoint.
@@ -169,7 +172,7 @@ type target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(address string, cfg config.JobConfig, baseLabels clientmodel.LabelSet) Target {
+func NewTarget(address string, cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) Target {
 	t := &target{
 		url: &url.URL{
 			Host: address,
@@ -183,12 +186,12 @@ func NewTarget(address string, cfg config.JobConfig, baseLabels clientmodel.Labe
 
 // Update overwrites settings in the target that are derived from the job config
 // it belongs to.
-func (t *target) Update(cfg config.JobConfig, baseLabels clientmodel.LabelSet) {
+func (t *target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) {
 	t.Lock()
 	defer t.Unlock()
 
 	t.url.Scheme = cfg.GetScheme()
-	t.url.Path = cfg.GetMetricsPath()
+	t.url.Path = string(baseLabels[clientmodel.MetricsPathLabel])
 
 	t.scrapeInterval = cfg.ScrapeInterval()
 	t.deadline = cfg.ScrapeTimeout()
@@ -197,8 +200,12 @@ func (t *target) Update(cfg config.JobConfig, baseLabels clientmodel.LabelSet) {
 	t.baseLabels = clientmodel.LabelSet{
 		clientmodel.InstanceLabel: clientmodel.LabelValue(t.InstanceIdentifier()),
 	}
+
+	// All remaining internal labels will not be part of the label set.
 	for name, val := range baseLabels {
-		t.baseLabels[name] = val
+		if !strings.HasPrefix(string(name), clientmodel.ReservedLabelPrefix) {
+			t.baseLabels[name] = val
+		}
 	}
 }
 
@@ -425,6 +432,19 @@ func (t *target) GlobalURL() string {
 	return url
 }
 
+// Labels implements Target.
+func (t *target) Labels() clientmodel.LabelSet {
+	t.RLock()
+	defer t.RUnlock()
+	ls := clientmodel.LabelSet{}
+	for ln, lv := range t.baseLabels {
+		ls[ln] = lv
+	}
+	ls[clientmodel.MetricsPathLabel] = clientmodel.LabelValue(t.url.Path)
+	ls[clientmodel.AddressLabel] = clientmodel.LabelValue(t.url.Host)
+	return ls
+}
+
 // BaseLabels implements Target.
 func (t *target) BaseLabels() clientmodel.LabelSet {
 	t.RLock()
@@ -433,9 +453,14 @@ func (t *target) BaseLabels() clientmodel.LabelSet {
 }
 
 // BaseLabelsWithoutJobAndInstance implements Target.
+//
+// TODO(fabxc): This method does not have to be part of the interface. Implement this
+// as a template filter func for the single use case.
 func (t *target) BaseLabelsWithoutJobAndInstance() clientmodel.LabelSet {
+	t.RLock()
+	defer t.RUnlock()
 	ls := clientmodel.LabelSet{}
-	for ln, lv := range t.BaseLabels() {
+	for ln, lv := range t.baseLabels {
 		if ln != clientmodel.JobLabel && ln != clientmodel.InstanceLabel {
 			ls[ln] = lv
 		}

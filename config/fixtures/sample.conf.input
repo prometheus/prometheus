@@ -10,8 +10,8 @@ global <
   rule_file: "prometheus.rules"
 >
 
-job: <
-  name: "prometheus"
+scrape_config: <
+  job_name: "prometheus"
   scrape_interval: "15s"
 
   target_group: <
@@ -25,8 +25,8 @@ job: <
   >
 >
 
-job: <
-  name: "random"
+scrape_config: <
+  job_name: "random"
   scrape_interval: "30s"
 
   target_group: <
