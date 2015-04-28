@@ -8,6 +8,10 @@
 			"Rev": "75cd24fc2f2c2a2088577d12123ddee5f54e0675"
 		},
 		{
+			"ImportPath": "github.com/prometheus/procfs",
+			"Rev": "92faa308558161acab0ada1db048e9996ecec160"
+		},
+		{
 			"ImportPath": "github.com/beorn7/perks/quantile",
 			"Rev": "b965b613227fddccbfffe13eae360ed3fa822f8d"
 		},

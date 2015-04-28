@@ -565,7 +565,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 func (p *parser) call(name string) *Call {
 	const ctx = "function call"
 
-	fn, exist := GetFunction(name)
+	fn, exist := getFunction(name)
 	if !exist {
 		p.errorf("unknown function with name %q", name)
 	}

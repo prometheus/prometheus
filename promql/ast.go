@@ -180,7 +180,7 @@ type ParenExpr struct {
 
 // StringLiteral represents a string.
 type StringLiteral struct {
-	Str string
+	Val string
 }
 
 // UnaryExpr represents a unary operation on another expression.
