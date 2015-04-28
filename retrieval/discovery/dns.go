@@ -32,6 +32,7 @@ const (
 	resolvConf = "/etc/resolv.conf"
 
 	dnsSourcePrefix = "dns"
+	DNSNameLabel    = clientmodel.MetaLabelPrefix + "dns_srv_name"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -148,6 +149,7 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) erro
 		target := clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.Target, addr.Port))
 		tg.Targets = append(tg.Targets, clientmodel.LabelSet{
 			clientmodel.AddressLabel: target,
+			DNSNameLabel:             clientmodel.LabelValue(name),
 		})
 	}
 

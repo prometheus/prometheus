@@ -172,10 +172,10 @@ type target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(address string, cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) Target {
+func NewTarget(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) Target {
 	t := &target{
 		url: &url.URL{
-			Host: address,
+			Host: string(baseLabels[clientmodel.AddressLabel]),
 		},
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
@@ -197,15 +197,15 @@ func (t *target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSe
 	t.deadline = cfg.ScrapeTimeout()
 	t.httpClient = utility.NewDeadlineClient(cfg.ScrapeTimeout())
 
-	t.baseLabels = clientmodel.LabelSet{
-		clientmodel.InstanceLabel: clientmodel.LabelValue(t.InstanceIdentifier()),
-	}
-
+	t.baseLabels = clientmodel.LabelSet{}
 	// All remaining internal labels will not be part of the label set.
 	for name, val := range baseLabels {
 		if !strings.HasPrefix(string(name), clientmodel.ReservedLabelPrefix) {
 			t.baseLabels[name] = val
 		}
+	}
+	if _, ok := t.baseLabels[clientmodel.InstanceLabel]; !ok {
+		t.baseLabels[clientmodel.InstanceLabel] = clientmodel.LabelValue(t.InstanceIdentifier())
 	}
 }
 

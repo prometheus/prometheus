@@ -14,6 +14,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -190,6 +191,11 @@ func (c *ScrapeConfig) Validate() error {
 			return fmt.Errorf("invalid DNS config: %s", err)
 		}
 	}
+	for _, rlcfg := range c.RelabelConfigs() {
+		if err := rlcfg.Validate(); err != nil {
+			return fmt.Errorf("invalid relabelling config: %s", err)
+		}
+	}
 	return nil
 }
 
@@ -201,6 +207,15 @@ func (c *ScrapeConfig) DNSConfigs() []*DNSConfig {
 		dnscfgs = append(dnscfgs, &DNSConfig{*dc})
 	}
 	return dnscfgs
+}
+
+// RelabelConfigs returns the relabel configs of the scrape config.
+func (c *ScrapeConfig) RelabelConfigs() []*RelabelConfig {
+	var rlcfgs []*RelabelConfig
+	for _, rc := range c.GetRelabelConfig() {
+		rlcfgs = append(rlcfgs, &RelabelConfig{*rc})
+	}
+	return rlcfgs
 }
 
 // DNSConfig encapsulates the protobuf configuration object for DNS based
@@ -220,6 +235,17 @@ func (c *DNSConfig) Validate() error {
 // SDRefreshInterval gets the the SD refresh interval for the scrape config.
 func (c *DNSConfig) RefreshInterval() time.Duration {
 	return stringToDuration(c.GetRefreshInterval())
+}
+
+type RelabelConfig struct {
+	pb.RelabelConfig
+}
+
+func (c *RelabelConfig) Validate() error {
+	if len(c.GetSourceLabel()) == 0 {
+		return errors.New("at least one source label is required")
+	}
+	return nil
 }
 
 // TargetGroup is derived from a protobuf TargetGroup and attaches a source to it

@@ -14,6 +14,7 @@ It has these top-level messages:
 	GlobalConfig
 	TargetGroup
 	DNSConfig
+	RelabelConfig
 	ScrapeConfig
 	PrometheusConfig
 */
@@ -25,6 +26,43 @@ import math "math"
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
 var _ = math.Inf
+
+// Action is the action to be performed for the relabeling.
+type RelabelConfig_Action int32
+
+const (
+	RelabelConfig_REPLACE RelabelConfig_Action = 0
+	RelabelConfig_KEEP    RelabelConfig_Action = 1
+	RelabelConfig_DROP    RelabelConfig_Action = 2
+)
+
+var RelabelConfig_Action_name = map[int32]string{
+	0: "REPLACE",
+	1: "KEEP",
+	2: "DROP",
+}
+var RelabelConfig_Action_value = map[string]int32{
+	"REPLACE": 0,
+	"KEEP":    1,
+	"DROP":    2,
+}
+
+func (x RelabelConfig_Action) Enum() *RelabelConfig_Action {
+	p := new(RelabelConfig_Action)
+	*p = x
+	return p
+}
+func (x RelabelConfig_Action) String() string {
+	return proto.EnumName(RelabelConfig_Action_name, int32(x))
+}
+func (x *RelabelConfig_Action) UnmarshalJSON(data []byte) error {
+	value, err := proto.UnmarshalJSONEnum(RelabelConfig_Action_value, data, "RelabelConfig_Action")
+	if err != nil {
+		return err
+	}
+	*x = RelabelConfig_Action(value)
+	return nil
+}
 
 // A label/value pair suitable for attaching to timeseries.
 type LabelPair struct {
@@ -149,7 +187,7 @@ func (m *TargetGroup) GetLabels() *LabelPairs {
 
 // The configuration for DNS based service discovery.
 type DNSConfig struct {
-	// The list of  DNS-SD service names pointing to SRV records
+	// The list of DNS-SD service names pointing to SRV records
 	// containing endpoint information.
 	Name []string `protobuf:"bytes,1,rep,name=name" json:"name,omitempty"`
 	// Discovery refresh period when using DNS-SD to discover targets. Must be a
@@ -178,9 +216,75 @@ func (m *DNSConfig) GetRefreshInterval() string {
 	return Default_DNSConfig_RefreshInterval
 }
 
+// The configuration for relabeling of target label sets.
+type RelabelConfig struct {
+	// A list of labels from which values are taken and concatenated
+	// with the configured separator in order.
+	SourceLabel []string `protobuf:"bytes,1,rep,name=source_label" json:"source_label,omitempty"`
+	// Regex against which the concatenation is matched.
+	Regex *string `protobuf:"bytes,2,req,name=regex" json:"regex,omitempty"`
+	// The label to which the resulting string is written in a replacement.
+	TargetLabel *string `protobuf:"bytes,3,opt,name=target_label" json:"target_label,omitempty"`
+	// Replacement is the regex replacement pattern to be used.
+	Replacement *string `protobuf:"bytes,4,opt,name=replacement" json:"replacement,omitempty"`
+	// Separator is the string between concatenated values from the source labels.
+	Separator        *string               `protobuf:"bytes,5,opt,name=separator,def=;" json:"separator,omitempty"`
+	Action           *RelabelConfig_Action `protobuf:"varint,6,opt,name=action,enum=io.prometheus.RelabelConfig_Action,def=0" json:"action,omitempty"`
+	XXX_unrecognized []byte                `json:"-"`
+}
+
+func (m *RelabelConfig) Reset()         { *m = RelabelConfig{} }
+func (m *RelabelConfig) String() string { return proto.CompactTextString(m) }
+func (*RelabelConfig) ProtoMessage()    {}
+
+const Default_RelabelConfig_Separator string = ";"
+const Default_RelabelConfig_Action RelabelConfig_Action = RelabelConfig_REPLACE
+
+func (m *RelabelConfig) GetSourceLabel() []string {
+	if m != nil {
+		return m.SourceLabel
+	}
+	return nil
+}
+
+func (m *RelabelConfig) GetRegex() string {
+	if m != nil && m.Regex != nil {
+		return *m.Regex
+	}
+	return ""
+}
+
+func (m *RelabelConfig) GetTargetLabel() string {
+	if m != nil && m.TargetLabel != nil {
+		return *m.TargetLabel
+	}
+	return ""
+}
+
+func (m *RelabelConfig) GetReplacement() string {
+	if m != nil && m.Replacement != nil {
+		return *m.Replacement
+	}
+	return ""
+}
+
+func (m *RelabelConfig) GetSeparator() string {
+	if m != nil && m.Separator != nil {
+		return *m.Separator
+	}
+	return Default_RelabelConfig_Separator
+}
+
+func (m *RelabelConfig) GetAction() RelabelConfig_Action {
+	if m != nil && m.Action != nil {
+		return *m.Action
+	}
+	return Default_RelabelConfig_Action
+}
+
 // The configuration for a Prometheus job to scrape.
 //
-// The next field no. is 10.
+// The next field no. is 11.
 type ScrapeConfig struct {
 	// The job name. Must adhere to the regex "[a-zA-Z_][a-zA-Z0-9_-]*".
 	JobName *string `protobuf:"bytes,1,req,name=job_name" json:"job_name,omitempty"`
@@ -195,6 +299,8 @@ type ScrapeConfig struct {
 	DnsConfig []*DNSConfig `protobuf:"bytes,9,rep,name=dns_config" json:"dns_config,omitempty"`
 	// List of labeled target groups for this job.
 	TargetGroup []*TargetGroup `protobuf:"bytes,5,rep,name=target_group" json:"target_group,omitempty"`
+	// List of relabel configurations.
+	RelabelConfig []*RelabelConfig `protobuf:"bytes,10,rep,name=relabel_config" json:"relabel_config,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
 	MetricsPath *string `protobuf:"bytes,6,opt,name=metrics_path,def=/metrics" json:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
@@ -245,6 +351,13 @@ func (m *ScrapeConfig) GetTargetGroup() []*TargetGroup {
 	return nil
 }
 
+func (m *ScrapeConfig) GetRelabelConfig() []*RelabelConfig {
+	if m != nil {
+		return m.RelabelConfig
+	}
+	return nil
+}
+
 func (m *ScrapeConfig) GetMetricsPath() string {
 	if m != nil && m.MetricsPath != nil {
 		return *m.MetricsPath
@@ -289,4 +402,5 @@ func (m *PrometheusConfig) GetScrapeConfig() []*ScrapeConfig {
 }
 
 func init() {
+	proto.RegisterEnum("io.prometheus.RelabelConfig_Action", RelabelConfig_Action_name, RelabelConfig_Action_value)
 }
