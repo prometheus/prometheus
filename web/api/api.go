@@ -20,14 +20,16 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/web/httputils"
 )
 
 // MetricsService manages the /api HTTP endpoint.
 type MetricsService struct {
-	Now     func() clientmodel.Timestamp
-	Storage local.Storage
+	Now         func() clientmodel.Timestamp
+	Storage     local.Storage
+	QueryEngine *promql.Engine
 }
 
 // RegisterHandler registers the handler for the various endpoints below /api.
@@ -37,13 +39,13 @@ func (msrv *MetricsService) RegisterHandler(pathPrefix string) {
 			Handler: http.HandlerFunc(h),
 		}
 	}
-	http.Handle(pathPrefix + "api/query", prometheus.InstrumentHandler(
-		pathPrefix + "api/query", handler(msrv.Query),
+	http.Handle(pathPrefix+"api/query", prometheus.InstrumentHandler(
+		pathPrefix+"api/query", handler(msrv.Query),
 	))
-	http.Handle(pathPrefix + "api/query_range", prometheus.InstrumentHandler(
-		pathPrefix + "api/query_range", handler(msrv.QueryRange),
+	http.Handle(pathPrefix+"api/query_range", prometheus.InstrumentHandler(
+		pathPrefix+"api/query_range", handler(msrv.QueryRange),
 	))
-	http.Handle(pathPrefix + "api/metrics", prometheus.InstrumentHandler(
-		pathPrefix + "api/metrics", handler(msrv.Metrics),
+	http.Handle(pathPrefix+"api/metrics", prometheus.InstrumentHandler(
+		pathPrefix+"api/metrics", handler(msrv.Metrics),
 	))
 }

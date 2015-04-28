@@ -20,9 +20,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 
-	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/promql"
 )
 
 var (
@@ -33,7 +34,12 @@ var (
 // checkRules reads rules from in. Sucessfully read rules
 // are printed to out.
 func checkRules(filename string, in io.Reader, out io.Writer) error {
-	rules, err := rules.LoadRulesFromReader(in)
+	content, err := ioutil.ReadAll(in)
+	if err != nil {
+		return err
+	}
+
+	rules, err := promql.ParseStmts(filename, string(content))
 	if err != nil {
 		return err
 	}

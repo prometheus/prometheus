@@ -19,6 +19,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 )
 
@@ -175,10 +176,12 @@ func TestTemplateExpansion(t *testing.T) {
 	})
 	storage.WaitForIndexing()
 
+	engine := promql.NewEngine(storage)
+
 	for i, s := range scenarios {
 		var result string
 		var err error
-		expander := NewTemplateExpander(s.text, "test", s.input, time, storage, "/")
+		expander := NewTemplateExpander(s.text, "test", s.input, time, engine, "/")
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
