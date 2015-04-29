@@ -78,7 +78,7 @@ var (
 
 type prometheus struct {
 	queryEngine         *promql.Engine
-	ruleManager         rules.RuleManager
+	ruleManager         *rules.Manager
 	targetManager       retrieval.TargetManager
 	notificationHandler *notification.NotificationHandler
 	storage             local.Storage
@@ -159,7 +159,7 @@ func NewPrometheus() *prometheus {
 
 	queryEngine := promql.NewEngine(memStorage)
 
-	ruleManager := rules.NewRuleManager(&rules.RuleManagerOptions{
+	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		SampleAppender:      sampleAppender,
 		NotificationHandler: notificationHandler,
 		EvaluationInterval:  conf.EvaluationInterval(),
