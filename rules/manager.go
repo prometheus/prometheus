@@ -15,12 +15,12 @@ package rules
 
 import (
 	"fmt"
+	"io/ioutil"
 	"sync"
 	"time"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/net/context"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -113,9 +113,6 @@ func NewManager(o *ManagerOptions) *Manager {
 		notificationHandler: o.NotificationHandler,
 		prometheusURL:       o.PrometheusURL,
 	}
-	manager.queryEngine.RegisterAlertHandler("rule_manager", manager.AddAlertingRule)
-	manager.queryEngine.RegisterRecordHandler("rule_manager", manager.AddRecordingRule)
-
 	return manager
 }
 
@@ -258,24 +255,37 @@ func (m *Manager) runIteration() {
 	wg.Wait()
 }
 
-func (m *Manager) AddAlertingRule(ctx context.Context, r *promql.AlertStmt) error {
-	rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Summary, r.Description)
-
+// LoadRuleFiles loads alerting and recording rules from the given files.
+func (m *Manager) LoadRuleFiles(filenames ...string) error {
 	m.Lock()
-	m.rules = append(m.rules, rule)
-	m.Unlock()
+	defer m.Unlock()
+
+	for _, fn := range filenames {
+		content, err := ioutil.ReadFile(fn)
+		if err != nil {
+			return err
+		}
+		stmts, err := promql.ParseStmts(string(content))
+		if err != nil {
+			return fmt.Errorf("error parsing %s: %s", fn, err)
+		}
+		for _, stmt := range stmts {
+			switch r := stmt.(type) {
+			case *promql.AlertStmt:
+				rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Summary, r.Description)
+				m.rules = append(m.rules, rule)
+			case *promql.RecordStmt:
+				rule := &RecordingRule{r.Name, r.Expr, r.Labels}
+				m.rules = append(m.rules, rule)
+			default:
+				panic("retrieval.Manager.LoadRuleFiles: unknown statement type")
+			}
+		}
+	}
 	return nil
 }
 
-func (m *Manager) AddRecordingRule(ctx context.Context, r *promql.RecordStmt) error {
-	rule := &RecordingRule{r.Name, r.Expr, r.Labels}
-
-	m.Lock()
-	m.rules = append(m.rules, rule)
-	m.Unlock()
-	return nil
-}
-
+// Rules returns the list of the manager's rules.
 func (m *Manager) Rules() []Rule {
 	m.Lock()
 	defer m.Unlock()
@@ -285,6 +295,7 @@ func (m *Manager) Rules() []Rule {
 	return rules
 }
 
+// AlertingRules returns the list of the manager's alerting rules.
 func (m *Manager) AlertingRules() []*AlertingRule {
 	m.Lock()
 	defer m.Unlock()

@@ -167,16 +167,9 @@ func NewPrometheus() *prometheus {
 		PrometheusURL:       web.MustBuildServerURL(*pathPrefix),
 		PathPrefix:          *pathPrefix,
 	})
-	for _, rf := range conf.Global.GetRuleFile() {
-		query, err := queryEngine.NewQueryFromFile(rf)
-		if err != nil {
-			glog.Errorf("Error loading rule file %q: %s", rf, err)
-			os.Exit(1)
-		}
-		if res := query.Exec(); res.Err != nil {
-			glog.Errorf("Error initializing rules: %s", res.Err)
-			os.Exit(1)
-		}
+	if err := ruleManager.LoadRuleFiles(conf.Global.GetRuleFile()...); err != nil {
+		glog.Errorf("Error loading rule files: %s", err)
+		os.Exit(1)
 	}
 
 	flags := map[string]string{}

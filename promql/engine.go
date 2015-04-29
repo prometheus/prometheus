@@ -16,11 +16,9 @@ package promql
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"runtime"
 	"sort"
-	"sync"
 	"time"
 
 	"golang.org/x/net/context"
@@ -165,14 +163,10 @@ type (
 	ErrQueryTimeout string
 	// ErrQueryCanceled is returned if a query was canceled during processing.
 	ErrQueryCanceled string
-	// ErrNoHandlers is returned if no handlers were registered for the
-	// execution of a statement.
-	ErrNoHandlers string
 )
 
 func (e ErrQueryTimeout) Error() string  { return fmt.Sprintf("query timed out in %s", e) }
 func (e ErrQueryCanceled) Error() string { return fmt.Sprintf("query was canceled in %s", e) }
-func (e ErrNoHandlers) Error() string    { return fmt.Sprintf("no handlers registered to process %s", e) }
 
 // A Query is derived from an a raw query string and can be run against an engine
 // it is associated with.
@@ -193,9 +187,6 @@ type query struct {
 	q string
 	// Statements of the parsed query.
 	stmts Statements
-	// On finished execution two bools indicating success of the execution
-	// are sent on the channel.
-	done chan bool
 	// Timer stats for the query execution.
 	stats *stats.TimerGroup
 	// Cancelation function for the query.
@@ -231,15 +222,6 @@ func (q *query) Exec() *Result {
 	return &Result{Err: err, Value: res}
 }
 
-type (
-	// AlertHandlers can be registered with an engine and are called on
-	// each executed alert statement.
-	AlertHandler func(context.Context, *AlertStmt) error
-	// RecordHandlers can be registered with an engine and are called on
-	// each executed record statement.
-	RecordHandler func(context.Context, *RecordStmt) error
-)
-
 // contextDone returns an error if the context was canceled or timed out.
 func contextDone(ctx context.Context, env string) error {
 	select {
@@ -258,63 +240,30 @@ func contextDone(ctx context.Context, env string) error {
 	}
 }
 
-// Engine handles the liftetime of queries from beginning to end. It is connected
-// to a storage.
+// Engine handles the liftetime of queries from beginning to end.
+// It is connected to a storage.
 type Engine struct {
-	sync.RWMutex
-
 	// The storage on which the engine operates.
 	storage local.Storage
 
 	// The base context for all queries and its cancellation function.
 	baseCtx       context.Context
 	cancelQueries func()
-
-	// Handlers for the statements.
-	alertHandlers  map[string]AlertHandler
-	recordHandlers map[string]RecordHandler
 }
 
 // NewEngine returns a new engine.
 func NewEngine(storage local.Storage) *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
-		storage:        storage,
-		baseCtx:        ctx,
-		cancelQueries:  cancel,
-		alertHandlers:  map[string]AlertHandler{},
-		recordHandlers: map[string]RecordHandler{},
+		storage:       storage,
+		baseCtx:       ctx,
+		cancelQueries: cancel,
 	}
 }
 
 // Stop the engine and cancel all running queries.
 func (ng *Engine) Stop() {
 	ng.cancelQueries()
-}
-
-// NewQuery returns a new query of the given query string.
-func (ng *Engine) NewQuery(qs string) (Query, error) {
-	stmts, err := ParseStmts(qs)
-	if err != nil {
-		return nil, err
-	}
-	query := &query{
-		q:     qs,
-		stmts: stmts,
-		ng:    ng,
-		done:  make(chan bool, 2),
-		stats: stats.NewTimerGroup(),
-	}
-	return query, nil
-}
-
-// NewQueryFromFile reads a file and returns a query of statements it contains.
-func (ng *Engine) NewQueryFromFile(filename string) (Query, error) {
-	content, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	return ng.NewQuery(string(content))
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -336,77 +285,64 @@ func (ng *Engine) NewRangeQuery(qs string, start, end clientmodel.Timestamp, int
 		Interval: interval,
 	}
 
-	query := &query{
+	qry := &query{
 		q:     qs,
 		stmts: Statements{es},
 		ng:    ng,
-		done:  make(chan bool, 2),
 		stats: stats.NewTimerGroup(),
 	}
-	return query, nil
+	return qry, nil
 }
 
-// exec executes all statements in the query. For evaluation statements only
-// one statement per query is allowed, after which the execution returns.
+// testStmt is an internal helper statement that allows execution
+// of an arbitrary function during handling. It is used to test the Engine.
+type testStmt func(context.Context) error
+
+func (testStmt) String() string   { return "test statement" }
+func (testStmt) DotGraph() string { return "test statement" }
+func (testStmt) stmt()            {}
+
+func (ng *Engine) newTestQuery(stmts ...Statement) Query {
+	qry := &query{
+		q:     "test statement",
+		stmts: Statements(stmts),
+		ng:    ng,
+		stats: stats.NewTimerGroup(),
+	}
+	return qry
+}
+
+// exec executes the query.
+//
+// At this point per query only one EvalStmt is evaluated. Alert and record
+// statements are not handled by the Engine.
 func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 	const env = "query execution"
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
 
-	// The base context might already be canceled (e.g. during shutdown).
-	if err := contextDone(ctx, env); err != nil {
-		return nil, err
-	}
-
 	evalTimer := q.stats.GetTimer(stats.TotalEvalTime).Start()
 	defer evalTimer.Stop()
 
-	ng.RLock()
-	alertHandlers := []AlertHandler{}
-	for _, h := range ng.alertHandlers {
-		alertHandlers = append(alertHandlers, h)
-	}
-	recordHandlers := []RecordHandler{}
-	for _, h := range ng.recordHandlers {
-		recordHandlers = append(recordHandlers, h)
-	}
-	ng.RUnlock()
-
 	for _, stmt := range q.stmts {
+		// The base context might already be canceled on the first iteration (e.g. during shutdown).
+		if err := contextDone(ctx, env); err != nil {
+			return nil, err
+		}
+
 		switch s := stmt.(type) {
-		case *AlertStmt:
-			if len(alertHandlers) == 0 {
-				return nil, ErrNoHandlers("alert statement")
-			}
-			for _, h := range alertHandlers {
-				if err := contextDone(ctx, env); err != nil {
-					return nil, err
-				}
-				err := h(ctx, s)
-				if err != nil {
-					return nil, err
-				}
-			}
-		case *RecordStmt:
-			if len(recordHandlers) == 0 {
-				return nil, ErrNoHandlers("record statement")
-			}
-			for _, h := range recordHandlers {
-				if err := contextDone(ctx, env); err != nil {
-					return nil, err
-				}
-				err := h(ctx, s)
-				if err != nil {
-					return nil, err
-				}
-			}
 		case *EvalStmt:
 			// Currently, only one execution statement per query is allowed.
 			return ng.execEvalStmt(ctx, q, s)
 
+		case testStmt:
+			if err := s(ctx); err != nil {
+				return nil, err
+			}
+
 		default:
-			panic(fmt.Errorf("statement of unknown type %T", stmt))
+			panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", stmt))
 		}
 	}
 	return nil, nil
@@ -1048,34 +984,6 @@ func (ev *evaluator) aggregation(op itemType, grouping clientmodel.LabelNames, k
 		resultVector = append(resultVector, sample)
 	}
 	return resultVector
-}
-
-// RegisterAlertHandler registers a new alert handler of the given name.
-func (ng *Engine) RegisterAlertHandler(name string, h AlertHandler) {
-	ng.Lock()
-	ng.alertHandlers[name] = h
-	ng.Unlock()
-}
-
-// RegisterRecordHandler registers a new record handler of the given name.
-func (ng *Engine) RegisterRecordHandler(name string, h RecordHandler) {
-	ng.Lock()
-	ng.recordHandlers[name] = h
-	ng.Unlock()
-}
-
-// UnregisterAlertHandler removes the alert handler with the given name.
-func (ng *Engine) UnregisterAlertHandler(name string) {
-	ng.Lock()
-	delete(ng.alertHandlers, name)
-	ng.Unlock()
-}
-
-// UnregisterRecordHandler removes the record handler with the given name.
-func (ng *Engine) UnregisterRecordHandler(name string) {
-	ng.Lock()
-	delete(ng.recordHandlers, name)
-	ng.Unlock()
 }
 
 // btos returns 1 if b is true, 0 otherwise.
