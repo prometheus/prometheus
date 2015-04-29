@@ -39,7 +39,7 @@ func checkRules(filename string, in io.Reader, out io.Writer) error {
 		return err
 	}
 
-	rules, err := promql.ParseStmts(filename, string(content))
+	rules, err := promql.ParseStmts(string(content))
 	if err != nil {
 		return err
 	}

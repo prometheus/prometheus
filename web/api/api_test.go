@@ -52,7 +52,7 @@ func TestQuery(t *testing.T) {
 		{
 			queryStr: "",
 			status:   http.StatusOK,
-			bodyRe:   `{"type":"error","value":"query:1,1 no expression found in input","version":1}`,
+			bodyRe:   `{"type":"error","value":"Parse error at char 1: no expression found in input","version":1}`,
 		},
 		{
 			queryStr: "expr=testmetric",
@@ -77,7 +77,7 @@ func TestQuery(t *testing.T) {
 		{
 			queryStr: "expr=(badexpression",
 			status:   http.StatusOK,
-			bodyRe:   `{"type":"error","value":"query:1,15 unexpected unclosed left parenthesis in paren expression","version":1}`,
+			bodyRe:   `{"type":"error","value":"Parse error at char 15: unexpected unclosed left parenthesis in paren expression","version":1}`,
 		},
 	}
 

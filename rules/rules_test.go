@@ -173,7 +173,7 @@ func TestAlertingRule(t *testing.T) {
 	engine := promql.NewEngine(storage)
 	defer engine.Stop()
 
-	expr, err := promql.ParseExpr("test", `http_requests{group="canary", job="app-server"} < 100`)
+	expr, err := promql.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 	if err != nil {
 		t.Fatalf("Unable to parse alert expression: %s", err)
 	}
