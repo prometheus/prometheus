@@ -46,7 +46,7 @@ func (s byAlertStateSorter) Swap(i, j int) {
 
 // AlertsHandler implements http.Handler.
 type AlertsHandler struct {
-	RuleManager rules.RuleManager
+	RuleManager *rules.Manager
 	PathPrefix  string
 
 	mutex sync.Mutex

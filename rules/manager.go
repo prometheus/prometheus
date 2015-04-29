@@ -70,20 +70,8 @@ func init() {
 	prometheus.MustRegister(evalDuration)
 }
 
-// A RuleManager manages recording and alerting rules. Create instances with
-// NewRuleManager.
-type RuleManager interface {
-	// Start the rule manager's periodic rule evaluation.
-	Run()
-	// Stop the rule manager's rule evaluation cycles.
-	Stop()
-	// Return all rules.
-	Rules() []Rule
-	// Return all alerting rules.
-	AlertingRules() []*AlertingRule
-}
-
-type ruleManager struct {
+// The Manager manages recording and alerting rules.
+type Manager struct {
 	// Protects the rules list.
 	sync.Mutex
 	rules []Rule
@@ -100,8 +88,8 @@ type ruleManager struct {
 	pathPrefix    string
 }
 
-// RuleManagerOptions bundles options for the RuleManager.
-type RuleManagerOptions struct {
+// ManagerOptions bundles options for the Manager.
+type ManagerOptions struct {
 	EvaluationInterval time.Duration
 	QueryEngine        *promql.Engine
 
@@ -112,10 +100,10 @@ type RuleManagerOptions struct {
 	PathPrefix    string
 }
 
-// NewRuleManager returns an implementation of RuleManager, ready to be started
+// NewManager returns an implementation of Manager, ready to be started
 // by calling the Run method.
-func NewRuleManager(o *RuleManagerOptions) RuleManager {
-	manager := &ruleManager{
+func NewManager(o *ManagerOptions) *Manager {
+	manager := &Manager{
 		rules: []Rule{},
 		done:  make(chan bool),
 
@@ -131,7 +119,8 @@ func NewRuleManager(o *RuleManagerOptions) RuleManager {
 	return manager
 }
 
-func (m *ruleManager) Run() {
+// Run the rule manager's periodic rule evaluation.
+func (m *Manager) Run() {
 	defer glog.Info("Rule manager stopped.")
 
 	ticker := time.NewTicker(m.interval)
@@ -158,12 +147,13 @@ func (m *ruleManager) Run() {
 	}
 }
 
-func (m *ruleManager) Stop() {
+// Stop the rule manager's rule evaluation cycles.
+func (m *Manager) Stop() {
 	glog.Info("Stopping rule manager...")
 	m.done <- true
 }
 
-func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clientmodel.Timestamp) {
+func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmodel.Timestamp) {
 	activeAlerts := rule.ActiveAlerts()
 	if len(activeAlerts) == 0 {
 		return
@@ -217,7 +207,7 @@ func (m *ruleManager) queueAlertNotifications(rule *AlertingRule, timestamp clie
 	m.notificationHandler.SubmitReqs(notifications)
 }
 
-func (m *ruleManager) runIteration() {
+func (m *Manager) runIteration() {
 	now := clientmodel.Now()
 	wg := sync.WaitGroup{}
 
@@ -268,7 +258,7 @@ func (m *ruleManager) runIteration() {
 	wg.Wait()
 }
 
-func (m *ruleManager) AddAlertingRule(ctx context.Context, r *promql.AlertStmt) error {
+func (m *Manager) AddAlertingRule(ctx context.Context, r *promql.AlertStmt) error {
 	rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Summary, r.Description)
 
 	m.Lock()
@@ -277,7 +267,7 @@ func (m *ruleManager) AddAlertingRule(ctx context.Context, r *promql.AlertStmt) 
 	return nil
 }
 
-func (m *ruleManager) AddRecordingRule(ctx context.Context, r *promql.RecordStmt) error {
+func (m *Manager) AddRecordingRule(ctx context.Context, r *promql.RecordStmt) error {
 	rule := &RecordingRule{r.Name, r.Expr, r.Labels}
 
 	m.Lock()
@@ -286,7 +276,7 @@ func (m *ruleManager) AddRecordingRule(ctx context.Context, r *promql.RecordStmt
 	return nil
 }
 
-func (m *ruleManager) Rules() []Rule {
+func (m *Manager) Rules() []Rule {
 	m.Lock()
 	defer m.Unlock()
 
@@ -295,7 +285,7 @@ func (m *ruleManager) Rules() []Rule {
 	return rules
 }
 
-func (m *ruleManager) AlertingRules() []*AlertingRule {
+func (m *Manager) AlertingRules() []*AlertingRule {
 	m.Lock()
 	defer m.Unlock()
 
