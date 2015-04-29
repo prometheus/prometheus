@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
 )
@@ -328,8 +327,7 @@ var tests = []struct {
 // for the parser to avoid duplicated effort.
 func TestLexer(t *testing.T) {
 	for i, test := range tests {
-		tn := fmt.Sprintf("test.%d \"%s\"", i, test.input)
-		l := lex(tn, test.input)
+		l := lex(test.input)
 
 		out := []item{}
 		for it := range l.items {
@@ -339,20 +337,20 @@ func TestLexer(t *testing.T) {
 		lastItem := out[len(out)-1]
 		if test.fail {
 			if lastItem.typ != itemError {
-				t.Fatalf("%s: expected lexing error but did not fail", tn)
+				t.Fatalf("%d: expected lexing error but did not fail", i)
 			}
 			continue
 		}
 		if lastItem.typ == itemError {
-			t.Fatalf("%s: unexpected lexing error: %s", tn, lastItem)
+			t.Fatalf("%d: unexpected lexing error: %s", i, lastItem)
 		}
 
 		if !reflect.DeepEqual(lastItem, item{itemEOF, Pos(len(test.input)), ""}) {
-			t.Fatalf("%s: lexing error: expected output to end with EOF item", tn)
+			t.Fatalf("%d: lexing error: expected output to end with EOF item", i)
 		}
 		out = out[:len(out)-1]
 		if !reflect.DeepEqual(out, test.expected) {
-			t.Errorf("%s: lexing mismatch:\nexpected: %#v\n-----\ngot: %#v", tn, test.expected, out)
+			t.Errorf("%d: lexing mismatch:\nexpected: %#v\n-----\ngot: %#v", i, test.expected, out)
 		}
 	}
 }

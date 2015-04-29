@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -25,15 +26,29 @@ import (
 )
 
 type parser struct {
-	name      string
 	lex       *lexer
 	token     [3]item
 	peekCount int
 }
 
+// ParseErr wraps a parsing error with line and position context.
+// If the parsing input was a single line, line will be 0 and omitted
+// from the error string.
+type ParseErr struct {
+	Line, Pos int
+	Err       error
+}
+
+func (e *ParseErr) Error() string {
+	if e.Line == 0 {
+		return fmt.Sprintf("Parse error at char %d: %s", e.Pos, e.Err)
+	}
+	return fmt.Sprintf("Parse error at line %d, char %d: %s", e.Line, e.Pos, e.Err)
+}
+
 // ParseStmts parses the input and returns the resulting statements or any ocurring error.
-func ParseStmts(name, input string) (Statements, error) {
-	p := newParser(name, input)
+func ParseStmts(input string) (Statements, error) {
+	p := newParser(input)
 
 	stmts, err := p.parseStmts()
 	if err != nil {
@@ -44,8 +59,8 @@ func ParseStmts(name, input string) (Statements, error) {
 }
 
 // ParseExpr returns the expression parsed from the input.
-func ParseExpr(name, input string) (Expr, error) {
-	p := newParser(name, input)
+func ParseExpr(input string) (Expr, error) {
+	p := newParser(input)
 
 	expr, err := p.parseExpr()
 	if err != nil {
@@ -56,10 +71,9 @@ func ParseExpr(name, input string) (Expr, error) {
 }
 
 // newParser returns a new parser.
-func newParser(name, input string) *parser {
+func newParser(input string) *parser {
 	p := &parser{
-		name: name,
-		lex:  lex(name, input),
+		lex: lex(input),
 	}
 	return p
 }
@@ -144,13 +158,20 @@ func (p *parser) backup() {
 
 // errorf formats the error and terminates processing.
 func (p *parser) errorf(format string, args ...interface{}) {
-	format = fmt.Sprintf("%s:%d,%d %s", p.name, p.lex.lineNumber(), p.lex.linePosition(), format)
-	panic(fmt.Errorf(format, args...))
+	p.error(fmt.Errorf(format, args...))
 }
 
 // error terminates processing.
 func (p *parser) error(err error) {
-	p.errorf("%s", err)
+	perr := &ParseErr{
+		Line: p.lex.lineNumber(),
+		Pos:  p.lex.linePosition(),
+		Err:  err,
+	}
+	if strings.Count(strings.TrimSpace(p.lex.input), "\n") == 0 {
+		perr.Line = 0
+	}
+	panic(perr)
 }
 
 // expect consumes the next token and guarantees it has the required type.

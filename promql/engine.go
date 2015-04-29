@@ -294,7 +294,7 @@ func (ng *Engine) Stop() {
 
 // NewQuery returns a new query of the given query string.
 func (ng *Engine) NewQuery(qs string) (Query, error) {
-	stmts, err := ParseStmts("query", qs)
+	stmts, err := ParseStmts(qs)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +325,7 @@ func (ng *Engine) NewInstantQuery(es string, ts clientmodel.Timestamp) (Query, e
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
 func (ng *Engine) NewRangeQuery(qs string, start, end clientmodel.Timestamp, interval time.Duration) (Query, error) {
-	expr, err := ParseExpr("query", qs)
+	expr, err := ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}

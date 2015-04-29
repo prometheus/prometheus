@@ -222,7 +222,6 @@ type Pos int
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	name    string    // The name of the input; used only for error reports.
 	input   string    // The string being scanned.
 	state   stateFn   // The next lexing function to enter.
 	pos     Pos       // Current position in the input.
@@ -298,12 +297,12 @@ func (l *lexer) lineNumber() int {
 
 // linePosition reports at which character in the current line
 // we are on.
-func (l *lexer) linePosition() Pos {
-	lb := Pos(strings.LastIndex(l.input[:l.lastPos], "\n"))
+func (l *lexer) linePosition() int {
+	lb := strings.LastIndex(l.input[:l.lastPos], "\n")
 	if lb == -1 {
-		return 1 + l.lastPos
+		return 1 + int(l.lastPos)
 	}
-	return 1 + l.lastPos - lb
+	return 1 + int(l.lastPos) - lb
 }
 
 // errorf returns an error token and terminates the scan by passing
@@ -321,9 +320,8 @@ func (l *lexer) nextItem() item {
 }
 
 // lex creates a new scanner for the input string.
-func lex(name, input string) *lexer {
+func lex(input string) *lexer {
 	l := &lexer{
-		name:  name,
 		input: input,
 		items: make(chan item),
 	}

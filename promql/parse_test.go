@@ -785,7 +785,7 @@ var testExpr = []struct {
 func TestParseExpressions(t *testing.T) {
 	for _, test := range testExpr {
 
-		parser := newParser("test", test.input)
+		parser := newParser(test.input)
 
 		expr, err := parser.parseExpr()
 		if !test.fail && err != nil {
@@ -819,7 +819,7 @@ func TestParseExpressions(t *testing.T) {
 
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
-	parser := newParser("test", "NaN")
+	parser := newParser("NaN")
 
 	expr, err := parser.parseExpr()
 	if err != nil {
@@ -1028,7 +1028,7 @@ var testStatement = []struct {
 
 func TestParseStatements(t *testing.T) {
 	for _, test := range testStatement {
-		parser := newParser("test", test.input)
+		parser := newParser(test.input)
 
 		stmts, err := parser.parseStmts()
 		if !test.fail && err != nil {
