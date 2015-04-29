@@ -77,7 +77,7 @@ func TestQuery(t *testing.T) {
 		{
 			queryStr: "expr=(badexpression",
 			status:   http.StatusOK,
-			bodyRe:   `{"type":"error","value":"Parse error at char 15: unexpected unclosed left parenthesis in paren expression","version":1}`,
+			bodyRe:   `{"type":"error","value":"Parse error at char 15: unclosed left parenthesis","version":1}`,
 		},
 	}
 

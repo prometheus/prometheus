@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,9 +26,10 @@ import (
 )
 
 var testExpr = []struct {
-	input    string
-	expected Expr
-	fail     bool
+	input    string // The input to be parsed.
+	expected Expr   // The expected expression AST.
+	fail     bool   // Whether parsing is supposed to fail.
+	errMsg   string // If not empty the parsing error has to contain this string.
 }{
 	// Scalars and scalar-to-scalar operations.
 	{
@@ -122,39 +124,77 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: "", fail: true,
+		input:  "",
+		fail:   true,
+		errMsg: "no expression found in input",
 	}, {
-		input: "# just a comment\n\n", fail: true,
+		input:  "# just a comment\n\n",
+		fail:   true,
+		errMsg: "no expression found in input",
 	}, {
-		input: "1+", fail: true,
+		input:  "1+",
+		fail:   true,
+		errMsg: "missing right-hand side in binary expression",
 	}, {
-		input: "2.5.", fail: true,
+		input:  ".",
+		fail:   true,
+		errMsg: "unexpected character: '.'",
 	}, {
-		input: "100..4", fail: true,
+		input:  "2.5.",
+		fail:   true,
+		errMsg: "could not parse remaining input \".\"...",
 	}, {
-		input: "0deadbeef", fail: true,
+		input:  "100..4",
+		fail:   true,
+		errMsg: "could not parse remaining input \".4\"...",
 	}, {
-		input: "1 /", fail: true,
+		input:  "0deadbeef",
+		fail:   true,
+		errMsg: "bad number or duration syntax: \"0de\"",
 	}, {
-		input: "*1", fail: true,
+		input:  "1 /",
+		fail:   true,
+		errMsg: "missing right-hand side in binary expression",
 	}, {
-		input: "(1))", fail: true,
+		input:  "*1",
+		fail:   true,
+		errMsg: "no valid expression found",
 	}, {
-		input: "((1)", fail: true,
+		input:  "(1))",
+		fail:   true,
+		errMsg: "could not parse remaining input \")\"...",
 	}, {
-		input: "(", fail: true,
+		input:  "((1)",
+		fail:   true,
+		errMsg: "unclosed left parenthesis",
 	}, {
-		input: "1 and 1", fail: true,
+		input:  "(",
+		fail:   true,
+		errMsg: "unclosed left parenthesis",
 	}, {
-		input: "1 or 1", fail: true,
+		input:  "1 and 1",
+		fail:   true,
+		errMsg: "AND and OR not allowed in binary scalar expression",
 	}, {
-		input: "1 !~ 1", fail: true,
+		input:  "1 or 1",
+		fail:   true,
+		errMsg: "AND and OR not allowed in binary scalar expression",
 	}, {
-		input: "1 =~ 1", fail: true,
+		input:  "1 !~ 1",
+		fail:   true,
+		errMsg: "could not parse remaining input \"!~ 1\"...",
 	}, {
-		input: "-some_metric", fail: true,
+		input:  "1 =~ 1",
+		fail:   true,
+		errMsg: "could not parse remaining input \"=~ 1\"...",
 	}, {
-		input: `-"string"`, fail: true,
+		input:  "-some_metric",
+		fail:   true,
+		errMsg: "expected type scalar in unary expression, got vector",
+	}, {
+		input:  `-"string"`,
+		fail:   true,
+		errMsg: "expected type scalar in unary expression, got string",
 	},
 	// Vector binary operations.
 	{
@@ -397,25 +437,45 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: "foo and 1", fail: true,
+		input:  "foo and 1",
+		fail:   true,
+		errMsg: "AND and OR not allowed in binary scalar expression",
 	}, {
-		input: "1 and foo", fail: true,
+		input:  "1 and foo",
+		fail:   true,
+		errMsg: "AND and OR not allowed in binary scalar expression",
 	}, {
-		input: "foo or 1", fail: true,
+		input:  "foo or 1",
+		fail:   true,
+		errMsg: "AND and OR not allowed in binary scalar expression",
 	}, {
-		input: "1 or foo", fail: true,
+		input:  "1 or foo",
+		fail:   true,
+		errMsg: "AND and OR not allowed in binary scalar expression",
 	}, {
-		input: "1 or on(bar) foo", fail: true,
+		input:  "1 or on(bar) foo",
+		fail:   true,
+		errMsg: "vector matching only allowed between vectors",
 	}, {
-		input: "foo == on(bar) 10", fail: true,
+		input:  "foo == on(bar) 10",
+		fail:   true,
+		errMsg: "vector matching only allowed between vectors",
 	}, {
-		input: "foo and on(bar) group_left(baz) bar", fail: true,
+		input:  "foo and on(bar) group_left(baz) bar",
+		fail:   true,
+		errMsg: "no grouping allowed for AND and OR operations",
 	}, {
-		input: "foo and on(bar) group_right(baz) bar", fail: true,
+		input:  "foo and on(bar) group_right(baz) bar",
+		fail:   true,
+		errMsg: "no grouping allowed for AND and OR operations",
 	}, {
-		input: "foo or on(bar) group_left(baz) bar", fail: true,
+		input:  "foo or on(bar) group_left(baz) bar",
+		fail:   true,
+		errMsg: "no grouping allowed for AND and OR operations",
 	}, {
-		input: "foo or on(bar) group_right(baz) bar", fail: true,
+		input:  "foo or on(bar) group_right(baz) bar",
+		fail:   true,
+		errMsg: "no grouping allowed for AND and OR operations",
 	},
 	// Test vector selector.
 	{
@@ -470,31 +530,59 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: `{`, fail: true,
+		input:  `{`,
+		fail:   true,
+		errMsg: "unexpected end of input inside braces",
 	}, {
-		input: `}`, fail: true,
+		input:  `}`,
+		fail:   true,
+		errMsg: "unexpected character: '}'",
 	}, {
-		input: `some{`, fail: true,
+		input:  `some{`,
+		fail:   true,
+		errMsg: "unexpected end of input inside braces",
 	}, {
-		input: `some}`, fail: true,
+		input:  `some}`,
+		fail:   true,
+		errMsg: "could not parse remaining input \"}\"...",
 	}, {
-		input: `some_metric{a=b}`, fail: true,
+		input:  `some_metric{a=b}`,
+		fail:   true,
+		errMsg: "unexpected identifier \"b\" in label matching, expected string",
 	}, {
-		input: `some_metric{a:b="b"}`, fail: true,
+		input:  `some_metric{a:b="b"}`,
+		fail:   true,
+		errMsg: "unexpected character inside braces: ':'",
 	}, {
-		input: `foo{a*"b"}`, fail: true,
+		input:  `foo{a*"b"}`,
+		fail:   true,
+		errMsg: "unexpected character inside braces: '*'",
 	}, {
-		input: `foo{a>="b"}`, fail: true,
+		input: `foo{a>="b"}`,
+		fail:  true,
+		// TODO(fabxc): willingly lexing wrong tokens allows for more precrise error
+		// messages from the parser - consider if this is an option.
+		errMsg: "unexpected character inside braces: '>'",
 	}, {
-		input: `foo{gibberish}`, fail: true,
+		input:  `foo{gibberish}`,
+		fail:   true,
+		errMsg: "expected label matching operator but got }",
 	}, {
-		input: `foo{1}`, fail: true,
+		input:  `foo{1}`,
+		fail:   true,
+		errMsg: "unexpected character inside braces: '1'",
 	}, {
-		input: `{}`, fail: true,
+		input:  `{}`,
+		fail:   true,
+		errMsg: "vector selector must contain label matchers or metric name",
 	}, {
-		input: `foo{__name__="bar"}`, fail: true,
-	}, {
-		input: `:foo`, fail: true,
+		input:  `foo{__name__="bar"}`,
+		fail:   true,
+		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",
+		// }, {
+		// 	input:  `:foo`,
+		// 	fail:   true,
+		// 	errMsg: "bla",
 	},
 	// Test matrix selector.
 	{
@@ -559,25 +647,45 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: `foo[5mm]`, fail: true,
+		input:  `foo[5mm]`,
+		fail:   true,
+		errMsg: "bad duration syntax: \"5mm\"",
 	}, {
-		input: `foo[0m]`, fail: true,
+		input:  `foo[0m]`,
+		fail:   true,
+		errMsg: "duration must be greater than 0",
 	}, {
-		input: `foo[5m30s]`, fail: true,
+		input:  `foo[5m30s]`,
+		fail:   true,
+		errMsg: "bad duration syntax: \"5m3\"",
 	}, {
-		input: `foo[5m] OFFSET 1h30m`, fail: true,
+		input:  `foo[5m] OFFSET 1h30m`,
+		fail:   true,
+		errMsg: "bad number or duration syntax: \"1h3\"",
 	}, {
-		input: `foo[]`, fail: true,
+		input:  `foo[]`,
+		fail:   true,
+		errMsg: "missing unit character in duration",
 	}, {
-		input: `foo[1]`, fail: true,
+		input:  `foo[1]`,
+		fail:   true,
+		errMsg: "missing unit character in duration",
 	}, {
-		input: `some_metric[5m] OFFSET 1`, fail: true,
+		input:  `some_metric[5m] OFFSET 1`,
+		fail:   true,
+		errMsg: "unexpected number \"1\" in matrix selector, expected duration",
 	}, {
-		input: `some_metric[5m] OFFSET 1mm`, fail: true,
+		input:  `some_metric[5m] OFFSET 1mm`,
+		fail:   true,
+		errMsg: "bad number or duration syntax: \"1mm\"",
 	}, {
-		input: `some_metric[5m] OFFSET`, fail: true,
+		input:  `some_metric[5m] OFFSET`,
+		fail:   true,
+		errMsg: "unexpected end of input in matrix selector, expected duration",
 	}, {
-		input: `(foo + bar)[5m]`, fail: true,
+		input:  `(foo + bar)[5m]`,
+		fail:   true,
+		errMsg: "could not parse remaining input \"[5m]\"...",
 	},
 	// Test aggregation.
 	{
@@ -692,21 +800,37 @@ var testExpr = []struct {
 			Grouping: clientmodel.LabelNames{"foo"},
 		},
 	}, {
-		input: `sum some_metric by (test)`, fail: true,
+		input:  `sum some_metric by (test)`,
+		fail:   true,
+		errMsg: "unexpected identifier \"some_metric\" in aggregation, expected \"(\"",
 	}, {
-		input: `sum (some_metric) by test`, fail: true,
+		input:  `sum (some_metric) by test`,
+		fail:   true,
+		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
 	}, {
-		input: `sum (some_metric) by ()`, fail: true,
+		input:  `sum (some_metric) by ()`,
+		fail:   true,
+		errMsg: "unexpected \")\" in grouping opts, expected identifier",
 	}, {
-		input: `sum (some_metric) by test`, fail: true,
+		input:  `sum (some_metric) by test`,
+		fail:   true,
+		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
 	}, {
-		input: `some_metric[5m] OFFSET`, fail: true,
+		input:  `some_metric[5m] OFFSET`,
+		fail:   true,
+		errMsg: "unexpected end of input in matrix selector, expected duration",
 	}, {
-		input: `sum () by (test)`, fail: true,
+		input:  `sum () by (test)`,
+		fail:   true,
+		errMsg: "no valid expression found",
 	}, {
-		input: "MIN keeping_extra (some_metric) by (foo)", fail: true,
+		input:  "MIN keeping_extra (some_metric) by (foo)",
+		fail:   true,
+		errMsg: "could not parse remaining input \"by (foo)\"...",
 	}, {
-		input: "MIN by(test) (some_metric) keeping_extra", fail: true,
+		input:  "MIN by(test) (some_metric) keeping_extra",
+		fail:   true,
+		errMsg: "could not parse remaining input \"keeping_extra\"...",
 	},
 	// Test function calls.
 	{
@@ -770,21 +894,30 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: "floor()", fail: true,
+		input:  "floor()",
+		fail:   true,
+		errMsg: "expected at least 1 argument(s) in call to \"floor\", got 0",
 	}, {
-		input: "floor(some_metric, other_metric)", fail: true,
+		input:  "floor(some_metric, other_metric)",
+		fail:   true,
+		errMsg: "expected at most 1 argument(s) in call to \"floor\", got 2",
 	}, {
-		input: "floor(1)", fail: true,
+		input:  "floor(1)",
+		fail:   true,
+		errMsg: "expected type vector in call to function \"floor\", got scalar",
 	}, {
-		input: "non_existant_function_far_bar()", fail: true,
+		input:  "non_existant_function_far_bar()",
+		fail:   true,
+		errMsg: "unknown function with name \"non_existant_function_far_bar\"",
 	}, {
-		input: "rate(some_metric)", fail: true,
+		input:  "rate(some_metric)",
+		fail:   true,
+		errMsg: "expected type matrix in call to function \"rate\", got vector",
 	},
 }
 
 func TestParseExpressions(t *testing.T) {
 	for _, test := range testExpr {
-
 		parser := newParser(test.input)
 
 		expr, err := parser.parseExpr()
@@ -793,6 +926,10 @@ func TestParseExpressions(t *testing.T) {
 			t.Fatalf("could not parse: %s", err)
 		}
 		if test.fail && err != nil {
+			if !strings.Contains(err.Error(), test.errMsg) {
+				t.Errorf("unexpected error on input '%s'", test.input)
+				t.Fatalf("expected error to contain %q but got %q", test.errMsg, err)
+			}
 			continue
 		}
 
@@ -804,6 +941,10 @@ func TestParseExpressions(t *testing.T) {
 
 		if test.fail {
 			if err != nil {
+				if !strings.Contains(err.Error(), test.errMsg) {
+					t.Errorf("unexpected error on input '%s'", test.input)
+					t.Fatalf("expected error to contain %q but got %q", test.errMsg, err)
+				}
 				continue
 			}
 			t.Errorf("error on input '%s'", test.input)

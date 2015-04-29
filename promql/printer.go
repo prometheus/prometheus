@@ -72,6 +72,9 @@ func Tree(node Node) string {
 }
 
 func tree(node Node, level string) string {
+	if node == nil {
+		return fmt.Sprintf("%s |---- %T\n", level, node)
+	}
 	typs := strings.Split(fmt.Sprintf("%T", node), ".")[1]
 
 	var t string
