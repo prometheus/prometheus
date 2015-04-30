@@ -22,10 +22,10 @@ import (
 )
 
 // LoadFromString returns a config parsed from the provided string.
-func LoadFromString(configStr string) (Config, error) {
+func LoadFromString(configStr string) (*Config, error) {
 	configProto := pb.PrometheusConfig{}
 	if err := proto.UnmarshalText(configStr, &configProto); err != nil {
-		return Config{}, err
+		return nil, err
 	}
 	if configProto.Global == nil {
 		configProto.Global = &pb.GlobalConfig{}
@@ -36,17 +36,17 @@ func LoadFromString(configStr string) (Config, error) {
 		}
 	}
 
-	config := Config{configProto}
+	config := &Config{configProto}
 	err := config.Validate()
 
 	return config, err
 }
 
 // LoadFromFile returns a config parsed from the file of the provided name.
-func LoadFromFile(fileName string) (Config, error) {
+func LoadFromFile(fileName string) (*Config, error) {
 	configStr, err := ioutil.ReadFile(fileName)
 	if err != nil {
-		return Config{}, err
+		return nil, err
 	}
 
 	return LoadFromString(string(configStr))

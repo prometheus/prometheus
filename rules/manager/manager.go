@@ -74,7 +74,7 @@ func init() {
 // NewRuleManager.
 type RuleManager interface {
 	// Load and add rules from rule files specified in the configuration.
-	AddRulesFromConfig(config config.Config) error
+	AddRulesFromConfig(config *config.Config) error
 	// Start the rule manager's periodic rule evaluation.
 	Run()
 	// Stop the rule manager's rule evaluation cycles.
@@ -267,7 +267,7 @@ func (m *ruleManager) runIteration() {
 	wg.Wait()
 }
 
-func (m *ruleManager) AddRulesFromConfig(config config.Config) error {
+func (m *ruleManager) AddRulesFromConfig(config *config.Config) error {
 	for _, ruleFile := range config.Global.RuleFile {
 		newRules, err := rules.LoadRulesFromFile(ruleFile)
 		if err != nil {

@@ -262,7 +262,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		},
 	}
 
-	targetManager, err := NewTargetManager(config.Config{}, nopAppender{})
+	targetManager, err := NewTargetManager(&config.Config{}, nopAppender{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		cfg := pb.PrometheusConfig{
 			ScrapeConfig: step.scrapeConfigs,
 		}
-		err := targetManager.ApplyConfig(config.Config{cfg})
+		err := targetManager.ApplyConfig(&config.Config{cfg})
 		if err != nil {
 			t.Fatal(err)
 		}

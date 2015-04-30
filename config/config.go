@@ -29,8 +29,10 @@ import (
 	pb "github.com/prometheus/prometheus/config/generated"
 )
 
-var jobNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_-]*$")
-var labelNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
+var (
+	jobNameRE   = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_-]*$")
+	labelNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
+)
 
 // Config encapsulates the configuration of a Prometheus instance. It wraps the
 // raw configuration protocol buffer to be able to add custom methods to it.
@@ -232,15 +234,17 @@ func (c *DNSConfig) Validate() error {
 	return nil
 }
 
-// SDRefreshInterval gets the the SD refresh interval for the scrape config.
+// RefreshInterval gets the the refresh interval for DNS service discovery.
 func (c *DNSConfig) RefreshInterval() time.Duration {
 	return stringToDuration(c.GetRefreshInterval())
 }
 
+// RelabelConfig encapsulates the protobuf configuration object for relabeling.
 type RelabelConfig struct {
 	pb.RelabelConfig
 }
 
+// Validate checks the RelabelConfig for the validity of its fields.
 func (c *RelabelConfig) Validate() error {
 	if len(c.GetSourceLabel()) == 0 {
 		return errors.New("at least one source label is required")

@@ -20,6 +20,6 @@ import (
 func TestLoadFromFile(t *testing.T) {
 	_, err := LoadFromFile("file-does-not-exist.conf")
 	if err == nil {
-		t.Error(err)
+		t.Error("Error expected on non-existing config file path but got none")
 	}
 }

@@ -2,5 +2,7 @@ scrape_config: <
   job_name: "testjob"
   dns_config: <
   	name: "sd_name"
+  	name: "sd_name2"
+  	refresh_interval: "15s"
   >
 >
