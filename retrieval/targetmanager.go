@@ -63,7 +63,7 @@ type TargetManager struct {
 }
 
 // NewTargetManager creates a new TargetManager based on the given config.
-func NewTargetManager(cfg config.Config, sampleAppender storage.SampleAppender) (*TargetManager, error) {
+func NewTargetManager(cfg *config.Config, sampleAppender storage.SampleAppender) (*TargetManager, error) {
 	tm := &TargetManager{
 		sampleAppender: sampleAppender,
 		targets:        make(map[string][]Target),
@@ -273,7 +273,7 @@ func (tm *TargetManager) Pools() map[string][]Target {
 
 // ApplyConfig resets the manager's target providers and job configurations as defined
 // by the new cfg. The state of targets that are valid in the new configuration remains unchanged.
-func (tm *TargetManager) ApplyConfig(cfg config.Config) error {
+func (tm *TargetManager) ApplyConfig(cfg *config.Config) error {
 	tm.stop(false)
 	// Even if updating the config failed, we want to continue rather than stop scraping anything.
 	defer tm.Run()
@@ -285,7 +285,7 @@ func (tm *TargetManager) ApplyConfig(cfg config.Config) error {
 	return nil
 }
 
-func (tm *TargetManager) applyConfig(cfg config.Config) error {
+func (tm *TargetManager) applyConfig(cfg *config.Config) error {
 	// Only apply changes if everything was successful.
 	providers := map[*config.ScrapeConfig][]TargetProvider{}
 

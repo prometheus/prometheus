@@ -1,0 +1,89 @@
+global <
+  scrape_interval: "30s"
+  evaluation_interval: "30s"
+  labels: <
+    label: <
+      name: "monitor"
+      value: "test"
+    >
+    label: <
+      name: "more"
+      value: "test"
+    >
+  >
+  rule_file: "prometheus.rules"
+  rule_file: "prometheus.more.rules"
+>
+
+scrape_config: <
+  job_name: "prometheus"
+  scrape_interval: "15s"
+  metrics_path: "/metrics"
+  scheme: "http"
+
+  target_group: <
+    target: "localhost:9090"
+  >
+>
+
+scrape_config: <
+  job_name: "myjob"
+  scrape_interval: "15s"
+  metrics_path: "/metrics"
+  scheme: "http"
+
+  dns_config: <
+    name: "first.srv.name"
+    name: "second.srv.name"
+    refresh_interval: "1h"
+  >
+
+  dns_config: <
+    name: "first2.srv.name"
+    name: "second2.srv.name"
+    refresh_interval: "1m"
+  >
+
+  relabel_config: <
+    source_label: "l1"
+    source_label: "l2"
+    regex: "^foobar.*$"
+    target_label: "l3"
+    replacement: "static"
+  >
+  relabel_config: <
+    source_label: "l4"
+    regex: "^foobar.*$"
+    action: DROP
+  >
+  relabel_config: <
+    source_label: "l4"
+    regex: "^foobar.*$"
+    action: KEEP
+  >
+
+  target_group: <
+    target: "localhost:9090"
+    target: "localhost:9091"
+    labels: <
+      label: <
+        name: "tg1"
+        value: "tg1"
+      >
+    >
+  > 
+  target_group: <
+    target: "my.domain:9090"
+    target: "my.domain:9091"
+    labels: <
+      label: <
+        name: "tg2"
+        value: "tg2"
+      >
+      label: <
+        name: "tg2_1"
+        value: "tg2_1"
+      >
+    >
+  >
+>

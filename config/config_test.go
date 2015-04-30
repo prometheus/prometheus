@@ -34,8 +34,9 @@ var configTests = []struct {
 		inputFile: "empty.conf.input",
 	}, {
 		inputFile: "sd_targets.conf.input",
-	},
-	{
+	}, {
+		inputFile: "full.conf.input",
+	}, {
 		inputFile:   "invalid_proto_format.conf.input",
 		shouldFail:  true,
 		errContains: "unknown field name",
