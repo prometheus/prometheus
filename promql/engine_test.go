@@ -6,13 +6,60 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
-
-	"github.com/prometheus/prometheus/storage/local"
 )
 
 var noop = testStmt(func(context.Context) error {
 	return nil
 })
+
+func TestQueryConcurreny(t *testing.T) {
+	engine := NewEngine(nil)
+	defer engine.Stop()
+
+	block := make(chan struct{})
+	processing := make(chan struct{})
+	f1 := testStmt(func(context.Context) error {
+		processing <- struct{}{}
+		<-block
+		return nil
+	})
+
+	for i := 0; i < *maxConcurrentQueries; i++ {
+		q := engine.newTestQuery(f1)
+		go q.Exec()
+		select {
+		case <-processing:
+			// Expected.
+		case <-time.After(5 * time.Millisecond):
+			t.Fatalf("Query within concurrency threshold not being executed")
+		}
+	}
+
+	q := engine.newTestQuery(f1)
+	go q.Exec()
+
+	select {
+	case <-processing:
+		t.Fatalf("Query above concurrency threhosld being executed")
+	case <-time.After(5 * time.Millisecond):
+		// Expected.
+	}
+
+	// Terminate a running query.
+	block <- struct{}{}
+
+	select {
+	case <-processing:
+		// Expected.
+	case <-time.After(5 * time.Millisecond):
+		t.Fatalf("Query within concurrency threshold not being executed")
+	}
+
+	// Terminate remaining queries.
+	for i := 0; i < *maxConcurrentQueries; i++ {
+		block <- struct{}{}
+	}
+}
 
 func TestQueryTimeout(t *testing.T) {
 	*defaultQueryTimeout = 5 * time.Millisecond
@@ -21,10 +68,7 @@ func TestQueryTimeout(t *testing.T) {
 		*defaultQueryTimeout = 2 * time.Minute
 	}()
 
-	storage, closer := local.NewTestStorage(t, 1)
-	defer closer.Close()
-
-	engine := NewEngine(storage)
+	engine := NewEngine(nil)
 	defer engine.Stop()
 
 	f1 := testStmt(func(context.Context) error {
@@ -46,10 +90,7 @@ func TestQueryTimeout(t *testing.T) {
 }
 
 func TestQueryCancel(t *testing.T) {
-	storage, closer := local.NewTestStorage(t, 1)
-	defer closer.Close()
-
-	engine := NewEngine(storage)
+	engine := NewEngine(nil)
 	defer engine.Stop()
 
 	// As for timeouts, cancellation is only checked at designated points. We ensure
@@ -91,10 +132,7 @@ func TestQueryCancel(t *testing.T) {
 }
 
 func TestEngineShutdown(t *testing.T) {
-	storage, closer := local.NewTestStorage(t, 1)
-	defer closer.Close()
-
-	engine := NewEngine(storage)
+	engine := NewEngine(nil)
 
 	handlerExecutions := 0
 	// Shutdown engine on first handler execution. Should handler execution ever become
