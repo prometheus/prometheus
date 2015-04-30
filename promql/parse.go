@@ -101,7 +101,7 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 			continue
 		}
 		if expr != nil {
-			p.errorf("expression read but input remaining")
+			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 		}
 		expr = p.expr()
 	}
@@ -131,6 +131,9 @@ func (p *parser) next() item {
 			t = p.lex.nextItem()
 		}
 		p.token[0] = t
+	}
+	if p.token[p.peekCount].typ == itemError {
+		p.errorf("%s", p.token[p.peekCount].val)
 	}
 	return p.token[p.peekCount]
 }
@@ -175,26 +178,21 @@ func (p *parser) error(err error) {
 }
 
 // expect consumes the next token and guarantees it has the required type.
-func (p *parser) expect(expected itemType, context string) item {
+func (p *parser) expect(exp itemType, context string) item {
 	token := p.next()
-	if token.typ != expected {
-		p.unexpected(token, context)
+	if token.typ != exp {
+		p.errorf("unexpected %s in %s, expected %s", token.desc(), context, exp.desc())
 	}
 	return token
 }
 
 // expectOneOf consumes the next token and guarantees it has one of the required types.
-func (p *parser) expectOneOf(expected1, expected2 itemType, context string) item {
+func (p *parser) expectOneOf(exp1, exp2 itemType, context string) item {
 	token := p.next()
-	if token.typ != expected1 && token.typ != expected2 {
-		p.unexpected(token, context)
+	if token.typ != exp1 && token.typ != exp2 {
+		p.errorf("unexpected %s in %s, expected %s or %s", token.desc(), context, exp1.desc(), exp2.desc())
 	}
 	return token
-}
-
-// unexpected complains about the token and terminates processing.
-func (p *parser) unexpected(token item, context string) {
-	p.errorf("unexpected %s in %s", token, context)
 }
 
 // recover is the handler that turns panics into returns from the top level of Parse.
@@ -303,10 +301,11 @@ func (p *parser) recordStmt() *RecordStmt {
 
 // expr parses any expression.
 func (p *parser) expr() Expr {
-	const ctx = "binary expression"
-
 	// Parse the starting expression.
 	expr := p.unaryExpr()
+	if expr == nil {
+		p.errorf("no valid expression found")
+	}
 
 	// Loop through the operations and construct a binary operation tree based
 	// on the operators' precedence.
@@ -354,6 +353,9 @@ func (p *parser) expr() Expr {
 
 		// Parse the next operand.
 		rhs := p.unaryExpr()
+		if rhs == nil {
+			p.errorf("missing right-hand side in binary expression")
+		}
 
 		// Assign the new root based on the precendence of the LHS and RHS operators.
 		if lhs, ok := expr.(*BinaryExpr); ok && lhs.Op.precedence() < op.precedence() {
@@ -497,7 +499,6 @@ func (p *parser) primaryExpr() Expr {
 		p.backup()
 		return p.aggrExpr()
 	}
-	p.errorf("invalid primary expression")
 	return nil
 }
 
@@ -535,7 +536,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 
 	agop := p.next()
 	if !agop.typ.isAggregator() {
-		p.errorf("%s is not an aggregation operator", agop)
+		p.errorf("expected aggregation operator but got %s", agop)
 	}
 	var grouping clientmodel.LabelNames
 	var keepExtra bool
@@ -650,7 +651,7 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 
 		op := p.next().typ
 		if !op.isOperator() {
-			p.errorf("item %s is not a valid operator for label matching", op)
+			p.errorf("expected label matching operator but got %s", op)
 		}
 		var validOp = false
 		for _, allowedOp := range operators {
@@ -849,10 +850,10 @@ func (p *parser) checkType(node Node) (typ ExprType) {
 	case *Call:
 		nargs := len(n.Func.ArgTypes)
 		if na := nargs - n.Func.OptionalArgs; na > len(n.Args) {
-			p.errorf("expected at least %d arguments in call to %q, got %d", na, n.Func.Name, len(n.Args))
+			p.errorf("expected at least %d argument(s) in call to %q, got %d", na, n.Func.Name, len(n.Args))
 		}
 		if nargs < len(n.Args) {
-			p.errorf("expected at most %d arguments in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
+			p.errorf("expected at most %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
 		}
 		for i, arg := range n.Args {
 			p.expectType(arg, n.Func.ArgTypes[i], fmt.Sprintf("call to function %q", n.Func.Name))

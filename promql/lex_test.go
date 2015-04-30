@@ -245,6 +245,9 @@ var tests = []struct {
 	},
 	// Test Selector.
 	{
+		input: `台北`,
+		fail:  true,
+	}, {
 		input: `{foo="bar"}`,
 		expected: []item{
 			{itemLeftBrace, 0, `{`},

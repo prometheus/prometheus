@@ -15,7 +15,6 @@ package promql
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -35,6 +34,8 @@ func (i item) String() string {
 		return "EOF"
 	case i.typ == itemError:
 		return i.val
+	case i.typ == itemIdentifier || i.typ == itemMetricIdentifier:
+		return fmt.Sprintf("%q", i.val)
 	case i.typ.isKeyword():
 		return fmt.Sprintf("<%s>", i.val)
 	case i.typ.isOperator():
@@ -183,6 +184,16 @@ var key = map[string]itemType{
 // These are the default string representations for common items. It does not
 // imply that those are the only character sequences that can be lexed to such an item.
 var itemTypeStr = map[itemType]string{
+	itemLeftParen:    "(",
+	itemRightParen:   ")",
+	itemLeftBrace:    "{",
+	itemRightBrace:   "}",
+	itemLeftBracket:  "[",
+	itemRightBracket: "]",
+	itemComma:        ",",
+	itemAssign:       "=",
+	itemSemicolon:    ";",
+
 	itemSUB:      "-",
 	itemADD:      "+",
 	itemMUL:      "*",
@@ -209,7 +220,39 @@ func (t itemType) String() string {
 	if s, ok := itemTypeStr[t]; ok {
 		return s
 	}
-	return reflect.TypeOf(t).Name()
+	return fmt.Sprintf("<item %d>", t)
+}
+
+func (i item) desc() string {
+	if _, ok := itemTypeStr[i.typ]; ok {
+		return i.String()
+	}
+	if i.typ == itemEOF {
+		return i.typ.desc()
+	}
+	return fmt.Sprintf("%s %s", i.typ.desc(), i)
+}
+
+func (t itemType) desc() string {
+	switch t {
+	case itemError:
+		return "error"
+	case itemEOF:
+		return "end of input"
+	case itemComment:
+		return "comment"
+	case itemIdentifier:
+		return "identifier"
+	case itemMetricIdentifier:
+		return "metric identifier"
+	case itemString:
+		return "string"
+	case itemNumber:
+		return "number"
+	case itemDuration:
+		return "duration"
+	}
+	return fmt.Sprintf("%q", t)
 }
 
 const eof = -1
@@ -377,7 +420,7 @@ func lexStatements(l *lexer) stateFn {
 			l.next()
 			l.emit(itemEQL)
 		} else if t == '~' {
-			return l.errorf("unrecognized character after '=': %#U", t)
+			return l.errorf("unexpected character after '=': %q", t)
 		} else {
 			l.emit(itemAssign)
 		}
@@ -385,7 +428,7 @@ func lexStatements(l *lexer) stateFn {
 		if t := l.next(); t == '=' {
 			l.emit(itemNEQ)
 		} else {
-			return l.errorf("unrecognized character after '!': %#U", t)
+			return l.errorf("unexpected character after '!': %q", t)
 		}
 	case r == '<':
 		if t := l.peek(); t == '=' {
@@ -401,7 +444,7 @@ func lexStatements(l *lexer) stateFn {
 		} else {
 			l.emit(itemGTR)
 		}
-	case '0' <= r && r <= '9' || r == '.':
+	case unicode.IsDigit(r) || (r == '.' && unicode.IsDigit(l.peek())):
 		l.backup()
 		return lexNumberOrDuration
 	case r == '"' || r == '\'':
@@ -422,7 +465,7 @@ func lexStatements(l *lexer) stateFn {
 			}
 		}
 		fallthrough
-	case isAlphaNumeric(r):
+	case isAlphaNumeric(r) || r == ':':
 		l.backup()
 		return lexKeywordOrIdentifier
 	case r == '(':
@@ -433,7 +476,7 @@ func lexStatements(l *lexer) stateFn {
 		l.emit(itemRightParen)
 		l.parenDepth--
 		if l.parenDepth < 0 {
-			return l.errorf("unexpected right parenthesis %#U", r)
+			return l.errorf("unexpected right parenthesis %q", r)
 		}
 		return lexStatements
 	case r == '{':
@@ -442,20 +485,20 @@ func lexStatements(l *lexer) stateFn {
 		return lexInsideBraces(l)
 	case r == '[':
 		if l.bracketOpen {
-			return l.errorf("unexpected left bracket %#U", r)
+			return l.errorf("unexpected left bracket %q", r)
 		}
 		l.emit(itemLeftBracket)
 		l.bracketOpen = true
 		return lexDuration
 	case r == ']':
 		if !l.bracketOpen {
-			return l.errorf("unexpected right bracket %#U", r)
+			return l.errorf("unexpected right bracket %q", r)
 		}
 		l.emit(itemRightBracket)
 		l.bracketOpen = false
 
 	default:
-		return l.errorf("unrecognized character in statement: %#U", r)
+		return l.errorf("unexpected character: %q", r)
 	}
 	return lexStatements
 }
@@ -469,10 +512,10 @@ func lexInsideBraces(l *lexer) stateFn {
 
 	switch r := l.next(); {
 	case r == eof:
-		return l.errorf("unexpected EOF inside braces")
+		return l.errorf("unexpected end of input inside braces")
 	case isSpace(r):
 		return lexSpace
-	case isAlphaNumeric(r):
+	case unicode.IsLetter(r) || r == '_':
 		l.backup()
 		return lexIdentifier
 	case r == ',':
@@ -494,16 +537,16 @@ func lexInsideBraces(l *lexer) stateFn {
 		case nr == '=':
 			l.emit(itemNEQ)
 		default:
-			return l.errorf("unrecognized character after '!' inside braces: %#U", nr)
+			return l.errorf("unexpected character after '!' inside braces: %q", nr)
 		}
 	case r == '{':
-		return l.errorf("unexpected left brace %#U", r)
+		return l.errorf("unexpected left brace %q", r)
 	case r == '}':
 		l.emit(itemRightBrace)
 		l.braceOpen = false
 		return lexStatements
 	default:
-		return l.errorf("unrecognized character inside braces: %#U", r)
+		return l.errorf("unexpected character inside braces: %q", r)
 	}
 	return lexInsideBraces
 }
@@ -553,7 +596,11 @@ func lexDuration(l *lexer) stateFn {
 		return l.errorf("missing unit character in duration")
 	}
 	// Next two chars must be a valid unit and a non-alphanumeric.
-	if l.accept("smhdwy") && !isAlphaNumeric(l.peek()) {
+	if l.accept("smhdwy") {
+		if isAlphaNumeric(l.next()) {
+			return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
+		}
+		l.backup()
 		l.emit(itemDuration)
 		return lexStatements
 	}
@@ -576,7 +623,11 @@ func lexNumberOrDuration(l *lexer) stateFn {
 		return lexStatements
 	}
 	// Next two chars must be a valid unit and a non-alphanumeric.
-	if l.accept("smhdwy") && !isAlphaNumeric(l.peek()) {
+	if l.accept("smhdwy") {
+		if isAlphaNumeric(l.next()) {
+			return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
+		}
+		l.backup()
 		l.emit(itemDuration)
 		return lexStatements
 	}
@@ -605,7 +656,8 @@ func (l *lexer) scanNumber() bool {
 	return true
 }
 
-// lexIdentifier scans an alphanumeric identifier.
+// lexIdentifier scans an alphanumeric identifier. The next character
+// is known to be a letter.
 func lexIdentifier(l *lexer) stateFn {
 	for isAlphaNumeric(l.next()) {
 		// absorb
@@ -651,5 +703,5 @@ func isEndOfLine(r rune) bool {
 
 // isAlphaNumeric reports whether r is an alphabetic, digit, or underscore.
 func isAlphaNumeric(r rune) bool {
-	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') || unicode.IsDigit(r)
 }
