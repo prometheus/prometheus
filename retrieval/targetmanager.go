@@ -81,19 +81,19 @@ func (tm *TargetManager) Run() {
 	sources := map[string]struct{}{}
 
 	for scfg, provs := range tm.providers {
-		for _, p := range provs {
+		for _, prov := range provs {
 			ch := make(chan *config.TargetGroup)
 			go tm.handleTargetUpdates(scfg, ch)
 
-			for _, src := range p.Sources() {
+			for _, src := range prov.Sources() {
 				src = fullSource(scfg, src)
 				sources[src] = struct{}{}
 			}
 
 			// Run the target provider after cleanup of the stale targets is done.
-			defer func(c chan *config.TargetGroup) {
+			defer func(p TargetProvider, c chan *config.TargetGroup) {
 				go p.Run(c)
-			}(ch)
+			}(prov, ch)
 		}
 	}
 
@@ -326,9 +326,17 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 			}
 		}
 
-		address, ok := labels[clientmodel.AddressLabel]
-		if !ok {
-			return nil, fmt.Errorf("Instance %d in target group %s has no address", i, tg)
+		if _, ok := labels[clientmodel.AddressLabel]; !ok {
+			return nil, fmt.Errorf("instance %d in target group %s has no address", i, tg)
+		}
+
+		labels, err := Relabel(labels, cfg.RelabelConfigs()...)
+		if err != nil {
+			return nil, fmt.Errorf("error while relabelling instance %d in target group %s: %s", i, tg, err)
+		}
+		// Check if the target was dropped.
+		if labels == nil {
+			continue
 		}
 
 		for ln := range labels {
@@ -338,8 +346,8 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 				delete(labels, ln)
 			}
 		}
-		targets = append(targets, NewTarget(string(address), cfg, labels))
-
+		tr := NewTarget(cfg, labels)
+		targets = append(targets, tr)
 	}
 
 	return targets, nil

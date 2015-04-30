@@ -164,10 +164,45 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		JobName:        proto.String("test_job2"),
 		ScrapeInterval: proto.String("1m"),
 		TargetGroup: []*pb.TargetGroup{
-			{Target: []string{"example.org:8080", "example.com:8081"}},
+			{
+				Target: []string{"example.org:8080", "example.com:8081"},
+				Labels: &pb.LabelPairs{Label: []*pb.LabelPair{
+					{Name: proto.String("foo"), Value: proto.String("bar")},
+					{Name: proto.String("boom"), Value: proto.String("box")},
+				}},
+			},
 			{Target: []string{"test.com:1234"}},
+			{
+				Target: []string{"test.com:1235"},
+				Labels: &pb.LabelPairs{Label: []*pb.LabelPair{
+					{Name: proto.String("instance"), Value: proto.String("fixed")},
+				}},
+			},
+		},
+		RelabelConfig: []*pb.RelabelConfig{
+			{
+				SourceLabel: []string{string(clientmodel.AddressLabel)},
+				Regex:       proto.String(`^test\.(.*?):(.*)`),
+				Replacement: proto.String("foo.${1}:${2}"),
+				TargetLabel: proto.String(string(clientmodel.AddressLabel)),
+			}, {
+				// Add a new label for example.* targets.
+				SourceLabel: []string{string(clientmodel.AddressLabel), "boom", "foo"},
+				Regex:       proto.String("^example.*?-b([a-z-]+)r$"),
+				TargetLabel: proto.String("new"),
+				Replacement: proto.String("$1"),
+				Separator:   proto.String("-"),
+			}, {
+				// Drop an existing label.
+				SourceLabel: []string{"boom"},
+				Regex:       proto.String(".*"),
+				TargetLabel: proto.String("boom"),
+				Replacement: proto.String(""),
+			},
 		},
 	}
+	proto.SetDefaults(testJob1)
+	proto.SetDefaults(testJob2)
 
 	sequence := []struct {
 		scrapeConfigs []*pb.ScrapeConfig
@@ -197,11 +232,14 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80"},
 				},
 				"test_job2:static:0": {
-					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.org:8080"},
-					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.com:8081"},
+					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba"},
+					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.com:8081", "foo": "bar", "new": "ox-ba"},
 				},
 				"test_job2:static:1": {
-					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "test.com:1234"},
+					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "foo.com:1234"},
+				},
+				"test_job2:static:2": {
+					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "fixed"},
 				},
 			},
 		}, {
@@ -211,11 +249,14 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			scrapeConfigs: []*pb.ScrapeConfig{testJob2},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job2:static:0": {
-					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.org:8080"},
-					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.com:8081"},
+					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba"},
+					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.com:8081", "foo": "bar", "new": "ox-ba"},
 				},
 				"test_job2:static:1": {
-					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "test.com:1234"},
+					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "foo.com:1234"},
+				},
+				"test_job2:static:2": {
+					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "fixed"},
 				},
 			},
 		},
