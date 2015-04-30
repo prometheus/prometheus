@@ -803,7 +803,7 @@ func createRandomSamples(metricName string, minLen int) clientmodel.Samples {
 						return clientmodel.SampleValue(rand.Intn(1<<16) - 1<<15 + int(v))
 					},
 					func(v clientmodel.SampleValue) clientmodel.SampleValue {
-						return clientmodel.SampleValue(rand.Intn(1<<32) - 1<<31 + int(v))
+						return clientmodel.SampleValue(rand.Int63n(1<<32) - 1<<31 + int64(v))
 					},
 				},
 			},

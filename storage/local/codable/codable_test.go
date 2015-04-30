@@ -32,7 +32,7 @@ func newLabelName(ln string) *LabelName {
 
 func TestUint64(t *testing.T) {
 	var b bytes.Buffer
-	const n = 422010471112345
+	const n = uint64(422010471112345)
 	if err := EncodeUint64(&b, n); err != nil {
 		t.Fatal(err)
 	}
