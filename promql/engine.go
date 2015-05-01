@@ -165,8 +165,8 @@ type (
 	ErrQueryCanceled string
 )
 
-func (e ErrQueryTimeout) Error() string  { return fmt.Sprintf("query timed out in %s", e) }
-func (e ErrQueryCanceled) Error() string { return fmt.Sprintf("query was canceled in %s", e) }
+func (e ErrQueryTimeout) Error() string  { return fmt.Sprintf("query timed out in %s", string(e)) }
+func (e ErrQueryCanceled) Error() string { return fmt.Sprintf("query was canceled in %s", string(e)) }
 
 // A Query is derived from an a raw query string and can be run against an engine
 // it is associated with.
