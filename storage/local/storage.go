@@ -277,10 +277,7 @@ func (s *memorySeriesStorage) NewIterator(fp clientmodel.Fingerprint) SeriesIter
 		// return any values.
 		return nopSeriesIterator{}
 	}
-	return series.newIterator(
-		func() { s.fpLocker.Lock(fp) },
-		func() { s.fpLocker.Unlock(fp) },
-	)
+	return series.newIterator()
 }
 
 // NewPreloader implements Storage.

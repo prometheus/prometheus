@@ -58,11 +58,11 @@ type Storage interface {
 	WaitForIndexing()
 }
 
-// SeriesIterator enables efficient access of sample values in a series. All
-// methods are goroutine-safe. A SeriesIterator iterates over a snapshot of a
-// series, i.e. it is safe to continue using a SeriesIterator after modifying
-// the corresponding series, but the iterator will represent the state of the
-// series prior the modification.
+// SeriesIterator enables efficient access of sample values in a series. Its
+// methods are not goroutine-safe. A SeriesIterator iterates over a snapshot of
+// a series, i.e. it is safe to continue using a SeriesIterator after or during
+// modifying the corresponding series, but the iterator will represent the state
+// of the series prior the modification.
 type SeriesIterator interface {
 	// Gets the two values that are immediately adjacent to a given time. In
 	// case a value exist at precisely the given time, only that single

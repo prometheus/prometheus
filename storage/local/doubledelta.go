@@ -398,8 +398,6 @@ func (it *doubleDeltaEncodedChunkIterator) length() int { return it.len }
 
 // getValueAtTime implements chunkIterator.
 func (it *doubleDeltaEncodedChunkIterator) getValueAtTime(t clientmodel.Timestamp) metric.Values {
-	// TODO(beorn7): Implement in a more efficient way making use of the
-	// state of the iterator and internals of the doubleDeltaChunk.
 	i := sort.Search(it.len, func(i int) bool {
 		return !it.getTimestampAtIndex(i).Before(t)
 	})
@@ -438,8 +436,6 @@ func (it *doubleDeltaEncodedChunkIterator) getValueAtTime(t clientmodel.Timestam
 
 // getRangeValues implements chunkIterator.
 func (it *doubleDeltaEncodedChunkIterator) getRangeValues(in metric.Interval) metric.Values {
-	// TODO(beorn7): Implement in a more efficient way making use of the
-	// state of the iterator and internals of the doubleDeltaChunk.
 	oldest := sort.Search(it.len, func(i int) bool {
 		return !it.getTimestampAtIndex(i).Before(in.OldestInclusive)
 	})
