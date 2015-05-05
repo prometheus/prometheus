@@ -35,7 +35,7 @@ docker: build
 tarball: $(ARCHIVE)
 
 $(ARCHIVE): build
-	tar -czf $(ARCHIVE) prometheus
+	tar -czf $(ARCHIVE) prometheus tools/rule_checker/rule_checker consoles console_libraries
 
 release: REMOTE     ?= $(error "can't upload, REMOTE not set")
 release: REMOTE_DIR ?= $(error "can't upload, REMOTE_DIR not set")
