@@ -107,10 +107,7 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 	}
 
 	targets := make([]Target, 0, len(response.Answer))
-	endpoint := &url.URL{
-		Scheme: "http",
-		Path:   p.job.GetMetricsPath(),
-	}
+	endpoint := &url.URL{Scheme: "http"}
 	for _, record := range response.Answer {
 		addr, ok := record.(*dns.SRV)
 		if !ok {
@@ -122,7 +119,7 @@ func (p *sdTargetProvider) Targets() ([]Target, error) {
 			addr.Target = addr.Target[:len(addr.Target)-1]
 		}
 		endpoint.Host = fmt.Sprintf("%s:%d", addr.Target, addr.Port)
-		t := NewTarget(endpoint.String(), p.job.ScrapeTimeout(), baseLabels)
+		t := NewTarget(endpoint.String() + p.job.GetMetricsPath(), p.job.ScrapeTimeout(), baseLabels)
 		targets = append(targets, t)
 	}
 
