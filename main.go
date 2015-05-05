@@ -92,7 +92,8 @@ type prometheus struct {
 func NewPrometheus() *prometheus {
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
-		glog.Errorf("Couldn't load configuration (-config.file=%s): %v\n", *configFile, err)
+		glog.Errorf("Couldn't load configuration (-config.file=%s): %v", *configFile, err)
+		glog.Errorf("Note: The configuration format has changed with version 0.14, please check the documentation.")
 		os.Exit(2)
 	}
 
