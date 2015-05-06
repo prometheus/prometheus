@@ -31,8 +31,9 @@ import (
 )
 
 var (
-	stalenessDelta      = flag.Duration("query.staleness-delta", 300*time.Second, "Staleness delta allowance during expression evaluations.")
-	defaultQueryTimeout = flag.Duration("query.timeout", 2*time.Minute, "Maximum time a query may take before being aborted.")
+	stalenessDelta       = flag.Duration("query.staleness-delta", 300*time.Second, "Staleness delta allowance during expression evaluations.")
+	defaultQueryTimeout  = flag.Duration("query.timeout", 2*time.Minute, "Maximum time a query may take before being aborted.")
+	maxConcurrentQueries = flag.Int("query.max-concurrency", 20, "Maximum number of queries executed concurrently.")
 )
 
 // SampleStream is a stream of Values belonging to an attached COWMetric.
@@ -215,10 +216,7 @@ func (q *query) Cancel() {
 
 // Exec implements the Query interface.
 func (q *query) Exec() *Result {
-	ctx, cancel := context.WithTimeout(q.ng.baseCtx, *defaultQueryTimeout)
-	q.cancel = cancel
-
-	res, err := q.ng.exec(ctx, q)
+	res, err := q.ng.exec(q)
 	return &Result{Err: err, Value: res}
 }
 
@@ -249,6 +247,8 @@ type Engine struct {
 	// The base context for all queries and its cancellation function.
 	baseCtx       context.Context
 	cancelQueries func()
+	// The gate limiting the maximum number of concurrent and waiting queries.
+	gate *queryGate
 }
 
 // NewEngine returns a new engine.
@@ -258,6 +258,7 @@ func NewEngine(storage local.Storage) *Engine {
 		storage:       storage,
 		baseCtx:       ctx,
 		cancelQueries: cancel,
+		gate:          newQueryGate(*maxConcurrentQueries),
 	}
 }
 
@@ -316,8 +317,20 @@ func (ng *Engine) newTestQuery(stmts ...Statement) Query {
 //
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
-func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
+func (ng *Engine) exec(q *query) (Value, error) {
 	const env = "query execution"
+
+	ctx, cancel := context.WithTimeout(q.ng.baseCtx, *defaultQueryTimeout)
+	q.cancel = cancel
+
+	queueTimer := q.stats.GetTimer(stats.ExecQueueTime).Start()
+
+	if err := ng.gate.Start(ctx); err != nil {
+		return nil, err
+	}
+	defer ng.gate.Done()
+
+	queueTimer.Stop()
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
@@ -1123,5 +1136,37 @@ func interpolateSamples(first, second *metric.SamplePair, timestamp clientmodel.
 	return &metric.SamplePair{
 		Value:     first.Value + (offset * dDt),
 		Timestamp: timestamp,
+	}
+}
+
+// A queryGate controls the maximum number of concurrently running and waiting queries.
+type queryGate struct {
+	ch chan struct{}
+}
+
+// newQueryGate returns a query gate that limits the number of queries
+// being concurrently executed.
+func newQueryGate(length int) *queryGate {
+	return &queryGate{
+		ch: make(chan struct{}, length),
+	}
+}
+
+// Start blocks until the gate has a free spot or the context is done.
+func (g *queryGate) Start(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return contextDone(ctx, "query queue")
+	case g.ch <- struct{}{}:
+		return nil
+	}
+}
+
+// Done releases a single spot in the gate.
+func (g *queryGate) Done() {
+	select {
+	case <-g.ch:
+	default:
+		panic("engine.queryGate.Done: more operations done than started")
 	}
 }
