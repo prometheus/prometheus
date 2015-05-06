@@ -26,14 +26,68 @@ var separator = []byte{0}
 // a singleton and refers to one and only one stream of samples.
 type Metric map[LabelName]LabelValue
 
-// Equal compares the fingerprints of both metrics.
+// Equal compares the metrics.
 func (m Metric) Equal(o Metric) bool {
-	return m.Fingerprint().Equal(o.Fingerprint())
+	if len(m) != len(o) {
+		return false
+	}
+	for ln, lv := range m {
+		olv, ok := o[ln]
+		if !ok {
+			return false
+		}
+		if olv != lv {
+			return false
+		}
+	}
+	return true
 }
 
-// Before compares the fingerprints of both metrics.
+// Before compares the metrics, using the following criteria:
+//
+// If m has fewer labels than o, it is before o. If it has more, it is not.
+//
+// If the number of labels is the same, the superset of all label names is
+// sorted alphanumerically. The first differing label pair found in that order
+// determines the outcome: If the label does not exist at all in m, then m is
+// before o, and vice versa. Otherwise the label value is compared
+// alphanumerically.
+//
+// If m and o are equal, the method returns false.
 func (m Metric) Before(o Metric) bool {
-	return m.Fingerprint().Less(o.Fingerprint())
+	if len(m) < len(o) {
+		return true
+	}
+	if len(m) > len(o) {
+		return false
+	}
+
+	lns := make(LabelNames, 0, len(m)+len(o))
+	for ln := range m {
+		lns = append(lns, ln)
+	}
+	for ln := range o {
+		lns = append(lns, ln)
+	}
+	// It's probably not worth it to de-dup lns.
+	sort.Sort(lns)
+	for _, ln := range lns {
+		mlv, ok := m[ln]
+		if !ok {
+			return true
+		}
+		olv, ok := o[ln]
+		if !ok {
+			return false
+		}
+		if mlv < olv {
+			return true
+		}
+		if mlv > olv {
+			return false
+		}
+	}
+	return false
 }
 
 // String implements Stringer.
@@ -65,6 +119,12 @@ func (m Metric) String() string {
 // Fingerprint returns a Metric's Fingerprint.
 func (m Metric) Fingerprint() Fingerprint {
 	return metricToFingerprint(m)
+}
+
+// Fingerprint returns a Metric's Fingerprint calculated by a faster hashing
+// algorithm, which is, however, more susceptible to hash collisions.
+func (m Metric) FastFingerprint() Fingerprint {
+	return metricToFastFingerprint(m)
 }
 
 // Clone returns a copy of the Metric.

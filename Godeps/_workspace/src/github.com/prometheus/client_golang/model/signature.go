@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"hash"
 	"hash/fnv"
+	"sort"
 	"sync"
 )
 
@@ -46,35 +47,70 @@ func getHashAndBuf() *hashAndBuf {
 }
 
 func putHashAndBuf(hb *hashAndBuf) {
+	hb.h.Reset()
+	hb.b.Reset()
 	hashAndBufPool.Put(hb)
 }
 
-// LabelsToSignature returns a unique signature (i.e., fingerprint) for a given
-// label set.
+// LabelsToSignature returns a quasi-unique signature (i.e., fingerprint) for a
+// given label set. (Collisions are possible but unlikely if the number of label
+// sets the function is applied to is small.)
 func LabelsToSignature(labels map[string]string) uint64 {
 	if len(labels) == 0 {
 		return emptyLabelSignature
 	}
 
-	var result uint64
+	labelNames := make([]string, 0, len(labels))
+	for labelName := range labels {
+		labelNames = append(labelNames, labelName)
+	}
+	sort.Strings(labelNames)
+
 	hb := getHashAndBuf()
 	defer putHashAndBuf(hb)
 
-	for labelName, labelValue := range labels {
+	for _, labelName := range labelNames {
 		hb.b.WriteString(labelName)
 		hb.b.WriteByte(SeparatorByte)
-		hb.b.WriteString(labelValue)
+		hb.b.WriteString(labels[labelName])
+		hb.b.WriteByte(SeparatorByte)
 		hb.h.Write(hb.b.Bytes())
-		result ^= hb.h.Sum64()
-		hb.h.Reset()
 		hb.b.Reset()
 	}
-	return result
+	return hb.h.Sum64()
 }
 
 // metricToFingerprint works exactly as LabelsToSignature but takes a Metric as
 // parameter (rather than a label map) and returns a Fingerprint.
 func metricToFingerprint(m Metric) Fingerprint {
+	if len(m) == 0 {
+		return Fingerprint(emptyLabelSignature)
+	}
+
+	labelNames := make(LabelNames, 0, len(m))
+	for labelName := range m {
+		labelNames = append(labelNames, labelName)
+	}
+	sort.Sort(labelNames)
+
+	hb := getHashAndBuf()
+	defer putHashAndBuf(hb)
+
+	for _, labelName := range labelNames {
+		hb.b.WriteString(string(labelName))
+		hb.b.WriteByte(SeparatorByte)
+		hb.b.WriteString(string(m[labelName]))
+		hb.b.WriteByte(SeparatorByte)
+		hb.h.Write(hb.b.Bytes())
+		hb.b.Reset()
+	}
+	return Fingerprint(hb.h.Sum64())
+}
+
+// metricToFastFingerprint works similar to metricToFingerprint but uses a
+// faster and less allocation-heavy hash function, which is more susceptible to
+// create hash collisions. Therefore, collision detection should be applied.
+func metricToFastFingerprint(m Metric) Fingerprint {
 	if len(m) == 0 {
 		return Fingerprint(emptyLabelSignature)
 	}
@@ -97,13 +133,15 @@ func metricToFingerprint(m Metric) Fingerprint {
 
 // SignatureForLabels works like LabelsToSignature but takes a Metric as
 // parameter (rather than a label map) and only includes the labels with the
-// specified LabelNames into the signature calculation.
+// specified LabelNames into the signature calculation. The labels passed in
+// will be sorted by this function.
 func SignatureForLabels(m Metric, labels LabelNames) uint64 {
 	if len(m) == 0 || len(labels) == 0 {
 		return emptyLabelSignature
 	}
 
-	var result uint64
+	sort.Sort(labels)
+
 	hb := getHashAndBuf()
 	defer putHashAndBuf(hb)
 
@@ -111,12 +149,11 @@ func SignatureForLabels(m Metric, labels LabelNames) uint64 {
 		hb.b.WriteString(string(label))
 		hb.b.WriteByte(SeparatorByte)
 		hb.b.WriteString(string(m[label]))
+		hb.b.WriteByte(SeparatorByte)
 		hb.h.Write(hb.b.Bytes())
-		result ^= hb.h.Sum64()
-		hb.h.Reset()
 		hb.b.Reset()
 	}
-	return result
+	return hb.h.Sum64()
 }
 
 // SignatureWithoutLabels works like LabelsToSignature but takes a Metric as
@@ -127,24 +164,27 @@ func SignatureWithoutLabels(m Metric, labels map[LabelName]struct{}) uint64 {
 		return emptyLabelSignature
 	}
 
-	var result uint64
+	labelNames := make(LabelNames, 0, len(m))
+	for labelName := range m {
+		if _, exclude := labels[labelName]; !exclude {
+			labelNames = append(labelNames, labelName)
+		}
+	}
+	if len(labelNames) == 0 {
+		return emptyLabelSignature
+	}
+	sort.Sort(labelNames)
+
 	hb := getHashAndBuf()
 	defer putHashAndBuf(hb)
 
-	for labelName, labelValue := range m {
-		if _, exclude := labels[labelName]; exclude {
-			continue
-		}
+	for _, labelName := range labelNames {
 		hb.b.WriteString(string(labelName))
 		hb.b.WriteByte(SeparatorByte)
-		hb.b.WriteString(string(labelValue))
+		hb.b.WriteString(string(m[labelName]))
+		hb.b.WriteByte(SeparatorByte)
 		hb.h.Write(hb.b.Bytes())
-		result ^= hb.h.Sum64()
-		hb.h.Reset()
 		hb.b.Reset()
 	}
-	if result == 0 {
-		return emptyLabelSignature
-	}
-	return result
+	return hb.h.Sum64()
 }

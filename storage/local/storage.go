@@ -382,7 +382,7 @@ func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
 		}
 		glog.Warning("Sample ingestion resumed.")
 	}
-	fp := sample.Metric.Fingerprint()
+	fp := sample.Metric.FastFingerprint() // TODO(beorn): Handle collisions.
 	s.fpLocker.Lock(fp)
 	series := s.getOrCreateSeries(fp, sample.Metric)
 	completedChunksCount := series.add(&metric.SamplePair{

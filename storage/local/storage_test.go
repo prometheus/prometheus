@@ -46,7 +46,7 @@ func TestGetFingerprintsForLabelMatchers(t *testing.T) {
 			Timestamp: clientmodel.Timestamp(i),
 			Value:     clientmodel.SampleValue(i),
 		}
-		fingerprints[i] = metric.Fingerprint()
+		fingerprints[i] = metric.FastFingerprint()
 	}
 	for _, s := range samples {
 		storage.Append(s)
@@ -172,7 +172,7 @@ func TestLoop(t *testing.T) {
 		storage.Append(s)
 	}
 	storage.WaitForIndexing()
-	series, _ := storage.(*memorySeriesStorage).fpToSeries.get(clientmodel.Metric{}.Fingerprint())
+	series, _ := storage.(*memorySeriesStorage).fpToSeries.get(clientmodel.Metric{}.FastFingerprint())
 	cdsBefore := len(series.chunkDescs)
 	time.Sleep(fpMaxWaitDuration + time.Second) // TODO(beorn7): Ugh, need to wait for maintenance to kick in.
 	cdsAfter := len(series.chunkDescs)
@@ -251,7 +251,7 @@ func testGetValueAtTime(t *testing.T, encoding chunkEncoding) {
 	}
 	s.WaitForIndexing()
 
-	fp := clientmodel.Metric{}.Fingerprint()
+	fp := clientmodel.Metric{}.FastFingerprint()
 
 	it := s.NewIterator(fp)
 
@@ -344,7 +344,7 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 	}
 	s.WaitForIndexing()
 
-	fp := clientmodel.Metric{}.Fingerprint()
+	fp := clientmodel.Metric{}.FastFingerprint()
 
 	it := s.NewIterator(fp)
 
@@ -498,7 +498,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 	s.WaitForIndexing()
 
-	fp := clientmodel.Metric{}.Fingerprint()
+	fp := clientmodel.Metric{}.FastFingerprint()
 
 	// Drop ~half of the chunks.
 	ms.maintainMemorySeries(fp, 1000)
@@ -896,7 +896,7 @@ func verifyStorage(t testing.TB, s Storage, samples clientmodel.Samples, maxAge 
 			// retention period, we can verify here that no results
 			// are returned.
 		}
-		fp := sample.Metric.Fingerprint()
+		fp := sample.Metric.FastFingerprint()
 		p := s.NewPreloader()
 		p.PreloadRange(fp, sample.Timestamp, sample.Timestamp, time.Hour)
 		found := s.NewIterator(fp).GetValueAtTime(sample.Timestamp)
