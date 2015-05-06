@@ -21,42 +21,36 @@ import (
 func TestSamplesSort(t *testing.T) {
 	input := Samples{
 		&Sample{
-			// Fingerprint: 81f9c9ed24563f8f.
 			Metric: Metric{
 				MetricNameLabel: "A",
 			},
 			Timestamp: 1,
 		},
 		&Sample{
-			// Fingerprint: 81f9c9ed24563f8f.
 			Metric: Metric{
 				MetricNameLabel: "A",
 			},
 			Timestamp: 2,
 		},
 		&Sample{
-			// Fingerprint: 1bf6c9ed24543f8f.
 			Metric: Metric{
 				MetricNameLabel: "C",
 			},
 			Timestamp: 1,
 		},
 		&Sample{
-			// Fingerprint: 1bf6c9ed24543f8f.
 			Metric: Metric{
 				MetricNameLabel: "C",
 			},
 			Timestamp: 2,
 		},
 		&Sample{
-			// Fingerprint: 68f4c9ed24533f8f.
 			Metric: Metric{
 				MetricNameLabel: "B",
 			},
 			Timestamp: 1,
 		},
 		&Sample{
-			// Fingerprint: 68f4c9ed24533f8f.
 			Metric: Metric{
 				MetricNameLabel: "B",
 			},
@@ -66,44 +60,38 @@ func TestSamplesSort(t *testing.T) {
 
 	expected := Samples{
 		&Sample{
-			// Fingerprint: 1bf6c9ed24543f8f.
-			Metric: Metric{
-				MetricNameLabel: "C",
-			},
-			Timestamp: 1,
-		},
-		&Sample{
-			// Fingerprint: 1bf6c9ed24543f8f.
-			Metric: Metric{
-				MetricNameLabel: "C",
-			},
-			Timestamp: 2,
-		},
-		&Sample{
-			// Fingerprint: 68f4c9ed24533f8f.
-			Metric: Metric{
-				MetricNameLabel: "B",
-			},
-			Timestamp: 1,
-		},
-		&Sample{
-			// Fingerprint: 68f4c9ed24533f8f.
-			Metric: Metric{
-				MetricNameLabel: "B",
-			},
-			Timestamp: 2,
-		},
-		&Sample{
-			// Fingerprint: 81f9c9ed24563f8f.
 			Metric: Metric{
 				MetricNameLabel: "A",
 			},
 			Timestamp: 1,
 		},
 		&Sample{
-			// Fingerprint: 81f9c9ed24563f8f.
 			Metric: Metric{
 				MetricNameLabel: "A",
+			},
+			Timestamp: 2,
+		},
+		&Sample{
+			Metric: Metric{
+				MetricNameLabel: "B",
+			},
+			Timestamp: 1,
+		},
+		&Sample{
+			Metric: Metric{
+				MetricNameLabel: "B",
+			},
+			Timestamp: 2,
+		},
+		&Sample{
+			Metric: Metric{
+				MetricNameLabel: "C",
+			},
+			Timestamp: 1,
+		},
+		&Sample{
+			Metric: Metric{
+				MetricNameLabel: "C",
 			},
 			Timestamp: 2,
 		},

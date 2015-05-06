@@ -17,12 +17,14 @@ import "testing"
 
 func testMetric(t testing.TB) {
 	var scenarios = []struct {
-		input       Metric
-		fingerprint Fingerprint
+		input           Metric
+		fingerprint     Fingerprint
+		fastFingerprint Fingerprint
 	}{
 		{
-			input:       Metric{},
-			fingerprint: 14695981039346656037,
+			input:           Metric{},
+			fingerprint:     14695981039346656037,
+			fastFingerprint: 14695981039346656037,
 		},
 		{
 			input: Metric{
@@ -30,33 +32,40 @@ func testMetric(t testing.TB) {
 				"occupation":   "robot",
 				"manufacturer": "westinghouse",
 			},
-			fingerprint: 11310079640881077873,
+			fingerprint:     5911716720268894962,
+			fastFingerprint: 11310079640881077873,
 		},
 		{
 			input: Metric{
 				"x": "y",
 			},
-			fingerprint: 13948396922932177635,
+			fingerprint:     8241431561484471700,
+			fastFingerprint: 13948396922932177635,
 		},
 		{
 			input: Metric{
 				"a": "bb",
 				"b": "c",
 			},
-			fingerprint: 3198632812309449502,
+			fingerprint:     3016285359649981711,
+			fastFingerprint: 3198632812309449502,
 		},
 		{
 			input: Metric{
 				"a":  "b",
 				"bb": "c",
 			},
-			fingerprint: 5774953389407657638,
+			fingerprint:     7122421792099404749,
+			fastFingerprint: 5774953389407657638,
 		},
 	}
 
 	for i, scenario := range scenarios {
 		if scenario.fingerprint != scenario.input.Fingerprint() {
 			t.Errorf("%d. expected %d, got %d", i, scenario.fingerprint, scenario.input.Fingerprint())
+		}
+		if scenario.fastFingerprint != scenario.input.FastFingerprint() {
+			t.Errorf("%d. expected %d, got %d", i, scenario.fastFingerprint, scenario.input.FastFingerprint())
 		}
 	}
 }
