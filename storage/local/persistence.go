@@ -55,6 +55,11 @@ const (
 	headsFormatLegacyVersion = 1 // Can read, but will never write.
 	headsMagicString         = "PrometheusHeads"
 
+	mappingsFileName      = "mappings.db"
+	mappingsTempFileName  = "mappings.db.tmp"
+	mappingsFormatVersion = 1
+	mappingsMagicString   = "PrometheusMappings"
+
 	dirtyFileName = "DIRTY"
 
 	fileBufSize = 1 << 16 // 64kiB.
@@ -1278,6 +1283,14 @@ func (p *persistence) headsTempFileName() string {
 	return path.Join(p.basePath, headsTempFileName)
 }
 
+func (p *persistence) mappingsFileName() string {
+	return path.Join(p.basePath, mappingsFileName)
+}
+
+func (p *persistence) mappingsTempFileName() string {
+	return path.Join(p.basePath, mappingsTempFileName)
+}
+
 func (p *persistence) processIndexingQueue() {
 	batchSize := 0
 	nameToValues := index.LabelNameLabelValuesMapping{}
@@ -1381,6 +1394,157 @@ loop:
 		}
 	}
 	close(p.indexingStopped)
+}
+
+// checkpointFPMappings persists the fingerprint mappings. This method is not
+// goroutine-safe.
+//
+// Description of the file format, v1:
+//
+// (1) Magic string (const mappingsMagicString).
+//
+// (2) Uvarint-encoded format version (const mappingsFormatVersion).
+//
+// (3) Uvarint-encoded number of mappings in fpMappings.
+//
+// (4) Repeated once per mapping:
+//
+// (4.1) The raw fingerprint as big-endian uint64.
+//
+// (4.2) The uvarint-encoded number of sub-mappings for the raw fingerprint.
+//
+// (4.3) Repeated once per sub-mapping:
+//
+// (4.3.1) The uvarint-encoded length of the unique metric string.
+// (4.3.2) The unique metric string.
+// (4.3.3) The mapped fingerprint as big-endian uint64.
+func (p *persistence) checkpointFPMappings(c fpMappings) (err error) {
+	glog.Info("Checkpointing fingerprint mappings...")
+	begin := time.Now()
+	f, err := os.OpenFile(p.mappingsTempFileName(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
+	if err != nil {
+		return
+	}
+
+	defer func() {
+		f.Sync()
+		closeErr := f.Close()
+		if err != nil {
+			return
+		}
+		err = closeErr
+		if err != nil {
+			return
+		}
+		err = os.Rename(p.mappingsTempFileName(), p.mappingsFileName())
+		duration := time.Since(begin)
+		glog.Infof("Done checkpointing fingerprint mappings in %v.", duration)
+	}()
+
+	w := bufio.NewWriterSize(f, fileBufSize)
+
+	if _, err = w.WriteString(mappingsMagicString); err != nil {
+		return
+	}
+	if _, err = codable.EncodeUvarint(w, mappingsFormatVersion); err != nil {
+		return
+	}
+	if _, err = codable.EncodeUvarint(w, uint64(len(c))); err != nil {
+		return
+	}
+
+	for fp, mappings := range c {
+		if err = codable.EncodeUint64(w, uint64(fp)); err != nil {
+			return
+		}
+		if _, err = codable.EncodeUvarint(w, uint64(len(mappings))); err != nil {
+			return
+		}
+		for ms, mappedFP := range mappings {
+			if _, err = codable.EncodeUvarint(w, uint64(len(ms))); err != nil {
+				return
+			}
+			if _, err = w.WriteString(ms); err != nil {
+				return
+			}
+			if err = codable.EncodeUint64(w, uint64(mappedFP)); err != nil {
+				return
+			}
+		}
+	}
+	err = w.Flush()
+	return
+}
+
+// loadFPMappings loads the fingerprint mappings. It also returns the highest
+// mapped fingerprint and any error encountered. If p.mappingsFileName is not
+// found, the method returns (fpMappings{}, 0, nil). Do not call concurrently
+// with checkpointFPMappings.
+func (p *persistence) loadFPMappings() (fpMappings, clientmodel.Fingerprint, error) {
+	fpm := fpMappings{}
+	var highestMappedFP clientmodel.Fingerprint
+
+	f, err := os.Open(p.mappingsFileName())
+	if os.IsNotExist(err) {
+		return fpm, 0, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, fileBufSize)
+
+	buf := make([]byte, len(mappingsMagicString))
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return nil, 0, err
+	}
+	magic := string(buf)
+	if magic != mappingsMagicString {
+		return nil, 0, fmt.Errorf(
+			"unexpected magic string, want %q, got %q",
+			mappingsMagicString, magic,
+		)
+	}
+	version, err := binary.ReadUvarint(r)
+	if version != mappingsFormatVersion || err != nil {
+		return nil, 0, fmt.Errorf("unknown fingerprint mappings format version, want %d", mappingsFormatVersion)
+	}
+	numRawFPs, err := binary.ReadUvarint(r)
+	if err != nil {
+		return nil, 0, err
+	}
+	for ; numRawFPs > 0; numRawFPs-- {
+		rawFP, err := codable.DecodeUint64(r)
+		if err != nil {
+			return nil, 0, err
+		}
+		numMappings, err := binary.ReadUvarint(r)
+		if err != nil {
+			return nil, 0, err
+		}
+		mappings := make(map[string]clientmodel.Fingerprint, numMappings)
+		for ; numMappings > 0; numMappings-- {
+			lenMS, err := binary.ReadUvarint(r)
+			if err != nil {
+				return nil, 0, err
+			}
+			buf := make([]byte, lenMS)
+			if _, err := io.ReadFull(r, buf); err != nil {
+				return nil, 0, err
+			}
+			fp, err := codable.DecodeUint64(r)
+			if err != nil {
+				return nil, 0, err
+			}
+			mappedFP := clientmodel.Fingerprint(fp)
+			if mappedFP > highestMappedFP {
+				highestMappedFP = mappedFP
+			}
+			mappings[string(buf)] = mappedFP
+		}
+		fpm[clientmodel.Fingerprint(rawFP)] = mappings
+	}
+	return fpm, highestMappedFP, nil
 }
 
 func offsetForChunkIndex(i int) int64 {

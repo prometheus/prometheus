@@ -201,8 +201,8 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 	}
 	s.WaitForIndexing()
 
-	for m := range s.(*memorySeriesStorage).fpToSeries.iter() {
-		s.(*memorySeriesStorage).fpLocker.Lock(m.fp)
+	for m := range s.fpToSeries.iter() {
+		s.fpLocker.Lock(m.fp)
 
 		var values metric.Values
 		for _, cd := range m.series.chunkDescs {
@@ -222,7 +222,7 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 				t.Errorf("%d. Got %v; want %v", i, v.Value, samples[i].Value)
 			}
 		}
-		s.(*memorySeriesStorage).fpLocker.Unlock(m.fp)
+		s.fpLocker.Unlock(m.fp)
 	}
 	glog.Info("test done, closing")
 }
@@ -491,8 +491,6 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
-	ms := s.(*memorySeriesStorage) // Going to test the internal maintain.*Series methods.
-
 	for _, sample := range samples {
 		s.Append(sample)
 	}
@@ -501,7 +499,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	fp := clientmodel.Metric{}.FastFingerprint()
 
 	// Drop ~half of the chunks.
-	ms.maintainMemorySeries(fp, 1000)
+	s.maintainMemorySeries(fp, 1000)
 	it := s.NewIterator(fp)
 	actual := it.GetBoundaryValues(metric.Interval{
 		OldestInclusive: 0,
@@ -519,7 +517,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 
 	// Drop everything.
-	ms.maintainMemorySeries(fp, 10000)
+	s.maintainMemorySeries(fp, 10000)
 	it = s.NewIterator(fp)
 	actual = it.GetBoundaryValues(metric.Interval{
 		OldestInclusive: 0,
@@ -535,24 +533,24 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 	s.WaitForIndexing()
 
-	series, ok := ms.fpToSeries.get(fp)
+	series, ok := s.fpToSeries.get(fp)
 	if !ok {
 		t.Fatal("could not find series")
 	}
 
 	// Persist head chunk so we can safely archive.
 	series.headChunkClosed = true
-	ms.maintainMemorySeries(fp, clientmodel.Earliest)
+	s.maintainMemorySeries(fp, clientmodel.Earliest)
 
 	// Archive metrics.
-	ms.fpToSeries.del(fp)
-	if err := ms.persistence.archiveMetric(
+	s.fpToSeries.del(fp)
+	if err := s.persistence.archiveMetric(
 		fp, series.metric, series.firstTime(), series.head().lastTime(),
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	archived, _, _, err := ms.persistence.hasArchivedMetric(fp)
+	archived, _, _, err := s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,8 +559,8 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 
 	// Drop ~half of the chunks of an archived series.
-	ms.maintainArchivedSeries(fp, 1000)
-	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
+	s.maintainArchivedSeries(fp, 1000)
+	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -571,8 +569,8 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 
 	// Drop everything.
-	ms.maintainArchivedSeries(fp, 10000)
-	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
+	s.maintainArchivedSeries(fp, 10000)
+	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -586,24 +584,24 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 	s.WaitForIndexing()
 
-	series, ok = ms.fpToSeries.get(fp)
+	series, ok = s.fpToSeries.get(fp)
 	if !ok {
 		t.Fatal("could not find series")
 	}
 
 	// Persist head chunk so we can safely archive.
 	series.headChunkClosed = true
-	ms.maintainMemorySeries(fp, clientmodel.Earliest)
+	s.maintainMemorySeries(fp, clientmodel.Earliest)
 
 	// Archive metrics.
-	ms.fpToSeries.del(fp)
-	if err := ms.persistence.archiveMetric(
+	s.fpToSeries.del(fp)
+	if err := s.persistence.archiveMetric(
 		fp, series.metric, series.firstTime(), series.head().lastTime(),
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
+	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,13 +610,13 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 
 	// Unarchive metrics.
-	ms.getOrCreateSeries(fp, clientmodel.Metric{})
+	s.getOrCreateSeries(fp, clientmodel.Metric{})
 
-	series, ok = ms.fpToSeries.get(fp)
+	series, ok = s.fpToSeries.get(fp)
 	if !ok {
 		t.Fatal("could not find series")
 	}
-	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
+	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,8 +626,8 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	// This will archive again, but must not drop it completely, despite the
 	// memorySeries being empty.
-	ms.maintainMemorySeries(fp, 1000)
-	archived, _, _, err = ms.persistence.hasArchivedMetric(fp)
+	s.maintainMemorySeries(fp, 1000)
+	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -751,11 +749,11 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 		for _, sample := range samples[start:middle] {
 			s.Append(sample)
 		}
-		verifyStorage(b, s, samples[:middle], o.PersistenceRetentionPeriod)
+		verifyStorage(b, s.(*memorySeriesStorage), samples[:middle], o.PersistenceRetentionPeriod)
 		for _, sample := range samples[middle:end] {
 			s.Append(sample)
 		}
-		verifyStorage(b, s, samples[:end], o.PersistenceRetentionPeriod)
+		verifyStorage(b, s.(*memorySeriesStorage), samples[:end], o.PersistenceRetentionPeriod)
 	}
 }
 
@@ -823,7 +821,25 @@ func createRandomSamples(metricName string, minLen int) clientmodel.Samples {
 		}
 	)
 
-	result := clientmodel.Samples{}
+	// Prefill resust with two samples with colliding metrics (to test fingerprint mapping).
+	result := clientmodel.Samples{
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				"instance": "ip-10-33-84-73.l05.ams5.s-cloud.net:24483",
+				"status":   "503",
+			},
+			Value:     42,
+			Timestamp: timestamp,
+		},
+		&clientmodel.Sample{
+			Metric: clientmodel.Metric{
+				"instance": "ip-10-33-84-73.l05.ams5.s-cloud.net:24480",
+				"status":   "500",
+			},
+			Value:     2010,
+			Timestamp: timestamp + 1,
+		},
+	}
 
 	metrics := []clientmodel.Metric{}
 	for n := rand.Intn(maxMetrics); n >= 0; n-- {
@@ -885,7 +901,7 @@ func createRandomSamples(metricName string, minLen int) clientmodel.Samples {
 	return result
 }
 
-func verifyStorage(t testing.TB, s Storage, samples clientmodel.Samples, maxAge time.Duration) bool {
+func verifyStorage(t testing.TB, s *memorySeriesStorage, samples clientmodel.Samples, maxAge time.Duration) bool {
 	s.WaitForIndexing()
 	result := true
 	for _, i := range rand.Perm(len(samples)) {
@@ -896,7 +912,10 @@ func verifyStorage(t testing.TB, s Storage, samples clientmodel.Samples, maxAge 
 			// retention period, we can verify here that no results
 			// are returned.
 		}
-		fp := sample.Metric.FastFingerprint()
+		fp, err := s.mapper.mapFP(sample.Metric.FastFingerprint(), sample.Metric)
+		if err != nil {
+			t.Fatal(err)
+		}
 		p := s.NewPreloader()
 		p.PreloadRange(fp, sample.Timestamp, sample.Timestamp, time.Hour)
 		found := s.NewIterator(fp).GetValueAtTime(sample.Timestamp)

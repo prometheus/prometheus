@@ -84,6 +84,19 @@ func EncodeVarint(w io.Writer, i int64) (int, error) {
 	return bytesWritten, err
 }
 
+// EncodeUvarint encodes an uint64 as a varint and writes it to an io.Writer.
+// It returns the number of bytes written.
+// This is a GC-friendly implementation that takes the required staging buffer
+// from a buffer pool.
+func EncodeUvarint(w io.Writer, i uint64) (int, error) {
+	buf := getBuf(binary.MaxVarintLen64)
+	defer putBuf(buf)
+
+	bytesWritten := binary.PutUvarint(buf, i)
+	_, err := w.Write(buf[:bytesWritten])
+	return bytesWritten, err
+}
+
 // EncodeUint64 writes an uint64 to an io.Writer in big-endian byte-order.
 // This is a GC-friendly implementation that takes the required staging buffer
 // from a buffer pool.
