@@ -448,3 +448,89 @@ func (m *SummaryVec) WithLabelValues(lvs ...string) Summary {
 func (m *SummaryVec) With(labels Labels) Summary {
 	return m.MetricVec.With(labels).(Summary)
 }
+
+type constSummary struct {
+	desc       *Desc
+	count      uint64
+	sum        float64
+	quantiles  map[float64]float64
+	labelPairs []*dto.LabelPair
+}
+
+func (s *constSummary) Desc() *Desc {
+	return s.desc
+}
+
+func (s *constSummary) Write(out *dto.Metric) error {
+	sum := &dto.Summary{}
+	qs := make([]*dto.Quantile, 0, len(s.quantiles))
+
+	sum.SampleCount = proto.Uint64(s.count)
+	sum.SampleSum = proto.Float64(s.sum)
+
+	for rank, q := range s.quantiles {
+		qs = append(qs, &dto.Quantile{
+			Quantile: proto.Float64(rank),
+			Value:    proto.Float64(q),
+		})
+	}
+
+	if len(qs) > 0 {
+		sort.Sort(quantSort(qs))
+	}
+	sum.Quantile = qs
+
+	out.Summary = sum
+	out.Label = s.labelPairs
+
+	return nil
+}
+
+// NewConstSummary returns a metric representing a Prometheus summary with fixed
+// values for the count, sum, and quantiles. As those parameters cannot be
+// changed, the returned value does not implement the Summary interface (but
+// only the Metric interface). Users of this package will not have much use for
+// it in regular operations. However, when implementing custom Collectors, it is
+// useful as a throw-away metric that is generated on the fly to send it to
+// Prometheus in the Collect method.
+//
+// quantiles maps ranks to quantile values. For example, a median latency of
+// 0.23s and a 99th percentile latency of 0.56s would be expressed as:
+//     map[float64]float64{0.5: 0.23, 0.99: 0.56}
+//
+// NewConstSummary returns an error if the length of labelValues is not
+// consistent with the variable labels in Desc.
+func NewConstSummary(
+	desc *Desc,
+	count uint64,
+	sum float64,
+	quantiles map[float64]float64,
+	labelValues ...string,
+) (Metric, error) {
+	if len(desc.variableLabels) != len(labelValues) {
+		return nil, errInconsistentCardinality
+	}
+	return &constSummary{
+		desc:       desc,
+		count:      count,
+		sum:        sum,
+		quantiles:  quantiles,
+		labelPairs: makeLabelPairs(desc, labelValues),
+	}, nil
+}
+
+// MustNewConstSummary is a version of NewConstSummary that panics where
+// NewConstMetric would have returned an error.
+func MustNewConstSummary(
+	desc *Desc,
+	count uint64,
+	sum float64,
+	quantiles map[float64]float64,
+	labelValues ...string,
+) Metric {
+	m, err := NewConstSummary(desc, count, sum, quantiles, labelValues...)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}

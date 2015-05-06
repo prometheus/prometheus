@@ -318,7 +318,7 @@ func (s *memorySeries) preloadChunks(indexes []int, mss *memorySeriesStorage) ([
 		if s.chunkDescsOffset == -1 {
 			panic("requested loading chunks from persistence in a situation where we must not have persisted data for chunk descriptors in memory")
 		}
-		fp := s.metric.Fingerprint()
+		fp := s.metric.FastFingerprint() // TODO(beorn): Handle collisions.
 		chunks, err := mss.loadChunks(fp, loadIndexes, s.chunkDescsOffset)
 		if err != nil {
 			// Unpin the chunks since we won't return them as pinned chunks now.
