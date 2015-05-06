@@ -8,10 +8,6 @@
 			"Rev": "75cd24fc2f2c2a2088577d12123ddee5f54e0675"
 		},
 		{
-			"ImportPath": "github.com/prometheus/procfs",
-			"Rev": "92faa308558161acab0ada1db048e9996ecec160"
-		},
-		{
 			"ImportPath": "github.com/beorn7/perks/quantile",
 			"Rev": "b965b613227fddccbfffe13eae360ed3fa822f8d"
 		},
@@ -67,6 +63,10 @@
 		{
 			"ImportPath": "github.com/syndtr/gosnappy/snappy",
 			"Rev": "156a073208e131d7d2e212cb749feae7c339e846"
+		},
+		{
+			"ImportPath": "golang.org/x/net/context",
+			"Rev": "b6fdb7d8a4ccefede406f8fe0f017fb58265054c"
 		}
 	]
 }
