@@ -66,7 +66,7 @@ var (
 	}
 
 	// The default DNS SD configuration.
-	DefaultDNSConfig = DefaultedDNSConfig{
+	DefaultDNSSDConfig = DefaultedDNSSDConfig{
 		RefreshInterval: Duration(30 * time.Second),
 	}
 )
@@ -80,7 +80,7 @@ type Config struct {
 	original string
 }
 
-func (c *Config) String() string {
+func (c Config) String() string {
 	if c.original != "" {
 		return c.original
 	}
@@ -117,12 +117,12 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // DefaultedConfig is a proxy type for Config.
 type DefaultedConfig struct {
-	GlobalConfig  *GlobalConfig   `yaml:"global_config"`
+	GlobalConfig  *GlobalConfig   `yaml:"global"`
 	RuleFiles     []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 }
 
-// GlobalConfig configures values that used across other configuration
+// GlobalConfig configures values that are used across other configuration
 // objects.
 type GlobalConfig struct {
 	// DefaultedGlobalConfig contains the actual fields for GlobalConfig.
@@ -141,11 +141,11 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // DefaultedGlobalConfig is a proxy type for GlobalConfig.
 type DefaultedGlobalConfig struct {
 	// How frequently to scrape targets by default.
-	ScrapeInterval Duration `yaml:"scrape_interval"`
+	ScrapeInterval Duration `yaml:"scrape_interval,omitempty"`
 	// The default timeout when scraping targets.
-	ScrapeTimeout Duration `yaml:"scrape_timeout"`
+	ScrapeTimeout Duration `yaml:"scrape_timeout,omitempty"`
 	// How frequently to evaluate rules by default.
-	EvaluationInterval Duration `yaml:"evaluation_interval"`
+	EvaluationInterval Duration `yaml:"evaluation_interval,omitempty"`
 
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	Labels clientmodel.LabelSet `yaml:"labels,omitempty"`
@@ -175,18 +175,18 @@ type DefaultedScrapeConfig struct {
 	// The job name to which the job label is set by default.
 	JobName string `yaml:"job_name"`
 	// How frequently to scrape the targets of this scrape config.
-	ScrapeInterval Duration `yaml:"scrape_interval"`
+	ScrapeInterval Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
-	ScrapeTimeout Duration `yaml:"scrape_timeout"`
+	ScrapeTimeout Duration `yaml:"scrape_timeout,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
-	MetricsPath string `yaml:"metrics_path"`
+	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
-	Scheme string `yaml:"scheme"`
+	Scheme string `yaml:"scheme,omitempty"`
 
 	// List of labeled target groups for this job.
 	TargetGroups []*TargetGroup `yaml:"target_groups,omitempty"`
 	// List of DNS service discovery configurations.
-	DNSConfigs []*DNSConfig `yaml:"dns_configs,omitempty"`
+	DNSSDConfigs []*DNSSDConfig `yaml:"dns_sd_configs,omitempty"`
 	// List of relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
 }
@@ -203,7 +203,7 @@ type TargetGroup struct {
 	Source string `yaml:"-", json:"-"`
 }
 
-func (tg *TargetGroup) String() string {
+func (tg TargetGroup) String() string {
 	return tg.Source
 }
 
@@ -229,29 +229,44 @@ func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// DNSConfig is the configuration for DNS based service discovery.
-type DNSConfig struct {
-	// DefaultedDNSConfig contains the actual fields for DNSConfig.
-	DefaultedDNSConfig `yaml:",inline"`
+// MarshalYAML implements the yaml.Marshaller interface.
+func (tg TargetGroup) MarshalYAML() (interface{}, error) {
+	g := &struct {
+		Targets []string             `yaml:"targets"`
+		Labels  clientmodel.LabelSet `yaml:"labels,omitempty"`
+	}{
+		Targets: make([]string, 0, len(tg.Targets)),
+		Labels:  tg.Labels,
+	}
+	for _, t := range tg.Targets {
+		g.Targets = append(g.Targets, string(t[clientmodel.AddressLabel]))
+	}
+	return g, nil
+}
+
+// DNSSDConfig is the configuration for DNS based service discovery.
+type DNSSDConfig struct {
+	// DefaultedDNSSDConfig contains the actual fields for DNSSDConfig.
+	DefaultedDNSSDConfig `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaller interface.
-func (c *DNSConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	c.DefaultedDNSConfig = DefaultDNSConfig
-	err := unmarshal(&c.DefaultedDNSConfig)
+func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	c.DefaultedDNSSDConfig = DefaultDNSSDConfig
+	err := unmarshal(&c.DefaultedDNSSDConfig)
 	if err != nil {
 		return err
 	}
 	if len(c.Names) == 0 {
-		return fmt.Errorf("DNS config must contain at least one SRV server name")
+		return fmt.Errorf("DNS config must contain at least one SRV record name")
 	}
 	return nil
 }
 
-// DefaultedDNSConfig is a proxy type for DNSConfig.
-type DefaultedDNSConfig struct {
+// DefaultedDNSSDConfig is a proxy type for DNSSDConfig.
+type DefaultedDNSSDConfig struct {
 	Names           []string `yaml:"names"`
-	RefreshInterval Duration `yaml:"refresh_interval"`
+	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
 }
 
 // RelabelAction is the action to be performed on relabeling.
@@ -298,7 +313,7 @@ type DefaultedRelabelConfig struct {
 	// with the configured separator in order.
 	SourceLabels clientmodel.LabelNames `yaml:"source_labels,flow"`
 	// Separator is the string between concatenated values from the source labels.
-	Separator string `yaml:"separator"`
+	Separator string `yaml:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
 	Regex *Regexp `yaml:"regex"`
 	// The label to which the resulting string is written in a replacement.
@@ -306,7 +321,7 @@ type DefaultedRelabelConfig struct {
 	// Replacement is the regex replacement pattern to be used.
 	Replacement string `yaml:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
-	Action RelabelAction `yaml:"action"`
+	Action RelabelAction `yaml:"action,omitempty"`
 }
 
 // Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
@@ -329,7 +344,7 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // MarshalYAML implements the yaml.Marshaller interface.
-func (re *Regexp) MarshalYAML() (interface{}, error) {
+func (re Regexp) MarshalYAML() (interface{}, error) {
 	return re.String(), nil
 }
 

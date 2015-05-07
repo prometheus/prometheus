@@ -72,15 +72,15 @@ var expectedConf = &Config{DefaultedConfig{
 			MetricsPath: "/my_path",
 			Scheme:      "http",
 
-			DNSConfigs: []*DNSConfig{
-				{DefaultedDNSConfig{
+			DNSSDConfigs: []*DNSSDConfig{
+				{DefaultedDNSSDConfig{
 					Names: []string{
 						"first.dns.address.domain.com",
 						"second.dns.address.domain.com",
 					},
 					RefreshInterval: Duration(15 * time.Second),
 				}},
-				{DefaultedDNSConfig{
+				{DefaultedDNSSDConfig{
 					Names: []string{
 						"first.dns.address.domain.com",
 					},

@@ -360,7 +360,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 func ProvidersFromConfig(cfg *config.ScrapeConfig) ([]TargetProvider, error) {
 	var providers []TargetProvider
 
-	for _, dnscfg := range cfg.DNSConfigs {
+	for _, dnscfg := range cfg.DNSSDConfigs {
 		dnsSD := discovery.NewDNSDiscovery(dnscfg.Names, time.Duration(dnscfg.RefreshInterval))
 		providers = append(providers, dnsSD)
 	}

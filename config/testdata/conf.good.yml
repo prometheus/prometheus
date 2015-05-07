@@ -1,5 +1,5 @@
 # my global config
-global_config:
+global:
   scrape_interval:     15s
   evaluation_interval: 30s
   # scrape_timeout is set to the global default (10s).
@@ -46,7 +46,7 @@ scrape_configs:
     metrics_path: /my_path
     # scheme defaults to 'http'.
 
-    dns_configs:
+    dns_sd_configs:
       - refresh_interval: 15s
         names:
           - first.dns.address.domain.com
