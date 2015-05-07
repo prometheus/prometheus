@@ -1418,7 +1418,7 @@ loop:
 // (4.3.1) The uvarint-encoded length of the unique metric string.
 // (4.3.2) The unique metric string.
 // (4.3.3) The mapped fingerprint as big-endian uint64.
-func (p *persistence) checkpointFPMappings(c fpMappings) (err error) {
+func (p *persistence) checkpointFPMappings(fpm fpMappings) (err error) {
 	glog.Info("Checkpointing fingerprint mappings...")
 	begin := time.Now()
 	f, err := os.OpenFile(p.mappingsTempFileName(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
@@ -1449,11 +1449,11 @@ func (p *persistence) checkpointFPMappings(c fpMappings) (err error) {
 	if _, err = codable.EncodeUvarint(w, mappingsFormatVersion); err != nil {
 		return
 	}
-	if _, err = codable.EncodeUvarint(w, uint64(len(c))); err != nil {
+	if _, err = codable.EncodeUvarint(w, uint64(len(fpm))); err != nil {
 		return
 	}
 
-	for fp, mappings := range c {
+	for fp, mappings := range fpm {
 		if err = codable.EncodeUint64(w, uint64(fp)); err != nil {
 			return
 		}
