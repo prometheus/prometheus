@@ -31,7 +31,7 @@ const (
 	GetValueAtTimeTime
 	GetBoundaryValuesTime
 	GetRangeValuesTime
-	ViewQueueTime
+	ExecQueueTime
 	ViewDiskPreparationTime
 	ViewDataExtractionTime
 	ViewDiskExtractionTime
@@ -64,8 +64,8 @@ func (s QueryTiming) String() string {
 		return "GetBoundaryValues() time"
 	case GetRangeValuesTime:
 		return "GetRangeValues() time"
-	case ViewQueueTime:
-		return "View queue wait time"
+	case ExecQueueTime:
+		return "Exec queue wait time"
 	case ViewDiskPreparationTime:
 		return "View building disk preparation time"
 	case ViewDataExtractionTime:

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ast
+package promql
 
 import (
 	"math"
@@ -25,8 +25,8 @@ import (
 // excludedLabels are the labels to exclude from signature calculation for
 // quantiles.
 var excludedLabels = map[clientmodel.LabelName]struct{}{
-	clientmodel.MetricNameLabel: {},
-	clientmodel.BucketLabel:     {},
+	clientmodel.MetricNameLabel: struct{}{},
+	clientmodel.BucketLabel:     struct{}{},
 }
 
 type bucket struct {

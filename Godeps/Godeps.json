@@ -63,6 +63,10 @@
 		{
 			"ImportPath": "github.com/syndtr/gosnappy/snappy",
 			"Rev": "156a073208e131d7d2e212cb749feae7c339e846"
+		},
+		{
+			"ImportPath": "golang.org/x/net/context",
+			"Rev": "b6fdb7d8a4ccefede406f8fe0f017fb58265054c"
 		}
 	]
 }
