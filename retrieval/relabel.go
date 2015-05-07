@@ -1,13 +1,12 @@
 package retrieval
 
 import (
-	"regexp"
+	"fmt"
 	"strings"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
-	pb "github.com/prometheus/prometheus/config/generated"
 )
 
 // Relabel returns a relabeled copy of the given label set. The relabel configurations
@@ -31,40 +30,34 @@ func Relabel(labels clientmodel.LabelSet, cfgs ...*config.RelabelConfig) (client
 }
 
 func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmodel.LabelSet, error) {
-	pat, err := regexp.Compile(cfg.GetRegex())
-	if err != nil {
-		return nil, err
+	values := make([]string, 0, len(cfg.SourceLabels))
+	for _, ln := range cfg.SourceLabels {
+		values = append(values, string(labels[ln]))
 	}
+	val := strings.Join(values, cfg.Separator)
 
-	values := make([]string, 0, len(cfg.GetSourceLabel()))
-	for _, name := range cfg.GetSourceLabel() {
-		values = append(values, string(labels[clientmodel.LabelName(name)]))
-	}
-	val := strings.Join(values, cfg.GetSeparator())
-
-	switch cfg.GetAction() {
-	case pb.RelabelConfig_DROP:
-		if pat.MatchString(val) {
+	switch cfg.Action {
+	case config.RelabelDrop:
+		if cfg.Regex.MatchString(val) {
 			return nil, nil
 		}
-	case pb.RelabelConfig_KEEP:
-		if !pat.MatchString(val) {
+	case config.RelabelKeep:
+		if !cfg.Regex.MatchString(val) {
 			return nil, nil
 		}
-	case pb.RelabelConfig_REPLACE:
+	case config.RelabelReplace:
 		// If there is no match no replacement must take place.
-		if !pat.MatchString(val) {
+		if !cfg.Regex.MatchString(val) {
 			break
 		}
-		res := pat.ReplaceAllString(val, cfg.GetReplacement())
-		ln := clientmodel.LabelName(cfg.GetTargetLabel())
+		res := cfg.Regex.ReplaceAllString(val, cfg.Replacement)
 		if res == "" {
-			delete(labels, ln)
+			delete(labels, cfg.TargetLabel)
 		} else {
-			labels[ln] = clientmodel.LabelValue(res)
+			labels[cfg.TargetLabel] = clientmodel.LabelValue(res)
 		}
 	default:
-		panic("retrieval.relabel: unknown relabel action type")
+		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
 	}
 	return labels, nil
 }

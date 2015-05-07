@@ -1,0 +1,3 @@
+global_config:
+  labels:
+    not$allowed: value

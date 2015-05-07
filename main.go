@@ -161,7 +161,7 @@ func NewPrometheus() *prometheus {
 	ruleManager := manager.NewRuleManager(&manager.RuleManagerOptions{
 		SampleAppender:      sampleAppender,
 		NotificationHandler: notificationHandler,
-		EvaluationInterval:  conf.EvaluationInterval(),
+		EvaluationInterval:  time.Duration(conf.GlobalConfig.EvaluationInterval),
 		Storage:             memStorage,
 		PrometheusURL:       web.MustBuildServerURL(*pathPrefix),
 		PathPrefix:          *pathPrefix,

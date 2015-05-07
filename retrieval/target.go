@@ -190,12 +190,12 @@ func (t *target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSe
 	t.Lock()
 	defer t.Unlock()
 
-	t.url.Scheme = cfg.GetScheme()
+	t.url.Scheme = cfg.Scheme
 	t.url.Path = string(baseLabels[clientmodel.MetricsPathLabel])
 
-	t.scrapeInterval = cfg.ScrapeInterval()
-	t.deadline = cfg.ScrapeTimeout()
-	t.httpClient = utility.NewDeadlineClient(cfg.ScrapeTimeout())
+	t.scrapeInterval = time.Duration(cfg.ScrapeInterval)
+	t.deadline = time.Duration(cfg.ScrapeTimeout)
+	t.httpClient = utility.NewDeadlineClient(time.Duration(cfg.ScrapeTimeout))
 
 	t.baseLabels = clientmodel.LabelSet{}
 	// All remaining internal labels will not be part of the label set.

@@ -268,7 +268,7 @@ func (m *ruleManager) runIteration() {
 }
 
 func (m *ruleManager) AddRulesFromConfig(config *config.Config) error {
-	for _, ruleFile := range config.Global.RuleFile {
+	for _, ruleFile := range config.RuleFiles {
 		newRules, err := rules.LoadRulesFromFile(ruleFile)
 		if err != nil {
 			return fmt.Errorf("%s: %s", ruleFile, err)

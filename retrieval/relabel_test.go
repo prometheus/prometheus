@@ -2,20 +2,18 @@ package retrieval
 
 import (
 	"reflect"
+	"regexp"
 	"testing"
-
-	"github.com/golang/protobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
-	pb "github.com/prometheus/prometheus/config/generated"
 )
 
 func TestRelabel(t *testing.T) {
 	tests := []struct {
 		input   clientmodel.LabelSet
-		relabel []pb.RelabelConfig
+		relabel []config.DefaultedRelabelConfig
 		output  clientmodel.LabelSet
 	}{
 		{
@@ -24,14 +22,14 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			},
-			relabel: []pb.RelabelConfig{
+			relabel: []config.DefaultedRelabelConfig{
 				{
-					SourceLabel: []string{"a"},
-					Regex:       proto.String("f(.*)"),
-					TargetLabel: proto.String("d"),
-					Separator:   proto.String(";"),
-					Replacement: proto.String("ch${1}-ch${1}"),
-					Action:      pb.RelabelConfig_REPLACE.Enum(),
+					SourceLabels: clientmodel.LabelNames{"a"},
+					Regex:        &config.Regexp{*regexp.MustCompile("f(.*)")},
+					TargetLabel:  clientmodel.LabelName("d"),
+					Separator:    ";",
+					Replacement:  "ch${1}-ch${1}",
+					Action:       config.RelabelReplace,
 				},
 			},
 			output: clientmodel.LabelSet{
@@ -47,21 +45,22 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			},
-			relabel: []pb.RelabelConfig{
+			relabel: []config.DefaultedRelabelConfig{
 				{
-					SourceLabel: []string{"a", "b"},
-					Regex:       proto.String("^f(.*);(.*)r$"),
-					TargetLabel: proto.String("a"),
-					Separator:   proto.String(";"),
-					Replacement: proto.String("b${1}${2}m"), // boobam
+					SourceLabels: clientmodel.LabelNames{"a", "b"},
+					Regex:        &config.Regexp{*regexp.MustCompile("^f(.*);(.*)r$")},
+					TargetLabel:  clientmodel.LabelName("a"),
+					Separator:    ";",
+					Replacement:  "b${1}${2}m", // boobam
+					Action:       config.RelabelReplace,
 				},
 				{
-					SourceLabel: []string{"c", "a"},
-					Regex:       proto.String("(b).*b(.*)ba(.*)"),
-					TargetLabel: proto.String("d"),
-					Separator:   proto.String(";"),
-					Replacement: proto.String("$1$2$2$3"),
-					Action:      pb.RelabelConfig_REPLACE.Enum(),
+					SourceLabels: clientmodel.LabelNames{"c", "a"},
+					Regex:        &config.Regexp{*regexp.MustCompile("(b).*b(.*)ba(.*)")},
+					TargetLabel:  clientmodel.LabelName("d"),
+					Separator:    ";",
+					Replacement:  "$1$2$2$3",
+					Action:       config.RelabelReplace,
 				},
 			},
 			output: clientmodel.LabelSet{
@@ -75,18 +74,18 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "foo",
 			},
-			relabel: []pb.RelabelConfig{
+			relabel: []config.DefaultedRelabelConfig{
 				{
-					SourceLabel: []string{"a"},
-					Regex:       proto.String("o$"),
-					Action:      pb.RelabelConfig_DROP.Enum(),
+					SourceLabels: clientmodel.LabelNames{"a"},
+					Regex:        &config.Regexp{*regexp.MustCompile("o$")},
+					Action:       config.RelabelDrop,
 				}, {
-					SourceLabel: []string{"a"},
-					Regex:       proto.String("f(.*)"),
-					TargetLabel: proto.String("d"),
-					Separator:   proto.String(";"),
-					Replacement: proto.String("ch$1-ch$1"),
-					Action:      pb.RelabelConfig_REPLACE.Enum(),
+					SourceLabels: clientmodel.LabelNames{"a"},
+					Regex:        &config.Regexp{*regexp.MustCompile("f(.*)")},
+					TargetLabel:  clientmodel.LabelName("d"),
+					Separator:    ";",
+					Replacement:  "ch$1-ch$1",
+					Action:       config.RelabelReplace,
 				},
 			},
 			output: nil,
@@ -95,11 +94,11 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "foo",
 			},
-			relabel: []pb.RelabelConfig{
+			relabel: []config.DefaultedRelabelConfig{
 				{
-					SourceLabel: []string{"a"},
-					Regex:       proto.String("no-match"),
-					Action:      pb.RelabelConfig_DROP.Enum(),
+					SourceLabels: clientmodel.LabelNames{"a"},
+					Regex:        &config.Regexp{*regexp.MustCompile("no-match")},
+					Action:       config.RelabelDrop,
 				},
 			},
 			output: clientmodel.LabelSet{
@@ -110,11 +109,11 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "foo",
 			},
-			relabel: []pb.RelabelConfig{
+			relabel: []config.DefaultedRelabelConfig{
 				{
-					SourceLabel: []string{"a"},
-					Regex:       proto.String("no-match"),
-					Action:      pb.RelabelConfig_KEEP.Enum(),
+					SourceLabels: clientmodel.LabelNames{"a"},
+					Regex:        &config.Regexp{*regexp.MustCompile("no-match")},
+					Action:       config.RelabelKeep,
 				},
 			},
 			output: nil,
@@ -123,11 +122,11 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "foo",
 			},
-			relabel: []pb.RelabelConfig{
+			relabel: []config.DefaultedRelabelConfig{
 				{
-					SourceLabel: []string{"a"},
-					Regex:       proto.String("^f"),
-					Action:      pb.RelabelConfig_KEEP.Enum(),
+					SourceLabels: clientmodel.LabelNames{"a"},
+					Regex:        &config.Regexp{*regexp.MustCompile("^f")},
+					Action:       config.RelabelKeep,
 				},
 			},
 			output: clientmodel.LabelSet{
@@ -139,13 +138,13 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "boo",
 			},
-			relabel: []pb.RelabelConfig{
+			relabel: []config.DefaultedRelabelConfig{
 				{
-					SourceLabel: []string{"a"},
-					Regex:       proto.String("^f"),
-					Action:      pb.RelabelConfig_REPLACE.Enum(),
-					TargetLabel: proto.String("b"),
-					Replacement: proto.String("bar"),
+					SourceLabels: clientmodel.LabelNames{"a"},
+					Regex:        &config.Regexp{*regexp.MustCompile("^f")},
+					TargetLabel:  clientmodel.LabelName("b"),
+					Replacement:  "bar",
+					Action:       config.RelabelReplace,
 				},
 			},
 			output: clientmodel.LabelSet{
@@ -157,7 +156,6 @@ func TestRelabel(t *testing.T) {
 	for i, test := range tests {
 		var relabel []*config.RelabelConfig
 		for _, rl := range test.relabel {
-			proto.SetDefaults(&rl)
 			relabel = append(relabel, &config.RelabelConfig{rl})
 		}
 		res, err := Relabel(test.input, relabel...)
