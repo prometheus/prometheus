@@ -100,7 +100,4 @@ tools: dependencies
 web: dependencies
 	$(MAKE) -C web
 
-rules: dependencies
-	$(MAKE) -C rules
-
 .PHONY: advice binary build clean config dependencies documentation format race_condition_binary race_condition_run release run search_index tag tarball test tools
