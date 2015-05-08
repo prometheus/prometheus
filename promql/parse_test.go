@@ -497,22 +497,22 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: `foo:bar{a="b"}`,
+		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{
 			Name:   "foo:bar",
 			Offset: 0,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: "a", Value: "b"},
+				{Type: metric.Equal, Name: "a", Value: "bc"},
 				{Type: metric.Equal, Name: clientmodel.MetricNameLabel, Value: "foo:bar"},
 			},
 		},
 	}, {
-		input: `foo{NaN='b'}`,
+		input: `foo{NaN='bc'}`,
 		expected: &VectorSelector{
 			Name:   "foo",
 			Offset: 0,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: "NaN", Value: "b"},
+				{Type: metric.Equal, Name: "NaN", Value: "bc"},
 				{Type: metric.Equal, Name: clientmodel.MetricNameLabel, Value: "foo"},
 			},
 		},
