@@ -257,16 +257,10 @@ func (p *parser) alertStmt() *AlertStmt {
 	}
 
 	p.expect(itemSummary, ctx)
-	sum, err := strconv.Unquote(p.expect(itemString, ctx).val)
-	if err != nil {
-		p.error(err)
-	}
+	sum := trimOne(p.expect(itemString, ctx).val)
 
 	p.expect(itemDescription, ctx)
-	desc, err := strconv.Unquote(p.expect(itemString, ctx).val)
-	if err != nil {
-		p.error(err)
-	}
+	desc := trimOne(p.expect(itemString, ctx).val)
 
 	return &AlertStmt{
 		Name:        name.val,
@@ -663,10 +657,7 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 			p.errorf("operator must be one of %q, is %q", operators, op)
 		}
 
-		val, err := strconv.Unquote(p.expect(itemString, ctx).val)
-		if err != nil {
-			p.error(err)
-		}
+		val := trimOne(p.expect(itemString, ctx).val)
 
 		// Map the item to the respective match type.
 		var matchType metric.MatchType
@@ -886,4 +877,15 @@ func parseDuration(ds string) (time.Duration, error) {
 		return 0, fmt.Errorf("duration must be greater than 0")
 	}
 	return dur, nil
+}
+
+// trimOne removes the first and last character from a string.
+func trimOne(s string) string {
+	if len(s) > 0 {
+		s = s[1:]
+	}
+	if len(s) > 0 {
+		s = s[:len(s)-1]
+	}
+	return s
 }

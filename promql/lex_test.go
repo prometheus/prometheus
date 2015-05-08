@@ -248,6 +248,15 @@ var tests = []struct {
 		input: `台北`,
 		fail:  true,
 	}, {
+		input: `{foo='bar'}`,
+		expected: []item{
+			{itemLeftBrace, 0, `{`},
+			{itemIdentifier, 1, `foo`},
+			{itemEQL, 4, `=`},
+			{itemString, 5, `'bar'`},
+			{itemRightBrace, 10, `}`},
+		},
+	}, {
 		input: `{foo="bar"}`,
 		expected: []item{
 			{itemLeftBrace, 0, `{`},
@@ -255,6 +264,15 @@ var tests = []struct {
 			{itemEQL, 4, `=`},
 			{itemString, 5, `"bar"`},
 			{itemRightBrace, 10, `}`},
+		},
+	}, {
+		input: `{foo="bar\"bar"}`,
+		expected: []item{
+			{itemLeftBrace, 0, `{`},
+			{itemIdentifier, 1, `foo`},
+			{itemEQL, 4, `=`},
+			{itemString, 5, `"bar\"bar"`},
+			{itemRightBrace, 15, `}`},
 		},
 	}, {
 		input: `{NaN	!= "bar" }`,
