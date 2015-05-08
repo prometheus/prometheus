@@ -12,7 +12,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-const maxMappedFP = 1 << 30 // About 1B fingerprints reserved for mapping.
+const maxMappedFP = 1 << 20 // About 1M fingerprints reserved for mapping.
 
 var separatorString = string([]byte{clientmodel.SeparatorByte})
 
