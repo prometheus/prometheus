@@ -23,7 +23,7 @@ type fpMappings map[clientmodel.Fingerprint]map[string]clientmodel.Fingerprint
 // fpMapper is used to map fingerprints in order to work around fingerprint
 // collisions.
 type fpMapper struct {
-	mtx      sync.RWMutex // Protects collisions.
+	mtx      sync.RWMutex // Protects mappings.
 	mappings fpMappings
 
 	fpToSeries      *seriesMap
@@ -32,7 +32,7 @@ type fpMapper struct {
 }
 
 // newFPMapper loads the collision map from the persistence and
-// returns an fpCollisionResolver ready to use.
+// returns an fpMapper ready to use.
 func newFPMapper(fpToSeries *seriesMap, p *persistence) (*fpMapper, error) {
 	r := &fpMapper{
 		fpToSeries: fpToSeries,
