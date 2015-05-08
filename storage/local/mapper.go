@@ -72,7 +72,25 @@ func (r *fpMapper) mapFP(fp clientmodel.Fingerprint, m clientmodel.Metric) (clie
 		// Collision detected!
 		return r.maybeAddMapping(fp, m)
 	}
-	// Metric is not in memory. Check the archive next.
+	// Metric is not in memory. Before doing the expensive archive lookup,
+	// check if we have a mapping for this metric in place already.
+	r.mtx.RLock()
+	mappedFPs, fpAlreadyMapped := r.mappings[fp]
+	r.mtx.RUnlock()
+	if fpAlreadyMapped {
+		// We indeed have mapped fp historically.
+		ms := metricToUniqueString(m)
+		// fp is locked by the caller, so no further locking of
+		// 'collisions' required (it is specific to fp).
+		mappedFP, ok := mappedFPs[ms]
+		if ok {
+			// Historical mapping found, return the mapped FP.
+			return mappedFP, nil
+		}
+	}
+	// If we are here, FP does not exist in memory and is either not mapped
+	// at all, or existing mappings for FP are not for m. Check if we have
+	// something for FP in the archive.
 	archivedMetric, err := r.p.getArchivedMetric(fp)
 	if err != nil {
 		return fp, err
@@ -85,24 +103,6 @@ func (r *fpMapper) mapFP(fp clientmodel.Fingerprint, m clientmodel.Metric) (clie
 		}
 		// Collision detected!
 		return r.maybeAddMapping(fp, m)
-	}
-	// The fingerprint is genuinely new. We might have mapped it
-	// historically, though. so we need to check the collisions map.
-	r.mtx.RLock()
-	mappedFPs, ok := r.mappings[fp]
-	r.mtx.RUnlock()
-	if !ok {
-		// No historical mapping, we are good.
-		return fp, nil
-	}
-	// We indeed have mapped fp historically.
-	ms := metricToUniqueString(m)
-	// fp is locked by the caller, so no further locking of 'collisions'
-	// required (it is specific to fp).
-	mappedFP, ok := mappedFPs[ms]
-	if ok {
-		// Historical mapping found, return the mapped FP.
-		return mappedFP, nil
 	}
 	// As fp does not exist, neither in memory nor in archive, we can safely
 	// keep it unmapped.

@@ -367,28 +367,31 @@ func TestFPMapper(t *testing.T) {
 	}
 
 	// To make sure that the mapping layer is not queried if the FP is found
-	// either in sm or in the archive, now put fp1 with cm12 in sm and fp2
-	// with cm22 into archive (which will never happen in practice as only
-	// mapped FPs are put into sm and the archive.
+	// in sm but the mapping layer is queried before going to the archive,
+	// now put fp1 with cm12 in sm and fp2 with cm22 into archive (which
+	// will never happen in practice as only mapped FPs are put into sm and
+	// the archive).
 	sm.put(fp1, &memorySeries{metric: cm12})
 	p.archiveMetric(fp2, cm22, 0, 0)
 	gotFP, err = mapper.mapFP(fp1, cm12)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := fp1; gotFP != wantFP {
+	if wantFP := fp1; gotFP != wantFP { // No mapping happened.
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp2, cm22)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := fp2; gotFP != wantFP {
+	if wantFP := clientmodel.Fingerprint(3); gotFP != wantFP { // Old mapping still applied.
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
 	// If we now map cm21, we should get a mapping as the collision with the
-	// archived metric is detected.
+	// archived metric is detected. Again, this is a pathological situation
+	// that must never happen in real operations. It's just staged here to
+	// test the expected behavior.
 	gotFP, err = mapper.mapFP(fp2, cm21)
 	if err != nil {
 		t.Fatal(err)
