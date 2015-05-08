@@ -31,7 +31,7 @@
 <ul>
 {{ template "_menuItem" (args . "index.html.example" "Overview") }}
 
-{{ if query "up{job='haproxy'}" }}
+{{ if query "up{job=\"haproxy\"}" }}
 {{ template "_menuItem" (args . "haproxy.html" "HAProxy") }}
 {{ if match "^haproxy" .Path }}
   <ul>
@@ -57,11 +57,11 @@
 {{ end }}
 {{ end }}
 
-{{ if query "up{job='cassandra'}" }}
+{{ if query "up{job=\"cassandra\"}" }}
 {{ template "_menuItem" (args . "cassandra.html" "Cassandra") }}
 {{ end }}
 
-{{ if query "up{job='node'}" }}
+{{ if query "up{job=\"node\"}" }}
 {{ template "_menuItem" (args . "node.html" "Node") }}
 {{ if match "^node" .Path }}
   {{ if .Params.instance }}
@@ -83,19 +83,19 @@
 {{ end }}
 
 
-{{ if query "up{job='cloudwatch'}" }}
+{{ if query "up{job=\"cloudwatch\"}" }}
 {{ template "_menuItem" (args . "cloudwatch.html" "CloudWatch") }}
 {{ end }}
 
-{{ if query "aws_elasticache_cpuutilization_average{job='aws_elasticache'}" }}
+{{ if query "aws_elasticache_cpuutilization_average{job=\"aws_elasticache\"}" }}
 {{ template "_menuItem" (args . "aws_elasticache.html" "ElastiCache") }}
 {{ end }}
 
-{{ if query "aws_elb_healthy_host_count_average{job='aws_elb'}" }}
+{{ if query "aws_elb_healthy_host_count_average{job=\"aws_elb\"}" }}
 {{ template "_menuItem" (args . "aws_elb.html" "ELB") }}
 {{ end }}
 
-{{ if query "aws_redshift_health_status_average{job='aws_redshift'}" }}
+{{ if query "aws_redshift_health_status_average{job=\"aws_redshift\"}" }}
 {{ template "_menuItem" (args . "aws_redshift.html" "Redshift") }}
 {{ if and (eq "aws_redshift-cluster.html" .Path) .Params.cluster_identifier }}
   <ul>
