@@ -1,0 +1,4 @@
+.build/build/
+.build/cache/*.gz
+.build/cache/*.bz2
+.build/root/
