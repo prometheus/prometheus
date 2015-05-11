@@ -121,6 +121,12 @@ var tests = []struct {
 	}, {
 		input:    "abc d",
 		expected: []item{{itemIdentifier, 0, "abc"}, {itemIdentifier, 4, "d"}},
+	}, {
+		input:    ":bc",
+		expected: []item{{itemMetricIdentifier, 0, ":bc"}},
+	}, {
+		input: "0a:bc",
+		fail:  true,
 	},
 	// Test comments.
 	{
@@ -246,6 +252,12 @@ var tests = []struct {
 	// Test Selector.
 	{
 		input: `台北`,
+		fail:  true,
+	}, {
+		input: `{台北='a'}`,
+		fail:  true,
+	}, {
+		input: `{0a='a'}`,
 		fail:  true,
 	}, {
 		input: `{foo='bar'}`,

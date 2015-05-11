@@ -453,6 +453,19 @@ func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
 	return e
 }
 
+// parseNumber parses a number.
+func (p *parser) number(val string) float64 {
+	n, err := strconv.ParseInt(val, 0, 64)
+	f := float64(n)
+	if err != nil {
+		f, err = strconv.ParseFloat(val, 64)
+	}
+	if err != nil {
+		p.errorf("error parsing number: %s", err)
+	}
+	return f
+}
+
 // primaryExpr parses a primary expression.
 //
 //		<metric_name> | <function_call> | <vector_aggregation> | <literal>
@@ -460,14 +473,7 @@ func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
 func (p *parser) primaryExpr() Expr {
 	switch t := p.next(); {
 	case t.typ == itemNumber:
-		n, err := strconv.ParseInt(t.val, 0, 64)
-		f := float64(n)
-		if err != nil {
-			f, err = strconv.ParseFloat(t.val, 64)
-		}
-		if err != nil {
-			p.errorf("error parsing number: %s", err)
-		}
+		f := p.number(t.val)
 		return &NumberLiteral{clientmodel.SampleValue(f)}
 
 	case t.typ == itemString:
