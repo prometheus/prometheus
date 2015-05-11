@@ -23,7 +23,8 @@ import (
 )
 
 var testSampleInterval = time.Duration(5) * time.Minute
-var testStartTime = clientmodel.Timestamp(0)
+
+// var testStartTime = clientmodel.Timestamp(0)
 
 func getTestValueStream(startVal, endVal, stepVal clientmodel.SampleValue, startTime clientmodel.Timestamp) (resultValues metric.Values) {
 	currentTime := startTime

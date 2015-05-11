@@ -33,13 +33,13 @@ var (
 	testEvalTime = testStartTime.Add(testSampleInterval * 10)
 	fixturesPath = "fixtures"
 
-	reSample  = regexp.MustCompile(`^(.*)(?: \=\>|:) (\-?\d+\.?\d*(?:e-?\d+)?|[+-]Inf|NaN) \@\[(\d+)\]$`)
-	minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
+	reSample = regexp.MustCompile(`^(.*)(?: \=\>|:) (\-?\d+\.?\d*(?:e-?\d+)?|[+-]Inf|NaN) \@\[(\d+)\]$`)
+	// minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
 )
 
-const (
-	epsilon = 0.000001 // Relative error allowed for sample values.
-)
+// const (
+// 	epsilon = 0.000001 // Relative error allowed for sample values.
+// )
 
 func annotateWithTime(lines []string, timestamp clientmodel.Timestamp) []string {
 	annotatedLines := []string{}

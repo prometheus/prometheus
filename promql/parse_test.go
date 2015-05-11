@@ -1272,7 +1272,7 @@ var testSeries = []struct {
 	},
 }
 
-// For these tests only, we use the samallest float64 to signal an omitted value.
+// For these tests only, we use the smallest float64 to signal an omitted value.
 const none = math.SmallestNonzeroFloat64
 
 func newSeq(vals ...float64) (res []sequenceValue) {
