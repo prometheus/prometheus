@@ -60,9 +60,32 @@ func query(q string, timestamp clientmodel.Timestamp, queryEngine *promql.Engine
 	if err != nil {
 		return nil, err
 	}
-	vector, err := query.Exec().Vector()
-	if err != nil {
-		return nil, err
+	res := query.Exec()
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	var vector promql.Vector
+
+	switch v := res.Value.(type) {
+	case promql.Matrix:
+		return nil, errors.New("matrix return values not supported")
+	case promql.Vector:
+		vector = v
+	case *promql.Scalar:
+		vector = promql.Vector{&promql.Sample{
+			Value:     v.Value,
+			Timestamp: v.Timestamp,
+		}}
+	case *promql.String:
+		vector = promql.Vector{&promql.Sample{
+			Metric: clientmodel.COWMetric{
+				Metric: clientmodel.Metric{"__value__": clientmodel.LabelValue(v.Value)},
+				Copied: true,
+			},
+			Timestamp: v.Timestamp,
+		}}
+	default:
+		panic("template.query: unhandled result value type")
 	}
 
 	// promql.Vector is hard to work with in templates, so convert to
