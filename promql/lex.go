@@ -465,7 +465,7 @@ func lexStatements(l *lexer) stateFn {
 			}
 		}
 		fallthrough
-	case isAlphaNumeric(r) || r == ':':
+	case isAlpha(r) || r == ':':
 		l.backup()
 		return lexKeywordOrIdentifier
 	case r == '(':
@@ -515,7 +515,7 @@ func lexInsideBraces(l *lexer) stateFn {
 		return l.errorf("unexpected end of input inside braces")
 	case isSpace(r):
 		return lexSpace
-	case unicode.IsLetter(r) || r == '_':
+	case isAlpha(r):
 		l.backup()
 		return lexIdentifier
 	case r == ',':
@@ -703,5 +703,10 @@ func isEndOfLine(r rune) bool {
 
 // isAlphaNumeric reports whether r is an alphabetic, digit, or underscore.
 func isAlphaNumeric(r rune) bool {
-	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') || unicode.IsDigit(r)
+	return isAlpha(r) || unicode.IsDigit(r)
+}
+
+// isAlpha reports whether r is an alphabetic or underscore.
+func isAlpha(r rune) bool {
+	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
 }
