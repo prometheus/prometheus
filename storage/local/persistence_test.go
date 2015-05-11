@@ -484,6 +484,36 @@ func TestCheckpointAndLoadSeriesMapAndHeadsChunkType1(t *testing.T) {
 	testCheckpointAndLoadSeriesMapAndHeads(t, 1)
 }
 
+func TestCheckpointAndLoadFPMappings(t *testing.T) {
+	p, closer := newTestPersistence(t, 1)
+	defer closer.Close()
+
+	in := fpMappings{
+		1: map[string]clientmodel.Fingerprint{
+			"foo": 1,
+			"bar": 2,
+		},
+		3: map[string]clientmodel.Fingerprint{
+			"baz": 4,
+		},
+	}
+
+	if err := p.checkpointFPMappings(in); err != nil {
+		t.Fatal(err)
+	}
+
+	out, fp, err := p.loadFPMappings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fp, clientmodel.Fingerprint(4); got != want {
+		t.Errorf("got highest FP %v, want %v", got, want)
+	}
+	if !reflect.DeepEqual(in, out) {
+		t.Errorf("got collision map %v, want %v", out, in)
+	}
+}
+
 func testGetFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
