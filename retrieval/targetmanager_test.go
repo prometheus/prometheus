@@ -15,25 +15,26 @@ package retrieval
 
 import (
 	"reflect"
+	"regexp"
 	"testing"
 	"time"
-
-	"github.com/golang/protobuf/proto"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
-	pb "github.com/prometheus/prometheus/config/generated"
 )
 
 func TestTargetManagerChan(t *testing.T) {
-	testJob1 := &config.ScrapeConfig{pb.ScrapeConfig{
-		JobName:        proto.String("test_job1"),
-		ScrapeInterval: proto.String("1m"),
-		TargetGroup: []*pb.TargetGroup{
-			{Target: []string{"example.org:80", "example.com:80"}},
+	testJob1 := &config.ScrapeConfig{config.DefaultedScrapeConfig{
+		JobName:        "test_job1",
+		ScrapeInterval: config.Duration(1 * time.Minute),
+		TargetGroups: []*config.TargetGroup{{
+			Targets: []clientmodel.LabelSet{
+				{clientmodel.AddressLabel: "example.org:80"},
+				{clientmodel.AddressLabel: "example.com:80"},
+			},
 		}},
-	}
+	}}
 	prov1 := &fakeTargetProvider{
 		sources: []string{"src1", "src2"},
 		update:  make(chan *config.TargetGroup),
@@ -153,63 +154,76 @@ func TestTargetManagerChan(t *testing.T) {
 }
 
 func TestTargetManagerConfigUpdate(t *testing.T) {
-	testJob1 := &pb.ScrapeConfig{
-		JobName:        proto.String("test_job1"),
-		ScrapeInterval: proto.String("1m"),
-		TargetGroup: []*pb.TargetGroup{
-			{Target: []string{"example.org:80", "example.com:80"}},
-		},
-	}
-	testJob2 := &pb.ScrapeConfig{
-		JobName:        proto.String("test_job2"),
-		ScrapeInterval: proto.String("1m"),
-		TargetGroup: []*pb.TargetGroup{
-			{
-				Target: []string{"example.org:8080", "example.com:8081"},
-				Labels: &pb.LabelPairs{Label: []*pb.LabelPair{
-					{Name: proto.String("foo"), Value: proto.String("bar")},
-					{Name: proto.String("boom"), Value: proto.String("box")},
-				}},
+	testJob1 := &config.ScrapeConfig{config.DefaultedScrapeConfig{
+		JobName:        "test_job1",
+		ScrapeInterval: config.Duration(1 * time.Minute),
+		TargetGroups: []*config.TargetGroup{{
+			Targets: []clientmodel.LabelSet{
+				{clientmodel.AddressLabel: "example.org:80"},
+				{clientmodel.AddressLabel: "example.com:80"},
 			},
-			{Target: []string{"test.com:1234"}},
+		}},
+	}}
+	testJob2 := &config.ScrapeConfig{config.DefaultedScrapeConfig{
+		JobName:        "test_job2",
+		ScrapeInterval: config.Duration(1 * time.Minute),
+		TargetGroups: []*config.TargetGroup{
 			{
-				Target: []string{"test.com:1235"},
-				Labels: &pb.LabelPairs{Label: []*pb.LabelPair{
-					{Name: proto.String("instance"), Value: proto.String("fixed")},
-				}},
+				Targets: []clientmodel.LabelSet{
+					{clientmodel.AddressLabel: "example.org:8080"},
+					{clientmodel.AddressLabel: "example.com:8081"},
+				},
+				Labels: clientmodel.LabelSet{
+					"foo":  "bar",
+					"boom": "box",
+				},
+			},
+			{
+				Targets: []clientmodel.LabelSet{
+					{clientmodel.AddressLabel: "test.com:1234"},
+				},
+			},
+			{
+				Targets: []clientmodel.LabelSet{
+					{clientmodel.AddressLabel: "test.com:1235"},
+				},
+				Labels: clientmodel.LabelSet{"instance": "fixed"},
 			},
 		},
-		RelabelConfig: []*pb.RelabelConfig{
-			{
-				SourceLabel: []string{string(clientmodel.AddressLabel)},
-				Regex:       proto.String(`^test\.(.*?):(.*)`),
-				Replacement: proto.String("foo.${1}:${2}"),
-				TargetLabel: proto.String(string(clientmodel.AddressLabel)),
-			}, {
+		RelabelConfigs: []*config.RelabelConfig{
+			{config.DefaultedRelabelConfig{
+				SourceLabels: clientmodel.LabelNames{clientmodel.AddressLabel},
+				Regex:        &config.Regexp{*regexp.MustCompile(`^test\.(.*?):(.*)`)},
+				Replacement:  "foo.${1}:${2}",
+				TargetLabel:  clientmodel.AddressLabel,
+				Action:       config.RelabelReplace,
+			}},
+			{config.DefaultedRelabelConfig{
 				// Add a new label for example.* targets.
-				SourceLabel: []string{string(clientmodel.AddressLabel), "boom", "foo"},
-				Regex:       proto.String("^example.*?-b([a-z-]+)r$"),
-				TargetLabel: proto.String("new"),
-				Replacement: proto.String("$1"),
-				Separator:   proto.String("-"),
-			}, {
+				SourceLabels: clientmodel.LabelNames{clientmodel.AddressLabel, "boom", "foo"},
+				Regex:        &config.Regexp{*regexp.MustCompile("^example.*?-b([a-z-]+)r$")},
+				TargetLabel:  "new",
+				Replacement:  "$1",
+				Separator:    "-",
+				Action:       config.RelabelReplace,
+			}},
+			{config.DefaultedRelabelConfig{
 				// Drop an existing label.
-				SourceLabel: []string{"boom"},
-				Regex:       proto.String(".*"),
-				TargetLabel: proto.String("boom"),
-				Replacement: proto.String(""),
-			},
+				SourceLabels: clientmodel.LabelNames{"boom"},
+				Regex:        &config.Regexp{*regexp.MustCompile(".*")},
+				TargetLabel:  "boom",
+				Replacement:  "",
+				Action:       config.RelabelReplace,
+			}},
 		},
-	}
-	proto.SetDefaults(testJob1)
-	proto.SetDefaults(testJob2)
+	}}
 
 	sequence := []struct {
-		scrapeConfigs []*pb.ScrapeConfig
+		scrapeConfigs []*config.ScrapeConfig
 		expected      map[string][]clientmodel.LabelSet
 	}{
 		{
-			scrapeConfigs: []*pb.ScrapeConfig{testJob1},
+			scrapeConfigs: []*config.ScrapeConfig{testJob1},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job1:static:0": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80"},
@@ -217,7 +231,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				},
 			},
 		}, {
-			scrapeConfigs: []*pb.ScrapeConfig{testJob1},
+			scrapeConfigs: []*config.ScrapeConfig{testJob1},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job1:static:0": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80"},
@@ -225,7 +239,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				},
 			},
 		}, {
-			scrapeConfigs: []*pb.ScrapeConfig{testJob1, testJob2},
+			scrapeConfigs: []*config.ScrapeConfig{testJob1, testJob2},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job1:static:0": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80"},
@@ -243,10 +257,10 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				},
 			},
 		}, {
-			scrapeConfigs: []*pb.ScrapeConfig{},
+			scrapeConfigs: []*config.ScrapeConfig{},
 			expected:      map[string][]clientmodel.LabelSet{},
 		}, {
-			scrapeConfigs: []*pb.ScrapeConfig{testJob2},
+			scrapeConfigs: []*config.ScrapeConfig{testJob2},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job2:static:0": {
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba"},
@@ -261,8 +275,9 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			},
 		},
 	}
+	conf := &config.Config{DefaultedConfig: config.DefaultConfig}
 
-	targetManager, err := NewTargetManager(&config.Config{}, nopAppender{})
+	targetManager, err := NewTargetManager(conf, nopAppender{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,10 +285,8 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 	defer targetManager.Stop()
 
 	for i, step := range sequence {
-		cfg := pb.PrometheusConfig{
-			ScrapeConfig: step.scrapeConfigs,
-		}
-		err := targetManager.ApplyConfig(&config.Config{cfg})
+		conf.ScrapeConfigs = step.scrapeConfigs
+		err := targetManager.ApplyConfig(conf)
 		if err != nil {
 			t.Fatal(err)
 		}

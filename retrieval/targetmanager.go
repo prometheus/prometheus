@@ -17,13 +17,13 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
-	pb "github.com/prometheus/prometheus/config/generated"
 	"github.com/prometheus/prometheus/retrieval/discovery"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -124,7 +124,7 @@ func (tm *TargetManager) handleTargetUpdates(cfg *config.ScrapeConfig, ch <-chan
 // Thus, oscilliating label sets for targets with the same source,
 // but providers from different configs, are prevented.
 func fullSource(cfg *config.ScrapeConfig, src string) string {
-	return cfg.GetJobName() + ":" + src
+	return cfg.JobName + ":" + src
 }
 
 // Stop all background processing.
@@ -289,7 +289,7 @@ func (tm *TargetManager) applyConfig(cfg *config.Config) error {
 	// Only apply changes if everything was successful.
 	providers := map[*config.ScrapeConfig][]TargetProvider{}
 
-	for _, scfg := range cfg.ScrapeConfigs() {
+	for _, scfg := range cfg.ScrapeConfigs {
 		provs, err := ProvidersFromConfig(scfg)
 		if err != nil {
 			return err
@@ -299,7 +299,7 @@ func (tm *TargetManager) applyConfig(cfg *config.Config) error {
 	tm.m.Lock()
 	defer tm.m.Unlock()
 
-	tm.globalLabels = cfg.GlobalLabels()
+	tm.globalLabels = cfg.GlobalConfig.Labels
 	tm.providers = providers
 	return nil
 }
@@ -315,7 +315,10 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 		// set already. Apply the labelsets in order of decreasing precedence.
 		labelsets := []clientmodel.LabelSet{
 			tg.Labels,
-			cfg.Labels(),
+			clientmodel.LabelSet{
+				clientmodel.MetricsPathLabel: clientmodel.LabelValue(cfg.MetricsPath),
+				clientmodel.JobLabel:         clientmodel.LabelValue(cfg.JobName),
+			},
 			tm.globalLabels,
 		}
 		for _, lset := range labelsets {
@@ -330,7 +333,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 			return nil, fmt.Errorf("instance %d in target group %s has no address", i, tg)
 		}
 
-		labels, err := Relabel(labels, cfg.RelabelConfigs()...)
+		labels, err := Relabel(labels, cfg.RelabelConfigs...)
 		if err != nil {
 			return nil, fmt.Errorf("error while relabelling instance %d in target group %s: %s", i, tg, err)
 		}
@@ -357,13 +360,12 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 func ProvidersFromConfig(cfg *config.ScrapeConfig) ([]TargetProvider, error) {
 	var providers []TargetProvider
 
-	for _, dnscfg := range cfg.DNSConfigs() {
-		dnsSD := discovery.NewDNSDiscovery(dnscfg.GetName(), dnscfg.RefreshInterval())
+	for _, dnscfg := range cfg.DNSSDConfigs {
+		dnsSD := discovery.NewDNSDiscovery(dnscfg.Names, time.Duration(dnscfg.RefreshInterval))
 		providers = append(providers, dnsSD)
 	}
-	if tgs := cfg.GetTargetGroup(); tgs != nil {
-		static := NewStaticProvider(tgs)
-		providers = append(providers, static)
+	if len(cfg.TargetGroups) > 0 {
+		providers = append(providers, NewStaticProvider(cfg.TargetGroups))
 	}
 	return providers, nil
 }
@@ -375,25 +377,13 @@ type StaticProvider struct {
 
 // NewStaticProvider returns a StaticProvider configured with the given
 // target groups.
-func NewStaticProvider(groups []*pb.TargetGroup) *StaticProvider {
-	prov := &StaticProvider{}
-
+func NewStaticProvider(groups []*config.TargetGroup) *StaticProvider {
 	for i, tg := range groups {
-		g := &config.TargetGroup{
-			Source: fmt.Sprintf("static:%d", i),
-			Labels: clientmodel.LabelSet{},
-		}
-		for _, pair := range tg.GetLabels().GetLabel() {
-			g.Labels[clientmodel.LabelName(pair.GetName())] = clientmodel.LabelValue(pair.GetValue())
-		}
-		for _, t := range tg.GetTarget() {
-			g.Targets = append(g.Targets, clientmodel.LabelSet{
-				clientmodel.AddressLabel: clientmodel.LabelValue(t),
-			})
-		}
-		prov.TargetGroups = append(prov.TargetGroups, g)
+		tg.Source = fmt.Sprintf("static:%d", i)
 	}
-	return prov
+	return &StaticProvider{
+		TargetGroups: groups,
+	}
 }
 
 // Run implements the TargetProvider interface.

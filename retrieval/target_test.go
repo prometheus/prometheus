@@ -26,8 +26,6 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/utility"
 )
 
@@ -91,9 +89,6 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 }
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
-	scfg := &config.ScrapeConfig{}
-	proto.SetDefaults(&scfg.ScrapeConfig)
-
 	testTarget := newTestTarget("example.url", 0, clientmodel.LabelSet{clientmodel.JobLabel: "testjob"})
 
 	now := clientmodel.Now()
@@ -149,9 +144,6 @@ func TestTargetScrapeTimeout(t *testing.T) {
 		),
 	)
 	defer server.Close()
-
-	scfg := &config.ScrapeConfig{}
-	proto.SetDefaults(&scfg.ScrapeConfig)
 
 	var testTarget Target = newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
 
