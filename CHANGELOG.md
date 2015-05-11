@@ -1,3 +1,13 @@
+## 0.13.3 / 2015-05-11
+* [BUGFIX] Handle fingerprint collisions properly.
+* [CHANGE] Comments in rules file must start with `#`. (The undocumented `//`
+  and `/*...*/` comment styles are no longer supported.)
+* [ENHANCEMENT] Switch to custom expression language parser and evaluation
+  engine, which generates better error messages, fixes some parsing edge-cases,
+  and enables other future enhancements (like the ones below).
+* [ENHANCEMENT] Limit maximum number of concurrent queries.
+* [ENHANCEMENT] Terminate running queries during shutdown.
+
 ## 0.13.2 / 2015-05-05
 * [MAINTENANCE] Updated vendored dependcies to their newest versions.
 * [MAINTENANCE] Include rule_checker and console templates in release tarball.
