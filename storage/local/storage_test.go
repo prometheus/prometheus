@@ -821,7 +821,7 @@ func createRandomSamples(metricName string, minLen int) clientmodel.Samples {
 		}
 	)
 
-	// Prefill resust with two samples with colliding metrics (to test fingerprint mapping).
+	// Prefill result with two samples with colliding metrics (to test fingerprint mapping).
 	result := clientmodel.Samples{
 		&clientmodel.Sample{
 			Metric: clientmodel.Metric{
