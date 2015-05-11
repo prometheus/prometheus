@@ -1216,3 +1216,101 @@ func mustGetFunction(name string) *Function {
 	}
 	return f
 }
+
+var testSeries = []struct {
+	input          string
+	expectedMetric clientmodel.Metric
+	expectedValues []sequenceValue
+	fail           bool
+}{
+	{
+		input:          `{} 1 2 3`,
+		expectedMetric: clientmodel.Metric{},
+		expectedValues: newSeq(1, 2, 3),
+	}, {
+		input: `{a="b"} -1 2 3`,
+		expectedMetric: clientmodel.Metric{
+			"a": "b",
+		},
+		expectedValues: newSeq(-1, 2, 3),
+	}, {
+		input: `my_metric 1 2 3`,
+		expectedMetric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+		},
+		expectedValues: newSeq(1, 2, 3),
+	}, {
+		input: `my_metric{} 1 2 3`,
+		expectedMetric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+		},
+		expectedValues: newSeq(1, 2, 3),
+	}, {
+		input: `my_metric{a="b"} 1 2 3`,
+		expectedMetric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+			"a": "b",
+		},
+		expectedValues: newSeq(1, 2, 3),
+	}, {
+		input: `my_metric{a="b"} 1 2 3-10x4`,
+		expectedMetric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+			"a": "b",
+		},
+		expectedValues: newSeq(1, 2, 3, -7, -17, -27, -37),
+	}, {
+		input: `my_metric{a="b"} 1 3 _ 5 _x4`,
+		expectedMetric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+			"a": "b",
+		},
+		expectedValues: newSeq(1, 3, none, 5, none, none, none, none),
+	}, {
+		input: `my_metric{a="b"} 1 3 _ 5 _a4`,
+		fail:  true,
+	},
+}
+
+// For these tests only, we use the samallest float64 to signal an omitted value.
+const none = math.SmallestNonzeroFloat64
+
+func newSeq(vals ...float64) (res []sequenceValue) {
+	for _, v := range vals {
+		if v == none {
+			res = append(res, sequenceValue{omitted: true})
+		} else {
+			res = append(res, sequenceValue{value: clientmodel.SampleValue(v)})
+		}
+	}
+	return res
+}
+
+func TestParseSeries(t *testing.T) {
+	for _, test := range testSeries {
+		parser := newParser(test.input)
+		parser.lex.seriesDesc = true
+
+		metric, vals, err := parser.parseSeriesDesc()
+		if !test.fail && err != nil {
+			t.Errorf("error in input: \n\n%s\n", test.input)
+			t.Fatalf("could not parse: %s", err)
+		}
+		if test.fail && err != nil {
+			continue
+		}
+
+		if test.fail {
+			if err != nil {
+				continue
+			}
+			t.Errorf("error in input: \n\n%s\n", test.input)
+			t.Fatalf("failure expected, but passed")
+		}
+
+		if !reflect.DeepEqual(vals, test.expectedValues) || !reflect.DeepEqual(metric, test.expectedMetric) {
+			t.Errorf("error in input: \n\n%s\n", test.input)
+			t.Fatalf("no match\n\nexpected:\n%s %s\ngot: \n%s %s\n", test.expectedMetric, test.expectedValues, metric, vals)
+		}
+	}
+}

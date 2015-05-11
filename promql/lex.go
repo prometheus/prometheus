@@ -284,6 +284,10 @@ type lexer struct {
 	braceOpen   bool // Whether a { is opened.
 	bracketOpen bool // Whether a [ is opened.
 	stringOpen  rune // Quote rune of the string currently being read.
+
+	// seriesDesc is set when a series description for the testing
+	// language is lexed.
+	seriesDesc bool
 }
 
 // next returns the next rune in the input.
@@ -536,6 +540,10 @@ func lexInsideBraces(l *lexer) stateFn {
 	case r == '}':
 		l.emit(itemRightBrace)
 		l.braceOpen = false
+
+		if l.seriesDesc {
+			return lexValueSequence
+		}
 		return lexStatements
 	default:
 		return l.errorf("unexpected character inside braces: %q", r)
@@ -670,7 +678,7 @@ func (l *lexer) scanNumber() bool {
 		l.acceptRun("0123456789")
 	}
 	// Next thing must not be alphanumeric.
-	if isAlphaNumeric(l.peek()) {
+	if isAlphaNumeric(l.peek()) && !l.seriesDesc {
 		return false
 	}
 	return true
@@ -708,6 +716,9 @@ Loop:
 			}
 			break Loop
 		}
+	}
+	if l.seriesDesc && l.peek() != '{' {
+		return lexValueSequence
 	}
 	return lexStatements
 }
