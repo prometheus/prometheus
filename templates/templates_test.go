@@ -66,6 +66,15 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "1 2",
 		},
 		{
+			text:   "{{ query \"1.5\" | first | value }}",
+			output: "1.5",
+		},
+		{
+			// Get value from scalar query.
+			text:   "{{ query \"scalar(count(metric))\" | first | value }}",
+			output: "2",
+		},
+		{
 			// Get value from query.
 			text:   "{{ query \"metric{instance='a'}\" | first | value }}",
 			output: "11",
