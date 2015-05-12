@@ -1,3 +1,23 @@
+## 0.13.3 / 2015-05-11
+* [BUGFIX] Handle fingerprint collisions properly.
+* [CHANGE] Comments in rules file must start with `#`. (The undocumented `//`
+  and `/*...*/` comment styles are no longer supported.)
+* [ENHANCEMENT] Switch to custom expression language parser and evaluation
+  engine, which generates better error messages, fixes some parsing edge-cases,
+  and enables other future enhancements (like the ones below).
+* [ENHANCEMENT] Limit maximum number of concurrent queries.
+* [ENHANCEMENT] Terminate running queries during shutdown.
+
+## 0.13.2 / 2015-05-05
+* [MAINTENANCE] Updated vendored dependcies to their newest versions.
+* [MAINTENANCE] Include rule_checker and console templates in release tarball.
+* [BUGFIX] Sort NaN as the lowest value.
+* [ENHANCEMENT] Add square root, stddev and stdvar functions.
+* [BUGFIX] Use scrape_timeout for scrape timeout, not scrape_interval.
+* [ENHANCEMENT] Improve chunk and chunkDesc loading, increase performance when
+  reading from disk.
+* [BUGFIX] Show correct error on wrong DNS response.
+
 ## 0.13.1 / 2015-04-09
 * [BUGFIX] Treat memory series with zero chunks correctly in series maintenance.
 * [ENHANCEMENT] Improve readability of usage text even more.

@@ -20,14 +20,16 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/web/httputils"
 )
 
 // MetricsService manages the /api HTTP endpoint.
 type MetricsService struct {
-	Now     func() clientmodel.Timestamp
-	Storage local.Storage
+	Now         func() clientmodel.Timestamp
+	Storage     local.Storage
+	QueryEngine *promql.Engine
 }
 
 // RegisterHandler registers the handler for the various endpoints below /api.

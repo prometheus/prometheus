@@ -11,14 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package rules
+package promql
 
 import (
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/rules/ast"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -26,7 +25,7 @@ import (
 var testSampleInterval = time.Duration(5) * time.Minute
 var testStartTime = clientmodel.Timestamp(0)
 
-func getTestValueStream(startVal clientmodel.SampleValue, endVal clientmodel.SampleValue, stepVal clientmodel.SampleValue, startTime clientmodel.Timestamp) (resultValues metric.Values) {
+func getTestValueStream(startVal, endVal, stepVal clientmodel.SampleValue, startTime clientmodel.Timestamp) (resultValues metric.Values) {
 	currentTime := startTime
 	for currentVal := startVal; currentVal <= endVal; currentVal += stepVal {
 		sample := metric.SamplePair{
@@ -39,11 +38,11 @@ func getTestValueStream(startVal clientmodel.SampleValue, endVal clientmodel.Sam
 	return resultValues
 }
 
-func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
-	vector := ast.Vector{}
+func getTestVectorFromTestMatrix(matrix Matrix) Vector {
+	vector := Vector{}
 	for _, sampleStream := range matrix {
 		lastSample := sampleStream.Values[len(sampleStream.Values)-1]
-		vector = append(vector, &ast.Sample{
+		vector = append(vector, &Sample{
 			Metric:    sampleStream.Metric,
 			Value:     lastSample.Value,
 			Timestamp: lastSample.Timestamp,
@@ -52,7 +51,7 @@ func getTestVectorFromTestMatrix(matrix ast.Matrix) ast.Vector {
 	return vector
 }
 
-func storeMatrix(storage local.Storage, matrix ast.Matrix) {
+func storeMatrix(storage local.Storage, matrix Matrix) {
 	pendingSamples := clientmodel.Samples{}
 	for _, sampleStream := range matrix {
 		for _, sample := range sampleStream.Values {
@@ -69,7 +68,9 @@ func storeMatrix(storage local.Storage, matrix ast.Matrix) {
 	storage.WaitForIndexing()
 }
 
-var testMatrix = ast.Matrix{
+var testVector = getTestVectorFromTestMatrix(testMatrix)
+
+var testMatrix = Matrix{
 	{
 		Metric: clientmodel.COWMetric{
 			Metric: clientmodel.Metric{
@@ -483,5 +484,3 @@ var testMatrix = ast.Matrix{
 		Values: getTestValueStream(0, 200, 20, testStartTime),
 	},
 }
-
-var testVector = getTestVectorFromTestMatrix(testMatrix)

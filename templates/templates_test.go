@@ -19,6 +19,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 )
 
@@ -63,6 +64,15 @@ func TestTemplateExpansion(t *testing.T) {
 			// Pass multiple arguments to templates.
 			text:   "{{define \"x\"}}{{.arg0}} {{.arg1}}{{end}}{{template \"x\" (args 1 \"2\")}}",
 			output: "1 2",
+		},
+		{
+			text:   "{{ query \"1.5\" | first | value }}",
+			output: "1.5",
+		},
+		{
+			// Get value from scalar query.
+			text:   "{{ query \"scalar(count(metric))\" | first | value }}",
+			output: "2",
 		},
 		{
 			// Get value from query.
@@ -175,10 +185,12 @@ func TestTemplateExpansion(t *testing.T) {
 	})
 	storage.WaitForIndexing()
 
+	engine := promql.NewEngine(storage)
+
 	for i, s := range scenarios {
 		var result string
 		var err error
-		expander := NewTemplateExpander(s.text, "test", s.input, time, storage, "/")
+		expander := NewTemplateExpander(s.text, "test", s.input, time, engine, "/")
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {

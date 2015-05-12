@@ -4,6 +4,7 @@
 *.cgo*.c
 *.cgo*.go
 *.conf
+*.rules
 *.exe
 *.orig
 *.pyc

@@ -301,7 +301,9 @@ func (s *memorySeries) dropChunks(t clientmodel.Timestamp) {
 }
 
 // preloadChunks is an internal helper method.
-func (s *memorySeries) preloadChunks(indexes []int, mss *memorySeriesStorage) ([]*chunkDesc, error) {
+func (s *memorySeries) preloadChunks(
+	indexes []int, fp clientmodel.Fingerprint, mss *memorySeriesStorage,
+) ([]*chunkDesc, error) {
 	loadIndexes := []int{}
 	pinnedChunkDescs := make([]*chunkDesc, 0, len(indexes))
 	for _, idx := range indexes {
@@ -318,7 +320,6 @@ func (s *memorySeries) preloadChunks(indexes []int, mss *memorySeriesStorage) ([
 		if s.chunkDescsOffset == -1 {
 			panic("requested loading chunks from persistence in a situation where we must not have persisted data for chunk descriptors in memory")
 		}
-		fp := s.metric.Fingerprint()
 		chunks, err := mss.loadChunks(fp, loadIndexes, s.chunkDescsOffset)
 		if err != nil {
 			// Unpin the chunks since we won't return them as pinned chunks now.
@@ -409,7 +410,7 @@ func (s *memorySeries) preloadChunksForRange(
 	for i := fromIdx; i <= throughIdx; i++ {
 		pinIndexes = append(pinIndexes, i)
 	}
-	return s.preloadChunks(pinIndexes, mss)
+	return s.preloadChunks(pinIndexes, fp, mss)
 }
 
 // newIterator returns a new SeriesIterator. The caller must have locked the

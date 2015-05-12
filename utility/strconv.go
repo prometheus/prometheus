@@ -15,8 +15,10 @@ package utility
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -79,4 +81,25 @@ func StringToDuration(durationStr string) (duration time.Duration, err error) {
 		panic("Invalid time unit in duration string.")
 	}
 	return
+}
+
+// TableLinkForExpression creates an escaped relative link to the table view of
+// the provided expression.
+func TableLinkForExpression(expr string) string {
+	// url.QueryEscape percent-escapes everything except spaces, for which it
+	// uses "+". However, in the non-query part of a URI, only percent-escaped
+	// spaces are legal, so we need to manually replace "+" with "%20" after
+	// query-escaping the string.
+	//
+	// See also:
+	// http://stackoverflow.com/questions/1634271/url-encoding-the-space-character-or-20.
+	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q,"tab":1}]`, expr))
+	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))
+}
+
+// GraphLinkForExpression creates an escaped relative link to the graph view of
+// the provided expression.
+func GraphLinkForExpression(expr string) string {
+	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q,"tab":0}]`, expr))
+	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))
 }

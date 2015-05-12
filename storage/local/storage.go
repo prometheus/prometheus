@@ -93,6 +93,7 @@ type memorySeriesStorage struct {
 	degraded           bool
 
 	persistence *persistence
+	mapper      *fpMapper
 
 	evictList                   *list.List
 	evictRequests               chan evictRequest
@@ -210,6 +211,12 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 	}
 	glog.Infof("%d series loaded.", s.fpToSeries.length())
 	s.numSeries.Set(float64(s.fpToSeries.length()))
+
+	mapper, err := newFPMapper(s.fpToSeries, p)
+	if err != nil {
+		return nil, err
+	}
+	s.mapper = mapper
 
 	return s, nil
 }
@@ -382,8 +389,18 @@ func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
 		}
 		glog.Warning("Sample ingestion resumed.")
 	}
-	fp := sample.Metric.Fingerprint()
-	s.fpLocker.Lock(fp)
+	rawFP := sample.Metric.FastFingerprint()
+	s.fpLocker.Lock(rawFP)
+	fp, err := s.mapper.mapFP(rawFP, sample.Metric)
+	if err != nil {
+		glog.Errorf("Error while mapping fingerprint %v: %v", rawFP, err)
+		s.persistence.setDirty(true)
+	}
+	if fp != rawFP {
+		// Switch locks.
+		s.fpLocker.Unlock(rawFP)
+		s.fpLocker.Lock(fp)
+	}
 	series := s.getOrCreateSeries(fp, sample.Metric)
 	completedChunksCount := series.add(&metric.SamplePair{
 		Value:     sample.Value,

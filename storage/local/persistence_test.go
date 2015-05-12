@@ -50,9 +50,9 @@ func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, tes
 
 func buildTestChunks(encoding chunkEncoding) map[clientmodel.Fingerprint][]chunk {
 	fps := clientmodel.Fingerprints{
-		m1.Fingerprint(),
-		m2.Fingerprint(),
-		m3.Fingerprint(),
+		m1.FastFingerprint(),
+		m2.FastFingerprint(),
+		m3.FastFingerprint(),
 	}
 	fpToChunks := map[clientmodel.Fingerprint][]chunk{}
 
@@ -375,11 +375,11 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 	s5.persistWatermark = 3
 	chunkCountS4 := len(s4.chunkDescs)
 	chunkCountS5 := len(s5.chunkDescs)
-	sm.put(m1.Fingerprint(), s1)
-	sm.put(m2.Fingerprint(), s2)
-	sm.put(m3.Fingerprint(), s3)
-	sm.put(m4.Fingerprint(), s4)
-	sm.put(m5.Fingerprint(), s5)
+	sm.put(m1.FastFingerprint(), s1)
+	sm.put(m2.FastFingerprint(), s2)
+	sm.put(m3.FastFingerprint(), s3)
+	sm.put(m4.FastFingerprint(), s4)
+	sm.put(m5.FastFingerprint(), s5)
 
 	if err := p.checkpointSeriesMapAndHeads(sm, fpLocker); err != nil {
 		t.Fatal(err)
@@ -392,7 +392,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 	if loadedSM.length() != 4 {
 		t.Errorf("want 4 series in map, got %d", loadedSM.length())
 	}
-	if loadedS1, ok := loadedSM.get(m1.Fingerprint()); ok {
+	if loadedS1, ok := loadedSM.get(m1.FastFingerprint()); ok {
 		if !reflect.DeepEqual(loadedS1.metric, m1) {
 			t.Errorf("want metric %v, got %v", m1, loadedS1.metric)
 		}
@@ -408,7 +408,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m1)
 	}
-	if loadedS3, ok := loadedSM.get(m3.Fingerprint()); ok {
+	if loadedS3, ok := loadedSM.get(m3.FastFingerprint()); ok {
 		if !reflect.DeepEqual(loadedS3.metric, m3) {
 			t.Errorf("want metric %v, got %v", m3, loadedS3.metric)
 		}
@@ -424,7 +424,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m3)
 	}
-	if loadedS4, ok := loadedSM.get(m4.Fingerprint()); ok {
+	if loadedS4, ok := loadedSM.get(m4.FastFingerprint()); ok {
 		if !reflect.DeepEqual(loadedS4.metric, m4) {
 			t.Errorf("want metric %v, got %v", m4, loadedS4.metric)
 		}
@@ -449,7 +449,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m4)
 	}
-	if loadedS5, ok := loadedSM.get(m5.Fingerprint()); ok {
+	if loadedS5, ok := loadedSM.get(m5.FastFingerprint()); ok {
 		if !reflect.DeepEqual(loadedS5.metric, m5) {
 			t.Errorf("want metric %v, got %v", m5, loadedS5.metric)
 		}
@@ -482,6 +482,36 @@ func TestCheckpointAndLoadSeriesMapAndHeadsChunkType0(t *testing.T) {
 
 func TestCheckpointAndLoadSeriesMapAndHeadsChunkType1(t *testing.T) {
 	testCheckpointAndLoadSeriesMapAndHeads(t, 1)
+}
+
+func TestCheckpointAndLoadFPMappings(t *testing.T) {
+	p, closer := newTestPersistence(t, 1)
+	defer closer.Close()
+
+	in := fpMappings{
+		1: map[string]clientmodel.Fingerprint{
+			"foo": 1,
+			"bar": 2,
+		},
+		3: map[string]clientmodel.Fingerprint{
+			"baz": 4,
+		},
+	}
+
+	if err := p.checkpointFPMappings(in); err != nil {
+		t.Fatal(err)
+	}
+
+	out, fp, err := p.loadFPMappings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fp, clientmodel.Fingerprint(4); got != want {
+		t.Errorf("got highest FP %v, want %v", got, want)
+	}
+	if !reflect.DeepEqual(in, out) {
+		t.Errorf("got collision map %v, want %v", out, in)
+	}
 }
 
 func testGetFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {

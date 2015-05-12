@@ -27,10 +27,8 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/rules/ast"
-	"github.com/prometheus/prometheus/stats"
-	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/utility"
 )
 
 // A version of vector that's easier to use from templates.
@@ -57,18 +55,40 @@ func (q queryResultByLabelSorter) Swap(i, j int) {
 	q.results[i], q.results[j] = q.results[j], q.results[i]
 }
 
-func query(q string, timestamp clientmodel.Timestamp, storage local.Storage) (queryResult, error) {
-	exprNode, err := rules.LoadExprFromString(q)
+func query(q string, timestamp clientmodel.Timestamp, queryEngine *promql.Engine) (queryResult, error) {
+	query, err := queryEngine.NewInstantQuery(q, timestamp)
 	if err != nil {
 		return nil, err
 	}
-	queryStats := stats.NewTimerGroup()
-	vector, err := ast.EvalToVector(exprNode, timestamp, storage, queryStats)
-	if err != nil {
-		return nil, err
+	res := query.Exec()
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	var vector promql.Vector
+
+	switch v := res.Value.(type) {
+	case promql.Matrix:
+		return nil, errors.New("matrix return values not supported")
+	case promql.Vector:
+		vector = v
+	case *promql.Scalar:
+		vector = promql.Vector{&promql.Sample{
+			Value:     v.Value,
+			Timestamp: v.Timestamp,
+		}}
+	case *promql.String:
+		vector = promql.Vector{&promql.Sample{
+			Metric: clientmodel.COWMetric{
+				Metric: clientmodel.Metric{"__value__": clientmodel.LabelValue(v.Value)},
+				Copied: true,
+			},
+			Timestamp: v.Timestamp,
+		}}
+	default:
+		panic("template.query: unhandled result value type")
 	}
 
-	// ast.Vector is hard to work with in templates, so convert to
+	// promql.Vector is hard to work with in templates, so convert to
 	// base data types.
 	var result = make(queryResult, len(vector))
 	for n, v := range vector {
@@ -92,14 +112,14 @@ type templateExpander struct {
 }
 
 // NewTemplateExpander returns a template expander ready to use.
-func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, storage local.Storage, pathPrefix string) *templateExpander {
+func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, queryEngine *promql.Engine, pathPrefix string) *templateExpander {
 	return &templateExpander{
 		text: text,
 		name: name,
 		data: data,
 		funcMap: text_template.FuncMap{
 			"query": func(q string) (queryResult, error) {
-				return query(q, timestamp, storage)
+				return query(q, timestamp, queryEngine)
 			},
 			"first": func(v queryResult) (*sample, error) {
 				if len(v) > 0 {
@@ -132,8 +152,8 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 			},
 			"match":     regexp.MatchString,
 			"title":     strings.Title,
-			"graphLink": rules.GraphLinkForExpression,
-			"tableLink": rules.TableLinkForExpression,
+			"graphLink": utility.GraphLinkForExpression,
+			"tableLink": utility.TableLinkForExpression,
 			"sortByLabel": func(label string, v queryResult) queryResult {
 				sorter := queryResultByLabelSorter{v[:], label}
 				sort.Stable(sorter)

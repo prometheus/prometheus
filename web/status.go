@@ -19,17 +19,18 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/rules/manager"
+	"github.com/prometheus/prometheus/rules"
 )
 
 // PrometheusStatusHandler implements http.Handler.
 type PrometheusStatusHandler struct {
 	mu sync.RWMutex
 
-	BuildInfo   map[string]string
-	Config      string
-	Flags       map[string]string
-	RuleManager manager.RuleManager
+	BuildInfo map[string]string
+	Config    string
+	Flags     map[string]string
+
+	RuleManager *rules.Manager
 	TargetPools func() map[string][]retrieval.Target
 
 	Birth      time.Time
