@@ -104,6 +104,8 @@ const (
 	itemString
 	itemNumber
 	itemDuration
+	itemBlank
+	itemTimes
 
 	operatorsStart
 	// Operators.
@@ -193,6 +195,8 @@ var itemTypeStr = map[itemType]string{
 	itemComma:        ",",
 	itemAssign:       "=",
 	itemSemicolon:    ";",
+	itemBlank:        "_",
+	itemTimes:        "x",
 
 	itemSUB:      "-",
 	itemADD:      "+",
@@ -214,6 +218,9 @@ func init() {
 	for s, ty := range key {
 		itemTypeStr[ty] = s
 	}
+	// Special numbers.
+	key["inf"] = itemNumber
+	key["nan"] = itemNumber
 }
 
 func (t itemType) String() string {
@@ -450,21 +457,6 @@ func lexStatements(l *lexer) stateFn {
 	case r == '"' || r == '\'':
 		l.stringOpen = r
 		return lexString
-	case r == 'N' || r == 'n' || r == 'I' || r == 'i':
-		n2 := strings.ToLower(l.input[l.pos:])
-		if len(n2) < 3 || !isAlphaNumeric(rune(n2[2])) {
-			if (r == 'N' || r == 'n') && strings.HasPrefix(n2, "an") {
-				l.pos += 2
-				l.emit(itemNumber)
-				break
-			}
-			if (r == 'I' || r == 'i') && strings.HasPrefix(n2, "nf") {
-				l.pos += 2
-				l.emit(itemNumber)
-				break
-			}
-		}
-		fallthrough
 	case isAlpha(r) || r == ':':
 		l.backup()
 		return lexKeywordOrIdentifier
@@ -549,6 +541,34 @@ func lexInsideBraces(l *lexer) stateFn {
 		return l.errorf("unexpected character inside braces: %q", r)
 	}
 	return lexInsideBraces
+}
+
+// lexValueSequence scans a value sequence of a series description.
+func lexValueSequence(l *lexer) stateFn {
+	switch r := l.next(); {
+	case r == eof:
+		return lexStatements
+	case isSpace(r):
+		lexSpace(l)
+	case r == '+':
+		l.emit(itemADD)
+	case r == '-':
+		l.emit(itemSUB)
+	case r == 'x':
+		l.emit(itemTimes)
+	case r == '_':
+		l.emit(itemBlank)
+	case unicode.IsDigit(r) || (r == '.' && unicode.IsDigit(l.peek())):
+		l.backup()
+		lexNumber(l)
+	case isAlpha(r):
+		l.backup()
+		// We might lex invalid items here but this will be caught by the parser.
+		return lexKeywordOrIdentifier
+	default:
+		return l.errorf("unexpected character in series sequence: %q", r)
+	}
+	return lexValueSequence
 }
 
 // lexString scans a quoted string. The initial quote has already been seen.
