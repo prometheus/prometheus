@@ -168,6 +168,10 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "unclosed left parenthesis",
 	}, {
+		input:  "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+		fail:   true,
+		errMsg: "out of range",
+	}, {
 		input:  "(",
 		fail:   true,
 		errMsg: "unclosed left parenthesis",
@@ -476,6 +480,14 @@ var testExpr = []struct {
 		input:  "foo or on(bar) group_right(baz) bar",
 		fail:   true,
 		errMsg: "no grouping allowed for AND and OR operations",
+	}, {
+		input:  `http_requests{group="production"} / on(instance) group_left cpu_count{type="smp"}`,
+		fail:   true,
+		errMsg: "unexpected identifier \"cpu_count\" in grouping opts, expected \"(\"",
+	}, {
+		input:  `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
+		fail:   true,
+		errMsg: "label \"instance\" must not occur in ON and INCLUDE clause at once",
 	},
 	// Test vector selector.
 	{
@@ -662,6 +674,9 @@ var testExpr = []struct {
 		input:  `foo[5m] OFFSET 1h30m`,
 		fail:   true,
 		errMsg: "bad number or duration syntax: \"1h3\"",
+	}, {
+		input: `foo["5m"]`,
+		fail:  true,
 	}, {
 		input:  `foo[]`,
 		fail:   true,
