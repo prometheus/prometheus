@@ -636,3 +636,38 @@ eval instant at 50m stdvar(http_requests)
 eval instant at 50m stdvar by (instance)(http_requests)
 	{instance="0"} 50000 
 	{instance="1"} 50000
+
+
+# Matrix tests.
+
+clear
+load 1h
+	testmetric{testlabel="1"} 1 1
+	testmetric{testlabel="2"} _ 2
+
+eval instant at 0h drop_common_labels(testmetric)
+	testmetric 1
+
+eval instant at 1h drop_common_labels(testmetric)
+	testmetric{testlabel="1"} 1
+	testmetric{testlabel="2"} 2
+
+clear
+load 1h
+	testmetric{testlabel="1"} 1 1
+	testmetric{testlabel="2"} 2 _
+
+eval instant at 0h sum(testmetric) keeping_extra
+	{} 3
+
+eval instant at 1h sum(testmetric) keeping_extra
+	{testlabel="1"} 1
+
+clear
+load 1h
+	testmetric{aa="bb"} 1
+	testmetric{a="abb"} 2
+
+eval instant at 0h testmetric
+	testmetric{aa="bb"} 1
+	testmetric{a="abb"} 2

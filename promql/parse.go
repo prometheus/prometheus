@@ -120,7 +120,7 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 	return
 }
 
-// sequenceValue is a omittable value in a sequence of time series values.
+// sequenceValue is an omittable value in a sequence of time series values.
 type sequenceValue struct {
 	value   clientmodel.SampleValue
 	omitted bool

@@ -138,4 +138,4 @@ eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds_bucket
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} 0.13333333333333333
 	{instance="ins1", job="job2"} 0.1
-	{instance="ins2", job="job2"} 0.11666666666666667 
+	{instance="ins2", job="job2"} 0.11666666666666667
