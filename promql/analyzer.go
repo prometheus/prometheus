@@ -131,19 +131,21 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 
 	// Preload all analyzed ranges.
 	for offset, pt := range a.offsetPreloadTimes {
-		if err = contextDone(ctx, env); err != nil {
-			return nil, err
-		}
-
 		start := a.Start.Add(-offset)
 		end := a.End.Add(-offset)
 		for fp, rangeDuration := range pt.ranges {
+			if err = contextDone(ctx, env); err != nil {
+				return nil, err
+			}
 			err = p.PreloadRange(fp, start.Add(-rangeDuration), end, *stalenessDelta)
 			if err != nil {
 				return nil, err
 			}
 		}
 		for fp := range pt.instants {
+			if err = contextDone(ctx, env); err != nil {
+				return nil, err
+			}
 			err = p.PreloadRange(fp, start, end, *stalenessDelta)
 			if err != nil {
 				return nil, err
