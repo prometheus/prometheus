@@ -92,13 +92,6 @@ type prometheus struct {
 // NewPrometheus creates a new prometheus object based on flag values.
 // Call Serve() to start serving and Close() for clean shutdown.
 func NewPrometheus() *prometheus {
-	conf, err := config.LoadFromFile(*configFile)
-	if err != nil {
-		glog.Errorf("Couldn't load configuration (-config.file=%s): %v", *configFile, err)
-		glog.Errorf("Note: The configuration format has changed with version 0.14, please check the documentation.")
-		os.Exit(2)
-	}
-
 	notificationHandler := notification.NewNotificationHandler(*alertmanagerURL, *notificationQueueCapacity)
 
 	var syncStrategy local.SyncStrategy
@@ -155,26 +148,17 @@ func NewPrometheus() *prometheus {
 		sampleAppender = fanout
 	}
 
-	targetManager, err := retrieval.NewTargetManager(conf, sampleAppender)
-	if err != nil {
-		glog.Errorf("Error creating target manager: %s", err)
-		os.Exit(1)
-	}
+	targetManager := retrieval.NewTargetManager(sampleAppender)
 
 	queryEngine := promql.NewEngine(memStorage)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		SampleAppender:      sampleAppender,
 		NotificationHandler: notificationHandler,
-		EvaluationInterval:  time.Duration(conf.GlobalConfig.EvaluationInterval),
 		QueryEngine:         queryEngine,
 		PrometheusURL:       web.MustBuildServerURL(*pathPrefix),
 		PathPrefix:          *pathPrefix,
 	})
-	if err := ruleManager.LoadRuleFiles(conf.RuleFiles...); err != nil {
-		glog.Errorf("Error loading rule files: %s", err)
-		os.Exit(1)
-	}
 
 	flags := map[string]string{}
 	flag.VisitAll(func(f *flag.Flag) {
@@ -182,7 +166,6 @@ func NewPrometheus() *prometheus {
 	})
 	prometheusStatus := &web.PrometheusStatusHandler{
 		BuildInfo:   BuildInfo,
-		Config:      conf.String(),
 		RuleManager: ruleManager,
 		TargetPools: targetManager.Pools,
 		Flags:       flags,
@@ -229,7 +212,25 @@ func NewPrometheus() *prometheus {
 		webService: webService,
 	}
 	webService.QuitChan = make(chan struct{})
+
+	p.reloadConfig()
+
 	return p
+}
+
+func (p *prometheus) reloadConfig() {
+	glog.Infof("Loading configuration file %s", *configFile)
+
+	conf, err := config.LoadFromFile(*configFile)
+	if err != nil {
+		glog.Errorf("Couldn't load configuration (-config.file=%s): %v", *configFile, err)
+		glog.Errorf("Note: The configuration format has changed with version 0.14, please check the documentation.")
+		return
+	}
+
+	p.webService.StatusHandler.ApplyConfig(conf)
+	p.targetManager.ApplyConfig(conf)
+	p.ruleManager.ApplyConfig(conf)
 }
 
 // Serve starts the Prometheus server. It returns after the server has been shut
@@ -252,14 +253,24 @@ func (p *prometheus) Serve() {
 		}
 	}()
 
-	notifier := make(chan os.Signal)
-	signal.Notify(notifier, os.Interrupt, syscall.SIGTERM)
+	hup := make(chan os.Signal)
+	signal.Notify(hup, syscall.SIGHUP)
+	go func() {
+		for range hup {
+			p.reloadConfig()
+		}
+	}()
+
+	term := make(chan os.Signal)
+	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 	select {
-	case <-notifier:
+	case <-term:
 		glog.Warning("Received SIGTERM, exiting gracefully...")
 	case <-p.webService.QuitChan:
 		glog.Warning("Received termination request via web service, exiting gracefully...")
 	}
+
+	close(hup)
 
 	p.targetManager.Stop()
 	p.ruleManager.Stop()

@@ -62,16 +62,13 @@ type TargetManager struct {
 	providers map[*config.ScrapeConfig][]TargetProvider
 }
 
-// NewTargetManager creates a new TargetManager based on the given config.
-func NewTargetManager(cfg *config.Config, sampleAppender storage.SampleAppender) (*TargetManager, error) {
+// NewTargetManager creates a new TargetManager.
+func NewTargetManager(sampleAppender storage.SampleAppender) *TargetManager {
 	tm := &TargetManager{
 		sampleAppender: sampleAppender,
 		targets:        make(map[string][]Target),
 	}
-	if err := tm.applyConfig(cfg); err != nil {
-		return nil, err
-	}
-	return tm, nil
+	return tm
 }
 
 // Run starts background processing to handle target updates.
@@ -129,19 +126,17 @@ func fullSource(cfg *config.ScrapeConfig, src string) string {
 
 // Stop all background processing.
 func (tm *TargetManager) Stop() {
-	tm.stop(true)
+	tm.m.Lock()
+	defer tm.m.Unlock()
+
+	if tm.running {
+		tm.stop(true)
+	}
 }
 
 // stop background processing of the target manager. If removeTargets is true,
 // existing targets will be stopped and removed.
 func (tm *TargetManager) stop(removeTargets bool) {
-	tm.m.Lock()
-	defer tm.m.Unlock()
-
-	if !tm.running {
-		return
-	}
-
 	glog.Info("Stopping target manager...")
 	defer glog.Info("Target manager stopped.")
 
@@ -273,35 +268,23 @@ func (tm *TargetManager) Pools() map[string][]Target {
 
 // ApplyConfig resets the manager's target providers and job configurations as defined
 // by the new cfg. The state of targets that are valid in the new configuration remains unchanged.
-func (tm *TargetManager) ApplyConfig(cfg *config.Config) error {
-	tm.stop(false)
-	// Even if updating the config failed, we want to continue rather than stop scraping anything.
-	defer tm.Run()
-
-	if err := tm.applyConfig(cfg); err != nil {
-		glog.Warningf("Error updating config, changes not applied: %s", err)
-		return err
-	}
-	return nil
-}
-
-func (tm *TargetManager) applyConfig(cfg *config.Config) error {
-	// Only apply changes if everything was successful.
-	providers := map[*config.ScrapeConfig][]TargetProvider{}
-
-	for _, scfg := range cfg.ScrapeConfigs {
-		provs, err := ProvidersFromConfig(scfg)
-		if err != nil {
-			return err
-		}
-		providers[scfg] = provs
-	}
+func (tm *TargetManager) ApplyConfig(cfg *config.Config) {
 	tm.m.Lock()
 	defer tm.m.Unlock()
 
+	if tm.running {
+		tm.stop(false)
+		// Even if updating the config failed, we want to continue rather than stop scraping anything.
+		defer tm.Run()
+	}
+	providers := map[*config.ScrapeConfig][]TargetProvider{}
+
+	for _, scfg := range cfg.ScrapeConfigs {
+		providers[scfg] = ProvidersFromConfig(scfg)
+	}
+
 	tm.globalLabels = cfg.GlobalConfig.Labels
 	tm.providers = providers
-	return nil
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
@@ -335,7 +318,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 
 		labels, err := Relabel(labels, cfg.RelabelConfigs...)
 		if err != nil {
-			return nil, fmt.Errorf("error while relabelling instance %d in target group %s: %s", i, tg, err)
+			return nil, fmt.Errorf("error while relabeling instance %d in target group %s: %s", i, tg, err)
 		}
 		// Check if the target was dropped.
 		if labels == nil {
@@ -357,7 +340,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 }
 
 // ProvidersFromConfig returns all TargetProviders configured in cfg.
-func ProvidersFromConfig(cfg *config.ScrapeConfig) ([]TargetProvider, error) {
+func ProvidersFromConfig(cfg *config.ScrapeConfig) []TargetProvider {
 	var providers []TargetProvider
 
 	for _, dnscfg := range cfg.DNSSDConfigs {
@@ -367,7 +350,7 @@ func ProvidersFromConfig(cfg *config.ScrapeConfig) ([]TargetProvider, error) {
 	if len(cfg.TargetGroups) > 0 {
 		providers = append(providers, NewStaticProvider(cfg.TargetGroups))
 	}
-	return providers, nil
+	return providers
 }
 
 // StaticProvider holds a list of target groups that never change.

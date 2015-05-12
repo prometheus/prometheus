@@ -24,6 +24,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -120,7 +121,11 @@ func NewManager(o *ManagerOptions) *Manager {
 func (m *Manager) Run() {
 	defer glog.Info("Rule manager stopped.")
 
-	ticker := time.NewTicker(m.interval)
+	m.Lock()
+	lastInterval := m.interval
+	m.Unlock()
+
+	ticker := time.NewTicker(lastInterval)
 	defer ticker.Stop()
 
 	for {
@@ -137,6 +142,14 @@ func (m *Manager) Run() {
 				start := time.Now()
 				m.runIteration()
 				iterationDuration.Observe(float64(time.Since(start) / time.Millisecond))
+
+				m.Lock()
+				if lastInterval != m.interval {
+					ticker.Stop()
+					ticker = time.NewTicker(m.interval)
+					lastInterval = m.interval
+				}
+				m.Unlock()
 			case <-m.done:
 				return
 			}
@@ -255,11 +268,27 @@ func (m *Manager) runIteration() {
 	wg.Wait()
 }
 
-// LoadRuleFiles loads alerting and recording rules from the given files.
-func (m *Manager) LoadRuleFiles(filenames ...string) error {
+// ApplyConfig updates the rule manager's state as the config requires. If
+// loading the new rules failed the old rule set is restored.
+func (m *Manager) ApplyConfig(conf *config.Config) {
 	m.Lock()
 	defer m.Unlock()
 
+	m.interval = time.Duration(conf.GlobalConfig.EvaluationInterval)
+
+	rulesSnapshot := make([]Rule, len(m.rules))
+	copy(rulesSnapshot, m.rules)
+	m.rules = m.rules[:0]
+
+	if err := m.loadRuleFiles(conf.RuleFiles...); err != nil {
+		// If loading the new rules failed, restore the old rule set.
+		m.rules = rulesSnapshot
+		glog.Errorf("Error loading rules, previous rule set restored: %s", err)
+	}
+}
+
+// loadRuleFiles loads alerting and recording rules from the given files.
+func (m *Manager) loadRuleFiles(filenames ...string) error {
 	for _, fn := range filenames {
 		content, err := ioutil.ReadFile(fn)
 		if err != nil {
