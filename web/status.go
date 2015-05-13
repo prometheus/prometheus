@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 )
@@ -47,5 +48,14 @@ func (h *PrometheusStatusHandler) TargetStateToClass() map[retrieval.TargetState
 }
 
 func (h *PrometheusStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
 	executeTemplate(w, "status", h, h.PathPrefix)
+	h.mu.RUnlock()
+}
+
+// ApplyConfig updates the status handler's state as the new config requires.
+func (h *PrometheusStatusHandler) ApplyConfig(conf *config.Config) {
+	h.mu.Lock()
+	h.Config = conf.String()
+	h.mu.Unlock()
 }

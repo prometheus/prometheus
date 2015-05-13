@@ -277,19 +277,15 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 	}
 	conf := &config.Config{DefaultedConfig: config.DefaultConfig}
 
-	targetManager, err := NewTargetManager(conf, nopAppender{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	targetManager := NewTargetManager(nopAppender{})
+	targetManager.ApplyConfig(conf)
+
 	targetManager.Run()
 	defer targetManager.Stop()
 
 	for i, step := range sequence {
 		conf.ScrapeConfigs = step.scrapeConfigs
-		err := targetManager.ApplyConfig(conf)
-		if err != nil {
-			t.Fatal(err)
-		}
+		targetManager.ApplyConfig(conf)
 
 		<-time.After(1 * time.Millisecond)
 

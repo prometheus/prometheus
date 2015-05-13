@@ -285,6 +285,7 @@ func (t *target) RunScraper(sampleAppender storage.SampleAppender) {
 				// On changed scrape interval the new interval becomes effective
 				// after the next scrape.
 				if lastScrapeInterval != t.scrapeInterval {
+					ticker.Stop()
 					ticker = time.NewTicker(t.scrapeInterval)
 					lastScrapeInterval = t.scrapeInterval
 				}
