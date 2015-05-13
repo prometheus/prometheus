@@ -20,6 +20,10 @@
 			"Rev": "655cdfa588ea190e901bc5590e65d5621688847c"
 		},
 		{
+			"ImportPath": "github.com/hashicorp/consul/api",
+			"Rev": "9fb235a98d8e88f7857b21bb2dd3efc428c01427",
+		},
+		{
 			"ImportPath": "github.com/matttproud/golang_protobuf_extensions/pbutil",
 			"Rev": "fc2b8d3a73c4867e51861bbdd5ae3c1f0869dd6a"
 		},
