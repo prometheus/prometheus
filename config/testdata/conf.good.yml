@@ -24,6 +24,14 @@ scrape_configs:
     labels:
       foo: baz
 
+    file_sd_configs:
+      - names:
+          - foo/*.slow.json
+          - foo/*.slow.yml
+        refresh_interval: 10m
+      - names:
+          - bar/*.yaml
+
     target_groups:
       - targets: ['localhost:9090', 'localhost:9191']
         labels:

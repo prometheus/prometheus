@@ -52,6 +52,17 @@ var expectedConf = &Config{DefaultedConfig{
 				},
 			},
 
+			FileSDConfigs: []*FileSDConfig{
+				{DefaultedFileSDConfig{
+					Names:           []string{"foo/*.slow.json", "foo/*.slow.yml"},
+					RefreshInterval: Duration(10 * time.Minute),
+				}},
+				{DefaultedFileSDConfig{
+					Names:           []string{"bar/*.yaml"},
+					RefreshInterval: Duration(30 * time.Second),
+				}},
+			},
+
 			RelabelConfigs: []*RelabelConfig{
 				{DefaultedRelabelConfig{
 					SourceLabels: clientmodel.LabelNames{"job", "__meta_dns_srv_name"},
