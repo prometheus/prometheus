@@ -28,6 +28,7 @@ scrape_configs:
       - names:
           - foo/*.slow.json
           - foo/*.slow.yml
+          - single/file.yml
         refresh_interval: 10m
       - names:
           - bar/*.yaml
