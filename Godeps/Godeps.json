@@ -69,6 +69,10 @@
 			"Rev": "b6fdb7d8a4ccefede406f8fe0f017fb58265054c"
 		},
 		{
+			"ImportPath": "gopkg.in/fsnotify.v1",
+			"Rev": "96c060f6a6b7e0d6f75fddd10efeaca3e5d1bcb0",
+		},
+		{
 			"ImportPath": "gopkg.in/yaml.v2",
 			"Rev": "49c95bdc21843256fb6c4e0d370a05f24a0bf213"
 		}
