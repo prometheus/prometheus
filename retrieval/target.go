@@ -210,8 +210,6 @@ func (t *target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSe
 }
 
 func (t *target) String() string {
-	t.RLock()
-	defer t.RUnlock()
 	return t.url.Host
 }
 
@@ -398,22 +396,6 @@ func (t *target) URL() string {
 
 // InstanceIdentifier implements Target.
 func (t *target) InstanceIdentifier() string {
-	// If we are given a port in the host port, use that.
-	if strings.Contains(t.url.Host, ":") {
-		return t.url.Host
-	}
-
-	t.RLock()
-	defer t.RUnlock()
-
-	// Otherwise, deduce port based on protocol.
-	if t.url.Scheme == "http" {
-		return fmt.Sprintf("%s:80", t.url.Host)
-	} else if t.url.Scheme == "https" {
-		return fmt.Sprintf("%s:443", t.url.Host)
-	}
-
-	glog.Warningf("Unknown scheme %s when generating identifier, using host without port number.", t.url.Scheme)
 	return t.url.Host
 }
 

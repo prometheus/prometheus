@@ -311,6 +311,19 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 
 	targets := make([]Target, 0, len(tg.Targets))
 	for i, labels := range tg.Targets {
+		addr := string(labels[clientmodel.AddressLabel])
+		// If no port was provided, infer it based on the used scheme.
+		if !strings.Contains(addr, ":") {
+			switch cfg.Scheme {
+			case "http":
+				addr = fmt.Sprintf("%s:80", addr)
+			case "https":
+				addr = fmt.Sprintf("%s:443", addr)
+			default:
+				panic(fmt.Errorf("targetsFromGroup: invalid scheme %q", cfg.Scheme))
+			}
+			labels[clientmodel.AddressLabel] = clientmodel.LabelValue(addr)
+		}
 		// Copy labels into the labelset for the target if they are not
 		// set already. Apply the labelsets in order of decreasing precedence.
 		labelsets := []clientmodel.LabelSet{
@@ -363,6 +376,10 @@ func ProvidersFromConfig(cfg *config.ScrapeConfig) ([]TargetProvider, error) {
 	for _, dnscfg := range cfg.DNSSDConfigs {
 		dnsSD := discovery.NewDNSDiscovery(dnscfg.Names, time.Duration(dnscfg.RefreshInterval))
 		providers = append(providers, dnsSD)
+	}
+	for _, filecfg := range cfg.FileSDConfigs {
+		fileSD := discovery.NewFileDiscovery(filecfg.Names, time.Duration(filecfg.RefreshInterval))
+		providers = append(providers, fileSD)
 	}
 	if len(cfg.TargetGroups) > 0 {
 		providers = append(providers, NewStaticProvider(cfg.TargetGroups))

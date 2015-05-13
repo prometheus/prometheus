@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"regexp"
@@ -16,7 +17,7 @@ import (
 
 var (
 	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
-	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml)$`)
+	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 )
 
 // Load parses the YAML input s into a Config.
@@ -254,6 +255,28 @@ func (tg TargetGroup) MarshalYAML() (interface{}, error) {
 	return g, nil
 }
 
+// UnmarshalJSON implements the json.Unmarshaller interface.
+func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
+	g := struct {
+		Targets []string             `yaml:"targets"`
+		Labels  clientmodel.LabelSet `yaml:"labels"`
+	}{}
+	if err := json.Unmarshal(b, &g); err != nil {
+		return err
+	}
+	tg.Targets = make([]clientmodel.LabelSet, 0, len(g.Targets))
+	for _, t := range g.Targets {
+		if strings.Contains(t, "/") {
+			return fmt.Errorf("%q is not a valid hostname", t)
+		}
+		tg.Targets = append(tg.Targets, clientmodel.LabelSet{
+			clientmodel.AddressLabel: clientmodel.LabelValue(t),
+		})
+	}
+	tg.Labels = g.Labels
+	return nil
+}
+
 // DNSSDConfig is the configuration for DNS based service discovery.
 type DNSSDConfig struct {
 	// DefaultedDNSSDConfig contains the actual fields for DNSSDConfig.
@@ -293,7 +316,7 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Names) == 0 {
-		return fmt.Errorf("file discovery config must contain at least on path name")
+		return fmt.Errorf("file service discovery config must contain at least one path name")
 	}
 	for _, name := range c.Names {
 		if !patFileSDName.MatchString(name) {

@@ -34,7 +34,7 @@ func TestTargetInterface(t *testing.T) {
 }
 
 func TestBaseLabels(t *testing.T) {
-	target := newTestTarget("example.com", 0, clientmodel.LabelSet{"job": "some_job", "foo": "bar"})
+	target := newTestTarget("example.com:80", 0, clientmodel.LabelSet{"job": "some_job", "foo": "bar"})
 	want := clientmodel.LabelSet{
 		clientmodel.JobLabel:      "some_job",
 		clientmodel.InstanceLabel: "example.com:80",
@@ -89,7 +89,7 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 }
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
-	testTarget := newTestTarget("example.url", 0, clientmodel.LabelSet{clientmodel.JobLabel: "testjob"})
+	testTarget := newTestTarget("example.url:80", 0, clientmodel.LabelSet{clientmodel.JobLabel: "testjob"})
 
 	now := clientmodel.Now()
 	appender := &collectResultAppender{}

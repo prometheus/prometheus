@@ -54,7 +54,7 @@ var expectedConf = &Config{DefaultedConfig{
 
 			FileSDConfigs: []*FileSDConfig{
 				{DefaultedFileSDConfig{
-					Names:           []string{"foo/*.slow.json", "foo/*.slow.yml"},
+					Names:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
 					RefreshInterval: Duration(10 * time.Minute),
 				}},
 				{DefaultedFileSDConfig{
