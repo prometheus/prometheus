@@ -14,7 +14,10 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
-var jobNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_-]*$")
+var (
+	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
+	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml)$`)
+)
 
 // Load parses the YAML input s into a Config.
 func Load(s string) (*Config, error) {
@@ -67,6 +70,11 @@ var (
 
 	// The default DNS SD configuration.
 	DefaultDNSSDConfig = DefaultedDNSSDConfig{
+		RefreshInterval: Duration(30 * time.Second),
+	}
+
+	// The default file SD configuration.
+	DefaultFileSDConfig = DefaultedFileSDConfig{
 		RefreshInterval: Duration(30 * time.Second),
 	}
 )
@@ -164,7 +172,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if !jobNameRE.MatchString(c.JobName) {
+	if !patJobName.MatchString(c.JobName) {
 		return fmt.Errorf("%q is not a valid job name", c.JobName)
 	}
 	return nil
@@ -187,6 +195,8 @@ type DefaultedScrapeConfig struct {
 	TargetGroups []*TargetGroup `yaml:"target_groups,omitempty"`
 	// List of DNS service discovery configurations.
 	DNSSDConfigs []*DNSSDConfig `yaml:"dns_sd_configs,omitempty"`
+	// List of file service discovery configurations.
+	FileSDConfigs []*FileSDConfig `yaml:"file_sd_configs,omitempty"`
 	// List of relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
 }
@@ -258,13 +268,43 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Names) == 0 {
-		return fmt.Errorf("DNS config must contain at least one SRV record name")
+		return fmt.Errorf("DNS-SD config must contain at least one SRV record name")
 	}
 	return nil
 }
 
 // DefaultedDNSSDConfig is a proxy type for DNSSDConfig.
 type DefaultedDNSSDConfig struct {
+	Names           []string `yaml:"names"`
+	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
+}
+
+// FileSDConfig is the configuration for file based discovery.
+type FileSDConfig struct {
+	// DefaultedFileSDConfig contains the actual fields for FileSDConfig.
+	DefaultedFileSDConfig `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaller interface.
+func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	c.DefaultedFileSDConfig = DefaultFileSDConfig
+	err := unmarshal(&c.DefaultedFileSDConfig)
+	if err != nil {
+		return err
+	}
+	if len(c.Names) == 0 {
+		return fmt.Errorf("file discovery config must contain at least on path name")
+	}
+	for _, name := range c.Names {
+		if !patFileSDName.MatchString(name) {
+			return fmt.Errorf("path name %q is not valid for file discovery", name)
+		}
+	}
+	return nil
+}
+
+// DefaultedFileSDConfig is a proxy type for FileSDConfig.
+type DefaultedFileSDConfig struct {
 	Names           []string `yaml:"names"`
 	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
 }
