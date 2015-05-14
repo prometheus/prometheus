@@ -32,7 +32,6 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/utility"
 )
 
 const (
@@ -195,7 +194,7 @@ func (t *target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSe
 
 	t.scrapeInterval = time.Duration(cfg.ScrapeInterval)
 	t.deadline = time.Duration(cfg.ScrapeTimeout)
-	t.httpClient = utility.NewDeadlineClient(time.Duration(cfg.ScrapeTimeout))
+	t.httpClient = &http.Client{Timeout: t.deadline}
 
 	t.baseLabels = clientmodel.LabelSet{}
 	// All remaining internal labels will not be part of the label set.
@@ -341,6 +340,7 @@ func (t *target) scrape(sampleAppender storage.SampleAppender) (err error) {
 		return err
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}

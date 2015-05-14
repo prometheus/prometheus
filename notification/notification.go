@@ -27,8 +27,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/utility"
 )
 
 const (
@@ -99,7 +97,7 @@ func NewNotificationHandler(alertmanagerURL string, notificationQueueCapacity in
 		alertmanagerURL:      strings.TrimRight(alertmanagerURL, "/"),
 		pendingNotifications: make(chan NotificationReqs, notificationQueueCapacity),
 
-		httpClient: utility.NewDeadlineClient(*deadline),
+		httpClient: &http.Client{Timeout: *deadline},
 
 		notificationLatency: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace: namespace,
