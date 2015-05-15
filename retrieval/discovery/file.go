@@ -44,13 +44,12 @@ type FileDiscovery struct {
 }
 
 // NewFileDiscovery returns a new file discovery for the given paths.
-func NewFileDiscovery(paths []string, interval time.Duration) *FileDiscovery {
-	fd := &FileDiscovery{
-		paths:    paths,
-		interval: interval,
+func NewFileDiscovery(conf *config.FileSDConfig) *FileDiscovery {
+	return &FileDiscovery{
+		paths:    conf.Names,
+		interval: time.Duration(conf.RefreshInterval),
 		done:     make(chan struct{}),
 	}
-	return fd
 }
 
 // Sources implements the TargetProvider interface.

@@ -70,11 +70,11 @@ type DNSDiscovery struct {
 }
 
 // NewDNSDiscovery returns a new DNSDiscovery which periodically refreshes its targets.
-func NewDNSDiscovery(names []string, refreshInterval time.Duration) *DNSDiscovery {
+func NewDNSDiscovery(conf *config.DNSSDConfig) *DNSDiscovery {
 	return &DNSDiscovery{
-		names:  names,
+		names:  conf.Names,
 		done:   make(chan struct{}),
-		ticker: time.NewTicker(refreshInterval),
+		ticker: time.NewTicker(time.Duration(conf.RefreshInterval)),
 	}
 }
 

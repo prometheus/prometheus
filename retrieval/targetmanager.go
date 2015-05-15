@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/golang/glog"
 
@@ -356,13 +355,11 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 func ProvidersFromConfig(cfg *config.ScrapeConfig) []TargetProvider {
 	var providers []TargetProvider
 
-	for _, dnscfg := range cfg.DNSSDConfigs {
-		dnsSD := discovery.NewDNSDiscovery(dnscfg.Names, time.Duration(dnscfg.RefreshInterval))
-		providers = append(providers, dnsSD)
+	for _, c := range cfg.DNSSDConfigs {
+		providers = append(providers, discovery.NewDNSDiscovery(c))
 	}
-	for _, filecfg := range cfg.FileSDConfigs {
-		fileSD := discovery.NewFileDiscovery(filecfg.Names, time.Duration(filecfg.RefreshInterval))
-		providers = append(providers, fileSD)
+	for _, c := range cfg.FileSDConfigs {
+		providers = append(providers, discovery.NewFileDiscovery(c))
 	}
 	if len(cfg.TargetGroups) > 0 {
 		providers = append(providers, NewStaticProvider(cfg.TargetGroups))

@@ -20,7 +20,11 @@ func TestFileSD(t *testing.T) {
 func testFileSD(t *testing.T, ext string) {
 	// As interval refreshing is more of a fallback, we only want to test
 	// whether file watches work as expected.
-	fsd := NewFileDiscovery([]string{"fixtures/_*" + ext}, 1*time.Hour)
+	var conf config.FileSDConfig
+	conf.Names = []string{"fixtures/_*" + ext}
+	conf.RefreshInterval = config.Duration(1 * time.Hour)
+
+	fsd := NewFileDiscovery(&conf)
 
 	ch := make(chan *config.TargetGroup)
 	go fsd.Run(ch)
