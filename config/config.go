@@ -182,6 +182,8 @@ type DefaultedScrapeConfig struct {
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
+	// The HTTP basic authentication credentials for the targets.
+	BasicAuth *BasicAuth `yaml:"basic_auth"`
 
 	// List of labeled target groups for this job.
 	TargetGroups []*TargetGroup `yaml:"target_groups,omitempty"`
@@ -191,7 +193,13 @@ type DefaultedScrapeConfig struct {
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
 }
 
-// A labeled group of targets to scrape for a job.
+// BasicAuth contains basic HTTP authentication credentials.
+type BasicAuth struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
+// TargetGroup is a set of targets with a common label set.
 type TargetGroup struct {
 	// Targets is a list of targets identified by a label set. Each target is
 	// uniquely identifiable in the group by its address label.

@@ -69,8 +69,12 @@ var expectedConf = &Config{DefaultedConfig{
 			ScrapeInterval: Duration(50 * time.Second),
 			ScrapeTimeout:  Duration(5 * time.Second),
 
+			BasicAuth: &BasicAuth{
+				Username: "admin",
+				Password: "password",
+			},
 			MetricsPath: "/my_path",
-			Scheme:      "http",
+			Scheme:      "https",
 
 			DNSSDConfigs: []*DNSSDConfig{
 				{DefaultedDNSSDConfig{

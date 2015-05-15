@@ -192,6 +192,9 @@ func (t *target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSe
 
 	t.url.Scheme = cfg.Scheme
 	t.url.Path = string(baseLabels[clientmodel.MetricsPathLabel])
+	if cfg.BasicAuth != nil {
+		t.url.User = url.UserPassword(cfg.BasicAuth.Username, cfg.BasicAuth.Password)
+	}
 
 	t.scrapeInterval = time.Duration(cfg.ScrapeInterval)
 	t.deadline = time.Duration(cfg.ScrapeTimeout)

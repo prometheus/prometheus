@@ -40,11 +40,15 @@ scrape_configs:
 
   - job_name: service-x
 
+    basic_auth:
+      username: admin
+      password: password
+
     scrape_interval: 50s
     scrape_timeout:  5s
 
     metrics_path: /my_path
-    # scheme defaults to 'http'.
+    scheme: https
 
     dns_sd_configs:
       - refresh_interval: 15s
