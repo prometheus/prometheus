@@ -592,6 +592,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 
 		case lt == ExprVector && rt == ExprVector:
+			if e.Op == itemLAND {
+				return ev.vectorAnd(lhs.(Vector), rhs.(Vector), e.VectorMatching)
+			}
 			return ev.vectorBinop(e.Op, lhs.(Vector), rhs.(Vector), e.VectorMatching)
 
 		case lt == ExprVector && rt == ExprScalar:
@@ -698,6 +701,38 @@ func (ev *evaluator) matrixSelectorBounds(node *MatrixSelector) Matrix {
 	return Matrix(sampleStreams)
 }
 
+func (ev *evaluator) vectorAnd(lhs, rhs Vector, matching *VectorMatching) Vector {
+	if matching.Card != CardManyToMany {
+		panic("logical operations must always be many-to-many matching")
+	}
+	// If no matching labels are specified, match by all labels.
+	signature := func(m clientmodel.COWMetric) uint64 {
+		return clientmodel.SignatureForLabels(m.Metric, matching.On)
+	}
+	if len(matching.On) == 0 {
+		signature = func(m clientmodel.COWMetric) uint64 {
+			m.Delete(clientmodel.MetricNameLabel)
+			return uint64(m.Metric.Fingerprint())
+		}
+	}
+
+	var result Vector
+	// The set of signatures for the right-hand side vector.
+	rightSigs := map[uint64]struct{}{}
+	// Add all rhs samples to a map so we can easily find matches later.
+	for _, rs := range rhs {
+		rightSigs[signature(rs.Metric)] = struct{}{}
+	}
+
+	for _, ls := range lhs {
+		// If there's a matching entry in the right-hand side vector, add the sample.
+		if _, ok := rightSigs[signature(ls.Metric)]; ok {
+			result = append(result, ls)
+		}
+	}
+	return result
+}
+
 // vectorBinop evaluates a binary operation between two vector values.
 func (ev *evaluator) vectorBinop(op itemType, lhs, rhs Vector, matching *VectorMatching) Vector {
 	result := make(Vector, 0, len(rhs))
@@ -748,21 +783,16 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs Vector, matching *VectorM
 		var value clientmodel.SampleValue
 		var keep bool
 
-		if op == itemLAND {
-			value = ls.Value
-			keep = true
-		} else {
-			if _, exists := added[hash]; matching.Card == CardOneToOne && exists {
-				// Many-to-one matching must be explicit.
-				ev.errorf("many-to-one matching must be explicit")
-			}
-			// Account for potentially swapped sidedness.
-			vl, vr := ls.Value, rs.Value
-			if matching.Card == CardOneToMany {
-				vl, vr = vr, vl
-			}
-			value, keep = vectorElemBinop(op, vl, vr)
+		if _, exists := added[hash]; matching.Card == CardOneToOne && exists {
+			// Many-to-one matching must be explicit.
+			ev.errorf("many-to-one matching must be explicit")
 		}
+		// Account for potentially swapped sidedness.
+		vl, vr := ls.Value, rs.Value
+		if matching.Card == CardOneToMany {
+			vl, vr = vr, vl
+		}
+		value, keep = vectorElemBinop(op, vl, vr)
 
 		if keep {
 			metric := resultMetric(op, ls, rs, matching)
