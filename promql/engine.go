@@ -279,20 +279,25 @@ func (ng *Engine) NewRangeQuery(qs string, start, end clientmodel.Timestamp, int
 	if err != nil {
 		return nil, err
 	}
+	qry := ng.newQuery(expr, start, end, interval)
+	qry.q = qs
+
+	return qry, nil
+}
+
+func (ng *Engine) newQuery(expr Expr, start, end clientmodel.Timestamp, interval time.Duration) *query {
 	es := &EvalStmt{
 		Expr:     expr,
 		Start:    start,
 		End:      end,
 		Interval: interval,
 	}
-
 	qry := &query{
-		q:     qs,
 		stmts: Statements{es},
 		ng:    ng,
 		stats: stats.NewTimerGroup(),
 	}
-	return qry, nil
+	return qry
 }
 
 // testStmt is an internal helper statement that allows execution
