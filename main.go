@@ -118,11 +118,7 @@ func NewPrometheus() *prometheus {
 		PedanticChecks: *storagePedanticChecks,
 		SyncStrategy:   syncStrategy,
 	}
-	memStorage, err := local.NewMemorySeriesStorage(o)
-	if err != nil {
-		glog.Error("Error opening memory series storage: ", err)
-		os.Exit(1)
-	}
+	memStorage := local.NewMemorySeriesStorage(o)
 
 	var sampleAppender storage.SampleAppender
 	var remoteStorageQueues []*remote.StorageQueueManager
@@ -213,38 +209,47 @@ func NewPrometheus() *prometheus {
 	}
 	webService.QuitChan = make(chan struct{})
 
-	p.reloadConfig()
+	if !p.reloadConfig() {
+		os.Exit(1)
+	}
 
 	return p
 }
 
-func (p *prometheus) reloadConfig() {
+func (p *prometheus) reloadConfig() bool {
 	glog.Infof("Loading configuration file %s", *configFile)
 
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
 		glog.Errorf("Couldn't load configuration (-config.file=%s): %v", *configFile, err)
 		glog.Errorf("Note: The configuration format has changed with version 0.14, please check the documentation.")
-		return
+		return false
 	}
 
 	p.webService.StatusHandler.ApplyConfig(conf)
 	p.targetManager.ApplyConfig(conf)
 	p.ruleManager.ApplyConfig(conf)
+
+	return true
 }
 
 // Serve starts the Prometheus server. It returns after the server has been shut
 // down. The method installs an interrupt handler, allowing to trigger a
 // shutdown by sending SIGTERM to the process.
 func (p *prometheus) Serve() {
+	if err := p.storage.Start(); err != nil {
+		glog.Error("Error opening memory series storage: ", err)
+		os.Exit(1)
+	}
 	for _, q := range p.remoteStorageQueues {
 		go q.Run()
 	}
+
 	go p.ruleManager.Run()
 	go p.notificationHandler.Run()
 	go p.targetManager.Run()
 
-	p.storage.Start()
+	registry.MustRegister(p)
 
 	go func() {
 		err := p.webService.ServeForever(*pathPrefix)
@@ -387,6 +392,5 @@ func main() {
 	}
 
 	p := NewPrometheus()
-	registry.MustRegister(p)
 	p.Serve()
 }

@@ -48,13 +48,11 @@ func NewTestStorage(t test.T, encoding chunkEncoding) (*memorySeriesStorage, tes
 		CheckpointInterval:         time.Hour,
 		SyncStrategy:               Adaptive,
 	}
-	storage, err := NewMemorySeriesStorage(o)
-	if err != nil {
+	storage := NewMemorySeriesStorage(o)
+	if err := storage.Start(); err != nil {
 		directory.Close()
 		t.Fatalf("Error creating storage: %s", err)
 	}
-
-	storage.Start()
 
 	closer := &testStorageCloser{
 		storage:   storage,

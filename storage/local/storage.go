@@ -82,6 +82,8 @@ type memorySeriesStorage struct {
 	fpLocker   *fingerprintLocker
 	fpToSeries *seriesMap
 
+	options *MemorySeriesStorageOptions
+
 	loopStopping, loopStopped  chan struct{}
 	maxMemoryChunks            int
 	dropAfter                  time.Duration
@@ -124,9 +126,11 @@ type MemorySeriesStorageOptions struct {
 
 // NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
 // has to be called to start the storage.
-func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
+func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 	s := &memorySeriesStorage{
 		fpLocker: newFingerprintLocker(1024),
+
+		options: o,
 
 		loopStopping:               make(chan struct{}),
 		loopStopped:                make(chan struct{}),
@@ -185,9 +189,13 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 			[]string{seriesLocationLabel},
 		),
 	}
+	return s
+}
 
+// Start implements Storage.
+func (s *memorySeriesStorage) Start() error {
 	var syncStrategy syncStrategy
-	switch o.SyncStrategy {
+	switch s.options.SyncStrategy {
 	case Never:
 		syncStrategy = func() bool { return false }
 	case Always:
@@ -198,33 +206,32 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) (Storage, error) {
 		panic("unknown sync strategy")
 	}
 
-	p, err := newPersistence(o.PersistenceStoragePath, o.Dirty, o.PedanticChecks, syncStrategy)
+	p, err := newPersistence(s.options.PersistenceStoragePath, s.options.Dirty, s.options.PedanticChecks, syncStrategy)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	s.persistence = p
 
 	glog.Info("Loading series map and head chunks...")
 	s.fpToSeries, s.numChunksToPersist, err = p.loadSeriesMapAndHeads()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	glog.Infof("%d series loaded.", s.fpToSeries.length())
 	s.numSeries.Set(float64(s.fpToSeries.length()))
 
 	mapper, err := newFPMapper(s.fpToSeries, p)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	s.mapper = mapper
 
-	return s, nil
-}
+	go s.persistence.run()
 
-// Start implements Storage.
-func (s *memorySeriesStorage) Start() {
 	go s.handleEvictList()
 	go s.loop()
+
+	return nil
 }
 
 // Stop implements Storage.
