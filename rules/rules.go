@@ -37,5 +37,5 @@ type Rule interface {
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
-	HTMLSnippet() template.HTML
+	HTMLSnippet(pathPrefix string) template.HTML
 }
