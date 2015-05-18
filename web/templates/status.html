@@ -51,19 +51,19 @@
                 <a href="{{.GlobalURL}}">{{.URL}}</a>
               </td>
               <td>
-                <span class="alert alert-{{index $stateToClass .State}} target_status_alert">
-                  {{.State}}
+                <span class="alert alert-{{index $stateToClass .Status.State}} target_status_alert">
+                  {{.Status.State}}
                 </span>
               </td>
               <td>
                 {{.BaseLabelsWithoutJobAndInstance}}
               </td>
               <td>
-                {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
+                {{if .Status.LastScrape.IsZero}}Never{{else}}{{since .Status.LastScrape}} ago{{end}}
               </td>
               <td>
-                {{if .LastError}}
-                <span class="alert alert-danger target_status_alert">{{.LastError}}</span>
+                {{if .Status.LastError}}
+                <span class="alert alert-danger target_status_alert">{{.Status.LastError}}</span>
                 {{end}}
               </td>
             </tr>

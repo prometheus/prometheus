@@ -57,8 +57,8 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := newTestTarget("bad schema", 0, nil)
 
 	testTarget.scrape(nopAppender{})
-	if testTarget.state != Unhealthy {
-		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
+	if testTarget.status.State() != Unhealthy {
+		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.status.State())
 	}
 }
 
@@ -80,11 +80,11 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{"dings": "bums"})
 
 	testTarget.scrape(slowAppender{})
-	if testTarget.state != Unhealthy {
-		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
+	if testTarget.status.State() != Unhealthy {
+		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.status.State())
 	}
-	if testTarget.lastError != errIngestChannelFull {
-		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.lastError)
+	if testTarget.status.LastError() != errIngestChannelFull {
+		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.status.LastError())
 	}
 }
 
@@ -93,7 +93,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 
 	now := clientmodel.Now()
 	appender := &collectResultAppender{}
-	testTarget.recordScrapeHealth(appender, now, true, 2*time.Second)
+	testTarget.recordScrapeHealth(appender, now, 2*time.Second)
 
 	result := appender.result
 
@@ -205,17 +205,17 @@ func TestTargetRunScraperScrapes(t *testing.T) {
 
 	// Enough time for a scrape to happen.
 	time.Sleep(2 * time.Millisecond)
-	if testTarget.lastScrape.IsZero() {
+	if testTarget.status.LastScrape().IsZero() {
 		t.Errorf("Scrape hasn't occured.")
 	}
 
 	testTarget.StopScraper()
 	// Wait for it to take effect.
 	time.Sleep(2 * time.Millisecond)
-	last := testTarget.lastScrape
+	last := testTarget.status.LastScrape()
 	// Enough time for a scrape to happen.
 	time.Sleep(2 * time.Millisecond)
-	if testTarget.lastScrape != last {
+	if testTarget.status.LastScrape() != last {
 		t.Errorf("Scrape occured after it was stopped.")
 	}
 }
@@ -249,7 +249,10 @@ func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmo
 			Host:   strings.TrimLeft(targetURL, "http://"),
 			Path:   "/metrics",
 		},
-		deadline:        deadline,
+		deadline: deadline,
+		status: &TargetStatus{
+			state: Healthy,
+		},
 		scrapeInterval:  1 * time.Millisecond,
 		httpClient:      utility.NewDeadlineClient(deadline),
 		scraperStopping: make(chan struct{}),
