@@ -48,7 +48,7 @@
           {{range $pool}}
             <tr>
               <td>
-                <a href="{{.GlobalURL}}">{{.URL}}</a>
+                <a href="{{.URL | globalURL}}">{{.URL}}</a>
               </td>
               <td>
                 <span class="alert alert-{{index $stateToClass .Status.State}} target_status_alert">
@@ -56,7 +56,7 @@
                 </span>
               </td>
               <td>
-                {{.BaseLabelsWithoutJobAndInstance}}
+                {{stripLabels .BaseLabels "job" "instance"}}
               </td>
               <td>
                 {{if .Status.LastScrape.IsZero}}Never{{else}}{{since .Status.LastScrape}} ago{{end}}

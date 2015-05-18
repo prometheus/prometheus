@@ -19,7 +19,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -52,8 +51,6 @@ const (
 
 var (
 	errIngestChannelFull = errors.New("ingestion channel full")
-
-	localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
 	targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -118,17 +115,11 @@ type Target interface {
 	URL() string
 	// Used to populate the `instance` label in metrics.
 	InstanceIdentifier() string
-	// The URL as seen from other hosts. References to localhost are resolved
-	// to the address of the prometheus server.
-	GlobalURL() string
 	// Return the labels describing the targets. These are the base labels
 	// as well as internal labels.
-	Labels() clientmodel.LabelSet
+	fullLabels() clientmodel.LabelSet
 	// Return the target's base labels.
 	BaseLabels() clientmodel.LabelSet
-	// Return the target's base labels without job and instance label. That's
-	// useful for display purposes.
-	BaseLabelsWithoutJobAndInstance() clientmodel.LabelSet
 	// Start scraping the target in regular intervals.
 	RunScraper(storage.SampleAppender)
 	// Stop scraping, synchronous.
@@ -195,7 +186,6 @@ type target struct {
 
 	// The status object for the target. It is only set once on initialization.
 	status *TargetStatus
-
 	// The HTTP client used to scrape the target's endpoint.
 	httpClient *http.Client
 
@@ -419,66 +409,43 @@ func (t *target) InstanceIdentifier() string {
 	return t.url.Host
 }
 
-// GlobalURL implements Target.
-func (t *target) GlobalURL() string {
-	url := t.URL()
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		glog.Warningf("Couldn't get hostname: %s, returning target.URL()", err)
-		return url
-	}
-	for _, localhostRepresentation := range localhostRepresentations {
-		url = strings.Replace(url, "//"+localhostRepresentation, "//"+hostname, 1)
-	}
-	return url
-}
-
-// Labels implements Target.
-func (t *target) Labels() clientmodel.LabelSet {
+// fullLabels implements Target.
+func (t *target) fullLabels() clientmodel.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
-	ls := clientmodel.LabelSet{}
+	lset := make(clientmodel.LabelSet, len(t.baseLabels)+2)
 	for ln, lv := range t.baseLabels {
-		ls[ln] = lv
+		lset[ln] = lv
 	}
-	ls[clientmodel.MetricsPathLabel] = clientmodel.LabelValue(t.url.Path)
-	ls[clientmodel.AddressLabel] = clientmodel.LabelValue(t.url.Host)
-	return ls
+	lset[clientmodel.MetricsPathLabel] = clientmodel.LabelValue(t.url.Path)
+	lset[clientmodel.AddressLabel] = clientmodel.LabelValue(t.url.Host)
+	return lset
 }
 
 // BaseLabels implements Target.
 func (t *target) BaseLabels() clientmodel.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
-	return t.baseLabels
-}
-
-// BaseLabelsWithoutJobAndInstance implements Target.
-//
-// TODO(fabxc): This method does not have to be part of the interface. Implement this
-// as a template filter func for the single use case.
-func (t *target) BaseLabelsWithoutJobAndInstance() clientmodel.LabelSet {
-	t.RLock()
-	defer t.RUnlock()
-	ls := clientmodel.LabelSet{}
+	lset := make(clientmodel.LabelSet, len(t.baseLabels))
 	for ln, lv := range t.baseLabels {
-		if ln != clientmodel.JobLabel && ln != clientmodel.InstanceLabel {
-			ls[ln] = lv
-		}
+		lset[ln] = lv
 	}
-	return ls
+	return lset
 }
 
 func (t *target) recordScrapeHealth(sampleAppender storage.SampleAppender, timestamp clientmodel.Timestamp, scrapeDuration time.Duration) {
-	healthMetric := clientmodel.Metric{}
-	durationMetric := clientmodel.Metric{}
-	for label, value := range t.BaseLabels() {
+	t.RLock()
+	healthMetric := make(clientmodel.Metric, len(t.baseLabels)+1)
+	durationMetric := make(clientmodel.Metric, len(t.baseLabels)+1)
+
+	healthMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeHealthMetricName)
+	durationMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeDurationMetricName)
+
+	for label, value := range t.baseLabels {
 		healthMetric[label] = value
 		durationMetric[label] = value
 	}
-	healthMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeHealthMetricName)
-	durationMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeDurationMetricName)
+	t.RUnlock()
 
 	healthValue := clientmodel.SampleValue(0)
 	if t.status.State() == Healthy {

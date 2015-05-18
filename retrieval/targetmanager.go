@@ -215,7 +215,7 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 				// to build up.
 				wg.Add(1)
 				go func(t Target) {
-					match.Update(cfg, t.Labels())
+					match.Update(cfg, t.fullLabels())
 					wg.Done()
 				}(tnew)
 				newTargets[i] = match

@@ -44,13 +44,6 @@ func TestBaseLabels(t *testing.T) {
 	if !reflect.DeepEqual(want, got) {
 		t.Errorf("want base labels %v, got %v", want, got)
 	}
-	delete(want, clientmodel.JobLabel)
-	delete(want, clientmodel.InstanceLabel)
-
-	got = target.BaseLabelsWithoutJobAndInstance()
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("want base labels %v, got %v", want, got)
-	}
 }
 
 func TestTargetScrapeUpdatesState(t *testing.T) {
