@@ -45,7 +45,7 @@ func TestTargetManagerChan(t *testing.T) {
 		providers: map[*config.ScrapeConfig][]TargetProvider{
 			testJob1: []TargetProvider{prov1},
 		},
-		targets: make(map[string][]Target),
+		targets: make(map[string][]*Target),
 	}
 	go targetManager.Run()
 	defer targetManager.Stop()

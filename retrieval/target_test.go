@@ -29,10 +29,6 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
-func TestTargetInterface(t *testing.T) {
-	var _ Target = &target{}
-}
-
 func TestBaseLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, clientmodel.LabelSet{"job": "some_job", "foo": "bar"})
 	want := clientmodel.LabelSet{
@@ -50,8 +46,8 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := newTestTarget("bad schema", 0, nil)
 
 	testTarget.scrape(nopAppender{})
-	if testTarget.status.State() != Unhealthy {
-		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.status.State())
+	if testTarget.status.Health() != HealthBad {
+		t.Errorf("Expected target state %v, actual: %v", HealthBad, testTarget.status.Health())
 	}
 }
 
@@ -73,8 +69,8 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{"dings": "bums"})
 
 	testTarget.scrape(slowAppender{})
-	if testTarget.status.State() != Unhealthy {
-		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.status.State())
+	if testTarget.status.Health() != HealthBad {
+		t.Errorf("Expected target state %v, actual: %v", HealthBad, testTarget.status.Health())
 	}
 	if testTarget.status.LastError() != errIngestChannelFull {
 		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.status.LastError())
@@ -86,7 +82,8 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 
 	now := clientmodel.Now()
 	appender := &collectResultAppender{}
-	testTarget.recordScrapeHealth(appender, now, 2*time.Second)
+	testTarget.status.setLastError(nil)
+	recordScrapeHealth(appender, now, testTarget.BaseLabels(), testTarget.status.Health(), 2*time.Second)
 
 	result := appender.result
 
@@ -138,13 +135,13 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	)
 	defer server.Close()
 
-	var testTarget Target = newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
+	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
 
 	appender := nopAppender{}
 
 	// scrape once without timeout
 	signal <- true
-	if err := testTarget.(*target).scrape(appender); err != nil {
+	if err := testTarget.scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,12 +150,12 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again
 	signal <- true
-	if err := testTarget.(*target).scrape(appender); err != nil {
+	if err := testTarget.scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 
 	// now timeout
-	if err := testTarget.(*target).scrape(appender); err == nil {
+	if err := testTarget.scrape(appender); err == nil {
 		t.Fatal("expected scrape to timeout")
 	} else {
 		signal <- true // let handler continue
@@ -166,7 +163,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again without timeout
 	signal <- true
-	if err := testTarget.(*target).scrape(appender); err != nil {
+	if err := testTarget.scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -224,28 +221,26 @@ func BenchmarkScrape(b *testing.B) {
 	)
 	defer server.Close()
 
-	var testTarget Target = newTestTarget(server.URL, 100*time.Millisecond, clientmodel.LabelSet{"dings": "bums"})
+	testTarget := newTestTarget(server.URL, 100*time.Millisecond, clientmodel.LabelSet{"dings": "bums"})
 	appender := nopAppender{}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := testTarget.(*target).scrape(appender); err != nil {
+		if err := testTarget.scrape(appender); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
-func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmodel.LabelSet) *target {
-	t := &target{
+func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmodel.LabelSet) *Target {
+	t := &Target{
 		url: &url.URL{
 			Scheme: "http",
 			Host:   strings.TrimLeft(targetURL, "http://"),
 			Path:   "/metrics",
 		},
-		deadline: deadline,
-		status: &TargetStatus{
-			state: Healthy,
-		},
+		deadline:        deadline,
+		status:          &TargetStatus{},
 		scrapeInterval:  1 * time.Millisecond,
 		httpClient:      utility.NewDeadlineClient(deadline),
 		scraperStopping: make(chan struct{}),

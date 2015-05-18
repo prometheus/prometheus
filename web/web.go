@@ -193,7 +193,7 @@ func getTemplate(name string, pathPrefix string) (*template.Template, error) {
 
 	file, err = getTemplateFile(name)
 	if err != nil {
-		glog.Error("Could not read template %d: ", name, err)
+		glog.Error("Could not read template %s: %s", name, err)
 		return nil, err
 	}
 	t, err = t.Parse(file)

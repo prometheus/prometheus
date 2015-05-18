@@ -67,72 +67,35 @@ func init() {
 	prometheus.MustRegister(targetIntervalLength)
 }
 
-// TargetState describes the state of a Target.
-type TargetState int
+// TargetHealth describes the health state of a target.
+type TargetHealth int
 
-func (t TargetState) String() string {
+func (t TargetHealth) String() string {
 	switch t {
-	case Unknown:
+	case HealthUnknown:
 		return "UNKNOWN"
-	case Healthy:
+	case HealthGood:
 		return "HEALTHY"
-	case Unhealthy:
+	case HealthBad:
 		return "UNHEALTHY"
 	}
-
 	panic("unknown state")
 }
 
 const (
 	// Unknown is the state of a Target before it is first scraped.
-	Unknown TargetState = iota
+	HealthUnknown TargetHealth = iota
 	// Healthy is the state of a Target that has been successfully scraped.
-	Healthy
+	HealthGood
 	// Unhealthy is the state of a Target that was scraped unsuccessfully.
-	Unhealthy
+	HealthBad
 )
-
-// A Target represents an endpoint that should be interrogated for metrics.
-//
-// The protocol described by this type will likely change in future iterations,
-// as it offers no good support for aggregated targets and fan out.  Thusly,
-// it is likely that the current Target and target uses will be
-// wrapped with some resolver type.
-//
-// For the future, the Target protocol will abstract away the exact means that
-// metrics are retrieved and deserialized from the given instance to which it
-// refers.
-//
-// Target implements extraction.Ingester.
-type Target interface {
-	extraction.Ingester
-
-	// Status returns the current status of the target.
-	Status() *TargetStatus
-	// The URL to which the Target corresponds.  Out of all of the available
-	// points in this interface, this one is the best candidate to change given
-	// the ways to express the endpoint.
-	URL() string
-	// Used to populate the `instance` label in metrics.
-	InstanceIdentifier() string
-	// Return the labels describing the targets. These are the base labels
-	// as well as internal labels.
-	fullLabels() clientmodel.LabelSet
-	// Return the target's base labels.
-	BaseLabels() clientmodel.LabelSet
-	// Start scraping the target in regular intervals.
-	RunScraper(storage.SampleAppender)
-	// Stop scraping, synchronous.
-	StopScraper()
-	// Update the target's state.
-	Update(*config.ScrapeConfig, clientmodel.LabelSet)
-}
 
 // TargetStatus contains information about the current status of a scrape target.
 type TargetStatus struct {
 	lastError  error
 	lastScrape time.Time
-	state      TargetState
+	health     TargetHealth
 
 	mu sync.RWMutex
 }
@@ -151,11 +114,11 @@ func (ts *TargetStatus) LastScrape() time.Time {
 	return ts.lastScrape
 }
 
-// State returns the last known health state of the target.
-func (ts *TargetStatus) State() TargetState {
+// Health returns the last known health state of the target.
+func (ts *TargetStatus) Health() TargetHealth {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
-	return ts.state
+	return ts.health
 }
 
 func (ts *TargetStatus) setLastScrape(t time.Time) {
@@ -168,15 +131,20 @@ func (ts *TargetStatus) setLastError(err error) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	if err == nil {
-		ts.state = Healthy
+		ts.health = HealthGood
 	} else {
-		ts.state = Unhealthy
+		ts.health = HealthBad
 	}
 	ts.lastError = err
 }
 
-// target is a Target that refers to a singular HTTP or HTTPS endpoint.
-type target struct {
+// Target refers to a singular HTTP or HTTPS endpoint.
+type Target struct {
+	// The status object for the target. It is only set once on initialization.
+	status *TargetStatus
+	// The HTTP client used to scrape the target's endpoint.
+	httpClient *http.Client
+
 	// Closing scraperStopping signals that scraping should stop.
 	scraperStopping chan struct{}
 	// Closing scraperStopped signals that scraping has been stopped.
@@ -184,14 +152,9 @@ type target struct {
 	// Channel to buffer ingested samples.
 	ingestedSamples chan clientmodel.Samples
 
-	// The status object for the target. It is only set once on initialization.
-	status *TargetStatus
-	// The HTTP client used to scrape the target's endpoint.
-	httpClient *http.Client
-
 	// Mutex protects the members below.
 	sync.RWMutex
-
+	// url is the URL to be scraped. Its host is immutable.
 	url *url.URL
 	// Any base labels that are added to this target and its metrics.
 	baseLabels clientmodel.LabelSet
@@ -202,8 +165,8 @@ type target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) Target {
-	t := &target{
+func NewTarget(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) *Target {
+	t := &Target{
 		url: &url.URL{
 			Host: string(baseLabels[clientmodel.AddressLabel]),
 		},
@@ -215,14 +178,14 @@ func NewTarget(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) Target
 	return t
 }
 
-// Status implements the Target interface.
-func (t *target) Status() *TargetStatus {
+// Status returns the status of the target.
+func (t *Target) Status() *TargetStatus {
 	return t.status
 }
 
 // Update overwrites settings in the target that are derived from the job config
 // it belongs to.
-func (t *target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) {
+func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) {
 	t.Lock()
 	defer t.Unlock()
 
@@ -248,12 +211,15 @@ func (t *target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSe
 	}
 }
 
-func (t *target) String() string {
+func (t *Target) String() string {
 	return t.url.Host
 }
 
-// Ingest implements Target and extraction.Ingester.
-func (t *target) Ingest(s clientmodel.Samples) error {
+// Ingest implements an extraction.Ingester.
+func (t *Target) Ingest(s clientmodel.Samples) error {
+	t.RLock()
+	deadline := t.deadline
+	t.RUnlock()
 	// Since the regular case is that ingestedSamples is ready to receive,
 	// first try without setting a timeout so that we don't need to allocate
 	// a timer most of the time.
@@ -264,14 +230,17 @@ func (t *target) Ingest(s clientmodel.Samples) error {
 		select {
 		case t.ingestedSamples <- s:
 			return nil
-		case <-time.After(t.deadline / 10):
+		case <-time.After(deadline / 10):
 			return errIngestChannelFull
 		}
 	}
 }
 
+// Ensure that Target implements extraction.Ingester at compile time.
+var _ extraction.Ingester = (*Target)(nil)
+
 // RunScraper implements Target.
-func (t *target) RunScraper(sampleAppender storage.SampleAppender) {
+func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
 	defer close(t.scraperStopped)
 
 	t.RLock()
@@ -316,7 +285,7 @@ func (t *target) RunScraper(sampleAppender storage.SampleAppender) {
 
 				intervalStr := lastScrapeInterval.String()
 
-				t.Lock()
+				t.RLock()
 				// On changed scrape interval the new interval becomes effective
 				// after the next scrape.
 				if lastScrapeInterval != t.scrapeInterval {
@@ -324,7 +293,7 @@ func (t *target) RunScraper(sampleAppender storage.SampleAppender) {
 					ticker = time.NewTicker(t.scrapeInterval)
 					lastScrapeInterval = t.scrapeInterval
 				}
-				t.Unlock()
+				t.RUnlock()
 
 				targetIntervalLength.WithLabelValues(intervalStr).Observe(
 					float64(took) / float64(time.Second), // Sub-second precision.
@@ -336,7 +305,7 @@ func (t *target) RunScraper(sampleAppender storage.SampleAppender) {
 }
 
 // StopScraper implements Target.
-func (t *target) StopScraper() {
+func (t *Target) StopScraper() {
 	glog.V(1).Infof("Stopping scraper for target %v...", t)
 
 	close(t.scraperStopping)
@@ -347,18 +316,16 @@ func (t *target) StopScraper() {
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
 
-func (t *target) scrape(sampleAppender storage.SampleAppender) (err error) {
-	t.RLock()
+func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 	start := time.Now()
+	baseLabels := t.BaseLabels()
 
 	defer func() {
-		t.RUnlock()
-
 		t.status.setLastError(err)
-		t.recordScrapeHealth(sampleAppender, clientmodel.TimestampFromTime(start), time.Since(start))
+		recordScrapeHealth(sampleAppender, clientmodel.TimestampFromTime(start), baseLabels, t.status.Health(), time.Since(start))
 	}()
 
-	req, err := http.NewRequest("GET", t.url.String(), nil)
+	req, err := http.NewRequest("GET", t.URL(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -390,7 +357,7 @@ func (t *target) scrape(sampleAppender storage.SampleAppender) (err error) {
 
 	for samples := range t.ingestedSamples {
 		for _, s := range samples {
-			s.Metric.MergeFromLabelSet(t.baseLabels, clientmodel.ExporterLabelPrefix)
+			s.Metric.MergeFromLabelSet(baseLabels, clientmodel.ExporterLabelPrefix)
 			sampleAppender.Append(s)
 		}
 	}
@@ -398,19 +365,19 @@ func (t *target) scrape(sampleAppender storage.SampleAppender) (err error) {
 }
 
 // URL implements Target.
-func (t *target) URL() string {
+func (t *Target) URL() string {
 	t.RLock()
 	defer t.RUnlock()
 	return t.url.String()
 }
 
-// InstanceIdentifier implements Target.
-func (t *target) InstanceIdentifier() string {
+// InstanceIdentifier returns the identifier for the target.
+func (t *Target) InstanceIdentifier() string {
 	return t.url.Host
 }
 
-// fullLabels implements Target.
-func (t *target) fullLabels() clientmodel.LabelSet {
+// fullLabels returns the base labels plus internal labels defining the target.
+func (t *Target) fullLabels() clientmodel.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
 	lset := make(clientmodel.LabelSet, len(t.baseLabels)+2)
@@ -422,8 +389,8 @@ func (t *target) fullLabels() clientmodel.LabelSet {
 	return lset
 }
 
-// BaseLabels implements Target.
-func (t *target) BaseLabels() clientmodel.LabelSet {
+// BaseLabels returns a copy of the target's base labels.
+func (t *Target) BaseLabels() clientmodel.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
 	lset := make(clientmodel.LabelSet, len(t.baseLabels))
@@ -433,22 +400,26 @@ func (t *target) BaseLabels() clientmodel.LabelSet {
 	return lset
 }
 
-func (t *target) recordScrapeHealth(sampleAppender storage.SampleAppender, timestamp clientmodel.Timestamp, scrapeDuration time.Duration) {
-	t.RLock()
-	healthMetric := make(clientmodel.Metric, len(t.baseLabels)+1)
-	durationMetric := make(clientmodel.Metric, len(t.baseLabels)+1)
+func recordScrapeHealth(
+	sampleAppender storage.SampleAppender,
+	timestamp clientmodel.Timestamp,
+	baseLabels clientmodel.LabelSet,
+	health TargetHealth,
+	scrapeDuration time.Duration,
+) {
+	healthMetric := make(clientmodel.Metric, len(baseLabels)+1)
+	durationMetric := make(clientmodel.Metric, len(baseLabels)+1)
 
 	healthMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeHealthMetricName)
 	durationMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeDurationMetricName)
 
-	for label, value := range t.baseLabels {
+	for label, value := range baseLabels {
 		healthMetric[label] = value
 		durationMetric[label] = value
 	}
-	t.RUnlock()
 
 	healthValue := clientmodel.SampleValue(0)
-	if t.status.State() == Healthy {
+	if health == HealthGood {
 		healthValue = clientmodel.SampleValue(1)
 	}
 
