@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"html/template"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -213,16 +214,16 @@ func (rule *AlertingRule) String() string {
 }
 
 // HTMLSnippet returns an HTML snippet representing this alerting rule.
-func (rule *AlertingRule) HTMLSnippet() template.HTML {
+func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	alertMetric := clientmodel.Metric{
 		clientmodel.MetricNameLabel: AlertMetricName,
 		AlertNameLabel:              clientmodel.LabelValue(rule.name),
 	}
 	return template.HTML(fmt.Sprintf(
 		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
-		utility.GraphLinkForExpression(alertMetric.String()),
+		pathPrefix+strings.TrimLeft(utility.GraphLinkForExpression(alertMetric.String()), "/"),
 		rule.name,
-		utility.GraphLinkForExpression(rule.Vector.String()),
+		pathPrefix+strings.TrimLeft(utility.GraphLinkForExpression(rule.Vector.String()), "/"),
 		rule.Vector,
 		utility.DurationToString(rule.holdDuration),
 		rule.Labels))
