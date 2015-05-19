@@ -56,7 +56,7 @@ type TargetManager struct {
 	running        bool
 
 	// Targets by their source ID.
-	targets map[string][]Target
+	targets map[string][]*Target
 	// Providers by the scrape configs they are derived from.
 	providers map[*config.ScrapeConfig][]TargetProvider
 }
@@ -65,7 +65,7 @@ type TargetManager struct {
 func NewTargetManager(sampleAppender storage.SampleAppender) *TargetManager {
 	tm := &TargetManager{
 		sampleAppender: sampleAppender,
-		targets:        make(map[string][]Target),
+		targets:        make(map[string][]*Target),
 	}
 	return tm
 }
@@ -165,7 +165,7 @@ func (tm *TargetManager) removeTargets(f func(string) bool) {
 		}
 		wg.Add(len(targets))
 		for _, target := range targets {
-			go func(t Target) {
+			go func(t *Target) {
 				t.StopScraper()
 				wg.Done()
 			}(target)
@@ -197,7 +197,7 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 		// Replace the old targets with the new ones while keeping the state
 		// of intersecting targets.
 		for i, tnew := range newTargets {
-			var match Target
+			var match *Target
 			for j, told := range oldTargets {
 				if told == nil {
 					continue
@@ -214,8 +214,8 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 				// Updating is blocked during a scrape. We don't want those wait times
 				// to build up.
 				wg.Add(1)
-				go func(t Target) {
-					match.Update(cfg, t.Labels())
+				go func(t *Target) {
+					match.Update(cfg, t.fullLabels())
 					wg.Done()
 				}(tnew)
 				newTargets[i] = match
@@ -227,7 +227,7 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 		for _, told := range oldTargets {
 			if told != nil {
 				wg.Add(1)
-				go func(t Target) {
+				go func(t *Target) {
 					t.StopScraper()
 					wg.Done()
 				}(told)
@@ -250,11 +250,11 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 }
 
 // Pools returns the targets currently being scraped bucketed by their job name.
-func (tm *TargetManager) Pools() map[string][]Target {
+func (tm *TargetManager) Pools() map[string][]*Target {
 	tm.m.RLock()
 	defer tm.m.RUnlock()
 
-	pools := map[string][]Target{}
+	pools := map[string][]*Target{}
 
 	for _, ts := range tm.targets {
 		for _, t := range ts {
@@ -287,11 +287,11 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) {
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
-func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]Target, error) {
+func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
 	tm.m.RLock()
 	defer tm.m.RUnlock()
 
-	targets := make([]Target, 0, len(tg.Targets))
+	targets := make([]*Target, 0, len(tg.Targets))
 	for i, labels := range tg.Targets {
 		addr := string(labels[clientmodel.AddressLabel])
 		// If no port was provided, infer it based on the used scheme.

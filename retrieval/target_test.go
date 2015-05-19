@@ -29,10 +29,6 @@ import (
 	"github.com/prometheus/prometheus/utility"
 )
 
-func TestTargetInterface(t *testing.T) {
-	var _ Target = &target{}
-}
-
 func TestBaseLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, clientmodel.LabelSet{"job": "some_job", "foo": "bar"})
 	want := clientmodel.LabelSet{
@@ -44,21 +40,14 @@ func TestBaseLabels(t *testing.T) {
 	if !reflect.DeepEqual(want, got) {
 		t.Errorf("want base labels %v, got %v", want, got)
 	}
-	delete(want, clientmodel.JobLabel)
-	delete(want, clientmodel.InstanceLabel)
-
-	got = target.BaseLabelsWithoutJobAndInstance()
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("want base labels %v, got %v", want, got)
-	}
 }
 
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := newTestTarget("bad schema", 0, nil)
 
 	testTarget.scrape(nopAppender{})
-	if testTarget.state != Unhealthy {
-		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
+	if testTarget.status.Health() != HealthBad {
+		t.Errorf("Expected target state %v, actual: %v", HealthBad, testTarget.status.Health())
 	}
 }
 
@@ -80,11 +69,11 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{"dings": "bums"})
 
 	testTarget.scrape(slowAppender{})
-	if testTarget.state != Unhealthy {
-		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
+	if testTarget.status.Health() != HealthBad {
+		t.Errorf("Expected target state %v, actual: %v", HealthBad, testTarget.status.Health())
 	}
-	if testTarget.lastError != errIngestChannelFull {
-		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.lastError)
+	if testTarget.status.LastError() != errIngestChannelFull {
+		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.status.LastError())
 	}
 }
 
@@ -93,7 +82,8 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 
 	now := clientmodel.Now()
 	appender := &collectResultAppender{}
-	testTarget.recordScrapeHealth(appender, now, true, 2*time.Second)
+	testTarget.status.setLastError(nil)
+	recordScrapeHealth(appender, now, testTarget.BaseLabels(), testTarget.status.Health(), 2*time.Second)
 
 	result := appender.result
 
@@ -145,13 +135,13 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	)
 	defer server.Close()
 
-	var testTarget Target = newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
+	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
 
 	appender := nopAppender{}
 
 	// scrape once without timeout
 	signal <- true
-	if err := testTarget.(*target).scrape(appender); err != nil {
+	if err := testTarget.scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,12 +150,12 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again
 	signal <- true
-	if err := testTarget.(*target).scrape(appender); err != nil {
+	if err := testTarget.scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 
 	// now timeout
-	if err := testTarget.(*target).scrape(appender); err == nil {
+	if err := testTarget.scrape(appender); err == nil {
 		t.Fatal("expected scrape to timeout")
 	} else {
 		signal <- true // let handler continue
@@ -173,7 +163,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again without timeout
 	signal <- true
-	if err := testTarget.(*target).scrape(appender); err != nil {
+	if err := testTarget.scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -205,17 +195,17 @@ func TestTargetRunScraperScrapes(t *testing.T) {
 
 	// Enough time for a scrape to happen.
 	time.Sleep(2 * time.Millisecond)
-	if testTarget.lastScrape.IsZero() {
+	if testTarget.status.LastScrape().IsZero() {
 		t.Errorf("Scrape hasn't occured.")
 	}
 
 	testTarget.StopScraper()
 	// Wait for it to take effect.
 	time.Sleep(2 * time.Millisecond)
-	last := testTarget.lastScrape
+	last := testTarget.status.LastScrape()
 	// Enough time for a scrape to happen.
 	time.Sleep(2 * time.Millisecond)
-	if testTarget.lastScrape != last {
+	if testTarget.status.LastScrape() != last {
 		t.Errorf("Scrape occured after it was stopped.")
 	}
 }
@@ -231,25 +221,26 @@ func BenchmarkScrape(b *testing.B) {
 	)
 	defer server.Close()
 
-	var testTarget Target = newTestTarget(server.URL, 100*time.Millisecond, clientmodel.LabelSet{"dings": "bums"})
+	testTarget := newTestTarget(server.URL, 100*time.Millisecond, clientmodel.LabelSet{"dings": "bums"})
 	appender := nopAppender{}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := testTarget.(*target).scrape(appender); err != nil {
+		if err := testTarget.scrape(appender); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
-func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmodel.LabelSet) *target {
-	t := &target{
+func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmodel.LabelSet) *Target {
+	t := &Target{
 		url: &url.URL{
 			Scheme: "http",
 			Host:   strings.TrimLeft(targetURL, "http://"),
 			Path:   "/metrics",
 		},
 		deadline:        deadline,
+		status:          &TargetStatus{},
 		scrapeInterval:  1 * time.Millisecond,
 		httpClient:      utility.NewDeadlineClient(deadline),
 		scraperStopping: make(chan struct{}),

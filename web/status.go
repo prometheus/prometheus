@@ -32,18 +32,18 @@ type PrometheusStatusHandler struct {
 	Flags     map[string]string
 
 	RuleManager *rules.Manager
-	TargetPools func() map[string][]retrieval.Target
+	TargetPools func() map[string][]*retrieval.Target
 
 	Birth      time.Time
 	PathPrefix string
 }
 
-// TargetStateToClass returns a map of TargetState to the name of a Bootstrap CSS class.
-func (h *PrometheusStatusHandler) TargetStateToClass() map[retrieval.TargetState]string {
-	return map[retrieval.TargetState]string{
-		retrieval.Unknown:   "warning",
-		retrieval.Healthy:   "success",
-		retrieval.Unhealthy: "danger",
+// TargetHealthToClass returns a map of TargetHealth to the name of a Bootstrap CSS class.
+func (h *PrometheusStatusHandler) TargetHealthToClass() map[retrieval.TargetHealth]string {
+	return map[retrieval.TargetHealth]string{
+		retrieval.HealthUnknown: "warning",
+		retrieval.HealthBad:     "success",
+		retrieval.HealthGood:    "danger",
 	}
 }
 
