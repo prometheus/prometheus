@@ -42,8 +42,8 @@ type PrometheusStatusHandler struct {
 func (h *PrometheusStatusHandler) TargetHealthToClass() map[retrieval.TargetHealth]string {
 	return map[retrieval.TargetHealth]string{
 		retrieval.HealthUnknown: "warning",
-		retrieval.HealthBad:     "success",
-		retrieval.HealthGood:    "danger",
+		retrieval.HealthGood:    "success",
+		retrieval.HealthBad:     "danger",
 	}
 }
 
