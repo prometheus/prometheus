@@ -26,7 +26,11 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
+
+const FileSDFilepathLabel = clientmodel.MetaLabelPrefix + "filepath"
 
 // FileDiscovery provides service discovery functionality based
 // on files that contain target groups in JSON or YAML format. Refreshing
@@ -196,7 +200,7 @@ func fileSource(filename string, i int) string {
 
 // Stop implements the TargetProvider interface.
 func (fd *FileDiscovery) Stop() {
-	glog.V(1).Info("Stopping file discovery for %s...", fd.paths)
+	glog.V(1).Infof("Stopping file discovery for %s...", fd.paths)
 
 	fd.done <- struct{}{}
 	// Closing the watcher will deadlock unless all events and errors are drained.
@@ -215,7 +219,7 @@ func (fd *FileDiscovery) Stop() {
 
 	fd.done <- struct{}{}
 
-	glog.V(1).Info("File discovery for %s stopped.", fd.paths)
+	glog.V(1).Infof("File discovery for %s stopped.", fd.paths)
 }
 
 // readFile reads a JSON or YAML list of targets groups from the file, depending on its
@@ -243,6 +247,9 @@ func readFile(filename string) ([]*config.TargetGroup, error) {
 
 	for i, tg := range targetGroups {
 		tg.Source = fileSource(filename, i)
+		tg.Labels = clientmodel.LabelSet{
+			FileSDFilepathLabel: clientmodel.LabelValue(filename),
+		}
 	}
 	return targetGroups, nil
 }
