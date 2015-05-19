@@ -237,27 +237,35 @@ func (p *prometheus) reloadConfig() bool {
 // down. The method installs an interrupt handler, allowing to trigger a
 // shutdown by sending SIGTERM to the process.
 func (p *prometheus) Serve() {
+	// Start all components.
 	if err := p.storage.Start(); err != nil {
 		glog.Error("Error opening memory series storage: ", err)
 		os.Exit(1)
 	}
+	defer p.storage.Stop()
+
+	// The storage has to be fully initialized before registering Prometheus.
+	registry.MustRegister(p)
+
 	for _, q := range p.remoteStorageQueues {
 		go q.Run()
+		defer q.Stop()
 	}
 
 	go p.ruleManager.Run()
+	defer p.ruleManager.Stop()
+
 	go p.notificationHandler.Run()
+	defer p.notificationHandler.Stop()
+
 	go p.targetManager.Run()
+	defer p.targetManager.Stop()
 
-	registry.MustRegister(p)
+	defer p.queryEngine.Stop()
 
-	go func() {
-		err := p.webService.ServeForever(*pathPrefix)
-		if err != nil {
-			glog.Fatal(err)
-		}
-	}()
+	go p.webService.ServeForever(*pathPrefix)
 
+	// Wait for reload or termination signals.
 	hup := make(chan os.Signal)
 	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
@@ -277,19 +285,6 @@ func (p *prometheus) Serve() {
 
 	close(hup)
 
-	p.targetManager.Stop()
-	p.ruleManager.Stop()
-	p.queryEngine.Stop()
-
-	if err := p.storage.Stop(); err != nil {
-		glog.Error("Error stopping local storage: ", err)
-	}
-
-	for _, q := range p.remoteStorageQueues {
-		q.Stop()
-	}
-
-	p.notificationHandler.Stop()
 	glog.Info("See you next time!")
 }
 
