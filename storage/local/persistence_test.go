@@ -42,6 +42,7 @@ func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, tes
 		dir.Close()
 		t.Fatal(err)
 	}
+	go p.run()
 	return p, test.NewCallbackCloser(func() {
 		p.close()
 		dir.Close()

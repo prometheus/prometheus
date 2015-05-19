@@ -58,7 +58,7 @@ type WebService struct {
 }
 
 // ServeForever serves the HTTP endpoints and only returns upon errors.
-func (ws WebService) ServeForever(pathPrefix string) error {
+func (ws WebService) ServeForever(pathPrefix string) {
 
 	http.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", 404)
@@ -108,9 +108,16 @@ func (ws WebService) ServeForever(pathPrefix string) error {
 		}))
 	}
 
-	glog.Info("listening on ", *listenAddress)
+	glog.Infof("Listening on %s", *listenAddress)
 
-	return http.ListenAndServe(*listenAddress, nil)
+	// If we cannot bind to a port, retry after 30 seconds.
+	for {
+		err := http.ListenAndServe(*listenAddress, nil)
+		if err != nil {
+			glog.Errorf("Could not listen on %s: %s", *listenAddress, err)
+		}
+		time.Sleep(30 * time.Second)
+	}
 }
 
 func (ws WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
