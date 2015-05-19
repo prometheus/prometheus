@@ -135,7 +135,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	)
 	defer server.Close()
 
-	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
+	testTarget := newTestTarget(server.URL, 25*time.Millisecond, clientmodel.LabelSet{})
 
 	appender := nopAppender{}
 
@@ -146,7 +146,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	}
 
 	// let the deadline lapse
-	time.Sleep(15 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond)
 
 	// now scrape again
 	signal <- true
@@ -194,17 +194,17 @@ func TestTargetRunScraperScrapes(t *testing.T) {
 	go testTarget.RunScraper(nopAppender{})
 
 	// Enough time for a scrape to happen.
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	if testTarget.status.LastScrape().IsZero() {
 		t.Errorf("Scrape hasn't occured.")
 	}
 
 	testTarget.StopScraper()
 	// Wait for it to take effect.
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 	last := testTarget.status.LastScrape()
 	// Enough time for a scrape to happen.
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	if testTarget.status.LastScrape() != last {
 		t.Errorf("Scrape occured after it was stopped.")
 	}
