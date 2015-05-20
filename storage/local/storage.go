@@ -19,8 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -212,12 +212,12 @@ func (s *memorySeriesStorage) Start() error {
 	}
 	s.persistence = p
 
-	glog.Info("Loading series map and head chunks...")
+	log.Info("Loading series map and head chunks...")
 	s.fpToSeries, s.numChunksToPersist, err = p.loadSeriesMapAndHeads()
 	if err != nil {
 		return err
 	}
-	glog.Infof("%d series loaded.", s.fpToSeries.length())
+	log.Infof("%d series loaded.", s.fpToSeries.length())
 	s.numSeries.Set(float64(s.fpToSeries.length()))
 
 	mapper, err := newFPMapper(s.fpToSeries, p)
@@ -236,13 +236,13 @@ func (s *memorySeriesStorage) Start() error {
 
 // Stop implements Storage.
 func (s *memorySeriesStorage) Stop() error {
-	glog.Info("Stopping local storage...")
+	log.Info("Stopping local storage...")
 
-	glog.Info("Stopping maintenance loop...")
+	log.Info("Stopping maintenance loop...")
 	close(s.loopStopping)
 	<-s.loopStopped
 
-	glog.Info("Stopping chunk eviction...")
+	log.Info("Stopping chunk eviction...")
 	close(s.evictStopping)
 	<-s.evictStopped
 
@@ -254,7 +254,7 @@ func (s *memorySeriesStorage) Stop() error {
 	if err := s.persistence.close(); err != nil {
 		return err
 	}
-	glog.Info("Local storage stopped.")
+	log.Info("Local storage stopped.")
 	return nil
 }
 
@@ -304,7 +304,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 				},
 			)
 			if err != nil {
-				glog.Error("Error getting fingerprints for label pair: ", err)
+				log.Error("Error getting fingerprints for label pair: ", err)
 			}
 			if len(fps) == 0 {
 				return nil
@@ -317,7 +317,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 		default:
 			values, err := s.persistence.getLabelValuesForLabelName(matcher.Name)
 			if err != nil {
-				glog.Errorf("Error getting label values for label name %q: %v", matcher.Name, err)
+				log.Errorf("Error getting label values for label name %q: %v", matcher.Name, err)
 			}
 			matches := matcher.Filter(values)
 			if len(matches) == 0 {
@@ -331,7 +331,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 					},
 				)
 				if err != nil {
-					glog.Error("Error getting fingerprints for label pair: ", err)
+					log.Error("Error getting fingerprints for label pair: ", err)
 				}
 				for _, fp := range fps {
 					if _, ok := result[fp]; ok || result == nil {
@@ -357,7 +357,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 func (s *memorySeriesStorage) GetLabelValuesForLabelName(labelName clientmodel.LabelName) clientmodel.LabelValues {
 	lvs, err := s.persistence.getLabelValuesForLabelName(labelName)
 	if err != nil {
-		glog.Errorf("Error getting label values for label name %q: %v", labelName, err)
+		log.Errorf("Error getting label values for label name %q: %v", labelName, err)
 	}
 	return lvs
 }
@@ -377,7 +377,7 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 	}
 	metric, err := s.persistence.getArchivedMetric(fp)
 	if err != nil {
-		glog.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
+		log.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
 	}
 	return clientmodel.COWMetric{
 		Metric: metric,
@@ -387,20 +387,20 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 // Append implements Storage.
 func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
 	if s.getNumChunksToPersist() >= s.maxChunksToPersist {
-		glog.Warningf(
+		log.Warnf(
 			"%d chunks waiting for persistence, sample ingestion suspended.",
 			s.getNumChunksToPersist(),
 		)
 		for s.getNumChunksToPersist() >= s.maxChunksToPersist {
 			time.Sleep(time.Second)
 		}
-		glog.Warning("Sample ingestion resumed.")
+		log.Warn("Sample ingestion resumed.")
 	}
 	rawFP := sample.Metric.FastFingerprint()
 	s.fpLocker.Lock(rawFP)
 	fp, err := s.mapper.mapFP(rawFP, sample.Metric)
 	if err != nil {
-		glog.Errorf("Error while mapping fingerprint %v: %v", rawFP, err)
+		log.Errorf("Error while mapping fingerprint %v: %v", rawFP, err)
 		s.persistence.setDirty(true)
 	}
 	if fp != rawFP {
@@ -423,7 +423,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m cl
 	if !ok {
 		unarchived, firstTime, err := s.persistence.unarchiveMetric(fp)
 		if err != nil {
-			glog.Errorf("Error unarchiving fingerprint %v: %v", fp, err)
+			log.Errorf("Error unarchiving fingerprint %v: %v", fp, err)
 		}
 		if unarchived {
 			s.seriesOps.WithLabelValues(unarchive).Inc()
@@ -507,7 +507,7 @@ func (s *memorySeriesStorage) handleEvictList() {
 				}
 			}()
 			ticker.Stop()
-			glog.Info("Chunk eviction stopped.")
+			log.Info("Chunk eviction stopped.")
 			close(s.evictStopped)
 			return
 		}
@@ -627,7 +627,7 @@ func (s *memorySeriesStorage) cycleThroughMemoryFingerprints() chan clientmodel.
 				count++
 			}
 			if count > 0 {
-				glog.Infof(
+				log.Infof(
 					"Completed maintenance sweep through %d in-memory fingerprints in %v.",
 					count, time.Since(begin),
 				)
@@ -651,7 +651,7 @@ func (s *memorySeriesStorage) cycleThroughArchivedFingerprints() chan clientmode
 				clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter),
 			)
 			if err != nil {
-				glog.Error("Failed to lookup archived fingerprint ranges: ", err)
+				log.Error("Failed to lookup archived fingerprint ranges: ", err)
 				s.waitForNextFP(0, 1)
 				continue
 			}
@@ -670,7 +670,7 @@ func (s *memorySeriesStorage) cycleThroughArchivedFingerprints() chan clientmode
 				s.waitForNextFP(len(archivedFPs), 1)
 			}
 			if len(archivedFPs) > 0 {
-				glog.Infof(
+				log.Infof(
 					"Completed maintenance sweep through %d archived fingerprints in %v.",
 					len(archivedFPs), time.Since(begin),
 				)
@@ -687,7 +687,7 @@ func (s *memorySeriesStorage) loop() {
 
 	defer func() {
 		checkpointTimer.Stop()
-		glog.Info("Maintenance loop stopped.")
+		log.Info("Maintenance loop stopped.")
 		close(s.loopStopped)
 	}()
 
@@ -807,7 +807,7 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 		if len(series.chunkDescs) == 0 {
 			cds, err := s.loadChunkDescs(fp, clientmodel.Latest)
 			if err != nil {
-				glog.Errorf(
+				log.Errorf(
 					"Could not load chunk descriptors prior to archiving metric %v, metric will not be archived: %v",
 					series.metric, err,
 				)
@@ -818,7 +818,7 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 		if err := s.persistence.archiveMetric(
 			fp, series.metric, series.firstTime(), series.head().lastTime(),
 		); err != nil {
-			glog.Errorf("Error archiving metric %v: %v", series.metric, err)
+			log.Errorf("Error archiving metric %v: %v", series.metric, err)
 			return
 		}
 		s.seriesOps.WithLabelValues(archive).Inc()
@@ -899,7 +899,7 @@ func (s *memorySeriesStorage) writeMemorySeries(
 	} else {
 		series.chunkDescsOffset -= numDroppedFromPersistence
 		if series.chunkDescsOffset < 0 {
-			glog.Errorf("Dropped more chunks from persistence than from memory for fingerprint %v, series %v.", fp, series)
+			log.Errorf("Dropped more chunks from persistence than from memory for fingerprint %v, series %v.", fp, series)
 			s.persistence.setDirty(true)
 			series.chunkDescsOffset = -1 // Makes sure it will be looked at during crash recovery.
 		}
@@ -921,7 +921,7 @@ func (s *memorySeriesStorage) maintainArchivedSeries(fp clientmodel.Fingerprint,
 
 	has, firstTime, lastTime, err := s.persistence.hasArchivedMetric(fp)
 	if err != nil {
-		glog.Error("Error looking up archived time range: ", err)
+		log.Error("Error looking up archived time range: ", err)
 		return
 	}
 	if !has || !firstTime.Before(beforeTime) {
@@ -933,11 +933,11 @@ func (s *memorySeriesStorage) maintainArchivedSeries(fp clientmodel.Fingerprint,
 
 	newFirstTime, _, _, allDropped, err := s.persistence.dropAndPersistChunks(fp, beforeTime, nil)
 	if err != nil {
-		glog.Error("Error dropping persisted chunks: ", err)
+		log.Error("Error dropping persisted chunks: ", err)
 	}
 	if allDropped {
 		if err := s.persistence.purgeArchivedMetric(fp); err != nil {
-			glog.Errorf("Error purging archived metric for fingerprint %v: %v", fp, err)
+			log.Errorf("Error purging archived metric for fingerprint %v: %v", fp, err)
 			return
 		}
 		s.seriesOps.WithLabelValues(archivePurge).Inc()
@@ -976,9 +976,9 @@ func (s *memorySeriesStorage) incNumChunksToPersist(by int) {
 func (s *memorySeriesStorage) isDegraded() bool {
 	nowDegraded := s.getNumChunksToPersist() > s.maxChunksToPersist*percentChunksToPersistForDegradation/100
 	if s.degraded && !nowDegraded {
-		glog.Warning("Storage has left graceful degradation mode. Things are back to normal.")
+		log.Warn("Storage has left graceful degradation mode. Things are back to normal.")
 	} else if !s.degraded && nowDegraded {
-		glog.Warningf(
+		log.Warnf(
 			"%d chunks waiting for persistence (%d%% of the allowed maximum %d). Storage is now in graceful degradation mode. Series files are not synced anymore if following the adaptive strategy. Checkpoints are not performed more often than every %v. Series maintenance happens as frequently as possible.",
 			s.getNumChunksToPersist(),
 			s.getNumChunksToPersist()*100/s.maxChunksToPersist,

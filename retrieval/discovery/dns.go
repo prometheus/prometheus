@@ -20,11 +20,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/config"
 )
 
@@ -97,12 +98,12 @@ func (dd *DNSDiscovery) Run(ch chan<- *config.TargetGroup) {
 
 // Stop implements the TargetProvider interface.
 func (dd *DNSDiscovery) Stop() {
-	glog.V(1).Info("Stopping DNS discovery for %s...", dd.names)
+	log.Debug("Stopping DNS discovery for %s...", dd.names)
 
 	dd.ticker.Stop()
 	dd.done <- struct{}{}
 
-	glog.V(1).Info("DNS discovery for %s stopped.", dd.names)
+	log.Debug("DNS discovery for %s stopped.", dd.names)
 }
 
 // Sources implements the TargetProvider interface.
@@ -120,7 +121,7 @@ func (dd *DNSDiscovery) refreshAll(ch chan<- *config.TargetGroup) {
 	for _, name := range dd.names {
 		go func(n string) {
 			if err := dd.refresh(n, ch); err != nil {
-				glog.Errorf("Error refreshing DNS targets: %s", err)
+				log.Errorf("Error refreshing DNS targets: %s", err)
 			}
 			wg.Done()
 		}(name)
@@ -140,7 +141,7 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) erro
 	for _, record := range response.Answer {
 		addr, ok := record.(*dns.SRV)
 		if !ok {
-			glog.Warningf("%q is not a valid SRV record", record)
+			log.Warnf("%q is not a valid SRV record", record)
 			continue
 		}
 		// Remove the final dot from rooted DNS names to make them look more usual.
@@ -173,7 +174,7 @@ func lookupSRV(name string) (*dns.Msg, error) {
 		for _, suffix := range conf.Search {
 			response, err = lookup(name, dns.TypeSRV, client, servAddr, suffix, false)
 			if err != nil {
-				glog.Warningf("resolving %s.%s failed: %s", name, suffix, err)
+				log.Warnf("resolving %s.%s failed: %s", name, suffix, err)
 				continue
 			}
 			if len(response.Answer) > 0 {

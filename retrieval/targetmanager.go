@@ -18,7 +18,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/golang/glog"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -72,7 +72,7 @@ func NewTargetManager(sampleAppender storage.SampleAppender) *TargetManager {
 
 // Run starts background processing to handle target updates.
 func (tm *TargetManager) Run() {
-	glog.Info("Starting target manager...")
+	log.Info("Starting target manager...")
 
 	sources := map[string]struct{}{}
 
@@ -107,10 +107,10 @@ func (tm *TargetManager) Run() {
 // context of the given job config.
 func (tm *TargetManager) handleTargetUpdates(cfg *config.ScrapeConfig, ch <-chan *config.TargetGroup) {
 	for tg := range ch {
-		glog.V(1).Infof("Received potential update for target group %q", tg.Source)
+		log.Debugf("Received potential update for target group %q", tg.Source)
 
 		if err := tm.updateTargetGroup(tg, cfg); err != nil {
-			glog.Errorf("Error updating targets: %s", err)
+			log.Errorf("Error updating targets: %s", err)
 		}
 	}
 }
@@ -136,8 +136,8 @@ func (tm *TargetManager) Stop() {
 // stop background processing of the target manager. If removeTargets is true,
 // existing targets will be stopped and removed.
 func (tm *TargetManager) stop(removeTargets bool) {
-	glog.Info("Stopping target manager...")
-	defer glog.Info("Target manager stopped.")
+	log.Info("Stopping target manager...")
+	defer log.Info("Target manager stopped.")
 
 	for _, provs := range tm.providers {
 		for _, p := range provs {

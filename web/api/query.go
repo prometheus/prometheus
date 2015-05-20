@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -86,7 +86,7 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 		httpJSONError(w, res.Err, http.StatusOK)
 		return
 	}
-	glog.V(1).Infof("Instant query: %s\nQuery stats:\n%s\n", expr, query.Stats())
+	log.Debugf("Instant query: %s\nQuery stats:\n%s\n", expr, query.Stats())
 
 	httputils.RespondJSON(w, res.Value)
 }
@@ -147,7 +147,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	glog.V(1).Infof("Range query: %s\nQuery stats:\n%s\n", expr, query.Stats())
+	log.Debugf("Range query: %s\nQuery stats:\n%s\n", expr, query.Stats())
 	httputils.RespondJSON(w, matrix)
 }
 
@@ -160,7 +160,7 @@ func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
-		glog.Error("Error marshalling metric names: ", err)
+		log.Error("Error marshalling metric names: ", err)
 		httpJSONError(w, fmt.Errorf("Error marshalling metric names: %s", err), http.StatusInternalServerError)
 		return
 	}

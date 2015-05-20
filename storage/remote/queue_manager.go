@@ -16,10 +16,10 @@ package remote
 import (
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -132,20 +132,20 @@ func (t *StorageQueueManager) Append(s *clientmodel.Sample) {
 	case t.queue <- s:
 	default:
 		t.samplesCount.WithLabelValues(dropped).Inc()
-		glog.Warning("Remote storage queue full, discarding sample.")
+		log.Warn("Remote storage queue full, discarding sample.")
 	}
 }
 
 // Stop stops sending samples to the remote storage and waits for pending
 // sends to complete.
 func (t *StorageQueueManager) Stop() {
-	glog.Infof("Stopping remote storage...")
+	log.Infof("Stopping remote storage...")
 	close(t.queue)
 	<-t.drained
 	for i := 0; i < maxConcurrentSends; i++ {
 		t.sendSemaphore <- true
 	}
-	glog.Info("Remote storage stopped.")
+	log.Info("Remote storage stopped.")
 }
 
 // Describe implements prometheus.Collector.
@@ -180,7 +180,7 @@ func (t *StorageQueueManager) sendSamples(s clientmodel.Samples) {
 
 	labelValue := success
 	if err != nil {
-		glog.Warningf("error sending %d samples to remote storage: %s", len(s), err)
+		log.Warnf("error sending %d samples to remote storage: %s", len(s), err)
 		labelValue = failure
 		t.sendErrors.Inc()
 	}
@@ -201,9 +201,9 @@ func (t *StorageQueueManager) Run() {
 		select {
 		case s, ok := <-t.queue:
 			if !ok {
-				glog.Infof("Flushing %d samples to remote storage...", len(t.pendingSamples))
+				log.Infof("Flushing %d samples to remote storage...", len(t.pendingSamples))
 				t.flush()
-				glog.Infof("Done flushing.")
+				log.Infof("Done flushing.")
 				return
 			}
 

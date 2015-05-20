@@ -20,7 +20,7 @@ import (
 	"testing/quick"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -223,7 +223,7 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 		}
 		s.fpLocker.Unlock(m.fp)
 	}
-	glog.Info("test done, closing")
+	log.Info("test done, closing")
 }
 
 func TestChunkType0(t *testing.T) {

@@ -28,8 +28,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -174,7 +174,7 @@ func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync sync
 
 	fLock, dirtyfileExisted, err := flock.New(dirtyPath)
 	if err != nil {
-		glog.Errorf("Could not lock %s, Prometheus already running?", dirtyPath)
+		log.Errorf("Could not lock %s, Prometheus already running?", dirtyPath)
 		return nil, err
 	}
 	if dirtyfileExisted {
@@ -315,7 +315,7 @@ func (p *persistence) setDirty(dirty bool) {
 	p.dirty = dirty
 	if dirty {
 		p.becameDirty = true
-		glog.Error("The storage is now inconsistent. Restart Prometheus ASAP to initiate recovery.")
+		log.Error("The storage is now inconsistent. Restart Prometheus ASAP to initiate recovery.")
 	}
 }
 
@@ -352,7 +352,7 @@ func (p *persistence) getLabelValuesForLabelName(ln clientmodel.LabelName) (clie
 func (p *persistence) persistChunks(fp clientmodel.Fingerprint, chunks []chunk) (index int, err error) {
 	defer func() {
 		if err != nil {
-			glog.Error("Error persisting chunks: ", err)
+			log.Error("Error persisting chunks: ", err)
 			p.setDirty(true)
 		}
 	}()
@@ -530,7 +530,7 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 // (4.8.2.2) The chunk itself, marshaled with the marshal() method.
 //
 func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap, fpLocker *fingerprintLocker) (err error) {
-	glog.Info("Checkpointing in-memory metrics and chunks...")
+	log.Info("Checkpointing in-memory metrics and chunks...")
 	begin := time.Now()
 	f, err := os.OpenFile(p.headsTempFileName(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
@@ -550,7 +550,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 		err = os.Rename(p.headsTempFileName(), p.headsFileName())
 		duration := time.Since(begin)
 		p.checkpointDuration.Set(float64(duration) / float64(time.Millisecond))
-		glog.Infof("Done checkpointing in-memory metrics and chunks in %v.", duration)
+		log.Infof("Done checkpointing in-memory metrics and chunks in %v.", duration)
 	}()
 
 	w := bufio.NewWriterSize(f, fileBufSize)
@@ -678,7 +678,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 
 	defer func() {
 		if sm != nil && p.dirty {
-			glog.Warning("Persistence layer appears dirty.")
+			log.Warn("Persistence layer appears dirty.")
 			err = p.recoverFromCrash(fingerprintToSeries)
 			if err != nil {
 				sm = nil
@@ -694,7 +694,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 		return sm, 0, nil
 	}
 	if err != nil {
-		glog.Warning("Could not open heads file:", err)
+		log.Warn("Could not open heads file:", err)
 		p.dirty = true
 		return
 	}
@@ -703,13 +703,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 
 	buf := make([]byte, len(headsMagicString))
 	if _, err := io.ReadFull(r, buf); err != nil {
-		glog.Warning("Could not read from heads file:", err)
+		log.Warn("Could not read from heads file:", err)
 		p.dirty = true
 		return sm, 0, nil
 	}
 	magic := string(buf)
 	if magic != headsMagicString {
-		glog.Warningf(
+		log.Warnf(
 			"unexpected magic string, want %q, got %q",
 			headsMagicString, magic,
 		)
@@ -718,13 +718,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 	}
 	version, err := binary.ReadVarint(r)
 	if (version != headsFormatVersion && version != headsFormatLegacyVersion) || err != nil {
-		glog.Warningf("unknown heads format version, want %d", headsFormatVersion)
+		log.Warnf("unknown heads format version, want %d", headsFormatVersion)
 		p.dirty = true
 		return sm, 0, nil
 	}
 	numSeries, err := codable.DecodeUint64(r)
 	if err != nil {
-		glog.Warning("Could not decode number of series:", err)
+		log.Warn("Could not decode number of series:", err)
 		p.dirty = true
 		return sm, 0, nil
 	}
@@ -732,20 +732,20 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 	for ; numSeries > 0; numSeries-- {
 		seriesFlags, err := r.ReadByte()
 		if err != nil {
-			glog.Warning("Could not read series flags:", err)
+			log.Warn("Could not read series flags:", err)
 			p.dirty = true
 			return sm, chunksToPersist, nil
 		}
 		headChunkPersisted := seriesFlags&flagHeadChunkPersisted != 0
 		fp, err := codable.DecodeUint64(r)
 		if err != nil {
-			glog.Warning("Could not decode fingerprint:", err)
+			log.Warn("Could not decode fingerprint:", err)
 			p.dirty = true
 			return sm, chunksToPersist, nil
 		}
 		var metric codable.Metric
 		if err := metric.UnmarshalFromReader(r); err != nil {
-			glog.Warning("Could not decode metric:", err)
+			log.Warn("Could not decode metric:", err)
 			p.dirty = true
 			return sm, chunksToPersist, nil
 		}
@@ -755,13 +755,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 			// persistWatermark only present in v2.
 			persistWatermark, err = binary.ReadVarint(r)
 			if err != nil {
-				glog.Warning("Could not decode persist watermark:", err)
+				log.Warn("Could not decode persist watermark:", err)
 				p.dirty = true
 				return sm, chunksToPersist, nil
 			}
 			modTimeNano, err := binary.ReadVarint(r)
 			if err != nil {
-				glog.Warning("Could not decode modification time:", err)
+				log.Warn("Could not decode modification time:", err)
 				p.dirty = true
 				return sm, chunksToPersist, nil
 			}
@@ -771,19 +771,19 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 		}
 		chunkDescsOffset, err := binary.ReadVarint(r)
 		if err != nil {
-			glog.Warning("Could not decode chunk descriptor offset:", err)
+			log.Warn("Could not decode chunk descriptor offset:", err)
 			p.dirty = true
 			return sm, chunksToPersist, nil
 		}
 		savedFirstTime, err := binary.ReadVarint(r)
 		if err != nil {
-			glog.Warning("Could not decode saved first time:", err)
+			log.Warn("Could not decode saved first time:", err)
 			p.dirty = true
 			return sm, chunksToPersist, nil
 		}
 		numChunkDescs, err := binary.ReadVarint(r)
 		if err != nil {
-			glog.Warning("Could not decode number of chunk descriptors:", err)
+			log.Warn("Could not decode number of chunk descriptors:", err)
 			p.dirty = true
 			return sm, chunksToPersist, nil
 		}
@@ -800,13 +800,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 			if i < persistWatermark {
 				firstTime, err := binary.ReadVarint(r)
 				if err != nil {
-					glog.Warning("Could not decode first time:", err)
+					log.Warn("Could not decode first time:", err)
 					p.dirty = true
 					return sm, chunksToPersist, nil
 				}
 				lastTime, err := binary.ReadVarint(r)
 				if err != nil {
-					glog.Warning("Could not decode last time:", err)
+					log.Warn("Could not decode last time:", err)
 					p.dirty = true
 					return sm, chunksToPersist, nil
 				}
@@ -819,13 +819,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 				// Non-persisted chunk.
 				encoding, err := r.ReadByte()
 				if err != nil {
-					glog.Warning("Could not decode chunk type:", err)
+					log.Warn("Could not decode chunk type:", err)
 					p.dirty = true
 					return sm, chunksToPersist, nil
 				}
 				chunk := newChunkForEncoding(chunkEncoding(encoding))
 				if err := chunk.unmarshal(r); err != nil {
-					glog.Warning("Could not decode chunk:", err)
+					log.Warn("Could not decode chunk:", err)
 					p.dirty = true
 					return sm, chunksToPersist, nil
 				}
@@ -870,7 +870,7 @@ func (p *persistence) dropAndPersistChunks(
 	// please handle with care!
 	defer func() {
 		if err != nil {
-			glog.Error("Error dropping and/or persisting chunks: ", err)
+			log.Error("Error dropping and/or persisting chunks: ", err)
 			p.setDirty(true)
 		}
 	}()
@@ -1146,14 +1146,14 @@ func (p *persistence) purgeArchivedMetric(fp clientmodel.Fingerprint) (err error
 		return err
 	}
 	if !deleted {
-		glog.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToMetrics index. This should never happen.", fp)
+		log.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToMetrics index. This should never happen.", fp)
 	}
 	deleted, err = p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp))
 	if err != nil {
 		return err
 	}
 	if !deleted {
-		glog.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToTimeRange index. This should never happen.", fp)
+		log.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToTimeRange index. This should never happen.", fp)
 	}
 	p.unindexMetric(fp, metric)
 	return nil
@@ -1183,14 +1183,14 @@ func (p *persistence) unarchiveMetric(fp clientmodel.Fingerprint) (
 		return false, firstTime, err
 	}
 	if !deleted {
-		glog.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToMetrics index. This should never happen.", fp)
+		log.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToMetrics index. This should never happen.", fp)
 	}
 	deleted, err = p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp))
 	if err != nil {
 		return false, firstTime, err
 	}
 	if !deleted {
-		glog.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToTimeRange index. This should never happen.", fp)
+		log.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToTimeRange index. This should never happen.", fp)
 	}
 	return true, firstTime, nil
 }
@@ -1205,26 +1205,26 @@ func (p *persistence) close() error {
 	var lastError, dirtyFileRemoveError error
 	if err := p.archivedFingerprintToMetrics.Close(); err != nil {
 		lastError = err
-		glog.Error("Error closing archivedFingerprintToMetric index DB: ", err)
+		log.Error("Error closing archivedFingerprintToMetric index DB: ", err)
 	}
 	if err := p.archivedFingerprintToTimeRange.Close(); err != nil {
 		lastError = err
-		glog.Error("Error closing archivedFingerprintToTimeRange index DB: ", err)
+		log.Error("Error closing archivedFingerprintToTimeRange index DB: ", err)
 	}
 	if err := p.labelPairToFingerprints.Close(); err != nil {
 		lastError = err
-		glog.Error("Error closing labelPairToFingerprints index DB: ", err)
+		log.Error("Error closing labelPairToFingerprints index DB: ", err)
 	}
 	if err := p.labelNameToLabelValues.Close(); err != nil {
 		lastError = err
-		glog.Error("Error closing labelNameToLabelValues index DB: ", err)
+		log.Error("Error closing labelNameToLabelValues index DB: ", err)
 	}
 	if lastError == nil && !p.isDirty() {
 		dirtyFileRemoveError = os.Remove(p.dirtyFileName)
 	}
 	if err := p.fLock.Release(); err != nil {
 		lastError = err
-		glog.Error("Error releasing file lock: ", err)
+		log.Error("Error releasing file lock: ", err)
 	}
 	if dirtyFileRemoveError != nil {
 		// On Windows, removing the dirty file before unlocking is not
@@ -1266,11 +1266,11 @@ func (p *persistence) openChunkFileForWriting(fp clientmodel.Fingerprint) (*os.F
 func (p *persistence) closeChunkFile(f *os.File) {
 	if p.shouldSync() {
 		if err := f.Sync(); err != nil {
-			glog.Error("Error syncing file:", err)
+			log.Error("Error syncing file:", err)
 		}
 	}
 	if err := f.Close(); err != nil {
-		glog.Error("Error closing chunk file:", err)
+		log.Error("Error closing chunk file:", err)
 	}
 }
 
@@ -1310,10 +1310,10 @@ func (p *persistence) processIndexingQueue() {
 		}(time.Now())
 
 		if err := p.labelPairToFingerprints.IndexBatch(pairToFPs); err != nil {
-			glog.Error("Error indexing label pair to fingerprints batch: ", err)
+			log.Error("Error indexing label pair to fingerprints batch: ", err)
 		}
 		if err := p.labelNameToLabelValues.IndexBatch(nameToValues); err != nil {
-			glog.Error("Error indexing label name to label values batch: ", err)
+			log.Error("Error indexing label name to label values batch: ", err)
 		}
 		batchSize = 0
 		nameToValues = index.LabelNameLabelValuesMapping{}
@@ -1362,7 +1362,7 @@ loop:
 					var err error
 					baseFPs, _, err = p.labelPairToFingerprints.LookupSet(lp)
 					if err != nil {
-						glog.Errorf("Error looking up label pair %v: %s", lp, err)
+						log.Errorf("Error looking up label pair %v: %s", lp, err)
 						continue
 					}
 					pairToFPs[lp] = baseFPs
@@ -1372,7 +1372,7 @@ loop:
 					var err error
 					baseValues, _, err = p.labelNameToLabelValues.LookupSet(ln)
 					if err != nil {
-						glog.Errorf("Error looking up label name %v: %s", ln, err)
+						log.Errorf("Error looking up label name %v: %s", ln, err)
 						continue
 					}
 					nameToValues[ln] = baseValues
@@ -1422,7 +1422,7 @@ loop:
 // (4.3.2) The unique metric string.
 // (4.3.3) The mapped fingerprint as big-endian uint64.
 func (p *persistence) checkpointFPMappings(fpm fpMappings) (err error) {
-	glog.Info("Checkpointing fingerprint mappings...")
+	log.Info("Checkpointing fingerprint mappings...")
 	begin := time.Now()
 	f, err := os.OpenFile(p.mappingsTempFileName(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
@@ -1441,7 +1441,7 @@ func (p *persistence) checkpointFPMappings(fpm fpMappings) (err error) {
 		}
 		err = os.Rename(p.mappingsTempFileName(), p.mappingsFileName())
 		duration := time.Since(begin)
-		glog.Infof("Done checkpointing fingerprint mappings in %v.", duration)
+		log.Infof("Done checkpointing fingerprint mappings in %v.", duration)
 	}()
 
 	w := bufio.NewWriterSize(f, fileBufSize)

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/prometheus/log"
 
 	consul "github.com/hashicorp/consul/api"
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -98,7 +98,7 @@ func (cd *ConsulDiscovery) Sources() []string {
 
 	srvs, _, err := client.Catalog().Services(nil)
 	if err != nil {
-		glog.Errorf("Error refreshing service list: %s", err)
+		log.Errorf("Error refreshing service list: %s", err)
 		return nil
 	}
 	cd.mu.Lock()
@@ -140,7 +140,7 @@ func (cd *ConsulDiscovery) Run(ch chan<- *config.TargetGroup) {
 
 // Stop implements the TargetProvider interface.
 func (cd *ConsulDiscovery) Stop() {
-	glog.V(1).Infof("Stopping Consul service discovery for %s", cd.clientConf.Address)
+	log.Debugf("Stopping Consul service discovery for %s", cd.clientConf.Address)
 
 	// The lock prevents Run from terminating while the watchers attempt
 	// to send on their channels.
@@ -157,7 +157,7 @@ func (cd *ConsulDiscovery) Stop() {
 	// Terminate Run.
 	cd.runDone <- struct{}{}
 
-	glog.V(1).Infof("Consul service discovery for %s stopped.", cd.clientConf.Address)
+	log.Debugf("Consul service discovery for %s stopped.", cd.clientConf.Address)
 }
 
 // watchServices retrieves updates from Consul's services endpoint and sends
@@ -171,7 +171,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 			WaitIndex:         lastIndex,
 		})
 		if err != nil {
-			glog.Errorf("Error refreshing service list: %s", err)
+			log.Errorf("Error refreshing service list: %s", err)
 			<-time.After(consulRetryInterval)
 			continue
 		}
@@ -232,7 +232,7 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 			WaitTime:  consulWatchTimeout,
 		})
 		if err != nil {
-			glog.Errorf("Error refreshing service %s: %s", srv.name, err)
+			log.Errorf("Error refreshing service %s: %s", srv.name, err)
 			<-time.After(consulRetryInterval)
 			continue
 		}

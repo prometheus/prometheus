@@ -24,7 +24,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -97,7 +97,7 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			// TODO(julius): figure out if it's possible to insert special float
 			// values into InfluxDB somehow.
-			glog.Warningf("cannot send value %f to InfluxDB, skipping sample %#v", v, s)
+			log.Warnf("cannot send value %f to InfluxDB, skipping sample %#v", v, s)
 			continue
 		}
 		metric := s.Metric[clientmodel.MetricNameLabel]

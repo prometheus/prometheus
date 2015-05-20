@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/golang/glog"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 )
@@ -133,7 +133,7 @@ func (r *fpMapper) maybeAddMapping(
 		// Checkpoint mappings after each change.
 		err := r.p.checkpointFPMappings(r.mappings)
 		r.mtx.RUnlock()
-		glog.Infof(
+		log.Infof(
 			"Collision detected for fingerprint %v, metric %v, mapping to new fingerprint %v.",
 			fp, collidingMetric, mappedFP,
 		)
@@ -147,7 +147,7 @@ func (r *fpMapper) maybeAddMapping(
 	// Checkpoint mappings after each change.
 	err := r.p.checkpointFPMappings(r.mappings)
 	r.mtx.Unlock()
-	glog.Infof(
+	log.Infof(
 		"Collision detected for fingerprint %v, metric %v, mapping to new fingerprint %v.",
 		fp, collidingMetric, mappedFP,
 	)

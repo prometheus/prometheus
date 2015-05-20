@@ -8,12 +8,13 @@
 			"Rev": "75cd24fc2f2c2a2088577d12123ddee5f54e0675"
 		},
 		{
-			"ImportPath": "github.com/beorn7/perks/quantile",
-			"Rev": "b965b613227fddccbfffe13eae360ed3fa822f8d"
+			"ImportPath": "github.com/Sirupsen/logrus",
+			"Comment": "v0.7.3-8-g52919f1",
+			"Rev": "52919f182f9c314f8a38c5afe96506f73d02b4b2"
 		},
 		{
-			"ImportPath": "github.com/golang/glog",
-			"Rev": "44145f04b68cf362d9c4df2182967c2275eaefed"
+			"ImportPath": "github.com/beorn7/perks/quantile",
+			"Rev": "b965b613227fddccbfffe13eae360ed3fa822f8d"
 		},
 		{
 			"ImportPath": "github.com/golang/protobuf/proto",
@@ -55,6 +56,10 @@
 			"ImportPath": "github.com/prometheus/client_model/go",
 			"Comment": "model-0.0.2-12-gfa8ad6f",
 			"Rev": "fa8ad6fec33561be4280a8f0514318c79d7f6cb6"
+		},
+		{
+			"ImportPath": "github.com/prometheus/log",
+			"Rev": "c1344118e003a86aefb326a436118ad1317266dd"
 		},
 		{
 			"ImportPath": "github.com/prometheus/procfs",
