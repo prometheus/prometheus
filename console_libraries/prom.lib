@@ -40,7 +40,7 @@ renderTemplate is the name of the template to use to render the value.
 */}}
 {{ define "prom_query_drilldown" }}
 {{ $expr := .arg0 }}{{ $suffix := (or .arg1 "") }}{{ $renderTemplate := (or .arg2 "__prom_query_drilldown_noop") }}
-<a class="prom_query_drilldown" href="{{ graphLink $expr }}">{{ with query $expr }}{{tmpl $renderTemplate ( . | first | value )}}{{ $suffix }}{{ else }}-{{ end }}</a>
+<a class="prom_query_drilldown" href="{{ pathPrefix }}{{ graphLink $expr }}">{{ with query $expr }}{{tmpl $renderTemplate ( . | first | value )}}{{ $suffix }}{{ else }}-{{ end }}</a>
 {{ end }}
 
 {{ define "prom_path" }}/consoles/{{ .Path }}?{{ range $param, $value := .Params }}{{ $param }}={{ $value }}&amp;{{ end }}{{ end }}"

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"html/template"
 	"reflect"
+	"strings"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -85,13 +86,13 @@ func (rule RecordingRule) String() string {
 }
 
 // HTMLSnippet returns an HTML snippet representing this rule.
-func (rule RecordingRule) HTMLSnippet() template.HTML {
+func (rule RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	ruleExpr := rule.vector.String()
 	return template.HTML(fmt.Sprintf(
 		`<a href="%s">%s</a>%s = <a href="%s">%s</a>`,
-		utility.GraphLinkForExpression(rule.name),
+		pathPrefix+strings.TrimLeft(utility.GraphLinkForExpression(rule.name), "/"),
 		rule.name,
 		rule.labels,
-		utility.GraphLinkForExpression(ruleExpr),
+		pathPrefix+strings.TrimLeft(utility.GraphLinkForExpression(ruleExpr), "/"),
 		ruleExpr))
 }
