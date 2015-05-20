@@ -79,6 +79,11 @@ const (
 type syncStrategy func() bool
 
 type memorySeriesStorage struct {
+	// numChunksToPersist has to be aligned for atomic operations.
+	numChunksToPersist int64 // The number of chunks waiting for persistence.
+	maxChunksToPersist int   // If numChunksToPersist reaches this threshold, ingestion will stall.
+	degraded           bool
+
 	fpLocker   *fingerprintLocker
 	fpToSeries *seriesMap
 
@@ -89,10 +94,6 @@ type memorySeriesStorage struct {
 	dropAfter                  time.Duration
 	checkpointInterval         time.Duration
 	checkpointDirtySeriesLimit int
-
-	numChunksToPersist int64 // The number of chunks waiting for persistence.
-	maxChunksToPersist int   // If numChunksToPersist reaches this threshold, ingestion will stall.
-	degraded           bool
 
 	persistence *persistence
 	mapper      *fpMapper

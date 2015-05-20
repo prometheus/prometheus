@@ -23,12 +23,14 @@ type fpMappings map[clientmodel.Fingerprint]map[string]clientmodel.Fingerprint
 // fpMapper is used to map fingerprints in order to work around fingerprint
 // collisions.
 type fpMapper struct {
+	// highestMappedFP has to be aligned for atomic operations.
+	highestMappedFP clientmodel.Fingerprint
+
 	mtx      sync.RWMutex // Protects mappings.
 	mappings fpMappings
 
-	fpToSeries      *seriesMap
-	p               *persistence
-	highestMappedFP clientmodel.Fingerprint
+	fpToSeries *seriesMap
+	p          *persistence
 }
 
 // newFPMapper loads the collision map from the persistence and
