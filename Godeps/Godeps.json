@@ -21,7 +21,7 @@
 		},
 		{
 			"ImportPath": "github.com/hashicorp/consul/api",
-			"Rev": "9fb235a98d8e88f7857b21bb2dd3efc428c01427",
+			"Rev": "9fb235a98d8e88f7857b21bb2dd3efc428c01427"
 		},
 		{
 			"ImportPath": "github.com/matttproud/golang_protobuf_extensions/pbutil",
@@ -74,7 +74,7 @@
 		},
 		{
 			"ImportPath": "gopkg.in/fsnotify.v1",
-			"Rev": "96c060f6a6b7e0d6f75fddd10efeaca3e5d1bcb0",
+			"Rev": "96c060f6a6b7e0d6f75fddd10efeaca3e5d1bcb0"
 		},
 		{
 			"ImportPath": "gopkg.in/yaml.v2",
