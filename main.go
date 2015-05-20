@@ -48,7 +48,7 @@ const deletionBatchSize = 100
 
 // Commandline flags.
 var (
-	configFile = flag.String("config.file", "prometheus.conf", "Prometheus configuration file name.")
+	configFile = flag.String("config.file", "prometheus.yml", "Prometheus configuration file name.")
 
 	alertmanagerURL           = flag.String("alertmanager.url", "", "The URL of the alert manager to send notifications to.")
 	notificationQueueCapacity = flag.Int("alertmanager.notification-queue-capacity", 100, "The capacity of the queue for pending alert manager notifications.")
