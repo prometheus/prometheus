@@ -644,7 +644,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 	vec := Vector{}
 	for fp, it := range node.iterators {
-		sampleCandidates := it.GetValueAtTime(ev.Timestamp.Add(-node.Offset))
+		sampleCandidates := it.ValueAtTime(ev.Timestamp.Add(-node.Offset))
 		samplePair := chooseClosestSample(sampleCandidates, ev.Timestamp.Add(-node.Offset))
 		if samplePair != nil {
 			vec = append(vec, &Sample{
@@ -666,7 +666,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 
 	sampleStreams := make([]*SampleStream, 0, len(node.iterators))
 	for fp, it := range node.iterators {
-		samplePairs := it.GetRangeValues(interval)
+		samplePairs := it.RangeValues(interval)
 		if len(samplePairs) == 0 {
 			continue
 		}
@@ -695,7 +695,7 @@ func (ev *evaluator) matrixSelectorBounds(node *MatrixSelector) Matrix {
 
 	sampleStreams := make([]*SampleStream, 0, len(node.iterators))
 	for fp, it := range node.iterators {
-		samplePairs := it.GetBoundaryValues(interval)
+		samplePairs := it.BoundaryValues(interval)
 		if len(samplePairs) == 0 {
 			continue
 		}

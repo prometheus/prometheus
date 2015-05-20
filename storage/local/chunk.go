@@ -41,8 +41,8 @@ const (
 // goroutine-safe proxies for chunk methods.
 type chunkDesc struct {
 	sync.Mutex
-	chunk          chunk // nil if chunk is evicted.
-	refCount       int
+	c              chunk // nil if chunk is evicted.
+	rCnt           int
 	chunkFirstTime clientmodel.Timestamp // Used if chunk is evicted.
 	chunkLastTime  clientmodel.Timestamp // Used if chunk is evicted.
 
@@ -59,14 +59,14 @@ func newChunkDesc(c chunk) *chunkDesc {
 	chunkOps.WithLabelValues(createAndPin).Inc()
 	atomic.AddInt64(&numMemChunks, 1)
 	numMemChunkDescs.Inc()
-	return &chunkDesc{chunk: c, refCount: 1}
+	return &chunkDesc{c: c, rCnt: 1}
 }
 
 func (cd *chunkDesc) add(s *metric.SamplePair) []chunk {
 	cd.Lock()
 	defer cd.Unlock()
 
-	return cd.chunk.add(s)
+	return cd.c.add(s)
 }
 
 // pin increments the refCount by one. Upon increment from 0 to 1, this
@@ -76,11 +76,11 @@ func (cd *chunkDesc) pin(evictRequests chan<- evictRequest) {
 	cd.Lock()
 	defer cd.Unlock()
 
-	if cd.refCount == 0 {
+	if cd.rCnt == 0 {
 		// Remove ourselves from the evict list.
 		evictRequests <- evictRequest{cd, false}
 	}
-	cd.refCount++
+	cd.rCnt++
 }
 
 // unpin decrements the refCount by one. Upon decrement from 1 to 0, this
@@ -90,69 +90,69 @@ func (cd *chunkDesc) unpin(evictRequests chan<- evictRequest) {
 	cd.Lock()
 	defer cd.Unlock()
 
-	if cd.refCount == 0 {
+	if cd.rCnt == 0 {
 		panic("cannot unpin already unpinned chunk")
 	}
-	cd.refCount--
-	if cd.refCount == 0 {
+	cd.rCnt--
+	if cd.rCnt == 0 {
 		// Add ourselves to the back of the evict list.
 		evictRequests <- evictRequest{cd, true}
 	}
 }
 
-func (cd *chunkDesc) getRefCount() int {
+func (cd *chunkDesc) refCount() int {
 	cd.Lock()
 	defer cd.Unlock()
 
-	return cd.refCount
+	return cd.rCnt
 }
 
 func (cd *chunkDesc) firstTime() clientmodel.Timestamp {
 	cd.Lock()
 	defer cd.Unlock()
 
-	if cd.chunk == nil {
+	if cd.c == nil {
 		return cd.chunkFirstTime
 	}
-	return cd.chunk.firstTime()
+	return cd.c.firstTime()
 }
 
 func (cd *chunkDesc) lastTime() clientmodel.Timestamp {
 	cd.Lock()
 	defer cd.Unlock()
 
-	if cd.chunk == nil {
+	if cd.c == nil {
 		return cd.chunkLastTime
 	}
-	return cd.chunk.newIterator().getLastTimestamp()
+	return cd.c.newIterator().lastTimestamp()
 }
 
 func (cd *chunkDesc) isEvicted() bool {
 	cd.Lock()
 	defer cd.Unlock()
 
-	return cd.chunk == nil
+	return cd.c == nil
 }
 
 func (cd *chunkDesc) contains(t clientmodel.Timestamp) bool {
 	return !t.Before(cd.firstTime()) && !t.After(cd.lastTime())
 }
 
-func (cd *chunkDesc) getChunk() chunk {
+func (cd *chunkDesc) chunk() chunk {
 	cd.Lock()
 	defer cd.Unlock()
 
-	return cd.chunk
+	return cd.c
 }
 
 func (cd *chunkDesc) setChunk(c chunk) {
 	cd.Lock()
 	defer cd.Unlock()
 
-	if cd.chunk != nil {
+	if cd.c != nil {
 		panic("chunk already set")
 	}
-	cd.chunk = c
+	cd.c = c
 }
 
 // maybeEvict evicts the chunk if the refCount is 0. It returns whether the chunk
@@ -162,15 +162,15 @@ func (cd *chunkDesc) maybeEvict() bool {
 	cd.Lock()
 	defer cd.Unlock()
 
-	if cd.chunk == nil {
+	if cd.c == nil {
 		return true
 	}
-	if cd.refCount != 0 {
+	if cd.rCnt != 0 {
 		return false
 	}
-	cd.chunkFirstTime = cd.chunk.firstTime()
-	cd.chunkLastTime = cd.chunk.newIterator().getLastTimestamp()
-	cd.chunk = nil
+	cd.chunkFirstTime = cd.c.firstTime()
+	cd.chunkLastTime = cd.c.newIterator().lastTimestamp()
+	cd.c = nil
 	chunkOps.WithLabelValues(evict).Inc()
 	atomic.AddInt64(&numMemChunks, -1)
 	return true
@@ -202,21 +202,21 @@ type chunkIterator interface {
 	// length returns the number of samples in the chunk.
 	length() int
 	// Gets the timestamp of the n-th sample in the chunk.
-	getTimestampAtIndex(int) clientmodel.Timestamp
+	timestampAtIndex(int) clientmodel.Timestamp
 	// Gets the last timestamp in the chunk.
-	getLastTimestamp() clientmodel.Timestamp
+	lastTimestamp() clientmodel.Timestamp
 	// Gets the sample value of the n-th sample in the chunk.
-	getSampleValueAtIndex(int) clientmodel.SampleValue
+	sampleValueAtIndex(int) clientmodel.SampleValue
 	// Gets the last sample value in the chunk.
-	getLastSampleValue() clientmodel.SampleValue
+	lastSampleValue() clientmodel.SampleValue
 	// Gets the two values that are immediately adjacent to a given time. In
 	// case a value exist at precisely the given time, only that single
 	// value is returned. Only the first or last value is returned (as a
 	// single value), if the given time is before or after the first or last
 	// value, respectively.
-	getValueAtTime(clientmodel.Timestamp) metric.Values
+	valueAtTime(clientmodel.Timestamp) metric.Values
 	// Gets all values contained within a given interval.
-	getRangeValues(metric.Interval) metric.Values
+	rangeValues(metric.Interval) metric.Values
 	// Whether a given timestamp is contained between first and last value
 	// in the chunk.
 	contains(clientmodel.Timestamp) bool

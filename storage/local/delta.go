@@ -285,52 +285,52 @@ type deltaEncodedChunkIterator struct {
 // length implements chunkIterator.
 func (it *deltaEncodedChunkIterator) length() int { return it.len }
 
-// getValueAtTime implements chunkIterator.
-func (it *deltaEncodedChunkIterator) getValueAtTime(t clientmodel.Timestamp) metric.Values {
+// valueAtTime implements chunkIterator.
+func (it *deltaEncodedChunkIterator) valueAtTime(t clientmodel.Timestamp) metric.Values {
 	i := sort.Search(it.len, func(i int) bool {
-		return !it.getTimestampAtIndex(i).Before(t)
+		return !it.timestampAtIndex(i).Before(t)
 	})
 
 	switch i {
 	case 0:
 		return metric.Values{metric.SamplePair{
-			Timestamp: it.getTimestampAtIndex(0),
-			Value:     it.getSampleValueAtIndex(0),
+			Timestamp: it.timestampAtIndex(0),
+			Value:     it.sampleValueAtIndex(0),
 		}}
 	case it.len:
 		return metric.Values{metric.SamplePair{
-			Timestamp: it.getTimestampAtIndex(it.len - 1),
-			Value:     it.getSampleValueAtIndex(it.len - 1),
+			Timestamp: it.timestampAtIndex(it.len - 1),
+			Value:     it.sampleValueAtIndex(it.len - 1),
 		}}
 	default:
-		ts := it.getTimestampAtIndex(i)
+		ts := it.timestampAtIndex(i)
 		if ts.Equal(t) {
 			return metric.Values{metric.SamplePair{
 				Timestamp: ts,
-				Value:     it.getSampleValueAtIndex(i),
+				Value:     it.sampleValueAtIndex(i),
 			}}
 		}
 		return metric.Values{
 			metric.SamplePair{
-				Timestamp: it.getTimestampAtIndex(i - 1),
-				Value:     it.getSampleValueAtIndex(i - 1),
+				Timestamp: it.timestampAtIndex(i - 1),
+				Value:     it.sampleValueAtIndex(i - 1),
 			},
 			metric.SamplePair{
 				Timestamp: ts,
-				Value:     it.getSampleValueAtIndex(i),
+				Value:     it.sampleValueAtIndex(i),
 			},
 		}
 	}
 }
 
-// getRangeValues implements chunkIterator.
-func (it *deltaEncodedChunkIterator) getRangeValues(in metric.Interval) metric.Values {
+// rangeValues implements chunkIterator.
+func (it *deltaEncodedChunkIterator) rangeValues(in metric.Interval) metric.Values {
 	oldest := sort.Search(it.len, func(i int) bool {
-		return !it.getTimestampAtIndex(i).Before(in.OldestInclusive)
+		return !it.timestampAtIndex(i).Before(in.OldestInclusive)
 	})
 
 	newest := sort.Search(it.len, func(i int) bool {
-		return it.getTimestampAtIndex(i).After(in.NewestInclusive)
+		return it.timestampAtIndex(i).After(in.NewestInclusive)
 	})
 
 	if oldest == it.len {
@@ -340,8 +340,8 @@ func (it *deltaEncodedChunkIterator) getRangeValues(in metric.Interval) metric.V
 	result := make(metric.Values, 0, newest-oldest)
 	for i := oldest; i < newest; i++ {
 		result = append(result, metric.SamplePair{
-			Timestamp: it.getTimestampAtIndex(i),
-			Value:     it.getSampleValueAtIndex(i),
+			Timestamp: it.timestampAtIndex(i),
+			Value:     it.sampleValueAtIndex(i),
 		})
 	}
 	return result
@@ -349,7 +349,7 @@ func (it *deltaEncodedChunkIterator) getRangeValues(in metric.Interval) metric.V
 
 // contains implements chunkIterator.
 func (it *deltaEncodedChunkIterator) contains(t clientmodel.Timestamp) bool {
-	return !t.Before(it.baseT) && !t.After(it.getTimestampAtIndex(it.len-1))
+	return !t.Before(it.baseT) && !t.After(it.timestampAtIndex(it.len-1))
 }
 
 // values implements chunkIterator.
@@ -358,8 +358,8 @@ func (it *deltaEncodedChunkIterator) values() <-chan *metric.SamplePair {
 	go func() {
 		for i := 0; i < it.len; i++ {
 			valuesChan <- &metric.SamplePair{
-				Timestamp: it.getTimestampAtIndex(i),
-				Value:     it.getSampleValueAtIndex(i),
+				Timestamp: it.timestampAtIndex(i),
+				Value:     it.sampleValueAtIndex(i),
 			}
 		}
 		close(valuesChan)
@@ -367,8 +367,8 @@ func (it *deltaEncodedChunkIterator) values() <-chan *metric.SamplePair {
 	return valuesChan
 }
 
-// getTimestampAtIndex implements chunkIterator.
-func (it *deltaEncodedChunkIterator) getTimestampAtIndex(idx int) clientmodel.Timestamp {
+// timestampAtIndex implements chunkIterator.
+func (it *deltaEncodedChunkIterator) timestampAtIndex(idx int) clientmodel.Timestamp {
 	offset := deltaHeaderBytes + idx*int(it.tBytes+it.vBytes)
 
 	switch it.tBytes {
@@ -386,13 +386,13 @@ func (it *deltaEncodedChunkIterator) getTimestampAtIndex(idx int) clientmodel.Ti
 	}
 }
 
-// getLastTimestamp implements chunkIterator.
-func (it *deltaEncodedChunkIterator) getLastTimestamp() clientmodel.Timestamp {
-	return it.getTimestampAtIndex(it.len - 1)
+// lastTimestamp implements chunkIterator.
+func (it *deltaEncodedChunkIterator) lastTimestamp() clientmodel.Timestamp {
+	return it.timestampAtIndex(it.len - 1)
 }
 
-// getSampleValueAtIndex implements chunkIterator.
-func (it *deltaEncodedChunkIterator) getSampleValueAtIndex(idx int) clientmodel.SampleValue {
+// sampleValueAtIndex implements chunkIterator.
+func (it *deltaEncodedChunkIterator) sampleValueAtIndex(idx int) clientmodel.SampleValue {
 	offset := deltaHeaderBytes + idx*int(it.tBytes+it.vBytes) + int(it.tBytes)
 
 	if it.isInt {
@@ -422,7 +422,7 @@ func (it *deltaEncodedChunkIterator) getSampleValueAtIndex(idx int) clientmodel.
 	}
 }
 
-// getLastSampleValue implements chunkIterator.
-func (it *deltaEncodedChunkIterator) getLastSampleValue() clientmodel.SampleValue {
-	return it.getSampleValueAtIndex(it.len - 1)
+// lastSampleValue implements chunkIterator.
+func (it *deltaEncodedChunkIterator) lastSampleValue() clientmodel.SampleValue {
+	return it.sampleValueAtIndex(it.len - 1)
 }

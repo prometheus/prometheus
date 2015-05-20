@@ -319,11 +319,11 @@ func (p *persistence) setDirty(dirty bool) {
 	}
 }
 
-// getFingerprintsForLabelPair returns the fingerprints for the given label
+// fingerprintsForLabelPair returns the fingerprints for the given label
 // pair. This method is goroutine-safe but take into account that metrics queued
 // for indexing with IndexMetric might not have made it into the index
 // yet. (Same applies correspondingly to UnindexMetric.)
-func (p *persistence) getFingerprintsForLabelPair(lp metric.LabelPair) (clientmodel.Fingerprints, error) {
+func (p *persistence) fingerprintsForLabelPair(lp metric.LabelPair) (clientmodel.Fingerprints, error) {
 	fps, _, err := p.labelPairToFingerprints.Lookup(lp)
 	if err != nil {
 		return nil, err
@@ -331,11 +331,11 @@ func (p *persistence) getFingerprintsForLabelPair(lp metric.LabelPair) (clientmo
 	return fps, nil
 }
 
-// getLabelValuesForLabelName returns the label values for the given label
+// labelValuesForLabelName returns the label values for the given label
 // name. This method is goroutine-safe but take into account that metrics queued
 // for indexing with IndexMetric might not have made it into the index
 // yet. (Same applies correspondingly to UnindexMetric.)
-func (p *persistence) getLabelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
+func (p *persistence) labelValuesForLabelName(ln clientmodel.LabelName) (clientmodel.LabelValues, error) {
 	lvs, _, err := p.labelNameToLabelValues.Lookup(ln)
 	if err != nil {
 		return nil, err
@@ -632,10 +632,10 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 					}
 				} else {
 					// This is the non-persisted head chunk. Fully marshal it.
-					if err = w.WriteByte(byte(chunkDesc.chunk.encoding())); err != nil {
+					if err = w.WriteByte(byte(chunkDesc.c.encoding())); err != nil {
 						return
 					}
-					if err = chunkDesc.chunk.marshal(w); err != nil {
+					if err = chunkDesc.c.marshal(w); err != nil {
 						return
 					}
 				}
@@ -880,7 +880,7 @@ func (p *persistence) dropAndPersistChunks(
 		// too old. If that's the case, the chunks in the series file
 		// are all too old, too.
 		i := 0
-		for ; i < len(chunks) && chunks[i].newIterator().getLastTimestamp().Before(beforeTime); i++ {
+		for ; i < len(chunks) && chunks[i].newIterator().lastTimestamp().Before(beforeTime); i++ {
 		}
 		if i < len(chunks) {
 			firstTimeNotDropped = chunks[i].firstTime()
@@ -1017,10 +1017,10 @@ func (p *persistence) deleteSeriesFile(fp clientmodel.Fingerprint) (int, error) 
 	return numChunks, nil
 }
 
-// getSeriesFileModTime returns the modification time of the series file
-// belonging to the provided fingerprint. In case of an error, the zero value of
-// time.Time is returned.
-func (p *persistence) getSeriesFileModTime(fp clientmodel.Fingerprint) time.Time {
+// seriesFileModTime returns the modification time of the series file belonging
+// to the provided fingerprint. In case of an error, the zero value of time.Time
+// is returned.
+func (p *persistence) seriesFileModTime(fp clientmodel.Fingerprint) time.Time {
 	var modTime time.Time
 	if fi, err := os.Stat(p.fileNameForFingerprint(fp)); err == nil {
 		return fi.ModTime()
@@ -1029,17 +1029,17 @@ func (p *persistence) getSeriesFileModTime(fp clientmodel.Fingerprint) time.Time
 }
 
 // indexMetric queues the given metric for addition to the indexes needed by
-// getFingerprintsForLabelPair, getLabelValuesForLabelName, and
-// getFingerprintsModifiedBefore.  If the queue is full, this method blocks
-// until the metric can be queued.  This method is goroutine-safe.
+// fingerprintsForLabelPair, labelValuesForLabelName, and
+// fingerprintsModifiedBefore.  If the queue is full, this method blocks until
+// the metric can be queued.  This method is goroutine-safe.
 func (p *persistence) indexMetric(fp clientmodel.Fingerprint, m clientmodel.Metric) {
 	p.indexingQueue <- indexingOp{fp, m, add}
 }
 
 // unindexMetric queues references to the given metric for removal from the
-// indexes used for getFingerprintsForLabelPair, getLabelValuesForLabelName, and
-// getFingerprintsModifiedBefore. The index of fingerprints to archived metrics
-// is not affected by this removal. (In fact, never call this method for an
+// indexes used for fingerprintsForLabelPair, labelValuesForLabelName, and
+// fingerprintsModifiedBefore. The index of fingerprints to archived metrics is
+// not affected by this removal. (In fact, never call this method for an
 // archived metric. To purge an archived metric, call purgeArchivedFingerprint.)
 // If the queue is full, this method blocks until the metric can be queued. This
 // method is goroutine-safe.
@@ -1097,10 +1097,10 @@ func (p *persistence) updateArchivedTimeRange(
 	return p.archivedFingerprintToTimeRange.Put(codable.Fingerprint(fp), codable.TimeRange{First: first, Last: last})
 }
 
-// getFingerprintsModifiedBefore returns the fingerprints of archived timeseries
+// fingerprintsModifiedBefore returns the fingerprints of archived timeseries
 // that have live samples before the provided timestamp. This method is
 // goroutine-safe.
-func (p *persistence) getFingerprintsModifiedBefore(beforeTime clientmodel.Timestamp) ([]clientmodel.Fingerprint, error) {
+func (p *persistence) fingerprintsModifiedBefore(beforeTime clientmodel.Timestamp) ([]clientmodel.Fingerprint, error) {
 	var fp codable.Fingerprint
 	var tr codable.TimeRange
 	fps := []clientmodel.Fingerprint{}
@@ -1119,9 +1119,9 @@ func (p *persistence) getFingerprintsModifiedBefore(beforeTime clientmodel.Times
 	return fps, nil
 }
 
-// getArchivedMetric retrieves the archived metric with the given
-// fingerprint. This method is goroutine-safe.
-func (p *persistence) getArchivedMetric(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
+// archivedMetric retrieves the archived metric with the given fingerprint. This
+// method is goroutine-safe.
+func (p *persistence) archivedMetric(fp clientmodel.Fingerprint) (clientmodel.Metric, error) {
 	metric, _, err := p.archivedFingerprintToMetrics.Lookup(fp)
 	return metric, err
 }
@@ -1137,7 +1137,7 @@ func (p *persistence) purgeArchivedMetric(fp clientmodel.Fingerprint) (err error
 		}
 	}()
 
-	metric, err := p.getArchivedMetric(fp)
+	metric, err := p.archivedMetric(fp)
 	if err != nil || metric == nil {
 		return err
 	}
@@ -1573,7 +1573,7 @@ func writeChunkHeader(w io.Writer, c chunk) error {
 	)
 	binary.LittleEndian.PutUint64(
 		header[chunkHeaderLastTimeOffset:],
-		uint64(c.newIterator().getLastTimestamp()),
+		uint64(c.newIterator().lastTimestamp()),
 	)
 	_, err := w.Write(header)
 	return err

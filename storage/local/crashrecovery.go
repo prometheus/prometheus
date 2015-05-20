@@ -318,7 +318,7 @@ func (p *persistence) sanitizeSeries(
 		return fp, true
 	}
 	// This series is supposed to be archived.
-	metric, err := p.getArchivedMetric(fp)
+	metric, err := p.archivedMetric(fp)
 	if err != nil {
 		glog.Errorf(
 			"Fingerprint %v assumed archived but couldn't be looked up in archived index: %s",

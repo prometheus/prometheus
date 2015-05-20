@@ -287,14 +287,14 @@ func (s *memorySeriesStorage) NewPreloader() Preloader {
 	}
 }
 
-// GetFingerprintsForLabelMatchers implements Storage.
-func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metric.LabelMatchers) clientmodel.Fingerprints {
+// FingerprintsForLabelMatchers implements Storage.
+func (s *memorySeriesStorage) FingerprintsForLabelMatchers(labelMatchers metric.LabelMatchers) clientmodel.Fingerprints {
 	var result map[clientmodel.Fingerprint]struct{}
 	for _, matcher := range labelMatchers {
 		intersection := map[clientmodel.Fingerprint]struct{}{}
 		switch matcher.Type {
 		case metric.Equal:
-			fps, err := s.persistence.getFingerprintsForLabelPair(
+			fps, err := s.persistence.fingerprintsForLabelPair(
 				metric.LabelPair{
 					Name:  matcher.Name,
 					Value: matcher.Value,
@@ -312,7 +312,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 				}
 			}
 		default:
-			values, err := s.persistence.getLabelValuesForLabelName(matcher.Name)
+			values, err := s.persistence.labelValuesForLabelName(matcher.Name)
 			if err != nil {
 				glog.Errorf("Error getting label values for label name %q: %v", matcher.Name, err)
 			}
@@ -321,7 +321,7 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 				return nil
 			}
 			for _, v := range matches {
-				fps, err := s.persistence.getFingerprintsForLabelPair(
+				fps, err := s.persistence.fingerprintsForLabelPair(
 					metric.LabelPair{
 						Name:  matcher.Name,
 						Value: v,
@@ -350,17 +350,17 @@ func (s *memorySeriesStorage) GetFingerprintsForLabelMatchers(labelMatchers metr
 	return fps
 }
 
-// GetLabelValuesForLabelName implements Storage.
-func (s *memorySeriesStorage) GetLabelValuesForLabelName(labelName clientmodel.LabelName) clientmodel.LabelValues {
-	lvs, err := s.persistence.getLabelValuesForLabelName(labelName)
+// LabelValuesForLabelName implements Storage.
+func (s *memorySeriesStorage) LabelValuesForLabelName(labelName clientmodel.LabelName) clientmodel.LabelValues {
+	lvs, err := s.persistence.labelValuesForLabelName(labelName)
 	if err != nil {
 		glog.Errorf("Error getting label values for label name %q: %v", labelName, err)
 	}
 	return lvs
 }
 
-// GetMetricForFingerprint implements Storage.
-func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint) clientmodel.COWMetric {
+// MetricForFingerprint implements Storage.
+func (s *memorySeriesStorage) MetricForFingerprint(fp clientmodel.Fingerprint) clientmodel.COWMetric {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
@@ -372,7 +372,7 @@ func (s *memorySeriesStorage) GetMetricForFingerprint(fp clientmodel.Fingerprint
 			Metric: series.metric,
 		}
 	}
-	metric, err := s.persistence.getArchivedMetric(fp)
+	metric, err := s.persistence.archivedMetric(fp)
 	if err != nil {
 		glog.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
 	}
@@ -455,7 +455,7 @@ func (s *memorySeriesStorage) preloadChunksForRange(
 			return nil, nil
 		}
 		if from.Add(-stalenessDelta).Before(last) && through.Add(stalenessDelta).After(first) {
-			metric, err := s.persistence.getArchivedMetric(fp)
+			metric, err := s.persistence.archivedMetric(fp)
 			if err != nil {
 				return nil, err
 			}
@@ -644,7 +644,7 @@ func (s *memorySeriesStorage) cycleThroughArchivedFingerprints() chan clientmode
 		defer close(archivedFingerprints)
 
 		for {
-			archivedFPs, err := s.persistence.getFingerprintsModifiedBefore(
+			archivedFPs, err := s.persistence.fingerprintsModifiedBefore(
 				clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter),
 			)
 			if err != nil {
@@ -840,20 +840,21 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 func (s *memorySeriesStorage) writeMemorySeries(
 	fp clientmodel.Fingerprint, series *memorySeries, beforeTime clientmodel.Timestamp,
 ) bool {
-	cds := series.getChunksToPersist()
+	cds := series.chunksToPersist()
 	defer func() {
 		for _, cd := range cds {
 			cd.unpin(s.evictRequests)
 		}
 		s.incNumChunksToPersist(-len(cds))
 		chunkOps.WithLabelValues(persistAndUnpin).Add(float64(len(cds)))
-		series.modTime = s.persistence.getSeriesFileModTime(fp)
+		series.modTime = s.persistence.seriesFileModTime(fp)
 	}()
 
 	// Get the actual chunks from underneath the chunkDescs.
+	// No lock required as chunks still to persist cannot be evicted.
 	chunks := make([]chunk, len(cds))
 	for i, cd := range cds {
-		chunks[i] = cd.chunk
+		chunks[i] = cd.c
 	}
 
 	if !series.firstTime().Before(beforeTime) {

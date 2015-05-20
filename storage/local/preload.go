@@ -40,8 +40,8 @@ func (p *memorySeriesPreloader) PreloadRange(
 }
 
 /*
-// GetMetricAtTime implements Preloader.
-func (p *memorySeriesPreloader) GetMetricAtTime(fp clientmodel.Fingerprint, t clientmodel.Timestamp) error {
+// MetricAtTime implements Preloader.
+func (p *memorySeriesPreloader) MetricAtTime(fp clientmodel.Fingerprint, t clientmodel.Timestamp) error {
 	cds, err := p.storage.preloadChunks(fp, &timeSelector{
 		from:    t,
 		through: t,
@@ -53,8 +53,8 @@ func (p *memorySeriesPreloader) GetMetricAtTime(fp clientmodel.Fingerprint, t cl
 	return nil
 }
 
-// GetMetricAtInterval implements Preloader.
-func (p *memorySeriesPreloader) GetMetricAtInterval(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration) error {
+// MetricAtInterval implements Preloader.
+func (p *memorySeriesPreloader) MetricAtInterval(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration) error {
 	cds, err := p.storage.preloadChunks(fp, &timeSelector{
 		from:     from,
 		through:  through,
@@ -67,8 +67,8 @@ func (p *memorySeriesPreloader) GetMetricAtInterval(fp clientmodel.Fingerprint, 
 	return
 }
 
-// GetMetricRange implements Preloader.
-func (p *memorySeriesPreloader) GetMetricRange(fp clientmodel.Fingerprint, t clientmodel.Timestamp, rangeDuration time.Duration) error {
+// MetricRange implements Preloader.
+func (p *memorySeriesPreloader) MetricRange(fp clientmodel.Fingerprint, t clientmodel.Timestamp, rangeDuration time.Duration) error {
 	cds, err := p.storage.preloadChunks(fp, &timeSelector{
 		from:          t,
 		through:       t,
@@ -81,8 +81,8 @@ func (p *memorySeriesPreloader) GetMetricRange(fp clientmodel.Fingerprint, t cli
 	return
 }
 
-// GetMetricRangeAtInterval implements Preloader.
-func (p *memorySeriesPreloader) GetMetricRangeAtInterval(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration) error {
+// MetricRangeAtInterval implements Preloader.
+func (p *memorySeriesPreloader) MetricRangeAtInterval(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration) error {
 	cds, err := p.storage.preloadChunks(fp, &timeSelector{
 		from:          from,
 		through:       through,
