@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 )
@@ -26,25 +27,35 @@ import (
 type PrometheusStatusHandler struct {
 	mu sync.RWMutex
 
-	BuildInfo   map[string]string
-	Config      string
-	Flags       map[string]string
+	BuildInfo map[string]string
+	Config    string
+	Flags     map[string]string
+
 	RuleManager *rules.Manager
-	TargetPools map[string]*retrieval.TargetPool
+	TargetPools func() map[string][]*retrieval.Target
 
 	Birth      time.Time
 	PathPrefix string
 }
 
-// TargetStateToClass returns a map of TargetState to the name of a Bootstrap CSS class.
-func (h *PrometheusStatusHandler) TargetStateToClass() map[retrieval.TargetState]string {
-	return map[retrieval.TargetState]string{
-		retrieval.Unknown:   "warning",
-		retrieval.Healthy:   "success",
-		retrieval.Unhealthy: "danger",
+// TargetHealthToClass returns a map of TargetHealth to the name of a Bootstrap CSS class.
+func (h *PrometheusStatusHandler) TargetHealthToClass() map[retrieval.TargetHealth]string {
+	return map[retrieval.TargetHealth]string{
+		retrieval.HealthUnknown: "warning",
+		retrieval.HealthGood:    "success",
+		retrieval.HealthBad:     "danger",
 	}
 }
 
 func (h *PrometheusStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
 	executeTemplate(w, "status", h, h.PathPrefix)
+	h.mu.RUnlock()
+}
+
+// ApplyConfig updates the status handler's state as the new config requires.
+func (h *PrometheusStatusHandler) ApplyConfig(conf *config.Config) {
+	h.mu.Lock()
+	h.Config = conf.String()
+	h.mu.Unlock()
 }

@@ -18,7 +18,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,49 +30,24 @@ import (
 )
 
 func TestBaseLabels(t *testing.T) {
-	target := NewTarget("http://example.com/metrics", 0, clientmodel.LabelSet{"job": "some_job", "foo": "bar"})
-	want := clientmodel.LabelSet{"job": "some_job", "foo": "bar", "instance": "example.com:80"}
+	target := newTestTarget("example.com:80", 0, clientmodel.LabelSet{"job": "some_job", "foo": "bar"})
+	want := clientmodel.LabelSet{
+		clientmodel.JobLabel:      "some_job",
+		clientmodel.InstanceLabel: "example.com:80",
+		"foo": "bar",
+	}
 	got := target.BaseLabels()
 	if !reflect.DeepEqual(want, got) {
 		t.Errorf("want base labels %v, got %v", want, got)
 	}
-	delete(want, "job")
-	delete(want, "instance")
-	got = target.BaseLabelsWithoutJobAndInstance()
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("want base labels %v, got %v", want, got)
-	}
-}
-
-func TestTargetHidesURLAuth(t *testing.T) {
-	testVectors := []string{"http://secret:data@host.com/query?args#fragment", "https://example.net/foo", "http://foo.com:31337/bar"}
-	testResults := []string{"host.com:80", "example.net:443", "foo.com:31337"}
-	if len(testVectors) != len(testResults) {
-		t.Errorf("Test vector length does not match test result length.")
-	}
-
-	for i := 0; i < len(testVectors); i++ {
-		testTarget := target{
-			state:      Unknown,
-			url:        testVectors[i],
-			httpClient: utility.NewDeadlineClient(0),
-		}
-		u := testTarget.InstanceIdentifier()
-		if u != testResults[i] {
-			t.Errorf("Expected InstanceIdentifier to be %v, actual %v", testResults[i], u)
-		}
-	}
 }
 
 func TestTargetScrapeUpdatesState(t *testing.T) {
-	testTarget := target{
-		state:      Unknown,
-		url:        "bad schema",
-		httpClient: utility.NewDeadlineClient(0),
-	}
+	testTarget := newTestTarget("bad schema", 0, nil)
+
 	testTarget.scrape(nopAppender{})
-	if testTarget.state != Unhealthy {
-		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
+	if testTarget.status.Health() != HealthBad {
+		t.Errorf("Expected target state %v, actual: %v", HealthBad, testTarget.status.Health())
 	}
 }
 
@@ -89,29 +66,24 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	)
 	defer server.Close()
 
-	testTarget := NewTarget(
-		server.URL,
-		10*time.Millisecond,
-		clientmodel.LabelSet{"dings": "bums"},
-	).(*target)
+	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{"dings": "bums"})
 
 	testTarget.scrape(slowAppender{})
-	if testTarget.state != Unhealthy {
-		t.Errorf("Expected target state %v, actual: %v", Unhealthy, testTarget.state)
+	if testTarget.status.Health() != HealthBad {
+		t.Errorf("Expected target state %v, actual: %v", HealthBad, testTarget.status.Health())
 	}
-	if testTarget.lastError != errIngestChannelFull {
-		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.lastError)
+	if testTarget.status.LastError() != errIngestChannelFull {
+		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.status.LastError())
 	}
 }
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
-	testTarget := NewTarget(
-		"http://example.url", 0, clientmodel.LabelSet{clientmodel.JobLabel: "testjob"},
-	).(*target)
+	testTarget := newTestTarget("example.url:80", 0, clientmodel.LabelSet{clientmodel.JobLabel: "testjob"})
 
 	now := clientmodel.Now()
 	appender := &collectResultAppender{}
-	testTarget.recordScrapeHealth(appender, now, true, 2*time.Second)
+	testTarget.status.setLastError(nil)
+	recordScrapeHealth(appender, now, testTarget.BaseLabels(), testTarget.status.Health(), 2*time.Second)
 
 	result := appender.result
 
@@ -123,7 +95,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	expected := &clientmodel.Sample{
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: scrapeHealthMetricName,
-			InstanceLabel:               "example.url:80",
+			clientmodel.InstanceLabel:   "example.url:80",
 			clientmodel.JobLabel:        "testjob",
 		},
 		Timestamp: now,
@@ -138,7 +110,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	expected = &clientmodel.Sample{
 		Metric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: scrapeDurationMetricName,
-			InstanceLabel:               "example.url:80",
+			clientmodel.InstanceLabel:   "example.url:80",
 			clientmodel.JobLabel:        "testjob",
 		},
 		Timestamp: now,
@@ -163,26 +135,27 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	)
 	defer server.Close()
 
-	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
+	testTarget := newTestTarget(server.URL, 25*time.Millisecond, clientmodel.LabelSet{})
+
 	appender := nopAppender{}
 
 	// scrape once without timeout
 	signal <- true
-	if err := testTarget.(*target).scrape(appender); err != nil {
+	if err := testTarget.scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 
 	// let the deadline lapse
-	time.Sleep(15 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond)
 
 	// now scrape again
 	signal <- true
-	if err := testTarget.(*target).scrape(appender); err != nil {
+	if err := testTarget.scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 
 	// now timeout
-	if err := testTarget.(*target).scrape(appender); err == nil {
+	if err := testTarget.scrape(appender); err == nil {
 		t.Fatal("expected scrape to timeout")
 	} else {
 		signal <- true // let handler continue
@@ -190,7 +163,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 
 	// now scrape again without timeout
 	signal <- true
-	if err := testTarget.(*target).scrape(appender); err != nil {
+	if err := testTarget.scrape(appender); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -205,39 +178,34 @@ func TestTargetScrape404(t *testing.T) {
 	)
 	defer server.Close()
 
-	testTarget := NewTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
+	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
 	appender := nopAppender{}
 
 	want := errors.New("server returned HTTP status 404 Not Found")
-	got := testTarget.(*target).scrape(appender)
+	got := testTarget.scrape(appender)
 	if got == nil || want.Error() != got.Error() {
 		t.Fatalf("want err %q, got %q", want, got)
 	}
 }
 
 func TestTargetRunScraperScrapes(t *testing.T) {
-	testTarget := target{
-		state:           Unknown,
-		url:             "bad schema",
-		httpClient:      utility.NewDeadlineClient(0),
-		scraperStopping: make(chan struct{}),
-		scraperStopped:  make(chan struct{}),
-	}
-	go testTarget.RunScraper(nopAppender{}, time.Duration(time.Millisecond))
+	testTarget := newTestTarget("bad schema", 0, nil)
+
+	go testTarget.RunScraper(nopAppender{})
 
 	// Enough time for a scrape to happen.
-	time.Sleep(2 * time.Millisecond)
-	if testTarget.lastScrape.IsZero() {
+	time.Sleep(10 * time.Millisecond)
+	if testTarget.status.LastScrape().IsZero() {
 		t.Errorf("Scrape hasn't occured.")
 	}
 
 	testTarget.StopScraper()
 	// Wait for it to take effect.
-	time.Sleep(2 * time.Millisecond)
-	last := testTarget.lastScrape
+	time.Sleep(5 * time.Millisecond)
+	last := testTarget.status.LastScrape()
 	// Enough time for a scrape to happen.
-	time.Sleep(2 * time.Millisecond)
-	if testTarget.lastScrape != last {
+	time.Sleep(10 * time.Millisecond)
+	if testTarget.status.LastScrape() != last {
 		t.Errorf("Scrape occured after it was stopped.")
 	}
 }
@@ -253,17 +221,36 @@ func BenchmarkScrape(b *testing.B) {
 	)
 	defer server.Close()
 
-	testTarget := NewTarget(
-		server.URL,
-		100*time.Millisecond,
-		clientmodel.LabelSet{"dings": "bums"},
-	)
+	testTarget := newTestTarget(server.URL, 100*time.Millisecond, clientmodel.LabelSet{"dings": "bums"})
 	appender := nopAppender{}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := testTarget.(*target).scrape(appender); err != nil {
+		if err := testTarget.scrape(appender); err != nil {
 			b.Fatal(err)
 		}
 	}
+}
+
+func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmodel.LabelSet) *Target {
+	t := &Target{
+		url: &url.URL{
+			Scheme: "http",
+			Host:   strings.TrimLeft(targetURL, "http://"),
+			Path:   "/metrics",
+		},
+		deadline:        deadline,
+		status:          &TargetStatus{},
+		scrapeInterval:  1 * time.Millisecond,
+		httpClient:      utility.NewDeadlineClient(deadline),
+		scraperStopping: make(chan struct{}),
+		scraperStopped:  make(chan struct{}),
+	}
+	t.baseLabels = clientmodel.LabelSet{
+		clientmodel.InstanceLabel: clientmodel.LabelValue(t.InstanceIdentifier()),
+	}
+	for baseLabel, baseValue := range baseLabels {
+		t.baseLabels[baseLabel] = baseValue
+	}
+	return t
 }

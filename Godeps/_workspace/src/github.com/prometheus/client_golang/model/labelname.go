@@ -14,6 +14,8 @@
 package model
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -39,8 +41,7 @@ const (
 	ReservedLabelPrefix = "__"
 
 	// MetaLabelPrefix is a prefix for labels that provide meta information.
-	// Labels with this prefix are used for intermediate label processing and
-	// will not be attached to time series.
+	// Labels with the prefix will not be attached to time series.
 	MetaLabelPrefix = "__meta_"
 
 	// JobLabel is the label name indicating the job from which a timeseries
@@ -59,9 +60,24 @@ const (
 	QuantileLabel = "quantile"
 )
 
+var labelNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
+
 // A LabelName is a key for a LabelSet or Metric.  It has a value associated
 // therewith.
 type LabelName string
+
+// UnmarshalYAML implements the yaml.Unmarshaller interface.
+func (ln *LabelName) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+	if !labelNameRE.MatchString(s) {
+		return fmt.Errorf("%q is not a valid label name", s)
+	}
+	*ln = LabelName(s)
+	return nil
+}
 
 // LabelNames is a sortable LabelName slice. In implements sort.Interface.
 type LabelNames []LabelName

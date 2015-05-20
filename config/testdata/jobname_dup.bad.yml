@@ -1,0 +1,5 @@
+# Two scrape configs with the same job names are not allowed.
+scrape_configs:
+  - job_name: prometheus
+  - job_name: service-x
+  - job_name: prometheus

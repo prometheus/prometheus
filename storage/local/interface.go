@@ -48,7 +48,7 @@ type Storage interface {
 	// Run the various maintenance loops in goroutines. Returns when the
 	// storage is ready to use. Keeps everything running in the background
 	// until Stop is called.
-	Start()
+	Start() error
 	// Stop shuts down the Storage gracefully, flushes all pending
 	// operations, stops all maintenance loops,and frees all resources.
 	Stop() error

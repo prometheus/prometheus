@@ -1,84 +1,167 @@
-// Copyright 2013 The Prometheus Authors
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package config
 
 import (
-	"path"
+	"reflect"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"gopkg.in/yaml.v2"
+
+	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-var fixturesPath = "fixtures"
+var expectedConf = &Config{DefaultedConfig{
+	GlobalConfig: &GlobalConfig{DefaultedGlobalConfig{
+		ScrapeInterval:     Duration(15 * time.Second),
+		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
+		EvaluationInterval: Duration(30 * time.Second),
 
-var configTests = []struct {
-	inputFile   string
-	shouldFail  bool
-	errContains string
+		Labels: clientmodel.LabelSet{
+			"monitor": "codelab",
+			"foo":     "bar",
+		},
+	}},
+
+	RuleFiles: []string{
+		"first.rules",
+		"second.rules",
+	},
+
+	ScrapeConfigs: []*ScrapeConfig{
+		{DefaultedScrapeConfig{
+			JobName: "prometheus",
+
+			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			TargetGroups: []*TargetGroup{
+				{
+					Targets: []clientmodel.LabelSet{
+						{clientmodel.AddressLabel: "localhost:9090"},
+						{clientmodel.AddressLabel: "localhost:9191"},
+					},
+					Labels: clientmodel.LabelSet{
+						"my":   "label",
+						"your": "label",
+					},
+				},
+			},
+
+			FileSDConfigs: []*FileSDConfig{
+				{DefaultedFileSDConfig{
+					Names:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
+					RefreshInterval: Duration(10 * time.Minute),
+				}},
+				{DefaultedFileSDConfig{
+					Names:           []string{"bar/*.yaml"},
+					RefreshInterval: Duration(30 * time.Second),
+				}},
+			},
+
+			RelabelConfigs: []*RelabelConfig{
+				{DefaultedRelabelConfig{
+					SourceLabels: clientmodel.LabelNames{"job", "__meta_dns_srv_name"},
+					TargetLabel:  "job",
+					Separator:    ";",
+					Regex:        &Regexp{*regexp.MustCompile("(.*)some-[regex]$")},
+					Replacement:  "foo-${1}",
+					Action:       RelabelReplace,
+				}},
+			},
+		}},
+		{DefaultedScrapeConfig{
+			JobName: "service-x",
+
+			ScrapeInterval: Duration(50 * time.Second),
+			ScrapeTimeout:  Duration(5 * time.Second),
+
+			BasicAuth: &BasicAuth{
+				Username: "admin",
+				Password: "password",
+			},
+			MetricsPath: "/my_path",
+			Scheme:      "https",
+
+			DNSSDConfigs: []*DNSSDConfig{
+				{DefaultedDNSSDConfig{
+					Names: []string{
+						"first.dns.address.domain.com",
+						"second.dns.address.domain.com",
+					},
+					RefreshInterval: Duration(15 * time.Second),
+				}},
+				{DefaultedDNSSDConfig{
+					Names: []string{
+						"first.dns.address.domain.com",
+					},
+					RefreshInterval: Duration(30 * time.Second),
+				}},
+			},
+
+			RelabelConfigs: []*RelabelConfig{
+				{DefaultedRelabelConfig{
+					SourceLabels: clientmodel.LabelNames{"job"},
+					Regex:        &Regexp{*regexp.MustCompile("(.*)some-[regex]$")},
+					Separator:    ";",
+					Action:       RelabelDrop,
+				}},
+			},
+		}},
+	},
+}, ""}
+
+func TestLoadConfig(t *testing.T) {
+	c, err := LoadFromFile("testdata/conf.good.yml")
+	if err != nil {
+		t.Errorf("Error parsing %s: %s", "testdata/conf.good.yml", err)
+	}
+	bgot, err := yaml.Marshal(c)
+	if err != nil {
+		t.Errorf("%s", err)
+	}
+	bexp, err := yaml.Marshal(expectedConf)
+	if err != nil {
+		t.Errorf("%s", err)
+	}
+	expectedConf.original = c.original
+
+	if !reflect.DeepEqual(c, expectedConf) {
+		t.Errorf("%s: unexpected config result: \n\n%s\n expected\n\n%s", "testdata/conf.good.yml", bgot, bexp)
+	}
+}
+
+var expectedErrors = []struct {
+	filename string
+	errMsg   string
 }{
 	{
-		inputFile: "minimal.conf.input",
+		filename: "jobname.bad.yml",
+		errMsg:   `"prom^etheus" is not a valid job name`,
 	}, {
-		inputFile: "sample.conf.input",
+		filename: "jobname_dup.bad.yml",
+		errMsg:   `found multiple scrape configs with job name "prometheus"`,
 	}, {
-		inputFile: "empty.conf.input",
+		filename: "labelname.bad.yml",
+		errMsg:   `"not$allowed" is not a valid label name`,
 	}, {
-		inputFile: "sd_targets.conf.input",
-	},
-	{
-		inputFile:   "invalid_proto_format.conf.input",
-		shouldFail:  true,
-		errContains: "unknown field name",
-	},
-	{
-		inputFile:   "invalid_scrape_interval.conf.input",
-		shouldFail:  true,
-		errContains: "invalid global scrape interval",
-	},
-	{
-		inputFile:   "invalid_job_name.conf.input",
-		shouldFail:  true,
-		errContains: "invalid job name",
-	},
-	{
-		inputFile:   "invalid_label_name.conf.input",
-		shouldFail:  true,
-		errContains: "invalid label name",
-	},
-	{
-		inputFile:   "mixing_sd_and_manual_targets.conf.input",
-		shouldFail:  true,
-		errContains: "specified both DNS-SD name and target group",
-	},
-	{
-		inputFile:   "repeated_job_name.conf.input",
-		shouldFail:  true,
-		errContains: "found multiple jobs configured with the same name: 'testjob1'",
+		filename: "regex.bad.yml",
+		errMsg:   "error parsing regexp",
 	},
 }
 
-func TestConfigs(t *testing.T) {
-	for i, configTest := range configTests {
-		_, err := LoadFromFile(path.Join(fixturesPath, configTest.inputFile))
-
-		if err != nil {
-			if !configTest.shouldFail {
-				t.Fatalf("%d. Error parsing config %v: %v", i, configTest.inputFile, err)
-			} else {
-				if !strings.Contains(err.Error(), configTest.errContains) {
-					t.Fatalf("%d. Expected error containing '%v', got: %v", i, configTest.errContains, err)
-				}
-			}
+func TestBadConfigs(t *testing.T) {
+	for _, ee := range expectedErrors {
+		_, err := LoadFromFile("testdata/" + ee.filename)
+		if err == nil {
+			t.Errorf("Expected error parsing %s but got none", ee.filename)
+		}
+		if !strings.Contains(err.Error(), ee.errMsg) {
+			t.Errorf("Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 		}
 	}
 }

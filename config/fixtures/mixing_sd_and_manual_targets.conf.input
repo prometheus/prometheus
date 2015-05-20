@@ -1,7 +1,0 @@
-job: <
-  name: "testjob"
-  sd_name: "sd_name"
-  target_group: <
-    target: "http://sampletarget:8080/metrics.json"
-  >
->

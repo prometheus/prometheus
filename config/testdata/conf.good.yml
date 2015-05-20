@@ -1,0 +1,74 @@
+# my global config
+global:
+  scrape_interval:     15s
+  evaluation_interval: 30s
+  # scrape_timeout is set to the global default (10s).
+
+  labels:
+      monitor: codelab
+      foo:     bar
+
+rule_files:
+  - "first.rules"
+  - "second.rules"
+
+scrape_configs:
+  - job_name: prometheus
+
+    # scrape_interval is defined by the configured global (15s).
+    # scrape_timeout is defined by the global default (10s).
+
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+
+    labels:
+      foo: baz
+
+    file_sd_configs:
+      - names:
+          - foo/*.slow.json
+          - foo/*.slow.yml
+          - single/file.yml
+        refresh_interval: 10m
+      - names:
+          - bar/*.yaml
+
+    target_groups:
+      - targets: ['localhost:9090', 'localhost:9191']
+        labels:
+          my:   label
+          your: label
+
+    relabel_configs:
+      - source_labels: [job, __meta_dns_srv_name]
+        regex:         (.*)some-[regex]$
+        target_label:  job
+        replacement:   foo-${1}
+        # action defaults to 'replace'
+
+
+  - job_name: service-x
+
+    basic_auth:
+      username: admin
+      password: password
+
+    scrape_interval: 50s
+    scrape_timeout:  5s
+
+    metrics_path: /my_path
+    scheme: https
+
+    dns_sd_configs:
+      - refresh_interval: 15s
+        names:
+          - first.dns.address.domain.com
+          - second.dns.address.domain.com
+      - names:
+          - first.dns.address.domain.com
+        # refresh_interval defaults to 30s.
+
+    relabel_configs:
+      - source_labels: [job]
+        regex:         (.*)some-[regex]$
+        action:        drop

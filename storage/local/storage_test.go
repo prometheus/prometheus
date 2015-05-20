@@ -163,9 +163,9 @@ func TestLoop(t *testing.T) {
 		CheckpointInterval:         250 * time.Millisecond,
 		SyncStrategy:               Adaptive,
 	}
-	storage, err := NewMemorySeriesStorage(o)
-	if err != nil {
-		t.Fatalf("Error creating storage: %s", err)
+	storage := NewMemorySeriesStorage(o)
+	if err := storage.Start; err != nil {
+		t.Fatalf("Error starting storage: %s", err)
 	}
 	storage.Start()
 	for _, s := range samples {
@@ -731,9 +731,9 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 		CheckpointInterval:         time.Second,
 		SyncStrategy:               Adaptive,
 	}
-	s, err := NewMemorySeriesStorage(o)
-	if err != nil {
-		b.Fatalf("Error creating storage: %s", err)
+	s := NewMemorySeriesStorage(o)
+	if err := s.Start(); err != nil {
+		b.Fatalf("Error starting storage: %s", err)
 	}
 	s.Start()
 	defer s.Stop()

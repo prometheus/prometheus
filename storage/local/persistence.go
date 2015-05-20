@@ -268,8 +268,11 @@ func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync sync
 	p.labelPairToFingerprints = labelPairToFingerprints
 	p.labelNameToLabelValues = labelNameToLabelValues
 
-	go p.processIndexingQueue()
 	return p, nil
+}
+
+func (p *persistence) run() {
+	p.processIndexingQueue()
 }
 
 // Describe implements prometheus.Collector.

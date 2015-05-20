@@ -29,9 +29,13 @@ import (
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 
+	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/web/api"
 	"github.com/prometheus/prometheus/web/blob"
 )
+
+var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
 // Commandline flags.
 var (
@@ -54,7 +58,7 @@ type WebService struct {
 }
 
 // ServeForever serves the HTTP endpoints and only returns upon errors.
-func (ws WebService) ServeForever(pathPrefix string) error {
+func (ws WebService) ServeForever(pathPrefix string) {
 
 	http.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", 404)
@@ -104,9 +108,16 @@ func (ws WebService) ServeForever(pathPrefix string) error {
 		}))
 	}
 
-	glog.Info("listening on ", *listenAddress)
+	glog.Infof("Listening on %s", *listenAddress)
 
-	return http.ListenAndServe(*listenAddress, nil)
+	// If we cannot bind to a port, retry after 30 seconds.
+	for {
+		err := http.ListenAndServe(*listenAddress, nil)
+		if err != nil {
+			glog.Errorf("Could not listen on %s: %s", *listenAddress, err)
+		}
+		time.Sleep(30 * time.Second)
+	}
 }
 
 func (ws WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
@@ -150,28 +161,53 @@ func getConsoles(pathPrefix string) string {
 	return ""
 }
 
-func getTemplate(name string, pathPrefix string) (t *template.Template, err error) {
-	t = template.New("_base")
+func getTemplate(name string, pathPrefix string) (*template.Template, error) {
+	t := template.New("_base")
+	var err error
 
 	t.Funcs(template.FuncMap{
 		"since":       time.Since,
 		"getConsoles": func() string { return getConsoles(pathPrefix) },
 		"pathPrefix":  func() string { return pathPrefix },
+		"stripLabels": func(lset clientmodel.LabelSet, labels ...clientmodel.LabelName) clientmodel.LabelSet {
+			for _, ln := range labels {
+				delete(lset, ln)
+			}
+			return lset
+		},
+		"globalURL": func(url string) string {
+			hostname, err := os.Hostname()
+			if err != nil {
+				glog.Warningf("Couldn't get hostname: %s, returning target.URL()", err)
+				return url
+			}
+			for _, localhostRepresentation := range localhostRepresentations {
+				url = strings.Replace(url, "//"+localhostRepresentation, "//"+hostname, 1)
+			}
+			return url
+		},
 	})
+
 	file, err := getTemplateFile("_base")
 	if err != nil {
-		glog.Error("Could not read base template: ", err)
+		glog.Errorln("Could not read base template:", err)
 		return nil, err
 	}
-	t.Parse(file)
+	t, err = t.Parse(file)
+	if err != nil {
+		glog.Errorln("Could not parse base template:", err)
+	}
 
 	file, err = getTemplateFile(name)
 	if err != nil {
-		glog.Error("Could not read base template: ", err)
+		glog.Error("Could not read template %s: %s", name, err)
 		return nil, err
 	}
-	t.Parse(file)
-	return
+	t, err = t.Parse(file)
+	if err != nil {
+		glog.Errorf("Could not parse template %s: %s", name, err)
+	}
+	return t, err
 }
 
 func executeTemplate(w http.ResponseWriter, name string, data interface{}, pathPrefix string) {
