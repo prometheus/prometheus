@@ -164,10 +164,9 @@ func TestLoop(t *testing.T) {
 		SyncStrategy:               Adaptive,
 	}
 	storage := NewMemorySeriesStorage(o)
-	if err := storage.Start; err != nil {
+	if err := storage.Start(); err != nil {
 		t.Fatalf("Error starting storage: %s", err)
 	}
-	storage.Start()
 	for _, s := range samples {
 		storage.Append(s)
 	}
