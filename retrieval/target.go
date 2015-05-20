@@ -23,9 +23,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/extraction"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -247,7 +247,7 @@ func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
 	lastScrapeInterval := t.scrapeInterval
 	t.RUnlock()
 
-	glog.V(1).Infof("Starting scraper for target %v...", t)
+	log.Debugf("Starting scraper for target %v...", t)
 
 	jitterTimer := time.NewTimer(time.Duration(float64(lastScrapeInterval) * rand.Float64()))
 	select {
@@ -306,12 +306,12 @@ func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
 
 // StopScraper implements Target.
 func (t *Target) StopScraper() {
-	glog.V(1).Infof("Stopping scraper for target %v...", t)
+	log.Debugf("Stopping scraper for target %v...", t)
 
 	close(t.scraperStopping)
 	<-t.scraperStopped
 
-	glog.V(1).Infof("Scraper for target %v stopped.", t)
+	log.Debugf("Scraper for target %v stopped.", t)
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`

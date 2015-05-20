@@ -26,8 +26,8 @@ import (
 
 	pprof_runtime "runtime/pprof"
 
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -108,13 +108,13 @@ func (ws WebService) ServeForever(pathPrefix string) {
 		}))
 	}
 
-	glog.Infof("Listening on %s", *listenAddress)
+	log.Infof("Listening on %s", *listenAddress)
 
 	// If we cannot bind to a port, retry after 30 seconds.
 	for {
 		err := http.ListenAndServe(*listenAddress, nil)
 		if err != nil {
-			glog.Errorf("Could not listen on %s: %s", *listenAddress, err)
+			log.Errorf("Could not listen on %s: %s", *listenAddress, err)
 		}
 		time.Sleep(30 * time.Second)
 	}
@@ -136,14 +136,14 @@ func getTemplateFile(name string) (string, error) {
 	if *useLocalAssets {
 		file, err := ioutil.ReadFile(fmt.Sprintf("web/templates/%s.html", name))
 		if err != nil {
-			glog.Errorf("Could not read %s template: %s", name, err)
+			log.Errorf("Could not read %s template: %s", name, err)
 			return "", err
 		}
 		return string(file), nil
 	}
 	file, err := blob.GetFile(blob.TemplateFiles, name+".html")
 	if err != nil {
-		glog.Errorf("Could not read %s template: %s", name, err)
+		log.Errorf("Could not read %s template: %s", name, err)
 		return "", err
 	}
 	return string(file), nil
@@ -178,7 +178,7 @@ func getTemplate(name string, pathPrefix string) (*template.Template, error) {
 		"globalURL": func(url string) string {
 			hostname, err := os.Hostname()
 			if err != nil {
-				glog.Warningf("Couldn't get hostname: %s, returning target.URL()", err)
+				log.Warnf("Couldn't get hostname: %s, returning target.URL()", err)
 				return url
 			}
 			for _, localhostRepresentation := range localhostRepresentations {
@@ -190,22 +190,22 @@ func getTemplate(name string, pathPrefix string) (*template.Template, error) {
 
 	file, err := getTemplateFile("_base")
 	if err != nil {
-		glog.Errorln("Could not read base template:", err)
+		log.Errorln("Could not read base template:", err)
 		return nil, err
 	}
 	t, err = t.Parse(file)
 	if err != nil {
-		glog.Errorln("Could not parse base template:", err)
+		log.Errorln("Could not parse base template:", err)
 	}
 
 	file, err = getTemplateFile(name)
 	if err != nil {
-		glog.Error("Could not read template %s: %s", name, err)
+		log.Error("Could not read template %s: %s", name, err)
 		return nil, err
 	}
 	t, err = t.Parse(file)
 	if err != nil {
-		glog.Errorf("Could not parse template %s: %s", name, err)
+		log.Errorf("Could not parse template %s: %s", name, err)
 	}
 	return t, err
 }
@@ -213,12 +213,12 @@ func getTemplate(name string, pathPrefix string) (*template.Template, error) {
 func executeTemplate(w http.ResponseWriter, name string, data interface{}, pathPrefix string) {
 	tpl, err := getTemplate(name, pathPrefix)
 	if err != nil {
-		glog.Error("Error preparing layout template: ", err)
+		log.Error("Error preparing layout template: ", err)
 		return
 	}
 	err = tpl.Execute(w, data)
 	if err != nil {
-		glog.Error("Error executing template: ", err)
+		log.Error("Error executing template: ", err)
 	}
 }
 
@@ -226,7 +226,7 @@ func dumpHeap(w http.ResponseWriter, r *http.Request) {
 	target := fmt.Sprintf("/tmp/%d.heap", time.Now().Unix())
 	f, err := os.Create(target)
 	if err != nil {
-		glog.Error("Could not dump heap: ", err)
+		log.Error("Could not dump heap: ", err)
 	}
 	fmt.Fprintf(w, "Writing to %s...", target)
 	defer f.Close()

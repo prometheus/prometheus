@@ -21,13 +21,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/prometheus/log"
 	"gopkg.in/fsnotify.v1"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/config"
-
 	clientmodel "github.com/prometheus/client_golang/model"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 const FileSDFilepathLabel = clientmodel.MetaLabelPrefix + "filepath"
@@ -64,7 +64,7 @@ func (fd *FileDiscovery) Sources() []string {
 	for _, p := range fd.listFiles() {
 		tgroups, err := readFile(p)
 		if err != nil {
-			glog.Errorf("Error reading file %q: ", p, err)
+			log.Errorf("Error reading file %q: ", p, err)
 		}
 		for _, tg := range tgroups {
 			srcs = append(srcs, tg.Source)
@@ -79,7 +79,7 @@ func (fd *FileDiscovery) listFiles() []string {
 	for _, p := range fd.paths {
 		files, err := filepath.Glob(p)
 		if err != nil {
-			glog.Errorf("Error expanding glob %q: %s", p, err)
+			log.Errorf("Error expanding glob %q: %s", p, err)
 			continue
 		}
 		paths = append(paths, files...)
@@ -100,7 +100,7 @@ func (fd *FileDiscovery) watchFiles() {
 			p = "./"
 		}
 		if err := fd.watcher.Add(p); err != nil {
-			glog.Errorf("Error adding file watch for %q: %s", p, err)
+			log.Errorf("Error adding file watch for %q: %s", p, err)
 		}
 	}
 }
@@ -111,7 +111,7 @@ func (fd *FileDiscovery) Run(ch chan<- *config.TargetGroup) {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		glog.Errorf("Error creating file watcher: %s", err)
+		log.Errorf("Error creating file watcher: %s", err)
 		return
 	}
 	fd.watcher = watcher
@@ -152,7 +152,7 @@ func (fd *FileDiscovery) Run(ch chan<- *config.TargetGroup) {
 
 			case err := <-fd.watcher.Errors:
 				if err != nil {
-					glog.Errorf("Error on file watch: %s", err)
+					log.Errorf("Error on file watch: %s", err)
 				}
 
 			case <-fd.done:
@@ -169,7 +169,7 @@ func (fd *FileDiscovery) refresh(ch chan<- *config.TargetGroup) {
 	for _, p := range fd.listFiles() {
 		tgroups, err := readFile(p)
 		if err != nil {
-			glog.Errorf("Error reading file %q: %s", p, err)
+			log.Errorf("Error reading file %q: %s", p, err)
 			// Prevent deletion down below.
 			ref[p] = fd.lastRefresh[p]
 			continue
@@ -200,7 +200,7 @@ func fileSource(filename string, i int) string {
 
 // Stop implements the TargetProvider interface.
 func (fd *FileDiscovery) Stop() {
-	glog.V(1).Infof("Stopping file discovery for %s...", fd.paths)
+	log.Debugf("Stopping file discovery for %s...", fd.paths)
 
 	fd.done <- struct{}{}
 	// Closing the watcher will deadlock unless all events and errors are drained.
@@ -219,7 +219,7 @@ func (fd *FileDiscovery) Stop() {
 
 	fd.done <- struct{}{}
 
-	glog.V(1).Infof("File discovery for %s stopped.", fd.paths)
+	log.Debugf("File discovery for %s stopped.", fd.paths)
 }
 
 // readFile reads a JSON or YAML list of targets groups from the file, depending on its

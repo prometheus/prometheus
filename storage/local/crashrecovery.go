@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/golang/glog"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -36,7 +36,7 @@ import (
 // queue as started by newPersistence).
 func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) error {
 	// TODO(beorn): We need proper tests for the crash recovery.
-	glog.Warning("Starting crash recovery. Prometheus is inoperational until complete.")
+	log.Warn("Starting crash recovery. Prometheus is inoperational until complete.")
 
 	fpsSeen := map[clientmodel.Fingerprint]struct{}{}
 	count := 0
@@ -48,7 +48,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 	// The mappings to rebuild.
 	fpm := fpMappings{}
 
-	glog.Info("Scanning files.")
+	log.Info("Scanning files.")
 	for i := 0; i < 1<<(seriesDirNameLen*4); i++ {
 		dirname := path.Join(p.basePath, fmt.Sprintf(seriesDirNameFmt, i))
 		dir, err := os.Open(dirname)
@@ -70,14 +70,14 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 				}
 				count++
 				if count%10000 == 0 {
-					glog.Infof("%d files scanned.", count)
+					log.Infof("%d files scanned.", count)
 				}
 			}
 		}
 	}
-	glog.Infof("File scan complete. %d series found.", len(fpsSeen))
+	log.Infof("File scan complete. %d series found.", len(fpsSeen))
 
-	glog.Info("Checking for series without series file.")
+	log.Info("Checking for series without series file.")
 	for fp, s := range fingerprintToSeries {
 		if _, seen := fpsSeen[fp]; !seen {
 			// fp exists in fingerprintToSeries, but has no representation on disk.
@@ -92,7 +92,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 					// to unindex it, just in case it's in the indexes.
 					p.unindexMetric(fp, s.metric)
 				}
-				glog.Warningf("Lost series detected: fingerprint %v, metric %v.", fp, s.metric)
+				log.Warnf("Lost series detected: fingerprint %v, metric %v.", fp, s.metric)
 				continue
 			}
 			// If we are here, the only chunks we have are the chunks in the checkpoint.
@@ -100,12 +100,12 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 			if s.persistWatermark > 0 || s.chunkDescsOffset != 0 {
 				minLostChunks := s.persistWatermark + s.chunkDescsOffset
 				if minLostChunks <= 0 {
-					glog.Warningf(
+					log.Warnf(
 						"Possible loss of chunks for fingerprint %v, metric %v.",
 						fp, s.metric,
 					)
 				} else {
-					glog.Warningf(
+					log.Warnf(
 						"Lost at least %d chunks for fingerprint %v, metric %v.",
 						minLostChunks, fp, s.metric,
 					)
@@ -122,7 +122,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 			fpsSeen[fp] = struct{}{} // Add so that fpsSeen is complete.
 		}
 	}
-	glog.Info("Check for series without series file complete.")
+	log.Info("Check for series without series file complete.")
 
 	if err := p.cleanUpArchiveIndexes(fingerprintToSeries, fpsSeen, fpm); err != nil {
 		return err
@@ -138,7 +138,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 	}
 
 	p.setDirty(false)
-	glog.Warning("Crash recovery complete.")
+	log.Warn("Crash recovery complete.")
 	return nil
 }
 
@@ -178,9 +178,9 @@ func (p *persistence) sanitizeSeries(
 		var err error
 		defer func() {
 			if err != nil {
-				glog.Errorf("Failed to move lost series file %s to orphaned directory, deleting it instead. Error was: %s", filename, err)
+				log.Errorf("Failed to move lost series file %s to orphaned directory, deleting it instead. Error was: %s", filename, err)
 				if err = os.Remove(filename); err != nil {
-					glog.Errorf("Even deleting file %s did not work: %s", filename, err)
+					log.Errorf("Even deleting file %s did not work: %s", filename, err)
 				}
 			}
 		}()
@@ -196,12 +196,12 @@ func (p *persistence) sanitizeSeries(
 	var fp clientmodel.Fingerprint
 	if len(fi.Name()) != fpLen-seriesDirNameLen+len(seriesFileSuffix) ||
 		!strings.HasSuffix(fi.Name(), seriesFileSuffix) {
-		glog.Warningf("Unexpected series file name %s.", filename)
+		log.Warnf("Unexpected series file name %s.", filename)
 		purge()
 		return fp, false
 	}
 	if err := fp.LoadFromString(path.Base(dirname) + fi.Name()[:fpLen-seriesDirNameLen]); err != nil {
-		glog.Warningf("Error parsing file name %s: %s", filename, err)
+		log.Warnf("Error parsing file name %s: %s", filename, err)
 		purge()
 		return fp, false
 	}
@@ -210,24 +210,24 @@ func (p *persistence) sanitizeSeries(
 	chunksInFile := int(fi.Size()) / chunkLenWithHeader
 	modTime := fi.ModTime()
 	if bytesToTrim != 0 {
-		glog.Warningf(
+		log.Warnf(
 			"Truncating file %s to exactly %d chunks, trimming %d extraneous bytes.",
 			filename, chunksInFile, bytesToTrim,
 		)
 		f, err := os.OpenFile(filename, os.O_WRONLY, 0640)
 		if err != nil {
-			glog.Errorf("Could not open file %s: %s", filename, err)
+			log.Errorf("Could not open file %s: %s", filename, err)
 			purge()
 			return fp, false
 		}
 		if err := f.Truncate(fi.Size() - bytesToTrim); err != nil {
-			glog.Errorf("Failed to truncate file %s: %s", filename, err)
+			log.Errorf("Failed to truncate file %s: %s", filename, err)
 			purge()
 			return fp, false
 		}
 	}
 	if chunksInFile == 0 {
-		glog.Warningf("No chunks left in file %s.", filename)
+		log.Warnf("No chunks left in file %s.", filename)
 		purge()
 		return fp, false
 	}
@@ -254,7 +254,7 @@ func (p *persistence) sanitizeSeries(
 			// heads.db. Treat this series as a freshly unarchived
 			// one. No chunks or chunkDescs in memory, no current
 			// head chunk.
-			glog.Warningf(
+			log.Warnf(
 				"Treating recovered metric %v, fingerprint %v, as freshly unarchived, with %d chunks in series file.",
 				s.metric, fp, chunksInFile,
 			)
@@ -278,7 +278,7 @@ func (p *persistence) sanitizeSeries(
 		// Load all the chunk descs (which assumes we have none from the future).
 		cds, err := p.loadChunkDescs(fp, clientmodel.Now())
 		if err != nil {
-			glog.Errorf(
+			log.Errorf(
 				"Failed to load chunk descriptors for metric %v, fingerprint %v: %s",
 				s.metric, fp, err,
 			)
@@ -298,7 +298,7 @@ func (p *persistence) sanitizeSeries(
 			}
 		}
 		if keepIdx == -1 {
-			glog.Warningf(
+			log.Warnf(
 				"Recovered metric %v, fingerprint %v: all %d chunks recovered from series file.",
 				s.metric, fp, chunksInFile,
 			)
@@ -308,7 +308,7 @@ func (p *persistence) sanitizeSeries(
 			s.headChunkClosed = true
 			return fp, true
 		}
-		glog.Warningf(
+		log.Warnf(
 			"Recovered metric %v, fingerprint %v: recovered %d chunks from series file, recovered %d chunks from checkpoint.",
 			s.metric, fp, chunksInFile, len(s.chunkDescs)-keepIdx,
 		)
@@ -320,7 +320,7 @@ func (p *persistence) sanitizeSeries(
 	// This series is supposed to be archived.
 	metric, err := p.getArchivedMetric(fp)
 	if err != nil {
-		glog.Errorf(
+		log.Errorf(
 			"Fingerprint %v assumed archived but couldn't be looked up in archived index: %s",
 			fp, err,
 		)
@@ -328,7 +328,7 @@ func (p *persistence) sanitizeSeries(
 		return fp, false
 	}
 	if metric == nil {
-		glog.Warningf(
+		log.Warnf(
 			"Fingerprint %v assumed archived but couldn't be found in archived index.",
 			fp,
 		)
@@ -345,14 +345,14 @@ func (p *persistence) cleanUpArchiveIndexes(
 	fpsSeen map[clientmodel.Fingerprint]struct{},
 	fpm fpMappings,
 ) error {
-	glog.Info("Cleaning up archive indexes.")
+	log.Info("Cleaning up archive indexes.")
 	var fp codable.Fingerprint
 	var m codable.Metric
 	count := 0
 	if err := p.archivedFingerprintToMetrics.ForEach(func(kv index.KeyValueAccessor) error {
 		count++
 		if count%10000 == 0 {
-			glog.Infof("%d archived metrics checked.", count)
+			log.Infof("%d archived metrics checked.", count)
 		}
 		if err := kv.Key(&fp); err != nil {
 			return err
@@ -364,10 +364,10 @@ func (p *persistence) cleanUpArchiveIndexes(
 		}
 		if !fpSeen || inMemory {
 			if inMemory {
-				glog.Warningf("Archive clean-up: Fingerprint %v is not archived. Purging from archive indexes.", clientmodel.Fingerprint(fp))
+				log.Warnf("Archive clean-up: Fingerprint %v is not archived. Purging from archive indexes.", clientmodel.Fingerprint(fp))
 			}
 			if !fpSeen {
-				glog.Warningf("Archive clean-up: Fingerprint %v is unknown. Purging from archive indexes.", clientmodel.Fingerprint(fp))
+				log.Warnf("Archive clean-up: Fingerprint %v is unknown. Purging from archive indexes.", clientmodel.Fingerprint(fp))
 			}
 			// It's fine if the fp is not in the archive indexes.
 			if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
@@ -390,7 +390,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if has {
 			return nil // All good.
 		}
-		glog.Warningf("Archive clean-up: Fingerprint %v is not in time-range index. Unarchiving it for recovery.")
+		log.Warnf("Archive clean-up: Fingerprint %v is not in time-range index. Unarchiving it for recovery.")
 		// Again, it's fine if fp is not in the archive index.
 		if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
 			return err
@@ -412,7 +412,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 	if err := p.archivedFingerprintToTimeRange.ForEach(func(kv index.KeyValueAccessor) error {
 		count++
 		if count%10000 == 0 {
-			glog.Infof("%d archived time ranges checked.", count)
+			log.Infof("%d archived time ranges checked.", count)
 		}
 		if err := kv.Key(&fp); err != nil {
 			return err
@@ -424,19 +424,19 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if has {
 			return nil // All good.
 		}
-		glog.Warningf("Archive clean-up: Purging unknown fingerprint %v in time-range index.", fp)
+		log.Warnf("Archive clean-up: Purging unknown fingerprint %v in time-range index.", fp)
 		deleted, err := p.archivedFingerprintToTimeRange.Delete(fp)
 		if err != nil {
 			return err
 		}
 		if !deleted {
-			glog.Errorf("Fingerprint %v to be deleted from archivedFingerprintToTimeRange not found. This should never happen.", fp)
+			log.Errorf("Fingerprint %v to be deleted from archivedFingerprintToTimeRange not found. This should never happen.", fp)
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
-	glog.Info("Clean-up of archive indexes complete.")
+	log.Info("Clean-up of archive indexes complete.")
 	return nil
 }
 
@@ -444,16 +444,16 @@ func (p *persistence) rebuildLabelIndexes(
 	fpToSeries map[clientmodel.Fingerprint]*memorySeries,
 ) error {
 	count := 0
-	glog.Info("Rebuilding label indexes.")
-	glog.Info("Indexing metrics in memory.")
+	log.Info("Rebuilding label indexes.")
+	log.Info("Indexing metrics in memory.")
 	for fp, s := range fpToSeries {
 		p.indexMetric(fp, s.metric)
 		count++
 		if count%10000 == 0 {
-			glog.Infof("%d metrics queued for indexing.", count)
+			log.Infof("%d metrics queued for indexing.", count)
 		}
 	}
-	glog.Info("Indexing archived metrics.")
+	log.Info("Indexing archived metrics.")
 	var fp codable.Fingerprint
 	var m codable.Metric
 	if err := p.archivedFingerprintToMetrics.ForEach(func(kv index.KeyValueAccessor) error {
@@ -466,20 +466,20 @@ func (p *persistence) rebuildLabelIndexes(
 		p.indexMetric(clientmodel.Fingerprint(fp), clientmodel.Metric(m))
 		count++
 		if count%10000 == 0 {
-			glog.Infof("%d metrics queued for indexing.", count)
+			log.Infof("%d metrics queued for indexing.", count)
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
-	glog.Info("All requests for rebuilding the label indexes queued. (Actual processing may lag behind.)")
+	log.Info("All requests for rebuilding the label indexes queued. (Actual processing may lag behind.)")
 	return nil
 }
 
 // maybeAddMapping adds a fingerprint mapping to fpm if the FastFingerprint of m is different from fp.
 func maybeAddMapping(fp clientmodel.Fingerprint, m clientmodel.Metric, fpm fpMappings) {
 	if rawFP := m.FastFingerprint(); rawFP != fp {
-		glog.Warningf(
+		log.Warnf(
 			"Metric %v with fingerprint %v is mapped from raw fingerprint %v.",
 			m, fp, rawFP,
 		)

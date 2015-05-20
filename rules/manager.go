@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/log"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -119,7 +119,7 @@ func NewManager(o *ManagerOptions) *Manager {
 
 // Run the rule manager's periodic rule evaluation.
 func (m *Manager) Run() {
-	defer glog.Info("Rule manager stopped.")
+	defer log.Info("Rule manager stopped.")
 
 	m.Lock()
 	lastInterval := m.interval
@@ -159,7 +159,7 @@ func (m *Manager) Run() {
 
 // Stop the rule manager's rule evaluation cycles.
 func (m *Manager) Stop() {
-	glog.Info("Stopping rule manager...")
+	log.Info("Stopping rule manager...")
 	m.done <- true
 }
 
@@ -197,7 +197,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 			result, err := template.Expand()
 			if err != nil {
 				result = err.Error()
-				glog.Warningf("Error expanding alert template %v with data '%v': %v", rule.Name(), tmplData, err)
+				log.Warnf("Error expanding alert template %v with data '%v': %v", rule.Name(), tmplData, err)
 			}
 			return result
 		}
@@ -238,7 +238,7 @@ func (m *Manager) runIteration() {
 
 			if err != nil {
 				evalFailures.Inc()
-				glog.Warningf("Error while evaluating rule %q: %s", rule, err)
+				log.Warnf("Error while evaluating rule %q: %s", rule, err)
 				return
 			}
 
@@ -283,7 +283,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) {
 	if err := m.loadRuleFiles(conf.RuleFiles...); err != nil {
 		// If loading the new rules failed, restore the old rule set.
 		m.rules = rulesSnapshot
-		glog.Errorf("Error loading rules, previous rule set restored: %s", err)
+		log.Errorf("Error loading rules, previous rule set restored: %s", err)
 	}
 }
 
