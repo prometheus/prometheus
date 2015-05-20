@@ -15,7 +15,7 @@
 
 .SUFFIXES:
 
-VERSION=$(shell cat `git rev-parse --show-toplevel`/VERSION)
+VERSION?=$(shell cat `git rev-parse --show-toplevel`/VERSION)
 
 OS=$(shell uname)
 ARCH=$(shell uname -m)
