@@ -93,7 +93,7 @@ func (r *fpMapper) mapFP(fp clientmodel.Fingerprint, m clientmodel.Metric) (clie
 	// If we are here, FP does not exist in memory and is either not mapped
 	// at all, or existing mappings for FP are not for m. Check if we have
 	// something for FP in the archive.
-	archivedMetric, err := r.p.getArchivedMetric(fp)
+	archivedMetric, err := r.p.archivedMetric(fp)
 	if err != nil {
 		return fp, err
 	}

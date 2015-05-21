@@ -208,7 +208,7 @@ func (s *memorySeries) add(v *metric.SamplePair) int {
 		newHead := newChunkDesc(newChunk())
 		s.chunkDescs = append(s.chunkDescs, newHead)
 		s.headChunkClosed = false
-	} else if s.headChunkUsedByIterator && s.head().getRefCount() > 1 {
+	} else if s.headChunkUsedByIterator && s.head().refCount() > 1 {
 		// We only need to clone the head chunk if the current head
 		// chunk was used in an iterator at all and if the refCount is
 		// still greater than the 1 we always have because the head
@@ -221,12 +221,12 @@ func (s *memorySeries) add(v *metric.SamplePair) int {
 		chunkOps.WithLabelValues(clone).Inc()
 		// No locking needed here because a non-persisted head chunk can
 		// not get evicted concurrently.
-		s.head().chunk = s.head().chunk.clone()
+		s.head().c = s.head().c.clone()
 		s.headChunkUsedByIterator = false
 	}
 
 	chunks := s.head().add(v)
-	s.head().chunk = chunks[0]
+	s.head().c = chunks[0]
 
 	for _, c := range chunks[1:] {
 		s.chunkDescs = append(s.chunkDescs, newChunkDesc(c))
@@ -415,10 +415,10 @@ func (s *memorySeries) preloadChunksForRange(
 
 // newIterator returns a new SeriesIterator. The caller must have locked the
 // fingerprint of the memorySeries.
-func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
+func (s *memorySeries) newIterator() SeriesIterator {
 	chunks := make([]chunk, 0, len(s.chunkDescs))
 	for i, cd := range s.chunkDescs {
-		if chunk := cd.getChunk(); chunk != nil {
+		if chunk := cd.chunk(); chunk != nil {
 			if i == len(s.chunkDescs)-1 && !s.headChunkClosed {
 				s.headChunkUsedByIterator = true
 			}
@@ -427,9 +427,8 @@ func (s *memorySeries) newIterator(lockFunc, unlockFunc func()) SeriesIterator {
 	}
 
 	return &memorySeriesIterator{
-		lock:   lockFunc,
-		unlock: unlockFunc,
-		chunks: chunks,
+		chunks:   chunks,
+		chunkIts: make([]chunkIterator, len(chunks)),
 	}
 }
 
@@ -449,13 +448,13 @@ func (s *memorySeries) firstTime() clientmodel.Timestamp {
 	return s.savedFirstTime
 }
 
-// getChunksToPersist returns a slice of chunkDescs eligible for
-// persistence. It's the caller's responsibility to actually persist the
-// returned chunks afterwards. The method sets the persistWatermark and the
-// dirty flag accordingly.
+// chunksToPersist returns a slice of chunkDescs eligible for persistence. It's
+// the caller's responsibility to actually persist the returned chunks
+// afterwards. The method sets the persistWatermark and the dirty flag
+// accordingly.
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) getChunksToPersist() []*chunkDesc {
+func (s *memorySeries) chunksToPersist() []*chunkDesc {
 	newWatermark := len(s.chunkDescs)
 	if !s.headChunkClosed {
 		newWatermark--
@@ -471,108 +470,124 @@ func (s *memorySeries) getChunksToPersist() []*chunkDesc {
 
 // memorySeriesIterator implements SeriesIterator.
 type memorySeriesIterator struct {
-	lock, unlock func()
-	chunkIt      chunkIterator
-	chunks       []chunk
+	chunkIt  chunkIterator   // Last chunkIterator used by ValueAtTime.
+	chunkIts []chunkIterator // Caches chunkIterators.
+	chunks   []chunk
 }
 
-// GetValueAtTime implements SeriesIterator.
-func (it *memorySeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.Values {
-	it.lock()
-	defer it.unlock()
-
+// ValueAtTime implements SeriesIterator.
+func (it *memorySeriesIterator) ValueAtTime(t clientmodel.Timestamp) metric.Values {
 	// The most common case. We are iterating through a chunk.
 	if it.chunkIt != nil && it.chunkIt.contains(t) {
-		return it.chunkIt.getValueAtTime(t)
+		return it.chunkIt.valueAtTime(t)
 	}
-
-	it.chunkIt = nil
 
 	if len(it.chunks) == 0 {
 		return nil
 	}
 
 	// Before or exactly on the first sample of the series.
-	if !t.After(it.chunks[0].firstTime()) {
+	it.chunkIt = it.chunkIterator(0)
+	ts := it.chunkIt.timestampAtIndex(0)
+	if !t.After(ts) {
 		// return first value of first chunk
-		return it.chunks[0].newIterator().getValueAtTime(t)
-	}
-	// After or exactly on the last sample of the series.
-	if !t.Before(it.chunks[len(it.chunks)-1].lastTime()) {
-		// return last value of last chunk
-		return it.chunks[len(it.chunks)-1].newIterator().getValueAtTime(t)
+		return metric.Values{metric.SamplePair{
+			Timestamp: ts,
+			Value:     it.chunkIt.sampleValueAtIndex(0),
+		}}
 	}
 
-	// Find first chunk where lastTime() is after or equal to t.
+	// After or exactly on the last sample of the series.
+	it.chunkIt = it.chunkIterator(len(it.chunks) - 1)
+	ts = it.chunkIt.lastTimestamp()
+	if !t.Before(ts) {
+		// return last value of last chunk
+		return metric.Values{metric.SamplePair{
+			Timestamp: ts,
+			Value:     it.chunkIt.sampleValueAtIndex(it.chunkIt.length() - 1),
+		}}
+	}
+
+	// Find last chunk where firstTime() is before or equal to t.
+	l := len(it.chunks) - 1
 	i := sort.Search(len(it.chunks), func(i int) bool {
-		return !it.chunks[i].lastTime().Before(t)
+		return !it.chunks[l-i].firstTime().After(t)
 	})
 	if i == len(it.chunks) {
 		panic("out of bounds")
 	}
-
-	if t.Before(it.chunks[i].firstTime()) {
+	it.chunkIt = it.chunkIterator(l - i)
+	ts = it.chunkIt.lastTimestamp()
+	if t.After(ts) {
 		// We ended up between two chunks.
+		sp1 := metric.SamplePair{
+			Timestamp: ts,
+			Value:     it.chunkIt.sampleValueAtIndex(it.chunkIt.length() - 1),
+		}
+		it.chunkIt = it.chunkIterator(l - i + 1)
 		return metric.Values{
-			it.chunks[i-1].newIterator().getValueAtTime(t)[0],
-			it.chunks[i].newIterator().getValueAtTime(t)[0],
+			sp1,
+			metric.SamplePair{
+				Timestamp: it.chunkIt.timestampAtIndex(0),
+				Value:     it.chunkIt.sampleValueAtIndex(0),
+			},
 		}
 	}
-	// We ended up in the middle of a chunk. We might stay there for a while,
-	// so save it as the current chunk iterator.
-	it.chunkIt = it.chunks[i].newIterator()
-	return it.chunkIt.getValueAtTime(t)
+	return it.chunkIt.valueAtTime(t)
 }
 
-// GetBoundaryValues implements SeriesIterator.
-func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Values {
-	it.lock()
-	defer it.unlock()
-
-	// Find the first relevant chunk.
+// BoundaryValues implements SeriesIterator.
+func (it *memorySeriesIterator) BoundaryValues(in metric.Interval) metric.Values {
+	// Find the first chunk for which the first sample is within the interval.
 	i := sort.Search(len(it.chunks), func(i int) bool {
-		return !it.chunks[i].lastTime().Before(in.OldestInclusive)
+		return !it.chunks[i].firstTime().Before(in.OldestInclusive)
 	})
+	// Only now check the last timestamp of the previous chunk (which is
+	// fairly expensive).
+	if i > 0 && !it.chunkIterator(i-1).lastTimestamp().Before(in.OldestInclusive) {
+		i--
+	}
+
 	values := make(metric.Values, 0, 2)
-	for i, c := range it.chunks[i:] {
-		var chunkIt chunkIterator
+	for j, c := range it.chunks[i:] {
 		if c.firstTime().After(in.NewestInclusive) {
 			if len(values) == 1 {
-				// We found the first value before, but are now
+				// We found the first value before but are now
 				// already past the last value. The value we
 				// want must be the last value of the previous
 				// chunk. So backtrack...
-				chunkIt = it.chunks[i-1].newIterator()
-				values = append(values, chunkIt.getValueAtTime(in.NewestInclusive)[0])
+				chunkIt := it.chunkIterator(i + j - 1)
+				values = append(values, metric.SamplePair{
+					Timestamp: chunkIt.lastTimestamp(),
+					Value:     chunkIt.lastSampleValue(),
+				})
 			}
 			break
 		}
+		chunkIt := it.chunkIterator(i + j)
 		if len(values) == 0 {
-			chunkIt = c.newIterator()
-			firstValues := chunkIt.getValueAtTime(in.OldestInclusive)
+			firstValues := chunkIt.valueAtTime(in.OldestInclusive)
 			switch len(firstValues) {
 			case 2:
 				values = append(values, firstValues[1])
 			case 1:
 				values = firstValues
 			default:
-				panic("unexpected return from getValueAtTime")
+				panic("unexpected return from valueAtTime")
 			}
 		}
-		if c.lastTime().After(in.NewestInclusive) {
-			if chunkIt == nil {
-				chunkIt = c.newIterator()
-			}
-			values = append(values, chunkIt.getValueAtTime(in.NewestInclusive)[0])
+		if chunkIt.lastTimestamp().After(in.NewestInclusive) {
+			values = append(values, chunkIt.valueAtTime(in.NewestInclusive)[0])
 			break
 		}
 	}
 	if len(values) == 1 {
 		// We found exactly one value. In that case, add the most recent we know.
-		values = append(
-			values,
-			it.chunks[len(it.chunks)-1].newIterator().getValueAtTime(in.NewestInclusive)[0],
-		)
+		chunkIt := it.chunkIterator(len(it.chunks) - 1)
+		values = append(values, metric.SamplePair{
+			Timestamp: chunkIt.lastTimestamp(),
+			Value:     chunkIt.lastSampleValue(),
+		})
 	}
 	if len(values) == 2 && values[0].Equal(&values[1]) {
 		return values[:1]
@@ -580,41 +595,53 @@ func (it *memorySeriesIterator) GetBoundaryValues(in metric.Interval) metric.Val
 	return values
 }
 
-// GetRangeValues implements SeriesIterator.
-func (it *memorySeriesIterator) GetRangeValues(in metric.Interval) metric.Values {
-	it.lock()
-	defer it.unlock()
-
-	// Find the first relevant chunk.
+// RangeValues implements SeriesIterator.
+func (it *memorySeriesIterator) RangeValues(in metric.Interval) metric.Values {
+	// Find the first chunk for which the first sample is within the interval.
 	i := sort.Search(len(it.chunks), func(i int) bool {
-		return !it.chunks[i].lastTime().Before(in.OldestInclusive)
+		return !it.chunks[i].firstTime().Before(in.OldestInclusive)
 	})
+	// Only now check the last timestamp of the previous chunk (which is
+	// fairly expensive).
+	if i > 0 && !it.chunkIterator(i-1).lastTimestamp().Before(in.OldestInclusive) {
+		i--
+	}
+
 	values := metric.Values{}
-	for _, c := range it.chunks[i:] {
+	for j, c := range it.chunks[i:] {
 		if c.firstTime().After(in.NewestInclusive) {
 			break
 		}
-		// TODO: actually reuse an iterator between calls if we get multiple ranges
-		// from the same chunk.
-		values = append(values, c.newIterator().getRangeValues(in)...)
+		values = append(values, it.chunkIterator(i+j).rangeValues(in)...)
 	}
 	return values
+}
+
+// chunkIterator returns the chunkIterator for the chunk at position i (and
+// creates it if needed).
+func (it *memorySeriesIterator) chunkIterator(i int) chunkIterator {
+	chunkIt := it.chunkIts[i]
+	if chunkIt == nil {
+		chunkIt = it.chunks[i].newIterator()
+		it.chunkIts[i] = chunkIt
+	}
+	return chunkIt
 }
 
 // nopSeriesIterator implements Series Iterator. It never returns any values.
 type nopSeriesIterator struct{}
 
-// GetValueAtTime implements SeriesIterator.
-func (_ nopSeriesIterator) GetValueAtTime(t clientmodel.Timestamp) metric.Values {
+// ValueAtTime implements SeriesIterator.
+func (_ nopSeriesIterator) ValueAtTime(t clientmodel.Timestamp) metric.Values {
 	return metric.Values{}
 }
 
-// GetBoundaryValues implements SeriesIterator.
-func (_ nopSeriesIterator) GetBoundaryValues(in metric.Interval) metric.Values {
+// BoundaryValues implements SeriesIterator.
+func (_ nopSeriesIterator) BoundaryValues(in metric.Interval) metric.Values {
 	return metric.Values{}
 }
 
-// GetRangeValues implements SeriesIterator.
-func (_ nopSeriesIterator) GetRangeValues(in metric.Interval) metric.Values {
+// RangeValues implements SeriesIterator.
+func (_ nopSeriesIterator) RangeValues(in metric.Interval) metric.Values {
 	return metric.Values{}
 }

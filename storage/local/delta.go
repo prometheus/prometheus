@@ -188,18 +188,19 @@ func (c deltaEncodedChunk) clone() chunk {
 
 // firstTime implements chunk.
 func (c deltaEncodedChunk) firstTime() clientmodel.Timestamp {
-	return c.valueAtIndex(0).Timestamp
-}
-
-// lastTime implements chunk.
-func (c deltaEncodedChunk) lastTime() clientmodel.Timestamp {
-	return c.valueAtIndex(c.len() - 1).Timestamp
+	return c.baseTime()
 }
 
 // newIterator implements chunk.
 func (c *deltaEncodedChunk) newIterator() chunkIterator {
 	return &deltaEncodedChunkIterator{
-		chunk: c,
+		c:      *c,
+		len:    c.len(),
+		baseT:  c.baseTime(),
+		baseV:  c.baseValue(),
+		tBytes: c.timeBytes(),
+		vBytes: c.valueBytes(),
+		isInt:  c.isInt(),
 	}
 }
 
@@ -237,19 +238,6 @@ func (c *deltaEncodedChunk) unmarshalFromBuf(buf []byte) {
 	*c = (*c)[:binary.LittleEndian.Uint16((*c)[deltaHeaderBufLenOffset:])]
 }
 
-// values implements chunk.
-func (c deltaEncodedChunk) values() <-chan *metric.SamplePair {
-	n := c.len()
-	valuesChan := make(chan *metric.SamplePair)
-	go func() {
-		for i := 0; i < n; i++ {
-			valuesChan <- c.valueAtIndex(i)
-		}
-		close(valuesChan)
-	}()
-	return valuesChan
-}
-
 // encoding implements chunk.
 func (c deltaEncodedChunk) encoding() chunkEncoding { return delta }
 
@@ -284,106 +272,157 @@ func (c deltaEncodedChunk) len() int {
 	return (len(c) - deltaHeaderBytes) / c.sampleSize()
 }
 
-func (c deltaEncodedChunk) valueAtIndex(idx int) *metric.SamplePair {
-	offset := deltaHeaderBytes + idx*c.sampleSize()
-
-	var ts clientmodel.Timestamp
-	switch c.timeBytes() {
-	case d1:
-		ts = c.baseTime() + clientmodel.Timestamp(uint8(c[offset]))
-	case d2:
-		ts = c.baseTime() + clientmodel.Timestamp(binary.LittleEndian.Uint16(c[offset:]))
-	case d4:
-		ts = c.baseTime() + clientmodel.Timestamp(binary.LittleEndian.Uint32(c[offset:]))
-	case d8:
-		// Take absolute value for d8.
-		ts = clientmodel.Timestamp(binary.LittleEndian.Uint64(c[offset:]))
-	default:
-		panic("Invalid number of bytes for time delta")
-	}
-
-	offset += int(c.timeBytes())
-
-	var v clientmodel.SampleValue
-	if c.isInt() {
-		switch c.valueBytes() {
-		case d0:
-			v = c.baseValue()
-		case d1:
-			v = c.baseValue() + clientmodel.SampleValue(int8(c[offset]))
-		case d2:
-			v = c.baseValue() + clientmodel.SampleValue(int16(binary.LittleEndian.Uint16(c[offset:])))
-		case d4:
-			v = c.baseValue() + clientmodel.SampleValue(int32(binary.LittleEndian.Uint32(c[offset:])))
-		// No d8 for ints.
-		default:
-			panic("Invalid number of bytes for integer delta")
-		}
-	} else {
-		switch c.valueBytes() {
-		case d4:
-			v = c.baseValue() + clientmodel.SampleValue(math.Float32frombits(binary.LittleEndian.Uint32(c[offset:])))
-		case d8:
-			// Take absolute value for d8.
-			v = clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(c[offset:])))
-		default:
-			panic("Invalid number of bytes for floating point delta")
-		}
-	}
-	return &metric.SamplePair{
-		Timestamp: ts,
-		Value:     v,
-	}
-}
-
 // deltaEncodedChunkIterator implements chunkIterator.
 type deltaEncodedChunkIterator struct {
-	chunk *deltaEncodedChunk
-	// TODO: add more fields here to keep track of last position.
+	c              deltaEncodedChunk
+	len            int
+	baseT          clientmodel.Timestamp
+	baseV          clientmodel.SampleValue
+	tBytes, vBytes deltaBytes
+	isInt          bool
 }
 
-// getValueAtTime implements chunkIterator.
-func (it *deltaEncodedChunkIterator) getValueAtTime(t clientmodel.Timestamp) metric.Values {
-	i := sort.Search(it.chunk.len(), func(i int) bool {
-		return !it.chunk.valueAtIndex(i).Timestamp.Before(t)
+// length implements chunkIterator.
+func (it *deltaEncodedChunkIterator) length() int { return it.len }
+
+// valueAtTime implements chunkIterator.
+func (it *deltaEncodedChunkIterator) valueAtTime(t clientmodel.Timestamp) metric.Values {
+	i := sort.Search(it.len, func(i int) bool {
+		return !it.timestampAtIndex(i).Before(t)
 	})
 
 	switch i {
 	case 0:
-		return metric.Values{*it.chunk.valueAtIndex(0)}
-	case it.chunk.len():
-		return metric.Values{*it.chunk.valueAtIndex(it.chunk.len() - 1)}
+		return metric.Values{metric.SamplePair{
+			Timestamp: it.timestampAtIndex(0),
+			Value:     it.sampleValueAtIndex(0),
+		}}
+	case it.len:
+		return metric.Values{metric.SamplePair{
+			Timestamp: it.timestampAtIndex(it.len - 1),
+			Value:     it.sampleValueAtIndex(it.len - 1),
+		}}
 	default:
-		v := it.chunk.valueAtIndex(i)
-		if v.Timestamp.Equal(t) {
-			return metric.Values{*v}
+		ts := it.timestampAtIndex(i)
+		if ts.Equal(t) {
+			return metric.Values{metric.SamplePair{
+				Timestamp: ts,
+				Value:     it.sampleValueAtIndex(i),
+			}}
 		}
-		return metric.Values{*it.chunk.valueAtIndex(i - 1), *v}
+		return metric.Values{
+			metric.SamplePair{
+				Timestamp: it.timestampAtIndex(i - 1),
+				Value:     it.sampleValueAtIndex(i - 1),
+			},
+			metric.SamplePair{
+				Timestamp: ts,
+				Value:     it.sampleValueAtIndex(i),
+			},
+		}
 	}
 }
 
-// getRangeValues implements chunkIterator.
-func (it *deltaEncodedChunkIterator) getRangeValues(in metric.Interval) metric.Values {
-	oldest := sort.Search(it.chunk.len(), func(i int) bool {
-		return !it.chunk.valueAtIndex(i).Timestamp.Before(in.OldestInclusive)
+// rangeValues implements chunkIterator.
+func (it *deltaEncodedChunkIterator) rangeValues(in metric.Interval) metric.Values {
+	oldest := sort.Search(it.len, func(i int) bool {
+		return !it.timestampAtIndex(i).Before(in.OldestInclusive)
 	})
 
-	newest := sort.Search(it.chunk.len(), func(i int) bool {
-		return it.chunk.valueAtIndex(i).Timestamp.After(in.NewestInclusive)
+	newest := sort.Search(it.len, func(i int) bool {
+		return it.timestampAtIndex(i).After(in.NewestInclusive)
 	})
 
-	if oldest == it.chunk.len() {
+	if oldest == it.len {
 		return nil
 	}
 
 	result := make(metric.Values, 0, newest-oldest)
 	for i := oldest; i < newest; i++ {
-		result = append(result, *it.chunk.valueAtIndex(i))
+		result = append(result, metric.SamplePair{
+			Timestamp: it.timestampAtIndex(i),
+			Value:     it.sampleValueAtIndex(i),
+		})
 	}
 	return result
 }
 
 // contains implements chunkIterator.
 func (it *deltaEncodedChunkIterator) contains(t clientmodel.Timestamp) bool {
-	return !t.Before(it.chunk.firstTime()) && !t.After(it.chunk.lastTime())
+	return !t.Before(it.baseT) && !t.After(it.timestampAtIndex(it.len-1))
+}
+
+// values implements chunkIterator.
+func (it *deltaEncodedChunkIterator) values() <-chan *metric.SamplePair {
+	valuesChan := make(chan *metric.SamplePair)
+	go func() {
+		for i := 0; i < it.len; i++ {
+			valuesChan <- &metric.SamplePair{
+				Timestamp: it.timestampAtIndex(i),
+				Value:     it.sampleValueAtIndex(i),
+			}
+		}
+		close(valuesChan)
+	}()
+	return valuesChan
+}
+
+// timestampAtIndex implements chunkIterator.
+func (it *deltaEncodedChunkIterator) timestampAtIndex(idx int) clientmodel.Timestamp {
+	offset := deltaHeaderBytes + idx*int(it.tBytes+it.vBytes)
+
+	switch it.tBytes {
+	case d1:
+		return it.baseT + clientmodel.Timestamp(uint8(it.c[offset]))
+	case d2:
+		return it.baseT + clientmodel.Timestamp(binary.LittleEndian.Uint16(it.c[offset:]))
+	case d4:
+		return it.baseT + clientmodel.Timestamp(binary.LittleEndian.Uint32(it.c[offset:]))
+	case d8:
+		// Take absolute value for d8.
+		return clientmodel.Timestamp(binary.LittleEndian.Uint64(it.c[offset:]))
+	default:
+		panic("Invalid number of bytes for time delta")
+	}
+}
+
+// lastTimestamp implements chunkIterator.
+func (it *deltaEncodedChunkIterator) lastTimestamp() clientmodel.Timestamp {
+	return it.timestampAtIndex(it.len - 1)
+}
+
+// sampleValueAtIndex implements chunkIterator.
+func (it *deltaEncodedChunkIterator) sampleValueAtIndex(idx int) clientmodel.SampleValue {
+	offset := deltaHeaderBytes + idx*int(it.tBytes+it.vBytes) + int(it.tBytes)
+
+	if it.isInt {
+		switch it.vBytes {
+		case d0:
+			return it.baseV
+		case d1:
+			return it.baseV + clientmodel.SampleValue(int8(it.c[offset]))
+		case d2:
+			return it.baseV + clientmodel.SampleValue(int16(binary.LittleEndian.Uint16(it.c[offset:])))
+		case d4:
+			return it.baseV + clientmodel.SampleValue(int32(binary.LittleEndian.Uint32(it.c[offset:])))
+		// No d8 for ints.
+		default:
+			panic("Invalid number of bytes for integer delta")
+		}
+	} else {
+		switch it.vBytes {
+		case d4:
+			return it.baseV + clientmodel.SampleValue(math.Float32frombits(binary.LittleEndian.Uint32(it.c[offset:])))
+		case d8:
+			// Take absolute value for d8.
+			return clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(it.c[offset:])))
+		default:
+			panic("Invalid number of bytes for floating point delta")
+		}
+	}
+}
+
+// lastSampleValue implements chunkIterator.
+func (it *deltaEncodedChunkIterator) lastSampleValue() clientmodel.SampleValue {
+	return it.sampleValueAtIndex(it.len - 1)
 }

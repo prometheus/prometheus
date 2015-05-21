@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/prometheus/utility/test"
 )
 
-func TestGetFingerprintsForLabelMatchers(t *testing.T) {
+func TestFingerprintsForLabelMatchers(t *testing.T) {
 	storage, closer := NewTestStorage(t, 1)
 	defer closer.Close()
 
@@ -121,7 +121,7 @@ func TestGetFingerprintsForLabelMatchers(t *testing.T) {
 	}
 
 	for _, mt := range matcherTests {
-		resfps := storage.GetFingerprintsForLabelMatchers(mt.matchers)
+		resfps := storage.FingerprintsForLabelMatchers(mt.matchers)
 		if len(mt.expected) != len(resfps) {
 			t.Fatalf("expected %d matches for %q, found %d", len(mt.expected), mt.matchers, len(resfps))
 		}
@@ -208,7 +208,7 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 			if cd.isEvicted() {
 				continue
 			}
-			for sample := range cd.chunk.values() {
+			for sample := range cd.c.newIterator().values() {
 				values = append(values, *sample)
 			}
 		}
@@ -234,8 +234,8 @@ func TestChunkType1(t *testing.T) {
 	testChunk(t, 1)
 }
 
-func testGetValueAtTime(t *testing.T, encoding chunkEncoding) {
-	samples := make(clientmodel.Samples, 1000)
+func testValueAtTime(t *testing.T, encoding chunkEncoding) {
+	samples := make(clientmodel.Samples, 10000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
 			Timestamp: clientmodel.Timestamp(2 * i),
@@ -256,7 +256,7 @@ func testGetValueAtTime(t *testing.T, encoding chunkEncoding) {
 
 	// #1 Exactly on a sample.
 	for i, expected := range samples {
-		actual := it.GetValueAtTime(expected.Timestamp)
+		actual := it.ValueAtTime(expected.Timestamp)
 
 		if len(actual) != 1 {
 			t.Fatalf("1.%d. Expected exactly one result, got %d.", i, len(actual))
@@ -275,7 +275,7 @@ func testGetValueAtTime(t *testing.T, encoding chunkEncoding) {
 			continue
 		}
 		expected2 := samples[i+1]
-		actual := it.GetValueAtTime(expected1.Timestamp + 1)
+		actual := it.ValueAtTime(expected1.Timestamp + 1)
 
 		if len(actual) != 2 {
 			t.Fatalf("2.%d. Expected exactly 2 results, got %d.", i, len(actual))
@@ -296,7 +296,7 @@ func testGetValueAtTime(t *testing.T, encoding chunkEncoding) {
 
 	// #3 Corner cases: Just before the first sample, just after the last.
 	expected := samples[0]
-	actual := it.GetValueAtTime(expected.Timestamp - 1)
+	actual := it.ValueAtTime(expected.Timestamp - 1)
 	if len(actual) != 1 {
 		t.Fatalf("3.1. Expected exactly one result, got %d.", len(actual))
 	}
@@ -307,7 +307,7 @@ func testGetValueAtTime(t *testing.T, encoding chunkEncoding) {
 		t.Errorf("3.1. Got %v; want %v", actual[0].Value, expected.Value)
 	}
 	expected = samples[len(samples)-1]
-	actual = it.GetValueAtTime(expected.Timestamp + 1)
+	actual = it.ValueAtTime(expected.Timestamp + 1)
 	if len(actual) != 1 {
 		t.Fatalf("3.2. Expected exactly one result, got %d.", len(actual))
 	}
@@ -319,16 +319,89 @@ func testGetValueAtTime(t *testing.T, encoding chunkEncoding) {
 	}
 }
 
-func TestGetValueAtTimeChunkType0(t *testing.T) {
-	testGetValueAtTime(t, 0)
+func TestValueAtTimeChunkType0(t *testing.T) {
+	testValueAtTime(t, 0)
 }
 
-func TestGetValueAtTimeChunkType1(t *testing.T) {
-	testGetValueAtTime(t, 1)
+func TestValueAtTimeChunkType1(t *testing.T) {
+	testValueAtTime(t, 1)
 }
 
-func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
-	samples := make(clientmodel.Samples, 1000)
+func benchmarkValueAtTime(b *testing.B, encoding chunkEncoding) {
+	samples := make(clientmodel.Samples, 10000)
+	for i := range samples {
+		samples[i] = &clientmodel.Sample{
+			Timestamp: clientmodel.Timestamp(2 * i),
+			Value:     clientmodel.SampleValue(float64(i) * 0.2),
+		}
+	}
+	s, closer := NewTestStorage(b, encoding)
+	defer closer.Close()
+
+	for _, sample := range samples {
+		s.Append(sample)
+	}
+	s.WaitForIndexing()
+
+	fp := clientmodel.Metric{}.FastFingerprint()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		it := s.NewIterator(fp)
+
+		// #1 Exactly on a sample.
+		for i, expected := range samples {
+			actual := it.ValueAtTime(expected.Timestamp)
+
+			if len(actual) != 1 {
+				b.Fatalf("1.%d. Expected exactly one result, got %d.", i, len(actual))
+			}
+			if expected.Timestamp != actual[0].Timestamp {
+				b.Errorf("1.%d. Got %v; want %v", i, actual[0].Timestamp, expected.Timestamp)
+			}
+			if expected.Value != actual[0].Value {
+				b.Errorf("1.%d. Got %v; want %v", i, actual[0].Value, expected.Value)
+			}
+		}
+
+		// #2 Between samples.
+		for i, expected1 := range samples {
+			if i == len(samples)-1 {
+				continue
+			}
+			expected2 := samples[i+1]
+			actual := it.ValueAtTime(expected1.Timestamp + 1)
+
+			if len(actual) != 2 {
+				b.Fatalf("2.%d. Expected exactly 2 results, got %d.", i, len(actual))
+			}
+			if expected1.Timestamp != actual[0].Timestamp {
+				b.Errorf("2.%d. Got %v; want %v", i, actual[0].Timestamp, expected1.Timestamp)
+			}
+			if expected1.Value != actual[0].Value {
+				b.Errorf("2.%d. Got %v; want %v", i, actual[0].Value, expected1.Value)
+			}
+			if expected2.Timestamp != actual[1].Timestamp {
+				b.Errorf("2.%d. Got %v; want %v", i, actual[1].Timestamp, expected1.Timestamp)
+			}
+			if expected2.Value != actual[1].Value {
+				b.Errorf("2.%d. Got %v; want %v", i, actual[1].Value, expected1.Value)
+			}
+		}
+	}
+}
+
+func BenchmarkValueAtTimeChunkType0(b *testing.B) {
+	benchmarkValueAtTime(b, 0)
+}
+
+func BenchmarkValueAtTimeChunkType1(b *testing.B) {
+	benchmarkValueAtTime(b, 1)
+}
+
+func testRangeValues(t *testing.T, encoding chunkEncoding) {
+	samples := make(clientmodel.Samples, 10000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
 			Timestamp: clientmodel.Timestamp(2 * i),
@@ -349,7 +422,7 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 
 	// #1 Zero length interval at sample.
 	for i, expected := range samples {
-		actual := it.GetRangeValues(metric.Interval{
+		actual := it.RangeValues(metric.Interval{
 			OldestInclusive: expected.Timestamp,
 			NewestInclusive: expected.Timestamp,
 		})
@@ -367,7 +440,7 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 
 	// #2 Zero length interval off sample.
 	for i, expected := range samples {
-		actual := it.GetRangeValues(metric.Interval{
+		actual := it.RangeValues(metric.Interval{
 			OldestInclusive: expected.Timestamp + 1,
 			NewestInclusive: expected.Timestamp + 1,
 		})
@@ -379,7 +452,7 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 
 	// #3 2sec interval around sample.
 	for i, expected := range samples {
-		actual := it.GetRangeValues(metric.Interval{
+		actual := it.RangeValues(metric.Interval{
 			OldestInclusive: expected.Timestamp - 1,
 			NewestInclusive: expected.Timestamp + 1,
 		})
@@ -401,7 +474,7 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 			continue
 		}
 		expected2 := samples[i+1]
-		actual := it.GetRangeValues(metric.Interval{
+		actual := it.RangeValues(metric.Interval{
 			OldestInclusive: expected1.Timestamp,
 			NewestInclusive: expected1.Timestamp + 2,
 		})
@@ -426,7 +499,7 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 	// #5 corner cases: Interval ends at first sample, interval starts
 	// at last sample, interval entirely before/after samples.
 	expected := samples[0]
-	actual := it.GetRangeValues(metric.Interval{
+	actual := it.RangeValues(metric.Interval{
 		OldestInclusive: expected.Timestamp - 2,
 		NewestInclusive: expected.Timestamp,
 	})
@@ -440,7 +513,7 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 		t.Errorf("5.1. Got %v; want %v.", actual[0].Value, expected.Value)
 	}
 	expected = samples[len(samples)-1]
-	actual = it.GetRangeValues(metric.Interval{
+	actual = it.RangeValues(metric.Interval{
 		OldestInclusive: expected.Timestamp,
 		NewestInclusive: expected.Timestamp + 2,
 	})
@@ -454,7 +527,7 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 		t.Errorf("5.2. Got %v; want %v.", actual[0].Value, expected.Value)
 	}
 	firstSample := samples[0]
-	actual = it.GetRangeValues(metric.Interval{
+	actual = it.RangeValues(metric.Interval{
 		OldestInclusive: firstSample.Timestamp - 4,
 		NewestInclusive: firstSample.Timestamp - 2,
 	})
@@ -462,7 +535,7 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 		t.Fatalf("5.3. Expected no results, got %d.", len(actual))
 	}
 	lastSample := samples[len(samples)-1]
-	actual = it.GetRangeValues(metric.Interval{
+	actual = it.RangeValues(metric.Interval{
 		OldestInclusive: lastSample.Timestamp + 2,
 		NewestInclusive: lastSample.Timestamp + 4,
 	})
@@ -471,16 +544,61 @@ func testGetRangeValues(t *testing.T, encoding chunkEncoding) {
 	}
 }
 
-func TestGetRangeValuesChunkType0(t *testing.T) {
-	testGetRangeValues(t, 0)
+func TestRangeValuesChunkType0(t *testing.T) {
+	testRangeValues(t, 0)
 }
 
-func TestGetRangeValuesChunkType1(t *testing.T) {
-	testGetRangeValues(t, 1)
+func TestRangeValuesChunkType1(t *testing.T) {
+	testRangeValues(t, 1)
+}
+
+func benchmarkRangeValues(b *testing.B, encoding chunkEncoding) {
+	samples := make(clientmodel.Samples, 10000)
+	for i := range samples {
+		samples[i] = &clientmodel.Sample{
+			Timestamp: clientmodel.Timestamp(2 * i),
+			Value:     clientmodel.SampleValue(float64(i) * 0.2),
+		}
+	}
+	s, closer := NewTestStorage(b, encoding)
+	defer closer.Close()
+
+	for _, sample := range samples {
+		s.Append(sample)
+	}
+	s.WaitForIndexing()
+
+	fp := clientmodel.Metric{}.FastFingerprint()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+
+		it := s.NewIterator(fp)
+
+		for _, sample := range samples {
+			actual := it.RangeValues(metric.Interval{
+				OldestInclusive: sample.Timestamp - 20,
+				NewestInclusive: sample.Timestamp + 20,
+			})
+
+			if len(actual) < 10 {
+				b.Fatalf("not enough samples found")
+			}
+		}
+	}
+}
+
+func BenchmarkRangeValuesChunkType0(b *testing.B) {
+	benchmarkRangeValues(b, 0)
+}
+
+func BenchmarkRangeValuesChunkType1(b *testing.B) {
+	benchmarkRangeValues(b, 1)
 }
 
 func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
-	samples := make(clientmodel.Samples, 1000)
+	samples := make(clientmodel.Samples, 10000)
 	for i := range samples {
 		samples[i] = &clientmodel.Sample{
 			Timestamp: clientmodel.Timestamp(2 * i),
@@ -498,29 +616,29 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	fp := clientmodel.Metric{}.FastFingerprint()
 
 	// Drop ~half of the chunks.
-	s.maintainMemorySeries(fp, 1000)
+	s.maintainMemorySeries(fp, 10000)
 	it := s.NewIterator(fp)
-	actual := it.GetBoundaryValues(metric.Interval{
+	actual := it.BoundaryValues(metric.Interval{
 		OldestInclusive: 0,
-		NewestInclusive: 10000,
+		NewestInclusive: 100000,
 	})
 	if len(actual) != 2 {
 		t.Fatal("expected two results after purging half of series")
 	}
-	if actual[0].Timestamp < 600 || actual[0].Timestamp > 1000 {
+	if actual[0].Timestamp < 6000 || actual[0].Timestamp > 10000 {
 		t.Errorf("1st timestamp out of expected range: %v", actual[0].Timestamp)
 	}
-	want := clientmodel.Timestamp(1998)
+	want := clientmodel.Timestamp(19998)
 	if actual[1].Timestamp != want {
 		t.Errorf("2nd timestamp: want %v, got %v", want, actual[1].Timestamp)
 	}
 
 	// Drop everything.
-	s.maintainMemorySeries(fp, 10000)
+	s.maintainMemorySeries(fp, 100000)
 	it = s.NewIterator(fp)
-	actual = it.GetBoundaryValues(metric.Interval{
+	actual = it.BoundaryValues(metric.Interval{
 		OldestInclusive: 0,
-		NewestInclusive: 10000,
+		NewestInclusive: 100000,
 	})
 	if len(actual) != 0 {
 		t.Fatal("expected zero results after purging the whole series")
@@ -558,7 +676,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 
 	// Drop ~half of the chunks of an archived series.
-	s.maintainArchivedSeries(fp, 1000)
+	s.maintainArchivedSeries(fp, 10000)
 	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
@@ -568,7 +686,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	}
 
 	// Drop everything.
-	s.maintainArchivedSeries(fp, 10000)
+	s.maintainArchivedSeries(fp, 100000)
 	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
@@ -625,7 +743,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	// This will archive again, but must not drop it completely, despite the
 	// memorySeries being empty.
-	s.maintainMemorySeries(fp, 1000)
+	s.maintainMemorySeries(fp, 10000)
 	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
 	if err != nil {
 		t.Fatal(err)
@@ -685,7 +803,7 @@ func testFuzz(t *testing.T, encoding chunkEncoding) {
 		s, c := NewTestStorage(t, encoding)
 		defer c.Close()
 
-		samples := createRandomSamples("test_fuzz", 1000)
+		samples := createRandomSamples("test_fuzz", 10000)
 		for _, sample := range samples {
 			s.Append(sample)
 		}
@@ -917,7 +1035,7 @@ func verifyStorage(t testing.TB, s *memorySeriesStorage, samples clientmodel.Sam
 		}
 		p := s.NewPreloader()
 		p.PreloadRange(fp, sample.Timestamp, sample.Timestamp, time.Hour)
-		found := s.NewIterator(fp).GetValueAtTime(sample.Timestamp)
+		found := s.NewIterator(fp).ValueAtTime(sample.Timestamp)
 		if len(found) != 1 {
 			t.Errorf("Sample %#v: Expected exactly one value, found %d.", sample, len(found))
 			result = false

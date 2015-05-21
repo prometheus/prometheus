@@ -70,8 +70,8 @@ func buildTestChunks(encoding chunkEncoding) map[clientmodel.Fingerprint][]chunk
 }
 
 func chunksEqual(c1, c2 chunk) bool {
-	values2 := c2.values()
-	for v1 := range c1.values() {
+	values2 := c2.newIterator().values()
+	for v1 := range c1.newIterator().values() {
 		v2 := <-values2
 		if !v1.Equal(v2) {
 			return false
@@ -397,7 +397,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if !reflect.DeepEqual(loadedS1.metric, m1) {
 			t.Errorf("want metric %v, got %v", m1, loadedS1.metric)
 		}
-		if !reflect.DeepEqual(loadedS1.head().chunk, s1.head().chunk) {
+		if !reflect.DeepEqual(loadedS1.head().c, s1.head().c) {
 			t.Error("head chunks differ")
 		}
 		if loadedS1.chunkDescsOffset != 0 {
@@ -413,7 +413,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if !reflect.DeepEqual(loadedS3.metric, m3) {
 			t.Errorf("want metric %v, got %v", m3, loadedS3.metric)
 		}
-		if loadedS3.head().chunk != nil {
+		if loadedS3.head().c != nil {
 			t.Error("head chunk not evicted")
 		}
 		if loadedS3.chunkDescsOffset != -1 {
@@ -515,7 +515,7 @@ func TestCheckpointAndLoadFPMappings(t *testing.T) {
 	}
 }
 
-func testGetFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
+func testFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
@@ -537,7 +537,7 @@ func testGetFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
 	}
 
 	for ts, want := range expectedFPs {
-		got, err := p.getFingerprintsModifiedBefore(ts)
+		got, err := p.fingerprintsModifiedBefore(ts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -575,7 +575,7 @@ func testGetFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
 	}
 
 	for ts, want := range expectedFPs {
-		got, err := p.getFingerprintsModifiedBefore(ts)
+		got, err := p.fingerprintsModifiedBefore(ts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -585,12 +585,12 @@ func testGetFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
 	}
 }
 
-func TestGetFingerprintsModifiedBeforeChunkType0(t *testing.T) {
-	testGetFingerprintsModifiedBefore(t, 0)
+func TestFingerprintsModifiedBeforeChunkType0(t *testing.T) {
+	testFingerprintsModifiedBefore(t, 0)
 }
 
-func TestGetFingerprintsModifiedBeforeChunkType1(t *testing.T) {
-	testGetFingerprintsModifiedBefore(t, 1)
+func TestFingerprintsModifiedBeforeChunkType1(t *testing.T) {
+	testFingerprintsModifiedBefore(t, 1)
 }
 
 func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
@@ -605,7 +605,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	p.indexMetric(2, m2)
 	p.waitForIndexing()
 
-	outFPs, err := p.getFingerprintsForLabelPair(metric.LabelPair{Name: "n1", Value: "v1"})
+	outFPs, err := p.fingerprintsForLabelPair(metric.LabelPair{Name: "n1", Value: "v1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -613,7 +613,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	outFPs, err = p.getFingerprintsForLabelPair(metric.LabelPair{Name: "n2", Value: "v2"})
+	outFPs, err = p.fingerprintsForLabelPair(metric.LabelPair{Name: "n2", Value: "v2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -637,7 +637,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	}
 	p.waitForIndexing()
 
-	outFPs, err = p.getFingerprintsForLabelPair(metric.LabelPair{Name: "n1", Value: "v1"})
+	outFPs, err = p.fingerprintsForLabelPair(metric.LabelPair{Name: "n1", Value: "v1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -645,7 +645,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	outFPs, err = p.getFingerprintsForLabelPair(metric.LabelPair{Name: "n2", Value: "v2"})
+	outFPs, err = p.fingerprintsForLabelPair(metric.LabelPair{Name: "n2", Value: "v2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -858,7 +858,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 	p.waitForIndexing()
 	for fp, m := range indexedFpsToMetrics {
 		// Compare archived metrics with input metrics.
-		mOut, err := p.getArchivedMetric(fp)
+		mOut, err := p.archivedMetric(fp)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -884,7 +884,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label name -> label values mappings.
 	for ln, lvs := range b.expectedLnToLvs {
-		outLvs, err := p.getLabelValuesForLabelName(ln)
+		outLvs, err := p.labelValuesForLabelName(ln)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -901,7 +901,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label pair -> fingerprints mappings.
 	for lp, fps := range b.expectedLpToFps {
-		outFPs, err := p.getFingerprintsForLabelPair(lp)
+		outFPs, err := p.fingerprintsForLabelPair(lp)
 		if err != nil {
 			t.Fatal(err)
 		}

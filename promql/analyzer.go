@@ -73,7 +73,7 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 		switch n := node.(type) {
 		case *VectorSelector:
 			pt := getPreloadTimes(n.Offset)
-			fpts := a.Storage.GetFingerprintsForLabelMatchers(n.LabelMatchers)
+			fpts := a.Storage.FingerprintsForLabelMatchers(n.LabelMatchers)
 			n.fingerprints = fpts
 			n.metrics = map[clientmodel.Fingerprint]clientmodel.COWMetric{}
 			n.iterators = map[clientmodel.Fingerprint]local.SeriesIterator{}
@@ -84,11 +84,11 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 				if _, alreadyInRanges := pt.ranges[fp]; !alreadyInRanges {
 					pt.instants[fp] = struct{}{}
 				}
-				n.metrics[fp] = a.Storage.GetMetricForFingerprint(fp)
+				n.metrics[fp] = a.Storage.MetricForFingerprint(fp)
 			}
 		case *MatrixSelector:
 			pt := getPreloadTimes(n.Offset)
-			fpts := a.Storage.GetFingerprintsForLabelMatchers(n.LabelMatchers)
+			fpts := a.Storage.FingerprintsForLabelMatchers(n.LabelMatchers)
 			n.fingerprints = fpts
 			n.metrics = map[clientmodel.Fingerprint]clientmodel.COWMetric{}
 			n.iterators = map[clientmodel.Fingerprint]local.SeriesIterator{}
@@ -100,7 +100,7 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 					// an instant for the same fingerprint, should we have one.
 					delete(pt.instants, fp)
 				}
-				n.metrics[fp] = a.Storage.GetMetricForFingerprint(fp)
+				n.metrics[fp] = a.Storage.MetricForFingerprint(fp)
 			}
 		}
 		return true
