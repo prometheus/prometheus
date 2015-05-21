@@ -120,6 +120,7 @@ type persistence struct {
 	indexingBatchSizes    prometheus.Summary
 	indexingBatchDuration prometheus.Summary
 	checkpointDuration    prometheus.Gauge
+	dirtyCounter          prometheus.Counter
 
 	dirtyMtx       sync.Mutex     // Protects dirty and becameDirty.
 	dirty          bool           // true if persistence was started in dirty state.
@@ -237,6 +238,12 @@ func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync sync
 			Name:      "checkpoint_duration_milliseconds",
 			Help:      "The duration (in milliseconds) it took to checkpoint in-memory metrics and head chunks.",
 		}),
+		dirtyCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "inconsistencies_total",
+			Help:      "A counter incremented each time an inconsistency in the local storage is detected. If this is greater zero, restart the server as soon as possible.",
+		}),
 		dirty:          dirty,
 		pedanticChecks: pedanticChecks,
 		dirtyFileName:  dirtyPath,
@@ -282,6 +289,7 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	p.indexingBatchSizes.Describe(ch)
 	p.indexingBatchDuration.Describe(ch)
 	ch <- p.checkpointDuration.Desc()
+	ch <- p.dirtyCounter.Desc()
 }
 
 // Collect implements prometheus.Collector.
@@ -293,6 +301,7 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	p.indexingBatchSizes.Collect(ch)
 	p.indexingBatchDuration.Collect(ch)
 	ch <- p.checkpointDuration
+	ch <- p.dirtyCounter
 }
 
 // isDirty returns the dirty flag in a goroutine-safe way.
@@ -307,6 +316,7 @@ func (p *persistence) isDirty() bool {
 // dirty during our runtime, there is no way back. If we were dirty from the
 // start, a clean-up might make us clean again.)
 func (p *persistence) setDirty(dirty bool) {
+	p.dirtyCounter.Inc()
 	p.dirtyMtx.Lock()
 	defer p.dirtyMtx.Unlock()
 	if p.becameDirty {

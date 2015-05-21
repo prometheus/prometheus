@@ -1003,6 +1003,7 @@ func (s *memorySeriesStorage) persistenceBacklogScore() float64 {
 // Describe implements prometheus.Collector.
 func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.persistence.Describe(ch)
+	s.mapper.Describe(ch)
 
 	ch <- s.persistErrors.Desc()
 	ch <- maxChunksToPersistDesc
@@ -1018,6 +1019,7 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 // Collect implements prometheus.Collector.
 func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.persistence.Collect(ch)
+	s.mapper.Collect(ch)
 
 	ch <- s.persistErrors
 	ch <- prometheus.MustNewConstMetric(
