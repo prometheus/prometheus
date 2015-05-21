@@ -27,8 +27,6 @@ import (
 	"github.com/golang/glog"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/utility"
 )
 
 const (
@@ -50,7 +48,7 @@ type Client struct {
 func NewClient(url string, timeout time.Duration) *Client {
 	return &Client{
 		url:        url,
-		httpClient: utility.NewDeadlineClient(timeout),
+		httpClient: &http.Client{Timeout: timeout},
 	}
 }
 
