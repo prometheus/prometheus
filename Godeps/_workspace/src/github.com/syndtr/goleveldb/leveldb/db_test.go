@@ -2445,7 +2445,7 @@ func TestDB_TableCompactionBuilder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rec := &sessionRecord{numLevel: s.o.GetNumLevel()}
+		rec := &sessionRecord{}
 		rec.addTableFile(i, tf)
 		if err := s.commit(rec); err != nil {
 			t.Fatal(err)
@@ -2455,7 +2455,7 @@ func TestDB_TableCompactionBuilder(t *testing.T) {
 	// Build grandparent.
 	v := s.version()
 	c := newCompaction(s, v, 1, append(tFiles{}, v.tables[1]...))
-	rec := &sessionRecord{numLevel: s.o.GetNumLevel()}
+	rec := &sessionRecord{}
 	b := &tableCompactionBuilder{
 		s:         s,
 		c:         c,
@@ -2479,7 +2479,7 @@ func TestDB_TableCompactionBuilder(t *testing.T) {
 	// Build level-1.
 	v = s.version()
 	c = newCompaction(s, v, 0, append(tFiles{}, v.tables[0]...))
-	rec = &sessionRecord{numLevel: s.o.GetNumLevel()}
+	rec = &sessionRecord{}
 	b = &tableCompactionBuilder{
 		s:         s,
 		c:         c,
@@ -2523,7 +2523,7 @@ func TestDB_TableCompactionBuilder(t *testing.T) {
 	// Compaction with transient error.
 	v = s.version()
 	c = newCompaction(s, v, 1, append(tFiles{}, v.tables[1]...))
-	rec = &sessionRecord{numLevel: s.o.GetNumLevel()}
+	rec = &sessionRecord{}
 	b = &tableCompactionBuilder{
 		s:         s,
 		c:         c,
@@ -2662,4 +2662,40 @@ func TestDB_IterTriggeredCompaction(t *testing.T) {
 
 func TestDB_IterTriggeredCompactionHalf(t *testing.T) {
 	testDB_IterTriggeredCompaction(t, 2)
+}
+
+func TestDB_ReadOnly(t *testing.T) {
+	h := newDbHarness(t)
+	defer h.close()
+
+	h.put("foo", "v1")
+	h.put("bar", "v2")
+	h.compactMem()
+
+	h.put("xfoo", "v1")
+	h.put("xbar", "v2")
+
+	t.Log("Trigger read-only")
+	if err := h.db.SetReadOnly(); err != nil {
+		h.close()
+		t.Fatalf("SetReadOnly error: %v", err)
+	}
+
+	h.stor.SetEmuErr(storage.TypeAll, tsOpCreate, tsOpReplace, tsOpRemove, tsOpWrite, tsOpWrite, tsOpSync)
+
+	ro := func(key, value, wantValue string) {
+		if err := h.db.Put([]byte(key), []byte(value), h.wo); err != ErrReadOnly {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		h.getVal(key, wantValue)
+	}
+
+	ro("foo", "vx", "v1")
+
+	h.o.ReadOnly = true
+	h.reopenDB()
+
+	ro("foo", "vx", "v1")
+	ro("bar", "vx", "v2")
+	h.assertNumKeys(4)
 }

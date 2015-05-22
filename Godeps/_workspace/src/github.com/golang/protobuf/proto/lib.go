@@ -30,179 +30,179 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 /*
-	Package proto converts data structures to and from the wire format of
-	protocol buffers.  It works in concert with the Go source code generated
-	for .proto files by the protocol compiler.
+Package proto converts data structures to and from the wire format of
+protocol buffers.  It works in concert with the Go source code generated
+for .proto files by the protocol compiler.
 
-	A summary of the properties of the protocol buffer interface
-	for a protocol buffer variable v:
+A summary of the properties of the protocol buffer interface
+for a protocol buffer variable v:
 
-	  - Names are turned from camel_case to CamelCase for export.
-	  - There are no methods on v to set fields; just treat
-		them as structure fields.
-	  - There are getters that return a field's value if set,
-		and return the field's default value if unset.
-		The getters work even if the receiver is a nil message.
-	  - The zero value for a struct is its correct initialization state.
-		All desired fields must be set before marshaling.
-	  - A Reset() method will restore a protobuf struct to its zero state.
-	  - Non-repeated fields are pointers to the values; nil means unset.
-		That is, optional or required field int32 f becomes F *int32.
-	  - Repeated fields are slices.
-	  - Helper functions are available to aid the setting of fields.
-		msg.Foo = proto.String("hello") // set field
-	  - Constants are defined to hold the default values of all fields that
-		have them.  They have the form Default_StructName_FieldName.
-		Because the getter methods handle defaulted values,
-		direct use of these constants should be rare.
-	  - Enums are given type names and maps from names to values.
-		Enum values are prefixed by the enclosing message's name, or by the
-		enum's type name if it is a top-level enum. Enum types have a String
-		method, and a Enum method to assist in message construction.
-	  - Nested messages, groups and enums have type names prefixed with the name of
-	  	the surrounding message type.
-	  - Extensions are given descriptor names that start with E_,
-		followed by an underscore-delimited list of the nested messages
-		that contain it (if any) followed by the CamelCased name of the
-		extension field itself.  HasExtension, ClearExtension, GetExtension
-		and SetExtension are functions for manipulating extensions.
-	  - Marshal and Unmarshal are functions to encode and decode the wire format.
+  - Names are turned from camel_case to CamelCase for export.
+  - There are no methods on v to set fields; just treat
+	them as structure fields.
+  - There are getters that return a field's value if set,
+	and return the field's default value if unset.
+	The getters work even if the receiver is a nil message.
+  - The zero value for a struct is its correct initialization state.
+	All desired fields must be set before marshaling.
+  - A Reset() method will restore a protobuf struct to its zero state.
+  - Non-repeated fields are pointers to the values; nil means unset.
+	That is, optional or required field int32 f becomes F *int32.
+  - Repeated fields are slices.
+  - Helper functions are available to aid the setting of fields.
+	msg.Foo = proto.String("hello") // set field
+  - Constants are defined to hold the default values of all fields that
+	have them.  They have the form Default_StructName_FieldName.
+	Because the getter methods handle defaulted values,
+	direct use of these constants should be rare.
+  - Enums are given type names and maps from names to values.
+	Enum values are prefixed by the enclosing message's name, or by the
+	enum's type name if it is a top-level enum. Enum types have a String
+	method, and a Enum method to assist in message construction.
+  - Nested messages, groups and enums have type names prefixed with the name of
+	the surrounding message type.
+  - Extensions are given descriptor names that start with E_,
+	followed by an underscore-delimited list of the nested messages
+	that contain it (if any) followed by the CamelCased name of the
+	extension field itself.  HasExtension, ClearExtension, GetExtension
+	and SetExtension are functions for manipulating extensions.
+  - Marshal and Unmarshal are functions to encode and decode the wire format.
 
-	The simplest way to describe this is to see an example.
-	Given file test.proto, containing
+The simplest way to describe this is to see an example.
+Given file test.proto, containing
 
-		package example;
+	package example;
 
-		enum FOO { X = 17; }
+	enum FOO { X = 17; }
 
-		message Test {
-		  required string label = 1;
-		  optional int32 type = 2 [default=77];
-		  repeated int64 reps = 3;
-		  optional group OptionalGroup = 4 {
-		    required string RequiredField = 5;
-		  }
+	message Test {
+	  required string label = 1;
+	  optional int32 type = 2 [default=77];
+	  repeated int64 reps = 3;
+	  optional group OptionalGroup = 4 {
+	    required string RequiredField = 5;
+	  }
+	}
+
+The resulting file, test.pb.go, is:
+
+	package example
+
+	import proto "github.com/golang/protobuf/proto"
+	import math "math"
+
+	type FOO int32
+	const (
+		FOO_X FOO = 17
+	)
+	var FOO_name = map[int32]string{
+		17: "X",
+	}
+	var FOO_value = map[string]int32{
+		"X": 17,
+	}
+
+	func (x FOO) Enum() *FOO {
+		p := new(FOO)
+		*p = x
+		return p
+	}
+	func (x FOO) String() string {
+		return proto.EnumName(FOO_name, int32(x))
+	}
+	func (x *FOO) UnmarshalJSON(data []byte) error {
+		value, err := proto.UnmarshalJSONEnum(FOO_value, data)
+		if err != nil {
+			return err
 		}
+		*x = FOO(value)
+		return nil
+	}
 
-	The resulting file, test.pb.go, is:
+	type Test struct {
+		Label            *string             `protobuf:"bytes,1,req,name=label" json:"label,omitempty"`
+		Type             *int32              `protobuf:"varint,2,opt,name=type,def=77" json:"type,omitempty"`
+		Reps             []int64             `protobuf:"varint,3,rep,name=reps" json:"reps,omitempty"`
+		Optionalgroup    *Test_OptionalGroup `protobuf:"group,4,opt,name=OptionalGroup" json:"optionalgroup,omitempty"`
+		XXX_unrecognized []byte              `json:"-"`
+	}
+	func (m *Test) Reset()         { *m = Test{} }
+	func (m *Test) String() string { return proto.CompactTextString(m) }
+	func (*Test) ProtoMessage()    {}
+	const Default_Test_Type int32 = 77
 
-		package example
-
-		import proto "github.com/golang/protobuf/proto"
-		import math "math"
-
-		type FOO int32
-		const (
-			FOO_X FOO = 17
-		)
-		var FOO_name = map[int32]string{
-			17: "X",
+	func (m *Test) GetLabel() string {
+		if m != nil && m.Label != nil {
+			return *m.Label
 		}
-		var FOO_value = map[string]int32{
-			"X": 17,
+		return ""
+	}
+
+	func (m *Test) GetType() int32 {
+		if m != nil && m.Type != nil {
+			return *m.Type
 		}
+		return Default_Test_Type
+	}
 
-		func (x FOO) Enum() *FOO {
-			p := new(FOO)
-			*p = x
-			return p
+	func (m *Test) GetOptionalgroup() *Test_OptionalGroup {
+		if m != nil {
+			return m.Optionalgroup
 		}
-		func (x FOO) String() string {
-			return proto.EnumName(FOO_name, int32(x))
+		return nil
+	}
+
+	type Test_OptionalGroup struct {
+		RequiredField *string `protobuf:"bytes,5,req" json:"RequiredField,omitempty"`
+	}
+	func (m *Test_OptionalGroup) Reset()         { *m = Test_OptionalGroup{} }
+	func (m *Test_OptionalGroup) String() string { return proto.CompactTextString(m) }
+
+	func (m *Test_OptionalGroup) GetRequiredField() string {
+		if m != nil && m.RequiredField != nil {
+			return *m.RequiredField
 		}
-		func (x *FOO) UnmarshalJSON(data []byte) error {
-			value, err := proto.UnmarshalJSONEnum(FOO_value, data)
-			if err != nil {
-				return err
-			}
-			*x = FOO(value)
-			return nil
+		return ""
+	}
+
+	func init() {
+		proto.RegisterEnum("example.FOO", FOO_name, FOO_value)
+	}
+
+To create and play with a Test object:
+
+package main
+
+	import (
+		"log"
+
+		"github.com/golang/protobuf/proto"
+		pb "./example.pb"
+	)
+
+	func main() {
+		test := &pb.Test{
+			Label: proto.String("hello"),
+			Type:  proto.Int32(17),
+			Optionalgroup: &pb.Test_OptionalGroup{
+				RequiredField: proto.String("good bye"),
+			},
 		}
-
-		type Test struct {
-			Label            *string             `protobuf:"bytes,1,req,name=label" json:"label,omitempty"`
-			Type             *int32              `protobuf:"varint,2,opt,name=type,def=77" json:"type,omitempty"`
-			Reps             []int64             `protobuf:"varint,3,rep,name=reps" json:"reps,omitempty"`
-			Optionalgroup    *Test_OptionalGroup `protobuf:"group,4,opt,name=OptionalGroup" json:"optionalgroup,omitempty"`
-			XXX_unrecognized []byte              `json:"-"`
+		data, err := proto.Marshal(test)
+		if err != nil {
+			log.Fatal("marshaling error: ", err)
 		}
-		func (m *Test) Reset()         { *m = Test{} }
-		func (m *Test) String() string { return proto.CompactTextString(m) }
-		func (*Test) ProtoMessage()    {}
-		const Default_Test_Type int32 = 77
-
-		func (m *Test) GetLabel() string {
-			if m != nil && m.Label != nil {
-				return *m.Label
-			}
-			return ""
+		newTest := &pb.Test{}
+		err = proto.Unmarshal(data, newTest)
+		if err != nil {
+			log.Fatal("unmarshaling error: ", err)
 		}
-
-		func (m *Test) GetType() int32 {
-			if m != nil && m.Type != nil {
-				return *m.Type
-			}
-			return Default_Test_Type
+		// Now test and newTest contain the same data.
+		if test.GetLabel() != newTest.GetLabel() {
+			log.Fatalf("data mismatch %q != %q", test.GetLabel(), newTest.GetLabel())
 		}
-
-		func (m *Test) GetOptionalgroup() *Test_OptionalGroup {
-			if m != nil {
-				return m.Optionalgroup
-			}
-			return nil
-		}
-
-		type Test_OptionalGroup struct {
-			RequiredField *string `protobuf:"bytes,5,req" json:"RequiredField,omitempty"`
-		}
-		func (m *Test_OptionalGroup) Reset()         { *m = Test_OptionalGroup{} }
-		func (m *Test_OptionalGroup) String() string { return proto.CompactTextString(m) }
-
-		func (m *Test_OptionalGroup) GetRequiredField() string {
-			if m != nil && m.RequiredField != nil {
-				return *m.RequiredField
-			}
-			return ""
-		}
-
-		func init() {
-			proto.RegisterEnum("example.FOO", FOO_name, FOO_value)
-		}
-
-	To create and play with a Test object:
-
-		package main
-
-		import (
-			"log"
-
-			"github.com/golang/protobuf/proto"
-			pb "./example.pb"
-		)
-
-		func main() {
-			test := &pb.Test{
-				Label: proto.String("hello"),
-				Type:  proto.Int32(17),
-				Optionalgroup: &pb.Test_OptionalGroup{
-					RequiredField: proto.String("good bye"),
-				},
-			}
-			data, err := proto.Marshal(test)
-			if err != nil {
-				log.Fatal("marshaling error: ", err)
-			}
-			newTest := &pb.Test{}
-			err = proto.Unmarshal(data, newTest)
-			if err != nil {
-				log.Fatal("unmarshaling error: ", err)
-			}
-			// Now test and newTest contain the same data.
-			if test.GetLabel() != newTest.GetLabel() {
-				log.Fatalf("data mismatch %q != %q", test.GetLabel(), newTest.GetLabel())
-			}
-			// etc.
-		}
+		// etc.
+	}
 */
 package proto
 
@@ -385,13 +385,13 @@ func UnmarshalJSONEnum(m map[string]int32, data []byte, enumName string) (int32,
 
 // DebugPrint dumps the encoded data in b in a debugging format with a header
 // including the string s. Used in testing but made available for general debugging.
-func (o *Buffer) DebugPrint(s string, b []byte) {
+func (p *Buffer) DebugPrint(s string, b []byte) {
 	var u uint64
 
-	obuf := o.buf
-	index := o.index
-	o.buf = b
-	o.index = 0
+	obuf := p.buf
+	index := p.index
+	p.buf = b
+	p.index = 0
 	depth := 0
 
 	fmt.Printf("\n--- %s ---\n", s)
@@ -402,12 +402,12 @@ out:
 			fmt.Print("  ")
 		}
 
-		index := o.index
-		if index == len(o.buf) {
+		index := p.index
+		if index == len(p.buf) {
 			break
 		}
 
-		op, err := o.DecodeVarint()
+		op, err := p.DecodeVarint()
 		if err != nil {
 			fmt.Printf("%3d: fetching op err %v\n", index, err)
 			break out
@@ -424,7 +424,7 @@ out:
 		case WireBytes:
 			var r []byte
 
-			r, err = o.DecodeRawBytes(false)
+			r, err = p.DecodeRawBytes(false)
 			if err != nil {
 				break out
 			}
@@ -445,7 +445,7 @@ out:
 			fmt.Printf("\n")
 
 		case WireFixed32:
-			u, err = o.DecodeFixed32()
+			u, err = p.DecodeFixed32()
 			if err != nil {
 				fmt.Printf("%3d: t=%3d fix32 err %v\n", index, tag, err)
 				break out
@@ -453,7 +453,7 @@ out:
 			fmt.Printf("%3d: t=%3d fix32 %d\n", index, tag, u)
 
 		case WireFixed64:
-			u, err = o.DecodeFixed64()
+			u, err = p.DecodeFixed64()
 			if err != nil {
 				fmt.Printf("%3d: t=%3d fix64 err %v\n", index, tag, err)
 				break out
@@ -462,7 +462,7 @@ out:
 			break
 
 		case WireVarint:
-			u, err = o.DecodeVarint()
+			u, err = p.DecodeVarint()
 			if err != nil {
 				fmt.Printf("%3d: t=%3d varint err %v\n", index, tag, err)
 				break out
@@ -488,12 +488,12 @@ out:
 	}
 
 	if depth != 0 {
-		fmt.Printf("%3d: start-end not balanced %d\n", o.index, depth)
+		fmt.Printf("%3d: start-end not balanced %d\n", p.index, depth)
 	}
 	fmt.Printf("\n")
 
-	o.buf = obuf
-	o.index = index
+	p.buf = obuf
+	p.index = index
 }
 
 // SetDefaults sets unset protocol buffer fields to their default values.

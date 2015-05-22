@@ -36,6 +36,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/duedil-ltd/discodns
 * https://github.com/StalkR/dns-reverse-proxy
 * https://github.com/tianon/rawdns
+* https://mesosphere.github.io/mesos-dns/
 
 Send pull request if you want to be listed here.
 

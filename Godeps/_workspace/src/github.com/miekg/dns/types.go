@@ -255,8 +255,10 @@ type HINFO struct {
 
 func (rr *HINFO) Header() *RR_Header { return &rr.Hdr }
 func (rr *HINFO) copy() RR           { return &HINFO{*rr.Hdr.copyHeader(), rr.Cpu, rr.Os} }
-func (rr *HINFO) String() string     { return rr.Hdr.String() + rr.Cpu + " " + rr.Os }
-func (rr *HINFO) len() int           { return rr.Hdr.len() + len(rr.Cpu) + len(rr.Os) }
+func (rr *HINFO) String() string {
+	return rr.Hdr.String() + sprintTxt([]string{rr.Cpu, rr.Os})
+}
+func (rr *HINFO) len() int { return rr.Hdr.len() + len(rr.Cpu) + len(rr.Os) }
 
 type MB struct {
 	Hdr RR_Header
@@ -1146,14 +1148,13 @@ func (rr *RKEY) String() string {
 }
 
 type NSAP struct {
-	Hdr    RR_Header
-	Length uint8
-	Nsap   string
+	Hdr  RR_Header
+	Nsap string
 }
 
 func (rr *NSAP) Header() *RR_Header { return &rr.Hdr }
-func (rr *NSAP) copy() RR           { return &NSAP{*rr.Hdr.copyHeader(), rr.Length, rr.Nsap} }
-func (rr *NSAP) String() string     { return rr.Hdr.String() + strconv.Itoa(int(rr.Length)) + " " + rr.Nsap }
+func (rr *NSAP) copy() RR           { return &NSAP{*rr.Hdr.copyHeader(), rr.Nsap} }
+func (rr *NSAP) String() string     { return rr.Hdr.String() + "0x" + rr.Nsap }
 func (rr *NSAP) len() int           { return rr.Hdr.len() + 1 + len(rr.Nsap) + 1 }
 
 type NSAPPTR struct {

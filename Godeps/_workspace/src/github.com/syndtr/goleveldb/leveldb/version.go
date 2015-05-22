@@ -300,7 +300,7 @@ func (v *version) offsetOf(ikey iKey) (n uint64, err error) {
 	return
 }
 
-func (v *version) pickLevel(umin, umax []byte) (level int) {
+func (v *version) pickMemdbLevel(umin, umax []byte) (level int) {
 	if !v.tables[0].overlaps(v.s.icmp, umin, umax, true) {
 		var overlaps tFiles
 		maxLevel := v.s.o.GetMaxMemCompationLevel()

@@ -16,7 +16,7 @@ type goCollector struct {
 func NewGoCollector() *goCollector {
 	return &goCollector{
 		goroutines: NewGauge(GaugeOpts{
-			Name: "process_goroutines",
+			Name: "go_goroutines",
 			Help: "Number of goroutines that currently exist.",
 		}),
 		gcDesc: NewDesc(

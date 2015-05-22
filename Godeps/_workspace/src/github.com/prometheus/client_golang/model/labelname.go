@@ -41,7 +41,8 @@ const (
 	ReservedLabelPrefix = "__"
 
 	// MetaLabelPrefix is a prefix for labels that provide meta information.
-	// Labels with the prefix will not be attached to time series.
+	// Labels with this prefix are used for intermediate label processing and
+	// will not be attached to time series.
 	MetaLabelPrefix = "__meta_"
 
 	// JobLabel is the label name indicating the job from which a timeseries
@@ -66,7 +67,7 @@ var labelNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
 // therewith.
 type LabelName string
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (ln *LabelName) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
