@@ -20,7 +20,7 @@ RUN apk add --update -t build-deps go git mercurial vim \
         " -o /bin/prometheus \
     && cd tools/rule_checker && go build -o /bin/rule_checker && cd ../.. \
     && mkdir -p /etc/prometheus \
-    && mv ./documentation/examples/prometheus.conf /etc/prometheus/prometheus.conf \
+    && mv ./documentation/examples/prometheus.yml /etc/prometheus/prometheus.yml \
     && mv ./console_libraries/ ./consoles/ /etc/prometheus/ \
     && rm -rf /go \
     && apk del --purge build-deps
@@ -29,7 +29,7 @@ EXPOSE     9090
 VOLUME     [ "/prometheus" ]
 WORKDIR    /prometheus
 ENTRYPOINT [ "/bin/prometheus" ]
-CMD        [ "-logtostderr", "-config.file=/etc/prometheus/prometheus.conf", \
+CMD        [ "-config.file=/etc/prometheus/prometheus.yml", \
              "-storage.local.path=/prometheus", \
              "-web.console.libraries=/etc/prometheus/console_libraries", \
              "-web.console.templates=/etc/prometheus/consoles" ]
