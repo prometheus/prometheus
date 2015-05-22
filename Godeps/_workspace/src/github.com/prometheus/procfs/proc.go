@@ -96,7 +96,22 @@ func (p Proc) CmdLine() ([]string, error) {
 		return nil, err
 	}
 
+	if len(data) < 1 {
+		return []string{}, nil
+	}
+
 	return strings.Split(string(data[:len(data)-1]), string(byte(0))), nil
+}
+
+// Executable returns the absolute path of the executable command of a process.
+func (p Proc) Executable() (string, error) {
+	exe, err := p.readlink("exe")
+
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+
+	return exe, err
 }
 
 // FileDescriptors returns the currently open file descriptors of a process.
@@ -146,4 +161,8 @@ func (p Proc) fileDescriptors() ([]string, error) {
 
 func (p Proc) open(pa string) (*os.File, error) {
 	return p.fs.open(path.Join(strconv.Itoa(p.PID), pa))
+}
+
+func (p Proc) readlink(pa string) (string, error) {
+	return p.fs.readlink(path.Join(strconv.Itoa(p.PID), pa))
 }

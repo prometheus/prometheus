@@ -213,6 +213,13 @@ func newHistogram(desc *Desc, opts HistogramOpts, labelValues ...string) Histogr
 }
 
 type histogram struct {
+	// sumBits contains the bits of the float64 representing the sum of all
+	// observations. sumBits and count have to go first in the struct to
+	// guarantee alignment for atomic operations.
+	// http://golang.org/pkg/sync/atomic/#pkg-note-BUG
+	sumBits uint64
+	count   uint64
+
 	SelfCollector
 	// Note that there is no mutex required.
 
@@ -222,9 +229,6 @@ type histogram struct {
 	counts      []uint64
 
 	labelPairs []*dto.LabelPair
-
-	sumBits uint64 // The bits of the float64 representing the sum of all observations.
-	count   uint64
 }
 
 func (h *histogram) Desc() *Desc {

@@ -189,6 +189,22 @@ func (k *DNSKEY) ToDS(h uint8) *DS {
 	return ds
 }
 
+// ToCDNSKEY converts a DNSKEY record to a CDNSKEY record.
+func (k *DNSKEY) ToCDNSKEY() *CDNSKEY {
+	c := &CDNSKEY{DNSKEY: *k}
+	c.Hdr = *k.Hdr.copyHeader()
+	c.Hdr.Rrtype = TypeCDNSKEY
+	return c
+}
+
+// ToCDS converts a DS record to a CDS record.
+func (d *DS) ToCDS() *CDS {
+	c := &CDS{DS: *d}
+	c.Hdr = *d.Hdr.copyHeader()
+	c.Hdr.Rrtype = TypeCDS
+	return c
+}
+
 // Sign signs an RRSet. The signature needs to be filled in with
 // the values: Inception, Expiration, KeyTag, SignerName and Algorithm.
 // The rest is copied from the RRset. Sign returns true when the signing went OK,

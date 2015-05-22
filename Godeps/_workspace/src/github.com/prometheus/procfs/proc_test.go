@@ -40,16 +40,46 @@ func TestAllProcs(t *testing.T) {
 }
 
 func TestCmdLine(t *testing.T) {
-	p1, err := testProcess(26231)
-	if err != nil {
-		t.Fatal(err)
+	for _, tt := range []struct {
+		process int
+		want    []string
+	}{
+		{process: 26231, want: []string{"vim", "test.go", "+10"}},
+		{process: 26232, want: []string{}},
+	} {
+		p1, err := testProcess(tt.process)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c1, err := p1.CmdLine()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(tt.want, c1) {
+			t.Errorf("want cmdline %v, got %v", tt.want, c1)
+		}
 	}
-	c, err := p1.CmdLine()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := []string{"vim", "test.go", "+10"}; !reflect.DeepEqual(want, c) {
-		t.Errorf("want cmdline %v, got %v", want, c)
+}
+
+func TestExecutable(t *testing.T) {
+	for _, tt := range []struct {
+		process int
+		want    string
+	}{
+		{process: 26231, want: "/usr/bin/vim"},
+		{process: 26232, want: ""},
+	} {
+		p, err := testProcess(tt.process)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exe, err := p.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(tt.want, exe) {
+			t.Errorf("want absolute path to cmdline %v, got %v", tt.want, exe)
+		}
 	}
 }
 

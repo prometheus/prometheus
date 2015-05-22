@@ -17,6 +17,16 @@ func HelloServer(w ResponseWriter, req *Msg) {
 	w.WriteMsg(m)
 }
 
+func HelloServerBadId(w ResponseWriter, req *Msg) {
+	m := new(Msg)
+	m.SetReply(req)
+	m.Id += 1
+
+	m.Extra = make([]RR, 1)
+	m.Extra[0] = &TXT{Hdr: RR_Header{Name: m.Question[0].Name, Rrtype: TypeTXT, Class: ClassINET, Ttl: 0}, Txt: []string{"Hello world"}}
+	w.WriteMsg(m)
+}
+
 func AnotherHelloServer(w ResponseWriter, req *Msg) {
 	m := new(Msg)
 	m.SetReply(req)

@@ -250,6 +250,11 @@ type Options struct {
 	// The default value (DefaultCompression) uses snappy compression.
 	Compression Compression
 
+	// DisableBufferPool allows disable use of util.BufferPool functionality.
+	//
+	// The default value is false.
+	DisableBufferPool bool
+
 	// DisableBlockCache allows disable use of cache.Cache functionality on
 	// 'sorted table' block.
 	//
@@ -320,6 +325,11 @@ type Options struct {
 	//
 	// The default value is 500.
 	OpenFilesCacheCapacity int
+
+	// If true then opens DB in read-only mode.
+	//
+	// The default value is false.
+	ReadOnly bool
 
 	// Strict defines the DB strict level.
 	Strict Strict
@@ -472,6 +482,20 @@ func (o *Options) GetCompression() Compression {
 	return o.Compression
 }
 
+func (o *Options) GetDisableBufferPool() bool {
+	if o == nil {
+		return false
+	}
+	return o.DisableBufferPool
+}
+
+func (o *Options) GetDisableBlockCache() bool {
+	if o == nil {
+		return false
+	}
+	return o.DisableBlockCache
+}
+
 func (o *Options) GetDisableCompactionBackoff() bool {
 	if o == nil {
 		return false
@@ -546,6 +570,13 @@ func (o *Options) GetOpenFilesCacheCapacity() int {
 		return 0
 	}
 	return o.OpenFilesCacheCapacity
+}
+
+func (o *Options) GetReadOnly() bool {
+	if o == nil {
+		return false
+	}
+	return o.ReadOnly
 }
 
 func (o *Options) GetStrict(strict Strict) bool {

@@ -175,9 +175,9 @@ http_response_size_bytes_count{handler="prometheus"} 119
 # HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
 # TYPE process_cpu_seconds_total counter
 process_cpu_seconds_total 0.55
-# HELP process_goroutines Number of goroutines that currently exist.
-# TYPE process_goroutines gauge
-process_goroutines 70
+# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines 70
 # HELP process_max_fds Maximum number of open file descriptors.
 # TYPE process_max_fds gauge
 process_max_fds 8192

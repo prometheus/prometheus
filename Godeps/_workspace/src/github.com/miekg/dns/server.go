@@ -264,6 +264,7 @@ func (srv *Server) ListenAndServe() error {
 		if e != nil {
 			return e
 		}
+		srv.Listener = l
 		return srv.serveTCP(l)
 	case "udp", "udp4", "udp6":
 		a, e := net.ResolveUDPAddr(srv.Net, addr)
@@ -277,6 +278,7 @@ func (srv *Server) ListenAndServe() error {
 		if e := setUDPSocketOptions(l); e != nil {
 			return e
 		}
+		srv.PacketConn = l
 		return srv.serveUDP(l)
 	}
 	return &Error{err: "bad network"}

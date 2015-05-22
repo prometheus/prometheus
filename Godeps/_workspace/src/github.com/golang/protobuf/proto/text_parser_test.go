@@ -462,7 +462,7 @@ func TestProto3TextParsing(t *testing.T) {
 func TestMapParsing(t *testing.T) {
 	m := new(MessageWithMap)
 	const in = `name_mapping:<key:1234 value:"Feist"> name_mapping:<key:1 value:"Beatles">` +
-		`msg_mapping:<key:-4 value:<f: 2.0>>` +
+		`msg_mapping:<key:-4, value:<f: 2.0>,>` + // separating commas are okay
 		`msg_mapping<key:-2 value<f: 4.0>>` + // no colon after "value"
 		`byte_mapping:<key:true value:"so be it">`
 	want := &MessageWithMap{

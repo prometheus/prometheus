@@ -49,6 +49,9 @@ func endingToString(c chan lex, errstr, f string) (string, *ParseError, string) 
 	s := ""
 	l := <-c // zString
 	for l.value != zNewline && l.value != zEOF {
+		if l.err {
+			return s, &ParseError{f, errstr, l}, ""
+		}
 		switch l.value {
 		case zString:
 			s += l.token
@@ -68,11 +71,17 @@ func endingToTxtSlice(c chan lex, errstr, f string) ([]string, *ParseError, stri
 	quote := false
 	l := <-c
 	var s []string
+	if l.err {
+		return s, &ParseError{f, errstr, l}, ""
+	}
 	switch l.value == zQuote {
 	case true: // A number of quoted string
 		s = make([]string, 0)
 		empty := true
 		for l.value != zNewline && l.value != zEOF {
+			if l.err {
+				return nil, &ParseError{f, errstr, l}, ""
+			}
 			switch l.value {
 			case zString:
 				empty = false
@@ -91,7 +100,7 @@ func endingToTxtSlice(c chan lex, errstr, f string) ([]string, *ParseError, stri
 						p, i = p+255, i+255
 					}
 					s = append(s, sx...)
-					break;
+					break
 				}
 
 				s = append(s, l.token)
@@ -117,6 +126,9 @@ func endingToTxtSlice(c chan lex, errstr, f string) ([]string, *ParseError, stri
 	case false: // Unquoted text record
 		s = make([]string, 1)
 		for l.value != zNewline && l.value != zEOF {
+			if l.err {
+				return s, &ParseError{f, errstr, l}, ""
+			}
 			s[0] += l.token
 			l = <-c
 		}
@@ -333,11 +345,24 @@ func setHINFO(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 	rr := new(HINFO)
 	rr.Hdr = h
 
-	l := <-c
-	rr.Cpu = l.token
-	<-c     // zBlank
-	l = <-c // zString
-	rr.Os = l.token
+	chunks, e, c1 := endingToTxtSlice(c, "bad HINFO Fields", f)
+	if e != nil {
+		return nil, e, c1
+	}
+
+	if ln := len(chunks); ln == 0 {
+		return rr, nil, ""
+	} else if ln == 1 {
+		// Can we split it?
+		if out := strings.Fields(chunks[0]); len(out) > 1 {
+			chunks = out
+		} else {
+			chunks = append(chunks, "")
+		}
+	}
+
+	rr.Cpu = chunks[0]
+	rr.Os = strings.Join(chunks[1:], " ")
 
 	return rr, nil, ""
 }
@@ -1438,9 +1463,9 @@ func setWKS(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 		case zString:
 			if k, err = net.LookupPort(proto, l.token); err != nil {
 				if i, e := strconv.Atoi(l.token); e != nil { // If a number use that
-					rr.BitMap = append(rr.BitMap, uint16(i))
-				} else {
 					return nil, &ParseError{f, "bad WKS BitMap", l}, ""
+				} else {
+					rr.BitMap = append(rr.BitMap, uint16(i))
 				}
 			}
 			rr.BitMap = append(rr.BitMap, uint16(k))
@@ -1473,8 +1498,11 @@ func setSSHFP(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 	}
 	rr.Type = uint8(i)
 	<-c // zBlank
-	l = <-c
-	rr.FingerPrint = l.token
+	s, e1, c1 := endingToString(c, "bad SSHFP Fingerprint", f)
+	if e1 != nil {
+		return nil, e1, c1
+	}
+	rr.FingerPrint = s
 	return rr, nil, ""
 }
 
@@ -1594,21 +1622,28 @@ func setNIMLOC(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 func setNSAP(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 	rr := new(NSAP)
 	rr.Hdr = h
-	l := <-c
-	if l.length == 0 {
-		return rr, nil, l.comment
-	}
-	i, e := strconv.Atoi(l.token)
-	if e != nil {
-		return nil, &ParseError{f, "bad NSAP Length", l}, ""
-	}
-	rr.Length = uint8(i)
-	<-c // zBlank
-	s, e1, c1 := endingToString(c, "bad NSAP Nsap", f)
-	if e != nil {
+	chunks, e1, c1 := endingToTxtSlice(c, "bad NSAP Nsap", f)
+	if e1 != nil {
 		return nil, e1, c1
 	}
-	rr.Nsap = s
+	// data would come as one string or multiple... Just to ignore possible
+	// variety let's merge things back together and split to actual "words"
+	s := strings.Fields(strings.Join(chunks, " "))
+	if len(s) == 0 {
+		return rr, nil, c1
+	}
+	if len(s[0]) >= 2 && s[0][0:2] == "0x" || s[0][0:2] == "0X" {
+		// although RFC only suggests 0x there is no clarification that X is not allowed
+		rr.Nsap = strings.Join(s, "")[2:]
+	} else {
+		// since we do not know what to do with this data, and, we would not use original length
+		// in formatting, it's moot to check correctness of the length
+		_, err := strconv.Atoi(s[0])
+		if err != nil {
+			return nil, &ParseError{f, "bad NSAP Length", lex{token: s[0]}}, ""
+		}
+		rr.Nsap = strings.Join(s[1:], "")
+	}
 	return rr, nil, c1
 }
 
@@ -1693,7 +1728,7 @@ func setDLV(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 }
 
 func setCDS(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
-	r, e, s := setDSs(h, c, o, f, "DLV")
+	r, e, s := setDSs(h, c, o, f, "CDS")
 	if r != nil {
 		return &CDS{*r.(*DS)}, e, s
 	}
@@ -1764,9 +1799,10 @@ func setTLSA(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 		return nil, &ParseError{f, "bad TLSA MatchingType", l}, ""
 	}
 	rr.MatchingType = uint8(i)
-	s, e, c1 := endingToString(c, "bad TLSA Certificate", f)
-	if e != nil {
-		return nil, e.(*ParseError), c1
+	// So this needs be e2 (i.e. different than e), because...??t
+	s, e2, c1 := endingToString(c, "bad TLSA Certificate", f)
+	if e2 != nil {
+		return nil, e2, c1
 	}
 	rr.Certificate = s
 	return rr, nil, c1
@@ -2153,7 +2189,7 @@ var typeToparserFunc = map[uint16]parserFunc{
 	TypeEUI64:      parserFunc{setEUI64, false},
 	TypeGID:        parserFunc{setGID, false},
 	TypeGPOS:       parserFunc{setGPOS, false},
-	TypeHINFO:      parserFunc{setHINFO, false},
+	TypeHINFO:      parserFunc{setHINFO, true},
 	TypeHIP:        parserFunc{setHIP, true},
 	TypeIPSECKEY:   parserFunc{setIPSECKEY, true},
 	TypeKX:         parserFunc{setKX, false},
@@ -2189,7 +2225,7 @@ var typeToparserFunc = map[uint16]parserFunc{
 	TypeSOA:        parserFunc{setSOA, false},
 	TypeSPF:        parserFunc{setSPF, true},
 	TypeSRV:        parserFunc{setSRV, false},
-	TypeSSHFP:      parserFunc{setSSHFP, false},
+	TypeSSHFP:      parserFunc{setSSHFP, true},
 	TypeTALINK:     parserFunc{setTALINK, false},
 	TypeTA:         parserFunc{setTA, true},
 	TypeTLSA:       parserFunc{setTLSA, true},
