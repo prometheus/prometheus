@@ -24,18 +24,23 @@ Prometheus' main distinguishing features as compared to other monitoring systems
 
 There are various ways of installing Prometheus.
 
-### Precompiled packages
+### Precompiled binaries
 
-We plan to provide precompiled binaries for various platforms and even
-packages for common Linux distributions soon. Once those are offered,
-it will be the recommended way of installing Prometheus.
+Precompiled binaries for released versions are available in the
+[*releases* section](https://github.com/prometheus/prometheus/releases)
+of the GitHub repository. Using the latest production release binary
+is the recommended way of installing Prometheus.
+
+Debian and RPM packages are being worked on.
 
 ### Use `make`
 
-Clone the repository in the usual way with `git clone`. _Do not
-download and unpack the source archives provided by GitHub._ (The
-makefile depends on running in a git repository. This will be fixed
-eventually.)
+Clone the repository in the usual way with `git clone`. (If you
+download and unpack the source archives provided by GitHub instead of
+using `git clone`, you need to set an environment variable `VERSION`
+to make the below work. See
+[issue #609](https://github.com/prometheus/prometheus/issues/609) for
+context.)
 
 In most circumstances, the following should work:
 
