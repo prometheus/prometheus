@@ -141,10 +141,10 @@ func (m *fpMapper) maybeAddMapping(
 		// A new mapping has to be created.
 		mappedFP = m.nextMappedFP()
 		mappedFPs[ms] = mappedFP
-		m.mtx.RLock()
+		m.mtx.Lock()
 		// Checkpoint mappings after each change.
 		err := m.p.checkpointFPMappings(m.mappings)
-		m.mtx.RUnlock()
+		m.mtx.Unlock()
 		log.Infof(
 			"Collision detected for fingerprint %v, metric %v, mapping to new fingerprint %v.",
 			fp, collidingMetric, mappedFP,
