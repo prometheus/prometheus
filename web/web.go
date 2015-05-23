@@ -40,6 +40,7 @@ var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 // Commandline flags.
 var (
 	listenAddress  = flag.String("web.listen-address", ":9090", "Address to listen on for the web interface, API, and telemetry.")
+	hostname       = flag.String("web.hostname", "", "Hostname on which the server is available.")
 	metricsPath    = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
 	useLocalAssets = flag.Bool("web.use-local-assets", false, "Read assets/templates from file instead of binary.")
 	userAssetsPath = flag.String("web.user-assets", "", "Path to static asset directory, available at /user.")
@@ -176,7 +177,7 @@ func getTemplate(name string, pathPrefix string) (*template.Template, error) {
 			return lset
 		},
 		"globalURL": func(url string) string {
-			hostname, err := os.Hostname()
+			hostname, err := getHostname()
 			if err != nil {
 				log.Warnf("Couldn't get hostname: %s, returning target.URL()", err)
 				return url
@@ -240,9 +241,16 @@ func MustBuildServerURL(pathPrefix string) string {
 	if err != nil {
 		panic(err)
 	}
-	hostname, err := os.Hostname()
+	hostname, err := getHostname()
 	if err != nil {
 		panic(err)
 	}
 	return fmt.Sprintf("http://%s:%s%s", hostname, port, pathPrefix)
+}
+
+func getHostname() (string, error) {
+	if *hostname != "" {
+		return *hostname, nil
+	}
+	return os.Hostname()
 }
