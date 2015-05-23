@@ -81,17 +81,24 @@ func testFileSD(t *testing.T, ext string) {
 			// Below we will change the file to a bad syntax. Previously extracted target
 			// groups must not be deleted via sending an empty target group.
 			if len(tg.Targets) == 0 {
-				t.Fatalf("Unexpected empty target group received: %s", tg)
+				t.Errorf("Unexpected empty target group received: %s", tg)
 			}
 		}
 	}()
 
-	newf, err = os.Create("fixtures/_test" + ext)
+	newf, err = os.Create("fixtures/_test.new")
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer os.Remove(newf.Name())
+
 	if _, err := newf.Write([]byte("]gibberish\n][")); err != nil {
 		t.Fatal(err)
 	}
 	newf.Close()
+
+	os.Rename(newf.Name(), "fixtures/_test"+ext)
+
+	// Give notifcations some time to arrive.
+	time.Sleep(50 * time.Millisecond)
 }
