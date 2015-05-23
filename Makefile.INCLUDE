@@ -58,7 +58,7 @@ export PREFIX=$(BUILD_PATH)/root
 
 export PATH := $(GOPATH)/bin:$(GOROOT)/bin:$(PATH)
 
-export GO_TEST_FLAGS ?= -v -short
+export GO_TEST_FLAGS ?= -short
 
 GO_GET := $(GO) get -u -v -x
 
