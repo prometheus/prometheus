@@ -194,7 +194,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 }
 
 // Start implements Storage.
-func (s *memorySeriesStorage) Start() error {
+func (s *memorySeriesStorage) Start() (err error) {
 	var syncStrategy syncStrategy
 	switch s.options.SyncStrategy {
 	case Never:
@@ -207,11 +207,22 @@ func (s *memorySeriesStorage) Start() error {
 		panic("unknown sync strategy")
 	}
 
-	p, err := newPersistence(s.options.PersistenceStoragePath, s.options.Dirty, s.options.PedanticChecks, syncStrategy)
+	var p *persistence
+	p, err = newPersistence(s.options.PersistenceStoragePath, s.options.Dirty, s.options.PedanticChecks, syncStrategy)
 	if err != nil {
 		return err
 	}
 	s.persistence = p
+	// Persistence must start running before loadSeriesMapAndHeads() is called.
+	go s.persistence.run()
+
+	defer func() {
+		if err != nil {
+			if e := p.close(); e != nil {
+				log.Errorln("Error closing persistence:", e)
+			}
+		}
+	}()
 
 	log.Info("Loading series map and head chunks...")
 	s.fpToSeries, s.numChunksToPersist, err = p.loadSeriesMapAndHeads()
@@ -221,13 +232,10 @@ func (s *memorySeriesStorage) Start() error {
 	log.Infof("%d series loaded.", s.fpToSeries.length())
 	s.numSeries.Set(float64(s.fpToSeries.length()))
 
-	mapper, err := newFPMapper(s.fpToSeries, p)
+	s.mapper, err = newFPMapper(s.fpToSeries, p)
 	if err != nil {
 		return err
 	}
-	s.mapper = mapper
-
-	go s.persistence.run()
 
 	go s.handleEvictList()
 	go s.loop()

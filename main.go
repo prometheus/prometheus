@@ -239,10 +239,14 @@ func (p *prometheus) reloadConfig() bool {
 func (p *prometheus) Serve() {
 	// Start all components.
 	if err := p.storage.Start(); err != nil {
-		log.Error("Error opening memory series storage: ", err)
+		log.Errorln("Error opening memory series storage:", err)
 		os.Exit(1)
 	}
-	defer p.storage.Stop()
+	defer func() {
+		if err := p.storage.Stop(); err != nil {
+			log.Errorln("Error stopping storage:", err)
+		}
+	}()
 
 	// The storage has to be fully initialized before registering Prometheus.
 	registry.MustRegister(p)
