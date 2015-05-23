@@ -1,3 +1,6 @@
+## 0.13.4 / 2015-05-23
+* [BUGFIX] Fix a race while checkpointing fingerprint mappings.
+
 ## 0.13.3 / 2015-05-11
 * [BUGFIX] Handle fingerprint collisions properly.
 * [CHANGE] Comments in rules file must start with `#`. (The undocumented `//`
