@@ -64,9 +64,21 @@ func (ws WebService) ServeForever(pathPrefix string) {
 		http.Error(w, "", 404)
 	}))
 
-	http.Handle(pathPrefix, prometheus.InstrumentHandler(
-		pathPrefix, ws.StatusHandler,
-	))
+	http.HandleFunc("/", prometheus.InstrumentHandlerFunc(pathPrefix, func(rw http.ResponseWriter, req *http.Request) {
+		// The "/" pattern matches everything, so we need to check
+		// that we're at the root here.
+		if req.URL.Path == pathPrefix {
+			ws.StatusHandler.ServeHTTP(rw, req)
+		} else if req.URL.Path == strings.TrimRight(pathPrefix, "/") {
+			http.Redirect(rw, req, pathPrefix, http.StatusFound)
+		} else if !strings.HasPrefix(req.URL.Path, pathPrefix) {
+			// We're running under a prefix but the user requested something
+			// outside of it. Let's see if this page exists under the prefix.
+			http.Redirect(rw, req, pathPrefix+strings.TrimLeft(req.URL.Path, "/"), http.StatusFound)
+		} else {
+			http.NotFound(rw, req)
+		}
+	}))
 	http.Handle(pathPrefix+"alerts", prometheus.InstrumentHandler(
 		pathPrefix+"alerts", ws.AlertsHandler,
 	))
@@ -100,12 +112,6 @@ func (ws WebService) ServeForever(pathPrefix string) {
 
 	if *enableQuit {
 		http.Handle(pathPrefix+"-/quit", http.HandlerFunc(ws.quitHandler))
-	}
-
-	if pathPrefix != "/" {
-		http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, pathPrefix, http.StatusFound)
-		}))
 	}
 
 	log.Infof("Listening on %s", *listenAddress)
