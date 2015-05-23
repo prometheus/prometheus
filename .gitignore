@@ -4,6 +4,8 @@
 *.cgo*.c
 *.cgo*.go
 *.conf
+*.yaml
+*.yml
 *.rules
 *.exe
 *.orig
