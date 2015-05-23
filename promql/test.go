@@ -20,7 +20,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"testing"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -50,7 +49,7 @@ const (
 // Test is a sequence of read and write commands that are run
 // against a test storage.
 type Test struct {
-	*testing.T
+	testutil.T
 
 	cmds []testCommand
 
@@ -60,7 +59,7 @@ type Test struct {
 }
 
 // NewTest returns an initialized empty Test.
-func NewTest(t *testing.T, input string) (*Test, error) {
+func NewTest(t testutil.T, input string) (*Test, error) {
 	test := &Test{
 		T:    t,
 		cmds: []testCommand{},
@@ -71,7 +70,7 @@ func NewTest(t *testing.T, input string) (*Test, error) {
 	return test, err
 }
 
-func NewTestFromFile(t *testing.T, filename string) (*Test, error) {
+func NewTestFromFile(t testutil.T, filename string) (*Test, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
