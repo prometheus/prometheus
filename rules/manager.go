@@ -16,6 +16,7 @@ package rules
 import (
 	"fmt"
 	"io/ioutil"
+	"strings"
 	"sync"
 	"time"
 
@@ -211,7 +212,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 			Value:        aa.Value,
 			ActiveSince:  aa.ActiveSince.Time(),
 			RuleString:   rule.String(),
-			GeneratorURL: m.prometheusURL + utility.GraphLinkForExpression(rule.Vector.String()),
+			GeneratorURL: m.prometheusURL + strings.TrimLeft(utility.GraphLinkForExpression(rule.Vector.String()), "/"),
 		})
 	}
 	m.notificationHandler.SubmitReqs(notifications)
