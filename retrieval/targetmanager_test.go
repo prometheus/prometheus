@@ -43,7 +43,7 @@ func TestTargetManagerChan(t *testing.T) {
 	targetManager := &TargetManager{
 		sampleAppender: nopAppender{},
 		providers: map[*config.ScrapeConfig][]TargetProvider{
-			testJob1: []TargetProvider{prov1},
+			testJob1: {prov1},
 		},
 		targets: make(map[string][]*Target),
 	}

@@ -25,8 +25,8 @@ import (
 // excludedLabels are the labels to exclude from signature calculation for
 // quantiles.
 var excludedLabels = map[clientmodel.LabelName]struct{}{
-	clientmodel.MetricNameLabel: struct{}{},
-	clientmodel.BucketLabel:     struct{}{},
+	clientmodel.MetricNameLabel: {},
+	clientmodel.BucketLabel:     {},
 }
 
 type bucket struct {
