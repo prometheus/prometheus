@@ -16,7 +16,6 @@ package rules
 import (
 	"fmt"
 	"html/template"
-	"strings"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -31,11 +30,20 @@ type RecordingRule struct {
 	labels clientmodel.LabelSet
 }
 
+// NewRecordingRule returns a new recording rule.
+func NewRecordingRule(name string, vector promql.Expr, labels clientmodel.LabelSet) *RecordingRule {
+	return &RecordingRule{
+		name:   name,
+		vector: vector,
+		labels: labels,
+	}
+}
+
 // Name returns the rule name.
 func (rule RecordingRule) Name() string { return rule.name }
 
-// Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
+// eval evaluates the rule and then overrides the metric names and labels accordingly.
+func (rule RecordingRule) eval(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err
