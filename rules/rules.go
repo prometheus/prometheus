@@ -27,7 +27,7 @@ type Rule interface {
 	// Name returns the name of the rule.
 	Name() string
 	// Eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(clientmodel.Timestamp, *promql.Engine) (promql.Vector, error)
+	eval(clientmodel.Timestamp, *promql.Engine) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,

@@ -186,7 +186,7 @@ func TestAlertingRule(t *testing.T) {
 	for i, expectedLines := range evalOutputs {
 		evalTime := testStartTime.Add(testSampleInterval * time.Duration(i))
 
-		res, err := rule.Eval(evalTime, engine)
+		res, err := rule.eval(evalTime, engine)
 		if err != nil {
 			t.Fatalf("Error during alerting rule evaluation: %s", err)
 		}

@@ -38,8 +38,8 @@ const (
 	namespace = "prometheus"
 
 	ruleTypeLabel     = "rule_type"
-	alertingRuleType  = "alerting"
-	recordingRuleType = "recording"
+	ruleTypeAlerting  = "alerting"
+	ruleTypeRecording = "recording"
 )
 
 var (
@@ -172,7 +172,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 
 	notifications := make(notification.NotificationReqs, 0, len(activeAlerts))
 	for _, aa := range activeAlerts {
-		if aa.State != Firing {
+		if aa.State != StateFiring {
 			// BUG: In the future, make AlertManager support pending alerts?
 			continue
 		}
@@ -204,15 +204,15 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 		}
 
 		notifications = append(notifications, &notification.NotificationReq{
-			Summary:     expand(rule.Summary),
-			Description: expand(rule.Description),
+			Summary:     expand(rule.summary),
+			Description: expand(rule.description),
 			Labels: aa.Labels.Merge(clientmodel.LabelSet{
-				AlertNameLabel: clientmodel.LabelValue(rule.Name()),
+				alertNameLabel: clientmodel.LabelValue(rule.Name()),
 			}),
 			Value:        aa.Value,
 			ActiveSince:  aa.ActiveSince.Time(),
 			RuleString:   rule.String(),
-			GeneratorURL: m.prometheusURL + strings.TrimLeft(utility.GraphLinkForExpression(rule.Vector.String()), "/"),
+			GeneratorURL: m.prometheusURL + strings.TrimLeft(utility.GraphLinkForExpression(rule.vector.String()), "/"),
 		})
 	}
 	m.notificationHandler.SubmitReqs(notifications)
@@ -234,7 +234,7 @@ func (m *Manager) runIteration() {
 			defer wg.Done()
 
 			start := time.Now()
-			vector, err := rule.Eval(now, m.queryEngine)
+			vector, err := rule.eval(now, m.queryEngine)
 			duration := time.Since(start)
 
 			if err != nil {
@@ -246,11 +246,11 @@ func (m *Manager) runIteration() {
 			switch r := rule.(type) {
 			case *AlertingRule:
 				m.queueAlertNotifications(r, now)
-				evalDuration.WithLabelValues(alertingRuleType).Observe(
+				evalDuration.WithLabelValues(ruleTypeAlerting).Observe(
 					float64(duration / time.Millisecond),
 				)
 			case *RecordingRule:
-				evalDuration.WithLabelValues(recordingRuleType).Observe(
+				evalDuration.WithLabelValues(ruleTypeRecording).Observe(
 					float64(duration / time.Millisecond),
 				)
 			default:
@@ -305,7 +305,7 @@ func (m *Manager) loadRuleFiles(filenames ...string) error {
 				rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Summary, r.Description)
 				m.rules = append(m.rules, rule)
 			case *promql.RecordStmt:
-				rule := &RecordingRule{r.Name, r.Expr, r.Labels}
+				rule := NewRecordingRule(r.Name, r.Expr, r.Labels)
 				m.rules = append(m.rules, rule)
 			default:
 				panic("retrieval.Manager.LoadRuleFiles: unknown statement type")
