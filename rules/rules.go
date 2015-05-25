@@ -26,9 +26,6 @@ import (
 type Rule interface {
 	// Name returns the name of the rule.
 	Name() string
-	// EvalRaw evaluates the rule's vector expression without triggering any
-	// other actions, like recording or alerting.
-	EvalRaw(clientmodel.Timestamp, *promql.Engine) (promql.Vector, error)
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(clientmodel.Timestamp, *promql.Engine) (promql.Vector, error)
 	// DotGraph returns a Graphviz dot graph of the rule.
