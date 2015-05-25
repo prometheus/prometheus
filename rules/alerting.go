@@ -16,7 +16,7 @@ package rules
 import (
 	"fmt"
 	"html/template"
-	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,21 +186,6 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 	}
 
 	return vector, nil
-}
-
-// DotGraph returns the text representation of a dot graph.
-func (rule *AlertingRule) DotGraph() string {
-	graph := fmt.Sprintf(
-		`digraph "Rules" {
-	  %#p[shape="box",label="ALERT %s IF FOR %s"];
-		%#p -> %x;
-		%s
-	}`,
-		&rule, rule.name, strutil.DurationToString(rule.holdDuration),
-		&rule, reflect.ValueOf(rule.Vector).Pointer(),
-		rule.Vector.DotGraph(),
-	)
-	return graph
 }
 
 func (rule *AlertingRule) String() string {
