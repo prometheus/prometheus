@@ -16,7 +16,6 @@ package rules
 import (
 	"fmt"
 	"html/template"
-	"reflect"
 	"strings"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -59,21 +58,6 @@ func (rule RecordingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 	}
 
 	return vector, nil
-}
-
-// DotGraph returns the text representation of a dot graph.
-func (rule RecordingRule) DotGraph() string {
-	graph := fmt.Sprintf(
-		`digraph "Rules" {
-	  %#p[shape="box",label="%s = "];
-		%#p -> %x;
-		%s
-	}`,
-		&rule, rule.name,
-		&rule, reflect.ValueOf(rule.vector).Pointer(),
-		rule.vector.DotGraph(),
-	)
-	return graph
 }
 
 func (rule RecordingRule) String() string {
