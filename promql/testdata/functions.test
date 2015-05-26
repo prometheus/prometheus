@@ -49,3 +49,16 @@ eval instant at 50m changes(http_requests[50m])
 	{path="/biz"} 1
 
 eval instant at 50m changes(nonexistent_metric[50m])
+
+
+clear
+
+# Tests for increase().
+load 5m
+	http_requests{path="/foo"}	0+10x10
+	http_requests{path="/bar"}	0+10x5 0+10x5
+
+# Tests for increase().
+eval instant at 50m increase(http_requests[50m])
+	{path="/foo"} 100
+	{path="/bar"}  90

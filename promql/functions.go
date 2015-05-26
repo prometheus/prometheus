@@ -118,6 +118,13 @@ func funcRate(ev *evaluator, args Expressions) Value {
 	return vector
 }
 
+// === increase(node ExprMatrix) Vector ===
+func funcIncrease(ev *evaluator, args Expressions) Value {
+	args = append(args, &NumberLiteral{1})
+	vector := funcDelta(ev, args).(Vector)
+	return vector
+}
+
 // === sort(node ExprVector) Vector ===
 func funcSort(ev *evaluator, args Expressions) Value {
 	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
@@ -571,6 +578,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []ExprType{ExprVector},
 		ReturnType: ExprVector,
 		Call:       funcAbsent,
+	},
+	"increase": {
+		Name:       "increase",
+		ArgTypes:   []ExprType{ExprMatrix},
+		ReturnType: ExprVector,
+		Call:       funcIncrease,
 	},
 	"avg_over_time": {
 		Name:       "avg_over_time",

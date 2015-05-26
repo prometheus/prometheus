@@ -310,7 +310,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 		// set already. Apply the labelsets in order of decreasing precedence.
 		labelsets := []clientmodel.LabelSet{
 			tg.Labels,
-			clientmodel.LabelSet{
+			{
 				clientmodel.MetricsPathLabel: clientmodel.LabelValue(cfg.MetricsPath),
 				clientmodel.JobLabel:         clientmodel.LabelValue(cfg.JobName),
 			},
