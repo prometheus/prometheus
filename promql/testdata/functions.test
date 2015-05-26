@@ -1,21 +1,51 @@
+# Testdata for resets() and changes().
 load 5m
 	http_requests{path="/foo"}	1 2 3 0 1 0 0 1 2 0
 	http_requests{path="/bar"}	1 2 3 4 5 1 2 3 4 5
+	http_requests{path="/biz"}	0 0 0 0 0 1 1 1 1 1
 
+# Tests for resets().
 eval instant at 50m resets(http_requests[5m])
 	{path="/foo"} 0
 	{path="/bar"} 0
+	{path="/biz"} 0
 
 eval instant at 50m resets(http_requests[20m])
 	{path="/foo"} 1
 	{path="/bar"} 0
+	{path="/biz"} 0
 
 eval instant at 50m resets(http_requests[30m])
 	{path="/foo"} 2
 	{path="/bar"} 1
+	{path="/biz"} 0
 
 eval instant at 50m resets(http_requests[50m])
 	{path="/foo"} 3
 	{path="/bar"} 1
+	{path="/biz"} 0
 
 eval instant at 50m resets(nonexistent_metric[50m])
+
+# Tests for changes().
+eval instant at 50m changes(http_requests[5m])
+	{path="/foo"} 0
+	{path="/bar"} 0
+	{path="/biz"} 0
+
+eval instant at 50m changes(http_requests[20m])
+	{path="/foo"} 3
+	{path="/bar"} 3
+	{path="/biz"} 0
+
+eval instant at 50m changes(http_requests[30m])
+	{path="/foo"} 4
+	{path="/bar"} 5
+	{path="/biz"} 1
+
+eval instant at 50m changes(http_requests[50m])
+	{path="/foo"} 8
+	{path="/bar"} 9
+	{path="/biz"} 1
+
+eval instant at 50m changes(nonexistent_metric[50m])
