@@ -532,6 +532,33 @@ func funcResets(ev *evaluator, args Expressions) Value {
 	return out
 }
 
+// === changes(matrix ExprMatrix) Vector ===
+func funcChanges(ev *evaluator, args Expressions) Value {
+	in := ev.evalMatrix(args[0])
+	out := make(Vector, 0, len(in))
+
+	for _, samples := range in {
+		changes := 0
+		prev := clientmodel.SampleValue(samples.Values[0].Value)
+		for _, sample := range samples.Values[1:] {
+			current := sample.Value
+			if current != prev {
+				changes++
+			}
+			prev = current
+		}
+
+		rs := &Sample{
+			Metric:    samples.Metric,
+			Value:     clientmodel.SampleValue(changes),
+			Timestamp: ev.Timestamp,
+		}
+		rs.Metric.Delete(clientmodel.MetricNameLabel)
+		out = append(out, rs)
+	}
+	return out
+}
+
 var functions = map[string]*Function{
 	"abs": {
 		Name:       "abs",
@@ -562,6 +589,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []ExprType{ExprVector},
 		ReturnType: ExprVector,
 		Call:       funcCeil,
+	},
+	"changes": {
+		Name:       "changes",
+		ArgTypes:   []ExprType{ExprMatrix},
+		ReturnType: ExprVector,
+		Call:       funcChanges,
 	},
 	"count_over_time": {
 		Name:       "count_over_time",
