@@ -1,0 +1,21 @@
+load 5m
+	http_requests{path="/foo"}	1 2 3 0 1 0 0 1 2 0
+	http_requests{path="/bar"}	1 2 3 4 5 1 2 3 4 5
+
+eval instant at 50m resets(http_requests[5m])
+	{path="/foo"} 0
+	{path="/bar"} 0
+
+eval instant at 50m resets(http_requests[20m])
+	{path="/foo"} 1
+	{path="/bar"} 0
+
+eval instant at 50m resets(http_requests[30m])
+	{path="/foo"} 2
+	{path="/bar"} 1
+
+eval instant at 50m resets(http_requests[50m])
+	{path="/foo"} 3
+	{path="/bar"} 1
+
+eval instant at 50m resets(nonexistent_metric[50m])

@@ -505,6 +505,33 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 	return outVec
 }
 
+// === resets(matrix ExprMatrix) Vector ===
+func funcResets(ev *evaluator, args Expressions) Value {
+	in := ev.evalMatrix(args[0])
+	out := make(Vector, 0, len(in))
+
+	for _, samples := range in {
+		resets := 0
+		prev := clientmodel.SampleValue(samples.Values[0].Value)
+		for _, sample := range samples.Values[1:] {
+			current := sample.Value
+			if current < prev {
+				resets++
+			}
+			prev = current
+		}
+
+		rs := &Sample{
+			Metric:    samples.Metric,
+			Value:     clientmodel.SampleValue(resets),
+			Timestamp: ev.Timestamp,
+		}
+		rs.Metric.Delete(clientmodel.MetricNameLabel)
+		out = append(out, rs)
+	}
+	return out
+}
+
 var functions = map[string]*Function{
 	"abs": {
 		Name:       "abs",
@@ -620,6 +647,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []ExprType{ExprMatrix},
 		ReturnType: ExprVector,
 		Call:       funcRate,
+	},
+	"resets": {
+		Name:       "resets",
+		ArgTypes:   []ExprType{ExprMatrix},
+		ReturnType: ExprVector,
+		Call:       funcResets,
 	},
 	"round": {
 		Name:         "round",
