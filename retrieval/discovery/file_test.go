@@ -11,10 +11,10 @@ import (
 )
 
 func TestFileSD(t *testing.T) {
+	defer os.Remove("fixtures/_test.yml")
+	defer os.Remove("fixtures/_test.json")
 	testFileSD(t, ".yml")
 	testFileSD(t, ".json")
-	os.Remove("fixtures/_test.yml")
-	os.Remove("fixtures/_test.json")
 }
 
 func testFileSD(t *testing.T, ext string) {
@@ -60,6 +60,9 @@ func testFileSD(t *testing.T, ext string) {
 	case <-time.After(15 * time.Second):
 		t.Fatalf("Expected new target group but got none")
 	case tg := <-ch:
+		if _, ok := tg.Labels["foo"]; !ok {
+			t.Fatalf("Label not parsed")
+		}
 		if tg.String() != fmt.Sprintf("file:fixtures/_test%s:0", ext) {
 			t.Fatalf("Unexpected target group", tg)
 		}

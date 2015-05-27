@@ -247,9 +247,10 @@ func readFile(filename string) ([]*config.TargetGroup, error) {
 
 	for i, tg := range targetGroups {
 		tg.Source = fileSource(filename, i)
-		tg.Labels = clientmodel.LabelSet{
-			FileSDFilepathLabel: clientmodel.LabelValue(filename),
+		if tg.Labels == nil {
+			tg.Labels = clientmodel.LabelSet{}
 		}
+		tg.Labels[FileSDFilepathLabel] = clientmodel.LabelValue(filename)
 	}
 	return targetGroups, nil
 }
