@@ -44,6 +44,8 @@ type Storage interface {
 	// Get the metric associated with the provided fingerprint.
 	MetricForFingerprint(clientmodel.Fingerprint) clientmodel.COWMetric
 	// Construct an iterator for a given fingerprint.
+	// The iterator will never return samples older than retention time,
+	// relative to the time NewIterator was called.
 	NewIterator(clientmodel.Fingerprint) SeriesIterator
 	// Run the various maintenance loops in goroutines. Returns when the
 	// storage is ready to use. Keeps everything running in the background

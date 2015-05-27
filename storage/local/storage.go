@@ -286,7 +286,47 @@ func (s *memorySeriesStorage) NewIterator(fp clientmodel.Fingerprint) SeriesIter
 		// return any values.
 		return nopSeriesIterator{}
 	}
-	return series.newIterator()
+	return &boundedIterator{
+		it:    series.newIterator(),
+		start: clientmodel.Now().Add(-s.dropAfter),
+	}
+}
+
+// boundedIterator wraps a SeriesIterator and does not allow fetching
+// data from earlier than the configured start time.
+type boundedIterator struct {
+	it    SeriesIterator
+	start clientmodel.Timestamp
+}
+
+// ValueAtTime implements the SeriesIterator interface.
+func (bit *boundedIterator) ValueAtTime(ts clientmodel.Timestamp) metric.Values {
+	if ts < bit.start {
+		return metric.Values{}
+	}
+	return bit.it.ValueAtTime(ts)
+}
+
+// BoundaryValues implements the SeriesIterator interface.
+func (bit *boundedIterator) BoundaryValues(interval metric.Interval) metric.Values {
+	if interval.NewestInclusive < bit.start {
+		return metric.Values{}
+	}
+	if interval.OldestInclusive < bit.start {
+		interval.OldestInclusive = bit.start
+	}
+	return bit.it.BoundaryValues(interval)
+}
+
+// RangeValues implements the SeriesIterator interface.
+func (bit *boundedIterator) RangeValues(interval metric.Interval) metric.Values {
+	if interval.NewestInclusive < bit.start {
+		return metric.Values{}
+	}
+	if interval.OldestInclusive < bit.start {
+		interval.OldestInclusive = bit.start
+	}
+	return bit.it.RangeValues(interval)
 }
 
 // NewPreloader implements Storage.
