@@ -152,8 +152,7 @@ func TestRetentionCutoff(t *testing.T) {
 
 	s.dropAfter = 1 * time.Hour
 
-	samples := make(clientmodel.Samples, 120)
-	for i := range samples {
+	for i := 0; i < 120; i++ {
 		smpl := &clientmodel.Sample{
 			Metric:    clientmodel.Metric{"job": "test"},
 			Timestamp: insertStart.Add(time.Duration(i) * time.Minute), // 1 minute intervals.
@@ -201,6 +200,85 @@ func TestRetentionCutoff(t *testing.T) {
 	}
 	if expt := now.Add(-1 * time.Hour).Add(time.Minute); vals[0].Timestamp != expt {
 		t.Errorf("unexpected timestamp for first sample: %v, expected %v", vals[0].Timestamp.Time(), expt.Time())
+	}
+}
+
+func TestDropMetrics(t *testing.T) {
+	now := clientmodel.Now()
+	insertStart := now.Add(-2 * time.Hour)
+
+	s, closer := NewTestStorage(t, 1)
+	defer closer.Close()
+
+	m1 := clientmodel.Metric{clientmodel.MetricNameLabel: "test", "n1": "v1"}
+	m2 := clientmodel.Metric{clientmodel.MetricNameLabel: "test", "n1": "v2"}
+
+	N := 120000
+
+	for j, m := range []clientmodel.Metric{m1, m2} {
+		for i := 0; i < N; i++ {
+			smpl := &clientmodel.Sample{
+				Metric:    m,
+				Timestamp: insertStart.Add(time.Duration(i) * time.Millisecond), // 1 minute intervals.
+				Value:     clientmodel.SampleValue(j),
+			}
+			s.Append(smpl)
+		}
+	}
+	s.WaitForIndexing()
+
+	matcher := metric.LabelMatchers{{
+		Type:  metric.Equal,
+		Name:  clientmodel.MetricNameLabel,
+		Value: "test",
+	}}
+
+	fps := s.FingerprintsForLabelMatchers(matcher)
+	if len(fps) != 2 {
+		t.Fatalf("unexpected number of fingerprints: %d", len(fps))
+	}
+
+	it := s.NewIterator(fps[0])
+	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != N {
+		t.Fatalf("unexpected number of samples: %d", len(vals))
+	}
+	it = s.NewIterator(fps[1])
+	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != N {
+		t.Fatalf("unexpected number of samples: %d", len(vals))
+	}
+
+	s.DropMetricsForFingerprints(fps[0])
+	s.WaitForIndexing()
+
+	fps2 := s.FingerprintsForLabelMatchers(matcher)
+	if len(fps2) != 1 {
+		t.Fatalf("unexpected number of fingerprints: %d", len(fps2))
+	}
+
+	it = s.NewIterator(fps[0])
+	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != 0 {
+		t.Fatalf("unexpected number of samples: %d", len(vals))
+	}
+	it = s.NewIterator(fps[1])
+	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != N {
+		t.Fatalf("unexpected number of samples: %d", len(vals))
+	}
+
+	s.DropMetricsForFingerprints(fps...)
+	s.WaitForIndexing()
+
+	fps3 := s.FingerprintsForLabelMatchers(matcher)
+	if len(fps3) != 0 {
+		t.Fatalf("unexpected number of fingerprints: %d", len(fps3))
+	}
+
+	it = s.NewIterator(fps[0])
+	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != 0 {
+		t.Fatalf("unexpected number of samples: %d", len(vals))
+	}
+	it = s.NewIterator(fps[1])
+	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != 0 {
+		t.Fatalf("unexpected number of samples: %d", len(vals))
 	}
 }
 
