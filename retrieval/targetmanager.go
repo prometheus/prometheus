@@ -93,6 +93,9 @@ func (tm *TargetManager) Run() {
 		}
 	}
 
+	tm.m.Lock()
+	defer tm.m.Unlock()
+
 	tm.removeTargets(func(src string) bool {
 		if _, ok := sources[src]; ok {
 			return false
@@ -125,12 +128,12 @@ func fullSource(cfg *config.ScrapeConfig, src string) string {
 
 // Stop all background processing.
 func (tm *TargetManager) Stop() {
-	tm.m.Lock()
-	defer tm.m.Unlock()
-
+	tm.m.RLock()
 	if tm.running {
-		tm.stop(true)
+		defer tm.stop(true)
 	}
+	// Return the lock before calling tm.stop().
+	defer tm.m.RUnlock()
 }
 
 // stop background processing of the target manager. If removeTargets is true,
@@ -139,11 +142,25 @@ func (tm *TargetManager) stop(removeTargets bool) {
 	log.Info("Stopping target manager...")
 	defer log.Info("Target manager stopped.")
 
-	for _, provs := range tm.providers {
-		for _, p := range provs {
-			p.Stop()
-		}
+	tm.m.Lock()
+	provs := []TargetProvider{}
+	for _, ps := range tm.providers {
+		provs = append(provs, ps...)
 	}
+	tm.m.Unlock()
+
+	var wg sync.WaitGroup
+	wg.Add(len(provs))
+	for _, prov := range provs {
+		go func(p TargetProvider) {
+			p.Stop()
+			wg.Done()
+		}(prov)
+	}
+	wg.Wait()
+
+	tm.m.Lock()
+	defer tm.m.Unlock()
 
 	if removeTargets {
 		tm.removeTargets(nil)
@@ -268,10 +285,11 @@ func (tm *TargetManager) Pools() map[string][]*Target {
 // ApplyConfig resets the manager's target providers and job configurations as defined
 // by the new cfg. The state of targets that are valid in the new configuration remains unchanged.
 func (tm *TargetManager) ApplyConfig(cfg *config.Config) {
-	tm.m.Lock()
-	defer tm.m.Unlock()
+	tm.m.RLock()
+	running := tm.running
+	tm.m.RUnlock()
 
-	if tm.running {
+	if running {
 		tm.stop(false)
 		// Even if updating the config failed, we want to continue rather than stop scraping anything.
 		defer tm.Run()
@@ -281,6 +299,9 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) {
 	for _, scfg := range cfg.ScrapeConfigs {
 		providers[scfg] = ProvidersFromConfig(scfg)
 	}
+
+	tm.m.Lock()
+	defer tm.m.Unlock()
 
 	tm.globalLabels = cfg.GlobalConfig.Labels
 	tm.providers = providers
