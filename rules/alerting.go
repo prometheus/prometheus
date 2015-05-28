@@ -22,6 +22,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/pkg/strutil"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/utility"
 )
@@ -201,7 +202,7 @@ func (rule *AlertingRule) DotGraph() string {
 		%#p -> %x;
 		%s
 	}`,
-		&rule, rule.name, utility.DurationToString(rule.holdDuration),
+		&rule, rule.name, strutil.DurationToString(rule.holdDuration),
 		&rule, reflect.ValueOf(rule.Vector).Pointer(),
 		rule.Vector.DotGraph(),
 	)
@@ -209,7 +210,7 @@ func (rule *AlertingRule) DotGraph() string {
 }
 
 func (rule *AlertingRule) String() string {
-	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.Vector, utility.DurationToString(rule.holdDuration), rule.Labels)
+	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.Vector, strutil.DurationToString(rule.holdDuration), rule.Labels)
 }
 
 // HTMLSnippet returns an HTML snippet representing this alerting rule.
@@ -220,11 +221,11 @@ func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	}
 	return template.HTML(fmt.Sprintf(
 		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
-		pathPrefix+utility.GraphLinkForExpression(alertMetric.String()),
+		pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()),
 		rule.name,
-		pathPrefix+utility.GraphLinkForExpression(rule.Vector.String()),
+		pathPrefix+strutil.GraphLinkForExpression(rule.Vector.String()),
 		rule.Vector,
-		utility.DurationToString(rule.holdDuration),
+		strutil.DurationToString(rule.holdDuration),
 		rule.Labels))
 }
 

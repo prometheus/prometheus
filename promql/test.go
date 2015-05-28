@@ -24,12 +24,11 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/pkg/strutil"
+	"github.com/prometheus/prometheus/pkg/testutil"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility"
-
-	"github.com/prometheus/prometheus/pkg/testutil"
 )
 
 var (
@@ -91,7 +90,7 @@ func (t *Test) parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	}
 	parts := patLoad.FindStringSubmatch(lines[i])
 
-	gap, err := utility.StringToDuration(parts[1])
+	gap, err := strutil.StringToDuration(parts[1])
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}
@@ -132,7 +131,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		return i, nil, perr
 	}
 
-	offset, err := utility.StringToDuration(at)
+	offset, err := strutil.StringToDuration(at)
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}

@@ -28,10 +28,10 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
+	"github.com/prometheus/prometheus/pkg/strutil"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
-	"github.com/prometheus/prometheus/utility"
 )
 
 // Constants for instrumentation.
@@ -213,7 +213,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 			Value:        aa.Value,
 			ActiveSince:  aa.ActiveSince.Time(),
 			RuleString:   rule.String(),
-			GeneratorURL: m.prometheusURL + strings.TrimLeft(utility.GraphLinkForExpression(rule.Vector.String()), "/"),
+			GeneratorURL: m.prometheusURL + strings.TrimLeft(strutil.GraphLinkForExpression(rule.Vector.String()), "/"),
 		})
 	}
 	m.notificationHandler.SubmitReqs(notifications)
