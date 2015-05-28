@@ -23,7 +23,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/templates"
+	"github.com/prometheus/prometheus/template"
 )
 
 var (
@@ -70,13 +70,13 @@ func (h *ConsolesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Path:      r.URL.Path,
 	}
 
-	template := templates.NewTemplateExpander(string(text), "__console_"+r.URL.Path, data, clientmodel.Now(), h.QueryEngine, h.PathPrefix)
+	tmpl := template.NewTemplateExpander(string(text), "__console_"+r.URL.Path, data, clientmodel.Now(), h.QueryEngine, h.PathPrefix)
 	filenames, err := filepath.Glob(*consoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	result, err := template.ExpandHTML(filenames)
+	result, err := tmpl.ExpandHTML(filenames)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
