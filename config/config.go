@@ -12,7 +12,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/pkg/strutil"
 )
 
 var (
@@ -479,7 +479,7 @@ func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal(&s); err != nil {
 		return err
 	}
-	dur, err := utility.StringToDuration(s)
+	dur, err := strutil.StringToDuration(s)
 	if err != nil {
 		return err
 	}
@@ -489,5 +489,5 @@ func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // MarshalYAML implements the yaml.Marshaler interface.
 func (d Duration) MarshalYAML() (interface{}, error) {
-	return utility.DurationToString(time.Duration(d)), nil
+	return strutil.DurationToString(time.Duration(d)), nil
 }
