@@ -24,8 +24,8 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/pkg/testutil"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility/test"
 )
 
 func TestFingerprintsForLabelMatchers(t *testing.T) {
@@ -217,7 +217,7 @@ func TestLoop(t *testing.T) {
 			Value:     clientmodel.SampleValue(float64(i) * 0.2),
 		}
 	}
-	directory := test.NewTemporaryDirectory("test_storage", t)
+	directory := testutil.NewTemporaryDirectory("test_storage", t)
 	defer directory.Close()
 	o := &MemorySeriesStorageOptions{
 		MemoryChunks:               50,
@@ -902,7 +902,7 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 	*defaultChunkEncoding = int(encoding)
 	const samplesPerRun = 100000
 	rand.Seed(42)
-	directory := test.NewTemporaryDirectory("test_storage", b)
+	directory := testutil.NewTemporaryDirectory("test_storage", b)
 	defer directory.Close()
 	o := &MemorySeriesStorageOptions{
 		MemoryChunks:               100,

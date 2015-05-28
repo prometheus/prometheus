@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/utility"
 
-	testutil "github.com/prometheus/prometheus/utility/test"
+	"github.com/prometheus/prometheus/pkg/testutil"
 )
 
 var (
