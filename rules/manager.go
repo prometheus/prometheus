@@ -16,6 +16,7 @@ package rules
 import (
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -281,7 +282,16 @@ func (m *Manager) ApplyConfig(conf *config.Config) {
 	copy(rulesSnapshot, m.rules)
 	m.rules = m.rules[:0]
 
-	if err := m.loadRuleFiles(conf.RuleFiles...); err != nil {
+	var files []string
+	for _, pat := range conf.RuleFiles {
+		fs, err := filepath.Glob(pat)
+		if err != nil {
+			// The only error can be a bad pattern.
+			log.Errorf("Error retrieving rule files for %s: %s", pat, err)
+		}
+		files = append(files, fs...)
+	}
+	if err := m.loadRuleFiles(files...); err != nil {
 		// If loading the new rules failed, restore the old rule set.
 		m.rules = rulesSnapshot
 		log.Errorf("Error loading rules, previous rule set restored: %s", err)

@@ -11,6 +11,7 @@ global:
 rule_files:
   - "first.rules"
   - "second.rules"
+  - "my/*.rules"
 
 scrape_configs:
   - job_name: prometheus
