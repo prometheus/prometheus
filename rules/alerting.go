@@ -24,7 +24,6 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/strutil"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/utility"
 )
 
 const (
@@ -149,10 +148,10 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 
 	// Create pending alerts for any new vector elements in the alert expression
 	// or update the expression value for existing elements.
-	resultFingerprints := utility.Set{}
+	resultFPs := map[clientmodel.Fingerprint]struct{}{}
 	for _, sample := range exprResult {
 		fp := sample.Metric.Metric.Fingerprint()
-		resultFingerprints.Add(fp)
+		resultFPs[fp] = struct{}{}
 
 		if alert, ok := rule.activeAlerts[fp]; !ok {
 			labels := clientmodel.LabelSet{}
@@ -177,7 +176,7 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, activeAlert := range rule.activeAlerts {
-		if !resultFingerprints.Has(fp) {
+		if _, ok := resultFPs[fp]; !ok {
 			vector = append(vector, activeAlert.sample(timestamp, 0))
 			delete(rule.activeAlerts, fp)
 			continue
