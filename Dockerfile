@@ -9,7 +9,7 @@ RUN apk add --update -t build-deps go git mercurial vim \
     && go get github.com/tools/godep \
     && cd /go/src/github.com/prometheus/prometheus \
     && $GOPATH/bin/godep restore && go get -d \
-    && ./utility/embed-static.sh web/static web/templates | gofmt > web/blob/files.go \
+    && ./scripts/embed-static.sh web/static web/templates | gofmt > web/blob/files.go \
     && go build -ldflags " \
             -X main.buildVersion  $(cat VERSION) \
             -X main.buildRevision $(git rev-parse --short HEAD) \
