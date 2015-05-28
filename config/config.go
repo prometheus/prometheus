@@ -106,7 +106,7 @@ func (c Config) String() string {
 	return string(b)
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	c.DefaultedConfig = DefaultConfig
 	if err := unmarshal(&c.DefaultedConfig); err != nil {
@@ -144,7 +144,7 @@ type GlobalConfig struct {
 	DefaultedGlobalConfig `yaml:",inline"`
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	c.DefaultedGlobalConfig = DefaultGlobalConfig
 	if err := unmarshal(&c.DefaultedGlobalConfig); err != nil {
@@ -172,7 +172,7 @@ type ScrapeConfig struct {
 	DefaultedScrapeConfig `yaml:",inline"`
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	c.DefaultedScrapeConfig = DefaultScrapeConfig
 	err := unmarshal(&c.DefaultedScrapeConfig)
@@ -234,7 +234,7 @@ func (tg TargetGroup) String() string {
 	return tg.Source
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	g := struct {
 		Targets []string             `yaml:"targets"`
@@ -256,7 +256,7 @@ func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// MarshalYAML implements the yaml.Marshaller interface.
+// MarshalYAML implements the yaml.Marshaler interface.
 func (tg TargetGroup) MarshalYAML() (interface{}, error) {
 	g := &struct {
 		Targets []string             `yaml:"targets"`
@@ -271,7 +271,7 @@ func (tg TargetGroup) MarshalYAML() (interface{}, error) {
 	return g, nil
 }
 
-// UnmarshalJSON implements the json.Unmarshaller interface.
+// UnmarshalJSON implements the json.Unmarshaler interface.
 func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
 	g := struct {
 		Targets []string             `yaml:"targets"`
@@ -299,7 +299,7 @@ type DNSSDConfig struct {
 	DefaultedDNSSDConfig `yaml:",inline"`
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	c.DefaultedDNSSDConfig = DefaultDNSSDConfig
 	err := unmarshal(&c.DefaultedDNSSDConfig)
@@ -324,7 +324,7 @@ type FileSDConfig struct {
 	DefaultedFileSDConfig `yaml:",inline"`
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	c.DefaultedFileSDConfig = DefaultFileSDConfig
 	err := unmarshal(&c.DefaultedFileSDConfig)
@@ -354,7 +354,7 @@ type ConsulSDConfig struct {
 	DefaultedConsulSDConfig `yaml:",inline"`
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	c.DefaultedConsulSDConfig = DefaultConsulSDConfig
 	err := unmarshal(&c.DefaultedConsulSDConfig)
@@ -394,7 +394,7 @@ const (
 	RelabelDrop = "drop"
 )
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
@@ -414,7 +414,7 @@ type RelabelConfig struct {
 	DefaultedRelabelConfig `yaml:",inline"`
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	c.DefaultedRelabelConfig = DefaultRelabelConfig
 	return unmarshal(&c.DefaultedRelabelConfig)
@@ -442,7 +442,7 @@ type Regexp struct {
 	regexp.Regexp
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
@@ -456,7 +456,7 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// MarshalYAML implements the yaml.Marshaller interface.
+// MarshalYAML implements the yaml.Marshaler interface.
 func (re Regexp) MarshalYAML() (interface{}, error) {
 	return re.String(), nil
 }
@@ -467,7 +467,7 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 // we might want to move this into our model as well, eventually.
 type Duration time.Duration
 
-// UnmarshalYAML implements the yaml.Unmarshaller interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
@@ -481,7 +481,7 @@ func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// MarshalYAML implements the yaml.Marshaller interface.
+// MarshalYAML implements the yaml.Marshaler interface.
 func (d Duration) MarshalYAML() (interface{}, error) {
 	return utility.DurationToString(time.Duration(d)), nil
 }
