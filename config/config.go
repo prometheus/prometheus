@@ -18,6 +18,7 @@ import (
 var (
 	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
+	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 )
 
 // Load parses the YAML input s into a Config.
@@ -111,6 +112,11 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	c.DefaultedConfig = DefaultConfig
 	if err := unmarshal(&c.DefaultedConfig); err != nil {
 		return err
+	}
+	for _, rf := range c.RuleFiles {
+		if !patRulePath.MatchString(rf) {
+			return fmt.Errorf("invalid rule file path %q", rf)
+		}
 	}
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
