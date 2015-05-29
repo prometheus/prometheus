@@ -1,0 +1,61 @@
+{{ template "head" . }}
+
+{{ template "prom_right_table_head" }}
+  <th colspan="2">Interface</th>
+</tr>
+{{ range printf "node_network_transmit_bytes{job='node',instance='%s'}" .Params.instance | query | sortByLabel "device" }}
+  <th colspan="2">{{ .Labels.device }}</th>
+  <tr>
+    <td>Transmit Rate</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_network_transmit_bytes{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device) "B/s" "humanize1024") }}</td>
+  </tr>
+  <tr>
+    <td>Receive Rate</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(node_network_receive_bytes{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device) "B/s" "humanize1024") }}</td>
+  </tr>
+{{ end }}
+<tr>
+</tr>
+{{ template "prom_right_table_tail" }}
+
+{{ template "prom_content_head" . }}
+  <h1>Node Network - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
+
+  <h3>Network Received IO</h3>
+  <div id="networkreceiveioGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#networkreceiveioGraph"),
+    expr: [
+      "rate(node_network_receive_bytes{job='node',instance='{{ .Params.instance }}'}[5m])",
+    ],
+    min: 0,
+    name: '[[ device ]]',
+    yUnits: "B",
+    renderer: 'area',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: 'Bytes Received'
+  })
+  </script>
+
+  <h3>Network Transmitted IO</h3>
+  <div id="networktransmitioGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#networktransmitioGraph"),
+    expr: [
+      "rate(node_network_transmit_bytes{job='node',instance='{{ .Params.instance }}'}[5m])",
+    ],
+    min: 0,
+    name: '[[ device ]]',
+    yUnits: "B",
+    renderer: 'area',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: 'Bytes Transmitted'
+  })
+  </script>
+{{ template "prom_content_tail" . }}
+
+{{ template "tail" }}
