@@ -16,6 +16,7 @@
   <th>Up</th>
   <th>CPU<br/>Used</th>
   <th>Memory<br/> Available</th>
+  <th>Network<br/> Tx/Rx</th>
 </tr>
 {{ range query "up{job='node'}" | sortByLabel "instance" }}
 <tr>
@@ -23,6 +24,7 @@
   <td{{ if eq (. | value) 1.0 }}>Yes{{ else }} class="alert-danger">No{{ end }}</td>
   <td>{{ template "prom_query_drilldown" (args (printf "100 * (1 - avg by(instance)(rate(node_cpu{job='node',mode='idle',instance='%s'}[5m])))" .Labels.instance) "%" "printf.1f") }}</td>
   <td>{{ template "prom_query_drilldown" (args (printf "node_memory_MemFree{job='node',instance='%s'} + node_memory_Cached{job='node',instance='%s'} + node_memory_Buffers{job='node',instance='%s'}" .Labels.instance .Labels.instance .Labels.instance) "B" "humanize1024") }}</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "rate(node_network_transmit_bytes{job='node',instance='%s'}[5m])" .Labels.instance ) "B/s" "humanize1024")}} / {{ template "prom_query_drilldown" (args (printf "rate(node_network_receive_bytes{job='node',instance='%s'}[5m])" .Labels.instance) "B/s" "humanize1024")}} </td>
 </tr>
 {{ else }}
 <tr><td colspan=4>No nodes found.</td></tr>
