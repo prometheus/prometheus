@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/testutil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestLocking(t *testing.T) {

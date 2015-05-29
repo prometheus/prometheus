@@ -28,10 +28,10 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
-	"github.com/prometheus/prometheus/pkg/strutil"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // Constants for instrumentation.

@@ -23,8 +23,8 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/pkg/strutil"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (

@@ -21,8 +21,8 @@ import (
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
-	"github.com/prometheus/prometheus/pkg/strutil"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 type parser struct {
