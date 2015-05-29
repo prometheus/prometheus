@@ -21,7 +21,7 @@ package local
 import (
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/testutil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testStorageCloser struct {

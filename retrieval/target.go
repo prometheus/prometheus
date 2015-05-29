@@ -30,8 +30,8 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/httputil"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const (

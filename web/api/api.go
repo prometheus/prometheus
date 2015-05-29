@@ -20,9 +20,9 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/pkg/httputil"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // MetricsService manages the /api HTTP endpoint.
