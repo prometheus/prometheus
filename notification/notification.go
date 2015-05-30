@@ -143,14 +143,14 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	alerts := make([]map[string]interface{}, 0, len(reqs))
 	for _, req := range reqs {
 		alerts = append(alerts, map[string]interface{}{
-			"Summary":     req.Summary,
-			"Description": req.Description,
-			"Labels":      req.Labels,
-			"Payload": map[string]interface{}{
-				"Value":        req.Value,
-				"ActiveSince":  req.ActiveSince,
-				"GeneratorURL": req.GeneratorURL,
-				"AlertingRule": req.RuleString,
+			"summary":     req.Summary,
+			"description": req.Description,
+			"labels":      req.Labels,
+			"payload": map[string]interface{}{
+				"value":        req.Value,
+				"activeSince":  req.ActiveSince,
+				"generatorURL": req.GeneratorURL,
+				"alertingRule": req.RuleString,
 			},
 		})
 	}
