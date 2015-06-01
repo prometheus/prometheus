@@ -222,7 +222,7 @@ func (p *prometheus) reloadConfig() bool {
 	conf, err := config.LoadFromFile(*configFile)
 	if err != nil {
 		log.Errorf("Couldn't load configuration (-config.file=%s): %v", *configFile, err)
-		log.Errorf("Note: The configuration format has changed with version 0.14, please check the documentation.")
+		log.Errorf("Note: The configuration format has changed with version 0.14. Please see the documentation (http://prometheus.io/docs/operating/configuration/) and the provided configuration migration tool (https://github.com/prometheus/migrate).")
 		return false
 	}
 
