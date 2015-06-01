@@ -302,7 +302,8 @@ type DNSSDConfig struct {
 // UnmarshalYAML implements the yaml.Unmarshaller interface.
 func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultDNSSDConfig
-	err := unmarshal(c)
+	type plainDNSSDConfig DNSSDConfig
+	err := unmarshal((*plainDNSSDConfig)(c))
 	if err != nil {
 		return err
 	}
@@ -321,7 +322,8 @@ type FileSDConfig struct {
 // UnmarshalYAML implements the yaml.Unmarshaller interface.
 func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultFileSDConfig
-	err := unmarshal(c)
+	type plainFileSDConfig FileSDConfig
+	err := unmarshal((*plainFileSDConfig)(c))
 	if err != nil {
 		return err
 	}
@@ -351,7 +353,8 @@ type ConsulSDConfig struct {
 // UnmarshalYAML implements the yaml.Unmarshaller interface.
 func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultConsulSDConfig
-	err := unmarshal(c)
+	type plainConsulSDConfig ConsulSDConfig
+	err := unmarshal((*plainConsulSDConfig)(c))
 	if err != nil {
 		return err
 	}
