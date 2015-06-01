@@ -19,9 +19,10 @@ import (
 	"io"
 	"io/ioutil"
 	"testing"
-	dto "github.com/prometheus/client_model/go"
 
 	"github.com/matttproud/golang_protobuf_extensions/pbutil"
+
+	dto "github.com/prometheus/client_model/go"
 )
 
 // Benchmarks to show how much penalty text format parsing actually inflicts.

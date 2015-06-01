@@ -61,7 +61,8 @@ const (
 	QuantileLabel = "quantile"
 )
 
-var labelNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
+// LabelNameRE is a regular expression matching valid label names.
+var LabelNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 // A LabelName is a key for a LabelSet or Metric.  It has a value associated
 // therewith.
@@ -73,7 +74,7 @@ func (ln *LabelName) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal(&s); err != nil {
 		return err
 	}
-	if !labelNameRE.MatchString(s) {
+	if !LabelNameRE.MatchString(s) {
 		return fmt.Errorf("%q is not a valid label name", s)
 	}
 	*ln = LabelName(s)

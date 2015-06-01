@@ -9,16 +9,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/prometheus/client_golang/model"
+	"github.com/golang/protobuf/proto"
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/client_golang/model"
 )
 
 var (
 	metricNameRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_:]*$`)
-	labelNameRE  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 )
 
 // Labels represents a collection of label name -> value mappings. This type is
@@ -194,6 +193,6 @@ func (d *Desc) String() string {
 }
 
 func checkLabelName(l string) bool {
-	return labelNameRE.MatchString(l) &&
+	return model.LabelNameRE.MatchString(l) &&
 		!strings.HasPrefix(l, model.ReservedLabelPrefix)
 }
