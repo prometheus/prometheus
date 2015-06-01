@@ -70,17 +70,17 @@ var (
 	}
 
 	// The default DNS SD configuration.
-	DefaultDNSSDConfig = DefaultedDNSSDConfig{
+	DefaultDNSSDConfig = DNSSDConfig{
 		RefreshInterval: Duration(30 * time.Second),
 	}
 
 	// The default file SD configuration.
-	DefaultFileSDConfig = DefaultedFileSDConfig{
+	DefaultFileSDConfig = FileSDConfig{
 		RefreshInterval: Duration(30 * time.Second),
 	}
 
 	// The default Consul SD configuration.
-	DefaultConsulSDConfig = DefaultedConsulSDConfig{
+	DefaultConsulSDConfig = ConsulSDConfig{
 		TagSeparator: ",",
 		Scheme:       "http",
 	}
@@ -295,14 +295,14 @@ func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
 
 // DNSSDConfig is the configuration for DNS based service discovery.
 type DNSSDConfig struct {
-	// DefaultedDNSSDConfig contains the actual fields for DNSSDConfig.
-	DefaultedDNSSDConfig `yaml:",inline"`
+	Names           []string `yaml:"names"`
+	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaller interface.
 func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	c.DefaultedDNSSDConfig = DefaultDNSSDConfig
-	err := unmarshal(&c.DefaultedDNSSDConfig)
+	*c = DefaultDNSSDConfig
+	err := unmarshal(c)
 	if err != nil {
 		return err
 	}
@@ -312,22 +312,16 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// DefaultedDNSSDConfig is a proxy type for DNSSDConfig.
-type DefaultedDNSSDConfig struct {
+// FileSDConfig is the configuration for file based discovery.
+type FileSDConfig struct {
 	Names           []string `yaml:"names"`
 	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
 }
 
-// FileSDConfig is the configuration for file based discovery.
-type FileSDConfig struct {
-	// DefaultedFileSDConfig contains the actual fields for FileSDConfig.
-	DefaultedFileSDConfig `yaml:",inline"`
-}
-
 // UnmarshalYAML implements the yaml.Unmarshaller interface.
 func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	c.DefaultedFileSDConfig = DefaultFileSDConfig
-	err := unmarshal(&c.DefaultedFileSDConfig)
+	*c = DefaultFileSDConfig
+	err := unmarshal(c)
 	if err != nil {
 		return err
 	}
@@ -342,22 +336,22 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// DefaultedFileSDConfig is a proxy type for FileSDConfig.
-type DefaultedFileSDConfig struct {
-	Names           []string `yaml:"names"`
-	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
-}
-
 // ConsulSDConfig is the configuration for Consul service discovery.
 type ConsulSDConfig struct {
-	// DefaultedConsulSDConfig contains the actual fields for ConsulSDConfig.
-	DefaultedConsulSDConfig `yaml:",inline"`
+	Server       string   `yaml:"server"`
+	Token        string   `yaml:"token"`
+	Datacenter   string   `yaml:"datacenter"`
+	TagSeparator string   `yaml:"tag_separator"`
+	Scheme       string   `yaml:"scheme"`
+	Username     string   `yaml:"username"`
+	Password     string   `yaml:"password"`
+	Services     []string `yaml:"services"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaller interface.
 func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	c.DefaultedConsulSDConfig = DefaultConsulSDConfig
-	err := unmarshal(&c.DefaultedConsulSDConfig)
+	*c = DefaultConsulSDConfig
+	err := unmarshal(c)
 	if err != nil {
 		return err
 	}
@@ -368,18 +362,6 @@ func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return fmt.Errorf("Consul SD configuration requires at least one service name")
 	}
 	return nil
-}
-
-// DefaultedConsulSDConfig is a proxy type for ConsulSDConfig.
-type DefaultedConsulSDConfig struct {
-	Server       string   `yaml:"server"`
-	Token        string   `yaml:"token"`
-	Datacenter   string   `yaml:"datacenter"`
-	TagSeparator string   `yaml:"tag_separator"`
-	Scheme       string   `yaml:"scheme"`
-	Username     string   `yaml:"username"`
-	Password     string   `yaml:"password"`
-	Services     []string `yaml:"services"`
 }
 
 // RelabelAction is the action to be performed on relabeling.
