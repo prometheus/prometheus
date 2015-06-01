@@ -1,3 +1,31 @@
+## 0.14.0 / 2015-06-01
+* [CHANGE] Configuration format changed and switched to YAML. 
+  (See the provided [migration tool](https://github.com/prometheus/migrate/releases).)
+* [ENHANCEMENT] Redesign of state-preserving target discovery.
+* [ENHANCEMENT] Allow specifying scrape URL scheme and basic HTTP auth for non-static targets.
+* [FEATURE] Allow attaching meaningful labels to targets via relabeling.
+* [FEATURE] Configuration/rule reloading at runtime.
+* [FEATURE] Target discovery via file watches.
+* [FEATURE] Target discovery via Consul.
+* [ENHANCEMENT] Simplified binary operation evaluation.
+* [ENHANCEMENT] More stable component initialization.
+* [ENHANCEMENT] Added internal expression testing language.
+* [BUGFIX] Fix graph links with path prefix.
+* [ENHANCEMENT] Allow building from source without git.
+* [ENHANCEMENT] Improve storage iterator performance.
+* [ENHANCEMENT] Change logging output format and flags.
+* [BUGFIX] Fix memory alignment bug for 32bit systems.
+* [ENHANCEMENT] Improve web redirection behavior.
+* [ENHANCEMENT] Allow overriding default hostname for Prometheus URLs.
+* [BUGFIX] Fix double slash in URL sent to alertmanager.
+* [FEATURE] Add resets() query function to count counter resets.
+* [FEATURE] Add changes() query function to count the number of times a gauge changed.
+* [FEATURE] Add increase() query function to calculate a counter's increase.
+* [ENHANCEMENT] Limit retrievable samples to the storage's retention window.
+
+## 0.13.4 / 2015-05-23
+* [BUGFIX] Fix a race while checkpointing fingerprint mappings.
+
 ## 0.13.3 / 2015-05-11
 * [BUGFIX] Handle fingerprint collisions properly.
 * [CHANGE] Comments in rules file must start with `#`. (The undocumented `//`
