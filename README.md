@@ -45,7 +45,7 @@ context.)
 In most circumstances, the following should work:
 
     $ make build
-    $ ./prometheus -config.file=documentation/examples/prometheus.conf
+    $ ./prometheus -config.file=documentation/examples/prometheus.yml
 
 The above requires a number of common tools to be installed, namely
 `curl`, `git`, `gzip`, `hg` (Mercurial CLI), `sed`, `xxd`. Should you
