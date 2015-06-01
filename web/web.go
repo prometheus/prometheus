@@ -68,51 +68,51 @@ func (ws WebService) ServeForever(pathPrefix string) {
 	http.HandleFunc("/", prometheus.InstrumentHandlerFunc(pathPrefix, func(rw http.ResponseWriter, req *http.Request) {
 		// The "/" pattern matches everything, so we need to check
 		// that we're at the root here.
-		if req.URL.Path == pathPrefix {
+		if req.URL.Path == pathPrefix+"/" {
 			ws.StatusHandler.ServeHTTP(rw, req)
-		} else if req.URL.Path == strings.TrimRight(pathPrefix, "/") {
-			http.Redirect(rw, req, pathPrefix, http.StatusFound)
-		} else if !strings.HasPrefix(req.URL.Path, pathPrefix) {
+		} else if req.URL.Path == pathPrefix {
+			http.Redirect(rw, req, pathPrefix+"/", http.StatusFound)
+		} else if !strings.HasPrefix(req.URL.Path, pathPrefix+"/") {
 			// We're running under a prefix but the user requested something
 			// outside of it. Let's see if this page exists under the prefix.
-			http.Redirect(rw, req, pathPrefix+strings.TrimLeft(req.URL.Path, "/"), http.StatusFound)
+			http.Redirect(rw, req, pathPrefix+req.URL.Path, http.StatusFound)
 		} else {
 			http.NotFound(rw, req)
 		}
 	}))
-	http.Handle(pathPrefix+"alerts", prometheus.InstrumentHandler(
-		pathPrefix+"alerts", ws.AlertsHandler,
+	http.Handle(pathPrefix+"/alerts", prometheus.InstrumentHandler(
+		pathPrefix+"/alerts", ws.AlertsHandler,
 	))
-	http.Handle(pathPrefix+"consoles/", prometheus.InstrumentHandler(
-		pathPrefix+"consoles/", http.StripPrefix(pathPrefix+"consoles/", ws.ConsolesHandler),
+	http.Handle(pathPrefix+"/consoles/", prometheus.InstrumentHandler(
+		pathPrefix+"/consoles/", http.StripPrefix(pathPrefix+"/consoles/", ws.ConsolesHandler),
 	))
-	http.Handle(pathPrefix+"graph", prometheus.InstrumentHandler(
-		pathPrefix+"graph", ws.GraphsHandler,
+	http.Handle(pathPrefix+"/graph", prometheus.InstrumentHandler(
+		pathPrefix+"/graph", ws.GraphsHandler,
 	))
-	http.Handle(pathPrefix+"heap", prometheus.InstrumentHandler(
-		pathPrefix+"heap", http.HandlerFunc(dumpHeap),
+	http.Handle(pathPrefix+"/heap", prometheus.InstrumentHandler(
+		pathPrefix+"/heap", http.HandlerFunc(dumpHeap),
 	))
 
 	ws.MetricsHandler.RegisterHandler(pathPrefix)
-	http.Handle(pathPrefix+strings.TrimLeft(*metricsPath, "/"), prometheus.Handler())
+	http.Handle(pathPrefix+*metricsPath, prometheus.Handler())
 	if *useLocalAssets {
-		http.Handle(pathPrefix+"static/", prometheus.InstrumentHandler(
-			pathPrefix+"static/", http.StripPrefix(pathPrefix+"static/", http.FileServer(http.Dir("web/static"))),
+		http.Handle(pathPrefix+"/static/", prometheus.InstrumentHandler(
+			pathPrefix+"/static/", http.StripPrefix(pathPrefix+"/static/", http.FileServer(http.Dir("web/static"))),
 		))
 	} else {
-		http.Handle(pathPrefix+"static/", prometheus.InstrumentHandler(
-			pathPrefix+"static/", http.StripPrefix(pathPrefix+"static/", new(blob.Handler)),
+		http.Handle(pathPrefix+"/static/", prometheus.InstrumentHandler(
+			pathPrefix+"/static/", http.StripPrefix(pathPrefix+"/static/", new(blob.Handler)),
 		))
 	}
 
 	if *userAssetsPath != "" {
-		http.Handle(pathPrefix+"user/", prometheus.InstrumentHandler(
-			pathPrefix+"user/", http.StripPrefix(pathPrefix+"user/", http.FileServer(http.Dir(*userAssetsPath))),
+		http.Handle(pathPrefix+"/user/", prometheus.InstrumentHandler(
+			pathPrefix+"/user/", http.StripPrefix(pathPrefix+"/user/", http.FileServer(http.Dir(*userAssetsPath))),
 		))
 	}
 
 	if *enableQuit {
-		http.Handle(pathPrefix+"-/quit", http.HandlerFunc(ws.quitHandler))
+		http.Handle(pathPrefix+"/-/quit", http.HandlerFunc(ws.quitHandler))
 	}
 
 	log.Infof("Listening on %s", *listenAddress)
@@ -158,11 +158,11 @@ func getTemplateFile(name string) (string, error) {
 
 func getConsoles(pathPrefix string) string {
 	if _, err := os.Stat(*consoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
-		return pathPrefix + "consoles/index.html"
+		return pathPrefix + "/consoles/index.html"
 	}
 	if *userAssetsPath != "" {
 		if _, err := os.Stat(*userAssetsPath + "/index.html"); !os.IsNotExist(err) {
-			return pathPrefix + "user/index.html"
+			return pathPrefix + "/user/index.html"
 		}
 	}
 	return ""
@@ -251,7 +251,7 @@ func MustBuildServerURL(pathPrefix string) string {
 	if err != nil {
 		panic(err)
 	}
-	return fmt.Sprintf("http://%s:%s%s", hostname, port, pathPrefix)
+	return fmt.Sprintf("http://%s:%s/%s", hostname, port, pathPrefix)
 }
 
 func getHostname() (string, error) {

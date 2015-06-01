@@ -39,13 +39,13 @@ func (msrv *MetricsService) RegisterHandler(pathPrefix string) {
 			Handler: http.HandlerFunc(h),
 		}
 	}
-	http.Handle(pathPrefix+"api/query", prometheus.InstrumentHandler(
-		pathPrefix+"api/query", handler(msrv.Query),
+	http.Handle(pathPrefix+"/api/query", prometheus.InstrumentHandler(
+		pathPrefix+"/api/query", handler(msrv.Query),
 	))
-	http.Handle(pathPrefix+"api/query_range", prometheus.InstrumentHandler(
-		pathPrefix+"api/query_range", handler(msrv.QueryRange),
+	http.Handle(pathPrefix+"/api/query_range", prometheus.InstrumentHandler(
+		pathPrefix+"/api/query_range", handler(msrv.QueryRange),
 	))
-	http.Handle(pathPrefix+"api/metrics", prometheus.InstrumentHandler(
-		pathPrefix+"api/metrics", handler(msrv.Metrics),
+	http.Handle(pathPrefix+"/api/metrics", prometheus.InstrumentHandler(
+		pathPrefix+"/api/metrics", handler(msrv.Metrics),
 	))
 }
