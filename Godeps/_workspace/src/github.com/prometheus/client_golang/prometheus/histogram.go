@@ -147,7 +147,7 @@ type HistogramOpts struct {
 	// element in the slice is the upper inclusive bound of a bucket. The
 	// values must be sorted in strictly increasing order. There is no need
 	// to add a highest bucket with +Inf bound, it will be added
-	// implicitly. The default value is DefObjectives.
+	// implicitly. The default value is DefBuckets.
 	Buckets []float64
 }
 
