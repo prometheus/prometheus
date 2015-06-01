@@ -251,7 +251,7 @@ func MustBuildServerURL(pathPrefix string) string {
 	if err != nil {
 		panic(err)
 	}
-	return fmt.Sprintf("http://%s:%s/%s", hostname, port, pathPrefix)
+	return fmt.Sprintf("http://%s:%s%s/", hostname, port, pathPrefix)
 }
 
 func getHostname() (string, error) {
