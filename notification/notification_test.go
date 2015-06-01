@@ -81,7 +81,7 @@ func TestNotificationHandler(t *testing.T) {
 			// Correct message.
 			summary:     "Summary",
 			description: "Description",
-			message:     `[{"Description":"Description","Labels":{"instance":"testinstance"},"Payload":{"ActiveSince":"0001-01-01T00:00:00Z","AlertingRule":"Test rule string","GeneratorURL":"prometheus_url","Value":"0.3333333333333333"},"Summary":"Summary"}]`,
+			message:     `[{"description":"Description","labels":{"instance":"testinstance"},"payload":{"activeSince":"0001-01-01T00:00:00Z","alertingRule":"Test rule string","generatorURL":"prometheus_url","value":"0.3333333333333333"},"summary":"Summary"}]`,
 		},
 	}
 
