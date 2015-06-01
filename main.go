@@ -71,7 +71,7 @@ var (
 	storageDirty          = flag.Bool("storage.local.dirty", false, "If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.")
 	storagePedanticChecks = flag.Bool("storage.local.pedantic-checks", false, "If set, a crash recovery will perform checks on each series file. This might take a very long time.")
 
-	pathPrefix = flag.String("web.path-prefix", "/", "Prefix for all web paths.")
+	pathPrefix = flag.String("web.path-prefix", "", "Prefix for all web paths.")
 
 	printVersion = flag.Bool("version", false, "Print version information.")
 )
@@ -377,11 +377,9 @@ func main() {
 		os.Exit(2)
 	}
 
-	if !strings.HasPrefix(*pathPrefix, "/") {
+	*pathPrefix = strings.TrimRight(*pathPrefix, "/")
+	if *pathPrefix != "" && !strings.HasPrefix(*pathPrefix, "/") {
 		*pathPrefix = "/" + *pathPrefix
-	}
-	if !strings.HasSuffix(*pathPrefix, "/") {
-		*pathPrefix = *pathPrefix + "/"
 	}
 
 	versionInfoTmpl.Execute(os.Stdout, BuildInfo)

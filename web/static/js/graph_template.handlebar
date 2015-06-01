@@ -1,5 +1,5 @@
         <div id="graph_wrapper{{id}}" class="graph_wrapper">
-          <form action="{{ pathPrefix }}api/query_range" method="GET" class="query_form form-inline">
+          <form action="{{ pathPrefix }}/api/query_range" method="GET" class="query_form form-inline">
             <div class="row">
               <div class="col-lg-10">
                 <span class="input-group expression_input_group">
@@ -14,7 +14,7 @@
               </div>
               <div class="col-lg-2">
                 <div class="eval_stats pull-right"></div>
-                <img src="{{ pathPrefix }}static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
+                <img src="{{ pathPrefix }}/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
               </div>
             </div>
             <div class="row">

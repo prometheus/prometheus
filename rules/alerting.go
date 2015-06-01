@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"html/template"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
@@ -221,9 +220,9 @@ func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	}
 	return template.HTML(fmt.Sprintf(
 		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
-		pathPrefix+strings.TrimLeft(utility.GraphLinkForExpression(alertMetric.String()), "/"),
+		pathPrefix+utility.GraphLinkForExpression(alertMetric.String()),
 		rule.name,
-		pathPrefix+strings.TrimLeft(utility.GraphLinkForExpression(rule.Vector.String()), "/"),
+		pathPrefix+utility.GraphLinkForExpression(rule.Vector.String()),
 		rule.Vector,
 		utility.DurationToString(rule.holdDuration),
 		rule.Labels))
