@@ -42,6 +42,9 @@ var tests = []struct {
 			{itemDuration, 1, `5m`},
 			{itemRightBracket, 3, `]`},
 		},
+	}, {
+		input:    "\r\n\r",
+		expected: []item{},
 	},
 	// Test numbers.
 	{

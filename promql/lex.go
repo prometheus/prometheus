@@ -724,7 +724,7 @@ Loop:
 }
 
 func isSpace(r rune) bool {
-	return r == ' ' || r == '\t' || r == '\n'
+	return r == ' ' || r == '\t' || r == '\n' || r == '\r'
 }
 
 // isEndOfLine reports whether r is an end-of-line character.
