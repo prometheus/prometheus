@@ -34,9 +34,9 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/local/codable"
-	"github.com/prometheus/prometheus/storage/local/flock"
 	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/util/flock"
 )
 
 const (

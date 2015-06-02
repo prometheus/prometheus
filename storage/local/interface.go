@@ -47,6 +47,9 @@ type Storage interface {
 	// The iterator will never return samples older than retention time,
 	// relative to the time NewIterator was called.
 	NewIterator(clientmodel.Fingerprint) SeriesIterator
+	// Drop all time series associated with the given fingerprints. This operation
+	// will not show up in the series operations metrics.
+	DropMetricsForFingerprints(...clientmodel.Fingerprint)
 	// Run the various maintenance loops in goroutines. Returns when the
 	// storage is ready to use. Keeps everything running in the background
 	// until Stop is called.

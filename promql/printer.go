@@ -22,7 +22,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 func (matrix Matrix) String() string {
@@ -145,7 +145,7 @@ func (node *AlertStmt) String() string {
 	s := fmt.Sprintf("ALERT %s", node.Name)
 	s += fmt.Sprintf("\n\tIF %s", node.Expr)
 	if node.Duration > 0 {
-		s += fmt.Sprintf("\n\tFOR %s", utility.DurationToString(node.Duration))
+		s += fmt.Sprintf("\n\tFOR %s", strutil.DurationToString(node.Duration))
 	}
 	if len(node.Labels) > 0 {
 		s += fmt.Sprintf("\n\tWITH %s", node.Labels)
@@ -207,7 +207,7 @@ func (node *MatrixSelector) String() string {
 		Name:          node.Name,
 		LabelMatchers: node.LabelMatchers,
 	}
-	return fmt.Sprintf("%s[%s]", vecSelector.String(), utility.DurationToString(node.Range))
+	return fmt.Sprintf("%s[%s]", vecSelector.String(), strutil.DurationToString(node.Range))
 }
 
 func (node *NumberLiteral) String() string {
@@ -260,7 +260,7 @@ func (node *AlertStmt) DotGraph() string {
 		%#p -> %x;
 		%s
 	}`,
-		node, node.Name, utility.DurationToString(node.Duration),
+		node, node.Name, strutil.DurationToString(node.Duration),
 		node, reflect.ValueOf(node.Expr).Pointer(),
 		node.Expr.DotGraph(),
 	)

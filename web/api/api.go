@@ -22,7 +22,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/web/httputils"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // MetricsService manages the /api HTTP endpoint.
@@ -35,7 +35,7 @@ type MetricsService struct {
 // RegisterHandler registers the handler for the various endpoints below /api.
 func (msrv *MetricsService) RegisterHandler(pathPrefix string) {
 	handler := func(h func(http.ResponseWriter, *http.Request)) http.Handler {
-		return httputils.CompressionHandler{
+		return httputil.CompressionHandler{
 			Handler: http.HandlerFunc(h),
 		}
 	}

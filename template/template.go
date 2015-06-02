@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package templates
+package template
 
 import (
 	"bytes"
@@ -28,7 +28,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // A version of vector that's easier to use from templates.
@@ -152,8 +152,8 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 			},
 			"match":     regexp.MatchString,
 			"title":     strings.Title,
-			"graphLink": utility.GraphLinkForExpression,
-			"tableLink": utility.TableLinkForExpression,
+			"graphLink": strutil.GraphLinkForExpression,
+			"tableLink": strutil.TableLinkForExpression,
 			"sortByLabel": func(label string, v queryResult) queryResult {
 				sorter := queryResultByLabelSorter{v[:], label}
 				sort.Stable(sorter)

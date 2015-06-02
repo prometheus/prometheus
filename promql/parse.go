@@ -22,7 +22,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 type parser struct {
@@ -982,7 +982,7 @@ func (p *parser) checkType(node Node) (typ ExprType) {
 }
 
 func parseDuration(ds string) (time.Duration, error) {
-	dur, err := utility.StringToDuration(ds)
+	dur, err := strutil.StringToDuration(ds)
 	if err != nil {
 		return 0, err
 	}

@@ -26,7 +26,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 func TestBaseLabels(t *testing.T) {
@@ -242,7 +242,7 @@ func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmo
 		deadline:        deadline,
 		status:          &TargetStatus{},
 		scrapeInterval:  1 * time.Millisecond,
-		httpClient:      utility.NewDeadlineClient(deadline),
+		httpClient:      httputil.NewDeadlineClient(deadline),
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 	}

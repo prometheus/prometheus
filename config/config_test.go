@@ -27,6 +27,7 @@ var expectedConf = &Config{DefaultedConfig{
 	RuleFiles: []string{
 		"first.rules",
 		"second.rules",
+		"my/*.rules",
 	},
 
 	ScrapeConfigs: []*ScrapeConfig{
@@ -151,6 +152,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "regex.bad.yml",
 		errMsg:   "error parsing regexp",
+	}, {
+		filename: "rules.bad.yml",
+		errMsg:   "invalid rule file path",
 	},
 }
 
@@ -159,6 +163,7 @@ func TestBadConfigs(t *testing.T) {
 		_, err := LoadFromFile("testdata/" + ee.filename)
 		if err == nil {
 			t.Errorf("Expected error parsing %s but got none", ee.filename)
+			continue
 		}
 		if !strings.Contains(err.Error(), ee.errMsg) {
 			t.Errorf("Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)

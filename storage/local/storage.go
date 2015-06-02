@@ -430,6 +430,26 @@ func (s *memorySeriesStorage) MetricForFingerprint(fp clientmodel.Fingerprint) c
 	}
 }
 
+// DropMetric implements Storage.
+func (s *memorySeriesStorage) DropMetricsForFingerprints(fps ...clientmodel.Fingerprint) {
+	for _, fp := range fps {
+		s.fpLocker.Lock(fp)
+
+		if series, ok := s.fpToSeries.get(fp); ok {
+			s.fpToSeries.del(fp)
+			s.numSeries.Dec()
+			s.persistence.unindexMetric(fp, series.metric)
+			if _, err := s.persistence.deleteSeriesFile(fp); err != nil {
+				log.Errorf("Error deleting series file for %v: %v", fp, err)
+			}
+		} else if err := s.persistence.purgeArchivedMetric(fp); err != nil {
+			log.Errorf("Error purging metric with fingerprint %v: %v", fp, err)
+		}
+
+		s.fpLocker.Unlock(fp)
+	}
+}
+
 // Append implements Storage.
 func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
 	if s.getNumChunksToPersist() >= s.maxChunksToPersist {
@@ -694,7 +714,7 @@ func (s *memorySeriesStorage) cycleThroughArchivedFingerprints() chan clientmode
 
 		for {
 			archivedFPs, err := s.persistence.fingerprintsModifiedBefore(
-				clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter),
+				clientmodel.Now().Add(-s.dropAfter),
 			)
 			if err != nil {
 				log.Error("Failed to lookup archived fingerprint ranges: ", err)
@@ -750,7 +770,7 @@ loop:
 			dirtySeriesCount = 0
 			checkpointTimer.Reset(s.checkpointInterval)
 		case fp := <-memoryFingerprints:
-			if s.maintainMemorySeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter)) {
+			if s.maintainMemorySeries(fp, clientmodel.Now().Add(-s.dropAfter)) {
 				dirtySeriesCount++
 				// Check if we have enough "dirty" series so that we need an early checkpoint.
 				// However, if we are already behind persisting chunks, creating a checkpoint
@@ -764,7 +784,7 @@ loop:
 				}
 			}
 		case fp := <-archivedFingerprints:
-			s.maintainArchivedSeries(fp, clientmodel.TimestampFromTime(time.Now()).Add(-s.dropAfter))
+			s.maintainArchivedSeries(fp, clientmodel.Now().Add(-s.dropAfter))
 		}
 	}
 	// Wait until both channels are closed.

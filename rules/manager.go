@@ -16,6 +16,7 @@ package rules
 import (
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -29,8 +30,8 @@ import (
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/templates"
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // Constants for instrumentation.
@@ -194,8 +195,8 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 		defs := "{{$labels := .Labels}}{{$value := .Value}}"
 
 		expand := func(text string) string {
-			template := templates.NewTemplateExpander(defs+text, "__alert_"+rule.Name(), tmplData, timestamp, m.queryEngine, m.pathPrefix)
-			result, err := template.Expand()
+			tmpl := template.NewTemplateExpander(defs+text, "__alert_"+rule.Name(), tmplData, timestamp, m.queryEngine, m.pathPrefix)
+			result, err := tmpl.Expand()
 			if err != nil {
 				result = err.Error()
 				log.Warnf("Error expanding alert template %v with data '%v': %v", rule.Name(), tmplData, err)
@@ -212,7 +213,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 			Value:        aa.Value,
 			ActiveSince:  aa.ActiveSince.Time(),
 			RuleString:   rule.String(),
-			GeneratorURL: m.prometheusURL + strings.TrimLeft(utility.GraphLinkForExpression(rule.Vector.String()), "/"),
+			GeneratorURL: m.prometheusURL + strings.TrimLeft(strutil.GraphLinkForExpression(rule.Vector.String()), "/"),
 		})
 	}
 	m.notificationHandler.SubmitReqs(notifications)
@@ -281,7 +282,16 @@ func (m *Manager) ApplyConfig(conf *config.Config) {
 	copy(rulesSnapshot, m.rules)
 	m.rules = m.rules[:0]
 
-	if err := m.loadRuleFiles(conf.RuleFiles...); err != nil {
+	var files []string
+	for _, pat := range conf.RuleFiles {
+		fs, err := filepath.Glob(pat)
+		if err != nil {
+			// The only error can be a bad pattern.
+			log.Errorf("Error retrieving rule files for %s: %s", pat, err)
+		}
+		files = append(files, fs...)
+	}
+	if err := m.loadRuleFiles(files...); err != nil {
 		// If loading the new rules failed, restore the old rule set.
 		m.rules = rulesSnapshot
 		log.Errorf("Error loading rules, previous rule set restored: %s", err)

@@ -26,7 +26,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/web/httputils"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // Enables cross-site script calls.
@@ -39,7 +39,7 @@ func setAccessControlHeaders(w http.ResponseWriter) {
 
 func httpJSONError(w http.ResponseWriter, err error, code int) {
 	w.WriteHeader(code)
-	httputils.ErrorJSON(w, err)
+	httputil.ErrorJSON(w, err)
 }
 
 func parseTimestampOrNow(t string, now clientmodel.Timestamp) (clientmodel.Timestamp, error) {
@@ -67,7 +67,7 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
-	params := httputils.GetQueryParams(r)
+	params := httputil.GetQueryParams(r)
 	expr := params.Get("expr")
 
 	timestamp, err := parseTimestampOrNow(params.Get("timestamp"), serv.Now())
@@ -88,7 +88,7 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Debugf("Instant query: %s\nQuery stats:\n%s\n", expr, query.Stats())
 
-	httputils.RespondJSON(w, res.Value)
+	httputil.RespondJSON(w, res.Value)
 }
 
 // QueryRange handles the /api/query_range endpoint.
@@ -96,7 +96,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
-	params := httputils.GetQueryParams(r)
+	params := httputil.GetQueryParams(r)
 	expr := params.Get("expr")
 
 	duration, err := parseDuration(params.Get("range"))
@@ -148,7 +148,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Debugf("Range query: %s\nQuery stats:\n%s\n", expr, query.Stats())
-	httputils.RespondJSON(w, matrix)
+	httputil.RespondJSON(w, matrix)
 }
 
 // Metrics handles the /api/metrics endpoint.

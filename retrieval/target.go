@@ -31,7 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const (
@@ -197,7 +197,7 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSe
 
 	t.scrapeInterval = time.Duration(cfg.ScrapeInterval)
 	t.deadline = time.Duration(cfg.ScrapeTimeout)
-	t.httpClient = utility.NewDeadlineClient(time.Duration(cfg.ScrapeTimeout))
+	t.httpClient = httputil.NewDeadlineClient(time.Duration(cfg.ScrapeTimeout))
 
 	t.baseLabels = clientmodel.LabelSet{}
 	// All remaining internal labels will not be part of the label set.

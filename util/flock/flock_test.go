@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/prometheus/prometheus/utility/test"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestLocking(t *testing.T) {
-	dir := test.NewTemporaryDirectory("test_flock", t)
+	dir := testutil.NewTemporaryDirectory("test_flock", t)
 	defer dir.Close()
 
 	fileName := filepath.Join(dir.Path(), "LOCK")

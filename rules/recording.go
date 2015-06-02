@@ -21,7 +21,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
@@ -89,9 +89,9 @@ func (rule RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	ruleExpr := rule.vector.String()
 	return template.HTML(fmt.Sprintf(
 		`<a href="%s">%s</a>%s = <a href="%s">%s</a>`,
-		pathPrefix+utility.GraphLinkForExpression(rule.name),
+		pathPrefix+strutil.GraphLinkForExpression(rule.name),
 		rule.name,
 		rule.labels,
-		pathPrefix+utility.GraphLinkForExpression(ruleExpr),
+		pathPrefix+strutil.GraphLinkForExpression(ruleExpr),
 		ruleExpr))
 }

@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/utility/test"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
@@ -34,16 +34,16 @@ var (
 	m5 = clientmodel.Metric{"label": "value5"}
 )
 
-func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, test.Closer) {
+func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, testutil.Closer) {
 	*defaultChunkEncoding = int(encoding)
-	dir := test.NewTemporaryDirectory("test_persistence", t)
+	dir := testutil.NewTemporaryDirectory("test_persistence", t)
 	p, err := newPersistence(dir.Path(), false, false, func() bool { return false })
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
 	}
 	go p.run()
-	return p, test.NewCallbackCloser(func() {
+	return p, testutil.NewCallbackCloser(func() {
 		p.close()
 		dir.Close()
 	})

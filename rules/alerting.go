@@ -23,7 +23,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/utility"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -148,10 +148,10 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 
 	// Create pending alerts for any new vector elements in the alert expression
 	// or update the expression value for existing elements.
-	resultFingerprints := utility.Set{}
+	resultFPs := map[clientmodel.Fingerprint]struct{}{}
 	for _, sample := range exprResult {
 		fp := sample.Metric.Metric.Fingerprint()
-		resultFingerprints.Add(fp)
+		resultFPs[fp] = struct{}{}
 
 		if alert, ok := rule.activeAlerts[fp]; !ok {
 			labels := clientmodel.LabelSet{}
@@ -176,7 +176,7 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, activeAlert := range rule.activeAlerts {
-		if !resultFingerprints.Has(fp) {
+		if _, ok := resultFPs[fp]; !ok {
 			vector = append(vector, activeAlert.sample(timestamp, 0))
 			delete(rule.activeAlerts, fp)
 			continue
@@ -201,7 +201,7 @@ func (rule *AlertingRule) DotGraph() string {
 		%#p -> %x;
 		%s
 	}`,
-		&rule, rule.name, utility.DurationToString(rule.holdDuration),
+		&rule, rule.name, strutil.DurationToString(rule.holdDuration),
 		&rule, reflect.ValueOf(rule.Vector).Pointer(),
 		rule.Vector.DotGraph(),
 	)
@@ -209,7 +209,7 @@ func (rule *AlertingRule) DotGraph() string {
 }
 
 func (rule *AlertingRule) String() string {
-	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.Vector, utility.DurationToString(rule.holdDuration), rule.Labels)
+	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.Vector, strutil.DurationToString(rule.holdDuration), rule.Labels)
 }
 
 // HTMLSnippet returns an HTML snippet representing this alerting rule.
@@ -220,11 +220,11 @@ func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	}
 	return template.HTML(fmt.Sprintf(
 		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
-		pathPrefix+utility.GraphLinkForExpression(alertMetric.String()),
+		pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()),
 		rule.name,
-		pathPrefix+utility.GraphLinkForExpression(rule.Vector.String()),
+		pathPrefix+strutil.GraphLinkForExpression(rule.Vector.String()),
 		rule.Vector,
-		utility.DurationToString(rule.holdDuration),
+		strutil.DurationToString(rule.holdDuration),
 		rule.Labels))
 }
 
