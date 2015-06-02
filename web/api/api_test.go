@@ -97,7 +97,7 @@ func TestQuery(t *testing.T) {
 		Storage:     storage,
 		QueryEngine: promql.NewEngine(storage),
 	}
-	api.RegisterHandler("")
+	api.RegisterHandler(http.DefaultServeMux, "")
 
 	server := httptest.NewServer(http.DefaultServeMux)
 	defer server.Close()

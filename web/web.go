@@ -49,77 +49,88 @@ var (
 
 // WebService handles the HTTP endpoints with the exception of /api.
 type WebService struct {
+	QuitChan chan struct{}
+	mux      *http.ServeMux
+}
+
+type WebServiceOptions struct {
+	PathPrefix      string
 	StatusHandler   *PrometheusStatusHandler
 	MetricsHandler  *api.MetricsService
 	AlertsHandler   *AlertsHandler
 	ConsolesHandler *ConsolesHandler
 	GraphsHandler   *GraphsHandler
-
-	QuitChan chan struct{}
 }
 
-// ServeForever serves the HTTP endpoints and only returns upon errors.
-func (ws WebService) ServeForever(pathPrefix string) {
+// NewWebService returns a new WebService.
+func NewWebService(o *WebServiceOptions) *WebService {
+	mux := http.NewServeMux()
 
-	http.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "", 404)
-	}))
+	ws := &WebService{
+		mux:      mux,
+		QuitChan: make(chan struct{}),
+	}
 
-	http.HandleFunc("/", prometheus.InstrumentHandlerFunc(pathPrefix, func(rw http.ResponseWriter, req *http.Request) {
+	mux.HandleFunc("/", prometheus.InstrumentHandlerFunc(o.PathPrefix, func(rw http.ResponseWriter, req *http.Request) {
 		// The "/" pattern matches everything, so we need to check
 		// that we're at the root here.
-		if req.URL.Path == pathPrefix+"/" {
-			ws.StatusHandler.ServeHTTP(rw, req)
-		} else if req.URL.Path == pathPrefix {
-			http.Redirect(rw, req, pathPrefix+"/", http.StatusFound)
-		} else if !strings.HasPrefix(req.URL.Path, pathPrefix+"/") {
+		if req.URL.Path == o.PathPrefix+"/" {
+			o.StatusHandler.ServeHTTP(rw, req)
+		} else if req.URL.Path == o.PathPrefix {
+			http.Redirect(rw, req, o.PathPrefix+"/", http.StatusFound)
+		} else if !strings.HasPrefix(req.URL.Path, o.PathPrefix+"/") {
 			// We're running under a prefix but the user requested something
 			// outside of it. Let's see if this page exists under the prefix.
-			http.Redirect(rw, req, pathPrefix+req.URL.Path, http.StatusFound)
+			http.Redirect(rw, req, o.PathPrefix+req.URL.Path, http.StatusFound)
 		} else {
 			http.NotFound(rw, req)
 		}
 	}))
-	http.Handle(pathPrefix+"/alerts", prometheus.InstrumentHandler(
-		pathPrefix+"/alerts", ws.AlertsHandler,
+	mux.Handle(o.PathPrefix+"/alerts", prometheus.InstrumentHandler(
+		o.PathPrefix+"/alerts", o.AlertsHandler,
 	))
-	http.Handle(pathPrefix+"/consoles/", prometheus.InstrumentHandler(
-		pathPrefix+"/consoles/", http.StripPrefix(pathPrefix+"/consoles/", ws.ConsolesHandler),
+	mux.Handle(o.PathPrefix+"/consoles/", prometheus.InstrumentHandler(
+		o.PathPrefix+"/consoles/", http.StripPrefix(o.PathPrefix+"/consoles/", o.ConsolesHandler),
 	))
-	http.Handle(pathPrefix+"/graph", prometheus.InstrumentHandler(
-		pathPrefix+"/graph", ws.GraphsHandler,
+	mux.Handle(o.PathPrefix+"/graph", prometheus.InstrumentHandler(
+		o.PathPrefix+"/graph", o.GraphsHandler,
 	))
-	http.Handle(pathPrefix+"/heap", prometheus.InstrumentHandler(
-		pathPrefix+"/heap", http.HandlerFunc(dumpHeap),
+	mux.Handle(o.PathPrefix+"/heap", prometheus.InstrumentHandler(
+		o.PathPrefix+"/heap", http.HandlerFunc(dumpHeap),
 	))
 
-	ws.MetricsHandler.RegisterHandler(pathPrefix)
-	http.Handle(pathPrefix+*metricsPath, prometheus.Handler())
+	o.MetricsHandler.RegisterHandler(mux, o.PathPrefix)
+	mux.Handle(o.PathPrefix+*metricsPath, prometheus.Handler())
 	if *useLocalAssets {
-		http.Handle(pathPrefix+"/static/", prometheus.InstrumentHandler(
-			pathPrefix+"/static/", http.StripPrefix(pathPrefix+"/static/", http.FileServer(http.Dir("web/static"))),
+		mux.Handle(o.PathPrefix+"/static/", prometheus.InstrumentHandler(
+			o.PathPrefix+"/static/", http.StripPrefix(o.PathPrefix+"/static/", http.FileServer(http.Dir("web/static"))),
 		))
 	} else {
-		http.Handle(pathPrefix+"/static/", prometheus.InstrumentHandler(
-			pathPrefix+"/static/", http.StripPrefix(pathPrefix+"/static/", new(blob.Handler)),
+		mux.Handle(o.PathPrefix+"/static/", prometheus.InstrumentHandler(
+			o.PathPrefix+"/static/", http.StripPrefix(o.PathPrefix+"/static/", new(blob.Handler)),
 		))
 	}
 
 	if *userAssetsPath != "" {
-		http.Handle(pathPrefix+"/user/", prometheus.InstrumentHandler(
-			pathPrefix+"/user/", http.StripPrefix(pathPrefix+"/user/", http.FileServer(http.Dir(*userAssetsPath))),
+		mux.Handle(o.PathPrefix+"/user/", prometheus.InstrumentHandler(
+			o.PathPrefix+"/user/", http.StripPrefix(o.PathPrefix+"/user/", http.FileServer(http.Dir(*userAssetsPath))),
 		))
 	}
 
 	if *enableQuit {
-		http.Handle(pathPrefix+"/-/quit", http.HandlerFunc(ws.quitHandler))
+		mux.Handle(o.PathPrefix+"/-/quit", http.HandlerFunc(ws.quitHandler))
 	}
 
+	return ws
+}
+
+// Run serves the HTTP endpoints.
+func (ws *WebService) Run() {
 	log.Infof("Listening on %s", *listenAddress)
 
 	// If we cannot bind to a port, retry after 30 seconds.
 	for {
-		err := http.ListenAndServe(*listenAddress, nil)
+		err := http.ListenAndServe(*listenAddress, ws.mux)
 		if err != nil {
 			log.Errorf("Could not listen on %s: %s", *listenAddress, err)
 		}
@@ -127,7 +138,7 @@ func (ws WebService) ServeForever(pathPrefix string) {
 	}
 }
 
-func (ws WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
+func (ws *WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		w.Header().Add("Allow", "POST")
 		w.WriteHeader(http.StatusMethodNotAllowed)
