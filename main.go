@@ -225,12 +225,13 @@ func (p *prometheus) reloadConfig() bool {
 		log.Errorf("Note: The configuration format has changed with version 0.14. Please see the documentation (http://prometheus.io/docs/operating/configuration/) and the provided configuration migration tool (https://github.com/prometheus/migrate).")
 		return false
 	}
+	success := true
 
-	p.webService.StatusHandler.ApplyConfig(conf)
-	p.targetManager.ApplyConfig(conf)
-	p.ruleManager.ApplyConfig(conf)
+	success = success && p.webService.StatusHandler.ApplyConfig(conf)
+	success = success && p.targetManager.ApplyConfig(conf)
+	success = success && p.ruleManager.ApplyConfig(conf)
 
-	return true
+	return success
 }
 
 // Serve starts the Prometheus server. It returns after the server has been shut

@@ -271,11 +271,12 @@ func (m *Manager) runIteration() {
 }
 
 // ApplyConfig updates the rule manager's state as the config requires. If
-// loading the new rules failed the old rule set is restored.
-func (m *Manager) ApplyConfig(conf *config.Config) {
+// loading the new rules failed the old rule set is restored. Returns true on success.
+func (m *Manager) ApplyConfig(conf *config.Config) bool {
 	m.Lock()
 	defer m.Unlock()
 
+	success := true
 	m.interval = time.Duration(conf.GlobalConfig.EvaluationInterval)
 
 	rulesSnapshot := make([]Rule, len(m.rules))
@@ -288,6 +289,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) {
 		if err != nil {
 			// The only error can be a bad pattern.
 			log.Errorf("Error retrieving rule files for %s: %s", pat, err)
+			success = false
 		}
 		files = append(files, fs...)
 	}
@@ -295,7 +297,9 @@ func (m *Manager) ApplyConfig(conf *config.Config) {
 		// If loading the new rules failed, restore the old rule set.
 		m.rules = rulesSnapshot
 		log.Errorf("Error loading rules, previous rule set restored: %s", err)
+		success = false
 	}
+	return success
 }
 
 // loadRuleFiles loads alerting and recording rules from the given files.

@@ -54,8 +54,10 @@ func (h *PrometheusStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 }
 
 // ApplyConfig updates the status handler's state as the new config requires.
-func (h *PrometheusStatusHandler) ApplyConfig(conf *config.Config) {
+// Returns true on success.
+func (h *PrometheusStatusHandler) ApplyConfig(conf *config.Config) bool {
 	h.mu.Lock()
 	h.Config = conf.String()
 	h.mu.Unlock()
+	return true
 }
