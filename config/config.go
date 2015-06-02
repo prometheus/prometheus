@@ -50,7 +50,7 @@ var (
 
 	// The default global configuration.
 	DefaultGlobalConfig = DefaultedGlobalConfig{
-		ScrapeInterval:     Duration(10 * time.Second),
+		ScrapeInterval:     Duration(1 * time.Minute),
 		ScrapeTimeout:      Duration(10 * time.Second),
 		EvaluationInterval: Duration(1 * time.Minute),
 	}
