@@ -228,12 +228,12 @@ type BasicAuth struct {
 type TargetGroup struct {
 	// Targets is a list of targets identified by a label set. Each target is
 	// uniquely identifiable in the group by its address label.
-	Targets []clientmodel.LabelSet `yaml:"targets,omitempty" json:"targets,omitempty"`
+	Targets []clientmodel.LabelSet
 	// Labels is a set of labels that is common across all targets in the group.
-	Labels clientmodel.LabelSet `yaml:"labels,omitempty" json:"labels,omitempty"`
+	Labels clientmodel.LabelSet
 
 	// Source is an identifier that describes a group of targets.
-	Source string `yaml:"-", json:"-"`
+	Source string
 }
 
 func (tg TargetGroup) String() string {
@@ -280,8 +280,8 @@ func (tg TargetGroup) MarshalYAML() (interface{}, error) {
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
 	g := struct {
-		Targets []string             `yaml:"targets"`
-		Labels  clientmodel.LabelSet `yaml:"labels"`
+		Targets []string             `json:"targets"`
+		Labels  clientmodel.LabelSet `json:"labels"`
 	}{}
 	if err := json.Unmarshal(b, &g); err != nil {
 		return err
