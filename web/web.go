@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
+	"github.com/prometheus/prometheus/util/route"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -49,77 +50,73 @@ var (
 
 // WebService handles the HTTP endpoints with the exception of /api.
 type WebService struct {
+	QuitChan chan struct{}
+	router   *route.Router
+}
+
+type WebServiceOptions struct {
+	PathPrefix      string
 	StatusHandler   *PrometheusStatusHandler
 	MetricsHandler  *api.MetricsService
 	AlertsHandler   *AlertsHandler
 	ConsolesHandler *ConsolesHandler
 	GraphsHandler   *GraphsHandler
-
-	QuitChan chan struct{}
 }
 
-// ServeForever serves the HTTP endpoints and only returns upon errors.
-func (ws WebService) ServeForever(pathPrefix string) {
+// NewWebService returns a new WebService.
+func NewWebService(o *WebServiceOptions) *WebService {
+	router := route.New()
 
-	http.Handle("/favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "", 404)
-	}))
+	ws := &WebService{
+		router:   router,
+		QuitChan: make(chan struct{}),
+	}
 
-	http.HandleFunc("/", prometheus.InstrumentHandlerFunc(pathPrefix, func(rw http.ResponseWriter, req *http.Request) {
-		// The "/" pattern matches everything, so we need to check
-		// that we're at the root here.
-		if req.URL.Path == pathPrefix+"/" {
-			ws.StatusHandler.ServeHTTP(rw, req)
-		} else if req.URL.Path == pathPrefix {
-			http.Redirect(rw, req, pathPrefix+"/", http.StatusFound)
-		} else if !strings.HasPrefix(req.URL.Path, pathPrefix+"/") {
-			// We're running under a prefix but the user requested something
-			// outside of it. Let's see if this page exists under the prefix.
-			http.Redirect(rw, req, pathPrefix+req.URL.Path, http.StatusFound)
-		} else {
-			http.NotFound(rw, req)
-		}
-	}))
-	http.Handle(pathPrefix+"/alerts", prometheus.InstrumentHandler(
-		pathPrefix+"/alerts", ws.AlertsHandler,
-	))
-	http.Handle(pathPrefix+"/consoles/", prometheus.InstrumentHandler(
-		pathPrefix+"/consoles/", http.StripPrefix(pathPrefix+"/consoles/", ws.ConsolesHandler),
-	))
-	http.Handle(pathPrefix+"/graph", prometheus.InstrumentHandler(
-		pathPrefix+"/graph", ws.GraphsHandler,
-	))
-	http.Handle(pathPrefix+"/heap", prometheus.InstrumentHandler(
-		pathPrefix+"/heap", http.HandlerFunc(dumpHeap),
-	))
+	if o.PathPrefix != "" {
+		// If the prefix is missing for the root path, append it.
+		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, o.PathPrefix, 301)
+		})
+		router = router.WithPrefix(o.PathPrefix)
+	}
 
-	ws.MetricsHandler.RegisterHandler(pathPrefix)
-	http.Handle(pathPrefix+*metricsPath, prometheus.Handler())
+	instr := prometheus.InstrumentHandler
+
+	router.Get("/", instr("status", o.StatusHandler))
+	router.Get("/alerts", instr("alerts", o.AlertsHandler))
+	router.Get("/graph", instr("graph", o.GraphsHandler))
+	router.Get("/heap", instr("heap", http.HandlerFunc(dumpHeap)))
+
+	router.Get(*metricsPath, prometheus.Handler().ServeHTTP)
+
+	o.MetricsHandler.RegisterHandler(router.WithPrefix("/api"))
+
+	router.Get("/consoles/*filepath", instr("consoles", o.ConsolesHandler))
+
 	if *useLocalAssets {
-		http.Handle(pathPrefix+"/static/", prometheus.InstrumentHandler(
-			pathPrefix+"/static/", http.StripPrefix(pathPrefix+"/static/", http.FileServer(http.Dir("web/static"))),
-		))
+		router.Get("/static/*filepath", instr("static", route.FileServe("web/static")))
 	} else {
-		http.Handle(pathPrefix+"/static/", prometheus.InstrumentHandler(
-			pathPrefix+"/static/", http.StripPrefix(pathPrefix+"/static/", new(blob.Handler)),
-		))
+		router.Get("/static/*filepath", instr("static", blob.Handler{}))
 	}
 
 	if *userAssetsPath != "" {
-		http.Handle(pathPrefix+"/user/", prometheus.InstrumentHandler(
-			pathPrefix+"/user/", http.StripPrefix(pathPrefix+"/user/", http.FileServer(http.Dir(*userAssetsPath))),
-		))
+		router.Get("/user/*filepath", instr("user", route.FileServe(*userAssetsPath)))
 	}
 
 	if *enableQuit {
-		http.Handle(pathPrefix+"/-/quit", http.HandlerFunc(ws.quitHandler))
+		router.Post("/-/quit", ws.quitHandler)
 	}
 
+	return ws
+}
+
+// Run serves the HTTP endpoints.
+func (ws *WebService) Run() {
 	log.Infof("Listening on %s", *listenAddress)
 
 	// If we cannot bind to a port, retry after 30 seconds.
 	for {
-		err := http.ListenAndServe(*listenAddress, nil)
+		err := http.ListenAndServe(*listenAddress, ws.router)
 		if err != nil {
 			log.Errorf("Could not listen on %s: %s", *listenAddress, err)
 		}
@@ -127,13 +124,7 @@ func (ws WebService) ServeForever(pathPrefix string) {
 	}
 }
 
-func (ws WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		w.Header().Add("Allow", "POST")
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
+func (ws *WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Requesting termination... Goodbye!")
 
 	close(ws.QuitChan)
