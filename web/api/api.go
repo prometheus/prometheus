@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/route"
 )
 
 // MetricsService manages the /api HTTP endpoint.
@@ -33,19 +34,15 @@ type MetricsService struct {
 }
 
 // RegisterHandler registers the handler for the various endpoints below /api.
-func (msrv *MetricsService) RegisterHandler(mux *http.ServeMux, pathPrefix string) {
-	handler := func(h func(http.ResponseWriter, *http.Request)) http.Handler {
-		return httputil.CompressionHandler{
-			Handler: http.HandlerFunc(h),
-		}
+func (msrv *MetricsService) RegisterHandler(router *route.Router) {
+	router.Get("/query", handle("query", msrv.Query))
+	router.Get("/query_range", handle("query_range", msrv.QueryRange))
+	router.Get("/metrics", handle("metrics", msrv.Metrics))
+}
+
+func handle(name string, f http.HandlerFunc) http.HandlerFunc {
+	h := httputil.CompressionHandler{
+		Handler: f,
 	}
-	mux.Handle(pathPrefix+"/api/query", prometheus.InstrumentHandler(
-		pathPrefix+"/api/query", handler(msrv.Query),
-	))
-	mux.Handle(pathPrefix+"/api/query_range", prometheus.InstrumentHandler(
-		pathPrefix+"/api/query_range", handler(msrv.QueryRange),
-	))
-	mux.Handle(pathPrefix+"/api/metrics", prometheus.InstrumentHandler(
-		pathPrefix+"/api/metrics", handler(msrv.Metrics),
-	))
+	return prometheus.InstrumentHandler(name, h)
 }

@@ -60,8 +60,7 @@ func New() *Router {
 	return &Router{rtr: httprouter.New()}
 }
 
-// WithPrefix returns a router that prefixes all registered routes
-// with preifx.
+// WithPrefix returns a router that prefixes all registered routes with prefix.
 func (r *Router) WithPrefix(prefix string) *Router {
 	return &Router{rtr: r.rtr, prefix: r.prefix + prefix}
 }

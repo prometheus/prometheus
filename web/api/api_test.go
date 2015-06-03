@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/util/route"
 )
 
 // This is a bit annoying. On one hand, we have to choose a current timestamp
@@ -97,9 +98,10 @@ func TestQuery(t *testing.T) {
 		Storage:     storage,
 		QueryEngine: promql.NewEngine(storage),
 	}
-	api.RegisterHandler(http.DefaultServeMux, "")
+	rtr := route.New()
+	api.RegisterHandler(rtr.WithPrefix("/api"))
 
-	server := httptest.NewServer(http.DefaultServeMux)
+	server := httptest.NewServer(rtr)
 	defer server.Close()
 
 	for i, s := range scenarios {

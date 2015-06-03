@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
+	"github.com/prometheus/prometheus/util/route"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -50,7 +51,7 @@ var (
 // WebService handles the HTTP endpoints with the exception of /api.
 type WebService struct {
 	QuitChan chan struct{}
-	mux      *http.ServeMux
+	router   *route.Router
 }
 
 type WebServiceOptions struct {
@@ -64,61 +65,46 @@ type WebServiceOptions struct {
 
 // NewWebService returns a new WebService.
 func NewWebService(o *WebServiceOptions) *WebService {
-	mux := http.NewServeMux()
+	router := route.New()
 
 	ws := &WebService{
-		mux:      mux,
+		router:   router,
 		QuitChan: make(chan struct{}),
 	}
 
-	mux.HandleFunc("/", prometheus.InstrumentHandlerFunc(o.PathPrefix, func(rw http.ResponseWriter, req *http.Request) {
-		// The "/" pattern matches everything, so we need to check
-		// that we're at the root here.
-		if req.URL.Path == o.PathPrefix+"/" {
-			o.StatusHandler.ServeHTTP(rw, req)
-		} else if req.URL.Path == o.PathPrefix {
-			http.Redirect(rw, req, o.PathPrefix+"/", http.StatusFound)
-		} else if !strings.HasPrefix(req.URL.Path, o.PathPrefix+"/") {
-			// We're running under a prefix but the user requested something
-			// outside of it. Let's see if this page exists under the prefix.
-			http.Redirect(rw, req, o.PathPrefix+req.URL.Path, http.StatusFound)
-		} else {
-			http.NotFound(rw, req)
-		}
-	}))
-	mux.Handle(o.PathPrefix+"/alerts", prometheus.InstrumentHandler(
-		o.PathPrefix+"/alerts", o.AlertsHandler,
-	))
-	mux.Handle(o.PathPrefix+"/consoles/", prometheus.InstrumentHandler(
-		o.PathPrefix+"/consoles/", http.StripPrefix(o.PathPrefix+"/consoles/", o.ConsolesHandler),
-	))
-	mux.Handle(o.PathPrefix+"/graph", prometheus.InstrumentHandler(
-		o.PathPrefix+"/graph", o.GraphsHandler,
-	))
-	mux.Handle(o.PathPrefix+"/heap", prometheus.InstrumentHandler(
-		o.PathPrefix+"/heap", http.HandlerFunc(dumpHeap),
-	))
+	if o.PathPrefix != "" {
+		// If the prefix is missing for the root path, append it.
+		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, o.PathPrefix, 301)
+		})
+		router = router.WithPrefix(o.PathPrefix)
+	}
 
-	o.MetricsHandler.RegisterHandler(mux, o.PathPrefix)
-	mux.Handle(o.PathPrefix+*metricsPath, prometheus.Handler())
+	instr := prometheus.InstrumentHandler
+
+	router.Get("/", instr("status", o.StatusHandler))
+	router.Get("/alerts", instr("alerts", o.AlertsHandler))
+	router.Get("/graph", instr("graph", o.GraphsHandler))
+	router.Get("/heap", instr("heap", http.HandlerFunc(dumpHeap)))
+
+	router.Get(*metricsPath, prometheus.Handler().ServeHTTP)
+
+	o.MetricsHandler.RegisterHandler(router.WithPrefix("/api"))
+
+	router.Get("/consoles/*filepath", instr("consoles", o.ConsolesHandler))
+
 	if *useLocalAssets {
-		mux.Handle(o.PathPrefix+"/static/", prometheus.InstrumentHandler(
-			o.PathPrefix+"/static/", http.StripPrefix(o.PathPrefix+"/static/", http.FileServer(http.Dir("web/static"))),
-		))
+		router.Get("/static/*filepath", instr("static", route.FileServe("web/static")))
 	} else {
-		mux.Handle(o.PathPrefix+"/static/", prometheus.InstrumentHandler(
-			o.PathPrefix+"/static/", http.StripPrefix(o.PathPrefix+"/static/", new(blob.Handler)),
-		))
+		router.Get("/static/*filepath", instr("static", blob.Handler{}))
 	}
 
 	if *userAssetsPath != "" {
-		mux.Handle(o.PathPrefix+"/user/", prometheus.InstrumentHandler(
-			o.PathPrefix+"/user/", http.StripPrefix(o.PathPrefix+"/user/", http.FileServer(http.Dir(*userAssetsPath))),
-		))
+		router.Get("/user/*filepath", instr("user", route.FileServe(*userAssetsPath)))
 	}
 
 	if *enableQuit {
-		mux.Handle(o.PathPrefix+"/-/quit", http.HandlerFunc(ws.quitHandler))
+		router.Post("/-/quit", ws.quitHandler)
 	}
 
 	return ws
@@ -130,7 +116,7 @@ func (ws *WebService) Run() {
 
 	// If we cannot bind to a port, retry after 30 seconds.
 	for {
-		err := http.ListenAndServe(*listenAddress, ws.mux)
+		err := http.ListenAndServe(*listenAddress, ws.router)
 		if err != nil {
 			log.Errorf("Could not listen on %s: %s", *listenAddress, err)
 		}
@@ -139,12 +125,6 @@ func (ws *WebService) Run() {
 }
 
 func (ws *WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		w.Header().Add("Allow", "POST")
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
 	fmt.Fprintf(w, "Requesting termination... Goodbye!")
 
 	close(ws.QuitChan)

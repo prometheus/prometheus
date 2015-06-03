@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/prometheus/log"
+
+	"github.com/prometheus/prometheus/util/route"
 )
 
 // Sub-directories for templates and static content.
@@ -46,7 +48,9 @@ func GetFile(bucket string, name string) ([]byte, error) {
 type Handler struct{}
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Path
+	ctx := route.Context(r)
+
+	name := strings.Trim(route.Param(ctx, "filepath"), "/")
 	if name == "" {
 		name = "index.html"
 	}
