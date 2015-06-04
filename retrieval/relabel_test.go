@@ -13,7 +13,7 @@ import (
 func TestRelabel(t *testing.T) {
 	tests := []struct {
 		input   clientmodel.LabelSet
-		relabel []config.DefaultedRelabelConfig
+		relabel []*config.RelabelConfig
 		output  clientmodel.LabelSet
 	}{
 		{
@@ -22,7 +22,7 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			},
-			relabel: []config.DefaultedRelabelConfig{
+			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: clientmodel.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("f(.*)")},
@@ -45,7 +45,7 @@ func TestRelabel(t *testing.T) {
 				"b": "bar",
 				"c": "baz",
 			},
-			relabel: []config.DefaultedRelabelConfig{
+			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: clientmodel.LabelNames{"a", "b"},
 					Regex:        &config.Regexp{*regexp.MustCompile("^f(.*);(.*)r$")},
@@ -74,7 +74,7 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "foo",
 			},
-			relabel: []config.DefaultedRelabelConfig{
+			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: clientmodel.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("o$")},
@@ -94,7 +94,7 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "foo",
 			},
-			relabel: []config.DefaultedRelabelConfig{
+			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: clientmodel.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("no-match")},
@@ -109,7 +109,7 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "foo",
 			},
-			relabel: []config.DefaultedRelabelConfig{
+			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: clientmodel.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("no-match")},
@@ -122,7 +122,7 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "foo",
 			},
-			relabel: []config.DefaultedRelabelConfig{
+			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: clientmodel.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("^f")},
@@ -138,7 +138,7 @@ func TestRelabel(t *testing.T) {
 			input: clientmodel.LabelSet{
 				"a": "boo",
 			},
-			relabel: []config.DefaultedRelabelConfig{
+			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: clientmodel.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("^f")},
@@ -154,11 +154,7 @@ func TestRelabel(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		var relabel []*config.RelabelConfig
-		for _, rl := range test.relabel {
-			relabel = append(relabel, &config.RelabelConfig{rl})
-		}
-		res, err := Relabel(test.input, relabel...)
+		res, err := Relabel(test.input, test.relabel...)
 		if err != nil {
 			t.Errorf("Test %d: error relabeling: %s", i+1, err)
 		}

@@ -12,8 +12,8 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 )
 
-var expectedConf = &Config{DefaultedConfig{
-	GlobalConfig: &GlobalConfig{DefaultedGlobalConfig{
+var expectedConf = &Config{
+	GlobalConfig: &GlobalConfig{
 		ScrapeInterval:     Duration(15 * time.Second),
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: Duration(30 * time.Second),
@@ -22,7 +22,7 @@ var expectedConf = &Config{DefaultedConfig{
 			"monitor": "codelab",
 			"foo":     "bar",
 		},
-	}},
+	},
 
 	RuleFiles: []string{
 		"first.rules",
@@ -31,7 +31,7 @@ var expectedConf = &Config{DefaultedConfig{
 	},
 
 	ScrapeConfigs: []*ScrapeConfig{
-		{DefaultedScrapeConfig{
+		{
 			JobName: "prometheus",
 
 			ScrapeInterval: Duration(15 * time.Second),
@@ -54,28 +54,28 @@ var expectedConf = &Config{DefaultedConfig{
 			},
 
 			FileSDConfigs: []*FileSDConfig{
-				{DefaultedFileSDConfig{
+				{
 					Names:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
 					RefreshInterval: Duration(10 * time.Minute),
-				}},
-				{DefaultedFileSDConfig{
+				},
+				{
 					Names:           []string{"bar/*.yaml"},
 					RefreshInterval: Duration(30 * time.Second),
-				}},
+				},
 			},
 
 			RelabelConfigs: []*RelabelConfig{
-				{DefaultedRelabelConfig{
+				{
 					SourceLabels: clientmodel.LabelNames{"job", "__meta_dns_srv_name"},
 					TargetLabel:  "job",
 					Separator:    ";",
 					Regex:        &Regexp{*regexp.MustCompile("(.*)some-[regex]$")},
 					Replacement:  "foo-${1}",
 					Action:       RelabelReplace,
-				}},
+				},
 			},
-		}},
-		{DefaultedScrapeConfig{
+		},
+		{
 			JobName: "service-x",
 
 			ScrapeInterval: Duration(50 * time.Second),
@@ -89,32 +89,33 @@ var expectedConf = &Config{DefaultedConfig{
 			Scheme:      "https",
 
 			DNSSDConfigs: []*DNSSDConfig{
-				{DefaultedDNSSDConfig{
+				{
 					Names: []string{
 						"first.dns.address.domain.com",
 						"second.dns.address.domain.com",
 					},
 					RefreshInterval: Duration(15 * time.Second),
-				}},
-				{DefaultedDNSSDConfig{
+				},
+				{
 					Names: []string{
 						"first.dns.address.domain.com",
 					},
 					RefreshInterval: Duration(30 * time.Second),
-				}},
+				},
 			},
 
 			RelabelConfigs: []*RelabelConfig{
-				{DefaultedRelabelConfig{
+				{
 					SourceLabels: clientmodel.LabelNames{"job"},
 					Regex:        &Regexp{*regexp.MustCompile("(.*)some-[regex]$")},
 					Separator:    ";",
 					Action:       RelabelDrop,
-				}},
+				},
 			},
-		}},
+		},
 	},
-}, ""}
+	original: "",
+}
 
 func TestLoadConfig(t *testing.T) {
 	c, err := LoadFromFile("testdata/conf.good.yml")
