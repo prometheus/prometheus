@@ -77,6 +77,16 @@ func NewTestFromFile(t testutil.T, filename string) (*Test, error) {
 	return NewTest(t, string(content))
 }
 
+// QueryEngine returns the test's query engine.
+func (t *Test) QueryEngine() *Engine {
+	return t.queryEngine
+}
+
+// Storage returns the test's storage.
+func (t *Test) Storage() local.Storage {
+	return t.storage
+}
+
 func raise(line int, format string, v ...interface{}) error {
 	return &ParseErr{
 		Line: line + 1,
