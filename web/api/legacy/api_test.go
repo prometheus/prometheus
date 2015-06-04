@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package api
+package legacy
 
 import (
 	"io/ioutil"
@@ -93,13 +93,13 @@ func TestQuery(t *testing.T) {
 	})
 	storage.WaitForIndexing()
 
-	api := MetricsService{
+	api := &API{
 		Now:         testNow,
 		Storage:     storage,
 		QueryEngine: promql.NewEngine(storage),
 	}
 	rtr := route.New()
-	api.RegisterHandler(rtr.WithPrefix("/api"))
+	api.Register(rtr.WithPrefix("/api"))
 
 	server := httptest.NewServer(rtr)
 	defer server.Close()
