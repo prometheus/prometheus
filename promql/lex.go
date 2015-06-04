@@ -666,7 +666,7 @@ func lexNumberOrDuration(l *lexer) stateFn {
 // not necessarily a valid number. This case is caught by the parser.
 func (l *lexer) scanNumber() bool {
 	digits := "0123456789"
-	// Disallow hexal in series descriptions as the syntax is ambiguous.
+	// Disallow hexadecimal in series descriptions as the syntax is ambiguous.
 	if !l.seriesDesc && l.accept("0") && l.accept("xX") {
 		digits = "0123456789abcdefABCDEF"
 	}
