@@ -666,7 +666,8 @@ func lexNumberOrDuration(l *lexer) stateFn {
 // not necessarily a valid number. This case is caught by the parser.
 func (l *lexer) scanNumber() bool {
 	digits := "0123456789"
-	if l.accept("0") && l.accept("xX") {
+	// Disallow hexal in series descriptions as the syntax is ambiguous.
+	if !l.seriesDesc && l.accept("0") && l.accept("xX") {
 		digits = "0123456789abcdefABCDEF"
 	}
 	l.acceptRun(digits)
@@ -677,11 +678,12 @@ func (l *lexer) scanNumber() bool {
 		l.accept("+-")
 		l.acceptRun("0123456789")
 	}
-	// Next thing must not be alphanumeric.
-	if isAlphaNumeric(l.peek()) && !l.seriesDesc {
-		return false
+	// Next thing must not be alphanumeric unless it's the times token
+	// for series repetitions.
+	if r := l.peek(); (l.seriesDesc && r == 'x') || !isAlphaNumeric(r) {
+		return true
 	}
-	return true
+	return false
 }
 
 // lexIdentifier scans an alphanumeric identifier. The next character
