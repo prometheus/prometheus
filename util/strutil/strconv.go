@@ -78,7 +78,7 @@ func StringToDuration(durationStr string) (duration time.Duration, err error) {
 	case "s":
 		duration *= 1
 	default:
-		panic("Invalid time unit in duration string.")
+		return 0, fmt.Errorf("invalid time unit in duration string: %q", unit)
 	}
 	return
 }
