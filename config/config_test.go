@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"reflect"
 	"regexp"
 	"strings"
@@ -150,6 +152,9 @@ var expectedErrors = []struct {
 		filename: "labelname.bad.yml",
 		errMsg:   `"not$allowed" is not a valid label name`,
 	}, {
+		filename: "labelname2.bad.yml",
+		errMsg:   `"not:allowed" is not a valid label name`,
+	}, {
 		filename: "regex.bad.yml",
 		errMsg:   "error parsing regexp",
 	}, {
@@ -168,5 +173,17 @@ func TestBadConfigs(t *testing.T) {
 		if !strings.Contains(err.Error(), ee.errMsg) {
 			t.Errorf("Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 		}
+	}
+}
+
+func TestBadTargetGroup(t *testing.T) {
+	content, err := ioutil.ReadFile("testdata/tgroup.bad.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tg TargetGroup
+	err = json.Unmarshal(content, &tg)
+	if err == nil {
+		t.Errorf("Expected unmarshal error but got none.")
 	}
 }

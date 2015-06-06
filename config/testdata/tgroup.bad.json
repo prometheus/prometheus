@@ -1,0 +1,7 @@
+{
+  "targets": ["1.2.3.4:9100"],
+  "labels": {
+    "some_valid_label": "foo",
+    "oops:this-label-is-invalid": "bar"
+  }
+}
