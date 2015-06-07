@@ -46,7 +46,7 @@ func LoadFromFile(filename string) (*Config, error) {
 var (
 	// The default top-level configuration.
 	DefaultConfig = Config{
-		GlobalConfig: &DefaultGlobalConfig,
+		GlobalConfig: DefaultGlobalConfig,
 	}
 
 	// The default global configuration.
@@ -56,7 +56,7 @@ var (
 		EvaluationInterval: Duration(1 * time.Minute),
 	}
 
-	// Te default scrape configuration.
+	// The default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout and ScrapeInterval default to the
 		// configured globals.
@@ -89,7 +89,7 @@ var (
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig  *GlobalConfig   `yaml:"global"`
+	GlobalConfig  GlobalConfig    `yaml:"global"`
 	RuleFiles     []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 

@@ -13,7 +13,7 @@ import (
 )
 
 var expectedConf = &Config{
-	GlobalConfig: &GlobalConfig{
+	GlobalConfig: GlobalConfig{
 		ScrapeInterval:     Duration(15 * time.Second),
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: Duration(30 * time.Second),
@@ -118,6 +118,12 @@ var expectedConf = &Config{
 }
 
 func TestLoadConfig(t *testing.T) {
+	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
+	// an overwritten default field in the global config permanently changes the default.
+	if _, err := LoadFromFile("testdata/global_timeout.good.yml"); err != nil {
+		t.Errorf("Error parsing %s: %s", "testdata/conf.good.yml", err)
+	}
+
 	c, err := LoadFromFile("testdata/conf.good.yml")
 	if err != nil {
 		t.Errorf("Error parsing %s: %s", "testdata/conf.good.yml", err)
