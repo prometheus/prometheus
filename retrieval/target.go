@@ -156,6 +156,8 @@ type Target struct {
 	sync.RWMutex
 	// url is the URL to be scraped. Its host is immutable.
 	url *url.URL
+	// Labels before any processing.
+	metaLabels clientmodel.LabelSet
 	// Any base labels that are added to this target and its metrics.
 	baseLabels clientmodel.LabelSet
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
@@ -165,7 +167,7 @@ type Target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) *Target {
+func NewTarget(cfg *config.ScrapeConfig, baseLabels, metaLabels clientmodel.LabelSet) *Target {
 	t := &Target{
 		url: &url.URL{
 			Host: string(baseLabels[clientmodel.AddressLabel]),
@@ -174,7 +176,7 @@ func NewTarget(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) *Targe
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 	}
-	t.Update(cfg, baseLabels)
+	t.Update(cfg, baseLabels, metaLabels)
 	return t
 }
 
@@ -185,7 +187,7 @@ func (t *Target) Status() *TargetStatus {
 
 // Update overwrites settings in the target that are derived from the job config
 // it belongs to.
-func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSet) {
+func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientmodel.LabelSet) {
 	t.Lock()
 	defer t.Unlock()
 
@@ -199,6 +201,7 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels clientmodel.LabelSe
 	t.deadline = time.Duration(cfg.ScrapeTimeout)
 	t.httpClient = httputil.NewDeadlineClient(time.Duration(cfg.ScrapeTimeout))
 
+	t.metaLabels = metaLabels
 	t.baseLabels = clientmodel.LabelSet{}
 	// All remaining internal labels will not be part of the label set.
 	for name, val := range baseLabels {
@@ -395,6 +398,17 @@ func (t *Target) BaseLabels() clientmodel.LabelSet {
 	defer t.RUnlock()
 	lset := make(clientmodel.LabelSet, len(t.baseLabels))
 	for ln, lv := range t.baseLabels {
+		lset[ln] = lv
+	}
+	return lset
+}
+
+// MetaLabels returns a copy of the target's labels before any processing.
+func (t *Target) MetaLabels() clientmodel.LabelSet {
+	t.RLock()
+	defer t.RUnlock()
+	lset := make(clientmodel.LabelSet, len(t.metaLabels))
+	for ln, lv := range t.metaLabels {
 		lset[ln] = lv
 	}
 	return lset
