@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package api
+package legacy
 
 import (
 	"encoding/json"
@@ -63,20 +63,20 @@ func parseDuration(d string) (time.Duration, error) {
 }
 
 // Query handles the /api/query endpoint.
-func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
+func (api *API) Query(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
 	params := httputil.GetQueryParams(r)
 	expr := params.Get("expr")
 
-	timestamp, err := parseTimestampOrNow(params.Get("timestamp"), serv.Now())
+	timestamp, err := parseTimestampOrNow(params.Get("timestamp"), api.Now())
 	if err != nil {
 		httpJSONError(w, fmt.Errorf("invalid query timestamp %s", err), http.StatusBadRequest)
 		return
 	}
 
-	query, err := serv.QueryEngine.NewInstantQuery(expr, timestamp)
+	query, err := api.QueryEngine.NewInstantQuery(expr, timestamp)
 	if err != nil {
 		httpJSONError(w, err, http.StatusOK)
 		return
@@ -92,7 +92,7 @@ func (serv MetricsService) Query(w http.ResponseWriter, r *http.Request) {
 }
 
 // QueryRange handles the /api/query_range endpoint.
-func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
+func (api *API) QueryRange(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
@@ -111,7 +111,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	end, err := parseTimestampOrNow(params.Get("end"), serv.Now())
+	end, err := parseTimestampOrNow(params.Get("end"), api.Now())
 	if err != nil {
 		httpJSONError(w, fmt.Errorf("invalid query timestamp: %s", err), http.StatusBadRequest)
 		return
@@ -121,7 +121,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	// the current time as the end time. Instead, the "end" parameter should
 	// simply be omitted or set to an empty string for that case.
 	if end == 0 {
-		end = serv.Now()
+		end = api.Now()
 	}
 
 	// For safety, limit the number of returned points per timeseries.
@@ -136,7 +136,7 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 	end = end.Add(-time.Duration(end.UnixNano() % int64(step)))
 	start := end.Add(-duration)
 
-	query, err := serv.QueryEngine.NewRangeQuery(expr, start, end, step)
+	query, err := api.QueryEngine.NewRangeQuery(expr, start, end, step)
 	if err != nil {
 		httpJSONError(w, err, http.StatusOK)
 		return
@@ -152,11 +152,11 @@ func (serv MetricsService) QueryRange(w http.ResponseWriter, r *http.Request) {
 }
 
 // Metrics handles the /api/metrics endpoint.
-func (serv MetricsService) Metrics(w http.ResponseWriter, r *http.Request) {
+func (api *API) Metrics(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
-	metricNames := serv.Storage.LabelValuesForLabelName(clientmodel.MetricNameLabel)
+	metricNames := api.Storage.LabelValuesForLabelName(clientmodel.MetricNameLabel)
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {

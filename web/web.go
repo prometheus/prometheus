@@ -26,13 +26,14 @@ import (
 
 	pprof_runtime "runtime/pprof"
 
+	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
+
+	"github.com/prometheus/prometheus/web/api/legacy"
+	"github.com/prometheus/prometheus/web/api/v1"
+
 	"github.com/prometheus/prometheus/util/route"
-
-	clientmodel "github.com/prometheus/client_golang/model"
-
-	"github.com/prometheus/prometheus/web/api"
 	"github.com/prometheus/prometheus/web/blob"
 )
 
@@ -57,7 +58,8 @@ type WebService struct {
 type WebServiceOptions struct {
 	PathPrefix      string
 	StatusHandler   *PrometheusStatusHandler
-	MetricsHandler  *api.MetricsService
+	APILegacy       *legacy.API
+	APIv1           *v1.API
 	AlertsHandler   *AlertsHandler
 	ConsolesHandler *ConsolesHandler
 	GraphsHandler   *GraphsHandler
@@ -75,7 +77,7 @@ func NewWebService(o *WebServiceOptions) *WebService {
 	if o.PathPrefix != "" {
 		// If the prefix is missing for the root path, append it.
 		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, o.PathPrefix, 301)
+			http.Redirect(w, r, o.PathPrefix, 302)
 		})
 		router = router.WithPrefix(o.PathPrefix)
 	}
@@ -89,7 +91,9 @@ func NewWebService(o *WebServiceOptions) *WebService {
 
 	router.Get(*metricsPath, prometheus.Handler().ServeHTTP)
 
-	o.MetricsHandler.RegisterHandler(router.WithPrefix("/api"))
+	o.APILegacy.Register(router.WithPrefix("/api"))
+
+	o.APIv1.Register(router.WithPrefix("/api/v1"))
 
 	router.Get("/consoles/*filepath", instr("consoles", o.ConsolesHandler))
 

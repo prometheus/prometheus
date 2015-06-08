@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package api
+package legacy
 
 import (
 	"net/http"
@@ -26,18 +26,18 @@ import (
 	"github.com/prometheus/prometheus/util/route"
 )
 
-// MetricsService manages the /api HTTP endpoint.
-type MetricsService struct {
+// API manages the /api HTTP endpoint.
+type API struct {
 	Now         func() clientmodel.Timestamp
 	Storage     local.Storage
 	QueryEngine *promql.Engine
 }
 
 // RegisterHandler registers the handler for the various endpoints below /api.
-func (msrv *MetricsService) RegisterHandler(router *route.Router) {
-	router.Get("/query", handle("query", msrv.Query))
-	router.Get("/query_range", handle("query_range", msrv.QueryRange))
-	router.Get("/metrics", handle("metrics", msrv.Metrics))
+func (api *API) Register(router *route.Router) {
+	router.Get("/query", handle("query", api.Query))
+	router.Get("/query_range", handle("query_range", api.QueryRange))
+	router.Get("/metrics", handle("metrics", api.Metrics))
 }
 
 func handle(name string, f http.HandlerFunc) http.HandlerFunc {

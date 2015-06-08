@@ -1275,6 +1275,13 @@ var testSeries = []struct {
 		},
 		expectedValues: newSeq(1, 2, 3, -7, -17, -27, -37),
 	}, {
+		input: `my_metric{a="b"} 1 2 3-0x4`,
+		expectedMetric: clientmodel.Metric{
+			clientmodel.MetricNameLabel: "my_metric",
+			"a": "b",
+		},
+		expectedValues: newSeq(1, 2, 3, 3, 3, 3, 3),
+	}, {
 		input: `my_metric{a="b"} 1 3 _ 5 _x4`,
 		expectedMetric: clientmodel.Metric{
 			clientmodel.MetricNameLabel: "my_metric",
