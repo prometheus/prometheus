@@ -17,3 +17,7 @@ th.job_header {
 .literal_output td {
   font-family: monospace;
 }
+
+.cursor-pointer {
+  cursor: pointer;
+}
