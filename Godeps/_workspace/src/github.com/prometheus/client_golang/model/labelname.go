@@ -14,6 +14,7 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -72,6 +73,19 @@ type LabelName string
 func (ln *LabelName) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
+		return err
+	}
+	if !LabelNameRE.MatchString(s) {
+		return fmt.Errorf("%q is not a valid label name", s)
+	}
+	*ln = LabelName(s)
+	return nil
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (ln *LabelName) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
 	if !LabelNameRE.MatchString(s) {

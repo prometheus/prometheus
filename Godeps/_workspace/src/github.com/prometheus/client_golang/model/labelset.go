@@ -14,6 +14,7 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -61,4 +62,22 @@ func (l LabelSet) MergeFromMetric(m Metric) {
 	for k, v := range m {
 		l[k] = v
 	}
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (l *LabelSet) UnmarshalJSON(b []byte) error {
+	var m map[LabelName]LabelValue
+	if err := json.Unmarshal(b, &m); err != nil {
+		return err
+	}
+	// encoding/json only unmarshals maps of the form map[string]T. It does not
+	// detect that LabelName is a string and does not call its UnmarshalJSON method.
+	// Thus we have to replicate the behavior here.
+	for ln := range m {
+		if !LabelNameRE.MatchString(string(ln)) {
+			return fmt.Errorf("%q is not a valid label name", ln)
+		}
+	}
+	*l = LabelSet(m)
+	return nil
 }
