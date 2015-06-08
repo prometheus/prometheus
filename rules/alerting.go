@@ -16,7 +16,6 @@ package rules
 import (
 	"fmt"
 	"html/template"
-	"reflect"
 	"sync"
 	"time"
 
@@ -28,12 +27,12 @@ import (
 
 const (
 	// AlertMetricName is the metric name for synthetic alert timeseries.
-	AlertMetricName clientmodel.LabelValue = "ALERTS"
+	alertMetricName clientmodel.LabelValue = "ALERTS"
 
 	// AlertNameLabel is the label name indicating the name of an alert.
-	AlertNameLabel clientmodel.LabelName = "alertname"
+	alertNameLabel clientmodel.LabelName = "alertname"
 	// AlertStateLabel is the label name indicating the state of an alert.
-	AlertStateLabel clientmodel.LabelName = "alertstate"
+	alertStateLabel clientmodel.LabelName = "alertstate"
 )
 
 // AlertState denotes the state of an active alert.
@@ -41,11 +40,11 @@ type AlertState int
 
 func (s AlertState) String() string {
 	switch s {
-	case Inactive:
+	case StateInactive:
 		return "inactive"
-	case Pending:
+	case StatePending:
 		return "pending"
-	case Firing:
+	case StateFiring:
 		return "firing"
 	default:
 		panic("undefined")
@@ -54,13 +53,13 @@ func (s AlertState) String() string {
 
 const (
 	// Inactive alerts are neither firing nor pending.
-	Inactive AlertState = iota
+	StateInactive AlertState = iota
 	// Pending alerts have been active for less than the configured
 	// threshold duration.
-	Pending
+	StatePending
 	// Firing alerts have been active for longer than the configured
 	// threshold duration.
-	Firing
+	StateFiring
 )
 
 // Alert is used to track active (pending/firing) alerts over time.
@@ -84,9 +83,9 @@ func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleV
 		recordedMetric[label] = value
 	}
 
-	recordedMetric[clientmodel.MetricNameLabel] = AlertMetricName
-	recordedMetric[AlertNameLabel] = clientmodel.LabelValue(a.Name)
-	recordedMetric[AlertStateLabel] = clientmodel.LabelValue(a.State.String())
+	recordedMetric[clientmodel.MetricNameLabel] = alertMetricName
+	recordedMetric[alertNameLabel] = clientmodel.LabelValue(a.Name)
+	recordedMetric[alertStateLabel] = clientmodel.LabelValue(a.State.String())
 
 	return &promql.Sample{
 		Metric: clientmodel.COWMetric{
@@ -103,16 +102,16 @@ type AlertingRule struct {
 	// The name of the alert.
 	name string
 	// The vector expression from which to generate alerts.
-	Vector promql.Expr
+	vector promql.Expr
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
-	Labels clientmodel.LabelSet
+	labels clientmodel.LabelSet
 	// Short alert summary, suitable for email subjects.
-	Summary string
+	summary string
 	// More detailed alert description.
-	Description string
+	description string
 
 	// Protects the below.
 	mutex sync.Mutex
@@ -121,24 +120,40 @@ type AlertingRule struct {
 	activeAlerts map[clientmodel.Fingerprint]*Alert
 }
 
+// NewAlertingRule constructs a new AlertingRule.
+func NewAlertingRule(
+	name string,
+	vector promql.Expr,
+	holdDuration time.Duration,
+	labels clientmodel.LabelSet,
+	summary string,
+	description string,
+) *AlertingRule {
+	return &AlertingRule{
+		name:         name,
+		vector:       vector,
+		holdDuration: holdDuration,
+		labels:       labels,
+		summary:      summary,
+		description:  description,
+
+		activeAlerts: map[clientmodel.Fingerprint]*Alert{},
+	}
+}
+
 // Name returns the name of the alert.
 func (rule *AlertingRule) Name() string {
 	return rule.name
 }
 
-// EvalRaw returns the raw value of the rule expression, without creating alerts.
-func (rule *AlertingRule) EvalRaw(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
-	query, err := engine.NewInstantQuery(rule.Vector.String(), timestamp)
+// eval evaluates the rule expression and then creates pending alerts and fires
+// or removes previously pending alerts accordingly.
+func (rule *AlertingRule) eval(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
+	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err
 	}
-	return query.Exec().Vector()
-}
-
-// Eval evaluates the rule expression and then creates pending alerts and fires
-// or removes previously pending alerts accordingly.
-func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
-	exprResult, err := rule.EvalRaw(timestamp, engine)
+	exprResult, err := query.Exec().Vector()
 	if err != nil {
 		return nil, err
 	}
@@ -156,14 +171,14 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 		if alert, ok := rule.activeAlerts[fp]; !ok {
 			labels := clientmodel.LabelSet{}
 			labels.MergeFromMetric(sample.Metric.Metric)
-			labels = labels.Merge(rule.Labels)
+			labels = labels.Merge(rule.labels)
 			if _, ok := labels[clientmodel.MetricNameLabel]; ok {
 				delete(labels, clientmodel.MetricNameLabel)
 			}
 			rule.activeAlerts[fp] = &Alert{
 				Name:        rule.name,
 				Labels:      labels,
-				State:       Pending,
+				State:       StatePending,
 				ActiveSince: timestamp,
 				Value:       sample.Value,
 			}
@@ -182,9 +197,9 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 			continue
 		}
 
-		if activeAlert.State == Pending && timestamp.Sub(activeAlert.ActiveSince) >= rule.holdDuration {
+		if activeAlert.State == StatePending && timestamp.Sub(activeAlert.ActiveSince) >= rule.holdDuration {
 			vector = append(vector, activeAlert.sample(timestamp, 0))
-			activeAlert.State = Firing
+			activeAlert.State = StateFiring
 		}
 
 		vector = append(vector, activeAlert.sample(timestamp, 1))
@@ -193,39 +208,24 @@ func (rule *AlertingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 	return vector, nil
 }
 
-// DotGraph returns the text representation of a dot graph.
-func (rule *AlertingRule) DotGraph() string {
-	graph := fmt.Sprintf(
-		`digraph "Rules" {
-	  %#p[shape="box",label="ALERT %s IF FOR %s"];
-		%#p -> %x;
-		%s
-	}`,
-		&rule, rule.name, strutil.DurationToString(rule.holdDuration),
-		&rule, reflect.ValueOf(rule.Vector).Pointer(),
-		rule.Vector.DotGraph(),
-	)
-	return graph
-}
-
 func (rule *AlertingRule) String() string {
-	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.Vector, strutil.DurationToString(rule.holdDuration), rule.Labels)
+	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.vector, strutil.DurationToString(rule.holdDuration), rule.labels)
 }
 
 // HTMLSnippet returns an HTML snippet representing this alerting rule.
 func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	alertMetric := clientmodel.Metric{
-		clientmodel.MetricNameLabel: AlertMetricName,
-		AlertNameLabel:              clientmodel.LabelValue(rule.name),
+		clientmodel.MetricNameLabel: alertMetricName,
+		alertNameLabel:              clientmodel.LabelValue(rule.name),
 	}
 	return template.HTML(fmt.Sprintf(
 		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
 		pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()),
 		rule.name,
-		pathPrefix+strutil.GraphLinkForExpression(rule.Vector.String()),
-		rule.Vector,
+		pathPrefix+strutil.GraphLinkForExpression(rule.vector.String()),
+		rule.vector,
 		strutil.DurationToString(rule.holdDuration),
-		rule.Labels))
+		rule.labels))
 }
 
 // State returns the "maximum" state: firing > pending > inactive.
@@ -233,7 +233,7 @@ func (rule *AlertingRule) State() AlertState {
 	rule.mutex.Lock()
 	defer rule.mutex.Unlock()
 
-	maxState := Inactive
+	maxState := StateInactive
 	for _, activeAlert := range rule.activeAlerts {
 		if activeAlert.State > maxState {
 			maxState = activeAlert.State
@@ -252,18 +252,4 @@ func (rule *AlertingRule) ActiveAlerts() []Alert {
 		alerts = append(alerts, *alert)
 	}
 	return alerts
-}
-
-// NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(name string, vector promql.Expr, holdDuration time.Duration, labels clientmodel.LabelSet, summary string, description string) *AlertingRule {
-	return &AlertingRule{
-		name:         name,
-		Vector:       vector,
-		holdDuration: holdDuration,
-		Labels:       labels,
-		Summary:      summary,
-		Description:  description,
-
-		activeAlerts: map[clientmodel.Fingerprint]*Alert{},
-	}
 }

@@ -16,7 +16,6 @@ package rules
 import (
 	"fmt"
 	"html/template"
-	"reflect"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -31,21 +30,25 @@ type RecordingRule struct {
 	labels clientmodel.LabelSet
 }
 
+// NewRecordingRule returns a new recording rule.
+func NewRecordingRule(name string, vector promql.Expr, labels clientmodel.LabelSet) *RecordingRule {
+	return &RecordingRule{
+		name:   name,
+		vector: vector,
+		labels: labels,
+	}
+}
+
 // Name returns the rule name.
 func (rule RecordingRule) Name() string { return rule.name }
 
-// EvalRaw returns the raw value of the rule expression.
-func (rule RecordingRule) EvalRaw(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
+// eval evaluates the rule and then overrides the metric names and labels accordingly.
+func (rule RecordingRule) eval(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err
 	}
-	return query.Exec().Vector()
-}
-
-// Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
-	vector, err := rule.EvalRaw(timestamp, engine)
+	vector, err := query.Exec().Vector()
 	if err != nil {
 		return nil, err
 	}
@@ -63,21 +66,6 @@ func (rule RecordingRule) Eval(timestamp clientmodel.Timestamp, engine *promql.E
 	}
 
 	return vector, nil
-}
-
-// DotGraph returns the text representation of a dot graph.
-func (rule RecordingRule) DotGraph() string {
-	graph := fmt.Sprintf(
-		`digraph "Rules" {
-	  %#p[shape="box",label="%s = "];
-		%#p -> %x;
-		%s
-	}`,
-		&rule, rule.name,
-		&rule, reflect.ValueOf(rule.vector).Pointer(),
-		rule.vector.DotGraph(),
-	)
-	return graph
 }
 
 func (rule RecordingRule) String() string {

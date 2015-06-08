@@ -63,9 +63,9 @@ func (h *AlertsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	alertStatus := AlertStatus{
 		AlertingRules: alertsSorter.alerts,
 		AlertStateToRowClass: map[rules.AlertState]string{
-			rules.Inactive: "success",
-			rules.Pending:  "warning",
-			rules.Firing:   "danger",
+			rules.StateInactive: "success",
+			rules.StatePending:  "warning",
+			rules.StateFiring:   "danger",
 		},
 	}
 	executeTemplate(w, "alerts", alertStatus, h.PathPrefix)
