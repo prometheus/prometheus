@@ -11,9 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/net/context"
+
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/route"
 )
 
 func TestEndpoints(t *testing.T) {
@@ -40,6 +43,7 @@ func TestEndpoints(t *testing.T) {
 	start := clientmodel.Timestamp(0)
 	var tests = []struct {
 		endpoint apiFunc
+		params   map[string]string
 		query    url.Values
 		response interface{}
 		errType  errorType
@@ -87,30 +91,59 @@ func TestEndpoints(t *testing.T) {
 			},
 		},
 		{
-			endpoint: api.metricNames,
+			endpoint: api.labelValues,
+			params: map[string]string{
+				"name": "__name__",
+			},
 			response: clientmodel.LabelValues{
 				"test_metric1",
 				"test_metric2",
 			},
 		},
+		{
+			endpoint: api.labelValues,
+			params: map[string]string{
+				"name": "not!!!allowed",
+			},
+			errType: errorBadData,
+		},
+		{
+			endpoint: api.labelValues,
+			params: map[string]string{
+				"name": "foo",
+			},
+			response: clientmodel.LabelValues{
+				"bar",
+				"boo",
+			},
+		},
 	}
 
 	for _, test := range tests {
+		// Build a context with the correct request params.
+		ctx := context.Background()
+		for p, v := range test.params {
+			ctx = route.WithParam(ctx, p, v)
+		}
+		api.context = func(r *http.Request) context.Context {
+			return ctx
+		}
+
 		req, err := http.NewRequest("ANY", fmt.Sprintf("http://example.com?%s", test.query.Encode()), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp, apierr := test.endpoint(req)
-		if apierr != nil {
-			if test.errType == "" {
-				t.Fatalf("Unexpected error: %s", apierr)
+		resp, apiErr := test.endpoint(req)
+		if apiErr != nil {
+			if test.errType == errorNone {
+				t.Fatalf("Unexpected error: %s", apiErr)
 			}
-			if test.errType != apierr.typ {
-				t.Fatalf("Expected error of type %q but got type %q", test.errType, apierr.typ)
+			if test.errType != apiErr.typ {
+				t.Fatalf("Expected error of type %q but got type %q", test.errType, apiErr.typ)
 			}
 			continue
 		}
-		if apierr == nil && test.errType != "" {
+		if apiErr == nil && test.errType != errorNone {
 			t.Fatalf("Expected error of type %q but got none", test.errType)
 		}
 		if !reflect.DeepEqual(resp, test.response) {
