@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/net/context"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -29,7 +30,8 @@ const (
 type errorType string
 
 const (
-	errorTimeout  errorType = "timeout"
+	errorNone     errorType = ""
+	errorTimeout            = "timeout"
 	errorCanceled           = "canceled"
 	errorExec               = "execution"
 	errorBadData            = "bad_data"
@@ -56,6 +58,8 @@ type response struct {
 type API struct {
 	Storage     local.Storage
 	QueryEngine *promql.Engine
+
+	context func(r *http.Request) context.Context
 }
 
 // Enables cross-site script calls.
@@ -70,6 +74,10 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
+	if api.context == nil {
+		api.context = route.Context
+	}
+
 	instr := func(name string, f apiFunc) http.HandlerFunc {
 		return prometheus.InstrumentHandlerFunc(name, func(w http.ResponseWriter, r *http.Request) {
 			setCORS(w)
@@ -84,7 +92,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/query", instr("query", api.query))
 	r.Get("/query_range", instr("query_range", api.queryRange))
 
-	r.Get("/metrics/names", instr("metric_names", api.metricNames))
+	r.Get("/label/:name/values", instr("label_values", api.labelValues))
 }
 
 type queryData struct {
@@ -154,11 +162,16 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 	}, nil
 }
 
-func (api *API) metricNames(r *http.Request) (interface{}, *apiError) {
-	metricNames := api.Storage.LabelValuesForLabelName(clientmodel.MetricNameLabel)
-	sort.Sort(metricNames)
+func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
+	name := route.Param(api.context(r), "name")
 
-	return metricNames, nil
+	if !clientmodel.LabelNameRE.MatchString(name) {
+		return nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}
+	}
+	vals := api.Storage.LabelValuesForLabelName(clientmodel.LabelName(name))
+	sort.Sort(vals)
+
+	return vals, nil
 }
 
 func respond(w http.ResponseWriter, data interface{}) {
