@@ -25,7 +25,7 @@ import (
 )
 
 func TestTargetManagerChan(t *testing.T) {
-	testJob1 := &config.ScrapeConfig{config.DefaultedScrapeConfig{
+	testJob1 := &config.ScrapeConfig{
 		JobName:        "test_job1",
 		ScrapeInterval: config.Duration(1 * time.Minute),
 		TargetGroups: []*config.TargetGroup{{
@@ -34,7 +34,7 @@ func TestTargetManagerChan(t *testing.T) {
 				{clientmodel.AddressLabel: "example.com:80"},
 			},
 		}},
-	}}
+	}
 	prov1 := &fakeTargetProvider{
 		sources: []string{"src1", "src2"},
 		update:  make(chan *config.TargetGroup),
@@ -154,7 +154,7 @@ func TestTargetManagerChan(t *testing.T) {
 }
 
 func TestTargetManagerConfigUpdate(t *testing.T) {
-	testJob1 := &config.ScrapeConfig{config.DefaultedScrapeConfig{
+	testJob1 := &config.ScrapeConfig{
 		JobName:        "test_job1",
 		ScrapeInterval: config.Duration(1 * time.Minute),
 		TargetGroups: []*config.TargetGroup{{
@@ -163,8 +163,8 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				{clientmodel.AddressLabel: "example.com:80"},
 			},
 		}},
-	}}
-	testJob2 := &config.ScrapeConfig{config.DefaultedScrapeConfig{
+	}
+	testJob2 := &config.ScrapeConfig{
 		JobName:        "test_job2",
 		ScrapeInterval: config.Duration(1 * time.Minute),
 		TargetGroups: []*config.TargetGroup{
@@ -191,14 +191,14 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			},
 		},
 		RelabelConfigs: []*config.RelabelConfig{
-			{config.DefaultedRelabelConfig{
+			{
 				SourceLabels: clientmodel.LabelNames{clientmodel.AddressLabel},
 				Regex:        &config.Regexp{*regexp.MustCompile(`^test\.(.*?):(.*)`)},
 				Replacement:  "foo.${1}:${2}",
 				TargetLabel:  clientmodel.AddressLabel,
 				Action:       config.RelabelReplace,
-			}},
-			{config.DefaultedRelabelConfig{
+			},
+			{
 				// Add a new label for example.* targets.
 				SourceLabels: clientmodel.LabelNames{clientmodel.AddressLabel, "boom", "foo"},
 				Regex:        &config.Regexp{*regexp.MustCompile("^example.*?-b([a-z-]+)r$")},
@@ -206,17 +206,17 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				Replacement:  "$1",
 				Separator:    "-",
 				Action:       config.RelabelReplace,
-			}},
-			{config.DefaultedRelabelConfig{
+			},
+			{
 				// Drop an existing label.
 				SourceLabels: clientmodel.LabelNames{"boom"},
 				Regex:        &config.Regexp{*regexp.MustCompile(".*")},
 				TargetLabel:  "boom",
 				Replacement:  "",
 				Action:       config.RelabelReplace,
-			}},
+			},
 		},
-	}}
+	}
 
 	sequence := []struct {
 		scrapeConfigs []*config.ScrapeConfig
@@ -275,7 +275,8 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			},
 		},
 	}
-	conf := &config.Config{DefaultedConfig: config.DefaultConfig}
+	conf := &config.Config{}
+	*conf = config.DefaultConfig
 
 	targetManager := NewTargetManager(nopAppender{})
 	targetManager.ApplyConfig(conf)
