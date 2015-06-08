@@ -98,7 +98,7 @@ func NewWebService(o *WebServiceOptions) *WebService {
 	router.Get("/consoles/*filepath", instr("consoles", o.ConsolesHandler))
 
 	if *useLocalAssets {
-		router.Get("/static/*filepath", instr("static", route.FileServe("web/static")))
+		router.Get("/static/*filepath", instr("static", route.FileServe("web/blob/static")))
 	} else {
 		router.Get("/static/*filepath", instr("static", blob.Handler{}))
 	}
@@ -136,7 +136,7 @@ func (ws *WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
 
 func getTemplateFile(name string) (string, error) {
 	if *useLocalAssets {
-		file, err := ioutil.ReadFile(fmt.Sprintf("web/templates/%s.html", name))
+		file, err := ioutil.ReadFile(fmt.Sprintf("web/blob/templates/%s.html", name))
 		if err != nil {
 			log.Errorf("Could not read %s template: %s", name, err)
 			return "", err

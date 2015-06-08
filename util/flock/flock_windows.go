@@ -19,5 +19,5 @@ func newLock(fileName string) (Releaser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &windowsFileLock{fd}, nil
+	return &windowsLock{fd}, nil
 }

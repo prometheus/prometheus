@@ -1,8 +1,8 @@
 package blob
 
+//go:generate go-bindata -pkg blob -o files.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  templates/... static/...
+
 import (
-	"bytes"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,21 +27,11 @@ var mimeMap = map[string]string{
 
 // GetFile retrieves the content of an embedded file.
 func GetFile(bucket string, name string) ([]byte, error) {
-	blob, ok := files[bucket][name]
-	if !ok {
-		return nil, fmt.Errorf("could not find %s/%s (missing or updated files.go?)", bucket, name)
-	}
-	reader := bytes.NewReader(blob)
-	gz, err := gzip.NewReader(reader)
+	data, err := Asset(fmt.Sprintf("%s/%s", bucket, name))
 	if err != nil {
 		return nil, err
 	}
-
-	var b bytes.Buffer
-	io.Copy(&b, gz)
-	gz.Close()
-
-	return b.Bytes(), nil
+	return data, nil
 }
 
 // Handler implements http.Handler.
