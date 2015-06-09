@@ -71,6 +71,10 @@
 			"Rev": "ee2372b58cee877abe07cde670d04d3b3bac5ee6"
 		},
 		{
+			"ImportPath": "github.com/samuel/go-zookeeper/zk",
+			"Rev": "c86eba8e7e95efab81f6c0455332e49d39aed12f"
+		},
+		{
 			"ImportPath": "github.com/syndtr/goleveldb/leveldb",
 			"Rev": "315fcfb05d4d46d4354b313d146ef688dda272a9"
 		},

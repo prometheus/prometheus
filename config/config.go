@@ -85,6 +85,11 @@ var (
 		TagSeparator: ",",
 		Scheme:       "http",
 	}
+
+	// The default Serverset SD configuration.
+	DefaultServersetSDConfig = ServersetSDConfig{
+		Timeout: Duration(10 * time.Second),
+	}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -204,6 +209,9 @@ type ScrapeConfig struct {
 	FileSDConfigs []*FileSDConfig `yaml:"file_sd_configs,omitempty"`
 	// List of Consul service discovery configurations.
 	ConsulSDConfigs []*ConsulSDConfig `yaml:"consul_sd_configs,omitempty"`
+	// List of Serverset service discovery configurations.
+	ServersetSDConfigs []*ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
+
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
@@ -404,6 +412,35 @@ func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return fmt.Errorf("Consul SD configuration requires at least one service name")
 	}
 	return checkOverflow(c.XXX, "consul_sd_config")
+}
+
+// ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
+type ServersetSDConfig struct {
+	Servers []string `yaml:"servers"`
+	Paths   []string `yaml:"paths"`
+	Timeout Duration `yaml:"timeout,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultServersetSDConfig
+	type plain ServersetSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("serverset SD config must contain at least one Zookeeper server")
+	}
+	if len(c.Paths) == 0 {
+		return fmt.Errorf("serverset SD config must contain at least one path")
+	}
+	for _, path := range c.Paths {
+		if !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
+		}
+	}
+	return nil
 }
 
 // RelabelAction is the action to be performed on relabeling.

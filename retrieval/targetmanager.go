@@ -389,6 +389,9 @@ func ProvidersFromConfig(cfg *config.ScrapeConfig) []TargetProvider {
 	for _, c := range cfg.ConsulSDConfigs {
 		providers = append(providers, discovery.NewConsulDiscovery(c))
 	}
+	for _, c := range cfg.ServersetSDConfigs {
+		providers = append(providers, discovery.NewServersetDiscovery(c))
+	}
 	if len(cfg.TargetGroups) > 0 {
 		providers = append(providers, NewStaticProvider(cfg.TargetGroups))
 	}
