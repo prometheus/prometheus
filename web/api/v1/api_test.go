@@ -195,6 +195,94 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric1{foo=~"o$"}`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric1",
+					"foo":      "boo",
+				},
+			},
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~"o$"}`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric1",
+					"foo":      "boo",
+				},
+			},
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric1{foo=~"o$"}`, `none`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric1",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Missing match[] query params in series requests.
+		{
+			endpoint: api.series,
+			errType:  errorBadData,
+		},
+		{
+			endpoint: api.dropSeries,
+			errType:  errorBadData,
+		},
+		// The following tests delete time series from the test storage. They
+		// must remain at the end and are fixed in their order.
+		{
+			endpoint: api.dropSeries,
+			query: url.Values{
+				"match[]": []string{`test_metric1{foo=~"o$"}`},
+			},
+			response: struct {
+				NumDeleted int `json:"numDeleted"`
+			}{1},
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric1`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric1",
+					"foo":      "bar",
+				},
+			},
+		}, {
+			endpoint: api.dropSeries,
+			query: url.Values{
+				"match[]": []string{`{__name__=~".*"}`},
+			},
+			response: struct {
+				NumDeleted int `json:"numDeleted"`
+			}{2},
+		},
 	}
 
 	for _, test := range tests {
@@ -227,6 +315,8 @@ func TestEndpoints(t *testing.T) {
 		if !reflect.DeepEqual(resp, test.response) {
 			t.Fatalf("Response does not match, expected:\n%#v\ngot:\n%#v", test.response, resp)
 		}
+		// Ensure that removed metrics are unindexed before the next request.
+		suite.Storage().WaitForIndexing()
 	}
 }
 
