@@ -112,7 +112,13 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 
 	res := qry.Exec()
 	if res.Err != nil {
-		return nil, &apiError{errorBadData, res.Err}
+		switch res.Err.(type) {
+		case promql.ErrQueryCanceled:
+			return nil, &apiError{errorCanceled, res.Err}
+		case promql.ErrQueryTimeout:
+			return nil, &apiError{errorTimeout, res.Err}
+		}
+		return nil, &apiError{errorExec, res.Err}
 	}
 	return &queryData{
 		ResultType: res.Value.Type(),
@@ -143,18 +149,18 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 
 	qry, err := api.QueryEngine.NewRangeQuery(r.FormValue("query"), start, end, step)
 	if err != nil {
-		switch err.(type) {
-		case promql.ErrQueryCanceled:
-			return nil, &apiError{errorCanceled, err}
-		case promql.ErrQueryTimeout:
-			return nil, &apiError{errorTimeout, err}
-		}
-		return nil, &apiError{errorExec, err}
+		return nil, &apiError{errorBadData, err}
 	}
 
 	res := qry.Exec()
 	if res.Err != nil {
-		return nil, &apiError{errorBadData, err}
+		switch res.Err.(type) {
+		case promql.ErrQueryCanceled:
+			return nil, &apiError{errorCanceled, res.Err}
+		case promql.ErrQueryTimeout:
+			return nil, &apiError{errorTimeout, res.Err}
+		}
+		return nil, &apiError{errorExec, res.Err}
 	}
 	return &queryData{
 		ResultType: res.Value.Type(),
