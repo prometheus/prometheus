@@ -165,6 +165,9 @@ var expectedErrors = []struct {
 		filename: "regex.bad.yml",
 		errMsg:   "error parsing regexp",
 	}, {
+		filename: "regex_missing.bad.yml",
+		errMsg:   "relabel configuration requires a regular expression",
+	}, {
 		filename: "rules.bad.yml",
 		errMsg:   "invalid rule file path",
 	},
