@@ -70,6 +70,35 @@ func ParseExpr(input string) (Expr, error) {
 	return expr, err
 }
 
+// ParseMetric parses the input into a metric
+func ParseMetric(input string) (m clientmodel.Metric, err error) {
+	p := newParser(input)
+	defer p.recover(&err)
+
+	m = p.metric()
+	if p.peek().typ != itemEOF {
+		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
+	}
+	return m, nil
+}
+
+// ParseMetricSelector parses the provided textual metric selector into a list of
+// label matchers.
+func ParseMetricSelector(input string) (m metric.LabelMatchers, err error) {
+	p := newParser(input)
+	defer p.recover(&err)
+
+	name := ""
+	if t := p.peek().typ; t == itemMetricIdentifier || t == itemIdentifier {
+		name = p.next().val
+	}
+	vs := p.vectorSelector(name)
+	if p.peek().typ != itemEOF {
+		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
+	}
+	return vs.LabelMatchers, nil
+}
+
 // parseSeriesDesc parses the description of a time series.
 func parseSeriesDesc(input string) (clientmodel.Metric, []sequenceValue, error) {
 	p := newParser(input)
@@ -137,20 +166,7 @@ func (v sequenceValue) String() string {
 func (p *parser) parseSeriesDesc() (m clientmodel.Metric, vals []sequenceValue, err error) {
 	defer p.recover(&err)
 
-	name := ""
-	m = clientmodel.Metric{}
-
-	t := p.peek().typ
-	if t == itemIdentifier || t == itemMetricIdentifier {
-		name = p.next().val
-		t = p.peek().typ
-	}
-	if t == itemLeftBrace {
-		m = clientmodel.Metric(p.labelSet())
-	}
-	if name != "" {
-		m[clientmodel.MetricNameLabel] = clientmodel.LabelValue(name)
-	}
+	m = p.metric()
 
 	const ctx = "series values"
 	for {
@@ -808,6 +824,32 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 	p.expect(itemRightBrace, ctx)
 
 	return matchers
+}
+
+// metric parses a metric.
+//
+//		<label_set>
+//		<metric_identifier> [<label_set>]
+//
+func (p *parser) metric() clientmodel.Metric {
+	name := ""
+	m := clientmodel.Metric{}
+
+	t := p.peek().typ
+	if t == itemIdentifier || t == itemMetricIdentifier {
+		name = p.next().val
+		t = p.peek().typ
+	}
+	if t != itemLeftBrace && name == "" {
+		p.errorf("missing metric name or metric selector")
+	}
+	if t == itemLeftBrace {
+		m = clientmodel.Metric(p.labelSet())
+	}
+	if name != "" {
+		m[clientmodel.MetricNameLabel] = clientmodel.LabelValue(name)
+	}
+	return m
 }
 
 // metricSelector parses a new metric selector.
