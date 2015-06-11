@@ -453,14 +453,16 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				fp := sample.Metric.Metric.Fingerprint()
 				ss := sampleStreams[fp]
 				if ss == nil {
-					ss = &SampleStream{Values: make(metric.Values, 0, numSteps)}
+					ss = &SampleStream{
+						Metric: sample.Metric,
+						Values: make(metric.Values, 0, numSteps),
+					}
 					sampleStreams[fp] = ss
 				}
 				ss.Values = append(ss.Values, metric.SamplePair{
 					Value:     sample.Value,
 					Timestamp: sample.Timestamp,
 				})
-
 			}
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
