@@ -55,7 +55,6 @@ benchmark: dependencies tools web
 clean:
 	$(MAKE) -C $(BUILD_PATH) clean
 	$(MAKE) -C tools clean
-	$(MAKE) -C web clean
 	rm -rf $(TEST_ARTIFACTS)
 	-rm $(ARCHIVE)
 	-find . -type f -name '*~' -exec rm '{}' ';'
