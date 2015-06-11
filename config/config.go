@@ -409,7 +409,13 @@ type RelabelConfig struct {
 func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultRelabelConfig
 	type plain RelabelConfig
-	return unmarshal((*plain)(c))
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if c.Regex == nil {
+		return fmt.Errorf("relabel configuration requires a regular expression")
+	}
+	return nil
 }
 
 // Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
