@@ -93,6 +93,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/query_range", instr("query_range", api.queryRange))
 
 	r.Get("/label/:name/values", instr("label_values", api.labelValues))
+
+	r.Get("/series", instr("series", api.series))
+	r.Del("/series", instr("drop_series", api.dropSeries))
 }
 
 type queryData struct {
@@ -112,7 +115,13 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 
 	res := qry.Exec()
 	if res.Err != nil {
-		return nil, &apiError{errorBadData, res.Err}
+		switch res.Err.(type) {
+		case promql.ErrQueryCanceled:
+			return nil, &apiError{errorCanceled, res.Err}
+		case promql.ErrQueryTimeout:
+			return nil, &apiError{errorTimeout, res.Err}
+		}
+		return nil, &apiError{errorExec, res.Err}
 	}
 	return &queryData{
 		ResultType: res.Value.Type(),
@@ -143,18 +152,18 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 
 	qry, err := api.QueryEngine.NewRangeQuery(r.FormValue("query"), start, end, step)
 	if err != nil {
-		switch err.(type) {
-		case promql.ErrQueryCanceled:
-			return nil, &apiError{errorCanceled, err}
-		case promql.ErrQueryTimeout:
-			return nil, &apiError{errorTimeout, err}
-		}
-		return nil, &apiError{errorExec, err}
+		return nil, &apiError{errorBadData, err}
 	}
 
 	res := qry.Exec()
 	if res.Err != nil {
-		return nil, &apiError{errorBadData, err}
+		switch res.Err.(type) {
+		case promql.ErrQueryCanceled:
+			return nil, &apiError{errorCanceled, res.Err}
+		case promql.ErrQueryTimeout:
+			return nil, &apiError{errorTimeout, res.Err}
+		}
+		return nil, &apiError{errorExec, res.Err}
 	}
 	return &queryData{
 		ResultType: res.Value.Type(),
@@ -172,6 +181,60 @@ func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
 	sort.Sort(vals)
 
 	return vals, nil
+}
+
+func (api *API) series(r *http.Request) (interface{}, *apiError) {
+	r.ParseForm()
+	if len(r.Form["match[]"]) == 0 {
+		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
+	}
+	fps := map[clientmodel.Fingerprint]struct{}{}
+
+	for _, lm := range r.Form["match[]"] {
+		matchers, err := promql.ParseMetricSelector(lm)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+		for _, fp := range api.Storage.FingerprintsForLabelMatchers(matchers) {
+			fps[fp] = struct{}{}
+		}
+	}
+
+	metrics := make([]clientmodel.Metric, 0, len(fps))
+	for fp := range fps {
+		if met := api.Storage.MetricForFingerprint(fp).Metric; met != nil {
+			metrics = append(metrics, met)
+		}
+	}
+	return metrics, nil
+}
+
+func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
+	r.ParseForm()
+	if len(r.Form["match[]"]) == 0 {
+		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
+	}
+	fps := map[clientmodel.Fingerprint]struct{}{}
+
+	for _, lm := range r.Form["match[]"] {
+		matchers, err := promql.ParseMetricSelector(lm)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+		for _, fp := range api.Storage.FingerprintsForLabelMatchers(matchers) {
+			fps[fp] = struct{}{}
+		}
+	}
+	for fp := range fps {
+		api.Storage.DropMetricsForFingerprints(fp)
+	}
+
+	res := struct {
+		NumDeleted int `json:"numDeleted"`
+	}{
+		NumDeleted: len(fps),
+	}
+	return res, nil
 }
 
 func respond(w http.ResponseWriter, data interface{}) {

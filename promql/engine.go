@@ -279,6 +279,9 @@ func (ng *Engine) NewRangeQuery(qs string, start, end clientmodel.Timestamp, int
 	if err != nil {
 		return nil, err
 	}
+	if expr.Type() != ExprVector && expr.Type() != ExprScalar {
+		return nil, fmt.Errorf("invalid expression type %q for range query, must be scalar or vector", expr.Type())
+	}
 	qry := ng.newQuery(expr, start, end, interval)
 	qry.q = qs
 
@@ -413,6 +416,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		evalTimer.Stop()
 		return val, nil
 	}
+	numSteps := int(s.End.Sub(s.Start) / s.Interval)
 
 	// Range evaluation.
 	sampleStreams := map[clientmodel.Fingerprint]*SampleStream{}
@@ -430,26 +434,36 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		if err != nil {
 			return nil, err
 		}
-		vector, ok := val.(Vector)
-		if !ok {
-			return nil, fmt.Errorf("value for expression %q must be of type vector but is %s", s.Expr, val.Type())
-		}
 
-		for _, sample := range vector {
-			samplePair := metric.SamplePair{
-				Value:     sample.Value,
-				Timestamp: sample.Timestamp,
+		switch v := val.(type) {
+		case *Scalar:
+			// As the expression type does not change we can safely default to 0
+			// as the fingerprint for scalar expressions.
+			ss := sampleStreams[0]
+			if ss == nil {
+				ss = &SampleStream{Values: make(metric.Values, 0, numSteps)}
+				sampleStreams[0] = ss
 			}
-			fp := sample.Metric.Metric.Fingerprint()
-			if sampleStreams[fp] == nil {
-				sampleStreams[fp] = &SampleStream{
-					Metric: sample.Metric,
-					Values: metric.Values{samplePair},
+			ss.Values = append(ss.Values, metric.SamplePair{
+				Value:     v.Value,
+				Timestamp: v.Timestamp,
+			})
+		case Vector:
+			for _, sample := range v {
+				fp := sample.Metric.Metric.Fingerprint()
+				ss := sampleStreams[fp]
+				if ss == nil {
+					ss = &SampleStream{Values: make(metric.Values, 0, numSteps)}
+					sampleStreams[fp] = ss
 				}
-			} else {
-				sampleStreams[fp].Values = append(sampleStreams[fp].Values, samplePair)
-			}
+				ss.Values = append(ss.Values, metric.SamplePair{
+					Value:     sample.Value,
+					Timestamp: sample.Timestamp,
+				})
 
+			}
+		default:
+			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 		}
 	}
 	evalTimer.Stop()

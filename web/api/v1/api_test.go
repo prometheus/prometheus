@@ -16,6 +16,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/route"
 )
 
@@ -91,6 +92,82 @@ func TestEndpoints(t *testing.T) {
 			},
 		},
 		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+			},
+			response: &queryData{
+				ResultType: promql.ExprMatrix,
+				Result: promql.Matrix{
+					&promql.SampleStream{
+						Values: metric.Values{
+							{Value: 0, Timestamp: start},
+							{Value: 1, Timestamp: start.Add(1 * time.Second)},
+							{Value: 2, Timestamp: start.Add(2 * time.Second)},
+						},
+					},
+				},
+			},
+		},
+		// Missing query params in range queries.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"0"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+			},
+			errType: errorBadData,
+		},
+		// Missing evaluation time.
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"0.333"},
+			},
+			errType: errorBadData,
+		},
+		// Bad query expression.
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"invalid][query"},
+				"time":  []string{"1970-01-01T01:02:03+01:00"},
+			},
+			errType: errorBadData,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"invalid][query"},
+				"start": []string{"0"},
+				"end":   []string{"100"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
+		{
 			endpoint: api.labelValues,
 			params: map[string]string{
 				"name": "__name__",
@@ -103,19 +180,108 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.labelValues,
 			params: map[string]string{
-				"name": "not!!!allowed",
-			},
-			errType: errorBadData,
-		},
-		{
-			endpoint: api.labelValues,
-			params: map[string]string{
 				"name": "foo",
 			},
 			response: clientmodel.LabelValues{
 				"bar",
 				"boo",
 			},
+		},
+		// Bad name parameter.
+		{
+			endpoint: api.labelValues,
+			params: map[string]string{
+				"name": "not!!!allowed",
+			},
+			errType: errorBadData,
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric1{foo=~"o$"}`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric1",
+					"foo":      "boo",
+				},
+			},
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~"o$"}`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric1",
+					"foo":      "boo",
+				},
+			},
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric1{foo=~"o$"}`, `none`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric1",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Missing match[] query params in series requests.
+		{
+			endpoint: api.series,
+			errType:  errorBadData,
+		},
+		{
+			endpoint: api.dropSeries,
+			errType:  errorBadData,
+		},
+		// The following tests delete time series from the test storage. They
+		// must remain at the end and are fixed in their order.
+		{
+			endpoint: api.dropSeries,
+			query: url.Values{
+				"match[]": []string{`test_metric1{foo=~"o$"}`},
+			},
+			response: struct {
+				NumDeleted int `json:"numDeleted"`
+			}{1},
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric1`},
+			},
+			response: []clientmodel.Metric{
+				{
+					"__name__": "test_metric1",
+					"foo":      "bar",
+				},
+			},
+		}, {
+			endpoint: api.dropSeries,
+			query: url.Values{
+				"match[]": []string{`{__name__=~".*"}`},
+			},
+			response: struct {
+				NumDeleted int `json:"numDeleted"`
+			}{2},
 		},
 	}
 
@@ -147,8 +313,10 @@ func TestEndpoints(t *testing.T) {
 			t.Fatalf("Expected error of type %q but got none", test.errType)
 		}
 		if !reflect.DeepEqual(resp, test.response) {
-			t.Fatalf("Response does not match, expected:\n%v\ngot:\n%v", test.response, resp)
+			t.Fatalf("Response does not match, expected:\n%#v\ngot:\n%#v", test.response, resp)
 		}
+		// Ensure that removed metrics are unindexed before the next request.
+		suite.Storage().WaitForIndexing()
 	}
 }
 
