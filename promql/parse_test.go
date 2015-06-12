@@ -716,7 +716,7 @@ var testExpr = []struct {
 			Grouping: clientmodel.LabelNames{"foo"},
 		},
 	}, {
-		input: "sum by (foo) keeping_extra (some_metric)",
+		input: "sum by (foo) keep_common (some_metric)",
 		expected: &AggregateExpr{
 			Op:              itemSum,
 			KeepExtraLabels: true,
@@ -729,7 +729,7 @@ var testExpr = []struct {
 			Grouping: clientmodel.LabelNames{"foo"},
 		},
 	}, {
-		input: "sum (some_metric) by (foo,bar) keeping_extra",
+		input: "sum (some_metric) by (foo,bar) keep_common",
 		expected: &AggregateExpr{
 			Op:              itemSum,
 			KeepExtraLabels: true,
@@ -754,7 +754,7 @@ var testExpr = []struct {
 			Grouping: clientmodel.LabelNames{"foo"},
 		},
 	}, {
-		input: "COUNT by (foo) keeping_extra (some_metric)",
+		input: "COUNT by (foo) keep_common (some_metric)",
 		expected: &AggregateExpr{
 			Op: itemCount,
 			Expr: &VectorSelector{
@@ -767,7 +767,7 @@ var testExpr = []struct {
 			KeepExtraLabels: true,
 		},
 	}, {
-		input: "MIN (some_metric) by (foo) keeping_extra",
+		input: "MIN (some_metric) by (foo) keep_common",
 		expected: &AggregateExpr{
 			Op: itemMin,
 			Expr: &VectorSelector{
@@ -839,13 +839,13 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "no valid expression found",
 	}, {
-		input:  "MIN keeping_extra (some_metric) by (foo)",
+		input:  "MIN keep_common (some_metric) by (foo)",
 		fail:   true,
 		errMsg: "could not parse remaining input \"by (foo)\"...",
 	}, {
-		input:  "MIN by(test) (some_metric) keeping_extra",
+		input:  "MIN by(test) (some_metric) keep_common",
 		fail:   true,
-		errMsg: "could not parse remaining input \"keeping_extra\"...",
+		errMsg: "could not parse remaining input \"keep_common\"...",
 	},
 	// Test function calls.
 	{

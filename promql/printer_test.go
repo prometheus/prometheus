@@ -28,7 +28,7 @@ func TestExprString(t *testing.T) {
 			in: `sum(task:errors:rate10s{job="s"}) BY (code)`,
 		},
 		{
-			in: `sum(task:errors:rate10s{job="s"}) BY (code) KEEPING_EXTRA`,
+			in: `sum(task:errors:rate10s{job="s"}) BY (code) KEEP_COMMON`,
 		},
 	}
 

@@ -179,7 +179,7 @@ func (node *AggregateExpr) String() string {
 	if len(node.Grouping) > 0 {
 		format := "%s BY (%s)"
 		if node.KeepExtraLabels {
-			format += " KEEPING_EXTRA"
+			format += " KEEP_COMMON"
 		}
 		return fmt.Sprintf(format, aggrString, node.Grouping)
 	}

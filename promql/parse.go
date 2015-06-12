@@ -651,8 +651,8 @@ func (p *parser) labels() clientmodel.LabelNames {
 
 // aggrExpr parses an aggregation expression.
 //
-//		<aggr_op> (<vector_expr>) [by <labels>] [keeping_extra]
-//		<aggr_op> [by <labels>] [keeping_extra] (<vector_expr>)
+//		<aggr_op> (<vector_expr>) [by <labels>] [keep_common]
+//		<aggr_op> [by <labels>] [keep_common] (<vector_expr>)
 //
 func (p *parser) aggrExpr() *AggregateExpr {
 	const ctx = "aggregation"
@@ -671,7 +671,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 		grouping = p.labels()
 		modifiersFirst = true
 	}
-	if p.peek().typ == itemKeepingExtra {
+	if p.peek().typ == itemKeepCommon {
 		p.next()
 		keepExtra = true
 		modifiersFirst = true
@@ -689,7 +689,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 			p.next()
 			grouping = p.labels()
 		}
-		if p.peek().typ == itemKeepingExtra {
+		if p.peek().typ == itemKeepCommon {
 			p.next()
 			keepExtra = true
 		}

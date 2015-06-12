@@ -37,7 +37,7 @@ eval instant at 50m SUM(http_requests{instance="0"}) BY(job)
 	{job="api-server"} 400
 	{job="app-server"} 1200
 
-eval instant at 50m SUM(http_requests{instance="0"}) BY(job) KEEPING_EXTRA
+eval instant at 50m SUM(http_requests{instance="0"}) BY(job) KEEP_COMMON
 	{instance="0", job="api-server"} 400
 	{instance="0", job="app-server"} 1200
 
@@ -411,15 +411,15 @@ eval instant at 50m sum by (group) (http_requests{job="api-server"})
 	{group="canary"} 700 
 	{group="production"} 300 
 
-# Test alternative "by"-clause order with "keeping_extra".
-eval instant at 50m sum by (group) keeping_extra (http_requests{job="api-server"})
+# Test alternative "by"-clause order with "keep_common".
+eval instant at 50m sum by (group) keep_common (http_requests{job="api-server"})
 	{group="canary", job="api-server"} 700 
 	{group="production", job="api-server"} 300 
 
 # Test both alternative "by"-clause orders in one expression.
 # Public health warning: stick to one form within an expression (or even
 # in an organization), or risk serious user confusion.
-eval instant at 50m sum(sum by (group) keeping_extra (http_requests{job="api-server"})) by (job)
+eval instant at 50m sum(sum by (group) keep_common (http_requests{job="api-server"})) by (job)
 	{job="api-server"} 1000 
 
 eval instant at 50m http_requests{group="canary"} and http_requests{instance="0"}
@@ -657,10 +657,10 @@ load 1h
 	testmetric{testlabel="1"} 1 1
 	testmetric{testlabel="2"} 2 _
 
-eval instant at 0h sum(testmetric) keeping_extra
+eval instant at 0h sum(testmetric) keep_common
 	{} 3
 
-eval instant at 1h sum(testmetric) keeping_extra
+eval instant at 1h sum(testmetric) keep_common
 	{testlabel="1"} 1
 
 clear
