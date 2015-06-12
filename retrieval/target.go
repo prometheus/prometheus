@@ -151,6 +151,8 @@ type Target struct {
 	scraperStopped chan struct{}
 	// Channel to buffer ingested samples.
 	ingestedSamples chan clientmodel.Samples
+	// Metric relabel configuration.
+	metricRelabelConfigs []*config.RelabelConfig
 
 	// Mutex protects the members below.
 	sync.RWMutex
@@ -212,6 +214,7 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientm
 	if _, ok := t.baseLabels[clientmodel.InstanceLabel]; !ok {
 		t.baseLabels[clientmodel.InstanceLabel] = clientmodel.LabelValue(t.InstanceIdentifier())
 	}
+	t.metricRelabelConfigs = cfg.MetricRelabelConfigs
 }
 
 func (t *Target) String() string {
@@ -361,6 +364,19 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 	for samples := range t.ingestedSamples {
 		for _, s := range samples {
 			s.Metric.MergeFromLabelSet(baseLabels, clientmodel.ExporterLabelPrefix)
+			// Avoid the copy in Relabel if there are no configs.
+			if len(t.metricRelabelConfigs) > 0 {
+				labels, err := Relabel(clientmodel.LabelSet(s.Metric), t.metricRelabelConfigs...)
+				if err != nil {
+					log.Errorf("error while relabeling metric %s of instance %s: ", s.Metric, t.url, err)
+					continue
+				}
+				// Check if the timeseries was dropped.
+				if labels == nil {
+					continue
+				}
+				s.Metric = clientmodel.Metric(labels)
+			}
 			sampleAppender.Append(s)
 		}
 	}

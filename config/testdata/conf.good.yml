@@ -71,6 +71,10 @@ scrape_configs:
     regex:         (.*)some-[regex]$
     action:        drop
 
+  metric_relabel_configs:
+  - source_labels: [__name__]
+    regex:         expensive_metric.*$
+    action:        drop
 
 - job_name: service-y
 
