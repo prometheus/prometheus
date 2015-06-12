@@ -101,35 +101,6 @@ select name="insert_metric" {
   margin-bottom: 0px;
 }
 
-/* Buttons */
-
-.config button {
-  font-size: 10pt;
-  margin-right: .3em;
-}
-
-.config input {
-  font-size: 10pt;
-}
-
-.config .input-append i {
-  padding-top: -4px;
-  margin-top: 0;
-}
-
-.config .input-append .btn:first-child i {
-  margin-right: 4px;
-  margin-left: 2px;
-}
-
-.config .input-append .btn:last-child i {
-  margin-left: 6px;
-}
-
-.config .icon-backward {
-  background-position: -242px -72px;
-}
-
 .datepicker {
   font-size: 10pt;
 }
@@ -183,18 +154,9 @@ input[name="end_input"], input[name="range_input"] {
   width: 200px;
 }
 
-.expression_input_group {
-  width: 80%;
-}
-
-.expression_input_group .input-group-btn {
-  /* Without this, the .input-group-btn has "width: auto" and extends to the
-   * right past the contained button's width */
-  width: 1px !important;
-}
-
-.form-group .input-group .expression_input {
-  width: auto;
+.expression_input {
+  width: 100% !important;
+  margin-bottom: 10px;
 }
 
 .expression_select {
