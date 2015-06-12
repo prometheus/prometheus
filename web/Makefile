@@ -21,6 +21,6 @@ blob/files.go: go-bindata $(shell find blob/templates/ blob/static/ -type f)
 	$(GO) generate ./blob
 
 go-bindata:
-	$(GO) get -u github.com/jteeuwen/go-bindata/...
+	$(GO) get github.com/jteeuwen/go-bindata/...
 
 .PHONY: go-bindata

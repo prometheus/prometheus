@@ -26,7 +26,7 @@ advice: $(GOCC)
 
 binary: build
 
-build: tools web $(GOPATH)
+build: tools $(GOPATH)
 	$(GO) build -o prometheus $(BUILDFLAGS) .
 
 docker: build
@@ -49,7 +49,7 @@ tag:
 $(BUILD_PATH)/cache/$(GOPKG):
 	$(CURL) -o $@ -L $(GOURL)/$(GOPKG)
 
-benchmark: dependencies tools web
+benchmark: dependencies tools
 	$(GO) test $(GO_TEST_FLAGS) -test.run='NONE' -test.bench='.*' -test.benchmem ./... | tee benchmark.txt
 
 clean:
@@ -84,7 +84,7 @@ race_condition_run: race_condition_binary
 search_index:
 	godoc -index -write_index -index_files='search_index'
 
-test: dependencies tools web
+test: dependencies tools
 	$(GO) test $(GO_TEST_FLAGS) ./...
 
 tools: dependencies
