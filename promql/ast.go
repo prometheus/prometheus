@@ -40,8 +40,6 @@ type Node interface {
 	// String representation of the node that returns the given node when parsed
 	// as part of a valid query.
 	String() string
-	// DotGraph returns a dot graph representation of the node.
-	DotGraph() string
 }
 
 // Statement is a generic interface for all statements.
