@@ -178,7 +178,11 @@ func (es Expressions) String() (s string) {
 func (node *AggregateExpr) String() string {
 	aggrString := fmt.Sprintf("%s(%s)", node.Op, node.Expr)
 	if len(node.Grouping) > 0 {
-		return fmt.Sprintf("%s BY (%s)", aggrString, node.Grouping)
+		format := "%s BY (%s)"
+		if node.KeepExtraLabels {
+			format += " KEEPING_EXTRA"
+		}
+		return fmt.Sprintf(format, aggrString, node.Grouping)
 	}
 	return aggrString
 }
