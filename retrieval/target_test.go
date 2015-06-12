@@ -20,14 +20,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -77,77 +75,6 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	if testTarget.status.LastError() != errIngestChannelFull {
 		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.status.LastError())
 	}
-}
-
-func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
-	server := httptest.NewServer(
-		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-				w.Write([]byte("test_metric_drop 0\n"))
-				w.Write([]byte("test_metric_relabel 1\n"))
-			},
-		),
-	)
-	defer server.Close()
-	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
-	testTarget.metricRelabelConfigs = []*config.RelabelConfig{
-		{
-			SourceLabels: clientmodel.LabelNames{"__name__"},
-			Regex:        &config.Regexp{*regexp.MustCompile(".*drop.*")},
-			Action:       config.RelabelDrop,
-		},
-		{
-			SourceLabels: clientmodel.LabelNames{"__name__"},
-			Regex:        &config.Regexp{*regexp.MustCompile(".*(relabel|up).*")},
-			TargetLabel:  "foo",
-			Replacement:  "bar",
-			Action:       config.RelabelReplace,
-		},
-	}
-
-	appender := &collectResultAppender{}
-	testTarget.scrape(appender)
-
-	// Remove variables part of result.
-	for _, sample := range appender.result {
-		sample.Timestamp = 0
-		sample.Value = 0
-	}
-
-	expected := []*clientmodel.Sample{
-		{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "test_metric_relabel",
-				"foo": "bar",
-				clientmodel.InstanceLabel: clientmodel.LabelValue(testTarget.url.Host),
-			},
-			Timestamp: 0,
-			Value:     0,
-		},
-		// The metrics about the scrape are not affected.
-		{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: scrapeHealthMetricName,
-				clientmodel.InstanceLabel:   clientmodel.LabelValue(testTarget.url.Host),
-			},
-			Timestamp: 0,
-			Value:     0,
-		},
-		{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: scrapeDurationMetricName,
-				clientmodel.InstanceLabel:   clientmodel.LabelValue(testTarget.url.Host),
-			},
-			Timestamp: 0,
-			Value:     0,
-		},
-	}
-
-	if !appender.result.Equal(expected) {
-		t.Fatalf("Expected and actual samples not equal. Expected: %s, actual: %s", expected, appender.result)
-	}
-
 }
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
