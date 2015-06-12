@@ -65,11 +65,11 @@ type StoreSamplesRequest struct {
 
 // point represents a single InfluxDB measurement.
 type point struct {
-	Timestamp int64                  `json:"timestamp"`
-	Precision string                 `json:"precision"`
-	Name      clientmodel.LabelValue `json:"name"`
-	Tags      clientmodel.LabelSet   `json:"tags"`
-	Fields    fields                 `json:"fields"`
+	Time        int64                  `json:"time"`
+	Precision   string                 `json:"precision"`
+	Measurement clientmodel.LabelValue `json:"measurement"`
+	Tags        clientmodel.LabelSet   `json:"tags"`
+	Fields      fields                 `json:"fields"`
 }
 
 // fields represents the fields/columns sent to InfluxDB for a given measurement.
@@ -102,10 +102,10 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 		}
 		metric := s.Metric[clientmodel.MetricNameLabel]
 		points = append(points, point{
-			Timestamp: s.Timestamp.UnixNano(),
-			Precision: "n",
-			Name:      metric,
-			Tags:      tagsFromMetric(s.Metric),
+			Time:        s.Timestamp.UnixNano(),
+			Precision:   "n",
+			Measurement: metric,
+			Tags:        tagsFromMetric(s.Metric),
 			Fields: fields{
 				Value: s.Value,
 			},
@@ -141,7 +141,7 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 
 	// API returns status code 200 for successful writes.
 	// http://influxdb.com/docs/v0.9/concepts/reading_and_writing_data.html#response
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
 

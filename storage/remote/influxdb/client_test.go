@@ -51,7 +51,7 @@ func TestClient(t *testing.T) {
 		},
 	}
 
-	expectedJSON := `{"database":"prometheus","retentionPolicy":"default","points":[{"timestamp":123456789123000000,"precision":"n","name":"testmetric","tags":{"test_label":"test_label_value1"},"fields":{"value":"1.23"}},{"timestamp":123456789123000000,"precision":"n","name":"testmetric","tags":{"test_label":"test_label_value2"},"fields":{"value":"5.1234"}}]}`
+	expectedJSON := `{"database":"prometheus","retentionPolicy":"default","points":[{"time":123456789123000000,"precision":"n","measurement":"testmetric","tags":{"test_label":"test_label_value1"},"fields":{"value":"1.23"}},{"time":123456789123000000,"precision":"n","measurement":"testmetric","tags":{"test_label":"test_label_value2"},"fields":{"value":"5.1234"}}]}`
 
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +76,7 @@ func TestClient(t *testing.T) {
 			if string(b) != expectedJSON {
 				t.Fatalf("Unexpected request body; expected:\n\n%s\n\ngot:\n\n%s", expectedJSON, string(b))
 			}
+			w.WriteHeader(http.StatusNoContent)
 		},
 	))
 	defer server.Close()
