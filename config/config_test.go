@@ -115,6 +115,24 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-y",
+
+			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ConsulSDConfigs: []*ConsulSDConfig{
+				{
+					Server:       "localhost:1234",
+					Services:     []string{"nginx", "cache", "mysql"},
+					TagSeparator: DefaultConsulSDConfig.TagSeparator,
+					Scheme:       DefaultConsulSDConfig.Scheme,
+				},
+			},
+		},
 	},
 	original: "",
 }
@@ -128,20 +146,20 @@ func TestLoadConfig(t *testing.T) {
 
 	c, err := LoadFromFile("testdata/conf.good.yml")
 	if err != nil {
-		t.Errorf("Error parsing %s: %s", "testdata/conf.good.yml", err)
+		t.Fatalf("Error parsing %s: %s", "testdata/conf.good.yml", err)
 	}
 	bgot, err := yaml.Marshal(c)
 	if err != nil {
-		t.Errorf("%s", err)
+		t.Fatalf("%s", err)
 	}
 	bexp, err := yaml.Marshal(expectedConf)
 	if err != nil {
-		t.Errorf("%s", err)
+		t.Fatalf("%s", err)
 	}
 	expectedConf.original = c.original
 
 	if !reflect.DeepEqual(c, expectedConf) {
-		t.Errorf("%s: unexpected config result: \n\n%s\n expected\n\n%s", "testdata/conf.good.yml", bgot, bexp)
+		t.Fatalf("%s: unexpected config result: \n\n%s\n expected\n\n%s", "testdata/conf.good.yml", bgot, bexp)
 	}
 }
 
@@ -170,6 +188,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "rules.bad.yml",
 		errMsg:   "invalid rule file path",
+	}, {
+		filename: "unknown_attr.bad.yml",
+		errMsg:   "unknown fields in scrape_config: consult_sd_configs",
 	},
 }
 

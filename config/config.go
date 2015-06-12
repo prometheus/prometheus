@@ -93,8 +93,22 @@ type Config struct {
 	RuleFiles     []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+
 	// original is the input from which the config was parsed.
 	original string
+}
+
+func checkOverflow(m map[string]interface{}, ctx string) error {
+	if len(m) > 0 {
+		var keys []string
+		for k := range m {
+			keys = append(keys, k)
+		}
+		return fmt.Errorf("unknown fields in %s: %s", ctx, strings.Join(keys, ", "))
+	}
+	return nil
 }
 
 func (c Config) String() string {
@@ -138,7 +152,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		jobNames[scfg.JobName] = struct{}{}
 	}
-	return nil
+	return checkOverflow(c.XXX, "config")
 }
 
 // GlobalConfig configures values that are used across other configuration
@@ -150,9 +164,11 @@ type GlobalConfig struct {
 	ScrapeTimeout Duration `yaml:"scrape_timeout,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval Duration `yaml:"evaluation_interval,omitempty"`
-
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	Labels clientmodel.LabelSet `yaml:"labels,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -162,7 +178,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	return nil
+	return checkOverflow(c.XXX, "global config")
 }
 
 // ScrapeConfig configures a scraping unit for Prometheus.
@@ -178,7 +194,7 @@ type ScrapeConfig struct {
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
 	// The HTTP basic authentication credentials for the targets.
-	BasicAuth *BasicAuth `yaml:"basic_auth"`
+	BasicAuth *BasicAuth `yaml:"basic_auth,omitempty"`
 
 	// List of labeled target groups for this job.
 	TargetGroups []*TargetGroup `yaml:"target_groups,omitempty"`
@@ -190,6 +206,9 @@ type ScrapeConfig struct {
 	ConsulSDConfigs []*ConsulSDConfig `yaml:"consul_sd_configs,omitempty"`
 	// List of relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -203,13 +222,26 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if !patJobName.MatchString(c.JobName) {
 		return fmt.Errorf("%q is not a valid job name", c.JobName)
 	}
-	return nil
+	return checkOverflow(c.XXX, "scrape_config")
 }
 
 // BasicAuth contains basic HTTP authentication credentials.
 type BasicAuth struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (a *BasicAuth) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type plain BasicAuth
+	err := unmarshal((*plain)(a))
+	if err != nil {
+		return err
+	}
+	return checkOverflow(a.XXX, "basic_auth")
 }
 
 // TargetGroup is a set of targets with a common label set.
@@ -231,8 +263,9 @@ func (tg TargetGroup) String() string {
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	g := struct {
-		Targets []string             `yaml:"targets"`
-		Labels  clientmodel.LabelSet `yaml:"labels"`
+		Targets []string               `yaml:"targets"`
+		Labels  clientmodel.LabelSet   `yaml:"labels"`
+		XXX     map[string]interface{} `yaml:",inline"`
 	}{}
 	if err := unmarshal(&g); err != nil {
 		return err
@@ -247,7 +280,7 @@ func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		})
 	}
 	tg.Labels = g.Labels
-	return nil
+	return checkOverflow(g.XXX, "target_group")
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
@@ -291,6 +324,9 @@ func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
 type DNSSDConfig struct {
 	Names           []string `yaml:"names"`
 	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -304,13 +340,16 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.Names) == 0 {
 		return fmt.Errorf("DNS-SD config must contain at least one SRV record name")
 	}
-	return nil
+	return checkOverflow(c.XXX, "dns_sd_config")
 }
 
 // FileSDConfig is the configuration for file based discovery.
 type FileSDConfig struct {
 	Names           []string `yaml:"names"`
 	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -329,7 +368,7 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("path name %q is not valid for file discovery", name)
 		}
 	}
-	return nil
+	return checkOverflow(c.XXX, "file_sd_config")
 }
 
 // ConsulSDConfig is the configuration for Consul service discovery.
@@ -343,6 +382,9 @@ type ConsulSDConfig struct {
 	Password     string `yaml:"password"`
 	// The list of services for which targets are discovered.
 	Services []string `yaml:"services"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -359,7 +401,7 @@ func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if len(c.Services) == 0 {
 		return fmt.Errorf("Consul SD configuration requires at least one service name")
 	}
-	return nil
+	return checkOverflow(c.XXX, "consul_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.
@@ -403,6 +445,9 @@ type RelabelConfig struct {
 	Replacement string `yaml:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
 	Action RelabelAction `yaml:"action,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -415,7 +460,7 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Regex == nil {
 		return fmt.Errorf("relabel configuration requires a regular expression")
 	}
-	return nil
+	return checkOverflow(c.XXX, "relabel_config")
 }
 
 // Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
