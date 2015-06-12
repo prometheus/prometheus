@@ -251,10 +251,10 @@ func (p *prometheus) Serve() {
 	// early as possible, but ignore it until we are ready to handle reloading
 	// our config.
 	hup := make(chan os.Signal)
-	block := make(chan bool)
+	hupReady := make(chan bool)
 	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
-		<-block
+		<-hupReady
 		for range hup {
 			p.reloadConfig()
 		}
@@ -293,8 +293,7 @@ func (p *prometheus) Serve() {
 	go p.webService.Run()
 
 	// Wait for reload or termination signals.
-	block <- true // Unblock SIGHUP handler.
-	close(block)
+	close(hupReady) // Unblock SIGHUP handler.
 
 	term := make(chan os.Signal)
 	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
