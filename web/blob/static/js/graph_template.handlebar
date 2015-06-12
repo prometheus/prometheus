@@ -2,19 +2,19 @@
           <form action="{{ pathPrefix }}/api/query_range" method="GET" class="query_form form-inline">
             <div class="row">
               <div class="col-lg-10">
-                <span class="input-group expression_input_group">
-                  <input placeholder="Expression" type="text" name="expr" id="expr{{id}}" value="{{expr}}" class="form-control expression_input" data-provide="typeahead" autocomplete="off">
-                  <span class="input-group-btn">
-                    <input class="btn btn-primary execute_btn" type="submit" value="Execute" name="submit">
-                  </span>
-                </span>
-                <select class="form-control expression_select" name="insert_metric">
-                  <option value="">- Insert Metric at Cursor -</option>
-                </select>
+                <textarea rows="1" placeholder="Expression (press Shift+Enter for newlines)" name="expr" id="expr{{id}}" class="form-control expression_input" data-provide="typeahead" autocomplete="off">{{expr}}</textarea>
               </div>
               <div class="col-lg-2">
                 <div class="eval_stats pull-right"></div>
                 <img src="{{ pathPrefix }}/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-lg-10">
+                <input class="btn btn-primary execute_btn" type="submit" value="Execute" name="submit">
+                <select class="form-control expression_select" name="insert_metric">
+                  <option value="">- insert metric at cursor -</option>
+                </select>
               </div>
             </div>
             <div class="row">

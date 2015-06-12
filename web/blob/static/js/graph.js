@@ -52,8 +52,24 @@ Prometheus.Graph.prototype.initialize = function() {
   // bind event handlers.
   var graphWrapper = self.el.find("#graph_wrapper" + self.id);
   self.queryForm = graphWrapper.find(".query_form");
-  self.expr = graphWrapper.find("input[name=expr]");
+
+  self.expr = graphWrapper.find("textarea[name=expr]");
+  self.expr.keypress(function(e) {
+    // Enter was pressed without the shift key.
+    if (e.which == 13 && !e.shiftKey) {
+      self.queryForm.submit();
+      e.preventDefault();
+    }
+
+    // Auto-resize the text area on input.
+    var offset = this.offsetHeight - this.clientHeight;
+    var resizeTextarea = function(el) {
+        $(el).css('height', 'auto').css('height', el.scrollHeight + offset);
+    };
+    $(this).on('keyup input', function() { resizeTextarea(this); });
+  });
   self.expr.change(storeGraphOptionsInURL);
+
   self.rangeInput = self.queryForm.find("input[name=range_input]");
   self.stackedBtn = self.queryForm.find(".stacked_btn");
   self.stacked = self.queryForm.find("input[name=stacked]");
@@ -191,7 +207,6 @@ Prometheus.Graph.prototype.getOptions = function() {
   var options = {};
 
   var optionInputs = [
-    "expr",
     "range_input",
     "end_input",
     "step_input",
@@ -204,6 +219,7 @@ Prometheus.Graph.prototype.getOptions = function() {
         options[name] = element.value;
       }
   });
+  options["expr"] = self.expr.val();
   options["tab"] = self.options["tab"];
   return options;
 };
