@@ -247,6 +247,19 @@ func (p *prometheus) reloadConfig() bool {
 // down. The method installs an interrupt handler, allowing to trigger a
 // shutdown by sending SIGTERM to the process.
 func (p *prometheus) Serve() {
+	// Wait for reload or termination signals. Start the handler for SIGHUP as
+	// early as possible, but ignore it until we are ready to handle reloading
+	// our config.
+	hup := make(chan os.Signal)
+	block := make(chan bool)
+	signal.Notify(hup, syscall.SIGHUP)
+	go func() {
+		<-block
+		for range hup {
+			p.reloadConfig()
+		}
+	}()
+
 	// Start all components.
 	if err := p.storage.Start(); err != nil {
 		log.Errorln("Error opening memory series storage:", err)
@@ -280,13 +293,8 @@ func (p *prometheus) Serve() {
 	go p.webService.Run()
 
 	// Wait for reload or termination signals.
-	hup := make(chan os.Signal)
-	signal.Notify(hup, syscall.SIGHUP)
-	go func() {
-		for range hup {
-			p.reloadConfig()
-		}
-	}()
+	block <- true // Unblock SIGHUP handler.
+	close(block)
 
 	term := make(chan os.Signal)
 	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
