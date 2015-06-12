@@ -145,7 +145,7 @@ const (
 	itemWith
 	itemSummary
 	itemDescription
-	itemKeepingExtra
+	itemKeepCommon
 	itemOffset
 	itemBy
 	itemOn
@@ -177,7 +177,8 @@ var key = map[string]itemType{
 	"description":   itemDescription,
 	"offset":        itemOffset,
 	"by":            itemBy,
-	"keeping_extra": itemKeepingExtra,
+	"keeping_extra": itemKeepCommon,
+	"keep_common":   itemKeepCommon,
 	"on":            itemOn,
 	"group_left":    itemGroupLeft,
 	"group_right":   itemGroupRight,
