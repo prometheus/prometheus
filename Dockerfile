@@ -1,15 +1,14 @@
-FROM alpine:edge
+FROM alpine:3.2
 MAINTAINER The Prometheus Authors <prometheus-developers@googlegroups.com>
 
 ENV GOPATH /go
 COPY . /go/src/github.com/prometheus/prometheus
 
-RUN apk add --update -t build-deps go git mercurial vim \
+RUN apk add --update -t build-deps go git mercurial \
     && apk add -u musl && rm -rf /var/cache/apk/* \
     && go get github.com/tools/godep \
     && cd /go/src/github.com/prometheus/prometheus \
     && $GOPATH/bin/godep restore && go get -d \
-    && ./scripts/embed-static.sh web/static web/templates | gofmt > web/blob/files.go \
     && go build -ldflags " \
             -X main.buildVersion  $(cat VERSION) \
             -X main.buildRevision $(git rev-parse --short HEAD) \
