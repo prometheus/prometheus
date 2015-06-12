@@ -115,6 +115,24 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-y",
+
+			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ConsulSDConfigs: []*ConsulSDConfig{
+				{
+					Server:       "localhost:1234",
+					Services:     []string{"nginx", "cache", "mysql"},
+					TagSeparator: DefaultConsulSDConfig.TagSeparator,
+					Scheme:       DefaultConsulSDConfig.Scheme,
+				},
+			},
+		},
 	},
 	original: "",
 }
