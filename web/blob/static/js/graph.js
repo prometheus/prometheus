@@ -450,6 +450,21 @@ Prometheus.Graph.prototype.updateGraph = function() {
   self.graphArea.append(self.graph);
   self.graphArea.append(self.yAxis);
 
+  var endTime = (self.getEndDate() || (new Date()).getTime()) / 1000; // Convert to UNIX timestamp.
+  var duration = self.parseDuration(self.rangeInput.val()) || 3600; // 1h default.
+  var startTime = endTime - duration;
+  self.data.forEach(function(s) {
+    // Padding series with invisible "null" values at the configured x-axis boundaries ensures
+    // that graphs are displayed with a fixed x-axis range instead of snapping to the available
+    // time range in the data.
+    if (s.data[0].x > startTime) {
+      s.data.unshift({x: startTime, y: null});
+    }
+    if (s.data[s.data.length - 1].x < endTime) {
+      s.data.push({x: endTime, y: null});
+    }
+  });
+
   // Now create the new graph.
   self.rickshawGraph = new Rickshaw.Graph({
     element: self.graph[0],
