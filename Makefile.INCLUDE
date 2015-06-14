@@ -15,7 +15,9 @@
 
 .SUFFIXES:
 
-VERSION?=$(shell cat `git rev-parse --show-toplevel`/VERSION)
+current_dir := $(patsubst %/,%, $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+
+VERSION=$(shell cat $(current_dir)/VERSION)
 
 OS=$(shell uname)
 ARCH=$(shell uname -m)
@@ -62,8 +64,8 @@ export GO_TEST_FLAGS ?= -short
 
 GO_GET := $(GO) get -u -v -x
 
-REV        := $(shell git rev-parse --short HEAD)
-BRANCH     := $(shell git rev-parse --abbrev-ref HEAD)
+REV        := $(shell git rev-parse --short HEAD 2> /dev/null  || echo 'unknown')
+BRANCH     := $(shell git rev-parse --abbrev-ref HEAD 2> /dev/null  || echo 'unknown')
 HOSTNAME   := $(shell hostname -f)
 BUILD_DATE := $(shell date +%Y%m%d-%H:%M:%S)
 BUILDFLAGS := -ldflags \
