@@ -16,7 +16,6 @@ package influxdb
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -36,22 +35,21 @@ const (
 	contentTypeJSON = "application/json"
 )
 
-var (
-	retentionPolicy = flag.String("storage.remote.influxdb.retention-policy", "default", "The InfluxDB retention policy to use.")
-	database        = flag.String("storage.remote.influxdb.database", "prometheus", "The name of the database to use for storing samples in InfluxDB.")
-)
-
 // Client allows sending batches of Prometheus samples to InfluxDB.
 type Client struct {
-	url        string
-	httpClient *http.Client
+	url             string
+	httpClient      *http.Client
+	retentionPolicy string
+	database        string
 }
 
 // NewClient creates a new Client.
-func NewClient(url string, timeout time.Duration) *Client {
+func NewClient(url string, timeout time.Duration, database, retentionPolicy string) *Client {
 	return &Client{
-		url:        url,
-		httpClient: httputil.NewDeadlineClient(timeout),
+		url:             url,
+		httpClient:      httputil.NewDeadlineClient(timeout),
+		retentionPolicy: retentionPolicy,
+		database:        database,
 	}
 }
 
@@ -120,8 +118,8 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 	u.Path = writeEndpoint
 
 	req := StoreSamplesRequest{
-		Database:        *database,
-		RetentionPolicy: *retentionPolicy,
+		Database:        c.database,
+		RetentionPolicy: c.retentionPolicy,
 		Points:          points,
 	}
 	buf, err := json.Marshal(req)

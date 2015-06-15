@@ -17,7 +17,6 @@
 package index
 
 import (
-	"flag"
 	"os"
 	"path"
 
@@ -35,10 +34,10 @@ const (
 )
 
 var (
-	fingerprintToMetricCacheSize     = flag.Int("storage.local.index-cache-size.fingerprint-to-metric", 10*1024*1024, "The size in bytes for the fingerprint to metric index cache.")
-	fingerprintTimeRangeCacheSize    = flag.Int("storage.local.index-cache-size.fingerprint-to-timerange", 5*1024*1024, "The size in bytes for the metric time range index cache.")
-	labelNameToLabelValuesCacheSize  = flag.Int("storage.local.index-cache-size.label-name-to-label-values", 10*1024*1024, "The size in bytes for the label name to label values index cache.")
-	labelPairToFingerprintsCacheSize = flag.Int("storage.local.index-cache-size.label-pair-to-fingerprints", 20*1024*1024, "The size in bytes for the label pair to fingerprints index cache.")
+	FingerprintMetricCacheSize     = 10 * 1024 * 1024
+	FingerprintTimeRangeCacheSize  = 5 * 1024 * 1024
+	LabelNameLabelValuesCacheSize  = 10 * 1024 * 1024
+	LabelPairFingerprintsCacheSize = 20 * 1024 * 1024
 )
 
 // FingerprintMetricMapping is an in-memory map of fingerprints to metrics.
@@ -93,7 +92,7 @@ func (i *FingerprintMetricIndex) Lookup(fp clientmodel.Fingerprint) (metric clie
 func NewFingerprintMetricIndex(basePath string) (*FingerprintMetricIndex, error) {
 	fingerprintToMetricDB, err := NewLevelDB(LevelDBOptions{
 		Path:           path.Join(basePath, fingerprintToMetricDir),
-		CacheSizeBytes: *fingerprintToMetricCacheSize,
+		CacheSizeBytes: FingerprintMetricCacheSize,
 	})
 	if err != nil {
 		return nil, err
@@ -165,7 +164,7 @@ func (i *LabelNameLabelValuesIndex) LookupSet(l clientmodel.LabelName) (values m
 func NewLabelNameLabelValuesIndex(basePath string) (*LabelNameLabelValuesIndex, error) {
 	labelNameToLabelValuesDB, err := NewLevelDB(LevelDBOptions{
 		Path:           path.Join(basePath, labelNameToLabelValuesDir),
-		CacheSizeBytes: *labelNameToLabelValuesCacheSize,
+		CacheSizeBytes: LabelNameLabelValuesCacheSize,
 	})
 	if err != nil {
 		return nil, err
@@ -239,7 +238,7 @@ func (i *LabelPairFingerprintIndex) LookupSet(p metric.LabelPair) (fps map[clien
 func NewLabelPairFingerprintIndex(basePath string) (*LabelPairFingerprintIndex, error) {
 	labelPairToFingerprintsDB, err := NewLevelDB(LevelDBOptions{
 		Path:           path.Join(basePath, labelPairToFingerprintsDir),
-		CacheSizeBytes: *labelPairToFingerprintsCacheSize,
+		CacheSizeBytes: LabelPairFingerprintsCacheSize,
 	})
 	if err != nil {
 		return nil, err
@@ -277,7 +276,7 @@ func (i *FingerprintTimeRangeIndex) Lookup(fp clientmodel.Fingerprint) (firstTim
 func NewFingerprintTimeRangeIndex(basePath string) (*FingerprintTimeRangeIndex, error) {
 	fingerprintTimeRangeDB, err := NewLevelDB(LevelDBOptions{
 		Path:           path.Join(basePath, fingerprintTimeRangeDir),
-		CacheSizeBytes: *fingerprintTimeRangeCacheSize,
+		CacheSizeBytes: FingerprintTimeRangeCacheSize,
 	})
 	if err != nil {
 		return nil, err

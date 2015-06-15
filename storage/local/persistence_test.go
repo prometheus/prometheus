@@ -35,7 +35,7 @@ var (
 )
 
 func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, testutil.Closer) {
-	*defaultChunkEncoding = int(encoding)
+	DefaultChunkEncoding = encoding
 	dir := testutil.NewTemporaryDirectory("test_persistence", t)
 	p, err := newPersistence(dir.Path(), false, false, func() bool { return false })
 	if err != nil {

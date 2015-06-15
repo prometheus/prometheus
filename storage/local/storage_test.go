@@ -977,7 +977,7 @@ func TestFuzzChunkType1(t *testing.T) {
 //
 // go test -race -cpu 8 -short -bench BenchmarkFuzzChunkType
 func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
-	*defaultChunkEncoding = int(encoding)
+	DefaultChunkEncoding = encoding
 	const samplesPerRun = 100000
 	rand.Seed(42)
 	directory := testutil.NewTemporaryDirectory("test_storage", b)

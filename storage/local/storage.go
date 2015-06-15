@@ -16,6 +16,7 @@ package local
 
 import (
 	"container/list"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -65,6 +66,34 @@ type evictRequest struct {
 
 // SyncStrategy is an enum to select a sync strategy for series files.
 type SyncStrategy int
+
+// String implements flag.Value.
+func (ss SyncStrategy) String() string {
+	switch ss {
+	case Adaptive:
+		return "adaptive"
+	case Always:
+		return "always"
+	case Never:
+		return "never"
+	}
+	return "<unknown>"
+}
+
+// Set implements flag.Value.
+func (ss *SyncStrategy) Set(s string) error {
+	switch s {
+	case "adaptive":
+		*ss = Adaptive
+	case "always":
+		*ss = Always
+	case "never":
+		*ss = Never
+	default:
+		return fmt.Errorf("invalid sync strategy: %s", s)
+	}
+	return nil
+}
 
 // Possible values for SyncStrategy.
 const (
