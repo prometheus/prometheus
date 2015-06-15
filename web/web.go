@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/route"
+	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web/api/legacy"
 	"github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/blob"
@@ -66,10 +67,9 @@ type Handler struct {
 // PrometheusStatus contains various information about the status
 // of the running Prometheus process.
 type PrometheusStatus struct {
-	Birth     time.Time
-	BuildInfo map[string]string
-	Flags     map[string]string
-	Config    string
+	Birth  time.Time
+	Flags  map[string]string
+	Config string
 
 	// A function that returns the current scrape targets pooled
 	// by their job name.
@@ -263,7 +263,13 @@ func (h *Handler) statush(w http.ResponseWriter, r *http.Request) {
 	h.status.mu.RLock()
 	defer h.status.mu.RUnlock()
 
-	h.executeTemplate(w, "status", h.status)
+	h.executeTemplate(w, "status", struct {
+		Status *PrometheusStatus
+		Info   map[string]string
+	}{
+		Status: h.status,
+		Info:   version.Map,
+	})
 }
 
 func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {

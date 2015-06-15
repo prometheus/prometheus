@@ -17,7 +17,7 @@
 
 current_dir := $(patsubst %/,%, $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 
-VERSION=$(shell cat $(current_dir)/VERSION)
+VERSION=$(shell cat $(current_dir)/version/VERSION)
 
 OS=$(shell uname)
 ARCH=$(shell uname -m)
@@ -54,7 +54,8 @@ GO      = $(GOENV) $(GOCC)
 GOFMT   = $(GOROOT)/bin/gofmt
 
 UNAME    := $(shell uname)
-SELFLINK  = $(GOPATH)/src/github.com/prometheus/prometheus
+REPO_PATH = github.com/prometheus/prometheus
+SELFLINK  = $(GOPATH)/src/$(REPO_PATH)
 
 export PREFIX=$(BUILD_PATH)/root
 
@@ -69,12 +70,12 @@ BRANCH     := $(shell git rev-parse --abbrev-ref HEAD 2> /dev/null  || echo 'unk
 HOSTNAME   := $(shell hostname -f)
 BUILD_DATE := $(shell date +%Y%m%d-%H:%M:%S)
 BUILDFLAGS := -ldflags \
-  " -X main.buildVersion $(VERSION)\
-		-X main.buildRevision $(REV)\
-		-X main.buildBranch $(BRANCH)\
-		-X main.buildUser $(USER)@$(HOSTNAME)\
-		-X main.buildDate $(BUILD_DATE)\
-		-X main.goVersion $(GO_VERSION)"
+  " -X $(REPO_PATH)/version.Version $(VERSION)\
+		-X $(REPO_PATH)/version.Revision $(REV)\
+		-X $(REPO_PATH)/version.Branch $(BRANCH)\
+		-X $(REPO_PATH)/version.BuildUser $(USER)@$(HOSTNAME)\
+		-X $(REPO_PATH)/version.BuildDate $(BUILD_DATE)\
+		-X $(REPO_PATH)/version.GoVersion $(GO_VERSION)"
 PROTOC := protoc
 CURL := curl
 
