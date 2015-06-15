@@ -36,9 +36,10 @@ type Storage interface {
 	// NewPreloader returns a new Preloader which allows preloading and pinning
 	// series data into memory for use within a query.
 	NewPreloader() Preloader
-	// Get all of the metric fingerprints that are associated with the
-	// provided label matchers.
-	FingerprintsForLabelMatchers(metric.LabelMatchers) clientmodel.Fingerprints
+	// MetricsForLabelMatchers returns the metrics from storage that satisfy the given
+	// label matchers. At least one label matcher must be specified that does not
+	// match the empty string.
+	MetricsForLabelMatchers(matchers ...*metric.LabelMatcher) map[clientmodel.Fingerprint]clientmodel.COWMetric
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(clientmodel.LabelName) clientmodel.LabelValues
 	// Get the metric associated with the provided fingerprint.

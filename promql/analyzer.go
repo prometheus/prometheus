@@ -72,27 +72,24 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 	Inspect(a.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
+			n.metrics = a.Storage.MetricsForLabelMatchers(n.LabelMatchers...)
+			n.iterators = make(map[clientmodel.Fingerprint]local.SeriesIterator, len(n.metrics))
+
 			pt := getPreloadTimes(n.Offset)
-			fpts := a.Storage.FingerprintsForLabelMatchers(n.LabelMatchers)
-			n.fingerprints = fpts
-			n.metrics = map[clientmodel.Fingerprint]clientmodel.COWMetric{}
-			n.iterators = map[clientmodel.Fingerprint]local.SeriesIterator{}
-			for _, fp := range fpts {
+			for fp := range n.metrics {
 				// Only add the fingerprint to the instants if not yet present in the
 				// ranges. Ranges always contain more points and span more time than
 				// instants for the same offset.
 				if _, alreadyInRanges := pt.ranges[fp]; !alreadyInRanges {
 					pt.instants[fp] = struct{}{}
 				}
-				n.metrics[fp] = a.Storage.MetricForFingerprint(fp)
 			}
 		case *MatrixSelector:
+			n.metrics = a.Storage.MetricsForLabelMatchers(n.LabelMatchers...)
+			n.iterators = make(map[clientmodel.Fingerprint]local.SeriesIterator, len(n.metrics))
+
 			pt := getPreloadTimes(n.Offset)
-			fpts := a.Storage.FingerprintsForLabelMatchers(n.LabelMatchers)
-			n.fingerprints = fpts
-			n.metrics = map[clientmodel.Fingerprint]clientmodel.COWMetric{}
-			n.iterators = map[clientmodel.Fingerprint]local.SeriesIterator{}
-			for _, fp := range fpts {
+			for fp := range n.metrics {
 				if pt.ranges[fp] < n.Range {
 					pt.ranges[fp] = n.Range
 					// Delete the fingerprint from the instants. Ranges always contain more
@@ -100,7 +97,6 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 					// an instant for the same fingerprint, should we have one.
 					delete(pt.instants, fp)
 				}
-				n.metrics[fp] = a.Storage.MetricForFingerprint(fp)
 			}
 		}
 		return true
@@ -157,11 +153,11 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 	Inspect(a.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			for _, fp := range n.fingerprints {
+			for fp := range n.metrics {
 				n.iterators[fp] = a.Storage.NewIterator(fp)
 			}
 		case *MatrixSelector:
-			for _, fp := range n.fingerprints {
+			for fp := range n.metrics {
 				n.iterators[fp] = a.Storage.NewIterator(fp)
 			}
 		}
