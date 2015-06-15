@@ -73,7 +73,7 @@ documentation: search_index
 	godoc -http=:6060 -index -index_files='search_index'
 
 format: dependencies
-	find . -iname '*.go' | egrep -v "^\./\.build|./generated|\./Godeps|\.(l|y)\.go" | xargs -n1 $(GOFMT) -w -s=true
+	find . -iname '*.go' | egrep -v "^\./(\.build|Godeps)/" | xargs -n1 $(GOFMT) -w -s=true
 
 race_condition_binary: build
 	$(GO) build -race -o prometheus.race $(BUILDFLAGS) .
