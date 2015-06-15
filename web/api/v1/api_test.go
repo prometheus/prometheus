@@ -277,7 +277,7 @@ func TestEndpoints(t *testing.T) {
 		}, {
 			endpoint: api.dropSeries,
 			query: url.Values{
-				"match[]": []string{`{__name__=~".*"}`},
+				"match[]": []string{`{__name__=~".+"}`},
 			},
 			response: struct {
 				NumDeleted int `json:"numDeleted"`

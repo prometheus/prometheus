@@ -378,7 +378,7 @@ eval instant at 50m drop_common_labels(http_requests{group="production",job="api
 	http_requests{instance="0"} 100 
 	http_requests{instance="1"} 200 
 
-eval instant at 50m {__name__=~".*"}
+eval instant at 50m {__name__=~".+"}
 	http_requests{group="canary", instance="0", job="api-server"} 300 
 	http_requests{group="canary", instance="0", job="app-server"} 700 
 	http_requests{group="canary", instance="1", job="api-server"} 400 
