@@ -16,7 +16,6 @@ package notification
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -40,10 +39,6 @@ const (
 const (
 	namespace = "prometheus"
 	subsystem = "notifications"
-)
-
-var (
-	deadline = flag.Duration("alertmanager.http-deadline", 10*time.Second, "Alert manager HTTP API timeout.")
 )
 
 // NotificationReq is a request for sending a notification to the alert manager
@@ -93,13 +88,20 @@ type NotificationHandler struct {
 	stopped chan struct{}
 }
 
-// NewNotificationHandler constructs a new NotificationHandler.
-func NewNotificationHandler(alertmanagerURL string, notificationQueueCapacity int) *NotificationHandler {
-	return &NotificationHandler{
-		alertmanagerURL:      strings.TrimRight(alertmanagerURL, "/"),
-		pendingNotifications: make(chan NotificationReqs, notificationQueueCapacity),
+// NotificationHandlerOptions are the configurable parameters of a NotificationHandler.
+type NotificationHandlerOptions struct {
+	AlertmanagerURL string
+	QueueCapacity   int
+	Deadline        time.Duration
+}
 
-		httpClient: httputil.NewDeadlineClient(*deadline),
+// NewNotificationHandler constructs a new NotificationHandler.
+func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler {
+	return &NotificationHandler{
+		alertmanagerURL:      strings.TrimRight(o.AlertmanagerURL, "/"),
+		pendingNotifications: make(chan NotificationReqs, o.QueueCapacity),
+
+		httpClient: httputil.NewDeadlineClient(o.Deadline),
 
 		notificationLatency: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace: namespace,
@@ -132,7 +134,7 @@ func NewNotificationHandler(alertmanagerURL string, notificationQueueCapacity in
 				nil, nil,
 			),
 			prometheus.GaugeValue,
-			float64(notificationQueueCapacity),
+			float64(o.QueueCapacity),
 		),
 		stopped: make(chan struct{}),
 	}
