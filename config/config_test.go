@@ -114,6 +114,14 @@ var expectedConf = &Config{
 					Action:       RelabelDrop,
 				},
 			},
+			MetricRelabelConfigs: []*RelabelConfig{
+				{
+					SourceLabels: clientmodel.LabelNames{"__name__"},
+					Regex:        &Regexp{*regexp.MustCompile("expensive_metric.*$")},
+					Separator:    ";",
+					Action:       RelabelDrop,
+				},
+			},
 		},
 		{
 			JobName: "service-y",
