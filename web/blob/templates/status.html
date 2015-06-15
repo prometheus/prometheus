@@ -28,11 +28,10 @@
     <pre>{{.Config}}</pre>
 
     <h2>Rules</h2>
-    <pre>{{range .RuleManager.Rules}}{{.HTMLSnippet pathPrefix}}<br/>{{end}}</pre>
+    <pre>{{range call .Rules}}{{.HTMLSnippet pathPrefix}}<br/>{{end}}</pre>
 
     <h2>Targets</h2>
       <table class="table table-condensed table-bordered table-striped table-hover">
-        {{$healthToClass := .TargetHealthToClass}}
         {{range $job, $pool := call .TargetPools}}
           <thead>
             <tr><th colspan="5" class="job_header">{{$job}}</th></tr>
@@ -51,7 +50,7 @@
                 <a href="{{.URL | globalURL}}">{{.URL}}</a>
               </td>
               <td>
-                <span class="alert alert-{{index $healthToClass .Status.Health}} target_status_alert">
+                <span class="alert alert-{{ .Status.Health | healthToClass }} target_status_alert">
                   {{.Status.Health}}
                 </span>
               </td>

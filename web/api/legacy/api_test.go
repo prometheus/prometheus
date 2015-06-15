@@ -96,7 +96,7 @@ func TestQuery(t *testing.T) {
 	api := &API{
 		Now:         testNow,
 		Storage:     storage,
-		QueryEngine: promql.NewEngine(storage),
+		QueryEngine: promql.NewEngine(storage, nil),
 	}
 	rtr := route.New()
 	api.Register(rtr.WithPrefix("/api"))

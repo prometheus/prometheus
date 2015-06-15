@@ -170,7 +170,7 @@ func TestAlertingRule(t *testing.T) {
 
 	storeMatrix(storage, testMatrix)
 
-	engine := promql.NewEngine(storage)
+	engine := promql.NewEngine(storage, nil)
 	defer engine.Stop()
 
 	expr, err := promql.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)

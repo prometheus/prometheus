@@ -185,7 +185,7 @@ func TestTemplateExpansion(t *testing.T) {
 	})
 	storage.WaitForIndexing()
 
-	engine := promql.NewEngine(storage)
+	engine := promql.NewEngine(storage, nil)
 
 	for i, s := range scenarios {
 		var result string

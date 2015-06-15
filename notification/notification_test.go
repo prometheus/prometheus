@@ -46,7 +46,11 @@ type testNotificationScenario struct {
 }
 
 func (s *testNotificationScenario) test(i int, t *testing.T) {
-	h := NewNotificationHandler("alertmanager_url", 0)
+	h := NewNotificationHandler(&NotificationHandlerOptions{
+		AlertmanagerURL: "alertmanager_url",
+		QueueCapacity:   0,
+		Deadline:        10 * time.Second,
+	})
 	defer h.Stop()
 
 	receivedPost := make(chan bool, 1)

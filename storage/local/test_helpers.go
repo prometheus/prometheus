@@ -38,7 +38,7 @@ func (t *testStorageCloser) Close() {
 // directory. The returned storage is already in serving state. Upon closing the
 // returned test.Closer, the temporary directory is cleaned up.
 func NewTestStorage(t testutil.T, encoding chunkEncoding) (*memorySeriesStorage, testutil.Closer) {
-	*defaultChunkEncoding = int(encoding)
+	DefaultChunkEncoding = encoding
 	directory := testutil.NewTemporaryDirectory("test_storage", t)
 	o := &MemorySeriesStorageOptions{
 		MemoryChunks:               1000000,

@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"flag"
 	"fmt"
 	"math"
 	"runtime"
@@ -28,12 +27,6 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/stats"
-)
-
-var (
-	stalenessDelta       = flag.Duration("query.staleness-delta", 300*time.Second, "Staleness delta allowance during expression evaluations.")
-	defaultQueryTimeout  = flag.Duration("query.timeout", 2*time.Minute, "Maximum time a query may take before being aborted.")
-	maxConcurrentQueries = flag.Int("query.max-concurrency", 20, "Maximum number of queries executed concurrently.")
 )
 
 // SampleStream is a stream of Values belonging to an attached COWMetric.
@@ -249,17 +242,35 @@ type Engine struct {
 	cancelQueries func()
 	// The gate limiting the maximum number of concurrent and waiting queries.
 	gate *queryGate
+
+	options *EngineOptions
 }
 
 // NewEngine returns a new engine.
-func NewEngine(storage local.Storage) *Engine {
+func NewEngine(storage local.Storage, o *EngineOptions) *Engine {
+	if o == nil {
+		o = DefaultEngineOptions
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
 		storage:       storage,
 		baseCtx:       ctx,
 		cancelQueries: cancel,
-		gate:          newQueryGate(*maxConcurrentQueries),
+		gate:          newQueryGate(o.MaxConcurrentQueries),
+		options:       o,
 	}
+}
+
+// EngineOptions contains configuration parameters for an Engine.
+type EngineOptions struct {
+	MaxConcurrentQueries int
+	Timeout              time.Duration
+}
+
+// DefaultEngineOptions are the default engine options.
+var DefaultEngineOptions = &EngineOptions{
+	MaxConcurrentQueries: 20,
+	Timeout:              2 * time.Minute,
 }
 
 // Stop the engine and cancel all running queries.
@@ -328,7 +339,7 @@ func (ng *Engine) newTestQuery(stmts ...Statement) Query {
 func (ng *Engine) exec(q *query) (Value, error) {
 	const env = "query execution"
 
-	ctx, cancel := context.WithTimeout(q.ng.baseCtx, *defaultQueryTimeout)
+	ctx, cancel := context.WithTimeout(q.ng.baseCtx, ng.options.Timeout)
 	q.cancel = cancel
 
 	queueTimer := q.stats.GetTimer(stats.ExecQueueTime).Start()
@@ -1107,6 +1118,10 @@ func shouldDropMetricName(op itemType) bool {
 	}
 }
 
+// StalenessDelta determines the time since the last sample after which a time
+// series is considered stale.
+var StalenessDelta = 5 * time.Minute
+
 // chooseClosestSample chooses the closest sample of a list of samples
 // surrounding a given target time. If samples are found both before and after
 // the target time, the sample value is interpolated between these. Otherwise,
@@ -1119,7 +1134,7 @@ func chooseClosestSample(samples metric.Values, timestamp clientmodel.Timestamp)
 		// Samples before target time.
 		if delta < 0 {
 			// Ignore samples outside of staleness policy window.
-			if -delta > *stalenessDelta {
+			if -delta > StalenessDelta {
 				continue
 			}
 			// Ignore samples that are farther away than what we've seen before.
@@ -1133,7 +1148,7 @@ func chooseClosestSample(samples metric.Values, timestamp clientmodel.Timestamp)
 		// Samples after target time.
 		if delta >= 0 {
 			// Ignore samples outside of staleness policy window.
-			if delta > *stalenessDelta {
+			if delta > StalenessDelta {
 				continue
 			}
 			// Ignore samples that are farther away than samples we've seen before.

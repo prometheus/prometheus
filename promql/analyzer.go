@@ -137,7 +137,7 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			err = p.PreloadRange(fp, start.Add(-rangeDuration), end, *stalenessDelta)
+			err = p.PreloadRange(fp, start.Add(-rangeDuration), end, StalenessDelta)
 			if err != nil {
 				return nil, err
 			}
@@ -146,7 +146,7 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			err = p.PreloadRange(fp, start, end, *stalenessDelta)
+			err = p.PreloadRange(fp, start, end, StalenessDelta)
 			if err != nil {
 				return nil, err
 			}

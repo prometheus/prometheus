@@ -27,7 +27,7 @@ advice: $(GOCC)
 binary: build
 
 build: tools $(GOPATH)
-	$(GO) build -o prometheus $(BUILDFLAGS) .
+	$(GO) build -o prometheus $(BUILDFLAGS) github.com/prometheus/prometheus/cmd/prometheus
 
 docker: build
 	docker build -t prometheus:$(REV) .
