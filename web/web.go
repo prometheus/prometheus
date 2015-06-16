@@ -14,6 +14,7 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -56,10 +57,10 @@ type Handler struct {
 	apiV1     *v1.API
 	apiLegacy *legacy.API
 
-	router  *route.Router
-	quitCh  chan struct{}
-	options *Options
-	status  *PrometheusStatus
+	router     *route.Router
+	quitCh     chan struct{}
+	options    *Options
+	statusInfo *PrometheusStatus
 
 	muAlerts sync.Mutex
 }
@@ -107,10 +108,10 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router := route.New()
 
 	h := &Handler{
-		router:  router,
-		quitCh:  make(chan struct{}),
-		options: o,
-		status:  status,
+		router:     router,
+		quitCh:     make(chan struct{}),
+		options:    o,
+		statusInfo: status,
 
 		ruleManager: rm,
 		queryEngine: qe,
@@ -137,9 +138,10 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	instrf := prometheus.InstrumentHandlerFunc
 	instrh := prometheus.InstrumentHandler
 
-	router.Get("/", instrf("status", h.statush))
+	router.Get("/", instrf("status", h.status))
 	router.Get("/alerts", instrf("alerts", h.alerts))
 	router.Get("/graph", instrf("graph", h.graph))
+	router.Get("/version", instrf("version", h.version))
 
 	router.Get("/heap", instrf("heap", dumpHeap))
 
@@ -259,17 +261,24 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "graph", nil)
 }
 
-func (h *Handler) statush(w http.ResponseWriter, r *http.Request) {
-	h.status.mu.RLock()
-	defer h.status.mu.RUnlock()
+func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
+	h.statusInfo.mu.RLock()
+	defer h.statusInfo.mu.RUnlock()
 
 	h.executeTemplate(w, "status", struct {
 		Status *PrometheusStatus
 		Info   map[string]string
 	}{
-		Status: h.status,
+		Status: h.statusInfo,
 		Info:   version.Map,
 	})
+}
+
+func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
+	dec := json.NewEncoder(w)
+	if err := dec.Encode(version.Map); err != nil {
+		http.Error(w, fmt.Sprintf("error encoding JSON: %s", err), http.StatusInternalServerError)
+	}
 }
 
 func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
