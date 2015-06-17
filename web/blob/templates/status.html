@@ -7,7 +7,7 @@
       <tbody>
         <tr>
           <th>Uptime</th>
-          <td>{{.Birth}}</td>
+          <td>{{.Status.Birth}}</td>
         </tr>
       </tbody>
     </table>
@@ -15,7 +15,7 @@
     <h2>Build Information</h2>
     <table class="table table-condensed table-bordered table-striped table-hover">
       <tbody>
-        {{range $key, $value := .BuildInfo}}
+        {{range $key, $value := .Info}}
         <tr>
           <th scope="row">{{$key}}</th>
           <td>{{$value}}</td>
@@ -25,14 +25,14 @@
     </table>
 
     <h2>Configuration</h2>
-    <pre>{{.Config}}</pre>
+    <pre>{{.Status.Config}}</pre>
 
     <h2>Rules</h2>
-    <pre>{{range call .Rules}}{{.HTMLSnippet pathPrefix}}<br/>{{end}}</pre>
+    <pre>{{range call .Status.Rules}}{{.HTMLSnippet pathPrefix}}<br/>{{end}}</pre>
 
     <h2>Targets</h2>
       <table class="table table-condensed table-bordered table-striped table-hover">
-        {{range $job, $pool := call .TargetPools}}
+        {{range $job, $pool := call .Status.TargetPools}}
           <thead>
             <tr><th colspan="5" class="job_header">{{$job}}</th></tr>
             <tr>
@@ -83,7 +83,7 @@
     <h2>Startup Flags</h2>
     <table class="table table-condensed table-bordered table-striped table-hover">
       <tbody>
-        {{range $key, $value := .Flags}}
+        {{range $key, $value := .Status.Flags}}
         <tr>
           <th scope="row">{{$key}}</th>
           <td>{{$value}}</td>

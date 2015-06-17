@@ -15,11 +15,14 @@
 package main
 
 import (
+	"bytes"
 	"flag"
+	"fmt"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
 	"syscall"
+	"text/template"
 	"time"
 
 	"github.com/prometheus/log"
@@ -36,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
+	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -48,7 +52,7 @@ func Main() int {
 		return 2
 	}
 
-	versionInfoTmpl.Execute(os.Stdout, BuildInfo)
+	printVersion()
 	if cfg.printVersion {
 		return 0
 	}
@@ -101,7 +105,6 @@ func Main() int {
 	})
 
 	status := &web.PrometheusStatus{
-		BuildInfo:   BuildInfo,
 		TargetPools: targetManager.Pools,
 		Rules:       ruleManager.Rules,
 		Flags:       flags,
@@ -201,4 +204,20 @@ func reloadConfig(filename string, rls ...Reloadable) bool {
 		success = success && rl.ApplyConfig(conf)
 	}
 	return success
+}
+
+var versionInfoTmpl = `prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
+  build user:       {{.buildUser}}
+  build date:       {{.builDate}}
+  go version:       {{.goVersion}}
+`
+
+func printVersion() {
+	t := template.Must(template.New("version").Parse(versionInfoTmpl))
+
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, "version", version.Map); err != nil {
+		panic(err)
+	}
+	fmt.Fprint(os.Stdout, buf.String())
 }
