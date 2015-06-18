@@ -21,6 +21,7 @@ import (
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"text/template"
 	"time"
@@ -206,9 +207,10 @@ func reloadConfig(filename string, rls ...Reloadable) bool {
 	return success
 }
 
-var versionInfoTmpl = `prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
+var versionInfoTmpl = `
+prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
   build user:       {{.buildUser}}
-  build date:       {{.builDate}}
+  build date:       {{.buildDate}}
   go version:       {{.goVersion}}
 `
 
@@ -219,5 +221,5 @@ func printVersion() {
 	if err := t.ExecuteTemplate(&buf, "version", version.Map); err != nil {
 		panic(err)
 	}
-	fmt.Fprint(os.Stdout, buf.String())
+	fmt.Fprintln(os.Stdout, strings.TrimSpace(buf.String()))
 }
