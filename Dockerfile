@@ -1,28 +1,17 @@
-FROM alpine:3.2
-MAINTAINER The Prometheus Authors <prometheus-developers@googlegroups.com>
+FROM        sdurrheimer/alpine-glibc
+MAINTAINER  The Prometheus Authors <prometheus-developers@googlegroups.com>
 
-ENV GOPATH=/go \
-    REPO_PATH=github.com/prometheus/prometheus
-COPY . /go/src/github.com/prometheus/prometheus
+WORKDIR /app
+COPY    . /app
 
-RUN apk add --update -t build-deps go git mercurial \
-    && apk add -u musl && rm -rf /var/cache/apk/* \
-    && cd /go/src/$REPO_PATH \
-    && cp -a ./Godeps/_workspace/* "$GOPATH" \
-    && BUILD_FLAGS=" \
-        -X $REPO_PATH/version.Version       $(cat version/VERSION) \
-        -X $REPO_PATH/version.Revision      $(git rev-parse --short HEAD) \
-        -X $REPO_PATH/version.Branch        $(git rev-parse --abbrev-ref HEAD) \
-        -X $REPO_PATH/version.BuildUser     root@$(hostname -f) \
-        -X $REPO_PATH/version.BuildDate     $(date +%Y%m%d-%H:%M:%S) \
-        -X $REPO_PATH/version.GoVersion     $(go version | awk '{print substr($3,3)}')" \
-    && go build -ldflags "$BUILD_FLAGS" -o /bin/prometheus $REPO_PATH/cmd/prometheus \
-    && go build -ldflags "$BUILD_FLAGS" -o /bin/promtool $REPO_PATH/cmd/promtool \
+RUN apk add --update -t build-deps git mercurial bzr make \
+    && make build \
+    && cp prometheus promtool /bin/ \
     && mkdir -p /etc/prometheus \
     && mv ./documentation/examples/prometheus.yml /etc/prometheus/prometheus.yml \
     && mv ./console_libraries/ ./consoles/ /etc/prometheus/ \
-    && rm -rf /go \
-    && apk del --purge build-deps
+    && apk del --purge build-deps \
+    && rm -rf /app /var/cache/apk/*
 
 EXPOSE     9090
 VOLUME     [ "/prometheus" ]
