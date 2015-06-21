@@ -1,22 +1,23 @@
 FROM alpine:3.2
 MAINTAINER The Prometheus Authors <prometheus-developers@googlegroups.com>
 
-ENV GOPATH /go
+ENV GOPATH=/go \
+    REPO_PATH=github.com/prometheus/prometheus
 COPY . /go/src/github.com/prometheus/prometheus
 
 RUN apk add --update -t build-deps go git mercurial \
     && apk add -u musl && rm -rf /var/cache/apk/* \
     && go get github.com/tools/godep \
-    && cd /go/src/github.com/prometheus/prometheus \
+    && cd /go/src/$REPO_PATH \
     && $GOPATH/bin/godep restore && go get -d \
     && go build -ldflags " \
-            -X main.buildVersion  $(cat VERSION) \
-            -X main.buildRevision $(git rev-parse --short HEAD) \
-            -X main.buildBranch   $(git rev-parse --abbrev-ref HEAD) \
-            -X main.buildUser     root \
-            -X main.buildDate     $(date +%Y%m%d-%H:%M:%S) \
-            -X main.goVersion     $(go version | awk '{print substr($3,3)}') \
-        " -o /bin/prometheus \
+            -X $REPO_PATH/version.Version       $(cat version/VERSION) \
+            -X $REPO_PATH/version.Revision      $(git rev-parse --short HEAD) \
+            -X $REPO_PATH/version.Branch        $(git rev-parse --abbrev-ref HEAD) \
+            -X $REPO_PATH/version.BuildUser     root@$(hostname -f) \
+            -X $REPO_PATH/version.BuildDate     $(date +%Y%m%d-%H:%M:%S) \
+            -X $REPO_PATH/version.GoVersion     $(go version | awk '{print substr($3,3)}') \
+        " -o /bin/prometheus $REPO_PATH/cmd/prometheus \
     && cd tools/rule_checker && go build -o /bin/rule_checker && cd ../.. \
     && mkdir -p /etc/prometheus \
     && mv ./documentation/examples/prometheus.yml /etc/prometheus/prometheus.yml \
