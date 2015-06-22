@@ -28,6 +28,7 @@ binary: build
 
 build: tools $(GOPATH)
 	$(GO) build -o prometheus $(BUILDFLAGS) github.com/prometheus/prometheus/cmd/prometheus
+	$(GO) build -o promtool $(BUILDFLAGS) github.com/prometheus/prometheus/cmd/promtool
 
 docker: build
 	docker build -t prometheus:$(REV) .
@@ -35,7 +36,7 @@ docker: build
 tarball: $(ARCHIVE)
 
 $(ARCHIVE): build
-	tar -czf $(ARCHIVE) prometheus tools/rule_checker/rule_checker consoles console_libraries
+	tar -czf $(ARCHIVE) prometheus promtool tools/rule_checker/rule_checker consoles console_libraries
 
 release: REMOTE     ?= $(error "can't upload, REMOTE not set")
 release: REMOTE_DIR ?= $(error "can't upload, REMOTE_DIR not set")
