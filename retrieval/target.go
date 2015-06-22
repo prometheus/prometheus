@@ -336,7 +336,7 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 		recordScrapeHealth(sampleAppender, clientmodel.TimestampFromTime(start), baseLabels, t.status.Health(), time.Since(start))
 	}()
 
-	req, err := http.NewRequest("GET", t.URL(), nil)
+	req, err := http.NewRequest("GET", t.URL().String(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -405,11 +405,13 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 	return err
 }
 
-// URL implements Target.
-func (t *Target) URL() string {
+// URL returns a copy of the target's URL.
+func (t *Target) URL() *url.URL {
 	t.RLock()
 	defer t.RUnlock()
-	return t.url.String()
+	u := &url.URL{}
+	*u = *t.url
+	return u
 }
 
 // InstanceIdentifier returns the identifier for the target.

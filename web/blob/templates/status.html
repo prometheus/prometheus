@@ -47,7 +47,12 @@
           {{range $pool}}
             <tr>
               <td>
-                <a href="{{.URL | globalURL}}">{{.URL}}</a>
+              <a href="{{.URL | globalURL}}">{{.URL.Scheme}}://{{.URL.Host}}{{.URL.Path}}</a><br>
+                {{range $label, $values := .URL.Query }}
+                  {{range $i, $value := $values}}
+                    <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                  {{end}}
+                {{end}}
               </td>
               <td>
                 <span class="alert alert-{{ .Status.Health | healthToClass }} target_status_alert">

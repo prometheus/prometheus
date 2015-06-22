@@ -334,11 +334,13 @@ func (h *Handler) getTemplate(name string) (*template_std.Template, error) {
 			}
 			return lset
 		},
-		"globalURL": func(url string) string {
-			for _, localhostRepresentation := range localhostRepresentations {
-				url = strings.Replace(url, "//"+localhostRepresentation, "//"+h.options.Hostname, 1)
+		"globalURL": func(u *url.URL) *url.URL {
+			for _, lhr := range localhostRepresentations {
+				if strings.HasPrefix(u.Host, lhr+":") {
+					u.Host = strings.Replace(u.Host, lhr+":", h.options.Hostname+":", 1)
+				}
 			}
-			return url
+			return u
 		},
 		"healthToClass": func(th retrieval.TargetHealth) string {
 			switch th {
