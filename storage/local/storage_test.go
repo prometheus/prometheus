@@ -15,6 +15,7 @@ package local
 
 import (
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"testing"
 	"testing/quick"
@@ -138,6 +139,100 @@ func TestFingerprintsForLabelMatchers(t *testing.T) {
 			}
 		}
 	}
+}
+
+var benchLabelMatchingRes map[clientmodel.Fingerprint]clientmodel.COWMetric
+
+func BenchmarkLabelMatching(b *testing.B) {
+	s, closer := NewTestStorage(b, 1)
+	defer closer.Close()
+
+	h := fnv.New64a()
+	lbl := func(x int) clientmodel.LabelValue {
+		h.Reset()
+		h.Write([]byte(fmt.Sprintf("%d", x)))
+		return clientmodel.LabelValue(fmt.Sprintf("%d", h.Sum64()))
+	}
+
+	M := 32
+	met := clientmodel.Metric{}
+	for i := 0; i < M; i++ {
+		met["label_a"] = lbl(i)
+		for j := 0; j < M; j++ {
+			met["label_b"] = lbl(j)
+			for k := 0; k < M; k++ {
+				met["label_c"] = lbl(k)
+				for l := 0; l < M; l++ {
+					met["label_d"] = lbl(l)
+					s.Append(&clientmodel.Sample{
+						Metric:    met.Clone(),
+						Timestamp: 0,
+						Value:     1,
+					})
+				}
+			}
+		}
+	}
+	s.WaitForIndexing()
+
+	newMatcher := func(matchType metric.MatchType, name clientmodel.LabelName, value clientmodel.LabelValue) *metric.LabelMatcher {
+		lm, err := metric.NewLabelMatcher(matchType, name, value)
+		if err != nil {
+			b.Fatalf("error creating label matcher: %s", err)
+		}
+		return lm
+	}
+
+	var matcherTests = []metric.LabelMatchers{
+		{
+			newMatcher(metric.Equal, "label_a", lbl(1)),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.Equal, "label_c", lbl(3)),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.Equal, "label_c", lbl(3)),
+			newMatcher(metric.NotEqual, "label_d", lbl(3)),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.Equal, "label_b", lbl(3)),
+			newMatcher(metric.Equal, "label_c", lbl(3)),
+			newMatcher(metric.NotEqual, "label_d", lbl(3)),
+		},
+		{
+			newMatcher(metric.RegexMatch, "label_a", ".+"),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.RegexMatch, "label_a", ".+"),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(1)),
+			newMatcher(metric.RegexMatch, "label_c", "("+lbl(3)+"|"+lbl(10)+")"),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.Equal, "label_a", lbl(4)),
+			newMatcher(metric.RegexMatch, "label_c", "("+lbl(3)+"|"+lbl(10)+")"),
+		},
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		benchLabelMatchingRes = map[clientmodel.Fingerprint]clientmodel.COWMetric{}
+		for _, mt := range matcherTests {
+			for _, fp := range s.FingerprintsForLabelMatchers(mt) {
+				benchLabelMatchingRes[fp] = s.MetricForFingerprint(fp)
+			}
+		}
+	}
+	// Stop timer to not count the storage closing.
+	b.StopTimer()
 }
 
 func TestRetentionCutoff(t *testing.T) {
