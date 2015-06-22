@@ -15,6 +15,7 @@ package local
 
 import (
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"testing"
 	"testing/quick"
@@ -28,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestFingerprintsForLabelMatchers(t *testing.T) {
+func TestMatches(t *testing.T) {
 	storage, closer := NewTestStorage(t, 1)
 	defer closer.Close()
 
@@ -40,6 +41,7 @@ func TestFingerprintsForLabelMatchers(t *testing.T) {
 			clientmodel.MetricNameLabel: clientmodel.LabelValue(fmt.Sprintf("test_metric_%d", i)),
 			"label1":                    clientmodel.LabelValue(fmt.Sprintf("test_%d", i/10)),
 			"label2":                    clientmodel.LabelValue(fmt.Sprintf("test_%d", (i+5)/10)),
+			"all":                       "const",
 		}
 		samples[i] = &clientmodel.Sample{
 			Metric:    metric,
@@ -81,15 +83,22 @@ func TestFingerprintsForLabelMatchers(t *testing.T) {
 			expected: fingerprints[5:10],
 		},
 		{
-			matchers: metric.LabelMatchers{newMatcher(metric.NotEqual, "label1", "x")},
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.Equal, "all", "const"),
+				newMatcher(metric.NotEqual, "label1", "x"),
+			},
 			expected: fingerprints,
 		},
 		{
-			matchers: metric.LabelMatchers{newMatcher(metric.NotEqual, "label1", "test_0")},
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.Equal, "all", "const"),
+				newMatcher(metric.NotEqual, "label1", "test_0"),
+			},
 			expected: fingerprints[10:],
 		},
 		{
 			matchers: metric.LabelMatchers{
+				newMatcher(metric.Equal, "all", "const"),
 				newMatcher(metric.NotEqual, "label1", "test_0"),
 				newMatcher(metric.NotEqual, "label1", "test_1"),
 				newMatcher(metric.NotEqual, "label1", "test_2"),
@@ -97,11 +106,44 @@ func TestFingerprintsForLabelMatchers(t *testing.T) {
 			expected: fingerprints[30:],
 		},
 		{
-			matchers: metric.LabelMatchers{newMatcher(metric.RegexMatch, "label1", `test_[3-5]`)},
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.Equal, "label1", ""),
+			},
+			expected: fingerprints[:0],
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.NotEqual, "label1", "test_0"),
+				newMatcher(metric.Equal, "label1", ""),
+			},
+			expected: fingerprints[:0],
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.NotEqual, "label1", "test_0"),
+				newMatcher(metric.Equal, "label2", ""),
+			},
+			expected: fingerprints[:0],
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.Equal, "all", "const"),
+				newMatcher(metric.NotEqual, "label1", "test_0"),
+				newMatcher(metric.Equal, "not_existant", ""),
+			},
+			expected: fingerprints[10:],
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.RegexMatch, "label1", `test_[3-5]`),
+			},
 			expected: fingerprints[30:60],
 		},
 		{
-			matchers: metric.LabelMatchers{newMatcher(metric.RegexNoMatch, "label1", `test_[3-5]`)},
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.Equal, "all", "const"),
+				newMatcher(metric.RegexNoMatch, "label1", `test_[3-5]`),
+			},
 			expected: append(append(clientmodel.Fingerprints{}, fingerprints[:30]...), fingerprints[60:]...),
 		},
 		{
@@ -121,11 +163,11 @@ func TestFingerprintsForLabelMatchers(t *testing.T) {
 	}
 
 	for _, mt := range matcherTests {
-		resfps := storage.FingerprintsForLabelMatchers(mt.matchers)
-		if len(mt.expected) != len(resfps) {
-			t.Fatalf("expected %d matches for %q, found %d", len(mt.expected), mt.matchers, len(resfps))
+		res := storage.MetricsForLabelMatchers(mt.matchers...)
+		if len(mt.expected) != len(res) {
+			t.Fatalf("expected %d matches for %q, found %d", len(mt.expected), mt.matchers, len(res))
 		}
-		for _, fp1 := range resfps {
+		for fp1 := range res {
 			found := false
 			for _, fp2 := range mt.expected {
 				if fp1 == fp2 {
@@ -138,6 +180,178 @@ func TestFingerprintsForLabelMatchers(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestFingerprintsForLabels(t *testing.T) {
+	storage, closer := NewTestStorage(t, 1)
+	defer closer.Close()
+
+	samples := make([]*clientmodel.Sample, 100)
+	fingerprints := make(clientmodel.Fingerprints, 100)
+
+	for i := range samples {
+		metric := clientmodel.Metric{
+			clientmodel.MetricNameLabel: clientmodel.LabelValue(fmt.Sprintf("test_metric_%d", i)),
+			"label1":                    clientmodel.LabelValue(fmt.Sprintf("test_%d", i/10)),
+			"label2":                    clientmodel.LabelValue(fmt.Sprintf("test_%d", (i+5)/10)),
+		}
+		samples[i] = &clientmodel.Sample{
+			Metric:    metric,
+			Timestamp: clientmodel.Timestamp(i),
+			Value:     clientmodel.SampleValue(i),
+		}
+		fingerprints[i] = metric.FastFingerprint()
+	}
+	for _, s := range samples {
+		storage.Append(s)
+	}
+	storage.WaitForIndexing()
+
+	var matcherTests = []struct {
+		pairs    []metric.LabelPair
+		expected clientmodel.Fingerprints
+	}{
+		{
+			pairs:    []metric.LabelPair{{"label1", "x"}},
+			expected: fingerprints[:0],
+		},
+		{
+			pairs:    []metric.LabelPair{{"label1", "test_0"}},
+			expected: fingerprints[:10],
+		},
+		{
+			pairs: []metric.LabelPair{
+				{"label1", "test_0"},
+				{"label1", "test_1"},
+			},
+			expected: fingerprints[:0],
+		},
+		{
+			pairs: []metric.LabelPair{
+				{"label1", "test_0"},
+				{"label2", "test_1"},
+			},
+			expected: fingerprints[5:10],
+		},
+		{
+			pairs: []metric.LabelPair{
+				{"label1", "test_1"},
+				{"label2", "test_2"},
+			},
+			expected: fingerprints[15:20],
+		},
+	}
+
+	for _, mt := range matcherTests {
+		resfps := storage.fingerprintsForLabelPairs(mt.pairs...)
+		if len(mt.expected) != len(resfps) {
+			t.Fatalf("expected %d matches for %q, found %d", len(mt.expected), mt.pairs, len(resfps))
+		}
+		for fp1 := range resfps {
+			found := false
+			for _, fp2 := range mt.expected {
+				if fp1 == fp2 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected fingerprint %s for %q not in result", fp1, mt.pairs)
+			}
+		}
+	}
+}
+
+var benchLabelMatchingRes map[clientmodel.Fingerprint]clientmodel.COWMetric
+
+func BenchmarkLabelMatching(b *testing.B) {
+	s, closer := NewTestStorage(b, 1)
+	defer closer.Close()
+
+	h := fnv.New64a()
+	lbl := func(x int) clientmodel.LabelValue {
+		h.Reset()
+		h.Write([]byte(fmt.Sprintf("%d", x)))
+		return clientmodel.LabelValue(fmt.Sprintf("%d", h.Sum64()))
+	}
+
+	M := 32
+	met := clientmodel.Metric{}
+	for i := 0; i < M; i++ {
+		met["label_a"] = lbl(i)
+		for j := 0; j < M; j++ {
+			met["label_b"] = lbl(j)
+			for k := 0; k < M; k++ {
+				met["label_c"] = lbl(k)
+				for l := 0; l < M; l++ {
+					met["label_d"] = lbl(l)
+					s.Append(&clientmodel.Sample{
+						Metric:    met.Clone(),
+						Timestamp: 0,
+						Value:     1,
+					})
+				}
+			}
+		}
+	}
+	s.WaitForIndexing()
+
+	newMatcher := func(matchType metric.MatchType, name clientmodel.LabelName, value clientmodel.LabelValue) *metric.LabelMatcher {
+		lm, err := metric.NewLabelMatcher(matchType, name, value)
+		if err != nil {
+			b.Fatalf("error creating label matcher: %s", err)
+		}
+		return lm
+	}
+
+	var matcherTests = []metric.LabelMatchers{
+		{
+			newMatcher(metric.Equal, "label_a", lbl(1)),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.Equal, "label_c", lbl(3)),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.Equal, "label_c", lbl(3)),
+			newMatcher(metric.NotEqual, "label_d", lbl(3)),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.Equal, "label_b", lbl(3)),
+			newMatcher(metric.Equal, "label_c", lbl(3)),
+			newMatcher(metric.NotEqual, "label_d", lbl(3)),
+		},
+		{
+			newMatcher(metric.RegexMatch, "label_a", ".+"),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.RegexMatch, "label_a", ".+"),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(1)),
+			newMatcher(metric.RegexMatch, "label_c", "("+lbl(3)+"|"+lbl(10)+")"),
+		},
+		{
+			newMatcher(metric.Equal, "label_a", lbl(3)),
+			newMatcher(metric.Equal, "label_a", lbl(4)),
+			newMatcher(metric.RegexMatch, "label_c", "("+lbl(3)+"|"+lbl(10)+")"),
+		},
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		benchLabelMatchingRes = map[clientmodel.Fingerprint]clientmodel.COWMetric{}
+		for _, mt := range matcherTests {
+			benchLabelMatchingRes = s.MetricsForLabelMatchers(mt...)
+		}
+	}
+	// Stop timer to not count the storage closing.
+	b.StopTimer()
 }
 
 func TestRetentionCutoff(t *testing.T) {
@@ -162,17 +376,17 @@ func TestRetentionCutoff(t *testing.T) {
 	}
 	s.WaitForIndexing()
 
-	lm, err := metric.NewLabelMatcher(metric.Equal, "job", "test")
-	if err != nil {
-		t.Fatalf("error creating label matcher: %s", err)
+	var fp clientmodel.Fingerprint
+	for f := range s.fingerprintsForLabelPairs(metric.LabelPair{"job", "test"}) {
+		fp = f
+		break
 	}
-	fp := s.FingerprintsForLabelMatchers(metric.LabelMatchers{lm})[0]
 
 	pl := s.NewPreloader()
 	defer pl.Close()
 
 	// Preload everything.
-	err = pl.PreloadRange(fp, insertStart, now, 5*time.Minute)
+	err := pl.PreloadRange(fp, insertStart, now, 5*time.Minute)
 	if err != nil {
 		t.Fatalf("Error preloading outdated chunks: %s", err)
 	}
@@ -227,56 +441,50 @@ func TestDropMetrics(t *testing.T) {
 	}
 	s.WaitForIndexing()
 
-	matcher := metric.LabelMatchers{{
-		Type:  metric.Equal,
-		Name:  clientmodel.MetricNameLabel,
-		Value: "test",
-	}}
-
-	fps := s.FingerprintsForLabelMatchers(matcher)
+	fps := s.fingerprintsForLabelPairs(metric.LabelPair{clientmodel.MetricNameLabel, "test"})
 	if len(fps) != 2 {
 		t.Fatalf("unexpected number of fingerprints: %d", len(fps))
 	}
 
-	it := s.NewIterator(fps[0])
-	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != N {
-		t.Fatalf("unexpected number of samples: %d", len(vals))
-	}
-	it = s.NewIterator(fps[1])
-	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != N {
-		t.Fatalf("unexpected number of samples: %d", len(vals))
+	var fpList clientmodel.Fingerprints
+	for fp := range fps {
+		it := s.NewIterator(fp)
+		if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != N {
+			t.Fatalf("unexpected number of samples: %d", len(vals))
+		}
+		fpList = append(fpList, fp)
 	}
 
-	s.DropMetricsForFingerprints(fps[0])
+	s.DropMetricsForFingerprints(fpList[0])
 	s.WaitForIndexing()
 
-	fps2 := s.FingerprintsForLabelMatchers(matcher)
+	fps2 := s.fingerprintsForLabelPairs(metric.LabelPair{clientmodel.MetricNameLabel, "test"})
 	if len(fps2) != 1 {
 		t.Fatalf("unexpected number of fingerprints: %d", len(fps2))
 	}
 
-	it = s.NewIterator(fps[0])
+	it := s.NewIterator(fpList[0])
 	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != 0 {
 		t.Fatalf("unexpected number of samples: %d", len(vals))
 	}
-	it = s.NewIterator(fps[1])
+	it = s.NewIterator(fpList[1])
 	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != N {
 		t.Fatalf("unexpected number of samples: %d", len(vals))
 	}
 
-	s.DropMetricsForFingerprints(fps...)
+	s.DropMetricsForFingerprints(fpList...)
 	s.WaitForIndexing()
 
-	fps3 := s.FingerprintsForLabelMatchers(matcher)
+	fps3 := s.fingerprintsForLabelPairs(metric.LabelPair{clientmodel.MetricNameLabel, "test"})
 	if len(fps3) != 0 {
 		t.Fatalf("unexpected number of fingerprints: %d", len(fps3))
 	}
 
-	it = s.NewIterator(fps[0])
+	it = s.NewIterator(fpList[0])
 	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != 0 {
 		t.Fatalf("unexpected number of samples: %d", len(vals))
 	}
-	it = s.NewIterator(fps[1])
+	it = s.NewIterator(fpList[1])
 	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != 0 {
 		t.Fatalf("unexpected number of samples: %d", len(vals))
 	}

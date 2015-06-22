@@ -161,8 +161,6 @@ type MatrixSelector struct {
 	// The series iterators are populated at query analysis time.
 	iterators map[clientmodel.Fingerprint]local.SeriesIterator
 	metrics   map[clientmodel.Fingerprint]clientmodel.COWMetric
-	// Fingerprints are populated from label matchers at query analysis time.
-	fingerprints clientmodel.Fingerprints
 }
 
 // NumberLiteral represents a number.
@@ -197,8 +195,6 @@ type VectorSelector struct {
 	// The series iterators are populated at query analysis time.
 	iterators map[clientmodel.Fingerprint]local.SeriesIterator
 	metrics   map[clientmodel.Fingerprint]clientmodel.COWMetric
-	// Fingerprints are populated from label matchers at query analysis time.
-	fingerprints clientmodel.Fingerprints
 }
 
 func (e *AggregateExpr) Type() ExprType  { return ExprVector }

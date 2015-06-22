@@ -188,23 +188,21 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
 	}
-	fps := map[clientmodel.Fingerprint]struct{}{}
+	res := map[clientmodel.Fingerprint]clientmodel.COWMetric{}
 
 	for _, lm := range r.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(lm)
 		if err != nil {
 			return nil, &apiError{errorBadData, err}
 		}
-		for _, fp := range api.Storage.FingerprintsForLabelMatchers(matchers) {
-			fps[fp] = struct{}{}
+		for fp, met := range api.Storage.MetricsForLabelMatchers(matchers...) {
+			res[fp] = met
 		}
 	}
 
-	metrics := make([]clientmodel.Metric, 0, len(fps))
-	for fp := range fps {
-		if met := api.Storage.MetricForFingerprint(fp).Metric; met != nil {
-			metrics = append(metrics, met)
-		}
+	metrics := make([]clientmodel.Metric, 0, len(res))
+	for _, met := range res {
+		metrics = append(metrics, met.Metric)
 	}
 	return metrics, nil
 }
@@ -221,7 +219,7 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 		if err != nil {
 			return nil, &apiError{errorBadData, err}
 		}
-		for _, fp := range api.Storage.FingerprintsForLabelMatchers(matchers) {
+		for fp := range api.Storage.MetricsForLabelMatchers(matchers...) {
 			fps[fp] = struct{}{}
 		}
 	}

@@ -588,6 +588,22 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "vector selector must contain label matchers or metric name",
 	}, {
+		input:  `{x=""}`,
+		fail:   true,
+		errMsg: "vector selector must contain at least one non-empty matcher",
+	}, {
+		input:  `{x=~".*"}`,
+		fail:   true,
+		errMsg: "vector selector must contain at least one non-empty matcher",
+	}, {
+		input:  `{x!~".+"}`,
+		fail:   true,
+		errMsg: "vector selector must contain at least one non-empty matcher",
+	}, {
+		input:  `{x!="a"}`,
+		fail:   true,
+		errMsg: "vector selector must contain at least one non-empty matcher",
+	}, {
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
 		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",

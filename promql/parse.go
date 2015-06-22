@@ -883,6 +883,25 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 	if len(matchers) == 0 {
 		p.errorf("vector selector must contain label matchers or metric name")
 	}
+	// A vector selector must contain at least one non-empty matcher to prevent
+	// implicit selection of all metrics (e.g. by a typo).
+	notEmpty := false
+	for _, lm := range matchers {
+		// Matching changes the inner state of the regex and causes reflect.DeepEqual
+		// to return false, which break tests.
+		// Thus, we create a new label matcher for this testing.
+		lm, err := metric.NewLabelMatcher(lm.Type, lm.Name, lm.Value)
+		if err != nil {
+			p.error(err)
+		}
+		if !lm.Match("") {
+			notEmpty = true
+			break
+		}
+	}
+	if !notEmpty {
+		p.errorf("vector selector must contain at least one non-empty matcher")
+	}
 
 	var err error
 	var offset time.Duration
