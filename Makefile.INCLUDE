@@ -76,7 +76,6 @@ BUILDFLAGS := -ldflags \
 		-X $(REPO_PATH)/version.BuildUser $(USER)@$(HOSTNAME)\
 		-X $(REPO_PATH)/version.BuildDate $(BUILD_DATE)\
 		-X $(REPO_PATH)/version.GoVersion $(GO_VERSION)"
-PROTOC := protoc
 CURL := curl
 
 ARCHIVE := prometheus-$(VERSION).$(GOOS)-$(GOARCH).tar.gz
