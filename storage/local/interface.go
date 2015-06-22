@@ -40,6 +40,9 @@ type Storage interface {
 	// label matchers. At least one label matcher must be specified that does not
 	// match the empty string.
 	MetricsForLabelMatchers(matchers ...*metric.LabelMatcher) map[clientmodel.Fingerprint]clientmodel.COWMetric
+	// LastSamplePairForFingerprint returns the last sample pair for the provided fingerprint.
+	// If the respective time series is evicted, nil is returned.
+	LastSamplePairForFingerprint(clientmodel.Fingerprint) *metric.SamplePair
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(clientmodel.LabelName) clientmodel.LabelValues
 	// Get the metric associated with the provided fingerprint.

@@ -142,6 +142,20 @@ func (cd *chunkDesc) lastTime() clientmodel.Timestamp {
 	return cd.c.newIterator().lastTimestamp()
 }
 
+func (cd *chunkDesc) lastSamplePair() *metric.SamplePair {
+	cd.Lock()
+	defer cd.Unlock()
+
+	if cd.c == nil {
+		return nil
+	}
+	it := cd.c.newIterator()
+	return &metric.SamplePair{
+		Timestamp: it.lastTimestamp(),
+		Value:     it.lastSampleValue(),
+	}
+}
+
 func (cd *chunkDesc) isEvicted() bool {
 	cd.Lock()
 	defer cd.Unlock()
