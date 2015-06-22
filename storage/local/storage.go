@@ -510,6 +510,11 @@ func (s *memorySeriesStorage) DropMetricsForFingerprints(fps ...clientmodel.Fing
 
 // Append implements Storage.
 func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
+	for ln, lv := range sample.Metric {
+		if len(lv) == 0 {
+			delete(sample.Metric, ln)
+		}
+	}
 	if s.getNumChunksToPersist() >= s.maxChunksToPersist {
 		log.Warnf(
 			"%d chunks waiting for persistence, sample ingestion suspended.",

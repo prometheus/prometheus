@@ -36,6 +36,7 @@ var expectedConf = &Config{
 		{
 			JobName: "prometheus",
 
+			HonorLabels:    true,
 			ScrapeInterval: Duration(15 * time.Second),
 			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
 

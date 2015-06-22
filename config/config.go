@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -62,6 +63,7 @@ var (
 		// configured globals.
 		MetricsPath: "/metrics",
 		Scheme:      "http",
+		HonorLabels: false,
 	}
 
 	// The default Relabel configuration.
@@ -190,6 +192,10 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type ScrapeConfig struct {
 	// The job name to which the job label is set by default.
 	JobName string `yaml:"job_name"`
+	// Indicator whether the scraped metrics should remain unmodified.
+	HonorLabels bool `yaml:"honor_labels,omitempty"`
+	// A set of query parameters with which the target is scraped.
+	Params url.Values `yaml:"params,omitempty"`
 	// How frequently to scrape the targets of this scrape config.
 	ScrapeInterval Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
