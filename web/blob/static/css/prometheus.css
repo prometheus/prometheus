@@ -10,8 +10,9 @@ th.job_header {
   padding-bottom: 10px;
 }
 
-.target_status_alert {
+.state_indicator {
   padding: 0 4px 0 4px;
+  text-transform: uppercase;
 }
 
 .literal_output td {

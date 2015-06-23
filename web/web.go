@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	template_std "html/template"
 	pprof_runtime "runtime/pprof"
+	template_text "text/template"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/prometheus"
@@ -320,11 +320,26 @@ func (h *Handler) getConsoles() string {
 	return ""
 }
 
-func (h *Handler) getTemplate(name string) (*template_std.Template, error) {
-	t := template_std.New("_base")
-	var err error
+func (h *Handler) getTemplate(name string) (string, error) {
+	baseTmpl, err := h.getTemplateFile("_base")
+	if err != nil {
+		return "", fmt.Errorf("Error reading base template: %s", err)
+	}
+	pageTmpl, err := h.getTemplateFile(name)
+	if err != nil {
+		return "", fmt.Errorf("Error reading page template %s: %s", name, err)
+	}
+	return baseTmpl + pageTmpl, nil
+}
 
-	t.Funcs(template_std.FuncMap{
+func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {
+	text, err := h.getTemplate(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	tmpl := template.NewTemplateExpander(text, name, data, clientmodel.Now(), h.queryEngine, h.options.PathPrefix)
+	tmpl.Funcs(template_text.FuncMap{
 		"since":       time.Since,
 		"getConsoles": h.getConsoles,
 		"pathPrefix":  func() string { return h.options.PathPrefix },
@@ -352,40 +367,26 @@ func (h *Handler) getTemplate(name string) (*template_std.Template, error) {
 				return "danger"
 			}
 		},
+		"alertStateToClass": func(as rules.AlertState) string {
+			switch as {
+			case rules.StateInactive:
+				return "success"
+			case rules.StatePending:
+				return "warning"
+			case rules.StateFiring:
+				return "danger"
+			default:
+				panic("unknown alert state")
+			}
+		},
 	})
 
-	file, err := h.getTemplateFile("_base")
+	result, err := tmpl.ExpandHTML(nil)
 	if err != nil {
-		log.Errorln("Could not read base template:", err)
-		return nil, err
-	}
-	t, err = t.Parse(file)
-	if err != nil {
-		log.Errorln("Could not parse base template:", err)
-	}
-
-	file, err = h.getTemplateFile(name)
-	if err != nil {
-		log.Error("Could not read template %s: %s", name, err)
-		return nil, err
-	}
-	t, err = t.Parse(file)
-	if err != nil {
-		log.Errorf("Could not parse template %s: %s", name, err)
-	}
-	return t, err
-}
-
-func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {
-	tpl, err := h.getTemplate(name)
-	if err != nil {
-		log.Error("Error preparing layout template: ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	err = tpl.Execute(w, data)
-	if err != nil {
-		log.Error("Error executing template: ", err)
-	}
+	io.WriteString(w, result)
 }
 
 func dumpHeap(w http.ResponseWriter, r *http.Request) {
