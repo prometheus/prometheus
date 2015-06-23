@@ -24,13 +24,12 @@ var (
 
 // Load parses the YAML input s into a Config.
 func Load(s string) (*Config, error) {
-	cfg := &Config{
-		original: s,
-	}
+	cfg := &Config{}
 	err := yaml.Unmarshal([]byte(s), cfg)
 	if err != nil {
 		return nil, err
 	}
+	cfg.original = s
 	return cfg, nil
 }
 
