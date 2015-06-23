@@ -37,7 +37,7 @@
                 {{end}}
               </td>
               <td><span class="alert alert-{{ .State | alertStateToClass }} state_indicator">{{.State}}</span></td>
-              <td>{{.ActiveSince.Time}}</td>
+              <td>{{.ActiveSince.Time.UTC}}</td>
               <td>{{.Value}}</td>
               <td><a href="#" class="silence_alert_link">Silence&hellip;</a></td>
             </tr>

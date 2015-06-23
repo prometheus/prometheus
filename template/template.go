@@ -242,7 +242,7 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 				if math.IsNaN(v) || math.IsInf(v, 0) {
 					return fmt.Sprintf("%.4g", v)
 				}
-				t := clientmodel.TimestampFromUnixNano(int64(v * 1000000000)).Time()
+				t := clientmodel.TimestampFromUnixNano(int64(v * 1e9)).Time().UTC()
 				return fmt.Sprint(t)
 			},
 			"pathPrefix": func() string {
