@@ -294,6 +294,13 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 	success := true
 	m.interval = time.Duration(conf.GlobalConfig.EvaluationInterval)
 
+	alertingRules := map[string]*AlertingRule{}
+	for _, r := range m.rules {
+		if ar, ok := r.(*AlertingRule); ok {
+			alertingRules[ar.name] = ar
+		}
+	}
+
 	rulesSnapshot := make([]Rule, len(m.rules))
 	copy(rulesSnapshot, m.rules)
 	m.rules = m.rules[:0]
@@ -314,6 +321,17 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 		log.Errorf("Error loading rules, previous rule set restored: %s", err)
 		success = false
 	}
+	// Restore alerting rule state.
+	for _, r := range m.rules {
+		ar, ok := r.(*AlertingRule)
+		if !ok {
+			continue
+		}
+		if old, ok := alertingRules[ar.name]; ok {
+			ar.activeAlerts = old.activeAlerts
+		}
+	}
+
 	return success
 }
 
