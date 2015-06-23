@@ -66,7 +66,7 @@ $(SELFLINK): $(GOPATH)
 	ln -s $(MAKEFILE_DIR) $@
 
 $(GOPATH):
-	cp -a $(MAKEFILE_DIR)/Godeps/_workspace $(GOPATH)
+	cp -a $(MAKEFILE_DIR)/Godeps/_workspace "$(GOPATH)"
 
 dependencies: $(GOCC) | $(SELFLINK)
 
