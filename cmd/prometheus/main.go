@@ -28,7 +28,7 @@ import (
 
 	"github.com/prometheus/log"
 
-	registry "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
@@ -38,8 +38,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/storage/remote/influxdb"
-	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web"
 )
@@ -58,39 +56,17 @@ func Main() int {
 		return 0
 	}
 
-	memStorage := local.NewMemorySeriesStorage(&cfg.storage)
-
 	var (
-		sampleAppender      storage.SampleAppender
-		remoteStorageQueues []*remote.StorageQueueManager
-	)
-	if cfg.opentsdbURL == "" && cfg.influxdbURL == "" {
-		log.Warnf("No remote storage URLs provided; not sending any samples to long-term storage")
-		sampleAppender = memStorage
-	} else {
-		fanout := storage.Fanout{memStorage}
-
-		addRemoteStorage := func(c remote.StorageClient) {
-			qm := remote.NewStorageQueueManager(c, 100*1024)
-			fanout = append(fanout, qm)
-			remoteStorageQueues = append(remoteStorageQueues, qm)
-		}
-
-		if cfg.opentsdbURL != "" {
-			addRemoteStorage(opentsdb.NewClient(cfg.opentsdbURL, cfg.remoteStorageTimeout))
-		}
-		if cfg.influxdbURL != "" {
-			addRemoteStorage(influxdb.NewClient(cfg.influxdbURL, cfg.remoteStorageTimeout, cfg.influxdbDatabase, cfg.influxdbRetentionPolicy))
-		}
-
-		sampleAppender = fanout
-	}
-
-	var (
+		memStorage          = local.NewMemorySeriesStorage(&cfg.storage)
+		remoteStorage       = remote.New(&cfg.remote)
+		sampleAppender      = storage.Fanout{memStorage}
 		notificationHandler = notification.NewNotificationHandler(&cfg.notification)
 		targetManager       = retrieval.NewTargetManager(sampleAppender)
 		queryEngine         = promql.NewEngine(memStorage, &cfg.queryEngine)
 	)
+	if remoteStorage != nil {
+		sampleAppender = append(sampleAppender, remoteStorage)
+	}
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		SampleAppender:      sampleAppender,
@@ -115,7 +91,7 @@ func Main() int {
 	webHandler := web.New(memStorage, queryEngine, ruleManager, status, &cfg.web)
 
 	if !reloadConfig(cfg.configFile, status, targetManager, ruleManager) {
-		os.Exit(1)
+		return 1
 	}
 
 	// Wait for reload or termination signals. Start the handler for SIGHUP as
@@ -142,16 +118,15 @@ func Main() int {
 		}
 	}()
 
-	// The storage has to be fully initialized before registering.
-	registry.MustRegister(memStorage)
-	registry.MustRegister(notificationHandler)
+	if remoteStorage != nil {
+		prometheus.MustRegister(remoteStorage)
 
-	for _, q := range remoteStorageQueues {
-		registry.MustRegister(q)
-
-		go q.Run()
-		defer q.Stop()
+		go remoteStorage.Run()
+		defer remoteStorage.Stop()
 	}
+	// The storage has to be fully initialized before registering.
+	prometheus.MustRegister(memStorage)
+	prometheus.MustRegister(notificationHandler)
 
 	go ruleManager.Run()
 	defer ruleManager.Stop()
