@@ -142,7 +142,7 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// HumanizeTimestamp - clientmodel.SampleValue input.
 			text:   "{{ 1435065584.128 | humanizeTimestamp }}",
-			output: "2015-06-23 15:19:44.128 +0200 CEST",
+			output: "2015-06-23 13:19:44.128 +0000 UTC",
 		},
 		{
 			// Title.
