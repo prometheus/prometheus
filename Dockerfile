@@ -7,9 +7,8 @@ COPY . /go/src/github.com/prometheus/prometheus
 
 RUN apk add --update -t build-deps go git mercurial \
     && apk add -u musl && rm -rf /var/cache/apk/* \
-    && go get github.com/tools/godep \
     && cd /go/src/$REPO_PATH \
-    && $GOPATH/bin/godep restore && go get -d \
+    && cp -a ./Godeps/_workspace/* "$GOPATH" \
     && go build -ldflags " \
             -X $REPO_PATH/version.Version       $(cat version/VERSION) \
             -X $REPO_PATH/version.Revision      $(git rev-parse --short HEAD) \
