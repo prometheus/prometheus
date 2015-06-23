@@ -73,11 +73,11 @@ type TargetHealth int
 func (t TargetHealth) String() string {
 	switch t {
 	case HealthUnknown:
-		return "UNKNOWN"
+		return "unknown"
 	case HealthGood:
-		return "HEALTHY"
+		return "healthy"
 	case HealthBad:
-		return "UNHEALTHY"
+		return "unhealthy"
 	}
 	panic("unknown state")
 }
