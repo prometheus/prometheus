@@ -54,8 +54,9 @@ type Handler struct {
 	ruleManager *rules.Manager
 	queryEngine *promql.Engine
 
-	apiV1     *v1.API
-	apiLegacy *legacy.API
+	apiV1      *v1.API
+	apiLegacy  *legacy.API
+	federation *Federation
 
 	router     *route.Router
 	quitCh     chan struct{}
@@ -125,6 +126,9 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 			Storage:     st,
 			Now:         clientmodel.Now,
 		},
+		federation: &Federation{
+			Storage: st,
+		},
 	}
 
 	if o.PathPrefix != "" {
@@ -145,6 +149,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 
 	router.Get("/heap", instrf("heap", dumpHeap))
 
+	router.Get("/federate", instrh("federate", h.federation))
 	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
 
 	h.apiLegacy.Register(router.WithPrefix("/api"))
@@ -329,11 +334,13 @@ func (h *Handler) getTemplate(name string) (*template_std.Template, error) {
 			}
 			return lset
 		},
-		"globalURL": func(url string) string {
-			for _, localhostRepresentation := range localhostRepresentations {
-				url = strings.Replace(url, "//"+localhostRepresentation, "//"+h.options.Hostname, 1)
+		"globalURL": func(u *url.URL) *url.URL {
+			for _, lhr := range localhostRepresentations {
+				if strings.HasPrefix(u.Host, lhr+":") {
+					u.Host = strings.Replace(u.Host, lhr+":", h.options.Hostname+":", 1)
+				}
 			}
-			return url
+			return u
 		},
 		"healthToClass": func(th retrieval.TargetHealth) string {
 			switch th {

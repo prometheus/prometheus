@@ -44,6 +44,91 @@ func TestBaseLabels(t *testing.T) {
 	}
 }
 
+func TestOverwriteLabels(t *testing.T) {
+	type test struct {
+		metric       string
+		resultNormal clientmodel.Metric
+		resultHonor  clientmodel.Metric
+	}
+	var tests []test
+
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				for _, test := range tests {
+					w.Write([]byte(test.metric))
+					w.Write([]byte(" 1\n"))
+				}
+			},
+		),
+	)
+	defer server.Close()
+	addr := clientmodel.LabelValue(strings.Split(server.URL, "://")[1])
+
+	tests = []test{
+		{
+			metric: `foo{}`,
+			resultNormal: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+				clientmodel.InstanceLabel:   addr,
+			},
+			resultHonor: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+				clientmodel.InstanceLabel:   addr,
+			},
+		},
+		{
+			metric: `foo{instance=""}`,
+			resultNormal: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+				clientmodel.InstanceLabel:   addr,
+			},
+			resultHonor: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+			},
+		},
+		{
+			metric: `foo{instance="other_instance"}`,
+			resultNormal: clientmodel.Metric{
+				clientmodel.MetricNameLabel:                                 "foo",
+				clientmodel.InstanceLabel:                                   addr,
+				clientmodel.ExportedLabelPrefix + clientmodel.InstanceLabel: "other_instance",
+			},
+			resultHonor: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+				clientmodel.InstanceLabel:   "other_instance",
+			},
+		},
+	}
+
+	target := newTestTarget(server.URL, 10*time.Millisecond, nil)
+
+	target.honorLabels = false
+	app := &collectResultAppender{}
+	if err := target.scrape(app); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, test := range tests {
+		if !reflect.DeepEqual(app.result[i].Metric, test.resultNormal) {
+			t.Errorf("Error comparing %q:\nExpected:\n%s\nGot:\n%s\n", test.metric, test.resultNormal, app.result[i].Metric)
+		}
+	}
+
+	target.honorLabels = true
+	app = &collectResultAppender{}
+	if err := target.scrape(app); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, test := range tests {
+		if !reflect.DeepEqual(app.result[i].Metric, test.resultHonor) {
+			t.Errorf("Error comparing %q:\nExpected:\n%s\nGot:\n%s\n", test.metric, test.resultHonor, app.result[i].Metric)
+		}
+
+	}
+}
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := newTestTarget("bad schema", 0, nil)
 
