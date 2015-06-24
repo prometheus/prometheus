@@ -55,7 +55,7 @@
                 {{end}}
               </td>
               <td>
-                <span class="alert alert-{{ .Status.Health | healthToClass }} state_indicator">
+                <span class="alert alert-{{ .Status.Health | healthToClass }} state_indicator text-uppercase">
                   {{.Status.Health}}
                 </span>
               </td>
@@ -76,7 +76,7 @@
               </td>
               <td>
                 {{if .Status.LastError}}
-                <span class="alert alert-danger target_status_alert">{{.Status.LastError}}</span>
+                <span class="alert alert-danger state_indicator">{{.Status.LastError}}</span>
                 {{end}}
               </td>
             </tr>
