@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/local/index"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -42,13 +43,7 @@ var cfg = struct {
 	notification notification.NotificationHandlerOptions
 	queryEngine  promql.EngineOptions
 	web          web.Options
-
-	// Remote storage.
-	remoteStorageTimeout    time.Duration
-	influxdbURL             string
-	influxdbRetentionPolicy string
-	influxdbDatabase        string
-	opentsdbURL             string
+	remote       remote.Options
 
 	prometheusURL string
 }{}
@@ -167,23 +162,23 @@ func init() {
 
 	// Remote storage.
 	cfg.fs.StringVar(
-		&cfg.opentsdbURL, "storage.remote.opentsdb-url", "",
+		&cfg.remote.OpentsdbURL, "storage.remote.opentsdb-url", "",
 		"The URL of the remote OpenTSDB server to send samples to. None, if empty.",
 	)
 	cfg.fs.StringVar(
-		&cfg.influxdbURL, "storage.remote.influxdb-url", "",
+		&cfg.remote.InfluxdbURL, "storage.remote.influxdb-url", "",
 		"The URL of the remote InfluxDB server to send samples to. None, if empty.",
 	)
 	cfg.fs.StringVar(
-		&cfg.influxdbRetentionPolicy, "storage.remote.influxdb.retention-policy", "default",
+		&cfg.remote.InfluxdbRetentionPolicy, "storage.remote.influxdb.retention-policy", "default",
 		"The InfluxDB retention policy to use.",
 	)
 	cfg.fs.StringVar(
-		&cfg.influxdbDatabase, "storage.remote.influxdb.database", "prometheus",
+		&cfg.remote.InfluxdbDatabase, "storage.remote.influxdb.database", "prometheus",
 		"The name of the database to use for storing samples in InfluxDB.",
 	)
 	cfg.fs.DurationVar(
-		&cfg.remoteStorageTimeout, "storage.remote.timeout", 30*time.Second,
+		&cfg.remote.StorageTimeout, "storage.remote.timeout", 30*time.Second,
 		"The timeout to use when sending samples to the remote storage.",
 	)
 
