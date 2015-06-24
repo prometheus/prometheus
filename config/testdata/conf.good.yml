@@ -71,6 +71,13 @@ scrape_configs:
   - source_labels: [job]
     regex:         (.*)some-[regex]$
     action:        drop
+  - source_labels: [__address__]
+    modulus:       8
+    target_label:  __hash
+    action:        hashmod
+  - source_labels: [__hash]
+    regex:         ^1$
+    action:        keep
 
   metric_relabel_configs:
   - source_labels: [__name__]

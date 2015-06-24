@@ -114,6 +114,19 @@ var expectedConf = &Config{
 					Separator:    ";",
 					Action:       RelabelDrop,
 				},
+				{
+					SourceLabels: clientmodel.LabelNames{"__address__"},
+					TargetLabel:  "__hash",
+					Modulus:      8,
+					Separator:    ";",
+					Action:       RelabelHashMod,
+				},
+				{
+					SourceLabels: clientmodel.LabelNames{"__hash"},
+					Regex:        &Regexp{*regexp.MustCompile("^1$")},
+					Separator:    ";",
+					Action:       RelabelKeep,
+				},
 			},
 			MetricRelabelConfigs: []*RelabelConfig{
 				{
@@ -194,6 +207,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "regex_missing.bad.yml",
 		errMsg:   "relabel configuration requires a regular expression",
+	}, {
+		filename: "modulus_missing.bad.yml",
+		errMsg:   "relabel configuration for hashmod requires non-zero modulus",
 	}, {
 		filename: "rules.bad.yml",
 		errMsg:   "invalid rule file path",
