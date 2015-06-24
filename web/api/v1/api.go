@@ -65,7 +65,7 @@ type API struct {
 // Enables cross-site script calls.
 func setCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE")
+	w.Header().Set("Access-Control-Allow-Methods", "GET")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Expose-Headers", "Date")
 }
