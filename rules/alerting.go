@@ -112,6 +112,8 @@ type AlertingRule struct {
 	summary string
 	// More detailed alert description.
 	description string
+	// A reference to a runbook for the alert.
+	runbook string
 
 	// Protects the below.
 	mutex sync.Mutex
@@ -128,6 +130,7 @@ func NewAlertingRule(
 	labels clientmodel.LabelSet,
 	summary string,
 	description string,
+	runbook string,
 ) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
@@ -136,6 +139,7 @@ func NewAlertingRule(
 		labels:       labels,
 		summary:      summary,
 		description:  description,
+		runbook:      runbook,
 
 		activeAlerts: map[clientmodel.Fingerprint]*Alert{},
 	}
@@ -219,6 +223,7 @@ func (rule *AlertingRule) String() string {
 	}
 	s += fmt.Sprintf("\n\tSUMMARY %q", rule.summary)
 	s += fmt.Sprintf("\n\tDESCRIPTION %q", rule.description)
+	s += fmt.Sprintf("\n\tRUNBOOK %q", rule.runbook)
 	return s
 }
 
@@ -240,6 +245,7 @@ func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	}
 	s += fmt.Sprintf("\n  SUMMARY %q", rule.summary)
 	s += fmt.Sprintf("\n  DESCRIPTION %q", rule.description)
+	s += fmt.Sprintf("\n  RUNBOOK %q", rule.runbook)
 	return template.HTML(s)
 }
 

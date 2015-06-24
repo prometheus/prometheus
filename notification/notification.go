@@ -48,6 +48,8 @@ type NotificationReq struct {
 	Summary string
 	// Longer alert description. May contain text/template-style interpolations.
 	Description string
+	// A reference to the runbook for the alert.
+	Runbook string
 	// Labels associated with this alert notification, including alert name.
 	Labels clientmodel.LabelSet
 	// Current value of alert
@@ -147,6 +149,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 		alerts = append(alerts, map[string]interface{}{
 			"summary":     req.Summary,
 			"description": req.Description,
+			"runbook":     req.Runbook,
 			"labels":      req.Labels,
 			"payload": map[string]interface{}{
 				"value":        req.Value,
