@@ -180,8 +180,8 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 	for {
 		catalog := cd.client.Catalog()
 		srvs, meta, err := catalog.Services(&consul.QueryOptions{
-			RequireConsistent: false,
-			WaitIndex:         lastIndex,
+			WaitIndex: lastIndex,
+			WaitTime:  consulWatchTimeout,
 		})
 		if err != nil {
 			log.Errorf("Error refreshing service list: %s", err)
@@ -197,6 +197,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 		cd.mu.Lock()
 		select {
 		case <-cd.srvsDone:
+			cd.mu.Unlock()
 			return
 		default:
 			// Continue.
@@ -272,9 +273,11 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 				ConsulTagsLabel:          clientmodel.LabelValue(tags),
 			})
 		}
+
 		cd.mu.Lock()
 		select {
 		case <-srv.done:
+			cd.mu.Unlock()
 			return
 		default:
 			// Continue.
