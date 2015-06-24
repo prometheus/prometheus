@@ -2,6 +2,7 @@ package retrieval
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strings"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -56,6 +57,11 @@ func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmode
 		} else {
 			labels[cfg.TargetLabel] = clientmodel.LabelValue(res)
 		}
+	case config.RelabelHashMod:
+		hasher := fnv.New64a()
+		hasher.Write([]byte(val))
+		mod := hasher.Sum64() % cfg.Modulus
+		labels[cfg.TargetLabel] = clientmodel.LabelValue(fmt.Sprintf("%d", mod))
 	default:
 		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
 	}

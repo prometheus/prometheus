@@ -455,9 +455,11 @@ const (
 	// Performs a regex replacement.
 	RelabelReplace RelabelAction = "replace"
 	// Drops targets for which the input does not match the regex.
-	RelabelKeep = "keep"
+	RelabelKeep RelabelAction = "keep"
 	// Drops targets for which the input does match the regex.
-	RelabelDrop = "drop"
+	RelabelDrop RelabelAction = "drop"
+	// Sets a label to the modulus of a hash of labels.
+	RelabelHashMod RelabelAction = "hashmod"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -467,7 +469,7 @@ func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch act := RelabelAction(strings.ToLower(s)); act {
-	case RelabelReplace, RelabelKeep, RelabelDrop:
+	case RelabelReplace, RelabelKeep, RelabelDrop, RelabelHashMod:
 		*a = act
 		return nil
 	}
@@ -482,7 +484,9 @@ type RelabelConfig struct {
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
-	Regex *Regexp `yaml:"regex"`
+	Regex *Regexp `yaml:"regex",omitempty`
+	// Modulus to take of the hash of concatenated values from the source labels.
+	Modulus uint64 `yaml:"modulus,omitempty"`
 	// The label to which the resulting string is written in a replacement.
 	TargetLabel clientmodel.LabelName `yaml:"target_label,omitempty"`
 	// Replacement is the regex replacement pattern to be used.
@@ -501,8 +505,11 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if c.Regex == nil {
+	if c.Regex == nil && c.Action != RelabelHashMod {
 		return fmt.Errorf("relabel configuration requires a regular expression")
+	}
+	if c.Modulus == 0 && c.Action == RelabelHashMod {
+		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
 	return checkOverflow(c.XXX, "relabel_config")
 }
@@ -527,8 +534,11 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
-func (re Regexp) MarshalYAML() (interface{}, error) {
-	return re.String(), nil
+func (re *Regexp) MarshalYAML() (interface{}, error) {
+	if re != nil {
+		return re.String(), nil
+	}
+	return nil, nil
 }
 
 // Duration encapsulates a time.Duration and makes it YAML marshallable.
