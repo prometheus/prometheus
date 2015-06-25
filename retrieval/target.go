@@ -23,11 +23,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/extraction"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/extraction"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
@@ -37,10 +37,10 @@ import (
 const (
 	// ScrapeHealthMetricName is the metric name for the synthetic health
 	// variable.
-	scrapeHealthMetricName clientmodel.LabelValue = "up"
+	scrapeHealthMetricName model.LabelValue = "up"
 	// ScrapeTimeMetricName is the metric name for the synthetic scrape duration
 	// variable.
-	scrapeDurationMetricName clientmodel.LabelValue = "scrape_duration_seconds"
+	scrapeDurationMetricName model.LabelValue = "scrape_duration_seconds"
 	// Capacity of the channel to buffer samples during ingestion.
 	ingestedSamplesCap = 256
 
@@ -150,7 +150,7 @@ type Target struct {
 	// Closing scraperStopped signals that scraping has been stopped.
 	scraperStopped chan struct{}
 	// Channel to buffer ingested samples.
-	ingestedSamples chan clientmodel.Samples
+	ingestedSamples chan model.Samples
 	// Metric relabel configuration.
 	metricRelabelConfigs []*config.RelabelConfig
 
@@ -159,9 +159,9 @@ type Target struct {
 	// url is the URL to be scraped. Its host is immutable.
 	url *url.URL
 	// Labels before any processing.
-	metaLabels clientmodel.LabelSet
+	metaLabels model.LabelSet
 	// Any base labels that are added to this target and its metrics.
-	baseLabels clientmodel.LabelSet
+	baseLabels model.LabelSet
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
 	deadline time.Duration
 	// The time between two scrapes.
@@ -172,10 +172,10 @@ type Target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(cfg *config.ScrapeConfig, baseLabels, metaLabels clientmodel.LabelSet) *Target {
+func NewTarget(cfg *config.ScrapeConfig, baseLabels, metaLabels model.LabelSet) *Target {
 	t := &Target{
 		url: &url.URL{
-			Host: string(baseLabels[clientmodel.AddressLabel]),
+			Host: string(baseLabels[model.AddressLabel]),
 		},
 		status:          &TargetStatus{},
 		scraperStopping: make(chan struct{}),
@@ -192,12 +192,12 @@ func (t *Target) Status() *TargetStatus {
 
 // Update overwrites settings in the target that are derived from the job config
 // it belongs to.
-func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientmodel.LabelSet) {
+func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels model.LabelSet) {
 	t.Lock()
 	defer t.Unlock()
 
 	t.url.Scheme = cfg.Scheme
-	t.url.Path = string(baseLabels[clientmodel.MetricsPathLabel])
+	t.url.Path = string(baseLabels[model.MetricsPathLabel])
 	if cfg.BasicAuth != nil {
 		t.url.User = url.UserPassword(cfg.BasicAuth.Username, cfg.BasicAuth.Password)
 	}
@@ -209,15 +209,15 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientm
 
 	t.honorLabels = cfg.HonorLabels
 	t.metaLabels = metaLabels
-	t.baseLabels = clientmodel.LabelSet{}
+	t.baseLabels = model.LabelSet{}
 	// All remaining internal labels will not be part of the label set.
 	for name, val := range baseLabels {
-		if !strings.HasPrefix(string(name), clientmodel.ReservedLabelPrefix) {
+		if !strings.HasPrefix(string(name), model.ReservedLabelPrefix) {
 			t.baseLabels[name] = val
 		}
 	}
-	if _, ok := t.baseLabels[clientmodel.InstanceLabel]; !ok {
-		t.baseLabels[clientmodel.InstanceLabel] = clientmodel.LabelValue(t.InstanceIdentifier())
+	if _, ok := t.baseLabels[model.InstanceLabel]; !ok {
+		t.baseLabels[model.InstanceLabel] = model.LabelValue(t.InstanceIdentifier())
 	}
 	t.metricRelabelConfigs = cfg.MetricRelabelConfigs
 }
@@ -227,7 +227,7 @@ func (t *Target) String() string {
 }
 
 // Ingest implements an extraction.Ingester.
-func (t *Target) Ingest(s clientmodel.Samples) error {
+func (t *Target) Ingest(s model.Samples) error {
 	t.RLock()
 	deadline := t.deadline
 	t.RUnlock()
@@ -333,7 +333,7 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 
 	defer func() {
 		t.status.setLastError(err)
-		recordScrapeHealth(sampleAppender, clientmodel.TimestampFromTime(start), baseLabels, t.status.Health(), time.Since(start))
+		recordScrapeHealth(sampleAppender, model.TimestampFromTime(start), baseLabels, t.status.Health(), time.Since(start))
 	}()
 
 	req, err := http.NewRequest("GET", t.URL().String(), nil)
@@ -356,10 +356,10 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 		return err
 	}
 
-	t.ingestedSamples = make(chan clientmodel.Samples, ingestedSamplesCap)
+	t.ingestedSamples = make(chan model.Samples, ingestedSamplesCap)
 
 	processOptions := &extraction.ProcessOptions{
-		Timestamp: clientmodel.TimestampFromTime(start),
+		Timestamp: model.TimestampFromTime(start),
 	}
 	go func() {
 		err = processor.ProcessSingle(resp.Body, t, processOptions)
@@ -381,14 +381,14 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 				// value of the label is stored in a label prefixed with the exported prefix.
 				for ln, lv := range baseLabels {
 					if v, ok := s.Metric[ln]; ok && v != "" {
-						s.Metric[clientmodel.ExportedLabelPrefix+ln] = v
+						s.Metric[model.ExportedLabelPrefix+ln] = v
 					}
 					s.Metric[ln] = lv
 				}
 			}
 			// Avoid the copy in Relabel if there are no configs.
 			if len(t.metricRelabelConfigs) > 0 {
-				labels, err := Relabel(clientmodel.LabelSet(s.Metric), t.metricRelabelConfigs...)
+				labels, err := Relabel(model.LabelSet(s.Metric), t.metricRelabelConfigs...)
 				if err != nil {
 					log.Errorf("Error while relabeling metric %s of instance %s: %s", s.Metric, t.url, err)
 					continue
@@ -397,7 +397,7 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 				if labels == nil {
 					continue
 				}
-				s.Metric = clientmodel.Metric(labels)
+				s.Metric = model.Metric(labels)
 			}
 			sampleAppender.Append(s)
 		}
@@ -420,23 +420,23 @@ func (t *Target) InstanceIdentifier() string {
 }
 
 // fullLabels returns the base labels plus internal labels defining the target.
-func (t *Target) fullLabels() clientmodel.LabelSet {
+func (t *Target) fullLabels() model.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
-	lset := make(clientmodel.LabelSet, len(t.baseLabels)+2)
+	lset := make(model.LabelSet, len(t.baseLabels)+2)
 	for ln, lv := range t.baseLabels {
 		lset[ln] = lv
 	}
-	lset[clientmodel.MetricsPathLabel] = clientmodel.LabelValue(t.url.Path)
-	lset[clientmodel.AddressLabel] = clientmodel.LabelValue(t.url.Host)
+	lset[model.MetricsPathLabel] = model.LabelValue(t.url.Path)
+	lset[model.AddressLabel] = model.LabelValue(t.url.Host)
 	return lset
 }
 
 // BaseLabels returns a copy of the target's base labels.
-func (t *Target) BaseLabels() clientmodel.LabelSet {
+func (t *Target) BaseLabels() model.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
-	lset := make(clientmodel.LabelSet, len(t.baseLabels))
+	lset := make(model.LabelSet, len(t.baseLabels))
 	for ln, lv := range t.baseLabels {
 		lset[ln] = lv
 	}
@@ -444,10 +444,10 @@ func (t *Target) BaseLabels() clientmodel.LabelSet {
 }
 
 // MetaLabels returns a copy of the target's labels before any processing.
-func (t *Target) MetaLabels() clientmodel.LabelSet {
+func (t *Target) MetaLabels() model.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
-	lset := make(clientmodel.LabelSet, len(t.metaLabels))
+	lset := make(model.LabelSet, len(t.metaLabels))
 	for ln, lv := range t.metaLabels {
 		lset[ln] = lv
 	}
@@ -456,36 +456,36 @@ func (t *Target) MetaLabels() clientmodel.LabelSet {
 
 func recordScrapeHealth(
 	sampleAppender storage.SampleAppender,
-	timestamp clientmodel.Timestamp,
-	baseLabels clientmodel.LabelSet,
+	timestamp model.Timestamp,
+	baseLabels model.LabelSet,
 	health TargetHealth,
 	scrapeDuration time.Duration,
 ) {
-	healthMetric := make(clientmodel.Metric, len(baseLabels)+1)
-	durationMetric := make(clientmodel.Metric, len(baseLabels)+1)
+	healthMetric := make(model.Metric, len(baseLabels)+1)
+	durationMetric := make(model.Metric, len(baseLabels)+1)
 
-	healthMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeHealthMetricName)
-	durationMetric[clientmodel.MetricNameLabel] = clientmodel.LabelValue(scrapeDurationMetricName)
+	healthMetric[model.MetricNameLabel] = model.LabelValue(scrapeHealthMetricName)
+	durationMetric[model.MetricNameLabel] = model.LabelValue(scrapeDurationMetricName)
 
 	for label, value := range baseLabels {
 		healthMetric[label] = value
 		durationMetric[label] = value
 	}
 
-	healthValue := clientmodel.SampleValue(0)
+	healthValue := model.SampleValue(0)
 	if health == HealthGood {
-		healthValue = clientmodel.SampleValue(1)
+		healthValue = model.SampleValue(1)
 	}
 
-	healthSample := &clientmodel.Sample{
+	healthSample := &model.Sample{
 		Metric:    healthMetric,
 		Timestamp: timestamp,
 		Value:     healthValue,
 	}
-	durationSample := &clientmodel.Sample{
+	durationSample := &model.Sample{
 		Metric:    durationMetric,
 		Timestamp: timestamp,
-		Value:     clientmodel.SampleValue(float64(scrapeDuration) / float64(time.Second)),
+		Value:     model.SampleValue(float64(scrapeDuration) / float64(time.Second)),
 	}
 
 	sampleAppender.Append(healthSample)

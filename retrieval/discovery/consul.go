@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/log"
 
 	consul "github.com/hashicorp/consul/api"
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -34,13 +34,13 @@ const (
 	consulRetryInterval = 15 * time.Second
 
 	// ConsuleNodeLabel is the name for the label containing a target's node name.
-	ConsulNodeLabel = clientmodel.MetaLabelPrefix + "consul_node"
+	ConsulNodeLabel = model.MetaLabelPrefix + "consul_node"
 	// ConsulTagsLabel is the name of the label containing the tags assigned to the target.
-	ConsulTagsLabel = clientmodel.MetaLabelPrefix + "consul_tags"
+	ConsulTagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// ConsulServiceLabel is the name of the label containing the service name.
-	ConsulServiceLabel = clientmodel.MetaLabelPrefix + "consul_service"
+	ConsulServiceLabel = model.MetaLabelPrefix + "consul_service"
 	// ConsulDCLabel is the name of the label containing the datacenter ID.
-	ConsulDCLabel = clientmodel.MetaLabelPrefix + "consul_dc"
+	ConsulDCLabel = model.MetaLabelPrefix + "consul_dc"
 )
 
 // ConsulDiscovery retrieves target information from a Consul server
@@ -217,9 +217,9 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 				srv.tgroup.Source = consulSourcePrefix + ":" + name
 				cd.services[name] = srv
 			}
-			srv.tgroup.Labels = clientmodel.LabelSet{
-				ConsulServiceLabel: clientmodel.LabelValue(name),
-				ConsulDCLabel:      clientmodel.LabelValue(cd.clientConf.Datacenter),
+			srv.tgroup.Labels = model.LabelSet{
+				ConsulServiceLabel: model.LabelValue(name),
+				ConsulDCLabel:      model.LabelValue(cd.clientConf.Datacenter),
 			}
 			update <- srv
 		}
@@ -255,7 +255,7 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 			continue
 		}
 		srv.lastIndex = meta.LastIndex
-		srv.tgroup.Targets = make([]clientmodel.LabelSet, 0, len(nodes))
+		srv.tgroup.Targets = make([]model.LabelSet, 0, len(nodes))
 
 		for _, node := range nodes {
 			addr := fmt.Sprintf("%s:%d", node.Address, node.ServicePort)
@@ -267,10 +267,10 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 			// in relabeling rules don't have to consider tag positions.
 			tags := cd.tagSeparator + strings.Join(node.ServiceTags, cd.tagSeparator) + cd.tagSeparator
 
-			srv.tgroup.Targets = append(srv.tgroup.Targets, clientmodel.LabelSet{
-				clientmodel.AddressLabel: clientmodel.LabelValue(addr),
-				ConsulNodeLabel:          clientmodel.LabelValue(node.Node),
-				ConsulTagsLabel:          clientmodel.LabelValue(tags),
+			srv.tgroup.Targets = append(srv.tgroup.Targets, model.LabelSet{
+				model.AddressLabel: model.LabelValue(addr),
+				ConsulNodeLabel:    model.LabelValue(node.Node),
+				ConsulTagsLabel:    model.LabelValue(tags),
 			})
 		}
 

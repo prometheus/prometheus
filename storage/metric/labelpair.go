@@ -14,13 +14,13 @@
 package metric
 
 import (
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // LabelPair pairs a name with a value.
 type LabelPair struct {
-	Name  clientmodel.LabelName
-	Value clientmodel.LabelValue
+	Name  model.LabelName
+	Value model.LabelValue
 }
 
 // Equal returns true iff both the Name and the Value of this LabelPair and o

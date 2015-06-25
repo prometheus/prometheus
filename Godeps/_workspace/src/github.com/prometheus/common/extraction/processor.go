@@ -17,7 +17,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // ProcessOptions dictates how the interpreted stream should be rendered for

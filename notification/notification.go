@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/util/httputil"
 )
@@ -51,9 +51,9 @@ type NotificationReq struct {
 	// A reference to the runbook for the alert.
 	Runbook string
 	// Labels associated with this alert notification, including alert name.
-	Labels clientmodel.LabelSet
+	Labels model.LabelSet
 	// Current value of alert
-	Value clientmodel.SampleValue
+	Value model.SampleValue
 	// Since when this alert has been active (pending or firing).
 	ActiveSince time.Time
 	// A textual representation of the rule that triggered the alert.

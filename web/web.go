@@ -30,8 +30,8 @@ import (
 	pprof_runtime "runtime/pprof"
 	template_text "text/template"
 
-	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
 
 	"github.com/prometheus/prometheus/config"
@@ -124,7 +124,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		apiLegacy: &legacy.API{
 			QueryEngine: qe,
 			Storage:     st,
-			Now:         clientmodel.Now,
+			Now:         model.Now,
 		},
 		federation: &Federation{
 			Storage: st,
@@ -248,7 +248,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		Path:      name,
 	}
 
-	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, clientmodel.Now(), h.queryEngine, h.options.PathPrefix)
+	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, model.Now(), h.queryEngine, h.options.PathPrefix)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -332,18 +332,22 @@ func (h *Handler) getTemplate(name string) (string, error) {
 	return baseTmpl + pageTmpl, nil
 }
 
+func init() {
+
+}
+
 func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {
 	text, err := h.getTemplate(name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	tmpl := template.NewTemplateExpander(text, name, data, clientmodel.Now(), h.queryEngine, h.options.PathPrefix)
+	tmpl := template.NewTemplateExpander(text, name, data, model.Now(), h.queryEngine, h.options.PathPrefix)
 	tmpl.Funcs(template_text.FuncMap{
 		"since":       time.Since,
 		"getConsoles": h.getConsoles,
 		"pathPrefix":  func() string { return h.options.PathPrefix },
-		"stripLabels": func(lset clientmodel.LabelSet, labels ...clientmodel.LabelName) clientmodel.LabelSet {
+		"stripLabels": func(lset model.LabelSet, labels ...model.LabelName) model.LabelSet {
 			for _, ln := range labels {
 				delete(lset, ln)
 			}

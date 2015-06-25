@@ -38,29 +38,26 @@
 			"Rev": "bb1103f648f811d2018d4bedcb2d4b2bce34a0f1"
 		},
 		{
-			"ImportPath": "github.com/prometheus/client_golang/extraction",
-			"Comment": "0.6.0",
-			"Rev": "e319516b0f97867d36151451cab8d4aefbe1786b"
-		},
-		{
-			"ImportPath": "github.com/prometheus/client_golang/model",
-			"Comment": "0.6.0",
-			"Rev": "e319516b0f97867d36151451cab8d4aefbe1786b"
-		},
-		{
 			"ImportPath": "github.com/prometheus/client_golang/prometheus",
 			"Comment": "0.6.0",
-			"Rev": "e319516b0f97867d36151451cab8d4aefbe1786b"
-		},
-		{
-			"ImportPath": "github.com/prometheus/client_golang/text",
-			"Comment": "0.6.0",
-			"Rev": "e319516b0f97867d36151451cab8d4aefbe1786b"
+			"Rev": "bf8ff5eab26271ffae085584755dc7d07ca842db"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_model/go",
 			"Comment": "model-0.0.2-12-gfa8ad6f",
 			"Rev": "fa8ad6fec33561be4280a8f0514318c79d7f6cb6"
+		},
+		{
+			"ImportPath": "github.com/prometheus/common/extraction",
+			"Rev": "86429fca671d1ad6fef4bdc680f2566d339ebe59"
+		},
+		{
+			"ImportPath": "github.com/prometheus/common/model",
+			"Rev": "86429fca671d1ad6fef4bdc680f2566d339ebe59"
+		},
+		{
+			"ImportPath": "github.com/prometheus/common/textproto",
+			"Rev": "86429fca671d1ad6fef4bdc680f2566d339ebe59"
 		},
 		{
 			"ImportPath": "github.com/prometheus/log",

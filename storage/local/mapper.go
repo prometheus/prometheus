@@ -10,22 +10,22 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 const maxMappedFP = 1 << 20 // About 1M fingerprints reserved for mapping.
 
-var separatorString = string([]byte{clientmodel.SeparatorByte})
+var separatorString = string([]byte{model.SeparatorByte})
 
 // fpMappings maps original fingerprints to a map of string representations of
 // metrics to the truly unique fingerprint.
-type fpMappings map[clientmodel.Fingerprint]map[string]clientmodel.Fingerprint
+type fpMappings map[model.Fingerprint]map[string]model.Fingerprint
 
 // fpMapper is used to map fingerprints in order to work around fingerprint
 // collisions.
 type fpMapper struct {
 	// highestMappedFP has to be aligned for atomic operations.
-	highestMappedFP clientmodel.Fingerprint
+	highestMappedFP model.Fingerprint
 
 	mtx      sync.RWMutex // Protects mappings.
 	mappings fpMappings
@@ -65,7 +65,7 @@ func newFPMapper(fpToSeries *seriesMap, p *persistence) (*fpMapper, error) {
 //
 // If an error is encountered, it is returned together with the unchanged raw
 // fingerprint.
-func (m *fpMapper) mapFP(fp clientmodel.Fingerprint, metric clientmodel.Metric) (clientmodel.Fingerprint, error) {
+func (m *fpMapper) mapFP(fp model.Fingerprint, metric model.Metric) (model.Fingerprint, error) {
 	// First check if we are in the reserved FP space, in which case this is
 	// automatically a collision that has to be mapped.
 	if fp <= maxMappedFP {
@@ -125,9 +125,9 @@ func (m *fpMapper) mapFP(fp clientmodel.Fingerprint, metric clientmodel.Metric) 
 // adds it to the collisions map if not yet there. In any case, it returns the
 // truly unique fingerprint for the colliding metric.
 func (m *fpMapper) maybeAddMapping(
-	fp clientmodel.Fingerprint,
-	collidingMetric clientmodel.Metric,
-) (clientmodel.Fingerprint, error) {
+	fp model.Fingerprint,
+	collidingMetric model.Metric,
+) (model.Fingerprint, error) {
 	ms := metricToUniqueString(collidingMetric)
 	m.mtx.RLock()
 	mappedFPs, ok := m.mappings[fp]
@@ -153,7 +153,7 @@ func (m *fpMapper) maybeAddMapping(
 	}
 	// This is the first collision for fp.
 	mappedFP := m.nextMappedFP()
-	mappedFPs = map[string]clientmodel.Fingerprint{ms: mappedFP}
+	mappedFPs = map[string]model.Fingerprint{ms: mappedFP}
 	m.mtx.Lock()
 	m.mappings[fp] = mappedFPs
 	m.mappingsCounter.Inc()
@@ -167,8 +167,8 @@ func (m *fpMapper) maybeAddMapping(
 	return mappedFP, err
 }
 
-func (m *fpMapper) nextMappedFP() clientmodel.Fingerprint {
-	mappedFP := clientmodel.Fingerprint(atomic.AddUint64((*uint64)(&m.highestMappedFP), 1))
+func (m *fpMapper) nextMappedFP() model.Fingerprint {
+	mappedFP := model.Fingerprint(atomic.AddUint64((*uint64)(&m.highestMappedFP), 1))
 	if mappedFP > maxMappedFP {
 		panic(fmt.Errorf("more than %v fingerprints mapped in collision detection", maxMappedFP))
 	}
@@ -192,7 +192,7 @@ func (m *fpMapper) Collect(ch chan<- prometheus.Metric) {
 // FastFingerprint function, and its result is not suitable as a key for maps
 // and indexes as it might become really large, causing a lot of hashing effort
 // in maps and a lot of storage overhead in indexes.
-func metricToUniqueString(m clientmodel.Metric) string {
+func metricToUniqueString(m model.Metric) string {
 	parts := make([]string, 0, len(m))
 	for ln, lv := range m {
 		parts = append(parts, string(ln)+separatorString+string(lv))

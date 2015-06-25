@@ -18,7 +18,8 @@
 // or separate functions. The best way depends on the nature of future changes,
 // which is the reason why no versioning scheme has been applied prematurely
 // here.
-package text
+
+package textproto
 
 import (
 	"bytes"
@@ -27,8 +28,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/prometheus/client_golang/model"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/model"
 )
 
 // MetricFamilyToText converts a MetricFamily proto message into text format and
@@ -79,7 +80,7 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (int, error) {
 		case dto.MetricType_COUNTER:
 			if metric.Counter == nil {
 				return written, fmt.Errorf(
-					"expected counter in metric %s", metric,
+					"expected counter in metric %s %s", name, metric,
 				)
 			}
 			n, err = writeSample(
@@ -90,7 +91,7 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (int, error) {
 		case dto.MetricType_GAUGE:
 			if metric.Gauge == nil {
 				return written, fmt.Errorf(
-					"expected gauge in metric %s", metric,
+					"expected gauge in metric %s %s", name, metric,
 				)
 			}
 			n, err = writeSample(
@@ -101,7 +102,7 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (int, error) {
 		case dto.MetricType_UNTYPED:
 			if metric.Untyped == nil {
 				return written, fmt.Errorf(
-					"expected untyped in metric %s", metric,
+					"expected untyped in metric %s %s", name, metric,
 				)
 			}
 			n, err = writeSample(
@@ -112,7 +113,7 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (int, error) {
 		case dto.MetricType_SUMMARY:
 			if metric.Summary == nil {
 				return written, fmt.Errorf(
-					"expected summary in metric %s", metric,
+					"expected summary in metric %s %s", name, metric,
 				)
 			}
 			for _, q := range metric.Summary.Quantile {
@@ -144,7 +145,7 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (int, error) {
 		case dto.MetricType_HISTOGRAM:
 			if metric.Histogram == nil {
 				return written, fmt.Errorf(
-					"expected summary in metric %s", metric,
+					"expected histogram in metric %s %s", name, metric,
 				)
 			}
 			infSeen := false
@@ -191,7 +192,7 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (int, error) {
 			)
 		default:
 			return written, fmt.Errorf(
-				"unexpected type in metric %s", metric,
+				"unexpected type in metric %s %s", name, metric,
 			)
 		}
 		written += n

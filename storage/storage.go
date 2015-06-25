@@ -14,13 +14,13 @@
 package storage
 
 import (
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // SampleAppender is the interface to append samples to both, local and remote
 // storage.
 type SampleAppender interface {
-	Append(*clientmodel.Sample)
+	Append(*model.Sample)
 }
 
 // Fanout is a SampleAppender that appends every sample to a list of other
@@ -30,7 +30,7 @@ type Fanout []SampleAppender
 // Append implements SampleAppender. It appends the provided sample to all
 // SampleAppenders in the Fanout slice and waits for each append to complete
 // before proceeding with the next.
-func (f Fanout) Append(s *clientmodel.Sample) {
+func (f Fanout) Append(s *model.Sample) {
 	for _, a := range f {
 		a.Append(s)
 	}

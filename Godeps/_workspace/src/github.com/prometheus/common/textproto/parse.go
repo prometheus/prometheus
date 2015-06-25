@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package text
+package textproto
 
 import (
 	"bufio"
@@ -25,7 +25,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // A stateFn is a function that represents a state in a state machine. By
@@ -83,10 +83,17 @@ type Parser struct {
 // and exactly the same label set), the resulting MetricFamily will contain
 // duplicate Metric proto messages. Similar is true for duplicate label
 // names. Checks for duplicates have to be performed separately, if required.
+// Also note that neither the metrics within each MetricFamily are sorted nor
+// the label pairs within each Metric. Sorting is not required for the most
+// frequent use of this method, which is sample ingestion in the Prometheus
+// server. However, for presentation purposes, you might want to sort the
+// metrics, and in some cases, you must sort the labels, e.g. for consumption by
+// the metric family injection hook of the Prometheus registry.
 //
-// Summaries are a rather special beast. You would probably not use them in the
-// simple text format anyway. This method can deal with summaries if they are
-// presented in exactly the way the text.Create function creates them.
+// Summaries and histograms are rather special beasts. You would probably not
+// use them in the simple text format anyway. This method can deal with
+// summaries and histograms if they are presented in exactly the way the
+// text.Create function creates them.
 //
 // This method must not be called concurrently. If you want to parse different
 // input concurrently, instantiate a separate Parser for each goroutine.

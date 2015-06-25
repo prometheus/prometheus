@@ -21,7 +21,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // Storage collects multiple remote storage queues.
@@ -70,7 +70,7 @@ func (s *Storage) Stop() {
 }
 
 // Append implements storage.SampleAppender.
-func (s *Storage) Append(smpl *clientmodel.Sample) {
+func (s *Storage) Append(smpl *model.Sample) {
 	for _, q := range s.queues {
 		q.Append(smpl)
 	}

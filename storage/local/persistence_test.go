@@ -18,7 +18,7 @@ import (
 	"sync"
 	"testing"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
@@ -27,11 +27,11 @@ import (
 )
 
 var (
-	m1 = clientmodel.Metric{"label": "value1"}
-	m2 = clientmodel.Metric{"label": "value2"}
-	m3 = clientmodel.Metric{"label": "value3"}
-	m4 = clientmodel.Metric{"label": "value4"}
-	m5 = clientmodel.Metric{"label": "value5"}
+	m1 = model.Metric{"label": "value1"}
+	m2 = model.Metric{"label": "value2"}
+	m3 = model.Metric{"label": "value3"}
+	m4 = model.Metric{"label": "value4"}
+	m5 = model.Metric{"label": "value5"}
 )
 
 func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, testutil.Closer) {
@@ -49,20 +49,20 @@ func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, tes
 	})
 }
 
-func buildTestChunks(encoding chunkEncoding) map[clientmodel.Fingerprint][]chunk {
-	fps := clientmodel.Fingerprints{
+func buildTestChunks(encoding chunkEncoding) map[model.Fingerprint][]chunk {
+	fps := model.Fingerprints{
 		m1.FastFingerprint(),
 		m2.FastFingerprint(),
 		m3.FastFingerprint(),
 	}
-	fpToChunks := map[clientmodel.Fingerprint][]chunk{}
+	fpToChunks := map[model.Fingerprint][]chunk{}
 
 	for _, fp := range fps {
 		fpToChunks[fp] = make([]chunk, 0, 10)
 		for i := 0; i < 10; i++ {
 			fpToChunks[fp] = append(fpToChunks[fp], newChunkForEncoding(encoding).add(&metric.SamplePair{
-				Timestamp: clientmodel.Timestamp(i),
-				Value:     clientmodel.SampleValue(fp),
+				Timestamp: model.Timestamp(i),
+				Value:     model.SampleValue(fp),
 			})[0])
 		}
 	}
@@ -88,11 +88,11 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 
 	for fp, chunks := range fpToChunks {
 		firstTimeNotDropped, offset, numDropped, allDropped, err :=
-			p.dropAndPersistChunks(fp, clientmodel.Earliest, chunks)
+			p.dropAndPersistChunks(fp, model.Earliest, chunks)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, want := firstTimeNotDropped, clientmodel.Timestamp(0); got != want {
+		if got, want := firstTimeNotDropped, model.Timestamp(0); got != want {
 			t.Errorf("Want firstTimeNotDropped %v, got %v.", got, want)
 		}
 		if got, want := offset, 0; got != want {
@@ -126,7 +126,7 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 10)
 		}
 		for i, cd := range actualChunkDescs {
-			if cd.firstTime() != clientmodel.Timestamp(i) || cd.lastTime() != clientmodel.Timestamp(i) {
+			if cd.firstTime() != model.Timestamp(i) || cd.lastTime() != model.Timestamp(i) {
 				t.Errorf(
 					"Want ts=%v, got firstTime=%v, lastTime=%v.",
 					i, cd.firstTime(), cd.lastTime(),
@@ -140,7 +140,7 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 5)
 		}
 		for i, cd := range actualChunkDescs {
-			if cd.firstTime() != clientmodel.Timestamp(i) || cd.lastTime() != clientmodel.Timestamp(i) {
+			if cd.firstTime() != model.Timestamp(i) || cd.lastTime() != model.Timestamp(i) {
 				t.Errorf(
 					"Want ts=%v, got firstTime=%v, lastTime=%v.",
 					i, cd.firstTime(), cd.lastTime(),
@@ -203,11 +203,11 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 	// Re-add first two of the chunks.
 	for fp, chunks := range fpToChunks {
 		firstTimeNotDropped, offset, numDropped, allDropped, err :=
-			p.dropAndPersistChunks(fp, clientmodel.Earliest, chunks[:2])
+			p.dropAndPersistChunks(fp, model.Earliest, chunks[:2])
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, want := firstTimeNotDropped, clientmodel.Timestamp(0); got != want {
+		if got, want := firstTimeNotDropped, model.Timestamp(0); got != want {
 			t.Errorf("Want firstTimeNotDropped %v, got %v.", got, want)
 		}
 		if got, want := offset, 0; got != want {
@@ -365,12 +365,12 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 	s3.persistWatermark = 1
 	for i := 0; i < 10000; i++ {
 		s4.add(&metric.SamplePair{
-			Timestamp: clientmodel.Timestamp(i),
-			Value:     clientmodel.SampleValue(i) / 2,
+			Timestamp: model.Timestamp(i),
+			Value:     model.SampleValue(i) / 2,
 		})
 		s5.add(&metric.SamplePair{
-			Timestamp: clientmodel.Timestamp(i),
-			Value:     clientmodel.SampleValue(i * i),
+			Timestamp: model.Timestamp(i),
+			Value:     model.SampleValue(i * i),
 		})
 	}
 	s5.persistWatermark = 3
@@ -490,11 +490,11 @@ func TestCheckpointAndLoadFPMappings(t *testing.T) {
 	defer closer.Close()
 
 	in := fpMappings{
-		1: map[string]clientmodel.Fingerprint{
+		1: map[string]model.Fingerprint{
 			"foo": 1,
 			"bar": 2,
 		},
-		3: map[string]clientmodel.Fingerprint{
+		3: map[string]model.Fingerprint{
 			"baz": 4,
 		},
 	}
@@ -507,7 +507,7 @@ func TestCheckpointAndLoadFPMappings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := fp, clientmodel.Fingerprint(4); got != want {
+	if got, want := fp, model.Fingerprint(4); got != want {
 		t.Errorf("got highest FP %v, want %v", got, want)
 	}
 	if !reflect.DeepEqual(in, out) {
@@ -519,14 +519,14 @@ func testFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
-	m1 := clientmodel.Metric{"n1": "v1"}
-	m2 := clientmodel.Metric{"n2": "v2"}
-	m3 := clientmodel.Metric{"n1": "v2"}
+	m1 := model.Metric{"n1": "v1"}
+	m2 := model.Metric{"n2": "v2"}
+	m3 := model.Metric{"n1": "v2"}
 	p.archiveMetric(1, m1, 2, 4)
 	p.archiveMetric(2, m2, 1, 6)
 	p.archiveMetric(3, m3, 5, 5)
 
-	expectedFPs := map[clientmodel.Timestamp][]clientmodel.Fingerprint{
+	expectedFPs := map[model.Timestamp][]model.Fingerprint{
 		0: {},
 		1: {},
 		2: {2},
@@ -564,7 +564,7 @@ func testFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
 		t.Fatal("expected no unarchival")
 	}
 
-	expectedFPs = map[clientmodel.Timestamp][]clientmodel.Fingerprint{
+	expectedFPs = map[model.Timestamp][]model.Fingerprint{
 		0: {},
 		1: {},
 		2: {2},
@@ -597,8 +597,8 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
-	m1 := clientmodel.Metric{"n1": "v1"}
-	m2 := clientmodel.Metric{"n2": "v2"}
+	m1 := model.Metric{"n1": "v1"}
+	m2 := model.Metric{"n2": "v2"}
 	p.archiveMetric(1, m1, 2, 4)
 	p.archiveMetric(2, m2, 1, 6)
 	p.indexMetric(1, m1)
@@ -609,7 +609,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := clientmodel.Fingerprints{1}
+	want := model.Fingerprints{1}
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
@@ -617,7 +617,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = clientmodel.Fingerprints{2}
+	want = model.Fingerprints{2}
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
@@ -649,7 +649,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = clientmodel.Fingerprints{2}
+	want = model.Fingerprints{2}
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
@@ -680,21 +680,21 @@ func testIndexing(t *testing.T, encoding chunkEncoding) {
 		{
 			fpToMetric: index.FingerprintMetricMapping{
 				0: {
-					clientmodel.MetricNameLabel: "metric_0",
-					"label_1":                   "value_1",
+					model.MetricNameLabel: "metric_0",
+					"label_1":             "value_1",
 				},
 				1: {
-					clientmodel.MetricNameLabel: "metric_0",
-					"label_2":                   "value_2",
-					"label_3":                   "value_3",
+					model.MetricNameLabel: "metric_0",
+					"label_2":             "value_2",
+					"label_3":             "value_3",
 				},
 				2: {
-					clientmodel.MetricNameLabel: "metric_1",
-					"label_1":                   "value_2",
+					model.MetricNameLabel: "metric_1",
+					"label_1":             "value_2",
 				},
 			},
 			expectedLnToLvs: index.LabelNameLabelValuesMapping{
-				clientmodel.MetricNameLabel: codable.LabelValueSet{
+				model.MetricNameLabel: codable.LabelValueSet{
 					"metric_0": struct{}{},
 					"metric_1": struct{}{},
 				},
@@ -711,11 +711,11 @@ func testIndexing(t *testing.T, encoding chunkEncoding) {
 			},
 			expectedLpToFps: index.LabelPairFingerprintsMapping{
 				metric.LabelPair{
-					Name:  clientmodel.MetricNameLabel,
+					Name:  model.MetricNameLabel,
 					Value: "metric_0",
 				}: codable.FingerprintSet{0: struct{}{}, 1: struct{}{}},
 				metric.LabelPair{
-					Name:  clientmodel.MetricNameLabel,
+					Name:  model.MetricNameLabel,
 					Value: "metric_1",
 				}: codable.FingerprintSet{2: struct{}{}},
 				metric.LabelPair{
@@ -738,21 +738,21 @@ func testIndexing(t *testing.T, encoding chunkEncoding) {
 		}, {
 			fpToMetric: index.FingerprintMetricMapping{
 				3: {
-					clientmodel.MetricNameLabel: "metric_0",
-					"label_1":                   "value_3",
+					model.MetricNameLabel: "metric_0",
+					"label_1":             "value_3",
 				},
 				4: {
-					clientmodel.MetricNameLabel: "metric_2",
-					"label_2":                   "value_2",
-					"label_3":                   "value_1",
+					model.MetricNameLabel: "metric_2",
+					"label_2":             "value_2",
+					"label_3":             "value_1",
 				},
 				5: {
-					clientmodel.MetricNameLabel: "metric_1",
-					"label_1":                   "value_3",
+					model.MetricNameLabel: "metric_1",
+					"label_1":             "value_3",
 				},
 			},
 			expectedLnToLvs: index.LabelNameLabelValuesMapping{
-				clientmodel.MetricNameLabel: codable.LabelValueSet{
+				model.MetricNameLabel: codable.LabelValueSet{
 					"metric_0": struct{}{},
 					"metric_1": struct{}{},
 					"metric_2": struct{}{},
@@ -772,15 +772,15 @@ func testIndexing(t *testing.T, encoding chunkEncoding) {
 			},
 			expectedLpToFps: index.LabelPairFingerprintsMapping{
 				metric.LabelPair{
-					Name:  clientmodel.MetricNameLabel,
+					Name:  model.MetricNameLabel,
 					Value: "metric_0",
 				}: codable.FingerprintSet{0: struct{}{}, 1: struct{}{}, 3: struct{}{}},
 				metric.LabelPair{
-					Name:  clientmodel.MetricNameLabel,
+					Name:  model.MetricNameLabel,
 					Value: "metric_1",
 				}: codable.FingerprintSet{2: struct{}{}, 5: struct{}{}},
 				metric.LabelPair{
-					Name:  clientmodel.MetricNameLabel,
+					Name:  model.MetricNameLabel,
 					Value: "metric_2",
 				}: codable.FingerprintSet{4: struct{}{}},
 				metric.LabelPair{
@@ -933,7 +933,7 @@ func BenchmarkLoadChunksSequentially(b *testing.B) {
 		sequentialIndexes[i] = i
 	}
 
-	var fp clientmodel.Fingerprint
+	var fp model.Fingerprint
 	for i := 0; i < b.N; i++ {
 		for _, s := range fpStrings {
 			fp.LoadFromString(s)
@@ -955,7 +955,7 @@ func BenchmarkLoadChunksRandomly(b *testing.B) {
 	}
 	randomIndexes := []int{1, 5, 6, 8, 11, 14, 18, 23, 29, 33, 42, 46}
 
-	var fp clientmodel.Fingerprint
+	var fp model.Fingerprint
 	for i := 0; i < b.N; i++ {
 		for _, s := range fpStrings {
 			fp.LoadFromString(s)
@@ -975,11 +975,11 @@ func BenchmarkLoadChunkDescs(b *testing.B) {
 		basePath: "fixtures",
 	}
 
-	var fp clientmodel.Fingerprint
+	var fp model.Fingerprint
 	for i := 0; i < b.N; i++ {
 		for _, s := range fpStrings {
 			fp.LoadFromString(s)
-			cds, err := p.loadChunkDescs(fp, clientmodel.Latest)
+			cds, err := p.loadChunkDescs(fp, model.Latest)
 			if err != nil {
 				b.Error(err)
 			}
