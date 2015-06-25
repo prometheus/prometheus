@@ -1,5 +1,5 @@
         <div id="graph_wrapper{{id}}" class="graph_wrapper">
-          <form action="{{ pathPrefix }}/api/query_range" method="GET" class="query_form form-inline">
+          <form class="query_form form-inline">
             <div class="row">
               <div class="col-lg-10">
                 <textarea rows="1" placeholder="Expression (press Shift+Enter for newlines)" name="expr" id="expr{{id}}" class="form-control expression_input" data-provide="typeahead" autocomplete="off">{{expr}}</textarea>
@@ -38,7 +38,6 @@
                     <div role="tabpanel" class="tab-pane graph_container reload" id="graph{{id}}">
                       <div class="clearfix">
                         <!-- Extracted to force grouped inputs. -->
-                        <input type="hidden" name="range">
                         <div class="prometheus_input_group range_input pull-left">
                           <button
                             class="btn btn-default pull-left"
@@ -65,7 +64,6 @@
                         </div>
 
                         <!-- Extracted to force grouped inputs. -->
-                        <input type="hidden" name="end">
                         <div class="prometheus_input_group pull-left">
 
                           <button
@@ -98,7 +96,6 @@
 
                         <div class="prometheus_input_group pull-left">
                           <input class="input" title="Resolution in seconds" placeholder="Res. (s)" type="text" name="step_input" id="step_input{{id}}" value="{{step_input}}" size="6">
-                          <input type="hidden" name="step">
                         </div>
 
                         <div class="prometheus_input_group pull-left">
