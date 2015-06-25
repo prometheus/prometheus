@@ -63,6 +63,10 @@
 			"Rev": "fa8ad6fec33561be4280a8f0514318c79d7f6cb6"
 		},
 		{
+			"ImportPath": "github.com/prometheus/common/model",
+			"Rev": "29aa51806fa1a8aae4ebee676fdf45842e222e93"
+		},
+		{
 			"ImportPath": "github.com/prometheus/log",
 			"Rev": "c1344118e003a86aefb326a436118ad1317266dd"
 		},
