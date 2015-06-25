@@ -44,8 +44,8 @@ type Sample struct {
 
 // Scalar is a scalar value evaluated at the set timestamp.
 type Scalar struct {
-	Value     clientmodel.SampleValue
-	Timestamp clientmodel.Timestamp
+	Value     clientmodel.SampleValue `json:"value"`
+	Timestamp clientmodel.Timestamp   `json:"timestamp"`
 }
 
 func (s *Scalar) String() string {
@@ -54,8 +54,8 @@ func (s *Scalar) String() string {
 
 // String is a string value evaluated at the set timestamp.
 type String struct {
-	Value     string
-	Timestamp clientmodel.Timestamp
+	Value     string                `json:"value"`
+	Timestamp clientmodel.Timestamp `json:"timestamp"`
 }
 
 func (s *String) String() string {
@@ -279,8 +279,15 @@ func (ng *Engine) Stop() {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
-func (ng *Engine) NewInstantQuery(es string, ts clientmodel.Timestamp) (Query, error) {
-	return ng.NewRangeQuery(es, ts, ts, 0)
+func (ng *Engine) NewInstantQuery(qs string, ts clientmodel.Timestamp) (Query, error) {
+	expr, err := ParseExpr(qs)
+	if err != nil {
+		return nil, err
+	}
+	qry := ng.newQuery(expr, ts, ts, 0)
+	qry.q = qs
+
+	return qry, nil
 }
 
 // NewRangeQuery returns an evaluation query for the given time range and with
