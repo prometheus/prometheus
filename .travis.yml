@@ -1,5 +1,7 @@
 # We use native code.
 
+sudo: false
+
 language: go
 
 go:
