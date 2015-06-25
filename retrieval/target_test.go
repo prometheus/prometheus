@@ -293,7 +293,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	)
 	defer server.Close()
 
-	testTarget := newTestTarget(server.URL, 25*time.Millisecond, clientmodel.LabelSet{})
+	testTarget := newTestTarget(server.URL, 50*time.Millisecond, clientmodel.LabelSet{})
 
 	appender := nopAppender{}
 
@@ -304,7 +304,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	}
 
 	// let the deadline lapse
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(55 * time.Millisecond)
 
 	// now scrape again
 	signal <- true
