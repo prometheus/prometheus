@@ -16,28 +16,28 @@ package retrieval
 import (
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
 
 type nopAppender struct{}
 
-func (a nopAppender) Append(*clientmodel.Sample) {
+func (a nopAppender) Append(*model.Sample) {
 }
 
 type slowAppender struct{}
 
-func (a slowAppender) Append(*clientmodel.Sample) {
+func (a slowAppender) Append(*model.Sample) {
 	time.Sleep(time.Millisecond)
 	return
 }
 
 type collectResultAppender struct {
-	result clientmodel.Samples
+	result model.Samples
 }
 
-func (a *collectResultAppender) Append(s *clientmodel.Sample) {
+func (a *collectResultAppender) Append(s *model.Sample) {
 	for ln, lv := range s.Metric {
 		if len(lv) == 0 {
 			delete(s.Metric, ln)

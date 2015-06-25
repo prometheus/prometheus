@@ -12,8 +12,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 
-	clientmodel "github.com/prometheus/client_golang/model"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/model"
 )
 
 type Federation struct {
@@ -23,7 +23,7 @@ type Federation struct {
 func (fed *Federation) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 
-	metrics := map[clientmodel.Fingerprint]clientmodel.COWMetric{}
+	metrics := map[model.Fingerprint]model.COWMetric{}
 
 	for _, s := range req.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)
@@ -58,7 +58,7 @@ func (fed *Federation) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		protMetric.Label = protMetric.Label[:0]
 
 		for ln, lv := range met.Metric {
-			if ln == clientmodel.MetricNameLabel {
+			if ln == model.MetricNameLabel {
 				protMetricFam.Name = proto.String(string(lv))
 				continue
 			}

@@ -17,21 +17,21 @@ import (
 	"math"
 	"sort"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // Helpers to calculate quantiles.
 
 // excludedLabels are the labels to exclude from signature calculation for
 // quantiles.
-var excludedLabels = map[clientmodel.LabelName]struct{}{
-	clientmodel.MetricNameLabel: {},
-	clientmodel.BucketLabel:     {},
+var excludedLabels = map[model.LabelName]struct{}{
+	model.MetricNameLabel: {},
+	model.BucketLabel:     {},
 }
 
 type bucket struct {
 	upperBound float64
-	count      clientmodel.SampleValue
+	count      model.SampleValue
 }
 
 // buckets implements sort.Interface.
@@ -42,7 +42,7 @@ func (b buckets) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b buckets) Less(i, j int) bool { return b[i].upperBound < b[j].upperBound }
 
 type metricWithBuckets struct {
-	metric  clientmodel.COWMetric
+	metric  model.COWMetric
 	buckets buckets
 }
 
@@ -68,7 +68,7 @@ type metricWithBuckets struct {
 // If q<0, -Inf is returned.
 //
 // If q>1, +Inf is returned.
-func quantile(q clientmodel.SampleValue, buckets buckets) float64 {
+func quantile(q model.SampleValue, buckets buckets) float64 {
 	if q < 0 {
 		return math.Inf(-1)
 	}

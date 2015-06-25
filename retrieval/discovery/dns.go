@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -33,7 +33,7 @@ const (
 	resolvConf = "/etc/resolv.conf"
 
 	dnsSourcePrefix = "dns"
-	DNSNameLabel    = clientmodel.MetaLabelPrefix + "dns_srv_name"
+	DNSNameLabel    = model.MetaLabelPrefix + "dns_srv_name"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -147,10 +147,10 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) erro
 		// Remove the final dot from rooted DNS names to make them look more usual.
 		addr.Target = strings.TrimRight(addr.Target, ".")
 
-		target := clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.Target, addr.Port))
-		tg.Targets = append(tg.Targets, clientmodel.LabelSet{
-			clientmodel.AddressLabel: target,
-			DNSNameLabel:             clientmodel.LabelValue(name),
+		target := model.LabelValue(fmt.Sprintf("%s:%d", addr.Target, addr.Port))
+		tg.Targets = append(tg.Targets, model.LabelSet{
+			model.AddressLabel: target,
+			DNSNameLabel:       model.LabelValue(name),
 		})
 	}
 

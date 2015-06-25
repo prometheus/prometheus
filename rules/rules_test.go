@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
@@ -28,10 +28,10 @@ import (
 
 var (
 	testSampleInterval = time.Duration(5) * time.Minute
-	testStartTime      = clientmodel.Timestamp(0)
+	testStartTime      = model.Timestamp(0)
 )
 
-func getTestValueStream(startVal clientmodel.SampleValue, endVal clientmodel.SampleValue, stepVal clientmodel.SampleValue, startTime clientmodel.Timestamp) (resultValues metric.Values) {
+func getTestValueStream(startVal model.SampleValue, endVal model.SampleValue, stepVal model.SampleValue, startTime model.Timestamp) (resultValues metric.Values) {
 	currentTime := startTime
 	for currentVal := startVal; currentVal <= endVal; currentVal += stepVal {
 		sample := metric.SamplePair{
@@ -58,10 +58,10 @@ func getTestVectorFromTestMatrix(matrix promql.Matrix) promql.Vector {
 }
 
 func storeMatrix(storage local.Storage, matrix promql.Matrix) {
-	pendingSamples := clientmodel.Samples{}
+	pendingSamples := model.Samples{}
 	for _, sampleStream := range matrix {
 		for _, sample := range sampleStream.Values {
-			pendingSamples = append(pendingSamples, &clientmodel.Sample{
+			pendingSamples = append(pendingSamples, &model.Sample{
 				Metric:    sampleStream.Metric.Metric,
 				Value:     sample.Value,
 				Timestamp: sample.Timestamp,
@@ -85,7 +85,7 @@ func vectorComparisonString(expected []string, actual []string) string {
 		separator)
 }
 
-func annotateWithTime(lines []string, timestamp clientmodel.Timestamp) []string {
+func annotateWithTime(lines []string, timestamp model.Timestamp) []string {
 	annotatedLines := []string{}
 	for _, line := range lines {
 		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp))
@@ -95,45 +95,45 @@ func annotateWithTime(lines []string, timestamp clientmodel.Timestamp) []string 
 
 var testMatrix = promql.Matrix{
 	{
-		Metric: clientmodel.COWMetric{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "api-server",
-				"instance":                  "0",
-				"group":                     "canary",
+		Metric: model.COWMetric{
+			Metric: model.Metric{
+				model.MetricNameLabel: "http_requests",
+				model.JobLabel:        "api-server",
+				"instance":            "0",
+				"group":               "canary",
 			},
 		},
 		Values: getTestValueStream(0, 300, 30, testStartTime),
 	},
 	{
-		Metric: clientmodel.COWMetric{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "api-server",
-				"instance":                  "1",
-				"group":                     "canary",
+		Metric: model.COWMetric{
+			Metric: model.Metric{
+				model.MetricNameLabel: "http_requests",
+				model.JobLabel:        "api-server",
+				"instance":            "1",
+				"group":               "canary",
 			},
 		},
 		Values: getTestValueStream(0, 400, 40, testStartTime),
 	},
 	{
-		Metric: clientmodel.COWMetric{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "app-server",
-				"instance":                  "0",
-				"group":                     "canary",
+		Metric: model.COWMetric{
+			Metric: model.Metric{
+				model.MetricNameLabel: "http_requests",
+				model.JobLabel:        "app-server",
+				"instance":            "0",
+				"group":               "canary",
 			},
 		},
 		Values: getTestValueStream(0, 700, 70, testStartTime),
 	},
 	{
-		Metric: clientmodel.COWMetric{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "http_requests",
-				clientmodel.JobLabel:        "app-server",
-				"instance":                  "1",
-				"group":                     "canary",
+		Metric: model.COWMetric{
+			Metric: model.Metric{
+				model.MetricNameLabel: "http_requests",
+				model.JobLabel:        "app-server",
+				"instance":            "1",
+				"group":               "canary",
 			},
 		},
 		Values: getTestValueStream(0, 800, 80, testStartTime),
@@ -178,7 +178,7 @@ func TestAlertingRule(t *testing.T) {
 		t.Fatalf("Unable to parse alert expression: %s", err)
 	}
 
-	alertLabels := clientmodel.LabelSet{
+	alertLabels := model.LabelSet{
 		"severity": "critical",
 	}
 	rule := NewAlertingRule("HttpRequestRateLow", expr, time.Minute, alertLabels, "summary", "description", "runbook")

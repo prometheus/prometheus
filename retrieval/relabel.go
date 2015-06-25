@@ -5,7 +5,7 @@ import (
 	"hash/fnv"
 	"strings"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -13,8 +13,8 @@ import (
 // Relabel returns a relabeled copy of the given label set. The relabel configurations
 // are applied in order of input.
 // If a label set is dropped, nil is returned.
-func Relabel(labels clientmodel.LabelSet, cfgs ...*config.RelabelConfig) (clientmodel.LabelSet, error) {
-	out := clientmodel.LabelSet{}
+func Relabel(labels model.LabelSet, cfgs ...*config.RelabelConfig) (model.LabelSet, error) {
+	out := model.LabelSet{}
 	for ln, lv := range labels {
 		out[ln] = lv
 	}
@@ -30,7 +30,7 @@ func Relabel(labels clientmodel.LabelSet, cfgs ...*config.RelabelConfig) (client
 	return out, nil
 }
 
-func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmodel.LabelSet, error) {
+func relabel(labels model.LabelSet, cfg *config.RelabelConfig) (model.LabelSet, error) {
 	values := make([]string, 0, len(cfg.SourceLabels))
 	for _, ln := range cfg.SourceLabels {
 		values = append(values, string(labels[ln]))
@@ -55,13 +55,13 @@ func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmode
 		if res == "" {
 			delete(labels, cfg.TargetLabel)
 		} else {
-			labels[cfg.TargetLabel] = clientmodel.LabelValue(res)
+			labels[cfg.TargetLabel] = model.LabelValue(res)
 		}
 	case config.RelabelHashMod:
 		hasher := fnv.New64a()
 		hasher.Write([]byte(val))
 		mod := hasher.Sum64() % cfg.Modulus
-		labels[cfg.TargetLabel] = clientmodel.LabelValue(fmt.Sprintf("%d", mod))
+		labels[cfg.TargetLabel] = model.LabelValue(fmt.Sprintf("%d", mod))
 	default:
 		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
 	}

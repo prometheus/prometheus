@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"regexp"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // MatchType is an enum for label matching types.
@@ -50,13 +50,13 @@ type LabelMatchers []*LabelMatcher
 // LabelMatcher models the matching of a label.
 type LabelMatcher struct {
 	Type  MatchType
-	Name  clientmodel.LabelName
-	Value clientmodel.LabelValue
+	Name  model.LabelName
+	Value model.LabelValue
 	re    *regexp.Regexp
 }
 
 // NewLabelMatcher returns a LabelMatcher object ready to use.
-func NewLabelMatcher(matchType MatchType, name clientmodel.LabelName, value clientmodel.LabelValue) (*LabelMatcher, error) {
+func NewLabelMatcher(matchType MatchType, name model.LabelName, value model.LabelValue) (*LabelMatcher, error) {
 	m := &LabelMatcher{
 		Type:  matchType,
 		Name:  name,
@@ -77,7 +77,7 @@ func (m *LabelMatcher) String() string {
 }
 
 // Match returns true if the label matcher matches the supplied label value.
-func (m *LabelMatcher) Match(v clientmodel.LabelValue) bool {
+func (m *LabelMatcher) Match(v model.LabelValue) bool {
 	switch m.Type {
 	case Equal:
 		return m.Value == v
@@ -94,8 +94,8 @@ func (m *LabelMatcher) Match(v clientmodel.LabelValue) bool {
 
 // Filter takes a list of label values and returns all label values which match
 // the label matcher.
-func (m *LabelMatcher) Filter(in clientmodel.LabelValues) clientmodel.LabelValues {
-	out := clientmodel.LabelValues{}
+func (m *LabelMatcher) Filter(in model.LabelValues) model.LabelValues {
+	out := model.LabelValues{}
 	for _, v := range in {
 		if m.Match(v) {
 			out = append(out, v)

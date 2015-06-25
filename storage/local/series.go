@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -36,22 +36,22 @@ const (
 
 // fingerprintSeriesPair pairs a fingerprint with a memorySeries pointer.
 type fingerprintSeriesPair struct {
-	fp     clientmodel.Fingerprint
+	fp     model.Fingerprint
 	series *memorySeries
 }
 
 // seriesMap maps fingerprints to memory series. All its methods are
 // goroutine-safe. A SeriesMap is effectively is a goroutine-safe version of
-// map[clientmodel.Fingerprint]*memorySeries.
+// map[model.Fingerprint]*memorySeries.
 type seriesMap struct {
 	mtx sync.RWMutex
-	m   map[clientmodel.Fingerprint]*memorySeries
+	m   map[model.Fingerprint]*memorySeries
 }
 
 // newSeriesMap returns a newly allocated empty seriesMap. To create a seriesMap
 // based on a prefilled map, use an explicit initializer.
 func newSeriesMap() *seriesMap {
-	return &seriesMap{m: make(map[clientmodel.Fingerprint]*memorySeries)}
+	return &seriesMap{m: make(map[model.Fingerprint]*memorySeries)}
 }
 
 // length returns the number of mappings in the seriesMap.
@@ -64,7 +64,7 @@ func (sm *seriesMap) length() int {
 
 // get returns a memorySeries for a fingerprint. Return values have the same
 // semantics as the native Go map.
-func (sm *seriesMap) get(fp clientmodel.Fingerprint) (s *memorySeries, ok bool) {
+func (sm *seriesMap) get(fp model.Fingerprint) (s *memorySeries, ok bool) {
 	sm.mtx.RLock()
 	defer sm.mtx.RUnlock()
 
@@ -73,7 +73,7 @@ func (sm *seriesMap) get(fp clientmodel.Fingerprint) (s *memorySeries, ok bool) 
 }
 
 // put adds a mapping to the seriesMap. It panics if s == nil.
-func (sm *seriesMap) put(fp clientmodel.Fingerprint, s *memorySeries) {
+func (sm *seriesMap) put(fp model.Fingerprint, s *memorySeries) {
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
@@ -84,7 +84,7 @@ func (sm *seriesMap) put(fp clientmodel.Fingerprint, s *memorySeries) {
 }
 
 // del removes a mapping from the series Map.
-func (sm *seriesMap) del(fp clientmodel.Fingerprint) {
+func (sm *seriesMap) del(fp model.Fingerprint) {
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
@@ -120,8 +120,8 @@ func (sm *seriesMap) iter() <-chan fingerprintSeriesPair {
 // for iterating over a map with a 'range' clause. However, if the next element
 // in iteration order is removed after the current element has been received
 // from the channel, it will still be produced by the channel.
-func (sm *seriesMap) fpIter() <-chan clientmodel.Fingerprint {
-	ch := make(chan clientmodel.Fingerprint)
+func (sm *seriesMap) fpIter() <-chan model.Fingerprint {
+	ch := make(chan model.Fingerprint)
 	go func() {
 		sm.mtx.RLock()
 		for fp := range sm.m {
@@ -136,7 +136,7 @@ func (sm *seriesMap) fpIter() <-chan clientmodel.Fingerprint {
 }
 
 type memorySeries struct {
-	metric clientmodel.Metric
+	metric model.Metric
 	// Sorted by start time, overlapping chunk ranges are forbidden.
 	chunkDescs []*chunkDesc
 	// The index (within chunkDescs above) of the first chunkDesc that
@@ -161,7 +161,7 @@ type memorySeries struct {
 	// chunkDescsOffset is not 0. It can be used to save the firstTime of the
 	// first chunk before its chunk desc is evicted. In doubt, this field is
 	// just set to the oldest possible timestamp.
-	savedFirstTime clientmodel.Timestamp
+	savedFirstTime model.Timestamp
 	// Whether the current head chunk has already been finished.  If true,
 	// the current head chunk must not be modified anymore.
 	headChunkClosed bool
@@ -181,12 +181,12 @@ type memorySeries struct {
 // firstTime is ignored (and set to the lowest possible timestamp instead - it
 // will be set properly upon the first eviction of chunkDescs).
 func newMemorySeries(
-	m clientmodel.Metric,
+	m model.Metric,
 	reallyNew bool,
-	firstTime clientmodel.Timestamp,
+	firstTime model.Timestamp,
 ) *memorySeries {
 	if !reallyNew {
-		firstTime = clientmodel.Earliest
+		firstTime = model.Earliest
 	}
 	s := memorySeries{
 		metric:          m,
@@ -275,7 +275,7 @@ func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
 
 // dropChunks removes chunkDescs older than t. The caller must have locked the
 // fingerprint of the series.
-func (s *memorySeries) dropChunks(t clientmodel.Timestamp) {
+func (s *memorySeries) dropChunks(t model.Timestamp) {
 	keepIdx := len(s.chunkDescs)
 	for i, cd := range s.chunkDescs {
 		if !cd.lastTime().Before(t) {
@@ -302,7 +302,7 @@ func (s *memorySeries) dropChunks(t clientmodel.Timestamp) {
 
 // preloadChunks is an internal helper method.
 func (s *memorySeries) preloadChunks(
-	indexes []int, fp clientmodel.Fingerprint, mss *memorySeriesStorage,
+	indexes []int, fp model.Fingerprint, mss *memorySeriesStorage,
 ) ([]*chunkDesc, error) {
 	loadIndexes := []int{}
 	pinnedChunkDescs := make([]*chunkDesc, 0, len(indexes))
@@ -337,7 +337,7 @@ func (s *memorySeries) preloadChunks(
 }
 
 /*
-func (s *memorySeries) preloadChunksAtTime(t clientmodel.Timestamp, p *persistence) (chunkDescs, error) {
+func (s *memorySeries) preloadChunksAtTime(t model.Timestamp, p *persistence) (chunkDescs, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -370,10 +370,10 @@ func (s *memorySeries) preloadChunksAtTime(t clientmodel.Timestamp, p *persisten
 // preloadChunksForRange loads chunks for the given range from the persistence.
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) preloadChunksForRange(
-	from clientmodel.Timestamp, through clientmodel.Timestamp,
-	fp clientmodel.Fingerprint, mss *memorySeriesStorage,
+	from model.Timestamp, through model.Timestamp,
+	fp model.Fingerprint, mss *memorySeriesStorage,
 ) ([]*chunkDesc, error) {
-	firstChunkDescTime := clientmodel.Latest
+	firstChunkDescTime := model.Latest
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
 	}
@@ -441,7 +441,7 @@ func (s *memorySeries) head() *chunkDesc {
 
 // firstTime returns the timestamp of the first sample in the series. The caller
 // must have locked the fingerprint of the memorySeries.
-func (s *memorySeries) firstTime() clientmodel.Timestamp {
+func (s *memorySeries) firstTime() model.Timestamp {
 	if s.chunkDescsOffset == 0 && len(s.chunkDescs) > 0 {
 		return s.chunkDescs[0].firstTime()
 	}
@@ -476,7 +476,7 @@ type memorySeriesIterator struct {
 }
 
 // ValueAtTime implements SeriesIterator.
-func (it *memorySeriesIterator) ValueAtTime(t clientmodel.Timestamp) metric.Values {
+func (it *memorySeriesIterator) ValueAtTime(t model.Timestamp) metric.Values {
 	// The most common case. We are iterating through a chunk.
 	if it.chunkIt != nil && it.chunkIt.contains(t) {
 		return it.chunkIt.valueAtTime(t)
@@ -632,7 +632,7 @@ func (it *memorySeriesIterator) chunkIterator(i int) chunkIterator {
 type nopSeriesIterator struct{}
 
 // ValueAtTime implements SeriesIterator.
-func (_ nopSeriesIterator) ValueAtTime(t clientmodel.Timestamp) metric.Values {
+func (_ nopSeriesIterator) ValueAtTime(t model.Timestamp) metric.Values {
 	return metric.Values{}
 }
 

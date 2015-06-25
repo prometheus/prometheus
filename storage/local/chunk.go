@@ -20,7 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -58,8 +58,8 @@ type chunkDesc struct {
 	sync.Mutex
 	c              chunk // nil if chunk is evicted.
 	rCnt           int
-	chunkFirstTime clientmodel.Timestamp // Used if chunk is evicted.
-	chunkLastTime  clientmodel.Timestamp // Used if chunk is evicted.
+	chunkFirstTime model.Timestamp // Used if chunk is evicted.
+	chunkLastTime  model.Timestamp // Used if chunk is evicted.
 
 	// evictListElement is nil if the chunk is not in the evict list.
 	// evictListElement is _not_ protected by the chunkDesc mutex.
@@ -122,7 +122,7 @@ func (cd *chunkDesc) refCount() int {
 	return cd.rCnt
 }
 
-func (cd *chunkDesc) firstTime() clientmodel.Timestamp {
+func (cd *chunkDesc) firstTime() model.Timestamp {
 	cd.Lock()
 	defer cd.Unlock()
 
@@ -132,7 +132,7 @@ func (cd *chunkDesc) firstTime() clientmodel.Timestamp {
 	return cd.c.firstTime()
 }
 
-func (cd *chunkDesc) lastTime() clientmodel.Timestamp {
+func (cd *chunkDesc) lastTime() model.Timestamp {
 	cd.Lock()
 	defer cd.Unlock()
 
@@ -163,7 +163,7 @@ func (cd *chunkDesc) isEvicted() bool {
 	return cd.c == nil
 }
 
-func (cd *chunkDesc) contains(t clientmodel.Timestamp) bool {
+func (cd *chunkDesc) contains(t model.Timestamp) bool {
 	return !t.Before(cd.firstTime()) && !t.After(cd.lastTime())
 }
 
@@ -216,7 +216,7 @@ type chunk interface {
 	// the relevant one and discard the orginal chunk.
 	add(sample *metric.SamplePair) []chunk
 	clone() chunk
-	firstTime() clientmodel.Timestamp
+	firstTime() model.Timestamp
 	newIterator() chunkIterator
 	marshal(io.Writer) error
 	unmarshal(io.Reader) error
@@ -231,24 +231,24 @@ type chunkIterator interface {
 	// length returns the number of samples in the chunk.
 	length() int
 	// Gets the timestamp of the n-th sample in the chunk.
-	timestampAtIndex(int) clientmodel.Timestamp
+	timestampAtIndex(int) model.Timestamp
 	// Gets the last timestamp in the chunk.
-	lastTimestamp() clientmodel.Timestamp
+	lastTimestamp() model.Timestamp
 	// Gets the sample value of the n-th sample in the chunk.
-	sampleValueAtIndex(int) clientmodel.SampleValue
+	sampleValueAtIndex(int) model.SampleValue
 	// Gets the last sample value in the chunk.
-	lastSampleValue() clientmodel.SampleValue
+	lastSampleValue() model.SampleValue
 	// Gets the two values that are immediately adjacent to a given time. In
 	// case a value exist at precisely the given time, only that single
 	// value is returned. Only the first or last value is returned (as a
 	// single value), if the given time is before or after the first or last
 	// value, respectively.
-	valueAtTime(clientmodel.Timestamp) metric.Values
+	valueAtTime(model.Timestamp) metric.Values
 	// Gets all values contained within a given interval.
 	rangeValues(metric.Interval) metric.Values
 	// Whether a given timestamp is contained between first and last value
 	// in the chunk.
-	contains(clientmodel.Timestamp) bool
+	contains(model.Timestamp) bool
 	// values returns a channel, from which all sample values in the chunk
 	// can be received in order. The channel is closed after the last
 	// one. It is generally not safe to mutate the chunk while the channel

@@ -23,7 +23,7 @@ import (
 
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
@@ -34,11 +34,11 @@ import (
 // an error or because the persistence was dirty from the start). Not goroutine
 // safe. Only call before anything else is running (except index processing
 // queue as started by newPersistence).
-func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) error {
+func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint]*memorySeries) error {
 	// TODO(beorn): We need proper tests for the crash recovery.
 	log.Warn("Starting crash recovery. Prometheus is inoperational until complete.")
 
-	fpsSeen := map[clientmodel.Fingerprint]struct{}{}
+	fpsSeen := map[model.Fingerprint]struct{}{}
 	count := 0
 	seriesDirNameFmt := fmt.Sprintf("%%0%dx", seriesDirNameLen)
 
@@ -170,9 +170,9 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Finge
 //   be found there, it is moved into the orphaned directory.
 func (p *persistence) sanitizeSeries(
 	dirname string, fi os.FileInfo,
-	fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries,
+	fingerprintToSeries map[model.Fingerprint]*memorySeries,
 	fpm fpMappings,
-) (clientmodel.Fingerprint, bool) {
+) (model.Fingerprint, bool) {
 	filename := path.Join(dirname, fi.Name())
 	purge := func() {
 		var err error
@@ -193,7 +193,7 @@ func (p *persistence) sanitizeSeries(
 		}
 	}
 
-	var fp clientmodel.Fingerprint
+	var fp model.Fingerprint
 	if len(fi.Name()) != fpLen-seriesDirNameLen+len(seriesFileSuffix) ||
 		!strings.HasSuffix(fi.Name(), seriesFileSuffix) {
 		log.Warnf("Unexpected series file name %s.", filename)
@@ -276,7 +276,7 @@ func (p *persistence) sanitizeSeries(
 		s.chunkDescs = s.chunkDescs[s.persistWatermark:]
 		numMemChunkDescs.Sub(float64(s.persistWatermark))
 		// Load all the chunk descs (which assumes we have none from the future).
-		cds, err := p.loadChunkDescs(fp, clientmodel.Now())
+		cds, err := p.loadChunkDescs(fp, model.Now())
 		if err != nil {
 			log.Errorf(
 				"Failed to load chunk descriptors for metric %v, fingerprint %v: %s",
@@ -341,8 +341,8 @@ func (p *persistence) sanitizeSeries(
 }
 
 func (p *persistence) cleanUpArchiveIndexes(
-	fpToSeries map[clientmodel.Fingerprint]*memorySeries,
-	fpsSeen map[clientmodel.Fingerprint]struct{},
+	fpToSeries map[model.Fingerprint]*memorySeries,
+	fpsSeen map[model.Fingerprint]struct{},
 	fpm fpMappings,
 ) error {
 	log.Info("Cleaning up archive indexes.")
@@ -357,17 +357,17 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if err := kv.Key(&fp); err != nil {
 			return err
 		}
-		_, fpSeen := fpsSeen[clientmodel.Fingerprint(fp)]
+		_, fpSeen := fpsSeen[model.Fingerprint(fp)]
 		inMemory := false
 		if fpSeen {
-			_, inMemory = fpToSeries[clientmodel.Fingerprint(fp)]
+			_, inMemory = fpToSeries[model.Fingerprint(fp)]
 		}
 		if !fpSeen || inMemory {
 			if inMemory {
-				log.Warnf("Archive clean-up: Fingerprint %v is not archived. Purging from archive indexes.", clientmodel.Fingerprint(fp))
+				log.Warnf("Archive clean-up: Fingerprint %v is not archived. Purging from archive indexes.", model.Fingerprint(fp))
 			}
 			if !fpSeen {
-				log.Warnf("Archive clean-up: Fingerprint %v is unknown. Purging from archive indexes.", clientmodel.Fingerprint(fp))
+				log.Warnf("Archive clean-up: Fingerprint %v is unknown. Purging from archive indexes.", model.Fingerprint(fp))
 			}
 			// It's fine if the fp is not in the archive indexes.
 			if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
@@ -381,7 +381,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if err := kv.Value(&m); err != nil {
 			return err
 		}
-		maybeAddMapping(clientmodel.Fingerprint(fp), clientmodel.Metric(m), fpm)
+		maybeAddMapping(model.Fingerprint(fp), model.Metric(m), fpm)
 		// Make sure it is in timerange index, too.
 		has, err := p.archivedFingerprintToTimeRange.Has(fp)
 		if err != nil {
@@ -395,15 +395,15 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
 			return err
 		}
-		series := newMemorySeries(clientmodel.Metric(m), false, clientmodel.Earliest)
-		cds, err := p.loadChunkDescs(clientmodel.Fingerprint(fp), clientmodel.Now())
+		series := newMemorySeries(model.Metric(m), false, model.Earliest)
+		cds, err := p.loadChunkDescs(model.Fingerprint(fp), model.Now())
 		if err != nil {
 			return err
 		}
 		series.chunkDescs = cds
 		series.chunkDescsOffset = 0
 		series.persistWatermark = len(cds)
-		fpToSeries[clientmodel.Fingerprint(fp)] = series
+		fpToSeries[model.Fingerprint(fp)] = series
 		return nil
 	}); err != nil {
 		return err
@@ -441,7 +441,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 }
 
 func (p *persistence) rebuildLabelIndexes(
-	fpToSeries map[clientmodel.Fingerprint]*memorySeries,
+	fpToSeries map[model.Fingerprint]*memorySeries,
 ) error {
 	count := 0
 	log.Info("Rebuilding label indexes.")
@@ -463,7 +463,7 @@ func (p *persistence) rebuildLabelIndexes(
 		if err := kv.Value(&m); err != nil {
 			return err
 		}
-		p.indexMetric(clientmodel.Fingerprint(fp), clientmodel.Metric(m))
+		p.indexMetric(model.Fingerprint(fp), model.Metric(m))
 		count++
 		if count%10000 == 0 {
 			log.Infof("%d metrics queued for indexing.", count)
@@ -477,7 +477,7 @@ func (p *persistence) rebuildLabelIndexes(
 }
 
 // maybeAddMapping adds a fingerprint mapping to fpm if the FastFingerprint of m is different from fp.
-func maybeAddMapping(fp clientmodel.Fingerprint, m clientmodel.Metric, fpm fpMappings) {
+func maybeAddMapping(fp model.Fingerprint, m model.Metric, fpm fpMappings) {
 	if rawFP := m.FastFingerprint(); rawFP != fp {
 		log.Warnf(
 			"Metric %v with fingerprint %v is mapped from raw fingerprint %v.",
@@ -486,7 +486,7 @@ func maybeAddMapping(fp clientmodel.Fingerprint, m clientmodel.Metric, fpm fpMap
 		if mappedFPs, ok := fpm[rawFP]; ok {
 			mappedFPs[metricToUniqueString(m)] = fp
 		} else {
-			fpm[rawFP] = map[string]clientmodel.Fingerprint{
+			fpm[rawFP] = map[string]model.Fingerprint{
 				metricToUniqueString(m): fp,
 			}
 		}
