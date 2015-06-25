@@ -26,7 +26,7 @@ advice: $(GOCC)
 
 binary: build
 
-build: tools $(GOPATH)
+build: dependencies $(GOPATH)
 	$(GO) build -o prometheus $(BUILDFLAGS) github.com/prometheus/prometheus/cmd/prometheus
 	$(GO) build -o promtool $(BUILDFLAGS) github.com/prometheus/prometheus/cmd/promtool
 
@@ -36,7 +36,7 @@ docker: build
 tarball: $(ARCHIVE)
 
 $(ARCHIVE): build
-	tar -czf $(ARCHIVE) prometheus promtool tools/rule_checker/rule_checker consoles console_libraries
+	tar -czf $(ARCHIVE) prometheus promtool consoles console_libraries
 
 release: REMOTE     ?= $(error "can't upload, REMOTE not set")
 release: REMOTE_DIR ?= $(error "can't upload, REMOTE_DIR not set")
@@ -50,12 +50,11 @@ tag:
 $(BUILD_PATH)/cache/$(GOPKG):
 	$(CURL) -o $@ -L $(GOURL)/$(GOPKG)
 
-benchmark: dependencies tools
+benchmark: dependencies
 	$(GO) test $(GO_TEST_FLAGS) -test.run='NONE' -test.bench='.*' -test.benchmem ./... | tee benchmark.txt
 
 clean:
 	$(MAKE) -C $(BUILD_PATH) clean
-	$(MAKE) -C tools clean
 	rm -rf $(TEST_ARTIFACTS)
 	-rm $(ARCHIVE)
 	-find . -type f -name '*~' -exec rm '{}' ';'
@@ -85,13 +84,10 @@ race_condition_run: race_condition_binary
 search_index:
 	godoc -index -write_index -index_files='search_index'
 
-test: dependencies tools
+test: dependencies
 	$(GO) test $(GO_TEST_FLAGS) ./...
-
-tools: dependencies
-	$(MAKE) -C tools
 
 web: dependencies
 	$(MAKE) -C web
 
-.PHONY: advice binary build clean dependencies documentation format race_condition_binary race_condition_run release run search_index tag tarball test tools
+.PHONY: advice binary build clean dependencies documentation format race_condition_binary race_condition_run release run search_index tag tarball test
