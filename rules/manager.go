@@ -207,6 +207,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 		notifications = append(notifications, &notification.NotificationReq{
 			Summary:     expand(rule.summary),
 			Description: expand(rule.description),
+			Runbook:     rule.runbook,
 			Labels: aa.Labels.Merge(clientmodel.LabelSet{
 				alertNameLabel: clientmodel.LabelValue(rule.Name()),
 			}),
@@ -316,7 +317,7 @@ func (m *Manager) loadRuleFiles(filenames ...string) error {
 		for _, stmt := range stmts {
 			switch r := stmt.(type) {
 			case *promql.AlertStmt:
-				rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Summary, r.Description)
+				rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Summary, r.Description, r.Runbook)
 				m.rules = append(m.rules, rule)
 			case *promql.RecordStmt:
 				rule := NewRecordingRule(r.Name, r.Expr, r.Labels)

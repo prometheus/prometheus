@@ -1032,9 +1032,10 @@ var testStatement = []struct {
 
 			foo = bar{label1="value1"}
 
-			ALERT BazAlert IF foo > 10 WITH {}
-			  SUMMARY "Baz"
+			ALERT BazAlert IF foo > 10
 			  DESCRIPTION "BazAlert"
+			  RUNBOOK     "http://my.url"
+			  SUMMARY     "Baz"
 		`,
 		expected: Statements{
 			&RecordStmt{
@@ -1100,6 +1101,7 @@ var testStatement = []struct {
 				Labels:      clientmodel.LabelSet{},
 				Summary:     "Baz",
 				Description: "BazAlert",
+				Runbook:     "http://my.url",
 			},
 		},
 	}, {

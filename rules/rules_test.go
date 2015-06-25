@@ -181,7 +181,7 @@ func TestAlertingRule(t *testing.T) {
 	alertLabels := clientmodel.LabelSet{
 		"severity": "critical",
 	}
-	rule := NewAlertingRule("HttpRequestRateLow", expr, time.Minute, alertLabels, "summary", "description")
+	rule := NewAlertingRule("HttpRequestRateLow", expr, time.Minute, alertLabels, "summary", "description", "runbook")
 
 	for i, expectedLines := range evalOutputs {
 		evalTime := testStartTime.Add(testSampleInterval * time.Duration(i))

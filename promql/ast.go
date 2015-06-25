@@ -62,6 +62,7 @@ type AlertStmt struct {
 	Labels      clientmodel.LabelSet
 	Summary     string
 	Description string
+	Runbook     string
 }
 
 // EvalStmt holds an expression and information on the range it should

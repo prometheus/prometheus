@@ -242,6 +242,9 @@ var tests = []struct {
 		input:    "summary",
 		expected: []item{{itemSummary, 0, "summary"}},
 	}, {
+		input:    "runbook",
+		expected: []item{{itemRunbook, 0, "runbook"}},
+	}, {
 		input:    "offset",
 		expected: []item{{itemOffset, 0, "offset"}},
 	}, {

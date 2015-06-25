@@ -144,6 +144,7 @@ const (
 	itemFor
 	itemWith
 	itemSummary
+	itemRunbook
 	itemDescription
 	itemKeepCommon
 	itemOffset
@@ -174,6 +175,7 @@ var key = map[string]itemType{
 	"for":           itemFor,
 	"with":          itemWith,
 	"summary":       itemSummary,
+	"runbook":       itemRunbook,
 	"description":   itemDescription,
 	"offset":        itemOffset,
 	"by":            itemBy,
