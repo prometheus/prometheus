@@ -19,7 +19,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 const (

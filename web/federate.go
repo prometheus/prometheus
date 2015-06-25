@@ -7,13 +7,13 @@ import (
 	"bitbucket.org/ww/goautoneg"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/text"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/textproto"
 )
 
 type Federation struct {
@@ -88,21 +88,21 @@ func chooseEncoder(req *http.Request) (encoder, string) {
 			accept.Params["proto"] == "io.prometheus.client.MetricFamily":
 			switch accept.Params["encoding"] {
 			case "delimited":
-				return text.WriteProtoDelimited, prometheus.DelimitedTelemetryContentType
+				return textproto.WriteProtoDelimited, prometheus.DelimitedTelemetryContentType
 			case "text":
-				return text.WriteProtoText, prometheus.ProtoTextTelemetryContentType
+				return textproto.WriteProtoText, prometheus.ProtoTextTelemetryContentType
 			case "compact-text":
-				return text.WriteProtoCompactText, prometheus.ProtoCompactTextTelemetryContentType
+				return textproto.WriteProtoCompactText, prometheus.ProtoCompactTextTelemetryContentType
 			default:
 				continue
 			}
 		case accept.Type == "text" &&
 			accept.SubType == "plain" &&
 			(accept.Params["version"] == "0.0.4" || accept.Params["version"] == ""):
-			return text.MetricFamilyToText, prometheus.TextTelemetryContentType
+			return textproto.MetricFamilyToText, prometheus.TextTelemetryContentType
 		default:
 			continue
 		}
 	}
-	return text.MetricFamilyToText, prometheus.TextTelemetryContentType
+	return textproto.MetricFamilyToText, prometheus.TextTelemetryContentType
 }

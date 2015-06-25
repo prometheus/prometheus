@@ -23,10 +23,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/extraction"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
+	"github.com/prometheus/common/extraction"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"

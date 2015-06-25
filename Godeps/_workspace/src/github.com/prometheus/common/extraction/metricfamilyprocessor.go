@@ -22,7 +22,7 @@ import (
 
 	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 
-	"github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 type metricFamilyProcessor struct{}

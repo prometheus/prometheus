@@ -23,7 +23,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 var test002Time = model.Now()

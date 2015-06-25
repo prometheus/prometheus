@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // Processor002 is responsible for decoding payloads from protocol version

@@ -16,7 +16,7 @@ package extraction
 import (
 	"io"
 
-	"github.com/prometheus/client_golang/text"
+	"github.com/prometheus/common/textproto"
 )
 
 type processor004 struct{}
@@ -26,7 +26,7 @@ type processor004 struct{}
 var Processor004 = &processor004{}
 
 func (t *processor004) ProcessSingle(i io.Reader, out Ingester, o *ProcessOptions) error {
-	var parser text.Parser
+	var parser textproto.Parser
 	metricFamilies, err := parser.TextToMetricFamilies(i)
 	if err != nil {
 		return err
