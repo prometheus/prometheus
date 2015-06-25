@@ -176,16 +176,19 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
   var self = this;
   $.ajax({
       method: "GET",
-      url: PATH_PREFIX + "/api/metrics",
+      url: PATH_PREFIX + "/api/v1/label/__name__/values",
       dataType: "json",
       success: function(json, textStatus) {
-        var availableMetrics = [];
-        for (var i = 0; i < json.length; i++) {
-          self.insertMetric[0].options.add(new Option(json[i], json[i]));
-          availableMetrics.push(json[i]);
+        if (json.status !== "success") {
+          self.showError("Error loading available metrics!")
+          return;
+        }
+        var metrics = json.data;
+        for (var i = 0; i < metrics.length; i++) {
+          self.insertMetric[0].options.add(new Option(metrics[i], metrics[i]));
         }
         self.expr.typeahead({
-          source: availableMetrics,
+          source: metrics,
           items: "all"
         });
         // This needs to happen after attaching the typeahead plugin, as it
@@ -267,7 +270,7 @@ Prometheus.Graph.prototype.decreaseRange = function() {
 Prometheus.Graph.prototype.getEndDate = function() {
   var self = this;
   if (!self.endDate || !self.endDate.val()) {
-    return null;
+    return new Date();
   }
   return self.endDate.data('datetimepicker').getDate().getTime();
 };
@@ -275,10 +278,6 @@ Prometheus.Graph.prototype.getEndDate = function() {
 Prometheus.Graph.prototype.getOrSetEndDate = function() {
   var self = this;
   var date = self.getEndDate();
-  if (date) {
-    return date;
-  }
-  date = new Date();
   self.setEndDate(date);
   return date;
 }
@@ -311,36 +310,51 @@ Prometheus.Graph.prototype.submitQuery = function() {
   self.evalStats.empty();
 
   var startTime = new Date().getTime();
-
   var rangeSeconds = self.parseDuration(self.rangeInput.val());
-  self.queryForm.find("input[name=range]").val(rangeSeconds);
   var resolution = self.queryForm.find("input[name=step_input]").val() || Math.max(Math.floor(rangeSeconds / 250), 1);
-  self.queryForm.find("input[name=step]").val(resolution);
   var endDate = self.getEndDate() / 1000;
-  self.queryForm.find("input[name=end]").val(endDate);
 
   if (self.queryXhr) {
     self.queryXhr.abort();
   }
   var url;
   var success;
+  var params = {
+    "query": self.expr.val()
+  };
   if (self.options["tab"] === 0) {
-    url  = self.queryForm.attr("action");
+    params['start'] = endDate - rangeSeconds;
+    params['end'] = endDate;
+    params['step'] = resolution;
+    url = PATH_PREFIX + "/api/v1/query_range";
     success = function(json, textStatus) { self.handleGraphResponse(json, textStatus); };
   } else {
-    url  = PATH_PREFIX + "/api/query";
-    success = function(text, textStatus) { self.handleConsoleResponse(text, textStatus); };
+    params['time'] = startTime / 1000;
+    url = PATH_PREFIX + "/api/v1/query";
+    success = function(json, textStatus) { self.handleConsoleResponse(json, textStatus); };
   }
 
   self.queryXhr = $.ajax({
       method: self.queryForm.attr("method"),
       url: url,
       dataType: "json",
-      data: self.queryForm.serialize(),
-      success: success,
+      data: params,
+      success: function(json, textStatus) {
+        if (json.status !== "success") {
+          self.showError(json.error);
+          return;
+        }
+        success(json.data, textStatus);
+      },
       error: function(xhr, resp) {
         if (resp != "abort") {
-          self.showError("Error executing query: " + resp);
+          var err;
+          if (xhr.responseJSON !== undefined) {
+            err = xhr.responseJSON.error;
+          } else {
+            err = xhr.statusText;
+          }
+          self.showError("Error executing query: " + err);
         }
       },
       complete: function() {
@@ -414,14 +428,23 @@ Prometheus.Graph.prototype.parseValue = function(value) {
 Prometheus.Graph.prototype.transformData = function(json) {
   var self = this;
   var palette = new Rickshaw.Color.Palette();
-  if (json.type != "matrix") {
+  if (json.resultType != "matrix") {
     self.showError("Result is not of matrix type! Please enter a correct expression.");
     return [];
   }
-  var data = json.value.map(function(ts) {
+  var data = json.result.map(function(ts) {
+    var name;
+    var labels;
+    if (ts.metric === null) {
+      name = "scalar";
+      labels = {};
+    } else {
+      name = escapeHTML(self.metricToTsName(ts.metric));
+      labels = ts.metric;
+    }
     return {
-      name: escapeHTML(self.metricToTsName(ts.metric)),
-      labels: ts.metric,
+      name: name,
+      labels: labels,
       data: ts.values.map(function(value) {
         return {
           x: value[0],
@@ -450,7 +473,7 @@ Prometheus.Graph.prototype.updateGraph = function() {
   self.graphArea.append(self.graph);
   self.graphArea.append(self.yAxis);
 
-  var endTime = (self.getEndDate() || (new Date()).getTime()) / 1000; // Convert to UNIX timestamp.
+  var endTime = self.getEndDate() / 1000; // Convert to UNIX timestamp.
   var duration = self.parseDuration(self.rangeInput.val()) || 3600; // 1h default.
   var startTime = endTime - duration;
   self.data.forEach(function(s) {
@@ -526,10 +549,6 @@ Prometheus.Graph.prototype.resizeGraph = function() {
 
 Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
   var self = this
-  if (json.type == "error") {
-    self.showError(json.value);
-    return;
-  }
   // Rickshaw mutates passed series data for stacked graphs, so we need to save
   // the original AJAX response in order to re-transform it into series data
   // when the user disables the stacking.
@@ -551,25 +570,25 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   var tBody = self.consoleTab.find(".console_table tbody");
   tBody.empty();
 
-  switch(data.type) {
+  switch(data.resultType) {
   case "vector":
-    if (data.value.length === 0) {
+    if (data.result.length === 0) {
       tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>");
       return;
     }
-    for (var i = 0; i < data.value.length; i++) {
-      var v = data.value[i];
-      var tsName = self.metricToTsName(v.metric);
-      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + v.value + "</td></tr>");
+    for (var i = 0; i < data.result.length; i++) {
+      var s = data.result[i];
+      var tsName = self.metricToTsName(s.metric);
+      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + s.value + "</td></tr>");
     }
     break;
   case "matrix":
-    if (data.value.length === 0) {
+    if (data.result.length === 0) {
       tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>");
       return;
     }
-    for (var i = 0; i < data.value.length; i++) {
-      var v = data.value[i];
+    for (var i = 0; i < data.result.length; i++) {
+      var v = data.result[i];
       var tsName = self.metricToTsName(v.metric);
       var valueText = "";
       for (var j = 0; j < v.values.length; j++) {
@@ -579,10 +598,10 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     }
     break;
   case "scalar":
-    tBody.append("<tr><td>scalar</td><td>" + data.value + "</td></tr>");
+    tBody.append("<tr><td>scalar</td><td>" + data.result.value + "</td></tr>");
     break;
-  case "error":
-    self.showError(data.value);
+  case "string":
+    tBody.append("<tr><td>string</td><td>" + data.result.value + "</td></tr>");
     break;
   default:
     self.showError("Unsupported value type!");
