@@ -238,10 +238,25 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 				}
 				return fmt.Sprintf("%.4g%ss", v, prefix)
 			},
+			"humanizeTimestamp": func(v float64) string {
+				if math.IsNaN(v) || math.IsInf(v, 0) {
+					return fmt.Sprintf("%.4g", v)
+				}
+				t := clientmodel.TimestampFromUnixNano(int64(v * 1e9)).Time().UTC()
+				return fmt.Sprint(t)
+			},
 			"pathPrefix": func() string {
 				return pathPrefix
 			},
 		},
+	}
+}
+
+// Funcs adds the functions in fm to the templateExpander's function map.
+// Existing functions will be overwritten in case of conflict.
+func (te templateExpander) Funcs(fm text_template.FuncMap) {
+	for k, v := range fm {
+		te.funcMap[k] = v
 	}
 }
 

@@ -379,11 +379,45 @@ func (p *parser) alertStmt() *AlertStmt {
 		lset = p.labelSet()
 	}
 
-	p.expect(itemSummary, ctx)
-	sum := trimOne(p.expect(itemString, ctx).val)
+	var (
+		hasSum, hasDesc, hasRunbook bool
+		sum, desc, runbook          string
+	)
+Loop:
+	for {
+		switch p.next().typ {
+		case itemSummary:
+			if hasSum {
+				p.errorf("summary must not be defined twice")
+			}
+			hasSum = true
+			sum = trimOne(p.expect(itemString, ctx).val)
 
-	p.expect(itemDescription, ctx)
-	desc := trimOne(p.expect(itemString, ctx).val)
+		case itemDescription:
+			if hasDesc {
+				p.errorf("description must not be defined twice")
+			}
+			hasDesc = true
+			desc = trimOne(p.expect(itemString, ctx).val)
+
+		case itemRunbook:
+			if hasRunbook {
+				p.errorf("runbook must not be defined twice")
+			}
+			hasRunbook = true
+			runbook = trimOne(p.expect(itemString, ctx).val)
+
+		default:
+			p.backup()
+			break Loop
+		}
+	}
+	if sum == "" {
+		p.errorf("alert summary missing")
+	}
+	if desc == "" {
+		p.errorf("alert description missing")
+	}
 
 	return &AlertStmt{
 		Name:        name.val,
@@ -392,6 +426,7 @@ func (p *parser) alertStmt() *AlertStmt {
 		Labels:      lset,
 		Summary:     sum,
 		Description: desc,
+		Runbook:     runbook,
 	}
 }
 
@@ -882,6 +917,25 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 
 	if len(matchers) == 0 {
 		p.errorf("vector selector must contain label matchers or metric name")
+	}
+	// A vector selector must contain at least one non-empty matcher to prevent
+	// implicit selection of all metrics (e.g. by a typo).
+	notEmpty := false
+	for _, lm := range matchers {
+		// Matching changes the inner state of the regex and causes reflect.DeepEqual
+		// to return false, which break tests.
+		// Thus, we create a new label matcher for this testing.
+		lm, err := metric.NewLabelMatcher(lm.Type, lm.Name, lm.Value)
+		if err != nil {
+			p.error(err)
+		}
+		if !lm.Match("") {
+			notEmpty = true
+			break
+		}
+	}
+	if !notEmpty {
+		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
 
 	var err error

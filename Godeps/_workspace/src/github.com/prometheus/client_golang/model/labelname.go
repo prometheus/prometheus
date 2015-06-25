@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	// ExporterLabelPrefix is the label name prefix to prepend if a
+	// ExportedLabelPrefix is the label name prefix to prepend if a
 	// synthetic label is already present in the exported metrics.
-	ExporterLabelPrefix LabelName = "exporter_"
+	ExportedLabelPrefix LabelName = "exported_"
 
 	// MetricNameLabel is the label name indicating the metric name of a
 	// timeseries.

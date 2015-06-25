@@ -15,7 +15,9 @@
 
 .SUFFIXES:
 
-VERSION?=$(shell cat `git rev-parse --show-toplevel`/VERSION)
+current_dir := $(patsubst %/,%, $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+
+VERSION=$(shell cat $(current_dir)/version/VERSION)
 
 OS=$(shell uname)
 ARCH=$(shell uname -m)
@@ -52,7 +54,8 @@ GO      = $(GOENV) $(GOCC)
 GOFMT   = $(GOROOT)/bin/gofmt
 
 UNAME    := $(shell uname)
-SELFLINK  = $(GOPATH)/src/github.com/prometheus/prometheus
+REPO_PATH = github.com/prometheus/prometheus
+SELFLINK  = $(GOPATH)/src/$(REPO_PATH)
 
 export PREFIX=$(BUILD_PATH)/root
 
@@ -60,20 +63,17 @@ export PATH := $(GOPATH)/bin:$(GOROOT)/bin:$(PATH)
 
 export GO_TEST_FLAGS ?= -short
 
-GO_GET := $(GO) get -u -v -x
-
-REV        := $(shell git rev-parse --short HEAD)
-BRANCH     := $(shell git rev-parse --abbrev-ref HEAD)
+REV        := $(shell git rev-parse --short HEAD 2> /dev/null  || echo 'unknown')
+BRANCH     := $(shell git rev-parse --abbrev-ref HEAD 2> /dev/null  || echo 'unknown')
 HOSTNAME   := $(shell hostname -f)
 BUILD_DATE := $(shell date +%Y%m%d-%H:%M:%S)
 BUILDFLAGS := -ldflags \
-  " -X main.buildVersion $(VERSION)\
-		-X main.buildRevision $(REV)\
-		-X main.buildBranch $(BRANCH)\
-		-X main.buildUser $(USER)@$(HOSTNAME)\
-		-X main.buildDate $(BUILD_DATE)\
-		-X main.goVersion $(GO_VERSION)"
-PROTOC := protoc
+  " -X $(REPO_PATH)/version.Version $(VERSION)\
+		-X $(REPO_PATH)/version.Revision $(REV)\
+		-X $(REPO_PATH)/version.Branch $(BRANCH)\
+		-X $(REPO_PATH)/version.BuildUser $(USER)@$(HOSTNAME)\
+		-X $(REPO_PATH)/version.BuildDate $(BUILD_DATE)\
+		-X $(REPO_PATH)/version.GoVersion $(GO_VERSION)"
 CURL := curl
 
 ARCHIVE := prometheus-$(VERSION).$(GOOS)-$(GOARCH).tar.gz

@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright 2015 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,17 +11,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package web
+package version
 
-import (
-	"net/http"
+// Build information. Populated at build-time.
+var (
+	Version   string
+	Revision  string
+	Branch    string
+	BuildUser string
+	BuildDate string
+	GoVersion string
 )
 
-// GraphsHandler implements http.Handler.
-type GraphsHandler struct {
-	PathPrefix string
-}
-
-func (h *GraphsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	executeTemplate(w, "graph", nil, h.PathPrefix)
+// Map provides the iterable version information.
+var Map = map[string]string{
+	"version":   Version,
+	"revision":  Revision,
+	"branch":    Branch,
+	"buildUser": BuildUser,
+	"buildDate": BuildDate,
+	"goVersion": GoVersion,
 }

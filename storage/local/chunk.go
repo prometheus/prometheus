@@ -15,7 +15,6 @@ package local
 
 import (
 	"container/list"
-	"flag"
 	"fmt"
 	"io"
 	"sync"
@@ -26,11 +25,27 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-var (
-	defaultChunkEncoding = flag.Int("storage.local.chunk-encoding-version", 1, "Which chunk encoding version to use for newly created chunks. Currently supported is 0 (delta encoding) and 1 (double-delta encoding).")
-)
+var DefaultChunkEncoding = doubleDelta
 
 type chunkEncoding byte
+
+// String implements flag.Value.
+func (ce chunkEncoding) String() string {
+	return fmt.Sprintf("%d", ce)
+}
+
+// Set implements flag.Value.
+func (ce *chunkEncoding) Set(s string) error {
+	switch s {
+	case "0":
+		*ce = delta
+	case "1":
+		*ce = doubleDelta
+	default:
+		return fmt.Errorf("invalid chunk encoding: %s", s)
+	}
+	return nil
+}
 
 const (
 	delta chunkEncoding = iota
@@ -125,6 +140,20 @@ func (cd *chunkDesc) lastTime() clientmodel.Timestamp {
 		return cd.chunkLastTime
 	}
 	return cd.c.newIterator().lastTimestamp()
+}
+
+func (cd *chunkDesc) lastSamplePair() *metric.SamplePair {
+	cd.Lock()
+	defer cd.Unlock()
+
+	if cd.c == nil {
+		return nil
+	}
+	it := cd.c.newIterator()
+	return &metric.SamplePair{
+		Timestamp: it.lastTimestamp(),
+		Value:     it.lastSampleValue(),
+	}
 }
 
 func (cd *chunkDesc) isEvicted() bool {
@@ -244,7 +273,7 @@ func transcodeAndAdd(dst chunk, src chunk, s *metric.SamplePair) []chunk {
 // newChunk creates a new chunk according to the encoding set by the
 // defaultChunkEncoding flag.
 func newChunk() chunk {
-	return newChunkForEncoding(chunkEncoding(*defaultChunkEncoding))
+	return newChunkForEncoding(DefaultChunkEncoding)
 }
 
 func newChunkForEncoding(encoding chunkEncoding) chunk {

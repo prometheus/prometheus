@@ -14,128 +14,285 @@
 package web
 
 import (
-	"flag"
+	"encoding/json"
 	"fmt"
-	"html/template"
+	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	pprof_runtime "runtime/pprof"
+	template_text "text/template"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/route"
+	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web/api/legacy"
 	"github.com/prometheus/prometheus/web/api/v1"
-
-	"github.com/prometheus/prometheus/util/route"
 	"github.com/prometheus/prometheus/web/blob"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
-// Commandline flags.
-var (
-	listenAddress  = flag.String("web.listen-address", ":9090", "Address to listen on for the web interface, API, and telemetry.")
-	hostname       = flag.String("web.hostname", "", "Hostname on which the server is available.")
-	metricsPath    = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
-	useLocalAssets = flag.Bool("web.use-local-assets", false, "Read assets/templates from file instead of binary.")
-	userAssetsPath = flag.String("web.user-assets", "", "Path to static asset directory, available at /user.")
-	enableQuit     = flag.Bool("web.enable-remote-shutdown", false, "Enable remote service shutdown.")
-)
+// Handler serves various HTTP endpoints of the Prometheus server
+type Handler struct {
+	ruleManager *rules.Manager
+	queryEngine *promql.Engine
 
-// WebService handles the HTTP endpoints with the exception of /api.
-type WebService struct {
-	QuitChan chan struct{}
-	router   *route.Router
+	apiV1      *v1.API
+	apiLegacy  *legacy.API
+	federation *Federation
+
+	router     *route.Router
+	quitCh     chan struct{}
+	options    *Options
+	statusInfo *PrometheusStatus
+
+	muAlerts sync.Mutex
 }
 
-type WebServiceOptions struct {
-	PathPrefix      string
-	StatusHandler   *PrometheusStatusHandler
-	APILegacy       *legacy.API
-	APIv1           *v1.API
-	AlertsHandler   *AlertsHandler
-	ConsolesHandler *ConsolesHandler
-	GraphsHandler   *GraphsHandler
+// PrometheusStatus contains various information about the status
+// of the running Prometheus process.
+type PrometheusStatus struct {
+	Birth  time.Time
+	Flags  map[string]string
+	Config string
+
+	// A function that returns the current scrape targets pooled
+	// by their job name.
+	TargetPools func() map[string][]*retrieval.Target
+	// A function that returns all loaded rules.
+	Rules func() []rules.Rule
+
+	mu sync.RWMutex
 }
 
-// NewWebService returns a new WebService.
-func NewWebService(o *WebServiceOptions) *WebService {
+// ApplyConfig updates the status state as the new config requires.
+// Returns true on success.
+func (s *PrometheusStatus) ApplyConfig(conf *config.Config) bool {
+	s.mu.Lock()
+	s.Config = conf.String()
+	s.mu.Unlock()
+	return true
+}
+
+// Options for the web Handler.
+type Options struct {
+	PathPrefix           string
+	ListenAddress        string
+	Hostname             string
+	MetricsPath          string
+	UseLocalAssets       bool
+	UserAssetsPath       string
+	ConsoleTemplatesPath string
+	ConsoleLibrariesPath string
+	EnableQuit           bool
+}
+
+// New initializes a new web Handler.
+func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *PrometheusStatus, o *Options) *Handler {
 	router := route.New()
 
-	ws := &WebService{
-		router:   router,
-		QuitChan: make(chan struct{}),
+	h := &Handler{
+		router:     router,
+		quitCh:     make(chan struct{}),
+		options:    o,
+		statusInfo: status,
+
+		ruleManager: rm,
+		queryEngine: qe,
+
+		apiV1: &v1.API{
+			QueryEngine: qe,
+			Storage:     st,
+		},
+		apiLegacy: &legacy.API{
+			QueryEngine: qe,
+			Storage:     st,
+			Now:         clientmodel.Now,
+		},
+		federation: &Federation{
+			Storage: st,
+		},
 	}
 
 	if o.PathPrefix != "" {
-		// If the prefix is missing for the root path, append it.
+		// If the prefix is missing for the root path, prepend it.
 		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, o.PathPrefix, 302)
+			http.Redirect(w, r, o.PathPrefix, http.StatusFound)
 		})
 		router = router.WithPrefix(o.PathPrefix)
 	}
 
-	instr := prometheus.InstrumentHandler
+	instrf := prometheus.InstrumentHandlerFunc
+	instrh := prometheus.InstrumentHandler
 
-	router.Get("/", instr("status", o.StatusHandler))
-	router.Get("/alerts", instr("alerts", o.AlertsHandler))
-	router.Get("/graph", instr("graph", o.GraphsHandler))
-	router.Get("/heap", instr("heap", http.HandlerFunc(dumpHeap)))
+	router.Get("/", instrf("status", h.status))
+	router.Get("/alerts", instrf("alerts", h.alerts))
+	router.Get("/graph", instrf("graph", h.graph))
+	router.Get("/version", instrf("version", h.version))
 
-	router.Get(*metricsPath, prometheus.Handler().ServeHTTP)
+	router.Get("/heap", instrf("heap", dumpHeap))
 
-	o.APILegacy.Register(router.WithPrefix("/api"))
+	router.Get("/federate", instrh("federate", h.federation))
+	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
 
-	o.APIv1.Register(router.WithPrefix("/api/v1"))
+	h.apiLegacy.Register(router.WithPrefix("/api"))
+	h.apiV1.Register(router.WithPrefix("/api/v1"))
 
-	router.Get("/consoles/*filepath", instr("consoles", o.ConsolesHandler))
+	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
 
-	if *useLocalAssets {
-		router.Get("/static/*filepath", instr("static", route.FileServe("web/blob/static")))
+	if o.UseLocalAssets {
+		router.Get("/static/*filepath", instrf("static", route.FileServe("web/blob/static")))
 	} else {
-		router.Get("/static/*filepath", instr("static", blob.Handler{}))
+		router.Get("/static/*filepath", instrh("static", blob.Handler{}))
 	}
 
-	if *userAssetsPath != "" {
-		router.Get("/user/*filepath", instr("user", route.FileServe(*userAssetsPath)))
+	if o.UserAssetsPath != "" {
+		router.Get("/user/*filepath", instrf("user", route.FileServe(o.UserAssetsPath)))
 	}
 
-	if *enableQuit {
-		router.Post("/-/quit", ws.quitHandler)
+	if o.EnableQuit {
+		router.Post("/-/quit", h.quit)
 	}
 
-	return ws
+	return h
+}
+
+// Quit returns the receive-only quit channel.
+func (h *Handler) Quit() <-chan struct{} {
+	return h.quitCh
 }
 
 // Run serves the HTTP endpoints.
-func (ws *WebService) Run() {
-	log.Infof("Listening on %s", *listenAddress)
+func (h *Handler) Run() {
+	log.Infof("Listening on %s", h.options.ListenAddress)
 
 	// If we cannot bind to a port, retry after 30 seconds.
 	for {
-		err := http.ListenAndServe(*listenAddress, ws.router)
+		err := http.ListenAndServe(h.options.ListenAddress, h.router)
 		if err != nil {
-			log.Errorf("Could not listen on %s: %s", *listenAddress, err)
+			log.Errorf("Could not listen on %s: %s", h.options.ListenAddress, err)
 		}
 		time.Sleep(30 * time.Second)
 	}
 }
 
-func (ws *WebService) quitHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Requesting termination... Goodbye!")
+func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
+	h.muAlerts.Lock()
+	defer h.muAlerts.Unlock()
 
-	close(ws.QuitChan)
+	alerts := h.ruleManager.AlertingRules()
+	alertsSorter := byAlertStateSorter{alerts: alerts}
+	sort.Sort(alertsSorter)
+
+	alertStatus := AlertStatus{
+		AlertingRules: alertsSorter.alerts,
+		AlertStateToRowClass: map[rules.AlertState]string{
+			rules.StateInactive: "success",
+			rules.StatePending:  "warning",
+			rules.StateFiring:   "danger",
+		},
+	}
+	h.executeTemplate(w, "alerts", alertStatus)
 }
 
-func getTemplateFile(name string) (string, error) {
-	if *useLocalAssets {
+func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
+	ctx := route.Context(r)
+	name := route.Param(ctx, "filepath")
+
+	file, err := http.Dir(h.options.ConsoleTemplatesPath).Open(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	text, err := ioutil.ReadAll(file)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Provide URL parameters as a map for easy use. Advanced users may have need for
+	// parameters beyond the first, so provide RawParams.
+	rawParams, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	params := map[string]string{}
+	for k, v := range rawParams {
+		params[k] = v[0]
+	}
+	data := struct {
+		RawParams url.Values
+		Params    map[string]string
+		Path      string
+	}{
+		RawParams: rawParams,
+		Params:    params,
+		Path:      name,
+	}
+
+	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, clientmodel.Now(), h.queryEngine, h.options.PathPrefix)
+	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	result, err := tmpl.ExpandHTML(filenames)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	io.WriteString(w, result)
+}
+
+func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "graph", nil)
+}
+
+func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
+	h.statusInfo.mu.RLock()
+	defer h.statusInfo.mu.RUnlock()
+
+	h.executeTemplate(w, "status", struct {
+		Status *PrometheusStatus
+		Info   map[string]string
+	}{
+		Status: h.statusInfo,
+		Info:   version.Map,
+	})
+}
+
+func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
+	dec := json.NewEncoder(w)
+	if err := dec.Encode(version.Map); err != nil {
+		http.Error(w, fmt.Sprintf("error encoding JSON: %s", err), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Requesting termination... Goodbye!")
+	close(h.quitCh)
+}
+
+func (h *Handler) getTemplateFile(name string) (string, error) {
+	if h.options.UseLocalAssets {
 		file, err := ioutil.ReadFile(fmt.Sprintf("web/blob/templates/%s.html", name))
 		if err != nil {
 			log.Errorf("Could not read %s template: %s", name, err)
@@ -151,77 +308,85 @@ func getTemplateFile(name string) (string, error) {
 	return string(file), nil
 }
 
-func getConsoles(pathPrefix string) string {
-	if _, err := os.Stat(*consoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
-		return pathPrefix + "/consoles/index.html"
+func (h *Handler) getConsoles() string {
+	if _, err := os.Stat(h.options.ConsoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
+		return h.options.PathPrefix + "/consoles/index.html"
 	}
-	if *userAssetsPath != "" {
-		if _, err := os.Stat(*userAssetsPath + "/index.html"); !os.IsNotExist(err) {
-			return pathPrefix + "/user/index.html"
+	if h.options.UserAssetsPath != "" {
+		if _, err := os.Stat(h.options.UserAssetsPath + "/index.html"); !os.IsNotExist(err) {
+			return h.options.PathPrefix + "/user/index.html"
 		}
 	}
 	return ""
 }
 
-func getTemplate(name string, pathPrefix string) (*template.Template, error) {
-	t := template.New("_base")
-	var err error
+func (h *Handler) getTemplate(name string) (string, error) {
+	baseTmpl, err := h.getTemplateFile("_base")
+	if err != nil {
+		return "", fmt.Errorf("Error reading base template: %s", err)
+	}
+	pageTmpl, err := h.getTemplateFile(name)
+	if err != nil {
+		return "", fmt.Errorf("Error reading page template %s: %s", name, err)
+	}
+	return baseTmpl + pageTmpl, nil
+}
 
-	t.Funcs(template.FuncMap{
+func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {
+	text, err := h.getTemplate(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	tmpl := template.NewTemplateExpander(text, name, data, clientmodel.Now(), h.queryEngine, h.options.PathPrefix)
+	tmpl.Funcs(template_text.FuncMap{
 		"since":       time.Since,
-		"getConsoles": func() string { return getConsoles(pathPrefix) },
-		"pathPrefix":  func() string { return pathPrefix },
+		"getConsoles": h.getConsoles,
+		"pathPrefix":  func() string { return h.options.PathPrefix },
 		"stripLabels": func(lset clientmodel.LabelSet, labels ...clientmodel.LabelName) clientmodel.LabelSet {
 			for _, ln := range labels {
 				delete(lset, ln)
 			}
 			return lset
 		},
-		"globalURL": func(url string) string {
-			hostname, err := getHostname()
-			if err != nil {
-				log.Warnf("Couldn't get hostname: %s, returning target.URL()", err)
-				return url
+		"globalURL": func(u *url.URL) *url.URL {
+			for _, lhr := range localhostRepresentations {
+				if strings.HasPrefix(u.Host, lhr+":") {
+					u.Host = strings.Replace(u.Host, lhr+":", h.options.Hostname+":", 1)
+				}
 			}
-			for _, localhostRepresentation := range localhostRepresentations {
-				url = strings.Replace(url, "//"+localhostRepresentation, "//"+hostname, 1)
+			return u
+		},
+		"healthToClass": func(th retrieval.TargetHealth) string {
+			switch th {
+			case retrieval.HealthUnknown:
+				return "warning"
+			case retrieval.HealthGood:
+				return "success"
+			default:
+				return "danger"
 			}
-			return url
+		},
+		"alertStateToClass": func(as rules.AlertState) string {
+			switch as {
+			case rules.StateInactive:
+				return "success"
+			case rules.StatePending:
+				return "warning"
+			case rules.StateFiring:
+				return "danger"
+			default:
+				panic("unknown alert state")
+			}
 		},
 	})
 
-	file, err := getTemplateFile("_base")
+	result, err := tmpl.ExpandHTML(nil)
 	if err != nil {
-		log.Errorln("Could not read base template:", err)
-		return nil, err
-	}
-	t, err = t.Parse(file)
-	if err != nil {
-		log.Errorln("Could not parse base template:", err)
-	}
-
-	file, err = getTemplateFile(name)
-	if err != nil {
-		log.Error("Could not read template %s: %s", name, err)
-		return nil, err
-	}
-	t, err = t.Parse(file)
-	if err != nil {
-		log.Errorf("Could not parse template %s: %s", name, err)
-	}
-	return t, err
-}
-
-func executeTemplate(w http.ResponseWriter, name string, data interface{}, pathPrefix string) {
-	tpl, err := getTemplate(name, pathPrefix)
-	if err != nil {
-		log.Error("Error preparing layout template: ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	err = tpl.Execute(w, data)
-	if err != nil {
-		log.Error("Error executing template: ", err)
-	}
+	io.WriteString(w, result)
 }
 
 func dumpHeap(w http.ResponseWriter, r *http.Request) {
@@ -236,22 +401,24 @@ func dumpHeap(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Done")
 }
 
-// MustBuildServerURL returns the server URL and panics in case an error occurs.
-func MustBuildServerURL(pathPrefix string) string {
-	_, port, err := net.SplitHostPort(*listenAddress)
-	if err != nil {
-		panic(err)
-	}
-	hostname, err := getHostname()
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("http://%s:%s%s/", hostname, port, pathPrefix)
+// AlertStatus bundles alerting rules and the mapping of alert states to row classes.
+type AlertStatus struct {
+	AlertingRules        []*rules.AlertingRule
+	AlertStateToRowClass map[rules.AlertState]string
 }
 
-func getHostname() (string, error) {
-	if *hostname != "" {
-		return *hostname, nil
-	}
-	return os.Hostname()
+type byAlertStateSorter struct {
+	alerts []*rules.AlertingRule
+}
+
+func (s byAlertStateSorter) Len() int {
+	return len(s.alerts)
+}
+
+func (s byAlertStateSorter) Less(i, j int) bool {
+	return s.alerts[i].State() > s.alerts[j].State()
+}
+
+func (s byAlertStateSorter) Swap(i, j int) {
+	s.alerts[i], s.alerts[j] = s.alerts[j], s.alerts[i]
 }

@@ -5,19 +5,3 @@
 .alert_details {
   display: none;
 }
-
-.silence_children_link {
-  margin-left: 5px;
-}
-
-.alert_rule {
-  padding: 5px;
-  color: #333;
-  background-color: #ddd;
-  font-family: monospace;
-  font-weight: normal;
-}
-
-.alert_description {
-  padding: 8px 0 8px 0;
-}

@@ -316,7 +316,9 @@ func (p *persistence) isDirty() bool {
 // dirty during our runtime, there is no way back. If we were dirty from the
 // start, a clean-up might make us clean again.)
 func (p *persistence) setDirty(dirty bool) {
-	p.dirtyCounter.Inc()
+	if dirty {
+		p.dirtyCounter.Inc()
+	}
 	p.dirtyMtx.Lock()
 	defer p.dirtyMtx.Unlock()
 	if p.becameDirty {

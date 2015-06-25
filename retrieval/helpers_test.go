@@ -38,6 +38,11 @@ type collectResultAppender struct {
 }
 
 func (a *collectResultAppender) Append(s *clientmodel.Sample) {
+	for ln, lv := range s.Metric {
+		if len(lv) == 0 {
+			delete(s.Metric, ln)
+		}
+	}
 	a.result = append(a.result, s)
 }
 

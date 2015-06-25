@@ -112,6 +112,8 @@ type AlertingRule struct {
 	summary string
 	// More detailed alert description.
 	description string
+	// A reference to a runbook for the alert.
+	runbook string
 
 	// Protects the below.
 	mutex sync.Mutex
@@ -128,6 +130,7 @@ func NewAlertingRule(
 	labels clientmodel.LabelSet,
 	summary string,
 	description string,
+	runbook string,
 ) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
@@ -136,6 +139,7 @@ func NewAlertingRule(
 		labels:       labels,
 		summary:      summary,
 		description:  description,
+		runbook:      runbook,
 
 		activeAlerts: map[clientmodel.Fingerprint]*Alert{},
 	}
@@ -209,23 +213,40 @@ func (rule *AlertingRule) eval(timestamp clientmodel.Timestamp, engine *promql.E
 }
 
 func (rule *AlertingRule) String() string {
-	return fmt.Sprintf("ALERT %s IF %s FOR %s WITH %s", rule.name, rule.vector, strutil.DurationToString(rule.holdDuration), rule.labels)
+	s := fmt.Sprintf("ALERT %s", rule.name)
+	s += fmt.Sprintf("\n\tIF %s", rule.vector)
+	if rule.holdDuration > 0 {
+		s += fmt.Sprintf("\n\tFOR %s", strutil.DurationToString(rule.holdDuration))
+	}
+	if len(rule.labels) > 0 {
+		s += fmt.Sprintf("\n\tWITH %s", rule.labels)
+	}
+	s += fmt.Sprintf("\n\tSUMMARY %q", rule.summary)
+	s += fmt.Sprintf("\n\tDESCRIPTION %q", rule.description)
+	s += fmt.Sprintf("\n\tRUNBOOK %q", rule.runbook)
+	return s
 }
 
-// HTMLSnippet returns an HTML snippet representing this alerting rule.
+// HTMLSnippet returns an HTML snippet representing this alerting rule. The
+// resulting snippet is expected to be presented in a <pre> element, so that
+// line breaks and other returned whitespace is respected.
 func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	alertMetric := clientmodel.Metric{
 		clientmodel.MetricNameLabel: alertMetricName,
 		alertNameLabel:              clientmodel.LabelValue(rule.name),
 	}
-	return template.HTML(fmt.Sprintf(
-		`ALERT <a href="%s">%s</a> IF <a href="%s">%s</a> FOR %s WITH %s`,
-		pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()),
-		rule.name,
-		pathPrefix+strutil.GraphLinkForExpression(rule.vector.String()),
-		rule.vector,
-		strutil.DurationToString(rule.holdDuration),
-		rule.labels))
+	s := fmt.Sprintf("ALERT <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()), rule.name)
+	s += fmt.Sprintf("\n  IF <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(rule.vector.String()), rule.vector)
+	if rule.holdDuration > 0 {
+		s += fmt.Sprintf("\n  FOR %s", strutil.DurationToString(rule.holdDuration))
+	}
+	if len(rule.labels) > 0 {
+		s += fmt.Sprintf("\n  WITH %s", rule.labels)
+	}
+	s += fmt.Sprintf("\n  SUMMARY %q", rule.summary)
+	s += fmt.Sprintf("\n  DESCRIPTION %q", rule.description)
+	s += fmt.Sprintf("\n  RUNBOOK %q", rule.runbook)
+	return template.HTML(s)
 }
 
 // State returns the "maximum" state: firing > pending > inactive.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -23,13 +24,12 @@ var (
 
 // Load parses the YAML input s into a Config.
 func Load(s string) (*Config, error) {
-	cfg := &Config{
-		original: s,
-	}
+	cfg := &Config{}
 	err := yaml.Unmarshal([]byte(s), cfg)
 	if err != nil {
 		return nil, err
 	}
+	cfg.original = s
 	return cfg, nil
 }
 
@@ -62,6 +62,7 @@ var (
 		// configured globals.
 		MetricsPath: "/metrics",
 		Scheme:      "http",
+		HonorLabels: false,
 	}
 
 	// The default Relabel configuration.
@@ -84,6 +85,11 @@ var (
 	DefaultConsulSDConfig = ConsulSDConfig{
 		TagSeparator: ",",
 		Scheme:       "http",
+	}
+
+	// The default Serverset SD configuration.
+	DefaultServersetSDConfig = ServersetSDConfig{
+		Timeout: Duration(10 * time.Second),
 	}
 )
 
@@ -185,6 +191,10 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type ScrapeConfig struct {
 	// The job name to which the job label is set by default.
 	JobName string `yaml:"job_name"`
+	// Indicator whether the scraped metrics should remain unmodified.
+	HonorLabels bool `yaml:"honor_labels,omitempty"`
+	// A set of query parameters with which the target is scraped.
+	Params url.Values `yaml:"params,omitempty"`
 	// How frequently to scrape the targets of this scrape config.
 	ScrapeInterval Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
@@ -204,8 +214,13 @@ type ScrapeConfig struct {
 	FileSDConfigs []*FileSDConfig `yaml:"file_sd_configs,omitempty"`
 	// List of Consul service discovery configurations.
 	ConsulSDConfigs []*ConsulSDConfig `yaml:"consul_sd_configs,omitempty"`
-	// List of relabel configurations.
+	// List of Serverset service discovery configurations.
+	ServersetSDConfigs []*ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
+
+	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
+	// List of metric relabel configurations.
+	MetricRelabelConfigs []*RelabelConfig `yaml:"metric_relabel_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -374,12 +389,12 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // ConsulSDConfig is the configuration for Consul service discovery.
 type ConsulSDConfig struct {
 	Server       string `yaml:"server"`
-	Token        string `yaml:"token"`
-	Datacenter   string `yaml:"datacenter"`
-	TagSeparator string `yaml:"tag_separator"`
-	Scheme       string `yaml:"scheme"`
-	Username     string `yaml:"username"`
-	Password     string `yaml:"password"`
+	Token        string `yaml:"token,omitempty"`
+	Datacenter   string `yaml:"datacenter,omitempty"`
+	TagSeparator string `yaml:"tag_separator,omitempty"`
+	Scheme       string `yaml:"scheme,omitempty"`
+	Username     string `yaml:"username,omitempty"`
+	Password     string `yaml:"password,omitempty"`
 	// The list of services for which targets are discovered.
 	Services []string `yaml:"services"`
 
@@ -404,6 +419,35 @@ func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	return checkOverflow(c.XXX, "consul_sd_config")
 }
 
+// ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
+type ServersetSDConfig struct {
+	Servers []string `yaml:"servers"`
+	Paths   []string `yaml:"paths"`
+	Timeout Duration `yaml:"timeout,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultServersetSDConfig
+	type plain ServersetSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("serverset SD config must contain at least one Zookeeper server")
+	}
+	if len(c.Paths) == 0 {
+		return fmt.Errorf("serverset SD config must contain at least one path")
+	}
+	for _, path := range c.Paths {
+		if !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
+		}
+	}
+	return nil
+}
+
 // RelabelAction is the action to be performed on relabeling.
 type RelabelAction string
 
@@ -411,9 +455,11 @@ const (
 	// Performs a regex replacement.
 	RelabelReplace RelabelAction = "replace"
 	// Drops targets for which the input does not match the regex.
-	RelabelKeep = "keep"
+	RelabelKeep RelabelAction = "keep"
 	// Drops targets for which the input does match the regex.
-	RelabelDrop = "drop"
+	RelabelDrop RelabelAction = "drop"
+	// Sets a label to the modulus of a hash of labels.
+	RelabelHashMod RelabelAction = "hashmod"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -423,7 +469,7 @@ func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch act := RelabelAction(strings.ToLower(s)); act {
-	case RelabelReplace, RelabelKeep, RelabelDrop:
+	case RelabelReplace, RelabelKeep, RelabelDrop, RelabelHashMod:
 		*a = act
 		return nil
 	}
@@ -438,7 +484,9 @@ type RelabelConfig struct {
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
-	Regex *Regexp `yaml:"regex"`
+	Regex *Regexp `yaml:"regex",omitempty`
+	// Modulus to take of the hash of concatenated values from the source labels.
+	Modulus uint64 `yaml:"modulus,omitempty"`
 	// The label to which the resulting string is written in a replacement.
 	TargetLabel clientmodel.LabelName `yaml:"target_label,omitempty"`
 	// Replacement is the regex replacement pattern to be used.
@@ -457,8 +505,11 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if c.Regex == nil {
+	if c.Regex == nil && c.Action != RelabelHashMod {
 		return fmt.Errorf("relabel configuration requires a regular expression")
+	}
+	if c.Modulus == 0 && c.Action == RelabelHashMod {
+		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
 	return checkOverflow(c.XXX, "relabel_config")
 }
@@ -483,8 +534,11 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
-func (re Regexp) MarshalYAML() (interface{}, error) {
-	return re.String(), nil
+func (re *Regexp) MarshalYAML() (interface{}, error) {
+	if re != nil {
+		return re.String(), nil
+	}
+	return nil, nil
 }
 
 // Duration encapsulates a time.Duration and makes it YAML marshallable.

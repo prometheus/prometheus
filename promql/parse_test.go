@@ -588,6 +588,22 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "vector selector must contain label matchers or metric name",
 	}, {
+		input:  `{x=""}`,
+		fail:   true,
+		errMsg: "vector selector must contain at least one non-empty matcher",
+	}, {
+		input:  `{x=~".*"}`,
+		fail:   true,
+		errMsg: "vector selector must contain at least one non-empty matcher",
+	}, {
+		input:  `{x!~".+"}`,
+		fail:   true,
+		errMsg: "vector selector must contain at least one non-empty matcher",
+	}, {
+		input:  `{x!="a"}`,
+		fail:   true,
+		errMsg: "vector selector must contain at least one non-empty matcher",
+	}, {
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
 		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",
@@ -1016,9 +1032,10 @@ var testStatement = []struct {
 
 			foo = bar{label1="value1"}
 
-			ALERT BazAlert IF foo > 10 WITH {}
-			  SUMMARY "Baz"
+			ALERT BazAlert IF foo > 10
 			  DESCRIPTION "BazAlert"
+			  RUNBOOK     "http://my.url"
+			  SUMMARY     "Baz"
 		`,
 		expected: Statements{
 			&RecordStmt{
@@ -1084,6 +1101,7 @@ var testStatement = []struct {
 				Labels:      clientmodel.LabelSet{},
 				Summary:     "Baz",
 				Description: "BazAlert",
+				Runbook:     "http://my.url",
 			},
 		},
 	}, {

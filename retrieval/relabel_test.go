@@ -151,6 +151,28 @@ func TestRelabel(t *testing.T) {
 				"a": "boo",
 			},
 		},
+		{
+			input: clientmodel.LabelSet{
+				"a": "foo",
+				"b": "bar",
+				"c": "baz",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: clientmodel.LabelNames{"c"},
+					TargetLabel:  clientmodel.LabelName("d"),
+					Separator:    ";",
+					Action:       config.RelabelHashMod,
+					Modulus:      1000,
+				},
+			},
+			output: clientmodel.LabelSet{
+				"a": "foo",
+				"b": "bar",
+				"c": "baz",
+				"d": "58",
+			},
+		},
 	}
 
 	for i, test := range tests {

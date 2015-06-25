@@ -89,7 +89,7 @@ func TestClient(t *testing.T) {
 	))
 	defer server.Close()
 
-	c := NewClient(server.URL, time.Minute)
+	c := NewClient(server.URL, time.Minute, "prometheus", "default")
 
 	if err := c.Store(samples); err != nil {
 		t.Fatalf("Error sending samples: %s", err)

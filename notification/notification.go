@@ -16,7 +16,6 @@ package notification
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -42,10 +41,6 @@ const (
 	subsystem = "notifications"
 )
 
-var (
-	deadline = flag.Duration("alertmanager.http-deadline", 10*time.Second, "Alert manager HTTP API timeout.")
-)
-
 // NotificationReq is a request for sending a notification to the alert manager
 // for a single alert vector element.
 type NotificationReq struct {
@@ -53,6 +48,8 @@ type NotificationReq struct {
 	Summary string
 	// Longer alert description. May contain text/template-style interpolations.
 	Description string
+	// A reference to the runbook for the alert.
+	Runbook string
 	// Labels associated with this alert notification, including alert name.
 	Labels clientmodel.LabelSet
 	// Current value of alert
@@ -93,13 +90,20 @@ type NotificationHandler struct {
 	stopped chan struct{}
 }
 
-// NewNotificationHandler constructs a new NotificationHandler.
-func NewNotificationHandler(alertmanagerURL string, notificationQueueCapacity int) *NotificationHandler {
-	return &NotificationHandler{
-		alertmanagerURL:      strings.TrimRight(alertmanagerURL, "/"),
-		pendingNotifications: make(chan NotificationReqs, notificationQueueCapacity),
+// NotificationHandlerOptions are the configurable parameters of a NotificationHandler.
+type NotificationHandlerOptions struct {
+	AlertmanagerURL string
+	QueueCapacity   int
+	Deadline        time.Duration
+}
 
-		httpClient: httputil.NewDeadlineClient(*deadline),
+// NewNotificationHandler constructs a new NotificationHandler.
+func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler {
+	return &NotificationHandler{
+		alertmanagerURL:      strings.TrimRight(o.AlertmanagerURL, "/"),
+		pendingNotifications: make(chan NotificationReqs, o.QueueCapacity),
+
+		httpClient: httputil.NewDeadlineClient(o.Deadline),
 
 		notificationLatency: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace: namespace,
@@ -132,7 +136,7 @@ func NewNotificationHandler(alertmanagerURL string, notificationQueueCapacity in
 				nil, nil,
 			),
 			prometheus.GaugeValue,
-			float64(notificationQueueCapacity),
+			float64(o.QueueCapacity),
 		),
 		stopped: make(chan struct{}),
 	}
@@ -145,6 +149,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 		alerts = append(alerts, map[string]interface{}{
 			"summary":     req.Summary,
 			"description": req.Description,
+			"runbook":     req.Runbook,
 			"labels":      req.Labels,
 			"payload": map[string]interface{}{
 				"value":        req.Value,

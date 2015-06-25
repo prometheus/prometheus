@@ -180,8 +180,8 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 	for {
 		catalog := cd.client.Catalog()
 		srvs, meta, err := catalog.Services(&consul.QueryOptions{
-			RequireConsistent: false,
-			WaitIndex:         lastIndex,
+			WaitIndex: lastIndex,
+			WaitTime:  consulWatchTimeout,
 		})
 		if err != nil {
 			log.Errorf("Error refreshing service list: %s", err)
@@ -197,6 +197,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 		cd.mu.Lock()
 		select {
 		case <-cd.srvsDone:
+			cd.mu.Unlock()
 			return
 		default:
 			// Continue.
@@ -258,6 +259,10 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 
 		for _, node := range nodes {
 			addr := fmt.Sprintf("%s:%d", node.Address, node.ServicePort)
+			// Use ServiceAddress instead of Address if not empty.
+			if len(node.ServiceAddress) > 0 {
+				addr = fmt.Sprintf("%s:%d", node.ServiceAddress, node.ServicePort)
+			}
 			// We surround the separated list with the separator as well. This way regular expressions
 			// in relabeling rules don't have to consider tag positions.
 			tags := cd.tagSeparator + strings.Join(node.ServiceTags, cd.tagSeparator) + cd.tagSeparator
@@ -268,9 +273,11 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 				ConsulTagsLabel:          clientmodel.LabelValue(tags),
 			})
 		}
+
 		cd.mu.Lock()
 		select {
 		case <-srv.done:
+			cd.mu.Unlock()
 			return
 		default:
 			// Continue.

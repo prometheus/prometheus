@@ -31,14 +31,21 @@ type Storage interface {
 	// fingerprint need to be submitted in chronological order, from oldest
 	// to newest. When Append has returned, the appended sample might not be
 	// queryable immediately. (Use WaitForIndexing to wait for complete
-	// processing.)
+	// processing.) The implementation might remove labels with empty value
+	// from the provided Sample as those labels are considered equivalent to
+	// a label not present at all.
 	Append(*clientmodel.Sample)
 	// NewPreloader returns a new Preloader which allows preloading and pinning
 	// series data into memory for use within a query.
 	NewPreloader() Preloader
-	// Get all of the metric fingerprints that are associated with the
-	// provided label matchers.
-	FingerprintsForLabelMatchers(metric.LabelMatchers) clientmodel.Fingerprints
+	// MetricsForLabelMatchers returns the metrics from storage that satisfy the given
+	// label matchers. At least one label matcher must be specified that does not
+	// match the empty string.
+	MetricsForLabelMatchers(...*metric.LabelMatcher) map[clientmodel.Fingerprint]clientmodel.COWMetric
+	// LastSamplePairForFingerprint returns the last sample pair for the
+	// provided fingerprint. If the respective time series does not exist or
+	// has an evicted head chunk, nil is returned.
+	LastSamplePairForFingerprint(clientmodel.Fingerprint) *metric.SamplePair
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(clientmodel.LabelName) clientmodel.LabelValues
 	// Get the metric associated with the provided fingerprint.

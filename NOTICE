@@ -66,3 +66,8 @@ gosnappy - a fork of code.google.com/p/snappy-go
 https://github.com/syndtr/gosnappy
 Copyright 2011 The Snappy-Go Authors
 See https://github.com/syndtr/gosnappy/blob/master/LICENSE for license details.
+
+go-zookeeper - Native ZooKeeper client for Go
+https://github.com/samuel/go-zookeeper
+Copyright (c) 2013, Samuel Stauffer <samuel@descolada.com>
+See https://github.com/samuel/go-zookeeper/blob/master/LICENSE for license details.

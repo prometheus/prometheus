@@ -16,6 +16,7 @@ rule_files:
 scrape_configs:
 - job_name: prometheus
 
+  honor_labels: true
   # scrape_interval is defined by the configured global (15s).
   # scrape_timeout is defined by the global default (10s).
 
@@ -70,7 +71,18 @@ scrape_configs:
   - source_labels: [job]
     regex:         (.*)some-[regex]$
     action:        drop
+  - source_labels: [__address__]
+    modulus:       8
+    target_label:  __hash
+    action:        hashmod
+  - source_labels: [__hash]
+    regex:         ^1$
+    action:        keep
 
+  metric_relabel_configs:
+  - source_labels: [__name__]
+    regex:         expensive_metric.*$
+    action:        drop
 
 - job_name: service-y
 

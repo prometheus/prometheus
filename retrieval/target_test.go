@@ -20,12 +20,14 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -42,6 +44,91 @@ func TestBaseLabels(t *testing.T) {
 	}
 }
 
+func TestOverwriteLabels(t *testing.T) {
+	type test struct {
+		metric       string
+		resultNormal clientmodel.Metric
+		resultHonor  clientmodel.Metric
+	}
+	var tests []test
+
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				for _, test := range tests {
+					w.Write([]byte(test.metric))
+					w.Write([]byte(" 1\n"))
+				}
+			},
+		),
+	)
+	defer server.Close()
+	addr := clientmodel.LabelValue(strings.Split(server.URL, "://")[1])
+
+	tests = []test{
+		{
+			metric: `foo{}`,
+			resultNormal: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+				clientmodel.InstanceLabel:   addr,
+			},
+			resultHonor: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+				clientmodel.InstanceLabel:   addr,
+			},
+		},
+		{
+			metric: `foo{instance=""}`,
+			resultNormal: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+				clientmodel.InstanceLabel:   addr,
+			},
+			resultHonor: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+			},
+		},
+		{
+			metric: `foo{instance="other_instance"}`,
+			resultNormal: clientmodel.Metric{
+				clientmodel.MetricNameLabel:                                 "foo",
+				clientmodel.InstanceLabel:                                   addr,
+				clientmodel.ExportedLabelPrefix + clientmodel.InstanceLabel: "other_instance",
+			},
+			resultHonor: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "foo",
+				clientmodel.InstanceLabel:   "other_instance",
+			},
+		},
+	}
+
+	target := newTestTarget(server.URL, 10*time.Millisecond, nil)
+
+	target.honorLabels = false
+	app := &collectResultAppender{}
+	if err := target.scrape(app); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, test := range tests {
+		if !reflect.DeepEqual(app.result[i].Metric, test.resultNormal) {
+			t.Errorf("Error comparing %q:\nExpected:\n%s\nGot:\n%s\n", test.metric, test.resultNormal, app.result[i].Metric)
+		}
+	}
+
+	target.honorLabels = true
+	app = &collectResultAppender{}
+	if err := target.scrape(app); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, test := range tests {
+		if !reflect.DeepEqual(app.result[i].Metric, test.resultHonor) {
+			t.Errorf("Error comparing %q:\nExpected:\n%s\nGot:\n%s\n", test.metric, test.resultHonor, app.result[i].Metric)
+		}
+
+	}
+}
 func TestTargetScrapeUpdatesState(t *testing.T) {
 	testTarget := newTestTarget("bad schema", 0, nil)
 
@@ -75,6 +162,77 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	if testTarget.status.LastError() != errIngestChannelFull {
 		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.status.LastError())
 	}
+}
+
+func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte("test_metric_drop 0\n"))
+				w.Write([]byte("test_metric_relabel 1\n"))
+			},
+		),
+	)
+	defer server.Close()
+	testTarget := newTestTarget(server.URL, 10*time.Millisecond, clientmodel.LabelSet{})
+	testTarget.metricRelabelConfigs = []*config.RelabelConfig{
+		{
+			SourceLabels: clientmodel.LabelNames{"__name__"},
+			Regex:        &config.Regexp{*regexp.MustCompile(".*drop.*")},
+			Action:       config.RelabelDrop,
+		},
+		{
+			SourceLabels: clientmodel.LabelNames{"__name__"},
+			Regex:        &config.Regexp{*regexp.MustCompile(".*(relabel|up).*")},
+			TargetLabel:  "foo",
+			Replacement:  "bar",
+			Action:       config.RelabelReplace,
+		},
+	}
+
+	appender := &collectResultAppender{}
+	testTarget.scrape(appender)
+
+	// Remove variables part of result.
+	for _, sample := range appender.result {
+		sample.Timestamp = 0
+		sample.Value = 0
+	}
+
+	expected := []*clientmodel.Sample{
+		{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "test_metric_relabel",
+				"foo": "bar",
+				clientmodel.InstanceLabel: clientmodel.LabelValue(testTarget.url.Host),
+			},
+			Timestamp: 0,
+			Value:     0,
+		},
+		// The metrics about the scrape are not affected.
+		{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: scrapeHealthMetricName,
+				clientmodel.InstanceLabel:   clientmodel.LabelValue(testTarget.url.Host),
+			},
+			Timestamp: 0,
+			Value:     0,
+		},
+		{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: scrapeDurationMetricName,
+				clientmodel.InstanceLabel:   clientmodel.LabelValue(testTarget.url.Host),
+			},
+			Timestamp: 0,
+			Value:     0,
+		},
+	}
+
+	if !appender.result.Equal(expected) {
+		t.Fatalf("Expected and actual samples not equal. Expected: %s, actual: %s", expected, appender.result)
+	}
+
 }
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
@@ -135,7 +293,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	)
 	defer server.Close()
 
-	testTarget := newTestTarget(server.URL, 25*time.Millisecond, clientmodel.LabelSet{})
+	testTarget := newTestTarget(server.URL, 50*time.Millisecond, clientmodel.LabelSet{})
 
 	appender := nopAppender{}
 
@@ -146,7 +304,7 @@ func TestTargetScrapeTimeout(t *testing.T) {
 	}
 
 	// let the deadline lapse
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(55 * time.Millisecond)
 
 	// now scrape again
 	signal <- true

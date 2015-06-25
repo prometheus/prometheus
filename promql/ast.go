@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -61,6 +62,7 @@ type AlertStmt struct {
 	Labels      clientmodel.LabelSet
 	Summary     string
 	Description string
+	Runbook     string
 }
 
 // EvalStmt holds an expression and information on the range it should
@@ -96,6 +98,11 @@ const (
 	ExprMatrix
 	ExprString
 )
+
+// MarshalJSON implements json.Marshaler.
+func (et ExprType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(et.String())
+}
 
 func (e ExprType) String() string {
 	switch e {
@@ -161,8 +168,6 @@ type MatrixSelector struct {
 	// The series iterators are populated at query analysis time.
 	iterators map[clientmodel.Fingerprint]local.SeriesIterator
 	metrics   map[clientmodel.Fingerprint]clientmodel.COWMetric
-	// Fingerprints are populated from label matchers at query analysis time.
-	fingerprints clientmodel.Fingerprints
 }
 
 // NumberLiteral represents a number.
@@ -197,8 +202,6 @@ type VectorSelector struct {
 	// The series iterators are populated at query analysis time.
 	iterators map[clientmodel.Fingerprint]local.SeriesIterator
 	metrics   map[clientmodel.Fingerprint]clientmodel.COWMetric
-	// Fingerprints are populated from label matchers at query analysis time.
-	fingerprints clientmodel.Fingerprints
 }
 
 func (e *AggregateExpr) Type() ExprType  { return ExprVector }

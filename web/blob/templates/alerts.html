@@ -16,9 +16,9 @@
       </tr>
       <tr class="alert_details">
         <td>
-          <div class="alert_description">
-            <span class="label alert_rule">{{.HTMLSnippet pathPrefix}}</span>
-            <a href="#" class="silence_children_link">Silence All Children&hellip;</a>
+          <div>
+            <pre><code>{{.HTMLSnippet pathPrefix}}</code></pre>
+            <a href="#" class="silence_children_link">Silence all instances of this alert&hellip;</a>
           </div>
           {{if $activeAlerts}}
           <table class="table table-bordered table-hover table-condensed alert_elements_table">
@@ -30,12 +30,16 @@
               <th>Silence</th>
             </tr>
             {{range $activeAlerts}}
-            <tr class="{{index $alertStateToRowClass .State}}"> 
-              <td>{{.Labels}}</td>
-              <td>{{.State}}</td>
-              <td>{{.ActiveSince}}</td>
+            <tr>
+              <td>
+                {{range $label, $value := .Labels}}
+                  <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                {{end}}
+              </td>
+              <td><span class="alert alert-{{ .State | alertStateToClass }} state_indicator text-uppercase">{{.State}}</span></td>
+              <td>{{.ActiveSince.Time.UTC}}</td>
               <td>{{.Value}}</td>
-              <td><a href="#" class="silence_alert_link">Silence&hellip;</button><td>
+              <td><a href="#" class="silence_alert_link">Silence&hellip;</a></td>
             </tr>
             {{end}}
           </table>

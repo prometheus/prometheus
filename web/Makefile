@@ -19,6 +19,7 @@ SUFFIXES:
 
 blob/files.go: go-bindata $(shell find blob/templates/ blob/static/ -type f)
 	$(GO) generate ./blob
+	$(GOFMT) -w -s=true blob/files.go
 
 go-bindata:
 	$(GO) get github.com/jteeuwen/go-bindata/...

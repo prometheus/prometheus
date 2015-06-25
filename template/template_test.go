@@ -135,9 +135,14 @@ func TestTemplateExpansion(t *testing.T) {
 		},
 		{
 			// Humanize* Inf and NaN.
-			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{ end }}",
+			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
 			input:  []float64{math.Inf(1), math.Inf(-1), math.NaN()},
-			output: "+Inf:+Inf:+Inf:-Inf:-Inf:-Inf:NaN:NaN:NaN:",
+			output: "+Inf:+Inf:+Inf:+Inf:-Inf:-Inf:-Inf:-Inf:NaN:NaN:NaN:NaN:",
+		},
+		{
+			// HumanizeTimestamp - clientmodel.SampleValue input.
+			text:   "{{ 1435065584.128 | humanizeTimestamp }}",
+			output: "2015-06-23 13:19:44.128 +0000 UTC",
 		},
 		{
 			// Title.
@@ -185,7 +190,7 @@ func TestTemplateExpansion(t *testing.T) {
 	})
 	storage.WaitForIndexing()
 
-	engine := promql.NewEngine(storage)
+	engine := promql.NewEngine(storage, nil)
 
 	for i, s := range scenarios {
 		var result string

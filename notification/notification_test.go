@@ -43,10 +43,15 @@ type testNotificationScenario struct {
 	description string
 	summary     string
 	message     string
+	runbook     string
 }
 
 func (s *testNotificationScenario) test(i int, t *testing.T) {
-	h := NewNotificationHandler("alertmanager_url", 0)
+	h := NewNotificationHandler(&NotificationHandlerOptions{
+		AlertmanagerURL: "alertmanager_url",
+		QueueCapacity:   0,
+		Deadline:        10 * time.Second,
+	})
 	defer h.Stop()
 
 	receivedPost := make(chan bool, 1)
@@ -59,6 +64,7 @@ func (s *testNotificationScenario) test(i int, t *testing.T) {
 		{
 			Summary:     s.summary,
 			Description: s.description,
+			Runbook:     s.runbook,
 			Labels: clientmodel.LabelSet{
 				clientmodel.LabelName("instance"): clientmodel.LabelValue("testinstance"),
 			},
@@ -81,7 +87,8 @@ func TestNotificationHandler(t *testing.T) {
 			// Correct message.
 			summary:     "Summary",
 			description: "Description",
-			message:     `[{"description":"Description","labels":{"instance":"testinstance"},"payload":{"activeSince":"0001-01-01T00:00:00Z","alertingRule":"Test rule string","generatorURL":"prometheus_url","value":"0.3333333333333333"},"summary":"Summary"}]`,
+			runbook:     "Runbook",
+			message:     `[{"description":"Description","labels":{"instance":"testinstance"},"payload":{"activeSince":"0001-01-01T00:00:00Z","alertingRule":"Test rule string","generatorURL":"prometheus_url","value":"0.3333333333333333"},"runbook":"Runbook","summary":"Summary"}]`,
 		},
 	}
 

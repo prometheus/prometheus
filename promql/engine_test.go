@@ -13,7 +13,7 @@ var noop = testStmt(func(context.Context) error {
 })
 
 func TestQueryConcurreny(t *testing.T) {
-	engine := NewEngine(nil)
+	engine := NewEngine(nil, nil)
 	defer engine.Stop()
 
 	block := make(chan struct{})
@@ -24,7 +24,7 @@ func TestQueryConcurreny(t *testing.T) {
 		return nil
 	})
 
-	for i := 0; i < *maxConcurrentQueries; i++ {
+	for i := 0; i < DefaultEngineOptions.MaxConcurrentQueries; i++ {
 		q := engine.newTestQuery(f1)
 		go q.Exec()
 		select {
@@ -56,19 +56,16 @@ func TestQueryConcurreny(t *testing.T) {
 	}
 
 	// Terminate remaining queries.
-	for i := 0; i < *maxConcurrentQueries; i++ {
+	for i := 0; i < DefaultEngineOptions.MaxConcurrentQueries; i++ {
 		block <- struct{}{}
 	}
 }
 
 func TestQueryTimeout(t *testing.T) {
-	*defaultQueryTimeout = 5 * time.Millisecond
-	defer func() {
-		// Restore default query timeout
-		*defaultQueryTimeout = 2 * time.Minute
-	}()
-
-	engine := NewEngine(nil)
+	engine := NewEngine(nil, &EngineOptions{
+		Timeout:              5 * time.Millisecond,
+		MaxConcurrentQueries: 20,
+	})
 	defer engine.Stop()
 
 	f1 := testStmt(func(context.Context) error {
@@ -90,7 +87,7 @@ func TestQueryTimeout(t *testing.T) {
 }
 
 func TestQueryCancel(t *testing.T) {
-	engine := NewEngine(nil)
+	engine := NewEngine(nil, nil)
 	defer engine.Stop()
 
 	// As for timeouts, cancellation is only checked at designated points. We ensure
@@ -132,7 +129,7 @@ func TestQueryCancel(t *testing.T) {
 }
 
 func TestEngineShutdown(t *testing.T) {
-	engine := NewEngine(nil)
+	engine := NewEngine(nil, nil)
 
 	handlerExecutions := 0
 	// Shutdown engine on first handler execution. Should handler execution ever become

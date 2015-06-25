@@ -48,11 +48,7 @@ In most circumstances, the following should work:
     $ ./prometheus -config.file=documentation/examples/prometheus.yml
 
 The above requires a number of common tools to be installed, namely
-`curl`, `git`, `gzip`, `hg` (Mercurial CLI), `sed`, `xxd`. Should you
-need to change any of the protocol buffer definition files
-(`*.proto`), you also need the protocol buffer compiler
-[`protoc`](http://code.google.com/p/protobuf/), v2.5.0 or higher,
-in your `$PATH`.
+`curl`, `git`, `gzip`, `hg` (Mercurial CLI).
 
 Everything else will be downloaded and installed into a staging
 environment in the `.build` sub-directory. That includes a Go
@@ -67,14 +63,11 @@ The `Makefile` offers a number of useful targets. Some examples:
 ### Use your own Go development environment
 
 Using your own Go development environment with the usual tooling is
-possible, too, but you have to take care of various generated files
-(usually by running `make` in the respective sub-directory):
+possible, too. After making changes to the files in `web/static` you
+have to run `make` in the `web/` directory. This generates the respective
+`web/blob/files.go` file which embedds the static assets in the compiled binary.
 
-* Compiling the protocol buffer definitions in `config` (only if you have changed them).
-* Generating the parser and lexer code in `rules` (only if you have changed `parser.y` or `lexer.l`).
-* The `files.go` blob in `web/blob`, which embeds the static web content into the binary.
-
-Furthermore, the build info (see `build_info.go`) will not be
+Furthermore, the version information (see `version/info.go`) will not be
 populated if you simply run `go build`. You have to pass in command
 line flags as defined in `Makefile.INCLUDE` (see `${BUILDFLAGS}`) to
 do that.

@@ -3,10 +3,9 @@
 *.a[568o]
 *.cgo*.c
 *.cgo*.go
-*.conf
-*.yaml
-*.yml
-*.rules
+/*.yaml
+/*.yml
+/*.rules
 *.exe
 *.orig
 *.pyc
@@ -23,13 +22,13 @@
 ._*
 .nfs.*
 /.git
-/.gitignore
 [568a].out
 _cgo_*
 core
 
 *-stamp
 /prometheus
+/promtool
 benchmark.txt
 /data
 
