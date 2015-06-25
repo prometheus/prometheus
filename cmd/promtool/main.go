@@ -145,7 +145,7 @@ func checkRules(t cli.Term, filename string) (int, error) {
 var versionInfoTmpl = `
 prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
   build user:       {{.buildUser}}
-  build date:       {{.builDate}}
+  build date:       {{.buildDate}}
   go version:       {{.goVersion}}
 `
 
