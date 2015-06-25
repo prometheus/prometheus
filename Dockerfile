@@ -9,15 +9,15 @@ RUN apk add --update -t build-deps go git mercurial \
     && apk add -u musl && rm -rf /var/cache/apk/* \
     && cd /go/src/$REPO_PATH \
     && cp -a ./Godeps/_workspace/* "$GOPATH" \
-    && go build -ldflags " \
-            -X $REPO_PATH/version.Version       $(cat version/VERSION) \
-            -X $REPO_PATH/version.Revision      $(git rev-parse --short HEAD) \
-            -X $REPO_PATH/version.Branch        $(git rev-parse --abbrev-ref HEAD) \
-            -X $REPO_PATH/version.BuildUser     root@$(hostname -f) \
-            -X $REPO_PATH/version.BuildDate     $(date +%Y%m%d-%H:%M:%S) \
-            -X $REPO_PATH/version.GoVersion     $(go version | awk '{print substr($3,3)}') \
-        " -o /bin/prometheus $REPO_PATH/cmd/prometheus \
-    && cd tools/rule_checker && go build -o /bin/rule_checker && cd ../.. \
+    && BUILD_FLAGS=" \
+        -X $REPO_PATH/version.Version       $(cat version/VERSION) \
+        -X $REPO_PATH/version.Revision      $(git rev-parse --short HEAD) \
+        -X $REPO_PATH/version.Branch        $(git rev-parse --abbrev-ref HEAD) \
+        -X $REPO_PATH/version.BuildUser     root@$(hostname -f) \
+        -X $REPO_PATH/version.BuildDate     $(date +%Y%m%d-%H:%M:%S) \
+        -X $REPO_PATH/version.GoVersion     $(go version | awk '{print substr($3,3)}')" \
+    && go build -ldflags "$BUILD_FLAGS" -o /bin/prometheus $REPO_PATH/cmd/prometheus \
+    && go build -ldflags "$BUILD_FLAGS" -o /bin/promtool $REPO_PATH/cmd/promtool \
     && mkdir -p /etc/prometheus \
     && mv ./documentation/examples/prometheus.yml /etc/prometheus/prometheus.yml \
     && mv ./console_libraries/ ./consoles/ /etc/prometheus/ \
