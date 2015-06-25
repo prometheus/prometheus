@@ -18,9 +18,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"sort"
 	"strings"
+	"text/template"
 	"time"
+	"unicode"
 
 	"github.com/prometheus/log"
 	"github.com/prometheus/prometheus/notification"
@@ -53,6 +54,9 @@ func init() {
 	flag.CommandLine.Usage = usage
 
 	cfg.fs = flag.CommandLine
+
+	// Set additional defaults.
+	cfg.storage.SyncStrategy = local.Adaptive
 
 	cfg.fs.BoolVar(
 		&cfg.printVersion, "version", false,
@@ -209,9 +213,6 @@ func init() {
 		&cfg.queryEngine.MaxConcurrentQueries, "query.max-concurrency", 20,
 		"Maximum number of queries executed concurrently.",
 	)
-
-	// Set additional defaults.
-	cfg.storage.SyncStrategy = local.Adaptive
 }
 
 func parse(args []string) error {
@@ -245,10 +246,44 @@ func parse(args []string) error {
 	return nil
 }
 
+var helpTmpl = `
+usage: prometheus [<args>]
+{{ range $cat, $flags := . }}{{ if ne $cat "." }} == {{ $cat | upper }} =={{ end }}
+  {{ range $flags }}
+   -{{ .Name }} {{ .DefValue | quote }}
+      {{ .Usage | wrap 80 6 }}
+  {{ end }}
+{{ end }}
+`
+
 func usage() {
+	helpTmpl = strings.TrimSpace(helpTmpl)
+	t := template.New("usage")
+	t = t.Funcs(template.FuncMap{
+		"wrap": func(width, indent int, s string) (ns string) {
+			width = width - indent
+			length := indent
+			for _, w := range strings.SplitAfter(s, " ") {
+				if length+len(w) > width {
+					ns += "\n" + strings.Repeat(" ", indent)
+					length = 0
+				}
+				ns += w
+				length += len(w)
+			}
+			return strings.TrimSpace(ns)
+		},
+		"quote": func(s string) string {
+			if len(s) == 0 || s == "false" || s == "true" || unicode.IsDigit(rune(s[0])) {
+				return s
+			}
+			return fmt.Sprintf("%q", s)
+		},
+		"upper": strings.ToUpper,
+	})
+	t = template.Must(t.Parse(helpTmpl))
+
 	groups := make(map[string][]*flag.Flag)
-	// Set a default group for ungrouped flags.
-	groups["."] = make([]*flag.Flag, 0)
 
 	// Bucket flags into groups based on the first of their dot-separated levels.
 	cfg.fs.VisitAll(func(fl *flag.Flag) {
@@ -260,43 +295,12 @@ func usage() {
 			groups[name] = append(groups[name], fl)
 		}
 	})
-
-	groupsOrdered := make(sort.StringSlice, 0, len(groups))
-	for groupName := range groups {
-		groupsOrdered = append(groupsOrdered, groupName)
-	}
-	sort.Sort(groupsOrdered)
-
-	fmt.Fprintf(os.Stderr, "Usage: %s [options ...]:\n\n", os.Args[0])
-
-	const (
-		maxLineLength = 80
-		lineSep       = "\n      "
-	)
-	for _, groupName := range groupsOrdered {
-		if groupName != "." {
-			fmt.Fprintf(os.Stderr, "\n%s:\n", strings.Title(groupName))
-		}
-
-		for _, fl := range groups[groupName] {
-			format := "  -%s=%s"
-			if strings.Contains(fl.DefValue, " ") || fl.DefValue == "" {
-				format = "  -%s=%q"
-			}
-			flagUsage := fmt.Sprintf(format+lineSep, fl.Name, fl.DefValue)
-
-			// Format the usage text to not exceed maxLineLength characters per line.
-			words := strings.SplitAfter(fl.Usage, " ")
-			lineLength := len(lineSep) - 1
-			for _, w := range words {
-				if lineLength+len(w) > maxLineLength {
-					flagUsage += lineSep
-					lineLength = len(lineSep) - 1
-				}
-				flagUsage += w
-				lineLength += len(w)
-			}
-			fmt.Fprintf(os.Stderr, "%s\n", flagUsage)
+	for cat, fl := range groups {
+		if len(fl) < 2 && cat != "." {
+			groups["."] = append(groups["."], fl...)
+			delete(groups, cat)
 		}
 	}
+
+	t.Execute(os.Stdout, groups)
 }
