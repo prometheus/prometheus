@@ -57,16 +57,19 @@ func Main() int {
 	}
 
 	var (
-		memStorage          = local.NewMemorySeriesStorage(&cfg.storage)
-		remoteStorage       = remote.New(&cfg.remote)
-		sampleAppender      = storage.Fanout{memStorage}
-		notificationHandler = notification.NewNotificationHandler(&cfg.notification)
-		targetManager       = retrieval.NewTargetManager(sampleAppender)
-		queryEngine         = promql.NewEngine(memStorage, &cfg.queryEngine)
+		memStorage     = local.NewMemorySeriesStorage(&cfg.storage)
+		remoteStorage  = remote.New(&cfg.remote)
+		sampleAppender = storage.Fanout{memStorage}
 	)
 	if remoteStorage != nil {
 		sampleAppender = append(sampleAppender, remoteStorage)
 	}
+
+	var (
+		notificationHandler = notification.NewNotificationHandler(&cfg.notification)
+		targetManager       = retrieval.NewTargetManager(sampleAppender)
+		queryEngine         = promql.NewEngine(memStorage, &cfg.queryEngine)
+	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		SampleAppender:      sampleAppender,
