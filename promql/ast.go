@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -96,6 +97,11 @@ const (
 	ExprMatrix
 	ExprString
 )
+
+// MarshalJSON implements json.Marshaler.
+func (et ExprType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(et.String())
+}
 
 func (e ExprType) String() string {
 	switch e {
