@@ -26,7 +26,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // A Summary captures individual observations from an event or sample stream and
