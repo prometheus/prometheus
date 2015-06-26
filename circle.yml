@@ -1,0 +1,11 @@
+machine:
+  services:
+    - docker
+
+dependencies:
+  override:
+    - make docker
+
+test:
+  override:
+    - /bin/true
