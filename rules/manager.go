@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	html_template "html/template"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
@@ -84,7 +86,7 @@ type Rule interface {
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
-	HTMLSnippet(pathPrefix string) template.HTML
+	HTMLSnippet(pathPrefix string) html_template.HTML
 }
 
 // The Manager manages recording and alerting rules.
@@ -285,14 +287,9 @@ func (m *Manager) runIteration() {
 	wg.Wait()
 }
 
-// ApplyConfig updates the rule manager's state as the config requires. If
-// loading the new rules failed the old rule set is restored. Returns true on success.
-func (m *Manager) ApplyConfig(conf *config.Config) bool {
-	m.Lock()
-	defer m.Unlock()
-
-	success := true
-	m.interval = time.Duration(conf.GlobalConfig.EvaluationInterval)
+// transferAlertState makes a copy of the state of alerting rules and returns a function
+// that restores them in the current state.
+func (m *Manager) transferAlertState() func() {
 
 	alertingRules := map[string]*AlertingRule{}
 	for _, r := range m.rules {
@@ -300,6 +297,31 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 			alertingRules[ar.name] = ar
 		}
 	}
+
+	return func() {
+		// Restore alerting rule state.
+		for _, r := range m.rules {
+			ar, ok := r.(*AlertingRule)
+			if !ok {
+				continue
+			}
+			if old, ok := alertingRules[ar.name]; ok {
+				ar.activeAlerts = old.activeAlerts
+			}
+		}
+	}
+}
+
+// ApplyConfig updates the rule manager's state as the config requires. If
+// loading the new rules failed the old rule set is restored. Returns true on success.
+func (m *Manager) ApplyConfig(conf *config.Config) bool {
+	m.Lock()
+	defer m.Unlock()
+
+	defer m.transferAlertState()()
+
+	success := true
+	m.interval = time.Duration(conf.GlobalConfig.EvaluationInterval)
 
 	rulesSnapshot := make([]Rule, len(m.rules))
 	copy(rulesSnapshot, m.rules)
@@ -320,16 +342,6 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 		m.rules = rulesSnapshot
 		log.Errorf("Error loading rules, previous rule set restored: %s", err)
 		success = false
-	}
-	// Restore alerting rule state.
-	for _, r := range m.rules {
-		ar, ok := r.(*AlertingRule)
-		if !ok {
-			continue
-		}
-		if old, ok := alertingRules[ar.name]; ok {
-			ar.activeAlerts = old.activeAlerts
-		}
 	}
 
 	return success
