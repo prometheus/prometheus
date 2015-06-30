@@ -73,6 +73,20 @@ func init() {
 	prometheus.MustRegister(evalDuration)
 }
 
+// A Rule encapsulates a vector expression which is evaluated at a specified
+// interval and acted upon (currently either recorded or used for alerting).
+type Rule interface {
+	// Name returns the name of the rule.
+	Name() string
+	// Eval evaluates the rule, including any associated recording or alerting actions.
+	eval(clientmodel.Timestamp, *promql.Engine) (promql.Vector, error)
+	// String returns a human-readable string representation of the rule.
+	String() string
+	// HTMLSnippet returns a human-readable string representation of the rule,
+	// decorated with HTML elements for use the web frontend.
+	HTMLSnippet(pathPrefix string) template.HTML
+}
+
 // The Manager manages recording and alerting rules.
 type Manager struct {
 	// Protects the rules list.
