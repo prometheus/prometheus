@@ -33,7 +33,7 @@
         </div>
         <div id="navbar" class="navbar-collapse collapse">
           <ul class="nav navbar-nav navbar-left">
-            {{$consoles := getConsoles}}
+            {{$consoles := consolesPath}}
             {{if $consoles}}
             <li><a href="{{$consoles}}">Consoles</a></li>
             {{ end }}

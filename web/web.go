@@ -18,12 +18,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -93,9 +93,8 @@ func (s *PrometheusStatus) ApplyConfig(conf *config.Config) bool {
 
 // Options for the web Handler.
 type Options struct {
-	PathPrefix           string
 	ListenAddress        string
-	Hostname             string
+	ExternalURL          *url.URL
 	MetricsPath          string
 	UseLocalAssets       bool
 	UserAssetsPath       string
@@ -131,12 +130,12 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		},
 	}
 
-	if o.PathPrefix != "" {
+	if o.ExternalURL.Path != "" {
 		// If the prefix is missing for the root path, prepend it.
 		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, o.PathPrefix, http.StatusFound)
+			http.Redirect(w, r, o.ExternalURL.Path, http.StatusFound)
 		})
-		router = router.WithPrefix(o.PathPrefix)
+		router = router.WithPrefix(o.ExternalURL.Path)
 	}
 
 	instrf := prometheus.InstrumentHandlerFunc
@@ -248,7 +247,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		Path:      name,
 	}
 
-	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, clientmodel.Now(), h.queryEngine, h.options.PathPrefix)
+	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, clientmodel.Now(), h.queryEngine, h.options.ExternalURL.Path)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -308,13 +307,13 @@ func (h *Handler) getTemplateFile(name string) (string, error) {
 	return string(file), nil
 }
 
-func (h *Handler) getConsoles() string {
+func (h *Handler) consolesPath() string {
 	if _, err := os.Stat(h.options.ConsoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
-		return h.options.PathPrefix + "/consoles/index.html"
+		return h.options.ExternalURL.Path + "/consoles/index.html"
 	}
 	if h.options.UserAssetsPath != "" {
 		if _, err := os.Stat(h.options.UserAssetsPath + "/index.html"); !os.IsNotExist(err) {
-			return h.options.PathPrefix + "/user/index.html"
+			return h.options.ExternalURL.Path + "/user/index.html"
 		}
 	}
 	return ""
@@ -332,17 +331,11 @@ func (h *Handler) getTemplate(name string) (string, error) {
 	return baseTmpl + pageTmpl, nil
 }
 
-func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {
-	text, err := h.getTemplate(name)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-
-	tmpl := template.NewTemplateExpander(text, name, data, clientmodel.Now(), h.queryEngine, h.options.PathPrefix)
-	tmpl.Funcs(template_text.FuncMap{
-		"since":       time.Since,
-		"getConsoles": h.getConsoles,
-		"pathPrefix":  func() string { return h.options.PathPrefix },
+func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
+	return template_text.FuncMap{
+		"since":        time.Since,
+		"consolesPath": func() string { return consolesPath },
+		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"stripLabels": func(lset clientmodel.LabelSet, labels ...clientmodel.LabelName) clientmodel.LabelSet {
 			for _, ln := range labels {
 				delete(lset, ln)
@@ -350,9 +343,39 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 			return lset
 		},
 		"globalURL": func(u *url.URL) *url.URL {
+			host, port, err := net.SplitHostPort(u.Host)
+			if err != nil {
+				return u
+			}
 			for _, lhr := range localhostRepresentations {
-				if strings.HasPrefix(u.Host, lhr+":") {
-					u.Host = strings.Replace(u.Host, lhr+":", h.options.Hostname+":", 1)
+				if host == lhr {
+					_, ownPort, err := net.SplitHostPort(opts.ListenAddress)
+					if err != nil {
+						return u
+					}
+
+					if port == ownPort {
+						// Only in the case where the target is on localhost and its port is
+						// the same as the one we're listening on, we know for sure that
+						// we're monitoring our own process and that we need to change the
+						// scheme, hostname, and port to the externally reachable ones as
+						// well. We shouldn't need to touch the path at all, since if a
+						// path prefix is defined, the path under which we scrape ourselves
+						// should already contain the prefix.
+						u.Scheme = opts.ExternalURL.Scheme
+						u.Host = opts.ExternalURL.Host
+					} else {
+						// Otherwise, we only know that localhost is not reachable
+						// externally, so we replace only the hostname by the one in the
+						// external URL. It could be the wrong hostname for the service on
+						// this port, but it's still the best possible guess.
+						host, _, err := net.SplitHostPort(opts.ExternalURL.Host)
+						if err != nil {
+							return u
+						}
+						u.Host = host + ":" + port
+					}
+					break
 				}
 			}
 			return u
@@ -379,7 +402,17 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 				panic("unknown alert state")
 			}
 		},
-	})
+	}
+}
+
+func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {
+	text, err := h.getTemplate(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	tmpl := template.NewTemplateExpander(text, name, data, clientmodel.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
 
 	result, err := tmpl.ExpandHTML(nil)
 	if err != nil {
