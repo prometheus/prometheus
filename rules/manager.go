@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	html_template "html/template"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
@@ -71,6 +73,20 @@ func init() {
 	prometheus.MustRegister(iterationDuration)
 	prometheus.MustRegister(evalFailures)
 	prometheus.MustRegister(evalDuration)
+}
+
+// A Rule encapsulates a vector expression which is evaluated at a specified
+// interval and acted upon (currently either recorded or used for alerting).
+type Rule interface {
+	// Name returns the name of the rule.
+	Name() string
+	// Eval evaluates the rule, including any associated recording or alerting actions.
+	eval(clientmodel.Timestamp, *promql.Engine) (promql.Vector, error)
+	// String returns a human-readable string representation of the rule.
+	String() string
+	// HTMLSnippet returns a human-readable string representation of the rule,
+	// decorated with HTML elements for use the web frontend.
+	HTMLSnippet(pathPrefix string) html_template.HTML
 }
 
 // The Manager manages recording and alerting rules.
@@ -271,11 +287,38 @@ func (m *Manager) runIteration() {
 	wg.Wait()
 }
 
+// transferAlertState makes a copy of the state of alerting rules and returns a function
+// that restores them in the current state.
+func (m *Manager) transferAlertState() func() {
+
+	alertingRules := map[string]*AlertingRule{}
+	for _, r := range m.rules {
+		if ar, ok := r.(*AlertingRule); ok {
+			alertingRules[ar.name] = ar
+		}
+	}
+
+	return func() {
+		// Restore alerting rule state.
+		for _, r := range m.rules {
+			ar, ok := r.(*AlertingRule)
+			if !ok {
+				continue
+			}
+			if old, ok := alertingRules[ar.name]; ok {
+				ar.activeAlerts = old.activeAlerts
+			}
+		}
+	}
+}
+
 // ApplyConfig updates the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored. Returns true on success.
 func (m *Manager) ApplyConfig(conf *config.Config) bool {
 	m.Lock()
 	defer m.Unlock()
+
+	defer m.transferAlertState()()
 
 	success := true
 	m.interval = time.Duration(conf.GlobalConfig.EvaluationInterval)
@@ -300,6 +343,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 		log.Errorf("Error loading rules, previous rule set restored: %s", err)
 		success = false
 	}
+
 	return success
 }
 
