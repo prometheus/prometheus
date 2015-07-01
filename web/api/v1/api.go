@@ -236,8 +236,8 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 }
 
 func respond(w http.ResponseWriter, data interface{}) {
-	w.WriteHeader(200)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
 
 	b, err := json.Marshal(&response{
 		Status: statusSuccess,
@@ -250,8 +250,8 @@ func respond(w http.ResponseWriter, data interface{}) {
 }
 
 func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
-	w.WriteHeader(422)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 
 	b, err := json.Marshal(&response{
 		Status:    statusError,
