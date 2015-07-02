@@ -30,7 +30,7 @@ build: dependencies $(GOPATH)
 	$(GO) build -o prometheus $(BUILDFLAGS) github.com/prometheus/prometheus/cmd/prometheus
 	$(GO) build -o promtool $(BUILDFLAGS) github.com/prometheus/prometheus/cmd/promtool
 
-docker: build
+docker:
 	docker build -t prometheus:$(REV) .
 
 tarball: $(ARCHIVE)
