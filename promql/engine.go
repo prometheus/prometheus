@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"runtime"
@@ -46,6 +47,22 @@ type Sample struct {
 type Scalar struct {
 	Value     clientmodel.SampleValue `json:"value"`
 	Timestamp clientmodel.Timestamp   `json:"timestamp"`
+}
+
+// MarshalJSON implements json.Marshaler.
+func (s *Sample) MarshalJSON() ([]byte, error) {
+	v := struct {
+		Metric clientmodel.COWMetric `json:"metric"`
+		Value  metric.SamplePair     `json:"value"`
+	}{
+		Metric: s.Metric,
+		Value: metric.SamplePair{
+			Timestamp: s.Timestamp,
+			Value:     s.Value,
+		},
+	}
+
+	return json.Marshal(&v)
 }
 
 func (s *Scalar) String() string {
