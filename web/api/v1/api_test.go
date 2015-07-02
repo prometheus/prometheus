@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -321,20 +322,31 @@ func TestEndpoints(t *testing.T) {
 }
 
 func TestRespondSuccess(t *testing.T) {
-	w := httptest.NewRecorder()
-	respond(w, "test")
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respond(w, "test")
+	}))
+	defer s.Close()
 
-	if w.Code != 200 {
-		t.Fatalf("Return code %d expected in success response but got %d", 200, w.Code)
-	}
-	var res response
-	err := json.Unmarshal([]byte(w.Body.String()), &res)
+	resp, err := http.Get(s.URL)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Error on test request: %s", err)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		t.Fatalf("Error reading response body: %s", err)
 	}
 
-	if h := w.Header().Get("Content-Type"); h != "application/json" {
-		t.Fatalf("expected Content-Type %q but got %q", "application/json", h)
+	if resp.StatusCode != 200 {
+		t.Fatalf("Return code %d expected in success response but got %d", 200, resp.StatusCode)
+	}
+	if h := resp.Header.Get("Content-Type"); h != "application/json" {
+		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
+	}
+
+	var res response
+	if err = json.Unmarshal([]byte(body), &res); err != nil {
+		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
 	exp := &response{
@@ -347,20 +359,31 @@ func TestRespondSuccess(t *testing.T) {
 }
 
 func TestRespondError(t *testing.T) {
-	w := httptest.NewRecorder()
-	respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
+	}))
+	defer s.Close()
 
-	if w.Code != 422 {
-		t.Fatalf("Return code %d expected in success response but got %d", 422, w.Code)
-	}
-	var res response
-	err := json.Unmarshal([]byte(w.Body.String()), &res)
+	resp, err := http.Get(s.URL)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Error on test request: %s", err)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		t.Fatalf("Error reading response body: %s", err)
 	}
 
-	if h := w.Header().Get("Content-Type"); h != "application/json" {
-		t.Fatalf("expected Content-Type %q but got %q", "application/json", h)
+	if resp.StatusCode != 422 {
+		t.Fatalf("Return code %d expected in error response but got %d", 422, resp.StatusCode)
+	}
+	if h := resp.Header.Get("Content-Type"); h != "application/json" {
+		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
+	}
+
+	var res response
+	if err = json.Unmarshal([]byte(body), &res); err != nil {
+		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
 	exp := &response{
