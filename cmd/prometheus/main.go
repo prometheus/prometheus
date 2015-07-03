@@ -75,8 +75,7 @@ func Main() int {
 		SampleAppender:      sampleAppender,
 		NotificationHandler: notificationHandler,
 		QueryEngine:         queryEngine,
-		PrometheusURL:       cfg.prometheusURL,
-		PathPrefix:          cfg.web.PathPrefix,
+		ExternalURL:         cfg.web.ExternalURL,
 	})
 
 	flags := map[string]string{}

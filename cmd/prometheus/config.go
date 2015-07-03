@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"text/template"
@@ -69,16 +70,12 @@ func init() {
 
 	// Web.
 	cfg.fs.StringVar(
-		&cfg.web.PathPrefix, "web.path-prefix", "",
-		"Prefix for all web paths.",
-	)
-	cfg.fs.StringVar(
 		&cfg.web.ListenAddress, "web.listen-address", ":9090",
 		"Address to listen on for the web interface, API, and telemetry.",
 	)
 	cfg.fs.StringVar(
-		&cfg.web.Hostname, "web.hostname", "",
-		"Hostname on which the server is available.",
+		&cfg.prometheusURL, "web.external-url", "",
+		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If omitted, relevant URL components will be derived automatically.",
 	)
 	cfg.fs.StringVar(
 		&cfg.web.MetricsPath, "web.telemetry-path", "/metrics",
@@ -98,7 +95,7 @@ func init() {
 	)
 	cfg.fs.StringVar(
 		&cfg.web.ConsoleTemplatesPath, "web.console.templates", "consoles",
-		"Path to the console template directory, available at /console.",
+		"Path to the console template directory, available at /consoles.",
 	)
 	cfg.fs.StringVar(
 		&cfg.web.ConsoleLibrariesPath, "web.console.libraries", "console_libraries",
@@ -224,24 +221,29 @@ func parse(args []string) error {
 		return err
 	}
 
-	ppref := strings.TrimRight(cfg.web.PathPrefix, "/")
-	if ppref != "" && !strings.HasPrefix(ppref, "/") {
-		ppref = "/" + ppref
-	}
-	cfg.web.PathPrefix = ppref
-
-	if cfg.web.Hostname == "" {
-		cfg.web.Hostname, err = os.Hostname()
+	if cfg.prometheusURL == "" {
+		hostname, err := os.Hostname()
 		if err != nil {
 			return err
 		}
+		_, port, err := net.SplitHostPort(cfg.web.ListenAddress)
+		if err != nil {
+			return err
+		}
+		cfg.prometheusURL = fmt.Sprintf("http://%s:%s/", hostname, port)
 	}
 
-	_, port, err := net.SplitHostPort(cfg.web.ListenAddress)
+	promURL, err := url.Parse(cfg.prometheusURL)
 	if err != nil {
 		return err
 	}
-	cfg.prometheusURL = fmt.Sprintf("http://%s:%s%s/", cfg.web.Hostname, port, cfg.web.PathPrefix)
+	cfg.web.ExternalURL = promURL
+
+	ppref := strings.TrimRight(cfg.web.ExternalURL.Path, "/")
+	if ppref != "" && !strings.HasPrefix(ppref, "/") {
+		ppref = "/" + ppref
+	}
+	cfg.web.ExternalURL.Path = ppref
 
 	return nil
 }

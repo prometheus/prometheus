@@ -16,8 +16,8 @@ package rules
 import (
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -103,8 +103,7 @@ type Manager struct {
 	sampleAppender      storage.SampleAppender
 	notificationHandler *notification.NotificationHandler
 
-	prometheusURL string
-	pathPrefix    string
+	externalURL *url.URL
 }
 
 // ManagerOptions bundles options for the Manager.
@@ -115,8 +114,7 @@ type ManagerOptions struct {
 	NotificationHandler *notification.NotificationHandler
 	SampleAppender      storage.SampleAppender
 
-	PrometheusURL string
-	PathPrefix    string
+	ExternalURL *url.URL
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -130,7 +128,7 @@ func NewManager(o *ManagerOptions) *Manager {
 		sampleAppender:      o.SampleAppender,
 		queryEngine:         o.QueryEngine,
 		notificationHandler: o.NotificationHandler,
-		prometheusURL:       o.PrometheusURL,
+		externalURL:         o.ExternalURL,
 	}
 	return manager
 }
@@ -211,7 +209,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 		defs := "{{$labels := .Labels}}{{$value := .Value}}"
 
 		expand := func(text string) string {
-			tmpl := template.NewTemplateExpander(defs+text, "__alert_"+rule.Name(), tmplData, timestamp, m.queryEngine, m.pathPrefix)
+			tmpl := template.NewTemplateExpander(defs+text, "__alert_"+rule.Name(), tmplData, timestamp, m.queryEngine, m.externalURL.Path)
 			result, err := tmpl.Expand()
 			if err != nil {
 				result = err.Error()
@@ -230,7 +228,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 			Value:        aa.Value,
 			ActiveSince:  aa.ActiveSince.Time(),
 			RuleString:   rule.String(),
-			GeneratorURL: m.prometheusURL + strings.TrimLeft(strutil.GraphLinkForExpression(rule.vector.String()), "/"),
+			GeneratorURL: m.externalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
 		})
 	}
 	m.notificationHandler.SubmitReqs(notifications)
