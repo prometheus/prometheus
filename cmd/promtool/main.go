@@ -84,6 +84,10 @@ func checkConfig(t cli.Term, filename string) ([]string, error) {
 	}
 	var ruleFiles []string
 	for _, rf := range cfg.RuleFiles {
+		if !filepath.IsAbs(rf) {
+			rf = filepath.Join(filepath.Dir(filename), rf)
+		}
+
 		rfs, err := filepath.Glob(rf)
 		if err != nil {
 			return nil, err

@@ -104,6 +104,7 @@ type Manager struct {
 	notificationHandler *notification.NotificationHandler
 
 	externalURL *url.URL
+	baseDir     string
 }
 
 // ManagerOptions bundles options for the Manager.
@@ -115,6 +116,7 @@ type ManagerOptions struct {
 	SampleAppender      storage.SampleAppender
 
 	ExternalURL *url.URL
+	BaseDir     string
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -129,6 +131,7 @@ func NewManager(o *ManagerOptions) *Manager {
 		queryEngine:         o.QueryEngine,
 		notificationHandler: o.NotificationHandler,
 		externalURL:         o.ExternalURL,
+		baseDir:             o.BaseDir,
 	}
 	return manager
 }
@@ -327,6 +330,10 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 
 	var files []string
 	for _, pat := range conf.RuleFiles {
+		if !filepath.IsAbs(pat) {
+			pat = filepath.Join(m.baseDir, pat)
+		}
+
 		fs, err := filepath.Glob(pat)
 		if err != nil {
 			// The only error can be a bad pattern.
@@ -356,6 +363,7 @@ func (m *Manager) loadRuleFiles(filenames ...string) error {
 		if err != nil {
 			return fmt.Errorf("error parsing %s: %s", fn, err)
 		}
+
 		for _, stmt := range stmts {
 			switch r := stmt.(type) {
 			case *promql.AlertStmt:

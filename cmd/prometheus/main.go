@@ -21,6 +21,7 @@ import (
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"text/template"
@@ -76,6 +77,7 @@ func Main() int {
 		NotificationHandler: notificationHandler,
 		QueryEngine:         queryEngine,
 		ExternalURL:         cfg.web.ExternalURL,
+		BaseDir:             filepath.Dir(cfg.configFile),
 	})
 
 	flags := map[string]string{}
