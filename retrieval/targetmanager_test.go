@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"net/url"
 	"reflect"
 	"regexp"
 	"testing"
@@ -157,12 +158,25 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 	testJob1 := &config.ScrapeConfig{
 		JobName:        "test_job1",
 		ScrapeInterval: config.Duration(1 * time.Minute),
+		Params: url.Values{
+			"testParam": []string{"paramValue", "secondValue"},
+		},
 		TargetGroups: []*config.TargetGroup{{
 			Targets: []clientmodel.LabelSet{
 				{clientmodel.AddressLabel: "example.org:80"},
 				{clientmodel.AddressLabel: "example.com:80"},
 			},
 		}},
+		RelabelConfigs: []*config.RelabelConfig{
+			{
+				// Copy out the URL parameter.
+				SourceLabels: clientmodel.LabelNames{"__param_testParam"},
+				Regex:        &config.Regexp{*regexp.MustCompile("^(.*)$")},
+				TargetLabel:  "testParam",
+				Replacement:  "$1",
+				Action:       config.RelabelReplace,
+			},
+		},
 	}
 	testJob2 := &config.ScrapeConfig{
 		JobName:        "test_job2",
@@ -226,24 +240,24 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			scrapeConfigs: []*config.ScrapeConfig{testJob1},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job1:static:0": {
-					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80"},
-					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80"},
+					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80", "testParam": "paramValue"},
+					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80", "testParam": "paramValue"},
 				},
 			},
 		}, {
 			scrapeConfigs: []*config.ScrapeConfig{testJob1},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job1:static:0": {
-					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80"},
-					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80"},
+					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80", "testParam": "paramValue"},
+					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80", "testParam": "paramValue"},
 				},
 			},
 		}, {
 			scrapeConfigs: []*config.ScrapeConfig{testJob1, testJob2},
 			expected: map[string][]clientmodel.LabelSet{
 				"test_job1:static:0": {
-					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80"},
-					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80"},
+					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80", "testParam": "paramValue"},
+					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80", "testParam": "paramValue"},
 				},
 				"test_job2:static:0": {
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba"},

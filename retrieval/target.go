@@ -197,10 +197,24 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientm
 
 	t.url.Scheme = cfg.Scheme
 	t.url.Path = string(baseLabels[clientmodel.MetricsPathLabel])
+	params := url.Values{}
+	for k, v := range cfg.Params {
+		params[k] = make([]string, len(v))
+		copy(params[k], v)
+	}
+	for k, v := range baseLabels {
+		if strings.HasPrefix(string(k), clientmodel.ParamLabelPrefix) {
+			if len(params[string(k[len(clientmodel.ParamLabelPrefix):])]) > 0 {
+				params[string(k[len(clientmodel.ParamLabelPrefix):])][0] = string(v)
+			} else {
+				params[string(k[len(clientmodel.ParamLabelPrefix):])] = []string{string(v)}
+			}
+		}
+	}
+	t.url.RawQuery = params.Encode()
 	if cfg.BasicAuth != nil {
 		t.url.User = url.UserPassword(cfg.BasicAuth.Username, cfg.BasicAuth.Password)
 	}
-	t.url.RawQuery = cfg.Params.Encode()
 
 	t.scrapeInterval = time.Duration(cfg.ScrapeInterval)
 	t.deadline = time.Duration(cfg.ScrapeTimeout)

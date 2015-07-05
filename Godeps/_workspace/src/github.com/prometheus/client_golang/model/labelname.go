@@ -46,6 +46,10 @@ const (
 	// will not be attached to time series.
 	MetaLabelPrefix = "__meta_"
 
+	// ParamLabelPrefix is a prefix for labels that provide URL parameters
+	// used to scrape a target.
+	ParamLabelPrefix = "__param_"
+
 	// JobLabel is the label name indicating the job from which a timeseries
 	// was scraped.
 	JobLabel LabelName = "job"
