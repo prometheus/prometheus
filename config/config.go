@@ -20,6 +20,7 @@ var (
 	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
+	patAuthLine   = regexp.MustCompile(`((?:username|password):\s+)(".+"|'.+'|[^\s]+)`)
 )
 
 // Load parses the YAML input s into a Config.
@@ -118,14 +119,17 @@ func checkOverflow(m map[string]interface{}, ctx string) error {
 }
 
 func (c Config) String() string {
+	var s string
 	if c.original != "" {
-		return c.original
+		s = c.original
+	} else {
+		b, err := yaml.Marshal(c)
+		if err != nil {
+			return fmt.Sprintf("<error creating config string: %s>", err)
+		}
+		s = string(b)
 	}
-	b, err := yaml.Marshal(c)
-	if err != nil {
-		return fmt.Sprintf("<error creating config string: %s>", err)
-	}
-	return string(b)
+	return patAuthLine.ReplaceAllString(s, "${1}<hidden>")
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

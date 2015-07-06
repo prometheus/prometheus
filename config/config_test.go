@@ -85,8 +85,8 @@ var expectedConf = &Config{
 			ScrapeTimeout:  Duration(5 * time.Second),
 
 			BasicAuth: &BasicAuth{
-				Username: "admin",
-				Password: "password",
+				Username: "admin_name",
+				Password: "admin_password",
 			},
 			MetricsPath: "/my_path",
 			Scheme:      "https",
@@ -182,6 +182,12 @@ func TestLoadConfig(t *testing.T) {
 
 	if !reflect.DeepEqual(c, expectedConf) {
 		t.Fatalf("%s: unexpected config result: \n\n%s\n expected\n\n%s", "testdata/conf.good.yml", bgot, bexp)
+	}
+
+	// String method must not reveal authentication credentials.
+	s := c.String()
+	if strings.Contains(s, "admin_name") || strings.Contains(s, "admin_password") {
+		t.Fatalf("config's String method reveals authentication credentials.")
 	}
 }
 
