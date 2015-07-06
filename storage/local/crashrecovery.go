@@ -254,7 +254,7 @@ func (p *persistence) sanitizeSeries(
 			// disk. Treat this series as a freshly unarchived one
 			// by loading the chunkDescs and setting all parameters
 			// based on the loaded chunkDescs.
-			cds, err := p.loadChunkDescs(fp, clientmodel.Latest)
+			cds, err := p.loadChunkDescs(fp, 0)
 			if err != nil {
 				log.Errorf(
 					"Failed to load chunk descriptors for metric %v, fingerprint %v: %s",
@@ -286,8 +286,7 @@ func (p *persistence) sanitizeSeries(
 		// First, throw away the chunkDescs without chunks.
 		s.chunkDescs = s.chunkDescs[s.persistWatermark:]
 		numMemChunkDescs.Sub(float64(s.persistWatermark))
-		// Load all the chunk descs.
-		cds, err := p.loadChunkDescs(fp, clientmodel.Latest)
+		cds, err := p.loadChunkDescs(fp, 0)
 		if err != nil {
 			log.Errorf(
 				"Failed to load chunk descriptors for metric %v, fingerprint %v: %s",
@@ -407,7 +406,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
 			return err
 		}
-		cds, err := p.loadChunkDescs(clientmodel.Fingerprint(fp), clientmodel.Latest)
+		cds, err := p.loadChunkDescs(clientmodel.Fingerprint(fp), 0)
 		if err != nil {
 			return err
 		}

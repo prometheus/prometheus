@@ -384,7 +384,7 @@ func (s *memorySeries) preloadChunksForRange(
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
 	}
 	if s.chunkDescsOffset != 0 && from.Before(firstChunkDescTime) {
-		cds, err := mss.loadChunkDescs(fp, firstChunkDescTime)
+		cds, err := mss.loadChunkDescs(fp, s.persistWatermark)
 		if err != nil {
 			return nil, err
 		}

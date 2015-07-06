@@ -589,7 +589,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m cl
 			// end up with a series without any chunkDescs for a
 			// while (which is confusing as it makes the series
 			// appear as archived or purged).
-			cds, err = s.loadChunkDescs(fp, clientmodel.Latest)
+			cds, err = s.loadChunkDescs(fp, 0)
 			if err != nil {
 				log.Errorf("Error loading chunk descs for fingerprint %v (metric %v): %v", fp, m, err)
 			}
@@ -1107,8 +1107,8 @@ func (s *memorySeriesStorage) loadChunks(fp clientmodel.Fingerprint, indexes []i
 }
 
 // See persistence.loadChunkDescs for detailed explanation.
-func (s *memorySeriesStorage) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) ([]*chunkDesc, error) {
-	return s.persistence.loadChunkDescs(fp, beforeTime)
+func (s *memorySeriesStorage) loadChunkDescs(fp clientmodel.Fingerprint, offsetFromEnd int) ([]*chunkDesc, error) {
+	return s.persistence.loadChunkDescs(fp, offsetFromEnd)
 }
 
 // getNumChunksToPersist returns numChunksToPersist in a goroutine-safe way.

@@ -33,6 +33,7 @@ const (
 	labelPairToFingerprintsDir = "labelpair_to_fingerprints"
 )
 
+// LevelDB cache sizes, changeable via flags.
 var (
 	FingerprintMetricCacheSize     = 10 * 1024 * 1024
 	FingerprintTimeRangeCacheSize  = 5 * 1024 * 1024

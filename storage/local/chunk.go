@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
+// The DefaultChunkEncoding can be changed via a flag.
 var DefaultChunkEncoding = doubleDelta
 
 type chunkEncoding byte
