@@ -579,7 +579,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     for (var i = 0; i < data.result.length; i++) {
       var s = data.result[i];
       var tsName = self.metricToTsName(s.metric);
-      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + s.value + "</td></tr>");
+      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + s[1] + "</td></tr>");
     }
     break;
   case "matrix":
@@ -598,10 +598,10 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     }
     break;
   case "scalar":
-    tBody.append("<tr><td>scalar</td><td>" + data.result.value + "</td></tr>");
+    tBody.append("<tr><td>scalar</td><td>" + data.result[1] + "</td></tr>");
     break;
   case "string":
-    tBody.append("<tr><td>string</td><td>" + data.result.value + "</td></tr>");
+    tBody.append("<tr><td>string</td><td>" + data.result[1] + "</td></tr>");
     break;
   default:
     self.showError("Unsupported value type!");

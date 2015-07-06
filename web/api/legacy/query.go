@@ -17,7 +17,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"time"
@@ -26,7 +28,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
-	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/promql"
 )
 
 // Enables cross-site script calls.
@@ -39,7 +41,7 @@ func setAccessControlHeaders(w http.ResponseWriter) {
 
 func httpJSONError(w http.ResponseWriter, err error, code int) {
 	w.WriteHeader(code)
-	httputil.ErrorJSON(w, err)
+	errorJSON(w, err)
 }
 
 func parseTimestampOrNow(t string, now clientmodel.Timestamp) (clientmodel.Timestamp, error) {
@@ -67,7 +69,7 @@ func (api *API) Query(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
-	params := httputil.GetQueryParams(r)
+	params := getQueryParams(r)
 	expr := params.Get("expr")
 
 	timestamp, err := parseTimestampOrNow(params.Get("timestamp"), api.Now())
@@ -88,7 +90,67 @@ func (api *API) Query(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Debugf("Instant query: %s\nQuery stats:\n%s\n", expr, query.Stats())
 
-	httputil.RespondJSON(w, res.Value)
+	if vec, ok := res.Value.(promql.Vector); ok {
+		respondJSON(w, plainVec(vec))
+		return
+	}
+	if sca, ok := res.Value.(*promql.Scalar); ok {
+		respondJSON(w, (*plainScalar)(sca))
+		return
+	}
+	if str, ok := res.Value.(*promql.String); ok {
+		respondJSON(w, (*plainString)(str))
+		return
+	}
+
+	respondJSON(w, res.Value)
+}
+
+// plainVec is an indirection that hides the original MarshalJSON method
+// which does not fit the response format for the legacy API.
+type plainVec promql.Vector
+
+func (pv plainVec) MarshalJSON() ([]byte, error) {
+	type plainSmpl promql.Sample
+
+	v := make([]*plainSmpl, len(pv))
+	for i, sv := range pv {
+		v[i] = (*plainSmpl)(sv)
+	}
+
+	return json.Marshal(&v)
+}
+
+func (pv plainVec) Type() promql.ExprType {
+	return promql.ExprVector
+}
+
+func (pv plainVec) String() string {
+	return ""
+}
+
+// plainScalar is an indirection that hides the original MarshalJSON method
+// which does not fit the response format for the legacy API.
+type plainScalar promql.Scalar
+
+func (pv plainScalar) Type() promql.ExprType {
+	return promql.ExprScalar
+}
+
+func (pv plainScalar) String() string {
+	return ""
+}
+
+// plainString is an indirection that hides the original MarshalJSON method
+// which does not fit the response format for the legacy API.
+type plainString promql.String
+
+func (pv plainString) Type() promql.ExprType {
+	return promql.ExprString
+}
+
+func (pv plainString) String() string {
+	return ""
 }
 
 // QueryRange handles the /api/query_range endpoint.
@@ -96,7 +158,7 @@ func (api *API) QueryRange(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
-	params := httputil.GetQueryParams(r)
+	params := getQueryParams(r)
 	expr := params.Get("expr")
 
 	duration, err := parseDuration(params.Get("range"))
@@ -148,7 +210,7 @@ func (api *API) QueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Debugf("Range query: %s\nQuery stats:\n%s\n", expr, query.Stats())
-	httputil.RespondJSON(w, matrix)
+	respondJSON(w, matrix)
 }
 
 // Metrics handles the /api/metrics endpoint.
@@ -165,4 +227,46 @@ func (api *API) Metrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write(resultBytes)
+}
+
+// GetQueryParams calls r.ParseForm and returns r.Form.
+func getQueryParams(r *http.Request) url.Values {
+	r.ParseForm()
+	return r.Form
+}
+
+var jsonFormatVersion = 1
+
+// ErrorJSON writes the given error JSON-formatted to w.
+func errorJSON(w io.Writer, err error) error {
+	data := struct {
+		Type    string `json:"type"`
+		Value   string `json:"value"`
+		Version int    `json:"version"`
+	}{
+		Type:    "error",
+		Value:   err.Error(),
+		Version: jsonFormatVersion,
+	}
+	enc := json.NewEncoder(w)
+	return enc.Encode(data)
+}
+
+// RespondJSON converts the given data value to JSON and writes it to w.
+func respondJSON(w io.Writer, val promql.Value) error {
+	data := struct {
+		Type    string      `json:"type"`
+		Value   interface{} `json:"value"`
+		Version int         `json:"version"`
+	}{
+		Type:    val.Type().String(),
+		Value:   val,
+		Version: jsonFormatVersion,
+	}
+	// TODO(fabxc): Adding MarshalJSON to promql.Values might be a good idea.
+	if sc, ok := val.(*promql.Scalar); ok {
+		data.Value = sc.Value
+	}
+	enc := json.NewEncoder(w)
+	return enc.Encode(data)
 }
