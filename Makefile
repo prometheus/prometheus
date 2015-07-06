@@ -76,10 +76,8 @@ format: dependencies
 	find . -iname '*.go' | egrep -v "^\./(\.build|Godeps)/" | xargs -n1 $(GOFMT) -w -s=true
 
 race_condition_binary: build
-	$(GO) build -race -o prometheus.race $(BUILDFLAGS) .
-
-race_condition_run: race_condition_binary
-	./prometheus.race $(ARGUMENTS)
+	$(GO) build -race -o prometheus.race $(BUILDFLAGS) github.com/prometheus/prometheus/cmd/prometheus
+	$(GO) build -race -o promtool.race $(BUILDFLAGS) github.com/prometheus/prometheus/cmd/promtool
 
 search_index:
 	godoc -index -write_index -index_files='search_index'
