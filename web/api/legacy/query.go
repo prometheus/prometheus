@@ -94,11 +94,19 @@ func (api *API) Query(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, plainVec(vec))
 		return
 	}
+	if sca, ok := res.Value.(*promql.Scalar); ok {
+		respondJSON(w, (*plainScalar)(sca))
+		return
+	}
+	if str, ok := res.Value.(*promql.String); ok {
+		respondJSON(w, (*plainString)(str))
+		return
+	}
 
 	respondJSON(w, res.Value)
 }
 
-// plainVec is an indirection that hides the original MarshalJSON methods
+// plainVec is an indirection that hides the original MarshalJSON method
 // which does not fit the response format for the legacy API.
 type plainVec promql.Vector
 
@@ -118,6 +126,30 @@ func (pv plainVec) Type() promql.ExprType {
 }
 
 func (pv plainVec) String() string {
+	return ""
+}
+
+// plainScalar is an indirection that hides the original MarshalJSON method
+// which does not fit the response format for the legacy API.
+type plainScalar promql.Scalar
+
+func (pv plainScalar) Type() promql.ExprType {
+	return promql.ExprScalar
+}
+
+func (pv plainScalar) String() string {
+	return ""
+}
+
+// plainString is an indirection that hides the original MarshalJSON method
+// which does not fit the response format for the legacy API.
+type plainString promql.String
+
+func (pv plainString) Type() promql.ExprType {
+	return promql.ExprString
+}
+
+func (pv plainString) String() string {
 	return ""
 }
 

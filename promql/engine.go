@@ -19,6 +19,7 @@ import (
 	"math"
 	"runtime"
 	"sort"
+	"strconv"
 	"time"
 
 	"golang.org/x/net/context"
@@ -43,12 +44,6 @@ type Sample struct {
 	Timestamp clientmodel.Timestamp   `json:"timestamp"`
 }
 
-// Scalar is a scalar value evaluated at the set timestamp.
-type Scalar struct {
-	Value     clientmodel.SampleValue `json:"value"`
-	Timestamp clientmodel.Timestamp   `json:"timestamp"`
-}
-
 // MarshalJSON implements json.Marshaler.
 func (s *Sample) MarshalJSON() ([]byte, error) {
 	v := struct {
@@ -65,14 +60,31 @@ func (s *Sample) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&v)
 }
 
+// Scalar is a scalar value evaluated at the set timestamp.
+type Scalar struct {
+	Value     clientmodel.SampleValue `json:"value"`
+	Timestamp clientmodel.Timestamp   `json:"timestamp"`
+}
+
 func (s *Scalar) String() string {
 	return fmt.Sprintf("scalar: %v @[%v]", s.Value, s.Timestamp)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (s *Scalar) MarshalJSON() ([]byte, error) {
+	v := strconv.FormatFloat(float64(s.Value), 'f', -1, 64)
+	return json.Marshal([]interface{}{s.Timestamp, string(v)})
 }
 
 // String is a string value evaluated at the set timestamp.
 type String struct {
 	Value     string                `json:"value"`
 	Timestamp clientmodel.Timestamp `json:"timestamp"`
+}
+
+// MarshalJSON implements json.Marshaler.
+func (s *String) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]interface{}{s.Timestamp, s.Value})
 }
 
 func (s *String) String() string {
