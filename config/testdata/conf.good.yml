@@ -49,8 +49,8 @@ scrape_configs:
 - job_name: service-x
 
   basic_auth:
-    username: admin
-    password: password
+    username: admin_name
+    password: admin_password
 
   scrape_interval: 50s
   scrape_timeout:  5s
