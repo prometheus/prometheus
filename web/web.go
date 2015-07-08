@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -244,7 +245,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 	}{
 		RawParams: rawParams,
 		Params:    params,
-		Path:      name,
+		Path:      strings.TrimLeft(name, "/"),
 	}
 
 	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, clientmodel.Now(), h.queryEngine, h.options.ExternalURL.Path)
