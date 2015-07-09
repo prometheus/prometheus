@@ -579,7 +579,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     for (var i = 0; i < data.result.length; i++) {
       var s = data.result[i];
       var tsName = self.metricToTsName(s.metric);
-      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + s[1] + "</td></tr>");
+      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + s.value[1] + "</td></tr>");
     }
     break;
   case "matrix":
