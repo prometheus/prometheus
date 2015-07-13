@@ -643,7 +643,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 						return
 					}
 				} else {
-					// This is the non-persisted head chunk. Fully marshal it.
+					// This is a non-persisted chunk. Fully marshal it.
 					if err = w.WriteByte(byte(chunkDesc.c.encoding())); err != nil {
 						return
 					}
@@ -853,6 +853,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 			modTime:          modTime,
 			chunkDescsOffset: int(chunkDescsOffset),
 			savedFirstTime:   clientmodel.Timestamp(savedFirstTime),
+			lastTime:         chunkDescs[len(chunkDescs)-1].lastTime(),
 			headChunkClosed:  persistWatermark >= numChunkDescs,
 		}
 	}
@@ -1173,38 +1174,27 @@ func (p *persistence) purgeArchivedMetric(fp clientmodel.Fingerprint) (err error
 
 // unarchiveMetric deletes an archived fingerprint and its metric, but (in
 // contrast to purgeArchivedMetric) does not un-index the metric.  If a metric
-// was actually deleted, the method returns true and the first time of the
-// deleted metric. The caller must have locked the fingerprint.
-func (p *persistence) unarchiveMetric(fp clientmodel.Fingerprint) (
-	deletedAnything bool,
-	firstDeletedTime clientmodel.Timestamp,
-	err error,
-) {
+// was actually deleted, the method returns true and the first time and last
+// time of the deleted metric. The caller must have locked the fingerprint.
+func (p *persistence) unarchiveMetric(fp clientmodel.Fingerprint) (deletedAnything bool, err error) {
 	defer func() {
 		if err != nil {
 			p.setDirty(true)
 		}
 	}()
 
-	firstTime, _, has, err := p.archivedFingerprintToTimeRange.Lookup(fp)
-	if err != nil || !has {
-		return false, firstTime, err
-	}
 	deleted, err := p.archivedFingerprintToMetrics.Delete(codable.Fingerprint(fp))
-	if err != nil {
-		return false, firstTime, err
-	}
-	if !deleted {
-		log.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToMetrics index. This should never happen.", fp)
+	if err != nil || !deleted {
+		return false, err
 	}
 	deleted, err = p.archivedFingerprintToTimeRange.Delete(codable.Fingerprint(fp))
 	if err != nil {
-		return false, firstTime, err
+		return false, err
 	}
 	if !deleted {
 		log.Errorf("Tried to delete non-archived fingerprint %s from archivedFingerprintToTimeRange index. This should never happen.", fp)
 	}
-	return true, firstTime, nil
+	return true, nil
 }
 
 // close flushes the indexing queue and other buffered data and releases any

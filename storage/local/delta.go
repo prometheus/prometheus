@@ -94,9 +94,11 @@ func (c deltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 	}
 
 	baseValue := c.baseValue()
-	// TODO(beorn7): Once https://github.com/prometheus/prometheus/issues/481 is
-	// fixed, we should panic here if dt is negative.
 	dt := s.Timestamp - c.baseTime()
+	if dt < 0 {
+		panic("time delta is less than zero")
+	}
+
 	dv := s.Value - baseValue
 	tb := c.timeBytes()
 	vb := c.valueBytes()
@@ -382,7 +384,7 @@ func (it *deltaEncodedChunkIterator) timestampAtIndex(idx int) clientmodel.Times
 		// Take absolute value for d8.
 		return clientmodel.Timestamp(binary.LittleEndian.Uint64(it.c[offset:]))
 	default:
-		panic("Invalid number of bytes for time delta")
+		panic("invalid number of bytes for time delta")
 	}
 }
 
@@ -407,7 +409,7 @@ func (it *deltaEncodedChunkIterator) sampleValueAtIndex(idx int) clientmodel.Sam
 			return it.baseV + clientmodel.SampleValue(int32(binary.LittleEndian.Uint32(it.c[offset:])))
 		// No d8 for ints.
 		default:
-			panic("Invalid number of bytes for integer delta")
+			panic("invalid number of bytes for integer delta")
 		}
 	} else {
 		switch it.vBytes {
@@ -417,7 +419,7 @@ func (it *deltaEncodedChunkIterator) sampleValueAtIndex(idx int) clientmodel.Sam
 			// Take absolute value for d8.
 			return clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(it.c[offset:])))
 		default:
-			panic("Invalid number of bytes for floating point delta")
+			panic("invalid number of bytes for floating point delta")
 		}
 	}
 }
