@@ -164,11 +164,11 @@ func (c doubleDeltaEncodedChunk) add(s *metric.SamplePair) []chunk {
 		case d0:
 			// No-op. Constant delta is stored as base value.
 		case d1:
-			c[offset] = byte(ddv)
+			c[offset] = byte(int8(ddv))
 		case d2:
-			binary.LittleEndian.PutUint16(c[offset:], uint16(ddv))
+			binary.LittleEndian.PutUint16(c[offset:], uint16(int16(ddv)))
 		case d4:
-			binary.LittleEndian.PutUint32(c[offset:], uint32(ddv))
+			binary.LittleEndian.PutUint32(c[offset:], uint32(int32(ddv)))
 		// d8 must not happen. Those samples are encoded as float64.
 		default:
 			panic("invalid number of bytes for integer delta")
