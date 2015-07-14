@@ -428,6 +428,9 @@ type ServersetSDConfig struct {
 	Servers []string `yaml:"servers"`
 	Paths   []string `yaml:"paths"`
 	Timeout Duration `yaml:"timeout,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -449,7 +452,7 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
 		}
 	}
-	return nil
+	return checkOverflow(c.XXX, "serverset_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.
