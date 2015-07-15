@@ -89,6 +89,8 @@ func init() {
 var (
 	// Global counter, also used internally, so not implemented as
 	// metrics. Collected in memorySeriesStorage.Collect.
+	// TODO(beorn7): As it is used internally, it is actually very bad style
+	// to have it as a global variable.
 	numMemChunks int64
 
 	// Metric descriptors for the above.

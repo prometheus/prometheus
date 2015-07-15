@@ -979,7 +979,7 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 		return
 	}
 	// If we are here, the series is not archived, so check for chunkDesc
-	// eviction next
+	// eviction next.
 	series.evictChunkDescs(iOldestNotEvicted)
 
 	return series.dirty && !seriesWasDirty
