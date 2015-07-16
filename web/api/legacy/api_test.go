@@ -56,19 +56,24 @@ func TestQuery(t *testing.T) {
 			bodyRe:   `{"type":"error","value":"Parse error at char 1: no expression found in input","version":1}`,
 		},
 		{
+			queryStr: "expr=1.4",
+			status:   http.StatusOK,
+			bodyRe:   `{"type":"scalar","value":"1.4","version":1}`,
+		},
+		{
 			queryStr: "expr=testmetric",
 			status:   http.StatusOK,
-			bodyRe:   `{"type":"vector","value":\[\{"metric":{"__name__":"testmetric"},"value":"0","timestamp":\d+\.\d+}\],"version":1\}`,
+			bodyRe:   `{"type":"vector","value":\[{"metric":{"__name__":"testmetric"},"value":"0","timestamp":\d+\.\d+}\],"version":1}`,
 		},
 		{
 			queryStr: "expr=testmetric&timestamp=" + testTimestamp.String(),
 			status:   http.StatusOK,
-			bodyRe:   `{"type":"vector","value":\[\{"metric":{"__name__":"testmetric"},"value":"0","timestamp":` + testTimestamp.String() + `}\],"version":1\}`,
+			bodyRe:   `{"type":"vector","value":\[{"metric":{"__name__":"testmetric"},"value":"0","timestamp":` + testTimestamp.String() + `}\],"version":1}`,
 		},
 		{
 			queryStr: "expr=testmetric&timestamp=" + testTimestamp.Add(-time.Hour).String(),
 			status:   http.StatusOK,
-			bodyRe:   `{"type":"vector","value":\[\],"version":1\}`,
+			bodyRe:   `{"type":"vector","value":\[\],"version":1}`,
 		},
 		{
 			queryStr: "timestamp=invalid",
