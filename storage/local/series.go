@@ -162,6 +162,9 @@ type memorySeries struct {
 	// first chunk before its chunk desc is evicted. In doubt, this field is
 	// just set to the oldest possible timestamp.
 	savedFirstTime clientmodel.Timestamp
+	// The timestamp of the last sample in this series. Needed for fast access to
+	// ensure timestamp monotonicity during ingestion.
+	lastTime clientmodel.Timestamp
 	// Whether the current head chunk has already been finished.  If true,
 	// the current head chunk must not be modified anymore.
 	headChunkClosed bool
@@ -175,28 +178,29 @@ type memorySeries struct {
 }
 
 // newMemorySeries returns a pointer to a newly allocated memorySeries for the
-// given metric. reallyNew defines if the memorySeries is a genuinely new series
-// or (if false) a series for a metric being unarchived, i.e. a series that
-// existed before but has been evicted from memory. If reallyNew is false,
-// firstTime is ignored (and set to the lowest possible timestamp instead - it
-// will be set properly upon the first eviction of chunkDescs).
-func newMemorySeries(
-	m clientmodel.Metric,
-	reallyNew bool,
-	firstTime clientmodel.Timestamp,
-) *memorySeries {
-	if !reallyNew {
-		firstTime = clientmodel.Earliest
+// given metric. chunkDescs and modTime in the new series are set according to
+// the provided parameters. chunkDescs can be nil or empty if this is a
+// genuinely new time series (i.e. not one that is being unarchived). In that
+// case, headChunkClosed is set to false, and firstTime and lastTime are both
+// set to clientmodel.Earliest. The zero value for modTime can be used if the
+// modification time of the series file is unknown (e.g. if this is a genuinely
+// new series).
+func newMemorySeries(m clientmodel.Metric, chunkDescs []*chunkDesc, modTime time.Time) *memorySeries {
+	firstTime := clientmodel.Earliest
+	lastTime := clientmodel.Earliest
+	if len(chunkDescs) > 0 {
+		firstTime = chunkDescs[0].firstTime()
+		lastTime = chunkDescs[len(chunkDescs)-1].lastTime()
 	}
-	s := memorySeries{
-		metric:          m,
-		headChunkClosed: !reallyNew,
-		savedFirstTime:  firstTime,
+	return &memorySeries{
+		metric:           m,
+		chunkDescs:       chunkDescs,
+		headChunkClosed:  len(chunkDescs) > 0,
+		savedFirstTime:   firstTime,
+		lastTime:         lastTime,
+		persistWatermark: len(chunkDescs),
+		modTime:          modTime,
 	}
-	if !reallyNew {
-		s.chunkDescsOffset = -1
-	}
-	return &s
 }
 
 // add adds a sample pair to the series. It returns the number of newly
@@ -231,6 +235,8 @@ func (s *memorySeries) add(v *metric.SamplePair) int {
 	for _, c := range chunks[1:] {
 		s.chunkDescs = append(s.chunkDescs, newChunkDesc(c))
 	}
+
+	s.lastTime = v.Timestamp
 	return len(chunks) - 1
 }
 
@@ -243,7 +249,7 @@ func (s *memorySeries) maybeCloseHeadChunk() bool {
 	if s.headChunkClosed {
 		return false
 	}
-	if time.Now().Sub(s.head().lastTime().Time()) > headChunkTimeout {
+	if time.Now().Sub(s.lastTime.Time()) > headChunkTimeout {
 		s.headChunkClosed = true
 		// Since we cannot modify the head chunk from now on, we
 		// don't need to bother with cloning anymore.

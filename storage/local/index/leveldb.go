@@ -109,11 +109,12 @@ func (l *LevelDB) Delete(key encoding.BinaryMarshaler) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	err = l.storage.Delete(k, l.writeOpts)
-	if err == leveldb.ErrNotFound {
-		return false, nil
+	// Note that Delete returns nil if k does not exist. So we have to test
+	// for existence with Has first.
+	if has, err := l.storage.Has(k, l.readOpts); !has || err != nil {
+		return false, err
 	}
-	if err != nil {
+	if err = l.storage.Delete(k, l.writeOpts); err != nil {
 		return false, err
 	}
 	return true, nil

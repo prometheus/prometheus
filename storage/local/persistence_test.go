@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
@@ -354,11 +355,11 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 
 	fpLocker := newFingerprintLocker(10)
 	sm := newSeriesMap()
-	s1 := newMemorySeries(m1, true, 0)
-	s2 := newMemorySeries(m2, false, 0)
-	s3 := newMemorySeries(m3, false, 0)
-	s4 := newMemorySeries(m4, true, 0)
-	s5 := newMemorySeries(m5, true, 0)
+	s1 := newMemorySeries(m1, nil, time.Time{})
+	s2 := newMemorySeries(m2, nil, time.Time{})
+	s3 := newMemorySeries(m3, nil, time.Time{})
+	s4 := newMemorySeries(m4, nil, time.Time{})
+	s5 := newMemorySeries(m5, nil, time.Time{})
 	s1.add(&metric.SamplePair{Timestamp: 1, Value: 3.14})
 	s3.add(&metric.SamplePair{Timestamp: 2, Value: 2.7})
 	s3.headChunkClosed = true
@@ -416,8 +417,8 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if loadedS3.head().c != nil {
 			t.Error("head chunk not evicted")
 		}
-		if loadedS3.chunkDescsOffset != -1 {
-			t.Errorf("want chunkDescsOffset -1, got %d", loadedS3.chunkDescsOffset)
+		if loadedS3.chunkDescsOffset != 0 {
+			t.Errorf("want chunkDescsOffset 0, got %d", loadedS3.chunkDescsOffset)
 		}
 		if !loadedS3.headChunkClosed {
 			t.Error("headChunkClosed is false")
@@ -546,22 +547,19 @@ func testFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
 		}
 	}
 
-	unarchived, firstTime, err := p.unarchiveMetric(1)
+	unarchived, err := p.unarchiveMetric(1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !unarchived {
-		t.Fatal("expected actual unarchival")
+		t.Error("expected actual unarchival")
 	}
-	if firstTime != 2 {
-		t.Errorf("expected first time 2, got %v", firstTime)
-	}
-	unarchived, firstTime, err = p.unarchiveMetric(1)
+	unarchived, err = p.unarchiveMetric(1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if unarchived {
-		t.Fatal("expected no unarchival")
+		t.Error("expected no unarchival")
 	}
 
 	expectedFPs = map[clientmodel.Timestamp][]clientmodel.Fingerprint{
@@ -831,15 +829,12 @@ func testIndexing(t *testing.T, encoding chunkEncoding) {
 		verifyIndexedState(i, t, batches[i], indexedFpsToMetrics, p)
 		for fp, m := range b.fpToMetric {
 			p.unindexMetric(fp, m)
-			unarchived, firstTime, err := p.unarchiveMetric(fp)
+			unarchived, err := p.unarchiveMetric(fp)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !unarchived {
 				t.Errorf("%d. metric not unarchived", i)
-			}
-			if firstTime != 1 {
-				t.Errorf("%d. expected firstTime=1, got %v", i, firstTime)
 			}
 			delete(indexedFpsToMetrics, fp)
 		}

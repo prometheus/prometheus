@@ -135,6 +135,7 @@ type memorySeriesStorage struct {
 	numSeries                   prometheus.Gauge
 	seriesOps                   *prometheus.CounterVec
 	ingestedSamplesCount        prometheus.Counter
+	outOfOrderSamplesCount      prometheus.Counter
 	invalidPreloadRequestsCount prometheus.Counter
 	maintainSeriesDuration      *prometheus.SummaryVec
 }
@@ -202,6 +203,12 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 			Subsystem: subsystem,
 			Name:      "ingested_samples_total",
 			Help:      "The total number of samples ingested.",
+		}),
+		outOfOrderSamplesCount: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "out_of_order_samples_total",
+			Help:      "The total number of samples that were discarded because their timestamps were at or before the last received sample for a series.",
 		}),
 		invalidPreloadRequestsCount: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -550,6 +557,13 @@ func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
 		s.fpLocker.Lock(fp)
 	}
 	series := s.getOrCreateSeries(fp, sample.Metric)
+
+	if sample.Timestamp <= series.lastTime {
+		s.fpLocker.Unlock(fp)
+		log.Warnf("Ignoring sample with out-of-order timestamp for fingerprint %v (%v): %v is not after %v", fp, series.metric, sample.Timestamp, series.lastTime)
+		s.outOfOrderSamplesCount.Inc()
+		return
+	}
 	completedChunksCount := series.add(&metric.SamplePair{
 		Value:     sample.Value,
 		Timestamp: sample.Timestamp,
@@ -562,18 +576,30 @@ func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
 func (s *memorySeriesStorage) getOrCreateSeries(fp clientmodel.Fingerprint, m clientmodel.Metric) *memorySeries {
 	series, ok := s.fpToSeries.get(fp)
 	if !ok {
-		unarchived, firstTime, err := s.persistence.unarchiveMetric(fp)
+		var cds []*chunkDesc
+		var modTime time.Time
+		unarchived, err := s.persistence.unarchiveMetric(fp)
 		if err != nil {
-			log.Errorf("Error unarchiving fingerprint %v: %v", fp, err)
+			log.Errorf("Error unarchiving fingerprint %v (metric %v): %v", fp, m, err)
 		}
 		if unarchived {
 			s.seriesOps.WithLabelValues(unarchive).Inc()
+			// We have to load chunkDescs anyway to do anything with
+			// the series, so let's do it right now so that we don't
+			// end up with a series without any chunkDescs for a
+			// while (which is confusing as it makes the series
+			// appear as archived or purged).
+			cds, err = s.loadChunkDescs(fp, clientmodel.Latest)
+			if err != nil {
+				log.Errorf("Error loading chunk descs for fingerprint %v (metric %v): %v", fp, m, err)
+			}
+			modTime = s.persistence.seriesFileModTime(fp)
 		} else {
 			// This was a genuinely new series, so index the metric.
 			s.persistence.indexMetric(fp, m)
 			s.seriesOps.WithLabelValues(create).Inc()
 		}
-		series = newMemorySeries(m, !unarchived, firstTime)
+		series = newMemorySeries(m, cds, modTime)
 		s.fpToSeries.put(fp, series)
 		s.numSeries.Inc()
 	}
@@ -943,21 +969,8 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 	if iOldestNotEvicted == -1 {
 		s.fpToSeries.del(fp)
 		s.numSeries.Dec()
-		// Make sure we have a head chunk descriptor (a freshly
-		// unarchived series has none).
-		if len(series.chunkDescs) == 0 {
-			cds, err := s.loadChunkDescs(fp, clientmodel.Latest)
-			if err != nil {
-				log.Errorf(
-					"Could not load chunk descriptors prior to archiving metric %v, metric will not be archived: %v",
-					series.metric, err,
-				)
-				return
-			}
-			series.chunkDescs = cds
-		}
 		if err := s.persistence.archiveMetric(
-			fp, series.metric, series.firstTime(), series.head().lastTime(),
+			fp, series.metric, series.firstTime(), series.lastTime,
 		); err != nil {
 			log.Errorf("Error archiving metric %v: %v", series.metric, err)
 			return
@@ -1154,6 +1167,7 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	ch <- s.numSeries.Desc()
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
+	ch <- s.outOfOrderSamplesCount.Desc()
 	ch <- s.invalidPreloadRequestsCount.Desc()
 	ch <- numMemChunksDesc
 	s.maintainSeriesDuration.Describe(ch)
@@ -1178,6 +1192,7 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	ch <- s.numSeries
 	s.seriesOps.Collect(ch)
 	ch <- s.ingestedSamplesCount
+	ch <- s.outOfOrderSamplesCount
 	ch <- s.invalidPreloadRequestsCount
 	ch <- prometheus.MustNewConstMetric(
 		numMemChunksDesc,

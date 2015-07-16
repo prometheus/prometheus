@@ -339,10 +339,7 @@ func (c doubleDeltaEncodedChunk) addFirstSample(s *metric.SamplePair) []chunk {
 func (c doubleDeltaEncodedChunk) addSecondSample(s *metric.SamplePair, tb, vb deltaBytes) []chunk {
 	baseTimeDelta := s.Timestamp - c.baseTime()
 	if baseTimeDelta < 0 {
-		// TODO(beorn7): We ignore this irregular case for now. Once
-		// https://github.com/prometheus/prometheus/issues/481 is
-		// fixed, we should panic here instead.
-		return []chunk{&c}
+		panic("base time delta is less than zero")
 	}
 	c = c[:doubleDeltaHeaderBytes]
 	if tb >= d8 || bytesNeededForUnsignedTimestampDelta(baseTimeDelta) >= d8 {
@@ -511,7 +508,7 @@ func (it *doubleDeltaEncodedChunkIterator) timestampAtIndex(idx int) clientmodel
 		// Take absolute value for d8.
 		return clientmodel.Timestamp(binary.LittleEndian.Uint64(it.c[offset:]))
 	default:
-		panic("Invalid number of bytes for time delta")
+		panic("invalid number of bytes for time delta")
 	}
 }
 
@@ -555,7 +552,7 @@ func (it *doubleDeltaEncodedChunkIterator) sampleValueAtIndex(idx int) clientmod
 				clientmodel.SampleValue(int32(binary.LittleEndian.Uint32(it.c[offset:])))
 		// No d8 for ints.
 		default:
-			panic("Invalid number of bytes for integer delta")
+			panic("invalid number of bytes for integer delta")
 		}
 	} else {
 		switch it.vBytes {
@@ -567,7 +564,7 @@ func (it *doubleDeltaEncodedChunkIterator) sampleValueAtIndex(idx int) clientmod
 			// Take absolute value for d8.
 			return clientmodel.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(it.c[offset:])))
 		default:
-			panic("Invalid number of bytes for floating point delta")
+			panic("invalid number of bytes for floating point delta")
 		}
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math/rand"
+	"reflect"
 	"testing"
 	"testing/quick"
 	"time"
@@ -377,7 +378,7 @@ func TestRetentionCutoff(t *testing.T) {
 	s.WaitForIndexing()
 
 	var fp clientmodel.Fingerprint
-	for f := range s.fingerprintsForLabelPairs(metric.LabelPair{"job", "test"}) {
+	for f := range s.fingerprintsForLabelPairs(metric.LabelPair{Name: "job", Value: "test"}) {
 		fp = f
 		break
 	}
@@ -398,7 +399,7 @@ func TestRetentionCutoff(t *testing.T) {
 		t.Errorf("unexpected result for timestamp before retention period")
 	}
 
-	vals = it.RangeValues(metric.Interval{insertStart, now})
+	vals = it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now})
 	// We get 59 values here because the clientmodel.Now() is slightly later
 	// than our now.
 	if len(vals) != 59 {
@@ -408,7 +409,7 @@ func TestRetentionCutoff(t *testing.T) {
 		t.Errorf("unexpected timestamp for first sample: %v, expected %v", vals[0].Timestamp.Time(), expt.Time())
 	}
 
-	vals = it.BoundaryValues(metric.Interval{insertStart, now})
+	vals = it.BoundaryValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now})
 	if len(vals) != 2 {
 		t.Errorf("expected 2 values but got %d", len(vals))
 	}
@@ -441,7 +442,7 @@ func TestDropMetrics(t *testing.T) {
 	}
 	s.WaitForIndexing()
 
-	fps := s.fingerprintsForLabelPairs(metric.LabelPair{clientmodel.MetricNameLabel, "test"})
+	fps := s.fingerprintsForLabelPairs(metric.LabelPair{Name: clientmodel.MetricNameLabel, Value: "test"})
 	if len(fps) != 2 {
 		t.Fatalf("unexpected number of fingerprints: %d", len(fps))
 	}
@@ -449,7 +450,7 @@ func TestDropMetrics(t *testing.T) {
 	var fpList clientmodel.Fingerprints
 	for fp := range fps {
 		it := s.NewIterator(fp)
-		if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != N {
+		if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != N {
 			t.Fatalf("unexpected number of samples: %d", len(vals))
 		}
 		fpList = append(fpList, fp)
@@ -458,34 +459,38 @@ func TestDropMetrics(t *testing.T) {
 	s.DropMetricsForFingerprints(fpList[0])
 	s.WaitForIndexing()
 
-	fps2 := s.fingerprintsForLabelPairs(metric.LabelPair{clientmodel.MetricNameLabel, "test"})
+	fps2 := s.fingerprintsForLabelPairs(metric.LabelPair{
+		Name: clientmodel.MetricNameLabel, Value: "test",
+	})
 	if len(fps2) != 1 {
 		t.Fatalf("unexpected number of fingerprints: %d", len(fps2))
 	}
 
 	it := s.NewIterator(fpList[0])
-	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != 0 {
+	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Fatalf("unexpected number of samples: %d", len(vals))
 	}
 	it = s.NewIterator(fpList[1])
-	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != N {
+	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != N {
 		t.Fatalf("unexpected number of samples: %d", len(vals))
 	}
 
 	s.DropMetricsForFingerprints(fpList...)
 	s.WaitForIndexing()
 
-	fps3 := s.fingerprintsForLabelPairs(metric.LabelPair{clientmodel.MetricNameLabel, "test"})
+	fps3 := s.fingerprintsForLabelPairs(metric.LabelPair{
+		Name: clientmodel.MetricNameLabel, Value: "test",
+	})
 	if len(fps3) != 0 {
 		t.Fatalf("unexpected number of fingerprints: %d", len(fps3))
 	}
 
 	it = s.NewIterator(fpList[0])
-	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != 0 {
+	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Fatalf("unexpected number of samples: %d", len(vals))
 	}
 	it = s.NewIterator(fpList[1])
-	if vals := it.RangeValues(metric.Interval{insertStart, now}); len(vals) != 0 {
+	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Fatalf("unexpected number of samples: %d", len(vals))
 	}
 }
@@ -1404,4 +1409,51 @@ func verifyStorage(t testing.TB, s *memorySeriesStorage, samples clientmodel.Sam
 		p.Close()
 	}
 	return result
+}
+
+func TestAppendOutOfOrder(t *testing.T) {
+	s, closer := NewTestStorage(t, 1)
+	defer closer.Close()
+
+	m := clientmodel.Metric{
+		clientmodel.MetricNameLabel: "out_of_order",
+	}
+
+	for i, t := range []int{0, 2, 2, 1} {
+		s.Append(&clientmodel.Sample{
+			Metric:    m,
+			Timestamp: clientmodel.Timestamp(t),
+			Value:     clientmodel.SampleValue(i),
+		})
+	}
+
+	fp, err := s.mapper.mapFP(m.FastFingerprint(), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pl := s.NewPreloader()
+	defer pl.Close()
+
+	err = pl.PreloadRange(fp, 0, 2, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("error preloading chunks: %s", err)
+	}
+
+	it := s.NewIterator(fp)
+
+	want := metric.Values{
+		{
+			Timestamp: 0,
+			Value:     0,
+		},
+		{
+			Timestamp: 2,
+			Value:     1,
+		},
+	}
+	got := it.RangeValues(metric.Interval{OldestInclusive: 0, NewestInclusive: 2})
+	if !reflect.DeepEqual(want, got) {
+		t.Fatalf("want %v, got %v", want, got)
+	}
 }

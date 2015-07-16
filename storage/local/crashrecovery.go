@@ -250,17 +250,28 @@ func (p *persistence) sanitizeSeries(
 		// consistent with the checkpoint, so we have to take a closer
 		// look.
 		if s.headChunkClosed {
-			// This is the easy case as we don't have any chunks in
-			// heads.db. Treat this series as a freshly unarchived
-			// one. No chunks or chunkDescs in memory, no current
-			// head chunk.
+			// This is the easy case as we have all chunks on
+			// disk. Treat this series as a freshly unarchived one
+			// by loading the chunkDescs and setting all parameters
+			// based on the loaded chunkDescs.
+			cds, err := p.loadChunkDescs(fp, clientmodel.Latest)
+			if err != nil {
+				log.Errorf(
+					"Failed to load chunk descriptors for metric %v, fingerprint %v: %s",
+					s.metric, fp, err,
+				)
+				purge()
+				return fp, false
+			}
 			log.Warnf(
 				"Treating recovered metric %v, fingerprint %v, as freshly unarchived, with %d chunks in series file.",
-				s.metric, fp, chunksInFile,
+				s.metric, fp, len(cds),
 			)
-			s.chunkDescs = nil
-			s.chunkDescsOffset = chunksInFile
-			s.persistWatermark = 0
+			s.chunkDescs = cds
+			s.chunkDescsOffset = 0
+			s.savedFirstTime = cds[0].firstTime()
+			s.lastTime = cds[len(cds)-1].lastTime()
+			s.persistWatermark = len(cds)
 			s.modTime = modTime
 			return fp, true
 		}
@@ -275,8 +286,8 @@ func (p *persistence) sanitizeSeries(
 		// First, throw away the chunkDescs without chunks.
 		s.chunkDescs = s.chunkDescs[s.persistWatermark:]
 		numMemChunkDescs.Sub(float64(s.persistWatermark))
-		// Load all the chunk descs (which assumes we have none from the future).
-		cds, err := p.loadChunkDescs(fp, clientmodel.Now())
+		// Load all the chunk descs.
+		cds, err := p.loadChunkDescs(fp, clientmodel.Latest)
 		if err != nil {
 			log.Errorf(
 				"Failed to load chunk descriptors for metric %v, fingerprint %v: %s",
@@ -287,6 +298,7 @@ func (p *persistence) sanitizeSeries(
 		}
 		s.persistWatermark = len(cds)
 		s.chunkDescsOffset = 0
+		s.savedFirstTime = cds[0].firstTime()
 		s.modTime = modTime
 
 		lastTime := cds[len(cds)-1].lastTime()
@@ -395,14 +407,11 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
 			return err
 		}
-		series := newMemorySeries(clientmodel.Metric(m), false, clientmodel.Earliest)
-		cds, err := p.loadChunkDescs(clientmodel.Fingerprint(fp), clientmodel.Now())
+		cds, err := p.loadChunkDescs(clientmodel.Fingerprint(fp), clientmodel.Latest)
 		if err != nil {
 			return err
 		}
-		series.chunkDescs = cds
-		series.chunkDescsOffset = 0
-		series.persistWatermark = len(cds)
+		series := newMemorySeries(clientmodel.Metric(m), cds, p.seriesFileModTime(clientmodel.Fingerprint(fp)))
 		fpToSeries[clientmodel.Fingerprint(fp)] = series
 		return nil
 	}); err != nil {
