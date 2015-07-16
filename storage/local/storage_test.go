@@ -1419,11 +1419,11 @@ func TestAppendOutOfOrder(t *testing.T) {
 		clientmodel.MetricNameLabel: "out_of_order",
 	}
 
-	for _, t := range []int{0, 2, 2, 1} {
+	for i, t := range []int{0, 2, 2, 1} {
 		s.Append(&clientmodel.Sample{
 			Metric:    m,
 			Timestamp: clientmodel.Timestamp(t),
-			Value:     clientmodel.SampleValue(t),
+			Value:     clientmodel.SampleValue(i),
 		})
 	}
 
@@ -1449,7 +1449,7 @@ func TestAppendOutOfOrder(t *testing.T) {
 		},
 		{
 			Timestamp: 2,
-			Value:     2,
+			Value:     1,
 		},
 	}
 	got := it.RangeValues(metric.Interval{OldestInclusive: 0, NewestInclusive: 2})
