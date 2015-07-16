@@ -37,7 +37,7 @@ The following individuals have contributed code to this repository
 * Stephen Shirley <kormat@gmail.com>
 * Steve Durrheimer <s.durrheimer@gmail.com>
 * Stuart Nelson <stuart.nelson@soundcloud.com>
-* Tobias Gesellchen <tobias.gesellchen@hypoport.de>
+* Tobias Gesellchen <tobias@gesellix.de>
 * Tobias Schmidt <ts@soundcloud.com>
 * Tomás Senart <tsenart@gmail.com>
 * Tom Prince <tom.prince@twistedmatrix.com>
