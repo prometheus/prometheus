@@ -31,6 +31,38 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
+func TestHostHeader(t *testing.T) {
+	type test struct {
+		target   *Target
+		wantHost string
+	}
+
+	tests := []test{
+		{
+			target:   newTestTarget("example.com:80", 0, nil),
+			wantHost: "example.com",
+		},
+		{
+			target:   newTestTarget("example.com:443", 0, nil),
+			wantHost: "example.com",
+		},
+		{
+			target:   newTestTarget("example.com", 0, nil),
+			wantHost: "example.com",
+		},
+		{
+			target:   newTestTarget("http://example.com:443/test", 0, nil),
+			wantHost: "example.com",
+		},
+	}
+
+	for _, test := range tests {
+		if test.target.hostHeader() != test.wantHost {
+			t.Errorf("want host header %v, got %v", test.wantHost, test.target.hostHeader)
+		}
+	}
+}
+
 func TestBaseLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, clientmodel.LabelSet{"job": "some_job", "foo": "bar"})
 	want := clientmodel.LabelSet{

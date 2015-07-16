@@ -348,6 +348,7 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 		panic(err)
 	}
 	req.Header.Add("Accept", acceptHeader)
+	req.Host = t.hostHeader()
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -419,6 +420,18 @@ func (t *Target) URL() *url.URL {
 	u := &url.URL{}
 	*u = *t.url
 	return u
+}
+
+// URLHostHeader returns the Host part of an URL without ports
+func (t *Target) hostHeader() string {
+	parts := strings.SplitN(t.url.Host, ":", 2)
+
+	// If 2 parts wasn't found, return the original value
+	if len(parts) != 2 {
+		return t.url.Host
+	}
+
+	return parts[0]
 }
 
 // InstanceIdentifier returns the identifier for the target.
