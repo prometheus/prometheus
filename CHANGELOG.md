@@ -1,3 +1,33 @@
+## 0.15.0rc2 / 2015-07-16
+CHANGES COMPARED TO RC1
+
+BREAKING CHANGES:
+
+- Relative paths for rule files are now evaluated relative to the config file.
+- External reachability flags (`-web.*`) consolidated.
+
+ALL CHANGES:
+
+- [BUGFIX] Fix chunk descriptor loading.
+- [ENHANCEMENT] Enforce strict monotonicity of time stamps within a series.
+- [CLEANUP] Fix `go vet` and `golint` violations.
+- [BUGFIX] Fix overflow detection for serverset config.
+- [BUGFIX] Fix float to int conversions in chunk encoding, which were broken
+  for some architectures.
+- [BUGFIX] Fix a regression in the `.Path` console template variable.
+- [BUGFIX] Fix race conditions in retrieval layer.
+- [BUGFIX] Fix value display error in web console.
+- [ENHANCEMENT] Export build information as metric.
+- [ENHANCEMENT] New dockerfile using alpine-glibc base image and make.
+- [BUGFIX] Fix the race condition targets in the Makefile.
+- [BUGFIX] Hide authentication credentials in config `String()` output.
+- [ENHANCEMENT] Refine v1 HTTP API output.
+- [CHANGE] Resolve rule files relative to config file.
+- [CHANGE] Consolidate external reachability flags (`-web.*`)into one.
+- [ENHANCEMENT] Add circleci yaml for Dockerfile test build.
+- [BUGFIX] Zookeeper SD: Handle serverset node not existing.
+- [ENHANCEMENT] Preserve alert state across reloads.
+
 ## 0.15.0rc1 / 2015-06-25
 BREAKING CHANGES:
 
