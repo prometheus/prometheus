@@ -444,10 +444,11 @@ func (p *persistence) loadChunks(fp clientmodel.Fingerprint, indexes []int, inde
 	return chunks, nil
 }
 
-// loadChunkDescs loads chunkDescs for a series up until a given time.  It is
-// the caller's responsibility to not persist or drop anything for the same
+// loadChunkDescs loads the chunkDescs for a series from disk. offsetFromEnd is
+// the number of chunkDescs to skip from the end of the series file. It is the
+// caller's responsibility to not persist or drop anything for the same
 // fingerprint concurrently.
-func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clientmodel.Timestamp) ([]*chunkDesc, error) {
+func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, offsetFromEnd int) ([]*chunkDesc, error) {
 	f, err := p.openChunkFileForReading(fp)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -469,8 +470,8 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 		)
 	}
 
-	numChunks := int(fi.Size()) / chunkLenWithHeader
-	cds := make([]*chunkDesc, 0, numChunks)
+	numChunks := int(fi.Size())/chunkLenWithHeader - offsetFromEnd
+	cds := make([]*chunkDesc, numChunks)
 	chunkTimesBuf := make([]byte, 16)
 	for i := 0; i < numChunks; i++ {
 		_, err := f.Seek(offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, os.SEEK_SET)
@@ -482,15 +483,10 @@ func (p *persistence) loadChunkDescs(fp clientmodel.Fingerprint, beforeTime clie
 		if err != nil {
 			return nil, err
 		}
-		cd := &chunkDesc{
+		cds[i] = &chunkDesc{
 			chunkFirstTime: clientmodel.Timestamp(binary.LittleEndian.Uint64(chunkTimesBuf)),
 			chunkLastTime:  clientmodel.Timestamp(binary.LittleEndian.Uint64(chunkTimesBuf[8:])),
 		}
-		if !cd.chunkLastTime.Before(beforeTime) {
-			// From here on, we have chunkDescs in memory already.
-			break
-		}
-		cds = append(cds, cd)
 	}
 	chunkDescOps.WithLabelValues(load).Add(float64(len(cds)))
 	numMemChunkDescs.Add(float64(len(cds)))

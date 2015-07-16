@@ -1116,6 +1116,78 @@ func TestEvictAndPurgeSeriesChunkType1(t *testing.T) {
 	testEvictAndPurgeSeries(t, 1)
 }
 
+func testEvictAndLoadChunkDescs(t *testing.T, encoding chunkEncoding) {
+	samples := make(clientmodel.Samples, 10000)
+	for i := range samples {
+		samples[i] = &clientmodel.Sample{
+			Timestamp: clientmodel.Timestamp(2 * i),
+			Value:     clientmodel.SampleValue(float64(i * i)),
+		}
+	}
+	// Give last sample a timestamp of now so that the head chunk will not
+	// be closed (which would then archive the time series later as
+	// everything will get evicted).
+	samples[len(samples)-1] = &clientmodel.Sample{
+		Timestamp: clientmodel.Now(),
+		Value:     clientmodel.SampleValue(3.14),
+	}
+
+	s, closer := NewTestStorage(t, encoding)
+	defer closer.Close()
+
+	// Adjust memory chunks to lower value to see evictions.
+	s.maxMemoryChunks = 1
+
+	for _, sample := range samples {
+		s.Append(sample)
+	}
+	s.WaitForIndexing()
+
+	fp := clientmodel.Metric{}.FastFingerprint()
+
+	series, ok := s.fpToSeries.get(fp)
+	if !ok {
+		t.Fatal("could not find series")
+	}
+
+	oldLen := len(series.chunkDescs)
+	// Maintain series without any dropped chunks.
+	s.maintainMemorySeries(fp, 0)
+	// Give the evict goroutine an opportunity to run.
+	time.Sleep(10 * time.Millisecond)
+	// Maintain series again to trigger chunkDesc eviction
+	s.maintainMemorySeries(fp, 0)
+
+	if oldLen <= len(series.chunkDescs) {
+		t.Errorf("Expected number of chunkDescs to decrease, old number %d, current number %d.", oldLen, len(series.chunkDescs))
+	}
+
+	// Load everything back.
+	p := s.NewPreloader()
+	p.PreloadRange(fp, 0, 100000, time.Hour)
+
+	if oldLen != len(series.chunkDescs) {
+		t.Errorf("Expected number of chunkDescs to have reached old value again, old number %d, current number %d.", oldLen, len(series.chunkDescs))
+	}
+
+	p.Close()
+
+	// Now maintain series with drops to make sure nothing crazy happens.
+	s.maintainMemorySeries(fp, 100000)
+
+	if len(series.chunkDescs) != 1 {
+		t.Errorf("Expected exactly one chunkDesc left, got %d.", len(series.chunkDescs))
+	}
+}
+
+func TestEvictAndLoadChunkDescsType0(t *testing.T) {
+	testEvictAndLoadChunkDescs(t, 0)
+}
+
+func TestEvictAndLoadChunkDescsType1(t *testing.T) {
+	testEvictAndLoadChunkDescs(t, 1)
+}
+
 func benchmarkAppend(b *testing.B, encoding chunkEncoding) {
 	samples := make(clientmodel.Samples, b.N)
 	for i := range samples {
@@ -1437,7 +1509,7 @@ func TestAppendOutOfOrder(t *testing.T) {
 
 	err = pl.PreloadRange(fp, 0, 2, 5*time.Minute)
 	if err != nil {
-		t.Fatalf("error preloading chunks: %s", err)
+		t.Fatalf("Error preloading chunks: %s", err)
 	}
 
 	it := s.NewIterator(fp)

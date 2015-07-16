@@ -122,7 +122,7 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 			}
 		}
 		// Load all chunk descs.
-		actualChunkDescs, err := p.loadChunkDescs(fp, 10)
+		actualChunkDescs, err := p.loadChunkDescs(fp, 0)
 		if len(actualChunkDescs) != 10 {
 			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 10)
 		}
@@ -974,7 +974,7 @@ func BenchmarkLoadChunkDescs(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for _, s := range fpStrings {
 			fp.LoadFromString(s)
-			cds, err := p.loadChunkDescs(fp, clientmodel.Latest)
+			cds, err := p.loadChunkDescs(fp, 0)
 			if err != nil {
 				b.Error(err)
 			}
