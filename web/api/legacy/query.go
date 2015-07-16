@@ -133,11 +133,16 @@ func (pv plainVec) String() string {
 // which does not fit the response format for the legacy API.
 type plainScalar promql.Scalar
 
-func (pv plainScalar) Type() promql.ExprType {
+func (ps plainScalar) MarshalJSON() ([]byte, error) {
+	s := strconv.FormatFloat(float64(ps.Value), 'f', -1, 64)
+	return json.Marshal(&s)
+}
+
+func (plainScalar) Type() promql.ExprType {
 	return promql.ExprScalar
 }
 
-func (pv plainScalar) String() string {
+func (plainScalar) String() string {
 	return ""
 }
 
