@@ -261,3 +261,16 @@ func TestEmptyConfig(t *testing.T) {
 		t.Fatalf("want %v, got %v", exp, c)
 	}
 }
+
+func TestEmptyGlobalBlock(t *testing.T) {
+	c, err := Load("global:\n")
+	if err != nil {
+		t.Fatalf("Unexpected error parsing empty config file: %s", err)
+	}
+	exp := DefaultConfig
+	exp.original = "global:\n"
+
+	if !reflect.DeepEqual(*c, exp) {
+		t.Fatalf("want %v, got %v", exp, c)
+	}
+}
