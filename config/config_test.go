@@ -249,3 +249,15 @@ func TestBadTargetGroup(t *testing.T) {
 		t.Errorf("Expected unmarshal error but got none.")
 	}
 }
+
+func TestEmptyConfig(t *testing.T) {
+	c, err := Load("")
+	if err != nil {
+		t.Fatalf("Unexpected error parsing empty config file: %s", err)
+	}
+	exp := DefaultConfig
+
+	if !reflect.DeepEqual(*c, exp) {
+		t.Fatalf("want %v, got %v", exp, c)
+	}
+}
