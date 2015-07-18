@@ -1,0 +1,33 @@
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+global:
+  scrape_interval:     15s # By default, scrape targets every 15 seconds.
+  evaluation_interval: 15s # By default, scrape targets every 15 seconds.
+  scrape_timeout: 10s
+
+scrape_configs:
+- job_name: 'kubernetes'
+
+  kubernetes_sd_configs:
+  - server: 'https://kubernetes.default.svc'
+    in_cluster: true
+
+  relabel_configs:
+  - source_labels: [__meta_kubernetes_node, __meta_kubernetes_service_annotation_prometheus_io_scrape]
+    action: keep
+    regex: ^(?:.+;|;true)$
+  - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+    action: replace
+    target_label: __scheme__
+    regex: ^(https?)$
+    replacement: $1
+  - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+    action: replace
+    target_label: __metrics_path__
+    regex: ^(.+)$
+    replacement: $1
+  - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+    action: replace
+    target_label: __address__
+    regex: ^(.+)(?::\d+);(\d+)$
+    replacement: $1:$2

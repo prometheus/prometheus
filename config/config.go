@@ -109,6 +109,13 @@ var (
 	DefaultMarathonSDConfig = MarathonSDConfig{
 		RefreshInterval: Duration(30 * time.Second),
 	}
+
+	// The default Kubernetes SD configuration
+	DefaultKubernetesSDConfig = KubernetesSDConfig{
+		KubeletPort:    10255,
+		RequestTimeout: Duration(10 * time.Second),
+		RetryInterval:  Duration(1 * time.Second),
+	}
 )
 
 // This custom URL type allows validating at configuration load time.
@@ -315,6 +322,8 @@ type ScrapeConfig struct {
 	ServersetSDConfigs []*ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
 	// MarathonSDConfigs is a list of Marathon service discovery configurations.
 	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
+	// List of Kubernetes service discovery configurations.
+	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -584,18 +593,52 @@ type MarathonSDConfig struct {
 	XXX map[string]interface{} `yaml:",inline"`
 }
 
+// KubernetesSDConfig is the configuration for Kubernetes service discovery.
+type KubernetesSDConfig struct {
+	Server          string   `yaml:"server"`
+	KubeletPort     int      `yaml:"kubelet_port,omitempty"`
+	InCluster       bool     `yaml:"in_cluster,omitempty"`
+	BearerTokenFile string   `yaml:"bearer_token_file,omitempty"`
+	Username        string   `yaml:"username,omitempty"`
+	Password        string   `yaml:"password,omitempty"`
+	Insecure        bool     `yaml:"insecure,omitempty"`
+	CertFile        string   `yaml:"cert_file,omitempty"`
+	KeyFile         string   `yaml:"key_file,omitempty"`
+	CAFile          string   `yaml:"ca_file,omitempty"`
+	RetryInterval   Duration `yaml:"retry_interval,omitempty"`
+	RequestTimeout  Duration `yaml:"request_timeout,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultMarathonSDConfig
 	type plain MarathonSDConfig
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
+	}
+
+	return checkOverflow(c.XXX, "marathon_sd_config")
+}
+
+func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultKubernetesSDConfig
+	type plain KubernetesSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
 	}
-	if len(c.Servers) == 0 {
-		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
+	if strings.TrimSpace(c.Server) == "" {
+		return fmt.Errorf("Kubernetes SD configuration requires a server address")
 	}
-	return checkOverflow(c.XXX, "marathon_sd_config")
+	// Make sure server ends in trailing slash - simpler URL building later
+	if !strings.HasSuffix(c.Server, "/") {
+		c.Server += "/"
+	}
+
+	return checkOverflow(c.XXX, "kubernetes_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.

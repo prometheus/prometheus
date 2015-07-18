@@ -22,7 +22,10 @@ import (
 	"time"
 )
 
-var durationRE = regexp.MustCompile("^([0-9]+)([ywdhms]+)$")
+var (
+	durationRE         = regexp.MustCompile("^([0-9]+)([ywdhms]+)$")
+	invalidLabelCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+)
 
 // DurationToString formats a time.Duration as a string with the assumption that
 // a year always has 365 days and a day always has 24h. (The former doesn't work
@@ -102,4 +105,10 @@ func TableLinkForExpression(expr string) string {
 func GraphLinkForExpression(expr string) string {
 	urlData := url.QueryEscape(fmt.Sprintf(`[{"expr":%q,"tab":0}]`, expr))
 	return fmt.Sprintf("/graph#%s", strings.Replace(urlData, "+", "%20", -1))
+}
+
+// SanitizeLabelName replaces anything that doesn't match
+// client_label.LabelNameRE with an underscore.
+func SanitizeLabelName(name string) string {
+	return invalidLabelCharRE.ReplaceAllString(name, "_")
 }

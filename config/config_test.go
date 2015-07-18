@@ -174,6 +174,26 @@ var expectedConf = &Config{
 			},
 			BearerToken: "avalidtoken",
 		},
+		{
+			JobName: "service-kubernetes",
+
+			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			KubernetesSDConfigs: []*KubernetesSDConfig{
+				{
+					Server:         "https://localhost:1234/",
+					Username:       "myusername",
+					Password:       "mypassword",
+					KubeletPort:    10255,
+					RequestTimeout: Duration(10 * time.Second),
+					RetryInterval:  Duration(1 * time.Second),
+				},
+			},
+		},
 	},
 	original: "",
 }
@@ -189,10 +209,12 @@ func TestLoadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error parsing %s: %s", "testdata/conf.good.yml", err)
 	}
+
 	bgot, err := yaml.Marshal(c)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
+
 	bexp, err := yaml.Marshal(expectedConf)
 	if err != nil {
 		t.Fatalf("%s", err)
