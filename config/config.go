@@ -26,6 +26,11 @@ var (
 // Load parses the YAML input s into a Config.
 func Load(s string) (*Config, error) {
 	cfg := &Config{}
+	// If the entire config body is empty the UnmarshalYAML method is
+	// never called. We thus have to set the DefaultConfig at the entry
+	// point as well.
+	*cfg = DefaultConfig
+
 	err := yaml.Unmarshal([]byte(s), cfg)
 	if err != nil {
 		return nil, err
@@ -142,6 +147,12 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+	// If a global block was open but empty the default global config is overwritten.
+	// We have to restore it here.
+	if c.GlobalConfig.isZero() {
+		c.GlobalConfig = DefaultGlobalConfig
+	}
+
 	for _, rf := range c.RuleFiles {
 		if !patRulePath.MatchString(rf) {
 			return fmt.Errorf("invalid rule file path %q", rf)
@@ -189,6 +200,14 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	return checkOverflow(c.XXX, "global config")
+}
+
+// isZero returns true iff the global config is the zero value.
+func (c *GlobalConfig) isZero() bool {
+	return c.Labels == nil &&
+		c.ScrapeInterval == 0 &&
+		c.ScrapeTimeout == 0 &&
+		c.EvaluationInterval == 0
 }
 
 // ScrapeConfig configures a scraping unit for Prometheus.
