@@ -1,3 +1,9 @@
+## 0.15.0rc3 / 2015-07-20
+CHANGES COMPARED TO RC2
+
+- [BUGFIX] Fix empty configuration file cases
+- [BUGFIX] Restore legacy API scalar format
+
 ## 0.15.0rc2 / 2015-07-16
 CHANGES COMPARED TO RC1
 
