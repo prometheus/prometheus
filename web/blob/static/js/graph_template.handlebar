@@ -12,9 +12,6 @@
             <div class="row">
               <div class="col-lg-10">
                 <input class="btn btn-primary execute_btn" type="submit" value="Execute" name="submit">
-                <select class="form-control expression_select" name="insert_metric">
-                  <option value="">- insert metric at cursor -</option>
-                </select>
               </div>
             </div>
             <div class="row">
