@@ -171,6 +171,8 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		router.Post("/-/quit", h.quit)
 	}
 
+	router.Get("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
+
 	return h
 }
 
