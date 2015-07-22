@@ -33,12 +33,18 @@ const (
 	consulWatchTimeout  = 30 * time.Second
 	consulRetryInterval = 15 * time.Second
 
+	// ConsuleAddressLabel is the name for the label containing a target's address.
+	ConsulAddressLabel = clientmodel.MetaLabelPrefix + "consul_address"
 	// ConsuleNodeLabel is the name for the label containing a target's node name.
 	ConsulNodeLabel = clientmodel.MetaLabelPrefix + "consul_node"
 	// ConsulTagsLabel is the name of the label containing the tags assigned to the target.
 	ConsulTagsLabel = clientmodel.MetaLabelPrefix + "consul_tags"
 	// ConsulServiceLabel is the name of the label containing the service name.
 	ConsulServiceLabel = clientmodel.MetaLabelPrefix + "consul_service"
+	// ConsulServiceAddressLabel is the name of the label containing the (optional) service address.
+	ConsulServiceAddressLabel = clientmodel.MetaLabelPrefix + "consul_service_address"
+	// ConsulServicePortLabel is the name of the label containing the service port.
+	ConsulServicePortLabel = clientmodel.MetaLabelPrefix + "consul_service_port"
 	// ConsulDCLabel is the name of the label containing the datacenter ID.
 	ConsulDCLabel = clientmodel.MetaLabelPrefix + "consul_dc"
 )
@@ -264,9 +270,12 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 			tags := cd.tagSeparator + strings.Join(node.ServiceTags, cd.tagSeparator) + cd.tagSeparator
 
 			srv.tgroup.Targets = append(srv.tgroup.Targets, clientmodel.LabelSet{
-				clientmodel.AddressLabel: clientmodel.LabelValue(addr),
-				ConsulNodeLabel:          clientmodel.LabelValue(node.Node),
-				ConsulTagsLabel:          clientmodel.LabelValue(tags),
+				clientmodel.AddressLabel:  clientmodel.LabelValue(addr),
+				ConsulAddressLabel:        clientmodel.LabelValue(node.Address),
+				ConsulNodeLabel:           clientmodel.LabelValue(node.Node),
+				ConsulTagsLabel:           clientmodel.LabelValue(tags),
+				ConsulServiceAddressLabel: clientmodel.LabelValue(node.ServiceAddress),
+				ConsulServicePortLabel:    clientmodel.LabelValue(node.ServicePort),
 			})
 		}
 
