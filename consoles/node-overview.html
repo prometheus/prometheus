@@ -53,10 +53,10 @@
 {{ define "roughlyNearZero" }}
 {{ if gt .1 . }}~0{{ else }}{{ printf "%.1f" . }}{{ end }}
 {{ end }}
-{{ range printf "node_filesystem_size{job='node',instance='%s'}" .Params.instance | query | sortByLabel "filesystem" }}
+{{ range printf "node_filesystem_size{job='node',instance='%s'}" .Params.instance | query | sortByLabel "mountpoint" }}
   <tr>
-    <td>{{ .Labels.filesystem }}</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "100 - node_filesystem_free{job='node',instance='%s',filesystem='%s'} / node_filesystem_size{job='node'} * 100" .Labels.instance .Labels.filesystem) "%" "roughlyNearZero") }}</td>
+    <td>{{ .Labels.mountpoint }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "100 - node_filesystem_free{job='node',instance='%s',mountpoint='%s'} / node_filesystem_size{job='node'} * 100" .Labels.instance .Labels.mountpoint) "%" "roughlyNearZero") }}</td>
   </tr>
 {{ end }}
 </tr>
