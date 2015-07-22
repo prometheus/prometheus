@@ -14,8 +14,11 @@
 package retrieval
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -195,6 +198,13 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientm
 	t.Lock()
 	defer t.Unlock()
 
+	httpClient, err := newHTTPClient(cfg)
+	if err != nil {
+		log.Errorf("cannot create HTTP client: %v", err)
+		return
+	}
+	t.httpClient = httpClient
+
 	t.url.Scheme = cfg.Scheme
 	t.url.Path = string(baseLabels[clientmodel.MetricsPathLabel])
 	params := url.Values{}
@@ -218,7 +228,6 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientm
 
 	t.scrapeInterval = time.Duration(cfg.ScrapeInterval)
 	t.deadline = time.Duration(cfg.ScrapeTimeout)
-	t.httpClient = httputil.NewDeadlineClient(time.Duration(cfg.ScrapeTimeout))
 
 	t.honorLabels = cfg.HonorLabels
 	t.metaLabels = metaLabels
@@ -233,6 +242,57 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientm
 		t.baseLabels[clientmodel.InstanceLabel] = clientmodel.LabelValue(t.InstanceIdentifier())
 	}
 	t.metricRelabelConfigs = cfg.MetricRelabelConfigs
+}
+
+func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
+	tlsConfig := &tls.Config{}
+
+	// If a CA cert is provided then let's read it in so we can validate the
+	// scrape target's certificate properly.
+	if len(cfg.CACert) > 0 {
+		caCertPool := x509.NewCertPool()
+		// Load CA cert.
+		caCert, err := ioutil.ReadFile(cfg.CACert)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to use specified CA cert %s: %s", cfg.CACert, err)
+		}
+		caCertPool.AppendCertsFromPEM(caCert)
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	// If a client cert & key is provided then configure TLS config accordingly.
+	if cfg.ClientCert != nil && len(cfg.ClientCert.Cert) > 0 && len(cfg.ClientCert.Key) > 0 {
+		cert, err := tls.LoadX509KeyPair(cfg.ClientCert.Cert, cfg.ClientCert.Key)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to use specified client cert (%s) & key (%s): %s", cfg.ClientCert.Cert, cfg.ClientCert.Key, err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+	tlsConfig.BuildNameToCertificate()
+
+	// Get a default roundtripper with the scrape timeout.
+	rt := httputil.NewDeadlineRoundTripper(time.Duration(cfg.ScrapeTimeout))
+	tr := rt.(*http.Transport)
+	// Set the TLS config from above
+	tr.TLSClientConfig = tlsConfig
+	rt = tr
+
+	// If a bearer token is provided, create a round tripper that will set the
+	// Authorization header correctly on each request.
+	bearerToken := cfg.BearerToken
+	if len(bearerToken) == 0 && len(cfg.BearerTokenFile) > 0 {
+		if b, err := ioutil.ReadFile(cfg.BearerTokenFile); err != nil {
+			return nil, fmt.Errorf("Unable to read bearer token file %s: %s", cfg.BearerTokenFile, err)
+		} else {
+			bearerToken = string(b)
+		}
+	}
+	if len(bearerToken) > 0 {
+		rt = httputil.NewBearerAuthRoundTripper(bearerToken, rt)
+	}
+
+	// Return a new client with the configured round tripper.
+	return httputil.NewClient(rt), nil
 }
 
 func (t *Target) String() string {

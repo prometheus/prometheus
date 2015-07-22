@@ -89,3 +89,11 @@ scrape_configs:
   consul_sd_configs:
   - server: 'localhost:1234'
     services: ['nginx', 'cache', 'mysql']
+
+- job_name: service-z
+
+  client_cert:
+    cert: valid_cert_file
+    key: valid_key_file
+
+  bearer_token: avalidtoken
