@@ -1,111 +1,113 @@
-## 0.15.0rc3 / 2015-07-20
-CHANGES COMPARED TO RC2
-
-- [BUGFIX] Fix empty configuration file cases
-- [BUGFIX] Restore legacy API scalar format
-
-## 0.15.0rc2 / 2015-07-16
-CHANGES COMPARED TO RC1
+## 0.15.0 / 2015-07-21
 
 BREAKING CHANGES:
 
 - Relative paths for rule files are now evaluated relative to the config file.
 - External reachability flags (`-web.*`) consolidated.
+- The default storage directory has been changed from `/tmp/metrics`
+  to `data` in the local directory.
+- The `rule_checker` tool has been replaced by `promtool` with
+  different flags and more functionality.
+- Empty labels are now removed upon ingestion into the
+  storage. Matching empty labels is now equivalent to matching unset
+  labels (`mymetric{label=""}` now matches series that don't have
+  `label` set at all).
+- The special `__meta_consul_tags` label in Consul service discovery
+  now starts and ends with tag separators to enable easier regex
+  matching.
+- The default scrape interval has been changed back from 1 minute to
+  10 seconds.
 
 ALL CHANGES:
 
-- [BUGFIX] Fix chunk descriptor loading.
-- [ENHANCEMENT] Enforce strict monotonicity of time stamps within a series.
-- [CLEANUP] Fix `go vet` and `golint` violations.
-- [BUGFIX] Fix overflow detection for serverset config.
-- [BUGFIX] Fix float to int conversions in chunk encoding, which were broken
-  for some architectures.
-- [BUGFIX] Fix a regression in the `.Path` console template variable.
-- [BUGFIX] Fix race conditions in retrieval layer.
-- [BUGFIX] Fix value display error in web console.
-- [ENHANCEMENT] Export build information as metric.
-- [ENHANCEMENT] New dockerfile using alpine-glibc base image and make.
-- [BUGFIX] Fix the race condition targets in the Makefile.
-- [BUGFIX] Hide authentication credentials in config `String()` output.
-- [ENHANCEMENT] Refine v1 HTTP API output.
-- [CHANGE] Resolve rule files relative to config file.
+- [CHANGE] Change default storage directory to `data` in the current
+  working directory.
 - [CHANGE] Consolidate external reachability flags (`-web.*`)into one.
-- [ENHANCEMENT] Add circleci yaml for Dockerfile test build.
-- [BUGFIX] Zookeeper SD: Handle serverset node not existing.
-- [ENHANCEMENT] Preserve alert state across reloads.
-
-## 0.15.0rc1 / 2015-06-25
-BREAKING CHANGES:
-
-- The default storage directory has been changed from `/tmp/metrics` to `data`
-  in the local directory.
-- The `rule_checker` tool has been replaced by `promtool` with different flags and more functionality.
-- Empty labels are now removed upon ingestion into the storage. Matching empty labels is
-  now equivalent to matching unset labels (`mymetric{label=""}` now matches
-  series that don't have `label` set at all).
-- If you are using Consul for service discovery, it will now choose Consul's
-  `ServiceAddress` field for the instance address instead of the `Address`
-  field, if it is present.
-- The special `__meta_consul_tags` label in Consul service discovery now
-  starts and ends with tag separators to enable easier regex matching.
-- The default scrape interval has been changed back from 1 minute to 10 seconds.
-
-ALL CHANGES:
-
-- [ENHANCEMENT] Prettify flag help output even more.
-- [CLEANUP] Use new v1 HTTP API for querying and graphing.
-- [FEATURE] Add optional `RUNBOOK` field to alert statements.
-- [FEATURE] Add `hashmod` relabel action to allow for horizontal sharding of Prometheus servers.
-- [BUGFIX] Fix shutdown deadlock in Consul SD code.
-- [BUGFIX] Periodically refresh services in Consul to recover from missing events.
-- [CLEANUP] Improve and simplify Dockerfile build steps.
-- [CLEANUP] Switch human-readable times on web UI to UTC.
-- [ENHANCEMENT] Show original configuration file contents on status page instead of serialized YAML.
-- [ENHANCEMENT] Improve UI of `/alerts` page.
-- [CLEANUP] Clean up initialization of remote storage queues.
-- [CLEANUP] Use `templates.TemplateExpander` for all page templates.
-- [ENHANCEMENT] Improve target URL handling and display.
+- [CHANGE] Deprecate `keeping_extra` modifier keyword, rename it to
+  `keep_common`.
+- [CHANGE] Improve label matching performance and treat unset labels
+  like empty labels in label matchers.
+- [CHANGE] Remove `rule_checker` tool and add generic `promtool` CLI
+  tool which allows checking rules and configuration files.
+- [CHANGE] Resolve rule files relative to config file.
+- [CHANGE] Restore default ScrapeInterval of 1 minute instead of 10 seconds.
+- [CHANGE] Surround `__meta_consul_tags` value with tag separators.
+- [CHANGE] Update node disk console for new filesystem labels.
+- [FEATURE] Add Consul's `ServiceAddress`, `Address`, and `ServicePort` as
+  meta labels to enable setting a custom scrape address if needed.
+- [FEATURE] Add `hashmod` relabel action to allow for horizontal
+  sharding of Prometheus servers.
+- [FEATURE] Add `honor_labels` scrape configuration option to not
+  overwrite any labels exposed by the target.
 - [FEATURE] Add basic federation support on `/federate`.
-- [FEATURE] Add `honor_labels` scrape configuration option to not overwrite any labels exposed by the target.
-- [FEATURE] Allow configuring query parameters when scraping metrics endpoints.
-- [ENHANCEMENT] README.md updates.
-- [BUGFIX] Increment dirty counter metric in storage only if `setDirty(true)` is called.
-- [CHANGE] Remove `rule_checker` tool and add generic `promtool` CLI tool which allows checking rules and configuration files.
-- [CHANGE] Improve label matching performance and treat unset labels like empty labels in label matchers.
-- [BUGFIX] Fix consoles "Prometheus" link to point to /
-- [CHANGE] Change default storage directory to `data` in the current working directory.
-- [CHANGE] Use Consul's `ServiceAddress` instead of `Address` as the instance address when the former is set.
+- [FEATURE] Add optional `RUNBOOK` field to alert statements.
+- [FEATURE] Add pre-relabel target labels to status page.
 - [FEATURE] Add version information endpoint under `/version`.
-- [FEATURE] Support Zookeeper Serversets as a service discovery mechanism.
-- [CLEANUP] Refactor main, flag handling, and web package.
+- [FEATURE] Added initial stable API version 1 under `/api/v1`,
+  including ability to delete series and query more metadata.
+- [FEATURE] Allow configuring query parameters when scraping metrics endpoints.
+- [FEATURE] Allow deleting time series via the new v1 API.
 - [FEATURE] Allow individual ingested metrics to be relabeled.
+- [FEATURE] Allow loading rule files from an entire directory.
+- [FEATURE] Allow scalar expressions in range queries, improve error messages.
+- [FEATURE] Support Zookeeper Serversets as a service discovery mechanism.
+- [ENHANCEMENT] Add circleci yaml for Dockerfile test build.
 - [ENHANCEMENT] Always show selected graph range, regardless of available data.
 - [ENHANCEMENT] Change expression input field to multi-line textarea.
-- [ENHANCEMENT] Start HUP signal handler earlier to not exit upon HUP during startup.
-- [ENHANCEMENT] Raise error on unknown config parameters.
-- [CHANGE] Deprecate `keeping_extra` modifier keyword, rename it to `keep_common`.
-- [BUGFIX] Validate presence of regex field in relabeling configurations.
-- [CLEANUP] Improve and simplify build infrastructure, use go-bindata for web assets. Allow building without git.
-- [FEATURE] Allow scalar expressions in range queries, improve error messages.
+- [ENHANCEMENT] Enforce strict monotonicity of time stamps within a series.
+- [ENHANCEMENT] Export build information as metric.
+- [ENHANCEMENT] Improve UI of `/alerts` page.
 - [ENHANCEMENT] Improve display of target labels on status page.
-- [BUGFIX] Prevent overwrite of default global config when loading a configuration.
-- [FEATURE] Add pre-relabel target labels to status page.
-- [FEATURE] Added initial stable API version 1 under `/api/v1`, including ability to delete series and query more metadata.
-- [CLEANUP] General cleanup of rules and query language code.
-- [CLEANUP] Remove unused methods from `Rule` interface.
-- [BUGFIX] Validate label names in JSON target groups.
-- [CLEANUP] Simplify default config handling.
-- [CHANGE] Surround `__meta_consul_tags` value with tag separators.
 - [ENHANCEMENT] Improve initialization and routing functionality of web service.
+- [ENHANCEMENT] Improve target URL handling and display.
+- [ENHANCEMENT] New dockerfile using alpine-glibc base image and make.
+- [ENHANCEMENT] Other minor fixes.
+- [ENHANCEMENT] Preserve alert state across reloads.
+- [ENHANCEMENT] Prettify flag help output even more.
+- [ENHANCEMENT] README.md updates.
+- [ENHANCEMENT] Raise error on unknown config parameters.
+- [ENHANCEMENT] Refine v1 HTTP API output.
+- [ENHANCEMENT] Show original configuration file contents on status
+  page instead of serialized YAML.
+- [ENHANCEMENT] Start HUP signal handler earlier to not exit upon HUP
+  during startup.
+- [ENHANCEMENT] Updated vendored dependencies.
 - [BUGFIX] Do not panic in `StringToDuration()` on wrong duration unit.
 - [BUGFIX] Exit on invalid rule files on startup.
+- [BUGFIX] Fix a regression in the `.Path` console template variable.
+- [BUGFIX] Fix chunk descriptor loading.
+- [BUGFIX] Fix consoles "Prometheus" link to point to /
+- [BUGFIX] Fix empty configuration file cases
+- [BUGFIX] Fix float to int conversions in chunk encoding, which were
+  broken for some architectures.
+- [BUGFIX] Fix overflow detection for serverset config.
+- [BUGFIX] Fix race conditions in retrieval layer.
+- [BUGFIX] Fix shutdown deadlock in Consul SD code.
+- [BUGFIX] Fix the race condition targets in the Makefile.
+- [BUGFIX] Fix value display error in web console.
+- [BUGFIX] Hide authentication credentials in config `String()` output.
+- [BUGFIX] Increment dirty counter metric in storage only if
+  `setDirty(true)` is called.
+- [BUGFIX] Periodically refresh services in Consul to recover from
+  missing events.
+- [BUGFIX] Prevent overwrite of default global config when loading a
+  configuration.
 - [BUGFIX] Properly lex `\r` as whitespace in expression language.
-- [FEATURE] Allow deleting time series via the new v1 API.
-- [FEATURE] Allow loading rule files from an entire directory.
-- [CHANGE] Restore default ScrapeInterval of 1 minute instead of 10 seconds.
+- [BUGFIX] Validate label names in JSON target groups.
+- [BUGFIX] Validate presence of regex field in relabeling configurations.
+- [CLEANUP] Clean up initialization of remote storage queues.
+- [CLEANUP] Fix `go vet` and `golint` violations.
+- [CLEANUP] General cleanup of rules and query language code.
+- [CLEANUP] Improve and simplify Dockerfile build steps.
+- [CLEANUP] Improve and simplify build infrastructure, use go-bindata
+  for web assets. Allow building without git.
 - [CLEANUP] Move all utility packages into common `util` subdirectory.
-- [ENHANCEMENT] Updated vendored dependencies.
-- [ENHANCEMENT] Other minor fixes.
+- [CLEANUP] Refactor main, flag handling, and web package.
+- [CLEANUP] Remove unused methods from `Rule` interface.
+- [CLEANUP] Simplify default config handling.
+- [CLEANUP] Switch human-readable times on web UI to UTC.
+- [CLEANUP] Use `templates.TemplateExpander` for all page templates.
+- [CLEANUP] Use new v1 HTTP API for querying and graphing.
 
 ## 0.14.0 / 2015-06-01
 * [CHANGE] Configuration format changed and switched to YAML.
