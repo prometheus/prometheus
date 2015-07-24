@@ -70,7 +70,7 @@ func TestMatches(t *testing.T) {
 	}{
 		{
 			matchers: metric.LabelMatchers{newMatcher(metric.Equal, "label1", "x")},
-			expected: fingerprints[:0],
+			expected: clientmodel.Fingerprints{},
 		},
 		{
 			matchers: metric.LabelMatchers{newMatcher(metric.Equal, "label1", "test_0")},
@@ -160,6 +160,20 @@ func TestMatches(t *testing.T) {
 				newMatcher(metric.NotEqual, "label2", `test_4`),
 			},
 			expected: append(append(clientmodel.Fingerprints{}, fingerprints[30:35]...), fingerprints[45:60]...),
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.Equal, "label1", `nonexistent`),
+				newMatcher(metric.RegexMatch, "label2", `test`),
+			},
+			expected: clientmodel.Fingerprints{},
+		},
+		{
+			matchers: metric.LabelMatchers{
+				newMatcher(metric.Equal, "label1", `test_0`),
+				newMatcher(metric.RegexMatch, "label2", `nonexistent`),
+			},
+			expected: clientmodel.Fingerprints{},
 		},
 	}
 

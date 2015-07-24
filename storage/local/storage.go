@@ -428,39 +428,40 @@ func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelM
 	}
 
 	var resFPs map[clientmodel.Fingerprint]struct{}
-	// If we cannot make a preselection based on equality matchers, expanding the other matchers to labels
-	// and intersecting their fingerprints is still likely to be the best choice.
 	if len(equals) > 0 {
 		resFPs = s.fingerprintsForLabelPairs(equals...)
-	}
-	var remaining metric.LabelMatchers
-	for _, matcher := range filters {
-		// Equal matches are all empty values.
-		if matcher.Match("") {
-			remaining = append(remaining, matcher)
-			continue
-		}
-		intersection := map[clientmodel.Fingerprint]struct{}{}
+	} else {
+		// If we cannot make a preselection based on equality matchers, expanding the other matchers to labels
+		// and intersecting their fingerprints is still likely to be the best choice.
+		var remaining metric.LabelMatchers
+		for _, matcher := range filters {
+			// Equal matches are all empty values.
+			if matcher.Match("") {
+				remaining = append(remaining, matcher)
+				continue
+			}
+			intersection := map[clientmodel.Fingerprint]struct{}{}
 
-		matches := matcher.Filter(s.LabelValuesForLabelName(matcher.Name))
-		if len(matches) == 0 {
-			return nil
-		}
-		for _, v := range matches {
-			fps := s.fingerprintsForLabelPairs(metric.LabelPair{
-				Name:  matcher.Name,
-				Value: v,
-			})
-			for fp := range fps {
-				if _, ok := resFPs[fp]; ok || resFPs == nil {
-					intersection[fp] = struct{}{}
+			matches := matcher.Filter(s.LabelValuesForLabelName(matcher.Name))
+			if len(matches) == 0 {
+				return nil
+			}
+			for _, v := range matches {
+				fps := s.fingerprintsForLabelPairs(metric.LabelPair{
+					Name:  matcher.Name,
+					Value: v,
+				})
+				for fp := range fps {
+					if _, ok := resFPs[fp]; ok || resFPs == nil {
+						intersection[fp] = struct{}{}
+					}
 				}
 			}
+			resFPs = intersection
 		}
-		resFPs = intersection
+		// The intersected matchers no longer need to be compared against the actual metrics.
+		filters = remaining
 	}
-	// The intersected matchers no longer need to be compared against the actual metrics.
-	filters = remaining
 
 	result := make(map[clientmodel.Fingerprint]clientmodel.COWMetric, len(resFPs))
 	for fp := range resFPs {
