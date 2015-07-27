@@ -158,6 +158,8 @@ type Header struct {
 }
 
 const (
+	headerSize = 12
+
 	// Header.Bits
 	_QR = 1 << 15 // query/response (response=1)
 	_AA = 1 << 10 // authoritative
@@ -501,6 +503,34 @@ func sprintName(s string) string {
 	return string(dst)
 }
 
+func sprintCAAValue(s string) string {
+	src := []byte(s)
+	dst := make([]byte, 0, len(src))
+	dst = append(dst, '"')
+	for i := 0; i < len(src); {
+		if i+1 < len(src) && src[i] == '\\' && src[i+1] == '.' {
+			dst = append(dst, src[i:i+2]...)
+			i += 2
+		} else {
+			b, n := nextByte(src, i)
+			if n == 0 {
+				i++ // dangling back slash
+			} else if b == '.' {
+				dst = append(dst, b)
+			} else {
+				if b < ' ' || b > '~' {
+					dst = appendByte(dst, b)
+				} else {
+					dst = append(dst, b)
+				}
+			}
+			i += n
+		}
+	}
+	dst = append(dst, '"')
+	return string(dst)
+}
+
 func sprintTxt(txt []string) string {
 	var out []byte
 	for i, s := range txt {
@@ -543,19 +573,22 @@ func appendTXTStringByte(s []byte, b byte) []byte {
 		return append(s, '\\', b)
 	}
 	if b < ' ' || b > '~' {
-		var buf [3]byte
-		bufs := strconv.AppendInt(buf[:0], int64(b), 10)
-		s = append(s, '\\')
-		for i := 0; i < 3-len(bufs); i++ {
-			s = append(s, '0')
-		}
-		for _, r := range bufs {
-			s = append(s, r)
-		}
-		return s
-
+		return appendByte(s, b)
 	}
 	return append(s, b)
+}
+
+func appendByte(s []byte, b byte) []byte {
+	var buf [3]byte
+	bufs := strconv.AppendInt(buf[:0], int64(b), 10)
+	s = append(s, '\\')
+	for i := 0; i < 3-len(bufs); i++ {
+		s = append(s, '0')
+	}
+	for _, r := range bufs {
+		s = append(s, r)
+	}
+	return s
 }
 
 func nextByte(b []byte, offset int) (byte, int) {
@@ -1527,8 +1560,6 @@ func (rr *EUI64) copy() RR           { return &EUI64{*rr.Hdr.copyHeader(), rr.Ad
 func (rr *EUI64) String() string     { return rr.Hdr.String() + euiToString(rr.Address, 64) }
 func (rr *EUI64) len() int           { return rr.Hdr.len() + 8 }
 
-// Support in incomplete - just handle it as unknown record
-/*
 type CAA struct {
 	Hdr   RR_Header
 	Flag  uint8
@@ -1538,14 +1569,10 @@ type CAA struct {
 
 func (rr *CAA) Header() *RR_Header { return &rr.Hdr }
 func (rr *CAA) copy() RR           { return &CAA{*rr.Hdr.copyHeader(), rr.Flag, rr.Tag, rr.Value} }
-func (rr *CAA) len() int           { return rr.Hdr.len() + 1 + len(rr.Tag) + 1 + len(rr.Value) }
-
+func (rr *CAA) len() int           { return rr.Hdr.len() + 2 + len(rr.Tag) + len(rr.Value) }
 func (rr *CAA) String() string {
-	s := rr.Hdr.String() + strconv.FormatInt(int64(rr.Flag), 10) + " " + rr.Tag
-	s += strconv.QuoteToASCII(rr.Value)
-	return s
+	return rr.Hdr.String() + strconv.Itoa(int(rr.Flag)) + " " + rr.Tag + " " + sprintCAAValue(rr.Value)
 }
-*/
 
 type UID struct {
 	Hdr RR_Header
@@ -1668,10 +1695,10 @@ func copyIP(ip net.IP) net.IP {
 
 // Map of constructors for each RR type.
 var typeToRR = map[uint16]func() RR{
-	TypeA:     func() RR { return new(A) },
-	TypeAAAA:  func() RR { return new(AAAA) },
-	TypeAFSDB: func() RR { return new(AFSDB) },
-	//	TypeCAA:        func() RR { return new(CAA) },
+	TypeA:          func() RR { return new(A) },
+	TypeAAAA:       func() RR { return new(AAAA) },
+	TypeAFSDB:      func() RR { return new(AFSDB) },
+	TypeCAA:        func() RR { return new(CAA) },
 	TypeCDS:        func() RR { return new(CDS) },
 	TypeCERT:       func() RR { return new(CERT) },
 	TypeCNAME:      func() RR { return new(CNAME) },

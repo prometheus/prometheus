@@ -22,6 +22,7 @@ It has these top-level messages:
 	OtherMessage
 	MyMessage
 	Ext
+	DefaultsMessage
 	MyMessageSet
 	Empty
 	MessageList
@@ -178,6 +179,42 @@ func (x *MyMessage_Color) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*x = MyMessage_Color(value)
+	return nil
+}
+
+type DefaultsMessage_DefaultsEnum int32
+
+const (
+	DefaultsMessage_ZERO DefaultsMessage_DefaultsEnum = 0
+	DefaultsMessage_ONE  DefaultsMessage_DefaultsEnum = 1
+	DefaultsMessage_TWO  DefaultsMessage_DefaultsEnum = 2
+)
+
+var DefaultsMessage_DefaultsEnum_name = map[int32]string{
+	0: "ZERO",
+	1: "ONE",
+	2: "TWO",
+}
+var DefaultsMessage_DefaultsEnum_value = map[string]int32{
+	"ZERO": 0,
+	"ONE":  1,
+	"TWO":  2,
+}
+
+func (x DefaultsMessage_DefaultsEnum) Enum() *DefaultsMessage_DefaultsEnum {
+	p := new(DefaultsMessage_DefaultsEnum)
+	*p = x
+	return p
+}
+func (x DefaultsMessage_DefaultsEnum) String() string {
+	return proto.EnumName(DefaultsMessage_DefaultsEnum_name, int32(x))
+}
+func (x *DefaultsMessage_DefaultsEnum) UnmarshalJSON(data []byte) error {
+	value, err := proto.UnmarshalJSONEnum(DefaultsMessage_DefaultsEnum_value, data, "DefaultsMessage_DefaultsEnum")
+	if err != nil {
+		return err
+	}
+	*x = DefaultsMessage_DefaultsEnum(value)
 	return nil
 }
 
@@ -1402,6 +1439,29 @@ var E_Ext_Number = &proto.ExtensionDesc{
 	Tag:           "varint,105,opt,name=number",
 }
 
+type DefaultsMessage struct {
+	XXX_extensions   map[int32]proto.Extension `json:"-"`
+	XXX_unrecognized []byte                    `json:"-"`
+}
+
+func (m *DefaultsMessage) Reset()         { *m = DefaultsMessage{} }
+func (m *DefaultsMessage) String() string { return proto.CompactTextString(m) }
+func (*DefaultsMessage) ProtoMessage()    {}
+
+var extRange_DefaultsMessage = []proto.ExtensionRange{
+	{100, 536870911},
+}
+
+func (*DefaultsMessage) ExtensionRangeArray() []proto.ExtensionRange {
+	return extRange_DefaultsMessage
+}
+func (m *DefaultsMessage) ExtensionMap() map[int32]proto.Extension {
+	if m.XXX_extensions == nil {
+		m.XXX_extensions = make(map[int32]proto.Extension)
+	}
+	return m.XXX_extensions
+}
+
 type MyMessageSet struct {
 	XXX_extensions   map[int32]proto.Extension `json:"-"`
 	XXX_unrecognized []byte                    `json:"-"`
@@ -1934,6 +1994,262 @@ var E_Greeting = &proto.ExtensionDesc{
 	Tag:           "bytes,106,rep,name=greeting",
 }
 
+var E_NoDefaultDouble = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*float64)(nil),
+	Field:         101,
+	Name:          "testdata.no_default_double",
+	Tag:           "fixed64,101,opt,name=no_default_double",
+}
+
+var E_NoDefaultFloat = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*float32)(nil),
+	Field:         102,
+	Name:          "testdata.no_default_float",
+	Tag:           "fixed32,102,opt,name=no_default_float",
+}
+
+var E_NoDefaultInt32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int32)(nil),
+	Field:         103,
+	Name:          "testdata.no_default_int32",
+	Tag:           "varint,103,opt,name=no_default_int32",
+}
+
+var E_NoDefaultInt64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int64)(nil),
+	Field:         104,
+	Name:          "testdata.no_default_int64",
+	Tag:           "varint,104,opt,name=no_default_int64",
+}
+
+var E_NoDefaultUint32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*uint32)(nil),
+	Field:         105,
+	Name:          "testdata.no_default_uint32",
+	Tag:           "varint,105,opt,name=no_default_uint32",
+}
+
+var E_NoDefaultUint64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*uint64)(nil),
+	Field:         106,
+	Name:          "testdata.no_default_uint64",
+	Tag:           "varint,106,opt,name=no_default_uint64",
+}
+
+var E_NoDefaultSint32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int32)(nil),
+	Field:         107,
+	Name:          "testdata.no_default_sint32",
+	Tag:           "zigzag32,107,opt,name=no_default_sint32",
+}
+
+var E_NoDefaultSint64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int64)(nil),
+	Field:         108,
+	Name:          "testdata.no_default_sint64",
+	Tag:           "zigzag64,108,opt,name=no_default_sint64",
+}
+
+var E_NoDefaultFixed32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*uint32)(nil),
+	Field:         109,
+	Name:          "testdata.no_default_fixed32",
+	Tag:           "fixed32,109,opt,name=no_default_fixed32",
+}
+
+var E_NoDefaultFixed64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*uint64)(nil),
+	Field:         110,
+	Name:          "testdata.no_default_fixed64",
+	Tag:           "fixed64,110,opt,name=no_default_fixed64",
+}
+
+var E_NoDefaultSfixed32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int32)(nil),
+	Field:         111,
+	Name:          "testdata.no_default_sfixed32",
+	Tag:           "fixed32,111,opt,name=no_default_sfixed32",
+}
+
+var E_NoDefaultSfixed64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int64)(nil),
+	Field:         112,
+	Name:          "testdata.no_default_sfixed64",
+	Tag:           "fixed64,112,opt,name=no_default_sfixed64",
+}
+
+var E_NoDefaultBool = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*bool)(nil),
+	Field:         113,
+	Name:          "testdata.no_default_bool",
+	Tag:           "varint,113,opt,name=no_default_bool",
+}
+
+var E_NoDefaultString = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*string)(nil),
+	Field:         114,
+	Name:          "testdata.no_default_string",
+	Tag:           "bytes,114,opt,name=no_default_string",
+}
+
+var E_NoDefaultBytes = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: ([]byte)(nil),
+	Field:         115,
+	Name:          "testdata.no_default_bytes",
+	Tag:           "bytes,115,opt,name=no_default_bytes",
+}
+
+var E_NoDefaultEnum = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*DefaultsMessage_DefaultsEnum)(nil),
+	Field:         116,
+	Name:          "testdata.no_default_enum",
+	Tag:           "varint,116,opt,name=no_default_enum,enum=testdata.DefaultsMessage_DefaultsEnum",
+}
+
+var E_DefaultDouble = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*float64)(nil),
+	Field:         201,
+	Name:          "testdata.default_double",
+	Tag:           "fixed64,201,opt,name=default_double,def=3.1415",
+}
+
+var E_DefaultFloat = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*float32)(nil),
+	Field:         202,
+	Name:          "testdata.default_float",
+	Tag:           "fixed32,202,opt,name=default_float,def=3.14",
+}
+
+var E_DefaultInt32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int32)(nil),
+	Field:         203,
+	Name:          "testdata.default_int32",
+	Tag:           "varint,203,opt,name=default_int32,def=42",
+}
+
+var E_DefaultInt64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int64)(nil),
+	Field:         204,
+	Name:          "testdata.default_int64",
+	Tag:           "varint,204,opt,name=default_int64,def=43",
+}
+
+var E_DefaultUint32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*uint32)(nil),
+	Field:         205,
+	Name:          "testdata.default_uint32",
+	Tag:           "varint,205,opt,name=default_uint32,def=44",
+}
+
+var E_DefaultUint64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*uint64)(nil),
+	Field:         206,
+	Name:          "testdata.default_uint64",
+	Tag:           "varint,206,opt,name=default_uint64,def=45",
+}
+
+var E_DefaultSint32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int32)(nil),
+	Field:         207,
+	Name:          "testdata.default_sint32",
+	Tag:           "zigzag32,207,opt,name=default_sint32,def=46",
+}
+
+var E_DefaultSint64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int64)(nil),
+	Field:         208,
+	Name:          "testdata.default_sint64",
+	Tag:           "zigzag64,208,opt,name=default_sint64,def=47",
+}
+
+var E_DefaultFixed32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*uint32)(nil),
+	Field:         209,
+	Name:          "testdata.default_fixed32",
+	Tag:           "fixed32,209,opt,name=default_fixed32,def=48",
+}
+
+var E_DefaultFixed64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*uint64)(nil),
+	Field:         210,
+	Name:          "testdata.default_fixed64",
+	Tag:           "fixed64,210,opt,name=default_fixed64,def=49",
+}
+
+var E_DefaultSfixed32 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int32)(nil),
+	Field:         211,
+	Name:          "testdata.default_sfixed32",
+	Tag:           "fixed32,211,opt,name=default_sfixed32,def=50",
+}
+
+var E_DefaultSfixed64 = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*int64)(nil),
+	Field:         212,
+	Name:          "testdata.default_sfixed64",
+	Tag:           "fixed64,212,opt,name=default_sfixed64,def=51",
+}
+
+var E_DefaultBool = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*bool)(nil),
+	Field:         213,
+	Name:          "testdata.default_bool",
+	Tag:           "varint,213,opt,name=default_bool,def=1",
+}
+
+var E_DefaultString = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*string)(nil),
+	Field:         214,
+	Name:          "testdata.default_string",
+	Tag:           "bytes,214,opt,name=default_string,def=Hello, string",
+}
+
+var E_DefaultBytes = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: ([]byte)(nil),
+	Field:         215,
+	Name:          "testdata.default_bytes",
+	Tag:           "bytes,215,opt,name=default_bytes,def=Hello, bytes",
+}
+
+var E_DefaultEnum = &proto.ExtensionDesc{
+	ExtendedType:  (*DefaultsMessage)(nil),
+	ExtensionType: (*DefaultsMessage_DefaultsEnum)(nil),
+	Field:         216,
+	Name:          "testdata.default_enum",
+	Tag:           "varint,216,opt,name=default_enum,enum=testdata.DefaultsMessage_DefaultsEnum,def=1",
+}
+
 var E_X201 = &proto.ExtensionDesc{
 	ExtendedType:  (*MyMessageSet)(nil),
 	ExtensionType: (*Empty)(nil),
@@ -2338,12 +2654,45 @@ func init() {
 	proto.RegisterEnum("testdata.FOO", FOO_name, FOO_value)
 	proto.RegisterEnum("testdata.GoTest_KIND", GoTest_KIND_name, GoTest_KIND_value)
 	proto.RegisterEnum("testdata.MyMessage_Color", MyMessage_Color_name, MyMessage_Color_value)
+	proto.RegisterEnum("testdata.DefaultsMessage_DefaultsEnum", DefaultsMessage_DefaultsEnum_name, DefaultsMessage_DefaultsEnum_value)
 	proto.RegisterEnum("testdata.Defaults_Color", Defaults_Color_name, Defaults_Color_value)
 	proto.RegisterEnum("testdata.RepeatedEnum_Color", RepeatedEnum_Color_name, RepeatedEnum_Color_value)
 	proto.RegisterExtension(E_Ext_More)
 	proto.RegisterExtension(E_Ext_Text)
 	proto.RegisterExtension(E_Ext_Number)
 	proto.RegisterExtension(E_Greeting)
+	proto.RegisterExtension(E_NoDefaultDouble)
+	proto.RegisterExtension(E_NoDefaultFloat)
+	proto.RegisterExtension(E_NoDefaultInt32)
+	proto.RegisterExtension(E_NoDefaultInt64)
+	proto.RegisterExtension(E_NoDefaultUint32)
+	proto.RegisterExtension(E_NoDefaultUint64)
+	proto.RegisterExtension(E_NoDefaultSint32)
+	proto.RegisterExtension(E_NoDefaultSint64)
+	proto.RegisterExtension(E_NoDefaultFixed32)
+	proto.RegisterExtension(E_NoDefaultFixed64)
+	proto.RegisterExtension(E_NoDefaultSfixed32)
+	proto.RegisterExtension(E_NoDefaultSfixed64)
+	proto.RegisterExtension(E_NoDefaultBool)
+	proto.RegisterExtension(E_NoDefaultString)
+	proto.RegisterExtension(E_NoDefaultBytes)
+	proto.RegisterExtension(E_NoDefaultEnum)
+	proto.RegisterExtension(E_DefaultDouble)
+	proto.RegisterExtension(E_DefaultFloat)
+	proto.RegisterExtension(E_DefaultInt32)
+	proto.RegisterExtension(E_DefaultInt64)
+	proto.RegisterExtension(E_DefaultUint32)
+	proto.RegisterExtension(E_DefaultUint64)
+	proto.RegisterExtension(E_DefaultSint32)
+	proto.RegisterExtension(E_DefaultSint64)
+	proto.RegisterExtension(E_DefaultFixed32)
+	proto.RegisterExtension(E_DefaultFixed64)
+	proto.RegisterExtension(E_DefaultSfixed32)
+	proto.RegisterExtension(E_DefaultSfixed64)
+	proto.RegisterExtension(E_DefaultBool)
+	proto.RegisterExtension(E_DefaultString)
+	proto.RegisterExtension(E_DefaultBytes)
+	proto.RegisterExtension(E_DefaultEnum)
 	proto.RegisterExtension(E_X201)
 	proto.RegisterExtension(E_X202)
 	proto.RegisterExtension(E_X203)

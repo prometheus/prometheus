@@ -95,6 +95,21 @@ func Infof(format string, args ...interface{}) {
 	fileLineEntry().Infof(format, args...)
 }
 
+// Print logs a message at level Info on the standard logger.
+func Print(args ...interface{}) {
+	fileLineEntry().Info(args...)
+}
+
+// Println logs a message at level Info on the standard logger.
+func Println(args ...interface{}) {
+	fileLineEntry().Infoln(args...)
+}
+
+// Printf logs a message at level Info on the standard logger.
+func Printf(format string, args ...interface{}) {
+	fileLineEntry().Infof(format, args...)
+}
+
 // Warn logs a message at level Warn on the standard logger.
 func Warn(args ...interface{}) {
 	fileLineEntry().Warn(args...)

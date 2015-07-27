@@ -41,7 +41,6 @@ import (
 	"io"
 	"log"
 	"math"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -283,20 +282,23 @@ func writeStruct(w *textWriter, sv reflect.Value) error {
 				if err := w.WriteByte('\n'); err != nil {
 					return err
 				}
-				// value
-				if _, err := w.WriteString("value:"); err != nil {
-					return err
-				}
-				if !w.compact {
-					if err := w.WriteByte(' '); err != nil {
+				// nil values aren't legal, but we can avoid panicking because of them.
+				if val.Kind() != reflect.Ptr || !val.IsNil() {
+					// value
+					if _, err := w.WriteString("value:"); err != nil {
 						return err
 					}
-				}
-				if err := writeAny(w, val, props.mvalprop); err != nil {
-					return err
-				}
-				if err := w.WriteByte('\n'); err != nil {
-					return err
+					if !w.compact {
+						if err := w.WriteByte(' '); err != nil {
+							return err
+						}
+					}
+					if err := writeAny(w, val, props.mvalprop); err != nil {
+						return err
+					}
+					if err := w.WriteByte('\n'); err != nil {
+						return err
+					}
 				}
 				// close struct
 				w.unindent()
@@ -315,27 +317,8 @@ func writeStruct(w *textWriter, sv reflect.Value) error {
 		}
 		if fv.Kind() != reflect.Ptr && fv.Kind() != reflect.Slice {
 			// proto3 non-repeated scalar field; skip if zero value
-			switch fv.Kind() {
-			case reflect.Bool:
-				if !fv.Bool() {
-					continue
-				}
-			case reflect.Int32, reflect.Int64:
-				if fv.Int() == 0 {
-					continue
-				}
-			case reflect.Uint32, reflect.Uint64:
-				if fv.Uint() == 0 {
-					continue
-				}
-			case reflect.Float32, reflect.Float64:
-				if fv.Float() == 0 {
-					continue
-				}
-			case reflect.String:
-				if fv.String() == "" {
-					continue
-				}
+			if isProto3Zero(fv) {
+				continue
 			}
 		}
 
@@ -666,10 +649,7 @@ func writeExtensions(w *textWriter, pv reflect.Value) error {
 
 		pb, err := GetExtension(ep, desc)
 		if err != nil {
-			if _, err := fmt.Fprintln(os.Stderr, "proto: failed getting extension: ", err); err != nil {
-				return err
-			}
-			continue
+			return fmt.Errorf("failed getting extension: %v", err)
 		}
 
 		// Repeated extensions will appear as a slice.

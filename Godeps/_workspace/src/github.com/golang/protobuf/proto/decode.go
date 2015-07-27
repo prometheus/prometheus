@@ -675,7 +675,7 @@ func (o *Buffer) dec_new_map(p *Properties, base structPointer) error {
 	oi := o.index       // index at the end of this map entry
 	o.index -= len(raw) // move buffer back to start of map entry
 
-	mptr := structPointer_Map(base, p.field, p.mtype) // *map[K]V
+	mptr := structPointer_NewAt(base, p.field, p.mtype) // *map[K]V
 	if mptr.Elem().IsNil() {
 		mptr.Elem().Set(reflect.MakeMap(mptr.Type().Elem()))
 	}

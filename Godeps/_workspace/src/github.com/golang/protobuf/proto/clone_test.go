@@ -36,6 +36,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
+	proto3pb "github.com/golang/protobuf/proto/proto3_proto"
 	pb "github.com/golang/protobuf/proto/testdata"
 )
 
@@ -212,6 +213,23 @@ var mergeTests = []struct {
 				0x4001: &pb.FloatingPoint{F: proto.Float64(2.0)},
 			},
 			ByteMapping: map[bool][]byte{true: []byte("wowsa")},
+		},
+	},
+	// proto3 shouldn't merge zero values,
+	// in the same way that proto2 shouldn't merge nils.
+	{
+		src: &proto3pb.Message{
+			Name: "Aaron",
+			Data: []byte(""), // zero value, but not nil
+		},
+		dst: &proto3pb.Message{
+			HeightInCm: 176,
+			Data:       []byte("texas!"),
+		},
+		want: &proto3pb.Message{
+			Name:       "Aaron",
+			HeightInCm: 176,
+			Data:       []byte("texas!"),
 		},
 	},
 }

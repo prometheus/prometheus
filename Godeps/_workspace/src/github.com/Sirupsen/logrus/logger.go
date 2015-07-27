@@ -14,7 +14,7 @@ type Logger struct {
 	// Hooks for the logger instance. These allow firing events based on logging
 	// levels and log entries. For example, to send errors to an error tracking
 	// service, log to StatsD or dump the core on fatal errors.
-	Hooks levelHooks
+	Hooks LevelHooks
 	// All log entries pass through the formatter before logged to Out. The
 	// included formatters are `TextFormatter` and `JSONFormatter` for which
 	// TextFormatter is the default. In development (when a TTY is attached) it
@@ -37,7 +37,7 @@ type Logger struct {
 //    var log = &Logger{
 //      Out: os.Stderr,
 //      Formatter: new(JSONFormatter),
-//      Hooks: make(levelHooks),
+//      Hooks: make(LevelHooks),
 //      Level: logrus.DebugLevel,
 //    }
 //
@@ -46,7 +46,7 @@ func New() *Logger {
 	return &Logger{
 		Out:       os.Stderr,
 		Formatter: new(TextFormatter),
-		Hooks:     make(levelHooks),
+		Hooks:     make(LevelHooks),
 		Level:     InfoLevel,
 	}
 }
@@ -102,6 +102,7 @@ func (logger *Logger) Fatalf(format string, args ...interface{}) {
 	if logger.Level >= FatalLevel {
 		NewEntry(logger).Fatalf(format, args...)
 	}
+	os.Exit(1)
 }
 
 func (logger *Logger) Panicf(format string, args ...interface{}) {
@@ -148,6 +149,7 @@ func (logger *Logger) Fatal(args ...interface{}) {
 	if logger.Level >= FatalLevel {
 		NewEntry(logger).Fatal(args...)
 	}
+	os.Exit(1)
 }
 
 func (logger *Logger) Panic(args ...interface{}) {
@@ -194,6 +196,7 @@ func (logger *Logger) Fatalln(args ...interface{}) {
 	if logger.Level >= FatalLevel {
 		NewEntry(logger).Fatalln(args...)
 	}
+	os.Exit(1)
 }
 
 func (logger *Logger) Panicln(args ...interface{}) {

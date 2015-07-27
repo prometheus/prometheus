@@ -13,13 +13,13 @@ var testcases = [][2]string{
 	{"AbC", "abc"},
 	{"я", "xn--41a"},
 	{"zя", "xn--z-0ub"},
-	{"ЯZ", "xn--z-zub"},
+	{"яZ", "xn--z-zub"},
 	{"а-я", "xn----7sb8g"},
 	{"إختبار", "xn--kgbechtv"},
 	{"آزمایشی", "xn--hgbk6aj7f53bba"},
 	{"测试", "xn--0zwm56d"},
 	{"測試", "xn--g6w251d"},
-	{"Испытание", "xn--80akhbyknj4f"},
+	{"испытание", "xn--80akhbyknj4f"},
 	{"परीक्षा", "xn--11b5bs3a9aj6g"},
 	{"δοκιμή", "xn--jxalpdlp"},
 	{"테스트", "xn--9t4b11yi5a"},
@@ -27,6 +27,7 @@ var testcases = [][2]string{
 	{"テスト", "xn--zckzah"},
 	{"பரிட்சை", "xn--hlcj6aya9esc7a"},
 	{"mamão-com-açúcar", "xn--mamo-com-acar-yeb1e6q"},
+	{"σ", "xn--4xa"},
 }
 
 func TestEncodeDecodePunycode(t *testing.T) {
@@ -81,16 +82,33 @@ func TestEncodeDecodeFinalPeriod(t *testing.T) {
 	}
 }
 
-var invalid = []string{
+var invalidACEs = []string{
 	"xn--*",
 	"xn--",
 	"xn---",
 }
 
 func TestInvalidPunycode(t *testing.T) {
-	for _, d := range invalid {
+	for _, d := range invalidACEs {
 		s := FromPunycode(d)
 		if s != d {
+			t.Errorf("Changed invalid name %s to %#v", d, s)
+		}
+	}
+}
+
+// You can verify the labels that are valid or not comparing to the Verisign
+// website: http://mct.verisign-grs.com/
+var invalidUnicodes = []string{
+	"Σ",
+	"ЯZ",
+	"Испытание",
+}
+
+func TestInvalidUnicodes(t *testing.T) {
+	for _, d := range invalidUnicodes {
+		s := ToPunycode(d)
+		if s != "" {
 			t.Errorf("Changed invalid name %s to %#v", d, s)
 		}
 	}

@@ -55,7 +55,7 @@
 //
 // Catch-all parameters match anything until the path end, including the
 // directory index (the '/' before the catch-all). Since they match anything
-// until the end, catch-all paramerters must always be the final path element.
+// until the end, catch-all parameters must always be the final path element.
 //  Path: /files/*filepath
 //
 //  Requests:
@@ -138,14 +138,14 @@ type Router struct {
 	// handler.
 	HandleMethodNotAllowed bool
 
-	// Configurable http.HandlerFunc which is called when no matching route is
+	// Configurable http.Handler which is called when no matching route is
 	// found. If it is not set, http.NotFound is used.
-	NotFound http.HandlerFunc
+	NotFound http.Handler
 
-	// Configurable http.HandlerFunc which is called when a request
+	// Configurable http.Handler which is called when a request
 	// cannot be routed and HandleMethodNotAllowed is true.
 	// If it is not set, http.Error with http.StatusMethodNotAllowed is used.
-	MethodNotAllowed http.HandlerFunc
+	MethodNotAllowed http.Handler
 
 	// Function to handle panics recovered from http handlers.
 	// It should be used to generate a error page and return the http error code
@@ -342,7 +342,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			handle, _, _ := r.trees[method].getValue(req.URL.Path)
 			if handle != nil {
 				if r.MethodNotAllowed != nil {
-					r.MethodNotAllowed(w, req)
+					r.MethodNotAllowed.ServeHTTP(w, req)
 				} else {
 					http.Error(w,
 						http.StatusText(http.StatusMethodNotAllowed),
@@ -356,7 +356,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// Handle 404
 	if r.NotFound != nil {
-		r.NotFound(w, req)
+		r.NotFound.ServeHTTP(w, req)
 	} else {
 		http.NotFound(w, req)
 	}

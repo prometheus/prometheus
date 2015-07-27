@@ -2170,10 +2170,44 @@ func setIPSECKEY(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string)
 	return rr, nil, c1
 }
 
+func setCAA(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
+	rr := new(CAA)
+	rr.Hdr = h
+	l := <-c
+	if l.length == 0 {
+		return rr, nil, l.comment
+	}
+	i, err := strconv.Atoi(l.token)
+	if err != nil {
+		return nil, &ParseError{f, "bad CAA Flag", l}, ""
+	}
+	rr.Flag = uint8(i)
+
+	<-c // zBlank
+	l = <-c // zString
+	if l.value != zString {
+		return nil, &ParseError{f, "bad CAA Tag", l}, ""
+	}
+	rr.Tag = l.token
+
+	<-c // zBlank
+	s, e, c1 := endingToTxtSlice(c, "bad CAA Value", f)
+	if e != nil {
+		return nil, e, ""
+	}
+	if len(s) > 1 {
+		return nil, &ParseError{f, "bad CAA Value", l}, ""
+	} else {
+		rr.Value = s[0]
+	}
+	return rr, nil, c1
+}
+
 var typeToparserFunc = map[uint16]parserFunc{
 	TypeAAAA:       parserFunc{setAAAA, false},
 	TypeAFSDB:      parserFunc{setAFSDB, false},
 	TypeA:          parserFunc{setA, false},
+	TypeCAA:        parserFunc{setCAA, true},
 	TypeCDS:        parserFunc{setCDS, true},
 	TypeCDNSKEY:    parserFunc{setCDNSKEY, true},
 	TypeCERT:       parserFunc{setCERT, true},

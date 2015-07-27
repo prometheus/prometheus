@@ -183,11 +183,23 @@ WAIT:
 
 	// Handle the case of not getting the lock
 	if !locked {
-		select {
-		case <-time.After(DefaultLockRetryTime):
+		// Determine why the lock failed
+		qOpts.WaitIndex = 0
+		pair, meta, err = kv.Get(l.opts.Key, qOpts)
+		if pair != nil && pair.Session != "" {
+			//If the session is not null, this means that a wait can safely happen
+			//using a long poll
+			qOpts.WaitIndex = meta.LastIndex
 			goto WAIT
-		case <-stopCh:
-			return nil, nil
+		} else {
+			// If the session is empty and the lock failed to acquire, then it means
+			// a lock-delay is in effect and a timed wait must be used
+			select {
+			case <-time.After(DefaultLockRetryTime):
+				goto WAIT
+			case <-stopCh:
+				return nil, nil
+			}
 		}
 	}
 

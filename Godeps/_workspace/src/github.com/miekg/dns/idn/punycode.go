@@ -3,9 +3,10 @@ package idn
 
 import (
 	"bytes"
-	"github.com/miekg/dns"
 	"strings"
 	"unicode"
+
+	"github.com/miekg/dns"
 )
 
 // Implementation idea from RFC itself and from from IDNA::Punycode created by
@@ -26,8 +27,8 @@ const (
 )
 
 // ToPunycode converts unicode domain names to DNS-appropriate punycode names.
-// This function would return incorrect result for strings for non-canonical
-// unicode strings.
+// This function would return an empty string result for domain names with
+// invalid unicode strings. This function expects domain names in lowercase.
 func ToPunycode(s string) string {
 	tokens := dns.SplitDomainName(s)
 	switch {
@@ -40,7 +41,11 @@ func ToPunycode(s string) string {
 	}
 
 	for i := range tokens {
-		tokens[i] = string(encode([]byte(tokens[i])))
+		t := encode([]byte(tokens[i]))
+		if t == nil {
+			return ""
+		}
+		tokens[i] = string(t)
 	}
 	return strings.Join(tokens, ".")
 }
@@ -138,12 +143,18 @@ func tfunc(k, bias rune) rune {
 	return k - bias
 }
 
-// encode transforms Unicode input bytes (that represent DNS label) into punycode bytestream
+// encode transforms Unicode input bytes (that represent DNS label) into
+// punycode bytestream. This function would return nil if there's an invalid
+// character in the label.
 func encode(input []byte) []byte {
 	n, bias := _N, _BIAS
 
 	b := bytes.Runes(input)
 	for i := range b {
+		if !isValidRune(b[i]) {
+			return nil
+		}
+
 		b[i] = preprune(b[i])
 	}
 
@@ -266,4 +277,35 @@ func decode(b []byte) []byte {
 		ret.WriteRune(r)
 	}
 	return ret.Bytes()
+}
+
+// isValidRune checks if the character is valid. We will look for the
+// character property in the code points list. For now we aren't checking special
+// rules in case of contextual property
+func isValidRune(r rune) bool {
+	return findProperty(r) == propertyPVALID
+}
+
+// findProperty will try to check the code point property of the given
+// character. It will use a binary search algorithm as we have a slice of
+// ordered ranges (average case performance O(log n))
+func findProperty(r rune) property {
+	imin, imax := 0, len(codePoints)
+
+	for imax >= imin {
+		imid := (imin + imax) / 2
+
+		codePoint := codePoints[imid]
+		if (codePoint.start == r && codePoint.end == 0) || (codePoint.start <= r && codePoint.end >= r) {
+			return codePoint.state
+		}
+
+		if (codePoint.end > 0 && codePoint.end < r) || (codePoint.end == 0 && codePoint.start < r) {
+			imin = imid + 1
+		} else {
+			imax = imid - 1
+		}
+	}
+
+	return propertyUnknown
 }

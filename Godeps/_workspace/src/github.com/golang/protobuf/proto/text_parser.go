@@ -174,7 +174,7 @@ func (p *textParser) advance() {
 		}
 		unq, err := unquoteC(p.s[1:i], rune(p.s[0]))
 		if err != nil {
-			p.errorf("invalid quoted string %v", p.s[0:i+1])
+			p.errorf("invalid quoted string %s: %v", p.s[0:i+1], err)
 			return
 		}
 		p.cur.value, p.s = p.s[0:i+1], p.s[i+1:len(p.s)]

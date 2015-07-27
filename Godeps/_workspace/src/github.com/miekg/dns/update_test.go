@@ -8,7 +8,7 @@ import (
 func TestDynamicUpdateParsing(t *testing.T) {
 	prefix := "example.com. IN "
 	for _, typ := range TypeToString {
-		if typ == "CAA" || typ == "OPT" || typ == "AXFR" || typ == "IXFR" || typ == "ANY" || typ == "TKEY" ||
+		if typ == "OPT" || typ == "AXFR" || typ == "IXFR" || typ == "ANY" || typ == "TKEY" ||
 			typ == "TSIG" || typ == "ISDN" || typ == "UNSPEC" || typ == "NULL" || typ == "ATMA" {
 			continue
 		}

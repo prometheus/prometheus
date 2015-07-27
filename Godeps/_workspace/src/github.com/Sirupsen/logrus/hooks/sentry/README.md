@@ -31,15 +31,32 @@ func main() {
 }
 ```
 
+If you wish to initialize a SentryHook with tags, you can use the `NewWithTagsSentryHook` constructor to provide default tags:
+
+```go
+tags := map[string]string{
+  "site": "example.com",
+}
+levels := []logrus.Level{
+  logrus.PanicLevel,
+  logrus.FatalLevel,
+  logrus.ErrorLevel,
+}
+hook, err := logrus_sentry.NewWithTagsSentryHook(YOUR_DSN, tags, levels)
+
+```
+
+
 ## Special fields
 
 Some logrus fields have a special meaning in this hook,
-these are server_name and logger.
+these are `server_name`, `logger` and `http_request`.
 When logs are sent to sentry these fields are treated differently.
-- server_name (also known as hostname) is the name of the server which
+- `server_name` (also known as hostname) is the name of the server which
 is logging the event (hostname.example.com)
-- logger is the part of the application which is logging the event.
+- `logger` is the part of the application which is logging the event.
 In go this usually means setting it to the name of the package.
+- `http_request` is the in-coming request(*http.Request). The detailed request data are sent to Sentry.
 
 ## Timeout
 
