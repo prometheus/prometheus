@@ -121,7 +121,7 @@ func (m Metric) Fingerprint() Fingerprint {
 	return metricToFingerprint(m)
 }
 
-// Fingerprint returns a Metric's Fingerprint calculated by a faster hashing
+// FastFingerprint returns a Metric's Fingerprint calculated by a faster hashing
 // algorithm, which is, however, more susceptible to hash collisions.
 func (m Metric) FastFingerprint() Fingerprint {
 	return metricToFastFingerprint(m)

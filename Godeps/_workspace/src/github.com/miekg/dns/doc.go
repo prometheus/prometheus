@@ -202,6 +202,9 @@ RFC 6895 sets aside a range of type codes for private use. This range
 is 65,280 - 65,534 (0xFF00 - 0xFFFE). When experimenting with new Resource Records these
 can be used, before requesting an official type code from IANA.
 
+see http://miek.nl/posts/2014/Sep/21/Private%20RRs%20and%20IDN%20in%20Go%20DNS/ for more
+information.
+
 EDNS0
 
 EDNS0 is an extension mechanism for the DNS defined in RFC 2671 and updated

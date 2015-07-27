@@ -543,6 +543,36 @@ func packTxtString(s string, msg []byte, offset int, tmp []byte) (int, error) {
 	return offset, nil
 }
 
+func packOctetString(s string, msg []byte, offset int, tmp []byte) (int, error) {
+	if offset >= len(msg) {
+		return offset, ErrBuf
+	}
+	bs := tmp[:len(s)]
+	copy(bs, s)
+	for i := 0; i < len(bs); i++ {
+		if len(msg) <= offset {
+			return offset, ErrBuf
+		}
+		if bs[i] == '\\' {
+			i++
+			if i == len(bs) {
+				break
+			}
+			// check for \DDD
+			if i+2 < len(bs) && isDigit(bs[i]) && isDigit(bs[i+1]) && isDigit(bs[i+2]) {
+				msg[offset] = dddToByte(bs[i:])
+				i += 2
+			} else {
+				msg[offset] = bs[i]
+			}
+		} else {
+			msg[offset] = bs[i]
+		}
+		offset++
+	}
+	return offset, nil
+}
+
 func unpackTxt(msg []byte, offset, rdend int) ([]string, int, error) {
 	var err error
 	var ss []string
@@ -890,6 +920,12 @@ func packStructValue(val reflect.Value, msg []byte, off int, compression map[str
 				// length of string. String is RAW (not encoded in hex, nor base64)
 				copy(msg[off:off+len(s)], s)
 				off += len(s)
+			case `dns:"octet"`:
+				bytesTmp := make([]byte, 256)
+				off, err = packOctetString(fv.String(), msg, off, bytesTmp)
+				if err != nil {
+					return lenmsg, err
+				}
 			case `dns:"txt"`:
 				fallthrough
 			case "":
@@ -1254,6 +1290,13 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 			switch val.Type().Field(i).Tag {
 			default:
 				return lenmsg, &Error{"bad tag unpacking string: " + val.Type().Field(i).Tag.Get("dns")}
+			case `dns:"octet"`:
+				strend := lenrd
+				if strend > lenmsg {
+					return lenmsg, &Error{err: "overflow unpacking octet"}
+				}
+				s = string(msg[off:strend])
+				off = strend
 			case `dns:"hex"`:
 				hexend := lenrd
 				if val.FieldByName("Hdr").FieldByName("Rrtype").Uint() == uint64(TypeHIP) {

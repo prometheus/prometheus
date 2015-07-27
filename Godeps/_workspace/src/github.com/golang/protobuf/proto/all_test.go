@@ -1925,6 +1925,18 @@ func TestMapFieldRoundTrips(t *testing.T) {
 	}
 }
 
+func TestMapFieldWithNil(t *testing.T) {
+	m := &MessageWithMap{
+		MsgMapping: map[int64]*FloatingPoint{
+			1: nil,
+		},
+	}
+	b, err := Marshal(m)
+	if err == nil {
+		t.Fatalf("Marshal of bad map should have failed, got these bytes: %v", b)
+	}
+}
+
 // Benchmarks
 
 func testMsg() *GoTest {

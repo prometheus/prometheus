@@ -168,6 +168,10 @@ func (k *KV) Release(p *KVPair, q *WriteOptions) (bool, *WriteMeta, error) {
 }
 
 func (k *KV) put(key string, params map[string]string, body []byte, q *WriteOptions) (bool, *WriteMeta, error) {
+	if len(key) > 0 && key[0] == '/' {
+		return false, nil, fmt.Errorf("Invalid key. Key must not begin with a '/': %s", key)
+	}
+
 	r := k.c.newRequest("PUT", "/v1/kv/"+key)
 	r.setWriteOptions(q)
 	for param, val := range params {

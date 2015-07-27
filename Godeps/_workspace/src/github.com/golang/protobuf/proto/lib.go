@@ -668,112 +668,118 @@ func buildDefaultMessage(t reflect.Type) (dm defaultMessage) {
 		}
 		ft := t.Field(fi).Type
 
-		var canHaveDefault, nestedMessage bool
-		switch ft.Kind() {
-		case reflect.Ptr:
-			if ft.Elem().Kind() == reflect.Struct {
-				nestedMessage = true
-			} else {
-				canHaveDefault = true // proto2 scalar field
-			}
-
-		case reflect.Slice:
-			switch ft.Elem().Kind() {
-			case reflect.Ptr:
-				nestedMessage = true // repeated message
-			case reflect.Uint8:
-				canHaveDefault = true // bytes field
-			}
-
-		case reflect.Map:
-			if ft.Elem().Kind() == reflect.Ptr {
-				nestedMessage = true // map with message values
-			}
+		sf, nested, err := fieldDefault(ft, prop)
+		switch {
+		case err != nil:
+			log.Print(err)
+		case nested:
+			dm.nested = append(dm.nested, fi)
+		case sf != nil:
+			sf.index = fi
+			dm.scalars = append(dm.scalars, *sf)
 		}
-
-		if !canHaveDefault {
-			if nestedMessage {
-				dm.nested = append(dm.nested, fi)
-			}
-			continue
-		}
-
-		sf := scalarField{
-			index: fi,
-			kind:  ft.Elem().Kind(),
-		}
-
-		// scalar fields without defaults
-		if !prop.HasDefault {
-			dm.scalars = append(dm.scalars, sf)
-			continue
-		}
-
-		// a scalar field: either *T or []byte
-		switch ft.Elem().Kind() {
-		case reflect.Bool:
-			x, err := strconv.ParseBool(prop.Default)
-			if err != nil {
-				log.Printf("proto: bad default bool %q: %v", prop.Default, err)
-				continue
-			}
-			sf.value = x
-		case reflect.Float32:
-			x, err := strconv.ParseFloat(prop.Default, 32)
-			if err != nil {
-				log.Printf("proto: bad default float32 %q: %v", prop.Default, err)
-				continue
-			}
-			sf.value = float32(x)
-		case reflect.Float64:
-			x, err := strconv.ParseFloat(prop.Default, 64)
-			if err != nil {
-				log.Printf("proto: bad default float64 %q: %v", prop.Default, err)
-				continue
-			}
-			sf.value = x
-		case reflect.Int32:
-			x, err := strconv.ParseInt(prop.Default, 10, 32)
-			if err != nil {
-				log.Printf("proto: bad default int32 %q: %v", prop.Default, err)
-				continue
-			}
-			sf.value = int32(x)
-		case reflect.Int64:
-			x, err := strconv.ParseInt(prop.Default, 10, 64)
-			if err != nil {
-				log.Printf("proto: bad default int64 %q: %v", prop.Default, err)
-				continue
-			}
-			sf.value = x
-		case reflect.String:
-			sf.value = prop.Default
-		case reflect.Uint8:
-			// []byte (not *uint8)
-			sf.value = []byte(prop.Default)
-		case reflect.Uint32:
-			x, err := strconv.ParseUint(prop.Default, 10, 32)
-			if err != nil {
-				log.Printf("proto: bad default uint32 %q: %v", prop.Default, err)
-				continue
-			}
-			sf.value = uint32(x)
-		case reflect.Uint64:
-			x, err := strconv.ParseUint(prop.Default, 10, 64)
-			if err != nil {
-				log.Printf("proto: bad default uint64 %q: %v", prop.Default, err)
-				continue
-			}
-			sf.value = x
-		default:
-			log.Printf("proto: unhandled def kind %v", ft.Elem().Kind())
-			continue
-		}
-
-		dm.scalars = append(dm.scalars, sf)
 	}
 
 	return dm
+}
+
+// fieldDefault returns the scalarField for field type ft.
+// sf will be nil if the field can not have a default.
+// nestedMessage will be true if this is a nested message.
+// Note that sf.index is not set on return.
+func fieldDefault(ft reflect.Type, prop *Properties) (sf *scalarField, nestedMessage bool, err error) {
+	var canHaveDefault bool
+	switch ft.Kind() {
+	case reflect.Ptr:
+		if ft.Elem().Kind() == reflect.Struct {
+			nestedMessage = true
+		} else {
+			canHaveDefault = true // proto2 scalar field
+		}
+
+	case reflect.Slice:
+		switch ft.Elem().Kind() {
+		case reflect.Ptr:
+			nestedMessage = true // repeated message
+		case reflect.Uint8:
+			canHaveDefault = true // bytes field
+		}
+
+	case reflect.Map:
+		if ft.Elem().Kind() == reflect.Ptr {
+			nestedMessage = true // map with message values
+		}
+	}
+
+	if !canHaveDefault {
+		if nestedMessage {
+			return nil, true, nil
+		}
+		return nil, false, nil
+	}
+
+	// We now know that ft is a pointer or slice.
+	sf = &scalarField{kind: ft.Elem().Kind()}
+
+	// scalar fields without defaults
+	if !prop.HasDefault {
+		return sf, false, nil
+	}
+
+	// a scalar field: either *T or []byte
+	switch ft.Elem().Kind() {
+	case reflect.Bool:
+		x, err := strconv.ParseBool(prop.Default)
+		if err != nil {
+			return nil, false, fmt.Errorf("proto: bad default bool %q: %v", prop.Default, err)
+		}
+		sf.value = x
+	case reflect.Float32:
+		x, err := strconv.ParseFloat(prop.Default, 32)
+		if err != nil {
+			return nil, false, fmt.Errorf("proto: bad default float32 %q: %v", prop.Default, err)
+		}
+		sf.value = float32(x)
+	case reflect.Float64:
+		x, err := strconv.ParseFloat(prop.Default, 64)
+		if err != nil {
+			return nil, false, fmt.Errorf("proto: bad default float64 %q: %v", prop.Default, err)
+		}
+		sf.value = x
+	case reflect.Int32:
+		x, err := strconv.ParseInt(prop.Default, 10, 32)
+		if err != nil {
+			return nil, false, fmt.Errorf("proto: bad default int32 %q: %v", prop.Default, err)
+		}
+		sf.value = int32(x)
+	case reflect.Int64:
+		x, err := strconv.ParseInt(prop.Default, 10, 64)
+		if err != nil {
+			return nil, false, fmt.Errorf("proto: bad default int64 %q: %v", prop.Default, err)
+		}
+		sf.value = x
+	case reflect.String:
+		sf.value = prop.Default
+	case reflect.Uint8:
+		// []byte (not *uint8)
+		sf.value = []byte(prop.Default)
+	case reflect.Uint32:
+		x, err := strconv.ParseUint(prop.Default, 10, 32)
+		if err != nil {
+			return nil, false, fmt.Errorf("proto: bad default uint32 %q: %v", prop.Default, err)
+		}
+		sf.value = uint32(x)
+	case reflect.Uint64:
+		x, err := strconv.ParseUint(prop.Default, 10, 64)
+		if err != nil {
+			return nil, false, fmt.Errorf("proto: bad default uint64 %q: %v", prop.Default, err)
+		}
+		sf.value = x
+	default:
+		return nil, false, fmt.Errorf("proto: unhandled def kind %v", ft.Elem().Kind())
+	}
+
+	return sf, false, nil
 }
 
 // Map fields may have key types of non-float scalars, strings and enums.
@@ -787,4 +793,21 @@ func (s mapKeys) Len() int      { return len(s) }
 func (s mapKeys) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s mapKeys) Less(i, j int) bool {
 	return fmt.Sprint(s[i].Interface()) < fmt.Sprint(s[j].Interface())
+}
+
+// isProto3Zero reports whether v is a zero proto3 value.
+func isProto3Zero(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Bool:
+		return !v.Bool()
+	case reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint32, reflect.Uint64:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.String:
+		return v.String() == ""
+	}
+	return false
 }

@@ -1084,7 +1084,7 @@ func (o *Buffer) enc_new_map(p *Properties, base structPointer) error {
 			repeated MapFieldEntry map_field = N;
 	*/
 
-	v := structPointer_Map(base, p.field, p.mtype).Elem() // map[K]V
+	v := structPointer_NewAt(base, p.field, p.mtype).Elem() // map[K]V
 	if v.Len() == 0 {
 		return nil
 	}
@@ -1106,6 +1106,11 @@ func (o *Buffer) enc_new_map(p *Properties, base structPointer) error {
 	for _, key := range keys {
 		val := v.MapIndex(key)
 
+		// The only illegal map entry values are nil message pointers.
+		if val.Kind() == reflect.Ptr && val.IsNil() {
+			return errors.New("proto: map has nil element")
+		}
+
 		keycopy.Set(key)
 		valcopy.Set(val)
 
@@ -1118,7 +1123,7 @@ func (o *Buffer) enc_new_map(p *Properties, base structPointer) error {
 }
 
 func size_new_map(p *Properties, base structPointer) int {
-	v := structPointer_Map(base, p.field, p.mtype).Elem() // map[K]V
+	v := structPointer_NewAt(base, p.field, p.mtype).Elem() // map[K]V
 
 	keycopy, valcopy, keybase, valbase := mapEncodeScratch(p.mtype)
 

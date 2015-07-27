@@ -189,26 +189,15 @@ func (c *Client) exchange(m *Msg, a string) (r *Msg, rtt time.Duration, err erro
 // If the received message contains a TSIG record the transaction
 // signature is verified.
 func (co *Conn) ReadMsg() (*Msg, error) {
-	var p []byte
-	m := new(Msg)
-	if _, ok := co.Conn.(*net.TCPConn); ok {
-		p = make([]byte, MaxMsgSize)
-	} else {
-		if co.UDPSize >= 512 {
-			p = make([]byte, co.UDPSize)
-		} else {
-			p = make([]byte, MinMsgSize)
-		}
-	}
-	n, err := co.Read(p)
-	if err != nil && n == 0 {
+	p, err := co.ReadMsgHeader(nil)
+	if err != nil {
 		return nil, err
 	}
-	p = p[:n]
+
+	m := new(Msg)
 	if err := m.Unpack(p); err != nil {
 		return nil, err
 	}
-	co.rtt = time.Since(co.t)
 	if t := m.IsTsig(); t != nil {
 		if _, ok := co.TsigSecret[t.Hdr.Name]; !ok {
 			return m, ErrSecret
@@ -217,6 +206,81 @@ func (co *Conn) ReadMsg() (*Msg, error) {
 		err = TsigVerify(p, co.TsigSecret[t.Hdr.Name], co.tsigRequestMAC, false)
 	}
 	return m, err
+}
+
+// ReadMsgHeader reads a DNS message, parses and populates hdr (when hdr is not nil).
+// Returns message as a byte slice to be parsed with Msg.Unpack later on.
+// Note that error handling on the message body is not possible as only the header is parsed.
+func (co *Conn) ReadMsgHeader(hdr *Header) ([]byte, error) {
+	var (
+		p   []byte
+		n   int
+		err error
+	)
+
+	if t, ok := co.Conn.(*net.TCPConn); ok {
+		// First two bytes specify the length of the entire message.
+		l, err := tcpMsgLen(t)
+		if err != nil {
+			return nil, err
+		}
+		p = make([]byte, l)
+		n, err = tcpRead(t, p)
+	} else {
+		if co.UDPSize > MinMsgSize {
+			p = make([]byte, co.UDPSize)
+		} else {
+			p = make([]byte, MinMsgSize)
+		}
+		n, err = co.Read(p)
+	}
+
+	if err != nil {
+		return nil, err
+	} else if n < headerSize {
+		return nil, ErrShortRead
+	}
+
+	p = p[:n]
+	if hdr != nil {
+		if _, err = UnpackStruct(hdr, p, 0); err != nil {
+			return nil, err
+		}
+	}
+	return p, err
+}
+
+// tcpMsgLen is a helper func to read first two bytes of stream as uint16 packet length.
+func tcpMsgLen(t *net.TCPConn) (int, error) {
+	p := []byte{0, 0}
+	n, err := t.Read(p)
+	if err != nil {
+		return 0, err
+	}
+	if n != 2 {
+		return 0, ErrShortRead
+	}
+	l, _ := unpackUint16(p, 0)
+	if l == 0 {
+		return 0, ErrShortRead
+	}
+	return int(l), nil
+}
+
+// tcpRead calls TCPConn.Read enough times to fill allocated buffer.
+func tcpRead(t *net.TCPConn, p []byte) (int, error) {
+	n, err := t.Read(p)
+	if err != nil {
+		return n, err
+	}
+	for n < len(p) {
+		j, err := t.Read(p[n:])
+		if err != nil {
+			return n, err
+		}
+		n += j
+	}
+	return n, err
 }
 
 // Read implements the net.Conn read method.
@@ -228,37 +292,22 @@ func (co *Conn) Read(p []byte) (n int, err error) {
 		return 0, io.ErrShortBuffer
 	}
 	if t, ok := co.Conn.(*net.TCPConn); ok {
-		n, err = t.Read(p[0:2])
-		if err != nil || n != 2 {
-			return n, err
+		l, err := tcpMsgLen(t)
+		if err != nil {
+			return 0, err
 		}
-		l, _ := unpackUint16(p[0:2], 0)
-		if l == 0 {
-			return 0, ErrShortRead
-		}
-		if int(l) > len(p) {
+		if l > len(p) {
 			return int(l), io.ErrShortBuffer
 		}
-		n, err = t.Read(p[:l])
-		if err != nil {
-			return n, err
-		}
-		i := n
-		for i < int(l) {
-			j, err := t.Read(p[i:int(l)])
-			if err != nil {
-				return i, err
-			}
-			i += j
-		}
-		n = i
-		return n, err
+		return tcpRead(t, p[:l])
 	}
 	// UDP connection
 	n, err = co.Conn.Read(p)
 	if err != nil {
 		return n, err
 	}
+
+	co.rtt = time.Since(co.t)
 	return n, err
 }
 
@@ -327,21 +376,3 @@ func DialTimeout(network, address string, timeout time.Duration) (conn *Conn, er
 	}
 	return conn, nil
 }
-
-// Close implements the net.Conn Close method.
-func (co *Conn) Close() error { return co.Conn.Close() }
-
-// LocalAddr implements the net.Conn LocalAddr method.
-func (co *Conn) LocalAddr() net.Addr { return co.Conn.LocalAddr() }
-
-// RemoteAddr implements the net.Conn RemoteAddr method.
-func (co *Conn) RemoteAddr() net.Addr { return co.Conn.RemoteAddr() }
-
-// SetDeadline implements the net.Conn SetDeadline method.
-func (co *Conn) SetDeadline(t time.Time) error { return co.Conn.SetDeadline(t) }
-
-// SetReadDeadline implements the net.Conn SetReadDeadline method.
-func (co *Conn) SetReadDeadline(t time.Time) error { return co.Conn.SetReadDeadline(t) }
-
-// SetWriteDeadline implements the net.Conn SetWriteDeadline method.
-func (co *Conn) SetWriteDeadline(t time.Time) error { return co.Conn.SetWriteDeadline(t) }

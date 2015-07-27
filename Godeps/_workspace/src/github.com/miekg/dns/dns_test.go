@@ -429,9 +429,6 @@ func TestToRFC3597(t *testing.T) {
 func TestNoRdataPack(t *testing.T) {
 	data := make([]byte, 1024)
 	for typ, fn := range typeToRR {
-		if typ == TypeCAA {
-			continue // TODO(miek): known omission
-		}
 		r := fn()
 		*r.Header() = RR_Header{Name: "miek.nl.", Rrtype: typ, Class: ClassINET, Ttl: 3600}
 		_, err := PackRR(r, data, 0, nil, false)

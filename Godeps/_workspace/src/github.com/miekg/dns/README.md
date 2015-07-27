@@ -37,6 +37,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/StalkR/dns-reverse-proxy
 * https://github.com/tianon/rawdns
 * https://mesosphere.github.io/mesos-dns/
+* https://pulse.turbobytes.com/
 
 Send pull request if you want to be listed here.
 
@@ -118,6 +119,7 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 6605 - ECDSA
 * 6725 - IANA Registry Update
 * 6742 - ILNP DNS
+* 6844 - CAA record
 * 6891 - EDNS0 update
 * 6895 - DNS IANA considerations
 * 6975 - Algorithm Understanding in DNSSEC
@@ -138,6 +140,5 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * privatekey.Precompute() when signing?
 * Last remaining RRs: APL, ATMA, A6 and NXT and IPSECKEY;
 * Missing in parsing: ISDN, UNSPEC, ATMA;
-* CAA parsing is broken;
 * NSEC(3) cover/match/closest enclose;
 * Replies with TC bit are not parsed to the end;

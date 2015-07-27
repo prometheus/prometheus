@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -61,9 +62,12 @@ func TestSpecialFields(t *testing.T) {
 			t.Fatal(err.Error())
 		}
 		logger.Hooks.Add(hook)
+
+		req, _ := http.NewRequest("GET", "url", nil)
 		logger.WithFields(logrus.Fields{
-			"server_name": server_name,
-			"logger":      logger_name,
+			"server_name":  server_name,
+			"logger":       logger_name,
+			"http_request": req,
 		}).Error(message)
 
 		packet := <-pch
@@ -91,6 +95,37 @@ func TestSentryHandler(t *testing.T) {
 		logger.Error(message)
 		packet := <-pch
 		if packet.Message != message {
+			t.Errorf("message should have been %s, was %s", message, packet.Message)
+		}
+	})
+}
+
+func TestSentryTags(t *testing.T) {
+	WithTestDSN(t, func(dsn string, pch <-chan *raven.Packet) {
+		logger := getTestLogger()
+		tags := map[string]string{
+			"site": "test",
+		}
+		levels := []logrus.Level{
+			logrus.ErrorLevel,
+		}
+
+		hook, err := NewWithTagsSentryHook(dsn, tags, levels)
+		if err != nil {
+			t.Fatal(err.Error())
+		}
+
+		logger.Hooks.Add(hook)
+
+		logger.Error(message)
+		packet := <-pch
+		expected := raven.Tags{
+			raven.Tag{
+				Key:   "site",
+				Value: "test",
+			},
+		}
+		if !reflect.DeepEqual(packet.Tags, expected) {
 			t.Errorf("message should have been %s, was %s", message, packet.Message)
 		}
 	})

@@ -183,7 +183,7 @@ Logrus comes with [built-in hooks](hooks/). Add those, or your custom hook, in
 import (
   log "github.com/Sirupsen/logrus"
   "github.com/Sirupsen/logrus/hooks/airbrake"
-  "github.com/Sirupsen/logrus/hooks/syslog"
+  logrus_syslog "github.com/Sirupsen/logrus/hooks/syslog"
   "log/syslog"
 )
 
@@ -206,12 +206,18 @@ func init() {
 | [Papertrail](https://github.com/Sirupsen/logrus/blob/master/hooks/papertrail/papertrail.go) | Send errors to the Papertrail hosted logging service via UDP. |
 | [Syslog](https://github.com/Sirupsen/logrus/blob/master/hooks/syslog/syslog.go) | Send errors to remote syslog server. Uses standard library `log/syslog` behind the scenes. |
 | [BugSnag](https://github.com/Sirupsen/logrus/blob/master/hooks/bugsnag/bugsnag.go) | Send errors to the Bugsnag exception tracking service. |
+| [Sentry](https://github.com/Sirupsen/logrus/blob/master/hooks/sentry/sentry.go) | Send errors to the Sentry error logging and aggregation service. |
 | [Hiprus](https://github.com/nubo/hiprus) | Send errors to a channel in hipchat. |
 | [Logrusly](https://github.com/sebest/logrusly) | Send logs to [Loggly](https://www.loggly.com/) |
 | [Slackrus](https://github.com/johntdyer/slackrus) | Hook for Slack chat. |
 | [Journalhook](https://github.com/wercker/journalhook) | Hook for logging to `systemd-journald` |
 | [Graylog](https://github.com/gemnasium/logrus-hooks/tree/master/graylog) | Hook for logging to [Graylog](http://graylog2.org/) |
 | [Raygun](https://github.com/squirkle/logrus-raygun-hook) | Hook for logging to [Raygun.io](http://raygun.io/) |
+| [LFShook](https://github.com/rifflock/lfshook) | Hook for logging to the local filesystem |
+| [Honeybadger](https://github.com/agonzalezro/logrus_honeybadger) | Hook for sending exceptions to Honeybadger |
+| [Mail](https://github.com/zbindenren/logrus_mail) | Hook for sending exceptions via mail |
+| [Rollrus](https://github.com/heroku/rollrus) | Hook for sending errors to rollbar |
+| [Fluentd](https://github.com/evalphobia/logrus_fluent) | Hook for logging to fluentd |
 
 #### Level logging
 
@@ -267,7 +273,7 @@ init() {
   // do something here to set environment depending on an environment variable
   // or command-line flag
   if Environment == "production" {
-    log.SetFormatter(logrus.JSONFormatter)
+    log.SetFormatter(&logrus.JSONFormatter{})
   } else {
     // The TextFormatter is default, you don't actually have to do this.
     log.SetFormatter(&log.TextFormatter{})
@@ -324,7 +330,7 @@ func (f *JSONFormatter) Format(entry *Entry) ([]byte, error) {
 
 #### Logger as an `io.Writer`
 
-Logrus can be transormed into an `io.Writer`. That writer is the end of an `io.Pipe` and it is your responsibility to close it.
+Logrus can be transformed into an `io.Writer`. That writer is the end of an `io.Pipe` and it is your responsibility to close it.
 
 ```go
 w := logger.Writer()

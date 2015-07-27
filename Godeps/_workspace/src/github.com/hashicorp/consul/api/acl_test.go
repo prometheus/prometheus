@@ -1,26 +1,14 @@
 package api
 
 import (
-	"os"
 	"testing"
 )
 
-// ROOT is a management token for the tests
-var CONSUL_ROOT string
-
-func init() {
-	CONSUL_ROOT = os.Getenv("CONSUL_ROOT")
-}
-
 func TestACL_CreateDestroy(t *testing.T) {
 	t.Parallel()
-	if CONSUL_ROOT == "" {
-		t.SkipNow()
-	}
-	c, s := makeClient(t)
+	c, s := makeACLClient(t)
 	defer s.Stop()
 
-	c.config.Token = CONSUL_ROOT
 	acl := c.ACL()
 
 	ae := ACLEntry{
@@ -63,16 +51,12 @@ func TestACL_CreateDestroy(t *testing.T) {
 
 func TestACL_CloneDestroy(t *testing.T) {
 	t.Parallel()
-	if CONSUL_ROOT == "" {
-		t.SkipNow()
-	}
-	c, s := makeClient(t)
+	c, s := makeACLClient(t)
 	defer s.Stop()
 
-	c.config.Token = CONSUL_ROOT
 	acl := c.ACL()
 
-	id, wm, err := acl.Clone(CONSUL_ROOT, nil)
+	id, wm, err := acl.Clone(c.config.Token, nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -97,16 +81,12 @@ func TestACL_CloneDestroy(t *testing.T) {
 
 func TestACL_Info(t *testing.T) {
 	t.Parallel()
-	if CONSUL_ROOT == "" {
-		t.SkipNow()
-	}
-	c, s := makeClient(t)
+	c, s := makeACLClient(t)
 	defer s.Stop()
 
-	c.config.Token = CONSUL_ROOT
 	acl := c.ACL()
 
-	ae, qm, err := acl.Info(CONSUL_ROOT, nil)
+	ae, qm, err := acl.Info(c.config.Token, nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -118,20 +98,16 @@ func TestACL_Info(t *testing.T) {
 		t.Fatalf("bad: %v", qm)
 	}
 
-	if ae == nil || ae.ID != CONSUL_ROOT || ae.Type != ACLManagementType {
+	if ae == nil || ae.ID != c.config.Token || ae.Type != ACLManagementType {
 		t.Fatalf("bad: %#v", ae)
 	}
 }
 
 func TestACL_List(t *testing.T) {
 	t.Parallel()
-	if CONSUL_ROOT == "" {
-		t.SkipNow()
-	}
-	c, s := makeClient(t)
+	c, s := makeACLClient(t)
 	defer s.Stop()
 
-	c.config.Token = CONSUL_ROOT
 	acl := c.ACL()
 
 	acls, qm, err := acl.List(nil)

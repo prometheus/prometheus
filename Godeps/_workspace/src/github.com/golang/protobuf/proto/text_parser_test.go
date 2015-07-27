@@ -152,7 +152,7 @@ var unMarshalTextTests = []UnmarshalTextTest{
 	// Bad quoted string
 	{
 		in:  `inner: < host: "\0" >` + "\n",
-		err: `line 1.15: invalid quoted string "\0"`,
+		err: `line 1.15: invalid quoted string "\0": \0 requires 2 following digits`,
 	},
 
 	// Number too large for int64

@@ -9,8 +9,8 @@
 		},
 		{
 			"ImportPath": "github.com/Sirupsen/logrus",
-			"Comment": "v0.7.3-13-g81e2611",
-			"Rev": "81e2611f37acccd8cb5e4e1a5a4a5f6c9c7f4537"
+			"Comment": "v0.8.5-1-g11538ee",
+			"Rev": "11538ee6888f72d4ab44a1aeba06b9bc4cb134a1"
 		},
 		{
 			"ImportPath": "github.com/beorn7/perks/quantile",
@@ -18,16 +18,21 @@
 		},
 		{
 			"ImportPath": "github.com/golang/protobuf/proto",
-			"Rev": "16256d3ce6929458613798ee44b7914a3f59f5c6"
+			"Rev": "0f7a9caded1fb3c9cc5a9b4bcf2ff633cc8ae644"
+		},
+		{
+			"ImportPath": "github.com/golang/snappy",
+			"Rev": "0c7f8a7704bfec561913f4df52c832f094ef56f0"
 		},
 		{
 			"ImportPath": "github.com/hashicorp/consul/api",
-			"Comment": "v0.5.2-9-g145b495",
-			"Rev": "145b495e22388832240ee78788524bd975e443ca"
+			"Comment": "v0.5.2-180-ga6317f2",
+			"Rev": "a6317f2fb2ba9d5ae695f7fa703cfb30a1c59af1"
 		},
 		{
 			"ImportPath": "github.com/julienschmidt/httprouter",
-			"Rev": "8c199fb6259ffc1af525cc3ad52ee60ba8359669"
+			"Comment": "v1.1-3-g6aacfd5",
+			"Rev": "6aacfd5ab513e34f7e64ea9627ab9670371b34e7"
 		},
 		{
 			"ImportPath": "github.com/matttproud/golang_protobuf_extensions/pbutil",
@@ -35,27 +40,27 @@
 		},
 		{
 			"ImportPath": "github.com/miekg/dns",
-			"Rev": "bb1103f648f811d2018d4bedcb2d4b2bce34a0f1"
+			"Rev": "e59f851c912767b1db587dcabee6e6652e495c75"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/extraction",
-			"Comment": "0.6.0",
-			"Rev": "e319516b0f97867d36151451cab8d4aefbe1786b"
+			"Comment": "0.7.0",
+			"Rev": "6dbab8106ed3ed77359ac85d9cf08e30290df864"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/model",
-			"Comment": "0.6.0",
-			"Rev": "e319516b0f97867d36151451cab8d4aefbe1786b"
+			"Comment": "0.7.0",
+			"Rev": "6dbab8106ed3ed77359ac85d9cf08e30290df864"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/prometheus",
-			"Comment": "0.6.0",
-			"Rev": "e319516b0f97867d36151451cab8d4aefbe1786b"
+			"Comment": "0.7.0",
+			"Rev": "6dbab8106ed3ed77359ac85d9cf08e30290df864"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/text",
-			"Comment": "0.6.0",
-			"Rev": "e319516b0f97867d36151451cab8d4aefbe1786b"
+			"Comment": "0.7.0",
+			"Rev": "6dbab8106ed3ed77359ac85d9cf08e30290df864"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_model/go",
@@ -64,27 +69,23 @@
 		},
 		{
 			"ImportPath": "github.com/prometheus/log",
-			"Rev": "c1344118e003a86aefb326a436118ad1317266dd"
+			"Rev": "439e5db48fbb50ebbaf2c816030473a62f505f55"
 		},
 		{
 			"ImportPath": "github.com/prometheus/procfs",
-			"Rev": "ee2372b58cee877abe07cde670d04d3b3bac5ee6"
+			"Rev": "c91d8eefde16bd047416409eb56353ea84a186e4"
 		},
 		{
 			"ImportPath": "github.com/samuel/go-zookeeper/zk",
-			"Rev": "c86eba8e7e95efab81f6c0455332e49d39aed12f"
+			"Rev": "5bb5cfc093ad18a28148c578f8632cfdb4d802e4"
 		},
 		{
 			"ImportPath": "github.com/syndtr/goleveldb/leveldb",
-			"Rev": "315fcfb05d4d46d4354b313d146ef688dda272a9"
-		},
-		{
-			"ImportPath": "github.com/syndtr/gosnappy/snappy",
-			"Rev": "156a073208e131d7d2e212cb749feae7c339e846"
+			"Rev": "183614d6b32571e867df4cf086f5480ceefbdfac"
 		},
 		{
 			"ImportPath": "golang.org/x/net/context",
-			"Rev": "ad9eb3904af97b912b9a242efb203c5c6782e72a"
+			"Rev": "b71143c25f0aad5f54981684b715686d34c56d25"
 		},
 		{
 			"ImportPath": "gopkg.in/fsnotify.v1",
@@ -93,7 +94,7 @@
 		},
 		{
 			"ImportPath": "gopkg.in/yaml.v2",
-			"Rev": "49c95bdc21843256fb6c4e0d370a05f24a0bf213"
+			"Rev": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40"
 		}
 	]
 }

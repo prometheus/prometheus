@@ -174,6 +174,48 @@ func TestRouterRoot(t *testing.T) {
 	}
 }
 
+func TestRouterChaining(t *testing.T) {
+	router1 := New()
+	router2 := New()
+	router1.NotFound = router2
+
+	fooHit := false
+	router1.POST("/foo", func(w http.ResponseWriter, req *http.Request, _ Params) {
+		fooHit = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	barHit := false
+	router2.POST("/bar", func(w http.ResponseWriter, req *http.Request, _ Params) {
+		barHit = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	r, _ := http.NewRequest("POST", "/foo", nil)
+	w := httptest.NewRecorder()
+	router1.ServeHTTP(w, r)
+	if !(w.Code == http.StatusOK && fooHit) {
+		t.Errorf("Regular routing failed with router chaining.")
+		t.FailNow()
+	}
+
+	r, _ = http.NewRequest("POST", "/bar", nil)
+	w = httptest.NewRecorder()
+	router1.ServeHTTP(w, r)
+	if !(w.Code == http.StatusOK && barHit) {
+		t.Errorf("Chained routing failed with router chaining.")
+		t.FailNow()
+	}
+
+	r, _ = http.NewRequest("POST", "/qax", nil)
+	w = httptest.NewRecorder()
+	router1.ServeHTTP(w, r)
+	if !(w.Code == http.StatusNotFound) {
+		t.Errorf("NotFound behavior failed with router chaining.")
+		t.FailNow()
+	}
+}
+
 func TestRouterNotAllowed(t *testing.T) {
 	handlerFunc := func(_ http.ResponseWriter, _ *http.Request, _ Params) {}
 
@@ -190,10 +232,10 @@ func TestRouterNotAllowed(t *testing.T) {
 
 	w = httptest.NewRecorder()
 	responseText := "custom method"
-	router.MethodNotAllowed = func(w http.ResponseWriter, req *http.Request) {
+	router.MethodNotAllowed = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 		w.Write([]byte(responseText))
-	}
+	})
 	router.ServeHTTP(w, r)
 	if got := w.Body.String(); !(got == responseText) {
 		t.Errorf("unexpected response got %q want %q", got, responseText)
@@ -237,10 +279,10 @@ func TestRouterNotFound(t *testing.T) {
 
 	// Test custom not found handler
 	var notFound bool
-	router.NotFound = func(rw http.ResponseWriter, r *http.Request) {
+	router.NotFound = http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(404)
 		notFound = true
-	}
+	})
 	r, _ := http.NewRequest("GET", "/nope", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)

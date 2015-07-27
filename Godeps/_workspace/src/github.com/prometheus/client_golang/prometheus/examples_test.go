@@ -392,6 +392,9 @@ func ExampleSummaryVec() {
 		temps.WithLabelValues("lithobates-catesbeianus").Observe(32 + math.Floor(100*math.Cos(float64(i)*0.11))/10)
 	}
 
+	// Create a Summary without any observations.
+	temps.WithLabelValues("leiopelma-hochstetteri")
+
 	// Just for demonstration, let's check the state of the summary vector
 	// by (ab)using its Collect method and the Write method of its elements
 	// (which is usually only used by Prometheus internally - code like the
@@ -413,6 +416,26 @@ func ExampleSummaryVec() {
 
 	// Output:
 	// [label: <
+	//   name: "species"
+	//   value: "leiopelma-hochstetteri"
+	// >
+	// summary: <
+	//   sample_count: 0
+	//   sample_sum: 0
+	//   quantile: <
+	//     quantile: 0.5
+	//     value: nan
+	//   >
+	//   quantile: <
+	//     quantile: 0.9
+	//     value: nan
+	//   >
+	//   quantile: <
+	//     quantile: 0.99
+	//     value: nan
+	//   >
+	// >
+	//  label: <
 	//   name: "species"
 	//   value: "lithobates-catesbeianus"
 	// >

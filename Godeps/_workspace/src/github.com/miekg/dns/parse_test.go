@@ -1455,3 +1455,54 @@ func TestParseHINFO(t *testing.T) {
 		}
 	}
 }
+
+func TestParseCAA(t *testing.T) {
+	lt := map[string]string{
+		"example.net.	CAA	0 issue \"symantec.com\"": "example.net.\t3600\tIN\tCAA\t0 issue \"symantec.com\"",
+		"example.net.	CAA	0 issuewild \"symantec.com; stuff\"": "example.net.\t3600\tIN\tCAA\t0 issuewild \"symantec.com; stuff\"",
+		"example.net.	CAA	128 tbs \"critical\"": "example.net.\t3600\tIN\tCAA\t128 tbs \"critical\"",
+		"example.net.	CAA	2 auth \"0>09\\006\\010+\\006\\001\\004\\001\\214y\\002\\003\\001\\006\\009`\\134H\\001e\\003\\004\\002\\001\\004 y\\209\\012\\221r\\220\\156Q\\218\\150\\150{\\166\\245:\\231\\182%\\157:\\133\\179}\\1923r\\238\\151\\255\\128q\\145\\002\\001\\000\"": "example.net.\t3600\tIN\tCAA\t2 auth \"0>09\\006\\010+\\006\\001\\004\\001\\214y\\002\\003\\001\\006\\009`\\134H\\001e\\003\\004\\002\\001\\004 y\\209\\012\\221r\\220\\156Q\\218\\150\\150{\\166\\245:\\231\\182%\\157:\\133\\179}\\1923r\\238\\151\\255\\128q\\145\\002\\001\\000\"",
+		"example.net.   TYPE257	0 issue \"symantec.com\"": "example.net.\t3600\tIN\tCAA\t0 issue \"symantec.com\"",
+	}
+	for i, o := range lt {
+		rr, err := NewRR(i)
+		if err != nil {
+			t.Error("failed to parse RR: ", err)
+			continue
+		}
+		if rr.String() != o {
+			t.Errorf("`%s' should be equal to\n`%s', but is     `%s'", i, o, rr.String())
+		} else {
+			t.Logf("RR is OK: `%s'", rr.String())
+		}
+	}
+}
+
+func TestPackCAA(t *testing.T) {
+	m := new(Msg)
+	record := new(CAA)
+	record.Hdr = RR_Header{Name: "example.com.", Rrtype: TypeCAA, Class: ClassINET, Ttl: 0}
+	record.Tag = "issue"
+	record.Value = "symantec.com"
+	record.Flag = 1
+
+	m.Answer = append(m.Answer, record)
+	bytes, err := m.Pack()
+	if err != nil {
+		t.Fatalf("failed to pack msg: %v", err)
+	}
+	if err := m.Unpack(bytes); err != nil {
+		t.Fatalf("failed to unpack msg: %v", err)
+	}
+	if len(m.Answer) != 1 {
+		t.Fatalf("incorrect number of answers unpacked")
+	}
+	rr := m.Answer[0].(*CAA)
+	if rr.Tag != "issue" {
+		t.Fatalf("invalid tag for unpacked answer")
+	} else if rr.Value != "symantec.com" {
+		t.Fatalf("invalid value for unpacked answer")
+	} else if rr.Flag != 1 {
+		t.Fatalf("invalid flag for unpacked answer")
+	}
+}

@@ -426,6 +426,11 @@ func TestProto3Text(t *testing.T) {
 			&pb.MessageWithMap{NameMapping: map[int32]string{1234: "Feist"}},
 			`name_mapping:<key:1234 value:"Feist" >`,
 		},
+		// map with nil value; not well-defined, but we shouldn't crash
+		{
+			&pb.MessageWithMap{MsgMapping: map[int64]*pb.FloatingPoint{7: nil}},
+			`msg_mapping:<key:7 >`,
+		},
 	}
 	for _, test := range tests {
 		got := strings.TrimSpace(test.m.String())

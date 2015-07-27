@@ -20,6 +20,16 @@ func makeClient(t *testing.T) (*Client, *testutil.TestServer) {
 	return makeClientWithConfig(t, nil, nil)
 }
 
+func makeACLClient(t *testing.T) (*Client, *testutil.TestServer) {
+	return makeClientWithConfig(t, func(clientConfig *Config) {
+		clientConfig.Token = "root"
+	}, func(serverConfig *testutil.TestServerConfig) {
+		serverConfig.ACLMasterToken = "root"
+		serverConfig.ACLDatacenter = "dc1"
+		serverConfig.ACLDefaultPolicy = "deny"
+	})
+}
+
 func makeClientWithConfig(
 	t *testing.T,
 	cb1 configCallback,
