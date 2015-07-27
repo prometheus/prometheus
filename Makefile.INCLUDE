@@ -31,7 +31,7 @@ MAKEFILE_DIR ?= $(realpath $(dir $(lastword $(MAKEFILE_LIST))))
 BUILD_PATH = $(MAKEFILE_DIR)/.build
 
 GO_VERSION := 1.4.2
-GOOS = $(subst Darwin,darwin,$(subst Linux,linux,$(subst FreeBSD,freebsd,$(OS))))
+GOOS ?= $(subst Darwin,darwin,$(subst Linux,linux,$(subst FreeBSD,freebsd,$(OS))))
 
 ifeq ($(GOOS),darwin)
 RELEASE_SUFFIX ?= -osx$(MAC_OS_X_VERSION)
@@ -42,7 +42,7 @@ endif
 # Never honor GOBIN, should it be set at all.
 unexport GOBIN
 
-GOARCH  = $(subst x86_64,amd64,$(patsubst i%86,386,$(ARCH)))
+GOARCH ?= $(subst x86_64,amd64,$(patsubst i%86,386,$(ARCH)))
 GOPKG  ?= go$(GO_VERSION).$(GOOS)-$(GOARCH)$(RELEASE_SUFFIX).tar.gz
 GOURL  ?= https://golang.org/dl
 GOROOT  = $(BUILD_PATH)/root/go
