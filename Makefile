@@ -36,7 +36,10 @@ docker:
 tarball: $(ARCHIVE)
 
 $(ARCHIVE): build
-	tar -czf $(ARCHIVE) prometheus promtool consoles console_libraries
+	mkdir -p $(ARCHIVEDIR)
+	cp -a prometheus promtool consoles console_libraries $(ARCHIVEDIR)
+	tar -czf $(ARCHIVE) $(ARCHIVEDIR)
+	rm -rf $(ARCHIVEDIR)
 
 release: REMOTE     ?= $(error "can't upload, REMOTE not set")
 release: REMOTE_DIR ?= $(error "can't upload, REMOTE_DIR not set")
