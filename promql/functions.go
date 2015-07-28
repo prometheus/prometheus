@@ -474,6 +474,43 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 	return resultVector
 }
 
+// === predict_linear(node ExprMatrix, k ExprScalar) Vector ===
+func funcPredictLinear(ev *evaluator, args Expressions) Value {
+	vector := funcDeriv(ev, args[0:1]).(Vector)
+	duration := clientmodel.SampleValue(clientmodel.SampleValue(ev.evalFloat(args[1])))
+
+	excludedLabels := map[clientmodel.LabelName]struct{}{
+		clientmodel.MetricNameLabel: {},
+	}
+
+	// Calculate predicted delta over the duration.
+	signatureToDelta := map[uint64]clientmodel.SampleValue{}
+	for _, el := range vector {
+		signature := clientmodel.SignatureWithoutLabels(el.Metric.Metric, excludedLabels)
+		signatureToDelta[signature] = el.Value * duration
+	}
+
+	// add predicted delta to last value.
+	matrixBounds := ev.evalMatrixBounds(args[0])
+	outVec := make(Vector, 0, len(signatureToDelta))
+	for _, samples := range matrixBounds {
+		if len(samples.Values) < 2 {
+			continue
+		}
+		signature := clientmodel.SignatureWithoutLabels(samples.Metric.Metric, excludedLabels)
+		delta, ok := signatureToDelta[signature]
+		if ok {
+			samples.Metric.Delete(clientmodel.MetricNameLabel)
+			outVec = append(outVec, &Sample{
+				Metric:    samples.Metric,
+				Value:     delta + samples.Values[1].Value,
+				Timestamp: ev.Timestamp,
+			})
+		}
+	}
+	return outVec
+}
+
 // === histogram_quantile(k ExprScalar, vector ExprVector) Vector ===
 func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 	q := clientmodel.SampleValue(ev.evalFloat(args[0]))
@@ -687,6 +724,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []ExprType{ExprMatrix},
 		ReturnType: ExprVector,
 		Call:       funcMinOverTime,
+	},
+	"predict_linear": {
+		Name:       "predict_linear",
+		ArgTypes:   []ExprType{ExprMatrix, ExprScalar},
+		ReturnType: ExprVector,
+		Call:       funcPredictLinear,
 	},
 	"rate": {
 		Name:       "rate",
