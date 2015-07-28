@@ -76,4 +76,5 @@ BUILDFLAGS := -ldflags \
 		-X $(REPO_PATH)/version.GoVersion $(GO_VERSION)"
 CURL := curl
 
-ARCHIVE := prometheus-$(VERSION).$(GOOS)-$(GOARCH).tar.gz
+ARCHIVEDIR := prometheus-$(VERSION).$(GOOS)-$(GOARCH)
+ARCHIVE := $(ARCHIVEDIR).tar.gz
