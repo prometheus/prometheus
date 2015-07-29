@@ -16,7 +16,6 @@ package promql
 import (
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -458,7 +457,7 @@ func lexStatements(l *lexer) stateFn {
 		} else {
 			l.emit(itemGTR)
 		}
-	case unicode.IsDigit(r) || (r == '.' && unicode.IsDigit(l.peek())):
+	case isDigit(r) || (r == '.' && isDigit(l.peek())):
 		l.backup()
 		return lexNumberOrDuration
 	case r == '"' || r == '\'':
@@ -569,7 +568,7 @@ func lexValueSequence(l *lexer) stateFn {
 		l.emit(itemTimes)
 	case r == '_':
 		l.emit(itemBlank)
-	case unicode.IsDigit(r) || (r == '.' && unicode.IsDigit(l.peek())):
+	case isDigit(r) || (r == '.' && isDigit(l.peek())):
 		l.backup()
 		lexNumber(l)
 	case isAlpha(r):
@@ -739,7 +738,14 @@ func isEndOfLine(r rune) bool {
 
 // isAlphaNumeric reports whether r is an alphabetic, digit, or underscore.
 func isAlphaNumeric(r rune) bool {
-	return isAlpha(r) || unicode.IsDigit(r)
+	return isAlpha(r) || isDigit(r)
+}
+
+// isDigit reports whether r is a digit. Note: we cannot use unicode.IsDigit()
+// instead because that also classifies non-Latin digits as digits. See
+// https://github.com/prometheus/prometheus/issues/939.
+func isDigit(r rune) bool {
+	return '0' <= r && r <= '9'
 }
 
 // isAlpha reports whether r is an alphabetic or underscore.
