@@ -68,14 +68,27 @@ type DNSDiscovery struct {
 	done   chan struct{}
 	ticker *time.Ticker
 	m      sync.RWMutex
+	port   int
+	qtype  uint16
 }
 
 // NewDNSDiscovery returns a new DNSDiscovery which periodically refreshes its targets.
 func NewDNSDiscovery(conf *config.DNSSDConfig) *DNSDiscovery {
+	qtype := dns.TypeSRV
+	switch strings.ToUpper(conf.Type) {
+	case "A":
+		qtype = dns.TypeA
+	case "AAAA":
+		qtype = dns.TypeAAAA
+	case "SRV":
+		qtype = dns.TypeSRV
+	}
 	return &DNSDiscovery{
 		names:  conf.Names,
 		done:   make(chan struct{}),
 		ticker: time.NewTicker(time.Duration(conf.RefreshInterval)),
+		qtype:  qtype,
+		port:   conf.Port,
 	}
 }
 
@@ -130,7 +143,7 @@ func (dd *DNSDiscovery) refreshAll(ch chan<- *config.TargetGroup) {
 }
 
 func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) error {
-	response, err := lookupSRV(name)
+	response, err := lookupAll(name, dd.qtype)
 	dnsSDLookupsCount.Inc()
 	if err != nil {
 		dnsSDLookupFailuresCount.Inc()
@@ -139,15 +152,22 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) erro
 
 	tg := &config.TargetGroup{}
 	for _, record := range response.Answer {
-		addr, ok := record.(*dns.SRV)
-		if !ok {
+		target := clientmodel.LabelValue("")
+		switch addr := record.(type) {
+		case *dns.SRV:
+			// Remove the final dot from rooted DNS names to make them look more usual.
+			addr.Target = strings.TrimRight(addr.Target, ".")
+
+			target = clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.Target, addr.Port))
+		case *dns.A:
+			target = clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.A, dd.port))
+		case *dns.AAAA:
+			target = clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.AAAA, dd.port))
+		default:
 			log.Warnf("%q is not a valid SRV record", record)
 			continue
-		}
-		// Remove the final dot from rooted DNS names to make them look more usual.
-		addr.Target = strings.TrimRight(addr.Target, ".")
 
-		target := clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.Target, addr.Port))
+		}
 		tg.Targets = append(tg.Targets, clientmodel.LabelSet{
 			clientmodel.AddressLabel: target,
 			DNSNameLabel:             clientmodel.LabelValue(name),
@@ -160,7 +180,7 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) erro
 	return nil
 }
 
-func lookupSRV(name string) (*dns.Msg, error) {
+func lookupAll(name string, qtype uint16) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
 		return nil, fmt.Errorf("could not load resolv.conf: %s", err)
@@ -172,7 +192,7 @@ func lookupSRV(name string) (*dns.Msg, error) {
 	for _, server := range conf.Servers {
 		servAddr := net.JoinHostPort(server, conf.Port)
 		for _, suffix := range conf.Search {
-			response, err = lookup(name, dns.TypeSRV, client, servAddr, suffix, false)
+			response, err = lookup(name, qtype, client, servAddr, suffix, false)
 			if err != nil {
 				log.Warnf("resolving %s.%s failed: %s", name, suffix, err)
 				continue
@@ -181,7 +201,7 @@ func lookupSRV(name string) (*dns.Msg, error) {
 				return response, nil
 			}
 		}
-		response, err = lookup(name, dns.TypeSRV, client, servAddr, "", false)
+		response, err = lookup(name, qtype, client, servAddr, "", false)
 		if err == nil {
 			return response, nil
 		}
