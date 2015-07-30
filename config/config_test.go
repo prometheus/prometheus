@@ -98,12 +98,14 @@ var expectedConf = &Config{
 						"second.dns.address.domain.com",
 					},
 					RefreshInterval: Duration(15 * time.Second),
+					Type:            "SRV",
 				},
 				{
 					Names: []string{
 						"first.dns.address.domain.com",
 					},
 					RefreshInterval: Duration(30 * time.Second),
+					Type:            "SRV",
 				},
 			},
 

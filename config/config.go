@@ -80,6 +80,7 @@ var (
 	// The default DNS SD configuration.
 	DefaultDNSSDConfig = DNSSDConfig{
 		RefreshInterval: Duration(30 * time.Second),
+		Type:            "SRV",
 	}
 
 	// The default file SD configuration.
@@ -362,7 +363,8 @@ func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
 type DNSSDConfig struct {
 	Names           []string `yaml:"names"`
 	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
-
+	Type            string   `yaml:"type"`
+	Port            int      `yaml:"port"` // Ignored for SRV records
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
@@ -377,6 +379,15 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if len(c.Names) == 0 {
 		return fmt.Errorf("DNS-SD config must contain at least one SRV record name")
+	}
+	switch strings.ToUpper(c.Type) {
+	case "SRV":
+	case "A", "AAAA":
+		if c.Port == 0 {
+			return fmt.Errorf("a port is required in DNS-SD configs for all record types except SRV")
+		}
+	default:
+		return fmt.Errorf("invalid DNS-SD records type %s", c.Type)
 	}
 	return checkOverflow(c.XXX, "dns_sd_config")
 }
