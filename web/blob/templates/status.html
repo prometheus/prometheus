@@ -2,7 +2,7 @@
 
 {{define "content"}}
   <div class="container-fluid">
-    <h2>Runtime Information</h2>
+    <h2 id="runtime">Runtime Information</h2>
     <table class="table table-condensed table-bordered table-striped table-hover">
       <tbody>
         <tr>
@@ -12,7 +12,7 @@
       </tbody>
     </table>
 
-    <h2>Build Information</h2>
+    <h2 id="buildinformation">Build Information</h2>
     <table class="table table-condensed table-bordered table-striped table-hover">
       <tbody>
         {{range $key, $value := .Info}}
@@ -24,13 +24,13 @@
       </tbody>
     </table>
 
-    <h2>Configuration</h2>
+    <h2 id="configuration">Configuration</h2>
     <pre>{{.Status.Config}}</pre>
 
-    <h2>Rules</h2>
+    <h2 id="rules">Rules</h2>
     <pre>{{range call .Status.Rules}}{{.HTMLSnippet pathPrefix}}<br/>{{end}}</pre>
 
-    <h2>Targets</h2>
+    <h2 id="targets">Targets</h2>
       <table class="table table-condensed table-bordered table-striped table-hover">
         {{range $job, $pool := call .Status.TargetPools}}
           <thead>
@@ -85,7 +85,7 @@
         {{end}}
       </table>
 
-    <h2>Startup Flags</h2>
+    <h2 id="startupflags">Startup Flags</h2>
     <table class="table table-condensed table-bordered table-striped table-hover">
       <tbody>
         {{range $key, $value := .Status.Flags}}
