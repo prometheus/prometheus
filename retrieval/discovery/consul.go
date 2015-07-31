@@ -16,6 +16,7 @@ package discovery
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -275,7 +276,7 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 				ConsulNodeLabel:           clientmodel.LabelValue(node.Node),
 				ConsulTagsLabel:           clientmodel.LabelValue(tags),
 				ConsulServiceAddressLabel: clientmodel.LabelValue(node.ServiceAddress),
-				ConsulServicePortLabel:    clientmodel.LabelValue(node.ServicePort),
+				ConsulServicePortLabel:    clientmodel.LabelValue(strconv.Itoa(node.ServicePort)),
 			})
 		}
 
