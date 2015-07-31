@@ -390,6 +390,49 @@ func BenchmarkScrape(b *testing.B) {
 	}
 }
 
+func TestURLParams(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte{})
+				r.ParseForm()
+				if r.Form["foo"][0] != "bar" {
+					t.Fatalf("URL parameter 'foo' had unexpected first value '%v'", r.Form["foo"][0])
+				}
+				if r.Form["foo"][1] != "baz" {
+					t.Fatalf("URL parameter 'foo' had unexpected second value '%v'", r.Form["foo"][1])
+				}
+			},
+		),
+	)
+	defer server.Close()
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target := NewTarget(
+		&config.ScrapeConfig{
+			JobName:        "test_job1",
+			ScrapeInterval: config.Duration(1 * time.Minute),
+			ScrapeTimeout:  config.Duration(1 * time.Second),
+			Scheme:         serverURL.Scheme,
+			Params: url.Values{
+				"foo": []string{"bar", "baz"},
+			},
+		},
+		clientmodel.LabelSet{
+			clientmodel.AddressLabel: clientmodel.LabelValue(serverURL.Host),
+			"__param_foo":            "bar",
+		},
+		nil)
+	app := &collectResultAppender{}
+	if err = target.scrape(app); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmodel.LabelSet) *Target {
 	t := &Target{
 		url: &url.URL{

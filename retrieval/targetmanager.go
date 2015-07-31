@@ -329,6 +329,11 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 			}
 			labels[clientmodel.AddressLabel] = clientmodel.LabelValue(addr)
 		}
+		for k, v := range cfg.Params {
+			if len(v) > 0 {
+				labels[clientmodel.LabelName(clientmodel.ParamLabelPrefix+k)] = clientmodel.LabelValue(v[0])
+			}
+		}
 		// Copy labels into the labelset for the target if they are not
 		// set already. Apply the labelsets in order of decreasing precedence.
 		labelsets := []clientmodel.LabelSet{
