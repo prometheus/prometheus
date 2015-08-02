@@ -1354,3 +1354,30 @@ func TestParseSeries(t *testing.T) {
 		}
 	}
 }
+
+func TestRecoverRuntime(t *testing.T) {
+	var p *parser
+	var err error
+	defer p.recover(&err)
+
+	// Cause a runtime panic.
+	var a []int
+	a[123] = 1
+
+	if err.Error() != "unexpected error" {
+		t.Fatalf("wrong error message: %q, expected %q", err, "unexpected error")
+	}
+}
+
+func TestRecoverError(t *testing.T) {
+	var p *parser
+	var err error
+	defer p.recover(&err)
+
+	e := fmt.Errorf("custom error")
+	panic(e)
+
+	if err.Error() != e.Error() {
+		t.Fatalf("wrong error message: %q, expected %q", err, e)
+	}
+}

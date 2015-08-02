@@ -20,7 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/log"
+
 	clientmodel "github.com/prometheus/client_golang/model"
+
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -323,9 +326,15 @@ func (p *parser) recover(errp *error) {
 	e := recover()
 	if e != nil {
 		if _, ok := e.(runtime.Error); ok {
-			panic(e)
+			// Print the stack trace but do not inhibit the running application.
+			buf := make([]byte, 64<<10)
+			buf = buf[:runtime.Stack(buf, false)]
+
+			log.Errorf("parser panic: %v\n%s", e, buf)
+			*errp = fmt.Errorf("unexpected error")
+		} else {
+			*errp = e.(error)
 		}
-		*errp = e.(error)
 	}
 	return
 }
