@@ -114,8 +114,9 @@ func (t *Test) parseLoad(lines []string, i int) (int, *loadCmd, error) {
 		}
 		metric, vals, err := parseSeriesDesc(defLine)
 		if err != nil {
-			perr := err.(*ParseErr)
-			perr.Line = i + 1
+			if perr, ok := err.(*ParseErr); ok {
+				perr.Line = i + 1
+			}
 			return i, nil, err
 		}
 		cmd.set(metric, vals...)
@@ -135,10 +136,11 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	)
 	expr, err := ParseExpr(qry)
 	if err != nil {
-		perr := err.(*ParseErr)
-		perr.Line = i + 1
-		perr.Pos += strings.Index(lines[i], qry)
-		return i, nil, perr
+		if perr, ok := err.(*ParseErr); ok {
+			perr.Line = i + 1
+			perr.Pos += strings.Index(lines[i], qry)
+		}
+		return i, nil, err
 	}
 
 	offset, err := strutil.StringToDuration(at)
@@ -168,8 +170,9 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		}
 		metric, vals, err := parseSeriesDesc(defLine)
 		if err != nil {
-			perr := err.(*ParseErr)
-			perr.Line = i + 1
+			if perr, ok := err.(*ParseErr); ok {
+				perr.Line = i + 1
+			}
 			return i, nil, err
 		}
 
