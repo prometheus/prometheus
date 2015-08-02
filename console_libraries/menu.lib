@@ -83,6 +83,20 @@
 {{ end }}
 
 
+{{ if query "up{job='snmp'}" }}
+{{ template "_menuItem" (args . "snmp.html" "SNMP") }}
+{{ if match "^snmp" .Path }}
+  {{ if .Params.instance }}
+  <ul>
+    <li {{ if eq .Path "snmp-overview.html" }}class="prom_lhs_menu_selected"{{ end }}>
+      <a href="snmp-overview.html?instance={{ .Params.instance }}">{{.Params.instance }}</a>
+    </li>
+  </ul>
+  {{ end }}
+{{ end }}
+{{ end }}
+
+
 {{ if query "up{job='cloudwatch'}" }}
 {{ template "_menuItem" (args . "cloudwatch.html" "CloudWatch") }}
 {{ end }}
