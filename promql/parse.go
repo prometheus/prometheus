@@ -464,9 +464,6 @@ func (p *parser) recordStmt() *RecordStmt {
 func (p *parser) expr() Expr {
 	// Parse the starting expression.
 	expr := p.unaryExpr()
-	if expr == nil {
-		p.errorf("no valid expression found")
-	}
 
 	// Loop through the operations and construct a binary operation tree based
 	// on the operators' precedence.
@@ -514,9 +511,6 @@ func (p *parser) expr() Expr {
 
 		// Parse the next operand.
 		rhs := p.unaryExpr()
-		if rhs == nil {
-			p.errorf("missing right-hand side in binary expression")
-		}
 
 		// Assign the new root based on the precendence of the LHS and RHS operators.
 		if lhs, ok := expr.(*BinaryExpr); ok && lhs.Op.precedence() < op.precedence() {
@@ -552,6 +546,7 @@ func (p *parser) unaryExpr() Expr {
 	case itemADD, itemSUB:
 		p.next()
 		e := p.unaryExpr()
+
 		// Simplify unary expressions for number literals.
 		if nl, ok := e.(*NumberLiteral); ok {
 			if t.typ == itemSUB {
@@ -665,6 +660,9 @@ func (p *parser) primaryExpr() Expr {
 	case t.typ.isAggregator():
 		p.backup()
 		return p.aggrExpr()
+
+	default:
+		p.errorf("no valid expression found")
 	}
 	return nil
 }

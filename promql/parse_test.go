@@ -134,7 +134,7 @@ var testExpr = []struct {
 	}, {
 		input:  "1+",
 		fail:   true,
-		errMsg: "missing right-hand side in binary expression",
+		errMsg: "no valid expression found",
 	}, {
 		input:  ".",
 		fail:   true,
@@ -154,7 +154,7 @@ var testExpr = []struct {
 	}, {
 		input:  "1 /",
 		fail:   true,
-		errMsg: "missing right-hand side in binary expression",
+		errMsg: "no valid expression found",
 	}, {
 		input:  "*1",
 		fail:   true,
@@ -944,6 +944,27 @@ var testExpr = []struct {
 		input:  "rate(some_metric)",
 		fail:   true,
 		errMsg: "expected type matrix in call to function \"rate\", got vector",
+	},
+	// Fuzzing regression tests.
+	{
+		input:  "-=",
+		fail:   true,
+		errMsg: `no valid expression found`,
+	},
+	{
+		input:  "++-++-+-+-<",
+		fail:   true,
+		errMsg: `no valid expression found`,
+	},
+	{
+		input:  "e-+=/(0)",
+		fail:   true,
+		errMsg: `no valid expression found`,
+	},
+	{
+		input:  "-If",
+		fail:   true,
+		errMsg: `no valid expression found`,
 	},
 }
 
