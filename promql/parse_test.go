@@ -973,6 +973,12 @@ func TestParseExpressions(t *testing.T) {
 		parser := newParser(test.input)
 
 		expr, err := parser.parseExpr()
+
+		// Unexpected errors are always caused by a bug.
+		if err == errUnexpected {
+			t.Fatalf("unexpected error occurred")
+		}
+
 		if !test.fail && err != nil {
 			t.Errorf("error in input '%s'", test.input)
 			t.Fatalf("could not parse: %s", err)
@@ -1219,6 +1225,19 @@ var testStatement = []struct {
 		`,
 		fail: true,
 	},
+	// Fuzzing regression tests.
+	{
+		input: `I=-/`,
+		fail:  true,
+	},
+	{
+		input: `I=3E8/-=`,
+		fail:  true,
+	},
+	{
+		input: `M=-=-0-0`,
+		fail:  true,
+	},
 }
 
 func TestParseStatements(t *testing.T) {
@@ -1226,6 +1245,12 @@ func TestParseStatements(t *testing.T) {
 		parser := newParser(test.input)
 
 		stmts, err := parser.parseStmts()
+
+		// Unexpected errors are always caused by a bug.
+		if err == errUnexpected {
+			t.Fatalf("unexpected error occurred")
+		}
+
 		if !test.fail && err != nil {
 			t.Errorf("error in input: \n\n%s\n", test.input)
 			t.Fatalf("could not parse: %s", err)
@@ -1353,6 +1378,12 @@ func TestParseSeries(t *testing.T) {
 		parser.lex.seriesDesc = true
 
 		metric, vals, err := parser.parseSeriesDesc()
+
+		// Unexpected errors are always caused by a bug.
+		if err == errUnexpected {
+			t.Fatalf("unexpected error occurred")
+		}
+
 		if !test.fail && err != nil {
 			t.Errorf("error in input: \n\n%s\n", test.input)
 			t.Fatalf("could not parse: %s", err)
@@ -1385,8 +1416,8 @@ func TestRecoverRuntime(t *testing.T) {
 	var a []int
 	a[123] = 1
 
-	if err.Error() != "unexpected error" {
-		t.Fatalf("wrong error message: %q, expected %q", err, "unexpected error")
+	if err != errUnexpected {
+		t.Fatalf("wrong error message: %q, expected %q", err, errUnexpected)
 	}
 }
 

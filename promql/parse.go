@@ -321,6 +321,8 @@ func (p *parser) expectOneOf(exp1, exp2 itemType, context string) item {
 	return token
 }
 
+var errUnexpected = fmt.Errorf("unexpected error")
+
 // recover is the handler that turns panics into returns from the top level of Parse.
 func (p *parser) recover(errp *error) {
 	e := recover()
@@ -331,7 +333,7 @@ func (p *parser) recover(errp *error) {
 			buf = buf[:runtime.Stack(buf, false)]
 
 			log.Errorf("parser panic: %v\n%s", e, buf)
-			*errp = fmt.Errorf("unexpected error")
+			*errp = errUnexpected
 		} else {
 			*errp = e.(error)
 		}
