@@ -49,7 +49,6 @@ const (
 // lives in github.com/prometheus/client_golang/text.
 func FuzzParseMetric(in []byte) int {
 	_, err := ParseMetric(string(in))
-
 	if err == nil {
 		return fuzzInteresting
 	}
@@ -60,7 +59,6 @@ func FuzzParseMetric(in []byte) int {
 // Fuzz the metric selector parser.
 func FuzzParseMetricSelector(in []byte) int {
 	_, err := ParseMetricSelector(string(in))
-
 	if err == nil {
 		return fuzzInteresting
 	}
@@ -71,7 +69,6 @@ func FuzzParseMetricSelector(in []byte) int {
 // Fuzz the expression parser.
 func FuzzParseExpr(in []byte) int {
 	_, err := ParseExpr(string(in))
-
 	if err == nil {
 		return fuzzInteresting
 	}
@@ -82,7 +79,6 @@ func FuzzParseExpr(in []byte) int {
 // Fuzz the parser.
 func FuzzParseStmts(in []byte) int {
 	_, err := ParseStmts(string(in))
-
 	if err == nil {
 		return fuzzInteresting
 	}
