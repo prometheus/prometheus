@@ -1075,7 +1075,9 @@ func (p *parser) checkType(node Node) (typ ExprType) {
 		if n.Op != itemADD && n.Op != itemSUB {
 			p.errorf("only + and - operators allowed for unary expressions")
 		}
-		p.expectType(n.Expr, ExprScalar, "unary expression")
+		if t := p.checkType(n.Expr); t != ExprScalar && t != ExprVector {
+			p.errorf("unary expression only allowed on expressions of type scalar or vector, got %q", t)
+		}
 
 	case *NumberLiteral, *MatrixSelector, *StringLiteral, *VectorSelector:
 		// Nothing to do for terminals.

@@ -691,11 +691,19 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return &String{Value: e.Val, Timestamp: ev.Timestamp}
 
 	case *UnaryExpr:
-		smpl := ev.evalScalar(e.Expr)
+		se := ev.evalOneOf(e.Expr, ExprScalar, ExprVector)
+		// Only + and - are possible operators.
 		if e.Op == itemSUB {
-			smpl.Value = -smpl.Value
+			switch v := se.(type) {
+			case *Scalar:
+				v.Value = -v.Value
+			case Vector:
+				for i, sv := range v {
+					v[i].Value = -sv.Value
+				}
+			}
 		}
-		return smpl
+		return se
 
 	case *VectorSelector:
 		return ev.vectorSelector(e)
