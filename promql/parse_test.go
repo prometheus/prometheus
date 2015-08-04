@@ -124,6 +124,26 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: "-some_metric", expected: &UnaryExpr{
+			Op: itemSUB,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: clientmodel.MetricNameLabel, Value: "some_metric"},
+				},
+			},
+		},
+	}, {
+		input: "+some_metric", expected: &UnaryExpr{
+			Op: itemADD,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: clientmodel.MetricNameLabel, Value: "some_metric"},
+				},
+			},
+		},
+	}, {
 		input:  "",
 		fail:   true,
 		errMsg: "no expression found in input",
@@ -192,13 +212,17 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "could not parse remaining input \"=~ 1\"...",
 	}, {
-		input:  "-some_metric",
-		fail:   true,
-		errMsg: "expected type scalar in unary expression, got vector",
-	}, {
 		input:  `-"string"`,
 		fail:   true,
-		errMsg: "expected type scalar in unary expression, got string",
+		errMsg: `unary expression only allowed on expressions of type scalar or vector, got "string"`,
+	}, {
+		input:  `-test[5m]`,
+		fail:   true,
+		errMsg: `unary expression only allowed on expressions of type scalar or vector, got "matrix"`,
+	}, {
+		input:  `*test`,
+		fail:   true,
+		errMsg: "no valid expression found",
 	},
 	// Vector binary operations.
 	{
@@ -950,18 +974,15 @@ var testExpr = []struct {
 		input:  "-=",
 		fail:   true,
 		errMsg: `no valid expression found`,
-	},
-	{
+	}, {
 		input:  "++-++-+-+-<",
 		fail:   true,
 		errMsg: `no valid expression found`,
-	},
-	{
+	}, {
 		input:  "e-+=/(0)",
 		fail:   true,
 		errMsg: `no valid expression found`,
-	},
-	{
+	}, {
 		input:  "-If",
 		fail:   true,
 		errMsg: `no valid expression found`,
