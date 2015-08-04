@@ -14,8 +14,11 @@
 package retrieval
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -454,4 +457,141 @@ func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmo
 		t.baseLabels[baseLabel] = baseValue
 	}
 	return t
+}
+
+func TestNewHTTPBearerToken(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				expected := "Bearer 1234"
+				received := r.Header.Get("Authorization")
+				if expected != received {
+					t.Fatalf("Authorization header was not set correctly: expected '%v', got '%v'", expected, received)
+				}
+			},
+		),
+	)
+	defer server.Close()
+
+	cfg := &config.ScrapeConfig{
+		ScrapeTimeout: config.Duration(1 * time.Second),
+		BearerToken:   "1234",
+	}
+	c, err := newHTTPClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewHTTPBearerTokenFile(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				expected := "Bearer 12345"
+				received := r.Header.Get("Authorization")
+				if expected != received {
+					t.Fatalf("Authorization header was not set correctly: expected '%v', got '%v'", expected, received)
+				}
+			},
+		),
+	)
+	defer server.Close()
+
+	cfg := &config.ScrapeConfig{
+		ScrapeTimeout:   config.Duration(1 * time.Second),
+		BearerTokenFile: "testdata/bearertoken.txt",
+	}
+	c, err := newHTTPClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewHTTPCACert(t *testing.T) {
+	server := httptest.NewUnstartedServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte{})
+			},
+		),
+	)
+	server.TLS = newTLSConfig(t)
+	server.StartTLS()
+	defer server.Close()
+
+	cfg := &config.ScrapeConfig{
+		ScrapeTimeout: config.Duration(1 * time.Second),
+		CACert:        "testdata/ca.cer",
+	}
+	c, err := newHTTPClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewHTTPClientCert(t *testing.T) {
+	server := httptest.NewUnstartedServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte{})
+			},
+		),
+	)
+	tlsConfig := newTLSConfig(t)
+	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+	tlsConfig.ClientCAs = tlsConfig.RootCAs
+	tlsConfig.BuildNameToCertificate()
+	server.TLS = tlsConfig
+	server.StartTLS()
+	defer server.Close()
+
+	cfg := &config.ScrapeConfig{
+		ScrapeTimeout: config.Duration(1 * time.Second),
+		CACert:        "testdata/ca.cer",
+		ClientCert: &config.ClientCert{
+			Cert: "testdata/client.cer",
+			Key:  "testdata/client.key",
+		},
+	}
+	c, err := newHTTPClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func newTLSConfig(t *testing.T) *tls.Config {
+	tlsConfig := &tls.Config{}
+	caCertPool := x509.NewCertPool()
+	caCert, err := ioutil.ReadFile("testdata/ca.cer")
+	if err != nil {
+		t.Fatalf("Couldn't set up TLS server: %v", err)
+	}
+	caCertPool.AppendCertsFromPEM(caCert)
+	tlsConfig.RootCAs = caCertPool
+	tlsConfig.ServerName = "127.0.0.1"
+	cert, err := tls.LoadX509KeyPair("testdata/server.cer", "testdata/server.key")
+	if err != nil {
+		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", "testdata/server.cer", "testdata/server.key")
+	}
+	tlsConfig.Certificates = []tls.Certificate{cert}
+	tlsConfig.BuildNameToCertificate()
+	return tlsConfig
 }

@@ -157,6 +157,21 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-z",
+
+			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeTimeout:  Duration(10 * time.Second),
+
+			MetricsPath: "/metrics",
+			Scheme:      "http",
+
+			ClientCert: &ClientCert{
+				Cert: "valid_cert_file",
+				Key:  "valid_key_file",
+			},
+			BearerToken: "avalidtoken",
+		},
 	},
 	original: "",
 }
@@ -224,6 +239,12 @@ var expectedErrors = []struct {
 	}, {
 		filename: "unknown_attr.bad.yml",
 		errMsg:   "unknown fields in scrape_config: consult_sd_configs",
+	}, {
+		filename: "bearertoken.bad.yml",
+		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
+	}, {
+		filename: "bearertoken_basicauth.bad.yml",
+		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	},
 }
 

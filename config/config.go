@@ -20,7 +20,7 @@ var (
 	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
-	patAuthLine   = regexp.MustCompile(`((?:username|password):\s+)(".+"|'.+'|[^\s]+)`)
+	patAuthLine   = regexp.MustCompile(`((?:username|password|bearer_token):\s+)(".+"|'.+'|[^\s]+)`)
 )
 
 // Load parses the YAML input s into a Config.
@@ -229,6 +229,14 @@ type ScrapeConfig struct {
 	Scheme string `yaml:"scheme,omitempty"`
 	// The HTTP basic authentication credentials for the targets.
 	BasicAuth *BasicAuth `yaml:"basic_auth,omitempty"`
+	// The bearer token for the targets.
+	BearerToken string `yaml:"bearer_token,omitempty"`
+	// The bearer token file for the targets.
+	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
+	// The ca cert to use for the targets.
+	CACert string `yaml:"ca_cert,omitempty"`
+	// The client cert authentication credentials for the targets.
+	ClientCert *ClientCert `yaml:"client_cert,omitempty"`
 
 	// List of labeled target groups for this job.
 	TargetGroups []*TargetGroup `yaml:"target_groups,omitempty"`
@@ -261,6 +269,12 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if !patJobName.MatchString(c.JobName) {
 		return fmt.Errorf("%q is not a valid job name", c.JobName)
 	}
+	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
+	}
 	return checkOverflow(c.XXX, "scrape_config")
 }
 
@@ -268,6 +282,15 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type BasicAuth struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// ClientCert contains client cert credentials.
+type ClientCert struct {
+	Cert string `yaml:"cert"`
+	Key  string `yaml:"key"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
