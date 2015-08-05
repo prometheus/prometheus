@@ -10,7 +10,7 @@ global:
 
 rule_files:
 - "first.rules"
-- "second.rules"
+- "/absolute/second.rules"
 - "my/*.rules"
 
 scrape_configs:
@@ -44,6 +44,8 @@ scrape_configs:
     target_label:  job
     replacement:   foo-${1}
     # action defaults to 'replace'
+
+  bearer_token_file: valid_token_file
 
 
 - job_name: service-x

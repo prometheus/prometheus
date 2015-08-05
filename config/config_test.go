@@ -27,9 +27,9 @@ var expectedConf = &Config{
 	},
 
 	RuleFiles: []string{
-		"first.rules",
-		"second.rules",
-		"my/*.rules",
+		"testdata/first.rules",
+		"/absolute/second.rules",
+		"testdata/my/*.rules",
 	},
 
 	ScrapeConfigs: []*ScrapeConfig{
@@ -42,6 +42,8 @@ var expectedConf = &Config{
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
+
+			BearerTokenFile: "testdata/valid_token_file",
 
 			TargetGroups: []*TargetGroup{
 				{
@@ -167,8 +169,8 @@ var expectedConf = &Config{
 			Scheme:      "http",
 
 			ClientCert: &ClientCert{
-				Cert: "valid_cert_file",
-				Key:  "valid_key_file",
+				Cert: "testdata/valid_cert_file",
+				Key:  "testdata/valid_key_file",
 			},
 			BearerToken: "avalidtoken",
 		},
