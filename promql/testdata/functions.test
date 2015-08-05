@@ -62,3 +62,33 @@ load 5m
 eval instant at 50m increase(http_requests[50m])
 	{path="/foo"} 100
 	{path="/bar"}  90
+
+
+clear
+
+# Tests for deriv() and predict_linear().
+load 5m
+	testcounter_reset_middle	0+10x4 0+10x5
+	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+
+# Deriv should return the same as rate in simple cases.
+eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[60m])
+	{group="canary", instance="1", job="app-server"} 0.26666666666666666
+
+eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[60m])
+	{group="canary", instance="1", job="app-server"} 0.26666666666666666
+
+# Deriv should return correct result.
+eval instant at 50m deriv(testcounter_reset_middle[100m])
+	{} 0.010606060606060607
+
+# Predict_linear should return correct result.
+eval instant at 50m predict_linear(testcounter_reset_middle[100m], 3600)
+	{} 88.181818181818185200
+
+# Predict_linear is syntactic sugar around deriv.
+eval instant at 50m predict_linear(http_requests[50m], 3600) - (http_requests + deriv(http_requests[50m]) * 3600)
+	{group="canary", instance="1", job="app-server"} 0
+
+eval instant at 50m predict_linear(testcounter_reset_middle[100m], 3600) - (testcounter_reset_middle + deriv(testcounter_reset_middle[100m]) * 3600)
+	{} 0

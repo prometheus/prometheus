@@ -238,10 +238,6 @@ eval instant at 50m delta(http_requests{group="canary", instance="1", job="app-s
 eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[60m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
-# Deriv should return the same as rate in simple cases.
-eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[60m])
-	{group="canary", instance="1", job="app-server"} 0.26666666666666666
-
 # Counter resets at in the middle of range are handled correctly by rate().
 eval instant at 50m rate(testcounter_reset_middle[60m])
 	{} 0.03
@@ -250,10 +246,6 @@ eval instant at 50m rate(testcounter_reset_middle[60m])
 # Counter resets at end of range are ignored by rate().
 eval instant at 50m rate(testcounter_reset_end[5m])
 	{} 0
-
-# Deriv should return correct result.
-eval instant at 50m deriv(testcounter_reset_middle[100m])
-	{} 0.010606060606060607
 
 # count_scalar for a non-empty vector should return scalar element count.
 eval instant at 50m count_scalar(http_requests)
