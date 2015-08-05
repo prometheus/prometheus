@@ -181,11 +181,11 @@ var expectedConf = &Config{
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
-	if _, err := LoadFromFile("testdata/global_timeout.good.yml"); err != nil {
+	if _, err := LoadFile("testdata/global_timeout.good.yml"); err != nil {
 		t.Errorf("Error parsing %s: %s", "testdata/conf.good.yml", err)
 	}
 
-	c, err := LoadFromFile("testdata/conf.good.yml")
+	c, err := LoadFile("testdata/conf.good.yml")
 	if err != nil {
 		t.Fatalf("Error parsing %s: %s", "testdata/conf.good.yml", err)
 	}
@@ -252,7 +252,7 @@ var expectedErrors = []struct {
 
 func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
-		_, err := LoadFromFile("testdata/" + ee.filename)
+		_, err := LoadFile("testdata/" + ee.filename)
 		if err == nil {
 			t.Errorf("Expected error parsing %s but got none", ee.filename)
 			continue

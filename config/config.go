@@ -40,8 +40,8 @@ func Load(s string) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadFromFile parses the given YAML file into a Config.
-func LoadFromFile(filename string) (*Config, error) {
+// LoadFile parses the given YAML file into a Config.
+func LoadFile(filename string) (*Config, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
