@@ -339,6 +339,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 		labelsets := []clientmodel.LabelSet{
 			tg.Labels,
 			{
+				clientmodel.SchemeLabel:      clientmodel.LabelValue(cfg.Scheme),
 				clientmodel.MetricsPathLabel: clientmodel.LabelValue(cfg.MetricsPath),
 				clientmodel.JobLabel:         clientmodel.LabelValue(cfg.JobName),
 			},
