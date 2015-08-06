@@ -16,6 +16,7 @@ package httputil
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -26,14 +27,16 @@ func NewClient(rt http.RoundTripper) *http.Client {
 
 // NewDeadlineClient returns a new http.Client which will time out long running
 // requests.
-func NewDeadlineClient(timeout time.Duration) *http.Client {
-	return NewClient(NewDeadlineRoundTripper(timeout))
+func NewDeadlineClient(timeout time.Duration, proxyURL *url.URL) *http.Client {
+	return NewClient(NewDeadlineRoundTripper(timeout, proxyURL))
 }
 
 // NewDeadlineRoundTripper returns a new http.RoundTripper which will time out
 // long running requests.
-func NewDeadlineRoundTripper(timeout time.Duration) http.RoundTripper {
+func NewDeadlineRoundTripper(timeout time.Duration, proxyURL *url.URL) http.RoundTripper {
 	return &http.Transport{
+		// Set proxy (if null, then becomes a direct connection)
+		Proxy: http.ProxyURL(proxyURL),
 		// We need to disable keepalive, because we set a deadline on the
 		// underlying connection.
 		DisableKeepAlives: true,

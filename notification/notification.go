@@ -103,7 +103,7 @@ func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler 
 		alertmanagerURL:      strings.TrimRight(o.AlertmanagerURL, "/"),
 		pendingNotifications: make(chan NotificationReqs, o.QueueCapacity),
 
-		httpClient: httputil.NewDeadlineClient(o.Deadline),
+		httpClient: httputil.NewDeadlineClient(o.Deadline, nil),
 
 		notificationLatency: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace: namespace,

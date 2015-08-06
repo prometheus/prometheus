@@ -447,7 +447,7 @@ func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmo
 		deadline:        deadline,
 		status:          &TargetStatus{},
 		scrapeInterval:  1 * time.Millisecond,
-		httpClient:      httputil.NewDeadlineClient(deadline),
+		httpClient:      httputil.NewDeadlineClient(deadline, nil),
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 	}

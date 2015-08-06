@@ -272,7 +272,7 @@ func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
 	tlsConfig.BuildNameToCertificate()
 
 	// Get a default roundtripper with the scrape timeout.
-	rt := httputil.NewDeadlineRoundTripper(time.Duration(cfg.ScrapeTimeout))
+	rt := httputil.NewDeadlineRoundTripper(time.Duration(cfg.ScrapeTimeout), cfg.ProxyURL.URL)
 	tr := rt.(*http.Transport)
 	// Set the TLS config from above
 	tr.TLSClientConfig = tlsConfig

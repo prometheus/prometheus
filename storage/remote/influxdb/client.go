@@ -47,7 +47,7 @@ type Client struct {
 func NewClient(url string, timeout time.Duration, database, retentionPolicy string) *Client {
 	return &Client{
 		url:             url,
-		httpClient:      httputil.NewDeadlineClient(timeout),
+		httpClient:      httputil.NewDeadlineClient(timeout, nil),
 		retentionPolicy: retentionPolicy,
 		database:        database,
 	}
