@@ -177,7 +177,8 @@ type Target struct {
 func NewTarget(cfg *config.ScrapeConfig, baseLabels, metaLabels clientmodel.LabelSet) *Target {
 	t := &Target{
 		url: &url.URL{
-			Host: string(baseLabels[clientmodel.AddressLabel]),
+			Scheme: string(baseLabels[clientmodel.SchemeLabel]),
+			Host:   string(baseLabels[clientmodel.AddressLabel]),
 		},
 		status:          &TargetStatus{},
 		scraperStopping: make(chan struct{}),
@@ -205,7 +206,7 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientm
 	}
 	t.httpClient = httpClient
 
-	t.url.Scheme = cfg.Scheme
+	t.url.Scheme = string(baseLabels[clientmodel.SchemeLabel])
 	t.url.Path = string(baseLabels[clientmodel.MetricsPathLabel])
 	params := url.Values{}
 	for k, v := range cfg.Params {
@@ -510,6 +511,7 @@ func (t *Target) fullLabels() clientmodel.LabelSet {
 	}
 	lset[clientmodel.MetricsPathLabel] = clientmodel.LabelValue(t.url.Path)
 	lset[clientmodel.AddressLabel] = clientmodel.LabelValue(t.url.Host)
+	lset[clientmodel.SchemeLabel] = clientmodel.LabelValue(t.url.Scheme)
 	return lset
 }
 

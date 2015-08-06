@@ -426,6 +426,7 @@ func TestURLParams(t *testing.T) {
 			},
 		},
 		clientmodel.LabelSet{
+			clientmodel.SchemeLabel:  clientmodel.LabelValue(serverURL.Scheme),
 			clientmodel.AddressLabel: clientmodel.LabelValue(serverURL.Host),
 			"__param_foo":            "bar",
 		},

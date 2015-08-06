@@ -29,6 +29,10 @@ const (
 	// timeseries.
 	MetricNameLabel LabelName = "__name__"
 
+	// SchemeLabel is the name of the label that holds the scheme on which to
+	// scrape a target.
+	SchemeLabel LabelName = "__scheme__"
+
 	// AddressLabel is the name of the label that holds the address of
 	// a scrape target.
 	AddressLabel LabelName = "__address__"
