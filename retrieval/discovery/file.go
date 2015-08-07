@@ -195,7 +195,7 @@ func (fd *FileDiscovery) refresh(ch chan<- *config.TargetGroup) {
 
 // fileSource returns a source ID for the i-th target group in the file.
 func fileSource(filename string, i int) string {
-	return fmt.Sprintf("file:%s:%d", filename, i)
+	return fmt.Sprintf("%s:%d", filename, i)
 }
 
 // Stop implements the TargetProvider interface.

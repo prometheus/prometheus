@@ -25,6 +25,51 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
+func TestPrefixedTargetProvider(t *testing.T) {
+	targetGroups := []*config.TargetGroup{
+		{
+			Targets: []clientmodel.LabelSet{
+				{clientmodel.AddressLabel: "test-1:1234"},
+			},
+		}, {
+			Targets: []clientmodel.LabelSet{
+				{clientmodel.AddressLabel: "test-1:1235"},
+			},
+		},
+	}
+
+	tp := &prefixedTargetProvider{
+		job:            "job-x",
+		mechanism:      "static",
+		idx:            123,
+		TargetProvider: NewStaticProvider(targetGroups),
+	}
+
+	expSources := []string{
+		"job-x:static:123:0",
+		"job-x:static:123:1",
+	}
+	if !reflect.DeepEqual(tp.Sources(), expSources) {
+		t.Fatalf("expected sources %v, got %v", expSources, tp.Sources())
+	}
+
+	ch := make(chan *config.TargetGroup)
+	go tp.Run(ch)
+
+	expGroup1 := *targetGroups[0]
+	expGroup2 := *targetGroups[1]
+	expGroup1.Source = "job-x:static:123:0"
+	expGroup2.Source = "job-x:static:123:1"
+
+	// The static target provider sends on the channel once per target group.
+	if tg := <-ch; !reflect.DeepEqual(tg, &expGroup1) {
+		t.Fatalf("expected target group %v, got %v", expGroup1, tg)
+	}
+	if tg := <-ch; !reflect.DeepEqual(tg, &expGroup2) {
+		t.Fatalf("expected target group %v, got %v", expGroup2, tg)
+	}
+}
+
 func TestTargetManagerChan(t *testing.T) {
 	testJob1 := &config.ScrapeConfig{
 		JobName:        "test_job1",
@@ -65,7 +110,7 @@ func TestTargetManagerChan(t *testing.T) {
 				},
 			},
 			expected: map[string][]clientmodel.LabelSet{
-				"test_job1:src1": {
+				"src1": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-1:1234"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-2:1234", "label": "set"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-3:1234"},
@@ -82,12 +127,12 @@ func TestTargetManagerChan(t *testing.T) {
 				Labels: clientmodel.LabelSet{"group": "label"},
 			},
 			expected: map[string][]clientmodel.LabelSet{
-				"test_job1:src1": {
+				"src1": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-1:1234"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-2:1234", "label": "set"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-3:1234"},
 				},
-				"test_job1:src2": {
+				"src2": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-1:1235", "group": "label"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-2:1235", "group": "label"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-3:1235", "group": "label"},
@@ -99,7 +144,7 @@ func TestTargetManagerChan(t *testing.T) {
 				Targets: []clientmodel.LabelSet{},
 			},
 			expected: map[string][]clientmodel.LabelSet{
-				"test_job1:src1": {
+				"src1": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-1:1234"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-2:1234", "label": "set"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-3:1234"},
@@ -115,7 +160,7 @@ func TestTargetManagerChan(t *testing.T) {
 				},
 			},
 			expected: map[string][]clientmodel.LabelSet{
-				"test_job1:src1": {
+				"src1": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-1:1234", "added": "label"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-3:1234"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "test-4:1234", "fancy": "label"},
@@ -239,7 +284,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		{
 			scrapeConfigs: []*config.ScrapeConfig{testJob1},
 			expected: map[string][]clientmodel.LabelSet{
-				"test_job1:static:0": {
+				"test_job1:static:0:0": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80", "testParam": "paramValue"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80", "testParam": "paramValue"},
 				},
@@ -247,7 +292,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		}, {
 			scrapeConfigs: []*config.ScrapeConfig{testJob1},
 			expected: map[string][]clientmodel.LabelSet{
-				"test_job1:static:0": {
+				"test_job1:static:0:0": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80", "testParam": "paramValue"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80", "testParam": "paramValue"},
 				},
@@ -255,18 +300,18 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		}, {
 			scrapeConfigs: []*config.ScrapeConfig{testJob1, testJob2},
 			expected: map[string][]clientmodel.LabelSet{
-				"test_job1:static:0": {
+				"test_job1:static:0:0": {
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.org:80", "testParam": "paramValue"},
 					{clientmodel.JobLabel: "test_job1", clientmodel.InstanceLabel: "example.com:80", "testParam": "paramValue"},
 				},
-				"test_job2:static:0": {
+				"test_job2:static:0:0": {
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba"},
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.com:8081", "foo": "bar", "new": "ox-ba"},
 				},
-				"test_job2:static:1": {
+				"test_job2:static:0:1": {
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "foo.com:1234"},
 				},
-				"test_job2:static:2": {
+				"test_job2:static:0:2": {
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "fixed"},
 				},
 			},
@@ -276,14 +321,14 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		}, {
 			scrapeConfigs: []*config.ScrapeConfig{testJob2},
 			expected: map[string][]clientmodel.LabelSet{
-				"test_job2:static:0": {
+				"test_job2:static:0:0": {
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba"},
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "example.com:8081", "foo": "bar", "new": "ox-ba"},
 				},
-				"test_job2:static:1": {
+				"test_job2:static:0:1": {
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "foo.com:1234"},
 				},
-				"test_job2:static:2": {
+				"test_job2:static:0:2": {
 					{clientmodel.JobLabel: "test_job2", clientmodel.InstanceLabel: "fixed"},
 				},
 			},

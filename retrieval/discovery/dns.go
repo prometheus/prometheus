@@ -32,8 +32,7 @@ import (
 const (
 	resolvConf = "/etc/resolv.conf"
 
-	dnsSourcePrefix = "dns"
-	DNSNameLabel    = clientmodel.MetaLabelPrefix + "dns_srv_name"
+	DNSNameLabel = clientmodel.MetaLabelPrefix + "dns_srv_name"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -123,7 +122,7 @@ func (dd *DNSDiscovery) Stop() {
 func (dd *DNSDiscovery) Sources() []string {
 	var srcs []string
 	for _, name := range dd.names {
-		srcs = append(srcs, dnsSourcePrefix+":"+name)
+		srcs = append(srcs, name)
 	}
 	return srcs
 }
@@ -174,7 +173,7 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) erro
 		})
 	}
 
-	tg.Source = dnsSourcePrefix + ":" + name
+	tg.Source = name
 	ch <- tg
 
 	return nil
