@@ -18,6 +18,14 @@
   <td><code>node</code></td>
 </tr>
 <tr>
+  <td>Prometheus</td>
+  <td><code>prometheus</code></td>
+</tr>
+<tr>
+  <td>SNMP Exporter</td>
+  <td><code>snmp</code></td>
+</tr>
+<tr>
   <td>HAProxy Exporter</td>
   <td><code>haproxy</code></td>
 </tr>

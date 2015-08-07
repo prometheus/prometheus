@@ -1,0 +1,125 @@
+{{ template "head" . }}
+
+{{ template "prom_right_table_head" }}
+  <tr>
+    <th colspan="2">Overview</th>
+  </tr>
+  <tr>
+    <td>CPU</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(process_cpu_seconds_total{job='prometheus',instance='%s'}[5m])" .Params.instance) "s/s" "humanizeNoSmallPrefix") }}</td>
+  </tr>
+  <tr>
+    <td>Memory</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "process_resident_memory_bytes{job='prometheus',instance='%s'}" .Params.instance) "B" "humanize1024") }}</td>
+  </tr>
+  <tr>
+    <td>Version</td>
+    <td>{{ with query (printf "prometheus_build_info{job='prometheus',instance='%s'}" .Params.instance) }}{{. | first | label "version"}}{{end}}</td>
+  </tr>
+
+  <tr>
+    <th colspan="2">Storage</th>
+  </tr>
+  <tr>
+    <td>Ingested Samples</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(prometheus_local_storage_ingested_samples_total{job='prometheus',instance='%s'}[5m])" .Params.instance) "/s" "humanizeNoSmallPrefix") }}</td>
+  </tr>
+  <tr>
+    <td>Time Series</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "prometheus_local_storage_memory_series{job='prometheus',instance='%s'}" .Params.instance) "" "humanize") }}</td>
+  </tr>
+  <tr>
+    <td>Indexing Queue</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "prometheus_local_storage_indexing_queue_length{job='prometheus',instance='%s'}" .Params.instance) "" "humanize") }}</td>
+  </tr>
+  <tr>
+    <td>Chunks</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "prometheus_local_storage_memory_chunks{job='prometheus',instance='%s'}" .Params.instance) "" "humanize") }}</td>
+  </tr>
+  <tr>
+    <td>Chunk Descriptors</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "prometheus_local_storage_memory_chunkdescs{job='prometheus',instance='%s'}" .Params.instance) "" "humanize") }}</td>
+  </tr>
+  <tr>
+    <td>Chunks To Persist</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "prometheus_local_storage_chunks_to_persist{job='prometheus',instance='%s'}" .Params.instance) "" "humanize") }}</td>
+  </tr>
+  <tr>
+    <td>Checkpoint Duration</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "prometheus_local_storage_checkpoint_duration_milliseconds{job='prometheus',instance='%s'} / 1000" .Params.instance) "" "humanizeDuration") }}</td>
+  </tr>
+
+  <tr>
+    <th colspan="2">Rules</th>
+  </tr>
+  <tr>
+    <td>Evaluation Duration</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(prometheus_evaluator_duration_milliseconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_evaluator_duration_milliseconds_count{job='prometheus',instance='%s'}[5m]) / 1000" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
+  </tr>
+  <tr>
+    <td>Notification Latency</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(prometheus_notifications_latency_milliseconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_notifications_latency_milliseconds_count{job='prometheus',instance='%s'}[5m]) / 1000" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
+  </tr>
+  <tr>
+    <td>Notification Queue</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "prometheus_notifications_queue_length{job='prometheus',instance='%s'}" .Params.instance) "" "humanize") }}</td>
+  </tr>
+  <tr>
+    <th colspan="2">HTTP Server</th>
+  </tr>
+{{ range printf "http_request_duration_microseconds_count{job='prometheus',instance='%s',handler=~'^(query.*|federate|consoles)$'}" .Params.instance | query | sortByLabel "handler" }}
+  <tr>
+    <td>{{ .Labels.handler }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "rate(http_request_duration_microseconds_count{job='prometheus',instance='%s',handler='%s'}[5m])" .Labels.instance .Labels.handler) "/s" "humanizeNoSmallPrefix") }}</td>
+  </tr>
+{{ end }}
+
+{{ template "prom_right_table_tail" }}
+
+{{ template "prom_content_head" . }}
+  <h1>Prometheus Overview - {{ .Params.instance }}</h1>
+
+  <h3>Ingested Samples</h3>
+  <div id="samplesGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#samplesGraph"),
+    expr: "rate(prometheus_local_storage_ingested_samples_total{job='prometheus',instance='{{ .Params.instance }}'}[5m])",
+    name: 'Ingested Samples',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: "Samples",
+    yUnits: "/s",
+  })
+  </script>
+
+  <h3>Time Series</h3>
+  <div id="seriesGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#seriesGraph"),
+    expr: "prometheus_local_storage_memory_series{job='prometheus',instance='{{ .Params.instance }}'}",
+    name: 'Time Series',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: "Time Series",
+  })
+  </script>
+
+  <h3>HTTP Server</h3>
+  <div id="serverGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#serverGraph"),
+    expr: "rate(http_request_duration_microseconds_count{job='prometheus',instance='{{ .Params.instance }}',handler=~'^(query.*|federate|consoles)$'}[5m])",
+    name: '[[handler]]',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: "Requests",
+    yUnits: "/s",
+  })
+  </script>
+
+{{ template "prom_content_tail" . }}
+
+{{ template "tail" }}

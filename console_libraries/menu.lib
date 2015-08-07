@@ -82,6 +82,19 @@
 {{ end }}
 {{ end }}
 
+{{ if query "up{job='prometheus'}" }}
+{{ template "_menuItem" (args . "prometheus.html" "Prometheus") }}
+{{ if match "^prometheus" .Path }}
+  {{ if .Params.instance }}
+  <ul>
+    <li {{ if eq .Path "prometheus-overview.html" }}class="prom_lhs_menu_selected"{{ end }}>
+      <a href="prometheus-overview.html?instance={{ .Params.instance }}">{{.Params.instance }}</a>
+    </li>
+  </ul>
+  {{ end }}
+{{ end }}
+{{ end }}
+
 
 {{ if query "up{job='snmp'}" }}
 {{ template "_menuItem" (args . "snmp.html" "SNMP") }}
