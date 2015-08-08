@@ -100,6 +100,34 @@ var (
 	}
 )
 
+// This custom URL type allows validating at configuration load time.
+type URL struct {
+	*url.URL
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface for URLs.
+func (u *URL) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	urlp, err := url.Parse(s)
+	if err != nil {
+		return err
+	}
+	u.URL = urlp
+	return nil
+}
+
+// MarshalYAML implements the yaml.Marshaler interface for URLs.
+func (u URL) MarshalYAML() (interface{}, error) {
+	if u.URL != nil {
+		return u.String(), nil
+	}
+	return nil, nil
+}
+
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
 	GlobalConfig  GlobalConfig    `yaml:"global"`
@@ -237,6 +265,8 @@ type ScrapeConfig struct {
 	CACert string `yaml:"ca_cert,omitempty"`
 	// The client cert authentication credentials for the targets.
 	ClientCert *ClientCert `yaml:"client_cert,omitempty"`
+	// HTTP proxy server to use to connect to the targets.
+	ProxyURL URL `yaml:"proxy_url,omitempty"`
 
 	// List of labeled target groups for this job.
 	TargetGroups []*TargetGroup `yaml:"target_groups,omitempty"`
