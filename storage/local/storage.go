@@ -560,9 +560,15 @@ func (s *memorySeriesStorage) Append(sample *clientmodel.Sample) {
 	series := s.getOrCreateSeries(fp, sample.Metric)
 
 	if sample.Timestamp <= series.lastTime {
+		// Don't log and track equal timestamps, as they are a common occurrence
+		// when using client-side timestamps (e.g. Pushgateway or federation).
+		// It would be even better to also compare the sample values here, but
+		// we don't have efficient access to a series's last value.
+		if sample.Timestamp != series.lastTime {
+			log.Warnf("Ignoring sample with out-of-order timestamp for fingerprint %v (%v): %v is not after %v", fp, series.metric, sample.Timestamp, series.lastTime)
+			s.outOfOrderSamplesCount.Inc()
+		}
 		s.fpLocker.Unlock(fp)
-		log.Warnf("Ignoring sample with out-of-order timestamp for fingerprint %v (%v): %v is not after %v", fp, series.metric, sample.Timestamp, series.lastTime)
-		s.outOfOrderSamplesCount.Inc()
 		return
 	}
 	completedChunksCount := series.add(&metric.SamplePair{
