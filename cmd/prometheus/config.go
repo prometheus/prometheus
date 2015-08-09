@@ -73,6 +73,17 @@ func init() {
 		&cfg.web.ListenAddress, "web.listen-address", ":9090",
 		"Address to listen on for the web interface, API, and telemetry.",
 	)
+
+	cfg.fs.BoolVar(
+		&cfg.web.AuthEnabled, "web.auth-enabled", false,
+		"Enable simple Authentication for web")
+
+	cfg.fs.StringVar(&cfg.web.BasicAuthUsername, "web.basicauth.username", "",
+		"Username to allow")
+
+	cfg.fs.StringVar(&cfg.web.BasicAuthPassword, "web.basicauth.password", "",
+		"Password to allow")
+
 	cfg.fs.StringVar(
 		&cfg.prometheusURL, "web.external-url", "",
 		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If omitted, relevant URL components will be derived automatically.",

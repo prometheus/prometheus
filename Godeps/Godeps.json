@@ -91,6 +91,10 @@
 		{
 			"ImportPath": "gopkg.in/yaml.v2",
 			"Rev": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40"
-		}
+		},
+                {
+                        "ImportPath": "github.com/abbot/go-http-auth",
+                        "Rev": "46b96277a30605aa35da613039628d71eab707d2"
+                }
 	]
 }
