@@ -98,6 +98,11 @@ var (
 	DefaultServersetSDConfig = ServersetSDConfig{
 		Timeout: Duration(10 * time.Second),
 	}
+
+	// DefaultMarathonSDConfig is the default Marathon SD configuration.
+	DefaultMarathonSDConfig = MarathonSDConfig{
+		RefreshInterval: Duration(30 * time.Second),
+	}
 )
 
 // This custom URL type allows validating at configuration load time.
@@ -278,6 +283,8 @@ type ScrapeConfig struct {
 	ConsulSDConfigs []*ConsulSDConfig `yaml:"consul_sd_configs,omitempty"`
 	// List of Serverset service discovery configurations.
 	ServersetSDConfigs []*ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
+	// MarathonSDConfigs is a list of Marathon service discovery configurations.
+	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -538,6 +545,29 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	return checkOverflow(c.XXX, "serverset_sd_config")
 }
 
+// MarathonSDConfig is the configuration for services running on Marathon.
+type MarathonSDConfig struct {
+	Servers         []string `yaml:"servers,omitempty"`
+	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultMarathonSDConfig
+	type plain MarathonSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
+	}
+	return checkOverflow(c.XXX, "marathon_sd_config")
+}
+
 // RelabelAction is the action to be performed on relabeling.
 type RelabelAction string
 
@@ -574,7 +604,7 @@ type RelabelConfig struct {
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
-	Regex *Regexp `yaml:"regex",omitempty`
+	Regex *Regexp `yaml:"regex,omitempty"`
 	// Modulus to take of the hash of concatenated values from the source labels.
 	Modulus uint64 `yaml:"modulus,omitempty"`
 	// The label to which the resulting string is written in a replacement.
