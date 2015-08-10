@@ -196,8 +196,8 @@ func (e ErrQueryCanceled) Error() string { return fmt.Sprintf("query was cancele
 type Query interface {
 	// Exec processes the query and
 	Exec() *Result
-	// Statements returns the parsed statements of the query.
-	Statements() Statements
+	// Statement returns the parsed statement of the query.
+	Statement() Statement
 	// Stats returns statistics about the lifetime of the query.
 	Stats() *stats.TimerGroup
 	// Cancel signals that a running query execution should be aborted.
@@ -208,8 +208,8 @@ type Query interface {
 type query struct {
 	// The original query string.
 	q string
-	// Statements of the parsed query.
-	stmts Statements
+	// Statement of the parsed query.
+	stmt Statement
 	// Timer stats for the query execution.
 	stats *stats.TimerGroup
 	// Cancelation function for the query.
@@ -219,9 +219,9 @@ type query struct {
 	ng *Engine
 }
 
-// Statements implements the Query interface.
-func (q *query) Statements() Statements {
-	return q.stmts
+// Statement implements the Query interface.
+func (q *query) Statement() Statement {
+	return q.stmt
 }
 
 // Stats implements the Query interface.
@@ -343,7 +343,7 @@ func (ng *Engine) newQuery(expr Expr, start, end clientmodel.Timestamp, interval
 		Interval: interval,
 	}
 	qry := &query{
-		stmts: Statements{es},
+		stmt:  es,
 		ng:    ng,
 		stats: stats.NewTimerGroup(),
 	}
@@ -358,10 +358,10 @@ func (testStmt) String() string   { return "test statement" }
 func (testStmt) DotGraph() string { return "test statement" }
 func (testStmt) stmt()            {}
 
-func (ng *Engine) newTestQuery(stmts ...Statement) Query {
+func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 	qry := &query{
 		q:     "test statement",
-		stmts: Statements(stmts),
+		stmt:  testStmt(f),
 		ng:    ng,
 		stats: stats.NewTimerGroup(),
 	}
@@ -373,8 +373,6 @@ func (ng *Engine) newTestQuery(stmts ...Statement) Query {
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
 func (ng *Engine) exec(q *query) (Value, error) {
-	const env = "query execution"
-
 	ctx, cancel := context.WithTimeout(q.ng.baseCtx, ng.options.Timeout)
 	q.cancel = cancel
 
@@ -390,30 +388,24 @@ func (ng *Engine) exec(q *query) (Value, error) {
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
 
+	const env = "query execution"
+
 	evalTimer := q.stats.GetTimer(stats.TotalEvalTime).Start()
 	defer evalTimer.Stop()
 
-	for _, stmt := range q.stmts {
-		// The base context might already be canceled on the first iteration (e.g. during shutdown).
-		if err := contextDone(ctx, env); err != nil {
-			return nil, err
-		}
-
-		switch s := stmt.(type) {
-		case *EvalStmt:
-			// Currently, only one execution statement per query is allowed.
-			return ng.execEvalStmt(ctx, q, s)
-
-		case testStmt:
-			if err := s(ctx); err != nil {
-				return nil, err
-			}
-
-		default:
-			panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", stmt))
-		}
+	// The base context might already be canceled on the first iteration (e.g. during shutdown).
+	if err := contextDone(ctx, env); err != nil {
+		return nil, err
 	}
-	return nil, nil
+
+	switch s := q.Statement().(type) {
+	case *EvalStmt:
+		return ng.execEvalStmt(ctx, q, s)
+	case testStmt:
+		return nil, s(ctx)
+	}
+
+	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
 }
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
