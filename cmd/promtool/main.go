@@ -22,8 +22,6 @@ import (
 	"strings"
 	"text/template"
 
-	"gopkg.in/yaml.v2"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/cli"
@@ -73,30 +71,51 @@ func checkConfig(t cli.Term, filename string) ([]string, error) {
 		return nil, fmt.Errorf("is a directory")
 	}
 
-	content, err := ioutil.ReadFile(filename)
+	cfg, err := config.LoadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	var cfg config.Config
-	if err := yaml.Unmarshal(content, &cfg); err != nil {
-		return nil, err
+	check := func(fn string) error {
+		// Nothing set, nothing to error on.
+		if fn == "" {
+			return nil
+		}
+		_, err := os.Stat(fn)
+		return err
 	}
+
 	var ruleFiles []string
 	for _, rf := range cfg.RuleFiles {
-		if !filepath.IsAbs(rf) {
-			rf = filepath.Join(filepath.Dir(filename), rf)
-		}
-
 		rfs, err := filepath.Glob(rf)
 		if err != nil {
 			return nil, err
 		}
-		// If an explicit file was given, error if it doesn't exist.
-		if !strings.Contains(rf, "*") && len(rfs) == 0 {
-			return nil, fmt.Errorf("%q does not point to an existing file", rf)
+		// If an explicit file was given, error if it is not accessible.
+		if !strings.Contains(rf, "*") {
+			if len(rfs) == 0 {
+				return nil, fmt.Errorf("%q does not point to an existing file", rf)
+			}
+			if err := check(rfs[0]); err != nil {
+				return nil, fmt.Errorf("error checking rule file %q: %s", rfs[0], err)
+			}
 		}
 		ruleFiles = append(ruleFiles, rfs...)
+	}
+
+	for _, scfg := range cfg.ScrapeConfigs {
+		if err := check(scfg.BearerTokenFile); err != nil {
+			return nil, fmt.Errorf("error checking bearer token file %q: %s", scfg.BearerTokenFile, err)
+		}
+
+		if scfg.ClientCert != nil {
+			if err := check(scfg.ClientCert.Cert); err != nil {
+				return nil, fmt.Errorf("error checking client cert file %q: %s", scfg.ClientCert.Cert, err)
+			}
+			if err := check(scfg.ClientCert.Key); err != nil {
+				return nil, fmt.Errorf("error checking client key file %q: %s", scfg.ClientCert.Key, err)
+			}
+		}
 	}
 
 	return ruleFiles, nil

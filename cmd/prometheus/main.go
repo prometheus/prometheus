@@ -21,7 +21,6 @@ import (
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"text/template"
@@ -77,7 +76,6 @@ func Main() int {
 		NotificationHandler: notificationHandler,
 		QueryEngine:         queryEngine,
 		ExternalURL:         cfg.web.ExternalURL,
-		BaseDir:             filepath.Dir(cfg.configFile),
 	})
 
 	flags := map[string]string{}
@@ -172,7 +170,7 @@ type Reloadable interface {
 func reloadConfig(filename string, rls ...Reloadable) bool {
 	log.Infof("Loading configuration file %s", filename)
 
-	conf, err := config.LoadFromFile(filename)
+	conf, err := config.LoadFile(filename)
 	if err != nil {
 		log.Errorf("Couldn't load configuration (-config.file=%s): %v", filename, err)
 		log.Errorf("Note: The configuration format has changed with version 0.14. Please see the documentation (http://prometheus.io/docs/operating/configuration/) and the provided configuration migration tool (https://github.com/prometheus/migrate).")

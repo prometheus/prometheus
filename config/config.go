@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -39,13 +40,18 @@ func Load(s string) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadFromFile parses the given YAML file into a Config.
-func LoadFromFile(filename string) (*Config, error) {
+// LoadFile parses the given YAML file into a Config.
+func LoadFile(filename string) (*Config, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	return Load(string(content))
+	cfg, err := Load(string(content))
+	if err != nil {
+		return nil, err
+	}
+	resolveFilepaths(filepath.Dir(filename), cfg)
+	return cfg, nil
 }
 
 // The defaults applied before parsing the respective config sections.
@@ -144,6 +150,30 @@ type Config struct {
 
 	// original is the input from which the config was parsed.
 	original string
+}
+
+// resolveFilepaths joins all relative paths in a configuration
+// with a given base directory.
+func resolveFilepaths(baseDir string, cfg *Config) {
+	join := func(fp string) string {
+		if len(fp) > 0 && !filepath.IsAbs(fp) {
+			fp = filepath.Join(baseDir, fp)
+		}
+		return fp
+	}
+
+	for i, rf := range cfg.RuleFiles {
+		cfg.RuleFiles[i] = join(rf)
+	}
+
+	for _, scfg := range cfg.ScrapeConfigs {
+		scfg.BearerTokenFile = join(scfg.BearerTokenFile)
+
+		if scfg.ClientCert != nil {
+			scfg.ClientCert.Cert = join(scfg.ClientCert.Cert)
+			scfg.ClientCert.Key = join(scfg.ClientCert.Key)
+		}
+	}
 }
 
 func checkOverflow(m map[string]interface{}, ctx string) error {
