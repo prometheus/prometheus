@@ -63,7 +63,7 @@ func testFileSD(t *testing.T, ext string) {
 		if _, ok := tg.Labels["foo"]; !ok {
 			t.Fatalf("Label not parsed")
 		}
-		if tg.String() != fmt.Sprintf("file:fixtures/_test%s:0", ext) {
+		if tg.String() != fmt.Sprintf("fixtures/_test%s:0", ext) {
 			t.Fatalf("Unexpected target group", tg)
 		}
 	}
@@ -71,7 +71,7 @@ func testFileSD(t *testing.T, ext string) {
 	case <-time.After(15 * time.Second):
 		t.Fatalf("Expected new target group but got none")
 	case tg := <-ch:
-		if tg.String() != fmt.Sprintf("file:fixtures/_test%s:1", ext) {
+		if tg.String() != fmt.Sprintf("fixtures/_test%s:1", ext) {
 			t.Fatalf("Unexpected target group %s", tg)
 		}
 	}

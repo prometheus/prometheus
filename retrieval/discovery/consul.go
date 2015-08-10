@@ -30,7 +30,6 @@ import (
 )
 
 const (
-	consulSourcePrefix  = "consul"
 	consulWatchTimeout  = 30 * time.Second
 	consulRetryInterval = 15 * time.Second
 
@@ -127,7 +126,7 @@ func (cd *ConsulDiscovery) Sources() []string {
 	srcs := make([]string, 0, len(srvs))
 	for name := range srvs {
 		if _, ok := cd.scrapedServices[name]; ok {
-			srcs = append(srcs, consulSourcePrefix+":"+name)
+			srcs = append(srcs, name)
 		}
 	}
 	return srcs
@@ -146,7 +145,7 @@ func (cd *ConsulDiscovery) Run(ch chan<- *config.TargetGroup) {
 			return
 		case srv := <-update:
 			if srv.removed {
-				ch <- &config.TargetGroup{Source: consulSourcePrefix + ":" + srv.name}
+				ch <- &config.TargetGroup{Source: srv.name}
 				break
 			}
 			// Launch watcher for the service.
@@ -221,7 +220,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 					tgroup: &config.TargetGroup{},
 					done:   make(chan struct{}, 1),
 				}
-				srv.tgroup.Source = consulSourcePrefix + ":" + name
+				srv.tgroup.Source = name
 				cd.services[name] = srv
 			}
 			srv.tgroup.Labels = clientmodel.LabelSet{

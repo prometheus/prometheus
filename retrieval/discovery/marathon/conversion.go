@@ -67,7 +67,7 @@ func isValidApp(app *App) bool {
 }
 
 func targetGroupName(app *App) string {
-	return fmt.Sprintf("marathon:%s", sanitizeName(app.ID))
+	return sanitizeName(app.ID)
 }
 
 func sanitizeName(id string) string {

@@ -82,7 +82,6 @@ func (tm *TargetManager) Run() {
 			go tm.handleTargetUpdates(scfg, ch)
 
 			for _, src := range prov.Sources() {
-				src = fullSource(scfg, src)
 				sources[src] = struct{}{}
 			}
 
@@ -116,14 +115,6 @@ func (tm *TargetManager) handleTargetUpdates(cfg *config.ScrapeConfig, ch <-chan
 			log.Errorf("Error updating targets: %s", err)
 		}
 	}
-}
-
-// fullSource prepends the unique job name to the source.
-//
-// Thus, oscilliating label sets for targets with the same source,
-// but providers from different configs, are prevented.
-func fullSource(cfg *config.ScrapeConfig, src string) string {
-	return cfg.JobName + ":" + src
 }
 
 // Stop all background processing.
@@ -199,7 +190,6 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 	if err != nil {
 		return err
 	}
-	src := fullSource(cfg, tgroup.Source)
 
 	tm.m.Lock()
 	defer tm.m.Unlock()
@@ -208,7 +198,7 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 		return nil
 	}
 
-	oldTargets, ok := tm.targets[src]
+	oldTargets, ok := tm.targets[tgroup.Source]
 	if ok {
 		var wg sync.WaitGroup
 		// Replace the old targets with the new ones while keeping the state
@@ -259,9 +249,9 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 	}
 
 	if len(newTargets) > 0 {
-		tm.targets[src] = newTargets
+		tm.targets[tgroup.Source] = newTargets
 	} else {
-		delete(tm.targets, src)
+		delete(tm.targets, tgroup.Source)
 	}
 	return nil
 }
@@ -298,7 +288,7 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
 	providers := map[*config.ScrapeConfig][]TargetProvider{}
 
 	for _, scfg := range cfg.ScrapeConfigs {
-		providers[scfg] = ProvidersFromConfig(scfg)
+		providers[scfg] = providersFromConfig(scfg)
 	}
 
 	tm.m.Lock()
@@ -307,6 +297,76 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
 	tm.globalLabels = cfg.GlobalConfig.Labels
 	tm.providers = providers
 	return true
+}
+
+// prefixedTargetProvider wraps TargetProvider and prefixes source strings
+// to make the sources unique across a configuration.
+type prefixedTargetProvider struct {
+	TargetProvider
+
+	job       string
+	mechanism string
+	idx       int
+}
+
+func (tp *prefixedTargetProvider) prefix(src string) string {
+	return fmt.Sprintf("%s:%s:%d:%s", tp.job, tp.mechanism, tp.idx, src)
+}
+
+func (tp *prefixedTargetProvider) Sources() []string {
+	srcs := tp.TargetProvider.Sources()
+	for i, src := range srcs {
+		srcs[i] = tp.prefix(src)
+	}
+
+	return srcs
+}
+
+func (tp *prefixedTargetProvider) Run(ch chan<- *config.TargetGroup) {
+	defer close(ch)
+
+	ch2 := make(chan *config.TargetGroup)
+	go tp.TargetProvider.Run(ch2)
+
+	for tg := range ch2 {
+		tg.Source = tp.prefix(tg.Source)
+		ch <- tg
+	}
+}
+
+// providersFromConfig returns all TargetProviders configured in cfg.
+func providersFromConfig(cfg *config.ScrapeConfig) []TargetProvider {
+	var providers []TargetProvider
+
+	app := func(mech string, i int, tp TargetProvider) {
+		providers = append(providers, &prefixedTargetProvider{
+			job:            cfg.JobName,
+			mechanism:      mech,
+			idx:            i,
+			TargetProvider: tp,
+		})
+	}
+
+	for i, c := range cfg.DNSSDConfigs {
+		app("dns", i, discovery.NewDNSDiscovery(c))
+	}
+	for i, c := range cfg.FileSDConfigs {
+		app("file", i, discovery.NewFileDiscovery(c))
+	}
+	for i, c := range cfg.ConsulSDConfigs {
+		app("consul", i, discovery.NewConsulDiscovery(c))
+	}
+	for i, c := range cfg.MarathonSDConfigs {
+		app("marathon", i, discovery.NewMarathonDiscovery(c))
+	}
+	for i, c := range cfg.ServersetSDConfigs {
+		app("serverset", i, discovery.NewServersetDiscovery(c))
+	}
+	if len(cfg.TargetGroups) > 0 {
+		app("static", 0, NewStaticProvider(cfg.TargetGroups))
+	}
+
+	return providers
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
@@ -382,31 +442,6 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 	return targets, nil
 }
 
-// ProvidersFromConfig returns all TargetProviders configured in cfg.
-func ProvidersFromConfig(cfg *config.ScrapeConfig) []TargetProvider {
-	var providers []TargetProvider
-
-	for _, c := range cfg.DNSSDConfigs {
-		providers = append(providers, discovery.NewDNSDiscovery(c))
-	}
-	for _, c := range cfg.FileSDConfigs {
-		providers = append(providers, discovery.NewFileDiscovery(c))
-	}
-	for _, c := range cfg.ConsulSDConfigs {
-		providers = append(providers, discovery.NewConsulDiscovery(c))
-	}
-	for _, c := range cfg.ServersetSDConfigs {
-		providers = append(providers, discovery.NewServersetDiscovery(c))
-	}
-	for _, c := range cfg.MarathonSDConfigs {
-		providers = append(providers, discovery.NewMarathonDiscovery(c))
-	}
-	if len(cfg.TargetGroups) > 0 {
-		providers = append(providers, NewStaticProvider(cfg.TargetGroups))
-	}
-	return providers
-}
-
 // StaticProvider holds a list of target groups that never change.
 type StaticProvider struct {
 	TargetGroups []*config.TargetGroup
@@ -416,7 +451,7 @@ type StaticProvider struct {
 // target groups.
 func NewStaticProvider(groups []*config.TargetGroup) *StaticProvider {
 	for i, tg := range groups {
-		tg.Source = fmt.Sprintf("static:%d", i)
+		tg.Source = fmt.Sprintf("%d", i)
 	}
 	return &StaticProvider{
 		TargetGroups: groups,

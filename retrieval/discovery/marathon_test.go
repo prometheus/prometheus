@@ -84,7 +84,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 	go func() {
 		select {
 		case tg := <-ch:
-			if tg.Source != "marathon:test-service" {
+			if tg.Source != "test-service" {
 				t.Fatalf("Wrong target group name: %s", tg.Source)
 			}
 			if len(tg.Targets) != 1 {

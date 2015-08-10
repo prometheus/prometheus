@@ -31,8 +31,6 @@ import (
 )
 
 const (
-	serversetSourcePrefix = "serverset"
-
 	serversetNodePrefix = "member_"
 
 	serversetLabelPrefix         = clientmodel.MetaLabelPrefix + "serverset_"
@@ -112,7 +110,7 @@ func (sd *ServersetDiscovery) processUpdates() {
 	defer sd.conn.Close()
 	for event := range sd.updates {
 		tg := &config.TargetGroup{
-			Source: serversetSourcePrefix + event.Path,
+			Source: event.Path,
 		}
 		sd.mu.Lock()
 		if event.Data != nil {
