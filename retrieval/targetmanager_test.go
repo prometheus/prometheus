@@ -54,7 +54,10 @@ func TestPrefixedTargetProvider(t *testing.T) {
 	}
 
 	ch := make(chan *config.TargetGroup)
-	go tp.Run(ch)
+	done := make(chan struct{})
+
+	defer close(done)
+	go tp.Run(ch, done)
 
 	expGroup1 := *targetGroups[0]
 	expGroup2 := *targetGroups[1]
@@ -347,10 +350,10 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		conf.ScrapeConfigs = step.scrapeConfigs
 		targetManager.ApplyConfig(conf)
 
-		<-time.After(1 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 
 		if len(targetManager.targets) != len(step.expected) {
-			t.Fatalf("step %d: sources mismatch %v, %v", targetManager.targets, step.expected)
+			t.Fatalf("step %d: sources mismatch: expected %v, got %v", i, step.expected, targetManager.targets)
 		}
 
 		for source, actTargets := range targetManager.targets {

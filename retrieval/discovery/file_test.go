@@ -24,11 +24,13 @@ func testFileSD(t *testing.T, ext string) {
 	conf.Names = []string{"fixtures/_*" + ext}
 	conf.RefreshInterval = config.Duration(1 * time.Hour)
 
-	fsd := NewFileDiscovery(&conf)
-
-	ch := make(chan *config.TargetGroup)
-	go fsd.Run(ch)
-	defer fsd.Stop()
+	var (
+		fsd  = NewFileDiscovery(&conf)
+		ch   = make(chan *config.TargetGroup)
+		done = make(chan struct{})
+	)
+	go fsd.Run(ch, done)
+	defer close(done)
 
 	select {
 	case <-time.After(25 * time.Millisecond):

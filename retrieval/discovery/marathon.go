@@ -40,13 +40,12 @@ func (md *MarathonDiscovery) Sources() []string {
 }
 
 // Run implements the TargetProvider interface.
-func (md *MarathonDiscovery) Run(ch chan<- *config.TargetGroup) {
+func (md *MarathonDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
 	for {
 		select {
-		case <-md.done:
-			log.Debug("Shutting down marathon discovery.")
+		case <-done:
 			return
 		case <-time.After(md.refreshInterval):
 			err := md.updateServices(ch)
@@ -55,11 +54,6 @@ func (md *MarathonDiscovery) Run(ch chan<- *config.TargetGroup) {
 			}
 		}
 	}
-}
-
-// Stop implements the TargetProvider interface.
-func (md *MarathonDiscovery) Stop() {
-	md.done <- struct{}{}
 }
 
 func (md *MarathonDiscovery) updateServices(ch chan<- *config.TargetGroup) error {

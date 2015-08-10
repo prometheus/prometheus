@@ -64,11 +64,11 @@ func init() {
 type DNSDiscovery struct {
 	names []string
 
-	done   chan struct{}
-	ticker *time.Ticker
-	m      sync.RWMutex
-	port   int
-	qtype  uint16
+	done     chan struct{}
+	interval time.Duration
+	m        sync.RWMutex
+	port     int
+	qtype    uint16
 }
 
 // NewDNSDiscovery returns a new DNSDiscovery which periodically refreshes its targets.
@@ -83,39 +83,32 @@ func NewDNSDiscovery(conf *config.DNSSDConfig) *DNSDiscovery {
 		qtype = dns.TypeSRV
 	}
 	return &DNSDiscovery{
-		names:  conf.Names,
-		done:   make(chan struct{}),
-		ticker: time.NewTicker(time.Duration(conf.RefreshInterval)),
-		qtype:  qtype,
-		port:   conf.Port,
+		names:    conf.Names,
+		done:     make(chan struct{}),
+		interval: time.Duration(conf.RefreshInterval),
+		qtype:    qtype,
+		port:     conf.Port,
 	}
 }
 
 // Run implements the TargetProvider interface.
-func (dd *DNSDiscovery) Run(ch chan<- *config.TargetGroup) {
+func (dd *DNSDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
+
+	ticker := time.NewTicker(dd.interval)
+	defer ticker.Stop()
 
 	// Get an initial set right away.
 	dd.refreshAll(ch)
 
 	for {
 		select {
-		case <-dd.ticker.C:
+		case <-ticker.C:
 			dd.refreshAll(ch)
-		case <-dd.done:
+		case <-done:
 			return
 		}
 	}
-}
-
-// Stop implements the TargetProvider interface.
-func (dd *DNSDiscovery) Stop() {
-	log.Debug("Stopping DNS discovery for %s...", dd.names)
-
-	dd.ticker.Stop()
-	dd.done <- struct{}{}
-
-	log.Debug("DNS discovery for %s stopped.", dd.names)
 }
 
 // Sources implements the TargetProvider interface.
