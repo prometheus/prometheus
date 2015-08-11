@@ -28,12 +28,12 @@ import (
 	"sync"
 	"time"
 
-	pprof_runtime "runtime/pprof"
-	template_text "text/template"
-
+	auth "github.com/abbot/go-http-auth"
 	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
+	pprof_runtime "runtime/pprof"
+	template_text "text/template"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
@@ -49,6 +49,7 @@ import (
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
+var authenticate = false
 
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
@@ -103,6 +104,25 @@ type Options struct {
 	ConsoleTemplatesPath string
 	ConsoleLibrariesPath string
 	EnableQuit           bool
+	AuthEnabled          bool
+	BasicAuthUsername    string
+	BasicAuthPassword    string
+}
+
+// Using this as the nil SecretProvider
+func Secret(user, realm string) string {
+	return ""
+}
+
+func OptionalAuthCheck(au auth.AuthenticatorInterface, wrapped http.HandlerFunc) http.HandlerFunc {
+	if authenticate == true {
+		return au.Wrap(func(w http.ResponseWriter, ar *auth.AuthenticatedRequest) {
+			ar.Header.Set("X-Authenticated-Username", ar.Username)
+			wrapped(w, &ar.Request)
+		})
+	} else {
+		return wrapped
+	}
 }
 
 // New initializes a new web Handler.
@@ -140,16 +160,27 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		})
 		router = router.WithPrefix(o.ExternalURL.Path)
 	}
+	var authenticator = auth.NewBasicAuthenticator("Prometheus", Secret)
+
+	if o.AuthEnabled == true {
+		authenticate = true
+		authenticator = auth.NewBasicAuthenticator("Prometheus", func(user string, realm string) string {
+			if user == o.BasicAuthUsername {
+				return o.BasicAuthPassword
+			}
+			return ""
+		})
+	}
 
 	instrf := prometheus.InstrumentHandlerFunc
 	instrh := prometheus.InstrumentHandler
 
-	router.Get("/", instrf("status", h.status))
-	router.Get("/alerts", instrf("alerts", h.alerts))
-	router.Get("/graph", instrf("graph", h.graph))
+	router.Get("/", OptionalAuthCheck(authenticator, instrf("status", h.status)))
+	router.Get("/alerts", OptionalAuthCheck(authenticator, instrf("alerts", h.alerts)))
+	router.Get("/graph", OptionalAuthCheck(authenticator, instrf("graph", h.graph)))
 	router.Get("/version", instrf("version", h.version))
 
-	router.Get("/heap", instrf("heap", dumpHeap))
+	router.Get("/heap", OptionalAuthCheck(authenticator, instrf("heap", dumpHeap)))
 
 	router.Get("/federate", instrh("federate", h.federation))
 	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
@@ -157,7 +188,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	h.apiLegacy.Register(router.WithPrefix("/api"))
 	h.apiV1.Register(router.WithPrefix("/api/v1"))
 
-	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
+	router.Get("/consoles/*filepath", OptionalAuthCheck(authenticator, instrf("consoles", h.consoles)))
 
 	if o.UseLocalAssets {
 		router.Get("/static/*filepath", instrf("static", route.FileServe("web/blob/static")))
