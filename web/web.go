@@ -61,6 +61,7 @@ type Handler struct {
 
 	router     *route.Router
 	quitCh     chan struct{}
+	reloadCh   chan bool // boolean saves as placeholder, actual value does not matter
 	options    *Options
 	statusInfo *PrometheusStatus
 
@@ -111,6 +112,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	h := &Handler{
 		router:     router,
 		quitCh:     make(chan struct{}),
+		reloadCh: make(chan bool),
 		options:    o,
 		statusInfo: status,
 
@@ -171,6 +173,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		router.Post("/-/quit", h.quit)
 	}
 
+	router.Post("/reload", h.reload)
 	router.Get("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
 
 	return h
@@ -179,6 +182,11 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 // Quit returns the receive-only quit channel.
 func (h *Handler) Quit() <-chan struct{} {
 	return h.quitCh
+}
+
+
+func (h *Handler) Reload() <-chan bool {
+	return h.reloadCh
 }
 
 // Run serves the HTTP endpoints.
@@ -291,6 +299,11 @@ func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Requesting termination... Goodbye!")
 	close(h.quitCh)
+}
+
+func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Reloading configuration file...")
+	h.reloadCh <- true
 }
 
 func (h *Handler) getTemplateFile(name string) (string, error) {
