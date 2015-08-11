@@ -296,6 +296,9 @@ PromConsole.graphDefaults = {
                   // If a string, it'll use that. [[ label ]] will be substituted.
                   // If a function it'll be called with a map of keys to values,
                   // and should return the name to use.
+                  // Can be a list of strings/functions, each element
+                  // will be applied to the pplots from the corresponding 
+                  // element of the expr list.
   xTitle: "Time",     // The title of the x axis.
   yUnits: "",     // The units of the y axis.
   yTitle: "",     // The title of the y axis.
@@ -312,7 +315,14 @@ PromConsole.Graph = function(params) {
     }
   }
   if (typeof params.expr == "string") {
-    params.expr = [params.expr]
+    params.expr = [params.expr];
+  }
+  if (typeof params.name == "string" || typeof params.name == "function") {
+    var name = [];
+    for (var i = 0; i < params.expr.length; i++) {
+      name.push(params.name)
+    }
+    params.name = name;
   }
 
   this.params = params;
@@ -409,15 +419,23 @@ PromConsole.Graph.prototype._render = function(data) {
   // This will be used on resize.
   this.rendered_data = data;
 
-  var nameFunc;
+
+  var nameFuncs = [];
   if (this.params.name === null) {
-    nameFunc = PromConsole._chooseNameFunction(data);
-  } else if (typeof this.params.name == "string") {
-    nameFunc = function(metric) {
-      return PromConsole._interpolateName(this.params.name, metric);
-    }.bind(this);
+    var chooser = PromConsole._chooseNameFunction(data);
+    for (var i = 0; i < this.params.expr.length; i++) {
+      nameFuncs.push(chooser);
+    }
   } else {
-    nameFunc = this.params.name;
+    for (var i = 0; i < this.params.name.length; i++) {
+      if (typeof this.params.name[i] == "string") {
+        nameFuncs.push(function(i, metric) {
+          return PromConsole._interpolateName(this.params.name[i], metric);
+        }.bind(this, i));
+      } else {
+        nameFuncs.push(this.params.name[i]);
+      }
+    }
   }
 
   // Get the data into the right format.
@@ -427,7 +445,7 @@ PromConsole.Graph.prototype._render = function(data) {
       series[seriesLen++] = {
             data: data[e].value[i].values.map(function(s) {return {x: s[0], y: self._parseValue(s[1])} }),
             color: palette.color(),
-            name: self._escapeHTML(nameFunc(data[e].value[i].metric)),
+            name: self._escapeHTML(nameFuncs[e](data[e].value[i].metric)),
       };
     }
   }
