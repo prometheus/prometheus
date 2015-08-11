@@ -104,7 +104,11 @@ func Main() int {
 	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
 		<-hupReady
-		for range hup {
+		for {
+			select {
+			case <-hup:
+			case <-webHandler.Reload():
+			}
 			reloadConfig(cfg.configFile, status, targetManager, ruleManager)
 		}
 	}()
