@@ -61,7 +61,7 @@ type Handler struct {
 
 	router     *route.Router
 	quitCh     chan struct{}
-	reloadCh   chan bool // boolean saves as placeholder, actual value does not matter
+	reloadCh   chan struct{}
 	options    *Options
 	statusInfo *PrometheusStatus
 
@@ -112,7 +112,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	h := &Handler{
 		router:     router,
 		quitCh:     make(chan struct{}),
-		reloadCh: make(chan bool),
+		reloadCh:   make(chan struct{}),
 		options:    o,
 		statusInfo: status,
 
@@ -173,7 +173,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		router.Post("/-/quit", h.quit)
 	}
 
-	router.Post("/reload", h.reload)
+	router.Post("/-/reload", h.reload)
 	router.Get("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
 
 	return h
@@ -184,8 +184,7 @@ func (h *Handler) Quit() <-chan struct{} {
 	return h.quitCh
 }
 
-
-func (h *Handler) Reload() <-chan bool {
+func (h *Handler) Reload() <-chan struct{} {
 	return h.reloadCh
 }
 
@@ -303,7 +302,7 @@ func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Reloading configuration file...")
-	h.reloadCh <- true
+	h.reloadCh <- struct{}{}
 }
 
 func (h *Handler) getTemplateFile(name string) (string, error) {
