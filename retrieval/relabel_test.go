@@ -170,7 +170,7 @@ func TestRelabel(t *testing.T) {
 				"a": "foo",
 				"b": "bar",
 				"c": "baz",
-				"d": "58",
+				"d": "976",
 			},
 		},
 	}
