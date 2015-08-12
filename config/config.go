@@ -610,6 +610,8 @@ const (
 	RelabelDrop RelabelAction = "drop"
 	// Sets a label to the modulus of a hash of labels.
 	RelabelHashMod RelabelAction = "hashmod"
+	// Copy labels to other labelnames based on a regex.
+	RelabelLabelMap RelabelAction = "labelmap"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
