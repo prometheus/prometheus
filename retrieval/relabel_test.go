@@ -173,6 +173,50 @@ func TestRelabel(t *testing.T) {
 				"d": "976",
 			},
 		},
+		{
+			input: clientmodel.LabelSet{
+				"a":  "foo",
+				"b1": "bar",
+				"b2": "baz",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					Regex:       &config.Regexp{*regexp.MustCompile("^(b.*)")},
+					Replacement: "bar_${1}",
+					Action:      config.RelabelLabelMap,
+				},
+			},
+			output: clientmodel.LabelSet{
+				"a":      "foo",
+				"b1":     "bar",
+				"b2":     "baz",
+				"bar_b1": "bar",
+				"bar_b2": "baz",
+			},
+		},
+		{
+			input: clientmodel.LabelSet{
+				"a":             "foo",
+				"__meta_my_bar": "aaa",
+				"__meta_my_baz": "bbb",
+				"__meta_other":  "ccc",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					Regex:       &config.Regexp{*regexp.MustCompile("^__meta_(my.*)")},
+					Replacement: "${1}",
+					Action:      config.RelabelLabelMap,
+				},
+			},
+			output: clientmodel.LabelSet{
+				"a":             "foo",
+				"__meta_my_bar": "aaa",
+				"__meta_my_baz": "bbb",
+				"__meta_other":  "ccc",
+				"my_bar":        "aaa",
+				"my_baz":        "bbb",
+			},
+		},
 	}
 
 	for i, test := range tests {

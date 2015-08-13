@@ -60,6 +60,19 @@ func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmode
 	case config.RelabelHashMod:
 		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
 		labels[cfg.TargetLabel] = clientmodel.LabelValue(fmt.Sprintf("%d", mod))
+	case config.RelabelLabelMap:
+		out := make(clientmodel.LabelSet, len(labels))
+		// Take a copy to avoid infinite loops.
+		for ln, lv := range labels {
+			out[ln] = lv
+		}
+		for ln, lv := range labels {
+			if cfg.Regex.MatchString(string(ln)) {
+				res := cfg.Regex.ReplaceAllString(string(ln), cfg.Replacement)
+				out[clientmodel.LabelName(res)] = lv
+			}
+		}
+		labels = out
 	default:
 		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
 	}
