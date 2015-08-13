@@ -223,9 +223,6 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientm
 		}
 	}
 	t.url.RawQuery = params.Encode()
-	if cfg.BasicAuth != nil {
-		t.url.User = url.UserPassword(cfg.BasicAuth.Username, cfg.BasicAuth.Password)
-	}
 
 	t.scrapeInterval = time.Duration(cfg.ScrapeInterval)
 	t.deadline = time.Duration(cfg.ScrapeTimeout)
@@ -290,6 +287,10 @@ func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
 	}
 	if len(bearerToken) > 0 {
 		rt = httputil.NewBearerAuthRoundTripper(bearerToken, rt)
+	}
+
+	if cfg.BasicAuth != nil {
+		rt = httputil.NewBasicAuthRoundTripper(cfg.BasicAuth.Username, cfg.BasicAuth.Password, rt)
 	}
 
 	// Return a new client with the configured round tripper.

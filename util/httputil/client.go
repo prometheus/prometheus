@@ -74,6 +74,27 @@ func (rt *bearerAuthRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	return rt.rt.RoundTrip(req)
 }
 
+type basicAuthRoundTripper struct {
+	username string
+	password string
+	rt       http.RoundTripper
+}
+
+// NewBasicAuthRoundTripper will apply a BASIC auth authorization header to a request unless it has
+// already been set.
+func NewBasicAuthRoundTripper(username, password string, rt http.RoundTripper) http.RoundTripper {
+	return &basicAuthRoundTripper{username, password, rt}
+}
+
+func (rt *basicAuthRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if len(req.Header.Get("Authorization")) != 0 {
+		return rt.rt.RoundTrip(req)
+	}
+	req = cloneRequest(req)
+	req.SetBasicAuth(rt.username, rt.password)
+	return rt.rt.RoundTrip(req)
+}
+
 // cloneRequest returns a clone of the provided *http.Request.
 // The clone is a shallow copy of the struct and its Header map.
 func cloneRequest(r *http.Request) *http.Request {

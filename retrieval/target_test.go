@@ -31,7 +31,6 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 func TestBaseLabels(t *testing.T) {
@@ -438,6 +437,10 @@ func TestURLParams(t *testing.T) {
 }
 
 func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmodel.LabelSet) *Target {
+	cfg := &config.ScrapeConfig{
+		ScrapeTimeout: config.Duration(deadline),
+	}
+	c, _ := newHTTPClient(cfg)
 	t := &Target{
 		url: &url.URL{
 			Scheme: "http",
@@ -447,7 +450,7 @@ func newTestTarget(targetURL string, deadline time.Duration, baseLabels clientmo
 		deadline:        deadline,
 		status:          &TargetStatus{},
 		scrapeInterval:  1 * time.Millisecond,
-		httpClient:      httputil.NewDeadlineClient(deadline, nil),
+		httpClient:      c,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 	}
@@ -505,6 +508,36 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout:   config.Duration(1 * time.Second),
 		BearerTokenFile: "testdata/bearertoken.txt",
+	}
+	c, err := newHTTPClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewHTTPBasicAuth(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				username, password, ok := r.BasicAuth()
+				if !(ok && username == "user" && password == "password123") {
+					t.Fatalf("Basic authorization header was not set correctly: expected '%v:%v', got '%v:%v'", "user", "password123", username, password)
+				}
+			},
+		),
+	)
+	defer server.Close()
+
+	cfg := &config.ScrapeConfig{
+		ScrapeTimeout: config.Duration(1 * time.Second),
+		BasicAuth: &config.BasicAuth{
+			Username: "user",
+			Password: "password123",
+		},
 	}
 	c, err := newHTTPClient(cfg)
 	if err != nil {

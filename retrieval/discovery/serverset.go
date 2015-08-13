@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +27,7 @@ import (
 	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -37,10 +37,6 @@ const (
 	serversetStatusLabel         = serversetLabelPrefix + "status"
 	serversetPathLabel           = serversetLabelPrefix + "path"
 	serversetEndpointLabelPrefix = serversetLabelPrefix + "endpoint"
-)
-
-var (
-	invalidLabelCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 )
 
 type serversetMember struct {
@@ -176,7 +172,7 @@ func parseServersetMember(data []byte, path string) (*clientmodel.LabelSet, erro
 	labels[serversetEndpointLabelPrefix+"_port"] = clientmodel.LabelValue(fmt.Sprintf("%d", member.ServiceEndpoint.Port))
 
 	for name, endpoint := range member.AdditionalEndpoints {
-		cleanName := clientmodel.LabelName(invalidLabelCharRE.ReplaceAllString(name, "_"))
+		cleanName := clientmodel.LabelName(strutil.SanitizeLabelName(name))
 		labels[serversetEndpointLabelPrefix+"_host_"+cleanName] = clientmodel.LabelValue(
 			endpoint.Host)
 		labels[serversetEndpointLabelPrefix+"_port_"+cleanName] = clientmodel.LabelValue(
