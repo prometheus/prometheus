@@ -32,7 +32,7 @@ import (
 const (
 	resolvConf = "/etc/resolv.conf"
 
-	DNSNameLabel = clientmodel.MetaLabelPrefix + "dns_srv_name"
+	DNSNameLabel = clientmodel.MetaLabelPrefix + "dns_name"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
