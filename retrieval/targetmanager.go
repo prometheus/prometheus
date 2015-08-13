@@ -33,7 +33,10 @@ import (
 //
 // The TargetProvider does not have to guarantee that an actual change happened.
 // It does guarantee that it sends the new TargetGroup whenever a change happens.
-// On startup it sends all TargetGroups it can see.
+//
+// Sources() is guaranteed to be called exactly once before each call to Run().
+// On a call to Run() implementing types must send a valid target group for each of
+// the sources they declared in the last call to Sources().
 type TargetProvider interface {
 	// Sources returns the source identifiers the provider is currently aware of.
 	Sources() []string
