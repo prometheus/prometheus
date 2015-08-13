@@ -120,13 +120,13 @@ var expectedConf = &Config{
 				},
 				{
 					SourceLabels: clientmodel.LabelNames{"__address__"},
-					TargetLabel:  "__hash",
+					TargetLabel:  "__tmp_hash",
 					Modulus:      8,
 					Separator:    ";",
 					Action:       RelabelHashMod,
 				},
 				{
-					SourceLabels: clientmodel.LabelNames{"__hash"},
+					SourceLabels: clientmodel.LabelNames{"__tmp_hash"},
 					Regex:        &Regexp{*regexp.MustCompile("^1$")},
 					Separator:    ";",
 					Action:       RelabelKeep,
