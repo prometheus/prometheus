@@ -1,8 +1,8 @@
 package retrieval
 
 import (
+	"crypto/md5"
 	"fmt"
-	"hash/fnv"
 	"strings"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -58,12 +58,22 @@ func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmode
 			labels[cfg.TargetLabel] = clientmodel.LabelValue(res)
 		}
 	case config.RelabelHashMod:
-		hasher := fnv.New64a()
-		hasher.Write([]byte(val))
-		mod := hasher.Sum64() % cfg.Modulus
+		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
 		labels[cfg.TargetLabel] = clientmodel.LabelValue(fmt.Sprintf("%d", mod))
 	default:
 		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
 	}
 	return labels, nil
+}
+
+// sum64 sums the md5 hash to an uint64.
+func sum64(hash [md5.Size]byte) uint64 {
+	var s uint64
+
+	for i, b := range hash {
+		shift := uint64((md5.Size - i - 1) * 8)
+
+		s |= uint64(b) << shift
+	}
+	return s
 }
