@@ -159,8 +159,6 @@ func Main() int {
 		log.Warn("Received termination request via web service, exiting gracefully...")
 	}
 
-	close(hup)
-
 	log.Info("See you next time!")
 	return 0
 }
