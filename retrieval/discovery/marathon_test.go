@@ -104,40 +104,6 @@ func TestMarathonSDSendGroup(t *testing.T) {
 	}
 }
 
-func TestMarathonSDNoLabel(t *testing.T) {
-	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
-		return marathonTestAppList(map[string]string{}, 1), nil
-	})
-	go func() {
-		select {
-		case tg := <-ch:
-			t.Fatalf("Got group: %s", tg)
-		default:
-		}
-	}()
-	err := md.updateServices(ch)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-}
-
-func TestMarathonSDNotRunning(t *testing.T) {
-	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
-		return marathonTestAppList(marathonValidLabel, 0), nil
-	})
-	go func() {
-		select {
-		case tg := <-ch:
-			t.Fatalf("Got group: %s", tg)
-		default:
-		}
-	}()
-	err := md.updateServices(ch)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-}
-
 func TestMarathonSDRemoveApp(t *testing.T) {
 	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
