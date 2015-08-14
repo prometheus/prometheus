@@ -529,6 +529,7 @@ type ConsulSDConfig struct {
 	Username     string `yaml:"username,omitempty"`
 	Password     string `yaml:"password,omitempty"`
 	// The list of services for which targets are discovered.
+	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
 
 	// Catches all undefined fields and must be empty after parsing.
@@ -545,9 +546,6 @@ func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	}
 	if strings.TrimSpace(c.Server) == "" {
 		return fmt.Errorf("Consul SD configuration requires a server address")
-	}
-	if len(c.Services) == 0 {
-		return fmt.Errorf("Consul SD configuration requires at least one service name")
 	}
 	return checkOverflow(c.XXX, "consul_sd_config")
 }

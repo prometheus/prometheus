@@ -122,7 +122,7 @@ func (cd *ConsulDiscovery) Sources() []string {
 
 	srcs := make([]string, 0, len(srvs))
 	for name := range srvs {
-		if _, ok := cd.scrapedServices[name]; ok {
+		if _, ok := cd.scrapedServices[name]; len(cd.scrapedServices) == 0 || ok {
 			srcs = append(srcs, name)
 		}
 	}
@@ -199,7 +199,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService, done <-ch
 		}
 		// Check for new services.
 		for name := range srvs {
-			if _, ok := cd.scrapedServices[name]; !ok {
+			if _, ok := cd.scrapedServices[name]; len(cd.scrapedServices) > 0 && !ok {
 				continue
 			}
 			srv, ok := cd.services[name]
