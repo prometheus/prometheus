@@ -67,7 +67,6 @@ type ServersetDiscovery struct {
 	sources   map[string]*config.TargetGroup
 	sdUpdates *chan<- *config.TargetGroup
 	updates   chan zookeeperTreeCacheEvent
-	runDone   chan struct{}
 	treeCache *zookeeperTreeCache
 }
 
@@ -84,7 +83,6 @@ func NewServersetDiscovery(conf *config.ServersetSDConfig) *ServersetDiscovery {
 		conn:    conn,
 		updates: updates,
 		sources: map[string]*config.TargetGroup{},
-		runDone: make(chan struct{}),
 	}
 	go sd.processUpdates()
 	sd.treeCache = NewZookeeperTreeCache(conn, conf.Paths[0], updates)
@@ -132,7 +130,7 @@ func (sd *ServersetDiscovery) processUpdates() {
 }
 
 // Run implements the TargetProvider interface.
-func (sd *ServersetDiscovery) Run(ch chan<- *config.TargetGroup) {
+func (sd *ServersetDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
 	// Send on everything we have seen so far.
 	sd.mu.Lock()
 	for _, targetGroup := range sd.sources {
@@ -142,18 +140,8 @@ func (sd *ServersetDiscovery) Run(ch chan<- *config.TargetGroup) {
 	sd.sdUpdates = &ch
 	sd.mu.Unlock()
 
-	<-sd.runDone
+	<-done
 	sd.treeCache.Stop()
-}
-
-// Stop implements the TargetProvider interface.
-func (sd *ServersetDiscovery) Stop() {
-	log.Debugf("Stopping serverset service discovery for %s %s", sd.conf.Servers, sd.conf.Paths)
-
-	// Terminate Run.
-	sd.runDone <- struct{}{}
-
-	log.Debugf("Serverset service discovery for %s %s stopped", sd.conf.Servers, sd.conf.Paths)
 }
 
 func parseServersetMember(data []byte, path string) (*clientmodel.LabelSet, error) {

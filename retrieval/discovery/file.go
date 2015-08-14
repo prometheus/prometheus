@@ -39,7 +39,6 @@ type FileDiscovery struct {
 	paths    []string
 	watcher  *fsnotify.Watcher
 	interval time.Duration
-	done     chan struct{}
 
 	// lastRefresh stores which files were found during the last refresh
 	// and how many target groups they contained.
@@ -52,7 +51,6 @@ func NewFileDiscovery(conf *config.FileSDConfig) *FileDiscovery {
 	return &FileDiscovery{
 		paths:    conf.Names,
 		interval: time.Duration(conf.RefreshInterval),
-		done:     make(chan struct{}),
 	}
 }
 
@@ -106,8 +104,9 @@ func (fd *FileDiscovery) watchFiles() {
 }
 
 // Run implements the TargetProvider interface.
-func (fd *FileDiscovery) Run(ch chan<- *config.TargetGroup) {
+func (fd *FileDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
+	defer fd.stop()
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -125,10 +124,13 @@ func (fd *FileDiscovery) Run(ch chan<- *config.TargetGroup) {
 		// Stopping has priority over refreshing. Thus we wrap the actual select
 		// clause to always catch done signals.
 		select {
-		case <-fd.done:
+		case <-done:
 			return
 		default:
 			select {
+			case <-done:
+				return
+
 			case event := <-fd.watcher.Events:
 				// fsnotify sometimes sends a bunch of events without name or operation.
 				// It's unclear what they are and why they are sent - filter them out.
@@ -154,9 +156,6 @@ func (fd *FileDiscovery) Run(ch chan<- *config.TargetGroup) {
 				if err != nil {
 					log.Errorf("Error on file watch: %s", err)
 				}
-
-			case <-fd.done:
-				return
 			}
 		}
 	}
@@ -198,11 +197,10 @@ func fileSource(filename string, i int) string {
 	return fmt.Sprintf("%s:%d", filename, i)
 }
 
-// Stop implements the TargetProvider interface.
-func (fd *FileDiscovery) Stop() {
+// stop shuts down the file watcher.
+func (fd *FileDiscovery) stop() {
 	log.Debugf("Stopping file discovery for %s...", fd.paths)
 
-	fd.done <- struct{}{}
 	// Closing the watcher will deadlock unless all events and errors are drained.
 	go func() {
 		for {
@@ -210,14 +208,12 @@ func (fd *FileDiscovery) Stop() {
 			case <-fd.watcher.Errors:
 			case <-fd.watcher.Events:
 				// Drain all events and errors.
-			case <-fd.done:
+			default:
 				return
 			}
 		}
 	}()
 	fd.watcher.Close()
-
-	fd.done <- struct{}{}
 
 	log.Debugf("File discovery for %s stopped.", fd.paths)
 }

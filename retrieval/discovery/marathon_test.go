@@ -147,17 +147,18 @@ func TestMarathonSDRunAndStop(t *testing.T) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	})
 	md.refreshInterval = time.Millisecond * 10
+	done := make(chan struct{})
 
 	go func() {
 		select {
 		case <-ch:
-			md.Stop()
+			close(done)
 		case <-time.After(md.refreshInterval * 3):
-			md.Stop()
+			close(done)
 			t.Fatalf("Update took too long.")
 		}
 	}()
-	md.Run(ch)
+	md.Run(ch, done)
 	select {
 	case <-ch:
 	default:

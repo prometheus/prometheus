@@ -43,20 +43,19 @@ type TargetProvider interface {
 	// Run hands a channel to the target provider through which it can send
 	// updated target groups. The channel must be closed by the target provider
 	// if no more updates will be sent.
-	Run(chan<- *config.TargetGroup)
-	// Stop terminates any potential computation of the target provider. The
-	// channel received on Run must be closed afterwards.
-	Stop()
+	// On receiving from done Run must return.
+	Run(up chan<- *config.TargetGroup, done <-chan struct{})
 }
 
 // TargetManager maintains a set of targets, starts and stops their scraping and
 // creates the new targets based on the target groups it receives from various
 // target providers.
 type TargetManager struct {
-	m              sync.RWMutex
+	mtx            sync.RWMutex
 	globalLabels   clientmodel.LabelSet
 	sampleAppender storage.SampleAppender
 	running        bool
+	done           chan struct{}
 
 	// Targets by their source ID.
 	targets map[string][]*Target
@@ -73,31 +72,96 @@ func NewTargetManager(sampleAppender storage.SampleAppender) *TargetManager {
 	return tm
 }
 
+// merge multiple target group channels into a single output channel.
+func merge(done <-chan struct{}, cs ...<-chan targetGroupUpdate) <-chan targetGroupUpdate {
+	var wg sync.WaitGroup
+	out := make(chan targetGroupUpdate)
+
+	// Start an output goroutine for each input channel in cs.  output
+	// copies values from c to out until c or done is closed, then calls
+	// wg.Done.
+	redir := func(c <-chan targetGroupUpdate) {
+		defer wg.Done()
+		for n := range c {
+			select {
+			case out <- n:
+			case <-done:
+				return
+			}
+		}
+	}
+
+	wg.Add(len(cs))
+	for _, c := range cs {
+		go redir(c)
+	}
+
+	// Close the out channel if all inbound channels are closed.
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	return out
+}
+
+// targetGroupUpdate is a potentially changed/new target group
+// for the given scrape configuration.
+type targetGroupUpdate struct {
+	tg   *config.TargetGroup
+	scfg *config.ScrapeConfig
+}
+
 // Run starts background processing to handle target updates.
 func (tm *TargetManager) Run() {
 	log.Info("Starting target manager...")
 
+	tm.done = make(chan struct{})
+
 	sources := map[string]struct{}{}
+	updates := []<-chan targetGroupUpdate{}
 
 	for scfg, provs := range tm.providers {
 		for _, prov := range provs {
-			ch := make(chan *config.TargetGroup)
-			go tm.handleTargetUpdates(scfg, ch)
-
+			// Get an initial set of available sources so we don't remove
+			// target groups from the last run that are still available.
 			for _, src := range prov.Sources() {
 				sources[src] = struct{}{}
 			}
 
+			tgc := make(chan *config.TargetGroup)
 			// Run the target provider after cleanup of the stale targets is done.
-			defer func(p TargetProvider, c chan *config.TargetGroup) {
-				go p.Run(c)
-			}(prov, ch)
+			defer func(prov TargetProvider, tgc chan *config.TargetGroup) {
+				go prov.Run(tgc, tm.done)
+			}(prov, tgc)
+
+			tgupc := make(chan targetGroupUpdate)
+			updates = append(updates, tgupc)
+
+			go func(scfg *config.ScrapeConfig) {
+				defer close(tgupc)
+				for {
+					select {
+					case tg := <-tgc:
+						if tg == nil {
+							break
+						}
+						tgupc <- targetGroupUpdate{tg: tg, scfg: scfg}
+					case <-tm.done:
+						return
+					}
+				}
+			}(scfg)
 		}
 	}
 
-	tm.m.Lock()
-	defer tm.m.Unlock()
+	// Merge all channels of incoming target group updates into a single
+	// one and keep applying the updates.
+	go tm.handleUpdates(merge(tm.done, updates...), tm.done)
 
+	tm.mtx.Lock()
+	defer tm.mtx.Unlock()
+
+	// Remove old target groups that are no longer in the set of sources.
 	tm.removeTargets(func(src string) bool {
 		if _, ok := sources[src]; ok {
 			return false
@@ -110,24 +174,32 @@ func (tm *TargetManager) Run() {
 
 // handleTargetUpdates receives target group updates and handles them in the
 // context of the given job config.
-func (tm *TargetManager) handleTargetUpdates(cfg *config.ScrapeConfig, ch <-chan *config.TargetGroup) {
-	for tg := range ch {
-		log.Debugf("Received potential update for target group %q", tg.Source)
+func (tm *TargetManager) handleUpdates(ch <-chan targetGroupUpdate, done <-chan struct{}) {
+	for {
+		select {
+		case update := <-ch:
+			if update.tg == nil {
+				break
+			}
+			log.Debugf("Received potential update for target group %q", update.tg.Source)
 
-		if err := tm.updateTargetGroup(tg, cfg); err != nil {
-			log.Errorf("Error updating targets: %s", err)
+			if err := tm.updateTargetGroup(update.tg, update.scfg); err != nil {
+				log.Errorf("Error updating targets: %s", err)
+			}
+		case <-done:
+			return
 		}
 	}
 }
 
 // Stop all background processing.
 func (tm *TargetManager) Stop() {
-	tm.m.RLock()
+	tm.mtx.RLock()
 	if tm.running {
 		defer tm.stop(true)
 	}
 	// Return the lock before calling tm.stop().
-	defer tm.m.RUnlock()
+	defer tm.mtx.RUnlock()
 }
 
 // stop background processing of the target manager. If removeTargets is true,
@@ -136,25 +208,10 @@ func (tm *TargetManager) stop(removeTargets bool) {
 	log.Info("Stopping target manager...")
 	defer log.Info("Target manager stopped.")
 
-	tm.m.Lock()
-	provs := []TargetProvider{}
-	for _, ps := range tm.providers {
-		provs = append(provs, ps...)
-	}
-	tm.m.Unlock()
+	close(tm.done)
 
-	var wg sync.WaitGroup
-	wg.Add(len(provs))
-	for _, prov := range provs {
-		go func(p TargetProvider) {
-			p.Stop()
-			wg.Done()
-		}(prov)
-	}
-	wg.Wait()
-
-	tm.m.Lock()
-	defer tm.m.Unlock()
+	tm.mtx.Lock()
+	defer tm.mtx.Unlock()
 
 	if removeTargets {
 		tm.removeTargets(nil)
@@ -194,8 +251,8 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 		return err
 	}
 
-	tm.m.Lock()
-	defer tm.m.Unlock()
+	tm.mtx.Lock()
+	defer tm.mtx.Unlock()
 
 	if !tm.running {
 		return nil
@@ -261,8 +318,8 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 
 // Pools returns the targets currently being scraped bucketed by their job name.
 func (tm *TargetManager) Pools() map[string][]*Target {
-	tm.m.RLock()
-	defer tm.m.RUnlock()
+	tm.mtx.RLock()
+	defer tm.mtx.RUnlock()
 
 	pools := map[string][]*Target{}
 
@@ -279,9 +336,9 @@ func (tm *TargetManager) Pools() map[string][]*Target {
 // by the new cfg. The state of targets that are valid in the new configuration remains unchanged.
 // Returns true on success.
 func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
-	tm.m.RLock()
+	tm.mtx.RLock()
 	running := tm.running
-	tm.m.RUnlock()
+	tm.mtx.RUnlock()
 
 	if running {
 		tm.stop(false)
@@ -294,8 +351,8 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
 		providers[scfg] = providersFromConfig(scfg)
 	}
 
-	tm.m.Lock()
-	defer tm.m.Unlock()
+	tm.mtx.Lock()
+	defer tm.mtx.Unlock()
 
 	tm.globalLabels = cfg.GlobalConfig.Labels
 	tm.providers = providers
@@ -325,15 +382,23 @@ func (tp *prefixedTargetProvider) Sources() []string {
 	return srcs
 }
 
-func (tp *prefixedTargetProvider) Run(ch chan<- *config.TargetGroup) {
+func (tp *prefixedTargetProvider) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
 	ch2 := make(chan *config.TargetGroup)
-	go tp.TargetProvider.Run(ch2)
+	go tp.TargetProvider.Run(ch2, done)
 
-	for tg := range ch2 {
-		tg.Source = tp.prefix(tg.Source)
-		ch <- tg
+	for {
+		select {
+		case <-done:
+			return
+		case tg := <-ch2:
+			if tg == nil {
+				break
+			}
+			tg.Source = tp.prefix(tg.Source)
+			ch <- tg
+		}
 	}
 }
 
@@ -382,8 +447,8 @@ func providersFromConfig(cfg *config.ScrapeConfig) []TargetProvider {
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
 func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
-	tm.m.RLock()
-	defer tm.m.RUnlock()
+	tm.mtx.RLock()
+	defer tm.mtx.RUnlock()
 
 	targets := make([]*Target, 0, len(tg.Targets))
 	for i, labels := range tg.Targets {
@@ -470,15 +535,17 @@ func NewStaticProvider(groups []*config.TargetGroup) *StaticProvider {
 }
 
 // Run implements the TargetProvider interface.
-func (sd *StaticProvider) Run(ch chan<- *config.TargetGroup) {
-	for _, tg := range sd.TargetGroups {
-		ch <- tg
-	}
-	close(ch) // This provider never sends any updates.
-}
+func (sd *StaticProvider) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+	defer close(ch)
 
-// Stop implements the TargetProvider interface.
-func (sd *StaticProvider) Stop() {}
+	for _, tg := range sd.TargetGroups {
+		select {
+		case <-done:
+			return
+		case ch <- tg:
+		}
+	}
+}
 
 // TargetGroups returns the provider's target groups.
 func (sd *StaticProvider) Sources() (srcs []string) {

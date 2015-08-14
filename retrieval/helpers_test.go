@@ -53,15 +53,16 @@ type fakeTargetProvider struct {
 	update  chan *config.TargetGroup
 }
 
-func (tp *fakeTargetProvider) Run(ch chan<- *config.TargetGroup) {
+func (tp *fakeTargetProvider) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
-	for tg := range tp.update {
-		ch <- tg
+	for {
+		select {
+		case tg := <-tp.update:
+			ch <- tg
+		case <-done:
+			return
+		}
 	}
-}
-
-func (tp *fakeTargetProvider) Stop() {
-	close(tp.update)
 }
 
 func (tp *fakeTargetProvider) Sources() []string {

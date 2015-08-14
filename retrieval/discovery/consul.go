@@ -57,9 +57,8 @@ type ConsulDiscovery struct {
 	tagSeparator    string
 	scrapedServices map[string]struct{}
 
-	mu                sync.RWMutex
-	services          map[string]*consulService
-	runDone, srvsDone chan struct{}
+	mu       sync.RWMutex
+	services map[string]*consulService
 }
 
 // consulService contains data belonging to the same service.
@@ -93,8 +92,6 @@ func NewConsulDiscovery(conf *config.ConsulSDConfig) *ConsulDiscovery {
 		client:          client,
 		clientConf:      clientConf,
 		tagSeparator:    conf.TagSeparator,
-		runDone:         make(chan struct{}),
-		srvsDone:        make(chan struct{}, 1),
 		scrapedServices: map[string]struct{}{},
 		services:        map[string]*consulService{},
 	}
@@ -133,18 +130,22 @@ func (cd *ConsulDiscovery) Sources() []string {
 }
 
 // Run implements the TargetProvider interface.
-func (cd *ConsulDiscovery) Run(ch chan<- *config.TargetGroup) {
+func (cd *ConsulDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
+	defer cd.stop()
 
 	update := make(chan *consulService, 10)
-	go cd.watchServices(update)
+	go cd.watchServices(update, done)
 
 	for {
 		select {
-		case <-cd.runDone:
+		case <-done:
 			return
 		case srv := <-update:
 			if srv.removed {
+				close(srv.done)
+
+				// Send clearing update.
 				ch <- &config.TargetGroup{Source: srv.name}
 				break
 			}
@@ -157,31 +158,20 @@ func (cd *ConsulDiscovery) Run(ch chan<- *config.TargetGroup) {
 	}
 }
 
-// Stop implements the TargetProvider interface.
-func (cd *ConsulDiscovery) Stop() {
-	log.Debugf("Stopping Consul service discovery for %s", cd.clientConf.Address)
-
+func (cd *ConsulDiscovery) stop() {
 	// The lock prevents Run from terminating while the watchers attempt
 	// to send on their channels.
 	cd.mu.Lock()
 	defer cd.mu.Unlock()
 
-	// The watching goroutines will terminate after their next watch timeout.
-	// As this can take long, the channel is buffered and we do not wait.
 	for _, srv := range cd.services {
-		srv.done <- struct{}{}
+		close(srv.done)
 	}
-	cd.srvsDone <- struct{}{}
-
-	// Terminate Run.
-	cd.runDone <- struct{}{}
-
-	log.Debugf("Consul service discovery for %s stopped.", cd.clientConf.Address)
 }
 
 // watchServices retrieves updates from Consul's services endpoint and sends
 // potential updates to the update channel.
-func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
+func (cd *ConsulDiscovery) watchServices(update chan<- *consulService, done <-chan struct{}) {
 	var lastIndex uint64
 	for {
 		catalog := cd.client.Catalog()
@@ -191,8 +181,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 		})
 		if err != nil {
 			log.Errorf("Error refreshing service list: %s", err)
-			<-time.After(consulRetryInterval)
-			continue
+			time.Sleep(consulRetryInterval)
 		}
 		// If the index equals the previous one, the watch timed out with no update.
 		if meta.LastIndex == lastIndex {
@@ -202,7 +191,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 
 		cd.mu.Lock()
 		select {
-		case <-cd.srvsDone:
+		case <-done:
 			cd.mu.Unlock()
 			return
 		default:
@@ -218,7 +207,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 				srv = &consulService{
 					name:   name,
 					tgroup: &config.TargetGroup{},
-					done:   make(chan struct{}, 1),
+					done:   make(chan struct{}),
 				}
 				srv.tgroup.Source = name
 				cd.services[name] = srv
@@ -234,7 +223,6 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService) {
 			if _, ok := srvs[name]; !ok {
 				srv.removed = true
 				update <- srv
-				srv.done <- struct{}{}
 				delete(cd.services, name)
 			}
 		}
@@ -253,7 +241,7 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 		})
 		if err != nil {
 			log.Errorf("Error refreshing service %s: %s", srv.name, err)
-			<-time.After(consulRetryInterval)
+			time.Sleep(consulRetryInterval)
 			continue
 		}
 		// If the index equals the previous one, the watch timed out with no update.
