@@ -91,7 +91,7 @@ var (
 
 	// The default file SD configuration.
 	DefaultFileSDConfig = FileSDConfig{
-		RefreshInterval: Duration(30 * time.Second),
+		RefreshInterval: Duration(5 * time.Minute),
 	}
 
 	// The default Consul SD configuration.
