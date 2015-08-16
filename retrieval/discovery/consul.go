@@ -52,10 +52,11 @@ const (
 // ConsulDiscovery retrieves target information from a Consul server
 // and updates them via watches.
 type ConsulDiscovery struct {
-	client          *consul.Client
-	clientConf      *consul.Config
-	tagSeparator    string
-	scrapedServices map[string]struct{}
+	client           *consul.Client
+	clientConf       *consul.Config
+	clientDatacenter string
+	tagSeparator     string
+	scrapedServices  map[string]struct{}
 
 	mu       sync.RWMutex
 	services map[string]*consulService
@@ -94,6 +95,17 @@ func NewConsulDiscovery(conf *config.ConsulSDConfig) *ConsulDiscovery {
 		tagSeparator:    conf.TagSeparator,
 		scrapedServices: map[string]struct{}{},
 		services:        map[string]*consulService{},
+	}
+	// If the datacenter isn't set in the clientConf, let's get it from the local Consul agent
+	// (Consul default is to use local node's datacenter if one isn't given for a query).
+	if clientConf.Datacenter == "" {
+		info, err := client.Agent().Self()
+		if err != nil {
+			panic(fmt.Errorf("discovery.NewConsulDiscovery: %s", err))
+		}
+		cd.clientDatacenter = info["Config"]["Datacenter"].(string)
+	} else {
+		cd.clientDatacenter = clientConf.Datacenter
 	}
 	for _, name := range conf.Services {
 		cd.scrapedServices[name] = struct{}{}
@@ -214,7 +226,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService, done <-ch
 			}
 			srv.tgroup.Labels = clientmodel.LabelSet{
 				ConsulServiceLabel: clientmodel.LabelValue(name),
-				ConsulDCLabel:      clientmodel.LabelValue(cd.clientConf.Datacenter),
+				ConsulDCLabel:      clientmodel.LabelValue(cd.clientDatacenter),
 			}
 			update <- srv
 		}
