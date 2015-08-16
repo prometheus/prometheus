@@ -65,7 +65,7 @@ var expectedConf = &Config{
 				},
 				{
 					Names:           []string{"bar/*.yaml"},
-					RefreshInterval: Duration(30 * time.Second),
+					RefreshInterval: Duration(5 * time.Minute),
 				},
 			},
 
