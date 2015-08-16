@@ -37,6 +37,7 @@ import (
 func (p *persistence) recoverFromCrash(fingerprintToSeries map[clientmodel.Fingerprint]*memorySeries) error {
 	// TODO(beorn): We need proper tests for the crash recovery.
 	log.Warn("Starting crash recovery. Prometheus is inoperational until complete.")
+	log.Warn("To avoid crash recovery in future, shutdown Prometheus with SIGTERM or a HTTP POST to /-/quit.")
 
 	fpsSeen := map[clientmodel.Fingerprint]struct{}{}
 	count := 0
