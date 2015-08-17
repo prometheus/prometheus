@@ -92,6 +92,25 @@ func TestRelabel(t *testing.T) {
 		},
 		{
 			input: clientmodel.LabelSet{
+				"a": "abc",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: clientmodel.LabelNames{"a"},
+					Regex:        &config.Regexp{*regexp.MustCompile("(b)")},
+					TargetLabel:  clientmodel.LabelName("d"),
+					Separator:    ";",
+					Replacement:  "$1",
+					Action:       config.RelabelReplace,
+				},
+			},
+			output: clientmodel.LabelSet{
+				"a": "abc",
+				"d": "b",
+			},
+		},
+		{
+			input: clientmodel.LabelSet{
 				"a": "foo",
 			},
 			relabel: []*config.RelabelConfig{

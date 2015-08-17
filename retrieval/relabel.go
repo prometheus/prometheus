@@ -47,12 +47,13 @@ func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmode
 			return nil, nil
 		}
 	case config.RelabelReplace:
+		indexes := cfg.Regex.FindStringSubmatchIndex(val)
 		// If there is no match no replacement must take place.
-		if !cfg.Regex.MatchString(val) {
+		if indexes == nil {
 			break
 		}
-		res := cfg.Regex.ReplaceAllString(val, cfg.Replacement)
-		if res == "" {
+		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
+		if len(res) == 0 {
 			delete(labels, cfg.TargetLabel)
 		} else {
 			labels[cfg.TargetLabel] = clientmodel.LabelValue(res)
