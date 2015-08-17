@@ -613,6 +613,16 @@ func (ev *evaluator) evalMatrixBounds(e Expr) Matrix {
 	return ev.matrixSelectorBounds(ms)
 }
 
+// evalString attempts to evaluate e to a string value and errors otherwise.
+func (ev *evaluator) evalString(e Expr) *String {
+	val := ev.eval(e)
+	sv, ok := val.(*String)
+	if !ok {
+		ev.errorf("expected string but got %s", val.Type())
+	}
+	return sv
+}
+
 // evalOneOf evaluates e and errors unless the result is of one of the given types.
 func (ev *evaluator) evalOneOf(e Expr, t1, t2 ExprType) Value {
 	val := ev.eval(e)

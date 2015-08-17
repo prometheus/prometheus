@@ -16,6 +16,7 @@ package promql
 import (
 	"container/heap"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"time"
@@ -603,6 +604,50 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 	return out
 }
 
+// === label_replace(vector ExprVector, dst_label, replacement, src_labelname, regex ExprString) Vector ===
+func funcLabelReplace(ev *evaluator, args Expressions) Value {
+	var (
+		vector   = ev.evalVector(args[0])
+		dst      = clientmodel.LabelName(ev.evalString(args[1]).Value)
+		repl     = ev.evalString(args[2]).Value
+		src      = clientmodel.LabelName(ev.evalString(args[3]).Value)
+		regexStr = ev.evalString(args[4]).Value
+	)
+
+	regex, err := regexp.Compile(regexStr)
+	if err != nil {
+		ev.errorf("invalid regular expression in label_replace(): %s", regexStr)
+	}
+	if !clientmodel.LabelNameRE.MatchString(string(dst)) {
+		ev.errorf("invalid destination label name in label_replace(): %s", dst)
+	}
+
+	outSet := make(map[clientmodel.Fingerprint]struct{}, len(vector))
+	for _, el := range vector {
+		srcVal := string(el.Metric.Metric[src])
+		indexes := regex.FindStringSubmatchIndex(srcVal)
+		// If there is no match, no replacement should take place.
+		if indexes == nil {
+			continue
+		}
+		res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
+		if len(res) == 0 {
+			el.Metric.Delete(dst)
+		} else {
+			el.Metric.Set(dst, clientmodel.LabelValue(res))
+		}
+
+		fp := el.Metric.Metric.Fingerprint()
+		if _, exists := outSet[fp]; exists {
+			ev.errorf("duplicated label set in output of label_replace(): %s", el.Metric.Metric)
+		} else {
+			outSet[fp] = struct{}{}
+		}
+	}
+
+	return vector
+}
+
 var functions = map[string]*Function{
 	"abs": {
 		Name:       "abs",
@@ -694,6 +739,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []ExprType{ExprScalar, ExprVector},
 		ReturnType: ExprVector,
 		Call:       funcHistogramQuantile,
+	},
+	"label_replace": {
+		Name:       "label_replace",
+		ArgTypes:   []ExprType{ExprVector, ExprString, ExprString, ExprString, ExprString},
+		ReturnType: ExprVector,
+		Call:       funcLabelReplace,
 	},
 	"ln": {
 		Name:       "ln",
