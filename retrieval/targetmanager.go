@@ -545,6 +545,7 @@ func (sd *StaticProvider) Run(ch chan<- *config.TargetGroup, done <-chan struct{
 		case ch <- tg:
 		}
 	}
+	<-done
 }
 
 // TargetGroups returns the provider's target groups.
