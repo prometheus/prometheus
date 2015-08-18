@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,6 +28,7 @@ import (
 
 	clientmodel "github.com/prometheus/client_golang/model"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -74,8 +76,8 @@ type httpPoster interface {
 // NotificationHandler is responsible for dispatching alert notifications to an
 // alert manager service.
 type NotificationHandler struct {
-	// The URL of the alert manager to send notifications to.
-	alertmanagerURL string
+	// The URLs of the alert managers to send notifications to.
+	alertmanagerURLs []string
 	// Buffer of notifications that have not yet been sent.
 	pendingNotifications chan NotificationReqs
 	// HTTP client with custom timeout settings.
@@ -88,19 +90,18 @@ type NotificationHandler struct {
 	notificationsQueueCapacity prometheus.Metric
 
 	stopped chan struct{}
+	mtx     sync.RWMutex
 }
 
 // NotificationHandlerOptions are the configurable parameters of a NotificationHandler.
 type NotificationHandlerOptions struct {
-	AlertmanagerURL string
-	QueueCapacity   int
-	Deadline        time.Duration
+	QueueCapacity int
+	Deadline      time.Duration
 }
 
 // NewNotificationHandler constructs a new NotificationHandler.
 func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler {
 	return &NotificationHandler{
-		alertmanagerURL:      strings.TrimRight(o.AlertmanagerURL, "/"),
 		pendingNotifications: make(chan NotificationReqs, o.QueueCapacity),
 
 		httpClient: httputil.NewDeadlineClient(o.Deadline, nil),
@@ -142,8 +143,29 @@ func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler 
 	}
 }
 
+// ApplyConfig updates the notification handler's state as the config requires.
+func (n *NotificationHandler) ApplyConfig(conf *config.Config) bool {
+	n.mtx.Lock()
+	defer n.mtx.Unlock()
+
+	var amURLs []string
+	for _, au := range conf.AlertmanagerURLs {
+		amURLs = append(amURLs, strings.TrimRight(au, "/"))
+	}
+	n.alertmanagerURLs = amURLs
+
+	return true
+}
+
 // Send a list of notifications to the configured alert manager.
 func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
+	n.mtx.RLock()
+	defer n.mtx.RUnlock()
+
+	if len(n.alertmanagerURLs) == 0 {
+		return nil
+	}
+
 	alerts := make([]map[string]interface{}, 0, len(reqs))
 	for _, req := range reqs {
 		alerts = append(alerts, map[string]interface{}{
@@ -163,9 +185,10 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	if err != nil {
 		return err
 	}
-	log.Debugln("Sending notifications to alertmanager:", string(buf))
+	log.Debugf("Sending notifications to alertmanager: %s", buf)
+
 	resp, err := n.httpClient.Post(
-		n.alertmanagerURL+alertmanagerAPIEventsPath,
+		n.alertmanagerURLs[0]+alertmanagerAPIEventsPath,
 		contentTypeJSON,
 		bytes.NewBuffer(buf),
 	)
@@ -185,7 +208,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 // Run dispatches notifications continuously.
 func (n *NotificationHandler) Run() {
 	for reqs := range n.pendingNotifications {
-		if n.alertmanagerURL == "" {
+		if len(n.alertmanagerURLs) == 0 {
 			log.Warn("No alert manager configured, not dispatching notification")
 			n.notificationDropped.Inc()
 			continue

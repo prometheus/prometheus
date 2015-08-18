@@ -148,9 +148,10 @@ func (u URL) MarshalYAML() (interface{}, error) {
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig  GlobalConfig    `yaml:"global"`
-	RuleFiles     []string        `yaml:"rule_files,omitempty"`
-	ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	GlobalConfig     GlobalConfig    `yaml:"global"`
+	AlertmanagerURLs []string        `yaml:"alertmanagers,omitempty"`
+	RuleFiles        []string        `yaml:"rule_files,omitempty"`
+	ScrapeConfigs    []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -222,6 +223,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// We have to restore it here.
 	if c.GlobalConfig.isZero() {
 		c.GlobalConfig = DefaultGlobalConfig
+	}
+
+	if len(c.AlertmanagerURLs) > 1 {
+		return fmt.Errorf("only one Alertmanager must be configured. (will change in the future)")
 	}
 
 	for _, rf := range c.RuleFiles {

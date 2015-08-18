@@ -48,11 +48,12 @@ type testNotificationScenario struct {
 
 func (s *testNotificationScenario) test(i int, t *testing.T) {
 	h := NewNotificationHandler(&NotificationHandlerOptions{
-		AlertmanagerURL: "alertmanager_url",
-		QueueCapacity:   0,
-		Deadline:        10 * time.Second,
+		QueueCapacity: 0,
+		Deadline:      10 * time.Second,
 	})
 	defer h.Stop()
+
+	h.alertmanagerURLs = []string{"alertmanager_url"}
 
 	receivedPost := make(chan bool, 1)
 	poster := testHTTPPoster{receivedPost: receivedPost}
