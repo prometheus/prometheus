@@ -49,9 +49,17 @@ func TestClient(t *testing.T) {
 			Timestamp: clientmodel.Timestamp(123456789123),
 			Value:     clientmodel.SampleValue(math.NaN()),
 		},
+		{
+			Metric: clientmodel.Metric{
+				clientmodel.MetricNameLabel: "testmetric",
+				"test_label":                "test_label_value3",
+			},
+			Timestamp: clientmodel.Timestamp(123456789124),
+			Value:     6,
+		},
 	}
 
-	expectedJSON := `{"database":"prometheus","retentionPolicy":"default","points":[{"timestamp":123456789123000000,"precision":"n","name":"testmetric","tags":{"test_label":"test_label_value1"},"fields":{"value":"1.23"}},{"timestamp":123456789123000000,"precision":"n","name":"testmetric","tags":{"test_label":"test_label_value2"},"fields":{"value":"5.1234"}}]}`
+	expectedLine := "testmetric,test_label=test_label_value1 value=1.23 123456789123000000\ntestmetric,test_label=test_label_value2 value=5.1234 123456789123000000\ntestmetric,test_label=test_label_value3 value=6.0 123456789124000000"
 
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -65,17 +73,18 @@ func TestClient(t *testing.T) {
 			if len(ct) != 1 {
 				t.Fatalf("Unexpected number of 'Content-Type' headers; got %d, want 1", len(ct))
 			}
-			if ct[0] != contentTypeJSON {
-				t.Fatalf("Unexpected 'Content-type'; expected %s, got %s", contentTypeJSON, ct[0])
+			if ct[0] != contentTypeDefault {
+				t.Fatalf("Unexpected 'Content-type'; expected %s, got %s", contentTypeDefault, ct[0])
 			}
 			b, err := ioutil.ReadAll(r.Body)
 			if err != nil {
 				t.Fatalf("Error reading body: %s", err)
 			}
 
-			if string(b) != expectedJSON {
-				t.Fatalf("Unexpected request body; expected:\n\n%s\n\ngot:\n\n%s", expectedJSON, string(b))
+			if string(b) != expectedLine {
+				t.Fatalf("Unexpected request body; expected:\n\n%s\n\ngot:\n\n%s", expectedLine, string(b))
 			}
+			w.WriteHeader(http.StatusNoContent)
 		},
 	))
 	defer server.Close()

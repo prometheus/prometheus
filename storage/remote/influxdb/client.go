@@ -15,12 +15,13 @@ package influxdb
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/log"
@@ -31,8 +32,9 @@ import (
 )
 
 const (
-	writeEndpoint   = "/write"
-	contentTypeJSON = "application/json"
+	writeEndpoint      = "/write"
+	contentTypeDefault = "application/x-www-form-urlencoded"
+	contentTypeJSON    = "application/json"
 )
 
 // Client allows sending batches of Prometheus samples to InfluxDB.
@@ -53,26 +55,20 @@ func NewClient(url string, timeout time.Duration, database, retentionPolicy stri
 	}
 }
 
-// StoreSamplesRequest is used for building a JSON request for storing samples
+// StoreSamplesRequest is used for building a line protocol request for storing samples
 // in InfluxDB.
 type StoreSamplesRequest struct {
-	Database        string  `json:"database"`
-	RetentionPolicy string  `json:"retentionPolicy"`
-	Points          []point `json:"points"`
+	Database        string
+	RetentionPolicy string
+	Points          []point
 }
 
 // point represents a single InfluxDB measurement.
 type point struct {
-	Timestamp int64                  `json:"timestamp"`
-	Precision string                 `json:"precision"`
-	Name      clientmodel.LabelValue `json:"name"`
-	Tags      clientmodel.LabelSet   `json:"tags"`
-	Fields    fields                 `json:"fields"`
-}
-
-// fields represents the fields/columns sent to InfluxDB for a given measurement.
-type fields struct {
-	Value clientmodel.SampleValue `json:"value"`
+	Time        int64
+	Measurement clientmodel.LabelValue
+	Tags        clientmodel.LabelSet
+	Value       float64
 }
 
 // tagsFromMetric extracts InfluxDB tags from a Prometheus metric.
@@ -85,6 +81,32 @@ func tagsFromMetric(m clientmodel.Metric) clientmodel.LabelSet {
 		tags[l] = v
 	}
 	return tags
+}
+
+// Convert float to a string with at least one decimal place
+func formatFloat(f float64) string {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if !strings.Contains(s, ".") {
+		s += ".0"
+	}
+	return s
+}
+
+// Convert points to Influxdb line protocol, buffer
+func pointsToLineProtocol(points []point) bytes.Buffer {
+	var pairs []string
+	for _, point := range points {
+		var line_s []string
+		line_s = append(line_s, string(point.Measurement))
+		for key, value := range point.Tags {
+			line_s = append(line_s, string(key)+"="+string(value))
+		}
+		var line = strings.Join(line_s, ",") + " value=" + formatFloat(point.Value) + " " + strconv.FormatInt(point.Time, 10)
+		pairs = append(pairs, line)
+	}
+	var b bytes.Buffer
+	b.WriteString(strings.Join(pairs, "\n"))
+	return b
 }
 
 // Store sends a batch of samples to InfluxDB via its HTTP API.
@@ -100,60 +122,51 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 		}
 		metric := s.Metric[clientmodel.MetricNameLabel]
 		points = append(points, point{
-			Timestamp: s.Timestamp.UnixNano(),
-			Precision: "n",
-			Name:      metric,
-			Tags:      tagsFromMetric(s.Metric),
-			Fields: fields{
-				Value: s.Value,
-			},
-		})
+			Time:        s.Timestamp.UnixNano(),
+			Measurement: metric,
+			Tags:        tagsFromMetric(s.Metric),
+			Value:       v,
+		},
+		)
 	}
 
+	// Construct the http request
 	u, err := url.Parse(c.url)
 	if err != nil {
 		return err
 	}
-
 	u.Path = writeEndpoint
+	values := u.Query()
+	values.Set("precision", "n")
+	values.Set("db", c.database)
+	values.Set("rp", c.retentionPolicy)
+	u.RawQuery = values.Encode()
 
-	req := StoreSamplesRequest{
-		Database:        c.database,
-		RetentionPolicy: c.retentionPolicy,
-		Points:          points,
-	}
-	buf, err := json.Marshal(req)
+	linesBuffer := pointsToLineProtocol(points)
+	req, err := http.NewRequest("POST", u.String(), &linesBuffer)
 	if err != nil {
 		return err
 	}
-
-	resp, err := c.httpClient.Post(
-		u.String(),
-		contentTypeJSON,
-		bytes.NewBuffer(buf),
-	)
+	req.Header.Set("Content-Type", contentTypeDefault)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	// API returns status code 200 for successful writes.
+	// API returns status code 204 for successful writes.
 	// http://influxdb.com/docs/v0.9/concepts/reading_and_writing_data.html#response
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
 
-	// API returns error details in the response content in JSON.
-	buf, err = ioutil.ReadAll(resp.Body)
+	// API returns error details in the response content as text.
+	buf, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
-	var r map[string]string
-	if err := json.Unmarshal(buf, &r); err != nil {
-		return err
-	}
-	return fmt.Errorf("failed to write samples into InfluxDB. Error: %s", r["error"])
+	return fmt.Errorf("failed to write samples into InfluxDB. Error CODE=%v: %s", resp.StatusCode, buf)
 }
 
 // Name identifies the client as an InfluxDB client.
