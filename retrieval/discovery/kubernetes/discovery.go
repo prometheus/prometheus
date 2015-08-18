@@ -64,6 +64,7 @@ const (
 	serviceEndpointsURL = apiPrefix + "/namespaces/%s/endpoints/%s"
 )
 
+// KubernetesDiscovery implements a TargetProvider for Kubernetes services.
 type KubernetesDiscovery struct {
 	client *http.Client
 	Conf   *config.KubernetesSDConfig
@@ -78,6 +79,7 @@ type KubernetesDiscovery struct {
 	runDone                  chan struct{}
 }
 
+// Initialize sets up the discovery for usage.
 func (kd *KubernetesDiscovery) Initialize() error {
 	client, err := newKubernetesHTTPClient(kd.Conf)
 
