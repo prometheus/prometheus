@@ -18,7 +18,6 @@
         <td>
           <div>
             <pre><code>{{.HTMLSnippet pathPrefix}}</code></pre>
-            <a href="#" class="silence_children_link">Silence all instances of this alert&hellip;</a>
           </div>
           {{if $activeAlerts}}
           <table class="table table-bordered table-hover table-condensed alert_elements_table">
@@ -39,7 +38,6 @@
               <td><span class="alert alert-{{ .State | alertStateToClass }} state_indicator text-uppercase">{{.State}}</span></td>
               <td>{{.ActiveSince.Time.UTC}}</td>
               <td>{{.Value}}</td>
-              <td><a href="#" class="silence_alert_link">Silence&hellip;</a></td>
             </tr>
             {{end}}
           </table>
