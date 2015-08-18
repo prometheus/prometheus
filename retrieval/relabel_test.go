@@ -1,6 +1,7 @@
 package retrieval
 
 import (
+	"crypto/md5"
 	"reflect"
 	"regexp"
 	"testing"
@@ -189,7 +190,7 @@ func TestRelabel(t *testing.T) {
 				"a": "foo",
 				"b": "bar",
 				"c": "baz",
-				"d": "976",
+				"d": "224",
 			},
 		},
 		{
@@ -246,6 +247,47 @@ func TestRelabel(t *testing.T) {
 
 		if !reflect.DeepEqual(res, test.output) {
 			t.Errorf("Test %d: relabel output mismatch: expected %#v, got %#v", i+1, test.output, res)
+		}
+	}
+}
+
+func TestSum64(t *testing.T) {
+	const modulo = 3
+
+	tests := map[string]string{
+		"foo":      "game1",
+		"bla":      "game2",
+		"barf":     "game3",
+		"noop":     "prodgame",
+		"stuff":    "game4",
+		"a":        "game5",
+		"grr":      "foogame",
+		"game":     "game6",
+		"actually": "game7",
+		"z":        "game8",
+		"z1":       "game9",
+		"0":        "game10",
+		"10":       "game11",
+		"hello":    "game12",
+		"goodbye":  "game13",
+	}
+	buckets := make(map[uint64]int)                // count how random this is
+	expected := (len(tests) * len(tests)) / modulo // we expect roughly this many values in each bucket
+
+	for k, _ := range tests {
+		for _, v1 := range tests {
+			mod := sum64(md5.Sum([]byte(k+v1))) % modulo
+			buckets[mod]++
+		}
+	}
+	for i, b := range buckets {
+		diff := b - expected
+		if diff < 0 {
+			diff = -diff
+		}
+		percent := (float64(diff) / float64(expected)) * 100.0
+		if percent > 10.0 {
+			t.Errorf("bucket %d, has %f % more elements than expected: %d", i, percent, expected)
 		}
 	}
 }
