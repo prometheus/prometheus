@@ -71,24 +71,73 @@ load 5m
 	testcounter_reset_middle	0+10x4 0+10x5
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 
-# Deriv should return the same as rate in simple cases.
+# deriv should return the same as rate in simple cases.
 eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[60m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[60m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
-# Deriv should return correct result.
+# deriv should return correct result.
 eval instant at 50m deriv(testcounter_reset_middle[100m])
 	{} 0.010606060606060607
 
-# Predict_linear should return correct result.
+# predict_linear should return correct result.
 eval instant at 50m predict_linear(testcounter_reset_middle[100m], 3600)
 	{} 88.181818181818185200
 
-# Predict_linear is syntactic sugar around deriv.
+# predict_linear is syntactic sugar around deriv.
 eval instant at 50m predict_linear(http_requests[50m], 3600) - (http_requests + deriv(http_requests[50m]) * 3600)
 	{group="canary", instance="1", job="app-server"} 0
 
 eval instant at 50m predict_linear(testcounter_reset_middle[100m], 3600) - (testcounter_reset_middle + deriv(testcounter_reset_middle[100m]) * 3600)
 	{} 0
+
+clear
+
+# Tests for label_replace.
+load 5m
+  testmetric{src="source-value-10",dst="original-destination-value"} 0
+  testmetric{src="source-value-20",dst="original-destination-value"} 1
+
+# label_replace does a substring match and replace.
+eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "value-(.*)")
+  testmetric{src="source-value-10",dst="destination-value-10"} 0
+  testmetric{src="source-value-20",dst="destination-value-20"} 1
+
+# label_replace works with multiple capture groups.
+eval instant at 0m label_replace(testmetric, "dst", "$1-value-$2", "src", "(.*)-value-(.*)")
+  testmetric{src="source-value-10",dst="source-value-10"} 0
+  testmetric{src="source-value-20",dst="source-value-20"} 1
+
+# label_replace does not overwrite the destination label if the source label
+# does not exist.
+eval instant at 0m label_replace(testmetric, "dst", "value-$1", "nonexistent-src", "source-value-(.*)")
+  testmetric{src="source-value-10",dst="original-destination-value"} 0
+  testmetric{src="source-value-20",dst="original-destination-value"} 1
+
+# label_replace overwrites the destination label if the source label is empty,
+# but matched.
+eval instant at 0m label_replace(testmetric, "dst", "value-$1", "nonexistent-src", "(.*)")
+  testmetric{src="source-value-10",dst="value-"} 0
+  testmetric{src="source-value-20",dst="value-"} 1
+
+# label_replace does not overwrite the destination label if the source label
+# is not matched.
+eval instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "non-matching-regex")
+  testmetric{src="source-value-10",dst="original-destination-value"} 0
+  testmetric{src="source-value-20",dst="original-destination-value"} 1
+
+# label_replace drops labels that are set to empty values.
+eval instant at 0m label_replace(testmetric, "dst", "", "dst", "")
+  testmetric{src="source-value-10"} 0
+  testmetric{src="source-value-20"} 1
+
+# label_replace fails when the regex is invalid.
+eval_fail instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "(.*")
+
+# label_replace fails when the destination label name is not a valid Prometheus label name.
+eval_fail instant at 0m label_replace(testmetric, "invalid-label-name", "", "src", "(.*)")
+
+# label_replace fails when there would be duplicated identical output label sets.
+eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
