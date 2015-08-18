@@ -80,14 +80,10 @@ func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmode
 	return labels, nil
 }
 
-// sum64 sums the md5 hash to an uint64.
-func sum64(hash [md5.Size]byte) uint64 {
-	var s uint64
-
-	for i, b := range hash {
-		shift := uint64((md5.Size - i - 1) * 8)
-
-		s |= uint64(b) << shift
+// sum xor-sums the md5 hash to an uint64.
+func sum64(hash [md5.Size]byte) (s uint64) {
+	for _, b := range hash {
+		s ^= uint64(b)
 	}
-	return s
+	return
 }
