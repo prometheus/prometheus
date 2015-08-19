@@ -48,9 +48,23 @@ func (rule RecordingRule) eval(timestamp clientmodel.Timestamp, engine *promql.E
 	if err != nil {
 		return nil, err
 	}
-	vector, err := query.Exec().Vector()
-	if err != nil {
-		return nil, err
+
+	result := query.Exec()
+	var vector promql.Vector
+	switch result.Value.(type) {
+	case promql.Vector:
+		vector, err = result.Vector()
+		if err != nil {
+			return nil, err
+		}
+	case *promql.Scalar:
+		scalar, err := result.Scalar()
+		if err != nil {
+			return nil, err
+		}
+		vector = promql.Vector{&promql.Sample{Value: scalar.Value, Timestamp: scalar.Timestamp}}
+	default:
+		return nil, fmt.Errorf("rule result is not a vector or scalar")
 	}
 
 	// Override the metric name and labels.

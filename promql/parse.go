@@ -1009,7 +1009,10 @@ func (p *parser) checkType(node Node) (typ ExprType) {
 		}
 
 	case *RecordStmt:
-		p.expectType(n.Expr, ExprVector, "record statement")
+		ty := p.checkType(n.Expr)
+		if ty != ExprVector && ty != ExprScalar {
+			p.errorf("record statement must have a valid expression of type vector or scalar but got %s", ty)
+		}
 
 	case Expressions:
 		for _, e := range n {

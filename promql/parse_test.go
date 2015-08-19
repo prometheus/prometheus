@@ -1207,10 +1207,20 @@ var testStatement = []struct {
 		expected: Statements{},
 	}, {
 		input: "foo = time()",
-		fail:  true,
+		expected: Statements{
+			&RecordStmt{
+				Name:   "foo",
+				Expr:   &Call{Func: mustGetFunction("time")},
+				Labels: nil,
+			}},
 	}, {
 		input: "foo = 1",
-		fail:  true,
+		expected: Statements{
+			&RecordStmt{
+				Name:   "foo",
+				Expr:   &NumberLiteral{1},
+				Labels: nil,
+			}},
 	}, {
 		input: "foo = bar[5m]",
 		fail:  true,
