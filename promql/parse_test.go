@@ -1428,7 +1428,7 @@ func TestParseSeries(t *testing.T) {
 	}
 }
 
-func TestRecoverRuntime(t *testing.T) {
+func TestRecoverParserRuntime(t *testing.T) {
 	var p *parser
 	var err error
 	defer p.recover(&err)
@@ -1442,7 +1442,7 @@ func TestRecoverRuntime(t *testing.T) {
 	}
 }
 
-func TestRecoverError(t *testing.T) {
+func TestRecoverParserError(t *testing.T) {
 	var p *parser
 	var err error
 	defer p.recover(&err)
