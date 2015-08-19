@@ -1,12 +1,9 @@
-# We use native code.
-
 sudo: false
 
 language: go
 
 go:
- - 1.1
+- 1.4
 
 script:
- - cd ${TRAVIS_BUILD_DIR}
- - bash -l ./travis-helper.sh
+- make -f Makefile
