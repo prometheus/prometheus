@@ -1,6 +1,7 @@
 package promql
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -177,5 +178,32 @@ func TestEngineShutdown(t *testing.T) {
 	}
 	if _, ok := res2.Err.(ErrQueryCanceled); !ok {
 		t.Fatalf("expected cancelation error, got %q", res2.Err)
+	}
+}
+
+func TestRecoverEvaluatorRuntime(t *testing.T) {
+	var ev *evaluator
+	var err error
+	defer ev.recover(&err)
+
+	// Cause a runtime panic.
+	var a []int
+	a[123] = 1
+
+	if err.Error() != "unexpected error" {
+		t.Fatalf("wrong error message: %q, expected %q", err, "unexpected error")
+	}
+}
+
+func TestRecoverEvaluatorError(t *testing.T) {
+	var ev *evaluator
+	var err error
+	defer ev.recover(&err)
+
+	e := fmt.Errorf("custom error")
+	panic(e)
+
+	if err.Error() != e.Error() {
+		t.Fatalf("wrong error message: %q, expected %q", err, e)
 	}
 }

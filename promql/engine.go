@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/log"
 	"golang.org/x/net/context"
 
 	clientmodel "github.com/prometheus/client_golang/model"
@@ -260,7 +261,7 @@ func contextDone(ctx context.Context, env string) error {
 	}
 }
 
-// Engine handles the liftetime of queries from beginning to end.
+// Engine handles the lifetime of queries from beginning to end.
 // It is connected to a storage.
 type Engine struct {
 	// The storage on which the engine operates.
@@ -554,11 +555,16 @@ func (ev *evaluator) error(err error) {
 func (ev *evaluator) recover(errp *error) {
 	e := recover()
 	if e != nil {
-		// Do not recover from runtime errors.
 		if _, ok := e.(runtime.Error); ok {
-			panic(e)
+			// Print the stack trace but do not inhibit the running application.
+			buf := make([]byte, 64<<10)
+			buf = buf[:runtime.Stack(buf, false)]
+
+			log.Errorf("parser panic: %v\n%s", e, buf)
+			*errp = fmt.Errorf("unexpected error")
+		} else {
+			*errp = e.(error)
 		}
-		*errp = e.(error)
 	}
 }
 
