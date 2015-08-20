@@ -59,11 +59,12 @@ type Handler struct {
 	apiLegacy  *legacy.API
 	federation *Federation
 
-	router     *route.Router
-	quitCh     chan struct{}
-	reloadCh   chan struct{}
-	options    *Options
-	statusInfo *PrometheusStatus
+	router      *route.Router
+	listenErrCh chan error
+	quitCh      chan struct{}
+	reloadCh    chan struct{}
+	options     *Options
+	statusInfo  *PrometheusStatus
 
 	muAlerts sync.Mutex
 }
@@ -110,11 +111,12 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router := route.New()
 
 	h := &Handler{
-		router:     router,
-		quitCh:     make(chan struct{}),
-		reloadCh:   make(chan struct{}),
-		options:    o,
-		statusInfo: status,
+		router:      router,
+		listenErrCh: make(chan error),
+		quitCh:      make(chan struct{}),
+		reloadCh:    make(chan struct{}),
+		options:     o,
+		statusInfo:  status,
 
 		ruleManager: rm,
 		queryEngine: qe,
@@ -179,11 +181,17 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	return h
 }
 
+// ListenError returns the receive-only channel that signals errors while starting the web server.
+func (h *Handler) ListenError() <-chan error {
+	return h.listenErrCh
+}
+
 // Quit returns the receive-only quit channel.
 func (h *Handler) Quit() <-chan struct{} {
 	return h.quitCh
 }
 
+// Reload returns the receive-only channel that signals configuration reload requests.
 func (h *Handler) Reload() <-chan struct{} {
 	return h.reloadCh
 }
@@ -191,15 +199,7 @@ func (h *Handler) Reload() <-chan struct{} {
 // Run serves the HTTP endpoints.
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
-
-	// If we cannot bind to a port, retry after 30 seconds.
-	for {
-		err := http.ListenAndServe(h.options.ListenAddress, h.router)
-		if err != nil {
-			log.Errorf("Could not listen on %s: %s", h.options.ListenAddress, err)
-		}
-		time.Sleep(30 * time.Second)
-	}
+	h.listenErrCh <- http.ListenAndServe(h.options.ListenAddress, h.router)
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
