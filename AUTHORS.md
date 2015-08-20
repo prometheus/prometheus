@@ -41,6 +41,7 @@ The following individuals have contributed code to this repository
 * Sam McLeod <sammcj@users.noreply.github.com>
 * Scott Worley <scottworley@scottworley.com>
 * Sergiusz 'q3k' Bazański <q3k@q3k.org>
+* Sharif Nassar <mrwacky42@gmail.com>
 * Sindre Myren <smyrman@gmail.com>
 * Stephan Erb <github@stephanerb.eu>
 * Stephen Shirley <kormat@gmail.com>
