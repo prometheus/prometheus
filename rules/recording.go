@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"html/template"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -27,11 +27,11 @@ import (
 type RecordingRule struct {
 	name   string
 	vector promql.Expr
-	labels clientmodel.LabelSet
+	labels model.LabelSet
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector promql.Expr, labels clientmodel.LabelSet) *RecordingRule {
+func NewRecordingRule(name string, vector promql.Expr, labels model.LabelSet) *RecordingRule {
 	return &RecordingRule{
 		name:   name,
 		vector: vector,
@@ -43,7 +43,7 @@ func NewRecordingRule(name string, vector promql.Expr, labels clientmodel.LabelS
 func (rule RecordingRule) Name() string { return rule.name }
 
 // eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) eval(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
+func (rule RecordingRule) eval(timestamp model.Time, engine *promql.Engine) (promql.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err
@@ -69,10 +69,10 @@ func (rule RecordingRule) eval(timestamp clientmodel.Timestamp, engine *promql.E
 
 	// Override the metric name and labels.
 	for _, sample := range vector {
-		sample.Metric.Set(clientmodel.MetricNameLabel, clientmodel.LabelValue(rule.name))
+		sample.Metric.Set(model.MetricNameLabel, model.LabelValue(rule.name))
 		for label, value := range rule.labels {
 			if value == "" {
-				sample.Metric.Delete(label)
+				sample.Metric.Del(label)
 			} else {
 				sample.Metric.Set(label, value)
 			}

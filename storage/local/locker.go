@@ -3,7 +3,7 @@ package local
 import (
 	"sync"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // fingerprintLocker allows locking individual fingerprints. To limit the number
@@ -33,11 +33,11 @@ func newFingerprintLocker(preallocatedMutexes int) *fingerprintLocker {
 }
 
 // Lock locks the given fingerprint.
-func (l *fingerprintLocker) Lock(fp clientmodel.Fingerprint) {
+func (l *fingerprintLocker) Lock(fp model.Fingerprint) {
 	l.fpMtxs[uint(fp)%l.numFpMtxs].Lock()
 }
 
 // Unlock unlocks the given fingerprint.
-func (l *fingerprintLocker) Unlock(fp clientmodel.Fingerprint) {
+func (l *fingerprintLocker) Unlock(fp model.Fingerprint) {
 	l.fpMtxs[uint(fp)%l.numFpMtxs].Unlock()
 }

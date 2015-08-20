@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notification"
@@ -81,7 +81,7 @@ type Rule interface {
 	// Name returns the name of the rule.
 	Name() string
 	// Eval evaluates the rule, including any associated recording or alerting actions.
-	eval(clientmodel.Timestamp, *promql.Engine) (promql.Vector, error)
+	eval(model.Time, *promql.Engine) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -179,7 +179,7 @@ func (m *Manager) Stop() {
 	m.done <- true
 }
 
-func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmodel.Timestamp) {
+func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp model.Time) {
 	activeAlerts := rule.ActiveAlerts()
 	if len(activeAlerts) == 0 {
 		return
@@ -199,7 +199,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 		}
 		tmplData := struct {
 			Labels map[string]string
-			Value  clientmodel.SampleValue
+			Value  model.SampleValue
 		}{
 			Labels: l,
 			Value:  aa.Value,
@@ -222,8 +222,8 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 			Summary:     expand(rule.summary),
 			Description: expand(rule.description),
 			Runbook:     rule.runbook,
-			Labels: aa.Labels.Merge(clientmodel.LabelSet{
-				alertNameLabel: clientmodel.LabelValue(rule.Name()),
+			Labels: aa.Labels.Merge(model.LabelSet{
+				alertNameLabel: model.LabelValue(rule.Name()),
 			}),
 			Value:        aa.Value,
 			ActiveSince:  aa.ActiveSince.Time(),
@@ -235,7 +235,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp clientmo
 }
 
 func (m *Manager) runIteration() {
-	now := clientmodel.Now()
+	now := model.Now()
 	wg := sync.WaitGroup{}
 
 	m.Lock()
@@ -274,7 +274,7 @@ func (m *Manager) runIteration() {
 			}
 
 			for _, s := range vector {
-				m.sampleAppender.Append(&clientmodel.Sample{
+				m.sampleAppender.Append(&model.Sample{
 					Metric:    s.Metric.Metric,
 					Value:     s.Value,
 					Timestamp: s.Timestamp,

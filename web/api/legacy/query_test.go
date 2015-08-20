@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 func TestParseTimestampOrNow(t *testing.T) {
@@ -33,7 +33,7 @@ func TestParseTimestampOrNow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %s; want nil", err)
 	}
-	expTS := clientmodel.TimestampFromUnixNano(1426956073123000000)
+	expTS := model.TimeFromUnixNano(1426956073123000000)
 	if !ts.Equal(expTS) {
 		t.Fatalf("ts = %v; want %v", ts, expTS)
 	}

@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
@@ -35,9 +35,9 @@ import (
 // query layer precisely without any change. Thus we round to seconds and then
 // add known-good digits after the decimal point which behave well in
 // parsing/re-formatting.
-var testTimestamp = clientmodel.TimestampFromTime(time.Now().Round(time.Second)).Add(124 * time.Millisecond)
+var testTimestamp = model.TimeFromUnix(time.Now().Round(time.Second).Unix()).Add(124 * time.Millisecond)
 
-func testNow() clientmodel.Timestamp {
+func testNow() model.Time {
 	return testTimestamp
 }
 
@@ -89,9 +89,9 @@ func TestQuery(t *testing.T) {
 
 	storage, closer := local.NewTestStorage(t, 1)
 	defer closer.Close()
-	storage.Append(&clientmodel.Sample{
-		Metric: clientmodel.Metric{
-			clientmodel.MetricNameLabel: "testmetric",
+	storage.Append(&model.Sample{
+		Metric: model.Metric{
+			model.MetricNameLabel: "testmetric",
 		},
 		Timestamp: testTimestamp,
 		Value:     0,

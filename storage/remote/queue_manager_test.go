@@ -17,16 +17,16 @@ import (
 	"sync"
 	"testing"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 type TestStorageClient struct {
-	receivedSamples clientmodel.Samples
-	expectedSamples clientmodel.Samples
+	receivedSamples model.Samples
+	expectedSamples model.Samples
 	wg              sync.WaitGroup
 }
 
-func (c *TestStorageClient) expectSamples(s clientmodel.Samples) {
+func (c *TestStorageClient) expectSamples(s model.Samples) {
 	c.expectedSamples = append(c.expectedSamples, s...)
 	c.wg.Add(len(s))
 }
@@ -40,7 +40,7 @@ func (c *TestStorageClient) waitForExpectedSamples(t *testing.T) {
 	}
 }
 
-func (c *TestStorageClient) Store(s clientmodel.Samples) error {
+func (c *TestStorageClient) Store(s model.Samples) error {
 	c.receivedSamples = append(c.receivedSamples, s...)
 	c.wg.Add(-len(s))
 	return nil
@@ -55,13 +55,13 @@ func TestSampleDelivery(t *testing.T) {
 	// batch timeout case.
 	n := maxSamplesPerSend * 2
 
-	samples := make(clientmodel.Samples, 0, n)
+	samples := make(model.Samples, 0, n)
 	for i := 0; i < n; i++ {
-		samples = append(samples, &clientmodel.Sample{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "test_metric",
+		samples = append(samples, &model.Sample{
+			Metric: model.Metric{
+				model.MetricNameLabel: "test_metric",
 			},
-			Value: clientmodel.SampleValue(i),
+			Value: model.SampleValue(i),
 		})
 	}
 

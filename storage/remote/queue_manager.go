@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 const (
@@ -47,7 +47,7 @@ const (
 // external timeseries database.
 type StorageClient interface {
 	// Store stores the given samples in the remote storage.
-	Store(clientmodel.Samples) error
+	Store(model.Samples) error
 	// Name identifies the remote storage implementation.
 	Name() string
 }
@@ -56,8 +56,8 @@ type StorageClient interface {
 // indicated by the provided StorageClient.
 type StorageQueueManager struct {
 	tsdb           StorageClient
-	queue          chan *clientmodel.Sample
-	pendingSamples clientmodel.Samples
+	queue          chan *model.Sample
+	pendingSamples model.Samples
 	sendSemaphore  chan bool
 	drained        chan bool
 
@@ -76,7 +76,7 @@ func NewStorageQueueManager(tsdb StorageClient, queueCapacity int) *StorageQueue
 
 	return &StorageQueueManager{
 		tsdb:          tsdb,
-		queue:         make(chan *clientmodel.Sample, queueCapacity),
+		queue:         make(chan *model.Sample, queueCapacity),
 		sendSemaphore: make(chan bool, maxConcurrentSends),
 		drained:       make(chan bool),
 
@@ -127,7 +127,7 @@ func NewStorageQueueManager(tsdb StorageClient, queueCapacity int) *StorageQueue
 // Append queues a sample to be sent to the remote storage. It drops the
 // sample on the floor if the queue is full. It implements
 // storage.SampleAppender.
-func (t *StorageQueueManager) Append(s *clientmodel.Sample) {
+func (t *StorageQueueManager) Append(s *model.Sample) {
 	select {
 	case t.queue <- s:
 	default:
@@ -165,7 +165,7 @@ func (t *StorageQueueManager) Collect(ch chan<- prometheus.Metric) {
 	ch <- t.queueCapacity
 }
 
-func (t *StorageQueueManager) sendSamples(s clientmodel.Samples) {
+func (t *StorageQueueManager) sendSamples(s model.Samples) {
 	t.sendSemaphore <- true
 	defer func() {
 		<-t.sendSemaphore

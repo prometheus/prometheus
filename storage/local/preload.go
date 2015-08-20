@@ -16,7 +16,7 @@ package local
 import (
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // memorySeriesPreloader is a Preloader for the memorySeriesStorage.
@@ -27,8 +27,8 @@ type memorySeriesPreloader struct {
 
 // PreloadRange implements Preloader.
 func (p *memorySeriesPreloader) PreloadRange(
-	fp clientmodel.Fingerprint,
-	from clientmodel.Timestamp, through clientmodel.Timestamp,
+	fp model.Fingerprint,
+	from model.Time, through model.Time,
 	stalenessDelta time.Duration,
 ) error {
 	cds, err := p.storage.preloadChunksForRange(fp, from, through, stalenessDelta)
@@ -41,7 +41,7 @@ func (p *memorySeriesPreloader) PreloadRange(
 
 /*
 // MetricAtTime implements Preloader.
-func (p *memorySeriesPreloader) MetricAtTime(fp clientmodel.Fingerprint, t clientmodel.Timestamp) error {
+func (p *memorySeriesPreloader) MetricAtTime(fp model.Fingerprint, t model.Time) error {
 	cds, err := p.storage.preloadChunks(fp, &timeSelector{
 		from:    t,
 		through: t,
@@ -54,7 +54,7 @@ func (p *memorySeriesPreloader) MetricAtTime(fp clientmodel.Fingerprint, t clien
 }
 
 // MetricAtInterval implements Preloader.
-func (p *memorySeriesPreloader) MetricAtInterval(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval time.Duration) error {
+func (p *memorySeriesPreloader) MetricAtInterval(fp model.Fingerprint, from, through model.Time, interval time.Duration) error {
 	cds, err := p.storage.preloadChunks(fp, &timeSelector{
 		from:     from,
 		through:  through,
@@ -68,7 +68,7 @@ func (p *memorySeriesPreloader) MetricAtInterval(fp clientmodel.Fingerprint, fro
 }
 
 // MetricRange implements Preloader.
-func (p *memorySeriesPreloader) MetricRange(fp clientmodel.Fingerprint, t clientmodel.Timestamp, rangeDuration time.Duration) error {
+func (p *memorySeriesPreloader) MetricRange(fp model.Fingerprint, t model.Time, rangeDuration time.Duration) error {
 	cds, err := p.storage.preloadChunks(fp, &timeSelector{
 		from:          t,
 		through:       t,
@@ -82,7 +82,7 @@ func (p *memorySeriesPreloader) MetricRange(fp clientmodel.Fingerprint, t client
 }
 
 // MetricRangeAtInterval implements Preloader.
-func (p *memorySeriesPreloader) MetricRangeAtInterval(fp clientmodel.Fingerprint, from, through clientmodel.Timestamp, interval, rangeDuration time.Duration) error {
+func (p *memorySeriesPreloader) MetricRangeAtInterval(fp model.Fingerprint, from, through model.Time, interval, rangeDuration time.Duration) error {
 	cds, err := p.storage.preloadChunks(fp, &timeSelector{
 		from:          from,
 		through:       through,

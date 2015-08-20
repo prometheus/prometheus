@@ -31,8 +31,8 @@ import (
 	pprof_runtime "runtime/pprof"
 	template_text "text/template"
 
-	clientmodel "github.com/prometheus/client_golang/model"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
 
 	"github.com/prometheus/prometheus/config"
@@ -128,7 +128,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		apiLegacy: &legacy.API{
 			QueryEngine: qe,
 			Storage:     st,
-			Now:         clientmodel.Now,
+			Now:         model.Now,
 		},
 		federation: &Federation{
 			Storage: st,
@@ -257,7 +257,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		Path:      strings.TrimLeft(name, "/"),
 	}
 
-	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, clientmodel.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -351,7 +351,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 		"since":        time.Since,
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
-		"stripLabels": func(lset clientmodel.LabelSet, labels ...clientmodel.LabelName) clientmodel.LabelSet {
+		"stripLabels": func(lset model.LabelSet, labels ...model.LabelName) model.LabelSet {
 			for _, ln := range labels {
 				delete(lset, ln)
 			}
@@ -426,7 +426,7 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	tmpl := template.NewTemplateExpander(text, name, data, clientmodel.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(text, name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
 	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
 
 	result, err := tmpl.ExpandHTML(nil)

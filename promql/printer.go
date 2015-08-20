@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strings"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -27,14 +27,14 @@ import (
 func (matrix Matrix) String() string {
 	metricStrings := make([]string, 0, len(matrix))
 	for _, sampleStream := range matrix {
-		metricName, hasName := sampleStream.Metric.Metric[clientmodel.MetricNameLabel]
+		metricName, hasName := sampleStream.Metric.Metric[model.MetricNameLabel]
 		numLabels := len(sampleStream.Metric.Metric)
 		if hasName {
 			numLabels--
 		}
 		labelStrings := make([]string, 0, numLabels)
 		for label, value := range sampleStream.Metric.Metric {
-			if label != clientmodel.MetricNameLabel {
+			if label != model.MetricNameLabel {
 				labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", label, value))
 			}
 		}
@@ -233,7 +233,7 @@ func (node *VectorSelector) String() string {
 	labelStrings := make([]string, 0, len(node.LabelMatchers)-1)
 	for _, matcher := range node.LabelMatchers {
 		// Only include the __name__ label if its no equality matching.
-		if matcher.Name == clientmodel.MetricNameLabel && matcher.Type == metric.Equal {
+		if matcher.Name == model.MetricNameLabel && matcher.Type == metric.Equal {
 			continue
 		}
 		labelStrings = append(labelStrings, matcher.String())

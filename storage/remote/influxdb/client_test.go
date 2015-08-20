@@ -21,33 +21,33 @@ import (
 	"testing"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 func TestClient(t *testing.T) {
-	samples := clientmodel.Samples{
+	samples := model.Samples{
 		{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "testmetric",
-				"test_label":                "test_label_value1",
+			Metric: model.Metric{
+				model.MetricNameLabel: "testmetric",
+				"test_label":          "test_label_value1",
 			},
-			Timestamp: clientmodel.Timestamp(123456789123),
+			Timestamp: model.Time(123456789123),
 			Value:     1.23,
 		},
 		{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "testmetric",
-				"test_label":                "test_label_value2",
+			Metric: model.Metric{
+				model.MetricNameLabel: "testmetric",
+				"test_label":          "test_label_value2",
 			},
-			Timestamp: clientmodel.Timestamp(123456789123),
+			Timestamp: model.Time(123456789123),
 			Value:     5.1234,
 		},
 		{
-			Metric: clientmodel.Metric{
-				clientmodel.MetricNameLabel: "special_float_value",
+			Metric: model.Metric{
+				model.MetricNameLabel: "special_float_value",
 			},
-			Timestamp: clientmodel.Timestamp(123456789123),
-			Value:     clientmodel.SampleValue(math.NaN()),
+			Timestamp: model.Time(123456789123),
+			Value:     model.SampleValue(math.NaN()),
 		},
 	}
 

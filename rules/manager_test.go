@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 )
@@ -55,7 +55,7 @@ func TestAlertingRule(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
-		clientmodel.LabelSet{"severity": "critical"},
+		model.LabelSet{"severity": "critical"},
 		"summary", "description", "runbook",
 	)
 
@@ -95,7 +95,7 @@ func TestAlertingRule(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		evalTime := clientmodel.Timestamp(0).Add(test.time)
+		evalTime := model.Time(0).Add(test.time)
 
 		res, err := rule.eval(evalTime, suite.QueryEngine())
 		if err != nil {
@@ -131,7 +131,7 @@ func TestAlertingRule(t *testing.T) {
 	}
 }
 
-func annotateWithTime(lines []string, timestamp clientmodel.Timestamp) []string {
+func annotateWithTime(lines []string, timestamp model.Time) []string {
 	annotatedLines := []string{}
 	for _, line := range lines {
 		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp))
@@ -149,7 +149,7 @@ func TestTransferAlertState(t *testing.T) {
 
 	arule := AlertingRule{
 		name:         "test",
-		activeAlerts: map[clientmodel.Fingerprint]*Alert{},
+		activeAlerts: map[model.Fingerprint]*Alert{},
 	}
 	aruleCopy := arule
 
@@ -166,7 +166,7 @@ func TestTransferAlertState(t *testing.T) {
 	m.rules = []Rule{
 		&AlertingRule{
 			name:         "test_other",
-			activeAlerts: map[clientmodel.Fingerprint]*Alert{},
+			activeAlerts: map[model.Fingerprint]*Alert{},
 		},
 		&aruleCopy,
 	}

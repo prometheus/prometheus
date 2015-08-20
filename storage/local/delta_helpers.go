@@ -16,7 +16,7 @@ package local
 import (
 	"math"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 type deltaBytes byte
@@ -29,7 +29,7 @@ const (
 	d8 deltaBytes = 8
 )
 
-func bytesNeededForUnsignedTimestampDelta(deltaT clientmodel.Timestamp) deltaBytes {
+func bytesNeededForUnsignedTimestampDelta(deltaT model.Time) deltaBytes {
 	switch {
 	case deltaT > math.MaxUint32:
 		return d8
@@ -42,7 +42,7 @@ func bytesNeededForUnsignedTimestampDelta(deltaT clientmodel.Timestamp) deltaByt
 	}
 }
 
-func bytesNeededForSignedTimestampDelta(deltaT clientmodel.Timestamp) deltaBytes {
+func bytesNeededForSignedTimestampDelta(deltaT model.Time) deltaBytes {
 	switch {
 	case deltaT > math.MaxInt32 || deltaT < math.MinInt32:
 		return d8
@@ -55,7 +55,7 @@ func bytesNeededForSignedTimestampDelta(deltaT clientmodel.Timestamp) deltaBytes
 	}
 }
 
-func bytesNeededForIntegerSampleValueDelta(deltaV clientmodel.SampleValue) deltaBytes {
+func bytesNeededForIntegerSampleValueDelta(deltaV model.SampleValue) deltaBytes {
 	switch {
 	case deltaV < math.MinInt32 || deltaV > math.MaxInt32:
 		return d8
@@ -78,7 +78,7 @@ func max(a, b deltaBytes) deltaBytes {
 }
 
 // isInt64 returns true if v can be represented as an int64.
-func isInt64(v clientmodel.SampleValue) bool {
+func isInt64(v model.SampleValue) bool {
 	// Note: Using math.Modf is slower than the conversion approach below.
-	return clientmodel.SampleValue(int64(v)) == v
+	return model.SampleValue(int64(v)) == v
 }

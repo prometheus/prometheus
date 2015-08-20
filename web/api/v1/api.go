@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
@@ -174,10 +174,10 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
 	name := route.Param(api.context(r), "name")
 
-	if !clientmodel.LabelNameRE.MatchString(name) {
+	if !model.LabelNameRE.MatchString(name) {
 		return nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}
 	}
-	vals := api.Storage.LabelValuesForLabelName(clientmodel.LabelName(name))
+	vals := api.Storage.LabelValuesForLabelName(model.LabelName(name))
 	sort.Sort(vals)
 
 	return vals, nil
@@ -188,7 +188,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
 	}
-	res := map[clientmodel.Fingerprint]clientmodel.COWMetric{}
+	res := map[model.Fingerprint]model.COWMetric{}
 
 	for _, lm := range r.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(lm)
@@ -200,7 +200,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		}
 	}
 
-	metrics := make([]clientmodel.Metric, 0, len(res))
+	metrics := make([]model.Metric, 0, len(res))
 	for _, met := range res {
 		metrics = append(metrics, met.Metric)
 	}
@@ -212,7 +212,7 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
 	}
-	fps := map[clientmodel.Fingerprint]struct{}{}
+	fps := map[model.Fingerprint]struct{}{}
 
 	for _, lm := range r.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(lm)
@@ -265,13 +265,13 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	w.Write(b)
 }
 
-func parseTime(s string) (clientmodel.Timestamp, error) {
+func parseTime(s string) (model.Time, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := int64(t * float64(time.Second))
-		return clientmodel.TimestampFromUnixNano(ts), nil
+		return model.TimeFromUnixNano(ts), nil
 	}
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return clientmodel.TimestampFromTime(t), nil
+		return model.TimeFromUnixNano(t.UnixNano()), nil
 	}
 	return 0, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }

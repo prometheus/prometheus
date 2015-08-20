@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -59,7 +59,7 @@ type AlertStmt struct {
 	Name        string
 	Expr        Expr
 	Duration    time.Duration
-	Labels      clientmodel.LabelSet
+	Labels      model.LabelSet
 	Summary     string
 	Description string
 	Runbook     string
@@ -72,7 +72,7 @@ type EvalStmt struct {
 
 	// The time boundaries for the evaluation. If Start equals End an instant
 	// is evaluated.
-	Start, End clientmodel.Timestamp
+	Start, End model.Time
 	// Time between two evaluated instants for the range [Start:End].
 	Interval time.Duration
 }
@@ -81,7 +81,7 @@ type EvalStmt struct {
 type RecordStmt struct {
 	Name   string
 	Expr   Expr
-	Labels clientmodel.LabelSet
+	Labels model.LabelSet
 }
 
 func (*AlertStmt) stmt()  {}
@@ -136,10 +136,10 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a vector.
 type AggregateExpr struct {
-	Op              itemType               // The used aggregation operation.
-	Expr            Expr                   // The vector expression over which is aggregated.
-	Grouping        clientmodel.LabelNames // The labels by which to group the vector.
-	KeepExtraLabels bool                   // Whether to keep extra labels common among result elements.
+	Op              itemType         // The used aggregation operation.
+	Expr            Expr             // The vector expression over which is aggregated.
+	Grouping        model.LabelNames // The labels by which to group the vector.
+	KeepExtraLabels bool             // Whether to keep extra labels common among result elements.
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -166,13 +166,13 @@ type MatrixSelector struct {
 	LabelMatchers metric.LabelMatchers
 
 	// The series iterators are populated at query analysis time.
-	iterators map[clientmodel.Fingerprint]local.SeriesIterator
-	metrics   map[clientmodel.Fingerprint]clientmodel.COWMetric
+	iterators map[model.Fingerprint]local.SeriesIterator
+	metrics   map[model.Fingerprint]model.COWMetric
 }
 
 // NumberLiteral represents a number.
 type NumberLiteral struct {
-	Val clientmodel.SampleValue
+	Val model.SampleValue
 }
 
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
@@ -200,8 +200,8 @@ type VectorSelector struct {
 	LabelMatchers metric.LabelMatchers
 
 	// The series iterators are populated at query analysis time.
-	iterators map[clientmodel.Fingerprint]local.SeriesIterator
-	metrics   map[clientmodel.Fingerprint]clientmodel.COWMetric
+	iterators map[model.Fingerprint]local.SeriesIterator
+	metrics   map[model.Fingerprint]model.COWMetric
 }
 
 func (e *AggregateExpr) Type() ExprType  { return ExprVector }
@@ -262,10 +262,10 @@ type VectorMatching struct {
 	Card VectorMatchCardinality
 	// On contains the labels which define equality of a pair
 	// of elements from the vectors.
-	On clientmodel.LabelNames
+	On model.LabelNames
 	// Include contains additional labels that should be included in
 	// the result from the side with the higher cardinality.
-	Include clientmodel.LabelNames
+	Include model.LabelNames
 }
 
 // A Visitor's Visit method is invoked for each node encountered by Walk.

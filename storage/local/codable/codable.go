@@ -37,7 +37,7 @@ import (
 	"io"
 	"sync"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -150,9 +150,9 @@ func decodeString(b byteReader) (string, error) {
 	return string(buf), nil
 }
 
-// A Metric is a clientmodel.Metric that implements
+// A Metric is a model.Metric that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
-type Metric clientmodel.Metric
+type Metric model.Metric
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (m Metric) MarshalBinary() ([]byte, error) {
@@ -196,16 +196,16 @@ func (m *Metric) UnmarshalFromReader(r byteReader) error {
 		if err != nil {
 			return err
 		}
-		(*m)[clientmodel.LabelName(ln)] = clientmodel.LabelValue(lv)
+		(*m)[model.LabelName(ln)] = model.LabelValue(lv)
 	}
 	return nil
 }
 
-// A Fingerprint is a clientmodel.Fingerprint that implements
+// A Fingerprint is a model.Fingerprint that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. The implementation
-// depends on clientmodel.Fingerprint to be convertible to uint64. It encodes
+// depends on model.Fingerprint to be convertible to uint64. It encodes
 // the fingerprint as a big-endian uint64.
-type Fingerprint clientmodel.Fingerprint
+type Fingerprint model.Fingerprint
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (fp Fingerprint) MarshalBinary() ([]byte, error) {
@@ -220,10 +220,10 @@ func (fp *Fingerprint) UnmarshalBinary(buf []byte) error {
 	return nil
 }
 
-// FingerprintSet is a map[clientmodel.Fingerprint]struct{} that
+// FingerprintSet is a map[model.Fingerprint]struct{} that
 // implements encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. Its
 // binary form is identical to that of Fingerprints.
-type FingerprintSet map[clientmodel.Fingerprint]struct{}
+type FingerprintSet map[model.Fingerprint]struct{}
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (fps FingerprintSet) MarshalBinary() ([]byte, error) {
@@ -247,15 +247,15 @@ func (fps *FingerprintSet) UnmarshalBinary(buf []byte) error {
 	*fps = make(FingerprintSet, numFPs)
 
 	for i := 0; i < int(numFPs); i++ {
-		(*fps)[clientmodel.Fingerprint(binary.BigEndian.Uint64(buf[offset+i*8:]))] = struct{}{}
+		(*fps)[model.Fingerprint(binary.BigEndian.Uint64(buf[offset+i*8:]))] = struct{}{}
 	}
 	return nil
 }
 
-// Fingerprints is a clientmodel.Fingerprints that implements
+// Fingerprints is a model.Fingerprints that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. Its binary form is
 // identical to that of FingerprintSet.
-type Fingerprints clientmodel.Fingerprints
+type Fingerprints model.Fingerprints
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (fps Fingerprints) MarshalBinary() ([]byte, error) {
@@ -277,7 +277,7 @@ func (fps *Fingerprints) UnmarshalBinary(buf []byte) error {
 	*fps = make(Fingerprints, numFPs)
 
 	for i := range *fps {
-		(*fps)[i] = clientmodel.Fingerprint(binary.BigEndian.Uint64(buf[offset+i*8:]))
+		(*fps)[i] = model.Fingerprint(binary.BigEndian.Uint64(buf[offset+i*8:]))
 	}
 	return nil
 }
@@ -309,14 +309,14 @@ func (lp *LabelPair) UnmarshalBinary(buf []byte) error {
 	if err != nil {
 		return err
 	}
-	lp.Name = clientmodel.LabelName(n)
-	lp.Value = clientmodel.LabelValue(v)
+	lp.Name = model.LabelName(n)
+	lp.Value = model.LabelValue(v)
 	return nil
 }
 
-// LabelName is a clientmodel.LabelName that implements
+// LabelName is a model.LabelName that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
-type LabelName clientmodel.LabelName
+type LabelName model.LabelName
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (l LabelName) MarshalBinary() ([]byte, error) {
@@ -338,10 +338,10 @@ func (l *LabelName) UnmarshalBinary(buf []byte) error {
 	return nil
 }
 
-// LabelValueSet is a map[clientmodel.LabelValue]struct{} that implements
+// LabelValueSet is a map[model.LabelValue]struct{} that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. Its binary form is
 // identical to that of LabelValues.
-type LabelValueSet map[clientmodel.LabelValue]struct{}
+type LabelValueSet map[model.LabelValue]struct{}
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (vs LabelValueSet) MarshalBinary() ([]byte, error) {
@@ -371,15 +371,15 @@ func (vs *LabelValueSet) UnmarshalBinary(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		(*vs)[clientmodel.LabelValue(v)] = struct{}{}
+		(*vs)[model.LabelValue(v)] = struct{}{}
 	}
 	return nil
 }
 
-// LabelValues is a clientmodel.LabelValues that implements
+// LabelValues is a model.LabelValues that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler. Its binary form is
 // identical to that of LabelValueSet.
-type LabelValues clientmodel.LabelValues
+type LabelValues model.LabelValues
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (vs LabelValues) MarshalBinary() ([]byte, error) {
@@ -409,7 +409,7 @@ func (vs *LabelValues) UnmarshalBinary(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		(*vs)[i] = clientmodel.LabelValue(v)
+		(*vs)[i] = model.LabelValue(v)
 	}
 	return nil
 }
@@ -417,7 +417,7 @@ func (vs *LabelValues) UnmarshalBinary(buf []byte) error {
 // TimeRange is used to define a time range and implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
 type TimeRange struct {
-	First, Last clientmodel.Timestamp
+	First, Last model.Time
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler.
@@ -443,7 +443,7 @@ func (tr *TimeRange) UnmarshalBinary(buf []byte) error {
 	if err != nil {
 		return err
 	}
-	tr.First = clientmodel.Timestamp(first)
-	tr.Last = clientmodel.Timestamp(last)
+	tr.First = model.Time(first)
+	tr.Last = model.Time(last)
 	return nil
 }

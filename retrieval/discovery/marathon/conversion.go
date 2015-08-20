@@ -16,7 +16,7 @@ package marathon
 import (
 	"fmt"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -34,12 +34,12 @@ func AppsToTargetGroups(apps *AppList) map[string]*config.TargetGroup {
 func createTargetGroup(app *App) *config.TargetGroup {
 	var (
 		targets = targetsForApp(app)
-		appName = clientmodel.LabelValue(app.ID)
-		image   = clientmodel.LabelValue(app.Container.Docker.Image)
+		appName = model.LabelValue(app.ID)
+		image   = model.LabelValue(app.Container.Docker.Image)
 	)
 	tg := &config.TargetGroup{
 		Targets: targets,
-		Labels: clientmodel.LabelSet{
+		Labels: model.LabelSet{
 			appLabel:   appName,
 			imageLabel: image,
 		},
@@ -48,19 +48,19 @@ func createTargetGroup(app *App) *config.TargetGroup {
 
 	for ln, lv := range app.Labels {
 		ln = appLabelPrefix + ln
-		tg.Labels[clientmodel.LabelName(ln)] = clientmodel.LabelValue(lv)
+		tg.Labels[model.LabelName(ln)] = model.LabelValue(lv)
 	}
 
 	return tg
 }
 
-func targetsForApp(app *App) []clientmodel.LabelSet {
-	targets := make([]clientmodel.LabelSet, 0, len(app.Tasks))
+func targetsForApp(app *App) []model.LabelSet {
+	targets := make([]model.LabelSet, 0, len(app.Tasks))
 	for _, t := range app.Tasks {
 		target := targetForTask(&t)
-		targets = append(targets, clientmodel.LabelSet{
-			clientmodel.AddressLabel: clientmodel.LabelValue(target),
-			taskLabel:                clientmodel.LabelValue(t.ID),
+		targets = append(targets, model.LabelSet{
+			model.AddressLabel: model.LabelValue(target),
+			taskLabel:          model.LabelValue(t.ID),
 		})
 	}
 	return targets

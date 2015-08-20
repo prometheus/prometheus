@@ -22,7 +22,7 @@ import (
 
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -74,7 +74,7 @@ func ParseExpr(input string) (Expr, error) {
 }
 
 // ParseMetric parses the input into a metric
-func ParseMetric(input string) (m clientmodel.Metric, err error) {
+func ParseMetric(input string) (m model.Metric, err error) {
 	p := newParser(input)
 	defer p.recover(&err)
 
@@ -103,7 +103,7 @@ func ParseMetricSelector(input string) (m metric.LabelMatchers, err error) {
 }
 
 // parseSeriesDesc parses the description of a time series.
-func parseSeriesDesc(input string) (clientmodel.Metric, []sequenceValue, error) {
+func parseSeriesDesc(input string) (model.Metric, []sequenceValue, error) {
 	p := newParser(input)
 	p.lex.seriesDesc = true
 
@@ -154,7 +154,7 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 
 // sequenceValue is an omittable value in a sequence of time series values.
 type sequenceValue struct {
-	value   clientmodel.SampleValue
+	value   model.SampleValue
 	omitted bool
 }
 
@@ -166,7 +166,7 @@ func (v sequenceValue) String() string {
 }
 
 // parseSeriesDesc parses a description of a time series into its metric and value sequence.
-func (p *parser) parseSeriesDesc() (m clientmodel.Metric, vals []sequenceValue, err error) {
+func (p *parser) parseSeriesDesc() (m model.Metric, vals []sequenceValue, err error) {
 	defer p.recover(&err)
 
 	m = p.metric()
@@ -203,7 +203,7 @@ func (p *parser) parseSeriesDesc() (m clientmodel.Metric, vals []sequenceValue, 
 		}
 		k := sign * p.number(p.expect(itemNumber, ctx).val)
 		vals = append(vals, sequenceValue{
-			value: clientmodel.SampleValue(k),
+			value: model.SampleValue(k),
 		})
 
 		// If there are no offset repetitions specified, proceed with the next value.
@@ -231,7 +231,7 @@ func (p *parser) parseSeriesDesc() (m clientmodel.Metric, vals []sequenceValue, 
 		for i := uint64(0); i < times; i++ {
 			k += offset
 			vals = append(vals, sequenceValue{
-				value: clientmodel.SampleValue(k),
+				value: model.SampleValue(k),
 			})
 		}
 	}
@@ -384,7 +384,7 @@ func (p *parser) alertStmt() *AlertStmt {
 		}
 	}
 
-	lset := clientmodel.LabelSet{}
+	lset := model.LabelSet{}
 	if p.peek().typ == itemWith {
 		p.expect(itemWith, ctx)
 		lset = p.labelSet()
@@ -447,7 +447,7 @@ func (p *parser) recordStmt() *RecordStmt {
 
 	name := p.expectOneOf(itemIdentifier, itemMetricIdentifier, ctx).val
 
-	var lset clientmodel.LabelSet
+	var lset model.LabelSet
 	if p.peek().typ == itemLeftBrace {
 		lset = p.labelSet()
 	}
@@ -638,7 +638,7 @@ func (p *parser) primaryExpr() Expr {
 	switch t := p.next(); {
 	case t.typ == itemNumber:
 		f := p.number(t.val)
-		return &NumberLiteral{clientmodel.SampleValue(f)}
+		return &NumberLiteral{model.SampleValue(f)}
 
 	case t.typ == itemString:
 		s := t.val[1 : len(t.val)-1]
@@ -673,15 +673,15 @@ func (p *parser) primaryExpr() Expr {
 //
 //		'(' <label_name>, ... ')'
 //
-func (p *parser) labels() clientmodel.LabelNames {
+func (p *parser) labels() model.LabelNames {
 	const ctx = "grouping opts"
 
 	p.expect(itemLeftParen, ctx)
 
-	labels := clientmodel.LabelNames{}
+	labels := model.LabelNames{}
 	for {
 		id := p.expect(itemIdentifier, ctx)
-		labels = append(labels, clientmodel.LabelName(id.val))
+		labels = append(labels, model.LabelName(id.val))
 
 		if p.peek().typ != itemComma {
 			break
@@ -705,7 +705,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	if !agop.typ.isAggregator() {
 		p.errorf("expected aggregation operator but got %s", agop)
 	}
-	var grouping clientmodel.LabelNames
+	var grouping model.LabelNames
 	var keepExtra bool
 
 	modifiersFirst := false
@@ -788,8 +788,8 @@ func (p *parser) call(name string) *Call {
 //
 //		'{' [ <labelname> '=' <match_string>, ... ] '}'
 //
-func (p *parser) labelSet() clientmodel.LabelSet {
-	set := clientmodel.LabelSet{}
+func (p *parser) labelSet() model.LabelSet {
+	set := model.LabelSet{}
 	for _, lm := range p.labelMatchers(itemEQL) {
 		set[lm.Name] = lm.Value
 	}
@@ -849,8 +849,8 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 
 		m, err := metric.NewLabelMatcher(
 			matchType,
-			clientmodel.LabelName(label.val),
-			clientmodel.LabelValue(val),
+			model.LabelName(label.val),
+			model.LabelValue(val),
 		)
 		if err != nil {
 			p.error(err)
@@ -875,9 +875,9 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 //		<label_set>
 //		<metric_identifier> [<label_set>]
 //
-func (p *parser) metric() clientmodel.Metric {
+func (p *parser) metric() model.Metric {
 	name := ""
-	m := clientmodel.Metric{}
+	m := model.Metric{}
 
 	t := p.peek().typ
 	if t == itemIdentifier || t == itemMetricIdentifier {
@@ -888,10 +888,10 @@ func (p *parser) metric() clientmodel.Metric {
 		p.errorf("missing metric name or metric selector")
 	}
 	if t == itemLeftBrace {
-		m = clientmodel.Metric(p.labelSet())
+		m = model.Metric(p.labelSet())
 	}
 	if name != "" {
-		m[clientmodel.MetricNameLabel] = clientmodel.LabelValue(name)
+		m[model.MetricNameLabel] = model.LabelValue(name)
 	}
 	return m
 }
@@ -912,15 +912,15 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 	// Metric name must not be set in the label matchers and before at the same time.
 	if name != "" {
 		for _, m := range matchers {
-			if m.Name == clientmodel.MetricNameLabel {
+			if m.Name == model.MetricNameLabel {
 				p.errorf("metric name must not be set twice: %q or %q", name, m.Value)
 			}
 		}
 		// Set name label matching.
 		matchers = append(matchers, &metric.LabelMatcher{
 			Type:  metric.Equal,
-			Name:  clientmodel.MetricNameLabel,
-			Value: clientmodel.LabelValue(name),
+			Name:  model.MetricNameLabel,
+			Value: model.LabelValue(name),
 		})
 	}
 

@@ -20,7 +20,7 @@ import (
 	"os"
 	"path"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -42,7 +42,7 @@ var (
 )
 
 // FingerprintMetricMapping is an in-memory map of fingerprints to metrics.
-type FingerprintMetricMapping map[clientmodel.Fingerprint]clientmodel.Metric
+type FingerprintMetricMapping map[model.Fingerprint]model.Metric
 
 // FingerprintMetricIndex models a database mapping fingerprints to metrics.
 type FingerprintMetricIndex struct {
@@ -83,7 +83,7 @@ func (i *FingerprintMetricIndex) UnindexBatch(mapping FingerprintMetricMapping) 
 // fingerprint is not an error. In that case, (nil, false, nil) is returned.
 //
 // This method is goroutine-safe.
-func (i *FingerprintMetricIndex) Lookup(fp clientmodel.Fingerprint) (metric clientmodel.Metric, ok bool, err error) {
+func (i *FingerprintMetricIndex) Lookup(fp model.Fingerprint) (metric model.Metric, ok bool, err error) {
 	ok, err = i.Get(codable.Fingerprint(fp), (*codable.Metric)(&metric))
 	return
 }
@@ -105,7 +105,7 @@ func NewFingerprintMetricIndex(basePath string) (*FingerprintMetricIndex, error)
 
 // LabelNameLabelValuesMapping is an in-memory map of label names to
 // label values.
-type LabelNameLabelValuesMapping map[clientmodel.LabelName]codable.LabelValueSet
+type LabelNameLabelValuesMapping map[model.LabelName]codable.LabelValueSet
 
 // LabelNameLabelValuesIndex is a KeyValueStore that maps existing label names
 // to all label values stored for that label name.
@@ -138,11 +138,11 @@ func (i *LabelNameLabelValuesIndex) IndexBatch(b LabelNameLabelValuesMapping) er
 }
 
 // Lookup looks up all label values for a given label name and returns them as
-// clientmodel.LabelValues (which is a slice). Looking up a non-existing label
+// model.LabelValues (which is a slice). Looking up a non-existing label
 // name is not an error. In that case, (nil, false, nil) is returned.
 //
 // This method is goroutine-safe.
-func (i *LabelNameLabelValuesIndex) Lookup(l clientmodel.LabelName) (values clientmodel.LabelValues, ok bool, err error) {
+func (i *LabelNameLabelValuesIndex) Lookup(l model.LabelName) (values model.LabelValues, ok bool, err error) {
 	ok, err = i.Get(codable.LabelName(l), (*codable.LabelValues)(&values))
 	return
 }
@@ -152,10 +152,10 @@ func (i *LabelNameLabelValuesIndex) Lookup(l clientmodel.LabelName) (values clie
 // (nil, false, nil) is returned.
 //
 // This method is goroutine-safe.
-func (i *LabelNameLabelValuesIndex) LookupSet(l clientmodel.LabelName) (values map[clientmodel.LabelValue]struct{}, ok bool, err error) {
+func (i *LabelNameLabelValuesIndex) LookupSet(l model.LabelName) (values map[model.LabelValue]struct{}, ok bool, err error) {
 	ok, err = i.Get(codable.LabelName(l), (*codable.LabelValueSet)(&values))
 	if values == nil {
-		values = map[clientmodel.LabelValue]struct{}{}
+		values = map[model.LabelValue]struct{}{}
 	}
 	return
 }
@@ -216,7 +216,7 @@ func (i *LabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintsMapping) e
 // returned.
 //
 // This method is goroutine-safe.
-func (i *LabelPairFingerprintIndex) Lookup(p metric.LabelPair) (fps clientmodel.Fingerprints, ok bool, err error) {
+func (i *LabelPairFingerprintIndex) Lookup(p metric.LabelPair) (fps model.Fingerprints, ok bool, err error) {
 	ok, err = i.Get((codable.LabelPair)(p), (*codable.Fingerprints)(&fps))
 	return
 }
@@ -226,10 +226,10 @@ func (i *LabelPairFingerprintIndex) Lookup(p metric.LabelPair) (fps clientmodel.
 // returned.
 //
 // This method is goroutine-safe.
-func (i *LabelPairFingerprintIndex) LookupSet(p metric.LabelPair) (fps map[clientmodel.Fingerprint]struct{}, ok bool, err error) {
+func (i *LabelPairFingerprintIndex) LookupSet(p metric.LabelPair) (fps map[model.Fingerprint]struct{}, ok bool, err error) {
 	ok, err = i.Get((codable.LabelPair)(p), (*codable.FingerprintSet)(&fps))
 	if fps == nil {
-		fps = map[clientmodel.Fingerprint]struct{}{}
+		fps = map[model.Fingerprint]struct{}{}
 	}
 	return
 }
@@ -266,7 +266,7 @@ type FingerprintTimeRangeIndex struct {
 // returned.
 //
 // This method is goroutine-safe.
-func (i *FingerprintTimeRangeIndex) Lookup(fp clientmodel.Fingerprint) (firstTime, lastTime clientmodel.Timestamp, ok bool, err error) {
+func (i *FingerprintTimeRangeIndex) Lookup(fp model.Fingerprint) (firstTime, lastTime model.Time, ok bool, err error) {
 	var tr codable.TimeRange
 	ok, err = i.Get(codable.Fingerprint(fp), &tr)
 	return tr.First, tr.Last, ok, err

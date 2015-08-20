@@ -20,7 +20,7 @@ import (
 
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval/discovery"
@@ -52,7 +52,7 @@ type TargetProvider interface {
 // target providers.
 type TargetManager struct {
 	mtx            sync.RWMutex
-	globalLabels   clientmodel.LabelSet
+	globalLabels   model.LabelSet
 	sampleAppender storage.SampleAppender
 	running        bool
 	done           chan struct{}
@@ -325,7 +325,7 @@ func (tm *TargetManager) Pools() map[string][]*Target {
 
 	for _, ts := range tm.targets {
 		for _, t := range ts {
-			job := string(t.BaseLabels()[clientmodel.JobLabel])
+			job := string(t.BaseLabels()[model.JobLabel])
 			pools[job] = append(pools[job], t)
 		}
 	}
@@ -452,7 +452,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 
 	targets := make([]*Target, 0, len(tg.Targets))
 	for i, labels := range tg.Targets {
-		addr := string(labels[clientmodel.AddressLabel])
+		addr := string(labels[model.AddressLabel])
 		// If no port was provided, infer it based on the used scheme.
 		if !strings.Contains(addr, ":") {
 			switch cfg.Scheme {
@@ -463,21 +463,21 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 			default:
 				panic(fmt.Errorf("targetsFromGroup: invalid scheme %q", cfg.Scheme))
 			}
-			labels[clientmodel.AddressLabel] = clientmodel.LabelValue(addr)
+			labels[model.AddressLabel] = model.LabelValue(addr)
 		}
 		for k, v := range cfg.Params {
 			if len(v) > 0 {
-				labels[clientmodel.LabelName(clientmodel.ParamLabelPrefix+k)] = clientmodel.LabelValue(v[0])
+				labels[model.LabelName(model.ParamLabelPrefix+k)] = model.LabelValue(v[0])
 			}
 		}
 		// Copy labels into the labelset for the target if they are not
 		// set already. Apply the labelsets in order of decreasing precedence.
-		labelsets := []clientmodel.LabelSet{
+		labelsets := []model.LabelSet{
 			tg.Labels,
 			{
-				clientmodel.SchemeLabel:      clientmodel.LabelValue(cfg.Scheme),
-				clientmodel.MetricsPathLabel: clientmodel.LabelValue(cfg.MetricsPath),
-				clientmodel.JobLabel:         clientmodel.LabelValue(cfg.JobName),
+				model.SchemeLabel:      model.LabelValue(cfg.Scheme),
+				model.MetricsPathLabel: model.LabelValue(cfg.MetricsPath),
+				model.JobLabel:         model.LabelValue(cfg.JobName),
 			},
 			tm.globalLabels,
 		}
@@ -489,7 +489,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 			}
 		}
 
-		if _, ok := labels[clientmodel.AddressLabel]; !ok {
+		if _, ok := labels[model.AddressLabel]; !ok {
 			return nil, fmt.Errorf("instance %d in target group %s has no address", i, tg)
 		}
 
@@ -507,7 +507,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 		for ln := range labels {
 			// Meta labels are deleted after relabelling. Other internal labels propagate to
 			// the target which decides whether they will be part of their label set.
-			if strings.HasPrefix(string(ln), clientmodel.MetaLabelPrefix) {
+			if strings.HasPrefix(string(ln), model.MetaLabelPrefix) {
 				delete(labels, ln)
 			}
 		}
