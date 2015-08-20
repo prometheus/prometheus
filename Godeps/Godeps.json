@@ -59,6 +59,10 @@
 			"Rev": "3a499bf7fc46bc58337ce612d0cbb29c550b8118"
 		},
 		{
+			"ImportPath": "github.com/prometheus/common/model",
+			"Rev": "2502df85be1b9482ed669faa6b7cfe7f850eb08e"
+		},
+		{
 			"ImportPath": "github.com/prometheus/client_model/go",
 			"Comment": "model-0.0.2-12-gfa8ad6f",
 			"Rev": "fa8ad6fec33561be4280a8f0514318c79d7f6cb6"
