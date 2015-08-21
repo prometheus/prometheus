@@ -157,6 +157,8 @@ func Main() int {
 		log.Warn("Received SIGTERM, exiting gracefully...")
 	case <-webHandler.Quit():
 		log.Warn("Received termination request via web service, exiting gracefully...")
+	case err := <-webHandler.ListenError():
+		log.Errorln("Error starting web server, exiting gracefully:", err)
 	}
 
 	log.Info("See you next time!")
