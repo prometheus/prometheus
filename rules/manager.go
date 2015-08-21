@@ -198,10 +198,10 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp model.Ti
 		}
 		tmplData := struct {
 			Labels map[string]string
-			Value  model.SampleValue
+			Value  float64
 		}{
 			Labels: l,
-			Value:  aa.Value,
+			Value:  float64(aa.Value),
 		}
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
