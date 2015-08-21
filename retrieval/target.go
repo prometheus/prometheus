@@ -38,12 +38,9 @@ import (
 )
 
 const (
-	// ScrapeHealthMetricName is the metric name for the synthetic health
-	// variable.
-	scrapeHealthMetricName model.LabelValue = "up"
-	// ScrapeTimeMetricName is the metric name for the synthetic scrape duration
-	// variable.
-	scrapeDurationMetricName model.LabelValue = "scrape_duration_seconds"
+	scrapeHealthMetricName   = "up"
+	scrapeDurationMetricName = "scrape_duration_seconds"
+
 	// Capacity of the channel to buffer samples during ingestion.
 	ingestedSamplesCap = 256
 
@@ -83,6 +80,13 @@ func (t TargetHealth) String() string {
 		return "unhealthy"
 	}
 	panic("unknown state")
+}
+
+func (t TargetHealth) value() model.SampleValue {
+	if t == HealthGood {
+		return 1
+	}
+	return 0
 }
 
 const (
@@ -565,17 +569,12 @@ func recordScrapeHealth(
 	healthMetric := make(model.Metric, len(baseLabels)+1)
 	durationMetric := make(model.Metric, len(baseLabels)+1)
 
-	healthMetric[model.MetricNameLabel] = model.LabelValue(scrapeHealthMetricName)
-	durationMetric[model.MetricNameLabel] = model.LabelValue(scrapeDurationMetricName)
+	healthMetric[model.MetricNameLabel] = scrapeHealthMetricName
+	durationMetric[model.MetricNameLabel] = scrapeDurationMetricName
 
-	for label, value := range baseLabels {
-		healthMetric[label] = value
-		durationMetric[label] = value
-	}
-
-	healthValue := model.SampleValue(0)
-	if health == HealthGood {
-		healthValue = model.SampleValue(1)
+	for ln, lv := range baseLabels {
+		healthMetric[ln] = lv
+		durationMetric[ln] = lv
 	}
 
 	ts := model.TimeFromUnixNano(timestamp.UnixNano())
@@ -583,7 +582,7 @@ func recordScrapeHealth(
 	healthSample := &model.Sample{
 		Metric:    healthMetric,
 		Timestamp: ts,
-		Value:     healthValue,
+		Value:     health.value(),
 	}
 	durationSample := &model.Sample{
 		Metric:    durationMetric,
