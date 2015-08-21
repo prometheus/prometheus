@@ -26,7 +26,7 @@ import (
 
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 )
@@ -44,7 +44,7 @@ func httpJSONError(w http.ResponseWriter, err error, code int) {
 	errorJSON(w, err)
 }
 
-func parseTimestampOrNow(t string, now clientmodel.Timestamp) (clientmodel.Timestamp, error) {
+func parseTimestampOrNow(t string, now model.Time) (model.Time, error) {
 	if t == "" {
 		return now, nil
 	}
@@ -53,7 +53,7 @@ func parseTimestampOrNow(t string, now clientmodel.Timestamp) (clientmodel.Times
 	if err != nil {
 		return 0, err
 	}
-	return clientmodel.TimestampFromUnixNano(int64(tFloat * float64(time.Second/time.Nanosecond))), nil
+	return model.TimeFromUnixNano(int64(tFloat * float64(time.Second/time.Nanosecond))), nil
 }
 
 func parseDuration(d string) (time.Duration, error) {
@@ -223,7 +223,7 @@ func (api *API) Metrics(w http.ResponseWriter, r *http.Request) {
 	setAccessControlHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
-	metricNames := api.Storage.LabelValuesForLabelName(clientmodel.MetricNameLabel)
+	metricNames := api.Storage.LabelValuesForLabelName(model.MetricNameLabel)
 	sort.Sort(metricNames)
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {

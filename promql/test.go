@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
@@ -40,7 +40,7 @@ var (
 )
 
 const (
-	testStartTime = clientmodel.Timestamp(0)
+	testStartTime = model.Time(0)
 	epsilon       = 0.000001 // Relative error allowed for sample values.
 	maxErrorCount = 10
 )
@@ -165,7 +165,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 		if f, err := parseNumber(defLine); err == nil {
-			cmd.expect(0, nil, sequenceValue{value: clientmodel.SampleValue(f)})
+			cmd.expect(0, nil, sequenceValue{value: model.SampleValue(f)})
 			break
 		}
 		metric, vals, err := parseSeriesDesc(defLine)
@@ -238,15 +238,15 @@ func (*evalCmd) testCmd()  {}
 // metrics into the storage.
 type loadCmd struct {
 	gap     time.Duration
-	metrics map[clientmodel.Fingerprint]clientmodel.Metric
-	defs    map[clientmodel.Fingerprint]metric.Values
+	metrics map[model.Fingerprint]model.Metric
+	defs    map[model.Fingerprint]metric.Values
 }
 
 func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
 		gap:     gap,
-		metrics: map[clientmodel.Fingerprint]clientmodel.Metric{},
-		defs:    map[clientmodel.Fingerprint]metric.Values{},
+		metrics: map[model.Fingerprint]model.Metric{},
+		defs:    map[model.Fingerprint]metric.Values{},
 	}
 }
 
@@ -255,7 +255,7 @@ func (cmd loadCmd) String() string {
 }
 
 // set a sequence of sample values for the given metric.
-func (cmd *loadCmd) set(m clientmodel.Metric, vals ...sequenceValue) {
+func (cmd *loadCmd) set(m model.Metric, vals ...sequenceValue) {
 	fp := m.Fingerprint()
 
 	samples := make(metric.Values, 0, len(vals))
@@ -278,7 +278,7 @@ func (cmd *loadCmd) append(a storage.SampleAppender) {
 	for fp, samples := range cmd.defs {
 		met := cmd.metrics[fp]
 		for _, smpl := range samples {
-			s := &clientmodel.Sample{
+			s := &model.Sample{
 				Metric:    met,
 				Value:     smpl.Value,
 				Timestamp: smpl.Timestamp,
@@ -292,14 +292,14 @@ func (cmd *loadCmd) append(a storage.SampleAppender) {
 // and expects a specific result.
 type evalCmd struct {
 	expr       Expr
-	start, end clientmodel.Timestamp
+	start, end model.Time
 	interval   time.Duration
 
 	instant       bool
 	fail, ordered bool
 
-	metrics  map[clientmodel.Fingerprint]clientmodel.Metric
-	expected map[clientmodel.Fingerprint]entry
+	metrics  map[model.Fingerprint]model.Metric
+	expected map[model.Fingerprint]entry
 }
 
 type entry struct {
@@ -311,7 +311,7 @@ func (e entry) String() string {
 	return fmt.Sprintf("%d: %s", e.pos, e.vals)
 }
 
-func newEvalCmd(expr Expr, start, end clientmodel.Timestamp, interval time.Duration) *evalCmd {
+func newEvalCmd(expr Expr, start, end model.Time, interval time.Duration) *evalCmd {
 	return &evalCmd{
 		expr:     expr,
 		start:    start,
@@ -319,8 +319,8 @@ func newEvalCmd(expr Expr, start, end clientmodel.Timestamp, interval time.Durat
 		interval: interval,
 		instant:  start == end && interval == 0,
 
-		metrics:  map[clientmodel.Fingerprint]clientmodel.Metric{},
-		expected: map[clientmodel.Fingerprint]entry{},
+		metrics:  map[model.Fingerprint]model.Metric{},
+		expected: map[model.Fingerprint]entry{},
 	}
 }
 
@@ -330,7 +330,7 @@ func (ev *evalCmd) String() string {
 
 // expect adds a new metric with a sequence of values to the set of expected
 // results for the query.
-func (ev *evalCmd) expect(pos int, m clientmodel.Metric, vals ...sequenceValue) {
+func (ev *evalCmd) expect(pos int, m model.Metric, vals ...sequenceValue) {
 	if m == nil {
 		ev.expected[0] = entry{pos: pos, vals: vals}
 		return
@@ -347,7 +347,7 @@ func (ev *evalCmd) compareResult(result Value) error {
 		if ev.instant {
 			return fmt.Errorf("received range result on instant evaluation")
 		}
-		seen := map[clientmodel.Fingerprint]bool{}
+		seen := map[model.Fingerprint]bool{}
 		for pos, v := range val {
 			fp := v.Metric.Metric.Fingerprint()
 			if _, ok := ev.metrics[fp]; !ok {
@@ -374,7 +374,7 @@ func (ev *evalCmd) compareResult(result Value) error {
 		if !ev.instant {
 			fmt.Errorf("received instant result on range evaluation")
 		}
-		seen := map[clientmodel.Fingerprint]bool{}
+		seen := map[model.Fingerprint]bool{}
 		for pos, v := range val {
 			fp := v.Metric.Metric.Fingerprint()
 			if _, ok := ev.metrics[fp]; !ok {

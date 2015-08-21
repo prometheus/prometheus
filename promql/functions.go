@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -36,10 +36,10 @@ type Function struct {
 	Call         func(ev *evaluator, args Expressions) Value
 }
 
-// === time() clientmodel.SampleValue ===
+// === time() model.SampleValue ===
 func funcTime(ev *evaluator, args Expressions) Value {
 	return &Scalar{
-		Value:     clientmodel.SampleValue(ev.Timestamp.Unix()),
+		Value:     model.SampleValue(ev.Timestamp.Unix()),
 		Timestamp: ev.Timestamp,
 	}
 }
@@ -65,8 +65,8 @@ func funcDelta(ev *evaluator, args Expressions) Value {
 			continue
 		}
 
-		counterCorrection := clientmodel.SampleValue(0)
-		lastValue := clientmodel.SampleValue(0)
+		counterCorrection := model.SampleValue(0)
+		lastValue := model.SampleValue(0)
 		for _, sample := range samples.Values {
 			currentValue := sample.Value
 			if isCounter && currentValue < lastValue {
@@ -90,7 +90,7 @@ func funcDelta(ev *evaluator, args Expressions) Value {
 		// them. Depending on how many samples are found under a target interval,
 		// the delta results are distorted and temporal aliasing occurs (ugly
 		// bumps). This effect is corrected for below.
-		intervalCorrection := clientmodel.SampleValue(targetInterval) / clientmodel.SampleValue(sampledInterval)
+		intervalCorrection := model.SampleValue(targetInterval) / model.SampleValue(sampledInterval)
 		resultValue *= intervalCorrection
 
 		resultSample := &Sample{
@@ -98,7 +98,7 @@ func funcDelta(ev *evaluator, args Expressions) Value {
 			Value:     resultValue,
 			Timestamp: ev.Timestamp,
 		}
-		resultSample.Metric.Delete(clientmodel.MetricNameLabel)
+		resultSample.Metric.Del(model.MetricNameLabel)
 		resultVector = append(resultVector, resultSample)
 	}
 	return resultVector
@@ -114,7 +114,7 @@ func funcRate(ev *evaluator, args Expressions) Value {
 	// matrix, such as looking at the samples themselves.
 	interval := args[0].(*MatrixSelector).Range
 	for i := range vector {
-		vector[i].Value /= clientmodel.SampleValue(interval / time.Second)
+		vector[i].Value /= model.SampleValue(interval / time.Second)
 	}
 	return vector
 }
@@ -191,10 +191,10 @@ func funcDropCommonLabels(ev *evaluator, args Expressions) Value {
 	if len(vector) < 1 {
 		return Vector{}
 	}
-	common := clientmodel.LabelSet{}
+	common := model.LabelSet{}
 	for k, v := range vector[0].Metric.Metric {
 		// TODO(julius): Should we also drop common metric names?
-		if k == clientmodel.MetricNameLabel {
+		if k == model.MetricNameLabel {
 			continue
 		}
 		common[k] = v
@@ -215,7 +215,7 @@ func funcDropCommonLabels(ev *evaluator, args Expressions) Value {
 	for _, el := range vector {
 		for k := range el.Metric.Metric {
 			if _, ok := common[k]; ok {
-				el.Metric.Delete(k)
+				el.Metric.Del(k)
 			}
 		}
 	}
@@ -235,8 +235,8 @@ func funcRound(ev *evaluator, args Expressions) Value {
 
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(math.Floor(float64(el.Value)*toNearestInverse+0.5) / toNearestInverse)
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Floor(float64(el.Value)*toNearestInverse+0.5) / toNearestInverse)
 	}
 	return vector
 }
@@ -245,20 +245,20 @@ func funcRound(ev *evaluator, args Expressions) Value {
 func funcScalar(ev *evaluator, args Expressions) Value {
 	v := ev.evalVector(args[0])
 	if len(v) != 1 {
-		return &Scalar{clientmodel.SampleValue(math.NaN()), ev.Timestamp}
+		return &Scalar{model.SampleValue(math.NaN()), ev.Timestamp}
 	}
-	return &Scalar{clientmodel.SampleValue(v[0].Value), ev.Timestamp}
+	return &Scalar{model.SampleValue(v[0].Value), ev.Timestamp}
 }
 
 // === count_scalar(vector ExprVector) model.SampleValue ===
 func funcCountScalar(ev *evaluator, args Expressions) Value {
 	return &Scalar{
-		Value:     clientmodel.SampleValue(len(ev.evalVector(args[0]))),
+		Value:     model.SampleValue(len(ev.evalVector(args[0]))),
 		Timestamp: ev.Timestamp,
 	}
 }
 
-func aggrOverTime(ev *evaluator, args Expressions, aggrFn func(metric.Values) clientmodel.SampleValue) Value {
+func aggrOverTime(ev *evaluator, args Expressions, aggrFn func(metric.Values) model.SampleValue) Value {
 	matrix := ev.evalMatrix(args[0])
 	resultVector := Vector{}
 
@@ -267,7 +267,7 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func(metric.Values) cl
 			continue
 		}
 
-		el.Metric.Delete(clientmodel.MetricNameLabel)
+		el.Metric.Del(model.MetricNameLabel)
 		resultVector = append(resultVector, &Sample{
 			Metric:    el.Metric,
 			Value:     aggrFn(el.Values),
@@ -279,19 +279,19 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func(metric.Values) cl
 
 // === avg_over_time(matrix ExprMatrix) Vector ===
 func funcAvgOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) clientmodel.SampleValue {
-		var sum clientmodel.SampleValue
+	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
+		var sum model.SampleValue
 		for _, v := range values {
 			sum += v.Value
 		}
-		return sum / clientmodel.SampleValue(len(values))
+		return sum / model.SampleValue(len(values))
 	})
 }
 
 // === count_over_time(matrix ExprMatrix) Vector ===
 func funcCountOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) clientmodel.SampleValue {
-		return clientmodel.SampleValue(len(values))
+	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
+		return model.SampleValue(len(values))
 	})
 }
 
@@ -299,38 +299,38 @@ func funcCountOverTime(ev *evaluator, args Expressions) Value {
 func funcFloor(ev *evaluator, args Expressions) Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(math.Floor(float64(el.Value)))
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Floor(float64(el.Value)))
 	}
 	return vector
 }
 
 // === max_over_time(matrix ExprMatrix) Vector ===
 func funcMaxOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) clientmodel.SampleValue {
+	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
 		max := math.Inf(-1)
 		for _, v := range values {
 			max = math.Max(max, float64(v.Value))
 		}
-		return clientmodel.SampleValue(max)
+		return model.SampleValue(max)
 	})
 }
 
 // === min_over_time(matrix ExprMatrix) Vector ===
 func funcMinOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) clientmodel.SampleValue {
+	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
 		min := math.Inf(1)
 		for _, v := range values {
 			min = math.Min(min, float64(v.Value))
 		}
-		return clientmodel.SampleValue(min)
+		return model.SampleValue(min)
 	})
 }
 
 // === sum_over_time(matrix ExprMatrix) Vector ===
 func funcSumOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) clientmodel.SampleValue {
-		var sum clientmodel.SampleValue
+	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
+		var sum model.SampleValue
 		for _, v := range values {
 			sum += v.Value
 		}
@@ -342,8 +342,8 @@ func funcSumOverTime(ev *evaluator, args Expressions) Value {
 func funcAbs(ev *evaluator, args Expressions) Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(math.Abs(float64(el.Value)))
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Abs(float64(el.Value)))
 	}
 	return vector
 }
@@ -353,17 +353,17 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 	if len(ev.evalVector(args[0])) > 0 {
 		return Vector{}
 	}
-	m := clientmodel.Metric{}
+	m := model.Metric{}
 	if vs, ok := args[0].(*VectorSelector); ok {
 		for _, matcher := range vs.LabelMatchers {
-			if matcher.Type == metric.Equal && matcher.Name != clientmodel.MetricNameLabel {
+			if matcher.Type == metric.Equal && matcher.Name != model.MetricNameLabel {
 				m[matcher.Name] = matcher.Value
 			}
 		}
 	}
 	return Vector{
 		&Sample{
-			Metric: clientmodel.COWMetric{
+			Metric: model.COWMetric{
 				Metric: m,
 				Copied: true,
 			},
@@ -377,8 +377,8 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 func funcCeil(ev *evaluator, args Expressions) Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(math.Ceil(float64(el.Value)))
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Ceil(float64(el.Value)))
 	}
 	return vector
 }
@@ -387,8 +387,8 @@ func funcCeil(ev *evaluator, args Expressions) Value {
 func funcExp(ev *evaluator, args Expressions) Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(math.Exp(float64(el.Value)))
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Exp(float64(el.Value)))
 	}
 	return vector
 }
@@ -397,8 +397,8 @@ func funcExp(ev *evaluator, args Expressions) Value {
 func funcSqrt(ev *evaluator, args Expressions) Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(math.Sqrt(float64(el.Value)))
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Sqrt(float64(el.Value)))
 	}
 	return vector
 }
@@ -407,8 +407,8 @@ func funcSqrt(ev *evaluator, args Expressions) Value {
 func funcLn(ev *evaluator, args Expressions) Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(math.Log(float64(el.Value)))
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Log(float64(el.Value)))
 	}
 	return vector
 }
@@ -417,8 +417,8 @@ func funcLn(ev *evaluator, args Expressions) Value {
 func funcLog2(ev *evaluator, args Expressions) Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(math.Log2(float64(el.Value)))
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Log2(float64(el.Value)))
 	}
 	return vector
 }
@@ -427,8 +427,8 @@ func funcLog2(ev *evaluator, args Expressions) Value {
 func funcLog10(ev *evaluator, args Expressions) Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
-		el.Metric.Delete(clientmodel.MetricNameLabel)
-		el.Value = clientmodel.SampleValue(math.Log10(float64(el.Value)))
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Log10(float64(el.Value)))
 	}
 	return vector
 }
@@ -446,13 +446,13 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 		}
 
 		// Least squares.
-		n := clientmodel.SampleValue(0)
-		sumY := clientmodel.SampleValue(0)
-		sumX := clientmodel.SampleValue(0)
-		sumXY := clientmodel.SampleValue(0)
-		sumX2 := clientmodel.SampleValue(0)
+		var (
+			n            model.SampleValue
+			sumX, sumY   model.SampleValue
+			sumXY, sumX2 model.SampleValue
+		)
 		for _, sample := range samples.Values {
-			x := clientmodel.SampleValue(sample.Timestamp.UnixNano() / 1e9)
+			x := model.SampleValue(sample.Timestamp.UnixNano() / 1e9)
 			n += 1.0
 			sumY += sample.Value
 			sumX += x
@@ -469,7 +469,7 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 			Value:     resultValue,
 			Timestamp: ev.Timestamp,
 		}
-		resultSample.Metric.Delete(clientmodel.MetricNameLabel)
+		resultSample.Metric.Del(model.MetricNameLabel)
 		resultVector = append(resultVector, resultSample)
 	}
 	return resultVector
@@ -478,16 +478,16 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 // === predict_linear(node ExprMatrix, k ExprScalar) Vector ===
 func funcPredictLinear(ev *evaluator, args Expressions) Value {
 	vector := funcDeriv(ev, args[0:1]).(Vector)
-	duration := clientmodel.SampleValue(clientmodel.SampleValue(ev.evalFloat(args[1])))
+	duration := model.SampleValue(model.SampleValue(ev.evalFloat(args[1])))
 
-	excludedLabels := map[clientmodel.LabelName]struct{}{
-		clientmodel.MetricNameLabel: {},
+	excludedLabels := map[model.LabelName]struct{}{
+		model.MetricNameLabel: {},
 	}
 
 	// Calculate predicted delta over the duration.
-	signatureToDelta := map[uint64]clientmodel.SampleValue{}
+	signatureToDelta := map[uint64]model.SampleValue{}
 	for _, el := range vector {
-		signature := clientmodel.SignatureWithoutLabels(el.Metric.Metric, excludedLabels)
+		signature := model.SignatureWithoutLabels(el.Metric.Metric, excludedLabels)
 		signatureToDelta[signature] = el.Value * duration
 	}
 
@@ -498,10 +498,10 @@ func funcPredictLinear(ev *evaluator, args Expressions) Value {
 		if len(samples.Values) < 2 {
 			continue
 		}
-		signature := clientmodel.SignatureWithoutLabels(samples.Metric.Metric, excludedLabels)
+		signature := model.SignatureWithoutLabels(samples.Metric.Metric, excludedLabels)
 		delta, ok := signatureToDelta[signature]
 		if ok {
-			samples.Metric.Delete(clientmodel.MetricNameLabel)
+			samples.Metric.Del(model.MetricNameLabel)
 			outVec = append(outVec, &Sample{
 				Metric:    samples.Metric,
 				Value:     delta + samples.Values[1].Value,
@@ -514,25 +514,25 @@ func funcPredictLinear(ev *evaluator, args Expressions) Value {
 
 // === histogram_quantile(k ExprScalar, vector ExprVector) Vector ===
 func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
-	q := clientmodel.SampleValue(ev.evalFloat(args[0]))
+	q := model.SampleValue(ev.evalFloat(args[0]))
 	inVec := ev.evalVector(args[1])
 
 	outVec := Vector{}
 	signatureToMetricWithBuckets := map[uint64]*metricWithBuckets{}
 	for _, el := range inVec {
 		upperBound, err := strconv.ParseFloat(
-			string(el.Metric.Metric[clientmodel.BucketLabel]), 64,
+			string(el.Metric.Metric[model.BucketLabel]), 64,
 		)
 		if err != nil {
 			// Oops, no bucket label or malformed label value. Skip.
 			// TODO(beorn7): Issue a warning somehow.
 			continue
 		}
-		signature := clientmodel.SignatureWithoutLabels(el.Metric.Metric, excludedLabels)
+		signature := model.SignatureWithoutLabels(el.Metric.Metric, excludedLabels)
 		mb, ok := signatureToMetricWithBuckets[signature]
 		if !ok {
-			el.Metric.Delete(clientmodel.BucketLabel)
-			el.Metric.Delete(clientmodel.MetricNameLabel)
+			el.Metric.Del(model.BucketLabel)
+			el.Metric.Del(model.MetricNameLabel)
 			mb = &metricWithBuckets{el.Metric, nil}
 			signatureToMetricWithBuckets[signature] = mb
 		}
@@ -542,7 +542,7 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 	for _, mb := range signatureToMetricWithBuckets {
 		outVec = append(outVec, &Sample{
 			Metric:    mb.metric,
-			Value:     clientmodel.SampleValue(quantile(q, mb.buckets)),
+			Value:     model.SampleValue(quantile(q, mb.buckets)),
 			Timestamp: ev.Timestamp,
 		})
 	}
@@ -557,7 +557,7 @@ func funcResets(ev *evaluator, args Expressions) Value {
 
 	for _, samples := range in {
 		resets := 0
-		prev := clientmodel.SampleValue(samples.Values[0].Value)
+		prev := model.SampleValue(samples.Values[0].Value)
 		for _, sample := range samples.Values[1:] {
 			current := sample.Value
 			if current < prev {
@@ -568,10 +568,10 @@ func funcResets(ev *evaluator, args Expressions) Value {
 
 		rs := &Sample{
 			Metric:    samples.Metric,
-			Value:     clientmodel.SampleValue(resets),
+			Value:     model.SampleValue(resets),
 			Timestamp: ev.Timestamp,
 		}
-		rs.Metric.Delete(clientmodel.MetricNameLabel)
+		rs.Metric.Del(model.MetricNameLabel)
 		out = append(out, rs)
 	}
 	return out
@@ -584,7 +584,7 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 
 	for _, samples := range in {
 		changes := 0
-		prev := clientmodel.SampleValue(samples.Values[0].Value)
+		prev := model.SampleValue(samples.Values[0].Value)
 		for _, sample := range samples.Values[1:] {
 			current := sample.Value
 			if current != prev {
@@ -595,10 +595,10 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 
 		rs := &Sample{
 			Metric:    samples.Metric,
-			Value:     clientmodel.SampleValue(changes),
+			Value:     model.SampleValue(changes),
 			Timestamp: ev.Timestamp,
 		}
-		rs.Metric.Delete(clientmodel.MetricNameLabel)
+		rs.Metric.Del(model.MetricNameLabel)
 		out = append(out, rs)
 	}
 	return out
@@ -608,9 +608,9 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 func funcLabelReplace(ev *evaluator, args Expressions) Value {
 	var (
 		vector   = ev.evalVector(args[0])
-		dst      = clientmodel.LabelName(ev.evalString(args[1]).Value)
+		dst      = model.LabelName(ev.evalString(args[1]).Value)
 		repl     = ev.evalString(args[2]).Value
-		src      = clientmodel.LabelName(ev.evalString(args[3]).Value)
+		src      = model.LabelName(ev.evalString(args[3]).Value)
 		regexStr = ev.evalString(args[4]).Value
 	)
 
@@ -618,11 +618,11 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 	if err != nil {
 		ev.errorf("invalid regular expression in label_replace(): %s", regexStr)
 	}
-	if !clientmodel.LabelNameRE.MatchString(string(dst)) {
+	if !model.LabelNameRE.MatchString(string(dst)) {
 		ev.errorf("invalid destination label name in label_replace(): %s", dst)
 	}
 
-	outSet := make(map[clientmodel.Fingerprint]struct{}, len(vector))
+	outSet := make(map[model.Fingerprint]struct{}, len(vector))
 	for _, el := range vector {
 		srcVal := string(el.Metric.Metric[src])
 		indexes := regex.FindStringSubmatchIndex(srcVal)
@@ -632,9 +632,9 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 		}
 		res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
 		if len(res) == 0 {
-			el.Metric.Delete(dst)
+			el.Metric.Del(dst)
 		} else {
-			el.Metric.Set(dst, clientmodel.LabelValue(res))
+			el.Metric.Set(dst, model.LabelValue(res))
 		}
 
 		fp := el.Metric.Metric.Fingerprint()

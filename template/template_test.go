@@ -17,7 +17,7 @@ import (
 	"math"
 	"testing"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
@@ -140,7 +140,7 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "+Inf:+Inf:+Inf:+Inf:-Inf:-Inf:-Inf:-Inf:NaN:NaN:NaN:NaN:",
 		},
 		{
-			// HumanizeTimestamp - clientmodel.SampleValue input.
+			// HumanizeTimestamp - model.SampleValue input.
 			text:   "{{ 1435065584.128 | humanizeTimestamp }}",
 			output: "2015-06-23 13:19:44.128 +0000 UTC",
 		},
@@ -172,20 +172,20 @@ func TestTemplateExpansion(t *testing.T) {
 		},
 	}
 
-	time := clientmodel.Timestamp(0)
+	time := model.Time(0)
 
 	storage, closer := local.NewTestStorage(t, 1)
 	defer closer.Close()
-	storage.Append(&clientmodel.Sample{
-		Metric: clientmodel.Metric{
-			clientmodel.MetricNameLabel: "metric",
-			"instance":                  "a"},
+	storage.Append(&model.Sample{
+		Metric: model.Metric{
+			model.MetricNameLabel: "metric",
+			"instance":            "a"},
 		Value: 11,
 	})
-	storage.Append(&clientmodel.Sample{
-		Metric: clientmodel.Metric{
-			clientmodel.MetricNameLabel: "metric",
-			"instance":                  "b"},
+	storage.Append(&model.Sample{
+		Metric: model.Metric{
+			model.MetricNameLabel: "metric",
+			"instance":            "b"},
 		Value: 21,
 	})
 	storage.WaitForIndexing()

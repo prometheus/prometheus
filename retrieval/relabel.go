@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -13,8 +13,8 @@ import (
 // Relabel returns a relabeled copy of the given label set. The relabel configurations
 // are applied in order of input.
 // If a label set is dropped, nil is returned.
-func Relabel(labels clientmodel.LabelSet, cfgs ...*config.RelabelConfig) (clientmodel.LabelSet, error) {
-	out := clientmodel.LabelSet{}
+func Relabel(labels model.LabelSet, cfgs ...*config.RelabelConfig) (model.LabelSet, error) {
+	out := model.LabelSet{}
 	for ln, lv := range labels {
 		out[ln] = lv
 	}
@@ -30,7 +30,7 @@ func Relabel(labels clientmodel.LabelSet, cfgs ...*config.RelabelConfig) (client
 	return out, nil
 }
 
-func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmodel.LabelSet, error) {
+func relabel(labels model.LabelSet, cfg *config.RelabelConfig) (model.LabelSet, error) {
 	values := make([]string, 0, len(cfg.SourceLabels))
 	for _, ln := range cfg.SourceLabels {
 		values = append(values, string(labels[ln]))
@@ -56,13 +56,13 @@ func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmode
 		if len(res) == 0 {
 			delete(labels, cfg.TargetLabel)
 		} else {
-			labels[cfg.TargetLabel] = clientmodel.LabelValue(res)
+			labels[cfg.TargetLabel] = model.LabelValue(res)
 		}
 	case config.RelabelHashMod:
 		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
-		labels[cfg.TargetLabel] = clientmodel.LabelValue(fmt.Sprintf("%d", mod))
+		labels[cfg.TargetLabel] = model.LabelValue(fmt.Sprintf("%d", mod))
 	case config.RelabelLabelMap:
-		out := make(clientmodel.LabelSet, len(labels))
+		out := make(model.LabelSet, len(labels))
 		// Take a copy to avoid infinite loops.
 		for ln, lv := range labels {
 			out[ln] = lv
@@ -70,7 +70,7 @@ func relabel(labels clientmodel.LabelSet, cfg *config.RelabelConfig) (clientmode
 		for ln, lv := range labels {
 			if cfg.Regex.MatchString(string(ln)) {
 				res := cfg.Regex.ReplaceAllString(string(ln), cfg.Replacement)
-				out[clientmodel.LabelName(res)] = lv
+				out[model.LabelName(res)] = lv
 			}
 		}
 		labels = out

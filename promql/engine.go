@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/log"
 	"golang.org/x/net/context"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -34,22 +34,22 @@ import (
 
 // SampleStream is a stream of Values belonging to an attached COWMetric.
 type SampleStream struct {
-	Metric clientmodel.COWMetric `json:"metric"`
-	Values metric.Values         `json:"values"`
+	Metric model.COWMetric `json:"metric"`
+	Values metric.Values   `json:"values"`
 }
 
 // Sample is a single sample belonging to a COWMetric.
 type Sample struct {
-	Metric    clientmodel.COWMetric   `json:"metric"`
-	Value     clientmodel.SampleValue `json:"value"`
-	Timestamp clientmodel.Timestamp   `json:"timestamp"`
+	Metric    model.COWMetric   `json:"metric"`
+	Value     model.SampleValue `json:"value"`
+	Timestamp model.Time        `json:"timestamp"`
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s *Sample) MarshalJSON() ([]byte, error) {
 	v := struct {
-		Metric clientmodel.COWMetric `json:"metric"`
-		Value  metric.SamplePair     `json:"value"`
+		Metric model.COWMetric   `json:"metric"`
+		Value  metric.SamplePair `json:"value"`
 	}{
 		Metric: s.Metric,
 		Value: metric.SamplePair{
@@ -63,8 +63,8 @@ func (s *Sample) MarshalJSON() ([]byte, error) {
 
 // Scalar is a scalar value evaluated at the set timestamp.
 type Scalar struct {
-	Value     clientmodel.SampleValue `json:"value"`
-	Timestamp clientmodel.Timestamp   `json:"timestamp"`
+	Value     model.SampleValue `json:"value"`
+	Timestamp model.Time        `json:"timestamp"`
 }
 
 func (s *Scalar) String() string {
@@ -79,8 +79,8 @@ func (s *Scalar) MarshalJSON() ([]byte, error) {
 
 // String is a string value evaluated at the set timestamp.
 type String struct {
-	Value     string                `json:"value"`
-	Timestamp clientmodel.Timestamp `json:"timestamp"`
+	Value     string     `json:"value"`
+	Timestamp model.Time `json:"timestamp"`
 }
 
 // MarshalJSON implements json.Marshaler.
@@ -92,7 +92,7 @@ func (s *String) String() string {
 	return s.Value
 }
 
-// Vector is basically only an alias for clientmodel.Samples, but the
+// Vector is basically only an alias for model.Samples, but the
 // contract is that in a Vector, all Samples have the same timestamp.
 type Vector []*Sample
 
@@ -309,7 +309,7 @@ func (ng *Engine) Stop() {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
-func (ng *Engine) NewInstantQuery(qs string, ts clientmodel.Timestamp) (Query, error) {
+func (ng *Engine) NewInstantQuery(qs string, ts model.Time) (Query, error) {
 	expr, err := ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -322,7 +322,7 @@ func (ng *Engine) NewInstantQuery(qs string, ts clientmodel.Timestamp) (Query, e
 
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
-func (ng *Engine) NewRangeQuery(qs string, start, end clientmodel.Timestamp, interval time.Duration) (Query, error) {
+func (ng *Engine) NewRangeQuery(qs string, start, end model.Time, interval time.Duration) (Query, error) {
 	expr, err := ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -336,7 +336,7 @@ func (ng *Engine) NewRangeQuery(qs string, start, end clientmodel.Timestamp, int
 	return qry, nil
 }
 
-func (ng *Engine) newQuery(expr Expr, start, end clientmodel.Timestamp, interval time.Duration) *query {
+func (ng *Engine) newQuery(expr Expr, start, end model.Time, interval time.Duration) *query {
 	es := &EvalStmt{
 		Expr:     expr,
 		Start:    start,
@@ -459,7 +459,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	numSteps := int(s.End.Sub(s.Start) / s.Interval)
 
 	// Range evaluation.
-	sampleStreams := map[clientmodel.Fingerprint]*SampleStream{}
+	sampleStreams := map[model.Fingerprint]*SampleStream{}
 	for ts := s.Start; !ts.After(s.End); ts = ts.Add(s.Interval) {
 
 		if err := contextDone(ctx, "range evaluation"); err != nil {
@@ -538,7 +538,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 type evaluator struct {
 	ctx context.Context
 
-	Timestamp clientmodel.Timestamp
+	Timestamp model.Time
 }
 
 // fatalf causes a panic with the input formatted into an error.
@@ -902,7 +902,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs Vector, matching *VectorM
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result vector. Check whether those labels have already been added for
 			// the same matching labels.
-			insertSig := clientmodel.SignatureForLabels(metric.Metric, matching.Include)
+			insertSig := model.SignatureForLabels(metric.Metric, matching.Include...)
 			if !exists {
 				insertedSigs = map[uint64]struct{}{}
 				matchedSigs[sig] = insertedSigs
@@ -923,36 +923,36 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs Vector, matching *VectorM
 
 // signatureFunc returns a function that calculates the signature for a metric
 // based on the provided labels.
-func signatureFunc(labels ...clientmodel.LabelName) func(m clientmodel.COWMetric) uint64 {
+func signatureFunc(labels ...model.LabelName) func(m model.COWMetric) uint64 {
 	if len(labels) == 0 {
-		return func(m clientmodel.COWMetric) uint64 {
-			m.Delete(clientmodel.MetricNameLabel)
+		return func(m model.COWMetric) uint64 {
+			m.Del(model.MetricNameLabel)
 			return uint64(m.Metric.Fingerprint())
 		}
 	}
-	return func(m clientmodel.COWMetric) uint64 {
-		return clientmodel.SignatureForLabels(m.Metric, labels)
+	return func(m model.COWMetric) uint64 {
+		return model.SignatureForLabels(m.Metric, labels...)
 	}
 }
 
 // resultMetric returns the metric for the given sample(s) based on the vector
 // binary operation and the matching options.
-func resultMetric(met clientmodel.COWMetric, op itemType, labels ...clientmodel.LabelName) clientmodel.COWMetric {
+func resultMetric(met model.COWMetric, op itemType, labels ...model.LabelName) model.COWMetric {
 	if len(labels) == 0 {
 		if shouldDropMetricName(op) {
-			met.Delete(clientmodel.MetricNameLabel)
+			met.Del(model.MetricNameLabel)
 		}
 		return met
 	}
 	// As we definitly write, creating a new metric is the easiest solution.
-	m := clientmodel.Metric{}
+	m := model.Metric{}
 	for _, ln := range labels {
 		// Included labels from the `group_x` modifier are taken from the "many"-side.
 		if v, ok := met.Metric[ln]; ok {
 			m[ln] = v
 		}
 	}
-	return clientmodel.COWMetric{Metric: m, Copied: false}
+	return model.COWMetric{Metric: m, Copied: false}
 }
 
 // vectorScalarBinop evaluates a binary operation between a vector and a scalar.
@@ -970,7 +970,7 @@ func (ev *evaluator) vectorScalarBinop(op itemType, lhs Vector, rhs *Scalar, swa
 		if keep {
 			lhsSample.Value = value
 			if shouldDropMetricName(op) {
-				lhsSample.Metric.Delete(clientmodel.MetricNameLabel)
+				lhsSample.Metric.Del(model.MetricNameLabel)
 			}
 			vector = append(vector, lhsSample)
 		}
@@ -979,7 +979,7 @@ func (ev *evaluator) vectorScalarBinop(op itemType, lhs Vector, rhs *Scalar, swa
 }
 
 // scalarBinop evaluates a binary operation between two scalars.
-func scalarBinop(op itemType, lhs, rhs clientmodel.SampleValue) clientmodel.SampleValue {
+func scalarBinop(op itemType, lhs, rhs model.SampleValue) model.SampleValue {
 	switch op {
 	case itemADD:
 		return lhs + rhs
@@ -991,9 +991,9 @@ func scalarBinop(op itemType, lhs, rhs clientmodel.SampleValue) clientmodel.Samp
 		return lhs / rhs
 	case itemMOD:
 		if rhs != 0 {
-			return clientmodel.SampleValue(int(lhs) % int(rhs))
+			return model.SampleValue(int(lhs) % int(rhs))
 		}
-		return clientmodel.SampleValue(math.NaN())
+		return model.SampleValue(math.NaN())
 	case itemEQL:
 		return btos(lhs == rhs)
 	case itemNEQ:
@@ -1011,7 +1011,7 @@ func scalarBinop(op itemType, lhs, rhs clientmodel.SampleValue) clientmodel.Samp
 }
 
 // vectorElemBinop evaluates a binary operation between two vector elements.
-func vectorElemBinop(op itemType, lhs, rhs clientmodel.SampleValue) (clientmodel.SampleValue, bool) {
+func vectorElemBinop(op itemType, lhs, rhs model.SampleValue) (model.SampleValue, bool) {
 	switch op {
 	case itemADD:
 		return lhs + rhs, true
@@ -1023,9 +1023,9 @@ func vectorElemBinop(op itemType, lhs, rhs clientmodel.SampleValue) (clientmodel
 		return lhs / rhs, true
 	case itemMOD:
 		if rhs != 0 {
-			return clientmodel.SampleValue(int(lhs) % int(rhs)), true
+			return model.SampleValue(int(lhs) % int(rhs)), true
 		}
-		return clientmodel.SampleValue(math.NaN()), true
+		return model.SampleValue(math.NaN()), true
 	case itemEQL:
 		return lhs, lhs == rhs
 	case itemNEQ:
@@ -1043,40 +1043,40 @@ func vectorElemBinop(op itemType, lhs, rhs clientmodel.SampleValue) (clientmodel
 }
 
 // labelIntersection returns the metric of common label/value pairs of two input metrics.
-func labelIntersection(metric1, metric2 clientmodel.COWMetric) clientmodel.COWMetric {
+func labelIntersection(metric1, metric2 model.COWMetric) model.COWMetric {
 	for label, value := range metric1.Metric {
 		if metric2.Metric[label] != value {
-			metric1.Delete(label)
+			metric1.Del(label)
 		}
 	}
 	return metric1
 }
 
 type groupedAggregation struct {
-	labels           clientmodel.COWMetric
-	value            clientmodel.SampleValue
-	valuesSquaredSum clientmodel.SampleValue
+	labels           model.COWMetric
+	value            model.SampleValue
+	valuesSquaredSum model.SampleValue
 	groupCount       int
 }
 
 // aggregation evaluates an aggregation operation on a vector.
-func (ev *evaluator) aggregation(op itemType, grouping clientmodel.LabelNames, keepExtra bool, vector Vector) Vector {
+func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, keepExtra bool, vector Vector) Vector {
 
 	result := map[uint64]*groupedAggregation{}
 
 	for _, sample := range vector {
-		groupingKey := clientmodel.SignatureForLabels(sample.Metric.Metric, grouping)
+		groupingKey := model.SignatureForLabels(sample.Metric.Metric, grouping...)
 
 		groupedResult, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			var m clientmodel.COWMetric
+			var m model.COWMetric
 			if keepExtra {
 				m = sample.Metric
-				m.Delete(clientmodel.MetricNameLabel)
+				m.Del(model.MetricNameLabel)
 			} else {
-				m = clientmodel.COWMetric{
-					Metric: clientmodel.Metric{},
+				m = model.COWMetric{
+					Metric: model.Metric{},
 					Copied: true,
 				}
 				for _, l := range grouping {
@@ -1129,15 +1129,15 @@ func (ev *evaluator) aggregation(op itemType, grouping clientmodel.LabelNames, k
 	for _, aggr := range result {
 		switch op {
 		case itemAvg:
-			aggr.value = aggr.value / clientmodel.SampleValue(aggr.groupCount)
+			aggr.value = aggr.value / model.SampleValue(aggr.groupCount)
 		case itemCount:
-			aggr.value = clientmodel.SampleValue(aggr.groupCount)
+			aggr.value = model.SampleValue(aggr.groupCount)
 		case itemStdvar:
 			avg := float64(aggr.value) / float64(aggr.groupCount)
-			aggr.value = clientmodel.SampleValue(float64(aggr.valuesSquaredSum)/float64(aggr.groupCount) - avg*avg)
+			aggr.value = model.SampleValue(float64(aggr.valuesSquaredSum)/float64(aggr.groupCount) - avg*avg)
 		case itemStddev:
 			avg := float64(aggr.value) / float64(aggr.groupCount)
-			aggr.value = clientmodel.SampleValue(math.Sqrt(float64(aggr.valuesSquaredSum)/float64(aggr.groupCount) - avg*avg))
+			aggr.value = model.SampleValue(math.Sqrt(float64(aggr.valuesSquaredSum)/float64(aggr.groupCount) - avg*avg))
 		default:
 			// For other aggregations, we already have the right value.
 		}
@@ -1152,7 +1152,7 @@ func (ev *evaluator) aggregation(op itemType, grouping clientmodel.LabelNames, k
 }
 
 // btos returns 1 if b is true, 0 otherwise.
-func btos(b bool) clientmodel.SampleValue {
+func btos(b bool) model.SampleValue {
 	if b {
 		return 1
 	}
@@ -1178,7 +1178,7 @@ var StalenessDelta = 5 * time.Minute
 // surrounding a given target time. If samples are found both before and after
 // the target time, the sample value is interpolated between these. Otherwise,
 // the single closest sample is returned verbatim.
-func chooseClosestSample(samples metric.Values, timestamp clientmodel.Timestamp) *metric.SamplePair {
+func chooseClosestSample(samples metric.Values, timestamp model.Time) *metric.SamplePair {
 	var closestBefore *metric.SamplePair
 	var closestAfter *metric.SamplePair
 	for _, candidate := range samples {
@@ -1224,12 +1224,12 @@ func chooseClosestSample(samples metric.Values, timestamp clientmodel.Timestamp)
 
 // interpolateSamples interpolates a value at a target time between two
 // provided sample pairs.
-func interpolateSamples(first, second *metric.SamplePair, timestamp clientmodel.Timestamp) *metric.SamplePair {
+func interpolateSamples(first, second *metric.SamplePair, timestamp model.Time) *metric.SamplePair {
 	dv := second.Value - first.Value
 	dt := second.Timestamp.Sub(first.Timestamp)
 
-	dDt := dv / clientmodel.SampleValue(dt)
-	offset := clientmodel.SampleValue(timestamp.Sub(first.Timestamp))
+	dDt := dv / model.SampleValue(dt)
+	offset := model.SampleValue(timestamp.Sub(first.Timestamp))
 
 	return &metric.SamplePair{
 		Value:     first.Value + (offset * dDt),

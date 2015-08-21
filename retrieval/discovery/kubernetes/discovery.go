@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -37,7 +37,7 @@ const (
 
 	// kubernetesMetaLabelPrefix is the meta prefix used for all meta labels.
 	// in this discovery.
-	metaLabelPrefix = clientmodel.MetaLabelPrefix + "kubernetes_"
+	metaLabelPrefix = model.MetaLabelPrefix + "kubernetes_"
 	// nodeLabel is the name for the label containing a target's node name.
 	nodeLabel = metaLabelPrefix + "node"
 	// serviceNamespaceLabel is the name for the label containing a target's service namespace.
@@ -224,13 +224,13 @@ func (kd *KubernetesDiscovery) updateNodesTargetGroup() *config.TargetGroup {
 	for nodeName, node := range kd.nodes {
 		address := fmt.Sprintf("%s:%d", node.Status.Addresses[0].Address, kd.Conf.KubeletPort)
 
-		t := clientmodel.LabelSet{
-			clientmodel.AddressLabel: clientmodel.LabelValue(address),
-			nodeLabel:                clientmodel.LabelValue(nodeName),
+		t := model.LabelSet{
+			model.AddressLabel: model.LabelValue(address),
+			nodeLabel:          model.LabelValue(nodeName),
 		}
 		for k, v := range node.ObjectMeta.Labels {
 			labelName := strutil.SanitizeLabelName(nodeLabelPrefix + k)
-			t[clientmodel.LabelName(labelName)] = clientmodel.LabelValue(v)
+			t[model.LabelName(labelName)] = model.LabelValue(v)
 		}
 		tg.Targets = append(tg.Targets, t)
 	}
@@ -397,20 +397,20 @@ func (kd *KubernetesDiscovery) addService(service *Service) *config.TargetGroup 
 func (kd *KubernetesDiscovery) updateServiceTargetGroup(service *Service, endpoints *Endpoints) *config.TargetGroup {
 	tg := &config.TargetGroup{
 		Source: serviceSource(service),
-		Labels: clientmodel.LabelSet{
-			serviceNamespaceLabel: clientmodel.LabelValue(service.ObjectMeta.Namespace),
-			serviceNameLabel:      clientmodel.LabelValue(service.ObjectMeta.Name),
+		Labels: model.LabelSet{
+			serviceNamespaceLabel: model.LabelValue(service.ObjectMeta.Namespace),
+			serviceNameLabel:      model.LabelValue(service.ObjectMeta.Name),
 		},
 	}
 
 	for k, v := range service.ObjectMeta.Labels {
 		labelName := strutil.SanitizeLabelName(serviceLabelPrefix + k)
-		tg.Labels[clientmodel.LabelName(labelName)] = clientmodel.LabelValue(v)
+		tg.Labels[model.LabelName(labelName)] = model.LabelValue(v)
 	}
 
 	for k, v := range service.ObjectMeta.Annotations {
 		labelName := strutil.SanitizeLabelName(serviceAnnotationPrefix + k)
-		tg.Labels[clientmodel.LabelName(labelName)] = clientmodel.LabelValue(v)
+		tg.Labels[model.LabelName(labelName)] = model.LabelValue(v)
 	}
 
 	// Now let's loop through the endpoints & add them to the target group with appropriate labels.
@@ -424,7 +424,7 @@ func (kd *KubernetesDiscovery) updateServiceTargetGroup(service *Service, endpoi
 			}
 			address := fmt.Sprintf("%s:%d", ipAddr, epPort)
 
-			t := clientmodel.LabelSet{clientmodel.AddressLabel: clientmodel.LabelValue(address)}
+			t := model.LabelSet{model.AddressLabel: model.LabelValue(address)}
 
 			tg.Targets = append(tg.Targets, t)
 		}

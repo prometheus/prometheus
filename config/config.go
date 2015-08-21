@@ -25,7 +25,7 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -270,7 +270,7 @@ type GlobalConfig struct {
 	// How frequently to evaluate rules by default.
 	EvaluationInterval Duration `yaml:"evaluation_interval,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
-	Labels clientmodel.LabelSet `yaml:"labels,omitempty"`
+	Labels model.LabelSet `yaml:"labels,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -399,9 +399,9 @@ func (a *BasicAuth) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type TargetGroup struct {
 	// Targets is a list of targets identified by a label set. Each target is
 	// uniquely identifiable in the group by its address label.
-	Targets []clientmodel.LabelSet
+	Targets []model.LabelSet
 	// Labels is a set of labels that is common across all targets in the group.
-	Labels clientmodel.LabelSet
+	Labels model.LabelSet
 
 	// Source is an identifier that describes a group of targets.
 	Source string
@@ -415,19 +415,19 @@ func (tg TargetGroup) String() string {
 func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	g := struct {
 		Targets []string               `yaml:"targets"`
-		Labels  clientmodel.LabelSet   `yaml:"labels"`
+		Labels  model.LabelSet         `yaml:"labels"`
 		XXX     map[string]interface{} `yaml:",inline"`
 	}{}
 	if err := unmarshal(&g); err != nil {
 		return err
 	}
-	tg.Targets = make([]clientmodel.LabelSet, 0, len(g.Targets))
+	tg.Targets = make([]model.LabelSet, 0, len(g.Targets))
 	for _, t := range g.Targets {
 		if strings.Contains(t, "/") {
 			return fmt.Errorf("%q is not a valid hostname", t)
 		}
-		tg.Targets = append(tg.Targets, clientmodel.LabelSet{
-			clientmodel.AddressLabel: clientmodel.LabelValue(t),
+		tg.Targets = append(tg.Targets, model.LabelSet{
+			model.AddressLabel: model.LabelValue(t),
 		})
 	}
 	tg.Labels = g.Labels
@@ -437,14 +437,14 @@ func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // MarshalYAML implements the yaml.Marshaler interface.
 func (tg TargetGroup) MarshalYAML() (interface{}, error) {
 	g := &struct {
-		Targets []string             `yaml:"targets"`
-		Labels  clientmodel.LabelSet `yaml:"labels,omitempty"`
+		Targets []string       `yaml:"targets"`
+		Labels  model.LabelSet `yaml:"labels,omitempty"`
 	}{
 		Targets: make([]string, 0, len(tg.Targets)),
 		Labels:  tg.Labels,
 	}
 	for _, t := range tg.Targets {
-		g.Targets = append(g.Targets, string(t[clientmodel.AddressLabel]))
+		g.Targets = append(g.Targets, string(t[model.AddressLabel]))
 	}
 	return g, nil
 }
@@ -452,19 +452,19 @@ func (tg TargetGroup) MarshalYAML() (interface{}, error) {
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
 	g := struct {
-		Targets []string             `json:"targets"`
-		Labels  clientmodel.LabelSet `json:"labels"`
+		Targets []string       `json:"targets"`
+		Labels  model.LabelSet `json:"labels"`
 	}{}
 	if err := json.Unmarshal(b, &g); err != nil {
 		return err
 	}
-	tg.Targets = make([]clientmodel.LabelSet, 0, len(g.Targets))
+	tg.Targets = make([]model.LabelSet, 0, len(g.Targets))
 	for _, t := range g.Targets {
 		if strings.Contains(t, "/") {
 			return fmt.Errorf("%q is not a valid hostname", t)
 		}
-		tg.Targets = append(tg.Targets, clientmodel.LabelSet{
-			clientmodel.AddressLabel: clientmodel.LabelValue(t),
+		tg.Targets = append(tg.Targets, model.LabelSet{
+			model.AddressLabel: model.LabelValue(t),
 		})
 	}
 	tg.Labels = g.Labels
@@ -686,7 +686,7 @@ func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type RelabelConfig struct {
 	// A list of labels from which values are taken and concatenated
 	// with the configured separator in order.
-	SourceLabels clientmodel.LabelNames `yaml:"source_labels,flow"`
+	SourceLabels model.LabelNames `yaml:"source_labels,flow"`
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
@@ -694,7 +694,7 @@ type RelabelConfig struct {
 	// Modulus to take of the hash of concatenated values from the source labels.
 	Modulus uint64 `yaml:"modulus,omitempty"`
 	// The label to which the resulting string is written in a replacement.
-	TargetLabel clientmodel.LabelName `yaml:"target_label,omitempty"`
+	TargetLabel model.LabelName `yaml:"target_label,omitempty"`
 	// Replacement is the regex replacement pattern to be used.
 	Replacement string `yaml:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.

@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 type testHTTPPoster struct {
@@ -65,10 +65,10 @@ func (s *testNotificationScenario) test(i int, t *testing.T) {
 			Summary:     s.summary,
 			Description: s.description,
 			Runbook:     s.runbook,
-			Labels: clientmodel.LabelSet{
-				clientmodel.LabelName("instance"): clientmodel.LabelValue("testinstance"),
+			Labels: model.LabelSet{
+				model.LabelName("instance"): model.LabelValue("testinstance"),
 			},
-			Value:        clientmodel.SampleValue(1.0 / 3.0),
+			Value:        model.SampleValue(1.0 / 3.0),
 			ActiveSince:  time.Time{},
 			RuleString:   "Test rule string",
 			GeneratorURL: "prometheus_url",

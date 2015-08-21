@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"fmt"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
-// TagValue is a clientmodel.LabelValue that implements json.Marshaler and
+// TagValue is a model.LabelValue that implements json.Marshaler and
 // json.Unmarshaler. These implementations avoid characters illegal in
 // OpenTSDB. See the MarshalJSON for details. TagValue is used for the values of
 // OpenTSDB tags as well as for OpenTSDB metric names.
-type TagValue clientmodel.LabelValue
+type TagValue model.LabelValue
 
 // MarshalJSON marshals this TagValue into JSON that only contains runes allowed
 // in OpenTSDB. It implements json.Marshaler. The runes allowed in OpenTSDB are

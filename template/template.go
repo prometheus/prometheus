@@ -25,7 +25,7 @@ import (
 	html_template "html/template"
 	text_template "text/template"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -55,7 +55,7 @@ func (q queryResultByLabelSorter) Swap(i, j int) {
 	q.results[i], q.results[j] = q.results[j], q.results[i]
 }
 
-func query(q string, timestamp clientmodel.Timestamp, queryEngine *promql.Engine) (queryResult, error) {
+func query(q string, timestamp model.Time, queryEngine *promql.Engine) (queryResult, error) {
 	query, err := queryEngine.NewInstantQuery(q, timestamp)
 	if err != nil {
 		return nil, err
@@ -78,8 +78,8 @@ func query(q string, timestamp clientmodel.Timestamp, queryEngine *promql.Engine
 		}}
 	case *promql.String:
 		vector = promql.Vector{&promql.Sample{
-			Metric: clientmodel.COWMetric{
-				Metric: clientmodel.Metric{"__value__": clientmodel.LabelValue(v.Value)},
+			Metric: model.COWMetric{
+				Metric: model.Metric{"__value__": model.LabelValue(v.Value)},
 				Copied: true,
 			},
 			Timestamp: v.Timestamp,
@@ -112,7 +112,7 @@ type templateExpander struct {
 }
 
 // NewTemplateExpander returns a template expander ready to use.
-func NewTemplateExpander(text string, name string, data interface{}, timestamp clientmodel.Timestamp, queryEngine *promql.Engine, pathPrefix string) *templateExpander {
+func NewTemplateExpander(text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine, pathPrefix string) *templateExpander {
 	return &templateExpander{
 		text: text,
 		name: name,
@@ -242,7 +242,7 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp c
 				if math.IsNaN(v) || math.IsInf(v, 0) {
 					return fmt.Sprintf("%.4g", v)
 				}
-				t := clientmodel.TimestampFromUnixNano(int64(v * 1e9)).Time().UTC()
+				t := model.TimeFromUnixNano(int64(v * 1e9)).Time().UTC()
 				return fmt.Sprint(t)
 			},
 			"pathPrefix": func() string {

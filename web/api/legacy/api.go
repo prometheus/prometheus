@@ -18,7 +18,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
@@ -28,7 +28,7 @@ import (
 
 // API manages the /api HTTP endpoint.
 type API struct {
-	Now         func() clientmodel.Timestamp
+	Now         func() model.Time
 	Storage     local.Storage
 	QueryEngine *promql.Engine
 }

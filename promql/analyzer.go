@@ -19,7 +19,7 @@ import (
 
 	"golang.org/x/net/context"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/local"
 )
@@ -32,7 +32,7 @@ type Analyzer struct {
 	// The expression being analyzed.
 	Expr Expr
 	// The time range for evaluation of Expr.
-	Start, End clientmodel.Timestamp
+	Start, End model.Time
 
 	// The preload times for different query time offsets.
 	offsetPreloadTimes map[time.Duration]preloadTimes
@@ -45,11 +45,11 @@ type preloadTimes struct {
 	// Instants require single samples to be loaded along the entire query
 	// range, with intervals between the samples corresponding to the query
 	// resolution.
-	instants map[clientmodel.Fingerprint]struct{}
+	instants map[model.Fingerprint]struct{}
 	// Ranges require loading a range of samples at each resolution step,
 	// stretching backwards from the current evaluation timestamp. The length of
 	// the range into the past is given by the duration, as in "foo[5m]".
-	ranges map[clientmodel.Fingerprint]time.Duration
+	ranges map[model.Fingerprint]time.Duration
 }
 
 // Analyze the provided expression and attach metrics and fingerprints to data-selecting
@@ -60,8 +60,8 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 	getPreloadTimes := func(offset time.Duration) preloadTimes {
 		if _, ok := a.offsetPreloadTimes[offset]; !ok {
 			a.offsetPreloadTimes[offset] = preloadTimes{
-				instants: map[clientmodel.Fingerprint]struct{}{},
-				ranges:   map[clientmodel.Fingerprint]time.Duration{},
+				instants: map[model.Fingerprint]struct{}{},
+				ranges:   map[model.Fingerprint]time.Duration{},
 			}
 		}
 		return a.offsetPreloadTimes[offset]
@@ -73,7 +73,7 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 		switch n := node.(type) {
 		case *VectorSelector:
 			n.metrics = a.Storage.MetricsForLabelMatchers(n.LabelMatchers...)
-			n.iterators = make(map[clientmodel.Fingerprint]local.SeriesIterator, len(n.metrics))
+			n.iterators = make(map[model.Fingerprint]local.SeriesIterator, len(n.metrics))
 
 			pt := getPreloadTimes(n.Offset)
 			for fp := range n.metrics {
@@ -86,7 +86,7 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 			}
 		case *MatrixSelector:
 			n.metrics = a.Storage.MetricsForLabelMatchers(n.LabelMatchers...)
-			n.iterators = make(map[clientmodel.Fingerprint]local.SeriesIterator, len(n.metrics))
+			n.iterators = make(map[model.Fingerprint]local.SeriesIterator, len(n.metrics))
 
 			pt := getPreloadTimes(n.Offset)
 			for fp := range n.metrics {

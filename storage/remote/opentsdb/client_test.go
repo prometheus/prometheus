@@ -19,14 +19,14 @@ import (
 	"reflect"
 	"testing"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 var (
-	metric = clientmodel.Metric{
-		clientmodel.MetricNameLabel: "test:metric",
-		"testlabel":                 "test:value",
-		"many_chars":                "abc!ABC:012-3!45ö67~89./",
+	metric = model.Metric{
+		model.MetricNameLabel: "test:metric",
+		"testlabel":           "test:value",
+		"many_chars":          "abc!ABC:012-3!45ö67~89./",
 	}
 )
 

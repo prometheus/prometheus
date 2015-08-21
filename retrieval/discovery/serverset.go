@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/log"
 	"github.com/samuel/go-zookeeper/zk"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -33,7 +33,7 @@ import (
 const (
 	serversetNodePrefix = "member_"
 
-	serversetLabelPrefix         = clientmodel.MetaLabelPrefix + "serverset_"
+	serversetLabelPrefix         = model.MetaLabelPrefix + "serverset_"
 	serversetStatusLabel         = serversetLabelPrefix + "status"
 	serversetPathLabel           = serversetLabelPrefix + "path"
 	serversetEndpointLabelPrefix = serversetLabelPrefix + "endpoint"
@@ -110,7 +110,7 @@ func (sd *ServersetDiscovery) processUpdates() {
 		if event.Data != nil {
 			labelSet, err := parseServersetMember(*event.Data, event.Path)
 			if err == nil {
-				tg.Targets = []clientmodel.LabelSet{*labelSet}
+				tg.Targets = []model.LabelSet{*labelSet}
 				sd.sources[event.Path] = tg
 			} else {
 				delete(sd.sources, event.Path)
@@ -144,31 +144,31 @@ func (sd *ServersetDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan str
 	sd.treeCache.Stop()
 }
 
-func parseServersetMember(data []byte, path string) (*clientmodel.LabelSet, error) {
+func parseServersetMember(data []byte, path string) (*model.LabelSet, error) {
 	member := serversetMember{}
 	err := json.Unmarshal(data, &member)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling serverset member %q: %s", path, err)
 	}
 
-	labels := clientmodel.LabelSet{}
-	labels[serversetPathLabel] = clientmodel.LabelValue(path)
-	labels[clientmodel.AddressLabel] = clientmodel.LabelValue(
+	labels := model.LabelSet{}
+	labels[serversetPathLabel] = model.LabelValue(path)
+	labels[model.AddressLabel] = model.LabelValue(
 		fmt.Sprintf("%s:%d", member.ServiceEndpoint.Host, member.ServiceEndpoint.Port))
 
-	labels[serversetEndpointLabelPrefix+"_host"] = clientmodel.LabelValue(member.ServiceEndpoint.Host)
-	labels[serversetEndpointLabelPrefix+"_port"] = clientmodel.LabelValue(fmt.Sprintf("%d", member.ServiceEndpoint.Port))
+	labels[serversetEndpointLabelPrefix+"_host"] = model.LabelValue(member.ServiceEndpoint.Host)
+	labels[serversetEndpointLabelPrefix+"_port"] = model.LabelValue(fmt.Sprintf("%d", member.ServiceEndpoint.Port))
 
 	for name, endpoint := range member.AdditionalEndpoints {
-		cleanName := clientmodel.LabelName(strutil.SanitizeLabelName(name))
-		labels[serversetEndpointLabelPrefix+"_host_"+cleanName] = clientmodel.LabelValue(
+		cleanName := model.LabelName(strutil.SanitizeLabelName(name))
+		labels[serversetEndpointLabelPrefix+"_host_"+cleanName] = model.LabelValue(
 			endpoint.Host)
-		labels[serversetEndpointLabelPrefix+"_port_"+cleanName] = clientmodel.LabelValue(
+		labels[serversetEndpointLabelPrefix+"_port_"+cleanName] = model.LabelValue(
 			fmt.Sprintf("%d", endpoint.Port))
 
 	}
 
-	labels[serversetStatusLabel] = clientmodel.LabelValue(member.Status)
+	labels[serversetStatusLabel] = model.LabelValue(member.Status)
 
 	return &labels, nil
 }

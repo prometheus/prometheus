@@ -18,7 +18,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -34,29 +34,29 @@ type Storage interface {
 	// processing.) The implementation might remove labels with empty value
 	// from the provided Sample as those labels are considered equivalent to
 	// a label not present at all.
-	Append(*clientmodel.Sample)
+	Append(*model.Sample)
 	// NewPreloader returns a new Preloader which allows preloading and pinning
 	// series data into memory for use within a query.
 	NewPreloader() Preloader
 	// MetricsForLabelMatchers returns the metrics from storage that satisfy the given
 	// label matchers. At least one label matcher must be specified that does not
 	// match the empty string.
-	MetricsForLabelMatchers(...*metric.LabelMatcher) map[clientmodel.Fingerprint]clientmodel.COWMetric
+	MetricsForLabelMatchers(...*metric.LabelMatcher) map[model.Fingerprint]model.COWMetric
 	// LastSamplePairForFingerprint returns the last sample pair for the
 	// provided fingerprint. If the respective time series does not exist or
 	// has an evicted head chunk, nil is returned.
-	LastSamplePairForFingerprint(clientmodel.Fingerprint) *metric.SamplePair
+	LastSamplePairForFingerprint(model.Fingerprint) *metric.SamplePair
 	// Get all of the label values that are associated with a given label name.
-	LabelValuesForLabelName(clientmodel.LabelName) clientmodel.LabelValues
+	LabelValuesForLabelName(model.LabelName) model.LabelValues
 	// Get the metric associated with the provided fingerprint.
-	MetricForFingerprint(clientmodel.Fingerprint) clientmodel.COWMetric
+	MetricForFingerprint(model.Fingerprint) model.COWMetric
 	// Construct an iterator for a given fingerprint.
 	// The iterator will never return samples older than retention time,
 	// relative to the time NewIterator was called.
-	NewIterator(clientmodel.Fingerprint) SeriesIterator
+	NewIterator(model.Fingerprint) SeriesIterator
 	// Drop all time series associated with the given fingerprints. This operation
 	// will not show up in the series operations metrics.
-	DropMetricsForFingerprints(...clientmodel.Fingerprint)
+	DropMetricsForFingerprints(...model.Fingerprint)
 	// Run the various maintenance loops in goroutines. Returns when the
 	// storage is ready to use. Keeps everything running in the background
 	// until Stop is called.
@@ -81,7 +81,7 @@ type SeriesIterator interface {
 	// value is returned. Only the first or last value is returned (as a
 	// single value), if the given time is before or after the first or last
 	// value, respectively.
-	ValueAtTime(clientmodel.Timestamp) metric.Values
+	ValueAtTime(model.Time) metric.Values
 	// Gets the boundary values of an interval: the first and last value
 	// within a given interval.
 	BoundaryValues(metric.Interval) metric.Values
@@ -94,8 +94,8 @@ type SeriesIterator interface {
 // goroutine-safe.
 type Preloader interface {
 	PreloadRange(
-		fp clientmodel.Fingerprint,
-		from clientmodel.Timestamp, through clientmodel.Timestamp,
+		fp model.Fingerprint,
+		from model.Time, through model.Time,
 		stalenessDelta time.Duration,
 	) error
 	// Close unpins any previously requested series data from memory.

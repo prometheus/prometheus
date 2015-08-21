@@ -5,34 +5,34 @@ import (
 	"regexp"
 	"testing"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
 
 func TestRelabel(t *testing.T) {
 	tests := []struct {
-		input   clientmodel.LabelSet
+		input   model.LabelSet
 		relabel []*config.RelabelConfig
-		output  clientmodel.LabelSet
+		output  model.LabelSet
 	}{
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a": "foo",
 				"b": "bar",
 				"c": "baz",
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"a"},
+					SourceLabels: model.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("f(.*)")},
-					TargetLabel:  clientmodel.LabelName("d"),
+					TargetLabel:  model.LabelName("d"),
 					Separator:    ";",
 					Replacement:  "ch${1}-ch${1}",
 					Action:       config.RelabelReplace,
 				},
 			},
-			output: clientmodel.LabelSet{
+			output: model.LabelSet{
 				"a": "foo",
 				"b": "bar",
 				"c": "baz",
@@ -40,30 +40,30 @@ func TestRelabel(t *testing.T) {
 			},
 		},
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a": "foo",
 				"b": "bar",
 				"c": "baz",
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"a", "b"},
+					SourceLabels: model.LabelNames{"a", "b"},
 					Regex:        &config.Regexp{*regexp.MustCompile("^f(.*);(.*)r$")},
-					TargetLabel:  clientmodel.LabelName("a"),
+					TargetLabel:  model.LabelName("a"),
 					Separator:    ";",
 					Replacement:  "b${1}${2}m", // boobam
 					Action:       config.RelabelReplace,
 				},
 				{
-					SourceLabels: clientmodel.LabelNames{"c", "a"},
+					SourceLabels: model.LabelNames{"c", "a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("(b).*b(.*)ba(.*)")},
-					TargetLabel:  clientmodel.LabelName("d"),
+					TargetLabel:  model.LabelName("d"),
 					Separator:    ";",
 					Replacement:  "$1$2$2$3",
 					Action:       config.RelabelReplace,
 				},
 			},
-			output: clientmodel.LabelSet{
+			output: model.LabelSet{
 				"a": "boobam",
 				"b": "bar",
 				"c": "baz",
@@ -71,18 +71,18 @@ func TestRelabel(t *testing.T) {
 			},
 		},
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a": "foo",
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"a"},
+					SourceLabels: model.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("o$")},
 					Action:       config.RelabelDrop,
 				}, {
-					SourceLabels: clientmodel.LabelNames{"a"},
+					SourceLabels: model.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("f(.*)")},
-					TargetLabel:  clientmodel.LabelName("d"),
+					TargetLabel:  model.LabelName("d"),
 					Separator:    ";",
 					Replacement:  "ch$1-ch$1",
 					Action:       config.RelabelReplace,
@@ -91,46 +91,46 @@ func TestRelabel(t *testing.T) {
 			output: nil,
 		},
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a": "abc",
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"a"},
+					SourceLabels: model.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("(b)")},
-					TargetLabel:  clientmodel.LabelName("d"),
+					TargetLabel:  model.LabelName("d"),
 					Separator:    ";",
 					Replacement:  "$1",
 					Action:       config.RelabelReplace,
 				},
 			},
-			output: clientmodel.LabelSet{
+			output: model.LabelSet{
 				"a": "abc",
 				"d": "b",
 			},
 		},
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a": "foo",
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"a"},
+					SourceLabels: model.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("no-match")},
 					Action:       config.RelabelDrop,
 				},
 			},
-			output: clientmodel.LabelSet{
+			output: model.LabelSet{
 				"a": "foo",
 			},
 		},
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a": "foo",
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"a"},
+					SourceLabels: model.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("no-match")},
 					Action:       config.RelabelKeep,
 				},
@@ -138,54 +138,54 @@ func TestRelabel(t *testing.T) {
 			output: nil,
 		},
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a": "foo",
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"a"},
+					SourceLabels: model.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("^f")},
 					Action:       config.RelabelKeep,
 				},
 			},
-			output: clientmodel.LabelSet{
+			output: model.LabelSet{
 				"a": "foo",
 			},
 		},
 		{
 			// No replacement must be applied if there is no match.
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a": "boo",
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"a"},
+					SourceLabels: model.LabelNames{"a"},
 					Regex:        &config.Regexp{*regexp.MustCompile("^f")},
-					TargetLabel:  clientmodel.LabelName("b"),
+					TargetLabel:  model.LabelName("b"),
 					Replacement:  "bar",
 					Action:       config.RelabelReplace,
 				},
 			},
-			output: clientmodel.LabelSet{
+			output: model.LabelSet{
 				"a": "boo",
 			},
 		},
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a": "foo",
 				"b": "bar",
 				"c": "baz",
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"c"},
-					TargetLabel:  clientmodel.LabelName("d"),
+					SourceLabels: model.LabelNames{"c"},
+					TargetLabel:  model.LabelName("d"),
 					Separator:    ";",
 					Action:       config.RelabelHashMod,
 					Modulus:      1000,
 				},
 			},
-			output: clientmodel.LabelSet{
+			output: model.LabelSet{
 				"a": "foo",
 				"b": "bar",
 				"c": "baz",
@@ -193,7 +193,7 @@ func TestRelabel(t *testing.T) {
 			},
 		},
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a":  "foo",
 				"b1": "bar",
 				"b2": "baz",
@@ -205,7 +205,7 @@ func TestRelabel(t *testing.T) {
 					Action:      config.RelabelLabelMap,
 				},
 			},
-			output: clientmodel.LabelSet{
+			output: model.LabelSet{
 				"a":      "foo",
 				"b1":     "bar",
 				"b2":     "baz",
@@ -214,7 +214,7 @@ func TestRelabel(t *testing.T) {
 			},
 		},
 		{
-			input: clientmodel.LabelSet{
+			input: model.LabelSet{
 				"a":             "foo",
 				"__meta_my_bar": "aaa",
 				"__meta_my_baz": "bbb",
@@ -227,7 +227,7 @@ func TestRelabel(t *testing.T) {
 					Action:      config.RelabelLabelMap,
 				},
 			},
-			output: clientmodel.LabelSet{
+			output: model.LabelSet{
 				"a":             "foo",
 				"__meta_my_bar": "aaa",
 				"__meta_my_baz": "bbb",

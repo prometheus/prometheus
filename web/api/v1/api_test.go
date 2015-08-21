@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/net/context"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -42,7 +42,7 @@ func TestEndpoints(t *testing.T) {
 		QueryEngine: suite.QueryEngine(),
 	}
 
-	start := clientmodel.Timestamp(0)
+	start := model.Time(0)
 	var tests = []struct {
 		endpoint apiFunc
 		params   map[string]string
@@ -173,7 +173,7 @@ func TestEndpoints(t *testing.T) {
 			params: map[string]string{
 				"name": "__name__",
 			},
-			response: clientmodel.LabelValues{
+			response: model.LabelValues{
 				"test_metric1",
 				"test_metric2",
 			},
@@ -183,7 +183,7 @@ func TestEndpoints(t *testing.T) {
 			params: map[string]string{
 				"name": "foo",
 			},
-			response: clientmodel.LabelValues{
+			response: model.LabelValues{
 				"bar",
 				"boo",
 			},
@@ -201,7 +201,7 @@ func TestEndpoints(t *testing.T) {
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
 			},
-			response: []clientmodel.Metric{
+			response: []model.Metric{
 				{
 					"__name__": "test_metric2",
 					"foo":      "boo",
@@ -213,7 +213,7 @@ func TestEndpoints(t *testing.T) {
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~"o$"}`},
 			},
-			response: []clientmodel.Metric{
+			response: []model.Metric{
 				{
 					"__name__": "test_metric1",
 					"foo":      "boo",
@@ -225,7 +225,7 @@ func TestEndpoints(t *testing.T) {
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~"o$"}`},
 			},
-			response: []clientmodel.Metric{
+			response: []model.Metric{
 				{
 					"__name__": "test_metric1",
 					"foo":      "boo",
@@ -237,7 +237,7 @@ func TestEndpoints(t *testing.T) {
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~"o$"}`, `none`},
 			},
-			response: []clientmodel.Metric{
+			response: []model.Metric{
 				{
 					"__name__": "test_metric1",
 					"foo":      "boo",
@@ -269,7 +269,7 @@ func TestEndpoints(t *testing.T) {
 			query: url.Values{
 				"match[]": []string{`test_metric1`},
 			},
-			response: []clientmodel.Metric{
+			response: []model.Metric{
 				{
 					"__name__": "test_metric1",
 					"foo":      "bar",
@@ -445,7 +445,7 @@ func TestParseTime(t *testing.T) {
 			t.Errorf("Expected error for %q but got none", test.input)
 			continue
 		}
-		res := clientmodel.TimestampFromTime(test.result)
+		res := model.TimeFromUnixNano(test.result.UnixNano())
 		if !test.fail && ts != res {
 			t.Errorf("Expected time %v for input %q but got %v", res, test.input, ts)
 		}

@@ -23,9 +23,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
-
-	clientmodel "github.com/prometheus/client_golang/model"
 
 	"github.com/prometheus/prometheus/util/httputil"
 )
@@ -63,23 +62,23 @@ type StoreSamplesRequest struct {
 
 // point represents a single InfluxDB measurement.
 type point struct {
-	Timestamp int64                  `json:"timestamp"`
-	Precision string                 `json:"precision"`
-	Name      clientmodel.LabelValue `json:"name"`
-	Tags      clientmodel.LabelSet   `json:"tags"`
-	Fields    fields                 `json:"fields"`
+	Timestamp int64            `json:"timestamp"`
+	Precision string           `json:"precision"`
+	Name      model.LabelValue `json:"name"`
+	Tags      model.LabelSet   `json:"tags"`
+	Fields    fields           `json:"fields"`
 }
 
 // fields represents the fields/columns sent to InfluxDB for a given measurement.
 type fields struct {
-	Value clientmodel.SampleValue `json:"value"`
+	Value model.SampleValue `json:"value"`
 }
 
 // tagsFromMetric extracts InfluxDB tags from a Prometheus metric.
-func tagsFromMetric(m clientmodel.Metric) clientmodel.LabelSet {
-	tags := make(clientmodel.LabelSet, len(m)-1)
+func tagsFromMetric(m model.Metric) model.LabelSet {
+	tags := make(model.LabelSet, len(m)-1)
 	for l, v := range m {
-		if l == clientmodel.MetricNameLabel {
+		if l == model.MetricNameLabel {
 			continue
 		}
 		tags[l] = v
@@ -88,7 +87,7 @@ func tagsFromMetric(m clientmodel.Metric) clientmodel.LabelSet {
 }
 
 // Store sends a batch of samples to InfluxDB via its HTTP API.
-func (c *Client) Store(samples clientmodel.Samples) error {
+func (c *Client) Store(samples model.Samples) error {
 	points := make([]point, 0, len(samples))
 	for _, s := range samples {
 		v := float64(s.Value)
@@ -98,7 +97,7 @@ func (c *Client) Store(samples clientmodel.Samples) error {
 			log.Warnf("cannot send value %f to InfluxDB, skipping sample %#v", v, s)
 			continue
 		}
-		metric := s.Metric[clientmodel.MetricNameLabel]
+		metric := s.Metric[model.MetricNameLabel]
 		points = append(points, point{
 			Timestamp: s.Timestamp.UnixNano(),
 			Precision: "n",

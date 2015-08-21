@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -27,12 +27,12 @@ import (
 
 const (
 	// AlertMetricName is the metric name for synthetic alert timeseries.
-	alertMetricName clientmodel.LabelValue = "ALERTS"
+	alertMetricName model.LabelValue = "ALERTS"
 
 	// AlertNameLabel is the label name indicating the name of an alert.
-	alertNameLabel clientmodel.LabelName = "alertname"
+	alertNameLabel model.LabelName = "alertname"
 	// AlertStateLabel is the label name indicating the state of an alert.
-	alertStateLabel clientmodel.LabelName = "alertstate"
+	alertStateLabel model.LabelName = "alertstate"
 )
 
 // AlertState denotes the state of an active alert.
@@ -67,28 +67,28 @@ type Alert struct {
 	// The name of the alert.
 	Name string
 	// The vector element labelset triggering this alert.
-	Labels clientmodel.LabelSet
+	Labels model.LabelSet
 	// The state of the alert (Pending or Firing).
 	State AlertState
 	// The time when the alert first transitioned into Pending state.
-	ActiveSince clientmodel.Timestamp
+	ActiveSince model.Time
 	// The value of the alert expression for this vector element.
-	Value clientmodel.SampleValue
+	Value model.SampleValue
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a Alert) sample(timestamp clientmodel.Timestamp, value clientmodel.SampleValue) *promql.Sample {
-	recordedMetric := clientmodel.Metric{}
+func (a Alert) sample(timestamp model.Time, value model.SampleValue) *promql.Sample {
+	recordedMetric := model.Metric{}
 	for label, value := range a.Labels {
 		recordedMetric[label] = value
 	}
 
-	recordedMetric[clientmodel.MetricNameLabel] = alertMetricName
-	recordedMetric[alertNameLabel] = clientmodel.LabelValue(a.Name)
-	recordedMetric[alertStateLabel] = clientmodel.LabelValue(a.State.String())
+	recordedMetric[model.MetricNameLabel] = alertMetricName
+	recordedMetric[alertNameLabel] = model.LabelValue(a.Name)
+	recordedMetric[alertStateLabel] = model.LabelValue(a.State.String())
 
 	return &promql.Sample{
-		Metric: clientmodel.COWMetric{
+		Metric: model.COWMetric{
 			Metric: recordedMetric,
 			Copied: true,
 		},
@@ -107,7 +107,7 @@ type AlertingRule struct {
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
-	labels clientmodel.LabelSet
+	labels model.LabelSet
 	// Short alert summary, suitable for email subjects.
 	summary string
 	// More detailed alert description.
@@ -119,7 +119,7 @@ type AlertingRule struct {
 	mutex sync.Mutex
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
-	activeAlerts map[clientmodel.Fingerprint]*Alert
+	activeAlerts map[model.Fingerprint]*Alert
 }
 
 // NewAlertingRule constructs a new AlertingRule.
@@ -127,7 +127,7 @@ func NewAlertingRule(
 	name string,
 	vector promql.Expr,
 	holdDuration time.Duration,
-	labels clientmodel.LabelSet,
+	labels model.LabelSet,
 	summary string,
 	description string,
 	runbook string,
@@ -141,7 +141,7 @@ func NewAlertingRule(
 		description:  description,
 		runbook:      runbook,
 
-		activeAlerts: map[clientmodel.Fingerprint]*Alert{},
+		activeAlerts: map[model.Fingerprint]*Alert{},
 	}
 }
 
@@ -152,7 +152,7 @@ func (rule *AlertingRule) Name() string {
 
 // eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (rule *AlertingRule) eval(timestamp clientmodel.Timestamp, engine *promql.Engine) (promql.Vector, error) {
+func (rule *AlertingRule) eval(timestamp model.Time, engine *promql.Engine) (promql.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err
@@ -167,17 +167,16 @@ func (rule *AlertingRule) eval(timestamp clientmodel.Timestamp, engine *promql.E
 
 	// Create pending alerts for any new vector elements in the alert expression
 	// or update the expression value for existing elements.
-	resultFPs := map[clientmodel.Fingerprint]struct{}{}
+	resultFPs := map[model.Fingerprint]struct{}{}
 	for _, sample := range exprResult {
 		fp := sample.Metric.Metric.Fingerprint()
 		resultFPs[fp] = struct{}{}
 
 		if alert, ok := rule.activeAlerts[fp]; !ok {
-			labels := clientmodel.LabelSet{}
-			labels.MergeFromMetric(sample.Metric.Metric)
+			labels := model.LabelSet(sample.Metric.Metric.Clone())
 			labels = labels.Merge(rule.labels)
-			if _, ok := labels[clientmodel.MetricNameLabel]; ok {
-				delete(labels, clientmodel.MetricNameLabel)
+			if _, ok := labels[model.MetricNameLabel]; ok {
+				delete(labels, model.MetricNameLabel)
 			}
 			rule.activeAlerts[fp] = &Alert{
 				Name:        rule.name,
@@ -231,9 +230,9 @@ func (rule *AlertingRule) String() string {
 // resulting snippet is expected to be presented in a <pre> element, so that
 // line breaks and other returned whitespace is respected.
 func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
-	alertMetric := clientmodel.Metric{
-		clientmodel.MetricNameLabel: alertMetricName,
-		alertNameLabel:              clientmodel.LabelValue(rule.name),
+	alertMetric := model.Metric{
+		model.MetricNameLabel: alertMetricName,
+		alertNameLabel:        model.LabelValue(rule.name),
 	}
 	s := fmt.Sprintf("ALERT <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()), rule.name)
 	s += fmt.Sprintf("\n  IF <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(rule.vector.String()), rule.vector)

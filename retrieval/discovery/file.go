@@ -25,12 +25,12 @@ import (
 	"gopkg.in/fsnotify.v1"
 	"gopkg.in/yaml.v2"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
 
-const FileSDFilepathLabel = clientmodel.MetaLabelPrefix + "filepath"
+const FileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
 
 // FileDiscovery provides service discovery functionality based
 // on files that contain target groups in JSON or YAML format. Refreshing
@@ -244,9 +244,9 @@ func readFile(filename string) ([]*config.TargetGroup, error) {
 	for i, tg := range targetGroups {
 		tg.Source = fileSource(filename, i)
 		if tg.Labels == nil {
-			tg.Labels = clientmodel.LabelSet{}
+			tg.Labels = model.LabelSet{}
 		}
-		tg.Labels[FileSDFilepathLabel] = clientmodel.LabelValue(filename)
+		tg.Labels[FileSDFilepathLabel] = model.LabelValue(filename)
 	}
 	return targetGroups, nil
 }

@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"strconv"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 // MarshalJSON implements json.Marshaler.
@@ -27,8 +27,8 @@ func (s SamplePair) MarshalJSON() ([]byte, error) {
 
 // SamplePair pairs a SampleValue with a Timestamp.
 type SamplePair struct {
-	Timestamp clientmodel.Timestamp
-	Value     clientmodel.SampleValue
+	Timestamp model.Time
+	Value     model.SampleValue
 }
 
 // Equal returns true if this SamplePair and o have equal Values and equal
@@ -50,6 +50,6 @@ type Values []SamplePair
 
 // Interval describes the inclusive interval between two Timestamps.
 type Interval struct {
-	OldestInclusive clientmodel.Timestamp
-	NewestInclusive clientmodel.Timestamp
+	OldestInclusive model.Time
+	NewestInclusive model.Time
 }

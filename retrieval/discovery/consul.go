@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/log"
 
 	consul "github.com/hashicorp/consul/api"
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -34,21 +34,21 @@ const (
 	consulRetryInterval = 15 * time.Second
 
 	// ConsuleAddressLabel is the name for the label containing a target's address.
-	ConsulAddressLabel = clientmodel.MetaLabelPrefix + "consul_address"
+	ConsulAddressLabel = model.MetaLabelPrefix + "consul_address"
 	// ConsuleNodeLabel is the name for the label containing a target's node name.
-	ConsulNodeLabel = clientmodel.MetaLabelPrefix + "consul_node"
+	ConsulNodeLabel = model.MetaLabelPrefix + "consul_node"
 	// ConsulTagsLabel is the name of the label containing the tags assigned to the target.
-	ConsulTagsLabel = clientmodel.MetaLabelPrefix + "consul_tags"
+	ConsulTagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// ConsulServiceLabel is the name of the label containing the service name.
-	ConsulServiceLabel = clientmodel.MetaLabelPrefix + "consul_service"
+	ConsulServiceLabel = model.MetaLabelPrefix + "consul_service"
 	// ConsulServiceAddressLabel is the name of the label containing the (optional) service address.
-	ConsulServiceAddressLabel = clientmodel.MetaLabelPrefix + "consul_service_address"
+	ConsulServiceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
 	// ConsulServicePortLabel is the name of the label containing the service port.
-	ConsulServicePortLabel = clientmodel.MetaLabelPrefix + "consul_service_port"
+	ConsulServicePortLabel = model.MetaLabelPrefix + "consul_service_port"
 	// ConsulDCLabel is the name of the label containing the datacenter ID.
-	ConsulDCLabel = clientmodel.MetaLabelPrefix + "consul_dc"
+	ConsulDCLabel = model.MetaLabelPrefix + "consul_dc"
 	// ConsulServiceIDLabel is the name of the label containing the service ID.
-	ConsulServiceIDLabel = clientmodel.MetaLabelPrefix + "consul_service_id"
+	ConsulServiceIDLabel = model.MetaLabelPrefix + "consul_service_id"
 )
 
 // ConsulDiscovery retrieves target information from a Consul server
@@ -226,9 +226,9 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService, done <-ch
 				srv.tgroup.Source = name
 				cd.services[name] = srv
 			}
-			srv.tgroup.Labels = clientmodel.LabelSet{
-				ConsulServiceLabel: clientmodel.LabelValue(name),
-				ConsulDCLabel:      clientmodel.LabelValue(cd.clientDatacenter),
+			srv.tgroup.Labels = model.LabelSet{
+				ConsulServiceLabel: model.LabelValue(name),
+				ConsulDCLabel:      model.LabelValue(cd.clientDatacenter),
 			}
 			update <- srv
 		}
@@ -263,7 +263,7 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 			continue
 		}
 		srv.lastIndex = meta.LastIndex
-		srv.tgroup.Targets = make([]clientmodel.LabelSet, 0, len(nodes))
+		srv.tgroup.Targets = make([]model.LabelSet, 0, len(nodes))
 
 		for _, node := range nodes {
 			addr := fmt.Sprintf("%s:%d", node.Address, node.ServicePort)
@@ -271,14 +271,14 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 			// in relabeling rules don't have to consider tag positions.
 			tags := cd.tagSeparator + strings.Join(node.ServiceTags, cd.tagSeparator) + cd.tagSeparator
 
-			srv.tgroup.Targets = append(srv.tgroup.Targets, clientmodel.LabelSet{
-				clientmodel.AddressLabel:  clientmodel.LabelValue(addr),
-				ConsulAddressLabel:        clientmodel.LabelValue(node.Address),
-				ConsulNodeLabel:           clientmodel.LabelValue(node.Node),
-				ConsulTagsLabel:           clientmodel.LabelValue(tags),
-				ConsulServiceAddressLabel: clientmodel.LabelValue(node.ServiceAddress),
-				ConsulServicePortLabel:    clientmodel.LabelValue(strconv.Itoa(node.ServicePort)),
-				ConsulServiceIDLabel:      clientmodel.LabelValue(node.ServiceID),
+			srv.tgroup.Targets = append(srv.tgroup.Targets, model.LabelSet{
+				model.AddressLabel:        model.LabelValue(addr),
+				ConsulAddressLabel:        model.LabelValue(node.Address),
+				ConsulNodeLabel:           model.LabelValue(node.Node),
+				ConsulTagsLabel:           model.LabelValue(tags),
+				ConsulServiceAddressLabel: model.LabelValue(node.ServiceAddress),
+				ConsulServicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
+				ConsulServiceIDLabel:      model.LabelValue(node.ServiceID),
 			})
 		}
 

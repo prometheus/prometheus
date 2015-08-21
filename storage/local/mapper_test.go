@@ -3,7 +3,7 @@ package local
 import (
 	"testing"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 var (
@@ -13,31 +13,31 @@ var (
 	// Note that fingerprints are set and not actually calculated.
 	// The collision detection is independent from the actually used
 	// fingerprinting algorithm.
-	fp1  = clientmodel.Fingerprint(maxMappedFP + 1)
-	fp2  = clientmodel.Fingerprint(maxMappedFP + 2)
-	fp3  = clientmodel.Fingerprint(1)
-	cm11 = clientmodel.Metric{
+	fp1  = model.Fingerprint(maxMappedFP + 1)
+	fp2  = model.Fingerprint(maxMappedFP + 2)
+	fp3  = model.Fingerprint(1)
+	cm11 = model.Metric{
 		"foo":   "bar",
 		"dings": "bumms",
 	}
-	cm12 = clientmodel.Metric{
+	cm12 = model.Metric{
 		"bar": "foo",
 	}
-	cm13 = clientmodel.Metric{
+	cm13 = model.Metric{
 		"foo": "bar",
 	}
-	cm21 = clientmodel.Metric{
+	cm21 = model.Metric{
 		"foo":   "bumms",
 		"dings": "bar",
 	}
-	cm22 = clientmodel.Metric{
+	cm22 = model.Metric{
 		"dings": "foo",
 		"bar":   "bumms",
 	}
-	cm31 = clientmodel.Metric{
+	cm31 = model.Metric{
 		"bumms": "dings",
 	}
-	cm32 = clientmodel.Metric{
+	cm32 = model.Metric{
 		"bumms": "dings",
 		"bar":   "foo",
 	}
@@ -84,12 +84,12 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(1); gotFP != wantFP {
+	if wantFP := model.Fingerprint(1); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
 	// The mapped cm12 is added to sm, too. That should not change the outcome.
-	sm.put(clientmodel.Fingerprint(1), &memorySeries{metric: cm12})
+	sm.put(model.Fingerprint(1), &memorySeries{metric: cm12})
 	gotFP, err = mapper.mapFP(fp1, cm11)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +101,7 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(1); gotFP != wantFP {
+	if wantFP := model.Fingerprint(1); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
@@ -110,19 +110,19 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(2); gotFP != wantFP {
+	if wantFP := model.Fingerprint(2); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp1, cm13)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(2); gotFP != wantFP {
+	if wantFP := model.Fingerprint(2); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
 	// Add cm13 to sm. Should not change anything.
-	sm.put(clientmodel.Fingerprint(2), &memorySeries{metric: cm13})
+	sm.put(model.Fingerprint(2), &memorySeries{metric: cm13})
 	gotFP, err = mapper.mapFP(fp1, cm11)
 	if err != nil {
 		t.Fatal(err)
@@ -134,14 +134,14 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(1); gotFP != wantFP {
+	if wantFP := model.Fingerprint(1); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp1, cm13)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(2); gotFP != wantFP {
+	if wantFP := model.Fingerprint(2); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
@@ -165,10 +165,10 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(3); gotFP != wantFP {
+	if wantFP := model.Fingerprint(3); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
-	sm.put(clientmodel.Fingerprint(3), &memorySeries{metric: cm22})
+	sm.put(model.Fingerprint(3), &memorySeries{metric: cm22})
 	gotFP, err = mapper.mapFP(fp2, cm21)
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +180,7 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(3); gotFP != wantFP {
+	if wantFP := model.Fingerprint(3); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
@@ -189,20 +189,20 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(4); gotFP != wantFP {
+	if wantFP := model.Fingerprint(4); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
-	sm.put(clientmodel.Fingerprint(4), &memorySeries{metric: cm31})
+	sm.put(model.Fingerprint(4), &memorySeries{metric: cm31})
 
 	// Map cm32, which is now mapped for two reasons...
 	gotFP, err = mapper.mapFP(fp3, cm32)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(5); gotFP != wantFP {
+	if wantFP := model.Fingerprint(5); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
-	sm.put(clientmodel.Fingerprint(5), &memorySeries{metric: cm32})
+	sm.put(model.Fingerprint(5), &memorySeries{metric: cm32})
 
 	// Now check ALL the mappings, just to be sure.
 	gotFP, err = mapper.mapFP(fp1, cm11)
@@ -216,14 +216,14 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(1); gotFP != wantFP {
+	if wantFP := model.Fingerprint(1); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp1, cm13)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(2); gotFP != wantFP {
+	if wantFP := model.Fingerprint(2); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp2, cm21)
@@ -237,21 +237,21 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(3); gotFP != wantFP {
+	if wantFP := model.Fingerprint(3); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp3, cm31)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(4); gotFP != wantFP {
+	if wantFP := model.Fingerprint(4); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp3, cm32)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(5); gotFP != wantFP {
+	if wantFP := model.Fingerprint(5); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
@@ -271,14 +271,14 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(1); gotFP != wantFP {
+	if wantFP := model.Fingerprint(1); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp1, cm13)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(2); gotFP != wantFP {
+	if wantFP := model.Fingerprint(2); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp2, cm21)
@@ -292,21 +292,21 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(3); gotFP != wantFP {
+	if wantFP := model.Fingerprint(3); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp3, cm31)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(4); gotFP != wantFP {
+	if wantFP := model.Fingerprint(4); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp3, cm32)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(5); gotFP != wantFP {
+	if wantFP := model.Fingerprint(5); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
@@ -327,14 +327,14 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(1); gotFP != wantFP {
+	if wantFP := model.Fingerprint(1); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp1, cm13)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(2); gotFP != wantFP {
+	if wantFP := model.Fingerprint(2); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp2, cm21)
@@ -348,21 +348,21 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(3); gotFP != wantFP {
+	if wantFP := model.Fingerprint(3); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp3, cm31)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(4); gotFP != wantFP {
+	if wantFP := model.Fingerprint(4); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 	gotFP, err = mapper.mapFP(fp3, cm32)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(5); gotFP != wantFP {
+	if wantFP := model.Fingerprint(5); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
@@ -384,7 +384,7 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(3); gotFP != wantFP { // Old mapping still applied.
+	if wantFP := model.Fingerprint(3); gotFP != wantFP { // Old mapping still applied.
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 
@@ -396,7 +396,7 @@ func TestFPMapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wantFP := clientmodel.Fingerprint(6); gotFP != wantFP {
+	if wantFP := model.Fingerprint(6); gotFP != wantFP {
 		t.Errorf("got fingerprint %v, want fingerprint %v", gotFP, wantFP)
 	}
 

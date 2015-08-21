@@ -24,7 +24,7 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 )
 
 var expectedConf = &Config{
@@ -33,7 +33,7 @@ var expectedConf = &Config{
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: Duration(30 * time.Second),
 
-		Labels: clientmodel.LabelSet{
+		Labels: model.LabelSet{
 			"monitor": "codelab",
 			"foo":     "bar",
 		},
@@ -60,11 +60,11 @@ var expectedConf = &Config{
 
 			TargetGroups: []*TargetGroup{
 				{
-					Targets: []clientmodel.LabelSet{
-						{clientmodel.AddressLabel: "localhost:9090"},
-						{clientmodel.AddressLabel: "localhost:9191"},
+					Targets: []model.LabelSet{
+						{model.AddressLabel: "localhost:9090"},
+						{model.AddressLabel: "localhost:9191"},
 					},
-					Labels: clientmodel.LabelSet{
+					Labels: model.LabelSet{
 						"my":   "label",
 						"your": "label",
 					},
@@ -84,7 +84,7 @@ var expectedConf = &Config{
 
 			RelabelConfigs: []*RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"job", "__meta_dns_srv_name"},
+					SourceLabels: model.LabelNames{"job", "__meta_dns_srv_name"},
 					TargetLabel:  "job",
 					Separator:    ";",
 					Regex:        &Regexp{*regexp.MustCompile("(.*)some-[regex]$")},
@@ -126,20 +126,20 @@ var expectedConf = &Config{
 
 			RelabelConfigs: []*RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"job"},
+					SourceLabels: model.LabelNames{"job"},
 					Regex:        &Regexp{*regexp.MustCompile("(.*)some-[regex]$")},
 					Separator:    ";",
 					Action:       RelabelDrop,
 				},
 				{
-					SourceLabels: clientmodel.LabelNames{"__address__"},
+					SourceLabels: model.LabelNames{"__address__"},
 					TargetLabel:  "__tmp_hash",
 					Modulus:      8,
 					Separator:    ";",
 					Action:       RelabelHashMod,
 				},
 				{
-					SourceLabels: clientmodel.LabelNames{"__tmp_hash"},
+					SourceLabels: model.LabelNames{"__tmp_hash"},
 					Regex:        &Regexp{*regexp.MustCompile("^1$")},
 					Separator:    ";",
 					Action:       RelabelKeep,
@@ -147,7 +147,7 @@ var expectedConf = &Config{
 			},
 			MetricRelabelConfigs: []*RelabelConfig{
 				{
-					SourceLabels: clientmodel.LabelNames{"__name__"},
+					SourceLabels: model.LabelNames{"__name__"},
 					Regex:        &Regexp{*regexp.MustCompile("expensive_metric.*$")},
 					Separator:    ";",
 					Action:       RelabelDrop,

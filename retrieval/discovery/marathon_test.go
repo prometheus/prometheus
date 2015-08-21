@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval/discovery/marathon"
@@ -104,8 +104,8 @@ func TestMarathonSDSendGroup(t *testing.T) {
 				t.Fatalf("Wrong number of targets: %v", tg.Targets)
 			}
 			tgt := tg.Targets[0]
-			if tgt[clientmodel.AddressLabel] != "mesos-slave1:31000" {
-				t.Fatalf("Wrong target address: %s", tgt[clientmodel.AddressLabel])
+			if tgt[model.AddressLabel] != "mesos-slave1:31000" {
+				t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 			}
 		default:
 			t.Fatal("Did not get a target group.")

@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 
-	clientmodel "github.com/prometheus/client_golang/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -32,7 +32,7 @@ import (
 const (
 	resolvConf = "/etc/resolv.conf"
 
-	DNSNameLabel = clientmodel.MetaLabelPrefix + "dns_name"
+	DNSNameLabel = model.MetaLabelPrefix + "dns_name"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -144,25 +144,25 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) erro
 
 	tg := &config.TargetGroup{}
 	for _, record := range response.Answer {
-		target := clientmodel.LabelValue("")
+		target := model.LabelValue("")
 		switch addr := record.(type) {
 		case *dns.SRV:
 			// Remove the final dot from rooted DNS names to make them look more usual.
 			addr.Target = strings.TrimRight(addr.Target, ".")
 
-			target = clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.Target, addr.Port))
+			target = model.LabelValue(fmt.Sprintf("%s:%d", addr.Target, addr.Port))
 		case *dns.A:
-			target = clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.A, dd.port))
+			target = model.LabelValue(fmt.Sprintf("%s:%d", addr.A, dd.port))
 		case *dns.AAAA:
-			target = clientmodel.LabelValue(fmt.Sprintf("%s:%d", addr.AAAA, dd.port))
+			target = model.LabelValue(fmt.Sprintf("%s:%d", addr.AAAA, dd.port))
 		default:
 			log.Warnf("%q is not a valid SRV record", record)
 			continue
 
 		}
-		tg.Targets = append(tg.Targets, clientmodel.LabelSet{
-			clientmodel.AddressLabel: target,
-			DNSNameLabel:             clientmodel.LabelValue(name),
+		tg.Targets = append(tg.Targets, model.LabelSet{
+			model.AddressLabel: target,
+			DNSNameLabel:       model.LabelValue(name),
 		})
 	}
 
