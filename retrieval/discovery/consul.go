@@ -47,6 +47,8 @@ const (
 	ConsulServicePortLabel = clientmodel.MetaLabelPrefix + "consul_service_port"
 	// ConsulDCLabel is the name of the label containing the datacenter ID.
 	ConsulDCLabel = clientmodel.MetaLabelPrefix + "consul_dc"
+	// ConsulServiceIDLabel is the name of the label containing the service ID.
+	ConsulServiceIDLabel = clientmodel.MetaLabelPrefix + "consul_service_id"
 )
 
 // ConsulDiscovery retrieves target information from a Consul server
@@ -276,6 +278,7 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 				ConsulTagsLabel:           clientmodel.LabelValue(tags),
 				ConsulServiceAddressLabel: clientmodel.LabelValue(node.ServiceAddress),
 				ConsulServicePortLabel:    clientmodel.LabelValue(strconv.Itoa(node.ServicePort)),
+				ConsulServiceIDLabel:      clientmodel.LabelValue(node.ServiceID),
 			})
 		}
 
