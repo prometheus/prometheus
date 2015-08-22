@@ -385,7 +385,7 @@ func (s *memorySeriesStorage) NewPreloader() Preloader {
 
 // fingerprintsForLabelPairs returns the set of fingerprints that have the given labels.
 // This does not work with empty label values.
-func (s *memorySeriesStorage) fingerprintsForLabelPairs(pairs ...metric.LabelPair) map[model.Fingerprint]struct{} {
+func (s *memorySeriesStorage) fingerprintsForLabelPairs(pairs ...model.LabelPair) map[model.Fingerprint]struct{} {
 	var result map[model.Fingerprint]struct{}
 	for _, pair := range pairs {
 		intersection := map[model.Fingerprint]struct{}{}
@@ -412,12 +412,12 @@ func (s *memorySeriesStorage) fingerprintsForLabelPairs(pairs ...metric.LabelPai
 // MetricsForLabelMatchers implements Storage.
 func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelMatcher) map[model.Fingerprint]model.COWMetric {
 	var (
-		equals  []metric.LabelPair
+		equals  []model.LabelPair
 		filters []*metric.LabelMatcher
 	)
 	for _, lm := range matchers {
 		if lm.Type == metric.Equal && lm.Value != "" {
-			equals = append(equals, metric.LabelPair{
+			equals = append(equals, model.LabelPair{
 				Name:  lm.Name,
 				Value: lm.Value,
 			})
@@ -446,7 +446,7 @@ func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelM
 				return nil
 			}
 			for _, v := range matches {
-				fps := s.fingerprintsForLabelPairs(metric.LabelPair{
+				fps := s.fingerprintsForLabelPairs(model.LabelPair{
 					Name:  matcher.Name,
 					Value: v,
 				})

@@ -34,7 +34,6 @@ import (
 
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
-	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/flock"
 )
 
@@ -334,7 +333,7 @@ func (p *persistence) setDirty(dirty bool) {
 // pair. This method is goroutine-safe but take into account that metrics queued
 // for indexing with IndexMetric might not have made it into the index
 // yet. (Same applies correspondingly to UnindexMetric.)
-func (p *persistence) fingerprintsForLabelPair(lp metric.LabelPair) (model.Fingerprints, error) {
+func (p *persistence) fingerprintsForLabelPair(lp model.LabelPair) (model.Fingerprints, error) {
 	fps, _, err := p.labelPairToFingerprints.Lookup(lp)
 	if err != nil {
 		return nil, err
@@ -1353,7 +1352,7 @@ loop:
 
 			batchSize++
 			for ln, lv := range op.metric {
-				lp := metric.LabelPair{Name: ln, Value: lv}
+				lp := model.LabelPair{Name: ln, Value: lv}
 				baseFPs, ok := pairToFPs[lp]
 				if !ok {
 					var err error

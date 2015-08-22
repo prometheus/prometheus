@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/local/codable"
-	"github.com/prometheus/prometheus/storage/metric"
 )
 
 const (
@@ -183,7 +182,7 @@ func DeleteLabelNameLabelValuesIndex(basePath string) error {
 
 // LabelPairFingerprintsMapping is an in-memory map of label pairs to
 // fingerprints.
-type LabelPairFingerprintsMapping map[metric.LabelPair]codable.FingerprintSet
+type LabelPairFingerprintsMapping map[model.LabelPair]codable.FingerprintSet
 
 // LabelPairFingerprintIndex is a KeyValueStore that maps existing label pairs
 // to the fingerprints of all metrics containing those label pairs.
@@ -216,7 +215,7 @@ func (i *LabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintsMapping) e
 // returned.
 //
 // This method is goroutine-safe.
-func (i *LabelPairFingerprintIndex) Lookup(p metric.LabelPair) (fps model.Fingerprints, ok bool, err error) {
+func (i *LabelPairFingerprintIndex) Lookup(p model.LabelPair) (fps model.Fingerprints, ok bool, err error) {
 	ok, err = i.Get((codable.LabelPair)(p), (*codable.Fingerprints)(&fps))
 	return
 }
@@ -226,7 +225,7 @@ func (i *LabelPairFingerprintIndex) Lookup(p metric.LabelPair) (fps model.Finger
 // returned.
 //
 // This method is goroutine-safe.
-func (i *LabelPairFingerprintIndex) LookupSet(p metric.LabelPair) (fps map[model.Fingerprint]struct{}, ok bool, err error) {
+func (i *LabelPairFingerprintIndex) LookupSet(p model.LabelPair) (fps map[model.Fingerprint]struct{}, ok bool, err error) {
 	ok, err = i.Get((codable.LabelPair)(p), (*codable.FingerprintSet)(&fps))
 	if fps == nil {
 		fps = map[model.Fingerprint]struct{}{}

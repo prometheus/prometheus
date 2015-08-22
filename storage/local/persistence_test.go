@@ -603,7 +603,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	p.indexMetric(2, m2)
 	p.waitForIndexing()
 
-	outFPs, err := p.fingerprintsForLabelPair(metric.LabelPair{Name: "n1", Value: "v1"})
+	outFPs, err := p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,7 +611,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	outFPs, err = p.fingerprintsForLabelPair(metric.LabelPair{Name: "n2", Value: "v2"})
+	outFPs, err = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,7 +635,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	}
 	p.waitForIndexing()
 
-	outFPs, err = p.fingerprintsForLabelPair(metric.LabelPair{Name: "n1", Value: "v1"})
+	outFPs, err = p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +643,7 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	outFPs, err = p.fingerprintsForLabelPair(metric.LabelPair{Name: "n2", Value: "v2"})
+	outFPs, err = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -708,27 +708,27 @@ func testIndexing(t *testing.T, encoding chunkEncoding) {
 				},
 			},
 			expectedLpToFps: index.LabelPairFingerprintsMapping{
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  model.MetricNameLabel,
 					Value: "metric_0",
 				}: codable.FingerprintSet{0: struct{}{}, 1: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  model.MetricNameLabel,
 					Value: "metric_1",
 				}: codable.FingerprintSet{2: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_1",
 					Value: "value_1",
 				}: codable.FingerprintSet{0: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_1",
 					Value: "value_2",
 				}: codable.FingerprintSet{2: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_2",
 					Value: "value_2",
 				}: codable.FingerprintSet{1: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_3",
 					Value: "value_3",
 				}: codable.FingerprintSet{1: struct{}{}},
@@ -769,39 +769,39 @@ func testIndexing(t *testing.T, encoding chunkEncoding) {
 				},
 			},
 			expectedLpToFps: index.LabelPairFingerprintsMapping{
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  model.MetricNameLabel,
 					Value: "metric_0",
 				}: codable.FingerprintSet{0: struct{}{}, 1: struct{}{}, 3: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  model.MetricNameLabel,
 					Value: "metric_1",
 				}: codable.FingerprintSet{2: struct{}{}, 5: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  model.MetricNameLabel,
 					Value: "metric_2",
 				}: codable.FingerprintSet{4: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_1",
 					Value: "value_1",
 				}: codable.FingerprintSet{0: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_1",
 					Value: "value_2",
 				}: codable.FingerprintSet{2: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_1",
 					Value: "value_3",
 				}: codable.FingerprintSet{3: struct{}{}, 5: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_2",
 					Value: "value_2",
 				}: codable.FingerprintSet{1: struct{}{}, 4: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_3",
 					Value: "value_1",
 				}: codable.FingerprintSet{4: struct{}{}},
-				metric.LabelPair{
+				model.LabelPair{
 					Name:  "label_3",
 					Value: "value_3",
 				}: codable.FingerprintSet{1: struct{}{}},
