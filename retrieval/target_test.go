@@ -17,7 +17,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	// "fmt"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -140,31 +140,31 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 	}
 }
 
-// func TestTargetScrapeWithFullChannel(t *testing.T) {
-// 	server := httptest.NewServer(
-// 		http.HandlerFunc(
-// 			func(w http.ResponseWriter, r *http.Request) {
-// 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-// 				for i := 0; i < 2*ingestedSamplesCap; i++ {
-// 					w.Write([]byte(
-// 						fmt.Sprintf("test_metric_%d{foo=\"bar\"} 123.456\n", i),
-// 					))
-// 				}
-// 			},
-// 		),
-// 	)
-// 	defer server.Close()
+func TestTargetScrapeWithFullChannel(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				for i := 0; i < 2*ingestedSamplesCap; i++ {
+					w.Write([]byte(
+						fmt.Sprintf("test_metric_%d{foo=\"bar\"} 123.456\n", i),
+					))
+				}
+			},
+		),
+	)
+	defer server.Close()
 
-// 	testTarget := newTestTarget(server.URL, 10*time.Millisecond, model.LabelSet{"dings": "bums"})
+	testTarget := newTestTarget(server.URL, 10*time.Millisecond, model.LabelSet{"dings": "bums"})
 
-// 	testTarget.scrape(slowAppender{})
-// 	if testTarget.status.Health() != HealthBad {
-// 		t.Errorf("Expected target state %v, actual: %v", HealthBad, testTarget.status.Health())
-// 	}
-// 	if testTarget.status.LastError() != errIngestChannelFull {
-// 		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.status.LastError())
-// 	}
-// }
+	testTarget.scrape(slowAppender{})
+	if testTarget.status.Health() != HealthBad {
+		t.Errorf("Expected target state %v, actual: %v", HealthBad, testTarget.status.Health())
+	}
+	if testTarget.status.LastError() != errIngestChannelFull {
+		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.status.LastError())
+	}
+}
 
 func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
 	server := httptest.NewServer(
