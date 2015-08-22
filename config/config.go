@@ -23,9 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
-
 	"github.com/prometheus/common/model"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/util/strutil"
 )

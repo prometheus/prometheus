@@ -17,7 +17,6 @@ import (
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"

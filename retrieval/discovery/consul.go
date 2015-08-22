@@ -21,10 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/log"
-
 	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/log"
 
 	"github.com/prometheus/prometheus/config"
 )

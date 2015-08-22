@@ -22,10 +22,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
 	"golang.org/x/net/context"
-
-	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"

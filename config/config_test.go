@@ -22,9 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v2"
-
 	"github.com/prometheus/common/model"
+	"gopkg.in/yaml.v2"
 )
 
 var expectedConf = &Config{

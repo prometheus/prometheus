@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/storage/metric"
 )
 

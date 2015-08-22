@@ -24,9 +24,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/prometheus/log"
-
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/log"
 
 	"github.com/prometheus/prometheus/promql"
 )

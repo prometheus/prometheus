@@ -21,11 +21,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
 	"gopkg.in/fsnotify.v1"
 	"gopkg.in/yaml.v2"
-
-	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 )

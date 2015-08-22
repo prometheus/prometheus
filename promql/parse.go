@@ -20,9 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/log"
-
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/log"
 
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/strutil"

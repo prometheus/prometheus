@@ -16,12 +16,11 @@ package remote
 import (
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
-
-	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/prometheus/common/model"
 )
 
 // Storage collects multiple remote storage queues.
