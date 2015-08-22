@@ -44,7 +44,7 @@ type Storage interface {
 	// LastSamplePairForFingerprint returns the last sample pair for the
 	// provided fingerprint. If the respective time series does not exist or
 	// has an evicted head chunk, nil is returned.
-	LastSamplePairForFingerprint(model.Fingerprint) *metric.SamplePair
+	LastSamplePairForFingerprint(model.Fingerprint) *model.SamplePair
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(model.LabelName) model.LabelValues
 	// Get the metric associated with the provided fingerprint.
@@ -80,12 +80,12 @@ type SeriesIterator interface {
 	// value is returned. Only the first or last value is returned (as a
 	// single value), if the given time is before or after the first or last
 	// value, respectively.
-	ValueAtTime(model.Time) metric.Values
+	ValueAtTime(model.Time) []model.SamplePair
 	// Gets the boundary values of an interval: the first and last value
 	// within a given interval.
-	BoundaryValues(metric.Interval) metric.Values
+	BoundaryValues(metric.Interval) []model.SamplePair
 	// Gets all values contained within a given interval.
-	RangeValues(metric.Interval) metric.Values
+	RangeValues(metric.Interval) []model.SamplePair
 }
 
 // A Preloader preloads series data necessary for a query into memory and pins

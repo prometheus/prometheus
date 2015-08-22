@@ -571,7 +571,7 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 	for m := range s.fpToSeries.iter() {
 		s.fpLocker.Lock(m.fp)
 
-		var values metric.Values
+		var values []model.SamplePair
 		for _, cd := range m.series.chunkDescs {
 			if cd.isEvicted() {
 				continue
@@ -1527,7 +1527,7 @@ func TestAppendOutOfOrder(t *testing.T) {
 
 	it := s.NewIterator(fp)
 
-	want := metric.Values{
+	want := []model.SamplePair{
 		{
 			Timestamp: 0,
 			Value:     0,

@@ -328,7 +328,7 @@ func (s *memorySeriesStorage) NewIterator(fp model.Fingerprint) SeriesIterator {
 }
 
 // LastSampleForFingerprint implements Storage.
-func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) *metric.SamplePair {
+func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) *model.SamplePair {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
@@ -347,17 +347,17 @@ type boundedIterator struct {
 }
 
 // ValueAtTime implements the SeriesIterator interface.
-func (bit *boundedIterator) ValueAtTime(ts model.Time) metric.Values {
+func (bit *boundedIterator) ValueAtTime(ts model.Time) []model.SamplePair {
 	if ts < bit.start {
-		return metric.Values{}
+		return []model.SamplePair{}
 	}
 	return bit.it.ValueAtTime(ts)
 }
 
 // BoundaryValues implements the SeriesIterator interface.
-func (bit *boundedIterator) BoundaryValues(interval metric.Interval) metric.Values {
+func (bit *boundedIterator) BoundaryValues(interval metric.Interval) []model.SamplePair {
 	if interval.NewestInclusive < bit.start {
-		return metric.Values{}
+		return []model.SamplePair{}
 	}
 	if interval.OldestInclusive < bit.start {
 		interval.OldestInclusive = bit.start
@@ -366,9 +366,9 @@ func (bit *boundedIterator) BoundaryValues(interval metric.Interval) metric.Valu
 }
 
 // RangeValues implements the SeriesIterator interface.
-func (bit *boundedIterator) RangeValues(interval metric.Interval) metric.Values {
+func (bit *boundedIterator) RangeValues(interval metric.Interval) []model.SamplePair {
 	if interval.NewestInclusive < bit.start {
-		return metric.Values{}
+		return []model.SamplePair{}
 	}
 	if interval.OldestInclusive < bit.start {
 		interval.OldestInclusive = bit.start
@@ -570,7 +570,7 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) {
 		s.fpLocker.Unlock(fp)
 		return
 	}
-	completedChunksCount := series.add(&metric.SamplePair{
+	completedChunksCount := series.add(&model.SamplePair{
 		Value:     sample.Value,
 		Timestamp: sample.Timestamp,
 	})

@@ -13,40 +13,7 @@
 
 package metric
 
-import (
-	"fmt"
-	"strconv"
-
-	"github.com/prometheus/common/model"
-)
-
-// MarshalJSON implements json.Marshaler.
-func (s SamplePair) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("[%s, \"%s\"]", s.Timestamp.String(), strconv.FormatFloat(float64(s.Value), 'f', -1, 64))), nil
-}
-
-// SamplePair pairs a SampleValue with a Timestamp.
-type SamplePair struct {
-	Timestamp model.Time
-	Value     model.SampleValue
-}
-
-// Equal returns true if this SamplePair and o have equal Values and equal
-// Timestamps.
-func (s *SamplePair) Equal(o *SamplePair) bool {
-	if s == o {
-		return true
-	}
-
-	return s.Value.Equal(o.Value) && s.Timestamp.Equal(o.Timestamp)
-}
-
-func (s *SamplePair) String() string {
-	return fmt.Sprintf("SamplePair at %s of %s", s.Timestamp, s.Value)
-}
-
-// Values is a slice of SamplePairs.
-type Values []SamplePair
+import "github.com/prometheus/common/model"
 
 // Interval describes the inclusive interval between two Timestamps.
 type Interval struct {
