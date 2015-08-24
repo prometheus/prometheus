@@ -376,3 +376,10 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleUpdatesReturnsWhenUpdateChanIsClosed(t *testing.T) {
+	tm := NewTargetManager(nopAppender{})
+	ch := make(chan targetGroupUpdate)
+	close(ch)
+	tm.handleUpdates(ch, make(chan struct{}))
+}
