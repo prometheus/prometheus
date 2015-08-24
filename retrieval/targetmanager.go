@@ -171,12 +171,15 @@ func (tm *TargetManager) Run() {
 	tm.running = true
 }
 
-// handleTargetUpdates receives target group updates and handles them in the
+// handleUpdates receives target group updates and handles them in the
 // context of the given job config.
 func (tm *TargetManager) handleUpdates(ch <-chan targetGroupUpdate, done <-chan struct{}) {
 	for {
 		select {
-		case update := <-ch:
+		case update, ok := <-ch:
+			if !ok {
+				return
+			}
 			if update.tg == nil {
 				break
 			}
