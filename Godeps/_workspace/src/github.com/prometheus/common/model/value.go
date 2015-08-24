@@ -67,18 +67,13 @@ func (s SamplePair) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal([...]interface{}{t, v})
+	return []byte(fmt.Sprintf("[%s,%s]", t, v)), nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (s *SamplePair) UnmarshalJSON(b []byte) error {
-	if len(b) < 2 || b[0] != '"' || b[len(b)-1] != '"' {
-		return fmt.Errorf("sample pair must be array")
-	}
-
-	b = b[1 : len(b)-1]
-
-	return json.Unmarshal(b, [...]json.Unmarshaler{&s.Timestamp, &s.Value})
+	v := [...]json.Unmarshaler{&s.Timestamp, &s.Value}
+	return json.Unmarshal(b, &v)
 }
 
 // Equal returns true if this SamplePair and o have equal Values and equal
@@ -87,15 +82,15 @@ func (s *SamplePair) Equal(o *SamplePair) bool {
 	return s == o || (s.Value == o.Value && s.Timestamp.Equal(o.Timestamp))
 }
 
-func (s *SamplePair) String() string {
+func (s SamplePair) String() string {
 	return fmt.Sprintf("%s @[%s]", s.Value, s.Timestamp)
 }
 
 // Sample is a sample pair associated with a metric.
 type Sample struct {
-	Metric    Metric
-	Value     SampleValue
-	Timestamp Time
+	Metric    Metric      `json:"metric"`
+	Value     SampleValue `json:"value"`
+	Timestamp Time        `json:"timestamp"`
 }
 
 // Equal compares first the metrics, then the timestamp, then the value.
@@ -117,11 +112,51 @@ func (s *Sample) Equal(o *Sample) bool {
 	return true
 }
 
-func (s *Sample) String() string {
+func (s Sample) String() string {
 	return fmt.Sprintf("%s => %s", s.Metric, SamplePair{
 		Timestamp: s.Timestamp,
 		Value:     s.Value,
 	})
+}
+
+// MarshalJSON implements json.Marshaler.
+func (s Sample) MarshalJSON() ([]byte, error) {
+	v := struct {
+		Metric Metric     `json:"metric"`
+		Value  SamplePair `json:"value"`
+	}{
+		Metric: s.Metric,
+		Value: SamplePair{
+			Timestamp: s.Timestamp,
+			Value:     s.Value,
+		},
+	}
+
+	return json.Marshal(&v)
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (s *Sample) UnmarshalJSON(b []byte) error {
+	v := struct {
+		Metric Metric     `json:"metric"`
+		Value  SamplePair `json:"value"`
+	}{
+		Metric: s.Metric,
+		Value: SamplePair{
+			Timestamp: s.Timestamp,
+			Value:     s.Value,
+		},
+	}
+
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+
+	s.Metric = v.Metric
+	s.Timestamp = v.Value.Timestamp
+	s.Value = v.Value.Value
+
+	return nil
 }
 
 // Samples is a sortable Sample slice. It implements sort.Interface.
@@ -169,7 +204,7 @@ type SampleStream struct {
 	Values []SamplePair `json:"values"`
 }
 
-func (ss *SampleStream) String() string {
+func (ss SampleStream) String() string {
 	vals := make([]string, len(ss.Values))
 	for i, v := range ss.Values {
 		vals[i] = v.String()
@@ -247,8 +282,31 @@ type Scalar struct {
 	Timestamp Time
 }
 
-func (s *Scalar) String() string {
+func (s Scalar) String() string {
 	return fmt.Sprintf("scalar: %v @[%v]", s.Value, s.Timestamp)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (s Scalar) MarshalJSON() ([]byte, error) {
+	v := strconv.FormatFloat(float64(s.Value), 'f', -1, 64)
+	return json.Marshal([...]interface{}{s.Timestamp, string(v)})
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (s *Scalar) UnmarshalJSON(b []byte) error {
+	var f string
+	v := [...]interface{}{&s.Timestamp, &f}
+
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+
+	value, err := strconv.ParseFloat(f, 64)
+	if err != nil {
+		return fmt.Errorf("error parsing sample value: %s", err)
+	}
+	s.Value = SampleValue(value)
+	return nil
 }
 
 // String is a string value evaluated at the set timestamp.
@@ -259,6 +317,17 @@ type String struct {
 
 func (s *String) String() string {
 	return s.Value
+}
+
+// MarshalJSON implements json.Marshaler.
+func (s String) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]interface{}{s.Timestamp, s.Value})
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (s *String) UnmarshalJSON(b []byte) error {
+	v := [...]interface{}{&s.Timestamp, &s.Value}
+	return json.Unmarshal(b, &v)
 }
 
 // Vector is basically only an alias for Samples, but the

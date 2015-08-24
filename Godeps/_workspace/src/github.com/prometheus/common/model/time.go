@@ -112,9 +112,7 @@ var dotPrecision = int(math.Log10(float64(second)))
 
 // String returns a string representation of the Time.
 func (t Time) String() string {
-	s := strconv.FormatInt(int64(t), 10)
-	i := len(s) - dotPrecision
-	return s[:i] + "." + s[i:]
+	return strconv.FormatFloat(float64(t)/float64(second), 'f', -1, 64)
 }
 
 // MarshalJSON implements the json.Marshaler interface.
