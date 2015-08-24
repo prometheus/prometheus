@@ -27,21 +27,21 @@ func TestMetric(t *testing.T) {
 
 	scenarios := []struct {
 		fn  func(*Metric)
-		out Metric
+		out model.Metric
 	}{
 		{
-			fn: func(cm *etric) {
+			fn: func(cm *Metric) {
 				cm.Del("to_delete")
 			},
-			out: Metric{
+			out: model.Metric{
 				"to_change": "test2",
 			},
 		},
 		{
-			fn: func(cm *COWMetric) {
+			fn: func(cm *Metric) {
 				cm.Set("to_change", "changed")
 			},
-			out: Metric{
+			out: model.Metric{
 				"to_delete": "test1",
 				"to_change": "changed",
 			},

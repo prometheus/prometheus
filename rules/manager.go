@@ -80,7 +80,7 @@ type Rule interface {
 	// Name returns the name of the rule.
 	Name() string
 	// Eval evaluates the rule, including any associated recording or alerting actions.
-	eval(model.Time, *promql.Engine) (promql.Vector, error)
+	eval(model.Time, *promql.Engine) (model.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -273,11 +273,7 @@ func (m *Manager) runIteration() {
 			}
 
 			for _, s := range vector {
-				m.sampleAppender.Append(&model.Sample{
-					Metric:    s.Metric.Metric,
-					Value:     s.Value,
-					Timestamp: s.Timestamp,
-				})
+				m.sampleAppender.Append(s)
 			}
 		}(rule)
 	}

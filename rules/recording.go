@@ -43,38 +43,44 @@ func NewRecordingRule(name string, vector promql.Expr, labels model.LabelSet) *R
 func (rule RecordingRule) Name() string { return rule.name }
 
 // eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) eval(timestamp model.Time, engine *promql.Engine) (promql.Vector, error) {
+func (rule RecordingRule) eval(timestamp model.Time, engine *promql.Engine) (model.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err
 	}
 
-	result := query.Exec()
-	var vector promql.Vector
+	var (
+		result = query.Exec()
+		vector model.Vector
+	)
 	switch result.Value.(type) {
-	case promql.Vector:
+	case model.Vector:
 		vector, err = result.Vector()
 		if err != nil {
 			return nil, err
 		}
-	case *promql.Scalar:
+	case *model.Scalar:
 		scalar, err := result.Scalar()
 		if err != nil {
 			return nil, err
 		}
-		vector = promql.Vector{&promql.Sample{Value: scalar.Value, Timestamp: scalar.Timestamp}}
+		vector = model.Vector{&model.Sample{
+			Value:     scalar.Value,
+			Timestamp: scalar.Timestamp,
+		}}
 	default:
 		return nil, fmt.Errorf("rule result is not a vector or scalar")
 	}
 
 	// Override the metric name and labels.
 	for _, sample := range vector {
-		sample.Metric.Set(model.MetricNameLabel, model.LabelValue(rule.name))
+		sample.Metric[model.MetricNameLabel] = model.LabelValue(rule.name)
+
 		for label, value := range rule.labels {
 			if value == "" {
-				sample.Metric.Del(label)
+				delete(sample.Metric, label)
 			} else {
-				sample.Metric.Set(label, value)
+				sample.Metric[label] = value
 			}
 		}
 	}

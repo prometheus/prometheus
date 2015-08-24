@@ -26,8 +26,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
-
-	"github.com/prometheus/prometheus/promql"
 )
 
 // Enables cross-site script calls.
@@ -89,15 +87,15 @@ func (api *API) Query(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Debugf("Instant query: %s\nQuery stats:\n%s\n", expr, query.Stats())
 
-	if vec, ok := res.Value.(promql.Vector); ok {
+	if vec, ok := res.Value.(model.Vector); ok {
 		respondJSON(w, plainVec(vec))
 		return
 	}
-	if sca, ok := res.Value.(*promql.Scalar); ok {
+	if sca, ok := res.Value.(*model.Scalar); ok {
 		respondJSON(w, (*plainScalar)(sca))
 		return
 	}
-	if str, ok := res.Value.(*promql.String); ok {
+	if str, ok := res.Value.(*model.String); ok {
 		respondJSON(w, (*plainString)(str))
 		return
 	}
@@ -107,10 +105,10 @@ func (api *API) Query(w http.ResponseWriter, r *http.Request) {
 
 // plainVec is an indirection that hides the original MarshalJSON method
 // which does not fit the response format for the legacy API.
-type plainVec promql.Vector
+type plainVec model.Vector
 
 func (pv plainVec) MarshalJSON() ([]byte, error) {
-	type plainSmpl promql.Sample
+	type plainSmpl model.Sample
 
 	v := make([]*plainSmpl, len(pv))
 	for i, sv := range pv {
@@ -120,8 +118,8 @@ func (pv plainVec) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&v)
 }
 
-func (pv plainVec) Type() promql.ExprType {
-	return promql.ExprVector
+func (pv plainVec) Type() model.ValueType {
+	return model.ValVector
 }
 
 func (pv plainVec) String() string {
@@ -130,15 +128,15 @@ func (pv plainVec) String() string {
 
 // plainScalar is an indirection that hides the original MarshalJSON method
 // which does not fit the response format for the legacy API.
-type plainScalar promql.Scalar
+type plainScalar model.Scalar
 
 func (ps plainScalar) MarshalJSON() ([]byte, error) {
 	s := strconv.FormatFloat(float64(ps.Value), 'f', -1, 64)
 	return json.Marshal(&s)
 }
 
-func (plainScalar) Type() promql.ExprType {
-	return promql.ExprScalar
+func (plainScalar) Type() model.ValueType {
+	return model.ValScalar
 }
 
 func (plainScalar) String() string {
@@ -147,10 +145,10 @@ func (plainScalar) String() string {
 
 // plainString is an indirection that hides the original MarshalJSON method
 // which does not fit the response format for the legacy API.
-type plainString promql.String
+type plainString model.String
 
-func (pv plainString) Type() promql.ExprType {
-	return promql.ExprString
+func (pv plainString) Type() model.ValueType {
+	return model.ValString
 }
 
 func (pv plainString) String() string {
@@ -257,7 +255,7 @@ func errorJSON(w io.Writer, err error) error {
 }
 
 // RespondJSON converts the given data value to JSON and writes it to w.
-func respondJSON(w io.Writer, val promql.Value) error {
+func respondJSON(w io.Writer, val model.Value) error {
 	data := struct {
 		Type    string      `json:"type"`
 		Value   interface{} `json:"value"`
@@ -268,7 +266,7 @@ func respondJSON(w io.Writer, val promql.Value) error {
 		Version: jsonFormatVersion,
 	}
 	// TODO(fabxc): Adding MarshalJSON to promql.Values might be a good idea.
-	if sc, ok := val.(*promql.Scalar); ok {
+	if sc, ok := val.(*model.Scalar); ok {
 		data.Value = sc.Value
 	}
 	enc := json.NewEncoder(w)

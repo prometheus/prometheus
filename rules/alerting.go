@@ -77,8 +77,8 @@ type Alert struct {
 }
 
 // sample returns a Sample suitable for recording the alert.
-func (a Alert) sample(timestamp model.Time, value model.SampleValue) *promql.Sample {
-	recordedMetric := model.Metric{}
+func (a Alert) sample(timestamp model.Time, value model.SampleValue) *model.Sample {
+	recordedMetric := make(model.Metric, len(a.Labels)+3)
 	for label, value := range a.Labels {
 		recordedMetric[label] = value
 	}
@@ -87,11 +87,8 @@ func (a Alert) sample(timestamp model.Time, value model.SampleValue) *promql.Sam
 	recordedMetric[alertNameLabel] = model.LabelValue(a.Name)
 	recordedMetric[alertStateLabel] = model.LabelValue(a.State.String())
 
-	return &promql.Sample{
-		Metric: model.COWMetric{
-			Metric: recordedMetric,
-			Copied: true,
-		},
+	return &model.Sample{
+		Metric:    recordedMetric,
 		Value:     value,
 		Timestamp: timestamp,
 	}
@@ -152,7 +149,7 @@ func (rule *AlertingRule) Name() string {
 
 // eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (rule *AlertingRule) eval(timestamp model.Time, engine *promql.Engine) (promql.Vector, error) {
+func (rule *AlertingRule) eval(timestamp model.Time, engine *promql.Engine) (model.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err
@@ -169,11 +166,11 @@ func (rule *AlertingRule) eval(timestamp model.Time, engine *promql.Engine) (pro
 	// or update the expression value for existing elements.
 	resultFPs := map[model.Fingerprint]struct{}{}
 	for _, sample := range exprResult {
-		fp := sample.Metric.Metric.Fingerprint()
+		fp := sample.Metric.Fingerprint()
 		resultFPs[fp] = struct{}{}
 
 		if alert, ok := rule.activeAlerts[fp]; !ok {
-			labels := model.LabelSet(sample.Metric.Metric.Clone())
+			labels := model.LabelSet(sample.Metric.Clone())
 			labels = labels.Merge(rule.labels)
 			if _, ok := labels[model.MetricNameLabel]; ok {
 				delete(labels, model.MetricNameLabel)
@@ -190,7 +187,7 @@ func (rule *AlertingRule) eval(timestamp model.Time, engine *promql.Engine) (pro
 		}
 	}
 
-	vector := promql.Vector{}
+	var vector model.Vector
 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, activeAlert := range rule.activeAlerts {

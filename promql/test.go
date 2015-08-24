@@ -340,25 +340,25 @@ func (ev *evalCmd) expect(pos int, m model.Metric, vals ...sequenceValue) {
 }
 
 // compareResult compares the result value with the defined expectation.
-func (ev *evalCmd) compareResult(result Value) error {
+func (ev *evalCmd) compareResult(result model.Value) error {
 	switch val := result.(type) {
-	case Matrix:
+	case model.Matrix:
 		if ev.instant {
 			return fmt.Errorf("received range result on instant evaluation")
 		}
 		seen := map[model.Fingerprint]bool{}
 		for pos, v := range val {
-			fp := v.Metric.Metric.Fingerprint()
+			fp := v.Metric.Fingerprint()
 			if _, ok := ev.metrics[fp]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", v.Metric.Metric)
+				return fmt.Errorf("unexpected metric %s in result", v.Metric)
 			}
 			exp := ev.expected[fp]
 			if ev.ordered && exp.pos != pos+1 {
-				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric.Metric, exp.vals, exp.pos, pos+1)
+				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
 			for i, expVal := range exp.vals {
 				if !almostEqual(float64(expVal.value), float64(v.Values[i].Value)) {
-					return fmt.Errorf("expected %v for %s but got %v", expVal, v.Metric.Metric, v.Values)
+					return fmt.Errorf("expected %v for %s but got %v", expVal, v.Metric, v.Values)
 				}
 			}
 			seen[fp] = true
@@ -369,22 +369,22 @@ func (ev *evalCmd) compareResult(result Value) error {
 			}
 		}
 
-	case Vector:
+	case model.Vector:
 		if !ev.instant {
 			fmt.Errorf("received instant result on range evaluation")
 		}
 		seen := map[model.Fingerprint]bool{}
 		for pos, v := range val {
-			fp := v.Metric.Metric.Fingerprint()
+			fp := v.Metric.Fingerprint()
 			if _, ok := ev.metrics[fp]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", v.Metric.Metric)
+				return fmt.Errorf("unexpected metric %s in result", v.Metric)
 			}
 			exp := ev.expected[fp]
 			if ev.ordered && exp.pos != pos+1 {
-				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric.Metric, exp.vals, exp.pos, pos+1)
+				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
 			if !almostEqual(float64(exp.vals[0].value), float64(v.Value)) {
-				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].value, v.Metric.Metric, v.Value)
+				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].value, v.Metric, v.Value)
 			}
 
 			seen[fp] = true
@@ -395,7 +395,7 @@ func (ev *evalCmd) compareResult(result Value) error {
 			}
 		}
 
-	case *Scalar:
+	case *model.Scalar:
 		if !almostEqual(float64(ev.expected[0].vals[0].value), float64(val.Value)) {
 			return fmt.Errorf("expected scalar %v but got %v", val.Value, ev.expected[0].vals[0].value)
 		}

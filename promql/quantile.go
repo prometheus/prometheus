@@ -18,6 +18,8 @@ import (
 	"sort"
 
 	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 // Helpers to calculate quantiles.
@@ -42,7 +44,7 @@ func (b buckets) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b buckets) Less(i, j int) bool { return b[i].upperBound < b[j].upperBound }
 
 type metricWithBuckets struct {
-	metric  model.COWMetric
+	metric  metric.Metric
 	buckets buckets
 }
 

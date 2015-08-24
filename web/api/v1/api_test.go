@@ -55,8 +55,8 @@ func TestEndpoints(t *testing.T) {
 				"time":  []string{"123.3"},
 			},
 			response: &queryData{
-				ResultType: promql.ExprScalar,
-				Result: &promql.Scalar{
+				ResultType: model.ValScalar,
+				Result: &model.Scalar{
 					Value:     2,
 					Timestamp: start.Add(123*time.Second + 300*time.Millisecond),
 				},
@@ -69,8 +69,8 @@ func TestEndpoints(t *testing.T) {
 				"time":  []string{"1970-01-01T00:02:03Z"},
 			},
 			response: &queryData{
-				ResultType: promql.ExprScalar,
-				Result: &promql.Scalar{
+				ResultType: model.ValScalar,
+				Result: &model.Scalar{
 					Value:     0.333,
 					Timestamp: start.Add(123 * time.Second),
 				},
@@ -83,8 +83,8 @@ func TestEndpoints(t *testing.T) {
 				"time":  []string{"1970-01-01T01:02:03+01:00"},
 			},
 			response: &queryData{
-				ResultType: promql.ExprScalar,
-				Result: &promql.Scalar{
+				ResultType: model.ValScalar,
+				Result: &model.Scalar{
 					Value:     0.333,
 					Timestamp: start.Add(123 * time.Second),
 				},
@@ -99,14 +99,15 @@ func TestEndpoints(t *testing.T) {
 				"step":  []string{"1"},
 			},
 			response: &queryData{
-				ResultType: promql.ExprMatrix,
-				Result: promql.Matrix{
-					&promql.SampleStream{
+				ResultType: model.ValMatrix,
+				Result: model.Matrix{
+					&model.SampleStream{
 						Values: []model.SamplePair{
 							{Value: 0, Timestamp: start},
 							{Value: 1, Timestamp: start.Add(1 * time.Second)},
 							{Value: 2, Timestamp: start.Add(2 * time.Second)},
 						},
+						Metric: model.Metric{},
 					},
 				},
 			},
@@ -312,7 +313,7 @@ func TestEndpoints(t *testing.T) {
 			t.Fatalf("Expected error of type %q but got none", test.errType)
 		}
 		if !reflect.DeepEqual(resp, test.response) {
-			t.Fatalf("Response does not match, expected:\n%#v\ngot:\n%#v", test.response, resp)
+			t.Fatalf("Response does not match, expected:\n%+v\ngot:\n%+v", test.response, resp)
 		}
 		// Ensure that removed metrics are unindexed before the next request.
 		suite.Storage().WaitForIndexing()
