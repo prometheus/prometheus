@@ -225,11 +225,11 @@ func init() {
 	key["nan"] = itemNumber
 }
 
-func (t itemType) String() string {
-	if s, ok := itemTypeStr[t]; ok {
+func (i itemType) String() string {
+	if s, ok := itemTypeStr[i]; ok {
 		return s
 	}
-	return fmt.Sprintf("<item %d>", t)
+	return fmt.Sprintf("<item %d>", i)
 }
 
 func (i item) desc() string {
@@ -242,8 +242,8 @@ func (i item) desc() string {
 	return fmt.Sprintf("%s %s", i.typ.desc(), i)
 }
 
-func (t itemType) desc() string {
-	switch t {
+func (i itemType) desc() string {
+	switch i {
 	case itemError:
 		return "error"
 	case itemEOF:
@@ -261,7 +261,7 @@ func (t itemType) desc() string {
 	case itemDuration:
 		return "duration"
 	}
-	return fmt.Sprintf("%q", t)
+	return fmt.Sprintf("%q", i)
 }
 
 const eof = -1

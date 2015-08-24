@@ -337,11 +337,11 @@ func (h *Handler) consolesPath() string {
 func (h *Handler) getTemplate(name string) (string, error) {
 	baseTmpl, err := h.getTemplateFile("_base")
 	if err != nil {
-		return "", fmt.Errorf("Error reading base template: %s", err)
+		return "", fmt.Errorf("error reading base template: %s", err)
 	}
 	pageTmpl, err := h.getTemplateFile(name)
 	if err != nil {
-		return "", fmt.Errorf("Error reading page template %s: %s", name, err)
+		return "", fmt.Errorf("error reading page template %s: %s", name, err)
 	}
 	return baseTmpl + pageTmpl, nil
 }

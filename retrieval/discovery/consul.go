@@ -32,22 +32,22 @@ const (
 	consulWatchTimeout  = 30 * time.Second
 	consulRetryInterval = 15 * time.Second
 
-	// ConsuleAddressLabel is the name for the label containing a target's address.
-	ConsulAddressLabel = model.MetaLabelPrefix + "consul_address"
-	// ConsuleNodeLabel is the name for the label containing a target's node name.
-	ConsulNodeLabel = model.MetaLabelPrefix + "consul_node"
-	// ConsulTagsLabel is the name of the label containing the tags assigned to the target.
-	ConsulTagsLabel = model.MetaLabelPrefix + "consul_tags"
-	// ConsulServiceLabel is the name of the label containing the service name.
-	ConsulServiceLabel = model.MetaLabelPrefix + "consul_service"
-	// ConsulServiceAddressLabel is the name of the label containing the (optional) service address.
-	ConsulServiceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
-	// ConsulServicePortLabel is the name of the label containing the service port.
-	ConsulServicePortLabel = model.MetaLabelPrefix + "consul_service_port"
-	// ConsulDCLabel is the name of the label containing the datacenter ID.
-	ConsulDCLabel = model.MetaLabelPrefix + "consul_dc"
-	// ConsulServiceIDLabel is the name of the label containing the service ID.
-	ConsulServiceIDLabel = model.MetaLabelPrefix + "consul_service_id"
+	// consulAddressLabel is the name for the label containing a target's address.
+	consulAddressLabel = model.MetaLabelPrefix + "consul_address"
+	// consulNodeLabel is the name for the label containing a target's node name.
+	consulNodeLabel = model.MetaLabelPrefix + "consul_node"
+	// consulTagsLabel is the name of the label containing the tags assigned to the target.
+	consulTagsLabel = model.MetaLabelPrefix + "consul_tags"
+	// consulServiceLabel is the name of the label containing the service name.
+	consulServiceLabel = model.MetaLabelPrefix + "consul_service"
+	// consulServiceAddressLabel is the name of the label containing the (optional) service address.
+	consulServiceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
+	// consulServicePortLabel is the name of the label containing the service port.
+	consulServicePortLabel = model.MetaLabelPrefix + "consul_service_port"
+	// consulDCLabel is the name of the label containing the datacenter ID.
+	consulDCLabel = model.MetaLabelPrefix + "consul_dc"
+	// consulServiceIDLabel is the name of the label containing the service ID.
+	consulServiceIDLabel = model.MetaLabelPrefix + "consul_service_id"
 )
 
 // ConsulDiscovery retrieves target information from a Consul server
@@ -226,8 +226,8 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService, done <-ch
 				cd.services[name] = srv
 			}
 			srv.tgroup.Labels = model.LabelSet{
-				ConsulServiceLabel: model.LabelValue(name),
-				ConsulDCLabel:      model.LabelValue(cd.clientDatacenter),
+				consulServiceLabel: model.LabelValue(name),
+				consulDCLabel:      model.LabelValue(cd.clientDatacenter),
 			}
 			update <- srv
 		}
@@ -272,12 +272,12 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.Ta
 
 			srv.tgroup.Targets = append(srv.tgroup.Targets, model.LabelSet{
 				model.AddressLabel:        model.LabelValue(addr),
-				ConsulAddressLabel:        model.LabelValue(node.Address),
-				ConsulNodeLabel:           model.LabelValue(node.Node),
-				ConsulTagsLabel:           model.LabelValue(tags),
-				ConsulServiceAddressLabel: model.LabelValue(node.ServiceAddress),
-				ConsulServicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
-				ConsulServiceIDLabel:      model.LabelValue(node.ServiceID),
+				consulAddressLabel:        model.LabelValue(node.Address),
+				consulNodeLabel:           model.LabelValue(node.Node),
+				consulTagsLabel:           model.LabelValue(tags),
+				consulServiceAddressLabel: model.LabelValue(node.ServiceAddress),
+				consulServicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
+				consulServiceIDLabel:      model.LabelValue(node.ServiceID),
 			})
 		}
 

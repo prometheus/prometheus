@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
-const FileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
+const fileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
 
 // FileDiscovery provides service discovery functionality based
 // on files that contain target groups in JSON or YAML format. Refreshing
@@ -245,7 +245,7 @@ func readFile(filename string) ([]*config.TargetGroup, error) {
 		if tg.Labels == nil {
 			tg.Labels = model.LabelSet{}
 		}
-		tg.Labels[FileSDFilepathLabel] = model.LabelValue(filename)
+		tg.Labels[fileSDFilepathLabel] = model.LabelValue(filename)
 	}
 	return targetGroups, nil
 }

@@ -638,16 +638,16 @@ func (it *memorySeriesIterator) chunkIterator(i int) chunkIterator {
 type nopSeriesIterator struct{}
 
 // ValueAtTime implements SeriesIterator.
-func (_ nopSeriesIterator) ValueAtTime(t model.Time) []model.SamplePair {
+func (i nopSeriesIterator) ValueAtTime(t model.Time) []model.SamplePair {
 	return []model.SamplePair{}
 }
 
 // BoundaryValues implements SeriesIterator.
-func (_ nopSeriesIterator) BoundaryValues(in metric.Interval) []model.SamplePair {
+func (i nopSeriesIterator) BoundaryValues(in metric.Interval) []model.SamplePair {
 	return []model.SamplePair{}
 }
 
 // RangeValues implements SeriesIterator.
-func (_ nopSeriesIterator) RangeValues(in metric.Interval) []model.SamplePair {
+func (i nopSeriesIterator) RangeValues(in metric.Interval) []model.SamplePair {
 	return []model.SamplePair{}
 }

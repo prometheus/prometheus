@@ -225,7 +225,7 @@ func (api *API) Metrics(w http.ResponseWriter, r *http.Request) {
 	resultBytes, err := json.Marshal(metricNames)
 	if err != nil {
 		log.Error("Error marshalling metric names: ", err)
-		httpJSONError(w, fmt.Errorf("Error marshalling metric names: %s", err), http.StatusInternalServerError)
+		httpJSONError(w, fmt.Errorf("error marshalling metric names: %s", err), http.StatusInternalServerError)
 		return
 	}
 	w.Write(resultBytes)

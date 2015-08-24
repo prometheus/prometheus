@@ -179,7 +179,6 @@ func (e *ParenExpr) Type() model.ValueType      { return e.Expr.Type() }
 func (e *StringLiteral) Type() model.ValueType  { return model.ValString }
 func (e *UnaryExpr) Type() model.ValueType      { return e.Expr.Type() }
 func (e *VectorSelector) Type() model.ValueType { return model.ValVector }
-
 func (e *BinaryExpr) Type() model.ValueType {
 	if e.LHS.Type() == model.ValScalar && e.RHS.Type() == model.ValScalar {
 		return model.ValScalar
@@ -197,7 +196,7 @@ func (*StringLiteral) expr()  {}
 func (*UnaryExpr) expr()      {}
 func (*VectorSelector) expr() {}
 
-// VectorMatchCardinaly describes the cardinality relationship
+// VectorMatchCardinality describes the cardinality relationship
 // of two vectors in a binary operation.
 type VectorMatchCardinality int
 
@@ -235,9 +234,10 @@ type VectorMatching struct {
 	Include model.LabelNames
 }
 
-// A Visitor's Visit method is invoked for each node encountered by Walk.
-// If the result visitor w is not nil, Walk visits each of the children
-// of node with the visitor w, followed by a call of w.Visit(nil).
+// Visitor allows visiting a Node and its child nodes. The Visit method is
+// invoked for each node encountered by Walk. If the result visitor w is not
+// nil, Walk visits each of the children of node with the visitor w, followed
+// by a call of w.Visit(nil).
 type Visitor interface {
 	Visit(node Node) (w Visitor)
 }

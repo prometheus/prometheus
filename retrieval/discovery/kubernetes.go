@@ -18,8 +18,9 @@ import (
 	"github.com/prometheus/prometheus/retrieval/discovery/kubernetes"
 )
 
-func NewKubernetesDiscovery(conf *config.KubernetesSDConfig) (*kubernetes.KubernetesDiscovery, error) {
-	kd := &kubernetes.KubernetesDiscovery{
+// NewKubernetesDiscovery creates a Kubernetes service discovery based on the passed-in configuration.
+func NewKubernetesDiscovery(conf *config.KubernetesSDConfig) (*kubernetes.Discovery, error) {
+	kd := &kubernetes.Discovery{
 		Conf: conf,
 	}
 	err := kd.Initialize()
