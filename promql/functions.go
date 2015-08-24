@@ -258,7 +258,7 @@ func funcCountScalar(ev *evaluator, args Expressions) Value {
 	}
 }
 
-func aggrOverTime(ev *evaluator, args Expressions, aggrFn func(metric.Values) model.SampleValue) Value {
+func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]model.SamplePair) model.SampleValue) Value {
 	matrix := ev.evalMatrix(args[0])
 	resultVector := Vector{}
 
@@ -279,7 +279,7 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func(metric.Values) mo
 
 // === avg_over_time(matrix ExprMatrix) Vector ===
 func funcAvgOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
 		var sum model.SampleValue
 		for _, v := range values {
 			sum += v.Value
@@ -290,7 +290,7 @@ func funcAvgOverTime(ev *evaluator, args Expressions) Value {
 
 // === count_over_time(matrix ExprMatrix) Vector ===
 func funcCountOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
 		return model.SampleValue(len(values))
 	})
 }
@@ -307,7 +307,7 @@ func funcFloor(ev *evaluator, args Expressions) Value {
 
 // === max_over_time(matrix ExprMatrix) Vector ===
 func funcMaxOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
 		max := math.Inf(-1)
 		for _, v := range values {
 			max = math.Max(max, float64(v.Value))
@@ -318,7 +318,7 @@ func funcMaxOverTime(ev *evaluator, args Expressions) Value {
 
 // === min_over_time(matrix ExprMatrix) Vector ===
 func funcMinOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
 		min := math.Inf(1)
 		for _, v := range values {
 			min = math.Min(min, float64(v.Value))
@@ -329,7 +329,7 @@ func funcMinOverTime(ev *evaluator, args Expressions) Value {
 
 // === sum_over_time(matrix ExprMatrix) Vector ===
 func funcSumOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values metric.Values) model.SampleValue {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
 		var sum model.SampleValue
 		for _, v := range values {
 			sum += v.Value

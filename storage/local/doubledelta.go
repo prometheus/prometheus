@@ -83,7 +83,7 @@ func newDoubleDeltaEncodedChunk(tb, vb deltaBytes, isInt bool, length int) *doub
 }
 
 // add implements chunk.
-func (c doubleDeltaEncodedChunk) add(s *metric.SamplePair) []chunk {
+func (c doubleDeltaEncodedChunk) add(s *model.SamplePair) []chunk {
 	if c.len() == 0 {
 		return c.addFirstSample(s)
 	}
@@ -321,7 +321,7 @@ func (c doubleDeltaEncodedChunk) isInt() bool {
 
 // addFirstSample is a helper method only used by c.add(). It adds timestamp and
 // value as base time and value.
-func (c doubleDeltaEncodedChunk) addFirstSample(s *metric.SamplePair) []chunk {
+func (c doubleDeltaEncodedChunk) addFirstSample(s *model.SamplePair) []chunk {
 	c = c[:doubleDeltaHeaderBaseValueOffset+8]
 	binary.LittleEndian.PutUint64(
 		c[doubleDeltaHeaderBaseTimeOffset:],
@@ -336,7 +336,7 @@ func (c doubleDeltaEncodedChunk) addFirstSample(s *metric.SamplePair) []chunk {
 
 // addSecondSample is a helper method only used by c.add(). It calculates the
 // base delta from the provided sample and adds it to the chunk.
-func (c doubleDeltaEncodedChunk) addSecondSample(s *metric.SamplePair, tb, vb deltaBytes) []chunk {
+func (c doubleDeltaEncodedChunk) addSecondSample(s *model.SamplePair, tb, vb deltaBytes) []chunk {
 	baseTimeDelta := s.Timestamp - c.baseTime()
 	if baseTimeDelta < 0 {
 		panic("base time delta is less than zero")
@@ -394,36 +394,36 @@ type doubleDeltaEncodedChunkIterator struct {
 func (it *doubleDeltaEncodedChunkIterator) length() int { return it.len }
 
 // valueAtTime implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) valueAtTime(t model.Time) metric.Values {
+func (it *doubleDeltaEncodedChunkIterator) valueAtTime(t model.Time) []model.SamplePair {
 	i := sort.Search(it.len, func(i int) bool {
 		return !it.timestampAtIndex(i).Before(t)
 	})
 
 	switch i {
 	case 0:
-		return metric.Values{metric.SamplePair{
+		return []model.SamplePair{{
 			Timestamp: it.timestampAtIndex(0),
 			Value:     it.sampleValueAtIndex(0),
 		}}
 	case it.len:
-		return metric.Values{metric.SamplePair{
+		return []model.SamplePair{{
 			Timestamp: it.timestampAtIndex(it.len - 1),
 			Value:     it.sampleValueAtIndex(it.len - 1),
 		}}
 	default:
 		ts := it.timestampAtIndex(i)
 		if ts.Equal(t) {
-			return metric.Values{metric.SamplePair{
+			return []model.SamplePair{{
 				Timestamp: ts,
 				Value:     it.sampleValueAtIndex(i),
 			}}
 		}
-		return metric.Values{
-			metric.SamplePair{
+		return []model.SamplePair{
+			{
 				Timestamp: it.timestampAtIndex(i - 1),
 				Value:     it.sampleValueAtIndex(i - 1),
 			},
-			metric.SamplePair{
+			{
 				Timestamp: ts,
 				Value:     it.sampleValueAtIndex(i),
 			},
@@ -432,7 +432,7 @@ func (it *doubleDeltaEncodedChunkIterator) valueAtTime(t model.Time) metric.Valu
 }
 
 // rangeValues implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) rangeValues(in metric.Interval) metric.Values {
+func (it *doubleDeltaEncodedChunkIterator) rangeValues(in metric.Interval) []model.SamplePair {
 	oldest := sort.Search(it.len, func(i int) bool {
 		return !it.timestampAtIndex(i).Before(in.OldestInclusive)
 	})
@@ -445,9 +445,9 @@ func (it *doubleDeltaEncodedChunkIterator) rangeValues(in metric.Interval) metri
 		return nil
 	}
 
-	result := make(metric.Values, 0, newest-oldest)
+	result := make([]model.SamplePair, 0, newest-oldest)
 	for i := oldest; i < newest; i++ {
-		result = append(result, metric.SamplePair{
+		result = append(result, model.SamplePair{
 			Timestamp: it.timestampAtIndex(i),
 			Value:     it.sampleValueAtIndex(i),
 		})
@@ -461,11 +461,11 @@ func (it *doubleDeltaEncodedChunkIterator) contains(t model.Time) bool {
 }
 
 // values implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) values() <-chan *metric.SamplePair {
-	valuesChan := make(chan *metric.SamplePair)
+func (it *doubleDeltaEncodedChunkIterator) values() <-chan *model.SamplePair {
+	valuesChan := make(chan *model.SamplePair)
 	go func() {
 		for i := 0; i < it.len; i++ {
-			valuesChan <- &metric.SamplePair{
+			valuesChan <- &model.SamplePair{
 				Timestamp: it.timestampAtIndex(i),
 				Value:     it.sampleValueAtIndex(i),
 			}

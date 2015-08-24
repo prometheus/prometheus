@@ -38,8 +38,6 @@ import (
 	"sync"
 
 	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/storage/metric"
 )
 
 // A byteReader is an io.ByteReader that also implements the vanilla io.Reader
@@ -282,9 +280,9 @@ func (fps *Fingerprints) UnmarshalBinary(buf []byte) error {
 	return nil
 }
 
-// LabelPair is a metric.LabelPair that implements
+// LabelPair is a model.LabelPair that implements
 // encoding.BinaryMarshaler and encoding.BinaryUnmarshaler.
-type LabelPair metric.LabelPair
+type LabelPair model.LabelPair
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (lp LabelPair) MarshalBinary() ([]byte, error) {

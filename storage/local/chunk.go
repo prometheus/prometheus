@@ -78,7 +78,7 @@ func newChunkDesc(c chunk) *chunkDesc {
 	return &chunkDesc{c: c, rCnt: 1}
 }
 
-func (cd *chunkDesc) add(s *metric.SamplePair) []chunk {
+func (cd *chunkDesc) add(s *model.SamplePair) []chunk {
 	cd.Lock()
 	defer cd.Unlock()
 
@@ -143,7 +143,7 @@ func (cd *chunkDesc) lastTime() model.Time {
 	return cd.c.newIterator().lastTimestamp()
 }
 
-func (cd *chunkDesc) lastSamplePair() *metric.SamplePair {
+func (cd *chunkDesc) lastSamplePair() *model.SamplePair {
 	cd.Lock()
 	defer cd.Unlock()
 
@@ -151,7 +151,7 @@ func (cd *chunkDesc) lastSamplePair() *metric.SamplePair {
 		return nil
 	}
 	it := cd.c.newIterator()
-	return &metric.SamplePair{
+	return &model.SamplePair{
 		Timestamp: it.lastTimestamp(),
 		Value:     it.lastSampleValue(),
 	}
@@ -215,7 +215,7 @@ type chunk interface {
 	// any. The first chunk returned might be the same as the original one
 	// or a newly allocated version. In any case, take the returned chunk as
 	// the relevant one and discard the orginal chunk.
-	add(sample *metric.SamplePair) []chunk
+	add(sample *model.SamplePair) []chunk
 	clone() chunk
 	firstTime() model.Time
 	newIterator() chunkIterator
@@ -244,9 +244,9 @@ type chunkIterator interface {
 	// value is returned. Only the first or last value is returned (as a
 	// single value), if the given time is before or after the first or last
 	// value, respectively.
-	valueAtTime(model.Time) metric.Values
+	valueAtTime(model.Time) []model.SamplePair
 	// Gets all values contained within a given interval.
-	rangeValues(metric.Interval) metric.Values
+	rangeValues(metric.Interval) []model.SamplePair
 	// Whether a given timestamp is contained between first and last value
 	// in the chunk.
 	contains(model.Time) bool
@@ -254,10 +254,10 @@ type chunkIterator interface {
 	// can be received in order. The channel is closed after the last
 	// one. It is generally not safe to mutate the chunk while the channel
 	// is still open.
-	values() <-chan *metric.SamplePair
+	values() <-chan *model.SamplePair
 }
 
-func transcodeAndAdd(dst chunk, src chunk, s *metric.SamplePair) []chunk {
+func transcodeAndAdd(dst chunk, src chunk, s *model.SamplePair) []chunk {
 	chunkOps.WithLabelValues(transcode).Inc()
 
 	head := dst

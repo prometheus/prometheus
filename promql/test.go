@@ -26,7 +26,6 @@ import (
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -239,14 +238,14 @@ func (*evalCmd) testCmd()  {}
 type loadCmd struct {
 	gap     time.Duration
 	metrics map[model.Fingerprint]model.Metric
-	defs    map[model.Fingerprint]metric.Values
+	defs    map[model.Fingerprint][]model.SamplePair
 }
 
 func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
 		gap:     gap,
 		metrics: map[model.Fingerprint]model.Metric{},
-		defs:    map[model.Fingerprint]metric.Values{},
+		defs:    map[model.Fingerprint][]model.SamplePair{},
 	}
 }
 
@@ -258,11 +257,11 @@ func (cmd loadCmd) String() string {
 func (cmd *loadCmd) set(m model.Metric, vals ...sequenceValue) {
 	fp := m.Fingerprint()
 
-	samples := make(metric.Values, 0, len(vals))
+	samples := make([]model.SamplePair, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
 		if !v.omitted {
-			samples = append(samples, metric.SamplePair{
+			samples = append(samples, model.SamplePair{
 				Timestamp: ts,
 				Value:     v.value,
 			})

@@ -222,33 +222,33 @@ func TestFingerprintsForLabels(t *testing.T) {
 	storage.WaitForIndexing()
 
 	var matcherTests = []struct {
-		pairs    []metric.LabelPair
+		pairs    []model.LabelPair
 		expected model.Fingerprints
 	}{
 		{
-			pairs:    []metric.LabelPair{{"label1", "x"}},
+			pairs:    []model.LabelPair{{"label1", "x"}},
 			expected: fingerprints[:0],
 		},
 		{
-			pairs:    []metric.LabelPair{{"label1", "test_0"}},
+			pairs:    []model.LabelPair{{"label1", "test_0"}},
 			expected: fingerprints[:10],
 		},
 		{
-			pairs: []metric.LabelPair{
+			pairs: []model.LabelPair{
 				{"label1", "test_0"},
 				{"label1", "test_1"},
 			},
 			expected: fingerprints[:0],
 		},
 		{
-			pairs: []metric.LabelPair{
+			pairs: []model.LabelPair{
 				{"label1", "test_0"},
 				{"label2", "test_1"},
 			},
 			expected: fingerprints[5:10],
 		},
 		{
-			pairs: []metric.LabelPair{
+			pairs: []model.LabelPair{
 				{"label1", "test_1"},
 				{"label2", "test_2"},
 			},
@@ -391,7 +391,7 @@ func TestRetentionCutoff(t *testing.T) {
 	s.WaitForIndexing()
 
 	var fp model.Fingerprint
-	for f := range s.fingerprintsForLabelPairs(metric.LabelPair{Name: "job", Value: "test"}) {
+	for f := range s.fingerprintsForLabelPairs(model.LabelPair{Name: "job", Value: "test"}) {
 		fp = f
 		break
 	}
@@ -455,7 +455,7 @@ func TestDropMetrics(t *testing.T) {
 	}
 	s.WaitForIndexing()
 
-	fps := s.fingerprintsForLabelPairs(metric.LabelPair{Name: model.MetricNameLabel, Value: "test"})
+	fps := s.fingerprintsForLabelPairs(model.LabelPair{Name: model.MetricNameLabel, Value: "test"})
 	if len(fps) != 2 {
 		t.Fatalf("unexpected number of fingerprints: %d", len(fps))
 	}
@@ -472,7 +472,7 @@ func TestDropMetrics(t *testing.T) {
 	s.DropMetricsForFingerprints(fpList[0])
 	s.WaitForIndexing()
 
-	fps2 := s.fingerprintsForLabelPairs(metric.LabelPair{
+	fps2 := s.fingerprintsForLabelPairs(model.LabelPair{
 		Name: model.MetricNameLabel, Value: "test",
 	})
 	if len(fps2) != 1 {
@@ -491,7 +491,7 @@ func TestDropMetrics(t *testing.T) {
 	s.DropMetricsForFingerprints(fpList...)
 	s.WaitForIndexing()
 
-	fps3 := s.fingerprintsForLabelPairs(metric.LabelPair{
+	fps3 := s.fingerprintsForLabelPairs(model.LabelPair{
 		Name: model.MetricNameLabel, Value: "test",
 	})
 	if len(fps3) != 0 {
@@ -571,7 +571,7 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 	for m := range s.fpToSeries.iter() {
 		s.fpLocker.Lock(m.fp)
 
-		var values metric.Values
+		var values []model.SamplePair
 		for _, cd := range m.series.chunkDescs {
 			if cd.isEvicted() {
 				continue
@@ -1527,7 +1527,7 @@ func TestAppendOutOfOrder(t *testing.T) {
 
 	it := s.NewIterator(fp)
 
-	want := metric.Values{
+	want := []model.SamplePair{
 		{
 			Timestamp: 0,
 			Value:     0,

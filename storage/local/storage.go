@@ -328,7 +328,7 @@ func (s *memorySeriesStorage) NewIterator(fp model.Fingerprint) SeriesIterator {
 }
 
 // LastSampleForFingerprint implements Storage.
-func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) *metric.SamplePair {
+func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) *model.SamplePair {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
@@ -347,17 +347,17 @@ type boundedIterator struct {
 }
 
 // ValueAtTime implements the SeriesIterator interface.
-func (bit *boundedIterator) ValueAtTime(ts model.Time) metric.Values {
+func (bit *boundedIterator) ValueAtTime(ts model.Time) []model.SamplePair {
 	if ts < bit.start {
-		return metric.Values{}
+		return []model.SamplePair{}
 	}
 	return bit.it.ValueAtTime(ts)
 }
 
 // BoundaryValues implements the SeriesIterator interface.
-func (bit *boundedIterator) BoundaryValues(interval metric.Interval) metric.Values {
+func (bit *boundedIterator) BoundaryValues(interval metric.Interval) []model.SamplePair {
 	if interval.NewestInclusive < bit.start {
-		return metric.Values{}
+		return []model.SamplePair{}
 	}
 	if interval.OldestInclusive < bit.start {
 		interval.OldestInclusive = bit.start
@@ -366,9 +366,9 @@ func (bit *boundedIterator) BoundaryValues(interval metric.Interval) metric.Valu
 }
 
 // RangeValues implements the SeriesIterator interface.
-func (bit *boundedIterator) RangeValues(interval metric.Interval) metric.Values {
+func (bit *boundedIterator) RangeValues(interval metric.Interval) []model.SamplePair {
 	if interval.NewestInclusive < bit.start {
-		return metric.Values{}
+		return []model.SamplePair{}
 	}
 	if interval.OldestInclusive < bit.start {
 		interval.OldestInclusive = bit.start
@@ -385,7 +385,7 @@ func (s *memorySeriesStorage) NewPreloader() Preloader {
 
 // fingerprintsForLabelPairs returns the set of fingerprints that have the given labels.
 // This does not work with empty label values.
-func (s *memorySeriesStorage) fingerprintsForLabelPairs(pairs ...metric.LabelPair) map[model.Fingerprint]struct{} {
+func (s *memorySeriesStorage) fingerprintsForLabelPairs(pairs ...model.LabelPair) map[model.Fingerprint]struct{} {
 	var result map[model.Fingerprint]struct{}
 	for _, pair := range pairs {
 		intersection := map[model.Fingerprint]struct{}{}
@@ -412,12 +412,12 @@ func (s *memorySeriesStorage) fingerprintsForLabelPairs(pairs ...metric.LabelPai
 // MetricsForLabelMatchers implements Storage.
 func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelMatcher) map[model.Fingerprint]model.COWMetric {
 	var (
-		equals  []metric.LabelPair
+		equals  []model.LabelPair
 		filters []*metric.LabelMatcher
 	)
 	for _, lm := range matchers {
 		if lm.Type == metric.Equal && lm.Value != "" {
-			equals = append(equals, metric.LabelPair{
+			equals = append(equals, model.LabelPair{
 				Name:  lm.Name,
 				Value: lm.Value,
 			})
@@ -446,7 +446,7 @@ func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelM
 				return nil
 			}
 			for _, v := range matches {
-				fps := s.fingerprintsForLabelPairs(metric.LabelPair{
+				fps := s.fingerprintsForLabelPairs(model.LabelPair{
 					Name:  matcher.Name,
 					Value: v,
 				})
@@ -570,7 +570,7 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) {
 		s.fpLocker.Unlock(fp)
 		return
 	}
-	completedChunksCount := series.add(&metric.SamplePair{
+	completedChunksCount := series.add(&model.SamplePair{
 		Value:     sample.Value,
 		Timestamp: sample.Timestamp,
 	})

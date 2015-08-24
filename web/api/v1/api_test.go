@@ -16,7 +16,6 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/route"
 )
 
@@ -103,7 +102,7 @@ func TestEndpoints(t *testing.T) {
 				ResultType: promql.ExprMatrix,
 				Result: promql.Matrix{
 					&promql.SampleStream{
-						Values: metric.Values{
+						Values: []model.SamplePair{
 							{Value: 0, Timestamp: start},
 							{Value: 1, Timestamp: start.Add(1 * time.Second)},
 							{Value: 2, Timestamp: start.Add(2 * time.Second)},

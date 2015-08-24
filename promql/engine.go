@@ -33,8 +33,8 @@ import (
 
 // SampleStream is a stream of Values belonging to an attached COWMetric.
 type SampleStream struct {
-	Metric model.COWMetric `json:"metric"`
-	Values metric.Values   `json:"values"`
+	Metric model.COWMetric    `json:"metric"`
+	Values []model.SamplePair `json:"values"`
 }
 
 // Sample is a single sample belonging to a COWMetric.
@@ -47,11 +47,11 @@ type Sample struct {
 // MarshalJSON implements json.Marshaler.
 func (s *Sample) MarshalJSON() ([]byte, error) {
 	v := struct {
-		Metric model.COWMetric   `json:"metric"`
-		Value  metric.SamplePair `json:"value"`
+		Metric model.COWMetric  `json:"metric"`
+		Value  model.SamplePair `json:"value"`
 	}{
 		Metric: s.Metric,
-		Value: metric.SamplePair{
+		Value: model.SamplePair{
 			Timestamp: s.Timestamp,
 			Value:     s.Value,
 		},
@@ -480,10 +480,10 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			// as the fingerprint for scalar expressions.
 			ss := sampleStreams[0]
 			if ss == nil {
-				ss = &SampleStream{Values: make(metric.Values, 0, numSteps)}
+				ss = &SampleStream{Values: make([]model.SamplePair, 0, numSteps)}
 				sampleStreams[0] = ss
 			}
-			ss.Values = append(ss.Values, metric.SamplePair{
+			ss.Values = append(ss.Values, model.SamplePair{
 				Value:     v.Value,
 				Timestamp: v.Timestamp,
 			})
@@ -494,11 +494,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				if ss == nil {
 					ss = &SampleStream{
 						Metric: sample.Metric,
-						Values: make(metric.Values, 0, numSteps),
+						Values: make([]model.SamplePair, 0, numSteps),
 					}
 					sampleStreams[fp] = ss
 				}
-				ss.Values = append(ss.Values, metric.SamplePair{
+				ss.Values = append(ss.Values, model.SamplePair{
 					Value:     sample.Value,
 					Timestamp: sample.Timestamp,
 				})
@@ -1177,9 +1177,9 @@ var StalenessDelta = 5 * time.Minute
 // surrounding a given target time. If samples are found both before and after
 // the target time, the sample value is interpolated between these. Otherwise,
 // the single closest sample is returned verbatim.
-func chooseClosestSample(samples metric.Values, timestamp model.Time) *metric.SamplePair {
-	var closestBefore *metric.SamplePair
-	var closestAfter *metric.SamplePair
+func chooseClosestSample(samples []model.SamplePair, timestamp model.Time) *model.SamplePair {
+	var closestBefore *model.SamplePair
+	var closestAfter *model.SamplePair
 	for _, candidate := range samples {
 		delta := candidate.Timestamp.Sub(timestamp)
 		// Samples before target time.
@@ -1223,14 +1223,14 @@ func chooseClosestSample(samples metric.Values, timestamp model.Time) *metric.Sa
 
 // interpolateSamples interpolates a value at a target time between two
 // provided sample pairs.
-func interpolateSamples(first, second *metric.SamplePair, timestamp model.Time) *metric.SamplePair {
+func interpolateSamples(first, second *model.SamplePair, timestamp model.Time) *model.SamplePair {
 	dv := second.Value - first.Value
 	dt := second.Timestamp.Sub(first.Timestamp)
 
 	dDt := dv / model.SampleValue(dt)
 	offset := model.SampleValue(timestamp.Sub(first.Timestamp))
 
-	return &metric.SamplePair{
+	return &model.SamplePair{
 		Value:     first.Value + (offset * dDt),
 		Timestamp: timestamp,
 	}
