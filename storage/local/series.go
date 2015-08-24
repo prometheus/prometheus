@@ -533,7 +533,7 @@ func (it *memorySeriesIterator) ValueAtTime(t model.Time) []model.SamplePair {
 		it.chunkIt = it.chunkIterator(l - i + 1)
 		return []model.SamplePair{
 			sp1,
-			model.SamplePair{
+			{
 				Timestamp: it.chunkIt.timestampAtIndex(0),
 				Value:     it.chunkIt.sampleValueAtIndex(0),
 			},
