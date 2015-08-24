@@ -77,7 +77,7 @@ func (c callbackCloser) Close() {
 
 // NewCallbackCloser returns a Closer that calls the provided function upon
 // closing.
-func NewCallbackCloser(fn func()) *callbackCloser {
+func NewCallbackCloser(fn func()) Closer {
 	return &callbackCloser{
 		fn: fn,
 	}

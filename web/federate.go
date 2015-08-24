@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 )
 
+// Federation implements a web handler to serve scrape federation requests.
 type Federation struct {
 	Storage local.Storage
 }

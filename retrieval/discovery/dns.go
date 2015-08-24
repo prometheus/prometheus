@@ -31,7 +31,7 @@ import (
 const (
 	resolvConf = "/etc/resolv.conf"
 
-	DNSNameLabel = model.MetaLabelPrefix + "dns_name"
+	dnsNameLabel = model.MetaLabelPrefix + "dns_name"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -161,7 +161,7 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) erro
 		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
 			model.AddressLabel: target,
-			DNSNameLabel:       model.LabelValue(name),
+			dnsNameLabel:       model.LabelValue(name),
 		})
 	}
 

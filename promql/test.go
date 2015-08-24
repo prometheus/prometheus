@@ -68,7 +68,7 @@ func NewTest(t testutil.T, input string) (*Test, error) {
 	return test, err
 }
 
-func NewTestFromFile(t testutil.T, filename string) (*Test, error) {
+func newTestFromFile(t testutil.T, filename string) (*Test, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -477,6 +477,7 @@ func (t *Test) clear() {
 	t.queryEngine = NewEngine(t.storage, nil)
 }
 
+// Close closes resources associated with the Test.
 func (t *Test) Close() {
 	t.queryEngine.Stop()
 	t.closeStorage()

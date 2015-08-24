@@ -550,7 +550,7 @@ func (sd *StaticProvider) Run(ch chan<- *config.TargetGroup, done <-chan struct{
 	<-done
 }
 
-// TargetGroups returns the provider's target groups.
+// Sources returns the provider's sources.
 func (sd *StaticProvider) Sources() (srcs []string) {
 	for _, tg := range sd.TargetGroups {
 		srcs = append(srcs, tg.Source)

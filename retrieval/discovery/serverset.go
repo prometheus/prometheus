@@ -49,11 +49,11 @@ type serversetEndpoint struct {
 	Port int
 }
 
-type ZookeeperLogger struct {
+type zookeeperLogger struct {
 }
 
 // Implements zk.Logger
-func (zl ZookeeperLogger) Printf(s string, i ...interface{}) {
+func (zl zookeeperLogger) Printf(s string, i ...interface{}) {
 	log.Infof(s, i...)
 }
 
@@ -72,7 +72,7 @@ type ServersetDiscovery struct {
 // NewServersetDiscovery returns a new ServersetDiscovery for the given config.
 func NewServersetDiscovery(conf *config.ServersetSDConfig) *ServersetDiscovery {
 	conn, _, err := zk.Connect(conf.Servers, time.Duration(conf.Timeout))
-	conn.SetLogger(ZookeeperLogger{})
+	conn.SetLogger(zookeeperLogger{})
 	if err != nil {
 		return nil
 	}
@@ -84,7 +84,7 @@ func NewServersetDiscovery(conf *config.ServersetSDConfig) *ServersetDiscovery {
 		sources: map[string]*config.TargetGroup{},
 	}
 	go sd.processUpdates()
-	sd.treeCache = NewZookeeperTreeCache(conn, conf.Paths[0], updates)
+	sd.treeCache = newZookeeperTreeCache(conn, conf.Paths[0], updates)
 	return sd
 }
 
@@ -194,7 +194,7 @@ type zookeeperTreeCacheNode struct {
 	children map[string]*zookeeperTreeCacheNode
 }
 
-func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan zookeeperTreeCacheEvent) *zookeeperTreeCache {
+func newZookeeperTreeCache(conn *zk.Conn, path string, events chan zookeeperTreeCacheEvent) *zookeeperTreeCache {
 	tc := &zookeeperTreeCache{
 		conn:   conn,
 		prefix: path,

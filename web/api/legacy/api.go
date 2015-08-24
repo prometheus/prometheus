@@ -32,7 +32,7 @@ type API struct {
 	QueryEngine *promql.Engine
 }
 
-// RegisterHandler registers the handler for the various endpoints below /api.
+// Register registers the handler for the various endpoints below /api.
 func (api *API) Register(router *route.Router) {
 	router.Get("/query", handle("query", api.Query))
 	router.Get("/query_range", handle("query_range", api.QueryRange))
