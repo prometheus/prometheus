@@ -60,11 +60,11 @@
 		},
 		{
 			"ImportPath": "github.com/prometheus/common/expfmt",
-			"Rev": "2502df85be1b9482ed669faa6b7cfe7f850eb08e"
+			"Rev": "675b18b12eb9d452d0377f1688d62e724f15b882"
 		},
 		{
 			"ImportPath": "github.com/prometheus/common/model",
-			"Rev": "2502df85be1b9482ed669faa6b7cfe7f850eb08e"
+			"Rev": "675b18b12eb9d452d0377f1688d62e724f15b882"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_model/go",

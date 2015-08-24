@@ -243,8 +243,8 @@ func (e ValueType) String() string {
 
 // Scalar is a scalar value evaluated at the set timestamp.
 type Scalar struct {
-	Value     SampleValue `json:"value"`
-	Timestamp Time        `json:"timestamp"`
+	Value     SampleValue
+	Timestamp Time
 }
 
 func (s *Scalar) String() string {
@@ -253,8 +253,8 @@ func (s *Scalar) String() string {
 
 // String is a string value evaluated at the set timestamp.
 type String struct {
-	Value     string `json:"value"`
-	Timestamp Time   `json:"timestamp"`
+	Value     string
+	Timestamp Time
 }
 
 func (s *String) String() string {
