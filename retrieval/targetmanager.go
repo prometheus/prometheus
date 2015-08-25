@@ -426,6 +426,9 @@ func providersFromConfig(cfg *config.ScrapeConfig) []TargetProvider {
 	for i, c := range cfg.MarathonSDConfigs {
 		app("marathon", i, discovery.NewMarathonDiscovery(c))
 	}
+	for i, c := range cfg.MesosSDConfigs {
+		app("mesos", i, discovery.NewMesosDiscovery(c))
+	}
 	for i, c := range cfg.KubernetesSDConfigs {
 		k, err := discovery.NewKubernetesDiscovery(c)
 		if err != nil {

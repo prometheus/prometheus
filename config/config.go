@@ -122,6 +122,12 @@ var (
 		RefreshInterval: Duration(30 * time.Second),
 	}
 
+	// The default Mesos SD configuration.
+	DefaultMesosSDConfig = MesosSDConfig{
+		ExporterPort:    9105,
+		RefreshInterval: Duration(30 * time.Second),
+	}
+
 	// The default Kubernetes SD configuration
 	DefaultKubernetesSDConfig = KubernetesSDConfig{
 		KubeletPort:    10255,
@@ -334,6 +340,8 @@ type ScrapeConfig struct {
 	ServersetSDConfigs []*ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
 	// MarathonSDConfigs is a list of Marathon service discovery configurations.
 	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
+	// MarathonSDConfigs is a list of Marathon service discovery configurations.
+	MesosSDConfigs []*MesosSDConfig `yaml:"mesos_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 
@@ -601,6 +609,37 @@ type MarathonSDConfig struct {
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
+}
+
+type MesosSDConfig struct {
+	ExporterPort    int      `yaml:"exporter_port,omitempty"`
+	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
+	Servers         []string `yaml:"servers,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *MesosSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultMesosSDConfig
+	type plain MesosSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("Mesos SD config must contain at least one Mesos Master server")
+	}
+
+	for _, server := range c.Servers {
+		_, err := url.Parse(server)
+		if err != nil {
+			return fmt.Errorf("Could not parse URL of Mesos Master: %s", err)
+		}
+	}
+
+	return checkOverflow(c.XXX, "mesos_sd_config")
 }
 
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
