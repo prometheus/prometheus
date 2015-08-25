@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -88,45 +87,13 @@ func (*AlertStmt) stmt()  {}
 func (*EvalStmt) stmt()   {}
 func (*RecordStmt) stmt() {}
 
-// ExprType is the type an evaluated expression returns.
-type ExprType int
-
-const (
-	ExprNone ExprType = iota
-	ExprScalar
-	ExprVector
-	ExprMatrix
-	ExprString
-)
-
-// MarshalJSON implements json.Marshaler.
-func (et ExprType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(et.String())
-}
-
-func (e ExprType) String() string {
-	switch e {
-	case ExprNone:
-		return "<ExprNone>"
-	case ExprScalar:
-		return "scalar"
-	case ExprVector:
-		return "vector"
-	case ExprMatrix:
-		return "matrix"
-	case ExprString:
-		return "string"
-	}
-	panic("promql.ExprType.String: unhandled expression type")
-}
-
 // Expr is a generic interface for all expression types.
 type Expr interface {
 	Node
 
 	// Type returns the type the expression evaluates to. It does not perform
 	// in-depth checks as this is done at parsing-time.
-	Type() ExprType
+	Type() model.ValueType
 	// expr ensures that no other types accidentally implement the interface.
 	expr()
 }
@@ -167,7 +134,7 @@ type MatrixSelector struct {
 
 	// The series iterators are populated at query analysis time.
 	iterators map[model.Fingerprint]local.SeriesIterator
-	metrics   map[model.Fingerprint]model.COWMetric
+	metrics   map[model.Fingerprint]metric.Metric
 }
 
 // NumberLiteral represents a number.
@@ -201,23 +168,23 @@ type VectorSelector struct {
 
 	// The series iterators are populated at query analysis time.
 	iterators map[model.Fingerprint]local.SeriesIterator
-	metrics   map[model.Fingerprint]model.COWMetric
+	metrics   map[model.Fingerprint]metric.Metric
 }
 
-func (e *AggregateExpr) Type() ExprType  { return ExprVector }
-func (e *Call) Type() ExprType           { return e.Func.ReturnType }
-func (e *MatrixSelector) Type() ExprType { return ExprMatrix }
-func (e *NumberLiteral) Type() ExprType  { return ExprScalar }
-func (e *ParenExpr) Type() ExprType      { return e.Expr.Type() }
-func (e *StringLiteral) Type() ExprType  { return ExprString }
-func (e *UnaryExpr) Type() ExprType      { return e.Expr.Type() }
-func (e *VectorSelector) Type() ExprType { return ExprVector }
+func (e *AggregateExpr) Type() model.ValueType  { return model.ValVector }
+func (e *Call) Type() model.ValueType           { return e.Func.ReturnType }
+func (e *MatrixSelector) Type() model.ValueType { return model.ValMatrix }
+func (e *NumberLiteral) Type() model.ValueType  { return model.ValScalar }
+func (e *ParenExpr) Type() model.ValueType      { return e.Expr.Type() }
+func (e *StringLiteral) Type() model.ValueType  { return model.ValString }
+func (e *UnaryExpr) Type() model.ValueType      { return e.Expr.Type() }
+func (e *VectorSelector) Type() model.ValueType { return model.ValVector }
 
-func (e *BinaryExpr) Type() ExprType {
-	if e.LHS.Type() == ExprScalar && e.RHS.Type() == ExprScalar {
-		return ExprScalar
+func (e *BinaryExpr) Type() model.ValueType {
+	if e.LHS.Type() == model.ValScalar && e.RHS.Type() == model.ValScalar {
+		return model.ValScalar
 	}
-	return ExprVector
+	return model.ValVector
 }
 
 func (*AggregateExpr) expr()  {}

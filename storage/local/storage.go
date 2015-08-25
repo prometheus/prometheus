@@ -410,7 +410,7 @@ func (s *memorySeriesStorage) fingerprintsForLabelPairs(pairs ...model.LabelPair
 }
 
 // MetricsForLabelMatchers implements Storage.
-func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelMatcher) map[model.Fingerprint]model.COWMetric {
+func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelMatcher) map[model.Fingerprint]metric.Metric {
 	var (
 		equals  []model.LabelPair
 		filters []*metric.LabelMatcher
@@ -462,7 +462,7 @@ func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelM
 		filters = remaining
 	}
 
-	result := make(map[model.Fingerprint]model.COWMetric, len(resFPs))
+	result := make(map[model.Fingerprint]metric.Metric, len(resFPs))
 	for fp := range resFPs {
 		result[fp] = s.MetricForFingerprint(fp)
 	}
@@ -486,7 +486,7 @@ func (s *memorySeriesStorage) LabelValuesForLabelName(labelName model.LabelName)
 }
 
 // MetricForFingerprint implements Storage.
-func (s *memorySeriesStorage) MetricForFingerprint(fp model.Fingerprint) model.COWMetric {
+func (s *memorySeriesStorage) MetricForFingerprint(fp model.Fingerprint) metric.Metric {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
@@ -494,16 +494,18 @@ func (s *memorySeriesStorage) MetricForFingerprint(fp model.Fingerprint) model.C
 	if ok {
 		// Wrap the returned metric in a copy-on-write (COW) metric here because
 		// the caller might mutate it.
-		return model.COWMetric{
+		return metric.Metric{
 			Metric: series.metric,
 		}
 	}
-	metric, err := s.persistence.archivedMetric(fp)
+	met, err := s.persistence.archivedMetric(fp)
 	if err != nil {
 		log.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
 	}
-	return model.COWMetric{
-		Metric: metric,
+
+	return metric.Metric{
+		Metric: met,
+		Copied: false,
 	}
 }
 

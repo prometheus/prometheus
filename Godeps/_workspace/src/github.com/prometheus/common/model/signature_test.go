@@ -247,7 +247,7 @@ func BenchmarkMetricToFastFingerprintTriple(b *testing.B) {
 	benchmarkMetricToFastFingerprint(b, LabelSet{"first-label": "first-label-value", "second-label": "second-label-value", "third-label": "third-label-value"}, 15738406913934009676)
 }
 
-func TestEmptyLabelSignature(t *testing.T) {
+func BenchmarkEmptyLabelSignature(b *testing.B) {
 	input := []map[string]string{nil, {}}
 
 	var ms runtime.MemStats
@@ -262,7 +262,7 @@ func TestEmptyLabelSignature(t *testing.T) {
 	runtime.ReadMemStats(&ms)
 
 	if got := ms.Alloc; alloc != got {
-		t.Fatal("expected LabelsToSignature with empty labels not to perform allocations")
+		b.Fatal("expected LabelsToSignature with empty labels not to perform allocations")
 	}
 }
 

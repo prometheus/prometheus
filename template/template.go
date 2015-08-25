@@ -64,24 +64,21 @@ func query(q string, timestamp model.Time, queryEngine *promql.Engine) (queryRes
 	if res.Err != nil {
 		return nil, res.Err
 	}
-	var vector promql.Vector
+	var vector model.Vector
 
 	switch v := res.Value.(type) {
-	case promql.Matrix:
+	case model.Matrix:
 		return nil, errors.New("matrix return values not supported")
-	case promql.Vector:
+	case model.Vector:
 		vector = v
-	case *promql.Scalar:
-		vector = promql.Vector{&promql.Sample{
+	case *model.Scalar:
+		vector = model.Vector{&model.Sample{
 			Value:     v.Value,
 			Timestamp: v.Timestamp,
 		}}
-	case *promql.String:
-		vector = promql.Vector{&promql.Sample{
-			Metric: model.COWMetric{
-				Metric: model.Metric{"__value__": model.LabelValue(v.Value)},
-				Copied: true,
-			},
+	case *model.String:
+		vector = model.Vector{&model.Sample{
+			Metric:    model.Metric{"__value__": model.LabelValue(v.Value)},
 			Timestamp: v.Timestamp,
 		}}
 	default:
@@ -96,7 +93,7 @@ func query(q string, timestamp model.Time, queryEngine *promql.Engine) (queryRes
 			Value:  float64(v.Value),
 			Labels: make(map[string]string),
 		}
-		for label, value := range v.Metric.Metric {
+		for label, value := range v.Metric {
 			s.Labels[string(label)] = string(value)
 		}
 		result[n] = &s

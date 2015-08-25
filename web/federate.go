@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/metric"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -33,7 +34,7 @@ type Federation struct {
 func (fed *Federation) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 
-	metrics := map[model.Fingerprint]model.COWMetric{}
+	metrics := map[model.Fingerprint]metric.Metric{}
 
 	for _, s := range req.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)

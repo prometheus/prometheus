@@ -14,7 +14,6 @@
 package model
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -79,42 +78,4 @@ func (m Metric) Fingerprint() Fingerprint {
 // algorithm, which is, however, more susceptible to hash collisions.
 func (m Metric) FastFingerprint() Fingerprint {
 	return LabelSet(m).FastFingerprint()
-}
-
-// COWMetric wraps a Metric to enable copy-on-write access patterns.
-type COWMetric struct {
-	Copied bool
-	Metric Metric
-}
-
-// Set sets a label name in the wrapped Metric to a given value and copies the
-// Metric initially, if it is not already a copy.
-func (m *COWMetric) Set(ln LabelName, lv LabelValue) {
-	m.doCOW()
-	m.Metric[ln] = lv
-}
-
-// Delete deletes a given label name from the wrapped Metric and copies the
-// Metric initially, if it is not already a copy.
-func (m *COWMetric) Del(ln LabelName) {
-	m.doCOW()
-	delete(m.Metric, ln)
-}
-
-// doCOW copies the underlying Metric if it is not already a copy.
-func (m *COWMetric) doCOW() {
-	if !m.Copied {
-		m.Metric = m.Metric.Clone()
-		m.Copied = true
-	}
-}
-
-// String implements fmt.Stringer.
-func (m COWMetric) String() string {
-	return m.Metric.String()
-}
-
-// MarshalJSON implements json.Marshaler.
-func (m COWMetric) MarshalJSON() ([]byte, error) {
-	return json.Marshal(m.Metric)
 }

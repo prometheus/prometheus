@@ -276,7 +276,7 @@ func TestFingerprintsForLabels(t *testing.T) {
 	}
 }
 
-var benchLabelMatchingRes map[model.Fingerprint]model.COWMetric
+var benchLabelMatchingRes map[model.Fingerprint]metric.Metric
 
 func BenchmarkLabelMatching(b *testing.B) {
 	s, closer := NewTestStorage(b, 1)
@@ -359,7 +359,7 @@ func BenchmarkLabelMatching(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		benchLabelMatchingRes = map[model.Fingerprint]model.COWMetric{}
+		benchLabelMatchingRes = map[model.Fingerprint]metric.Metric{}
 		for _, mt := range matcherTests {
 			benchLabelMatchingRes = s.MetricsForLabelMatchers(mt...)
 		}

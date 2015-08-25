@@ -40,7 +40,7 @@ type Storage interface {
 	// MetricsForLabelMatchers returns the metrics from storage that satisfy the given
 	// label matchers. At least one label matcher must be specified that does not
 	// match the empty string.
-	MetricsForLabelMatchers(...*metric.LabelMatcher) map[model.Fingerprint]model.COWMetric
+	MetricsForLabelMatchers(...*metric.LabelMatcher) map[model.Fingerprint]metric.Metric
 	// LastSamplePairForFingerprint returns the last sample pair for the
 	// provided fingerprint. If the respective time series does not exist or
 	// has an evicted head chunk, nil is returned.
@@ -48,7 +48,7 @@ type Storage interface {
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(model.LabelName) model.LabelValues
 	// Get the metric associated with the provided fingerprint.
-	MetricForFingerprint(model.Fingerprint) model.COWMetric
+	MetricForFingerprint(model.Fingerprint) metric.Metric
 	// Construct an iterator for a given fingerprint.
 	// The iterator will never return samples older than retention time,
 	// relative to the time NewIterator was called.

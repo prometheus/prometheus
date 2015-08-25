@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/route"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -98,8 +99,8 @@ func (api *API) Register(r *route.Router) {
 }
 
 type queryData struct {
-	ResultType promql.ExprType `json:"resultType"`
-	Result     promql.Value    `json:"result"`
+	ResultType model.ValueType `json:"resultType"`
+	Result     model.Value     `json:"result"`
 }
 
 func (api *API) query(r *http.Request) (interface{}, *apiError) {
@@ -187,7 +188,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
 	}
-	res := map[model.Fingerprint]model.COWMetric{}
+	res := map[model.Fingerprint]metric.Metric{}
 
 	for _, lm := range r.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(lm)

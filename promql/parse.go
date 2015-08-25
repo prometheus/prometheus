@@ -967,7 +967,7 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 
 // expectType checks the type of the node and raises an error if it
 // is not of the expected type.
-func (p *parser) expectType(node Node, want ExprType, context string) {
+func (p *parser) expectType(node Node, want model.ValueType, context string) {
 	t := p.checkType(node)
 	if t != want {
 		p.errorf("expected type %s in %s, got %s", want, context, t)
@@ -979,12 +979,12 @@ func (p *parser) expectType(node Node, want ExprType, context string) {
 //
 // Some of these checks are redundant as the the parsing stage does not allow
 // them, but the costs are small and might reveal errors when making changes.
-func (p *parser) checkType(node Node) (typ ExprType) {
+func (p *parser) checkType(node Node) (typ model.ValueType) {
 	// For expressions the type is determined by their Type function.
 	// Statements and lists do not have a type but are not invalid either.
 	switch n := node.(type) {
 	case Statements, Expressions, Statement:
-		typ = ExprNone
+		typ = model.ValNone
 	case Expr:
 		typ = n.Type()
 	default:
@@ -996,27 +996,27 @@ func (p *parser) checkType(node Node) (typ ExprType) {
 	switch n := node.(type) {
 	case Statements:
 		for _, s := range n {
-			p.expectType(s, ExprNone, "statement list")
+			p.expectType(s, model.ValNone, "statement list")
 		}
 	case *AlertStmt:
-		p.expectType(n.Expr, ExprVector, "alert statement")
+		p.expectType(n.Expr, model.ValVector, "alert statement")
 
 	case *EvalStmt:
 		ty := p.checkType(n.Expr)
-		if ty == ExprNone {
+		if ty == model.ValNone {
 			p.errorf("evaluation statement must have a valid expression type but got %s", ty)
 		}
 
 	case *RecordStmt:
 		ty := p.checkType(n.Expr)
-		if ty != ExprVector && ty != ExprScalar {
+		if ty != model.ValVector && ty != model.ValScalar {
 			p.errorf("record statement must have a valid expression of type vector or scalar but got %s", ty)
 		}
 
 	case Expressions:
 		for _, e := range n {
 			ty := p.checkType(e)
-			if ty == ExprNone {
+			if ty == model.ValNone {
 				p.errorf("expression must have a valid expression type but got %s", ty)
 			}
 		}
@@ -1024,7 +1024,7 @@ func (p *parser) checkType(node Node) (typ ExprType) {
 		if !n.Op.isAggregator() {
 			p.errorf("aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
-		p.expectType(n.Expr, ExprVector, "aggregation expression")
+		p.expectType(n.Expr, model.ValVector, "aggregation expression")
 
 	case *BinaryExpr:
 		lt := p.checkType(n.LHS)
@@ -1033,11 +1033,11 @@ func (p *parser) checkType(node Node) (typ ExprType) {
 		if !n.Op.isOperator() {
 			p.errorf("only logical and arithmetic operators allowed in binary expression, got %q", n.Op)
 		}
-		if (lt != ExprScalar && lt != ExprVector) || (rt != ExprScalar && rt != ExprVector) {
+		if (lt != model.ValScalar && lt != model.ValVector) || (rt != model.ValScalar && rt != model.ValVector) {
 			p.errorf("binary expression must contain only scalar and vector types")
 		}
 
-		if (lt != ExprVector || rt != ExprVector) && n.VectorMatching != nil {
+		if (lt != model.ValVector || rt != model.ValVector) && n.VectorMatching != nil {
 			if len(n.VectorMatching.On) > 0 {
 				p.errorf("vector matching only allowed between vectors")
 			}
@@ -1054,7 +1054,7 @@ func (p *parser) checkType(node Node) (typ ExprType) {
 			}
 		}
 
-		if (lt == ExprScalar || rt == ExprScalar) && (n.Op == itemLAND || n.Op == itemLOR) {
+		if (lt == model.ValScalar || rt == model.ValScalar) && (n.Op == itemLAND || n.Op == itemLOR) {
 			p.errorf("AND and OR not allowed in binary scalar expression")
 		}
 
@@ -1077,7 +1077,7 @@ func (p *parser) checkType(node Node) (typ ExprType) {
 		if n.Op != itemADD && n.Op != itemSUB {
 			p.errorf("only + and - operators allowed for unary expressions")
 		}
-		if t := p.checkType(n.Expr); t != ExprScalar && t != ExprVector {
+		if t := p.checkType(n.Expr); t != model.ValScalar && t != model.ValVector {
 			p.errorf("unary expression only allowed on expressions of type scalar or vector, got %q", t)
 		}
 

@@ -24,23 +24,23 @@ import (
 const (
 	// ExportedLabelPrefix is the prefix to prepend to the label names present in
 	// exported metrics if a label of the same name is added by the server.
-	ExportedLabelPrefix LabelName = "exported_"
+	ExportedLabelPrefix = "exported_"
 
 	// MetricNameLabel is the label name indicating the metric name of a
 	// timeseries.
-	MetricNameLabel LabelName = "__name__"
+	MetricNameLabel = "__name__"
 
 	// SchemeLabel is the name of the label that holds the scheme on which to
 	// scrape a target.
-	SchemeLabel LabelName = "__scheme__"
+	SchemeLabel = "__scheme__"
 
 	// AddressLabel is the name of the label that holds the address of
 	// a scrape target.
-	AddressLabel LabelName = "__address__"
+	AddressLabel = "__address__"
 
 	// MetricsPathLabel is the name of the label that holds the path on which to
 	// scrape a target.
-	MetricsPathLabel LabelName = "__metrics_path__"
+	MetricsPathLabel = "__metrics_path__"
 
 	// ReservedLabelPrefix is a prefix which is not legal in user-supplied
 	// label names.
@@ -63,10 +63,10 @@ const (
 
 	// JobLabel is the label name indicating the job from which a timeseries
 	// was scraped.
-	JobLabel LabelName = "job"
+	JobLabel = "job"
 
 	// InstanceLabel is the label name used for the instance label.
-	InstanceLabel LabelName = "instance"
+	InstanceLabel = "instance"
 
 	// BucketLabel is used for the label that defines the upper bound of a
 	// bucket of a histogram ("le" -> "less or equal").
