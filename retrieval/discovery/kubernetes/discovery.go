@@ -271,7 +271,7 @@ func (kd *Discovery) watchNodes(events chan interface{}, done <-chan struct{}, r
 			return
 		}
 		if res.StatusCode != http.StatusOK {
-			log.Errorf("Failed to watch nodes: %s", res.StatusCode)
+			log.Errorf("Failed to watch nodes: %d", res.StatusCode)
 			return
 		}
 
@@ -312,7 +312,7 @@ func (kd *Discovery) watchServices(events chan interface{}, done <-chan struct{}
 			return
 		}
 		if res.StatusCode != http.StatusOK {
-			log.Errorf("Failed to watch services: %s", res.StatusCode)
+			log.Errorf("Failed to watch services: %d", res.StatusCode)
 			return
 		}
 
@@ -382,7 +382,7 @@ func (kd *Discovery) addService(service *Service) *config.TargetGroup {
 		return nil
 	}
 	if res.StatusCode != http.StatusOK {
-		log.Errorf("Failed to get service endpoints: %s", res.StatusCode)
+		log.Errorf("Failed to get service endpoints: %d", res.StatusCode)
 		return nil
 	}
 
@@ -453,7 +453,7 @@ func (kd *Discovery) watchServiceEndpoints(events chan interface{}, done <-chan 
 			return
 		}
 		if res.StatusCode != http.StatusOK {
-			log.Errorf("Failed to watch service endpoints: %s", res.StatusCode)
+			log.Errorf("Failed to watch service endpoints: %d", res.StatusCode)
 			return
 		}
 

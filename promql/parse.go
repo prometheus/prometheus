@@ -535,7 +535,6 @@ func (p *parser) expr() Expr {
 			}
 		}
 	}
-	return nil
 }
 
 // unaryExpr parses a unary expression.

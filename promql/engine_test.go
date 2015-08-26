@@ -113,7 +113,7 @@ func TestQueryCancel(t *testing.T) {
 		t.Fatalf("expected cancellation error for query1 but got none")
 	}
 	if ee := ErrQueryCanceled("test statement execution"); res.Err != ee {
-		t.Fatalf("expected error %q, got %q")
+		t.Fatalf("expected error %q, got %q", ee, res.Err)
 	}
 
 	// Canceling a query before starting it must have no effect.
@@ -198,12 +198,15 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 func TestRecoverEvaluatorError(t *testing.T) {
 	var ev *evaluator
 	var err error
-	defer ev.recover(&err)
 
 	e := fmt.Errorf("custom error")
-	panic(e)
 
-	if err.Error() != e.Error() {
-		t.Fatalf("wrong error message: %q, expected %q", err, e)
-	}
+	defer func() {
+		if err.Error() != e.Error() {
+			t.Fatalf("wrong error message: %q, expected %q", err, e)
+		}
+	}()
+	defer ev.recover(&err)
+
+	panic(e)
 }
