@@ -176,7 +176,9 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	}
 
 	router.Post("/-/reload", h.reload)
+
 	router.Get("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
+	router.Post("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
 
 	return h
 }
