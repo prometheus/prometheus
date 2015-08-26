@@ -160,7 +160,7 @@ func (fd *FileDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}
 	}
 }
 
-// refresh reads all files matching the discoveries patterns and sends the respective
+// refresh reads all files matching the discovery's patterns and sends the respective
 // updated target groups through the channel.
 func (fd *FileDiscovery) refresh(ch chan<- *config.TargetGroup) {
 	ref := map[string]int{}
