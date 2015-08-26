@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,12 +37,14 @@ const (
 	serversetStatusLabel         = serversetLabelPrefix + "status"
 	serversetPathLabel           = serversetLabelPrefix + "path"
 	serversetEndpointLabelPrefix = serversetLabelPrefix + "endpoint"
+	serversetShardLabel          = serversetLabelPrefix + "shard"
 )
 
 type serversetMember struct {
 	ServiceEndpoint     serversetEndpoint
 	AdditionalEndpoints map[string]serversetEndpoint
 	Status              string `json:"status"`
+	Shard               int    `json:"shard"`
 }
 
 type serversetEndpoint struct {
@@ -168,6 +171,7 @@ func parseServersetMember(data []byte, path string) (*model.LabelSet, error) {
 	}
 
 	labels[serversetStatusLabel] = model.LabelValue(member.Status)
+	labels[serversetShardLabel] = model.LabelValue(strconv.Itoa(member.Shard))
 
 	return &labels, nil
 }
