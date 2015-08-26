@@ -30,7 +30,6 @@ func testFileSD(t *testing.T, ext string) {
 		done = make(chan struct{})
 	)
 	go fsd.Run(ch, done)
-	defer close(done)
 
 	select {
 	case <-time.After(25 * time.Millisecond):
@@ -81,6 +80,7 @@ func testFileSD(t *testing.T, ext string) {
 	// some runs (which might be empty, chains of different operations etc.).
 	// We have to drain those (as the target manager would) to avoid deadlocking and must
 	// not try to make sense of it all...
+	drained := make(chan struct{})
 	go func() {
 		for tg := range ch {
 			// Below we will change the file to a bad syntax. Previously extracted target
@@ -89,6 +89,7 @@ func testFileSD(t *testing.T, ext string) {
 				t.Errorf("Unexpected empty target group received: %s", tg)
 			}
 		}
+		close(drained)
 	}()
 
 	newf, err = os.Create("fixtures/_test.new")
@@ -104,6 +105,6 @@ func testFileSD(t *testing.T, ext string) {
 
 	os.Rename(newf.Name(), "fixtures/_test"+ext)
 
-	// Give notifcations some time to arrive.
-	time.Sleep(50 * time.Millisecond)
+	close(done)
+	<-drained
 }
