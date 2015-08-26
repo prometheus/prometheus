@@ -269,7 +269,7 @@ func (m *Manager) runIteration() {
 					float64(duration / time.Millisecond),
 				)
 			default:
-				panic(fmt.Errorf("Unknown rule type: %T", rule))
+				panic(fmt.Errorf("unknown rule type: %T", rule))
 			}
 
 			for _, s := range vector {

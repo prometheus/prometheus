@@ -24,7 +24,7 @@ func TestEvaluations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, fn := range files {
-		test, err := NewTestFromFile(t, fn)
+		test, err := newTestFromFile(t, fn)
 		if err != nil {
 			t.Errorf("error creating test for %s: %s", fn, err)
 		}

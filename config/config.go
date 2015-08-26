@@ -68,19 +68,19 @@ func LoadFile(filename string) (*Config, error) {
 
 // The defaults applied before parsing the respective config sections.
 var (
-	// The default top-level configuration.
+	// DefaultConfig is the default top-level configuration.
 	DefaultConfig = Config{
 		GlobalConfig: DefaultGlobalConfig,
 	}
 
-	// The default global configuration.
+	// DefaultGlobalConfig is the default global configuration.
 	DefaultGlobalConfig = GlobalConfig{
 		ScrapeInterval:     Duration(1 * time.Minute),
 		ScrapeTimeout:      Duration(10 * time.Second),
 		EvaluationInterval: Duration(1 * time.Minute),
 	}
 
-	// The default scrape configuration.
+	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout and ScrapeInterval default to the
 		// configured globals.
@@ -89,30 +89,30 @@ var (
 		HonorLabels: false,
 	}
 
-	// The default Relabel configuration.
+	// DefaultRelabelConfig is the default Relabel configuration.
 	DefaultRelabelConfig = RelabelConfig{
 		Action:    RelabelReplace,
 		Separator: ";",
 	}
 
-	// The default DNS SD configuration.
+	// DefaultDNSSDConfig is the default DNS SD configuration.
 	DefaultDNSSDConfig = DNSSDConfig{
 		RefreshInterval: Duration(30 * time.Second),
 		Type:            "SRV",
 	}
 
-	// The default file SD configuration.
+	// DefaultFileSDConfig is the default file SD configuration.
 	DefaultFileSDConfig = FileSDConfig{
 		RefreshInterval: Duration(5 * time.Minute),
 	}
 
-	// The default Consul SD configuration.
+	// DefaultConsulSDConfig is the default Consul SD configuration.
 	DefaultConsulSDConfig = ConsulSDConfig{
 		TagSeparator: ",",
 		Scheme:       "http",
 	}
 
-	// The default Serverset SD configuration.
+	// DefaultServersetSDConfig is the default Serverset SD configuration.
 	DefaultServersetSDConfig = ServersetSDConfig{
 		Timeout: Duration(10 * time.Second),
 	}
@@ -122,7 +122,7 @@ var (
 		RefreshInterval: Duration(30 * time.Second),
 	}
 
-	// The default Kubernetes SD configuration
+	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
 	DefaultKubernetesSDConfig = KubernetesSDConfig{
 		KubeletPort:    10255,
 		RequestTimeout: Duration(10 * time.Second),
@@ -130,7 +130,7 @@ var (
 	}
 )
 
-// This custom URL type allows validating at configuration load time.
+// URL is a custom URL type that allows validation at configuration load time.
 type URL struct {
 	*url.URL
 }
@@ -633,6 +633,7 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	return checkOverflow(c.XXX, "marathon_sd_config")
 }
 
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultKubernetesSDConfig
 	type plain KubernetesSDConfig
@@ -655,15 +656,15 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 type RelabelAction string
 
 const (
-	// Performs a regex replacement.
+	// RelabelReplace performs a regex replacement.
 	RelabelReplace RelabelAction = "replace"
-	// Drops targets for which the input does not match the regex.
+	// RelabelKeep drops targets for which the input does not match the regex.
 	RelabelKeep RelabelAction = "keep"
-	// Drops targets for which the input does match the regex.
+	// RelabelDrop drops targets for which the input does match the regex.
 	RelabelDrop RelabelAction = "drop"
-	// Sets a label to the modulus of a hash of labels.
+	// RelabelHashMod sets a label to the modulus of a hash of labels.
 	RelabelHashMod RelabelAction = "hashmod"
-	// Copy labels to other labelnames based on a regex.
+	// RelabelLabelMap copies labels to other labelnames based on a regex.
 	RelabelLabelMap RelabelAction = "labelmap"
 )
 

@@ -65,8 +65,8 @@ const (
 	serviceEndpointsURL = apiPrefix + "/namespaces/%s/endpoints/%s"
 )
 
-// KubernetesDiscovery implements a TargetProvider for Kubernetes services.
-type KubernetesDiscovery struct {
+// Discovery implements a TargetProvider for Kubernetes services.
+type Discovery struct {
 	client *http.Client
 	Conf   *config.KubernetesSDConfig
 
@@ -81,7 +81,7 @@ type KubernetesDiscovery struct {
 }
 
 // Initialize sets up the discovery for usage.
-func (kd *KubernetesDiscovery) Initialize() error {
+func (kd *Discovery) Initialize() error {
 	client, err := newKubernetesHTTPClient(kd.Conf)
 
 	if err != nil {
@@ -97,7 +97,7 @@ func (kd *KubernetesDiscovery) Initialize() error {
 }
 
 // Sources implements the TargetProvider interface.
-func (kd *KubernetesDiscovery) Sources() []string {
+func (kd *Discovery) Sources() []string {
 	res, err := kd.client.Get(kd.Conf.Server + nodesURL)
 	if err != nil {
 		// If we can't list nodes then we can't watch them. Assume this is a misconfiguration
@@ -163,7 +163,7 @@ func (kd *KubernetesDiscovery) Sources() []string {
 }
 
 // Run implements the TargetProvider interface.
-func (kd *KubernetesDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (kd *Discovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
 	select {
@@ -215,7 +215,7 @@ func (kd *KubernetesDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan st
 	}
 }
 
-func (kd *KubernetesDiscovery) updateNodesTargetGroup() *config.TargetGroup {
+func (kd *Discovery) updateNodesTargetGroup() *config.TargetGroup {
 	kd.nodesMu.Lock()
 	defer kd.nodesMu.Unlock()
 
@@ -239,7 +239,7 @@ func (kd *KubernetesDiscovery) updateNodesTargetGroup() *config.TargetGroup {
 	return tg
 }
 
-func (kd *KubernetesDiscovery) updateNode(node *Node, eventType EventType) {
+func (kd *Discovery) updateNode(node *Node, eventType EventType) {
 	kd.nodesMu.Lock()
 	defer kd.nodesMu.Unlock()
 	updatedNodeName := node.ObjectMeta.Name
@@ -254,7 +254,7 @@ func (kd *KubernetesDiscovery) updateNode(node *Node, eventType EventType) {
 }
 
 // watchNodes watches nodes as they come & go.
-func (kd *KubernetesDiscovery) watchNodes(events chan interface{}, done <-chan struct{}, retryInterval time.Duration) {
+func (kd *Discovery) watchNodes(events chan interface{}, done <-chan struct{}, retryInterval time.Duration) {
 	until(func() {
 		req, err := http.NewRequest("GET", kd.Conf.Server+nodesURL, nil)
 		if err != nil {
@@ -294,7 +294,7 @@ func (kd *KubernetesDiscovery) watchNodes(events chan interface{}, done <-chan s
 }
 
 // watchServices watches services as they come & go.
-func (kd *KubernetesDiscovery) watchServices(events chan interface{}, done <-chan struct{}, retryInterval time.Duration) {
+func (kd *Discovery) watchServices(events chan interface{}, done <-chan struct{}, retryInterval time.Duration) {
 	until(func() {
 		req, err := http.NewRequest("GET", kd.Conf.Server+servicesURL, nil)
 		if err != nil {
@@ -334,7 +334,7 @@ func (kd *KubernetesDiscovery) watchServices(events chan interface{}, done <-cha
 	}, retryInterval, done)
 }
 
-func (kd *KubernetesDiscovery) updateService(service *Service, eventType EventType) *config.TargetGroup {
+func (kd *Discovery) updateService(service *Service, eventType EventType) *config.TargetGroup {
 	kd.servicesMu.Lock()
 	defer kd.servicesMu.Unlock()
 
@@ -355,7 +355,7 @@ func (kd *KubernetesDiscovery) updateService(service *Service, eventType EventTy
 	return nil
 }
 
-func (kd *KubernetesDiscovery) deleteService(service *Service) *config.TargetGroup {
+func (kd *Discovery) deleteService(service *Service) *config.TargetGroup {
 	tg := &config.TargetGroup{Source: serviceSource(service)}
 
 	delete(kd.services[service.ObjectMeta.Namespace], service.ObjectMeta.Name)
@@ -366,7 +366,7 @@ func (kd *KubernetesDiscovery) deleteService(service *Service) *config.TargetGro
 	return tg
 }
 
-func (kd *KubernetesDiscovery) addService(service *Service) *config.TargetGroup {
+func (kd *Discovery) addService(service *Service) *config.TargetGroup {
 	namespace, ok := kd.services[service.ObjectMeta.Namespace]
 	if !ok {
 		namespace = map[string]*Service{}
@@ -386,16 +386,16 @@ func (kd *KubernetesDiscovery) addService(service *Service) *config.TargetGroup 
 		return nil
 	}
 
-	var endpoints Endpoints
-	if err := json.NewDecoder(res.Body).Decode(&endpoints); err != nil {
+	var eps Endpoints
+	if err := json.NewDecoder(res.Body).Decode(&eps); err != nil {
 		log.Errorf("Error getting service endpoints: %s", err)
 		return nil
 	}
 
-	return kd.updateServiceTargetGroup(service, &endpoints)
+	return kd.updateServiceTargetGroup(service, &eps)
 }
 
-func (kd *KubernetesDiscovery) updateServiceTargetGroup(service *Service, endpoints *Endpoints) *config.TargetGroup {
+func (kd *Discovery) updateServiceTargetGroup(service *Service, eps *Endpoints) *config.TargetGroup {
 	tg := &config.TargetGroup{
 		Source: serviceSource(service),
 		Labels: model.LabelSet{
@@ -415,10 +415,10 @@ func (kd *KubernetesDiscovery) updateServiceTargetGroup(service *Service, endpoi
 	}
 
 	// Now let's loop through the endpoints & add them to the target group with appropriate labels.
-	for _, eps := range endpoints.Subsets {
-		epPort := eps.Ports[0].Port
+	for _, ss := range eps.Subsets {
+		epPort := ss.Ports[0].Port
 
-		for _, addr := range eps.Addresses {
+		for _, addr := range ss.Addresses {
 			ipAddr := addr.IP
 			if len(ipAddr) == net.IPv6len {
 				ipAddr = "[" + ipAddr + "]"
@@ -435,7 +435,7 @@ func (kd *KubernetesDiscovery) updateServiceTargetGroup(service *Service, endpoi
 }
 
 // watchServiceEndpoints watches service endpoints as they come & go.
-func (kd *KubernetesDiscovery) watchServiceEndpoints(events chan interface{}, done <-chan struct{}, retryInterval time.Duration) {
+func (kd *Discovery) watchServiceEndpoints(events chan interface{}, done <-chan struct{}, retryInterval time.Duration) {
 	until(func() {
 		req, err := http.NewRequest("GET", kd.Conf.Server+endpointsURL, nil)
 		if err != nil {
@@ -475,7 +475,7 @@ func (kd *KubernetesDiscovery) watchServiceEndpoints(events chan interface{}, do
 	}, retryInterval, done)
 }
 
-func (kd *KubernetesDiscovery) updateServiceEndpoints(endpoints *Endpoints, eventType EventType) *config.TargetGroup {
+func (kd *Discovery) updateServiceEndpoints(endpoints *Endpoints, eventType EventType) *config.TargetGroup {
 	kd.servicesMu.Lock()
 	defer kd.servicesMu.Unlock()
 

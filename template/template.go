@@ -101,7 +101,8 @@ func query(q string, timestamp model.Time, queryEngine *promql.Engine) (queryRes
 	return result, nil
 }
 
-type templateExpander struct {
+// Expander executes templates in text or HTML mode with a common set of Prometheus template functions.
+type Expander struct {
 	text    string
 	name    string
 	data    interface{}
@@ -109,8 +110,8 @@ type templateExpander struct {
 }
 
 // NewTemplateExpander returns a template expander ready to use.
-func NewTemplateExpander(text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine, pathPrefix string) *templateExpander {
-	return &templateExpander{
+func NewTemplateExpander(text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine, pathPrefix string) *Expander {
+	return &Expander{
 		text: text,
 		name: name,
 		data: data,
@@ -249,16 +250,16 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp m
 	}
 }
 
-// Funcs adds the functions in fm to the templateExpander's function map.
+// Funcs adds the functions in fm to the Expander's function map.
 // Existing functions will be overwritten in case of conflict.
-func (te templateExpander) Funcs(fm text_template.FuncMap) {
+func (te Expander) Funcs(fm text_template.FuncMap) {
 	for k, v := range fm {
 		te.funcMap[k] = v
 	}
 }
 
-// Expand a template.
-func (te templateExpander) Expand() (result string, resultErr error) {
+// Expand expands a template in text (non-HTML) mode.
+func (te Expander) Expand() (result string, resultErr error) {
 	// It'd better to have no alert description than to kill the whole process
 	// if there's a bug in the template.
 	defer func() {
@@ -283,8 +284,8 @@ func (te templateExpander) Expand() (result string, resultErr error) {
 	return buffer.String(), nil
 }
 
-// Expand a template with HTML escaping, with templates read from the given files.
-func (te templateExpander) ExpandHTML(templateFiles []string) (result string, resultErr error) {
+// ExpandHTML expands a template with HTML escaping, with templates read from the given files.
+func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr error) {
 	defer func() {
 		if r := recover(); r != nil {
 			var ok bool

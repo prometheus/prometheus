@@ -52,13 +52,13 @@ func (s AlertState) String() string {
 }
 
 const (
-	// Inactive alerts are neither firing nor pending.
+	// StateInactive is the state of an alert that is either firing nor pending.
 	StateInactive AlertState = iota
-	// Pending alerts have been active for less than the configured
-	// threshold duration.
+	// StatePending is the state of an alert that has been active for less than
+	// the configured threshold duration.
 	StatePending
-	// Firing alerts have been active for longer than the configured
-	// threshold duration.
+	// StateFiring is the state of an alert that has been active for longer than
+	// the configured threshold duration.
 	StateFiring
 )
 

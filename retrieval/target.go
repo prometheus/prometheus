@@ -90,11 +90,11 @@ func (t TargetHealth) value() model.SampleValue {
 }
 
 const (
-	// Unknown is the state of a Target before it is first scraped.
+	// HealthUnknown is the state of a Target before it is first scraped.
 	HealthUnknown TargetHealth = iota
-	// Healthy is the state of a Target that has been successfully scraped.
+	// HealthGood is the state of a Target that has been successfully scraped.
 	HealthGood
-	// Unhealthy is the state of a Target that was scraped unsuccessfully.
+	// HealthBad is the state of a Target that was scraped unsuccessfully.
 	HealthBad
 )
 
@@ -258,7 +258,7 @@ func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
 		// Load CA cert.
 		caCert, err := ioutil.ReadFile(cfg.CACert)
 		if err != nil {
-			return nil, fmt.Errorf("Unable to use specified CA cert %s: %s", cfg.CACert, err)
+			return nil, fmt.Errorf("unable to use specified CA cert %s: %s", cfg.CACert, err)
 		}
 		caCertPool.AppendCertsFromPEM(caCert)
 		tlsConfig.RootCAs = caCertPool
@@ -268,7 +268,7 @@ func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
 	if cfg.ClientCert != nil && len(cfg.ClientCert.Cert) > 0 && len(cfg.ClientCert.Key) > 0 {
 		cert, err := tls.LoadX509KeyPair(cfg.ClientCert.Cert, cfg.ClientCert.Key)
 		if err != nil {
-			return nil, fmt.Errorf("Unable to use specified client cert (%s) & key (%s): %s", cfg.ClientCert.Cert, cfg.ClientCert.Key, err)
+			return nil, fmt.Errorf("unable to use specified client cert (%s) & key (%s): %s", cfg.ClientCert.Cert, cfg.ClientCert.Key, err)
 		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
@@ -285,12 +285,13 @@ func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
 	// Authorization header correctly on each request.
 	bearerToken := cfg.BearerToken
 	if len(bearerToken) == 0 && len(cfg.BearerTokenFile) > 0 {
-		if b, err := ioutil.ReadFile(cfg.BearerTokenFile); err != nil {
-			return nil, fmt.Errorf("Unable to read bearer token file %s: %s", cfg.BearerTokenFile, err)
-		} else {
-			bearerToken = string(b)
+		b, err := ioutil.ReadFile(cfg.BearerTokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read bearer token file %s: %s", cfg.BearerTokenFile, err)
 		}
+		bearerToken = string(b)
 	}
+
 	if len(bearerToken) > 0 {
 		rt = httputil.NewBearerAuthRoundTripper(bearerToken, rt)
 	}
