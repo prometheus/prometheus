@@ -67,6 +67,7 @@ func (rule RecordingRule) eval(timestamp model.Time, engine *promql.Engine) (mod
 		vector = model.Vector{&model.Sample{
 			Value:     scalar.Value,
 			Timestamp: scalar.Timestamp,
+			Metric:    model.Metric{},
 		}}
 	default:
 		return nil, fmt.Errorf("rule result is not a vector or scalar")
