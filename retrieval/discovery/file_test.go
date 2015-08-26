@@ -66,7 +66,7 @@ func testFileSD(t *testing.T, ext string) {
 			t.Fatalf("Label not parsed")
 		}
 		if tg.String() != fmt.Sprintf("fixtures/_test%s:0", ext) {
-			t.Fatalf("Unexpected target group", tg)
+			t.Fatalf("Unexpected target group %s", tg)
 		}
 	}
 	select {

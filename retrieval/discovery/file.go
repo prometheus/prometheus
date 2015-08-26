@@ -61,7 +61,7 @@ func (fd *FileDiscovery) Sources() []string {
 	for _, p := range fd.listFiles() {
 		tgroups, err := readFile(p)
 		if err != nil {
-			log.Errorf("Error reading file %q: ", p, err)
+			log.Errorf("Error reading file %q: %s", p, err)
 		}
 		for _, tg := range tgroups {
 			srcs = append(srcs, tg.Source)

@@ -623,7 +623,7 @@ func newTLSConfig(t *testing.T) *tls.Config {
 	tlsConfig.ServerName = "127.0.0.1"
 	cert, err := tls.LoadX509KeyPair("testdata/server.cer", "testdata/server.key")
 	if err != nil {
-		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", "testdata/server.cer", "testdata/server.key")
+		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", "testdata/server.cer", "testdata/server.key", err)
 	}
 	tlsConfig.Certificates = []tls.Certificate{cert}
 	tlsConfig.BuildNameToCertificate()
