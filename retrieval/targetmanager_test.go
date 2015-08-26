@@ -178,7 +178,7 @@ func TestTargetManagerChan(t *testing.T) {
 		<-time.After(1 * time.Millisecond)
 
 		if len(targetManager.targets) != len(step.expected) {
-			t.Fatalf("step %d: sources mismatch %v, %v", targetManager.targets, step.expected)
+			t.Fatalf("step %d: sources mismatch %v, %v", i, targetManager.targets, step.expected)
 		}
 
 		for source, actTargets := range targetManager.targets {

@@ -1456,12 +1456,15 @@ func TestRecoverParserRuntime(t *testing.T) {
 func TestRecoverParserError(t *testing.T) {
 	var p *parser
 	var err error
-	defer p.recover(&err)
 
 	e := fmt.Errorf("custom error")
-	panic(e)
 
-	if err.Error() != e.Error() {
-		t.Fatalf("wrong error message: %q, expected %q", err, e)
-	}
+	defer func() {
+		if err.Error() != e.Error() {
+			t.Fatalf("wrong error message: %q, expected %q", err, e)
+		}
+	}()
+	defer p.recover(&err)
+
+	panic(e)
 }

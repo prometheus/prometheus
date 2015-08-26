@@ -271,7 +271,7 @@ func (kd *KubernetesDiscovery) watchNodes(events chan interface{}, done <-chan s
 			return
 		}
 		if res.StatusCode != http.StatusOK {
-			log.Errorf("Failed to watch nodes: %s", res.StatusCode)
+			log.Errorf("Failed to watch nodes: %d", res.StatusCode)
 			return
 		}
 
@@ -312,7 +312,7 @@ func (kd *KubernetesDiscovery) watchServices(events chan interface{}, done <-cha
 			return
 		}
 		if res.StatusCode != http.StatusOK {
-			log.Errorf("Failed to watch services: %s", res.StatusCode)
+			log.Errorf("Failed to watch services: %d", res.StatusCode)
 			return
 		}
 
@@ -382,7 +382,7 @@ func (kd *KubernetesDiscovery) addService(service *Service) *config.TargetGroup 
 		return nil
 	}
 	if res.StatusCode != http.StatusOK {
-		log.Errorf("Failed to get service endpoints: %s", res.StatusCode)
+		log.Errorf("Failed to get service endpoints: %d", res.StatusCode)
 		return nil
 	}
 
@@ -453,7 +453,7 @@ func (kd *KubernetesDiscovery) watchServiceEndpoints(events chan interface{}, do
 			return
 		}
 		if res.StatusCode != http.StatusOK {
-			log.Errorf("Failed to watch service endpoints: %s", res.StatusCode)
+			log.Errorf("Failed to watch service endpoints: %d", res.StatusCode)
 			return
 		}
 

@@ -46,7 +46,7 @@ func (c *TestStorageClient) Store(s model.Samples) error {
 	return nil
 }
 
-func (c TestStorageClient) Name() string {
+func (c *TestStorageClient) Name() string {
 	return "teststorageclient"
 }
 
