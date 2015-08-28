@@ -160,6 +160,30 @@ func (fd *FileDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}
 	}
 }
 
+// stop shuts down the file watcher.
+func (fd *FileDiscovery) stop() {
+	log.Debugf("Stopping file discovery for %s...", fd.paths)
+
+	done := make(chan struct{})
+	defer close(done)
+
+	// Closing the watcher will deadlock unless all events and errors are drained.
+	go func() {
+		for {
+			select {
+			case <-fd.watcher.Errors:
+			case <-fd.watcher.Events:
+				// Drain all events and errors.
+			case <-done:
+				return
+			}
+		}
+	}()
+	fd.watcher.Close()
+
+	log.Debugf("File discovery for %s stopped.", fd.paths)
+}
+
 // refresh reads all files matching the discovery's patterns and sends the respective
 // updated target groups through the channel.
 func (fd *FileDiscovery) refresh(ch chan<- *config.TargetGroup) {
@@ -194,27 +218,6 @@ func (fd *FileDiscovery) refresh(ch chan<- *config.TargetGroup) {
 // fileSource returns a source ID for the i-th target group in the file.
 func fileSource(filename string, i int) string {
 	return fmt.Sprintf("%s:%d", filename, i)
-}
-
-// stop shuts down the file watcher.
-func (fd *FileDiscovery) stop() {
-	log.Debugf("Stopping file discovery for %s...", fd.paths)
-
-	// Closing the watcher will deadlock unless all events and errors are drained.
-	go func() {
-		for {
-			select {
-			case <-fd.watcher.Errors:
-			case <-fd.watcher.Events:
-				// Drain all events and errors.
-			default:
-				return
-			}
-		}
-	}()
-	fd.watcher.Close()
-
-	log.Debugf("File discovery for %s stopped.", fd.paths)
 }
 
 // readFile reads a JSON or YAML list of targets groups from the file, depending on its
