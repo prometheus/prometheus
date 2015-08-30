@@ -23,8 +23,8 @@ type SampleAppender interface {
 	Append(*model.Sample)
 }
 
-// Fanout is a SampleAppender that appends every sample to a list of other
-// SampleAppenders.
+// Fanout is a SampleAppender that appends every sample to each SampleAppender
+// in its list.
 type Fanout []SampleAppender
 
 // Append implements SampleAppender. It appends the provided sample to all
