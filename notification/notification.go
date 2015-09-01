@@ -20,12 +20,14 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -86,7 +88,9 @@ type NotificationHandler struct {
 	notificationsQueueLength   prometheus.Gauge
 	notificationsQueueCapacity prometheus.Metric
 
-	stopped chan struct{}
+	globalLabels model.LabelSet
+	mtx          sync.RWMutex
+	stopped      chan struct{}
 }
 
 // NotificationHandlerOptions are the configurable parameters of a NotificationHandler.
@@ -141,10 +145,28 @@ func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler 
 	}
 }
 
+// ApplyConfig updates the status state as the new config requires.
+// Returns true on success.
+func (n *NotificationHandler) ApplyConfig(conf *config.Config) bool {
+	n.mtx.Lock()
+	defer n.mtx.Unlock()
+
+	n.globalLabels = conf.GlobalConfig.Labels
+	return true
+}
+
 // Send a list of notifications to the configured alert manager.
 func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
+	n.mtx.RLock()
+	defer n.mtx.RUnlock()
+
 	alerts := make([]map[string]interface{}, 0, len(reqs))
 	for _, req := range reqs {
+		for ln, lv := range n.globalLabels {
+			if _, ok := req.Labels[ln]; !ok {
+				req.Labels[ln] = lv
+			}
+		}
 		alerts = append(alerts, map[string]interface{}{
 			"summary":     req.Summary,
 			"description": req.Description,
