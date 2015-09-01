@@ -16,7 +16,6 @@ package retrieval
 import (
 	"net/url"
 	"reflect"
-	"regexp"
 	"testing"
 	"time"
 
@@ -219,7 +218,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			{
 				// Copy out the URL parameter.
 				SourceLabels: model.LabelNames{"__param_testParam"},
-				Regex:        &config.Regexp{*regexp.MustCompile("^(.*)$")},
+				Regex:        config.MustNewRegexp("(.*)"),
 				TargetLabel:  "testParam",
 				Replacement:  "$1",
 				Action:       config.RelabelReplace,
@@ -255,7 +254,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		RelabelConfigs: []*config.RelabelConfig{
 			{
 				SourceLabels: model.LabelNames{model.AddressLabel},
-				Regex:        &config.Regexp{*regexp.MustCompile(`^test\.(.*?):(.*)`)},
+				Regex:        config.MustNewRegexp(`test\.(.*?):(.*)`),
 				Replacement:  "foo.${1}:${2}",
 				TargetLabel:  model.AddressLabel,
 				Action:       config.RelabelReplace,
@@ -263,7 +262,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			{
 				// Add a new label for example.* targets.
 				SourceLabels: model.LabelNames{model.AddressLabel, "boom", "foo"},
-				Regex:        &config.Regexp{*regexp.MustCompile("^example.*?-b([a-z-]+)r$")},
+				Regex:        config.MustNewRegexp("example.*?-b([a-z-]+)r"),
 				TargetLabel:  "new",
 				Replacement:  "$1",
 				Separator:    "-",
@@ -272,7 +271,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			{
 				// Drop an existing label.
 				SourceLabels: model.LabelNames{"boom"},
-				Regex:        &config.Regexp{*regexp.MustCompile(".*")},
+				Regex:        config.MustNewRegexp(".*"),
 				TargetLabel:  "boom",
 				Replacement:  "",
 				Action:       config.RelabelReplace,

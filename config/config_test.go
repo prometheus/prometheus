@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +85,7 @@ var expectedConf = &Config{
 					SourceLabels: model.LabelNames{"job", "__meta_dns_srv_name"},
 					TargetLabel:  "job",
 					Separator:    ";",
-					Regex:        &Regexp{*regexp.MustCompile("(.*)some-[regex]$")},
+					Regex:        MustNewRegexp("(.*)some-[regex]"),
 					Replacement:  "foo-${1}",
 					Action:       RelabelReplace,
 				},
@@ -126,7 +125,7 @@ var expectedConf = &Config{
 			RelabelConfigs: []*RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"job"},
-					Regex:        &Regexp{*regexp.MustCompile("(.*)some-[regex]$")},
+					Regex:        MustNewRegexp("(.*)some-[regex]"),
 					Separator:    ";",
 					Action:       RelabelDrop,
 				},
@@ -139,7 +138,7 @@ var expectedConf = &Config{
 				},
 				{
 					SourceLabels: model.LabelNames{"__tmp_hash"},
-					Regex:        &Regexp{*regexp.MustCompile("^1$")},
+					Regex:        MustNewRegexp("1"),
 					Separator:    ";",
 					Action:       RelabelKeep,
 				},
@@ -147,7 +146,7 @@ var expectedConf = &Config{
 			MetricRelabelConfigs: []*RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
-					Regex:        &Regexp{*regexp.MustCompile("expensive_metric.*$")},
+					Regex:        MustNewRegexp("expensive_metric.*"),
 					Separator:    ";",
 					Action:       RelabelDrop,
 				},
