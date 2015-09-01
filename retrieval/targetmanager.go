@@ -66,7 +66,7 @@ type TargetManager struct {
 func NewTargetManager(sampleAppender storage.SampleAppender) *TargetManager {
 	tm := &TargetManager{
 		sampleAppender: sampleAppender,
-		targets:        make(map[string][]*Target),
+		targets:        map[string][]*Target{},
 	}
 	return tm
 }
