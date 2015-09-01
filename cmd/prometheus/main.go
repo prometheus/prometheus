@@ -93,7 +93,7 @@ func Main() int {
 
 	webHandler := web.New(memStorage, queryEngine, ruleManager, status, &cfg.web)
 
-	reloadables := []Reloadable{status, targetManager, ruleManager, webHandler}
+	reloadables := []Reloadable{status, targetManager, ruleManager, webHandler, notificationHandler}
 
 	if !reloadConfig(cfg.configFile, reloadables...) {
 		return 1
