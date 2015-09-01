@@ -100,10 +100,15 @@ load 5m
   testmetric{src="source-value-10",dst="original-destination-value"} 0
   testmetric{src="source-value-20",dst="original-destination-value"} 1
 
-# label_replace does a substring match and replace.
-eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "value-(.*)")
+# label_replace does a full-string match and replace.
+eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "source-value-(.*)")
   testmetric{src="source-value-10",dst="destination-value-10"} 0
   testmetric{src="source-value-20",dst="destination-value-20"} 1
+
+# label_replace does not do a sub-string match.
+eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "value-(.*)")
+  testmetric{src="source-value-10",dst="original-destination-value"} 0
+  testmetric{src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace works with multiple capture groups.
 eval instant at 0m label_replace(testmetric, "dst", "$1-value-$2", "src", "(.*)-value-(.*)")
@@ -129,7 +134,7 @@ eval instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "non-matc
   testmetric{src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace drops labels that are set to empty values.
-eval instant at 0m label_replace(testmetric, "dst", "", "dst", "")
+eval instant at 0m label_replace(testmetric, "dst", "", "dst", ".*")
   testmetric{src="source-value-10"} 0
   testmetric{src="source-value-20"} 1
 
