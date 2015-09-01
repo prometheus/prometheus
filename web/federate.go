@@ -19,20 +19,18 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 
-	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+
+	dto "github.com/prometheus/client_model/go"
 )
 
-// Federation implements a web handler to serve scrape federation requests.
-type Federation struct {
-	Storage local.Storage
-}
+func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
 
-func (fed *Federation) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 
 	metrics := map[model.Fingerprint]metric.Metric{}
@@ -43,7 +41,7 @@ func (fed *Federation) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		for fp, met := range fed.Storage.MetricsForLabelMatchers(matchers...) {
+		for fp, met := range h.storage.MetricsForLabelMatchers(matchers...) {
 			metrics[fp] = met
 		}
 	}
@@ -63,7 +61,9 @@ func (fed *Federation) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	for fp, met := range metrics {
-		sp := fed.Storage.LastSamplePairForFingerprint(fp)
+		globalUsed := map[model.LabelName]struct{}{}
+
+		sp := h.storage.LastSamplePairForFingerprint(fp)
 		if sp == nil {
 			continue
 		}
@@ -80,14 +80,27 @@ func (fed *Federation) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				Name:  proto.String(string(ln)),
 				Value: proto.String(string(lv)),
 			})
+			if _, ok := h.globalLabels[ln]; ok {
+				globalUsed[ln] = struct{}{}
+			}
 		}
+
+		// Attach global labels if they do not exist yet.
+		for ln, lv := range h.globalLabels {
+			if _, ok := globalUsed[ln]; !ok {
+				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
+					Name:  proto.String(string(ln)),
+					Value: proto.String(string(lv)),
+				})
+			}
+		}
+
 		protMetric.TimestampMs = (*int64)(&sp.Timestamp)
 		protMetric.Untyped.Value = (*float64)(&sp.Value)
 
 		if err := enc.Encode(protMetricFam); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-
 		}
 	}
 }
