@@ -40,7 +40,7 @@ scrape_configs:
 
   relabel_configs:
   - source_labels: [job, __meta_dns_srv_name]
-    regex:         (.*)some-[regex]$
+    regex:         (.*)some-[regex]
     target_label:  job
     replacement:   foo-${1}
     # action defaults to 'replace'
@@ -71,19 +71,19 @@ scrape_configs:
 
   relabel_configs:
   - source_labels: [job]
-    regex:         (.*)some-[regex]$
+    regex:         (.*)some-[regex]
     action:        drop
   - source_labels: [__address__]
     modulus:       8
     target_label:  __tmp_hash
     action:        hashmod
   - source_labels: [__tmp_hash]
-    regex:         ^1$
+    regex:         1
     action:        keep
 
   metric_relabel_configs:
   - source_labels: [__name__]
-    regex:         expensive_metric.*$
+    regex:         expensive_metric.*
     action:        drop
 
 - job_name: service-y
