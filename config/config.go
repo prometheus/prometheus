@@ -723,6 +723,29 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
 type Regexp struct {
 	regexp.Regexp
+	original string
+}
+
+// NewRegexp creates a new anchored Regexp and returns an error if the
+// passed-in regular expression does not compile.
+func NewRegexp(s string) (*Regexp, error) {
+	regex, err := regexp.Compile("^(?:" + s + ")$")
+	if err != nil {
+		return nil, err
+	}
+	return &Regexp{
+		Regexp:   *regex,
+		original: s,
+	}, nil
+}
+
+// MustNewRegexp works like NewRegexp, but panics if the regular expression does not compile.
+func MustNewRegexp(s string) *Regexp {
+	re, err := NewRegexp(s)
+	if err != nil {
+		panic(err)
+	}
+	return re
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -731,18 +754,18 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal(&s); err != nil {
 		return err
 	}
-	regex, err := regexp.Compile(s)
+	r, err := NewRegexp(s)
 	if err != nil {
 		return err
 	}
-	re.Regexp = *regex
+	*re = *r
 	return nil
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
 func (re *Regexp) MarshalYAML() (interface{}, error) {
 	if re != nil {
-		return re.String(), nil
+		return re.original, nil
 	}
 	return nil, nil
 }

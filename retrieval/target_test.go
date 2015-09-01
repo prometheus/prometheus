@@ -23,7 +23,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -181,12 +180,12 @@ func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
 	testTarget.metricRelabelConfigs = []*config.RelabelConfig{
 		{
 			SourceLabels: model.LabelNames{"__name__"},
-			Regex:        &config.Regexp{*regexp.MustCompile(".*drop.*")},
+			Regex:        config.MustNewRegexp(".*drop.*"),
 			Action:       config.RelabelDrop,
 		},
 		{
 			SourceLabels: model.LabelNames{"__name__"},
-			Regex:        &config.Regexp{*regexp.MustCompile(".*(relabel|up).*")},
+			Regex:        config.MustNewRegexp(".*(relabel|up).*"),
 			TargetLabel:  "foo",
 			Replacement:  "bar",
 			Action:       config.RelabelReplace,

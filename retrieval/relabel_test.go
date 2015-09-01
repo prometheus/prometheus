@@ -15,7 +15,6 @@ package retrieval
 
 import (
 	"reflect"
-	"regexp"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -38,7 +37,7 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        &config.Regexp{*regexp.MustCompile("f(.*)")},
+					Regex:        config.MustNewRegexp("f(.*)"),
 					TargetLabel:  model.LabelName("d"),
 					Separator:    ";",
 					Replacement:  "ch${1}-ch${1}",
@@ -61,7 +60,7 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"a", "b"},
-					Regex:        &config.Regexp{*regexp.MustCompile("^f(.*);(.*)r$")},
+					Regex:        config.MustNewRegexp("f(.*);(.*)r"),
 					TargetLabel:  model.LabelName("a"),
 					Separator:    ";",
 					Replacement:  "b${1}${2}m", // boobam
@@ -69,7 +68,7 @@ func TestRelabel(t *testing.T) {
 				},
 				{
 					SourceLabels: model.LabelNames{"c", "a"},
-					Regex:        &config.Regexp{*regexp.MustCompile("(b).*b(.*)ba(.*)")},
+					Regex:        config.MustNewRegexp("(b).*b(.*)ba(.*)"),
 					TargetLabel:  model.LabelName("d"),
 					Separator:    ";",
 					Replacement:  "$1$2$2$3",
@@ -90,11 +89,11 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        &config.Regexp{*regexp.MustCompile("o$")},
+					Regex:        config.MustNewRegexp(".*o.*"),
 					Action:       config.RelabelDrop,
 				}, {
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        &config.Regexp{*regexp.MustCompile("f(.*)")},
+					Regex:        config.MustNewRegexp("f(.*)"),
 					TargetLabel:  model.LabelName("d"),
 					Separator:    ";",
 					Replacement:  "ch$1-ch$1",
@@ -110,7 +109,7 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        &config.Regexp{*regexp.MustCompile("(b)")},
+					Regex:        config.MustNewRegexp(".*(b).*"),
 					TargetLabel:  model.LabelName("d"),
 					Separator:    ";",
 					Replacement:  "$1",
@@ -129,7 +128,7 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        &config.Regexp{*regexp.MustCompile("no-match")},
+					Regex:        config.MustNewRegexp("no-match"),
 					Action:       config.RelabelDrop,
 				},
 			},
@@ -144,7 +143,22 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        &config.Regexp{*regexp.MustCompile("no-match")},
+					Regex:        config.MustNewRegexp("f|o"),
+					Action:       config.RelabelDrop,
+				},
+			},
+			output: model.LabelSet{
+				"a": "foo",
+			},
+		},
+		{
+			input: model.LabelSet{
+				"a": "foo",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        config.MustNewRegexp("no-match"),
 					Action:       config.RelabelKeep,
 				},
 			},
@@ -157,7 +171,7 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        &config.Regexp{*regexp.MustCompile("^f")},
+					Regex:        config.MustNewRegexp("f.*"),
 					Action:       config.RelabelKeep,
 				},
 			},
@@ -173,7 +187,7 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        &config.Regexp{*regexp.MustCompile("^f")},
+					Regex:        config.MustNewRegexp("f"),
 					TargetLabel:  model.LabelName("b"),
 					Replacement:  "bar",
 					Action:       config.RelabelReplace,
@@ -213,7 +227,7 @@ func TestRelabel(t *testing.T) {
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					Regex:       &config.Regexp{*regexp.MustCompile("^(b.*)")},
+					Regex:       config.MustNewRegexp("(b.*)"),
 					Replacement: "bar_${1}",
 					Action:      config.RelabelLabelMap,
 				},
@@ -235,7 +249,7 @@ func TestRelabel(t *testing.T) {
 			},
 			relabel: []*config.RelabelConfig{
 				{
-					Regex:       &config.Regexp{*regexp.MustCompile("^__meta_(my.*)")},
+					Regex:       config.MustNewRegexp("__meta_(my.*)"),
 					Replacement: "${1}",
 					Action:      config.RelabelLabelMap,
 				},
