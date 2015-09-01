@@ -106,7 +106,9 @@ func Main() int {
 
 	webHandler := web.New(memStorage, queryEngine, ruleManager, status, &cfg.web)
 
-	if !reloadConfig(cfg.configFile, status, targetManager, ruleManager) {
+	reloadables := []Reloadable{status, targetManager, ruleManager, webHandler}
+
+	if !reloadConfig(cfg.configFile, reloadables...) {
 		return 1
 	}
 
@@ -123,7 +125,7 @@ func Main() int {
 			case <-hup:
 			case <-webHandler.Reload():
 			}
-			reloadConfig(cfg.configFile, status, targetManager, ruleManager)
+			reloadConfig(cfg.configFile, reloadables...)
 		}
 	}()
 
