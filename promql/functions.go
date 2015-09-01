@@ -616,7 +616,7 @@ func funcLabelReplace(ev *evaluator, args Expressions) model.Value {
 		regexStr = ev.evalString(args[4]).Value
 	)
 
-	regex, err := regexp.Compile(regexStr)
+	regex, err := regexp.Compile("^(?:" + regexStr + ")$")
 	if err != nil {
 		ev.errorf("invalid regular expression in label_replace(): %s", regexStr)
 	}
