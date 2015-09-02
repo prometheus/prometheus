@@ -626,6 +626,10 @@ type KubernetesSDConfig struct {
 func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultMarathonSDConfig
 	type plain MarathonSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
 	}

@@ -107,3 +107,8 @@ scrape_configs:
     - 'https://localhost:1234'
     username: 'myusername'
     password: 'mypassword'
+
+- job_name: service-marathon
+  marathon_sd_configs:
+  - servers:
+    - 'http://marathon.example.com:8080'
