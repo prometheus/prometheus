@@ -71,37 +71,40 @@ var testExpr = []struct {
 		expected: &NumberLiteral{-493},
 	}, {
 		input:    "1 + 1",
-		expected: &BinaryExpr{itemADD, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemADD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 - 1",
-		expected: &BinaryExpr{itemSUB, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemSUB, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 * 1",
-		expected: &BinaryExpr{itemMUL, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemMUL, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 % 1",
-		expected: &BinaryExpr{itemMOD, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemMOD, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 / 1",
-		expected: &BinaryExpr{itemDIV, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemDIV, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 == 1",
-		expected: &BinaryExpr{itemEQL, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemEQL, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 != 1",
-		expected: &BinaryExpr{itemNEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemNEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 > 1",
-		expected: &BinaryExpr{itemGTR, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemGTR, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 >= 1",
-		expected: &BinaryExpr{itemGTE, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemGTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 < 1",
-		expected: &BinaryExpr{itemLSS, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemLSS, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
 		input:    "1 <= 1",
-		expected: &BinaryExpr{itemLTE, &NumberLiteral{1}, &NumberLiteral{1}, nil},
+		expected: &BinaryExpr{itemLTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+	}, {
+		input:    "1 <= bool 1",
+		expected: &BinaryExpr{itemLTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
 		input: "+1 + -2 * 1",
 		expected: &BinaryExpr{
@@ -255,6 +258,19 @@ var testExpr = []struct {
 				},
 			},
 			RHS: &NumberLiteral{1},
+		},
+	}, {
+		input: "foo == bool 1",
+		expected: &BinaryExpr{
+			Op: itemEQL,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS:        &NumberLiteral{1},
+			ReturnBool: true,
 		},
 	}, {
 		input: "2.5 / bar",
@@ -513,6 +529,18 @@ var testExpr = []struct {
 		input:  `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:   true,
 		errMsg: "label \"instance\" must not occur in ON and INCLUDE clause at once",
+	}, {
+		input:  "foo + bool bar",
+		fail:   true,
+		errMsg: "bool modifier can only be used on comparison operators",
+	}, {
+		input:  "foo + bool 10",
+		fail:   true,
+		errMsg: "bool modifier can only be used on comparison operators",
+	}, {
+		input:  "foo and bool 10",
+		fail:   true,
+		errMsg: "bool modifier can only be used on comparison operators",
 	},
 	// Test vector selector.
 	{
