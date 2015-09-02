@@ -151,6 +151,7 @@ const (
 	itemOn
 	itemGroupLeft
 	itemGroupRight
+	itemBool
 	keywordsEnd
 )
 
@@ -183,6 +184,7 @@ var key = map[string]itemType{
 	"on":            itemOn,
 	"group_left":    itemGroupLeft,
 	"group_right":   itemGroupRight,
+	"bool":          itemBool,
 }
 
 // These are the default string representations for common items. It does not

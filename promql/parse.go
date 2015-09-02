@@ -485,6 +485,19 @@ func (p *parser) expr() Expr {
 			vecMatching.Card = CardManyToMany
 		}
 
+		returnBool := false
+		// Parse bool modifier.
+		if p.peek().typ == itemBool {
+			switch op {
+			case itemEQL, itemNEQ, itemLTE, itemLSS, itemGTE, itemGTR:
+				break
+			default:
+				p.errorf("bool modifier can only be used on comparison operators")
+			}
+			p.next()
+			returnBool = true
+		}
+
 		// Parse ON clause.
 		if p.peek().typ == itemOn {
 			p.next()
@@ -523,6 +536,7 @@ func (p *parser) expr() Expr {
 					LHS:            lhs.RHS,
 					RHS:            rhs,
 					VectorMatching: vecMatching,
+					ReturnBool:     returnBool,
 				},
 				VectorMatching: lhs.VectorMatching,
 			}
@@ -532,6 +546,7 @@ func (p *parser) expr() Expr {
 				LHS:            expr,
 				RHS:            rhs,
 				VectorMatching: vecMatching,
+				ReturnBool:     returnBool,
 			}
 		}
 	}
