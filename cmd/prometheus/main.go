@@ -46,6 +46,19 @@ func main() {
 	os.Exit(Main())
 }
 
+var (
+	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "prometheus",
+		Name:      "config_last_reload_successful",
+		Help:      "Whether the last configuration reload attempt was successful.",
+	})
+	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "prometheus",
+		Name:      "config_last_reload_success_timestamp_seconds",
+		Help:      "Timestamp of the last successful configuration reload.",
+	})
+)
+
 // Main manages the startup and shutdown lifecycle of the entire Prometheus server.
 func Main() int {
 	if err := parse(os.Args[1:]); err != nil {
@@ -134,6 +147,8 @@ func Main() int {
 	// The storage has to be fully initialized before registering.
 	prometheus.MustRegister(memStorage)
 	prometheus.MustRegister(notificationHandler)
+	prometheus.MustRegister(configSuccess)
+	prometheus.MustRegister(configSuccessTime)
 
 	go ruleManager.Run()
 	defer ruleManager.Stop()
@@ -172,8 +187,16 @@ type Reloadable interface {
 	ApplyConfig(*config.Config) bool
 }
 
-func reloadConfig(filename string, rls ...Reloadable) bool {
+func reloadConfig(filename string, rls ...Reloadable) (success bool) {
 	log.Infof("Loading configuration file %s", filename)
+	defer func() {
+		if success {
+			configSuccess.Set(1)
+			configSuccessTime.Set(float64(time.Now().Unix()))
+		} else {
+			configSuccess.Set(0)
+		}
+	}()
 
 	conf, err := config.LoadFile(filename)
 	if err != nil {
@@ -181,7 +204,7 @@ func reloadConfig(filename string, rls ...Reloadable) bool {
 		log.Errorf("Note: The configuration format has changed with version 0.14. Please see the documentation (http://prometheus.io/docs/operating/configuration/) and the provided configuration migration tool (https://github.com/prometheus/migrate).")
 		return false
 	}
-	success := true
+	success = true
 
 	for _, rl := range rls {
 		success = success && rl.ApplyConfig(conf)
