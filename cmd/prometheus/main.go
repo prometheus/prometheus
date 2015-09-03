@@ -70,6 +70,8 @@ func Main() int {
 		return 0
 	}
 
+	var reloadables []Reloadable
+
 	var (
 		memStorage     = local.NewMemorySeriesStorage(&cfg.storage)
 		remoteStorage  = remote.New(&cfg.remote)
@@ -77,6 +79,7 @@ func Main() int {
 	)
 	if remoteStorage != nil {
 		sampleAppender = append(sampleAppender, remoteStorage)
+		reloadables = append(reloadables, remoteStorage)
 	}
 
 	var (
@@ -106,7 +109,9 @@ func Main() int {
 
 	webHandler := web.New(memStorage, queryEngine, ruleManager, status, &cfg.web)
 
-	if !reloadConfig(cfg.configFile, status, targetManager, ruleManager) {
+	reloadables = append(reloadables, status, targetManager, ruleManager, webHandler, notificationHandler)
+
+	if !reloadConfig(cfg.configFile, reloadables...) {
 		return 1
 	}
 
@@ -123,7 +128,7 @@ func Main() int {
 			case <-hup:
 			case <-webHandler.Reload():
 			}
-			reloadConfig(cfg.configFile, status, targetManager, ruleManager)
+			reloadConfig(cfg.configFile, reloadables...)
 		}
 	}()
 
