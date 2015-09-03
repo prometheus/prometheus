@@ -605,7 +605,7 @@ type MarathonSDConfig struct {
 
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
-	Server          string   `yaml:"server"`
+	Masters         []URL    `yaml:"masters"`
 	KubeletPort     int      `yaml:"kubelet_port,omitempty"`
 	InCluster       bool     `yaml:"in_cluster,omitempty"`
 	BearerTokenFile string   `yaml:"bearer_token_file,omitempty"`
@@ -641,12 +641,8 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(c.Server) == "" {
-		return fmt.Errorf("Kubernetes SD configuration requires a server address")
-	}
-	// Make sure server ends in trailing slash - simpler URL building later
-	if !strings.HasSuffix(c.Server, "/") {
-		c.Server += "/"
+	if len(c.Masters) == 0 {
+		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes master")
 	}
 
 	return checkOverflow(c.XXX, "kubernetes_sd_config")
