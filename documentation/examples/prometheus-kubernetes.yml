@@ -8,14 +8,18 @@ global:
 scrape_configs:
 - job_name: 'kubernetes'
 
+  ca_cert: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
   kubernetes_sd_configs:
-  - server: 'https://kubernetes.default.svc'
+  - masters:
+    - 'https://kubernetes.default.svc'
     in_cluster: true
 
   relabel_configs:
-  - source_labels: [__meta_kubernetes_node, __meta_kubernetes_service_annotation_prometheus_io_scrape]
+  - source_labels: [__meta_kubernetes_role, __meta_kubernetes_service_annotation_prometheus_io_scrape]
     action: keep
-    regex: ^(?:.+;|;true)$
+    regex: ^(?:(?:master|node);.*|.*;true)$
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
     action: replace
     target_label: __scheme__
