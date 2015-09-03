@@ -4,7 +4,7 @@ Julius Volz in 2012.
 Maintainers of this repository:
 
 * Björn Rabenstein <beorn@soundcloud.com>
-* Fabian Reinartz <fabian.reinartz@soundcloud.com>
+* Fabian Reinartz <fabian@soundcloud.com>
 * Julius Volz <julius@soundcloud.com>
 
 The following individuals have contributed code to this repository
