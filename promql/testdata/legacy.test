@@ -108,26 +108,6 @@ eval instant at 50m SUM(http_requests) BY (job) / 0
 	{job="app-server"} +Inf 
 
 
-eval instant at 50m SUM(http_requests) BY (job) > 1000
-	{job="app-server"} 2600 
-
-
-eval instant at 50m 1000 < SUM(http_requests) BY (job)
-	{job="app-server"} 1000 
-
-
-eval instant at 50m SUM(http_requests) BY (job) <= 1000
-	{job="api-server"} 1000 
-
-
-eval instant at 50m SUM(http_requests) BY (job) != 1000
-	{job="app-server"} 2600 
-
-
-eval instant at 50m SUM(http_requests) BY (job) == 1000
-	{job="api-server"} 1000 
-
-
 eval instant at 50m SUM(http_requests) BY (job) + SUM(http_requests) BY (job)
 	{job="api-server"} 2000 
 	{job="app-server"} 5200 

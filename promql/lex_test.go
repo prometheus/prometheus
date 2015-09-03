@@ -264,6 +264,9 @@ var tests = []struct {
 	}, {
 		input:    "group_right",
 		expected: []item{{itemGroupRight, 0, "group_right"}},
+	}, {
+		input:    "bool",
+		expected: []item{{itemBool, 0, "bool"}},
 	},
 	// Test Selector.
 	{

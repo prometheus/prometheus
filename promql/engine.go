@@ -639,13 +639,13 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 			case itemLOR:
 				return ev.vectorOr(lhs.(vector), rhs.(vector), e.VectorMatching)
 			default:
-				return ev.vectorBinop(e.Op, lhs.(vector), rhs.(vector), e.VectorMatching)
+				return ev.vectorBinop(e.Op, lhs.(vector), rhs.(vector), e.VectorMatching, e.ReturnBool)
 			}
 		case lt == model.ValVector && rt == model.ValScalar:
-			return ev.vectorScalarBinop(e.Op, lhs.(vector), rhs.(*model.Scalar), false)
+			return ev.vectorScalarBinop(e.Op, lhs.(vector), rhs.(*model.Scalar), false, e.ReturnBool)
 
 		case lt == model.ValScalar && rt == model.ValVector:
-			return ev.vectorScalarBinop(e.Op, rhs.(vector), lhs.(*model.Scalar), true)
+			return ev.vectorScalarBinop(e.Op, rhs.(vector), lhs.(*model.Scalar), true, e.ReturnBool)
 		}
 
 	case *Call:
@@ -800,7 +800,7 @@ func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector 
 }
 
 // vectorBinop evaluates a binary operation between two vector, excluding AND and OR.
-func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorMatching) vector {
+func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorMatching, returnBool bool) vector {
 	if matching.Card == CardManyToMany {
 		panic("many-to-many only allowed for AND and OR")
 	}
@@ -852,7 +852,13 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 			vl, vr = vr, vl
 		}
 		value, keep := vectorElemBinop(op, vl, vr)
-		if !keep {
+		if returnBool {
+			if keep {
+				value = 1.0
+			} else {
+				value = 0.0
+			}
+		} else if !keep {
 			continue
 		}
 		metric := resultMetric(ls.Metric, op, resultLabels...)
@@ -921,7 +927,7 @@ func resultMetric(met metric.Metric, op itemType, labels ...model.LabelName) met
 }
 
 // vectorScalarBinop evaluates a binary operation between a vector and a scalar.
-func (ev *evaluator) vectorScalarBinop(op itemType, lhs vector, rhs *model.Scalar, swap bool) vector {
+func (ev *evaluator) vectorScalarBinop(op itemType, lhs vector, rhs *model.Scalar, swap, returnBool bool) vector {
 	vec := make(vector, 0, len(lhs))
 
 	for _, lhsSample := range lhs {
@@ -932,6 +938,14 @@ func (ev *evaluator) vectorScalarBinop(op itemType, lhs vector, rhs *model.Scala
 			lv, rv = rv, lv
 		}
 		value, keep := vectorElemBinop(op, lv, rv)
+		if returnBool {
+			if keep {
+				value = 1.0
+			} else {
+				value = 0.0
+			}
+			keep = true
+		}
 		if keep {
 			lhsSample.Value = value
 			if shouldDropMetricName(op) {

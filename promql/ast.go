@@ -117,6 +117,9 @@ type BinaryExpr struct {
 	// The matching behavior for the operation if both operands are vectors.
 	// If they are not this field is nil.
 	VectorMatching *VectorMatching
+
+	// If a comparison operator, return 0/1 rather than filtering.
+	ReturnBool bool
 }
 
 // Call represents a function call.
