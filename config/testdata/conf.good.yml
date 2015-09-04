@@ -103,6 +103,7 @@ scrape_configs:
 - job_name: service-kubernetes
 
   kubernetes_sd_configs:
-  - server: 'https://localhost:1234'
+  - masters:
+    - 'https://localhost:1234'
     username: 'myusername'
     password: 'mypassword'

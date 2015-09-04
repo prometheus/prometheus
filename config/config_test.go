@@ -16,6 +16,7 @@ package config
 import (
 	"encoding/json"
 	"io/ioutil"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -196,7 +197,7 @@ var expectedConf = &Config{
 
 			KubernetesSDConfigs: []*KubernetesSDConfig{
 				{
-					Server:         "https://localhost:1234/",
+					Masters:        []URL{kubernetesSDHostURL()},
 					Username:       "myusername",
 					Password:       "mypassword",
 					KubeletPort:    10255,
@@ -331,4 +332,9 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	if !reflect.DeepEqual(*c, exp) {
 		t.Fatalf("want %v, got %v", exp, c)
 	}
+}
+
+func kubernetesSDHostURL() URL {
+	tURL, _ := url.Parse("https://localhost:1234")
+	return URL{URL: tURL}
 }
