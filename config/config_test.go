@@ -206,6 +206,24 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-marathon",
+
+			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			MarathonSDConfigs: []*MarathonSDConfig{
+				{
+					Servers: []string{
+						"http://marathon.example.com:8080",
+					},
+					RefreshInterval: Duration(30 * time.Second),
+				},
+			},
+		},
 	},
 	original: "",
 }
@@ -281,6 +299,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+	}, {
+		filename: "marathon_no_servers.bad.yml",
+		errMsg:   "Marathon SD config must contain at least one Marathon server",
 	},
 }
 
