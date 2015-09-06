@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
+	"github.com/prometheus/prometheus/storage/remote/kafka"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 )
 
@@ -53,6 +54,11 @@ func New(o *Options) *Storage {
 		c := influxdb.NewClient(o.InfluxdbURL, o.StorageTimeout, o.InfluxdbDatabase, o.InfluxdbRetentionPolicy)
 		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
 	}
+	if o.KafkaURL != "" {
+		if c, err := kafka.NewClient(o.KafkaURL, o.StorageTimeout); err == nil {
+			s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
+		}
+	}
 	if len(s.queues) == 0 {
 		return nil
 	}
@@ -66,6 +72,7 @@ type Options struct {
 	InfluxdbRetentionPolicy string
 	InfluxdbDatabase        string
 	OpentsdbURL             string
+	KafkaURL                string
 }
 
 // Run starts the background processing of the storage queues.

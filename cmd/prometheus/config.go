@@ -182,6 +182,10 @@ func init() {
 		&cfg.remote.StorageTimeout, "storage.remote.timeout", 30*time.Second,
 		"The timeout to use when sending samples to the remote storage.",
 	)
+	cfg.fs.StringVar(
+		&cfg.remote.KafkaURL, "sotrage.remote.kafka-url", "",
+		"The URL of the remote Kafka server to send samples to. None, if empty.",
+	)
 
 	// Alertmanager.
 	cfg.fs.StringVar(
