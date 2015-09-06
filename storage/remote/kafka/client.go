@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"math"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -53,6 +55,8 @@ func (e *YamlEncoding) Decode(data []byte, v interface{}) error { return yaml.Un
 type Client struct {
 	*sarama.Config
 
+	Topic string
+
 	uri      *url.URL
 	encoding Encoding
 	client   sarama.Client
@@ -68,6 +72,20 @@ func NewClient(uri string, timeout time.Duration) (*Client, error) {
 
 	cfg := sarama.NewConfig()
 	cfg.Producer.Timeout = timeout
+
+	topic := u.Query().Get("topic")
+
+	if topic == "" {
+		topic = strings.Trim(strings.Replace(u.Path, "/", ".", -1), ". ")
+
+		if topic == "" {
+			if hostname, err := os.Hostname(); err != nil {
+				return nil, err
+			} else {
+				topic = hostname
+			}
+		}
+	}
 
 	var encoding Encoding
 
@@ -91,6 +109,7 @@ func NewClient(uri string, timeout time.Duration) (*Client, error) {
 
 	return &Client{
 		Config:   cfg,
+		Topic:    topic,
 		uri:      u,
 		encoding: encoding,
 	}, nil
@@ -129,7 +148,7 @@ func (c *Client) Store(samples model.Samples) error {
 		v := float64(s.Value)
 
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			log.Warnf("cannot send value %f to Kafka, skipping sample %#v", v, s)
+			log.Debugf("cannot send value %f to Kafka, skipping sample %#v", v, s)
 			continue
 		}
 
@@ -144,13 +163,15 @@ func (c *Client) Store(samples model.Samples) error {
 		}
 
 		msgs = append(msgs, &sarama.ProducerMessage{
-			Topic: c.uri.Path,
+			Topic: c.Topic,
 			Key:   sarama.StringEncoder(s.Metric[model.MetricNameLabel]),
 			Value: sarama.ByteEncoder(data),
 		})
 	}
 
-	if c.producer == nil {
+	producer := c.producer
+
+	if producer == nil {
 		if c.client == nil {
 			if client, err := sarama.NewClient([]string{c.uri.Host}, c.Config); err != nil {
 				return err
@@ -159,22 +180,22 @@ func (c *Client) Store(samples model.Samples) error {
 			}
 		}
 
-		if producer, err := sarama.NewAsyncProducerFromClient(c.client); err != nil {
+		if p, err := sarama.NewAsyncProducerFromClient(c.client); err != nil {
 			return err
 		} else {
-			c.producer = producer
+			producer = p
 		}
 	}
 
 	var errors sarama.ProducerErrors
 
 	for _, msg := range msgs {
-		log.Infof("sending: %s", msg)
+		log.Infof("sending: %v", msg)
 
 		select {
-		case c.producer.Input() <- msg:
-		case perr := <-c.producer.Errors():
-			log.Warnf("received: %s", perr)
+		case producer.Input() <- msg:
+		case perr := <-producer.Errors():
+			log.Warnf("received: %v", perr)
 
 			errors = append(errors, perr)
 
@@ -182,11 +203,11 @@ func (c *Client) Store(samples model.Samples) error {
 		}
 	}
 
-	if perrs := c.producer.Close(); perrs != nil {
-		errors = append(errors, perrs.(sarama.ProducerErrors)...)
+	if c.producer == nil {
+		if perrs := producer.Close(); perrs != nil {
+			errors = append(errors, perrs.(sarama.ProducerErrors)...)
+		}
 	}
-
-	c.producer = nil
 
 	if len(errors) > 0 {
 		return errors

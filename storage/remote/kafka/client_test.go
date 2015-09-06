@@ -58,6 +58,10 @@ func doTestClient(t *testing.T, format string) {
 		if err := c.Store(samples); err != nil {
 			t.Fatalf("Error sending samples: %s", err)
 		}
+
+		if err := c.producer.Close(); err != nil {
+			t.Fatalf("Error closing producer: %s", err)
+		}
 	}()
 
 	var msgs []*Sample
