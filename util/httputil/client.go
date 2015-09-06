@@ -14,6 +14,10 @@
 package httputil
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -107,4 +111,40 @@ func cloneRequest(r *http.Request) *http.Request {
 		r2.Header[k] = s
 	}
 	return r2
+}
+
+type TLSOptions struct {
+	InsecureSkipVerify bool
+	CAFile             string
+	CertFile           string
+	KeyFile            string
+}
+
+func NewTLSConfig(opts TLSOptions) (*tls.Config, error) {
+	tlsConfig := &tls.Config{InsecureSkipVerify: opts.InsecureSkipVerify}
+
+	// If a CA cert is provided then let's read it in so we can validate the
+	// scrape target's certificate properly.
+	if len(opts.CAFile) > 0 {
+		caCertPool := x509.NewCertPool()
+		// Load CA cert.
+		caCert, err := ioutil.ReadFile(opts.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to use specified CA cert %s: %s", opts.CAFile, err)
+		}
+		caCertPool.AppendCertsFromPEM(caCert)
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	// If a client cert & key is provided then configure TLS config accordingly.
+	if len(opts.CertFile) > 0 && len(opts.KeyFile) > 0 {
+		cert, err := tls.LoadX509KeyPair(opts.CertFile, opts.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to use specified client cert (%s) & key (%s): %s", opts.CertFile, opts.KeyFile, err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+	tlsConfig.BuildNameToCertificate()
+
+	return tlsConfig, nil
 }

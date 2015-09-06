@@ -563,7 +563,9 @@ func TestNewHTTPCACert(t *testing.T) {
 
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: config.Duration(1 * time.Second),
-		CACert:        "testdata/ca.cer",
+		TLSConfig: config.TLSConfig{
+			CAFile: "testdata/ca.cer",
+		},
 	}
 	c, err := newHTTPClient(cfg)
 	if err != nil {
@@ -594,10 +596,10 @@ func TestNewHTTPClientCert(t *testing.T) {
 
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: config.Duration(1 * time.Second),
-		CACert:        "testdata/ca.cer",
-		ClientCert: &config.ClientCert{
-			Cert: "testdata/client.cer",
-			Key:  "testdata/client.key",
+		TLSConfig: config.TLSConfig{
+			CAFile:   "testdata/ca.cer",
+			CertFile: "testdata/client.cer",
+			KeyFile:  "testdata/client.key",
 		},
 	}
 	c, err := newHTTPClient(cfg)
