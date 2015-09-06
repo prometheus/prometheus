@@ -187,10 +187,15 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 
 	for _, scfg := range cfg.ScrapeConfigs {
 		scfg.BearerTokenFile = join(scfg.BearerTokenFile)
+		scfg.TLSConfig.CAFile = join(scfg.TLSConfig.CAFile)
+		scfg.TLSConfig.CertFile = join(scfg.TLSConfig.CertFile)
+		scfg.TLSConfig.KeyFile = join(scfg.TLSConfig.KeyFile)
 
-		if scfg.ClientCert != nil {
-			scfg.ClientCert.Cert = join(scfg.ClientCert.Cert)
-			scfg.ClientCert.Key = join(scfg.ClientCert.Key)
+		for _, kcfg := range scfg.KubernetesSDConfigs {
+			kcfg.BearerTokenFile = join(kcfg.BearerTokenFile)
+			kcfg.TLSConfig.CAFile = join(kcfg.TLSConfig.CAFile)
+			kcfg.TLSConfig.CertFile = join(kcfg.TLSConfig.CertFile)
+			kcfg.TLSConfig.KeyFile = join(kcfg.TLSConfig.KeyFile)
 		}
 	}
 }
@@ -293,6 +298,18 @@ func (c *GlobalConfig) isZero() bool {
 		c.EvaluationInterval == 0
 }
 
+// TLSConfig configures the options for TLS connections.
+type TLSConfig struct {
+	// The CA cert to use for the targets.
+	CAFile string `yaml:"ca_file,omitempty"`
+	// The client cert file for the targets.
+	CertFile string `yaml:"cert_file,omitempty"`
+	// The client key file for the targets.
+	KeyFile string `yaml:"key_file,omitempty"`
+	// Disable target certificate validation.
+	InsecureSkipVerify bool `yaml:"insecure_skip_verify"`
+}
+
 // ScrapeConfig configures a scraping unit for Prometheus.
 type ScrapeConfig struct {
 	// The job name to which the job label is set by default.
@@ -315,12 +332,10 @@ type ScrapeConfig struct {
 	BearerToken string `yaml:"bearer_token,omitempty"`
 	// The bearer token file for the targets.
 	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
-	// The ca cert to use for the targets.
-	CACert string `yaml:"ca_cert,omitempty"`
-	// The client cert authentication credentials for the targets.
-	ClientCert *ClientCert `yaml:"client_cert,omitempty"`
 	// HTTP proxy server to use to connect to the targets.
 	ProxyURL URL `yaml:"proxy_url,omitempty"`
+	// Inlined TLSConfig.
+	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
 
 	// List of labeled target groups for this job.
 	TargetGroups []*TargetGroup `yaml:"target_groups,omitempty"`
@@ -605,18 +620,15 @@ type MarathonSDConfig struct {
 
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
-	Masters         []URL    `yaml:"masters"`
-	KubeletPort     int      `yaml:"kubelet_port,omitempty"`
-	InCluster       bool     `yaml:"in_cluster,omitempty"`
-	BearerTokenFile string   `yaml:"bearer_token_file,omitempty"`
-	Username        string   `yaml:"username,omitempty"`
-	Password        string   `yaml:"password,omitempty"`
-	Insecure        bool     `yaml:"insecure,omitempty"`
-	CertFile        string   `yaml:"cert_file,omitempty"`
-	KeyFile         string   `yaml:"key_file,omitempty"`
-	CAFile          string   `yaml:"ca_file,omitempty"`
-	RetryInterval   Duration `yaml:"retry_interval,omitempty"`
-	RequestTimeout  Duration `yaml:"request_timeout,omitempty"`
+	Masters         []URL     `yaml:"masters"`
+	KubeletPort     int       `yaml:"kubelet_port,omitempty"`
+	InCluster       bool      `yaml:"in_cluster,omitempty"`
+	BearerTokenFile string    `yaml:"bearer_token_file,omitempty"`
+	Username        string    `yaml:"username,omitempty"`
+	Password        string    `yaml:"password,omitempty"`
+	RetryInterval   Duration  `yaml:"retry_interval,omitempty"`
+	RequestTimeout  Duration  `yaml:"request_timeout,omitempty"`
+	TLSConfig       TLSConfig `yaml:"tls_config,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
