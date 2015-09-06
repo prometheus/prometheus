@@ -178,13 +178,13 @@ func init() {
 		&cfg.remote.InfluxdbDatabase, "storage.remote.influxdb.database", "prometheus",
 		"The name of the database to use for storing samples in InfluxDB.",
 	)
+	cfg.fs.StringVar(
+		&cfg.remote.KafkaURL, "storage.remote.kafka-url", "",
+		"The URL of the remote Kafka server to send samples to. None, if empty.",
+	)
 	cfg.fs.DurationVar(
 		&cfg.remote.StorageTimeout, "storage.remote.timeout", 30*time.Second,
 		"The timeout to use when sending samples to the remote storage.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.KafkaURL, "sotrage.remote.kafka-url", "",
-		"The URL of the remote Kafka server to send samples to. None, if empty.",
 	)
 
 	// Alertmanager.
