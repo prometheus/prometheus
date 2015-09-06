@@ -1,0 +1,12 @@
+package kafka;
+
+message Sample {
+	message Tag {
+		required string name = 1;
+		required string value = 2;
+	}
+
+	required double value = 1;
+	required int64 timestamp = 2;
+	repeated Tag tags = 3;
+}
