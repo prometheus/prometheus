@@ -887,7 +887,7 @@ loop:
 				// while in a situation like that, where we are clearly lacking speed of disk
 				// maintenance, the best we can do for crash recovery is to persist chunks as
 				// quickly as possible. So only checkpoint if the storage is not in "graceful
-				// degratadion mode".
+				// degradation mode".
 				if dirtySeriesCount >= s.checkpointDirtySeriesLimit && !s.isDegraded() {
 					checkpointTimer.Reset(0)
 				}
