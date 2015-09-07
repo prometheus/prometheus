@@ -875,8 +875,12 @@ loop:
 		case <-s.loopStopping:
 			break loop
 		case <-checkpointTimer.C:
-			s.persistence.checkpointSeriesMapAndHeads(s.fpToSeries, s.fpLocker)
-			dirtySeriesCount = 0
+			err := s.persistence.checkpointSeriesMapAndHeads(s.fpToSeries, s.fpLocker)
+			if err != nil {
+				log.Errorln("Error while checkpointing:", err)
+			} else {
+				dirtySeriesCount = 0
+			}
 			checkpointTimer.Reset(s.checkpointInterval)
 		case fp := <-memoryFingerprints:
 			if s.maintainMemorySeries(fp, model.Now().Add(-s.dropAfter)) {
