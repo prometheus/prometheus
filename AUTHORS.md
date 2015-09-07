@@ -22,7 +22,7 @@ The following individuals have contributed code to this repository
 * Deomid Ryabkov <rojer@rojer.me>
 * Dan Williams <me@deedubs.com>
 * Daniel Bornkessel <daniel@soundcloud.com>
-* Fabian Reinartz <fabian.reinartz@soundcloud.com>
+* Fabian Reinartz <fabian@soundcloud.com>
 * Florian Pfitzer <pfitzer@w3p.cc>
 * Jimmi Dyson <jimmidyson@gmail.com>
 * Johannes 'fish' Ziemke <fish@freigeist.org>
