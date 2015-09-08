@@ -1,11 +1,14 @@
 package kafka
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -53,6 +56,24 @@ func (e *YamlEncoding) Name() string                            { return ENCODIN
 func (e *YamlEncoding) Encode(v interface{}) ([]byte, error)    { return yaml.Marshal(v) }
 func (e *YamlEncoding) Decode(data []byte, v interface{}) error { return yaml.Unmarshal(data, v) }
 
+var (
+	buildInFuncs = map[string]interface{}{
+		"prefix":  strings.HasPrefix,
+		"suffix":  strings.HasSuffix,
+		"index":   strings.Index,
+		"replace": strings.Replace,
+		"split":   strings.Split,
+		"join":    strings.Join,
+		"lower":   strings.ToLower,
+		"upper":   strings.ToUpper,
+		"title":   strings.ToTitle,
+		"trim":    strings.Trim,
+		"sub": func(s string, off, end int) string {
+			return s[off:end]
+		},
+	}
+)
+
 type Client struct {
 	*sarama.Config
 
@@ -62,6 +83,7 @@ type Client struct {
 	encoding Encoding
 	client   sarama.Client
 	producer sarama.AsyncProducer
+	topicTpl *template.Template
 }
 
 func NewClient(uri string, timeout time.Duration) (*Client, error) {
@@ -85,6 +107,18 @@ func NewClient(uri string, timeout time.Duration) (*Client, error) {
 			} else {
 				topic = hostname
 			}
+		}
+	}
+
+	var topicTpl *template.Template
+
+	if text := u.Query().Get("template"); text != "" {
+		if tpl, err := template.New("t").Funcs(buildInFuncs).Parse(text); err != nil {
+			return nil, err
+		} else {
+			topicTpl = tpl
+
+			log.Debugf("template parsed: %s", text)
 		}
 	}
 
@@ -113,6 +147,7 @@ func NewClient(uri string, timeout time.Duration) (*Client, error) {
 		Topic:    topic,
 		uri:      u,
 		encoding: encoding,
+		topicTpl: topicTpl,
 	}, nil
 }
 
@@ -138,6 +173,26 @@ func labelsFromMetric(m model.Metric) []*dto.LabelPair {
 	return labels
 }
 
+const maxTopicLength = 255
+
+var illegalTopicChars = regexp.MustCompile("[^\\w\\.-]")
+
+func topicNormalize(s string) string {
+	s = illegalTopicChars.ReplaceAllString(s, "_")
+
+	if len(s) > maxTopicLength {
+		return s[:maxTopicLength]
+	}
+
+	return s
+}
+
+const kafkaMessageHeadSize = 26 // the metadata overhead of CRC, flags, etc.
+
+func messageSize(msg *sarama.ProducerMessage) int {
+	return msg.Key.Length() + msg.Value.Length() + kafkaMessageHeadSize
+}
+
 func (c *Client) Store(samples model.Samples) error {
 	if err := c.Validate(); err != nil {
 		return err
@@ -153,8 +208,10 @@ func (c *Client) Store(samples model.Samples) error {
 			continue
 		}
 
+		labels := labelsFromMetric(s.Metric)
+
 		data, err := c.encoding.Encode(&dto.Metric{
-			Label: labelsFromMetric(s.Metric),
+			Label: labels,
 			Untyped: &dto.Untyped{
 				Value: proto.Float64(v),
 			},
@@ -165,11 +222,35 @@ func (c *Client) Store(samples model.Samples) error {
 			return err
 		}
 
-		msgs = append(msgs, &sarama.ProducerMessage{
-			Topic: c.Topic,
-			Key:   sarama.StringEncoder(s.Metric[model.MetricNameLabel]),
-			Value: sarama.ByteEncoder(data),
-		})
+		topic := c.Topic
+
+		if c.topicTpl != nil {
+			var buf bytes.Buffer
+
+			vars := make(map[string]interface{})
+
+			for _, label := range labels {
+				vars[*label.Name] = *label.Value
+			}
+
+			if err := c.topicTpl.Execute(&buf, vars); err != nil {
+				log.Warnf("execute template: %s", err)
+			} else {
+				topic = topicNormalize(buf.String())
+
+				log.Debugf("generated topic `%s` with %v", topic, vars)
+			}
+		}
+
+		if topic == "" {
+			log.Debugf("skip message without topic")
+		} else {
+			msgs = append(msgs, &sarama.ProducerMessage{
+				Topic: topic,
+				Key:   sarama.StringEncoder(s.Metric[model.MetricNameLabel]),
+				Value: sarama.ByteEncoder(data),
+			})
+		}
 	}
 
 	producer := c.producer
@@ -193,7 +274,7 @@ func (c *Client) Store(samples model.Samples) error {
 	var errors sarama.ProducerErrors
 
 	for _, msg := range msgs {
-		log.Infof("sending: %v", msg)
+		log.Debugf("sending %d bytes message to topic `%s`: %v", messageSize(msg), msg.Topic, msg)
 
 		select {
 		case producer.Input() <- msg:
