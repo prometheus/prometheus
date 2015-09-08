@@ -7,6 +7,7 @@ import (
 
 	"github.com/Shopify/sarama/mocks"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 )
 
@@ -64,22 +65,22 @@ func doTestClient(t *testing.T, format string) {
 		}
 	}()
 
-	var msgs []*Sample
+	var metrics []*dto.Metric
 
 	for msg := range c.producer.Successes() {
-		var sample Sample
+		var metric dto.Metric
 
 		if data, err := msg.Value.Encode(); err != nil {
 			t.Fatalf("Error encoding value: %s", err)
-		} else if c.encoding.Decode(data, &sample); err != nil {
+		} else if c.encoding.Decode(data, &metric); err != nil {
 			t.Fatalf("Error decoding value: %s", err)
 		} else {
-			msgs = append(msgs, &sample)
+			metrics = append(metrics, &metric)
 		}
 	}
 
-	if len(msgs) != len(samples)-1 {
-		t.Fatalf("Error missed %d messages", len(samples)-len(msgs)-1)
+	if len(metrics) != len(samples)-1 {
+		t.Fatalf("Error missed %d messages", len(samples)-len(metrics)-1)
 	}
 }
 

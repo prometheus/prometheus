@@ -12,6 +12,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"gopkg.in/yaml.v2"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
 )
@@ -120,21 +121,21 @@ func (c *Client) Name() string {
 }
 
 // tagsFromMetric translates Prometheus metric into Kakfa/ProtoBuf tags.
-func tagsFromMetric(m model.Metric) []*Sample_Tag {
-	tags := make([]*Sample_Tag, 0, len(m)-1)
+func labelsFromMetric(m model.Metric) []*dto.LabelPair {
+	labels := make([]*dto.LabelPair, 0, len(m)-1)
 
 	for l, v := range m {
 		if l == model.MetricNameLabel {
 			continue
 		}
 
-		tags = append(tags, &Sample_Tag{
+		labels = append(labels, &dto.LabelPair{
 			Name:  proto.String(string(l)),
 			Value: proto.String(string(v)),
 		})
 	}
 
-	return tags
+	return labels
 }
 
 func (c *Client) Store(samples model.Samples) error {
@@ -152,10 +153,12 @@ func (c *Client) Store(samples model.Samples) error {
 			continue
 		}
 
-		data, err := c.encoding.Encode(&Sample{
-			Value:     proto.Float64(v),
-			Timestamp: proto.Int64(s.Timestamp.Unix()),
-			Tags:      tagsFromMetric(s.Metric),
+		data, err := c.encoding.Encode(&dto.Metric{
+			Label: labelsFromMetric(s.Metric),
+			Untyped: &dto.Untyped{
+				Value: proto.Float64(v),
+			},
+			TimestampMs: proto.Int64(int64(s.Timestamp)),
 		})
 
 		if err != nil {
