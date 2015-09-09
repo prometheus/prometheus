@@ -334,7 +334,7 @@ type ScrapeConfig struct {
 	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
 	// HTTP proxy server to use to connect to the targets.
 	ProxyURL URL `yaml:"proxy_url,omitempty"`
-	// Inlined TLSConfig.
+	// TLSConfig to use to connect to the targets.
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
 
 	// List of labeled target groups for this job.
