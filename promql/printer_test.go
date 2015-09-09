@@ -30,6 +30,9 @@ func TestExprString(t *testing.T) {
 		{
 			in: `sum(task:errors:rate10s{job="s"}) BY (code) KEEP_COMMON`,
 		},
+		{
+			in: `up > BOOL 0`,
+		},
 	}
 
 	for _, test := range inputs {
