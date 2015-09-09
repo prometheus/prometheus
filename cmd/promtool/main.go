@@ -62,6 +62,15 @@ func CheckConfigCmd(t cli.Term, args ...string) int {
 	return 0
 }
 
+func checkFileExists(fn string) error {
+	// Nothing set, nothing to error on.
+	if fn == "" {
+		return nil
+	}
+	_, err := os.Stat(fn)
+	return err
+}
+
 func checkConfig(t cli.Term, filename string) ([]string, error) {
 	t.Infof("Checking %s", filename)
 
@@ -76,15 +85,6 @@ func checkConfig(t cli.Term, filename string) ([]string, error) {
 		return nil, err
 	}
 
-	check := func(fn string) error {
-		// Nothing set, nothing to error on.
-		if fn == "" {
-			return nil
-		}
-		_, err := os.Stat(fn)
-		return err
-	}
-
 	var ruleFiles []string
 	for _, rf := range cfg.RuleFiles {
 		rfs, err := filepath.Glob(rf)
@@ -96,7 +96,7 @@ func checkConfig(t cli.Term, filename string) ([]string, error) {
 			if len(rfs) == 0 {
 				return nil, fmt.Errorf("%q does not point to an existing file", rf)
 			}
-			if err := check(rfs[0]); err != nil {
+			if err := checkFileExists(rfs[0]); err != nil {
 				return nil, fmt.Errorf("error checking rule file %q: %s", rfs[0], err)
 			}
 		}
@@ -104,26 +104,40 @@ func checkConfig(t cli.Term, filename string) ([]string, error) {
 	}
 
 	for _, scfg := range cfg.ScrapeConfigs {
-		if err := check(scfg.BearerTokenFile); err != nil {
+		if err := checkFileExists(scfg.BearerTokenFile); err != nil {
 			return nil, fmt.Errorf("error checking bearer token file %q: %s", scfg.BearerTokenFile, err)
 		}
 
-		if err := check(scfg.TLSConfig.CertFile); err != nil {
-			return nil, fmt.Errorf("error checking client cert file %q: %s", scfg.TLSConfig.CertFile, err)
-		}
-		if err := check(scfg.TLSConfig.KeyFile); err != nil {
-			return nil, fmt.Errorf("error checking client key file %q: %s", scfg.TLSConfig.KeyFile, err)
+		if err := checkTLSConfig(scfg.TLSConfig); err != nil {
+			return nil, err
 		}
 
-		if len(scfg.TLSConfig.CertFile) > 0 && len(scfg.TLSConfig.KeyFile) == 0 {
-			return nil, fmt.Errorf("client cert file %s specified without client key file", scfg.TLSConfig.CertFile)
-		}
-		if len(scfg.TLSConfig.KeyFile) > 0 && len(scfg.TLSConfig.CertFile) == 0 {
-			return nil, fmt.Errorf("client key file %s specified without client cert file", scfg.TLSConfig.KeyFile)
+		for _, kd := range scfg.KubernetesSDConfigs {
+			if err := checkTLSConfig(kd.TLSConfig); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	return ruleFiles, nil
+}
+
+func checkTLSConfig(tlsConfig config.TLSConfig) error {
+	if err := checkFileExists(tlsConfig.CertFile); err != nil {
+		return fmt.Errorf("error checking client cert file %q: %s", tlsConfig.CertFile, err)
+	}
+	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
+		return fmt.Errorf("error checking client key file %q: %s", tlsConfig.KeyFile, err)
+	}
+
+	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
+		return fmt.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
+	}
+	if len(tlsConfig.KeyFile) > 0 && len(tlsConfig.CertFile) == 0 {
+		return fmt.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
+	}
+
+	return nil
 }
 
 // CheckRulesCmd validates rule files.
