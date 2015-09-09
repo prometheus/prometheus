@@ -146,6 +146,11 @@ func (node *AggregateExpr) String() string {
 }
 
 func (node *BinaryExpr) String() string {
+	returnBool := ""
+	if node.ReturnBool {
+		returnBool = " BOOL"
+	}
+
 	matching := ""
 	vm := node.VectorMatching
 	if vm != nil && len(vm.On) > 0 {
@@ -157,7 +162,7 @@ func (node *BinaryExpr) String() string {
 			matching += fmt.Sprintf(" GROUP_RIGHT(%s)", vm.Include)
 		}
 	}
-	return fmt.Sprintf("%s %s%s %s", node.LHS, node.Op, matching, node.RHS)
+	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, returnBool, matching, node.RHS)
 }
 
 func (node *Call) String() string {
