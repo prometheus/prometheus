@@ -33,17 +33,17 @@ func (a slowAppender) Append(*model.Sample) {
 	return
 }
 
-type collectResultAppender struct {
-	result model.Samples
+type collectAppender struct {
+	samples model.Samples
 }
 
-func (a *collectResultAppender) Append(s *model.Sample) {
+func (a *collectAppender) Append(s *model.Sample) {
 	for ln, lv := range s.Metric {
 		if len(lv) == 0 {
 			delete(s.Metric, ln)
 		}
 	}
-	a.result = append(a.result, s)
+	a.samples = append(a.samples, s)
 }
 
 // fakeTargetProvider implements a TargetProvider and allows manual injection
