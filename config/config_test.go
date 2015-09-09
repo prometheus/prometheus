@@ -180,10 +180,11 @@ var expectedConf = &Config{
 			MetricsPath: "/metrics",
 			Scheme:      "http",
 
-			ClientCert: &ClientCert{
-				Cert: "testdata/valid_cert_file",
-				Key:  "testdata/valid_key_file",
+			TLSConfig: TLSConfig{
+				CertFile: "testdata/valid_cert_file",
+				KeyFile:  "testdata/valid_key_file",
 			},
+
 			BearerToken: "avalidtoken",
 		},
 		{

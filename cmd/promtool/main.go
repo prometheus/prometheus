@@ -108,13 +108,18 @@ func checkConfig(t cli.Term, filename string) ([]string, error) {
 			return nil, fmt.Errorf("error checking bearer token file %q: %s", scfg.BearerTokenFile, err)
 		}
 
-		if scfg.ClientCert != nil {
-			if err := check(scfg.ClientCert.Cert); err != nil {
-				return nil, fmt.Errorf("error checking client cert file %q: %s", scfg.ClientCert.Cert, err)
-			}
-			if err := check(scfg.ClientCert.Key); err != nil {
-				return nil, fmt.Errorf("error checking client key file %q: %s", scfg.ClientCert.Key, err)
-			}
+		if err := check(scfg.TLSConfig.CertFile); err != nil {
+			return nil, fmt.Errorf("error checking client cert file %q: %s", scfg.TLSConfig.CertFile, err)
+		}
+		if err := check(scfg.TLSConfig.KeyFile); err != nil {
+			return nil, fmt.Errorf("error checking client key file %q: %s", scfg.TLSConfig.KeyFile, err)
+		}
+
+		if len(scfg.TLSConfig.CertFile) > 0 && len(scfg.TLSConfig.KeyFile) == 0 {
+			return nil, fmt.Errorf("client cert file %s specified without client key file", scfg.TLSConfig.CertFile)
+		}
+		if len(scfg.TLSConfig.KeyFile) > 0 && len(scfg.TLSConfig.CertFile) == 0 {
+			return nil, fmt.Errorf("client key file %s specified without client cert file", scfg.TLSConfig.KeyFile)
 		}
 	}
 

@@ -94,9 +94,9 @@ scrape_configs:
 
 - job_name: service-z
 
-  client_cert:
-    cert: valid_cert_file
-    key: valid_key_file
+  tls_config:
+    cert_file: valid_cert_file
+    key_file: valid_key_file
 
   bearer_token: avalidtoken
 
