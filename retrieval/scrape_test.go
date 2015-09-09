@@ -197,24 +197,31 @@ func TestScrapePoolSync(t *testing.T) {
 
 type testScraper struct {
 	block, active chan struct{}
-	samples       []*model.Sample
+	samples       model.Vector
+	batchSize     int
 }
 
 func newTestScraper() *testScraper {
 	return &testScraper{
-		block:  make(chan struct{}, 1),
-		active: make(chan struct{}),
+		block:     make(chan struct{}, 1),
+		active:    make(chan struct{}),
+		batchSize: 8,
 	}
 }
 
-func (s *testScraper) Scrape(ctx context.Context, ch chan<- *model.Sample) error {
+func (s *testScraper) Scrape(ctx context.Context, ch chan<- model.Vector) error {
 	defer close(ch)
 
 	s.active <- struct{}{}
 
-	for _, smpl := range s.samples {
+	for i := 0; i < len(s.samples); i += s.batchSize {
+		end := i + s.batchSize
+		if l := len(s.samples); end > l {
+			end += l
+		}
+
 		select {
-		case ch <- smpl:
+		case ch <- s.samples[i : i+s.batchSize]:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -459,7 +466,9 @@ func TestScrapeLoopScrape(t *testing.T) {
 		state:    &TargetStatus{},
 	}
 
-	scraper.samples = make([]*model.Sample, 2*ingestedSamplesCap)
+	totalSamples := 1024
+
+	scraper.samples = make([]*model.Sample, 2*totalSamples)
 
 	// Perform a regular scrape where all appends succeed immediately.
 	t.Log("Test regular scraping")
@@ -470,7 +479,7 @@ func TestScrapeLoopScrape(t *testing.T) {
 
 	<-scraper.active
 	// Receive all samples.
-	for i := 0; i < 2*ingestedSamplesCap; i++ {
+	for i := 0; i < 2*totalSamples; i++ {
 		select {
 		case <-appender.ch:
 		case <-time.After(timeout):
@@ -497,7 +506,7 @@ func TestScrapeLoopScrape(t *testing.T) {
 	// Test appending with context being canceled at random points in time.
 	t.Log("Test scraping with context cancelation")
 
-	for numIngested := 0; numIngested < 2*ingestedSamplesCap; numIngested += 8 {
+	for numIngested := 0; numIngested < 2*totalSamples; numIngested += 8 {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		go func() {
@@ -505,12 +514,12 @@ func TestScrapeLoopScrape(t *testing.T) {
 		}()
 
 		<-scraper.active
-		//
+
 		for i := 0; i < numIngested; i++ {
 			select {
 			case <-appender.ch:
 			case <-time.After(timeout):
-				t.Fatalf("Timeout on expecting sample %d", i)
+				t.Fatalf("Timeout on expecting samples %d", i)
 			}
 		}
 		cancel()

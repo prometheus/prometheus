@@ -29,7 +29,7 @@ import (
 type Scraper interface {
 	// Sends samples to ch until an error occurrs, the context is canceled
 	// or no further samples can be retrieved. The channel is closed before returning.
-	Scrape(ctx context.Context, ch chan<- *model.Sample) error
+	Scrape(ctx context.Context, ch chan<- model.Vector) error
 }
 
 // Scrape pools runs scrapers for a set of targets where a target, identified by
@@ -213,17 +213,17 @@ func (sl *scrapeLoop) stop() {
 
 // scrape executes a single Scrape and appends the retrieved samples.
 func (sl *scrapeLoop) scrape(ctx context.Context, timeout time.Duration) error {
-	ch := make(chan *model.Sample, ingestedSamplesCap)
+	ch := make(chan model.Vector)
 
 	// Receive and append all the samples retrieved by the scraper.
 	go func() {
 		var (
-			smpl *model.Sample
-			ok   bool
+			samples model.Vector
+			ok      bool
 		)
 		for {
 			select {
-			case smpl, ok = <-ch:
+			case samples, ok = <-ch:
 				if !ok {
 					return
 				}
@@ -233,7 +233,15 @@ func (sl *scrapeLoop) scrape(ctx context.Context, timeout time.Duration) error {
 			// TODO(fabxc): Change the SampleAppender interface to return an error
 			// so we can proceed based on the status and don't leak goroutines trying
 			// to append a single sample after dropping all the other ones.
-			sl.appender.Append(smpl)
+			for _, smpl := range samples {
+				sl.appender.Append(smpl)
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 		}
 	}()
 
