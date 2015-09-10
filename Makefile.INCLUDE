@@ -30,14 +30,8 @@ MAKEFILE_DIR ?= $(realpath $(dir $(lastword $(MAKEFILE_LIST))))
 
 BUILD_PATH = $(MAKEFILE_DIR)/.build
 
-GO_VERSION := 1.4.2
+GO_VERSION := 1.5.1
 GOOS ?= $(subst Darwin,darwin,$(subst Linux,linux,$(subst FreeBSD,freebsd,$(OS))))
-
-ifeq ($(GOOS),darwin)
-RELEASE_SUFFIX ?= -osx$(MAC_OS_X_VERSION)
-else
-RELEASE_SUFFIX ?=
-endif
 
 # Never honor GOBIN, should it be set at all.
 unexport GOBIN
