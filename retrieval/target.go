@@ -429,7 +429,7 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 
 	req, err := http.NewRequest("GET", t.URL().String(), nil)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	req.Header.Add("Accept", acceptHeader)
 
