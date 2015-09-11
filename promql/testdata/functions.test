@@ -146,3 +146,18 @@ eval_fail instant at 0m label_replace(testmetric, "invalid-label-name", "", "src
 
 # label_replace fails when there would be duplicated identical output label sets.
 eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
+
+clear
+
+# Tests for vector.
+eval instant at 0m vector(1)
+  {} 1
+
+eval instant at 60m vector(time())
+  {} 3600
+
+eval instant at 0m vector(1, {a="b"})
+  {a="b"} 1
+
+eval instant at 0m vector(1, {a="b", c=~"d", e!="f", g!~"h", a="z"})
+  {a="z"} 1
