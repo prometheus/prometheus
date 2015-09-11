@@ -206,7 +206,6 @@ func reloadConfig(filename string, rls ...Reloadable) (success bool) {
 	conf, err := config.LoadFile(filename)
 	if err != nil {
 		log.Errorf("Couldn't load configuration (-config.file=%s): %v", filename, err)
-		log.Errorf("Note: The configuration format has changed with version 0.14. Please see the documentation (http://prometheus.io/docs/operating/configuration/) and the provided configuration migration tool (https://github.com/prometheus/migrate).")
 		return false
 	}
 	success = true
