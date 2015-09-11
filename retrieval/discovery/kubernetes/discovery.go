@@ -115,6 +115,7 @@ func (kd *Discovery) Sources() []string {
 		log.Errorf("Unable to list Kubernetes nodes: %s", err)
 		return []string{}
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		log.Errorf("Unable to list Kubernetes nodes. Unexpected response: %d %s", res.StatusCode, res.Status)
 		return []string{}
@@ -143,6 +144,7 @@ func (kd *Discovery) Sources() []string {
 		log.Errorf("Unable to list Kubernetes services: %s", err)
 		return []string{}
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		log.Errorf("Unable to list Kubernetes services. Unexpected response: %d %s", res.StatusCode, res.Status)
 		return []string{}
@@ -351,6 +353,7 @@ func (kd *Discovery) watchNodes(events chan interface{}, done <-chan struct{}, r
 			log.Errorf("Failed to watch nodes: %s", err)
 			return
 		}
+		defer res.Body.Close()
 		if res.StatusCode != http.StatusOK {
 			log.Errorf("Failed to watch nodes: %d", res.StatusCode)
 			return
@@ -392,6 +395,7 @@ func (kd *Discovery) watchServices(events chan interface{}, done <-chan struct{}
 			log.Errorf("Failed to watch services: %s", err)
 			return
 		}
+		defer res.Body.Close()
 		if res.StatusCode != http.StatusOK {
 			log.Errorf("Failed to watch services: %d", res.StatusCode)
 			return
@@ -462,6 +466,7 @@ func (kd *Discovery) addService(service *Service) *config.TargetGroup {
 		log.Errorf("Error getting service endpoints: %s", err)
 		return nil
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		log.Errorf("Failed to get service endpoints: %d", res.StatusCode)
 		return nil
@@ -534,6 +539,7 @@ func (kd *Discovery) watchServiceEndpoints(events chan interface{}, done <-chan 
 			log.Errorf("Failed to watch service endpoints: %s", err)
 			return
 		}
+		defer res.Body.Close()
 		if res.StatusCode != http.StatusOK {
 			log.Errorf("Failed to watch service endpoints: %d", res.StatusCode)
 			return
