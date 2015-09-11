@@ -1059,7 +1059,7 @@ func (p *persistence) indexMetric(fp model.Fingerprint, m model.Metric) {
 // indexes used for fingerprintsForLabelPair, labelValuesForLabelName, and
 // fingerprintsModifiedBefore. The index of fingerprints to archived metrics is
 // not affected by this removal. (In fact, never call this method for an
-// archived metric. To purge an archived metric, call purgeArchivedFingerprint.)
+// archived metric. To purge an archived metric, call purgeArchivedMetric.)
 // If the queue is full, this method blocks until the metric can be queued. This
 // method is goroutine-safe.
 func (p *persistence) unindexMetric(fp model.Fingerprint, m model.Metric) {
