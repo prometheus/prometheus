@@ -62,12 +62,12 @@ BRANCH     := $(shell git rev-parse --abbrev-ref HEAD 2> /dev/null  || echo 'unk
 HOSTNAME   := $(shell hostname -f)
 BUILD_DATE := $(shell date +%Y%m%d-%H:%M:%S)
 BUILDFLAGS := -ldflags \
-  " -X $(REPO_PATH)/version.Version $(VERSION)\
-		-X $(REPO_PATH)/version.Revision $(REV)\
-		-X $(REPO_PATH)/version.Branch $(BRANCH)\
-		-X $(REPO_PATH)/version.BuildUser $(USER)@$(HOSTNAME)\
-		-X $(REPO_PATH)/version.BuildDate $(BUILD_DATE)\
-		-X $(REPO_PATH)/version.GoVersion $(GO_VERSION)"
+  " -X $(REPO_PATH)/version.Version=$(VERSION)\
+		-X $(REPO_PATH)/version.Revision=$(REV)\
+		-X $(REPO_PATH)/version.Branch=$(BRANCH)\
+		-X $(REPO_PATH)/version.BuildUser=$(USER)@$(HOSTNAME)\
+		-X $(REPO_PATH)/version.BuildDate=$(BUILD_DATE)\
+		-X $(REPO_PATH)/version.GoVersion=$(GO_VERSION)"
 CURL := curl
 
 ARCHIVEDIR := prometheus-$(VERSION).$(GOOS)-$(GOARCH)
