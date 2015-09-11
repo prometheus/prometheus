@@ -518,11 +518,12 @@ func (s *memorySeriesStorage) DropMetricsForFingerprints(fps ...model.Fingerprin
 			s.fpToSeries.del(fp)
 			s.numSeries.Dec()
 			s.persistence.unindexMetric(fp, series.metric)
-			if _, err := s.persistence.deleteSeriesFile(fp); err != nil {
-				log.Errorf("Error deleting series file for %v: %v", fp, err)
-			}
 		} else if err := s.persistence.purgeArchivedMetric(fp); err != nil {
 			log.Errorf("Error purging metric with fingerprint %v: %v", fp, err)
+		}
+		// Attempt to delete series file in any case.
+		if _, err := s.persistence.deleteSeriesFile(fp); err != nil {
+			log.Errorf("Error deleting series file for %v: %v", fp, err)
 		}
 
 		s.fpLocker.Unlock(fp)
