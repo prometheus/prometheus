@@ -78,13 +78,7 @@ func (t TargetHealth) String() string {
 	panic("unknown state")
 }
 
-func (t TargetHealth) value() model.SampleValue {
-	if t == HealthGood {
-		return 1
-	}
-	return 0
-}
-
+// The possible health values of a target.
 const (
 	HealthUnknown TargetHealth = iota
 	HealthGood
@@ -195,6 +189,21 @@ func (t *Target) host() string {
 
 func (t *Target) path() string {
 	return string(t.labels[model.MetricsPathLabel])
+}
+
+func (t *Target) offset(interval time.Duration) time.Duration {
+	now := time.Now().UnixNano()
+
+	var (
+		base   = now - (now % int64(interval))
+		offset = uint64(t.fingerprint()) % uint64(interval)
+		next   = base + int64(offset)
+	)
+
+	if next < now {
+		next += int64(interval)
+	}
+	return time.Duration(next - now)
 }
 
 func (t *Target) wrapAppender(app storage.SampleAppender) storage.SampleAppender {

@@ -14,7 +14,6 @@
 package retrieval
 
 import (
-	"math/rand"
 	"sync"
 	"time"
 
@@ -25,20 +24,22 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Scraper retrieves samples.
-type Scraper interface {
+// scraper retrieves samples.
+type scraper interface {
 	// Sends samples to ch until an error occurrs, the context is canceled
 	// or no further samples can be retrieved. The channel is closed before returning.
 	Scrape(ctx context.Context, ch chan<- model.Vector) error
 }
 
 // Scrape pools runs scrapers for a set of targets where a target, identified by
-// a label set is scraped exactly once.
+// a label set, is scraped exactly once.
 type ScrapePool struct {
 	appender storage.SampleAppender
 
-	ctx     context.Context
-	cancel  func()
+	ctx    context.Context
+	cancel func()
+
+	// A constructor function for new loops.
 	newLoop func(storage.SampleAppender, *Target, *TargetStatus) loop
 
 	mtx    sync.RWMutex
@@ -119,12 +120,16 @@ type loop interface {
 
 // scrapeLoop manages scraping cycles.
 type scrapeLoop struct {
-	scraper  Scraper
+	scraper  scraper
 	state    *TargetStatus
 	appender storage.SampleAppender
 
-	cancel      func()
+	// A function to calculate an initial offset for a given
+	// scrape interval.
+	offset func(time.Duration) time.Duration
+
 	stopc, done chan struct{}
+	cancel      func()
 	mtx         sync.RWMutex
 }
 
@@ -133,6 +138,7 @@ func newScrapeLoop(app storage.SampleAppender, target *Target, state *TargetStat
 		scraper:  target,
 		appender: target.wrapAppender(app),
 		state:    state,
+		offset:   target.offset,
 	}
 }
 
@@ -143,6 +149,11 @@ func (sl *scrapeLoop) active() bool {
 func (sl *scrapeLoop) run(ctx context.Context, interval, timeout time.Duration, errc chan<- error) {
 	if sl.active() {
 		return
+	}
+
+	// If no offset function is provided, default to starting immediately.
+	if sl.offset == nil {
+		sl.offset = func(time.Duration) time.Duration { return 0 }
 	}
 
 	ctx, sl.cancel = context.WithCancel(ctx)
@@ -156,8 +167,8 @@ func (sl *scrapeLoop) run(ctx context.Context, interval, timeout time.Duration, 
 	}()
 
 	select {
-	case <-time.After(time.Duration(float64(interval) * rand.Float64())):
-		// Continue after random scraping offset.
+	case <-time.After(sl.offset(interval)):
+		// Continue after a scraping offset.
 	case <-ctx.Done():
 		return
 	case <-sl.stopc:
@@ -180,6 +191,8 @@ func (sl *scrapeLoop) run(ctx context.Context, interval, timeout time.Duration, 
 			errc <- err
 		}
 
+		// First check without the ticker to not initiate
+		// another scrape if termination was requested.
 		select {
 		case <-sl.stopc:
 			return
@@ -188,7 +201,13 @@ func (sl *scrapeLoop) run(ctx context.Context, interval, timeout time.Duration, 
 		default:
 		}
 
-		<-ticker.C
+		select {
+		case <-sl.stopc:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

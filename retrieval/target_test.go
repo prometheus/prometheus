@@ -1,21 +1,22 @@
-// // Copyright 2013 The Prometheus Authors
-// // Licensed under the Apache License, Version 2.0 (the "License");
-// // you may not use this file except in compliance with the License.
-// // You may obtain a copy of the License at
-// //
-// // http://www.apache.org/licenses/LICENSE-2.0
-// //
-// // Unless required by applicable law or agreed to in writing, software
-// // distributed under the License is distributed on an "AS IS" BASIS,
-// // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// // See the License for the specific language governing permissions and
-// // limitations under the License.
+// Copyright 2013 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package retrieval
 
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -196,6 +197,52 @@ func TestTargetScrape(t *testing.T) {
 
 	case <-time.After(1 * time.Second):
 		t.Fatalf("No sample received")
+	}
+}
+
+func TestTargetOffset(t *testing.T) {
+	interval := 10 * time.Second
+
+	offsets := make([]time.Duration, 10000)
+
+	// Calculate offsets for 10000 different targets.
+	for i := range offsets {
+		target := newTestTarget("example.com:80", 0, model.LabelSet{
+			"label": model.LabelValue(fmt.Sprintf("%d", i)),
+		})
+		offsets[i] = target.offset(interval)
+	}
+
+	// Put the offsets into buckets and validate that they are all
+	// within bounds.
+	bucketSize := 1 * time.Second
+	buckets := make([]int, interval/bucketSize)
+
+	for _, offset := range offsets {
+		if offset < 0 || offset >= interval {
+			t.Fatalf("Offset %v out of bounds", offset)
+		}
+
+		bucket := offset / bucketSize
+		buckets[bucket]++
+	}
+
+	t.Log(buckets)
+
+	// Calculate whether the the number of targets per bucket
+	// does not differ more than a given tolerance.
+	avg := len(offsets) / len(buckets)
+	tolerance := 0.15
+
+	for _, bucket := range buckets {
+		diff := bucket - avg
+		if diff < 0 {
+			diff = -diff
+		}
+
+		if float64(diff)/float64(avg) > tolerance {
+			t.Fatalf("Bucket out of tolerance bounds")
+		}
 	}
 }
 
