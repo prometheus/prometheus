@@ -437,6 +437,8 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
@@ -445,7 +447,6 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
 
 	sdec := expfmt.SampleDecoder{
 		Dec: dec,
