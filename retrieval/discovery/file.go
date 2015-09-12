@@ -179,7 +179,9 @@ func (fd *FileDiscovery) stop() {
 			}
 		}
 	}()
-	fd.watcher.Close()
+	if err := fd.watcher.Close(); err != nil {
+		log.Errorf("Error closing file watcher for %s: %s", fd.paths, err)
+	}
 
 	log.Debugf("File discovery for %s stopped.", fd.paths)
 }

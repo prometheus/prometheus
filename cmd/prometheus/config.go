@@ -304,5 +304,7 @@ func usage() {
 		}
 	}
 
-	t.Execute(os.Stdout, groups)
+	if err := t.Execute(os.Stdout, groups); err != nil {
+		panic(fmt.Errorf("error executing usage template: %s", err))
+	}
 }

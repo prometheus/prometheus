@@ -156,13 +156,16 @@ func BasicHelp(app *App, ts string) func() string {
 		}
 
 		var buf bytes.Buffer
-		t.Execute(&buf, struct {
+		err := t.Execute(&buf, struct {
 			Name     string
 			Commands []command
 		}{
 			Name:     app.Name,
 			Commands: cmds,
 		})
+		if err != nil {
+			panic(fmt.Errorf("error executing help template: %s", err))
+		}
 		return strings.TrimSpace(buf.String())
 	}
 }
