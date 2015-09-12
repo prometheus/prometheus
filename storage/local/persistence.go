@@ -1123,7 +1123,7 @@ func (p *persistence) fingerprintsModifiedBefore(beforeTime model.Time) ([]model
 	var fp codable.Fingerprint
 	var tr codable.TimeRange
 	fps := []model.Fingerprint{}
-	p.archivedFingerprintToTimeRange.ForEach(func(kv index.KeyValueAccessor) error {
+	err := p.archivedFingerprintToTimeRange.ForEach(func(kv index.KeyValueAccessor) error {
 		if err := kv.Value(&tr); err != nil {
 			return err
 		}
@@ -1135,7 +1135,7 @@ func (p *persistence) fingerprintsModifiedBefore(beforeTime model.Time) ([]model
 		}
 		return nil
 	})
-	return fps, nil
+	return fps, err
 }
 
 // archivedMetric retrieves the archived metric with the given fingerprint. This
@@ -1438,8 +1438,12 @@ func (p *persistence) checkpointFPMappings(fpm fpMappings) (err error) {
 	}
 
 	defer func() {
-		f.Sync()
+		syncErr := f.Sync()
 		closeErr := f.Close()
+		if err != nil {
+			return
+		}
+		err = syncErr
 		if err != nil {
 			return
 		}
