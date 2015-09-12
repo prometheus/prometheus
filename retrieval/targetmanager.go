@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
 
@@ -26,6 +27,28 @@ import (
 	"github.com/prometheus/prometheus/retrieval/discovery"
 	"github.com/prometheus/prometheus/storage"
 )
+
+var (
+	scrapePoolSyncs = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "scrape_pool_syncs_total",
+			Help:      "Number of target synchronizations with the scrape pool.",
+		},
+	)
+	targetGroupUpdates = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "target_group_updates_total",
+			Help:      "Number of received target group updates.",
+		},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(scrapePoolSyncs)
+	prometheus.MustRegister(targetGroupUpdates)
+}
 
 // A TargetProvider provides information about target groups. It maintains a set
 // of sources from which TargetGroups can originate. Whenever a target provider
@@ -198,6 +221,7 @@ func (tm *TargetManager) handleUpdates(ch <-chan targetGroupUpdate, done <-chan 
 				break
 			}
 			log.Debugf("Received potential update for target group %q", update.tg.Source)
+			targetGroupUpdates.Inc()
 
 			if err := tm.updateTargetGroup(update.tg, update.scfg); err != nil {
 				log.Errorf("Error updating targets: %s", err)
@@ -207,6 +231,7 @@ func (tm *TargetManager) handleUpdates(ch <-chan targetGroupUpdate, done <-chan 
 		case <-syncTicker.C:
 			if dirty {
 				tm.sync()
+				scrapePoolSyncs.Inc()
 			}
 			dirty = false
 
