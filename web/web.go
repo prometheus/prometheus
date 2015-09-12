@@ -159,7 +159,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	instrh := prometheus.InstrumentHandler
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, "/graph", http.StatusFound)
 	})
 	router.Get("/graph", instrf("graph", h.graph))
 
