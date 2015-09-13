@@ -650,24 +650,11 @@ func funcLabelReplace(ev *evaluator, args Expressions) model.Value {
 	return vector
 }
 
-// === vector(s scalar, vector model.ValVectora={}) Vector ===
+// === vector(s scalar) Vector ===
 func funcVector(ev *evaluator, args Expressions) model.Value {
-	m := model.Metric{}
-	if len(args) >= 2 {
-		if vs, ok := args[1].(*VectorSelector); ok {
-			for _, matcher := range vs.LabelMatchers {
-				if matcher.Type == metric.Equal && matcher.Name != model.MetricNameLabel {
-					m[matcher.Name] = matcher.Value
-				}
-			}
-		}
-	}
 	return vector{
 		&sample{
-			Metric: metric.Metric{
-				Metric: m,
-				Copied: true,
-			},
+			Metric: metric.Metric{},
 			Value:     model.SampleValue(ev.evalFloat(args[0])),
 			Timestamp: ev.Timestamp,
 		},
@@ -871,9 +858,8 @@ var functions = map[string]*Function{
 	},
 	"vector": {
 		Name:         "vector",
-		ArgTypes:     []model.ValueType{model.ValScalar, model.ValVector},
+		ArgTypes:     []model.ValueType{model.ValScalar},
 		ReturnType:   model.ValVector,
-		OptionalArgs: 1,
 		Call:         funcVector,
 	},
 }
