@@ -155,9 +155,3 @@ eval instant at 0m vector(1)
 
 eval instant at 60m vector(time())
   {} 3600
-
-eval instant at 0m vector(1, {a="b"})
-  {a="b"} 1
-
-eval instant at 0m vector(1, {a="b", c=~"d", e!="f", g!~"h", a="z"})
-  {a="z"} 1
