@@ -120,9 +120,10 @@ type loop interface {
 
 // scrapeLoop manages scraping cycles.
 type scrapeLoop struct {
-	scraper  scraper
-	state    *TargetStatus
-	appender storage.SampleAppender
+	scraper        scraper
+	state          *TargetStatus
+	appender       storage.SampleAppender
+	reportAppender storage.SampleAppender
 
 	// A function to calculate an initial offset for a given
 	// scrape interval.
@@ -135,10 +136,11 @@ type scrapeLoop struct {
 
 func newScrapeLoop(app storage.SampleAppender, target *Target, state *TargetStatus) loop {
 	return &scrapeLoop{
-		scraper:  target,
-		appender: target.wrapAppender(app),
-		state:    state,
-		offset:   target.offset,
+		scraper:        target,
+		appender:       target.wrapAppender(app, true),
+		reportAppender: target.wrapAppender(app, false),
+		state:          state,
+		offset:         target.offset,
 	}
 }
 
@@ -295,6 +297,6 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, err error)
 		Value:     model.SampleValue(float64(duration) / float64(time.Second)),
 	}
 
-	sl.appender.Append(healthSample)
-	sl.appender.Append(durationSample)
+	sl.reportAppender.Append(healthSample)
+	sl.reportAppender.Append(durationSample)
 }

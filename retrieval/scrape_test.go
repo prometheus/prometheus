@@ -39,7 +39,7 @@ func TestNewScrapePool(t *testing.T) {
 	}
 
 	if sp.newLoop == nil {
-		t.Fatalf("newLoop function not initializated")
+		t.Fatalf("newLoop function not initialized")
 	}
 }
 
@@ -245,9 +245,10 @@ func TestScrapeLoopRun(t *testing.T) {
 	)
 
 	sl := &scrapeLoop{
-		scraper:  scraper,
-		appender: nopAppender{},
-		state:    &TargetStatus{},
+		scraper:        scraper,
+		appender:       nopAppender{},
+		reportAppender: nopAppender{},
+		state:          &TargetStatus{},
 	}
 
 	checkStatus := func(h TargetHealth) {
@@ -390,7 +391,7 @@ func TestScrapeLoopReport(t *testing.T) {
 
 	for _, test := range suite {
 		appender := &collectAppender{}
-		sl.appender = appender
+		sl.reportAppender = appender
 
 		sl.report(test.start.Time(), test.duration, test.err)
 
@@ -399,7 +400,7 @@ func TestScrapeLoopReport(t *testing.T) {
 		}
 
 		if sl.state.LastScrape() != test.start.Time() {
-			t.Fatalf("Expeceted test start at %v but got %v", test.start.Time(), sl.state.LastScrape())
+			t.Fatalf("Expected test start at %v but got %v", test.start.Time(), sl.state.LastScrape())
 		}
 
 		if len(appender.samples) != 2 {
@@ -489,7 +490,7 @@ func TestScrapeLoopScrape(t *testing.T) {
 
 	select {
 	case <-appender.ch:
-		t.Fatalf("Received more sample than sent by the scraper")
+		t.Fatalf("Received more samples than sent by the scraper")
 	default:
 	}
 	scraper.block <- struct{}{}

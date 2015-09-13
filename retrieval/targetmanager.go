@@ -206,7 +206,7 @@ func (tm *TargetManager) Run() {
 func (tm *TargetManager) handleUpdates(ch <-chan targetGroupUpdate, done <-chan struct{}) {
 	// To not sync constantly on a stream of updates, attempt a sync every second
 	// if an update has been received.
-	syncTicker := time.NewTicker(1 * time.Second)
+	syncTicker := time.NewTicker(2 * time.Second)
 	defer syncTicker.Stop()
 
 	dirty := false

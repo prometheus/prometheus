@@ -206,10 +206,10 @@ func (t *Target) offset(interval time.Duration) time.Duration {
 	return time.Duration(next - now)
 }
 
-func (t *Target) wrapAppender(app storage.SampleAppender) storage.SampleAppender {
+func (t *Target) wrapAppender(app storage.SampleAppender, relabel bool) storage.SampleAppender {
 	// The relabelAppender has to be inside the label-modifying appenders
 	// so the relabeling rules are applied to the correct label set.
-	if mrc := t.scrapeConfig.MetricRelabelConfigs; len(mrc) > 0 {
+	if mrc := t.scrapeConfig.MetricRelabelConfigs; relabel && len(mrc) > 0 {
 		app = relabelAppender{
 			app:         app,
 			relabelings: mrc,

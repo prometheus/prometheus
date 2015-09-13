@@ -56,6 +56,32 @@ func TestTargetBaseLabels(t *testing.T) {
 	}
 }
 
+func TestTargetMetaLabels(t *testing.T) {
+	target := newTestTarget("example.com:80", 0, model.LabelSet{
+		model.JobLabel: "some_job",
+		"foo":          "bar",
+	})
+
+	want := model.LabelSet{
+		model.JobLabel:         "some_job",
+		model.SchemeLabel:      "http",
+		model.AddressLabel:     "example.com:80",
+		model.MetricsPathLabel: "/metrics",
+		"foo": "bar",
+	}
+	got := target.MetaLabels()
+
+	if !reflect.DeepEqual(want, got) {
+		t.Errorf("want base labels %v, got %v", want, got)
+	}
+
+	// Ensure it is a copy.
+	delete(got, "foo")
+	if _, ok := target.MetaLabels()["foo"]; !ok {
+		t.Fatalf("Targets internal label set was modified")
+	}
+}
+
 func newTestTarget(host string, timeout time.Duration, baseLabels model.LabelSet) *Target {
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout:  config.Duration(timeout),
@@ -243,6 +269,70 @@ func TestTargetOffset(t *testing.T) {
 		if float64(diff)/float64(avg) > tolerance {
 			t.Fatalf("Bucket out of tolerance bounds")
 		}
+	}
+}
+
+func TestTargetWrapAppender(t *testing.T) {
+	cfg := &config.ScrapeConfig{
+		MetricRelabelConfigs: []*config.RelabelConfig{
+			{}, {}, {},
+		},
+	}
+
+	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
+	target.scrapeConfig = cfg
+	app := &nopAppender{}
+
+	cfg.HonorLabels = false
+	wrapped := target.wrapAppender(app, true)
+
+	rl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	re, ok := rl.app.(relabelAppender)
+	if !ok {
+		t.Fatalf("Expected relabelAppender but got %T", rl.app)
+	}
+	if re.app != app {
+		t.Fatalf("Expected base appender but got %T", re.app)
+	}
+
+	cfg.HonorLabels = true
+	wrapped = target.wrapAppender(app, true)
+
+	hl, ok := wrapped.(honorLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected honorLabelsAppender but got %T", wrapped)
+	}
+	re, ok = hl.app.(relabelAppender)
+	if !ok {
+		t.Fatalf("Expected relabelAppender but got %T", hl.app)
+	}
+	if re.app != app {
+		t.Fatalf("Expected base appender but got %T", re.app)
+	}
+
+	cfg.HonorLabels = false
+	wrapped = target.wrapAppender(app, false)
+
+	rl, ok = wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	if rl.app != app {
+		t.Fatalf("Expected base appender but got %T", rl.app)
+	}
+
+	cfg.HonorLabels = true
+	wrapped = target.wrapAppender(app, false)
+
+	hl, ok = wrapped.(honorLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected honorLabelsAppender but got %T", wrapped)
+	}
+	if hl.app != app {
+		t.Fatalf("Expected base appender but got %T", hl.app)
 	}
 }
 
