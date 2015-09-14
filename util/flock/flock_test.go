@@ -27,7 +27,7 @@ func TestLocking(t *testing.T) {
 	}
 
 	// File must now exist.
-	if _, err := os.Stat(fileName); err != nil {
+	if _, err = os.Stat(fileName); err != nil {
 		t.Errorf("Could not stat file %q expected to exist: %s", fileName, err)
 	}
 
@@ -48,7 +48,7 @@ func TestLocking(t *testing.T) {
 	}
 
 	// File must still exist.
-	if _, err := os.Stat(fileName); err != nil {
+	if _, err = os.Stat(fileName); err != nil {
 		t.Errorf("Could not stat file %q expected to exist: %s", fileName, err)
 	}
 

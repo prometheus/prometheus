@@ -30,7 +30,9 @@ type testStorageCloser struct {
 }
 
 func (t *testStorageCloser) Close() {
-	t.storage.Stop()
+	if err := t.storage.Stop(); err != nil {
+		panic(err)
+	}
 	t.directory.Close()
 }
 

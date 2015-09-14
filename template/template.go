@@ -272,11 +272,11 @@ func (te Expander) Expand() (result string, resultErr error) {
 		}
 	}()
 
-	var buffer bytes.Buffer
 	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Parse(te.text)
 	if err != nil {
 		return "", fmt.Errorf("error parsing template %v: %v", te.name, err)
 	}
+	var buffer bytes.Buffer
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
 		return "", fmt.Errorf("error executing template %v: %v", te.name, err)
@@ -296,7 +296,6 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 		}
 	}()
 
-	var buffer bytes.Buffer
 	tmpl := html_template.New(te.name).Funcs(html_template.FuncMap(te.funcMap))
 	tmpl.Funcs(html_template.FuncMap{
 		"tmpl": func(name string, data interface{}) (html_template.HTML, error) {
@@ -315,6 +314,7 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 			return "", fmt.Errorf("error parsing template files for %v: %v", te.name, err)
 		}
 	}
+	var buffer bytes.Buffer
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
 		return "", fmt.Errorf("error executing template %v: %v", te.name, err)

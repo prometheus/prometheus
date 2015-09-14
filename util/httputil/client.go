@@ -48,12 +48,16 @@ func NewDeadlineRoundTripper(timeout time.Duration, proxyURL *url.URL) http.Roun
 			start := time.Now()
 
 			c, err = net.DialTimeout(netw, addr, timeout)
-
-			if err == nil {
-				c.SetDeadline(start.Add(timeout))
+			if err != nil {
+				return nil, err
 			}
 
-			return
+			if err = c.SetDeadline(start.Add(timeout)); err != nil {
+				c.Close()
+				return nil, err
+			}
+
+			return c, nil
 		},
 	}
 }

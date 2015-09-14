@@ -41,7 +41,6 @@ var (
 const (
 	testStartTime = model.Time(0)
 	epsilon       = 0.000001 // Relative error allowed for sample values.
-	maxErrorCount = 10
 )
 
 // Test is a sequence of read and write commands that are run

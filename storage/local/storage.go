@@ -1111,7 +1111,9 @@ func (s *memorySeriesStorage) maintainArchivedSeries(fp model.Fingerprint, befor
 		s.seriesOps.WithLabelValues(archivePurge).Inc()
 		return
 	}
-	s.persistence.updateArchivedTimeRange(fp, newFirstTime, lastTime)
+	if err := s.persistence.updateArchivedTimeRange(fp, newFirstTime, lastTime); err != nil {
+		log.Errorf("Error updating archived time range for fingerprint %v: %s", fp, err)
+	}
 }
 
 // See persistence.loadChunks for detailed explanation.

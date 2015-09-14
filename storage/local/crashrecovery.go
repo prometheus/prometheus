@@ -44,7 +44,9 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 
 	// Delete the fingerprint mapping file as it might be stale or
 	// corrupt. We'll rebuild the mappings as we go.
-	os.Remove(p.mappingsFileName())
+	if err := os.RemoveAll(p.mappingsFileName()); err != nil {
+		return fmt.Errorf("couldn't remove old fingerprint mapping file %s: %s", p.mappingsFileName(), err)
+	}
 	// The mappings to rebuild.
 	fpm := fpMappings{}
 

@@ -57,7 +57,9 @@ func (i *FingerprintMetricIndex) IndexBatch(mapping FingerprintMetricMapping) er
 	b := i.NewBatch()
 
 	for fp, m := range mapping {
-		b.Put(codable.Fingerprint(fp), codable.Metric(m))
+		if err := b.Put(codable.Fingerprint(fp), codable.Metric(m)); err != nil {
+			return err
+		}
 	}
 
 	return i.Commit(b)
@@ -72,7 +74,9 @@ func (i *FingerprintMetricIndex) UnindexBatch(mapping FingerprintMetricMapping) 
 	b := i.NewBatch()
 
 	for fp := range mapping {
-		b.Delete(codable.Fingerprint(fp))
+		if err := b.Delete(codable.Fingerprint(fp)); err != nil {
+			return err
+		}
 	}
 
 	return i.Commit(b)
@@ -196,14 +200,18 @@ type LabelPairFingerprintIndex struct {
 //
 // While this method is fundamentally goroutine-safe, note that the order of
 // execution for multiple batches executed concurrently is undefined.
-func (i *LabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintsMapping) error {
+func (i *LabelPairFingerprintIndex) IndexBatch(m LabelPairFingerprintsMapping) (err error) {
 	batch := i.NewBatch()
 
 	for pair, fps := range m {
 		if len(fps) == 0 {
-			batch.Delete(codable.LabelPair(pair))
+			err = batch.Delete(codable.LabelPair(pair))
 		} else {
-			batch.Put(codable.LabelPair(pair), fps)
+			err = batch.Put(codable.LabelPair(pair), fps)
+		}
+
+		if err != nil {
+			return err
 		}
 	}
 
