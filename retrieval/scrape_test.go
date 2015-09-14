@@ -190,8 +190,15 @@ func TestScrapePoolSync(t *testing.T) {
 			}
 		}
 
-		lastLoops = sp.loops
-		lastStates = sp.states
+		lastLoops := map[model.Fingerprint]loop{}
+		for fp, l := range sp.loops {
+			lastLoops[fp] = l
+		}
+
+		lastStates := map[model.Fingerprint]*TargetStatus{}
+		for fp, s := range sp.states {
+			lastStates[fp] = s
+		}
 	}
 }
 
@@ -205,7 +212,7 @@ func newTestScraper() *testScraper {
 	return &testScraper{
 		block:     make(chan struct{}, 1),
 		active:    make(chan struct{}),
-		batchSize: 8,
+		batchSize: 128,
 	}
 }
 
@@ -317,7 +324,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		t.Fatalf("Expected scrape was not initiated")
 	}
 
-	sl.kill()
+	cancel()
 
 	select {
 	case err := <-errc:
@@ -507,7 +514,7 @@ func TestScrapeLoopScrape(t *testing.T) {
 	// Test appending with context being canceled at random points in time.
 	t.Log("Test scraping with context cancelation")
 
-	for numIngested := 0; numIngested < 2*totalSamples; numIngested += 8 {
+	for numIngested := 0; numIngested < 2*totalSamples; numIngested += scraper.batchSize {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		go func() {
@@ -526,17 +533,19 @@ func TestScrapeLoopScrape(t *testing.T) {
 		cancel()
 
 		// With the current SampleAppender behavior we cannot terminate
-		// mid-appending. We may have to consume one more sample before the
-		// cancelation takes effect.
-		select {
-		case <-appender.ch:
-		default:
-		}
+		// mid-appending. We may have to consume one more batch of samples
+		// before appending terminates.
+	Loop:
+		for i := 1; ; i++ {
+			select {
+			case <-appender.ch:
+			case <-time.After(5 * time.Millisecond):
+				break Loop
+			}
 
-		select {
-		case <-appender.ch:
-			t.Fatalf("Received more samples after context cancelation")
-		default:
+			if i > scraper.batchSize {
+				t.Fatalf("Unexpected sample received after cancelation")
+			}
 		}
 
 		select {

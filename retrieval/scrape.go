@@ -54,6 +54,7 @@ func NewScrapePool(app storage.SampleAppender) *ScrapePool {
 	sp := &ScrapePool{
 		appender: app,
 		states:   map[model.Fingerprint]*TargetStatus{},
+		loops:    map[model.Fingerprint]loop{},
 		newLoop:  newScrapeLoop,
 	}
 	sp.ctx, sp.cancel = context.WithCancel(context.Background())
@@ -69,22 +70,41 @@ func (sp *ScrapePool) Stop() {
 }
 
 // Sync the running scrapers with the provided list of targets.
-func (sp *ScrapePool) Sync(targets []*Target) {
+func (sp *ScrapePool) Sync(rawTargets []*Target) {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
-	// Shutdown all running loops after their current scrape
-	// is finished.
-	for _, l := range sp.loops {
-		go l.stop()
+	targets := map[model.Fingerprint]*Target{}
+	for _, t := range rawTargets {
+		targets[t.fingerprint()] = t
 	}
 
-	// Old loops are shutting down, create new from the targets.
-	sp.loops = map[model.Fingerprint]loop{}
+	// Drop states for targets that no longer exist.
+	for fp := range sp.states {
+		if _, ok := targets[fp]; !ok {
+			delete(sp.states, fp)
+		}
+	}
 
-	for _, t := range targets {
-		fp := t.fingerprint()
+	// Stop loops for removed targets and remove them after
+	// they exited succesfully.
+	for fp, loop := range sp.loops {
+		if _, ok := targets[fp]; !ok {
+			go func() {
+				loop.stop()
 
+				sp.mtx.Lock()
+				if sp.loops[fp] == loop {
+					delete(sp.loops, fp)
+				}
+				sp.mtx.Unlock()
+			}()
+		}
+	}
+
+	// Start loops for the target set. Synchronously stop existing loops
+	// for previous targets.
+	for fp, t := range targets {
 		// Create states for new targets.
 		state, ok := sp.states[fp]
 		if !ok {
@@ -92,24 +112,19 @@ func (sp *ScrapePool) Sync(targets []*Target) {
 			sp.states[fp] = state
 		}
 
-		// Create and start loops the first time we see a target.
-		if _, ok := sp.loops[fp]; !ok {
-			loop := sp.newLoop(sp.appender, t, state)
-			sp.loops[fp] = loop
+		oldLoop, ok := sp.loops[fp]
+		loop := sp.newLoop(sp.appender, t, state)
 
-			sp.running.Add(1)
-			go func(t *Target) {
-				loop.run(sp.ctx, t.interval(), t.timeout(), nil)
-				sp.running.Done()
-			}(t)
-		}
-	}
+		sp.running.Add(1)
+		go func(t *Target) {
+			if ok {
+				oldLoop.stop()
+			}
+			loop.run(sp.ctx, t.interval(), t.timeout(), nil)
+			sp.running.Done()
+		}(t)
 
-	// Drop states of targets that no longer exist.
-	for fp := range sp.states {
-		if _, ok := sp.loops[fp]; !ok {
-			delete(sp.states, fp)
-		}
+		sp.loops[fp] = loop
 	}
 }
 
@@ -130,7 +145,6 @@ type scrapeLoop struct {
 	offset func(time.Duration) time.Duration
 
 	stopc, done chan struct{}
-	cancel      func()
 	mtx         sync.RWMutex
 }
 
@@ -145,28 +159,40 @@ func newScrapeLoop(app storage.SampleAppender, target *Target, state *TargetStat
 }
 
 func (sl *scrapeLoop) active() bool {
-	return sl.cancel != nil
+	if sl.done == nil {
+		return false
+	}
+
+	select {
+	case <-sl.done:
+		return false
+	default:
+		return true
+	}
 }
 
 func (sl *scrapeLoop) run(ctx context.Context, interval, timeout time.Duration, errc chan<- error) {
+	sl.mtx.Lock()
+
 	if sl.active() {
+		sl.mtx.Unlock()
 		return
 	}
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	sl.stopc = make(chan struct{})
+	sl.done = make(chan struct{})
+
+	defer cancel()
+	defer close(sl.done)
+
+	sl.mtx.Unlock()
 
 	// If no offset function is provided, default to starting immediately.
 	if sl.offset == nil {
 		sl.offset = func(time.Duration) time.Duration { return 0 }
 	}
-
-	ctx, sl.cancel = context.WithCancel(ctx)
-
-	sl.stopc = make(chan struct{})
-	sl.done = make(chan struct{})
-
-	defer func() {
-		close(sl.done)
-		sl.cancel = nil
-	}()
 
 	select {
 	case <-time.After(sl.offset(interval)):
@@ -213,31 +239,28 @@ func (sl *scrapeLoop) run(ctx context.Context, interval, timeout time.Duration, 
 	}
 }
 
-// kill terminates the scraping loop immediately.
-func (sl *scrapeLoop) kill() {
-	if !sl.active() {
-		return
-	}
-	sl.cancel()
-}
-
 // stop finishes any pending scrapes and then kills the loop.
 func (sl *scrapeLoop) stop() {
+	sl.mtx.Lock()
+	defer sl.mtx.Unlock()
+
 	if !sl.active() {
 		return
 	}
 	close(sl.stopc)
 	<-sl.done
-
-	sl.kill()
 }
 
 // scrape executes a single Scrape and appends the retrieved samples.
 func (sl *scrapeLoop) scrape(ctx context.Context, timeout time.Duration) error {
-	ch := make(chan model.Vector)
-
+	var (
+		ch   = make(chan model.Vector)
+		done = make(chan struct{})
+	)
 	// Receive and append all the samples retrieved by the scraper.
 	go func() {
+		defer close(done)
+
 		var (
 			samples model.Vector
 			ok      bool
@@ -251,6 +274,7 @@ func (sl *scrapeLoop) scrape(ctx context.Context, timeout time.Duration) error {
 			case <-ctx.Done():
 				return
 			}
+
 			// TODO(fabxc): Change the SampleAppender interface to return an error
 			// so we can proceed based on the status and don't leak goroutines trying
 			// to append a single sample after dropping all the other ones.
@@ -268,7 +292,10 @@ func (sl *scrapeLoop) scrape(ctx context.Context, timeout time.Duration) error {
 
 	ctx, _ = context.WithTimeout(ctx, timeout)
 
-	return sl.scraper.Scrape(ctx, ch)
+	err := sl.scraper.Scrape(ctx, ch)
+	<-done
+
+	return err
 }
 
 func (sl *scrapeLoop) report(start time.Time, duration time.Duration, err error) {
