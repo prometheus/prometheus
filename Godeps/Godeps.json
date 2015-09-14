@@ -99,6 +99,22 @@
 		{
 			"ImportPath": "gopkg.in/yaml.v2",
 			"Rev": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40"
+		},
+		{
+			"ImportPath": "github.com/Shopify/sarama",
+			"Rev": "4faee6199919651f769e85fd97f1b3bf5739cb81"
+		},
+		{
+			"ImportPath": "github.com/eapache/go-resiliency",
+			"Rev": "ed0319b32e66e3295db52695ba3ee493e823fbfe"
+		},
+		{
+			"ImportPath": "github.com/eapache/queue",
+			"Rev": "ded5959c0d4e360646dc9e9908cff48666781367"
+		},
+		{
+			"ImportPath": "github.com/klauspost/crc32",
+			"Rev": "a5d1ea1c7bb4ad05a27df06491071dd6d45d1a08"
 		}
 	]
 }

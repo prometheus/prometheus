@@ -1,0 +1,42 @@
+language: go
+go:
+- 1.3.3
+- 1.4.2
+- 1.5
+
+env:
+  global:
+  - KAFKA_PEERS=localhost:9091,localhost:9092,localhost:9093,localhost:9094,localhost:9095
+  - TOXIPROXY_ADDR=http://localhost:8474
+  - KAFKA_INSTALL_ROOT=/home/travis/kafka
+  - KAFKA_HOSTNAME=localhost
+  - DEBUG=true
+  matrix:
+  - KAFKA_VERSION=0.8.1.1
+  - KAFKA_VERSION=0.8.2.1
+
+before_install:
+- export REPOSITORY_ROOT=${TRAVIS_BUILD_DIR}
+- vagrant/install_cluster.sh
+- vagrant/boot_cluster.sh
+- vagrant/create_topics.sh
+
+
+install:
+- make install_dependencies
+
+script:
+- make test
+- make vet
+- make errcheck
+- make fmt
+
+matrix:
+  include:
+    - go: tip
+      env: KAFKA_VERSION=0.8.2.1
+  allow_failures:
+    - go: tip
+  fast_finish: true
+
+sudo: false
