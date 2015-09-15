@@ -1,0 +1,230 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"canonical": "bitbucket.org/ww/goautoneg",
+			"comment": "",
+			"local": "vendor/bitbucket.org/ww/goautoneg",
+			"revision": "75cd24fc2f2c",
+			"revisionTime": "2012-07-07T21:04:53+10:00"
+		},
+		{
+			"canonical": "github.com/Sirupsen/logrus",
+			"comment": "",
+			"local": "vendor/github.com/Sirupsen/logrus",
+			"revision": "418b41d23a1bf978c06faea5313ba194650ac088",
+			"revisionTime": "2015-09-08T20:46:18Z"
+		},
+		{
+			"canonical": "github.com/beorn7/perks/quantile",
+			"comment": "",
+			"local": "vendor/github.com/beorn7/perks/quantile",
+			"revision": "b965b613227fddccbfffe13eae360ed3fa822f8d",
+			"revisionTime": "2015-02-23T14:51:52+01:00"
+		},
+		{
+			"canonical": "github.com/golang/protobuf/proto",
+			"comment": "",
+			"local": "vendor/github.com/golang/protobuf/proto",
+			"revision": "1dceb1a2654bdc74ca97ad91f71f500eecc96269",
+			"revisionTime": "2015-09-03T11:38:02+10:00"
+		},
+		{
+			"canonical": "github.com/golang/snappy",
+			"comment": "",
+			"local": "vendor/github.com/golang/snappy",
+			"revision": "723cc1e459b8eea2dea4583200fd60757d40097a",
+			"revisionTime": "2015-07-30T13:18:44+10:00"
+		},
+		{
+			"canonical": "github.com/hashicorp/consul/api",
+			"comment": "",
+			"local": "vendor/github.com/hashicorp/consul/api",
+			"revision": "34f98f7bdf2eec7517e3aac44691566963152721",
+			"revisionTime": "2015-09-08T11:01:49-04:00"
+		},
+		{
+			"canonical": "github.com/julienschmidt/httprouter",
+			"comment": "",
+			"local": "vendor/github.com/julienschmidt/httprouter",
+			"revision": "109e267447e95ad1bb48b758e40dd7453eb7b039",
+			"revisionTime": "2015-09-05T19:25:33+02:00"
+		},
+		{
+			"canonical": "github.com/matttproud/golang_protobuf_extensions/pbutil",
+			"comment": "",
+			"local": "vendor/github.com/matttproud/golang_protobuf_extensions/pbutil",
+			"revision": "fc2b8d3a73c4867e51861bbdd5ae3c1f0869dd6a",
+			"revisionTime": "2015-04-06T19:39:34+02:00"
+		},
+		{
+			"canonical": "github.com/miekg/dns",
+			"comment": "",
+			"local": "vendor/github.com/miekg/dns",
+			"revision": "8395762c3490507cf5a27405fcd0e3d3dc547109",
+			"revisionTime": "2015-09-05T08:12:15+01:00"
+		},
+		{
+			"canonical": "github.com/prometheus/client_golang/prometheus",
+			"comment": "",
+			"local": "vendor/github.com/prometheus/client_golang/prometheus",
+			"revision": "25e1a6571b75377d2f49354012d002b024eb44ca",
+			"revisionTime": "2015-08-24T10:54:08+02:00"
+		},
+		{
+			"canonical": "github.com/prometheus/client_golang/text",
+			"comment": "",
+			"local": "vendor/github.com/prometheus/client_golang/text",
+			"revision": "25e1a6571b75377d2f49354012d002b024eb44ca",
+			"revisionTime": "2015-08-24T10:54:08+02:00"
+		},
+		{
+			"canonical": "github.com/prometheus/client_model/go",
+			"comment": "",
+			"local": "vendor/github.com/prometheus/client_model/go",
+			"revision": "fa8ad6fec33561be4280a8f0514318c79d7f6cb6",
+			"revisionTime": "2015-02-12T10:17:44Z"
+		},
+		{
+			"canonical": "github.com/prometheus/common/expfmt",
+			"comment": "",
+			"local": "vendor/github.com/prometheus/common/expfmt",
+			"revision": "c33395bbc758c8d25735ec7036d66b342084ae35",
+			"revisionTime": "2015-08-25T14:37:19+02:00"
+		},
+		{
+			"canonical": "github.com/prometheus/common/model",
+			"comment": "",
+			"local": "vendor/github.com/prometheus/common/model",
+			"revision": "c33395bbc758c8d25735ec7036d66b342084ae35",
+			"revisionTime": "2015-08-25T14:37:19+02:00"
+		},
+		{
+			"canonical": "github.com/prometheus/log",
+			"comment": "",
+			"local": "vendor/github.com/prometheus/log",
+			"revision": "439e5db48fbb50ebbaf2c816030473a62f505f55",
+			"revisionTime": "2015-05-29T14:22:02+02:00"
+		},
+		{
+			"canonical": "github.com/prometheus/procfs",
+			"comment": "",
+			"local": "vendor/github.com/prometheus/procfs",
+			"revision": "c91d8eefde16bd047416409eb56353ea84a186e4",
+			"revisionTime": "2015-06-16T16:46:31+02:00"
+		},
+		{
+			"canonical": "github.com/samuel/go-zookeeper/zk",
+			"comment": "",
+			"local": "vendor/github.com/samuel/go-zookeeper/zk",
+			"revision": "177002e16a0061912f02377e2dd8951a8b3551bc",
+			"revisionTime": "2015-08-17T10:50:50-07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/cache",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/cache",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/comparer",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/comparer",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/errors",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/errors",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/filter",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/filter",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/iterator",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/iterator",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/journal",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/journal",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/memdb",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/memdb",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/opt",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/opt",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/storage",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/storage",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/table",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/table",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "github.com/syndtr/goleveldb/leveldb/util",
+			"comment": "",
+			"local": "vendor/github.com/syndtr/goleveldb/leveldb/util",
+			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
+			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"canonical": "golang.org/x/net/context",
+			"comment": "",
+			"local": "vendor/golang.org/x/net/context",
+			"revision": "db8e4de5b2d6653f66aea53094624468caad15d2",
+			"revisionTime": "2015-08-24T18:07:02+02:00"
+		},
+		{
+			"canonical": "gopkg.in/fsnotify.v1",
+			"comment": "",
+			"local": "vendor/gopkg.in/fsnotify.v1",
+			"revision": "96c060f6a6b7e0d6f75fddd10efeaca3e5d1bcb0",
+			"revisionTime": "2015-02-08T13:29:58-07:00"
+		},
+		{
+			"canonical": "gopkg.in/yaml.v2",
+			"comment": "",
+			"local": "vendor/gopkg.in/yaml.v2",
+			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
+			"revisionTime": "2015-06-24T11:29:02+01:00"
+		}
+	]
+}
