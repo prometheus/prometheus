@@ -212,7 +212,7 @@ func TestTargetScrape(t *testing.T) {
 		}
 		ts := smpl.Timestamp.Time()
 		if ts.Before(start.Add(-1*time.Millisecond)) || ts.After(time.Now().Add(1*time.Millisecond)) {
-			t.Fatalf("Unexpected timestamp: %v", ts, start)
+			t.Fatalf("Unexpected timestamp: want %v, got %v", start, ts)
 		}
 	}
 

@@ -94,7 +94,7 @@ type TargetStatus struct {
 	mu sync.RWMutex
 }
 
-func (ts TargetStatus) String() string {
+func (ts *TargetStatus) String() string {
 	if ts.LastError() != nil {
 		return fmt.Sprintf("<status %s:%q>", ts.Health(), ts.LastError())
 	}

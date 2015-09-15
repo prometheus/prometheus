@@ -170,7 +170,7 @@ func TestScrapePoolSync(t *testing.T) {
 				break
 			}
 			if !found {
-				t.Fatalf("step %d: unexpected target %q")
+				t.Fatalf("step %d: expected target %q not found", i, tl.target)
 			}
 		}
 

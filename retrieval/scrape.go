@@ -79,27 +79,25 @@ func (sp *ScrapePool) Sync(rawTargets []*Target) {
 		targets[t.fingerprint()] = t
 	}
 
-	// Drop states for targets that no longer exist.
-	for fp := range sp.states {
-		if _, ok := targets[fp]; !ok {
-			delete(sp.states, fp)
-		}
-	}
-
 	// Stop loops for removed targets and remove them after
 	// they exited succesfully.
-	for fp, loop := range sp.loops {
-		if _, ok := targets[fp]; !ok {
-			go func() {
-				loop.stop()
-
-				sp.mtx.Lock()
-				if sp.loops[fp] == loop {
-					delete(sp.loops, fp)
-				}
-				sp.mtx.Unlock()
-			}()
+	for fp, l := range sp.loops {
+		if _, ok := targets[fp]; ok {
+			continue
 		}
+		delete(sp.states, fp)
+
+		go func(fp model.Fingerprint, l loop) {
+			l.stop()
+
+			// Cleanup after ourselves if there isn't a new loop
+			// for the fingerprint already.
+			sp.mtx.Lock()
+			if sp.loops[fp] == l {
+				delete(sp.loops, fp)
+			}
+			sp.mtx.Unlock()
+		}(fp, l)
 	}
 
 	// Start loops for the target set. Synchronously stop existing loops
@@ -274,6 +272,11 @@ func (sl *scrapeLoop) scrape(ctx context.Context, timeout time.Duration) error {
 			case <-ctx.Done():
 				return
 			}
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 
 			// TODO(fabxc): Change the SampleAppender interface to return an error
 			// so we can proceed based on the status and don't leak goroutines trying
@@ -281,18 +284,12 @@ func (sl *scrapeLoop) scrape(ctx context.Context, timeout time.Duration) error {
 			for _, smpl := range samples {
 				sl.appender.Append(smpl)
 			}
-
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
 		}
 	}()
 
-	ctx, _ = context.WithTimeout(ctx, timeout)
+	scrapeCtx, _ := context.WithTimeout(ctx, timeout)
 
-	err := sl.scraper.Scrape(ctx, ch)
+	err := sl.scraper.Scrape(scrapeCtx, ch)
 	<-done
 
 	return err
