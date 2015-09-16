@@ -62,7 +62,8 @@ type StorageQueueManager struct {
 
 	samplesCount  *prometheus.CounterVec
 	sendLatency   prometheus.Summary
-	sendErrors    prometheus.Counter
+	failedBatches prometheus.Counter
+	failedSamples prometheus.Counter
 	queueLength   prometheus.Gauge
 	queueCapacity prometheus.Metric
 }
@@ -92,15 +93,22 @@ func NewStorageQueueManager(tsdb StorageClient, queueCapacity int) *StorageQueue
 		sendLatency: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
 			Subsystem:   subsystem,
-			Name:        "sent_latency_milliseconds",
+			Name:        "send_latency_seconds",
 			Help:        "Latency quantiles for sending sample batches to the remote storage.",
 			ConstLabels: constLabels,
 		}),
-		sendErrors: prometheus.NewCounter(prometheus.CounterOpts{
+		failedBatches: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace:   namespace,
 			Subsystem:   subsystem,
-			Name:        "sent_errors_total",
-			Help:        "Total number of errors sending sample batches to the remote storage.",
+			Name:        "failed_batches_total",
+			Help:        "Total number of sample batches that encountered an error while being sent to the remote storage.",
+			ConstLabels: constLabels,
+		}),
+		failedSamples: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "failed_samples_total",
+			Help:        "Total number of samples that encountered an error while being sent to the remote storage.",
 			ConstLabels: constLabels,
 		}),
 		queueLength: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -151,6 +159,8 @@ func (t *StorageQueueManager) Stop() {
 func (t *StorageQueueManager) Describe(ch chan<- *prometheus.Desc) {
 	t.samplesCount.Describe(ch)
 	t.sendLatency.Describe(ch)
+	ch <- t.failedBatches.Desc()
+	ch <- t.failedSamples.Desc()
 	ch <- t.queueLength.Desc()
 	ch <- t.queueCapacity.Desc()
 }
@@ -160,6 +170,8 @@ func (t *StorageQueueManager) Collect(ch chan<- prometheus.Metric) {
 	t.samplesCount.Collect(ch)
 	t.sendLatency.Collect(ch)
 	t.queueLength.Set(float64(len(t.queue)))
+	ch <- t.failedBatches
+	ch <- t.failedSamples
 	ch <- t.queueLength
 	ch <- t.queueCapacity
 }
@@ -175,13 +187,14 @@ func (t *StorageQueueManager) sendSamples(s model.Samples) {
 	// floor.
 	begin := time.Now()
 	err := t.tsdb.Store(s)
-	duration := time.Since(begin) / time.Millisecond
+	duration := time.Since(begin) / time.Second
 
 	labelValue := success
 	if err != nil {
 		log.Warnf("error sending %d samples to remote storage: %s", len(s), err)
 		labelValue = failure
-		t.sendErrors.Inc()
+		t.failedBatches.Inc()
+		t.failedSamples.Add(float64(len(s)))
 	}
 	t.samplesCount.WithLabelValues(labelValue).Add(float64(len(s)))
 	t.sendLatency.Observe(float64(duration))
