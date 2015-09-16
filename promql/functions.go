@@ -654,7 +654,7 @@ func funcLabelReplace(ev *evaluator, args Expressions) model.Value {
 func funcVector(ev *evaluator, args Expressions) model.Value {
 	return vector{
 		&sample{
-			Metric: metric.Metric{},
+			Metric:    metric.Metric{},
 			Value:     model.SampleValue(ev.evalFloat(args[0])),
 			Timestamp: ev.Timestamp,
 		},
@@ -857,10 +857,10 @@ var functions = map[string]*Function{
 		Call:       funcTopk,
 	},
 	"vector": {
-		Name:         "vector",
-		ArgTypes:     []model.ValueType{model.ValScalar},
-		ReturnType:   model.ValVector,
-		Call:         funcVector,
+		Name:       "vector",
+		ArgTypes:   []model.ValueType{model.ValScalar},
+		ReturnType: model.ValVector,
+		Call:       funcVector,
 	},
 }
 
