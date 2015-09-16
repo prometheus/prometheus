@@ -33,6 +33,7 @@ core
 /promtool
 benchmark.txt
 /data
+/.build
 
 .#*
 command-line-arguments.test
