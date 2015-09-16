@@ -33,6 +33,16 @@
 			"revisionTime": "2015-09-08T11:01:49-04:00"
 		},
 		{
+			"path": "github.com/influxdb/influxdb/client",
+			"revision": "291aaeb9485b43b16875c238482b2f7d0a22a13b",
+			"revisionTime": "2015-09-16T14:41:53+02:00"
+		},
+		{
+			"path": "github.com/influxdb/influxdb/tsdb",
+			"revision": "291aaeb9485b43b16875c238482b2f7d0a22a13b",
+			"revisionTime": "2015-09-16T14:41:53+02:00"
+		},
+		{
 			"path": "github.com/julienschmidt/httprouter",
 			"revision": "109e267447e95ad1bb48b758e40dd7453eb7b039",
 			"revisionTime": "2015-09-05T19:25:33+02:00"
