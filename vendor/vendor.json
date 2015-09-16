@@ -13,6 +13,96 @@
 			"revisionTime": "2015-09-08T20:46:18Z"
 		},
 		{
+			"path": "github.com/aws/aws-sdk-go/aws",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/awserr",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/awsutil",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/corehandlers",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/credentials",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/defaults",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/ec2metadata",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/request",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/service",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/aws/service/serviceinfo",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/internal/endpoints",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/internal/protocol/ec2query",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/internal/protocol/query/queryutil",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/internal/protocol/rest",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/internal/protocol/xml/xmlutil",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/internal/signer/v4",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
+			"path": "github.com/aws/aws-sdk-go/service/ec2",
+			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
+			"revisionTime": "2015-08-20T12:44:31-07:00"
+		},
+		{
 			"path": "github.com/beorn7/perks/quantile",
 			"revision": "b965b613227fddccbfffe13eae360ed3fa822f8d",
 			"revisionTime": "2015-02-23T14:51:52+01:00"
@@ -161,6 +251,11 @@
 			"path": "github.com/syndtr/goleveldb/leveldb/util",
 			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
 			"revisionTime": "2015-08-19T12:16:22+07:00"
+		},
+		{
+			"path": "github.com/vaughan0/go-ini",
+			"revision": "a98ad7ee00ec53921f08832bc06ecf7fd600e6a1",
+			"revisionTime": "2013-09-23T16:52:12+02:00"
 		},
 		{
 			"path": "golang.org/x/net/context",
