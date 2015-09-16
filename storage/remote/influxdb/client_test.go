@@ -18,8 +18,11 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
+
+	influx "github.com/influxdb/influxdb/client"
 
 	"github.com/prometheus/common/model"
 )
@@ -44,43 +47,63 @@ func TestClient(t *testing.T) {
 		},
 		{
 			Metric: model.Metric{
-				model.MetricNameLabel: "special_float_value",
+				model.MetricNameLabel: "nan_value",
 			},
 			Timestamp: model.Time(123456789123),
 			Value:     model.SampleValue(math.NaN()),
 		},
+		{
+			Metric: model.Metric{
+				model.MetricNameLabel: "pos_inf_value",
+			},
+			Timestamp: model.Time(123456789123),
+			Value:     model.SampleValue(math.Inf(1)),
+		},
+		{
+			Metric: model.Metric{
+				model.MetricNameLabel: "neg_inf_value",
+			},
+			Timestamp: model.Time(123456789123),
+			Value:     model.SampleValue(math.Inf(-1)),
+		},
 	}
 
-	expectedJSON := `{"database":"prometheus","retentionPolicy":"default","points":[{"timestamp":123456789123000000,"precision":"n","name":"testmetric","tags":{"test_label":"test_label_value1"},"fields":{"value":"1.23"}},{"timestamp":123456789123000000,"precision":"n","name":"testmetric","tags":{"test_label":"test_label_value2"},"fields":{"value":"5.1234"}}]}`
+	expectedBody := `testmetric,test_label=test_label_value1 value=1.23 123456789123000000
+testmetric,test_label=test_label_value2 value=5.1234 123456789123000000
+`
 
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != "POST" {
 				t.Fatalf("Unexpected method; expected POST, got %s", r.Method)
 			}
-			if r.URL.Path != writeEndpoint {
-				t.Fatalf("Unexpected path; expected %s, got %s", writeEndpoint, r.URL.Path)
-			}
-			ct := r.Header["Content-Type"]
-			if len(ct) != 1 {
-				t.Fatalf("Unexpected number of 'Content-Type' headers; got %d, want 1", len(ct))
-			}
-			if ct[0] != contentTypeJSON {
-				t.Fatalf("Unexpected 'Content-type'; expected %s, got %s", contentTypeJSON, ct[0])
+			if r.URL.Path != "/write" {
+				t.Fatalf("Unexpected path; expected %s, got %s", "/write", r.URL.Path)
 			}
 			b, err := ioutil.ReadAll(r.Body)
 			if err != nil {
 				t.Fatalf("Error reading body: %s", err)
 			}
 
-			if string(b) != expectedJSON {
-				t.Fatalf("Unexpected request body; expected:\n\n%s\n\ngot:\n\n%s", expectedJSON, string(b))
+			if string(b) != expectedBody {
+				t.Fatalf("Unexpected request body; expected:\n\n%s\n\ngot:\n\n%s", expectedBody, string(b))
 			}
 		},
 	))
 	defer server.Close()
 
-	c := NewClient(server.URL, time.Minute, "prometheus", "default")
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("Unable to parse server URL %s: %s", server.URL, err)
+	}
+
+	conf := influx.Config{
+		URL:      *serverURL,
+		Username: "testuser",
+		Password: "testpass",
+		Timeout:  time.Minute,
+	}
+	c := NewClient(conf, "test_db", "default")
 
 	if err := c.Store(samples); err != nil {
 		t.Fatalf("Error sending samples: %s", err)
