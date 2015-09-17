@@ -156,12 +156,8 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		router = router.WithPrefix(o.ExternalURL.Path)
 	}
 
-	instrh := func(name string, h http.Handler) http.HandlerFunc {
-		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{h})
-	}
-	instrf := func(name string, f http.HandlerFunc) http.HandlerFunc {
-		return instrh(name, f)
-	}
+	instrh := prometheus.InstrumentHandler
+	instrf := prometheus.InstrumentHandlerFunc
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/graph", http.StatusFound)
@@ -174,8 +170,11 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 
 	router.Get("/heap", instrf("heap", dumpHeap))
 
-	router.Get("/federate", instrf("federate", h.federation))
 	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
+
+	router.Get("/federate", instrh("federate", httputil.CompressionHandler{
+		http.HandlerFunc(h.federation),
+	}))
 
 	h.apiLegacy.Register(router.WithPrefix("/api"))
 	h.apiV1.Register(router.WithPrefix("/api/v1"))
