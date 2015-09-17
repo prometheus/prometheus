@@ -4,7 +4,7 @@ MAINTAINER  The Prometheus Authors <prometheus-developers@googlegroups.com>
 WORKDIR /app
 COPY    . /app
 
-RUN apk add --update -t build-deps git mercurial bzr make \
+RUN apk add --update -t build-deps git make bash go \
     && make build \
     && cp prometheus promtool /bin/ \
     && mkdir -p /etc/prometheus \
