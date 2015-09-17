@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/route"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -79,7 +80,7 @@ func (api *API) Register(r *route.Router) {
 	}
 
 	instr := func(name string, f apiFunc) http.HandlerFunc {
-		return prometheus.InstrumentHandlerFunc(name, func(w http.ResponseWriter, r *http.Request) {
+		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			setCORS(w)
 			if data, err := f(r); err != nil {
 				respondError(w, err, data)
@@ -87,6 +88,7 @@ func (api *API) Register(r *route.Router) {
 				respond(w, data)
 			}
 		})
+		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{hf})
 	}
 
 	r.Get("/query", instr("query", api.query))

@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/route"
 	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web/api/legacy"
@@ -155,8 +156,12 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		router = router.WithPrefix(o.ExternalURL.Path)
 	}
 
-	instrf := prometheus.InstrumentHandlerFunc
-	instrh := prometheus.InstrumentHandler
+	instrh := func(name string, h http.Handler) http.HandlerFunc {
+		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{h})
+	}
+	instrf := func(name string, f http.HandlerFunc) http.HandlerFunc {
+		return instrh(name, f)
+	}
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/graph", http.StatusFound)
