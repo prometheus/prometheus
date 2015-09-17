@@ -119,7 +119,7 @@ func templates_baseHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "templates/_base.html", size: 2017, mode: os.FileMode(420), modTime: time.Unix(1442039984, 0)}
+	info := bindataFileInfo{name: "templates/_base.html", size: 2017, mode: os.FileMode(420), modTime: time.Unix(1442334134, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -976,72 +976,72 @@ type bintree struct {
 }
 
 var _bintree = &bintree{nil, map[string]*bintree{
-	"static": {nil, map[string]*bintree{
-		"css": {nil, map[string]*bintree{
-			"alerts.css":       {staticCssAlertsCss, map[string]*bintree{}},
-			"graph.css":        {staticCssGraphCss, map[string]*bintree{}},
-			"prom_console.css": {staticCssProm_consoleCss, map[string]*bintree{}},
-			"prometheus.css":   {staticCssPrometheusCss, map[string]*bintree{}},
+	"static": &bintree{nil, map[string]*bintree{
+		"css": &bintree{nil, map[string]*bintree{
+			"alerts.css":       &bintree{staticCssAlertsCss, map[string]*bintree{}},
+			"graph.css":        &bintree{staticCssGraphCss, map[string]*bintree{}},
+			"prom_console.css": &bintree{staticCssProm_consoleCss, map[string]*bintree{}},
+			"prometheus.css":   &bintree{staticCssPrometheusCss, map[string]*bintree{}},
 		}},
-		"img": {nil, map[string]*bintree{
-			"ajax-loader.gif": {staticImgAjaxLoaderGif, map[string]*bintree{}},
+		"img": &bintree{nil, map[string]*bintree{
+			"ajax-loader.gif": &bintree{staticImgAjaxLoaderGif, map[string]*bintree{}},
 		}},
-		"js": {nil, map[string]*bintree{
-			"alerts.js":                {staticJsAlertsJs, map[string]*bintree{}},
-			"graph.js":                 {staticJsGraphJs, map[string]*bintree{}},
-			"graph_template.handlebar": {staticJsGraph_templateHandlebar, map[string]*bintree{}},
-			"prom_console.js":          {staticJsProm_consoleJs, map[string]*bintree{}},
+		"js": &bintree{nil, map[string]*bintree{
+			"alerts.js":                &bintree{staticJsAlertsJs, map[string]*bintree{}},
+			"graph.js":                 &bintree{staticJsGraphJs, map[string]*bintree{}},
+			"graph_template.handlebar": &bintree{staticJsGraph_templateHandlebar, map[string]*bintree{}},
+			"prom_console.js":          &bintree{staticJsProm_consoleJs, map[string]*bintree{}},
 		}},
-		"vendor": {nil, map[string]*bintree{
-			"bootstrap-3.3.1": {nil, map[string]*bintree{
-				"css": {nil, map[string]*bintree{
-					"bootstrap-theme.css":     {staticVendorBootstrap331CssBootstrapThemeCss, map[string]*bintree{}},
-					"bootstrap-theme.css.map": {staticVendorBootstrap331CssBootstrapThemeCssMap, map[string]*bintree{}},
-					"bootstrap-theme.min.css": {staticVendorBootstrap331CssBootstrapThemeMinCss, map[string]*bintree{}},
-					"bootstrap.css":           {staticVendorBootstrap331CssBootstrapCss, map[string]*bintree{}},
-					"bootstrap.css.map":       {staticVendorBootstrap331CssBootstrapCssMap, map[string]*bintree{}},
-					"bootstrap.min.css":       {staticVendorBootstrap331CssBootstrapMinCss, map[string]*bintree{}},
+		"vendor": &bintree{nil, map[string]*bintree{
+			"bootstrap-3.3.1": &bintree{nil, map[string]*bintree{
+				"css": &bintree{nil, map[string]*bintree{
+					"bootstrap-theme.css":     &bintree{staticVendorBootstrap331CssBootstrapThemeCss, map[string]*bintree{}},
+					"bootstrap-theme.css.map": &bintree{staticVendorBootstrap331CssBootstrapThemeCssMap, map[string]*bintree{}},
+					"bootstrap-theme.min.css": &bintree{staticVendorBootstrap331CssBootstrapThemeMinCss, map[string]*bintree{}},
+					"bootstrap.css":           &bintree{staticVendorBootstrap331CssBootstrapCss, map[string]*bintree{}},
+					"bootstrap.css.map":       &bintree{staticVendorBootstrap331CssBootstrapCssMap, map[string]*bintree{}},
+					"bootstrap.min.css":       &bintree{staticVendorBootstrap331CssBootstrapMinCss, map[string]*bintree{}},
 				}},
-				"fonts": {nil, map[string]*bintree{
-					"glyphicons-halflings-regular.eot":  {staticVendorBootstrap331FontsGlyphiconsHalflingsRegularEot, map[string]*bintree{}},
-					"glyphicons-halflings-regular.svg":  {staticVendorBootstrap331FontsGlyphiconsHalflingsRegularSvg, map[string]*bintree{}},
-					"glyphicons-halflings-regular.ttf":  {staticVendorBootstrap331FontsGlyphiconsHalflingsRegularTtf, map[string]*bintree{}},
-					"glyphicons-halflings-regular.woff": {staticVendorBootstrap331FontsGlyphiconsHalflingsRegularWoff, map[string]*bintree{}},
+				"fonts": &bintree{nil, map[string]*bintree{
+					"glyphicons-halflings-regular.eot":  &bintree{staticVendorBootstrap331FontsGlyphiconsHalflingsRegularEot, map[string]*bintree{}},
+					"glyphicons-halflings-regular.svg":  &bintree{staticVendorBootstrap331FontsGlyphiconsHalflingsRegularSvg, map[string]*bintree{}},
+					"glyphicons-halflings-regular.ttf":  &bintree{staticVendorBootstrap331FontsGlyphiconsHalflingsRegularTtf, map[string]*bintree{}},
+					"glyphicons-halflings-regular.woff": &bintree{staticVendorBootstrap331FontsGlyphiconsHalflingsRegularWoff, map[string]*bintree{}},
 				}},
-				"js": {nil, map[string]*bintree{
-					"bootstrap.js":     {staticVendorBootstrap331JsBootstrapJs, map[string]*bintree{}},
-					"bootstrap.min.js": {staticVendorBootstrap331JsBootstrapMinJs, map[string]*bintree{}},
-					"npm.js":           {staticVendorBootstrap331JsNpmJs, map[string]*bintree{}},
+				"js": &bintree{nil, map[string]*bintree{
+					"bootstrap.js":     &bintree{staticVendorBootstrap331JsBootstrapJs, map[string]*bintree{}},
+					"bootstrap.min.js": &bintree{staticVendorBootstrap331JsBootstrapMinJs, map[string]*bintree{}},
+					"npm.js":           &bintree{staticVendorBootstrap331JsNpmJs, map[string]*bintree{}},
 				}},
 			}},
-			"bootstrap-datetimepicker": {nil, map[string]*bintree{
-				"bootstrap-datetimepicker.js":      {staticVendorBootstrapDatetimepickerBootstrapDatetimepickerJs, map[string]*bintree{}},
-				"bootstrap-datetimepicker.min.css": {staticVendorBootstrapDatetimepickerBootstrapDatetimepickerMinCss, map[string]*bintree{}},
+			"bootstrap-datetimepicker": &bintree{nil, map[string]*bintree{
+				"bootstrap-datetimepicker.js":      &bintree{staticVendorBootstrapDatetimepickerBootstrapDatetimepickerJs, map[string]*bintree{}},
+				"bootstrap-datetimepicker.min.css": &bintree{staticVendorBootstrapDatetimepickerBootstrapDatetimepickerMinCss, map[string]*bintree{}},
 			}},
-			"bootstrap3-typeahead": {nil, map[string]*bintree{
-				"bootstrap3-typeahead.min.js": {staticVendorBootstrap3TypeaheadBootstrap3TypeaheadMinJs, map[string]*bintree{}},
+			"bootstrap3-typeahead": &bintree{nil, map[string]*bintree{
+				"bootstrap3-typeahead.min.js": &bintree{staticVendorBootstrap3TypeaheadBootstrap3TypeaheadMinJs, map[string]*bintree{}},
 			}},
-			"js": {nil, map[string]*bintree{
-				"handlebars.js":       {staticVendorJsHandlebarsJs, map[string]*bintree{}},
-				"jquery.hotkeys.js":   {staticVendorJsJqueryHotkeysJs, map[string]*bintree{}},
-				"jquery.min.js":       {staticVendorJsJqueryMinJs, map[string]*bintree{}},
-				"jquery.selection.js": {staticVendorJsJquerySelectionJs, map[string]*bintree{}},
+			"js": &bintree{nil, map[string]*bintree{
+				"handlebars.js":       &bintree{staticVendorJsHandlebarsJs, map[string]*bintree{}},
+				"jquery.hotkeys.js":   &bintree{staticVendorJsJqueryHotkeysJs, map[string]*bintree{}},
+				"jquery.min.js":       &bintree{staticVendorJsJqueryMinJs, map[string]*bintree{}},
+				"jquery.selection.js": &bintree{staticVendorJsJquerySelectionJs, map[string]*bintree{}},
 			}},
-			"rickshaw": {nil, map[string]*bintree{
-				"rickshaw.min.css": {staticVendorRickshawRickshawMinCss, map[string]*bintree{}},
-				"rickshaw.min.js":  {staticVendorRickshawRickshawMinJs, map[string]*bintree{}},
-				"vendor": {nil, map[string]*bintree{
-					"d3.layout.min.js": {staticVendorRickshawVendorD3LayoutMinJs, map[string]*bintree{}},
-					"d3.v3.js":         {staticVendorRickshawVendorD3V3Js, map[string]*bintree{}},
+			"rickshaw": &bintree{nil, map[string]*bintree{
+				"rickshaw.min.css": &bintree{staticVendorRickshawRickshawMinCss, map[string]*bintree{}},
+				"rickshaw.min.js":  &bintree{staticVendorRickshawRickshawMinJs, map[string]*bintree{}},
+				"vendor": &bintree{nil, map[string]*bintree{
+					"d3.layout.min.js": &bintree{staticVendorRickshawVendorD3LayoutMinJs, map[string]*bintree{}},
+					"d3.v3.js":         &bintree{staticVendorRickshawVendorD3V3Js, map[string]*bintree{}},
 				}},
 			}},
 		}},
 	}},
-	"templates": {nil, map[string]*bintree{
-		"_base.html":  {templates_baseHtml, map[string]*bintree{}},
-		"alerts.html": {templatesAlertsHtml, map[string]*bintree{}},
-		"graph.html":  {templatesGraphHtml, map[string]*bintree{}},
-		"status.html": {templatesStatusHtml, map[string]*bintree{}},
+	"templates": &bintree{nil, map[string]*bintree{
+		"_base.html":  &bintree{templates_baseHtml, map[string]*bintree{}},
+		"alerts.html": &bintree{templatesAlertsHtml, map[string]*bintree{}},
+		"graph.html":  &bintree{templatesGraphHtml, map[string]*bintree{}},
+		"status.html": &bintree{templatesStatusHtml, map[string]*bintree{}},
 	}},
 }}
 
