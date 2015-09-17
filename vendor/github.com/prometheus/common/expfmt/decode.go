@@ -36,7 +36,7 @@ type DecodeOptions struct {
 	Timestamp model.Time
 }
 
-// NewDecor returns a new decoder based on the HTTP header.
+// NewDecoder returns a new decoder based on the HTTP header.
 func NewDecoder(r io.Reader, h http.Header) (Decoder, error) {
 	ct := h.Get(hdrContentType)
 
@@ -135,7 +135,7 @@ func ExtractSamples(o *DecodeOptions, fams ...*dto.MetricFamily) model.Vector {
 }
 
 func extractSamples(f *dto.MetricFamily, o *DecodeOptions) model.Vector {
-	switch *f.Type {
+	switch f.GetType() {
 	case dto.MetricType_COUNTER:
 		return extractCounter(o, f)
 	case dto.MetricType_GAUGE:
