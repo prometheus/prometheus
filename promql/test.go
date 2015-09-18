@@ -370,7 +370,7 @@ func (ev *evalCmd) compareResult(result model.Value) error {
 
 	case model.Vector:
 		if !ev.instant {
-			fmt.Errorf("received instant result on range evaluation")
+			return fmt.Errorf("received instant result on range evaluation")
 		}
 		seen := map[model.Fingerprint]bool{}
 		for pos, v := range val {
