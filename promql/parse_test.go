@@ -1084,7 +1084,7 @@ func TestNaNExpression(t *testing.T) {
 
 	if !math.IsNaN(float64(nl.Val)) {
 		t.Errorf("error on input 'NaN'")
-		t.Fatalf("expected 'NaN' in number literal but got %d", nl.Val)
+		t.Fatalf("expected 'NaN' in number literal but got %v", nl.Val)
 	}
 }
 

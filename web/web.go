@@ -173,7 +173,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
 
 	router.Get("/federate", instrh("federate", httputil.CompressionHandler{
-		http.HandlerFunc(h.federation),
+		Handler: http.HandlerFunc(h.federation),
 	}))
 
 	h.apiLegacy.Register(router.WithPrefix("/api"))
