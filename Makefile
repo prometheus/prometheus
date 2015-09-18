@@ -36,8 +36,9 @@ docker:
 	@docker build -t prometheus:$(shell git rev-parse --short HEAD) .
 
 assets:
+	@echo ">> writing assets"
 	@$(GO) get github.com/jteeuwen/go-bindata/...
 	@$(GO) generate ./web/blob
 
 
-.PHONY: format build test vet docker assets
+.PHONY: all format build test vet docker assets
