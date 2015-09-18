@@ -37,7 +37,7 @@ func TestRuleEval(t *testing.T) {
 	}{
 		{
 			name:   "nolabels",
-			expr:   &promql.NumberLiteral{1},
+			expr:   &promql.NumberLiteral{Val: 1},
 			labels: model.LabelSet{},
 			result: model.Vector{&model.Sample{
 				Value:     1,
@@ -47,7 +47,7 @@ func TestRuleEval(t *testing.T) {
 		},
 		{
 			name:   "labels",
-			expr:   &promql.NumberLiteral{1},
+			expr:   &promql.NumberLiteral{Val: 1},
 			labels: model.LabelSet{"foo": "bar"},
 			result: model.Vector{&model.Sample{
 				Value:     1,

@@ -88,7 +88,9 @@ func (api *API) Register(r *route.Router) {
 				respond(w, data)
 			}
 		})
-		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{hf})
+		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{
+			Handler: hf,
+		})
 	}
 
 	r.Get("/query", instr("query", api.query))
