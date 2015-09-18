@@ -36,7 +36,7 @@ Debian and RPM packages are being worked on.
 ### Building from source
 
 To build Prometheus from the source code yourself you need to have a working
-go environment with [version 1.5 or greater installed](http://golang.org/doc/install).
+Go environment with [version 1.5 or greater installed](http://golang.org/doc/install).
 
 You can directly use the `go` tool to download and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
@@ -53,7 +53,7 @@ You can also clone the repository yourself and build using `make`:
     $ make
     $ ./prometheus -config.file=your_config.yml
 
-The makefile provides several targets:
+The Makefile provides several targets:
 
   * *build*: build the `prometheus` and `promtool` binaries
   * *test*: run the tests
