@@ -247,9 +247,15 @@ func funcRound(ev *evaluator, args Expressions) model.Value {
 func funcScalar(ev *evaluator, args Expressions) model.Value {
 	v := ev.evalVector(args[0])
 	if len(v) != 1 {
-		return &model.Scalar{model.SampleValue(math.NaN()), ev.Timestamp}
+		return &model.Scalar{
+			Value:     model.SampleValue(math.NaN()),
+			Timestamp: ev.Timestamp,
+		}
 	}
-	return &model.Scalar{model.SampleValue(v[0].Value), ev.Timestamp}
+	return &model.Scalar{
+		Value:     model.SampleValue(v[0].Value),
+		Timestamp: ev.Timestamp,
+	}
 }
 
 // === count_scalar(vector model.ValVector) model.SampleValue ===
