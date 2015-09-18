@@ -53,7 +53,7 @@ All changes:
   discovery.
 * [FEATURE] Allow scalar expressions in recording rules to enable use cases
   such as building constant metrics.
-* [FEATURE] Add `label_replace()` query language function.
+* [FEATURE] Add `label_replace()` and `vector()` query language functions.
 * [FEATURE] In Consul service discovery, fill in the `__meta_consul_dc`
   datacenter label from the Consul agent when it's not set in the Consul SD
   config.
