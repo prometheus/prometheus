@@ -41,7 +41,7 @@ func (e encoder) Encode(v *dto.MetricFamily) error {
 func Negotiate(h http.Header) Format {
 	for _, ac := range goautoneg.ParseAccept(h.Get(hdrAccept)) {
 		// Check for protocol buffer
-		if ac.Type == ProtoType && ac.SubType == ProtoSubType && ac.Params["proto"] == ProtoProtocol {
+		if ac.Type+"/"+ac.SubType == ProtoType && ac.Params["proto"] == ProtoProtocol {
 			switch ac.Params["encoding"] {
 			case "delimited":
 				return FmtProtoDelim
