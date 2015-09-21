@@ -114,3 +114,9 @@ scrape_configs:
   marathon_sd_configs:
   - servers:
     - 'http://marathon.example.com:8080'
+
+- job_name: service-ec2
+  ec2_sd_configs:
+    - region: us-east-1
+      access_key: access
+      secret_key: secret

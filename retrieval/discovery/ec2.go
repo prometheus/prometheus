@@ -1,0 +1,131 @@
+// Copyright 2015 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package discovery
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/model"
+
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/strutil"
+)
+
+const (
+	ec2Label           = model.MetaLabelPrefix + "ec2_"
+	ec2LabelInstanceID = ec2Label + "instance_id"
+	ec2LabelPublicIP   = ec2Label + "public_ip"
+	ec2LabelPrivateIP  = ec2Label + "private_ip"
+	ec2LabelTag        = ec2Label + "tag_"
+)
+
+// EC2Discovery periodically performs EC2-SD requests. It implements
+// the TargetProvider interface.
+type EC2Discovery struct {
+	aws      *aws.Config
+	done     chan struct{}
+	interval time.Duration
+	port     int
+}
+
+// NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
+func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
+	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
+	if conf.AccessKey == "" && conf.SecretKey == "" {
+		creds = credentials.NewEnvCredentials()
+	}
+	return &EC2Discovery{
+		aws: &aws.Config{
+			Region:      &conf.Region,
+			Credentials: creds,
+		},
+		done:     make(chan struct{}),
+		interval: time.Duration(conf.RefreshInterval),
+		port:     conf.Port,
+	}
+}
+
+// Run implements the TargetProvider interface.
+func (ed *EC2Discovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+	defer close(ch)
+
+	ticker := time.NewTicker(ed.interval)
+	defer ticker.Stop()
+
+	// Get an initial set right away.
+	tg, err := ed.refresh()
+	if err != nil {
+		log.Error(err)
+	} else {
+		ch <- tg
+	}
+
+	for {
+		select {
+		case <-ticker.C:
+			tg, err := ed.refresh()
+			if err != nil {
+				log.Error(err)
+			} else {
+				ch <- tg
+			}
+		case <-done:
+			return
+		}
+	}
+}
+
+// Sources implements the TargetProvider interface.
+func (ed *EC2Discovery) Sources() []string {
+	return []string{*ed.aws.Region}
+}
+
+func (ed *EC2Discovery) refresh() (*config.TargetGroup, error) {
+	ec2s := ec2.New(ed.aws)
+	tg := &config.TargetGroup{
+		Source: *ed.aws.Region,
+	}
+	if err := ec2s.DescribeInstancesPages(nil, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+		for _, r := range p.Reservations {
+			for _, inst := range r.Instances {
+				if inst.PrivateIpAddress == nil {
+					continue
+				}
+				labels := model.LabelSet{
+					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
+				}
+				if inst.PublicIpAddress != nil {
+					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
+				}
+				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
+				addr := fmt.Sprintf("%s:%d", *inst.PrivateIpAddress, ed.port)
+				labels[model.AddressLabel] = model.LabelValue(addr)
+				for _, t := range inst.Tags {
+					name := strutil.SanitizeLabelName(*t.Key)
+					labels[ec2LabelTag+model.LabelName(name)] = model.LabelValue(*t.Value)
+				}
+				tg.Targets = append(tg.Targets, labels)
+			}
+		}
+		return true
+	}); err != nil {
+		return nil, fmt.Errorf("could not describe instances: %s", err)
+	}
+	return tg, nil
+}
