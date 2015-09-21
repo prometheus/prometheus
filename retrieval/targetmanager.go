@@ -438,6 +438,9 @@ func providersFromConfig(cfg *config.ScrapeConfig) []TargetProvider {
 	for i, c := range cfg.ServersetSDConfigs {
 		app("serverset", i, discovery.NewServersetDiscovery(c))
 	}
+	for i, c := range cfg.EC2SDConfigs {
+		app("ec2", i, discovery.NewEC2Discovery(c))
+	}
 	if len(cfg.TargetGroups) > 0 {
 		app("static", 0, NewStaticProvider(cfg.TargetGroups))
 	}
