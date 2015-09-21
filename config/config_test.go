@@ -274,6 +274,9 @@ var expectedErrors = []struct {
 		filename: "jobname_dup.bad.yml",
 		errMsg:   `found multiple scrape configs with job name "prometheus"`,
 	}, {
+		filename: "scrape_interval.bad.yml",
+		errMsg:   `scrape timeout greater than scrape interval`,
+	}, {
 		filename: "labelname.bad.yml",
 		errMsg:   `"not$allowed" is not a valid label name`,
 	}, {

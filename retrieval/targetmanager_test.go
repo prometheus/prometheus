@@ -89,7 +89,7 @@ func TestTargetManagerChan(t *testing.T) {
 	}
 
 	targetManager := &TargetManager{
-		sampleAppender: nopAppender{},
+		pool: NewScrapePool(nopAppender{}),
 		providers: map[*config.ScrapeConfig][]TargetProvider{
 			testJob1: {prov1},
 		},
@@ -174,7 +174,7 @@ func TestTargetManagerChan(t *testing.T) {
 	for i, step := range sequence {
 		prov1.update <- step.tgroup
 
-		<-time.After(1 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond)
 
 		if len(targetManager.targets) != len(step.expected) {
 			t.Fatalf("step %d: sources mismatch %v, %v", i, targetManager.targets, step.expected)
@@ -379,6 +379,18 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 func TestHandleUpdatesReturnsWhenUpdateChanIsClosed(t *testing.T) {
 	tm := NewTargetManager(nopAppender{})
 	ch := make(chan targetGroupUpdate)
+
 	close(ch)
-	tm.handleUpdates(ch, make(chan struct{}))
+
+	exited := make(chan struct{})
+	go func() {
+		tm.handleUpdates(ch, make(chan struct{}))
+		close(exited)
+	}()
+
+	select {
+	case <-exited:
+	case <-time.After(time.Second):
+		t.Fatalf("handleUpdates did not exit on closed update channel")
+	}
 }

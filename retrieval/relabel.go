@@ -55,10 +55,12 @@ func relabel(labels model.LabelSet, cfg *config.RelabelConfig) (model.LabelSet, 
 		if cfg.Regex.MatchString(val) {
 			return nil, nil
 		}
+
 	case config.RelabelKeep:
 		if !cfg.Regex.MatchString(val) {
 			return nil, nil
 		}
+
 	case config.RelabelReplace:
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
 		// If there is no match no replacement must take place.
@@ -71,9 +73,11 @@ func relabel(labels model.LabelSet, cfg *config.RelabelConfig) (model.LabelSet, 
 		} else {
 			labels[cfg.TargetLabel] = model.LabelValue(res)
 		}
+
 	case config.RelabelHashMod:
 		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
 		labels[cfg.TargetLabel] = model.LabelValue(fmt.Sprintf("%d", mod))
+
 	case config.RelabelLabelMap:
 		out := make(model.LabelSet, len(labels))
 		// Take a copy to avoid infinite loops.
@@ -87,6 +91,7 @@ func relabel(labels model.LabelSet, cfg *config.RelabelConfig) (model.LabelSet, 
 			}
 		}
 		labels = out
+
 	default:
 		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
 	}
