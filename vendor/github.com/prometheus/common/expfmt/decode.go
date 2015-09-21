@@ -36,13 +36,13 @@ type DecodeOptions struct {
 	Timestamp model.Time
 }
 
-// NewDecoder returns a new decoder based on the HTTP header.
-func NewDecoder(r io.Reader, h http.Header) (Decoder, error) {
+// ResponseFormat extracts the correct format from a HTTP response header.
+func ResponseFormat(h http.Header) (Format, error) {
 	ct := h.Get(hdrContentType)
 
 	mediatype, params, err := mime.ParseMediaType(ct)
 	if err != nil {
-		return nil, fmt.Errorf("invalid Content-Type header %q: %s", ct, err)
+		return "", fmt.Errorf("invalid Content-Type header %q: %s", ct, err)
 	}
 
 	const (
@@ -53,22 +53,32 @@ func NewDecoder(r io.Reader, h http.Header) (Decoder, error) {
 	switch mediatype {
 	case protoType:
 		if p := params["proto"]; p != ProtoProtocol {
-			return nil, fmt.Errorf("unrecognized protocol message %s", p)
+			return "", fmt.Errorf("unrecognized protocol message %s", p)
 		}
 		if e := params["encoding"]; e != "delimited" {
-			return nil, fmt.Errorf("unsupported encoding %s", e)
+			return "", fmt.Errorf("unsupported encoding %s", e)
 		}
-		return &protoDecoder{r: r}, nil
+		return FmtProtoDelim, nil
 
 	case textType:
 		if v, ok := params["version"]; ok && v != "0.0.4" {
-			return nil, fmt.Errorf("unrecognized protocol version %s", v)
+			return "", fmt.Errorf("unrecognized protocol version %s", v)
 		}
-		return &textDecoder{r: r}, nil
-
-	default:
-		return nil, fmt.Errorf("unsupported media type %q, expected %q or %q", mediatype, protoType, textType)
+		return FmtText, nil
 	}
+
+	return "", fmt.Errorf("unsupported media type %q, expected %q or %q", mediatype, protoType, textType)
+}
+
+// NewDecoder returns a new decoder based on the HTTP header.
+func NewDecoder(r io.Reader, format Format) (Decoder, error) {
+	switch format {
+	case FmtProtoDelim:
+		return &protoDecoder{r: r}, nil
+	case FmtText:
+		return &textDecoder{r: r}, nil
+	}
+	return nil, fmt.Errorf("unsupported decoding format %q", format)
 }
 
 // protoDecoder implements the Decoder interface for protocol buffers.

@@ -443,7 +443,11 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 		return fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
-	dec, err := expfmt.NewDecoder(resp.Body, resp.Header)
+	respfmt, err := expfmt.ResponseFormat(resp.Header)
+	if err != nil {
+		return err
+	}
+	dec, err := expfmt.NewDecoder(resp.Body, respfmt)
 	if err != nil {
 		return err
 	}
