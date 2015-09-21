@@ -687,7 +687,7 @@ func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch act := RelabelAction(strings.ToLower(s)); act {
-	case RelabelReplace, RelabelKeep, RelabelDrop, RelabelHashMod:
+	case RelabelReplace, RelabelKeep, RelabelDrop, RelabelHashMod, RelabelLabelMap:
 		*a = act
 		return nil
 	}

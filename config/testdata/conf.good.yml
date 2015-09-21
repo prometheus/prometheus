@@ -80,6 +80,8 @@ scrape_configs:
   - source_labels: [__tmp_hash]
     regex:         1
     action:        keep
+  - action:        labelmap
+    regex:         1
 
   metric_relabel_configs:
   - source_labels: [__name__]
