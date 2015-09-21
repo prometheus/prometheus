@@ -143,6 +143,11 @@ var expectedConf = &Config{
 					Separator:    ";",
 					Action:       RelabelKeep,
 				},
+				{
+					Regex:     MustNewRegexp("1"),
+					Separator: ";",
+					Action:    RelabelLabelMap,
+				},
 			},
 			MetricRelabelConfigs: []*RelabelConfig{
 				{
