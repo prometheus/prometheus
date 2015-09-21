@@ -33,7 +33,7 @@ var (
 	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
-	patAuthLine   = regexp.MustCompile(`((?:username|password|bearer_token):\s+)(".+"|'.+'|[^\s]+)`)
+	patAuthLine   = regexp.MustCompile(`((?:username|password|bearer_token|secret_key):\s+)(".+"|'.+'|[^\s]+)`)
 )
 
 // Load parses the YAML input s into a Config.
@@ -127,6 +127,12 @@ var (
 		KubeletPort:    10255,
 		RequestTimeout: Duration(10 * time.Second),
 		RetryInterval:  Duration(1 * time.Second),
+	}
+
+	// DefaultEC2SDConfig is the default EC2 SD configuration.
+	DefaultEC2SDConfig = EC2SDConfig{
+		Port:            80,
+		RefreshInterval: Duration(60 * time.Second),
 	}
 )
 
@@ -351,6 +357,8 @@ type ScrapeConfig struct {
 	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
+	// List of EC2 service discovery configurations.
+	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -662,6 +670,31 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	}
 
 	return checkOverflow(c.XXX, "kubernetes_sd_config")
+}
+
+// EC2SDConfig is the configuration for EC2 based service discovery.
+type EC2SDConfig struct {
+	Region          string   `yaml:"region"`
+	AccessKey       string   `yaml:"access_key,omitempty"`
+	SecretKey       string   `yaml:"secret_key,omitempty"`
+	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
+	Port            int      `yaml:"port"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultEC2SDConfig
+	type plain EC2SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if c.Region == "" {
+		return fmt.Errorf("EC2 SD configuration requires a region")
+	}
+	return checkOverflow(c.XXX, "ec2_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.

@@ -230,6 +230,25 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-ec2",
+
+			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			EC2SDConfigs: []*EC2SDConfig{
+				{
+					Region:          "us-east-1",
+					AccessKey:       "access",
+					SecretKey:       "secret",
+					RefreshInterval: Duration(60 * time.Second),
+					Port:            80,
+				},
+			},
+		},
 	},
 	original: "",
 }
