@@ -41,9 +41,6 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (int, error) {
 	if name == "" {
 		return written, fmt.Errorf("MetricFamily has no name: %s", in)
 	}
-	if in.Type == nil {
-		return written, fmt.Errorf("MetricFamily has no type: %s", in)
-	}
 
 	// Comments, first HELP, then TYPE.
 	if in.Help != nil {

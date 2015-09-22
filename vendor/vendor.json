@@ -74,8 +74,8 @@
 		},
 		{
 			"path": "github.com/prometheus/common/expfmt",
-			"revision": "e5bcf05f3c1b99df9892e773349e88d038f0e93c",
-			"revisionTime": "2015-09-17T12:22:22+02:00"
+			"revision": "51d43993bd4018e9470540600641285cad786840",
+			"revisionTime": "2015-09-22T12:03:38+02:00"
 		},
 		{
 			"path": "github.com/prometheus/common/model",
