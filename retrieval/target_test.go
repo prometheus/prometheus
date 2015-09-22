@@ -103,7 +103,7 @@ func TestOverwriteLabels(t *testing.T) {
 		},
 	}
 
-	target := newTestTarget(server.URL, 10*time.Millisecond, nil)
+	target := newTestTarget(server.URL, time.Second, nil)
 
 	target.honorLabels = false
 	app := &collectResultAppender{}
@@ -154,7 +154,9 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	)
 	defer server.Close()
 
-	testTarget := newTestTarget(server.URL, 10*time.Millisecond, model.LabelSet{"dings": "bums"})
+	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{"dings": "bums"})
+	// Affects full channel but not HTTP fetch
+	testTarget.deadline = 0
 
 	testTarget.scrape(slowAppender{})
 	if testTarget.status.Health() != HealthBad {
@@ -176,7 +178,7 @@ func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
 		),
 	)
 	defer server.Close()
-	testTarget := newTestTarget(server.URL, 10*time.Millisecond, model.LabelSet{})
+	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{})
 	testTarget.metricRelabelConfigs = []*config.RelabelConfig{
 		{
 			SourceLabels: model.LabelNames{"__name__"},
@@ -337,7 +339,7 @@ func TestTargetScrape404(t *testing.T) {
 	)
 	defer server.Close()
 
-	testTarget := newTestTarget(server.URL, 10*time.Millisecond, model.LabelSet{})
+	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{})
 	appender := nopAppender{}
 
 	want := errors.New("server returned HTTP status 404 Not Found")
@@ -380,7 +382,7 @@ func BenchmarkScrape(b *testing.B) {
 	)
 	defer server.Close()
 
-	testTarget := newTestTarget(server.URL, 100*time.Millisecond, model.LabelSet{"dings": "bums"})
+	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{"dings": "bums"})
 	appender := nopAppender{}
 
 	b.ResetTimer()
