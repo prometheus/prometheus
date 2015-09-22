@@ -195,6 +195,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService, done <-ch
 		if err != nil {
 			log.Errorf("Error refreshing service list: %s", err)
 			time.Sleep(consulRetryInterval)
+			continue
 		}
 		// If the index equals the previous one, the watch timed out with no update.
 		if meta.LastIndex == lastIndex {
