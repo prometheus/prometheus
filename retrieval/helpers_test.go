@@ -30,7 +30,6 @@ type slowAppender struct{}
 
 func (a slowAppender) Append(*model.Sample) {
 	time.Sleep(time.Millisecond)
-	return
 }
 
 type collectResultAppender struct {
