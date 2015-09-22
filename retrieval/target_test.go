@@ -154,7 +154,7 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	)
 	defer server.Close()
 
-	testTarget := newTestTarget(server.URL, 10*time.Millisecond, model.LabelSet{"dings": "bums"})
+	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{"dings": "bums"})
 
 	testTarget.scrape(slowAppender{})
 	if testTarget.status.Health() != HealthBad {
