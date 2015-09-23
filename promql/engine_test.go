@@ -12,7 +12,7 @@ var noop = testStmt(func(context.Context) error {
 	return nil
 })
 
-func TestQueryConcurreny(t *testing.T) {
+func TestQueryConcurrency(t *testing.T) {
 	engine := NewEngine(nil, nil)
 	defer engine.Stop()
 
@@ -31,7 +31,7 @@ func TestQueryConcurreny(t *testing.T) {
 		select {
 		case <-processing:
 			// Expected.
-		case <-time.After(5 * time.Millisecond):
+		case <-time.After(20 * time.Millisecond):
 			t.Fatalf("Query within concurrency threshold not being executed")
 		}
 	}
@@ -42,7 +42,7 @@ func TestQueryConcurreny(t *testing.T) {
 	select {
 	case <-processing:
 		t.Fatalf("Query above concurrency threhosld being executed")
-	case <-time.After(5 * time.Millisecond):
+	case <-time.After(20 * time.Millisecond):
 		// Expected.
 	}
 
@@ -52,7 +52,7 @@ func TestQueryConcurreny(t *testing.T) {
 	select {
 	case <-processing:
 		// Expected.
-	case <-time.After(5 * time.Millisecond):
+	case <-time.After(20 * time.Millisecond):
 		t.Fatalf("Query within concurrency threshold not being executed")
 	}
 
