@@ -195,7 +195,9 @@ func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
 	}
 
 	appender := &collectResultAppender{}
-	testTarget.scrape(appender)
+	if err := testTarget.scrape(appender); err != nil {
+		t.Fatal(err)
+	}
 
 	// Remove variables part of result.
 	for _, sample := range appender.result {
