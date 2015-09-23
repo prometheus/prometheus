@@ -174,7 +174,7 @@ func TestTargetManagerChan(t *testing.T) {
 	for i, step := range sequence {
 		prov1.update <- step.tgroup
 
-		<-time.After(1 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 
 		if len(targetManager.targets) != len(step.expected) {
 			t.Fatalf("step %d: sources mismatch %v, %v", i, targetManager.targets, step.expected)
