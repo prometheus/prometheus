@@ -80,6 +80,11 @@ func (r *Router) Del(path string, h http.HandlerFunc) {
 	r.rtr.DELETE(r.prefix+path, handle(h))
 }
 
+// Put registers a new PUT route.
+func (r *Router) Put(path string, h http.HandlerFunc) {
+	r.rtr.PUT(r.prefix+path, handle(h))
+}
+
 // Post registers a new POST route.
 func (r *Router) Post(path string, h http.HandlerFunc) {
 	r.rtr.POST(r.prefix+path, handle(h))

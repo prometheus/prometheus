@@ -22,10 +22,10 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/util/route"
 )
 
 // This is a bit annoying. On one hand, we have to choose a current timestamp
