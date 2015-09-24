@@ -83,6 +83,11 @@
 			"revisionTime": "2015-08-25T14:37:19+02:00"
 		},
 		{
+			"path": "github.com/prometheus/common/route",
+			"revision": "ffd5d0f2976124c788687ec2ac194f5479e1f9c2",
+			"revisionTime": "2015-09-24T17:06:36+02:00"
+		},
+		{
 			"path": "github.com/prometheus/log",
 			"revision": "439e5db48fbb50ebbaf2c816030473a62f505f55",
 			"revisionTime": "2015-05-29T14:22:02+02:00"
