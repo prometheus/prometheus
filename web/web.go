@@ -33,6 +33,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/route"
 	"github.com/prometheus/log"
 
 	"github.com/prometheus/prometheus/config"
@@ -42,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/util/route"
 	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web/api/legacy"
 	"github.com/prometheus/prometheus/web/api/v1"
