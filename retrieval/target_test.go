@@ -357,17 +357,17 @@ func TestTargetRunScraperScrapes(t *testing.T) {
 	go testTarget.RunScraper(nopAppender{})
 
 	// Enough time for a scrape to happen.
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	if testTarget.status.LastScrape().IsZero() {
 		t.Errorf("Scrape hasn't occured.")
 	}
 
 	testTarget.StopScraper()
 	// Wait for it to take effect.
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	last := testTarget.status.LastScrape()
 	// Enough time for a scrape to happen.
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	if testTarget.status.LastScrape() != last {
 		t.Errorf("Scrape occured after it was stopped.")
 	}
