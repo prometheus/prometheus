@@ -1,22 +1,17 @@
-# A scrape configuration containing exactly one endpoint to scrape:
-# Here it's Prometheus itself.
-global:
-  scrape_interval:     15s # By default, scrape targets every 15 seconds.
-  evaluation_interval: 15s # By default, scrape targets every 15 seconds.
-  scrape_timeout: 10s
+# A scrape configuration for running prometheus in cluster on kubernetes. It
+# will create endpoints for node and master roles, as well as any service
+# which is annotated with `prometheus_io_scrape=true`
 
 scrape_configs:
 - job_name: 'kubernetes'
-
-  tls_config:
-    ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-
-  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:
   - masters:
     - 'https://kubernetes.default.svc'
     in_cluster: true
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   relabel_configs:
   - source_labels: [__meta_kubernetes_role, __meta_kubernetes_service_annotation_prometheus_io_scrape]
