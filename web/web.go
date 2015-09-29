@@ -67,8 +67,8 @@ type Handler struct {
 	options     *Options
 	statusInfo  *PrometheusStatus
 
-	globalLabels model.LabelSet
-	mtx          sync.RWMutex
+	externalLabels model.LabelSet
+	mtx            sync.RWMutex
 }
 
 // ApplyConfig updates the status state as the new config requires.
@@ -77,7 +77,7 @@ func (h *Handler) ApplyConfig(conf *config.Config) bool {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
-	h.globalLabels = conf.GlobalConfig.Labels
+	h.externalLabels = conf.GlobalConfig.ExternalLabels
 
 	return true
 }

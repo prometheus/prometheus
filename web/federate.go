@@ -80,13 +80,13 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				Name:  proto.String(string(ln)),
 				Value: proto.String(string(lv)),
 			})
-			if _, ok := h.globalLabels[ln]; ok {
+			if _, ok := h.externalLabels[ln]; ok {
 				globalUsed[ln] = struct{}{}
 			}
 		}
 
 		// Attach global labels if they do not exist yet.
-		for ln, lv := range h.globalLabels {
+		for ln, lv := range h.externalLabels {
 			if _, ok := globalUsed[ln]; !ok {
 				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
 					Name:  proto.String(string(ln)),

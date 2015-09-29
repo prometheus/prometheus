@@ -30,9 +30,9 @@ import (
 
 // Storage collects multiple remote storage queues.
 type Storage struct {
-	queues       []*StorageQueueManager
-	globalLabels model.LabelSet
-	mtx          sync.RWMutex
+	queues         []*StorageQueueManager
+	externalLabels model.LabelSet
+	mtx            sync.RWMutex
 }
 
 // ApplyConfig updates the status state as the new config requires.
@@ -41,7 +41,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) bool {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	s.globalLabels = conf.GlobalConfig.Labels
+	s.externalLabels = conf.GlobalConfig.ExternalLabels
 	return true
 }
 
@@ -102,7 +102,7 @@ func (s *Storage) Append(smpl *model.Sample) {
 	snew = *smpl
 	snew.Metric = smpl.Metric.Clone()
 
-	for ln, lv := range s.globalLabels {
+	for ln, lv := range s.externalLabels {
 		if _, ok := smpl.Metric[ln]; !ok {
 			snew.Metric[ln] = lv
 		}
