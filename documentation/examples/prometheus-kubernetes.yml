@@ -9,9 +9,6 @@ scrape_configs:
   - masters:
     - 'https://kubernetes.default.svc'
     in_cluster: true
-    tls_config:
-      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   relabel_configs:
   - source_labels: [__meta_kubernetes_role, __meta_kubernetes_service_annotation_prometheus_io_scrape]
@@ -32,3 +29,6 @@ scrape_configs:
     target_label: __address__
     regex: ^(.+)(?::\d+);(\d+)$
     replacement: $1:$2
+  - action: labelmap
+    regex: ^__meta_kubernetes_service_label_(.+)$
+    replacement: $1
