@@ -51,6 +51,7 @@ type TargetProvider interface {
 // target providers.
 type TargetManager struct {
 	mtx            sync.RWMutex
+	globalLabels   model.LabelSet
 	sampleAppender storage.SampleAppender
 	running        bool
 	done           chan struct{}
@@ -355,6 +356,7 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
 	tm.mtx.Lock()
 	defer tm.mtx.Unlock()
 
+	tm.globalLabels = cfg.GlobalConfig.Labels
 	tm.providers = providers
 	return true
 }
@@ -479,6 +481,7 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 				model.MetricsPathLabel: model.LabelValue(cfg.MetricsPath),
 				model.JobLabel:         model.LabelValue(cfg.JobName),
 			},
+			tm.globalLabels,
 		}
 		for _, lset := range labelsets {
 			for ln, lv := range lset {

@@ -15,7 +15,6 @@ package remote
 
 import (
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,26 +22,13 @@ import (
 
 	influx "github.com/influxdb/influxdb/client"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 )
 
 // Storage collects multiple remote storage queues.
 type Storage struct {
-	queues       []*StorageQueueManager
-	globalLabels model.LabelSet
-	mtx          sync.RWMutex
-}
-
-// ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (s *Storage) ApplyConfig(conf *config.Config) bool {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
-	s.globalLabels = conf.GlobalConfig.Labels
-	return true
+	queues []*StorageQueueManager
 }
 
 // New returns a new remote Storage.
@@ -96,21 +82,8 @@ func (s *Storage) Stop() {
 
 // Append implements storage.SampleAppender.
 func (s *Storage) Append(smpl *model.Sample) {
-	s.mtx.RLock()
-
-	var snew model.Sample
-	snew = *smpl
-	snew.Metric = smpl.Metric.Clone()
-
-	for ln, lv := range s.globalLabels {
-		if _, ok := smpl.Metric[ln]; !ok {
-			snew.Metric[ln] = lv
-		}
-	}
-	s.mtx.RUnlock()
-
 	for _, q := range s.queues {
-		q.Append(&snew)
+		q.Append(smpl)
 	}
 }
 

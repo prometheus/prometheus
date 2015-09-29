@@ -55,10 +55,10 @@ var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 type Handler struct {
 	ruleManager *rules.Manager
 	queryEngine *promql.Engine
-	storage     local.Storage
 
-	apiV1     *v1.API
-	apiLegacy *legacy.API
+	apiV1      *v1.API
+	apiLegacy  *legacy.API
+	federation *Federation
 
 	router      *route.Router
 	listenErrCh chan error
@@ -67,19 +67,7 @@ type Handler struct {
 	options     *Options
 	statusInfo  *PrometheusStatus
 
-	globalLabels model.LabelSet
-	mtx          sync.RWMutex
-}
-
-// ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (h *Handler) ApplyConfig(conf *config.Config) bool {
-	h.mtx.Lock()
-	defer h.mtx.Unlock()
-
-	h.globalLabels = conf.GlobalConfig.Labels
-
-	return true
+	muAlerts sync.Mutex
 }
 
 // PrometheusStatus contains various information about the status
@@ -102,10 +90,8 @@ type PrometheusStatus struct {
 // Returns true on success.
 func (s *PrometheusStatus) ApplyConfig(conf *config.Config) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.Config = conf.String()
-
+	s.mu.Unlock()
 	return true
 }
 
@@ -135,7 +121,6 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 
 		ruleManager: rm,
 		queryEngine: qe,
-		storage:     st,
 
 		apiV1: &v1.API{
 			QueryEngine: qe,
@@ -145,6 +130,9 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 			QueryEngine: qe,
 			Storage:     st,
 			Now:         model.Now,
+		},
+		federation: &Federation{
+			Storage: st,
 		},
 	}
 
@@ -173,7 +161,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
 
 	router.Get("/federate", instrh("federate", httputil.CompressionHandler{
-		Handler: http.HandlerFunc(h.federation),
+		Handler: h.federation,
 	}))
 
 	h.apiLegacy.Register(router.WithPrefix("/api"))
@@ -225,6 +213,9 @@ func (h *Handler) Run() {
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
+	h.muAlerts.Lock()
+	defer h.muAlerts.Unlock()
+
 	alerts := h.ruleManager.AlertingRules()
 	alertsSorter := byAlertStateSorter{alerts: alerts}
 	sort.Sort(alertsSorter)
