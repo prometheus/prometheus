@@ -80,3 +80,13 @@ scrape_configs:
     regex: ^(.+)$
     target_label: kubernetes_role
     replacement: $1
+  - source_labels: [__meta_kubernetes_service_namespace]
+    action: replace
+    regex: ^(.+)$
+    target_label: kubernetes_namespace
+    replacement: $1
+  - source_labels: [__meta_kubernetes_service_name]
+    action: replace
+    regex: ^(.+)$
+    target_label: kubernetes_name
+    replacement: $1
