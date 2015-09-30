@@ -6,7 +6,7 @@ BREAKING CHANGES:
 
 All changes:
 
-* [CHANGE] Renamed `lobal.labels` to `global.external_labels`.
+* [CHANGE] Renamed `global.labels` to `global.external_labels`.
 * [ENHANCEMENT] Several flaky tests fixed.
 * [ENHANCEMENT] Switched to common routing package.
 * [ENHANCEMENT] Usage of more resilient metric decoder.
