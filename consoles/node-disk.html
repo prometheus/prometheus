@@ -64,7 +64,7 @@
     expr: "100 - node_filesystem_free{job='node',instance='{{ .Params.instance }}'} / node_filesystem_size{job='node'} * 100",
     min: 0,
     max: 100,
-    name: '[[ filesystem ]]',
+    name: '[[ mountpoint ]]',
     yUnits: "%",
     yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
