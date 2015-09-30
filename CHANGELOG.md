@@ -2,20 +2,20 @@
 
 BREAKING CHANGES:
 
-* [CHANGE] Renamed global.labels to global.external_labels
+* [CHANGE] Renamed `global.labels` to `global.external_labels`.
 
 All changes:
 
-* [BUGFIX] Fix high CPU usage on configuration reload
-* [BUGFIX] Fix disappearing __params on configuration reload
-* [CHANGE] Renamed global.labels to global.external_labels
-* [BUGFIX] Make labelmap action available through configuration
-* [ENHANCEMENT] Several flaky tests fixed
-* [ENHANCEMENT] Switched to common routing package
-* [BUGFIX] Fix direct access of protobuf fields
-* [BUGFIX] Fix panic on Consul request error
-* [ENHANCEMENT] Usage of more resilient metric decoder
-* [BUGFIX] Redirect of graph endpoint for prefixed setups
+* [CHANGE] Renamed `lobal.labels` to `global.external_labels`.
+* [ENHANCEMENT] Several flaky tests fixed.
+* [ENHANCEMENT] Switched to common routing package.
+* [ENHANCEMENT] Usage of more resilient metric decoder.
+* [BUGFIX] Fix high CPU usage on configuration reload.
+* [BUGFIX] Fix disappearing `__params` on configuration reload.
+* [BUGFIX] Make `labelmap` action available through configuration.
+* [BUGFIX] Fix direct access of protobuf fields.
+* [BUGFIX] Fix panic on Consul request error.
+* [BUGFIX] Redirect of graph endpoint for prefixed setups.
 
 ## 0.16.0rc1 / 2015-09-18
 
