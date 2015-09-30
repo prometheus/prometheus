@@ -110,7 +110,7 @@ func TestUnquote(t *testing.T) {
 		}
 	}
 
-	// run the quote tests too, backward
+	// Run the quote tests too, backward.
 	for _, tt := range quotetests {
 		if in, err := Unquote(tt.out); in != tt.in {
 			t.Errorf("Unquote(%#q) = %q, %v, want %q, nil", tt.out, in, err, tt.in)

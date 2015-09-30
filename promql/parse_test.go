@@ -1016,6 +1016,54 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `no valid expression found`,
 	},
+	// String quoting and escape sequence interpretation tests.
+	{
+		input: `"double-quoted string \" with escaped quote"`,
+		expected: &StringLiteral{
+			Val: "double-quoted string \" with escaped quote",
+		},
+	}, {
+		input: `'single-quoted string \' with escaped quote'`,
+		expected: &StringLiteral{
+			Val: "single-quoted string ' with escaped quote",
+		},
+	}, {
+		input: "`backtick-quoted string`",
+		expected: &StringLiteral{
+			Val: "backtick-quoted string",
+		},
+	}, {
+		input: `"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"`,
+		expected: &StringLiteral{
+			Val: "\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺",
+		},
+	}, {
+		input: `'\a\b\f\n\r\t\v\\\' - \xFF\377\u1234\U00010111\U0001011111☺'`,
+		expected: &StringLiteral{
+			Val: "\a\b\f\n\r\t\v\\' - \xFF\377\u1234\U00010111\U0001011111☺",
+		},
+	}, {
+		input: "`" + `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺` + "`",
+		expected: &StringLiteral{
+			Val: `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺`,
+		},
+	}, {
+		input:  "`\\``",
+		fail:   true,
+		errMsg: "could not parse remaining input",
+	}, {
+		input:  `"\`,
+		fail:   true,
+		errMsg: "escape sequence not terminated",
+	}, {
+		input:  `"\c"`,
+		fail:   true,
+		errMsg: "unknown escape sequence U+0063 'c'",
+	}, {
+		input:  `"\x."`,
+		fail:   true,
+		errMsg: "illegal character U+002E '.' in escape sequence",
+	},
 }
 
 func TestParseExpressions(t *testing.T) {
