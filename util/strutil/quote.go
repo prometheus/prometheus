@@ -28,7 +28,9 @@ var ErrSyntax = errors.New("invalid syntax")
 // NOTE: This function as well as the necessary helper functions below
 // (unquoteChar, contains, unhex) and associated tests have been adapted from
 // the corresponding functions in the "strconv" package of the Go standard
-// library to work for Prometheus-style strings.
+// library to work for Prometheus-style strings. Go's special-casing for single
+// quotes was removed and single quoted strings are now treated the same as
+// double quoted ones.
 func Unquote(s string) (t string, err error) {
 	n := len(s)
 	if n < 2 {
@@ -103,7 +105,7 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 		return rune(s[0]), false, s[1:], nil
 	}
 
-	// hard case: c is backslash
+	// Hard case: c is backslash.
 	if len(s) <= 1 {
 		err = ErrSyntax
 		return
@@ -151,7 +153,7 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 		}
 		s = s[n:]
 		if c == 'x' {
-			// single-byte string, possibly not UTF-8
+			// Single-byte string, possibly not UTF-8.
 			value = v
 			break
 		}
@@ -167,7 +169,7 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 			err = ErrSyntax
 			return
 		}
-		for j := 0; j < 2; j++ { // one digit already; two more
+		for j := 0; j < 2; j++ { // One digit already; two more.
 			x := rune(s[j]) - '0'
 			if x < 0 || x > 7 {
 				err = ErrSyntax

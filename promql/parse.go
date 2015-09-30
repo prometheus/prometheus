@@ -43,9 +43,9 @@ type ParseErr struct {
 
 func (e *ParseErr) Error() string {
 	if e.Line == 0 {
-		return fmt.Sprintf("Parse error at char %d: %s", e.Pos, e.Err)
+		return fmt.Sprintf("parse error at char %d: %s", e.Pos, e.Err)
 	}
-	return fmt.Sprintf("Parse error at line %d, char %d: %s", e.Line, e.Pos, e.Err)
+	return fmt.Sprintf("parse error at line %d, char %d: %s", e.Line, e.Pos, e.Err)
 }
 
 // ParseStmts parses the input and returns the resulting statements or any ocurring error.
@@ -401,21 +401,21 @@ Loop:
 				p.errorf("summary must not be defined twice")
 			}
 			hasSum = true
-			sum = trimOne(p.expect(itemString, ctx).val)
+			sum = p.unquoteString(p.expect(itemString, ctx).val)
 
 		case itemDescription:
 			if hasDesc {
 				p.errorf("description must not be defined twice")
 			}
 			hasDesc = true
-			desc = trimOne(p.expect(itemString, ctx).val)
+			desc = p.unquoteString(p.expect(itemString, ctx).val)
 
 		case itemRunbook:
 			if hasRunbook {
 				p.errorf("runbook must not be defined twice")
 			}
 			hasRunbook = true
-			runbook = trimOne(p.expect(itemString, ctx).val)
+			runbook = p.unquoteString(p.expect(itemString, ctx).val)
 
 		default:
 			p.backup()
@@ -654,8 +654,7 @@ func (p *parser) primaryExpr() Expr {
 		return &NumberLiteral{model.SampleValue(f)}
 
 	case t.typ == itemString:
-		s := t.val[1 : len(t.val)-1]
-		return &StringLiteral{s}
+		return &StringLiteral{p.unquoteString(t.val)}
 
 	case t.typ == itemLeftBrace:
 		// Metric selector without metric name.
@@ -843,7 +842,7 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 			p.errorf("operator must be one of %q, is %q", operators, op)
 		}
 
-		val := trimOne(p.expect(itemString, ctx).val)
+		val := p.unquoteString(p.expect(itemString, ctx).val)
 
 		// Map the item to the respective match type.
 		var matchType metric.MatchType
@@ -1104,6 +1103,14 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 	return
 }
 
+func (p *parser) unquoteString(s string) string {
+	unquoted, err := strutil.Unquote(s)
+	if err != nil {
+		p.errorf("error unquoting string %q: %s", s, err)
+	}
+	return unquoted
+}
+
 func parseDuration(ds string) (time.Duration, error) {
 	dur, err := strutil.StringToDuration(ds)
 	if err != nil {
@@ -1113,15 +1120,4 @@ func parseDuration(ds string) (time.Duration, error) {
 		return 0, fmt.Errorf("duration must be greater than 0")
 	}
 	return dur, nil
-}
-
-// trimOne removes the first and last character from a string.
-func trimOne(s string) string {
-	if len(s) > 0 {
-		s = s[1:]
-	}
-	if len(s) > 0 {
-		s = s[:len(s)-1]
-	}
-	return s
 }
