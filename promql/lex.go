@@ -16,6 +16,7 @@ package promql
 import (
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -465,6 +466,9 @@ func lexStatements(l *lexer) stateFn {
 	case r == '"' || r == '\'':
 		l.stringOpen = r
 		return lexString
+	case r == '`':
+		l.stringOpen = r
+		return lexRawString
 	case isAlpha(r) || r == ':':
 		l.backup()
 		return lexKeywordOrIdentifier
@@ -523,6 +527,9 @@ func lexInsideBraces(l *lexer) stateFn {
 	case r == '"' || r == '\'':
 		l.stringOpen = r
 		return lexString
+	case r == '`':
+		l.stringOpen = r
+		return lexRawString
 	case r == '=':
 		if l.next() == '~' {
 			l.emit(itemEQLRegex)
@@ -583,18 +590,96 @@ func lexValueSequence(l *lexer) stateFn {
 	return lexValueSequence
 }
 
+// lexEscape scans a string escape sequence. The initial escaping character (\)
+// has already been seen.
+//
+// NOTE: This function as well as the helper function digitVal() and associated
+// tests have been adapted from the corresponding functions in the "go/scanner"
+// package of the Go standard library to work for Prometheus-style strings.
+// None of the actual escaping/quoting logic was changed in this function - it
+// was only modified to integrate with our lexer.
+func lexEscape(l *lexer) {
+	var n int
+	var base, max uint32
+
+	ch := l.next()
+	switch ch {
+	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', l.stringOpen:
+		return
+	case '0', '1', '2', '3', '4', '5', '6', '7':
+		n, base, max = 3, 8, 255
+	case 'x':
+		ch = l.next()
+		n, base, max = 2, 16, 255
+	case 'u':
+		ch = l.next()
+		n, base, max = 4, 16, unicode.MaxRune
+	case 'U':
+		ch = l.next()
+		n, base, max = 8, 16, unicode.MaxRune
+	case eof:
+		l.errorf("escape sequence not terminated")
+	default:
+		l.errorf("unknown escape sequence %#U", ch)
+	}
+
+	var x uint32
+	for n > 0 {
+		d := uint32(digitVal(ch))
+		if d >= base {
+			if ch == eof {
+				l.errorf("escape sequence not terminated")
+			}
+			l.errorf("illegal character %#U in escape sequence", ch)
+		}
+		x = x*base + d
+		ch = l.next()
+		n--
+	}
+
+	if x > max || 0xD800 <= x && x < 0xE000 {
+		l.errorf("escape sequence is an invalid Unicode code point")
+	}
+}
+
+// digitVal returns the digit value of a rune or 16 in case the rune does not
+// represent a valid digit.
+func digitVal(ch rune) int {
+	switch {
+	case '0' <= ch && ch <= '9':
+		return int(ch - '0')
+	case 'a' <= ch && ch <= 'f':
+		return int(ch - 'a' + 10)
+	case 'A' <= ch && ch <= 'F':
+		return int(ch - 'A' + 10)
+	}
+	return 16 // Larger than any legal digit val.
+}
+
 // lexString scans a quoted string. The initial quote has already been seen.
 func lexString(l *lexer) stateFn {
 Loop:
 	for {
 		switch l.next() {
 		case '\\':
-			if r := l.next(); r != eof && r != '\n' {
-				break
-			}
-			fallthrough
+			lexEscape(l)
 		case eof, '\n':
 			return l.errorf("unterminated quoted string")
+		case l.stringOpen:
+			break Loop
+		}
+	}
+	l.emit(itemString)
+	return lexStatements
+}
+
+// lexRawString scans a raw quoted string. The initial quote has already been seen.
+func lexRawString(l *lexer) stateFn {
+Loop:
+	for {
+		switch l.next() {
+		case eof:
+			return l.errorf("unterminated raw string")
 		case l.stringOpen:
 			break Loop
 		}
