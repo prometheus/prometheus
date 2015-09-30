@@ -206,6 +206,10 @@ func reloadConfig(filename string, rls ...Reloadable) (success bool) {
 	conf, err := config.LoadFile(filename)
 	if err != nil {
 		log.Errorf("Couldn't load configuration (-config.file=%s): %v", filename, err)
+		// TODO(julius): Remove this notice when releasing 0.17.0 or 0.18.0.
+		if err.Error() == "unknown fields in global config: labels" {
+			log.Errorf("NOTE: The 'labels' setting in the global configuration section has been renamed to 'external_labels' and now has changed semantics (see release notes at https://github.com/prometheus/prometheus/blob/master/CHANGELOG.md). Please update your configuration file accordingly.")
+		}
 		return false
 	}
 	success = true

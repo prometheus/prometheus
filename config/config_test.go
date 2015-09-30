@@ -32,7 +32,7 @@ var expectedConf = &Config{
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: Duration(30 * time.Second),
 
-		Labels: model.LabelSet{
+		ExternalLabels: model.LabelSet{
 			"monitor": "codelab",
 			"foo":     "bar",
 		},

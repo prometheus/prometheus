@@ -88,9 +88,9 @@ type NotificationHandler struct {
 	notificationsQueueLength   prometheus.Gauge
 	notificationsQueueCapacity prometheus.Metric
 
-	globalLabels model.LabelSet
-	mtx          sync.RWMutex
-	stopped      chan struct{}
+	externalLabels model.LabelSet
+	mtx            sync.RWMutex
+	stopped        chan struct{}
 }
 
 // NotificationHandlerOptions are the configurable parameters of a NotificationHandler.
@@ -151,7 +151,7 @@ func (n *NotificationHandler) ApplyConfig(conf *config.Config) bool {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	n.globalLabels = conf.GlobalConfig.Labels
+	n.externalLabels = conf.GlobalConfig.ExternalLabels
 	return true
 }
 
@@ -162,7 +162,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 
 	alerts := make([]map[string]interface{}, 0, len(reqs))
 	for _, req := range reqs {
-		for ln, lv := range n.globalLabels {
+		for ln, lv := range n.externalLabels {
 			if _, ok := req.Labels[ln]; !ok {
 				req.Labels[ln] = lv
 			}
