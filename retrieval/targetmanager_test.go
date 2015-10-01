@@ -174,7 +174,7 @@ func TestTargetManagerChan(t *testing.T) {
 	for i, step := range sequence {
 		prov1.update <- step.tgroup
 
-		<-time.After(1 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 
 		if len(targetManager.targets) != len(step.expected) {
 			t.Fatalf("step %d: sources mismatch %v, %v", i, targetManager.targets, step.expected)
@@ -287,34 +287,44 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			scrapeConfigs: []*config.ScrapeConfig{testJob1},
 			expected: map[string][]model.LabelSet{
 				"test_job1:static:0:0": {
-					{model.JobLabel: "test_job1", model.InstanceLabel: "example.org:80", "testParam": "paramValue"},
-					{model.JobLabel: "test_job1", model.InstanceLabel: "example.com:80", "testParam": "paramValue"},
+					{model.JobLabel: "test_job1", model.InstanceLabel: "example.org:80", "testParam": "paramValue",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.org:80", model.ParamLabelPrefix + "testParam": "paramValue"},
+					{model.JobLabel: "test_job1", model.InstanceLabel: "example.com:80", "testParam": "paramValue",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.com:80", model.ParamLabelPrefix + "testParam": "paramValue"},
 				},
 			},
 		}, {
 			scrapeConfigs: []*config.ScrapeConfig{testJob1},
 			expected: map[string][]model.LabelSet{
 				"test_job1:static:0:0": {
-					{model.JobLabel: "test_job1", model.InstanceLabel: "example.org:80", "testParam": "paramValue"},
-					{model.JobLabel: "test_job1", model.InstanceLabel: "example.com:80", "testParam": "paramValue"},
+					{model.JobLabel: "test_job1", model.InstanceLabel: "example.org:80", "testParam": "paramValue",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.org:80", model.ParamLabelPrefix + "testParam": "paramValue"},
+					{model.JobLabel: "test_job1", model.InstanceLabel: "example.com:80", "testParam": "paramValue",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.com:80", model.ParamLabelPrefix + "testParam": "paramValue"},
 				},
 			},
 		}, {
 			scrapeConfigs: []*config.ScrapeConfig{testJob1, testJob2},
 			expected: map[string][]model.LabelSet{
 				"test_job1:static:0:0": {
-					{model.JobLabel: "test_job1", model.InstanceLabel: "example.org:80", "testParam": "paramValue"},
-					{model.JobLabel: "test_job1", model.InstanceLabel: "example.com:80", "testParam": "paramValue"},
+					{model.JobLabel: "test_job1", model.InstanceLabel: "example.org:80", "testParam": "paramValue",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.org:80", model.ParamLabelPrefix + "testParam": "paramValue"},
+					{model.JobLabel: "test_job1", model.InstanceLabel: "example.com:80", "testParam": "paramValue",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.com:80", model.ParamLabelPrefix + "testParam": "paramValue"},
 				},
 				"test_job2:static:0:0": {
-					{model.JobLabel: "test_job2", model.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba"},
-					{model.JobLabel: "test_job2", model.InstanceLabel: "example.com:8081", "foo": "bar", "new": "ox-ba"},
+					{model.JobLabel: "test_job2", model.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.org:8080"},
+					{model.JobLabel: "test_job2", model.InstanceLabel: "example.com:8081", "foo": "bar", "new": "ox-ba",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.com:8081"},
 				},
 				"test_job2:static:0:1": {
-					{model.JobLabel: "test_job2", model.InstanceLabel: "foo.com:1234"},
+					{model.JobLabel: "test_job2", model.InstanceLabel: "foo.com:1234",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "foo.com:1234"},
 				},
 				"test_job2:static:0:2": {
-					{model.JobLabel: "test_job2", model.InstanceLabel: "fixed"},
+					{model.JobLabel: "test_job2", model.InstanceLabel: "fixed",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "foo.com:1235"},
 				},
 			},
 		}, {
@@ -324,14 +334,18 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			scrapeConfigs: []*config.ScrapeConfig{testJob2},
 			expected: map[string][]model.LabelSet{
 				"test_job2:static:0:0": {
-					{model.JobLabel: "test_job2", model.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba"},
-					{model.JobLabel: "test_job2", model.InstanceLabel: "example.com:8081", "foo": "bar", "new": "ox-ba"},
+					{model.JobLabel: "test_job2", model.InstanceLabel: "example.org:8080", "foo": "bar", "new": "ox-ba",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.org:8080"},
+					{model.JobLabel: "test_job2", model.InstanceLabel: "example.com:8081", "foo": "bar", "new": "ox-ba",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "example.com:8081"},
 				},
 				"test_job2:static:0:1": {
-					{model.JobLabel: "test_job2", model.InstanceLabel: "foo.com:1234"},
+					{model.JobLabel: "test_job2", model.InstanceLabel: "foo.com:1234",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "foo.com:1234"},
 				},
 				"test_job2:static:0:2": {
-					{model.JobLabel: "test_job2", model.InstanceLabel: "fixed"},
+					{model.JobLabel: "test_job2", model.InstanceLabel: "fixed",
+						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "foo.com:1235"},
 				},
 			},
 		},
@@ -363,7 +377,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			for _, expt := range expTargets {
 				found := false
 				for _, actt := range actTargets {
-					if reflect.DeepEqual(expt, actt.BaseLabels()) {
+					if reflect.DeepEqual(expt, actt.fullLabels()) {
 						found = true
 						break
 					}

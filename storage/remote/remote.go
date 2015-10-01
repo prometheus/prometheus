@@ -14,11 +14,14 @@
 package remote
 
 import (
+	"net/url"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+
+	influx "github.com/influxdb/influxdb/client"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
@@ -27,9 +30,9 @@ import (
 
 // Storage collects multiple remote storage queues.
 type Storage struct {
-	queues       []*StorageQueueManager
-	globalLabels model.LabelSet
-	mtx          sync.RWMutex
+	queues         []*StorageQueueManager
+	externalLabels model.LabelSet
+	mtx            sync.RWMutex
 }
 
 // ApplyConfig updates the status state as the new config requires.
@@ -38,7 +41,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) bool {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	s.globalLabels = conf.GlobalConfig.Labels
+	s.externalLabels = conf.GlobalConfig.ExternalLabels
 	return true
 }
 
@@ -49,8 +52,15 @@ func New(o *Options) *Storage {
 		c := opentsdb.NewClient(o.OpentsdbURL, o.StorageTimeout)
 		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
 	}
-	if o.InfluxdbURL != "" {
-		c := influxdb.NewClient(o.InfluxdbURL, o.StorageTimeout, o.InfluxdbDatabase, o.InfluxdbRetentionPolicy)
+	if o.InfluxdbURL != nil {
+		conf := influx.Config{
+			URL:      *o.InfluxdbURL,
+			Username: o.InfluxdbUsername,
+			Password: o.InfluxdbPassword,
+			Timeout:  o.StorageTimeout,
+		}
+		c := influxdb.NewClient(conf, o.InfluxdbDatabase, o.InfluxdbRetentionPolicy)
+		prometheus.MustRegister(c)
 		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
 	}
 	if len(s.queues) == 0 {
@@ -62,8 +72,10 @@ func New(o *Options) *Storage {
 // Options contains configuration parameters for a remote storage.
 type Options struct {
 	StorageTimeout          time.Duration
-	InfluxdbURL             string
+	InfluxdbURL             *url.URL
 	InfluxdbRetentionPolicy string
+	InfluxdbUsername        string
+	InfluxdbPassword        string
 	InfluxdbDatabase        string
 	OpentsdbURL             string
 }
@@ -90,7 +102,7 @@ func (s *Storage) Append(smpl *model.Sample) {
 	snew = *smpl
 	snew.Metric = smpl.Metric.Clone()
 
-	for ln, lv := range s.globalLabels {
+	for ln, lv := range s.externalLabels {
 		if _, ok := smpl.Metric[ln]; !ok {
 			snew.Metric[ln] = lv
 		}

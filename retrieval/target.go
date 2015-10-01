@@ -164,6 +164,8 @@ type Target struct {
 	metaLabels model.LabelSet
 	// Any base labels that are added to this target and its metrics.
 	baseLabels model.LabelSet
+	// Internal labels, such as scheme.
+	internalLabels model.LabelSet
 	// What is the deadline for the HTTP or HTTPS against this endpoint.
 	deadline time.Duration
 	// The time between two scrapes.
@@ -211,6 +213,11 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels model.L
 	t.url.Scheme = string(baseLabels[model.SchemeLabel])
 	t.url.Path = string(baseLabels[model.MetricsPathLabel])
 
+	t.internalLabels = model.LabelSet{}
+	t.internalLabels[model.SchemeLabel] = baseLabels[model.SchemeLabel]
+	t.internalLabels[model.MetricsPathLabel] = baseLabels[model.MetricsPathLabel]
+	t.internalLabels[model.AddressLabel] = model.LabelValue(t.url.Host)
+
 	params := url.Values{}
 
 	for k, v := range cfg.Params {
@@ -224,6 +231,7 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels model.L
 			} else {
 				params[string(k[len(model.ParamLabelPrefix):])] = []string{string(v)}
 			}
+			t.internalLabels[model.ParamLabelPrefix+k[len(model.ParamLabelPrefix):]] = v
 		}
 	}
 	t.url.RawQuery = params.Encode()
@@ -443,10 +451,7 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 		return fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
-	dec, err := expfmt.NewDecoder(resp.Body, resp.Header)
-	if err != nil {
-		return err
-	}
+	dec := expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header))
 
 	sdec := expfmt.SampleDecoder{
 		Dec: dec,
@@ -564,13 +569,13 @@ func (t *Target) InstanceIdentifier() string {
 func (t *Target) fullLabels() model.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
-	lset := make(model.LabelSet, len(t.baseLabels)+2)
+	lset := make(model.LabelSet, len(t.baseLabels)+len(t.internalLabels))
 	for ln, lv := range t.baseLabels {
 		lset[ln] = lv
 	}
-	lset[model.MetricsPathLabel] = model.LabelValue(t.url.Path)
-	lset[model.AddressLabel] = model.LabelValue(t.url.Host)
-	lset[model.SchemeLabel] = model.LabelValue(t.url.Scheme)
+	for k, v := range t.internalLabels {
+		lset[k] = v
+	}
 	return lset
 }
 

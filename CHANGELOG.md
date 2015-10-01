@@ -1,3 +1,153 @@
+## 0.16.0rc2 / 2015-09-30
+
+BREAKING CHANGES:
+
+* [CHANGE] Renamed `global.labels` to `global.external_labels`.
+
+All changes:
+
+* [CHANGE] Renamed `global.labels` to `global.external_labels`.
+* [ENHANCEMENT] Several flaky tests fixed.
+* [ENHANCEMENT] Switched to common routing package.
+* [ENHANCEMENT] Usage of more resilient metric decoder.
+* [BUGFIX] Fix high CPU usage on configuration reload.
+* [BUGFIX] Fix disappearing `__params` on configuration reload.
+* [BUGFIX] Make `labelmap` action available through configuration.
+* [BUGFIX] Fix direct access of protobuf fields.
+* [BUGFIX] Fix panic on Consul request error.
+* [BUGFIX] Redirect of graph endpoint for prefixed setups.
+
+## 0.16.0rc1 / 2015-09-18
+
+BREAKING CHANGES:
+
+* Release tarballs now contain the built binaries in a nested directory.
+* The `hash_mod` relabeling action now uses MD5 hashes instead of FNV hashes to
+  achieve a better distribution.
+* The DNS-SD meta label `__meta_dns_srv_name` was renamed to `__meta_dns_name`
+  to reflect support for other record types than `SRV`.
+* The default full refresh interval for the file-based service discovery has been
+  increased from 30 seconds to 5 minutes.
+* In relabeling, parts of a source label that weren't matched by
+  the specified regular expression are no longer included in the replacement output.
+* Queries no longer interpolate between two data points. Instead, the resulting
+  value will always be the latest value before the evaluation query timestamp.
+* Regular expressions supplied via the configuration are now anchored to match
+  full strings instead of substrings.
+* Global labels are not appended upon storing time series anymore. Instead,
+  they are only appended when communicating with external systems
+  (Alertmanager, remote storages, federation).
+* The names and units of metrics related to remote storage sample appends have
+  been changed.
+* The experimental support for writing to InfluxDB has been updated to work
+  with InfluxDB 0.9.x. 0.8.x versions of InfluxDB are not supported anymore.
+
+All changes:
+
+* [CHANGE] Vendoring is now done via govendor instead of godep.
+* [CHANGE] Change web UI root page to show the graphing interface instead of
+  the server status page.
+* [CHANGE] Append global labels only when communicating with external systems
+  instead of storing them locally.
+* [CHANGE] Change all regexes in the configuration to do full-string matches
+  instead of substring matches.
+* [CHANGE] Remove interpolation of vector values in queries.
+* [CHANGE] For alert `SUMMARY`/`DESCRIPTION` template fields, cast the alert
+  value to `float64` to work with common templating functions.
+* [CHANGE] In relabeling, don't include unmatched source label parts in the
+  replacement.
+* [CHANGE] Change default full refresh interval for the file-based service
+  discovery from 30 seconds to 5 minutes.
+* [CHANGE] Rename the DNS-SD meta label `__meta_dns_srv_name` to
+  `__meta_dns_name` to reflect support for other record types than `SRV`.
+* [CHANGE] Release tarballs now contain the binaries in a nested directory.
+* [CHANGE] Update InfluxDB write support to work with InfluxDB 0.9.x.
+* [FEATURE] Allow configuring TLS options in scrape configurations.
+* [FEATURE] Add instrumentation around configuration reloads.
+* [FEATURE] Add `bool` modifier to comparison operators to enable boolean
+  (`0`/`1`) output instead of filtering.
+* [FEATURE] In Zookeeper serverset discovery, provide `__meta_serverset_shard`
+  label with the serverset shard number.
+* [FEATURE] Provide `__meta_consul_service_id` meta label in Consul service
+  discovery.
+* [FEATURE] Allow scalar expressions in recording rules to enable use cases
+  such as building constant metrics.
+* [FEATURE] Add `label_replace()` and `vector()` query language functions.
+* [FEATURE] In Consul service discovery, fill in the `__meta_consul_dc`
+  datacenter label from the Consul agent when it's not set in the Consul SD
+  config.
+* [FEATURE] Scrape all services upon empty services list in Consul service
+  discovery.
+* [FEATURE] Add `labelmap` relabeling action to map a set of input labels to a
+  set of output labels using regular expressions.
+* [FEATURE] Introduce `__tmp` as a relabeling label prefix that is guaranteed
+  to not be used by Prometheus internally.
+* [FEATURE] Kubernetes-based service discovery.
+* [FEATURE] Marathon-based service discovery.
+* [FEATURE] Support multiple series names in console graphs JavaScript library.
+* [FEATURE] Allow reloading configuration via web handler at `/-/reload`.
+* [FEATURE] Updates to promtool to reflect new Prometheus configuration
+  features.
+* [FEATURE] Add `proxy_url` parameter to scrape configurations to enable use of
+  proxy servers.
+* [FEATURE] Add console templates for Prometheus itself.
+* [FEATURE] Allow relabeling the protocol scheme of targets.
+* [FEATURE] Add `predict_linear()` query language function.
+* [FEATURE] Support for authentication using bearer tokens, client certs, and
+  CA certs.
+* [FEATURE] Implement unary expressions for vector types (`-foo`, `+foo`).
+* [FEATURE] Add console templates for the SNMP exporter.
+* [FEATURE] Make it possible to relabel target scrape query parameters.
+* [FEATURE] Add support for `A` and `AAAA` records in DNS service discovery.
+* [ENHANCEMENT] Update vendored dependencies.
+* [ENHANCEMENT] Add compression to more HTTP handlers.
+* [ENHANCEMENT] Make -web.external-url flag help string more verbose.
+* [ENHANCEMENT] Improve metrics around remote storage queues.
+* [ENHANCEMENT] Use Go 1.5.1 instead of Go 1.4.2 in builds.
+* [ENHANCEMENT] Update the architecture diagram in the `README.md`.
+* [ENHANCEMENT] Time out sample appends in retrieval layer if the storage is
+  backlogging.
+* [ENHANCEMENT] Make `hash_mod` relabeling action use MD5 instead of FNV to
+  enable better hash distribution.
+* [ENHANCEMENT] Better tracking of targets between same service discovery
+  mechanisms in one scrape configuration.
+* [ENHANCEMENT] Handle parser and query evaluation runtime panics more
+  gracefully.
+* [ENHANCEMENT] Add IDs to H2 tags on status page to allow anchored linking.
+* [BUGFIX] Fix series file deletion behavior when purging archived series.
+* [BUGFIX] Fix error checking and logging around checkpointing.
+* [BUGFIX] Fix map initialization in target manager.
+* [BUGFIX] Fix draining of file watcher events in file-based service discovery.
+* [BUGFIX] Add `POST` handler for `/debug` endpoints to fix CPU profiling.
+* [BUGFIX] Fix several flaky tests.
+* [BUGFIX] Fix busylooping in case a scrape configuration has no target
+  providers defined.
+* [BUGFIX] Fix exit behavior of static target provider.
+* [BUGFIX] Fix configuration reloading loop upon shutdown.
+* [BUGFIX] Add missing check for nil expression in expression parser.
+* [BUGFIX] Fix error handling bug in test code.
+* [BUGFIX] Fix Consul port meta label.
+* [BUGFIX] Fix lexer bug that treated non-Latin Unicode digits as digits.
+* [CLEANUP] Update build environment scripts and Makefiles to work better with
+  native Go build mechanisms and new Go 1.5 experimental vendoring support.
+* [CLEANUP] Remove logged notice about 0.14.x configuration file format change.
+* [CLEANUP] Move scrape-time metric label modification into SampleAppenders.
+* [CLEANUP] Switch from `github.com/client_golang/model` to
+  `github.com/common/model` and related type cleanups.
+* [CLEANUP] Switch from `github.com/client_golang/extraction` to
+  `github.com/common/expfmt` and related type cleanups.
+* [CLEANUP] Exit Prometheus when the web server encounters a startup error.
+* [CLEANUP] Remove non-functional alert-silencing links on alerting page.
+* [CLEANUP] General cleanups to comments and code, derived from `golint`,
+  `go vet`, or otherwise.
+* [CLEANUP] When entering crash recovery, tell users how to cleanly shut down
+  Prometheus.
+* [CLEANUP] Remove internal support for multi-statement queries in query engine.
+* [CLEANUP] Update AUTHORS.md.
+* [CLEANUP] Don't warn/increment metric upon encountering equal timestamps for
+  the same series upon append.
+* [CLEANUP] Resolve relative paths during configuration loading.
+
 ## 0.15.1 / 2015-07-27
 * [BUGFIX] Fix vector matching behavior when there is a mix of equality and
   non-equality matchers in a vector selector and one matcher matches no series.
@@ -24,7 +174,7 @@ BREAKING CHANGES:
 * The default scrape interval has been changed back from 1 minute to
   10 seconds.
 
-ALL CHANGES:
+All changes:
 
 * [CHANGE] Change default storage directory to `data` in the current
   working directory.

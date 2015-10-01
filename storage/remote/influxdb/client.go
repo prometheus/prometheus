@@ -14,148 +14,96 @@
 package influxdb
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"math"
-	"net/http"
-	"net/url"
-	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/log"
 
-	"github.com/prometheus/prometheus/util/httputil"
-)
-
-const (
-	writeEndpoint   = "/write"
-	contentTypeJSON = "application/json"
+	influx "github.com/influxdb/influxdb/client"
 )
 
 // Client allows sending batches of Prometheus samples to InfluxDB.
 type Client struct {
-	url             string
-	httpClient      *http.Client
-	retentionPolicy string
+	client          *influx.Client
 	database        string
+	retentionPolicy string
+	ignoredSamples  prometheus.Counter
 }
 
 // NewClient creates a new Client.
-func NewClient(url string, timeout time.Duration, database, retentionPolicy string) *Client {
+func NewClient(conf influx.Config, db string, rp string) *Client {
+	c, err := influx.NewClient(conf)
+	// Currently influx.NewClient() *should* never return an error.
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return &Client{
-		url:             url,
-		httpClient:      httputil.NewDeadlineClient(timeout, nil),
-		retentionPolicy: retentionPolicy,
-		database:        database,
+		client:          c,
+		database:        db,
+		retentionPolicy: rp,
+		ignoredSamples: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: "prometheus_influxdb_ignored_samples_total",
+				Help: "The total number of samples not sent to InfluxDB due to unsupported float values (Inf, -Inf, NaN).",
+			},
+		),
 	}
 }
 
-// StoreSamplesRequest is used for building a JSON request for storing samples
-// in InfluxDB.
-type StoreSamplesRequest struct {
-	Database        string  `json:"database"`
-	RetentionPolicy string  `json:"retentionPolicy"`
-	Points          []point `json:"points"`
-}
-
-// point represents a single InfluxDB measurement.
-type point struct {
-	Timestamp int64            `json:"timestamp"`
-	Precision string           `json:"precision"`
-	Name      model.LabelValue `json:"name"`
-	Tags      model.LabelSet   `json:"tags"`
-	Fields    fields           `json:"fields"`
-}
-
-// fields represents the fields/columns sent to InfluxDB for a given measurement.
-type fields struct {
-	Value model.SampleValue `json:"value"`
-}
-
 // tagsFromMetric extracts InfluxDB tags from a Prometheus metric.
-func tagsFromMetric(m model.Metric) model.LabelSet {
-	tags := make(model.LabelSet, len(m)-1)
+func tagsFromMetric(m model.Metric) map[string]string {
+	tags := make(map[string]string, len(m)-1)
 	for l, v := range m {
-		if l == model.MetricNameLabel {
-			continue
+		if l != model.MetricNameLabel {
+			tags[string(l)] = string(v)
 		}
-		tags[l] = v
 	}
 	return tags
 }
 
 // Store sends a batch of samples to InfluxDB via its HTTP API.
 func (c *Client) Store(samples model.Samples) error {
-	points := make([]point, 0, len(samples))
+	points := make([]influx.Point, 0, len(samples))
 	for _, s := range samples {
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			// TODO(julius): figure out if it's possible to insert special float
-			// values into InfluxDB somehow.
-			log.Warnf("cannot send value %f to InfluxDB, skipping sample %#v", v, s)
+			log.Debugf("cannot send value %f to InfluxDB, skipping sample %#v", v, s)
+			c.ignoredSamples.Inc()
 			continue
 		}
-		metric := s.Metric[model.MetricNameLabel]
-		points = append(points, point{
-			Timestamp: s.Timestamp.UnixNano(),
-			Precision: "n",
-			Name:      metric,
-			Tags:      tagsFromMetric(s.Metric),
-			Fields: fields{
-				Value: s.Value,
+		points = append(points, influx.Point{
+			Measurement: string(s.Metric[model.MetricNameLabel]),
+			Tags:        tagsFromMetric(s.Metric),
+			Time:        s.Timestamp.Time(),
+			Precision:   "ms",
+			Fields: map[string]interface{}{
+				"value": v,
 			},
 		})
 	}
 
-	u, err := url.Parse(c.url)
-	if err != nil {
-		return err
-	}
-
-	u.Path = writeEndpoint
-
-	req := StoreSamplesRequest{
+	bps := influx.BatchPoints{
+		Points:          points,
 		Database:        c.database,
 		RetentionPolicy: c.retentionPolicy,
-		Points:          points,
 	}
-	buf, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Post(
-		u.String(),
-		contentTypeJSON,
-		bytes.NewBuffer(buf),
-	)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// API returns status code 200 for successful writes.
-	// http://influxdb.com/docs/v0.9/concepts/reading_and_writing_data.html#response
-	if resp.StatusCode == http.StatusOK {
-		return nil
-	}
-
-	// API returns error details in the response content in JSON.
-	buf, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	var r map[string]string
-	if err := json.Unmarshal(buf, &r); err != nil {
-		return err
-	}
-	return fmt.Errorf("failed to write samples into InfluxDB. Error: %s", r["error"])
+	_, err := c.client.Write(bps)
+	return err
 }
 
 // Name identifies the client as an InfluxDB client.
 func (c Client) Name() string {
 	return "influxdb"
+}
+
+// Describe implements prometheus.Collector.
+func (c *Client) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.ignoredSamples.Desc()
+}
+
+// Collect implements prometheus.Collector.
+func (c *Client) Collect(ch chan<- prometheus.Metric) {
+	ch <- c.ignoredSamples
 }

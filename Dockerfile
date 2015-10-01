@@ -1,17 +1,18 @@
 FROM        sdurrheimer/alpine-glibc
 MAINTAINER  The Prometheus Authors <prometheus-developers@googlegroups.com>
 
-WORKDIR /app
-COPY    . /app
+WORKDIR /gopath/src/github.com/prometheus/prometheus
+COPY    . /gopath/src/github.com/prometheus/prometheus
 
-RUN apk add --update -t build-deps git mercurial bzr make \
+RUN apk add --update -t build-deps tar openssl git make bash \
+    && source ./scripts/goenv.sh /go /gopath \
     && make build \
     && cp prometheus promtool /bin/ \
     && mkdir -p /etc/prometheus \
     && mv ./documentation/examples/prometheus.yml /etc/prometheus/prometheus.yml \
     && mv ./console_libraries/ ./consoles/ /etc/prometheus/ \
     && apk del --purge build-deps \
-    && rm -rf /app /var/cache/apk/*
+    && rm -rf /go /gopath /var/cache/apk/*
 
 EXPOSE     9090
 VOLUME     [ "/prometheus" ]

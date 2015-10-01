@@ -80,9 +80,21 @@ func (r *Router) Del(path string, h http.HandlerFunc) {
 	r.rtr.DELETE(r.prefix+path, handle(h))
 }
 
+// Put registers a new PUT route.
+func (r *Router) Put(path string, h http.HandlerFunc) {
+	r.rtr.PUT(r.prefix+path, handle(h))
+}
+
 // Post registers a new POST route.
 func (r *Router) Post(path string, h http.HandlerFunc) {
 	r.rtr.POST(r.prefix+path, handle(h))
+}
+
+// Redirect takes an absolute path and sends an internal HTTP redirect for it,
+// prefixed by the router's path prefix. Note that this method does not include
+// functionality for handling relative paths or full URL redirects.
+func (r *Router) Redirect(w http.ResponseWriter, req *http.Request, path string, code int) {
+	http.Redirect(w, req, r.prefix+path, code)
 }
 
 // ServeHTTP implements http.Handler.

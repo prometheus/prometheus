@@ -32,7 +32,7 @@ var expectedConf = &Config{
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: Duration(30 * time.Second),
 
-		Labels: model.LabelSet{
+		ExternalLabels: model.LabelSet{
 			"monitor": "codelab",
 			"foo":     "bar",
 		},
@@ -142,6 +142,11 @@ var expectedConf = &Config{
 					Regex:        MustNewRegexp("1"),
 					Separator:    ";",
 					Action:       RelabelKeep,
+				},
+				{
+					Regex:     MustNewRegexp("1"),
+					Separator: ";",
+					Action:    RelabelLabelMap,
 				},
 			},
 			MetricRelabelConfigs: []*RelabelConfig{

@@ -128,14 +128,14 @@ func (tm *TargetManager) Run() {
 
 			tgc := make(chan *config.TargetGroup)
 			// Run the target provider after cleanup of the stale targets is done.
-			defer func(prov TargetProvider, tgc chan *config.TargetGroup) {
-				go prov.Run(tgc, tm.done)
-			}(prov, tgc)
+			defer func(prov TargetProvider, tgc chan<- *config.TargetGroup, done <-chan struct{}) {
+				go prov.Run(tgc, done)
+			}(prov, tgc, tm.done)
 
 			tgupc := make(chan targetGroupUpdate)
 			updates = append(updates, tgupc)
 
-			go func(scfg *config.ScrapeConfig) {
+			go func(scfg *config.ScrapeConfig, done <-chan struct{}) {
 				defer close(tgupc)
 				for {
 					select {
@@ -144,11 +144,11 @@ func (tm *TargetManager) Run() {
 							break
 						}
 						tgupc <- targetGroupUpdate{tg: tg, scfg: scfg}
-					case <-tm.done:
+					case <-done:
 						return
 					}
 				}
-			}(scfg)
+			}(scfg, tm.done)
 		}
 	}
 

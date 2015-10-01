@@ -33,44 +33,34 @@ is the recommended way of installing Prometheus.
 
 Debian and RPM packages are being worked on.
 
-### Use `make`
+### Building from source
 
-Clone the repository in the usual way with `git clone`. (If you
-download and unpack the source archives provided by GitHub instead of
-using `git clone`, you need to set an environment variable `VERSION`
-to make the below work. See
-[issue #609](https://github.com/prometheus/prometheus/issues/609) for
-context.)
+To build Prometheus from the source code yourself you need to have a working
+Go environment with [version 1.5 or greater installed](http://golang.org/doc/install).
 
-In most circumstances, the following should work:
+You can directly use the `go` tool to download and install the `prometheus`
+and `promtool` binaries into your `GOPATH`:
 
-    $ make build
-    $ ./prometheus -config.file=documentation/examples/prometheus.yml
+    $ go get github.com/prometheus/prometheus/...
+    $ prometheus -config.file=your_config.yml
 
-The above requires a number of common tools to be installed, namely
-`curl`, `git`, `gzip`, `hg` (Mercurial CLI).
+You can also clone the repository yourself and build using `make`:
 
-Everything else will be downloaded and installed into a staging
-environment in the `.build` sub-directory. That includes a Go
-development environment of the appropriate version.
+    $ mkdir -p $GOPATH/src/github.com/prometheus
+    $ cd $GOPATH/src/github.com/prometheus
+    $ git clone https://github.com/prometheus/prometheus.git
+    $ cd prometheus
+    $ make
+    $ ./prometheus -config.file=your_config.yml
 
-The `Makefile` offers a number of useful targets. Some examples:
+The Makefile provides several targets:
 
-* `make test` runs tests.
-* `make tarball` creates a tarball with the binary for distribution.
-* `make race_condition_run` compiles and runs a binary with the race detector enabled. To pass arguments when running Prometheus this way, set the `ARGUMENTS` environment variable (e.g. `ARGUMENTS="-config.file=./prometheus.conf" make race_condition_run`).
-
-### Use your own Go development environment
-
-Using your own Go development environment with the usual tooling is
-possible, too. After making changes to the files in `web/static` you
-have to run `make` in the `web/` directory. This generates the respective
-`web/blob/files.go` file which embedds the static assets in the compiled binary.
-
-Furthermore, the version information (see `version/info.go`) will not be
-populated if you simply run `go build`. You have to pass in command
-line flags as defined in `Makefile.INCLUDE` (see `${BUILDFLAGS}`) to
-do that.
+  * *build*: build the `prometheus` and `promtool` binaries
+  * *test*: run the tests
+  * *format*: format the source code
+  * *vet*: check the source code for common errors
+  * *assets*: rebuild the static assets
+  * *docker*: build a docker container for the current `HEAD`
 
 ## More information
 

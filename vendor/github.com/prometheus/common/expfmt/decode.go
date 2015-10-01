@@ -36,39 +36,67 @@ type DecodeOptions struct {
 	Timestamp model.Time
 }
 
-// NewDecor returns a new decoder based on the HTTP header.
-func NewDecoder(r io.Reader, h http.Header) (Decoder, error) {
+// ResponseFormat extracts the correct format from a HTTP response header.
+// If no matching format can be found FormatUnknown is returned.
+func ResponseFormat(h http.Header) Format {
 	ct := h.Get(hdrContentType)
 
 	mediatype, params, err := mime.ParseMediaType(ct)
 	if err != nil {
-		return nil, fmt.Errorf("invalid Content-Type header %q: %s", ct, err)
+		return FmtUnknown
 	}
 
 	const (
-		protoType = ProtoType + "/" + ProtoSubType
-		textType  = "text/plain"
+		textType = "text/plain"
+		jsonType = "application/json"
 	)
 
 	switch mediatype {
-	case protoType:
-		if p := params["proto"]; p != ProtoProtocol {
-			return nil, fmt.Errorf("unrecognized protocol message %s", p)
+	case ProtoType:
+		if p, ok := params["proto"]; ok && p != ProtoProtocol {
+			return FmtUnknown
 		}
-		if e := params["encoding"]; e != "delimited" {
-			return nil, fmt.Errorf("unsupported encoding %s", e)
+		if e, ok := params["encoding"]; ok && e != "delimited" {
+			return FmtUnknown
 		}
-		return &protoDecoder{r: r}, nil
+		return FmtProtoDelim
 
 	case textType:
-		if v, ok := params["version"]; ok && v != "0.0.4" {
-			return nil, fmt.Errorf("unrecognized protocol version %s", v)
+		if v, ok := params["version"]; ok && v != TextVersion {
+			return FmtUnknown
 		}
-		return &textDecoder{r: r}, nil
+		return FmtText
 
-	default:
-		return nil, fmt.Errorf("unsupported media type %q, expected %q or %q", mediatype, protoType, textType)
+	case jsonType:
+		var prometheusAPIVersion string
+
+		if params["schema"] == "prometheus/telemetry" && params["version"] != "" {
+			prometheusAPIVersion = params["version"]
+		} else {
+			prometheusAPIVersion = h.Get("X-Prometheus-API-Version")
+		}
+
+		switch prometheusAPIVersion {
+		case "0.0.2", "":
+			return fmtJSON2
+		default:
+			return FmtUnknown
+		}
 	}
+
+	return FmtUnknown
+}
+
+// NewDecoder returns a new decoder based on the given input format.
+// If the input format does not imply otherwise, a text format decoder is returned.
+func NewDecoder(r io.Reader, format Format) Decoder {
+	switch format {
+	case FmtProtoDelim:
+		return &protoDecoder{r: r}
+	case fmtJSON2:
+		return newJSON2Decoder(r)
+	}
+	return &textDecoder{r: r}
 }
 
 // protoDecoder implements the Decoder interface for protocol buffers.
@@ -101,12 +129,15 @@ func (d *textDecoder) Decode(v *dto.MetricFamily) error {
 		if len(fams) == 0 {
 			return io.EOF
 		}
+		d.fams = make([]*dto.MetricFamily, 0, len(fams))
 		for _, f := range fams {
 			d.fams = append(d.fams, f)
 		}
 	}
-	*v = *d.fams[len(d.fams)-1]
-	d.fams = d.fams[:len(d.fams)-1]
+
+	*v = *d.fams[0]
+	d.fams = d.fams[1:]
+
 	return nil
 }
 
@@ -135,7 +166,7 @@ func ExtractSamples(o *DecodeOptions, fams ...*dto.MetricFamily) model.Vector {
 }
 
 func extractSamples(f *dto.MetricFamily, o *DecodeOptions) model.Vector {
-	switch *f.Type {
+	switch f.GetType() {
 	case dto.MetricType_COUNTER:
 		return extractCounter(o, f)
 	case dto.MetricType_GAUGE:
@@ -272,33 +303,29 @@ func extractSummary(o *DecodeOptions, f *dto.MetricFamily) model.Vector {
 			})
 		}
 
-		if m.Summary.SampleSum != nil {
-			lset := make(model.LabelSet, len(m.Label)+1)
-			for _, p := range m.Label {
-				lset[model.LabelName(p.GetName())] = model.LabelValue(p.GetValue())
-			}
-			lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_sum")
-
-			samples = append(samples, &model.Sample{
-				Metric:    model.Metric(lset),
-				Value:     model.SampleValue(m.Summary.GetSampleSum()),
-				Timestamp: timestamp,
-			})
+		lset := make(model.LabelSet, len(m.Label)+1)
+		for _, p := range m.Label {
+			lset[model.LabelName(p.GetName())] = model.LabelValue(p.GetValue())
 		}
+		lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_sum")
 
-		if m.Summary.SampleCount != nil {
-			lset := make(model.LabelSet, len(m.Label)+1)
-			for _, p := range m.Label {
-				lset[model.LabelName(p.GetName())] = model.LabelValue(p.GetValue())
-			}
-			lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_count")
+		samples = append(samples, &model.Sample{
+			Metric:    model.Metric(lset),
+			Value:     model.SampleValue(m.Summary.GetSampleSum()),
+			Timestamp: timestamp,
+		})
 
-			samples = append(samples, &model.Sample{
-				Metric:    model.Metric(lset),
-				Value:     model.SampleValue(m.Summary.GetSampleCount()),
-				Timestamp: timestamp,
-			})
+		lset = make(model.LabelSet, len(m.Label)+1)
+		for _, p := range m.Label {
+			lset[model.LabelName(p.GetName())] = model.LabelValue(p.GetValue())
 		}
+		lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_count")
+
+		samples = append(samples, &model.Sample{
+			Metric:    model.Metric(lset),
+			Value:     model.SampleValue(m.Summary.GetSampleCount()),
+			Timestamp: timestamp,
+		})
 	}
 
 	return samples
@@ -338,49 +365,45 @@ func extractHistogram(o *DecodeOptions, f *dto.MetricFamily) model.Vector {
 			})
 		}
 
-		if m.Histogram.SampleSum != nil {
-			lset := make(model.LabelSet, len(m.Label)+1)
+		lset := make(model.LabelSet, len(m.Label)+1)
+		for _, p := range m.Label {
+			lset[model.LabelName(p.GetName())] = model.LabelValue(p.GetValue())
+		}
+		lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_sum")
+
+		samples = append(samples, &model.Sample{
+			Metric:    model.Metric(lset),
+			Value:     model.SampleValue(m.Histogram.GetSampleSum()),
+			Timestamp: timestamp,
+		})
+
+		lset = make(model.LabelSet, len(m.Label)+1)
+		for _, p := range m.Label {
+			lset[model.LabelName(p.GetName())] = model.LabelValue(p.GetValue())
+		}
+		lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_count")
+
+		count := &model.Sample{
+			Metric:    model.Metric(lset),
+			Value:     model.SampleValue(m.Histogram.GetSampleCount()),
+			Timestamp: timestamp,
+		}
+		samples = append(samples, count)
+
+		if !infSeen {
+			// Append an infinity bucket sample.
+			lset := make(model.LabelSet, len(m.Label)+2)
 			for _, p := range m.Label {
 				lset[model.LabelName(p.GetName())] = model.LabelValue(p.GetValue())
 			}
-			lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_sum")
+			lset[model.LabelName(model.BucketLabel)] = model.LabelValue("+Inf")
+			lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_bucket")
 
 			samples = append(samples, &model.Sample{
 				Metric:    model.Metric(lset),
-				Value:     model.SampleValue(m.Histogram.GetSampleSum()),
+				Value:     count.Value,
 				Timestamp: timestamp,
 			})
-		}
-
-		if m.Histogram.SampleCount != nil {
-			lset := make(model.LabelSet, len(m.Label)+1)
-			for _, p := range m.Label {
-				lset[model.LabelName(p.GetName())] = model.LabelValue(p.GetValue())
-			}
-			lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_count")
-
-			count := &model.Sample{
-				Metric:    model.Metric(lset),
-				Value:     model.SampleValue(m.Histogram.GetSampleCount()),
-				Timestamp: timestamp,
-			}
-			samples = append(samples, count)
-
-			if !infSeen {
-				// Append a infinity bucket sample.
-				lset := make(model.LabelSet, len(m.Label)+2)
-				for _, p := range m.Label {
-					lset[model.LabelName(p.GetName())] = model.LabelValue(p.GetValue())
-				}
-				lset[model.LabelName(model.BucketLabel)] = model.LabelValue("+Inf")
-				lset[model.MetricNameLabel] = model.LabelValue(f.GetName() + "_bucket")
-
-				samples = append(samples, &model.Sample{
-					Metric:    model.Metric(lset),
-					Value:     count.Value,
-					Timestamp: timestamp,
-				})
-			}
 		}
 	}
 

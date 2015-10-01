@@ -584,7 +584,7 @@ func newKubernetesHTTPClient(conf *config.KubernetesSDConfig) (*http.Client, err
 			bearerTokenFile = serviceAccountToken
 		}
 		if len(caFile) == 0 {
-			// With recent versions, the CA certificate is provided as a token
+			// With recent versions, the CA certificate is mounted as a secret
 			// but we need to handle older versions too. In this case, don't
 			// set the CAFile & the configuration will have to use InsecureSkipVerify.
 			if _, err := os.Stat(serviceAccountCACert); err == nil {

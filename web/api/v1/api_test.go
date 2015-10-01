@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/route"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/route"
 )
 
 func TestEndpoints(t *testing.T) {

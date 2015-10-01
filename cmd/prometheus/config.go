@@ -48,6 +48,7 @@ var cfg = struct {
 	remote       remote.Options
 
 	prometheusURL string
+	influxdbURL   string
 }{}
 
 func init() {
@@ -75,7 +76,7 @@ func init() {
 	)
 	cfg.fs.StringVar(
 		&cfg.prometheusURL, "web.external-url", "",
-		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If omitted, relevant URL components will be derived automatically.",
+		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.",
 	)
 	cfg.fs.StringVar(
 		&cfg.web.MetricsPath, "web.telemetry-path", "/metrics",
@@ -167,12 +168,16 @@ func init() {
 		"The URL of the remote OpenTSDB server to send samples to. None, if empty.",
 	)
 	cfg.fs.StringVar(
-		&cfg.remote.InfluxdbURL, "storage.remote.influxdb-url", "",
+		&cfg.influxdbURL, "storage.remote.influxdb-url", "",
 		"The URL of the remote InfluxDB server to send samples to. None, if empty.",
 	)
 	cfg.fs.StringVar(
 		&cfg.remote.InfluxdbRetentionPolicy, "storage.remote.influxdb.retention-policy", "default",
 		"The InfluxDB retention policy to use.",
+	)
+	cfg.fs.StringVar(
+		&cfg.remote.InfluxdbUsername, "storage.remote.influxdb.username", "",
+		"The username to use when sending samples to InfluxDB.",
 	)
 	cfg.fs.StringVar(
 		&cfg.remote.InfluxdbDatabase, "storage.remote.influxdb.database", "prometheus",
@@ -221,6 +226,20 @@ func parse(args []string) error {
 		return err
 	}
 
+	if err := parsePrometheusURL(); err != nil {
+		return err
+	}
+
+	if err := parseInfluxdbURL(); err != nil {
+		return err
+	}
+
+	cfg.remote.InfluxdbPassword = os.Getenv("INFLUXDB_PW")
+
+	return nil
+}
+
+func parsePrometheusURL() error {
 	if cfg.prometheusURL == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -244,7 +263,20 @@ func parse(args []string) error {
 		ppref = "/" + ppref
 	}
 	cfg.web.ExternalURL.Path = ppref
+	return nil
+}
 
+func parseInfluxdbURL() error {
+	if cfg.influxdbURL == "" {
+		return nil
+	}
+
+	url, err := url.Parse(cfg.influxdbURL)
+	if err != nil {
+		return err
+	}
+
+	cfg.remote.InfluxdbURL = url
 	return nil
 }
 

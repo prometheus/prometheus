@@ -33,6 +33,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/route"
 	"github.com/prometheus/log"
 
 	"github.com/prometheus/prometheus/config"
@@ -41,7 +42,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
-	"github.com/prometheus/prometheus/util/route"
+	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web/api/legacy"
 	"github.com/prometheus/prometheus/web/api/v1"
@@ -66,8 +67,8 @@ type Handler struct {
 	options     *Options
 	statusInfo  *PrometheusStatus
 
-	globalLabels model.LabelSet
-	mtx          sync.RWMutex
+	externalLabels model.LabelSet
+	mtx            sync.RWMutex
 }
 
 // ApplyConfig updates the status state as the new config requires.
@@ -76,7 +77,7 @@ func (h *Handler) ApplyConfig(conf *config.Config) bool {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
-	h.globalLabels = conf.GlobalConfig.Labels
+	h.externalLabels = conf.GlobalConfig.ExternalLabels
 
 	return true
 }
@@ -155,11 +156,11 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		router = router.WithPrefix(o.ExternalURL.Path)
 	}
 
-	instrf := prometheus.InstrumentHandlerFunc
 	instrh := prometheus.InstrumentHandler
+	instrf := prometheus.InstrumentHandlerFunc
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/graph", http.StatusFound)
+		router.Redirect(w, r, "/graph", http.StatusFound)
 	})
 	router.Get("/graph", instrf("graph", h.graph))
 
@@ -169,8 +170,11 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 
 	router.Get("/heap", instrf("heap", dumpHeap))
 
-	router.Get("/federate", instrf("federate", h.federation))
 	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
+
+	router.Get("/federate", instrh("federate", httputil.CompressionHandler{
+		Handler: http.HandlerFunc(h.federation),
+	}))
 
 	h.apiLegacy.Register(router.WithPrefix("/api"))
 	h.apiV1.Register(router.WithPrefix("/api/v1"))
