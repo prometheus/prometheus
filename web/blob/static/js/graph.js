@@ -601,7 +601,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     tBody.append("<tr><td>scalar</td><td>" + data.result[1] + "</td></tr>");
     break;
   case "string":
-    tBody.append("<tr><td>string</td><td>" + data.result[1] + "</td></tr>");
+    tBody.append("<tr><td>string</td><td>" + escapeHTML(data.result[1]) + "</td></tr>");
     break;
   default:
     self.showError("Unsupported value type!");
