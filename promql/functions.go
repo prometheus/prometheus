@@ -303,6 +303,16 @@ func funcCountOverTime(ev *evaluator, args Expressions) model.Value {
 	})
 }
 
+// === first_over_time(matrix model.ValMatrix) Vector ===
+func funcFirstOverTime(ev *evaluator, args Expressions) model.Value {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
+		if len(values) == 0 {
+			return 0
+		}
+		return values[0].Value
+	})
+}
+
 // === floor(vector model.ValVector) Vector ===
 func funcFloor(ev *evaluator, args Expressions) model.Value {
 	vector := ev.evalVector(args[0])
@@ -311,6 +321,17 @@ func funcFloor(ev *evaluator, args Expressions) model.Value {
 		el.Value = model.SampleValue(math.Floor(float64(el.Value)))
 	}
 	return vector
+}
+
+// === last_over_time(matrix model.ValMatrix) Vector ===
+func funcLastOverTime(ev *evaluator, args Expressions) model.Value {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
+		l := len(values)
+		if l == 0 {
+			return 0
+		}
+		return values[l-1].Value
+	})
 }
 
 // === max_over_time(matrix model.ValMatrix) Vector ===
@@ -685,6 +706,18 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValMatrix},
 		ReturnType: model.ValVector,
 		Call:       funcIncrease,
+	},
+	"first_over_time": {
+		Name:       "first_over_time",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcFirstOverTime,
+	},
+	"last_over_time": {
+		Name:       "last_over_time",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcLastOverTime,
 	},
 	"avg_over_time": {
 		Name:       "avg_over_time",
