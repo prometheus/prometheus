@@ -21,8 +21,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/log"
 
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"

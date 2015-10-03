@@ -20,8 +20,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/log"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/storage/local"
