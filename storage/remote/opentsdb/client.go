@@ -24,7 +24,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/prometheus/log"
+	"github.com/prometheus/common/log"
 
 	"github.com/prometheus/common/model"
 

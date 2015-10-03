@@ -18,8 +18,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/log"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval/discovery"
