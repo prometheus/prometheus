@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/log"
 	"github.com/samuel/go-zookeeper/zk"
 
 	"github.com/prometheus/prometheus/config"

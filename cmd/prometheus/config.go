@@ -24,7 +24,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/prometheus/log"
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
