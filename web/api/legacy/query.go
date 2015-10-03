@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/log"
 )
 
 // Enables cross-site script calls.

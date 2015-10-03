@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/route"
-	"github.com/prometheus/log"
 )
 
 // Sub-directories for templates and static content.
