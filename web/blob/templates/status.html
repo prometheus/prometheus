@@ -26,6 +26,7 @@
 
     <h2 id="configuration">Configuration</h2>
     <pre>{{.Status.Config}}</pre>
+    <button class="btn btn-primary" id="reload-conf-btn">Reload Configurations</button>
 
     <h2 id="rules">Rules</h2>
     <pre>{{range call .Status.Rules}}{{.HTMLSnippet pathPrefix}}<br/>{{end}}</pre>
@@ -98,3 +99,7 @@
     </table>
   </div>
 {{end}}
+
+{{ define "js" }}
+<script src="{{ pathPrefix }}/static/js/status.js"></script>
+{{ end }}
