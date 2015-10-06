@@ -63,13 +63,13 @@ func (zl zookeeperLogger) Printf(s string, i ...interface{}) {
 // ServersetDiscovery retrieves target information from a Serverset server
 // and updates them via watches.
 type ServersetDiscovery struct {
-	conf      *config.ServersetSDConfig
-	conn      *zk.Conn
-	mu        sync.RWMutex
-	sources   map[string]*config.TargetGroup
-	sdUpdates *chan<- *config.TargetGroup
-	updates   chan zookeeperTreeCacheEvent
-	treeCache *zookeeperTreeCache
+	conf       *config.ServersetSDConfig
+	conn       *zk.Conn
+	mu         sync.RWMutex
+	sources    map[string]*config.TargetGroup
+	sdUpdates  *chan<- *config.TargetGroup
+	updates    chan zookeeperTreeCacheEvent
+	treeCaches []*zookeeperTreeCache
 }
 
 // NewServersetDiscovery returns a new ServersetDiscovery for the given config.
@@ -87,7 +87,9 @@ func NewServersetDiscovery(conf *config.ServersetSDConfig) *ServersetDiscovery {
 		sources: map[string]*config.TargetGroup{},
 	}
 	go sd.processUpdates()
-	sd.treeCache = newZookeeperTreeCache(conn, conf.Paths[0], updates)
+	for _, path := range conf.Paths {
+		sd.treeCaches = append(sd.treeCaches, newZookeeperTreeCache(conn, path, updates))
+	}
 	return sd
 }
 
@@ -143,7 +145,9 @@ func (sd *ServersetDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan str
 	sd.mu.Unlock()
 
 	<-done
-	sd.treeCache.Stop()
+	for _, tc := range sd.treeCaches {
+		tc.Stop()
+	}
 }
 
 func parseServersetMember(data []byte, path string) (*model.LabelSet, error) {
