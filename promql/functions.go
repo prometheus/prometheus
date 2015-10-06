@@ -30,11 +30,12 @@ import (
 // Function represents a function of the expression language and is
 // used by function nodes.
 type Function struct {
-	Name       string
-	ArgTypes   []model.ValueType
-	Variadic   bool
-	ReturnType model.ValueType
-	Call       func(ev *evaluator, args Expressions) model.Value
+	Name         string
+	ArgTypes     []model.ValueType
+	OptionalArgs int
+	Variadic     bool
+	ReturnType   model.ValueType
+	Call         func(ev *evaluator, args Expressions) model.Value
 }
 
 // === time() model.SampleValue ===
@@ -765,11 +766,11 @@ var functions = map[string]*Function{
 		Call:       funcCountScalar,
 	},
 	"delta": {
-		Name:       "delta",
-		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar},
-		Variadic:   true,
-		ReturnType: model.ValVector,
-		Call:       funcDelta,
+		Name:         "delta",
+		ArgTypes:     []model.ValueType{model.ValMatrix, model.ValScalar},
+		OptionalArgs: 1, // The 2nd argument is deprecated.
+		ReturnType:   model.ValVector,
+		Call:         funcDelta,
 	},
 	"deriv": {
 		Name:       "deriv",
@@ -863,11 +864,11 @@ var functions = map[string]*Function{
 		Call:       funcResets,
 	},
 	"round": {
-		Name:       "round",
-		ArgTypes:   []model.ValueType{model.ValVector, model.ValScalar},
-		Variadic:   true,
-		ReturnType: model.ValVector,
-		Call:       funcRound,
+		Name:         "round",
+		ArgTypes:     []model.ValueType{model.ValVector, model.ValScalar},
+		OptionalArgs: 1,
+		ReturnType:   model.ValVector,
+		Call:         funcRound,
 	},
 	"scalar": {
 		Name:       "scalar",
