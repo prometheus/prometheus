@@ -149,6 +149,18 @@ eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
 
 clear
 
+# Tests for label_join.
+load 5m
+  testmetric{src="a",src1="b",src2="c",dst="original-destination-value"} 0
+  testmetric{src="d",src1="e",src2="f",dst="original-destination-value"} 1
+
+# label_join joins all src values in order.
+eval instant at 0m label_join(testmetric, "dst", "-", "src", "src1", "src2")
+  testmetric{src="a",src1="b",src2="c",dst="a-b-c"} 0
+  testmetric{src="d",src1="e",src2="f",dst="d-e-f"} 1
+
+clear
+
 # Tests for vector.
 eval instant at 0m vector(1)
   {} 1

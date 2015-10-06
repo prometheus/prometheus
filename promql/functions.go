@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -656,6 +657,44 @@ func funcLabelReplace(ev *evaluator, args Expressions) model.Value {
 	return vector
 }
 
+// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
+func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
+	var (
+		vector    = ev.evalVector(args[0])
+		dst       = model.LabelName(ev.evalString(args[1]).Value)
+		sep       = ev.evalString(args[2]).Value
+		srcLabels = make([]model.LabelName, 0)
+	)
+	for i := 3; i < len(args); i++ {
+		src := args[i]
+		srcLabels = append(srcLabels, model.LabelName(ev.evalString(src).Value))
+	}
+
+	if !model.LabelNameRE.MatchString(string(dst)) {
+		ev.errorf("invalid destination label name in label_join(): %s", dst)
+	}
+
+	outSet := make(map[model.Fingerprint]struct{}, len(vector))
+	for _, el := range vector {
+		srcVals := make([]string, 0)
+		for _, src := range srcLabels {
+			srcVal := string(el.Metric.Metric[src])
+			srcVals = append(srcVals, srcVal)
+		}
+
+		dstVal := strings.Join(srcVals, sep)
+		el.Metric.Set(dst, model.LabelValue(dstVal))
+
+		fp := el.Metric.Metric.Fingerprint()
+		if _, exists := outSet[fp]; exists {
+			ev.errorf("duplicated label set in output of label_join(): %s", el.Metric.Metric)
+		} else {
+			outSet[fp] = struct{}{}
+		}
+	}
+	return vector
+}
+
 // === vector(s scalar) Vector ===
 func funcVector(ev *evaluator, args Expressions) model.Value {
 	return vector{
@@ -764,6 +803,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValVector, model.ValString, model.ValString, model.ValString, model.ValString},
 		ReturnType: model.ValVector,
 		Call:       funcLabelReplace,
+	},
+	"label_join": {
+		Name:       "label_join",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValString, model.ValString, model.ValString, model.ValString, model.ValString},
+		ReturnType: model.ValVector,
+		Call:       funcLabelJoin,
 	},
 	"ln": {
 		Name:       "ln",
