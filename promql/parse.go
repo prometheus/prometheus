@@ -1077,7 +1077,7 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 		if !n.Func.Variadic && nargs > len(n.Args) {
 			p.errorf("expected at least %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
 		}
-		if nargs < len(n.Args) {
+		if !n.Func.Variadic && nargs < len(n.Args) {
 			p.errorf("expected at most %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
 		}
 		if n.Func.Variadic && nargs > len(n.Args)+1 {
