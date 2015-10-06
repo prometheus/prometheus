@@ -1,26 +1,26 @@
-/* globals PATH_PREFIX, jQuery */
-(function ($, undefined) {
+/* globals PATH_PREFIX, $ */
+$(function () {
     'use strict';
 
-    $('#reload-conf-btn').on('click', function () {
+    $('#reload_conf_btn').on('click', function () {
         var elBtn;
         $(this).promise().then(function (btn) {
             elBtn = btn;
             elBtn.text('Waiting...').prop('disabled', true);
             return $.post(PATH_PREFIX + '/-/reload');
         }).then(function () {
-            elBtn.text('Loaded Successfully!')
+            elBtn.text('Triggered Reload!')
                 .prop('disabled', false)
                 .addClass('btn-success');
         }, function() {
-            elBtn.text('Failed to load!')
+            elBtn.text('Triggered Reload Failed!')
                 .prop('disabled', false)
                 .addClass('btn-danger');
         }).always(function () {
             setTimeout(function () {
                 elBtn.removeClass('btn-danger btn-success')
-                    .text('Reload Configurations');
-            }, 1000);
+                    .text('Reload Configuration');
+            }, 1400);
         });
     });
-}(jQuery));
+});

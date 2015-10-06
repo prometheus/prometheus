@@ -1,7 +1,10 @@
 {{define "head"}}
   <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/alerts.css">
-  <script src="{{ pathPrefix }}/static/js/alerts.js"></script>
 {{end}}
+
+{{ define "js" }}
+  <script src="{{ pathPrefix }}/static/js/alerts.js"></script>
+{{ end }}
 
 {{define "content"}}
 <div class="container-fluid">
@@ -49,6 +52,3 @@
   </table>
 </div>
 {{end}}
-
-{{ define "js" }}
-{{ end }}

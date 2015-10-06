@@ -3,7 +3,9 @@
 
     <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.css">
     <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-datetimepicker/bootstrap-datetimepicker.min.css">
+{{end}}
 
+{{ define "js" }}
     <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.v3.js"></script>
     <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
     <script src="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.js"></script>
@@ -17,7 +19,7 @@
     <script src="{{ pathPrefix }}/static/js/graph.js"></script>
 
     <script id="graph_template" type="text/x-handlebars-template"></script>
-{{end}}
+{{ end }}
 
 {{define "content"}}
     <div id="graph_container" class="container-fluid">
@@ -26,6 +28,3 @@
       <div><input class="btn btn-primary" type="submit" value="Add Graph" id="add_graph"></div>
     </div>
 {{end}}
-
-{{ define "js" }}
-{{ end }}
