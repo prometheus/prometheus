@@ -1,23 +1,4 @@
-## 0.16.0rc2 / 2015-09-30
-
-BREAKING CHANGES:
-
-* [CHANGE] Renamed `global.labels` to `global.external_labels`.
-
-All changes:
-
-* [CHANGE] Renamed `global.labels` to `global.external_labels`.
-* [ENHANCEMENT] Several flaky tests fixed.
-* [ENHANCEMENT] Switched to common routing package.
-* [ENHANCEMENT] Usage of more resilient metric decoder.
-* [BUGFIX] Fix high CPU usage on configuration reload.
-* [BUGFIX] Fix disappearing `__params` on configuration reload.
-* [BUGFIX] Make `labelmap` action available through configuration.
-* [BUGFIX] Fix direct access of protobuf fields.
-* [BUGFIX] Fix panic on Consul request error.
-* [BUGFIX] Redirect of graph endpoint for prefixed setups.
-
-## 0.16.0rc1 / 2015-09-18
+## 0.16.0 / 2015-10-08
 
 BREAKING CHANGES:
 
@@ -25,25 +6,41 @@ BREAKING CHANGES:
 * The `hash_mod` relabeling action now uses MD5 hashes instead of FNV hashes to
   achieve a better distribution.
 * The DNS-SD meta label `__meta_dns_srv_name` was renamed to `__meta_dns_name`
-  to reflect support for other record types than `SRV`.
+  to reflect support for DNS record types other than `SRV`.
 * The default full refresh interval for the file-based service discovery has been
   increased from 30 seconds to 5 minutes.
 * In relabeling, parts of a source label that weren't matched by
-  the specified regular expression are no longer included in the replacement output.
+  the specified regular expression are no longer included in the replacement
+  output.
 * Queries no longer interpolate between two data points. Instead, the resulting
   value will always be the latest value before the evaluation query timestamp.
 * Regular expressions supplied via the configuration are now anchored to match
   full strings instead of substrings.
 * Global labels are not appended upon storing time series anymore. Instead,
   they are only appended when communicating with external systems
-  (Alertmanager, remote storages, federation).
+  (Alertmanager, remote storages, federation). They have thus also been renamed
+  from `global.labels` to `global.external_labels`.
 * The names and units of metrics related to remote storage sample appends have
   been changed.
 * The experimental support for writing to InfluxDB has been updated to work
   with InfluxDB 0.9.x. 0.8.x versions of InfluxDB are not supported anymore.
+* Escape sequences in double- and single-quoted string literals in rules or query
+  expressions are now interpreted like escape sequences in Go string literals
+  (https://golang.org/ref/spec#String_literals).
+
+Future breaking changes / deprecated features:
+
+* The `delta()` function had an undocumented optional second boolean argument
+  to make it behave like `increase()`. This second argument will be removed in
+  the future. Migrate any occurrences of `delta(x, 1)` to use `increase(x)`
+  instead.
+* Support for filter operators between two scalar values (like `2 > 1`) will be
+  removed in the future. These will require a `bool` modifier on the operator,
+  e.g.  `2 > bool 1`.
 
 All changes:
 
+* [CHANGE] Renamed `global.labels` to `global.external_labels`.
 * [CHANGE] Vendoring is now done via govendor instead of godep.
 * [CHANGE] Change web UI root page to show the graphing interface instead of
   the server status page.
@@ -62,6 +59,9 @@ All changes:
   `__meta_dns_name` to reflect support for other record types than `SRV`.
 * [CHANGE] Release tarballs now contain the binaries in a nested directory.
 * [CHANGE] Update InfluxDB write support to work with InfluxDB 0.9.x.
+* [FEATURE] Support full "Go-style" escape sequences in strings and add raw
+  string literals.
+* [FEATURE] Add EC2 service discovery support.
 * [FEATURE] Allow configuring TLS options in scrape configurations.
 * [FEATURE] Add instrumentation around configuration reloads.
 * [FEATURE] Add `bool` modifier to comparison operators to enable boolean
@@ -99,6 +99,9 @@ All changes:
 * [FEATURE] Add console templates for the SNMP exporter.
 * [FEATURE] Make it possible to relabel target scrape query parameters.
 * [FEATURE] Add support for `A` and `AAAA` records in DNS service discovery.
+* [ENHANCEMENT] Fix several flaky tests.
+* [ENHANCEMENT] Switch to common routing package.
+* [ENHANCEMENT] Use more resilient metric decoder.
 * [ENHANCEMENT] Update vendored dependencies.
 * [ENHANCEMENT] Add compression to more HTTP handlers.
 * [ENHANCEMENT] Make -web.external-url flag help string more verbose.
@@ -114,6 +117,13 @@ All changes:
 * [ENHANCEMENT] Handle parser and query evaluation runtime panics more
   gracefully.
 * [ENHANCEMENT] Add IDs to H2 tags on status page to allow anchored linking.
+* [BUGFIX] Fix watching multiple paths with Zookeeper serverset discovery.
+* [BUGFIX] Fix high CPU usage on configuration reload.
+* [BUGFIX] Fix disappearing `__params` on configuration reload.
+* [BUGFIX] Make `labelmap` action available through configuration.
+* [BUGFIX] Fix direct access of protobuf fields.
+* [BUGFIX] Fix panic on Consul request error.
+* [BUGFIX] Redirect of graph endpoint for prefixed setups.
 * [BUGFIX] Fix series file deletion behavior when purging archived series.
 * [BUGFIX] Fix error checking and logging around checkpointing.
 * [BUGFIX] Fix map initialization in target manager.
@@ -128,6 +138,9 @@ All changes:
 * [BUGFIX] Fix error handling bug in test code.
 * [BUGFIX] Fix Consul port meta label.
 * [BUGFIX] Fix lexer bug that treated non-Latin Unicode digits as digits.
+* [CLEANUP] Remove obsolete federation example from console templates.
+* [CLEANUP] Remove duplicated Bootstrap JS inclusion on graph page.
+* [CLEANUP] Switch to common log package.
 * [CLEANUP] Update build environment scripts and Makefiles to work better with
   native Go build mechanisms and new Go 1.5 experimental vendoring support.
 * [CLEANUP] Remove logged notice about 0.14.x configuration file format change.
