@@ -64,6 +64,7 @@ type Handler struct {
 	listenErrCh chan error
 	quitCh      chan struct{}
 	reloadCh    chan struct{}
+	sigReloadCh chan error
 	options     *Options
 	statusInfo  *PrometheusStatus
 
@@ -71,15 +72,17 @@ type Handler struct {
 	mtx            sync.RWMutex
 }
 
+// ValidateConfig validates if config fits to requirements.
+func (h *Handler) ValidateConfig(conf *config.Config) error {
+	return nil
+}
+
 // ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (h *Handler) ApplyConfig(conf *config.Config) bool {
+func (h *Handler) ApplyConfig(conf *config.Config) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
 	h.externalLabels = conf.GlobalConfig.ExternalLabels
-
-	return true
 }
 
 // PrometheusStatus contains various information about the status
@@ -98,15 +101,17 @@ type PrometheusStatus struct {
 	mu sync.RWMutex
 }
 
+// ValidateConfig validates if config fits to requirements.
+func (s *PrometheusStatus) ValidateConfig(conf *config.Config) error {
+	return nil
+}
+
 // ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (s *PrometheusStatus) ApplyConfig(conf *config.Config) bool {
+func (s *PrometheusStatus) ApplyConfig(conf *config.Config) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.Config = conf.String()
-
-	return true
 }
 
 // Options for the web Handler.
@@ -130,6 +135,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		listenErrCh: make(chan error),
 		quitCh:      make(chan struct{}),
 		reloadCh:    make(chan struct{}),
+		sigReloadCh: make(chan error),
 		options:     o,
 		statusInfo:  status,
 
@@ -216,6 +222,12 @@ func (h *Handler) Quit() <-chan struct{} {
 // Reload returns the receive-only channel that signals configuration reload requests.
 func (h *Handler) Reload() <-chan struct{} {
 	return h.reloadCh
+}
+
+// SignaledReload returns the write-only channel that signals on configuration reload status.
+// it receives nil on success reloading or an error instance on failure.
+func (h *Handler) SignaledReload() chan<- error {
+	return h.sigReloadCh
 }
 
 // Run serves the HTTP endpoints.
@@ -320,8 +332,13 @@ func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Reloading configuration file...")
 	h.reloadCh <- struct{}{}
+	err := <- h.sigReloadCh
+	if err == nil {
+		w.WriteHeader(http.StatusAccepted)
+	} else {
+		http.Error(w, err.Error(), http.StatusNotAcceptable)
+	}
 }
 
 func (h *Handler) getTemplateFile(name string) (string, error) {

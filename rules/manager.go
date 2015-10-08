@@ -305,15 +305,32 @@ func (m *Manager) transferAlertState() func() {
 	}
 }
 
-// ApplyConfig updates the rule manager's state as the config requires. If
-// loading the new rules failed the old rule set is restored. Returns true on success.
-func (m *Manager) ApplyConfig(conf *config.Config) bool {
+// ValidateConfig validates if config fits to requirements.
+func (m *Manager) ValidateConfig(conf *config.Config) (err error) {
+	var files []string
+	for _, pat := range conf.RuleFiles {
+		fs, err := filepath.Glob(pat)
+		if err != nil {
+			// The only error can be a bad pattern.
+			log.Errorf("Error retrieving rule files for %s: %s", pat, err)
+			return err
+		}
+		files = append(files, fs...)
+	}
+	if err := m.loadRuleFiles(true, files...); err != nil {
+		log.Errorf("Error loading rules, previous rule set restored: %s", err)
+		return err
+	}
+	return nil
+}
+
+// ApplyConfig updates the rule manager's state as the config requires.
+func (m *Manager) ApplyConfig(conf *config.Config) {
 	m.Lock()
 	defer m.Unlock()
 
 	defer m.transferAlertState()()
 
-	success := true
 	m.interval = time.Duration(conf.GlobalConfig.EvaluationInterval)
 
 	rulesSnapshot := make([]Rule, len(m.rules))
@@ -321,27 +338,27 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 	m.rules = m.rules[:0]
 
 	var files []string
+	// todo(roy): the validated file content should be passed somehow from ValidateConfig.
+	// then we can remove it after some refactoring.
 	for _, pat := range conf.RuleFiles {
 		fs, err := filepath.Glob(pat)
 		if err != nil {
 			// The only error can be a bad pattern.
 			log.Errorf("Error retrieving rule files for %s: %s", pat, err)
-			success = false
 		}
 		files = append(files, fs...)
 	}
-	if err := m.loadRuleFiles(files...); err != nil {
+	if err := m.loadRuleFiles(false, files...); err != nil {
 		// If loading the new rules failed, restore the old rule set.
 		m.rules = rulesSnapshot
 		log.Errorf("Error loading rules, previous rule set restored: %s", err)
-		success = false
 	}
-
-	return success
 }
 
 // loadRuleFiles loads alerting and recording rules from the given files.
-func (m *Manager) loadRuleFiles(filenames ...string) error {
+// By using dryRun, no config changes applied at all, it only validates
+// the config and returns the appropriate error (or not)
+func (m *Manager) loadRuleFiles(dryRun bool, filenames ...string) error {
 	for _, fn := range filenames {
 		content, err := ioutil.ReadFile(fn)
 		if err != nil {
@@ -355,11 +372,15 @@ func (m *Manager) loadRuleFiles(filenames ...string) error {
 		for _, stmt := range stmts {
 			switch r := stmt.(type) {
 			case *promql.AlertStmt:
-				rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Summary, r.Description, r.Runbook)
-				m.rules = append(m.rules, rule)
+				if !dryRun {
+					rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Summary, r.Description, r.Runbook)
+					m.rules = append(m.rules, rule)
+				}
 			case *promql.RecordStmt:
-				rule := NewRecordingRule(r.Name, r.Expr, r.Labels)
-				m.rules = append(m.rules, rule)
+				if !dryRun {
+					rule := NewRecordingRule(r.Name, r.Expr, r.Labels)
+					m.rules = append(m.rules, rule)
+				}
 			default:
 				panic("retrieval.Manager.LoadRuleFiles: unknown statement type")
 			}

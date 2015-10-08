@@ -111,7 +111,7 @@ func Main() int {
 
 	reloadables = append(reloadables, status, targetManager, ruleManager, webHandler, notificationHandler)
 
-	if !reloadConfig(cfg.configFile, reloadables...) {
+	if reloadConfig(cfg.configFile, reloadables...) != nil {
 		return 1
 	}
 
@@ -123,12 +123,17 @@ func Main() int {
 	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
 		<-hupReady
+		var signaledChannel chan<- error
 		for {
 			select {
 			case <-hup:
 			case <-webHandler.Reload():
+				signaledChannel = webHandler.SignaledReload()
 			}
-			reloadConfig(cfg.configFile, reloadables...)
+			status := reloadConfig(cfg.configFile, reloadables...)
+			if signaledChannel != nil {
+				signaledChannel <- status
+			}
 		}
 	}()
 
@@ -189,13 +194,14 @@ func Main() int {
 // Reloadable things can change their internal state to match a new config
 // and handle failure gracefully.
 type Reloadable interface {
-	ApplyConfig(*config.Config) bool
+	ApplyConfig(*config.Config)
+	ValidateConfig(*config.Config) error
 }
 
-func reloadConfig(filename string, rls ...Reloadable) (success bool) {
+func reloadConfig(filename string, rls ...Reloadable) (err error) {
 	log.Infof("Loading configuration file %s", filename)
 	defer func() {
-		if success {
+		if err == nil {
 			configSuccess.Set(1)
 			configSuccessTime.Set(float64(time.Now().Unix()))
 		} else {
@@ -210,14 +216,20 @@ func reloadConfig(filename string, rls ...Reloadable) (success bool) {
 		if err.Error() == "unknown fields in global config: labels" {
 			log.Errorf("NOTE: The 'labels' setting in the global configuration section has been renamed to 'external_labels' and now has changed semantics (see release notes at https://github.com/prometheus/prometheus/blob/master/CHANGELOG.md). Please update your configuration file accordingly.")
 		}
-		return false
+		return err
 	}
-	success = true
 
 	for _, rl := range rls {
-		success = success && rl.ApplyConfig(conf)
+		if err = rl.ValidateConfig(conf); err != nil {
+			return err
+		}
 	}
-	return success
+
+	for _, rl := range rls {
+		rl.ApplyConfig(conf)
+	}
+
+	return err
 }
 
 var versionInfoTmpl = `

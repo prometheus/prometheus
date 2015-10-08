@@ -35,14 +35,17 @@ type Storage struct {
 	mtx            sync.RWMutex
 }
 
+// ValidateConfig validates if config fits to requirements.
+func (h *Storage) ValidateConfig(conf *config.Config) error {
+	return nil
+}
+
 // ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (s *Storage) ApplyConfig(conf *config.Config) bool {
+func (s *Storage) ApplyConfig(conf *config.Config) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	s.externalLabels = conf.GlobalConfig.ExternalLabels
-	return true
 }
 
 // New returns a new remote Storage.
