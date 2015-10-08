@@ -43,7 +43,7 @@ type TargetProvider interface {
 	// updated target groups. The channel must be closed by the target provider
 	// if no more updates will be sent.
 	// On receiving from done Run must return.
-	Run(up chan<- *config.TargetGroup, done <-chan struct{})
+	Run(up chan<- config.TargetGroup, done <-chan struct{})
 }
 
 // TargetManager maintains a set of targets, starts and stops their scraping and
@@ -105,7 +105,7 @@ func merge(done <-chan struct{}, cs ...<-chan targetGroupUpdate) <-chan targetGr
 // targetGroupUpdate is a potentially changed/new target group
 // for the given scrape configuration.
 type targetGroupUpdate struct {
-	tg   *config.TargetGroup
+	tg   config.TargetGroup
 	scfg *config.ScrapeConfig
 }
 
@@ -126,9 +126,9 @@ func (tm *TargetManager) Run() {
 				sources[src] = struct{}{}
 			}
 
-			tgc := make(chan *config.TargetGroup)
+			tgc := make(chan config.TargetGroup)
 			// Run the target provider after cleanup of the stale targets is done.
-			defer func(prov TargetProvider, tgc chan<- *config.TargetGroup, done <-chan struct{}) {
+			defer func(prov TargetProvider, tgc chan<- config.TargetGroup, done <-chan struct{}) {
 				go prov.Run(tgc, done)
 			}(prov, tgc, tm.done)
 
@@ -140,9 +140,6 @@ func (tm *TargetManager) Run() {
 				for {
 					select {
 					case tg := <-tgc:
-						if tg == nil {
-							break
-						}
 						tgupc <- targetGroupUpdate{tg: tg, scfg: scfg}
 					case <-done:
 						return
@@ -179,12 +176,9 @@ func (tm *TargetManager) handleUpdates(ch <-chan targetGroupUpdate, done <-chan 
 			if !ok {
 				return
 			}
-			if update.tg == nil {
-				break
-			}
 			log.Debugf("Received potential update for target group %q", update.tg.Source)
 
-			if err := tm.updateTargetGroup(update.tg, update.scfg); err != nil {
+			if err := tm.updateTargetGroup(&update.tg, update.scfg); err != nil {
 				log.Errorf("Error updating targets: %s", err)
 			}
 		case <-done:
@@ -382,10 +376,10 @@ func (tp *prefixedTargetProvider) Sources() []string {
 	return srcs
 }
 
-func (tp *prefixedTargetProvider) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (tp *prefixedTargetProvider) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
-	ch2 := make(chan *config.TargetGroup)
+	ch2 := make(chan config.TargetGroup)
 	go tp.TargetProvider.Run(ch2, done)
 
 	for {
@@ -393,9 +387,6 @@ func (tp *prefixedTargetProvider) Run(ch chan<- *config.TargetGroup, done <-chan
 		case <-done:
 			return
 		case tg := <-ch2:
-			if tg == nil {
-				break
-			}
 			tg.Source = tp.prefix(tg.Source)
 			ch <- tg
 		}
@@ -537,14 +528,14 @@ func NewStaticProvider(groups []*config.TargetGroup) *StaticProvider {
 }
 
 // Run implements the TargetProvider interface.
-func (sd *StaticProvider) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (sd *StaticProvider) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
 	for _, tg := range sd.TargetGroups {
 		select {
 		case <-done:
 			return
-		case ch <- tg:
+		case ch <- *tg:
 		}
 	}
 	<-done

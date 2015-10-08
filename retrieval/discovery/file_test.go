@@ -26,7 +26,7 @@ func testFileSD(t *testing.T, ext string) {
 
 	var (
 		fsd  = NewFileDiscovery(&conf)
-		ch   = make(chan *config.TargetGroup)
+		ch   = make(chan config.TargetGroup)
 		done = make(chan struct{})
 	)
 	go fsd.Run(ch, done)

@@ -67,7 +67,7 @@ type ServersetDiscovery struct {
 	conn       *zk.Conn
 	mu         sync.RWMutex
 	sources    map[string]*config.TargetGroup
-	sdUpdates  *chan<- *config.TargetGroup
+	sdUpdates  *chan<- config.TargetGroup
 	updates    chan zookeeperTreeCacheEvent
 	treeCaches []*zookeeperTreeCache
 }
@@ -124,7 +124,7 @@ func (sd *ServersetDiscovery) processUpdates() {
 		}
 		sd.mu.Unlock()
 		if sd.sdUpdates != nil {
-			*sd.sdUpdates <- tg
+			*sd.sdUpdates <- *tg
 		}
 	}
 
@@ -134,11 +134,11 @@ func (sd *ServersetDiscovery) processUpdates() {
 }
 
 // Run implements the TargetProvider interface.
-func (sd *ServersetDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (sd *ServersetDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	// Send on everything we have seen so far.
 	sd.mu.Lock()
 	for _, targetGroup := range sd.sources {
-		ch <- targetGroup
+		ch <- *targetGroup
 	}
 	// Tell processUpdates to send future updates.
 	sd.sdUpdates = &ch
