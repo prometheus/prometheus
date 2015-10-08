@@ -103,7 +103,7 @@ func (fd *FileDiscovery) watchFiles() {
 }
 
 // Run implements the TargetProvider interface.
-func (fd *FileDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (fd *FileDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 	defer fd.stop()
 
@@ -188,7 +188,7 @@ func (fd *FileDiscovery) stop() {
 
 // refresh reads all files matching the discovery's patterns and sends the respective
 // updated target groups through the channel.
-func (fd *FileDiscovery) refresh(ch chan<- *config.TargetGroup) {
+func (fd *FileDiscovery) refresh(ch chan<- config.TargetGroup) {
 	ref := map[string]int{}
 	for _, p := range fd.listFiles() {
 		tgroups, err := readFile(p)
@@ -199,7 +199,7 @@ func (fd *FileDiscovery) refresh(ch chan<- *config.TargetGroup) {
 			continue
 		}
 		for _, tg := range tgroups {
-			ch <- tg
+			ch <- *tg
 		}
 		ref[p] = len(tgroups)
 	}
@@ -208,7 +208,7 @@ func (fd *FileDiscovery) refresh(ch chan<- *config.TargetGroup) {
 		m, ok := ref[f]
 		if !ok || n > m {
 			for i := m; i < n; i++ {
-				ch <- &config.TargetGroup{Source: fileSource(f, i)}
+				ch <- config.TargetGroup{Source: fileSource(f, i)}
 			}
 		}
 	}

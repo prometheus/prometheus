@@ -91,7 +91,7 @@ func NewDNSDiscovery(conf *config.DNSSDConfig) *DNSDiscovery {
 }
 
 // Run implements the TargetProvider interface.
-func (dd *DNSDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (dd *DNSDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
 	ticker := time.NewTicker(dd.interval)
@@ -119,7 +119,7 @@ func (dd *DNSDiscovery) Sources() []string {
 	return srcs
 }
 
-func (dd *DNSDiscovery) refreshAll(ch chan<- *config.TargetGroup) {
+func (dd *DNSDiscovery) refreshAll(ch chan<- config.TargetGroup) {
 	var wg sync.WaitGroup
 	wg.Add(len(dd.names))
 	for _, name := range dd.names {
@@ -133,7 +133,7 @@ func (dd *DNSDiscovery) refreshAll(ch chan<- *config.TargetGroup) {
 	wg.Wait()
 }
 
-func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) error {
+func (dd *DNSDiscovery) refresh(name string, ch chan<- config.TargetGroup) error {
 	response, err := lookupAll(name, dd.qtype)
 	dnsSDLookupsCount.Inc()
 	if err != nil {
@@ -141,7 +141,7 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- *config.TargetGroup) erro
 		return err
 	}
 
-	tg := &config.TargetGroup{}
+	var tg config.TargetGroup
 	for _, record := range response.Answer {
 		target := model.LabelValue("")
 		switch addr := record.(type) {

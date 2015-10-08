@@ -52,12 +52,12 @@ type fakeTargetProvider struct {
 	update  chan *config.TargetGroup
 }
 
-func (tp *fakeTargetProvider) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (tp *fakeTargetProvider) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 	for {
 		select {
 		case tg := <-tp.update:
-			ch <- tg
+			ch <- *tg
 		case <-done:
 			return
 		}
