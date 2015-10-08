@@ -282,7 +282,7 @@ func TestLoadConfig(t *testing.T) {
 
 	// String method must not reveal authentication credentials.
 	s := c.String()
-	if strings.Contains(s, "admin_name") || strings.Contains(s, "admin_password") {
+	if strings.Contains(s, "admin_password") {
 		t.Fatalf("config's String method reveals authentication credentials.")
 	}
 }

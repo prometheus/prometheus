@@ -33,7 +33,7 @@ var (
 	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
-	patAuthLine   = regexp.MustCompile(`((?:username|password|bearer_token|secret_key):\s+)(".+"|'.+'|[^\s]+)`)
+	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key):\s+)(".+"|'.+'|[^\s]+)`)
 )
 
 // Load parses the YAML input s into a Config.
