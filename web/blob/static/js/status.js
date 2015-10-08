@@ -9,11 +9,12 @@ $(function () {
             elBtn.text('Waiting...').prop('disabled', true);
             return $.post(PATH_PREFIX + '/-/reload');
         }).then(function () {
-            elBtn.text('Triggered Reload!')
+            elBtn.text('Reloaded Successfully!')
                 .prop('disabled', false)
                 .addClass('btn-success');
         }, function() {
-            elBtn.text('Triggered Reload Failed!')
+            // todo: show verbose error (the body itself)
+            elBtn.text('Failed to reload!')
                 .prop('disabled', false)
                 .addClass('btn-danger');
         }).always(function () {
