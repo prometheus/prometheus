@@ -66,7 +66,7 @@ type ConsulDiscovery struct {
 // consulService contains data belonging to the same service.
 type consulService struct {
 	name      string
-	tgroup    *config.TargetGroup
+	tgroup    config.TargetGroup
 	lastIndex uint64
 	removed   bool
 	running   bool
@@ -143,7 +143,7 @@ func (cd *ConsulDiscovery) Sources() []string {
 }
 
 // Run implements the TargetProvider interface.
-func (cd *ConsulDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (cd *ConsulDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 	defer cd.stop()
 
@@ -159,7 +159,7 @@ func (cd *ConsulDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct
 				close(srv.done)
 
 				// Send clearing update.
-				ch <- &config.TargetGroup{Source: srv.name}
+				ch <- config.TargetGroup{Source: srv.name}
 				break
 			}
 			// Launch watcher for the service.
@@ -219,9 +219,8 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService, done <-ch
 			srv, ok := cd.services[name]
 			if !ok {
 				srv = &consulService{
-					name:   name,
-					tgroup: &config.TargetGroup{},
-					done:   make(chan struct{}),
+					name: name,
+					done: make(chan struct{}),
 				}
 				srv.tgroup.Source = name
 				cd.services[name] = srv
@@ -246,7 +245,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService, done <-ch
 
 // watchService retrieves updates about srv from Consul's service endpoint.
 // On a potential update the resulting target group is sent to ch.
-func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- *config.TargetGroup) {
+func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- config.TargetGroup) {
 	catalog := cd.client.Catalog()
 	for {
 		nodes, meta, err := catalog.Service(srv.name, "", &consul.QueryOptions{

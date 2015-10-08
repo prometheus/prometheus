@@ -26,8 +26,8 @@ import (
 
 var marathonValidLabel = map[string]string{"prometheus": "yes"}
 
-func newTestDiscovery(client marathon.AppListClient) (chan *config.TargetGroup, *MarathonDiscovery) {
-	ch := make(chan *config.TargetGroup)
+func newTestDiscovery(client marathon.AppListClient) (chan config.TargetGroup, *MarathonDiscovery) {
+	ch := make(chan config.TargetGroup)
 	md := NewMarathonDiscovery(&config.MarathonSDConfig{
 		Servers: []string{"http://localhost:8080"},
 	})

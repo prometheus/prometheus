@@ -53,7 +53,7 @@ func (md *MarathonDiscovery) Sources() []string {
 }
 
 // Run implements the TargetProvider interface.
-func (md *MarathonDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (md *MarathonDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
 	for {
@@ -69,7 +69,7 @@ func (md *MarathonDiscovery) Run(ch chan<- *config.TargetGroup, done <-chan stru
 	}
 }
 
-func (md *MarathonDiscovery) updateServices(ch chan<- *config.TargetGroup) error {
+func (md *MarathonDiscovery) updateServices(ch chan<- config.TargetGroup) error {
 	targetMap, err := md.fetchTargetGroups()
 	if err != nil {
 		return err
@@ -77,7 +77,7 @@ func (md *MarathonDiscovery) updateServices(ch chan<- *config.TargetGroup) error
 
 	// Update services which are still present
 	for _, tg := range targetMap {
-		ch <- tg
+		ch <- *tg
 	}
 
 	// Remove services which did disappear
@@ -85,7 +85,7 @@ func (md *MarathonDiscovery) updateServices(ch chan<- *config.TargetGroup) error
 		_, ok := targetMap[source]
 		if !ok {
 			log.Debugf("Removing group for %s", source)
-			ch <- &config.TargetGroup{Source: source}
+			ch <- config.TargetGroup{Source: source}
 		}
 	}
 

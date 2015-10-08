@@ -52,7 +52,7 @@ func TestPrefixedTargetProvider(t *testing.T) {
 		t.Fatalf("expected sources %v, got %v", expSources, tp.Sources())
 	}
 
-	ch := make(chan *config.TargetGroup)
+	ch := make(chan config.TargetGroup)
 	done := make(chan struct{})
 
 	defer close(done)
@@ -64,10 +64,10 @@ func TestPrefixedTargetProvider(t *testing.T) {
 	expGroup2.Source = "job-x:static:123:1"
 
 	// The static target provider sends on the channel once per target group.
-	if tg := <-ch; !reflect.DeepEqual(tg, &expGroup1) {
+	if tg := <-ch; !reflect.DeepEqual(tg, expGroup1) {
 		t.Fatalf("expected target group %v, got %v", expGroup1, tg)
 	}
-	if tg := <-ch; !reflect.DeepEqual(tg, &expGroup2) {
+	if tg := <-ch; !reflect.DeepEqual(tg, expGroup2) {
 		t.Fatalf("expected target group %v, got %v", expGroup2, tg)
 	}
 }
