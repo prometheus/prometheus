@@ -41,6 +41,10 @@ build:
 	@echo ">> building binaries"
 	@./scripts/build.sh
 
+tarballs:
+	@echo ">> building release tarballs"
+	@./scripts/release_tarballs.sh
+
 docker:
 	@docker build -t prometheus:$(shell git rev-parse --short HEAD) .
 
@@ -50,4 +54,5 @@ assets:
 	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
 
 
-.PHONY: all style format build test vet docker assets
+.PHONY: all style format build test vet docker assets tarballs
+
