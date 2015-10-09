@@ -36,6 +36,10 @@ build:
 	@echo ">> building binaries"
 	@./scripts/build.sh
 
+tarballs:
+	@echo ">> building release tarballs"
+	@./scripts/release_tarballs.sh
+
 docker:
 	@docker build -t prometheus:$(shell git rev-parse --short HEAD) .
 
@@ -46,4 +50,5 @@ assets:
 	@$(GO) fmt ./web/blob >/dev/null
 
 
-.PHONY: all style format build test vet docker assets
+.PHONY: all style format build test vet docker assets tarballs
+
