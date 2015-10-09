@@ -8,7 +8,7 @@
 
 <tr>
   <td>API Requests</td>
-  <td>{{ template "prom_query_drilldown" (args "sum by (job)(rate(cloudwatch_requests_total{job='cloudwatch'}[5m]))" "/s" "humanizeNoSmallPrefix") }}</td>
+  <td>{{ template "prom_query_drilldown" (args "sum by (job)(irate(cloudwatch_requests_total{job='cloudwatch'}[5m]))" "/s" "humanizeNoSmallPrefix") }}</td>
 </tr>
 {{ template "prom_right_table_tail" }}
 
