@@ -63,6 +63,21 @@ eval instant at 50m increase(http_requests[50m])
 	{path="/foo"} 100
 	{path="/bar"}  90
 
+clear
+
+# Tests for irate().
+load 5m
+	http_requests{path="/foo"}	0+10x10
+	http_requests{path="/bar"}	0+10x5 0+10x5
+
+eval instant at 50m irate(http_requests[50m])
+	{path="/foo"} .03333333333333333333
+	{path="/bar"} .03333333333333333333
+
+# Counter reset.
+eval instant at 30m irate(http_requests[50m])
+	{path="/foo"} .03333333333333333333
+	{path="/bar"} 0
 
 clear
 

@@ -127,6 +127,46 @@ func funcIncrease(ev *evaluator, args Expressions) model.Value {
 	return funcDelta(ev, args).(vector)
 }
 
+// === irate(node model.ValMatrix) Vector ===
+func funcIrate(ev *evaluator, args Expressions) model.Value {
+	resultVector := vector{}
+	for _, samples := range ev.evalMatrix(args[0]) {
+		// No sense in trying to compute a rate without at least two points. Drop
+		// this vector element.
+		if len(samples.Values) < 2 {
+			continue
+		}
+
+		lastSample := samples.Values[len(samples.Values)-1]
+		previousSample := samples.Values[len(samples.Values)-2]
+
+		var resultValue model.SampleValue
+		if lastSample.Value < previousSample.Value {
+			// Counter reset.
+			resultValue = lastSample.Value
+		} else {
+			resultValue = lastSample.Value - previousSample.Value
+		}
+
+		sampledInterval := lastSample.Timestamp.Sub(previousSample.Timestamp)
+		if sampledInterval == 0 {
+			// Avoid dividing by 0.
+			continue
+		}
+		// Convert to per-second.
+		resultValue /= model.SampleValue(sampledInterval.Seconds())
+
+		resultSample := &sample{
+			Metric:    samples.Metric,
+			Value:     resultValue,
+			Timestamp: ev.Timestamp,
+		}
+		resultSample.Metric.Del(model.MetricNameLabel)
+		resultVector = append(resultVector, resultSample)
+	}
+	return resultVector
+}
+
 // === sort(node model.ValVector) Vector ===
 func funcSort(ev *evaluator, args Expressions) model.Value {
 	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
@@ -758,6 +798,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValScalar, model.ValVector},
 		ReturnType: model.ValVector,
 		Call:       funcHistogramQuantile,
+	},
+	"irate": {
+		Name:       "irate",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcIrate,
 	},
 	"label_replace": {
 		Name:       "label_replace",
