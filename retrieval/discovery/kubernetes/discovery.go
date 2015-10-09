@@ -173,25 +173,35 @@ func (kd *Discovery) Sources() []string {
 }
 
 // Run implements the TargetProvider interface.
-func (kd *Discovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
+func (kd *Discovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
-	select {
-	case ch <- kd.updateMastersTargetGroup():
-	case <-done:
-		return
+	if tg := kd.updateMastersTargetGroup(); tg != nil {
+		select {
+		case ch <- *tg:
+		case <-done:
+			return
+		}
 	}
 
-	select {
-	case ch <- kd.updateNodesTargetGroup():
-	case <-done:
-		return
+	if tg := kd.updateNodesTargetGroup(); tg != nil {
+		select {
+		case ch <- *tg:
+		case <-done:
+			return
+		}
 	}
 
 	for _, ns := range kd.services {
 		for _, service := range ns {
+			tg := kd.addService(service)
+
+			if tg == nil {
+				continue
+			}
+
 			select {
-			case ch <- kd.addService(service):
+			case ch <- *tg:
 			case <-done:
 				return
 			}
@@ -223,8 +233,12 @@ func (kd *Discovery) Run(ch chan<- *config.TargetGroup, done <-chan struct{}) {
 			}
 		}
 
+		if tg == nil {
+			continue
+		}
+
 		select {
-		case ch <- tg:
+		case ch <- *tg:
 		case <-done:
 			return
 		}
