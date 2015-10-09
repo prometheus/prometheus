@@ -62,7 +62,7 @@ renderTemplate is the name of the template to use to render the value.
 </tr>
 <tr>
   <td>CPU</td>
-  <td>{{  template "prom_query_drilldown" (args (printf "avg by(job)(rate(process_cpu_seconds_total{job='%s'}[5m]))" .) "s/s" "humanizeNoSmallPrefix") }}</td>
+  <td>{{  template "prom_query_drilldown" (args (printf "avg by(job)(irate(process_cpu_seconds_total{job='%s'}[5m]))" .) "s/s" "humanizeNoSmallPrefix") }}</td>
 </tr>
 <tr>
   <td>Memory</td>
