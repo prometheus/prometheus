@@ -85,23 +85,20 @@ var testExpr = []struct {
 		input:    "1 / 1",
 		expected: &BinaryExpr{itemDIV, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
-		input:    "1 == 1",
-		expected: &BinaryExpr{itemEQL, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 == bool 1",
+		expected: &BinaryExpr{itemEQL, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
-		input:    "1 != 1",
-		expected: &BinaryExpr{itemNEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 != bool 1",
+		expected: &BinaryExpr{itemNEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
-		input:    "1 > 1",
-		expected: &BinaryExpr{itemGTR, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 > bool 1",
+		expected: &BinaryExpr{itemGTR, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
-		input:    "1 >= 1",
-		expected: &BinaryExpr{itemGTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 >= bool 1",
+		expected: &BinaryExpr{itemGTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
-		input:    "1 < 1",
-		expected: &BinaryExpr{itemLSS, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
-	}, {
-		input:    "1 <= 1",
-		expected: &BinaryExpr{itemLTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 < bool 1",
+		expected: &BinaryExpr{itemLSS, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
 		input:    "1 <= bool 1",
 		expected: &BinaryExpr{itemLTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
@@ -203,6 +200,10 @@ var testExpr = []struct {
 		input:  "1 and 1",
 		fail:   true,
 		errMsg: "AND and OR not allowed in binary scalar expression",
+	}, {
+		input:  "1 == 1",
+		fail:   true,
+		errMsg: "parse error at char 7: comparisons between scalars must use BOOL modifier",
 	}, {
 		input:  "1 or 1",
 		fail:   true,

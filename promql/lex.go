@@ -60,6 +60,17 @@ func (i itemType) isAggregator() bool { return i > aggregatorsStart && i < aggre
 // Returns false otherwise.
 func (i itemType) isKeyword() bool { return i > keywordsStart && i < keywordsEnd }
 
+// isCompairsonOperator returns true if the item corresponds to a comparison operator.
+// Returns false otherwise.
+func (i itemType) isComparisonOperator() bool {
+	switch i {
+	case itemEQL, itemNEQ, itemLTE, itemLSS, itemGTE, itemGTR:
+		return true
+	default:
+		return false
+	}
+}
+
 // Constants for operator precedence in expressions.
 //
 const LowestPrec = 0 // Non-operators.
