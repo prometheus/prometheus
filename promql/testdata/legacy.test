@@ -194,18 +194,18 @@ eval instant at 50m sum(http_requests) by (job) + min(http_requests) by (job) + 
 	{job="api-server"} 1750 
 
 
-# Deltas should be adjusted for target interval vs. samples under target interval.
+# Deltas should not be adjusted for target interval vs. samples under target interval.
 eval instant at 50m delta(http_requests{group="canary", instance="1", job="app-server"}[18m])
-	{group="canary", instance="1", job="app-server"} 288
+	{group="canary", instance="1", job="app-server"} 240
 
 
 # Rates should calculate per-second rates.
 eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[60m])
-	{group="canary", instance="1", job="app-server"} 0.26666666666666666
+	{group="canary", instance="1", job="app-server"} 0.2222222222222222
 
 # Counter resets at in the middle of range are handled correctly by rate().
 eval instant at 50m rate(testcounter_reset_middle[60m])
-	{} 0.03
+	{} 0.025
 
 
 # Counter resets at end of range are ignored by rate().
