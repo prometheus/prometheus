@@ -304,6 +304,7 @@ func (t *Target) String() string {
 
 // RunScraper implements Target.
 func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
+	defer t.httpClient.Transport.(*http.Transport).CloseIdleConnections()
 	defer close(t.scraperStopped)
 
 	t.RLock()
