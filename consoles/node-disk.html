@@ -46,7 +46,7 @@
   new PromConsole.Graph({
     node: document.querySelector("#diskioGraph"),
     expr: [
-      "irate(node_disk_io_time_ms{job='node',instance='{{ .Params.instance }}',device!~'^(md\\d+$|dm-)'}[5m]) / 1000 * 100",
+      "irate(node_disk_io_time_ms{job='node',instance='{{ .Params.instance }}',device!~'^(md\\\\d+$|dm-)'}[5m]) / 1000 * 100",
     ],
     min: 0,
     name: '[[ device ]]',
