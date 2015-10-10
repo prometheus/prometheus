@@ -35,7 +35,7 @@
 <tr>
   <th colspan="2">Disks</th>
 </tr>
-{{ range printf "node_disk_io_time_ms{job='node',instance='%s',device!~'^(md\\d+$|dm-)'}" .Params.instance | query | sortByLabel "device" }}
+{{ range printf "node_disk_io_time_ms{job='node',instance='%s',device!~'^(md\\\\d+$|dm-)'}" .Params.instance | query | sortByLabel "device" }}
   <tr>
     <td>{{ .Labels.device }} Utilization</td>
     <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_io_time_ms{job='node',instance='%s',device='%s'}[5m]) / 1000 * 100" .Labels.instance .Labels.device) "%" "printf.1f") }}</td>
@@ -85,7 +85,7 @@
   new PromConsole.Graph({
     node: document.querySelector("#diskioGraph"),
     expr: [
-      "irate(node_disk_io_time_ms{job='node',instance='{{ .Params.instance }}',device!~'^(md\\d+$|dm-)'}[5m]) / 1000 * 100",
+      "irate(node_disk_io_time_ms{job='node',instance='{{ .Params.instance }}',device!~'^(md\\\\d+$|dm-)'}[5m]) / 1000 * 100",
     ],
     min: 0,
     name: '[[ device ]]',
