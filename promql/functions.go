@@ -44,8 +44,9 @@ func funcTime(ev *evaluator, args Expressions) model.Value {
 	}
 }
 
-// === delta(matrix model.ValMatrix, isCounter=0 model.ValScalar) Vector ===
+// === delta(matrix model.ValMatrix) Vector ===
 func funcDelta(ev *evaluator, args Expressions) model.Value {
+	// This function still takes a 2nd argument for use by rate() and increase().
 	isCounter := len(args) >= 2 && ev.evalInt(args[1]) > 0
 	resultVector := vector{}
 
@@ -763,11 +764,10 @@ var functions = map[string]*Function{
 		Call:       funcCountScalar,
 	},
 	"delta": {
-		Name:         "delta",
-		ArgTypes:     []model.ValueType{model.ValMatrix, model.ValScalar},
-		OptionalArgs: 1, // The 2nd argument is deprecated.
-		ReturnType:   model.ValVector,
-		Call:         funcDelta,
+		Name:       "delta",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcDelta,
 	},
 	"deriv": {
 		Name:       "deriv",
