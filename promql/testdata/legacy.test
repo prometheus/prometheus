@@ -133,16 +133,6 @@ eval instant at 50m rate(http_requests[25m]) * 25 * 60
 	{group="production", instance="1", job="api-server"} 100 
 	{group="production", instance="1", job="app-server"} 300 
 
-eval instant at 50m delta(http_requests[25m], 1)
-	{group="canary", instance="0", job="api-server"} 150 
-	{group="canary", instance="0", job="app-server"} 350 
-	{group="canary", instance="1", job="api-server"} 200 
-	{group="canary", instance="1", job="app-server"} 400 
-	{group="production", instance="0", job="api-server"} 50 
-	{group="production", instance="0", job="app-server"} 250 
-	{group="production", instance="1", job="api-server"} 100 
-	{group="production", instance="1", job="app-server"} 300 
-
 eval_ordered instant at 50m sort(http_requests)
 	http_requests{group="production", instance="0", job="api-server"} 100 
 	http_requests{group="production", instance="1", job="api-server"} 200 
@@ -206,11 +196,6 @@ eval instant at 50m sum(http_requests) by (job) + min(http_requests) by (job) + 
 
 # Deltas should be adjusted for target interval vs. samples under target interval.
 eval instant at 50m delta(http_requests{group="canary", instance="1", job="app-server"}[18m])
-	{group="canary", instance="1", job="app-server"} 288
-
-
-# Deltas should perform the same operation when 2nd argument is 0.
-eval instant at 50m delta(http_requests{group="canary", instance="1", job="app-server"}[18m], 0)
 	{group="canary", instance="1", job="app-server"} 288
 
 
