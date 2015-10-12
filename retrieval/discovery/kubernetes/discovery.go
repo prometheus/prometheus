@@ -37,8 +37,6 @@ const (
 	// kubernetesMetaLabelPrefix is the meta prefix used for all meta labels.
 	// in this discovery.
 	metaLabelPrefix = model.MetaLabelPrefix + "kubernetes_"
-	// nodeLabel is the name for the label containing a target's node name.
-	nodeLabel = metaLabelPrefix + "node"
 	// serviceNamespaceLabel is the name for the label containing a target's service namespace.
 	serviceNamespaceLabel = metaLabelPrefix + "service_namespace"
 	// serviceNameLabel is the name for the label containing a target's service name.
@@ -323,8 +321,8 @@ func (kd *Discovery) updateNodesTargetGroup() *config.TargetGroup {
 		address := fmt.Sprintf("%s:%d", node.Status.Addresses[0].Address, kd.Conf.KubeletPort)
 
 		t := model.LabelSet{
-			model.AddressLabel: model.LabelValue(address),
-			nodeLabel:          model.LabelValue(nodeName),
+			model.AddressLabel:  model.LabelValue(address),
+			model.InstanceLabel: model.LabelValue(nodeName),
 		}
 		for k, v := range node.ObjectMeta.Labels {
 			labelName := strutil.SanitizeLabelName(nodeLabelPrefix + k)
