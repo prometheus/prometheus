@@ -488,10 +488,7 @@ func (p *parser) expr() Expr {
 		returnBool := false
 		// Parse bool modifier.
 		if p.peek().typ == itemBool {
-			switch op {
-			case itemEQL, itemNEQ, itemLTE, itemLSS, itemGTE, itemGTR:
-				break
-			default:
+			if !op.isComparisonOperator() {
 				p.errorf("bool modifier can only be used on comparison operators")
 			}
 			p.next()
@@ -540,6 +537,9 @@ func (p *parser) expr() Expr {
 				},
 				VectorMatching: lhs.VectorMatching,
 			}
+			if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && lhs.RHS.Type() == model.ValScalar {
+				p.errorf("comparisons between scalars must use BOOL modifier")
+			}
 		} else {
 			expr = &BinaryExpr{
 				Op:             op,
@@ -548,7 +548,11 @@ func (p *parser) expr() Expr {
 				VectorMatching: vecMatching,
 				ReturnBool:     returnBool,
 			}
+			if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && expr.Type() == model.ValScalar {
+				p.errorf("comparisons between scalars must use BOOL modifier")
+			}
 		}
+
 	}
 }
 
