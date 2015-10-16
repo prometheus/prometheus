@@ -1,3 +1,10 @@
+## 0.16.1 / 2015-10-16
+
+* [FEATURE] Add `irate()` function.
+* [ENHANCEMENT] Improved auto-completion in expression browser.
+* [CHANGE] Kubernetes SD moves node label to instance label.
+* [BUGFIX] Escape regexes in console templates.
+
 ## 0.16.0 / 2015-10-09
 
 BREAKING CHANGES:
