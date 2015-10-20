@@ -15,10 +15,12 @@ package discovery
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/defaults"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
@@ -29,10 +31,15 @@ import (
 
 const (
 	ec2Label           = model.MetaLabelPrefix + "ec2_"
+	ec2LabelAZ         = ec2Label + "availability_zone"
 	ec2LabelInstanceID = ec2Label + "instance_id"
+	ec2LabelPublicDNS  = ec2Label + "public_dns_name"
 	ec2LabelPublicIP   = ec2Label + "public_ip"
 	ec2LabelPrivateIP  = ec2Label + "private_ip"
+	ec2LabelSubnetID   = ec2Label + "subnet_id"
 	ec2LabelTag        = ec2Label + "tag_"
+	ec2LabelVPCID      = ec2Label + "vpc_id"
+	subnetSeparator    = ","
 )
 
 // EC2Discovery periodically performs EC2-SD requests. It implements
@@ -48,7 +55,7 @@ type EC2Discovery struct {
 func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
 	if conf.AccessKey == "" && conf.SecretKey == "" {
-		creds = credentials.NewEnvCredentials()
+		creds = defaults.DefaultChainCredentials
 	}
 	return &EC2Discovery{
 		aws: &aws.Config{
@@ -110,12 +117,34 @@ func (ed *EC2Discovery) refresh() (*config.TargetGroup, error) {
 				labels := model.LabelSet{
 					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
 				}
-				if inst.PublicIpAddress != nil {
-					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
-				}
 				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
 				addr := fmt.Sprintf("%s:%d", *inst.PrivateIpAddress, ed.port)
 				labels[model.AddressLabel] = model.LabelValue(addr)
+
+				if inst.PublicIpAddress != nil {
+					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
+					labels[ec2LabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
+				}
+
+				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
+
+				if inst.VpcId != nil {
+					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
+
+					subnetsMap := make(map[string]struct{})
+					for _, eni := range inst.NetworkInterfaces {
+						subnetsMap[*eni.SubnetId] = struct{}{}
+					}
+					subnets := []string{}
+					for k := range subnetsMap {
+						subnets = append(subnets, k)
+					}
+					labels[ec2LabelSubnetID] = model.LabelValue(
+						subnetSeparator +
+							strings.Join(subnets, subnetSeparator) +
+							subnetSeparator)
+				}
+
 				for _, t := range inst.Tags {
 					name := strutil.SanitizeLabelName(*t.Key)
 					labels[ec2LabelTag+model.LabelName(name)] = model.LabelValue(*t.Value)
