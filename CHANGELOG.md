@@ -324,7 +324,7 @@ All changes:
 * [ENHANCEMENT] Terminate running queries during shutdown.
 
 ## 0.13.2 / 2015-05-05
-* [MAINTENANCE] Updated vendored dependcies to their newest versions.
+* [MAINTENANCE] Updated vendored dependencies to their newest versions.
 * [MAINTENANCE] Include rule_checker and console templates in release tarball.
 * [BUGFIX] Sort NaN as the lowest value.
 * [ENHANCEMENT] Add square root, stddev and stdvar functions.
