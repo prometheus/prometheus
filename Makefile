@@ -37,8 +37,9 @@ docker:
 
 assets:
 	@echo ">> writing assets"
-	@$(GO) get github.com/jteeuwen/go-bindata/...
+	@$(GO) get -u github.com/jteeuwen/go-bindata/...
 	@$(GO) generate ./web/blob
+	@$(GO) fmt ./web/blob >/dev/null
 
 
 .PHONY: all format build test vet docker assets
