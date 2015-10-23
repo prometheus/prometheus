@@ -626,22 +626,6 @@ type MarathonSDConfig struct {
 	XXX map[string]interface{} `yaml:",inline"`
 }
 
-// KubernetesSDConfig is the configuration for Kubernetes service discovery.
-type KubernetesSDConfig struct {
-	Masters         []URL     `yaml:"masters"`
-	KubeletPort     int       `yaml:"kubelet_port,omitempty"`
-	InCluster       bool      `yaml:"in_cluster,omitempty"`
-	BearerTokenFile string    `yaml:"bearer_token_file,omitempty"`
-	Username        string    `yaml:"username,omitempty"`
-	Password        string    `yaml:"password,omitempty"`
-	RetryInterval   Duration  `yaml:"retry_interval,omitempty"`
-	RequestTimeout  Duration  `yaml:"request_timeout,omitempty"`
-	TLSConfig       TLSConfig `yaml:"tls_config,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultMarathonSDConfig
@@ -657,6 +641,22 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	return checkOverflow(c.XXX, "marathon_sd_config")
 }
 
+// KubernetesSDConfig is the configuration for Kubernetes service discovery.
+type KubernetesSDConfig struct {
+	Masters         []URL      `yaml:"masters"`
+	KubeletPort     int        `yaml:"kubelet_port,omitempty"`
+	InCluster       bool       `yaml:"in_cluster,omitempty"`
+	BasicAuth       *BasicAuth `yaml:"basic_auth,omitempty"`
+	BearerToken     string     `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string     `yaml:"bearer_token_file,omitempty"`
+	RetryInterval   Duration   `yaml:"retry_interval,omitempty"`
+	RequestTimeout  Duration   `yaml:"request_timeout,omitempty"`
+	TLSConfig       TLSConfig  `yaml:"tls_config,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultKubernetesSDConfig
@@ -667,6 +667,12 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	}
 	if len(c.Masters) == 0 {
 		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes master")
+	}
+	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
 
 	return checkOverflow(c.XXX, "kubernetes_sd_config")

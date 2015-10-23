@@ -107,8 +107,10 @@ scrape_configs:
   kubernetes_sd_configs:
   - masters:
     - 'https://localhost:1234'
-    username: 'myusername'
-    password: 'mypassword'
+
+    basic_auth:
+      username: 'myusername'
+      password: 'mypassword'
 
 - job_name: service-marathon
   marathon_sd_configs:
