@@ -624,16 +624,22 @@ func newKubernetesHTTPClient(conf *config.KubernetesSDConfig) (*http.Client, err
 		TLSClientConfig: tlsConfig,
 	}
 
-	bearerToken, err := ioutil.ReadFile(bearerTokenFile)
-	if err != nil {
-		return nil, err
+	// If a bearer token is provided, create a round tripper that will set the
+	// Authorization header correctly on each request.
+	bearerToken := conf.BearerToken
+	if len(bearerToken) == 0 && len(bearerTokenFile) > 0 {
+		b, err := ioutil.ReadFile(bearerTokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read bearer token file %s: %s", bearerTokenFile, err)
+		}
+		bearerToken = string(b)
+	}
+	if len(bearerToken) > 0 {
+		rt = httputil.NewBearerAuthRoundTripper(bearerToken, rt)
 	}
 
-	if len(bearerToken) > 0 {
-		rt = httputil.NewBearerAuthRoundTripper(string(bearerToken), rt)
-	}
-	if len(conf.Username) > 0 && len(conf.Password) > 0 {
-		rt = httputil.NewBasicAuthRoundTripper(conf.Username, conf.Password, rt)
+	if conf.BasicAuth != nil {
+		rt = httputil.NewBasicAuthRoundTripper(conf.BasicAuth.Username, conf.BasicAuth.Password, rt)
 	}
 
 	return &http.Client{
