@@ -105,7 +105,7 @@ scrape_configs:
 - job_name: service-kubernetes
 
   kubernetes_sd_configs:
-  - masters:
+  - api_servers:
     - 'https://localhost:1234'
 
     basic_auth:

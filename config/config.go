@@ -643,7 +643,7 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
-	Masters         []URL      `yaml:"masters"`
+	APIServers      []URL      `yaml:"api_servers"`
 	KubeletPort     int        `yaml:"kubelet_port,omitempty"`
 	InCluster       bool       `yaml:"in_cluster,omitempty"`
 	BasicAuth       *BasicAuth `yaml:"basic_auth,omitempty"`
@@ -665,8 +665,8 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err != nil {
 		return err
 	}
-	if len(c.Masters) == 0 {
-		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes master")
+	if len(c.APIServers) == 0 {
+		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes API server")
 	}
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
