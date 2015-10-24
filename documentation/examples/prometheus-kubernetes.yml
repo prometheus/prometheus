@@ -1,5 +1,5 @@
 # A scrape configuration for running Prometheus on a Kubernetes cluster.
-# This uses separate scrape configs for cluster components (i.e. master, node)
+# This uses separate scrape configs for cluster components (i.e. API server, node)
 # and services to allow each to use different authentication configs.
 #
 # Kubernetes labels will be added as Prometheus labels on metrics via the
@@ -18,20 +18,20 @@ scrape_configs:
   bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:
-  - masters:
+  - api_servers:
     - 'https://kubernetes.default.svc'
     in_cluster: true
 
   relabel_configs:
   - source_labels: [__meta_kubernetes_role]
     action: keep
-    regex: ^(?:master|node)$
+    regex: (?:apiserver|node)
   - action: labelmap
-    regex: ^__meta_kubernetes_node_label_(.+)$
+    regex: __meta_kubernetes_node_label_(.+)
     replacement: $1
   - source_labels: [__meta_kubernetes_role]
     action: replace
-    regex: ^(.+)$
+    regex: (.+)
     target_label: kubernetes_role
     replacement: $1
 
@@ -49,44 +49,44 @@ scrape_configs:
 - job_name: 'kubernetes-services'
 
   kubernetes_sd_configs:
-  - masters:
+  - api_servers:
     - 'https://kubernetes.default.svc'
     in_cluster: true
 
   relabel_configs:
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
     action: keep
-    regex: ^true$
+    regex: true
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
     action: replace
     target_label: __scheme__
-    regex: ^(https?)$
+    regex: (https?)
     replacement: $1
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
     action: replace
     target_label: __metrics_path__
-    regex: ^(.+)$
+    regex: (.+)
     replacement: $1
   - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
     action: replace
     target_label: __address__
-    regex: ^(.+)(?::\d+);(\d+)$
+    regex: (.+)(?::\d+);(\d+)
     replacement: $1:$2
   - action: labelmap
-    regex: ^__meta_kubernetes_service_label_(.+)$
+    regex: __meta_kubernetes_service_label_(.+)
     replacement: $1
   - source_labels: [__meta_kubernetes_role]
     action: replace
-    regex: ^(.+)$
+    regex: (.+)
     target_label: kubernetes_role
     replacement: $1
   - source_labels: [__meta_kubernetes_service_namespace]
     action: replace
-    regex: ^(.+)$
+    regex: (.+)
     target_label: kubernetes_namespace
     replacement: $1
   - source_labels: [__meta_kubernetes_service_name]
     action: replace
-    regex: ^(.+)$
+    regex: (.+)
     target_label: kubernetes_name
     replacement: $1

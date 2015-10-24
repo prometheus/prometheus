@@ -203,9 +203,11 @@ var expectedConf = &Config{
 
 			KubernetesSDConfigs: []*KubernetesSDConfig{
 				{
-					Masters:        []URL{kubernetesSDHostURL()},
-					Username:       "myusername",
-					Password:       "mypassword",
+					APIServers: []URL{kubernetesSDHostURL()},
+					BasicAuth: &BasicAuth{
+						Username: "myusername",
+						Password: "mypassword",
+					},
 					KubeletPort:    10255,
 					RequestTimeout: Duration(10 * time.Second),
 					RetryInterval:  Duration(1 * time.Second),
@@ -323,6 +325,12 @@ var expectedErrors = []struct {
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "bearertoken_basicauth.bad.yml",
+		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+	}, {
+		filename: "kubernetes_bearertoken.bad.yml",
+		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
+	}, {
+		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "marathon_no_servers.bad.yml",
