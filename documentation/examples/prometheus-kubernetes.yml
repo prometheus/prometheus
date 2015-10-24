@@ -1,5 +1,5 @@
 # A scrape configuration for running Prometheus on a Kubernetes cluster.
-# This uses separate scrape configs for cluster components (i.e. master, node)
+# This uses separate scrape configs for cluster components (i.e. API server, node)
 # and services to allow each to use different authentication configs.
 #
 # Kubernetes labels will be added as Prometheus labels on metrics via the
@@ -18,14 +18,14 @@ scrape_configs:
   bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:
-  - masters:
+  - api_servers:
     - 'https://kubernetes.default.svc'
     in_cluster: true
 
   relabel_configs:
   - source_labels: [__meta_kubernetes_role]
     action: keep
-    regex: ^(?:master|node)$
+    regex: ^(?:apiserver|node)$
   - action: labelmap
     regex: ^__meta_kubernetes_node_label_(.+)$
     replacement: $1
@@ -49,7 +49,7 @@ scrape_configs:
 - job_name: 'kubernetes-services'
 
   kubernetes_sd_configs:
-  - masters:
+  - api_servers:
     - 'https://kubernetes.default.svc'
     in_cluster: true
 

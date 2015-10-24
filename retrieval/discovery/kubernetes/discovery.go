@@ -49,8 +49,8 @@ const (
 	serviceAnnotationPrefix = metaLabelPrefix + "service_annotation_"
 	// nodesTargetGroupName is the name given to the target group for nodes.
 	nodesTargetGroupName = "nodes"
-	// mastersTargetGroupName is the name given to the target group for masters.
-	mastersTargetGroupName = "masters"
+	// apiServersTargetGroupName is the name given to the target group for API servers.
+	apiServersTargetGroupName = "apiServers"
 	// roleLabel is the name for the label containing a target's role.
 	roleLabel = metaLabelPrefix + "role"
 
@@ -70,8 +70,8 @@ type Discovery struct {
 	client *http.Client
 	Conf   *config.KubernetesSDConfig
 
-	masters                  []config.URL
-	mastersMu                sync.RWMutex
+	apiServers               []config.URL
+	apiServersMu             sync.RWMutex
 	nodesResourceVersion     string
 	servicesResourceVersion  string
 	endpointsResourceVersion string
@@ -90,7 +90,7 @@ func (kd *Discovery) Initialize() error {
 		return err
 	}
 
-	kd.masters = kd.Conf.Masters
+	kd.apiServers = kd.Conf.APIServers
 	kd.client = client
 	kd.nodes = map[string]*Node{}
 	kd.services = map[string]map[string]*Service{}
@@ -101,12 +101,12 @@ func (kd *Discovery) Initialize() error {
 
 // Sources implements the TargetProvider interface.
 func (kd *Discovery) Sources() []string {
-	sourceNames := make([]string, 0, len(kd.masters))
-	for _, master := range kd.masters {
-		sourceNames = append(sourceNames, mastersTargetGroupName+":"+master.Host)
+	sourceNames := make([]string, 0, len(kd.apiServers))
+	for _, apiServer := range kd.apiServers {
+		sourceNames = append(sourceNames, apiServersTargetGroupName+":"+apiServer.Host)
 	}
 
-	res, err := kd.queryMasterPath(nodesURL)
+	res, err := kd.queryAPIServerPath(nodesURL)
 	if err != nil {
 		// If we can't list nodes then we can't watch them. Assume this is a misconfiguration
 		// & log & return empty.
@@ -135,7 +135,7 @@ func (kd *Discovery) Sources() []string {
 		kd.nodes[node.ObjectMeta.Name] = &nodes.Items[idx]
 	}
 
-	res, err = kd.queryMasterPath(servicesURL)
+	res, err = kd.queryAPIServerPath(servicesURL)
 	if err != nil {
 		// If we can't list services then we can't watch them. Assume this is a misconfiguration
 		// & log & return empty.
@@ -174,7 +174,7 @@ func (kd *Discovery) Sources() []string {
 func (kd *Discovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
-	if tg := kd.updateMastersTargetGroup(); tg != nil {
+	if tg := kd.updateAPIServersTargetGroup(); tg != nil {
 		select {
 		case ch <- *tg:
 		case <-done:
@@ -243,61 +243,63 @@ func (kd *Discovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	}
 }
 
-func (kd *Discovery) queryMasterPath(path string) (*http.Response, error) {
+func (kd *Discovery) queryAPIServerPath(path string) (*http.Response, error) {
 	req, err := http.NewRequest("GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
-	return kd.queryMasterReq(req)
+	return kd.queryAPIServerReq(req)
 }
 
-func (kd *Discovery) queryMasterReq(req *http.Request) (*http.Response, error) {
-	// Lock in case we need to rotate masters to request.
-	kd.mastersMu.Lock()
-	defer kd.mastersMu.Unlock()
-	for i := 0; i < len(kd.masters); i++ {
+func (kd *Discovery) queryAPIServerReq(req *http.Request) (*http.Response, error) {
+	// Lock in case we need to rotate API servers to request.
+	kd.apiServersMu.Lock()
+	defer kd.apiServersMu.Unlock()
+	var lastErr error
+	for i := 0; i < len(kd.apiServers); i++ {
 		cloneReq := *req
-		cloneReq.URL.Host = kd.masters[0].Host
-		cloneReq.URL.Scheme = kd.masters[0].Scheme
+		cloneReq.URL.Host = kd.apiServers[0].Host
+		cloneReq.URL.Scheme = kd.apiServers[0].Scheme
 		res, err := kd.client.Do(&cloneReq)
 		if err == nil {
 			return res, nil
 		}
-		kd.rotateMasters()
+		lastErr = err
+		kd.rotateAPIServers()
 	}
-	return nil, fmt.Errorf("Unable to query any masters")
+	return nil, fmt.Errorf("Unable to query any API servers: %v", lastErr)
 }
 
-func (kd *Discovery) rotateMasters() {
-	if len(kd.masters) > 1 {
-		kd.masters = append(kd.masters[1:], kd.masters[0])
+func (kd *Discovery) rotateAPIServers() {
+	if len(kd.apiServers) > 1 {
+		kd.apiServers = append(kd.apiServers[1:], kd.apiServers[0])
 	}
 }
 
-func (kd *Discovery) updateMastersTargetGroup() *config.TargetGroup {
+func (kd *Discovery) updateAPIServersTargetGroup() *config.TargetGroup {
 	tg := &config.TargetGroup{
-		Source: mastersTargetGroupName,
+		Source: apiServersTargetGroupName,
 		Labels: model.LabelSet{
-			roleLabel: model.LabelValue("master"),
+			roleLabel: model.LabelValue("apiserver"),
 		},
 	}
 
-	for _, master := range kd.masters {
-		masterAddress := master.Host
-		_, _, err := net.SplitHostPort(masterAddress)
+	for _, apiServer := range kd.apiServers {
+		apiServerAddress := apiServer.Host
+		_, _, err := net.SplitHostPort(apiServerAddress)
 		// If error then no port is specified - use default for scheme.
 		if err != nil {
-			switch master.Scheme {
+			switch apiServer.Scheme {
 			case "http":
-				masterAddress = net.JoinHostPort(masterAddress, "80")
+				apiServerAddress = net.JoinHostPort(apiServerAddress, "80")
 			case "https":
-				masterAddress = net.JoinHostPort(masterAddress, "443")
+				apiServerAddress = net.JoinHostPort(apiServerAddress, "443")
 			}
 		}
 
 		t := model.LabelSet{
-			model.AddressLabel: model.LabelValue(masterAddress),
-			model.SchemeLabel:  model.LabelValue(master.Scheme),
+			model.AddressLabel: model.LabelValue(apiServerAddress),
+			model.SchemeLabel:  model.LabelValue(apiServer.Scheme),
 		}
 		tg.Targets = append(tg.Targets, t)
 	}
@@ -360,7 +362,7 @@ func (kd *Discovery) watchNodes(events chan interface{}, done <-chan struct{}, r
 		values.Add("watch", "true")
 		values.Add("resourceVersion", kd.nodesResourceVersion)
 		req.URL.RawQuery = values.Encode()
-		res, err := kd.queryMasterReq(req)
+		res, err := kd.queryAPIServerReq(req)
 		if err != nil {
 			log.Errorf("Failed to watch nodes: %s", err)
 			return
@@ -402,7 +404,7 @@ func (kd *Discovery) watchServices(events chan interface{}, done <-chan struct{}
 		values.Add("resourceVersion", kd.servicesResourceVersion)
 		req.URL.RawQuery = values.Encode()
 
-		res, err := kd.queryMasterReq(req)
+		res, err := kd.queryAPIServerReq(req)
 		if err != nil {
 			log.Errorf("Failed to watch services: %s", err)
 			return
@@ -473,7 +475,7 @@ func (kd *Discovery) addService(service *Service) *config.TargetGroup {
 	namespace[service.ObjectMeta.Name] = service
 	endpointURL := fmt.Sprintf(serviceEndpointsURL, service.ObjectMeta.Namespace, service.ObjectMeta.Name)
 
-	res, err := kd.queryMasterPath(endpointURL)
+	res, err := kd.queryAPIServerPath(endpointURL)
 	if err != nil {
 		log.Errorf("Error getting service endpoints: %s", err)
 		return nil
@@ -546,7 +548,7 @@ func (kd *Discovery) watchServiceEndpoints(events chan interface{}, done <-chan 
 		values.Add("resourceVersion", kd.servicesResourceVersion)
 		req.URL.RawQuery = values.Encode()
 
-		res, err := kd.queryMasterReq(req)
+		res, err := kd.queryAPIServerReq(req)
 		if err != nil {
 			log.Errorf("Failed to watch service endpoints: %s", err)
 			return
