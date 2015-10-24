@@ -16,6 +16,8 @@ package log
 import (
 	"flag"
 	"fmt"
+	"net/url"
+	"os"
 	"runtime"
 	"strings"
 
@@ -39,10 +41,71 @@ func (f levelFlag) Set(level string) error {
 	return nil
 }
 
+func setSyslogFormatter(appname, local string) error {
+	if appname == "" {
+		return fmt.Errorf("missing appname paramter")
+	}
+	if local == "" {
+		return fmt.Errorf("missing local paramter")
+	}
+
+	fmter, err := newSyslogger(appname, local, origLogger.Formatter)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating syslog formatter: %v\n", err)
+		origLogger.Errorf("can't connect logger to syslog: %v", err)
+		return err
+	}
+	origLogger.Formatter = fmter
+	return nil
+}
+
+func setJSONFormatter() {
+	origLogger.Formatter = &logrus.JSONFormatter{}
+}
+
+type logFormatFlag struct{ uri string }
+
+// String implements flag.Value.
+func (f logFormatFlag) String() string {
+	return f.uri
+}
+
+// Set implements flag.Value.
+func (f logFormatFlag) Set(format string) error {
+	f.uri = format
+	u, err := url.Parse(format)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "logger" {
+		return fmt.Errorf("invalid scheme %s", u.Scheme)
+	}
+	jsonq := u.Query().Get("json")
+	if jsonq == "true" {
+		setJSONFormatter()
+	}
+
+	switch u.Opaque {
+	case "syslog":
+		appname := u.Query().Get("appname")
+		facility := u.Query().Get("local")
+		return setSyslogFormatter(appname, facility)
+	case "stdout":
+		origLogger.Out = os.Stdout
+	case "stderr":
+		origLogger.Out = os.Stderr
+
+	default:
+		return fmt.Errorf("unsupported logger %s", u.Opaque)
+	}
+	return nil
+}
+
 func init() {
-	// In order for this flag to take effect, the user of the package must call
+	// In order for these flags to take effect, the user of the package must call
 	// flag.Parse() before logging anything.
 	flag.Var(levelFlag{}, "log.level", "Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal].")
+	flag.Var(logFormatFlag{}, "log.format", "If set use a syslog logger or JSON logging. Example: logger:syslog?appname=bob&local=7 or logger:stdout?json=true. Defaults to stderr.")
 }
 
 type Logger interface {
