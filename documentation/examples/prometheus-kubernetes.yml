@@ -25,13 +25,13 @@ scrape_configs:
   relabel_configs:
   - source_labels: [__meta_kubernetes_role]
     action: keep
-    regex: ^(?:apiserver|node)$
+    regex: (?:apiserver|node)
   - action: labelmap
-    regex: ^__meta_kubernetes_node_label_(.+)$
+    regex: __meta_kubernetes_node_label_(.+)
     replacement: $1
   - source_labels: [__meta_kubernetes_role]
     action: replace
-    regex: ^(.+)$
+    regex: (.+)
     target_label: kubernetes_role
     replacement: $1
 
@@ -56,37 +56,37 @@ scrape_configs:
   relabel_configs:
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
     action: keep
-    regex: ^true$
+    regex: true
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
     action: replace
     target_label: __scheme__
-    regex: ^(https?)$
+    regex: (https?)
     replacement: $1
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
     action: replace
     target_label: __metrics_path__
-    regex: ^(.+)$
+    regex: (.+)
     replacement: $1
   - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
     action: replace
     target_label: __address__
-    regex: ^(.+)(?::\d+);(\d+)$
+    regex: (.+)(?::\d+);(\d+)
     replacement: $1:$2
   - action: labelmap
-    regex: ^__meta_kubernetes_service_label_(.+)$
+    regex: __meta_kubernetes_service_label_(.+)
     replacement: $1
   - source_labels: [__meta_kubernetes_role]
     action: replace
-    regex: ^(.+)$
+    regex: (.+)
     target_label: kubernetes_role
     replacement: $1
   - source_labels: [__meta_kubernetes_service_namespace]
     action: replace
-    regex: ^(.+)$
+    regex: (.+)
     target_label: kubernetes_namespace
     replacement: $1
   - source_labels: [__meta_kubernetes_service_name]
     action: replace
-    regex: ^(.+)$
+    regex: (.+)
     target_label: kubernetes_name
     replacement: $1
