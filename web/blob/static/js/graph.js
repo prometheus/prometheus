@@ -159,11 +159,11 @@ Prometheus.Graph.prototype.initialize = function() {
 };
 
 // Returns true if the character at "pos" in the expression string "str" looks
-// like it could be a metric name (if it's not in a string or a label matchers
-// section).
+// like it could be a metric name (if it's not in a string, a label matchers
+// section, or a range specification).
 function isPotentialMetric(str, pos) {
   var quote = null;
-  var inMatchers = false;
+  var inMatchersOrRange = false;
 
   for (var i = 0; i < pos; i++) {
     var ch = str[i];
@@ -185,7 +185,7 @@ function isPotentialMetric(str, pos) {
         break;
     }
 
-    // Ignore curly braces in strings.
+    // Ignore curly braces and square brackets in strings.
     if (quote) {
       continue;
     }
@@ -193,15 +193,17 @@ function isPotentialMetric(str, pos) {
     // Track whether we are in curly braces (label matchers).
     switch (ch) {
       case "{":
-        inMatchers = true;
+      case "[":
+        inMatchersOrRange = true;
         break;
       case "}":
-        inMatchers = false;
+      case "]":
+        inMatchersOrRange = false;
         break;
     }
   }
 
-  return !inMatchers && quote === null;
+  return !inMatchersOrRange && quote === null;
 }
 
 // Returns the current word under the cursor position in $input.
