@@ -3,11 +3,6 @@
 	"ignore": "test",
 	"package": [
 		{
-			"path": "bitbucket.org/ww/goautoneg",
-			"revision": "75cd24fc2f2c",
-			"revisionTime": "2012-07-07T21:04:53+10:00"
-		},
-		{
 			"path": "github.com/Sirupsen/logrus",
 			"revision": "418b41d23a1bf978c06faea5313ba194650ac088",
 			"revisionTime": "2015-09-08T20:46:18Z"
@@ -149,13 +144,8 @@
 		},
 		{
 			"path": "github.com/prometheus/client_golang/prometheus",
-			"revision": "25e1a6571b75377d2f49354012d002b024eb44ca",
-			"revisionTime": "2015-08-24T10:54:08+02:00"
-		},
-		{
-			"path": "github.com/prometheus/client_golang/text",
-			"revision": "25e1a6571b75377d2f49354012d002b024eb44ca",
-			"revisionTime": "2015-08-24T10:54:08+02:00"
+			"revision": "449ccefff16c8e2b7229f6be1921ba22f62461fe",
+			"revisionTime": "2015-10-26T02:27:06+01:00"
 		},
 		{
 			"path": "github.com/prometheus/client_model/go",
@@ -164,23 +154,28 @@
 		},
 		{
 			"path": "github.com/prometheus/common/expfmt",
-			"revision": "51d43993bd4018e9470540600641285cad786840",
-			"revisionTime": "2015-09-22T12:03:38+02:00"
+			"revision": "4fdc91a58c9d3696b982e8a680f4997403132d44",
+			"revisionTime": "2015-10-26T12:04:34+01:00"
+		},
+		{
+			"path": "github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg",
+			"revision": "4fdc91a58c9d3696b982e8a680f4997403132d44",
+			"revisionTime": "2015-10-26T12:04:34+01:00"
 		},
 		{
 			"path": "github.com/prometheus/common/log",
-			"revision": "d34c5f15e0237463f3e12b7912ec8066e8fcda2f",
-			"revisionTime": "2015-10-24T15:29:39-04:00"
+			"revision": "4fdc91a58c9d3696b982e8a680f4997403132d44",
+			"revisionTime": "2015-10-26T12:04:34+01:00"
 		},
 		{
 			"path": "github.com/prometheus/common/model",
-			"revision": "c33395bbc758c8d25735ec7036d66b342084ae35",
-			"revisionTime": "2015-08-25T14:37:19+02:00"
+			"revision": "4fdc91a58c9d3696b982e8a680f4997403132d44",
+			"revisionTime": "2015-10-26T12:04:34+01:00"
 		},
 		{
 			"path": "github.com/prometheus/common/route",
-			"revision": "ffd5d0f2976124c788687ec2ac194f5479e1f9c2",
-			"revisionTime": "2015-09-24T17:06:36+02:00"
+			"revision": "4fdc91a58c9d3696b982e8a680f4997403132d44",
+			"revisionTime": "2015-10-26T12:04:34+01:00"
 		},
 		{
 			"path": "github.com/prometheus/procfs",
