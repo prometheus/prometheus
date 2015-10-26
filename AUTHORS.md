@@ -5,7 +5,7 @@ Maintainers of this repository:
 
 * Björn Rabenstein <beorn@soundcloud.com>
 * Fabian Reinartz <fabian@soundcloud.com>
-* Julius Volz <julius@soundcloud.com>
+* Julius Volz <julius.volz@gmail.com>
 
 The following individuals have contributed code to this repository
 (listed in alphabetical order):
@@ -28,7 +28,7 @@ The following individuals have contributed code to this repository
 * Johannes 'fish' Ziemke <fish@freigeist.org>
 * Joonas Bergius <joonas@digitalocean.com>
 * Joseph Wilk <joe@josephwilk.net>
-* Julius Volz <julius@soundcloud.com>
+* Julius Volz <julius.volz@gmail.com>
 * Laurie Malau <laurie.malau@gmail.com>
 * Marko Mikulicic <mkm@cesanta.com>
 * Matt T. Proud <matt.proud@gmail.com>
