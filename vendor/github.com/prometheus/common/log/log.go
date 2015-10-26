@@ -43,10 +43,10 @@ func (f levelFlag) Set(level string) error {
 
 func setSyslogFormatter(appname, local string) error {
 	if appname == "" {
-		return fmt.Errorf("missing appname paramter")
+		return fmt.Errorf("missing appname parameter")
 	}
 	if local == "" {
-		return fmt.Errorf("missing local paramter")
+		return fmt.Errorf("missing local parameter")
 	}
 
 	fmter, err := newSyslogger(appname, local, origLogger.Formatter)
