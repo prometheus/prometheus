@@ -54,10 +54,24 @@ Prometheus.Graph.prototype.initialize = function() {
   self.queryForm = graphWrapper.find(".query_form");
 
   self.expr = graphWrapper.find("textarea[name=expr]");
+  self.expr.history = [""];
+  self.expr.curElement = 0;
   self.expr.keypress(function(e) {
     // Enter was pressed without the shift key.
     if (e.which == 13 && !e.shiftKey) {
       self.queryForm.submit();
+      e.preventDefault();
+    }
+
+    if (e.which == 74 && e.shiftKey && self.expr.curElement > 0) {
+      self.expr.history[self.expr.curElement] = self.expr.val();
+      self.expr.curElement--;
+      self.expr.val(self.expr.history[self.expr.curElement]);
+      e.preventDefault();
+    } else if  (e.which == 75 && e.shiftKey  && self.expr.history.length > self.expr.curElement) {
+      self.expr.history[self.expr.curElement] = self.expr.val();
+      self.expr.curElement++;
+      self.expr.val(self.expr.history[self.expr.curElement]);
       e.preventDefault();
     }
 
@@ -138,6 +152,12 @@ Prometheus.Graph.prototype.initialize = function() {
   });
 
   self.queryForm.submit(function() {
+    // Add textarea-input to history
+    if (self.expr.val() != "" && self.expr.history[self.expr.curElement] != self.expr.val()) {
+      self.expr.curElement = self.expr.history.length;
+      self.expr.history[self.expr.curElement] = self.expr.val();
+    }
+
     self.consoleTab.addClass("reload");
     self.graphTab.addClass("reload");
     self.submitQuery();
