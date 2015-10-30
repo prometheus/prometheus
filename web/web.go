@@ -113,6 +113,7 @@ func (s *PrometheusStatus) ApplyConfig(conf *config.Config) bool {
 type Options struct {
 	ListenAddress        string
 	ExternalURL          *url.URL
+	PrefixRoutes         bool
 	MetricsPath          string
 	UseLocalAssets       bool
 	UserAssetsPath       string
@@ -148,7 +149,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		},
 	}
 
-	if o.ExternalURL.Path != "" {
+	if o.ExternalURL.Path != "" && o.PrefixRoutes {
 		// If the prefix is missing for the root path, prepend it.
 		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, o.ExternalURL.Path, http.StatusFound)

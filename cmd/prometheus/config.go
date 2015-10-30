@@ -78,6 +78,10 @@ func init() {
 		&cfg.prometheusURL, "web.external-url", "",
 		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.",
 	)
+	cfg.fs.BoolVar(
+		&cfg.web.PrefixRoutes, "web.prefix-routes", true,
+		"Whether to prefix all HTTP routes with the path part of the URL specified by -web.external-url. Turning this off allows for proxies which pass only a trailing part of the path on to the Prometheus backend.",
+	)
 	cfg.fs.StringVar(
 		&cfg.web.MetricsPath, "web.telemetry-path", "/metrics",
 		"Path under which to expose metrics.",
