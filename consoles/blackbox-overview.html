@@ -4,7 +4,7 @@
 {{ $job := .Params.job }}
 <tr>
   <th>{{ $job }}</th>
-  <th>{{  template "prom_query_drilldown" (args (printf "sum(up{job='%s'})" $job))  }} / {{ template "prom_query_drilldown" (args (printf "count(up{job='%s'})" $job)) }}</th>
+  <th>{{ template "prom_query_drilldown" (args (printf "sum(up{job='%s'})" $job))  }} / {{ template "prom_query_drilldown" (args (printf "count(up{job='%s'})" $job)) }}</th>
 </tr>
 
 <tr>
@@ -12,7 +12,7 @@
 </tr>
 {{ range query (printf "probe_success{job='%s'}" $job) | sortByLabel "instance" }}
 <tr>
-  <td {{ if eq (. | value) 1.0 }}{{ else }} class="alert-danger"{{ end }}>
+  <td>
     <a href="http://{{ .Labels.instance }}/">{{ .Labels.instance }}</a></td>
   <td {{ if eq (. | value) 1.0 }}>Up{{ else }} class="alert-danger">Down{{ end }}</td>
 </tr>
@@ -23,8 +23,7 @@
 </tr>
 {{ range query (printf "avg_over_time(probe_success{job='%s'}[1d]) * 100" $job) | sortByLabel "instance" }}
 <tr>
-  <td {{ if gt (. | value) 90.0 }}{{ else }} class="alert-danger"{{ end }}>
-    {{ .Labels.instance }}</td>
+  <td>{{ .Labels.instance }}</td>
   <td {{ if gt (. | value) 90.0 }}{{ else }} class="alert-danger"{{ end }}>
     {{ (. | value | printf "%.2f") }}%</td>
 </tr>
