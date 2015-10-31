@@ -1,0 +1,30 @@
+{{ template "head" . }}
+
+{{ template "prom_right_table_head" }}
+<tr>
+  <th>Blackbox</th>
+  <th>{{ template "prom_query_drilldown" (args "sum(up{job=~'blackbox.*'})") }} / {{ template "prom_query_drilldown" (args "count(up{job=~'blackbox.*'})") }}</th>
+</tr>
+{{ template "prom_right_table_tail" }}
+
+{{ template "prom_content_head" . }}
+<h1>Blackbox</h1>
+
+<table class="table table-condensed table-striped table-bordered" style="width: 0%">
+<tr>
+  <th>Blackbox Probe</th>
+  <th>Instances</th>
+</tr>
+{{ range query "count(probe_duration_seconds) by (job)" | sortByLabel "job" }}
+<tr>
+  <td><a href="blackbox-overview.html?job={{ .Labels.job }}">{{ .Labels.job }}</a></td>
+  <td>{{ (. | value) }}</td>
+</tr>
+{{ else }}
+<tr><td colspan=4>No blackbox probers found.</td></tr>
+{{ end }}
+
+
+{{ template "prom_content_tail" . }}
+
+{{ template "tail" }}
