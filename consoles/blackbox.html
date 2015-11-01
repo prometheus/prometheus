@@ -1,0 +1,52 @@
+{{ template "head" . }}
+
+{{ template "prom_right_table_head" }}
+<tr>
+  <th>Blackbox</th>
+  <th>{{ template "prom_query_drilldown" (args "sum(up{job='blackbox'})") }} / {{ template "prom_query_drilldown" (args "count(up{job='blackbox'})") }}</th>
+</tr>
+
+<tr>
+  <th colspan=2>Currently</th>
+</tr>
+{{ range query "probe_success{job='blackbox'}" | sortByLabel "instance" }}
+<tr>
+  <td>
+    <a href="http://{{ .Labels.instance }}/">{{ .Labels.instance }}</a></td>
+  <td {{ if eq (. | value) 1.0 }}>Up{{ else }} class="alert-danger">Down{{ end }}</td>
+</tr>
+{{ end }}
+
+<tr>
+  <th colspan=2>Past Day %</th>
+</tr>
+{{ range query "avg_over_time(probe_success{job='blackbox'}[1d]) * 100" | sortByLabel "instance" }}
+<tr>
+  <td>{{ .Labels.instance }}</td>
+  <td {{ if gt (. | value) 90.0 }}{{ else }} class="alert-danger"{{ end }}>
+    {{ (. | value | printf "%.2f") }}%</td>
+</tr>
+{{ end }}
+
+{{ template "prom_right_table_tail" }}
+
+{{ template "prom_content_head" .}}
+<h1>Blackbox</h1>
+
+<h3>Response times</h3>
+<div id="responseGraph"></div>
+<script>
+new PromConsole.Graph({
+  node: document.querySelector("#responseGraph"),
+  expr: "probe_duration_seconds{job='blackbox'}",
+  name: "[[instance]]",
+  yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+  yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+  yUnits: "s",
+  yTitle: "response time"
+})
+</script>
+
+{{ template "prom_content_tail" . }}
+
+{{ template "tail" }}

@@ -61,6 +61,10 @@
 {{ template "_menuItem" (args . "cassandra.html" "Cassandra") }}
 {{ end }}
 
+{{ if query "up{job='blackbox'}" }}
+{{ template "_menuItem" (args . "blackbox.html" "Blackbox") }}
+{{ end }}
+
 {{ if query "up{job='node'}" }}
 {{ template "_menuItem" (args . "node.html" "Node") }}
 {{ if match "^node" .Path }}
