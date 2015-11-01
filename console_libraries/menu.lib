@@ -61,17 +61,8 @@
 {{ template "_menuItem" (args . "cassandra.html" "Cassandra") }}
 {{ end }}
 
-{{ if query "up{job=~'blackbox.*'}" }}
+{{ if query "up{job='blackbox'}" }}
 {{ template "_menuItem" (args . "blackbox.html" "Blackbox") }}
-{{ if match "^blackbox" .Path }}
-  {{ if .Params.job }}
-  <ul>
-    {{ range query "count(probe_duration_seconds) by (job)" | sortByLabel "job" }}
-    <li><a href="blackbox-overview.html?job={{ .Labels.job }}">{{ .Labels.job }}</a></li>
-    {{ end }}
-  </ul>
-  {{ end }}
-{{ end }}
 {{ end }}
 
 {{ if query "up{job='node'}" }}
