@@ -21,6 +21,7 @@
 {{ template "prom_console_head" }}
 </head>
 <body>
+<div class="prom_console_content">
 {{ template "navbar" . }}
 {{ template "menu" . }}
 {{ end }}
@@ -73,12 +74,10 @@ renderTemplate is the name of the template to use to render the value.
 
 
 {{ define "prom_content_head" }}
-<div class="prom_console_content">
-  <div class="container">
+<div class="container-fluid">
 {{ template "prom_graph_timecontrol" . }}
 {{ end }}
 {{ define "prom_content_tail" }}
-  </div>
 </div>
 {{ end }}
 
@@ -128,6 +127,7 @@ renderTemplate is the name of the template to use to render the value.
 
 {{/* Bottom of all pages. */}}
 {{ define "tail" }}
+</div>
 </body>
 </html>
 {{ end }}
