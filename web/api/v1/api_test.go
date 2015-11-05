@@ -210,7 +210,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`},
+				"match[]": []string{`test_metric1{foo=~".+o"}`},
 			},
 			response: []model.Metric{
 				{
@@ -222,7 +222,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~"o$"}`},
+				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~".+o"}`},
 			},
 			response: []model.Metric{
 				{
@@ -234,7 +234,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`, `none`},
+				"match[]": []string{`test_metric1{foo=~".+o"}`, `none`},
 			},
 			response: []model.Metric{
 				{
@@ -257,7 +257,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.dropSeries,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`},
+				"match[]": []string{`test_metric1{foo=~".+o"}`},
 			},
 			response: struct {
 				NumDeleted int `json:"numDeleted"`

@@ -63,7 +63,7 @@ func NewLabelMatcher(matchType MatchType, name model.LabelName, value model.Labe
 		Value: value,
 	}
 	if matchType == RegexMatch || matchType == RegexNoMatch {
-		re, err := regexp.Compile(string(value))
+		re, err := regexp.Compile("^(?:" + string(value) + ")$")
 		if err != nil {
 			return nil, err
 		}

@@ -226,20 +226,20 @@ eval instant at 50m http_requests{group!="canary"}
 	http_requests{group="production", instance="1", job="api-server"} 200 
 	http_requests{group="production", instance="0", job="api-server"} 100 
 
-eval instant at 50m http_requests{job=~"server",group!="canary"}
+eval instant at 50m http_requests{job=~".+-server",group!="canary"}
 	http_requests{group="production", instance="1", job="app-server"} 600 
 	http_requests{group="production", instance="0", job="app-server"} 500 
 	http_requests{group="production", instance="1", job="api-server"} 200 
 	http_requests{group="production", instance="0", job="api-server"} 100 
 
-eval instant at 50m http_requests{job!~"api",group!="canary"}
+eval instant at 50m http_requests{job!~"api-.+",group!="canary"}
 	http_requests{group="production", instance="1", job="app-server"} 600 
 	http_requests{group="production", instance="0", job="app-server"} 500 
 
-eval instant at 50m count_scalar(http_requests{job=~"^server$"})
+eval instant at 50m count_scalar(http_requests{job=~"server"})
 	0
 
-eval instant at 50m http_requests{group="production",job=~"^api"}
+eval instant at 50m http_requests{group="production",job=~"api-.+"}
 	http_requests{group="production", instance="0", job="api-server"} 100 
 	http_requests{group="production", instance="1", job="api-server"} 200 
 
@@ -357,7 +357,7 @@ eval instant at 50m {__name__=~".+"}
 	cpu_count{instance="0", type="numa"} 300 
 
 
-eval instant at 50m {job=~"server", job!~"api"}
+eval instant at 50m {job=~".+-server", job!~"api-.+"}
 	http_requests{group="canary", instance="0", job="app-server"} 700 
 	http_requests{group="canary", instance="1", job="app-server"} 800 
 	http_requests{group="production", instance="0", job="app-server"} 500 
