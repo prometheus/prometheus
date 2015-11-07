@@ -398,7 +398,26 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
 		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
+	// Check for users putting URLs in target groups.
+	if len(c.RelabelConfigs) == 0 {
+		for _, tg := range c.TargetGroups {
+			for _, t := range tg.Targets {
+				if err = CheckTargetAddress(t[model.AddressLabel]); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	return checkOverflow(c.XXX, "scrape_config")
+}
+
+// CheckTargetAddress checks if target address is valid.
+func CheckTargetAddress(address model.LabelValue) error {
+	// For now check for a URL, we may want to expand this later.
+	if strings.Contains(string(address), "/") {
+		return fmt.Errorf("%q is not a valid hostname", address)
+	}
+	return nil
 }
 
 // BasicAuth contains basic HTTP authentication credentials.
@@ -457,9 +476,6 @@ func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	tg.Targets = make([]model.LabelSet, 0, len(g.Targets))
 	for _, t := range g.Targets {
-		if strings.Contains(t, "/") {
-			return fmt.Errorf("%q is not a valid hostname", t)
-		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
 			model.AddressLabel: model.LabelValue(t),
 		})

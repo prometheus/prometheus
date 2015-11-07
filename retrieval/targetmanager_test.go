@@ -278,6 +278,25 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			},
 		},
 	}
+	// Test that targets without host:port addresses are dropped.
+	testJob3 := &config.ScrapeConfig{
+		JobName:        "test_job1",
+		ScrapeInterval: config.Duration(1 * time.Minute),
+		TargetGroups: []*config.TargetGroup{{
+			Targets: []model.LabelSet{
+				{model.AddressLabel: "example.net:80"},
+			},
+		}},
+		RelabelConfigs: []*config.RelabelConfig{
+			{
+				SourceLabels: model.LabelNames{model.AddressLabel},
+				Regex:        config.MustNewRegexp("(.*)"),
+				TargetLabel:  "__address__",
+				Replacement:  "http://$1",
+				Action:       config.RelabelReplace,
+			},
+		},
+	}
 
 	sequence := []struct {
 		scrapeConfigs []*config.ScrapeConfig
@@ -348,6 +367,9 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "foo.com:1235"},
 				},
 			},
+		}, {
+			scrapeConfigs: []*config.ScrapeConfig{testJob3},
+			expected:      map[string][]model.LabelSet{},
 		},
 	}
 	conf := &config.Config{}
