@@ -496,6 +496,9 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 		if labels == nil {
 			continue
 		}
+		if err = config.CheckTargetAddress(labels[model.AddressLabel]); err != nil {
+			return nil, err
+		}
 
 		for ln := range labels {
 			// Meta labels are deleted after relabelling. Other internal labels propagate to

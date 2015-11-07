@@ -335,6 +335,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "marathon_no_servers.bad.yml",
 		errMsg:   "Marathon SD config must contain at least one Marathon server",
+	}, {
+		filename: "url_in_targetgroup.bad.yml",
+		errMsg:   "\"http://bad\" is not a valid hostname",
 	},
 }
 
