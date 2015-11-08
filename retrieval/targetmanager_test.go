@@ -211,7 +211,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		TargetGroups: []*config.TargetGroup{{
 			Targets: []model.LabelSet{
 				{model.AddressLabel: "example.org:80"},
-				{model.AddressLabel: "example.com:80"},
+				{model.AddressLabel: "example.com"},
 			},
 		}},
 		RelabelConfigs: []*config.RelabelConfig{
@@ -222,6 +222,13 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				TargetLabel:  "testParam",
 				Replacement:  "$1",
 				Action:       config.RelabelReplace,
+			},
+			{
+				// The port number is added after relabeling, so
+				// this relabel rule should have no effect.
+				SourceLabels: model.LabelNames{model.AddressLabel},
+				Regex:        config.MustNewRegexp("example.com:80"),
+				Action:       config.RelabelDrop,
 			},
 		},
 	}
