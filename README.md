@@ -14,7 +14,7 @@ Prometheus' main distinguishing features as compared to other monitoring systems
 - **pushing timeseries** is supported via an intermediary gateway
 - targets are discovered via **service discovery** or **static configuration**
 - multiple modes of **graphing and dashboarding support**
-- **federation support** coming soon
+- support for hierarchical and horizontal **federation**
 
 ## Architecture overview
 
