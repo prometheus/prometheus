@@ -164,6 +164,18 @@ func init() {
 
 	// Remote storage.
 	cfg.fs.StringVar(
+		&cfg.remote.GraphiteAddress, "storage.remote.graphite-address", "",
+		"The host:port of the remote Graphite server to send samples to. None, if empty.",
+	)
+	cfg.fs.StringVar(
+		&cfg.remote.GraphiteTransport, "storage.remote.graphite-transport", "tcp",
+		"Transport protocol to use to communicate with Graphite. 'tcp', if empty.",
+	)
+	cfg.fs.StringVar(
+		&cfg.remote.GraphitePrefix, "storage.remote.graphite-prefix", "",
+		"The prefix to prepend to all metrics exported to Graphite. None, if empty.",
+	)
+	cfg.fs.StringVar(
 		&cfg.remote.OpentsdbURL, "storage.remote.opentsdb-url", "",
 		"The URL of the remote OpenTSDB server to send samples to. None, if empty.",
 	)
