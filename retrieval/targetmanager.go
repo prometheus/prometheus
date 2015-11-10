@@ -326,11 +326,15 @@ func (tm *TargetManager) Pools() map[string][]*Target {
 	}
 	return pools
 }
+// ValidateConfig validates if config fits to requirements.
+func (m *TargetManager) ValidateConfig(conf *config.Config) error {
+	return nil
+}
 
 // ApplyConfig resets the manager's target providers and job configurations as defined
 // by the new cfg. The state of targets that are valid in the new configuration remains unchanged.
 // Returns true on success.
-func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
+func (tm *TargetManager) ApplyConfig(cfg *config.Config) {
 	tm.mtx.RLock()
 	running := tm.running
 	tm.mtx.RUnlock()
@@ -350,7 +354,6 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
 	defer tm.mtx.Unlock()
 
 	tm.providers = providers
-	return true
 }
 
 // prefixedTargetProvider wraps TargetProvider and prefixes source strings

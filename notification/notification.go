@@ -145,14 +145,17 @@ func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler 
 	}
 }
 
+// ValidateConfig validates if config fits to requirements.
+func (n *NotificationHandler) ValidateConfig(conf *config.Config) error {
+	return nil
+}
+
 // ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (n *NotificationHandler) ApplyConfig(conf *config.Config) bool {
+func (n *NotificationHandler) ApplyConfig(conf *config.Config) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
 	n.externalLabels = conf.GlobalConfig.ExternalLabels
-	return true
 }
 
 // Send a list of notifications to the configured alert manager.
