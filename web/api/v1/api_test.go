@@ -35,9 +35,11 @@ func TestEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	now := model.Now()
 	api := &API{
 		Storage:     suite.Storage(),
 		QueryEngine: suite.QueryEngine(),
+		now:         func() model.Time { return now },
 	}
 
 	start := model.Time(0)
@@ -91,6 +93,19 @@ func TestEndpoints(t *testing.T) {
 			},
 		},
 		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"0.333"},
+			},
+			response: &queryData{
+				ResultType: model.ValScalar,
+				Result: &model.Scalar{
+					Value:     0.333,
+					Timestamp: now,
+				},
+			},
+		},
+		{
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -137,14 +152,6 @@ func TestEndpoints(t *testing.T) {
 				"query": []string{"time()"},
 				"start": []string{"0"},
 				"end":   []string{"2"},
-			},
-			errType: errorBadData,
-		},
-		// Missing evaluation time.
-		{
-			endpoint: api.query,
-			query: url.Values{
-				"query": []string{"0.333"},
 			},
 			errType: errorBadData,
 		},
