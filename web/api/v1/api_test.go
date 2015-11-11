@@ -380,8 +380,8 @@ func TestRespondError(t *testing.T) {
 		t.Fatalf("Error reading response body: %s", err)
 	}
 
-	if resp.StatusCode != 422 {
-		t.Fatalf("Return code %d expected in error response but got %d", 422, resp.StatusCode)
+	if want, have := http.StatusServiceUnavailable, resp.StatusCode; want != have {
+		t.Fatalf("Return code %d expected in error response but got %d", want, have)
 	}
 	if h := resp.Header.Get("Content-Type"); h != "application/json" {
 		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
