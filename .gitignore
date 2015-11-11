@@ -21,11 +21,8 @@
 .idea
 
 .DS_Store
-._*
 .nfs.*
-/.git
 [568a].out
-_cgo_*
 core
 
 *-stamp
@@ -38,6 +35,5 @@ benchmark.txt
 .#*
 command-line-arguments.test
 *BACKUP*
-*BASE*
 *LOCAL*
 *REMOTE*
