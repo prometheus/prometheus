@@ -54,15 +54,6 @@ type response struct {
 	Error     string      `json:"error,omitempty"`
 }
 
-// API can register a set of endpoints in a router and handle
-// them using the provided storage and query engine.
-type API struct {
-	Storage     local.Storage
-	QueryEngine *promql.Engine
-
-	context func(r *http.Request) context.Context
-}
-
 // Enables cross-site script calls.
 func setCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin")
@@ -73,12 +64,28 @@ func setCORS(w http.ResponseWriter) {
 
 type apiFunc func(r *http.Request) (interface{}, *apiError)
 
+// API can register a set of endpoints in a router and handle
+// them using the provided storage and query engine.
+type API struct {
+	Storage     local.Storage
+	QueryEngine *promql.Engine
+
+	context func(r *http.Request) context.Context
+	now     func() model.Time
+}
+
+// NewAPI returns an initialized API type.
+func NewAPI(qe *promql.Engine, st local.Storage) *API {
+	return &API{
+		QueryEngine: qe,
+		Storage:     st,
+		context:     route.Context,
+		now:         model.Now,
+	}
+}
+
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
-	if api.context == nil {
-		api.context = route.Context
-	}
-
 	instr := func(name string, f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			setCORS(w)
@@ -108,10 +115,17 @@ type queryData struct {
 }
 
 func (api *API) query(r *http.Request) (interface{}, *apiError) {
-	ts, err := parseTime(r.FormValue("time"))
-	if err != nil {
-		return nil, &apiError{errorBadData, err}
+	var ts model.Time
+	if t := r.FormValue("time"); t != "" {
+		var err error
+		ts, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		ts = api.now()
 	}
+
 	qry, err := api.QueryEngine.NewInstantQuery(r.FormValue("query"), ts)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}
