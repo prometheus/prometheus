@@ -33,7 +33,7 @@ vet:
 	@echo ">> vetting code"
 	@$(GO) vet $(pkgs)
 
-build: assets
+build:
 	@echo ">> building binaries"
 	@./scripts/build.sh
 
