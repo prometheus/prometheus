@@ -17,7 +17,7 @@ PromConsole._stripTrailingZero = function(x) {
       return x.replace(/\.?0*$/, '');
     }
     return x;
-}
+};
 
 // Humanize a number.
 PromConsole.NumberFormatter.humanize = function(x) {
@@ -30,7 +30,7 @@ PromConsole.NumberFormatter.humanize = function(x) {
     return x.toExponential(3) + prefix;
   }
   return PromConsole._stripTrailingZero(x.toFixed(3)) + prefix;
-}
+};
 
 // Humanize a number, don't use milli/micro/etc. prefixes.
 PromConsole.NumberFormatter.humanizeNoSmallPrefix = function(x) {
@@ -43,7 +43,7 @@ PromConsole.NumberFormatter.humanizeNoSmallPrefix = function(x) {
   x = ret[0];
   var prefix = ret[1];
   return PromConsole._stripTrailingZero(x.toFixed(3)) + prefix;
-}
+};
 
 // Humanize a number with 1024 as the base, rather than 1000.
 PromConsole.NumberFormatter.humanize1024 = function(x) {
@@ -56,7 +56,7 @@ PromConsole.NumberFormatter.humanize1024 = function(x) {
     return x.toExponential(3) + prefix;
   }
   return PromConsole._stripTrailingZero(x.toFixed(3)) + prefix;
-}
+};
 
 // Humanize a number, returning an exact representation.
 PromConsole.NumberFormatter.humanizeExact = function(x) {
@@ -64,11 +64,11 @@ PromConsole.NumberFormatter.humanizeExact = function(x) {
     x, PromConsole.NumberFormatter.prefixesBig,
     PromConsole.NumberFormatter.prefixesSmall, 1000);
   return ret[0] + ret[1];
-}
+};
 
 PromConsole.NumberFormatter._humanize = function(x, prefixesBig, prefixesSmall, factor) {
-  var prefix = ""
-  if (x == 0) {
+  var prefix = "";
+  if (x === 0) {
     /* Do nothing. */
   } else if (Math.abs(x) >= 1) {
     for (var i=0; i < prefixesBig.length && Math.abs(x) >= factor; ++i) {
@@ -113,7 +113,7 @@ PromConsole.TimeControl = function() {
     this.endElement.value = PromConsole.TimeControl.prototype.getHumanDate(
       new Date(PromConsole.TimeControl._initialValues.endTime * 1000));
   }
-}
+};
 
 PromConsole.TimeControl.timeFactors = {
   "y": 60 * 60 * 24 * 365,
@@ -134,11 +134,11 @@ PromConsole.TimeControl.prototype._setHash = function() {
   var endTime = this.getEndDate() / 1000;
   window.location.hash = "#pctc" + encodeURIComponent(JSON.stringify(
     {duration: duration, endTime: endTime}));
-}
+};
 
 PromConsole.TimeControl._initialValues = function() {
   var hash = window.location.hash;
-  if (hash.indexOf('#pctc') == 0) {
+  if (hash.indexOf('#pctc') === 0) {
     return JSON.parse(decodeURIComponent(hash.substring(5)));
   }
   return {duration: 3600, endTime: new Date().getTime() / 1000, endTimeNow: true};
@@ -158,9 +158,9 @@ PromConsole.TimeControl.prototype.getHumanDuration = function(duration) {
   for (var key in PromConsole.TimeControl.timeFactors) {
     units.push([PromConsole.TimeControl.timeFactors[key], key]);
   }
-  units.sort(function(a, b) { return b[0] - a[0] });
+  units.sort(function(a, b) { return b[0] - a[0]; });
   for (var i = 0; i < units.length; ++i) {
-    if (duration % units[i][0] == 0) {
+    if (duration % units[i][0] === 0) {
       return (duration / units[i][0]) + units[i][1];
     }
   }
@@ -195,7 +195,7 @@ PromConsole.TimeControl.prototype.setDuration = function(duration) {
 };
 
 PromConsole.TimeControl.prototype.getEndDate = function() {
-  if (this.endElement.value == '') {
+  if (this.endElement.value === '') {
     return null;
   }
   return new Date(this.endElement.value).getTime();
@@ -209,21 +209,20 @@ PromConsole.TimeControl.prototype.getOrSetEndDate = function() {
   date = new Date();
   this.setEndDate(date);
   return date;
-}
+};
 
 PromConsole.TimeControl.prototype.getHumanDate = function(date) {
   var hours = date.getHours() < 10 ? '0' + date.getHours() : date.getHours();
   var minutes = date.getMinutes() < 10 ? '0' + date.getMinutes() : date.getMinutes();
   return date.getFullYear() + "-" + (date.getMonth()+1) + "-" + date.getDate() + " " +
       hours + ":" + minutes;
-}
+};
 
 PromConsole.TimeControl.prototype.setEndDate = function(date) {
   this.setRefresh("Off");
   this.endElement.value = this.getHumanDate(date);
   this._setHash();
 };
-
 
 PromConsole.TimeControl.prototype.increaseEnd = function() {
   // Increase duration 25% range & convert ms to s.
@@ -240,7 +239,7 @@ PromConsole.TimeControl.prototype.refresh = function() {
   this.endElement.value = '';
   this._setHash();
   this.dispatch();
-}
+};
 
 PromConsole.TimeControl.prototype.dispatch = function() {
   var durationSeconds = this.parseDuration(this.durationElement.value);
@@ -264,7 +263,7 @@ PromConsole.TimeControl.prototype.setRefresh = function(duration) {
     this._refreshInterval = null;
   }
   if (duration != "Off") {
-    if (this.endElement.value != '') {
+    if (this.endElement.value !== '') {
       this.refresh();
     }
     var durationSeconds = this.parseDuration(duration);
@@ -272,8 +271,6 @@ PromConsole.TimeControl.prototype.setRefresh = function(duration) {
   }
   this.refreshValueElement.textContent = duration;
 };
-
-
 
 // List of all graphs, used by time controls.
 PromConsole._graph_registry = [];
@@ -320,7 +317,7 @@ PromConsole.Graph = function(params) {
   if (typeof params.name == "string" || typeof params.name == "function") {
     var name = [];
     for (var i = 0; i < params.expr.length; i++) {
-      name.push(params.name)
+      name.push(params.name);
     }
     params.name = name;
   }
@@ -380,10 +377,9 @@ PromConsole.Graph = function(params) {
     if(this.rendered_data !== null) {
       this._render(this.rendered_data);
     }
-  }.bind(this))
+  }.bind(this));
 
   this.dispatch();
-
 };
 
 PromConsole.Graph.prototype._parseValue = function(value) {
@@ -391,10 +387,10 @@ PromConsole.Graph.prototype._parseValue = function(value) {
   if (isNaN(val)) {
     // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). The
     // can't be graphed, so show them as gaps (null).
-    return null
+    return null;
   }
   return val;
-}
+};
 
 PromConsole.Graph.prototype._escapeHTML = function(string) {
   var entityMap = {
@@ -409,7 +405,7 @@ PromConsole.Graph.prototype._escapeHTML = function(string) {
   return string.replace(/[&<>"'\/]/g, function (s) {
     return entityMap[s];
   });
-}
+};
 
 PromConsole.Graph.prototype._render = function(data) {
   var self = this;
@@ -443,7 +439,7 @@ PromConsole.Graph.prototype._render = function(data) {
   for (var e = 0; e < data.length; e++) {
     for (var i = 0; i < data[e].value.length; i++) {
       series[seriesLen++] = {
-            data: data[e].value[i].values.map(function(s) {return {x: s[0], y: self._parseValue(s[1])} }),
+            data: data[e].value[i].values.map(function(s) { return {x: s[0], y: self._parseValue(s[1])}; }),
             color: palette.color(),
             name: self._escapeHTML(nameFuncs[e](data[e].value[i].metric)),
       };
@@ -473,8 +469,8 @@ PromConsole.Graph.prototype._render = function(data) {
       onRender: function() {
         var xLabel = this.element.getElementsByClassName("x_label")[0];
         var item = this.element.getElementsByClassName("item")[0];
-        if (xLabel.offsetWidth + xLabel.offsetLeft + this.element.offsetLeft > graph.element.offsetWidth
-          || item.offsetWidth + item.offsetLeft + this.element.offsetLeft > graph.element.offsetWidth) {
+        if (xLabel.offsetWidth + xLabel.offsetLeft + this.element.offsetLeft > graph.element.offsetWidth ||
+          item.offsetWidth + item.offsetLeft + this.element.offsetLeft > graph.element.offsetWidth) {
           xLabel.classList.add("prom_graph_hover_flipped");
           item.classList.add("prom_graph_hover_flipped");
         } else {
@@ -482,7 +478,9 @@ PromConsole.Graph.prototype._render = function(data) {
           item.classList.remove("prom_graph_hover_flipped");
         }
       },
-      yFormatter: function(y) {return this.params.yHoverFormatter(y) + this.params.yUnits}.bind(this)
+      yFormatter: function(y) {
+        return this.params.yHoverFormatter(y) + this.params.yUnits;
+      }.bind(this)
   });
   var yAxis = new Rickshaw.Graph.Axis.Y({
       graph: graph,
@@ -507,9 +505,9 @@ PromConsole.Graph.prototype._clearGraph = function() {
   while (this.legendDiv.lastChild) {
     this.legendDiv.removeChild(this.legendDiv.lastChild);
   }
-}
+};
 
-PromConsole.Graph.prototype._xhrs = []
+PromConsole.Graph.prototype._xhrs = [];
 
 PromConsole.Graph.prototype.dispatch = function() {
   for (var j = 0; j < this._xhrs.length; j++) {
@@ -520,9 +518,9 @@ PromConsole.Graph.prototype.dispatch = function() {
   var pending_requests = this.params.expr.length;
   for (var i = 0; i < this.params.expr.length; ++i) {
     var endTime = this.params.endTime;
-    var url = PATH_PREFIX + "/api/query_range?expr=" + encodeURIComponent(this.params.expr[i])
-      + "&step=" + this.params.duration / this.graphTd.offsetWidth
-      + "&range=" + this.params.duration + "&end=" + endTime;
+    var url = PATH_PREFIX + "/api/query_range?expr=" + encodeURIComponent(this.params.expr[i]) +
+      "&step=" + this.params.duration / this.graphTd.offsetWidth + 
+      "&range=" + this.params.duration + "&end=" + endTime;
     var xhr = new XMLHttpRequest();
     xhr.open('get', url, true);
     xhr.responseType = 'json';
@@ -538,20 +536,20 @@ PromConsole.Graph.prototype.dispatch = function() {
       for (var j = 0; j < pending_requests; j++) {
         this._xhrs[j].abort();
       }
-    }.bind(this, xhr, i)
+    }.bind(this, xhr, i);
     xhr.onload = function(xhr, i) {
-      if (pending_requests == 0) {
+      if (pending_requests === 0) {
         // Got an error before this success.
         return;
       }
       var data = xhr.response;
       pending_requests -= 1;
       all_data[i] = data;
-      if (pending_requests == 0) {
+      if (pending_requests === 0) {
         this._xhrs = [];
         this._render(all_data);
       }
-    }.bind(this, xhr, i)
+    }.bind(this, xhr, i);
     xhr.send();
     this._xhrs[i] = xhr;
   }
@@ -568,13 +566,13 @@ PromConsole._interpolateName = function(name, metric) {
   var re = /(.*?)\[\[\s*(\w+)+\s*\]\](.*?)/g;
   var result = '';
   while (match = re.exec(name)) {
-    result = result + match[1] + metric[match[2]] + match[3]
+    result = result + match[1] + metric[match[2]] + match[3];
   }
   if (!result) {
     return name;
   }
   return result;
-}
+};
 
 // Given the data returned by the API, return an appropriate function
 // to return plot names.
@@ -589,7 +587,8 @@ PromConsole._chooseNameFunction = function(data) {
       name += label + "='" + metric[label] + "',";
     }
     return name + "}";
-  }
+  };
+  
   // If only one label varies, use that value.
   var labelValues = {};
   for (var e = 0; e < data.length; e++) {
@@ -602,6 +601,7 @@ PromConsole._chooseNameFunction = function(data) {
       }
     }
   }
+  
   var multiValueLabels = [];
   for (var label in labelValues) {
     if (Object.keys(labelValues[label]).length > 1) {
@@ -611,11 +611,10 @@ PromConsole._chooseNameFunction = function(data) {
   if (multiValueLabels.length == 1) {
     nameFunc = function(metric) {
       return metric[multiValueLabels[0]];
-    }
+    };
   }
   return nameFunc;
-}
-
+};
 
 // Given a list of expressions, produce the /graph url for them.
 PromConsole._graphsToSlashGraphURL = function(exprs) {
