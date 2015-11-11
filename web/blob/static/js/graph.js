@@ -37,10 +37,10 @@ Prometheus.Graph.prototype.initialize = function() {
   self.id = Prometheus.Graph.numGraphs++;
 
   // Set default options.
-  self.options["id"] = self.id;
-  self.options["range_input"] = self.options["range_input"] || "1h";
-  if (self.options["tab"] === undefined) {
-    self.options["tab"] = 1;
+  self.options.id = self.id;
+  self.options.range_input = self.options.range_input || "1h";
+  if (self.options.tab === undefined) {
+    self.options.tab = 1;
   }
 
   // Draw graph controls and container from Handlebars template.
@@ -79,10 +79,10 @@ Prometheus.Graph.prototype.initialize = function() {
   self.graphTab   = graphWrapper.find(".graph_container");
 
   self.tabs = graphWrapper.find("a[data-toggle='tab']");
-  self.tabs.eq(self.options["tab"]).tab("show");
+  self.tabs.eq(self.options.tab).tab("show");
   self.tabs.on("shown.bs.tab", function(e) {
     var target = $(e.target);
-    self.options["tab"] = target.parent().index();
+    self.options.tab = target.parent().index();
     storeGraphOptionsInURL();
     if ($("#" + target.attr("aria-controls")).hasClass("reload")) {
       self.submitQuery();
@@ -102,11 +102,11 @@ Prometheus.Graph.prototype.initialize = function() {
     language: 'en',
     pickSeconds: false,
   });
-  if (self.options["end_input"]) {
-    self.endDate.data('datetimepicker').setValue(self.options["end_input"]);
+  if (self.options.end_input) {
+    self.endDate.data('datetimepicker').setValue(self.options.end_input);
   }
-  self.endDate.change(function() { self.submitQuery() });
-  self.refreshInterval.change(function() { self.updateRefresh() });
+  self.endDate.change(function() { self.submitQuery(); });
+  self.refreshInterval.change(function() { self.updateRefresh(); });
 
   self.isStacked = function() {
     return self.stacked.val() === '1';
@@ -237,7 +237,7 @@ Prometheus.Graph.prototype.populateAutocompleteMetrics = function() {
       dataType: "json",
       success: function(json, textStatus) {
         if (json.status !== "success") {
-          self.showError("Error loading available metrics!")
+          self.showError("Error loading available metrics!");
           return;
         }
 
@@ -302,20 +302,20 @@ Prometheus.Graph.prototype.getOptions = function() {
   ];
 
   self.queryForm.find("input").each(function(index, element) {
-      var name = element.name;
-      if ($.inArray(name, optionInputs) >= 0) {
-        options[name] = element.value;
-      }
+    var name = element.name;
+    if ($.inArray(name, optionInputs) >= 0) {
+      options[name] = element.value;
+    }
   });
-  options["expr"] = self.expr.val();
-  options["tab"] = self.options["tab"];
+  options.expr = self.expr.val();
+  options.tab = self.options.tab;
   return options;
 };
 
 Prometheus.Graph.prototype.parseDuration = function(rangeText) {
   var rangeRE = new RegExp("^([0-9]+)([ywdhms]+)$");
   var matches = rangeText.match(rangeRE);
-  if (!matches) { return };
+  if (!matches) { return; }
   if (matches.length != 3) {
     return 60;
   }
@@ -365,7 +365,7 @@ Prometheus.Graph.prototype.getOrSetEndDate = function() {
   var date = self.getEndDate();
   self.setEndDate(date);
   return date;
-}
+};
 
 Prometheus.Graph.prototype.setEndDate = function(date) {
   var self = this;
@@ -374,13 +374,13 @@ Prometheus.Graph.prototype.setEndDate = function(date) {
 
 Prometheus.Graph.prototype.increaseEnd = function() {
   var self = this;
-  self.setEndDate(new Date(self.getOrSetEndDate() + self.parseDuration(self.rangeInput.val()) * 1000/2 )) // increase by 1/2 range & convert ms in s
+  self.setEndDate(new Date(self.getOrSetEndDate() + self.parseDuration(self.rangeInput.val()) * 1000/2 )); // increase by 1/2 range & convert ms in s
   self.submitQuery();
 };
 
 Prometheus.Graph.prototype.decreaseEnd = function() {
   var self = this;
-  self.setEndDate(new Date(self.getOrSetEndDate() - self.parseDuration(self.rangeInput.val()) * 1000/2 ))
+  self.setEndDate(new Date(self.getOrSetEndDate() - self.parseDuration(self.rangeInput.val()) * 1000/2 ));
   self.submitQuery();
 };
 
@@ -407,14 +407,14 @@ Prometheus.Graph.prototype.submitQuery = function() {
   var params = {
     "query": self.expr.val()
   };
-  if (self.options["tab"] === 0) {
-    params['start'] = endDate - rangeSeconds;
-    params['end'] = endDate;
-    params['step'] = resolution;
+  if (self.options.tab === 0) {
+    params.start = endDate - rangeSeconds;
+    params.end = endDate;
+    params.step = resolution;
     url = PATH_PREFIX + "/api/v1/query_range";
     success = function(json, textStatus) { self.handleGraphResponse(json, textStatus); };
   } else {
-    params['time'] = startTime / 1000;
+    params.time = startTime / 1000;
     url = PATH_PREFIX + "/api/v1/query";
     success = function(json, textStatus) { self.handleConsoleResponse(json, textStatus); };
   }
@@ -454,13 +454,13 @@ Prometheus.Graph.prototype.showError = function(msg) {
   var self = this;
   self.error.text(msg);
   self.error.show();
-}
+};
 
 Prometheus.Graph.prototype.clearError = function(msg) {
   var self = this;
   self.error.text('');
   self.error.hide();
-}
+};
 
 Prometheus.Graph.prototype.updateRefresh = function() {
   var self = this;
@@ -470,30 +470,30 @@ Prometheus.Graph.prototype.updateRefresh = function() {
   }
 
   interval = self.parseDuration(self.refreshInterval.val());
-  if (!interval) { return };
+  if (!interval) { return; }
 
   self.timeoutID = window.setTimeout(function() {
     self.submitQuery();
     self.updateRefresh();
   }, interval * SECOND);
-}
+};
 
 Prometheus.Graph.prototype.renderLabels = function(labels) {
   var labelStrings = [];
-  for (label in labels) {
+  for (var label in labels) {
     if (label != "__name__") {
       labelStrings.push("<strong>" + label + "</strong>: " + escapeHTML(labels[label]));
     }
   }
   return labels = "<div class=\"labels\">" + labelStrings.join("<br>") + "</div>";
-}
+};
 
 Prometheus.Graph.prototype.metricToTsName = function(labels) {
-  var tsName = (labels["__name__"] || '') + "{";
+  var tsName = (labels.__name__ || '') + "{";
   var labelStrings = [];
-   for (label in labels) {
+   for (var label in labels) {
      if (label != "__name__") {
-      labelStrings.push(label + "=\"" + labels[label] + "\"");
+       labelStrings.push(label + "=\"" + labels[label] + "\"");
      }
    }
   tsName += labelStrings.join(",") + "}";
@@ -505,7 +505,7 @@ Prometheus.Graph.prototype.parseValue = function(value) {
   if (isNaN(val)) {
     // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). The
     // can't be graphed, so show them as gaps (null).
-    return null
+    return null;
   }
   return val;
 };
@@ -534,7 +534,7 @@ Prometheus.Graph.prototype.transformData = function(json) {
         return {
           x: value[0],
           y: self.parseValue(value[1])
-        }
+        };
       }),
       color: palette.color()
     };
@@ -545,7 +545,7 @@ Prometheus.Graph.prototype.transformData = function(json) {
 
 Prometheus.Graph.prototype.updateGraph = function() {
   var self = this;
-  if (self.data.length == 0) { return; }
+  if (self.data.length === 0) { return; }
 
   // Remove any traces of an existing graph.
   self.legend.empty();
@@ -599,7 +599,7 @@ Prometheus.Graph.prototype.updateGraph = function() {
     graph: self.rickshawGraph,
     formatter: function(series, x, y) {
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
-      var content = swatch + (series.labels["__name__"] || 'value') + ": <strong>" + y + '</strong><br>';
+      var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + y + '</strong><br>';
       return content + self.renderLabels(series.labels);
     }
   });
@@ -624,28 +624,28 @@ Prometheus.Graph.prototype.updateGraph = function() {
 
 Prometheus.Graph.prototype.resizeGraph = function() {
   var self = this;
-  if (self.rickshawGraph != null) {
+  if (self.rickshawGraph !== null) {
     self.rickshawGraph.configure({
       width: Math.max(self.graph.innerWidth() - 80, 200),
     });
     self.rickshawGraph.render();
   }
-}
+};
 
 Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
-  var self = this
+  var self = this;
   // Rickshaw mutates passed series data for stacked graphs, so we need to save
   // the original AJAX response in order to re-transform it into series data
   // when the user disables the stacking.
   self.graphJSON = json;
   self.data = self.transformData(json);
-  if (self.data.length == 0) {
+  if (self.data.length === 0) {
     self.showError("No datapoints found.");
     return;
   }
   self.graphTab.removeClass("reload");
   self.updateGraph();
-}
+};
 
 Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   var self = this;
@@ -679,7 +679,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
       for (var j = 0; j < v.values.length; j++) {
         valueText += v.values[j][1] + " @" + v.values[j][0] + "<br/>";
       }
-      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + valueText + "</td></tr>")
+      tBody.append("<tr><td>" + escapeHTML(tsName) + "</td><td>" + valueText + "</td></tr>");
     }
     break;
   case "scalar":
@@ -692,7 +692,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     self.showError("Unsupported value type!");
     break;
   }
-}
+};
 
 function parseGraphOptionsFromURL() {
   var hashOptions = window.location.hash.slice(1);
@@ -750,7 +750,7 @@ function init() {
     success: function(data) {
       graphTemplate = Handlebars.compile(data);
       var options = parseGraphOptionsFromURL();
-      if (options.length == 0) {
+      if (options.length === 0) {
         options.push({});
       }
       for (var i = 0; i < options.length; i++) {
@@ -758,7 +758,7 @@ function init() {
       }
       $("#add_graph").click(function() { addGraph({}); });
     }
-  })
+  });
 }
 
 $(init);
