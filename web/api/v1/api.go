@@ -269,7 +269,19 @@ func respond(w http.ResponseWriter, data interface{}) {
 
 func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
+
+	var code int
+	switch apiErr.typ {
+	case errorBadData:
+		code = http.StatusBadRequest
+	case errorExec:
+		code = 422
+	case errorCanceled, errorTimeout:
+		code = http.StatusServiceUnavailable
+	default:
+		code = http.StatusInternalServerError
+	}
+	w.WriteHeader(code)
 
 	b, err := json.Marshal(&response{
 		Status:    statusError,
