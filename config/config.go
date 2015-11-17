@@ -91,8 +91,10 @@ var (
 
 	// DefaultRelabelConfig is the default Relabel configuration.
 	DefaultRelabelConfig = RelabelConfig{
-		Action:    RelabelReplace,
-		Separator: ";",
+		Action:      RelabelReplace,
+		Separator:   ";",
+		Regex:       MustNewRegexp("(.*)"),
+		Replacement: "$1",
 	}
 
 	// DefaultDNSSDConfig is the default DNS SD configuration.
@@ -769,7 +771,7 @@ type RelabelConfig struct {
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
-	Regex *Regexp `yaml:"regex,omitempty"`
+	Regex Regexp `yaml:"regex,omitempty"`
 	// Modulus to take of the hash of concatenated values from the source labels.
 	Modulus uint64 `yaml:"modulus,omitempty"`
 	// The label to which the resulting string is written in a replacement.
@@ -790,9 +792,6 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if c.Regex == nil && c.Action != RelabelHashMod {
-		return fmt.Errorf("relabel configuration requires a regular expression")
-	}
 	if c.Modulus == 0 && c.Action == RelabelHashMod {
 		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
@@ -801,25 +800,22 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
 type Regexp struct {
-	regexp.Regexp
+	*regexp.Regexp
 	original string
 }
 
 // NewRegexp creates a new anchored Regexp and returns an error if the
 // passed-in regular expression does not compile.
-func NewRegexp(s string) (*Regexp, error) {
+func NewRegexp(s string) (Regexp, error) {
 	regex, err := regexp.Compile("^(?:" + s + ")$")
-	if err != nil {
-		return nil, err
-	}
-	return &Regexp{
-		Regexp:   *regex,
+	return Regexp{
+		Regexp:   regex,
 		original: s,
-	}, nil
+	}, err
 }
 
 // MustNewRegexp works like NewRegexp, but panics if the regular expression does not compile.
-func MustNewRegexp(s string) *Regexp {
+func MustNewRegexp(s string) Regexp {
 	re, err := NewRegexp(s)
 	if err != nil {
 		panic(err)
@@ -837,13 +833,13 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	*re = *r
+	*re = r
 	return nil
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
-func (re *Regexp) MarshalYAML() (interface{}, error) {
-	if re != nil {
+func (re Regexp) MarshalYAML() (interface{}, error) {
+	if re.original != "" {
 		return re.original, nil
 	}
 	return nil, nil
