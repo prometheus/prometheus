@@ -501,7 +501,6 @@ func (kd *Discovery) updateServiceTargetGroup(service *Service, eps *Endpoints) 
 		Labels: model.LabelSet{
 			serviceNamespaceLabel: model.LabelValue(service.ObjectMeta.Namespace),
 			serviceNameLabel:      model.LabelValue(service.ObjectMeta.Name),
-			roleLabel:             model.LabelValue("service"),
 		},
 	}
 
@@ -515,6 +514,12 @@ func (kd *Discovery) updateServiceTargetGroup(service *Service, eps *Endpoints) 
 		tg.Labels[model.LabelName(labelName)] = model.LabelValue(v)
 	}
 
+	t := model.LabelSet{
+		model.AddressLabel: model.LabelValue(service.ObjectMeta.Name + "." + service.ObjectMeta.Namespace + ".svc"),
+		roleLabel:          model.LabelValue("service"),
+	}
+	tg.Targets = append(tg.Targets, t)
+
 	// Now let's loop through the endpoints & add them to the target group with appropriate labels.
 	for _, ss := range eps.Subsets {
 		epPort := ss.Ports[0].Port
@@ -526,7 +531,10 @@ func (kd *Discovery) updateServiceTargetGroup(service *Service, eps *Endpoints) 
 			}
 			address := fmt.Sprintf("%s:%d", ipAddr, epPort)
 
-			t := model.LabelSet{model.AddressLabel: model.LabelValue(address)}
+			t := model.LabelSet{
+				model.AddressLabel: model.LabelValue(address),
+				roleLabel:          model.LabelValue("endpoint"),
+			}
 
 			tg.Targets = append(tg.Targets, t)
 		}
