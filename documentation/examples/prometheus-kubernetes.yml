@@ -28,12 +28,9 @@ scrape_configs:
     regex: (?:apiserver|node)
   - action: labelmap
     regex: __meta_kubernetes_node_label_(.+)
-    replacement: $1
   - source_labels: [__meta_kubernetes_role]
     action: replace
-    regex: (.+)
     target_label: kubernetes_role
-    replacement: $1
 
 # Scrape config for service endpoints.
 #
@@ -61,12 +58,9 @@ scrape_configs:
     action: replace
     target_label: __scheme__
     regex: (https?)
-    replacement: $1
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
     action: replace
     target_label: __metrics_path__
-    regex: (.+)
-    replacement: $1
   - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
     action: replace
     target_label: __address__
@@ -74,22 +68,15 @@ scrape_configs:
     replacement: $1:$2
   - action: labelmap
     regex: __meta_kubernetes_service_label_(.+)
-    replacement: $1
   - source_labels: [__meta_kubernetes_role]
     action: replace
-    regex: (.+)
     target_label: kubernetes_role
-    replacement: $1
   - source_labels: [__meta_kubernetes_service_namespace]
     action: replace
-    regex: (.+)
     target_label: kubernetes_namespace
-    replacement: $1
   - source_labels: [__meta_kubernetes_service_name]
     action: replace
-    regex: (.+)
     target_label: kubernetes_name
-    replacement: $1
 
 # Example scrape config for probing services via the Blackbox Exporter.
 #
@@ -113,32 +100,21 @@ scrape_configs:
     action: keep
     regex: service;true
   - source_labels: []
-    regex: .*
     target_label: __address__
     replacement: prom-blackbox.default.svc:9115
   - source_labels: [__address__]
     regex: (.*)(:80)?
     target_label: __param_target
-    replacement: ${1}
   - source_labels: [__param_target]
-    regex: (.*)
     target_label: instance
-    replacement: ${1}
   - action: labelmap
     regex: __meta_kubernetes_service_label_(.+)
-    replacement: $1
   - source_labels: [__meta_kubernetes_role]
     action: replace
-    regex: (.+)
     target_label: kubernetes_role
-    replacement: $1
   - source_labels: [__meta_kubernetes_service_namespace]
     action: replace
-    regex: (.+)
     target_label: kubernetes_namespace
-    replacement: $1
   - source_labels: [__meta_kubernetes_service_name]
     action: replace
-    regex: (.+)
     target_label: kubernetes_name
-    replacement: $1
