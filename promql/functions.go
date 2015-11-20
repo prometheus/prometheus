@@ -228,6 +228,28 @@ func funcBottomk(ev *evaluator, args Expressions) model.Value {
 	return vector(bottomk)
 }
 
+// === clamp_max(vector model.ValVector, max Scalar) Vector ===
+func funcClampMax(ev *evaluator, args Expressions) model.Value {
+	vec := ev.evalVector(args[0])
+	max := ev.evalFloat(args[1])
+	for _, el := range vec {
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Min(max, float64(el.Value)))
+	}
+	return vec
+}
+
+// === clamp_min(vector model.ValVector, min Scalar) Vector ===
+func funcClampMin(ev *evaluator, args Expressions) model.Value {
+	vec := ev.evalVector(args[0])
+	min := ev.evalFloat(args[1])
+	for _, el := range vec {
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Max(min, float64(el.Value)))
+	}
+	return vec
+}
+
 // === drop_common_labels(node model.ValVector) Vector ===
 func funcDropCommonLabels(ev *evaluator, args Expressions) model.Value {
 	vec := ev.evalVector(args[0])
@@ -750,6 +772,18 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValMatrix},
 		ReturnType: model.ValVector,
 		Call:       funcChanges,
+	},
+	"clamp_max": {
+		Name:       "clamp_max",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValScalar},
+		ReturnType: model.ValVector,
+		Call:       funcClampMax,
+	},
+	"clamp_min": {
+		Name:       "clamp_min",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValScalar},
+		ReturnType: model.ValVector,
+		Call:       funcClampMin,
 	},
 	"count_over_time": {
 		Name:       "count_over_time",
