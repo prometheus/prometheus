@@ -54,25 +54,31 @@ Prometheus.Graph.prototype.initialize = function() {
   self.queryForm = graphWrapper.find(".query_form");
 
   self.expr = graphWrapper.find("textarea[name=expr]");
-  self.expr.history = [""];
-  self.expr.curElement = 0;
+  self.expr.history = JSON.parse(localStorage.getItem('history') || '[" "]');
+  self.expr.curElement = self.expr.history.length;
   self.expr.keypress(function(e) {
     // Enter was pressed without the shift key.
-    if (e.which == 13 && !e.shiftKey) {
+    if (e.which == 13 /* enter */ && !e.shiftKey) {
       self.queryForm.submit();
       e.preventDefault();
     }
 
-    if (e.which == 74 && e.shiftKey && self.expr.curElement > 0) {
+    if (e.which == 74 /* j */ && e.shiftKey && self.expr.curElement > 0) {
       self.expr.history[self.expr.curElement] = self.expr.val();
       self.expr.curElement--;
       self.expr.val(self.expr.history[self.expr.curElement]);
       e.preventDefault();
-    } else if  (e.which == 75 && e.shiftKey  && self.expr.history.length > self.expr.curElement) {
+    } else if  (e.which == 75 /* k */ && e.shiftKey  && self.expr.history.length > self.expr.curElement) {
       self.expr.history[self.expr.curElement] = self.expr.val();
       self.expr.curElement++;
       self.expr.val(self.expr.history[self.expr.curElement]);
       e.preventDefault();
+    }
+
+    if (e.which ==67 /* c */ && e.shiftKey) {
+      if (confirm('Do you want to clear local query history?')) {
+        localStorage.removeItem('history');
+      }
     }
 
     // Auto-resize the text area on input.
@@ -156,6 +162,13 @@ Prometheus.Graph.prototype.initialize = function() {
     if (self.expr.val() != "" && self.expr.history[self.expr.curElement] != self.expr.val()) {
       self.expr.curElement = self.expr.history.length;
       self.expr.history[self.expr.curElement] = self.expr.val();
+
+      var locHistory = JSON.parse(localStorage.getItem('history') || '[" "]');
+      locHistory[locHistory.length] = self.expr.val();
+      if(locHistory.length > 100) {
+        locHistory = locHistory.slice(locHistory.length - 100, locHistory.length);
+      }
+      localStorage.setItem('history', JSON.stringify(locHistory));
     }
 
     self.consoleTab.addClass("reload");
