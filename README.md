@@ -14,12 +14,7 @@ Prometheus' main distinguishing features as compared to other monitoring systems
 - **pushing timeseries** is supported via an intermediary gateway
 - targets are discovered via **service discovery** or **static configuration**
 - multiple modes of **graphing and dashboarding support**
-- **federation support** coming soon
-
-## Hacktoberfest 2015
-
-Prometheus is a featured project in [DigitalOcean's Hacktoberfest](https://hacktoberfest.digitalocean.com/). 
-We have prepared a [list of potential projects](https://docs.google.com/document/d/1u1iPsFZ0kaa1SJZ1BKoNdm0j5c2lxB1pFah1b4Na8Sg/edit#heading=h.lgmt23h6abgp) to get you started.
+- support for hierarchical and horizontal **federation**
 
 ## Architecture overview
 

@@ -211,7 +211,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 		TargetGroups: []*config.TargetGroup{{
 			Targets: []model.LabelSet{
 				{model.AddressLabel: "example.org:80"},
-				{model.AddressLabel: "example.com:80"},
+				{model.AddressLabel: "example.com"},
 			},
 		}},
 		RelabelConfigs: []*config.RelabelConfig{
@@ -222,6 +222,13 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				TargetLabel:  "testParam",
 				Replacement:  "$1",
 				Action:       config.RelabelReplace,
+			},
+			{
+				// The port number is added after relabeling, so
+				// this relabel rule should have no effect.
+				SourceLabels: model.LabelNames{model.AddressLabel},
+				Regex:        config.MustNewRegexp("example.com:80"),
+				Action:       config.RelabelDrop,
 			},
 		},
 	}
@@ -274,6 +281,25 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				Regex:        config.MustNewRegexp(".*"),
 				TargetLabel:  "boom",
 				Replacement:  "",
+				Action:       config.RelabelReplace,
+			},
+		},
+	}
+	// Test that targets without host:port addresses are dropped.
+	testJob3 := &config.ScrapeConfig{
+		JobName:        "test_job1",
+		ScrapeInterval: config.Duration(1 * time.Minute),
+		TargetGroups: []*config.TargetGroup{{
+			Targets: []model.LabelSet{
+				{model.AddressLabel: "example.net:80"},
+			},
+		}},
+		RelabelConfigs: []*config.RelabelConfig{
+			{
+				SourceLabels: model.LabelNames{model.AddressLabel},
+				Regex:        config.MustNewRegexp("(.*)"),
+				TargetLabel:  "__address__",
+				Replacement:  "http://$1",
 				Action:       config.RelabelReplace,
 			},
 		},
@@ -348,6 +374,9 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 						model.SchemeLabel: "", model.MetricsPathLabel: "", model.AddressLabel: "foo.com:1235"},
 				},
 			},
+		}, {
+			scrapeConfigs: []*config.ScrapeConfig{testJob3},
+			expected:      map[string][]model.LabelSet{},
 		},
 	}
 	conf := &config.Config{}

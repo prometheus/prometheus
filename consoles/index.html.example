@@ -37,6 +37,10 @@
   <td>Cassandra (JMX Exporter)</td>
   <td><code>cassandra</code></td>
 </tr>
+<tr>
+  <td>Blackbox (Prober)</td>
+  <td><code>blackbox</code></td>
+</tr>
 </table>
 
 {{ template "prom_content_tail" . }}

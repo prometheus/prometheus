@@ -14,6 +14,7 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,7 +47,7 @@ import (
 	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web/api/legacy"
 	"github.com/prometheus/prometheus/web/api/v1"
-	"github.com/prometheus/prometheus/web/blob"
+	"github.com/prometheus/prometheus/web/ui"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -137,10 +138,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		queryEngine: qe,
 		storage:     st,
 
-		apiV1: &v1.API{
-			QueryEngine: qe,
-			Storage:     st,
-		},
+		apiV1: v1.NewAPI(qe, st),
 		apiLegacy: &legacy.API{
 			QueryEngine: qe,
 			Storage:     st,
@@ -181,11 +179,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 
 	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
 
-	if o.UseLocalAssets {
-		router.Get("/static/*filepath", instrf("static", route.FileServe("web/blob/static")))
-	} else {
-		router.Get("/static/*filepath", instrh("static", blob.Handler{}))
-	}
+	router.Get("/static/*filepath", instrf("static", serveStaticAsset))
 
 	if o.UserAssetsPath != "" {
 		router.Get("/user/*filepath", instrf("user", route.FileServe(o.UserAssetsPath)))
@@ -201,6 +195,28 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router.Post("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
 
 	return h
+}
+
+func serveStaticAsset(w http.ResponseWriter, req *http.Request) {
+	fp := route.Param(route.Context(req), "filepath")
+	fp = filepath.Join("web/ui/static", fp)
+
+	info, err := ui.AssetInfo(fp)
+	if err != nil {
+		log.With("file", fp).Warn("Could not get file info: ", err)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	file, err := ui.Asset(fp)
+	if err != nil {
+		if err != io.EOF {
+			log.With("file", fp).Warn("Could not get file: ", err)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	http.ServeContent(w, req, info.Name(), info.ModTime(), bytes.NewReader(file))
 }
 
 // ListenError returns the receive-only channel that signals errors while starting the web server.
@@ -237,7 +253,7 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 			rules.StateFiring:   "danger",
 		},
 	}
-	h.executeTemplate(w, "alerts", alertStatus)
+	h.executeTemplate(w, "alerts.html", alertStatus)
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
@@ -291,14 +307,14 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
-	h.executeTemplate(w, "graph", nil)
+	h.executeTemplate(w, "graph.html", nil)
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	h.statusInfo.mu.RLock()
 	defer h.statusInfo.mu.RUnlock()
 
-	h.executeTemplate(w, "status", struct {
+	h.executeTemplate(w, "status.html", struct {
 		Status *PrometheusStatus
 		Info   map[string]string
 	}{
@@ -324,23 +340,6 @@ func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
 	h.reloadCh <- struct{}{}
 }
 
-func (h *Handler) getTemplateFile(name string) (string, error) {
-	if h.options.UseLocalAssets {
-		file, err := ioutil.ReadFile(fmt.Sprintf("web/blob/templates/%s.html", name))
-		if err != nil {
-			log.Errorf("Could not read %s template: %s", name, err)
-			return "", err
-		}
-		return string(file), nil
-	}
-	file, err := blob.GetFile(blob.TemplateFiles, name+".html")
-	if err != nil {
-		log.Errorf("Could not read %s template: %s", name, err)
-		return "", err
-	}
-	return string(file), nil
-}
-
 func (h *Handler) consolesPath() string {
 	if _, err := os.Stat(h.options.ConsoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
 		return h.options.ExternalURL.Path + "/consoles/index.html"
@@ -351,18 +350,6 @@ func (h *Handler) consolesPath() string {
 		}
 	}
 	return ""
-}
-
-func (h *Handler) getTemplate(name string) (string, error) {
-	baseTmpl, err := h.getTemplateFile("_base")
-	if err != nil {
-		return "", fmt.Errorf("error reading base template: %s", err)
-	}
-	pageTmpl, err := h.getTemplateFile(name)
-	if err != nil {
-		return "", fmt.Errorf("error reading page template %s: %s", name, err)
-	}
-	return baseTmpl + pageTmpl, nil
 }
 
 func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
@@ -437,6 +424,18 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			}
 		},
 	}
+}
+
+func (h *Handler) getTemplate(name string) (string, error) {
+	baseTmpl, err := ui.Asset("web/ui/templates/_base.html")
+	if err != nil {
+		return "", fmt.Errorf("error reading base template: %s", err)
+	}
+	pageTmpl, err := ui.Asset(filepath.Join("web/ui/templates", name))
+	if err != nil {
+		return "", fmt.Errorf("error reading page template %s: %s", name, err)
+	}
+	return string(baseTmpl) + string(pageTmpl), nil
 }
 
 func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {

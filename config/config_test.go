@@ -89,6 +89,19 @@ var expectedConf = &Config{
 					Regex:        MustNewRegexp("(.*)some-[regex]"),
 					Replacement:  "foo-${1}",
 					Action:       RelabelReplace,
+				}, {
+					SourceLabels: model.LabelNames{"abc"},
+					TargetLabel:  "cde",
+					Separator:    ";",
+					Regex:        DefaultRelabelConfig.Regex,
+					Replacement:  DefaultRelabelConfig.Replacement,
+					Action:       RelabelReplace,
+				}, {
+					TargetLabel: "abc",
+					Separator:   ";",
+					Regex:       DefaultRelabelConfig.Regex,
+					Replacement: "static",
+					Action:      RelabelReplace,
 				},
 			},
 		},
@@ -128,11 +141,14 @@ var expectedConf = &Config{
 					SourceLabels: model.LabelNames{"job"},
 					Regex:        MustNewRegexp("(.*)some-[regex]"),
 					Separator:    ";",
+					Replacement:  DefaultRelabelConfig.Replacement,
 					Action:       RelabelDrop,
 				},
 				{
 					SourceLabels: model.LabelNames{"__address__"},
 					TargetLabel:  "__tmp_hash",
+					Regex:        DefaultRelabelConfig.Regex,
+					Replacement:  DefaultRelabelConfig.Replacement,
 					Modulus:      8,
 					Separator:    ";",
 					Action:       RelabelHashMod,
@@ -141,12 +157,14 @@ var expectedConf = &Config{
 					SourceLabels: model.LabelNames{"__tmp_hash"},
 					Regex:        MustNewRegexp("1"),
 					Separator:    ";",
+					Replacement:  DefaultRelabelConfig.Replacement,
 					Action:       RelabelKeep,
 				},
 				{
-					Regex:     MustNewRegexp("1"),
-					Separator: ";",
-					Action:    RelabelLabelMap,
+					Regex:       MustNewRegexp("1"),
+					Separator:   ";",
+					Replacement: DefaultRelabelConfig.Replacement,
+					Action:      RelabelLabelMap,
 				},
 			},
 			MetricRelabelConfigs: []*RelabelConfig{
@@ -154,6 +172,7 @@ var expectedConf = &Config{
 					SourceLabels: model.LabelNames{"__name__"},
 					Regex:        MustNewRegexp("expensive_metric.*"),
 					Separator:    ";",
+					Replacement:  DefaultRelabelConfig.Replacement,
 					Action:       RelabelDrop,
 				},
 			},
@@ -309,9 +328,6 @@ var expectedErrors = []struct {
 		filename: "regex.bad.yml",
 		errMsg:   "error parsing regexp",
 	}, {
-		filename: "regex_missing.bad.yml",
-		errMsg:   "relabel configuration requires a regular expression",
-	}, {
 		filename: "modulus_missing.bad.yml",
 		errMsg:   "relabel configuration for hashmod requires non-zero modulus",
 	}, {
@@ -335,6 +351,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "marathon_no_servers.bad.yml",
 		errMsg:   "Marathon SD config must contain at least one Marathon server",
+	}, {
+		filename: "url_in_targetgroup.bad.yml",
+		errMsg:   "\"http://bad\" is not a valid hostname",
 	},
 }
 

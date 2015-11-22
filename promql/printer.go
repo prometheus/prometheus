@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -174,7 +175,11 @@ func (node *MatrixSelector) String() string {
 		Name:          node.Name,
 		LabelMatchers: node.LabelMatchers,
 	}
-	return fmt.Sprintf("%s[%s]", vecSelector.String(), strutil.DurationToString(node.Range))
+	offset := ""
+	if node.Offset != time.Duration(0) {
+		offset = fmt.Sprintf(" OFFSET %s", strutil.DurationToString(node.Offset))
+	}
+	return fmt.Sprintf("%s[%s]%s", vecSelector.String(), strutil.DurationToString(node.Range), offset)
 }
 
 func (node *NumberLiteral) String() string {
@@ -202,10 +207,14 @@ func (node *VectorSelector) String() string {
 		}
 		labelStrings = append(labelStrings, matcher.String())
 	}
+	offset := ""
+	if node.Offset != time.Duration(0) {
+		offset = fmt.Sprintf(" OFFSET %s", strutil.DurationToString(node.Offset))
+	}
 
 	if len(labelStrings) == 0 {
-		return node.Name
+		return fmt.Sprintf("%s%s", node.Name, offset)
 	}
 	sort.Strings(labelStrings)
-	return fmt.Sprintf("%s{%s}", node.Name, strings.Join(labelStrings, ","))
+	return fmt.Sprintf("%s{%s}%s", node.Name, strings.Join(labelStrings, ","), offset)
 }

@@ -35,9 +35,11 @@ func TestEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	now := model.Now()
 	api := &API{
 		Storage:     suite.Storage(),
 		QueryEngine: suite.QueryEngine(),
+		now:         func() model.Time { return now },
 	}
 
 	start := model.Time(0)
@@ -91,6 +93,19 @@ func TestEndpoints(t *testing.T) {
 			},
 		},
 		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"0.333"},
+			},
+			response: &queryData{
+				ResultType: model.ValScalar,
+				Result: &model.Scalar{
+					Value:     0.333,
+					Timestamp: now,
+				},
+			},
+		},
+		{
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -137,14 +152,6 @@ func TestEndpoints(t *testing.T) {
 				"query": []string{"time()"},
 				"start": []string{"0"},
 				"end":   []string{"2"},
-			},
-			errType: errorBadData,
-		},
-		// Missing evaluation time.
-		{
-			endpoint: api.query,
-			query: url.Values{
-				"query": []string{"0.333"},
 			},
 			errType: errorBadData,
 		},
@@ -210,7 +217,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`},
+				"match[]": []string{`test_metric1{foo=~".+o"}`},
 			},
 			response: []model.Metric{
 				{
@@ -222,7 +229,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~"o$"}`},
+				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~".+o"}`},
 			},
 			response: []model.Metric{
 				{
@@ -234,7 +241,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`, `none`},
+				"match[]": []string{`test_metric1{foo=~".+o"}`, `none`},
 			},
 			response: []model.Metric{
 				{
@@ -257,7 +264,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.dropSeries,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`},
+				"match[]": []string{`test_metric1{foo=~".+o"}`},
 			},
 			response: struct {
 				NumDeleted int `json:"numDeleted"`
@@ -373,8 +380,8 @@ func TestRespondError(t *testing.T) {
 		t.Fatalf("Error reading response body: %s", err)
 	}
 
-	if resp.StatusCode != 422 {
-		t.Fatalf("Return code %d expected in error response but got %d", 422, resp.StatusCode)
+	if want, have := http.StatusServiceUnavailable, resp.StatusCode; want != have {
+		t.Fatalf("Return code %d expected in error response but got %d", want, have)
 	}
 	if h := resp.Header.Get("Content-Type"); h != "application/json" {
 		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
