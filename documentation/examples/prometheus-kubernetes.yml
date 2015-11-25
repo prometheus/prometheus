@@ -60,6 +60,7 @@ scrape_configs:
     regex: (https?)
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
     action: replace
+    regex: (.+)
     target_label: __metrics_path__
   - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
     action: replace
@@ -99,9 +100,8 @@ scrape_configs:
   - source_labels: [__meta_kubernetes_role, __meta_kubernetes_service_annotation_prometheus_io_probe]
     action: keep
     regex: service;true
-  - source_labels: []
-    target_label: __address__
-    replacement: prom-blackbox.default.svc:9115
+  - target_label: __address__
+    replacement: blackbox.default.svc:9115
   - source_labels: [__address__]
     regex: (.*)(:80)?
     target_label: __param_target
