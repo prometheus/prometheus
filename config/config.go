@@ -93,7 +93,7 @@ var (
 	DefaultRelabelConfig = RelabelConfig{
 		Action:      RelabelReplace,
 		Separator:   ";",
-		Regex:       MustNewRegexp("(.*)"),
+		Regex:       MustNewRegexp("(.+)"),
 		Replacement: "$1",
 	}
 
