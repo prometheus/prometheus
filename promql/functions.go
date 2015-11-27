@@ -46,55 +46,15 @@ func funcTime(ev *evaluator, args Expressions) model.Value {
 
 // === delta(matrix model.ValMatrix) Vector ===
 func funcDelta(ev *evaluator, args Expressions) model.Value {
-	// This function still takes a 2nd argument for use by rate() and increase().
-	isCounter := len(args) >= 2 && ev.evalInt(args[1]) > 0
 	resultVector := vector{}
-
-	// If we treat these metrics as counters, we need to fetch all values
-	// in the interval to find breaks in the timeseries' monotonicity.
-	// I.e. if a counter resets, we want to ignore that reset.
-	var matrixValue matrix
-	if isCounter {
-		matrixValue = ev.evalMatrix(args[0])
-	} else {
-		matrixValue = ev.evalMatrixBounds(args[0])
-	}
-	for _, samples := range matrixValue {
+	for _, samples := range ev.evalMatrixBounds(args[0]) {
 		// No sense in trying to compute a delta without at least two points. Drop
 		// this vector element.
 		if len(samples.Values) < 2 {
 			continue
 		}
 
-		var (
-			counterCorrection model.SampleValue
-			lastValue         model.SampleValue
-		)
-		for _, sample := range samples.Values {
-			currentValue := sample.Value
-			if isCounter && currentValue < lastValue {
-				counterCorrection += lastValue - currentValue
-			}
-			lastValue = currentValue
-		}
-		resultValue := lastValue - samples.Values[0].Value + counterCorrection
-
-		targetInterval := args[0].(*MatrixSelector).Range
-		sampledInterval := samples.Values[len(samples.Values)-1].Timestamp.Sub(samples.Values[0].Timestamp)
-		if sampledInterval == 0 {
-			// Only found one sample. Cannot compute a rate from this.
-			continue
-		}
-		// Correct for differences in target vs. actual delta interval.
-		//
-		// Above, we didn't actually calculate the delta for the specified target
-		// interval, but for an interval between the first and last found samples
-		// under the target interval, which will usually have less time between
-		// them. Depending on how many samples are found under a target interval,
-		// the delta results are distorted and temporal aliasing occurs (ugly
-		// bumps). This effect is corrected for below.
-		intervalCorrection := model.SampleValue(targetInterval) / model.SampleValue(sampledInterval)
-		resultValue *= intervalCorrection
+		resultValue := samples.Values[len(samples.Values)-1].Value - samples.Values[0].Value
 
 		resultSample := &sample{
 			Metric:    samples.Metric,
@@ -109,8 +69,7 @@ func funcDelta(ev *evaluator, args Expressions) model.Value {
 
 // === rate(node model.ValMatrix) Vector ===
 func funcRate(ev *evaluator, args Expressions) model.Value {
-	args = append(args, &NumberLiteral{1})
-	vector := funcDelta(ev, args).(vector)
+	vector := funcIncrease(ev, args).(vector)
 
 	// TODO: could be other type of model.ValMatrix in the future (right now, only
 	// MatrixSelector exists). Find a better way of getting the duration of a
@@ -124,8 +83,35 @@ func funcRate(ev *evaluator, args Expressions) model.Value {
 
 // === increase(node model.ValMatrix) Vector ===
 func funcIncrease(ev *evaluator, args Expressions) model.Value {
-	args = append(args, &NumberLiteral{1})
-	return funcDelta(ev, args).(vector)
+	resultVector := vector{}
+	for _, samples := range ev.evalMatrix(args[0]) {
+		// No sense in trying to compute an increase without at least two points. Drop
+		// this vector element.
+		if len(samples.Values) < 2 {
+			continue
+		}
+
+		var (
+			counterCorrection model.SampleValue
+			lastValue         model.SampleValue
+		)
+		for _, sample := range samples.Values {
+			currentValue := sample.Value
+			if currentValue < lastValue {
+				counterCorrection += lastValue - currentValue
+			}
+			lastValue = currentValue
+		}
+		resultValue := lastValue - samples.Values[0].Value + counterCorrection
+		resultSample := &sample{
+			Metric:    samples.Metric,
+			Value:     resultValue,
+			Timestamp: ev.Timestamp,
+		}
+		resultSample.Metric.Del(model.MetricNameLabel)
+		resultVector = append(resultVector, resultSample)
+	}
+	return resultVector
 }
 
 // === irate(node model.ValMatrix) Vector ===
