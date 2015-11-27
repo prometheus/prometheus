@@ -170,3 +170,26 @@ eval instant at 0m vector(1)
 
 eval instant at 60m vector(time())
   {} 3600
+
+clear
+
+# Tests for clamp_max and clamp_min().
+load 5m
+	test_clamp{src="clamp-a"}	-50
+	test_clamp{src="clamp-b"}	0
+	test_clamp{src="clamp-c"}	100
+
+eval instant at 0m clamp_max(test_clamp, 75)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	75
+
+eval instant at 0m clamp_min(test_clamp, -25)
+	{src="clamp-a"}	-25
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m clamp_max(clamp_min(test_clamp, -20), 70)
+	{src="clamp-a"}	-20
+	{src="clamp-b"}	0
+	{src="clamp-c"}	70
