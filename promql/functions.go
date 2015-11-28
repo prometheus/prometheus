@@ -19,7 +19,6 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
-	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -44,28 +43,25 @@ func funcTime(ev *evaluator, args Expressions) model.Value {
 	}
 }
 
-// === delta(matrix model.ValMatrix) Vector ===
-func funcDelta(ev *evaluator, args Expressions) model.Value {
-	// This function still takes a 2nd argument for use by rate() and increase().
-	isCounter := len(args) >= 2 && ev.evalInt(args[1]) > 0
+// extrapolatedRate is a utility function for rate/increase/delta.
+// It calculates the rate (allowing for counter resets if isCounter is true),
+// extrapolates if the first/last sample is close to the boundary, and returns
+// the result as either per-second (if isRate is true) or overall.
+func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) model.Value {
+	ms := arg.(*MatrixSelector)
+
+	rangeStart := ev.Timestamp.Add(-ms.Range - ms.Offset)
+	rangeEnd := ev.Timestamp.Add(-ms.Offset)
+
 	resultVector := vector{}
 
-	// If we treat these metrics as counters, we need to fetch all values
-	// in the interval to find breaks in the timeseries' monotonicity.
-	// I.e. if a counter resets, we want to ignore that reset.
-	var matrixValue matrix
-	if isCounter {
-		matrixValue = ev.evalMatrix(args[0])
-	} else {
-		matrixValue = ev.evalMatrixBounds(args[0])
-	}
+	matrixValue := ev.evalMatrix(ms)
 	for _, samples := range matrixValue {
-		// No sense in trying to compute a delta without at least two points. Drop
+		// No sense in trying to compute a rate without at least two points. Drop
 		// this vector element.
 		if len(samples.Values) < 2 {
 			continue
 		}
-
 		var (
 			counterCorrection model.SampleValue
 			lastValue         model.SampleValue
@@ -79,22 +75,48 @@ func funcDelta(ev *evaluator, args Expressions) model.Value {
 		}
 		resultValue := lastValue - samples.Values[0].Value + counterCorrection
 
-		targetInterval := args[0].(*MatrixSelector).Range
-		sampledInterval := samples.Values[len(samples.Values)-1].Timestamp.Sub(samples.Values[0].Timestamp)
-		if sampledInterval == 0 {
-			// Only found one sample. Cannot compute a rate from this.
-			continue
+		// Duration between first/last samples and boundary of range.
+		durationToStart := samples.Values[0].Timestamp.Sub(rangeStart).Seconds()
+		durationToEnd := rangeEnd.Sub(samples.Values[len(samples.Values)-1].Timestamp).Seconds()
+
+		sampledInterval := samples.Values[len(samples.Values)-1].Timestamp.Sub(samples.Values[0].Timestamp).Seconds()
+		averageDurationBetweenSamples := sampledInterval / float64(len(samples.Values)-1)
+
+		if isCounter && resultValue > 0 && samples.Values[0].Value >= 0 {
+			// Counters cannot be negative. If we have any slope at
+			// all (i.e. resultValue went up), we can extrapolate
+			// the zero point of the counter. If the duration to the
+			// zero point is shorter than the durationToStart, we
+			// take the zero point as the start of the series,
+			// thereby avoiding extrapolation to negative counter
+			// values.
+			durationToZero := sampledInterval * float64(samples.Values[0].Value/resultValue)
+			if durationToZero < durationToStart {
+				durationToStart = durationToZero
+			}
 		}
-		// Correct for differences in target vs. actual delta interval.
-		//
-		// Above, we didn't actually calculate the delta for the specified target
-		// interval, but for an interval between the first and last found samples
-		// under the target interval, which will usually have less time between
-		// them. Depending on how many samples are found under a target interval,
-		// the delta results are distorted and temporal aliasing occurs (ugly
-		// bumps). This effect is corrected for below.
-		intervalCorrection := model.SampleValue(targetInterval) / model.SampleValue(sampledInterval)
-		resultValue *= intervalCorrection
+
+		// If the first/last samples are close to the boundaries of the range,
+		// extrapolate the result. This is as we expect that another sample
+		// will exist given the spacing between samples we've seen thus far,
+		// with an allowance for noise.
+		extrapolationThreshold := averageDurationBetweenSamples * 1.1
+		extrapolateToInterval := sampledInterval
+
+		if durationToStart < extrapolationThreshold {
+			extrapolateToInterval += durationToStart
+		} else {
+			extrapolateToInterval += averageDurationBetweenSamples / 2
+		}
+		if durationToEnd < extrapolationThreshold {
+			extrapolateToInterval += durationToEnd
+		} else {
+			extrapolateToInterval += averageDurationBetweenSamples / 2
+		}
+		resultValue = resultValue * model.SampleValue(extrapolateToInterval/sampledInterval)
+		if isRate {
+			resultValue = resultValue / model.SampleValue(ms.Range.Seconds())
+		}
 
 		resultSample := &sample{
 			Metric:    samples.Metric,
@@ -107,25 +129,19 @@ func funcDelta(ev *evaluator, args Expressions) model.Value {
 	return resultVector
 }
 
+// === delta(matrix model.ValMatrix) Vector ===
+func funcDelta(ev *evaluator, args Expressions) model.Value {
+	return extrapolatedRate(ev, args[0], false, false)
+}
+
 // === rate(node model.ValMatrix) Vector ===
 func funcRate(ev *evaluator, args Expressions) model.Value {
-	args = append(args, &NumberLiteral{1})
-	vector := funcDelta(ev, args).(vector)
-
-	// TODO: could be other type of model.ValMatrix in the future (right now, only
-	// MatrixSelector exists). Find a better way of getting the duration of a
-	// matrix, such as looking at the samples themselves.
-	interval := args[0].(*MatrixSelector).Range
-	for i := range vector {
-		vector[i].Value /= model.SampleValue(interval / time.Second)
-	}
-	return vector
+	return extrapolatedRate(ev, args[0], true, true)
 }
 
 // === increase(node model.ValMatrix) Vector ===
 func funcIncrease(ev *evaluator, args Expressions) model.Value {
-	args = append(args, &NumberLiteral{1})
-	return funcDelta(ev, args).(vector)
+	return extrapolatedRate(ev, args[0], true, false)
 }
 
 // === irate(node model.ValMatrix) Vector ===

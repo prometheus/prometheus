@@ -15,6 +15,14 @@ load 5m
 	testcounter_reset_middle	0+10x4 0+10x5
 	testcounter_reset_end    	0+10x9 0 10
 
+load 4m
+	testcounter_zero_cutoff{start="0m"}	0+240x10
+	testcounter_zero_cutoff{start="1m"}	60+240x10
+	testcounter_zero_cutoff{start="2m"}	120+240x10
+	testcounter_zero_cutoff{start="3m"}	180+240x10
+	testcounter_zero_cutoff{start="4m"}	240+240x10
+	testcounter_zero_cutoff{start="5m"}	300+240x10
+	
 load 5m
 	label_grouping_test{a="aa", b="bb"}	0+10x10
 	label_grouping_test{a="a", b="abb"}	0+20x10
@@ -151,11 +159,12 @@ eval instant at 50m delta(http_requests{group="canary", instance="1", job="app-s
 
 
 # Rates should calculate per-second rates.
-eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[60m])
+eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[50m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
+	
 # Counter resets at in the middle of range are handled correctly by rate().
-eval instant at 50m rate(testcounter_reset_middle[60m])
+eval instant at 50m rate(testcounter_reset_middle[50m])
 	{} 0.03
 
 
@@ -163,6 +172,26 @@ eval instant at 50m rate(testcounter_reset_middle[60m])
 eval instant at 50m rate(testcounter_reset_end[5m])
 	{} 0
 
+
+# Zero cutoff for left-side extrapolation.
+eval instant at 10m rate(testcounter_zero_cutoff[20m])
+	{start="0m"} 0.5
+	{start="1m"} 0.55
+	{start="2m"} 0.6
+	{start="3m"} 0.65
+	{start="4m"} 0.7
+	{start="5m"} 0.6
+
+# Normal half-interval cutoff for left-side extrapolation.
+eval instant at 50m rate(testcounter_zero_cutoff[20m])
+	{start="0m"} 0.6
+	{start="1m"} 0.6
+	{start="2m"} 0.6
+	{start="3m"} 0.6
+	{start="4m"} 0.6
+	{start="5m"} 0.6
+	
+	
 # count_scalar for a non-empty vector should return scalar element count.
 eval instant at 50m count_scalar(http_requests)
 	8
