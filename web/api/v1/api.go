@@ -14,7 +14,9 @@ import (
 	"github.com/prometheus/common/route"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -69,16 +71,18 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 type API struct {
 	Storage     local.Storage
 	QueryEngine *promql.Engine
+	RuleManager *rules.Manager
 
 	context func(r *http.Request) context.Context
 	now     func() model.Time
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st local.Storage) *API {
+func NewAPI(qe *promql.Engine, st local.Storage, rm *rules.Manager) *API {
 	return &API{
 		QueryEngine: qe,
 		Storage:     st,
+		RuleManager: rm,
 		context:     route.Context,
 		now:         model.Now,
 	}
@@ -107,6 +111,8 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/series", instr("series", api.series))
 	r.Del("/series", instr("drop_series", api.dropSeries))
+
+	r.Get("/alerts", instr("alerts", api.alerts))
 }
 
 type queryData struct {
@@ -251,6 +257,35 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 		NumDeleted: len(fps),
 	}
 	return res, nil
+}
+
+func (api *API) alerts(r *http.Request) (interface{}, *apiError) {
+	// Generate snapshot of notifications for all current alerts
+	var reqs notification.NotificationReqs
+	now := model.Now()
+
+	for _, rule := range api.RuleManager.AlertingRules() {
+		reqs = append(reqs, api.RuleManager.GetRuleAlertNotifications(rule, now)...)
+	}
+
+	// Generate an alert map
+	alerts := make([]map[string]interface{}, 0, len(reqs))
+	for _, req := range reqs {
+		alerts = append(alerts, map[string]interface{}{
+			"summary":     req.Summary,
+			"description": req.Description,
+			"runbook":     req.Runbook,
+			"labels":      req.Labels,
+			"payload": map[string]interface{}{
+				"value":        req.Value,
+				"activeSince":  req.ActiveSince,
+				"generatorURL": req.GeneratorURL,
+				"alertingRule": req.RuleString,
+			},
+		})
+	}
+
+	return alerts, nil
 }
 
 func respond(w http.ResponseWriter, data interface{}) {
