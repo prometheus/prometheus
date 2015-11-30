@@ -19,7 +19,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -32,7 +31,7 @@ import (
 )
 
 const (
-	alertmanagerAPIEventsPath = "/api/alerts"
+	AlertmanagerAPIEventsPath = "/api/alerts"
 	contentTypeJSON           = "application/json"
 )
 
@@ -103,7 +102,7 @@ type NotificationHandlerOptions struct {
 // NewNotificationHandler constructs a new NotificationHandler.
 func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler {
 	return &NotificationHandler{
-		alertmanagerURL:      strings.TrimRight(o.AlertmanagerURL, "/"),
+		alertmanagerURL:      o.AlertmanagerURL,
 		pendingNotifications: make(chan NotificationReqs, o.QueueCapacity),
 
 		httpClient: httputil.NewDeadlineClient(o.Deadline, nil),
@@ -186,7 +185,7 @@ func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
 	}
 	log.Debugln("Sending notifications to alertmanager:", string(buf))
 	resp, err := n.httpClient.Post(
-		n.alertmanagerURL+alertmanagerAPIEventsPath,
+		n.alertmanagerURL,
 		contentTypeJSON,
 		bytes.NewBuffer(buf),
 	)

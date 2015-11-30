@@ -49,6 +49,7 @@ var cfg = struct {
 
 	prometheusURL string
 	influxdbURL   string
+	alertmgrURL   string
 }{}
 
 func init() {
@@ -198,7 +199,7 @@ func init() {
 
 	// Alertmanager.
 	cfg.fs.StringVar(
-		&cfg.notification.AlertmanagerURL, "alertmanager.url", "",
+		&cfg.alertmgrURL, "alertmanager.url", "",
 		"The URL of the alert manager to send notifications to.",
 	)
 	cfg.fs.IntVar(
@@ -239,6 +240,10 @@ func parse(args []string) error {
 	}
 
 	if err := parseInfluxdbURL(); err != nil {
+		return err
+	}
+
+	if err := parseAlertmanagerURL(); err != nil {
 		return err
 	}
 
@@ -285,6 +290,25 @@ func parseInfluxdbURL() error {
 	}
 
 	cfg.remote.InfluxdbURL = url
+	return nil
+}
+
+func parseAlertmanagerURL() error {
+	if cfg.alertmgrURL == "" {
+		return nil
+	}
+
+	url, err := url.Parse(cfg.alertmgrURL)
+	if err != nil {
+		return err
+	}
+
+	if url.Path == "" {
+		cfg.notification.AlertmanagerURL = strings.TrimRight(cfg.alertmgrURL, "/") +
+			notification.AlertmanagerAPIEventsPath
+	} else {
+		cfg.notification.AlertmanagerURL = cfg.alertmgrURL
+	}
 	return nil
 }
 
