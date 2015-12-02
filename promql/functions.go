@@ -80,21 +80,25 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) mode
 		durationToEnd := rangeEnd.Sub(samples.Values[len(samples.Values)-1].Timestamp).Seconds()
 
 		sampledInterval := samples.Values[len(samples.Values)-1].Timestamp.Sub(samples.Values[0].Timestamp).Seconds()
-		averageDurationBetweenSamples := sampledInterval / float64(len(samples.Values))
+		averageDurationBetweenSamples := sampledInterval / float64(len(samples.Values)-1)
 
 		// If the first/last samples are close to the boundaries of the range,
 		// extrapolate the result. This is as we expect that another sample
 		// will exist given the spacing between samples we've seen thus far,
 		// with an allowance for noise.
 		extrapolationThreshold := averageDurationBetweenSamples * 1.1
-		extrpolateToInterval := sampledInterval
+		extrapolateToInterval := sampledInterval
 		if durationToStart < extrapolationThreshold {
-			extrpolateToInterval += durationToStart
+			extrapolateToInterval += durationToStart
+		} else {
+			extrapolateToInterval += averageDurationBetweenSamples / 2
 		}
 		if durationToEnd < extrapolationThreshold {
-			extrpolateToInterval += durationToEnd
+			extrapolateToInterval += durationToEnd
+		} else {
+			extrapolateToInterval += averageDurationBetweenSamples / 2
 		}
-		resultValue = resultValue * model.SampleValue(extrpolateToInterval/sampledInterval)
+		resultValue = resultValue * model.SampleValue(extrapolateToInterval/sampledInterval)
 		if isRate {
 			resultValue = resultValue / model.SampleValue(sampledInterval)
 		}
