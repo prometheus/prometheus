@@ -63,38 +63,54 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) mode
 			continue
 		}
 		var (
-			counterCorrection model.SampleValue
-			lastValue         model.SampleValue
+			counterCorrection            model.SampleValue
+			lastValue                    model.SampleValue
+			lastTimestamp                model.Time
+			medianDurationBetweenSamples float64
 		)
-		for _, sample := range samples.Values {
+		durationsBetweenSamples := make([]float64, len(samples.Values)-1)
+		for i, sample := range samples.Values {
 			currentValue := sample.Value
 			if isCounter && currentValue < lastValue {
 				counterCorrection += lastValue - currentValue
 			}
 			lastValue = currentValue
+			if i > 0 {
+				durationsBetweenSamples[i-1] = sample.Timestamp.Sub(lastTimestamp).Seconds()
+			}
+			lastTimestamp = sample.Timestamp
 		}
 		resultValue := lastValue - samples.Values[0].Value + counterCorrection
-
+		sort.Float64s(durationsBetweenSamples)
+		if len(durationsBetweenSamples)%2 == 0 {
+			medianDurationBetweenSamples = (durationsBetweenSamples[len(durationsBetweenSamples)/2] +
+				durationsBetweenSamples[len(durationsBetweenSamples)/2-1]) / 2
+		} else {
+			medianDurationBetweenSamples = durationsBetweenSamples[len(durationsBetweenSamples)/2]
+		}
 		// Duration between first/last samples and boundary of range.
 		durationToStart := samples.Values[0].Timestamp.Sub(rangeStart).Seconds()
 		durationToEnd := rangeEnd.Sub(samples.Values[len(samples.Values)-1].Timestamp).Seconds()
 
 		sampledInterval := samples.Values[len(samples.Values)-1].Timestamp.Sub(samples.Values[0].Timestamp).Seconds()
-		averageDurationBetweenSamples := sampledInterval / float64(len(samples.Values))
 
 		// If the first/last samples are close to the boundaries of the range,
 		// extrapolate the result. This is as we expect that another sample
 		// will exist given the spacing between samples we've seen thus far,
 		// with an allowance for noise.
-		extrapolationThreshold := averageDurationBetweenSamples * 1.1
-		extrpolateToInterval := sampledInterval
+		extrapolationThreshold := medianDurationBetweenSamples * 1.1
+		extrapolateToInterval := sampledInterval
 		if durationToStart < extrapolationThreshold {
-			extrpolateToInterval += durationToStart
+			extrapolateToInterval += durationToStart
+		} else {
+			extrapolateToInterval += medianDurationBetweenSamples / 2
 		}
 		if durationToEnd < extrapolationThreshold {
-			extrpolateToInterval += durationToEnd
+			extrapolateToInterval += durationToEnd
+		} else {
+			extrapolateToInterval += medianDurationBetweenSamples / 2
 		}
-		resultValue = resultValue * model.SampleValue(extrpolateToInterval/sampledInterval)
+		resultValue = resultValue * model.SampleValue(extrapolateToInterval/sampledInterval)
 		if isRate {
 			resultValue = resultValue / model.SampleValue(sampledInterval)
 		}

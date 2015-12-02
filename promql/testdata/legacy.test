@@ -201,11 +201,11 @@ eval instant at 50m delta(http_requests{group="canary", instance="1", job="app-s
 
 # Rates should calculate per-second rates.
 eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[60m])
-	{group="canary", instance="1", job="app-server"} 0.26666666666666666
+	{group="canary", instance="1", job="app-server"} 0.28
 
 # Counter resets at in the middle of range are handled correctly by rate().
 eval instant at 50m rate(testcounter_reset_middle[60m])
-	{} 0.03
+	{} 0.0315
 
 
 # Counter resets at end of range are ignored by rate().
