@@ -85,6 +85,21 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "a",
 		},
 		{
+			// Missing label is empty when using label function.
+			text:   "{{ query \"metric{instance='a'}\" | first | label \"foo\" }}",
+			output: "",
+		},
+		{
+			// Missing label is empty when not using label function.
+			text:   "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			output: "",
+		},
+		{
+			text:   "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			output: "",
+			html:   true,
+		},
+		{
 			// Range over query and sort by label.
 			text:   "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
 			output: "a:11: b:21: ",
