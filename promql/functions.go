@@ -100,6 +100,21 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) mode
 		// with an allowance for noise.
 		extrapolationThreshold := medianDurationBetweenSamples * 1.1
 		extrapolateToInterval := sampledInterval
+
+		if isCounter && resultValue > 0 && samples.Values[0].Value >= 0 {
+			// Counters cannot be negative. If we have any slope at
+			// all (i.e. resultValue went up), we can extrapolate
+			// the zero point of the timer. If the duration to the
+			// zero point is shorter than the durationToStart, we
+			// certainly don't want to extrapolate all the way to
+			// the start as that would mean extrapolation to
+			// negative values.
+			durationToZero := sampledInterval * float64(samples.Values[0].Value/resultValue)
+			if durationToZero < durationToStart {
+				durationToStart = durationToZero
+			}
+		}
+
 		if durationToStart < extrapolationThreshold {
 			extrapolateToInterval += durationToStart
 		} else {
