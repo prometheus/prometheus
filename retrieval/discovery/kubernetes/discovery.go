@@ -514,8 +514,18 @@ func (kd *Discovery) updateServiceTargetGroup(service *Service, eps *Endpoints) 
 		tg.Labels[model.LabelName(labelName)] = model.LabelValue(v)
 	}
 
+	serviceAddress := service.ObjectMeta.Name + "." + service.ObjectMeta.Namespace + ".svc"
+
+	// Append the first TCP service port if one exists.
+	for _, port := range service.Spec.Ports {
+		if port.Protocol == ProtocolTCP {
+			serviceAddress += fmt.Sprintf(":%d", port.Port)
+			break
+		}
+	}
+
 	t := model.LabelSet{
-		model.AddressLabel: model.LabelValue(service.ObjectMeta.Name + "." + service.ObjectMeta.Namespace + ".svc"),
+		model.AddressLabel: model.LabelValue(serviceAddress),
 		roleLabel:          model.LabelValue("service"),
 	}
 	tg.Targets = append(tg.Targets, t)
