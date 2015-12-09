@@ -15,7 +15,7 @@ RUN apk add --update -t build-deps tar openssl git make bash \
     && rm -rf /go /gopath /var/cache/apk/*
 
 EXPOSE     9090
-VOLUME     [ "/prometheus" ]
+VOLUME     [ "/prometheus", "/etcd/ssl/certificates" ]
 WORKDIR    /prometheus
 ENTRYPOINT [ "/bin/prometheus" ]
 CMD        [ "-config.file=/etc/prometheus/prometheus.yml", \
