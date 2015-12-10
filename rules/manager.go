@@ -179,9 +179,14 @@ func (m *Manager) Stop() {
 }
 
 func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp model.Time) {
+	notifications := m.GetRuleAlertNotifications(rule, timestamp)
+	m.notificationHandler.SubmitReqs(notifications)
+}
+
+func (m *Manager) GetRuleAlertNotifications(rule *AlertingRule, timestamp model.Time) notification.NotificationReqs {
 	activeAlerts := rule.ActiveAlerts()
 	if len(activeAlerts) == 0 {
-		return
+		return notification.NotificationReqs{}
 	}
 
 	notifications := make(notification.NotificationReqs, 0, len(activeAlerts))
@@ -230,7 +235,7 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp model.Ti
 			GeneratorURL: m.externalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
 		})
 	}
-	m.notificationHandler.SubmitReqs(notifications)
+	return notifications
 }
 
 func (m *Manager) runIteration() {

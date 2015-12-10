@@ -138,7 +138,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		queryEngine: qe,
 		storage:     st,
 
-		apiV1: v1.NewAPI(qe, st),
+		apiV1: v1.NewAPI(qe, st, rm),
 		apiLegacy: &legacy.API{
 			QueryEngine: qe,
 			Storage:     st,
