@@ -42,7 +42,7 @@ var cfg = struct {
 	configFile   string
 
 	storage      local.MemorySeriesStorageOptions
-	notification notification.NotificationHandlerOptions
+	notification notification.HandlerOptions
 	queryEngine  promql.EngineOptions
 	web          web.Options
 	remote       remote.Options
@@ -206,7 +206,7 @@ func init() {
 		"The capacity of the queue for pending alert manager notifications.",
 	)
 	cfg.fs.DurationVar(
-		&cfg.notification.Deadline, "alertmanager.http-deadline", 10*time.Second,
+		&cfg.notification.Timeout, "alertmanager.http-deadline", 10*time.Second,
 		"Alert manager HTTP API timeout.",
 	)
 
