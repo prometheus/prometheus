@@ -208,23 +208,22 @@ func (m *Manager) sendAlertNotifications(rule *AlertingRule, timestamp model.Tim
 		// who are not used to Go's templating system.
 		defs := "{{$labels := .Labels}}{{$value := .Value}}"
 
-		expand := func(text string) string {
-			tmpl := template.NewTemplateExpander(defs+text, "__alert_"+rule.Name(), tmplData, timestamp, m.queryEngine, m.externalURL.Path)
+		expand := func(text model.LabelValue) model.LabelValue {
+			tmpl := template.NewTemplateExpander(defs+string(text), "__alert_"+rule.Name(), tmplData, timestamp, m.queryEngine, m.externalURL.Path)
 			result, err := tmpl.Expand()
 			if err != nil {
 				result = err.Error()
 				log.Warnf("Error expanding alert template %v with data '%v': %v", rule.Name(), tmplData, err)
 			}
-			return result
+			return model.LabelValue(result)
 		}
 
 		labels := aa.Labels.Clone()
 		labels[model.AlertNameLabel] = model.LabelValue(rule.Name())
 
-		annotations := model.LabelSet{
-			"summary":     model.LabelValue(expand(rule.summary)),
-			"description": model.LabelValue(expand(rule.description)),
-			"runbook":     model.LabelValue(expand(rule.runbook)),
+		annotations := rule.annotations.Clone()
+		for an, av := range rule.annotations {
+			annotations[an] = expand(av)
 		}
 
 		alerts = append(alerts, &model.Alert{
@@ -359,7 +358,7 @@ func (m *Manager) loadRuleFiles(filenames ...string) error {
 		for _, stmt := range stmts {
 			switch r := stmt.(type) {
 			case *promql.AlertStmt:
-				rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Summary, r.Description, r.Runbook)
+				rule := NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Annotations)
 				m.rules = append(m.rules, rule)
 			case *promql.RecordStmt:
 				rule := NewRecordingRule(r.Name, r.Expr, r.Labels)

@@ -105,12 +105,8 @@ type AlertingRule struct {
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
 	labels model.LabelSet
-	// Short alert summary, suitable for email subjects.
-	summary string
-	// More detailed alert description.
-	description string
-	// A reference to a runbook for the alert.
-	runbook string
+	// Non-identifying key/value pairs.
+	annotations model.LabelSet
 
 	// Protects the below.
 	mutex sync.Mutex
@@ -120,23 +116,13 @@ type AlertingRule struct {
 }
 
 // NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(
-	name string,
-	vector promql.Expr,
-	holdDuration time.Duration,
-	labels model.LabelSet,
-	summary string,
-	description string,
-	runbook string,
-) *AlertingRule {
+func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns model.LabelSet) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
-		vector:       vector,
-		holdDuration: holdDuration,
-		labels:       labels,
-		summary:      summary,
-		description:  description,
-		runbook:      runbook,
+		vector:       vec,
+		holdDuration: hold,
+		labels:       lbls,
+		annotations:  anns,
 
 		activeAlerts: map[model.Fingerprint]*Alert{},
 	}
@@ -217,9 +203,9 @@ func (rule *AlertingRule) String() string {
 	if len(rule.labels) > 0 {
 		s += fmt.Sprintf("\n\tWITH %s", rule.labels)
 	}
-	s += fmt.Sprintf("\n\tSUMMARY %q", rule.summary)
-	s += fmt.Sprintf("\n\tDESCRIPTION %q", rule.description)
-	s += fmt.Sprintf("\n\tRUNBOOK %q", rule.runbook)
+	if len(rule.annotations) > 0 {
+		s += fmt.Sprintf("\n\tANNOTATIONS %s", rule.annotations)
+	}
 	return s
 }
 
@@ -239,9 +225,9 @@ func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	if len(rule.labels) > 0 {
 		s += fmt.Sprintf("\n  WITH %s", rule.labels)
 	}
-	s += fmt.Sprintf("\n  SUMMARY %q", rule.summary)
-	s += fmt.Sprintf("\n  DESCRIPTION %q", rule.description)
-	s += fmt.Sprintf("\n  RUNBOOK %q", rule.runbook)
+	if len(rule.annotations) > 0 {
+		s += fmt.Sprintf("\n  ANNOTATIONS %s", rule.annotations)
+	}
 	return template.HTML(s)
 }
 
