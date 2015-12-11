@@ -254,8 +254,13 @@
 		},
 		{
 			"path": "golang.org/x/net/context",
-			"revision": "db8e4de5b2d6653f66aea53094624468caad15d2",
-			"revisionTime": "2015-08-24T18:07:02+02:00"
+			"revision": "2cba614e8ff920c60240d2677bc019af32ee04e5",
+			"revisionTime": "2015-10-21T11:20:37-06:00"
+		},
+		{
+			"path": "golang.org/x/net/context/ctxhttp",
+			"revision": "2cba614e8ff920c60240d2677bc019af32ee04e5",
+			"revisionTime": "2015-10-21T11:20:37-06:00"
 		},
 		{
 			"path": "gopkg.in/fsnotify.v1",

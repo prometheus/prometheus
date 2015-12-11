@@ -83,7 +83,7 @@ func Main() int {
 	}
 
 	var (
-		notificationHandler = notification.NewNotificationHandler(&cfg.notification)
+		notificationHandler = notification.New(&cfg.notification)
 		targetManager       = retrieval.NewTargetManager(sampleAppender)
 		queryEngine         = promql.NewEngine(memStorage, &cfg.queryEngine)
 	)

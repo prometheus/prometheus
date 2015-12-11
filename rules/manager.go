@@ -100,7 +100,7 @@ type Manager struct {
 	queryEngine *promql.Engine
 
 	sampleAppender      storage.SampleAppender
-	notificationHandler *notification.NotificationHandler
+	notificationHandler *notification.Handler
 
 	externalURL *url.URL
 }
@@ -110,7 +110,7 @@ type ManagerOptions struct {
 	EvaluationInterval time.Duration
 	QueryEngine        *promql.Engine
 
-	NotificationHandler *notification.NotificationHandler
+	NotificationHandler *notification.Handler
 	SampleAppender      storage.SampleAppender
 
 	ExternalURL *url.URL
@@ -178,13 +178,14 @@ func (m *Manager) Stop() {
 	m.done <- true
 }
 
-func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp model.Time) {
+func (m *Manager) sendAlertNotifications(rule *AlertingRule, timestamp model.Time) {
 	activeAlerts := rule.ActiveAlerts()
 	if len(activeAlerts) == 0 {
 		return
 	}
 
-	notifications := make(notification.NotificationReqs, 0, len(activeAlerts))
+	alerts := make(model.Alerts, 0, len(activeAlerts))
+
 	for _, aa := range activeAlerts {
 		if aa.State != StateFiring {
 			// BUG: In the future, make AlertManager support pending alerts?
@@ -217,20 +218,23 @@ func (m *Manager) queueAlertNotifications(rule *AlertingRule, timestamp model.Ti
 			return result
 		}
 
-		notifications = append(notifications, &notification.NotificationReq{
-			Summary:     expand(rule.summary),
-			Description: expand(rule.description),
-			Runbook:     rule.runbook,
-			Labels: aa.Labels.Merge(model.LabelSet{
-				alertNameLabel: model.LabelValue(rule.Name()),
-			}),
-			Value:        aa.Value,
-			ActiveSince:  aa.ActiveSince.Time(),
-			RuleString:   rule.String(),
+		labels := aa.Labels.Clone()
+		labels[model.AlertNameLabel] = model.LabelValue(rule.Name())
+
+		annotations := model.LabelSet{
+			"summary":     model.LabelValue(expand(rule.summary)),
+			"description": model.LabelValue(expand(rule.description)),
+			"runbook":     model.LabelValue(expand(rule.runbook)),
+		}
+
+		alerts = append(alerts, &model.Alert{
+			StartsAt:     aa.ActiveSince.Time(),
+			Labels:       labels,
+			Annotations:  annotations,
 			GeneratorURL: m.externalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
 		})
 	}
-	m.notificationHandler.SubmitReqs(notifications)
+	m.notificationHandler.Send(alerts...)
 }
 
 func (m *Manager) runIteration() {
@@ -260,7 +264,7 @@ func (m *Manager) runIteration() {
 
 			switch r := rule.(type) {
 			case *AlertingRule:
-				m.queueAlertNotifications(r, now)
+				m.sendAlertNotifications(r, now)
 				evalDuration.WithLabelValues(ruleTypeAlerting).Observe(
 					float64(duration / time.Millisecond),
 				)
