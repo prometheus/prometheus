@@ -202,11 +202,11 @@ func init() {
 		"The URL of the alert manager to send notifications to.",
 	)
 	cfg.fs.IntVar(
-		&cfg.notification.QueueCapacity, "alertmanager.notification-queue-capacity", 100,
+		&cfg.notification.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
 		"The capacity of the queue for pending alert manager notifications.",
 	)
 	cfg.fs.DurationVar(
-		&cfg.notification.Timeout, "alertmanager.http-deadline", 10*time.Second,
+		&cfg.notification.Timeout, "alertmanager.timeout", 10*time.Second,
 		"Alert manager HTTP API timeout.",
 	)
 
