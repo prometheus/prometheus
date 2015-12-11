@@ -357,9 +357,9 @@ func (p *parser) stmt() Statement {
 
 // alertStmt parses an alert rule.
 //
-//		ALERT name IF expr [FOR duration] [WITH label_set]
-//			SUMMARY "summary"
-//			DESCRIPTION "description"
+//		ALERT name IF expr [FOR duration]
+//			[WITH label_set]
+//			[ANNOTATIONS label_set]
 //
 func (p *parser) alertStmt() *AlertStmt {
 	const ctx = "alert statement"
@@ -389,44 +389,10 @@ func (p *parser) alertStmt() *AlertStmt {
 		lset = p.labelSet()
 	}
 
-	var (
-		hasSum, hasDesc, hasRunbook bool
-		sum, desc, runbook          string
-	)
-Loop:
-	for {
-		switch p.next().typ {
-		case itemSummary:
-			if hasSum {
-				p.errorf("summary must not be defined twice")
-			}
-			hasSum = true
-			sum = p.unquoteString(p.expect(itemString, ctx).val)
-
-		case itemDescription:
-			if hasDesc {
-				p.errorf("description must not be defined twice")
-			}
-			hasDesc = true
-			desc = p.unquoteString(p.expect(itemString, ctx).val)
-
-		case itemRunbook:
-			if hasRunbook {
-				p.errorf("runbook must not be defined twice")
-			}
-			hasRunbook = true
-			runbook = p.unquoteString(p.expect(itemString, ctx).val)
-
-		default:
-			p.backup()
-			break Loop
-		}
-	}
-	if sum == "" {
-		p.errorf("alert summary missing")
-	}
-	if desc == "" {
-		p.errorf("alert description missing")
+	annotations := model.LabelSet{}
+	if p.peek().typ == itemAnnotations {
+		p.expect(itemAnnotations, ctx)
+		annotations = p.labelSet()
 	}
 
 	return &AlertStmt{
@@ -434,9 +400,7 @@ Loop:
 		Expr:        expr,
 		Duration:    duration,
 		Labels:      lset,
-		Summary:     sum,
-		Description: desc,
-		Runbook:     runbook,
+		Annotations: annotations,
 	}
 }
 
@@ -874,11 +838,20 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 
 		matchers = append(matchers, m)
 
+		if p.peek().typ == itemIdentifier {
+			p.errorf("missing comma before next identifier %q", p.peek().val)
+		}
+
 		// Terminate list if last matcher.
 		if p.peek().typ != itemComma {
 			break
 		}
 		p.next()
+
+		// Allow comma after each item in a multi-line listing.
+		if p.peek().typ == itemRightBrace {
+			break
+		}
 	}
 
 	p.expect(itemRightBrace, ctx)

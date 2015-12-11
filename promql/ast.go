@@ -59,9 +59,7 @@ type AlertStmt struct {
 	Expr        Expr
 	Duration    time.Duration
 	Labels      model.LabelSet
-	Summary     string
-	Description string
-	Runbook     string
+	Annotations model.LabelSet
 }
 
 // EvalStmt holds an expression and information on the range it should
