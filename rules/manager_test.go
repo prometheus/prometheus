@@ -56,7 +56,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		model.LabelSet{"severity": "critical"},
-		"summary", "description", "runbook",
+		model.LabelSet{},
 	)
 
 	var tests = []struct {

@@ -241,14 +241,8 @@ var tests = []struct {
 		input:    "with",
 		expected: []item{{itemWith, 0, "with"}},
 	}, {
-		input:    "description",
-		expected: []item{{itemDescription, 0, "description"}},
-	}, {
-		input:    "summary",
-		expected: []item{{itemSummary, 0, "summary"}},
-	}, {
-		input:    "runbook",
-		expected: []item{{itemRunbook, 0, "runbook"}},
+		input:    "annotations",
+		expected: []item{{itemAnnotations, 0, "annotations"}},
 	}, {
 		input:    "offset",
 		expected: []item{{itemOffset, 0, "offset"}},
