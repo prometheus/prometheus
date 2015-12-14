@@ -227,7 +227,7 @@ func (m *Manager) sendAlertNotifications(rule *AlertingRule, timestamp model.Tim
 		}
 
 		alerts = append(alerts, &model.Alert{
-			StartsAt:     aa.ActiveSince.Time(),
+			StartsAt:     aa.ActiveSince.Time().Add(rule.holdDuration),
 			Labels:       labels,
 			Annotations:  annotations,
 			GeneratorURL: m.externalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
