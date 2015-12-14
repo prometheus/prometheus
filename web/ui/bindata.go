@@ -134,7 +134,7 @@ func webUiTemplatesAlertsHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/alerts.html", size: 1707, mode: os.FileMode(420), modTime: time.Unix(1450269200, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/alerts.html", size: 1707, mode: os.FileMode(420), modTime: time.Unix(1450348618, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }

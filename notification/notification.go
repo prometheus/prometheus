@@ -168,6 +168,9 @@ func (n *Handler) Run() {
 
 		alerts := n.nextBatch()
 
+		if len(alerts) == 0 {
+			continue
+		}
 		if n.opts.AlertmanagerURL == "" {
 			log.Warn("No AlertManager configured, not dispatching %d alerts", len(alerts))
 			n.dropped.Add(float64(len(alerts)))
