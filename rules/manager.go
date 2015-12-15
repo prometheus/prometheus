@@ -46,7 +46,7 @@ var (
 	evalDuration = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
-			Name:      "rule_evaluation_duration_milliseconds",
+			Name:      "rule_evaluation_duration_seconds",
 			Help:      "The duration for a rule to execute.",
 		},
 		[]string{ruleTypeLabel},
@@ -58,9 +58,16 @@ var (
 			Help:      "The total number of rule evaluation failures.",
 		},
 	)
+	evalTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "rule_evaluations_total",
+			Help:      "The total number of rule evaluations.",
+		},
+	)
 	iterationDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Namespace:  namespace,
-		Name:       "evaluator_duration_milliseconds",
+		Name:       "evaluator_duration_seconds",
 		Help:       "The duration for all evaluations to execute.",
 		Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 	})
@@ -121,7 +128,7 @@ func (g *Group) run() {
 		start := time.Now()
 		g.eval()
 
-		iterationDuration.Observe(float64(time.Since(start) / time.Millisecond))
+		iterationDuration.Observe(float64(time.Since(start)) / float64(time.Millisecond))
 	}
 	iter()
 
@@ -199,6 +206,7 @@ func (g *Group) eval() {
 			defer wg.Done()
 
 			start := time.Now()
+			evalTotal.Inc()
 
 			vector, err := rule.eval(now, g.opts.QueryEngine)
 			if err != nil {
@@ -220,7 +228,7 @@ func (g *Group) eval() {
 			}
 
 			evalDuration.WithLabelValues(string(rtyp)).Observe(
-				float64(time.Since(start) / time.Millisecond),
+				float64(time.Since(start)) / float64(time.Second),
 			)
 
 			for _, s := range vector {
