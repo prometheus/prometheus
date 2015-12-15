@@ -159,6 +159,11 @@ func (n *Handler) nextBatch() []*model.Alert {
 
 // Run dispatches notifications continuously.
 func (n *Handler) Run() {
+	// Just warn one in the beginning to prevent nosiy logs.
+	if n.opts.AlertmanagerURL == "" {
+		log.Warnf("No AlertManager configured, not dispatching any alerts")
+	}
+
 	for {
 		select {
 		case <-n.ctx.Done():
@@ -172,7 +177,6 @@ func (n *Handler) Run() {
 			continue
 		}
 		if n.opts.AlertmanagerURL == "" {
-			log.Warn("No AlertManager configured, not dispatching %d alerts", len(alerts))
 			n.dropped.Add(float64(len(alerts)))
 			continue
 		}

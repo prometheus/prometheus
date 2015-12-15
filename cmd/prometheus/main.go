@@ -155,7 +155,6 @@ func Main() int {
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
 
-	// go ruleManager.Run()
 	defer ruleManager.Stop()
 
 	go notificationHandler.Run()

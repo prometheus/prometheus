@@ -15,7 +15,6 @@ package rules
 
 import (
 	"fmt"
-	// "reflect"
 	"strings"
 	"testing"
 	"time"
