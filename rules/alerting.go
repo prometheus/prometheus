@@ -38,6 +38,17 @@ const (
 // AlertState denotes the state of an active alert.
 type AlertState int
 
+const (
+	// StateInactive is the state of an alert that is either firing nor pending.
+	StateInactive AlertState = iota
+	// StatePending is the state of an alert that has been active for less than
+	// the configured threshold duration.
+	StatePending
+	// StateFiring is the state of an alert that has been active for longer than
+	// the configured threshold duration.
+	StateFiring
+)
+
 func (s AlertState) String() string {
 	switch s {
 	case StateInactive:
@@ -50,17 +61,13 @@ func (s AlertState) String() string {
 	panic(fmt.Errorf("unknown alert state: %v", s))
 }
 
-const (
-	StateInactive AlertState = iota
-	StatePending
-	StateFiring
-)
-
-type alertInstance struct {
-	metric      model.Metric
-	value       model.SampleValue
-	state       AlertState
-	activeSince model.Time
+// Alert is the user-level representation of a single instance of an alerting rule.
+type Alert struct {
+	State      AlertState
+	Labels     model.LabelSet
+	Value      model.SampleValue
+	ActiveAt   model.Time
+	ResolvedAt model.Time
 }
 
 // An AlertingRule generates alerts from its vector expression.
@@ -81,7 +88,7 @@ type AlertingRule struct {
 	mtx sync.Mutex
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
-	active map[model.Fingerprint]*alertInstance
+	active map[model.Fingerprint]*Alert
 }
 
 // NewAlertingRule constructs a new AlertingRule.
@@ -92,7 +99,7 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 		holdDuration: hold,
 		labels:       lbls,
 		annotations:  anns,
-		active:       map[model.Fingerprint]*alertInstance{},
+		active:       map[model.Fingerprint]*Alert{},
 	}
 }
 
@@ -101,17 +108,17 @@ func (rule *AlertingRule) Name() string {
 	return rule.name
 }
 
-func (r *AlertingRule) sample(ai *alertInstance, ts model.Time, set bool) *model.Sample {
+func (r *AlertingRule) sample(alert *Alert, ts model.Time, set bool) *model.Sample {
 	// Build alert labels in order they can be overwritten.
 	metric := model.Metric(r.labels.Clone())
 
-	for ln, lv := range ai.metric {
+	for ln, lv := range alert.Labels {
 		metric[ln] = lv
 	}
 
 	metric[model.MetricNameLabel] = alertMetricName
 	metric[model.AlertNameLabel] = model.LabelValue(r.name)
-	metric[alertStateLabel] = model.LabelValue(ai.state.String())
+	metric[alertStateLabel] = model.LabelValue(alert.State.String())
 
 	s := &model.Sample{
 		Metric:    metric,
@@ -123,6 +130,10 @@ func (r *AlertingRule) sample(ai *alertInstance, ts model.Time, set bool) *model
 	}
 	return s
 }
+
+// resolvedRetention is the duration for which a resolved alert instance
+// is kept in memory state and consequentally repeatedly sent to the AlertManager.
+const resolvedRetention = 15 * time.Minute
 
 // eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
@@ -147,47 +158,49 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine) (model.Vector,
 		fp := smpl.Metric.Fingerprint()
 		resultFPs[fp] = struct{}{}
 
-		if ai, ok := r.active[fp]; ok {
-			ai.value = smpl.Value
+		if alert, ok := r.active[fp]; ok {
+			alert.Value = smpl.Value
 			continue
 		}
 
 		delete(smpl.Metric, model.MetricNameLabel)
 
-		r.active[fp] = &alertInstance{
-			metric:      smpl.Metric,
-			activeSince: ts,
-			state:       StatePending,
-			value:       smpl.Value,
+		r.active[fp] = &Alert{
+			Labels:   model.LabelSet(smpl.Metric),
+			ActiveAt: ts,
+			State:    StatePending,
+			Value:    smpl.Value,
 		}
 	}
 
 	var vec model.Vector
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
-	for fp, ai := range r.active {
+	for fp, a := range r.active {
 		if _, ok := resultFPs[fp]; !ok {
-			delete(r.active, fp)
-			vec = append(vec, r.sample(ai, ts, false))
+			if a.State != StateInactive {
+				vec = append(vec, r.sample(a, ts, false))
+			}
+			// If the alert was previously firing, keep it aroud for a given
+			// retention time so it is reported as resolved to the AlertManager.
+			if a.State == StatePending || (a.ResolvedAt != 0 && ts.Sub(a.ResolvedAt) > resolvedRetention) {
+				delete(r.active, fp)
+			}
+			if a.State != StateInactive {
+				a.State = StateInactive
+				a.ResolvedAt = ts
+			}
 			continue
 		}
 
-		if ai.state != StateFiring && ts.Sub(ai.activeSince) >= r.holdDuration {
-			vec = append(vec, r.sample(ai, ts, false))
-			ai.state = StateFiring
+		if a.State == StatePending && ts.Sub(a.ActiveAt) >= r.holdDuration {
+			vec = append(vec, r.sample(a, ts, false))
+			a.State = StateFiring
 		}
 
-		vec = append(vec, r.sample(ai, ts, true))
+		vec = append(vec, r.sample(a, ts, true))
 	}
 
 	return vec, nil
-}
-
-// Alert is the user-level representation of a single instance of an alerting rule.
-type Alert struct {
-	State       AlertState
-	Labels      model.LabelSet
-	ActiveSince model.Time
-	Value       model.SampleValue
 }
 
 func (r *AlertingRule) State() AlertState {
@@ -195,9 +208,9 @@ func (r *AlertingRule) State() AlertState {
 	defer r.mtx.Unlock()
 
 	maxState := StateInactive
-	for _, ai := range r.active {
-		if ai.state > maxState {
-			maxState = ai.state
+	for _, a := range r.active {
+		if a.State > maxState {
+			maxState = a.State
 		}
 	}
 	return maxState
@@ -205,21 +218,30 @@ func (r *AlertingRule) State() AlertState {
 
 // ActiveAlerts returns a slice of active alerts.
 func (r *AlertingRule) ActiveAlerts() []*Alert {
+	var res []*Alert
+	for _, a := range r.recentAlerts() {
+		if a.ResolvedAt == 0 {
+			res = append(res, a)
+		}
+	}
+	return res
+}
+
+func (r *AlertingRule) recentAlerts() []*Alert {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
 	alerts := make([]*Alert, 0, len(r.active))
-	for _, ai := range r.active {
+
+	for _, a := range r.active {
 		labels := r.labels.Clone()
-		for ln, lv := range ai.metric {
+		for ln, lv := range a.Labels {
 			labels[ln] = lv
 		}
-		alerts = append(alerts, &Alert{
-			State:       ai.state,
-			Labels:      labels,
-			ActiveSince: ai.activeSince,
-			Value:       ai.value,
-		})
+		anew := *a
+		anew.Labels = labels
+
+		alerts = append(alerts, &anew)
 	}
 	return alerts
 }

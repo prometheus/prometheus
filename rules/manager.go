@@ -241,9 +241,10 @@ func (g *Group) eval() {
 
 func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 	var alerts model.Alerts
-	for _, alert := range rule.ActiveAlerts() {
+
+	for _, alert := range rule.recentAlerts() {
 		// Only send actually firing alerts.
-		if alert.State != StateFiring {
+		if alert.State == StatePending {
 			continue
 		}
 
@@ -292,12 +293,17 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 			annotations[an] = expand(av)
 		}
 
-		alerts = append(alerts, &model.Alert{
-			StartsAt:     alert.ActiveSince.Time().Add(rule.holdDuration),
+		a := &model.Alert{
+			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
 			Labels:       labels,
 			Annotations:  annotations,
 			GeneratorURL: g.opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
-		})
+		}
+		if alert.ResolvedAt != 0 {
+			a.EndsAt = alert.ResolvedAt.Time()
+		}
+
+		alerts = append(alerts, a)
 	}
 
 	if len(alerts) > 0 {
