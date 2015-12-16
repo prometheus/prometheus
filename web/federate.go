@@ -46,10 +46,12 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	format := expfmt.Negotiate(req.Header)
+	var (
+		minTimestamp = model.Now().Add(-promql.StalenessDelta)
+		format       = expfmt.Negotiate(req.Header)
+		enc          = expfmt.NewEncoder(w, format)
+	)
 	w.Header().Set("Content-Type", string(format))
-
-	enc := expfmt.NewEncoder(w, format)
 
 	protMetric := &dto.Metric{
 		Label:   []*dto.LabelPair{},
@@ -64,7 +66,8 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		globalUsed := map[model.LabelName]struct{}{}
 
 		sp := h.storage.LastSamplePairForFingerprint(fp)
-		if sp == nil {
+		// Discard if sample does not exist or lays before the staleness interval.
+		if sp == nil || sp.Timestamp.Before(minTimestamp) {
 			continue
 		}
 
