@@ -63,11 +63,13 @@ func (s AlertState) String() string {
 
 // Alert is the user-level representation of a single instance of an alerting rule.
 type Alert struct {
-	State      AlertState
-	Labels     model.LabelSet
-	Value      model.SampleValue
-	ActiveAt   model.Time
-	ResolvedAt model.Time
+	State  AlertState
+	Labels model.LabelSet
+	// The value at the last evaluation of the alerting expression.
+	Value model.SampleValue
+	// The interval during which the condition of this alert held true.
+	// ResolvedAt will be 0 to indicate a still active alert.
+	ActiveAt, ResolvedAt model.Time
 }
 
 // An AlertingRule generates alerts from its vector expression.
@@ -109,7 +111,6 @@ func (rule *AlertingRule) Name() string {
 }
 
 func (r *AlertingRule) sample(alert *Alert, ts model.Time, set bool) *model.Sample {
-	// Build alert labels in order they can be overwritten.
 	metric := model.Metric(r.labels.Clone())
 
 	for ln, lv := range alert.Labels {
@@ -180,7 +181,7 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine) (model.Vector,
 			if a.State != StateInactive {
 				vec = append(vec, r.sample(a, ts, false))
 			}
-			// If the alert was previously firing, keep it aroud for a given
+			// If the alert was previously firing, keep it around for a given
 			// retention time so it is reported as resolved to the AlertManager.
 			if a.State == StatePending || (a.ResolvedAt != 0 && ts.Sub(a.ResolvedAt) > resolvedRetention) {
 				delete(r.active, fp)
@@ -203,6 +204,8 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine) (model.Vector,
 	return vec, nil
 }
 
+// State returns the maximum state of alert instances for this rule.
+// StateFiring > StatePending > StateInactive
 func (r *AlertingRule) State() AlertState {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
@@ -219,7 +222,7 @@ func (r *AlertingRule) State() AlertState {
 // ActiveAlerts returns a slice of active alerts.
 func (r *AlertingRule) ActiveAlerts() []*Alert {
 	var res []*Alert
-	for _, a := range r.recentAlerts() {
+	for _, a := range r.currentAlerts() {
 		if a.ResolvedAt == 0 {
 			res = append(res, a)
 		}
@@ -227,7 +230,9 @@ func (r *AlertingRule) ActiveAlerts() []*Alert {
 	return res
 }
 
-func (r *AlertingRule) recentAlerts() []*Alert {
+// currentAlerts returns all instances of alerts for this rule. This may include
+// inactive alerts that were previously firing.
+func (r *AlertingRule) currentAlerts() []*Alert {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 

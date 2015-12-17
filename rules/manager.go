@@ -99,6 +99,7 @@ type Rule interface {
 	HTMLSnippet(pathPrefix string) html_template.HTML
 }
 
+// Group is a set of rules that have a logical relation.
 type Group struct {
 	name     string
 	interval time.Duration
@@ -160,6 +161,7 @@ func (g *Group) fingerprint() model.Fingerprint {
 	return l.Fingerprint()
 }
 
+// offset returns until the next consistently slotted evaluation interval.
 func (g *Group) offset() time.Duration {
 	now := time.Now().UnixNano()
 
@@ -175,6 +177,7 @@ func (g *Group) offset() time.Duration {
 	return time.Duration(next - now)
 }
 
+// copyState copies the alerting rule state from the given group.
 func (g *Group) copyState(from *Group) {
 	for _, fromRule := range from.rules {
 		far, ok := fromRule.(*AlertingRule)
@@ -193,6 +196,9 @@ func (g *Group) copyState(from *Group) {
 	}
 }
 
+// eval runs a single evaluation cycle in which all rules are evaluated in parallel.
+// In the future a single group will be evaluated sequentially to properly handle
+// rule dependency.
 func (g *Group) eval() {
 	var (
 		now = model.Now()
@@ -239,10 +245,11 @@ func (g *Group) eval() {
 	wg.Wait()
 }
 
+// sendAlerts sends alert notifications for the given rule.
 func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 	var alerts model.Alerts
 
-	for _, alert := range rule.recentAlerts() {
+	for _, alert := range rule.currentAlerts() {
 		// Only send actually firing alerts.
 		if alert.State == StatePending {
 			continue
@@ -407,6 +414,9 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 	return true
 }
 
+// loadGroups reads groups from a list of files.
+// As there's currently no group syntax a single group named "default" containing
+// all rules will be returned.
 func (m *Manager) loadGroups(filenames ...string) (map[string]*Group, error) {
 	groups := map[string]*Group{}
 
