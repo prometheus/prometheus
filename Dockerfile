@@ -1,18 +1,11 @@
-FROM        sdurrheimer/alpine-glibc
+FROM        prom/busybox:latest
 MAINTAINER  The Prometheus Authors <prometheus-developers@googlegroups.com>
 
-WORKDIR /gopath/src/github.com/prometheus/prometheus
-COPY    . /gopath/src/github.com/prometheus/prometheus
-
-RUN apk add --update -t build-deps tar openssl git make bash \
-    && source ./scripts/goenv.sh /go /gopath \
-    && make build \
-    && cp prometheus promtool /bin/ \
-    && mkdir -p /etc/prometheus \
-    && mv ./documentation/examples/prometheus.yml /etc/prometheus/prometheus.yml \
-    && mv ./console_libraries/ ./consoles/ /etc/prometheus/ \
-    && apk del --purge build-deps \
-    && rm -rf /go /gopath /var/cache/apk/*
+COPY prometheus                             /bin/prometheus
+COPY promtool                               /bin/promtool
+COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
+COPY console_libraries/                     /etc/prometheus/
+COPY consoles/                              /etc/prometheus/
 
 EXPOSE     9090
 VOLUME     [ "/prometheus" ]
