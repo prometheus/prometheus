@@ -194,7 +194,7 @@ func funcTopk(ev *evaluator, args Expressions) model.Value {
 	topk := make(vectorByValueHeap, 0, k)
 
 	for _, el := range vec {
-		if len(topk) < k || topk[0].Value < el.Value {
+		if len(topk) < k || topk[0].Value < el.Value || math.IsNaN(float64(topk[0].Value)) {
 			if len(topk) == k {
 				heap.Pop(&topk)
 			}
@@ -213,18 +213,17 @@ func funcBottomk(ev *evaluator, args Expressions) model.Value {
 	}
 	vec := ev.evalVector(args[1])
 
-	bottomk := make(vectorByValueHeap, 0, k)
-	bkHeap := reverseHeap{Interface: &bottomk}
+	bottomk := make(vectorByReverseValueHeap, 0, k)
 
 	for _, el := range vec {
-		if len(bottomk) < k || bottomk[0].Value > el.Value {
+		if len(bottomk) < k || bottomk[0].Value > el.Value || math.IsNaN(float64(bottomk[0].Value)) {
 			if len(bottomk) == k {
-				heap.Pop(&bkHeap)
+				heap.Pop(&bottomk)
 			}
-			heap.Push(&bkHeap, el)
+			heap.Push(&bottomk, el)
 		}
 	}
-	sort.Sort(bottomk)
+	sort.Sort(sort.Reverse(bottomk))
 	return vector(bottomk)
 }
 
@@ -985,10 +984,31 @@ func (s *vectorByValueHeap) Pop() interface{} {
 	return el
 }
 
-type reverseHeap struct {
-	heap.Interface
+type vectorByReverseValueHeap vector
+
+func (s vectorByReverseValueHeap) Len() int {
+	return len(s)
 }
 
-func (s reverseHeap) Less(i, j int) bool {
-	return s.Interface.Less(j, i)
+func (s vectorByReverseValueHeap) Less(i, j int) bool {
+	if math.IsNaN(float64(s[i].Value)) {
+		return true
+	}
+	return s[i].Value > s[j].Value
+}
+
+func (s vectorByReverseValueHeap) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (s *vectorByReverseValueHeap) Push(x interface{}) {
+	*s = append(*s, x.(*sample))
+}
+
+func (s *vectorByReverseValueHeap) Pop() interface{} {
+	old := *s
+	n := len(old)
+	el := old[n-1]
+	*s = old[0 : n-1]
+	return el
 }
