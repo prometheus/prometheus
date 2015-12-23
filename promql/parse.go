@@ -358,7 +358,7 @@ func (p *parser) stmt() Statement {
 // alertStmt parses an alert rule.
 //
 //		ALERT name IF expr [FOR duration]
-//			[WITH label_set]
+//			[LABELS label_set]
 //			[ANNOTATIONS label_set]
 //
 func (p *parser) alertStmt() *AlertStmt {
@@ -384,8 +384,8 @@ func (p *parser) alertStmt() *AlertStmt {
 	}
 
 	lset := model.LabelSet{}
-	if p.peek().typ == itemWith {
-		p.expect(itemWith, ctx)
+	if p.peek().typ == itemLabels {
+		p.expect(itemLabels, ctx)
 		lset = p.labelSet()
 	}
 
