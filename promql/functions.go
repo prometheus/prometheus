@@ -96,7 +96,7 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) mode
 		}
 		resultValue = resultValue * model.SampleValue(extrapolateToInterval/sampledInterval)
 		if isRate {
-			resultValue = resultValue / model.SampleValue(sampledInterval)
+			resultValue = resultValue / model.SampleValue(ms.Range.Seconds())
 		}
 
 		resultSample := &sample{
