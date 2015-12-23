@@ -87,14 +87,14 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) mode
 		// will exist given the spacing between samples we've seen thus far,
 		// with an allowance for noise.
 		extrapolationThreshold := averageDurationBetweenSamples * 1.1
-		extrpolateToInterval := sampledInterval
+		extrapolateToInterval := sampledInterval
 		if durationToStart < extrapolationThreshold {
-			extrpolateToInterval += durationToStart
+			extrapolateToInterval += durationToStart
 		}
 		if durationToEnd < extrapolationThreshold {
-			extrpolateToInterval += durationToEnd
+			extrapolateToInterval += durationToEnd
 		}
-		resultValue = resultValue * model.SampleValue(extrpolateToInterval/sampledInterval)
+		resultValue = resultValue * model.SampleValue(extrapolateToInterval/sampledInterval)
 		if isRate {
 			resultValue = resultValue / model.SampleValue(sampledInterval)
 		}
