@@ -1149,7 +1149,8 @@ var testStatement = []struct {
 			dc:http_request:rate5m = sum(rate(http_request_count[5m])) by (dc)
 	
 			# A simple test alerting rule.
-			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5m WITH {
+			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5m
+			  LABELS {
 			    service = "testservice"
 			    # ... more fields here ...
 			  }
@@ -1284,7 +1285,8 @@ var testStatement = []struct {
 	}, {
 		input: `
 			# A simple test alerting rule.
-			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5 WITH {
+			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5
+			  LABELS {
 			    service = "testservice"
 			    # ... more fields here ... 
 			  }
@@ -1332,7 +1334,7 @@ var testStatement = []struct {
 		input: `foo{a!~"b"} = bar`,
 		fail:  true,
 	}, {
-		input: `ALERT SomeName IF time() WITH {} 
+		input: `ALERT SomeName IF time() LABELS {} 
 			SUMMARY "Global request rate low"
 			DESCRIPTION "The global request rate is low"
 		`,

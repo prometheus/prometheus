@@ -238,8 +238,8 @@ var tests = []struct {
 		input:    "for",
 		expected: []item{{itemFor, 0, "for"}},
 	}, {
-		input:    "with",
-		expected: []item{{itemWith, 0, "with"}},
+		input:    "labels",
+		expected: []item{{itemLabels, 0, "labels"}},
 	}, {
 		input:    "annotations",
 		expected: []item{{itemAnnotations, 0, "annotations"}},
