@@ -109,8 +109,9 @@ func (node *AlertStmt) String() string {
 	if len(node.Labels) > 0 {
 		s += fmt.Sprintf("\n\tWITH %s", node.Labels)
 	}
-	s += fmt.Sprintf("\n\tSUMMARY %q", node.Summary)
-	s += fmt.Sprintf("\n\tDESCRIPTION %q", node.Description)
+	if len(node.Annotations) > 0 {
+		s += fmt.Sprintf("\n\tANNOTATIONS %s", node.Labels)
+	}
 	return s
 }
 

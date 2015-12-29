@@ -107,6 +107,27 @@ type Container struct {
 // will answer requests sent through the proxy.
 type Service struct {
 	ObjectMeta `json:"metadata,omitempty" description:"standard object metadata; see http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata"`
+
+	// Spec defines the behavior of a service.
+	// http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status
+	Spec ServiceSpec `json:"spec,omitempty"`
+}
+
+// ServiceSpec describes the attributes that a user creates on a service.
+type ServiceSpec struct {
+	// The list of ports that are exposed by this service.
+	// More info: http://releases.k8s.io/HEAD/docs/user-guide/services.md#virtual-ips-and-service-proxies
+	Ports []ServicePort `json:"ports"`
+}
+
+// ServicePort conatins information on service's port.
+type ServicePort struct {
+	// The IP protocol for this port. Supports "TCP" and "UDP".
+	// Default is TCP.
+	Protocol Protocol `json:"protocol,omitempty"`
+
+	// The port that will be exposed by this service.
+	Port int32 `json:"port"`
 }
 
 // ServiceList holds a list of services.

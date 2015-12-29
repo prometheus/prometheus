@@ -60,7 +60,6 @@ scrape_configs:
     regex: (https?)
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
     action: replace
-    regex: (.+)
     target_label: __metrics_path__
   - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
     action: replace
@@ -100,21 +99,17 @@ scrape_configs:
   - source_labels: [__meta_kubernetes_role, __meta_kubernetes_service_annotation_prometheus_io_probe]
     action: keep
     regex: service;true
-  - target_label: __address__
-    replacement: blackbox.default.svc:9115
   - source_labels: [__address__]
-    regex: (.*)(:80)?
     target_label: __param_target
+  - target_label: __address__
+    replacement: blackbox
   - source_labels: [__param_target]
     target_label: instance
   - action: labelmap
     regex: __meta_kubernetes_service_label_(.+)
   - source_labels: [__meta_kubernetes_role]
-    action: replace
     target_label: kubernetes_role
   - source_labels: [__meta_kubernetes_service_namespace]
-    action: replace
     target_label: kubernetes_namespace
   - source_labels: [__meta_kubernetes_service_name]
-    action: replace
     target_label: kubernetes_name

@@ -74,7 +74,7 @@ type consulService struct {
 }
 
 // NewConsulDiscovery returns a new ConsulDiscovery for the given config.
-func NewConsulDiscovery(conf *config.ConsulSDConfig) *ConsulDiscovery {
+func NewConsulDiscovery(conf *config.ConsulSDConfig) (*ConsulDiscovery, error) {
 	clientConf := &consul.Config{
 		Address:    conf.Server,
 		Scheme:     conf.Scheme,
@@ -87,8 +87,7 @@ func NewConsulDiscovery(conf *config.ConsulSDConfig) *ConsulDiscovery {
 	}
 	client, err := consul.NewClient(clientConf)
 	if err != nil {
-		// NewClient always returns a nil error.
-		panic(fmt.Errorf("discovery.NewConsulDiscovery: %s", err))
+		return nil, err
 	}
 	cd := &ConsulDiscovery{
 		client:          client,
@@ -102,7 +101,7 @@ func NewConsulDiscovery(conf *config.ConsulSDConfig) *ConsulDiscovery {
 	if clientConf.Datacenter == "" {
 		info, err := client.Agent().Self()
 		if err != nil {
-			panic(fmt.Errorf("discovery.NewConsulDiscovery: %s", err))
+			return nil, err
 		}
 		cd.clientDatacenter = info["Config"]["Datacenter"].(string)
 	} else {
@@ -111,7 +110,7 @@ func NewConsulDiscovery(conf *config.ConsulSDConfig) *ConsulDiscovery {
 	for _, name := range conf.Services {
 		cd.scrapedServices[name] = struct{}{}
 	}
-	return cd
+	return cd, nil
 }
 
 // Sources implements the TargetProvider interface.

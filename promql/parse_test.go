@@ -1149,19 +1149,24 @@ var testStatement = []struct {
 			dc:http_request:rate5m = sum(rate(http_request_count[5m])) by (dc)
 	
 			# A simple test alerting rule.
-			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5m WITH {
+			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5m
+			  LABELS {
 			    service = "testservice"
 			    # ... more fields here ...
 			  }
-			  SUMMARY "Global request rate low"
-			  DESCRIPTION "The global request rate is low"
+			  ANNOTATIONS {
+			    summary     = "Global request rate low",
+			    description = "The global request rate is low"
+			  }
 
 			foo = bar{label1="value1"}
 
 			ALERT BazAlert IF foo > 10
-			  DESCRIPTION "BazAlert"
-			  RUNBOOK     "http://my.url"
-			  SUMMARY     "Baz"
+			  ANNOTATIONS {
+			    description = "BazAlert",
+			    runbook     = "http://my.url",
+			    summary     = "Baz",
+			  }
 		`,
 		expected: Statements{
 			&RecordStmt{
@@ -1196,10 +1201,12 @@ var testStatement = []struct {
 					},
 					RHS: &NumberLiteral{10000},
 				}},
-				Labels:      model.LabelSet{"service": "testservice"},
-				Duration:    5 * time.Minute,
-				Summary:     "Global request rate low",
-				Description: "The global request rate is low",
+				Labels:   model.LabelSet{"service": "testservice"},
+				Duration: 5 * time.Minute,
+				Annotations: model.LabelSet{
+					"summary":     "Global request rate low",
+					"description": "The global request rate is low",
+				},
 			},
 			&RecordStmt{
 				Name: "foo",
@@ -1224,10 +1231,12 @@ var testStatement = []struct {
 					},
 					RHS: &NumberLiteral{10},
 				},
-				Labels:      model.LabelSet{},
-				Summary:     "Baz",
-				Description: "BazAlert",
-				Runbook:     "http://my.url",
+				Labels: model.LabelSet{},
+				Annotations: model.LabelSet{
+					"summary":     "Baz",
+					"description": "BazAlert",
+					"runbook":     "http://my.url",
+				},
 			},
 		},
 	}, {
@@ -1248,8 +1257,10 @@ var testStatement = []struct {
 		},
 	}, {
 		input: `ALERT SomeName IF some_metric > 1 
-			SUMMARY "Global request rate low"
-			DESCRIPTION "The global request rate is low"
+			ANNOTATIONS {
+			  summary = "Global request rate low",
+			  description = "The global request rate is low"
+			}
 		`,
 		expected: Statements{
 			&AlertStmt{
@@ -1264,20 +1275,25 @@ var testStatement = []struct {
 					},
 					RHS: &NumberLiteral{1},
 				},
-				Labels:      model.LabelSet{},
-				Summary:     "Global request rate low",
-				Description: "The global request rate is low",
+				Labels: model.LabelSet{},
+				Annotations: model.LabelSet{
+					"summary":     "Global request rate low",
+					"description": "The global request rate is low",
+				},
 			},
 		},
 	}, {
 		input: `
 			# A simple test alerting rule.
-			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5 WITH {
+			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5
+			  LABELS {
 			    service = "testservice"
 			    # ... more fields here ... 
 			  }
-			  SUMMARY "Global request rate low"
-			  DESCRIPTION "The global request rate is low"
+			  ANNOTATIONS {
+			    summary = "Global request rate low"
+			    description = "The global request rate is low"
+			  }
 	  	`,
 		fail: true,
 	}, {
@@ -1318,18 +1334,8 @@ var testStatement = []struct {
 		input: `foo{a!~"b"} = bar`,
 		fail:  true,
 	}, {
-		input: `ALERT SomeName IF time() WITH {} 
+		input: `ALERT SomeName IF time() LABELS {} 
 			SUMMARY "Global request rate low"
-			DESCRIPTION "The global request rate is low"
-		`,
-		fail: true,
-	}, {
-		input: `ALERT SomeName IF some_metric > 1 WITH {} 
-			SUMMARY "Global request rate low"
-		`,
-		fail: true,
-	}, {
-		input: `ALERT SomeName IF some_metric > 1 
 			DESCRIPTION "The global request rate is low"
 		`,
 		fail: true,

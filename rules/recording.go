@@ -40,7 +40,9 @@ func NewRecordingRule(name string, vector promql.Expr, labels model.LabelSet) *R
 }
 
 // Name returns the rule name.
-func (rule RecordingRule) Name() string { return rule.name }
+func (rule RecordingRule) Name() string {
+	return rule.name
+}
 
 // eval evaluates the rule and then overrides the metric names and labels accordingly.
 func (rule RecordingRule) eval(timestamp model.Time, engine *promql.Engine) (model.Vector, error) {

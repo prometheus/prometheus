@@ -83,7 +83,7 @@ func Main() int {
 	}
 
 	var (
-		notificationHandler = notification.NewNotificationHandler(&cfg.notification)
+		notificationHandler = notification.New(&cfg.notification)
 		targetManager       = retrieval.NewTargetManager(sampleAppender)
 		queryEngine         = promql.NewEngine(memStorage, &cfg.queryEngine)
 	)
@@ -155,7 +155,6 @@ func Main() int {
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
 
-	go ruleManager.Run()
 	defer ruleManager.Stop()
 
 	go notificationHandler.Run()

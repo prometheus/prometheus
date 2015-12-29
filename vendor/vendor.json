@@ -154,8 +154,8 @@
 		},
 		{
 			"path": "github.com/prometheus/common/expfmt",
-			"revision": "4fdc91a58c9d3696b982e8a680f4997403132d44",
-			"revisionTime": "2015-10-26T12:04:34+01:00"
+			"revision": "56b90312e937d43b930f06a59bf0d6a4ae1944bc",
+			"revisionTime": "2015-12-09T21:44:25+01:00"
 		},
 		{
 			"path": "github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg",
@@ -169,8 +169,8 @@
 		},
 		{
 			"path": "github.com/prometheus/common/model",
-			"revision": "4fdc91a58c9d3696b982e8a680f4997403132d44",
-			"revisionTime": "2015-10-26T12:04:34+01:00"
+			"revision": "56b90312e937d43b930f06a59bf0d6a4ae1944bc",
+			"revisionTime": "2015-12-09T21:44:25+01:00"
 		},
 		{
 			"path": "github.com/prometheus/common/route",
@@ -254,8 +254,13 @@
 		},
 		{
 			"path": "golang.org/x/net/context",
-			"revision": "db8e4de5b2d6653f66aea53094624468caad15d2",
-			"revisionTime": "2015-08-24T18:07:02+02:00"
+			"revision": "2cba614e8ff920c60240d2677bc019af32ee04e5",
+			"revisionTime": "2015-10-21T11:20:37-06:00"
+		},
+		{
+			"path": "golang.org/x/net/context/ctxhttp",
+			"revision": "2cba614e8ff920c60240d2677bc019af32ee04e5",
+			"revisionTime": "2015-10-21T11:20:37-06:00"
 		},
 		{
 			"path": "gopkg.in/fsnotify.v1",

@@ -16,8 +16,7 @@ package notification
 import (
 	"bytes"
 	"encoding/json"
-	"io"
-	"io/ioutil"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -25,14 +24,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
+	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const (
-	AlertmanagerAPIEventsPath = "/api/alerts"
-	contentTypeJSON           = "application/json"
+
+	AlertPushEndpoint = "/api/v1/alerts"
+	contentTypeJSON   = "application/json"
 )
 
 // String constants for instrumentation.
@@ -41,97 +42,75 @@ const (
 	subsystem = "notifications"
 )
 
-// NotificationReq is a request for sending a notification to the alert manager
-// for a single alert vector element.
-type NotificationReq struct {
-	// Short-form alert summary. May contain text/template-style interpolations.
-	Summary string
-	// Longer alert description. May contain text/template-style interpolations.
-	Description string
-	// A reference to the runbook for the alert.
-	Runbook string
-	// Labels associated with this alert notification, including alert name.
-	Labels model.LabelSet
-	// Current value of alert
-	Value model.SampleValue
-	// Since when this alert has been active (pending or firing).
-	ActiveSince time.Time
-	// A textual representation of the rule that triggered the alert.
-	RuleString string
-	// Prometheus console link to alert expression.
-	GeneratorURL string
-}
-
-// NotificationReqs is just a short-hand for []*NotificationReq. No methods
-// attached. Arguably, it's more confusing than helpful. Perhaps we should
-// remove it...
-type NotificationReqs []*NotificationReq
-
-type httpPoster interface {
-	Post(url string, bodyType string, body io.Reader) (*http.Response, error)
-}
-
-// NotificationHandler is responsible for dispatching alert notifications to an
+// Handler is responsible for dispatching alert notifications to an
 // alert manager service.
-type NotificationHandler struct {
-	// The URL of the alert manager to send notifications to.
-	alertmanagerURL string
-	// Buffer of notifications that have not yet been sent.
-	pendingNotifications chan NotificationReqs
-	// HTTP client with custom timeout settings.
-	httpClient httpPoster
+type Handler struct {
+	queue model.Alerts
+	opts  *HandlerOptions
 
-	notificationLatency        prometheus.Summary
-	notificationErrors         prometheus.Counter
-	notificationDropped        prometheus.Counter
-	notificationsQueueLength   prometheus.Gauge
-	notificationsQueueCapacity prometheus.Metric
+	more   chan struct{}
+	mtx    sync.RWMutex
+	ctx    context.Context
+	cancel func()
 
-	externalLabels model.LabelSet
-	mtx            sync.RWMutex
-	stopped        chan struct{}
+	latency       prometheus.Summary
+	errors        prometheus.Counter
+	dropped       prometheus.Counter
+	sent          prometheus.Counter
+	queueLength   prometheus.Gauge
+	queueCapacity prometheus.Metric
 }
 
-// NotificationHandlerOptions are the configurable parameters of a NotificationHandler.
-type NotificationHandlerOptions struct {
+// HandlerOptions are the configurable parameters of a Handler.
+type HandlerOptions struct {
 	AlertmanagerURL string
 	QueueCapacity   int
-	Deadline        time.Duration
+	Timeout         time.Duration
+	ExternalLabels  model.LabelSet
 }
 
-// NewNotificationHandler constructs a new NotificationHandler.
-func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler {
-	return &NotificationHandler{
-		alertmanagerURL:      o.AlertmanagerURL,
-		pendingNotifications: make(chan NotificationReqs, o.QueueCapacity),
+// NewHandler constructs a new Handler.
+func New(o *HandlerOptions) *Handler {
+	ctx, cancel := context.WithCancel(context.Background())
 
-		httpClient: httputil.NewDeadlineClient(o.Deadline, nil),
+	return &Handler{
+		queue:  make(model.Alerts, 0, o.QueueCapacity),
+		ctx:    ctx,
+		cancel: cancel,
+		more:   make(chan struct{}, 1),
+		opts:   o,
 
-		notificationLatency: prometheus.NewSummary(prometheus.SummaryOpts{
+		latency: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "latency_milliseconds",
+			Name:      "latency_seconds",
 			Help:      "Latency quantiles for sending alert notifications (not including dropped notifications).",
 		}),
-		notificationErrors: prometheus.NewCounter(prometheus.CounterOpts{
+		errors: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "errors_total",
 			Help:      "Total number of errors sending alert notifications.",
 		}),
-		notificationDropped: prometheus.NewCounter(prometheus.CounterOpts{
+		sent: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "sent_total",
+			Help:      "Total number of alerts successfully sent.",
+		}),
+		dropped: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "dropped_total",
-			Help:      "Total number of alert notifications dropped due to alert manager missing in configuration.",
+			Help:      "Total number of alerts dropped due to alert manager missing in configuration.",
 		}),
-		notificationsQueueLength: prometheus.NewGauge(prometheus.GaugeOpts{
+		queueLength: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queue_length",
 			Help:      "The number of alert notifications in the queue.",
 		}),
-		notificationsQueueCapacity: prometheus.MustNewConstMetric(
+		queueCapacity: prometheus.MustNewConstMetric(
 			prometheus.NewDesc(
 				prometheus.BuildFQName(namespace, subsystem, "queue_capacity"),
 				"The capacity of the alert notifications queue.",
@@ -140,114 +119,183 @@ func NewNotificationHandler(o *NotificationHandlerOptions) *NotificationHandler 
 			prometheus.GaugeValue,
 			float64(o.QueueCapacity),
 		),
-		stopped: make(chan struct{}),
 	}
 }
 
 // ApplyConfig updates the status state as the new config requires.
 // Returns true on success.
-func (n *NotificationHandler) ApplyConfig(conf *config.Config) bool {
+func (n *Handler) ApplyConfig(conf *config.Config) bool {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	n.externalLabels = conf.GlobalConfig.ExternalLabels
+	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
 	return true
 }
 
-// Send a list of notifications to the configured alert manager.
-func (n *NotificationHandler) sendNotifications(reqs NotificationReqs) error {
+const maxBatchSize = 64
+
+func (n *Handler) queueLen() int {
 	n.mtx.RLock()
 	defer n.mtx.RUnlock()
 
-	alerts := make([]map[string]interface{}, 0, len(reqs))
-	for _, req := range reqs {
-		for ln, lv := range n.externalLabels {
-			if _, ok := req.Labels[ln]; !ok {
-				req.Labels[ln] = lv
+	return len(n.queue)
+}
+
+func (n *Handler) nextBatch() []*model.Alert {
+	n.mtx.Lock()
+	defer n.mtx.Unlock()
+
+	var alerts model.Alerts
+
+	if len(n.queue) > maxBatchSize {
+		alerts = append(make(model.Alerts, 0, maxBatchSize), n.queue[:maxBatchSize]...)
+		n.queue = n.queue[maxBatchSize:]
+	} else {
+		alerts = append(make(model.Alerts, 0, len(n.queue)), n.queue...)
+		n.queue = n.queue[:0]
+	}
+
+	return alerts
+}
+
+// Run dispatches notifications continuously.
+func (n *Handler) Run() {
+	// Just warn once in the beginning to prevent noisy logs.
+	if n.opts.AlertmanagerURL == "" {
+		log.Warnf("No AlertManager configured, not dispatching any alerts")
+	}
+
+	for {
+		select {
+		case <-n.ctx.Done():
+			return
+		case <-n.more:
+		}
+
+		alerts := n.nextBatch()
+
+		if len(alerts) == 0 {
+			continue
+		}
+		if n.opts.AlertmanagerURL == "" {
+			n.dropped.Add(float64(len(alerts)))
+			continue
+		}
+
+		begin := time.Now()
+
+		if err := n.send(alerts...); err != nil {
+			log.Errorf("Error sending %d alerts: %s", len(alerts), err)
+			n.errors.Inc()
+			n.dropped.Add(float64(len(alerts)))
+		}
+
+		n.latency.Observe(float64(time.Since(begin)) / float64(time.Second))
+		n.sent.Add(float64(len(alerts)))
+
+		// If the queue still has items left, kick off the next iteration.
+		if n.queueLen() > 0 {
+			n.setMore()
+		}
+	}
+}
+
+// SubmitReqs queues the given notification requests for processing.
+func (n *Handler) Send(alerts ...*model.Alert) {
+	n.mtx.Lock()
+	defer n.mtx.Unlock()
+
+	// Queue capacity should be significantly larger than a single alert
+	// batch could be.
+	if d := len(alerts) - n.opts.QueueCapacity; d > 0 {
+		alerts = alerts[d:]
+
+		log.Warnf("Alert batch larger than queue capacity, dropping %d alerts", d)
+		n.dropped.Add(float64(d))
+	}
+
+	// If the queue is full, remove the oldest alerts in favor
+	// of newer ones.
+	if d := (len(n.queue) + len(alerts)) - n.opts.QueueCapacity; d > 0 {
+		n.queue = n.queue[d:]
+
+		log.Warnf("Alert notification queue full, dropping %d alerts", d)
+		n.dropped.Add(float64(d))
+	}
+	n.queue = append(n.queue, alerts...)
+
+	// Notify sending goroutine that there are alerts to be processed.
+	n.setMore()
+}
+
+// setMore signals that the alert queue has items.
+func (n *Handler) setMore() {
+	// If we cannot send on the channel, it means the signal already exists
+	// and has not been consumed yet.
+	select {
+	case n.more <- struct{}{}:
+	default:
+	}
+}
+
+func (n *Handler) postURL() string {
+	return n.opts.AlertmanagerURL
+}
+
+func (n *Handler) send(alerts ...*model.Alert) error {
+	// Attach external labels before sending alerts.
+	for _, a := range alerts {
+		for ln, lv := range n.opts.ExternalLabels {
+			if _, ok := a.Labels[ln]; !ok {
+				a.Labels[ln] = lv
 			}
 		}
-		alerts = append(alerts, map[string]interface{}{
-			"summary":     req.Summary,
-			"description": req.Description,
-			"runbook":     req.Runbook,
-			"labels":      req.Labels,
-			"payload": map[string]interface{}{
-				"value":        req.Value,
-				"activeSince":  req.ActiveSince,
-				"generatorURL": req.GeneratorURL,
-				"alertingRule": req.RuleString,
-			},
-		})
 	}
-	buf, err := json.Marshal(alerts)
-	if err != nil {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(alerts); err != nil {
 		return err
 	}
-	log.Debugln("Sending notifications to alertmanager:", string(buf))
-	resp, err := n.httpClient.Post(
-		n.alertmanagerURL,
-		contentTypeJSON,
-		bytes.NewBuffer(buf),
-	)
+	ctx, _ := context.WithTimeout(context.Background(), n.opts.Timeout)
+
+	resp, err := ctxhttp.Post(ctx, http.DefaultClient, n.postURL(), contentTypeJSON, &buf)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	_, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("bad response status %v", resp.Status)
 	}
-	// BUG: Do we need to check the response code?
 	return nil
 }
 
-// Run dispatches notifications continuously.
-func (n *NotificationHandler) Run() {
-	for reqs := range n.pendingNotifications {
-		if n.alertmanagerURL == "" {
-			log.Warn("No alert manager configured, not dispatching notification")
-			n.notificationDropped.Inc()
-			continue
-		}
-
-		begin := time.Now()
-		err := n.sendNotifications(reqs)
-
-		if err != nil {
-			log.Error("Error sending notification: ", err)
-			n.notificationErrors.Inc()
-		}
-
-		n.notificationLatency.Observe(float64(time.Since(begin) / time.Millisecond))
-	}
-	close(n.stopped)
-}
-
-// SubmitReqs queues the given notification requests for processing.
-func (n *NotificationHandler) SubmitReqs(reqs NotificationReqs) {
-	n.pendingNotifications <- reqs
-}
-
 // Stop shuts down the notification handler.
-func (n *NotificationHandler) Stop() {
+func (n *Handler) Stop() {
 	log.Info("Stopping notification handler...")
-	close(n.pendingNotifications)
-	<-n.stopped
-	log.Info("Notification handler stopped.")
+
+	close(n.more)
+	n.cancel()
 }
 
 // Describe implements prometheus.Collector.
-func (n *NotificationHandler) Describe(ch chan<- *prometheus.Desc) {
-	n.notificationLatency.Describe(ch)
-	ch <- n.notificationsQueueLength.Desc()
-	ch <- n.notificationsQueueCapacity.Desc()
+func (n *Handler) Describe(ch chan<- *prometheus.Desc) {
+	ch <- n.latency.Desc()
+	ch <- n.errors.Desc()
+	ch <- n.sent.Desc()
+	ch <- n.dropped.Desc()
+	ch <- n.queueLength.Desc()
+	ch <- n.queueCapacity.Desc()
 }
 
 // Collect implements prometheus.Collector.
-func (n *NotificationHandler) Collect(ch chan<- prometheus.Metric) {
-	n.notificationLatency.Collect(ch)
-	n.notificationsQueueLength.Set(float64(len(n.pendingNotifications)))
-	ch <- n.notificationsQueueLength
-	ch <- n.notificationsQueueCapacity
+func (n *Handler) Collect(ch chan<- prometheus.Metric) {
+	n.queueLength.Set(float64(n.queueLen()))
+
+	ch <- n.latency
+	ch <- n.errors
+	ch <- n.sent
+	ch <- n.dropped
+	ch <- n.queueLength
+	ch <- n.queueCapacity
 }

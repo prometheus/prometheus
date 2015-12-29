@@ -153,10 +153,8 @@ const (
 	itemAlert
 	itemIf
 	itemFor
-	itemWith
-	itemSummary
-	itemRunbook
-	itemDescription
+	itemLabels
+	itemAnnotations
 	itemKeepCommon
 	itemOffset
 	itemBy
@@ -185,10 +183,8 @@ var key = map[string]itemType{
 	"alert":         itemAlert,
 	"if":            itemIf,
 	"for":           itemFor,
-	"with":          itemWith,
-	"summary":       itemSummary,
-	"runbook":       itemRunbook,
-	"description":   itemDescription,
+	"labels":        itemLabels,
+	"annotations":   itemAnnotations,
 	"offset":        itemOffset,
 	"by":            itemBy,
 	"keeping_extra": itemKeepCommon,

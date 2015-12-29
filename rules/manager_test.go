@@ -15,7 +15,6 @@ package rules
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +55,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		model.LabelSet{"severity": "critical"},
-		"summary", "description", "runbook",
+		model.LabelSet{},
 	)
 
 	var tests = []struct {
@@ -137,47 +136,4 @@ func annotateWithTime(lines []string, timestamp model.Time) []string {
 		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp))
 	}
 	return annotatedLines
-}
-
-func TestTransferAlertState(t *testing.T) {
-	m := NewManager(&ManagerOptions{})
-
-	alert := &Alert{
-		Name:  "testalert",
-		State: StateFiring,
-	}
-
-	arule := AlertingRule{
-		name:         "test",
-		activeAlerts: map[model.Fingerprint]*Alert{},
-	}
-	aruleCopy := arule
-
-	m.rules = append(m.rules, &arule)
-
-	// Set an alert.
-	arule.activeAlerts[0] = alert
-
-	// Save state and get the restore function.
-	restore := m.transferAlertState()
-
-	// Remove arule from the rule list and add an unrelated rule and the
-	// stateless copy of arule.
-	m.rules = []Rule{
-		&AlertingRule{
-			name:         "test_other",
-			activeAlerts: map[model.Fingerprint]*Alert{},
-		},
-		&aruleCopy,
-	}
-
-	// Apply the restore function.
-	restore()
-
-	if ar := m.rules[0].(*AlertingRule); len(ar.activeAlerts) != 0 {
-		t.Fatalf("unexpected alert for unrelated alerting rule")
-	}
-	if ar := m.rules[1].(*AlertingRule); !reflect.DeepEqual(ar.activeAlerts[0], alert) {
-		t.Fatalf("alert state was not restored")
-	}
 }
