@@ -33,6 +33,10 @@ import (
 	"github.com/prometheus/prometheus/web"
 )
 
+const (
+	alertPushEndpoint = "/api/v1/alerts"
+)
+
 // cfg contains immutable configuration parameters for a running Prometheus
 // server. It is populated by its flag set.
 var cfg = struct {
@@ -305,7 +309,7 @@ func parseAlertmanagerURL() error {
 
 	if url.Path == "" {
 		cfg.notification.AlertmanagerURL = strings.TrimRight(cfg.alertmgrURL, "/") +
-			notification.AlertPushEndpoint
+			alertPushEndpoint
 	} else {
 		cfg.notification.AlertmanagerURL = cfg.alertmgrURL
 	}

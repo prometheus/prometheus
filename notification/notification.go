@@ -31,7 +31,6 @@ import (
 )
 
 const (
-	AlertPushEndpoint = "/api/v1/alerts"
 	contentTypeJSON   = "application/json"
 )
 

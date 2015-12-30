@@ -89,9 +89,6 @@ func TestHandlerSend(t *testing.T) {
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != AlertPushEndpoint {
-			t.Fatalf("Bad endpoint %q used, expected %q", r.URL.Path, AlertPushEndpoint)
-		}
 		defer r.Body.Close()
 
 		var alerts model.Alerts
@@ -110,7 +107,7 @@ func TestHandlerSend(t *testing.T) {
 	defer server.Close()
 
 	h := New(&HandlerOptions{
-		AlertmanagerURL: server.URL + AlertPushEndpoint,
+		AlertmanagerURL: server.URL,
 		Timeout:         time.Minute,
 		ExternalLabels:  model.LabelSet{"a": "b"},
 	})
