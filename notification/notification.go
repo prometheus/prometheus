@@ -31,8 +31,7 @@ import (
 )
 
 const (
-	alertPushEndpoint = "/api/v1/alerts"
-	contentTypeJSON   = "application/json"
+	contentTypeJSON = "application/json"
 )
 
 // String constants for instrumentation.
@@ -238,7 +237,7 @@ func (n *Handler) setMore() {
 }
 
 func (n *Handler) postURL() string {
-	return n.opts.AlertmanagerURL + alertPushEndpoint
+	return n.opts.AlertmanagerURL
 }
 
 func (n *Handler) send(alerts ...*model.Alert) error {
