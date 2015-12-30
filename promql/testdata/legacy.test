@@ -133,38 +133,6 @@ eval instant at 50m rate(http_requests[25m]) * 25 * 60
 	{group="production", instance="1", job="api-server"} 100 
 	{group="production", instance="1", job="app-server"} 300 
 
-eval_ordered instant at 50m sort(http_requests)
-	http_requests{group="production", instance="0", job="api-server"} 100 
-	http_requests{group="production", instance="1", job="api-server"} 200 
-	http_requests{group="canary", instance="0", job="api-server"} 300 
-	http_requests{group="canary", instance="1", job="api-server"} 400 
-	http_requests{group="production", instance="0", job="app-server"} 500 
-	http_requests{group="production", instance="1", job="app-server"} 600 
-	http_requests{group="canary", instance="0", job="app-server"} 700 
-	http_requests{group="canary", instance="1", job="app-server"} 800 
-
-eval_ordered instant at 50m sort(0 / round(http_requests, 400) + http_requests)
-	{group="production", instance="0", job="api-server"} NaN 
-	{group="production", instance="1", job="api-server"} 200 
-	{group="canary", instance="0", job="api-server"} 300 
-	{group="canary", instance="1", job="api-server"} 400 
-	{group="production", instance="0", job="app-server"} 500 
-	{group="production", instance="1", job="app-server"} 600 
-	{group="canary", instance="0", job="app-server"} 700 
-	{group="canary", instance="1", job="app-server"} 800 
-
-
-eval_ordered instant at 50m sort_desc(http_requests)
-	http_requests{group="canary", instance="1", job="app-server"} 800 
-	http_requests{group="canary", instance="0", job="app-server"} 700 
-	http_requests{group="production", instance="1", job="app-server"} 600 
-	http_requests{group="production", instance="0", job="app-server"} 500 
-	http_requests{group="canary", instance="1", job="api-server"} 400 
-	http_requests{group="canary", instance="0", job="api-server"} 300 
-	http_requests{group="production", instance="1", job="api-server"} 200 
-	http_requests{group="production", instance="0", job="api-server"} 100 
-
-
 
 # Single-letter label names and values.
 eval instant at 50m x{y="testvalue"}
