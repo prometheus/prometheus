@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	contentTypeJSON   = "application/json"
+	contentTypeJSON = "application/json"
 )
 
 // String constants for instrumentation.
