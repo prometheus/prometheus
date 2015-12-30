@@ -204,7 +204,7 @@ func init() {
 	// Alertmanager.
 	cfg.fs.StringVar(
 		&cfg.alertmgrURL, "alertmanager.url", "",
-		"The URL of the alert manager to send notifications to.",
+		"The URL of the alert manager to send notifications to. (If no path is provided, the path is set to '"+alertPushEndpoint+"').",
 	)
 	cfg.fs.IntVar(
 		&cfg.notification.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
