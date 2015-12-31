@@ -170,16 +170,19 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 
 // === sort(node model.ValVector) Vector ===
 func funcSort(ev *evaluator, args Expressions) model.Value {
-	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
-	sort.Sort(byValueSorter)
+	// NaN should sort to the bottom, so take descending sort with NaN first and
+	// reverse it.
+	byValueSorter := vectorByReverseValueHeap(ev.evalVector(args[0]))
+	sort.Sort(sort.Reverse(byValueSorter))
 	return vector(byValueSorter)
 }
 
 // === sortDesc(node model.ValVector) Vector ===
 func funcSortDesc(ev *evaluator, args Expressions) model.Value {
+	// NaN should sort to the bottom, so take ascending sort with NaN first and
+	// reverse it.
 	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
 	sort.Sort(sort.Reverse(byValueSorter))
-
 	return vector(byValueSorter)
 }
 
@@ -201,6 +204,7 @@ func funcTopk(ev *evaluator, args Expressions) model.Value {
 			heap.Push(&topk, el)
 		}
 	}
+	// The heap keeps the lowest value on top, so reverse it.
 	sort.Sort(sort.Reverse(topk))
 	return vector(topk)
 }
@@ -223,6 +227,7 @@ func funcBottomk(ev *evaluator, args Expressions) model.Value {
 			heap.Push(&bottomk, el)
 		}
 	}
+	// The heap keeps the highest value on top, so reverse it.
 	sort.Sort(sort.Reverse(bottomk))
 	return vector(bottomk)
 }
