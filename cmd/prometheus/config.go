@@ -185,7 +185,7 @@ func init() {
 	)
 	cfg.fs.StringVar(
 		&cfg.remote.InfluxdbUsername, "storage.remote.influxdb.username", "",
-		"The username to use when sending samples to InfluxDB.",
+		"The username to use when sending samples to InfluxDB. The corresponding password must be provided via the INFLUXDB_PW environment variable.",
 	)
 	cfg.fs.StringVar(
 		&cfg.remote.InfluxdbDatabase, "storage.remote.influxdb.database", "prometheus",
