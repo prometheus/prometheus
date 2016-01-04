@@ -41,23 +41,8 @@ func (f levelFlag) Set(level string) error {
 	return nil
 }
 
-func setSyslogFormatter(appname, local string) error {
-	if appname == "" {
-		return fmt.Errorf("missing appname parameter")
-	}
-	if local == "" {
-		return fmt.Errorf("missing local parameter")
-	}
-
-	fmter, err := newSyslogger(appname, local, origLogger.Formatter)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error creating syslog formatter: %v\n", err)
-		origLogger.Errorf("can't connect logger to syslog: %v", err)
-		return err
-	}
-	origLogger.Formatter = fmter
-	return nil
-}
+// setSyslogFormatter is nil if the target architecture does not support syslog.
+var setSyslogFormatter func(string, string) error
 
 func setJSONFormatter() {
 	origLogger.Formatter = &logrus.JSONFormatter{}
@@ -87,6 +72,9 @@ func (f logFormatFlag) Set(format string) error {
 
 	switch u.Opaque {
 	case "syslog":
+		if setSyslogFormatter == nil {
+			return fmt.Errorf("system does not support syslog")
+		}
 		appname := u.Query().Get("appname")
 		facility := u.Query().Get("local")
 		return setSyslogFormatter(appname, facility)
