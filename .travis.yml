@@ -6,4 +6,4 @@ go:
 - 1.5
 
 script:
-- make -f Makefile
+- make style test

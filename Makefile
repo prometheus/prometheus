@@ -21,6 +21,10 @@ endif
 
 all: assets format build test
 
+style:
+	@echo ">> checking code style"
+	@! gofmt -d **/*.go | grep '^'
+
 test:
 	@echo ">> running tests"
 	@$(GO) test -short $(pkgs)
@@ -46,4 +50,4 @@ assets:
 	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
 
 
-.PHONY: all format build test vet docker assets
+.PHONY: all style format build test vet docker assets
