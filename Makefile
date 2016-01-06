@@ -16,6 +16,10 @@ pkgs  = $(shell $(GO) list ./... | grep -v /vendor/)
 
 all: format build test
 
+style:
+	@echo ">> checking code style"
+	@! gofmt -d **/*.go | grep '^'
+
 test:
 	@echo ">> running tests"
 	@$(GO) test -short $(pkgs)
@@ -42,4 +46,4 @@ assets:
 	@$(GO) fmt ./web/blob >/dev/null
 
 
-.PHONY: all format build test vet docker assets
+.PHONY: all style format build test vet docker assets
