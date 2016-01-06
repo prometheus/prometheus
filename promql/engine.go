@@ -1084,11 +1084,11 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, keepExt
 			groupedResult.value += sample.Value
 			groupedResult.groupCount++
 		case itemMax:
-			if groupedResult.value < sample.Value {
+			if groupedResult.value < sample.Value || math.IsNaN(float64(groupedResult.value)) {
 				groupedResult.value = sample.Value
 			}
 		case itemMin:
-			if groupedResult.value > sample.Value {
+			if groupedResult.value > sample.Value || math.IsNaN(float64(groupedResult.value)) {
 				groupedResult.value = sample.Value
 			}
 		case itemCount:
