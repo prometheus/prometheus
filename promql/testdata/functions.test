@@ -63,6 +63,10 @@ eval instant at 50m increase(http_requests[50m])
 	{path="/foo"} 100
 	{path="/bar"}  90
 
+eval instant at 50m increase(http_requests[100m])
+	{path="/foo"} 100
+	{path="/bar"}  90
+
 clear
 
 # Tests for irate().
@@ -87,10 +91,10 @@ load 5m
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 
 # deriv should return the same as rate in simple cases.
-eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[60m])
+eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[50m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
-eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[60m])
+eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[50m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 # deriv should return correct result.
