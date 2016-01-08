@@ -325,6 +325,7 @@ type Manager struct {
 	opts   *ManagerOptions
 	groups map[string]*Group
 	mtx    sync.RWMutex
+	block  chan struct{}
 }
 
 // ManagerOptions bundles options for the Manager.
@@ -341,8 +342,14 @@ func NewManager(o *ManagerOptions) *Manager {
 	manager := &Manager{
 		groups: map[string]*Group{},
 		opts:   o,
+		block:  make(chan struct{}),
 	}
 	return manager
+}
+
+// Run starts processing of the rule manager.
+func (m *Manager) Run() {
+	close(m.block)
 }
 
 // Stop the rule manager's rule evaluation cycles.
@@ -398,7 +405,13 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 				oldg.stop()
 				newg.copyState(oldg)
 			}
-			go newg.run()
+			go func() {
+				// Wait with starting evaluation until the rule manager
+				// is told to run. This is necessary to avoid running
+				// queries against a bootstrapping storage.
+				<-m.block
+				newg.run()
+			}()
 			wg.Done()
 		}(newg)
 	}
