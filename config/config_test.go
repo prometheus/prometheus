@@ -270,6 +270,23 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-nerve",
+
+			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			NerveSDConfigs: []*NerveSDConfig{
+				{
+					Servers: []string{"localhost"},
+					Paths:   []string{"/monitoring"},
+					Timeout: Duration(10 * time.Second),
+				},
+			},
+		},
 	},
 	original: "",
 }

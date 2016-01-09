@@ -126,3 +126,10 @@ scrape_configs:
     - region: us-east-1
       access_key: access
       secret_key: secret
+
+- job_name: service-nerve
+  nerve_sd_configs:
+    - servers:
+      - localhost
+      paths:
+      - /monitoring
