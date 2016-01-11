@@ -527,6 +527,7 @@ func (s *memorySeriesStorage) DropMetricsForFingerprints(fps ...model.Fingerprin
 		}
 
 		s.fpLocker.Unlock(fp)
+		s.seriesOps.WithLabelValues(requestedPurge).Inc()
 	}
 }
 
