@@ -57,6 +57,7 @@ const (
 	unarchive          = "unarchive"
 	memoryPurge        = "purge_from_memory"
 	archivePurge       = "purge_from_archive"
+	requestedPurge     = "purge_on_request"
 	memoryMaintenance  = "maintenance_in_memory"
 	archiveMaintenance = "maintenance_in_archive"
 
