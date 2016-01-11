@@ -48,8 +48,8 @@ func TestEscape(t *testing.T) {
 func TestPathFromMetric(t *testing.T) {
 	expected := ("prefix." +
 		"test:metric" +
-		".many_chars=abc!ABC:012-3!45%C3%B667~89%2E%2F\\(\\)\\{\\}\\,%3D%2E\\\"\\\\" +
-		".testlabel=test:value")
+		".many_chars.abc!ABC:012-3!45%C3%B667~89%2E%2F\\(\\)\\{\\}\\,%3D%2E\\\"\\\\" +
+		".testlabel.test:value")
 	actual := pathFromMetric(metric, "prefix.")
 	if expected != actual {
 		t.Errorf("Expected %s, got %s", expected, actual)
