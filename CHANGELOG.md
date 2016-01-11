@@ -1,3 +1,31 @@
+## 0.16.2 / 2016-01-11
+
+* [FEATURE] Multiple authentication options for EC2 discovery added
+* [FEATURE] Several meta labels for EC2 discovery added
+* [FEATURE] Allow full URLs in static target groups (used e.g. by the `blackbox_exporter`)
+* [FEATURE] Add Graphite remote-storage integration
+* [FEATURE] Create separate Kubernetes targets for services and their endpoints
+* [FEATURE] Add `clamp_{min,max}` functions to PromQL
+* [FEATURE] Omitted time parameter in API query defaults to now
+* [ENHANCEMENT] Less frequent time series file truncation
+* [ENHANCEMENT] Instrument number of  manually deleted time series
+* [ENHANCEMENT] Ignore lost+found directory during storage version detection
+* [CHANGE] Kubernetes `masters` renamed to `api_servers`
+* [BUGFIX] Return proper HTTP status codes on API errors
+* [BUGFIX] Fix Kubernetes authentication configuration
+* [BUGFIX] Fix stripped OFFSET from in rule evaluation and display
+* [BUGFIX] Do not crash on failing Consul SD initialization
+* [BUGFIX] Revert changes to metric auto-completion
+* [BUGFIX] Add config overflow validation for TLS configuration
+* [BUGFIX] Skip already watched Zookeeper nodes in serverset SD
+* [BUGFIX] Don't federate stale samples
+* [BUGFIX] Move NaN to end of result for `topk/bottomk/sort/sort_desc/min/max`
+* [BUGFIX] Limit extrapolation of `delta/rate/increase`
+* [BUGFIX] Fix unhandled error in rule evaluation
+
+Some changes to the Kubernetes service discovery were integration since
+it was releases as a beta feature.
+
 ## 0.16.1 / 2015-10-16
 
 * [FEATURE] Add `irate()` function.
