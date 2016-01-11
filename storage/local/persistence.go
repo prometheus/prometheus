@@ -129,11 +129,18 @@ type persistence struct {
 
 	shouldSync syncStrategy
 
+	minShrinkRatio float64 // How much a series file has to shrink to justify dropping chunks.
+
 	bufPool sync.Pool
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
-func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync syncStrategy) (*persistence, error) {
+func newPersistence(
+	basePath string,
+	dirty, pedanticChecks bool,
+	shouldSync syncStrategy,
+	minShrinkRatio float64,
+) (*persistence, error) {
 	dirtyPath := filepath.Join(basePath, dirtyFileName)
 	versionPath := filepath.Join(basePath, versionFileName)
 
@@ -938,13 +945,14 @@ func (p *persistence) dropAndPersistChunks(
 	}
 	defer f.Close()
 
+	headerBuf := make([]byte, chunkHeaderLen)
+	var firstTimeInFile model.Time
 	// Find the first chunk in the file that should be kept.
 	for ; ; numDropped++ {
 		_, err = f.Seek(offsetForChunkIndex(numDropped), os.SEEK_SET)
 		if err != nil {
 			return
 		}
-		headerBuf := make([]byte, chunkHeaderLen)
 		_, err = io.ReadFull(f, headerBuf)
 		if err == io.EOF {
 			// We ran into the end of the file without finding any chunks that should
@@ -962,29 +970,44 @@ func (p *persistence) dropAndPersistChunks(
 		if err != nil {
 			return
 		}
+		if numDropped == 0 {
+			firstTimeInFile = model.Time(
+				binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
+			)
+		}
 		lastTime := model.Time(
 			binary.LittleEndian.Uint64(headerBuf[chunkHeaderLastTimeOffset:]),
 		)
 		if !lastTime.Before(beforeTime) {
-			firstTimeNotDropped = model.Time(
-				binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
-			)
-			chunkOps.WithLabelValues(drop).Add(float64(numDropped))
 			break
 		}
 	}
 
-	// We've found the first chunk that should be kept. If it is the first
-	// one, just append the chunks.
-	if numDropped == 0 {
+	// We've found the first chunk that should be kept.
+	// First check if the shrink ratio is good enough to perform the the
+	// actual drop or leave it for next time if it is not worth the effort.
+	fi, err := f.Stat()
+	if err != nil {
+		return
+	}
+	totalChunks := int(fi.Size())/chunkLenWithHeader + len(chunks)
+	if numDropped == 0 || float64(numDropped)/float64(totalChunks) < p.minShrinkRatio {
+		// Nothing to drop. Just adjust the return values and append the chunks (if any).
+		numDropped = 0
+		firstTimeNotDropped = firstTimeInFile
 		if len(chunks) > 0 {
 			offset, err = p.persistChunks(fp, chunks)
 		}
 		return
 	}
-	// Otherwise, seek backwards to the beginning of its header and start
-	// copying everything from there into a new file. Then append the chunks
-	// to the new file.
+	// If we are here, we have to drop some chunks for real. So we need to
+	// record firstTimeNotDropped from the last read header, seek backwards
+	// to the beginning of its header, and start copying everything from
+	// there into a new file. Then append the chunks to the new file.
+	firstTimeNotDropped = model.Time(
+		binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
+	)
+	chunkOps.WithLabelValues(drop).Add(float64(numDropped))
 	_, err = f.Seek(-chunkHeaderLen, os.SEEK_CUR)
 	if err != nil {
 		return
