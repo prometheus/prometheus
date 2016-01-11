@@ -37,7 +37,7 @@ var (
 func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, testutil.Closer) {
 	DefaultChunkEncoding = encoding
 	dir := testutil.NewTemporaryDirectory("test_persistence", t)
-	p, err := newPersistence(dir.Path(), false, false, func() bool { return false })
+	p, err := newPersistence(dir.Path(), false, false, func() bool { return false }, 0.1)
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
@@ -336,6 +336,85 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 		}
 		if !allDropped {
 			t.Error("not all chunks dropped")
+		}
+	}
+	// Now set minShrinkRatio to 0.25 and play with it.
+	p.minShrinkRatio = 0.25
+	// Re-add 8 chunks.
+	for fp, chunks := range fpToChunks {
+		firstTimeNotDropped, offset, numDropped, allDropped, err :=
+			p.dropAndPersistChunks(fp, model.Earliest, chunks[:8])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := firstTimeNotDropped, model.Time(0); got != want {
+			t.Errorf("Want firstTimeNotDropped %v, got %v.", got, want)
+		}
+		if got, want := offset, 0; got != want {
+			t.Errorf("Want offset %v, got %v.", got, want)
+		}
+		if got, want := numDropped, 0; got != want {
+			t.Errorf("Want numDropped %v, got %v.", got, want)
+		}
+		if allDropped {
+			t.Error("All dropped.")
+		}
+	}
+	// Drop only the first chunk should not happen, but persistence should still work.
+	for fp, chunks := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 1, chunks[8:9])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 8 {
+			t.Errorf("want offset 8, got %d", offset)
+		}
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
+		if numDropped != 0 {
+			t.Errorf("want 0 dropped chunk, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+	}
+	// Drop only the first two chunks should not happen, either.
+	for fp := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 2, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 0 {
+			t.Errorf("want offset 0, got %d", offset)
+		}
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
+		if numDropped != 0 {
+			t.Errorf("want 0 dropped chunk, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+	}
+	// Drop the first three chunks should finally work.
+	for fp, chunks := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 3, chunks[9:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 6 {
+			t.Errorf("want offset 6, got %d", offset)
+		}
+		if firstTime != 3 {
+			t.Errorf("want first time 3, got %d", firstTime)
+		}
+		if numDropped != 3 {
+			t.Errorf("want 3 dropped chunk, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
 		}
 	}
 }

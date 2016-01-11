@@ -132,6 +132,10 @@ func init() {
 		&cfg.storage.SyncStrategy, "storage.local.series-sync-strategy",
 		"When to sync series files after modification. Possible values: 'never', 'always', 'adaptive'. Sync'ing slows down storage performance but reduces the risk of data loss in case of an OS crash. With the 'adaptive' strategy, series files are sync'd for as long as the storage is not too much behind on chunk persistence.",
 	)
+	cfg.fs.Float64Var(
+		&cfg.storage.MinShrinkRatio, "storage.local.series-file-shrink-ratio", 0.1,
+		"A series file is only truncated (to delete samples that have exceeded the retention period) if it shrinks by at least the provided ratio. This saves I/O operations while causing only a limited storage space overhead. If 0 or smaller, truncation will be performed even for a single dropped chunk, while 1 or larger will effectively prevent any truncation.",
+	)
 	cfg.fs.BoolVar(
 		&cfg.storage.Dirty, "storage.local.dirty", false,
 		"If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.",

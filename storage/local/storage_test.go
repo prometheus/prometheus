@@ -563,6 +563,7 @@ func TestLoop(t *testing.T) {
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         250 * time.Millisecond,
 		SyncStrategy:               Adaptive,
+		MinShrinkRatio:             0.1,
 	}
 	storage := NewMemorySeriesStorage(o)
 	if err := storage.Start(); err != nil {
@@ -1320,6 +1321,7 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         time.Second,
 		SyncStrategy:               Adaptive,
+		MinShrinkRatio:             0.1,
 	}
 	s := NewMemorySeriesStorage(o)
 	if err := s.Start(); err != nil {

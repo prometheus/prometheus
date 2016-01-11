@@ -152,6 +152,7 @@ type MemorySeriesStorageOptions struct {
 	Dirty                      bool          // Force the storage to consider itself dirty on startup.
 	PedanticChecks             bool          // If dirty, perform crash-recovery checks on each series file.
 	SyncStrategy               SyncStrategy  // Which sync strategy to apply to series files.
+	MinShrinkRatio             float64       // Minimum ratio a series file has to shrink during truncation.
 }
 
 // NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
@@ -243,7 +244,12 @@ func (s *memorySeriesStorage) Start() (err error) {
 	}
 
 	var p *persistence
-	p, err = newPersistence(s.options.PersistenceStoragePath, s.options.Dirty, s.options.PedanticChecks, syncStrategy)
+	p, err = newPersistence(
+		s.options.PersistenceStoragePath,
+		s.options.Dirty, s.options.PedanticChecks,
+		syncStrategy,
+		s.options.MinShrinkRatio,
+	)
 	if err != nil {
 		return err
 	}
