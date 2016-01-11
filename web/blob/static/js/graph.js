@@ -73,6 +73,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.rangeInput = self.queryForm.find("input[name=range_input]");
   self.stackedBtn = self.queryForm.find(".stacked_btn");
   self.stacked = self.queryForm.find("input[name=stacked]");
+  self.insertMetric = self.queryForm.find("select[name=insert_metric]");
   self.refreshInterval = self.queryForm.find("select[name=refresh]");
 
   self.consoleTab = graphWrapper.find(".console");
@@ -88,6 +89,13 @@ Prometheus.Graph.prototype.initialize = function() {
       self.submitQuery();
     }
   });
+  
+  // Return moves focus back to expr instead of submitting.
+  self.insertMetric.bind("keydown", "return", function(e) {
+    self.expr.focus();
+    self.expr.val(self.expr.val());
+    return e.preventDefault();
+  })
 
   self.error = graphWrapper.find(".error").hide();
   self.graphArea = graphWrapper.find(".graph_area");
@@ -151,85 +159,19 @@ Prometheus.Graph.prototype.initialize = function() {
   self.queryForm.find("button[name=inc_end]").click(function() { self.increaseEnd(); });
   self.queryForm.find("button[name=dec_end]").click(function() { self.decreaseEnd(); });
 
-  self.populateAutocompleteMetrics();
+  self.insertMetric.change(function() {
+    self.expr.selection("replace", {text: self.insertMetric.val(), mode: "before"});
+    self.expr.focus(); // refocusing
+  });
+
+  self.populateInsertableMetrics();
 
   if (self.expr.val()) {
     self.submitQuery();
   }
 };
 
-// Returns true if the character at "pos" in the expression string "str" looks
-// like it could be a metric name (if it's not in a string, a label matchers
-// section, or a range specification).
-function isPotentialMetric(str, pos) {
-  var quote = null;
-  var inMatchersOrRange = false;
-
-  for (var i = 0; i < pos; i++) {
-    var ch = str[i];
-
-    // Skip over escaped characters (quotes or otherwise) in strings.
-    if (quote !== null && ch === "\\") {
-      i += 1;
-      continue;
-    }
-
-    // Track if we are entering or leaving a string.
-    switch (ch) {
-      case quote:
-        quote = null;
-        break;
-      case '"':
-      case "'":
-        quote = ch;
-        break;
-    }
-
-    // Ignore curly braces and square brackets in strings.
-    if (quote) {
-      continue;
-    }
-
-    // Track whether we are in curly braces (label matchers).
-    switch (ch) {
-      case "{":
-      case "[":
-        inMatchersOrRange = true;
-        break;
-      case "}":
-      case "]":
-        inMatchersOrRange = false;
-        break;
-    }
-  }
-
-  return !inMatchersOrRange && quote === null;
-}
-
-// Returns the current word under the cursor position in $input.
-function currentWord($input) {
-  var wordRE = new RegExp("[a-zA-Z0-9:_]");
-  var pos = $input.prop("selectionStart");
-  var str = $input.val();
-  var len = str.length;
-  var start = pos;
-  var end = pos;
-
-  while (start > 0 && str[start-1].match(wordRE)) {
-    start--;
-  }
-  while (end < len && str[end].match(wordRE)) {
-    end++;
-  }
-
-  return {
-    start: start,
-    end: end,
-    word: $input.val().substring(start, end)
-  };
-}
-
-Prometheus.Graph.prototype.populateAutocompleteMetrics = function() {
+Prometheus.Graph.prototype.populateInsertableMetrics = function() {
   var self = this;
   $.ajax({
       method: "GET",
@@ -239,41 +181,14 @@ Prometheus.Graph.prototype.populateAutocompleteMetrics = function() {
         if (json.status !== "success") {
           self.showError("Error loading available metrics!");
           return;
+        } 
+        var metrics = json.data;
+        for (var i = 0; i < metrics.length; i++) {
+          self.insertMetric[0].options.add(new Option(metrics[i], metrics[i]));
         }
 
-        // For the typeahead autocompletion, we need to remember where to put
-        // the cursor after inserting an autocompleted word (we want to put it
-        // after that word, not at the end of the entire input string).
-        var afterUpdatePos = null;
-
         self.expr.typeahead({
-          // Needs to return true for autocomplete items that should be matched
-          // by the current input.
-          matcher: function(item) {
-            var cw = currentWord(self.expr);
-            if (cw.word.length !== 0 &&
-                item.toLowerCase().indexOf(cw.word.toLowerCase()) > -1 &&
-                isPotentialMetric(self.expr.val(), cw.start)) {
-              return true;
-            }
-            return false;
-          },
-          // Returns the entire string to which the input field should be set
-          // upon selecting an item from the autocomplete list.
-          updater: function(item) {
-            var str = self.expr.val();
-            var cw = currentWord(self.expr);
-            afterUpdatePos = cw.start + item.length;
-            return str.substring(0, cw.start) + item + str.substring(cw.end, str.length);
-          },
-          // Is called *after* the input field has been set to the string
-          // returned by the "updater" callback. We want to move the cursor to
-          // the end of the actually inserted word here.
-          afterSelect: function(item) {
-            self.expr.prop("selectionStart", afterUpdatePos);
-            self.expr.prop("selectionEnd", afterUpdatePos);
-          },
-          source: json.data,
+          source: metrics,
           items: "all"
         });
         // This needs to happen after attaching the typeahead plugin, as it
