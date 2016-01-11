@@ -162,6 +162,11 @@ const (
 	itemGroupLeft
 	itemGroupRight
 	itemBool
+	// Old alerting syntax
+	itemWith
+	itemSummary
+	itemRunbook
+	itemDescription
 	keywordsEnd
 )
 
@@ -193,6 +198,12 @@ var key = map[string]itemType{
 	"group_left":    itemGroupLeft,
 	"group_right":   itemGroupRight,
 	"bool":          itemBool,
+
+	// Old alerting syntax.
+	"with":        itemWith,
+	"summary":     itemSummary,
+	"runbook":     itemRunbook,
+	"description": itemDescription,
 }
 
 // These are the default string representations for common items. It does not
