@@ -63,11 +63,11 @@ func pathFromMetric(m model.Metric, prefix string) string {
 		if l == model.MetricNameLabel || len(l) == 0 {
 			continue
 		}
-		// Here we use '=' instead of '.' to be able
-		// to later read back the value correctly. Using '.' would
-		// not allow to distinguish labels from values.
+		// Since we use '.' instead of '=' to separate label and values
+		// it means that we can't have an '.' in the metric name. Fortunately
+		// this is prohibited in prometheus metrics.
 		buffer.WriteString(fmt.Sprintf(
-			".%s=%s", string(l), escape(v)))
+			".%s.%s", string(l), escape(v)))
 	}
 	return buffer.String()
 }
