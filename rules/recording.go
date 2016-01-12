@@ -55,6 +55,10 @@ func (rule RecordingRule) eval(timestamp model.Time, engine *promql.Engine) (mod
 		result = query.Exec()
 		vector model.Vector
 	)
+	if result.Err != nil {
+		return nil, err
+	}
+
 	switch result.Value.(type) {
 	case model.Vector:
 		vector, err = result.Vector()
