@@ -123,7 +123,11 @@ func (g *Group) run() {
 	defer close(g.terminated)
 
 	// Wait an initial amount to have consistently slotted intervals.
-	time.Sleep(g.offset())
+	select {
+	case <-time.After(g.offset()):
+	case <-g.done:
+		return
+	}
 
 	iter := func() {
 		start := time.Now()
