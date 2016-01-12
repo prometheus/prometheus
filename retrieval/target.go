@@ -73,9 +73,9 @@ func (t TargetHealth) String() string {
 	case HealthUnknown:
 		return "unknown"
 	case HealthGood:
-		return "healthy"
+		return "up"
 	case HealthBad:
-		return "unhealthy"
+		return "down"
 	}
 	panic("unknown state")
 }
