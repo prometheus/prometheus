@@ -12,6 +12,8 @@
 * [ENHANCEMENT] Ignore lost+found directory during storage version detection
 * [CHANGE] Kubernetes `masters` renamed to `api_servers`
 * [CHANGE] "Healthy" and "unhealthy" targets are now called "up" and "down" in the web UI
+* [CHANGE] Remove undocumented 2nd argument of the `delta` function.
+  (This is a BREAKING CHANGE for users of the undocumented 2nd argument.)
 * [BUGFIX] Return proper HTTP status codes on API errors
 * [BUGFIX] Fix Kubernetes authentication configuration
 * [BUGFIX] Fix stripped OFFSET from in rule evaluation and display
