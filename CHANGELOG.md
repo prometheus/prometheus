@@ -1,4 +1,4 @@
-## 0.16.2 / 2016-01-11
+## 0.16.2 / 2016-01-18
 
 * [FEATURE] Multiple authentication options for EC2 discovery added
 * [FEATURE] Several meta labels for EC2 discovery added
