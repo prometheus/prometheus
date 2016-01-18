@@ -27,7 +27,7 @@
 * [BUGFIX] Fix unhandled error in rule evaluation
 
 Some changes to the Kubernetes service discovery were integration since
-it was releases as a beta feature.
+it was released as a beta feature.
 
 ## 0.16.1 / 2015-10-16
 
