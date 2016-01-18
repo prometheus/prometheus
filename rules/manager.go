@@ -220,8 +220,12 @@ func (g *Group) eval() {
 
 			vector, err := rule.eval(now, g.opts.QueryEngine)
 			if err != nil {
+				// Canceled queries are intentional termination of queries. This normally
+				// happens on shutdown and thus we skip logging of any errors here.
+				if _, ok := err.(promql.ErrQueryCanceled); !ok {
+					log.Warnf("Error while evaluating rule %q: %s", rule, err)
+				}
 				evalFailures.Inc()
-				log.Warnf("Error while evaluating rule %q: %s", rule, err)
 			}
 			var rtyp ruleType
 
