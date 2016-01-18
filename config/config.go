@@ -119,6 +119,11 @@ var (
 		Timeout: Duration(10 * time.Second),
 	}
 
+	// DefaultNerveSDConfig is the default Nerve SD configuration.
+	DefaultNerveSDConfig = NerveSDConfig{
+		Timeout: Duration(10 * time.Second),
+	}
+
 	// DefaultMarathonSDConfig is the default Marathon SD configuration.
 	DefaultMarathonSDConfig = MarathonSDConfig{
 		RefreshInterval: Duration(30 * time.Second),
@@ -367,6 +372,8 @@ type ScrapeConfig struct {
 	ConsulSDConfigs []*ConsulSDConfig `yaml:"consul_sd_configs,omitempty"`
 	// List of Serverset service discovery configurations.
 	ServersetSDConfigs []*ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
+	// NerveSDConfigs is a list of Nerve service discovery configurations.
+	NerveSDConfigs []*NerveSDConfig `yaml:"nerve_sd_configs,omitempty"`
 	// MarathonSDConfigs is a list of Marathon service discovery configurations.
 	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
@@ -645,6 +652,38 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		}
 	}
 	return checkOverflow(c.XXX, "serverset_sd_config")
+}
+
+// NerveSDConfig is the configuration for AirBnB's Nerve in Zookeeper based discovery.
+type NerveSDConfig struct {
+	Servers []string `yaml:"servers"`
+	Paths   []string `yaml:"paths"`
+	Timeout Duration `yaml:"timeout,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultNerveSDConfig
+	type plain NerveSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("nerve SD config must contain at least one Zookeeper server")
+	}
+	if len(c.Paths) == 0 {
+		return fmt.Errorf("nerve SD config must contain at least one path")
+	}
+	for _, path := range c.Paths {
+		if !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("nerve SD config paths must begin with '/': %s", path)
+		}
+	}
+	return checkOverflow(c.XXX, "nerve_sd_config")
 }
 
 // MarathonSDConfig is the configuration for services running on Marathon.
