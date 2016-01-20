@@ -200,6 +200,7 @@ func (n *Handler) Run() {
 }
 
 // SubmitReqs queues the given notification requests for processing.
+// Panics if called on a handler that is not running.
 func (n *Handler) Send(alerts ...*model.Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
