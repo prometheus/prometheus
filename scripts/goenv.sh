@@ -15,7 +15,7 @@ goroot="$1"
 gopath="$2"
 
 go_version_min="1.5"
-go_version_install="1.5.1"
+go_version_install="1.5.3"
 
 vernum() {
 	printf "%03d%03d%03d" $(echo "$1" | tr '.' ' ')
