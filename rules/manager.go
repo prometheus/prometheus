@@ -36,11 +36,7 @@ import (
 )
 
 // Constants for instrumentation.
-const (
-	namespace = "prometheus"
-
-	ruleTypeLabel = "rule_type"
-)
+const namespace = "prometheus"
 
 var (
 	evalDuration = prometheus.NewSummaryVec(
@@ -49,21 +45,23 @@ var (
 			Name:      "rule_evaluation_duration_seconds",
 			Help:      "The duration for a rule to execute.",
 		},
-		[]string{ruleTypeLabel},
+		[]string{"rule_type"},
 	)
-	evalFailures = prometheus.NewCounter(
+	evalFailures = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "rule_evaluation_failures_total",
 			Help:      "The total number of rule evaluation failures.",
 		},
+		[]string{"rule_type"},
 	)
-	evalTotal = prometheus.NewCounter(
+	evalTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "rule_evaluations_total",
 			Help:      "The total number of rule evaluations.",
 		},
+		[]string{"rule_type"},
 	)
 	iterationDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Namespace:  namespace,
@@ -74,6 +72,11 @@ var (
 )
 
 func init() {
+	evalTotal.WithLabelValues(string(ruleTypeAlert))
+	evalTotal.WithLabelValues(string(ruleTypeRecording))
+	evalFailures.WithLabelValues(string(ruleTypeAlert))
+	evalFailures.WithLabelValues(string(ruleTypeRecording))
+
 	prometheus.MustRegister(iterationDuration)
 	prometheus.MustRegister(evalFailures)
 	prometheus.MustRegister(evalDuration)
@@ -200,6 +203,16 @@ func (g *Group) copyState(from *Group) {
 	}
 }
 
+func typeForRule(r Rule) ruleType {
+	switch r.(type) {
+	case *AlertingRule:
+		return ruleTypeAlert
+	case *RecordingRule:
+		return ruleTypeRecording
+	}
+	panic(fmt.Errorf("unknown rule type: %T", r))
+}
+
 // eval runs a single evaluation cycle in which all rules are evaluated in parallel.
 // In the future a single group will be evaluated sequentially to properly handle
 // rule dependency.
@@ -210,13 +223,18 @@ func (g *Group) eval() {
 	)
 
 	for _, rule := range g.rules {
+		rtyp := string(typeForRule(rule))
+
 		wg.Add(1)
 		// BUG(julius): Look at fixing thundering herd.
 		go func(rule Rule) {
 			defer wg.Done()
 
-			start := time.Now()
-			evalTotal.Inc()
+			defer func(t time.Time) {
+				evalDuration.WithLabelValues(rtyp).Observe(float64(time.Since(t)) / float64(time.Second))
+			}(time.Now())
+
+			evalTotal.WithLabelValues(rtyp).Inc()
 
 			vector, err := rule.eval(now, g.opts.QueryEngine)
 			if err != nil {
@@ -225,26 +243,13 @@ func (g *Group) eval() {
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
 					log.Warnf("Error while evaluating rule %q: %s", rule, err)
 				}
-				evalFailures.Inc()
-			}
-			var rtyp ruleType
-
-			switch r := rule.(type) {
-			case *AlertingRule:
-				rtyp = ruleTypeRecording
-				g.sendAlerts(r, now)
-
-			case *RecordingRule:
-				rtyp = ruleTypeAlert
-
-			default:
-				panic(fmt.Errorf("unknown rule type: %T", rule))
+				evalFailures.WithLabelValues(rtyp).Inc()
+				return
 			}
 
-			evalDuration.WithLabelValues(string(rtyp)).Observe(
-				float64(time.Since(start)) / float64(time.Second),
-			)
-
+			if ar, ok := rule.(*AlertingRule); ok {
+				g.sendAlerts(ar, now)
+			}
 			for _, s := range vector {
 				g.opts.SampleAppender.Append(s)
 			}
