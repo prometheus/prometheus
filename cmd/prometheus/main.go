@@ -156,7 +156,7 @@ func Main() int {
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
 
-	// The notification is a dependency of the rule manager. It has to be
+	// The notification handler is a dependency of the rule manager. It has to be
 	// started before and torn down afterwards.
 	go notificationHandler.Run()
 	defer notificationHandler.Stop()
