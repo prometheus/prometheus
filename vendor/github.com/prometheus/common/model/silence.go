@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"regexp"
 	"time"
-	"unicode/utf8"
 )
 
 // Matcher describes a matches the value of a given label.
@@ -54,7 +53,7 @@ func (m *Matcher) Validate() error {
 		if _, err := regexp.Compile(m.Value); err != nil {
 			return fmt.Errorf("invalid regular expression %q", m.Value)
 		}
-	} else if !utf8.ValidString(m.Value) || len(m.Value) == 0 {
+	} else if !LabelValue(m.Value).IsValid() || len(m.Value) == 0 {
 		return fmt.Errorf("invalid value %q", m.Value)
 	}
 	return nil
