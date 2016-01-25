@@ -609,19 +609,20 @@ func (p *parser) unaryExpr() Expr {
 		case *MatrixSelector:
 			s.Offset = offset
 		default:
-			p.errorf("offset modifier must be preceded by a metric or range selector, but follows a %T instead", e)
+			p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
 		}
 	}
 
 	return e
 }
 
-// rangeSelector parses a matrix selector based on a given vector selector.
+// rangeSelector parses a matrix (a.k.a. range) selector based on a given
+// vector selector.
 //
 //		<vector_selector> '[' <duration> ']'
 //
 func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
-	const ctx = "matrix selector"
+	const ctx = "range selector"
 	p.next()
 
 	var erange time.Duration
@@ -948,7 +949,7 @@ func (p *parser) offset() time.Duration {
 	return offset
 }
 
-// vectorSelector parses a new vector selector.
+// vectorSelector parses a new (instant) vector selector.
 //
 //		<metric_identifier> [<label_matchers>]
 //		[<metric_identifier>] <label_matchers>

@@ -228,6 +228,10 @@ var testExpr = []struct {
 		input:  `*test`,
 		fail:   true,
 		errMsg: "no valid expression found",
+	}, {
+		input:  "1 offset 1d",
+		fail:   true,
+		errMsg: "offset modifier must be preceded by an instant or range selector",
 	},
 	// Vector binary operations.
 	{
