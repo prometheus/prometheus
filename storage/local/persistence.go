@@ -67,8 +67,9 @@ const (
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
 	chunkLenWithHeader         = chunkLen + chunkHeaderLen
-	chunkMaxBatchSize          = 62 // Max no. of chunks to load or write in one batch.
-	// Note that 62 is the largest number of chunks that fit into 64kiB on disk.
+	chunkMaxBatchSize          = 62 // Max no. of chunks to load or write in
+	// one batch.  Note that 62 is the largest number of chunks that fit
+	// into 64kiB on disk because chunkHeaderLen is added to each 1k chunk.
 
 	indexingMaxBatchSize  = 1024 * 1024
 	indexingBatchTimeout  = 500 * time.Millisecond // Commit batch when idle for that long.
