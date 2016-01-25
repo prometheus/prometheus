@@ -861,6 +861,12 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 			}
 		}
 
+		headChunkClosed := persistWatermark >= numChunkDescs
+		if !headChunkClosed {
+			// Head chunk is not ready for persisting yet.
+			chunksToPersist--
+		}
+
 		fingerprintToSeries[model.Fingerprint(fp)] = &memorySeries{
 			metric:           model.Metric(metric),
 			chunkDescs:       chunkDescs,
@@ -869,7 +875,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 			chunkDescsOffset: int(chunkDescsOffset),
 			savedFirstTime:   model.Time(savedFirstTime),
 			lastTime:         chunkDescs[len(chunkDescs)-1].lastTime(),
-			headChunkClosed:  persistWatermark >= numChunkDescs,
+			headChunkClosed:  headChunkClosed,
 		}
 	}
 	return sm, chunksToPersist, nil

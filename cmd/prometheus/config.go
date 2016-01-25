@@ -113,7 +113,7 @@ func init() {
 		"How long to retain samples in the local storage.",
 	)
 	cfg.fs.IntVar(
-		&cfg.storage.MaxChunksToPersist, "storage.local.max-chunks-to-persist", 1024*1024,
+		&cfg.storage.MaxChunksToPersist, "storage.local.max-chunks-to-persist", 512*1024,
 		"How many chunks can be waiting for persistence before sample ingestion will stop. Many chunks waiting to be persisted will increase the checkpoint size.",
 	)
 	cfg.fs.DurationVar(
