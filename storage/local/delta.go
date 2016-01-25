@@ -218,7 +218,21 @@ func (c deltaEncodedChunk) marshal(w io.Writer) error {
 		return err
 	}
 	if n != cap(c) {
-		return fmt.Errorf("wanted to write %d bytes, wrote %d", len(c), n)
+		return fmt.Errorf("wanted to write %d bytes, wrote %d", cap(c), n)
+	}
+	return nil
+}
+
+// marshalToBuf implements chunk.
+func (c deltaEncodedChunk) marshalToBuf(buf []byte) error {
+	if len(c) > math.MaxUint16 {
+		panic("chunk buffer length would overflow a 16 bit uint")
+	}
+	binary.LittleEndian.PutUint16(c[deltaHeaderBufLenOffset:], uint16(len(c)))
+
+	n := copy(buf, c)
+	if n != len(c) {
+		return fmt.Errorf("wanted to copy %d bytes to buffer, copied %d", len(c), n)
 	}
 	return nil
 }
