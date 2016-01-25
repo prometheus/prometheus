@@ -377,7 +377,10 @@ func TestRetentionCutoff(t *testing.T) {
 	defer closer.Close()
 
 	// Stop maintenance loop to prevent actual purging.
-	s.loopStopping <- struct{}{}
+	close(s.loopStopping)
+	<-s.loopStopped
+	// Recreate channel to avoid panic when we really shut down.
+	s.loopStopping = make(chan struct{})
 
 	s.dropAfter = 1 * time.Hour
 
