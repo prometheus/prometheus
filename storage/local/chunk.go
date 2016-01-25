@@ -220,6 +220,7 @@ type chunk interface {
 	firstTime() model.Time
 	newIterator() chunkIterator
 	marshal(io.Writer) error
+	marshalToBuf([]byte) error
 	unmarshal(io.Reader) error
 	unmarshalFromBuf([]byte)
 	encoding() chunkEncoding

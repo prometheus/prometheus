@@ -67,7 +67,9 @@ const (
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
 	chunkLenWithHeader         = chunkLen + chunkHeaderLen
-	chunkMaxBatchSize          = 64 // How many chunks to load at most in one batch.
+	chunkMaxBatchSize          = 62 // Max no. of chunks to load or write in
+	// one batch.  Note that 62 is the largest number of chunks that fit
+	// into 64kiB on disk because chunkHeaderLen is added to each 1k chunk.
 
 	indexingMaxBatchSize  = 1024 * 1024
 	indexingBatchTimeout  = 500 * time.Millisecond // Commit batch when idle for that long.
@@ -380,7 +382,7 @@ func (p *persistence) persistChunks(fp model.Fingerprint, chunks []chunk) (index
 	}
 	defer p.closeChunkFile(f)
 
-	if err := writeChunks(f, chunks); err != nil {
+	if err := p.writeChunks(f, chunks); err != nil {
 		return -1, err
 	}
 
@@ -412,8 +414,8 @@ func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffse
 	chunks := make([]chunk, 0, len(indexes))
 	buf := p.bufPool.Get().([]byte)
 	defer func() {
-		// buf may change below, so wrap returning to the pool in a function.
-		// A simple 'defer p.bufPool.Put(buf)' would only return the original buf.
+		// buf may change below. An unwrapped 'defer p.bufPool.Put(buf)'
+		// would only put back the original buf.
 		p.bufPool.Put(buf)
 	}()
 
@@ -1031,7 +1033,7 @@ func (p *persistence) dropAndPersistChunks(
 	offset = int(written / chunkLenWithHeader)
 
 	if len(chunks) > 0 {
-		if err = writeChunks(temp, chunks); err != nil {
+		if err = p.writeChunks(temp, chunks); err != nil {
 			return
 		}
 	}
@@ -1585,6 +1587,37 @@ func (p *persistence) loadFPMappings() (fpMappings, model.Fingerprint, error) {
 	return fpm, highestMappedFP, nil
 }
 
+func (p *persistence) writeChunks(w io.Writer, chunks []chunk) error {
+	b := p.bufPool.Get().([]byte)
+	defer func() {
+		// buf may change below. An unwrapped 'defer p.bufPool.Put(buf)'
+		// would only put back the original buf.
+		p.bufPool.Put(b)
+	}()
+
+	for batchSize := chunkMaxBatchSize; len(chunks) > 0; chunks = chunks[batchSize:] {
+		if batchSize > len(chunks) {
+			batchSize = len(chunks)
+		}
+		writeSize := batchSize * chunkLenWithHeader
+		if cap(b) < writeSize {
+			b = make([]byte, writeSize)
+		}
+		b = b[:writeSize]
+
+		for i, chunk := range chunks[:batchSize] {
+			writeChunkHeader(b[i*chunkLenWithHeader:], chunk)
+			if err := chunk.marshalToBuf(b[i*chunkLenWithHeader+chunkHeaderLen:]); err != nil {
+				return err
+			}
+		}
+		if _, err := w.Write(b); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func offsetForChunkIndex(i int) int64 {
 	return int64(i * chunkLenWithHeader)
 }
@@ -1599,8 +1632,7 @@ func chunkIndexForOffset(offset int64) (int, error) {
 	return int(offset) / chunkLenWithHeader, nil
 }
 
-func writeChunkHeader(w io.Writer, c chunk) error {
-	header := make([]byte, chunkHeaderLen)
+func writeChunkHeader(header []byte, c chunk) {
 	header[chunkHeaderTypeOffset] = byte(c.encoding())
 	binary.LittleEndian.PutUint64(
 		header[chunkHeaderFirstTimeOffset:],
@@ -1610,20 +1642,4 @@ func writeChunkHeader(w io.Writer, c chunk) error {
 		header[chunkHeaderLastTimeOffset:],
 		uint64(c.newIterator().lastTimestamp()),
 	)
-	_, err := w.Write(header)
-	return err
-}
-
-func writeChunks(w io.Writer, chunks []chunk) error {
-	b := bufio.NewWriterSize(w, len(chunks)*chunkLenWithHeader)
-	for _, chunk := range chunks {
-		if err := writeChunkHeader(b, chunk); err != nil {
-			return err
-		}
-
-		if err := chunk.marshal(b); err != nil {
-			return err
-		}
-	}
-	return b.Flush()
 }
