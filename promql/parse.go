@@ -598,6 +598,21 @@ func (p *parser) unaryExpr() Expr {
 		}
 		e = p.rangeSelector(vs)
 	}
+
+	// Parse optional offset.
+	if p.peek().typ == itemOffset {
+		offset := p.offset()
+
+		switch s := e.(type) {
+		case *VectorSelector:
+			s.Offset = offset
+		case *MatrixSelector:
+			s.Offset = offset
+		default:
+			p.errorf("offset modifier must be preceded by a metric or range selector, but follows a %T instead", e)
+		}
+	}
+
 	return e
 }
 
@@ -609,7 +624,7 @@ func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
 	const ctx = "matrix selector"
 	p.next()
 
-	var erange, offset time.Duration
+	var erange time.Duration
 	var err error
 
 	erangeStr := p.expect(itemDuration, ctx).val
@@ -620,27 +635,15 @@ func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
 
 	p.expect(itemRightBracket, ctx)
 
-	// Parse optional offset.
-	if p.peek().typ == itemOffset {
-		p.next()
-		offi := p.expect(itemDuration, ctx)
-
-		offset, err = parseDuration(offi.val)
-		if err != nil {
-			p.error(err)
-		}
-	}
-
 	e := &MatrixSelector{
 		Name:          vs.Name,
 		LabelMatchers: vs.LabelMatchers,
 		Range:         erange,
-		Offset:        offset,
 	}
 	return e
 }
 
-// parseNumber parses a number.
+// number parses a number.
 func (p *parser) number(val string) float64 {
 	n, err := strconv.ParseInt(val, 0, 64)
 	f := float64(n)
@@ -927,10 +930,28 @@ func (p *parser) metric() model.Metric {
 	return m
 }
 
-// metricSelector parses a new metric selector.
+// offset parses an offset modifier.
 //
-//		<metric_identifier> [<label_matchers>] [ offset <duration> ]
-//		[<metric_identifier>] <label_matchers> [ offset <duration> ]
+//		offset <duration>
+//
+func (p *parser) offset() time.Duration {
+	const ctx = "offset"
+
+	p.next()
+	offi := p.expect(itemDuration, ctx)
+
+	offset, err := parseDuration(offi.val)
+	if err != nil {
+		p.error(err)
+	}
+
+	return offset
+}
+
+// vectorSelector parses a new vector selector.
+//
+//		<metric_identifier> [<label_matchers>]
+//		[<metric_identifier>] <label_matchers>
 //
 func (p *parser) vectorSelector(name string) *VectorSelector {
 	const ctx = "metric selector"
@@ -978,22 +999,9 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
 
-	var err error
-	var offset time.Duration
-	// Parse optional offset.
-	if p.peek().typ == itemOffset {
-		p.next()
-		offi := p.expect(itemDuration, ctx)
-
-		offset, err = parseDuration(offi.val)
-		if err != nil {
-			p.error(err)
-		}
-	}
 	return &VectorSelector{
 		Name:          name,
 		LabelMatchers: matchers,
-		Offset:        offset,
 	}
 }
 

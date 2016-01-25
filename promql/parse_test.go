@@ -758,7 +758,7 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric[5m] OFFSET 1`,
 		fail:   true,
-		errMsg: "unexpected number \"1\" in matrix selector, expected duration",
+		errMsg: "unexpected number \"1\" in offset, expected duration",
 	}, {
 		input:  `some_metric[5m] OFFSET 1mm`,
 		fail:   true,
@@ -766,7 +766,11 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric[5m] OFFSET`,
 		fail:   true,
-		errMsg: "unexpected end of input in matrix selector, expected duration",
+		errMsg: "unexpected end of input in offset, expected duration",
+	}, {
+		input:  `some_metric OFFSET 1m[5m]`,
+		fail:   true,
+		errMsg: "could not parse remaining input \"[5m]\"...",
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
@@ -900,10 +904,6 @@ var testExpr = []struct {
 		input:  `sum (some_metric) by test`,
 		fail:   true,
 		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
-	}, {
-		input:  `some_metric[5m] OFFSET`,
-		fail:   true,
-		errMsg: "unexpected end of input in matrix selector, expected duration",
 	}, {
 		input:  `sum () by (test)`,
 		fail:   true,
@@ -1147,7 +1147,7 @@ var testStatement = []struct {
 		input: `
 			# A simple test recording rule.
 			dc:http_request:rate5m = sum(rate(http_request_count[5m])) by (dc)
-	
+
 			# A simple test alerting rule.
 			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5m
 			  LABELS {
@@ -1315,7 +1315,7 @@ var testStatement = []struct {
 			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5
 			  LABELS {
 			    service = "testservice"
-			    # ... more fields here ... 
+			    # ... more fields here ...
 			  }
 			  ANNOTATIONS {
 			    summary = "Global request rate low"
