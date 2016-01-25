@@ -24,6 +24,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/promql"
@@ -264,6 +265,10 @@ func parsePrometheusURL() error {
 		cfg.prometheusURL = fmt.Sprintf("http://%s:%s/", hostname, port)
 	}
 
+	if ok := govalidator.IsURL(cfg.prometheusURL); !ok {
+		return fmt.Errorf("Invalid Prometheus URL: %s", cfg.prometheusURL)
+	}
+
 	promURL, err := url.Parse(cfg.prometheusURL)
 	if err != nil {
 		return err
@@ -281,6 +286,10 @@ func parsePrometheusURL() error {
 func parseInfluxdbURL() error {
 	if cfg.influxdbURL == "" {
 		return nil
+	}
+
+	if ok := govalidator.IsURL(cfg.influxdbURL); !ok {
+		return fmt.Errorf("Invalid InfluxDB URL: %s", cfg.influxdbURL)
 	}
 
 	url, err := url.Parse(cfg.influxdbURL)
