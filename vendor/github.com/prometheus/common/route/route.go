@@ -75,6 +75,11 @@ func (r *Router) Get(path string, h http.HandlerFunc) {
 	r.rtr.GET(r.prefix+path, handle(h))
 }
 
+// Options registers a new OPTIONS route.
+func (r *Router) Options(path string, h http.HandlerFunc) {
+	r.rtr.OPTIONS(r.prefix+path, handle(h))
+}
+
 // Del registers a new DELETE route.
 func (r *Router) Del(path string, h http.HandlerFunc) {
 	r.rtr.DELETE(r.prefix+path, handle(h))

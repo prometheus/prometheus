@@ -174,8 +174,8 @@
 		},
 		{
 			"path": "github.com/prometheus/common/route",
-			"revision": "4fdc91a58c9d3696b982e8a680f4997403132d44",
-			"revisionTime": "2015-10-26T12:04:34+01:00"
+			"revision": "14ca1097bbe21584194c15e391a9dab95ad42a59",
+			"revisionTime": "2016-01-25T23:57:51+01:00"
 		},
 		{
 			"path": "github.com/prometheus/procfs",

@@ -34,6 +34,12 @@ type API struct {
 
 // Register registers the handler for the various endpoints below /api.
 func (api *API) Register(router *route.Router) {
+	// List all the endpoints here instead of using a wildcard route because we
+	// would otherwise handle /api/v1 as well.
+	router.Options("/query", handle("options", api.Options))
+	router.Options("/query_range", handle("options", api.Options))
+	router.Options("/metrics", handle("options", api.Options))
+
 	router.Get("/query", handle("query", api.Query))
 	router.Get("/query_range", handle("query_range", api.QueryRange))
 	router.Get("/metrics", handle("metrics", api.Metrics))

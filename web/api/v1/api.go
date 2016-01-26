@@ -38,6 +38,13 @@ const (
 	errorBadData            = "bad_data"
 )
 
+var corsHeaders = map[string]string{
+	"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
+	"Access-Control-Allow-Methods":  "GET, OPTIONS",
+	"Access-Control-Allow-Origin":   "*",
+	"Access-Control-Expose-Headers": "Date",
+}
+
 type apiError struct {
 	typ errorType
 	err error
@@ -56,10 +63,9 @@ type response struct {
 
 // Enables cross-site script calls.
 func setCORS(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin")
-	w.Header().Set("Access-Control-Allow-Methods", "GET")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Expose-Headers", "Date")
+	for h, v := range corsHeaders {
+		w.Header().Set(h, v)
+	}
 }
 
 type apiFunc func(r *http.Request) (interface{}, *apiError)
@@ -91,14 +97,18 @@ func (api *API) Register(r *route.Router) {
 			setCORS(w)
 			if data, err := f(r); err != nil {
 				respondError(w, err, data)
-			} else {
+			} else if data != nil {
 				respond(w, data)
+			} else {
+				w.WriteHeader(http.StatusNoContent)
 			}
 		})
 		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{
 			Handler: hf,
 		})
 	}
+
+	r.Options("/*path", instr("options", api.options))
 
 	r.Get("/query", instr("query", api.query))
 	r.Get("/query_range", instr("query_range", api.queryRange))
@@ -112,6 +122,10 @@ func (api *API) Register(r *route.Router) {
 type queryData struct {
 	ResultType model.ValueType `json:"resultType"`
 	Result     model.Value     `json:"result"`
+}
+
+func (api *API) options(r *http.Request) (interface{}, *apiError) {
+	return nil, nil
 }
 
 func (api *API) query(r *http.Request) (interface{}, *apiError) {
@@ -255,7 +269,7 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 
 func respond(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	b, err := json.Marshal(&response{
 		Status: statusSuccess,
