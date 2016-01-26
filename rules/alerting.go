@@ -258,7 +258,7 @@ func (rule *AlertingRule) String() string {
 		s += fmt.Sprintf("\n\tFOR %s", strutil.DurationToString(rule.holdDuration))
 	}
 	if len(rule.labels) > 0 {
-		s += fmt.Sprintf("\n\tWITH %s", rule.labels)
+		s += fmt.Sprintf("\n\tLABELS %s", rule.labels)
 	}
 	if len(rule.annotations) > 0 {
 		s += fmt.Sprintf("\n\tANNOTATIONS %s", rule.annotations)
@@ -280,7 +280,7 @@ func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 		s += fmt.Sprintf("\n  FOR %s", strutil.DurationToString(rule.holdDuration))
 	}
 	if len(rule.labels) > 0 {
-		s += fmt.Sprintf("\n  WITH %s", rule.labels)
+		s += fmt.Sprintf("\n  LABELS %s", rule.labels)
 	}
 	if len(rule.annotations) > 0 {
 		s += fmt.Sprintf("\n  ANNOTATIONS %s", rule.annotations)
