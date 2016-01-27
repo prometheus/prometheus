@@ -14,8 +14,6 @@
 package retrieval
 
 import (
-	"time"
-
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -26,14 +24,13 @@ type nopAppender struct{}
 func (a nopAppender) Append(*model.Sample) {
 }
 
-type slowAppender struct{}
-
-func (a slowAppender) Append(*model.Sample) {
-	time.Sleep(time.Millisecond)
+func (a nopAppender) NeedsThrottling() bool {
+	return false
 }
 
 type collectResultAppender struct {
-	result model.Samples
+	result    model.Samples
+	throttled bool
 }
 
 func (a *collectResultAppender) Append(s *model.Sample) {
@@ -43,6 +40,10 @@ func (a *collectResultAppender) Append(s *model.Sample) {
 		}
 	}
 	a.result = append(a.result, s)
+}
+
+func (a *collectResultAppender) NeedsThrottling() bool {
+	return a.throttled
 }
 
 // fakeTargetProvider implements a TargetProvider and allows manual injection

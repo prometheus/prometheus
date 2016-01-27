@@ -66,8 +66,18 @@ var (
 	iterationDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Namespace:  namespace,
 		Name:       "evaluator_duration_seconds",
-		Help:       "The duration for all evaluations to execute.",
+		Help:       "The duration of rule group evaluations.",
 		Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
+	})
+	iterationsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "evaluator_iterations_skipped_total",
+		Help:      "The total number of rule group evaluations skipped due to throttled metric storage.",
+	})
+	iterationsScheduled = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "evaluator_iterations_total",
+		Help:      "The total number of scheduled rule group evaluations, whether skipped or executed.",
 	})
 )
 
@@ -78,6 +88,7 @@ func init() {
 	evalFailures.WithLabelValues(string(ruleTypeRecording))
 
 	prometheus.MustRegister(iterationDuration)
+	prometheus.MustRegister(iterationsSkipped)
 	prometheus.MustRegister(evalFailures)
 	prometheus.MustRegister(evalDuration)
 }
@@ -133,6 +144,11 @@ func (g *Group) run() {
 	}
 
 	iter := func() {
+		iterationsScheduled.Inc()
+		if g.opts.SampleAppender.NeedsThrottling() {
+			iterationsSkipped.Inc()
+			return
+		}
 		start := time.Now()
 		g.eval()
 

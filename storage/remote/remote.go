@@ -124,6 +124,13 @@ func (s *Storage) Append(smpl *model.Sample) {
 	}
 }
 
+// NeedsThrottling implements storage.SampleAppender. It will always return
+// false as a remote storage drops samples on the floor if backlogging instead
+// of asking for throttling.
+func (s *Storage) NeedsThrottling() bool {
+	return false
+}
+
 // Describe implements prometheus.Collector.
 func (s *Storage) Describe(ch chan<- *prometheus.Desc) {
 	for _, q := range s.queues {

@@ -107,7 +107,7 @@ func init() {
 	)
 	cfg.fs.IntVar(
 		&cfg.storage.MemoryChunks, "storage.local.memory-chunks", 1024*1024,
-		"How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.",
+		"How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily. Sample ingestion will be throttled if the configured value is exceeded by more than 10%.",
 	)
 	cfg.fs.DurationVar(
 		&cfg.storage.PersistenceRetentionPeriod, "storage.local.retention", 15*24*time.Hour,
@@ -115,7 +115,7 @@ func init() {
 	)
 	cfg.fs.IntVar(
 		&cfg.storage.MaxChunksToPersist, "storage.local.max-chunks-to-persist", 512*1024,
-		"How many chunks can be waiting for persistence before sample ingestion will stop. Many chunks waiting to be persisted will increase the checkpoint size.",
+		"How many chunks can be waiting for persistence before sample ingestion will be throttled. Many chunks waiting to be persisted will increase the checkpoint size.",
 	)
 	cfg.fs.DurationVar(
 		&cfg.storage.CheckpointInterval, "storage.local.checkpoint-interval", 5*time.Minute,
