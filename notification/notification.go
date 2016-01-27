@@ -274,7 +274,6 @@ func (n *Handler) send(alerts ...*model.Alert) error {
 func (n *Handler) Stop() {
 	log.Info("Stopping notification handler...")
 
-	close(n.more)
 	n.cancel()
 }
 
