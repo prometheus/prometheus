@@ -17,9 +17,9 @@ up until version 0.18.
 * [ENHANCEMENT] Added more storage instrumentation
 * [ENHANCEMENT] Improved instrumentation of notification handler
 * [BUGFIX] Do not count head chunks as chunks waiting for persistence
-* [BUGFIX] Handle OPTIOPNS HTTP requests to the API correctly
+* [BUGFIX] Handle OPTIONS HTTP requests to the API correctly
 * [BUGFIX] Parsing of ranges in PromQL fixed
-* [BUGFIX] Correctly validate URL flag paramters
+* [BUGFIX] Correctly validate URL flag parameters
 
 ## 0.16.2 / 2016-01-18
 
