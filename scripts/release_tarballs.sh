@@ -33,7 +33,7 @@ for GOOS in "darwin" "freebsd" "linux" "windows"; do
     echo " >   $tarball"
     mkdir -p "${tarball_dir}"
     cp -a "prometheus${ext}" "promtool${ext}" consoles console_libraries "${tarball_dir}"
-    tar --owner=root --group=root -czf "${tarball}" "${tarball_dir}"
+    tar -czf "${tarball}" "${tarball_dir}"
     rm -rf "${tarball_dir}"
     rm "prometheus${ext}" "promtool${ext}"
   done
