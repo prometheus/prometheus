@@ -8,6 +8,11 @@
 			"revisionTime": "2015-09-08T20:46:18Z"
 		},
 		{
+			"path": "github.com/asaskevich/govalidator",
+			"revision": "129580890d97de923d9d9aec06cb1aa771812aff",
+			"revisionTime": "2015-12-29T23:28:36+03:00"
+		},
+		{
 			"path": "github.com/aws/aws-sdk-go/aws",
 			"revision": "a11ddd7a070196035bc94b6c04a2a0114c06a395",
 			"revisionTime": "2015-08-20T12:44:31-07:00"
