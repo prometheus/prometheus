@@ -1,10 +1,10 @@
 ## 0.17.0 / 2016-01-27
 
-This version no longer works with Alertmanager version 0.4.0 and earlier!
+This version no longer works with Alertmanager 0.4.0 and earlier!
 The alerting rule syntax has changed as well but the old syntax is supported
 up until version 0.18.
 
-* [CHANGE] Integrate with Alertmanager version 0.1.0 and higher
+* [CHANGE] Integrate with Alertmanager 0.1.0 and higher
 * [CHANGE] Degraded storage mode renamed to rushed mode
 * [CHANGE] New alerting rule syntax
 * [CHANGE] Add label validation on ingestion
