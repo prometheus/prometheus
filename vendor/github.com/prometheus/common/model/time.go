@@ -163,10 +163,10 @@ func (t *Time) UnmarshalJSON(b []byte) error {
 // This type should not propagate beyond the scope of input/output processing.
 type Duration time.Duration
 
-var durationRE = regexp.MustCompile("^([0-9]+)(d|h|m|s|ms)$")
+var durationRE = regexp.MustCompile("^([0-9]+)(y|w|d|h|m|s|ms)$")
 
 // StringToDuration parses a string into a time.Duration, assuming that a year
-// a day always has 24h.
+// always has 365d, a week always has 7d, and a day always has 24h.
 func ParseDuration(durationStr string) (Duration, error) {
 	matches := durationRE.FindStringSubmatch(durationStr)
 	if len(matches) != 3 {
@@ -177,6 +177,10 @@ func ParseDuration(durationStr string) (Duration, error) {
 		dur  = time.Duration(n) * time.Millisecond
 	)
 	switch unit := matches[2]; unit {
+	case "y":
+		dur *= 1000 * 60 * 60 * 24 * 365
+	case "w":
+		dur *= 1000 * 60 * 60 * 24 * 7
 	case "d":
 		dur *= 1000 * 60 * 60 * 24
 	case "h":
@@ -199,6 +203,8 @@ func (d Duration) String() string {
 		unit = "ms"
 	)
 	factors := map[string]int64{
+		"y":  1000 * 60 * 60 * 24 * 365,
+		"w":  1000 * 60 * 60 * 24 * 7,
 		"d":  1000 * 60 * 60 * 24,
 		"h":  1000 * 60 * 60,
 		"m":  1000 * 60,
@@ -207,6 +213,10 @@ func (d Duration) String() string {
 	}
 
 	switch int64(0) {
+	case ms % factors["y"]:
+		unit = "y"
+	case ms % factors["w"]:
+		unit = "w"
 	case ms % factors["d"]:
 		unit = "d"
 	case ms % factors["h"]:

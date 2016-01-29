@@ -26,7 +26,6 @@ import (
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -98,11 +97,11 @@ func (t *Test) parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	}
 	parts := patLoad.FindStringSubmatch(lines[i])
 
-	gap, err := strutil.StringToDuration(parts[1])
+	gap, err := model.ParseDuration(parts[1])
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}
-	cmd := newLoadCmd(gap)
+	cmd := newLoadCmd(time.Duration(gap))
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
@@ -141,11 +140,11 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		return i, nil, err
 	}
 
-	offset, err := strutil.StringToDuration(at)
+	offset, err := model.ParseDuration(at)
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}
-	ts := testStartTime.Add(offset)
+	ts := testStartTime.Add(time.Duration(offset))
 
 	cmd := newEvalCmd(expr, ts, ts, 0)
 	switch mod {

@@ -420,8 +420,8 @@ func TestURLParams(t *testing.T) {
 	target := NewTarget(
 		&config.ScrapeConfig{
 			JobName:        "test_job1",
-			ScrapeInterval: config.Duration(1 * time.Minute),
-			ScrapeTimeout:  config.Duration(1 * time.Second),
+			ScrapeInterval: model.Duration(1 * time.Minute),
+			ScrapeTimeout:  model.Duration(1 * time.Second),
 			Scheme:         serverURL.Scheme,
 			Params: url.Values{
 				"foo": []string{"bar", "baz"},
@@ -441,7 +441,7 @@ func TestURLParams(t *testing.T) {
 
 func newTestTarget(targetURL string, deadline time.Duration, baseLabels model.LabelSet) *Target {
 	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: config.Duration(deadline),
+		ScrapeTimeout: model.Duration(deadline),
 	}
 	c, _ := newHTTPClient(cfg)
 	t := &Target{
@@ -481,7 +481,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: config.Duration(1 * time.Second),
+		ScrapeTimeout: model.Duration(1 * time.Second),
 		BearerToken:   "1234",
 	}
 	c, err := newHTTPClient(cfg)
@@ -509,7 +509,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.ScrapeConfig{
-		ScrapeTimeout:   config.Duration(1 * time.Second),
+		ScrapeTimeout:   model.Duration(1 * time.Second),
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
 	c, err := newHTTPClient(cfg)
@@ -536,7 +536,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: config.Duration(1 * time.Second),
+		ScrapeTimeout: model.Duration(1 * time.Second),
 		BasicAuth: &config.BasicAuth{
 			Username: "user",
 			Password: "password123",
@@ -566,7 +566,7 @@ func TestNewHTTPCACert(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: config.Duration(1 * time.Second),
+		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
 			CAFile: "testdata/ca.cer",
 		},
@@ -599,7 +599,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: config.Duration(1 * time.Second),
+		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
 			CAFile:   "testdata/ca.cer",
 			CertFile: "testdata/client.cer",

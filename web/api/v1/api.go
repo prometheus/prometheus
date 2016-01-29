@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 type status string
@@ -324,8 +323,8 @@ func parseDuration(s string) (time.Duration, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		return time.Duration(d * float64(time.Second)), nil
 	}
-	if d, err := strutil.StringToDuration(s); err == nil {
-		return d, nil
+	if d, err := model.ParseDuration(s); err == nil {
+		return time.Duration(d), nil
 	}
 	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
 }

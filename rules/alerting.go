@@ -58,7 +58,7 @@ func (s AlertState) String() string {
 	case StateFiring:
 		return "firing"
 	}
-	panic(fmt.Errorf("unknown alert state: %v", s))
+	panic(fmt.Errorf("unknown alert state: %v", s.String()))
 }
 
 // Alert is the user-level representation of a single instance of an alerting rule.
@@ -255,7 +255,7 @@ func (rule *AlertingRule) String() string {
 	s := fmt.Sprintf("ALERT %s", rule.name)
 	s += fmt.Sprintf("\n\tIF %s", rule.vector)
 	if rule.holdDuration > 0 {
-		s += fmt.Sprintf("\n\tFOR %s", strutil.DurationToString(rule.holdDuration))
+		s += fmt.Sprintf("\n\tFOR %s", model.Duration(rule.holdDuration))
 	}
 	if len(rule.labels) > 0 {
 		s += fmt.Sprintf("\n\tLABELS %s", rule.labels)
@@ -277,7 +277,7 @@ func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	s := fmt.Sprintf("ALERT <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()), rule.name)
 	s += fmt.Sprintf("\n  IF <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(rule.vector.String()), rule.vector)
 	if rule.holdDuration > 0 {
-		s += fmt.Sprintf("\n  FOR %s", strutil.DurationToString(rule.holdDuration))
+		s += fmt.Sprintf("\n  FOR %s", model.Duration(rule.holdDuration))
 	}
 	if len(rule.labels) > 0 {
 		s += fmt.Sprintf("\n  LABELS %s", rule.labels)
