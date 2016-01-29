@@ -1140,12 +1140,12 @@ func (p *parser) unquoteString(s string) string {
 }
 
 func parseDuration(ds string) (time.Duration, error) {
-	dur, err := strutil.StringToDuration(ds)
+	dur, err := model.ParseDuration(ds)
 	if err != nil {
 		return 0, err
 	}
 	if dur == 0 {
 		return 0, fmt.Errorf("duration must be greater than 0")
 	}
-	return dur, nil
+	return time.Duration(dur), nil
 }

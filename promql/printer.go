@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // Tree returns a string of the tree structure of the given node.
@@ -104,7 +103,7 @@ func (node *AlertStmt) String() string {
 	s := fmt.Sprintf("ALERT %s", node.Name)
 	s += fmt.Sprintf("\n\tIF %s", node.Expr)
 	if node.Duration > 0 {
-		s += fmt.Sprintf("\n\tFOR %s", strutil.DurationToString(node.Duration))
+		s += fmt.Sprintf("\n\tFOR %s", model.Duration(node.Duration))
 	}
 	if len(node.Labels) > 0 {
 		s += fmt.Sprintf("\n\tLABELS %s", node.Labels)
@@ -178,9 +177,9 @@ func (node *MatrixSelector) String() string {
 	}
 	offset := ""
 	if node.Offset != time.Duration(0) {
-		offset = fmt.Sprintf(" OFFSET %s", strutil.DurationToString(node.Offset))
+		offset = fmt.Sprintf(" OFFSET %s", model.Duration(node.Offset))
 	}
-	return fmt.Sprintf("%s[%s]%s", vecSelector.String(), strutil.DurationToString(node.Range), offset)
+	return fmt.Sprintf("%s[%s]%s", vecSelector.String(), model.Duration(node.Range), offset)
 }
 
 func (node *NumberLiteral) String() string {
@@ -210,7 +209,7 @@ func (node *VectorSelector) String() string {
 	}
 	offset := ""
 	if node.Offset != time.Duration(0) {
-		offset = fmt.Sprintf(" OFFSET %s", strutil.DurationToString(node.Offset))
+		offset = fmt.Sprintf(" OFFSET %s", model.Duration(node.Offset))
 	}
 
 	if len(labelStrings) == 0 {

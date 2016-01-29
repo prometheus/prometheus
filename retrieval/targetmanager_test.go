@@ -75,7 +75,7 @@ func TestPrefixedTargetProvider(t *testing.T) {
 func TestTargetManagerChan(t *testing.T) {
 	testJob1 := &config.ScrapeConfig{
 		JobName:        "test_job1",
-		ScrapeInterval: config.Duration(1 * time.Minute),
+		ScrapeInterval: model.Duration(1 * time.Minute),
 		TargetGroups: []*config.TargetGroup{{
 			Targets: []model.LabelSet{
 				{model.AddressLabel: "example.org:80"},
@@ -204,7 +204,7 @@ func TestTargetManagerChan(t *testing.T) {
 func TestTargetManagerConfigUpdate(t *testing.T) {
 	testJob1 := &config.ScrapeConfig{
 		JobName:        "test_job1",
-		ScrapeInterval: config.Duration(1 * time.Minute),
+		ScrapeInterval: model.Duration(1 * time.Minute),
 		Params: url.Values{
 			"testParam": []string{"paramValue", "secondValue"},
 		},
@@ -234,7 +234,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 	}
 	testJob2 := &config.ScrapeConfig{
 		JobName:        "test_job2",
-		ScrapeInterval: config.Duration(1 * time.Minute),
+		ScrapeInterval: model.Duration(1 * time.Minute),
 		TargetGroups: []*config.TargetGroup{
 			{
 				Targets: []model.LabelSet{
@@ -288,7 +288,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 	// Test that targets without host:port addresses are dropped.
 	testJob3 := &config.ScrapeConfig{
 		JobName:        "test_job1",
-		ScrapeInterval: config.Duration(1 * time.Minute),
+		ScrapeInterval: model.Duration(1 * time.Minute),
 		TargetGroups: []*config.TargetGroup{{
 			Targets: []model.LabelSet{
 				{model.AddressLabel: "example.net:80"},

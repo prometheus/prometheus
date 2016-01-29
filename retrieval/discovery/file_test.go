@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/config"
 )
 
@@ -22,7 +24,7 @@ func testFileSD(t *testing.T, ext string) {
 	// whether file watches work as expected.
 	var conf config.FileSDConfig
 	conf.Names = []string{"fixtures/_*" + ext}
-	conf.RefreshInterval = config.Duration(1 * time.Hour)
+	conf.RefreshInterval = model.Duration(1 * time.Hour)
 
 	var (
 		fsd  = NewFileDiscovery(&conf)
