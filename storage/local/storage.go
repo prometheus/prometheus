@@ -47,9 +47,9 @@ const (
 	persintenceUrgencyScoreForLeavingRushedMode  = 0.7
 
 	// This factor times -storage.local.memory-chunks is the number of
-	// memory chunks we tolerate before suspending ingestion (TODO!). It is
-	// also a basis for calculating the persistenceUrgencyScore.
-	toleranceFactorForMemChunks = 1.1
+	// memory chunks we tolerate before throttling the storage. It is also a
+	// basis for calculating the persistenceUrgencyScore.
+	toleranceFactorMemChunks = 1.1
 	// This factor times -storage.local.max-chunks-to-persist is the minimum
 	// required number of chunks waiting for persistence before the number
 	// of chunks in memory may influence the persistenceUrgencyScore. (In
@@ -121,9 +121,10 @@ type syncStrategy func() bool
 
 type memorySeriesStorage struct {
 	// numChunksToPersist has to be aligned for atomic operations.
-	numChunksToPersist int64 // The number of chunks waiting for persistence.
-	maxChunksToPersist int   // If numChunksToPersist reaches this threshold, ingestion will stall.
-	rushed             bool  // Whether the storage is in rushed mode.
+	numChunksToPersist int64         // The number of chunks waiting for persistence.
+	maxChunksToPersist int           // If numChunksToPersist reaches this threshold, ingestion will be throttled.
+	rushed             bool          // Whether the storage is in rushed mode.
+	throttled          chan struct{} // This chan is sent to whenever NeedsThrottling() returns true (for logging).
 
 	fpLocker   *fingerprintLocker
 	fpToSeries *seriesMap
@@ -180,6 +181,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 
 		loopStopping:               make(chan struct{}),
 		loopStopped:                make(chan struct{}),
+		throttled:                  make(chan struct{}, 1),
 		maxMemoryChunks:            o.MemoryChunks,
 		dropAfter:                  o.PersistenceRetentionPeriod,
 		checkpointInterval:         o.CheckpointInterval,
@@ -306,6 +308,7 @@ func (s *memorySeriesStorage) Start() (err error) {
 	}
 
 	go s.handleEvictList()
+	go s.logThrottling()
 	go s.loop()
 
 	return nil
@@ -571,16 +574,6 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) {
 			delete(sample.Metric, ln)
 		}
 	}
-	if s.getNumChunksToPersist() >= s.maxChunksToPersist {
-		log.Warnf(
-			"%d chunks waiting for persistence, sample ingestion suspended.",
-			s.getNumChunksToPersist(),
-		)
-		for s.getNumChunksToPersist() >= s.maxChunksToPersist {
-			time.Sleep(time.Second)
-		}
-		log.Warn("Sample ingestion resumed.")
-	}
 	rawFP := sample.Metric.FastFingerprint()
 	s.fpLocker.Lock(rawFP)
 	fp, err := s.mapper.mapFP(rawFP, sample.Metric)
@@ -614,6 +607,57 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) {
 	s.fpLocker.Unlock(fp)
 	s.ingestedSamplesCount.Inc()
 	s.incNumChunksToPersist(completedChunksCount)
+}
+
+// NeedsThrottling implements Storage.
+func (s *memorySeriesStorage) NeedsThrottling() bool {
+	if s.getNumChunksToPersist() > s.maxChunksToPersist ||
+		float64(atomic.LoadInt64(&numMemChunks)) > float64(s.maxMemoryChunks)*toleranceFactorMemChunks {
+		select {
+		case s.throttled <- struct{}{}:
+		default: // Do nothing, signal aready pending.
+		}
+		return true
+	}
+	return false
+}
+
+// logThrottling handles logging of throttled events and has to be started as a
+// goroutine. It stops once s.loopStopping is closed.
+//
+// Logging strategy: Whenever Throttle() is called and returns true, an signal
+// is sent to s.throttled. If that happens for the first time, an Error is
+// logged that the storage is now throttled. As long as signals continues to be
+// sent via s.throttled at least once per minute, nothing else is logged. Once
+// no signal has arrived for a minute, an Info is logged that the storage is not
+// throttled anymore. This resets things to the initial state, i.e. once a
+// signal arrives again, the Error will be logged again.
+func (s *memorySeriesStorage) logThrottling() {
+	timer := time.NewTimer(time.Minute)
+	timer.Stop()
+
+	for {
+		select {
+		case <-s.throttled:
+			if !timer.Reset(time.Minute) {
+				log.
+					With("chunksToPersist", s.getNumChunksToPersist()).
+					With("maxChunksToPersist", s.maxChunksToPersist).
+					With("memoryChunks", atomic.LoadInt64(&numMemChunks)).
+					With("maxToleratedMemChunks", int(float64(s.maxMemoryChunks)*toleranceFactorMemChunks)).
+					Error("Storage needs throttling. Scrapes and rule evaluations will be skipped.")
+			}
+		case <-timer.C:
+			log.
+				With("chunksToPersist", s.getNumChunksToPersist()).
+				With("maxChunksToPersist", s.maxChunksToPersist).
+				With("memoryChunks", atomic.LoadInt64(&numMemChunks)).
+				With("maxToleratedMemChunks", int(float64(s.maxMemoryChunks)*toleranceFactorMemChunks)).
+				Info("Storage does not need throttling anymore.")
+		case <-s.loopStopping:
+			return
+		}
+	}
 }
 
 func (s *memorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Metric) *memorySeries {
@@ -1210,7 +1254,7 @@ func (s *memorySeriesStorage) calculatePersistenceUrgencyScore() float64 {
 	if chunksToPersist > maxChunksToPersist*factorMinChunksToPersist {
 		score = math.Max(
 			score,
-			(memChunks/maxMemChunks-1)/(toleranceFactorForMemChunks-1),
+			(memChunks/maxMemChunks-1)/(toleranceFactorMemChunks-1),
 		)
 	}
 	if score > 1 {
@@ -1230,11 +1274,11 @@ func (s *memorySeriesStorage) calculatePersistenceUrgencyScore() float64 {
 		s.rushedMode.Set(0)
 		log.
 			With("urgencyScore", score).
-			With("chunksToPersist", chunksToPersist).
-			With("maxChunksToPersist", maxChunksToPersist).
-			With("memoryChunks", memChunks).
-			With("maxMemoryChunks", maxMemChunks).
-			Warn("Storage has left rushed mode.")
+			With("chunksToPersist", int(chunksToPersist)).
+			With("maxChunksToPersist", int(maxChunksToPersist)).
+			With("memoryChunks", int(memChunks)).
+			With("maxMemoryChunks", int(maxMemChunks)).
+			Info("Storage has left rushed mode.")
 		return score
 	}
 	if score > persintenceUrgencyScoreForEnteringRushedMode {
@@ -1243,10 +1287,10 @@ func (s *memorySeriesStorage) calculatePersistenceUrgencyScore() float64 {
 		s.rushedMode.Set(1)
 		log.
 			With("urgencyScore", score).
-			With("chunksToPersist", chunksToPersist).
-			With("maxChunksToPersist", maxChunksToPersist).
-			With("memoryChunks", memChunks).
-			With("maxMemoryChunks", maxMemChunks).
+			With("chunksToPersist", int(chunksToPersist)).
+			With("maxChunksToPersist", int(maxChunksToPersist)).
+			With("memoryChunks", int(memChunks)).
+			With("maxMemoryChunks", int(maxMemChunks)).
 			Warn("Storage has entered rushed mode.")
 		return 1
 	}

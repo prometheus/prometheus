@@ -139,12 +139,12 @@ func TestTargetScrapeUpdatesState(t *testing.T) {
 	}
 }
 
-func TestTargetScrapeWithFullChannel(t *testing.T) {
+func TestTargetScrapeWithThrottledStorage(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-				for i := 0; i < 2*ingestedSamplesCap; i++ {
+				for i := 0; i < 10; i++ {
 					w.Write([]byte(
 						fmt.Sprintf("test_metric_%d{foo=\"bar\"} 123.456\n", i),
 					))
@@ -155,15 +155,21 @@ func TestTargetScrapeWithFullChannel(t *testing.T) {
 	defer server.Close()
 
 	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{"dings": "bums"})
-	// Affects full channel but not HTTP fetch
-	testTarget.deadline = 0
 
-	testTarget.scrape(slowAppender{})
+	go testTarget.RunScraper(&collectResultAppender{throttled: true})
+
+	// Enough time for a scrape to happen.
+	time.Sleep(20 * time.Millisecond)
+
+	testTarget.StopScraper()
+	// Wait for it to take effect.
+	time.Sleep(20 * time.Millisecond)
+
 	if testTarget.status.Health() != HealthBad {
 		t.Errorf("Expected target state %v, actual: %v", HealthBad, testTarget.status.Health())
 	}
-	if testTarget.status.LastError() != errIngestChannelFull {
-		t.Errorf("Expected target error %q, actual: %q", errIngestChannelFull, testTarget.status.LastError())
+	if testTarget.status.LastError() != errSkippedScrape {
+		t.Errorf("Expected target error %q, actual: %q", errSkippedScrape, testTarget.status.LastError())
 	}
 }
 
@@ -450,7 +456,6 @@ func newTestTarget(targetURL string, deadline time.Duration, baseLabels model.La
 			Host:   strings.TrimLeft(targetURL, "http://"),
 			Path:   "/metrics",
 		},
-		deadline:        deadline,
 		status:          &TargetStatus{},
 		scrapeInterval:  1 * time.Millisecond,
 		httpClient:      c,

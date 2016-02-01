@@ -34,6 +34,9 @@ type Storage interface {
 	// from the provided Sample as those labels are considered equivalent to
 	// a label not present at all.
 	Append(*model.Sample)
+	// NeedsThrottling returns true if the Storage has too many chunks in memory
+	// already or has too many chunks waiting for persistence.
+	NeedsThrottling() bool
 	// NewPreloader returns a new Preloader which allows preloading and pinning
 	// series data into memory for use within a query.
 	NewPreloader() Preloader
