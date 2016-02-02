@@ -27,7 +27,7 @@ type SampleAppender interface {
 	// sending samples. Local storage implementations will only drop metrics
 	// upon unrecoverable errors. Reporting any errors is done via metrics
 	// and logs and not the concern of the caller.
-	Append(*model.Sample)
+	Append(*model.Sample) error
 	// NeedsThrottling returns true if the underlying storage wishes to not
 	// receive any more samples. Append will still work but might lead to
 	// undue resource usage. It is recommended to call NeedsThrottling once
@@ -53,10 +53,16 @@ type Fanout []SampleAppender
 // Append implements SampleAppender. It appends the provided sample to all
 // SampleAppenders in the Fanout slice and waits for each append to complete
 // before proceeding with the next.
-func (f Fanout) Append(s *model.Sample) {
+// If any of the SampleAppenders returns an error, the first one is returned
+// at the end.
+func (f Fanout) Append(s *model.Sample) error {
+	var err error
 	for _, a := range f {
-		a.Append(s)
+		if e := a.Append(s); e != nil && err == nil {
+			err = e
+		}
 	}
+	return err
 }
 
 // NeedsThrottling returns true if at least one of the SampleAppenders in the

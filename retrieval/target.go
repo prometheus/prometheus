@@ -32,6 +32,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -449,14 +450,28 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 		},
 	}
 
-	var samples model.Vector
+	var (
+		samples       model.Vector
+		numOutOfOrder int
+	)
 	for {
 		if err = sdec.Decode(&samples); err != nil {
 			break
 		}
 		for _, s := range samples {
-			appender.Append(s)
+			err := appender.Append(s)
+			if err != nil {
+				if err == local.ErrOutOfOrderSample {
+					numOutOfOrder++
+				} else {
+					log.Warnf("Error inserting sample %v: %s", s, err)
+				}
+			}
+
 		}
+	}
+	if numOutOfOrder > 0 {
+		log.Warnf("Error on ingesting %d out-of-order samples")
 	}
 
 	if err == io.EOF {
@@ -472,7 +487,7 @@ type ruleLabelsAppender struct {
 	labels model.LabelSet
 }
 
-func (app ruleLabelsAppender) Append(s *model.Sample) {
+func (app ruleLabelsAppender) Append(s *model.Sample) error {
 	for ln, lv := range app.labels {
 		if v, ok := s.Metric[ln]; ok && v != "" {
 			s.Metric[model.ExportedLabelPrefix+ln] = v
@@ -480,7 +495,7 @@ func (app ruleLabelsAppender) Append(s *model.Sample) {
 		s.Metric[ln] = lv
 	}
 
-	app.SampleAppender.Append(s)
+	return app.SampleAppender.Append(s)
 }
 
 type honorLabelsAppender struct {
@@ -491,14 +506,14 @@ type honorLabelsAppender struct {
 // Merges the sample's metric with the given labels if the label is not
 // already present in the metric.
 // This also considers labels explicitly set to the empty string.
-func (app honorLabelsAppender) Append(s *model.Sample) {
+func (app honorLabelsAppender) Append(s *model.Sample) error {
 	for ln, lv := range app.labels {
 		if _, ok := s.Metric[ln]; !ok {
 			s.Metric[ln] = lv
 		}
 	}
 
-	app.SampleAppender.Append(s)
+	return app.SampleAppender.Append(s)
 }
 
 // Applies a set of relabel configurations to the sample's metric
@@ -508,19 +523,18 @@ type relabelAppender struct {
 	relabelings []*config.RelabelConfig
 }
 
-func (app relabelAppender) Append(s *model.Sample) {
+func (app relabelAppender) Append(s *model.Sample) error {
 	labels, err := Relabel(model.LabelSet(s.Metric), app.relabelings...)
 	if err != nil {
-		log.Errorf("Error while relabeling metric %s: %s", s.Metric, err)
-		return
+		return fmt.Errorf("metric relabeling error %s: %s", s.Metric, err)
 	}
 	// Check if the timeseries was dropped.
 	if labels == nil {
-		return
+		return nil
 	}
 	s.Metric = model.Metric(labels)
 
-	app.SampleAppender.Append(s)
+	return app.SampleAppender.Append(s)
 }
 
 // URL returns a copy of the target's URL.
