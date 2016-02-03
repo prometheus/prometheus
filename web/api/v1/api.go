@@ -15,6 +15,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -74,16 +75,18 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 type API struct {
 	Storage     local.Storage
 	QueryEngine *promql.Engine
+	PathPrefix  string
 
 	context func(r *http.Request) context.Context
 	now     func() model.Time
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st local.Storage) *API {
+func NewAPI(qe *promql.Engine, st local.Storage, pathPrefix string) *API {
 	return &API{
 		QueryEngine: qe,
 		Storage:     st,
+		PathPrefix:  pathPrefix,
 		context:     route.Context,
 		now:         model.Now,
 	}
@@ -111,6 +114,7 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/query", instr("query", api.query))
 	r.Get("/query_range", instr("query_range", api.queryRange))
+	r.Get("/query_rule", instr("query_rule", api.queryRule))
 
 	r.Get("/label/:name/values", instr("label_values", api.labelValues))
 
@@ -200,6 +204,62 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 	}, nil
+}
+
+func (api *API) queryRule(r *http.Request) (interface{}, *apiError) {
+	end, err := defaultTime(r.FormValue("end"), api.now())
+	if err != nil {
+		return nil, &apiError{errorBadData, err}
+	}
+
+	count, err := defaultInt(r.FormValue("count"), 1)
+	if err != nil {
+		return nil, &apiError{errorBadData, err}
+	}
+
+	step, err := defaultInt(r.FormValue("step"), 60)
+	if err != nil {
+		return nil, &apiError{errorBadData, err}
+	}
+
+	// start evaluating rules based on the 'end' time,
+	// this is user friendly:
+	// "what alerts would fire at 'end' time, based on the past 5 minutes"
+	start := end.Add(-time.Second * time.Duration((count-1)*step))
+
+	st, err := promql.ParseStmts(string(r.FormValue("query")))
+	if err != nil {
+		return nil, &apiError{errorBadData, err}
+	}
+
+	rls, err := rules.NewRules(st)
+	if err != nil {
+		return nil, &apiError{errorBadData, err}
+	}
+
+	var v []interface{}
+	for _, r := range rls {
+		for i := 0; i < count; i++ {
+			ts := start.Add(time.Duration(step*i) * time.Second)
+			_, err := r.Eval(ts, api.QueryEngine)
+			if err != nil {
+				switch err.(type) {
+				case promql.ErrQueryCanceled:
+					return nil, &apiError{errorCanceled, err}
+				case promql.ErrQueryTimeout:
+					return nil, &apiError{errorTimeout, err}
+				}
+				return nil, &apiError{errorExec, err}
+			}
+		}
+
+		if r, ok := r.(*rules.AlertingRule); ok {
+			for _, a := range r.Expand(end, api.QueryEngine, api.PathPrefix) {
+				v = append(v, a)
+			}
+		}
+	}
+	return v, nil
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
@@ -306,6 +366,20 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 		return
 	}
 	w.Write(b)
+}
+
+func defaultTime(value string, t model.Time) (model.Time, error) {
+	if value == "" {
+		return t, nil
+	}
+	return parseTime(value)
+}
+
+func defaultInt(value string, i int) (int, error) {
+	if value == "" {
+		return i, nil
+	}
+	return strconv.Atoi(value)
 }
 
 func parseTime(s string) (model.Time, error) {
