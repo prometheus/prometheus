@@ -104,8 +104,8 @@ func (s *Storage) Stop() {
 	}
 }
 
-// Append implements storage.SampleAppender.
-func (s *Storage) Append(smpl *model.Sample) {
+// Append implements storage.SampleAppender. Always returns nil.
+func (s *Storage) Append(smpl *model.Sample) error {
 	s.mtx.RLock()
 
 	var snew model.Sample
@@ -122,6 +122,7 @@ func (s *Storage) Append(smpl *model.Sample) {
 	for _, q := range s.queues {
 		q.Append(&snew)
 	}
+	return nil
 }
 
 // NeedsThrottling implements storage.SampleAppender. It will always return

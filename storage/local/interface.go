@@ -33,7 +33,7 @@ type Storage interface {
 	// processing.) The implementation might remove labels with empty value
 	// from the provided Sample as those labels are considered equivalent to
 	// a label not present at all.
-	Append(*model.Sample)
+	Append(*model.Sample) error
 	// NeedsThrottling returns true if the Storage has too many chunks in memory
 	// already or has too many chunks waiting for persistence.
 	NeedsThrottling() bool

@@ -567,8 +567,10 @@ func (s *memorySeriesStorage) DropMetricsForFingerprints(fps ...model.Fingerprin
 	}
 }
 
+var ErrOutOfOrderSample = fmt.Errorf("sample timestamp out of order")
+
 // Append implements Storage.
-func (s *memorySeriesStorage) Append(sample *model.Sample) {
+func (s *memorySeriesStorage) Append(sample *model.Sample) error {
 	for ln, lv := range sample.Metric {
 		if len(lv) == 0 {
 			delete(sample.Metric, ln)
@@ -589,16 +591,16 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) {
 	series := s.getOrCreateSeries(fp, sample.Metric)
 
 	if sample.Timestamp <= series.lastTime {
+		s.fpLocker.Unlock(fp)
 		// Don't log and track equal timestamps, as they are a common occurrence
 		// when using client-side timestamps (e.g. Pushgateway or federation).
 		// It would be even better to also compare the sample values here, but
 		// we don't have efficient access to a series's last value.
 		if sample.Timestamp != series.lastTime {
-			log.Warnf("Ignoring sample with out-of-order timestamp for fingerprint %v (%v): %v is not after %v", fp, series.metric, sample.Timestamp, series.lastTime)
 			s.outOfOrderSamplesCount.Inc()
+			return ErrOutOfOrderSample
 		}
-		s.fpLocker.Unlock(fp)
-		return
+		return nil
 	}
 	completedChunksCount := series.add(&model.SamplePair{
 		Value:     sample.Value,
@@ -607,6 +609,8 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) {
 	s.fpLocker.Unlock(fp)
 	s.ingestedSamplesCount.Inc()
 	s.incNumChunksToPersist(completedChunksCount)
+
+	return nil
 }
 
 // NeedsThrottling implements Storage.
