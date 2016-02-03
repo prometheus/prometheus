@@ -163,6 +163,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router.Get("/graph", instrf("graph", h.graph))
 
 	router.Get("/status", instrf("status", h.status))
+	router.Get("/config", instrf("config", h.config))
 	router.Get("/alerts", instrf("alerts", h.alerts))
 	router.Get("/version", instrf("version", h.version))
 
@@ -315,6 +316,19 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	defer h.statusInfo.mu.RUnlock()
 
 	h.executeTemplate(w, "status.html", struct {
+		Status *PrometheusStatus
+		Info   map[string]string
+	}{
+		Status: h.statusInfo,
+		Info:   version.Map,
+	})
+}
+
+func (h *Handler) config(w http.ResponseWriter, r *http.Request) {
+	h.statusInfo.mu.RLock()
+	defer h.statusInfo.mu.RUnlock()
+
+	h.executeTemplate(w, "config.html", struct {
 		Status *PrometheusStatus
 		Info   map[string]string
 	}{
