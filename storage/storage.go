@@ -25,8 +25,7 @@ type SampleAppender interface {
 	// of the sample after Append has returned. Remote storage
 	// implementation will simply drop samples if they cannot keep up with
 	// sending samples. Local storage implementations will only drop metrics
-	// upon unrecoverable errors. Reporting any errors is done via metrics
-	// and logs and not the concern of the caller.
+	// upon unrecoverable errors.
 	Append(*model.Sample) error
 	// NeedsThrottling returns true if the underlying storage wishes to not
 	// receive any more samples. Append will still work but might lead to

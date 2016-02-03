@@ -591,6 +591,7 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) error {
 	series := s.getOrCreateSeries(fp, sample.Metric)
 
 	if sample.Timestamp <= series.lastTime {
+		s.fpLocker.Unlock(fp)
 		// Don't log and track equal timestamps, as they are a common occurrence
 		// when using client-side timestamps (e.g. Pushgateway or federation).
 		// It would be even better to also compare the sample values here, but
@@ -599,7 +600,6 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) error {
 			s.outOfOrderSamplesCount.Inc()
 			return ErrOutOfOrderSample
 		}
-		s.fpLocker.Unlock(fp)
 		return nil
 	}
 	completedChunksCount := series.add(&model.SamplePair{

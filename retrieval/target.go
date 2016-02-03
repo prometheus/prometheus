@@ -453,6 +453,7 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 	var (
 		samples       model.Vector
 		numOutOfOrder int
+		logger        = log.With("target", t.InstanceIdentifier())
 	)
 	for {
 		if err = sdec.Decode(&samples); err != nil {
@@ -464,14 +465,14 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 				if err == local.ErrOutOfOrderSample {
 					numOutOfOrder++
 				} else {
-					log.Warnf("Error inserting sample %v: %s", s, err)
+					logger.With("sample", s).Warnf("Error inserting sample: %s", err)
 				}
 			}
 
 		}
 	}
 	if numOutOfOrder > 0 {
-		log.Warnf("Error on ingesting %d out-of-order samples")
+		logger.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order samples")
 	}
 
 	if err == io.EOF {
