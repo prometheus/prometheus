@@ -264,7 +264,10 @@ func (g *Group) eval() {
 			}
 
 			if ar, ok := rule.(*AlertingRule); ok {
-				g.sendAlerts(ar, now)
+				alerts := ar.Expand(g.opts, now)
+				if len(alerts) > 0 {
+					g.opts.NotificationHandler.Send(alerts...)
+				}
 			}
 			for _, s := range vector {
 				g.opts.SampleAppender.Append(s)
@@ -274,8 +277,8 @@ func (g *Group) eval() {
 	wg.Wait()
 }
 
-// sendAlerts sends alert notifications for the given rule.
-func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
+// Expand fills out templated detail for an evaluated alert.
+func (rule *AlertingRule) Expand(opts *ManagerOptions, timestamp model.Time) model.Alerts {
 	var alerts model.Alerts
 
 	for _, alert := range rule.currentAlerts() {
@@ -307,8 +310,8 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 				"__alert_"+rule.Name(),
 				tmplData,
 				timestamp,
-				g.opts.QueryEngine,
-				g.opts.ExternalURL.Path,
+				opts.QueryEngine,
+				opts.ExternalURL.Path,
 			)
 			result, err := tmpl.Expand()
 			if err != nil {
@@ -333,7 +336,7 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
 			Labels:       labels,
 			Annotations:  annotations,
-			GeneratorURL: g.opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
+			GeneratorURL: opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
 		}
 		if alert.ResolvedAt != 0 {
 			a.EndsAt = alert.ResolvedAt.Time()
@@ -342,11 +345,7 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 		alerts = append(alerts, a)
 	}
 
-	if len(alerts) > 0 {
-		g.opts.NotificationHandler.Send(alerts...)
-	}
-
-	return nil
+	return alerts
 }
 
 // The Manager manages recording and alerting rules.
@@ -476,25 +475,32 @@ func (m *Manager) loadGroups(filenames ...string) (map[string]*Group, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error parsing %s: %s", fn, err)
 		}
-
-		for _, stmt := range stmts {
-			var rule Rule
-
-			switch r := stmt.(type) {
-			case *promql.AlertStmt:
-				rule = NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Annotations)
-
-			case *promql.RecordStmt:
-				rule = NewRecordingRule(r.Name, r.Expr, r.Labels)
-
-			default:
-				panic("retrieval.Manager.LoadRuleFiles: unknown statement type")
-			}
-			g.rules = append(g.rules, rule)
+		g.rules, err = NewRules(stmts)
+		if err != nil {
+			return nil, err
 		}
 	}
-
 	return groups, nil
+}
+
+// NewRules returns a list of rules from input statements.
+func NewRules(stmts promql.Statements) (rules []Rule, err error) {
+	for _, stmt := range stmts {
+		var rule Rule
+
+		switch r := stmt.(type) {
+		case *promql.AlertStmt:
+			rule = NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Annotations)
+
+		case *promql.RecordStmt:
+			rule = NewRecordingRule(r.Name, r.Expr, r.Labels)
+
+		default:
+			return nil, fmt.Errorf("unknown statement type")
+		}
+		rules = append(rules, rule)
+	}
+	return rules, nil
 }
 
 // Rules returns the list of the manager's rules.
