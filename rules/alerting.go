@@ -136,9 +136,9 @@ func (r *AlertingRule) sample(alert *Alert, ts model.Time, set bool) *model.Samp
 // is kept in memory state and consequentally repeatedly sent to the AlertManager.
 const resolvedRetention = 15 * time.Minute
 
-// eval evaluates the rule expression and then creates pending alerts and fires
+// Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine) (model.Vector, error) {
+func (r *AlertingRule) Eval(ts model.Time, engine *promql.Engine) (model.Vector, error) {
 	query, err := engine.NewInstantQuery(r.vector.String(), ts)
 	if err != nil {
 		return nil, err
