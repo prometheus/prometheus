@@ -31,8 +31,6 @@ import (
 	"github.com/prometheus/prometheus/notification"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/template"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // Constants for instrumentation.
@@ -275,77 +273,6 @@ func (g *Group) eval() {
 		}(rule)
 	}
 	wg.Wait()
-}
-
-// Expand fills out templated detail for an evaluated alert.
-func (rule *AlertingRule) Expand(opts *ManagerOptions, timestamp model.Time) model.Alerts {
-	var alerts model.Alerts
-
-	for _, alert := range rule.currentAlerts() {
-		// Only send actually firing alerts.
-		if alert.State == StatePending {
-			continue
-		}
-
-		// Provide the alert information to the template.
-		l := make(map[string]string, len(alert.Labels))
-		for k, v := range alert.Labels {
-			l[string(k)] = string(v)
-		}
-
-		tmplData := struct {
-			Labels map[string]string
-			Value  float64
-		}{
-			Labels: l,
-			Value:  float64(alert.Value),
-		}
-		// Inject some convenience variables that are easier to remember for users
-		// who are not used to Go's templating system.
-		defs := "{{$labels := .Labels}}{{$value := .Value}}"
-
-		expand := func(text model.LabelValue) model.LabelValue {
-			tmpl := template.NewTemplateExpander(
-				defs+string(text),
-				"__alert_"+rule.Name(),
-				tmplData,
-				timestamp,
-				opts.QueryEngine,
-				opts.ExternalURL.Path,
-			)
-			result, err := tmpl.Expand()
-			if err != nil {
-				result = fmt.Sprintf("<error expanding template: %s>", err)
-				log.Warnf("Error expanding alert template %v with data '%v': %s", rule.Name(), tmplData, err)
-			}
-			return model.LabelValue(result)
-		}
-
-		labels := make(model.LabelSet, len(alert.Labels)+1)
-		for ln, lv := range alert.Labels {
-			labels[ln] = expand(lv)
-		}
-		labels[model.AlertNameLabel] = model.LabelValue(rule.Name())
-
-		annotations := make(model.LabelSet, len(rule.annotations))
-		for an, av := range rule.annotations {
-			annotations[an] = expand(av)
-		}
-
-		a := &model.Alert{
-			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
-			Labels:       labels,
-			Annotations:  annotations,
-			GeneratorURL: opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
-		}
-		if alert.ResolvedAt != 0 {
-			a.EndsAt = alert.ResolvedAt.Time()
-		}
-
-		alerts = append(alerts, a)
-	}
-
-	return alerts
 }
 
 // The Manager manages recording and alerting rules.

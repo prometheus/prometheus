@@ -15,13 +15,15 @@ package rules
 
 import (
 	"fmt"
-	"html/template"
 	"sync"
 	"time"
 
-	"github.com/prometheus/common/model"
+	html_template "html/template"
 
+	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -204,6 +206,77 @@ func (r *AlertingRule) Eval(ts model.Time, engine *promql.Engine) (model.Vector,
 	return vec, nil
 }
 
+// Expand fills out templated detail for an evaluated alert.
+func (rule *AlertingRule) Expand(opts *ManagerOptions, timestamp model.Time) model.Alerts {
+	var alerts model.Alerts
+
+	for _, alert := range rule.currentAlerts() {
+		// Only send actually firing alerts.
+		if alert.State == StatePending {
+			continue
+		}
+
+		// Provide the alert information to the template.
+		l := make(map[string]string, len(alert.Labels))
+		for k, v := range alert.Labels {
+			l[string(k)] = string(v)
+		}
+
+		tmplData := struct {
+			Labels map[string]string
+			Value  float64
+		}{
+			Labels: l,
+			Value:  float64(alert.Value),
+		}
+		// Inject some convenience variables that are easier to remember for users
+		// who are not used to Go's templating system.
+		defs := "{{$labels := .Labels}}{{$value := .Value}}"
+
+		expand := func(text model.LabelValue) model.LabelValue {
+			tmpl := template.NewTemplateExpander(
+				defs+string(text),
+				"__alert_"+rule.Name(),
+				tmplData,
+				timestamp,
+				opts.QueryEngine,
+				opts.ExternalURL.Path,
+			)
+			result, err := tmpl.Expand()
+			if err != nil {
+				result = fmt.Sprintf("<error expanding template: %s>", err)
+				log.Warnf("Error expanding alert template %v with data '%v': %s", rule.Name(), tmplData, err)
+			}
+			return model.LabelValue(result)
+		}
+
+		labels := make(model.LabelSet, len(alert.Labels)+1)
+		for ln, lv := range alert.Labels {
+			labels[ln] = expand(lv)
+		}
+		labels[model.AlertNameLabel] = model.LabelValue(rule.Name())
+
+		annotations := make(model.LabelSet, len(rule.annotations))
+		for an, av := range rule.annotations {
+			annotations[an] = expand(av)
+		}
+
+		a := &model.Alert{
+			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
+			Labels:       labels,
+			Annotations:  annotations,
+			GeneratorURL: opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
+		}
+		if alert.ResolvedAt != 0 {
+			a.EndsAt = alert.ResolvedAt.Time()
+		}
+
+		alerts = append(alerts, a)
+	}
+
+	return alerts
+}
+
 // State returns the maximum state of alert instances for this rule.
 // StateFiring > StatePending > StateInactive
 func (r *AlertingRule) State() AlertState {
@@ -269,7 +342,7 @@ func (rule *AlertingRule) String() string {
 // HTMLSnippet returns an HTML snippet representing this alerting rule. The
 // resulting snippet is expected to be presented in a <pre> element, so that
 // line breaks and other returned whitespace is respected.
-func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
+func (rule *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 	alertMetric := model.Metric{
 		model.MetricNameLabel: alertMetricName,
 		alertNameLabel:        model.LabelValue(rule.name),
@@ -285,5 +358,5 @@ func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	if len(rule.annotations) > 0 {
 		s += fmt.Sprintf("\n  ANNOTATIONS %s", rule.annotations)
 	}
-	return template.HTML(s)
+	return html_template.HTML(s)
 }
