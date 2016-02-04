@@ -25,6 +25,43 @@ import (
 	"github.com/prometheus/common/model"
 )
 
+func TestHandlerPostURL(t *testing.T) {
+	var cases = []struct {
+		in, out string
+	}{
+		{
+			in:  "http://localhost:9093",
+			out: "http://localhost:9093/api/v1/alerts",
+		},
+		{
+			in:  "http://localhost:9093/",
+			out: "http://localhost:9093/api/v1/alerts",
+		},
+		{
+			in:  "http://localhost:9093/prefix",
+			out: "http://localhost:9093/prefix/api/v1/alerts",
+		},
+		{
+			in:  "http://localhost:9093/prefix//",
+			out: "http://localhost:9093/prefix/api/v1/alerts",
+		},
+		{
+			in:  "http://localhost:9093/prefix//",
+			out: "http://localhost:9093/prefix/api/v1/alerts",
+		},
+	}
+	h := &Handler{
+		opts: &HandlerOptions{},
+	}
+
+	for _, c := range cases {
+		h.opts.AlertmanagerURL = c.in
+		if res := h.postURL(); res != c.out {
+			t.Errorf("Expected post URL %q for %q but got %q", c.out, c.in, res)
+		}
+	}
+}
+
 func TestHandlerNextBatch(t *testing.T) {
 	h := New(&HandlerOptions{})
 
