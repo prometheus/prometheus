@@ -262,7 +262,7 @@ func (g *Group) eval() {
 			}
 
 			if ar, ok := rule.(*AlertingRule); ok {
-				alerts := ar.Expand(g.opts, now)
+				alerts := ar.Expand(now, g.opts.QueryEngine, g.opts.ExternalURL.Path)
 				if len(alerts) > 0 {
 					g.opts.NotificationHandler.Send(alerts...)
 				}

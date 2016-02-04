@@ -207,7 +207,7 @@ func (r *AlertingRule) Eval(ts model.Time, engine *promql.Engine) (model.Vector,
 }
 
 // Expand fills out templated detail for an evaluated alert.
-func (rule *AlertingRule) Expand(opts *ManagerOptions, timestamp model.Time) model.Alerts {
+func (rule *AlertingRule) Expand(timestamp model.Time, queryEngine *promql.Engine, pathPrefix string) model.Alerts {
 	var alerts model.Alerts
 
 	for _, alert := range rule.currentAlerts() {
@@ -239,8 +239,8 @@ func (rule *AlertingRule) Expand(opts *ManagerOptions, timestamp model.Time) mod
 				"__alert_"+rule.Name(),
 				tmplData,
 				timestamp,
-				opts.QueryEngine,
-				opts.ExternalURL.Path,
+				queryEngine,
+				pathPrefix,
 			)
 			result, err := tmpl.Expand()
 			if err != nil {
@@ -265,7 +265,7 @@ func (rule *AlertingRule) Expand(opts *ManagerOptions, timestamp model.Time) mod
 			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
 			Labels:       labels,
 			Annotations:  annotations,
-			GeneratorURL: opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
+			GeneratorURL: pathPrefix + strutil.GraphLinkForExpression(rule.vector.String()),
 		}
 		if alert.ResolvedAt != 0 {
 			a.EndsAt = alert.ResolvedAt.Time()
