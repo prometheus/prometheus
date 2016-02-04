@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -239,7 +240,7 @@ func (n *Handler) setMore() {
 }
 
 func (n *Handler) postURL() string {
-	return n.opts.AlertmanagerURL + alertPushEndpoint
+	return strings.TrimRight(n.opts.AlertmanagerURL, "/") + alertPushEndpoint
 }
 
 func (n *Handler) send(alerts ...*model.Alert) error {
