@@ -39,7 +39,7 @@ const (
 type AlertState int
 
 const (
-	// StateInactive is the state of an alert that is either firing nor pending.
+	// StateInactive is the state of an alert that is neither firing nor pending.
 	StateInactive AlertState = iota
 	// StatePending is the state of an alert that has been active for less than
 	// the configured threshold duration.
@@ -159,7 +159,7 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine) (model.Vector,
 		fp := smpl.Metric.Fingerprint()
 		resultFPs[fp] = struct{}{}
 
-		if alert, ok := r.active[fp]; ok {
+		if alert, ok := r.active[fp]; ok && alert.State != StateInactive {
 			alert.Value = smpl.Value
 			continue
 		}
