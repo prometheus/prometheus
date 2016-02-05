@@ -52,7 +52,7 @@ You can also clone the repository yourself and build using `make`:
     $ cd $GOPATH/src/github.com/prometheus
     $ git clone https://github.com/prometheus/prometheus.git
     $ cd prometheus
-    $ make
+    $ make build
     $ ./prometheus -config.file=your_config.yml
 
 The Makefile provides several targets:

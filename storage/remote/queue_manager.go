@@ -132,15 +132,16 @@ func NewStorageQueueManager(tsdb StorageClient, queueCapacity int) *StorageQueue
 }
 
 // Append queues a sample to be sent to the remote storage. It drops the
-// sample on the floor if the queue is full. It implements
-// storage.SampleAppender.
-func (t *StorageQueueManager) Append(s *model.Sample) {
+// sample on the floor if the queue is full.
+// Always returns nil.
+func (t *StorageQueueManager) Append(s *model.Sample) error {
 	select {
 	case t.queue <- s:
 	default:
 		t.samplesCount.WithLabelValues(dropped).Inc()
 		log.Warn("Remote storage queue full, discarding sample.")
 	}
+	return nil
 }
 
 // Stop stops sending samples to the remote storage and waits for pending

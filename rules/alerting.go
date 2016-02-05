@@ -39,7 +39,7 @@ const (
 type AlertState int
 
 const (
-	// StateInactive is the state of an alert that is either firing nor pending.
+	// StateInactive is the state of an alert that is neither firing nor pending.
 	StateInactive AlertState = iota
 	// StatePending is the state of an alert that has been active for less than
 	// the configured threshold duration.
@@ -58,7 +58,7 @@ func (s AlertState) String() string {
 	case StateFiring:
 		return "firing"
 	}
-	panic(fmt.Errorf("unknown alert state: %v", s))
+	panic(fmt.Errorf("unknown alert state: %v", s.String()))
 }
 
 // Alert is the user-level representation of a single instance of an alerting rule.
@@ -159,7 +159,7 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine) (model.Vector,
 		fp := smpl.Metric.Fingerprint()
 		resultFPs[fp] = struct{}{}
 
-		if alert, ok := r.active[fp]; ok {
+		if alert, ok := r.active[fp]; ok && alert.State != StateInactive {
 			alert.Value = smpl.Value
 			continue
 		}
@@ -255,7 +255,7 @@ func (rule *AlertingRule) String() string {
 	s := fmt.Sprintf("ALERT %s", rule.name)
 	s += fmt.Sprintf("\n\tIF %s", rule.vector)
 	if rule.holdDuration > 0 {
-		s += fmt.Sprintf("\n\tFOR %s", strutil.DurationToString(rule.holdDuration))
+		s += fmt.Sprintf("\n\tFOR %s", model.Duration(rule.holdDuration))
 	}
 	if len(rule.labels) > 0 {
 		s += fmt.Sprintf("\n\tLABELS %s", rule.labels)
@@ -277,7 +277,7 @@ func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	s := fmt.Sprintf("ALERT <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()), rule.name)
 	s += fmt.Sprintf("\n  IF <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(rule.vector.String()), rule.vector)
 	if rule.holdDuration > 0 {
-		s += fmt.Sprintf("\n  FOR %s", strutil.DurationToString(rule.holdDuration))
+		s += fmt.Sprintf("\n  FOR %s", model.Duration(rule.holdDuration))
 	}
 	if len(rule.labels) > 0 {
 		s += fmt.Sprintf("\n  LABELS %s", rule.labels)

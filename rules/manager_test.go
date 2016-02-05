@@ -27,14 +27,8 @@ import (
 func TestAlertingRule(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m
-			http_requests{job="api-server", instance="0", group="production"}	0+10x10
-			http_requests{job="api-server", instance="1", group="production"}	0+20x10
-			http_requests{job="api-server", instance="0", group="canary"}		0+30x10
-			http_requests{job="api-server", instance="1", group="canary"}		0+40x10
-			http_requests{job="app-server", instance="0", group="production"}	0+50x10
-			http_requests{job="app-server", instance="1", group="production"}	0+60x10
-			http_requests{job="app-server", instance="0", group="canary"}		0+70x10
-			http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+			http_requests{job="app-server", instance="0", group="canary"}	75 85  95 105 105  95  85
+			http_requests{job="app-server", instance="1", group="canary"}	80 90 100 110 120 130 140
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -79,17 +73,32 @@ func TestAlertingRule(t *testing.T) {
 		}, {
 			time: 10 * time.Minute,
 			result: []string{
+				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
 				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
+			},
+		},
+		{
+			time: 15 * time.Minute,
+			result: []string{
 				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
 			},
 		},
 		{
-			time:   15 * time.Minute,
-			result: nil,
+			time:   20 * time.Minute,
+			result: []string{},
 		},
 		{
-			time:   20 * time.Minute,
-			result: nil,
+			time: 25 * time.Minute,
+			result: []string{
+				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+			},
+		},
+		{
+			time: 30 * time.Minute,
+			result: []string{
+				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
+				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+			},
 		},
 	}
 

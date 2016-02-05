@@ -165,6 +165,7 @@ func (tm *TargetManager) Run() {
 	})
 
 	tm.running = true
+	log.Info("Target manager started.")
 }
 
 // handleUpdates receives target group updates and handles them in the

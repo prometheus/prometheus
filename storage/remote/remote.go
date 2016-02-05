@@ -104,8 +104,8 @@ func (s *Storage) Stop() {
 	}
 }
 
-// Append implements storage.SampleAppender.
-func (s *Storage) Append(smpl *model.Sample) {
+// Append implements storage.SampleAppender. Always returns nil.
+func (s *Storage) Append(smpl *model.Sample) error {
 	s.mtx.RLock()
 
 	var snew model.Sample
@@ -122,6 +122,14 @@ func (s *Storage) Append(smpl *model.Sample) {
 	for _, q := range s.queues {
 		q.Append(&snew)
 	}
+	return nil
+}
+
+// NeedsThrottling implements storage.SampleAppender. It will always return
+// false as a remote storage drops samples on the floor if backlogging instead
+// of asking for throttling.
+func (s *Storage) NeedsThrottling() bool {
+	return false
 }
 
 // Describe implements prometheus.Collector.

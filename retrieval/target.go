@@ -32,6 +32,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -48,7 +49,7 @@ const (
 )
 
 var (
-	errIngestChannelFull = errors.New("ingestion channel full")
+	errSkippedScrape = errors.New("scrape skipped due to throttled ingestion")
 
 	targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -59,10 +60,19 @@ var (
 		},
 		[]string{interval},
 	)
+	targetSkippedScrapes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "target_skipped_scrapes_total",
+			Help:      "Total number of scrapes that were skipped because the metric storage was throttled.",
+		},
+		[]string{interval},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(targetIntervalLength)
+	prometheus.MustRegister(targetSkippedScrapes)
 }
 
 // TargetHealth describes the health state of a target.
@@ -151,8 +161,6 @@ type Target struct {
 	scraperStopping chan struct{}
 	// Closing scraperStopped signals that scraping has been stopped.
 	scraperStopped chan struct{}
-	// Channel to buffer ingested samples.
-	ingestedSamples chan model.Vector
 
 	// Mutex protects the members below.
 	sync.RWMutex
@@ -166,8 +174,6 @@ type Target struct {
 	baseLabels model.LabelSet
 	// Internal labels, such as scheme.
 	internalLabels model.LabelSet
-	// What is the deadline for the HTTP or HTTPS against this endpoint.
-	deadline time.Duration
 	// The time between two scrapes.
 	scrapeInterval time.Duration
 	// Whether the target's labels have precedence over the base labels
@@ -237,7 +243,6 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels model.L
 	t.url.RawQuery = params.Encode()
 
 	t.scrapeInterval = time.Duration(cfg.ScrapeInterval)
-	t.deadline = time.Duration(cfg.ScrapeTimeout)
 
 	t.honorLabels = cfg.HonorLabels
 	t.metaLabels = metaLabels
@@ -361,6 +366,11 @@ func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
 				targetIntervalLength.WithLabelValues(intervalStr).Observe(
 					float64(took) / float64(time.Second), // Sub-second precision.
 				)
+				if sampleAppender.NeedsThrottling() {
+					targetSkippedScrapes.WithLabelValues(intervalStr).Inc()
+					t.status.setLastError(errSkippedScrape)
+					continue
+				}
 				t.scrape(sampleAppender)
 			}
 		}
@@ -375,26 +385,6 @@ func (t *Target) StopScraper() {
 	<-t.scraperStopped
 
 	log.Debugf("Scraper for target %v stopped.", t)
-}
-
-func (t *Target) ingest(s model.Vector) error {
-	t.RLock()
-	deadline := t.deadline
-	t.RUnlock()
-	// Since the regular case is that ingestedSamples is ready to receive,
-	// first try without setting a timeout so that we don't need to allocate
-	// a timer most of the time.
-	select {
-	case t.ingestedSamples <- s:
-		return nil
-	default:
-		select {
-		case t.ingestedSamples <- s:
-			return nil
-		case <-time.After(deadline / 10):
-			return errIngestChannelFull
-		}
-	}
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
@@ -414,20 +404,20 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 	// so the relabeling rules are applied to the correct label set.
 	if len(t.metricRelabelConfigs) > 0 {
 		appender = relabelAppender{
-			app:         appender,
-			relabelings: t.metricRelabelConfigs,
+			SampleAppender: appender,
+			relabelings:    t.metricRelabelConfigs,
 		}
 	}
 
 	if t.honorLabels {
 		appender = honorLabelsAppender{
-			app:    appender,
-			labels: baseLabels,
+			SampleAppender: appender,
+			labels:         baseLabels,
 		}
 	} else {
 		appender = ruleLabelsAppender{
-			app:    appender,
-			labels: baseLabels,
+			SampleAppender: appender,
+			labels:         baseLabels,
 		}
 	}
 
@@ -460,30 +450,29 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 		},
 	}
 
-	t.ingestedSamples = make(chan model.Vector, ingestedSamplesCap)
-
-	go func() {
-		for {
-			// TODO(fabxc): Change the SampleAppender interface to return an error
-			// so we can proceed based on the status and don't leak goroutines trying
-			// to append a single sample after dropping all the other ones.
-			//
-			// This will also allow use to reuse this vector and save allocations.
-			var samples model.Vector
-			if err = sdec.Decode(&samples); err != nil {
-				break
-			}
-			if err = t.ingest(samples); err != nil {
-				break
-			}
+	var (
+		samples       model.Vector
+		numOutOfOrder int
+		logger        = log.With("target", t.InstanceIdentifier())
+	)
+	for {
+		if err = sdec.Decode(&samples); err != nil {
+			break
 		}
-		close(t.ingestedSamples)
-	}()
-
-	for samples := range t.ingestedSamples {
 		for _, s := range samples {
-			appender.Append(s)
+			err := appender.Append(s)
+			if err != nil {
+				if err == local.ErrOutOfOrderSample {
+					numOutOfOrder++
+				} else {
+					logger.With("sample", s).Warnf("Error inserting sample: %s", err)
+				}
+			}
+
 		}
+	}
+	if numOutOfOrder > 0 {
+		logger.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order samples")
 	}
 
 	if err == io.EOF {
@@ -495,11 +484,11 @@ func (t *Target) scrape(appender storage.SampleAppender) (err error) {
 // Merges the ingested sample's metric with the label set. On a collision the
 // value of the ingested label is stored in a label prefixed with 'exported_'.
 type ruleLabelsAppender struct {
-	app    storage.SampleAppender
+	storage.SampleAppender
 	labels model.LabelSet
 }
 
-func (app ruleLabelsAppender) Append(s *model.Sample) {
+func (app ruleLabelsAppender) Append(s *model.Sample) error {
 	for ln, lv := range app.labels {
 		if v, ok := s.Metric[ln]; ok && v != "" {
 			s.Metric[model.ExportedLabelPrefix+ln] = v
@@ -507,47 +496,46 @@ func (app ruleLabelsAppender) Append(s *model.Sample) {
 		s.Metric[ln] = lv
 	}
 
-	app.app.Append(s)
+	return app.SampleAppender.Append(s)
 }
 
 type honorLabelsAppender struct {
-	app    storage.SampleAppender
+	storage.SampleAppender
 	labels model.LabelSet
 }
 
 // Merges the sample's metric with the given labels if the label is not
 // already present in the metric.
 // This also considers labels explicitly set to the empty string.
-func (app honorLabelsAppender) Append(s *model.Sample) {
+func (app honorLabelsAppender) Append(s *model.Sample) error {
 	for ln, lv := range app.labels {
 		if _, ok := s.Metric[ln]; !ok {
 			s.Metric[ln] = lv
 		}
 	}
 
-	app.app.Append(s)
+	return app.SampleAppender.Append(s)
 }
 
 // Applies a set of relabel configurations to the sample's metric
 // before actually appending it.
 type relabelAppender struct {
-	app         storage.SampleAppender
+	storage.SampleAppender
 	relabelings []*config.RelabelConfig
 }
 
-func (app relabelAppender) Append(s *model.Sample) {
+func (app relabelAppender) Append(s *model.Sample) error {
 	labels, err := Relabel(model.LabelSet(s.Metric), app.relabelings...)
 	if err != nil {
-		log.Errorf("Error while relabeling metric %s: %s", s.Metric, err)
-		return
+		return fmt.Errorf("metric relabeling error %s: %s", s.Metric, err)
 	}
 	// Check if the timeseries was dropped.
 	if labels == nil {
-		return
+		return nil
 	}
 	s.Metric = model.Metric(labels)
 
-	app.app.Append(s)
+	return app.SampleAppender.Append(s)
 }
 
 // URL returns a copy of the target's URL.
