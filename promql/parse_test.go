@@ -870,6 +870,32 @@ var testExpr = []struct {
 			Grouping: model.LabelNames{"foo"},
 		},
 	}, {
+		input: "sum without (foo) (some_metric)",
+		expected: &AggregateExpr{
+			Op:      itemSum,
+			Without: true,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+				},
+			},
+			Grouping: model.LabelNames{"foo"},
+		},
+	}, {
+		input: "sum (some_metric) without (foo)",
+		expected: &AggregateExpr{
+			Op:      itemSum,
+			Without: true,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+				},
+			},
+			Grouping: model.LabelNames{"foo"},
+		},
+	}, {
 		input: "stddev(some_metric)",
 		expected: &AggregateExpr{
 			Op: itemStddev,
@@ -920,6 +946,18 @@ var testExpr = []struct {
 		input:  "MIN by(test) (some_metric) keep_common",
 		fail:   true,
 		errMsg: "could not parse remaining input \"keep_common\"...",
+	}, {
+		input:  `sum (some_metric) without (test) keep_common`,
+		fail:   true,
+		errMsg: "cannot use 'keep_common' with 'without'",
+	}, {
+		input:  `sum (some_metric) without (test) by (test)`,
+		fail:   true,
+		errMsg: "could not parse remaining input \"by (test)\"...",
+	}, {
+		input:  `sum without (test) (some_metric) by (test)`,
+		fail:   true,
+		errMsg: "could not parse remaining input \"by (test)\"...",
 	},
 	// Test function calls.
 	{
