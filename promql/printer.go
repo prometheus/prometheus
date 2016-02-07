@@ -137,7 +137,12 @@ func (es Expressions) String() (s string) {
 func (node *AggregateExpr) String() string {
 	aggrString := fmt.Sprintf("%s(%s)", node.Op, node.Expr)
 	if len(node.Grouping) > 0 {
-		format := "%s BY (%s)"
+		var format string
+		if node.Without {
+			format = "%s WITHOUT (%s)"
+		} else {
+			format = "%s BY (%s)"
+		}
 		if node.KeepExtraLabels {
 			format += " KEEP_COMMON"
 		}

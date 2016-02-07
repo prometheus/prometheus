@@ -732,11 +732,14 @@ func (p *parser) aggrExpr() *AggregateExpr {
 		p.errorf("expected aggregation operator but got %s", agop)
 	}
 	var grouping model.LabelNames
-	var keepExtra bool
+	var keepExtra, without bool
 
 	modifiersFirst := false
 
-	if p.peek().typ == itemBy {
+	if t := p.peek().typ; t == itemBy || t == itemWithout {
+		if t == itemWithout {
+			without = true
+		}
 		p.next()
 		grouping = p.labels()
 		modifiersFirst = true
@@ -752,9 +755,12 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	p.expect(itemRightParen, ctx)
 
 	if !modifiersFirst {
-		if p.peek().typ == itemBy {
+		if t := p.peek().typ; t == itemBy || t == itemWithout {
 			if len(grouping) > 0 {
 				p.errorf("aggregation must only contain one grouping clause")
+			}
+			if t == itemWithout {
+				without = true
 			}
 			p.next()
 			grouping = p.labels()
@@ -765,10 +771,15 @@ func (p *parser) aggrExpr() *AggregateExpr {
 		}
 	}
 
+	if keepExtra && without {
+		p.errorf("cannot use 'keep_common' with 'without'")
+	}
+
 	return &AggregateExpr{
 		Op:              agop.typ,
 		Expr:            e,
 		Grouping:        grouping,
+		Without:         without,
 		KeepExtraLabels: keepExtra,
 	}
 }

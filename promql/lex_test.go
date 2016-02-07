@@ -262,6 +262,9 @@ var tests = []struct {
 		input:    "by",
 		expected: []item{{itemBy, 0, "by"}},
 	}, {
+		input:    "without",
+		expected: []item{{itemWithout, 0, "without"}},
+	}, {
 		input:    "on",
 		expected: []item{{itemOn, 0, "on"}},
 	}, {

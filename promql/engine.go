@@ -619,7 +619,7 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 	switch e := expr.(type) {
 	case *AggregateExpr:
 		vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.KeepExtraLabels, vector)
+		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepExtraLabels, vector)
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, model.ValScalar, model.ValVector)
@@ -1039,12 +1039,25 @@ type groupedAggregation struct {
 }
 
 // aggregation evaluates an aggregation operation on a vector.
-func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, keepExtra bool, vec vector) vector {
+func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepExtra bool, vec vector) vector {
 
 	result := map[uint64]*groupedAggregation{}
 
 	for _, sample := range vec {
-		groupingKey := model.SignatureForLabels(sample.Metric.Metric, grouping...)
+		withoutMetric := sample.Metric
+		if without {
+			for _, l := range grouping {
+				withoutMetric.Del(l)
+			}
+			withoutMetric.Del(model.MetricNameLabel)
+		}
+
+		var groupingKey uint64
+		if without {
+			groupingKey = uint64(withoutMetric.Metric.Fingerprint())
+		} else {
+			groupingKey = model.SignatureForLabels(sample.Metric.Metric, grouping...)
+		}
 
 		groupedResult, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
@@ -1053,6 +1066,8 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, keepExt
 			if keepExtra {
 				m = sample.Metric
 				m.Del(model.MetricNameLabel)
+			} else if without {
+				m = withoutMetric
 			} else {
 				m = metric.Metric{
 					Metric: model.Metric{},
