@@ -1,0 +1,115 @@
+load 5m
+  http_requests{job="api-server", instance="0", group="production"} 0+10x10
+  http_requests{job="api-server", instance="1", group="production"} 0+20x10
+  http_requests{job="api-server", instance="0", group="canary"}   0+30x10
+  http_requests{job="api-server", instance="1", group="canary"}   0+40x10
+  http_requests{job="app-server", instance="0", group="production"} 0+50x10
+  http_requests{job="app-server", instance="1", group="production"} 0+60x10
+  http_requests{job="app-server", instance="0", group="canary"}   0+70x10
+  http_requests{job="app-server", instance="1", group="canary"}   0+80x10
+
+load 5m
+  foo{job="api-server", instance="0", region="europe"} 0+90x10
+  foo{job="api-server"} 0+100x10
+
+# Simple sum.
+eval instant at 50m SUM BY (group) (http_requests{job="api-server"})
+  {group="canary"} 700
+  {group="production"} 300
+
+# Test alternative "by"-clause order.
+eval instant at 50m sum by (group) (http_requests{job="api-server"})
+  {group="canary"} 700
+  {group="production"} 300
+
+# Simple average.
+eval instant at 50m avg by (group) (http_requests{job="api-server"})
+  {group="canary"} 350
+  {group="production"} 150
+
+# Simple count.
+eval instant at 50m count by (group) (http_requests{job="api-server"})
+  {group="canary"} 2
+  {group="production"} 2
+
+# Simple without.
+eval instant at 50m sum without (instance) (http_requests{job="api-server"})
+  {group="canary",job="api-server"} 700
+  {group="production",job="api-server"} 300
+
+# Without with mismatched and missing labels. Do not do this.
+eval instant at 50m sum without (instance) (http_requests{job="api-server"} or foo)
+  {group="canary",job="api-server"} 700
+  {group="production",job="api-server"} 300
+  {region="europe",job="api-server"} 900
+  {job="api-server"} 1000
+
+# Lower-cased aggregation operators should work too.
+eval instant at 50m sum(http_requests) by (job) + min(http_requests) by (job) + max(http_requests) by (job) + avg(http_requests) by (job)
+  {job="app-server"} 4550
+  {job="api-server"} 1750
+
+# Test alternative "by"-clause order with "keep_common".
+eval instant at 50m sum by (group) keep_common (http_requests{job="api-server"})
+  {group="canary", job="api-server"} 700
+  {group="production", job="api-server"} 300
+
+# Test both alternative "by"-clause orders in one expression.
+# Public health warning: stick to one form within an expression (or even
+# in an organization), or risk serious user confusion.
+eval instant at 50m sum(sum by (group) keep_common (http_requests{job="api-server"})) by (job)
+  {job="api-server"} 1000
+
+
+
+# Standard deviation and variance.
+eval instant at 50m stddev(http_requests)
+  {} 229.12878474779
+
+eval instant at 50m stddev by (instance)(http_requests)
+  {instance="0"} 223.60679774998
+  {instance="1"} 223.60679774998
+
+eval instant at 50m stdvar(http_requests)
+  {} 52500
+
+eval instant at 50m stdvar by (instance)(http_requests)
+  {instance="0"} 50000
+  {instance="1"} 50000
+
+
+
+# Regression test for missing separator byte in labelsToGroupingKey.
+clear
+load 5m
+  label_grouping_test{a="aa", b="bb"} 0+10x10
+  label_grouping_test{a="a", b="abb"} 0+20x10
+
+eval instant at 50m sum(label_grouping_test) by (a, b)
+  {a="a", b="abb"} 200
+  {a="aa", b="bb"} 100
+
+
+
+# Tests for min/max.
+clear
+load 5m
+  http_requests{job="api-server", instance="0", group="production"}	1
+  http_requests{job="api-server", instance="1", group="production"}	2
+  http_requests{job="api-server", instance="0", group="canary"}		NaN
+  http_requests{job="api-server", instance="1", group="canary"}		3
+  http_requests{job="api-server", instance="2", group="canary"}		4
+
+eval instant at 0m max(http_requests)
+  {} 4
+
+eval instant at 0m min(http_requests)
+  {} 1
+
+eval instant at 0m max by (group) (http_requests)
+  {group="production"} 2
+  {group="canary"} 4
+
+eval instant at 0m min by (group) (http_requests)
+  {group="production"} 1
+  {group="canary"} 3
