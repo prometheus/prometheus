@@ -423,7 +423,7 @@ func TestURLParams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	target := NewTarget(
+	target, err := NewTarget(
 		&config.ScrapeConfig{
 			JobName:        "test_job1",
 			ScrapeInterval: model.Duration(1 * time.Minute),
@@ -439,6 +439,9 @@ func TestURLParams(t *testing.T) {
 			"__param_foo":      "bar",
 		},
 		nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	app := &collectResultAppender{}
 	if err = target.scrape(app); err != nil {
 		t.Fatal(err)
@@ -638,4 +641,19 @@ func newTLSConfig(t *testing.T) *tls.Config {
 	tlsConfig.Certificates = []tls.Certificate{cert}
 	tlsConfig.BuildNameToCertificate()
 	return tlsConfig
+}
+
+func TestNewTargetWithBadTLSConfig(t *testing.T) {
+	cfg := &config.ScrapeConfig{
+		ScrapeTimeout: model.Duration(1 * time.Second),
+		TLSConfig: config.TLSConfig{
+			CAFile:   "testdata/nonexistent_ca.cer",
+			CertFile: "testdata/nonexistent_client.cer",
+			KeyFile:  "testdata/nonexistent_client.key",
+		},
+	}
+	_, err := NewTarget(cfg, nil, nil)
+	if err == nil {
+		t.Fatalf("Expected error, got nil.")
+	}
 }
