@@ -4,7 +4,7 @@ This is an example on how to setup RabbitMQ so Prometheus can scrape data from i
 It uses a third party [RabbitMQ exporter](https://github.com/kbudde/rabbitmq_exporter).
 
 Since the [RabbitMQ exporter](https://github.com/kbudde/rabbitmq_exporter) needs to
-scrape the RabbitMQ management API to scrap data, and it defaults to localhost, it is
+scrape the RabbitMQ management API to scrape data, and it defaults to localhost, it is
 easier to simply embed the **kbudde/rabbitmq-exporter** on the same pod as RabbitMQ,
 this way they share the same network.
 
