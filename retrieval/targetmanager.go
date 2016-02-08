@@ -278,7 +278,9 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 				// to build up.
 				wg.Add(1)
 				go func(t *Target) {
-					match.Update(cfg, t.fullLabels(), t.metaLabels)
+					if err := match.Update(cfg, t.fullLabels(), t.metaLabels); err != nil {
+						log.Errorf("Error updating target %v: %v", t, err)
+					}
 					wg.Done()
 				}(tnew)
 				newTargets[i] = match
@@ -516,7 +518,10 @@ func (tm *TargetManager) targetsFromGroup(tg *config.TargetGroup, cfg *config.Sc
 				delete(labels, ln)
 			}
 		}
-		tr := NewTarget(cfg, labels, preRelabelLabels)
+		tr, err := NewTarget(cfg, labels, preRelabelLabels)
+		if err != nil {
+			return nil, fmt.Errorf("error while creating instance %d in target group %s: %s", i, tg, err)
+		}
 		targets = append(targets, tr)
 	}
 
