@@ -868,7 +868,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 			if exists {
 				ev.errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 			}
-			matchedSigs[sig] = nil // Set existance to true.
+			matchedSigs[sig] = nil // Set existence to true.
 		} else {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result vector. Check whether those labels have already been added for
@@ -915,7 +915,7 @@ func resultMetric(met metric.Metric, op itemType, labels ...model.LabelName) met
 		}
 		return met
 	}
-	// As we definitly write, creating a new metric is the easiest solution.
+	// As we definitely write, creating a new metric is the easiest solution.
 	m := model.Metric{}
 	for _, ln := range labels {
 		// Included labels from the `group_x` modifier are taken from the "many"-side.

@@ -115,7 +115,7 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 		return nil, errors.New("analysis must be performed before preparing query")
 	}
 	var err error
-	// The preloader must not be closed unless an error ocurred as closing
+	// The preloader must not be closed unless an error occured as closing
 	// unpins the preloaded chunks.
 	p := a.Storage.NewPreloader()
 	defer func() {

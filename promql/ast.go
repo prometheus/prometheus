@@ -145,7 +145,7 @@ type NumberLiteral struct {
 }
 
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
-// of operator precendence.
+// of operator precedence.
 type ParenExpr struct {
 	Expr Expr
 }

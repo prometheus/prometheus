@@ -619,7 +619,7 @@ func (s *memorySeriesStorage) NeedsThrottling() bool {
 		float64(atomic.LoadInt64(&numMemChunks)) > float64(s.maxMemoryChunks)*toleranceFactorMemChunks {
 		select {
 		case s.throttled <- struct{}{}:
-		default: // Do nothing, signal aready pending.
+		default: // Do nothing, signal already pending.
 		}
 		return true
 	}
@@ -1243,7 +1243,7 @@ func (s *memorySeriesStorage) incNumChunksToPersist(by int) {
 //
 // This method is not goroutine-safe, but it is only ever called by the single
 // goroutine that is in charge of series maintenance. According to the returned
-// score, series maintenence should be sped up. If a score of 1 is returned,
+// score, series maintenance should be sped up. If a score of 1 is returned,
 // checkpointing based on dirty-series count should be disabled, and series
 // files should not by synced anymore provided the user has specified the
 // adaptive sync strategy.

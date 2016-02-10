@@ -48,7 +48,7 @@ func (e *ParseErr) Error() string {
 	return fmt.Sprintf("parse error at line %d, char %d: %s", e.Line, e.Pos, e.Err)
 }
 
-// ParseStmts parses the input and returns the resulting statements or any ocurring error.
+// ParseStmts parses the input and returns the resulting statements or any occuring error.
 func ParseStmts(input string) (Statements, error) {
 	p := newParser(input)
 
@@ -529,7 +529,7 @@ func (p *parser) expr() Expr {
 		// Parse the next operand.
 		rhs := p.unaryExpr()
 
-		// Assign the new root based on the precendence of the LHS and RHS operators.
+		// Assign the new root based on the precedence of the LHS and RHS operators.
 		if lhs, ok := expr.(*BinaryExpr); ok && lhs.Op.precedence() < op.precedence() {
 			expr = &BinaryExpr{
 				Op:  lhs.Op,
