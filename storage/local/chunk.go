@@ -214,7 +214,7 @@ type chunk interface {
 	// new version of the original chunk, followed by overflow chunks, if
 	// any. The first chunk returned might be the same as the original one
 	// or a newly allocated version. In any case, take the returned chunk as
-	// the relevant one and discard the orginal chunk.
+	// the relevant one and discard the original chunk.
 	add(sample *model.SamplePair) []chunk
 	clone() chunk
 	firstTime() model.Time

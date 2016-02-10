@@ -37,7 +37,7 @@ const (
 	ViewDiskExtractionTime
 )
 
-// Return a string represenation of a QueryTiming identifier.
+// Return a string representation of a QueryTiming identifier.
 func (s QueryTiming) String() string {
 	switch s {
 	case TotalEvalTime:
