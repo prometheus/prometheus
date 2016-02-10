@@ -184,7 +184,7 @@ type Target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(cfg *config.ScrapeConfig, baseLabels, metaLabels model.LabelSet) *Target {
+func NewTarget(cfg *config.ScrapeConfig, baseLabels, metaLabels model.LabelSet) (*Target, error) {
 	t := &Target{
 		url: &url.URL{
 			Scheme: string(baseLabels[model.SchemeLabel]),
@@ -194,8 +194,8 @@ func NewTarget(cfg *config.ScrapeConfig, baseLabels, metaLabels model.LabelSet) 
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 	}
-	t.Update(cfg, baseLabels, metaLabels)
-	return t
+	err := t.Update(cfg, baseLabels, metaLabels)
+	return t, err
 }
 
 // Status returns the status of the target.
@@ -205,14 +205,13 @@ func (t *Target) Status() *TargetStatus {
 
 // Update overwrites settings in the target that are derived from the job config
 // it belongs to.
-func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels model.LabelSet) {
+func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels model.LabelSet) error {
 	t.Lock()
 	defer t.Unlock()
 
 	httpClient, err := newHTTPClient(cfg)
 	if err != nil {
-		log.Errorf("cannot create HTTP client: %v", err)
-		return
+		return fmt.Errorf("cannot create HTTP client: %v", err)
 	}
 	t.httpClient = httpClient
 
@@ -257,6 +256,7 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels model.L
 		t.baseLabels[model.InstanceLabel] = model.LabelValue(t.InstanceIdentifier())
 	}
 	t.metricRelabelConfigs = cfg.MetricRelabelConfigs
+	return nil
 }
 
 func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
