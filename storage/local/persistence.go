@@ -856,7 +856,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 					p.dirty = true
 					return sm, chunksToPersist, nil
 				}
-				chunkDescs[i] = newChunkDesc(chunk)
+				chunkDescs[i] = newChunkDesc(chunk, chunk.firstTime())
 				chunksToPersist++
 			}
 		}

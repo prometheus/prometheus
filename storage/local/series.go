@@ -209,7 +209,7 @@ func newMemorySeries(m model.Metric, chunkDescs []*chunkDesc, modTime time.Time)
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) add(v *model.SamplePair) int {
 	if len(s.chunkDescs) == 0 || s.headChunkClosed {
-		newHead := newChunkDesc(newChunk())
+		newHead := newChunkDesc(newChunk(), v.Timestamp)
 		s.chunkDescs = append(s.chunkDescs, newHead)
 		s.headChunkClosed = false
 	} else if s.headChunkUsedByIterator && s.head().refCount() > 1 {
@@ -233,7 +233,12 @@ func (s *memorySeries) add(v *model.SamplePair) int {
 	s.head().c = chunks[0]
 
 	for _, c := range chunks[1:] {
-		s.chunkDescs = append(s.chunkDescs, newChunkDesc(c))
+		s.chunkDescs = append(s.chunkDescs, newChunkDesc(c, c.firstTime()))
+	}
+
+	// Populate lastTime of now-closed chunks.
+	for _, cd := range s.chunkDescs[len(s.chunkDescs)-len(chunks) : len(s.chunkDescs)-1] {
+		cd.maybePopulateLastTime()
 	}
 
 	s.lastTime = v.Timestamp
@@ -254,6 +259,7 @@ func (s *memorySeries) maybeCloseHeadChunk() bool {
 		// Since we cannot modify the head chunk from now on, we
 		// don't need to bother with cloning anymore.
 		s.headChunkUsedByIterator = false
+		s.head().maybePopulateLastTime()
 		return true
 	}
 	return false
