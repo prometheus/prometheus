@@ -379,6 +379,7 @@ func TestRetentionCutoff(t *testing.T) {
 	// Stop maintenance loop to prevent actual purging.
 	close(s.loopStopping)
 	<-s.loopStopped
+	<-s.logThrottlingStopped
 	// Recreate channel to avoid panic when we really shut down.
 	s.loopStopping = make(chan struct{})
 
