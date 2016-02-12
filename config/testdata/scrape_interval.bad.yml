@@ -1,0 +1,4 @@
+scrape_configs:
+- job_name: prometheus
+  scrape_interval: 5s
+  scrape_timeout:  6s
