@@ -132,6 +132,7 @@ type memorySeriesStorage struct {
 	options *MemorySeriesStorageOptions
 
 	loopStopping, loopStopped  chan struct{}
+	logThrottlingStopped       chan struct{}
 	maxMemoryChunks            int
 	dropAfter                  time.Duration
 	checkpointInterval         time.Duration
@@ -181,6 +182,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 
 		loopStopping:               make(chan struct{}),
 		loopStopped:                make(chan struct{}),
+		logThrottlingStopped:       make(chan struct{}),
 		throttled:                  make(chan struct{}, 1),
 		maxMemoryChunks:            o.MemoryChunks,
 		dropAfter:                  o.PersistenceRetentionPeriod,
@@ -639,6 +641,9 @@ func (s *memorySeriesStorage) NeedsThrottling() bool {
 func (s *memorySeriesStorage) logThrottling() {
 	timer := time.NewTimer(time.Minute)
 	timer.Stop()
+
+	// Signal exit of the goroutine. Currently only needed by test code.
+	defer close(s.logThrottlingStopped)
 
 	for {
 		select {
