@@ -105,7 +105,7 @@ func TestOverwriteLabels(t *testing.T) {
 
 	target := newTestTarget(server.URL, time.Second, nil)
 
-	target.honorLabels = false
+	target.scrapeConfig.HonorLabels = false
 	app := &collectResultAppender{}
 	if err := target.scrape(app); err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestOverwriteLabels(t *testing.T) {
 		}
 	}
 
-	target.honorLabels = true
+	target.scrapeConfig.HonorLabels = true
 	app = &collectResultAppender{}
 	if err := target.scrape(app); err != nil {
 		t.Fatal(err)
@@ -185,7 +185,7 @@ func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
 	)
 	defer server.Close()
 	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{})
-	testTarget.metricRelabelConfigs = []*config.RelabelConfig{
+	testTarget.scrapeConfig.MetricRelabelConfigs = []*config.RelabelConfig{
 		{
 			SourceLabels: model.LabelNames{"__name__"},
 			Regex:        config.MustNewRegexp(".*drop.*"),
@@ -216,7 +216,7 @@ func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
 			Metric: model.Metric{
 				model.MetricNameLabel: "test_metric_relabel",
 				"foo":               "bar",
-				model.InstanceLabel: model.LabelValue(testTarget.url.Host),
+				model.InstanceLabel: model.LabelValue(testTarget.host()),
 			},
 			Timestamp: 0,
 			Value:     0,
@@ -225,7 +225,7 @@ func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
 		{
 			Metric: model.Metric{
 				model.MetricNameLabel: scrapeHealthMetricName,
-				model.InstanceLabel:   model.LabelValue(testTarget.url.Host),
+				model.InstanceLabel:   model.LabelValue(testTarget.host()),
 			},
 			Timestamp: 0,
 			Value:     0,
@@ -233,7 +233,7 @@ func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
 		{
 			Metric: model.Metric{
 				model.MetricNameLabel: scrapeDurationMetricName,
-				model.InstanceLabel:   model.LabelValue(testTarget.url.Host),
+				model.InstanceLabel:   model.LabelValue(testTarget.host()),
 			},
 			Timestamp: 0,
 			Value:     0,
@@ -438,7 +438,8 @@ func TestURLParams(t *testing.T) {
 			model.AddressLabel: model.LabelValue(serverURL.Host),
 			"__param_foo":      "bar",
 		},
-		nil)
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,29 +449,28 @@ func TestURLParams(t *testing.T) {
 	}
 }
 
-func newTestTarget(targetURL string, deadline time.Duration, baseLabels model.LabelSet) *Target {
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(deadline),
-	}
-	c, _ := newHTTPClient(cfg)
+func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelSet) *Target {
+	labels = labels.Clone()
+	labels[model.SchemeLabel] = "http"
+	labels[model.AddressLabel] = model.LabelValue(strings.TrimLeft(targetURL, "http://"))
+	labels[model.MetricsPathLabel] = "/metrics"
+
 	t := &Target{
-		url: &url.URL{
-			Scheme: "http",
-			Host:   strings.TrimLeft(targetURL, "http://"),
-			Path:   "/metrics",
+		scrapeConfig: &config.ScrapeConfig{
+			ScrapeInterval: model.Duration(time.Millisecond),
+			ScrapeTimeout:  model.Duration(deadline),
 		},
+		labels:          labels,
 		status:          &TargetStatus{},
-		scrapeInterval:  1 * time.Millisecond,
-		httpClient:      c,
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 	}
-	t.baseLabels = model.LabelSet{
-		model.InstanceLabel: model.LabelValue(t.InstanceIdentifier()),
+
+	var err error
+	if t.httpClient, err = t.client(); err != nil {
+		panic(err)
 	}
-	for baseLabel, baseValue := range baseLabels {
-		t.baseLabels[baseLabel] = baseValue
-	}
+
 	return t
 }
 
