@@ -83,7 +83,7 @@ var expectedConf = &Config{
 
 			RelabelConfigs: []*RelabelConfig{
 				{
-					SourceLabels: model.LabelNames{"job", "__meta_dns_srv_name"},
+					SourceLabels: model.LabelNames{"job", "__meta_dns_name"},
 					TargetLabel:  "job",
 					Separator:    ";",
 					Regex:        MustNewRegexp("(.*)some-[regex]"),
