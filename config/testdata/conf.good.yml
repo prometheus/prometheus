@@ -39,7 +39,7 @@ scrape_configs:
       your: label
 
   relabel_configs:
-  - source_labels: [job, __meta_dns_srv_name]
+  - source_labels: [job, __meta_dns_name]
     regex:         (.*)some-[regex]
     target_label:  job
     replacement:   foo-${1}
