@@ -357,6 +357,15 @@ func (t *Target) wrapAppender(app storage.SampleAppender) storage.SampleAppender
 	return app
 }
 
+// wrapReportingAppender wraps an appender for target status report samples.
+// It ignores any relabeling rules set for the target.
+func (t *Target) wrapReportingAppender(app storage.SampleAppender) storage.SampleAppender {
+	return ruleLabelsAppender{
+		SampleAppender: app,
+		labels:         t.Labels(),
+	}
+}
+
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
 	t.RLock()
@@ -484,13 +493,11 @@ const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client
 
 func (t *Target) scrape(appender storage.SampleAppender) error {
 	var (
-		err    error
-		start  = time.Now()
-		labels = t.Labels()
+		err   error
+		start = time.Now()
 	)
 	defer func(appender storage.SampleAppender) {
-		t.status.setLastError(err)
-		recordScrapeHealth(appender, start, labels, t.status.Health(), time.Since(start))
+		t.report(appender, start, time.Since(start), err)
 	}(appender)
 
 	t.RLock()
@@ -554,6 +561,38 @@ func (t *Target) scrape(appender storage.SampleAppender) error {
 		return nil
 	}
 	return err
+}
+
+func (t *Target) report(app storage.SampleAppender, start time.Time, duration time.Duration, err error) {
+	t.status.setLastScrape(start)
+	t.status.setLastError(err)
+
+	ts := model.TimeFromUnixNano(start.UnixNano())
+
+	var health model.SampleValue
+	if err == nil {
+		health = 1
+	}
+
+	healthSample := &model.Sample{
+		Metric: model.Metric{
+			model.MetricNameLabel: scrapeHealthMetricName,
+		},
+		Timestamp: ts,
+		Value:     health,
+	}
+	durationSample := &model.Sample{
+		Metric: model.Metric{
+			model.MetricNameLabel: scrapeDurationMetricName,
+		},
+		Timestamp: ts,
+		Value:     model.SampleValue(float64(duration) / float64(time.Second)),
+	}
+
+	app = t.wrapReportingAppender(app)
+
+	app.Append(healthSample)
+	app.Append(durationSample)
 }
 
 // Merges the ingested sample's metric with the label set. On a collision the
@@ -638,39 +677,4 @@ func (t *Target) MetaLabels() model.LabelSet {
 	defer t.RUnlock()
 
 	return t.metaLabels.Clone()
-}
-
-func recordScrapeHealth(
-	sampleAppender storage.SampleAppender,
-	timestamp time.Time,
-	labels model.LabelSet,
-	health TargetHealth,
-	scrapeDuration time.Duration,
-) {
-	healthMetric := make(model.Metric, len(labels)+1)
-	durationMetric := make(model.Metric, len(labels)+1)
-
-	healthMetric[model.MetricNameLabel] = scrapeHealthMetricName
-	durationMetric[model.MetricNameLabel] = scrapeDurationMetricName
-
-	for ln, lv := range labels {
-		healthMetric[ln] = lv
-		durationMetric[ln] = lv
-	}
-
-	ts := model.TimeFromUnixNano(timestamp.UnixNano())
-
-	healthSample := &model.Sample{
-		Metric:    healthMetric,
-		Timestamp: ts,
-		Value:     health.value(),
-	}
-	durationSample := &model.Sample{
-		Metric:    durationMetric,
-		Timestamp: ts,
-		Value:     model.SampleValue(float64(scrapeDuration) / float64(time.Second)),
-	}
-
-	sampleAppender.Append(healthSample)
-	sampleAppender.Append(durationSample)
 }
