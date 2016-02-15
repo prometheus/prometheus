@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
@@ -267,6 +266,30 @@ func (t *Target) String() string {
 	return t.host()
 }
 
+// fingerprint returns an identifying hash for the target.
+func (t *Target) fingerprint() model.Fingerprint {
+	t.RLock()
+	defer t.RUnlock()
+
+	return t.labels.Fingerprint()
+}
+
+// offset returns the time until the next scrape cycle for the target.
+func (t *Target) offset(interval time.Duration) time.Duration {
+	now := time.Now().UnixNano()
+
+	var (
+		base   = now % int64(interval)
+		offset = uint64(t.fingerprint()) % uint64(interval)
+		next   = base + int64(offset)
+	)
+
+	if next > int64(interval) {
+		next -= int64(interval)
+	}
+	return time.Duration(next)
+}
+
 func (t *Target) client() (*http.Client, error) {
 	t.RLock()
 	defer t.RUnlock()
@@ -366,14 +389,12 @@ func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
 
 	log.Debugf("Starting scraper for target %v...", t)
 
-	jitterTimer := time.NewTimer(time.Duration(float64(lastScrapeInterval) * rand.Float64()))
 	select {
-	case <-jitterTimer.C:
+	case <-time.After(t.offset(lastScrapeInterval)):
+		// Continue after scraping offset.
 	case <-t.scraperStopping:
-		jitterTimer.Stop()
 		return
 	}
-	jitterTimer.Stop()
 
 	ticker := time.NewTicker(lastScrapeInterval)
 	defer ticker.Stop()
