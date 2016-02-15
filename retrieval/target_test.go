@@ -91,6 +91,82 @@ func TestTargetOffset(t *testing.T) {
 	}
 }
 
+func TestTargetWrapReportingAppender(t *testing.T) {
+	cfg := &config.ScrapeConfig{
+		MetricRelabelConfigs: []*config.RelabelConfig{
+			{}, {}, {},
+		},
+	}
+
+	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
+	target.scrapeConfig = cfg
+	app := &nopAppender{}
+
+	cfg.HonorLabels = false
+	wrapped := target.wrapReportingAppender(app)
+
+	rl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	if rl.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", rl.SampleAppender)
+	}
+
+	cfg.HonorLabels = true
+	wrapped = target.wrapReportingAppender(app)
+
+	hl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	if hl.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", hl.SampleAppender)
+	}
+}
+
+func TestTargetWrapAppender(t *testing.T) {
+	cfg := &config.ScrapeConfig{
+		MetricRelabelConfigs: []*config.RelabelConfig{
+			{}, {}, {},
+		},
+	}
+
+	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
+	target.scrapeConfig = cfg
+	app := &nopAppender{}
+
+	cfg.HonorLabels = false
+	wrapped := target.wrapAppender(app)
+
+	rl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	re, ok := rl.SampleAppender.(relabelAppender)
+	if !ok {
+		t.Fatalf("Expected relabelAppender but got %T", rl.SampleAppender)
+	}
+	if re.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", re.SampleAppender)
+	}
+
+	cfg.HonorLabels = true
+	wrapped = target.wrapAppender(app)
+
+	hl, ok := wrapped.(honorLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected honorLabelsAppender but got %T", wrapped)
+	}
+	re, ok = hl.SampleAppender.(relabelAppender)
+	if !ok {
+		t.Fatalf("Expected relabelAppender but got %T", hl.SampleAppender)
+	}
+	if re.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", re.SampleAppender)
+	}
+}
+
 func TestOverwriteLabels(t *testing.T) {
 	type test struct {
 		metric       string
@@ -293,12 +369,13 @@ func TestTargetScrapeMetricRelabelConfigs(t *testing.T) {
 }
 
 func TestTargetRecordScrapeHealth(t *testing.T) {
-	testTarget := newTestTarget("example.url:80", 0, model.LabelSet{model.JobLabel: "testjob"})
+	var (
+		testTarget = newTestTarget("example.url:80", 0, model.LabelSet{model.JobLabel: "testjob"})
+		now        = model.Now()
+		appender   = &collectResultAppender{}
+	)
 
-	now := model.Now()
-	appender := &collectResultAppender{}
-	testTarget.status.setLastError(nil)
-	recordScrapeHealth(appender, now.Time(), testTarget.Labels(), testTarget.status.Health(), 2*time.Second)
+	testTarget.report(appender, now.Time(), 2*time.Second, nil)
 
 	result := appender.result
 
