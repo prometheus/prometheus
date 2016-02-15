@@ -56,11 +56,11 @@ const (
 // chunkDesc contains meta-data for a chunk. Many of its methods are
 // goroutine-safe proxies for chunk methods.
 type chunkDesc struct {
-	sync.Mutex
+	sync.Mutex           // TODO(beorn7): Try out if an RWMutex would help here.
 	c              chunk // nil if chunk is evicted.
 	rCnt           int
-	chunkFirstTime model.Time // Used if chunk is evicted.
-	chunkLastTime  model.Time // Used if chunk is evicted.
+	chunkFirstTime model.Time // Populated at creation.
+	chunkLastTime  model.Time // Populated on closing of the chunk, model.Earliest if unset.
 
 	// evictListElement is nil if the chunk is not in the evict list.
 	// evictListElement is _not_ protected by the chunkDesc mutex.
@@ -71,11 +71,16 @@ type chunkDesc struct {
 // newChunkDesc creates a new chunkDesc pointing to the provided chunk. The
 // provided chunk is assumed to be not persisted yet. Therefore, the refCount of
 // the new chunkDesc is 1 (preventing eviction prior to persisting).
-func newChunkDesc(c chunk) *chunkDesc {
+func newChunkDesc(c chunk, firstTime model.Time) *chunkDesc {
 	chunkOps.WithLabelValues(createAndPin).Inc()
 	atomic.AddInt64(&numMemChunks, 1)
 	numMemChunkDescs.Inc()
-	return &chunkDesc{c: c, rCnt: 1}
+	return &chunkDesc{
+		c:              c,
+		rCnt:           1,
+		chunkFirstTime: firstTime,
+		chunkLastTime:  model.Earliest,
+	}
 }
 
 func (cd *chunkDesc) add(s *model.SamplePair) []chunk {
@@ -124,23 +129,27 @@ func (cd *chunkDesc) refCount() int {
 }
 
 func (cd *chunkDesc) firstTime() model.Time {
-	cd.Lock()
-	defer cd.Unlock()
-
-	if cd.c == nil {
-		return cd.chunkFirstTime
-	}
-	return cd.c.firstTime()
+	// No lock required, will never be modified.
+	return cd.chunkFirstTime
 }
 
 func (cd *chunkDesc) lastTime() model.Time {
 	cd.Lock()
 	defer cd.Unlock()
 
-	if cd.c == nil {
+	if cd.chunkLastTime != model.Earliest || cd.c == nil {
 		return cd.chunkLastTime
 	}
 	return cd.c.newIterator().lastTimestamp()
+}
+
+func (cd *chunkDesc) maybePopulateLastTime() {
+	cd.Lock()
+	defer cd.Unlock()
+
+	if cd.chunkLastTime == model.Earliest && cd.c != nil {
+		cd.chunkLastTime = cd.c.newIterator().lastTimestamp()
+	}
 }
 
 func (cd *chunkDesc) lastSamplePair() *model.SamplePair {
@@ -198,8 +207,10 @@ func (cd *chunkDesc) maybeEvict() bool {
 	if cd.rCnt != 0 {
 		return false
 	}
-	cd.chunkFirstTime = cd.c.firstTime()
-	cd.chunkLastTime = cd.c.newIterator().lastTimestamp()
+	// Last opportunity to populate chunkLastTime.
+	if cd.chunkLastTime == model.Earliest {
+		cd.chunkLastTime = cd.c.newIterator().lastTimestamp()
+	}
 	cd.c = nil
 	chunkOps.WithLabelValues(evict).Inc()
 	atomic.AddInt64(&numMemChunks, -1)
