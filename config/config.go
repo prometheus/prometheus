@@ -260,14 +260,20 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
+		// First set the correct scrape interval, then check that the timeout
+		// (inferred or explicit) is not greater than that.
 		if scfg.ScrapeInterval == 0 {
 			scfg.ScrapeInterval = c.GlobalConfig.ScrapeInterval
 		}
-		if scfg.ScrapeTimeout == 0 {
-			scfg.ScrapeTimeout = c.GlobalConfig.ScrapeTimeout
-		}
 		if scfg.ScrapeTimeout > scfg.ScrapeInterval {
 			return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", scfg.JobName)
+		}
+		if scfg.ScrapeTimeout == 0 {
+			if c.GlobalConfig.ScrapeTimeout > scfg.ScrapeInterval {
+				scfg.ScrapeTimeout = scfg.ScrapeInterval
+			} else {
+				scfg.ScrapeTimeout = c.GlobalConfig.ScrapeTimeout
+			}
 		}
 
 		if _, ok := jobNames[scfg.JobName]; ok {
@@ -296,10 +302,26 @@ type GlobalConfig struct {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultGlobalConfig
-	type plain GlobalConfig
-	if err := unmarshal((*plain)(c)); err != nil {
+	if err := unmarshal(c); err != nil {
 		return err
+	}
+	// First set the correct scrape interval, then check that the timeout
+	// (inferred or explicit) is not greater than that.
+	if c.ScrapeInterval == 0 {
+		c.ScrapeInterval = DefaultGlobalConfig.ScrapeInterval
+	}
+	if c.ScrapeTimeout > c.ScrapeInterval {
+		return fmt.Errorf("global scrape timeout greater than scrape interval")
+	}
+	if c.ScrapeTimeout == 0 {
+		if DefaultGlobalConfig.ScrapeTimeout > c.ScrapeInterval {
+			c.ScrapeTimeout = c.ScrapeInterval
+		} else {
+			c.ScrapeTimeout = DefaultGlobalConfig.ScrapeTimeout
+		}
+	}
+	if c.EvaluationInterval == 0 {
+		c.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
 	}
 	return checkOverflow(c.XXX, "global config")
 }
