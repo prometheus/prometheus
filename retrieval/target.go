@@ -433,7 +433,6 @@ func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
 	ticker := time.NewTicker(lastScrapeInterval)
 	defer ticker.Stop()
 
-	t.status.setLastScrape(time.Now())
 	t.scrape(sampleAppender)
 
 	// Explanation of the contraption below:
@@ -453,7 +452,6 @@ func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
 				return
 			case <-ticker.C:
 				took := time.Since(t.status.LastScrape())
-				t.status.setLastScrape(time.Now())
 
 				intervalStr := lastScrapeInterval.String()
 
