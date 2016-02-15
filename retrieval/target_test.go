@@ -45,6 +45,52 @@ func TestTargetLabels(t *testing.T) {
 	}
 }
 
+func TestTargetOffset(t *testing.T) {
+	interval := 10 * time.Second
+
+	offsets := make([]time.Duration, 10000)
+
+	// Calculate offsets for 10000 different targets.
+	for i := range offsets {
+		target := newTestTarget("example.com:80", 0, model.LabelSet{
+			"label": model.LabelValue(fmt.Sprintf("%d", i)),
+		})
+		offsets[i] = target.offset(interval)
+	}
+
+	// Put the offsets into buckets and validate that they are all
+	// within bounds.
+	bucketSize := 1 * time.Second
+	buckets := make([]int, interval/bucketSize)
+
+	for _, offset := range offsets {
+		if offset < 0 || offset >= interval {
+			t.Fatalf("Offset %v out of bounds", offset)
+		}
+
+		bucket := offset / bucketSize
+		buckets[bucket]++
+	}
+
+	t.Log(buckets)
+
+	// Calculate whether the the number of targets per bucket
+	// does not differ more than a given tolerance.
+	avg := len(offsets) / len(buckets)
+	tolerance := 0.15
+
+	for _, bucket := range buckets {
+		diff := bucket - avg
+		if diff < 0 {
+			diff = -diff
+		}
+
+		if float64(diff)/float64(avg) > tolerance {
+			t.Fatalf("Bucket out of tolerance bounds")
+		}
+	}
+}
+
 func TestOverwriteLabels(t *testing.T) {
 	type test struct {
 		metric       string
