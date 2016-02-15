@@ -544,7 +544,8 @@ func (t *Target) scrape(appender storage.SampleAppender) error {
 	}
 
 	if err == io.EOF {
-		return nil
+		// Set err to nil since it is used in the scrape health recording.
+		err = nil
 	}
 	return err
 }
