@@ -332,6 +332,31 @@ func (t *Target) path() string {
 	return string(t.labels[model.MetricsPathLabel])
 }
 
+// wrapAppender wraps a SampleAppender for samples ingested from the target.
+func (t *Target) wrapAppender(app storage.SampleAppender) storage.SampleAppender {
+	// The relabelAppender has to be inside the label-modifying appenders
+	// so the relabeling rules are applied to the correct label set.
+	if mrc := t.scrapeConfig.MetricRelabelConfigs; len(mrc) > 0 {
+		app = relabelAppender{
+			SampleAppender: app,
+			relabelings:    mrc,
+		}
+	}
+
+	if t.scrapeConfig.HonorLabels {
+		app = honorLabelsAppender{
+			SampleAppender: app,
+			labels:         t.Labels(),
+		}
+	} else {
+		app = ruleLabelsAppender{
+			SampleAppender: app,
+			labels:         t.Labels(),
+		}
+	}
+	return app
+}
+
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
 	t.RLock()
@@ -469,26 +494,8 @@ func (t *Target) scrape(appender storage.SampleAppender) error {
 	}(appender)
 
 	t.RLock()
-	// The relabelAppender has to be inside the label-modifying appenders
-	// so the relabeling rules are applied to the correct label set.
-	if len(t.scrapeConfig.MetricRelabelConfigs) > 0 {
-		appender = relabelAppender{
-			SampleAppender: appender,
-			relabelings:    t.scrapeConfig.MetricRelabelConfigs,
-		}
-	}
 
-	if t.scrapeConfig.HonorLabels {
-		appender = honorLabelsAppender{
-			SampleAppender: appender,
-			labels:         labels,
-		}
-	} else {
-		appender = ruleLabelsAppender{
-			SampleAppender: appender,
-			labels:         labels,
-		}
-	}
+	appender = t.wrapAppender(appender)
 
 	httpClient := t.httpClient
 	t.RUnlock()
