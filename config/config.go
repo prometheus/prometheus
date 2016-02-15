@@ -302,27 +302,33 @@ type GlobalConfig struct {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	if err := unmarshal(c); err != nil {
+	// Create a clean global config as the previous one was already populated
+	// by the default due to the YAML parser behavior for empty blocks.
+	gc := &GlobalConfig{}
+	type plain GlobalConfig
+	if err := unmarshal((*plain)(gc)); err != nil {
 		return err
 	}
 	// First set the correct scrape interval, then check that the timeout
 	// (inferred or explicit) is not greater than that.
-	if c.ScrapeInterval == 0 {
-		c.ScrapeInterval = DefaultGlobalConfig.ScrapeInterval
+	if gc.ScrapeInterval == 0 {
+		gc.ScrapeInterval = DefaultGlobalConfig.ScrapeInterval
 	}
-	if c.ScrapeTimeout > c.ScrapeInterval {
+	if gc.ScrapeTimeout > gc.ScrapeInterval {
 		return fmt.Errorf("global scrape timeout greater than scrape interval")
 	}
-	if c.ScrapeTimeout == 0 {
-		if DefaultGlobalConfig.ScrapeTimeout > c.ScrapeInterval {
-			c.ScrapeTimeout = c.ScrapeInterval
+	if gc.ScrapeTimeout == 0 {
+		if DefaultGlobalConfig.ScrapeTimeout > gc.ScrapeInterval {
+			gc.ScrapeTimeout = gc.ScrapeInterval
 		} else {
-			c.ScrapeTimeout = DefaultGlobalConfig.ScrapeTimeout
+			gc.ScrapeTimeout = DefaultGlobalConfig.ScrapeTimeout
 		}
 	}
-	if c.EvaluationInterval == 0 {
-		c.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
+	if gc.EvaluationInterval == 0 {
+		gc.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
 	}
+	*c = *gc
+
 	return checkOverflow(c.XXX, "global config")
 }
 
