@@ -174,7 +174,7 @@ type Target struct {
 
 	// Labels before any processing.
 	metaLabels model.LabelSet
-	// Any base labels that are added to this target and its metrics.
+	// Any labels that are added to this target and its metrics.
 	labels model.LabelSet
 
 	// The HTTP client used to scrape the target's endpoint.
@@ -199,11 +199,11 @@ func (t *Target) Status() *TargetStatus {
 
 // Update overwrites settings in the target that are derived from the job config
 // it belongs to.
-func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels model.LabelSet) error {
+func (t *Target) Update(cfg *config.ScrapeConfig, labels, metaLabels model.LabelSet) error {
 	t.Lock()
 
 	t.scrapeConfig = cfg
-	t.labels = baseLabels
+	t.labels = labels
 	t.metaLabels = metaLabels
 
 	t.Unlock()
@@ -438,13 +438,13 @@ const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client
 
 func (t *Target) scrape(appender storage.SampleAppender) error {
 	var (
-		err        error
-		start      = time.Now()
-		baseLabels = t.BaseLabels()
+		err    error
+		start  = time.Now()
+		labels = t.Labels()
 	)
 	defer func(appender storage.SampleAppender) {
 		t.status.setLastError(err)
-		recordScrapeHealth(appender, start, baseLabels, t.status.Health(), time.Since(start))
+		recordScrapeHealth(appender, start, labels, t.status.Health(), time.Since(start))
 	}(appender)
 
 	t.RLock()
@@ -460,12 +460,12 @@ func (t *Target) scrape(appender storage.SampleAppender) error {
 	if t.scrapeConfig.HonorLabels {
 		appender = honorLabelsAppender{
 			SampleAppender: appender,
-			labels:         baseLabels,
+			labels:         labels,
 		}
 	} else {
 		appender = ruleLabelsAppender{
 			SampleAppender: appender,
-			labels:         baseLabels,
+			labels:         labels,
 		}
 	}
 
@@ -585,8 +585,8 @@ func (app relabelAppender) Append(s *model.Sample) error {
 	return app.SampleAppender.Append(s)
 }
 
-// BaseLabels returns a copy of the target's base labels.
-func (t *Target) BaseLabels() model.LabelSet {
+// Labels returns a copy of the set of all public labels of the target.
+func (t *Target) Labels() model.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
 
@@ -615,17 +615,17 @@ func (t *Target) MetaLabels() model.LabelSet {
 func recordScrapeHealth(
 	sampleAppender storage.SampleAppender,
 	timestamp time.Time,
-	baseLabels model.LabelSet,
+	labels model.LabelSet,
 	health TargetHealth,
 	scrapeDuration time.Duration,
 ) {
-	healthMetric := make(model.Metric, len(baseLabels)+1)
-	durationMetric := make(model.Metric, len(baseLabels)+1)
+	healthMetric := make(model.Metric, len(labels)+1)
+	durationMetric := make(model.Metric, len(labels)+1)
 
 	healthMetric[model.MetricNameLabel] = scrapeHealthMetricName
 	durationMetric[model.MetricNameLabel] = scrapeDurationMetricName
 
-	for ln, lv := range baseLabels {
+	for ln, lv := range labels {
 		healthMetric[ln] = lv
 		durationMetric[ln] = lv
 	}

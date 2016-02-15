@@ -32,14 +32,14 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
-func TestBaseLabels(t *testing.T) {
+func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, model.LabelSet{"job": "some_job", "foo": "bar"})
 	want := model.LabelSet{
 		model.JobLabel:      "some_job",
 		model.InstanceLabel: "example.com:80",
 		"foo":               "bar",
 	}
-	got := target.BaseLabels()
+	got := target.Labels()
 	if !reflect.DeepEqual(want, got) {
 		t.Errorf("want base labels %v, got %v", want, got)
 	}
@@ -252,7 +252,7 @@ func TestTargetRecordScrapeHealth(t *testing.T) {
 	now := model.Now()
 	appender := &collectResultAppender{}
 	testTarget.status.setLastError(nil)
-	recordScrapeHealth(appender, now.Time(), testTarget.BaseLabels(), testTarget.status.Health(), 2*time.Second)
+	recordScrapeHealth(appender, now.Time(), testTarget.Labels(), testTarget.status.Health(), 2*time.Second)
 
 	result := appender.result
 

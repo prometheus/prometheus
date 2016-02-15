@@ -188,7 +188,7 @@ func TestTargetManagerChan(t *testing.T) {
 			for _, expt := range expTargets {
 				found := false
 				for _, actt := range actTargets {
-					if reflect.DeepEqual(expt, actt.BaseLabels()) {
+					if reflect.DeepEqual(expt, actt.Labels()) {
 						found = true
 						break
 					}
