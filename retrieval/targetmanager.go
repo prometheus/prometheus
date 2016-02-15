@@ -323,7 +323,7 @@ func (tm *TargetManager) Pools() map[string][]*Target {
 
 	for _, ts := range tm.targets {
 		for _, t := range ts {
-			job := string(t.BaseLabels()[model.JobLabel])
+			job := string(t.Labels()[model.JobLabel])
 			pools[job] = append(pools[job], t)
 		}
 	}
