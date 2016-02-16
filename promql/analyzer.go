@@ -125,6 +125,7 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 	}()
 
 	// Preload all analyzed ranges.
+	iters := map[model.Fingerprint]local.SeriesIterator{}
 	for offset, pt := range a.offsetPreloadTimes {
 		start := a.Start.Add(-offset)
 		end := a.End.Add(-offset)
@@ -132,19 +133,35 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			err = p.PreloadRange(fp, start.Add(-rangeDuration), end, StalenessDelta)
+			startOfRange := start.Add(-rangeDuration)
+			if StalenessDelta > rangeDuration {
+				// Cover a weird corner case: The expression
+				// mixes up instants and ranges for the same
+				// series. We'll handle that over-all as
+				// range. But if the rangeDuration is smaller
+				// than the StalenessDelta, the range wouldn't
+				// cover everything potentially needed for the
+				// instant, so we have to extend startOfRange.
+				startOfRange = start.Add(-StalenessDelta)
+			}
+			iter, err := p.PreloadRange(fp, startOfRange, end)
 			if err != nil {
 				return nil, err
 			}
+			iters[fp] = iter
 		}
 		for fp := range pt.instants {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			err = p.PreloadRange(fp, start, end, StalenessDelta)
+			// Need to look backwards by StalenessDelta but not
+			// forward because we always return the closest sample
+			// _before_ the reference time.
+			iter, err := p.PreloadRange(fp, start.Add(-StalenessDelta), end)
 			if err != nil {
 				return nil, err
 			}
+			iters[fp] = iter
 		}
 	}
 
@@ -153,11 +170,11 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 		switch n := node.(type) {
 		case *VectorSelector:
 			for fp := range n.metrics {
-				n.iterators[fp] = a.Storage.NewIterator(fp)
+				n.iterators[fp] = iters[fp]
 			}
 		case *MatrixSelector:
 			for fp := range n.metrics {
-				n.iterators[fp] = a.Storage.NewIterator(fp)
+				n.iterators[fp] = iters[fp]
 			}
 		}
 		return true

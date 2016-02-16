@@ -14,8 +14,6 @@
 package local
 
 import (
-	"time"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -52,10 +50,6 @@ type Storage interface {
 	LabelValuesForLabelName(model.LabelName) model.LabelValues
 	// Get the metric associated with the provided fingerprint.
 	MetricForFingerprint(model.Fingerprint) metric.Metric
-	// Construct an iterator for a given fingerprint.
-	// The iterator will never return samples older than retention time,
-	// relative to the time NewIterator was called.
-	NewIterator(model.Fingerprint) SeriesIterator
 	// Drop all time series associated with the given fingerprints.
 	DropMetricsForFingerprints(...model.Fingerprint)
 	// Run the various maintenance loops in goroutines. Returns when the
@@ -77,12 +71,11 @@ type Storage interface {
 // modifying the corresponding series, but the iterator will represent the state
 // of the series prior the modification.
 type SeriesIterator interface {
-	// Gets the two values that are immediately adjacent to a given time. In
-	// case a value exist at precisely the given time, only that single
-	// value is returned. Only the first or last value is returned (as a
-	// single value), if the given time is before or after the first or last
-	// value, respectively.
-	ValueAtTime(model.Time) []model.SamplePair
+	// Gets the value that is closest before the given time. In case a value
+	// exist at precisely the given time, that value is returned. If no
+	// applicable value exists, a SamplePair with timestamp model.Earliest
+	// and value 0.0 is returned.
+	ValueAtOrBeforeTime(model.Time) model.SamplePair
 	// Gets the boundary values of an interval: the first and last value
 	// within a given interval.
 	BoundaryValues(metric.Interval) []model.SamplePair
@@ -90,15 +83,14 @@ type SeriesIterator interface {
 	RangeValues(metric.Interval) []model.SamplePair
 }
 
-// A Preloader preloads series data necessary for a query into memory and pins
-// them until released via Close(). Its methods are generally not
-// goroutine-safe.
+// A Preloader preloads series data necessary for a query into memory, pins it
+// until released via Close(), and returns an iterator for the pinned data. Its
+// methods are generally not goroutine-safe.
 type Preloader interface {
 	PreloadRange(
 		fp model.Fingerprint,
 		from model.Time, through model.Time,
-		stalenessDelta time.Duration,
-	) error
+	) (SeriesIterator, error)
 	// Close unpins any previously requested series data from memory.
 	Close()
 }

@@ -583,6 +583,11 @@ func funcPredictLinear(ev *evaluator, args Expressions) model.Value {
 	}
 
 	// add predicted delta to last value.
+	// TODO(beorn7): This is arguably suboptimal. The funcDeriv above has
+	// given us an estimate over the range. So we should add the delta to
+	// the value predicted for the end of the range. Also, once this has
+	// been rectified, we are not using BoundaryValues anywhere anymore, so
+	// we can kick out a whole lot of code.
 	matrixBounds := ev.evalMatrixBounds(args[0])
 	outVec := make(vector, 0, len(signatureToDelta))
 	for _, samples := range matrixBounds {
