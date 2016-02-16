@@ -28,6 +28,8 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
+	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
@@ -219,8 +221,6 @@ func (t *Target) Update(cfg *config.ScrapeConfig, labels, metaLabels model.Label
 }
 
 func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
-	rt := httputil.NewDeadlineRoundTripper(time.Duration(cfg.ScrapeTimeout), cfg.ProxyURL.URL)
-
 	tlsOpts := httputil.TLSOptions{
 		InsecureSkipVerify: cfg.TLSConfig.InsecureSkipVerify,
 		CAFile:             cfg.TLSConfig.CAFile,
@@ -233,11 +233,13 @@ func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Get a default roundtripper with the scrape timeout.
-	tr := rt.(*http.Transport)
-	// Set the TLS config from above
-	tr.TLSClientConfig = tlsConfig
-	rt = tr
+	// The only timeout we care about is the configured scrape timeout.
+	// It is applied on request. So we leave out any timings here.
+	var rt http.RoundTripper = &http.Transport{
+		Proxy:             http.ProxyURL(cfg.ProxyURL.URL),
+		DisableKeepAlives: true,
+		TLSClientConfig:   tlsConfig,
+	}
 
 	// If a bearer token is provided, create a round tripper that will set the
 	// Authorization header correctly on each request.
@@ -502,7 +504,7 @@ func (t *Target) scrape(appender storage.SampleAppender) error {
 
 	appender = t.wrapAppender(appender)
 
-	httpClient := t.httpClient
+	client := t.httpClient
 	t.RUnlock()
 
 	req, err := http.NewRequest("GET", t.URL().String(), nil)
@@ -511,7 +513,8 @@ func (t *Target) scrape(appender storage.SampleAppender) error {
 	}
 	req.Header.Add("Accept", acceptHeader)
 
-	resp, err := httpClient.Do(req)
+	ctx, _ := context.WithTimeout(context.Background(), t.timeout())
+	resp, err := ctxhttp.Do(ctx, client, req)
 	if err != nil {
 		return err
 	}
