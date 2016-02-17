@@ -152,7 +152,7 @@ func (g *Group) run() {
 		start := time.Now()
 		g.eval()
 
-		iterationDuration.Observe(float64(time.Since(start)) / float64(time.Millisecond))
+		iterationDuration.Observe(float64(time.Since(start)) / float64(time.Second))
 	}
 	iter()
 
