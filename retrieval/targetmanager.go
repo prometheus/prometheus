@@ -265,7 +265,7 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 				if told == nil {
 					continue
 				}
-				if tnew.InstanceIdentifier() == told.InstanceIdentifier() {
+				if tnew.fingerprint() == told.fingerprint() {
 					match = told
 					oldTargets[j] = nil
 					break
