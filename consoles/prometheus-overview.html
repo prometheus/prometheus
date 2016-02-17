@@ -54,7 +54,7 @@
   </tr>
   <tr>
     <td>Evaluation Duration</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_evaluator_duration_milliseconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_evaluator_duration_milliseconds_count{job='prometheus',instance='%s'}[5m]) / 1000" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_evaluator_duration_seconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_evaluator_duration_seconds_count{job='prometheus',instance='%s'}[5m]) / 1000" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
   </tr>
   <tr>
     <td>Notification Latency</td>
