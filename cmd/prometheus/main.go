@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The main package for the Prometheus server executeable.
+// The main package for the Prometheus server executable.
 package main
 
 import (
