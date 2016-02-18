@@ -40,7 +40,7 @@ type TargetProvider interface {
 	// updated target groups. The channel must be closed by the target provider
 	// if no more updates will be sent.
 	// On receiving from done Run must return.
-	Run(up chan<- config.TargetGroup, done <-chan struct{})
+	Run(ctx context.Context, up chan<- []*config.TargetGroup)
 }
 
 // TargetManager maintains a set of targets, starts and stops their scraping and
@@ -178,7 +178,7 @@ func (ss *scrapeSet) run(ctx context.Context) {
 
 	for name, prov := range providers {
 		var (
-			updates = make(chan config.TargetGroup)
+			updates = make(chan []*config.TargetGroup)
 		)
 
 		wg.Add(1)
@@ -192,23 +192,17 @@ func (ss *scrapeSet) run(ctx context.Context) {
 				case <-ctx.Done():
 					ss.stopScrapers(name)
 					return
-				case update := <-updates:
-					if err := ss.update(name, &update); err != nil {
-						log.With("target_group", update).Errorf("Target update failed: %s", err)
+				case tgs := <-updates:
+					for _, tg := range tgs {
+						if err := ss.update(name, tg); err != nil {
+							log.With("target_group", tg).Errorf("Target update failed: %s", err)
+						}
 					}
 				}
 			}
 		}(name, prov)
 
-		done := make(chan struct{})
-
-		// TODO(fabxc): Adjust the TargetProvider interface so we can remove this
-		// redirection of the termination signal.
-		go func() {
-			<-ctx.Done()
-			close(done)
-		}()
-		go prov.Run(updates, done)
+		go prov.Run(ctx, updates)
 	}
 
 	wg.Wait()
@@ -421,21 +415,16 @@ func NewStaticProvider(groups []*config.TargetGroup) *StaticProvider {
 	for i, tg := range groups {
 		tg.Source = fmt.Sprintf("%d", i)
 	}
-	return &StaticProvider{
-		TargetGroups: groups,
-	}
+	return &StaticProvider{groups}
 }
 
 // Run implements the TargetProvider interface.
-func (sd *StaticProvider) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
-	defer close(ch)
-
-	for _, tg := range sd.TargetGroups {
-		select {
-		case <-done:
-			return
-		case ch <- *tg:
-		}
+func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+	// We still have to consider that the consumer exits right away in which case
+	// the context will be canceled.
+	select {
+	case ch <- sd.TargetGroups:
+	case <-ctx.Done():
 	}
-	<-done
+	close(ch)
 }

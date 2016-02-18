@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -94,75 +95,35 @@ func (kd *Discovery) Initialize() error {
 	return nil
 }
 
-// Sources implements the TargetProvider interface.
-func (kd *Discovery) Sources() []string {
-	sourceNames := make([]string, 0, len(kd.apiServers))
-	for _, apiServer := range kd.apiServers {
-		sourceNames = append(sourceNames, apiServersTargetGroupName+":"+apiServer.Host)
-	}
-
-	nodes, _, err := kd.getNodes()
-	if err != nil {
-		// If we can't list nodes then we can't watch them. Assume this is a misconfiguration
-		// & log & return empty.
-		log.Errorf("Unable to initialize Kubernetes nodes: %s", err)
-		return []string{}
-	}
-	sourceNames = append(sourceNames, kd.nodeSources(nodes)...)
-
-	services, _, err := kd.getServices()
-	if err != nil {
-		// If we can't list services then we can't watch them. Assume this is a misconfiguration
-		// & log & return empty.
-		log.Errorf("Unable to initialize Kubernetes services: %s", err)
-		return []string{}
-	}
-	sourceNames = append(sourceNames, kd.serviceSources(services)...)
-
-	return sourceNames
-}
-
-func (kd *Discovery) nodeSources(nodes map[string]*Node) []string {
-	var sourceNames []string
-	for name := range nodes {
-		sourceNames = append(sourceNames, nodesTargetGroupName+":"+name)
-	}
-	return sourceNames
-}
-
-func (kd *Discovery) serviceSources(services map[string]map[string]*Service) []string {
-	var sourceNames []string
-	for _, ns := range services {
-		for _, service := range ns {
-			sourceNames = append(sourceNames, serviceSource(service))
-		}
-	}
-	return sourceNames
-}
-
 // Run implements the TargetProvider interface.
-func (kd *Discovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
+func (kd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	defer close(ch)
 
-	if tg := kd.updateAPIServersTargetGroup(); tg != nil {
-		select {
-		case ch <- *tg:
-		case <-done:
-			return
-		}
+	// Send an initial full view.
+	// TODO(fabxc): this does not include all available services and service
+	// endpoints yet. Service endpoints were also missing in the previous Sources() method.
+	var all []*config.TargetGroup
+
+	all = append(all, kd.updateAPIServersTargetGroup())
+	all = append(all, kd.updateNodesTargetGroup())
+
+	select {
+	case ch <- all:
+	case <-ctx.Done():
+		return
 	}
 
 	retryInterval := time.Duration(kd.Conf.RetryInterval)
 
 	update := make(chan interface{}, 10)
 
-	go kd.watchNodes(update, done, retryInterval)
-	go kd.startServiceWatch(update, done, retryInterval)
+	go kd.watchNodes(update, ctx.Done(), retryInterval)
+	go kd.startServiceWatch(update, ctx.Done(), retryInterval)
 
 	var tg *config.TargetGroup
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
 		case event := <-update:
 			switch obj := event.(type) {
@@ -181,8 +142,8 @@ func (kd *Discovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 		}
 
 		select {
-		case ch <- *tg:
-		case <-done:
+		case ch <- []*config.TargetGroup{tg}:
+		case <-ctx.Done():
 			return
 		}
 	}

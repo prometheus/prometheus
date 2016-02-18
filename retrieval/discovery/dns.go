@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -91,7 +92,7 @@ func NewDNSDiscovery(conf *config.DNSSDConfig) *DNSDiscovery {
 }
 
 // Run implements the TargetProvider interface.
-func (dd *DNSDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
+func (dd *DNSDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	defer close(ch)
 
 	ticker := time.NewTicker(dd.interval)
@@ -104,22 +105,13 @@ func (dd *DNSDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) 
 		select {
 		case <-ticker.C:
 			dd.refreshAll(ch)
-		case <-done:
+		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-// Sources implements the TargetProvider interface.
-func (dd *DNSDiscovery) Sources() []string {
-	var srcs []string
-	for _, name := range dd.names {
-		srcs = append(srcs, name)
-	}
-	return srcs
-}
-
-func (dd *DNSDiscovery) refreshAll(ch chan<- config.TargetGroup) {
+func (dd *DNSDiscovery) refreshAll(ch chan<- []*config.TargetGroup) {
 	var wg sync.WaitGroup
 	wg.Add(len(dd.names))
 	for _, name := range dd.names {
@@ -133,7 +125,7 @@ func (dd *DNSDiscovery) refreshAll(ch chan<- config.TargetGroup) {
 	wg.Wait()
 }
 
-func (dd *DNSDiscovery) refresh(name string, ch chan<- config.TargetGroup) error {
+func (dd *DNSDiscovery) refresh(name string, ch chan<- []*config.TargetGroup) error {
 	response, err := lookupAll(name, dd.qtype)
 	dnsSDLookupsCount.Inc()
 	if err != nil {
@@ -141,7 +133,8 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- config.TargetGroup) error
 		return err
 	}
 
-	var tg config.TargetGroup
+	tg := &config.TargetGroup{}
+
 	for _, record := range response.Answer {
 		target := model.LabelValue("")
 		switch addr := record.(type) {
@@ -166,7 +159,7 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- config.TargetGroup) error
 	}
 
 	tg.Source = name
-	ch <- tg
+	ch <- []*config.TargetGroup{tg}
 
 	return nil
 }
