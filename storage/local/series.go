@@ -162,9 +162,15 @@ type memorySeries struct {
 	// first chunk before its chunk desc is evicted. In doubt, this field is
 	// just set to the oldest possible timestamp.
 	savedFirstTime model.Time
-	// The timestamp of the last sample in this series. Needed for fast access to
-	// ensure timestamp monotonicity during ingestion.
+	// The timestamp of the last sample in this series. Needed for fast
+	// access for federation and to ensure timestamp monotonicity during
+	// ingestion.
 	lastTime model.Time
+	// The last ingested sample value. Needed for fast access for
+	// federation.
+	lastSampleValue model.SampleValue
+	// Whether lastSampleValue has been set already.
+	lastSampleValueSet bool
 	// Whether the current head chunk has already been finished.  If true,
 	// the current head chunk must not be modified anymore.
 	headChunkClosed bool
@@ -242,6 +248,8 @@ func (s *memorySeries) add(v *model.SamplePair) int {
 	}
 
 	s.lastTime = v.Timestamp
+	s.lastSampleValue = v.Value
+	s.lastSampleValueSet = true
 	return len(chunks) - 1
 }
 
@@ -435,13 +443,31 @@ func (s *memorySeries) head() *chunkDesc {
 	return s.chunkDescs[len(s.chunkDescs)-1]
 }
 
-// firstTime returns the timestamp of the first sample in the series. The caller
-// must have locked the fingerprint of the memorySeries.
+// firstTime returns the timestamp of the first sample in the series.
+//
+// The caller must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) firstTime() model.Time {
 	if s.chunkDescsOffset == 0 && len(s.chunkDescs) > 0 {
 		return s.chunkDescs[0].firstTime()
 	}
 	return s.savedFirstTime
+}
+
+// lastSamplePair returns the last ingested SamplePair. It returns
+// ZeroSamplePair if this memorySeries has never received a sample (via the add
+// method), which is the case for freshly unarchived series or newly created
+// ones and also for all series after a server restart. However, in that case,
+// series will most likely be considered stale anyway.
+//
+// The caller must have locked the fingerprint of the memorySeries.
+func (s *memorySeries) lastSamplePair() model.SamplePair {
+	if !s.lastSampleValueSet {
+		return ZeroSamplePair
+	}
+	return model.SamplePair{
+		Timestamp: s.lastTime,
+		Value:     s.lastSampleValue,
+	}
 }
 
 // chunksToPersist returns a slice of chunkDescs eligible for persistence. It's

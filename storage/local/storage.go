@@ -354,7 +354,7 @@ func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint)
 	if !ok {
 		return ZeroSamplePair
 	}
-	return series.head().lastSamplePair()
+	return series.lastSamplePair()
 }
 
 // boundedIterator wraps a SeriesIterator and does not allow fetching
@@ -576,15 +576,17 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) error {
 
 	if sample.Timestamp <= series.lastTime {
 		s.fpLocker.Unlock(fp)
-		// Don't log and track equal timestamps, as they are a common occurrence
-		// when using client-side timestamps (e.g. Pushgateway or federation).
-		// It would be even better to also compare the sample values here, but
-		// we don't have efficient access to a series's last value.
-		if sample.Timestamp != series.lastTime {
-			s.outOfOrderSamplesCount.Inc()
-			return ErrOutOfOrderSample
+		// Don't report "no-op appends", i.e. where timestamp and sample
+		// value are the same as for the last append, as they are a
+		// common occurrence when using client-side timestamps
+		// (e.g. Pushgateway or federation).
+		if sample.Timestamp == series.lastTime &&
+			series.lastSampleValueSet &&
+			sample.Value == series.lastSampleValue {
+			return nil
 		}
-		return nil
+		s.outOfOrderSamplesCount.Inc()
+		return ErrOutOfOrderSample
 	}
 	completedChunksCount := series.add(&model.SamplePair{
 		Value:     sample.Value,

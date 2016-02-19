@@ -81,13 +81,6 @@ const (
 // is populated upon creation of a chunkDesc, so it is alway safe to call
 // firstTime. The firstTime method is arguably not needed and only there for
 // consistency with lastTime.
-//
-// Yet another (deprecated) case is lastSamplePair. It's used in federation and
-// must be callable without pinning. Locking the fingerprint of the series is
-// still required (to avoid concurrent appends to the chunk). The call is
-// relatively expensive because of the required acquisition of the evict
-// mutex. It will go away, though, once tracking the lastSamplePair has been
-// moved into the series object.
 type chunkDesc struct {
 	sync.Mutex           // Protects pinning.
 	c              chunk // nil if chunk is evicted.
@@ -191,24 +184,6 @@ func (cd *chunkDesc) lastTime() model.Time {
 func (cd *chunkDesc) maybePopulateLastTime() {
 	if cd.chunkLastTime == model.Earliest && cd.c != nil {
 		cd.chunkLastTime = cd.c.newIterator().lastTimestamp()
-	}
-}
-
-// lastSamplePair returns the last sample pair of the underlying chunk, or
-// ZeroSampleValue if the chunk is evicted. For safe concurrent access, this
-// method requires the fingerprint of the time series to be locked.
-// TODO(beorn7): Move up into memorySeries.
-func (cd *chunkDesc) lastSamplePair() model.SamplePair {
-	cd.Lock()
-	defer cd.Unlock()
-
-	if cd.c == nil {
-		return ZeroSamplePair
-	}
-	it := cd.c.newIterator()
-	return model.SamplePair{
-		Timestamp: it.lastTimestamp(),
-		Value:     it.lastSampleValue(),
 	}
 }
 
