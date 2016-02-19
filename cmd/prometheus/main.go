@@ -62,6 +62,7 @@ var (
 // Main manages the startup and shutdown lifecycle of the entire Prometheus server.
 func Main() int {
 	if err := parse(os.Args[1:]); err != nil {
+		log.Error(err)
 		return 2
 	}
 
