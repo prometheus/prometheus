@@ -346,13 +346,13 @@ func (s *memorySeriesStorage) WaitForIndexing() {
 }
 
 // LastSampleForFingerprint implements Storage.
-func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) *model.SamplePair {
+func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) model.SamplePair {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
 	series, ok := s.fpToSeries.get(fp)
 	if !ok {
-		return nil
+		return ZeroSamplePair
 	}
 	return series.head().lastSamplePair()
 }
@@ -367,7 +367,7 @@ type boundedIterator struct {
 // ValueAtOrBeforeTime implements the SeriesIterator interface.
 func (bit *boundedIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePair {
 	if ts < bit.start {
-		return model.SamplePair{Timestamp: model.Earliest}
+		return ZeroSamplePair
 	}
 	return bit.it.ValueAtOrBeforeTime(ts)
 }

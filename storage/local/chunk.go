@@ -194,19 +194,19 @@ func (cd *chunkDesc) maybePopulateLastTime() {
 	}
 }
 
-// lastSamplePair returns the last sample pair of the underlying chunk, or nil
-// if the chunk is evicted. For safe concurrent access, this method requires the
-// fingerprint of the time series to be locked.
+// lastSamplePair returns the last sample pair of the underlying chunk, or
+// ZeroSampleValue if the chunk is evicted. For safe concurrent access, this
+// method requires the fingerprint of the time series to be locked.
 // TODO(beorn7): Move up into memorySeries.
-func (cd *chunkDesc) lastSamplePair() *model.SamplePair {
+func (cd *chunkDesc) lastSamplePair() model.SamplePair {
 	cd.Lock()
 	defer cd.Unlock()
 
 	if cd.c == nil {
-		return nil
+		return ZeroSamplePair
 	}
 	it := cd.c.newIterator()
-	return &model.SamplePair{
+	return model.SamplePair{
 		Timestamp: it.lastTimestamp(),
 		Value:     it.lastSampleValue(),
 	}
@@ -293,8 +293,7 @@ type chunkIterator interface {
 	lastSampleValue() model.SampleValue
 	// Gets the value that is closest before the given time. In case a value
 	// exist at precisely the given time, that value is returned. If no
-	// applicable value exists, a SamplePair with timestamp model.Earliest
-	// and value 0.0 is returned.
+	// applicable value exists, ZeroSamplePair is returned.
 	valueAtOrBeforeTime(model.Time) model.SamplePair
 	// Gets all values contained within a given interval.
 	rangeValues(metric.Interval) []model.SamplePair

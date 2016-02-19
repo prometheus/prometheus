@@ -42,10 +42,12 @@ type Storage interface {
 	// label matchers. At least one label matcher must be specified that does not
 	// match the empty string.
 	MetricsForLabelMatchers(...*metric.LabelMatcher) map[model.Fingerprint]metric.Metric
-	// LastSamplePairForFingerprint returns the last sample pair for the
-	// provided fingerprint. If the respective time series does not exist or
-	// has an evicted head chunk, nil is returned.
-	LastSamplePairForFingerprint(model.Fingerprint) *model.SamplePair
+	// LastSamplePairForFingerprint returns the last sample pair that has
+	// been ingested for the provided fingerprint. If this instance of the
+	// Storage has never ingested a sample for the provided fingerprint (or
+	// the last ingestion is so long ago that the series has been archived),
+	// ZeroSamplePair is returned.
+	LastSamplePairForFingerprint(model.Fingerprint) model.SamplePair
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(model.LabelName) model.LabelValues
 	// Get the metric associated with the provided fingerprint.
@@ -73,8 +75,7 @@ type Storage interface {
 type SeriesIterator interface {
 	// Gets the value that is closest before the given time. In case a value
 	// exist at precisely the given time, that value is returned. If no
-	// applicable value exists, a SamplePair with timestamp model.Earliest
-	// and value 0.0 is returned.
+	// applicable value exists, ZeroSamplePair is returned.
 	ValueAtOrBeforeTime(model.Time) model.SamplePair
 	// Gets the boundary values of an interval: the first and last value
 	// within a given interval.
@@ -94,3 +95,10 @@ type Preloader interface {
 	// Close unpins any previously requested series data from memory.
 	Close()
 }
+
+// ZeroSamplePair is the pseudo zero-value of model.SamplePair used by the local
+// package to signal a non-existing sample. It is a SamplePair with timestamp
+// model.Earliest and value 0.0. Note that the natural zero value of SamplePair
+// has a timestamp of 0, which is possible to appear in a real SamplePair and
+// thus not suitable to signal a non-existing SamplePair.
+var ZeroSamplePair = model.SamplePair{Timestamp: model.Earliest}

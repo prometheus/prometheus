@@ -479,7 +479,7 @@ func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePa
 	}
 
 	if len(it.chunks) == 0 {
-		return model.SamplePair{Timestamp: model.Earliest}
+		return ZeroSamplePair
 	}
 
 	// Find the last chunk where firstTime() is before or equal to t.
@@ -489,7 +489,7 @@ func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePa
 	})
 	if i == len(it.chunks) {
 		// Even the first chunk starts after t.
-		return model.SamplePair{Timestamp: model.Earliest}
+		return ZeroSamplePair
 	}
 	it.chunkIt = it.chunkIterator(l - i)
 	return it.chunkIt.valueAtOrBeforeTime(t)
@@ -598,7 +598,7 @@ type nopSeriesIterator struct{}
 
 // ValueAtTime implements SeriesIterator.
 func (i nopSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
-	return model.SamplePair{Timestamp: model.Earliest}
+	return ZeroSamplePair
 }
 
 // BoundaryValues implements SeriesIterator.
