@@ -367,8 +367,9 @@ func (s *memorySeries) preloadChunks(
 }
 
 // newIterator returns a new SeriesIterator for the provided chunkDescs (which
-// must be pinned). The caller must have locked the fingerprint of the
-// memorySeries.
+// must be pinned).
+//
+// The caller must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc) SeriesIterator {
 	chunks := make([]chunk, 0, len(pinnedChunkDescs))
 	for _, cd := range pinnedChunkDescs {
@@ -385,9 +386,27 @@ func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc) SeriesIterator
 // preloadChunksForRange loads chunks for the given range from the persistence.
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) preloadChunksForRange(
+	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	fp model.Fingerprint, mss *memorySeriesStorage,
+	lastSampleOnly bool,
+	mss *memorySeriesStorage,
 ) ([]*chunkDesc, SeriesIterator, error) {
+	// If we have to preload for only one sample, and we have a
+	// lastSamplePair in the series, and thas last samplePair is in the
+	// interval, just take it in a singleSampleSeriesIterator. No need to
+	// pin or load anything.
+	if lastSampleOnly {
+		lastSample := s.lastSamplePair()
+		if !through.Before(lastSample.Timestamp) &&
+			!from.After(lastSample.Timestamp) &&
+			lastSample != ZeroSamplePair {
+			iter := &boundedIterator{
+				it:    &singleSampleSeriesIterator{samplePair: lastSample},
+				start: model.Now().Add(-mss.dropAfter),
+			}
+			return nil, iter, nil
+		}
+	}
 	firstChunkDescTime := model.Latest
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
@@ -617,6 +636,35 @@ func (it *memorySeriesIterator) chunkIterator(i int) chunkIterator {
 		it.chunkIts[i] = chunkIt
 	}
 	return chunkIt
+}
+
+// singleSampleSeriesIterator implements Series Iterator. It is a "shortcut
+// iterator" that returns a single samplee only. The sample is saved in the
+// iterator itself, so no chunks need to be pinned.
+type singleSampleSeriesIterator struct {
+	samplePair model.SamplePair
+}
+
+// ValueAtTime implements SeriesIterator.
+func (it *singleSampleSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
+	if it.samplePair.Timestamp.After(t) {
+		return ZeroSamplePair
+	}
+	return it.samplePair
+}
+
+// BoundaryValues implements SeriesIterator.
+func (it *singleSampleSeriesIterator) BoundaryValues(in metric.Interval) []model.SamplePair {
+	return it.RangeValues(in)
+}
+
+// RangeValues implements SeriesIterator.
+func (it *singleSampleSeriesIterator) RangeValues(in metric.Interval) []model.SamplePair {
+	if it.samplePair.Timestamp.After(in.NewestInclusive) ||
+		it.samplePair.Timestamp.Before(in.OldestInclusive) {
+		return []model.SamplePair{}
+	}
+	return []model.SamplePair{it.samplePair}
 }
 
 // nopSeriesIterator implements Series Iterator. It never returns any values.

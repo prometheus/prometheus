@@ -500,7 +500,7 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps2))
 	}
 
-	_, it, err := s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest)
+	_, it, err := s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest, false)
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}
@@ -508,7 +508,7 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
 
-	_, it, err = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest)
+	_, it, err = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest, false)
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}
@@ -533,7 +533,7 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps3))
 	}
 
-	_, it, err = s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest)
+	_, it, err = s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest, false)
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}
@@ -541,7 +541,7 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
 
-	_, it, err = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest)
+	_, it, err = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest, false)
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}
@@ -670,7 +670,7 @@ func testValueAtOrBeforeTime(t *testing.T, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}
@@ -747,7 +747,7 @@ func benchmarkValueAtOrBeforeTime(b *testing.B, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
 	if err != nil {
 		b.Fatalf("Error preloading everything: %s", err)
 	}
@@ -828,7 +828,7 @@ func testRangeValues(t *testing.T, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}
@@ -983,7 +983,7 @@ func benchmarkRangeValues(b *testing.B, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
 	if err != nil {
 		b.Fatalf("Error preloading everything: %s", err)
 	}
@@ -1032,7 +1032,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	// Drop ~half of the chunks.
 	s.maintainMemorySeries(fp, 10000)
-	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	_, it, err := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}
@@ -1053,7 +1053,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	// Drop everything.
 	s.maintainMemorySeries(fp, 100000)
-	_, it, err = s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	_, it, err = s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}

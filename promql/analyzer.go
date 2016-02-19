@@ -41,14 +41,20 @@ type Analyzer struct {
 // fingerprints. One of these structs is collected for each offset by the query
 // analyzer.
 type preloadTimes struct {
-	// Instants require single samples to be loaded along the entire query
-	// range, with intervals between the samples corresponding to the query
-	// resolution.
-	instants map[model.Fingerprint]struct{}
-	// Ranges require loading a range of samples at each resolution step,
-	// stretching backwards from the current evaluation timestamp. The length of
-	// the range into the past is given by the duration, as in "foo[5m]".
+	// Ranges require loading a range of samples. They can be triggered by
+	// two type of expressions: First a range expression AKA matrix
+	// selector, where the Duration in the ranges map is the length of the
+	// range in the range expression. Second an instant expression AKA
+	// vector selector, where the Duration in the ranges map is the
+	// StalenessDelta. In preloading, both types of expressions result in
+	// the same effect: Preload everything between the specified start time
+	// minus the Duration in the ranges map up to the specified end time.
 	ranges map[model.Fingerprint]time.Duration
+	// Instants require a single sample to be loaded. This only happens for
+	// instant expressions AKA vector selectors iff the specified start ond
+	// end time are the same, Thus, instants is only populated if start and
+	// end time are the same.
+	instants map[model.Fingerprint]struct{}
 }
 
 // Analyze the provided expression and attach metrics and fingerprints to data-selecting
@@ -57,13 +63,15 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 	a.offsetPreloadTimes = map[time.Duration]preloadTimes{}
 
 	getPreloadTimes := func(offset time.Duration) preloadTimes {
-		if _, ok := a.offsetPreloadTimes[offset]; !ok {
-			a.offsetPreloadTimes[offset] = preloadTimes{
-				instants: map[model.Fingerprint]struct{}{},
-				ranges:   map[model.Fingerprint]time.Duration{},
-			}
+		if pt, ok := a.offsetPreloadTimes[offset]; ok {
+			return pt
 		}
-		return a.offsetPreloadTimes[offset]
+		pt := preloadTimes{
+			instants: map[model.Fingerprint]struct{}{},
+			ranges:   map[model.Fingerprint]time.Duration{},
+		}
+		a.offsetPreloadTimes[offset] = pt
+		return pt
 	}
 
 	// Retrieve fingerprints and metrics for the required time range for
@@ -76,11 +84,14 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 
 			pt := getPreloadTimes(n.Offset)
 			for fp := range n.metrics {
-				// Only add the fingerprint to the instants if not yet present in the
-				// ranges. Ranges always contain more points and span more time than
-				// instants for the same offset.
-				if _, alreadyInRanges := pt.ranges[fp]; !alreadyInRanges {
+				r, alreadyInRanges := pt.ranges[fp]
+				if a.Start.Equal(a.End) && !alreadyInRanges {
+					// A true instant, we only need one value.
 					pt.instants[fp] = struct{}{}
+					continue
+				}
+				if r < StalenessDelta {
+					pt.ranges[fp] = StalenessDelta
 				}
 			}
 		case *MatrixSelector:
@@ -133,18 +144,7 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			startOfRange := start.Add(-rangeDuration)
-			if StalenessDelta > rangeDuration {
-				// Cover a weird corner case: The expression
-				// mixes up instants and ranges for the same
-				// series. We'll handle that over-all as
-				// range. But if the rangeDuration is smaller
-				// than the StalenessDelta, the range wouldn't
-				// cover everything potentially needed for the
-				// instant, so we have to extend startOfRange.
-				startOfRange = start.Add(-StalenessDelta)
-			}
-			iter, err := p.PreloadRange(fp, startOfRange, end)
+			iter, err := p.PreloadRange(fp, start.Add(-rangeDuration), end)
 			if err != nil {
 				return nil, err
 			}
@@ -154,10 +154,7 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			// Need to look backwards by StalenessDelta but not
-			// forward because we always return the closest sample
-			// _before_ the reference time.
-			iter, err := p.PreloadRange(fp, start.Add(-StalenessDelta), end)
+			iter, err := p.PreloadInstant(fp, start, StalenessDelta)
 			if err != nil {
 				return nil, err
 			}

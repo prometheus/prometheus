@@ -14,6 +14,8 @@
 package local
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -91,6 +93,10 @@ type Preloader interface {
 	PreloadRange(
 		fp model.Fingerprint,
 		from model.Time, through model.Time,
+	) (SeriesIterator, error)
+	PreloadInstant(
+		fp model.Fingerprint,
+		timestamp model.Time, stalenessDelta time.Duration,
 	) (SeriesIterator, error)
 	// Close unpins any previously requested series data from memory.
 	Close()

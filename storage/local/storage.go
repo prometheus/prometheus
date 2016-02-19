@@ -689,6 +689,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 func (s *memorySeriesStorage) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
+	lastSampleOnly bool,
 ) ([]*chunkDesc, SeriesIterator, error) {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
@@ -713,7 +714,7 @@ func (s *memorySeriesStorage) preloadChunksForRange(
 			return nil, nopIter, nil
 		}
 	}
-	return series.preloadChunksForRange(from, through, fp, s)
+	return series.preloadChunksForRange(fp, from, through, lastSampleOnly, s)
 }
 
 func (s *memorySeriesStorage) handleEvictList() {
