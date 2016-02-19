@@ -113,6 +113,7 @@ func (dd *DNSDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 
 func (dd *DNSDiscovery) refreshAll(ch chan<- []*config.TargetGroup) {
 	var wg sync.WaitGroup
+
 	wg.Add(len(dd.names))
 	for _, name := range dd.names {
 		go func(n string) {
@@ -122,6 +123,7 @@ func (dd *DNSDiscovery) refreshAll(ch chan<- []*config.TargetGroup) {
 			wg.Done()
 		}(name)
 	}
+
 	wg.Wait()
 }
 
