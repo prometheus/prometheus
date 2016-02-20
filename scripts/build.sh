@@ -34,7 +34,8 @@ ldflags="
   -X ${repo_path}/version.Branch=${branch}
   -X ${repo_path}/version.BuildUser=${USER}@${host}
   -X ${repo_path}/version.BuildDate=${build_date}
-  -X ${repo_path}/version.GoVersion=${go_version}"
+  -X ${repo_path}/version.GoVersion=${go_version}
+  ${EXTRA_LDFLAGS}"
 
 export GO15VENDOREXPERIMENT="1"
 
