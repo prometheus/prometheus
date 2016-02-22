@@ -135,7 +135,7 @@ func (sp *scrapePool) sync(tgroups map[string]map[model.Fingerprint]*Target) {
 				newTargets[fp] = tnew
 
 				tnew.scrapeLoop = newScrapeLoop(sp.ctx, tnew, tnew.wrapAppender(sp.appender), tnew.wrapReportingAppender(sp.appender))
-				go tnew.scrapeLoop.run(tnew.interval(), tnew.timeout())
+				go tnew.scrapeLoop.run(tnew.interval(), tnew.timeout(), nil)
 			}
 		}
 		for fp, told := range prevTargets {
@@ -179,7 +179,7 @@ func (sp *scrapePool) sync(tgroups map[string]map[model.Fingerprint]*Target) {
 }
 
 type loop interface {
-	run(interval, timeout time.Duration)
+	run(interval, timeout time.Duration, errc chan<- error)
 	stop()
 }
 
@@ -207,7 +207,7 @@ func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp storage.Sampl
 	return sl
 }
 
-func (sl *scrapeLoop) run(interval, timeout time.Duration) {
+func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	defer close(sl.done)
 
 	select {
@@ -229,33 +229,34 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration) {
 		default:
 		}
 
-		if sl.appender.NeedsThrottling() {
+		if !sl.appender.NeedsThrottling() {
+			var (
+				start        = time.Now()
+				scrapeCtx, _ = context.WithTimeout(sl.ctx, timeout)
+			)
+
+			targetIntervalLength.WithLabelValues(interval.String()).Observe(
+				float64(time.Since(last)) / float64(time.Second), // Sub-second precision.
+			)
+
+			samples, err := sl.scraper.scrape(scrapeCtx)
+			if err == nil {
+				sl.append(samples)
+			} else if errc != nil {
+				errc <- err
+			}
+
+			sl.report(start, time.Since(start), err)
+			last = start
+		} else {
 			targetSkippedScrapes.WithLabelValues(interval.String()).Inc()
-			continue
 		}
-		targetIntervalLength.WithLabelValues(interval.String()).Observe(
-			float64(time.Since(last)) / float64(time.Second), // Sub-second precision.
-		)
-
-		var (
-			start        = time.Now()
-			scrapeCtx, _ = context.WithTimeout(sl.ctx, timeout)
-		)
-
-		samples, err := sl.scraper.scrape(scrapeCtx)
-		if err == nil {
-			sl.append(samples)
-		}
-
-		sl.report(start, time.Since(start), err)
 
 		select {
 		case <-sl.ctx.Done():
 			return
 		case <-ticker.C:
 		}
-
-		last = start
 	}
 }
 
