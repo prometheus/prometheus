@@ -278,7 +278,7 @@ func (tm *TargetManager) updateTargetGroup(tgroup *config.TargetGroup, cfg *conf
 				// to build up.
 				wg.Add(1)
 				go func(t *Target) {
-					if err := match.Update(cfg, t.fullLabels(), t.metaLabels); err != nil {
+					if err := match.Update(cfg, t.labels, t.metaLabels); err != nil {
 						log.Errorf("Error updating target %v: %v", t, err)
 					}
 					wg.Done()
