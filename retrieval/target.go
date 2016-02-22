@@ -167,7 +167,6 @@ type Target struct {
 	scraperStopping chan struct{}
 	// Closing scraperStopped signals that scraping has been stopped.
 	scraperStopped chan struct{}
-	running        bool
 
 	// Mutex protects the members below.
 	sync.RWMutex
@@ -388,11 +387,9 @@ func (t *Target) InstanceIdentifier() string {
 
 // RunScraper implements Target.
 func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
-	defer close(t.scraperStopped)
+	log.Debugf("Running scraper for %v", t)
 
-	t.Lock()
-	t.running = true
-	t.Unlock()
+	defer close(t.scraperStopped)
 
 	lastScrapeInterval := t.interval()
 
@@ -452,14 +449,6 @@ func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
 
 // StopScraper implements Target.
 func (t *Target) StopScraper() {
-	t.Lock()
-	if !t.running {
-		t.Unlock()
-		return
-	}
-	t.running = false
-	t.Unlock()
-
 	log.Debugf("Stopping scraper for target %v...", t)
 
 	close(t.scraperStopping)
