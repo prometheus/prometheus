@@ -578,7 +578,7 @@ func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelS
 	labels[model.AddressLabel] = model.LabelValue(strings.TrimLeft(targetURL, "http://"))
 	labels[model.MetricsPathLabel] = "/metrics"
 
-	t := &Target{
+	return &Target{
 		scrapeConfig: &config.ScrapeConfig{
 			ScrapeInterval: model.Duration(time.Millisecond),
 			ScrapeTimeout:  model.Duration(deadline),
@@ -588,13 +588,6 @@ func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelS
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
 	}
-
-	var err error
-	if t.httpClient, err = t.client(); err != nil {
-		panic(err)
-	}
-
-	return t
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
