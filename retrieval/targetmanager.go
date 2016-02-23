@@ -184,7 +184,7 @@ type targetSet struct {
 func newTargetSet(cfg *config.ScrapeConfig, app storage.SampleAppender) *targetSet {
 	ts := &targetSet{
 		tgroups:    map[string]map[model.Fingerprint]*Target{},
-		scrapePool: newScrapePool(app),
+		scrapePool: newScrapePool(cfg, app),
 		syncCh:     make(chan struct{}, 1),
 		config:     cfg,
 	}
