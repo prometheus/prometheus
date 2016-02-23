@@ -184,40 +184,25 @@ type Target struct {
 
 // NewTarget creates a reasonably configured target for querying.
 func NewTarget(cfg *config.ScrapeConfig, labels, metaLabels model.LabelSet) (*Target, error) {
+	client, err := newHTTPClient(cfg)
+	if err != nil {
+		return nil, err
+	}
 	t := &Target{
 		status:          &TargetStatus{},
 		scraperStopping: make(chan struct{}),
 		scraperStopped:  make(chan struct{}),
+		scrapeConfig:    cfg,
+		labels:          labels,
+		metaLabels:      metaLabels,
+		httpClient:      client,
 	}
-	err := t.Update(cfg, labels, metaLabels)
-	return t, err
+	return t, nil
 }
 
 // Status returns the status of the target.
 func (t *Target) Status() *TargetStatus {
 	return t.status
-}
-
-// Update overwrites settings in the target that are derived from the job config
-// it belongs to.
-func (t *Target) Update(cfg *config.ScrapeConfig, labels, metaLabels model.LabelSet) error {
-	t.Lock()
-
-	t.scrapeConfig = cfg
-	t.labels = labels
-	t.metaLabels = metaLabels
-
-	t.Unlock()
-
-	httpClient, err := t.client()
-	if err != nil {
-		return fmt.Errorf("cannot create HTTP client: %s", err)
-	}
-	t.Lock()
-	t.httpClient = httpClient
-	t.Unlock()
-
-	return nil
 }
 
 func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
@@ -290,13 +275,6 @@ func (t *Target) offset(interval time.Duration) time.Duration {
 		next -= int64(interval)
 	}
 	return time.Duration(next)
-}
-
-func (t *Target) client() (*http.Client, error) {
-	t.RLock()
-	defer t.RUnlock()
-
-	return newHTTPClient(t.scrapeConfig)
 }
 
 func (t *Target) interval() time.Duration {
@@ -407,11 +385,11 @@ func (t *Target) InstanceIdentifier() string {
 
 // RunScraper implements Target.
 func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
+	log.Debugf("Running scraper for %v", t)
+
 	defer close(t.scraperStopped)
 
 	lastScrapeInterval := t.interval()
-
-	log.Debugf("Starting scraper for target %v...", t)
 
 	select {
 	case <-time.After(t.offset(lastScrapeInterval)):
