@@ -20,8 +20,85 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
-	// "github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/config"
 )
+
+func TestScrapePoolReportAppender(t *testing.T) {
+	cfg := &config.ScrapeConfig{
+		MetricRelabelConfigs: []*config.RelabelConfig{
+			{}, {}, {},
+		},
+	}
+	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
+	app := &nopAppender{}
+
+	sp := newScrapePool(cfg, app)
+
+	cfg.HonorLabels = false
+	wrapped := sp.reportAppender(target)
+
+	rl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	if rl.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", rl.SampleAppender)
+	}
+
+	cfg.HonorLabels = true
+	wrapped = sp.reportAppender(target)
+
+	hl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	if hl.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", hl.SampleAppender)
+	}
+}
+
+func TestScrapePoolSampleAppender(t *testing.T) {
+	cfg := &config.ScrapeConfig{
+		MetricRelabelConfigs: []*config.RelabelConfig{
+			{}, {}, {},
+		},
+	}
+
+	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
+	app := &nopAppender{}
+
+	sp := newScrapePool(cfg, app)
+
+	cfg.HonorLabels = false
+	wrapped := sp.sampleAppender(target)
+
+	rl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	re, ok := rl.SampleAppender.(relabelAppender)
+	if !ok {
+		t.Fatalf("Expected relabelAppender but got %T", rl.SampleAppender)
+	}
+	if re.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", re.SampleAppender)
+	}
+
+	cfg.HonorLabels = true
+	wrapped = sp.sampleAppender(target)
+
+	hl, ok := wrapped.(honorLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected honorLabelsAppender but got %T", wrapped)
+	}
+	re, ok = hl.SampleAppender.(relabelAppender)
+	if !ok {
+		t.Fatalf("Expected relabelAppender but got %T", hl.SampleAppender)
+	}
+	if re.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", re.SampleAppender)
+	}
+}
 
 func TestScrapeLoopRun(t *testing.T) {
 	var (

@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 )
@@ -69,6 +70,7 @@ func init() {
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
 	appender storage.SampleAppender
+	config   *config.ScrapeConfig
 
 	ctx     context.Context
 	mtx     sync.RWMutex
@@ -77,9 +79,10 @@ type scrapePool struct {
 	targets map[model.Fingerprint]loop
 }
 
-func newScrapePool(app storage.SampleAppender) *scrapePool {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
 	return &scrapePool{
 		appender: app,
+		config:   cfg,
 		tgroups:  map[string]map[model.Fingerprint]*Target{},
 	}
 }
@@ -102,6 +105,40 @@ func (sp *scrapePool) stop() {
 	sp.mtx.RUnlock()
 
 	wg.Wait()
+}
+
+// sampleAppender returns an appender for ingested samples from the target.
+func (sp *scrapePool) sampleAppender(target *Target) storage.SampleAppender {
+	app := sp.appender
+	// The relabelAppender has to be inside the label-modifying appenders
+	// so the relabeling rules are applied to the correct label set.
+	if mrc := sp.config.MetricRelabelConfigs; len(mrc) > 0 {
+		app = relabelAppender{
+			SampleAppender: app,
+			relabelings:    mrc,
+		}
+	}
+
+	if sp.config.HonorLabels {
+		app = honorLabelsAppender{
+			SampleAppender: app,
+			labels:         target.Labels(),
+		}
+	} else {
+		app = ruleLabelsAppender{
+			SampleAppender: app,
+			labels:         target.Labels(),
+		}
+	}
+	return app
+}
+
+// reportAppender returns an appender for reporting samples for the target.
+func (sp *scrapePool) reportAppender(target *Target) storage.SampleAppender {
+	return ruleLabelsAppender{
+		SampleAppender: sp.appender,
+		labels:         target.Labels(),
+	}
 }
 
 func (sp *scrapePool) sync(tgroups map[string]map[model.Fingerprint]*Target) {
@@ -127,7 +164,7 @@ func (sp *scrapePool) sync(tgroups map[string]map[model.Fingerprint]*Target) {
 			} else {
 				newTargets[fp] = tnew
 
-				tnew.scrapeLoop = newScrapeLoop(sp.ctx, tnew, tnew.wrapAppender(sp.appender), tnew.wrapReportingAppender(sp.appender))
+				tnew.scrapeLoop = newScrapeLoop(sp.ctx, tnew, sp.sampleAppender(tnew), sp.reportAppender(tnew))
 				go tnew.scrapeLoop.run(tnew.interval(), tnew.timeout(), nil)
 			}
 		}
