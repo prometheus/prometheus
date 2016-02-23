@@ -117,6 +117,8 @@ func (tm *TargetManager) reload() {
 				ts.runScraping(tm.ctx)
 				tm.wg.Done()
 			}(ts)
+		} else {
+			ts.reload(scfg)
 		}
 		ts.runProviders(tm.ctx, providersFromConfig(scfg))
 	}
@@ -201,6 +203,14 @@ func (ts *targetSet) cancel() {
 	if ts.cancelProviders != nil {
 		ts.cancelProviders()
 	}
+}
+
+func (ts *targetSet) reload(cfg *config.ScrapeConfig) {
+	ts.mtx.Lock()
+	ts.config = cfg
+	ts.mtx.Unlock()
+
+	ts.scrapePool.reload(cfg)
 }
 
 func (ts *targetSet) runScraping(ctx context.Context) {
