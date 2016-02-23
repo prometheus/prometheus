@@ -165,7 +165,7 @@ func (sp *scrapePool) sync(tgroups map[string]map[model.Fingerprint]*Target) {
 				newTargets[fp] = tnew
 
 				tnew.scrapeLoop = newScrapeLoop(sp.ctx, tnew, sp.sampleAppender(tnew), sp.reportAppender(tnew))
-				go tnew.scrapeLoop.run(tnew.interval(), tnew.timeout(), nil)
+				go tnew.scrapeLoop.run(time.Duration(sp.config.ScrapeInterval), time.Duration(sp.config.ScrapeTimeout), nil)
 			}
 		}
 		for fp, told := range prevTargets {
