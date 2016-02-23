@@ -966,6 +966,13 @@ loop:
 			} else {
 				dirtySeriesCount = 0
 			}
+			// If a checkpoint takes longer than checkpointInterval, unluckily timed
+			// combination with the Reset(0) call below can lead to a case where a
+			// time is lurking in C leading to repeated checkpointing without break.
+			select {
+			case <-checkpointTimer.C: // Get rid of the lurking time.
+			default:
+			}
 			checkpointTimer.Reset(s.checkpointInterval)
 		case fp := <-memoryFingerprints:
 			if s.maintainMemorySeries(fp, model.Now().Add(-s.dropAfter)) {
