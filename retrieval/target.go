@@ -229,20 +229,6 @@ func (t *Target) offset(interval time.Duration) time.Duration {
 	return time.Duration(next)
 }
 
-func (t *Target) interval() time.Duration {
-	t.RLock()
-	defer t.RUnlock()
-
-	return time.Duration(t.scrapeConfig.ScrapeInterval)
-}
-
-func (t *Target) timeout() time.Duration {
-	t.RLock()
-	defer t.RUnlock()
-
-	return time.Duration(t.scrapeConfig.ScrapeTimeout)
-}
-
 func (t *Target) scheme() string {
 	t.RLock()
 	defer t.RUnlock()
