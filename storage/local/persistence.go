@@ -823,6 +823,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 			}
 		}
 
+		headChunkClosed := true // Initial assumption.
 		for i := int64(0); i < numChunkDescs; i++ {
 			if i < persistWatermark {
 				firstTime, err := binary.ReadVarint(r)
@@ -844,6 +845,9 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 				chunkDescsTotal++
 			} else {
 				// Non-persisted chunk.
+				// If there are non-persisted chunks at all, we consider
+				// the head chunk not to be closed yet.
+				headChunkClosed = false
 				encoding, err := r.ReadByte()
 				if err != nil {
 					log.Warn("Could not decode chunk type:", err)
@@ -856,15 +860,15 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 					p.dirty = true
 					return sm, chunksToPersist, nil
 				}
-				chunkDescs[i] = newChunkDesc(chunk, chunk.firstTime())
-				chunksToPersist++
+				cd := newChunkDesc(chunk, chunk.firstTime())
+				if i < numChunkDescs-1 {
+					// This is NOT the head chunk. So it's a chunk
+					// to be persisted, and we need to populate lastTime.
+					chunksToPersist++
+					cd.maybePopulateLastTime()
+				}
+				chunkDescs[i] = cd
 			}
-		}
-
-		headChunkClosed := persistWatermark >= numChunkDescs
-		if !headChunkClosed {
-			// Head chunk is not ready for persisting yet.
-			chunksToPersist--
 		}
 
 		fingerprintToSeries[model.Fingerprint(fp)] = &memorySeries{
