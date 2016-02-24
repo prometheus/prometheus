@@ -307,7 +307,7 @@ func (it *deltaEncodedChunkIterator) valueAtOrBeforeTime(t model.Time) model.Sam
 		return it.timestampAtIndex(i).After(t)
 	})
 	if i == 0 {
-		return model.SamplePair{Timestamp: model.Earliest}
+		return ZeroSamplePair
 	}
 	return model.SamplePair{
 		Timestamp: it.timestampAtIndex(i - 1),

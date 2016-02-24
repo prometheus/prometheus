@@ -13,7 +13,11 @@
 
 package local
 
-import "github.com/prometheus/common/model"
+import (
+	"time"
+
+	"github.com/prometheus/common/model"
+)
 
 // memorySeriesPreloader is a Preloader for the memorySeriesStorage.
 type memorySeriesPreloader struct {
@@ -26,7 +30,20 @@ func (p *memorySeriesPreloader) PreloadRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
 ) (SeriesIterator, error) {
-	cds, iter, err := p.storage.preloadChunksForRange(fp, from, through)
+	cds, iter, err := p.storage.preloadChunksForRange(fp, from, through, false)
+	if err != nil {
+		return iter, err
+	}
+	p.pinnedChunkDescs = append(p.pinnedChunkDescs, cds...)
+	return iter, nil
+}
+
+// PreloadInstant implements Preloader
+func (p *memorySeriesPreloader) PreloadInstant(
+	fp model.Fingerprint,
+	timestamp model.Time, stalenessDelta time.Duration,
+) (SeriesIterator, error) {
+	cds, iter, err := p.storage.preloadChunksForRange(fp, timestamp.Add(-stalenessDelta), timestamp, true)
 	if err != nil {
 		return iter, err
 	}

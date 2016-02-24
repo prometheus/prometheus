@@ -162,9 +162,15 @@ type memorySeries struct {
 	// first chunk before its chunk desc is evicted. In doubt, this field is
 	// just set to the oldest possible timestamp.
 	savedFirstTime model.Time
-	// The timestamp of the last sample in this series. Needed for fast access to
-	// ensure timestamp monotonicity during ingestion.
+	// The timestamp of the last sample in this series. Needed for fast
+	// access for federation and to ensure timestamp monotonicity during
+	// ingestion.
 	lastTime model.Time
+	// The last ingested sample value. Needed for fast access for
+	// federation.
+	lastSampleValue model.SampleValue
+	// Whether lastSampleValue has been set already.
+	lastSampleValueSet bool
 	// Whether the current head chunk has already been finished.  If true,
 	// the current head chunk must not be modified anymore.
 	headChunkClosed bool
@@ -242,6 +248,8 @@ func (s *memorySeries) add(v *model.SamplePair) int {
 	}
 
 	s.lastTime = v.Timestamp
+	s.lastSampleValue = v.Value
+	s.lastSampleValueSet = true
 	return len(chunks) - 1
 }
 
@@ -359,8 +367,9 @@ func (s *memorySeries) preloadChunks(
 }
 
 // newIterator returns a new SeriesIterator for the provided chunkDescs (which
-// must be pinned). The caller must have locked the fingerprint of the
-// memorySeries.
+// must be pinned).
+//
+// The caller must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc) SeriesIterator {
 	chunks := make([]chunk, 0, len(pinnedChunkDescs))
 	for _, cd := range pinnedChunkDescs {
@@ -377,9 +386,27 @@ func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc) SeriesIterator
 // preloadChunksForRange loads chunks for the given range from the persistence.
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) preloadChunksForRange(
+	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	fp model.Fingerprint, mss *memorySeriesStorage,
+	lastSampleOnly bool,
+	mss *memorySeriesStorage,
 ) ([]*chunkDesc, SeriesIterator, error) {
+	// If we have to preload for only one sample, and we have a
+	// lastSamplePair in the series, and thas last samplePair is in the
+	// interval, just take it in a singleSampleSeriesIterator. No need to
+	// pin or load anything.
+	if lastSampleOnly {
+		lastSample := s.lastSamplePair()
+		if !through.Before(lastSample.Timestamp) &&
+			!from.After(lastSample.Timestamp) &&
+			lastSample != ZeroSamplePair {
+			iter := &boundedIterator{
+				it:    &singleSampleSeriesIterator{samplePair: lastSample},
+				start: model.Now().Add(-mss.dropAfter),
+			}
+			return nil, iter, nil
+		}
+	}
 	firstChunkDescTime := model.Latest
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
@@ -435,13 +462,31 @@ func (s *memorySeries) head() *chunkDesc {
 	return s.chunkDescs[len(s.chunkDescs)-1]
 }
 
-// firstTime returns the timestamp of the first sample in the series. The caller
-// must have locked the fingerprint of the memorySeries.
+// firstTime returns the timestamp of the first sample in the series.
+//
+// The caller must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) firstTime() model.Time {
 	if s.chunkDescsOffset == 0 && len(s.chunkDescs) > 0 {
 		return s.chunkDescs[0].firstTime()
 	}
 	return s.savedFirstTime
+}
+
+// lastSamplePair returns the last ingested SamplePair. It returns
+// ZeroSamplePair if this memorySeries has never received a sample (via the add
+// method), which is the case for freshly unarchived series or newly created
+// ones and also for all series after a server restart. However, in that case,
+// series will most likely be considered stale anyway.
+//
+// The caller must have locked the fingerprint of the memorySeries.
+func (s *memorySeries) lastSamplePair() model.SamplePair {
+	if !s.lastSampleValueSet {
+		return ZeroSamplePair
+	}
+	return model.SamplePair{
+		Timestamp: s.lastTime,
+		Value:     s.lastSampleValue,
+	}
 }
 
 // chunksToPersist returns a slice of chunkDescs eligible for persistence. It's
@@ -479,7 +524,7 @@ func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePa
 	}
 
 	if len(it.chunks) == 0 {
-		return model.SamplePair{Timestamp: model.Earliest}
+		return ZeroSamplePair
 	}
 
 	// Find the last chunk where firstTime() is before or equal to t.
@@ -489,7 +534,7 @@ func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePa
 	})
 	if i == len(it.chunks) {
 		// Even the first chunk starts after t.
-		return model.SamplePair{Timestamp: model.Earliest}
+		return ZeroSamplePair
 	}
 	it.chunkIt = it.chunkIterator(l - i)
 	return it.chunkIt.valueAtOrBeforeTime(t)
@@ -593,12 +638,41 @@ func (it *memorySeriesIterator) chunkIterator(i int) chunkIterator {
 	return chunkIt
 }
 
+// singleSampleSeriesIterator implements Series Iterator. It is a "shortcut
+// iterator" that returns a single samplee only. The sample is saved in the
+// iterator itself, so no chunks need to be pinned.
+type singleSampleSeriesIterator struct {
+	samplePair model.SamplePair
+}
+
+// ValueAtTime implements SeriesIterator.
+func (it *singleSampleSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
+	if it.samplePair.Timestamp.After(t) {
+		return ZeroSamplePair
+	}
+	return it.samplePair
+}
+
+// BoundaryValues implements SeriesIterator.
+func (it *singleSampleSeriesIterator) BoundaryValues(in metric.Interval) []model.SamplePair {
+	return it.RangeValues(in)
+}
+
+// RangeValues implements SeriesIterator.
+func (it *singleSampleSeriesIterator) RangeValues(in metric.Interval) []model.SamplePair {
+	if it.samplePair.Timestamp.After(in.NewestInclusive) ||
+		it.samplePair.Timestamp.Before(in.OldestInclusive) {
+		return []model.SamplePair{}
+	}
+	return []model.SamplePair{it.samplePair}
+}
+
 // nopSeriesIterator implements Series Iterator. It never returns any values.
 type nopSeriesIterator struct{}
 
 // ValueAtTime implements SeriesIterator.
 func (i nopSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
-	return model.SamplePair{Timestamp: model.Earliest}
+	return ZeroSamplePair
 }
 
 // BoundaryValues implements SeriesIterator.

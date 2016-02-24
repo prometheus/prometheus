@@ -81,13 +81,6 @@ const (
 // is populated upon creation of a chunkDesc, so it is alway safe to call
 // firstTime. The firstTime method is arguably not needed and only there for
 // consistency with lastTime.
-//
-// Yet another (deprecated) case is lastSamplePair. It's used in federation and
-// must be callable without pinning. Locking the fingerprint of the series is
-// still required (to avoid concurrent appends to the chunk). The call is
-// relatively expensive because of the required acquisition of the evict
-// mutex. It will go away, though, once tracking the lastSamplePair has been
-// moved into the series object.
 type chunkDesc struct {
 	sync.Mutex           // Protects pinning.
 	c              chunk // nil if chunk is evicted.
@@ -194,24 +187,6 @@ func (cd *chunkDesc) maybePopulateLastTime() {
 	}
 }
 
-// lastSamplePair returns the last sample pair of the underlying chunk, or nil
-// if the chunk is evicted. For safe concurrent access, this method requires the
-// fingerprint of the time series to be locked.
-// TODO(beorn7): Move up into memorySeries.
-func (cd *chunkDesc) lastSamplePair() *model.SamplePair {
-	cd.Lock()
-	defer cd.Unlock()
-
-	if cd.c == nil {
-		return nil
-	}
-	it := cd.c.newIterator()
-	return &model.SamplePair{
-		Timestamp: it.lastTimestamp(),
-		Value:     it.lastSampleValue(),
-	}
-}
-
 // isEvicted returns whether the chunk is evicted. For safe concurrent access,
 // the caller must have locked the fingerprint of the series.
 func (cd *chunkDesc) isEvicted() bool {
@@ -293,8 +268,7 @@ type chunkIterator interface {
 	lastSampleValue() model.SampleValue
 	// Gets the value that is closest before the given time. In case a value
 	// exist at precisely the given time, that value is returned. If no
-	// applicable value exists, a SamplePair with timestamp model.Earliest
-	// and value 0.0 is returned.
+	// applicable value exists, ZeroSamplePair is returned.
 	valueAtOrBeforeTime(model.Time) model.SamplePair
 	// Gets all values contained within a given interval.
 	rangeValues(metric.Interval) []model.SamplePair

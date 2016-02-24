@@ -413,7 +413,7 @@ func (it *doubleDeltaEncodedChunkIterator) valueAtOrBeforeTime(t model.Time) mod
 		return it.timestampAtIndex(i).After(t)
 	})
 	if i == 0 {
-		return model.SamplePair{Timestamp: model.Earliest}
+		return ZeroSamplePair
 	}
 	return model.SamplePair{
 		Timestamp: it.timestampAtIndex(i - 1),

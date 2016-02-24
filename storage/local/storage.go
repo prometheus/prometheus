@@ -348,15 +348,15 @@ func (s *memorySeriesStorage) WaitForIndexing() {
 }
 
 // LastSampleForFingerprint implements Storage.
-func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) *model.SamplePair {
+func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) model.SamplePair {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
 	series, ok := s.fpToSeries.get(fp)
 	if !ok {
-		return nil
+		return ZeroSamplePair
 	}
-	return series.head().lastSamplePair()
+	return series.lastSamplePair()
 }
 
 // boundedIterator wraps a SeriesIterator and does not allow fetching
@@ -369,7 +369,7 @@ type boundedIterator struct {
 // ValueAtOrBeforeTime implements the SeriesIterator interface.
 func (bit *boundedIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePair {
 	if ts < bit.start {
-		return model.SamplePair{Timestamp: model.Earliest}
+		return ZeroSamplePair
 	}
 	return bit.it.ValueAtOrBeforeTime(ts)
 }
@@ -578,15 +578,17 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) error {
 
 	if sample.Timestamp <= series.lastTime {
 		s.fpLocker.Unlock(fp)
-		// Don't log and track equal timestamps, as they are a common occurrence
-		// when using client-side timestamps (e.g. Pushgateway or federation).
-		// It would be even better to also compare the sample values here, but
-		// we don't have efficient access to a series's last value.
-		if sample.Timestamp != series.lastTime {
-			s.outOfOrderSamplesCount.Inc()
-			return ErrOutOfOrderSample
+		// Don't report "no-op appends", i.e. where timestamp and sample
+		// value are the same as for the last append, as they are a
+		// common occurrence when using client-side timestamps
+		// (e.g. Pushgateway or federation).
+		if sample.Timestamp == series.lastTime &&
+			series.lastSampleValueSet &&
+			sample.Value == series.lastSampleValue {
+			return nil
 		}
-		return nil
+		s.outOfOrderSamplesCount.Inc()
+		return ErrOutOfOrderSample
 	}
 	completedChunksCount := series.add(&model.SamplePair{
 		Value:     sample.Value,
@@ -689,6 +691,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 func (s *memorySeriesStorage) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
+	lastSampleOnly bool,
 ) ([]*chunkDesc, SeriesIterator, error) {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
@@ -713,7 +716,7 @@ func (s *memorySeriesStorage) preloadChunksForRange(
 			return nil, nopIter, nil
 		}
 	}
-	return series.preloadChunksForRange(from, through, fp, s)
+	return series.preloadChunksForRange(fp, from, through, lastSampleOnly, s)
 }
 
 func (s *memorySeriesStorage) handleEvictList() {
