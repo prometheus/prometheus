@@ -524,10 +524,37 @@ func funcLog10(ev *evaluator, args Expressions) model.Value {
 	return vector
 }
 
+// linearRegression performs a least-square linear regression analysis on the
+// provided SamplePairs. It returns the slope, and the intercept value at the
+// provided time.
+func linearRegression(samples []model.SamplePair, interceptTime model.Time) (slope, intercept model.SampleValue) {
+	var (
+		n            model.SampleValue
+		sumX, sumY   model.SampleValue
+		sumXY, sumX2 model.SampleValue
+	)
+	for _, sample := range samples {
+		x := model.SampleValue(
+			model.Time(sample.Timestamp-interceptTime).UnixNano(),
+		) / 1e9
+		n += 1.0
+		sumY += sample.Value
+		sumX += x
+		sumXY += x * sample.Value
+		sumX2 += x * x
+	}
+	covXY := sumXY - sumX*sumY/n
+	varX := sumX2 - sumX*sumX/n
+
+	slope = covXY / varX
+	intercept = sumY/n - slope*sumX/n
+	return
+}
+
 // === deriv(node model.ValMatrix) Vector ===
 func funcDeriv(ev *evaluator, args Expressions) model.Value {
-	resultVector := vector{}
 	mat := ev.evalMatrix(args[0])
+	resultVector := make(vector, 0, len(mat))
 
 	for _, samples := range mat {
 		// No sense in trying to compute a derivative without at least two points.
@@ -535,29 +562,10 @@ func funcDeriv(ev *evaluator, args Expressions) model.Value {
 		if len(samples.Values) < 2 {
 			continue
 		}
-
-		// Least squares.
-		var (
-			n            model.SampleValue
-			sumX, sumY   model.SampleValue
-			sumXY, sumX2 model.SampleValue
-		)
-		for _, sample := range samples.Values {
-			x := model.SampleValue(sample.Timestamp.UnixNano() / 1e9)
-			n += 1.0
-			sumY += sample.Value
-			sumX += x
-			sumXY += x * sample.Value
-			sumX2 += x * x
-		}
-		numerator := sumXY - sumX*sumY/n
-		denominator := sumX2 - (sumX*sumX)/n
-
-		resultValue := numerator / denominator
-
+		slope, _ := linearRegression(samples.Values, 0)
 		resultSample := &sample{
 			Metric:    samples.Metric,
-			Value:     resultValue,
+			Value:     slope,
 			Timestamp: ev.Timestamp,
 		}
 		resultSample.Metric.Del(model.MetricNameLabel)
@@ -568,44 +576,26 @@ func funcDeriv(ev *evaluator, args Expressions) model.Value {
 
 // === predict_linear(node model.ValMatrix, k model.ValScalar) Vector ===
 func funcPredictLinear(ev *evaluator, args Expressions) model.Value {
-	vec := funcDeriv(ev, args[0:1]).(vector)
-	duration := model.SampleValue(model.SampleValue(ev.evalFloat(args[1])))
+	mat := ev.evalMatrix(args[0])
+	resultVector := make(vector, 0, len(mat))
+	duration := model.SampleValue(ev.evalFloat(args[1]))
 
-	excludedLabels := map[model.LabelName]struct{}{
-		model.MetricNameLabel: {},
-	}
-
-	// Calculate predicted delta over the duration.
-	signatureToDelta := map[uint64]model.SampleValue{}
-	for _, el := range vec {
-		signature := model.SignatureWithoutLabels(el.Metric.Metric, excludedLabels)
-		signatureToDelta[signature] = el.Value * duration
-	}
-
-	// add predicted delta to last value.
-	// TODO(beorn7): This is arguably suboptimal. The funcDeriv above has
-	// given us an estimate over the range. So we should add the delta to
-	// the value predicted for the end of the range. Also, once this has
-	// been rectified, we are not using BoundaryValues anywhere anymore, so
-	// we can kick out a whole lot of code.
-	matrixBounds := ev.evalMatrixBounds(args[0])
-	outVec := make(vector, 0, len(signatureToDelta))
-	for _, samples := range matrixBounds {
+	for _, samples := range mat {
+		// No sense in trying to predict anything without at least two points.
+		// Drop this vector element.
 		if len(samples.Values) < 2 {
 			continue
 		}
-		signature := model.SignatureWithoutLabels(samples.Metric.Metric, excludedLabels)
-		delta, ok := signatureToDelta[signature]
-		if ok {
-			samples.Metric.Del(model.MetricNameLabel)
-			outVec = append(outVec, &sample{
-				Metric:    samples.Metric,
-				Value:     delta + samples.Values[1].Value,
-				Timestamp: ev.Timestamp,
-			})
+		slope, intercept := linearRegression(samples.Values, ev.Timestamp)
+		resultSample := &sample{
+			Metric:    samples.Metric,
+			Value:     slope*duration + intercept,
+			Timestamp: ev.Timestamp,
 		}
+		resultSample.Metric.Del(model.MetricNameLabel)
+		resultVector = append(resultVector, resultSample)
 	}
-	return outVec
+	return resultVector
 }
 
 // === histogram_quantile(k model.ValScalar, vector model.ValVector) Vector ===

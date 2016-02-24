@@ -79,9 +79,6 @@ type SeriesIterator interface {
 	// exist at precisely the given time, that value is returned. If no
 	// applicable value exists, ZeroSamplePair is returned.
 	ValueAtOrBeforeTime(model.Time) model.SamplePair
-	// Gets the boundary values of an interval: the first and last value
-	// within a given interval.
-	BoundaryValues(metric.Interval) []model.SamplePair
 	// Gets all values contained within a given interval.
 	RangeValues(metric.Interval) []model.SamplePair
 }

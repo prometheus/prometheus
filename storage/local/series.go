@@ -540,71 +540,6 @@ func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePa
 	return it.chunkIt.valueAtOrBeforeTime(t)
 }
 
-// BoundaryValues implements SeriesIterator.
-func (it *memorySeriesIterator) BoundaryValues(in metric.Interval) []model.SamplePair {
-	// Find the first chunk for which the first sample is within the interval.
-	i := sort.Search(len(it.chunks), func(i int) bool {
-		return !it.chunks[i].firstTime().Before(in.OldestInclusive)
-	})
-	// Only now check the last timestamp of the previous chunk (which is
-	// fairly expensive).
-	if i > 0 && !it.chunkIterator(i-1).lastTimestamp().Before(in.OldestInclusive) {
-		i--
-	}
-
-	values := make([]model.SamplePair, 0, 2)
-	for j, c := range it.chunks[i:] {
-		if c.firstTime().After(in.NewestInclusive) {
-			if len(values) == 1 {
-				// We found the first value before but are now
-				// already past the last value. The value we
-				// want must be the last value of the previous
-				// chunk. So backtrack...
-				chunkIt := it.chunkIterator(i + j - 1)
-				values = append(values, model.SamplePair{
-					Timestamp: chunkIt.lastTimestamp(),
-					Value:     chunkIt.lastSampleValue(),
-				})
-			}
-			break
-		}
-		chunkIt := it.chunkIterator(i + j)
-		if len(values) == 0 {
-			for s := range chunkIt.values() {
-				if len(values) == 0 && !s.Timestamp.Before(in.OldestInclusive) {
-					values = append(values, *s)
-					// We cannot just break out here as we have to consume all
-					// the values to not leak a goroutine. This could obviously
-					// be made much neater with more suitable methods in the chunk
-					// interface. But currently, BoundaryValues is only used by
-					// `predict_linear` so we would pollute the chunk interface
-					// unduly just for one single corner case. Plus, even that use
-					// of BoundaryValues is suboptimal and should be replaced.
-				}
-			}
-		}
-		if chunkIt.lastTimestamp().After(in.NewestInclusive) {
-			s := chunkIt.valueAtOrBeforeTime(in.NewestInclusive)
-			if s.Timestamp != model.Earliest {
-				values = append(values, s)
-			}
-			break
-		}
-	}
-	if len(values) == 1 {
-		// We found exactly one value. In that case, add the most recent we know.
-		chunkIt := it.chunkIterator(len(it.chunks) - 1)
-		values = append(values, model.SamplePair{
-			Timestamp: chunkIt.lastTimestamp(),
-			Value:     chunkIt.lastSampleValue(),
-		})
-	}
-	if len(values) == 2 && values[0].Equal(&values[1]) {
-		return values[:1]
-	}
-	return values
-}
-
 // RangeValues implements SeriesIterator.
 func (it *memorySeriesIterator) RangeValues(in metric.Interval) []model.SamplePair {
 	// Find the first chunk for which the first sample is within the interval.
@@ -653,11 +588,6 @@ func (it *singleSampleSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.Sa
 	return it.samplePair
 }
 
-// BoundaryValues implements SeriesIterator.
-func (it *singleSampleSeriesIterator) BoundaryValues(in metric.Interval) []model.SamplePair {
-	return it.RangeValues(in)
-}
-
 // RangeValues implements SeriesIterator.
 func (it *singleSampleSeriesIterator) RangeValues(in metric.Interval) []model.SamplePair {
 	if it.samplePair.Timestamp.After(in.NewestInclusive) ||
@@ -673,11 +603,6 @@ type nopSeriesIterator struct{}
 // ValueAtTime implements SeriesIterator.
 func (i nopSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 	return ZeroSamplePair
-}
-
-// BoundaryValues implements SeriesIterator.
-func (i nopSeriesIterator) BoundaryValues(in metric.Interval) []model.SamplePair {
-	return []model.SamplePair{}
 }
 
 // RangeValues implements SeriesIterator.

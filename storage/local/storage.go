@@ -374,17 +374,6 @@ func (bit *boundedIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePair 
 	return bit.it.ValueAtOrBeforeTime(ts)
 }
 
-// BoundaryValues implements the SeriesIterator interface.
-func (bit *boundedIterator) BoundaryValues(interval metric.Interval) []model.SamplePair {
-	if interval.NewestInclusive < bit.start {
-		return []model.SamplePair{}
-	}
-	if interval.OldestInclusive < bit.start {
-		interval.OldestInclusive = bit.start
-	}
-	return bit.it.BoundaryValues(interval)
-}
-
 // RangeValues implements the SeriesIterator interface.
 func (bit *boundedIterator) RangeValues(interval metric.Interval) []model.SamplePair {
 	if interval.NewestInclusive < bit.start {

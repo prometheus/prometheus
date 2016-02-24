@@ -424,14 +424,6 @@ func TestRetentionCutoff(t *testing.T) {
 	if expt := now.Add(-1 * time.Hour).Add(time.Minute); vals[0].Timestamp != expt {
 		t.Errorf("unexpected timestamp for first sample: %v, expected %v", vals[0].Timestamp.Time(), expt.Time())
 	}
-
-	vals = it.BoundaryValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now})
-	if len(vals) != 2 {
-		t.Errorf("expected 2 values but got %d", len(vals))
-	}
-	if expt := now.Add(-1 * time.Hour).Add(time.Minute); vals[0].Timestamp != expt {
-		t.Errorf("unexpected timestamp for first sample: %v, expected %v", vals[0].Timestamp.Time(), expt.Time())
-	}
 }
 
 func TestDropMetrics(t *testing.T) {
@@ -1036,18 +1028,18 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}
-	actual := it.BoundaryValues(metric.Interval{
+	actual := it.RangeValues(metric.Interval{
 		OldestInclusive: 0,
 		NewestInclusive: 100000,
 	})
-	if len(actual) != 2 {
-		t.Fatal("expected two results after purging half of series")
+	if len(actual) < 4000 {
+		t.Fatalf("expected more than %d results after purging half of series, got %d", 4000, len(actual))
 	}
 	if actual[0].Timestamp < 6000 || actual[0].Timestamp > 10000 {
 		t.Errorf("1st timestamp out of expected range: %v", actual[0].Timestamp)
 	}
 	want := model.Time(19998)
-	if actual[1].Timestamp != want {
+	if actual[len(actual)-1].Timestamp != want {
 		t.Errorf("2nd timestamp: want %v, got %v", want, actual[1].Timestamp)
 	}
 
@@ -1057,7 +1049,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatalf("Error preloading everything: %s", err)
 	}
-	actual = it.BoundaryValues(metric.Interval{
+	actual = it.RangeValues(metric.Interval{
 		OldestInclusive: 0,
 		NewestInclusive: 100000,
 	})
