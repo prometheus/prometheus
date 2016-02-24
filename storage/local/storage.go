@@ -18,6 +18,7 @@ import (
 	"container/list"
 	"fmt"
 	"math"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -124,6 +125,7 @@ type memorySeriesStorage struct {
 	numChunksToPersist int64         // The number of chunks waiting for persistence.
 	maxChunksToPersist int           // If numChunksToPersist reaches this threshold, ingestion will be throttled.
 	rushed             bool          // Whether the storage is in rushed mode.
+	rushedMtx          sync.Mutex    // Protects entering and exiting rushed mode.
 	throttled          chan struct{} // This chan is sent to whenever NeedsThrottling() returns true (for logging).
 
 	fpLocker   *fingerprintLocker
@@ -950,6 +952,13 @@ loop:
 			} else {
 				dirtySeriesCount = 0
 			}
+			// If a checkpoint takes longer than checkpointInterval, unluckily timed
+			// combination with the Reset(0) call below can lead to a case where a
+			// time is lurking in C leading to repeated checkpointing without break.
+			select {
+			case <-checkpointTimer.C: // Get rid of the lurking time.
+			default:
+			}
 			checkpointTimer.Reset(s.checkpointInterval)
 		case fp := <-memoryFingerprints:
 			if s.maintainMemorySeries(fp, model.Now().Add(-s.dropAfter)) {
@@ -1234,6 +1243,9 @@ func (s *memorySeriesStorage) incNumChunksToPersist(by int) {
 // files should not by synced anymore provided the user has specified the
 // adaptive sync strategy.
 func (s *memorySeriesStorage) calculatePersistenceUrgencyScore() float64 {
+	s.rushedMtx.Lock()
+	defer s.rushedMtx.Unlock()
+
 	var (
 		chunksToPersist    = float64(s.getNumChunksToPersist())
 		maxChunksToPersist = float64(s.maxChunksToPersist)

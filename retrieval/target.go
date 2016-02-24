@@ -405,18 +405,6 @@ func (t *Target) InstanceIdentifier() string {
 	return t.host()
 }
 
-func (t *Target) fullLabels() model.LabelSet {
-	t.RLock()
-	defer t.RUnlock()
-
-	lset := t.labels.Clone()
-
-	if _, ok := lset[model.InstanceLabel]; !ok {
-		lset[model.InstanceLabel] = t.labels[model.AddressLabel]
-	}
-	return lset
-}
-
 // RunScraper implements Target.
 func (t *Target) RunScraper(sampleAppender storage.SampleAppender) {
 	defer close(t.scraperStopped)

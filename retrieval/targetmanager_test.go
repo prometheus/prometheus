@@ -315,7 +315,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				"test_job1:static:0:0": {
 					{
 						model.JobLabel:                       "test_job1",
-						model.InstanceLabel:                  "example.org:80",
 						"testParam":                          "paramValue",
 						model.SchemeLabel:                    "",
 						model.MetricsPathLabel:               "",
@@ -324,7 +323,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 					},
 					{
 						model.JobLabel:                       "test_job1",
-						model.InstanceLabel:                  "example.com:80",
 						"testParam":                          "paramValue",
 						model.SchemeLabel:                    "",
 						model.MetricsPathLabel:               "",
@@ -338,7 +336,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				"test_job1:static:0:0": {
 					{
 						model.JobLabel:                       "test_job1",
-						model.InstanceLabel:                  "example.org:80",
 						"testParam":                          "paramValue",
 						model.SchemeLabel:                    "",
 						model.MetricsPathLabel:               "",
@@ -347,7 +344,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 					},
 					{
 						model.JobLabel:                       "test_job1",
-						model.InstanceLabel:                  "example.com:80",
 						"testParam":                          "paramValue",
 						model.SchemeLabel:                    "",
 						model.MetricsPathLabel:               "",
@@ -362,7 +358,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				"test_job1:static:0:0": {
 					{
 						model.JobLabel:                       "test_job1",
-						model.InstanceLabel:                  "example.org:80",
 						"testParam":                          "paramValue",
 						model.SchemeLabel:                    "",
 						model.MetricsPathLabel:               "",
@@ -371,7 +366,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 					},
 					{
 						model.JobLabel:                       "test_job1",
-						model.InstanceLabel:                  "example.com:80",
 						"testParam":                          "paramValue",
 						model.SchemeLabel:                    "",
 						model.MetricsPathLabel:               "",
@@ -382,7 +376,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				"test_job2:static:0:0": {
 					{
 						model.JobLabel:         "test_job2",
-						model.InstanceLabel:    "example.org:8080",
 						"foo":                  "bar",
 						"new":                  "ox-ba",
 						model.SchemeLabel:      "",
@@ -391,7 +384,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 					},
 					{
 						model.JobLabel:         "test_job2",
-						model.InstanceLabel:    "example.com:8081",
 						"foo":                  "bar",
 						"new":                  "ox-ba",
 						model.SchemeLabel:      "",
@@ -402,7 +394,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				"test_job2:static:0:1": {
 					{
 						model.JobLabel:         "test_job2",
-						model.InstanceLabel:    "foo.com:1234",
 						model.SchemeLabel:      "",
 						model.MetricsPathLabel: "",
 						model.AddressLabel:     "foo.com:1234",
@@ -427,7 +418,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				"test_job2:static:0:0": {
 					{
 						model.JobLabel:         "test_job2",
-						model.InstanceLabel:    "example.org:8080",
 						"foo":                  "bar",
 						"new":                  "ox-ba",
 						model.SchemeLabel:      "",
@@ -435,7 +425,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 						model.AddressLabel:     "example.org:8080"},
 					{
 						model.JobLabel:         "test_job2",
-						model.InstanceLabel:    "example.com:8081",
 						"foo":                  "bar",
 						"new":                  "ox-ba",
 						model.SchemeLabel:      "",
@@ -446,7 +435,6 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 				"test_job2:static:0:1": {
 					{
 						model.JobLabel:         "test_job2",
-						model.InstanceLabel:    "foo.com:1234",
 						model.SchemeLabel:      "",
 						model.MetricsPathLabel: "",
 						model.AddressLabel:     "foo.com:1234",
@@ -494,7 +482,7 @@ func TestTargetManagerConfigUpdate(t *testing.T) {
 			for _, expt := range expTargets {
 				found := false
 				for _, actt := range actTargets {
-					if reflect.DeepEqual(expt, actt.fullLabels()) {
+					if reflect.DeepEqual(expt, actt.labels) {
 						found = true
 						break
 					}
