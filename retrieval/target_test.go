@@ -181,7 +181,7 @@ func TestTargetScrape404(t *testing.T) {
 	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{})
 
 	want := errors.New("server returned HTTP status 404 Not Found")
-	_, got := testTarget.scrape(context.Background())
+	_, got := testTarget.scrape(context.Background(), time.Now())
 	if got == nil || want.Error() != got.Error() {
 		t.Fatalf("want err %q, got %q", want, got)
 	}
@@ -229,7 +229,7 @@ func TestURLParams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = target.scrape(context.Background()); err != nil {
+	if _, err = target.scrape(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }

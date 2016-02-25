@@ -66,13 +66,6 @@ func init() {
 	prometheus.MustRegister(targetSkippedScrapes)
 }
 
-// A scraper retrieves samples and accepts a status report at the end.
-type scraper interface {
-	scrape(context.Context) (model.Samples, error)
-	report(start time.Time, dur time.Duration, err error)
-	offset(interval time.Duration) time.Duration
-}
-
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
 	appender storage.SampleAppender
@@ -178,6 +171,13 @@ func (sp *scrapePool) sync(tgroups map[string]map[model.Fingerprint]*Target) {
 	sp.mtx.Unlock()
 }
 
+// A scraper retrieves samples and accepts a status report at the end.
+type scraper interface {
+	scrape(ctx context.Context, ts time.Time) (model.Samples, error)
+	report(start time.Time, dur time.Duration, err error)
+	offset(interval time.Duration) time.Duration
+}
+
 type loop interface {
 	run(interval, timeout time.Duration, errc chan<- error)
 	stop()
@@ -239,7 +239,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 				float64(time.Since(last)) / float64(time.Second), // Sub-second precision.
 			)
 
-			samples, err := sl.scraper.scrape(scrapeCtx)
+			samples, err := sl.scraper.scrape(scrapeCtx, start)
 			if err == nil {
 				sl.append(samples)
 			} else if errc != nil {
