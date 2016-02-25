@@ -63,7 +63,7 @@ func TestScrapeLoopRun(t *testing.T) {
 	scraper.offsetDur = 0
 
 	block := make(chan struct{})
-	scraper.scrapeFunc = func(ctx context.Context) (model.Samples, error) {
+	scraper.scrapeFunc = func(ctx context.Context, ts time.Time) (model.Samples, error) {
 		select {
 		case <-block:
 		case <-ctx.Done():
@@ -116,7 +116,7 @@ type testScraper struct {
 
 	samples    model.Samples
 	scrapeErr  error
-	scrapeFunc func(context.Context) (model.Samples, error)
+	scrapeFunc func(context.Context, time.Time) (model.Samples, error)
 }
 
 func (ts *testScraper) offset(interval time.Duration) time.Duration {
@@ -129,9 +129,9 @@ func (ts *testScraper) report(start time.Time, duration time.Duration, err error
 	ts.lastError = err
 }
 
-func (ts *testScraper) scrape(ctx context.Context) (model.Samples, error) {
+func (ts *testScraper) scrape(ctx context.Context, t time.Time) (model.Samples, error) {
 	if ts.scrapeFunc != nil {
-		return ts.scrapeFunc(ctx)
+		return ts.scrapeFunc(ctx, t)
 	}
 	return ts.samples, ts.scrapeErr
 }
