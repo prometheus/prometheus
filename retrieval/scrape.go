@@ -235,9 +235,12 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 				scrapeCtx, _ = context.WithTimeout(sl.ctx, timeout)
 			)
 
-			targetIntervalLength.WithLabelValues(interval.String()).Observe(
-				float64(time.Since(last)) / float64(time.Second), // Sub-second precision.
-			)
+			// Only record after the first scrape.
+			if !last.IsZero() {
+				targetIntervalLength.WithLabelValues(interval.String()).Observe(
+					float64(time.Since(last)) / float64(time.Second), // Sub-second precision.
+				)
+			}
 
 			samples, err := sl.scraper.scrape(scrapeCtx, start)
 			if err == nil {
