@@ -340,12 +340,10 @@ func (t *Target) InstanceIdentifier() string {
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
 
-func (t *Target) scrape(ctx context.Context) (model.Samples, error) {
+func (t *Target) scrape(ctx context.Context, ts time.Time) (model.Samples, error) {
 	t.RLock()
 	client := t.httpClient
 	t.RUnlock()
-
-	start := time.Now()
 
 	req, err := http.NewRequest("GET", t.URL().String(), nil)
 	if err != nil {
@@ -370,7 +368,7 @@ func (t *Target) scrape(ctx context.Context) (model.Samples, error) {
 	sdec := expfmt.SampleDecoder{
 		Dec: expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header)),
 		Opts: &expfmt.DecodeOptions{
-			Timestamp: model.TimeFromUnixNano(start.UnixNano()),
+			Timestamp: model.TimeFromUnixNano(ts.UnixNano()),
 		},
 	}
 
