@@ -15,13 +15,18 @@ package retrieval
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
+	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
@@ -70,13 +75,14 @@ func init() {
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
 	appender storage.SampleAppender
-	config   *config.ScrapeConfig
 
 	ctx context.Context
 
+	mtx    sync.RWMutex
+	config *config.ScrapeConfig
+	client *http.Client
 	// Targets and loops must always be synchronized to have the same
 	// set of fingerprints.
-	mtx     sync.RWMutex
 	targets map[model.Fingerprint]*Target
 	loops   map[model.Fingerprint]loop
 
@@ -85,9 +91,15 @@ type scrapePool struct {
 }
 
 func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
+	client, err := newHTTPClient(cfg)
+	if err != nil {
+		// Any errors that could occur here should be caught during config validation.
+		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
+	}
 	return &scrapePool{
 		appender: app,
 		config:   cfg,
+		client:   client,
 		targets:  map[model.Fingerprint]*Target{},
 		loops:    map[model.Fingerprint]loop{},
 		newLoop:  newScrapeLoop,
@@ -123,7 +135,13 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
+	client, err := newHTTPClient(cfg)
+	if err != nil {
+		// Any errors that could occur here should be caught during config validation.
+		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
+	}
 	sp.config = cfg
+	sp.client = client
 
 	var (
 		wg       sync.WaitGroup
@@ -134,7 +152,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	for fp, oldLoop := range sp.loops {
 		var (
 			t       = sp.targets[fp]
-			newLoop = sp.newLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
+			s       = &targetScraper{Target: t, client: sp.client}
+			newLoop = sp.newLoop(sp.ctx, s, sp.sampleAppender(t), sp.reportAppender(t))
 		)
 		wg.Add(1)
 
@@ -169,7 +188,8 @@ func (sp *scrapePool) sync(targets []*Target) {
 		fingerprints[fp] = struct{}{}
 
 		if _, ok := sp.targets[fp]; !ok {
-			l := sp.newLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
+			s := &targetScraper{Target: t, client: sp.client}
+			l := sp.newLoop(sp.ctx, s, sp.sampleAppender(t), sp.reportAppender(t))
 
 			sp.targets[fp] = t
 			sp.loops[fp] = l
@@ -240,6 +260,57 @@ type scraper interface {
 	scrape(ctx context.Context, ts time.Time) (model.Samples, error)
 	report(start time.Time, dur time.Duration, err error)
 	offset(interval time.Duration) time.Duration
+}
+
+// targetScraper implements the scraper interface for a target.
+type targetScraper struct {
+	*Target
+	client *http.Client
+}
+
+const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
+
+func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples, error) {
+	req, err := http.NewRequest("GET", s.URL().String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("Accept", acceptHeader)
+
+	resp, err := ctxhttp.Do(ctx, s.client, req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
+	}
+
+	var (
+		allSamples = make(model.Samples, 0, 200)
+		decSamples = make(model.Vector, 0, 50)
+	)
+	sdec := expfmt.SampleDecoder{
+		Dec: expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header)),
+		Opts: &expfmt.DecodeOptions{
+			Timestamp: model.TimeFromUnixNano(ts.UnixNano()),
+		},
+	}
+
+	for {
+		if err = sdec.Decode(&decSamples); err != nil {
+			break
+		}
+		allSamples = append(allSamples, decSamples...)
+		decSamples = decSamples[:0]
+	}
+
+	if err == io.EOF {
+		// Set err to nil since it is used in the scrape health recording.
+		err = nil
+	}
+	return allSamples, err
 }
 
 // A loop can run and be stopped again. It must not be reused after it was stopped.

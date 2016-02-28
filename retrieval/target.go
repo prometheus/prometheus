@@ -15,7 +15,6 @@ package retrieval
 
 import (
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -23,10 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
@@ -121,7 +117,6 @@ type Target struct {
 	// The status object for the target. It is only set once on initialization.
 	status *TargetStatus
 
-	scrapeLoop   *scrapeLoop
 	scrapeConfig *config.ScrapeConfig
 
 	// Mutex protects the members below.
@@ -131,25 +126,16 @@ type Target struct {
 	metaLabels model.LabelSet
 	// Any labels that are added to this target and its metrics.
 	labels model.LabelSet
-
-	// The HTTP client used to scrape the target's endpoint.
-	httpClient *http.Client
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(cfg *config.ScrapeConfig, labels, metaLabels model.LabelSet) (*Target, error) {
-	client, err := newHTTPClient(cfg)
-	if err != nil {
-		return nil, err
-	}
-	t := &Target{
+func NewTarget(cfg *config.ScrapeConfig, labels, metaLabels model.LabelSet) *Target {
+	return &Target{
 		status:       &TargetStatus{},
 		scrapeConfig: cfg,
 		labels:       labels,
 		metaLabels:   metaLabels,
-		httpClient:   client,
 	}
-	return t, nil
 }
 
 // Status returns the status of the target.
@@ -280,60 +266,6 @@ func (t *Target) URL() *url.URL {
 		Path:     string(t.labels[model.MetricsPathLabel]),
 		RawQuery: params.Encode(),
 	}
-}
-
-// InstanceIdentifier returns the identifier for the target.
-func (t *Target) InstanceIdentifier() string {
-	return t.host()
-}
-
-const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
-
-func (t *Target) scrape(ctx context.Context, ts time.Time) (model.Samples, error) {
-	t.RLock()
-	client := t.httpClient
-	t.RUnlock()
-
-	req, err := http.NewRequest("GET", t.URL().String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Add("Accept", acceptHeader)
-
-	resp, err := ctxhttp.Do(ctx, client, req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
-	}
-
-	var (
-		allSamples = make(model.Samples, 0, 200)
-		decSamples = make(model.Vector, 0, 50)
-	)
-	sdec := expfmt.SampleDecoder{
-		Dec: expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header)),
-		Opts: &expfmt.DecodeOptions{
-			Timestamp: model.TimeFromUnixNano(ts.UnixNano()),
-		},
-	}
-
-	for {
-		if err = sdec.Decode(&decSamples); err != nil {
-			break
-		}
-		allSamples = append(allSamples, decSamples...)
-		decSamples = decSamples[:0]
-	}
-
-	if err == io.EOF {
-		// Set err to nil since it is used in the scrape health recording.
-		err = nil
-	}
-	return allSamples, err
 }
 
 func (t *Target) report(start time.Time, dur time.Duration, err error) {

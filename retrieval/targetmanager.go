@@ -459,11 +459,8 @@ func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) (map[mod
 				delete(labels, ln)
 			}
 		}
-		tr, err := NewTarget(cfg, labels, preRelabelLabels)
-		if err != nil {
-			return nil, fmt.Errorf("error while creating instance %d in target group %s: %s", i, tg, err)
-		}
 
+		tr := NewTarget(cfg, labels, preRelabelLabels)
 		targets[tr.fingerprint()] = tr
 	}
 
