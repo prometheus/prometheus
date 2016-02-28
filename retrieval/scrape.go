@@ -82,9 +82,9 @@ type scrapePool struct {
 	config *config.ScrapeConfig
 	client *http.Client
 	// Targets and loops must always be synchronized to have the same
-	// set of fingerprints.
-	targets map[model.Fingerprint]*Target
-	loops   map[model.Fingerprint]loop
+	// set of hashes.
+	targets map[uint64]*Target
+	loops   map[uint64]loop
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(context.Context, scraper, storage.SampleAppender, storage.SampleAppender) loop
@@ -100,8 +100,8 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrape
 		appender: app,
 		config:   cfg,
 		client:   client,
-		targets:  map[model.Fingerprint]*Target{},
-		loops:    map[model.Fingerprint]loop{},
+		targets:  map[uint64]*Target{},
+		loops:    map[uint64]loop{},
 		newLoop:  newScrapeLoop,
 	}
 }
@@ -178,21 +178,21 @@ func (sp *scrapePool) sync(targets []*Target) {
 	defer sp.mtx.Unlock()
 
 	var (
-		fingerprints = map[model.Fingerprint]struct{}{}
-		interval     = time.Duration(sp.config.ScrapeInterval)
-		timeout      = time.Duration(sp.config.ScrapeTimeout)
+		uniqueTargets = map[uint64]struct{}{}
+		interval      = time.Duration(sp.config.ScrapeInterval)
+		timeout       = time.Duration(sp.config.ScrapeTimeout)
 	)
 
 	for _, t := range targets {
-		fp := t.fingerprint()
-		fingerprints[fp] = struct{}{}
+		hash := t.hash()
+		uniqueTargets[hash] = struct{}{}
 
-		if _, ok := sp.targets[fp]; !ok {
+		if _, ok := sp.targets[hash]; !ok {
 			s := &targetScraper{Target: t, client: sp.client}
 			l := sp.newLoop(sp.ctx, s, sp.sampleAppender(t), sp.reportAppender(t))
 
-			sp.targets[fp] = t
-			sp.loops[fp] = l
+			sp.targets[hash] = t
+			sp.loops[hash] = l
 
 			go l.run(interval, timeout, nil)
 		}
@@ -201,16 +201,16 @@ func (sp *scrapePool) sync(targets []*Target) {
 	var wg sync.WaitGroup
 
 	// Stop and remove old targets and scraper loops.
-	for fp := range sp.targets {
-		if _, ok := fingerprints[fp]; !ok {
+	for hash := range sp.targets {
+		if _, ok := uniqueTargets[hash]; !ok {
 			wg.Add(1)
 			go func(l loop) {
 				l.stop()
 				wg.Done()
-			}(sp.loops[fp])
+			}(sp.loops[hash])
 
-			delete(sp.loops, fp)
-			delete(sp.targets, fp)
+			delete(sp.loops, hash)
+			delete(sp.targets, hash)
 		}
 	}
 
