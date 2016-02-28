@@ -74,9 +74,14 @@ type scrapePool struct {
 
 	ctx context.Context
 
+	// Targets and loops must always be synchronized to have the same
+	// set of fingerprints.
 	mtx     sync.RWMutex
 	targets map[model.Fingerprint]*Target
 	loops   map[model.Fingerprint]loop
+
+	// Constructor for new scrape loops. This is settable for testing convenience.
+	newLoop func(context.Context, scraper, storage.SampleAppender, storage.SampleAppender) loop
 }
 
 func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
@@ -85,25 +90,28 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrape
 		config:   cfg,
 		targets:  map[model.Fingerprint]*Target{},
 		loops:    map[model.Fingerprint]loop{},
+		newLoop:  newScrapeLoop,
 	}
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
-// A stopped scrape pool must not be used again.
 func (sp *scrapePool) stop() {
 	var wg sync.WaitGroup
 
-	sp.mtx.RLock()
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
 
-	for _, l := range sp.loops {
+	for fp, l := range sp.loops {
 		wg.Add(1)
 
 		go func(l loop) {
 			l.stop()
 			wg.Done()
 		}(l)
+
+		delete(sp.loops, fp)
+		delete(sp.targets, fp)
 	}
-	sp.mtx.RUnlock()
 
 	wg.Wait()
 }
@@ -126,7 +134,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	for fp, oldLoop := range sp.loops {
 		var (
 			t       = sp.targets[fp]
-			newLoop = newScrapeLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
+			newLoop = sp.newLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
 		)
 		wg.Add(1)
 
@@ -140,6 +148,56 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 		sp.loops[fp] = newLoop
 	}
 
+	wg.Wait()
+}
+
+// sync takes a list of potentially duplicated targets, deduplicates them, starts
+// scrape loops for new targets, and stops scrape loops for disappeared targets.
+// It returns after all stopped scrape loops terminated.
+func (sp *scrapePool) sync(targets []*Target) {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+
+	var (
+		fingerprints = map[model.Fingerprint]struct{}{}
+		interval     = time.Duration(sp.config.ScrapeInterval)
+		timeout      = time.Duration(sp.config.ScrapeTimeout)
+	)
+
+	for _, t := range targets {
+		fp := t.fingerprint()
+		fingerprints[fp] = struct{}{}
+
+		if _, ok := sp.targets[fp]; !ok {
+			l := sp.newLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
+
+			sp.targets[fp] = t
+			sp.loops[fp] = l
+
+			go l.run(interval, timeout, nil)
+		}
+	}
+
+	var wg sync.WaitGroup
+
+	// Stop and remove old targets and scraper loops.
+	for fp := range sp.targets {
+		if _, ok := fingerprints[fp]; !ok {
+			wg.Add(1)
+			go func(l loop) {
+				l.stop()
+				wg.Done()
+			}(sp.loops[fp])
+
+			delete(sp.loops, fp)
+			delete(sp.targets, fp)
+		}
+	}
+
+	// Wait for all potentially stopped scrapers to terminate.
+	// This covers the case of flapping targets. If the server is under high load, a new scraper
+	// may be active and tries to insert. The old scraper that didn't terminate yet could still
+	// be inserting a previous sample set.
 	wg.Wait()
 }
 
@@ -177,56 +235,6 @@ func (sp *scrapePool) reportAppender(target *Target) storage.SampleAppender {
 	}
 }
 
-// sync takes a list of potentially duplicated targets, deduplicates them, starts
-// scrape loops for new targets, and stops scrape loops for disappeared targets.
-// It returns after all stopped scrape loops terminated.
-func (sp *scrapePool) sync(targets []*Target) {
-	sp.mtx.Lock()
-	defer sp.mtx.Unlock()
-
-	var (
-		fingerprints = map[model.Fingerprint]struct{}{}
-		interval     = time.Duration(sp.config.ScrapeInterval)
-		timeout      = time.Duration(sp.config.ScrapeTimeout)
-	)
-
-	for _, t := range targets {
-		fp := t.fingerprint()
-		fingerprints[fp] = struct{}{}
-
-		if _, ok := sp.targets[fp]; !ok {
-			l := newScrapeLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
-
-			sp.targets[fp] = t
-			sp.loops[fp] = l
-
-			go l.run(interval, timeout, nil)
-		}
-	}
-
-	var wg sync.WaitGroup
-
-	// Stop and remove old targets and scraper loops.
-	for fp := range sp.targets {
-		if _, ok := fingerprints[fp]; !ok {
-			wg.Add(1)
-			go func(l loop) {
-				l.stop()
-				wg.Done()
-			}(sp.loops[fp])
-
-			delete(sp.loops, fp)
-			delete(sp.targets, fp)
-		}
-	}
-
-	// Wait for all potentially stopped scrapers to terminate.
-	// This covers the case of flapping targets. If the server is under high load, a new scraper
-	// may be active and tries to insert. The old scraper that didn't terminate yet could still
-	// be inserting a previous sample set.
-	wg.Wait()
-}
-
 // A scraper retrieves samples and accepts a status report at the end.
 type scraper interface {
 	scrape(ctx context.Context, ts time.Time) (model.Samples, error)
@@ -234,7 +242,7 @@ type scraper interface {
 	offset(interval time.Duration) time.Duration
 }
 
-// A loop can run and be stopped again. It must be reused after it was stopped.
+// A loop can run and be stopped again. It must not be reused after it was stopped.
 type loop interface {
 	run(interval, timeout time.Duration, errc chan<- error)
 	stop()
@@ -247,12 +255,11 @@ type scrapeLoop struct {
 	reportAppender storage.SampleAppender
 
 	done   chan struct{}
-	mtx    sync.RWMutex
 	ctx    context.Context
 	cancel func()
 }
 
-func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp storage.SampleAppender) *scrapeLoop {
+func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp storage.SampleAppender) loop {
 	sl := &scrapeLoop{
 		scraper:        sc,
 		appender:       app,
@@ -321,10 +328,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 }
 
 func (sl *scrapeLoop) stop() {
-	sl.mtx.RLock()
 	sl.cancel()
-	sl.mtx.RUnlock()
-
 	<-sl.done
 }
 
