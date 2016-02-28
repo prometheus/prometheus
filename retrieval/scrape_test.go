@@ -60,11 +60,11 @@ func (l *testLoop) stop() {
 
 func TestScrapePoolStop(t *testing.T) {
 	sp := &scrapePool{
-		targets: map[model.Fingerprint]*Target{},
-		loops:   map[model.Fingerprint]loop{},
+		targets: map[uint64]*Target{},
+		loops:   map[uint64]loop{},
 	}
 	var mtx sync.Mutex
-	stopped := map[model.Fingerprint]bool{}
+	stopped := map[uint64]bool{}
 	numTargets := 20
 
 	// Stopping the scrape pool must call stop() on all scrape loops,
@@ -82,12 +82,12 @@ func TestScrapePoolStop(t *testing.T) {
 			time.Sleep(time.Duration(i*20) * time.Millisecond)
 
 			mtx.Lock()
-			stopped[t.fingerprint()] = true
+			stopped[t.hash()] = true
 			mtx.Unlock()
 		}
 
-		sp.targets[t.fingerprint()] = t
-		sp.loops[t.fingerprint()] = l
+		sp.targets[t.hash()] = t
+		sp.loops[t.hash()] = l
 	}
 
 	done := make(chan struct{})
@@ -126,7 +126,7 @@ func TestScrapePoolReload(t *testing.T) {
 	var mtx sync.Mutex
 	numTargets := 20
 
-	stopped := map[model.Fingerprint]bool{}
+	stopped := map[uint64]bool{}
 
 	reloadCfg := &config.ScrapeConfig{
 		ScrapeInterval: model.Duration(3 * time.Second),
@@ -144,7 +144,7 @@ func TestScrapePoolReload(t *testing.T) {
 				t.Errorf("Expected scrape timeout %d but got %d", 2*time.Second, timeout)
 			}
 			mtx.Lock()
-			if !stopped[s.(*targetScraper).fingerprint()] {
+			if !stopped[s.(*targetScraper).hash()] {
 				t.Errorf("Scrape loop for %v not stopped yet", s.(*targetScraper))
 			}
 			mtx.Unlock()
@@ -152,8 +152,8 @@ func TestScrapePoolReload(t *testing.T) {
 		return l
 	}
 	sp := &scrapePool{
-		targets: map[model.Fingerprint]*Target{},
-		loops:   map[model.Fingerprint]loop{},
+		targets: map[uint64]*Target{},
+		loops:   map[uint64]loop{},
 		newLoop: newLoop,
 	}
 
@@ -172,18 +172,18 @@ func TestScrapePoolReload(t *testing.T) {
 			time.Sleep(time.Duration(i*20) * time.Millisecond)
 
 			mtx.Lock()
-			stopped[t.fingerprint()] = true
+			stopped[t.hash()] = true
 			mtx.Unlock()
 		}
 
-		sp.targets[t.fingerprint()] = t
-		sp.loops[t.fingerprint()] = l
+		sp.targets[t.hash()] = t
+		sp.loops[t.hash()] = l
 	}
 	done := make(chan struct{})
 
-	beforeTargets := map[model.Fingerprint]*Target{}
-	for fp, t := range sp.targets {
-		beforeTargets[fp] = t
+	beforeTargets := map[uint64]*Target{}
+	for h, t := range sp.targets {
+		beforeTargets[h] = t
 	}
 
 	reloadTime := time.Now()

@@ -34,9 +34,8 @@ import (
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, model.LabelSet{"job": "some_job", "foo": "bar"})
 	want := model.LabelSet{
-		model.JobLabel:      "some_job",
-		model.InstanceLabel: "example.com:80",
-		"foo":               "bar",
+		model.JobLabel: "some_job",
+		"foo":          "bar",
 	}
 	got := target.Labels()
 	if !reflect.DeepEqual(want, got) {
@@ -142,10 +141,6 @@ func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelS
 	labels[model.MetricsPathLabel] = "/metrics"
 
 	return &Target{
-		scrapeConfig: &config.ScrapeConfig{
-			ScrapeInterval: model.Duration(time.Millisecond),
-			ScrapeTimeout:  model.Duration(deadline),
-		},
 		labels: labels,
 		status: &TargetStatus{},
 	}

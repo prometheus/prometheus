@@ -176,7 +176,7 @@ type targetSet struct {
 	mtx sync.RWMutex
 
 	// Sets of targets by a source string that is unique across target providers.
-	tgroups   map[string]map[model.Fingerprint]*Target
+	tgroups   map[string]map[uint64]*Target
 	providers map[string]TargetProvider
 
 	scrapePool *scrapePool
@@ -189,7 +189,7 @@ type targetSet struct {
 
 func newTargetSet(cfg *config.ScrapeConfig, app storage.SampleAppender) *targetSet {
 	ts := &targetSet{
-		tgroups:    map[string]map[model.Fingerprint]*Target{},
+		tgroups:    map[string]map[uint64]*Target{},
 		scrapePool: newScrapePool(cfg, app),
 		syncCh:     make(chan struct{}, 1),
 		config:     cfg,
@@ -394,8 +394,8 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
-func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) (map[model.Fingerprint]*Target, error) {
-	targets := make(map[model.Fingerprint]*Target, len(tg.Targets))
+func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) (map[uint64]*Target, error) {
+	targets := make(map[uint64]*Target, len(tg.Targets))
 
 	for i, labels := range tg.Targets {
 		for k, v := range cfg.Params {
@@ -460,8 +460,12 @@ func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) (map[mod
 			}
 		}
 
-		tr := NewTarget(cfg, labels, preRelabelLabels)
-		targets[tr.fingerprint()] = tr
+		if _, ok := labels[model.InstanceLabel]; !ok {
+			labels[model.InstanceLabel] = labels[model.AddressLabel]
+		}
+
+		tr := NewTarget(labels, preRelabelLabels, cfg.Params)
+		targets[tr.hash()] = tr
 	}
 
 	return targets, nil
