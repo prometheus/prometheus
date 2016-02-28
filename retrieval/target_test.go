@@ -142,7 +142,6 @@ func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelS
 
 	return &Target{
 		labels: labels,
-		status: &TargetStatus{},
 	}
 }
 

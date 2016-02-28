@@ -31,114 +31,38 @@ import (
 )
 
 // TargetHealth describes the health state of a target.
-type TargetHealth int
+type TargetHealth string
 
-func (t TargetHealth) String() string {
-	switch t {
-	case HealthUnknown:
-		return "unknown"
-	case HealthGood:
-		return "up"
-	case HealthBad:
-		return "down"
-	}
-	panic("unknown state")
-}
-
-func (t TargetHealth) value() model.SampleValue {
-	if t == HealthGood {
-		return 1
-	}
-	return 0
-}
-
+// The possible health states of a target based on the last performed scrape.
 const (
-	// HealthUnknown is the state of a Target before it is first scraped.
-	HealthUnknown TargetHealth = iota
-	// HealthGood is the state of a Target that has been successfully scraped.
-	HealthGood
-	// HealthBad is the state of a Target that was scraped unsuccessfully.
-	HealthBad
+	HealthUnknown TargetHealth = "unknown"
+	HealthGood    TargetHealth = "up"
+	HealthBad     TargetHealth = "down"
 )
-
-// TargetStatus contains information about the current status of a scrape target.
-type TargetStatus struct {
-	lastError  error
-	lastScrape time.Time
-	health     TargetHealth
-
-	mu sync.RWMutex
-}
-
-// LastError returns the error encountered during the last scrape.
-func (ts *TargetStatus) LastError() error {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
-	return ts.lastError
-}
-
-// LastScrape returns the time of the last scrape.
-func (ts *TargetStatus) LastScrape() time.Time {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
-	return ts.lastScrape
-}
-
-// Health returns the last known health state of the target.
-func (ts *TargetStatus) Health() TargetHealth {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
-	return ts.health
-}
-
-func (ts *TargetStatus) setLastScrape(t time.Time) {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-
-	ts.lastScrape = t
-}
-
-func (ts *TargetStatus) setLastError(err error) {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-
-	if err == nil {
-		ts.health = HealthGood
-	} else {
-		ts.health = HealthBad
-	}
-	ts.lastError = err
-}
 
 // Target refers to a singular HTTP or HTTPS endpoint.
 type Target struct {
-	// The status object for the target. It is only set once on initialization.
-	status *TargetStatus
-
 	// Labels before any processing.
 	metaLabels model.LabelSet
 	// Any labels that are added to this target and its metrics.
 	labels model.LabelSet
 	// Additional URL parmeters that are part of the target URL.
 	params url.Values
+
+	mtx        sync.RWMutex
+	lastError  error
+	lastScrape time.Time
+	health     TargetHealth
 }
 
 // NewTarget creates a reasonably configured target for querying.
 func NewTarget(labels, metaLabels model.LabelSet, params url.Values) *Target {
 	return &Target{
-		status:     &TargetStatus{},
 		labels:     labels,
 		metaLabels: metaLabels,
 		params:     params,
+		health:     HealthUnknown,
 	}
-}
-
-// Status returns the status of the target.
-func (t *Target) Status() *TargetStatus {
-	return t.status
 }
 
 func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
@@ -260,8 +184,41 @@ func (t *Target) URL() *url.URL {
 }
 
 func (t *Target) report(start time.Time, dur time.Duration, err error) {
-	t.status.setLastError(err)
-	t.status.setLastScrape(start)
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+
+	if err == nil {
+		t.health = HealthGood
+	} else {
+		t.health = HealthBad
+	}
+
+	t.lastError = err
+	t.lastScrape = start
+}
+
+// LastError returns the error encountered during the last scrape.
+func (t *Target) LastError() error {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.lastError
+}
+
+// LastScrape returns the time of the last scrape.
+func (t *Target) LastScrape() time.Time {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.lastScrape
+}
+
+// Health returns the last known health state of the target.
+func (t *Target) Health() TargetHealth {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.health
 }
 
 // Merges the ingested sample's metric with the label set. On a collision the
