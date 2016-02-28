@@ -144,8 +144,8 @@ func TestScrapePoolReload(t *testing.T) {
 				t.Errorf("Expected scrape timeout %d but got %d", 2*time.Second, timeout)
 			}
 			mtx.Lock()
-			if !stopped[s.(*Target).fingerprint()] {
-				t.Errorf("Scrape loop for %v not stopped yet", s.(*Target))
+			if !stopped[s.(*targetScraper).fingerprint()] {
+				t.Errorf("Scrape loop for %v not stopped yet", s.(*targetScraper))
 			}
 			mtx.Unlock()
 		}

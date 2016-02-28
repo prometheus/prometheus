@@ -16,19 +16,17 @@ package retrieval
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
+	// "net/url"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -92,71 +90,50 @@ func TestTargetOffset(t *testing.T) {
 	}
 }
 
-func TestTargetScrape404(t *testing.T) {
-	server := httptest.NewServer(
-		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusNotFound)
-			},
-		),
-	)
-	defer server.Close()
+// func TestTargetURLParams(t *testing.T) {
+// 	server := httptest.NewServer(
+// 		http.HandlerFunc(
+// 			func(w http.ResponseWriter, r *http.Request) {
+// 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+// 				w.Write([]byte{})
+// 				r.ParseForm()
+// 				if r.Form["foo"][0] != "bar" {
+// 					t.Fatalf("URL parameter 'foo' had unexpected first value '%v'", r.Form["foo"][0])
+// 				}
+// 				if r.Form["foo"][1] != "baz" {
+// 					t.Fatalf("URL parameter 'foo' had unexpected second value '%v'", r.Form["foo"][1])
+// 				}
+// 			},
+// 		),
+// 	)
+// 	defer server.Close()
+// 	serverURL, err := url.Parse(server.URL)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{})
-
-	want := errors.New("server returned HTTP status 404 Not Found")
-	_, got := testTarget.scrape(context.Background(), time.Now())
-	if got == nil || want.Error() != got.Error() {
-		t.Fatalf("want err %q, got %q", want, got)
-	}
-}
-
-func TestURLParams(t *testing.T) {
-	server := httptest.NewServer(
-		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-				w.Write([]byte{})
-				r.ParseForm()
-				if r.Form["foo"][0] != "bar" {
-					t.Fatalf("URL parameter 'foo' had unexpected first value '%v'", r.Form["foo"][0])
-				}
-				if r.Form["foo"][1] != "baz" {
-					t.Fatalf("URL parameter 'foo' had unexpected second value '%v'", r.Form["foo"][1])
-				}
-			},
-		),
-	)
-	defer server.Close()
-	serverURL, err := url.Parse(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	target, err := NewTarget(
-		&config.ScrapeConfig{
-			JobName:        "test_job1",
-			ScrapeInterval: model.Duration(1 * time.Minute),
-			ScrapeTimeout:  model.Duration(1 * time.Second),
-			Scheme:         serverURL.Scheme,
-			Params: url.Values{
-				"foo": []string{"bar", "baz"},
-			},
-		},
-		model.LabelSet{
-			model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
-			model.AddressLabel: model.LabelValue(serverURL.Host),
-			"__param_foo":      "bar",
-		},
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = target.scrape(context.Background(), time.Now()); err != nil {
-		t.Fatal(err)
-	}
-}
+// 	target, err := NewTarget(
+// 		&config.ScrapeConfig{
+// 			JobName: "test_job1",
+// 			Scheme:  "https",
+// 			Params: url.Values{
+// 				"foo": []string{"bar", "baz"},
+// 			},
+// 		},
+// 		model.LabelSet{
+// 			model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+// 			model.AddressLabel: model.LabelValue(serverURL.Host),
+// 			"__param_foo":      "bar_override",
+// 		},
+// 		nil,
+// 	)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if _, err = target.scrape(context.Background(), time.Now()); err != nil {
+// 		t.Fatal(err)
+// 	}
+// }
 
 func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelSet) *Target {
 	labels = labels.Clone()
@@ -343,7 +320,7 @@ func newTLSConfig(t *testing.T) *tls.Config {
 	return tlsConfig
 }
 
-func TestNewTargetWithBadTLSConfig(t *testing.T) {
+func TestNewClientWithBadTLSConfig(t *testing.T) {
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
@@ -352,7 +329,7 @@ func TestNewTargetWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := NewTarget(cfg, nil, nil)
+	_, err := newHTTPClient(cfg)
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}
