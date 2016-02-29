@@ -69,7 +69,7 @@ type HandlerOptions struct {
 	ExternalLabels  model.LabelSet
 }
 
-// NewHandler constructs a new Handler.
+// New constructs a new Handler.
 func New(o *HandlerOptions) *Handler {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -200,7 +200,7 @@ func (n *Handler) Run() {
 	}
 }
 
-// SubmitReqs queues the given notification requests for processing.
+// Send queues the given notification requests for processing.
 // Panics if called on a handler that is not running.
 func (n *Handler) Send(alerts ...*model.Alert) {
 	n.mtx.Lock()
