@@ -335,6 +335,7 @@ func (t *Target) path() string {
 }
 
 // wrapAppender wraps a SampleAppender for samples ingested from the target.
+// RLock must be acquired by the caller.
 func (t *Target) wrapAppender(app storage.SampleAppender) storage.SampleAppender {
 	// The relabelAppender has to be inside the label-modifying appenders
 	// so the relabeling rules are applied to the correct label set.
@@ -348,12 +349,12 @@ func (t *Target) wrapAppender(app storage.SampleAppender) storage.SampleAppender
 	if t.scrapeConfig.HonorLabels {
 		app = honorLabelsAppender{
 			SampleAppender: app,
-			labels:         t.Labels(),
+			labels:         t.unlockedLabels(),
 		}
 	} else {
 		app = ruleLabelsAppender{
 			SampleAppender: app,
-			labels:         t.Labels(),
+			labels:         t.unlockedLabels(),
 		}
 	}
 	return app
@@ -361,6 +362,7 @@ func (t *Target) wrapAppender(app storage.SampleAppender) storage.SampleAppender
 
 // wrapReportingAppender wraps an appender for target status report samples.
 // It ignores any relabeling rules set for the target.
+// RLock must not be acquired by the caller.
 func (t *Target) wrapReportingAppender(app storage.SampleAppender) storage.SampleAppender {
 	return ruleLabelsAppender{
 		SampleAppender: app,
@@ -647,6 +649,12 @@ func (t *Target) Labels() model.LabelSet {
 	t.RLock()
 	defer t.RUnlock()
 
+	return t.unlockedLabels()
+}
+
+// unlockedLabels does the same as Labels but does not lock the mutex (useful
+// for internal usage when the mutex is already locked).
+func (t *Target) unlockedLabels() model.LabelSet {
 	lset := make(model.LabelSet, len(t.labels))
 	for ln, lv := range t.labels {
 		if !strings.HasPrefix(string(ln), model.ReservedLabelPrefix) {

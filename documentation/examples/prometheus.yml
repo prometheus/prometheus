@@ -14,7 +14,7 @@ rule_files:
   # - "first.rules"
   # - "second.rules"
 
-# A scrape configuration containing exactly one endpoint to scrape: 
+# A scrape configuration containing exactly one endpoint to scrape:
 # Here it's Prometheus itself.
 scrape_configs:
   # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
@@ -22,7 +22,6 @@ scrape_configs:
 
     # Override the global default and scrape targets from this job every 5 seconds.
     scrape_interval: 5s
-    scrape_timeout: 10s
 
     # metrics_path defaults to '/metrics'
     # scheme defaults to 'http'.
