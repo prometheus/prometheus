@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 )
@@ -69,106 +70,169 @@ func init() {
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
 	appender storage.SampleAppender
+	config   *config.ScrapeConfig
 
-	ctx     context.Context
+	ctx context.Context
+
+	// Targets and loops must always be synchronized to have the same
+	// set of fingerprints.
 	mtx     sync.RWMutex
-	tgroups map[string]map[model.Fingerprint]*Target
+	targets map[model.Fingerprint]*Target
+	loops   map[model.Fingerprint]loop
 
-	targets map[model.Fingerprint]loop
+	// Constructor for new scrape loops. This is settable for testing convenience.
+	newLoop func(context.Context, scraper, storage.SampleAppender, storage.SampleAppender) loop
 }
 
-func newScrapePool(app storage.SampleAppender) *scrapePool {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
 	return &scrapePool{
 		appender: app,
-		tgroups:  map[string]map[model.Fingerprint]*Target{},
+		config:   cfg,
+		targets:  map[model.Fingerprint]*Target{},
+		loops:    map[model.Fingerprint]loop{},
+		newLoop:  newScrapeLoop,
 	}
 }
 
+// stop terminates all scrape loops and returns after they all terminated.
 func (sp *scrapePool) stop() {
 	var wg sync.WaitGroup
 
-	sp.mtx.RLock()
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
 
-	for _, tgroup := range sp.tgroups {
-		for _, t := range tgroup {
-			wg.Add(1)
+	for fp, l := range sp.loops {
+		wg.Add(1)
 
-			go func(t *Target) {
-				t.scrapeLoop.stop()
-				wg.Done()
-			}(t)
-		}
+		go func(l loop) {
+			l.stop()
+			wg.Done()
+		}(l)
+
+		delete(sp.loops, fp)
+		delete(sp.targets, fp)
 	}
-	sp.mtx.RUnlock()
 
 	wg.Wait()
 }
 
-func (sp *scrapePool) sync(tgroups map[string]map[model.Fingerprint]*Target) {
+// reload the scrape pool with the given scrape configuration. The target state is preserved
+// but all scrape loops are restarted with the new scrape configuration.
+// This method returns after all scrape loops that were stopped have fully terminated.
+func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+
+	sp.config = cfg
 
 	var (
-		wg         sync.WaitGroup
-		newTgroups = map[string]map[model.Fingerprint]*Target{}
+		wg       sync.WaitGroup
+		interval = time.Duration(sp.config.ScrapeInterval)
+		timeout  = time.Duration(sp.config.ScrapeTimeout)
 	)
 
-	for source, targets := range tgroups {
+	for fp, oldLoop := range sp.loops {
 		var (
-			prevTargets = sp.tgroups[source]
-			newTargets  = map[model.Fingerprint]*Target{}
+			t       = sp.targets[fp]
+			newLoop = sp.newLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
 		)
-		newTgroups[source] = newTargets
+		wg.Add(1)
 
-		for fp, tnew := range targets {
-			// If the same target existed before, we let it run and replace
-			// the new one with it.
-			if told, ok := prevTargets[fp]; ok {
-				newTargets[fp] = told
-			} else {
-				newTargets[fp] = tnew
+		go func(oldLoop, newLoop loop) {
+			oldLoop.stop()
+			wg.Done()
 
-				tnew.scrapeLoop = newScrapeLoop(sp.ctx, tnew, tnew.wrapAppender(sp.appender), tnew.wrapReportingAppender(sp.appender))
-				go tnew.scrapeLoop.run(tnew.interval(), tnew.timeout(), nil)
-			}
-		}
-		for fp, told := range prevTargets {
-			// A previous target is no longer in the group.
-			if _, ok := targets[fp]; !ok {
-				wg.Add(1)
+			go newLoop.run(interval, timeout, nil)
+		}(oldLoop, newLoop)
 
-				go func(told *Target) {
-					told.scrapeLoop.stop()
-					wg.Done()
-				}(told)
-			}
+		sp.loops[fp] = newLoop
+	}
+
+	wg.Wait()
+}
+
+// sync takes a list of potentially duplicated targets, deduplicates them, starts
+// scrape loops for new targets, and stops scrape loops for disappeared targets.
+// It returns after all stopped scrape loops terminated.
+func (sp *scrapePool) sync(targets []*Target) {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+
+	var (
+		fingerprints = map[model.Fingerprint]struct{}{}
+		interval     = time.Duration(sp.config.ScrapeInterval)
+		timeout      = time.Duration(sp.config.ScrapeTimeout)
+	)
+
+	for _, t := range targets {
+		fp := t.fingerprint()
+		fingerprints[fp] = struct{}{}
+
+		if _, ok := sp.targets[fp]; !ok {
+			l := sp.newLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
+
+			sp.targets[fp] = t
+			sp.loops[fp] = l
+
+			go l.run(interval, timeout, nil)
 		}
 	}
 
-	// Stop scrapers for target groups that disappeared completely.
-	for source, targets := range sp.tgroups {
-		if _, ok := tgroups[source]; ok {
-			continue
-		}
-		for _, told := range targets {
+	var wg sync.WaitGroup
+
+	// Stop and remove old targets and scraper loops.
+	for fp := range sp.targets {
+		if _, ok := fingerprints[fp]; !ok {
 			wg.Add(1)
-
-			go func(told *Target) {
-				told.scrapeLoop.stop()
+			go func(l loop) {
+				l.stop()
 				wg.Done()
-			}(told)
+			}(sp.loops[fp])
+
+			delete(sp.loops, fp)
+			delete(sp.targets, fp)
 		}
 	}
-
-	sp.tgroups = newTgroups
 
 	// Wait for all potentially stopped scrapers to terminate.
 	// This covers the case of flapping targets. If the server is under high load, a new scraper
 	// may be active and tries to insert. The old scraper that didn't terminate yet could still
 	// be inserting a previous sample set.
 	wg.Wait()
+}
 
-	// TODO(fabxc): maybe this can be released earlier with subsequent refactoring.
-	sp.mtx.Unlock()
+// sampleAppender returns an appender for ingested samples from the target.
+func (sp *scrapePool) sampleAppender(target *Target) storage.SampleAppender {
+	app := sp.appender
+	// The relabelAppender has to be inside the label-modifying appenders
+	// so the relabeling rules are applied to the correct label set.
+	if mrc := sp.config.MetricRelabelConfigs; len(mrc) > 0 {
+		app = relabelAppender{
+			SampleAppender: app,
+			relabelings:    mrc,
+		}
+	}
+
+	if sp.config.HonorLabels {
+		app = honorLabelsAppender{
+			SampleAppender: app,
+			labels:         target.Labels(),
+		}
+	} else {
+		app = ruleLabelsAppender{
+			SampleAppender: app,
+			labels:         target.Labels(),
+		}
+	}
+	return app
+}
+
+// reportAppender returns an appender for reporting samples for the target.
+func (sp *scrapePool) reportAppender(target *Target) storage.SampleAppender {
+	return ruleLabelsAppender{
+		SampleAppender: sp.appender,
+		labels:         target.Labels(),
+	}
 }
 
 // A scraper retrieves samples and accepts a status report at the end.
@@ -178,6 +242,7 @@ type scraper interface {
 	offset(interval time.Duration) time.Duration
 }
 
+// A loop can run and be stopped again. It must not be reused after it was stopped.
 type loop interface {
 	run(interval, timeout time.Duration, errc chan<- error)
 	stop()
@@ -190,12 +255,11 @@ type scrapeLoop struct {
 	reportAppender storage.SampleAppender
 
 	done   chan struct{}
-	mtx    sync.RWMutex
 	ctx    context.Context
 	cancel func()
 }
 
-func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp storage.SampleAppender) *scrapeLoop {
+func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp storage.SampleAppender) loop {
 	sl := &scrapeLoop{
 		scraper:        sc,
 		appender:       app,
@@ -264,10 +328,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 }
 
 func (sl *scrapeLoop) stop() {
-	sl.mtx.RLock()
 	sl.cancel()
-	sl.mtx.RUnlock()
-
 	<-sl.done
 }
 

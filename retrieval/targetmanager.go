@@ -117,6 +117,8 @@ func (tm *TargetManager) reload() {
 				ts.runScraping(tm.ctx)
 				tm.wg.Done()
 			}(ts)
+		} else {
+			ts.reload(scfg)
 		}
 		ts.runProviders(tm.ctx, providersFromConfig(scfg))
 	}
@@ -140,12 +142,14 @@ func (tm *TargetManager) Pools() map[string][]*Target {
 
 	// TODO(fabxc): this is just a hack to maintain compatibility for now.
 	for _, ps := range tm.targetSets {
-		for _, ts := range ps.scrapePool.tgroups {
-			for _, t := range ts {
-				job := string(t.Labels()[model.JobLabel])
-				pools[job] = append(pools[job], t)
-			}
+		ps.scrapePool.mtx.RLock()
+
+		for _, t := range ps.scrapePool.targets {
+			job := string(t.Labels()[model.JobLabel])
+			pools[job] = append(pools[job], t)
 		}
+
+		ps.scrapePool.mtx.RUnlock()
 	}
 	return pools
 }
@@ -166,10 +170,12 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
 }
 
 // targetSet holds several TargetProviders for which the same scrape configuration
-// is used. It runs the target providers and starts and stops scrapers as it
-// receives target updates.
+// is used. It maintains target groups from all given providers and sync them
+// to a scrape pool.
 type targetSet struct {
-	mtx       sync.RWMutex
+	mtx sync.RWMutex
+
+	// Sets of targets by a source string that is unique across target providers.
 	tgroups   map[string]map[model.Fingerprint]*Target
 	providers map[string]TargetProvider
 
@@ -184,7 +190,7 @@ type targetSet struct {
 func newTargetSet(cfg *config.ScrapeConfig, app storage.SampleAppender) *targetSet {
 	ts := &targetSet{
 		tgroups:    map[string]map[model.Fingerprint]*Target{},
-		scrapePool: newScrapePool(app),
+		scrapePool: newScrapePool(cfg, app),
 		syncCh:     make(chan struct{}, 1),
 		config:     cfg,
 	}
@@ -201,6 +207,14 @@ func (ts *targetSet) cancel() {
 	if ts.cancelProviders != nil {
 		ts.cancelProviders()
 	}
+}
+
+func (ts *targetSet) reload(cfg *config.ScrapeConfig) {
+	ts.mtx.Lock()
+	ts.config = cfg
+	ts.mtx.Unlock()
+
+	ts.scrapePool.reload(cfg)
 }
 
 func (ts *targetSet) runScraping(ctx context.Context) {
@@ -221,7 +235,9 @@ Loop:
 		case <-ctx.Done():
 			break Loop
 		case <-ts.syncCh:
+			ts.mtx.RLock()
 			ts.sync()
+			ts.mtx.RUnlock()
 		}
 	}
 
@@ -231,9 +247,13 @@ Loop:
 }
 
 func (ts *targetSet) sync() {
-	// TODO(fabxc): temporary simple version. For a deduplicating scrape pool we will
-	// submit a list of all targets.
-	ts.scrapePool.sync(ts.tgroups)
+	targets := []*Target{}
+	for _, tgroup := range ts.tgroups {
+		for _, t := range tgroup {
+			targets = append(targets, t)
+		}
+	}
+	ts.scrapePool.sync(targets)
 }
 
 func (ts *targetSet) runProviders(ctx context.Context, providers map[string]TargetProvider) {
@@ -298,8 +318,9 @@ func (ts *targetSet) runProviders(ctx context.Context, providers map[string]Targ
 		go prov.Run(ctx, updates)
 	}
 
+	// We wait for a full initial set of target groups before releasing the mutex
+	// to ensure the initial sync is complete and there are no races with subsequent updates.
 	wg.Wait()
-
 	ts.sync()
 }
 

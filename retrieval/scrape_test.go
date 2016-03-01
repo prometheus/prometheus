@@ -14,14 +14,332 @@
 package retrieval
 
 import (
+	"fmt"
+	"reflect"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
-	// "github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage"
 )
+
+func TestNewScrapePool(t *testing.T) {
+	var (
+		app = &nopAppender{}
+		cfg = &config.ScrapeConfig{}
+		sp  = newScrapePool(cfg, app)
+	)
+
+	if a, ok := sp.appender.(*nopAppender); !ok || a != app {
+		t.Fatalf("Wrong sample appender")
+	}
+	if sp.config != cfg {
+		t.Fatalf("Wrong scrape config")
+	}
+	if sp.newLoop == nil {
+		t.Fatalf("newLoop function not initialized")
+	}
+}
+
+type testLoop struct {
+	startFunc func(interval, timeout time.Duration, errc chan<- error)
+	stopFunc  func()
+}
+
+func (l *testLoop) run(interval, timeout time.Duration, errc chan<- error) {
+	l.startFunc(interval, timeout, errc)
+}
+
+func (l *testLoop) stop() {
+	l.stopFunc()
+}
+
+func TestScrapePoolStop(t *testing.T) {
+	sp := &scrapePool{
+		targets: map[model.Fingerprint]*Target{},
+		loops:   map[model.Fingerprint]loop{},
+	}
+	var mtx sync.Mutex
+	stopped := map[model.Fingerprint]bool{}
+	numTargets := 20
+
+	// Stopping the scrape pool must call stop() on all scrape loops,
+	// clean them and the respective targets up. It must wait until each loop's
+	// stop function returned before returning itself.
+
+	for i := 0; i < numTargets; i++ {
+		t := &Target{
+			labels: model.LabelSet{
+				model.AddressLabel: model.LabelValue(fmt.Sprintf("example.com:%d", i)),
+			},
+		}
+		l := &testLoop{}
+		l.stopFunc = func() {
+			time.Sleep(time.Duration(i*20) * time.Millisecond)
+
+			mtx.Lock()
+			stopped[t.fingerprint()] = true
+			mtx.Unlock()
+		}
+
+		sp.targets[t.fingerprint()] = t
+		sp.loops[t.fingerprint()] = l
+	}
+
+	done := make(chan struct{})
+	stopTime := time.Now()
+
+	go func() {
+		sp.stop()
+		close(done)
+	}()
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("scrapeLoop.stop() did not return as expected")
+	case <-done:
+		// This should have taken at least as long as the last target slept.
+		if time.Since(stopTime) < time.Duration(numTargets*20)*time.Millisecond {
+			t.Fatalf("scrapeLoop.stop() exited before all targets stopped")
+		}
+	}
+
+	mtx.Lock()
+	if len(stopped) != numTargets {
+		t.Fatalf("Expected 20 stopped loops, got %d", len(stopped))
+	}
+	mtx.Unlock()
+
+	if len(sp.targets) > 0 {
+		t.Fatalf("Targets were not cleared on stopping: %d left", len(sp.targets))
+	}
+	if len(sp.loops) > 0 {
+		t.Fatalf("Loops were not cleared on stopping: %d left", len(sp.loops))
+	}
+}
+
+func TestScrapePoolReload(t *testing.T) {
+	var mtx sync.Mutex
+	numTargets := 20
+
+	stopped := map[model.Fingerprint]bool{}
+
+	reloadCfg := &config.ScrapeConfig{
+		ScrapeInterval: model.Duration(3 * time.Second),
+		ScrapeTimeout:  model.Duration(2 * time.Second),
+	}
+	// On starting to run, new loops created on reload check whether their preceeding
+	// equivalents have been stopped.
+	newLoop := func(ctx context.Context, s scraper, app, reportApp storage.SampleAppender) loop {
+		l := &testLoop{}
+		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
+			if interval != 3*time.Second {
+				t.Errorf("Expected scrape interval %d but got %d", 3*time.Second, interval)
+			}
+			if timeout != 2*time.Second {
+				t.Errorf("Expected scrape timeout %d but got %d", 2*time.Second, timeout)
+			}
+			mtx.Lock()
+			if !stopped[s.(*Target).fingerprint()] {
+				t.Errorf("Scrape loop for %v not stopped yet", s.(*Target))
+			}
+			mtx.Unlock()
+		}
+		return l
+	}
+	sp := &scrapePool{
+		targets: map[model.Fingerprint]*Target{},
+		loops:   map[model.Fingerprint]loop{},
+		newLoop: newLoop,
+	}
+
+	// Reloading a scrape pool with a new scrape configuration must stop all scrape
+	// loops and start new ones. A new loop must not be started before the preceeding
+	// one terminated.
+
+	for i := 0; i < numTargets; i++ {
+		t := &Target{
+			labels: model.LabelSet{
+				model.AddressLabel: model.LabelValue(fmt.Sprintf("example.com:%d", i)),
+			},
+		}
+		l := &testLoop{}
+		l.stopFunc = func() {
+			time.Sleep(time.Duration(i*20) * time.Millisecond)
+
+			mtx.Lock()
+			stopped[t.fingerprint()] = true
+			mtx.Unlock()
+		}
+
+		sp.targets[t.fingerprint()] = t
+		sp.loops[t.fingerprint()] = l
+	}
+	done := make(chan struct{})
+
+	beforeTargets := map[model.Fingerprint]*Target{}
+	for fp, t := range sp.targets {
+		beforeTargets[fp] = t
+	}
+
+	reloadTime := time.Now()
+
+	go func() {
+		sp.reload(reloadCfg)
+		close(done)
+	}()
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("scrapeLoop.reload() did not return as expected")
+	case <-done:
+		// This should have taken at least as long as the last target slept.
+		if time.Since(reloadTime) < time.Duration(numTargets*20)*time.Millisecond {
+			t.Fatalf("scrapeLoop.stop() exited before all targets stopped")
+		}
+	}
+
+	mtx.Lock()
+	if len(stopped) != numTargets {
+		t.Fatalf("Expected 20 stopped loops, got %d", stopped)
+	}
+	mtx.Unlock()
+
+	if !reflect.DeepEqual(sp.targets, beforeTargets) {
+		t.Fatalf("Reloading affected target states unexpectedly")
+	}
+	if len(sp.loops) != numTargets {
+		t.Fatalf("Expected %d loops after reload but got %d", numTargets, len(sp.loops))
+	}
+}
+
+func TestScrapePoolReportAppender(t *testing.T) {
+	cfg := &config.ScrapeConfig{
+		MetricRelabelConfigs: []*config.RelabelConfig{
+			{}, {}, {},
+		},
+	}
+	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
+	app := &nopAppender{}
+
+	sp := newScrapePool(cfg, app)
+
+	cfg.HonorLabels = false
+	wrapped := sp.reportAppender(target)
+
+	rl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	if rl.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", rl.SampleAppender)
+	}
+
+	cfg.HonorLabels = true
+	wrapped = sp.reportAppender(target)
+
+	hl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	if hl.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", hl.SampleAppender)
+	}
+}
+
+func TestScrapePoolSampleAppender(t *testing.T) {
+	cfg := &config.ScrapeConfig{
+		MetricRelabelConfigs: []*config.RelabelConfig{
+			{}, {}, {},
+		},
+	}
+
+	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
+	app := &nopAppender{}
+
+	sp := newScrapePool(cfg, app)
+
+	cfg.HonorLabels = false
+	wrapped := sp.sampleAppender(target)
+
+	rl, ok := wrapped.(ruleLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+	}
+	re, ok := rl.SampleAppender.(relabelAppender)
+	if !ok {
+		t.Fatalf("Expected relabelAppender but got %T", rl.SampleAppender)
+	}
+	if re.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", re.SampleAppender)
+	}
+
+	cfg.HonorLabels = true
+	wrapped = sp.sampleAppender(target)
+
+	hl, ok := wrapped.(honorLabelsAppender)
+	if !ok {
+		t.Fatalf("Expected honorLabelsAppender but got %T", wrapped)
+	}
+	re, ok = hl.SampleAppender.(relabelAppender)
+	if !ok {
+		t.Fatalf("Expected relabelAppender but got %T", hl.SampleAppender)
+	}
+	if re.SampleAppender != app {
+		t.Fatalf("Expected base appender but got %T", re.SampleAppender)
+	}
+}
+
+func TestScrapeLoopStop(t *testing.T) {
+	scraper := &testScraper{}
+	sl := newScrapeLoop(context.Background(), scraper, nil, nil)
+
+	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
+	// loops are syarted asynchronously. Thus it's possible, that a loop is stopped
+	// again before having started properly.
+	// Stopping not-yet-started loops must block until the run method was called and exited.
+	// The run method must exit immediately.
+
+	stopDone := make(chan struct{})
+	go func() {
+		sl.stop()
+		close(stopDone)
+	}()
+
+	select {
+	case <-stopDone:
+		t.Fatalf("Stopping terminated before run exited successfully")
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	// Running the scrape loop must exit before calling the scraper even once.
+	scraper.scrapeFunc = func(context.Context, time.Time) (model.Samples, error) {
+		t.Fatalf("scraper was called for terminated scrape loop")
+		return nil, nil
+	}
+
+	runDone := make(chan struct{})
+	go func() {
+		sl.run(0, 0, nil)
+		close(runDone)
+	}()
+
+	select {
+	case <-runDone:
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Running terminated scrape loop did not exit")
+	}
+
+	select {
+	case <-stopDone:
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Stopping did not terminate after running exited")
+	}
+}
 
 func TestScrapeLoopRun(t *testing.T) {
 	var (

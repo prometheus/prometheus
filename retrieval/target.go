@@ -121,12 +121,11 @@ type Target struct {
 	// The status object for the target. It is only set once on initialization.
 	status *TargetStatus
 
-	scrapeLoop *scrapeLoop
+	scrapeLoop   *scrapeLoop
+	scrapeConfig *config.ScrapeConfig
 
 	// Mutex protects the members below.
 	sync.RWMutex
-
-	scrapeConfig *config.ScrapeConfig
 
 	// Labels before any processing.
 	metaLabels model.LabelSet
@@ -230,20 +229,6 @@ func (t *Target) offset(interval time.Duration) time.Duration {
 	return time.Duration(next)
 }
 
-func (t *Target) interval() time.Duration {
-	t.RLock()
-	defer t.RUnlock()
-
-	return time.Duration(t.scrapeConfig.ScrapeInterval)
-}
-
-func (t *Target) timeout() time.Duration {
-	t.RLock()
-	defer t.RUnlock()
-
-	return time.Duration(t.scrapeConfig.ScrapeTimeout)
-}
-
 func (t *Target) scheme() string {
 	t.RLock()
 	defer t.RUnlock()
@@ -263,42 +248,6 @@ func (t *Target) path() string {
 	defer t.RUnlock()
 
 	return string(t.labels[model.MetricsPathLabel])
-}
-
-// wrapAppender wraps a SampleAppender for samples ingested from the target.
-// RLock must be acquired by the caller.
-func (t *Target) wrapAppender(app storage.SampleAppender) storage.SampleAppender {
-	// The relabelAppender has to be inside the label-modifying appenders
-	// so the relabeling rules are applied to the correct label set.
-	if mrc := t.scrapeConfig.MetricRelabelConfigs; len(mrc) > 0 {
-		app = relabelAppender{
-			SampleAppender: app,
-			relabelings:    mrc,
-		}
-	}
-
-	if t.scrapeConfig.HonorLabels {
-		app = honorLabelsAppender{
-			SampleAppender: app,
-			labels:         t.unlockedLabels(),
-		}
-	} else {
-		app = ruleLabelsAppender{
-			SampleAppender: app,
-			labels:         t.unlockedLabels(),
-		}
-	}
-	return app
-}
-
-// wrapReportingAppender wraps an appender for target status report samples.
-// It ignores any relabeling rules set for the target.
-// RLock must not be acquired by the caller.
-func (t *Target) wrapReportingAppender(app storage.SampleAppender) storage.SampleAppender {
-	return ruleLabelsAppender{
-		SampleAppender: app,
-		labels:         t.Labels(),
-	}
 }
 
 // URL returns a copy of the target's URL.
