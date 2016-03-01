@@ -31,7 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/notification"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
@@ -84,16 +84,16 @@ func Main() int {
 	}
 
 	var (
-		notificationHandler = notification.New(&cfg.notification)
-		targetManager       = retrieval.NewTargetManager(sampleAppender)
-		queryEngine         = promql.NewEngine(memStorage, &cfg.queryEngine)
+		notifier      = notifier.New(&cfg.notifier)
+		targetManager = retrieval.NewTargetManager(sampleAppender)
+		queryEngine   = promql.NewEngine(memStorage, &cfg.queryEngine)
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		SampleAppender:      sampleAppender,
-		NotificationHandler: notificationHandler,
-		QueryEngine:         queryEngine,
-		ExternalURL:         cfg.web.ExternalURL,
+		SampleAppender: sampleAppender,
+		Notifier:       notifier,
+		QueryEngine:    queryEngine,
+		ExternalURL:    cfg.web.ExternalURL,
 	})
 
 	flags := map[string]string{}
@@ -110,7 +110,7 @@ func Main() int {
 
 	webHandler := web.New(memStorage, queryEngine, ruleManager, status, &cfg.web)
 
-	reloadables = append(reloadables, status, targetManager, ruleManager, webHandler, notificationHandler)
+	reloadables = append(reloadables, status, targetManager, ruleManager, webHandler, notifier)
 
 	if !reloadConfig(cfg.configFile, reloadables...) {
 		return 1
@@ -153,14 +153,14 @@ func Main() int {
 	}
 	// The storage has to be fully initialized before registering.
 	prometheus.MustRegister(memStorage)
-	prometheus.MustRegister(notificationHandler)
+	prometheus.MustRegister(notifier)
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
 
-	// The notification handler is a dependency of the rule manager. It has to be
+	// The notifieris a dependency of the rule manager. It has to be
 	// started before and torn down afterwards.
-	go notificationHandler.Run()
-	defer notificationHandler.Stop()
+	go notifier.Run()
+	defer notifier.Stop()
 
 	go ruleManager.Run()
 	defer ruleManager.Stop()

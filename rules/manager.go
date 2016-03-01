@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/notification"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
@@ -343,7 +343,7 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 	}
 
 	if len(alerts) > 0 {
-		g.opts.NotificationHandler.Send(alerts...)
+		g.opts.Notifier.Send(alerts...)
 	}
 
 	return nil
@@ -359,10 +359,10 @@ type Manager struct {
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL         *url.URL
-	QueryEngine         *promql.Engine
-	NotificationHandler *notification.Handler
-	SampleAppender      storage.SampleAppender
+	ExternalURL    *url.URL
+	QueryEngine    *promql.Engine
+	Notifier       *notifier.Notifier
+	SampleAppender storage.SampleAppender
 }
 
 // NewManager returns an implementation of Manager, ready to be started
