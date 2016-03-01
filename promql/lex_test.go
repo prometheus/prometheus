@@ -99,6 +99,26 @@ var tests = []struct {
 		input:    "0x123",
 		expected: []item{{itemNumber, 0, "0x123"}},
 	},
+	// Test strings.
+	{
+		input:    "\"test\\tsecuence\"",
+		expected: []item{{itemString, 0, `"test\tsecuence"`}},
+	},
+	{
+		input:    "\"test\\\\.expression\"",
+		expected: []item{{itemString, 0, `"test\\.expression"`}},
+	},
+	{
+		input: "\"test\\.expression\"",
+		expected: []item{
+			{itemError, 0, "unknown escape sequence U+002E '.'"},
+			{itemString, 0, `"test\.expression"`},
+		},
+	},
+	{
+		input:    "`test\\.expression`",
+		expected: []item{{itemString, 0, "`test\\.expression`"}},
+	},
 	{
 		// See https://github.com/prometheus/prometheus/issues/939.
 		input: ".٩",
