@@ -265,7 +265,13 @@ func (kd *Discovery) updateNodesTargetGroup() *config.TargetGroup {
 
 	// Now let's loop through the nodes & add them to the target group with appropriate labels.
 	for nodeName, node := range kd.nodes {
-		address := fmt.Sprintf("%s:%d", node.Status.Addresses[0].Address, kd.Conf.KubeletPort)
+		nodeAddress, err := nodeHostIP(node)
+		if err != nil {
+			log.Debugf("Skipping node %s: %s", node.Name, err)
+			continue
+		}
+
+		address := fmt.Sprintf("%s:%d", nodeAddress.String(), kd.Conf.KubeletPort)
 
 		t := model.LabelSet{
 			model.AddressLabel:  model.LabelValue(address),
@@ -743,4 +749,28 @@ func until(f func(), period time.Duration, stopCh <-chan struct{}) {
 			f()
 		}
 	}
+}
+
+// nodeHostIP returns the provided node's address, based on the priority:
+// 1. NodeInternalIP
+// 2. NodeExternalIP
+// 3. NodeLegacyHostIP
+//
+// Copied from k8s.io/kubernetes/pkg/util/node/node.go
+func nodeHostIP(node *Node) (net.IP, error) {
+	addresses := node.Status.Addresses
+	addressMap := make(map[NodeAddressType][]NodeAddress)
+	for i := range addresses {
+		addressMap[addresses[i].Type] = append(addressMap[addresses[i].Type], addresses[i])
+	}
+	if addresses, ok := addressMap[NodeInternalIP]; ok {
+		return net.ParseIP(addresses[0].Address), nil
+	}
+	if addresses, ok := addressMap[NodeExternalIP]; ok {
+		return net.ParseIP(addresses[0].Address), nil
+	}
+	if addresses, ok := addressMap[NodeLegacyHostIP]; ok {
+		return net.ParseIP(addresses[0].Address), nil
+	}
+	return nil, fmt.Errorf("host IP unknown; known addresses: %v", addresses)
 }
