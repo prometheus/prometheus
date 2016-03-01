@@ -20,7 +20,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	// "net/url"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -89,50 +89,38 @@ func TestTargetOffset(t *testing.T) {
 	}
 }
 
-// func TestTargetURLParams(t *testing.T) {
-// 	server := httptest.NewServer(
-// 		http.HandlerFunc(
-// 			func(w http.ResponseWriter, r *http.Request) {
-// 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-// 				w.Write([]byte{})
-// 				r.ParseForm()
-// 				if r.Form["foo"][0] != "bar" {
-// 					t.Fatalf("URL parameter 'foo' had unexpected first value '%v'", r.Form["foo"][0])
-// 				}
-// 				if r.Form["foo"][1] != "baz" {
-// 					t.Fatalf("URL parameter 'foo' had unexpected second value '%v'", r.Form["foo"][1])
-// 				}
-// 			},
-// 		),
-// 	)
-// 	defer server.Close()
-// 	serverURL, err := url.Parse(server.URL)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+func TestTargetURL(t *testing.T) {
+	params := url.Values{
+		"abc": []string{"foo", "bar", "baz"},
+		"xyz": []string{"hoo"},
+	}
+	labels := model.LabelSet{
+		model.AddressLabel:     "example.com:1234",
+		model.SchemeLabel:      "https",
+		model.MetricsPathLabel: "/metricz",
+		"__param_abc":          "overwrite",
+		"__param_cde":          "huu",
+	}
+	target := NewTarget(labels, labels, params)
 
-// 	target, err := NewTarget(
-// 		&config.ScrapeConfig{
-// 			JobName: "test_job1",
-// 			Scheme:  "https",
-// 			Params: url.Values{
-// 				"foo": []string{"bar", "baz"},
-// 			},
-// 		},
-// 		model.LabelSet{
-// 			model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
-// 			model.AddressLabel: model.LabelValue(serverURL.Host),
-// 			"__param_foo":      "bar_override",
-// 		},
-// 		nil,
-// 	)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	if _, err = target.scrape(context.Background(), time.Now()); err != nil {
-// 		t.Fatal(err)
-// 	}
-// }
+	// The reserved labels are concatenated into a full URL. The first value for each
+	// URL query parameter can be set/modified via labels as well.
+	expectedParams := url.Values{
+		"abc": []string{"overwrite", "bar", "baz"},
+		"cde": []string{"huu"},
+		"xyz": []string{"hoo"},
+	}
+	expectedURL := url.URL{
+		Scheme:   "https",
+		Host:     "example.com:1234",
+		Path:     "/metricz",
+		RawQuery: expectedParams.Encode(),
+	}
+
+	if u := target.URL(); !reflect.DeepEqual(u.String(), expectedURL.String()) {
+		t.Fatalf("Expected URL %q but got %q", expectedURL, u)
+	}
+}
 
 func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelSet) *Target {
 	labels = labels.Clone()
