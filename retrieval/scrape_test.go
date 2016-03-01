@@ -15,7 +15,11 @@ package retrieval
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -60,11 +64,11 @@ func (l *testLoop) stop() {
 
 func TestScrapePoolStop(t *testing.T) {
 	sp := &scrapePool{
-		targets: map[model.Fingerprint]*Target{},
-		loops:   map[model.Fingerprint]loop{},
+		targets: map[uint64]*Target{},
+		loops:   map[uint64]loop{},
 	}
 	var mtx sync.Mutex
-	stopped := map[model.Fingerprint]bool{}
+	stopped := map[uint64]bool{}
 	numTargets := 20
 
 	// Stopping the scrape pool must call stop() on all scrape loops,
@@ -82,12 +86,12 @@ func TestScrapePoolStop(t *testing.T) {
 			time.Sleep(time.Duration(i*20) * time.Millisecond)
 
 			mtx.Lock()
-			stopped[t.fingerprint()] = true
+			stopped[t.hash()] = true
 			mtx.Unlock()
 		}
 
-		sp.targets[t.fingerprint()] = t
-		sp.loops[t.fingerprint()] = l
+		sp.targets[t.hash()] = t
+		sp.loops[t.hash()] = l
 	}
 
 	done := make(chan struct{})
@@ -126,7 +130,7 @@ func TestScrapePoolReload(t *testing.T) {
 	var mtx sync.Mutex
 	numTargets := 20
 
-	stopped := map[model.Fingerprint]bool{}
+	stopped := map[uint64]bool{}
 
 	reloadCfg := &config.ScrapeConfig{
 		ScrapeInterval: model.Duration(3 * time.Second),
@@ -144,16 +148,16 @@ func TestScrapePoolReload(t *testing.T) {
 				t.Errorf("Expected scrape timeout %d but got %d", 2*time.Second, timeout)
 			}
 			mtx.Lock()
-			if !stopped[s.(*Target).fingerprint()] {
-				t.Errorf("Scrape loop for %v not stopped yet", s.(*Target))
+			if !stopped[s.(*targetScraper).hash()] {
+				t.Errorf("Scrape loop for %v not stopped yet", s.(*targetScraper))
 			}
 			mtx.Unlock()
 		}
 		return l
 	}
 	sp := &scrapePool{
-		targets: map[model.Fingerprint]*Target{},
-		loops:   map[model.Fingerprint]loop{},
+		targets: map[uint64]*Target{},
+		loops:   map[uint64]loop{},
 		newLoop: newLoop,
 	}
 
@@ -172,18 +176,18 @@ func TestScrapePoolReload(t *testing.T) {
 			time.Sleep(time.Duration(i*20) * time.Millisecond)
 
 			mtx.Lock()
-			stopped[t.fingerprint()] = true
+			stopped[t.hash()] = true
 			mtx.Unlock()
 		}
 
-		sp.targets[t.fingerprint()] = t
-		sp.loops[t.fingerprint()] = l
+		sp.targets[t.hash()] = t
+		sp.loops[t.hash()] = l
 	}
 	done := make(chan struct{})
 
-	beforeTargets := map[model.Fingerprint]*Target{}
-	for fp, t := range sp.targets {
-		beforeTargets[fp] = t
+	beforeTargets := map[uint64]*Target{}
+	for h, t := range sp.targets {
+		beforeTargets[h] = t
 	}
 
 	reloadTime := time.Now()
@@ -420,6 +424,134 @@ func TestScrapeLoopRun(t *testing.T) {
 		t.Fatalf("Unexpected error: %s", err)
 	case <-time.After(3 * time.Second):
 		t.Fatalf("Loop did not terminate on context cancelation")
+	}
+}
+
+func TestTargetScraperScrapeOK(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+			w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: model.LabelSet{
+				model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+				model.AddressLabel: model.LabelValue(serverURL.Host),
+			},
+		},
+		client: http.DefaultClient,
+	}
+	now := time.Now()
+
+	samples, err := ts.scrape(context.Background(), now)
+	if err != nil {
+		t.Fatalf("Unexpected scrape error: %s", err)
+	}
+
+	expectedSamples := model.Samples{
+		{
+			Metric:    model.Metric{"__name__": "metric_a"},
+			Timestamp: model.TimeFromUnixNano(now.UnixNano()),
+			Value:     1,
+		},
+		{
+			Metric:    model.Metric{"__name__": "metric_b"},
+			Timestamp: model.TimeFromUnixNano(now.UnixNano()),
+			Value:     2,
+		},
+	}
+
+	if !reflect.DeepEqual(samples, expectedSamples) {
+		t.Errorf("Scraped samples did not match served metrics")
+		t.Errorf("Expected: %v", expectedSamples)
+		t.Fatalf("Got: %v", samples)
+	}
+}
+
+func TestTargetScrapeScrapeCancel(t *testing.T) {
+	block := make(chan struct{})
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-block
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: model.LabelSet{
+				model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+				model.AddressLabel: model.LabelValue(serverURL.Host),
+			},
+		},
+		client: http.DefaultClient,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+
+	go func() {
+		time.Sleep(1 * time.Second)
+		cancel()
+	}()
+
+	go func() {
+		if _, err := ts.scrape(ctx, time.Now()); err != context.Canceled {
+			t.Fatalf("Expected context cancelation error but got: %s", err)
+		}
+		close(done)
+	}()
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Scrape function did not return unexpectedly")
+	case <-done:
+	}
+	// If this is closed in a defer above the function the test server
+	// does not terminate and the test doens't complete.
+	close(block)
+}
+
+func TestTargetScrapeScrapeNotFound(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: model.LabelSet{
+				model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+				model.AddressLabel: model.LabelValue(serverURL.Host),
+			},
+		},
+		client: http.DefaultClient,
+	}
+
+	if _, err := ts.scrape(context.Background(), time.Now()); !strings.Contains(err.Error(), "404") {
+		t.Fatalf("Expected \"404 NotFound\" error but got: %s", err)
 	}
 }
 

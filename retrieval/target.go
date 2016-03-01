@@ -15,7 +15,7 @@ package retrieval
 
 import (
 	"fmt"
-	"io"
+	"hash/fnv"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -23,10 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
@@ -34,127 +31,38 @@ import (
 )
 
 // TargetHealth describes the health state of a target.
-type TargetHealth int
+type TargetHealth string
 
-func (t TargetHealth) String() string {
-	switch t {
-	case HealthUnknown:
-		return "unknown"
-	case HealthGood:
-		return "up"
-	case HealthBad:
-		return "down"
-	}
-	panic("unknown state")
-}
-
-func (t TargetHealth) value() model.SampleValue {
-	if t == HealthGood {
-		return 1
-	}
-	return 0
-}
-
+// The possible health states of a target based on the last performed scrape.
 const (
-	// HealthUnknown is the state of a Target before it is first scraped.
-	HealthUnknown TargetHealth = iota
-	// HealthGood is the state of a Target that has been successfully scraped.
-	HealthGood
-	// HealthBad is the state of a Target that was scraped unsuccessfully.
-	HealthBad
+	HealthUnknown TargetHealth = "unknown"
+	HealthGood    TargetHealth = "up"
+	HealthBad     TargetHealth = "down"
 )
-
-// TargetStatus contains information about the current status of a scrape target.
-type TargetStatus struct {
-	lastError  error
-	lastScrape time.Time
-	health     TargetHealth
-
-	mu sync.RWMutex
-}
-
-// LastError returns the error encountered during the last scrape.
-func (ts *TargetStatus) LastError() error {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
-	return ts.lastError
-}
-
-// LastScrape returns the time of the last scrape.
-func (ts *TargetStatus) LastScrape() time.Time {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
-	return ts.lastScrape
-}
-
-// Health returns the last known health state of the target.
-func (ts *TargetStatus) Health() TargetHealth {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
-	return ts.health
-}
-
-func (ts *TargetStatus) setLastScrape(t time.Time) {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-
-	ts.lastScrape = t
-}
-
-func (ts *TargetStatus) setLastError(err error) {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-
-	if err == nil {
-		ts.health = HealthGood
-	} else {
-		ts.health = HealthBad
-	}
-	ts.lastError = err
-}
 
 // Target refers to a singular HTTP or HTTPS endpoint.
 type Target struct {
-	// The status object for the target. It is only set once on initialization.
-	status *TargetStatus
-
-	scrapeLoop   *scrapeLoop
-	scrapeConfig *config.ScrapeConfig
-
-	// Mutex protects the members below.
-	sync.RWMutex
-
 	// Labels before any processing.
 	metaLabels model.LabelSet
 	// Any labels that are added to this target and its metrics.
 	labels model.LabelSet
+	// Additional URL parmeters that are part of the target URL.
+	params url.Values
 
-	// The HTTP client used to scrape the target's endpoint.
-	httpClient *http.Client
+	mtx        sync.RWMutex
+	lastError  error
+	lastScrape time.Time
+	health     TargetHealth
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(cfg *config.ScrapeConfig, labels, metaLabels model.LabelSet) (*Target, error) {
-	client, err := newHTTPClient(cfg)
-	if err != nil {
-		return nil, err
+func NewTarget(labels, metaLabels model.LabelSet, params url.Values) *Target {
+	return &Target{
+		labels:     labels,
+		metaLabels: metaLabels,
+		params:     params,
+		health:     HealthUnknown,
 	}
-	t := &Target{
-		status:       &TargetStatus{},
-		scrapeConfig: cfg,
-		labels:       labels,
-		metaLabels:   metaLabels,
-		httpClient:   client,
-	}
-	return t, nil
-}
-
-// Status returns the status of the target.
-func (t *Target) Status() *TargetStatus {
-	return t.status
 }
 
 func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
@@ -202,15 +110,16 @@ func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
 }
 
 func (t *Target) String() string {
-	return t.host()
+	return t.URL().String()
 }
 
-// fingerprint returns an identifying hash for the target.
-func (t *Target) fingerprint() model.Fingerprint {
-	t.RLock()
-	defer t.RUnlock()
+// hash returns an identifying hash for the target.
+func (t *Target) hash() uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(t.labels.Fingerprint().String()))
+	h.Write([]byte(t.URL().String()))
 
-	return t.labels.Fingerprint()
+	return h.Sum64()
 }
 
 // offset returns the time until the next scrape cycle for the target.
@@ -219,7 +128,7 @@ func (t *Target) offset(interval time.Duration) time.Duration {
 
 	var (
 		base   = now % int64(interval)
-		offset = uint64(t.fingerprint()) % uint64(interval)
+		offset = t.hash() % uint64(interval)
 		next   = base + int64(offset)
 	)
 
@@ -229,35 +138,27 @@ func (t *Target) offset(interval time.Duration) time.Duration {
 	return time.Duration(next)
 }
 
-func (t *Target) scheme() string {
-	t.RLock()
-	defer t.RUnlock()
-
-	return string(t.labels[model.SchemeLabel])
+// Labels returns a copy of the set of all public labels of the target.
+func (t *Target) Labels() model.LabelSet {
+	lset := make(model.LabelSet, len(t.labels))
+	for ln, lv := range t.labels {
+		if !strings.HasPrefix(string(ln), model.ReservedLabelPrefix) {
+			lset[ln] = lv
+		}
+	}
+	return lset
 }
 
-func (t *Target) host() string {
-	t.RLock()
-	defer t.RUnlock()
-
-	return string(t.labels[model.AddressLabel])
-}
-
-func (t *Target) path() string {
-	t.RLock()
-	defer t.RUnlock()
-
-	return string(t.labels[model.MetricsPathLabel])
+// MetaLabels returns a copy of the target's labels before any processing.
+func (t *Target) MetaLabels() model.LabelSet {
+	return t.metaLabels.Clone()
 }
 
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
-	t.RLock()
-	defer t.RUnlock()
-
 	params := url.Values{}
 
-	for k, v := range t.scrapeConfig.Params {
+	for k, v := range t.params {
 		params[k] = make([]string, len(v))
 		copy(params[k], v)
 	}
@@ -282,63 +183,42 @@ func (t *Target) URL() *url.URL {
 	}
 }
 
-// InstanceIdentifier returns the identifier for the target.
-func (t *Target) InstanceIdentifier() string {
-	return t.host()
-}
-
-const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
-
-func (t *Target) scrape(ctx context.Context, ts time.Time) (model.Samples, error) {
-	t.RLock()
-	client := t.httpClient
-	t.RUnlock()
-
-	req, err := http.NewRequest("GET", t.URL().String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Add("Accept", acceptHeader)
-
-	resp, err := ctxhttp.Do(ctx, client, req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
-	}
-
-	var (
-		allSamples = make(model.Samples, 0, 200)
-		decSamples = make(model.Vector, 0, 50)
-	)
-	sdec := expfmt.SampleDecoder{
-		Dec: expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header)),
-		Opts: &expfmt.DecodeOptions{
-			Timestamp: model.TimeFromUnixNano(ts.UnixNano()),
-		},
-	}
-
-	for {
-		if err = sdec.Decode(&decSamples); err != nil {
-			break
-		}
-		allSamples = append(allSamples, decSamples...)
-		decSamples = decSamples[:0]
-	}
-
-	if err == io.EOF {
-		// Set err to nil since it is used in the scrape health recording.
-		err = nil
-	}
-	return allSamples, err
-}
-
 func (t *Target) report(start time.Time, dur time.Duration, err error) {
-	t.status.setLastError(err)
-	t.status.setLastScrape(start)
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+
+	if err == nil {
+		t.health = HealthGood
+	} else {
+		t.health = HealthBad
+	}
+
+	t.lastError = err
+	t.lastScrape = start
+}
+
+// LastError returns the error encountered during the last scrape.
+func (t *Target) LastError() error {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.lastError
+}
+
+// LastScrape returns the time of the last scrape.
+func (t *Target) LastScrape() time.Time {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.lastScrape
+}
+
+// Health returns the last known health state of the target.
+func (t *Target) Health() TargetHealth {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.health
 }
 
 // Merges the ingested sample's metric with the label set. On a collision the
@@ -396,37 +276,4 @@ func (app relabelAppender) Append(s *model.Sample) error {
 	s.Metric = model.Metric(labels)
 
 	return app.SampleAppender.Append(s)
-}
-
-// Labels returns a copy of the set of all public labels of the target.
-func (t *Target) Labels() model.LabelSet {
-	t.RLock()
-	defer t.RUnlock()
-
-	return t.unlockedLabels()
-}
-
-// unlockedLabels does the same as Labels but does not lock the mutex (useful
-// for internal usage when the mutex is already locked).
-func (t *Target) unlockedLabels() model.LabelSet {
-	lset := make(model.LabelSet, len(t.labels))
-	for ln, lv := range t.labels {
-		if !strings.HasPrefix(string(ln), model.ReservedLabelPrefix) {
-			lset[ln] = lv
-		}
-	}
-
-	if _, ok := lset[model.InstanceLabel]; !ok {
-		lset[model.InstanceLabel] = t.labels[model.AddressLabel]
-	}
-
-	return lset
-}
-
-// MetaLabels returns a copy of the target's labels before any processing.
-func (t *Target) MetaLabels() model.LabelSet {
-	t.RLock()
-	defer t.RUnlock()
-
-	return t.metaLabels.Clone()
 }

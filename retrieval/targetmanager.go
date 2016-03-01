@@ -176,7 +176,7 @@ type targetSet struct {
 	mtx sync.RWMutex
 
 	// Sets of targets by a source string that is unique across target providers.
-	tgroups   map[string]map[model.Fingerprint]*Target
+	tgroups   map[string][]*Target
 	providers map[string]TargetProvider
 
 	scrapePool *scrapePool
@@ -189,7 +189,7 @@ type targetSet struct {
 
 func newTargetSet(cfg *config.ScrapeConfig, app storage.SampleAppender) *targetSet {
 	ts := &targetSet{
-		tgroups:    map[string]map[model.Fingerprint]*Target{},
+		tgroups:    map[string][]*Target{},
 		scrapePool: newScrapePool(cfg, app),
 		syncCh:     make(chan struct{}, 1),
 		config:     cfg,
@@ -247,13 +247,11 @@ Loop:
 }
 
 func (ts *targetSet) sync() {
-	targets := []*Target{}
-	for _, tgroup := range ts.tgroups {
-		for _, t := range tgroup {
-			targets = append(targets, t)
-		}
+	var all []*Target
+	for _, targets := range ts.tgroups {
+		all = append(all, targets...)
 	}
-	ts.scrapePool.sync(targets)
+	ts.scrapePool.sync(all)
 }
 
 func (ts *targetSet) runProviders(ctx context.Context, providers map[string]TargetProvider) {
@@ -394,8 +392,8 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
-func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) (map[model.Fingerprint]*Target, error) {
-	targets := make(map[model.Fingerprint]*Target, len(tg.Targets))
+func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
+	targets := make([]*Target, 0, len(tg.Targets))
 
 	for i, labels := range tg.Targets {
 		for k, v := range cfg.Params {
@@ -459,12 +457,12 @@ func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) (map[mod
 				delete(labels, ln)
 			}
 		}
-		tr, err := NewTarget(cfg, labels, preRelabelLabels)
-		if err != nil {
-			return nil, fmt.Errorf("error while creating instance %d in target group %s: %s", i, tg, err)
+
+		if _, ok := labels[model.InstanceLabel]; !ok {
+			labels[model.InstanceLabel] = labels[model.AddressLabel]
 		}
 
-		targets[tr.fingerprint()] = tr
+		targets = append(targets, NewTarget(labels, preRelabelLabels, cfg.Params))
 	}
 
 	return targets, nil

@@ -15,13 +15,18 @@ package retrieval
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
+	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
@@ -70,26 +75,33 @@ func init() {
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
 	appender storage.SampleAppender
-	config   *config.ScrapeConfig
 
 	ctx context.Context
 
+	mtx    sync.RWMutex
+	config *config.ScrapeConfig
+	client *http.Client
 	// Targets and loops must always be synchronized to have the same
-	// set of fingerprints.
-	mtx     sync.RWMutex
-	targets map[model.Fingerprint]*Target
-	loops   map[model.Fingerprint]loop
+	// set of hashes.
+	targets map[uint64]*Target
+	loops   map[uint64]loop
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(context.Context, scraper, storage.SampleAppender, storage.SampleAppender) loop
 }
 
 func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
+	client, err := newHTTPClient(cfg)
+	if err != nil {
+		// Any errors that could occur here should be caught during config validation.
+		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
+	}
 	return &scrapePool{
 		appender: app,
 		config:   cfg,
-		targets:  map[model.Fingerprint]*Target{},
-		loops:    map[model.Fingerprint]loop{},
+		client:   client,
+		targets:  map[uint64]*Target{},
+		loops:    map[uint64]loop{},
 		newLoop:  newScrapeLoop,
 	}
 }
@@ -123,7 +135,13 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
+	client, err := newHTTPClient(cfg)
+	if err != nil {
+		// Any errors that could occur here should be caught during config validation.
+		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
+	}
 	sp.config = cfg
+	sp.client = client
 
 	var (
 		wg       sync.WaitGroup
@@ -134,7 +152,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	for fp, oldLoop := range sp.loops {
 		var (
 			t       = sp.targets[fp]
-			newLoop = sp.newLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
+			s       = &targetScraper{Target: t, client: sp.client}
+			newLoop = sp.newLoop(sp.ctx, s, sp.sampleAppender(t), sp.reportAppender(t))
 		)
 		wg.Add(1)
 
@@ -159,20 +178,21 @@ func (sp *scrapePool) sync(targets []*Target) {
 	defer sp.mtx.Unlock()
 
 	var (
-		fingerprints = map[model.Fingerprint]struct{}{}
-		interval     = time.Duration(sp.config.ScrapeInterval)
-		timeout      = time.Duration(sp.config.ScrapeTimeout)
+		uniqueTargets = map[uint64]struct{}{}
+		interval      = time.Duration(sp.config.ScrapeInterval)
+		timeout       = time.Duration(sp.config.ScrapeTimeout)
 	)
 
 	for _, t := range targets {
-		fp := t.fingerprint()
-		fingerprints[fp] = struct{}{}
+		hash := t.hash()
+		uniqueTargets[hash] = struct{}{}
 
-		if _, ok := sp.targets[fp]; !ok {
-			l := sp.newLoop(sp.ctx, t, sp.sampleAppender(t), sp.reportAppender(t))
+		if _, ok := sp.targets[hash]; !ok {
+			s := &targetScraper{Target: t, client: sp.client}
+			l := sp.newLoop(sp.ctx, s, sp.sampleAppender(t), sp.reportAppender(t))
 
-			sp.targets[fp] = t
-			sp.loops[fp] = l
+			sp.targets[hash] = t
+			sp.loops[hash] = l
 
 			go l.run(interval, timeout, nil)
 		}
@@ -181,16 +201,16 @@ func (sp *scrapePool) sync(targets []*Target) {
 	var wg sync.WaitGroup
 
 	// Stop and remove old targets and scraper loops.
-	for fp := range sp.targets {
-		if _, ok := fingerprints[fp]; !ok {
+	for hash := range sp.targets {
+		if _, ok := uniqueTargets[hash]; !ok {
 			wg.Add(1)
 			go func(l loop) {
 				l.stop()
 				wg.Done()
-			}(sp.loops[fp])
+			}(sp.loops[hash])
 
-			delete(sp.loops, fp)
-			delete(sp.targets, fp)
+			delete(sp.loops, hash)
+			delete(sp.targets, hash)
 		}
 	}
 
@@ -240,6 +260,57 @@ type scraper interface {
 	scrape(ctx context.Context, ts time.Time) (model.Samples, error)
 	report(start time.Time, dur time.Duration, err error)
 	offset(interval time.Duration) time.Duration
+}
+
+// targetScraper implements the scraper interface for a target.
+type targetScraper struct {
+	*Target
+	client *http.Client
+}
+
+const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
+
+func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples, error) {
+	req, err := http.NewRequest("GET", s.URL().String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("Accept", acceptHeader)
+
+	resp, err := ctxhttp.Do(ctx, s.client, req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
+	}
+
+	var (
+		allSamples = make(model.Samples, 0, 200)
+		decSamples = make(model.Vector, 0, 50)
+	)
+	sdec := expfmt.SampleDecoder{
+		Dec: expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header)),
+		Opts: &expfmt.DecodeOptions{
+			Timestamp: model.TimeFromUnixNano(ts.UnixNano()),
+		},
+	}
+
+	for {
+		if err = sdec.Decode(&decSamples); err != nil {
+			break
+		}
+		allSamples = append(allSamples, decSamples...)
+		decSamples = decSamples[:0]
+	}
+
+	if err == io.EOF {
+		// Set err to nil since it is used in the scrape health recording.
+		err = nil
+	}
+	return allSamples, err
 }
 
 // A loop can run and be stopped again. It must not be reused after it was stopped.

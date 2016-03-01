@@ -16,7 +16,6 @@ package retrieval
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -28,7 +27,6 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -36,9 +34,8 @@ import (
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, model.LabelSet{"job": "some_job", "foo": "bar"})
 	want := model.LabelSet{
-		model.JobLabel:      "some_job",
-		model.InstanceLabel: "example.com:80",
-		"foo":               "bar",
+		model.JobLabel: "some_job",
+		"foo":          "bar",
 	}
 	got := target.Labels()
 	if !reflect.DeepEqual(want, got) {
@@ -92,69 +89,36 @@ func TestTargetOffset(t *testing.T) {
 	}
 }
 
-func TestTargetScrape404(t *testing.T) {
-	server := httptest.NewServer(
-		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusNotFound)
-			},
-		),
-	)
-	defer server.Close()
-
-	testTarget := newTestTarget(server.URL, time.Second, model.LabelSet{})
-
-	want := errors.New("server returned HTTP status 404 Not Found")
-	_, got := testTarget.scrape(context.Background(), time.Now())
-	if got == nil || want.Error() != got.Error() {
-		t.Fatalf("want err %q, got %q", want, got)
+func TestTargetURL(t *testing.T) {
+	params := url.Values{
+		"abc": []string{"foo", "bar", "baz"},
+		"xyz": []string{"hoo"},
 	}
-}
+	labels := model.LabelSet{
+		model.AddressLabel:     "example.com:1234",
+		model.SchemeLabel:      "https",
+		model.MetricsPathLabel: "/metricz",
+		"__param_abc":          "overwrite",
+		"__param_cde":          "huu",
+	}
+	target := NewTarget(labels, labels, params)
 
-func TestURLParams(t *testing.T) {
-	server := httptest.NewServer(
-		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-				w.Write([]byte{})
-				r.ParseForm()
-				if r.Form["foo"][0] != "bar" {
-					t.Fatalf("URL parameter 'foo' had unexpected first value '%v'", r.Form["foo"][0])
-				}
-				if r.Form["foo"][1] != "baz" {
-					t.Fatalf("URL parameter 'foo' had unexpected second value '%v'", r.Form["foo"][1])
-				}
-			},
-		),
-	)
-	defer server.Close()
-	serverURL, err := url.Parse(server.URL)
-	if err != nil {
-		t.Fatal(err)
+	// The reserved labels are concatenated into a full URL. The first value for each
+	// URL query parameter can be set/modified via labels as well.
+	expectedParams := url.Values{
+		"abc": []string{"overwrite", "bar", "baz"},
+		"cde": []string{"huu"},
+		"xyz": []string{"hoo"},
+	}
+	expectedURL := url.URL{
+		Scheme:   "https",
+		Host:     "example.com:1234",
+		Path:     "/metricz",
+		RawQuery: expectedParams.Encode(),
 	}
 
-	target, err := NewTarget(
-		&config.ScrapeConfig{
-			JobName:        "test_job1",
-			ScrapeInterval: model.Duration(1 * time.Minute),
-			ScrapeTimeout:  model.Duration(1 * time.Second),
-			Scheme:         serverURL.Scheme,
-			Params: url.Values{
-				"foo": []string{"bar", "baz"},
-			},
-		},
-		model.LabelSet{
-			model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
-			model.AddressLabel: model.LabelValue(serverURL.Host),
-			"__param_foo":      "bar",
-		},
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = target.scrape(context.Background(), time.Now()); err != nil {
-		t.Fatal(err)
+	if u := target.URL(); !reflect.DeepEqual(u.String(), expectedURL.String()) {
+		t.Fatalf("Expected URL %q but got %q", expectedURL, u)
 	}
 }
 
@@ -165,12 +129,7 @@ func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelS
 	labels[model.MetricsPathLabel] = "/metrics"
 
 	return &Target{
-		scrapeConfig: &config.ScrapeConfig{
-			ScrapeInterval: model.Duration(time.Millisecond),
-			ScrapeTimeout:  model.Duration(deadline),
-		},
 		labels: labels,
-		status: &TargetStatus{},
 	}
 }
 
@@ -343,7 +302,7 @@ func newTLSConfig(t *testing.T) *tls.Config {
 	return tlsConfig
 }
 
-func TestNewTargetWithBadTLSConfig(t *testing.T) {
+func TestNewClientWithBadTLSConfig(t *testing.T) {
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
@@ -352,7 +311,7 @@ func TestNewTargetWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := NewTarget(cfg, nil, nil)
+	_, err := newHTTPClient(cfg)
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}
