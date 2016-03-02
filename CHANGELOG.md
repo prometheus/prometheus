@@ -1,4 +1,4 @@
-## 0.17.0 / unreleased
+## 0.17.0 / 2016-03-02
 
 This version no longer works with Alertmanager 0.0.4 and earlier!
 The alerting rule syntax has changed as well but the old syntax is supported
@@ -15,6 +15,7 @@ be changed to `http_requests_total{status=~"5.."}`).
 * [CHANGE] New alerting rule syntax
 * [CHANGE] Add label validation on ingestion
 * [CHANGE] Regular expression matchers in PromQL are anchored
+* [FEATURE] Add `without` aggregation modifier
 * [FEATURE] Send alert resolved notifications to Alertmanager
 * [FEATURE] Allow millisecond precision in configuration file
 * [FEATURE] Support AirBnB's Smartstack Nerve for service discovery
@@ -26,6 +27,9 @@ be changed to `http_requests_total{status=~"5.."}`).
 * [BUGFIX] Handle OPTIONS HTTP requests to the API correctly
 * [BUGFIX] Parsing of ranges in PromQL fixed
 * [BUGFIX] Correctly validate URL flag parameters
+* [BUGFIX] Log argument parse errors
+* [BUGFIX] Properly handle creation of target with bad TLS config
+* [BUGFIX] Fix of checkpoint timing issue
 
 ## 0.16.2 / 2016-01-18
 
