@@ -54,7 +54,7 @@ const (
 )
 
 // chunkDesc contains meta-data for a chunk. Pay special attention to the
-// documented requirements for calling its method concurrently (WRT pinning and
+// documented requirements for calling its methods concurrently (WRT pinning and
 // locking). The doc comments spell out the requirements for each method, but
 // here is an overview and general explanation:
 //
@@ -71,7 +71,7 @@ const (
 // or creation) or by locking the fingerprint of the series the chunkDesc
 // belongs to. The affected methods are: add, maybePopulateLastTime, setChunk.
 //
-// Finally, there is the special cases firstTime and lastTime. lastTime requires
+// Finally, there are the special cases firstTime and lastTime. lastTime requires
 // to have locked the fingerprint of the series but the chunk does not need to
 // be pinned. That's because the chunkLastTime field in chunkDesc gets populated
 // upon completion of the chunk (when it is still pinned, and which happens
@@ -267,7 +267,7 @@ type chunkIterator interface {
 	// Gets the last sample value in the chunk.
 	lastSampleValue() model.SampleValue
 	// Gets the value that is closest before the given time. In case a value
-	// exist at precisely the given time, that value is returned. If no
+	// exists at precisely the given time, that value is returned. If no
 	// applicable value exists, ZeroSamplePair is returned.
 	valueAtOrBeforeTime(model.Time) model.SamplePair
 	// Gets all values contained within a given interval.
