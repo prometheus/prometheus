@@ -1,0 +1,37 @@
+load 10s
+	http_requests{job="api-server", instance="0", group="production"}	0+10x1000 100+30x1000
+	http_requests{job="api-server", instance="1", group="production"}	0+20x1000 200+30x1000
+	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
+	http_requests{job="api-server", instance="1", group="canary"}		0+40x2000
+
+eval instant at 8000s rate(http_requests[1m])
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+	{job="api-server", instance="0", group="canary"} 3
+	{job="api-server", instance="1", group="canary"} 4
+
+eval instant at 18000s rate(http_requests[1m])
+	{job="api-server", instance="0", group="production"} 3
+	{job="api-server", instance="1", group="production"} 3
+	{job="api-server", instance="0", group="canary"} 8
+	{job="api-server", instance="1", group="canary"} 4
+
+eval instant at 8000s rate(http_requests{group=~"pro.*"}[1m])
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+
+eval instant at 18000s rate(http_requests{group=~".*ry", instance="1"}[1m])
+	{job="api-server", instance="1", group="canary"} 4
+
+eval instant at 18000s rate(http_requests{instance!="3"}[1m] offset 10000s)
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+	{job="api-server", instance="0", group="canary"} 3
+	{job="api-server", instance="1", group="canary"} 4
+
+eval instant at 18000s rate(http_requests[40s]) - rate(http_requests[1m] offset 10000s)
+	{job="api-server", instance="0", group="production"} 2
+	{job="api-server", instance="1", group="production"} 1
+	{job="api-server", instance="0", group="canary"} 5
+	{job="api-server", instance="1", group="canary"} 0
+
