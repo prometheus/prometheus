@@ -221,6 +221,13 @@ func (t *Target) Health() TargetHealth {
 	return t.health
 }
 
+// Targets is a sortable list of targets.
+type Targets []*Target
+
+func (ts Targets) Len() int           { return len(ts) }
+func (ts Targets) Less(i, j int) bool { return ts[i].URL().String() < ts[j].URL().String() }
+func (ts Targets) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
+
 // Merges the ingested sample's metric with the label set. On a collision the
 // value of the ingested label is stored in a label prefixed with 'exported_'.
 type ruleLabelsAppender struct {
