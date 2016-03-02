@@ -28,7 +28,7 @@ func (p *memorySeriesPreloader) PreloadRange(
 ) (SeriesIterator, error) {
 	cds, iter, err := p.storage.preloadChunksForRange(fp, from, through)
 	if err != nil {
-		return iter, err
+		return nil, err
 	}
 	p.pinnedChunkDescs = append(p.pinnedChunkDescs, cds...)
 	return iter, nil
