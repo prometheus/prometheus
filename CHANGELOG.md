@@ -5,10 +5,7 @@ The alerting rule syntax has changed as well but the old syntax is supported
 up until version 0.18.
 
 All regular expressions in PromQL are anchored now, matching the behavior of
-regular expressions in config files. Expressions in rules, alerts or dashboards
-need to be changed if they don't match the full value so far (for example
-`http_requests_total{status=~"^5"}` won't match anything anymore and needs to
-be changed to `http_requests_total{status=~"5.."}`).
+regular expressions in config files.
 
 * [CHANGE] Integrate with Alertmanager 0.1.0 and higher
 * [CHANGE] Degraded storage mode renamed to rushed mode
