@@ -72,7 +72,7 @@ type Storage interface {
 // of the series prior the modification.
 type SeriesIterator interface {
 	// Gets the value that is closest before the given time. In case a value
-	// exist at precisely the given time, that value is returned. If no
+	// exists at precisely the given time, that value is returned. If no
 	// applicable value exists, a SamplePair with timestamp model.Earliest
 	// and value 0.0 is returned.
 	ValueAtOrBeforeTime(model.Time) model.SamplePair
