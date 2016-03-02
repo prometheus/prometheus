@@ -136,8 +136,10 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 	}()
 
 	// Preload all analyzed ranges.
-	iters := map[model.Fingerprint]local.SeriesIterator{}
+	iters := map[time.Duration]map[model.Fingerprint]local.SeriesIterator{}
 	for offset, pt := range a.offsetPreloadTimes {
+		itersForDuration := map[model.Fingerprint]local.SeriesIterator{}
+		iters[offset] = itersForDuration
 		start := a.Start.Add(-offset)
 		end := a.End.Add(-offset)
 		for fp, rangeDuration := range pt.ranges {
@@ -148,7 +150,7 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 			if err != nil {
 				return nil, err
 			}
-			iters[fp] = iter
+			itersForDuration[fp] = iter
 		}
 		for fp := range pt.instants {
 			if err = contextDone(ctx, env); err != nil {
@@ -158,7 +160,7 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 			if err != nil {
 				return nil, err
 			}
-			iters[fp] = iter
+			itersForDuration[fp] = iter
 		}
 	}
 
@@ -167,11 +169,11 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 		switch n := node.(type) {
 		case *VectorSelector:
 			for fp := range n.metrics {
-				n.iterators[fp] = iters[fp]
+				n.iterators[fp] = iters[n.Offset][fp]
 			}
 		case *MatrixSelector:
 			for fp := range n.metrics {
-				n.iterators[fp] = iters[fp]
+				n.iterators[fp] = iters[n.Offset][fp]
 			}
 		}
 		return true

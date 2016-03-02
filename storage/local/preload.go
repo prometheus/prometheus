@@ -45,7 +45,7 @@ func (p *memorySeriesPreloader) PreloadInstant(
 ) (SeriesIterator, error) {
 	cds, iter, err := p.storage.preloadChunksForRange(fp, timestamp.Add(-stalenessDelta), timestamp, true)
 	if err != nil {
-		return iter, err
+		return nil, err
 	}
 	p.pinnedChunkDescs = append(p.pinnedChunkDescs, cds...)
 	return iter, nil
