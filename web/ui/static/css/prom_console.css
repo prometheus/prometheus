@@ -2,15 +2,16 @@
   margin-bottom: 0;
 }
 
+.container-fluid {
+  padding: 0;
+}
+
 div.prom_lhs_menu {
-  float: left;
-  margin-right: 2ex;
   background: #222;
-  min-height: 100%;
-  overflow: auto;
 }
 .prom_lhs_menu ul {
   list-style: none;
+  padding-top: .5ex;
   padding-left: .5ex;
   margin-left: .5ex;
 }
@@ -38,21 +39,6 @@ li.prom_lhs_menu_selected {
   background: #666666;
 }
 
-.prom_console_rhs {
-  float: right;
-  margin-left: 1ex;
-  height: 100%;
-}
-.prom_console_rhs table {
-  margin-top: 1ex;
-  margin-bottom: 32px;  /* Space for time control. */
-}
-.prom_console_rhs th {
-  text-align: center;
-}
-.prom_console_rhs td:nth-child(2) {
-  text-align: right;
-}
 
 .prom_console_content {
   overflow: visible;

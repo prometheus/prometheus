@@ -3,23 +3,21 @@
 {{/* Navbar, should be passed . */}}
 {{ define "navbar" }}
 <nav class="navbar navbar-inverse navbar-static-top">
-  <div class="container-fluid">
-    <!-- Brand and toggle get grouped for better mobile display -->
-    <div class="navbar-header">
-      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
-        <span class="sr-only">Toggle navigation</span>
-        <span class="icon-bar"></span>
-        <span class="icon-bar"></span>
-        <span class="icon-bar"></span>
-      </button>
-      <a class="navbar-brand" href="{{ pathPrefix }}/">Prometheus</a>
-    </div>
+  <!-- Brand and toggle get grouped for better mobile display -->
+  <div class="navbar-header">
+    <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+      <span class="sr-only">Toggle navigation</span>
+      <span class="icon-bar"></span>
+      <span class="icon-bar"></span>
+      <span class="icon-bar"></span>
+    </button>
+    <a class="navbar-brand" href="{{ pathPrefix }}/">Prometheus</a>
+  </div>
 
-    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
-      <ul class="nav navbar-nav">
-        <li><a href="{{ pathPrefix }}/alerts">Alerts</a></li>
-        <li><a href="https://www.pagerduty.com/">PagerDuty</a></li>
-      </div>
+  <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+    <ul class="nav navbar-nav">
+      <li><a href="{{ pathPrefix }}/alerts">Alerts</a></li>
+      <li><a href="https://www.pagerduty.com/">PagerDuty</a></li>
     </ul>
   </div>
 </nav>
@@ -27,7 +25,7 @@
 
 {{/* LHS menu, should be passed . */}}
 {{ define "menu" }}
-<div class="prom_lhs_menu">
+<div class="col-md-2 prom_lhs_menu">
 <ul>
 {{ template "_menuItem" (args . "index.html.example" "Overview") }}
 
