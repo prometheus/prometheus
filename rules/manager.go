@@ -212,8 +212,12 @@ func (g *Group) copyState(from *Group) {
 			if !ok {
 				continue
 			}
-			if far.Name() == ar.Name() {
-				ar.active = far.active
+			// TODO(fabxc): forbid same alert definitions that are not unique by
+			// at least on static label or alertname?
+			if far.equal(ar) {
+				for fp, a := range far.active {
+					ar.active[fp] = a
+				}
 			}
 		}
 	}
