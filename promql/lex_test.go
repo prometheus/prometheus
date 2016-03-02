@@ -101,8 +101,8 @@ var tests = []struct {
 	},
 	// Test strings.
 	{
-		input:    "\"test\\tsecuence\"",
-		expected: []item{{itemString, 0, `"test\tsecuence"`}},
+		input:    "\"test\\tsequence\"",
+		expected: []item{{itemString, 0, `"test\tsequence"`}},
 	},
 	{
 		input:    "\"test\\\\.expression\"",
