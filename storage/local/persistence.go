@@ -369,13 +369,10 @@ func (p *persistence) labelValuesForLabelName(ln model.LabelName) (model.LabelVa
 // the (zero-based) index of the first persisted chunk within the series
 // file. In case of an error, the returned index is -1 (to avoid the
 // misconception that the chunk was written at position 0).
+//
+// Returning an error signals problems with the series file. In this case, the
+// caller should quarantine the series.
 func (p *persistence) persistChunks(fp model.Fingerprint, chunks []chunk) (index int, err error) {
-	defer func() {
-		if err != nil {
-			p.setDirty(true, fmt.Errorf("error in method persistChunks: %s", err))
-		}
-	}()
-
 	f, err := p.openChunkFileForWriting(fp)
 	if err != nil {
 		return -1, err
@@ -915,6 +912,9 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 // deleted (in which case the returned timestamp will be 0 and must be ignored).
 // It is the caller's responsibility to make sure nothing is persisted or loaded
 // for the same fingerprint concurrently.
+//
+// Returning an error signals problems with the series file. In this case, the
+// caller should quarantine the series.
 func (p *persistence) dropAndPersistChunks(
 	fp model.Fingerprint, beforeTime model.Time, chunks []chunk,
 ) (
@@ -927,12 +927,6 @@ func (p *persistence) dropAndPersistChunks(
 	// Style note: With the many return values, it was decided to use naked
 	// returns in this method. They make the method more readable, but
 	// please handle with care!
-	defer func() {
-		if err != nil {
-			p.setDirty(true, fmt.Errorf("error in method dropAndPersistChunks: %s", err))
-		}
-	}()
-
 	if len(chunks) > 0 {
 		// We have chunks to persist. First check if those are already
 		// too old. If that's the case, the chunks in the series file

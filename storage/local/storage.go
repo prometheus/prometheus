@@ -16,6 +16,7 @@ package local
 
 import (
 	"container/list"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -1108,8 +1109,20 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 func (s *memorySeriesStorage) writeMemorySeries(
 	fp model.Fingerprint, series *memorySeries, beforeTime model.Time,
 ) bool {
-	cds := series.chunksToPersist()
+	var (
+		persistErr error
+		cds        = series.chunksToPersist()
+	)
+
 	defer func() {
+		if persistErr != nil {
+			s.quarantineSeries(fp, series.metric, persistErr)
+			s.persistErrors.Inc()
+		}
+		// The following is done even in case of an error to ensure
+		// correct counter bookkeeping and to not pin chunks in memory
+		// that belong to a series that is scheduled for quarantine
+		// anyway.
 		for _, cd := range cds {
 			cd.unpin(s.evictRequests)
 		}
@@ -1130,9 +1143,9 @@ func (s *memorySeriesStorage) writeMemorySeries(
 		if len(cds) == 0 {
 			return false
 		}
-		offset, err := s.persistence.persistChunks(fp, chunks)
-		if err != nil {
-			s.persistErrors.Inc()
+		var offset int
+		offset, persistErr = s.persistence.persistChunks(fp, chunks)
+		if persistErr != nil {
 			return false
 		}
 		if series.chunkDescsOffset == -1 {
@@ -1144,14 +1157,12 @@ func (s *memorySeriesStorage) writeMemorySeries(
 		return false
 	}
 
-	newFirstTime, offset, numDroppedFromPersistence, allDroppedFromPersistence, err :=
+	newFirstTime, offset, numDroppedFromPersistence, allDroppedFromPersistence, persistErr :=
 		s.persistence.dropAndPersistChunks(fp, beforeTime, chunks)
-	if err != nil {
-		s.persistErrors.Inc()
+	if persistErr != nil {
 		return false
 	}
-	if err := series.dropChunks(beforeTime); err != nil {
-		s.persistErrors.Inc()
+	if persistErr = series.dropChunks(beforeTime); persistErr != nil {
 		return false
 	}
 	if len(series.chunkDescs) == 0 && allDroppedFromPersistence {
@@ -1168,8 +1179,8 @@ func (s *memorySeriesStorage) writeMemorySeries(
 	} else {
 		series.chunkDescsOffset -= numDroppedFromPersistence
 		if series.chunkDescsOffset < 0 {
-			s.persistence.setDirty(true, fmt.Errorf("dropped more chunks from persistence than from memory for fingerprint %v, series %v", fp, series))
-			series.chunkDescsOffset = -1 // Makes sure it will be looked at during crash recovery.
+			persistErr = errors.New("dropped more chunks from persistence than from memory")
+			series.chunkDescsOffset = -1
 		}
 	}
 	return false
