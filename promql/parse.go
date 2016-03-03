@@ -536,7 +536,7 @@ func (p *parser) expr() Expr {
 
 func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMatching, returnBool bool) *BinaryExpr {
 	if lhsBE, ok := lhs.(*BinaryExpr); ok && lhsBE.Op.precedence() < op.precedence() {
-		var balanced = p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
+		balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
 		if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == model.ValScalar && lhsBE.LHS.Type() == model.ValScalar {
 			p.errorf("comparisons between scalars must use BOOL modifier")
 		}
