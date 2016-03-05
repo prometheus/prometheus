@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/eliothedeman/smoothie"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
@@ -181,6 +182,36 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 		resultSample.Metric.Del(model.MetricNameLabel)
 		resultVector = append(resultVector, resultSample)
 	}
+	return resultVector
+}
+
+// === holtWinters(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
+func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
+	mat := ev.evalMatrix(args[0])
+	sf := ev.evalFloat(args[1])
+	tf := ev.evalFloat(args[2])
+
+	// make an ouput vector large enough to hole the entire result
+	resultVector := make(vector, 0, len(mat.value()))
+	for _, samples := range mat {
+
+		// create a dataframe and fill it with all the values of the current sample
+		df := smoothie.NewDataFrame(len(samples.Values))
+		for i, v := range samples.Values {
+			df.Insert(i, float64(v.Value))
+		}
+
+		// run the smoothing operation
+		// this is quite expensive
+		df = df.HoltWinters(sf, tf)
+		resultVector = append(resultVector, &sample{
+			Metric:    samples.Metric,
+			Value:     model.SampleValue(df.Index(df.Len() - 1)), // the last value in the vector is the smoothed result
+			Timestamp: ev.Timestamp,
+		})
+
+	}
+
 	return resultVector
 }
 
@@ -852,6 +883,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValScalar, model.ValVector},
 		ReturnType: model.ValVector,
 		Call:       funcHistogramQuantile,
+	},
+	"holt_winters": {
+		Name:       "holt_winters",
+		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar, model.ValScalar},
+		ReturnType: model.ValVector,
+		Call:       funcHoltWinters,
 	},
 	"irate": {
 		Name:       "irate",
