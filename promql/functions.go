@@ -195,21 +195,23 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 	resultVector := make(vector, 0, len(mat.value()))
 	for _, samples := range mat {
 
-		// create a dataframe and fill it with all the values of the current sample
-		df := smoothie.NewDataFrame(len(samples.Values))
-		for i, v := range samples.Values {
-			df.Insert(i, float64(v.Value))
+		// can't do the smoothing operation with less than two points
+		if len(samples.Values) > 2 {
+			// create a dataframe and fill it with all the values of the current sample
+			df := smoothie.NewDataFrame(len(samples.Values))
+			for i, v := range samples.Values {
+				df.Insert(i, float64(v.Value))
+			}
+
+			// run the smoothing operation
+			// this is quite expensive
+			df = df.HoltWinters(sf, tf)
+			resultVector = append(resultVector, &sample{
+				Metric:    samples.Metric,
+				Value:     model.SampleValue(df.Index(df.Len() - 1)), // the last value in the vector is the smoothed result
+				Timestamp: ev.Timestamp,
+			})
 		}
-
-		// run the smoothing operation
-		// this is quite expensive
-		df = df.HoltWinters(sf, tf)
-		resultVector = append(resultVector, &sample{
-			Metric:    samples.Metric,
-			Value:     model.SampleValue(df.Index(df.Len() - 1)), // the last value in the vector is the smoothed result
-			Timestamp: ev.Timestamp,
-		})
-
 	}
 
 	return resultVector
