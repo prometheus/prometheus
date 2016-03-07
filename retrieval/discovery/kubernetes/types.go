@@ -202,11 +202,13 @@ type NodeStatus struct {
 
 type NodeAddressType string
 
-// These are valid address type of node.
+// These are valid address types of node. NodeLegacyHostIP is used to transit
+// from out-dated HostIP field to NodeAddress.
 const (
-	NodeHostName   NodeAddressType = "Hostname"
-	NodeExternalIP NodeAddressType = "ExternalIP"
-	NodeInternalIP NodeAddressType = "InternalIP"
+	NodeLegacyHostIP NodeAddressType = "LegacyHostIP"
+	NodeHostName     NodeAddressType = "Hostname"
+	NodeExternalIP   NodeAddressType = "ExternalIP"
+	NodeInternalIP   NodeAddressType = "InternalIP"
 )
 
 type NodeAddress struct {

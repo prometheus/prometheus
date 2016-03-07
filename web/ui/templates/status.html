@@ -55,8 +55,8 @@
                 {{end}}
               </td>
               <td>
-                <span class="alert alert-{{ .Status.Health | healthToClass }} state_indicator text-uppercase">
-                  {{.Status.Health}}
+                <span class="alert alert-{{ .Health | healthToClass }} state_indicator text-uppercase">
+                  {{.Health}}
                 </span>
               </td>
               <td>
@@ -70,11 +70,11 @@
                 </span>
               </td>
               <td>
-                {{if .Status.LastScrape.IsZero}}Never{{else}}{{since .Status.LastScrape}} ago{{end}}
+                {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
               </td>
               <td>
-                {{if .Status.LastError}}
-                <span class="alert alert-danger state_indicator">{{.Status.LastError}}</span>
+                {{if .LastError}}
+                <span class="alert alert-danger state_indicator">{{.LastError}}</span>
                 {{end}}
               </td>
             </tr>

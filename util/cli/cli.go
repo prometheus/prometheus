@@ -32,7 +32,8 @@ type Command struct {
 type Term interface {
 	Infof(format string, v ...interface{})
 	Errorf(format string, v ...interface{})
-	Out(format string)
+	Out() io.Writer
+	Err() io.Writer
 }
 
 type basicTerm struct {
@@ -52,9 +53,13 @@ func (t *basicTerm) Errorf(format string, v ...interface{}) {
 }
 
 // Out implements Term.
-func (t *basicTerm) Out(msg string) {
-	fmt.Fprint(t.out, msg)
-	fmt.Fprint(t.out, "\n")
+func (t *basicTerm) Out() io.Writer {
+	return t.out
+}
+
+// Err implements Term.
+func (t *basicTerm) Err() io.Writer {
+	return t.err
 }
 
 // BasicTerm returns a Term writing Infof and Errorf to err and Out to out.
