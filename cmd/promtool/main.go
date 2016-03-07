@@ -199,7 +199,7 @@ func VersionCmd(t cli.Term, _ ...string) int {
 	if err := tmpl.ExecuteTemplate(&buf, "version", version.Map); err != nil {
 		panic(err)
 	}
-	t.Out(strings.TrimSpace(buf.String()))
+	fmt.Fprintln(t.Out(), strings.TrimSpace(buf.String()))
 	return 0
 }
 
