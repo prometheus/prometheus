@@ -20,7 +20,6 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/eliothedeman/smoothie"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/metric"
@@ -185,8 +184,54 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 	return resultVector
 }
 
-// === holtWinters(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
-func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
+// s = computed smoothed values, b = computed trend factors, d = raw
+func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
+
+	// init s
+	if i < 2 {
+		s[0] = d[0]
+		s[1] = d[1]
+	}
+
+	// check for the cached value
+	if !math.IsNaN(s[i]) {
+		return s[i]
+	}
+
+	x := sf * d[i]
+	y := (1 - sf) * (doubleSVal(i-1, sf, tf, s, b, d) + doubleBVal(i-1, sf, tf, s, b, d))
+
+	// cache value
+	s[i] = x + y
+
+	return x + y
+}
+
+// s = computed smoothed values, b = coumputed trend factors, d = raw
+func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
+
+	// init b
+	if i < 2 {
+		b[0] = (d[len(d)-1] - d[0]) / float64(len(d))
+		b[1] = d[1] - d[0]
+	}
+
+	// check for the cached value
+	if !math.IsNaN(b[i]) {
+		return b[i]
+	}
+
+	x := tf * (doubleSVal(i, sf, tf, s, b, d) - doubleSVal(i-1, sf, tf, s, b, d))
+	y := (1 - tf) * doubleBVal(i-1, sf, tf, s, b, d)
+
+	// cache value
+	b[i] = x + y
+
+	return x + y
+}
+
+// === doubleSmooth(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
+func funcDoubleSmooth(ev *evaluator, args Expressions) model.Value {
 	mat := ev.evalMatrix(args[0])
 	sf := ev.evalFloat(args[1])
 	tf := ev.evalFloat(args[2])
@@ -194,28 +239,43 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 	// make an ouput vector large enough to hole the entire result
 	resultVector := make(vector, 0, len(mat.value()))
 
-	// cache the dataframe so it can be reused
-	var df *smoothie.DataFrame
+	// create scratch values
+	var s, b, d []float64
 
 	for _, samples := range mat {
 		l := len(samples.Values)
-		if df == nil || df.Len() != l {
-			df = smoothie.NewDataFrame(l)
-		}
 
 		// can't do the smoothing operation with less than two points
 		if l > 2 {
-			// create a dataframe and fill it with all the values of the current sample
+
+			// resize scratch values
+			if l != len(s) {
+				s = make([]float64, l)
+				b = make([]float64, l)
+				d = make([]float64, l)
+			}
+
+			// NaN out stratch values, this use used to check for chached values
+			for i := range b {
+				b[i] = math.NaN()
+				s[i] = math.NaN()
+			}
+
+			// fill in the d values with the raw values from the input
 			for i, v := range samples.Values {
-				df.Insert(i, float64(v.Value))
+				d[i] = float64(v.Value)
+			}
+
+			// run the smoothing operation
+			for i := 0; i < len(d); i++ {
+				s[i] = doubleSVal(i, sf, tf, s, b, d)
 			}
 
 			// run the smoothing operation
 			// this is quite expensive
-			df = df.HoltWinters(sf, tf)
 			resultVector = append(resultVector, &sample{
 				Metric:    samples.Metric,
-				Value:     model.SampleValue(df.Index(df.Len() - 1)), // the last value in the vector is the smoothed result
+				Value:     model.SampleValue(s[len(s)-1]), // the last value in the vector is the smoothed result
 				Timestamp: ev.Timestamp,
 			})
 		}
@@ -898,11 +958,11 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcHistogramQuantile,
 	},
-	"holt_winters": {
-		Name:       "holt_winters",
+	"double_smooth": {
+		Name:       "double_smooth",
 		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar, model.ValScalar},
 		ReturnType: model.ValVector,
-		Call:       funcHoltWinters,
+		Call:       funcDoubleSmooth,
 	},
 	"irate": {
 		Name:       "irate",
