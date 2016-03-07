@@ -82,14 +82,14 @@ func buildTestChunks(t *testing.T, encoding chunkEncoding) map[model.Fingerprint
 }
 
 func chunksEqual(c1, c2 chunk) bool {
-	values2 := c2.newIterator().values()
-	for v1 := range c1.newIterator().values() {
-		v2 := <-values2
-		if !(v1 == v2) {
+	it1 := c1.newIterator()
+	it2 := c2.newIterator()
+	for it1.scan() && it2.scan() {
+		if !(it1.value() == it2.value()) {
 			return false
 		}
 	}
-	return true
+	return it1.err() == nil && it2.err() == nil
 }
 
 func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {

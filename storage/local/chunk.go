@@ -259,18 +259,13 @@ type chunk interface {
 
 // A chunkIterator enables efficient access to the content of a chunk. It is
 // generally not safe to use a chunkIterator concurrently with or after chunk
-// mutation.
+// mutation. The error returned by any of the methods is always the last error
+// encountered by the iterator, i.e. once an error has been encountered, no
+// method will ever return a nil error again. In general, errors signal data
+// corruption in the chunk and require quarantining.
 type chunkIterator interface {
-	// length returns the number of samples in the chunk.
-	length() int
-	// Gets the timestamp of the n-th sample in the chunk.
-	timestampAtIndex(int) (model.Time, error)
 	// Gets the last timestamp in the chunk.
 	lastTimestamp() (model.Time, error)
-	// Gets the sample value of the n-th sample in the chunk.
-	sampleValueAtIndex(int) (model.SampleValue, error)
-	// Gets the last sample value in the chunk.
-	lastSampleValue() (model.SampleValue, error)
 	// Gets the value that is closest before the given time. In case a value
 	// exists at precisely the given time, that value is returned. If no
 	// applicable value exists, ZeroSamplePair is returned.
@@ -280,35 +275,48 @@ type chunkIterator interface {
 	// Whether a given timestamp is contained between first and last value
 	// in the chunk.
 	contains(model.Time) (bool, error)
-	// values returns a channel, from which all sample values in the chunk
-	// can be received in order. The channel is closed after the last
-	// one. It is generally not safe to mutate the chunk while the channel
-	// is still open. If a value is returned with error!=nil, no further
-	// values will be returned and the channel is closed.
-	values() <-chan struct {
-		model.SamplePair
-		error
-	}
+	// scan, value, and err implement a bufio.Scanner-like interface.  The
+	// scan method advances the iterator to the next value in the chunk and
+	// returns true if that worked. In that case, the value method will
+	// return the sample pair the iterator has advanced to. If the scan
+	// method returns false, either an error has occured or the end of the
+	// chunk has been reached. In the former case, the err method will
+	// return the error. In the latter case, the err method will return nil.
+	// Upon creation, the iterator is at position "minus one". After the
+	// first scan call, value will return the 1st value in the
+	// chunk. valueAtOrBeforeTime and rangeValues all modify the iterator
+	// position, too. They behave as if their return values were retrieved
+	// after a scan call, i.e. calling the value or err methods after a call
+	// to those methods will retrieve the same return value again (or the
+	// last value in the range in case of rangeValues), and subsequent scan
+	// calls will advance the iterator from there.
+	scan() bool
+	value() model.SamplePair
+	err() error
 }
 
 func transcodeAndAdd(dst chunk, src chunk, s model.SamplePair) ([]chunk, error) {
 	chunkOps.WithLabelValues(transcode).Inc()
 
-	head := dst
-	body := []chunk{}
-	for v := range src.newIterator().values() {
-		if v.error != nil {
-			return nil, v.error
-		}
-		newChunks, err := head.add(v.SamplePair)
-		if err != nil {
+	var (
+		head            = dst
+		body, newChunks []chunk
+		err             error
+	)
+
+	it := src.newIterator()
+	for it.scan() {
+		if newChunks, err = head.add(it.value()); err != nil {
 			return nil, err
 		}
 		body = append(body, newChunks[:len(newChunks)-1]...)
 		head = newChunks[len(newChunks)-1]
 	}
-	newChunks, err := head.add(s)
-	if err != nil {
+	if it.err() != nil {
+		return nil, it.err()
+	}
+
+	if newChunks, err = head.add(s); err != nil {
 		return nil, err
 	}
 	return append(body, newChunks...), nil

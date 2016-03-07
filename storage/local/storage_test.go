@@ -692,11 +692,12 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 			if cd.isEvicted() {
 				continue
 			}
-			for sample := range cd.c.newIterator().values() {
-				if sample.error != nil {
-					t.Error(sample.error)
-				}
-				values = append(values, sample.SamplePair)
+			it := cd.c.newIterator()
+			for it.scan() {
+				values = append(values, it.value())
+			}
+			if it.err() != nil {
+				t.Error(it.err())
 			}
 		}
 
