@@ -26,7 +26,7 @@ import (
 
 	"github.com/asaskevich/govalidator"
 	"github.com/prometheus/common/log"
-	"github.com/prometheus/prometheus/notification"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/local/index"
@@ -42,11 +42,11 @@ var cfg = struct {
 	printVersion bool
 	configFile   string
 
-	storage      local.MemorySeriesStorageOptions
-	notification notification.HandlerOptions
-	queryEngine  promql.EngineOptions
-	web          web.Options
-	remote       remote.Options
+	storage     local.MemorySeriesStorageOptions
+	notifier    notifier.Options
+	queryEngine promql.EngineOptions
+	web         web.Options
+	remote      remote.Options
 
 	prometheusURL string
 	influxdbURL   string
@@ -203,15 +203,15 @@ func init() {
 
 	// Alertmanager.
 	cfg.fs.StringVar(
-		&cfg.notification.AlertmanagerURL, "alertmanager.url", "",
+		&cfg.notifier.AlertmanagerURL, "alertmanager.url", "",
 		"The URL of the alert manager to send notifications to.",
 	)
 	cfg.fs.IntVar(
-		&cfg.notification.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
+		&cfg.notifier.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
 		"The capacity of the queue for pending alert manager notifications.",
 	)
 	cfg.fs.DurationVar(
-		&cfg.notification.Timeout, "alertmanager.timeout", 10*time.Second,
+		&cfg.notifier.Timeout, "alertmanager.timeout", 10*time.Second,
 		"Alert manager HTTP API timeout.",
 	)
 

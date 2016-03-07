@@ -125,6 +125,20 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: "1 < bool 2 - 1 * 2",
+		expected: &BinaryExpr{
+			Op:         itemLSS,
+			ReturnBool: true,
+			LHS:        &NumberLiteral{1},
+			RHS: &BinaryExpr{
+				Op:  itemSUB,
+				LHS: &NumberLiteral{2},
+				RHS: &BinaryExpr{
+					Op: itemMUL, LHS: &NumberLiteral{1}, RHS: &NumberLiteral{2},
+				},
+			},
+		},
+	}, {
 		input: "-some_metric", expected: &UnaryExpr{
 			Op: itemSUB,
 			Expr: &VectorSelector{

@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 	"gopkg.in/fsnotify.v1"
 	"gopkg.in/yaml.v2"
 
@@ -51,23 +52,6 @@ func NewFileDiscovery(conf *config.FileSDConfig) *FileDiscovery {
 		paths:    conf.Names,
 		interval: time.Duration(conf.RefreshInterval),
 	}
-}
-
-// Sources implements the TargetProvider interface.
-func (fd *FileDiscovery) Sources() []string {
-	var srcs []string
-	// As we allow multiple target groups per file we have no choice
-	// but to parse them all.
-	for _, p := range fd.listFiles() {
-		tgroups, err := readFile(p)
-		if err != nil {
-			log.Errorf("Error reading file %q: %s", p, err)
-		}
-		for _, tg := range tgroups {
-			srcs = append(srcs, tg.Source)
-		}
-	}
-	return srcs
 }
 
 // listFiles returns a list of all files that match the configured patterns.
@@ -103,7 +87,7 @@ func (fd *FileDiscovery) watchFiles() {
 }
 
 // Run implements the TargetProvider interface.
-func (fd *FileDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
+func (fd *FileDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	defer close(ch)
 	defer fd.stop()
 
@@ -123,11 +107,11 @@ func (fd *FileDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{})
 		// Stopping has priority over refreshing. Thus we wrap the actual select
 		// clause to always catch done signals.
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
 		default:
 			select {
-			case <-done:
+			case <-ctx.Done():
 				return
 
 			case event := <-fd.watcher.Events:
@@ -188,7 +172,7 @@ func (fd *FileDiscovery) stop() {
 
 // refresh reads all files matching the discovery's patterns and sends the respective
 // updated target groups through the channel.
-func (fd *FileDiscovery) refresh(ch chan<- config.TargetGroup) {
+func (fd *FileDiscovery) refresh(ch chan<- []*config.TargetGroup) {
 	ref := map[string]int{}
 	for _, p := range fd.listFiles() {
 		tgroups, err := readFile(p)
@@ -198,9 +182,8 @@ func (fd *FileDiscovery) refresh(ch chan<- config.TargetGroup) {
 			ref[p] = fd.lastRefresh[p]
 			continue
 		}
-		for _, tg := range tgroups {
-			ch <- *tg
-		}
+		ch <- tgroups
+
 		ref[p] = len(tgroups)
 	}
 	// Send empty updates for sources that disappeared.
@@ -208,7 +191,9 @@ func (fd *FileDiscovery) refresh(ch chan<- config.TargetGroup) {
 		m, ok := ref[f]
 		if !ok || n > m {
 			for i := m; i < n; i++ {
-				ch <- config.TargetGroup{Source: fileSource(f, i)}
+				ch <- []*config.TargetGroup{
+					{Source: fileSource(f, i)},
+				}
 			}
 		}
 	}

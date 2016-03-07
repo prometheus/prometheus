@@ -425,7 +425,7 @@ func (t *Test) Run() error {
 	return nil
 }
 
-// exec processes a single step of the test
+// exec processes a single step of the test.
 func (t *Test) exec(tc testCommand) error {
 	switch cmd := tc.(type) {
 	case *clearCmd:

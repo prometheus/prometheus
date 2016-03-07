@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package notification
+package notifier
 
 import (
 	"encoding/json"
@@ -50,8 +50,8 @@ func TestHandlerPostURL(t *testing.T) {
 			out: "http://localhost:9093/prefix/api/v1/alerts",
 		},
 	}
-	h := &Handler{
-		opts: &HandlerOptions{},
+	h := &Notifier{
+		opts: &Options{},
 	}
 
 	for _, c := range cases {
@@ -63,7 +63,7 @@ func TestHandlerPostURL(t *testing.T) {
 }
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := New(&HandlerOptions{})
+	h := New(&Options{})
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &model.Alert{
@@ -146,7 +146,7 @@ func TestHandlerSend(t *testing.T) {
 
 	defer server.Close()
 
-	h := New(&HandlerOptions{
+	h := New(&Options{
 		AlertmanagerURL: server.URL,
 		Timeout:         time.Minute,
 		ExternalLabels:  model.LabelSet{"a": "b"},
@@ -202,7 +202,7 @@ func TestHandlerFull(t *testing.T) {
 		}
 	}))
 
-	h := New(&HandlerOptions{
+	h := New(&Options{
 		AlertmanagerURL: server.URL,
 		Timeout:         time.Second,
 		QueueCapacity:   3 * maxBatchSize,
