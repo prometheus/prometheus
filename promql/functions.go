@@ -193,12 +193,19 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 
 	// make an ouput vector large enough to hole the entire result
 	resultVector := make(vector, 0, len(mat.value()))
+
+	// cache the dataframe so it can be reused
+	var df *smoothie.DataFrame
+
 	for _, samples := range mat {
+		l := len(samples.Values)
+		if df == nil || df.Len() != l {
+			df = smoothie.NewDataFrame(l)
+		}
 
 		// can't do the smoothing operation with less than two points
-		if len(samples.Values) > 2 {
+		if l > 2 {
 			// create a dataframe and fill it with all the values of the current sample
-			df := smoothie.NewDataFrame(len(samples.Values))
 			for i, v := range samples.Values {
 				df.Insert(i, float64(v.Value))
 			}
