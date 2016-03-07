@@ -110,6 +110,10 @@ func (rule *AlertingRule) Name() string {
 	return rule.name
 }
 
+func (r *AlertingRule) equal(o *AlertingRule) bool {
+	return r.name == o.name && r.labels.Equal(o.labels)
+}
+
 func (r *AlertingRule) sample(alert *Alert, ts model.Time, set bool) *model.Sample {
 	metric := model.Metric(r.labels.Clone())
 
