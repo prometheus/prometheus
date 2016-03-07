@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package notification
+package notifier
 
 import (
 	"bytes"
@@ -44,9 +44,9 @@ const (
 
 // Handler is responsible for dispatching alert notifications to an
 // alert manager service.
-type Handler struct {
+type Notifier struct {
 	queue model.Alerts
-	opts  *HandlerOptions
+	opts  *Options
 
 	more   chan struct{}
 	mtx    sync.RWMutex
@@ -62,18 +62,18 @@ type Handler struct {
 }
 
 // HandlerOptions are the configurable parameters of a Handler.
-type HandlerOptions struct {
+type Options struct {
 	AlertmanagerURL string
 	QueueCapacity   int
 	Timeout         time.Duration
 	ExternalLabels  model.LabelSet
 }
 
-// NewHandler constructs a new Handler.
-func New(o *HandlerOptions) *Handler {
+// New constructs a neww Notifier.
+func New(o *Options) *Notifier {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &Handler{
+	return &Notifier{
 		queue:  make(model.Alerts, 0, o.QueueCapacity),
 		ctx:    ctx,
 		cancel: cancel,
@@ -124,7 +124,7 @@ func New(o *HandlerOptions) *Handler {
 
 // ApplyConfig updates the status state as the new config requires.
 // Returns true on success.
-func (n *Handler) ApplyConfig(conf *config.Config) bool {
+func (n *Notifier) ApplyConfig(conf *config.Config) bool {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
@@ -134,14 +134,14 @@ func (n *Handler) ApplyConfig(conf *config.Config) bool {
 
 const maxBatchSize = 64
 
-func (n *Handler) queueLen() int {
+func (n *Notifier) queueLen() int {
 	n.mtx.RLock()
 	defer n.mtx.RUnlock()
 
 	return len(n.queue)
 }
 
-func (n *Handler) nextBatch() []*model.Alert {
+func (n *Notifier) nextBatch() []*model.Alert {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
@@ -159,7 +159,7 @@ func (n *Handler) nextBatch() []*model.Alert {
 }
 
 // Run dispatches notifications continuously.
-func (n *Handler) Run() {
+func (n *Notifier) Run() {
 	// Just warn once in the beginning to prevent noisy logs.
 	if n.opts.AlertmanagerURL == "" {
 		log.Warnf("No AlertManager configured, not dispatching any alerts")
@@ -200,9 +200,9 @@ func (n *Handler) Run() {
 	}
 }
 
-// SubmitReqs queues the given notification requests for processing.
+// Send queues the given notification requests for processing.
 // Panics if called on a handler that is not running.
-func (n *Handler) Send(alerts ...*model.Alert) {
+func (n *Notifier) Send(alerts ...*model.Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
@@ -230,7 +230,7 @@ func (n *Handler) Send(alerts ...*model.Alert) {
 }
 
 // setMore signals that the alert queue has items.
-func (n *Handler) setMore() {
+func (n *Notifier) setMore() {
 	// If we cannot send on the channel, it means the signal already exists
 	// and has not been consumed yet.
 	select {
@@ -239,11 +239,11 @@ func (n *Handler) setMore() {
 	}
 }
 
-func (n *Handler) postURL() string {
+func (n *Notifier) postURL() string {
 	return strings.TrimRight(n.opts.AlertmanagerURL, "/") + alertPushEndpoint
 }
 
-func (n *Handler) send(alerts ...*model.Alert) error {
+func (n *Notifier) send(alerts ...*model.Alert) error {
 	// Attach external labels before sending alerts.
 	for _, a := range alerts {
 		for ln, lv := range n.opts.ExternalLabels {
@@ -272,14 +272,14 @@ func (n *Handler) send(alerts ...*model.Alert) error {
 }
 
 // Stop shuts down the notification handler.
-func (n *Handler) Stop() {
+func (n *Notifier) Stop() {
 	log.Info("Stopping notification handler...")
 
 	n.cancel()
 }
 
 // Describe implements prometheus.Collector.
-func (n *Handler) Describe(ch chan<- *prometheus.Desc) {
+func (n *Notifier) Describe(ch chan<- *prometheus.Desc) {
 	ch <- n.latency.Desc()
 	ch <- n.errors.Desc()
 	ch <- n.sent.Desc()
@@ -289,7 +289,7 @@ func (n *Handler) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements prometheus.Collector.
-func (n *Handler) Collect(ch chan<- prometheus.Metric) {
+func (n *Notifier) Collect(ch chan<- prometheus.Metric) {
 	n.queueLength.Set(float64(n.queueLen()))
 
 	ch <- n.latency

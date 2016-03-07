@@ -530,35 +530,34 @@ func (p *parser) expr() Expr {
 		rhs := p.unaryExpr()
 
 		// Assign the new root based on the precedence of the LHS and RHS operators.
-		if lhs, ok := expr.(*BinaryExpr); ok && lhs.Op.precedence() < op.precedence() {
-			expr = &BinaryExpr{
-				Op:  lhs.Op,
-				LHS: lhs.LHS,
-				RHS: &BinaryExpr{
-					Op:             op,
-					LHS:            lhs.RHS,
-					RHS:            rhs,
-					VectorMatching: vecMatching,
-					ReturnBool:     returnBool,
-				},
-				VectorMatching: lhs.VectorMatching,
-			}
-			if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && lhs.RHS.Type() == model.ValScalar {
-				p.errorf("comparisons between scalars must use BOOL modifier")
-			}
-		} else {
-			expr = &BinaryExpr{
-				Op:             op,
-				LHS:            expr,
-				RHS:            rhs,
-				VectorMatching: vecMatching,
-				ReturnBool:     returnBool,
-			}
-			if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && expr.Type() == model.ValScalar {
-				p.errorf("comparisons between scalars must use BOOL modifier")
-			}
-		}
+		expr = p.balance(expr, op, rhs, vecMatching, returnBool)
+	}
+}
 
+func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMatching, returnBool bool) *BinaryExpr {
+	if lhsBE, ok := lhs.(*BinaryExpr); ok && lhsBE.Op.precedence() < op.precedence() {
+		balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
+		if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == model.ValScalar && lhsBE.LHS.Type() == model.ValScalar {
+			p.errorf("comparisons between scalars must use BOOL modifier")
+		}
+		return &BinaryExpr{
+			Op:             lhsBE.Op,
+			LHS:            lhsBE.LHS,
+			RHS:            balanced,
+			VectorMatching: lhsBE.VectorMatching,
+			ReturnBool:     lhsBE.ReturnBool,
+		}
+	} else {
+		if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && lhs.Type() == model.ValScalar {
+			p.errorf("comparisons between scalars must use BOOL modifier")
+		}
+		return &BinaryExpr{
+			Op:             op,
+			LHS:            lhs,
+			RHS:            rhs,
+			VectorMatching: vecMatching,
+			ReturnBool:     returnBool,
+		}
 	}
 }
 
