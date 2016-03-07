@@ -59,23 +59,31 @@ func testFileSD(t *testing.T, ext string) {
 	}
 	newf.Close()
 
+	timeout := time.After(15 * time.Second)
 	// The files contain two target groups.
-	select {
-	case <-time.After(15 * time.Second):
-		t.Fatalf("Expected new target group but got none")
-	case tgs := <-ch:
-		tg := tgs[0]
+retry:
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("Expected new target group but got none")
+		case tgs := <-ch:
+			if len(tgs) != 2 {
+				continue retry // Potentially a partial write, just retry.
+			}
+			tg := tgs[0]
 
-		if _, ok := tg.Labels["foo"]; !ok {
-			t.Fatalf("Label not parsed")
-		}
-		if tg.String() != fmt.Sprintf("fixtures/_test%s:0", ext) {
-			t.Fatalf("Unexpected target group %s", tg)
-		}
+			if _, ok := tg.Labels["foo"]; !ok {
+				t.Fatalf("Label not parsed")
+			}
+			if tg.String() != fmt.Sprintf("fixtures/_test%s:0", ext) {
+				t.Fatalf("Unexpected target group %s", tg)
+			}
 
-		tg = tgs[1]
-		if tg.String() != fmt.Sprintf("fixtures/_test%s:1", ext) {
-			t.Fatalf("Unexpected target groups %s", tg)
+			tg = tgs[1]
+			if tg.String() != fmt.Sprintf("fixtures/_test%s:1", ext) {
+				t.Fatalf("Unexpected target groups %s", tg)
+			}
+			break retry
 		}
 	}
 
