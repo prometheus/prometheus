@@ -18,11 +18,8 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 
 	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/storage/metric"
 )
 
 // The 21-byte header of a delta-encoded chunk looks like:
@@ -201,17 +198,14 @@ func (c deltaEncodedChunk) firstTime() model.Time {
 
 // newIterator implements chunk.
 func (c *deltaEncodedChunk) newIterator() chunkIterator {
-	return &deltaEncodedChunkIterator{
-		c:         *c,
-		len:       c.len(),
-		baseT:     c.baseTime(),
-		baseV:     c.baseValue(),
-		tBytes:    c.timeBytes(),
-		vBytes:    c.valueBytes(),
-		isInt:     c.isInt(),
-		pos:       -1,
-		lastValue: ZeroSamplePair,
-	}
+	return newIndexAccessingChunkIterator(c.len(), &deltaEncodedIndexAccessor{
+		c:      *c,
+		baseT:  c.baseTime(),
+		baseV:  c.baseValue(),
+		tBytes: c.timeBytes(),
+		vBytes: c.valueBytes(),
+		isInt:  c.isInt(),
+	})
 }
 
 // marshal implements chunk.
@@ -305,137 +299,65 @@ func (c deltaEncodedChunk) len() int {
 	return (len(c) - deltaHeaderBytes) / c.sampleSize()
 }
 
-// deltaEncodedChunkIterator implements chunkIterator.
-type deltaEncodedChunkIterator struct {
+// deltaEncodedIndexAccessor implements indexAccessor.
+type deltaEncodedIndexAccessor struct {
 	c              deltaEncodedChunk
-	len            int
 	baseT          model.Time
 	baseV          model.SampleValue
 	tBytes, vBytes deltaBytes
 	isInt          bool
-	pos            int
-	lastValue      model.SamplePair
 	lastErr        error
 }
 
-// lastTimestamp implements chunkIterator.
-func (it *deltaEncodedChunkIterator) lastTimestamp() (model.Time, error) {
-	return it.timestampAtIndex(it.len - 1), it.lastErr
+func (acc *deltaEncodedIndexAccessor) err() error {
+	return acc.lastErr
 }
 
-// valueAtOrBeforeTime implements chunkIterator.
-func (it *deltaEncodedChunkIterator) valueAtOrBeforeTime(t model.Time) (model.SamplePair, error) {
-	i := sort.Search(it.len, func(i int) bool {
-		return it.timestampAtIndex(i).After(t)
-	})
-	if i == 0 || it.lastErr != nil {
-		return ZeroSamplePair, it.lastErr
-	}
-	it.pos = i - 1
-	it.lastValue = model.SamplePair{
-		Timestamp: it.timestampAtIndex(i - 1),
-		Value:     it.sampleValueAtIndex(i - 1),
-	}
-	return it.lastValue, it.lastErr
-}
+func (acc *deltaEncodedIndexAccessor) timestampAtIndex(idx int) model.Time {
+	offset := deltaHeaderBytes + idx*int(acc.tBytes+acc.vBytes)
 
-// rangeValues implements chunkIterator.
-func (it *deltaEncodedChunkIterator) rangeValues(in metric.Interval) ([]model.SamplePair, error) {
-	oldest := sort.Search(it.len, func(i int) bool {
-		return !it.timestampAtIndex(i).Before(in.OldestInclusive)
-	})
-	newest := sort.Search(it.len, func(i int) bool {
-		return it.timestampAtIndex(i).After(in.NewestInclusive)
-	})
-	if oldest == it.len || it.lastErr != nil {
-		return nil, it.lastErr
-	}
-
-	result := make([]model.SamplePair, 0, newest-oldest)
-	for i := oldest; i < newest; i++ {
-		it.pos = i
-		it.lastValue = model.SamplePair{
-			Timestamp: it.timestampAtIndex(i),
-			Value:     it.sampleValueAtIndex(i),
-		}
-		result = append(result, it.lastValue)
-	}
-	return result, it.lastErr
-}
-
-// contains implements chunkIterator.
-func (it *deltaEncodedChunkIterator) contains(t model.Time) (bool, error) {
-	return !t.Before(it.baseT) && !t.After(it.timestampAtIndex(it.len-1)), it.lastErr
-}
-
-// scan implements chunkIterator.
-func (it *deltaEncodedChunkIterator) scan() bool {
-	it.pos++
-	if it.pos >= it.len {
-		return false
-	}
-	it.lastValue = model.SamplePair{
-		Timestamp: it.timestampAtIndex(it.pos),
-		Value:     it.sampleValueAtIndex(it.pos),
-	}
-	return it.lastErr == nil
-}
-
-// value implements chunkIterator.
-func (it *deltaEncodedChunkIterator) value() model.SamplePair {
-	return it.lastValue
-}
-
-// err implements chunkIterator.
-func (it *deltaEncodedChunkIterator) err() error {
-	return it.lastErr
-}
-
-func (it *deltaEncodedChunkIterator) timestampAtIndex(idx int) model.Time {
-	offset := deltaHeaderBytes + idx*int(it.tBytes+it.vBytes)
-
-	switch it.tBytes {
+	switch acc.tBytes {
 	case d1:
-		return it.baseT + model.Time(uint8(it.c[offset]))
+		return acc.baseT + model.Time(uint8(acc.c[offset]))
 	case d2:
-		return it.baseT + model.Time(binary.LittleEndian.Uint16(it.c[offset:]))
+		return acc.baseT + model.Time(binary.LittleEndian.Uint16(acc.c[offset:]))
 	case d4:
-		return it.baseT + model.Time(binary.LittleEndian.Uint32(it.c[offset:]))
+		return acc.baseT + model.Time(binary.LittleEndian.Uint32(acc.c[offset:]))
 	case d8:
 		// Take absolute value for d8.
-		return model.Time(binary.LittleEndian.Uint64(it.c[offset:]))
+		return model.Time(binary.LittleEndian.Uint64(acc.c[offset:]))
 	default:
-		it.lastErr = fmt.Errorf("invalid number of bytes for time delta: %d", it.tBytes)
+		acc.lastErr = fmt.Errorf("invalid number of bytes for time delta: %d", acc.tBytes)
 	}
 	return model.Earliest
 }
 
-func (it *deltaEncodedChunkIterator) sampleValueAtIndex(idx int) model.SampleValue {
-	offset := deltaHeaderBytes + idx*int(it.tBytes+it.vBytes) + int(it.tBytes)
+func (acc *deltaEncodedIndexAccessor) sampleValueAtIndex(idx int) model.SampleValue {
+	offset := deltaHeaderBytes + idx*int(acc.tBytes+acc.vBytes) + int(acc.tBytes)
 
-	if it.isInt {
-		switch it.vBytes {
+	if acc.isInt {
+		switch acc.vBytes {
 		case d0:
-			return it.baseV
+			return acc.baseV
 		case d1:
-			return it.baseV + model.SampleValue(int8(it.c[offset]))
+			return acc.baseV + model.SampleValue(int8(acc.c[offset]))
 		case d2:
-			return it.baseV + model.SampleValue(int16(binary.LittleEndian.Uint16(it.c[offset:])))
+			return acc.baseV + model.SampleValue(int16(binary.LittleEndian.Uint16(acc.c[offset:])))
 		case d4:
-			return it.baseV + model.SampleValue(int32(binary.LittleEndian.Uint32(it.c[offset:])))
+			return acc.baseV + model.SampleValue(int32(binary.LittleEndian.Uint32(acc.c[offset:])))
 		// No d8 for ints.
 		default:
-			it.lastErr = fmt.Errorf("invalid number of bytes for integer delta: %d", it.vBytes)
+			acc.lastErr = fmt.Errorf("invalid number of bytes for integer delta: %d", acc.vBytes)
 		}
 	} else {
-		switch it.vBytes {
+		switch acc.vBytes {
 		case d4:
-			return it.baseV + model.SampleValue(math.Float32frombits(binary.LittleEndian.Uint32(it.c[offset:])))
+			return acc.baseV + model.SampleValue(math.Float32frombits(binary.LittleEndian.Uint32(acc.c[offset:])))
 		case d8:
 			// Take absolute value for d8.
-			return model.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(it.c[offset:])))
+			return model.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(acc.c[offset:])))
 		default:
-			it.lastErr = fmt.Errorf("invalid number of bytes for floating point delta: %d", it.vBytes)
+			acc.lastErr = fmt.Errorf("invalid number of bytes for floating point delta: %d", acc.vBytes)
 		}
 	}
 	return 0

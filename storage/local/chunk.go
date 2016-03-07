@@ -17,6 +17,7 @@ import (
 	"container/list"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -341,4 +342,103 @@ func newChunkForEncoding(encoding chunkEncoding) (chunk, error) {
 	default:
 		return nil, fmt.Errorf("unknown chunk encoding: %v", encoding)
 	}
+}
+
+// indexAccessor allows accesses to samples by index.
+type indexAccessor interface {
+	timestampAtIndex(int) model.Time
+	sampleValueAtIndex(int) model.SampleValue
+	err() error
+}
+
+// indexAccessingChunkIterator is a chunk iterator for chunks for which an
+// indexAccessor implementation exists.
+type indexAccessingChunkIterator struct {
+	len       int
+	pos       int
+	lastValue model.SamplePair
+	acc       indexAccessor
+}
+
+func newIndexAccessingChunkIterator(len int, acc indexAccessor) *indexAccessingChunkIterator {
+	return &indexAccessingChunkIterator{
+		len:       len,
+		pos:       -1,
+		lastValue: ZeroSamplePair,
+		acc:       acc,
+	}
+}
+
+// lastTimestamp implements chunkIterator.
+func (it *indexAccessingChunkIterator) lastTimestamp() (model.Time, error) {
+	return it.acc.timestampAtIndex(it.len - 1), it.acc.err()
+}
+
+// valueAtOrBeforeTime implements chunkIterator.
+func (it *indexAccessingChunkIterator) valueAtOrBeforeTime(t model.Time) (model.SamplePair, error) {
+	i := sort.Search(it.len, func(i int) bool {
+		return it.acc.timestampAtIndex(i).After(t)
+	})
+	if i == 0 || it.acc.err() != nil {
+		return ZeroSamplePair, it.acc.err()
+	}
+	it.pos = i - 1
+	it.lastValue = model.SamplePair{
+		Timestamp: it.acc.timestampAtIndex(i - 1),
+		Value:     it.acc.sampleValueAtIndex(i - 1),
+	}
+	return it.lastValue, it.acc.err()
+}
+
+// rangeValues implements chunkIterator.
+func (it *indexAccessingChunkIterator) rangeValues(in metric.Interval) ([]model.SamplePair, error) {
+	oldest := sort.Search(it.len, func(i int) bool {
+		return !it.acc.timestampAtIndex(i).Before(in.OldestInclusive)
+	})
+	newest := sort.Search(it.len, func(i int) bool {
+		return it.acc.timestampAtIndex(i).After(in.NewestInclusive)
+	})
+	if oldest == it.len || it.acc.err() != nil {
+		return nil, it.acc.err()
+	}
+
+	result := make([]model.SamplePair, 0, newest-oldest)
+	for i := oldest; i < newest; i++ {
+		it.pos = i
+		it.lastValue = model.SamplePair{
+			Timestamp: it.acc.timestampAtIndex(i),
+			Value:     it.acc.sampleValueAtIndex(i),
+		}
+		result = append(result, it.lastValue)
+	}
+	return result, it.acc.err()
+}
+
+// contains implements chunkIterator.
+func (it *indexAccessingChunkIterator) contains(t model.Time) (bool, error) {
+	return !t.Before(it.acc.timestampAtIndex(0)) &&
+		!t.After(it.acc.timestampAtIndex(it.len-1)), it.acc.err()
+}
+
+// scan implements chunkIterator.
+func (it *indexAccessingChunkIterator) scan() bool {
+	it.pos++
+	if it.pos >= it.len {
+		return false
+	}
+	it.lastValue = model.SamplePair{
+		Timestamp: it.acc.timestampAtIndex(it.pos),
+		Value:     it.acc.sampleValueAtIndex(it.pos),
+	}
+	return it.acc.err() == nil
+}
+
+// value implements chunkIterator.
+func (it *indexAccessingChunkIterator) value() model.SamplePair {
+	return it.lastValue
+}
+
+// err implements chunkIterator.
+func (it *indexAccessingChunkIterator) err() error {
+	return it.acc.err()
 }
