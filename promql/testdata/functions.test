@@ -241,14 +241,14 @@ eval_ordered instant at 50m bottomk(3, http_requests{job="api-server",group="pro
 	http_requests{job="api-server", instance="1", group="production"}	200
 	http_requests{job="api-server", instance="2", group="production"}	NaN
 
-# Test for double_smooth
+# Tests for holt_winters
 clear
 load 5m
-	http_requests{job="api-server", instance="0", group="production"}	0+10x100
-	http_requests{job="api-server", instance="1", group="canary"}		0+40x100
+	http_requests{job="api-server", instance="0", group="production"}	0+10x10000
+	http_requests{job="api-server", instance="1", group="canary"}		0+40x10000
 
-eval_ordered instant at 50m double_smooth(http_requests{job="api-server",group="production"}[20m], 0.1, 0.1)
-	http_request{job="api-server", instance="0", group="production"} 100
+eval instant at 5m holt_winters(http_requests{}[20m], 0.1, 0.1)
+	http_requests{job="api-server", instance="0", group="production"}	1
 
 # Tests for sort/sort_desc.
 clear
