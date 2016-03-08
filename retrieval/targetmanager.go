@@ -274,26 +274,26 @@ func (ts *targetSet) runProviders(ctx context.Context, providers map[string]Targ
 		updates := make(chan []*config.TargetGroup)
 
 		go func(name string, prov TargetProvider) {
-			var initial []*config.TargetGroup
-
 			select {
 			case <-ctx.Done():
-				wg.Done()
-				return
-			case initial = <-updates:
+			case initial, ok := <-updates:
+				// Handle the case that a target provider exits and closes the channel
+				// before the context is done.
+				if !ok {
+					break
+				}
 				// First set of all targets the provider knows.
+				for _, tgroup := range initial {
+					targets, err := targetsFromGroup(tgroup, ts.config)
+					if err != nil {
+						log.With("target_group", tgroup).Errorf("Target update failed: %s", err)
+						continue
+					}
+					ts.tgroups[name+"/"+tgroup.Source] = targets
+				}
 			case <-time.After(5 * time.Second):
 				// Initial set didn't arrive. Act as if it was empty
 				// and wait for updates later on.
-			}
-
-			for _, tgroup := range initial {
-				targets, err := targetsFromGroup(tgroup, ts.config)
-				if err != nil {
-					log.With("target_group", tgroup).Errorf("Target update failed: %s", err)
-					continue
-				}
-				ts.tgroups[name+"/"+tgroup.Source] = targets
 			}
 
 			wg.Done()
@@ -303,7 +303,12 @@ func (ts *targetSet) runProviders(ctx context.Context, providers map[string]Targ
 				select {
 				case <-ctx.Done():
 					return
-				case tgs := <-updates:
+				case tgs, ok := <-updates:
+					// Handle the case that a target provider exits and closes the channel
+					// before the context is done.
+					if !ok {
+						return
+					}
 					for _, tg := range tgs {
 						if err := ts.update(name, tg); err != nil {
 							log.With("target_group", tg).Errorf("Target update failed: %s", err)
