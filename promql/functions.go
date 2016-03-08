@@ -185,6 +185,7 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 	return resultVector
 }
 
+// doubleSVal calculates the smoothed value at index i of raw data d
 // s = computed smoothed values, b = computed trend factors, d = raw
 func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 	defer func() {
@@ -209,6 +210,7 @@ func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 	return x + y
 }
 
+// doubleBVal calculates the trend value at index i of raw data d
 // s = computed smoothed values, b = coumputed trend factors, d = raw
 func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 
@@ -226,9 +228,16 @@ func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 	return x + y
 }
 
-// === doubleSmooth(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
+// === holt_winters(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
 // algorhythm taken from https://en.wikipedia.org/wiki/Exponential_smoothing
-func funcDoubleSmooth(ev *evaluator, args Expressions) model.Value {
+func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("here")
+			panic(r)
+		}
+
+	}()
 	mat := ev.evalMatrix(args[0])
 	sf := ev.evalFloat(args[1])
 	tf := ev.evalFloat(args[2])
@@ -270,195 +279,6 @@ func funcDoubleSmooth(ev *evaluator, args Expressions) model.Value {
 			// run the smoothing operation
 			for i := 1; i < len(d); i++ {
 				s[i] = doubleSVal(i, sf, tf, s, b, d)
-			}
-
-			// run the smoothing operation
-			// this is quite expensive
-			resultVector = append(resultVector, &sample{
-				Metric:    samples.Metric,
-				Value:     model.SampleValue(s[len(s)-1]), // the last value in the vector is the smoothed result
-				Timestamp: ev.Timestamp,
-			})
-		}
-	}
-
-	return resultVector
-}
-
-// index, smooth factor, trend factor, season factor, smooth/trend/season/raw data, period
-// algorhythm taken from https://en.wikipedia.org/wiki/Exponential_smoothing
-func tripleSVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 {
-
-	// log.Println("s", i)
-	if !math.IsNaN(s[i]) {
-		// log.Println("cached", "s", "val", s[i])
-		return s[i]
-	}
-
-	x := sf * (d[i] / tripleCVal(i-p, sf, tf, cf, s, b, c, d, p))
-	y := (1 - sf) * (tripleSVal(i-1, sf, tf, cf, s, b, c, d, p) + tripleBVal(i-1, sf, tf, cf, s, b, c, d, p))
-
-	// cache value
-	s[i] = x + y
-	if math.IsNaN(s[i]) {
-		log.Println(i)
-		log.Println("s", s)
-		log.Println("c", c)
-		log.Println("b", b)
-		panic("s")
-	}
-
-	return s[i]
-}
-
-// index, smooth factor, trend factor, season factor, smooth/trend/season/raw data, period
-func tripleBVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 {
-	// log.Println("b", i)
-
-	if !math.IsNaN(b[i]) {
-		// log.Println("cached", "b", "val", b[i])
-		return b[i]
-	}
-
-	x := tf * (tripleSVal(i, sf, tf, cf, s, b, c, d, p) - tripleSVal(i-1, sf, tf, cf, s, b, c, d, p))
-	y := (1 - tf) * tripleBVal(i-1, sf, tf, cf, s, b, c, d, p)
-
-	// cache value
-	b[i] = x + y
-	if math.IsNaN(b[i]) {
-		log.Println(i)
-		log.Println("d", d[i])
-		log.Println("c", c[i])
-		log.Println("b", b[i])
-		panic("b")
-	}
-	return b[i]
-}
-
-// index, smooth factor, trend factor, season factor, smooth/trend/season/raw data, period
-func tripleCVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 {
-	// log.Println("c", i)
-
-	if i < 0 {
-		i += p
-	}
-
-	if !math.IsNaN(c[i]) {
-		// log.Println("cached", "c", "val", c[i])
-		return c[i]
-	}
-
-	x := cf * (d[i] / tripleSVal(i, sf, tf, cf, s, b, c, d, p))
-	y := (1 - cf) * tripleCVal(i-p, sf, tf, cf, s, b, c, d, p)
-
-	// cache value
-	c[i] = x + y
-	if math.IsNaN(c[i]) {
-		log.Println(i)
-		log.Println("d", d[i])
-		log.Println("c", c[i])
-		log.Println("b", b[i])
-		panic("c")
-	}
-	return c[i]
-}
-
-// raw, period
-func tripleCalcBZero(d []float64, p int) float64 {
-
-	x := 0.0
-	for i := 0; i < p; i++ {
-
-		x += ((d[i+p] - d[i]) / float64(p))
-	}
-	return x / float64(p)
-}
-
-func tripleInitCVals(d, c []float64, p int) {
-	freq := len(d) / p
-	a := make([]float64, freq)
-	for j := 1; j < freq; j++ {
-		sum := 0.0
-		for i := 1; i < p; i++ {
-			sum += d[(p*(j-1))+i]
-		}
-		a[j] = sum / float64(p)
-		if a[j] == 0 {
-			a[j] = 0.1
-		}
-	}
-
-	for i := 1; i < p; i++ {
-		sum := 0.0
-		for j := 1; j < freq; j++ {
-			sum += d[(p*(j-1))+i] / a[j]
-		}
-
-		c[i] = (1 / float64(freq)) * sum
-		if c[i] == 0 {
-			c[i] = 0.1
-		}
-		// log.Println(c[i])
-	}
-}
-
-// === tripleSmooth(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
-func funcTripleSmooth(ev *evaluator, args Expressions) model.Value {
-	mat := ev.evalMatrix(args[0])
-	sf := ev.evalFloat(args[1])
-	tf := ev.evalFloat(args[2])
-	cf := ev.evalFloat(args[3])
-	p := ev.evalInt(args[4])
-
-	// make an ouput vector large enough to hole the entire result
-	resultVector := make(vector, 0, len(mat.value()))
-
-	// create scratch values
-	var s, b, c, d []float64
-
-	for _, samples := range mat {
-		l := len(samples.Values)
-
-		// can't do the smoothing operation with less than 6 points
-		if l > 6 {
-
-			// resize p so that it fits within the dataset, this should only happen at the end of the series
-			if p > (l / 2) {
-				p = (l / 2) - 2
-			}
-
-			// resize scratch values
-			if l != len(s) {
-				s = make([]float64, l)
-				b = make([]float64, l)
-				c = make([]float64, l)
-				d = make([]float64, l)
-			}
-
-			// NaN out stratch values, this use used to check for chached values
-			for i := range b {
-				b[i] = math.NaN()
-				s[i] = math.NaN()
-				c[i] = math.NaN()
-			}
-
-			// fill in the d values with the raw values from the input
-			for i, v := range samples.Values {
-				d[i] = float64(v.Value)
-				if d[i] == 0 {
-					d[i] = 0.00000001 // TODO: (eliothedmena) need to figure out how to handle 0 values, as this will cause NaN down the line
-				}
-			}
-
-			// set init values
-			b[0] = tripleCalcBZero(d, p)
-			tripleInitCVals(d, c, p)
-			s[0] = d[0]
-			c[0] = 1
-
-			// run the smoothing operation
-			for i := 2; i < len(d); i++ {
-				s[i] = tripleSVal(i, sf, tf, cf, s, b, c, d, p)
 			}
 
 			// run the smoothing operation
@@ -1143,17 +963,11 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcHistogramQuantile,
 	},
-	"double_smooth": {
-		Name:       "double_smooth",
+	"holt_winters": {
+		Name:       "holt_wintersh",
 		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar, model.ValScalar},
 		ReturnType: model.ValVector,
-		Call:       funcDoubleSmooth,
-	},
-	"triple_smooth": {
-		Name:       "triple_smooth",
-		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar, model.ValScalar, model.ValScalar, model.ValScalar},
-		ReturnType: model.ValVector,
-		Call:       funcTripleSmooth,
+		Call:       funcHoltWinters,
 	},
 	"irate": {
 		Name:       "irate",
