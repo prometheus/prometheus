@@ -188,15 +188,8 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 // doubleSVal calculates the smoothed value at index i of raw data d
 // s = computed smoothed values, b = computed trend factors, d = raw
 func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Println(i, len(s))
-			panic(r)
-		}
 
-	}()
-
-	// check for the cached value
+	// check for the cached valuu
 	if !math.IsNaN(s[i]) {
 		return s[i]
 	}
@@ -239,7 +232,11 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 
 	}()
 	mat := ev.evalMatrix(args[0])
+
+	// smoothing factor
 	sf := ev.evalFloat(args[1])
+
+	// trend factor
 	tf := ev.evalFloat(args[2])
 
 	// make an ouput vector large enough to hole the entire result
@@ -281,8 +278,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 				s[i] = doubleSVal(i, sf, tf, s, b, d)
 			}
 
-			// run the smoothing operation
-			// this is quite expensive
+			samples.Metric.Del(model.MetricNameLabel)
 			resultVector = append(resultVector, &sample{
 				Metric:    samples.Metric,
 				Value:     model.SampleValue(s[len(s)-1]), // the last value in the vector is the smoothed result
