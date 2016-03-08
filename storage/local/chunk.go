@@ -53,46 +53,13 @@ const (
 	doubleDelta
 )
 
-// chunkDesc contains meta-data for a chunk. Pay special attention to the
-// documented requirements for calling its methods concurrently (WRT pinning and
-// locking). The doc comments spell out the requirements for each method, but
-// here is an overview and general explanation:
-//
-// Everything that changes the pinning of the underlying chunk or deals with its
-// eviction is protected by a mutex. This affects the following methods: pin,
-// unpin, refCount, isEvicted, maybeEvict. These methods can be called at any
-// time without further prerequisites.
-//
-// Another group of methods acts on (or sets) the underlying chunk. These
-// methods involve no locking. They may only be called if the caller has pinned
-// the chunk (to guarantee the chunk is not evicted concurrently). Also, the
-// caller must make sure nobody else will call these methods concurrently,
-// either by holding the sole reference to the chunkDesc (usually during loading
-// or creation) or by locking the fingerprint of the series the chunkDesc
-// belongs to. The affected methods are: add, maybePopulateLastTime, setChunk.
-//
-// Finally, there are the special cases firstTime and lastTime. lastTime requires
-// to have locked the fingerprint of the series but the chunk does not need to
-// be pinned. That's because the chunkLastTime field in chunkDesc gets populated
-// upon completion of the chunk (when it is still pinned, and which happens
-// while the series's fingerprint is locked). Once that has happened, calling
-// lastTime does not require the chunk to be loaded anymore. Before that has
-// happened, the chunk is pinned anyway. The chunkFirstTime field in chunkDesc
-// is populated upon creation of a chunkDesc, so it is alway safe to call
-// firstTime. The firstTime method is arguably not needed and only there for
-// consistency with lastTime.
-//
-// Yet another (deprecated) case is lastSamplePair. It's used in federation and
-// must be callable without pinning. Locking the fingerprint of the series is
-// still required (to avoid concurrent appends to the chunk). The call is
-// relatively expensive because of the required acquisition of the evict
-// mutex. It will go away, though, once tracking the lastSamplePair has been
-// moved into the series object.
+// chunkDesc contains meta-data for a chunk. Many of its methods are
+// goroutine-safe proxies for chunk methods.
 type chunkDesc struct {
-	sync.Mutex           // Protects pinning.
+	sync.Mutex           // TODO(beorn7): Try out if an RWMutex would help here.
 	c              chunk // nil if chunk is evicted.
 	rCnt           int
-	chunkFirstTime model.Time // Populated at creation. Immutable.
+	chunkFirstTime model.Time // Populated at creation.
 	chunkLastTime  model.Time // Populated on closing of the chunk, model.Earliest if unset.
 
 	// evictListElement is nil if the chunk is not in the evict list.
@@ -116,17 +83,16 @@ func newChunkDesc(c chunk, firstTime model.Time) *chunkDesc {
 	}
 }
 
-// add adds a sample pair to the underlying chunk. For safe concurrent access,
-// The chunk must be pinned, and the caller must have locked the fingerprint of
-// the series.
 func (cd *chunkDesc) add(s *model.SamplePair) []chunk {
+	cd.Lock()
+	defer cd.Unlock()
+
 	return cd.c.add(s)
 }
 
 // pin increments the refCount by one. Upon increment from 0 to 1, this
 // chunkDesc is removed from the evict list. To enable the latter, the
-// evictRequests channel has to be provided. This method can be called
-// concurrently at any time.
+// evictRequests channel has to be provided.
 func (cd *chunkDesc) pin(evictRequests chan<- evictRequest) {
 	cd.Lock()
 	defer cd.Unlock()
@@ -140,8 +106,7 @@ func (cd *chunkDesc) pin(evictRequests chan<- evictRequest) {
 
 // unpin decrements the refCount by one. Upon decrement from 1 to 0, this
 // chunkDesc is added to the evict list. To enable the latter, the evictRequests
-// channel has to be provided. This method can be called concurrently at any
-// time.
+// channel has to be provided.
 func (cd *chunkDesc) unpin(evictRequests chan<- evictRequest) {
 	cd.Lock()
 	defer cd.Unlock()
@@ -156,8 +121,6 @@ func (cd *chunkDesc) unpin(evictRequests chan<- evictRequest) {
 	}
 }
 
-// refCount returns the number of pins. This method can be called concurrently
-// at any time.
 func (cd *chunkDesc) refCount() int {
 	cd.Lock()
 	defer cd.Unlock()
@@ -165,39 +128,30 @@ func (cd *chunkDesc) refCount() int {
 	return cd.rCnt
 }
 
-// firstTime returns the timestamp of the first sample in the chunk. This method
-// can be called concurrently at any time. It only returns the immutable
-// cd.chunkFirstTime without any locking. Arguably, this method is
-// useless. However, it provides consistency with the lastTime method.
 func (cd *chunkDesc) firstTime() model.Time {
+	// No lock required, will never be modified.
 	return cd.chunkFirstTime
 }
 
-// lastTime returns the timestamp of the last sample in the chunk. For safe
-// concurrent access, this method requires the fingerprint of the time series to
-// be locked.
 func (cd *chunkDesc) lastTime() model.Time {
+	cd.Lock()
+	defer cd.Unlock()
+
 	if cd.chunkLastTime != model.Earliest || cd.c == nil {
 		return cd.chunkLastTime
 	}
 	return cd.c.newIterator().lastTimestamp()
 }
 
-// maybePopulateLastTime populates the chunkLastTime from the underlying chunk
-// if it has not yet happened. Call this method directly after having added the
-// last sample to a chunk or after closing a head chunk due to age. For safe
-// concurrent access, the chunk must be pinned, and the caller must have locked
-// the fingerprint of the series.
 func (cd *chunkDesc) maybePopulateLastTime() {
+	cd.Lock()
+	defer cd.Unlock()
+
 	if cd.chunkLastTime == model.Earliest && cd.c != nil {
 		cd.chunkLastTime = cd.c.newIterator().lastTimestamp()
 	}
 }
 
-// lastSamplePair returns the last sample pair of the underlying chunk, or nil
-// if the chunk is evicted. For safe concurrent access, this method requires the
-// fingerprint of the time series to be locked.
-// TODO(beorn7): Move up into memorySeries.
 func (cd *chunkDesc) lastSamplePair() *model.SamplePair {
 	cd.Lock()
 	defer cd.Unlock()
@@ -212,22 +166,28 @@ func (cd *chunkDesc) lastSamplePair() *model.SamplePair {
 	}
 }
 
-// isEvicted returns whether the chunk is evicted. For safe concurrent access,
-// the caller must have locked the fingerprint of the series.
 func (cd *chunkDesc) isEvicted() bool {
-	// Locking required here because we do not want the caller to force
-	// pinning the chunk first, so it could be evicted while this method is
-	// called.
 	cd.Lock()
 	defer cd.Unlock()
 
 	return cd.c == nil
 }
 
-// setChunk sets the underlying chunk. The caller must have locked the
-// fingerprint of the series and must have "pre-pinned" the chunk (i.e. first
-// call pin and then set the chunk).
+func (cd *chunkDesc) contains(t model.Time) bool {
+	return !t.Before(cd.firstTime()) && !t.After(cd.lastTime())
+}
+
+func (cd *chunkDesc) chunk() chunk {
+	cd.Lock()
+	defer cd.Unlock()
+
+	return cd.c
+}
+
 func (cd *chunkDesc) setChunk(c chunk) {
+	cd.Lock()
+	defer cd.Unlock()
+
 	if cd.c != nil {
 		panic("chunk already set")
 	}
@@ -236,7 +196,7 @@ func (cd *chunkDesc) setChunk(c chunk) {
 
 // maybeEvict evicts the chunk if the refCount is 0. It returns whether the chunk
 // is now evicted, which includes the case that the chunk was evicted even
-// before this method was called. It can be called concurrently at any time.
+// before this method was called.
 func (cd *chunkDesc) maybeEvict() bool {
 	cd.Lock()
 	defer cd.Unlock()
@@ -247,9 +207,9 @@ func (cd *chunkDesc) maybeEvict() bool {
 	if cd.rCnt != 0 {
 		return false
 	}
+	// Last opportunity to populate chunkLastTime.
 	if cd.chunkLastTime == model.Earliest {
-		// This must never happen.
-		panic("chunkLastTime not populated for evicted chunk")
+		cd.chunkLastTime = cd.c.newIterator().lastTimestamp()
 	}
 	cd.c = nil
 	chunkOps.WithLabelValues(evict).Inc()
@@ -291,11 +251,12 @@ type chunkIterator interface {
 	sampleValueAtIndex(int) model.SampleValue
 	// Gets the last sample value in the chunk.
 	lastSampleValue() model.SampleValue
-	// Gets the value that is closest before the given time. In case a value
-	// exists at precisely the given time, that value is returned. If no
-	// applicable value exists, a SamplePair with timestamp model.Earliest
-	// and value 0.0 is returned.
-	valueAtOrBeforeTime(model.Time) model.SamplePair
+	// Gets the two values that are immediately adjacent to a given time. In
+	// case a value exist at precisely the given time, only that single
+	// value is returned. Only the first or last value is returned (as a
+	// single value), if the given time is before or after the first or last
+	// value, respectively.
+	valueAtTime(model.Time) []model.SamplePair
 	// Gets all values contained within a given interval.
 	rangeValues(metric.Interval) []model.SamplePair
 	// Whether a given timestamp is contained between first and last value

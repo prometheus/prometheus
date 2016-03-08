@@ -485,12 +485,6 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if loadedS1.headChunkClosed {
 			t.Error("headChunkClosed is true")
 		}
-		if loadedS1.head().chunkFirstTime != 1 {
-			t.Errorf("want chunkFirstTime in head chunk to be 1, got %d", loadedS1.head().chunkFirstTime)
-		}
-		if loadedS1.head().chunkLastTime != model.Earliest {
-			t.Error("want chunkLastTime in head chunk to be unset")
-		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m1)
 	}
@@ -506,12 +500,6 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		}
 		if !loadedS3.headChunkClosed {
 			t.Error("headChunkClosed is false")
-		}
-		if loadedS3.head().chunkFirstTime != 2 {
-			t.Errorf("want chunkFirstTime in head chunk to be 2, got %d", loadedS3.head().chunkFirstTime)
-		}
-		if loadedS3.head().chunkLastTime != 2 {
-			t.Errorf("want chunkLastTime in head chunk to be 2, got %d", loadedS3.head().chunkLastTime)
 		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m3)
@@ -538,27 +526,6 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if loadedS4.headChunkClosed {
 			t.Error("headChunkClosed is true")
 		}
-		for i, cd := range loadedS4.chunkDescs {
-			if cd.chunkFirstTime != cd.c.firstTime() {
-				t.Errorf(
-					"chunkDesc[%d]: chunkFirstTime not consistent with chunk, want %d, got %d",
-					i, cd.c.firstTime(), cd.chunkFirstTime,
-				)
-			}
-			if i == len(loadedS4.chunkDescs)-1 {
-				// Head chunk.
-				if cd.chunkLastTime != model.Earliest {
-					t.Error("want chunkLastTime in head chunk to be unset")
-				}
-				continue
-			}
-			if cd.chunkLastTime != cd.c.newIterator().lastTimestamp() {
-				t.Errorf(
-					"chunkDesc[%d]: chunkLastTime not consistent with chunk, want %d, got %d",
-					i, cd.c.newIterator().lastTimestamp(), cd.chunkLastTime,
-				)
-			}
-		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m4)
 	}
@@ -583,34 +550,6 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		}
 		if loadedS5.headChunkClosed {
 			t.Error("headChunkClosed is true")
-		}
-		for i, cd := range loadedS5.chunkDescs {
-			if i < 3 {
-				// Evicted chunks.
-				if cd.chunkFirstTime == model.Earliest {
-					t.Errorf("chunkDesc[%d]: chunkLastTime not set", i)
-				}
-				continue
-			}
-			if cd.chunkFirstTime != cd.c.firstTime() {
-				t.Errorf(
-					"chunkDesc[%d]: chunkFirstTime not consistent with chunk, want %d, got %d",
-					i, cd.c.firstTime(), cd.chunkFirstTime,
-				)
-			}
-			if i == len(loadedS5.chunkDescs)-1 {
-				// Head chunk.
-				if cd.chunkLastTime != model.Earliest {
-					t.Error("want chunkLastTime in head chunk to be unset")
-				}
-				continue
-			}
-			if cd.chunkLastTime != cd.c.newIterator().lastTimestamp() {
-				t.Errorf(
-					"chunkDesc[%d]: chunkLastTime not consistent with chunk, want %d, got %d",
-					i, cd.c.newIterator().lastTimestamp(), cd.chunkLastTime,
-				)
-			}
 		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m5)

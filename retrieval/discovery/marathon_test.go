@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval/discovery/marathon"
@@ -27,8 +26,8 @@ import (
 
 var marathonValidLabel = map[string]string{"prometheus": "yes"}
 
-func newTestDiscovery(client marathon.AppListClient) (chan []*config.TargetGroup, *MarathonDiscovery) {
-	ch := make(chan []*config.TargetGroup)
+func newTestDiscovery(client marathon.AppListClient) (chan config.TargetGroup, *MarathonDiscovery) {
+	ch := make(chan config.TargetGroup)
 	md := NewMarathonDiscovery(&config.MarathonSDConfig{
 		Servers: []string{"http://localhost:8080"},
 	})
@@ -61,9 +60,7 @@ func TestMarathonSDEmptyList(t *testing.T) {
 	go func() {
 		select {
 		case tg := <-ch:
-			if len(tg) > 0 {
-				t.Fatalf("Got group: %v", tg)
-			}
+			t.Fatalf("Got group: %v", tg)
 		default:
 		}
 	}()
@@ -99,9 +96,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 	})
 	go func() {
 		select {
-		case tgs := <-ch:
-			tg := tgs[0]
-
+		case tg := <-ch:
 			if tg.Source != "test-service" {
 				t.Fatalf("Wrong target group name: %s", tg.Source)
 			}
@@ -126,10 +121,9 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	})
-
 	go func() {
-		up1 := (<-ch)[0]
-		up2 := (<-ch)[0]
+		up1 := <-ch
+		up2 := <-ch
 		if up2.Source != up1.Source {
 			t.Fatalf("Source is different: %s", up2)
 			if len(up2.Targets) > 0 {
@@ -151,25 +145,33 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	}
 }
 
+func TestMarathonSDSources(t *testing.T) {
+	_, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
+		return marathonTestAppList(marathonValidLabel, 1), nil
+	})
+	sources := md.Sources()
+	if len(sources) != 1 {
+		t.Fatalf("Wrong number of sources: %s", sources)
+	}
+}
+
 func TestMarathonSDRunAndStop(t *testing.T) {
 	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	})
 	md.refreshInterval = time.Millisecond * 10
-	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 
 	go func() {
 		select {
 		case <-ch:
-			cancel()
+			close(done)
 		case <-time.After(md.refreshInterval * 3):
-			cancel()
+			close(done)
 			t.Fatalf("Update took too long.")
 		}
 	}()
-
-	md.Run(ctx, ch)
-
+	md.Run(ch, done)
 	select {
 	case <-ch:
 	default:

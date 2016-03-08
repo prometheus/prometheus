@@ -22,7 +22,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/samuel/go-zookeeper/zk"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -58,7 +57,7 @@ type ServersetDiscovery struct {
 	conn       *zk.Conn
 	mu         sync.RWMutex
 	sources    map[string]*config.TargetGroup
-	sdUpdates  *chan<- []*config.TargetGroup
+	sdUpdates  *chan<- config.TargetGroup
 	updates    chan treecache.ZookeeperTreeCacheEvent
 	treeCaches []*treecache.ZookeeperTreeCache
 }
@@ -84,6 +83,17 @@ func NewServersetDiscovery(conf *config.ServersetSDConfig) *ServersetDiscovery {
 	return sd
 }
 
+// Sources implements the TargetProvider interface.
+func (sd *ServersetDiscovery) Sources() []string {
+	sd.mu.RLock()
+	defer sd.mu.RUnlock()
+	srcs := []string{}
+	for t := range sd.sources {
+		srcs = append(srcs, t)
+	}
+	return srcs
+}
+
 func (sd *ServersetDiscovery) processUpdates() {
 	defer sd.conn.Close()
 	for event := range sd.updates {
@@ -104,7 +114,7 @@ func (sd *ServersetDiscovery) processUpdates() {
 		}
 		sd.mu.Unlock()
 		if sd.sdUpdates != nil {
-			*sd.sdUpdates <- []*config.TargetGroup{tg}
+			*sd.sdUpdates <- *tg
 		}
 	}
 
@@ -114,22 +124,17 @@ func (sd *ServersetDiscovery) processUpdates() {
 }
 
 // Run implements the TargetProvider interface.
-func (sd *ServersetDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (sd *ServersetDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	// Send on everything we have seen so far.
 	sd.mu.Lock()
-
-	all := make([]*config.TargetGroup, 0, len(sd.sources))
-
-	for _, tg := range sd.sources {
-		all = append(all, tg)
+	for _, targetGroup := range sd.sources {
+		ch <- *targetGroup
 	}
-	ch <- all
-
 	// Tell processUpdates to send future updates.
 	sd.sdUpdates = &ch
 	sd.mu.Unlock()
 
-	<-ctx.Done()
+	<-done
 	for _, tc := range sd.treeCaches {
 		tc.Stop()
 	}
@@ -137,8 +142,8 @@ func (sd *ServersetDiscovery) Run(ctx context.Context, ch chan<- []*config.Targe
 
 func parseServersetMember(data []byte, path string) (*model.LabelSet, error) {
 	member := serversetMember{}
-
-	if err := json.Unmarshal(data, &member); err != nil {
+	err := json.Unmarshal(data, &member)
+	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling serverset member %q: %s", path, err)
 	}
 

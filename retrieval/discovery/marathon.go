@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"github.com/prometheus/common/log"
-	"golang.org/x/net/context"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval/discovery/marathon"
 )
@@ -42,13 +40,25 @@ func NewMarathonDiscovery(conf *config.MarathonSDConfig) *MarathonDiscovery {
 	}
 }
 
+// Sources implements the TargetProvider interface.
+func (md *MarathonDiscovery) Sources() []string {
+	var sources []string
+	tgroups, err := md.fetchTargetGroups()
+	if err == nil {
+		for source := range tgroups {
+			sources = append(sources, source)
+		}
+	}
+	return sources
+}
+
 // Run implements the TargetProvider interface.
-func (md *MarathonDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (md *MarathonDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-done:
 			return
 		case <-time.After(md.refreshInterval):
 			err := md.updateServices(ch)
@@ -59,24 +69,23 @@ func (md *MarathonDiscovery) Run(ctx context.Context, ch chan<- []*config.Target
 	}
 }
 
-func (md *MarathonDiscovery) updateServices(ch chan<- []*config.TargetGroup) error {
+func (md *MarathonDiscovery) updateServices(ch chan<- config.TargetGroup) error {
 	targetMap, err := md.fetchTargetGroups()
 	if err != nil {
 		return err
 	}
 
-	all := make([]*config.TargetGroup, 0, len(targetMap))
+	// Update services which are still present
 	for _, tg := range targetMap {
-		all = append(all, tg)
+		ch <- *tg
 	}
-	ch <- all
 
 	// Remove services which did disappear
 	for source := range md.lastRefresh {
 		_, ok := targetMap[source]
 		if !ok {
 			log.Debugf("Removing group for %s", source)
-			ch <- []*config.TargetGroup{{Source: source}}
+			ch <- config.TargetGroup{Source: source}
 		}
 	}
 

@@ -301,17 +301,41 @@ type deltaEncodedChunkIterator struct {
 // length implements chunkIterator.
 func (it *deltaEncodedChunkIterator) length() int { return it.len }
 
-// valueAtOrBeforeTime implements chunkIterator.
-func (it *deltaEncodedChunkIterator) valueAtOrBeforeTime(t model.Time) model.SamplePair {
+// valueAtTime implements chunkIterator.
+func (it *deltaEncodedChunkIterator) valueAtTime(t model.Time) []model.SamplePair {
 	i := sort.Search(it.len, func(i int) bool {
-		return it.timestampAtIndex(i).After(t)
+		return !it.timestampAtIndex(i).Before(t)
 	})
-	if i == 0 {
-		return model.SamplePair{Timestamp: model.Earliest}
-	}
-	return model.SamplePair{
-		Timestamp: it.timestampAtIndex(i - 1),
-		Value:     it.sampleValueAtIndex(i - 1),
+
+	switch i {
+	case 0:
+		return []model.SamplePair{{
+			Timestamp: it.timestampAtIndex(0),
+			Value:     it.sampleValueAtIndex(0),
+		}}
+	case it.len:
+		return []model.SamplePair{{
+			Timestamp: it.timestampAtIndex(it.len - 1),
+			Value:     it.sampleValueAtIndex(it.len - 1),
+		}}
+	default:
+		ts := it.timestampAtIndex(i)
+		if ts.Equal(t) {
+			return []model.SamplePair{{
+				Timestamp: ts,
+				Value:     it.sampleValueAtIndex(i),
+			}}
+		}
+		return []model.SamplePair{
+			{
+				Timestamp: it.timestampAtIndex(i - 1),
+				Value:     it.sampleValueAtIndex(i - 1),
+			},
+			{
+				Timestamp: ts,
+				Value:     it.sampleValueAtIndex(i),
+			},
+		}
 	}
 }
 
