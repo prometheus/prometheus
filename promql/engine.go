@@ -688,15 +688,16 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 func (ev *evaluator) vectorSelector(node *VectorSelector) vector {
 	vec := vector{}
 	for fp, it := range node.iterators {
-		sampleCandidates := it.ValueAtTime(ev.Timestamp.Add(-node.Offset))
-		samplePair := chooseClosestBefore(sampleCandidates, ev.Timestamp.Add(-node.Offset))
-		if samplePair != nil {
-			vec = append(vec, &sample{
-				Metric:    node.metrics[fp],
-				Value:     samplePair.Value,
-				Timestamp: ev.Timestamp,
-			})
+		refTime := ev.Timestamp.Add(-node.Offset)
+		samplePair := it.ValueAtOrBeforeTime(refTime)
+		if samplePair.Timestamp.Before(refTime.Add(-StalenessDelta)) {
+			continue // Sample outside of staleness policy window.
 		}
+		vec = append(vec, &sample{
+			Metric:    node.metrics[fp],
+			Value:     samplePair.Value,
+			Timestamp: ev.Timestamp,
+		})
 	}
 	return vec
 }
@@ -1167,23 +1168,6 @@ func shouldDropMetricName(op itemType) bool {
 // StalenessDelta determines the time since the last sample after which a time
 // series is considered stale.
 var StalenessDelta = 5 * time.Minute
-
-// chooseClosestBefore chooses the closest sample of a list of samples
-// before or at a given target time.
-func chooseClosestBefore(samples []model.SamplePair, timestamp model.Time) *model.SamplePair {
-	for _, candidate := range samples {
-		delta := candidate.Timestamp.Sub(timestamp)
-		// Samples before or at target time.
-		if delta <= 0 {
-			// Ignore samples outside of staleness policy window.
-			if -delta > StalenessDelta {
-				continue
-			}
-			return &candidate
-		}
-	}
-	return nil
-}
 
 // A queryGate controls the maximum number of concurrently running and waiting queries.
 type queryGate struct {

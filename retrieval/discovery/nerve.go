@@ -21,6 +21,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/samuel/go-zookeeper/zk"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/treecache"
@@ -47,7 +48,7 @@ type NerveDiscovery struct {
 	conn       *zk.Conn
 	mu         sync.RWMutex
 	sources    map[string]*config.TargetGroup
-	sdUpdates  *chan<- config.TargetGroup
+	sdUpdates  *chan<- []*config.TargetGroup
 	updates    chan treecache.ZookeeperTreeCacheEvent
 	treeCaches []*treecache.ZookeeperTreeCache
 }
@@ -73,17 +74,6 @@ func NewNerveDiscovery(conf *config.NerveSDConfig) *NerveDiscovery {
 	return sd
 }
 
-// Sources implements the TargetProvider interface.
-func (sd *NerveDiscovery) Sources() []string {
-	sd.mu.RLock()
-	defer sd.mu.RUnlock()
-	srcs := []string{}
-	for t := range sd.sources {
-		srcs = append(srcs, t)
-	}
-	return srcs
-}
-
 func (sd *NerveDiscovery) processUpdates() {
 	defer sd.conn.Close()
 	for event := range sd.updates {
@@ -104,7 +94,7 @@ func (sd *NerveDiscovery) processUpdates() {
 		}
 		sd.mu.Unlock()
 		if sd.sdUpdates != nil {
-			*sd.sdUpdates <- *tg
+			*sd.sdUpdates <- []*config.TargetGroup{tg}
 		}
 	}
 
@@ -114,17 +104,22 @@ func (sd *NerveDiscovery) processUpdates() {
 }
 
 // Run implements the TargetProvider interface.
-func (sd *NerveDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
+func (sd *NerveDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	// Send on everything we have seen so far.
 	sd.mu.Lock()
-	for _, targetGroup := range sd.sources {
-		ch <- *targetGroup
+
+	all := make([]*config.TargetGroup, 0, len(sd.sources))
+
+	for _, tg := range sd.sources {
+		all = append(all, tg)
 	}
+	ch <- all
+
 	// Tell processUpdates to send future updates.
 	sd.sdUpdates = &ch
 	sd.mu.Unlock()
 
-	<-done
+	<-ctx.Done()
 	for _, tc := range sd.treeCaches {
 		tc.Stop()
 	}
