@@ -276,13 +276,13 @@ func funcDoubleSmooth(ev *evaluator, args Expressions) model.Value {
 // index, smooth factor, trend factor, season factor, smooth/trend/season/raw data, period
 func tripleSVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 {
 
-	log.Println("s", i)
+	// log.Println("s", i)
 	if !math.IsNaN(s[i]) {
-		log.Println("cached", "s", "val", s[i])
+		// log.Println("cached", "s", "val", s[i])
 		return s[i]
 	}
 
-	x := sf * (d[i] / (tripleCVal(i-p, sf, tf, cf, s, b, c, d, p)))
+	x := sf * (d[i] / tripleCVal(i-p, sf, tf, cf, s, b, c, d, p))
 	y := (1 - sf) * (tripleSVal(i-1, sf, tf, cf, s, b, c, d, p) + tripleBVal(i-1, sf, tf, cf, s, b, c, d, p))
 
 	// cache value
@@ -293,15 +293,15 @@ func tripleSVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 
 
 // index, smooth factor, trend factor, season factor, smooth/trend/season/raw data, period
 func tripleBVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 {
-	log.Println("b", i)
+	// log.Println("b", i)
 
 	if !math.IsNaN(b[i]) {
-		log.Println("cached", "b", "val", b[i])
+		// log.Println("cached", "b", "val", b[i])
 		return b[i]
 	}
 
 	x := tf * (tripleSVal(i, sf, tf, cf, s, b, c, d, p) - tripleSVal(i-1, sf, tf, cf, s, b, c, d, p))
-	y := (1 - tf) * (tripleBVal(i-1, sf, tf, cf, s, b, c, d, p))
+	y := (1 - tf) * tripleBVal(i-1, sf, tf, cf, s, b, c, d, p)
 
 	// cache value
 	b[i] = x + y
@@ -310,14 +310,14 @@ func tripleBVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 
 
 // index, smooth factor, trend factor, season factor, smooth/trend/season/raw data, period
 func tripleCVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 {
-	log.Println("c", i)
+	// log.Println("c", i)
 
 	if i < 0 {
 		i += p
 	}
 
 	if !math.IsNaN(c[i]) {
-		log.Println("cached", "c", "val", c[i])
+		// log.Println("cached", "c", "val", c[i])
 		return c[i]
 	}
 
@@ -404,16 +404,11 @@ func funcTripleSmooth(ev *evaluator, args Expressions) model.Value {
 			b[0] = tripleCalcBZero(d, p)
 			tripleInitCVals(d, c, p)
 			s[0] = d[0]
-			s[1] = d[1]
-			c[0] = 0
+			c[0] = 1
 
 			// run the smoothing operation
 			for i := 2; i < len(d); i++ {
 				log.Println(i)
-				// log.Println("s", s)
-				// log.Println("b", b)
-				// log.Println("c", c)
-				// log.Println("d", d)
 				s[i] = tripleSVal(i, sf, tf, cf, s, b, c, d, p)
 			}
 
