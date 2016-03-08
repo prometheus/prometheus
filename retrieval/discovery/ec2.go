@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/defaults"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/prometheus/prometheus/config"
@@ -46,7 +47,6 @@ const (
 // the TargetProvider interface.
 type EC2Discovery struct {
 	aws      *aws.Config
-	done     chan struct{}
 	interval time.Duration
 	port     int
 }
@@ -62,14 +62,13 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 			Region:      &conf.Region,
 			Credentials: creds,
 		},
-		done:     make(chan struct{}),
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 	}
 }
 
 // Run implements the TargetProvider interface.
-func (ed *EC2Discovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
+func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	defer close(ch)
 
 	ticker := time.NewTicker(ed.interval)
@@ -80,7 +79,7 @@ func (ed *EC2Discovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) 
 	if err != nil {
 		log.Error(err)
 	} else {
-		ch <- *tg
+		ch <- []*config.TargetGroup{tg}
 	}
 
 	for {
@@ -90,17 +89,12 @@ func (ed *EC2Discovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) 
 			if err != nil {
 				log.Error(err)
 			} else {
-				ch <- *tg
+				ch <- []*config.TargetGroup{tg}
 			}
-		case <-done:
+		case <-ctx.Done():
 			return
 		}
 	}
-}
-
-// Sources implements the TargetProvider interface.
-func (ed *EC2Discovery) Sources() []string {
-	return []string{*ed.aws.Region}
 }
 
 func (ed *EC2Discovery) refresh() (*config.TargetGroup, error) {

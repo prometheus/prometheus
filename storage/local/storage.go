@@ -347,26 +347,6 @@ func (s *memorySeriesStorage) WaitForIndexing() {
 	s.persistence.waitForIndexing()
 }
 
-// NewIterator implements Storage.
-func (s *memorySeriesStorage) NewIterator(fp model.Fingerprint) SeriesIterator {
-	s.fpLocker.Lock(fp)
-	defer s.fpLocker.Unlock(fp)
-
-	series, ok := s.fpToSeries.get(fp)
-	if !ok {
-		// Oops, no series for fp found. That happens if, after
-		// preloading is done, the whole series is identified as old
-		// enough for purging and hence purged for good. As there is no
-		// data left to iterate over, return an iterator that will never
-		// return any values.
-		return nopSeriesIterator{}
-	}
-	return &boundedIterator{
-		it:    series.newIterator(),
-		start: model.Now().Add(-s.dropAfter),
-	}
-}
-
 // LastSampleForFingerprint implements Storage.
 func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) *model.SamplePair {
 	s.fpLocker.Lock(fp)
@@ -386,12 +366,12 @@ type boundedIterator struct {
 	start model.Time
 }
 
-// ValueAtTime implements the SeriesIterator interface.
-func (bit *boundedIterator) ValueAtTime(ts model.Time) []model.SamplePair {
+// ValueAtOrBeforeTime implements the SeriesIterator interface.
+func (bit *boundedIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePair {
 	if ts < bit.start {
-		return []model.SamplePair{}
+		return model.SamplePair{Timestamp: model.Earliest}
 	}
-	return bit.it.ValueAtTime(ts)
+	return bit.it.ValueAtOrBeforeTime(ts)
 }
 
 // BoundaryValues implements the SeriesIterator interface.
@@ -571,6 +551,8 @@ func (s *memorySeriesStorage) DropMetricsForFingerprints(fps ...model.Fingerprin
 	}
 }
 
+// ErrOutOfOrderSample is returned if a sample has a timestamp before the latest
+// timestamp in the series it is appended to.
 var ErrOutOfOrderSample = fmt.Errorf("sample timestamp out of order")
 
 // Append implements Storage.
@@ -707,8 +689,7 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 func (s *memorySeriesStorage) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	stalenessDelta time.Duration,
-) ([]*chunkDesc, error) {
+) ([]*chunkDesc, SeriesIterator, error) {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
@@ -716,20 +697,20 @@ func (s *memorySeriesStorage) preloadChunksForRange(
 	if !ok {
 		has, first, last, err := s.persistence.hasArchivedMetric(fp)
 		if err != nil {
-			return nil, err
+			return nil, nopIter, err
 		}
 		if !has {
 			s.invalidPreloadRequestsCount.Inc()
-			return nil, nil
+			return nil, nopIter, nil
 		}
-		if from.Add(-stalenessDelta).Before(last) && through.Add(stalenessDelta).After(first) {
+		if from.Before(last) && through.After(first) {
 			metric, err := s.persistence.archivedMetric(fp)
 			if err != nil {
-				return nil, err
+				return nil, nopIter, err
 			}
 			series = s.getOrCreateSeries(fp, metric)
 		} else {
-			return nil, nil
+			return nil, nopIter, nil
 		}
 	}
 	return series.preloadChunksForRange(from, through, fp, s)
