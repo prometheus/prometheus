@@ -287,6 +287,13 @@ func tripleSVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 
 
 	// cache value
 	s[i] = x + y
+	if math.IsNaN(s[i]) {
+		log.Println(i)
+		log.Println("s", s)
+		log.Println("c", c)
+		log.Println("b", b)
+		panic("s")
+	}
 
 	return s[i]
 }
@@ -305,6 +312,13 @@ func tripleBVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 
 
 	// cache value
 	b[i] = x + y
+	if math.IsNaN(b[i]) {
+		log.Println(i)
+		log.Println("d", d[i])
+		log.Println("c", c[i])
+		log.Println("b", b[i])
+		panic("b")
+	}
 	return b[i]
 }
 
@@ -326,11 +340,19 @@ func tripleCVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 
 
 	// cache value
 	c[i] = x + y
+	if math.IsNaN(c[i]) {
+		log.Println(i)
+		log.Println("d", d[i])
+		log.Println("c", c[i])
+		log.Println("b", b[i])
+		panic("c")
+	}
 	return c[i]
 }
 
 // raw, period
 func tripleCalcBZero(d []float64, p int) float64 {
+
 	x := 0.0
 	for i := 0; i < p; i++ {
 
@@ -348,6 +370,9 @@ func tripleInitCVals(d, c []float64, p int) {
 			sum += d[(p*(j-1))+i]
 		}
 		a[j] = sum / float64(p)
+		if a[j] == 0 {
+			a[j] = 0.1
+		}
 	}
 
 	for i := 1; i < p; i++ {
@@ -357,6 +382,10 @@ func tripleInitCVals(d, c []float64, p int) {
 		}
 
 		c[i] = (1 / float64(freq)) * sum
+		if c[i] == 0 {
+			c[i] = 0.1
+		}
+		// log.Println(c[i])
 	}
 }
 
@@ -377,8 +406,13 @@ func funcTripleSmooth(ev *evaluator, args Expressions) model.Value {
 	for _, samples := range mat {
 		l := len(samples.Values)
 
-		// can't do the smoothing operation with less than two points
-		if l > 2 {
+		// can't do the smoothing operation with less than 6 points
+		if l > 6 {
+
+			// resize p so that it fits within the dataset, this should only happen at the end of the series
+			if p > (l / 2) {
+				p = (l / 2) - 2
+			}
 
 			// resize scratch values
 			if l != len(s) {
@@ -398,6 +432,9 @@ func funcTripleSmooth(ev *evaluator, args Expressions) model.Value {
 			// fill in the d values with the raw values from the input
 			for i, v := range samples.Values {
 				d[i] = float64(v.Value)
+				if d[i] == 0 {
+					d[i] = 0.00000001 // TODO: (eliothedmena) need to figure out how to handle 0 values, as this will cause NaN down the line
+				}
 			}
 
 			// set init values
@@ -408,7 +445,6 @@ func funcTripleSmooth(ev *evaluator, args Expressions) model.Value {
 
 			// run the smoothing operation
 			for i := 2; i < len(d); i++ {
-				log.Println(i)
 				s[i] = tripleSVal(i, sf, tf, cf, s, b, c, d, p)
 			}
 
