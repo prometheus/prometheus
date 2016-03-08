@@ -26,6 +26,6 @@ func (b *Benchmark) Run() {
 	b.b.ReportAllocs()
 	b.b.ResetTimer()
 	for i := 0; i < b.b.N; i++ {
-		b.t.Run()
+		b.t.RunAsBenchmark(b.b)
 	}
 }
