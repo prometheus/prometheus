@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -134,11 +135,11 @@ func (tm *TargetManager) reload() {
 }
 
 // Pools returns the targets currently being scraped bucketed by their job name.
-func (tm *TargetManager) Pools() map[string][]*Target {
+func (tm *TargetManager) Pools() map[string]Targets {
 	tm.mtx.RLock()
 	defer tm.mtx.RUnlock()
 
-	pools := map[string][]*Target{}
+	pools := map[string]Targets{}
 
 	// TODO(fabxc): this is just a hack to maintain compatibility for now.
 	for _, ps := range tm.targetSets {
@@ -150,6 +151,9 @@ func (tm *TargetManager) Pools() map[string][]*Target {
 		}
 
 		ps.scrapePool.mtx.RUnlock()
+	}
+	for _, targets := range pools {
+		sort.Sort(targets)
 	}
 	return pools
 }
