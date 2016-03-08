@@ -242,10 +242,8 @@ func parse(args []string) error {
 	if err := parsePrometheusURL(); err != nil {
 		return err
 	}
+
 	if err := parseInfluxdbURL(); err != nil {
-		return err
-	}
-	if err := validateAlertmanagerURL(); err != nil {
 		return err
 	}
 
@@ -268,7 +266,7 @@ func parsePrometheusURL() error {
 	}
 
 	if ok := govalidator.IsURL(cfg.prometheusURL); !ok {
-		return fmt.Errorf("invalid Prometheus URL: %s", cfg.prometheusURL)
+		return fmt.Errorf("Invalid Prometheus URL: %s", cfg.prometheusURL)
 	}
 
 	promURL, err := url.Parse(cfg.prometheusURL)
@@ -291,7 +289,7 @@ func parseInfluxdbURL() error {
 	}
 
 	if ok := govalidator.IsURL(cfg.influxdbURL); !ok {
-		return fmt.Errorf("invalid InfluxDB URL: %s", cfg.influxdbURL)
+		return fmt.Errorf("Invalid InfluxDB URL: %s", cfg.influxdbURL)
 	}
 
 	url, err := url.Parse(cfg.influxdbURL)
@@ -300,23 +298,6 @@ func parseInfluxdbURL() error {
 	}
 
 	cfg.remote.InfluxdbURL = url
-	return nil
-}
-
-func validateAlertmanagerURL() error {
-	if cfg.notifier.AlertmanagerURL == "" {
-		return nil
-	}
-	if ok := govalidator.IsURL(cfg.notifier.AlertmanagerURL); !ok {
-		return fmt.Errorf("invalid Alertmanager URL: %s", cfg.notifier.AlertmanagerURL)
-	}
-	url, err := url.Parse(cfg.notifier.AlertmanagerURL)
-	if err != nil {
-		return err
-	}
-	if url.Scheme == "" {
-		return fmt.Errorf("missing scheme in Alertmanager URL: %s", cfg.notifier.AlertmanagerURL)
-	}
 	return nil
 }
 

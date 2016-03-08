@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -92,7 +91,7 @@ func NewDNSDiscovery(conf *config.DNSSDConfig) *DNSDiscovery {
 }
 
 // Run implements the TargetProvider interface.
-func (dd *DNSDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (dd *DNSDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
 	defer close(ch)
 
 	ticker := time.NewTicker(dd.interval)
@@ -105,15 +104,23 @@ func (dd *DNSDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 		select {
 		case <-ticker.C:
 			dd.refreshAll(ch)
-		case <-ctx.Done():
+		case <-done:
 			return
 		}
 	}
 }
 
-func (dd *DNSDiscovery) refreshAll(ch chan<- []*config.TargetGroup) {
-	var wg sync.WaitGroup
+// Sources implements the TargetProvider interface.
+func (dd *DNSDiscovery) Sources() []string {
+	var srcs []string
+	for _, name := range dd.names {
+		srcs = append(srcs, name)
+	}
+	return srcs
+}
 
+func (dd *DNSDiscovery) refreshAll(ch chan<- config.TargetGroup) {
+	var wg sync.WaitGroup
 	wg.Add(len(dd.names))
 	for _, name := range dd.names {
 		go func(n string) {
@@ -123,11 +130,10 @@ func (dd *DNSDiscovery) refreshAll(ch chan<- []*config.TargetGroup) {
 			wg.Done()
 		}(name)
 	}
-
 	wg.Wait()
 }
 
-func (dd *DNSDiscovery) refresh(name string, ch chan<- []*config.TargetGroup) error {
+func (dd *DNSDiscovery) refresh(name string, ch chan<- config.TargetGroup) error {
 	response, err := lookupAll(name, dd.qtype)
 	dnsSDLookupsCount.Inc()
 	if err != nil {
@@ -135,8 +141,7 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- []*config.TargetGroup) er
 		return err
 	}
 
-	tg := &config.TargetGroup{}
-
+	var tg config.TargetGroup
 	for _, record := range response.Answer {
 		target := model.LabelValue("")
 		switch addr := record.(type) {
@@ -161,7 +166,7 @@ func (dd *DNSDiscovery) refresh(name string, ch chan<- []*config.TargetGroup) er
 	}
 
 	tg.Source = name
-	ch <- []*config.TargetGroup{tg}
+	ch <- tg
 
 	return nil
 }

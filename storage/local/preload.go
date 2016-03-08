@@ -13,7 +13,11 @@
 
 package local
 
-import "github.com/prometheus/common/model"
+import (
+	"time"
+
+	"github.com/prometheus/common/model"
+)
 
 // memorySeriesPreloader is a Preloader for the memorySeriesStorage.
 type memorySeriesPreloader struct {
@@ -25,14 +29,73 @@ type memorySeriesPreloader struct {
 func (p *memorySeriesPreloader) PreloadRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-) (SeriesIterator, error) {
-	cds, iter, err := p.storage.preloadChunksForRange(fp, from, through)
+	stalenessDelta time.Duration,
+) error {
+	cds, err := p.storage.preloadChunksForRange(fp, from, through, stalenessDelta)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	p.pinnedChunkDescs = append(p.pinnedChunkDescs, cds...)
-	return iter, nil
+	return nil
 }
+
+/*
+// MetricAtTime implements Preloader.
+func (p *memorySeriesPreloader) MetricAtTime(fp model.Fingerprint, t model.Time) error {
+	cds, err := p.storage.preloadChunks(fp, &timeSelector{
+		from:    t,
+		through: t,
+	})
+	if err != nil {
+		return err
+	}
+	p.pinnedChunkDescs = append(p.pinnedChunkDescs, cds...)
+	return nil
+}
+
+// MetricAtInterval implements Preloader.
+func (p *memorySeriesPreloader) MetricAtInterval(fp model.Fingerprint, from, through model.Time, interval time.Duration) error {
+	cds, err := p.storage.preloadChunks(fp, &timeSelector{
+		from:     from,
+		through:  through,
+		interval: interval,
+	})
+	if err != nil {
+		return err
+	}
+	p.pinnedChunkDescs = append(p.pinnedChunkDescs, cds...)
+	return
+}
+
+// MetricRange implements Preloader.
+func (p *memorySeriesPreloader) MetricRange(fp model.Fingerprint, t model.Time, rangeDuration time.Duration) error {
+	cds, err := p.storage.preloadChunks(fp, &timeSelector{
+		from:          t,
+		through:       t,
+		rangeDuration: through.Sub(from),
+	})
+	if err != nil {
+		return err
+	}
+	p.pinnedChunkDescs = append(p.pinnedChunkDescs, cds...)
+	return
+}
+
+// MetricRangeAtInterval implements Preloader.
+func (p *memorySeriesPreloader) MetricRangeAtInterval(fp model.Fingerprint, from, through model.Time, interval, rangeDuration time.Duration) error {
+	cds, err := p.storage.preloadChunks(fp, &timeSelector{
+		from:          from,
+		through:       through,
+		interval:      interval,
+		rangeDuration: rangeDuration,
+	})
+	if err != nil {
+		return err
+	}
+	p.pinnedChunkDescs = append(p.pinnedChunkDescs, cds...)
+	return
+}
+*/
 
 // Close implements Preloader.
 func (p *memorySeriesPreloader) Close() {
