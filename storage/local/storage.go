@@ -129,12 +129,13 @@ const (
 type syncStrategy func() bool
 
 type memorySeriesStorage struct {
-	// numChunksToPersist has to be aligned for atomic operations.
-	numChunksToPersist int64         // The number of chunks waiting for persistence.
-	maxChunksToPersist int           // If numChunksToPersist reaches this threshold, ingestion will be throttled.
-	rushed             bool          // Whether the storage is in rushed mode.
-	rushedMtx          sync.Mutex    // Protects entering and exiting rushed mode.
-	throttled          chan struct{} // This chan is sent to whenever NeedsThrottling() returns true (for logging).
+	// archiveHighWatermark and numChunksToPersist have to be aligned for atomic operations.
+	archiveHighWatermark model.Time    // No archived series has samples after this time.
+	numChunksToPersist   int64         // The number of chunks waiting for persistence.
+	maxChunksToPersist   int           // If numChunksToPersist reaches this threshold, ingestion will be throttled.
+	rushed               bool          // Whether the storage is in rushed mode.
+	rushedMtx            sync.Mutex    // Protects entering and exiting rushed mode.
+	throttled            chan struct{} // This chan is sent to whenever NeedsThrottling() returns true (for logging).
 
 	fpLocker   *fingerprintLocker
 	fpToSeries *seriesMap
@@ -201,6 +202,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 		dropAfter:                  o.PersistenceRetentionPeriod,
 		checkpointInterval:         o.CheckpointInterval,
 		checkpointDirtySeriesLimit: o.CheckpointDirtySeriesLimit,
+		archiveHighWatermark:       model.Now().Add(-headChunkTimeout),
 
 		maxChunksToPersist: o.MaxChunksToPersist,
 
@@ -368,15 +370,20 @@ func (s *memorySeriesStorage) WaitForIndexing() {
 }
 
 // LastSampleForFingerprint implements Storage.
-func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp model.Fingerprint) model.SamplePair {
+func (s *memorySeriesStorage) LastSampleForFingerprint(fp model.Fingerprint) model.Sample {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
 	series, ok := s.fpToSeries.get(fp)
 	if !ok {
-		return ZeroSamplePair
+		return ZeroSample
 	}
-	return series.lastSamplePair()
+	sp := series.lastSamplePair()
+	return model.Sample{
+		Metric:    series.metric,
+		Value:     sp.Value,
+		Timestamp: sp.Timestamp,
+	}
 }
 
 // boundedIterator wraps a SeriesIterator and does not allow fetching
@@ -439,7 +446,10 @@ func (s *memorySeriesStorage) fingerprintsForLabelPairs(pairs ...model.LabelPair
 }
 
 // MetricsForLabelMatchers implements Storage.
-func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelMatcher) map[model.Fingerprint]metric.Metric {
+func (s *memorySeriesStorage) MetricsForLabelMatchers(
+	from, through model.Time,
+	matchers ...*metric.LabelMatcher,
+) map[model.Fingerprint]metric.Metric {
 	var (
 		equals  []model.LabelPair
 		filters []*metric.LabelMatcher
@@ -491,9 +501,11 @@ func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelM
 		filters = remaining
 	}
 
-	result := make(map[model.Fingerprint]metric.Metric, len(resFPs))
+	result := map[model.Fingerprint]metric.Metric{}
 	for fp := range resFPs {
-		result[fp] = s.MetricForFingerprint(fp)
+		if metric, ok := s.metricForFingerprint(fp, from, through); ok {
+			result[fp] = metric
+		}
 	}
 	for _, matcher := range filters {
 		for fp, met := range result {
@@ -505,6 +517,58 @@ func (s *memorySeriesStorage) MetricsForLabelMatchers(matchers ...*metric.LabelM
 	return result
 }
 
+// metricForFingerprint returns the metric for the given fingerprint if the
+// corresponding time series has samples between 'from' and 'through'.
+func (s *memorySeriesStorage) metricForFingerprint(
+	fp model.Fingerprint,
+	from, through model.Time,
+) (metric.Metric, bool) {
+	// Lock FP so that no (un-)archiving will happen during lookup.
+	s.fpLocker.Lock(fp)
+	defer s.fpLocker.Unlock(fp)
+
+	watermark := model.Time(atomic.LoadInt64((*int64)(&s.archiveHighWatermark)))
+
+	series, ok := s.fpToSeries.get(fp)
+	if ok {
+		if series.lastTime.Before(from) || series.savedFirstTime.After(through) {
+			return metric.Metric{}, false
+		}
+		// Wrap the returned metric in a copy-on-write (COW) metric here because
+		// the caller might mutate it.
+		return metric.Metric{
+			Metric: series.metric,
+		}, true
+	}
+	// From here on, we are only concerned with archived metrics.
+	// If the high watermark of archived series is before 'from', we are done.
+	if watermark < from {
+		return metric.Metric{}, false
+	}
+	if from.After(model.Earliest) || through.Before(model.Latest) {
+		// The range lookup is relatively cheap, so let's do it first.
+		ok, first, last, err := s.persistence.hasArchivedMetric(fp)
+		if err != nil {
+			log.Errorf("Error retrieving archived time range for fingerprint %v: %v", fp, err)
+			return metric.Metric{}, false
+		}
+		if !ok || first.After(through) || last.Before(from) {
+			return metric.Metric{}, false
+		}
+	}
+
+	met, err := s.persistence.archivedMetric(fp)
+	if err != nil {
+		log.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
+		return metric.Metric{}, false
+	}
+
+	return metric.Metric{
+		Metric: met,
+		Copied: false,
+	}, true
+}
+
 // LabelValuesForLabelName implements Storage.
 func (s *memorySeriesStorage) LabelValuesForLabelName(labelName model.LabelName) model.LabelValues {
 	lvs, err := s.persistence.labelValuesForLabelName(labelName)
@@ -512,30 +576,6 @@ func (s *memorySeriesStorage) LabelValuesForLabelName(labelName model.LabelName)
 		log.Errorf("Error getting label values for label name %q: %v", labelName, err)
 	}
 	return lvs
-}
-
-// MetricForFingerprint implements Storage.
-func (s *memorySeriesStorage) MetricForFingerprint(fp model.Fingerprint) metric.Metric {
-	s.fpLocker.Lock(fp)
-	defer s.fpLocker.Unlock(fp)
-
-	series, ok := s.fpToSeries.get(fp)
-	if ok {
-		// Wrap the returned metric in a copy-on-write (COW) metric here because
-		// the caller might mutate it.
-		return metric.Metric{
-			Metric: series.metric,
-		}
-	}
-	met, err := s.persistence.archivedMetric(fp)
-	if err != nil {
-		log.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
-	}
-
-	return metric.Metric{
-		Metric: met,
-		Copied: false,
-	}
 }
 
 // DropMetric implements Storage.
@@ -1077,8 +1117,9 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 		}
 	}
 
-	// Archive if all chunks are evicted.
-	if iOldestNotEvicted == -1 {
+	// Archive if all chunks are evicted. Also make sure the last sample has
+	// an age of at least headChunkTimeout (which is very likely anyway).
+	if iOldestNotEvicted == -1 && model.Now().Sub(series.lastTime) > headChunkTimeout {
 		s.fpToSeries.del(fp)
 		s.numSeries.Dec()
 		if err := s.persistence.archiveMetric(
@@ -1088,6 +1129,15 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 			return
 		}
 		s.seriesOps.WithLabelValues(archive).Inc()
+		oldWatermark := atomic.LoadInt64((*int64)(&s.archiveHighWatermark))
+		if oldWatermark < int64(series.lastTime) {
+			if !atomic.CompareAndSwapInt64(
+				(*int64)(&s.archiveHighWatermark),
+				oldWatermark, int64(series.lastTime),
+			) {
+				panic("s.archiveHighWatermark modified outside of maintainMemorySeries")
+			}
+		}
 		return
 	}
 	// If we are here, the series is not archived, so check for chunkDesc

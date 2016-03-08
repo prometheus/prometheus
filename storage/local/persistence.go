@@ -1068,6 +1068,9 @@ func (p *persistence) fingerprintsModifiedBefore(beforeTime model.Time) ([]model
 // method is goroutine-safe.
 func (p *persistence) archivedMetric(fp model.Fingerprint) (model.Metric, error) {
 	metric, _, err := p.archivedFingerprintToMetrics.Lookup(fp)
+	if err != nil {
+		p.setDirty(true, err)
+	}
 	return metric, err
 }
 

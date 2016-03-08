@@ -178,7 +178,10 @@ func TestMatches(t *testing.T) {
 	}
 
 	for _, mt := range matcherTests {
-		res := storage.MetricsForLabelMatchers(mt.matchers...)
+		res := storage.MetricsForLabelMatchers(
+			model.Earliest, model.Latest,
+			mt.matchers...,
+		)
 		if len(mt.expected) != len(res) {
 			t.Fatalf("expected %d matches for %q, found %d", len(mt.expected), mt.matchers, len(res))
 		}
@@ -362,7 +365,10 @@ func BenchmarkLabelMatching(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		benchLabelMatchingRes = map[model.Fingerprint]metric.Metric{}
 		for _, mt := range matcherTests {
-			benchLabelMatchingRes = s.MetricsForLabelMatchers(mt...)
+			benchLabelMatchingRes = s.MetricsForLabelMatchers(
+				model.Earliest, model.Latest,
+				mt...,
+			)
 		}
 	}
 	// Stop timer to not count the storage closing.
