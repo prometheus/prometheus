@@ -15,7 +15,6 @@ package discovery
 
 import (
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +23,7 @@ import (
 	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -113,52 +113,24 @@ func NewConsulDiscovery(conf *config.ConsulSDConfig) (*ConsulDiscovery, error) {
 	return cd, nil
 }
 
-// Sources implements the TargetProvider interface.
-func (cd *ConsulDiscovery) Sources() []string {
-	clientConf := *cd.clientConf
-	clientConf.HttpClient = &http.Client{Timeout: 5 * time.Second}
-
-	client, err := consul.NewClient(&clientConf)
-	if err != nil {
-		// NewClient always returns a nil error.
-		panic(fmt.Errorf("discovery.ConsulDiscovery.Sources: %s", err))
-	}
-
-	srvs, _, err := client.Catalog().Services(nil)
-	if err != nil {
-		log.Errorf("Error refreshing service list: %s", err)
-		return nil
-	}
-	cd.mu.Lock()
-	defer cd.mu.Unlock()
-
-	srcs := make([]string, 0, len(srvs))
-	for name := range srvs {
-		if _, ok := cd.scrapedServices[name]; len(cd.scrapedServices) == 0 || ok {
-			srcs = append(srcs, name)
-		}
-	}
-	return srcs
-}
-
 // Run implements the TargetProvider interface.
-func (cd *ConsulDiscovery) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
+func (cd *ConsulDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	defer close(ch)
 	defer cd.stop()
 
 	update := make(chan *consulService, 10)
-	go cd.watchServices(update, done)
+	go cd.watchServices(update, ctx.Done())
 
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
 		case srv := <-update:
 			if srv.removed {
 				close(srv.done)
 
 				// Send clearing update.
-				ch <- config.TargetGroup{Source: srv.name}
+				ch <- []*config.TargetGroup{{Source: srv.name}}
 				break
 			}
 			// Launch watcher for the service.
@@ -244,7 +216,7 @@ func (cd *ConsulDiscovery) watchServices(update chan<- *consulService, done <-ch
 
 // watchService retrieves updates about srv from Consul's service endpoint.
 // On a potential update the resulting target group is sent to ch.
-func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- config.TargetGroup) {
+func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- []*config.TargetGroup) {
 	catalog := cd.client.Catalog()
 	for {
 		nodes, meta, err := catalog.Service(srv.name, "", &consul.QueryOptions{
@@ -288,7 +260,11 @@ func (cd *ConsulDiscovery) watchService(srv *consulService, ch chan<- config.Tar
 		default:
 			// Continue.
 		}
-		ch <- srv.tgroup
+		// TODO(fabxc): do a copy for now to avoid races. The integration
+		// needs needs some general cleanup.
+		tg := srv.tgroup
+		ch <- []*config.TargetGroup{&tg}
+
 		cd.mu.Unlock()
 	}
 }

@@ -47,12 +47,6 @@ const (
 	seriesTempFileSuffix = ".db.tmp"
 	seriesDirNameLen     = 2 // How many bytes of the fingerprint in dir name.
 
-	headsFileName            = "heads.db"
-	headsTempFileName        = "heads.db.tmp"
-	headsFormatVersion       = 2
-	headsFormatLegacyVersion = 1 // Can read, but will never write.
-	headsMagicString         = "PrometheusHeads"
-
 	mappingsFileName      = "mappings.db"
 	mappingsTempFileName  = "mappings.db.tmp"
 	mappingsFormatVersion = 1
@@ -699,186 +693,36 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 // start-up while nothing else is running in storage land. This method is
 // utterly goroutine-unsafe.
 func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist int64, err error) {
-	var chunkDescsTotal int64
 	fingerprintToSeries := make(map[model.Fingerprint]*memorySeries)
 	sm = &seriesMap{m: fingerprintToSeries}
 
 	defer func() {
-		if sm != nil && p.dirty {
+		if p.dirty {
 			log.Warn("Persistence layer appears dirty.")
 			err = p.recoverFromCrash(fingerprintToSeries)
 			if err != nil {
 				sm = nil
 			}
 		}
-		if err == nil {
-			numMemChunkDescs.Add(float64(chunkDescsTotal))
-		}
 	}()
 
-	f, err := os.Open(p.headsFileName())
-	if os.IsNotExist(err) {
+	hs := newHeadsScanner(p.headsFileName())
+	defer hs.close()
+	for hs.scan() {
+		fingerprintToSeries[hs.fp] = hs.series
+	}
+	if os.IsNotExist(hs.err) {
 		return sm, 0, nil
 	}
-	if err != nil {
-		log.Warn("Could not open heads file:", err)
+	if hs.err != nil {
 		p.dirty = true
-		return
+		log.
+			With("file", p.headsFileName()).
+			With("error", hs.err).
+			Error("Error reading heads file.")
+		return sm, 0, hs.err
 	}
-	defer f.Close()
-	r := bufio.NewReaderSize(f, fileBufSize)
-
-	buf := make([]byte, len(headsMagicString))
-	if _, err := io.ReadFull(r, buf); err != nil {
-		log.Warn("Could not read from heads file:", err)
-		p.dirty = true
-		return sm, 0, nil
-	}
-	magic := string(buf)
-	if magic != headsMagicString {
-		log.Warnf(
-			"unexpected magic string, want %q, got %q",
-			headsMagicString, magic,
-		)
-		p.dirty = true
-		return
-	}
-	version, err := binary.ReadVarint(r)
-	if (version != headsFormatVersion && version != headsFormatLegacyVersion) || err != nil {
-		log.Warnf("unknown heads format version, want %d", headsFormatVersion)
-		p.dirty = true
-		return sm, 0, nil
-	}
-	numSeries, err := codable.DecodeUint64(r)
-	if err != nil {
-		log.Warn("Could not decode number of series:", err)
-		p.dirty = true
-		return sm, 0, nil
-	}
-
-	for ; numSeries > 0; numSeries-- {
-		seriesFlags, err := r.ReadByte()
-		if err != nil {
-			log.Warn("Could not read series flags:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		headChunkPersisted := seriesFlags&flagHeadChunkPersisted != 0
-		fp, err := codable.DecodeUint64(r)
-		if err != nil {
-			log.Warn("Could not decode fingerprint:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		var metric codable.Metric
-		if err := metric.UnmarshalFromReader(r); err != nil {
-			log.Warn("Could not decode metric:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		var persistWatermark int64
-		var modTime time.Time
-		if version != headsFormatLegacyVersion {
-			// persistWatermark only present in v2.
-			persistWatermark, err = binary.ReadVarint(r)
-			if err != nil {
-				log.Warn("Could not decode persist watermark:", err)
-				p.dirty = true
-				return sm, chunksToPersist, nil
-			}
-			modTimeNano, err := binary.ReadVarint(r)
-			if err != nil {
-				log.Warn("Could not decode modification time:", err)
-				p.dirty = true
-				return sm, chunksToPersist, nil
-			}
-			if modTimeNano != -1 {
-				modTime = time.Unix(0, modTimeNano)
-			}
-		}
-		chunkDescsOffset, err := binary.ReadVarint(r)
-		if err != nil {
-			log.Warn("Could not decode chunk descriptor offset:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		savedFirstTime, err := binary.ReadVarint(r)
-		if err != nil {
-			log.Warn("Could not decode saved first time:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		numChunkDescs, err := binary.ReadVarint(r)
-		if err != nil {
-			log.Warn("Could not decode number of chunk descriptors:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		chunkDescs := make([]*chunkDesc, numChunkDescs)
-		if version == headsFormatLegacyVersion {
-			if headChunkPersisted {
-				persistWatermark = numChunkDescs
-			} else {
-				persistWatermark = numChunkDescs - 1
-			}
-		}
-
-		for i := int64(0); i < numChunkDescs; i++ {
-			if i < persistWatermark {
-				firstTime, err := binary.ReadVarint(r)
-				if err != nil {
-					log.Warn("Could not decode first time:", err)
-					p.dirty = true
-					return sm, chunksToPersist, nil
-				}
-				lastTime, err := binary.ReadVarint(r)
-				if err != nil {
-					log.Warn("Could not decode last time:", err)
-					p.dirty = true
-					return sm, chunksToPersist, nil
-				}
-				chunkDescs[i] = &chunkDesc{
-					chunkFirstTime: model.Time(firstTime),
-					chunkLastTime:  model.Time(lastTime),
-				}
-				chunkDescsTotal++
-			} else {
-				// Non-persisted chunk.
-				encoding, err := r.ReadByte()
-				if err != nil {
-					log.Warn("Could not decode chunk type:", err)
-					p.dirty = true
-					return sm, chunksToPersist, nil
-				}
-				chunk := newChunkForEncoding(chunkEncoding(encoding))
-				if err := chunk.unmarshal(r); err != nil {
-					log.Warn("Could not decode chunk:", err)
-					p.dirty = true
-					return sm, chunksToPersist, nil
-				}
-				chunkDescs[i] = newChunkDesc(chunk, chunk.firstTime())
-				chunksToPersist++
-			}
-		}
-
-		headChunkClosed := persistWatermark >= numChunkDescs
-		if !headChunkClosed {
-			// Head chunk is not ready for persisting yet.
-			chunksToPersist--
-		}
-
-		fingerprintToSeries[model.Fingerprint(fp)] = &memorySeries{
-			metric:           model.Metric(metric),
-			chunkDescs:       chunkDescs,
-			persistWatermark: int(persistWatermark),
-			modTime:          modTime,
-			chunkDescsOffset: int(chunkDescsOffset),
-			savedFirstTime:   model.Time(savedFirstTime),
-			lastTime:         chunkDescs[len(chunkDescs)-1].lastTime(),
-			headChunkClosed:  headChunkClosed,
-		}
-	}
-	return sm, chunksToPersist, nil
+	return sm, hs.chunksToPersistTotal, nil
 }
 
 // dropAndPersistChunks deletes all chunks from a series file whose last sample
