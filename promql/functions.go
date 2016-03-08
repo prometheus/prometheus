@@ -220,6 +220,7 @@ func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 }
 
 // === doubleSmooth(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
+// algorhythm taken from https://en.wikipedia.org/wiki/Exponential_smoothing
 func funcDoubleSmooth(ev *evaluator, args Expressions) model.Value {
 	mat := ev.evalMatrix(args[0])
 	sf := ev.evalFloat(args[1])
@@ -274,6 +275,7 @@ func funcDoubleSmooth(ev *evaluator, args Expressions) model.Value {
 }
 
 // index, smooth factor, trend factor, season factor, smooth/trend/season/raw data, period
+// algorhythm taken from https://en.wikipedia.org/wiki/Exponential_smoothing
 func tripleSVal(i int, sf, tf, cf float64, s, b, c, d []float64, p int) float64 {
 
 	// log.Println("s", i)
