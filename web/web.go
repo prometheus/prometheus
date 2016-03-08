@@ -92,7 +92,7 @@ type PrometheusStatus struct {
 
 	// A function that returns the current scrape targets pooled
 	// by their job name.
-	TargetPools func() map[string][]*retrieval.Target
+	TargetPools func() map[string]retrieval.Targets
 	// A function that returns all loaded rules.
 	Rules func() []rules.Rule
 

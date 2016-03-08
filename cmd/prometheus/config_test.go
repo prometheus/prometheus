@@ -48,6 +48,18 @@ func TestParse(t *testing.T) {
 			input: []string{"-storage.remote.influxdb-url", "'https://some-url/'"},
 			valid: false,
 		},
+		{
+			input: []string{"-alertmanager.url", ""},
+			valid: true,
+		},
+		{
+			input: []string{"-alertmanager.url", "http://alertmanager.company.com"},
+			valid: true,
+		},
+		{
+			input: []string{"-alertmanager.url", "alertmanager.company.com"},
+			valid: false,
+		},
 	}
 
 	for i, test := range tests {
