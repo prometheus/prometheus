@@ -42,20 +42,3 @@ eval instant at 1d double_smooth(http_requests[1d], 0.3, 0.3)
 	bench := NewBenchmark(b, input)
 	bench.Run()
 }
-
-func TestTriple(t *testing.T) {
-	input := `
-
-load 1m
-    http_requests{path="/foo"}    0+10x1440
-
-eval instant at 1d triple_smooth(http_requests[1d], 0.3, 0.3, 0.1, 40)
-    {path="/foo"} 0
-`
-
-	test, _ := NewTest(t, input)
-	err := test.Run()
-	if err != nil {
-		t.Error(err)
-	}
-}

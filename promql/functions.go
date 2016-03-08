@@ -187,6 +187,13 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 
 // s = computed smoothed values, b = computed trend factors, d = raw
 func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println(i, len(s))
+			panic(r)
+		}
+
+	}()
 
 	// check for the cached value
 	if !math.IsNaN(s[i]) {
@@ -255,6 +262,10 @@ func funcDoubleSmooth(ev *evaluator, args Expressions) model.Value {
 			for i, v := range samples.Values {
 				d[i] = float64(v.Value)
 			}
+
+			// set initial values
+			s[0] = d[0]
+			b[0] = d[1] - d[0]
 
 			// run the smoothing operation
 			for i := 1; i < len(d); i++ {
