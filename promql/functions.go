@@ -231,7 +231,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 	// trend factor
 	tf := ev.evalFloat(args[2])
 
-	// make an ouput vector large enough to hole the entire result
+	// make an ouput vector large enough to hold the entire result
 	resultVector := make(vector, len(mat.value()))
 	resultCount := 0
 
