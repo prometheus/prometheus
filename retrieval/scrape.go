@@ -65,11 +65,21 @@ var (
 		},
 		[]string{interval},
 	)
+	targetReloadIntervalLength = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Namespace:  namespace,
+			Name:       "target_reload_length_seconds",
+			Help:       "Actual interval to reload the scrape pool with a given configuration.",
+			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
+		},
+		[]string{interval},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(targetIntervalLength)
 	prometheus.MustRegister(targetSkippedScrapes)
+	prometheus.MustRegister(targetReloadIntervalLength)
 }
 
 // scrapePool manages scrapes for sets of targets.
@@ -132,6 +142,7 @@ func (sp *scrapePool) stop() {
 // but all scrape loops are restarted with the new scrape configuration.
 // This method returns after all scrape loops that were stopped have fully terminated.
 func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
+	start := time.Now()
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
@@ -168,6 +179,9 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	}
 
 	wg.Wait()
+	targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
+		float64(time.Since(start)) / float64(time.Second),
+	)
 }
 
 // sync takes a list of potentially duplicated targets, deduplicates them, starts
