@@ -67,7 +67,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		sp := h.storage.LastSamplePairForFingerprint(fp)
 		// Discard if sample does not exist or lays before the staleness interval.
-		if sp == nil || sp.Timestamp.Before(minTimestamp) {
+		if sp.Timestamp.Before(minTimestamp) {
 			continue
 		}
 

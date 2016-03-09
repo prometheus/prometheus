@@ -29,7 +29,6 @@ const (
 	ResultAppendTime
 	QueryAnalysisTime
 	GetValueAtTimeTime
-	GetBoundaryValuesTime
 	GetRangeValuesTime
 	ExecQueueTime
 	ViewDiskPreparationTime
@@ -60,8 +59,6 @@ func (s QueryTiming) String() string {
 		return "Query analysis time"
 	case GetValueAtTimeTime:
 		return "GetValueAtTime() time"
-	case GetBoundaryValuesTime:
-		return "GetBoundaryValues() time"
 	case GetRangeValuesTime:
 		return "GetRangeValues() time"
 	case ExecQueueTime:
