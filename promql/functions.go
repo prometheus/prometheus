@@ -281,7 +281,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 		}
 	}
 
-	return resultVector
+	return resultVector[:resultCount]
 }
 
 // === sort(node model.ValVector) Vector ===
