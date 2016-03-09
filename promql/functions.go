@@ -184,7 +184,10 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 	return resultVector
 }
 
-// Calculates the smoothed value at index d[i]
+// Calculate the smoothed value at index i in raw data d.
+// The smoothed value is created by creating two values (x,y) where...
+// x = the current raw data point, weighted by the smoothing factor.
+// y = the last smoothed point + the last trend value weighted by the inverse of the smoothing factor.
 // s = computed smoothed values, b = computed trend factors, d = raw
 func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 
@@ -202,7 +205,8 @@ func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 	return s[i]
 }
 
-// doubleBVal calculates the trend value at index i of raw data d
+// Calculate the trend value at the given index i in raw data d.
+// This is somewhat analogous to the slope of the trend at the given index.
 // s = computed smoothed values, b = computed trend factors, d = raw
 func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 
@@ -256,55 +260,56 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 		l = len(samples.Values)
 
 		// can't do the smoothing operation with less than two points
-		if l > 2 {
+		if l < 2 {
+			continue
+		}
 
-			// resize scratch values
-			if l != len(s) {
-				s = make([]float64, l)
-				b = make([]float64, l)
-				d = make([]float64, l)
-			}
+		// resize scratch values
+		if l != len(s) {
+			s = make([]float64, l)
+			b = make([]float64, l)
+			d = make([]float64, l)
+		}
+
+		// holt-winters is undefined for NaN
+		foundNaN := false
+		// fill in the d values with the raw values from the input
+		for i, v := range samples.Values {
+			d[i] = float64(v.Value)
 
 			// holt-winters is undefined for NaN
-			foundNaN := false
-			// fill in the d values with the raw values from the input
-			for i, v := range samples.Values {
-				d[i] = float64(v.Value)
-
-				// holt-winters is undefined for NaN
-				if math.IsNaN(d[i]) {
-					foundNaN = true
-					break
-				}
+			if math.IsNaN(d[i]) {
+				foundNaN = true
+				break
 			}
-
-			// skip to next because we found a NaN in the raw data set
-			if foundNaN {
-				continue
-			}
-
-			// NaN out scratch values, this use used to check for cached values
-			for i := range b {
-				b[i] = math.NaN()
-				s[i] = math.NaN()
-			}
-
-			// set initial values
-			s[0] = d[0]
-			b[0] = d[1] - d[0]
-
-			// run the smoothing operation
-			for i := 1; i < len(d); i++ {
-				s[i] = doubleSVal(i, sf, tf, s, b, d)
-			}
-
-			samples.Metric.Del(model.MetricNameLabel)
-			resultVector = append(resultVector, &sample{
-				Metric:    samples.Metric,
-				Value:     model.SampleValue(s[len(s)-1]), // the last value in the vector is the smoothed result
-				Timestamp: ev.Timestamp,
-			})
 		}
+
+		// skip to next because we found a NaN in the raw data set
+		if foundNaN {
+			continue
+		}
+
+		// NaN out scratch values, this use used to check for cached values
+		for i := range b {
+			b[i] = math.NaN()
+			s[i] = math.NaN()
+		}
+
+		// set initial values
+		s[0] = d[0]
+		b[0] = d[1] - d[0]
+
+		// run the smoothing operation
+		for i := 1; i < len(d); i++ {
+			s[i] = doubleSVal(i, sf, tf, s, b, d)
+		}
+
+		samples.Metric.Del(model.MetricNameLabel)
+		resultVector = append(resultVector, &sample{
+			Metric:    samples.Metric,
+			Value:     model.SampleValue(s[len(s)-1]), // the last value in the vector is the smoothed result
+			Timestamp: ev.Timestamp,
+		})
 	}
 
 	return resultVector
