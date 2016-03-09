@@ -73,7 +73,7 @@ type Storage interface {
 // methods are not goroutine-safe. A SeriesIterator iterates over a snapshot of
 // a series, i.e. it is safe to continue using a SeriesIterator after or during
 // modifying the corresponding series, but the iterator will represent the state
-// of the series prior the modification.
+// of the series prior to the modification.
 type SeriesIterator interface {
 	// Gets the value that is closest before the given time. In case a value
 	// exists at precisely the given time, that value is returned. If no
@@ -90,11 +90,11 @@ type Preloader interface {
 	PreloadRange(
 		fp model.Fingerprint,
 		from model.Time, through model.Time,
-	) (SeriesIterator, error)
+	) SeriesIterator
 	PreloadInstant(
 		fp model.Fingerprint,
 		timestamp model.Time, stalenessDelta time.Duration,
-	) (SeriesIterator, error)
+	) SeriesIterator
 	// Close unpins any previously requested series data from memory.
 	Close()
 }
