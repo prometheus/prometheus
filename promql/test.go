@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -409,6 +410,30 @@ type clearCmd struct{}
 
 func (cmd clearCmd) String() string {
 	return "clear"
+}
+
+// RunAsBenchmark runs the test in benchmark mode.
+// This will not count any loads or non eval functions.
+func (t *Test) RunAsBenchmark(b *testing.B) error {
+	for _, cmd := range t.cmds {
+
+		switch cmd.(type) {
+		// only time the "eval" command
+		case *evalCmd:
+			err := t.exec(cmd)
+			if err != nil {
+				return err
+			}
+		default:
+			b.StopTimer()
+			err := t.exec(cmd)
+			if err != nil {
+				return err
+			}
+			b.StartTimer()
+		}
+	}
+	return nil
 }
 
 // Run executes the command sequence of the test. Until the maximum error number

@@ -253,6 +253,36 @@ eval_ordered instant at 50m bottomk(3, http_requests{job="api-server",group="pro
 	http_requests{job="api-server", instance="1", group="production"}	200
 	http_requests{job="api-server", instance="2", group="production"}	NaN
 
+# Tests for holt_winters
+clear
+
+# positive trends
+load 10s
+	http_requests{job="api-server", instance="0", group="production"}	0+10x1000 100+30x1000
+	http_requests{job="api-server", instance="1", group="production"}	0+20x1000 200+30x1000
+	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
+	http_requests{job="api-server", instance="1", group="canary"}		0+40x2000
+
+eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 8000
+	{job="api-server", instance="1", group="production"} 16000
+	{job="api-server", instance="0", group="canary"} 24000
+	{job="api-server", instance="1", group="canary"} 32000
+
+# negative trends
+clear
+load 10s
+	http_requests{job="api-server", instance="0", group="production"}	8000-10x1000
+	http_requests{job="api-server", instance="1", group="production"}	0-20x1000
+	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
+	http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
+
+eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 0
+	{job="api-server", instance="1", group="production"} -16000
+	{job="api-server", instance="0", group="canary"} 24000
+	{job="api-server", instance="1", group="canary"} -32000
+
 
 # Tests for sort/sort_desc.
 clear
