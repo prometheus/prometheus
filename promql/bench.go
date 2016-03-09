@@ -11,10 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package promql
 
-// Test is a sequence of read and write commands that are run
 import "testing"
 
 // Benchmark runs a test multiple times as a built in benchmark
@@ -23,7 +21,7 @@ type Benchmark struct {
 	t *Test
 }
 
-// NewBenchmark returns an initilized empty Benchmark
+// NewBenchmark returns an initilized empty Benchmark.
 func NewBenchmark(b *testing.B, input string) *Benchmark {
 	t, err := NewTest(b, input)
 	if err != nil {
