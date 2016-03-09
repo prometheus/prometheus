@@ -250,7 +250,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 	}
 
 	// make an output vector large enough to hole the entire result
-	resultVector := make(vector, 0, len(mat.value()))
+	resultVector := make(vector, 0, len(mat))
 
 	// create scratch values
 	var s, b, d []float64
