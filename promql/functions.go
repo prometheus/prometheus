@@ -184,7 +184,7 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 	return resultVector
 }
 
-// doubleSVal calculates the smoothed value at index i of raw data d
+// Calculates the smoothed value at index d[i]
 // s = computed smoothed values, b = computed trend factors, d = raw
 func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 
@@ -221,7 +221,13 @@ func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 }
 
 // === holt_winters(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
-// algorhythm taken from https://en.wikipedia.org/wiki/Exponential_smoothing
+// Holt-Winters is similar to a weighted moving average, where historical data
+// has exponentially less influence on the current data. Holt-Winter also accounts
+// for trends in data. The smoothing factor (0 < sf < 1) effects how historical data will effect the current
+// data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) effects
+// how trends in historical data will effect the current data. A lower trend factor increases the includence
+// of trends.
+// algorhythm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing"
 func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 	mat := ev.evalMatrix(args[0])
 
@@ -231,7 +237,15 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 	// trend factor
 	tf := ev.evalFloat(args[2])
 
-	// make an ouput vector large enough to hold the entire result
+	// sanity check input
+	if sf <= 0 || sf >= 1 {
+		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 got: %f", sf)
+	}
+	if tf <= 0 || tf >= 1 {
+		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 got: %f", sf)
+	}
+
+	// make an ouput vector large enough to hole the entire result
 	resultVector := make(vector, len(mat.value()))
 	resultCount := 0
 
@@ -252,15 +266,28 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 				d = make([]float64, l)
 			}
 
+			// holt-winters is undefined for NaN
+			foundNaN := false
+			// fill in the d values with the raw values from the input
+			for i, v := range samples.Values {
+				d[i] = float64(v.Value)
+
+				// holt-winters is undefined for NaN
+				if math.IsNaN(d[i]) {
+					foundNaN = true
+					break
+				}
+			}
+
+			// skip to next because we found a NaN in the raw data set
+			if foundNaN {
+				continue
+			}
+
 			// NaN out stratch values, this use used to check for chached values
 			for i := range b {
 				b[i] = math.NaN()
 				s[i] = math.NaN()
-			}
-
-			// fill in the d values with the raw values from the input
-			for i, v := range samples.Values {
-				d[i] = float64(v.Value)
 			}
 
 			// set initial values
