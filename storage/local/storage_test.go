@@ -34,6 +34,7 @@ func TestMatches(t *testing.T) {
 	storage, closer := NewTestStorage(t, 1)
 	defer closer.Close()
 
+	storage.archiveHighWatermark = 90
 	samples := make([]*model.Sample, 100)
 	fingerprints := make(model.Fingerprints, 100)
 
@@ -55,6 +56,20 @@ func TestMatches(t *testing.T) {
 		storage.Append(s)
 	}
 	storage.WaitForIndexing()
+
+	// Archive every tenth metric.
+	for i, fp := range fingerprints {
+		if i%10 != 0 {
+			continue
+		}
+		s, ok := storage.fpToSeries.get(fp)
+		if !ok {
+			t.Fatal("could not retrieve series for fp", fp)
+		}
+		storage.fpLocker.Lock(fp)
+		storage.persistence.archiveMetric(fp, s.metric, s.firstTime(), s.lastTime)
+		storage.fpLocker.Unlock(fp)
+	}
 
 	newMatcher := func(matchType metric.MatchType, name model.LabelName, value model.LabelValue) *metric.LabelMatcher {
 		lm, err := metric.NewLabelMatcher(matchType, name, value)
@@ -197,6 +212,56 @@ func TestMatches(t *testing.T) {
 				t.Errorf("expected fingerprint %s for %q not in result", fp1, mt.matchers)
 			}
 		}
+		// Smoketest for from/through.
+		if len(storage.MetricsForLabelMatchers(
+			model.Earliest, -10000,
+			mt.matchers...,
+		)) > 0 {
+			t.Error("expected no matches with 'through' older than any sample")
+		}
+		if len(storage.MetricsForLabelMatchers(
+			10000, model.Latest,
+			mt.matchers...,
+		)) > 0 {
+			t.Error("expected no matches with 'from' newer than any sample")
+		}
+		// Now the tricky one, cut out something from the middle.
+		var (
+			from    model.Time = 25
+			through model.Time = 75
+		)
+		res = storage.MetricsForLabelMatchers(
+			from, through,
+			mt.matchers...,
+		)
+		expected := model.Fingerprints{}
+		for _, fp := range mt.expected {
+			i := 0
+			for ; fingerprints[i] != fp && i < len(fingerprints); i++ {
+			}
+			if i == len(fingerprints) {
+				t.Fatal("expected fingerprint does not exist")
+			}
+			if !model.Time(i).Before(from) && !model.Time(i).After(through) {
+				expected = append(expected, fp)
+			}
+		}
+		if len(expected) != len(res) {
+			t.Errorf("expected %d range-limited matches for %q, found %d", len(expected), mt.matchers, len(res))
+		}
+		for fp1 := range res {
+			found := false
+			for _, fp2 := range expected {
+				if fp1 == fp2 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected fingerprint %s for %q not in range-limited result", fp1, mt.matchers)
+			}
+		}
+
 	}
 }
 
@@ -1195,12 +1260,19 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 		t.Fatal("archived")
 	}
 
+	// Set archiveHighWatermark to a low value so that we can see it increase.
+	s.archiveHighWatermark = 42
+
 	// This will archive again, but must not drop it completely, despite the
 	// memorySeries being empty.
 	s.maintainMemorySeries(fp, 10000)
 	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("series purged completely")
+	}
+	// archiveHighWatermark must have been set by maintainMemorySeries.
+	if want, got := model.Time(19998), s.archiveHighWatermark; want != got {
+		t.Errorf("want archiveHighWatermark %v, got %v", want, got)
 	}
 }
 

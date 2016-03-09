@@ -520,15 +520,12 @@ func (s *memorySeriesStorage) metricForFingerprint(
 	fp model.Fingerprint,
 	from, through model.Time,
 ) (metric.Metric, bool) {
-	// Lock FP so that no (un-)archiving will happen during lookup.
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
-	watermark := model.Time(atomic.LoadInt64((*int64)(&s.archiveHighWatermark)))
-
 	series, ok := s.fpToSeries.get(fp)
 	if ok {
-		if series.lastTime.Before(from) || series.savedFirstTime.After(through) {
+		if series.lastTime.Before(from) || series.firstTime().After(through) {
 			return metric.Metric{}, false
 		}
 		// Wrap the returned metric in a copy-on-write (COW) metric here because
@@ -539,13 +536,15 @@ func (s *memorySeriesStorage) metricForFingerprint(
 	}
 	// From here on, we are only concerned with archived metrics.
 	// If the high watermark of archived series is before 'from', we are done.
+	watermark := model.Time(atomic.LoadInt64((*int64)(&s.archiveHighWatermark)))
 	if watermark < from {
 		return metric.Metric{}, false
 	}
 	if from.After(model.Earliest) || through.Before(model.Latest) {
-		// The range lookup is relatively cheap, so let's do it first.
-		ok, first, last := s.persistence.hasArchivedMetric(fp)
-		if !ok || first.After(through) || last.Before(from) {
+		// The range lookup is relatively cheap, so let's do it first if
+		// we have a chance the archived metric is not in the range.
+		has, first, last := s.persistence.hasArchivedMetric(fp)
+		if !has || first.After(through) || last.Before(from) {
 			return metric.Metric{}, false
 		}
 	}
@@ -725,14 +724,25 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 }
 
 // getSeriesForRange is a helper method for preloadChunksForRange and preloadChunksForInstant.
+//
+// The caller must have locked the fp.
 func (s *memorySeriesStorage) getSeriesForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
 ) *memorySeries {
 	series, ok := s.fpToSeries.get(fp)
 	if ok {
+		if series.lastTime.Before(from) || series.firstTime().After(through) {
+			return nil
+		}
 		return series
 	}
+
+	watermark := model.Time(atomic.LoadInt64((*int64)(&s.archiveHighWatermark)))
+	if watermark < from {
+		return nil
+	}
+
 	has, first, last := s.persistence.hasArchivedMetric(fp)
 	if !has {
 		s.invalidPreloadRequestsCount.Inc()
