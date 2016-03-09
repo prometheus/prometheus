@@ -960,7 +960,7 @@ var functions = map[string]*Function{
 		Call:       funcHistogramQuantile,
 	},
 	"holt_winters": {
-		Name:       "holt_wintersh",
+		Name:       "holt_winters",
 		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar, model.ValScalar},
 		ReturnType: model.ValVector,
 		Call:       funcHoltWinters,
