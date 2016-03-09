@@ -243,7 +243,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 
 	// sanity check input
 	if sf <= 0 || sf >= 1 {
-		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 got: %f", sf)
+		ev.errorf("invalid smoothing factor. Expected: 0 < tf < 1 got: %f", sf)
 	}
 	if tf <= 0 || tf >= 1 {
 		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 got: %f", sf)
