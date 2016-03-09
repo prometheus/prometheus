@@ -189,8 +189,8 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 
 	// check for the cached valuu
-	if !math.IsNaN(s[i]) {
-		return s[i]
+	if f := s[i]; !math.IsNaN(f) {
+		return f
 	}
 
 	x := sf * d[i]
@@ -199,7 +199,7 @@ func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 	// cache value
 	s[i] = x + y
 
-	return x + y
+	return s[i]
 }
 
 // doubleBVal calculates the trend value at index i of raw data d
@@ -207,8 +207,8 @@ func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 
 	// check for the cached value
-	if !math.IsNaN(b[i]) {
-		return b[i]
+	if f := b[i]; !math.IsNaN(f) {
+		return f
 	}
 
 	x := tf * (doubleSVal(i, sf, tf, s, b, d) - doubleSVal(i-1, sf, tf, s, b, d))
@@ -217,7 +217,7 @@ func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 	// cache value
 	b[i] = x + y
 
-	return x + y
+	return b[i]
 }
 
 // === holt_winters(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
@@ -232,7 +232,8 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 	tf := ev.evalFloat(args[2])
 
 	// make an ouput vector large enough to hole the entire result
-	resultVector := make(vector, 0, len(mat.value()))
+	resultVector := make(vector, len(mat.value()))
+	resultCount := 0
 
 	// create scratch values
 	var s, b, d []float64
@@ -271,11 +272,12 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 			}
 
 			samples.Metric.Del(model.MetricNameLabel)
-			resultVector = append(resultVector, &sample{
+			resultVector[resultCount] = &sample{
 				Metric:    samples.Metric,
 				Value:     model.SampleValue(s[len(s)-1]), // the last value in the vector is the smoothed result
 				Timestamp: ev.Timestamp,
-			})
+			}
+			resultCount++
 		}
 	}
 
