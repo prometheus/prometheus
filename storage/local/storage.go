@@ -736,46 +736,76 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 	return series, nil
 }
 
+// getSeriesForRange is a helper method for preloadChunksForRange and preloadChunksForInstant.
+func (s *memorySeriesStorage) getSeriesForRange(
+	fp model.Fingerprint,
+	from model.Time, through model.Time,
+) *memorySeries {
+	series, ok := s.fpToSeries.get(fp)
+	if ok {
+		return series
+	}
+	has, first, last, err := s.persistence.hasArchivedMetric(fp)
+	if err != nil {
+		log.With("fingerprint", fp).With("error", err).Error("Archive index error while preloading chunks.")
+		return nil
+	}
+	if !has {
+		s.invalidPreloadRequestsCount.Inc()
+		return nil
+	}
+	if last.Before(from) || first.After(through) {
+		return nil
+	}
+	metric, err := s.persistence.archivedMetric(fp)
+	if err != nil {
+		log.With("fingerprint", fp).With("error", err).Error("Archive index error while preloading chunks.")
+		return nil
+	}
+	series, err = s.getOrCreateSeries(fp, metric)
+	if err != nil {
+		// getOrCreateSeries took care of quarantining already.
+		return nil
+	}
+	return series
+}
+
 func (s *memorySeriesStorage) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	lastSampleOnly bool,
 ) ([]*chunkDesc, SeriesIterator) {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
-	series, ok := s.fpToSeries.get(fp)
-	if !ok {
-		has, first, last, err := s.persistence.hasArchivedMetric(fp)
-		if err != nil {
-			log.With("fingerprint", fp).With("error", err).Error("Archive index error while preloading chunks.")
-			return nil, nopIter
-		}
-		if !has {
-			s.invalidPreloadRequestsCount.Inc()
-			return nil, nopIter
-		}
-		if from.Before(last) && through.After(first) {
-			metric, err := s.persistence.archivedMetric(fp)
-			if err != nil {
-				log.With("fingerprint", fp).With("error", err).Error("Archive index error while preloading chunks.")
-				return nil, nopIter
-			}
-			series, err = s.getOrCreateSeries(fp, metric)
-			if err != nil {
-				log.With("fingerprint", fp).With("error", err).Error("Error while retrieving series.")
-				return nil, nopIter
-			}
-		} else {
-			return nil, nopIter
-		}
+	series := s.getSeriesForRange(fp, from, through)
+	if series == nil {
+		return nil, nopIter
 	}
-	cds, it, err := series.preloadChunksForRange(fp, from, through, lastSampleOnly, s)
+	cds, iter, err := series.preloadChunksForRange(fp, from, through, s)
 	if err != nil {
 		s.quarantineSeries(fp, series.metric, err)
 		return nil, nopIter
 	}
-	return cds, it
+	return cds, iter
+}
+
+func (s *memorySeriesStorage) preloadChunksForInstant(
+	fp model.Fingerprint,
+	from model.Time, through model.Time,
+) ([]*chunkDesc, SeriesIterator) {
+	s.fpLocker.Lock(fp)
+	defer s.fpLocker.Unlock(fp)
+
+	series := s.getSeriesForRange(fp, from, through)
+	if series == nil {
+		return nil, nopIter
+	}
+	cds, iter, err := series.preloadChunksForInstant(fp, from, through, s)
+	if err != nil {
+		s.quarantineSeries(fp, series.metric, err)
+		return nil, nopIter
+	}
+	return cds, iter
 }
 
 func (s *memorySeriesStorage) handleEvictList() {
