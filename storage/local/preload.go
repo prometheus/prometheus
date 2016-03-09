@@ -30,9 +30,9 @@ func (p *memorySeriesPreloader) PreloadRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
 ) (SeriesIterator, error) {
-	cds, iter, err := p.storage.preloadChunksForRange(fp, from, through, false)
+	cds, iter, err := p.storage.preloadChunksForRange(fp, from, through)
 	if err != nil {
-		return iter, err
+		return nil, err
 	}
 	p.pinnedChunkDescs = append(p.pinnedChunkDescs, cds...)
 	return iter, nil
@@ -43,7 +43,7 @@ func (p *memorySeriesPreloader) PreloadInstant(
 	fp model.Fingerprint,
 	timestamp model.Time, stalenessDelta time.Duration,
 ) (SeriesIterator, error) {
-	cds, iter, err := p.storage.preloadChunksForRange(fp, timestamp.Add(-stalenessDelta), timestamp, true)
+	cds, iter, err := p.storage.preloadChunksForInstant(fp, timestamp.Add(-stalenessDelta), timestamp)
 	if err != nil {
 		return nil, err
 	}
