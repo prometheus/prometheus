@@ -188,7 +188,7 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 // s = computed smoothed values, b = computed trend factors, d = raw
 func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 
-	// check for the cached valuu
+	// check for the cached value
 	if f := s[i]; !math.IsNaN(f) {
 		return f
 	}
