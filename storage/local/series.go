@@ -383,30 +383,40 @@ func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc) SeriesIterator
 	}
 }
 
+// preloadChunksForInstant preloads chunks for the latest value in the given
+// range. If the last sample saved in the memorySeries itself is the latest
+// value in the given range, it will in fact preload zero chunks and just take
+// that value.
+func (s *memorySeries) preloadChunksForInstant(
+	fp model.Fingerprint,
+	from model.Time, through model.Time,
+	mss *memorySeriesStorage,
+) ([]*chunkDesc, SeriesIterator, error) {
+	// If we have a lastSamplePair in the series, and thas last samplePair
+	// is in the interval, just take it in a singleSampleSeriesIterator. No
+	// need to pin or load anything.
+	lastSample := s.lastSamplePair()
+	if !through.Before(lastSample.Timestamp) &&
+		!from.After(lastSample.Timestamp) &&
+		lastSample != ZeroSamplePair {
+		iter := &boundedIterator{
+			it:    &singleSampleSeriesIterator{samplePair: lastSample},
+			start: model.Now().Add(-mss.dropAfter),
+		}
+		return nil, iter, nil
+	}
+	// If we are here, we are out of luck and have to delegate to the more
+	// expensive method.
+	return s.preloadChunksForRange(fp, from, through, mss)
+}
+
 // preloadChunksForRange loads chunks for the given range from the persistence.
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	lastSampleOnly bool,
 	mss *memorySeriesStorage,
 ) ([]*chunkDesc, SeriesIterator, error) {
-	// If we have to preload for only one sample, and we have a
-	// lastSamplePair in the series, and thas last samplePair is in the
-	// interval, just take it in a singleSampleSeriesIterator. No need to
-	// pin or load anything.
-	if lastSampleOnly {
-		lastSample := s.lastSamplePair()
-		if !through.Before(lastSample.Timestamp) &&
-			!from.After(lastSample.Timestamp) &&
-			lastSample != ZeroSamplePair {
-			iter := &boundedIterator{
-				it:    &singleSampleSeriesIterator{samplePair: lastSample},
-				start: model.Now().Add(-mss.dropAfter),
-			}
-			return nil, iter, nil
-		}
-	}
 	firstChunkDescTime := model.Latest
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()

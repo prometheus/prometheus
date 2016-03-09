@@ -677,35 +677,58 @@ func (s *memorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 	return series
 }
 
+func (s *memorySeriesStorage) getSeriesForRange(
+	fp model.Fingerprint,
+	from model.Time, through model.Time,
+) (*memorySeries, error) {
+	series, ok := s.fpToSeries.get(fp)
+	if ok {
+		return series, nil
+	}
+	has, first, last, err := s.persistence.hasArchivedMetric(fp)
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		s.invalidPreloadRequestsCount.Inc()
+		return nil, nil
+	}
+	if last.Before(from) || first.After(through) {
+		return nil, nil
+	}
+	metric, err := s.persistence.archivedMetric(fp)
+	if err != nil {
+		return nil, err
+	}
+	return s.getOrCreateSeries(fp, metric), nil
+}
+
 func (s *memorySeriesStorage) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	lastSampleOnly bool,
 ) ([]*chunkDesc, SeriesIterator, error) {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
-	series, ok := s.fpToSeries.get(fp)
-	if !ok {
-		has, first, last, err := s.persistence.hasArchivedMetric(fp)
-		if err != nil {
-			return nil, nopIter, err
-		}
-		if !has {
-			s.invalidPreloadRequestsCount.Inc()
-			return nil, nopIter, nil
-		}
-		if from.Before(last) && through.After(first) {
-			metric, err := s.persistence.archivedMetric(fp)
-			if err != nil {
-				return nil, nopIter, err
-			}
-			series = s.getOrCreateSeries(fp, metric)
-		} else {
-			return nil, nopIter, nil
-		}
+	series, err := s.getSeriesForRange(fp, from, through)
+	if err != nil || series == nil {
+		return nil, nopIter, err
 	}
-	return series.preloadChunksForRange(fp, from, through, lastSampleOnly, s)
+	return series.preloadChunksForRange(fp, from, through, s)
+}
+
+func (s *memorySeriesStorage) preloadChunksForInstant(
+	fp model.Fingerprint,
+	from model.Time, through model.Time,
+) ([]*chunkDesc, SeriesIterator, error) {
+	s.fpLocker.Lock(fp)
+	defer s.fpLocker.Unlock(fp)
+
+	series, err := s.getSeriesForRange(fp, from, through)
+	if err != nil || series == nil {
+		return nil, nopIter, err
+	}
+	return series.preloadChunksForInstant(fp, from, through, s)
 }
 
 func (s *memorySeriesStorage) handleEvictList() {
