@@ -107,6 +107,8 @@ func (hs *headsScanner) scan() bool {
 		firstTime        int64
 		lastTime         int64
 		encoding         byte
+		ch               chunk
+		lastTimeHead     model.Time
 	)
 	if seriesFlags, hs.err = hs.r.ReadByte(); hs.err != nil {
 		return false
@@ -174,11 +176,13 @@ func (hs *headsScanner) scan() bool {
 			if encoding, hs.err = hs.r.ReadByte(); hs.err != nil {
 				return false
 			}
-			chunk := newChunkForEncoding(chunkEncoding(encoding))
-			if hs.err = chunk.unmarshal(hs.r); hs.err != nil {
+			if ch, hs.err = newChunkForEncoding(chunkEncoding(encoding)); hs.err != nil {
 				return false
 			}
-			cd := newChunkDesc(chunk, chunk.firstTime())
+			if hs.err = ch.unmarshal(hs.r); hs.err != nil {
+				return false
+			}
+			cd := newChunkDesc(ch, ch.firstTime())
 			if i < numChunkDescs-1 {
 				// This is NOT the head chunk. So it's a chunk
 				// to be persisted, and we need to populate lastTime.
@@ -189,6 +193,10 @@ func (hs *headsScanner) scan() bool {
 		}
 	}
 
+	if lastTimeHead, hs.err = chunkDescs[len(chunkDescs)-1].lastTime(); hs.err != nil {
+		return false
+	}
+
 	hs.series = &memorySeries{
 		metric:           model.Metric(metric),
 		chunkDescs:       chunkDescs,
@@ -196,7 +204,7 @@ func (hs *headsScanner) scan() bool {
 		modTime:          modTime,
 		chunkDescsOffset: int(chunkDescsOffset),
 		savedFirstTime:   model.Time(savedFirstTime),
-		lastTime:         chunkDescs[len(chunkDescs)-1].lastTime(),
+		lastTime:         lastTimeHead,
 		headChunkClosed:  headChunkClosed,
 	}
 	hs.seriesCurrent++

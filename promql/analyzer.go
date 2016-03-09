@@ -146,21 +146,13 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			iter, err := p.PreloadRange(fp, start.Add(-rangeDuration), end)
-			if err != nil {
-				return nil, err
-			}
-			itersForDuration[fp] = iter
+			itersForDuration[fp] = p.PreloadRange(fp, start.Add(-rangeDuration), end)
 		}
 		for fp := range pt.instants {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			iter, err := p.PreloadInstant(fp, start, StalenessDelta)
-			if err != nil {
-				return nil, err
-			}
-			itersForDuration[fp] = iter
+			itersForDuration[fp] = p.PreloadInstant(fp, start, StalenessDelta)
 		}
 	}
 

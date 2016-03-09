@@ -575,15 +575,6 @@ func (ev *evaluator) evalMatrix(e Expr) matrix {
 	return mat
 }
 
-// evalMatrixBounds attempts to evaluate e to matrix boundaries and errors otherwise.
-func (ev *evaluator) evalMatrixBounds(e Expr) matrix {
-	ms, ok := e.(*MatrixSelector)
-	if !ok {
-		ev.errorf("matrix bounds can only be evaluated for matrix selectors, got %T", e)
-	}
-	return ev.matrixSelectorBounds(ms)
-}
-
 // evalString attempts to evaluate e to a string value and errors otherwise.
 func (ev *evaluator) evalString(e Expr) *model.String {
 	val := ev.eval(e)
@@ -727,29 +718,6 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) matrix {
 			Values: samplePairs,
 		}
 		sampleStreams = append(sampleStreams, sampleStream)
-	}
-	return matrix(sampleStreams)
-}
-
-// matrixSelectorBounds evaluates the boundaries of a *MatrixSelector.
-func (ev *evaluator) matrixSelectorBounds(node *MatrixSelector) matrix {
-	interval := metric.Interval{
-		OldestInclusive: ev.Timestamp.Add(-node.Range - node.Offset),
-		NewestInclusive: ev.Timestamp.Add(-node.Offset),
-	}
-
-	sampleStreams := make([]*sampleStream, 0, len(node.iterators))
-	for fp, it := range node.iterators {
-		samplePairs := it.BoundaryValues(interval)
-		if len(samplePairs) == 0 {
-			continue
-		}
-
-		ss := &sampleStream{
-			Metric: node.metrics[fp],
-			Values: samplePairs,
-		}
-		sampleStreams = append(sampleStreams, ss)
 	}
 	return matrix(sampleStreams)
 }

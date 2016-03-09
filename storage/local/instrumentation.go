@@ -60,6 +60,9 @@ const (
 	requestedPurge     = "purge_on_request"
 	memoryMaintenance  = "maintenance_in_memory"
 	archiveMaintenance = "maintenance_in_archive"
+	completedQurantine = "quarantine_completed"
+	droppedQuarantine  = "quarantine_dropped"
+	failedQuarantine   = "quarantine_failed"
 
 	// Op-types for chunkOps.
 	createAndPin    = "create" // A chunkDesc creation with refCount=1.
