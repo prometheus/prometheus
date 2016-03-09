@@ -548,7 +548,7 @@ func linearRegression(samples []model.SamplePair, interceptTime model.Time) (slo
 
 	slope = covXY / varX
 	intercept = sumY/n - slope*sumX/n
-	return
+	return slope, intercept
 }
 
 // === deriv(node model.ValMatrix) Vector ===
