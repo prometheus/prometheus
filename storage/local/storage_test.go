@@ -489,12 +489,12 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps2))
 	}
 
-	_, it := s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest, false)
+	_, it := s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
 
-	_, it = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest, false)
+	_, it = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != N {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
@@ -516,12 +516,12 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps3))
 	}
 
-	_, it = s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest, false)
+	_, it = s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
 
-	_, it = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest, false)
+	_, it = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
@@ -740,7 +740,7 @@ func testValueAtOrBeforeTime(t *testing.T, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
 
 	// #1 Exactly on a sample.
 	for i, expected := range samples {
@@ -814,7 +814,7 @@ func benchmarkValueAtOrBeforeTime(b *testing.B, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
 
 	b.ResetTimer()
 
@@ -892,7 +892,7 @@ func testRangeValues(t *testing.T, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
 
 	// #1 Zero length interval at sample.
 	for i, expected := range samples {
@@ -1044,7 +1044,7 @@ func benchmarkRangeValues(b *testing.B, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
 
 	b.ResetTimer()
 
@@ -1090,7 +1090,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	// Drop ~half of the chunks.
 	s.maintainMemorySeries(fp, 10000)
-	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
 	actual := it.RangeValues(metric.Interval{
 		OldestInclusive: 0,
 		NewestInclusive: 100000,
@@ -1108,7 +1108,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	// Drop everything.
 	s.maintainMemorySeries(fp, 100000)
-	_, it = s.preloadChunksForRange(fp, model.Earliest, model.Latest, false)
+	_, it = s.preloadChunksForRange(fp, model.Earliest, model.Latest)
 	actual = it.RangeValues(metric.Interval{
 		OldestInclusive: 0,
 		NewestInclusive: 100000,
