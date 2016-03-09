@@ -5,7 +5,7 @@
 //
 // http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, software
+// Unless required by applicable law or agreed to in writing, softwar
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
@@ -15,7 +15,7 @@ package promql
 
 import "testing"
 
-// Benchmark runs a test multiple times as a built in benchmark
+// A Benchmark holds context for running a unit test as a benchmark.
 type Benchmark struct {
 	b *testing.B
 	t *Test
@@ -33,7 +33,7 @@ func NewBenchmark(b *testing.B, input string) *Benchmark {
 	}
 }
 
-// Run the benchmark a bunch of times
+// Run the benchmark.
 func (b *Benchmark) Run() {
 	b.b.ReportAllocs()
 	b.b.ResetTimer()
