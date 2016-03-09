@@ -203,7 +203,7 @@ func doubleSVal(i int, sf, tf float64, s, b, d []float64) float64 {
 }
 
 // doubleBVal calculates the trend value at index i of raw data d
-// s = computed smoothed values, b = coumputed trend factors, d = raw
+// s = computed smoothed values, b = computed trend factors, d = raw
 func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 
 	// check for the cached value
@@ -225,9 +225,9 @@ func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 // has exponentially less influence on the current data. Holt-Winter also accounts
 // for trends in data. The smoothing factor (0 < sf < 1) effects how historical data will effect the current
 // data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) effects
-// how trends in historical data will effect the current data. A lower trend factor increases the includence
+// how trends in historical data will effect the current data. A lower trend factor increases the influence
 // of trends.
-// algorhythm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing"
+// algorithm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing"
 func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 	mat := ev.evalMatrix(args[0])
 
@@ -245,9 +245,8 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 got: %f", sf)
 	}
 
-	// make an ouput vector large enough to hole the entire result
-	resultVector := make(vector, len(mat.value()))
-	resultCount := 0
+	// make an output vector large enough to hole the entire result
+	resultVector := make(vector, 0, len(mat.value()))
 
 	// create scratch values
 	var s, b, d []float64
@@ -284,7 +283,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 				continue
 			}
 
-			// NaN out stratch values, this use used to check for chached values
+			// NaN out scratch values, this use used to check for cached values
 			for i := range b {
 				b[i] = math.NaN()
 				s[i] = math.NaN()
@@ -300,16 +299,15 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 			}
 
 			samples.Metric.Del(model.MetricNameLabel)
-			resultVector[resultCount] = &sample{
+			resultVector = append(resultVector, &sample{
 				Metric:    samples.Metric,
 				Value:     model.SampleValue(s[len(s)-1]), // the last value in the vector is the smoothed result
 				Timestamp: ev.Timestamp,
-			}
-			resultCount++
+			})
 		}
 	}
 
-	return resultVector[:resultCount]
+	return resultVector
 }
 
 // === sort(node model.ValVector) Vector ===
