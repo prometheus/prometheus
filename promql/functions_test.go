@@ -46,7 +46,6 @@ eval instant at 1w holt_winters(http_requests[1w], 0.3, 0.3)
 
 func BenchmarkDoubleSmooth1Day1Min(b *testing.B) {
 	input := `
-
 clear
 load 1m
     http_requests{path="/foo"}    0+10x1440
