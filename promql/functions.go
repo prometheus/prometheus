@@ -15,7 +15,6 @@ package promql
 
 import (
 	"container/heap"
-	"log"
 	"math"
 	"regexp"
 	"sort"
@@ -224,13 +223,6 @@ func doubleBVal(i int, sf, tf float64, s, b, d []float64) float64 {
 // === holt_winters(node model.ValVector, smoothingFactor model.ValScalar, trendFactor model.ValScalar) Vector ===
 // algorhythm taken from https://en.wikipedia.org/wiki/Exponential_smoothing
 func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Println("here")
-			panic(r)
-		}
-
-	}()
 	mat := ev.evalMatrix(args[0])
 
 	// smoothing factor
