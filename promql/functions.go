@@ -238,8 +238,9 @@ func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
 	// create scratch values
 	var s, b, d []float64
 
+	var l int
 	for _, samples := range mat {
-		l := len(samples.Values)
+		l = len(samples.Values)
 
 		// can't do the smoothing operation with less than two points
 		if l > 2 {
