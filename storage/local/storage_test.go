@@ -471,11 +471,7 @@ func TestDropMetrics(t *testing.T) {
 	s.maintainMemorySeries(fpToBeArchived, 0)
 	s.fpLocker.Lock(fpToBeArchived)
 	s.fpToSeries.del(fpToBeArchived)
-	if err := s.persistence.archiveMetric(
-		fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond),
-	); err != nil {
-		t.Error(err)
-	}
+	s.persistence.archiveMetric(fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond))
 	s.fpLocker.Unlock(fpToBeArchived)
 
 	fps := s.fingerprintsForLabelPairs(model.LabelPair{Name: model.MetricNameLabel, Value: "test"})
@@ -582,11 +578,7 @@ func TestQuarantineMetric(t *testing.T) {
 	s.maintainMemorySeries(fpToBeArchived, 0)
 	s.fpLocker.Lock(fpToBeArchived)
 	s.fpToSeries.del(fpToBeArchived)
-	if err := s.persistence.archiveMetric(
-		fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond),
-	); err != nil {
-		t.Error(err)
-	}
+	s.persistence.archiveMetric(fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond))
 	s.fpLocker.Unlock(fpToBeArchived)
 
 	// Corrupt the series file for m3.
@@ -1144,36 +1136,22 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.persistence.archiveMetric(
-		fp, series.metric, series.firstTime(), lastTime,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	archived, _, _, err := s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
+	archived, _, _ := s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
 	}
 
 	// Drop ~half of the chunks of an archived series.
 	s.maintainArchivedSeries(fp, 10000)
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("archived series purged although only half of the chunks dropped")
 	}
 
 	// Drop everything.
 	s.maintainArchivedSeries(fp, 100000)
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if archived {
 		t.Fatal("archived series not dropped")
 	}
@@ -1199,16 +1177,8 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.persistence.archiveMetric(
-		fp, series.metric, series.firstTime(), lastTime,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
 	}
@@ -1220,10 +1190,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if !ok {
 		t.Fatal("could not find series")
 	}
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if archived {
 		t.Fatal("archived")
 	}
@@ -1231,10 +1198,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	// This will archive again, but must not drop it completely, despite the
 	// memorySeries being empty.
 	s.maintainMemorySeries(fp, 10000)
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("series purged completely")
 	}

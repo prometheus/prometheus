@@ -425,10 +425,7 @@ func (s *memorySeriesStorage) fingerprintsForLabelPairs(pairs ...model.LabelPair
 	var result map[model.Fingerprint]struct{}
 	for _, pair := range pairs {
 		intersection := map[model.Fingerprint]struct{}{}
-		fps, err := s.persistence.fingerprintsForLabelPair(pair)
-		if err != nil {
-			log.Error("Error getting fingerprints for label pair: ", err)
-		}
+		fps := s.persistence.fingerprintsForLabelPair(pair)
 		if len(fps) == 0 {
 			return nil
 		}
@@ -547,19 +544,14 @@ func (s *memorySeriesStorage) metricForFingerprint(
 	}
 	if from.After(model.Earliest) || through.Before(model.Latest) {
 		// The range lookup is relatively cheap, so let's do it first.
-		ok, first, last, err := s.persistence.hasArchivedMetric(fp)
-		if err != nil {
-			log.Errorf("Error retrieving archived time range for fingerprint %v: %v", fp, err)
-			return metric.Metric{}, false
-		}
+		ok, first, last := s.persistence.hasArchivedMetric(fp)
 		if !ok || first.After(through) || last.Before(from) {
 			return metric.Metric{}, false
 		}
 	}
 
-	met, err := s.persistence.archivedMetric(fp)
-	if err != nil {
-		log.Errorf("Error retrieving archived metric for fingerprint %v: %v", fp, err)
+	met, _ := s.persistence.archivedMetric(fp) // Ignoring error, there is nothing we can do.
+	if met == nil {
 		return metric.Metric{}, false
 	}
 
@@ -571,11 +563,7 @@ func (s *memorySeriesStorage) metricForFingerprint(
 
 // LabelValuesForLabelName implements Storage.
 func (s *memorySeriesStorage) LabelValuesForLabelName(labelName model.LabelName) model.LabelValues {
-	lvs, err := s.persistence.labelValuesForLabelName(labelName)
-	if err != nil {
-		log.Errorf("Error getting label values for label name %q: %v", labelName, err)
-	}
-	return lvs
+	return s.persistence.labelValuesForLabelName(labelName)
 }
 
 // DropMetric implements Storage.
@@ -603,7 +591,7 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) error {
 		s.fpLocker.Unlock(fp)
 	}() // Func wrapper because fp might change below.
 	if err != nil {
-		s.persistence.setDirty(true, fmt.Errorf("error while mapping fingerprint %v: %s", rawFP, err))
+		s.persistence.setDirty(fmt.Errorf("error while mapping fingerprint %v: %s", rawFP, err))
 		return err
 	}
 	if fp != rawFP {
@@ -745,11 +733,7 @@ func (s *memorySeriesStorage) getSeriesForRange(
 	if ok {
 		return series
 	}
-	has, first, last, err := s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		log.With("fingerprint", fp).With("error", err).Error("Archive index error while preloading chunks.")
-		return nil
-	}
+	has, first, last := s.persistence.hasArchivedMetric(fp)
 	if !has {
 		s.invalidPreloadRequestsCount.Inc()
 		return nil
@@ -759,7 +743,7 @@ func (s *memorySeriesStorage) getSeriesForRange(
 	}
 	metric, err := s.persistence.archivedMetric(fp)
 	if err != nil {
-		log.With("fingerprint", fp).With("error", err).Error("Archive index error while preloading chunks.")
+		// Error already logged, storage declared dirty by archivedMetric.
 		return nil
 	}
 	series, err = s.getOrCreateSeries(fp, metric)
@@ -1152,12 +1136,7 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 	if iOldestNotEvicted == -1 && model.Now().Sub(series.lastTime) > headChunkTimeout {
 		s.fpToSeries.del(fp)
 		s.numSeries.Dec()
-		if err := s.persistence.archiveMetric(
-			fp, series.metric, series.firstTime(), series.lastTime,
-		); err != nil {
-			log.Errorf("Error archiving metric %v: %v", series.metric, err)
-			return
-		}
+		s.persistence.archiveMetric(fp, series.metric, series.firstTime(), series.lastTime)
 		s.seriesOps.WithLabelValues(archive).Inc()
 		oldWatermark := atomic.LoadInt64((*int64)(&s.archiveHighWatermark))
 		if oldWatermark < int64(series.lastTime) {
@@ -1278,11 +1257,7 @@ func (s *memorySeriesStorage) maintainArchivedSeries(fp model.Fingerprint, befor
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
-	has, firstTime, lastTime, err := s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		log.Error("Error looking up archived time range: ", err)
-		return
-	}
+	has, firstTime, lastTime := s.persistence.hasArchivedMetric(fp)
 	if !has || !firstTime.Before(beforeTime) {
 		// Oldest sample not old enough, or metric purged or unarchived in the meantime.
 		return
@@ -1295,10 +1270,7 @@ func (s *memorySeriesStorage) maintainArchivedSeries(fp model.Fingerprint, befor
 		log.Error("Error dropping persisted chunks: ", err)
 	}
 	if allDropped {
-		if err := s.persistence.purgeArchivedMetric(fp); err != nil {
-			log.Errorf("Error purging archived metric for fingerprint %v: %v", fp, err)
-			return
-		}
+		s.persistence.purgeArchivedMetric(fp) // Ignoring error. Nothing we can do.
 		s.seriesOps.WithLabelValues(archivePurge).Inc()
 		return
 	}
@@ -1487,13 +1459,7 @@ func (s *memorySeriesStorage) purgeSeries(fp model.Fingerprint, m model.Metric, 
 		s.incNumChunksToPersist(-numChunksNotYetPersisted)
 
 	} else {
-		if err := s.persistence.purgeArchivedMetric(fp); err != nil {
-			log.
-				With("fingerprint", fp).
-				With("metric", m).
-				With("error", err).
-				Error("Error purging metric from archive.")
-		}
+		s.persistence.purgeArchivedMetric(fp) // Ignoring error. There is nothing we can do.
 	}
 	if m != nil {
 		// If we know a metric now, unindex it in any case.
