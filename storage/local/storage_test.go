@@ -749,7 +749,7 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 
 	for m := range s.fpToSeries.iter() {
 		s.fpLocker.Lock(m.fp)
-
+		defer s.fpLocker.Unlock(m.fp) // TODO remove, see below
 		var values []model.SamplePair
 		for _, cd := range m.series.chunkDescs {
 			if cd.isEvicted() {
@@ -772,7 +772,7 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 				t.Errorf("%d. Got %v; want %v", i, v.Value, samples[i].Value)
 			}
 		}
-		s.fpLocker.Unlock(m.fp)
+		//s.fpLocker.Unlock(m.fp)
 	}
 	log.Info("test done, closing")
 }
@@ -783,6 +783,10 @@ func TestChunkType0(t *testing.T) {
 
 func TestChunkType1(t *testing.T) {
 	testChunk(t, 1)
+}
+
+func TestChunkType2(t *testing.T) {
+	testChunk(t, 2)
 }
 
 func testValueAtOrBeforeTime(t *testing.T, encoding chunkEncoding) {
@@ -857,6 +861,10 @@ func TestValueAtTimeChunkType0(t *testing.T) {
 
 func TestValueAtTimeChunkType1(t *testing.T) {
 	testValueAtOrBeforeTime(t, 1)
+}
+
+func TestValueAtTimeChunkType2(t *testing.T) {
+	testValueAtOrBeforeTime(t, 2)
 }
 
 func benchmarkValueAtOrBeforeTime(b *testing.B, encoding chunkEncoding) {
@@ -935,6 +943,10 @@ func BenchmarkValueAtOrBeforeTimeChunkType0(b *testing.B) {
 
 func BenchmarkValueAtTimeChunkType1(b *testing.B) {
 	benchmarkValueAtOrBeforeTime(b, 1)
+}
+
+func BenchmarkValueAtTimeChunkType2(b *testing.B) {
+	benchmarkValueAtOrBeforeTime(b, 2)
 }
 
 func testRangeValues(t *testing.T, encoding chunkEncoding) {
@@ -1089,6 +1101,10 @@ func TestRangeValuesChunkType1(t *testing.T) {
 	testRangeValues(t, 1)
 }
 
+func TestRangeValuesChunkType2(t *testing.T) {
+	testRangeValues(t, 2)
+}
+
 func benchmarkRangeValues(b *testing.B, encoding chunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
@@ -1131,6 +1147,10 @@ func BenchmarkRangeValuesChunkType0(b *testing.B) {
 
 func BenchmarkRangeValuesChunkType1(b *testing.B) {
 	benchmarkRangeValues(b, 1)
+}
+
+func BenchmarkRangeValuesChunkType2(b *testing.B) {
+	benchmarkRangeValues(b, 2)
 }
 
 func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
@@ -1284,6 +1304,10 @@ func TestEvictAndPurgeSeriesChunkType1(t *testing.T) {
 	testEvictAndPurgeSeries(t, 1)
 }
 
+func TestEvictAndPurgeSeriesChunkType2(t *testing.T) {
+	testEvictAndPurgeSeries(t, 2)
+}
+
 func testEvictAndLoadChunkDescs(t *testing.T, encoding chunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
@@ -1418,6 +1442,10 @@ func TestFuzzChunkType1(t *testing.T) {
 	testFuzz(t, 1)
 }
 
+func TestFuzzChunkType2(t *testing.T) {
+	testFuzz(t, 2)
+}
+
 // benchmarkFuzz is the benchmark version of testFuzz. The storage options are
 // set such that evictions, checkpoints, and purging will happen concurrently,
 // too. This benchmark will have a very long runtime (up to minutes). You can
@@ -1476,6 +1504,10 @@ func BenchmarkFuzzChunkType0(b *testing.B) {
 
 func BenchmarkFuzzChunkType1(b *testing.B) {
 	benchmarkFuzz(b, 1)
+}
+
+func BenchmarkFuzzChunkType2(b *testing.B) {
+	benchmarkFuzz(b, 2)
 }
 
 func createRandomSamples(metricName string, minLen int) model.Samples {
@@ -1633,15 +1665,15 @@ func verifyStorage(t testing.TB, s *memorySeriesStorage, samples model.Samples, 
 		it := p.PreloadRange(fp, sample.Timestamp, sample.Timestamp)
 		found := it.ValueAtOrBeforeTime(sample.Timestamp)
 		if found.Timestamp == model.Earliest {
-			t.Errorf("Sample %#v: Expected sample not found.", sample)
+			t.Errorf("Sample #%d %#v: Expected sample not found.", i, sample)
 			result = false
 			p.Close()
 			continue
 		}
 		if sample.Value != found.Value || sample.Timestamp != found.Timestamp {
 			t.Errorf(
-				"Value (or timestamp) mismatch, want %f (at time %v), got %f (at time %v).",
-				sample.Value, sample.Timestamp, found.Value, found.Timestamp,
+				"Sample #%d %#v: Value (or timestamp) mismatch, want %f (at time %v), got %f (at time %v).",
+				i, sample, sample.Value, sample.Timestamp, found.Value, found.Timestamp,
 			)
 			result = false
 		}
