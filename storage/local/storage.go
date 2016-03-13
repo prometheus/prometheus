@@ -159,15 +159,15 @@ type memorySeriesStorage struct {
 	quarantineRequests                    chan quarantineRequest
 	quarantineStopping, quarantineStopped chan struct{}
 
-	persistErrors               prometheus.Counter
-	numSeries                   prometheus.Gauge
-	seriesOps                   *prometheus.CounterVec
-	ingestedSamplesCount        prometheus.Counter
-	outOfOrderSamplesCount      prometheus.Counter
-	invalidPreloadRequestsCount prometheus.Counter
-	maintainSeriesDuration      *prometheus.SummaryVec
-	persistenceUrgencyScore     prometheus.Gauge
-	rushedMode                  prometheus.Gauge
+	persistErrors                 prometheus.Counter
+	numSeries                     prometheus.Gauge
+	seriesOps                     *prometheus.CounterVec
+	ingestedSamplesCount          prometheus.Counter
+	outOfOrderSamplesCount        prometheus.Counter
+	nonExistentSeriesMatchesCount prometheus.Counter
+	maintainSeriesDuration        *prometheus.SummaryVec
+	persistenceUrgencyScore       prometheus.Gauge
+	rushedMode                    prometheus.Gauge
 }
 
 // MemorySeriesStorageOptions contains options needed by
@@ -248,11 +248,11 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 			Name:      "out_of_order_samples_total",
 			Help:      "The total number of samples that were discarded because their timestamps were at or before the last received sample for a series.",
 		}),
-		invalidPreloadRequestsCount: prometheus.NewCounter(prometheus.CounterOpts{
+		nonExistentSeriesMatchesCount: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "invalid_preload_requests_total",
-			Help:      "The total number of preload requests referring to a non-existent series. This is an indication of outdated label indexes.",
+			Name:      "non_existent_series_matches_total",
+			Help:      "How often a non-existent series was referred to during label matching or chunk preloading. This is an indication of outdated label indexes.",
 		}),
 		maintainSeriesDuration: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
@@ -545,7 +545,11 @@ func (s *memorySeriesStorage) metricForRange(
 		// The range lookup is relatively cheap, so let's do it first if
 		// we have a chance the archived metric is not in the range.
 		has, first, last := s.persistence.hasArchivedMetric(fp)
-		if !has || first.After(through) || last.Before(from) {
+		if !has {
+			s.nonExistentSeriesMatchesCount.Inc()
+			return nil, nil, false
+		}
+		if first.After(through) || last.Before(from) {
 			return nil, nil, false
 		}
 	}
@@ -1492,7 +1496,7 @@ func (s *memorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
 	ch <- s.outOfOrderSamplesCount.Desc()
-	ch <- s.invalidPreloadRequestsCount.Desc()
+	ch <- s.nonExistentSeriesMatchesCount.Desc()
 	ch <- numMemChunksDesc
 	s.maintainSeriesDuration.Describe(ch)
 	ch <- s.persistenceUrgencyScore.Desc()
@@ -1519,7 +1523,7 @@ func (s *memorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.seriesOps.Collect(ch)
 	ch <- s.ingestedSamplesCount
 	ch <- s.outOfOrderSamplesCount
-	ch <- s.invalidPreloadRequestsCount
+	ch <- s.nonExistentSeriesMatchesCount
 	ch <- prometheus.MustNewConstMetric(
 		numMemChunksDesc,
 		prometheus.GaugeValue,
