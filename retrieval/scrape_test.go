@@ -19,6 +19,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -469,6 +470,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 			Value:     2,
 		},
 	}
+	sort.Sort(expectedSamples)
+	sort.Sort(samples)
 
 	if !reflect.DeepEqual(samples, expectedSamples) {
 		t.Errorf("Scraped samples did not match served metrics")
