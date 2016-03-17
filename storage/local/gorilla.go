@@ -26,9 +26,8 @@ import (
 //   Gorilla: A Fast, Scalable, In-Memory Time Series Database
 //   T. Pelkonen et al., Facebook Inc.
 //   http://www.vldb.org/pvldb/vol8/p1816-teller.pdf
-// Note that there are significant differences in detail, some of which due to
-// the way Prometheus chunks work, some of which to optimize for the Prometheus
-// use-case.
+// Note that there are significant differences in detail, some due to the way
+// Prometheus chunks work, others to optimize for the Prometheus use-case.
 //
 // Layout of a 1024 byte gorilla chunk (big endian, wherever it matters):
 // - first time (int64):                  8 bytes  bit 0000-0063
@@ -391,12 +390,12 @@ func (c gorillaChunk) zeroDDTRepeats() (repeats uint64, offset uint16) {
 }
 
 func (c gorillaChunk) setZeroDDTRepeats(repeats uint64, offset uint16) {
-	if repeats == 0 {
+	switch repeats {
+	case 0:
 		// Just clear the offset.
 		binary.BigEndian.PutUint16(c[gorillaCountOffsetBitOffset:], 0)
 		return
-	}
-	if repeats == 1 {
+	case 1:
 		// First time we set a repeat here, so set the offset. But only
 		// if we haven't reached the footer yet. (If that's the case, we
 		// would overwrite ourselves below, and we don't need the offset
@@ -405,8 +404,7 @@ func (c gorillaChunk) setZeroDDTRepeats(repeats uint64, offset uint16) {
 		if offset+7 <= gorillaNextSampleBitOffsetThreshold {
 			binary.BigEndian.PutUint16(c[gorillaCountOffsetBitOffset:], offset)
 		}
-	}
-	if repeats > 1 {
+	default:
 		// For a change, we are writing somewhere where we have written
 		// before. We need to clear the bits first.
 		posIn1stByte := offset % 8

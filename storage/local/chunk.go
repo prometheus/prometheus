@@ -313,7 +313,7 @@ func rangeValues(it chunkIterator, in metric.Interval) ([]model.SamplePair, erro
 }
 
 // addToOverflowChunk is a utility function that creates a new chunk as overflow
-// chunk, addse the provided sample to it, and returns a chunk slice containing
+// chunk, adds the provided sample to it, and returns a chunk slice containing
 // the provided old chunk followed by the new overflow chunk.
 func addToOverflowChunk(c chunk, s model.SamplePair) ([]chunk, error) {
 	overflowChunks, err := newChunk().add(s)
