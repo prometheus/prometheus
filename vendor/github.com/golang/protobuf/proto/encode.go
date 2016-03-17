@@ -105,6 +105,11 @@ func (p *Buffer) EncodeVarint(x uint64) error {
 	return nil
 }
 
+// SizeVarint returns the varint encoding size of an integer.
+func SizeVarint(x uint64) int {
+	return sizeVarint(x)
+}
+
 func sizeVarint(x uint64) (n int) {
 	for {
 		n++
@@ -332,7 +337,7 @@ func size_bool(p *Properties, base structPointer) int {
 
 func size_proto3_bool(p *Properties, base structPointer) int {
 	v := *structPointer_BoolVal(base, p.field)
-	if !v {
+	if !v && !p.oneof {
 		return 0
 	}
 	return len(p.tagcode) + 1 // each bool takes exactly one byte
@@ -375,7 +380,7 @@ func size_int32(p *Properties, base structPointer) (n int) {
 func size_proto3_int32(p *Properties, base structPointer) (n int) {
 	v := structPointer_Word32Val(base, p.field)
 	x := int32(word32Val_Get(v)) // permit sign extension to use full 64-bit range
-	if x == 0 {
+	if x == 0 && !p.oneof {
 		return 0
 	}
 	n += len(p.tagcode)
@@ -421,7 +426,7 @@ func size_uint32(p *Properties, base structPointer) (n int) {
 func size_proto3_uint32(p *Properties, base structPointer) (n int) {
 	v := structPointer_Word32Val(base, p.field)
 	x := word32Val_Get(v)
-	if x == 0 {
+	if x == 0 && !p.oneof {
 		return 0
 	}
 	n += len(p.tagcode)
@@ -466,7 +471,7 @@ func size_int64(p *Properties, base structPointer) (n int) {
 func size_proto3_int64(p *Properties, base structPointer) (n int) {
 	v := structPointer_Word64Val(base, p.field)
 	x := word64Val_Get(v)
-	if x == 0 {
+	if x == 0 && !p.oneof {
 		return 0
 	}
 	n += len(p.tagcode)
@@ -509,7 +514,7 @@ func size_string(p *Properties, base structPointer) (n int) {
 
 func size_proto3_string(p *Properties, base structPointer) (n int) {
 	v := *structPointer_StringVal(base, p.field)
-	if v == "" {
+	if v == "" && !p.oneof {
 		return 0
 	}
 	n += len(p.tagcode)
@@ -681,7 +686,7 @@ func (o *Buffer) enc_proto3_slice_byte(p *Properties, base structPointer) error 
 
 func size_slice_byte(p *Properties, base structPointer) (n int) {
 	s := *structPointer_Bytes(base, p.field)
-	if s == nil {
+	if s == nil && !p.oneof {
 		return 0
 	}
 	n += len(p.tagcode)
@@ -691,7 +696,7 @@ func size_slice_byte(p *Properties, base structPointer) (n int) {
 
 func size_proto3_slice_byte(p *Properties, base structPointer) (n int) {
 	s := *structPointer_Bytes(base, p.field)
-	if len(s) == 0 {
+	if len(s) == 0 && !p.oneof {
 		return 0
 	}
 	n += len(p.tagcode)
@@ -1115,9 +1120,8 @@ func (o *Buffer) enc_new_map(p *Properties, base structPointer) error {
 		return nil
 	}
 
-	keys := v.MapKeys()
-	sort.Sort(mapKeys(keys))
-	for _, key := range keys {
+	// Don't sort map keys. It is not required by the spec, and C++ doesn't do it.
+	for _, key := range v.MapKeys() {
 		val := v.MapIndex(key)
 
 		// The only illegal map entry values are nil message pointers.
@@ -1249,24 +1253,9 @@ func size_struct(prop *StructProperties, base structPointer) (n int) {
 	}
 
 	// Factor in any oneof fields.
-	// TODO: This could be faster and use less reflection.
-	if prop.oneofMarshaler != nil {
-		sv := reflect.ValueOf(structPointer_Interface(base, prop.stype)).Elem()
-		for i := 0; i < prop.stype.NumField(); i++ {
-			fv := sv.Field(i)
-			if fv.Kind() != reflect.Interface || fv.IsNil() {
-				continue
-			}
-			if prop.stype.Field(i).Tag.Get("protobuf_oneof") == "" {
-				continue
-			}
-			spv := fv.Elem()         // interface -> *T
-			sv := spv.Elem()         // *T -> T
-			sf := sv.Type().Field(0) // StructField inside T
-			var prop Properties
-			prop.Init(sf.Type, "whatever", sf.Tag.Get("protobuf"), &sf)
-			n += prop.size(&prop, toStructPointer(spv))
-		}
+	if prop.oneofSizer != nil {
+		m := structPointer_Interface(base, prop.stype).(Message)
+		n += prop.oneofSizer(m)
 	}
 
 	return
