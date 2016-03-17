@@ -82,14 +82,14 @@ func buildTestChunks(t *testing.T, encoding chunkEncoding) map[model.Fingerprint
 }
 
 func chunksEqual(c1, c2 chunk) bool {
-	values2 := c2.newIterator().values()
-	for v1 := range c1.newIterator().values() {
-		v2 := <-values2
-		if !(v1 == v2) {
+	it1 := c1.newIterator()
+	it2 := c2.newIterator()
+	for it1.scan() && it2.scan() {
+		if !(it1.value() == it2.value()) {
 			return false
 		}
 	}
-	return true
+	return it1.err() == nil && it2.err() == nil
 }
 
 func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
@@ -770,58 +770,46 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	p.indexMetric(2, m2)
 	p.waitForIndexing()
 
-	outFPs, err := p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	outFPs := p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
 	want := model.Fingerprints{1}
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	outFPs, err = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	outFPs = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
 	want = model.Fingerprints{2}
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	if archived, _, _, err := p.hasArchivedMetric(1); err != nil || !archived {
+	if archived, _, _ := p.hasArchivedMetric(1); !archived {
 		t.Error("want FP 1 archived")
 	}
-	if archived, _, _, err := p.hasArchivedMetric(2); err != nil || !archived {
+	if archived, _, _ := p.hasArchivedMetric(2); !archived {
 		t.Error("want FP 2 archived")
 	}
 
-	if err != p.purgeArchivedMetric(1) {
+	if err := p.purgeArchivedMetric(1); err != nil {
 		t.Fatal(err)
 	}
-	if err != p.purgeArchivedMetric(3) {
+	if err := p.purgeArchivedMetric(3); err != nil {
 		// Purging something that has not beet archived is not an error.
 		t.Fatal(err)
 	}
 	p.waitForIndexing()
 
-	outFPs, err = p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	outFPs = p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
 	want = nil
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	outFPs, err = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	outFPs = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
 	want = model.Fingerprints{2}
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	if archived, _, _, err := p.hasArchivedMetric(1); err != nil || archived {
+	if archived, _, _ := p.hasArchivedMetric(1); archived {
 		t.Error("want FP 1 not archived")
 	}
-	if archived, _, _, err := p.hasArchivedMetric(2); err != nil || !archived {
+	if archived, _, _ := p.hasArchivedMetric(2); !archived {
 		t.Error("want FP 2 archived")
 	}
 }
@@ -983,9 +971,7 @@ func testIndexing(t *testing.T, encoding chunkEncoding) {
 	for i, b := range batches {
 		for fp, m := range b.fpToMetric {
 			p.indexMetric(fp, m)
-			if err := p.archiveMetric(fp, m, 1, 2); err != nil {
-				t.Fatal(err)
-			}
+			p.archiveMetric(fp, m, 1, 2)
 			indexedFpsToMetrics[fp] = m
 		}
 		verifyIndexedState(i, t, b, indexedFpsToMetrics, p)
@@ -1029,10 +1015,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 		}
 
 		// Check that archived metrics are in membership index.
-		has, first, last, err := p.hasArchivedMetric(fp)
-		if err != nil {
-			t.Fatal(err)
-		}
+		has, first, last := p.hasArchivedMetric(fp)
 		if !has {
 			t.Errorf("%d. fingerprint %v not found", i, fp)
 		}
@@ -1046,10 +1029,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label name -> label values mappings.
 	for ln, lvs := range b.expectedLnToLvs {
-		outLvs, err := p.labelValuesForLabelName(ln)
-		if err != nil {
-			t.Fatal(err)
-		}
+		outLvs := p.labelValuesForLabelName(ln)
 
 		outSet := codable.LabelValueSet{}
 		for _, lv := range outLvs {
@@ -1063,10 +1043,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label pair -> fingerprints mappings.
 	for lp, fps := range b.expectedLpToFps {
-		outFPs, err := p.fingerprintsForLabelPair(lp)
-		if err != nil {
-			t.Fatal(err)
-		}
+		outFPs := p.fingerprintsForLabelPair(lp)
 
 		outSet := codable.FingerprintSet{}
 		for _, fp := range outFPs {
