@@ -348,6 +348,7 @@ func (acc *deltaEncodedIndexAccessor) sampleValueAtIndex(idx int) model.SampleVa
 		// No d8 for ints.
 		default:
 			acc.lastErr = fmt.Errorf("invalid number of bytes for integer delta: %d", acc.vBytes)
+			return 0
 		}
 	} else {
 		switch acc.vBytes {
