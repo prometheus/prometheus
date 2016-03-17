@@ -285,7 +285,7 @@ type chunkIterator interface {
 	// of the find... methods). It returns ZeroSamplePair before any of
 	// those methods were called.
 	value() model.SamplePair
-	// Returns the last error encountered. In general, an error signal data
+	// Returns the last error encountered. In general, an error signals data
 	// corruption in the chunk and requires quarantining.
 	err() error
 }

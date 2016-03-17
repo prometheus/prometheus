@@ -452,8 +452,8 @@ func (acc *doubleDeltaEncodedIndexAccessor) timestampAtIndex(idx int) model.Time
 		return model.Time(binary.LittleEndian.Uint64(acc.c[offset:]))
 	default:
 		acc.lastErr = fmt.Errorf("invalid number of bytes for time delta: %d", acc.tBytes)
+		return model.Earliest
 	}
-	return model.Earliest
 }
 
 func (acc *doubleDeltaEncodedIndexAccessor) sampleValueAtIndex(idx int) model.SampleValue {
@@ -491,6 +491,7 @@ func (acc *doubleDeltaEncodedIndexAccessor) sampleValueAtIndex(idx int) model.Sa
 		// No d8 for ints.
 		default:
 			acc.lastErr = fmt.Errorf("invalid number of bytes for integer delta: %d", acc.vBytes)
+			return 0
 		}
 	} else {
 		switch acc.vBytes {
@@ -503,7 +504,7 @@ func (acc *doubleDeltaEncodedIndexAccessor) sampleValueAtIndex(idx int) model.Sa
 			return model.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(acc.c[offset:])))
 		default:
 			acc.lastErr = fmt.Errorf("invalid number of bytes for floating point delta: %d", acc.vBytes)
+			return 0
 		}
 	}
-	return 0
 }
