@@ -140,7 +140,13 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 		}
 	}
 
-	p.setDirty(false, nil)
+	p.dirtyMtx.Lock()
+	// Only declare storage clean if it didn't become dirty during crash recovery.
+	if !p.becameDirty {
+		p.dirty = false
+	}
+	p.dirtyMtx.Unlock()
+
 	log.Warn("Crash recovery complete.")
 	return nil
 }

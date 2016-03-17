@@ -226,7 +226,10 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		if err != nil {
 			return nil, &apiError{errorBadData, err}
 		}
-		for fp, met := range api.Storage.MetricsForLabelMatchers(matchers...) {
+		for fp, met := range api.Storage.MetricsForLabelMatchers(
+			model.Earliest, model.Latest, // Get every series.
+			matchers...,
+		) {
 			res[fp] = met
 		}
 	}
@@ -250,7 +253,10 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 		if err != nil {
 			return nil, &apiError{errorBadData, err}
 		}
-		for fp := range api.Storage.MetricsForLabelMatchers(matchers...) {
+		for fp := range api.Storage.MetricsForLabelMatchers(
+			model.Earliest, model.Latest, // Get every series.
+			matchers...,
+		) {
 			fps[fp] = struct{}{}
 		}
 	}

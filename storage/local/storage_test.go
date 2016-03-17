@@ -34,6 +34,7 @@ func TestMatches(t *testing.T) {
 	storage, closer := NewTestStorage(t, 1)
 	defer closer.Close()
 
+	storage.archiveHighWatermark = 90
 	samples := make([]*model.Sample, 100)
 	fingerprints := make(model.Fingerprints, 100)
 
@@ -55,6 +56,20 @@ func TestMatches(t *testing.T) {
 		storage.Append(s)
 	}
 	storage.WaitForIndexing()
+
+	// Archive every tenth metric.
+	for i, fp := range fingerprints {
+		if i%10 != 0 {
+			continue
+		}
+		s, ok := storage.fpToSeries.get(fp)
+		if !ok {
+			t.Fatal("could not retrieve series for fp", fp)
+		}
+		storage.fpLocker.Lock(fp)
+		storage.persistence.archiveMetric(fp, s.metric, s.firstTime(), s.lastTime)
+		storage.fpLocker.Unlock(fp)
+	}
 
 	newMatcher := func(matchType metric.MatchType, name model.LabelName, value model.LabelValue) *metric.LabelMatcher {
 		lm, err := metric.NewLabelMatcher(matchType, name, value)
@@ -178,7 +193,10 @@ func TestMatches(t *testing.T) {
 	}
 
 	for _, mt := range matcherTests {
-		res := storage.MetricsForLabelMatchers(mt.matchers...)
+		res := storage.MetricsForLabelMatchers(
+			model.Earliest, model.Latest,
+			mt.matchers...,
+		)
 		if len(mt.expected) != len(res) {
 			t.Fatalf("expected %d matches for %q, found %d", len(mt.expected), mt.matchers, len(res))
 		}
@@ -194,6 +212,56 @@ func TestMatches(t *testing.T) {
 				t.Errorf("expected fingerprint %s for %q not in result", fp1, mt.matchers)
 			}
 		}
+		// Smoketest for from/through.
+		if len(storage.MetricsForLabelMatchers(
+			model.Earliest, -10000,
+			mt.matchers...,
+		)) > 0 {
+			t.Error("expected no matches with 'through' older than any sample")
+		}
+		if len(storage.MetricsForLabelMatchers(
+			10000, model.Latest,
+			mt.matchers...,
+		)) > 0 {
+			t.Error("expected no matches with 'from' newer than any sample")
+		}
+		// Now the tricky one, cut out something from the middle.
+		var (
+			from    model.Time = 25
+			through model.Time = 75
+		)
+		res = storage.MetricsForLabelMatchers(
+			from, through,
+			mt.matchers...,
+		)
+		expected := model.Fingerprints{}
+		for _, fp := range mt.expected {
+			i := 0
+			for ; fingerprints[i] != fp && i < len(fingerprints); i++ {
+			}
+			if i == len(fingerprints) {
+				t.Fatal("expected fingerprint does not exist")
+			}
+			if !model.Time(i).Before(from) && !model.Time(i).After(through) {
+				expected = append(expected, fp)
+			}
+		}
+		if len(expected) != len(res) {
+			t.Errorf("expected %d range-limited matches for %q, found %d", len(expected), mt.matchers, len(res))
+		}
+		for fp1 := range res {
+			found := false
+			for _, fp2 := range expected {
+				if fp1 == fp2 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected fingerprint %s for %q not in range-limited result", fp1, mt.matchers)
+			}
+		}
+
 	}
 }
 
@@ -362,7 +430,10 @@ func BenchmarkLabelMatching(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		benchLabelMatchingRes = map[model.Fingerprint]metric.Metric{}
 		for _, mt := range matcherTests {
-			benchLabelMatchingRes = s.MetricsForLabelMatchers(mt...)
+			benchLabelMatchingRes = s.MetricsForLabelMatchers(
+				model.Earliest, model.Latest,
+				mt...,
+			)
 		}
 	}
 	// Stop timer to not count the storage closing.
@@ -465,11 +536,7 @@ func TestDropMetrics(t *testing.T) {
 	s.maintainMemorySeries(fpToBeArchived, 0)
 	s.fpLocker.Lock(fpToBeArchived)
 	s.fpToSeries.del(fpToBeArchived)
-	if err := s.persistence.archiveMetric(
-		fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond),
-	); err != nil {
-		t.Error(err)
-	}
+	s.persistence.archiveMetric(fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond))
 	s.fpLocker.Unlock(fpToBeArchived)
 
 	fps := s.fingerprintsForLabelPairs(model.LabelPair{Name: model.MetricNameLabel, Value: "test"})
@@ -576,11 +643,7 @@ func TestQuarantineMetric(t *testing.T) {
 	s.maintainMemorySeries(fpToBeArchived, 0)
 	s.fpLocker.Lock(fpToBeArchived)
 	s.fpToSeries.del(fpToBeArchived)
-	if err := s.persistence.archiveMetric(
-		fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond),
-	); err != nil {
-		t.Error(err)
-	}
+	s.persistence.archiveMetric(fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond))
 	s.fpLocker.Unlock(fpToBeArchived)
 
 	// Corrupt the series file for m3.
@@ -692,11 +755,12 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 			if cd.isEvicted() {
 				continue
 			}
-			for sample := range cd.c.newIterator().values() {
-				if sample.error != nil {
-					t.Error(sample.error)
-				}
-				values = append(values, sample.SamplePair)
+			it := cd.c.newIterator()
+			for it.scan() {
+				values = append(values, it.value())
+			}
+			if it.err() != nil {
+				t.Error(it.err())
 			}
 		}
 
@@ -1137,36 +1201,22 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.persistence.archiveMetric(
-		fp, series.metric, series.firstTime(), lastTime,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	archived, _, _, err := s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
+	archived, _, _ := s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
 	}
 
 	// Drop ~half of the chunks of an archived series.
 	s.maintainArchivedSeries(fp, 10000)
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("archived series purged although only half of the chunks dropped")
 	}
 
 	// Drop everything.
 	s.maintainArchivedSeries(fp, 100000)
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if archived {
 		t.Fatal("archived series not dropped")
 	}
@@ -1192,16 +1242,8 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.persistence.archiveMetric(
-		fp, series.metric, series.firstTime(), lastTime,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
 	}
@@ -1213,23 +1255,24 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if !ok {
 		t.Fatal("could not find series")
 	}
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if archived {
 		t.Fatal("archived")
 	}
 
+	// Set archiveHighWatermark to a low value so that we can see it increase.
+	s.archiveHighWatermark = 42
+
 	// This will archive again, but must not drop it completely, despite the
 	// memorySeries being empty.
 	s.maintainMemorySeries(fp, 10000)
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("series purged completely")
+	}
+	// archiveHighWatermark must have been set by maintainMemorySeries.
+	if want, got := model.Time(19998), s.archiveHighWatermark; want != got {
+		t.Errorf("want archiveHighWatermark %v, got %v", want, got)
 	}
 }
 

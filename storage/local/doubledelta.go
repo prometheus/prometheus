@@ -18,11 +18,8 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 
 	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/storage/metric"
 )
 
 // The 37-byte header of a delta-encoded chunk looks like:
@@ -207,9 +204,8 @@ func (c doubleDeltaEncodedChunk) firstTime() model.Time {
 
 // newIterator implements chunk.
 func (c *doubleDeltaEncodedChunk) newIterator() chunkIterator {
-	return &doubleDeltaEncodedChunkIterator{
+	return newIndexAccessingChunkIterator(c.len(), &doubleDeltaEncodedIndexAccessor{
 		c:      *c,
-		len:    c.len(),
 		baseT:  c.baseTime(),
 		baseΔT: c.baseTimeDelta(),
 		baseV:  c.baseValue(),
@@ -217,7 +213,7 @@ func (c *doubleDeltaEncodedChunk) newIterator() chunkIterator {
 		tBytes: c.timeBytes(),
 		vBytes: c.valueBytes(),
 		isInt:  c.isInt(),
-	}
+	})
 }
 
 // marshal implements chunk.
@@ -409,223 +405,106 @@ func (c doubleDeltaEncodedChunk) addSecondSample(s model.SamplePair, tb, vb delt
 	return []chunk{&c}, nil
 }
 
-// doubleDeltaEncodedChunkIterator implements chunkIterator.
-type doubleDeltaEncodedChunkIterator struct {
+// doubleDeltaEncodedIndexAccessor implements indexAccessor.
+type doubleDeltaEncodedIndexAccessor struct {
 	c              doubleDeltaEncodedChunk
-	len            int
 	baseT, baseΔT  model.Time
 	baseV, baseΔV  model.SampleValue
 	tBytes, vBytes deltaBytes
 	isInt          bool
+	lastErr        error
 }
 
-// length implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) length() int { return it.len }
-
-// valueAtOrBeforeTime implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) valueAtOrBeforeTime(t model.Time) (model.SamplePair, error) {
-	var lastErr error
-	i := sort.Search(it.len, func(i int) bool {
-		ts, err := it.timestampAtIndex(i)
-		if err != nil {
-			lastErr = err
-		}
-		return ts.After(t)
-	})
-	if i == 0 || lastErr != nil {
-		return ZeroSamplePair, lastErr
-	}
-	ts, err := it.timestampAtIndex(i - 1)
-	if err != nil {
-		return ZeroSamplePair, err
-	}
-	v, err := it.sampleValueAtIndex(i - 1)
-	if err != nil {
-		return ZeroSamplePair, err
-	}
-	return model.SamplePair{Timestamp: ts, Value: v}, nil
+func (acc *doubleDeltaEncodedIndexAccessor) err() error {
+	return acc.lastErr
 }
 
-// rangeValues implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) rangeValues(in metric.Interval) ([]model.SamplePair, error) {
-	var lastErr error
-
-	oldest := sort.Search(it.len, func(i int) bool {
-		t, err := it.timestampAtIndex(i)
-		if err != nil {
-			lastErr = err
-		}
-		return !t.Before(in.OldestInclusive)
-	})
-
-	newest := sort.Search(it.len, func(i int) bool {
-		t, err := it.timestampAtIndex(i)
-		if err != nil {
-			lastErr = err
-		}
-		return t.After(in.NewestInclusive)
-	})
-
-	if oldest == it.len || lastErr != nil {
-		return nil, lastErr
-	}
-
-	result := make([]model.SamplePair, 0, newest-oldest)
-	for i := oldest; i < newest; i++ {
-		t, err := it.timestampAtIndex(i)
-		if err != nil {
-			return nil, err
-		}
-		v, err := it.sampleValueAtIndex(i)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, model.SamplePair{Timestamp: t, Value: v})
-	}
-	return result, nil
-}
-
-// contains implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) contains(t model.Time) (bool, error) {
-	lastT, err := it.timestampAtIndex(it.len - 1)
-	if err != nil {
-		return false, err
-	}
-	return !t.Before(it.baseT) && !t.After(lastT), nil
-}
-
-// values implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) values() <-chan struct {
-	model.SamplePair
-	error
-} {
-	valuesChan := make(chan struct {
-		model.SamplePair
-		error
-	})
-	go func() {
-		for i := 0; i < it.len; i++ {
-			t, err := it.timestampAtIndex(i)
-			if err != nil {
-				valuesChan <- struct {
-					model.SamplePair
-					error
-				}{ZeroSamplePair, err}
-				break
-			}
-			v, err := it.sampleValueAtIndex(i)
-			if err != nil {
-				valuesChan <- struct {
-					model.SamplePair
-					error
-				}{ZeroSamplePair, err}
-				break
-			}
-			valuesChan <- struct {
-				model.SamplePair
-				error
-			}{model.SamplePair{Timestamp: t, Value: v}, nil}
-		}
-		close(valuesChan)
-	}()
-	return valuesChan
-}
-
-// timestampAtIndex implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) timestampAtIndex(idx int) (model.Time, error) {
+func (acc *doubleDeltaEncodedIndexAccessor) timestampAtIndex(idx int) model.Time {
 	if idx == 0 {
-		return it.baseT, nil
+		return acc.baseT
 	}
 	if idx == 1 {
 		// If time bytes are at d8, the time is saved directly rather
 		// than as a difference.
-		if it.tBytes == d8 {
-			return it.baseΔT, nil
+		if acc.tBytes == d8 {
+			return acc.baseΔT
 		}
-		return it.baseT + it.baseΔT, nil
+		return acc.baseT + acc.baseΔT
 	}
 
-	offset := doubleDeltaHeaderBytes + (idx-2)*int(it.tBytes+it.vBytes)
+	offset := doubleDeltaHeaderBytes + (idx-2)*int(acc.tBytes+acc.vBytes)
 
-	switch it.tBytes {
+	switch acc.tBytes {
 	case d1:
-		return it.baseT +
-			model.Time(idx)*it.baseΔT +
-			model.Time(int8(it.c[offset])), nil
+		return acc.baseT +
+			model.Time(idx)*acc.baseΔT +
+			model.Time(int8(acc.c[offset]))
 	case d2:
-		return it.baseT +
-			model.Time(idx)*it.baseΔT +
-			model.Time(int16(binary.LittleEndian.Uint16(it.c[offset:]))), nil
+		return acc.baseT +
+			model.Time(idx)*acc.baseΔT +
+			model.Time(int16(binary.LittleEndian.Uint16(acc.c[offset:])))
 	case d4:
-		return it.baseT +
-			model.Time(idx)*it.baseΔT +
-			model.Time(int32(binary.LittleEndian.Uint32(it.c[offset:]))), nil
+		return acc.baseT +
+			model.Time(idx)*acc.baseΔT +
+			model.Time(int32(binary.LittleEndian.Uint32(acc.c[offset:])))
 	case d8:
 		// Take absolute value for d8.
-		return model.Time(binary.LittleEndian.Uint64(it.c[offset:])), nil
+		return model.Time(binary.LittleEndian.Uint64(acc.c[offset:]))
 	default:
-		return 0, fmt.Errorf("invalid number of bytes for time delta: %d", it.tBytes)
+		acc.lastErr = fmt.Errorf("invalid number of bytes for time delta: %d", acc.tBytes)
+		return model.Earliest
 	}
 }
 
-// lastTimestamp implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) lastTimestamp() (model.Time, error) {
-	return it.timestampAtIndex(it.len - 1)
-}
-
-// sampleValueAtIndex implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) sampleValueAtIndex(idx int) (model.SampleValue, error) {
+func (acc *doubleDeltaEncodedIndexAccessor) sampleValueAtIndex(idx int) model.SampleValue {
 	if idx == 0 {
-		return it.baseV, nil
+		return acc.baseV
 	}
 	if idx == 1 {
 		// If value bytes are at d8, the value is saved directly rather
 		// than as a difference.
-		if it.vBytes == d8 {
-			return it.baseΔV, nil
+		if acc.vBytes == d8 {
+			return acc.baseΔV
 		}
-		return it.baseV + it.baseΔV, nil
+		return acc.baseV + acc.baseΔV
 	}
 
-	offset := doubleDeltaHeaderBytes + (idx-2)*int(it.tBytes+it.vBytes) + int(it.tBytes)
+	offset := doubleDeltaHeaderBytes + (idx-2)*int(acc.tBytes+acc.vBytes) + int(acc.tBytes)
 
-	if it.isInt {
-		switch it.vBytes {
+	if acc.isInt {
+		switch acc.vBytes {
 		case d0:
-			return it.baseV +
-				model.SampleValue(idx)*it.baseΔV, nil
+			return acc.baseV +
+				model.SampleValue(idx)*acc.baseΔV
 		case d1:
-			return it.baseV +
-				model.SampleValue(idx)*it.baseΔV +
-				model.SampleValue(int8(it.c[offset])), nil
+			return acc.baseV +
+				model.SampleValue(idx)*acc.baseΔV +
+				model.SampleValue(int8(acc.c[offset]))
 		case d2:
-			return it.baseV +
-				model.SampleValue(idx)*it.baseΔV +
-				model.SampleValue(int16(binary.LittleEndian.Uint16(it.c[offset:]))), nil
+			return acc.baseV +
+				model.SampleValue(idx)*acc.baseΔV +
+				model.SampleValue(int16(binary.LittleEndian.Uint16(acc.c[offset:])))
 		case d4:
-			return it.baseV +
-				model.SampleValue(idx)*it.baseΔV +
-				model.SampleValue(int32(binary.LittleEndian.Uint32(it.c[offset:]))), nil
+			return acc.baseV +
+				model.SampleValue(idx)*acc.baseΔV +
+				model.SampleValue(int32(binary.LittleEndian.Uint32(acc.c[offset:])))
 		// No d8 for ints.
 		default:
-			return 0, fmt.Errorf("invalid number of bytes for integer delta: %d", it.vBytes)
+			acc.lastErr = fmt.Errorf("invalid number of bytes for integer delta: %d", acc.vBytes)
+			return 0
 		}
 	} else {
-		switch it.vBytes {
+		switch acc.vBytes {
 		case d4:
-			return it.baseV +
-				model.SampleValue(idx)*it.baseΔV +
-				model.SampleValue(math.Float32frombits(binary.LittleEndian.Uint32(it.c[offset:]))), nil
+			return acc.baseV +
+				model.SampleValue(idx)*acc.baseΔV +
+				model.SampleValue(math.Float32frombits(binary.LittleEndian.Uint32(acc.c[offset:])))
 		case d8:
 			// Take absolute value for d8.
-			return model.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(it.c[offset:]))), nil
+			return model.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(acc.c[offset:])))
 		default:
-			return 0, fmt.Errorf("invalid number of bytes for floating point delta: %d", it.vBytes)
+			acc.lastErr = fmt.Errorf("invalid number of bytes for floating point delta: %d", acc.vBytes)
+			return 0
 		}
 	}
-}
-
-// lastSampleValue implements chunkIterator.
-func (it *doubleDeltaEncodedChunkIterator) lastSampleValue() (model.SampleValue, error) {
-	return it.sampleValueAtIndex(it.len - 1)
 }

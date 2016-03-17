@@ -19,7 +19,6 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/metric"
 
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
@@ -33,7 +32,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	req.ParseForm()
 
-	metrics := map[model.Fingerprint]metric.Metric{}
+	fps := map[model.Fingerprint]struct{}{}
 
 	for _, s := range req.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)
@@ -41,8 +40,11 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		for fp, met := range h.storage.MetricsForLabelMatchers(matchers...) {
-			metrics[fp] = met
+		for fp := range h.storage.MetricsForLabelMatchers(
+			model.Now().Add(-promql.StalenessDelta), model.Latest,
+			matchers...,
+		) {
+			fps[fp] = struct{}{}
 		}
 	}
 
@@ -62,19 +64,19 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		Type:   dto.MetricType_UNTYPED.Enum(),
 	}
 
-	for fp, met := range metrics {
+	for fp := range fps {
 		globalUsed := map[model.LabelName]struct{}{}
 
-		sp := h.storage.LastSamplePairForFingerprint(fp)
+		s := h.storage.LastSampleForFingerprint(fp)
 		// Discard if sample does not exist or lays before the staleness interval.
-		if sp.Timestamp.Before(minTimestamp) {
+		if s.Timestamp.Before(minTimestamp) {
 			continue
 		}
 
 		// Reset label slice.
 		protMetric.Label = protMetric.Label[:0]
 
-		for ln, lv := range met.Metric {
+		for ln, lv := range s.Metric {
 			if ln == model.MetricNameLabel {
 				protMetricFam.Name = proto.String(string(lv))
 				continue
@@ -98,8 +100,8 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 
-		protMetric.TimestampMs = proto.Int64(int64(sp.Timestamp))
-		protMetric.Untyped.Value = proto.Float64(float64(sp.Value))
+		protMetric.TimestampMs = proto.Int64(int64(s.Timestamp))
+		protMetric.Untyped.Value = proto.Float64(float64(s.Value))
 
 		if err := enc.Encode(protMetricFam); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

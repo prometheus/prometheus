@@ -79,7 +79,10 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 	Inspect(a.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			n.metrics = a.Storage.MetricsForLabelMatchers(n.LabelMatchers...)
+			n.metrics = a.Storage.MetricsForLabelMatchers(
+				a.Start.Add(-n.Offset-StalenessDelta), a.End.Add(-n.Offset),
+				n.LabelMatchers...,
+			)
 			n.iterators = make(map[model.Fingerprint]local.SeriesIterator, len(n.metrics))
 
 			pt := getPreloadTimes(n.Offset)
@@ -95,7 +98,10 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 				}
 			}
 		case *MatrixSelector:
-			n.metrics = a.Storage.MetricsForLabelMatchers(n.LabelMatchers...)
+			n.metrics = a.Storage.MetricsForLabelMatchers(
+				a.Start.Add(-n.Offset-n.Range), a.End.Add(-n.Offset),
+				n.LabelMatchers...,
+			)
 			n.iterators = make(map[model.Fingerprint]local.SeriesIterator, len(n.metrics))
 
 			pt := getPreloadTimes(n.Offset)

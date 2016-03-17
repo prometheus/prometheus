@@ -312,49 +312,44 @@ func (p *persistence) isDirty() bool {
 	return p.dirty
 }
 
-// setDirty sets the dirty flag in a goroutine-safe way. Once the dirty flag was
-// set to true with this method, it cannot be set to false again. (If we became
-// dirty during our runtime, there is no way back. If we were dirty from the
-// start, a clean-up might make us clean again.) The provided error will be
-// logged as a reason if dirty is true.
-func (p *persistence) setDirty(dirty bool, err error) {
-	if dirty {
-		p.dirtyCounter.Inc()
-	}
+// setDirty flags the storage as dirty in a goroutine-safe way. The provided
+// error will be logged as a reason the first time the storage is flagged as dirty.
+func (p *persistence) setDirty(err error) {
+	p.dirtyCounter.Inc()
 	p.dirtyMtx.Lock()
 	defer p.dirtyMtx.Unlock()
 	if p.becameDirty {
 		return
 	}
-	p.dirty = dirty
-	if dirty {
-		p.becameDirty = true
-		log.With("error", err).Error("The storage is now inconsistent. Restart Prometheus ASAP to initiate recovery.")
-	}
+	p.dirty = true
+	p.becameDirty = true
+	log.With("error", err).Error("The storage is now inconsistent. Restart Prometheus ASAP to initiate recovery.")
 }
 
 // fingerprintsForLabelPair returns the fingerprints for the given label
 // pair. This method is goroutine-safe but take into account that metrics queued
 // for indexing with IndexMetric might not have made it into the index
 // yet. (Same applies correspondingly to UnindexMetric.)
-func (p *persistence) fingerprintsForLabelPair(lp model.LabelPair) (model.Fingerprints, error) {
+func (p *persistence) fingerprintsForLabelPair(lp model.LabelPair) model.Fingerprints {
 	fps, _, err := p.labelPairToFingerprints.Lookup(lp)
 	if err != nil {
-		return nil, err
+		p.setDirty(fmt.Errorf("error in method fingerprintsForLabelPair(%v): %s", lp, err))
+		return nil
 	}
-	return fps, nil
+	return fps
 }
 
 // labelValuesForLabelName returns the label values for the given label
 // name. This method is goroutine-safe but take into account that metrics queued
 // for indexing with IndexMetric might not have made it into the index
 // yet. (Same applies correspondingly to UnindexMetric.)
-func (p *persistence) labelValuesForLabelName(ln model.LabelName) (model.LabelValues, error) {
+func (p *persistence) labelValuesForLabelName(ln model.LabelName) model.LabelValues {
 	lvs, _, err := p.labelNameToLabelValues.Lookup(ln)
 	if err != nil {
-		return nil, err
+		p.setDirty(fmt.Errorf("error in method labelValuesForLabelName(%v): %s", ln, err))
+		return nil
 	}
-	return lvs, nil
+	return lvs
 }
 
 // persistChunks persists a number of consecutive chunks of a series. It is the
@@ -1008,29 +1003,28 @@ func (p *persistence) waitForIndexing() {
 // the metric. The caller must have locked the fingerprint.
 func (p *persistence) archiveMetric(
 	fp model.Fingerprint, m model.Metric, first, last model.Time,
-) error {
+) {
 	if err := p.archivedFingerprintToMetrics.Put(codable.Fingerprint(fp), codable.Metric(m)); err != nil {
-		p.setDirty(true, err)
-		return err
+		p.setDirty(fmt.Errorf("error in method archiveMetric inserting fingerprint %v into FingerprintToMetrics: %s", fp, err))
+		return
 	}
 	if err := p.archivedFingerprintToTimeRange.Put(codable.Fingerprint(fp), codable.TimeRange{First: first, Last: last}); err != nil {
-		p.setDirty(true, err)
-		return err
+		p.setDirty(fmt.Errorf("error in method archiveMetric inserting fingerprint %v into FingerprintToTimeRange: %s", fp, err))
 	}
-	return nil
 }
 
 // hasArchivedMetric returns whether the archived metric for the given
 // fingerprint exists and if yes, what the first and last timestamp in the
 // corresponding series is. This method is goroutine-safe.
 func (p *persistence) hasArchivedMetric(fp model.Fingerprint) (
-	hasMetric bool, firstTime, lastTime model.Time, err error,
+	hasMetric bool, firstTime, lastTime model.Time,
 ) {
-	firstTime, lastTime, hasMetric, err = p.archivedFingerprintToTimeRange.Lookup(fp)
+	firstTime, lastTime, hasMetric, err := p.archivedFingerprintToTimeRange.Lookup(fp)
 	if err != nil {
-		p.setDirty(true, err)
+		p.setDirty(fmt.Errorf("error in method hasArchivedMetric(%v): %s", fp, err))
+		hasMetric = false
 	}
-	return
+	return hasMetric, firstTime, lastTime
 }
 
 // updateArchivedTimeRange updates an archived time range. The caller must make
@@ -1068,7 +1062,11 @@ func (p *persistence) fingerprintsModifiedBefore(beforeTime model.Time) ([]model
 // method is goroutine-safe.
 func (p *persistence) archivedMetric(fp model.Fingerprint) (model.Metric, error) {
 	metric, _, err := p.archivedFingerprintToMetrics.Lookup(fp)
-	return metric, err
+	if err != nil {
+		p.setDirty(fmt.Errorf("error in method archivedMetric(%v): %s", fp, err))
+		return nil, err
+	}
+	return metric, nil
 }
 
 // purgeArchivedMetric deletes an archived fingerprint and its corresponding
@@ -1078,7 +1076,7 @@ func (p *persistence) archivedMetric(fp model.Fingerprint) (model.Metric, error)
 func (p *persistence) purgeArchivedMetric(fp model.Fingerprint) (err error) {
 	defer func() {
 		if err != nil {
-			p.setDirty(true, fmt.Errorf("error in method purgeArchivedMetric: %s", err))
+			p.setDirty(fmt.Errorf("error in method purgeArchivedMetric(%v): %s", fp, err))
 		}
 	}()
 
