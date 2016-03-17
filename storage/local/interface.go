@@ -40,20 +40,22 @@ type Storage interface {
 	// NewPreloader returns a new Preloader which allows preloading and pinning
 	// series data into memory for use within a query.
 	NewPreloader() Preloader
-	// MetricsForLabelMatchers returns the metrics from storage that satisfy the given
-	// label matchers. At least one label matcher must be specified that does not
-	// match the empty string.
-	MetricsForLabelMatchers(...*metric.LabelMatcher) map[model.Fingerprint]metric.Metric
-	// LastSamplePairForFingerprint returns the last sample pair that has
-	// been ingested for the provided fingerprint. If this instance of the
+	// MetricsForLabelMatchers returns the metrics from storage that satisfy
+	// the given label matchers. At least one label matcher must be
+	// specified that does not match the empty string. The times from and
+	// through are hints for the storage to optimize the search. The storage
+	// MAY exclude metrics that have no samples in the specified interval
+	// from the returned map. In doubt, specify model.Earliest for from and
+	// model.Latest for through.
+	MetricsForLabelMatchers(from, through model.Time, matchers ...*metric.LabelMatcher) map[model.Fingerprint]metric.Metric
+	// LastSampleForFingerprint returns the last sample that has been
+	// ingested for the provided fingerprint. If this instance of the
 	// Storage has never ingested a sample for the provided fingerprint (or
 	// the last ingestion is so long ago that the series has been archived),
-	// ZeroSamplePair is returned.
-	LastSamplePairForFingerprint(model.Fingerprint) model.SamplePair
+	// ZeroSample is returned.
+	LastSampleForFingerprint(model.Fingerprint) model.Sample
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(model.LabelName) model.LabelValues
-	// Get the metric associated with the provided fingerprint.
-	MetricForFingerprint(model.Fingerprint) metric.Metric
 	// Drop all time series associated with the given fingerprints.
 	DropMetricsForFingerprints(...model.Fingerprint)
 	// Run the various maintenance loops in goroutines. Returns when the
@@ -89,7 +91,7 @@ type SeriesIterator interface {
 type Preloader interface {
 	PreloadRange(
 		fp model.Fingerprint,
-		from model.Time, through model.Time,
+		from, through model.Time,
 	) SeriesIterator
 	PreloadInstant(
 		fp model.Fingerprint,
@@ -100,8 +102,15 @@ type Preloader interface {
 }
 
 // ZeroSamplePair is the pseudo zero-value of model.SamplePair used by the local
-// package to signal a non-existing sample. It is a SamplePair with timestamp
-// model.Earliest and value 0.0. Note that the natural zero value of SamplePair
-// has a timestamp of 0, which is possible to appear in a real SamplePair and
-// thus not suitable to signal a non-existing SamplePair.
+// package to signal a non-existing sample pair. It is a SamplePair with
+// timestamp model.Earliest and value 0.0. Note that the natural zero value of
+// SamplePair has a timestamp of 0, which is possible to appear in a real
+// SamplePair and thus not suitable to signal a non-existing SamplePair.
 var ZeroSamplePair = model.SamplePair{Timestamp: model.Earliest}
+
+// ZeroSample is the pseudo zero-value of model.Sample used by the local package
+// to signal a non-existing sample. It is a Sample with timestamp
+// model.Earliest, value 0.0, and metric nil. Note that the natural zero value
+// of Sample has a timestamp of 0, which is possible to appear in a real
+// Sample and thus not suitable to signal a non-existing Sample.
+var ZeroSample = model.Sample{Timestamp: model.Earliest}

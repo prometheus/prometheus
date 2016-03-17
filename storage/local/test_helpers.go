@@ -21,6 +21,7 @@ package local
 import (
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -51,6 +52,7 @@ func NewTestStorage(t testutil.T, encoding chunkEncoding) (*memorySeriesStorage,
 		SyncStrategy:               Adaptive,
 	}
 	storage := NewMemorySeriesStorage(o)
+	storage.(*memorySeriesStorage).archiveHighWatermark = model.Latest
 	if err := storage.Start(); err != nil {
 		directory.Close()
 		t.Fatalf("Error creating storage: %s", err)
