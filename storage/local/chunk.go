@@ -17,6 +17,7 @@ import (
 	"container/list"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -261,54 +262,72 @@ type chunk interface {
 // generally not safe to use a chunkIterator concurrently with or after chunk
 // mutation.
 type chunkIterator interface {
-	// length returns the number of samples in the chunk.
-	length() int
-	// Gets the timestamp of the n-th sample in the chunk.
-	timestampAtIndex(int) (model.Time, error)
 	// Gets the last timestamp in the chunk.
 	lastTimestamp() (model.Time, error)
-	// Gets the sample value of the n-th sample in the chunk.
-	sampleValueAtIndex(int) (model.SampleValue, error)
-	// Gets the last sample value in the chunk.
-	lastSampleValue() (model.SampleValue, error)
-	// Gets the value that is closest before the given time. In case a value
-	// exists at precisely the given time, that value is returned. If no
-	// applicable value exists, ZeroSamplePair is returned.
-	valueAtOrBeforeTime(model.Time) (model.SamplePair, error)
-	// Gets all values contained within a given interval.
-	rangeValues(metric.Interval) ([]model.SamplePair, error)
 	// Whether a given timestamp is contained between first and last value
 	// in the chunk.
 	contains(model.Time) (bool, error)
-	// values returns a channel, from which all sample values in the chunk
-	// can be received in order. The channel is closed after the last
-	// one. It is generally not safe to mutate the chunk while the channel
-	// is still open. If a value is returned with error!=nil, no further
-	// values will be returned and the channel is closed.
-	values() <-chan struct {
-		model.SamplePair
-		error
+	// Scans the next value in the chunk. Directly after the iterator has
+	// been created, the next value is the first value in the
+	// chunk. Otherwise, it is the value following the last value scanned or
+	// found (by one of the find... methods). Returns false if either the
+	// end of the chunk is reached or an error has occurred.
+	scan() bool
+	// Finds the most recent value at or before the provided time. Returns
+	// false if either the chunk contains no value at or before the provided
+	// time, or an error has occurred.
+	findAtOrBefore(model.Time) bool
+	// Finds the oldest value at or after the provided time. Returns false
+	// if either the chunk contains no value at or after the provided time,
+	// or an error has occurred.
+	findAtOrAfter(model.Time) bool
+	// Returns the last value scanned (by the scan method) or found (by one
+	// of the find... methods). It returns ZeroSamplePair before any of
+	// those methods were called.
+	value() model.SamplePair
+	// Returns the last error encountered. In general, an error signals data
+	// corruption in the chunk and requires quarantining.
+	err() error
+}
+
+// rangeValues is a utility function that retrieves all values within the given
+// range from a chunkIterator.
+func rangeValues(it chunkIterator, in metric.Interval) ([]model.SamplePair, error) {
+	result := []model.SamplePair{}
+	if !it.findAtOrAfter(in.OldestInclusive) {
+		return result, it.err()
 	}
+	for !it.value().Timestamp.After(in.NewestInclusive) {
+		result = append(result, it.value())
+		if !it.scan() {
+			break
+		}
+	}
+	return result, it.err()
 }
 
 func transcodeAndAdd(dst chunk, src chunk, s model.SamplePair) ([]chunk, error) {
 	chunkOps.WithLabelValues(transcode).Inc()
 
-	head := dst
-	body := []chunk{}
-	for v := range src.newIterator().values() {
-		if v.error != nil {
-			return nil, v.error
-		}
-		newChunks, err := head.add(v.SamplePair)
-		if err != nil {
+	var (
+		head            = dst
+		body, newChunks []chunk
+		err             error
+	)
+
+	it := src.newIterator()
+	for it.scan() {
+		if newChunks, err = head.add(it.value()); err != nil {
 			return nil, err
 		}
 		body = append(body, newChunks[:len(newChunks)-1]...)
 		head = newChunks[len(newChunks)-1]
 	}
-	newChunks, err := head.add(s)
-	if err != nil {
+	if it.err() != nil {
+		return nil, it.err()
+	}
+
+	if newChunks, err = head.add(s); err != nil {
 		return nil, err
 	}
 	return append(body, newChunks...), nil
@@ -333,4 +352,95 @@ func newChunkForEncoding(encoding chunkEncoding) (chunk, error) {
 	default:
 		return nil, fmt.Errorf("unknown chunk encoding: %v", encoding)
 	}
+}
+
+// indexAccessor allows accesses to samples by index.
+type indexAccessor interface {
+	timestampAtIndex(int) model.Time
+	sampleValueAtIndex(int) model.SampleValue
+	err() error
+}
+
+// indexAccessingChunkIterator is a chunk iterator for chunks for which an
+// indexAccessor implementation exists.
+type indexAccessingChunkIterator struct {
+	len       int
+	pos       int
+	lastValue model.SamplePair
+	acc       indexAccessor
+}
+
+func newIndexAccessingChunkIterator(len int, acc indexAccessor) *indexAccessingChunkIterator {
+	return &indexAccessingChunkIterator{
+		len:       len,
+		pos:       -1,
+		lastValue: ZeroSamplePair,
+		acc:       acc,
+	}
+}
+
+// lastTimestamp implements chunkIterator.
+func (it *indexAccessingChunkIterator) lastTimestamp() (model.Time, error) {
+	return it.acc.timestampAtIndex(it.len - 1), it.acc.err()
+}
+
+// contains implements chunkIterator.
+func (it *indexAccessingChunkIterator) contains(t model.Time) (bool, error) {
+	return !t.Before(it.acc.timestampAtIndex(0)) &&
+		!t.After(it.acc.timestampAtIndex(it.len-1)), it.acc.err()
+}
+
+// scan implements chunkIterator.
+func (it *indexAccessingChunkIterator) scan() bool {
+	it.pos++
+	if it.pos >= it.len {
+		return false
+	}
+	it.lastValue = model.SamplePair{
+		Timestamp: it.acc.timestampAtIndex(it.pos),
+		Value:     it.acc.sampleValueAtIndex(it.pos),
+	}
+	return it.acc.err() == nil
+}
+
+// findAtOrBefore implements chunkIterator.
+func (it *indexAccessingChunkIterator) findAtOrBefore(t model.Time) bool {
+	i := sort.Search(it.len, func(i int) bool {
+		return it.acc.timestampAtIndex(i).After(t)
+	})
+	if i == 0 || it.acc.err() != nil {
+		return false
+	}
+	it.pos = i - 1
+	it.lastValue = model.SamplePair{
+		Timestamp: it.acc.timestampAtIndex(i - 1),
+		Value:     it.acc.sampleValueAtIndex(i - 1),
+	}
+	return true
+}
+
+// findAtOrAfter implements chunkIterator.
+func (it *indexAccessingChunkIterator) findAtOrAfter(t model.Time) bool {
+	i := sort.Search(it.len, func(i int) bool {
+		return !it.acc.timestampAtIndex(i).Before(t)
+	})
+	if i == it.len || it.acc.err() != nil {
+		return false
+	}
+	it.pos = i
+	it.lastValue = model.SamplePair{
+		Timestamp: it.acc.timestampAtIndex(i),
+		Value:     it.acc.sampleValueAtIndex(i),
+	}
+	return true
+}
+
+// value implements chunkIterator.
+func (it *indexAccessingChunkIterator) value() model.SamplePair {
+	return it.lastValue
+}
+
+// err implements chunkIterator.
+func (it *indexAccessingChunkIterator) err() error {
+	return it.acc.err()
 }
