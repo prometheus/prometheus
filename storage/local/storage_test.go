@@ -31,7 +31,7 @@ import (
 )
 
 func TestMatches(t *testing.T) {
-	storage, closer := NewTestStorage(t, 1)
+	storage, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	storage.archiveHighWatermark = 90
@@ -266,7 +266,7 @@ func TestMatches(t *testing.T) {
 }
 
 func TestFingerprintsForLabels(t *testing.T) {
-	storage, closer := NewTestStorage(t, 1)
+	storage, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	samples := make([]*model.Sample, 100)
@@ -348,7 +348,7 @@ func TestFingerprintsForLabels(t *testing.T) {
 var benchLabelMatchingRes map[model.Fingerprint]metric.Metric
 
 func BenchmarkLabelMatching(b *testing.B) {
-	s, closer := NewTestStorage(b, 1)
+	s, closer := NewTestStorage(b, 2)
 	defer closer.Close()
 
 	h := fnv.New64a()
@@ -444,7 +444,7 @@ func TestRetentionCutoff(t *testing.T) {
 	now := model.Now()
 	insertStart := now.Add(-2 * time.Hour)
 
-	s, closer := NewTestStorage(t, 1)
+	s, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	// Stop maintenance loop to prevent actual purging.
@@ -498,7 +498,7 @@ func TestDropMetrics(t *testing.T) {
 	now := model.Now()
 	insertStart := now.Add(-2 * time.Hour)
 
-	s, closer := NewTestStorage(t, 1)
+	s, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	chunkFileExists := func(fp model.Fingerprint) (bool, error) {
@@ -605,7 +605,7 @@ func TestQuarantineMetric(t *testing.T) {
 	now := model.Now()
 	insertStart := now.Add(-2 * time.Hour)
 
-	s, closer := NewTestStorage(t, 1)
+	s, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	chunkFileExists := func(fp model.Fingerprint) (bool, error) {
@@ -1763,7 +1763,7 @@ func verifyStorageSequential(t testing.TB, s *memorySeriesStorage, samples model
 }
 
 func TestAppendOutOfOrder(t *testing.T) {
-	s, closer := NewTestStorage(t, 1)
+	s, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	m := model.Metric{

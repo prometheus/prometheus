@@ -24,7 +24,7 @@ import (
 )
 
 func TestRuleEval(t *testing.T) {
-	storage, closer := local.NewTestStorage(t, 1)
+	storage, closer := local.NewTestStorage(t, 2)
 	defer closer.Close()
 	engine := promql.NewEngine(storage, nil)
 	now := model.Now()

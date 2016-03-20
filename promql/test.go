@@ -469,7 +469,7 @@ func (t *Test) clear() {
 	}
 
 	var closer testutil.Closer
-	t.storage, closer = local.NewTestStorage(t, 1)
+	t.storage, closer = local.NewTestStorage(t, 2)
 
 	t.closeStorage = closer.Close
 	t.queryEngine = NewEngine(t.storage, nil)
