@@ -745,10 +745,22 @@ func (c gorillaChunk) addBitPattern(offset uint16, pattern uint64, n uint16) uin
 		newOffset   = offset + n
 	)
 
+	// Clean up the parts of the footer we will write into. (But not more as
+	// we are still using the value related part of the footer when we have
+	// already overwritten timestamp related parts.)
 	if newOffset > gorillaNextSampleBitOffsetThreshold {
-		// We'll write into the footer. Clean it first.
-		for i := gorillaNextSampleBitOffsetThreshold / 8; i < len(c); i++ {
-			c[i] = 0
+		pos := offset
+		if pos < gorillaNextSampleBitOffsetThreshold {
+			pos = gorillaNextSampleBitOffsetThreshold
+		}
+		for pos < newOffset {
+			posInByte := pos % 8
+			bitsToClear := newOffset - pos
+			if bitsToClear > 8-posInByte {
+				bitsToClear = 8 - posInByte
+			}
+			c[pos/8] &^= bitMask[bitsToClear][posInByte]
+			pos += bitsToClear
 		}
 	}
 
@@ -1091,7 +1103,7 @@ func (it *gorillaChunkIterator) reset() {
 // reset, a chunk can be rewound again.
 func (it *gorillaChunkIterator) rewind(t model.Time, v model.SampleValue) {
 	if it.rewound {
-		panic("cannet rewind Gorilla chunk twice")
+		panic("cannot rewind Gorilla chunk twice")
 	}
 	it.rewound = true
 	it.nextT = it.t
