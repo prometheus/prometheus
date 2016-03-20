@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// The DefaultChunkEncoding can be changed via a flag.
+// DefaultChunkEncoding can be changed via a flag.
 var DefaultChunkEncoding = doubleDelta
 
 var errChunkBoundsExceeded = errors.New("attempted access outside of chunk boundaries")
