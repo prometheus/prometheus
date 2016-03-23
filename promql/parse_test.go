@@ -1313,32 +1313,6 @@ var testStatement = []struct {
 		},
 	}, {
 		input: `ALERT SomeName IF some_metric > 1
-			WITH {}
-			SUMMARY "Global request rate low"
-			DESCRIPTION "The global request rate is low"
-		`,
-		expected: Statements{
-			&AlertStmt{
-				Name: "SomeName",
-				Expr: &BinaryExpr{
-					Op: itemGTR,
-					LHS: &VectorSelector{
-						Name: "some_metric",
-						LabelMatchers: metric.LabelMatchers{
-							{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
-						},
-					},
-					RHS: &NumberLiteral{1},
-				},
-				Labels: model.LabelSet{},
-				Annotations: model.LabelSet{
-					"summary":     "Global request rate low",
-					"description": "The global request rate is low",
-				},
-			},
-		},
-	}, {
-		input: `ALERT SomeName IF some_metric > 1
 			LABELS {}
 			ANNOTATIONS {
 				summary = "Global request rate low",

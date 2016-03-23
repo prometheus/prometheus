@@ -384,57 +384,17 @@ func (p *parser) alertStmt() *AlertStmt {
 		}
 	}
 
-	// Accepting WITH instead of LABELS is temporary compatibility
-	// with the old alerting syntax.
 	var (
-		hasLabels   bool
-		oldSyntax   bool
 		labels      = model.LabelSet{}
 		annotations = model.LabelSet{}
 	)
-	if t := p.peek().typ; t == itemLabels {
+	if p.peek().typ == itemLabels {
 		p.expect(itemLabels, ctx)
 		labels = p.labelSet()
-		hasLabels = true
-	} else if t == itemWith {
-		p.expect(itemWith, ctx)
-		labels = p.labelSet()
-		oldSyntax = true
 	}
-
-	// Only allow old annotation syntax if new label syntax isn't used.
-	if !hasLabels {
-	Loop:
-		for {
-			switch p.next().typ {
-			case itemSummary:
-				annotations["summary"] = model.LabelValue(p.unquoteString(p.expect(itemString, ctx).val))
-
-			case itemDescription:
-				annotations["description"] = model.LabelValue(p.unquoteString(p.expect(itemString, ctx).val))
-
-			case itemRunbook:
-				annotations["runbook"] = model.LabelValue(p.unquoteString(p.expect(itemString, ctx).val))
-
-			default:
-				p.backup()
-				break Loop
-			}
-		}
-		if len(annotations) > 0 {
-			oldSyntax = true
-		}
-	}
-
-	// Only allow new annotation syntax if WITH or old annotation
-	// syntax weren't used.
-	if !oldSyntax {
-		if p.peek().typ == itemAnnotations {
-			p.expect(itemAnnotations, ctx)
-			annotations = p.labelSet()
-		}
-	} else {
-		log.Warnf("Alerting rule with old syntax found. Support for this syntax will be removed with 0.18. Please update to the new syntax.")
+	if p.peek().typ == itemAnnotations {
+		p.expect(itemAnnotations, ctx)
+		annotations = p.labelSet()
 	}
 
 	return &AlertStmt{
