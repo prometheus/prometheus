@@ -1410,6 +1410,10 @@ func BenchmarkAppendType1(b *testing.B) {
 	benchmarkAppend(b, 1)
 }
 
+func BenchmarkAppendType2(b *testing.B) {
+	benchmarkAppend(b, 2)
+}
+
 // Append a large number of random samples and then check if we can get them out
 // of the storage alright.
 func testFuzz(t *testing.T, encoding chunkEncoding) {

@@ -47,7 +47,7 @@ func (ce *chunkEncoding) Set(s string) error {
 	case "1":
 		*ce = doubleDelta
 	case "2":
-		*ce = gorilla
+		*ce = varbit
 	default:
 		return fmt.Errorf("invalid chunk encoding: %s", s)
 	}
@@ -57,7 +57,7 @@ func (ce *chunkEncoding) Set(s string) error {
 const (
 	delta chunkEncoding = iota
 	doubleDelta
-	gorilla
+	varbit
 )
 
 // chunkDesc contains meta-data for a chunk. Pay special attention to the
@@ -370,8 +370,8 @@ func newChunkForEncoding(encoding chunkEncoding) (chunk, error) {
 		return newDeltaEncodedChunk(d1, d0, true, chunkLen), nil
 	case doubleDelta:
 		return newDoubleDeltaEncodedChunk(d1, d0, true, chunkLen), nil
-	case gorilla:
-		return newGorillaChunk(gorillaZeroEncoding), nil
+	case varbit:
+		return newVarbitChunk(varbitZeroEncoding), nil
 	default:
 		return nil, fmt.Errorf("unknown chunk encoding: %v", encoding)
 	}

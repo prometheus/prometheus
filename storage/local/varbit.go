@@ -22,14 +22,26 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-// Gorilla chunk encoding is inspired by the following paper:
+// The varbit chunk encoding is broadly similar to the double-delta
+// chunks. However, it uses a number of different bit-widths to save the
+// double-deltas (rather than 1, 2, or 4 bytes). Also, it doesn't use the delta
+// of the first two samples of a chunk as the base delta, but uses a "sliding"
+// delta, i.e. the delta of the two previous samples. Both differences make
+// random access more expensive. Sample values can be encoded with the same
+// double-delta scheme as timestamps, but different value encodings can be
+// chosen adaptively, among them XOR encoding and "zero" encoding for constant
+// sample values. Overall, the varbit encoding results in a much better
+// compression ratio (~1.3 bytes per sample compared to ~3.3 bytes per sample
+// with double-delta encoding, for typical data sets).
+//
+// Major parts of the varbit encoding are inspired by the following paper:
 //   Gorilla: A Fast, Scalable, In-Memory Time Series Database
 //   T. Pelkonen et al., Facebook Inc.
 //   http://www.vldb.org/pvldb/vol8/p1816-teller.pdf
-// Note that there are significant differences in detail, some due to the way
-// Prometheus chunks work, others to optimize for the Prometheus use-case.
+// Note that there are significant differences, some due to the way Prometheus
+// chunks work, others to optimize for the Prometheus use-case.
 //
-// Layout of a 1024 byte gorilla chunk (big endian, wherever it matters):
+// Layout of a 1024 byte varbit chunk (big endian, wherever it matters):
 // - first time (int64):                  8 bytes  bit 0000-0063
 // - first value (float64):               8 bytes  bit 0064-0127
 // - last time (int64):                   8 bytes  bit 0128-0191
@@ -68,8 +80,9 @@ import (
 // The difference to the 2nd timestamp is saved as first Δt. 3 bytes is enough
 // for about 4.5h. Since we close a chunk after sitting idle for 1h, this
 // limitation has no practical consequences. Should, for whatever reason, a
-// larger delta be required, the chunk would be closed and the new sample added
-// to a new chunk.
+// larger delta be required, the chunk would be closed, i.e. the new sample is
+// added as the last sample to the chunk, and the next sample will be added to a
+// new chunk.
 //
 // From the 3rd timestamp on, a double-delta (ΔΔt) is saved:
 //   (t_{n} - t_{n-1}) - (t_{n-2} - t_{n-1})
@@ -81,8 +94,8 @@ import (
 // 7 bits counting the number of consecutive ΔΔt==0 (the count is offset by -1,
 // so the range of 0 to 127 represents 1 to 128 repetitions).
 //
-// If ΔΔt != 0, we essentially apply the Gorilla scheme verbatim (cf. section
-// 4.1.1 in the paper), but with different bit buckets as Prometheus uses ms
+// If ΔΔt != 0, we essentially apply the Gorilla encoding scheme (cf. section
+// 4.1.1 in the paper) but with different bit buckets as Prometheus uses ms
 // rather than s, and the default scrape interval is 1m rather than 4m). In
 // particular:
 //
@@ -96,20 +109,20 @@ import (
 //   value.  This spans more than 1h, which is usually enough as we close a
 //   chunk anyway if it doesn't receive any sample in 1h.
 //
-// - Should we nevertheless encounter a larger ΔΔt, we simply close the chunk
-//   and overflow into a new chunk.
+// - Should we nevertheless encounter a larger ΔΔt, we simply close the chunk,
+//   add the new sample as the last of the chunk, and add subsequent samples to
+//   a new chunk.
 //
 // VALUE ENCODING
 //
 // Value encoding can change and is determined by the two least significant bits
 // of the 'flags' byte at bit position 280. The encoding can be changed without
 // transcoding upon adding the 3rd sample. After that, an encoding change
-// results either in transcoding or in closing the chunk and overflowing into a
-// new chunk.
+// results either in transcoding or in closing the chunk.
 //
 // The 1st sample value is always saved directly. The 2nd sample value is saved
-// as the last value. Upon saving the 3rd value, an encoding is chosen, and the
-// chunk is prepared accordingly.
+// in the header as the last value. Upon saving the 3rd value, an encoding is
+// chosen, and the chunk is prepared accordingly.
 //
 // The following value encodings exist (with their value in the flags byte):
 //
@@ -141,14 +154,15 @@ import (
 //
 // 2: XOR encoding.
 //
-// This follows verbatim the Gorilla value encoding (cf. section 4.1.2 of the
-// paper). The last count of leading zeros and the last count of meaningful bits
-// in the XOR value is saved at the end of the chunk for as long as the chunk is
-// not closed yet (see above). Note, though, that the number of significant bits
-// is saved as (count-1), i.e. a saved value of 0 means 1 significant bit, a
-// saved value of 1 means 2, and so on. Also, we save the numbers of leading
-// zeros and significant bits anew if they drop a lot. Otherwise, you can easily
-// be locked in with a high number of significant bits.
+// This follows almost precisely the Gorilla value encoding (cf. section 4.1.2
+// of the paper). The last count of leading zeros and the last count of
+// meaningful bits in the XOR value is saved at the end of the chunk for as long
+// as the chunk is not closed yet (see above). Note, though, that the number of
+// significant bits is saved as (count-1), i.e. a saved value of 0 means 1
+// significant bit, a saved value of 1 means 2, and so on. Also, we save the
+// numbers of leading zeros and significant bits anew if they drop a
+// lot. Otherwise, you can easily be locked in with a high number of significant
+// bits.
 //
 // 3: Direct encoding.
 //
@@ -167,111 +181,111 @@ import (
 //     determines how many sample values will follow directly after another.
 
 const (
-	gorillaMinLength = 128
-	gorillaMaxLength = 8191
+	varbitMinLength = 128
+	varbitMaxLength = 8191
 
 	// Useful byte offsets.
-	gorillaFirstTimeOffset           = 0
-	gorillaFirstValueOffset          = 8
-	gorillaLastTimeOffset            = 16
-	gorillaLastValueOffset           = 24
-	gorillaFirstTimeDeltaOffset      = 32
-	gorillaFlagOffset                = 35
-	gorillaNextSampleBitOffsetOffset = 36
-	gorillaFirstValueDeltaOffset     = 38
+	varbitFirstTimeOffset           = 0
+	varbitFirstValueOffset          = 8
+	varbitLastTimeOffset            = 16
+	varbitLastValueOffset           = 24
+	varbitFirstTimeDeltaOffset      = 32
+	varbitFlagOffset                = 35
+	varbitNextSampleBitOffsetOffset = 36
+	varbitFirstValueDeltaOffset     = 38
 	// The following are in the "footer" and only usable if the chunk is
 	// still open.
-	gorillaCountOffsetBitOffset           = chunkLen - 9
-	gorillaLastTimeDeltaOffset            = chunkLen - 7
-	gorillaLastValueDeltaOffset           = chunkLen - 4
-	gorillaLastLeadingZerosCountOffset    = chunkLen - 4
-	gorillaLastSignificantBitsCountOffset = chunkLen - 3
+	varbitCountOffsetBitOffset           = chunkLen - 9
+	varbitLastTimeDeltaOffset            = chunkLen - 7
+	varbitLastValueDeltaOffset           = chunkLen - 4
+	varbitLastLeadingZerosCountOffset    = chunkLen - 4
+	varbitLastSignificantBitsCountOffset = chunkLen - 3
 
-	gorillaFirstSampleBitOffset  uint16 = 0 // Symbolic, don't really read or write here.
-	gorillaSecondSampleBitOffset uint16 = 1 // Symbolic, don't really read or write here.
-	// gorillaThirdSampleBitOffset is a bit special. Depending on the encoding, there can
+	varbitFirstSampleBitOffset  uint16 = 0 // Symbolic, don't really read or write here.
+	varbitSecondSampleBitOffset uint16 = 1 // Symbolic, don't really read or write here.
+	// varbitThirdSampleBitOffset is a bit special. Depending on the encoding, there can
 	// be various things at this offset. It's most of the time symbolic, but in the best
 	// case (zero encoding for values), it will be the real offset for the 3rd sample.
-	gorillaThirdSampleBitOffset uint16 = gorillaFirstValueDeltaOffset * 8
+	varbitThirdSampleBitOffset uint16 = varbitFirstValueDeltaOffset * 8
 
 	// If the bit offset for the next sample is above this threshold, no new
 	// samples can be added to the chunk's payload (because the payload has
 	// already reached the footer). However, one more sample can be saved in
 	// the header as the last sample.
-	gorillaNextSampleBitOffsetThreshold = 8 * gorillaCountOffsetBitOffset
+	varbitNextSampleBitOffsetThreshold = 8 * varbitCountOffsetBitOffset
 
-	gorillaMaxTimeDelta = 1 << 24 // What fits into a 3-byte timestamp.
+	varbitMaxTimeDelta = 1 << 24 // What fits into a 3-byte timestamp.
 )
 
-type gorillaValueEncoding byte
+type varbitValueEncoding byte
 
 const (
-	gorillaZeroEncoding gorillaValueEncoding = iota
-	gorillaIntDoubleDeltaEncoding
-	gorillaXOREncoding
-	gorillaDirectEncoding
+	varbitZeroEncoding varbitValueEncoding = iota
+	varbitIntDoubleDeltaEncoding
+	varbitXOREncoding
+	varbitDirectEncoding
 )
 
-// gorillaWorstCaseBitsPerSample provides the worst-case number of bits needed
+// varbitWorstCaseBitsPerSample provides the worst-case number of bits needed
 // per sample with the various value encodings. The counts already include the
 // up to 27 bits taken by a timestamp.
-var gorillaWorstCaseBitsPerSample = map[gorillaValueEncoding]int{
-	gorillaZeroEncoding:           27 + 0,
-	gorillaIntDoubleDeltaEncoding: 27 + 38,
-	gorillaXOREncoding:            27 + 13 + 64,
-	gorillaDirectEncoding:         27 + 64,
+var varbitWorstCaseBitsPerSample = map[varbitValueEncoding]int{
+	varbitZeroEncoding:           27 + 0,
+	varbitIntDoubleDeltaEncoding: 27 + 38,
+	varbitXOREncoding:            27 + 13 + 64,
+	varbitDirectEncoding:         27 + 64,
 }
 
-// gorillaChunk implements the chunk interface.
-type gorillaChunk []byte
+// varbitChunk implements the chunk interface.
+type varbitChunk []byte
 
-// newGorillaChunk returns a newly allocated gorillaChunk.  For simplicity, all
-// Gorilla chunks must have the length as determined by the chunkLen constant.
-func newGorillaChunk(enc gorillaValueEncoding) *gorillaChunk {
-	if chunkLen < gorillaMinLength || chunkLen > gorillaMaxLength {
+// newVarbitChunk returns a newly allocated varbitChunk.  For simplicity, all
+// varbit chunks must have the length as determined by the chunkLen constant.
+func newVarbitChunk(enc varbitValueEncoding) *varbitChunk {
+	if chunkLen < varbitMinLength || chunkLen > varbitMaxLength {
 		panic(fmt.Errorf(
-			"invalid chunk length of %d bytes , need at least %d bytes and at most %d bytes",
-			chunkLen, gorillaMinLength, gorillaMaxLength,
+			"invalid chunk length of %d bytes, need at least %d bytes and at most %d bytes",
+			chunkLen, varbitMinLength, varbitMaxLength,
 		))
 	}
-	if enc > gorillaDirectEncoding {
-		panic(fmt.Errorf("unknown Gorilla value encoding: %v", enc))
+	if enc > varbitDirectEncoding {
+		panic(fmt.Errorf("unknown varbit value encoding: %v", enc))
 	}
-	c := make(gorillaChunk, chunkLen)
+	c := make(varbitChunk, chunkLen)
 	c.setValueEncoding(enc)
 	return &c
 }
 
 // add implements chunk.
-func (c *gorillaChunk) add(s model.SamplePair) ([]chunk, error) {
+func (c *varbitChunk) add(s model.SamplePair) ([]chunk, error) {
 	offset := c.nextSampleOffset()
 	switch {
 	case c.closed():
 		return addToOverflowChunk(c, s)
-	case offset > gorillaNextSampleBitOffsetThreshold:
+	case offset > varbitNextSampleBitOffsetThreshold:
 		return c.addLastSample(s), nil
-	case offset == gorillaFirstSampleBitOffset:
+	case offset == varbitFirstSampleBitOffset:
 		return c.addFirstSample(s), nil
-	case offset == gorillaSecondSampleBitOffset:
+	case offset == varbitSecondSampleBitOffset:
 		return c.addSecondSample(s)
 	}
 	return c.addLaterSample(s, offset)
 }
 
 // clone implements chunk.
-func (c gorillaChunk) clone() chunk {
-	clone := make(gorillaChunk, len(c))
+func (c varbitChunk) clone() chunk {
+	clone := make(varbitChunk, len(c))
 	copy(clone, c)
 	return &clone
 }
 
 // newIterator implements chunk.
-func (c gorillaChunk) newIterator() chunkIterator {
-	return newGorillaChunkIterator(c)
+func (c varbitChunk) newIterator() chunkIterator {
+	return newVarbitChunkIterator(c)
 }
 
 // marshal implements chunk.
-func (c gorillaChunk) marshal(w io.Writer) error {
+func (c varbitChunk) marshal(w io.Writer) error {
 	n, err := w.Write(c)
 	if err != nil {
 		return err
@@ -283,7 +297,7 @@ func (c gorillaChunk) marshal(w io.Writer) error {
 }
 
 // marshalToBuf implements chunk.
-func (c gorillaChunk) marshalToBuf(buf []byte) error {
+func (c varbitChunk) marshalToBuf(buf []byte) error {
 	n := copy(buf, c)
 	if n != len(c) {
 		return fmt.Errorf("wanted to copy %d bytes to buffer, copied %d", len(c), n)
@@ -292,13 +306,13 @@ func (c gorillaChunk) marshalToBuf(buf []byte) error {
 }
 
 // unmarshal implements chunk.
-func (c gorillaChunk) unmarshal(r io.Reader) error {
+func (c varbitChunk) unmarshal(r io.Reader) error {
 	_, err := io.ReadFull(r, c)
 	return err
 }
 
 // unmarshalFromBuf implements chunk.
-func (c gorillaChunk) unmarshalFromBuf(buf []byte) error {
+func (c varbitChunk) unmarshalFromBuf(buf []byte) error {
 	if copied := copy(c, buf); copied != cap(c) {
 		return fmt.Errorf("insufficient bytes copied from buffer during unmarshaling, want %d, got %d", cap(c), copied)
 	}
@@ -306,123 +320,123 @@ func (c gorillaChunk) unmarshalFromBuf(buf []byte) error {
 }
 
 // encoding implements chunk.
-func (c gorillaChunk) encoding() chunkEncoding { return gorilla }
+func (c varbitChunk) encoding() chunkEncoding { return varbit }
 
 // firstTime implements chunk.
-func (c gorillaChunk) firstTime() model.Time {
+func (c varbitChunk) firstTime() model.Time {
 	return model.Time(
 		binary.BigEndian.Uint64(
-			c[gorillaFirstTimeOffset:],
+			c[varbitFirstTimeOffset:],
 		),
 	)
 }
 
-func (c gorillaChunk) firstValue() model.SampleValue {
+func (c varbitChunk) firstValue() model.SampleValue {
 	return model.SampleValue(
 		math.Float64frombits(
 			binary.BigEndian.Uint64(
-				c[gorillaFirstValueOffset:],
+				c[varbitFirstValueOffset:],
 			),
 		),
 	)
 }
 
-func (c gorillaChunk) lastTime() model.Time {
+func (c varbitChunk) lastTime() model.Time {
 	return model.Time(
 		binary.BigEndian.Uint64(
-			c[gorillaLastTimeOffset:],
+			c[varbitLastTimeOffset:],
 		),
 	)
 }
 
-func (c gorillaChunk) lastValue() model.SampleValue {
+func (c varbitChunk) lastValue() model.SampleValue {
 	return model.SampleValue(
 		math.Float64frombits(
 			binary.BigEndian.Uint64(
-				c[gorillaLastValueOffset:],
+				c[varbitLastValueOffset:],
 			),
 		),
 	)
 }
 
-func (c gorillaChunk) firstTimeDelta() model.Time {
+func (c varbitChunk) firstTimeDelta() model.Time {
 	// Only the first 3 bytes are actually the timestamp, so get rid of the
 	// last one by bitshifting.
-	return model.Time(c[gorillaFirstTimeDeltaOffset+2]) |
-		model.Time(c[gorillaFirstTimeDeltaOffset+1])<<8 |
-		model.Time(c[gorillaFirstTimeDeltaOffset])<<16
+	return model.Time(c[varbitFirstTimeDeltaOffset+2]) |
+		model.Time(c[varbitFirstTimeDeltaOffset+1])<<8 |
+		model.Time(c[varbitFirstTimeDeltaOffset])<<16
 }
 
 // firstValueDelta returns an undefined result if the encoding type is not 1.
-func (c gorillaChunk) firstValueDelta() int32 {
-	return int32(binary.BigEndian.Uint32(c[gorillaFirstValueDeltaOffset:]))
+func (c varbitChunk) firstValueDelta() int32 {
+	return int32(binary.BigEndian.Uint32(c[varbitFirstValueDeltaOffset:]))
 }
 
 // lastTimeDelta returns an undefined result if the chunk is closed already.
-func (c gorillaChunk) lastTimeDelta() model.Time {
-	return model.Time(c[gorillaLastTimeDeltaOffset+2]) |
-		model.Time(c[gorillaLastTimeDeltaOffset+1])<<8 |
-		model.Time(c[gorillaLastTimeDeltaOffset])<<16
+func (c varbitChunk) lastTimeDelta() model.Time {
+	return model.Time(c[varbitLastTimeDeltaOffset+2]) |
+		model.Time(c[varbitLastTimeDeltaOffset+1])<<8 |
+		model.Time(c[varbitLastTimeDeltaOffset])<<16
 }
 
 // setLastTimeDelta must not be called if the chunk is closed already. It most
 // not be called with a time that doesn't fit into 24bit, either.
-func (c gorillaChunk) setLastTimeDelta(dT model.Time) {
-	if dT > gorillaMaxTimeDelta {
+func (c varbitChunk) setLastTimeDelta(dT model.Time) {
+	if dT > varbitMaxTimeDelta {
 		panic("Δt overflows 24 bit")
 	}
-	c[gorillaLastTimeDeltaOffset] = byte(dT >> 16)
-	c[gorillaLastTimeDeltaOffset+1] = byte(dT >> 8)
-	c[gorillaLastTimeDeltaOffset+2] = byte(dT)
+	c[varbitLastTimeDeltaOffset] = byte(dT >> 16)
+	c[varbitLastTimeDeltaOffset+1] = byte(dT >> 8)
+	c[varbitLastTimeDeltaOffset+2] = byte(dT)
 }
 
 // lastValueDelta returns an undefined result if the chunk is closed already.
-func (c gorillaChunk) lastValueDelta() int32 {
-	return int32(binary.BigEndian.Uint32(c[gorillaLastValueDeltaOffset:]))
+func (c varbitChunk) lastValueDelta() int32 {
+	return int32(binary.BigEndian.Uint32(c[varbitLastValueDeltaOffset:]))
 }
 
 // setLastValueDelta must not be called if the chunk is closed already.
-func (c gorillaChunk) setLastValueDelta(dV int32) {
-	binary.BigEndian.PutUint32(c[gorillaLastValueDeltaOffset:], uint32(dV))
+func (c varbitChunk) setLastValueDelta(dV int32) {
+	binary.BigEndian.PutUint32(c[varbitLastValueDeltaOffset:], uint32(dV))
 }
 
-func (c gorillaChunk) nextSampleOffset() uint16 {
-	return binary.BigEndian.Uint16(c[gorillaNextSampleBitOffsetOffset:])
+func (c varbitChunk) nextSampleOffset() uint16 {
+	return binary.BigEndian.Uint16(c[varbitNextSampleBitOffsetOffset:])
 }
 
-func (c gorillaChunk) setNextSampleOffset(offset uint16) {
-	binary.BigEndian.PutUint16(c[gorillaNextSampleBitOffsetOffset:], offset)
+func (c varbitChunk) setNextSampleOffset(offset uint16) {
+	binary.BigEndian.PutUint16(c[varbitNextSampleBitOffsetOffset:], offset)
 }
 
-func (c gorillaChunk) valueEncoding() gorillaValueEncoding {
-	return gorillaValueEncoding(c[gorillaFlagOffset] & 0x03)
+func (c varbitChunk) valueEncoding() varbitValueEncoding {
+	return varbitValueEncoding(c[varbitFlagOffset] & 0x03)
 }
 
-func (c gorillaChunk) setValueEncoding(enc gorillaValueEncoding) {
-	if enc > gorillaDirectEncoding {
-		panic("invalid Gorilla value encoding")
+func (c varbitChunk) setValueEncoding(enc varbitValueEncoding) {
+	if enc > varbitDirectEncoding {
+		panic("invalid varbit value encoding")
 	}
-	c[gorillaFlagOffset] &^= 0x03     // Clear.
-	c[gorillaFlagOffset] |= byte(enc) // Set.
+	c[varbitFlagOffset] &^= 0x03     // Clear.
+	c[varbitFlagOffset] |= byte(enc) // Set.
 }
 
-func (c gorillaChunk) closed() bool {
-	return c[gorillaFlagOffset] > 0x7F // Most significant bit set.
+func (c varbitChunk) closed() bool {
+	return c[varbitFlagOffset] > 0x7F // Most significant bit set.
 }
 
-func (c gorillaChunk) zeroDDTRepeats() (repeats uint64, offset uint16) {
-	offset = binary.BigEndian.Uint16(c[gorillaCountOffsetBitOffset:])
+func (c varbitChunk) zeroDDTRepeats() (repeats uint64, offset uint16) {
+	offset = binary.BigEndian.Uint16(c[varbitCountOffsetBitOffset:])
 	if offset == 0 {
 		return 0, 0
 	}
 	return c.readBitPattern(offset, 7) + 1, offset
 }
 
-func (c gorillaChunk) setZeroDDTRepeats(repeats uint64, offset uint16) {
+func (c varbitChunk) setZeroDDTRepeats(repeats uint64, offset uint16) {
 	switch repeats {
 	case 0:
 		// Just clear the offset.
-		binary.BigEndian.PutUint16(c[gorillaCountOffsetBitOffset:], 0)
+		binary.BigEndian.PutUint16(c[varbitCountOffsetBitOffset:], 0)
 		return
 	case 1:
 		// First time we set a repeat here, so set the offset. But only
@@ -430,8 +444,8 @@ func (c gorillaChunk) setZeroDDTRepeats(repeats uint64, offset uint16) {
 		// would overwrite ourselves below, and we don't need the offset
 		// later anyway because no more samples will be added to this
 		// chunk.)
-		if offset+7 <= gorillaNextSampleBitOffsetThreshold {
-			binary.BigEndian.PutUint16(c[gorillaCountOffsetBitOffset:], offset)
+		if offset+7 <= varbitNextSampleBitOffsetThreshold {
+			binary.BigEndian.PutUint16(c[varbitCountOffsetBitOffset:], offset)
 		}
 	default:
 		// For a change, we are writing somewhere where we have written
@@ -445,56 +459,56 @@ func (c gorillaChunk) setZeroDDTRepeats(repeats uint64, offset uint16) {
 	c.addBitPattern(offset, repeats-1, 7)
 }
 
-func (c gorillaChunk) setLastSample(s model.SamplePair) {
+func (c varbitChunk) setLastSample(s model.SamplePair) {
 	binary.BigEndian.PutUint64(
-		c[gorillaLastTimeOffset:],
+		c[varbitLastTimeOffset:],
 		uint64(s.Timestamp),
 	)
 	binary.BigEndian.PutUint64(
-		c[gorillaLastValueOffset:],
+		c[varbitLastValueOffset:],
 		math.Float64bits(float64(s.Value)),
 	)
 }
 
 // addFirstSample is a helper method only used by c.add(). It adds timestamp and
 // value as base time and value.
-func (c *gorillaChunk) addFirstSample(s model.SamplePair) []chunk {
+func (c *varbitChunk) addFirstSample(s model.SamplePair) []chunk {
 	binary.BigEndian.PutUint64(
-		(*c)[gorillaFirstTimeOffset:],
+		(*c)[varbitFirstTimeOffset:],
 		uint64(s.Timestamp),
 	)
 	binary.BigEndian.PutUint64(
-		(*c)[gorillaFirstValueOffset:],
+		(*c)[varbitFirstValueOffset:],
 		math.Float64bits(float64(s.Value)),
 	)
 	c.setLastSample(s) // To simplify handling of single-sample chunks.
-	c.setNextSampleOffset(gorillaSecondSampleBitOffset)
+	c.setNextSampleOffset(varbitSecondSampleBitOffset)
 	return []chunk{c}
 }
 
 // addSecondSample is a helper method only used by c.add(). It calculates the
 // first time delta from the provided sample and adds it to the chunk together
 // with the provided sample as the last sample.
-func (c *gorillaChunk) addSecondSample(s model.SamplePair) ([]chunk, error) {
+func (c *varbitChunk) addSecondSample(s model.SamplePair) ([]chunk, error) {
 	firstTimeDelta := s.Timestamp - c.firstTime()
 	if firstTimeDelta < 0 {
 		return nil, fmt.Errorf("first Δt is less than zero: %v", firstTimeDelta)
 	}
-	if firstTimeDelta > gorillaMaxTimeDelta {
+	if firstTimeDelta > varbitMaxTimeDelta {
 		// A time delta too great. Still, we can add it as a last sample
 		// before overflowing.
 		return c.addLastSample(s), nil
 	}
-	(*c)[gorillaFirstTimeDeltaOffset] = byte(firstTimeDelta >> 16)
-	(*c)[gorillaFirstTimeDeltaOffset+1] = byte(firstTimeDelta >> 8)
-	(*c)[gorillaFirstTimeDeltaOffset+2] = byte(firstTimeDelta)
+	(*c)[varbitFirstTimeDeltaOffset] = byte(firstTimeDelta >> 16)
+	(*c)[varbitFirstTimeDeltaOffset+1] = byte(firstTimeDelta >> 8)
+	(*c)[varbitFirstTimeDeltaOffset+2] = byte(firstTimeDelta)
 
 	// Also set firstTimeDelta as the last time delta to be able to use the
 	// normal methods for adding later samples.
 	c.setLastTimeDelta(firstTimeDelta)
 
 	c.setLastSample(s)
-	c.setNextSampleOffset(gorillaThirdSampleBitOffset)
+	c.setNextSampleOffset(varbitThirdSampleBitOffset)
 	return []chunk{c}, nil
 }
 
@@ -504,15 +518,15 @@ func (c *gorillaChunk) addSecondSample(s model.SamplePair) ([]chunk, error) {
 // adds the very last sample added to this chunk ever, while setLastSample sets
 // the sample most recently added to the chunk so that it can be used for the
 // calculations required to add the next sample.
-func (c *gorillaChunk) addLastSample(s model.SamplePair) []chunk {
+func (c *varbitChunk) addLastSample(s model.SamplePair) []chunk {
 	c.setLastSample(s)
-	(*c)[gorillaFlagOffset] |= 0x80
+	(*c)[varbitFlagOffset] |= 0x80
 	return []chunk{c}
 }
 
 // addLaterSample is a helper method only used by c.add(). It adds a third or
 // later sample.
-func (c *gorillaChunk) addLaterSample(s model.SamplePair, offset uint16) ([]chunk, error) {
+func (c *varbitChunk) addLaterSample(s model.SamplePair, offset uint16) ([]chunk, error) {
 	var (
 		lastTime      = c.lastTime()
 		lastTimeDelta = c.lastTimeDelta()
@@ -524,22 +538,22 @@ func (c *gorillaChunk) addLaterSample(s model.SamplePair, offset uint16) ([]chun
 	if newTimeDelta < 0 {
 		return nil, fmt.Errorf("Δt is less than zero: %v", newTimeDelta)
 	}
-	if offset == gorillaThirdSampleBitOffset {
+	if offset == varbitThirdSampleBitOffset {
 		offset, encoding = c.prepForThirdSample(lastValue, s.Value, encoding)
 	}
-	if newTimeDelta > gorillaMaxTimeDelta {
+	if newTimeDelta > varbitMaxTimeDelta {
 		// A time delta too great. Still, we can add it as a last sample
 		// before overflowing.
 		return c.addLastSample(s), nil
 	}
 
 	// Analyze worst case, does it fit? If not, set new sample as the last.
-	if int(offset)+gorillaWorstCaseBitsPerSample[encoding] > chunkLen*8 {
+	if int(offset)+varbitWorstCaseBitsPerSample[encoding] > chunkLen*8 {
 		return c.addLastSample(s), nil
 	}
 
 	// Transcoding/overflow decisions first.
-	if encoding == gorillaZeroEncoding && s.Value != lastValue {
+	if encoding == varbitZeroEncoding && s.Value != lastValue {
 		// Cannot go on with zero encoding.
 		if offset > chunkLen*4 {
 			// Chunk already half full. Don't transcode, overflow instead.
@@ -547,17 +561,17 @@ func (c *gorillaChunk) addLaterSample(s model.SamplePair, offset uint16) ([]chun
 		}
 		if isInt32(s.Value - lastValue) {
 			// Trying int encoding looks promising.
-			return transcodeAndAdd(newGorillaChunk(gorillaIntDoubleDeltaEncoding), c, s)
+			return transcodeAndAdd(newVarbitChunk(varbitIntDoubleDeltaEncoding), c, s)
 		}
-		return transcodeAndAdd(newGorillaChunk(gorillaXOREncoding), c, s)
+		return transcodeAndAdd(newVarbitChunk(varbitXOREncoding), c, s)
 	}
-	if encoding == gorillaIntDoubleDeltaEncoding && !isInt32(s.Value-lastValue) {
+	if encoding == varbitIntDoubleDeltaEncoding && !isInt32(s.Value-lastValue) {
 		// Cannot go on with int encoding.
 		if offset > chunkLen*4 {
 			// Chunk already half full. Don't transcode, overflow instead.
 			return addToOverflowChunk(c, s)
 		}
-		return transcodeAndAdd(newGorillaChunk(gorillaXOREncoding), c, s)
+		return transcodeAndAdd(newVarbitChunk(varbitXOREncoding), c, s)
 	}
 
 	offset, overflow := c.addDDTime(offset, lastTimeDelta, newTimeDelta)
@@ -565,16 +579,16 @@ func (c *gorillaChunk) addLaterSample(s model.SamplePair, offset uint16) ([]chun
 		return c.addLastSample(s), nil
 	}
 	switch encoding {
-	case gorillaZeroEncoding:
+	case varbitZeroEncoding:
 		// Nothing to do.
-	case gorillaIntDoubleDeltaEncoding:
+	case varbitIntDoubleDeltaEncoding:
 		offset = c.addDDValue(offset, lastValue, s.Value)
-	case gorillaXOREncoding:
+	case varbitXOREncoding:
 		offset = c.addXORValue(offset, lastValue, s.Value)
-	case gorillaDirectEncoding:
+	case varbitDirectEncoding:
 		offset = c.addBitPattern(offset, math.Float64bits(float64(s.Value)), 64)
 	default:
-		return nil, fmt.Errorf("unknown Gorilla value encoding: %v", encoding)
+		return nil, fmt.Errorf("unknown Varbit value encoding: %v", encoding)
 	}
 
 	c.setNextSampleOffset(offset)
@@ -582,11 +596,11 @@ func (c *gorillaChunk) addLaterSample(s model.SamplePair, offset uint16) ([]chun
 	return []chunk{c}, nil
 }
 
-func (c gorillaChunk) prepForThirdSample(
-	lastValue, newValue model.SampleValue, encoding gorillaValueEncoding,
-) (uint16, gorillaValueEncoding) {
+func (c varbitChunk) prepForThirdSample(
+	lastValue, newValue model.SampleValue, encoding varbitValueEncoding,
+) (uint16, varbitValueEncoding) {
 	var (
-		offset                   = gorillaThirdSampleBitOffset
+		offset                   = varbitThirdSampleBitOffset
 		firstValue               = c.firstValue()
 		firstValueDelta          = lastValue - firstValue
 		firstXOR                 = math.Float64bits(float64(firstValue)) ^ math.Float64bits(float64(lastValue))
@@ -597,31 +611,31 @@ func (c gorillaChunk) prepForThirdSample(
 	// Now pick an initial encoding and prepare things accordingly.
 	// However, never pick an encoding "below" the one initially set.
 	switch {
-	case encoding == gorillaZeroEncoding && lastValue == firstValue && lastValue == newValue:
+	case encoding == varbitZeroEncoding && lastValue == firstValue && lastValue == newValue:
 		// Stay at zero encoding.
 		// No value to be set.
 		// No offset change required.
-	case encoding <= gorillaIntDoubleDeltaEncoding && isInt32(firstValueDelta):
-		encoding = gorillaIntDoubleDeltaEncoding
+	case encoding <= varbitIntDoubleDeltaEncoding && isInt32(firstValueDelta):
+		encoding = varbitIntDoubleDeltaEncoding
 		binary.BigEndian.PutUint32(
-			c[gorillaFirstValueDeltaOffset:],
+			c[varbitFirstValueDeltaOffset:],
 			uint32(int32(firstValueDelta)),
 		)
 		c.setLastValueDelta(int32(firstValueDelta))
 		offset += 32
-	case encoding == gorillaDirectEncoding || firstSignificantBits+secondSignificantBits > 100:
+	case encoding == varbitDirectEncoding || firstSignificantBits+secondSignificantBits > 100:
 		// Heuristics based on three samples only is a bit weak,
 		// but if we need 50+13 = 63 bits per sample already
 		// now, we might be better off going for direct encoding.
-		encoding = gorillaDirectEncoding
+		encoding = varbitDirectEncoding
 		// Put bit pattern directly where otherwise the delta would have gone.
 		binary.BigEndian.PutUint64(
-			c[gorillaFirstValueDeltaOffset:],
+			c[varbitFirstValueDeltaOffset:],
 			math.Float64bits(float64(lastValue)),
 		)
 		offset += 64
 	default:
-		encoding = gorillaXOREncoding
+		encoding = varbitXOREncoding
 		offset = c.addXORValue(offset, firstValue, lastValue)
 	}
 	c.setValueEncoding(encoding)
@@ -630,7 +644,7 @@ func (c gorillaChunk) prepForThirdSample(
 }
 
 // addDDTime requires that lastTimeDelta and newTimeDelta are positive and don't overflow 24bit.
-func (c gorillaChunk) addDDTime(offset uint16, lastTimeDelta, newTimeDelta model.Time) (newOffset uint16, overflow bool) {
+func (c varbitChunk) addDDTime(offset uint16, lastTimeDelta, newTimeDelta model.Time) (newOffset uint16, overflow bool) {
 	timeDD := newTimeDelta - lastTimeDelta
 
 	if !isSignedIntN(int64(timeDD), 23) {
@@ -672,7 +686,7 @@ func (c gorillaChunk) addDDTime(offset uint16, lastTimeDelta, newTimeDelta model
 }
 
 // addDDValue requires that newValue-lastValue can be represented with an int32.
-func (c gorillaChunk) addDDValue(offset uint16, lastValue, newValue model.SampleValue) uint16 {
+func (c varbitChunk) addDDValue(offset uint16, lastValue, newValue model.SampleValue) uint16 {
 	newValueDelta := int64(newValue - lastValue)
 	lastValueDelta := c.lastValueDelta()
 	valueDD := newValueDelta - int64(lastValueDelta)
@@ -698,7 +712,7 @@ func (c gorillaChunk) addDDValue(offset uint16, lastValue, newValue model.Sample
 	}
 }
 
-func (c gorillaChunk) addXORValue(offset uint16, lastValue, newValue model.SampleValue) uint16 {
+func (c varbitChunk) addXORValue(offset uint16, lastValue, newValue model.SampleValue) uint16 {
 	lastPattern := math.Float64bits(float64(lastValue))
 	newPattern := math.Float64bits(float64(newValue))
 	xor := lastPattern ^ newPattern
@@ -706,8 +720,8 @@ func (c gorillaChunk) addXORValue(offset uint16, lastValue, newValue model.Sampl
 		return c.addZeroBit(offset)
 	}
 
-	lastLeadingBits := c[gorillaLastLeadingZerosCountOffset]
-	lastSignificantBits := c[gorillaLastSignificantBitsCountOffset]
+	lastLeadingBits := c[varbitLastLeadingZerosCountOffset]
+	lastSignificantBits := c[varbitLastSignificantBitsCountOffset]
 	newLeadingBits, newSignificantBits := countBits(xor)
 
 	// Short entry if the new significant bits fit into the same box as the
@@ -727,8 +741,8 @@ func (c gorillaChunk) addXORValue(offset uint16, lastValue, newValue model.Sampl
 	}
 
 	// Long entry.
-	c[gorillaLastLeadingZerosCountOffset] = newLeadingBits
-	c[gorillaLastSignificantBitsCountOffset] = newSignificantBits
+	c[varbitLastLeadingZerosCountOffset] = newLeadingBits
+	c[varbitLastSignificantBitsCountOffset] = newSignificantBits
 	offset = c.addOneBits(offset, 2)
 	offset = c.addBitPattern(offset, uint64(newLeadingBits), 5)
 	offset = c.addBitPattern(offset, uint64(newSignificantBits-1), 6) // Note -1!
@@ -739,8 +753,8 @@ func (c gorillaChunk) addXORValue(offset uint16, lastValue, newValue model.Sampl
 	)
 }
 
-func (c gorillaChunk) addZeroBit(offset uint16) uint16 {
-	if offset < gorillaNextSampleBitOffsetThreshold {
+func (c varbitChunk) addZeroBit(offset uint16) uint16 {
+	if offset < varbitNextSampleBitOffsetThreshold {
 		// Writing a zero to a never touched area is a no-op.
 		// Just increase the offset.
 		return offset + 1
@@ -749,7 +763,7 @@ func (c gorillaChunk) addZeroBit(offset uint16) uint16 {
 	return offset + 1
 }
 
-func (c gorillaChunk) addOneBits(offset uint16, n uint16) uint16 {
+func (c varbitChunk) addOneBits(offset uint16, n uint16) uint16 {
 	if n > 7 {
 		panic("unexpected number of control bits")
 	}
@@ -766,14 +780,14 @@ func (c gorillaChunk) addOneBits(offset uint16, n uint16) uint16 {
 	}
 	return offset
 }
-func (c gorillaChunk) addOneBitsWithTrailingZero(offset uint16, n uint16) uint16 {
+func (c varbitChunk) addOneBitsWithTrailingZero(offset uint16, n uint16) uint16 {
 	offset = c.addOneBits(offset, n)
 	return c.addZeroBit(offset)
 }
 
 // addSignedInt adds i as a signed integer with n bits. It requires i to be
 // representable as such. (Check with isSignedIntN first.)
-func (c gorillaChunk) addSignedInt(offset uint16, i int64, n uint16) uint16 {
+func (c varbitChunk) addSignedInt(offset uint16, i int64, n uint16) uint16 {
 	if i < 0 && n < 64 {
 		i += 1 << n
 	}
@@ -782,7 +796,7 @@ func (c gorillaChunk) addSignedInt(offset uint16, i int64, n uint16) uint16 {
 
 // addBitPattern adds the last n bits of the given pattern. Other bits in the
 // pattern must be 0.
-func (c gorillaChunk) addBitPattern(offset uint16, pattern uint64, n uint16) uint16 {
+func (c varbitChunk) addBitPattern(offset uint16, pattern uint64, n uint16) uint16 {
 	var (
 		byteOffset  = offset / 8
 		bitsToWrite = 8 - offset%8
@@ -792,10 +806,10 @@ func (c gorillaChunk) addBitPattern(offset uint16, pattern uint64, n uint16) uin
 	// Clean up the parts of the footer we will write into. (But not more as
 	// we are still using the value related part of the footer when we have
 	// already overwritten timestamp related parts.)
-	if newOffset > gorillaNextSampleBitOffsetThreshold {
+	if newOffset > varbitNextSampleBitOffsetThreshold {
 		pos := offset
-		if pos < gorillaNextSampleBitOffsetThreshold {
-			pos = gorillaNextSampleBitOffsetThreshold
+		if pos < varbitNextSampleBitOffsetThreshold {
+			pos = varbitNextSampleBitOffsetThreshold
 		}
 		for pos < newOffset {
 			posInByte := pos % 8
@@ -823,7 +837,7 @@ func (c gorillaChunk) addBitPattern(offset uint16, pattern uint64, n uint16) uin
 
 // readBitPattern reads n bits at the given offset and returns them as the last
 // n bits in a uint64.
-func (c gorillaChunk) readBitPattern(offset, n uint16) uint64 {
+func (c varbitChunk) readBitPattern(offset, n uint16) uint64 {
 	var (
 		result                   uint64
 		byteOffset               = offset / 8
@@ -849,12 +863,12 @@ func (c gorillaChunk) readBitPattern(offset, n uint16) uint64 {
 	return result
 }
 
-type gorillaChunkIterator struct {
-	c gorillaChunk
+type varbitChunkIterator struct {
+	c varbitChunk
 	// pos is the bit position within the chunk for the next sample to be
 	// decoded when scan() is called (i.e. it is _not_ the bit position of
 	// the sample currently returned by value()). The symbolic values
-	// gorillaFirstSampleBitOffset and gorillaSecondSampleBitOffset are also
+	// varbitFirstSampleBitOffset and varbitSecondSampleBitOffset are also
 	// used for pos. len is the offset of the first bit in the chunk that is
 	// not part of the payload. If pos==len, then the iterator is positioned
 	// behind the last sample in the payload. However, the next call of
@@ -867,15 +881,15 @@ type gorillaChunkIterator struct {
 	v                    model.SampleValue
 	dV                   int64 // Only used for int value encoding.
 	leading, significant uint16
-	enc                  gorillaValueEncoding
+	enc                  varbitValueEncoding
 	lastError            error
 	rewound              bool
 	nextT                model.Time        // Only for rewound state.
 	nextV                model.SampleValue // Only for rewound state.
 }
 
-func newGorillaChunkIterator(c gorillaChunk) *gorillaChunkIterator {
-	return &gorillaChunkIterator{
+func newVarbitChunkIterator(c varbitChunk) *varbitChunkIterator {
+	return &varbitChunkIterator{
 		c:           c,
 		len:         c.nextSampleOffset(),
 		t:           model.Earliest,
@@ -885,8 +899,8 @@ func newGorillaChunkIterator(c gorillaChunk) *gorillaChunkIterator {
 }
 
 // lastTimestamp implements chunkIterator.
-func (it *gorillaChunkIterator) lastTimestamp() (model.Time, error) {
-	if it.len == gorillaFirstSampleBitOffset {
+func (it *varbitChunkIterator) lastTimestamp() (model.Time, error) {
+	if it.len == varbitFirstSampleBitOffset {
 		// No samples in the chunk yet.
 		return model.Earliest, it.lastError
 	}
@@ -894,7 +908,7 @@ func (it *gorillaChunkIterator) lastTimestamp() (model.Time, error) {
 }
 
 // contains implements chunkIterator.
-func (it *gorillaChunkIterator) contains(t model.Time) (bool, error) {
+func (it *varbitChunkIterator) contains(t model.Time) (bool, error) {
 	last, err := it.lastTimestamp()
 	if err != nil {
 		it.lastError = err
@@ -905,7 +919,7 @@ func (it *gorillaChunkIterator) contains(t model.Time) (bool, error) {
 }
 
 // scan implements chunkIterator.
-func (it *gorillaChunkIterator) scan() bool {
+func (it *varbitChunkIterator) scan() bool {
 	if it.lastError != nil {
 		return false
 	}
@@ -927,14 +941,14 @@ func (it *gorillaChunkIterator) scan() bool {
 		it.v = it.c.lastValue()
 		return it.lastError == nil
 	}
-	if it.pos == gorillaFirstSampleBitOffset {
+	if it.pos == varbitFirstSampleBitOffset {
 		it.t = it.c.firstTime()
 		it.v = it.c.firstValue()
-		it.pos = gorillaSecondSampleBitOffset
+		it.pos = varbitSecondSampleBitOffset
 		return it.lastError == nil
 	}
-	if it.pos == gorillaSecondSampleBitOffset {
-		if it.len == gorillaThirdSampleBitOffset && !it.c.closed() {
+	if it.pos == varbitSecondSampleBitOffset {
+		if it.len == varbitThirdSampleBitOffset && !it.c.closed() {
 			// Special case: Chunk has only two samples.
 			it.t = it.c.lastTime()
 			it.v = it.c.lastValue()
@@ -945,46 +959,46 @@ func (it *gorillaChunkIterator) scan() bool {
 		it.t += it.dT
 		// Value depends on encoding.
 		switch it.enc {
-		case gorillaZeroEncoding:
-			it.pos = gorillaThirdSampleBitOffset
-		case gorillaIntDoubleDeltaEncoding:
+		case varbitZeroEncoding:
+			it.pos = varbitThirdSampleBitOffset
+		case varbitIntDoubleDeltaEncoding:
 			it.dV = int64(it.c.firstValueDelta())
 			it.v += model.SampleValue(it.dV)
-			it.pos = gorillaThirdSampleBitOffset + 32
-		case gorillaXOREncoding:
-			it.pos = gorillaThirdSampleBitOffset
+			it.pos = varbitThirdSampleBitOffset + 32
+		case varbitXOREncoding:
+			it.pos = varbitThirdSampleBitOffset
 			it.readXOR()
-		case gorillaDirectEncoding:
+		case varbitDirectEncoding:
 			it.v = model.SampleValue(math.Float64frombits(
-				binary.BigEndian.Uint64(it.c[gorillaThirdSampleBitOffset/8:]),
+				binary.BigEndian.Uint64(it.c[varbitThirdSampleBitOffset/8:]),
 			))
-			it.pos = gorillaThirdSampleBitOffset + 64
+			it.pos = varbitThirdSampleBitOffset + 64
 		default:
-			it.lastError = fmt.Errorf("unknown Gorilla value encoding: %v", it.enc)
+			it.lastError = fmt.Errorf("unknown varbit value encoding: %v", it.enc)
 		}
 		return it.lastError == nil
 	}
 	// 3rd sample or later does not have special cases anymore.
 	it.readDDT()
 	switch it.enc {
-	case gorillaZeroEncoding:
+	case varbitZeroEncoding:
 		// Do nothing.
-	case gorillaIntDoubleDeltaEncoding:
+	case varbitIntDoubleDeltaEncoding:
 		it.readDDV()
-	case gorillaXOREncoding:
+	case varbitXOREncoding:
 		it.readXOR()
-	case gorillaDirectEncoding:
+	case varbitDirectEncoding:
 		it.v = model.SampleValue(math.Float64frombits(it.readBitPattern(64)))
 		return it.lastError == nil
 	default:
-		it.lastError = fmt.Errorf("unknown Gorilla value encoding: %v", it.enc)
+		it.lastError = fmt.Errorf("unknown varbit value encoding: %v", it.enc)
 		return false
 	}
 	return it.lastError == nil
 }
 
 // findAtOrBefore implements chunkIterator.
-func (it *gorillaChunkIterator) findAtOrBefore(t model.Time) bool {
+func (it *varbitChunkIterator) findAtOrBefore(t model.Time) bool {
 	if it.len == 0 || t.Before(it.c.firstTime()) {
 		return false
 	}
@@ -1020,7 +1034,7 @@ func (it *gorillaChunkIterator) findAtOrBefore(t model.Time) bool {
 }
 
 // findAtOrAfter implements chunkIterator.
-func (it *gorillaChunkIterator) findAtOrAfter(t model.Time) bool {
+func (it *varbitChunkIterator) findAtOrAfter(t model.Time) bool {
 	if it.len == 0 || t.After(it.c.lastTime()) {
 		return false
 	}
@@ -1043,7 +1057,7 @@ func (it *gorillaChunkIterator) findAtOrAfter(t model.Time) bool {
 }
 
 // value implements chunkIterator.
-func (it *gorillaChunkIterator) value() model.SamplePair {
+func (it *varbitChunkIterator) value() model.SamplePair {
 	return model.SamplePair{
 		Timestamp: it.t,
 		Value:     it.v,
@@ -1051,11 +1065,11 @@ func (it *gorillaChunkIterator) value() model.SamplePair {
 }
 
 // err implements chunkIterator.
-func (it *gorillaChunkIterator) err() error {
+func (it *varbitChunkIterator) err() error {
 	return it.lastError
 }
 
-func (it *gorillaChunkIterator) readDDT() {
+func (it *varbitChunkIterator) readDDT() {
 	if it.repeats > 0 {
 		it.repeats--
 	} else {
@@ -1075,7 +1089,7 @@ func (it *gorillaChunkIterator) readDDT() {
 	it.t += it.dT
 }
 
-func (it *gorillaChunkIterator) readDDV() {
+func (it *varbitChunkIterator) readDDV() {
 	switch it.readControlBits(4) {
 	case 0:
 		// Do nothing.
@@ -1093,7 +1107,7 @@ func (it *gorillaChunkIterator) readDDV() {
 	it.v += model.SampleValue(it.dV)
 }
 
-func (it *gorillaChunkIterator) readXOR() {
+func (it *varbitChunkIterator) readXOR() {
 	switch it.readControlBits(2) {
 	case 0:
 		return
@@ -1113,7 +1127,7 @@ func (it *gorillaChunkIterator) readXOR() {
 // readControlBits reads successive 1-bits and stops after reading the first
 // 0-bit. It also stops once it has read max bits. It returns the number of read
 // 1-bits.
-func (it *gorillaChunkIterator) readControlBits(max uint16) uint16 {
+func (it *varbitChunkIterator) readControlBits(max uint16) uint16 {
 	var count uint16
 	for count < max && int(it.pos/8) < len(it.c) {
 		b := it.c[it.pos/8] & bitMask[1][it.pos%8]
@@ -1129,7 +1143,7 @@ func (it *gorillaChunkIterator) readControlBits(max uint16) uint16 {
 	return count
 }
 
-func (it *gorillaChunkIterator) readBitPattern(n uint16) uint64 {
+func (it *varbitChunkIterator) readBitPattern(n uint16) uint64 {
 	if len(it.c)*8 < int(it.pos)+int(n) {
 		it.lastError = errChunkBoundsExceeded
 		return 0
@@ -1139,7 +1153,7 @@ func (it *gorillaChunkIterator) readBitPattern(n uint16) uint64 {
 	return u
 }
 
-func (it *gorillaChunkIterator) readSignedInt(n uint16) int64 {
+func (it *varbitChunkIterator) readSignedInt(n uint16) int64 {
 	u := it.readBitPattern(n)
 	if n < 64 && u >= 1<<(n-1) {
 		u -= 1 << n
@@ -1148,7 +1162,7 @@ func (it *gorillaChunkIterator) readSignedInt(n uint16) int64 {
 }
 
 // reset puts the chunk iterator into the state it had upon creation.
-func (it *gorillaChunkIterator) reset() {
+func (it *varbitChunkIterator) reset() {
 	it.pos = 0
 	it.t = model.Earliest
 	it.dT = 0
@@ -1161,12 +1175,12 @@ func (it *gorillaChunkIterator) reset() {
 }
 
 // rewind "rewinds" the chunk iterator by one step. Since one cannot simply
-// rewind a Gorilla chunk, the old values have to be provided by the
+// rewind a Varbit chunk, the old values have to be provided by the
 // caller. Rewinding an already rewound chunk panics. After a call of scan or
 // reset, a chunk can be rewound again.
-func (it *gorillaChunkIterator) rewind(t model.Time, v model.SampleValue) {
+func (it *varbitChunkIterator) rewind(t model.Time, v model.SampleValue) {
 	if it.rewound {
-		panic("cannot rewind Gorilla chunk twice")
+		panic("cannot rewind varbit chunk twice")
 	}
 	it.rewound = true
 	it.nextT = it.t
