@@ -74,6 +74,7 @@ func newDeltaEncodedChunk(tb, vb deltaBytes, isInt bool, length int) *deltaEncod
 
 // add implements chunk.
 func (c deltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
+	// TODO(beorn7): Since we return &c, this method might cause an unnecessary allocation.
 	if c.len() == 0 {
 		c = c[:deltaHeaderBytes]
 		binary.LittleEndian.PutUint64(c[deltaHeaderBaseTimeOffset:], uint64(s.Timestamp))
@@ -86,11 +87,7 @@ func (c deltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
 	// Do we generally have space for another sample in this chunk? If not,
 	// overflow into a new one.
 	if remainingBytes < sampleSize {
-		overflowChunks, err := newChunk().add(s)
-		if err != nil {
-			return nil, err
-		}
-		return []chunk{&c, overflowChunks[0]}, nil
+		return addToOverflowChunk(&c, s)
 	}
 
 	baseValue := c.baseValue()
@@ -130,11 +127,7 @@ func (c deltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
 			return transcodeAndAdd(newDeltaEncodedChunk(ntb, nvb, nInt, cap(c)), &c, s)
 		}
 		// Chunk is already half full. Better create a new one and save the transcoding efforts.
-		overflowChunks, err := newChunk().add(s)
-		if err != nil {
-			return nil, err
-		}
-		return []chunk{&c, overflowChunks[0]}, nil
+		return addToOverflowChunk(&c, s)
 	}
 
 	offset := len(c)
