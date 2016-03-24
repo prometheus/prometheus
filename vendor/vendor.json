@@ -174,8 +174,8 @@
 		},
 		{
 			"path": "github.com/prometheus/common/model",
-			"revision": "0e53cc19aa67dd2e8587a26e28643cb152f5403d",
-			"revisionTime": "2016-01-29T15:16:16+01:00"
+			"revision": "167b27da48d058a9b46d84b834d67f68f0243f67",
+			"revisionTime": "2016-03-18T12:23:18Z"
 		},
 		{
 			"path": "github.com/prometheus/common/route",
