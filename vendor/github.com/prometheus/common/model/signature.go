@@ -98,7 +98,7 @@ func labelSetToFastFingerprint(ls LabelSet) Fingerprint {
 // specified LabelNames into the signature calculation. The labels passed in
 // will be sorted by this function.
 func SignatureForLabels(m Metric, labels ...LabelName) uint64 {
-	if len(m) == 0 || len(labels) == 0 {
+	if len(labels) == 0 {
 		return emptyLabelSignature
 	}
 
