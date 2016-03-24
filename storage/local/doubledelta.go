@@ -81,6 +81,7 @@ func newDoubleDeltaEncodedChunk(tb, vb deltaBytes, isInt bool, length int) *doub
 
 // add implements chunk.
 func (c doubleDeltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
+	// TODO(beorn7): Since we return &c, this method might cause an unnecessary allocation.
 	if c.len() == 0 {
 		return c.addFirstSample(s), nil
 	}
@@ -98,11 +99,7 @@ func (c doubleDeltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
 	// Do we generally have space for another sample in this chunk? If not,
 	// overflow into a new one.
 	if remainingBytes < sampleSize {
-		overflowChunks, err := newChunk().add(s)
-		if err != nil {
-			return nil, err
-		}
-		return []chunk{&c, overflowChunks[0]}, nil
+		return addToOverflowChunk(&c, s)
 	}
 
 	projectedTime := c.baseTime() + model.Time(c.len())*c.baseTimeDelta()
@@ -136,11 +133,7 @@ func (c doubleDeltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
 			return transcodeAndAdd(newDoubleDeltaEncodedChunk(ntb, nvb, nInt, cap(c)), &c, s)
 		}
 		// Chunk is already half full. Better create a new one and save the transcoding efforts.
-		overflowChunks, err := newChunk().add(s)
-		if err != nil {
-			return nil, err
-		}
-		return []chunk{&c, overflowChunks[0]}, nil
+		return addToOverflowChunk(&c, s)
 	}
 
 	offset := len(c)
@@ -452,8 +445,8 @@ func (acc *doubleDeltaEncodedIndexAccessor) timestampAtIndex(idx int) model.Time
 		return model.Time(binary.LittleEndian.Uint64(acc.c[offset:]))
 	default:
 		acc.lastErr = fmt.Errorf("invalid number of bytes for time delta: %d", acc.tBytes)
+		return model.Earliest
 	}
-	return model.Earliest
 }
 
 func (acc *doubleDeltaEncodedIndexAccessor) sampleValueAtIndex(idx int) model.SampleValue {
@@ -491,6 +484,7 @@ func (acc *doubleDeltaEncodedIndexAccessor) sampleValueAtIndex(idx int) model.Sa
 		// No d8 for ints.
 		default:
 			acc.lastErr = fmt.Errorf("invalid number of bytes for integer delta: %d", acc.vBytes)
+			return 0
 		}
 	} else {
 		switch acc.vBytes {
@@ -503,7 +497,7 @@ func (acc *doubleDeltaEncodedIndexAccessor) sampleValueAtIndex(idx int) model.Sa
 			return model.SampleValue(math.Float64frombits(binary.LittleEndian.Uint64(acc.c[offset:])))
 		default:
 			acc.lastErr = fmt.Errorf("invalid number of bytes for floating point delta: %d", acc.vBytes)
+			return 0
 		}
 	}
-	return 0
 }

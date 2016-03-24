@@ -189,7 +189,7 @@ func TestTemplateExpansion(t *testing.T) {
 
 	time := model.Time(0)
 
-	storage, closer := local.NewTestStorage(t, 1)
+	storage, closer := local.NewTestStorage(t, 2)
 	defer closer.Close()
 	storage.Append(&model.Sample{
 		Metric: model.Metric{

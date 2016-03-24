@@ -15,6 +15,7 @@ package local
 
 import (
 	"container/list"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -26,8 +27,10 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// The DefaultChunkEncoding can be changed via a flag.
+// DefaultChunkEncoding can be changed via a flag.
 var DefaultChunkEncoding = doubleDelta
+
+var errChunkBoundsExceeded = errors.New("attempted access outside of chunk boundaries")
 
 type chunkEncoding byte
 
@@ -43,6 +46,8 @@ func (ce *chunkEncoding) Set(s string) error {
 		*ce = delta
 	case "1":
 		*ce = doubleDelta
+	case "2":
+		*ce = varbit
 	default:
 		return fmt.Errorf("invalid chunk encoding: %s", s)
 	}
@@ -52,6 +57,7 @@ func (ce *chunkEncoding) Set(s string) error {
 const (
 	delta chunkEncoding = iota
 	doubleDelta
+	varbit
 )
 
 // chunkDesc contains meta-data for a chunk. Pay special attention to the
@@ -285,7 +291,7 @@ type chunkIterator interface {
 	// of the find... methods). It returns ZeroSamplePair before any of
 	// those methods were called.
 	value() model.SamplePair
-	// Returns the last error encountered. In general, an error signal data
+	// Returns the last error encountered. In general, an error signals data
 	// corruption in the chunk and requires quarantining.
 	err() error
 }
@@ -306,6 +312,21 @@ func rangeValues(it chunkIterator, in metric.Interval) ([]model.SamplePair, erro
 	return result, it.err()
 }
 
+// addToOverflowChunk is a utility function that creates a new chunk as overflow
+// chunk, adds the provided sample to it, and returns a chunk slice containing
+// the provided old chunk followed by the new overflow chunk.
+func addToOverflowChunk(c chunk, s model.SamplePair) ([]chunk, error) {
+	overflowChunks, err := newChunk().add(s)
+	if err != nil {
+		return nil, err
+	}
+	return []chunk{c, overflowChunks[0]}, nil
+}
+
+// transcodeAndAdd is a utility function that transcodes the dst chunk into the
+// provided src chunk (plus the necessary overflow chunks) and then adds the
+// provided sample. It returns the new chunks (transcoded plus overflow) with
+// the new sample at the end.
 func transcodeAndAdd(dst chunk, src chunk, s model.SamplePair) ([]chunk, error) {
 	chunkOps.WithLabelValues(transcode).Inc()
 
@@ -334,7 +355,7 @@ func transcodeAndAdd(dst chunk, src chunk, s model.SamplePair) ([]chunk, error) 
 }
 
 // newChunk creates a new chunk according to the encoding set by the
-// defaultChunkEncoding flag.
+// DefaultChunkEncoding flag.
 func newChunk() chunk {
 	chunk, err := newChunkForEncoding(DefaultChunkEncoding)
 	if err != nil {
@@ -349,6 +370,8 @@ func newChunkForEncoding(encoding chunkEncoding) (chunk, error) {
 		return newDeltaEncodedChunk(d1, d0, true, chunkLen), nil
 	case doubleDelta:
 		return newDoubleDeltaEncodedChunk(d1, d0, true, chunkLen), nil
+	case varbit:
+		return newVarbitChunk(varbitZeroEncoding), nil
 	default:
 		return nil, fmt.Errorf("unknown chunk encoding: %v", encoding)
 	}

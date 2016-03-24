@@ -653,6 +653,10 @@ func TestCheckpointAndLoadSeriesMapAndHeadsChunkType1(t *testing.T) {
 	testCheckpointAndLoadSeriesMapAndHeads(t, 1)
 }
 
+func TestCheckpointAndLoadSeriesMapAndHeadsChunkType2(t *testing.T) {
+	testCheckpointAndLoadSeriesMapAndHeads(t, 2)
+}
+
 func TestCheckpointAndLoadFPMappings(t *testing.T) {
 	p, closer := newTestPersistence(t, 1)
 	defer closer.Close()
@@ -758,6 +762,10 @@ func TestFingerprintsModifiedBeforeChunkType1(t *testing.T) {
 	testFingerprintsModifiedBefore(t, 1)
 }
 
+func TestFingerprintsModifiedBeforeChunkType2(t *testing.T) {
+	testFingerprintsModifiedBefore(t, 2)
+}
+
 func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
@@ -820,6 +828,10 @@ func TestDropArchivedMetricChunkType0(t *testing.T) {
 
 func TestDropArchivedMetricChunkType1(t *testing.T) {
 	testDropArchivedMetric(t, 1)
+}
+
+func TestDropArchivedMetricChunkType2(t *testing.T) {
+	testDropArchivedMetric(t, 2)
 }
 
 type incrementalBatch struct {
@@ -1000,6 +1012,10 @@ func TestIndexingChunkType0(t *testing.T) {
 
 func TestIndexingChunkType1(t *testing.T) {
 	testIndexing(t, 1)
+}
+
+func TestIndexingChunkType2(t *testing.T) {
+	testIndexing(t, 2)
 }
 
 func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMetrics index.FingerprintMetricMapping, p *persistence) {
