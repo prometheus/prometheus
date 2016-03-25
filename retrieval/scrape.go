@@ -14,7 +14,6 @@
 package retrieval
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,9 +36,6 @@ const (
 	scrapeHealthMetricName   = "up"
 	scrapeDurationMetricName = "scrape_duration_seconds"
 
-	// Capacity of the channel to buffer samples during ingestion.
-	ingestedSamplesCap = 256
-
 	// Constants for instrumentation.
 	namespace = "prometheus"
 	interval  = "interval"
@@ -47,8 +43,6 @@ const (
 )
 
 var (
-	errSkippedScrape = errors.New("scrape skipped due to throttled ingestion")
-
 	targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Namespace:  namespace,

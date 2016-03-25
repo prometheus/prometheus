@@ -8,10 +8,6 @@ import (
 	"golang.org/x/net/context"
 )
 
-var noop = testStmt(func(context.Context) error {
-	return nil
-})
-
 func TestQueryConcurrency(t *testing.T) {
 	engine := NewEngine(nil, nil)
 	defer engine.Stop()

@@ -30,8 +30,6 @@ import (
 )
 
 const (
-	serversetNodePrefix = "member_"
-
 	serversetLabelPrefix         = model.MetaLabelPrefix + "serverset_"
 	serversetStatusLabel         = serversetLabelPrefix + "status"
 	serversetPathLabel           = serversetLabelPrefix + "path"

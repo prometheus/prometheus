@@ -36,7 +36,6 @@ const (
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
-	interval  = "interval"
 )
 
 var (
