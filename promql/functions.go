@@ -184,6 +184,102 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 	return resultVector
 }
 
+// Calculate the trend value at the given index i in raw data d.
+// This is somewhat analogous to the slope of the trend at the given index.
+// The argument "s" is the set of computed smoothed values.
+// The argument "b" is the set of computed trend factors.
+// The argument "d" is the set of raw input values.
+func calcTrendValue(i int, sf, tf float64, s, b, d []float64) float64 {
+	if i == 0 {
+		return b[0]
+	}
+
+	x := tf * (s[i] - s[i-1])
+	y := (1 - tf) * b[i-1]
+
+	// Cache the computed value.
+	b[i] = x + y
+
+	return b[i]
+}
+
+// Holt-Winters is similar to a weighted moving average, where historical data has exponentially less influence on the current data.
+// Holt-Winter also accounts for trends in data. The smoothing factor (0 < sf < 1) effects how historical data will effect the current
+// data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) effects
+// how trends in historical data will effect the current data. A higher trend factor increases the influence.
+// of trends. Algorithm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing".
+func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
+	mat := ev.evalMatrix(args[0])
+
+	// The smoothing factor argument.
+	sf := ev.evalFloat(args[1])
+
+	// The trend factor argument.
+	tf := ev.evalFloat(args[2])
+
+	// Sanity check the input.
+	if sf <= 0 || sf >= 1 {
+		ev.errorf("invalid smoothing factor. Expected: 0 < sf < 1 got: %f", sf)
+	}
+	if tf <= 0 || tf >= 1 {
+		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 got: %f", sf)
+	}
+
+	// Make an output vector large enough to hold the entire result.
+	resultVector := make(vector, 0, len(mat))
+
+	// Create scratch values.
+	var s, b, d []float64
+
+	var l int
+	for _, samples := range mat {
+		l = len(samples.Values)
+
+		// Can't do the smoothing operation with less than two points.
+		if l < 2 {
+			continue
+		}
+
+		// Resize scratch values.
+		if l != len(s) {
+			s = make([]float64, l)
+			b = make([]float64, l)
+			d = make([]float64, l)
+		}
+
+		// Fill in the d values with the raw values from the input.
+		for i, v := range samples.Values {
+			d[i] = float64(v.Value)
+		}
+
+		// Set initial values.
+		s[0] = d[0]
+		b[0] = d[1] - d[0]
+
+		// Run the smoothing operation.
+		var x, y float64
+		for i := 1; i < len(d); i++ {
+
+			// Scale the raw value against the smoothing factor.
+			x = sf * d[i]
+
+			// Scale the last smoothed value with the trend at this point.
+			y = (1 - sf) * (s[i-1] + calcTrendValue(i-1, sf, tf, s, b, d))
+
+			s[i] = x + y
+		}
+
+		samples.Metric.Del(model.MetricNameLabel)
+		resultVector = append(resultVector, &sample{
+			Metric:    samples.Metric,
+			Value:     model.SampleValue(s[len(s)-1]), // The last value in the vector is the smoothed result.
+			Timestamp: ev.Timestamp,
+		})
+	}
+
+	return resultVector
+}
+
 // === sort(node model.ValVector) Vector ===
 func funcSort(ev *evaluator, args Expressions) model.Value {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
@@ -847,6 +943,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValScalar, model.ValVector},
 		ReturnType: model.ValVector,
 		Call:       funcHistogramQuantile,
+	},
+	"holt_winters": {
+		Name:       "holt_winters",
+		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar, model.ValScalar},
+		ReturnType: model.ValVector,
+		Call:       funcHoltWinters,
 	},
 	"irate": {
 		Name:       "irate",
