@@ -759,7 +759,12 @@ func (c varbitChunk) addZeroBit(offset uint16) uint16 {
 		// Just increase the offset.
 		return offset + 1
 	}
-	c[offset/8] &^= bitMask[1][offset%8]
+	newByte := c[offset/8] &^ bitMask[1][offset%8]
+	c[offset/8] = newByte
+	// TODO(beorn7): The two lines above could be written as
+	//     c[offset/8] &^= bitMask[1][offset%8]
+	// However, that tickles a compiler bug with GOARCH=386.
+	// See https://github.com/prometheus/prometheus/issues/1509
 	return offset + 1
 }
 
