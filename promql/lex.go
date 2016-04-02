@@ -48,7 +48,7 @@ func (i item) String() string {
 	return fmt.Sprintf("%q", i.val)
 }
 
-// isOperator returns true if the item corresponds to a logical or arithmetic operator.
+// isOperator returns true if the item corresponds to a arithmetic or set operator.
 // Returns false otherwise.
 func (i itemType) isOperator() bool { return i > operatorsStart && i < operatorsEnd }
 
@@ -71,6 +71,15 @@ func (i itemType) isComparisonOperator() bool {
 	}
 }
 
+// isSetOperator returns whether the item corresponds to a set operator.
+func (i itemType) isSetOperator() bool {
+	switch i {
+	case itemLAND, itemLOR, itemLUnless:
+		return true
+	}
+	return false
+}
+
 // Constants for operator precedence in expressions.
 //
 const LowestPrec = 0 // Non-operators.
@@ -82,7 +91,7 @@ func (i itemType) precedence() int {
 	switch i {
 	case itemLOR:
 		return 1
-	case itemLAND:
+	case itemLAND, itemLUnless:
 		return 2
 	case itemEQL, itemNEQ, itemLTE, itemLSS, itemGTE, itemGTR:
 		return 3
@@ -127,6 +136,7 @@ const (
 	itemDIV
 	itemLAND
 	itemLOR
+	itemLUnless
 	itemEQL
 	itemNEQ
 	itemLTE
@@ -168,8 +178,9 @@ const (
 
 var key = map[string]itemType{
 	// Operators.
-	"and": itemLAND,
-	"or":  itemLOR,
+	"and":    itemLAND,
+	"or":     itemLOR,
+	"unless": itemLUnless,
 
 	// Aggregators.
 	"sum":    itemSum,

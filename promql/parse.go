@@ -447,7 +447,7 @@ func (p *parser) expr() Expr {
 		vecMatching := &VectorMatching{
 			Card: CardOneToOne,
 		}
-		if op == itemLAND || op == itemLOR {
+		if op.isSetOperator() {
 			vecMatching.Card = CardManyToMany
 		}
 
@@ -1042,7 +1042,7 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 		rt := p.checkType(n.RHS)
 
 		if !n.Op.isOperator() {
-			p.errorf("only logical and arithmetic operators allowed in binary expression, got %q", n.Op)
+			p.errorf("binary expression does not support operator %q", n.Op)
 		}
 		if (lt != model.ValScalar && lt != model.ValVector) || (rt != model.ValScalar && rt != model.ValVector) {
 			p.errorf("binary expression must contain only scalar and vector types")
@@ -1055,18 +1055,18 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 			n.VectorMatching = nil
 		} else {
 			// Both operands are vectors.
-			if n.Op == itemLAND || n.Op == itemLOR {
+			if n.Op.isSetOperator() {
 				if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
-					p.errorf("no grouping allowed for AND and OR operations")
+					p.errorf("no grouping allowed for %q operation", n.Op)
 				}
 				if n.VectorMatching.Card != CardManyToMany {
-					p.errorf("AND and OR operations must always be many-to-many")
+					p.errorf("set operations must always be many-to-many")
 				}
 			}
 		}
 
-		if (lt == model.ValScalar || rt == model.ValScalar) && (n.Op == itemLAND || n.Op == itemLOR) {
-			p.errorf("AND and OR not allowed in binary scalar expression")
+		if (lt == model.ValScalar || rt == model.ValScalar) && n.Op.isSetOperator() {
+			p.errorf("set operator %q not allowed in binary scalar expression", n.Op)
 		}
 
 	case *Call:
