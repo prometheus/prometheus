@@ -16,132 +16,132 @@ load 5m
 
 
 eval instant at 50m SUM(http_requests) BY (job) - COUNT(http_requests) BY (job)
-	{job="api-server"} 996 
-	{job="app-server"} 2596 
+	{job="api-server"} 996
+	{job="app-server"} 2596
 
 eval instant at 50m 2 - SUM(http_requests) BY (job)
-	{job="api-server"} -998 
-	{job="app-server"} -2598 
+	{job="api-server"} -998
+	{job="app-server"} -2598
 
 eval instant at 50m 1000 / SUM(http_requests) BY (job)
-	{job="api-server"} 1 
-	{job="app-server"} 0.38461538461538464 
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
 
 eval instant at 50m SUM(http_requests) BY (job) - 2
-	{job="api-server"} 998 
-	{job="app-server"} 2598 
+	{job="api-server"} 998
+	{job="app-server"} 2598
 
 eval instant at 50m SUM(http_requests) BY (job) % 3
-	{job="api-server"} 1 
-	{job="app-server"} 2 
+	{job="api-server"} 1
+	{job="app-server"} 2
 
 eval instant at 50m SUM(http_requests) BY (job) / 0
-	{job="api-server"} +Inf 
-	{job="app-server"} +Inf 
+	{job="api-server"} +Inf
+	{job="app-server"} +Inf
 
 eval instant at 50m SUM(http_requests) BY (job) + SUM(http_requests) BY (job)
-	{job="api-server"} 2000 
-	{job="app-server"} 5200 
+	{job="api-server"} 2000
+	{job="app-server"} 5200
 
 
 eval instant at 50m http_requests{job="api-server", group="canary"}
-	http_requests{group="canary", instance="0", job="api-server"} 300 
-	http_requests{group="canary", instance="1", job="api-server"} 400 
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="1", job="api-server"} 400
 
 eval instant at 50m http_requests{job="api-server", group="canary"} + rate(http_requests{job="api-server"}[5m]) * 5 * 60
-	{group="canary", instance="0", job="api-server"} 330 
-	{group="canary", instance="1", job="api-server"} 440 
+	{group="canary", instance="0", job="api-server"} 330
+	{group="canary", instance="1", job="api-server"} 440
 
 eval instant at 50m rate(http_requests[25m]) * 25 * 60
-  {group="canary", instance="0", job="api-server"} 150 
-  {group="canary", instance="0", job="app-server"} 350 
-  {group="canary", instance="1", job="api-server"} 200 
-  {group="canary", instance="1", job="app-server"} 400 
-  {group="production", instance="0", job="api-server"} 50 
-  {group="production", instance="0", job="app-server"} 249.99999999999997 
-  {group="production", instance="1", job="api-server"} 100 
-  {group="production", instance="1", job="app-server"} 300 
+  {group="canary", instance="0", job="api-server"} 150
+  {group="canary", instance="0", job="app-server"} 350
+  {group="canary", instance="1", job="api-server"} 200
+  {group="canary", instance="1", job="app-server"} 400
+  {group="production", instance="0", job="api-server"} 50
+  {group="production", instance="0", job="app-server"} 249.99999999999997
+  {group="production", instance="1", job="api-server"} 100
+  {group="production", instance="1", job="app-server"} 300
 
 
 eval instant at 50m http_requests{group="canary"} and http_requests{instance="0"}
-	http_requests{group="canary", instance="0", job="api-server"} 300 
-	http_requests{group="canary", instance="0", job="app-server"} 700 
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="0", job="app-server"} 700
 
 eval instant at 50m (http_requests{group="canary"} + 1) and http_requests{instance="0"}
-	{group="canary", instance="0", job="api-server"} 301 
-	{group="canary", instance="0", job="app-server"} 701 
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
 
 eval instant at 50m (http_requests{group="canary"} + 1) and on(instance, job) http_requests{instance="0", group="production"}
-	{group="canary", instance="0", job="api-server"} 301 
-	{group="canary", instance="0", job="app-server"} 701 
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
 
 eval instant at 50m (http_requests{group="canary"} + 1) and on(instance) http_requests{instance="0", group="production"}
-	{group="canary", instance="0", job="api-server"} 301 
-	{group="canary", instance="0", job="app-server"} 701 
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
 
 eval instant at 50m http_requests{group="canary"} or http_requests{group="production"}
-	http_requests{group="canary", instance="0", job="api-server"} 300 
-	http_requests{group="canary", instance="0", job="app-server"} 700 
-	http_requests{group="canary", instance="1", job="api-server"} 400 
-	http_requests{group="canary", instance="1", job="app-server"} 800 
-	http_requests{group="production", instance="0", job="api-server"} 100 
-	http_requests{group="production", instance="0", job="app-server"} 500 
-	http_requests{group="production", instance="1", job="api-server"} 200 
-	http_requests{group="production", instance="1", job="app-server"} 600 
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
 
 # On overlap the rhs samples must be dropped.
 eval instant at 50m (http_requests{group="canary"} + 1) or http_requests{instance="1"}
-	{group="canary", instance="0", job="api-server"} 301 
-	{group="canary", instance="0", job="app-server"} 701 
-	{group="canary", instance="1", job="api-server"} 401 
-	{group="canary", instance="1", job="app-server"} 801 
-	http_requests{group="production", instance="1", job="api-server"} 200 
-	http_requests{group="production", instance="1", job="app-server"} 600 
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
 
 
 # Matching only on instance excludes everything that has instance=0/1 but includes
 # entries without the instance label.
 eval instant at 50m (http_requests{group="canary"} + 1) or on(instance) (http_requests or cpu_count or vector_matching_a)
-	{group="canary", instance="0", job="api-server"} 301 
-	{group="canary", instance="0", job="app-server"} 701 
-	{group="canary", instance="1", job="api-server"} 401 
-	{group="canary", instance="1", job="app-server"} 801 
-	vector_matching_a{l="x"} 10 
-	vector_matching_a{l="y"} 20 
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	vector_matching_a{l="x"} 10
+	vector_matching_a{l="y"} 20
 
 eval instant at 50m http_requests{group="canary"} / on(instance,job) http_requests{group="production"}
-	{instance="0", job="api-server"} 3 
-	{instance="0", job="app-server"} 1.4 
-	{instance="1", job="api-server"} 2 
-	{instance="1", job="app-server"} 1.3333333333333333 
+	{instance="0", job="api-server"} 3
+	{instance="0", job="app-server"} 1.4
+	{instance="1", job="api-server"} 2
+	{instance="1", job="app-server"} 1.3333333333333333
 
 # https://github.com/prometheus/prometheus/issues/1489
 eval instant at 50m http_requests AND ON (dummy) vector(1)
-	http_requests{group="canary", instance="0", job="api-server"} 300 
-	http_requests{group="canary", instance="0", job="app-server"} 700 
-	http_requests{group="canary", instance="1", job="api-server"} 400 
-	http_requests{group="canary", instance="1", job="app-server"} 800 
-	http_requests{group="production", instance="0", job="api-server"} 100 
-	http_requests{group="production", instance="0", job="app-server"} 500 
-	http_requests{group="production", instance="1", job="api-server"} 200 
-	http_requests{group="production", instance="1", job="app-server"} 600 
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
 
 
 # Comparisons.
 eval instant at 50m SUM(http_requests) BY (job) > 1000
-	{job="app-server"} 2600 
+	{job="app-server"} 2600
 
 eval instant at 50m 1000 < SUM(http_requests) BY (job)
-	{job="app-server"} 1000 
+	{job="app-server"} 1000
 
 eval instant at 50m SUM(http_requests) BY (job) <= 1000
-	{job="api-server"} 1000 
+	{job="api-server"} 1000
 
 eval instant at 50m SUM(http_requests) BY (job) != 1000
-	{job="app-server"} 2600 
+	{job="app-server"} 2600
 
 eval instant at 50m SUM(http_requests) BY (job) == 1000
-	{job="api-server"} 1000 
+	{job="api-server"} 1000
 
 eval instant at 50m SUM(http_requests) BY (job) == bool 1000
 	{job="api-server"} 1
