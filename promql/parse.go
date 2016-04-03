@@ -925,8 +925,6 @@ func (p *parser) offset() time.Duration {
 //		[<metric_identifier>] <label_matchers>
 //
 func (p *parser) vectorSelector(name string) *VectorSelector {
-	const ctx = "metric selector"
-
 	var matchers metric.LabelMatchers
 	// Parse label matching if any.
 	if t := p.peek(); t.typ == itemLeftBrace {

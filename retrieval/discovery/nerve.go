@@ -28,8 +28,6 @@ import (
 )
 
 const (
-	nerveNodePrefix = "member_"
-
 	nerveLabelPrefix         = model.MetaLabelPrefix + "nerve_"
 	nervePathLabel           = nerveLabelPrefix + "path"
 	nerveEndpointLabelPrefix = nerveLabelPrefix + "endpoint"
