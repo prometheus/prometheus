@@ -629,6 +629,8 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 				return ev.vectorAnd(lhs.(vector), rhs.(vector), e.VectorMatching)
 			case itemLOR:
 				return ev.vectorOr(lhs.(vector), rhs.(vector), e.VectorMatching)
+			case itemLUnless:
+				return ev.vectorUnless(lhs.(vector), rhs.(vector), e.VectorMatching)
 			default:
 				return ev.vectorBinop(e.Op, lhs.(vector), rhs.(vector), e.VectorMatching, e.ReturnBool)
 			}
@@ -724,9 +726,8 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) matrix {
 
 func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector {
 	if matching.Card != CardManyToMany {
-		panic("logical operations must always be many-to-many matching")
+		panic("set operations must only use many-to-many matching")
 	}
-	// If no matching labels are specified, match by all labels.
 	sigf := signatureFunc(matching.On...)
 
 	var result vector
@@ -748,7 +749,7 @@ func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector
 
 func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector {
 	if matching.Card != CardManyToMany {
-		panic("logical operations must always be many-to-many matching")
+		panic("set operations must only use many-to-many matching")
 	}
 	sigf := signatureFunc(matching.On...)
 
@@ -768,10 +769,30 @@ func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector 
 	return result
 }
 
-// vectorBinop evaluates a binary operation between two vector, excluding AND and OR.
+func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vector {
+	if matching.Card != CardManyToMany {
+		panic("set operations must only use many-to-many matching")
+	}
+	sigf := signatureFunc(matching.On...)
+
+	rightSigs := map[uint64]struct{}{}
+	for _, rs := range rhs {
+		rightSigs[sigf(rs.Metric)] = struct{}{}
+	}
+
+	var result vector
+	for _, ls := range lhs {
+		if _, ok := rightSigs[sigf(ls.Metric)]; !ok {
+			result = append(result, ls)
+		}
+	}
+	return result
+}
+
+// vectorBinop evaluates a binary operation between two vectors, excluding set operators.
 func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorMatching, returnBool bool) vector {
 	if matching.Card == CardManyToMany {
-		panic("many-to-many only allowed for AND and OR")
+		panic("many-to-many only allowed for set operators")
 	}
 	var (
 		result       = vector{}

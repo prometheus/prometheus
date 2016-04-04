@@ -109,6 +109,16 @@ eval instant at 50m (http_requests{group="canary"} + 1) or on(instance) (http_re
 	vector_matching_a{l="x"} 10
 	vector_matching_a{l="y"} 20
 
+eval instant at 50m http_requests{group="canary"} unless http_requests{instance="0"}
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m http_requests{group="canary"} unless on(job) http_requests{instance="0"}
+
+eval instant at 50m http_requests{group="canary"} unless on(job, instance) http_requests{instance="0"}
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+
 eval instant at 50m http_requests{group="canary"} / on(instance,job) http_requests{group="production"}
 	{instance="0", job="api-server"} 3
 	{instance="0", job="app-server"} 1.4

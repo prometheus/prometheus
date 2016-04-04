@@ -217,6 +217,9 @@ var tests = []struct {
 	}, {
 		input:    `or`,
 		expected: []item{{itemLOR, 0, `or`}},
+	}, {
+		input:    `unless`,
+		expected: []item{{itemLUnless, 0, `unless`}},
 	},
 	// Test aggregators.
 	{
