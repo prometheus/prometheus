@@ -130,6 +130,13 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrape
 	}
 }
 
+func (sp *scrapePool) init(ctx context.Context) {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+
+	sp.ctx = ctx
+}
+
 // stop terminates all scrape loops and returns after they all terminated.
 func (sp *scrapePool) stop() {
 	var wg sync.WaitGroup
