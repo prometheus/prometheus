@@ -224,7 +224,7 @@ func (ts *targetSet) reload(cfg *config.ScrapeConfig) {
 func (ts *targetSet) runScraping(ctx context.Context) {
 	ctx, ts.cancelScraping = context.WithCancel(ctx)
 
-	ts.scrapePool.ctx = ctx
+	ts.scrapePool.init(ctx)
 
 Loop:
 	for {
