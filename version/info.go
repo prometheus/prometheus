@@ -13,7 +13,11 @@
 
 package version
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"runtime"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 // Build information. Populated at build-time.
 var (
@@ -22,7 +26,7 @@ var (
 	Branch    string
 	BuildUser string
 	BuildDate string
-	GoVersion string
+	GoVersion = runtime.Version()
 )
 
 // Map provides the iterable version information.
