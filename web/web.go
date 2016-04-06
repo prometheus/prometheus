@@ -282,14 +282,20 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 	for k, v := range rawParams {
 		params[k] = v[0]
 	}
+	headers := map[string]string{}
+	for k, v := range r.Header {
+		headers[k] = v[0]
+	}
 	data := struct {
 		RawParams url.Values
 		Params    map[string]string
 		Path      string
+		Headers   map[string]string
 	}{
 		RawParams: rawParams,
 		Params:    params,
 		Path:      strings.TrimLeft(name, "/"),
+		Headers:   headers,
 	}
 
 	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
