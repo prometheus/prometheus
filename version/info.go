@@ -43,11 +43,11 @@ func init() {
 	buildInfo := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "prometheus_build_info",
-			Help: "A metric with a constant '1' value labeled by version, revision, and branch from which Prometheus was built.",
+			Help: "A metric with a constant '1' value labeled by version, revision, branch, and goversion from which Prometheus was built.",
 		},
-		[]string{"version", "revision", "branch"},
+		[]string{"version", "revision", "branch", "goversion"},
 	)
-	buildInfo.WithLabelValues(Version, Revision, Branch).Set(1)
+	buildInfo.WithLabelValues(Version, Revision, Branch, GoVersion).Set(1)
 
 	prometheus.MustRegister(buildInfo)
 }
