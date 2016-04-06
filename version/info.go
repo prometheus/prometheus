@@ -26,6 +26,7 @@ var (
 	Branch    string
 	BuildUser string
 	BuildDate string
+	GoVersion = runtime.Version()
 )
 
 // Map provides the iterable version information.
@@ -35,7 +36,7 @@ var Map = map[string]string{
 	"branch":    Branch,
 	"buildUser": BuildUser,
 	"buildDate": BuildDate,
-	"goVersion": runtime.Version(),
+	"goVersion": GoVersion,
 }
 
 func init() {
