@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/common/model"
 
@@ -296,6 +297,14 @@ func funcSortDesc(ev *evaluator, args Expressions) model.Value {
 	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return vector(byValueSorter)
+}
+
+// === sort_by_label(node model.ValVector, model.ValString) model.ValVector ===
+func funcSortByLabel(ev *evaluator, args Expressions) model.Value {
+	l := ev.evalString(args[1])
+	s := vectorByLabelHeap{vector: ev.evalVector(args[0]), labelName: l.String()}
+	sort.Sort(s)
+	return s.vector
 }
 
 // === topk(k model.ValScalar, node model.ValVector) Vector ===
@@ -1035,6 +1044,12 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcSortDesc,
 	},
+	"sort_by_label": {
+		Name:       "sort_by_label",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValString},
+		ReturnType: model.ValVector,
+		Call:       funcSortByLabel,
+	},
 	"sqrt": {
 		Name:       "sqrt",
 		ArgTypes:   []model.ValueType{model.ValVector},
@@ -1129,4 +1144,23 @@ func (s *vectorByReverseValueHeap) Pop() interface{} {
 	el := old[n-1]
 	*s = old[0 : n-1]
 	return el
+}
+
+type vectorByLabelHeap struct {
+	vector    vector
+	labelName string
+}
+
+func (s vectorByLabelHeap) Len() int {
+	return len(s.vector)
+}
+
+func (s vectorByLabelHeap) Less(i, j int) bool {
+	lv1 := s.vector[i].Metric.Get(model.LabelName(s.labelName))
+	lv2 := s.vector[j].Metric.Get(model.LabelName(s.labelName))
+	return strings.Compare(string(lv1), string(lv2)) < 0
+}
+
+func (s vectorByLabelHeap) Swap(i, j int) {
+	s.vector[i], s.vector[j] = s.vector[j], s.vector[i]
 }
