@@ -3,6 +3,7 @@
 * [BUGFIX] Fix operator precedence in PromQL
 * [CHANGE/BUGFIX] Target identity considers path and parameters additionally to host and port
 * [CHANGE] Rename metric `prometheus_local_storage_invalid_preload_requests_total` to `prometheus_local_storage_non_existent_series_matches_total`
+* [CHANGE] Support for old alerting rule syntax dropped
 * [FEATURE] Deduplicate targets within the same scrape job
 * [FEATURE] Add varbit chunk encoding (higher compression, more CPU usage – disabled by default)
 * [FEATURE] Add `holt_winters` query function
