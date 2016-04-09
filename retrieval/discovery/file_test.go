@@ -1,3 +1,5 @@
+// +build !linux !arm64,!ppc64le,!ppc64
+
 package discovery
 
 import (
