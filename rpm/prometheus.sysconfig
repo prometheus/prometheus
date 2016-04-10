@@ -1,0 +1,3 @@
+# prometheus run options
+
+PROMETHEUS_OPTS="-config.file=/etc/prometheus/prometheus.yaml -web.console.libraries=/usr/share/prometheus/console_libraries -web.console.templates=/usr/share/prometheus/consoles -storage.local.path=/var/lib/prometheus/data"

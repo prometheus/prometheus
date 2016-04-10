@@ -13,6 +13,8 @@
 
 GO   := GO15VENDOREXPERIMENT=1 go
 pkgs  = $(shell $(GO) list ./... | grep -v /vendor/)
+PWD   = $(shell pwd)
+VERSION = $(shell cat version/VERSION)
 
 ifdef DEBUG
 	bindata_flags = -debug
@@ -47,6 +49,11 @@ tarballs:
 
 docker:
 	@docker build -t prometheus:$(shell git rev-parse --short HEAD) .
+
+rpm:	build
+	@echo ">> building rpm package"
+	@rpmbuild --buildroot "$(PWD)/.build" -D "_topdir $(PWD)" -D "_builddir $(PWD)/.build" -D "src_root $(PWD)" -D "version $(VERSION)" -bb prometheus.spec
+	@mv RPMS/*/*.rpm "$(PWD)"/
 
 assets:
 	@echo ">> writing assets"
