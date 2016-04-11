@@ -12,6 +12,7 @@
 # limitations under the License.
 
 export GO15VENDOREXPERIMENT := 1
+export CGO_ENABLED := 0
 
 GO   := go
 pkgs  = $(shell $(GO) list ./... | grep -v /vendor/)
