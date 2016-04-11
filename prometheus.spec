@@ -2,13 +2,18 @@
 
 Name:           prometheus
 Version:        %{version}
-Release:        1%{?dist}
+%if 0%{use_systemd}
+Release:        1%{?dist}systemd
+Requires:       systemd-units
+%else
+Release:        1%{?dist}nosystemd
+Requires:       daemonize
+%endif
 Summary:        Prometheus is a systems and service monitoring system. It collects metrics from configured targets at given intervals, evaluates rule expressions, displays the results, and can trigger alerts if some condition is observed to be true.
 Group:          System Environment/Daemons
 License:        See the LICENSE file at github.
 URL:            https://github.com/prometheus/prometheus
 Requires(pre):  /usr/sbin/useradd
-Requires:       systemd-units
 AutoReqProv:    No
 
 %description
@@ -28,18 +33,25 @@ install -d \
 	var/run/prometheus \
 	var/lib/prometheus \
 	usr/bin \
-	lib/systemd/system \
 	etc/prometheus \
 	etc/sysconfig \
 	usr/share/prometheus \
 	usr/share/prometheus/consoles \
 	usr/share/prometheus/console_libraries
-
-install -m 755 "%{src_root}/rpm/prometheus.service" lib/systemd/system/prometheus.service
 install -m 644 "%{src_root}/rpm/prometheus.sysconfig" etc/sysconfig/prometheus
 install -m 644 "%{src_root}/rpm/prometheus.yaml" etc/prometheus/prometheus.yaml
 install -m 755 "%{src_root}/prometheus" usr/bin/prometheus
 install -m 755 "%{src_root}/promtool" usr/bin/promtool
+
+%if 0%{use_systemd}
+install -d lib/systemd/system
+install -m 644 "%{src_root}/rpm/prometheus.service" lib/systemd/system/prometheus.service
+%else
+install -d etc/init.d
+install -m 755 "%{src_root}/rpm/prometheus.init" etc/init.d/prometheus
+install -d etc/logrotate.d
+install -m 644 "%{src_root}/rpm/prometheus.logrotate" etc/logrotate.d/prometheus
+%endif
 
 for f in "%{src_root}/consoles"/*.html "%{src_root}/consoles"/index.html.example; do
     install -m 644 "$f" usr/share/prometheus/consoles/
@@ -49,7 +61,7 @@ for f in "%{src_root}/console_libraries"/*.lib; do
 done
 
 %clean
-
+rm -r "%{_builddir}/"
 %pre
 getent group prometheus >/dev/null || groupadd -r prometheus
 getent passwd prometheus >/dev/null || \
@@ -68,8 +80,12 @@ chmod 744 /var/log/prometheus
 /usr/bin/prometheus
 /usr/bin/promtool
 %config(noreplace) /etc/prometheus/prometheus.yaml
-%config(noreplace) /etc/logrotate.d/prometheus
+%if 0%{use_systemd}
 /lib/systemd/system/prometheus.service
+%else
+/etc/init.d/prometheus
+%config(noreplace) /etc/logrotate.d/prometheus
+%endif
 %config(noreplace) /etc/sysconfig/prometheus
 /usr/share/prometheus/consoles/aws_elasticache.html
 /usr/share/prometheus/consoles/aws_elb.html

@@ -50,10 +50,17 @@ tarballs:
 docker:
 	@docker build -t prometheus:$(shell git rev-parse --short HEAD) .
 
-rpm:	build
-	@echo ">> building rpm package"
-	@rpmbuild --buildroot "$(PWD)/.build" -D "_topdir $(PWD)" -D "_builddir $(PWD)/.build" -D "src_root $(PWD)" -D "version $(VERSION)" -bb prometheus.spec
+rpm-nosystemd:
+	@echo ">> building rpm package for no-systemd distros"
+	@rpmbuild --buildroot "$(PWD)/.build/nosystemd" -D "_topdir $(PWD)" -D "_builddir $(PWD)/.build/nosystemd" -D "src_root $(PWD)" -D "version $(VERSION)" -D 'use_systemd 0' -bb prometheus.spec
 	@mv RPMS/*/*.rpm "$(PWD)"/
+
+rpm-systemd:
+	@echo ">> building rpm package for systemd distros"
+	@rpmbuild --buildroot "$(PWD)/.build/systemd" -D "_topdir $(PWD)" -D "_builddir $(PWD)/.build/systemd" -D "src_root $(PWD)" -D "version $(VERSION)" -D 'use_systemd 1' -bb prometheus.spec
+	@mv RPMS/*/*.rpm "$(PWD)"/
+
+rpm:	build rpm-systemd rpm-nosystemd
 
 assets:
 	@echo ">> writing assets"
@@ -61,5 +68,4 @@ assets:
 	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
 
 
-.PHONY: all style format build test vet docker assets tarballs
-
+.PHONY: all style format build test vet docker assets tarballs rpm-nosystemd rpm-systemd

@@ -1,0 +1,12 @@
+# not installed by default as logrotate is used to manage all log files.
+/var/log/prometheus/prometheus.log
+{
+  sharedscripts
+  missingok
+  notifempty
+  rotate 30
+  compress
+  postrotate
+        [ ! -f /var/run/prometheus/prometheus.pid ] || /etc/init.d/prometheus reload
+  endscript
+}
