@@ -45,7 +45,7 @@ stop() {
     echo
     [ $RETVAL = 0 ] && rm -f ${LOCK_FILE} ${PID_FILE}
     return $RETVAL
-}  
+}
 
 check_status() {
     status -p ${PID_FILE} ${DAEMON}
