@@ -11,7 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO   := GO15VENDOREXPERIMENT=1 go
+export GO15VENDOREXPERIMENT := 1
+
+GO   := go
 pkgs  = $(shell $(GO) list ./... | grep -v /vendor/)
 PWD   = $(shell pwd)
 VERSION = $(shell cat version/VERSION)

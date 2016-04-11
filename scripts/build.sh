@@ -35,8 +35,6 @@ ldflags="
   -X ${repo_path}/version.BuildDate=${build_date}
   ${EXTRA_LDFLAGS}"
 
-export GO15VENDOREXPERIMENT="1"
-
 echo " >   prometheus"
 go build -ldflags "${ldflags}" -o prometheus${ext} ${repo_path}/cmd/prometheus
 
