@@ -70,20 +70,15 @@ getent passwd prometheus >/dev/null || \
 exit 0
 
 %post
-chgrp prometheus /var/run/prometheus
-chmod 774 /var/run/prometheus
-chown prometheus:prometheus /var/log/prometheus
-chmod 744 /var/log/prometheus
-
 %files
-%defattr(-,root,root,-)
-/usr/bin/prometheus
-/usr/bin/promtool
+%defattr(644,root,root,755)
+%attr(755, root, root)/usr/bin/prometheus
+%attr(755, root, root)/usr/bin/promtool
 %config(noreplace) /etc/prometheus/prometheus.yaml
 %if 0%{use_systemd}
 /lib/systemd/system/prometheus.service
 %else
-/etc/init.d/prometheus
+%attr(755, root, root)/etc/init.d/prometheus
 %config(noreplace) /etc/logrotate.d/prometheus
 %endif
 %config(noreplace) /etc/sysconfig/prometheus
@@ -110,6 +105,6 @@ chmod 744 /var/log/prometheus
 /usr/share/prometheus/consoles/snmp.html
 /usr/share/prometheus/console_libraries/prom.lib
 /usr/share/prometheus/console_libraries/menu.lib
-%attr(755, prometheus, prometheus)/var/lib/prometheus
-/var/run/prometheus
-/var/log/prometheus
+%attr(750, prometheus, prometheus)/var/lib/prometheus
+%attr(750, prometheus, prometheus)/var/run/prometheus
+%attr(750, prometheus, prometheus)/var/log/prometheus
