@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+
+- job_name: prometheus
+  target_groups:
+    - targets:
+        - 'localhost:9090'
