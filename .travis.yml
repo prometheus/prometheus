@@ -6,4 +6,4 @@ go:
 - 1.5
 
 script:
-- make style test
+- make check_license style test
