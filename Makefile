@@ -25,6 +25,10 @@ style:
 	@echo ">> checking code style"
 	@! gofmt -d $(shell find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
+check_license:
+	@echo ">> checking license header"
+	@./scripts/check_license.sh
+
 test:
 	@echo ">> running tests"
 	@$(GO) test -short $(pkgs)
@@ -54,5 +58,5 @@ assets:
 	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
 
 
-.PHONY: all style format build test vet docker assets tarballs
+.PHONY: all style check_license format build test vet docker assets tarballs
 
