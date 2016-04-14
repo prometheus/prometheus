@@ -1683,10 +1683,7 @@ func verifyStorageRandom(t testing.TB, s *memorySeriesStorage, samples model.Sam
 	result := true
 	for _, i := range rand.Perm(len(samples)) {
 		sample := samples[i]
-		fp, err := s.mapper.mapFP(sample.Metric.FastFingerprint(), sample.Metric)
-		if err != nil {
-			t.Fatal(err)
-		}
+		fp := s.mapper.mapFP(sample.Metric.FastFingerprint(), sample.Metric)
 		p := s.NewPreloader()
 		it := p.PreloadInstant(fp, sample.Timestamp, 0)
 		found := it.ValueAtOrBeforeTime(sample.Timestamp)
@@ -1726,10 +1723,7 @@ func verifyStorageSequential(t testing.TB, s *memorySeriesStorage, samples model
 		p.Close()
 	}()
 	for i, sample := range samples {
-		newFP, err := s.mapper.mapFP(sample.Metric.FastFingerprint(), sample.Metric)
-		if err != nil {
-			t.Fatal(err)
-		}
+		newFP := s.mapper.mapFP(sample.Metric.FastFingerprint(), sample.Metric)
 		if it == nil || newFP != fp {
 			fp = newFP
 			p.Close()
@@ -1782,10 +1776,7 @@ func TestAppendOutOfOrder(t *testing.T) {
 		})
 	}
 
-	fp, err := s.mapper.mapFP(m.FastFingerprint(), m)
-	if err != nil {
-		t.Fatal(err)
-	}
+	fp := s.mapper.mapFP(m.FastFingerprint(), m)
 
 	pl := s.NewPreloader()
 	defer pl.Close()

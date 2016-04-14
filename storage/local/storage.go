@@ -356,6 +356,9 @@ func (s *memorySeriesStorage) Stop() error {
 	if err := s.persistence.checkpointSeriesMapAndHeads(s.fpToSeries, s.fpLocker); err != nil {
 		return err
 	}
+	if err := s.mapper.checkpoint(); err != nil {
+		return err
+	}
 
 	if err := s.persistence.close(); err != nil {
 		return err
@@ -587,14 +590,10 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) error {
 	}
 	rawFP := sample.Metric.FastFingerprint()
 	s.fpLocker.Lock(rawFP)
-	fp, err := s.mapper.mapFP(rawFP, sample.Metric)
+	fp := s.mapper.mapFP(rawFP, sample.Metric)
 	defer func() {
 		s.fpLocker.Unlock(fp)
 	}() // Func wrapper because fp might change below.
-	if err != nil {
-		s.persistence.setDirty(fmt.Errorf("error while mapping fingerprint %v: %s", rawFP, err))
-		return err
-	}
 	if fp != rawFP {
 		// Switch locks.
 		s.fpLocker.Unlock(rawFP)
