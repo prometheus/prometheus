@@ -1327,8 +1327,10 @@ loop:
 	close(p.indexingStopped)
 }
 
-// checkpointFPMappings persists the fingerprint mappings. This method is not
-// goroutine-safe.
+// checkpointFPMappings persists the fingerprint mappings. The caller has to
+// ensure that the provided mappings are not changed concurrently. This method
+// is only called upon shutdown or during crash recovery, when no samples are
+// ingested.
 //
 // Description of the file format, v1:
 //
