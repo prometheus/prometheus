@@ -1,5 +1,8 @@
 # Prometheus [![Build Status](https://travis-ci.org/prometheus/prometheus.svg)](https://travis-ci.org/prometheus/prometheus) [![Circle CI](https://circleci.com/gh/prometheus/prometheus/tree/master.svg?style=svg)](https://circleci.com/gh/prometheus/prometheus/tree/master)
 
+Visit [prometheus.io](https://prometheus.io) for the full documentation,
+examples and guides.
+
 Prometheus is a systems and service monitoring system. It collects metrics
 from configured targets at given intervals, evaluates rule expressions,
 displays the results, and can trigger alerts if some condition is observed
