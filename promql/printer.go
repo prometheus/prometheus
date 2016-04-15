@@ -143,10 +143,10 @@ func (node *AggregateExpr) String() string {
 		} else {
 			format = "%s BY (%s)"
 		}
-		if node.KeepExtraLabels {
-			format += " KEEP_COMMON"
-		}
-		return fmt.Sprintf(format, aggrString, node.Grouping)
+		aggrString = fmt.Sprintf(format, aggrString, node.Grouping)
+	}
+	if node.KeepExtraLabels {
+		aggrString += " KEEP_COMMON"
 	}
 	return aggrString
 }
