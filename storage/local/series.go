@@ -313,21 +313,27 @@ func (s *memorySeries) dropChunks(t model.Time) error {
 			break
 		}
 	}
-	if keepIdx > 0 {
-		s.chunkDescs = append(
-			make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx),
-			s.chunkDescs[keepIdx:]...,
-		)
-		s.persistWatermark -= keepIdx
-		if s.persistWatermark < 0 {
-			panic("dropped unpersisted chunks from memory")
-		}
-		if s.chunkDescsOffset != -1 {
-			s.chunkDescsOffset += keepIdx
-		}
-		numMemChunkDescs.Sub(float64(keepIdx))
-		s.dirty = true
+	if keepIdx == len(s.chunkDescs) && !s.headChunkClosed {
+		// Never drop an open head chunk.
+		keepIdx--
 	}
+	if keepIdx <= 0 {
+		// Nothing to drop.
+		return nil
+	}
+	s.chunkDescs = append(
+		make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx),
+		s.chunkDescs[keepIdx:]...,
+	)
+	s.persistWatermark -= keepIdx
+	if s.persistWatermark < 0 {
+		panic("dropped unpersisted chunks from memory")
+	}
+	if s.chunkDescsOffset != -1 {
+		s.chunkDescsOffset += keepIdx
+	}
+	numMemChunkDescs.Sub(float64(keepIdx))
+	s.dirty = true
 	return nil
 }
 
