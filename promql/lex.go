@@ -18,6 +18,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/prometheus/common/log"
 )
 
 // item represents a token or text string returned from the scanner.
@@ -173,6 +175,10 @@ const (
 	itemGroupLeft
 	itemGroupRight
 	itemBool
+	// Removed keywords. Just here to detect and print errors.
+	itemSummary
+	itemDescription
+	itemRunbook
 	keywordsEnd
 )
 
@@ -206,6 +212,10 @@ var key = map[string]itemType{
 	"group_left":    itemGroupLeft,
 	"group_right":   itemGroupRight,
 	"bool":          itemBool,
+	// Removed keywords. Just here to detect and print errors.
+	"summary":     itemSummary,
+	"description": itemDescription,
+	"runbook":     itemRunbook,
 }
 
 // These are the default string representations for common items. It does not
@@ -395,6 +405,12 @@ func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 func (l *lexer) nextItem() item {
 	item := <-l.items
 	l.lastPos = item.pos
+
+	// TODO(fabxc): remove for version 1.0.
+	t := item.typ
+	if t == itemSummary || t == itemDescription || t == itemRunbook {
+		log.Errorf("Token %q is not valid anymore. Alerting rule syntax has changed with version 0.17.0. Please read https://prometheus.io/docs/alerting/rules/.", item)
+	}
 	return item
 }
 
