@@ -17,12 +17,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"golang.org/x/net/context"
@@ -43,11 +45,13 @@ const (
 type errorType string
 
 const (
-	errorNone     errorType = ""
-	errorTimeout            = "timeout"
-	errorCanceled           = "canceled"
-	errorExec               = "execution"
-	errorBadData            = "bad_data"
+	errorNone      errorType = ""
+	errorTimeout             = "timeout"
+	errorCanceled            = "canceled"
+	errorExec                = "execution"
+	errorBadData             = "bad_data"
+	errorThrottled           = "throttled"
+	errorAppend              = "append"
 )
 
 var corsHeaders = map[string]string{
@@ -129,6 +133,8 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/series", instr("series", api.series))
 	r.Del("/series", instr("drop_series", api.dropSeries))
+
+	r.Post("/push", instr("push", api.push))
 }
 
 type queryData struct {
@@ -282,6 +288,51 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 	}{
 		NumDeleted: len(fps),
 	}
+	return res, nil
+}
+
+func (api *API) push(r *http.Request) (interface{}, *apiError) {
+	var (
+		allSamples = make(model.Samples, 0, 200)
+		decSamples = make(model.Vector, 0, 50)
+	)
+	sdec := expfmt.SampleDecoder{
+		Dec: expfmt.NewDecoder(r.Body, expfmt.ResponseFormat(r.Header)),
+		Opts: &expfmt.DecodeOptions{
+			Timestamp: model.Now(),
+		},
+	}
+
+	for {
+		err := sdec.Decode(&decSamples)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+		allSamples = append(allSamples, decSamples...)
+		decSamples = decSamples[:0]
+	}
+
+	if api.Storage.NeedsThrottling() {
+		return nil, &apiError{
+			errorThrottled,
+			fmt.Errorf("storage throttled - back off and try again"),
+		}
+	}
+	for _, s := range allSamples {
+		if err := api.Storage.Append(s); err != nil {
+			return nil, &apiError{errorAppend, err}
+		}
+	}
+
+	res := struct {
+		NumAppended int `json:"numAppended"`
+	}{
+		NumAppended: len(allSamples),
+	}
+
 	return res, nil
 }
 
