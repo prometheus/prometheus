@@ -902,23 +902,20 @@ func signatureFunc(ignoring bool, labels ...model.LabelName) func(m metric.Metri
 // resultMetric returns the metric for the given sample(s) based on the vector
 // binary operation and the matching options.
 func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching) metric.Metric {
+	if shouldDropMetricName(op) {
+		lhs.Del(model.MetricNameLabel)
+	}
 	if len(matching.On)+len(matching.Include) == 0 {
-		if shouldDropMetricName(op) {
-			lhs.Del(model.MetricNameLabel)
-		}
 		return lhs
 	}
 	if matching.Ignoring {
-		if shouldDropMetricName(op) {
-			lhs.Del(model.MetricNameLabel)
-		}
 		if matching.Card == CardOneToOne {
 			for _, l := range matching.On {
 				lhs.Del(l)
 			}
 		}
 		for _, ln := range matching.Include {
-			// Included labels from the `group_x` modifier are taken from the one side with Ignoring.
+			// Included labels from the `group_x` modifier are taken from the "one"-side.
 			value := rhs.Metric[ln]
 			if value != "" {
 				lhs.Set(ln, rhs.Metric[ln])
@@ -930,14 +927,20 @@ func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching)
 	}
 	// As we definitely write, creating a new metric is the easiest solution.
 	m := model.Metric{}
-	for _, ln := range matching.On {
-		if v, ok := lhs.Metric[ln]; ok {
-			m[ln] = v
+	if matching.Card == CardOneToOne {
+		for _, ln := range matching.On {
+			if v, ok := lhs.Metric[ln]; ok {
+				m[ln] = v
+			}
+		}
+	} else {
+		for k, v := range lhs.Metric {
+			m[k] = v
 		}
 	}
 	for _, ln := range matching.Include {
-		// Included labels from the `group_x` modifier are taken from the "many"-side with On.
-		if v, ok := lhs.Metric[ln]; ok {
+		// Included labels from the `group_x` modifier are taken from the "one"-side .
+		if v, ok := rhs.Metric[ln]; ok {
 			m[ln] = v
 		}
 	}

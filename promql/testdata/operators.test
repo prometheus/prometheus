@@ -281,8 +281,8 @@ eval instant at 5m sum(sum without (instance)(node_cpu) / ignoring (mode) group_
 
 
 # Copy over label from metric with no matching labels, without having to list cross-job target labels ('job' here).
-#eval instant at 5m node_cpu + on(dummy) group_left(foo) random
-#  {instance="abc",job="node",mode="idle",foo="bar"} 3
-#  {instance="abc",job="node",mode="user",foo="bar"} 1
-#  {instance="def",job="node",mode="idle",foo="bar"} 8
-#  {instance="def",job="node",mode="user",foo="bar"} 2
+eval instant at 5m node_cpu + on(dummy) group_left(foo) random*0
+  {instance="abc",job="node",mode="idle",foo="bar"} 3
+  {instance="abc",job="node",mode="user",foo="bar"} 1
+  {instance="def",job="node",mode="idle",foo="bar"} 8
+  {instance="def",job="node",mode="user",foo="bar"} 2
