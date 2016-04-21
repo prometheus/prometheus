@@ -223,12 +223,27 @@ load 5m
   node_cpu{instance="def",job="node",mode="idle"} 8
   node_cpu{instance="def",job="node",mode="user"} 2
 
+load 5m
+  random{foo="bar"} 1
+
 # Copy machine role to node variable.
 eval instant at 5m node_role * on (instance,job) group_left (role) node_var
   {instance="abc",job="node",role="prometheus"} 2
 
 eval instant at 5m node_var * on (instance,job) group_right (role) node_role
   {instance="abc",job="node",role="prometheus"} 2
+
+eval instant at 5m node_var * ignoring (role) group_left (role) node_role
+  {instance="abc",job="node",role="prometheus"} 2
+
+eval instant at 5m node_role * ignoring (role) group_right (role) node_var
+  {instance="abc",job="node",role="prometheus"} 2
+
+# Copy machine role to node variable with instrumentation labels.
+eval instant at 5m node_cpu * ignoring (role, mode) group_left (role) node_role
+  {instance="abc",job="node",mode="idle",role="prometheus"} 3
+  {instance="abc",job="node",mode="user",role="prometheus"} 1
+
 
 # Ratio of total.
 eval instant at 5m node_cpu / on (instance,job) group_left (mode) sum by (instance,job)(node_cpu)
@@ -243,3 +258,31 @@ eval instant at 5m sum by (mode, job)(node_cpu) / on (job) group_left (mode) sum
 
 eval instant at 5m sum(sum by (mode, job)(node_cpu) / on (job) group_left (mode) sum by (job)(node_cpu))
   {} 1.0
+
+
+eval instant at 5m node_cpu / ignoring (mode) group_left sum without (mode)(node_cpu)
+  {instance="abc",job="node",mode="idle"} .75
+  {instance="abc",job="node",mode="user"} .25
+  {instance="def",job="node",mode="idle"} .80
+  {instance="def",job="node",mode="user"} .20
+
+eval instant at 5m node_cpu / ignoring (mode) group_left(dummy) sum without (mode)(node_cpu)
+  {instance="abc",job="node",mode="idle"} .75
+  {instance="abc",job="node",mode="user"} .25
+  {instance="def",job="node",mode="idle"} .80
+  {instance="def",job="node",mode="user"} .20
+
+eval instant at 5m sum without (instance)(node_cpu) / ignoring (mode) group_left sum without (instance, mode)(node_cpu)
+  {job="node",mode="idle"} 0.7857142857142857
+  {job="node",mode="user"} 0.21428571428571427
+
+eval instant at 5m sum(sum without (instance)(node_cpu) / ignoring (mode) group_left sum without (instance, mode)(node_cpu))
+  {} 1.0
+
+
+# Copy over label from metric with no matching labels, without having to list cross-job target labels ('job' here).
+#eval instant at 5m node_cpu + on(dummy) group_left(foo) random
+#  {instance="abc",job="node",mode="idle",foo="bar"} 3
+#  {instance="abc",job="node",mode="user",foo="bar"} 1
+#  {instance="def",job="node",mode="idle",foo="bar"} 8
+#  {instance="def",job="node",mode="user",foo="bar"} 2

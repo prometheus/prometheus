@@ -251,13 +251,13 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "offset modifier must be preceded by an instant or range selector",
 	}, {
+		input:  "a - on(b) group_left d",
+		fail:   true,
+		errMsg: "must specify labels in INCLUDE clause when using ON",
+	}, {
 		input:  "a - on(b) ignoring(c) d",
 		fail:   true,
 		errMsg: "parse error at char 11: no valid expression found",
-	}, {
-		input:  "a - ignoring(b) group_left(c) d",
-		fail:   true,
-		errMsg: "parse error at char 29: IGNORING not permitted with many to one matching",
 	},
 	// Vector binary operations.
 	{
@@ -591,6 +591,52 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: "foo / ignoring(test,blub) group_left(blub) bar",
+		expected: &BinaryExpr{
+			Op: itemDIV,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:     CardManyToOne,
+				On:       model.LabelNames{"test", "blub"},
+				Include:  model.LabelNames{"blub"},
+				Ignoring: true,
+			},
+		},
+	}, {
+		input: "foo / ignoring(test,blub) group_left(bar) bar",
+		expected: &BinaryExpr{
+			Op: itemDIV,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:     CardManyToOne,
+				On:       model.LabelNames{"test", "blub"},
+				Include:  model.LabelNames{"bar"},
+				Ignoring: true,
+			},
+		},
+	}, {
 		input: "foo - on(test,blub) group_right(bar,foo) bar",
 		expected: &BinaryExpr{
 			Op: itemSUB,
@@ -610,6 +656,29 @@ var testExpr = []struct {
 				Card:    CardOneToMany,
 				On:      model.LabelNames{"test", "blub"},
 				Include: model.LabelNames{"bar", "foo"},
+			},
+		},
+	}, {
+		input: "foo - ignoring(test,blub) group_right(bar,foo) bar",
+		expected: &BinaryExpr{
+			Op: itemSUB,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:     CardOneToMany,
+				On:       model.LabelNames{"test", "blub"},
+				Include:  model.LabelNames{"bar", "foo"},
+				Ignoring: true,
 			},
 		},
 	}, {
@@ -671,7 +740,7 @@ var testExpr = []struct {
 	}, {
 		input:  `http_requests{group="production"} / on(instance) group_left cpu_count{type="smp"}`,
 		fail:   true,
-		errMsg: "unexpected identifier \"cpu_count\" in grouping opts, expected \"(\"",
+		errMsg: "parse error at char 61: must specify labels in INCLUDE clause when using ON",
 	}, {
 		input:  `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:   true,

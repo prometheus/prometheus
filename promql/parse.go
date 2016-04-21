@@ -461,7 +461,7 @@ func (p *parser) expr() Expr {
 			returnBool = true
 		}
 
-		// Parse ON clause.
+		// Parse ON/IGNORING clause.
 		if p.peek().typ == itemOn || p.peek().typ == itemIgnoring {
 			if p.peek().typ == itemIgnoring {
 				vecMatching.Ignoring = true
@@ -470,24 +470,24 @@ func (p *parser) expr() Expr {
 			vecMatching.On = p.labels()
 
 			// Parse grouping.
-			if t := p.peek().typ; t == itemGroupLeft {
+			if t := p.peek().typ; t == itemGroupLeft || t == itemGroupRight {
 				p.next()
-				vecMatching.Card = CardManyToOne
-				vecMatching.Include = p.labels()
-			} else if t == itemGroupRight {
-				p.next()
-				vecMatching.Card = CardOneToMany
-				vecMatching.Include = p.labels()
+				if t == itemGroupLeft {
+					vecMatching.Card = CardManyToOne
+				} else {
+					vecMatching.Card = CardOneToMany
+				}
+				if p.peek().typ == itemLeftParen {
+					vecMatching.Include = p.labels()
+				} else if !vecMatching.Ignoring {
+					p.errorf("must specify labels in INCLUDE clause when using ON")
+				}
 			}
-		}
-
-		if vecMatching.Ignoring && (vecMatching.Card == CardManyToOne || vecMatching.Card == CardOneToMany) {
-			p.errorf("IGNORING not permitted with many to one matching")
 		}
 
 		for _, ln := range vecMatching.On {
 			for _, ln2 := range vecMatching.Include {
-				if ln == ln2 {
+				if ln == ln2 && !vecMatching.Ignoring {
 					p.errorf("label %q must not occur in ON and INCLUDE clause at once", ln)
 				}
 			}

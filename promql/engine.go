@@ -795,9 +795,8 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 		panic("many-to-many only allowed for set operators")
 	}
 	var (
-		result       = vector{}
-		sigf         = signatureFunc(matching.Ignoring, matching.On...)
-		resultLabels = append(matching.On, matching.Include...)
+		result = vector{}
+		sigf   = signatureFunc(matching.Ignoring, matching.On...)
 	)
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -851,7 +850,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 		} else if !keep {
 			continue
 		}
-		metric := resultMetric(ls.Metric, op, matching.Ignoring, resultLabels...)
+		metric := resultMetric(ls.Metric, rs.Metric, op, matching)
 
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == CardOneToOne {
@@ -863,7 +862,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result vector. Check whether those labels have already been added for
 			// the same matching labels.
-			insertSig := model.SignatureForLabels(metric.Metric, matching.Include...)
+			insertSig := uint64(metric.Metric.Fingerprint())
 			if !exists {
 				insertedSigs = map[uint64]struct{}{}
 				matchedSigs[sig] = insertedSigs
@@ -902,21 +901,43 @@ func signatureFunc(ignoring bool, labels ...model.LabelName) func(m metric.Metri
 
 // resultMetric returns the metric for the given sample(s) based on the vector
 // binary operation and the matching options.
-func resultMetric(met metric.Metric, op itemType, ignoring bool, labels ...model.LabelName) metric.Metric {
-	if len(labels) == 0 || ignoring {
+func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching) metric.Metric {
+	if len(matching.On)+len(matching.Include) == 0 {
 		if shouldDropMetricName(op) {
-			met.Del(model.MetricNameLabel)
+			lhs.Del(model.MetricNameLabel)
 		}
-		for _, l := range labels {
-			met.Del(l)
+		return lhs
+	}
+	if matching.Ignoring {
+		if shouldDropMetricName(op) {
+			lhs.Del(model.MetricNameLabel)
 		}
-		return met
+		if matching.Card == CardOneToOne {
+			for _, l := range matching.On {
+				lhs.Del(l)
+			}
+		}
+		for _, ln := range matching.Include {
+			// Included labels from the `group_x` modifier are taken from the one side with Ignoring.
+			value := rhs.Metric[ln]
+			if value != "" {
+				lhs.Set(ln, rhs.Metric[ln])
+			} else {
+				lhs.Del(ln)
+			}
+		}
+		return lhs
 	}
 	// As we definitely write, creating a new metric is the easiest solution.
 	m := model.Metric{}
-	for _, ln := range labels {
-		// Included labels from the `group_x` modifier are taken from the "many"-side.
-		if v, ok := met.Metric[ln]; ok {
+	for _, ln := range matching.On {
+		if v, ok := lhs.Metric[ln]; ok {
+			m[ln] = v
+		}
+	}
+	for _, ln := range matching.Include {
+		// Included labels from the `group_x` modifier are taken from the "many"-side with On.
+		if v, ok := lhs.Metric[ln]; ok {
 			m[ln] = v
 		}
 	}
