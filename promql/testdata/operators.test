@@ -170,3 +170,38 @@ eval instant at 50m 0 == bool 1
 
 eval instant at 50m 1 == bool 1
 	1
+
+# group_left/group_right.
+
+clear
+
+load 5m
+  node_var{instance="abc",job="node"} 2
+  node_role{instance="abc",job="node",role="prometheus"} 1
+
+load 5m
+  node_cpu{instance="abc",job="node",mode="idle"} 3
+  node_cpu{instance="abc",job="node",mode="user"} 1
+  node_cpu{instance="def",job="node",mode="idle"} 8
+  node_cpu{instance="def",job="node",mode="user"} 2
+
+# Copy machine role to node variable.
+eval instant at 5m node_role * on (instance,job) group_left (role) node_var
+  {instance="abc",job="node",role="prometheus"} 2
+
+eval instant at 5m node_var * on (instance,job) group_right (role) node_role
+  {instance="abc",job="node",role="prometheus"} 2
+
+# Ratio of total.
+eval instant at 5m node_cpu / on (instance,job) group_left (mode) sum by (instance,job)(node_cpu)
+  {instance="abc",job="node",mode="idle"} .75
+  {instance="abc",job="node",mode="user"} .25
+  {instance="def",job="node",mode="idle"} .80
+  {instance="def",job="node",mode="user"} .20
+
+eval instant at 5m sum by (mode, job)(node_cpu) / on (job) group_left (mode) sum by (job)(node_cpu)
+  {job="node",mode="idle"} 0.7857142857142857
+  {job="node",mode="user"} 0.21428571428571427
+
+eval instant at 5m sum(sum by (mode, job)(node_cpu) / on (job) group_left (mode) sum by (job)(node_cpu))
+  {} 1.0
