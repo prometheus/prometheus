@@ -250,6 +250,14 @@ var testExpr = []struct {
 		input:  "1 offset 1d",
 		fail:   true,
 		errMsg: "offset modifier must be preceded by an instant or range selector",
+	}, {
+		input:  "a - on(b) ignoring(c) d",
+		fail:   true,
+		errMsg: "parse error at char 11: no valid expression found",
+	}, {
+		input:  "a - ignoring(b) group_left(c) d",
+		fail:   true,
+		errMsg: "parse error at char 29: IGNORING not permitted with many to one matching",
 	},
 	// Vector binary operations.
 	{
@@ -515,6 +523,28 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{
 				Card: CardManyToMany,
 				On:   model.LabelNames{"test", "blub"},
+			},
+		},
+	}, {
+		input: "foo and ignoring(test,blub) bar",
+		expected: &BinaryExpr{
+			Op: itemLAND,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:     CardManyToMany,
+				On:       model.LabelNames{"test", "blub"},
+				Ignoring: true,
 			},
 		},
 	}, {

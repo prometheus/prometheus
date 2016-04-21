@@ -462,7 +462,10 @@ func (p *parser) expr() Expr {
 		}
 
 		// Parse ON clause.
-		if p.peek().typ == itemOn {
+		if p.peek().typ == itemOn || p.peek().typ == itemIgnoring {
+			if p.peek().typ == itemIgnoring {
+				vecMatching.Ignoring = true
+			}
 			p.next()
 			vecMatching.On = p.labels()
 
@@ -476,6 +479,10 @@ func (p *parser) expr() Expr {
 				vecMatching.Card = CardOneToMany
 				vecMatching.Include = p.labels()
 			}
+		}
+
+		if vecMatching.Ignoring && (vecMatching.Card == CardManyToOne || vecMatching.Card == CardOneToMany) {
+			p.errorf("IGNORING not permitted with many to one matching")
 		}
 
 		for _, ln := range vecMatching.On {

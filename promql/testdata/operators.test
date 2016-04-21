@@ -79,6 +79,14 @@ eval instant at 50m (http_requests{group="canary"} + 1) and on(instance) http_re
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 
+eval instant at 50m (http_requests{group="canary"} + 1) and ignoring(group) http_requests{instance="0", group="production"}
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+
+eval instant at 50m (http_requests{group="canary"} + 1) and ignoring(group, job) http_requests{instance="0", group="production"}
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+
 eval instant at 50m http_requests{group="canary"} or http_requests{group="production"}
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
@@ -109,6 +117,14 @@ eval instant at 50m (http_requests{group="canary"} + 1) or on(instance) (http_re
 	vector_matching_a{l="x"} 10
 	vector_matching_a{l="y"} 20
 
+eval instant at 50m (http_requests{group="canary"} + 1) or ignoring(l, group, job) (http_requests or cpu_count or vector_matching_a)
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	vector_matching_a{l="x"} 10
+	vector_matching_a{l="y"} 20
+
 eval instant at 50m http_requests{group="canary"} unless http_requests{instance="0"}
 	http_requests{group="canary", instance="1", job="api-server"} 400
 	http_requests{group="canary", instance="1", job="app-server"} 800
@@ -125,8 +141,30 @@ eval instant at 50m http_requests{group="canary"} / on(instance,job) http_reques
 	{instance="1", job="api-server"} 2
 	{instance="1", job="app-server"} 1.3333333333333333
 
+eval instant at 50m http_requests{group="canary"} unless ignoring(group, instance) http_requests{instance="0"}
+
+eval instant at 50m http_requests{group="canary"} unless ignoring(group) http_requests{instance="0"}
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m http_requests{group="canary"} / ignoring(group) http_requests{group="production"}
+	{instance="0", job="api-server"} 3
+	{instance="0", job="app-server"} 1.4
+	{instance="1", job="api-server"} 2
+	{instance="1", job="app-server"} 1.3333333333333333
+
 # https://github.com/prometheus/prometheus/issues/1489
 eval instant at 50m http_requests AND ON (dummy) vector(1)
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
+
+eval instant at 50m http_requests AND IGNORING (group, instance, job) vector(1)
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="1", job="api-server"} 400

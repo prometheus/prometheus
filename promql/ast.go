@@ -231,6 +231,9 @@ type VectorMatching struct {
 	// On contains the labels which define equality of a pair
 	// of elements from the vectors.
 	On model.LabelNames
+	// Ignoring excludes the given label names from matching,
+	// rather than only using them.
+	Ignoring bool
 	// Include contains additional labels that should be included in
 	// the result from the side with the higher cardinality.
 	Include model.LabelNames

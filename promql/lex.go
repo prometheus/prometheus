@@ -172,6 +172,7 @@ const (
 	itemBy
 	itemWithout
 	itemOn
+	itemIgnoring
 	itemGroupLeft
 	itemGroupRight
 	itemBool
@@ -209,6 +210,7 @@ var key = map[string]itemType{
 	"keeping_extra": itemKeepCommon,
 	"keep_common":   itemKeepCommon,
 	"on":            itemOn,
+	"ignoring":      itemIgnoring,
 	"group_left":    itemGroupLeft,
 	"group_right":   itemGroupRight,
 	"bool":          itemBool,

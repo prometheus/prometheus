@@ -728,7 +728,7 @@ func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.On...)
+	sigf := signatureFunc(matching.Ignoring, matching.On...)
 
 	var result vector
 	// The set of signatures for the right-hand side vector.
@@ -751,7 +751,7 @@ func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector 
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.On...)
+	sigf := signatureFunc(matching.Ignoring, matching.On...)
 
 	var result vector
 	leftSigs := map[uint64]struct{}{}
@@ -773,7 +773,7 @@ func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vec
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.On...)
+	sigf := signatureFunc(matching.Ignoring, matching.On...)
 
 	rightSigs := map[uint64]struct{}{}
 	for _, rs := range rhs {
@@ -796,7 +796,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 	}
 	var (
 		result       = vector{}
-		sigf         = signatureFunc(matching.On...)
+		sigf         = signatureFunc(matching.Ignoring, matching.On...)
 		resultLabels = append(matching.On, matching.Include...)
 	)
 
@@ -851,7 +851,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 		} else if !keep {
 			continue
 		}
-		metric := resultMetric(ls.Metric, op, resultLabels...)
+		metric := resultMetric(ls.Metric, op, matching.Ignoring, resultLabels...)
 
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == CardOneToOne {
@@ -883,12 +883,16 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 }
 
 // signatureFunc returns a function that calculates the signature for a metric
-// based on the provided labels.
-func signatureFunc(labels ...model.LabelName) func(m metric.Metric) uint64 {
-	if len(labels) == 0 {
+// based on the provided labels. If ignoring, then the given labels are ignored instead.
+func signatureFunc(ignoring bool, labels ...model.LabelName) func(m metric.Metric) uint64 {
+	if len(labels) == 0 || ignoring {
 		return func(m metric.Metric) uint64 {
-			m.Del(model.MetricNameLabel)
-			return uint64(m.Metric.Fingerprint())
+			tmp := m.Metric.Clone()
+			for _, l := range labels {
+				delete(tmp, l)
+			}
+			delete(tmp, model.MetricNameLabel)
+			return uint64(tmp.Fingerprint())
 		}
 	}
 	return func(m metric.Metric) uint64 {
@@ -898,10 +902,13 @@ func signatureFunc(labels ...model.LabelName) func(m metric.Metric) uint64 {
 
 // resultMetric returns the metric for the given sample(s) based on the vector
 // binary operation and the matching options.
-func resultMetric(met metric.Metric, op itemType, labels ...model.LabelName) metric.Metric {
-	if len(labels) == 0 {
+func resultMetric(met metric.Metric, op itemType, ignoring bool, labels ...model.LabelName) metric.Metric {
+	if len(labels) == 0 || ignoring {
 		if shouldDropMetricName(op) {
 			met.Del(model.MetricNameLabel)
+		}
+		for _, l := range labels {
+			met.Del(l)
 		}
 		return met
 	}
