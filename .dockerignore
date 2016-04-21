@@ -1,3 +1,5 @@
 data/
-prometheus
-promtool
+.build/
+.tarballs/
+
+!.build/linux-amd64/

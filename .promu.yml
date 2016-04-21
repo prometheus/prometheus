@@ -1,0 +1,45 @@
+go: 1.5.4
+repository:
+    path: github.com/prometheus/prometheus
+build:
+    binaries:
+        - name: prometheus
+          path: ./cmd/prometheus
+        - name: promtool
+          path: ./cmd/promtool
+    flags: -tags netgo
+    ldflags: |
+        -X {{repoPath}}/version.Version={{.Version}}
+        -X {{repoPath}}/version.Revision={{.Revision}}
+        -X {{repoPath}}/version.Branch={{.Branch}}
+        -X {{repoPath}}/version.BuildUser={{user}}@{{host}}
+        -X {{repoPath}}/version.BuildDate={{date "20060102-15:04:05"}}
+tarball:
+    files:
+        - consoles
+        - console_libraries
+        - documentation/examples/prometheus.yml
+        - LICENSE
+        - NOTICE
+crossbuild:
+    platforms:
+        - linux/amd64
+        - linux/386
+        - darwin/amd64
+        - darwin/386
+        - windows/amd64
+        - windows/386
+        - freebsd/amd64
+        - freebsd/386
+        - openbsd/amd64
+        - openbsd/386
+        - netbsd/amd64
+        - netbsd/386
+        - dragonfly/amd64
+        - linux/arm
+        - linux/arm64
+        - freebsd/arm
+        - openbsd/arm
+        - netbsd/arm
+        - linux/ppc64
+        - linux/ppc64le
