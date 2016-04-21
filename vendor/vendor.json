@@ -3,11 +3,6 @@
 	"ignore": "test",
 	"package": [
 		{
-			"path": "github.com/Sirupsen/logrus",
-			"revision": "418b41d23a1bf978c06faea5313ba194650ac088",
-			"revisionTime": "2015-09-08T20:46:18Z"
-		},
-		{
 			"path": "github.com/asaskevich/govalidator",
 			"revision": "129580890d97de923d9d9aec06cb1aa771812aff",
 			"revisionTime": "2015-12-29T23:28:36+03:00"
@@ -106,6 +101,12 @@
 			"path": "github.com/beorn7/perks/quantile",
 			"revision": "b965b613227fddccbfffe13eae360ed3fa822f8d",
 			"revisionTime": "2015-02-23T14:51:52+01:00"
+		},
+		{
+			"checksumSHA1": "1LWe3iDPpInibsVD1TzbTWSDXFc=",
+			"path": "github.com/dgrijalva/jwt-go",
+			"revision": "9a4b9f2ac1f7685147a5c01544e3b922dbc1f4a0",
+			"revisionTime": "2016-03-07T15:28:38-08:00"
 		},
 		{
 			"path": "github.com/golang/protobuf/proto",
@@ -271,6 +272,41 @@
 			"path": "gopkg.in/fsnotify.v1",
 			"revision": "96c060f6a6b7e0d6f75fddd10efeaca3e5d1bcb0",
 			"revisionTime": "2015-02-08T13:29:58-07:00"
+		},
+		{
+			"path": "gopkg.in/yaml.v2",
+			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
+			"revisionTime": "2015-06-24T11:29:02+01:00"
+		},
+		{
+			"path": "gopkg.in/yaml.v2",
+			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
+			"revisionTime": "2015-06-24T11:29:02+01:00"
+		},
+		{
+			"path": "gopkg.in/yaml.v2",
+			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
+			"revisionTime": "2015-06-24T11:29:02+01:00"
+		},
+		{
+			"path": "gopkg.in/yaml.v2",
+			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
+			"revisionTime": "2015-06-24T11:29:02+01:00"
+		},
+		{
+			"path": "gopkg.in/yaml.v2",
+			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
+			"revisionTime": "2015-06-24T11:29:02+01:00"
+		},
+		{
+			"path": "gopkg.in/yaml.v2",
+			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
+			"revisionTime": "2015-06-24T11:29:02+01:00"
+		},
+		{
+			"path": "gopkg.in/yaml.v2",
+			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
+			"revisionTime": "2015-06-24T11:29:02+01:00"
 		},
 		{
 			"path": "gopkg.in/yaml.v2",

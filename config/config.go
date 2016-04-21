@@ -31,7 +31,7 @@ var (
 	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
-	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key):\s+)(".+"|'.+'|[^\s]+)`)
+	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key|client_secret):\s+)(".+"|'.+'|[^\s]+)`)
 )
 
 // Load parses the YAML input s into a Config.
@@ -138,6 +138,12 @@ var (
 	DefaultEC2SDConfig = EC2SDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
+	// DefaultAzureSDConfig is the default Azure SD configuration.
+	DefaultAzureSDConfig = AzureSDConfig{
+		Port:            80,
+		RefreshInterval: model.Duration(5 * time.Minute),
 	}
 )
 
@@ -409,6 +415,8 @@ type ScrapeConfig struct {
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
+	// List of Azure service discovery configurations.
+	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -799,6 +807,30 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return fmt.Errorf("EC2 SD configuration requires a region")
 	}
 	return checkOverflow(c.XXX, "ec2_sd_config")
+}
+
+// AzureSDConfig is the configuration for Azure based service discovery.
+type AzureSDConfig struct {
+	Port            int            `yaml:"port"`
+	SubscriptionID  string         `yaml:"subscription_id"`
+	TenantID        string         `yaml:"tenant_id,omitempty"`
+	ClientID        string         `yaml:"client_id,omitempty"`
+	ClientSecret    string         `yaml:"client_secret,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultAzureSDConfig
+	type plain AzureSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+
+	return checkOverflow(c.XXX, "azure_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.

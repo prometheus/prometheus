@@ -393,6 +393,9 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 	for i, c := range cfg.EC2SDConfigs {
 		app("ec2", i, discovery.NewEC2Discovery(c))
 	}
+	for i, c := range cfg.AzureSDConfigs {
+		app("azure", i, discovery.NewAzureDiscovery(c))
+	}
 	if len(cfg.TargetGroups) > 0 {
 		app("static", 0, NewStaticProvider(cfg.TargetGroups))
 	}
