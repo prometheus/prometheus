@@ -251,10 +251,6 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "offset modifier must be preceded by an instant or range selector",
 	}, {
-		input:  "a - on(b) group_left d",
-		fail:   true,
-		errMsg: "must specify labels in INCLUDE clause when using ON",
-	}, {
 		input:  "a - on(b) ignoring(c) d",
 		fail:   true,
 		errMsg: "parse error at char 11: no valid expression found",
@@ -505,6 +501,27 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: "foo * on(test,blub) group_left bar",
+		expected: &BinaryExpr{
+			Op: itemMUL,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card: CardManyToOne,
+				On:   model.LabelNames{"test", "blub"},
+			},
+		},
+	}, {
 		input: "foo and on(test,blub) bar",
 		expected: &BinaryExpr{
 			Op: itemLAND,
@@ -737,10 +754,6 @@ var testExpr = []struct {
 		input:  "foo unless on(bar) group_right(baz) bar",
 		fail:   true,
 		errMsg: "no grouping allowed for \"unless\" operation",
-	}, {
-		input:  `http_requests{group="production"} / on(instance) group_left cpu_count{type="smp"}`,
-		fail:   true,
-		errMsg: "parse error at char 61: must specify labels in INCLUDE clause when using ON",
 	}, {
 		input:  `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:   true,

@@ -942,6 +942,8 @@ func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching)
 		// Included labels from the `group_x` modifier are taken from the "one"-side .
 		if v, ok := rhs.Metric[ln]; ok {
 			m[ln] = v
+		} else {
+			delete(m, ln)
 		}
 	}
 	return metric.Metric{Metric: m, Copied: false}

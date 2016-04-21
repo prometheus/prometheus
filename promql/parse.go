@@ -479,8 +479,6 @@ func (p *parser) expr() Expr {
 				}
 				if p.peek().typ == itemLeftParen {
 					vecMatching.Include = p.labels()
-				} else if !vecMatching.Ignoring {
-					p.errorf("must specify labels in INCLUDE clause when using ON")
 				}
 			}
 		}
