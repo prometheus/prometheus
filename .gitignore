@@ -31,9 +31,15 @@ core
 benchmark.txt
 /data
 /.build
+/.release
+/.tarballs
 
 .#*
 command-line-arguments.test
 *BACKUP*
 *LOCAL*
 *REMOTE*
+
+!/circle.yml
+!/.travis.yml
+!/.promu.yml
