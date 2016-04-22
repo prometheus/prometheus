@@ -1,4 +1,4 @@
-FROM        prom/busybox:latest
+FROM        quay.io/prometheus/busybox:latest
 MAINTAINER  The Prometheus Authors <prometheus-developers@googlegroups.com>
 
 COPY prometheus                             /bin/prometheus
