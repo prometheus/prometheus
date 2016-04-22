@@ -513,9 +513,10 @@ Prometheus.Graph.prototype.updateGraph = function() {
   var hoverDetail = new Rickshaw.Graph.HoverDetail({
     graph: self.rickshawGraph,
     formatter: function(series, x, y) {
+      var date = '<span class="date">' + new Date(x * 1000).toUTCString() + '</span>';
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
-      var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + y + '</strong><br>';
-      return content + self.renderLabels(series.labels);
+      var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + y + '</strong>';
+      return date + '<br>' + content + '<br>' + self.renderLabels(series.labels);
     }
   });
 
