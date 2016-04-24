@@ -3,9 +3,11 @@
 	"ignore": "test",
 	"package": [
 		{
+			"checksumSHA1": "DypC2gHBVRhfPqBbsuGYgkrjvOw=",
+			"origin": "github.com/prometheus/prometheus/vendor/github.com/asaskevich/govalidator",
 			"path": "github.com/asaskevich/govalidator",
-			"revision": "129580890d97de923d9d9aec06cb1aa771812aff",
-			"revisionTime": "2015-12-29T23:28:36+03:00"
+			"revision": "5b6e9375cbf581a9008064f7216e816b568d6daa",
+			"revisionTime": "2016-04-23T17:31:43Z"
 		},
 		{
 			"path": "github.com/aws/aws-sdk-go/aws",
@@ -313,5 +315,6 @@
 			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
 			"revisionTime": "2015-06-24T11:29:02+01:00"
 		}
-	]
+	],
+	"rootPath": "github.com/prometheus/prometheus"
 }
