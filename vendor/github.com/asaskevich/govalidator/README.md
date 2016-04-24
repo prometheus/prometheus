@@ -42,6 +42,7 @@ func Filter(array []interface{}, iterator ConditionIterator) []interface{}
 func Find(array []interface{}, iterator ConditionIterator) interface{}
 func GetLine(s string, index int) (string, error)
 func GetLines(s string) []string
+func IsHost(s string) bool
 func InRange(value, left, right float64) bool
 func IsASCII(str string) bool
 func IsAlpha(str string) bool
@@ -50,6 +51,8 @@ func IsBase64(str string) bool
 func IsByteLength(str string, min, max int) bool
 func IsCreditCard(str string) bool
 func IsDataURI(str string) bool
+func IsDialString(str string) bool
+func IsDNSName(str string) bool
 func IsDivisibleBy(str, num string) bool
 func IsEmail(str string) bool
 func IsFilePath(str string) (bool, int)
@@ -80,6 +83,7 @@ func IsNonNegative(value float64) bool
 func IsNonPositive(value float64) bool
 func IsNull(str string) bool
 func IsNumeric(str string) bool
+func IsPort(str string) bool
 func IsPositive(value float64) bool
 func IsPrintableASCII(str string) bool
 func IsRGBcolor(str string) bool
@@ -146,7 +150,7 @@ type User struct {
 	LastName string
 }
 
-str, _ := govalidator.ToString(&User{"John", "Juan"})
+str := govalidator.ToString(&User{"John", "Juan"})
 println(str)
 ```
 ###### Each, Map, Filter, Count for slices
@@ -188,12 +192,15 @@ Here is a list of available validators for struct fields (validator - used funct
 "base64":         IsBase64,
 "creditcard":     IsCreditCard,
 "datauri":        IsDataURI,
+"dialstring":     IsDialString,
+"dns":            IsDNSName,
 "email":          IsEmail,
 "float":          IsFloat,
 "fullwidth":      IsFullWidth,
 "halfwidth":      IsHalfWidth,
 "hexadecimal":    IsHexadecimal,
 "hexcolor":       IsHexcolor,
+"host":           IsHost,
 "int":            IsInt,
 "ip":             IsIP,
 "ipv4":           IsIPv4,
@@ -208,6 +215,7 @@ Here is a list of available validators for struct fields (validator - used funct
 "multibyte":      IsMultibyte,
 "null":           IsNull,
 "numeric":        IsNumeric,
+"port":           IsPort,
 "printableascii": IsPrintableASCII,
 "requri":         IsRequestURI,
 "requrl":         IsRequestURL,
@@ -282,4 +290,3 @@ If you do have a contribution for the package feel free to put up a Pull Request
 * [Simon ccl1115](https://github.com/ccl1115)
 
 [![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/asaskevich/govalidator/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
-
