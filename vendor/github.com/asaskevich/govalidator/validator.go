@@ -9,7 +9,9 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+
 	"unicode"
 	"unicode/utf8"
 )
@@ -450,9 +452,36 @@ func IsISO3166Alpha3(str string) bool {
 	return false
 }
 
+// IsDNSName will validate the given string as a DNS name
+func IsDNSName(str string) bool {
+	if str == "" || len(strings.Replace(str, ".", "", -1)) > 255 {
+		// constraints already violated
+		return false
+	}
+	return rxDNSName.MatchString(str)
+}
+
+// IsDialString validates the given string for usage with the various Dial() functions
+func IsDialString(str string) bool {
+
+	if h, p, err := net.SplitHostPort(str); err == nil && h != "" && p != "" && (IsDNSName(h) || IsIP(h)) && IsPort(p) {
+		return true
+	}
+
+	return false
+}
+
 // IsIP checks if a string is either IP version 4 or 6.
 func IsIP(str string) bool {
 	return net.ParseIP(str) != nil
+}
+
+// IsPort checks if a string represents a valid port
+func IsPort(str string) bool {
+	if i, err := strconv.Atoi(str); err == nil && i > 0 && i < 65536 {
+		return true
+	}
+	return false
 }
 
 // IsIPv4 check if the string is an IP version 4.
@@ -478,6 +507,11 @@ func IsIPv6(str string) bool {
 func IsMAC(str string) bool {
 	_, err := net.ParseMAC(str)
 	return err == nil
+}
+
+// IsHost checks if the string is a valid IP (both v4 and v6) or a valid DNS name
+func IsHost(str string) bool {
+	return IsIP(str) || IsDNSName(str)
 }
 
 // IsMongoID check if the string is a valid hex-encoded representation of a MongoDB ObjectId.
@@ -614,19 +648,39 @@ func (opts tagOptions) contains(optionName string) bool {
 	return false
 }
 
+func searchOption(limit int, predicate func(counter int) bool) int {
+	for counter := 0; counter < limit; counter++ {
+		if predicate(counter) {
+			return counter
+		}
+	}
+	return -1
+}
+
 func checkRequired(v reflect.Value, t reflect.StructField, options tagOptions) (bool, error) {
-	if options.contains("required") {
-		err := fmt.Errorf("non zero value required")
-		return false, Error{t.Name, err}
-	} else if fieldsRequiredByDefault && !options.contains("optional") {
+	var err error
+	var customErrorMessageExists bool
+	requiredIndex := searchOption(len(options), func(index int) bool { return strings.HasPrefix(options[index], "required") })
+	optionalIndex := searchOption(len(options), func(index int) bool { return strings.HasPrefix(options[index], "optional") })
+	if requiredIndex > -1 {
+		validationOptions := strings.Split(options[requiredIndex], "~")
+		if len(validationOptions) == 2 {
+			err = fmt.Errorf(strings.Split(options[requiredIndex], "~")[1])
+			customErrorMessageExists = true
+		} else {
+			err = fmt.Errorf("non zero value required")
+		}
+		return false, Error{t.Name, err, customErrorMessageExists}
+	} else if fieldsRequiredByDefault && optionalIndex == -1 {
 		err := fmt.Errorf("All fields are required to at least have one validation defined")
-		return false, Error{t.Name, err}
+		return false, Error{t.Name, err, customErrorMessageExists}
 	}
 	// not required and empty is valid
 	return true, nil
 }
 
 func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
+	var customErrorMessageExists bool
 	if !v.IsValid() {
 		return false, nil
 	}
@@ -640,7 +694,7 @@ func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
 			return true, nil
 		}
 		err := fmt.Errorf("All fields are required to at least have one validation defined")
-		return false, Error{t.Name, err}
+		return false, Error{t.Name, err, customErrorMessageExists}
 	case "-":
 		return true, nil
 	}
@@ -648,13 +702,17 @@ func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
 	options := parseTag(tag)
 	for i := range options {
 		tagOpt := options[i]
-		if ok := isValidTag(tagOpt); !ok {
+		tagOptions := strings.Split(tagOpt, "~")
+		if ok := isValidTag(tagOptions[0]); !ok {
 			continue
 		}
-		if validatefunc, ok := CustomTypeTagMap[tagOpt]; ok {
+		if validatefunc, ok := CustomTypeTagMap[tagOptions[0]]; ok {
 			options = append(options[:i], options[i+1:]...) // we found our custom validator, so remove it from the options
 			if result := validatefunc(v.Interface()); !result {
-				return false, Error{t.Name, fmt.Errorf("%s does not validate as %s", fmt.Sprint(v), tagOpt)}
+				if len(tagOptions) == 2 {
+					return false, Error{t.Name, fmt.Errorf(tagOptions[1]), true}
+				}
+				return false, Error{t.Name, fmt.Errorf("%s does not validate as %s", fmt.Sprint(v), tagOptions[0]), false}
 			}
 			return true, nil
 		}
@@ -674,60 +732,81 @@ func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
 		// for each tag option check the map of validator functions
 		for i := range options {
 			tagOpt := options[i]
+			tagOptions := strings.Split(tagOpt, "~")
 			negate := false
+			customMsgExists := (len(tagOptions) == 2)
 			// Check wether the tag looks like '!something' or 'something'
-			if len(tagOpt) > 0 && tagOpt[0] == '!' {
-				tagOpt = string(tagOpt[1:])
+			if len(tagOptions[0]) > 0 && tagOptions[0][0] == '!' {
+				tagOpt = string(tagOptions[0][1:])
+				tagOptions[0] = tagOpt
 				negate = true
 			}
-			if ok := isValidTag(tagOpt); !ok {
-				err := fmt.Errorf("Unknown Validator %s", tagOpt)
-				return false, Error{t.Name, err}
+			if ok := isValidTag(tagOptions[0]); !ok {
+				err := fmt.Errorf("Unknown Validator %s", tagOptions[0])
+				return false, Error{t.Name, err, false}
 			}
 
 			// Check for param validators
 			for key, value := range ParamTagRegexMap {
-				ps := value.FindStringSubmatch(tagOpt)
+				ps := value.FindStringSubmatch(tagOptions[0])
 				if len(ps) > 0 {
 					if validatefunc, ok := ParamTagMap[key]; ok {
 						switch v.Kind() {
 						case reflect.String:
 							field := fmt.Sprint(v) // make value into string, then validate with regex
-							if result := validatefunc(field, ps[1:]...); !result && !negate || result && negate {
+							if result := validatefunc(field, ps[1:]...); (!result && !negate) || (result && negate) {
 								var err error
 								if !negate {
-									err = fmt.Errorf("%s does not validate as %s", field, tagOpt)
+									if customMsgExists {
+										err = fmt.Errorf(tagOptions[1])
+									} else {
+										err = fmt.Errorf("%s does not validate as %s", field, tagOpt)
+									}
+
 								} else {
-									err = fmt.Errorf("%s does validate as %s", field, tagOpt)
+									if customMsgExists {
+										err = fmt.Errorf(tagOptions[1])
+									} else {
+										err = fmt.Errorf("%s does validate as %s", field, tagOpt)
+									}
 								}
-								return false, Error{t.Name, err}
+								return false, Error{t.Name, err, customMsgExists}
 							}
 						default:
 							//Not Yet Supported Types (Fail here!)
-							err := fmt.Errorf("Validator %s doesn't support kind %s", tagOpt, v.Kind())
-							return false, Error{t.Name, err}
+							err := fmt.Errorf("Validator %s doesn't support kind %s", tagOptions[0], v.Kind())
+							return false, Error{t.Name, err, false}
 						}
 					}
 				}
 			}
 
-			if validatefunc, ok := TagMap[tagOpt]; ok {
+			if validatefunc, ok := TagMap[tagOptions[0]]; ok {
 				switch v.Kind() {
 				case reflect.String:
 					field := fmt.Sprint(v) // make value into string, then validate with regex
 					if result := validatefunc(field); !result && !negate || result && negate {
 						var err error
+
 						if !negate {
-							err = fmt.Errorf("%s does not validate as %s", field, tagOpt)
+							if customMsgExists {
+								err = fmt.Errorf(tagOptions[1])
+							} else {
+								err = fmt.Errorf("%s does not validate as %s", field, tagOpt)
+							}
 						} else {
-							err = fmt.Errorf("%s does validate as %s", field, tagOpt)
+							if customMsgExists {
+								err = fmt.Errorf(tagOptions[1])
+							} else {
+								err = fmt.Errorf("%s does validate as %s", field, tagOpt)
+							}
 						}
-						return false, Error{t.Name, err}
+						return false, Error{t.Name, err, customMsgExists}
 					}
 				default:
 					//Not Yet Supported Types (Fail here!)
-					err := fmt.Errorf("Validator %s doesn't support kind %s for value %v", tagOpt, v.Kind(), v)
-					return false, Error{t.Name, err}
+					err := fmt.Errorf("Validator %s doesn't support kind %s for value %v", tagOptions[0], v.Kind(), v)
+					return false, Error{t.Name, err, false}
 				}
 			}
 		}

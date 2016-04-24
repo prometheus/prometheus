@@ -15,10 +15,15 @@ func (es Errors) Error() string {
 }
 
 type Error struct {
-	Name string
-	Err  error
+	Name                     string
+	Err                      error
+	CustomErrorMessageExists bool
 }
 
 func (e Error) Error() string {
-	return e.Name + ": " + e.Err.Error()
+	if e.CustomErrorMessageExists {
+		return e.Err.Error()
+	} else {
+		return e.Name + ": " + e.Err.Error()
+	}
 }
