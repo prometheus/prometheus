@@ -281,7 +281,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 	}
 
 	// Initialize metric vectors.
-	// TODO(beorn7): Rework once we have a utility function for it in golang_client.
+	// TODO(beorn7): Rework once we have a utility function for it in client_golang.
 	s.discardedSamplesCount.WithLabelValues(outOfOrderTimestamp)
 	s.discardedSamplesCount.WithLabelValues(duplicateSample)
 	s.maintainSeriesDuration.WithLabelValues(maintainInMemory)
@@ -605,8 +605,8 @@ var (
 	ErrOutOfOrderSample = fmt.Errorf("sample timestamp out of order")
 	// ErrDuplicateSampleForTimestamp is returned if a sample has the same
 	// timestamp as the latest sample in the series it is appended to but a
-	// different value. (Appending an identical sample is a no-op does not
-	// cause an error.)
+	// different value. (Appending an identical sample is a no-op and does
+	// not cause an error.)
 	ErrDuplicateSampleForTimestamp = fmt.Errorf("sample with repeated timestamp but different value")
 )
 
