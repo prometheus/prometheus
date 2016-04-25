@@ -19,5 +19,5 @@ import (
 )
 
 func NewConsul(cfg *config.ConsulSDConfig) (*consul.Discovery, error) {
-	return nil, nil
+	return consul.NewDiscovery(cfg)
 }
