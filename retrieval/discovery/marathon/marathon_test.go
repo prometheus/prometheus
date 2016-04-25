@@ -47,7 +47,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 		default:
 		}
 	}()
-	err := md.updateServices(ch)
+	err := md.updateServices(context.Background(), ch)
 	if err != errTesting {
 		t.Fatalf("Expected error: %s", err)
 	}
@@ -66,7 +66,7 @@ func TestMarathonSDEmptyList(t *testing.T) {
 		default:
 		}
 	}()
-	err := md.updateServices(ch)
+	err := md.updateServices(context.Background(), ch)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
 	}
@@ -115,7 +115,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 			t.Fatal("Did not get a target group.")
 		}
 	}()
-	err := md.updateServices(ch)
+	err := md.updateServices(context.Background(), ch)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
 	}
@@ -136,7 +136,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 			}
 		}
 	}()
-	err := md.updateServices(ch)
+	err := md.updateServices(context.Background(), ch)
 	if err != nil {
 		t.Fatalf("Got error on first update: %s", err)
 	}
@@ -144,7 +144,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	md.Client = func(url string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
-	err = md.updateServices(ch)
+	err = md.updateServices(context.Background(), ch)
 	if err != nil {
 		t.Fatalf("Got error on second update: %s", err)
 	}
