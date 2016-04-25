@@ -444,19 +444,30 @@ func (sl *scrapeLoop) stop() {
 }
 
 func (sl *scrapeLoop) append(samples model.Samples) {
-	numOutOfOrder := 0
+	var (
+		numOutOfOrder = 0
+		numDuplicates = 0
+	)
 
 	for _, s := range samples {
 		if err := sl.appender.Append(s); err != nil {
-			if err == local.ErrOutOfOrderSample {
+			switch err {
+			case local.ErrOutOfOrderSample:
 				numOutOfOrder++
-			} else {
-				log.Warnf("Error inserting sample: %s", err)
+				log.With("sample", s).With("error", err).Debug("Sample discarded")
+			case local.ErrDuplicateSampleForTimestamp:
+				numDuplicates++
+				log.With("sample", s).With("error", err).Debug("Sample discarded")
+			default:
+				log.With("sample", s).With("error", err).Warn("Sample discarded")
 			}
 		}
 	}
 	if numOutOfOrder > 0 {
 		log.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order samples")
+	}
+	if numDuplicates > 0 {
+		log.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
 	}
 }
 
