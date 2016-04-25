@@ -48,7 +48,6 @@ const appListPath string = "/v2/apps/?embed=apps.tasks"
 type Discovery struct {
 	Servers         []string
 	RefreshInterval time.Duration
-	Done            chan struct{}
 	lastRefresh     map[string]*config.TargetGroup
 	Client          AppListClient
 }
@@ -62,7 +61,7 @@ func (md *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-ctx.Done():
 			return
 		case <-time.After(md.RefreshInterval):
-			err := md.updateServices(ch)
+			err := md.updateServices(ctx, ch)
 			if err != nil {
 				log.Errorf("Error while updating services: %s", err)
 			}
@@ -70,7 +69,7 @@ func (md *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
-func (md *Discovery) updateServices(ch chan<- []*config.TargetGroup) error {
+func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.TargetGroup) error {
 	targetMap, err := md.fetchTargetGroups()
 	if err != nil {
 		return err
@@ -80,14 +79,23 @@ func (md *Discovery) updateServices(ch chan<- []*config.TargetGroup) error {
 	for _, tg := range targetMap {
 		all = append(all, tg)
 	}
-	ch <- all
 
-	// Remove services which did disappear
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case ch <- all:
+	}
+
+	// Remove services which did disappear.
 	for source := range md.lastRefresh {
 		_, ok := targetMap[source]
 		if !ok {
-			log.Debugf("Removing group for %s", source)
-			ch <- []*config.TargetGroup{{Source: source}}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case ch <- []*config.TargetGroup{{Source: source}}:
+				log.Debugf("Removing group for %s", source)
+			}
 		}
 	}
 
