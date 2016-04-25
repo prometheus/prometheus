@@ -38,7 +38,9 @@ There are various ways of installing Prometheus.
 Precompiled binaries for released versions are available in the
 [*releases* section](https://github.com/prometheus/prometheus/releases)
 of the GitHub repository. Using the latest production release binary
-is the recommended way of installing Prometheus.
+is the recommended way of installing Prometheus. 
+See the [Installing](https://prometheus.io/docs/introduction/install/) 
+chapter in the documentation for all the details.
 
 Debian and RPM packages are being worked on.
 
