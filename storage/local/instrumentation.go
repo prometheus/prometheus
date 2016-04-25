@@ -82,6 +82,12 @@ const (
 	// Maintenance types for maintainSeriesDuration.
 	maintainInMemory = "memory"
 	maintainArchived = "archived"
+
+	discardReasonLabel = "reason"
+
+	// Reasons to discard samples.
+	outOfOrderTimestamp = "timestamp_out_of_order"
+	duplicateSample     = "multiple_values_for_timestamp"
 )
 
 func init() {
