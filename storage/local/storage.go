@@ -279,6 +279,25 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 			Help:      "1 if the storage is in rushed mode, 0 otherwise. In rushed mode, the system behaves as if the persistence_urgency_score is 1.",
 		}),
 	}
+
+	// Initialize metric vectors.
+	// TODO(beorn7): Rework once we have a utility function for it in golang_client.
+	s.discardedSamplesCount.WithLabelValues(outOfOrderTimestamp)
+	s.discardedSamplesCount.WithLabelValues(duplicateSample)
+	s.maintainSeriesDuration.WithLabelValues(maintainInMemory)
+	s.maintainSeriesDuration.WithLabelValues(maintainArchived)
+	s.seriesOps.WithLabelValues(create)
+	s.seriesOps.WithLabelValues(archive)
+	s.seriesOps.WithLabelValues(unarchive)
+	s.seriesOps.WithLabelValues(memoryPurge)
+	s.seriesOps.WithLabelValues(archivePurge)
+	s.seriesOps.WithLabelValues(requestedPurge)
+	s.seriesOps.WithLabelValues(memoryMaintenance)
+	s.seriesOps.WithLabelValues(archiveMaintenance)
+	s.seriesOps.WithLabelValues(completedQurantine)
+	s.seriesOps.WithLabelValues(droppedQuarantine)
+	s.seriesOps.WithLabelValues(failedQuarantine)
+
 	return s
 }
 
