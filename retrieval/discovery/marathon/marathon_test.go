@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discovery
+package marathon
 
 import (
 	"errors"
@@ -22,23 +22,22 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/retrieval/discovery/marathon"
 )
 
 var marathonValidLabel = map[string]string{"prometheus": "yes"}
 
-func newTestDiscovery(client marathon.AppListClient) (chan []*config.TargetGroup, *MarathonDiscovery) {
+func newTestDiscovery(client AppListClient) (chan []*config.TargetGroup, *Discovery) {
 	ch := make(chan []*config.TargetGroup)
-	md := NewMarathonDiscovery(&config.MarathonSDConfig{
+	md := &Discovery{
 		Servers: []string{"http://localhost:8080"},
-	})
-	md.client = client
+	}
+	md.Client = client
 	return ch, md
 }
 
 func TestMarathonSDHandleError(t *testing.T) {
 	var errTesting = errors.New("testing failure")
-	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
+	ch, md := newTestDiscovery(func(url string) (*AppList, error) {
 		return nil, errTesting
 	})
 	go func() {
@@ -55,8 +54,8 @@ func TestMarathonSDHandleError(t *testing.T) {
 }
 
 func TestMarathonSDEmptyList(t *testing.T) {
-	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
-		return &marathon.AppList{}, nil
+	ch, md := newTestDiscovery(func(url string) (*AppList, error) {
+		return &AppList{}, nil
 	})
 	go func() {
 		select {
@@ -73,28 +72,28 @@ func TestMarathonSDEmptyList(t *testing.T) {
 	}
 }
 
-func marathonTestAppList(labels map[string]string, runningTasks int) *marathon.AppList {
-	task := marathon.Task{
+func marathonTestAppList(labels map[string]string, runningTasks int) *AppList {
+	task := Task{
 		ID:    "test-task-1",
 		Host:  "mesos-slave1",
 		Ports: []uint32{31000},
 	}
-	docker := marathon.DockerContainer{Image: "repo/image:tag"}
-	container := marathon.Container{Docker: docker}
-	app := marathon.App{
+	docker := DockerContainer{Image: "repo/image:tag"}
+	container := Container{Docker: docker}
+	app := App{
 		ID:           "test-service",
-		Tasks:        []marathon.Task{task},
+		Tasks:        []Task{task},
 		RunningTasks: runningTasks,
 		Labels:       labels,
 		Container:    container,
 	}
-	return &marathon.AppList{
-		Apps: []marathon.App{app},
+	return &AppList{
+		Apps: []App{app},
 	}
 }
 
 func TestMarathonSDSendGroup(t *testing.T) {
-	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
+	ch, md := newTestDiscovery(func(url string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	})
 	go func() {
@@ -123,7 +122,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 }
 
 func TestMarathonSDRemoveApp(t *testing.T) {
-	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
+	ch, md := newTestDiscovery(func(url string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	})
 
@@ -142,7 +141,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 		t.Fatalf("Got error on first update: %s", err)
 	}
 
-	md.client = func(url string) (*marathon.AppList, error) {
+	md.Client = func(url string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
 	err = md.updateServices(ch)
@@ -152,17 +151,17 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 }
 
 func TestMarathonSDRunAndStop(t *testing.T) {
-	ch, md := newTestDiscovery(func(url string) (*marathon.AppList, error) {
+	ch, md := newTestDiscovery(func(url string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	})
-	md.refreshInterval = time.Millisecond * 10
+	md.RefreshInterval = time.Millisecond * 10
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		select {
 		case <-ch:
 			cancel()
-		case <-time.After(md.refreshInterval * 3):
+		case <-time.After(md.RefreshInterval * 3):
 			cancel()
 			t.Fatalf("Update took too long.")
 		}
