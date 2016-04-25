@@ -56,7 +56,7 @@ type Discovery struct {
 	clientConf       *consul.Config
 	clientDatacenter string
 	tagSeparator     string
-	scrapedServices  map[string]struct{} // Set of services which will be discovered.
+	watchedServices  []string // Set of services which will be discovered.
 }
 
 // NewDiscovery returns a new Discovery for the given config.
@@ -79,7 +79,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 		client:          client,
 		clientConf:      clientConf,
 		tagSeparator:    conf.TagSeparator,
-		scrapedServices: map[string]struct{}{},
+		watchedServices: conf.Services,
 	}
 	// If the datacenter isn't set in the clientConf, let's get it from the local Consul agent
 	// (Consul default is to use local node's datacenter if one isn't given for a query).
@@ -92,10 +92,21 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 	} else {
 		cd.clientDatacenter = clientConf.Datacenter
 	}
-	for _, name := range conf.Services {
-		cd.scrapedServices[name] = struct{}{}
-	}
 	return cd, nil
+}
+
+// shouldWatch returns whether the service of the given name should be watched.
+func (cd *Discovery) shouldWatch(name string) bool {
+	// If there's no fixed set of watched services, we watch everything.
+	if len(cd.watchedServices) == 0 {
+		return true
+	}
+	for _, sn := range cd.watchedServices {
+		if sn == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Run implements the TargetProvider interface.
@@ -134,8 +145,7 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 		// Check for new services.
 		for name := range srvs {
-			// If no restriction on scraped services is set, we scrape everything.
-			if _, ok := cd.scrapedServices[name]; len(cd.scrapedServices) > 0 && !ok {
+			if !cd.shouldWatch(name) {
 				continue
 			}
 			if _, ok := services[name]; ok {
