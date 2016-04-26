@@ -486,7 +486,7 @@ func (p *parser) expr() Expr {
 		for _, ln := range vecMatching.MatchingLabels {
 			for _, ln2 := range vecMatching.Include {
 				if ln == ln2 && !vecMatching.Ignoring {
-					p.errorf("label %q must not occur in ON and INCLUDE clause at once", ln)
+					p.errorf("label %q must not occur in ON and GROUP clause at once", ln)
 				}
 			}
 		}

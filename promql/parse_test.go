@@ -757,7 +757,7 @@ var testExpr = []struct {
 	}, {
 		input:  `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:   true,
-		errMsg: "label \"instance\" must not occur in ON and INCLUDE clause at once",
+		errMsg: "label \"instance\" must not occur in ON and GROUP clause at once",
 	}, {
 		input:  "foo + bool bar",
 		fail:   true,

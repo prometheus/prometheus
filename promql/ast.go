@@ -235,7 +235,7 @@ type VectorMatching struct {
 	// rather than only using them.
 	Ignoring bool
 	// Include contains additional labels that should be included in
-	// the result from the side with the higher cardinality.
+	// the result from the side with the lower cardinality.
 	Include model.LabelNames
 }
 
