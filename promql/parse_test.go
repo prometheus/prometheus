@@ -250,6 +250,10 @@ var testExpr = []struct {
 		input:  "1 offset 1d",
 		fail:   true,
 		errMsg: "offset modifier must be preceded by an instant or range selector",
+	}, {
+		input:  "a - on(b) ignoring(c) d",
+		fail:   true,
+		errMsg: "parse error at char 11: no valid expression found",
 	},
 	// Vector binary operations.
 	{
@@ -465,14 +469,14 @@ var testExpr = []struct {
 					},
 				},
 				VectorMatching: &VectorMatching{
-					Card:    CardOneToMany,
-					On:      model.LabelNames{"baz", "buz"},
-					Include: model.LabelNames{"test"},
+					Card:           CardOneToMany,
+					MatchingLabels: model.LabelNames{"baz", "buz"},
+					Include:        model.LabelNames{"test"},
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardOneToOne,
-				On:   model.LabelNames{"foo"},
+				Card:           CardOneToOne,
+				MatchingLabels: model.LabelNames{"foo"},
 			},
 		},
 	}, {
@@ -492,8 +496,29 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardOneToOne,
-				On:   model.LabelNames{"test", "blub"},
+				Card:           CardOneToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+			},
+		},
+	}, {
+		input: "foo * on(test,blub) group_left bar",
+		expected: &BinaryExpr{
+			Op: itemMUL,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
 			},
 		},
 	}, {
@@ -513,8 +538,30 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardManyToMany,
-				On:   model.LabelNames{"test", "blub"},
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+			},
+		},
+	}, {
+		input: "foo and ignoring(test,blub) bar",
+		expected: &BinaryExpr{
+			Op: itemLAND,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Ignoring:       true,
 			},
 		},
 	}, {
@@ -534,8 +581,8 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardManyToMany,
-				On:   model.LabelNames{"bar"},
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{"bar"},
 			},
 		},
 	}, {
@@ -555,9 +602,55 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card:    CardManyToOne,
-				On:      model.LabelNames{"test", "blub"},
-				Include: model.LabelNames{"bar"},
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar"},
+			},
+		},
+	}, {
+		input: "foo / ignoring(test,blub) group_left(blub) bar",
+		expected: &BinaryExpr{
+			Op: itemDIV,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"blub"},
+				Ignoring:       true,
+			},
+		},
+	}, {
+		input: "foo / ignoring(test,blub) group_left(bar) bar",
+		expected: &BinaryExpr{
+			Op: itemDIV,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar"},
+				Ignoring:       true,
 			},
 		},
 	}, {
@@ -577,9 +670,32 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card:    CardOneToMany,
-				On:      model.LabelNames{"test", "blub"},
-				Include: model.LabelNames{"bar", "foo"},
+				Card:           CardOneToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar", "foo"},
+			},
+		},
+	}, {
+		input: "foo - ignoring(test,blub) group_right(bar,foo) bar",
+		expected: &BinaryExpr{
+			Op: itemSUB,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardOneToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar", "foo"},
+				Ignoring:       true,
 			},
 		},
 	}, {
@@ -639,13 +755,9 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "no grouping allowed for \"unless\" operation",
 	}, {
-		input:  `http_requests{group="production"} / on(instance) group_left cpu_count{type="smp"}`,
-		fail:   true,
-		errMsg: "unexpected identifier \"cpu_count\" in grouping opts, expected \"(\"",
-	}, {
 		input:  `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:   true,
-		errMsg: "label \"instance\" must not occur in ON and INCLUDE clause at once",
+		errMsg: "label \"instance\" must not occur in ON and GROUP clause at once",
 	}, {
 		input:  "foo + bool bar",
 		fail:   true,

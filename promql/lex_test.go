@@ -279,6 +279,9 @@ var tests = []struct {
 		input:    "on",
 		expected: []item{{itemOn, 0, "on"}},
 	}, {
+		input:    "ignoring",
+		expected: []item{{itemIgnoring, 0, "ignoring"}},
+	}, {
 		input:    "group_left",
 		expected: []item{{itemGroupLeft, 0, "group_left"}},
 	}, {

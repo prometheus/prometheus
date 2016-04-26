@@ -461,27 +461,32 @@ func (p *parser) expr() Expr {
 			returnBool = true
 		}
 
-		// Parse ON clause.
-		if p.peek().typ == itemOn {
+		// Parse ON/IGNORING clause.
+		if p.peek().typ == itemOn || p.peek().typ == itemIgnoring {
+			if p.peek().typ == itemIgnoring {
+				vecMatching.Ignoring = true
+			}
 			p.next()
-			vecMatching.On = p.labels()
+			vecMatching.MatchingLabels = p.labels()
 
 			// Parse grouping.
-			if t := p.peek().typ; t == itemGroupLeft {
+			if t := p.peek().typ; t == itemGroupLeft || t == itemGroupRight {
 				p.next()
-				vecMatching.Card = CardManyToOne
-				vecMatching.Include = p.labels()
-			} else if t == itemGroupRight {
-				p.next()
-				vecMatching.Card = CardOneToMany
-				vecMatching.Include = p.labels()
+				if t == itemGroupLeft {
+					vecMatching.Card = CardManyToOne
+				} else {
+					vecMatching.Card = CardOneToMany
+				}
+				if p.peek().typ == itemLeftParen {
+					vecMatching.Include = p.labels()
+				}
 			}
 		}
 
-		for _, ln := range vecMatching.On {
+		for _, ln := range vecMatching.MatchingLabels {
 			for _, ln2 := range vecMatching.Include {
-				if ln == ln2 {
-					p.errorf("label %q must not occur in ON and INCLUDE clause at once", ln)
+				if ln == ln2 && !vecMatching.Ignoring {
+					p.errorf("label %q must not occur in ON and GROUP clause at once", ln)
 				}
 			}
 		}
@@ -1047,7 +1052,7 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 		}
 
 		if (lt != model.ValVector || rt != model.ValVector) && n.VectorMatching != nil {
-			if len(n.VectorMatching.On) > 0 {
+			if len(n.VectorMatching.MatchingLabels) > 0 {
 				p.errorf("vector matching only allowed between vectors")
 			}
 			n.VectorMatching = nil
