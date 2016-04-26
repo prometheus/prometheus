@@ -728,7 +728,7 @@ func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.On...)
+	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
 
 	var result vector
 	// The set of signatures for the right-hand side vector.
@@ -751,7 +751,7 @@ func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector 
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.On...)
+	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
 
 	var result vector
 	leftSigs := map[uint64]struct{}{}
@@ -773,7 +773,7 @@ func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vec
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.On...)
+	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
 
 	rightSigs := map[uint64]struct{}{}
 	for _, rs := range rhs {
@@ -796,7 +796,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 	}
 	var (
 		result = vector{}
-		sigf   = signatureFunc(matching.Ignoring, matching.On...)
+		sigf   = signatureFunc(matching.Ignoring, matching.MatchingLabels...)
 	)
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -905,12 +905,12 @@ func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching)
 	if shouldDropMetricName(op) {
 		lhs.Del(model.MetricNameLabel)
 	}
-	if len(matching.On)+len(matching.Include) == 0 {
+	if len(matching.MatchingLabels)+len(matching.Include) == 0 {
 		return lhs
 	}
 	if matching.Ignoring {
 		if matching.Card == CardOneToOne {
-			for _, l := range matching.On {
+			for _, l := range matching.MatchingLabels {
 				lhs.Del(l)
 			}
 		}
@@ -928,7 +928,7 @@ func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching)
 	// As we definitely write, creating a new metric is the easiest solution.
 	m := model.Metric{}
 	if matching.Card == CardOneToOne {
-		for _, ln := range matching.On {
+		for _, ln := range matching.MatchingLabels {
 			if v, ok := lhs.Metric[ln]; ok {
 				m[ln] = v
 			}

@@ -467,7 +467,7 @@ func (p *parser) expr() Expr {
 				vecMatching.Ignoring = true
 			}
 			p.next()
-			vecMatching.On = p.labels()
+			vecMatching.MatchingLabels = p.labels()
 
 			// Parse grouping.
 			if t := p.peek().typ; t == itemGroupLeft || t == itemGroupRight {
@@ -483,7 +483,7 @@ func (p *parser) expr() Expr {
 			}
 		}
 
-		for _, ln := range vecMatching.On {
+		for _, ln := range vecMatching.MatchingLabels {
 			for _, ln2 := range vecMatching.Include {
 				if ln == ln2 && !vecMatching.Ignoring {
 					p.errorf("label %q must not occur in ON and INCLUDE clause at once", ln)
@@ -1052,7 +1052,7 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 		}
 
 		if (lt != model.ValVector || rt != model.ValVector) && n.VectorMatching != nil {
-			if len(n.VectorMatching.On) > 0 {
+			if len(n.VectorMatching.MatchingLabels) > 0 {
 				p.errorf("vector matching only allowed between vectors")
 			}
 			n.VectorMatching = nil

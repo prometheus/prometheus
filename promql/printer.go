@@ -159,11 +159,11 @@ func (node *BinaryExpr) String() string {
 
 	matching := ""
 	vm := node.VectorMatching
-	if vm != nil && len(vm.On) > 0 {
+	if vm != nil && len(vm.MatchingLabels) > 0 {
 		if vm.Ignoring {
-			matching = fmt.Sprintf(" IGNORING(%s)", vm.On)
+			matching = fmt.Sprintf(" IGNORING(%s)", vm.MatchingLabels)
 		} else {
-			matching = fmt.Sprintf(" ON(%s)", vm.On)
+			matching = fmt.Sprintf(" ON(%s)", vm.MatchingLabels)
 		}
 		if vm.Card == CardManyToOne {
 			matching += fmt.Sprintf(" GROUP_LEFT(%s)", vm.Include)
