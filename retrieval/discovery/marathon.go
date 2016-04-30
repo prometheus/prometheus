@@ -16,81 +16,15 @@ package discovery
 import (
 	"time"
 
-	"github.com/prometheus/common/log"
-	"golang.org/x/net/context"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval/discovery/marathon"
 )
 
-// MarathonDiscovery provides service discovery based on a Marathon instance.
-type MarathonDiscovery struct {
-	servers         []string
-	refreshInterval time.Duration
-	done            chan struct{}
-	lastRefresh     map[string]*config.TargetGroup
-	client          marathon.AppListClient
-}
-
-// NewMarathonDiscovery creates a new Marathon based discovery.
-func NewMarathonDiscovery(conf *config.MarathonSDConfig) *MarathonDiscovery {
-	return &MarathonDiscovery{
-		servers:         conf.Servers,
-		refreshInterval: time.Duration(conf.RefreshInterval),
-		done:            make(chan struct{}),
-		client:          marathon.FetchMarathonApps,
+// NewMarathon creates a new Marathon based discovery.
+func NewMarathon(conf *config.MarathonSDConfig) *marathon.Discovery {
+	return &marathon.Discovery{
+		Servers:         conf.Servers,
+		RefreshInterval: time.Duration(conf.RefreshInterval),
+		Client:          marathon.FetchApps,
 	}
-}
-
-// Run implements the TargetProvider interface.
-func (md *MarathonDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer close(ch)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(md.refreshInterval):
-			err := md.updateServices(ch)
-			if err != nil {
-				log.Errorf("Error while updating services: %s", err)
-			}
-		}
-	}
-}
-
-func (md *MarathonDiscovery) updateServices(ch chan<- []*config.TargetGroup) error {
-	targetMap, err := md.fetchTargetGroups()
-	if err != nil {
-		return err
-	}
-
-	all := make([]*config.TargetGroup, 0, len(targetMap))
-	for _, tg := range targetMap {
-		all = append(all, tg)
-	}
-	ch <- all
-
-	// Remove services which did disappear
-	for source := range md.lastRefresh {
-		_, ok := targetMap[source]
-		if !ok {
-			log.Debugf("Removing group for %s", source)
-			ch <- []*config.TargetGroup{{Source: source}}
-		}
-	}
-
-	md.lastRefresh = targetMap
-	return nil
-}
-
-func (md *MarathonDiscovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
-	url := marathon.RandomAppsURL(md.servers)
-	apps, err := md.client(url)
-	if err != nil {
-		return nil, err
-	}
-
-	groups := marathon.AppsToTargetGroups(apps)
-	return groups, nil
 }
