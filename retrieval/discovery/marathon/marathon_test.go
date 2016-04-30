@@ -30,8 +30,8 @@ func newTestDiscovery(client AppListClient) (chan []*config.TargetGroup, *Discov
 	ch := make(chan []*config.TargetGroup)
 	md := &Discovery{
 		Servers: []string{"http://localhost:8080"},
+		Client:  client,
 	}
-	md.Client = client
 	return ch, md
 }
 
