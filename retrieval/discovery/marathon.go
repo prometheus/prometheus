@@ -25,7 +25,6 @@ func NewMarathon(conf *config.MarathonSDConfig) *marathon.Discovery {
 	return &marathon.Discovery{
 		Servers:         conf.Servers,
 		RefreshInterval: time.Duration(conf.RefreshInterval),
-		Done:            make(chan struct{}),
 		Client:          marathon.FetchApps,
 	}
 }
