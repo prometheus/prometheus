@@ -366,7 +366,7 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 		app("file", i, discovery.NewFileDiscovery(c))
 	}
 	for i, c := range cfg.ConsulSDConfigs {
-		k, err := discovery.NewConsulDiscovery(c)
+		k, err := discovery.NewConsul(c)
 		if err != nil {
 			log.Errorf("Cannot create Consul discovery: %s", err)
 			continue
