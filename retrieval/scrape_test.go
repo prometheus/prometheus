@@ -210,7 +210,7 @@ func TestScrapePoolReload(t *testing.T) {
 
 	mtx.Lock()
 	if len(stopped) != numTargets {
-		t.Fatalf("Expected 20 stopped loops, got %d", stopped)
+		t.Fatalf("Expected 20 stopped loops, got %d", len(stopped))
 	}
 	mtx.Unlock()
 
