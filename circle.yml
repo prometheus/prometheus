@@ -55,8 +55,8 @@ deployment:
       - docker login -e $QUAY_EMAIL -u $QUAY_LOGIN -p $QUAY_PASSWORD quay.io
       - |
         if [[ "$CIRCLE_TAG" =~ ^[0-9]+(\.[0-9]+){2}$ ]]; then
-            docker tag "$DOCKER_IMAGE_NAME:$CIRCLE_TAG" "$DOCKER_IMAGE_NAME:latest"
-            docker tag "$QUAY_IMAGE_NAME:$CIRCLE_TAG" "$QUAY_IMAGE_NAME:latest"
+          docker tag "$DOCKER_IMAGE_NAME:$CIRCLE_TAG" "$DOCKER_IMAGE_NAME:latest"
+          docker tag "$QUAY_IMAGE_NAME:$CIRCLE_TAG" "$QUAY_IMAGE_NAME:latest"
         fi
       - docker push $DOCKER_IMAGE_NAME
       - docker push $QUAY_IMAGE_NAME
