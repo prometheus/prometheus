@@ -1,4 +1,4 @@
-go: 1.5.4
+go: 1.6.2
 repository:
     path: github.com/prometheus/prometheus
 build:
