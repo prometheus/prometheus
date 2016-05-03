@@ -1,10 +1,8 @@
 # Prometheus [![Build Status](https://travis-ci.org/prometheus/prometheus.svg)][travis]
 
 [![CircleCI](https://circleci.com/gh/prometheus/prometheus/tree/master.svg?style=shield)][circleci]
-[![Docker Stars](https://img.shields.io/docker/stars/prom/prometheus.svg)][hub]
-[![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg)][hub]
-[![Image Size](https://img.shields.io/imagelayers/image-size/prom/prometheus/latest.svg)][imagelayers]
-[![Image Layers](https://img.shields.io/imagelayers/layers/prom/prometheus/latest.svg)][imagelayers]
+[![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
+[![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
 
 Visit [prometheus.io](https://prometheus.io) for the full documentation,
 examples and guides.
@@ -93,4 +91,4 @@ Apache License 2.0, see [LICENSE](LICENSE).
 [travis]: https://travis-ci.org/prometheus/prometheus
 [hub]: https://hub.docker.com/r/prom/prometheus/
 [circleci]: https://circleci.com/gh/prometheus/prometheus
-[imagelayers]: https://imagelayers.io/?images=prom/prometheus:latest
+[quay]: https://quay.io/repository/prometheus/prometheus
