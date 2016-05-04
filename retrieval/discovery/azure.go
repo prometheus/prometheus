@@ -188,7 +188,7 @@ func (ad *AzureDiscovery) refresh() (*config.TargetGroup, error) {
 				}
 			}
 
-			// Get the IP address information via seperate call to the network provider.
+			// Get the IP address information via separate call to the network provider.
 			for _, nic := range *vm.Properties.NetworkProfile.NetworkInterfaces {
 				r, err := newAzureResourceFromID(*nic.ID)
 				if err != nil {
