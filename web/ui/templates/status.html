@@ -15,12 +15,30 @@
     <h2 id="buildinformation">Build Information</h2>
     <table class="table table-condensed table-bordered table-striped table-hover">
       <tbody>
-        {{range $key, $value := .Info}}
         <tr>
-          <th scope="row">{{$key}}</th>
-          <td>{{$value}}</td>
+          <th scope="row">Version</th>
+          <td>{{.Version.Version}}</td>
         </tr>
-        {{end}}
+        <tr>
+          <th scope="row">Revision</th>
+          <td>{{.Version.Revision}}</td>
+        </tr>
+        <tr>
+          <th scope="row">Branch</th>
+          <td>{{.Version.Branch}}</td>
+        </tr>
+        <tr>
+          <th scope="row">BuildUser</th>
+          <td>{{.Version.BuildUser}}</td>
+        </tr>
+        <tr>
+          <th scope="row">BuildDate</th>
+          <td>{{.Version.BuildDate}}</td>
+        </tr>
+        <tr>
+          <th scope="row">GoVersion</th>
+          <td>{{.Version.GoVersion}}</td>
+        </tr>
       </tbody>
     </table>
 
