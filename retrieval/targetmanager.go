@@ -360,7 +360,7 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 	}
 
 	for i, c := range cfg.DNSSDConfigs {
-		app("dns", i, discovery.NewDNSDiscovery(c))
+		app("dns", i, discovery.NewDNS(c))
 	}
 	for i, c := range cfg.FileSDConfigs {
 		app("file", i, discovery.NewFileDiscovery(c))
