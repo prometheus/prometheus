@@ -9,11 +9,11 @@ build:
           path: ./cmd/promtool
     flags: -tags netgo
     ldflags: |
-        -X {{repoPath}}/version.Version={{.Version}}
-        -X {{repoPath}}/version.Revision={{.Revision}}
-        -X {{repoPath}}/version.Branch={{.Branch}}
-        -X {{repoPath}}/version.BuildUser={{user}}@{{host}}
-        -X {{repoPath}}/version.BuildDate={{date "20060102-15:04:05"}}
+        -X {{repoPath}}/vendor/github.com/prometheus/common/version.Version={{.Version}}
+        -X {{repoPath}}/vendor/github.com/prometheus/common/version.Revision={{.Revision}}
+        -X {{repoPath}}/vendor/github.com/prometheus/common/version.Branch={{.Branch}}
+        -X {{repoPath}}/vendor/github.com/prometheus/common/version.BuildUser={{user}}@{{host}}
+        -X {{repoPath}}/vendor/github.com/prometheus/common/version.BuildDate={{date "20060102-15:04:05"}}
 tarball:
     files:
         - consoles
