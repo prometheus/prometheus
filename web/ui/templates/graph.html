@@ -15,6 +15,9 @@
     <script src="{{ pathPrefix }}/static/vendor/js/jquery.hotkeys.js"></script>
 
     <script src="{{ pathPrefix }}/static/js/graph.js?v=1"></script>
+    <script type="text/javascript">
+      Prometheus.Graph.staticOptions.timestampLocal = {{ .TimestampLocal }};
+    </script>
 
     <script id="graph_template" type="text/x-handlebars-template"></script>
 {{end}}
