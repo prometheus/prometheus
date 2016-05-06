@@ -44,7 +44,6 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web/api/legacy"
 	"github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
@@ -67,6 +66,7 @@ type Handler struct {
 	reloadCh    chan struct{}
 	options     *Options
 	statusInfo  *PrometheusStatus
+	versionInfo *PrometheusVersion
 
 	externalLabels model.LabelSet
 	mtx            sync.RWMutex
@@ -110,6 +110,16 @@ func (s *PrometheusStatus) ApplyConfig(conf *config.Config) bool {
 	return true
 }
 
+// PrometheusVersion contains various build information about Prometheus
+type PrometheusVersion struct {
+	Version   string `json:"version"`
+	Revision  string `json:"revision"`
+	Branch    string `json:"branch"`
+	BuildUser string `json:"buildUser"`
+	BuildDate string `json:"buildDate"`
+	GoVersion string `json:"goVersion"`
+}
+
 // Options for the web Handler.
 type Options struct {
 	ListenAddress        string
@@ -123,7 +133,7 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *PrometheusStatus, o *Options) *Handler {
+func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *PrometheusStatus, version *PrometheusVersion, o *Options) *Handler {
 	router := route.New()
 
 	h := &Handler{
@@ -133,6 +143,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		reloadCh:    make(chan struct{}),
 		options:     o,
 		statusInfo:  status,
+		versionInfo: version,
 
 		ruleManager: rm,
 		queryEngine: qe,
@@ -315,17 +326,17 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	defer h.statusInfo.mu.RUnlock()
 
 	h.executeTemplate(w, "status.html", struct {
-		Status *PrometheusStatus
-		Info   map[string]string
+		Status  *PrometheusStatus
+		Version *PrometheusVersion
 	}{
-		Status: h.statusInfo,
-		Info:   version.Map,
+		Status:  h.statusInfo,
+		Version: h.versionInfo,
 	})
 }
 
 func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewEncoder(w)
-	if err := dec.Encode(version.Map); err != nil {
+	if err := dec.Encode(h.versionInfo); err != nil {
 		http.Error(w, fmt.Sprintf("error encoding JSON: %s", err), http.StatusInternalServerError)
 	}
 }

@@ -14,18 +14,16 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
-	"text/template"
 
+	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/cli"
-	"github.com/prometheus/prometheus/version"
 )
 
 // CheckConfigCmd validates configuration files.
@@ -184,22 +182,9 @@ func checkRules(t cli.Term, filename string) (int, error) {
 	return len(rules), nil
 }
 
-var versionInfoTmpl = `
-prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
-  build user:       {{.buildUser}}
-  build date:       {{.buildDate}}
-  go version:       {{.goVersion}}
-`
-
 // VersionCmd prints the binaries version information.
 func VersionCmd(t cli.Term, _ ...string) int {
-	tmpl := template.Must(template.New("version").Parse(versionInfoTmpl))
-
-	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "version", version.Map); err != nil {
-		panic(err)
-	}
-	fmt.Fprintln(t.Out(), strings.TrimSpace(buf.String()))
+	fmt.Fprintln(os.Stdout, version.Print("promtool"))
 	return 0
 }
 
