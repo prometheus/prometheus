@@ -114,7 +114,7 @@ func (dd *Discovery) refreshAll(ctx context.Context, ch chan<- []*config.TargetG
 	wg.Add(len(dd.names))
 	for _, name := range dd.names {
 		go func(n string) {
-			if err := dd.refresh(n, ctx, ch); err != nil {
+			if err := dd.refresh(ctx, n, ch); err != nil {
 				log.Errorf("Error refreshing DNS targets: %s", err)
 			}
 			wg.Done()
@@ -124,7 +124,7 @@ func (dd *Discovery) refreshAll(ctx context.Context, ch chan<- []*config.TargetG
 	wg.Wait()
 }
 
-func (dd *Discovery) refresh(name string, ctx context.Context, ch chan<- []*config.TargetGroup) error {
+func (dd *Discovery) refresh(ctx context.Context, name string, ch chan<- []*config.TargetGroup) error {
 	response, err := lookupAll(name, dd.qtype)
 	dnsSDLookupsCount.Inc()
 	if err != nil {
