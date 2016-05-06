@@ -45,7 +45,6 @@ import (
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/version"
-	"github.com/prometheus/prometheus/web/api/legacy"
 	"github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
 )
@@ -58,8 +57,7 @@ type Handler struct {
 	queryEngine *promql.Engine
 	storage     local.Storage
 
-	apiV1     *v1.API
-	apiLegacy *legacy.API
+	apiV1 *v1.API
 
 	router      *route.Router
 	listenErrCh chan error
@@ -139,11 +137,6 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		storage:     st,
 
 		apiV1: v1.NewAPI(qe, st),
-		apiLegacy: &legacy.API{
-			QueryEngine: qe,
-			Storage:     st,
-			Now:         model.Now,
-		},
 	}
 
 	if o.ExternalURL.Path != "" {
@@ -174,7 +167,6 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		Handler: http.HandlerFunc(h.federation),
 	}))
 
-	h.apiLegacy.Register(router.WithPrefix("/api"))
 	h.apiV1.Register(router.WithPrefix("/api/v1"))
 
 	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
