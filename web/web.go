@@ -120,6 +120,7 @@ type Options struct {
 	ConsoleTemplatesPath string
 	ConsoleLibrariesPath string
 	EnableQuit           bool
+	TimestampLocal       bool
 }
 
 // New initializes a new web Handler.
@@ -307,7 +308,11 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
-	h.executeTemplate(w, "graph.html", nil)
+	h.executeTemplate(w, "graph.html", struct {
+		TimestampLocal bool
+	}{
+		TimestampLocal: h.options.TimestampLocal,
+	})
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {

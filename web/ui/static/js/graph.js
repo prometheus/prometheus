@@ -16,6 +16,9 @@ Prometheus.Graph = function(element, options) {
   this.initialize();
 };
 
+// Options which are filled based on server-side configuration.
+Prometheus.Graph.staticOptions = {};
+
 Prometheus.Graph.timeFactors = {
   "y": 60 * 60 * 24 * 365,
   "w": 60 * 60 * 24 * 7,
@@ -458,6 +461,15 @@ Prometheus.Graph.prototype.transformData = function(json) {
   return data;
 };
 
+Prometheus.Graph.prototype.formatUnixTime = function(unixTime) {
+  var date = new Date(unixTime * SECOND);
+  if (Prometheus.Graph.staticOptions.timestampLocal) {
+    return date.toString();
+  } else {
+    return date.toUTCString();
+  }
+};
+
 Prometheus.Graph.prototype.updateGraph = function() {
   var self = this;
   if (self.data.length === 0) { return; }
@@ -499,7 +511,11 @@ Prometheus.Graph.prototype.updateGraph = function() {
     min: "auto",
   });
 
-  var xAxis = new Rickshaw.Graph.Axis.Time({ graph: self.rickshawGraph });
+  var xAxisOpts = { graph: self.rickshawGraph };
+  if (Prometheus.Graph.staticOptions.timestampLocal) {
+    xAxisOpts.timeFixture = new Rickshaw.Fixtures.Time.Local();
+  }
+  var xAxis = new Rickshaw.Graph.Axis.Time(xAxisOpts);
 
   var yAxis = new Rickshaw.Graph.Axis.Y({
     graph: self.rickshawGraph,
@@ -513,11 +529,12 @@ Prometheus.Graph.prototype.updateGraph = function() {
   var hoverDetail = new Rickshaw.Graph.HoverDetail({
     graph: self.rickshawGraph,
     formatter: function(series, x, y) {
-      var date = '<span class="date">' + new Date(x * 1000).toUTCString() + '</span>';
+      var date = '<span class="date">' + self.formatUnixTime(x) + '</span>';
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
       var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + y + '</strong>';
       return date + '<br>' + content + '<br>' + self.renderLabels(series.labels);
-    }
+    },
+    xFormatter: self.formatUnixTime,
   });
 
   var legend = new Rickshaw.Graph.Legend({

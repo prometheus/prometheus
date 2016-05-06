@@ -99,6 +99,10 @@ func init() {
 		&cfg.web.ConsoleLibrariesPath, "web.console.libraries", "console_libraries",
 		"Path to the console library directory.",
 	)
+	cfg.fs.BoolVar(
+		&cfg.web.TimestampLocal, "web.timestamp.local", false,
+		"If set to true, local time used instead of UTC for X-axis timestamp.",
+	)
 
 	// Storage.
 	cfg.fs.StringVar(
