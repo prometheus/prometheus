@@ -14,16 +14,12 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"strings"
-	"text/template"
 
-	"github.com/prometheus/prometheus/util/cli"
-	"github.com/prometheus/prometheus/version"
-
+	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/util/cli"
 )
 
 // DumpHeadsCmd dumps metadata of a heads.db file.
@@ -39,22 +35,9 @@ func DumpHeadsCmd(t cli.Term, args ...string) int {
 	return 0
 }
 
-var versionInfoTmpl = `
-prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
-  build user:       {{.buildUser}}
-  build date:       {{.buildDate}}
-  go version:       {{.goVersion}}
-`
-
 // VersionCmd prints the binaries version information.
 func VersionCmd(t cli.Term, _ ...string) int {
-	tmpl := template.Must(template.New("version").Parse(versionInfoTmpl))
-
-	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "version", version.Map); err != nil {
-		panic(err)
-	}
-	fmt.Fprintln(t.Out(), strings.TrimSpace(buf.String()))
+	fmt.Fprintln(os.Stdout, version.Print("storagetool"))
 	return 0
 }
 

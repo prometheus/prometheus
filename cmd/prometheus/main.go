@@ -15,21 +15,17 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
-	"text/template"
 	"time"
 
-	"github.com/prometheus/common/log"
-
 	"github.com/prometheus/client_golang/prometheus"
-
+	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
@@ -38,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -59,6 +54,10 @@ var (
 	})
 )
 
+func init() {
+	prometheus.MustRegister(version.NewCollector("prometheus"))
+}
+
 // Main manages the startup and shutdown lifecycle of the entire Prometheus server.
 func Main() int {
 	if err := parse(os.Args[1:]); err != nil {
@@ -66,10 +65,13 @@ func Main() int {
 		return 2
 	}
 
-	printVersion()
 	if cfg.printVersion {
+		fmt.Fprintln(os.Stdout, version.Print("prometheus"))
 		return 0
 	}
+
+	log.Infoln("Starting prometheus", version.Info())
+	log.Infoln("Build context", version.BuildContext())
 
 	var reloadables []Reloadable
 
@@ -108,7 +110,16 @@ func Main() int {
 		Birth:       time.Now(),
 	}
 
-	webHandler := web.New(memStorage, queryEngine, ruleManager, status, &cfg.web)
+	version := &web.PrometheusVersion{
+		Version:   version.Version,
+		Revision:  version.Revision,
+		Branch:    version.Branch,
+		BuildUser: version.BuildUser,
+		BuildDate: version.BuildDate,
+		GoVersion: version.GoVersion,
+	}
+
+	webHandler := web.New(memStorage, queryEngine, ruleManager, status, version, &cfg.web)
 
 	reloadables = append(reloadables, status, targetManager, ruleManager, webHandler, notifier)
 
@@ -220,21 +231,4 @@ func reloadConfig(filename string, rls ...Reloadable) (success bool) {
 		success = success && rl.ApplyConfig(conf)
 	}
 	return success
-}
-
-var versionInfoTmpl = `
-prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
-  build user:       {{.buildUser}}
-  build date:       {{.buildDate}}
-  go version:       {{.goVersion}}
-`
-
-func printVersion() {
-	t := template.Must(template.New("version").Parse(versionInfoTmpl))
-
-	var buf bytes.Buffer
-	if err := t.ExecuteTemplate(&buf, "version", version.Map); err != nil {
-		panic(err)
-	}
-	fmt.Fprintln(os.Stdout, strings.TrimSpace(buf.String()))
 }
