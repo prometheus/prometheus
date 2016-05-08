@@ -226,6 +226,9 @@ load 5m
 load 5m
   random{foo="bar"} 1
 
+load 5m
+  threshold{instance="abc",job="node",target="a@b.com"} 0
+
 # Copy machine role to node variable.
 eval instant at 5m node_role * on (instance) group_right (role) node_var
   {instance="abc",job="node",role="prometheus"} 2
@@ -290,3 +293,16 @@ eval instant at 5m node_cpu + on(dummy) group_left(foo) random*0
   {instance="abc",job="node",mode="user",foo="bar"} 1
   {instance="def",job="node",mode="idle",foo="bar"} 8
   {instance="def",job="node",mode="user",foo="bar"} 2
+
+
+# Use threshold from metric, and copy over target.
+eval instant at 5m node_cpu > on(job, instance) group_left(target) threshold
+  node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
+  node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
+
+# Use threshold from metric, and a default (1) if it's not present.
+eval instant at 5m node_cpu > on(job, instance) group_left(target) (threshold or on (job, instance) (sum by (job, instance)(node_cpu) * 0 + 1))
+  node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
+  node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
+  node_cpu{instance="def",job="node",mode="idle"} 8
+  node_cpu{instance="def",job="node",mode="user"} 2
