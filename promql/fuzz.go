@@ -53,7 +53,7 @@ func FuzzParseMetric(in []byte) int {
 		return fuzzInteresting
 	}
 
-	return fuzzDiscard
+	return fuzzMeh
 }
 
 // Fuzz the metric selector parser.
@@ -63,7 +63,7 @@ func FuzzParseMetricSelector(in []byte) int {
 		return fuzzInteresting
 	}
 
-	return fuzzDiscard
+	return fuzzMeh
 }
 
 // Fuzz the expression parser.
@@ -73,7 +73,7 @@ func FuzzParseExpr(in []byte) int {
 		return fuzzInteresting
 	}
 
-	return fuzzDiscard
+	return fuzzMeh
 }
 
 // Fuzz the parser.
@@ -83,5 +83,5 @@ func FuzzParseStmts(in []byte) int {
 		return fuzzInteresting
 	}
 
-	return fuzzDiscard
+	return fuzzMeh
 }
