@@ -42,7 +42,7 @@ const (
 	subsystem = "notifications"
 )
 
-// Handler is responsible for dispatching alert notifications to an
+// Notifier is responsible for dispatching alert notifications to an
 // alert manager service.
 type Notifier struct {
 	queue model.Alerts
@@ -61,7 +61,7 @@ type Notifier struct {
 	queueCapacity prometheus.Metric
 }
 
-// HandlerOptions are the configurable parameters of a Handler.
+// Options are the configurable parameters of a Handler.
 type Options struct {
 	AlertmanagerURL string
 	QueueCapacity   int

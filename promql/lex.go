@@ -82,8 +82,7 @@ func (i itemType) isSetOperator() bool {
 	return false
 }
 
-// Constants for operator precedence in expressions.
-//
+// LowestPrec is a constant for operator precedence in expressions.
 const LowestPrec = 0 // Non-operators.
 
 // Precedence returns the operator precedence of the binary
