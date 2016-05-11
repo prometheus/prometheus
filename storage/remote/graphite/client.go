@@ -51,7 +51,7 @@ func pathFromMetric(m model.Metric, prefix string) string {
 
 	// We want to sort the labels.
 	labels := make(model.LabelNames, 0, len(m))
-	for l, _ := range m {
+	for l := range m {
 		labels = append(labels, l)
 	}
 	sort.Sort(labels)
