@@ -263,6 +263,86 @@ func TestEndpoints(t *testing.T) {
 				},
 			},
 		},
+		// Start and end before series starts.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"-2"},
+				"end":     []string{"-1"},
+			},
+			response: []model.Metric{},
+		},
+		// Start and end after series ends.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"100000"},
+				"end":     []string{"100001"},
+			},
+			response: []model.Metric{},
+		},
+		// Start before series starts, end after series ends.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"-1"},
+				"end":     []string{"100000"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start and end within series.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"1"},
+				"end":     []string{"100"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start within series, end after.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"1"},
+				"end":     []string{"100000"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start before series, end within series.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"-1"},
+				"end":     []string{"1"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
 		// Missing match[] query params in series requests.
 		{
 			endpoint: api.series,

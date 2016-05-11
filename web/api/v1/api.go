@@ -232,6 +232,29 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
 	}
+
+	var start model.Time
+	if t := r.FormValue("start"); t != "" {
+		var err error
+		start, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		start = model.Earliest
+	}
+
+	var end model.Time
+	if t := r.FormValue("end"); t != "" {
+		var err error
+		end, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		end = model.Latest
+	}
+
 	res := map[model.Fingerprint]metric.Metric{}
 
 	for _, lm := range r.Form["match[]"] {
@@ -240,7 +263,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 			return nil, &apiError{errorBadData, err}
 		}
 		for fp, met := range api.Storage.MetricsForLabelMatchers(
-			model.Earliest, model.Latest, // Get every series.
+			start, end,
 			matchers...,
 		) {
 			res[fp] = met
