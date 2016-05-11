@@ -512,17 +512,16 @@ func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMat
 			VectorMatching: lhsBE.VectorMatching,
 			ReturnBool:     lhsBE.ReturnBool,
 		}
-	} else {
-		if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && lhs.Type() == model.ValScalar {
-			p.errorf("comparisons between scalars must use BOOL modifier")
-		}
-		return &BinaryExpr{
-			Op:             op,
-			LHS:            lhs,
-			RHS:            rhs,
-			VectorMatching: vecMatching,
-			ReturnBool:     returnBool,
-		}
+	}
+	if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && lhs.Type() == model.ValScalar {
+		p.errorf("comparisons between scalars must use BOOL modifier")
+	}
+	return &BinaryExpr{
+		Op:             op,
+		LHS:            lhs,
+		RHS:            rhs,
+		VectorMatching: vecMatching,
+		ReturnBool:     returnBool,
 	}
 }
 
