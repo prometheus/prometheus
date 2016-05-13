@@ -7,7 +7,7 @@
       <tbody>
         <tr>
           <th>Uptime</th>
-          <td>{{.Status.Birth.UTC}}</td>
+          <td>{{.Birth.UTC}}</td>
         </tr>
       </tbody>
     </table>
@@ -39,77 +39,6 @@
           <th scope="row">GoVersion</th>
           <td>{{.Version.GoVersion}}</td>
         </tr>
-      </tbody>
-    </table>
-
-    <h2 id="configuration">Configuration</h2>
-    <pre>{{.Status.Config}}</pre>
-
-    <h2 id="rules">Rules</h2>
-    <pre>{{range call .Status.Rules}}{{.HTMLSnippet pathPrefix}}<br/>{{end}}</pre>
-
-    <h2 id="targets">Targets</h2>
-      <table class="table table-condensed table-bordered table-striped table-hover">
-        {{range $job, $pool := call .Status.TargetPools}}
-          <thead>
-            <tr><th colspan="5" class="job_header">{{$job}}</th></tr>
-            <tr>
-              <th>Endpoint</th>
-              <th>State</th>
-              <th>Labels</th>
-              <th>Last Scrape</th>
-              <th>Error</th>
-            </tr>
-          </thead>
-          <tbody>
-          {{range $pool}}
-            <tr>
-              <td>
-              <a href="{{.URL | globalURL}}">{{.URL.Scheme}}://{{.URL.Host}}{{.URL.Path}}</a><br>
-                {{range $label, $values := .URL.Query }}
-                  {{range $i, $value := $values}}
-                    <span class="label label-primary">{{$label}}="{{$value}}"</span>
-                  {{end}}
-                {{end}}
-              </td>
-              <td>
-                <span class="alert alert-{{ .Health | healthToClass }} state_indicator text-uppercase">
-                  {{.Health}}
-                </span>
-              </td>
-              <td>
-                <span class="cursor-pointer" data-toggle="tooltip" title="" data-html=true data-original-title="<b>Before relabeling:</b>{{range $k, $v := .MetaLabels}}<br>{{$k | html | html}}=&quot;{{$v | html | html}}&quot;{{end}}">
-                  {{$labels := stripLabels .Labels "job" "instance"}}
-                  {{range $label, $value := $labels}}
-                    <span class="label label-primary">{{$label}}="{{$value}}"</span>
-                  {{else}}
-                    <span class="label label-default">none</span>
-                  {{end}}
-                </span>
-              </td>
-              <td>
-                {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
-              </td>
-              <td>
-                {{if .LastError}}
-                <span class="alert alert-danger state_indicator">{{.LastError}}</span>
-                {{end}}
-              </td>
-            </tr>
-          {{end}}
-          </tbody>
-        {{end}}
-      </table>
-
-    <h2 id="startupflags">Startup Flags</h2>
-    <table class="table table-condensed table-bordered table-striped table-hover">
-      <tbody>
-        {{range $key, $value := .Status.Flags}}
-        <tr>
-          <th scope="row">{{$key}}</th>
-          <td>{{$value}}</td>
-        </tr>
-        {{end}}
       </tbody>
     </table>
   </div>
