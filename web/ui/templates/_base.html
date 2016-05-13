@@ -39,7 +39,16 @@
             {{ end }}
             <li><a href="{{ pathPrefix }}/alerts">Alerts</a></li>
             <li><a href="{{ pathPrefix }}/graph">Graph</a></li>
-            <li><a href="{{ pathPrefix }}/status">Status</a></li>
+w            <li class="dropdown">
+              <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Status <span class="caret"></span></a>
+              <ul class="dropdown-menu">
+                <li><a href="/status">Runtime &amp; Build Information</a></li>
+                <li><a href="/flags">Command-Line Flags</a></li>
+                <li><a href="/config">Configuration</a></li>
+                <li><a href="/rules">Rules</a></li>
+                <li><a href="/targets">Targets</a></li>
+              </ul>
+            </li>
             <li>
               <a href="https://prometheus.io" target="_blank">Help</a>
             </li>

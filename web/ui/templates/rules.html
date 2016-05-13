@@ -1,0 +1,8 @@
+{{define "head"}}<!-- nix -->{{end}}
+
+{{define "content"}}
+  <div class="container-fluid">
+    <h2 id="rules">Rules</h2>
+    <pre>{{range .Rules}}{{.HTMLSnippet pathPrefix}}<br/>{{end}}</pre>
+  </div>
+{{end}}
