@@ -61,7 +61,7 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 		awsConfig.Region = &conf.Region
 	}
 	if conf.AccessKey != "" && conf.SecretKey != "" {
-	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
+		creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
 		awsConfig.Credentials = creds
 	}
 
