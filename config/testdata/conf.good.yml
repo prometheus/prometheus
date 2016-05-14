@@ -127,6 +127,17 @@ scrape_configs:
       access_key: access
       secret_key: secret
 
+- job_name: service-ecs
+  ecs_sd_configs:
+    - region: us-east-1
+      access_key: access
+      secret_key: secret
+      cluster_name: default
+      refresh_interval: 1m
+      port_from: 6000
+      port_to: 6100
+
+
 - job_name: service-azure
   azure_sd_configs:
     - subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11

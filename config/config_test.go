@@ -271,6 +271,27 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-ecs",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ECSSDConfigs: []*ECSSDConfig{
+				{
+					Region:          "us-east-1",
+					AccessKey:       "access",
+					SecretKey:       "secret",
+					ClusterName:     "default",
+					RefreshInterval: model.Duration(60 * time.Second),
+					PortFrom:        6000,
+					PortTo:          6100,
+				},
+			},
+		},
+		{
 			JobName: "service-azure",
 
 			ScrapeInterval: model.Duration(15 * time.Second),

@@ -20,11 +20,12 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/defaults"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
+	"github.com/aws/aws-sdk-go/aws/defaults"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -53,15 +54,19 @@ type EC2Discovery struct {
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
 func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
-	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
-	if conf.AccessKey == "" && conf.SecretKey == "" {
-		creds = defaults.DefaultChainCredentials
+	awsConfig := defaults.Get().Config
+
+	// override the default region
+	if conf.Region != "" {
+		awsConfig.Region = &conf.Region
 	}
+	if conf.AccessKey != "" && conf.SecretKey != "" {
+	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
+		awsConfig.Credentials = creds
+	}
+
 	return &EC2Discovery{
-		aws: &aws.Config{
-			Region:      &conf.Region,
-			Credentials: creds,
-		},
+		aws:      awsConfig,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 	}
@@ -98,7 +103,7 @@ func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 }
 
 func (ed *EC2Discovery) refresh() (*config.TargetGroup, error) {
-	ec2s := ec2.New(ed.aws)
+	ec2s := ec2.New(session.New(), ed.aws)
 	tg := &config.TargetGroup{
 		Source: *ed.aws.Region,
 	}

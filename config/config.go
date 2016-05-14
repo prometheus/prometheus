@@ -415,6 +415,8 @@ type ScrapeConfig struct {
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
+	// List of ECS service discovery configurations.
+	ECSSDConfigs []*ECSSDConfig `yaml:"ecs_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
 
@@ -791,6 +793,19 @@ type EC2SDConfig struct {
 	SecretKey       string         `yaml:"secret_key,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// ECSSDConfig is the configuration for EC2 based service discovery.
+type ECSSDConfig struct {
+	Region          string         `yaml:"region"`
+	AccessKey       string         `yaml:"access_key,omitempty"`
+	SecretKey       string         `yaml:"secret_key,omitempty"`
+	ClusterName     string         `yaml:"cluster_name,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	PortFrom        int            `yaml:"port_from"`
+	PortTo          int            `yaml:"port_to"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
