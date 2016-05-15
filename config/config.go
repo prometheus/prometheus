@@ -895,7 +895,7 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Modulus == 0 && c.Action == RelabelHashMod {
 		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
-	return checkOverflow(c.XXX, "relabel_config")
+	return checkOverflow(c.XXX, "relabel_configs")
 }
 
 // Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
