@@ -132,10 +132,8 @@ scrape_configs:
     - region: us-east-1
       access_key: access
       secret_key: secret
-      cluster_name: default
       refresh_interval: 1m
-      port_from: 6000
-      port_to: 6100
+      port: 8080
 
 
 - job_name: service-azure

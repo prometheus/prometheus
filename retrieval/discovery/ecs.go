@@ -30,15 +30,15 @@ import (
 
 const (
 	ecsServiceNameLabel = model.MetaLabelPrefix + "ecs_service_name"
+	ecsClusterNameLabel = model.MetaLabelPrefix + "ecs_cluster_name"
 )
 
 // ECSDiscovery periodically performs ECS-SD requests. It implements
 // the TargetProvider interface.
 type ECSDiscovery struct {
-	aws         *aws.Config
-	interval    time.Duration
-	port        int64
-	clusterName string
+	aws      *aws.Config
+	interval time.Duration
+	port     int64
 }
 
 // NewECSDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
@@ -55,10 +55,9 @@ func NewECSDiscovery(conf *config.ECSSDConfig) *ECSDiscovery {
 	}
 
 	return &ECSDiscovery{
-		aws:         awsConfig,
-		interval:    time.Duration(conf.RefreshInterval),
-		port:        int64(conf.Port),
-		clusterName: conf.ClusterName,
+		aws:      awsConfig,
+		interval: time.Duration(conf.RefreshInterval),
+		port:     int64(conf.Port),
 	}
 }
 
@@ -99,135 +98,149 @@ func (ed *ECSDiscovery) refresh() (*config.TargetGroup, error) {
 	ecsService := ecs.New(session.New(), ed.aws)
 	ec2s := ec2.New(session.New(), ed.aws)
 
-	listServicesResponse, err := ecsService.ListServices(&ecs.ListServicesInput{
-		Cluster:    aws.String(ed.clusterName),
-		MaxResults: aws.Int64(100),
-	})
+	listClustersResponse, err := ecsService.ListClusters(&ecs.ListClustersInput{})
 	if err != nil {
-		return nil, fmt.Errorf("error listing ecs services: %s", err)
+		return nil, fmt.Errorf("error listing ecs clusters: %s", err)
 	}
 
-	services, err := ecsService.DescribeServices(&ecs.DescribeServicesInput{
-		Cluster:  aws.String(ed.clusterName),
-		Services: listServicesResponse.ServiceArns,
-	})
+	describeClustersResponse, err := ecsService.DescribeClusters(&ecs.DescribeClustersInput{Clusters: listClustersResponse.ClusterArns})
 	if err != nil {
-		return nil, fmt.Errorf("error listing describing services: %s", err)
+		return nil, fmt.Errorf("error describing ecs clusters: %s", err)
 	}
 
-	taskDefitionCache := make(map[string]*ecs.DescribeTaskDefinitionOutput)
+	for _, cluster := range describeClustersResponse.Clusters {
 
-	for _, service := range services.Services {
-
-		// In case we encounter more than one service using the same service definition, no need to look it up again
-		taskDefinitionResponse, cached := taskDefitionCache[*service.TaskDefinition]
-		if !cached {
-			taskDefinitionResponse, err = ecsService.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
-				TaskDefinition: service.TaskDefinition,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("error listing describing task description: %s", err)
-			}
-			taskDefitionCache[*service.TaskDefinition] = taskDefinitionResponse
+		listServicesResponse, err := ecsService.ListServices(&ecs.ListServicesInput{
+			Cluster:    aws.String(*cluster.ClusterArn),
+			MaxResults: aws.Int64(100),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error listing ecs services: %s", err)
 		}
 
-		monitored := false
-		monitoringPort := 0
+		services, err := ecsService.DescribeServices(&ecs.DescribeServicesInput{
+			Cluster:  aws.String(*cluster.ClusterArn),
+			Services: listServicesResponse.ServiceArns,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error listing describing services: %s", err)
+		}
 
-		var dockerLabels map[string]*string
+		taskDefitionCache := make(map[string]*ecs.DescribeTaskDefinitionOutput)
 
-		// See if any container is exposing the specified port and use the host post which it is mapped to
-		for _, containerDesc := range taskDefinitionResponse.TaskDefinition.ContainerDefinitions {
-			for _, portMapping := range containerDesc.PortMappings {
-				if *portMapping.ContainerPort == ed.port {
-					monitored = true
-					monitoringPort = int(*portMapping.HostPort)
-					dockerLabels = containerDesc.DockerLabels
+		for _, service := range services.Services {
+
+			// In case we encounter more than one service using the same service definition, no need to look it up again
+			taskDefinitionResponse, cached := taskDefitionCache[*service.TaskDefinition]
+			if !cached {
+				taskDefinitionResponse, err = ecsService.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
+					TaskDefinition: service.TaskDefinition,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("error listing describing task description: %s", err)
+				}
+				taskDefitionCache[*service.TaskDefinition] = taskDefinitionResponse
+			}
+
+			monitored := false
+			monitoringPort := 0
+
+			var dockerLabels map[string]*string
+
+			// See if any container is exposing the specified port and use the host post which it is mapped to
+			for _, containerDesc := range taskDefinitionResponse.TaskDefinition.ContainerDefinitions {
+				for _, portMapping := range containerDesc.PortMappings {
+					if *portMapping.ContainerPort == ed.port {
+						monitored = true
+						monitoringPort = int(*portMapping.HostPort)
+						dockerLabels = containerDesc.DockerLabels
+						break
+					}
+				}
+				if monitored {
 					break
 				}
 			}
-			if monitored {
-				break
-			}
-		}
 
-		if !monitored {
-			continue
-		}
-
-		tasksArns, err := ecsService.ListTasks(&ecs.ListTasksInput{
-			ServiceName: aws.String(*service.ServiceName),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("error listing listing tasks: %s", err)
-		}
-
-		taskDescriptionsResponse, err := ecsService.DescribeTasks(&ecs.DescribeTasksInput{
-			Tasks: tasksArns.TaskArns,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("error describing tasks: %s", err)
-		}
-
-		describeContainerInstancesRequest := &ecs.DescribeContainerInstancesInput{
-			ContainerInstances: []*string{},
-		}
-
-		// First we populate the cache keys
-		for _, task := range taskDescriptionsResponse.Tasks {
-			describeContainerInstancesRequest.ContainerInstances = append(describeContainerInstancesRequest.ContainerInstances, task.ContainerInstanceArn)
-		}
-		containerInstanceResponse, err := ecsService.DescribeContainerInstances(describeContainerInstancesRequest)
-		if err != nil {
-			return nil, fmt.Errorf("error describing container instance: %s", err)
-		}
-
-		containerInstances := make(map[string]*ecs.ContainerInstance)
-
-		ec2InstancesRequest := &ec2.DescribeInstancesInput{
-			InstanceIds: []*string{},
-		}
-
-		for _, containerInstance := range containerInstanceResponse.ContainerInstances {
-			containerInstances[*containerInstance.ContainerInstanceArn] = containerInstance
-			ec2InstancesRequest.InstanceIds = append(ec2InstancesRequest.InstanceIds, containerInstance.Ec2InstanceId)
-		}
-
-		ec2Response, err := ec2s.DescribeInstances(ec2InstancesRequest)
-		if err != nil {
-			return nil, fmt.Errorf("error describing container ec2 instance: %s", err)
-		}
-
-		ec2Instances := make(map[string]*ec2.Instance)
-		for _, reservation := range ec2Response.Reservations {
-			for _, ec2 := range reservation.Instances {
-				ec2Instances[*ec2.InstanceId] = ec2
-			}
-		}
-
-		for _, task := range taskDescriptionsResponse.Tasks {
-			containerInstance, found := containerInstances[*task.ContainerInstanceArn]
-			if !found {
-				continue
-			}
-			inst, found := ec2Instances[*containerInstance.Ec2InstanceId]
-			if !found {
+			if !monitored {
 				continue
 			}
 
-			labels := model.LabelSet{
-				ecsServiceNameLabel: model.LabelValue(*service.ServiceName),
-			}
-			addr := fmt.Sprintf("%s:%d", *inst.PrivateIpAddress, monitoringPort)
-			labels[model.AddressLabel] = model.LabelValue(addr)
-
-			// We also want to pipe the docker labels to the series
-			for dockerLabelName, dockerLabelValue := range dockerLabels {
-				labels[model.LabelName(dockerLabelName)] = model.LabelValue(*dockerLabelValue)
+			tasksArns, err := ecsService.ListTasks(&ecs.ListTasksInput{
+				ServiceName: aws.String(*service.ServiceName),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("error listing listing tasks: %s", err)
 			}
 
-			tg.Targets = append(tg.Targets, labels)
+			taskDescriptionsResponse, err := ecsService.DescribeTasks(&ecs.DescribeTasksInput{
+				Tasks: tasksArns.TaskArns,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("error describing tasks: %s", err)
+			}
 
+			describeContainerInstancesRequest := &ecs.DescribeContainerInstancesInput{
+				ContainerInstances: []*string{},
+			}
+
+			// First we populate the cache keys
+			for _, task := range taskDescriptionsResponse.Tasks {
+				describeContainerInstancesRequest.ContainerInstances = append(describeContainerInstancesRequest.ContainerInstances, task.ContainerInstanceArn)
+			}
+			containerInstanceResponse, err := ecsService.DescribeContainerInstances(describeContainerInstancesRequest)
+			if err != nil {
+				return nil, fmt.Errorf("error describing container instance: %s", err)
+			}
+
+			containerInstances := make(map[string]*ecs.ContainerInstance)
+
+			ec2InstancesRequest := &ec2.DescribeInstancesInput{
+				InstanceIds: []*string{},
+			}
+
+			for _, containerInstance := range containerInstanceResponse.ContainerInstances {
+				containerInstances[*containerInstance.ContainerInstanceArn] = containerInstance
+				ec2InstancesRequest.InstanceIds = append(ec2InstancesRequest.InstanceIds, containerInstance.Ec2InstanceId)
+			}
+
+			ec2Response, err := ec2s.DescribeInstances(ec2InstancesRequest)
+			if err != nil {
+				return nil, fmt.Errorf("error describing container ec2 instance: %s", err)
+			}
+
+			ec2Instances := make(map[string]*ec2.Instance)
+			for _, reservation := range ec2Response.Reservations {
+				for _, ec2 := range reservation.Instances {
+					ec2Instances[*ec2.InstanceId] = ec2
+				}
+			}
+
+			for _, task := range taskDescriptionsResponse.Tasks {
+				containerInstance, found := containerInstances[*task.ContainerInstanceArn]
+				if !found {
+					continue
+				}
+				inst, found := ec2Instances[*containerInstance.Ec2InstanceId]
+				if !found {
+					continue
+				}
+
+				labels := model.LabelSet{
+					ecsServiceNameLabel: model.LabelValue(*service.ServiceName),
+					ecsClusterNameLabel: model.LabelValue(*cluster.ClusterName),
+				}
+				addr := fmt.Sprintf("%s:%d", *inst.PrivateIpAddress, monitoringPort)
+				labels[model.AddressLabel] = model.LabelValue(addr)
+
+				// We also want to pipe the docker labels to the series
+				for dockerLabelName, dockerLabelValue := range dockerLabels {
+					labels[model.LabelName(model.MetaLabelPrefix+dockerLabelName)] = model.LabelValue(*dockerLabelValue)
+				}
+
+				tg.Targets = append(tg.Targets, labels)
+
+			}
 		}
 	}
 	return tg, nil

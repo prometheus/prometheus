@@ -143,7 +143,6 @@ var (
 	// DefaultECSSDConfig is the default EC2 SD configuration.
 	DefaultECSSDConfig = ECSSDConfig{
 		Port:            8080,
-		ClusterName:     "default",
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
 
@@ -823,7 +822,6 @@ type ECSSDConfig struct {
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
 	SecretKey       string         `yaml:"secret_key,omitempty"`
-	ClusterName     string         `yaml:"cluster_name,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
 	// Catches all undefined fields and must be empty after parsing.
