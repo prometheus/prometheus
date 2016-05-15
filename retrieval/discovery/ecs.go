@@ -37,8 +37,7 @@ const (
 type ECSDiscovery struct {
 	aws         *aws.Config
 	interval    time.Duration
-	portFrom    int64
-	portTo      int64
+	port        int64
 	clusterName string
 }
 
@@ -58,8 +57,7 @@ func NewECSDiscovery(conf *config.ECSSDConfig) *ECSDiscovery {
 	return &ECSDiscovery{
 		aws:         awsConfig,
 		interval:    time.Duration(conf.RefreshInterval),
-		portFrom:    int64(conf.PortFrom),
-		portTo:      int64(conf.PortTo),
+		port:        int64(conf.Port),
 		clusterName: conf.ClusterName,
 	}
 }
@@ -138,15 +136,18 @@ func (ed *ECSDiscovery) refresh() (*config.TargetGroup, error) {
 
 		var dockerLabels map[string]*string
 
-		// See if any container is exposing the specified ports
+		// See if any container is exposing the specified port and use the host post which it is mapped to
 		for _, containerDesc := range taskDefinitionResponse.TaskDefinition.ContainerDefinitions {
 			for _, portMapping := range containerDesc.PortMappings {
-				if *portMapping.HostPort >= ed.portFrom && *portMapping.HostPort <= ed.portTo {
+				if *portMapping.ContainerPort == ed.port {
 					monitored = true
 					monitoringPort = int(*portMapping.HostPort)
 					dockerLabels = containerDesc.DockerLabels
 					break
 				}
+			}
+			if monitored {
+				break
 			}
 		}
 
