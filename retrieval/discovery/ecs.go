@@ -38,7 +38,7 @@ const (
 type ECSDiscovery struct {
 	aws      *aws.Config
 	interval time.Duration
-	port     int64
+	ports    []int
 }
 
 // NewECSDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
@@ -57,7 +57,7 @@ func NewECSDiscovery(conf *config.ECSSDConfig) *ECSDiscovery {
 	return &ECSDiscovery{
 		aws:      awsConfig,
 		interval: time.Duration(conf.RefreshInterval),
-		port:     int64(conf.Port),
+		ports:    conf.Ports,
 	}
 }
 
@@ -142,27 +142,25 @@ func (ed *ECSDiscovery) refresh() (*config.TargetGroup, error) {
 				taskDefitionCache[*service.TaskDefinition] = taskDefinitionResponse
 			}
 
-			monitored := false
-			monitoringPort := 0
-
-			var dockerLabels map[string]*string
+			serviceIsMonitored := false
+			monitoringPorts := []int{}
+			dockerLabelsPerPort := make(map[int]map[string]*string)
 
 			// See if any container is exposing the specified port and use the host post which it is mapped to
 			for _, containerDesc := range taskDefinitionResponse.TaskDefinition.ContainerDefinitions {
 				for _, portMapping := range containerDesc.PortMappings {
-					if *portMapping.ContainerPort == ed.port {
-						monitored = true
-						monitoringPort = int(*portMapping.HostPort)
-						dockerLabels = containerDesc.DockerLabels
-						break
+					for _, metricsPort := range ed.ports {
+						if int(*portMapping.ContainerPort) == metricsPort {
+							serviceIsMonitored = true
+							monitoringPort := int(*portMapping.HostPort)
+							monitoringPorts = append(monitoringPorts, monitoringPort)
+							dockerLabelsPerPort[monitoringPort] = containerDesc.DockerLabels
+						}
 					}
-				}
-				if monitored {
-					break
 				}
 			}
 
-			if !monitored {
+			if !serviceIsMonitored {
 				continue
 			}
 
@@ -230,15 +228,23 @@ func (ed *ECSDiscovery) refresh() (*config.TargetGroup, error) {
 					ecsServiceNameLabel: model.LabelValue(*service.ServiceName),
 					ecsClusterNameLabel: model.LabelValue(*cluster.ClusterName),
 				}
-				addr := fmt.Sprintf("%s:%d", *inst.PrivateIpAddress, monitoringPort)
-				labels[model.AddressLabel] = model.LabelValue(addr)
 
-				// We also want to pipe the docker labels to the series
-				for dockerLabelName, dockerLabelValue := range dockerLabels {
-					labels[model.LabelName(model.MetaLabelPrefix+dockerLabelName)] = model.LabelValue(*dockerLabelValue)
+				// Add each port, in cases where we have multi-container setups
+				for _, monitoringPort := range monitoringPorts {
+					addr := fmt.Sprintf("%s:%d", *inst.PrivateIpAddress, monitoringPort)
+					labels[model.AddressLabel] = model.LabelValue(addr)
+
+					dockerLabels, foundLabels := dockerLabelsPerPort[monitoringPort]
+					if foundLabels {
+						// We also want to pipe the docker labels to the series
+						for dockerLabelName, dockerLabelValue := range dockerLabels {
+							labels[model.LabelName(model.MetaLabelPrefix+dockerLabelName)] = model.LabelValue(*dockerLabelValue)
+						}
+						tg.Targets = append(tg.Targets, labels)
+
+					}
+
 				}
-
-				tg.Targets = append(tg.Targets, labels)
 
 			}
 		}

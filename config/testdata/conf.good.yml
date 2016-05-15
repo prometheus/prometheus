@@ -133,7 +133,7 @@ scrape_configs:
       access_key: access
       secret_key: secret
       refresh_interval: 1m
-      port: 8080
+      ports: [8080]
 
 
 - job_name: service-azure
