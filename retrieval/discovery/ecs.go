@@ -20,12 +20,16 @@ import (
 	"github.com/aws/aws-sdk-go/aws/defaults"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	ecs "github.com/aws/aws-sdk-go/service/ecs"
+	"github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"golang.org/x/net/context"
 	"time"
+)
+
+const (
+	ecsServiceNameLabel = model.MetaLabelPrefix + "ecs_service_name"
 )
 
 // ECSDiscovery periodically performs ECS-SD requests. It implements
@@ -106,20 +110,27 @@ func (ed *ECSDiscovery) refresh() (*config.TargetGroup, error) {
 	}
 
 	services, err := ecsService.DescribeServices(&ecs.DescribeServicesInput{
-		Cluster:  aws.String("default"),
+		Cluster:  aws.String(ed.clusterName),
 		Services: listServicesResponse.ServiceArns,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error listing describing services: %s", err)
 	}
 
+	taskDefitionCache := make(map[string]*ecs.DescribeTaskDefinitionOutput)
+
 	for _, service := range services.Services {
-		// Possibly cache theses, since ARNS are immutable, afaik
-		taskDefinitionResponse, err := ecsService.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
-			TaskDefinition: service.TaskDefinition,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("error listing describing task description: %s", err)
+
+		// In case we encounter more than one service using the same service definition, no need to look it up again
+		taskDefinitionResponse, cached := taskDefitionCache[*service.TaskDefinition]
+		if !cached {
+			taskDefinitionResponse, err = ecsService.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
+				TaskDefinition: service.TaskDefinition,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("error listing describing task description: %s", err)
+			}
+			taskDefitionCache[*service.TaskDefinition] = taskDefinitionResponse
 		}
 
 		monitored := false
@@ -157,26 +168,54 @@ func (ed *ECSDiscovery) refresh() (*config.TargetGroup, error) {
 			return nil, fmt.Errorf("error describing tasks: %s", err)
 		}
 
+		describeContainerInstancesRequest := &ecs.DescribeContainerInstancesInput{
+			ContainerInstances: []*string{},
+		}
+
+		// First we populate the cache keys
 		for _, task := range taskDescriptionsResponse.Tasks {
-			// Describe the container instance to get the IP
-			containerInstanceResponse, err := ecsService.DescribeContainerInstances(&ecs.DescribeContainerInstancesInput{
-				ContainerInstances: []*string{task.ContainerInstanceArn},
-			})
-			if err != nil {
-				return nil, fmt.Errorf("error describing container instance: %s", err)
+			describeContainerInstancesRequest.ContainerInstances = append(describeContainerInstancesRequest.ContainerInstances, task.ContainerInstanceArn)
+		}
+		containerInstanceResponse, err := ecsService.DescribeContainerInstances(describeContainerInstancesRequest)
+		if err != nil {
+			return nil, fmt.Errorf("error describing container instance: %s", err)
+		}
+
+		containerInstances := make(map[string]*ecs.ContainerInstance)
+
+		ec2InstancesRequest := &ec2.DescribeInstancesInput{
+				InstanceIds: []*string{},
 			}
 
-			containerInstance := containerInstanceResponse.ContainerInstances[0]
-			ec2Response, err := ec2s.DescribeInstances(&ec2.DescribeInstancesInput{
-				InstanceIds: []*string{containerInstance.Ec2InstanceId},
-			})
-			if err != nil {
-				return nil, fmt.Errorf("error describing container ec2 instance: %s", err)
+		for _, containerInstance := range containerInstanceResponse.ContainerInstances {
+			containerInstances[*containerInstance.ContainerInstanceArn] = containerInstance
+			ec2InstancesRequest.InstanceIds = append(ec2InstancesRequest.InstanceIds, containerInstance.Ec2InstanceId)
+		}
+
+		ec2Response, err := ec2s.DescribeInstances(ec2InstancesRequest)
+		if err != nil {
+			return nil, fmt.Errorf("error describing container ec2 instance: %s", err)
+		}
+
+		ec2Instances := make(map[string]*ec2.Instance)
+		for _, reservation := range ec2Response.Reservations {
+			for _, ec2 := range reservation.Instances{
+				ec2Instances[*ec2.InstanceId] = ec2
+			}
+		}
+
+		for _, task := range taskDescriptionsResponse.Tasks {
+			containerInstance, found := containerInstances[*task.ContainerInstanceArn]
+			if !found{
+				continue
+			}
+			inst, found := ec2Instances[*containerInstance.Ec2InstanceId]
+			if !found{
+				continue
 			}
 
-			inst := ec2Response.Reservations[0].Instances[0]
 			labels := model.LabelSet{
-				"ecs_service_name": model.LabelValue(*service.ServiceName),
+				ecsServiceNameLabel: model.LabelValue(*service.ServiceName),
 			}
 			addr := fmt.Sprintf("%s:%d", *inst.PrivateIpAddress, monitoringPort)
 			labels[model.AddressLabel] = model.LabelValue(addr)
