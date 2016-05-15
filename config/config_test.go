@@ -285,7 +285,7 @@ var expectedConf = &Config{
 					AccessKey:       "access",
 					SecretKey:       "secret",
 					RefreshInterval: model.Duration(60 * time.Second),
-					Port:            8080,
+					Ports:           []int{8080},
 				},
 			},
 		},
