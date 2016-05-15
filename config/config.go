@@ -140,6 +140,14 @@ var (
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
 
+	// DefaultECSSDConfig is the default EC2 SD configuration.
+	DefaultECSSDConfig = ECSSDConfig{
+		PortFrom:        6100,
+		PortTo:          6200,
+		ClusterName:     "default",
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
 	// DefaultAzureSDConfig is the default Azure SD configuration.
 	DefaultAzureSDConfig = AzureSDConfig{
 		Port:            80,
@@ -797,6 +805,20 @@ type EC2SDConfig struct {
 	XXX map[string]interface{} `yaml:",inline"`
 }
 
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultEC2SDConfig
+	type plain EC2SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if c.Region == "" {
+		return fmt.Errorf("EC2 SD configuration requires a region")
+	}
+	return checkOverflow(c.XXX, "ec2_sd_config")
+}
+
 // ECSSDConfig is the configuration for EC2 based service discovery.
 type ECSSDConfig struct {
 	Region          string         `yaml:"region"`
@@ -811,17 +833,17 @@ type ECSSDConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultEC2SDConfig
-	type plain EC2SDConfig
+func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultECSSDConfig
+	type plain ECSSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
 	}
 	if c.Region == "" {
-		return fmt.Errorf("EC2 SD configuration requires a region")
+		return fmt.Errorf("ECS SD configuration requires a region")
 	}
-	return checkOverflow(c.XXX, "ec2_sd_config")
+	return checkOverflow(c.XXX, "ecs_sd_config")
 }
 
 // AzureSDConfig is the configuration for Azure based service discovery.
