@@ -184,8 +184,8 @@ func (ed *ECSDiscovery) refresh() (*config.TargetGroup, error) {
 		containerInstances := make(map[string]*ecs.ContainerInstance)
 
 		ec2InstancesRequest := &ec2.DescribeInstancesInput{
-				InstanceIds: []*string{},
-			}
+			InstanceIds: []*string{},
+		}
 
 		for _, containerInstance := range containerInstanceResponse.ContainerInstances {
 			containerInstances[*containerInstance.ContainerInstanceArn] = containerInstance
@@ -199,18 +199,18 @@ func (ed *ECSDiscovery) refresh() (*config.TargetGroup, error) {
 
 		ec2Instances := make(map[string]*ec2.Instance)
 		for _, reservation := range ec2Response.Reservations {
-			for _, ec2 := range reservation.Instances{
+			for _, ec2 := range reservation.Instances {
 				ec2Instances[*ec2.InstanceId] = ec2
 			}
 		}
 
 		for _, task := range taskDescriptionsResponse.Tasks {
 			containerInstance, found := containerInstances[*task.ContainerInstanceArn]
-			if !found{
+			if !found {
 				continue
 			}
 			inst, found := ec2Instances[*containerInstance.Ec2InstanceId]
-			if !found{
+			if !found {
 				continue
 			}
 
