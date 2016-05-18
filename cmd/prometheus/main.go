@@ -103,13 +103,6 @@ func Main() int {
 		flags[f.Name] = f.Value.String()
 	})
 
-	status := &web.PrometheusStatus{
-		TargetPools: targetManager.Pools,
-		Rules:       ruleManager.Rules,
-		Flags:       flags,
-		Birth:       time.Now(),
-	}
-
 	version := &web.PrometheusVersion{
 		Version:   version.Version,
 		Revision:  version.Revision,
@@ -119,9 +112,9 @@ func Main() int {
 		GoVersion: version.GoVersion,
 	}
 
-	webHandler := web.New(memStorage, queryEngine, ruleManager, status, version, &cfg.web)
+	webHandler := web.New(memStorage, queryEngine, targetManager, ruleManager, version, flags, &cfg.web)
 
-	reloadables = append(reloadables, status, targetManager, ruleManager, webHandler, notifier)
+	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
 
 	if !reloadConfig(cfg.configFile, reloadables...) {
 		return 1
