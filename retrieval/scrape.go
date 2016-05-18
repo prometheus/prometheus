@@ -327,30 +327,45 @@ func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples
 		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
-	var (
-		allSamples = make(model.Samples, 0, 200)
-		decSamples = make(model.Vector, 0, 50)
-	)
-	sdec := expfmt.SampleDecoder{
-		Dec: expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header)),
-		Opts: &expfmt.DecodeOptions{
-			Timestamp: model.TimeFromUnixNano(ts.UnixNano()),
-		},
+	type samplesAndError struct {
+		samples model.Samples
+		err     error
 	}
+	result := make(chan samplesAndError, 1)
 
-	for {
-		if err = sdec.Decode(&decSamples); err != nil {
-			break
+	go func() {
+		var (
+			allSamples = make(model.Samples, 0, 200)
+			decSamples = make(model.Vector, 0, 50)
+		)
+		sdec := expfmt.SampleDecoder{
+			Dec: expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header)),
+			Opts: &expfmt.DecodeOptions{
+				Timestamp: model.TimeFromUnixNano(ts.UnixNano()),
+			},
 		}
-		allSamples = append(allSamples, decSamples...)
-		decSamples = decSamples[:0]
-	}
 
-	if err == io.EOF {
-		// Set err to nil since it is used in the scrape health recording.
-		err = nil
+		for {
+			if err = sdec.Decode(&decSamples); err != nil {
+				break
+			}
+			allSamples = append(allSamples, decSamples...)
+			decSamples = decSamples[:0]
+		}
+
+		if err == io.EOF {
+			// Set err to nil since it is used in the scrape health recording.
+			err = nil
+		}
+		result <- samplesAndError{allSamples, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-result:
+		return r.samples, r.err
 	}
-	return allSamples, err
 }
 
 // A loop can run and be stopped again. It must not be reused after it was stopped.
