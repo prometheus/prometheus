@@ -26,7 +26,7 @@ func TestParseTimestampOrNow(t *testing.T) {
 		t.Fatalf("err = %s; want nil", err)
 	}
 	if !testNow().Equal(ts) {
-		t.Fatalf("ts = %v; want ts = %v", ts, testNow)
+		t.Fatalf("ts = %v; want ts = %v", ts, testNow())
 	}
 
 	ts, err = parseTimestampOrNow("1426956073.12345", testNow())
