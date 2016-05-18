@@ -267,14 +267,16 @@
 			"revisionTime": "2013-09-23T16:52:12+02:00"
 		},
 		{
+			"checksumSHA1": "9jjO5GjLa0XF/nfWihF02RoH4qc=",
 			"path": "golang.org/x/net/context",
-			"revision": "2cba614e8ff920c60240d2677bc019af32ee04e5",
-			"revisionTime": "2015-10-21T11:20:37-06:00"
+			"revision": "8aacbecd63e105fa5f07afbd49472fd3e17a19d1",
+			"revisionTime": "2016-05-18T19:54:31Z"
 		},
 		{
+			"checksumSHA1": "Do+l129/Bafh54VFaquooqtCcfk=",
 			"path": "golang.org/x/net/context/ctxhttp",
-			"revision": "2cba614e8ff920c60240d2677bc019af32ee04e5",
-			"revisionTime": "2015-10-21T11:20:37-06:00"
+			"revision": "8aacbecd63e105fa5f07afbd49472fd3e17a19d1",
+			"revisionTime": "2016-05-18T19:54:31Z"
 		},
 		{
 			"path": "gopkg.in/fsnotify.v1",
