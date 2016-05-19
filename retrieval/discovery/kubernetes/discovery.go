@@ -904,6 +904,12 @@ func (a ByContainerPort) Len() int           { return len(a) }
 func (a ByContainerPort) Less(i, j int) bool { return a[i].ContainerPort < a[j].ContainerPort }
 func (a ByContainerPort) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
+type ByContainerName []Container
+
+func (a ByContainerName) Len() int           { return len(a) }
+func (a ByContainerName) Less(i, j int) bool { return a[i].Name < a[j].Name }
+func (a ByContainerName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+
 func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 	var targets []model.LabelSet = make([]model.LabelSet, 0, len(pod.PodSpec.Containers))
 	if pod.PodStatus.PodIP == "" {
@@ -922,6 +928,8 @@ func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 			ready = strings.ToLower(cond.Status)
 		}
 	}
+
+	sort.Sort(ByContainerName(pod.PodSpec.Containers))
 
 	for _, container := range pod.PodSpec.Containers {
 		// Collect a list of TCP ports
@@ -959,7 +967,7 @@ func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 			portLabel.WriteString("=")
 			portLabel.WriteString(strconv.FormatInt(int64(port.ContainerPort), 10))
 			portLabel.WriteString(",")
-			t[model.LabelName(podContainerPortMapPrefix + port.Name)] = model.LabelValue(strconv.FormatInt(int64(port.ContainerPort), 10))
+			t[model.LabelName(podContainerPortMapPrefix+port.Name)] = model.LabelValue(strconv.FormatInt(int64(port.ContainerPort), 10))
 		}
 
 		t[model.LabelName(podContainerPortListLabel)] = model.LabelValue(portLabel.String())
