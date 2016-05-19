@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/retrieval/discovery/consul"
 )
 
+// NewConsul creates a new Consul based Discovery.
 func NewConsul(cfg *config.ConsulSDConfig) (*consul.Discovery, error) {
 	return consul.NewDiscovery(cfg)
 }

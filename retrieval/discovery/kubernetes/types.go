@@ -13,12 +13,14 @@
 
 package kubernetes
 
+// EventType can legally only have the values defined as constants below.
 type EventType string
 
+// Possible values for EventType.
 const (
-	added    EventType = "ADDED"
-	modified EventType = "MODIFIED"
-	deleted  EventType = "DELETED"
+	Added    EventType = "ADDED"
+	Modified EventType = "MODIFIED"
+	Deleted  EventType = "DELETED"
 )
 
 type nodeEvent struct {
@@ -200,6 +202,7 @@ type NodeStatus struct {
 	Addresses []NodeAddress `json:"addresses,omitempty" description:"list of addresses reachable to the node; see http://releases.k8s.io/HEAD/docs/admin/node.md#node-addresses" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
+// NodeAddressType can legally only have the values defined as constants below.
 type NodeAddressType string
 
 // These are valid address types of node. NodeLegacyHostIP is used to transit
@@ -211,6 +214,7 @@ const (
 	NodeInternalIP   NodeAddressType = "InternalIP"
 )
 
+// NodeAddress defines the address of a node.
 type NodeAddress struct {
 	Type    NodeAddressType `json:"type" description:"node address type, one of Hostname, ExternalIP or InternalIP"`
 	Address string          `json:"address" description:"the node address"`
