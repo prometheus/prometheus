@@ -42,8 +42,8 @@ var containerB = Container{
 	Name: "b",
 	Ports: []ContainerPort{
 		ContainerPort{
-			Name:          "http",
-			ContainerPort: 80,
+			Name:          "https",
+			ContainerPort: 443,
 			Protocol:      "TCP",
 		},
 	},
@@ -142,6 +142,18 @@ func TestUpdatePodTargets(t *testing.T) {
 	if result[0][podReadyLabel] != "true" {
 		t.Fatalf("expected result[0] podReadyLabel 'true', received '%s'", result[0][podReadyLabel])
 	}
+	if _, ok := result[0][podContainerPortMapPrefix + "http"]; !ok {
+	  t.Fatalf("expected result[0][podContainerPortMapPrefix + 'http'] to be '80', but was missing")
+	}
+	if result[0][podContainerPortMapPrefix + "http"] != "80" {
+	  t.Fatalf("expected result[0][podContainerPortMapPrefix + 'http'] to be '80', but was %s", result[0][podContainerPortMapPrefix + "http"])
+	}
+	if _, ok := result[1][podContainerPortMapPrefix + "https"]; !ok {
+	  t.Fatalf("expected result[1][podContainerPortMapPrefix + 'https'] to be '443', but was missing")
+	}
+	if result[1][podContainerPortMapPrefix + "https"] != "443" {
+	  t.Fatalf("expected result[1][podContainerPortMapPrefix + 'https'] to be '443', but was %s", result[1][podContainerPortMapPrefix + "https"])
+	}
 
 	// A pod with all valid containers should return one target with allContainers=false
 	result = updatePodTargets(pod("easy", []Container{containerA, containerB}), false)
@@ -163,13 +175,13 @@ func TestUpdatePodTargets(t *testing.T) {
 	if result[0][model.AddressLabel] != "1.1.1.1:22" {
 		t.Fatalf("expected result[0] address to be 1.1.1.1:22, received %s", result[0][model.AddressLabel])
 	}
-	if result[0][podContainerPortListLabel] != "ssh=22,http=80," {
-		t.Fatalf("expected result[0] podContainerPortListLabel to be 'ssh=22,http=80,', received '%s'", result[0][podContainerPortListLabel])
+	if result[0][podContainerPortListLabel] != ",ssh=22,http=80," {
+		t.Fatalf("expected result[0] podContainerPortListLabel to be ',ssh=22,http=80,', received '%s'", result[0][podContainerPortListLabel])
 	}
 	if result[1][model.AddressLabel] != "1.1.1.1:80" {
 		t.Fatalf("expected result[1] address to be 1.1.1.1:80, received %s", result[1][model.AddressLabel])
 	}
-	if result[1][podContainerPortListLabel] != "http=80,https=443," {
-		t.Fatalf("expected result[1] podContainerPortListLabel to be 'http=80,https=443,', received '%s'", result[1][podContainerPortListLabel])
+	if result[1][podContainerPortListLabel] != ",http=80,https=443," {
+		t.Fatalf("expected result[1] podContainerPortListLabel to be ',http=80,https=443,', received '%s'", result[1][podContainerPortListLabel])
 	}
 }
