@@ -100,6 +100,14 @@ type Container struct {
 	Name string `json:"name" description:"name of the container; must be a DNS_LABEL and unique within the pod; cannot be updated"`
 	// Optional.
 	Image string `json:"image,omitempty" description:"Docker image name; see http://releases.k8s.io/HEAD/docs/user-guide/images.md"`
+
+	Ports []ContainerPort `json:"ports"`
+}
+
+type ContainerPort struct {
+	Name          string `json:"name"`
+	ContainerPort int32  `json:"containerPort"`
+	Protocol      string `json:"protocol"`
 }
 
 // Service is a named abstraction of software service (for example, mysql) consisting of local port
@@ -230,4 +238,36 @@ type NodeList struct {
 	ListMeta `json:"metadata,omitempty" description:"standard list metadata; see http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata"`
 
 	Items []Node `json:"items" description:"list of nodes"`
+}
+
+type Pod struct {
+	ObjectMeta `json:"metadata,omitempty" description:"standard object metadata; see http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata"`
+	PodStatus  `json:"status,omitempty"   description:"pod status object; see http://kubernetes.io/v1.1/docs/api-reference/v1/definitions.html#_v1_podstatus"`
+	PodSpec    `json:"spec,omitempty"     description:"pod spec object; see http://kubernetes.io/v1.1/docs/api-reference/v1/definitions.html#_v1_podspec"`
+}
+
+type podEvent struct {
+	EventType EventType `json:"type"`
+	Pod       *Pod      `json:"object"`
+}
+
+type PodList struct {
+	ListMeta `json:"metadata,omitempty" description:"standard list metadata; see http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata"`
+
+	Items []Pod `json:"items" description:"list of pods"`
+}
+
+type PodStatus struct {
+	Phase      string         `json:"phase" description:"Current condition of the pod. More info: http://kubernetes.io/v1.1/docs/user-guide/pod-states.html#pod-phase"`
+	PodIP      string         `json:"podIP" description:"IP address allocated to the pod. Routable at least within the cluster. Empty if not yet allocated."`
+	Conditions []PodCondition `json:"conditions" description:"Current service state of pod."`
+}
+
+type PodSpec struct {
+	Containers []Container `json:"containers" description:"list of containers, see http://kubernetes.io/v1.1/docs/api-reference/v1/definitions.html#_v1_container"`
+}
+
+type PodCondition struct {
+	Type   string `json:"type" description:"Type is the type of the condition. Currently only Ready."`
+	Status string `json:"status" description:"Status is the status of the condition. Can be True, False, Unknown."`
 }
