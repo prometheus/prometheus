@@ -50,6 +50,33 @@ func (c *TestStorageClient) Name() string {
 	return "teststorageclient"
 }
 
+type TestBlockingStorageClient struct {
+	block   chan bool
+	getData chan bool
+}
+
+func NewTestBlockedStorageClient() *TestBlockingStorageClient {
+	return &TestBlockingStorageClient{
+		block:   make(chan bool),
+		getData: make(chan bool),
+	}
+}
+
+func (c *TestBlockingStorageClient) Store(s model.Samples) error {
+	<-c.getData
+	<-c.block
+	return nil
+}
+
+func (c *TestBlockingStorageClient) unlock() {
+	close(c.getData)
+	close(c.block)
+}
+
+func (c *TestBlockingStorageClient) Name() string {
+	return "testblockingstorageclient"
+}
+
 func TestSampleDelivery(t *testing.T) {
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.
@@ -81,4 +108,41 @@ func TestSampleDelivery(t *testing.T) {
 	defer m.Stop()
 
 	c.waitForExpectedSamples(t)
+}
+
+func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
+	// `maxSamplesPerSend*maxConcurrentSends + 1` samples should be consumed by
+	//  goroutines, `maxSamplesPerSend` should be still in the queue.
+	n := maxSamplesPerSend*maxConcurrentSends + maxSamplesPerSend*2
+
+	samples := make(model.Samples, 0, n)
+	for i := 0; i < n; i++ {
+		samples = append(samples, &model.Sample{
+			Metric: model.Metric{
+				model.MetricNameLabel: "test_metric",
+			},
+			Value: model.SampleValue(i),
+		})
+	}
+
+	c := NewTestBlockedStorageClient()
+	m := NewStorageQueueManager(c, n)
+
+	go m.Run()
+
+	for _, s := range samples {
+		m.Append(s)
+	}
+
+	for i := 0; i < maxConcurrentSends; i++ {
+		c.getData <- true // Wait while all goroutines are spawned.
+	}
+
+	if len(m.queue) != maxSamplesPerSend {
+		t.Errorf("Queue should contain %d samples, it contains 0.", maxSamplesPerSend)
+	}
+
+	c.unlock()
+
+	defer m.Stop()
 }
