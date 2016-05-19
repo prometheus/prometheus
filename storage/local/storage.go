@@ -640,7 +640,7 @@ func (s *memorySeriesStorage) Append(sample *model.Sample) error {
 		// (e.g. Pushgateway or federation).
 		if sample.Timestamp == series.lastTime &&
 			series.lastSampleValueSet &&
-			sample.Value == series.lastSampleValue {
+			sample.Value.Equal(series.lastSampleValue) {
 			return nil
 		}
 		s.discardedSamplesCount.WithLabelValues(duplicateSample).Inc()
