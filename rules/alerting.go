@@ -106,8 +106,8 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 }
 
 // Name returns the name of the alert.
-func (rule *AlertingRule) Name() string {
-	return rule.name
+func (r *AlertingRule) Name() string {
+	return r.name
 }
 
 func (r *AlertingRule) equal(o *AlertingRule) bool {
@@ -255,17 +255,17 @@ func (r *AlertingRule) currentAlerts() []*Alert {
 	return alerts
 }
 
-func (rule *AlertingRule) String() string {
-	s := fmt.Sprintf("ALERT %s", rule.name)
-	s += fmt.Sprintf("\n\tIF %s", rule.vector)
-	if rule.holdDuration > 0 {
-		s += fmt.Sprintf("\n\tFOR %s", model.Duration(rule.holdDuration))
+func (r *AlertingRule) String() string {
+	s := fmt.Sprintf("ALERT %s", r.name)
+	s += fmt.Sprintf("\n\tIF %s", r.vector)
+	if r.holdDuration > 0 {
+		s += fmt.Sprintf("\n\tFOR %s", model.Duration(r.holdDuration))
 	}
-	if len(rule.labels) > 0 {
-		s += fmt.Sprintf("\n\tLABELS %s", rule.labels)
+	if len(r.labels) > 0 {
+		s += fmt.Sprintf("\n\tLABELS %s", r.labels)
 	}
-	if len(rule.annotations) > 0 {
-		s += fmt.Sprintf("\n\tANNOTATIONS %s", rule.annotations)
+	if len(r.annotations) > 0 {
+		s += fmt.Sprintf("\n\tANNOTATIONS %s", r.annotations)
 	}
 	return s
 }
@@ -273,21 +273,21 @@ func (rule *AlertingRule) String() string {
 // HTMLSnippet returns an HTML snippet representing this alerting rule. The
 // resulting snippet is expected to be presented in a <pre> element, so that
 // line breaks and other returned whitespace is respected.
-func (rule *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
+func (r *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	alertMetric := model.Metric{
 		model.MetricNameLabel: alertMetricName,
-		alertNameLabel:        model.LabelValue(rule.name),
+		alertNameLabel:        model.LabelValue(r.name),
 	}
-	s := fmt.Sprintf("ALERT <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()), rule.name)
-	s += fmt.Sprintf("\n  IF <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(rule.vector.String()), rule.vector)
-	if rule.holdDuration > 0 {
-		s += fmt.Sprintf("\n  FOR %s", model.Duration(rule.holdDuration))
+	s := fmt.Sprintf("ALERT <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()), r.name)
+	s += fmt.Sprintf("\n  IF <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(r.vector.String()), r.vector)
+	if r.holdDuration > 0 {
+		s += fmt.Sprintf("\n  FOR %s", model.Duration(r.holdDuration))
 	}
-	if len(rule.labels) > 0 {
-		s += fmt.Sprintf("\n  LABELS %s", rule.labels)
+	if len(r.labels) > 0 {
+		s += fmt.Sprintf("\n  LABELS %s", r.labels)
 	}
-	if len(rule.annotations) > 0 {
-		s += fmt.Sprintf("\n  ANNOTATIONS %s", rule.annotations)
+	if len(r.annotations) > 0 {
+		s += fmt.Sprintf("\n  ANNOTATIONS %s", r.annotations)
 	}
 	return template.HTML(s)
 }
