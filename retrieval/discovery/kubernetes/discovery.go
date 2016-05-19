@@ -59,6 +59,9 @@ const (
 	podContainerPortNameLabel = metaLabelPrefix + "pod_container_port_name"
 	// PodContainerPortListLabel is the name for the label containing a list of all TCP ports on the target container
 	podContainerPortListLabel = metaLabelPrefix + "pod_container_port_list"
+	// PodContainerPortMapPrefix is the prefix used to create the names of labels that associate container port names to port values
+	// Such labels will be named (podContainerPortMapPrefix)_(PortName) = (ContainerPort)
+	podContainerPortMapPrefix = metaLabelPrefix + "pod_container_port_map_"
 	// podReadyLabel is the name for the label containing the 'Ready' status (true/false/unknown) for a target
 	podReadyLabel = metaLabelPrefix + "pod_ready"
 	// podLabelPrefix is the prefix for prom label names corresponding to k8s labels for a target pod
@@ -926,7 +929,7 @@ func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 		// Product a target pointed at the first port
 		// Include a label containing all ports (portName=port,PortName=port,...,)
 		var tcpPorts []ContainerPort
-		var portLabel bytes.Buffer
+		var portLabel *bytes.Buffer = bytes.NewBufferString(",")
 
 		for _, port := range container.Ports {
 			if port.Protocol == "TCP" {
@@ -941,13 +944,6 @@ func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 
 		sort.Sort(ByContainerPort(tcpPorts))
 
-		for _, port := range tcpPorts {
-			portLabel.WriteString(port.Name)
-			portLabel.WriteString("=")
-			portLabel.WriteString(strconv.FormatInt(int64(port.ContainerPort), 10))
-			portLabel.WriteString(",")
-		}
-
 		t := model.LabelSet{
 			model.AddressLabel:        model.LabelValue(net.JoinHostPort(pod.PodIP, strconv.FormatInt(int64(tcpPorts[0].ContainerPort), 10))),
 			podNameLabel:              model.LabelValue(pod.ObjectMeta.Name),
@@ -955,9 +951,18 @@ func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 			podNamespaceLabel:         model.LabelValue(pod.ObjectMeta.Namespace),
 			podContainerNameLabel:     model.LabelValue(container.Name),
 			podContainerPortNameLabel: model.LabelValue(tcpPorts[0].Name),
-			podContainerPortListLabel: model.LabelValue(portLabel.String()),
 			podReadyLabel:             model.LabelValue(ready),
 		}
+
+		for _, port := range tcpPorts {
+			portLabel.WriteString(port.Name)
+			portLabel.WriteString("=")
+			portLabel.WriteString(strconv.FormatInt(int64(port.ContainerPort), 10))
+			portLabel.WriteString(",")
+			t[model.LabelName(podContainerPortMapPrefix + port.Name)] = model.LabelValue(strconv.FormatInt(int64(port.ContainerPort), 10))
+		}
+
+		t[model.LabelName(podContainerPortListLabel)] = model.LabelValue(portLabel.String())
 
 		for k, v := range pod.ObjectMeta.Labels {
 			labelName := strutil.SanitizeLabelName(podLabelPrefix + k)
