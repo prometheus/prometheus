@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -270,8 +271,29 @@ func (g *Group) eval() {
 			if ar, ok := rule.(*AlertingRule); ok {
 				g.sendAlerts(ar, now)
 			}
+			var (
+				numOutOfOrder = 0
+				numDuplicates = 0
+			)
 			for _, s := range vector {
-				g.opts.SampleAppender.Append(s)
+				if err := g.opts.SampleAppender.Append(s); err != nil {
+					switch err {
+					case local.ErrOutOfOrderSample:
+						numOutOfOrder++
+						log.With("sample", s).With("error", err).Debug("Rule evaluation result discarded")
+					case local.ErrDuplicateSampleForTimestamp:
+						numDuplicates++
+						log.With("sample", s).With("error", err).Debug("Rule evaluation result discarded")
+					default:
+						log.With("sample", s).With("error", err).Warn("Rule evaluation result discarded")
+					}
+				}
+			}
+			if numOutOfOrder > 0 {
+				log.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order result from rule evaluation")
+			}
+			if numDuplicates > 0 {
+				log.With("numDropped", numDuplicates).Warn("Error on ingesting results from rule evaluation with different value but same timestamp")
 			}
 		}(rule)
 	}
