@@ -802,14 +802,14 @@ func (kd *Discovery) updatePod(pod *Pod, eventType EventType) {
 	defer kd.podsMu.Unlock()
 
 	switch eventType {
-	case deleted:
+	case Deleted:
 		if _, ok := kd.pods[pod.ObjectMeta.Namespace]; ok {
 			delete(kd.pods[pod.ObjectMeta.Namespace], pod.ObjectMeta.Name)
 			if len(kd.pods[pod.ObjectMeta.Namespace]) == 0 {
 				delete(kd.pods, pod.ObjectMeta.Namespace)
 			}
 		}
-	case added, modified:
+	case Added, Modified:
 		if _, ok := kd.pods[pod.ObjectMeta.Namespace]; !ok {
 			kd.pods[pod.ObjectMeta.Namespace] = map[string]*Pod{}
 		}
