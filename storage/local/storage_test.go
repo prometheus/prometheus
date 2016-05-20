@@ -16,9 +16,9 @@ package local
 import (
 	"fmt"
 	"hash/fnv"
+	"math"
 	"math/rand"
 	"os"
-	"reflect"
 	"testing"
 	"testing/quick"
 	"time"
@@ -1768,12 +1768,83 @@ func TestAppendOutOfOrder(t *testing.T) {
 		model.MetricNameLabel: "out_of_order",
 	}
 
-	for i, t := range []int{0, 2, 2, 1} {
-		s.Append(&model.Sample{
+	tests := []struct {
+		name      string
+		timestamp model.Time
+		value     model.SampleValue
+		wantErr   error
+	}{
+		{
+			name:      "1st sample",
+			timestamp: 0,
+			value:     0,
+			wantErr:   nil,
+		},
+		{
+			name:      "regular append",
+			timestamp: 2,
+			value:     1,
+			wantErr:   nil,
+		},
+		{
+			name:      "same timestamp, same value (no-op)",
+			timestamp: 2,
+			value:     1,
+			wantErr:   nil,
+		},
+		{
+			name:      "same timestamp, different value",
+			timestamp: 2,
+			value:     2,
+			wantErr:   ErrDuplicateSampleForTimestamp,
+		},
+		{
+			name:      "earlier timestamp, same value",
+			timestamp: 1,
+			value:     2,
+			wantErr:   ErrOutOfOrderSample,
+		},
+		{
+			name:      "earlier timestamp, different value",
+			timestamp: 1,
+			value:     3,
+			wantErr:   ErrOutOfOrderSample,
+		},
+		{
+			name:      "regular append of NaN",
+			timestamp: 3,
+			value:     model.SampleValue(math.NaN()),
+			wantErr:   nil,
+		},
+		{
+			name:      "no-op append of NaN",
+			timestamp: 3,
+			value:     model.SampleValue(math.NaN()),
+			wantErr:   nil,
+		},
+		{
+			name:      "append of NaN with earlier timestamp",
+			timestamp: 2,
+			value:     model.SampleValue(math.NaN()),
+			wantErr:   ErrOutOfOrderSample,
+		},
+		{
+			name:      "append of normal sample after NaN with same timestamp",
+			timestamp: 3,
+			value:     3.14,
+			wantErr:   ErrDuplicateSampleForTimestamp,
+		},
+	}
+
+	for _, test := range tests {
+		gotErr := s.Append(&model.Sample{
 			Metric:    m,
-			Timestamp: model.Time(t),
-			Value:     model.SampleValue(i),
+			Timestamp: test.timestamp,
+			Value:     test.value,
 		})
+		if gotErr != test.wantErr {
+			t.Errorf("%s: got %q, want %q", test.name, gotErr, test.wantErr)
+		}
 	}
 
 	fp := s.mapper.mapFP(m.FastFingerprint(), m)
@@ -1792,9 +1863,18 @@ func TestAppendOutOfOrder(t *testing.T) {
 			Timestamp: 2,
 			Value:     1,
 		},
+		{
+			Timestamp: 3,
+			Value:     model.SampleValue(math.NaN()),
+		},
 	}
-	got := it.RangeValues(metric.Interval{OldestInclusive: 0, NewestInclusive: 2})
-	if !reflect.DeepEqual(want, got) {
-		t.Fatalf("want %v, got %v", want, got)
+	got := it.RangeValues(metric.Interval{OldestInclusive: 0, NewestInclusive: 3})
+	// Note that we cannot just reflect.DeepEqual(want, got) because it has
+	// the semantics of NaN != NaN.
+	for i, gotSamplePair := range got {
+		wantSamplePair := want[i]
+		if !wantSamplePair.Equal(&gotSamplePair) {
+			t.Fatalf("want %v, got %v", wantSamplePair, gotSamplePair)
+		}
 	}
 }
