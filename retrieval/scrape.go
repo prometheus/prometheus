@@ -496,6 +496,10 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, err error)
 		Value:     model.SampleValue(float64(duration) / float64(time.Second)),
 	}
 
-	sl.reportAppender.Append(healthSample)
-	sl.reportAppender.Append(durationSample)
+	if err := sl.reportAppender.Append(healthSample); err != nil {
+		log.With("sample", healthSample).With("error", err).Warn("Scrape health sample discarded")
+	}
+	if err := sl.reportAppender.Append(durationSample); err != nil {
+		log.With("sample", durationSample).With("error", err).Warn("Scrape duration sample discarded")
+	}
 }
