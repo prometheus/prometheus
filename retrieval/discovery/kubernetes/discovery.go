@@ -253,10 +253,10 @@ func (kd *Discovery) updateNode(node *Node, eventType EventType) {
 	defer kd.nodesMu.Unlock()
 	updatedNodeName := node.ObjectMeta.Name
 	switch eventType {
-	case deleted:
+	case Deleted:
 		// Deleted - remove from nodes map.
 		delete(kd.nodes, updatedNodeName)
-	case added, modified:
+	case Added, Modified:
 		// Added/Modified - update the node in the nodes map.
 		kd.nodes[updatedNodeName] = node
 	}
@@ -331,7 +331,7 @@ func (kd *Discovery) watchNodes(events chan interface{}, done <-chan struct{}, r
 		kd.nodes = map[string]*Node{}
 
 		for _, node := range nodes {
-			events <- &nodeEvent{added, node}
+			events <- &nodeEvent{Added, node}
 		}
 
 		req, err := http.NewRequest("GET", nodesURL, nil)
@@ -391,12 +391,12 @@ func (kd *Discovery) startServiceWatch(events chan<- interface{}, done <-chan st
 		for oldNSName, oldNS := range existingServices {
 			if ns, ok := services[oldNSName]; !ok {
 				for _, service := range existingServices[oldNSName] {
-					events <- &serviceEvent{deleted, service}
+					events <- &serviceEvent{Deleted, service}
 				}
 			} else {
 				for oldServiceName, oldService := range oldNS {
 					if _, ok := ns[oldServiceName]; !ok {
-						events <- &serviceEvent{deleted, oldService}
+						events <- &serviceEvent{Deleted, oldService}
 					}
 				}
 			}
@@ -407,7 +407,7 @@ func (kd *Discovery) startServiceWatch(events chan<- interface{}, done <-chan st
 
 		for _, ns := range services {
 			for _, service := range ns {
-				events <- &serviceEvent{added, service}
+				events <- &serviceEvent{Added, service}
 			}
 		}
 
@@ -510,9 +510,9 @@ func (kd *Discovery) updateService(service *Service, eventType EventType) *confi
 	defer kd.servicesMu.Unlock()
 
 	switch eventType {
-	case deleted:
+	case Deleted:
 		return kd.deleteService(service)
-	case added, modified:
+	case Added, Modified:
 		return kd.addService(service)
 	}
 	return nil
