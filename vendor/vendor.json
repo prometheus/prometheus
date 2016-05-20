@@ -161,35 +161,40 @@
 			"revisionTime": "2015-02-12T10:17:44Z"
 		},
 		{
+			"checksumSHA1": "l0JT1CAPc/22KdnxCke1LKtR+4M=",
 			"path": "github.com/prometheus/common/expfmt",
-			"revision": "23070236b1ebff452f494ae831569545c2b61d26",
-			"revisionTime": "2016-02-11T16:03:55+01:00"
+			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
+			"revisionTime": "2016-05-19T16:20:33Z"
 		},
 		{
+			"checksumSHA1": "GWlM3d2vPYyNATtTFgftS10/A9w=",
 			"path": "github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg",
-			"revision": "4fdc91a58c9d3696b982e8a680f4997403132d44",
-			"revisionTime": "2015-10-26T12:04:34+01:00"
+			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
+			"revisionTime": "2016-05-19T16:20:33Z"
 		},
 		{
+			"checksumSHA1": "koBNYQryxAG8hyHBlpn8pcnSVdM=",
 			"path": "github.com/prometheus/common/log",
-			"revision": "0a3005bb37bc411040083a55372e77c405f6464c",
-			"revisionTime": "2016-01-04T14:47:38+01:00"
+			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
+			"revisionTime": "2016-05-19T16:20:33Z"
 		},
 		{
+			"checksumSHA1": "Zgmg/aOfoCNTAMtrXqBJmt852t0=",
 			"path": "github.com/prometheus/common/model",
-			"revision": "167b27da48d058a9b46d84b834d67f68f0243f67",
-			"revisionTime": "2016-03-18T12:23:18Z"
+			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
+			"revisionTime": "2016-05-19T16:20:33Z"
 		},
 		{
+			"checksumSHA1": "CKVJRc1NREmfoAWQLHxqWQlvxo0=",
 			"path": "github.com/prometheus/common/route",
-			"revision": "14ca1097bbe21584194c15e391a9dab95ad42a59",
-			"revisionTime": "2016-01-25T23:57:51+01:00"
+			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
+			"revisionTime": "2016-05-19T16:20:33Z"
 		},
 		{
 			"checksumSHA1": "91KYK0SpvkaMJJA2+BcxbVnyRO0=",
 			"path": "github.com/prometheus/common/version",
-			"revision": "dd586c1c5abb0be59e60f942c22af711a2008cb4",
-			"revisionTime": "2016-05-03T22:05:32Z"
+			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
+			"revisionTime": "2016-05-19T16:20:33Z"
 		},
 		{
 			"path": "github.com/prometheus/procfs",
