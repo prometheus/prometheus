@@ -1,3 +1,18 @@
+## 0.19.0 / 2016-05-24
+
+This version contains a breaking change to the query language. Please read
+the documentation on the grouping behavior of vector matching:
+
+	https://prometheus.io/docs/querying/operators/#vector-matching
+
+* [FEATURE] Add experimental Microsoft Azure service discovery
+* [FEATURE] Add `ignoring` modifier for binary operations
+* [FEATURE] Add pod discovery to Kubernetes service discovery
+* [CHANGE] Vector matching takes grouping labels from one-side
+* [ENHANCEMENT] Support time range on /api/v1/series endpoint
+* [ENHANCEMENT] Partition status page into invidual pages
+* [BUGFIX] Fix issue of hanging target scrapes
+
 ## 0.18.0 / 2016-04-18
 
 * [BUGFIX] Fix operator precedence in PromQL
