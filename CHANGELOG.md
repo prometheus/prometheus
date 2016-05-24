@@ -10,7 +10,7 @@ https://prometheus.io/docs/querying/operators/#vector-matching
 * [FEATURE] Add pod discovery to Kubernetes service discovery
 * [CHANGE] Vector matching takes grouping labels from one-side
 * [ENHANCEMENT] Support time range on /api/v1/series endpoint
-* [ENHANCEMENT] Partition status page into invidual pages
+* [ENHANCEMENT] Partition status page into individual pages
 * [BUGFIX] Fix issue of hanging target scrapes
 
 ## 0.18.0 / 2016-04-18
