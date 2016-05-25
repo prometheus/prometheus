@@ -454,7 +454,7 @@ func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Targ
 			case "https":
 				addr = fmt.Sprintf("%s:443", addr)
 			default:
-				panic(fmt.Errorf("targetsFromGroup: invalid scheme %q", cfg.Scheme))
+				return nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
 			}
 			labels[model.AddressLabel] = model.LabelValue(addr)
 		}
