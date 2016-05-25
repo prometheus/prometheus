@@ -404,6 +404,7 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
+// Panics if target group is nil.
 func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
 	targets := make([]*Target, 0, len(tg.Targets))
 
