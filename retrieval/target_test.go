@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	CAFilePath = "testdata/ca.cer"
+	caCertPath = "testdata/ca.cer"
 )
 
 func TestTargetLabels(t *testing.T) {
@@ -239,7 +239,7 @@ func TestNewHTTPCACert(t *testing.T) {
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
-			CAFile: CAFilePath,
+			CAFile: caCertPath,
 		},
 	}
 	c, err := newHTTPClient(cfg)
@@ -272,7 +272,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
-			CAFile:   CAFilePath,
+			CAFile:   caCertPath,
 			CertFile: "testdata/client.cer",
 			KeyFile:  "testdata/client.key",
 		},
@@ -303,7 +303,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
-			CAFile:     CAFilePath,
+			CAFile:     caCertPath,
 			ServerName: "prometheus.rocks",
 		},
 	}
@@ -333,7 +333,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
-			CAFile:     CAFilePath,
+			CAFile:     caCertPath,
 			ServerName: "badname",
 		},
 	}
@@ -350,7 +350,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 func newTLSConfig(certName string, t *testing.T) *tls.Config {
 	tlsConfig := &tls.Config{}
 	caCertPool := x509.NewCertPool()
-	caCert, err := ioutil.ReadFile(CAFilePath)
+	caCert, err := ioutil.ReadFile(caCertPath)
 	if err != nil {
 		t.Fatalf("Couldn't set up TLS server: %v", err)
 	}
