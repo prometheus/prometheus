@@ -610,7 +610,7 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 	switch e := expr.(type) {
 	case *AggregateExpr:
 		vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepExtraLabels, vector)
+		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepCommonLabels, vector)
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, model.ValScalar, model.ValVector)
@@ -1062,7 +1062,7 @@ type groupedAggregation struct {
 }
 
 // aggregation evaluates an aggregation operation on a vector.
-func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepExtra bool, vec vector) vector {
+func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepCommon bool, vec vector) vector {
 
 	result := map[uint64]*groupedAggregation{}
 
@@ -1086,7 +1086,7 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 		// Add a new group if it doesn't exist.
 		if !ok {
 			var m metric.Metric
-			if keepExtra {
+			if keepCommon {
 				m = sample.Metric
 				m.Del(model.MetricNameLabel)
 			} else if without {
@@ -1111,7 +1111,7 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 			continue
 		}
 		// Add the sample to the existing group.
-		if keepExtra {
+		if keepCommon {
 			groupedResult.labels = labelIntersection(groupedResult.labels, sample.Metric)
 		}
 

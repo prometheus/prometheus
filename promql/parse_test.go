@@ -1020,8 +1020,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum by (foo) keep_common (some_metric)",
 		expected: &AggregateExpr{
-			Op:              itemSum,
-			KeepExtraLabels: true,
+			Op:               itemSum,
+			KeepCommonLabels: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
@@ -1033,8 +1033,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum (some_metric) by (foo,bar) keep_common",
 		expected: &AggregateExpr{
-			Op:              itemSum,
-			KeepExtraLabels: true,
+			Op:               itemSum,
+			KeepCommonLabels: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
@@ -1065,8 +1065,8 @@ var testExpr = []struct {
 					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
 				},
 			},
-			Grouping:        model.LabelNames{"foo"},
-			KeepExtraLabels: true,
+			Grouping:         model.LabelNames{"foo"},
+			KeepCommonLabels: true,
 		},
 	}, {
 		input: "MIN (some_metric) by (foo) keep_common",
@@ -1078,8 +1078,8 @@ var testExpr = []struct {
 					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
 				},
 			},
-			Grouping:        model.LabelNames{"foo"},
-			KeepExtraLabels: true,
+			Grouping:         model.LabelNames{"foo"},
+			KeepCommonLabels: true,
 		},
 	}, {
 		input: "max by (foo)(some_metric)",

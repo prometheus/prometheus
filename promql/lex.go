@@ -179,6 +179,7 @@ const (
 	itemSummary
 	itemDescription
 	itemRunbook
+	itemKeepExtra
 	keywordsEnd
 )
 
@@ -198,25 +199,25 @@ var key = map[string]itemType{
 	"stdvar": itemStdvar,
 
 	// Keywords.
-	"alert":         itemAlert,
-	"if":            itemIf,
-	"for":           itemFor,
-	"labels":        itemLabels,
-	"annotations":   itemAnnotations,
-	"offset":        itemOffset,
-	"by":            itemBy,
-	"without":       itemWithout,
-	"keeping_extra": itemKeepCommon,
-	"keep_common":   itemKeepCommon,
-	"on":            itemOn,
-	"ignoring":      itemIgnoring,
-	"group_left":    itemGroupLeft,
-	"group_right":   itemGroupRight,
-	"bool":          itemBool,
+	"alert":       itemAlert,
+	"if":          itemIf,
+	"for":         itemFor,
+	"labels":      itemLabels,
+	"annotations": itemAnnotations,
+	"offset":      itemOffset,
+	"by":          itemBy,
+	"without":     itemWithout,
+	"keep_common": itemKeepCommon,
+	"on":          itemOn,
+	"ignoring":    itemIgnoring,
+	"group_left":  itemGroupLeft,
+	"group_right": itemGroupRight,
+	"bool":        itemBool,
 	// Removed keywords. Just here to detect and print errors.
-	"summary":     itemSummary,
-	"description": itemDescription,
-	"runbook":     itemRunbook,
+	"summary":       itemSummary,
+	"description":   itemDescription,
+	"runbook":       itemRunbook,
+	"keeping_extra": itemKeepExtra,
 }
 
 // These are the default string representations for common items. It does not
@@ -411,6 +412,8 @@ func (l *lexer) nextItem() item {
 	t := item.typ
 	if t == itemSummary || t == itemDescription || t == itemRunbook {
 		log.Errorf("Token %q is not valid anymore. Alerting rule syntax has changed with version 0.17.0. Please read https://prometheus.io/docs/alerting/rules/.", item)
+	} else if t == itemKeepExtra {
+		log.Error("Token 'keeping_extra' is not valid anymore. Use 'keep_common' instead.")
 	}
 	return item
 }
