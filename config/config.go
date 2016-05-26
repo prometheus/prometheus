@@ -354,6 +354,8 @@ type TLSConfig struct {
 	CertFile string `yaml:"cert_file,omitempty"`
 	// The client key file for the targets.
 	KeyFile string `yaml:"key_file,omitempty"`
+	// Used to verify the hostname for the targets.
+	ServerName string `yaml:"server_name,omitempty"`
 	// Disable target certificate validation.
 	InsecureSkipVerify bool `yaml:"insecure_skip_verify"`
 
