@@ -239,7 +239,12 @@ func (h *Handler) Reload() <-chan struct{} {
 // Run serves the HTTP endpoints.
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
-	h.listenErrCh <- http.ListenAndServe(h.options.ListenAddress, h.router)
+	server := &http.Server{
+		Addr:     h.options.ListenAddress,
+		Handler:  h.router,
+		ErrorLog: log.NewErrorLogger(),
+	}
+	h.listenErrCh <- server.ListenAndServe()
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
