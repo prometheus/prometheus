@@ -122,6 +122,7 @@ type TLSOptions struct {
 	CAFile             string
 	CertFile           string
 	KeyFile            string
+	ServerName         string
 }
 
 func NewTLSConfig(opts TLSOptions) (*tls.Config, error) {
@@ -140,6 +141,9 @@ func NewTLSConfig(opts TLSOptions) (*tls.Config, error) {
 		tlsConfig.RootCAs = caCertPool
 	}
 
+	if len(opts.ServerName) > 0 {
+		tlsConfig.ServerName = opts.ServerName
+	}
 	// If a client cert & key is provided then configure TLS config accordingly.
 	if len(opts.CertFile) > 0 && len(opts.KeyFile) > 0 {
 		cert, err := tls.LoadX509KeyPair(opts.CertFile, opts.KeyFile)
