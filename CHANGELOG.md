@@ -1,3 +1,8 @@
+## 0.19.1 / 2016-05-25
+
+* [BUGFIX] Handle service discovery panic affecting Kubernetes SD
+* [BUGFIX] Fix web UI display issue in some browsers
+
 ## 0.19.0 / 2016-05-24
 
 This version contains a breaking change to the query language. Please read
