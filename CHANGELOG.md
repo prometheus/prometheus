@@ -1,3 +1,9 @@
+## 0.19.2 / 2016-05-29
+
+* [BUGFIX] Correctly handle `GROUP_LEFT` and `GROUP_RIGHT` without labels in
+  string representation of expressions and in rules.
+* [BUGFIX] Use `-web.external-url` for new status endpoints.
+
 ## 0.19.1 / 2016-05-25
 
 * [BUGFIX] Handle service discovery panic affecting Kubernetes SD
