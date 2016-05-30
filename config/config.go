@@ -604,7 +604,7 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // FileSDConfig is the configuration for file based discovery.
 type FileSDConfig struct {
-	Names           []string       `yaml:"names"`
+	Files           []string       `yaml:"files"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
@@ -619,10 +619,10 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if len(c.Names) == 0 {
+	if len(c.Files) == 0 {
 		return fmt.Errorf("file service discovery config must contain at least one path name")
 	}
-	for _, name := range c.Names {
+	for _, name := range c.Files {
 		if !patFileSDName.MatchString(name) {
 			return fmt.Errorf("path name %q is not valid for file discovery", name)
 		}
