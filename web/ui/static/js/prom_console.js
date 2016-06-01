@@ -543,6 +543,9 @@ PromConsole.Graph.prototype.dispatch = function() {
         return;
       }
       var data = xhr.response;
+      if (typeof data !== "object") {
+        data = JSON.parse(xhr.responseText);
+      }
       pending_requests -= 1;
       all_data[i] = data;
       if (pending_requests === 0) {
