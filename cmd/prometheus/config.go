@@ -162,6 +162,10 @@ func init() {
 		&index.LabelPairFingerprintsCacheSize, "storage.local.index-cache-size.label-pair-to-fingerprints", index.LabelPairFingerprintsCacheSize,
 		"The size in bytes for the label pair to fingerprints index cache.",
 	)
+	cfg.fs.IntVar(
+		&cfg.storage.NumMutexes, "storage.local.num-fingerprint-mutexes", 4096,
+		"The number of mutexes used for fingerprint locking.",
+	)
 
 	// Remote storage.
 	cfg.fs.StringVar(

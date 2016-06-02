@@ -37,8 +37,12 @@ type fingerprintLocker struct {
 	numFpMtxs uint
 }
 
-// newFingerprintLocker returns a new fingerprintLocker ready for use.
+// newFingerprintLocker returns a new fingerprintLocker ready for use.  At least
+// 1024 preallocated mutexes are used, even if preallocatedMutexes is lower.
 func newFingerprintLocker(preallocatedMutexes int) *fingerprintLocker {
+	if preallocatedMutexes < 1024 {
+		preallocatedMutexes = 1024
+	}
 	return &fingerprintLocker{
 		make([]sync.Mutex, preallocatedMutexes),
 		uint(preallocatedMutexes),
@@ -47,10 +51,14 @@ func newFingerprintLocker(preallocatedMutexes int) *fingerprintLocker {
 
 // Lock locks the given fingerprint.
 func (l *fingerprintLocker) Lock(fp model.Fingerprint) {
-	l.fpMtxs[uint(fp)%l.numFpMtxs].Lock()
+	l.fpMtxs[hashFP(fp)%l.numFpMtxs].Lock()
 }
 
 // Unlock unlocks the given fingerprint.
 func (l *fingerprintLocker) Unlock(fp model.Fingerprint) {
-	l.fpMtxs[uint(fp)%l.numFpMtxs].Unlock()
+	l.fpMtxs[hashFP(fp)%l.numFpMtxs].Unlock()
+}
+
+func hashFP(fp model.Fingerprint) uint {
+	return uint(fp ^ (fp >> 32) ^ (fp >> 16))
 }

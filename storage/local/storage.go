@@ -184,13 +184,14 @@ type MemorySeriesStorageOptions struct {
 	PedanticChecks             bool          // If dirty, perform crash-recovery checks on each series file.
 	SyncStrategy               SyncStrategy  // Which sync strategy to apply to series files.
 	MinShrinkRatio             float64       // Minimum ratio a series file has to shrink during truncation.
+	NumMutexes                 int           // Number of mutexes used for stochastic fingerprint locking.
 }
 
 // NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
 // has to be called to start the storage.
 func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
 	s := &memorySeriesStorage{
-		fpLocker: newFingerprintLocker(1024),
+		fpLocker: newFingerprintLocker(o.NumMutexes),
 
 		options: o,
 
