@@ -143,6 +143,16 @@ func (kd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 	all = append(all, kd.updateAPIServersTargetGroup())
 	all = append(all, kd.updateNodesTargetGroup())
+
+	pods, _, err := kd.getPods()
+	if err != nil {
+		log.Errorf("Cannot initialize pods collection: %s", err)
+		return
+	}
+	kd.podsMu.Lock()
+	kd.pods = pods
+	kd.podsMu.Unlock()
+
 	all = append(all, kd.updatePodsTargetGroup())
 	for _, ns := range kd.pods {
 		for _, pod := range ns {
@@ -792,11 +802,6 @@ func nodeHostIP(node *Node) (net.IP, error) {
 	return nil, fmt.Errorf("host IP unknown; known addresses: %v", addresses)
 }
 
-////////////////////////////////////
-// Here there be dragons.         //
-// Pod discovery code lies below. //
-////////////////////////////////////
-
 func (kd *Discovery) updatePod(pod *Pod, eventType EventType) {
 	kd.podsMu.Lock()
 	defer kd.podsMu.Unlock()
@@ -988,6 +993,11 @@ func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 			break
 		}
 	}
+
+	if len(targets) == 0 {
+		log.Debugf("no targets for pod %s", pod.ObjectMeta.Name)
+	}
+
 	return targets
 }
 
