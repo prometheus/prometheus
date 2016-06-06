@@ -106,6 +106,21 @@
   })
   </script>
 
+  <h3>Urgency Score</h3>
+  For details about this metrics, see the <a href="https://prometheus.io/docs/operating/storage/#persistence-pressure-and-rushed-mode">
+  Prometheus documentation</a>.
+  <div id="urgencyGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#urgencyGraph"),
+    expr: "prometheus_local_storage_persistence_urgency_score{job='prometheus',instance='{{ .Params.instance }}'}",
+    name: 'Urgency Score',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: "Urgency Score",
+  })
+  </script>
+
   <h3>HTTP Server</h3>
   <div id="serverGraph"></div>
   <script>
