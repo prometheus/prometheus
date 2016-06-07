@@ -227,7 +227,6 @@ var expectedConf = &Config{
 						Username: "myusername",
 						Password: "mypassword",
 					},
-					KubeletPort:    10255,
 					RequestTimeout: model.Duration(10 * time.Second),
 					RetryInterval:  model.Duration(1 * time.Second),
 				},

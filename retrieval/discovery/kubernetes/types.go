@@ -208,6 +208,26 @@ type EndpointsList struct {
 type NodeStatus struct {
 	// Queried from cloud provider, if available.
 	Addresses []NodeAddress `json:"addresses,omitempty" description:"list of addresses reachable to the node; see http://releases.k8s.io/HEAD/docs/admin/node.md#node-addresses" patchStrategy:"merge" patchMergeKey:"type"`
+	// Endpoints of daemons running on the Node.
+	DaemonEndpoints NodeDaemonEndpoints `json:"daemonEndpoints,omitempty"`
+}
+
+// NodeDaemonEndpoints lists ports opened by daemons running on the Node.
+type NodeDaemonEndpoints struct {
+	// Endpoint on which Kubelet is listening.
+	KubeletEndpoint DaemonEndpoint `json:"kubeletEndpoint,omitempty"`
+}
+
+// DaemonEndpoint contains information about a single Daemon endpoint.
+type DaemonEndpoint struct {
+	/*
+		The port tag was not properly in quotes in earlier releases, so it must be
+		uppercased for backwards compat (since it was falling back to var name of
+		'Port').
+	*/
+
+	// Port number of the given endpoint.
+	Port int32 `json:"Port"`
 }
 
 // NodeAddressType can legally only have the values defined as constants below.
