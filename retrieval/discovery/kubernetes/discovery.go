@@ -26,7 +26,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -304,9 +303,6 @@ func (kd *Discovery) updateNodesTargetGroup() *config.TargetGroup {
 		}
 
 		kubeletPort := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
-		if kubeletPort == 0 {
-			kubeletPort = kd.Conf.KubeletPort
-		}
 
 		address := fmt.Sprintf("%s:%d", defaultNodeAddress.String(), kubeletPort)
 
@@ -316,7 +312,7 @@ func (kd *Discovery) updateNodesTargetGroup() *config.TargetGroup {
 		}
 
 		for addrType, ip := range nodeAddressMap {
-			labelName := strutil.SanitizeLabelName(nodeAddressPrefix + toSnake(string(addrType)))
+			labelName := strutil.SanitizeLabelName(nodeAddressPrefix + string(addrType))
 			t[model.LabelName(labelName)] = model.LabelValue(ip[0].String())
 		}
 
@@ -1063,21 +1059,4 @@ func (kd *Discovery) updatePodsTargetGroup() *config.TargetGroup {
 	}
 
 	return tg
-}
-
-// toSnake convert the given string to snake case following the Golang format:
-// acronyms are converted to lower-case and preceded by an underscore.
-func toSnake(in string) string {
-	runes := []rune(in)
-	length := len(runes)
-
-	var out []rune
-	for i := 0; i < length; i++ {
-		if i > 0 && unicode.IsUpper(runes[i]) && ((i+1 < length && unicode.IsLower(runes[i+1])) || unicode.IsLower(runes[i-1])) {
-			out = append(out, '_')
-		}
-		out = append(out, unicode.ToLower(runes[i]))
-	}
-
-	return string(out)
 }
