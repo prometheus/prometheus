@@ -129,7 +129,6 @@ var (
 
 	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
 	DefaultKubernetesSDConfig = KubernetesSDConfig{
-		KubeletPort:    10255,
 		RequestTimeout: model.Duration(10 * time.Second),
 		RetryInterval:  model.Duration(1 * time.Second),
 	}
@@ -752,7 +751,6 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
 	APIServers      []URL          `yaml:"api_servers"`
-	KubeletPort     int            `yaml:"kubelet_port,omitempty"`
 	InCluster       bool           `yaml:"in_cluster,omitempty"`
 	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
 	BearerToken     string         `yaml:"bearer_token,omitempty"`
