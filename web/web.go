@@ -377,7 +377,9 @@ func (h *Handler) consolesPath() string {
 
 func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	return template_text.FuncMap{
-		"since":        time.Since,
+		"since": func(t time.Time) time.Duration {
+			return time.Since(t) / time.Millisecond * time.Millisecond
+		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"stripLabels": func(lset model.LabelSet, labels ...model.LabelName) model.LabelSet {
