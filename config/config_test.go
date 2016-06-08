@@ -57,7 +57,7 @@ var expectedConf = &Config{
 
 			BearerTokenFile: "testdata/valid_token_file",
 
-			TargetGroups: []*TargetGroup{
+			StaticConfigs: []*TargetGroup{
 				{
 					Targets: []model.LabelSet{
 						{model.AddressLabel: "localhost:9090"},
@@ -409,8 +409,8 @@ func TestBadConfigs(t *testing.T) {
 	}
 }
 
-func TestBadTargetGroup(t *testing.T) {
-	content, err := ioutil.ReadFile("testdata/tgroup.bad.json")
+func TestBadStaticConfigs(t *testing.T) {
+	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
 	if err != nil {
 		t.Fatal(err)
 	}
