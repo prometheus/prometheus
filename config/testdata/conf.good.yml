@@ -32,7 +32,7 @@ scrape_configs:
     - files:
       - bar/*.yaml
 
-  target_groups:
+  static_configs:
   - targets: ['localhost:9090', 'localhost:9191']
     labels:
       my:   label
