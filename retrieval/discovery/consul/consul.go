@@ -229,12 +229,20 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 		}
 
 		for _, node := range nodes {
-			var (
+
+			// We surround the separated list with the separator as well. This way regular expressions
+			// in relabeling rules don't have to consider tag positions.
+			var tags = srv.tagSeparator + strings.Join(node.ServiceTags, srv.tagSeparator) + srv.tagSeparator
+
+			// If the service address is not empty it should be used instead of the node address
+			// since the service may be registered remotely through a different node
+			var addr string
+			if node.ServiceAddress != "" {
+				addr = fmt.Sprintf("%s:%d", node.ServiceAddress, node.ServicePort)
+			} else {
 				addr = fmt.Sprintf("%s:%d", node.Address, node.ServicePort)
-				// We surround the separated list with the separator as well. This way regular expressions
-				// in relabeling rules don't have to consider tag positions.
-				tags = srv.tagSeparator + strings.Join(node.ServiceTags, srv.tagSeparator) + srv.tagSeparator
-			)
+			}
+
 			tgroup.Targets = append(tgroup.Targets, model.LabelSet{
 				model.AddressLabel:  model.LabelValue(addr),
 				addressLabel:        model.LabelValue(node.Address),
