@@ -15,11 +15,10 @@ package marathon
 
 import (
 	"errors"
-	"testing"
-	"time"
-
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
+	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -89,6 +88,52 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *AppList {
 	}
 	return &AppList{
 		Apps: []App{app},
+	}
+}
+
+func marathonTestZeroTaskPortAppList(labels map[string]string, runningTasks int) *AppList {
+	task := Task{
+		ID:    "test-task-2",
+		Host:  "mesos-slave-2",
+		Ports: []uint32{},
+	}
+	docker := DockerContainer{Image: "repo/image:tag"}
+	container := Container{Docker: docker}
+	app := App{
+		ID:           "test-service-zero-ports",
+		Tasks:        []Task{task},
+		RunningTasks: runningTasks,
+		Labels:       labels,
+		Container:    container,
+	}
+	return &AppList{
+		Apps: []App{app},
+	}
+}
+
+func TestMarathonZeroTaskPorts(t *testing.T) {
+	ch, md := newTestDiscovery(func(url string) (*AppList, error) {
+		return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
+	})
+
+	go func() {
+		select {
+		case tgs := <-ch:
+			tg := tgs[0]
+
+			if tg.Source != "test-service-zero-ports" {
+				t.Fatalf("Wrong target group name: %s", tg.Source)
+			}
+			if len(tg.Targets) != 0 {
+				t.Fatalf("Wrong number of targets: %v", tg.Targets)
+			}
+		default:
+			t.Fatal("Did not get a target group.")
+		}
+	}()
+	err := md.updateServices(context.Background(), ch)
+	if err != nil {
+		t.Fatalf("Got error: %s", err)
 	}
 }
 
