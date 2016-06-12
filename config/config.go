@@ -252,6 +252,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "config"); err != nil {
+		return err
+	}
 	// If a global block was open but empty the default global config is overwritten.
 	// We have to restore it here.
 	if c.GlobalConfig.isZero() {
@@ -287,7 +290,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		jobNames[scfg.JobName] = struct{}{}
 	}
-	return checkOverflow(c.XXX, "config")
+	return nil
 }
 
 // GlobalConfig configures values that are used across other configuration
@@ -315,6 +318,9 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(gc)); err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "global config"); err != nil {
+		return err
+	}
 	// First set the correct scrape interval, then check that the timeout
 	// (inferred or explicit) is not greater than that.
 	if gc.ScrapeInterval == 0 {
@@ -335,7 +341,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	*c = *gc
 
-	return checkOverflow(c.XXX, "global config")
+	return nil
 }
 
 // isZero returns true iff the global config is the zero value.
@@ -369,7 +375,10 @@ func (c *TLSConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	return checkOverflow(c.XXX, "TLS config")
+	if err := checkOverflow(c.XXX, "TLS config"); err != nil {
+		return err
+	}
+	return nil
 }
 
 // ScrapeConfig configures a scraping unit for Prometheus.
@@ -439,6 +448,9 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "scrape_config"); err != nil {
+		return err
+	}
 	if !patJobName.MatchString(c.JobName) {
 		return fmt.Errorf("%q is not a valid job name", c.JobName)
 	}
@@ -466,7 +478,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			}
 		}
 	}
-	return checkOverflow(c.XXX, "scrape_config")
+	return nil
 }
 
 // CheckTargetAddress checks if target address is valid.
@@ -597,6 +609,9 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "dns_sd_config"); err != nil {
+		return err
+	}
 	if len(c.Names) == 0 {
 		return fmt.Errorf("DNS-SD config must contain at least one SRV record name")
 	}
@@ -609,7 +624,7 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	default:
 		return fmt.Errorf("invalid DNS-SD records type %s", c.Type)
 	}
-	return checkOverflow(c.XXX, "dns_sd_config")
+	return nil
 }
 
 // FileSDConfig is the configuration for file based discovery.
@@ -629,6 +644,9 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "file_sd_config"); err != nil {
+		return err
+	}
 	if len(c.Files) == 0 {
 		return fmt.Errorf("file service discovery config must contain at least one path name")
 	}
@@ -637,7 +655,7 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("path name %q is not valid for file discovery", name)
 		}
 	}
-	return checkOverflow(c.XXX, "file_sd_config")
+	return nil
 }
 
 // ConsulSDConfig is the configuration for Consul service discovery.
@@ -665,10 +683,13 @@ func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "consul_sd_config"); err != nil {
+		return err
+	}
 	if strings.TrimSpace(c.Server) == "" {
 		return fmt.Errorf("Consul SD configuration requires a server address")
 	}
-	return checkOverflow(c.XXX, "consul_sd_config")
+	return nil
 }
 
 // ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
@@ -689,6 +710,9 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "serverset_sd_config"); err != nil {
+		return err
+	}
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("serverset SD config must contain at least one Zookeeper server")
 	}
@@ -700,7 +724,7 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
 		}
 	}
-	return checkOverflow(c.XXX, "serverset_sd_config")
+	return nil
 }
 
 // NerveSDConfig is the configuration for AirBnB's Nerve in Zookeeper based discovery.
@@ -721,6 +745,9 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "nerve_sd_config"); err != nil {
+		return err
+	}
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("nerve SD config must contain at least one Zookeeper server")
 	}
@@ -732,7 +759,7 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("nerve SD config paths must begin with '/': %s", path)
 		}
 	}
-	return checkOverflow(c.XXX, "nerve_sd_config")
+	return nil
 }
 
 // MarathonSDConfig is the configuration for services running on Marathon.
@@ -752,11 +779,14 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "marathon_sd_config"); err != nil {
+		return err
+	}
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
 	}
 
-	return checkOverflow(c.XXX, "marathon_sd_config")
+	return nil
 }
 
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
@@ -782,6 +812,9 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
+		return err
+	}
 	if len(c.APIServers) == 0 {
 		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes API server")
 	}
@@ -792,7 +825,7 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
 
-	return checkOverflow(c.XXX, "kubernetes_sd_config")
+	return nil
 }
 
 // EC2SDConfig is the configuration for EC2 based service discovery.
@@ -814,10 +847,13 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "ec2_sd_config"); err != nil {
+		return err
+	}
 	if c.Region == "" {
 		return fmt.Errorf("EC2 SD configuration requires a region")
 	}
-	return checkOverflow(c.XXX, "ec2_sd_config")
+	return nil
 }
 
 // AzureSDConfig is the configuration for Azure based service discovery.
@@ -903,10 +939,13 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "relabel_config"); err != nil {
+		return err
+	}
 	if c.Modulus == 0 && c.Action == RelabelHashMod {
 		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
-	return checkOverflow(c.XXX, "relabel_config")
+	return nil
 }
 
 // Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
