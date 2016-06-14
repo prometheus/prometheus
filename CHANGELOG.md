@@ -1,3 +1,8 @@
+## 0.19.3 / 2016-06-14
+
+* [BUGFIX] Handle Marathon apps with zero ports
+* [BUGFIX] Fix startup panic in retrieval layer
+
 ## 0.19.2 / 2016-05-29
 
 * [BUGFIX] Correctly handle `GROUP_LEFT` and `GROUP_RIGHT` without labels in
