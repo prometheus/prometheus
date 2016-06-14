@@ -16,6 +16,7 @@ package log
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"runtime"
@@ -301,4 +302,17 @@ func Fatalln(args ...interface{}) {
 // Fatalf logs a message at level Fatal on the standard logger.
 func Fatalf(format string, args ...interface{}) {
 	baseLogger.sourced().Fatalf(format, args...)
+}
+
+type errorLogWriter struct{}
+
+func (errorLogWriter) Write(b []byte) (int, error) {
+	baseLogger.sourced().Error(string(b))
+	return len(b), nil
+}
+
+// NewErrorLogger returns a log.Logger that is meant to be used
+// in the ErrorLog field of an http.Server to log HTTP server errors.
+func NewErrorLogger() *log.Logger {
+	return log.New(&errorLogWriter{}, "", 0)
 }

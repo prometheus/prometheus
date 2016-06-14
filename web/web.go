@@ -239,7 +239,12 @@ func (h *Handler) Reload() <-chan struct{} {
 // Run serves the HTTP endpoints.
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
-	h.listenErrCh <- http.ListenAndServe(h.options.ListenAddress, h.router)
+	server := &http.Server{
+		Addr:     h.options.ListenAddress,
+		Handler:  h.router,
+		ErrorLog: log.NewErrorLogger(),
+	}
+	h.listenErrCh <- server.ListenAndServe()
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
@@ -372,7 +377,9 @@ func (h *Handler) consolesPath() string {
 
 func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	return template_text.FuncMap{
-		"since":        time.Since,
+		"since": func(t time.Time) time.Duration {
+			return time.Since(t) / time.Millisecond * time.Millisecond
+		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"stripLabels": func(lset model.LabelSet, labels ...model.LabelName) model.LabelSet {

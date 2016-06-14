@@ -249,9 +249,6 @@ var tests = []struct {
 		input:    "alert",
 		expected: []item{{itemAlert, 0, "alert"}},
 	}, {
-		input:    "keeping_extra",
-		expected: []item{{itemKeepCommon, 0, "keeping_extra"}},
-	}, {
 		input:    "keep_common",
 		expected: []item{{itemKeepCommon, 0, "keep_common"}},
 	}, {

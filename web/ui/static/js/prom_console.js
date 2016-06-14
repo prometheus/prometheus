@@ -198,7 +198,8 @@ PromConsole.TimeControl.prototype.getEndDate = function() {
   if (this.endElement.value === '') {
     return null;
   }
-  return new Date(this.endElement.value).getTime();
+  var dateParts = this.endElement.value.split(/[- :]/)
+  return Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2], dateParts[3], dateParts[4]);
 };
 
 PromConsole.TimeControl.prototype.getOrSetEndDate = function() {
@@ -208,13 +209,13 @@ PromConsole.TimeControl.prototype.getOrSetEndDate = function() {
   }
   date = new Date();
   this.setEndDate(date);
-  return date;
+  return date.getTime();
 };
 
 PromConsole.TimeControl.prototype.getHumanDate = function(date) {
-  var hours = date.getHours() < 10 ? '0' + date.getHours() : date.getHours();
-  var minutes = date.getMinutes() < 10 ? '0' + date.getMinutes() : date.getMinutes();
-  return date.getFullYear() + "-" + (date.getMonth()+1) + "-" + date.getDate() + " " +
+  var hours = date.getUTCHours() < 10 ? '0' + date.getUTCHours() : date.getUTCHours();
+  var minutes = date.getUTCMinutes() < 10 ? '0' + date.getUTCMinutes() : date.getUTCMinutes();
+  return date.getUTCFullYear() + "-" + (date.getUTCMonth()+1) + "-" + date.getUTCDate() + " " +
       hours + ":" + minutes;
 };
 
@@ -543,6 +544,9 @@ PromConsole.Graph.prototype.dispatch = function() {
         return;
       }
       var data = xhr.response;
+      if (typeof data !== "object") {
+        data = JSON.parse(xhr.responseText);
+      }
       pending_requests -= 1;
       all_data[i] = data;
       if (pending_requests === 0) {

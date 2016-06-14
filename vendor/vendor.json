@@ -173,10 +173,10 @@
 			"revisionTime": "2016-05-19T16:20:33Z"
 		},
 		{
-			"checksumSHA1": "koBNYQryxAG8hyHBlpn8pcnSVdM=",
+			"checksumSHA1": "qHoBp/PVBcLedTNZrF3toV9QGa0=",
 			"path": "github.com/prometheus/common/log",
-			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
-			"revisionTime": "2016-05-19T16:20:33Z"
+			"revision": "a6ab08426bb262e2d190097751f5cfd1cfdfd17d",
+			"revisionTime": "2016-05-26T15:55:09Z"
 		},
 		{
 			"checksumSHA1": "Zgmg/aOfoCNTAMtrXqBJmt852t0=",
@@ -284,9 +284,17 @@
 			"revisionTime": "2016-05-18T19:54:31Z"
 		},
 		{
+			"checksumSHA1": "QcDlr1sWBDt6Dn/v7W/MRgccAi4=",
+			"path": "golang.org/x/sys/unix",
+			"revision": "076b546753157f758b316e59bcb51e6807c04057",
+			"revisionTime": "2016-06-01T13:19:39Z"
+		},
+		{
+			"checksumSHA1": "JfVmsMwyeeepbdw4q4wpN07BuFg=",
+			"origin": "github.com/prometheus/prometheus/vendor/gopkg.in/fsnotify.v1",
 			"path": "gopkg.in/fsnotify.v1",
-			"revision": "96c060f6a6b7e0d6f75fddd10efeaca3e5d1bcb0",
-			"revisionTime": "2015-02-08T13:29:58-07:00"
+			"revision": "30411dbcefb7a1da7e84f75530ad3abe4011b4f8",
+			"revisionTime": "2016-04-12T13:37:56Z"
 		},
 		{
 			"path": "gopkg.in/yaml.v2",

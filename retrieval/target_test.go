@@ -31,6 +31,10 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
+const (
+	caCertPath = "testdata/ca.cer"
+)
+
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, model.LabelSet{"job": "some_job", "foo": "bar"})
 	want := model.LabelSet{
@@ -228,14 +232,14 @@ func TestNewHTTPCACert(t *testing.T) {
 			},
 		),
 	)
-	server.TLS = newTLSConfig(t)
+	server.TLS = newTLSConfig("server", t)
 	server.StartTLS()
 	defer server.Close()
 
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
-			CAFile: "testdata/ca.cer",
+			CAFile: caCertPath,
 		},
 	}
 	c, err := newHTTPClient(cfg)
@@ -257,7 +261,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			},
 		),
 	)
-	tlsConfig := newTLSConfig(t)
+	tlsConfig := newTLSConfig("server", t)
 	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 	tlsConfig.ClientCAs = tlsConfig.RootCAs
 	tlsConfig.BuildNameToCertificate()
@@ -268,7 +272,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 	cfg := &config.ScrapeConfig{
 		ScrapeTimeout: model.Duration(1 * time.Second),
 		TLSConfig: config.TLSConfig{
-			CAFile:   "testdata/ca.cer",
+			CAFile:   caCertPath,
 			CertFile: "testdata/client.cer",
 			KeyFile:  "testdata/client.key",
 		},
@@ -283,19 +287,81 @@ func TestNewHTTPClientCert(t *testing.T) {
 	}
 }
 
-func newTLSConfig(t *testing.T) *tls.Config {
+func TestNewHTTPWithServerName(t *testing.T) {
+	server := httptest.NewUnstartedServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte{})
+			},
+		),
+	)
+	server.TLS = newTLSConfig("servername", t)
+	server.StartTLS()
+	defer server.Close()
+
+	cfg := &config.ScrapeConfig{
+		ScrapeTimeout: model.Duration(1 * time.Second),
+		TLSConfig: config.TLSConfig{
+			CAFile:     caCertPath,
+			ServerName: "prometheus.rocks",
+		},
+	}
+	c, err := newHTTPClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewHTTPWithBadServerName(t *testing.T) {
+	server := httptest.NewUnstartedServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte{})
+			},
+		),
+	)
+	server.TLS = newTLSConfig("servername", t)
+	server.StartTLS()
+	defer server.Close()
+
+	cfg := &config.ScrapeConfig{
+		ScrapeTimeout: model.Duration(1 * time.Second),
+		TLSConfig: config.TLSConfig{
+			CAFile:     caCertPath,
+			ServerName: "badname",
+		},
+	}
+	c, err := newHTTPClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Get(server.URL)
+	if err == nil {
+		t.Fatal("Expected error, got nil.")
+	}
+}
+
+func newTLSConfig(certName string, t *testing.T) *tls.Config {
 	tlsConfig := &tls.Config{}
 	caCertPool := x509.NewCertPool()
-	caCert, err := ioutil.ReadFile("testdata/ca.cer")
+	caCert, err := ioutil.ReadFile(caCertPath)
 	if err != nil {
 		t.Fatalf("Couldn't set up TLS server: %v", err)
 	}
 	caCertPool.AppendCertsFromPEM(caCert)
 	tlsConfig.RootCAs = caCertPool
 	tlsConfig.ServerName = "127.0.0.1"
-	cert, err := tls.LoadX509KeyPair("testdata/server.cer", "testdata/server.key")
+	certPath := fmt.Sprintf("testdata/%s.cer", certName)
+	keyPath := fmt.Sprintf("testdata/%s.key", certName)
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
-		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", "testdata/server.cer", "testdata/server.key", err)
+		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", certPath, keyPath, err)
 	}
 	tlsConfig.Certificates = []tls.Certificate{cert}
 	tlsConfig.BuildNameToCertificate()

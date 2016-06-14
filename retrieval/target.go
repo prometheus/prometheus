@@ -74,6 +74,9 @@ func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
 		tlsOpts.CertFile = cfg.TLSConfig.CertFile
 		tlsOpts.KeyFile = cfg.TLSConfig.KeyFile
 	}
+	if len(cfg.TLSConfig.ServerName) > 0 {
+		tlsOpts.ServerName = cfg.TLSConfig.ServerName
+	}
 	tlsConfig, err := httputil.NewTLSConfig(tlsOpts)
 	if err != nil {
 		return nil, err

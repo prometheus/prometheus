@@ -83,6 +83,10 @@ const (
 	nodesTargetGroupName = "nodes"
 	// nodeLabelPrefix is the prefix for the node labels.
 	nodeLabelPrefix = metaLabelPrefix + "node_label_"
+	// nodeAddressPrefix is the prefix for the node addresses.
+	nodeAddressPrefix = metaLabelPrefix + "node_address_"
+	// nodePortLabel is the name of the label for the node port.
+	nodePortLabel = metaLabelPrefix + "node_port"
 
 	// apiServersTargetGroupName is the name given to the target group for API servers.
 	apiServersTargetGroupName = "apiServers"
@@ -143,6 +147,16 @@ func (kd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 	all = append(all, kd.updateAPIServersTargetGroup())
 	all = append(all, kd.updateNodesTargetGroup())
+
+	pods, _, err := kd.getPods()
+	if err != nil {
+		log.Errorf("Cannot initialize pods collection: %s", err)
+		return
+	}
+	kd.podsMu.Lock()
+	kd.pods = pods
+	kd.podsMu.Unlock()
+
 	all = append(all, kd.updatePodsTargetGroup())
 	for _, ns := range kd.pods {
 		for _, pod := range ns {
@@ -282,18 +296,28 @@ func (kd *Discovery) updateNodesTargetGroup() *config.TargetGroup {
 
 	// Now let's loop through the nodes & add them to the target group with appropriate labels.
 	for nodeName, node := range kd.nodes {
-		nodeAddress, err := nodeHostIP(node)
+		defaultNodeAddress, nodeAddressMap, err := nodeAddresses(node)
 		if err != nil {
 			log.Debugf("Skipping node %s: %s", node.Name, err)
 			continue
 		}
 
-		address := fmt.Sprintf("%s:%d", nodeAddress.String(), kd.Conf.KubeletPort)
+		kubeletPort := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
+
+		address := fmt.Sprintf("%s:%d", defaultNodeAddress.String(), kubeletPort)
 
 		t := model.LabelSet{
 			model.AddressLabel:  model.LabelValue(address),
 			model.InstanceLabel: model.LabelValue(nodeName),
 		}
+
+		for addrType, ip := range nodeAddressMap {
+			labelName := strutil.SanitizeLabelName(nodeAddressPrefix + string(addrType))
+			t[model.LabelName(labelName)] = model.LabelValue(ip[0].String())
+		}
+
+		t[model.LabelName(nodePortLabel)] = model.LabelValue(strconv.Itoa(kubeletPort))
+
 		for k, v := range node.ObjectMeta.Labels {
 			labelName := strutil.SanitizeLabelName(nodeLabelPrefix + k)
 			t[model.LabelName(labelName)] = model.LabelValue(v)
@@ -768,34 +792,34 @@ func until(f func(), period time.Duration, stopCh <-chan struct{}) {
 	}
 }
 
-// nodeHostIP returns the provided node's address, based on the priority:
+// nodeAddresses returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
 // 2. NodeExternalIP
 // 3. NodeLegacyHostIP
 //
 // Copied from k8s.io/kubernetes/pkg/util/node/node.go
-func nodeHostIP(node *Node) (net.IP, error) {
+func nodeAddresses(node *Node) (net.IP, map[NodeAddressType][]net.IP, error) {
 	addresses := node.Status.Addresses
-	addressMap := make(map[NodeAddressType][]NodeAddress)
-	for i := range addresses {
-		addressMap[addresses[i].Type] = append(addressMap[addresses[i].Type], addresses[i])
+	addressMap := map[NodeAddressType][]net.IP{}
+	for _, addr := range addresses {
+		ip := net.ParseIP(addr.Address)
+		// All addresses should be valid IPs.
+		if ip == nil {
+			continue
+		}
+		addressMap[addr.Type] = append(addressMap[addr.Type], ip)
 	}
 	if addresses, ok := addressMap[NodeInternalIP]; ok {
-		return net.ParseIP(addresses[0].Address), nil
+		return addresses[0], addressMap, nil
 	}
 	if addresses, ok := addressMap[NodeExternalIP]; ok {
-		return net.ParseIP(addresses[0].Address), nil
+		return addresses[0], addressMap, nil
 	}
 	if addresses, ok := addressMap[NodeLegacyHostIP]; ok {
-		return net.ParseIP(addresses[0].Address), nil
+		return addresses[0], addressMap, nil
 	}
-	return nil, fmt.Errorf("host IP unknown; known addresses: %v", addresses)
+	return nil, nil, fmt.Errorf("host IP unknown; known addresses: %v", addresses)
 }
-
-////////////////////////////////////
-// Here there be dragons.         //
-// Pod discovery code lies below. //
-////////////////////////////////////
 
 func (kd *Discovery) updatePod(pod *Pod, eventType EventType) {
 	kd.podsMu.Lock()
@@ -988,6 +1012,11 @@ func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 			break
 		}
 	}
+
+	if len(targets) == 0 {
+		log.Debugf("no targets for pod %s", pod.ObjectMeta.Name)
+	}
+
 	return targets
 }
 

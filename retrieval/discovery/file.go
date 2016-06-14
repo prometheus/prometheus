@@ -49,7 +49,7 @@ type FileDiscovery struct {
 // NewFileDiscovery returns a new file discovery for the given paths.
 func NewFileDiscovery(conf *config.FileSDConfig) *FileDiscovery {
 	return &FileDiscovery{
-		paths:    conf.Names,
+		paths:    conf.Files,
 		interval: time.Duration(conf.RefreshInterval),
 	}
 }

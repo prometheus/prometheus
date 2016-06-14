@@ -57,7 +57,7 @@ var expectedConf = &Config{
 
 			BearerTokenFile: "testdata/valid_token_file",
 
-			TargetGroups: []*TargetGroup{
+			StaticConfigs: []*TargetGroup{
 				{
 					Targets: []model.LabelSet{
 						{model.AddressLabel: "localhost:9090"},
@@ -72,11 +72,11 @@ var expectedConf = &Config{
 
 			FileSDConfigs: []*FileSDConfig{
 				{
-					Names:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
+					Files:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
 					RefreshInterval: model.Duration(10 * time.Minute),
 				},
 				{
-					Names:           []string{"bar/*.yaml"},
+					Files:           []string{"bar/*.yaml"},
 					RefreshInterval: model.Duration(5 * time.Minute),
 				},
 			},
@@ -227,7 +227,6 @@ var expectedConf = &Config{
 						Username: "myusername",
 						Password: "mypassword",
 					},
-					KubeletPort:    10255,
 					RequestTimeout: model.Duration(10 * time.Second),
 					RetryInterval:  model.Duration(1 * time.Second),
 				},
@@ -410,8 +409,8 @@ func TestBadConfigs(t *testing.T) {
 	}
 }
 
-func TestBadTargetGroup(t *testing.T) {
-	content, err := ioutil.ReadFile("testdata/tgroup.bad.json")
+func TestBadStaticConfigs(t *testing.T) {
+	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
 	if err != nil {
 		t.Fatal(err)
 	}

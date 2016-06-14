@@ -407,8 +407,8 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 	for i, c := range cfg.AzureSDConfigs {
 		app("azure", i, discovery.NewAzureDiscovery(c))
 	}
-	if len(cfg.TargetGroups) > 0 {
-		app("static", 0, NewStaticProvider(cfg.TargetGroups))
+	if len(cfg.StaticConfigs) > 0 {
+		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
 	}
 
 	return providers
