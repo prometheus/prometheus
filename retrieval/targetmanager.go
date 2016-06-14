@@ -331,7 +331,12 @@ func (ts *targetSet) runProviders(ctx context.Context, providers map[string]Targ
 	// We wait for a full initial set of target groups before releasing the mutex
 	// to ensure the initial sync is complete and there are no races with subsequent updates.
 	wg.Wait()
-	ts.sync()
+	// Just signal that there are initial sets to sync now. Actual syncing must only
+	// happen in the runScraping loop.
+	select {
+	case ts.syncCh <- struct{}{}:
+	default:
+	}
 }
 
 // update handles a target group update from a target provider identified by the name.
