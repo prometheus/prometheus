@@ -40,11 +40,14 @@ func TestMarathonSDHandleError(t *testing.T) {
 	ch, md := newTestDiscovery(func(url string) (*AppList, error) {
 		return nil, errTesting
 	})
+	stop := make(chan struct{})
+	defer close(stop)
+
 	go func() {
 		select {
 		case tg := <-ch:
 			t.Fatalf("Got group: %s", tg)
-		default:
+		case <-stop:
 		}
 	}()
 	err := md.updateServices(context.Background(), ch)
@@ -57,13 +60,16 @@ func TestMarathonSDEmptyList(t *testing.T) {
 	ch, md := newTestDiscovery(func(url string) (*AppList, error) {
 		return &AppList{}, nil
 	})
+	stop := make(chan struct{})
+	defer close(stop)
+
 	go func() {
 		select {
 		case tg := <-ch:
 			if len(tg) > 0 {
 				t.Fatalf("Got group: %v", tg)
 			}
-		default:
+		case <-stop:
 		}
 	}()
 	err := md.updateServices(context.Background(), ch)
@@ -111,7 +117,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 			if tgt[model.AddressLabel] != "mesos-slave1:31000" {
 				t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 			}
-		default:
+		case <-time.After(5 * time.Second):
 			t.Fatal("Did not get a target group.")
 		}
 	}()
