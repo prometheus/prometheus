@@ -812,6 +812,7 @@ func (p *persistence) dropAndPersistChunks(
 		}
 		_, err = io.ReadFull(f, headerBuf)
 		if err == io.EOF {
+			f.Close()
 			// We ran into the end of the file without finding any chunks that should
 			// be kept. Remove the whole file.
 			if numDropped, err = p.deleteSeriesFile(fp); err != nil {
@@ -875,6 +876,7 @@ func (p *persistence) dropAndPersistChunks(
 		return
 	}
 	defer func() {
+		f.Close()
 		p.closeChunkFile(temp)
 		if err == nil {
 			err = os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp))
