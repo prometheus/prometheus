@@ -121,6 +121,10 @@ scrape_configs:
   - servers:
     - 'http://marathon.example.com:8080'
 
+    basic_auth:
+      username: 'myusername'
+      password: 'mypassword'
+
 - job_name: service-ec2
   ec2_sd_configs:
     - region: us-east-1

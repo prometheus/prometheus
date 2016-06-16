@@ -243,8 +243,10 @@ var expectedConf = &Config{
 
 			MarathonSDConfigs: []*MarathonSDConfig{
 				{
-					Servers: []string{
-						"http://marathon.example.com:8080",
+					Servers: []string{"http://marathon.example.com:8080"},
+					BasicAuth: &BasicAuth{
+						Username: "myusername",
+						Password: "mypassword",
 					},
 					RefreshInterval: model.Duration(30 * time.Second),
 				},
