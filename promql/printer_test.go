@@ -79,3 +79,35 @@ func TestExprString(t *testing.T) {
 		}
 	}
 }
+
+func TestStmtsString(t *testing.T) {
+	// A list of valid statements that are expected to be returned as out when
+	// calling String(). If out is empty the output is expected to equal the
+	// input.
+	inputs := []struct {
+		in, out string
+	}{
+		{
+			in:  `ALERT foo IF up == 0 FOR 1m`,
+			out: "ALERT foo\n\tIF up == 0\n\tFOR 1m",
+		},
+		{
+			in:  `ALERT foo IF up == 0 FOR 1m ANNOTATIONS {summary="foo"}`,
+			out: "ALERT foo\n\tIF up == 0\n\tFOR 1m\n\tANNOTATIONS {summary=\"foo\"}",
+		},
+	}
+
+	for _, test := range inputs {
+		expr, err := ParseStmts(test.in)
+		if err != nil {
+			t.Fatalf("parsing error for %q: %s", test.in, err)
+		}
+		exp := test.in
+		if test.out != "" {
+			exp = test.out
+		}
+		if expr.String() != exp {
+			t.Fatalf("expected %q to be returned as:\n%s\ngot:\n%s\n", test.in, exp, expr.String())
+		}
+	}
+}
