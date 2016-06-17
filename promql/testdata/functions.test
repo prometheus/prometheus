@@ -195,10 +195,10 @@ eval instant at 0m label_join(testmetric, "dst", "-", "src", "src3", "src1")
   testmetric{src="a",src1="b",src2="c",dst="a--b"} 0
   testmetric{src="d",src1="e",src2="f",dst="d--e"} 1
 
-# label_join does not overwrite the destination label if the resulting dst label is empty string
+# label_join overwrites the destination label even if the resulting dst label is empty string
 eval instant at 0m label_join(testmetric, "dst", "", "emptysrc", "emptysrc1", "emptysrc2")
-  testmetric{src="a",src1="b",src2="c",dst="original-destination-value"} 0
-  testmetric{src="d",src1="e",src2="f",dst="original-destination-value"} 1
+  testmetric{src="a",src1="b",src2="c",dst=""} 0
+  testmetric{src="d",src1="e",src2="f",dst=""} 1
 
 # test without dst label for label_join
 load 5m

@@ -857,9 +857,6 @@ func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
 		}
 
 		dstVal := strings.Join(srcVals, sep)
-		if dstVal == "" {
-			continue
-		}
 		el.Metric.Set(dst, model.LabelValue(dstVal))
 
 		fp := el.Metric.Metric.Fingerprint()
