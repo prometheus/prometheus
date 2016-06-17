@@ -28,9 +28,9 @@ import (
 
 var expectedConf = &Config{
 	GlobalConfig: GlobalConfig{
-		ScrapeInterval:     Duration(15 * time.Second),
+		ScrapeInterval:     model.Duration(15 * time.Second),
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
-		EvaluationInterval: Duration(30 * time.Second),
+		EvaluationInterval: model.Duration(30 * time.Second),
 
 		ExternalLabels: model.LabelSet{
 			"monitor": "codelab",
@@ -49,7 +49,7 @@ var expectedConf = &Config{
 			JobName: "prometheus",
 
 			HonorLabels:    true,
-			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeInterval: model.Duration(15 * time.Second),
 			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
@@ -57,7 +57,7 @@ var expectedConf = &Config{
 
 			BearerTokenFile: "testdata/valid_token_file",
 
-			TargetGroups: []*TargetGroup{
+			StaticConfigs: []*TargetGroup{
 				{
 					Targets: []model.LabelSet{
 						{model.AddressLabel: "localhost:9090"},
@@ -72,31 +72,44 @@ var expectedConf = &Config{
 
 			FileSDConfigs: []*FileSDConfig{
 				{
-					Names:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
-					RefreshInterval: Duration(10 * time.Minute),
+					Files:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
+					RefreshInterval: model.Duration(10 * time.Minute),
 				},
 				{
-					Names:           []string{"bar/*.yaml"},
-					RefreshInterval: Duration(5 * time.Minute),
+					Files:           []string{"bar/*.yaml"},
+					RefreshInterval: model.Duration(5 * time.Minute),
 				},
 			},
 
 			RelabelConfigs: []*RelabelConfig{
 				{
-					SourceLabels: model.LabelNames{"job", "__meta_dns_srv_name"},
+					SourceLabels: model.LabelNames{"job", "__meta_dns_name"},
 					TargetLabel:  "job",
 					Separator:    ";",
 					Regex:        MustNewRegexp("(.*)some-[regex]"),
 					Replacement:  "foo-${1}",
 					Action:       RelabelReplace,
+				}, {
+					SourceLabels: model.LabelNames{"abc"},
+					TargetLabel:  "cde",
+					Separator:    ";",
+					Regex:        DefaultRelabelConfig.Regex,
+					Replacement:  DefaultRelabelConfig.Replacement,
+					Action:       RelabelReplace,
+				}, {
+					TargetLabel: "abc",
+					Separator:   ";",
+					Regex:       DefaultRelabelConfig.Regex,
+					Replacement: "static",
+					Action:      RelabelReplace,
 				},
 			},
 		},
 		{
 			JobName: "service-x",
 
-			ScrapeInterval: Duration(50 * time.Second),
-			ScrapeTimeout:  Duration(5 * time.Second),
+			ScrapeInterval: model.Duration(50 * time.Second),
+			ScrapeTimeout:  model.Duration(5 * time.Second),
 
 			BasicAuth: &BasicAuth{
 				Username: "admin_name",
@@ -111,14 +124,14 @@ var expectedConf = &Config{
 						"first.dns.address.domain.com",
 						"second.dns.address.domain.com",
 					},
-					RefreshInterval: Duration(15 * time.Second),
+					RefreshInterval: model.Duration(15 * time.Second),
 					Type:            "SRV",
 				},
 				{
 					Names: []string{
 						"first.dns.address.domain.com",
 					},
-					RefreshInterval: Duration(30 * time.Second),
+					RefreshInterval: model.Duration(30 * time.Second),
 					Type:            "SRV",
 				},
 			},
@@ -128,11 +141,14 @@ var expectedConf = &Config{
 					SourceLabels: model.LabelNames{"job"},
 					Regex:        MustNewRegexp("(.*)some-[regex]"),
 					Separator:    ";",
+					Replacement:  DefaultRelabelConfig.Replacement,
 					Action:       RelabelDrop,
 				},
 				{
 					SourceLabels: model.LabelNames{"__address__"},
 					TargetLabel:  "__tmp_hash",
+					Regex:        DefaultRelabelConfig.Regex,
+					Replacement:  DefaultRelabelConfig.Replacement,
 					Modulus:      8,
 					Separator:    ";",
 					Action:       RelabelHashMod,
@@ -141,12 +157,14 @@ var expectedConf = &Config{
 					SourceLabels: model.LabelNames{"__tmp_hash"},
 					Regex:        MustNewRegexp("1"),
 					Separator:    ";",
+					Replacement:  DefaultRelabelConfig.Replacement,
 					Action:       RelabelKeep,
 				},
 				{
-					Regex:     MustNewRegexp("1"),
-					Separator: ";",
-					Action:    RelabelLabelMap,
+					Regex:       MustNewRegexp("1"),
+					Separator:   ";",
+					Replacement: DefaultRelabelConfig.Replacement,
+					Action:      RelabelLabelMap,
 				},
 			},
 			MetricRelabelConfigs: []*RelabelConfig{
@@ -154,6 +172,7 @@ var expectedConf = &Config{
 					SourceLabels: model.LabelNames{"__name__"},
 					Regex:        MustNewRegexp("expensive_metric.*"),
 					Separator:    ";",
+					Replacement:  DefaultRelabelConfig.Replacement,
 					Action:       RelabelDrop,
 				},
 			},
@@ -161,7 +180,7 @@ var expectedConf = &Config{
 		{
 			JobName: "service-y",
 
-			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeInterval: model.Duration(15 * time.Second),
 			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
@@ -179,8 +198,8 @@ var expectedConf = &Config{
 		{
 			JobName: "service-z",
 
-			ScrapeInterval: Duration(15 * time.Second),
-			ScrapeTimeout:  Duration(10 * time.Second),
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  model.Duration(10 * time.Second),
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
@@ -195,7 +214,7 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes",
 
-			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeInterval: model.Duration(15 * time.Second),
 			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
@@ -203,19 +222,20 @@ var expectedConf = &Config{
 
 			KubernetesSDConfigs: []*KubernetesSDConfig{
 				{
-					Masters:        []URL{kubernetesSDHostURL()},
-					Username:       "myusername",
-					Password:       "mypassword",
-					KubeletPort:    10255,
-					RequestTimeout: Duration(10 * time.Second),
-					RetryInterval:  Duration(1 * time.Second),
+					APIServers: []URL{kubernetesSDHostURL()},
+					BasicAuth: &BasicAuth{
+						Username: "myusername",
+						Password: "mypassword",
+					},
+					RequestTimeout: model.Duration(10 * time.Second),
+					RetryInterval:  model.Duration(1 * time.Second),
 				},
 			},
 		},
 		{
 			JobName: "service-marathon",
 
-			ScrapeInterval: Duration(15 * time.Second),
+			ScrapeInterval: model.Duration(15 * time.Second),
 			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
@@ -226,7 +246,63 @@ var expectedConf = &Config{
 					Servers: []string{
 						"http://marathon.example.com:8080",
 					},
-					RefreshInterval: Duration(30 * time.Second),
+					RefreshInterval: model.Duration(30 * time.Second),
+				},
+			},
+		},
+		{
+			JobName: "service-ec2",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			EC2SDConfigs: []*EC2SDConfig{
+				{
+					Region:          "us-east-1",
+					AccessKey:       "access",
+					SecretKey:       "secret",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Port:            80,
+				},
+			},
+		},
+		{
+			JobName: "service-azure",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			AzureSDConfigs: []*AzureSDConfig{
+				{
+					SubscriptionID:  "11AAAA11-A11A-111A-A111-1111A1111A11",
+					TenantID:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
+					ClientID:        "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
+					ClientSecret:    "nAdvAK2oBuVym4IXix",
+					RefreshInterval: model.Duration(5 * time.Minute),
+					Port:            9100,
+				},
+			},
+		},
+		{
+			JobName: "service-nerve",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			NerveSDConfigs: []*NerveSDConfig{
+				{
+					Servers: []string{"localhost"},
+					Paths:   []string{"/monitoring"},
+					Timeout: model.Duration(10 * time.Second),
 				},
 			},
 		},
@@ -263,7 +339,7 @@ func TestLoadConfig(t *testing.T) {
 
 	// String method must not reveal authentication credentials.
 	s := c.String()
-	if strings.Contains(s, "admin_name") || strings.Contains(s, "admin_password") {
+	if strings.Contains(s, "admin_password") {
 		t.Fatalf("config's String method reveals authentication credentials.")
 	}
 }
@@ -279,6 +355,9 @@ var expectedErrors = []struct {
 		filename: "jobname_dup.bad.yml",
 		errMsg:   `found multiple scrape configs with job name "prometheus"`,
 	}, {
+		filename: "scrape_interval.bad.yml",
+		errMsg:   `scrape timeout greater than scrape interval`,
+	}, {
 		filename: "labelname.bad.yml",
 		errMsg:   `"not$allowed" is not a valid label name`,
 	}, {
@@ -287,9 +366,6 @@ var expectedErrors = []struct {
 	}, {
 		filename: "regex.bad.yml",
 		errMsg:   "error parsing regexp",
-	}, {
-		filename: "regex_missing.bad.yml",
-		errMsg:   "relabel configuration requires a regular expression",
 	}, {
 		filename: "modulus_missing.bad.yml",
 		errMsg:   "relabel configuration for hashmod requires non-zero modulus",
@@ -306,8 +382,17 @@ var expectedErrors = []struct {
 		filename: "bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	}, {
+		filename: "kubernetes_bearertoken.bad.yml",
+		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
+	}, {
+		filename: "kubernetes_bearertoken_basicauth.bad.yml",
+		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+	}, {
 		filename: "marathon_no_servers.bad.yml",
 		errMsg:   "Marathon SD config must contain at least one Marathon server",
+	}, {
+		filename: "url_in_targetgroup.bad.yml",
+		errMsg:   "\"http://bad\" is not a valid hostname",
 	},
 }
 
@@ -324,8 +409,8 @@ func TestBadConfigs(t *testing.T) {
 	}
 }
 
-func TestBadTargetGroup(t *testing.T) {
-	content, err := ioutil.ReadFile("testdata/tgroup.bad.json")
+func TestBadStaticConfigs(t *testing.T) {
+	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
 	if err != nil {
 		t.Fatal(err)
 	}

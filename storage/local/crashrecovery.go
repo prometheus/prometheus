@@ -14,10 +14,11 @@
 package local
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 
@@ -52,7 +53,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 
 	log.Info("Scanning files.")
 	for i := 0; i < 1<<(seriesDirNameLen*4); i++ {
-		dirname := path.Join(p.basePath, fmt.Sprintf(seriesDirNameFmt, i))
+		dirname := filepath.Join(p.basePath, fmt.Sprintf(seriesDirNameFmt, i))
 		dir, err := os.Open(dirname)
 		if os.IsNotExist(err) {
 			continue
@@ -139,7 +140,13 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 		}
 	}
 
-	p.setDirty(false)
+	p.dirtyMtx.Lock()
+	// Only declare storage clean if it didn't become dirty during crash recovery.
+	if !p.becameDirty {
+		p.dirty = false
+	}
+	p.dirtyMtx.Unlock()
+
 	log.Warn("Crash recovery complete.")
 	return nil
 }
@@ -175,28 +182,38 @@ func (p *persistence) sanitizeSeries(
 	fingerprintToSeries map[model.Fingerprint]*memorySeries,
 	fpm fpMappings,
 ) (model.Fingerprint, bool) {
-	filename := path.Join(dirname, fi.Name())
+	var (
+		fp       model.Fingerprint
+		err      error
+		filename = filepath.Join(dirname, fi.Name())
+		s        *memorySeries
+	)
+
 	purge := func() {
-		var err error
-		defer func() {
-			if err != nil {
-				log.Errorf("Failed to move lost series file %s to orphaned directory, deleting it instead. Error was: %s", filename, err)
-				if err = os.Remove(filename); err != nil {
-					log.Errorf("Even deleting file %s did not work: %s", filename, err)
-				}
+		if fp != 0 {
+			var metric model.Metric
+			if s != nil {
+				metric = s.metric
 			}
-		}()
-		orphanedDir := path.Join(p.basePath, "orphaned", path.Base(dirname))
-		if err = os.MkdirAll(orphanedDir, 0700); err != nil {
-			return
+			if err = p.quarantineSeriesFile(
+				fp, errors.New("purge during crash recovery"), metric,
+			); err == nil {
+				return
+			}
+			log.
+				With("file", filename).
+				With("error", err).
+				Error("Failed to move lost series file to orphaned directory.")
 		}
-		if err = os.Rename(filename, path.Join(orphanedDir, fi.Name())); err != nil {
-			return
+		// If we are here, we are either purging an incorrectly named
+		// file, or quarantining has failed. So simply delete the file.
+		if err = os.Remove(filename); err != nil {
+			log.
+				With("file", filename).
+				With("error", err).
+				Error("Failed to delete lost series file.")
 		}
 	}
-
-	var fp model.Fingerprint
-	var err error
 
 	if len(fi.Name()) != fpLen-seriesDirNameLen+len(seriesFileSuffix) ||
 		!strings.HasSuffix(fi.Name(), seriesFileSuffix) {
@@ -204,7 +221,7 @@ func (p *persistence) sanitizeSeries(
 		purge()
 		return fp, false
 	}
-	if fp, err = model.FingerprintFromString(path.Base(dirname) + fi.Name()[:fpLen-seriesDirNameLen]); err != nil {
+	if fp, err = model.FingerprintFromString(filepath.Base(dirname) + fi.Name()[:fpLen-seriesDirNameLen]); err != nil {
 		log.Warnf("Error parsing file name %s: %s", filename, err)
 		purge()
 		return fp, false
@@ -274,7 +291,15 @@ func (p *persistence) sanitizeSeries(
 			s.chunkDescs = cds
 			s.chunkDescsOffset = 0
 			s.savedFirstTime = cds[0].firstTime()
-			s.lastTime = cds[len(cds)-1].lastTime()
+			s.lastTime, err = cds[len(cds)-1].lastTime()
+			if err != nil {
+				log.Errorf(
+					"Failed to determine time of the last sample for metric %v, fingerprint %v: %s",
+					s.metric, fp, err,
+				)
+				purge()
+				return fp, false
+			}
 			s.persistWatermark = len(cds)
 			s.modTime = modTime
 			return fp, true
@@ -304,7 +329,15 @@ func (p *persistence) sanitizeSeries(
 		s.savedFirstTime = cds[0].firstTime()
 		s.modTime = modTime
 
-		lastTime := cds[len(cds)-1].lastTime()
+		lastTime, err := cds[len(cds)-1].lastTime()
+		if err != nil {
+			log.Errorf(
+				"Failed to determine time of the last sample for metric %v, fingerprint %v: %s",
+				s.metric, fp, err,
+			)
+			purge()
+			return fp, false
+		}
 		keepIdx := -1
 		for i, cd := range s.chunkDescs {
 			if cd.firstTime() >= lastTime {
@@ -414,7 +447,10 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if err != nil {
 			return err
 		}
-		series := newMemorySeries(model.Metric(m), cds, p.seriesFileModTime(model.Fingerprint(fp)))
+		series, err := newMemorySeries(model.Metric(m), cds, p.seriesFileModTime(model.Fingerprint(fp)))
+		if err != nil {
+			return err
+		}
 		fpToSeries[model.Fingerprint(fp)] = series
 		return nil
 	}); err != nil {

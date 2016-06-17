@@ -26,7 +26,6 @@ import (
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -98,11 +97,11 @@ func (t *Test) parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	}
 	parts := patLoad.FindStringSubmatch(lines[i])
 
-	gap, err := strutil.StringToDuration(parts[1])
+	gap, err := model.ParseDuration(parts[1])
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}
-	cmd := newLoadCmd(gap)
+	cmd := newLoadCmd(time.Duration(gap))
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
@@ -141,11 +140,11 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		return i, nil, err
 	}
 
-	offset, err := strutil.StringToDuration(at)
+	offset, err := model.ParseDuration(at)
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
 	}
-	ts := testStartTime.Add(offset)
+	ts := testStartTime.Add(time.Duration(offset))
 
 	cmd := newEvalCmd(expr, ts, ts, 0)
 	switch mod {
@@ -412,6 +411,32 @@ func (cmd clearCmd) String() string {
 	return "clear"
 }
 
+// RunAsBenchmark runs the test in benchmark mode.
+// This will not count any loads or non eval functions.
+func (t *Test) RunAsBenchmark(b *Benchmark) error {
+	for _, cmd := range t.cmds {
+
+		switch cmd.(type) {
+		// Only time the "eval" command.
+		case *evalCmd:
+			err := t.exec(cmd)
+			if err != nil {
+				return err
+			}
+		default:
+			if b.iterCount == 0 {
+				b.b.StopTimer()
+				err := t.exec(cmd)
+				if err != nil {
+					return err
+				}
+				b.b.StartTimer()
+			}
+		}
+	}
+	return nil
+}
+
 // Run executes the command sequence of the test. Until the maximum error number
 // is reached, evaluation errors do not terminate execution.
 func (t *Test) Run() error {
@@ -426,7 +451,7 @@ func (t *Test) Run() error {
 	return nil
 }
 
-// exec processes a single step of the test
+// exec processes a single step of the test.
 func (t *Test) exec(tc testCommand) error {
 	switch cmd := tc.(type) {
 	case *clearCmd:
@@ -470,7 +495,7 @@ func (t *Test) clear() {
 	}
 
 	var closer testutil.Closer
-	t.storage, closer = local.NewTestStorage(t, 1)
+	t.storage, closer = local.NewTestStorage(t, 2)
 
 	t.closeStorage = closer.Close
 	t.queryEngine = NewEngine(t.storage, nil)

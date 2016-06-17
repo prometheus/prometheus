@@ -19,7 +19,6 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
-	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -44,27 +43,25 @@ func funcTime(ev *evaluator, args Expressions) model.Value {
 	}
 }
 
-// === delta(matrix model.ValMatrix, isCounter=0 model.ValScalar) Vector ===
-func funcDelta(ev *evaluator, args Expressions) model.Value {
-	isCounter := len(args) >= 2 && ev.evalInt(args[1]) > 0
+// extrapolatedRate is a utility function for rate/increase/delta.
+// It calculates the rate (allowing for counter resets if isCounter is true),
+// extrapolates if the first/last sample is close to the boundary, and returns
+// the result as either per-second (if isRate is true) or overall.
+func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) model.Value {
+	ms := arg.(*MatrixSelector)
+
+	rangeStart := ev.Timestamp.Add(-ms.Range - ms.Offset)
+	rangeEnd := ev.Timestamp.Add(-ms.Offset)
+
 	resultVector := vector{}
 
-	// If we treat these metrics as counters, we need to fetch all values
-	// in the interval to find breaks in the timeseries' monotonicity.
-	// I.e. if a counter resets, we want to ignore that reset.
-	var matrixValue matrix
-	if isCounter {
-		matrixValue = ev.evalMatrix(args[0])
-	} else {
-		matrixValue = ev.evalMatrixBounds(args[0])
-	}
+	matrixValue := ev.evalMatrix(ms)
 	for _, samples := range matrixValue {
-		// No sense in trying to compute a delta without at least two points. Drop
+		// No sense in trying to compute a rate without at least two points. Drop
 		// this vector element.
 		if len(samples.Values) < 2 {
 			continue
 		}
-
 		var (
 			counterCorrection model.SampleValue
 			lastValue         model.SampleValue
@@ -78,22 +75,48 @@ func funcDelta(ev *evaluator, args Expressions) model.Value {
 		}
 		resultValue := lastValue - samples.Values[0].Value + counterCorrection
 
-		targetInterval := args[0].(*MatrixSelector).Range
-		sampledInterval := samples.Values[len(samples.Values)-1].Timestamp.Sub(samples.Values[0].Timestamp)
-		if sampledInterval == 0 {
-			// Only found one sample. Cannot compute a rate from this.
-			continue
+		// Duration between first/last samples and boundary of range.
+		durationToStart := samples.Values[0].Timestamp.Sub(rangeStart).Seconds()
+		durationToEnd := rangeEnd.Sub(samples.Values[len(samples.Values)-1].Timestamp).Seconds()
+
+		sampledInterval := samples.Values[len(samples.Values)-1].Timestamp.Sub(samples.Values[0].Timestamp).Seconds()
+		averageDurationBetweenSamples := sampledInterval / float64(len(samples.Values)-1)
+
+		if isCounter && resultValue > 0 && samples.Values[0].Value >= 0 {
+			// Counters cannot be negative. If we have any slope at
+			// all (i.e. resultValue went up), we can extrapolate
+			// the zero point of the counter. If the duration to the
+			// zero point is shorter than the durationToStart, we
+			// take the zero point as the start of the series,
+			// thereby avoiding extrapolation to negative counter
+			// values.
+			durationToZero := sampledInterval * float64(samples.Values[0].Value/resultValue)
+			if durationToZero < durationToStart {
+				durationToStart = durationToZero
+			}
 		}
-		// Correct for differences in target vs. actual delta interval.
-		//
-		// Above, we didn't actually calculate the delta for the specified target
-		// interval, but for an interval between the first and last found samples
-		// under the target interval, which will usually have less time between
-		// them. Depending on how many samples are found under a target interval,
-		// the delta results are distorted and temporal aliasing occurs (ugly
-		// bumps). This effect is corrected for below.
-		intervalCorrection := model.SampleValue(targetInterval) / model.SampleValue(sampledInterval)
-		resultValue *= intervalCorrection
+
+		// If the first/last samples are close to the boundaries of the range,
+		// extrapolate the result. This is as we expect that another sample
+		// will exist given the spacing between samples we've seen thus far,
+		// with an allowance for noise.
+		extrapolationThreshold := averageDurationBetweenSamples * 1.1
+		extrapolateToInterval := sampledInterval
+
+		if durationToStart < extrapolationThreshold {
+			extrapolateToInterval += durationToStart
+		} else {
+			extrapolateToInterval += averageDurationBetweenSamples / 2
+		}
+		if durationToEnd < extrapolationThreshold {
+			extrapolateToInterval += durationToEnd
+		} else {
+			extrapolateToInterval += averageDurationBetweenSamples / 2
+		}
+		resultValue = resultValue * model.SampleValue(extrapolateToInterval/sampledInterval)
+		if isRate {
+			resultValue = resultValue / model.SampleValue(ms.Range.Seconds())
+		}
 
 		resultSample := &sample{
 			Metric:    samples.Metric,
@@ -106,39 +129,172 @@ func funcDelta(ev *evaluator, args Expressions) model.Value {
 	return resultVector
 }
 
+// === delta(matrix model.ValMatrix) Vector ===
+func funcDelta(ev *evaluator, args Expressions) model.Value {
+	return extrapolatedRate(ev, args[0], false, false)
+}
+
 // === rate(node model.ValMatrix) Vector ===
 func funcRate(ev *evaluator, args Expressions) model.Value {
-	args = append(args, &NumberLiteral{1})
-	vector := funcDelta(ev, args).(vector)
-
-	// TODO: could be other type of model.ValMatrix in the future (right now, only
-	// MatrixSelector exists). Find a better way of getting the duration of a
-	// matrix, such as looking at the samples themselves.
-	interval := args[0].(*MatrixSelector).Range
-	for i := range vector {
-		vector[i].Value /= model.SampleValue(interval / time.Second)
-	}
-	return vector
+	return extrapolatedRate(ev, args[0], true, true)
 }
 
 // === increase(node model.ValMatrix) Vector ===
 func funcIncrease(ev *evaluator, args Expressions) model.Value {
-	args = append(args, &NumberLiteral{1})
-	return funcDelta(ev, args).(vector)
+	return extrapolatedRate(ev, args[0], true, false)
+}
+
+// === irate(node model.ValMatrix) Vector ===
+func funcIrate(ev *evaluator, args Expressions) model.Value {
+	resultVector := vector{}
+	for _, samples := range ev.evalMatrix(args[0]) {
+		// No sense in trying to compute a rate without at least two points. Drop
+		// this vector element.
+		if len(samples.Values) < 2 {
+			continue
+		}
+
+		lastSample := samples.Values[len(samples.Values)-1]
+		previousSample := samples.Values[len(samples.Values)-2]
+
+		var resultValue model.SampleValue
+		if lastSample.Value < previousSample.Value {
+			// Counter reset.
+			resultValue = lastSample.Value
+		} else {
+			resultValue = lastSample.Value - previousSample.Value
+		}
+
+		sampledInterval := lastSample.Timestamp.Sub(previousSample.Timestamp)
+		if sampledInterval == 0 {
+			// Avoid dividing by 0.
+			continue
+		}
+		// Convert to per-second.
+		resultValue /= model.SampleValue(sampledInterval.Seconds())
+
+		resultSample := &sample{
+			Metric:    samples.Metric,
+			Value:     resultValue,
+			Timestamp: ev.Timestamp,
+		}
+		resultSample.Metric.Del(model.MetricNameLabel)
+		resultVector = append(resultVector, resultSample)
+	}
+	return resultVector
+}
+
+// Calculate the trend value at the given index i in raw data d.
+// This is somewhat analogous to the slope of the trend at the given index.
+// The argument "s" is the set of computed smoothed values.
+// The argument "b" is the set of computed trend factors.
+// The argument "d" is the set of raw input values.
+func calcTrendValue(i int, sf, tf float64, s, b, d []float64) float64 {
+	if i == 0 {
+		return b[0]
+	}
+
+	x := tf * (s[i] - s[i-1])
+	y := (1 - tf) * b[i-1]
+
+	// Cache the computed value.
+	b[i] = x + y
+
+	return b[i]
+}
+
+// Holt-Winters is similar to a weighted moving average, where historical data has exponentially less influence on the current data.
+// Holt-Winter also accounts for trends in data. The smoothing factor (0 < sf < 1) affects how historical data will affect the current
+// data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) affects
+// how trends in historical data will affect the current data. A higher trend factor increases the influence.
+// of trends. Algorithm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing".
+func funcHoltWinters(ev *evaluator, args Expressions) model.Value {
+	mat := ev.evalMatrix(args[0])
+
+	// The smoothing factor argument.
+	sf := ev.evalFloat(args[1])
+
+	// The trend factor argument.
+	tf := ev.evalFloat(args[2])
+
+	// Sanity check the input.
+	if sf <= 0 || sf >= 1 {
+		ev.errorf("invalid smoothing factor. Expected: 0 < sf < 1 got: %f", sf)
+	}
+	if tf <= 0 || tf >= 1 {
+		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 got: %f", sf)
+	}
+
+	// Make an output vector large enough to hold the entire result.
+	resultVector := make(vector, 0, len(mat))
+
+	// Create scratch values.
+	var s, b, d []float64
+
+	var l int
+	for _, samples := range mat {
+		l = len(samples.Values)
+
+		// Can't do the smoothing operation with less than two points.
+		if l < 2 {
+			continue
+		}
+
+		// Resize scratch values.
+		if l != len(s) {
+			s = make([]float64, l)
+			b = make([]float64, l)
+			d = make([]float64, l)
+		}
+
+		// Fill in the d values with the raw values from the input.
+		for i, v := range samples.Values {
+			d[i] = float64(v.Value)
+		}
+
+		// Set initial values.
+		s[0] = d[0]
+		b[0] = d[1] - d[0]
+
+		// Run the smoothing operation.
+		var x, y float64
+		for i := 1; i < len(d); i++ {
+
+			// Scale the raw value against the smoothing factor.
+			x = sf * d[i]
+
+			// Scale the last smoothed value with the trend at this point.
+			y = (1 - sf) * (s[i-1] + calcTrendValue(i-1, sf, tf, s, b, d))
+
+			s[i] = x + y
+		}
+
+		samples.Metric.Del(model.MetricNameLabel)
+		resultVector = append(resultVector, &sample{
+			Metric:    samples.Metric,
+			Value:     model.SampleValue(s[len(s)-1]), // The last value in the vector is the smoothed result.
+			Timestamp: ev.Timestamp,
+		})
+	}
+
+	return resultVector
 }
 
 // === sort(node model.ValVector) Vector ===
 func funcSort(ev *evaluator, args Expressions) model.Value {
-	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
-	sort.Sort(byValueSorter)
+	// NaN should sort to the bottom, so take descending sort with NaN first and
+	// reverse it.
+	byValueSorter := vectorByReverseValueHeap(ev.evalVector(args[0]))
+	sort.Sort(sort.Reverse(byValueSorter))
 	return vector(byValueSorter)
 }
 
 // === sortDesc(node model.ValVector) Vector ===
 func funcSortDesc(ev *evaluator, args Expressions) model.Value {
+	// NaN should sort to the bottom, so take ascending sort with NaN first and
+	// reverse it.
 	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
 	sort.Sort(sort.Reverse(byValueSorter))
-
 	return vector(byValueSorter)
 }
 
@@ -153,13 +309,14 @@ func funcTopk(ev *evaluator, args Expressions) model.Value {
 	topk := make(vectorByValueHeap, 0, k)
 
 	for _, el := range vec {
-		if len(topk) < k || topk[0].Value < el.Value {
+		if len(topk) < k || topk[0].Value < el.Value || math.IsNaN(float64(topk[0].Value)) {
 			if len(topk) == k {
 				heap.Pop(&topk)
 			}
 			heap.Push(&topk, el)
 		}
 	}
+	// The heap keeps the lowest value on top, so reverse it.
 	sort.Sort(sort.Reverse(topk))
 	return vector(topk)
 }
@@ -172,19 +329,41 @@ func funcBottomk(ev *evaluator, args Expressions) model.Value {
 	}
 	vec := ev.evalVector(args[1])
 
-	bottomk := make(vectorByValueHeap, 0, k)
-	bkHeap := reverseHeap{Interface: &bottomk}
+	bottomk := make(vectorByReverseValueHeap, 0, k)
 
 	for _, el := range vec {
-		if len(bottomk) < k || bottomk[0].Value > el.Value {
+		if len(bottomk) < k || bottomk[0].Value > el.Value || math.IsNaN(float64(bottomk[0].Value)) {
 			if len(bottomk) == k {
-				heap.Pop(&bkHeap)
+				heap.Pop(&bottomk)
 			}
-			heap.Push(&bkHeap, el)
+			heap.Push(&bottomk, el)
 		}
 	}
-	sort.Sort(bottomk)
+	// The heap keeps the highest value on top, so reverse it.
+	sort.Sort(sort.Reverse(bottomk))
 	return vector(bottomk)
+}
+
+// === clamp_max(vector model.ValVector, max Scalar) Vector ===
+func funcClampMax(ev *evaluator, args Expressions) model.Value {
+	vec := ev.evalVector(args[0])
+	max := ev.evalFloat(args[1])
+	for _, el := range vec {
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Min(max, float64(el.Value)))
+	}
+	return vec
+}
+
+// === clamp_min(vector model.ValVector, min Scalar) Vector ===
+func funcClampMin(ev *evaluator, args Expressions) model.Value {
+	vec := ev.evalVector(args[0])
+	min := ev.evalFloat(args[1])
+	for _, el := range vec {
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(math.Max(min, float64(el.Value)))
+	}
+	return vec
 }
 
 // === drop_common_labels(node model.ValVector) Vector ===
@@ -441,10 +620,37 @@ func funcLog10(ev *evaluator, args Expressions) model.Value {
 	return vector
 }
 
+// linearRegression performs a least-square linear regression analysis on the
+// provided SamplePairs. It returns the slope, and the intercept value at the
+// provided time.
+func linearRegression(samples []model.SamplePair, interceptTime model.Time) (slope, intercept model.SampleValue) {
+	var (
+		n            model.SampleValue
+		sumX, sumY   model.SampleValue
+		sumXY, sumX2 model.SampleValue
+	)
+	for _, sample := range samples {
+		x := model.SampleValue(
+			model.Time(sample.Timestamp-interceptTime).UnixNano(),
+		) / 1e9
+		n += 1.0
+		sumY += sample.Value
+		sumX += x
+		sumXY += x * sample.Value
+		sumX2 += x * x
+	}
+	covXY := sumXY - sumX*sumY/n
+	varX := sumX2 - sumX*sumX/n
+
+	slope = covXY / varX
+	intercept = sumY/n - slope*sumX/n
+	return slope, intercept
+}
+
 // === deriv(node model.ValMatrix) Vector ===
 func funcDeriv(ev *evaluator, args Expressions) model.Value {
-	resultVector := vector{}
 	mat := ev.evalMatrix(args[0])
+	resultVector := make(vector, 0, len(mat))
 
 	for _, samples := range mat {
 		// No sense in trying to compute a derivative without at least two points.
@@ -452,29 +658,10 @@ func funcDeriv(ev *evaluator, args Expressions) model.Value {
 		if len(samples.Values) < 2 {
 			continue
 		}
-
-		// Least squares.
-		var (
-			n            model.SampleValue
-			sumX, sumY   model.SampleValue
-			sumXY, sumX2 model.SampleValue
-		)
-		for _, sample := range samples.Values {
-			x := model.SampleValue(sample.Timestamp.UnixNano() / 1e9)
-			n += 1.0
-			sumY += sample.Value
-			sumX += x
-			sumXY += x * sample.Value
-			sumX2 += x * x
-		}
-		numerator := sumXY - sumX*sumY/n
-		denominator := sumX2 - (sumX*sumX)/n
-
-		resultValue := numerator / denominator
-
+		slope, _ := linearRegression(samples.Values, 0)
 		resultSample := &sample{
 			Metric:    samples.Metric,
-			Value:     resultValue,
+			Value:     slope,
 			Timestamp: ev.Timestamp,
 		}
 		resultSample.Metric.Del(model.MetricNameLabel)
@@ -485,39 +672,26 @@ func funcDeriv(ev *evaluator, args Expressions) model.Value {
 
 // === predict_linear(node model.ValMatrix, k model.ValScalar) Vector ===
 func funcPredictLinear(ev *evaluator, args Expressions) model.Value {
-	vec := funcDeriv(ev, args[0:1]).(vector)
-	duration := model.SampleValue(model.SampleValue(ev.evalFloat(args[1])))
+	mat := ev.evalMatrix(args[0])
+	resultVector := make(vector, 0, len(mat))
+	duration := model.SampleValue(ev.evalFloat(args[1]))
 
-	excludedLabels := map[model.LabelName]struct{}{
-		model.MetricNameLabel: {},
-	}
-
-	// Calculate predicted delta over the duration.
-	signatureToDelta := map[uint64]model.SampleValue{}
-	for _, el := range vec {
-		signature := model.SignatureWithoutLabels(el.Metric.Metric, excludedLabels)
-		signatureToDelta[signature] = el.Value * duration
-	}
-
-	// add predicted delta to last value.
-	matrixBounds := ev.evalMatrixBounds(args[0])
-	outVec := make(vector, 0, len(signatureToDelta))
-	for _, samples := range matrixBounds {
+	for _, samples := range mat {
+		// No sense in trying to predict anything without at least two points.
+		// Drop this vector element.
 		if len(samples.Values) < 2 {
 			continue
 		}
-		signature := model.SignatureWithoutLabels(samples.Metric.Metric, excludedLabels)
-		delta, ok := signatureToDelta[signature]
-		if ok {
-			samples.Metric.Del(model.MetricNameLabel)
-			outVec = append(outVec, &sample{
-				Metric:    samples.Metric,
-				Value:     delta + samples.Values[1].Value,
-				Timestamp: ev.Timestamp,
-			})
+		slope, intercept := linearRegression(samples.Values, ev.Timestamp)
+		resultSample := &sample{
+			Metric:    samples.Metric,
+			Value:     slope*duration + intercept,
+			Timestamp: ev.Timestamp,
 		}
+		resultSample.Metric.Del(model.MetricNameLabel)
+		resultVector = append(resultVector, resultSample)
 	}
-	return outVec
+	return resultVector
 }
 
 // === histogram_quantile(k model.ValScalar, vector model.ValVector) Vector ===
@@ -710,6 +884,18 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcChanges,
 	},
+	"clamp_max": {
+		Name:       "clamp_max",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValScalar},
+		ReturnType: model.ValVector,
+		Call:       funcClampMax,
+	},
+	"clamp_min": {
+		Name:       "clamp_min",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValScalar},
+		ReturnType: model.ValVector,
+		Call:       funcClampMin,
+	},
 	"count_over_time": {
 		Name:       "count_over_time",
 		ArgTypes:   []model.ValueType{model.ValMatrix},
@@ -723,11 +909,10 @@ var functions = map[string]*Function{
 		Call:       funcCountScalar,
 	},
 	"delta": {
-		Name:         "delta",
-		ArgTypes:     []model.ValueType{model.ValMatrix, model.ValScalar},
-		OptionalArgs: 1, // The 2nd argument is deprecated.
-		ReturnType:   model.ValVector,
-		Call:         funcDelta,
+		Name:       "delta",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcDelta,
 	},
 	"deriv": {
 		Name:       "deriv",
@@ -758,6 +943,18 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValScalar, model.ValVector},
 		ReturnType: model.ValVector,
 		Call:       funcHistogramQuantile,
+	},
+	"holt_winters": {
+		Name:       "holt_winters",
+		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar, model.ValScalar},
+		ReturnType: model.ValVector,
+		Call:       funcHoltWinters,
+	},
+	"irate": {
+		Name:       "irate",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcIrate,
 	},
 	"label_replace": {
 		Name:       "label_replace",
@@ -905,10 +1102,31 @@ func (s *vectorByValueHeap) Pop() interface{} {
 	return el
 }
 
-type reverseHeap struct {
-	heap.Interface
+type vectorByReverseValueHeap vector
+
+func (s vectorByReverseValueHeap) Len() int {
+	return len(s)
 }
 
-func (s reverseHeap) Less(i, j int) bool {
-	return s.Interface.Less(j, i)
+func (s vectorByReverseValueHeap) Less(i, j int) bool {
+	if math.IsNaN(float64(s[i].Value)) {
+		return true
+	}
+	return s[i].Value > s[j].Value
+}
+
+func (s vectorByReverseValueHeap) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (s *vectorByReverseValueHeap) Push(x interface{}) {
+	*s = append(*s, x.(*sample))
+}
+
+func (s *vectorByReverseValueHeap) Pop() interface{} {
+	old := *s
+	n := len(old)
+	el := old[n-1]
+	*s = old[0 : n-1]
+	return el
 }

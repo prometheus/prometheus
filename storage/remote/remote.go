@@ -24,6 +24,7 @@ import (
 	influx "github.com/influxdb/influxdb/client"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage/remote/graphite"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 )
@@ -48,6 +49,12 @@ func (s *Storage) ApplyConfig(conf *config.Config) bool {
 // New returns a new remote Storage.
 func New(o *Options) *Storage {
 	s := &Storage{}
+	if o.GraphiteAddress != "" {
+		c := graphite.NewClient(
+			o.GraphiteAddress, o.GraphiteTransport,
+			o.StorageTimeout, o.GraphitePrefix)
+		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
+	}
 	if o.OpentsdbURL != "" {
 		c := opentsdb.NewClient(o.OpentsdbURL, o.StorageTimeout)
 		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
@@ -78,6 +85,9 @@ type Options struct {
 	InfluxdbPassword        string
 	InfluxdbDatabase        string
 	OpentsdbURL             string
+	GraphiteAddress         string
+	GraphiteTransport       string
+	GraphitePrefix          string
 }
 
 // Run starts the background processing of the storage queues.
@@ -94,8 +104,8 @@ func (s *Storage) Stop() {
 	}
 }
 
-// Append implements storage.SampleAppender.
-func (s *Storage) Append(smpl *model.Sample) {
+// Append implements storage.SampleAppender. Always returns nil.
+func (s *Storage) Append(smpl *model.Sample) error {
 	s.mtx.RLock()
 
 	var snew model.Sample
@@ -112,6 +122,14 @@ func (s *Storage) Append(smpl *model.Sample) {
 	for _, q := range s.queues {
 		q.Append(&snew)
 	}
+	return nil
+}
+
+// NeedsThrottling implements storage.SampleAppender. It will always return
+// false as a remote storage drops samples on the floor if backlogging instead
+// of asking for throttling.
+func (s *Storage) NeedsThrottling() bool {
+	return false
 }
 
 // Describe implements prometheus.Collector.

@@ -1,0 +1,28 @@
+{{define "head"}}
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/graph.css">
+
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.css">
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-datetimepicker/bootstrap-datetimepicker.min.css">
+
+    <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.v3.js"></script>
+    <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
+    <script src="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.js"></script>
+    <script src="{{ pathPrefix }}/static/vendor/bootstrap-datetimepicker/bootstrap-datetimepicker.js"></script>
+    <script src="{{ pathPrefix }}/static/vendor/bootstrap3-typeahead/bootstrap3-typeahead.min.js"></script>
+
+    <script src="{{ pathPrefix }}/static/vendor/js/handlebars.js"></script>
+    <script src="{{ pathPrefix }}/static/vendor/js/jquery.selection.js"></script>
+    <script src="{{ pathPrefix }}/static/vendor/js/jquery.hotkeys.js"></script>
+
+    <script src="{{ pathPrefix }}/static/js/graph.js?v=1"></script>
+
+    <script id="graph_template" type="text/x-handlebars-template"></script>
+{{end}}
+
+{{define "content"}}
+    <div id="graph_container" class="container-fluid">
+    </div>
+    <div class="container-fluid">
+      <div><input class="btn btn-primary" type="submit" value="Add Graph" id="add_graph"></div>
+    </div>
+{{end}}

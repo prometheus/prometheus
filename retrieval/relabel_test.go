@@ -104,6 +104,20 @@ func TestRelabel(t *testing.T) {
 		},
 		{
 			input: model.LabelSet{
+				"a": "foo",
+				"b": "bar",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        config.MustNewRegexp(".*o.*"),
+					Action:       config.RelabelDrop,
+				},
+			},
+			output: nil,
+		},
+		{
+			input: model.LabelSet{
 				"a": "abc",
 			},
 			relabel: []*config.RelabelConfig{

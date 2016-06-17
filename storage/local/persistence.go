@@ -20,7 +20,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -46,12 +45,7 @@ const (
 	seriesFileSuffix     = ".db"
 	seriesTempFileSuffix = ".db.tmp"
 	seriesDirNameLen     = 2 // How many bytes of the fingerprint in dir name.
-
-	headsFileName            = "heads.db"
-	headsTempFileName        = "heads.db.tmp"
-	headsFormatVersion       = 2
-	headsFormatLegacyVersion = 1 // Can read, but will never write.
-	headsMagicString         = "PrometheusHeads"
+	hintFileSuffix       = ".hint"
 
 	mappingsFileName      = "mappings.db"
 	mappingsTempFileName  = "mappings.db.tmp"
@@ -67,7 +61,9 @@ const (
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
 	chunkLenWithHeader         = chunkLen + chunkHeaderLen
-	chunkMaxBatchSize          = 64 // How many chunks to load at most in one batch.
+	chunkMaxBatchSize          = 62 // Max no. of chunks to load or write in
+	// one batch.  Note that 62 is the largest number of chunks that fit
+	// into 64kiB on disk because chunkHeaderLen is added to each 1k chunk.
 
 	indexingMaxBatchSize  = 1024 * 1024
 	indexingBatchTimeout  = 500 * time.Millisecond // Commit batch when idle for that long.
@@ -129,11 +125,18 @@ type persistence struct {
 
 	shouldSync syncStrategy
 
+	minShrinkRatio float64 // How much a series file has to shrink to justify dropping chunks.
+
 	bufPool sync.Pool
 }
 
 // newPersistence returns a newly allocated persistence backed by local disk storage, ready to use.
-func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync syncStrategy) (*persistence, error) {
+func newPersistence(
+	basePath string,
+	dirty, pedanticChecks bool,
+	shouldSync syncStrategy,
+	minShrinkRatio float64,
+) (*persistence, error) {
 	dirtyPath := filepath.Join(basePath, dirtyFileName)
 	versionPath := filepath.Join(basePath, versionFileName)
 
@@ -155,7 +158,7 @@ func newPersistence(basePath string, dirty, pedanticChecks bool, shouldSync sync
 		if err != nil {
 			return nil, err
 		}
-		if len(fis) > 0 {
+		if len(fis) > 0 && !(len(fis) == 1 && fis[0].Name() == "lost+found" && fis[0].IsDir()) {
 			return nil, fmt.Errorf("could not detect storage version on disk, assuming version 0, need version %d - please wipe storage or run a version of Prometheus compatible with storage version 0", Version)
 		}
 		// Finally we can write our own version into a new version file.
@@ -309,48 +312,44 @@ func (p *persistence) isDirty() bool {
 	return p.dirty
 }
 
-// setDirty sets the dirty flag in a goroutine-safe way. Once the dirty flag was
-// set to true with this method, it cannot be set to false again. (If we became
-// dirty during our runtime, there is no way back. If we were dirty from the
-// start, a clean-up might make us clean again.)
-func (p *persistence) setDirty(dirty bool) {
-	if dirty {
-		p.dirtyCounter.Inc()
-	}
+// setDirty flags the storage as dirty in a goroutine-safe way. The provided
+// error will be logged as a reason the first time the storage is flagged as dirty.
+func (p *persistence) setDirty(err error) {
+	p.dirtyCounter.Inc()
 	p.dirtyMtx.Lock()
 	defer p.dirtyMtx.Unlock()
 	if p.becameDirty {
 		return
 	}
-	p.dirty = dirty
-	if dirty {
-		p.becameDirty = true
-		log.Error("The storage is now inconsistent. Restart Prometheus ASAP to initiate recovery.")
-	}
+	p.dirty = true
+	p.becameDirty = true
+	log.With("error", err).Error("The storage is now inconsistent. Restart Prometheus ASAP to initiate recovery.")
 }
 
 // fingerprintsForLabelPair returns the fingerprints for the given label
 // pair. This method is goroutine-safe but take into account that metrics queued
 // for indexing with IndexMetric might not have made it into the index
 // yet. (Same applies correspondingly to UnindexMetric.)
-func (p *persistence) fingerprintsForLabelPair(lp model.LabelPair) (model.Fingerprints, error) {
+func (p *persistence) fingerprintsForLabelPair(lp model.LabelPair) model.Fingerprints {
 	fps, _, err := p.labelPairToFingerprints.Lookup(lp)
 	if err != nil {
-		return nil, err
+		p.setDirty(fmt.Errorf("error in method fingerprintsForLabelPair(%v): %s", lp, err))
+		return nil
 	}
-	return fps, nil
+	return fps
 }
 
 // labelValuesForLabelName returns the label values for the given label
 // name. This method is goroutine-safe but take into account that metrics queued
 // for indexing with IndexMetric might not have made it into the index
 // yet. (Same applies correspondingly to UnindexMetric.)
-func (p *persistence) labelValuesForLabelName(ln model.LabelName) (model.LabelValues, error) {
+func (p *persistence) labelValuesForLabelName(ln model.LabelName) model.LabelValues {
 	lvs, _, err := p.labelNameToLabelValues.Lookup(ln)
 	if err != nil {
-		return nil, err
+		p.setDirty(fmt.Errorf("error in method labelValuesForLabelName(%v): %s", ln, err))
+		return nil
 	}
-	return lvs, nil
+	return lvs
 }
 
 // persistChunks persists a number of consecutive chunks of a series. It is the
@@ -359,21 +358,17 @@ func (p *persistence) labelValuesForLabelName(ln model.LabelName) (model.LabelVa
 // the (zero-based) index of the first persisted chunk within the series
 // file. In case of an error, the returned index is -1 (to avoid the
 // misconception that the chunk was written at position 0).
+//
+// Returning an error signals problems with the series file. In this case, the
+// caller should quarantine the series.
 func (p *persistence) persistChunks(fp model.Fingerprint, chunks []chunk) (index int, err error) {
-	defer func() {
-		if err != nil {
-			log.Error("Error persisting chunks: ", err)
-			p.setDirty(true)
-		}
-	}()
-
 	f, err := p.openChunkFileForWriting(fp)
 	if err != nil {
 		return -1, err
 	}
 	defer p.closeChunkFile(f)
 
-	if err := writeChunks(f, chunks); err != nil {
+	if err := p.writeChunks(f, chunks); err != nil {
 		return -1, err
 	}
 
@@ -405,8 +400,8 @@ func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffse
 	chunks := make([]chunk, 0, len(indexes))
 	buf := p.bufPool.Get().([]byte)
 	defer func() {
-		// buf may change below, so wrap returning to the pool in a function.
-		// A simple 'defer p.bufPool.Put(buf)' would only return the original buf.
+		// buf may change below. An unwrapped 'defer p.bufPool.Put(buf)'
+		// would only put back the original buf.
 		p.bufPool.Put(buf)
 	}()
 
@@ -432,8 +427,13 @@ func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffse
 			return nil, err
 		}
 		for c := 0; c < batchSize; c++ {
-			chunk := newChunkForEncoding(chunkEncoding(buf[c*chunkLenWithHeader+chunkHeaderTypeOffset]))
-			chunk.unmarshalFromBuf(buf[c*chunkLenWithHeader+chunkHeaderLen:])
+			chunk, err := newChunkForEncoding(chunkEncoding(buf[c*chunkLenWithHeader+chunkHeaderTypeOffset]))
+			if err != nil {
+				return nil, err
+			}
+			if err := chunk.unmarshalFromBuf(buf[c*chunkLenWithHeader+chunkHeaderLen:]); err != nil {
+				return nil, err
+			}
 			chunks = append(chunks, chunk)
 		}
 	}
@@ -461,7 +461,7 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 		return nil, err
 	}
 	if fi.Size()%int64(chunkLenWithHeader) != 0 {
-		p.setDirty(true)
+		// The returned error will bubble up and lead to quarantining of the whole series.
 		return nil, fmt.Errorf(
 			"size of series file for fingerprint %v is %d, which is not a multiple of the chunk length %d",
 			fp, fi.Size(), chunkLenWithHeader,
@@ -639,7 +639,11 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 					if _, err = codable.EncodeVarint(w, int64(chunkDesc.firstTime())); err != nil {
 						return
 					}
-					if _, err = codable.EncodeVarint(w, int64(chunkDesc.lastTime())); err != nil {
+					lt, err := chunkDesc.lastTime()
+					if err != nil {
+						return
+					}
+					if _, err = codable.EncodeVarint(w, int64(lt)); err != nil {
 						return
 					}
 				} else {
@@ -690,180 +694,36 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 // start-up while nothing else is running in storage land. This method is
 // utterly goroutine-unsafe.
 func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist int64, err error) {
-	var chunkDescsTotal int64
 	fingerprintToSeries := make(map[model.Fingerprint]*memorySeries)
 	sm = &seriesMap{m: fingerprintToSeries}
 
 	defer func() {
-		if sm != nil && p.dirty {
+		if p.dirty {
 			log.Warn("Persistence layer appears dirty.")
 			err = p.recoverFromCrash(fingerprintToSeries)
 			if err != nil {
 				sm = nil
 			}
 		}
-		if err == nil {
-			numMemChunkDescs.Add(float64(chunkDescsTotal))
-		}
 	}()
 
-	f, err := os.Open(p.headsFileName())
-	if os.IsNotExist(err) {
+	hs := newHeadsScanner(p.headsFileName())
+	defer hs.close()
+	for hs.scan() {
+		fingerprintToSeries[hs.fp] = hs.series
+	}
+	if os.IsNotExist(hs.err) {
 		return sm, 0, nil
 	}
-	if err != nil {
-		log.Warn("Could not open heads file:", err)
+	if hs.err != nil {
 		p.dirty = true
-		return
+		log.
+			With("file", p.headsFileName()).
+			With("error", hs.err).
+			Error("Error reading heads file.")
+		return sm, 0, hs.err
 	}
-	defer f.Close()
-	r := bufio.NewReaderSize(f, fileBufSize)
-
-	buf := make([]byte, len(headsMagicString))
-	if _, err := io.ReadFull(r, buf); err != nil {
-		log.Warn("Could not read from heads file:", err)
-		p.dirty = true
-		return sm, 0, nil
-	}
-	magic := string(buf)
-	if magic != headsMagicString {
-		log.Warnf(
-			"unexpected magic string, want %q, got %q",
-			headsMagicString, magic,
-		)
-		p.dirty = true
-		return
-	}
-	version, err := binary.ReadVarint(r)
-	if (version != headsFormatVersion && version != headsFormatLegacyVersion) || err != nil {
-		log.Warnf("unknown heads format version, want %d", headsFormatVersion)
-		p.dirty = true
-		return sm, 0, nil
-	}
-	numSeries, err := codable.DecodeUint64(r)
-	if err != nil {
-		log.Warn("Could not decode number of series:", err)
-		p.dirty = true
-		return sm, 0, nil
-	}
-
-	for ; numSeries > 0; numSeries-- {
-		seriesFlags, err := r.ReadByte()
-		if err != nil {
-			log.Warn("Could not read series flags:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		headChunkPersisted := seriesFlags&flagHeadChunkPersisted != 0
-		fp, err := codable.DecodeUint64(r)
-		if err != nil {
-			log.Warn("Could not decode fingerprint:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		var metric codable.Metric
-		if err := metric.UnmarshalFromReader(r); err != nil {
-			log.Warn("Could not decode metric:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		var persistWatermark int64
-		var modTime time.Time
-		if version != headsFormatLegacyVersion {
-			// persistWatermark only present in v2.
-			persistWatermark, err = binary.ReadVarint(r)
-			if err != nil {
-				log.Warn("Could not decode persist watermark:", err)
-				p.dirty = true
-				return sm, chunksToPersist, nil
-			}
-			modTimeNano, err := binary.ReadVarint(r)
-			if err != nil {
-				log.Warn("Could not decode modification time:", err)
-				p.dirty = true
-				return sm, chunksToPersist, nil
-			}
-			if modTimeNano != -1 {
-				modTime = time.Unix(0, modTimeNano)
-			}
-		}
-		chunkDescsOffset, err := binary.ReadVarint(r)
-		if err != nil {
-			log.Warn("Could not decode chunk descriptor offset:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		savedFirstTime, err := binary.ReadVarint(r)
-		if err != nil {
-			log.Warn("Could not decode saved first time:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		numChunkDescs, err := binary.ReadVarint(r)
-		if err != nil {
-			log.Warn("Could not decode number of chunk descriptors:", err)
-			p.dirty = true
-			return sm, chunksToPersist, nil
-		}
-		chunkDescs := make([]*chunkDesc, numChunkDescs)
-		if version == headsFormatLegacyVersion {
-			if headChunkPersisted {
-				persistWatermark = numChunkDescs
-			} else {
-				persistWatermark = numChunkDescs - 1
-			}
-		}
-
-		for i := int64(0); i < numChunkDescs; i++ {
-			if i < persistWatermark {
-				firstTime, err := binary.ReadVarint(r)
-				if err != nil {
-					log.Warn("Could not decode first time:", err)
-					p.dirty = true
-					return sm, chunksToPersist, nil
-				}
-				lastTime, err := binary.ReadVarint(r)
-				if err != nil {
-					log.Warn("Could not decode last time:", err)
-					p.dirty = true
-					return sm, chunksToPersist, nil
-				}
-				chunkDescs[i] = &chunkDesc{
-					chunkFirstTime: model.Time(firstTime),
-					chunkLastTime:  model.Time(lastTime),
-				}
-				chunkDescsTotal++
-			} else {
-				// Non-persisted chunk.
-				encoding, err := r.ReadByte()
-				if err != nil {
-					log.Warn("Could not decode chunk type:", err)
-					p.dirty = true
-					return sm, chunksToPersist, nil
-				}
-				chunk := newChunkForEncoding(chunkEncoding(encoding))
-				if err := chunk.unmarshal(r); err != nil {
-					log.Warn("Could not decode chunk:", err)
-					p.dirty = true
-					return sm, chunksToPersist, nil
-				}
-				chunkDescs[i] = newChunkDesc(chunk)
-				chunksToPersist++
-			}
-		}
-
-		fingerprintToSeries[model.Fingerprint(fp)] = &memorySeries{
-			metric:           model.Metric(metric),
-			chunkDescs:       chunkDescs,
-			persistWatermark: int(persistWatermark),
-			modTime:          modTime,
-			chunkDescsOffset: int(chunkDescsOffset),
-			savedFirstTime:   model.Time(savedFirstTime),
-			lastTime:         chunkDescs[len(chunkDescs)-1].lastTime(),
-			headChunkClosed:  persistWatermark >= numChunkDescs,
-		}
-	}
-	return sm, chunksToPersist, nil
+	return sm, hs.chunksToPersistTotal, nil
 }
 
 // dropAndPersistChunks deletes all chunks from a series file whose last sample
@@ -875,6 +735,9 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 // deleted (in which case the returned timestamp will be 0 and must be ignored).
 // It is the caller's responsibility to make sure nothing is persisted or loaded
 // for the same fingerprint concurrently.
+//
+// Returning an error signals problems with the series file. In this case, the
+// caller should quarantine the series.
 func (p *persistence) dropAndPersistChunks(
 	fp model.Fingerprint, beforeTime model.Time, chunks []chunk,
 ) (
@@ -887,19 +750,20 @@ func (p *persistence) dropAndPersistChunks(
 	// Style note: With the many return values, it was decided to use naked
 	// returns in this method. They make the method more readable, but
 	// please handle with care!
-	defer func() {
-		if err != nil {
-			log.Error("Error dropping and/or persisting chunks: ", err)
-			p.setDirty(true)
-		}
-	}()
-
 	if len(chunks) > 0 {
 		// We have chunks to persist. First check if those are already
 		// too old. If that's the case, the chunks in the series file
 		// are all too old, too.
 		i := 0
-		for ; i < len(chunks) && chunks[i].newIterator().lastTimestamp().Before(beforeTime); i++ {
+		for ; i < len(chunks); i++ {
+			var lt model.Time
+			lt, err = chunks[i].newIterator().lastTimestamp()
+			if err != nil {
+				return
+			}
+			if !lt.Before(beforeTime) {
+				break
+			}
 		}
 		if i < len(chunks) {
 			firstTimeNotDropped = chunks[i].firstTime()
@@ -938,13 +802,14 @@ func (p *persistence) dropAndPersistChunks(
 	}
 	defer f.Close()
 
+	headerBuf := make([]byte, chunkHeaderLen)
+	var firstTimeInFile model.Time
 	// Find the first chunk in the file that should be kept.
 	for ; ; numDropped++ {
 		_, err = f.Seek(offsetForChunkIndex(numDropped), os.SEEK_SET)
 		if err != nil {
 			return
 		}
-		headerBuf := make([]byte, chunkHeaderLen)
 		_, err = io.ReadFull(f, headerBuf)
 		if err == io.EOF {
 			// We ran into the end of the file without finding any chunks that should
@@ -962,29 +827,44 @@ func (p *persistence) dropAndPersistChunks(
 		if err != nil {
 			return
 		}
+		if numDropped == 0 {
+			firstTimeInFile = model.Time(
+				binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
+			)
+		}
 		lastTime := model.Time(
 			binary.LittleEndian.Uint64(headerBuf[chunkHeaderLastTimeOffset:]),
 		)
 		if !lastTime.Before(beforeTime) {
-			firstTimeNotDropped = model.Time(
-				binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
-			)
-			chunkOps.WithLabelValues(drop).Add(float64(numDropped))
 			break
 		}
 	}
 
-	// We've found the first chunk that should be kept. If it is the first
-	// one, just append the chunks.
-	if numDropped == 0 {
+	// We've found the first chunk that should be kept.
+	// First check if the shrink ratio is good enough to perform the the
+	// actual drop or leave it for next time if it is not worth the effort.
+	fi, err := f.Stat()
+	if err != nil {
+		return
+	}
+	totalChunks := int(fi.Size())/chunkLenWithHeader + len(chunks)
+	if numDropped == 0 || float64(numDropped)/float64(totalChunks) < p.minShrinkRatio {
+		// Nothing to drop. Just adjust the return values and append the chunks (if any).
+		numDropped = 0
+		firstTimeNotDropped = firstTimeInFile
 		if len(chunks) > 0 {
 			offset, err = p.persistChunks(fp, chunks)
 		}
 		return
 	}
-	// Otherwise, seek backwards to the beginning of its header and start
-	// copying everything from there into a new file. Then append the chunks
-	// to the new file.
+	// If we are here, we have to drop some chunks for real. So we need to
+	// record firstTimeNotDropped from the last read header, seek backwards
+	// to the beginning of its header, and start copying everything from
+	// there into a new file. Then append the chunks to the new file.
+	firstTimeNotDropped = model.Time(
+		binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
+	)
+	chunkOps.WithLabelValues(drop).Add(float64(numDropped))
 	_, err = f.Seek(-chunkHeaderLen, os.SEEK_CUR)
 	if err != nil {
 		return
@@ -1008,7 +888,7 @@ func (p *persistence) dropAndPersistChunks(
 	offset = int(written / chunkLenWithHeader)
 
 	if len(chunks) > 0 {
-		if err = writeChunks(temp, chunks); err != nil {
+		if err = p.writeChunks(temp, chunks); err != nil {
 			return
 		}
 	}
@@ -1034,6 +914,44 @@ func (p *persistence) deleteSeriesFile(fp model.Fingerprint) (int, error) {
 	}
 	chunkOps.WithLabelValues(drop).Add(float64(numChunks))
 	return numChunks, nil
+}
+
+// quarantineSeriesFile moves a series file to the orphaned directory. It also
+// writes a hint file with the provided quarantine reason and, if series is
+// non-nil, the string representation of the metric.
+func (p *persistence) quarantineSeriesFile(fp model.Fingerprint, quarantineReason error, metric model.Metric) error {
+	var (
+		oldName     = p.fileNameForFingerprint(fp)
+		orphanedDir = filepath.Join(p.basePath, "orphaned", filepath.Base(filepath.Dir(oldName)))
+		newName     = filepath.Join(orphanedDir, filepath.Base(oldName))
+		hintName    = newName[:len(newName)-len(seriesFileSuffix)] + hintFileSuffix
+	)
+
+	renameErr := os.MkdirAll(orphanedDir, 0700)
+	if renameErr != nil {
+		return renameErr
+	}
+	renameErr = os.Rename(oldName, newName)
+	if os.IsNotExist(renameErr) {
+		// Source file dosn't exist. That's normal.
+		renameErr = nil
+	}
+	// Write hint file even if the rename ended in an error. At least try...
+	// And ignore errors writing the hint file. It's best effort.
+	if f, err := os.Create(hintName); err == nil {
+		if metric != nil {
+			f.WriteString(metric.String() + "\n")
+		} else {
+			f.WriteString("[UNKNOWN METRIC]\n")
+		}
+		if quarantineReason != nil {
+			f.WriteString(quarantineReason.Error() + "\n")
+		} else {
+			f.WriteString("[UNKNOWN REASON]\n")
+		}
+		f.Close()
+	}
+	return renameErr
 }
 
 // seriesFileModTime returns the modification time of the series file belonging
@@ -1085,26 +1003,28 @@ func (p *persistence) waitForIndexing() {
 // the metric. The caller must have locked the fingerprint.
 func (p *persistence) archiveMetric(
 	fp model.Fingerprint, m model.Metric, first, last model.Time,
-) error {
+) {
 	if err := p.archivedFingerprintToMetrics.Put(codable.Fingerprint(fp), codable.Metric(m)); err != nil {
-		p.setDirty(true)
-		return err
+		p.setDirty(fmt.Errorf("error in method archiveMetric inserting fingerprint %v into FingerprintToMetrics: %s", fp, err))
+		return
 	}
 	if err := p.archivedFingerprintToTimeRange.Put(codable.Fingerprint(fp), codable.TimeRange{First: first, Last: last}); err != nil {
-		p.setDirty(true)
-		return err
+		p.setDirty(fmt.Errorf("error in method archiveMetric inserting fingerprint %v into FingerprintToTimeRange: %s", fp, err))
 	}
-	return nil
 }
 
 // hasArchivedMetric returns whether the archived metric for the given
 // fingerprint exists and if yes, what the first and last timestamp in the
 // corresponding series is. This method is goroutine-safe.
 func (p *persistence) hasArchivedMetric(fp model.Fingerprint) (
-	hasMetric bool, firstTime, lastTime model.Time, err error,
+	hasMetric bool, firstTime, lastTime model.Time,
 ) {
-	firstTime, lastTime, hasMetric, err = p.archivedFingerprintToTimeRange.Lookup(fp)
-	return
+	firstTime, lastTime, hasMetric, err := p.archivedFingerprintToTimeRange.Lookup(fp)
+	if err != nil {
+		p.setDirty(fmt.Errorf("error in method hasArchivedMetric(%v): %s", fp, err))
+		hasMetric = false
+	}
+	return hasMetric, firstTime, lastTime
 }
 
 // updateArchivedTimeRange updates an archived time range. The caller must make
@@ -1142,7 +1062,11 @@ func (p *persistence) fingerprintsModifiedBefore(beforeTime model.Time) ([]model
 // method is goroutine-safe.
 func (p *persistence) archivedMetric(fp model.Fingerprint) (model.Metric, error) {
 	metric, _, err := p.archivedFingerprintToMetrics.Lookup(fp)
-	return metric, err
+	if err != nil {
+		p.setDirty(fmt.Errorf("error in method archivedMetric(%v): %s", fp, err))
+		return nil, err
+	}
+	return metric, nil
 }
 
 // purgeArchivedMetric deletes an archived fingerprint and its corresponding
@@ -1152,7 +1076,7 @@ func (p *persistence) archivedMetric(fp model.Fingerprint) (model.Metric, error)
 func (p *persistence) purgeArchivedMetric(fp model.Fingerprint) (err error) {
 	defer func() {
 		if err != nil {
-			p.setDirty(true)
+			p.setDirty(fmt.Errorf("error in method purgeArchivedMetric(%v): %s", fp, err))
 		}
 	}()
 
@@ -1183,12 +1107,8 @@ func (p *persistence) purgeArchivedMetric(fp model.Fingerprint) (err error) {
 // was actually deleted, the method returns true and the first time and last
 // time of the deleted metric. The caller must have locked the fingerprint.
 func (p *persistence) unarchiveMetric(fp model.Fingerprint) (deletedAnything bool, err error) {
-	defer func() {
-		if err != nil {
-			p.setDirty(true)
-		}
-	}()
-
+	// An error returned here will bubble up and lead to quarantining of the
+	// series, so no setDirty required.
 	deleted, err := p.archivedFingerprintToMetrics.Delete(codable.Fingerprint(fp))
 	if err != nil || !deleted {
 		return false, err
@@ -1244,17 +1164,17 @@ func (p *persistence) close() error {
 
 func (p *persistence) dirNameForFingerprint(fp model.Fingerprint) string {
 	fpStr := fp.String()
-	return path.Join(p.basePath, fpStr[0:seriesDirNameLen])
+	return filepath.Join(p.basePath, fpStr[0:seriesDirNameLen])
 }
 
 func (p *persistence) fileNameForFingerprint(fp model.Fingerprint) string {
 	fpStr := fp.String()
-	return path.Join(p.basePath, fpStr[0:seriesDirNameLen], fpStr[seriesDirNameLen:]+seriesFileSuffix)
+	return filepath.Join(p.basePath, fpStr[0:seriesDirNameLen], fpStr[seriesDirNameLen:]+seriesFileSuffix)
 }
 
 func (p *persistence) tempFileNameForFingerprint(fp model.Fingerprint) string {
 	fpStr := fp.String()
-	return path.Join(p.basePath, fpStr[0:seriesDirNameLen], fpStr[seriesDirNameLen:]+seriesTempFileSuffix)
+	return filepath.Join(p.basePath, fpStr[0:seriesDirNameLen], fpStr[seriesDirNameLen:]+seriesTempFileSuffix)
 }
 
 func (p *persistence) openChunkFileForWriting(fp model.Fingerprint) (*os.File, error) {
@@ -1287,19 +1207,19 @@ func (p *persistence) openChunkFileForReading(fp model.Fingerprint) (*os.File, e
 }
 
 func (p *persistence) headsFileName() string {
-	return path.Join(p.basePath, headsFileName)
+	return filepath.Join(p.basePath, headsFileName)
 }
 
 func (p *persistence) headsTempFileName() string {
-	return path.Join(p.basePath, headsTempFileName)
+	return filepath.Join(p.basePath, headsTempFileName)
 }
 
 func (p *persistence) mappingsFileName() string {
-	return path.Join(p.basePath, mappingsFileName)
+	return filepath.Join(p.basePath, mappingsFileName)
 }
 
 func (p *persistence) mappingsTempFileName() string {
-	return path.Join(p.basePath, mappingsTempFileName)
+	return filepath.Join(p.basePath, mappingsTempFileName)
 }
 
 func (p *persistence) processIndexingQueue() {
@@ -1407,8 +1327,10 @@ loop:
 	close(p.indexingStopped)
 }
 
-// checkpointFPMappings persists the fingerprint mappings. This method is not
-// goroutine-safe.
+// checkpointFPMappings persists the fingerprint mappings. The caller has to
+// ensure that the provided mappings are not changed concurrently. This method
+// is only called upon shutdown or during crash recovery, when no samples are
+// ingested.
 //
 // Description of the file format, v1:
 //
@@ -1562,6 +1484,39 @@ func (p *persistence) loadFPMappings() (fpMappings, model.Fingerprint, error) {
 	return fpm, highestMappedFP, nil
 }
 
+func (p *persistence) writeChunks(w io.Writer, chunks []chunk) error {
+	b := p.bufPool.Get().([]byte)
+	defer func() {
+		// buf may change below. An unwrapped 'defer p.bufPool.Put(buf)'
+		// would only put back the original buf.
+		p.bufPool.Put(b)
+	}()
+
+	for batchSize := chunkMaxBatchSize; len(chunks) > 0; chunks = chunks[batchSize:] {
+		if batchSize > len(chunks) {
+			batchSize = len(chunks)
+		}
+		writeSize := batchSize * chunkLenWithHeader
+		if cap(b) < writeSize {
+			b = make([]byte, writeSize)
+		}
+		b = b[:writeSize]
+
+		for i, chunk := range chunks[:batchSize] {
+			if err := writeChunkHeader(b[i*chunkLenWithHeader:], chunk); err != nil {
+				return err
+			}
+			if err := chunk.marshalToBuf(b[i*chunkLenWithHeader+chunkHeaderLen:]); err != nil {
+				return err
+			}
+		}
+		if _, err := w.Write(b); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func offsetForChunkIndex(i int) int64 {
 	return int64(i * chunkLenWithHeader)
 }
@@ -1576,31 +1531,19 @@ func chunkIndexForOffset(offset int64) (int, error) {
 	return int(offset) / chunkLenWithHeader, nil
 }
 
-func writeChunkHeader(w io.Writer, c chunk) error {
-	header := make([]byte, chunkHeaderLen)
+func writeChunkHeader(header []byte, c chunk) error {
 	header[chunkHeaderTypeOffset] = byte(c.encoding())
 	binary.LittleEndian.PutUint64(
 		header[chunkHeaderFirstTimeOffset:],
 		uint64(c.firstTime()),
 	)
+	lt, err := c.newIterator().lastTimestamp()
+	if err != nil {
+		return err
+	}
 	binary.LittleEndian.PutUint64(
 		header[chunkHeaderLastTimeOffset:],
-		uint64(c.newIterator().lastTimestamp()),
+		uint64(lt),
 	)
-	_, err := w.Write(header)
-	return err
-}
-
-func writeChunks(w io.Writer, chunks []chunk) error {
-	b := bufio.NewWriterSize(w, len(chunks)*chunkLenWithHeader)
-	for _, chunk := range chunks {
-		if err := writeChunkHeader(b, chunk); err != nil {
-			return err
-		}
-
-		if err := chunk.marshal(b); err != nil {
-			return err
-		}
-	}
-	return b.Flush()
+	return nil
 }

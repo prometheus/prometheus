@@ -1,0 +1,45 @@
+{{define "head"}}<!-- nix -->{{end}}
+
+{{define "content"}}
+  <div class="container-fluid">
+    <h2 id="runtime">Runtime Information</h2>
+    <table class="table table-condensed table-bordered table-striped table-hover">
+      <tbody>
+        <tr>
+          <th>Uptime</th>
+          <td>{{.Birth.UTC}}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="buildinformation">Build Information</h2>
+    <table class="table table-condensed table-bordered table-striped table-hover">
+      <tbody>
+        <tr>
+          <th scope="row">Version</th>
+          <td>{{.Version.Version}}</td>
+        </tr>
+        <tr>
+          <th scope="row">Revision</th>
+          <td>{{.Version.Revision}}</td>
+        </tr>
+        <tr>
+          <th scope="row">Branch</th>
+          <td>{{.Version.Branch}}</td>
+        </tr>
+        <tr>
+          <th scope="row">BuildUser</th>
+          <td>{{.Version.BuildUser}}</td>
+        </tr>
+        <tr>
+          <th scope="row">BuildDate</th>
+          <td>{{.Version.BuildDate}}</td>
+        </tr>
+        <tr>
+          <th scope="row">GoVersion</th>
+          <td>{{.Version.GoVersion}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+{{end}}

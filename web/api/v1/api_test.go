@@ -1,3 +1,16 @@
+// Copyright 2016 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package v1
 
 import (
@@ -35,9 +48,11 @@ func TestEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	now := model.Now()
 	api := &API{
 		Storage:     suite.Storage(),
 		QueryEngine: suite.QueryEngine(),
+		now:         func() model.Time { return now },
 	}
 
 	start := model.Time(0)
@@ -91,6 +106,19 @@ func TestEndpoints(t *testing.T) {
 			},
 		},
 		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"0.333"},
+			},
+			response: &queryData{
+				ResultType: model.ValScalar,
+				Result: &model.Scalar{
+					Value:     0.333,
+					Timestamp: now,
+				},
+			},
+		},
+		{
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -137,14 +165,6 @@ func TestEndpoints(t *testing.T) {
 				"query": []string{"time()"},
 				"start": []string{"0"},
 				"end":   []string{"2"},
-			},
-			errType: errorBadData,
-		},
-		// Missing evaluation time.
-		{
-			endpoint: api.query,
-			query: url.Values{
-				"query": []string{"0.333"},
 			},
 			errType: errorBadData,
 		},
@@ -210,7 +230,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`},
+				"match[]": []string{`test_metric1{foo=~".+o"}`},
 			},
 			response: []model.Metric{
 				{
@@ -222,7 +242,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~"o$"}`},
+				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~".+o"}`},
 			},
 			response: []model.Metric{
 				{
@@ -234,11 +254,91 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`, `none`},
+				"match[]": []string{`test_metric1{foo=~".+o"}`, `none`},
 			},
 			response: []model.Metric{
 				{
 					"__name__": "test_metric1",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start and end before series starts.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"-2"},
+				"end":     []string{"-1"},
+			},
+			response: []model.Metric{},
+		},
+		// Start and end after series ends.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"100000"},
+				"end":     []string{"100001"},
+			},
+			response: []model.Metric{},
+		},
+		// Start before series starts, end after series ends.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"-1"},
+				"end":     []string{"100000"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start and end within series.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"1"},
+				"end":     []string{"100"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start within series, end after.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"1"},
+				"end":     []string{"100000"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start before series, end within series.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"-1"},
+				"end":     []string{"1"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
 					"foo":      "boo",
 				},
 			},
@@ -257,7 +357,7 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.dropSeries,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`},
+				"match[]": []string{`test_metric1{foo=~".+o"}`},
 			},
 			response: struct {
 				NumDeleted int `json:"numDeleted"`
@@ -373,8 +473,8 @@ func TestRespondError(t *testing.T) {
 		t.Fatalf("Error reading response body: %s", err)
 	}
 
-	if resp.StatusCode != 422 {
-		t.Fatalf("Return code %d expected in error response but got %d", 422, resp.StatusCode)
+	if want, have := http.StatusServiceUnavailable, resp.StatusCode; want != have {
+		t.Fatalf("Return code %d expected in error response but got %d", want, have)
 	}
 	if h := resp.Header.Get("Content-Type"); h != "application/json" {
 		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
@@ -493,6 +593,35 @@ func TestParseDuration(t *testing.T) {
 		}
 		if !test.fail && d != test.result {
 			t.Errorf("Expected duration %v for input %q but got %v", test.result, test.input, d)
+		}
+	}
+}
+
+func TestOptionsMethod(t *testing.T) {
+	r := route.New()
+	api := &API{}
+	api.Register(r)
+
+	s := httptest.NewServer(r)
+	defer s.Close()
+
+	req, err := http.NewRequest("OPTIONS", s.URL+"/any_path", nil)
+	if err != nil {
+		t.Fatalf("Error creating OPTIONS request: %s", err)
+	}
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Error executing OPTIONS request: %s", err)
+	}
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("Expected status %d, got %d", http.StatusNoContent, resp.StatusCode)
+	}
+
+	for h, v := range corsHeaders {
+		if resp.Header.Get(h) != v {
+			t.Fatalf("Expected %q for header %q, got %q", v, h, resp.Header.Get(h))
 		}
 	}
 }

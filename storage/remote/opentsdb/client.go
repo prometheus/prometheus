@@ -21,7 +21,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"regexp"
 	"time"
 
 	"github.com/prometheus/common/log"
@@ -34,10 +33,6 @@ import (
 const (
 	putEndpoint     = "/api/put"
 	contentTypeJSON = "application/json"
-)
-
-var (
-	illegalCharsRE = regexp.MustCompile(`[^a-zA-Z0-9_\-./]`)
 )
 
 // Client allows sending batches of Prometheus samples to OpenTSDB.

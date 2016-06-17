@@ -30,6 +30,7 @@
 {{ define "humanizeNoSmallPrefix" }}{{ if and (lt . 1.0) (gt . -1.0) }}{{ printf "%.3g" . }}{{ else }}{{ humanize . }}{{ end }}{{ end }}
 {{ define "humanize1024" }}{{ humanize1024 . }}{{ end }}
 {{ define "humanizeDuration" }}{{ humanizeDuration . }}{{ end }}
+{{ define "humanizeTimestamp" }}{{ humanizeTimestamp . }}{{ end }}
 {{ define "printf.1f" }}{{ printf "%.1f" . }}{{ end }}
 {{ define "printf.3g" }}{{ printf "%.3g" . }}{{ end }}
 
@@ -62,7 +63,7 @@ renderTemplate is the name of the template to use to render the value.
 </tr>
 <tr>
   <td>CPU</td>
-  <td>{{  template "prom_query_drilldown" (args (printf "avg by(job)(rate(process_cpu_seconds_total{job='%s'}[5m]))" .) "s/s" "humanizeNoSmallPrefix") }}</td>
+  <td>{{  template "prom_query_drilldown" (args (printf "avg by(job)(irate(process_cpu_seconds_total{job='%s'}[5m]))" .) "s/s" "humanizeNoSmallPrefix") }}</td>
 </tr>
 <tr>
   <td>Memory</td>

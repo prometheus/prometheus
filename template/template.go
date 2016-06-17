@@ -273,6 +273,7 @@ func (te Expander) Expand() (result string, resultErr error) {
 	}()
 
 	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Parse(te.text)
+	tmpl.Option("missingkey=zero")
 	if err != nil {
 		return "", fmt.Errorf("error parsing template %v: %v", te.name, err)
 	}
@@ -297,6 +298,7 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 	}()
 
 	tmpl := html_template.New(te.name).Funcs(html_template.FuncMap(te.funcMap))
+	tmpl.Option("missingkey=zero")
 	tmpl.Funcs(html_template.FuncMap{
 		"tmpl": func(name string, data interface{}) (html_template.HTML, error) {
 			var buffer bytes.Buffer

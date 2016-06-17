@@ -16,7 +16,10 @@ package promql
 import (
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
+
+	"github.com/prometheus/common/log"
 )
 
 // item represents a token or text string returned from the scanner.
@@ -47,7 +50,7 @@ func (i item) String() string {
 	return fmt.Sprintf("%q", i.val)
 }
 
-// isOperator returns true if the item corresponds to a logical or arithmetic operator.
+// isOperator returns true if the item corresponds to a arithmetic or set operator.
 // Returns false otherwise.
 func (i itemType) isOperator() bool { return i > operatorsStart && i < operatorsEnd }
 
@@ -59,8 +62,27 @@ func (i itemType) isAggregator() bool { return i > aggregatorsStart && i < aggre
 // Returns false otherwise.
 func (i itemType) isKeyword() bool { return i > keywordsStart && i < keywordsEnd }
 
-// Constants for operator precedence in expressions.
-//
+// isCompairsonOperator returns true if the item corresponds to a comparison operator.
+// Returns false otherwise.
+func (i itemType) isComparisonOperator() bool {
+	switch i {
+	case itemEQL, itemNEQ, itemLTE, itemLSS, itemGTE, itemGTR:
+		return true
+	default:
+		return false
+	}
+}
+
+// isSetOperator returns whether the item corresponds to a set operator.
+func (i itemType) isSetOperator() bool {
+	switch i {
+	case itemLAND, itemLOR, itemLUnless:
+		return true
+	}
+	return false
+}
+
+// LowestPrec is a constant for operator precedence in expressions.
 const LowestPrec = 0 // Non-operators.
 
 // Precedence returns the operator precedence of the binary
@@ -70,7 +92,7 @@ func (i itemType) precedence() int {
 	switch i {
 	case itemLOR:
 		return 1
-	case itemLAND:
+	case itemLAND, itemLUnless:
 		return 2
 	case itemEQL, itemNEQ, itemLTE, itemLSS, itemGTE, itemGTR:
 		return 3
@@ -115,6 +137,7 @@ const (
 	itemDIV
 	itemLAND
 	itemLOR
+	itemLUnless
 	itemEQL
 	itemNEQ
 	itemLTE
@@ -141,24 +164,30 @@ const (
 	itemAlert
 	itemIf
 	itemFor
-	itemWith
-	itemSummary
-	itemRunbook
-	itemDescription
+	itemLabels
+	itemAnnotations
 	itemKeepCommon
 	itemOffset
 	itemBy
+	itemWithout
 	itemOn
+	itemIgnoring
 	itemGroupLeft
 	itemGroupRight
 	itemBool
+	// Removed keywords. Just here to detect and print errors.
+	itemSummary
+	itemDescription
+	itemRunbook
+	itemKeepExtra
 	keywordsEnd
 )
 
 var key = map[string]itemType{
 	// Operators.
-	"and": itemLAND,
-	"or":  itemLOR,
+	"and":    itemLAND,
+	"or":     itemLOR,
+	"unless": itemLUnless,
 
 	// Aggregators.
 	"sum":    itemSum,
@@ -170,21 +199,25 @@ var key = map[string]itemType{
 	"stdvar": itemStdvar,
 
 	// Keywords.
-	"alert":         itemAlert,
-	"if":            itemIf,
-	"for":           itemFor,
-	"with":          itemWith,
+	"alert":       itemAlert,
+	"if":          itemIf,
+	"for":         itemFor,
+	"labels":      itemLabels,
+	"annotations": itemAnnotations,
+	"offset":      itemOffset,
+	"by":          itemBy,
+	"without":     itemWithout,
+	"keep_common": itemKeepCommon,
+	"on":          itemOn,
+	"ignoring":    itemIgnoring,
+	"group_left":  itemGroupLeft,
+	"group_right": itemGroupRight,
+	"bool":        itemBool,
+	// Removed keywords. Just here to detect and print errors.
 	"summary":       itemSummary,
-	"runbook":       itemRunbook,
 	"description":   itemDescription,
-	"offset":        itemOffset,
-	"by":            itemBy,
-	"keeping_extra": itemKeepCommon,
-	"keep_common":   itemKeepCommon,
-	"on":            itemOn,
-	"group_left":    itemGroupLeft,
-	"group_right":   itemGroupRight,
-	"bool":          itemBool,
+	"runbook":       itemRunbook,
+	"keeping_extra": itemKeepExtra,
 }
 
 // These are the default string representations for common items. It does not
@@ -331,7 +364,7 @@ func (l *lexer) ignore() {
 
 // accept consumes the next rune if it's from the valid set.
 func (l *lexer) accept(valid string) bool {
-	if strings.IndexRune(valid, l.next()) >= 0 {
+	if strings.ContainsRune(valid, l.next()) {
 		return true
 	}
 	l.backup()
@@ -340,7 +373,7 @@ func (l *lexer) accept(valid string) bool {
 
 // acceptRun consumes a run of runes from the valid set.
 func (l *lexer) acceptRun(valid string) {
-	for strings.IndexRune(valid, l.next()) >= 0 {
+	for strings.ContainsRune(valid, l.next()) {
 		// consume
 	}
 	l.backup()
@@ -374,6 +407,14 @@ func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 func (l *lexer) nextItem() item {
 	item := <-l.items
 	l.lastPos = item.pos
+
+	// TODO(fabxc): remove for version 1.0.
+	t := item.typ
+	if t == itemSummary || t == itemDescription || t == itemRunbook {
+		log.Errorf("Token %q is not valid anymore. Alerting rule syntax has changed with version 0.17.0. Please read https://prometheus.io/docs/alerting/rules/.", item)
+	} else if t == itemKeepExtra {
+		log.Error("Token 'keeping_extra' is not valid anymore. Use 'keep_common' instead.")
+	}
 	return item
 }
 
@@ -465,6 +506,9 @@ func lexStatements(l *lexer) stateFn {
 	case r == '"' || r == '\'':
 		l.stringOpen = r
 		return lexString
+	case r == '`':
+		l.stringOpen = r
+		return lexRawString
 	case isAlpha(r) || r == ':':
 		l.backup()
 		return lexKeywordOrIdentifier
@@ -523,6 +567,9 @@ func lexInsideBraces(l *lexer) stateFn {
 	case r == '"' || r == '\'':
 		l.stringOpen = r
 		return lexString
+	case r == '`':
+		l.stringOpen = r
+		return lexRawString
 	case r == '=':
 		if l.next() == '~' {
 			l.emit(itemEQLRegex)
@@ -583,18 +630,96 @@ func lexValueSequence(l *lexer) stateFn {
 	return lexValueSequence
 }
 
+// lexEscape scans a string escape sequence. The initial escaping character (\)
+// has already been seen.
+//
+// NOTE: This function as well as the helper function digitVal() and associated
+// tests have been adapted from the corresponding functions in the "go/scanner"
+// package of the Go standard library to work for Prometheus-style strings.
+// None of the actual escaping/quoting logic was changed in this function - it
+// was only modified to integrate with our lexer.
+func lexEscape(l *lexer) {
+	var n int
+	var base, max uint32
+
+	ch := l.next()
+	switch ch {
+	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', l.stringOpen:
+		return
+	case '0', '1', '2', '3', '4', '5', '6', '7':
+		n, base, max = 3, 8, 255
+	case 'x':
+		ch = l.next()
+		n, base, max = 2, 16, 255
+	case 'u':
+		ch = l.next()
+		n, base, max = 4, 16, unicode.MaxRune
+	case 'U':
+		ch = l.next()
+		n, base, max = 8, 16, unicode.MaxRune
+	case eof:
+		l.errorf("escape sequence not terminated")
+	default:
+		l.errorf("unknown escape sequence %#U", ch)
+	}
+
+	var x uint32
+	for n > 0 {
+		d := uint32(digitVal(ch))
+		if d >= base {
+			if ch == eof {
+				l.errorf("escape sequence not terminated")
+			}
+			l.errorf("illegal character %#U in escape sequence", ch)
+		}
+		x = x*base + d
+		ch = l.next()
+		n--
+	}
+
+	if x > max || 0xD800 <= x && x < 0xE000 {
+		l.errorf("escape sequence is an invalid Unicode code point")
+	}
+}
+
+// digitVal returns the digit value of a rune or 16 in case the rune does not
+// represent a valid digit.
+func digitVal(ch rune) int {
+	switch {
+	case '0' <= ch && ch <= '9':
+		return int(ch - '0')
+	case 'a' <= ch && ch <= 'f':
+		return int(ch - 'a' + 10)
+	case 'A' <= ch && ch <= 'F':
+		return int(ch - 'A' + 10)
+	}
+	return 16 // Larger than any legal digit val.
+}
+
 // lexString scans a quoted string. The initial quote has already been seen.
 func lexString(l *lexer) stateFn {
 Loop:
 	for {
 		switch l.next() {
 		case '\\':
-			if r := l.next(); r != eof && r != '\n' {
-				break
-			}
-			fallthrough
+			lexEscape(l)
 		case eof, '\n':
 			return l.errorf("unterminated quoted string")
+		case l.stringOpen:
+			break Loop
+		}
+	}
+	l.emit(itemString)
+	return lexStatements
+}
+
+// lexRawString scans a raw quoted string. The initial quote has already been seen.
+func lexRawString(l *lexer) stateFn {
+Loop:
+	for {
+		switch l.next() {
+		case eof:
+			return l.errorf("unterminated raw string")
 		case l.stringOpen:
 			break Loop
 		}

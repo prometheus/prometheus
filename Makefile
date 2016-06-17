@@ -11,10 +11,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO   := GO15VENDOREXPERIMENT=1 go
-pkgs  = $(shell $(GO) list ./... | grep -v /vendor/)
+GO           := GO15VENDOREXPERIMENT=1 go
+FIRST_GOPATH := $(firstword $(subst :, ,$(GOPATH)))
+PROMU        := $(FIRST_GOPATH)/bin/promu
+pkgs          = $(shell $(GO) list ./... | grep -v /vendor/)
+
+PREFIX                  ?= $(shell pwd)
+BIN_DIR                 ?= $(shell pwd)
+DOCKER_IMAGE_NAME       ?= prometheus
+DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
+
+ifdef DEBUG
+	bindata_flags = -debug
+endif
+
 
 all: format build test
+
+style:
+	@echo ">> checking code style"
+	@! gofmt -d $(shell find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
+
+check_license:
+	@echo ">> checking license header"
+	@./scripts/check_license.sh
 
 test:
 	@echo ">> running tests"
@@ -28,17 +48,27 @@ vet:
 	@echo ">> vetting code"
 	@$(GO) vet $(pkgs)
 
-build:
+build: promu
 	@echo ">> building binaries"
-	@./scripts/build.sh
+	@$(PROMU) build --prefix $(PREFIX)
+
+tarball: promu
+	@echo ">> building release tarball"
+	@$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
 docker:
-	@docker build -t prometheus:$(shell git rev-parse --short HEAD) .
+	@echo ">> building docker image"
+	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
 assets:
 	@echo ">> writing assets"
-	@$(GO) get github.com/jteeuwen/go-bindata/...
-	@$(GO) generate ./web/blob
+	@$(GO) get -u github.com/jteeuwen/go-bindata/...
+	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
+
+promu:
+	@GOOS=$(shell uname -s | tr A-Z a-z) \
+	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
+	$(GO) get -u github.com/prometheus/promu
 
 
-.PHONY: all format build test vet docker assets
+.PHONY: all style check_license format build test vet assets tarball docker promu

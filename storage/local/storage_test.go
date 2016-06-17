@@ -16,9 +16,9 @@ package local
 import (
 	"fmt"
 	"hash/fnv"
+	"math"
 	"math/rand"
 	"os"
-	"reflect"
 	"testing"
 	"testing/quick"
 	"time"
@@ -31,9 +31,10 @@ import (
 )
 
 func TestMatches(t *testing.T) {
-	storage, closer := NewTestStorage(t, 1)
+	storage, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
+	storage.archiveHighWatermark = 90
 	samples := make([]*model.Sample, 100)
 	fingerprints := make(model.Fingerprints, 100)
 
@@ -55,6 +56,20 @@ func TestMatches(t *testing.T) {
 		storage.Append(s)
 	}
 	storage.WaitForIndexing()
+
+	// Archive every tenth metric.
+	for i, fp := range fingerprints {
+		if i%10 != 0 {
+			continue
+		}
+		s, ok := storage.fpToSeries.get(fp)
+		if !ok {
+			t.Fatal("could not retrieve series for fp", fp)
+		}
+		storage.fpLocker.Lock(fp)
+		storage.persistence.archiveMetric(fp, s.metric, s.firstTime(), s.lastTime)
+		storage.fpLocker.Unlock(fp)
+	}
 
 	newMatcher := func(matchType metric.MatchType, name model.LabelName, value model.LabelValue) *metric.LabelMatcher {
 		lm, err := metric.NewLabelMatcher(matchType, name, value)
@@ -178,7 +193,10 @@ func TestMatches(t *testing.T) {
 	}
 
 	for _, mt := range matcherTests {
-		res := storage.MetricsForLabelMatchers(mt.matchers...)
+		res := storage.MetricsForLabelMatchers(
+			model.Earliest, model.Latest,
+			mt.matchers...,
+		)
 		if len(mt.expected) != len(res) {
 			t.Fatalf("expected %d matches for %q, found %d", len(mt.expected), mt.matchers, len(res))
 		}
@@ -194,11 +212,61 @@ func TestMatches(t *testing.T) {
 				t.Errorf("expected fingerprint %s for %q not in result", fp1, mt.matchers)
 			}
 		}
+		// Smoketest for from/through.
+		if len(storage.MetricsForLabelMatchers(
+			model.Earliest, -10000,
+			mt.matchers...,
+		)) > 0 {
+			t.Error("expected no matches with 'through' older than any sample")
+		}
+		if len(storage.MetricsForLabelMatchers(
+			10000, model.Latest,
+			mt.matchers...,
+		)) > 0 {
+			t.Error("expected no matches with 'from' newer than any sample")
+		}
+		// Now the tricky one, cut out something from the middle.
+		var (
+			from    model.Time = 25
+			through model.Time = 75
+		)
+		res = storage.MetricsForLabelMatchers(
+			from, through,
+			mt.matchers...,
+		)
+		expected := model.Fingerprints{}
+		for _, fp := range mt.expected {
+			i := 0
+			for ; fingerprints[i] != fp && i < len(fingerprints); i++ {
+			}
+			if i == len(fingerprints) {
+				t.Fatal("expected fingerprint does not exist")
+			}
+			if !model.Time(i).Before(from) && !model.Time(i).After(through) {
+				expected = append(expected, fp)
+			}
+		}
+		if len(expected) != len(res) {
+			t.Errorf("expected %d range-limited matches for %q, found %d", len(expected), mt.matchers, len(res))
+		}
+		for fp1 := range res {
+			found := false
+			for _, fp2 := range expected {
+				if fp1 == fp2 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected fingerprint %s for %q not in range-limited result", fp1, mt.matchers)
+			}
+		}
+
 	}
 }
 
 func TestFingerprintsForLabels(t *testing.T) {
-	storage, closer := NewTestStorage(t, 1)
+	storage, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	samples := make([]*model.Sample, 100)
@@ -280,7 +348,7 @@ func TestFingerprintsForLabels(t *testing.T) {
 var benchLabelMatchingRes map[model.Fingerprint]metric.Metric
 
 func BenchmarkLabelMatching(b *testing.B) {
-	s, closer := NewTestStorage(b, 1)
+	s, closer := NewTestStorage(b, 2)
 	defer closer.Close()
 
 	h := fnv.New64a()
@@ -362,7 +430,10 @@ func BenchmarkLabelMatching(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		benchLabelMatchingRes = map[model.Fingerprint]metric.Metric{}
 		for _, mt := range matcherTests {
-			benchLabelMatchingRes = s.MetricsForLabelMatchers(mt...)
+			benchLabelMatchingRes = s.MetricsForLabelMatchers(
+				model.Earliest, model.Latest,
+				mt...,
+			)
 		}
 	}
 	// Stop timer to not count the storage closing.
@@ -373,11 +444,15 @@ func TestRetentionCutoff(t *testing.T) {
 	now := model.Now()
 	insertStart := now.Add(-2 * time.Hour)
 
-	s, closer := NewTestStorage(t, 1)
+	s, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	// Stop maintenance loop to prevent actual purging.
-	s.loopStopping <- struct{}{}
+	close(s.loopStopping)
+	<-s.loopStopped
+	<-s.logThrottlingStopped
+	// Recreate channel to avoid panic when we really shut down.
+	s.loopStopping = make(chan struct{})
 
 	s.dropAfter = 1 * time.Hour
 
@@ -401,31 +476,18 @@ func TestRetentionCutoff(t *testing.T) {
 	defer pl.Close()
 
 	// Preload everything.
-	err := pl.PreloadRange(fp, insertStart, now, 5*time.Minute)
-	if err != nil {
-		t.Fatalf("Error preloading outdated chunks: %s", err)
-	}
+	it := pl.PreloadRange(fp, insertStart, now)
 
-	it := s.NewIterator(fp)
-
-	vals := it.ValueAtTime(now.Add(-61 * time.Minute))
-	if len(vals) != 0 {
+	val := it.ValueAtOrBeforeTime(now.Add(-61 * time.Minute))
+	if val.Timestamp != model.Earliest {
 		t.Errorf("unexpected result for timestamp before retention period")
 	}
 
-	vals = it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now})
+	vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now})
 	// We get 59 values here because the model.Now() is slightly later
 	// than our now.
 	if len(vals) != 59 {
 		t.Errorf("expected 59 values but got %d", len(vals))
-	}
-	if expt := now.Add(-1 * time.Hour).Add(time.Minute); vals[0].Timestamp != expt {
-		t.Errorf("unexpected timestamp for first sample: %v, expected %v", vals[0].Timestamp.Time(), expt.Time())
-	}
-
-	vals = it.BoundaryValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now})
-	if len(vals) != 2 {
-		t.Errorf("expected 2 values but got %d", len(vals))
 	}
 	if expt := now.Add(-1 * time.Hour).Add(time.Minute); vals[0].Timestamp != expt {
 		t.Errorf("unexpected timestamp for first sample: %v, expected %v", vals[0].Timestamp.Time(), expt.Time())
@@ -436,7 +498,7 @@ func TestDropMetrics(t *testing.T) {
 	now := model.Now()
 	insertStart := now.Add(-2 * time.Hour)
 
-	s, closer := NewTestStorage(t, 1)
+	s, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	chunkFileExists := func(fp model.Fingerprint) (bool, error) {
@@ -474,11 +536,7 @@ func TestDropMetrics(t *testing.T) {
 	s.maintainMemorySeries(fpToBeArchived, 0)
 	s.fpLocker.Lock(fpToBeArchived)
 	s.fpToSeries.del(fpToBeArchived)
-	if err := s.persistence.archiveMetric(
-		fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond),
-	); err != nil {
-		t.Error(err)
-	}
+	s.persistence.archiveMetric(fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond))
 	s.fpLocker.Unlock(fpToBeArchived)
 
 	fps := s.fingerprintsForLabelPairs(model.LabelPair{Name: model.MetricNameLabel, Value: "test"})
@@ -498,11 +556,12 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps2))
 	}
 
-	it := s.NewIterator(fpList[0])
+	_, it := s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
-	it = s.NewIterator(fpList[1])
+
+	_, it = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != N {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
@@ -524,11 +583,12 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps3))
 	}
 
-	it = s.NewIterator(fpList[0])
+	_, it = s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
-	it = s.NewIterator(fpList[1])
+
+	_, it = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
@@ -538,6 +598,91 @@ func TestDropMetrics(t *testing.T) {
 	}
 	if exists {
 		t.Errorf("chunk file still exists for fp=%v", fpList[2])
+	}
+}
+
+func TestQuarantineMetric(t *testing.T) {
+	now := model.Now()
+	insertStart := now.Add(-2 * time.Hour)
+
+	s, closer := NewTestStorage(t, 2)
+	defer closer.Close()
+
+	chunkFileExists := func(fp model.Fingerprint) (bool, error) {
+		f, err := s.persistence.openChunkFileForReading(fp)
+		if err == nil {
+			f.Close()
+			return true, nil
+		}
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	m1 := model.Metric{model.MetricNameLabel: "test", "n1": "v1"}
+	m2 := model.Metric{model.MetricNameLabel: "test", "n1": "v2"}
+	m3 := model.Metric{model.MetricNameLabel: "test", "n1": "v3"}
+
+	N := 120000
+
+	for j, m := range []model.Metric{m1, m2, m3} {
+		for i := 0; i < N; i++ {
+			smpl := &model.Sample{
+				Metric:    m,
+				Timestamp: insertStart.Add(time.Duration(i) * time.Millisecond), // 1 millisecond intervals.
+				Value:     model.SampleValue(j),
+			}
+			s.Append(smpl)
+		}
+	}
+	s.WaitForIndexing()
+
+	// Archive m3, but first maintain it so that at least something is written to disk.
+	fpToBeArchived := m3.FastFingerprint()
+	s.maintainMemorySeries(fpToBeArchived, 0)
+	s.fpLocker.Lock(fpToBeArchived)
+	s.fpToSeries.del(fpToBeArchived)
+	s.persistence.archiveMetric(fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond))
+	s.fpLocker.Unlock(fpToBeArchived)
+
+	// Corrupt the series file for m3.
+	f, err := os.Create(s.persistence.fileNameForFingerprint(fpToBeArchived))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("This is clearly not the content of a series file."); err != nil {
+		t.Fatal(err)
+	}
+	if f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	fps := s.fingerprintsForLabelPairs(model.LabelPair{Name: model.MetricNameLabel, Value: "test"})
+	if len(fps) != 3 {
+		t.Errorf("unexpected number of fingerprints: %d", len(fps))
+	}
+
+	pl := s.NewPreloader()
+	// This will access the corrupt file and lead to quarantining.
+	pl.PreloadInstant(fpToBeArchived, now.Add(-2*time.Hour), time.Minute)
+	pl.Close()
+	time.Sleep(time.Second) // Give time to quarantine. TODO(beorn7): Find a better way to wait.
+	s.WaitForIndexing()
+
+	fps2 := s.fingerprintsForLabelPairs(model.LabelPair{
+		Name: model.MetricNameLabel, Value: "test",
+	})
+	if len(fps2) != 2 {
+		t.Errorf("unexpected number of fingerprints: %d", len(fps2))
+	}
+
+	exists, err := chunkFileExists(fpToBeArchived)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Errorf("chunk file exists for fp=%v", fpToBeArchived)
 	}
 }
 
@@ -563,6 +708,7 @@ func TestLoop(t *testing.T) {
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         250 * time.Millisecond,
 		SyncStrategy:               Adaptive,
+		MinShrinkRatio:             0.1,
 	}
 	storage := NewMemorySeriesStorage(o)
 	if err := storage.Start(); err != nil {
@@ -603,14 +749,18 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 
 	for m := range s.fpToSeries.iter() {
 		s.fpLocker.Lock(m.fp)
-
+		defer s.fpLocker.Unlock(m.fp) // TODO remove, see below
 		var values []model.SamplePair
 		for _, cd := range m.series.chunkDescs {
 			if cd.isEvicted() {
 				continue
 			}
-			for sample := range cd.c.newIterator().values() {
-				values = append(values, *sample)
+			it := cd.c.newIterator()
+			for it.scan() {
+				values = append(values, it.value())
+			}
+			if it.err() != nil {
+				t.Error(it.err())
 			}
 		}
 
@@ -622,7 +772,7 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 				t.Errorf("%d. Got %v; want %v", i, v.Value, samples[i].Value)
 			}
 		}
-		s.fpLocker.Unlock(m.fp)
+		//s.fpLocker.Unlock(m.fp)
 	}
 	log.Info("test done, closing")
 }
@@ -635,7 +785,11 @@ func TestChunkType1(t *testing.T) {
 	testChunk(t, 1)
 }
 
-func testValueAtTime(t *testing.T, encoding chunkEncoding) {
+func TestChunkType2(t *testing.T) {
+	testChunk(t, 2)
+}
+
+func testValueAtOrBeforeTime(t *testing.T, encoding chunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -653,82 +807,67 @@ func testValueAtTime(t *testing.T, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	it := s.NewIterator(fp)
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
 
 	// #1 Exactly on a sample.
 	for i, expected := range samples {
-		actual := it.ValueAtTime(expected.Timestamp)
+		actual := it.ValueAtOrBeforeTime(expected.Timestamp)
 
-		if len(actual) != 1 {
-			t.Fatalf("1.%d. Expected exactly one result, got %d.", i, len(actual))
+		if expected.Timestamp != actual.Timestamp {
+			t.Errorf("1.%d. Got %v; want %v", i, actual.Timestamp, expected.Timestamp)
 		}
-		if expected.Timestamp != actual[0].Timestamp {
-			t.Errorf("1.%d. Got %v; want %v", i, actual[0].Timestamp, expected.Timestamp)
-		}
-		if expected.Value != actual[0].Value {
-			t.Errorf("1.%d. Got %v; want %v", i, actual[0].Value, expected.Value)
+		if expected.Value != actual.Value {
+			t.Errorf("1.%d. Got %v; want %v", i, actual.Value, expected.Value)
 		}
 	}
 
 	// #2 Between samples.
-	for i, expected1 := range samples {
+	for i, expected := range samples {
 		if i == len(samples)-1 {
 			continue
 		}
-		expected2 := samples[i+1]
-		actual := it.ValueAtTime(expected1.Timestamp + 1)
+		actual := it.ValueAtOrBeforeTime(expected.Timestamp + 1)
 
-		if len(actual) != 2 {
-			t.Fatalf("2.%d. Expected exactly 2 results, got %d.", i, len(actual))
+		if expected.Timestamp != actual.Timestamp {
+			t.Errorf("2.%d. Got %v; want %v", i, actual.Timestamp, expected.Timestamp)
 		}
-		if expected1.Timestamp != actual[0].Timestamp {
-			t.Errorf("2.%d. Got %v; want %v", i, actual[0].Timestamp, expected1.Timestamp)
-		}
-		if expected1.Value != actual[0].Value {
-			t.Errorf("2.%d. Got %v; want %v", i, actual[0].Value, expected1.Value)
-		}
-		if expected2.Timestamp != actual[1].Timestamp {
-			t.Errorf("2.%d. Got %v; want %v", i, actual[1].Timestamp, expected1.Timestamp)
-		}
-		if expected2.Value != actual[1].Value {
-			t.Errorf("2.%d. Got %v; want %v", i, actual[1].Value, expected1.Value)
+		if expected.Value != actual.Value {
+			t.Errorf("2.%d. Got %v; want %v", i, actual.Value, expected.Value)
 		}
 	}
 
 	// #3 Corner cases: Just before the first sample, just after the last.
-	expected := samples[0]
-	actual := it.ValueAtTime(expected.Timestamp - 1)
-	if len(actual) != 1 {
-		t.Fatalf("3.1. Expected exactly one result, got %d.", len(actual))
+	expected := &model.Sample{Timestamp: model.Earliest}
+	actual := it.ValueAtOrBeforeTime(samples[0].Timestamp - 1)
+	if expected.Timestamp != actual.Timestamp {
+		t.Errorf("3.1. Got %v; want %v", actual.Timestamp, expected.Timestamp)
 	}
-	if expected.Timestamp != actual[0].Timestamp {
-		t.Errorf("3.1. Got %v; want %v", actual[0].Timestamp, expected.Timestamp)
-	}
-	if expected.Value != actual[0].Value {
-		t.Errorf("3.1. Got %v; want %v", actual[0].Value, expected.Value)
+	if expected.Value != actual.Value {
+		t.Errorf("3.1. Got %v; want %v", actual.Value, expected.Value)
 	}
 	expected = samples[len(samples)-1]
-	actual = it.ValueAtTime(expected.Timestamp + 1)
-	if len(actual) != 1 {
-		t.Fatalf("3.2. Expected exactly one result, got %d.", len(actual))
+	actual = it.ValueAtOrBeforeTime(expected.Timestamp + 1)
+	if expected.Timestamp != actual.Timestamp {
+		t.Errorf("3.2. Got %v; want %v", actual.Timestamp, expected.Timestamp)
 	}
-	if expected.Timestamp != actual[0].Timestamp {
-		t.Errorf("3.2. Got %v; want %v", actual[0].Timestamp, expected.Timestamp)
-	}
-	if expected.Value != actual[0].Value {
-		t.Errorf("3.2. Got %v; want %v", actual[0].Value, expected.Value)
+	if expected.Value != actual.Value {
+		t.Errorf("3.2. Got %v; want %v", actual.Value, expected.Value)
 	}
 }
 
 func TestValueAtTimeChunkType0(t *testing.T) {
-	testValueAtTime(t, 0)
+	testValueAtOrBeforeTime(t, 0)
 }
 
 func TestValueAtTimeChunkType1(t *testing.T) {
-	testValueAtTime(t, 1)
+	testValueAtOrBeforeTime(t, 1)
 }
 
-func benchmarkValueAtTime(b *testing.B, encoding chunkEncoding) {
+func TestValueAtTimeChunkType2(t *testing.T) {
+	testValueAtOrBeforeTime(t, 2)
+}
+
+func benchmarkValueAtOrBeforeTime(b *testing.B, encoding chunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -746,59 +885,68 @@ func benchmarkValueAtTime(b *testing.B, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		it := s.NewIterator(fp)
-
 		// #1 Exactly on a sample.
 		for i, expected := range samples {
-			actual := it.ValueAtTime(expected.Timestamp)
+			actual := it.ValueAtOrBeforeTime(expected.Timestamp)
 
-			if len(actual) != 1 {
-				b.Fatalf("1.%d. Expected exactly one result, got %d.", i, len(actual))
+			if expected.Timestamp != actual.Timestamp {
+				b.Errorf("1.%d. Got %v; want %v", i, actual.Timestamp, expected.Timestamp)
 			}
-			if expected.Timestamp != actual[0].Timestamp {
-				b.Errorf("1.%d. Got %v; want %v", i, actual[0].Timestamp, expected.Timestamp)
-			}
-			if expected.Value != actual[0].Value {
-				b.Errorf("1.%d. Got %v; want %v", i, actual[0].Value, expected.Value)
+			if expected.Value != actual.Value {
+				b.Errorf("1.%d. Got %v; want %v", i, actual.Value, expected.Value)
 			}
 		}
 
 		// #2 Between samples.
-		for i, expected1 := range samples {
+		for i, expected := range samples {
 			if i == len(samples)-1 {
 				continue
 			}
-			expected2 := samples[i+1]
-			actual := it.ValueAtTime(expected1.Timestamp + 1)
+			actual := it.ValueAtOrBeforeTime(expected.Timestamp + 1)
 
-			if len(actual) != 2 {
-				b.Fatalf("2.%d. Expected exactly 2 results, got %d.", i, len(actual))
+			if expected.Timestamp != actual.Timestamp {
+				b.Errorf("2.%d. Got %v; want %v", i, actual.Timestamp, expected.Timestamp)
 			}
-			if expected1.Timestamp != actual[0].Timestamp {
-				b.Errorf("2.%d. Got %v; want %v", i, actual[0].Timestamp, expected1.Timestamp)
+			if expected.Value != actual.Value {
+				b.Errorf("2.%d. Got %v; want %v", i, actual.Value, expected.Value)
 			}
-			if expected1.Value != actual[0].Value {
-				b.Errorf("2.%d. Got %v; want %v", i, actual[0].Value, expected1.Value)
-			}
-			if expected2.Timestamp != actual[1].Timestamp {
-				b.Errorf("2.%d. Got %v; want %v", i, actual[1].Timestamp, expected1.Timestamp)
-			}
-			if expected2.Value != actual[1].Value {
-				b.Errorf("2.%d. Got %v; want %v", i, actual[1].Value, expected1.Value)
-			}
+		}
+
+		// #3 Corner cases: Just before the first sample, just after the last.
+		expected := &model.Sample{Timestamp: model.Earliest}
+		actual := it.ValueAtOrBeforeTime(samples[0].Timestamp - 1)
+		if expected.Timestamp != actual.Timestamp {
+			b.Errorf("3.1. Got %v; want %v", actual.Timestamp, expected.Timestamp)
+		}
+		if expected.Value != actual.Value {
+			b.Errorf("3.1. Got %v; want %v", actual.Value, expected.Value)
+		}
+		expected = samples[len(samples)-1]
+		actual = it.ValueAtOrBeforeTime(expected.Timestamp + 1)
+		if expected.Timestamp != actual.Timestamp {
+			b.Errorf("3.2. Got %v; want %v", actual.Timestamp, expected.Timestamp)
+		}
+		if expected.Value != actual.Value {
+			b.Errorf("3.2. Got %v; want %v", actual.Value, expected.Value)
 		}
 	}
 }
 
-func BenchmarkValueAtTimeChunkType0(b *testing.B) {
-	benchmarkValueAtTime(b, 0)
+func BenchmarkValueAtOrBeforeTimeChunkType0(b *testing.B) {
+	benchmarkValueAtOrBeforeTime(b, 0)
 }
 
 func BenchmarkValueAtTimeChunkType1(b *testing.B) {
-	benchmarkValueAtTime(b, 1)
+	benchmarkValueAtOrBeforeTime(b, 1)
+}
+
+func BenchmarkValueAtTimeChunkType2(b *testing.B) {
+	benchmarkValueAtOrBeforeTime(b, 2)
 }
 
 func testRangeValues(t *testing.T, encoding chunkEncoding) {
@@ -819,7 +967,7 @@ func testRangeValues(t *testing.T, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	it := s.NewIterator(fp)
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
 
 	// #1 Zero length interval at sample.
 	for i, expected := range samples {
@@ -953,6 +1101,10 @@ func TestRangeValuesChunkType1(t *testing.T) {
 	testRangeValues(t, 1)
 }
 
+func TestRangeValuesChunkType2(t *testing.T) {
+	testRangeValues(t, 2)
+}
+
 func benchmarkRangeValues(b *testing.B, encoding chunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
@@ -971,12 +1123,11 @@ func benchmarkRangeValues(b *testing.B, encoding chunkEncoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-
-		it := s.NewIterator(fp)
-
 		for _, sample := range samples {
 			actual := it.RangeValues(metric.Interval{
 				OldestInclusive: sample.Timestamp - 20,
@@ -996,6 +1147,10 @@ func BenchmarkRangeValuesChunkType0(b *testing.B) {
 
 func BenchmarkRangeValuesChunkType1(b *testing.B) {
 	benchmarkRangeValues(b, 1)
+}
+
+func BenchmarkRangeValuesChunkType2(b *testing.B) {
+	benchmarkRangeValues(b, 2)
 }
 
 func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
@@ -1018,26 +1173,26 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	// Drop ~half of the chunks.
 	s.maintainMemorySeries(fp, 10000)
-	it := s.NewIterator(fp)
-	actual := it.BoundaryValues(metric.Interval{
+	_, it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	actual := it.RangeValues(metric.Interval{
 		OldestInclusive: 0,
 		NewestInclusive: 100000,
 	})
-	if len(actual) != 2 {
-		t.Fatal("expected two results after purging half of series")
+	if len(actual) < 4000 {
+		t.Fatalf("expected more than %d results after purging half of series, got %d", 4000, len(actual))
 	}
 	if actual[0].Timestamp < 6000 || actual[0].Timestamp > 10000 {
 		t.Errorf("1st timestamp out of expected range: %v", actual[0].Timestamp)
 	}
 	want := model.Time(19998)
-	if actual[1].Timestamp != want {
+	if actual[len(actual)-1].Timestamp != want {
 		t.Errorf("2nd timestamp: want %v, got %v", want, actual[1].Timestamp)
 	}
 
 	// Drop everything.
 	s.maintainMemorySeries(fp, 100000)
-	it = s.NewIterator(fp)
-	actual = it.BoundaryValues(metric.Interval{
+	_, it = s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	actual = it.RangeValues(metric.Interval{
 		OldestInclusive: 0,
 		NewestInclusive: 100000,
 	})
@@ -1062,36 +1217,26 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	// Archive metrics.
 	s.fpToSeries.del(fp)
-	if err := s.persistence.archiveMetric(
-		fp, series.metric, series.firstTime(), series.head().lastTime(),
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	archived, _, _, err := s.persistence.hasArchivedMetric(fp)
+	lastTime, err := series.head().lastTime()
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
+	archived, _, _ := s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
 	}
 
 	// Drop ~half of the chunks of an archived series.
 	s.maintainArchivedSeries(fp, 10000)
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("archived series purged although only half of the chunks dropped")
 	}
 
 	// Drop everything.
 	s.maintainArchivedSeries(fp, 100000)
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if archived {
 		t.Fatal("archived series not dropped")
 	}
@@ -1113,16 +1258,12 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 
 	// Archive metrics.
 	s.fpToSeries.del(fp)
-	if err := s.persistence.archiveMetric(
-		fp, series.metric, series.firstTime(), series.head().lastTime(),
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
+	lastTime, err = series.head().lastTime()
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
 	}
@@ -1134,23 +1275,24 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if !ok {
 		t.Fatal("could not find series")
 	}
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if archived {
 		t.Fatal("archived")
 	}
 
+	// Set archiveHighWatermark to a low value so that we can see it increase.
+	s.archiveHighWatermark = 42
+
 	// This will archive again, but must not drop it completely, despite the
 	// memorySeries being empty.
 	s.maintainMemorySeries(fp, 10000)
-	archived, _, _, err = s.persistence.hasArchivedMetric(fp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("series purged completely")
+	}
+	// archiveHighWatermark must have been set by maintainMemorySeries.
+	if want, got := model.Time(19998), s.archiveHighWatermark; want != got {
+		t.Errorf("want archiveHighWatermark %v, got %v", want, got)
 	}
 }
 
@@ -1160,6 +1302,10 @@ func TestEvictAndPurgeSeriesChunkType0(t *testing.T) {
 
 func TestEvictAndPurgeSeriesChunkType1(t *testing.T) {
 	testEvictAndPurgeSeries(t, 1)
+}
+
+func TestEvictAndPurgeSeriesChunkType2(t *testing.T) {
+	testEvictAndPurgeSeries(t, 2)
 }
 
 func testEvictAndLoadChunkDescs(t *testing.T, encoding chunkEncoding) {
@@ -1200,7 +1346,7 @@ func testEvictAndLoadChunkDescs(t *testing.T, encoding chunkEncoding) {
 	// Maintain series without any dropped chunks.
 	s.maintainMemorySeries(fp, 0)
 	// Give the evict goroutine an opportunity to run.
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond)
 	// Maintain series again to trigger chunkDesc eviction
 	s.maintainMemorySeries(fp, 0)
 
@@ -1210,7 +1356,7 @@ func testEvictAndLoadChunkDescs(t *testing.T, encoding chunkEncoding) {
 
 	// Load everything back.
 	p := s.NewPreloader()
-	p.PreloadRange(fp, 0, 100000, time.Hour)
+	p.PreloadRange(fp, 0, 100000)
 
 	if oldLen != len(series.chunkDescs) {
 		t.Errorf("Expected number of chunkDescs to have reached old value again, old number %d, current number %d.", oldLen, len(series.chunkDescs))
@@ -1264,6 +1410,10 @@ func BenchmarkAppendType1(b *testing.B) {
 	benchmarkAppend(b, 1)
 }
 
+func BenchmarkAppendType2(b *testing.B) {
+	benchmarkAppend(b, 2)
+}
+
 // Append a large number of random samples and then check if we can get them out
 // of the storage alright.
 func testFuzz(t *testing.T, encoding chunkEncoding) {
@@ -1280,7 +1430,10 @@ func testFuzz(t *testing.T, encoding chunkEncoding) {
 		for _, sample := range samples {
 			s.Append(sample)
 		}
-		return verifyStorage(t, s, samples, 24*7*time.Hour)
+		if !verifyStorageRandom(t, s, samples) {
+			return false
+		}
+		return verifyStorageSequential(t, s, samples)
 	}
 
 	if err := quick.Check(check, nil); err != nil {
@@ -1294,6 +1447,10 @@ func TestFuzzChunkType0(t *testing.T) {
 
 func TestFuzzChunkType1(t *testing.T) {
 	testFuzz(t, 1)
+}
+
+func TestFuzzChunkType2(t *testing.T) {
+	testFuzz(t, 2)
 }
 
 // benchmarkFuzz is the benchmark version of testFuzz. The storage options are
@@ -1320,6 +1477,7 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 		PersistenceStoragePath:     directory.Path(),
 		CheckpointInterval:         time.Second,
 		SyncStrategy:               Adaptive,
+		MinShrinkRatio:             0.1,
 	}
 	s := NewMemorySeriesStorage(o)
 	if err := s.Start(); err != nil {
@@ -1339,11 +1497,12 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 		for _, sample := range samples[start:middle] {
 			s.Append(sample)
 		}
-		verifyStorage(b, s.(*memorySeriesStorage), samples[:middle], o.PersistenceRetentionPeriod)
+		verifyStorageRandom(b, s.(*memorySeriesStorage), samples[:middle])
 		for _, sample := range samples[middle:end] {
 			s.Append(sample)
 		}
-		verifyStorage(b, s.(*memorySeriesStorage), samples[:end], o.PersistenceRetentionPeriod)
+		verifyStorageRandom(b, s.(*memorySeriesStorage), samples[:end])
+		verifyStorageSequential(b, s.(*memorySeriesStorage), samples)
 	}
 }
 
@@ -1355,17 +1514,20 @@ func BenchmarkFuzzChunkType1(b *testing.B) {
 	benchmarkFuzz(b, 1)
 }
 
+func BenchmarkFuzzChunkType2(b *testing.B) {
+	benchmarkFuzz(b, 2)
+}
+
 func createRandomSamples(metricName string, minLen int) model.Samples {
 	type valueCreator func() model.SampleValue
 	type deltaApplier func(model.SampleValue) model.SampleValue
 
 	var (
-		maxMetrics         = 5
-		maxStreakLength    = 500
-		maxTimeDelta       = 10000
-		maxTimeDeltaFactor = 10
-		timestamp          = model.Now() - model.Time(maxTimeDelta*maxTimeDeltaFactor*minLen/4) // So that some timestamps are in the future.
-		generators         = []struct {
+		maxMetrics      = 5
+		maxStreakLength = 2000
+		maxTimeDelta    = 10000
+		timestamp       = model.Now() - model.Time(maxTimeDelta*minLen) // So that some timestamps are in the future.
+		generators      = []struct {
 			createValue valueCreator
 			applyDelta  []deltaApplier
 		}{
@@ -1409,6 +1571,28 @@ func createRandomSamples(metricName string, minLen int) model.Samples {
 				},
 			},
 		}
+		timestampIncrementers = []func(baseDelta model.Time) model.Time{
+			// Regular increments.
+			func(delta model.Time) model.Time {
+				return delta
+			},
+			// Jittered increments. σ is 1/100 of delta, e.g. 10ms for 10s scrape interval.
+			func(delta model.Time) model.Time {
+				return delta + model.Time(rand.NormFloat64()*float64(delta)/100)
+			},
+			// Regular increments, but missing a scrape with 10% chance.
+			func(delta model.Time) model.Time {
+				i := rand.Intn(100)
+				if i < 90 {
+					return delta
+				}
+				if i < 99 {
+					return 2 * delta
+				}
+				return 3 * delta
+				// Ignoring the case with more than two missed scrapes in a row.
+			},
+		}
 	)
 
 	// Prefill result with two samples with colliding metrics (to test fingerprint mapping).
@@ -1440,13 +1624,16 @@ func createRandomSamples(metricName string, minLen int) model.Samples {
 	}
 
 	for len(result) < minLen {
-		// Pick a metric for this cycle.
-		metric := metrics[rand.Intn(len(metrics))]
-		timeDelta := rand.Intn(maxTimeDelta) + 1
-		generator := generators[rand.Intn(len(generators))]
-		createValue := generator.createValue
-		applyDelta := generator.applyDelta[rand.Intn(len(generator.applyDelta))]
-		incTimestamp := func() { timestamp += model.Time(timeDelta * (rand.Intn(maxTimeDeltaFactor) + 1)) }
+		var (
+			// Pick a metric for this cycle.
+			metric       = metrics[rand.Intn(len(metrics))]
+			timeDelta    = model.Time(rand.Intn(maxTimeDelta) + 1)
+			generator    = generators[rand.Intn(len(generators))]
+			createValue  = generator.createValue
+			applyDelta   = generator.applyDelta[rand.Intn(len(generator.applyDelta))]
+			incTimestamp = timestampIncrementers[rand.Intn(len(timestampIncrementers))]
+		)
+
 		switch rand.Intn(4) {
 		case 0: // A single sample.
 			result = append(result, &model.Sample{
@@ -1454,7 +1641,7 @@ func createRandomSamples(metricName string, minLen int) model.Samples {
 				Value:     createValue(),
 				Timestamp: timestamp,
 			})
-			incTimestamp()
+			timestamp += incTimestamp(timeDelta)
 		case 1: // A streak of random sample values.
 			for n := rand.Intn(maxStreakLength); n >= 0; n-- {
 				result = append(result, &model.Sample{
@@ -1462,7 +1649,7 @@ func createRandomSamples(metricName string, minLen int) model.Samples {
 					Value:     createValue(),
 					Timestamp: timestamp,
 				})
-				incTimestamp()
+				timestamp += incTimestamp(timeDelta)
 			}
 		case 2: // A streak of sample values with incremental changes.
 			value := createValue()
@@ -1472,7 +1659,7 @@ func createRandomSamples(metricName string, minLen int) model.Samples {
 					Value:     value,
 					Timestamp: timestamp,
 				})
-				incTimestamp()
+				timestamp += incTimestamp(timeDelta)
 				value = applyDelta(value)
 			}
 		case 3: // A streak of constant sample values.
@@ -1483,7 +1670,7 @@ func createRandomSamples(metricName string, minLen int) model.Samples {
 					Value:     value,
 					Timestamp: timestamp,
 				})
-				incTimestamp()
+				timestamp += incTimestamp(timeDelta)
 			}
 		}
 	}
@@ -1491,36 +1678,29 @@ func createRandomSamples(metricName string, minLen int) model.Samples {
 	return result
 }
 
-func verifyStorage(t testing.TB, s *memorySeriesStorage, samples model.Samples, maxAge time.Duration) bool {
+func verifyStorageRandom(t testing.TB, s *memorySeriesStorage, samples model.Samples) bool {
 	s.WaitForIndexing()
 	result := true
 	for _, i := range rand.Perm(len(samples)) {
 		sample := samples[i]
-		if sample.Timestamp.Before(model.TimeFromUnixNano(time.Now().Add(-maxAge).UnixNano())) {
-			continue
-			// TODO: Once we have a guaranteed cutoff at the
-			// retention period, we can verify here that no results
-			// are returned.
-		}
-		fp, err := s.mapper.mapFP(sample.Metric.FastFingerprint(), sample.Metric)
-		if err != nil {
-			t.Fatal(err)
-		}
+		fp := s.mapper.mapFP(sample.Metric.FastFingerprint(), sample.Metric)
 		p := s.NewPreloader()
-		p.PreloadRange(fp, sample.Timestamp, sample.Timestamp, time.Hour)
-		found := s.NewIterator(fp).ValueAtTime(sample.Timestamp)
-		if len(found) != 1 {
-			t.Errorf("Sample %#v: Expected exactly one value, found %d.", sample, len(found))
+		it := p.PreloadInstant(fp, sample.Timestamp, 0)
+		found := it.ValueAtOrBeforeTime(sample.Timestamp)
+		startTime := it.(*boundedIterator).start
+		switch {
+		case found.Timestamp != model.Earliest && sample.Timestamp.Before(startTime):
+			t.Errorf("Sample #%d %#v: Expected outdated sample to be excluded.", i, sample)
 			result = false
-			p.Close()
-			continue
-		}
-		want := sample.Value
-		got := found[0].Value
-		if want != got || sample.Timestamp != found[0].Timestamp {
+		case found.Timestamp == model.Earliest && !sample.Timestamp.Before(startTime):
+			t.Errorf("Sample #%d %#v: Expected sample not found.", i, sample)
+			result = false
+		case found.Timestamp == model.Earliest && sample.Timestamp.Before(startTime):
+			// All good. Outdated sample dropped.
+		case sample.Value != found.Value || sample.Timestamp != found.Timestamp:
 			t.Errorf(
-				"Value (or timestamp) mismatch, want %f (at time %v), got %f (at time %v).",
-				want, sample.Timestamp, got, found[0].Timestamp,
+				"Sample #%d %#v: Value (or timestamp) mismatch, want %f (at time %v), got %f (at time %v).",
+				i, sample, sample.Value, sample.Timestamp, found.Value, found.Timestamp,
 			)
 			result = false
 		}
@@ -1529,36 +1709,150 @@ func verifyStorage(t testing.TB, s *memorySeriesStorage, samples model.Samples, 
 	return result
 }
 
+func verifyStorageSequential(t testing.TB, s *memorySeriesStorage, samples model.Samples) bool {
+	s.WaitForIndexing()
+	var (
+		result = true
+		fp     model.Fingerprint
+		p      = s.NewPreloader()
+		it     SeriesIterator
+		r      []model.SamplePair
+		j      int
+	)
+	defer func() {
+		p.Close()
+	}()
+	for i, sample := range samples {
+		newFP := s.mapper.mapFP(sample.Metric.FastFingerprint(), sample.Metric)
+		if it == nil || newFP != fp {
+			fp = newFP
+			p.Close()
+			p = s.NewPreloader()
+			it = p.PreloadRange(fp, sample.Timestamp, model.Latest)
+			r = it.RangeValues(metric.Interval{
+				OldestInclusive: sample.Timestamp,
+				NewestInclusive: model.Latest,
+			})
+			j = -1
+		}
+		startTime := it.(*boundedIterator).start
+		if sample.Timestamp.Before(startTime) {
+			continue
+		}
+		j++
+		if j >= len(r) {
+			t.Errorf(
+				"Sample #%d %v not found.",
+				i, sample,
+			)
+			result = false
+			continue
+		}
+		found := r[j]
+		if sample.Value != found.Value || sample.Timestamp != found.Timestamp {
+			t.Errorf(
+				"Sample #%d %v: Value (or timestamp) mismatch, want %f (at time %v), got %f (at time %v).",
+				i, sample, sample.Value, sample.Timestamp, found.Value, found.Timestamp,
+			)
+			result = false
+		}
+	}
+	return result
+}
+
 func TestAppendOutOfOrder(t *testing.T) {
-	s, closer := NewTestStorage(t, 1)
+	s, closer := NewTestStorage(t, 2)
 	defer closer.Close()
 
 	m := model.Metric{
 		model.MetricNameLabel: "out_of_order",
 	}
 
-	for i, t := range []int{0, 2, 2, 1} {
-		s.Append(&model.Sample{
-			Metric:    m,
-			Timestamp: model.Time(t),
-			Value:     model.SampleValue(i),
-		})
+	tests := []struct {
+		name      string
+		timestamp model.Time
+		value     model.SampleValue
+		wantErr   error
+	}{
+		{
+			name:      "1st sample",
+			timestamp: 0,
+			value:     0,
+			wantErr:   nil,
+		},
+		{
+			name:      "regular append",
+			timestamp: 2,
+			value:     1,
+			wantErr:   nil,
+		},
+		{
+			name:      "same timestamp, same value (no-op)",
+			timestamp: 2,
+			value:     1,
+			wantErr:   nil,
+		},
+		{
+			name:      "same timestamp, different value",
+			timestamp: 2,
+			value:     2,
+			wantErr:   ErrDuplicateSampleForTimestamp,
+		},
+		{
+			name:      "earlier timestamp, same value",
+			timestamp: 1,
+			value:     2,
+			wantErr:   ErrOutOfOrderSample,
+		},
+		{
+			name:      "earlier timestamp, different value",
+			timestamp: 1,
+			value:     3,
+			wantErr:   ErrOutOfOrderSample,
+		},
+		{
+			name:      "regular append of NaN",
+			timestamp: 3,
+			value:     model.SampleValue(math.NaN()),
+			wantErr:   nil,
+		},
+		{
+			name:      "no-op append of NaN",
+			timestamp: 3,
+			value:     model.SampleValue(math.NaN()),
+			wantErr:   nil,
+		},
+		{
+			name:      "append of NaN with earlier timestamp",
+			timestamp: 2,
+			value:     model.SampleValue(math.NaN()),
+			wantErr:   ErrOutOfOrderSample,
+		},
+		{
+			name:      "append of normal sample after NaN with same timestamp",
+			timestamp: 3,
+			value:     3.14,
+			wantErr:   ErrDuplicateSampleForTimestamp,
+		},
 	}
 
-	fp, err := s.mapper.mapFP(m.FastFingerprint(), m)
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range tests {
+		gotErr := s.Append(&model.Sample{
+			Metric:    m,
+			Timestamp: test.timestamp,
+			Value:     test.value,
+		})
+		if gotErr != test.wantErr {
+			t.Errorf("%s: got %q, want %q", test.name, gotErr, test.wantErr)
+		}
 	}
+
+	fp := s.mapper.mapFP(m.FastFingerprint(), m)
 
 	pl := s.NewPreloader()
 	defer pl.Close()
 
-	err = pl.PreloadRange(fp, 0, 2, 5*time.Minute)
-	if err != nil {
-		t.Fatalf("Error preloading chunks: %s", err)
-	}
-
-	it := s.NewIterator(fp)
+	it := pl.PreloadRange(fp, 0, 2)
 
 	want := []model.SamplePair{
 		{
@@ -1569,9 +1863,18 @@ func TestAppendOutOfOrder(t *testing.T) {
 			Timestamp: 2,
 			Value:     1,
 		},
+		{
+			Timestamp: 3,
+			Value:     model.SampleValue(math.NaN()),
+		},
 	}
-	got := it.RangeValues(metric.Interval{OldestInclusive: 0, NewestInclusive: 2})
-	if !reflect.DeepEqual(want, got) {
-		t.Fatalf("want %v, got %v", want, got)
+	got := it.RangeValues(metric.Interval{OldestInclusive: 0, NewestInclusive: 3})
+	// Note that we cannot just reflect.DeepEqual(want, got) because it has
+	// the semantics of NaN != NaN.
+	for i, gotSamplePair := range got {
+		wantSamplePair := want[i]
+		if !wantSamplePair.Equal(&gotSamplePair) {
+			t.Fatalf("want %v, got %v", wantSamplePair, gotSamplePair)
+		}
 	}
 }

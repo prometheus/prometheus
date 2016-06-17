@@ -1,0 +1,51 @@
+{{define "head"}}
+  <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/alerts.css">
+  <script src="{{ pathPrefix }}/static/js/alerts.js"></script>
+{{end}}
+
+{{define "content"}}
+<div class="container-fluid">
+  <h2>Alerts</h2>
+  <table class="table table-bordered table-collapsed">
+    <tbody>
+    {{$alertStateToRowClass := .AlertStateToRowClass}}
+    {{range .AlertingRules}}
+      {{$activeAlerts := .ActiveAlerts}}
+      <tr class="{{index $alertStateToRowClass .State}} alert_header">
+        <td><i class="icon-chevron-down"></i> <b>{{.Name}}</b> ({{len $activeAlerts}} active)</td>
+      </tr>
+      <tr class="alert_details">
+        <td>
+          <div>
+            <pre><code>{{.HTMLSnippet pathPrefix}}</code></pre>
+          </div>
+          {{if $activeAlerts}}
+          <table class="table table-bordered table-hover table-condensed alert_elements_table">
+            <tr class="">
+              <th>Labels</th>
+              <th>State</th>
+              <th>Active Since</th>
+              <th>Value</th>
+              <th>Silence</th>
+            </tr>
+            {{range $activeAlerts}}
+            <tr>
+              <td>
+                {{range $label, $value := .Labels}}
+                  <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                {{end}}
+              </td>
+              <td><span class="alert alert-{{ .State | alertStateToClass }} state_indicator text-uppercase">{{.State}}</span></td>
+              <td>{{.ActiveAt.Time.UTC}}</td>
+              <td>{{.Value}}</td>
+            </tr>
+            {{end}}
+          </table>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}

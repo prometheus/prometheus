@@ -132,15 +132,16 @@ func NewStorageQueueManager(tsdb StorageClient, queueCapacity int) *StorageQueue
 }
 
 // Append queues a sample to be sent to the remote storage. It drops the
-// sample on the floor if the queue is full. It implements
-// storage.SampleAppender.
-func (t *StorageQueueManager) Append(s *model.Sample) {
+// sample on the floor if the queue is full.
+// Always returns nil.
+func (t *StorageQueueManager) Append(s *model.Sample) error {
 	select {
 	case t.queue <- s:
 	default:
 		t.samplesCount.WithLabelValues(dropped).Inc()
 		log.Warn("Remote storage queue full, discarding sample.")
 	}
+	return nil
 }
 
 // Stop stops sending samples to the remote storage and waits for pending
@@ -178,26 +179,29 @@ func (t *StorageQueueManager) Collect(ch chan<- prometheus.Metric) {
 
 func (t *StorageQueueManager) sendSamples(s model.Samples) {
 	t.sendSemaphore <- true
-	defer func() {
-		<-t.sendSemaphore
+
+	go func() {
+		defer func() {
+			<-t.sendSemaphore
+		}()
+
+		// Samples are sent to the remote storage on a best-effort basis. If a
+		// sample isn't sent correctly the first time, it's simply dropped on the
+		// floor.
+		begin := time.Now()
+		err := t.tsdb.Store(s)
+		duration := time.Since(begin) / time.Second
+
+		labelValue := success
+		if err != nil {
+			log.Warnf("error sending %d samples to remote storage: %s", len(s), err)
+			labelValue = failure
+			t.failedBatches.Inc()
+			t.failedSamples.Add(float64(len(s)))
+		}
+		t.samplesCount.WithLabelValues(labelValue).Add(float64(len(s)))
+		t.sendLatency.Observe(float64(duration))
 	}()
-
-	// Samples are sent to the remote storage on a best-effort basis. If a
-	// sample isn't sent correctly the first time, it's simply dropped on the
-	// floor.
-	begin := time.Now()
-	err := t.tsdb.Store(s)
-	duration := time.Since(begin) / time.Second
-
-	labelValue := success
-	if err != nil {
-		log.Warnf("error sending %d samples to remote storage: %s", len(s), err)
-		labelValue = failure
-		t.failedBatches.Inc()
-		t.failedSamples.Add(float64(len(s)))
-	}
-	t.samplesCount.WithLabelValues(labelValue).Add(float64(len(s)))
-	t.sendLatency.Observe(float64(duration))
 }
 
 // Run continuously sends samples to the remote storage.
@@ -222,7 +226,7 @@ func (t *StorageQueueManager) Run() {
 			t.pendingSamples = append(t.pendingSamples, s)
 
 			for len(t.pendingSamples) >= maxSamplesPerSend {
-				go t.sendSamples(t.pendingSamples[:maxSamplesPerSend])
+				t.sendSamples(t.pendingSamples[:maxSamplesPerSend])
 				t.pendingSamples = t.pendingSamples[maxSamplesPerSend:]
 			}
 		case <-time.After(batchSendDeadline):
@@ -234,7 +238,7 @@ func (t *StorageQueueManager) Run() {
 // Flush flushes remaining queued samples.
 func (t *StorageQueueManager) flush() {
 	if len(t.pendingSamples) > 0 {
-		go t.sendSamples(t.pendingSamples)
+		t.sendSamples(t.pendingSamples)
 	}
 	t.pendingSamples = t.pendingSamples[:0]
 }

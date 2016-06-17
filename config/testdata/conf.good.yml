@@ -24,26 +24,30 @@ scrape_configs:
   # scheme defaults to 'http'.
 
   file_sd_configs:
-    - names:
+    - files:
       - foo/*.slow.json
       - foo/*.slow.yml
       - single/file.yml
       refresh_interval: 10m
-    - names:
+    - files:
       - bar/*.yaml
 
-  target_groups:
+  static_configs:
   - targets: ['localhost:9090', 'localhost:9191']
     labels:
       my:   label
       your: label
 
   relabel_configs:
-  - source_labels: [job, __meta_dns_srv_name]
+  - source_labels: [job, __meta_dns_name]
     regex:         (.*)some-[regex]
     target_label:  job
     replacement:   foo-${1}
     # action defaults to 'replace'
+  - source_labels: [abc]
+    target_label:  cde
+  - replacement:   static
+    target_label:  abc
 
   bearer_token_file: valid_token_file
 
@@ -105,12 +109,35 @@ scrape_configs:
 - job_name: service-kubernetes
 
   kubernetes_sd_configs:
-  - masters:
+  - api_servers:
     - 'https://localhost:1234'
-    username: 'myusername'
-    password: 'mypassword'
+
+    basic_auth:
+      username: 'myusername'
+      password: 'mypassword'
 
 - job_name: service-marathon
   marathon_sd_configs:
   - servers:
     - 'http://marathon.example.com:8080'
+
+- job_name: service-ec2
+  ec2_sd_configs:
+    - region: us-east-1
+      access_key: access
+      secret_key: secret
+
+- job_name: service-azure
+  azure_sd_configs:
+    - subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11
+      tenant_id: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
+      client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
+      client_secret: nAdvAK2oBuVym4IXix
+      port: 9100
+
+- job_name: service-nerve
+  nerve_sd_configs:
+    - servers:
+      - localhost
+      paths:
+      - /monitoring

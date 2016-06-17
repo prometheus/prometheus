@@ -1,3 +1,16 @@
+// Copyright 2016 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package v1
 
 import (
@@ -18,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 type status string
@@ -38,6 +50,13 @@ const (
 	errorBadData            = "bad_data"
 )
 
+var corsHeaders = map[string]string{
+	"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
+	"Access-Control-Allow-Methods":  "GET, OPTIONS",
+	"Access-Control-Allow-Origin":   "*",
+	"Access-Control-Expose-Headers": "Date",
+}
+
 type apiError struct {
 	typ errorType
 	err error
@@ -54,6 +73,15 @@ type response struct {
 	Error     string      `json:"error,omitempty"`
 }
 
+// Enables cross-site script calls.
+func setCORS(w http.ResponseWriter) {
+	for h, v := range corsHeaders {
+		w.Header().Set(h, v)
+	}
+}
+
+type apiFunc func(r *http.Request) (interface{}, *apiError)
+
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
@@ -61,37 +89,38 @@ type API struct {
 	QueryEngine *promql.Engine
 
 	context func(r *http.Request) context.Context
+	now     func() model.Time
 }
 
-// Enables cross-site script calls.
-func setCORS(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin")
-	w.Header().Set("Access-Control-Allow-Methods", "GET")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Expose-Headers", "Date")
+// NewAPI returns an initialized API type.
+func NewAPI(qe *promql.Engine, st local.Storage) *API {
+	return &API{
+		QueryEngine: qe,
+		Storage:     st,
+		context:     route.Context,
+		now:         model.Now,
+	}
 }
-
-type apiFunc func(r *http.Request) (interface{}, *apiError)
 
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
-	if api.context == nil {
-		api.context = route.Context
-	}
-
 	instr := func(name string, f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			setCORS(w)
 			if data, err := f(r); err != nil {
 				respondError(w, err, data)
-			} else {
+			} else if data != nil {
 				respond(w, data)
+			} else {
+				w.WriteHeader(http.StatusNoContent)
 			}
 		})
 		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{
 			Handler: hf,
 		})
 	}
+
+	r.Options("/*path", instr("options", api.options))
 
 	r.Get("/query", instr("query", api.query))
 	r.Get("/query_range", instr("query_range", api.queryRange))
@@ -107,11 +136,22 @@ type queryData struct {
 	Result     model.Value     `json:"result"`
 }
 
+func (api *API) options(r *http.Request) (interface{}, *apiError) {
+	return nil, nil
+}
+
 func (api *API) query(r *http.Request) (interface{}, *apiError) {
-	ts, err := parseTime(r.FormValue("time"))
-	if err != nil {
-		return nil, &apiError{errorBadData, err}
+	var ts model.Time
+	if t := r.FormValue("time"); t != "" {
+		var err error
+		ts, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		ts = api.now()
 	}
+
 	qry, err := api.QueryEngine.NewInstantQuery(r.FormValue("query"), ts)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}
@@ -192,6 +232,29 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
 	}
+
+	var start model.Time
+	if t := r.FormValue("start"); t != "" {
+		var err error
+		start, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		start = model.Earliest
+	}
+
+	var end model.Time
+	if t := r.FormValue("end"); t != "" {
+		var err error
+		end, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		end = model.Latest
+	}
+
 	res := map[model.Fingerprint]metric.Metric{}
 
 	for _, lm := range r.Form["match[]"] {
@@ -199,7 +262,10 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		if err != nil {
 			return nil, &apiError{errorBadData, err}
 		}
-		for fp, met := range api.Storage.MetricsForLabelMatchers(matchers...) {
+		for fp, met := range api.Storage.MetricsForLabelMatchers(
+			start, end,
+			matchers...,
+		) {
 			res[fp] = met
 		}
 	}
@@ -223,7 +289,10 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 		if err != nil {
 			return nil, &apiError{errorBadData, err}
 		}
-		for fp := range api.Storage.MetricsForLabelMatchers(matchers...) {
+		for fp := range api.Storage.MetricsForLabelMatchers(
+			model.Earliest, model.Latest, // Get every series.
+			matchers...,
+		) {
 			fps[fp] = struct{}{}
 		}
 	}
@@ -241,7 +310,7 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 
 func respond(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	b, err := json.Marshal(&response{
 		Status: statusSuccess,
@@ -255,7 +324,19 @@ func respond(w http.ResponseWriter, data interface{}) {
 
 func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
+
+	var code int
+	switch apiErr.typ {
+	case errorBadData:
+		code = http.StatusBadRequest
+	case errorExec:
+		code = 422
+	case errorCanceled, errorTimeout:
+		code = http.StatusServiceUnavailable
+	default:
+		code = http.StatusInternalServerError
+	}
+	w.WriteHeader(code)
 
 	b, err := json.Marshal(&response{
 		Status:    statusError,
@@ -284,8 +365,8 @@ func parseDuration(s string) (time.Duration, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		return time.Duration(d * float64(time.Second)), nil
 	}
-	if d, err := strutil.StringToDuration(s); err == nil {
-		return d, nil
+	if d, err := model.ParseDuration(s); err == nil {
+		return time.Duration(d), nil
 	}
 	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
 }
