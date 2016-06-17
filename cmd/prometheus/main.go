@@ -11,34 +11,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The main package for the Prometheus server executeable.
+// The main package for the Prometheus server executable.
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
-	"text/template"
 	"time"
 
-	"github.com/prometheus/common/log"
-
 	"github.com/prometheus/client_golang/prometheus"
-
+	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/notification"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -59,16 +54,24 @@ var (
 	})
 )
 
+func init() {
+	prometheus.MustRegister(version.NewCollector("prometheus"))
+}
+
 // Main manages the startup and shutdown lifecycle of the entire Prometheus server.
 func Main() int {
 	if err := parse(os.Args[1:]); err != nil {
+		log.Error(err)
 		return 2
 	}
 
-	printVersion()
 	if cfg.printVersion {
+		fmt.Fprintln(os.Stdout, version.Print("prometheus"))
 		return 0
 	}
+
+	log.Infoln("Starting prometheus", version.Info())
+	log.Infoln("Build context", version.BuildContext())
 
 	var reloadables []Reloadable
 
@@ -83,16 +86,16 @@ func Main() int {
 	}
 
 	var (
-		notificationHandler = notification.NewNotificationHandler(&cfg.notification)
-		targetManager       = retrieval.NewTargetManager(sampleAppender)
-		queryEngine         = promql.NewEngine(memStorage, &cfg.queryEngine)
+		notifier      = notifier.New(&cfg.notifier)
+		targetManager = retrieval.NewTargetManager(sampleAppender)
+		queryEngine   = promql.NewEngine(memStorage, &cfg.queryEngine)
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		SampleAppender:      sampleAppender,
-		NotificationHandler: notificationHandler,
-		QueryEngine:         queryEngine,
-		ExternalURL:         cfg.web.ExternalURL,
+		SampleAppender: sampleAppender,
+		Notifier:       notifier,
+		QueryEngine:    queryEngine,
+		ExternalURL:    cfg.web.ExternalURL,
 	})
 
 	flags := map[string]string{}
@@ -100,16 +103,18 @@ func Main() int {
 		flags[f.Name] = f.Value.String()
 	})
 
-	status := &web.PrometheusStatus{
-		TargetPools: targetManager.Pools,
-		Rules:       ruleManager.Rules,
-		Flags:       flags,
-		Birth:       time.Now(),
+	version := &web.PrometheusVersion{
+		Version:   version.Version,
+		Revision:  version.Revision,
+		Branch:    version.Branch,
+		BuildUser: version.BuildUser,
+		BuildDate: version.BuildDate,
+		GoVersion: version.GoVersion,
 	}
 
-	webHandler := web.New(memStorage, queryEngine, ruleManager, status, &cfg.web)
+	webHandler := web.New(memStorage, queryEngine, targetManager, ruleManager, version, flags, &cfg.web)
 
-	reloadables = append(reloadables, status, targetManager, ruleManager, webHandler, notificationHandler)
+	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
 
 	if !reloadConfig(cfg.configFile, reloadables...) {
 		return 1
@@ -132,7 +137,8 @@ func Main() int {
 		}
 	}()
 
-	// Start all components.
+	// Start all components. The order is NOT arbitrary.
+
 	if err := memStorage.Start(); err != nil {
 		log.Errorln("Error opening memory series storage:", err)
 		return 1
@@ -151,19 +157,23 @@ func Main() int {
 	}
 	// The storage has to be fully initialized before registering.
 	prometheus.MustRegister(memStorage)
-	prometheus.MustRegister(notificationHandler)
+	prometheus.MustRegister(notifier)
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
+
+	// The notifieris a dependency of the rule manager. It has to be
+	// started before and torn down afterwards.
+	go notifier.Run()
+	defer notifier.Stop()
 
 	go ruleManager.Run()
 	defer ruleManager.Stop()
 
-	go notificationHandler.Run()
-	defer notificationHandler.Stop()
-
 	go targetManager.Run()
 	defer targetManager.Stop()
 
+	// Shutting down the query engine before the rule manager will cause pending queries
+	// to be canceled and ensures a quick shutdown of the rule manager.
 	defer queryEngine.Stop()
 
 	go webHandler.Run()
@@ -206,10 +216,6 @@ func reloadConfig(filename string, rls ...Reloadable) (success bool) {
 	conf, err := config.LoadFile(filename)
 	if err != nil {
 		log.Errorf("Couldn't load configuration (-config.file=%s): %v", filename, err)
-		// TODO(julius): Remove this notice when releasing 0.17.0 or 0.18.0.
-		if err.Error() == "unknown fields in global config: labels" {
-			log.Errorf("NOTE: The 'labels' setting in the global configuration section has been renamed to 'external_labels' and now has changed semantics (see release notes at https://github.com/prometheus/prometheus/blob/master/CHANGELOG.md). Please update your configuration file accordingly.")
-		}
 		return false
 	}
 	success = true
@@ -218,21 +224,4 @@ func reloadConfig(filename string, rls ...Reloadable) (success bool) {
 		success = success && rl.ApplyConfig(conf)
 	}
 	return success
-}
-
-var versionInfoTmpl = `
-prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
-  build user:       {{.buildUser}}
-  build date:       {{.buildDate}}
-  go version:       {{.goVersion}}
-`
-
-func printVersion() {
-	t := template.Must(template.New("version").Parse(versionInfoTmpl))
-
-	var buf bytes.Buffer
-	if err := t.ExecuteTemplate(&buf, "version", version.Map); err != nil {
-		panic(err)
-	}
-	fmt.Fprintln(os.Stdout, strings.TrimSpace(buf.String()))
 }

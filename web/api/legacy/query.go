@@ -31,7 +31,7 @@ import (
 // Enables cross-site script calls.
 func setAccessControlHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin")
-	w.Header().Set("Access-Control-Allow-Methods", "GET")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Expose-Headers", "Date")
 }
@@ -59,6 +59,12 @@ func parseDuration(d string) (time.Duration, error) {
 		return 0, err
 	}
 	return time.Duration(dFloat * float64(time.Second/time.Nanosecond)), nil
+}
+
+// Options handles OPTIONS requests to /api/... endpoints.
+func (api *API) Options(w http.ResponseWriter, r *http.Request) {
+	setAccessControlHeaders(w)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Query handles the /api/query endpoint.

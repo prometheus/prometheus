@@ -15,7 +15,6 @@ package rules
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -28,14 +27,8 @@ import (
 func TestAlertingRule(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m
-			http_requests{job="api-server", instance="0", group="production"}	0+10x10
-			http_requests{job="api-server", instance="1", group="production"}	0+20x10
-			http_requests{job="api-server", instance="0", group="canary"}		0+30x10
-			http_requests{job="api-server", instance="1", group="canary"}		0+40x10
-			http_requests{job="app-server", instance="0", group="production"}	0+50x10
-			http_requests{job="app-server", instance="1", group="production"}	0+60x10
-			http_requests{job="app-server", instance="0", group="canary"}		0+70x10
-			http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+			http_requests{job="app-server", instance="0", group="canary"}	75 85  95 105 105  95  85
+			http_requests{job="app-server", instance="1", group="canary"}	80 90 100 110 120 130 140
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +49,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		model.LabelSet{"severity": "critical"},
-		"summary", "description", "runbook",
+		model.LabelSet{},
 	)
 
 	var tests = []struct {
@@ -80,17 +73,32 @@ func TestAlertingRule(t *testing.T) {
 		}, {
 			time: 10 * time.Minute,
 			result: []string{
+				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
 				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
+			},
+		},
+		{
+			time: 15 * time.Minute,
+			result: []string{
 				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
 			},
 		},
 		{
-			time:   15 * time.Minute,
-			result: nil,
+			time:   20 * time.Minute,
+			result: []string{},
 		},
 		{
-			time:   20 * time.Minute,
-			result: nil,
+			time: 25 * time.Minute,
+			result: []string{
+				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+			},
+		},
+		{
+			time: 30 * time.Minute,
+			result: []string{
+				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
+				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+			},
 		},
 	}
 
@@ -137,47 +145,4 @@ func annotateWithTime(lines []string, timestamp model.Time) []string {
 		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp))
 	}
 	return annotatedLines
-}
-
-func TestTransferAlertState(t *testing.T) {
-	m := NewManager(&ManagerOptions{})
-
-	alert := &Alert{
-		Name:  "testalert",
-		State: StateFiring,
-	}
-
-	arule := AlertingRule{
-		name:         "test",
-		activeAlerts: map[model.Fingerprint]*Alert{},
-	}
-	aruleCopy := arule
-
-	m.rules = append(m.rules, &arule)
-
-	// Set an alert.
-	arule.activeAlerts[0] = alert
-
-	// Save state and get the restore function.
-	restore := m.transferAlertState()
-
-	// Remove arule from the rule list and add an unrelated rule and the
-	// stateless copy of arule.
-	m.rules = []Rule{
-		&AlertingRule{
-			name:         "test_other",
-			activeAlerts: map[model.Fingerprint]*Alert{},
-		},
-		&aruleCopy,
-	}
-
-	// Apply the restore function.
-	restore()
-
-	if ar := m.rules[0].(*AlertingRule); len(ar.activeAlerts) != 0 {
-		t.Fatalf("unexpected alert for unrelated alerting rule")
-	}
-	if ar := m.rules[1].(*AlertingRule); !reflect.DeepEqual(ar.activeAlerts[0], alert) {
-		t.Fatalf("alert state was not restored")
-	}
 }

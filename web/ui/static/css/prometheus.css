@@ -1,0 +1,28 @@
+/* Move down content because we have a fixed navbar that is 50px tall */
+body {
+  padding-top: 50px;
+  padding-bottom: 20px;
+}
+
+th.job_header {
+  font-size: 20px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.state_indicator {
+  padding: 0 4px 0 4px;
+}
+
+.literal_output td {
+  font-family: monospace;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.tooltip-inner {
+  max-width: none;
+  text-align: left;
+}

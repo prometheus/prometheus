@@ -59,9 +59,7 @@ type AlertStmt struct {
 	Expr        Expr
 	Duration    time.Duration
 	Labels      model.LabelSet
-	Summary     string
-	Description string
-	Runbook     string
+	Annotations model.LabelSet
 }
 
 // EvalStmt holds an expression and information on the range it should
@@ -103,10 +101,11 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a vector.
 type AggregateExpr struct {
-	Op              itemType         // The used aggregation operation.
-	Expr            Expr             // The vector expression over which is aggregated.
-	Grouping        model.LabelNames // The labels by which to group the vector.
-	KeepExtraLabels bool             // Whether to keep extra labels common among result elements.
+	Op               itemType         // The used aggregation operation.
+	Expr             Expr             // The vector expression over which is aggregated.
+	Grouping         model.LabelNames // The labels by which to group the vector.
+	Without          bool             // Whether to drop the given labels rather than keep them.
+	KeepCommonLabels bool             // Whether to keep common labels among result elements.
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -146,7 +145,7 @@ type NumberLiteral struct {
 }
 
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
-// of operator precendence.
+// of operator precedence.
 type ParenExpr struct {
 	Expr Expr
 }
@@ -229,11 +228,14 @@ func (vmc VectorMatchCardinality) String() string {
 type VectorMatching struct {
 	// The cardinality of the two vectors.
 	Card VectorMatchCardinality
-	// On contains the labels which define equality of a pair
-	// of elements from the vectors.
-	On model.LabelNames
+	// MatchingLabels contains the labels which define equality of a pair of
+	// elements from the vectors.
+	MatchingLabels model.LabelNames
+	// Ignoring excludes the given label names from matching,
+	// rather than only using them.
+	Ignoring bool
 	// Include contains additional labels that should be included in
-	// the result from the side with the higher cardinality.
+	// the result from the side with the lower cardinality.
 	Include model.LabelNames
 }
 

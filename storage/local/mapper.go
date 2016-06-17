@@ -1,3 +1,16 @@
+// Copyright 2016 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package local
 
 import (
@@ -59,13 +72,20 @@ func newFPMapper(fpToSeries *seriesMap, p *persistence) (*fpMapper, error) {
 	return m, nil
 }
 
+// checkpoint persists the current mappings.  The caller has to ensure that the
+// provided mappings are not changed concurrently. This method is only called
+// upon shutdown, when no samples are ingested anymore.
+func (m *fpMapper) checkpoint() error {
+	return m.p.checkpointFPMappings(m.mappings)
+}
+
 // mapFP takes a raw fingerprint (as returned by Metrics.FastFingerprint) and
 // returns a truly unique fingerprint. The caller must have locked the raw
 // fingerprint.
 //
 // If an error is encountered, it is returned together with the unchanged raw
 // fingerprint.
-func (m *fpMapper) mapFP(fp model.Fingerprint, metric model.Metric) (model.Fingerprint, error) {
+func (m *fpMapper) mapFP(fp model.Fingerprint, metric model.Metric) model.Fingerprint {
 	// First check if we are in the reserved FP space, in which case this is
 	// automatically a collision that has to be mapped.
 	if fp <= maxMappedFP {
@@ -79,7 +99,7 @@ func (m *fpMapper) mapFP(fp model.Fingerprint, metric model.Metric) (model.Finge
 		// FP exists in memory, but is it for the same metric?
 		if metric.Equal(s.metric) {
 			// Yupp. We are done.
-			return fp, nil
+			return fp
 		}
 		// Collision detected!
 		return m.maybeAddMapping(fp, metric)
@@ -97,28 +117,30 @@ func (m *fpMapper) mapFP(fp model.Fingerprint, metric model.Metric) (model.Finge
 		mappedFP, ok := mappedFPs[ms]
 		if ok {
 			// Historical mapping found, return the mapped FP.
-			return mappedFP, nil
+			return mappedFP
 		}
 	}
 	// If we are here, FP does not exist in memory and is either not mapped
 	// at all, or existing mappings for FP are not for m. Check if we have
 	// something for FP in the archive.
 	archivedMetric, err := m.p.archivedMetric(fp)
-	if err != nil {
-		return fp, err
+	if err != nil || archivedMetric == nil {
+		// Either the archive lookup has returend an error, or fp does
+		// not exist in the archive. In the former case, the storage has
+		// been marked as dirty already. We just carry on for as long as
+		// it goes, assuming that fp does not exist. In either case,
+		// since now we know (or assume) now that fp does not exist,
+		// neither in memory nor in archive, we can safely keep it
+		// unmapped.
+		return fp
 	}
-	if archivedMetric != nil {
-		// FP exists in archive, but is it for the same metric?
-		if metric.Equal(archivedMetric) {
-			// Yupp. We are done.
-			return fp, nil
-		}
-		// Collision detected!
-		return m.maybeAddMapping(fp, metric)
+	// FP exists in archive, but is it for the same metric?
+	if metric.Equal(archivedMetric) {
+		// Yupp. We are done.
+		return fp
 	}
-	// As fp does not exist, neither in memory nor in archive, we can safely
-	// keep it unmapped.
-	return fp, nil
+	// Collision detected!
+	return m.maybeAddMapping(fp, metric)
 }
 
 // maybeAddMapping is only used internally. It takes a detected collision and
@@ -127,7 +149,7 @@ func (m *fpMapper) mapFP(fp model.Fingerprint, metric model.Metric) (model.Finge
 func (m *fpMapper) maybeAddMapping(
 	fp model.Fingerprint,
 	collidingMetric model.Metric,
-) (model.Fingerprint, error) {
+) model.Fingerprint {
 	ms := metricToUniqueString(collidingMetric)
 	m.mtx.RLock()
 	mappedFPs, ok := m.mappings[fp]
@@ -136,20 +158,16 @@ func (m *fpMapper) maybeAddMapping(
 		// fp is locked by the caller, so no further locking required.
 		mappedFP, ok := mappedFPs[ms]
 		if ok {
-			return mappedFP, nil // Existing mapping.
+			return mappedFP // Existing mapping.
 		}
 		// A new mapping has to be created.
 		mappedFP = m.nextMappedFP()
 		mappedFPs[ms] = mappedFP
-		m.mtx.Lock()
-		// Checkpoint mappings after each change.
-		err := m.p.checkpointFPMappings(m.mappings)
-		m.mtx.Unlock()
 		log.Infof(
 			"Collision detected for fingerprint %v, metric %v, mapping to new fingerprint %v.",
 			fp, collidingMetric, mappedFP,
 		)
-		return mappedFP, err
+		return mappedFP
 	}
 	// This is the first collision for fp.
 	mappedFP := m.nextMappedFP()
@@ -157,14 +175,12 @@ func (m *fpMapper) maybeAddMapping(
 	m.mtx.Lock()
 	m.mappings[fp] = mappedFPs
 	m.mappingsCounter.Inc()
-	// Checkpoint mappings after each change.
-	err := m.p.checkpointFPMappings(m.mappings)
 	m.mtx.Unlock()
 	log.Infof(
 		"Collision detected for fingerprint %v, metric %v, mapping to new fingerprint %v.",
 		fp, collidingMetric, mappedFP,
 	)
-	return mappedFP, err
+	return mappedFP
 }
 
 func (m *fpMapper) nextMappedFP() model.Fingerprint {

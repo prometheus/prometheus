@@ -29,7 +29,6 @@ const (
 	ResultAppendTime
 	QueryAnalysisTime
 	GetValueAtTimeTime
-	GetBoundaryValuesTime
 	GetRangeValuesTime
 	ExecQueueTime
 	ViewDiskPreparationTime
@@ -37,7 +36,7 @@ const (
 	ViewDiskExtractionTime
 )
 
-// Return a string represenation of a QueryTiming identifier.
+// Return a string representation of a QueryTiming identifier.
 func (s QueryTiming) String() string {
 	switch s {
 	case TotalEvalTime:
@@ -60,8 +59,6 @@ func (s QueryTiming) String() string {
 		return "Query analysis time"
 	case GetValueAtTimeTime:
 		return "GetValueAtTime() time"
-	case GetBoundaryValuesTime:
-		return "GetBoundaryValues() time"
 	case GetRangeValuesTime:
 		return "GetRangeValues() time"
 	case ExecQueueTime:

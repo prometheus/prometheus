@@ -19,13 +19,15 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
 	"unicode"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/prometheus/common/log"
-	"github.com/prometheus/prometheus/notification"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/local/index"
@@ -41,15 +43,18 @@ var cfg = struct {
 	printVersion bool
 	configFile   string
 
-	storage      local.MemorySeriesStorageOptions
-	notification notification.NotificationHandlerOptions
-	queryEngine  promql.EngineOptions
-	web          web.Options
-	remote       remote.Options
+	storage     local.MemorySeriesStorageOptions
+	notifier    notifier.Options
+	queryEngine promql.EngineOptions
+	web         web.Options
+	remote      remote.Options
 
-	prometheusURL string
-	influxdbURL   string
-}{}
+	alertmanagerURLs stringset
+	prometheusURL    string
+	influxdbURL      string
+}{
+	alertmanagerURLs: stringset{},
+}
 
 func init() {
 	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
@@ -82,10 +87,6 @@ func init() {
 		&cfg.web.MetricsPath, "web.telemetry-path", "/metrics",
 		"Path under which to expose metrics.",
 	)
-	cfg.fs.BoolVar(
-		&cfg.web.UseLocalAssets, "web.use-local-assets", false,
-		"Read assets/templates from file instead of binary.",
-	)
 	cfg.fs.StringVar(
 		&cfg.web.UserAssetsPath, "web.user-assets", "",
 		"Path to static asset directory, available at /user.",
@@ -110,15 +111,15 @@ func init() {
 	)
 	cfg.fs.IntVar(
 		&cfg.storage.MemoryChunks, "storage.local.memory-chunks", 1024*1024,
-		"How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily.",
+		"How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily. Sample ingestion will be throttled if the configured value is exceeded by more than 10%.",
 	)
 	cfg.fs.DurationVar(
 		&cfg.storage.PersistenceRetentionPeriod, "storage.local.retention", 15*24*time.Hour,
 		"How long to retain samples in the local storage.",
 	)
 	cfg.fs.IntVar(
-		&cfg.storage.MaxChunksToPersist, "storage.local.max-chunks-to-persist", 1024*1024,
-		"How many chunks can be waiting for persistence before sample ingestion will stop. Many chunks waiting to be persisted will increase the checkpoint size.",
+		&cfg.storage.MaxChunksToPersist, "storage.local.max-chunks-to-persist", 512*1024,
+		"How many chunks can be waiting for persistence before sample ingestion will be throttled. Many chunks waiting to be persisted will increase the checkpoint size.",
 	)
 	cfg.fs.DurationVar(
 		&cfg.storage.CheckpointInterval, "storage.local.checkpoint-interval", 5*time.Minute,
@@ -132,6 +133,10 @@ func init() {
 		&cfg.storage.SyncStrategy, "storage.local.series-sync-strategy",
 		"When to sync series files after modification. Possible values: 'never', 'always', 'adaptive'. Sync'ing slows down storage performance but reduces the risk of data loss in case of an OS crash. With the 'adaptive' strategy, series files are sync'd for as long as the storage is not too much behind on chunk persistence.",
 	)
+	cfg.fs.Float64Var(
+		&cfg.storage.MinShrinkRatio, "storage.local.series-file-shrink-ratio", 0.1,
+		"A series file is only truncated (to delete samples that have exceeded the retention period) if it shrinks by at least the provided ratio. This saves I/O operations while causing only a limited storage space overhead. If 0 or smaller, truncation will be performed even for a single dropped chunk, while 1 or larger will effectively prevent any truncation.",
+	)
 	cfg.fs.BoolVar(
 		&cfg.storage.Dirty, "storage.local.dirty", false,
 		"If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.",
@@ -142,7 +147,7 @@ func init() {
 	)
 	cfg.fs.Var(
 		&local.DefaultChunkEncoding, "storage.local.chunk-encoding-version",
-		"Which chunk encoding version to use for newly created chunks. Currently supported is 0 (delta encoding) and 1 (double-delta encoding).",
+		"Which chunk encoding version to use for newly created chunks. Currently supported is 0 (delta encoding), 1 (double-delta encoding), and 2 (double-delta encoding with variable bit-width).",
 	)
 	// Index cache sizes.
 	cfg.fs.IntVar(
@@ -161,8 +166,24 @@ func init() {
 		&index.LabelPairFingerprintsCacheSize, "storage.local.index-cache-size.label-pair-to-fingerprints", index.LabelPairFingerprintsCacheSize,
 		"The size in bytes for the label pair to fingerprints index cache.",
 	)
+	cfg.fs.IntVar(
+		&cfg.storage.NumMutexes, "storage.local.num-fingerprint-mutexes", 4096,
+		"The number of mutexes used for fingerprint locking.",
+	)
 
 	// Remote storage.
+	cfg.fs.StringVar(
+		&cfg.remote.GraphiteAddress, "storage.remote.graphite-address", "",
+		"The host:port of the remote Graphite server to send samples to. None, if empty.",
+	)
+	cfg.fs.StringVar(
+		&cfg.remote.GraphiteTransport, "storage.remote.graphite-transport", "tcp",
+		"Transport protocol to use to communicate with Graphite. 'tcp', if empty.",
+	)
+	cfg.fs.StringVar(
+		&cfg.remote.GraphitePrefix, "storage.remote.graphite-prefix", "",
+		"The prefix to prepend to all metrics exported to Graphite. None, if empty.",
+	)
 	cfg.fs.StringVar(
 		&cfg.remote.OpentsdbURL, "storage.remote.opentsdb-url", "",
 		"The URL of the remote OpenTSDB server to send samples to. None, if empty.",
@@ -177,7 +198,7 @@ func init() {
 	)
 	cfg.fs.StringVar(
 		&cfg.remote.InfluxdbUsername, "storage.remote.influxdb.username", "",
-		"The username to use when sending samples to InfluxDB.",
+		"The username to use when sending samples to InfluxDB. The corresponding password must be provided via the INFLUXDB_PW environment variable.",
 	)
 	cfg.fs.StringVar(
 		&cfg.remote.InfluxdbDatabase, "storage.remote.influxdb.database", "prometheus",
@@ -189,16 +210,16 @@ func init() {
 	)
 
 	// Alertmanager.
-	cfg.fs.StringVar(
-		&cfg.notification.AlertmanagerURL, "alertmanager.url", "",
-		"The URL of the alert manager to send notifications to.",
+	cfg.fs.Var(
+		&cfg.alertmanagerURLs, "alertmanager.url",
+		"Comma-separated list of Alertmanager URLs to send notifications to.",
 	)
 	cfg.fs.IntVar(
-		&cfg.notification.QueueCapacity, "alertmanager.notification-queue-capacity", 100,
+		&cfg.notifier.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
 		"The capacity of the queue for pending alert manager notifications.",
 	)
 	cfg.fs.DurationVar(
-		&cfg.notification.Deadline, "alertmanager.http-deadline", 10*time.Second,
+		&cfg.notifier.Timeout, "alertmanager.timeout", 10*time.Second,
 		"Alert manager HTTP API timeout.",
 	)
 
@@ -229,9 +250,14 @@ func parse(args []string) error {
 	if err := parsePrometheusURL(); err != nil {
 		return err
 	}
-
 	if err := parseInfluxdbURL(); err != nil {
 		return err
+	}
+	for u := range cfg.alertmanagerURLs {
+		if err := validateAlertmanagerURL(u); err != nil {
+			return err
+		}
+		cfg.notifier.AlertmanagerURLs = cfg.alertmanagerURLs.slice()
 	}
 
 	cfg.remote.InfluxdbPassword = os.Getenv("INFLUXDB_PW")
@@ -250,6 +276,10 @@ func parsePrometheusURL() error {
 			return err
 		}
 		cfg.prometheusURL = fmt.Sprintf("http://%s:%s/", hostname, port)
+	}
+
+	if ok := govalidator.IsURL(cfg.prometheusURL); !ok {
+		return fmt.Errorf("invalid Prometheus URL: %s", cfg.prometheusURL)
 	}
 
 	promURL, err := url.Parse(cfg.prometheusURL)
@@ -271,12 +301,33 @@ func parseInfluxdbURL() error {
 		return nil
 	}
 
+	if ok := govalidator.IsURL(cfg.influxdbURL); !ok {
+		return fmt.Errorf("invalid InfluxDB URL: %s", cfg.influxdbURL)
+	}
+
 	url, err := url.Parse(cfg.influxdbURL)
 	if err != nil {
 		return err
 	}
 
 	cfg.remote.InfluxdbURL = url
+	return nil
+}
+
+func validateAlertmanagerURL(u string) error {
+	if u == "" {
+		return nil
+	}
+	if ok := govalidator.IsURL(u); !ok {
+		return fmt.Errorf("invalid Alertmanager URL: %s", u)
+	}
+	url, err := url.Parse(u)
+	if err != nil {
+		return err
+	}
+	if url.Scheme == "" {
+		return fmt.Errorf("missing scheme in Alertmanager URL: %s", u)
+	}
 	return nil
 }
 
@@ -339,4 +390,29 @@ func usage() {
 	if err := t.Execute(os.Stdout, groups); err != nil {
 		panic(fmt.Errorf("error executing usage template: %s", err))
 	}
+}
+
+type stringset map[string]struct{}
+
+func (ss stringset) Set(s string) error {
+	for _, v := range strings.Split(s, ",") {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			ss[v] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (ss stringset) String() string {
+	return strings.Join(ss.slice(), ",")
+}
+
+func (ss stringset) slice() []string {
+	slice := make([]string, 0, len(ss))
+	for k := range ss {
+		slice = append(slice, k)
+	}
+	sort.Strings(slice)
+	return slice
 }

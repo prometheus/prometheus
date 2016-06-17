@@ -19,6 +19,7 @@ package index
 import (
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/prometheus/common/model"
 
@@ -95,7 +96,7 @@ func (i *FingerprintMetricIndex) Lookup(fp model.Fingerprint) (metric model.Metr
 // ready to use.
 func NewFingerprintMetricIndex(basePath string) (*FingerprintMetricIndex, error) {
 	fingerprintToMetricDB, err := NewLevelDB(LevelDBOptions{
-		Path:           path.Join(basePath, fingerprintToMetricDir),
+		Path:           filepath.Join(basePath, fingerprintToMetricDir),
 		CacheSizeBytes: FingerprintMetricCacheSize,
 	})
 	if err != nil {
@@ -167,7 +168,7 @@ func (i *LabelNameLabelValuesIndex) LookupSet(l model.LabelName) (values map[mod
 // LabelNameLabelValuesIndex ready to use.
 func NewLabelNameLabelValuesIndex(basePath string) (*LabelNameLabelValuesIndex, error) {
 	labelNameToLabelValuesDB, err := NewLevelDB(LevelDBOptions{
-		Path:           path.Join(basePath, labelNameToLabelValuesDir),
+		Path:           filepath.Join(basePath, labelNameToLabelValuesDir),
 		CacheSizeBytes: LabelNameLabelValuesCacheSize,
 	})
 	if err != nil {
@@ -245,7 +246,7 @@ func (i *LabelPairFingerprintIndex) LookupSet(p model.LabelPair) (fps map[model.
 // LabelPairFingerprintIndex ready to use.
 func NewLabelPairFingerprintIndex(basePath string) (*LabelPairFingerprintIndex, error) {
 	labelPairToFingerprintsDB, err := NewLevelDB(LevelDBOptions{
-		Path:           path.Join(basePath, labelPairToFingerprintsDir),
+		Path:           filepath.Join(basePath, labelPairToFingerprintsDir),
 		CacheSizeBytes: LabelPairFingerprintsCacheSize,
 	})
 	if err != nil {
@@ -283,7 +284,7 @@ func (i *FingerprintTimeRangeIndex) Lookup(fp model.Fingerprint) (firstTime, las
 // FingerprintTimeRangeIndex ready to use.
 func NewFingerprintTimeRangeIndex(basePath string) (*FingerprintTimeRangeIndex, error) {
 	fingerprintTimeRangeDB, err := NewLevelDB(LevelDBOptions{
-		Path:           path.Join(basePath, fingerprintTimeRangeDir),
+		Path:           filepath.Join(basePath, fingerprintTimeRangeDir),
 		CacheSizeBytes: FingerprintTimeRangeCacheSize,
 	})
 	if err != nil {

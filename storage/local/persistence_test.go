@@ -14,6 +14,10 @@
 package local
 
 import (
+	"bufio"
+	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
@@ -37,7 +41,7 @@ var (
 func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, testutil.Closer) {
 	DefaultChunkEncoding = encoding
 	dir := testutil.NewTemporaryDirectory("test_persistence", t)
-	p, err := newPersistence(dir.Path(), false, false, func() bool { return false })
+	p, err := newPersistence(dir.Path(), false, false, func() bool { return false }, 0.1)
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
@@ -49,7 +53,7 @@ func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, tes
 	})
 }
 
-func buildTestChunks(encoding chunkEncoding) map[model.Fingerprint][]chunk {
+func buildTestChunks(t *testing.T, encoding chunkEncoding) map[model.Fingerprint][]chunk {
 	fps := model.Fingerprints{
 		m1.FastFingerprint(),
 		m2.FastFingerprint(),
@@ -60,31 +64,39 @@ func buildTestChunks(encoding chunkEncoding) map[model.Fingerprint][]chunk {
 	for _, fp := range fps {
 		fpToChunks[fp] = make([]chunk, 0, 10)
 		for i := 0; i < 10; i++ {
-			fpToChunks[fp] = append(fpToChunks[fp], newChunkForEncoding(encoding).add(&model.SamplePair{
+			ch, err := newChunkForEncoding(encoding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			chs, err := ch.add(model.SamplePair{
 				Timestamp: model.Time(i),
 				Value:     model.SampleValue(fp),
-			})[0])
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			fpToChunks[fp] = append(fpToChunks[fp], chs[0])
 		}
 	}
 	return fpToChunks
 }
 
 func chunksEqual(c1, c2 chunk) bool {
-	values2 := c2.newIterator().values()
-	for v1 := range c1.newIterator().values() {
-		v2 := <-values2
-		if !v1.Equal(v2) {
+	it1 := c1.newIterator()
+	it2 := c2.newIterator()
+	for it1.scan() && it2.scan() {
+		if !(it1.value() == it2.value()) {
 			return false
 		}
 	}
-	return true
+	return it1.err() == nil && it2.err() == nil
 }
 
 func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
-	fpToChunks := buildTestChunks(encoding)
+	fpToChunks := buildTestChunks(t, encoding)
 
 	for fp, chunks := range fpToChunks {
 		firstTimeNotDropped, offset, numDropped, allDropped, err :=
@@ -126,10 +138,14 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 10)
 		}
 		for i, cd := range actualChunkDescs {
-			if cd.firstTime() != model.Time(i) || cd.lastTime() != model.Time(i) {
+			lastTime, err := cd.lastTime()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cd.firstTime() != model.Time(i) || lastTime != model.Time(i) {
 				t.Errorf(
 					"Want ts=%v, got firstTime=%v, lastTime=%v.",
-					i, cd.firstTime(), cd.lastTime(),
+					i, cd.firstTime(), lastTime,
 				)
 			}
 
@@ -140,10 +156,14 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 5)
 		}
 		for i, cd := range actualChunkDescs {
-			if cd.firstTime() != model.Time(i) || cd.lastTime() != model.Time(i) {
+			lastTime, err := cd.lastTime()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cd.firstTime() != model.Time(i) || lastTime != model.Time(i) {
 				t.Errorf(
 					"Want ts=%v, got firstTime=%v, lastTime=%v.",
-					i, cd.firstTime(), cd.lastTime(),
+					i, cd.firstTime(), lastTime,
 				)
 			}
 
@@ -338,6 +358,85 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
 			t.Error("not all chunks dropped")
 		}
 	}
+	// Now set minShrinkRatio to 0.25 and play with it.
+	p.minShrinkRatio = 0.25
+	// Re-add 8 chunks.
+	for fp, chunks := range fpToChunks {
+		firstTimeNotDropped, offset, numDropped, allDropped, err :=
+			p.dropAndPersistChunks(fp, model.Earliest, chunks[:8])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := firstTimeNotDropped, model.Time(0); got != want {
+			t.Errorf("Want firstTimeNotDropped %v, got %v.", got, want)
+		}
+		if got, want := offset, 0; got != want {
+			t.Errorf("Want offset %v, got %v.", got, want)
+		}
+		if got, want := numDropped, 0; got != want {
+			t.Errorf("Want numDropped %v, got %v.", got, want)
+		}
+		if allDropped {
+			t.Error("All dropped.")
+		}
+	}
+	// Drop only the first chunk should not happen, but persistence should still work.
+	for fp, chunks := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 1, chunks[8:9])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 8 {
+			t.Errorf("want offset 8, got %d", offset)
+		}
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
+		if numDropped != 0 {
+			t.Errorf("want 0 dropped chunk, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+	}
+	// Drop only the first two chunks should not happen, either.
+	for fp := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 2, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 0 {
+			t.Errorf("want offset 0, got %d", offset)
+		}
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
+		if numDropped != 0 {
+			t.Errorf("want 0 dropped chunk, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+	}
+	// Drop the first three chunks should finally work.
+	for fp, chunks := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 3, chunks[9:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 6 {
+			t.Errorf("want offset 6, got %d", offset)
+		}
+		if firstTime != 3 {
+			t.Errorf("want first time 3, got %d", firstTime)
+		}
+		if numDropped != 3 {
+			t.Errorf("want 3 dropped chunk, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+	}
 }
 
 func TestPersistLoadDropChunksType0(t *testing.T) {
@@ -354,21 +453,21 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 
 	fpLocker := newFingerprintLocker(10)
 	sm := newSeriesMap()
-	s1 := newMemorySeries(m1, nil, time.Time{})
-	s2 := newMemorySeries(m2, nil, time.Time{})
-	s3 := newMemorySeries(m3, nil, time.Time{})
-	s4 := newMemorySeries(m4, nil, time.Time{})
-	s5 := newMemorySeries(m5, nil, time.Time{})
-	s1.add(&model.SamplePair{Timestamp: 1, Value: 3.14})
-	s3.add(&model.SamplePair{Timestamp: 2, Value: 2.7})
+	s1, _ := newMemorySeries(m1, nil, time.Time{})
+	s2, _ := newMemorySeries(m2, nil, time.Time{})
+	s3, _ := newMemorySeries(m3, nil, time.Time{})
+	s4, _ := newMemorySeries(m4, nil, time.Time{})
+	s5, _ := newMemorySeries(m5, nil, time.Time{})
+	s1.add(model.SamplePair{Timestamp: 1, Value: 3.14})
+	s3.add(model.SamplePair{Timestamp: 2, Value: 2.7})
 	s3.headChunkClosed = true
 	s3.persistWatermark = 1
 	for i := 0; i < 10000; i++ {
-		s4.add(&model.SamplePair{
+		s4.add(model.SamplePair{
 			Timestamp: model.Time(i),
 			Value:     model.SampleValue(i) / 2,
 		})
-		s5.add(&model.SamplePair{
+		s5.add(model.SamplePair{
 			Timestamp: model.Time(i),
 			Value:     model.SampleValue(i * i),
 		})
@@ -406,6 +505,12 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if loadedS1.headChunkClosed {
 			t.Error("headChunkClosed is true")
 		}
+		if loadedS1.head().chunkFirstTime != 1 {
+			t.Errorf("want chunkFirstTime in head chunk to be 1, got %d", loadedS1.head().chunkFirstTime)
+		}
+		if loadedS1.head().chunkLastTime != model.Earliest {
+			t.Error("want chunkLastTime in head chunk to be unset")
+		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m1)
 	}
@@ -421,6 +526,12 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		}
 		if !loadedS3.headChunkClosed {
 			t.Error("headChunkClosed is false")
+		}
+		if loadedS3.head().chunkFirstTime != 2 {
+			t.Errorf("want chunkFirstTime in head chunk to be 2, got %d", loadedS3.head().chunkFirstTime)
+		}
+		if loadedS3.head().chunkLastTime != 2 {
+			t.Errorf("want chunkLastTime in head chunk to be 2, got %d", loadedS3.head().chunkLastTime)
 		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m3)
@@ -447,6 +558,31 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if loadedS4.headChunkClosed {
 			t.Error("headChunkClosed is true")
 		}
+		for i, cd := range loadedS4.chunkDescs {
+			if cd.chunkFirstTime != cd.c.firstTime() {
+				t.Errorf(
+					"chunkDesc[%d]: chunkFirstTime not consistent with chunk, want %d, got %d",
+					i, cd.c.firstTime(), cd.chunkFirstTime,
+				)
+			}
+			if i == len(loadedS4.chunkDescs)-1 {
+				// Head chunk.
+				if cd.chunkLastTime != model.Earliest {
+					t.Error("want chunkLastTime in head chunk to be unset")
+				}
+				continue
+			}
+			lastTime, err := cd.c.newIterator().lastTimestamp()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cd.chunkLastTime != lastTime {
+				t.Errorf(
+					"chunkDesc[%d]: chunkLastTime not consistent with chunk, want %d, got %d",
+					i, lastTime, cd.chunkLastTime,
+				)
+			}
+		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m4)
 	}
@@ -472,6 +608,38 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 		if loadedS5.headChunkClosed {
 			t.Error("headChunkClosed is true")
 		}
+		for i, cd := range loadedS5.chunkDescs {
+			if i < 3 {
+				// Evicted chunks.
+				if cd.chunkFirstTime == model.Earliest {
+					t.Errorf("chunkDesc[%d]: chunkLastTime not set", i)
+				}
+				continue
+			}
+			if cd.chunkFirstTime != cd.c.firstTime() {
+				t.Errorf(
+					"chunkDesc[%d]: chunkFirstTime not consistent with chunk, want %d, got %d",
+					i, cd.c.firstTime(), cd.chunkFirstTime,
+				)
+			}
+			if i == len(loadedS5.chunkDescs)-1 {
+				// Head chunk.
+				if cd.chunkLastTime != model.Earliest {
+					t.Error("want chunkLastTime in head chunk to be unset")
+				}
+				continue
+			}
+			lastTime, err := cd.c.newIterator().lastTimestamp()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cd.chunkLastTime != lastTime {
+				t.Errorf(
+					"chunkDesc[%d]: chunkLastTime not consistent with chunk, want %d, got %d",
+					i, cd.chunkLastTime, lastTime,
+				)
+			}
+		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m5)
 	}
@@ -483,6 +651,10 @@ func TestCheckpointAndLoadSeriesMapAndHeadsChunkType0(t *testing.T) {
 
 func TestCheckpointAndLoadSeriesMapAndHeadsChunkType1(t *testing.T) {
 	testCheckpointAndLoadSeriesMapAndHeads(t, 1)
+}
+
+func TestCheckpointAndLoadSeriesMapAndHeadsChunkType2(t *testing.T) {
+	testCheckpointAndLoadSeriesMapAndHeads(t, 2)
 }
 
 func TestCheckpointAndLoadFPMappings(t *testing.T) {
@@ -590,6 +762,10 @@ func TestFingerprintsModifiedBeforeChunkType1(t *testing.T) {
 	testFingerprintsModifiedBefore(t, 1)
 }
 
+func TestFingerprintsModifiedBeforeChunkType2(t *testing.T) {
+	testFingerprintsModifiedBefore(t, 2)
+}
+
 func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
@@ -602,58 +778,46 @@ func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
 	p.indexMetric(2, m2)
 	p.waitForIndexing()
 
-	outFPs, err := p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	outFPs := p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
 	want := model.Fingerprints{1}
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	outFPs, err = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	outFPs = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
 	want = model.Fingerprints{2}
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	if archived, _, _, err := p.hasArchivedMetric(1); err != nil || !archived {
+	if archived, _, _ := p.hasArchivedMetric(1); !archived {
 		t.Error("want FP 1 archived")
 	}
-	if archived, _, _, err := p.hasArchivedMetric(2); err != nil || !archived {
+	if archived, _, _ := p.hasArchivedMetric(2); !archived {
 		t.Error("want FP 2 archived")
 	}
 
-	if err != p.purgeArchivedMetric(1) {
+	if err := p.purgeArchivedMetric(1); err != nil {
 		t.Fatal(err)
 	}
-	if err != p.purgeArchivedMetric(3) {
+	if err := p.purgeArchivedMetric(3); err != nil {
 		// Purging something that has not beet archived is not an error.
 		t.Fatal(err)
 	}
 	p.waitForIndexing()
 
-	outFPs, err = p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	outFPs = p.fingerprintsForLabelPair(model.LabelPair{Name: "n1", Value: "v1"})
 	want = nil
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	outFPs, err = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	outFPs = p.fingerprintsForLabelPair(model.LabelPair{Name: "n2", Value: "v2"})
 	want = model.Fingerprints{2}
 	if !reflect.DeepEqual(outFPs, want) {
 		t.Errorf("want %#v, got %#v", want, outFPs)
 	}
-	if archived, _, _, err := p.hasArchivedMetric(1); err != nil || archived {
+	if archived, _, _ := p.hasArchivedMetric(1); archived {
 		t.Error("want FP 1 not archived")
 	}
-	if archived, _, _, err := p.hasArchivedMetric(2); err != nil || !archived {
+	if archived, _, _ := p.hasArchivedMetric(2); !archived {
 		t.Error("want FP 2 archived")
 	}
 }
@@ -664,6 +828,10 @@ func TestDropArchivedMetricChunkType0(t *testing.T) {
 
 func TestDropArchivedMetricChunkType1(t *testing.T) {
 	testDropArchivedMetric(t, 1)
+}
+
+func TestDropArchivedMetricChunkType2(t *testing.T) {
+	testDropArchivedMetric(t, 2)
 }
 
 type incrementalBatch struct {
@@ -815,9 +983,7 @@ func testIndexing(t *testing.T, encoding chunkEncoding) {
 	for i, b := range batches {
 		for fp, m := range b.fpToMetric {
 			p.indexMetric(fp, m)
-			if err := p.archiveMetric(fp, m, 1, 2); err != nil {
-				t.Fatal(err)
-			}
+			p.archiveMetric(fp, m, 1, 2)
 			indexedFpsToMetrics[fp] = m
 		}
 		verifyIndexedState(i, t, b, indexedFpsToMetrics, p)
@@ -848,6 +1014,10 @@ func TestIndexingChunkType1(t *testing.T) {
 	testIndexing(t, 1)
 }
 
+func TestIndexingChunkType2(t *testing.T) {
+	testIndexing(t, 2)
+}
+
 func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMetrics index.FingerprintMetricMapping, p *persistence) {
 	p.waitForIndexing()
 	for fp, m := range indexedFpsToMetrics {
@@ -861,10 +1031,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 		}
 
 		// Check that archived metrics are in membership index.
-		has, first, last, err := p.hasArchivedMetric(fp)
-		if err != nil {
-			t.Fatal(err)
-		}
+		has, first, last := p.hasArchivedMetric(fp)
 		if !has {
 			t.Errorf("%d. fingerprint %v not found", i, fp)
 		}
@@ -878,10 +1045,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label name -> label values mappings.
 	for ln, lvs := range b.expectedLnToLvs {
-		outLvs, err := p.labelValuesForLabelName(ln)
-		if err != nil {
-			t.Fatal(err)
-		}
+		outLvs := p.labelValuesForLabelName(ln)
 
 		outSet := codable.LabelValueSet{}
 		for _, lv := range outLvs {
@@ -895,10 +1059,7 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label pair -> fingerprints mappings.
 	for lp, fps := range b.expectedLpToFps {
-		outFPs, err := p.fingerprintsForLabelPair(lp)
-		if err != nil {
-			t.Fatal(err)
-		}
+		outFPs := p.fingerprintsForLabelPair(lp)
 
 		outSet := codable.FingerprintSet{}
 		for _, fp := range outFPs {
@@ -909,6 +1070,108 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 			t.Errorf("%d. %v: fingerprints don't match. Got: %v; want %v", i, lp, outSet, fps)
 		}
 	}
+}
+
+func TestQuranatineSeriesFile(t *testing.T) {
+	p, closer := newTestPersistence(t, 1)
+	defer closer.Close()
+
+	verify := func(fp model.Fingerprint, seriesFileShouldExist bool, contentHintFile ...string) {
+		var (
+			fpStr           = fp.String()
+			originalFile    = p.fileNameForFingerprint(fp)
+			quarantinedFile = filepath.Join(p.basePath, "orphaned", fpStr[0:seriesDirNameLen], fpStr[seriesDirNameLen:]+seriesFileSuffix)
+			hintFile        = filepath.Join(p.basePath, "orphaned", fpStr[0:seriesDirNameLen], fpStr[seriesDirNameLen:]+hintFileSuffix)
+		)
+		if _, err := os.Stat(originalFile); !os.IsNotExist(err) {
+			t.Errorf("Expected file %q to not exist.", originalFile)
+		}
+		if _, err := os.Stat(quarantinedFile); (os.IsNotExist(err) && seriesFileShouldExist) || (err == nil && !seriesFileShouldExist) {
+			t.Errorf("Unexpected state of quarantined file %q. Expected it to exist: %t. os.Stat returned: %s.", quarantinedFile, seriesFileShouldExist, err)
+		}
+		f, err := os.Open(hintFile)
+		defer f.Close()
+		if err != nil {
+			t.Errorf("Could not open hint file %q: %s", hintFile, err)
+			return
+		}
+		scanner := bufio.NewScanner(f)
+		for _, want := range contentHintFile {
+			if !scanner.Scan() {
+				t.Errorf("Unexpected end of hint file %q.", hintFile)
+				return
+			}
+			got := scanner.Text()
+			if want != got {
+				t.Errorf("Want hint line %q, got %q.", want, got)
+			}
+		}
+		if scanner.Scan() {
+			t.Errorf("Unexpected spurious content in hint file %q: %q", hintFile, scanner.Text())
+		}
+	}
+
+	if err := p.quarantineSeriesFile(0, nil, nil); err != nil {
+		t.Error(err)
+	}
+	verify(0, false, "[UNKNOWN METRIC]", "[UNKNOWN REASON]")
+
+	if err := p.quarantineSeriesFile(
+		1, errors.New("file does not exist"),
+		nil,
+	); err != nil {
+		t.Error(err)
+	}
+	verify(1, false, "[UNKNOWN METRIC]", "file does not exist")
+
+	if err := p.quarantineSeriesFile(
+		2, errors.New("file does not exist"),
+		model.Metric{"foo": "bar", "dings": "bums"},
+	); err != nil {
+		t.Error(err)
+	}
+	verify(2, false, `{dings="bums", foo="bar"}`, "file does not exist")
+
+	if err := p.quarantineSeriesFile(
+		3, nil,
+		model.Metric{"foo": "bar", "dings": "bums"},
+	); err != nil {
+		t.Error(err)
+	}
+	verify(3, false, `{dings="bums", foo="bar"}`, "[UNKNOWN REASON]")
+
+	err := os.Mkdir(filepath.Join(p.basePath, "00"), os.ModePerm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(p.fileNameForFingerprint(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	if err := p.quarantineSeriesFile(
+		4, errors.New("file exists"),
+		model.Metric{"sound": "cloud"},
+	); err != nil {
+		t.Error(err)
+	}
+	verify(4, true, `{sound="cloud"}`, "file exists")
+
+	if err := p.quarantineSeriesFile(4, nil, nil); err != nil {
+		t.Error(err)
+	}
+	// Overwrites hint file but leaves series file intact.
+	verify(4, true, "[UNKNOWN METRIC]", "[UNKNOWN REASON]")
+
+	if err := p.quarantineSeriesFile(
+		4, errors.New("file exists"),
+		model.Metric{"sound": "cloud"},
+	); err != nil {
+		t.Error(err)
+	}
+	// Overwrites everything.
+	verify(4, true, `{sound="cloud"}`, "file exists")
 }
 
 var fpStrings = []string{

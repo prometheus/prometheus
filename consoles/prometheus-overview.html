@@ -6,7 +6,7 @@
   </tr>
   <tr>
     <td>CPU</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "rate(process_cpu_seconds_total{job='prometheus',instance='%s'}[5m])" .Params.instance) "s/s" "humanizeNoSmallPrefix") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(process_cpu_seconds_total{job='prometheus',instance='%s'}[5m])" .Params.instance) "s/s" "humanizeNoSmallPrefix") }}</td>
   </tr>
   <tr>
     <td>Memory</td>
@@ -22,7 +22,7 @@
   </tr>
   <tr>
     <td>Ingested Samples</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "rate(prometheus_local_storage_ingested_samples_total{job='prometheus',instance='%s'}[5m])" .Params.instance) "/s" "humanizeNoSmallPrefix") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_local_storage_ingested_samples_total{job='prometheus',instance='%s'}[5m])" .Params.instance) "/s" "humanizeNoSmallPrefix") }}</td>
   </tr>
   <tr>
     <td>Time Series</td>
@@ -54,11 +54,11 @@
   </tr>
   <tr>
     <td>Evaluation Duration</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "rate(prometheus_evaluator_duration_milliseconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_evaluator_duration_milliseconds_count{job='prometheus',instance='%s'}[5m]) / 1000" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_evaluator_duration_seconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_evaluator_duration_seconds_count{job='prometheus',instance='%s'}[5m]) / 1000" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
   </tr>
   <tr>
     <td>Notification Latency</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "rate(prometheus_notifications_latency_milliseconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_notifications_latency_milliseconds_count{job='prometheus',instance='%s'}[5m]) / 1000" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_notifications_latency_milliseconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_notifications_latency_milliseconds_count{job='prometheus',instance='%s'}[5m]) / 1000" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
   </tr>
   <tr>
     <td>Notification Queue</td>
@@ -70,7 +70,7 @@
 {{ range printf "http_request_duration_microseconds_count{job='prometheus',instance='%s',handler=~'^(query.*|federate|consoles)$'}" .Params.instance | query | sortByLabel "handler" }}
   <tr>
     <td>{{ .Labels.handler }}</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "rate(http_request_duration_microseconds_count{job='prometheus',instance='%s',handler='%s'}[5m])" .Labels.instance .Labels.handler) "/s" "humanizeNoSmallPrefix") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(http_request_duration_microseconds_count{job='prometheus',instance='%s',handler='%s'}[5m])" .Labels.instance .Labels.handler) "/s" "humanizeNoSmallPrefix") }}</td>
   </tr>
 {{ end }}
 
@@ -84,7 +84,7 @@
   <script>
   new PromConsole.Graph({
     node: document.querySelector("#samplesGraph"),
-    expr: "rate(prometheus_local_storage_ingested_samples_total{job='prometheus',instance='{{ .Params.instance }}'}[5m])",
+    expr: "irate(prometheus_local_storage_ingested_samples_total{job='prometheus',instance='{{ .Params.instance }}'}[5m])",
     name: 'Ingested Samples',
     yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
@@ -111,7 +111,7 @@
   <script>
   new PromConsole.Graph({
     node: document.querySelector("#serverGraph"),
-    expr: "rate(http_request_duration_microseconds_count{job='prometheus',instance='{{ .Params.instance }}',handler=~'^(query.*|federate|consoles)$'}[5m])",
+    expr: "irate(http_request_duration_microseconds_count{job='prometheus',instance='{{ .Params.instance }}',handler=~'^(query.*|federate|consoles)$'}[5m])",
     name: '[[handler]]',
     yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,

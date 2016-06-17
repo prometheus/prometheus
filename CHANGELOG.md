@@ -1,23 +1,123 @@
-## 0.16.0rc2 / 2015-09-30
+## 0.19.3 / 2016-06-14
 
-BREAKING CHANGES:
+* [BUGFIX] Handle Marathon apps with zero ports
+* [BUGFIX] Fix startup panic in retrieval layer
 
-* [CHANGE] Renamed `global.labels` to `global.external_labels`.
+## 0.19.2 / 2016-05-29
 
-All changes:
+* [BUGFIX] Correctly handle `GROUP_LEFT` and `GROUP_RIGHT` without labels in
+  string representation of expressions and in rules.
+* [BUGFIX] Use `-web.external-url` for new status endpoints.
 
-* [CHANGE] Renamed `global.labels` to `global.external_labels`.
-* [ENHANCEMENT] Several flaky tests fixed.
-* [ENHANCEMENT] Switched to common routing package.
-* [ENHANCEMENT] Usage of more resilient metric decoder.
-* [BUGFIX] Fix high CPU usage on configuration reload.
-* [BUGFIX] Fix disappearing `__params` on configuration reload.
-* [BUGFIX] Make `labelmap` action available through configuration.
-* [BUGFIX] Fix direct access of protobuf fields.
-* [BUGFIX] Fix panic on Consul request error.
-* [BUGFIX] Redirect of graph endpoint for prefixed setups.
+## 0.19.1 / 2016-05-25
 
-## 0.16.0rc1 / 2015-09-18
+* [BUGFIX] Handle service discovery panic affecting Kubernetes SD
+* [BUGFIX] Fix web UI display issue in some browsers
+
+## 0.19.0 / 2016-05-24
+
+This version contains a breaking change to the query language. Please read
+the documentation on the grouping behavior of vector matching:
+
+https://prometheus.io/docs/querying/operators/#vector-matching
+
+* [FEATURE] Add experimental Microsoft Azure service discovery
+* [FEATURE] Add `ignoring` modifier for binary operations
+* [FEATURE] Add pod discovery to Kubernetes service discovery
+* [CHANGE] Vector matching takes grouping labels from one-side
+* [ENHANCEMENT] Support time range on /api/v1/series endpoint
+* [ENHANCEMENT] Partition status page into individual pages
+* [BUGFIX] Fix issue of hanging target scrapes
+
+## 0.18.0 / 2016-04-18
+
+* [BUGFIX] Fix operator precedence in PromQL
+* [BUGFIX] Never drop still open head chunk
+* [BUGFIX] Fix missing 'keep_common' when printing AST node
+* [CHANGE/BUGFIX] Target identity considers path and parameters additionally to host and port
+* [CHANGE] Rename metric `prometheus_local_storage_invalid_preload_requests_total` to `prometheus_local_storage_non_existent_series_matches_total`
+* [CHANGE] Support for old alerting rule syntax dropped
+* [FEATURE] Deduplicate targets within the same scrape job
+* [FEATURE] Add varbit chunk encoding (higher compression, more CPU usage – disabled by default)
+* [FEATURE] Add `holt_winters` query function
+* [FEATURE] Add relative complement `unless` operator to PromQL
+* [ENHANCEMENT] Quarantine series file if data corruption is encountered (instead of crashing)
+* [ENHANCEMENT] Validate Alertmanager URL
+* [ENHANCEMENT] Use UTC for build timestamp
+* [ENHANCEMENT] Improve index query performance (especially for active time series)
+* [ENHANCEMENT] Instrument configuration reload duration
+* [ENHANCEMENT] Instrument retrieval layer
+* [ENHANCEMENT] Add Go version to `prometheus_build_info` metric
+
+## 0.17.0 / 2016-03-02
+
+This version no longer works with Alertmanager 0.0.4 and earlier!
+The alerting rule syntax has changed as well but the old syntax is supported
+up until version 0.18.
+
+All regular expressions in PromQL are anchored now, matching the behavior of
+regular expressions in config files.
+
+* [CHANGE] Integrate with Alertmanager 0.1.0 and higher
+* [CHANGE] Degraded storage mode renamed to rushed mode
+* [CHANGE] New alerting rule syntax
+* [CHANGE] Add label validation on ingestion
+* [CHANGE] Regular expression matchers in PromQL are anchored
+* [FEATURE] Add `without` aggregation modifier
+* [FEATURE] Send alert resolved notifications to Alertmanager
+* [FEATURE] Allow millisecond precision in configuration file
+* [FEATURE] Support AirBnB's Smartstack Nerve for service discovery
+* [ENHANCEMENT] Storage switches less often between regular and rushed mode.
+* [ENHANCEMENT] Storage switches into rushed mode if there are too many memory chunks.
+* [ENHANCEMENT] Added more storage instrumentation
+* [ENHANCEMENT] Improved instrumentation of notification handler
+* [BUGFIX] Do not count head chunks as chunks waiting for persistence
+* [BUGFIX] Handle OPTIONS HTTP requests to the API correctly
+* [BUGFIX] Parsing of ranges in PromQL fixed
+* [BUGFIX] Correctly validate URL flag parameters
+* [BUGFIX] Log argument parse errors
+* [BUGFIX] Properly handle creation of target with bad TLS config
+* [BUGFIX] Fix of checkpoint timing issue
+
+## 0.16.2 / 2016-01-18
+
+* [FEATURE] Multiple authentication options for EC2 discovery added
+* [FEATURE] Several meta labels for EC2 discovery added
+* [FEATURE] Allow full URLs in static target groups (used e.g. by the `blackbox_exporter`)
+* [FEATURE] Add Graphite remote-storage integration
+* [FEATURE] Create separate Kubernetes targets for services and their endpoints
+* [FEATURE] Add `clamp_{min,max}` functions to PromQL
+* [FEATURE] Omitted time parameter in API query defaults to now
+* [ENHANCEMENT] Less frequent time series file truncation
+* [ENHANCEMENT] Instrument number of  manually deleted time series
+* [ENHANCEMENT] Ignore lost+found directory during storage version detection
+* [CHANGE] Kubernetes `masters` renamed to `api_servers`
+* [CHANGE] "Healthy" and "unhealthy" targets are now called "up" and "down" in the web UI
+* [CHANGE] Remove undocumented 2nd argument of the `delta` function.
+  (This is a BREAKING CHANGE for users of the undocumented 2nd argument.)
+* [BUGFIX] Return proper HTTP status codes on API errors
+* [BUGFIX] Fix Kubernetes authentication configuration
+* [BUGFIX] Fix stripped OFFSET from in rule evaluation and display
+* [BUGFIX] Do not crash on failing Consul SD initialization
+* [BUGFIX] Revert changes to metric auto-completion
+* [BUGFIX] Add config overflow validation for TLS configuration
+* [BUGFIX] Skip already watched Zookeeper nodes in serverset SD
+* [BUGFIX] Don't federate stale samples
+* [BUGFIX] Move NaN to end of result for `topk/bottomk/sort/sort_desc/min/max`
+* [BUGFIX] Limit extrapolation of `delta/rate/increase`
+* [BUGFIX] Fix unhandled error in rule evaluation
+
+Some changes to the Kubernetes service discovery were integration since
+it was released as a beta feature.
+
+## 0.16.1 / 2015-10-16
+
+* [FEATURE] Add `irate()` function.
+* [ENHANCEMENT] Improved auto-completion in expression browser.
+* [CHANGE] Kubernetes SD moves node label to instance label.
+* [BUGFIX] Escape regexes in console templates.
+
+## 0.16.0 / 2015-10-09
 
 BREAKING CHANGES:
 
@@ -25,25 +125,41 @@ BREAKING CHANGES:
 * The `hash_mod` relabeling action now uses MD5 hashes instead of FNV hashes to
   achieve a better distribution.
 * The DNS-SD meta label `__meta_dns_srv_name` was renamed to `__meta_dns_name`
-  to reflect support for other record types than `SRV`.
+  to reflect support for DNS record types other than `SRV`.
 * The default full refresh interval for the file-based service discovery has been
   increased from 30 seconds to 5 minutes.
 * In relabeling, parts of a source label that weren't matched by
-  the specified regular expression are no longer included in the replacement output.
+  the specified regular expression are no longer included in the replacement
+  output.
 * Queries no longer interpolate between two data points. Instead, the resulting
   value will always be the latest value before the evaluation query timestamp.
 * Regular expressions supplied via the configuration are now anchored to match
   full strings instead of substrings.
 * Global labels are not appended upon storing time series anymore. Instead,
   they are only appended when communicating with external systems
-  (Alertmanager, remote storages, federation).
+  (Alertmanager, remote storages, federation). They have thus also been renamed
+  from `global.labels` to `global.external_labels`.
 * The names and units of metrics related to remote storage sample appends have
   been changed.
 * The experimental support for writing to InfluxDB has been updated to work
   with InfluxDB 0.9.x. 0.8.x versions of InfluxDB are not supported anymore.
+* Escape sequences in double- and single-quoted string literals in rules or query
+  expressions are now interpreted like escape sequences in Go string literals
+  (https://golang.org/ref/spec#String_literals).
+
+Future breaking changes / deprecated features:
+
+* The `delta()` function had an undocumented optional second boolean argument
+  to make it behave like `increase()`. This second argument will be removed in
+  the future. Migrate any occurrences of `delta(x, 1)` to use `increase(x)`
+  instead.
+* Support for filter operators between two scalar values (like `2 > 1`) will be
+  removed in the future. These will require a `bool` modifier on the operator,
+  e.g.  `2 > bool 1`.
 
 All changes:
 
+* [CHANGE] Renamed `global.labels` to `global.external_labels`.
 * [CHANGE] Vendoring is now done via govendor instead of godep.
 * [CHANGE] Change web UI root page to show the graphing interface instead of
   the server status page.
@@ -62,6 +178,9 @@ All changes:
   `__meta_dns_name` to reflect support for other record types than `SRV`.
 * [CHANGE] Release tarballs now contain the binaries in a nested directory.
 * [CHANGE] Update InfluxDB write support to work with InfluxDB 0.9.x.
+* [FEATURE] Support full "Go-style" escape sequences in strings and add raw
+  string literals.
+* [FEATURE] Add EC2 service discovery support.
 * [FEATURE] Allow configuring TLS options in scrape configurations.
 * [FEATURE] Add instrumentation around configuration reloads.
 * [FEATURE] Add `bool` modifier to comparison operators to enable boolean
@@ -99,6 +218,9 @@ All changes:
 * [FEATURE] Add console templates for the SNMP exporter.
 * [FEATURE] Make it possible to relabel target scrape query parameters.
 * [FEATURE] Add support for `A` and `AAAA` records in DNS service discovery.
+* [ENHANCEMENT] Fix several flaky tests.
+* [ENHANCEMENT] Switch to common routing package.
+* [ENHANCEMENT] Use more resilient metric decoder.
 * [ENHANCEMENT] Update vendored dependencies.
 * [ENHANCEMENT] Add compression to more HTTP handlers.
 * [ENHANCEMENT] Make -web.external-url flag help string more verbose.
@@ -114,6 +236,13 @@ All changes:
 * [ENHANCEMENT] Handle parser and query evaluation runtime panics more
   gracefully.
 * [ENHANCEMENT] Add IDs to H2 tags on status page to allow anchored linking.
+* [BUGFIX] Fix watching multiple paths with Zookeeper serverset discovery.
+* [BUGFIX] Fix high CPU usage on configuration reload.
+* [BUGFIX] Fix disappearing `__params` on configuration reload.
+* [BUGFIX] Make `labelmap` action available through configuration.
+* [BUGFIX] Fix direct access of protobuf fields.
+* [BUGFIX] Fix panic on Consul request error.
+* [BUGFIX] Redirect of graph endpoint for prefixed setups.
 * [BUGFIX] Fix series file deletion behavior when purging archived series.
 * [BUGFIX] Fix error checking and logging around checkpointing.
 * [BUGFIX] Fix map initialization in target manager.
@@ -128,6 +257,9 @@ All changes:
 * [BUGFIX] Fix error handling bug in test code.
 * [BUGFIX] Fix Consul port meta label.
 * [BUGFIX] Fix lexer bug that treated non-Latin Unicode digits as digits.
+* [CLEANUP] Remove obsolete federation example from console templates.
+* [CLEANUP] Remove duplicated Bootstrap JS inclusion on graph page.
+* [CLEANUP] Switch to common log package.
 * [CLEANUP] Update build environment scripts and Makefiles to work better with
   native Go build mechanisms and new Go 1.5 experimental vendoring support.
 * [CLEANUP] Remove logged notice about 0.14.x configuration file format change.
@@ -304,7 +436,7 @@ All changes:
 * [ENHANCEMENT] Terminate running queries during shutdown.
 
 ## 0.13.2 / 2015-05-05
-* [MAINTENANCE] Updated vendored dependcies to their newest versions.
+* [MAINTENANCE] Updated vendored dependencies to their newest versions.
 * [MAINTENANCE] Include rule_checker and console templates in release tarball.
 * [BUGFIX] Sort NaN as the lowest value.
 * [ENHANCEMENT] Add square root, stddev and stdvar functions.

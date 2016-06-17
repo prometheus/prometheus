@@ -575,15 +575,6 @@ func (ev *evaluator) evalMatrix(e Expr) matrix {
 	return mat
 }
 
-// evalMatrixBounds attempts to evaluate e to matrix boundaries and errors otherwise.
-func (ev *evaluator) evalMatrixBounds(e Expr) matrix {
-	ms, ok := e.(*MatrixSelector)
-	if !ok {
-		ev.errorf("matrix bounds can only be evaluated for matrix selectors, got %T", e)
-	}
-	return ev.matrixSelectorBounds(ms)
-}
-
 // evalString attempts to evaluate e to a string value and errors otherwise.
 func (ev *evaluator) evalString(e Expr) *model.String {
 	val := ev.eval(e)
@@ -619,7 +610,7 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 	switch e := expr.(type) {
 	case *AggregateExpr:
 		vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.KeepExtraLabels, vector)
+		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepCommonLabels, vector)
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, model.ValScalar, model.ValVector)
@@ -638,6 +629,8 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 				return ev.vectorAnd(lhs.(vector), rhs.(vector), e.VectorMatching)
 			case itemLOR:
 				return ev.vectorOr(lhs.(vector), rhs.(vector), e.VectorMatching)
+			case itemLUnless:
+				return ev.vectorUnless(lhs.(vector), rhs.(vector), e.VectorMatching)
 			default:
 				return ev.vectorBinop(e.Op, lhs.(vector), rhs.(vector), e.VectorMatching, e.ReturnBool)
 			}
@@ -688,15 +681,16 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 func (ev *evaluator) vectorSelector(node *VectorSelector) vector {
 	vec := vector{}
 	for fp, it := range node.iterators {
-		sampleCandidates := it.ValueAtTime(ev.Timestamp.Add(-node.Offset))
-		samplePair := chooseClosestBefore(sampleCandidates, ev.Timestamp.Add(-node.Offset))
-		if samplePair != nil {
-			vec = append(vec, &sample{
-				Metric:    node.metrics[fp],
-				Value:     samplePair.Value,
-				Timestamp: ev.Timestamp,
-			})
+		refTime := ev.Timestamp.Add(-node.Offset)
+		samplePair := it.ValueAtOrBeforeTime(refTime)
+		if samplePair.Timestamp.Before(refTime.Add(-StalenessDelta)) {
+			continue // Sample outside of staleness policy window.
 		}
+		vec = append(vec, &sample{
+			Metric:    node.metrics[fp],
+			Value:     samplePair.Value,
+			Timestamp: ev.Timestamp,
+		})
 	}
 	return vec
 }
@@ -730,35 +724,11 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) matrix {
 	return matrix(sampleStreams)
 }
 
-// matrixSelectorBounds evaluates the boundaries of a *MatrixSelector.
-func (ev *evaluator) matrixSelectorBounds(node *MatrixSelector) matrix {
-	interval := metric.Interval{
-		OldestInclusive: ev.Timestamp.Add(-node.Range - node.Offset),
-		NewestInclusive: ev.Timestamp.Add(-node.Offset),
-	}
-
-	sampleStreams := make([]*sampleStream, 0, len(node.iterators))
-	for fp, it := range node.iterators {
-		samplePairs := it.BoundaryValues(interval)
-		if len(samplePairs) == 0 {
-			continue
-		}
-
-		ss := &sampleStream{
-			Metric: node.metrics[fp],
-			Values: samplePairs,
-		}
-		sampleStreams = append(sampleStreams, ss)
-	}
-	return matrix(sampleStreams)
-}
-
 func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector {
 	if matching.Card != CardManyToMany {
-		panic("logical operations must always be many-to-many matching")
+		panic("set operations must only use many-to-many matching")
 	}
-	// If no matching labels are specified, match by all labels.
-	sigf := signatureFunc(matching.On...)
+	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
 
 	var result vector
 	// The set of signatures for the right-hand side vector.
@@ -779,9 +749,9 @@ func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector
 
 func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector {
 	if matching.Card != CardManyToMany {
-		panic("logical operations must always be many-to-many matching")
+		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.On...)
+	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
 
 	var result vector
 	leftSigs := map[uint64]struct{}{}
@@ -799,15 +769,34 @@ func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector 
 	return result
 }
 
-// vectorBinop evaluates a binary operation between two vector, excluding AND and OR.
+func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vector {
+	if matching.Card != CardManyToMany {
+		panic("set operations must only use many-to-many matching")
+	}
+	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+
+	rightSigs := map[uint64]struct{}{}
+	for _, rs := range rhs {
+		rightSigs[sigf(rs.Metric)] = struct{}{}
+	}
+
+	var result vector
+	for _, ls := range lhs {
+		if _, ok := rightSigs[sigf(ls.Metric)]; !ok {
+			result = append(result, ls)
+		}
+	}
+	return result
+}
+
+// vectorBinop evaluates a binary operation between two vectors, excluding set operators.
 func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorMatching, returnBool bool) vector {
 	if matching.Card == CardManyToMany {
-		panic("many-to-many only allowed for AND and OR")
+		panic("many-to-many only allowed for set operators")
 	}
 	var (
-		result       = vector{}
-		sigf         = signatureFunc(matching.On...)
-		resultLabels = append(matching.On, matching.Include...)
+		result = vector{}
+		sigf   = signatureFunc(matching.Ignoring, matching.MatchingLabels...)
 	)
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -861,19 +850,19 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 		} else if !keep {
 			continue
 		}
-		metric := resultMetric(ls.Metric, op, resultLabels...)
+		metric := resultMetric(ls.Metric, rs.Metric, op, matching)
 
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == CardOneToOne {
 			if exists {
 				ev.errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 			}
-			matchedSigs[sig] = nil // Set existance to true.
+			matchedSigs[sig] = nil // Set existence to true.
 		} else {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result vector. Check whether those labels have already been added for
 			// the same matching labels.
-			insertSig := model.SignatureForLabels(metric.Metric, matching.Include...)
+			insertSig := uint64(metric.Metric.Fingerprint())
 			if !exists {
 				insertedSigs = map[uint64]struct{}{}
 				matchedSigs[sig] = insertedSigs
@@ -893,12 +882,16 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 }
 
 // signatureFunc returns a function that calculates the signature for a metric
-// based on the provided labels.
-func signatureFunc(labels ...model.LabelName) func(m metric.Metric) uint64 {
-	if len(labels) == 0 {
+// based on the provided labels. If ignoring, then the given labels are ignored instead.
+func signatureFunc(ignoring bool, labels ...model.LabelName) func(m metric.Metric) uint64 {
+	if len(labels) == 0 || ignoring {
 		return func(m metric.Metric) uint64 {
-			m.Del(model.MetricNameLabel)
-			return uint64(m.Metric.Fingerprint())
+			tmp := m.Metric.Clone()
+			for _, l := range labels {
+				delete(tmp, l)
+			}
+			delete(tmp, model.MetricNameLabel)
+			return uint64(tmp.Fingerprint())
 		}
 	}
 	return func(m metric.Metric) uint64 {
@@ -908,19 +901,49 @@ func signatureFunc(labels ...model.LabelName) func(m metric.Metric) uint64 {
 
 // resultMetric returns the metric for the given sample(s) based on the vector
 // binary operation and the matching options.
-func resultMetric(met metric.Metric, op itemType, labels ...model.LabelName) metric.Metric {
-	if len(labels) == 0 {
-		if shouldDropMetricName(op) {
-			met.Del(model.MetricNameLabel)
-		}
-		return met
+func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching) metric.Metric {
+	if shouldDropMetricName(op) {
+		lhs.Del(model.MetricNameLabel)
 	}
-	// As we definitly write, creating a new metric is the easiest solution.
+	if len(matching.MatchingLabels)+len(matching.Include) == 0 {
+		return lhs
+	}
+	if matching.Ignoring {
+		if matching.Card == CardOneToOne {
+			for _, l := range matching.MatchingLabels {
+				lhs.Del(l)
+			}
+		}
+		for _, ln := range matching.Include {
+			// Included labels from the `group_x` modifier are taken from the "one"-side.
+			value := rhs.Metric[ln]
+			if value != "" {
+				lhs.Set(ln, rhs.Metric[ln])
+			} else {
+				lhs.Del(ln)
+			}
+		}
+		return lhs
+	}
+	// As we definitely write, creating a new metric is the easiest solution.
 	m := model.Metric{}
-	for _, ln := range labels {
-		// Included labels from the `group_x` modifier are taken from the "many"-side.
-		if v, ok := met.Metric[ln]; ok {
+	if matching.Card == CardOneToOne {
+		for _, ln := range matching.MatchingLabels {
+			if v, ok := lhs.Metric[ln]; ok {
+				m[ln] = v
+			}
+		}
+	} else {
+		for k, v := range lhs.Metric {
+			m[k] = v
+		}
+	}
+	for _, ln := range matching.Include {
+		// Included labels from the `group_x` modifier are taken from the "one"-side .
+		if v, ok := rhs.Metric[ln]; ok {
 			m[ln] = v
+		} else {
+			delete(m, ln)
 		}
 	}
 	return metric.Metric{Metric: m, Copied: false}
@@ -1039,20 +1062,35 @@ type groupedAggregation struct {
 }
 
 // aggregation evaluates an aggregation operation on a vector.
-func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, keepExtra bool, vec vector) vector {
+func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepCommon bool, vec vector) vector {
 
 	result := map[uint64]*groupedAggregation{}
 
 	for _, sample := range vec {
-		groupingKey := model.SignatureForLabels(sample.Metric.Metric, grouping...)
+		withoutMetric := sample.Metric
+		if without {
+			for _, l := range grouping {
+				withoutMetric.Del(l)
+			}
+			withoutMetric.Del(model.MetricNameLabel)
+		}
+
+		var groupingKey uint64
+		if without {
+			groupingKey = uint64(withoutMetric.Metric.Fingerprint())
+		} else {
+			groupingKey = model.SignatureForLabels(sample.Metric.Metric, grouping...)
+		}
 
 		groupedResult, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
 			var m metric.Metric
-			if keepExtra {
+			if keepCommon {
 				m = sample.Metric
 				m.Del(model.MetricNameLabel)
+			} else if without {
+				m = withoutMetric
 			} else {
 				m = metric.Metric{
 					Metric: model.Metric{},
@@ -1073,7 +1111,7 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, keepExt
 			continue
 		}
 		// Add the sample to the existing group.
-		if keepExtra {
+		if keepCommon {
 			groupedResult.labels = labelIntersection(groupedResult.labels, sample.Metric)
 		}
 
@@ -1084,11 +1122,11 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, keepExt
 			groupedResult.value += sample.Value
 			groupedResult.groupCount++
 		case itemMax:
-			if groupedResult.value < sample.Value {
+			if groupedResult.value < sample.Value || math.IsNaN(float64(groupedResult.value)) {
 				groupedResult.value = sample.Value
 			}
 		case itemMin:
-			if groupedResult.value > sample.Value {
+			if groupedResult.value > sample.Value || math.IsNaN(float64(groupedResult.value)) {
 				groupedResult.value = sample.Value
 			}
 		case itemCount:
@@ -1152,23 +1190,6 @@ func shouldDropMetricName(op itemType) bool {
 // StalenessDelta determines the time since the last sample after which a time
 // series is considered stale.
 var StalenessDelta = 5 * time.Minute
-
-// chooseClosestBefore chooses the closest sample of a list of samples
-// before or at a given target time.
-func chooseClosestBefore(samples []model.SamplePair, timestamp model.Time) *model.SamplePair {
-	for _, candidate := range samples {
-		delta := candidate.Timestamp.Sub(timestamp)
-		// Samples before or at target time.
-		if delta <= 0 {
-			// Ignore samples outside of staleness policy window.
-			if -delta > StalenessDelta {
-				continue
-			}
-			return &candidate
-		}
-	}
-	return nil
-}
 
 // A queryGate controls the maximum number of concurrently running and waiting queries.
 type queryGate struct {

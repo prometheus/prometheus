@@ -14,6 +14,7 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,29 +44,32 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web/api/legacy"
 	"github.com/prometheus/prometheus/web/api/v1"
-	"github.com/prometheus/prometheus/web/blob"
+	"github.com/prometheus/prometheus/web/ui"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
-	ruleManager *rules.Manager
-	queryEngine *promql.Engine
-	storage     local.Storage
+	targetManager *retrieval.TargetManager
+	ruleManager   *rules.Manager
+	queryEngine   *promql.Engine
+	storage       local.Storage
 
 	apiV1     *v1.API
 	apiLegacy *legacy.API
 
-	router      *route.Router
-	listenErrCh chan error
-	quitCh      chan struct{}
-	reloadCh    chan struct{}
-	options     *Options
-	statusInfo  *PrometheusStatus
+	router       *route.Router
+	listenErrCh  chan error
+	quitCh       chan struct{}
+	reloadCh     chan struct{}
+	options      *Options
+	configString string
+	versionInfo  *PrometheusVersion
+	birth        time.Time
+	flagsMap     map[string]string
 
 	externalLabels model.LabelSet
 	mtx            sync.RWMutex
@@ -78,35 +82,19 @@ func (h *Handler) ApplyConfig(conf *config.Config) bool {
 	defer h.mtx.Unlock()
 
 	h.externalLabels = conf.GlobalConfig.ExternalLabels
+	h.configString = conf.String()
 
 	return true
 }
 
-// PrometheusStatus contains various information about the status
-// of the running Prometheus process.
-type PrometheusStatus struct {
-	Birth  time.Time
-	Flags  map[string]string
-	Config string
-
-	// A function that returns the current scrape targets pooled
-	// by their job name.
-	TargetPools func() map[string][]*retrieval.Target
-	// A function that returns all loaded rules.
-	Rules func() []rules.Rule
-
-	mu sync.RWMutex
-}
-
-// ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (s *PrometheusStatus) ApplyConfig(conf *config.Config) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Config = conf.String()
-
-	return true
+// PrometheusVersion contains build information about Prometheus.
+type PrometheusVersion struct {
+	Version   string `json:"version"`
+	Revision  string `json:"revision"`
+	Branch    string `json:"branch"`
+	BuildUser string `json:"buildUser"`
+	BuildDate string `json:"buildDate"`
+	GoVersion string `json:"goVersion"`
 }
 
 // Options for the web Handler.
@@ -122,7 +110,15 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *PrometheusStatus, o *Options) *Handler {
+func New(
+	st local.Storage,
+	qe *promql.Engine,
+	tm *retrieval.TargetManager,
+	rm *rules.Manager,
+	version *PrometheusVersion,
+	flags map[string]string,
+	o *Options,
+) *Handler {
 	router := route.New()
 
 	h := &Handler{
@@ -131,16 +127,16 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		quitCh:      make(chan struct{}),
 		reloadCh:    make(chan struct{}),
 		options:     o,
-		statusInfo:  status,
+		versionInfo: version,
+		birth:       time.Now(),
+		flagsMap:    flags,
 
-		ruleManager: rm,
-		queryEngine: qe,
-		storage:     st,
+		targetManager: tm,
+		ruleManager:   rm,
+		queryEngine:   qe,
+		storage:       st,
 
-		apiV1: &v1.API{
-			QueryEngine: qe,
-			Storage:     st,
-		},
+		apiV1: v1.NewAPI(qe, st),
 		apiLegacy: &legacy.API{
 			QueryEngine: qe,
 			Storage:     st,
@@ -162,10 +158,14 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		router.Redirect(w, r, "/graph", http.StatusFound)
 	})
-	router.Get("/graph", instrf("graph", h.graph))
 
-	router.Get("/status", instrf("status", h.status))
 	router.Get("/alerts", instrf("alerts", h.alerts))
+	router.Get("/graph", instrf("graph", h.graph))
+	router.Get("/status", instrf("status", h.status))
+	router.Get("/flags", instrf("flags", h.flags))
+	router.Get("/config", instrf("config", h.config))
+	router.Get("/rules", instrf("rules", h.rules))
+	router.Get("/targets", instrf("targets", h.targets))
 	router.Get("/version", instrf("version", h.version))
 
 	router.Get("/heap", instrf("heap", dumpHeap))
@@ -181,11 +181,7 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 
 	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
 
-	if o.UseLocalAssets {
-		router.Get("/static/*filepath", instrf("static", route.FileServe("web/blob/static")))
-	} else {
-		router.Get("/static/*filepath", instrh("static", blob.Handler{}))
-	}
+	router.Get("/static/*filepath", instrf("static", serveStaticAsset))
 
 	if o.UserAssetsPath != "" {
 		router.Get("/user/*filepath", instrf("user", route.FileServe(o.UserAssetsPath)))
@@ -201,6 +197,28 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router.Post("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
 
 	return h
+}
+
+func serveStaticAsset(w http.ResponseWriter, req *http.Request) {
+	fp := route.Param(route.Context(req), "filepath")
+	fp = filepath.Join("web/ui/static", fp)
+
+	info, err := ui.AssetInfo(fp)
+	if err != nil {
+		log.With("file", fp).Warn("Could not get file info: ", err)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	file, err := ui.Asset(fp)
+	if err != nil {
+		if err != io.EOF {
+			log.With("file", fp).Warn("Could not get file: ", err)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	http.ServeContent(w, req, info.Name(), info.ModTime(), bytes.NewReader(file))
 }
 
 // ListenError returns the receive-only channel that signals errors while starting the web server.
@@ -221,7 +239,12 @@ func (h *Handler) Reload() <-chan struct{} {
 // Run serves the HTTP endpoints.
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
-	h.listenErrCh <- http.ListenAndServe(h.options.ListenAddress, h.router)
+	server := &http.Server{
+		Addr:     h.options.ListenAddress,
+		Handler:  h.router,
+		ErrorLog: log.NewErrorLogger(),
+	}
+	h.listenErrCh <- server.ListenAndServe()
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +260,7 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 			rules.StateFiring:   "danger",
 		},
 	}
-	h.executeTemplate(w, "alerts", alertStatus)
+	h.executeTemplate(w, "alerts.html", alertStatus)
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
@@ -291,25 +314,41 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
-	h.executeTemplate(w, "graph", nil)
+	h.executeTemplate(w, "graph.html", nil)
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
-	h.statusInfo.mu.RLock()
-	defer h.statusInfo.mu.RUnlock()
-
-	h.executeTemplate(w, "status", struct {
-		Status *PrometheusStatus
-		Info   map[string]string
+	h.executeTemplate(w, "status.html", struct {
+		Birth   time.Time
+		Version *PrometheusVersion
 	}{
-		Status: h.statusInfo,
-		Info:   version.Map,
+		Birth:   h.birth,
+		Version: h.versionInfo,
 	})
+}
+
+func (h *Handler) flags(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "flags.html", h.flagsMap)
+}
+
+func (h *Handler) config(w http.ResponseWriter, r *http.Request) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
+	h.executeTemplate(w, "config.html", h.configString)
+}
+
+func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "rules.html", h.ruleManager)
+}
+
+func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "targets.html", h.targetManager)
 }
 
 func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewEncoder(w)
-	if err := dec.Encode(version.Map); err != nil {
+	if err := dec.Encode(h.versionInfo); err != nil {
 		http.Error(w, fmt.Sprintf("error encoding JSON: %s", err), http.StatusInternalServerError)
 	}
 }
@@ -324,23 +363,6 @@ func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
 	h.reloadCh <- struct{}{}
 }
 
-func (h *Handler) getTemplateFile(name string) (string, error) {
-	if h.options.UseLocalAssets {
-		file, err := ioutil.ReadFile(fmt.Sprintf("web/blob/templates/%s.html", name))
-		if err != nil {
-			log.Errorf("Could not read %s template: %s", name, err)
-			return "", err
-		}
-		return string(file), nil
-	}
-	file, err := blob.GetFile(blob.TemplateFiles, name+".html")
-	if err != nil {
-		log.Errorf("Could not read %s template: %s", name, err)
-		return "", err
-	}
-	return string(file), nil
-}
-
 func (h *Handler) consolesPath() string {
 	if _, err := os.Stat(h.options.ConsoleTemplatesPath + "/index.html"); !os.IsNotExist(err) {
 		return h.options.ExternalURL.Path + "/consoles/index.html"
@@ -353,21 +375,11 @@ func (h *Handler) consolesPath() string {
 	return ""
 }
 
-func (h *Handler) getTemplate(name string) (string, error) {
-	baseTmpl, err := h.getTemplateFile("_base")
-	if err != nil {
-		return "", fmt.Errorf("error reading base template: %s", err)
-	}
-	pageTmpl, err := h.getTemplateFile(name)
-	if err != nil {
-		return "", fmt.Errorf("error reading page template %s: %s", name, err)
-	}
-	return baseTmpl + pageTmpl, nil
-}
-
 func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	return template_text.FuncMap{
-		"since":        time.Since,
+		"since": func(t time.Time) time.Duration {
+			return time.Since(t) / time.Millisecond * time.Millisecond
+		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"stripLabels": func(lset model.LabelSet, labels ...model.LabelName) model.LabelSet {
@@ -437,6 +449,18 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			}
 		},
 	}
+}
+
+func (h *Handler) getTemplate(name string) (string, error) {
+	baseTmpl, err := ui.Asset("web/ui/templates/_base.html")
+	if err != nil {
+		return "", fmt.Errorf("error reading base template: %s", err)
+	}
+	pageTmpl, err := ui.Asset(filepath.Join("web/ui/templates", name))
+	if err != nil {
+		return "", fmt.Errorf("error reading page template %s: %s", name, err)
+	}
+	return string(baseTmpl) + string(pageTmpl), nil
 }
 
 func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {

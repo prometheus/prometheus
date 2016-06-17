@@ -53,7 +53,7 @@ func TestQuery(t *testing.T) {
 		{
 			queryStr: "",
 			status:   http.StatusOK,
-			bodyRe:   `{"type":"error","value":"Parse error at char 1: no expression found in input","version":1}`,
+			bodyRe:   `{"type":"error","value":"parse error at char 1: no expression found in input","version":1}`,
 		},
 		{
 			queryStr: "expr=1.4",
@@ -83,11 +83,11 @@ func TestQuery(t *testing.T) {
 		{
 			queryStr: "expr=(badexpression",
 			status:   http.StatusOK,
-			bodyRe:   `{"type":"error","value":"Parse error at char 15: unclosed left parenthesis","version":1}`,
+			bodyRe:   `{"type":"error","value":"parse error at char 15: unclosed left parenthesis","version":1}`,
 		},
 	}
 
-	storage, closer := local.NewTestStorage(t, 1)
+	storage, closer := local.NewTestStorage(t, 2)
 	defer closer.Close()
 	storage.Append(&model.Sample{
 		Metric: model.Metric{

@@ -85,23 +85,20 @@ var testExpr = []struct {
 		input:    "1 / 1",
 		expected: &BinaryExpr{itemDIV, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
 	}, {
-		input:    "1 == 1",
-		expected: &BinaryExpr{itemEQL, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 == bool 1",
+		expected: &BinaryExpr{itemEQL, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
-		input:    "1 != 1",
-		expected: &BinaryExpr{itemNEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 != bool 1",
+		expected: &BinaryExpr{itemNEQ, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
-		input:    "1 > 1",
-		expected: &BinaryExpr{itemGTR, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 > bool 1",
+		expected: &BinaryExpr{itemGTR, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
-		input:    "1 >= 1",
-		expected: &BinaryExpr{itemGTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 >= bool 1",
+		expected: &BinaryExpr{itemGTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
-		input:    "1 < 1",
-		expected: &BinaryExpr{itemLSS, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
-	}, {
-		input:    "1 <= 1",
-		expected: &BinaryExpr{itemLTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, false},
+		input:    "1 < bool 1",
+		expected: &BinaryExpr{itemLSS, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
 	}, {
 		input:    "1 <= bool 1",
 		expected: &BinaryExpr{itemLTE, &NumberLiteral{1}, &NumberLiteral{1}, nil, true},
@@ -125,6 +122,20 @@ var testExpr = []struct {
 				RHS: &ParenExpr{&BinaryExpr{
 					Op: itemMUL, LHS: &NumberLiteral{3}, RHS: &NumberLiteral{1},
 				}},
+			},
+		},
+	}, {
+		input: "1 < bool 2 - 1 * 2",
+		expected: &BinaryExpr{
+			Op:         itemLSS,
+			ReturnBool: true,
+			LHS:        &NumberLiteral{1},
+			RHS: &BinaryExpr{
+				Op:  itemSUB,
+				LHS: &NumberLiteral{2},
+				RHS: &BinaryExpr{
+					Op: itemMUL, LHS: &NumberLiteral{1}, RHS: &NumberLiteral{2},
+				},
 			},
 		},
 	}, {
@@ -202,11 +213,19 @@ var testExpr = []struct {
 	}, {
 		input:  "1 and 1",
 		fail:   true,
-		errMsg: "AND and OR not allowed in binary scalar expression",
+		errMsg: "set operator \"and\" not allowed in binary scalar expression",
+	}, {
+		input:  "1 == 1",
+		fail:   true,
+		errMsg: "parse error at char 7: comparisons between scalars must use BOOL modifier",
 	}, {
 		input:  "1 or 1",
 		fail:   true,
-		errMsg: "AND and OR not allowed in binary scalar expression",
+		errMsg: "set operator \"or\" not allowed in binary scalar expression",
+	}, {
+		input:  "1 unless 1",
+		fail:   true,
+		errMsg: "set operator \"unless\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 !~ 1",
 		fail:   true,
@@ -227,6 +246,14 @@ var testExpr = []struct {
 		input:  `*test`,
 		fail:   true,
 		errMsg: "no valid expression found",
+	}, {
+		input:  "1 offset 1d",
+		fail:   true,
+		errMsg: "offset modifier must be preceded by an instant or range selector",
+	}, {
+		input:  "a - on(b) ignoring(c) d",
+		fail:   true,
+		errMsg: "parse error at char 11: no valid expression found",
 	},
 	// Vector binary operations.
 	{
@@ -321,6 +348,24 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{Card: CardManyToMany},
 		},
 	}, {
+		input: "foo unless bar",
+		expected: &BinaryExpr{
+			Op: itemLUnless,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{Card: CardManyToMany},
+		},
+	}, {
 		// Test and/or precedence and reassigning of operands.
 		input: "foo + bar or bla and blub",
 		expected: &BinaryExpr{
@@ -360,6 +405,45 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{Card: CardManyToMany},
 		},
 	}, {
+		// Test and/or/unless precedence.
+		input: "foo and bar unless baz or qux",
+		expected: &BinaryExpr{
+			Op: itemLOR,
+			LHS: &BinaryExpr{
+				Op: itemLUnless,
+				LHS: &BinaryExpr{
+					Op: itemLAND,
+					LHS: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: metric.LabelMatchers{
+							{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+						},
+					},
+					RHS: &VectorSelector{
+						Name: "bar",
+						LabelMatchers: metric.LabelMatchers{
+							{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+						},
+					},
+					VectorMatching: &VectorMatching{Card: CardManyToMany},
+				},
+				RHS: &VectorSelector{
+					Name: "baz",
+					LabelMatchers: metric.LabelMatchers{
+						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "baz"},
+					},
+				},
+				VectorMatching: &VectorMatching{Card: CardManyToMany},
+			},
+			RHS: &VectorSelector{
+				Name: "qux",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "qux"},
+				},
+			},
+			VectorMatching: &VectorMatching{Card: CardManyToMany},
+		},
+	}, {
 		// Test precedence and reassigning of operands.
 		input: "bar + on(foo) bla / on(baz, buz) group_right(test) blub",
 		expected: &BinaryExpr{
@@ -385,14 +469,14 @@ var testExpr = []struct {
 					},
 				},
 				VectorMatching: &VectorMatching{
-					Card:    CardOneToMany,
-					On:      model.LabelNames{"baz", "buz"},
-					Include: model.LabelNames{"test"},
+					Card:           CardOneToMany,
+					MatchingLabels: model.LabelNames{"baz", "buz"},
+					Include:        model.LabelNames{"test"},
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardOneToOne,
-				On:   model.LabelNames{"foo"},
+				Card:           CardOneToOne,
+				MatchingLabels: model.LabelNames{"foo"},
 			},
 		},
 	}, {
@@ -412,8 +496,29 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardOneToOne,
-				On:   model.LabelNames{"test", "blub"},
+				Card:           CardOneToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+			},
+		},
+	}, {
+		input: "foo * on(test,blub) group_left bar",
+		expected: &BinaryExpr{
+			Op: itemMUL,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
 			},
 		},
 	}, {
@@ -433,8 +538,51 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardManyToMany,
-				On:   model.LabelNames{"test", "blub"},
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+			},
+		},
+	}, {
+		input: "foo and ignoring(test,blub) bar",
+		expected: &BinaryExpr{
+			Op: itemLAND,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Ignoring:       true,
+			},
+		},
+	}, {
+		input: "foo unless on(bar) baz",
+		expected: &BinaryExpr{
+			Op: itemLUnless,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "baz",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "baz"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{"bar"},
 			},
 		},
 	}, {
@@ -454,9 +602,55 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card:    CardManyToOne,
-				On:      model.LabelNames{"test", "blub"},
-				Include: model.LabelNames{"bar"},
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar"},
+			},
+		},
+	}, {
+		input: "foo / ignoring(test,blub) group_left(blub) bar",
+		expected: &BinaryExpr{
+			Op: itemDIV,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"blub"},
+				Ignoring:       true,
+			},
+		},
+	}, {
+		input: "foo / ignoring(test,blub) group_left(bar) bar",
+		expected: &BinaryExpr{
+			Op: itemDIV,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar"},
+				Ignoring:       true,
 			},
 		},
 	}, {
@@ -476,27 +670,58 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card:    CardOneToMany,
-				On:      model.LabelNames{"test", "blub"},
-				Include: model.LabelNames{"bar", "foo"},
+				Card:           CardOneToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar", "foo"},
+			},
+		},
+	}, {
+		input: "foo - ignoring(test,blub) group_right(bar,foo) bar",
+		expected: &BinaryExpr{
+			Op: itemSUB,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardOneToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar", "foo"},
+				Ignoring:       true,
 			},
 		},
 	}, {
 		input:  "foo and 1",
 		fail:   true,
-		errMsg: "AND and OR not allowed in binary scalar expression",
+		errMsg: "set operator \"and\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 and foo",
 		fail:   true,
-		errMsg: "AND and OR not allowed in binary scalar expression",
+		errMsg: "set operator \"and\" not allowed in binary scalar expression",
 	}, {
 		input:  "foo or 1",
 		fail:   true,
-		errMsg: "AND and OR not allowed in binary scalar expression",
+		errMsg: "set operator \"or\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 or foo",
 		fail:   true,
-		errMsg: "AND and OR not allowed in binary scalar expression",
+		errMsg: "set operator \"or\" not allowed in binary scalar expression",
+	}, {
+		input:  "foo unless 1",
+		fail:   true,
+		errMsg: "set operator \"unless\" not allowed in binary scalar expression",
+	}, {
+		input:  "1 unless foo",
+		fail:   true,
+		errMsg: "set operator \"unless\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 or on(bar) foo",
 		fail:   true,
@@ -508,27 +733,31 @@ var testExpr = []struct {
 	}, {
 		input:  "foo and on(bar) group_left(baz) bar",
 		fail:   true,
-		errMsg: "no grouping allowed for AND and OR operations",
+		errMsg: "no grouping allowed for \"and\" operation",
 	}, {
 		input:  "foo and on(bar) group_right(baz) bar",
 		fail:   true,
-		errMsg: "no grouping allowed for AND and OR operations",
+		errMsg: "no grouping allowed for \"and\" operation",
 	}, {
 		input:  "foo or on(bar) group_left(baz) bar",
 		fail:   true,
-		errMsg: "no grouping allowed for AND and OR operations",
+		errMsg: "no grouping allowed for \"or\" operation",
 	}, {
 		input:  "foo or on(bar) group_right(baz) bar",
 		fail:   true,
-		errMsg: "no grouping allowed for AND and OR operations",
+		errMsg: "no grouping allowed for \"or\" operation",
 	}, {
-		input:  `http_requests{group="production"} / on(instance) group_left cpu_count{type="smp"}`,
+		input:  "foo unless on(bar) group_left(baz) bar",
 		fail:   true,
-		errMsg: "unexpected identifier \"cpu_count\" in grouping opts, expected \"(\"",
+		errMsg: "no grouping allowed for \"unless\" operation",
+	}, {
+		input:  "foo unless on(bar) group_right(baz) bar",
+		fail:   true,
+		errMsg: "no grouping allowed for \"unless\" operation",
 	}, {
 		input:  `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:   true,
-		errMsg: "label \"instance\" must not occur in ON and INCLUDE clause at once",
+		errMsg: "label \"instance\" must not occur in ON and GROUP clause at once",
 	}, {
 		input:  "foo + bool bar",
 		fail:   true,
@@ -757,7 +986,7 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric[5m] OFFSET 1`,
 		fail:   true,
-		errMsg: "unexpected number \"1\" in matrix selector, expected duration",
+		errMsg: "unexpected number \"1\" in offset, expected duration",
 	}, {
 		input:  `some_metric[5m] OFFSET 1mm`,
 		fail:   true,
@@ -765,7 +994,11 @@ var testExpr = []struct {
 	}, {
 		input:  `some_metric[5m] OFFSET`,
 		fail:   true,
-		errMsg: "unexpected end of input in matrix selector, expected duration",
+		errMsg: "unexpected end of input in offset, expected duration",
+	}, {
+		input:  `some_metric OFFSET 1m[5m]`,
+		fail:   true,
+		errMsg: "could not parse remaining input \"[5m]\"...",
 	}, {
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
@@ -787,8 +1020,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum by (foo) keep_common (some_metric)",
 		expected: &AggregateExpr{
-			Op:              itemSum,
-			KeepExtraLabels: true,
+			Op:               itemSum,
+			KeepCommonLabels: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
@@ -800,8 +1033,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum (some_metric) by (foo,bar) keep_common",
 		expected: &AggregateExpr{
-			Op:              itemSum,
-			KeepExtraLabels: true,
+			Op:               itemSum,
+			KeepCommonLabels: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
@@ -832,8 +1065,8 @@ var testExpr = []struct {
 					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
 				},
 			},
-			Grouping:        model.LabelNames{"foo"},
-			KeepExtraLabels: true,
+			Grouping:         model.LabelNames{"foo"},
+			KeepCommonLabels: true,
 		},
 	}, {
 		input: "MIN (some_metric) by (foo) keep_common",
@@ -845,13 +1078,39 @@ var testExpr = []struct {
 					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
 				},
 			},
-			Grouping:        model.LabelNames{"foo"},
-			KeepExtraLabels: true,
+			Grouping:         model.LabelNames{"foo"},
+			KeepCommonLabels: true,
 		},
 	}, {
 		input: "max by (foo)(some_metric)",
 		expected: &AggregateExpr{
 			Op: itemMax,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+				},
+			},
+			Grouping: model.LabelNames{"foo"},
+		},
+	}, {
+		input: "sum without (foo) (some_metric)",
+		expected: &AggregateExpr{
+			Op:      itemSum,
+			Without: true,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+				},
+			},
+			Grouping: model.LabelNames{"foo"},
+		},
+	}, {
+		input: "sum (some_metric) without (foo)",
+		expected: &AggregateExpr{
+			Op:      itemSum,
+			Without: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
@@ -900,10 +1159,6 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
 	}, {
-		input:  `some_metric[5m] OFFSET`,
-		fail:   true,
-		errMsg: "unexpected end of input in matrix selector, expected duration",
-	}, {
 		input:  `sum () by (test)`,
 		fail:   true,
 		errMsg: "no valid expression found",
@@ -915,6 +1170,18 @@ var testExpr = []struct {
 		input:  "MIN by(test) (some_metric) keep_common",
 		fail:   true,
 		errMsg: "could not parse remaining input \"keep_common\"...",
+	}, {
+		input:  `sum (some_metric) without (test) keep_common`,
+		fail:   true,
+		errMsg: "cannot use 'keep_common' with 'without'",
+	}, {
+		input:  `sum (some_metric) without (test) by (test)`,
+		fail:   true,
+		errMsg: "could not parse remaining input \"by (test)\"...",
+	}, {
+		input:  `sum without (test) (some_metric) by (test)`,
+		fail:   true,
+		errMsg: "could not parse remaining input \"by (test)\"...",
 	},
 	// Test function calls.
 	{
@@ -1016,6 +1283,54 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `no valid expression found`,
 	},
+	// String quoting and escape sequence interpretation tests.
+	{
+		input: `"double-quoted string \" with escaped quote"`,
+		expected: &StringLiteral{
+			Val: "double-quoted string \" with escaped quote",
+		},
+	}, {
+		input: `'single-quoted string \' with escaped quote'`,
+		expected: &StringLiteral{
+			Val: "single-quoted string ' with escaped quote",
+		},
+	}, {
+		input: "`backtick-quoted string`",
+		expected: &StringLiteral{
+			Val: "backtick-quoted string",
+		},
+	}, {
+		input: `"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"`,
+		expected: &StringLiteral{
+			Val: "\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺",
+		},
+	}, {
+		input: `'\a\b\f\n\r\t\v\\\' - \xFF\377\u1234\U00010111\U0001011111☺'`,
+		expected: &StringLiteral{
+			Val: "\a\b\f\n\r\t\v\\' - \xFF\377\u1234\U00010111\U0001011111☺",
+		},
+	}, {
+		input: "`" + `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺` + "`",
+		expected: &StringLiteral{
+			Val: `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺`,
+		},
+	}, {
+		input:  "`\\``",
+		fail:   true,
+		errMsg: "could not parse remaining input",
+	}, {
+		input:  `"\`,
+		fail:   true,
+		errMsg: "escape sequence not terminated",
+	}, {
+		input:  `"\c"`,
+		fail:   true,
+		errMsg: "unknown escape sequence U+0063 'c'",
+	}, {
+		input:  `"\x."`,
+		fail:   true,
+		errMsg: "illegal character U+002E '.' in escape sequence",
+	},
 }
 
 func TestParseExpressions(t *testing.T) {
@@ -1098,21 +1413,26 @@ var testStatement = []struct {
 		input: `
 			# A simple test recording rule.
 			dc:http_request:rate5m = sum(rate(http_request_count[5m])) by (dc)
-	
+
 			# A simple test alerting rule.
-			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5m WITH {
+			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5m
+			  LABELS {
 			    service = "testservice"
 			    # ... more fields here ...
 			  }
-			  SUMMARY "Global request rate low"
-			  DESCRIPTION "The global request rate is low"
+			  ANNOTATIONS {
+			    summary     = "Global request rate low",
+			    description = "The global request rate is low"
+			  }
 
 			foo = bar{label1="value1"}
 
 			ALERT BazAlert IF foo > 10
-			  DESCRIPTION "BazAlert"
-			  RUNBOOK     "http://my.url"
-			  SUMMARY     "Baz"
+			  ANNOTATIONS {
+			    description = "BazAlert",
+			    runbook     = "http://my.url",
+			    summary     = "Baz",
+			  }
 		`,
 		expected: Statements{
 			&RecordStmt{
@@ -1147,10 +1467,12 @@ var testStatement = []struct {
 					},
 					RHS: &NumberLiteral{10000},
 				}},
-				Labels:      model.LabelSet{"service": "testservice"},
-				Duration:    5 * time.Minute,
-				Summary:     "Global request rate low",
-				Description: "The global request rate is low",
+				Labels:   model.LabelSet{"service": "testservice"},
+				Duration: 5 * time.Minute,
+				Annotations: model.LabelSet{
+					"summary":     "Global request rate low",
+					"description": "The global request rate is low",
+				},
 			},
 			&RecordStmt{
 				Name: "foo",
@@ -1175,10 +1497,12 @@ var testStatement = []struct {
 					},
 					RHS: &NumberLiteral{10},
 				},
-				Labels:      model.LabelSet{},
-				Summary:     "Baz",
-				Description: "BazAlert",
-				Runbook:     "http://my.url",
+				Labels: model.LabelSet{},
+				Annotations: model.LabelSet{
+					"summary":     "Baz",
+					"description": "BazAlert",
+					"runbook":     "http://my.url",
+				},
 			},
 		},
 	}, {
@@ -1198,9 +1522,12 @@ var testStatement = []struct {
 			},
 		},
 	}, {
-		input: `ALERT SomeName IF some_metric > 1 
-			SUMMARY "Global request rate low"
-			DESCRIPTION "The global request rate is low"
+		input: `ALERT SomeName IF some_metric > 1
+			LABELS {}
+			ANNOTATIONS {
+				summary = "Global request rate low",
+				description = "The global request rate is low",
+			}
 		`,
 		expected: Statements{
 			&AlertStmt{
@@ -1215,20 +1542,25 @@ var testStatement = []struct {
 					},
 					RHS: &NumberLiteral{1},
 				},
-				Labels:      model.LabelSet{},
-				Summary:     "Global request rate low",
-				Description: "The global request rate is low",
+				Labels: model.LabelSet{},
+				Annotations: model.LabelSet{
+					"summary":     "Global request rate low",
+					"description": "The global request rate is low",
+				},
 			},
 		},
 	}, {
 		input: `
 			# A simple test alerting rule.
-			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5 WITH {
+			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5
+			  LABELS {
 			    service = "testservice"
-			    # ... more fields here ... 
+			    # ... more fields here ...
 			  }
-			  SUMMARY "Global request rate low"
-			  DESCRIPTION "The global request rate is low"
+			  ANNOTATIONS {
+			    summary = "Global request rate low"
+			    description = "The global request rate is low"
+			  }
 	  	`,
 		fail: true,
 	}, {
@@ -1268,22 +1600,6 @@ var testStatement = []struct {
 	}, {
 		input: `foo{a!~"b"} = bar`,
 		fail:  true,
-	}, {
-		input: `ALERT SomeName IF time() WITH {} 
-			SUMMARY "Global request rate low"
-			DESCRIPTION "The global request rate is low"
-		`,
-		fail: true,
-	}, {
-		input: `ALERT SomeName IF some_metric > 1 WITH {} 
-			SUMMARY "Global request rate low"
-		`,
-		fail: true,
-	}, {
-		input: `ALERT SomeName IF some_metric > 1 
-			DESCRIPTION "The global request rate is low"
-		`,
-		fail: true,
 	},
 	// Fuzzing regression tests.
 	{

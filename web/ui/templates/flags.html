@@ -1,0 +1,17 @@
+{{define "head"}}<!-- nix -->{{end}}
+
+{{define "content"}}
+  <div class="container-fluid">
+    <h2 id="startupflags">Command-Line Flags</h2>
+    <table class="table table-condensed table-bordered table-striped table-hover">
+      <tbody>
+        {{range $key, $value := . }}
+        <tr>
+          <th scope="row">{{$key}}</th>
+          <td>{{$value}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+{{end}}

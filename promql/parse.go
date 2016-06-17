@@ -43,12 +43,12 @@ type ParseErr struct {
 
 func (e *ParseErr) Error() string {
 	if e.Line == 0 {
-		return fmt.Sprintf("Parse error at char %d: %s", e.Pos, e.Err)
+		return fmt.Sprintf("parse error at char %d: %s", e.Pos, e.Err)
 	}
-	return fmt.Sprintf("Parse error at line %d, char %d: %s", e.Line, e.Pos, e.Err)
+	return fmt.Sprintf("parse error at line %d, char %d: %s", e.Line, e.Pos, e.Err)
 }
 
-// ParseStmts parses the input and returns the resulting statements or any ocurring error.
+// ParseStmts parses the input and returns the resulting statements or any occuring error.
 func ParseStmts(input string) (Statements, error) {
 	p := newParser(input)
 
@@ -357,9 +357,9 @@ func (p *parser) stmt() Statement {
 
 // alertStmt parses an alert rule.
 //
-//		ALERT name IF expr [FOR duration] [WITH label_set]
-//			SUMMARY "summary"
-//			DESCRIPTION "description"
+//		ALERT name IF expr [FOR duration]
+//			[LABELS label_set]
+//			[ANNOTATIONS label_set]
 //
 func (p *parser) alertStmt() *AlertStmt {
 	const ctx = "alert statement"
@@ -371,9 +371,10 @@ func (p *parser) alertStmt() *AlertStmt {
 	expr := p.expr()
 
 	// Optional for clause.
-	var duration time.Duration
-	var err error
-
+	var (
+		duration time.Duration
+		err      error
+	)
 	if p.peek().typ == itemFor {
 		p.next()
 		dur := p.expect(itemDuration, ctx)
@@ -383,60 +384,25 @@ func (p *parser) alertStmt() *AlertStmt {
 		}
 	}
 
-	lset := model.LabelSet{}
-	if p.peek().typ == itemWith {
-		p.expect(itemWith, ctx)
-		lset = p.labelSet()
-	}
-
 	var (
-		hasSum, hasDesc, hasRunbook bool
-		sum, desc, runbook          string
+		labels      = model.LabelSet{}
+		annotations = model.LabelSet{}
 	)
-Loop:
-	for {
-		switch p.next().typ {
-		case itemSummary:
-			if hasSum {
-				p.errorf("summary must not be defined twice")
-			}
-			hasSum = true
-			sum = trimOne(p.expect(itemString, ctx).val)
-
-		case itemDescription:
-			if hasDesc {
-				p.errorf("description must not be defined twice")
-			}
-			hasDesc = true
-			desc = trimOne(p.expect(itemString, ctx).val)
-
-		case itemRunbook:
-			if hasRunbook {
-				p.errorf("runbook must not be defined twice")
-			}
-			hasRunbook = true
-			runbook = trimOne(p.expect(itemString, ctx).val)
-
-		default:
-			p.backup()
-			break Loop
-		}
+	if p.peek().typ == itemLabels {
+		p.expect(itemLabels, ctx)
+		labels = p.labelSet()
 	}
-	if sum == "" {
-		p.errorf("alert summary missing")
-	}
-	if desc == "" {
-		p.errorf("alert description missing")
+	if p.peek().typ == itemAnnotations {
+		p.expect(itemAnnotations, ctx)
+		annotations = p.labelSet()
 	}
 
 	return &AlertStmt{
 		Name:        name.val,
 		Expr:        expr,
 		Duration:    duration,
-		Labels:      lset,
-		Summary:     sum,
-		Description: desc,
-		Runbook:     runbook,
+		Labels:      labels,
+		Annotations: annotations,
 	}
 }
 
@@ -481,44 +447,46 @@ func (p *parser) expr() Expr {
 		vecMatching := &VectorMatching{
 			Card: CardOneToOne,
 		}
-		if op == itemLAND || op == itemLOR {
+		if op.isSetOperator() {
 			vecMatching.Card = CardManyToMany
 		}
 
 		returnBool := false
 		// Parse bool modifier.
 		if p.peek().typ == itemBool {
-			switch op {
-			case itemEQL, itemNEQ, itemLTE, itemLSS, itemGTE, itemGTR:
-				break
-			default:
+			if !op.isComparisonOperator() {
 				p.errorf("bool modifier can only be used on comparison operators")
 			}
 			p.next()
 			returnBool = true
 		}
 
-		// Parse ON clause.
-		if p.peek().typ == itemOn {
+		// Parse ON/IGNORING clause.
+		if p.peek().typ == itemOn || p.peek().typ == itemIgnoring {
+			if p.peek().typ == itemIgnoring {
+				vecMatching.Ignoring = true
+			}
 			p.next()
-			vecMatching.On = p.labels()
+			vecMatching.MatchingLabels = p.labels()
 
 			// Parse grouping.
-			if t := p.peek().typ; t == itemGroupLeft {
+			if t := p.peek().typ; t == itemGroupLeft || t == itemGroupRight {
 				p.next()
-				vecMatching.Card = CardManyToOne
-				vecMatching.Include = p.labels()
-			} else if t == itemGroupRight {
-				p.next()
-				vecMatching.Card = CardOneToMany
-				vecMatching.Include = p.labels()
+				if t == itemGroupLeft {
+					vecMatching.Card = CardManyToOne
+				} else {
+					vecMatching.Card = CardOneToMany
+				}
+				if p.peek().typ == itemLeftParen {
+					vecMatching.Include = p.labels()
+				}
 			}
 		}
 
-		for _, ln := range vecMatching.On {
+		for _, ln := range vecMatching.MatchingLabels {
 			for _, ln2 := range vecMatching.Include {
-				if ln == ln2 {
-					p.errorf("label %q must not occur in ON and INCLUDE clause at once", ln)
+				if ln == ln2 && !vecMatching.Ignoring {
+					p.errorf("label %q must not occur in ON and GROUP clause at once", ln)
 				}
 			}
 		}
@@ -526,29 +494,34 @@ func (p *parser) expr() Expr {
 		// Parse the next operand.
 		rhs := p.unaryExpr()
 
-		// Assign the new root based on the precendence of the LHS and RHS operators.
-		if lhs, ok := expr.(*BinaryExpr); ok && lhs.Op.precedence() < op.precedence() {
-			expr = &BinaryExpr{
-				Op:  lhs.Op,
-				LHS: lhs.LHS,
-				RHS: &BinaryExpr{
-					Op:             op,
-					LHS:            lhs.RHS,
-					RHS:            rhs,
-					VectorMatching: vecMatching,
-					ReturnBool:     returnBool,
-				},
-				VectorMatching: lhs.VectorMatching,
-			}
-		} else {
-			expr = &BinaryExpr{
-				Op:             op,
-				LHS:            expr,
-				RHS:            rhs,
-				VectorMatching: vecMatching,
-				ReturnBool:     returnBool,
-			}
+		// Assign the new root based on the precedence of the LHS and RHS operators.
+		expr = p.balance(expr, op, rhs, vecMatching, returnBool)
+	}
+}
+
+func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMatching, returnBool bool) *BinaryExpr {
+	if lhsBE, ok := lhs.(*BinaryExpr); ok && lhsBE.Op.precedence() < op.precedence() {
+		balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
+		if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == model.ValScalar && lhsBE.LHS.Type() == model.ValScalar {
+			p.errorf("comparisons between scalars must use BOOL modifier")
 		}
+		return &BinaryExpr{
+			Op:             lhsBE.Op,
+			LHS:            lhsBE.LHS,
+			RHS:            balanced,
+			VectorMatching: lhsBE.VectorMatching,
+			ReturnBool:     lhsBE.ReturnBool,
+		}
+	}
+	if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && lhs.Type() == model.ValScalar {
+		p.errorf("comparisons between scalars must use BOOL modifier")
+	}
+	return &BinaryExpr{
+		Op:             op,
+		LHS:            lhs,
+		RHS:            rhs,
+		VectorMatching: vecMatching,
+		ReturnBool:     returnBool,
 	}
 }
 
@@ -588,18 +561,34 @@ func (p *parser) unaryExpr() Expr {
 		}
 		e = p.rangeSelector(vs)
 	}
+
+	// Parse optional offset.
+	if p.peek().typ == itemOffset {
+		offset := p.offset()
+
+		switch s := e.(type) {
+		case *VectorSelector:
+			s.Offset = offset
+		case *MatrixSelector:
+			s.Offset = offset
+		default:
+			p.errorf("offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
+		}
+	}
+
 	return e
 }
 
-// rangeSelector parses a matrix selector based on a given vector selector.
+// rangeSelector parses a matrix (a.k.a. range) selector based on a given
+// vector selector.
 //
 //		<vector_selector> '[' <duration> ']'
 //
 func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
-	const ctx = "matrix selector"
+	const ctx = "range selector"
 	p.next()
 
-	var erange, offset time.Duration
+	var erange time.Duration
 	var err error
 
 	erangeStr := p.expect(itemDuration, ctx).val
@@ -610,27 +599,15 @@ func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
 
 	p.expect(itemRightBracket, ctx)
 
-	// Parse optional offset.
-	if p.peek().typ == itemOffset {
-		p.next()
-		offi := p.expect(itemDuration, ctx)
-
-		offset, err = parseDuration(offi.val)
-		if err != nil {
-			p.error(err)
-		}
-	}
-
 	e := &MatrixSelector{
 		Name:          vs.Name,
 		LabelMatchers: vs.LabelMatchers,
 		Range:         erange,
-		Offset:        offset,
 	}
 	return e
 }
 
-// parseNumber parses a number.
+// number parses a number.
 func (p *parser) number(val string) float64 {
 	n, err := strconv.ParseInt(val, 0, 64)
 	f := float64(n)
@@ -654,8 +631,7 @@ func (p *parser) primaryExpr() Expr {
 		return &NumberLiteral{model.SampleValue(f)}
 
 	case t.typ == itemString:
-		s := t.val[1 : len(t.val)-1]
-		return &StringLiteral{s}
+		return &StringLiteral{p.unquoteString(t.val)}
 
 	case t.typ == itemLeftBrace:
 		// Metric selector without metric name.
@@ -719,18 +695,21 @@ func (p *parser) aggrExpr() *AggregateExpr {
 		p.errorf("expected aggregation operator but got %s", agop)
 	}
 	var grouping model.LabelNames
-	var keepExtra bool
+	var keepCommon, without bool
 
 	modifiersFirst := false
 
-	if p.peek().typ == itemBy {
+	if t := p.peek().typ; t == itemBy || t == itemWithout {
+		if t == itemWithout {
+			without = true
+		}
 		p.next()
 		grouping = p.labels()
 		modifiersFirst = true
 	}
 	if p.peek().typ == itemKeepCommon {
 		p.next()
-		keepExtra = true
+		keepCommon = true
 		modifiersFirst = true
 	}
 
@@ -739,24 +718,32 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	p.expect(itemRightParen, ctx)
 
 	if !modifiersFirst {
-		if p.peek().typ == itemBy {
+		if t := p.peek().typ; t == itemBy || t == itemWithout {
 			if len(grouping) > 0 {
 				p.errorf("aggregation must only contain one grouping clause")
+			}
+			if t == itemWithout {
+				without = true
 			}
 			p.next()
 			grouping = p.labels()
 		}
 		if p.peek().typ == itemKeepCommon {
 			p.next()
-			keepExtra = true
+			keepCommon = true
 		}
 	}
 
+	if keepCommon && without {
+		p.errorf("cannot use 'keep_common' with 'without'")
+	}
+
 	return &AggregateExpr{
-		Op:              agop.typ,
-		Expr:            e,
-		Grouping:        grouping,
-		KeepExtraLabels: keepExtra,
+		Op:               agop.typ,
+		Expr:             e,
+		Grouping:         grouping,
+		Without:          without,
+		KeepCommonLabels: keepCommon,
 	}
 }
 
@@ -843,7 +830,7 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 			p.errorf("operator must be one of %q, is %q", operators, op)
 		}
 
-		val := trimOne(p.expect(itemString, ctx).val)
+		val := p.unquoteString(p.expect(itemString, ctx).val)
 
 		// Map the item to the respective match type.
 		var matchType metric.MatchType
@@ -871,11 +858,20 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 
 		matchers = append(matchers, m)
 
+		if p.peek().typ == itemIdentifier {
+			p.errorf("missing comma before next identifier %q", p.peek().val)
+		}
+
 		// Terminate list if last matcher.
 		if p.peek().typ != itemComma {
 			break
 		}
 		p.next()
+
+		// Allow comma after each item in a multi-line listing.
+		if p.peek().typ == itemRightBrace {
+			break
+		}
 	}
 
 	p.expect(itemRightBrace, ctx)
@@ -909,14 +905,30 @@ func (p *parser) metric() model.Metric {
 	return m
 }
 
-// metricSelector parses a new metric selector.
+// offset parses an offset modifier.
 //
-//		<metric_identifier> [<label_matchers>] [ offset <duration> ]
-//		[<metric_identifier>] <label_matchers> [ offset <duration> ]
+//		offset <duration>
+//
+func (p *parser) offset() time.Duration {
+	const ctx = "offset"
+
+	p.next()
+	offi := p.expect(itemDuration, ctx)
+
+	offset, err := parseDuration(offi.val)
+	if err != nil {
+		p.error(err)
+	}
+
+	return offset
+}
+
+// vectorSelector parses a new (instant) vector selector.
+//
+//		<metric_identifier> [<label_matchers>]
+//		[<metric_identifier>] <label_matchers>
 //
 func (p *parser) vectorSelector(name string) *VectorSelector {
-	const ctx = "metric selector"
-
 	var matchers metric.LabelMatchers
 	// Parse label matching if any.
 	if t := p.peek(); t.typ == itemLeftBrace {
@@ -960,22 +972,9 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
 
-	var err error
-	var offset time.Duration
-	// Parse optional offset.
-	if p.peek().typ == itemOffset {
-		p.next()
-		offi := p.expect(itemDuration, ctx)
-
-		offset, err = parseDuration(offi.val)
-		if err != nil {
-			p.error(err)
-		}
-	}
 	return &VectorSelector{
 		Name:          name,
 		LabelMatchers: matchers,
-		Offset:        offset,
 	}
 }
 
@@ -1045,31 +1044,31 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 		rt := p.checkType(n.RHS)
 
 		if !n.Op.isOperator() {
-			p.errorf("only logical and arithmetic operators allowed in binary expression, got %q", n.Op)
+			p.errorf("binary expression does not support operator %q", n.Op)
 		}
 		if (lt != model.ValScalar && lt != model.ValVector) || (rt != model.ValScalar && rt != model.ValVector) {
 			p.errorf("binary expression must contain only scalar and vector types")
 		}
 
 		if (lt != model.ValVector || rt != model.ValVector) && n.VectorMatching != nil {
-			if len(n.VectorMatching.On) > 0 {
+			if len(n.VectorMatching.MatchingLabels) > 0 {
 				p.errorf("vector matching only allowed between vectors")
 			}
 			n.VectorMatching = nil
 		} else {
 			// Both operands are vectors.
-			if n.Op == itemLAND || n.Op == itemLOR {
+			if n.Op.isSetOperator() {
 				if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
-					p.errorf("no grouping allowed for AND and OR operations")
+					p.errorf("no grouping allowed for %q operation", n.Op)
 				}
 				if n.VectorMatching.Card != CardManyToMany {
-					p.errorf("AND and OR operations must always be many-to-many")
+					p.errorf("set operations must always be many-to-many")
 				}
 			}
 		}
 
-		if (lt == model.ValScalar || rt == model.ValScalar) && (n.Op == itemLAND || n.Op == itemLOR) {
-			p.errorf("AND and OR not allowed in binary scalar expression")
+		if (lt == model.ValScalar || rt == model.ValScalar) && n.Op.isSetOperator() {
+			p.errorf("set operator %q not allowed in binary scalar expression", n.Op)
 		}
 
 	case *Call:
@@ -1110,24 +1109,21 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 	return
 }
 
+func (p *parser) unquoteString(s string) string {
+	unquoted, err := strutil.Unquote(s)
+	if err != nil {
+		p.errorf("error unquoting string %q: %s", s, err)
+	}
+	return unquoted
+}
+
 func parseDuration(ds string) (time.Duration, error) {
-	dur, err := strutil.StringToDuration(ds)
+	dur, err := model.ParseDuration(ds)
 	if err != nil {
 		return 0, err
 	}
 	if dur == 0 {
 		return 0, fmt.Errorf("duration must be greater than 0")
 	}
-	return dur, nil
-}
-
-// trimOne removes the first and last character from a string.
-func trimOne(s string) string {
-	if len(s) > 0 {
-		s = s[1:]
-	}
-	if len(s) > 0 {
-		s = s[:len(s)-1]
-	}
-	return s
+	return time.Duration(dur), nil
 }

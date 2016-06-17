@@ -57,8 +57,12 @@ const (
 	unarchive          = "unarchive"
 	memoryPurge        = "purge_from_memory"
 	archivePurge       = "purge_from_archive"
+	requestedPurge     = "purge_on_request"
 	memoryMaintenance  = "maintenance_in_memory"
 	archiveMaintenance = "maintenance_in_archive"
+	completedQurantine = "quarantine_completed"
+	droppedQuarantine  = "quarantine_dropped"
+	failedQuarantine   = "quarantine_failed"
 
 	// Op-types for chunkOps.
 	createAndPin    = "create" // A chunkDesc creation with refCount=1.
@@ -78,6 +82,12 @@ const (
 	// Maintenance types for maintainSeriesDuration.
 	maintainInMemory = "memory"
 	maintainArchived = "archived"
+
+	discardReasonLabel = "reason"
+
+	// Reasons to discard samples.
+	outOfOrderTimestamp = "timestamp_out_of_order"
+	duplicateSample     = "multiple_values_for_timestamp"
 )
 
 func init() {

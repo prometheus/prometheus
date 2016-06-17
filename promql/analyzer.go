@@ -41,14 +41,20 @@ type Analyzer struct {
 // fingerprints. One of these structs is collected for each offset by the query
 // analyzer.
 type preloadTimes struct {
-	// Instants require single samples to be loaded along the entire query
-	// range, with intervals between the samples corresponding to the query
-	// resolution.
-	instants map[model.Fingerprint]struct{}
-	// Ranges require loading a range of samples at each resolution step,
-	// stretching backwards from the current evaluation timestamp. The length of
-	// the range into the past is given by the duration, as in "foo[5m]".
+	// Ranges require loading a range of samples. They can be triggered by
+	// two type of expressions: First a range expression AKA matrix
+	// selector, where the Duration in the ranges map is the length of the
+	// range in the range expression. Second an instant expression AKA
+	// vector selector, where the Duration in the ranges map is the
+	// StalenessDelta. In preloading, both types of expressions result in
+	// the same effect: Preload everything between the specified start time
+	// minus the Duration in the ranges map up to the specified end time.
 	ranges map[model.Fingerprint]time.Duration
+	// Instants require a single sample to be loaded. This only happens for
+	// instant expressions AKA vector selectors iff the specified start ond
+	// end time are the same, Thus, instants is only populated if start and
+	// end time are the same.
+	instants map[model.Fingerprint]struct{}
 }
 
 // Analyze the provided expression and attach metrics and fingerprints to data-selecting
@@ -57,13 +63,15 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 	a.offsetPreloadTimes = map[time.Duration]preloadTimes{}
 
 	getPreloadTimes := func(offset time.Duration) preloadTimes {
-		if _, ok := a.offsetPreloadTimes[offset]; !ok {
-			a.offsetPreloadTimes[offset] = preloadTimes{
-				instants: map[model.Fingerprint]struct{}{},
-				ranges:   map[model.Fingerprint]time.Duration{},
-			}
+		if pt, ok := a.offsetPreloadTimes[offset]; ok {
+			return pt
 		}
-		return a.offsetPreloadTimes[offset]
+		pt := preloadTimes{
+			instants: map[model.Fingerprint]struct{}{},
+			ranges:   map[model.Fingerprint]time.Duration{},
+		}
+		a.offsetPreloadTimes[offset] = pt
+		return pt
 	}
 
 	// Retrieve fingerprints and metrics for the required time range for
@@ -71,20 +79,29 @@ func (a *Analyzer) Analyze(ctx context.Context) error {
 	Inspect(a.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			n.metrics = a.Storage.MetricsForLabelMatchers(n.LabelMatchers...)
+			n.metrics = a.Storage.MetricsForLabelMatchers(
+				a.Start.Add(-n.Offset-StalenessDelta), a.End.Add(-n.Offset),
+				n.LabelMatchers...,
+			)
 			n.iterators = make(map[model.Fingerprint]local.SeriesIterator, len(n.metrics))
 
 			pt := getPreloadTimes(n.Offset)
 			for fp := range n.metrics {
-				// Only add the fingerprint to the instants if not yet present in the
-				// ranges. Ranges always contain more points and span more time than
-				// instants for the same offset.
-				if _, alreadyInRanges := pt.ranges[fp]; !alreadyInRanges {
+				r, alreadyInRanges := pt.ranges[fp]
+				if a.Start.Equal(a.End) && !alreadyInRanges {
+					// A true instant, we only need one value.
 					pt.instants[fp] = struct{}{}
+					continue
+				}
+				if r < StalenessDelta {
+					pt.ranges[fp] = StalenessDelta
 				}
 			}
 		case *MatrixSelector:
-			n.metrics = a.Storage.MetricsForLabelMatchers(n.LabelMatchers...)
+			n.metrics = a.Storage.MetricsForLabelMatchers(
+				a.Start.Add(-n.Offset-n.Range), a.End.Add(-n.Offset),
+				n.LabelMatchers...,
+			)
 			n.iterators = make(map[model.Fingerprint]local.SeriesIterator, len(n.metrics))
 
 			pt := getPreloadTimes(n.Offset)
@@ -115,7 +132,7 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 		return nil, errors.New("analysis must be performed before preparing query")
 	}
 	var err error
-	// The preloader must not be closed unless an error ocurred as closing
+	// The preloader must not be closed unless an error occured as closing
 	// unpins the preloaded chunks.
 	p := a.Storage.NewPreloader()
 	defer func() {
@@ -125,26 +142,23 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 	}()
 
 	// Preload all analyzed ranges.
+	iters := map[time.Duration]map[model.Fingerprint]local.SeriesIterator{}
 	for offset, pt := range a.offsetPreloadTimes {
+		itersForDuration := map[model.Fingerprint]local.SeriesIterator{}
+		iters[offset] = itersForDuration
 		start := a.Start.Add(-offset)
 		end := a.End.Add(-offset)
 		for fp, rangeDuration := range pt.ranges {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			err = p.PreloadRange(fp, start.Add(-rangeDuration), end, StalenessDelta)
-			if err != nil {
-				return nil, err
-			}
+			itersForDuration[fp] = p.PreloadRange(fp, start.Add(-rangeDuration), end)
 		}
 		for fp := range pt.instants {
 			if err = contextDone(ctx, env); err != nil {
 				return nil, err
 			}
-			err = p.PreloadRange(fp, start, end, StalenessDelta)
-			if err != nil {
-				return nil, err
-			}
+			itersForDuration[fp] = p.PreloadInstant(fp, start, StalenessDelta)
 		}
 	}
 
@@ -153,11 +167,11 @@ func (a *Analyzer) Prepare(ctx context.Context) (local.Preloader, error) {
 		switch n := node.(type) {
 		case *VectorSelector:
 			for fp := range n.metrics {
-				n.iterators[fp] = a.Storage.NewIterator(fp)
+				n.iterators[fp] = iters[n.Offset][fp]
 			}
 		case *MatrixSelector:
 			for fp := range n.metrics {
-				n.iterators[fp] = a.Storage.NewIterator(fp)
+				n.iterators[fp] = iters[n.Offset][fp]
 			}
 		}
 		return true

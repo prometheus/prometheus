@@ -23,17 +23,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
-
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 var (
 	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
-	patAuthLine   = regexp.MustCompile(`((?:username|password|bearer_token):\s+)(".+"|'.+'|[^\s]+)`)
+	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key|client_secret):\s+)(".+"|'.+'|[^\s]+)`)
 )
 
 // Load parses the YAML input s into a Config.
@@ -75,9 +74,9 @@ var (
 
 	// DefaultGlobalConfig is the default global configuration.
 	DefaultGlobalConfig = GlobalConfig{
-		ScrapeInterval:     Duration(1 * time.Minute),
-		ScrapeTimeout:      Duration(10 * time.Second),
-		EvaluationInterval: Duration(1 * time.Minute),
+		ScrapeInterval:     model.Duration(1 * time.Minute),
+		ScrapeTimeout:      model.Duration(10 * time.Second),
+		EvaluationInterval: model.Duration(1 * time.Minute),
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
@@ -91,19 +90,21 @@ var (
 
 	// DefaultRelabelConfig is the default Relabel configuration.
 	DefaultRelabelConfig = RelabelConfig{
-		Action:    RelabelReplace,
-		Separator: ";",
+		Action:      RelabelReplace,
+		Separator:   ";",
+		Regex:       MustNewRegexp("(.*)"),
+		Replacement: "$1",
 	}
 
 	// DefaultDNSSDConfig is the default DNS SD configuration.
 	DefaultDNSSDConfig = DNSSDConfig{
-		RefreshInterval: Duration(30 * time.Second),
+		RefreshInterval: model.Duration(30 * time.Second),
 		Type:            "SRV",
 	}
 
 	// DefaultFileSDConfig is the default file SD configuration.
 	DefaultFileSDConfig = FileSDConfig{
-		RefreshInterval: Duration(5 * time.Minute),
+		RefreshInterval: model.Duration(5 * time.Minute),
 	}
 
 	// DefaultConsulSDConfig is the default Consul SD configuration.
@@ -114,19 +115,35 @@ var (
 
 	// DefaultServersetSDConfig is the default Serverset SD configuration.
 	DefaultServersetSDConfig = ServersetSDConfig{
-		Timeout: Duration(10 * time.Second),
+		Timeout: model.Duration(10 * time.Second),
+	}
+
+	// DefaultNerveSDConfig is the default Nerve SD configuration.
+	DefaultNerveSDConfig = NerveSDConfig{
+		Timeout: model.Duration(10 * time.Second),
 	}
 
 	// DefaultMarathonSDConfig is the default Marathon SD configuration.
 	DefaultMarathonSDConfig = MarathonSDConfig{
-		RefreshInterval: Duration(30 * time.Second),
+		RefreshInterval: model.Duration(30 * time.Second),
 	}
 
 	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
 	DefaultKubernetesSDConfig = KubernetesSDConfig{
-		KubeletPort:    10255,
-		RequestTimeout: Duration(10 * time.Second),
-		RetryInterval:  Duration(1 * time.Second),
+		RequestTimeout: model.Duration(10 * time.Second),
+		RetryInterval:  model.Duration(1 * time.Second),
+	}
+
+	// DefaultEC2SDConfig is the default EC2 SD configuration.
+	DefaultEC2SDConfig = EC2SDConfig{
+		Port:            80,
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
+	// DefaultAzureSDConfig is the default Azure SD configuration.
+	DefaultAzureSDConfig = AzureSDConfig{
+		Port:            80,
+		RefreshInterval: model.Duration(5 * time.Minute),
 	}
 )
 
@@ -235,6 +252,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "config"); err != nil {
+		return err
+	}
 	// If a global block was open but empty the default global config is overwritten.
 	// We have to restore it here.
 	if c.GlobalConfig.isZero() {
@@ -249,11 +269,20 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
+		// First set the correct scrape interval, then check that the timeout
+		// (inferred or explicit) is not greater than that.
 		if scfg.ScrapeInterval == 0 {
 			scfg.ScrapeInterval = c.GlobalConfig.ScrapeInterval
 		}
+		if scfg.ScrapeTimeout > scfg.ScrapeInterval {
+			return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", scfg.JobName)
+		}
 		if scfg.ScrapeTimeout == 0 {
-			scfg.ScrapeTimeout = c.GlobalConfig.ScrapeTimeout
+			if c.GlobalConfig.ScrapeTimeout > scfg.ScrapeInterval {
+				scfg.ScrapeTimeout = scfg.ScrapeInterval
+			} else {
+				scfg.ScrapeTimeout = c.GlobalConfig.ScrapeTimeout
+			}
 		}
 
 		if _, ok := jobNames[scfg.JobName]; ok {
@@ -261,18 +290,18 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		jobNames[scfg.JobName] = struct{}{}
 	}
-	return checkOverflow(c.XXX, "config")
+	return nil
 }
 
 // GlobalConfig configures values that are used across other configuration
 // objects.
 type GlobalConfig struct {
 	// How frequently to scrape targets by default.
-	ScrapeInterval Duration `yaml:"scrape_interval,omitempty"`
+	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The default timeout when scraping targets.
-	ScrapeTimeout Duration `yaml:"scrape_timeout,omitempty"`
+	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
 	// How frequently to evaluate rules by default.
-	EvaluationInterval Duration `yaml:"evaluation_interval,omitempty"`
+	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels model.LabelSet `yaml:"external_labels,omitempty"`
 
@@ -282,12 +311,37 @@ type GlobalConfig struct {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultGlobalConfig
+	// Create a clean global config as the previous one was already populated
+	// by the default due to the YAML parser behavior for empty blocks.
+	gc := &GlobalConfig{}
 	type plain GlobalConfig
-	if err := unmarshal((*plain)(c)); err != nil {
+	if err := unmarshal((*plain)(gc)); err != nil {
 		return err
 	}
-	return checkOverflow(c.XXX, "global config")
+	if err := checkOverflow(c.XXX, "global config"); err != nil {
+		return err
+	}
+	// First set the correct scrape interval, then check that the timeout
+	// (inferred or explicit) is not greater than that.
+	if gc.ScrapeInterval == 0 {
+		gc.ScrapeInterval = DefaultGlobalConfig.ScrapeInterval
+	}
+	if gc.ScrapeTimeout > gc.ScrapeInterval {
+		return fmt.Errorf("global scrape timeout greater than scrape interval")
+	}
+	if gc.ScrapeTimeout == 0 {
+		if DefaultGlobalConfig.ScrapeTimeout > gc.ScrapeInterval {
+			gc.ScrapeTimeout = gc.ScrapeInterval
+		} else {
+			gc.ScrapeTimeout = DefaultGlobalConfig.ScrapeTimeout
+		}
+	}
+	if gc.EvaluationInterval == 0 {
+		gc.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
+	}
+	*c = *gc
+
+	return nil
 }
 
 // isZero returns true iff the global config is the zero value.
@@ -306,8 +360,25 @@ type TLSConfig struct {
 	CertFile string `yaml:"cert_file,omitempty"`
 	// The client key file for the targets.
 	KeyFile string `yaml:"key_file,omitempty"`
+	// Used to verify the hostname for the targets.
+	ServerName string `yaml:"server_name,omitempty"`
 	// Disable target certificate validation.
 	InsecureSkipVerify bool `yaml:"insecure_skip_verify"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *TLSConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type plain TLSConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "TLS config"); err != nil {
+		return err
+	}
+	return nil
 }
 
 // ScrapeConfig configures a scraping unit for Prometheus.
@@ -319,9 +390,9 @@ type ScrapeConfig struct {
 	// A set of query parameters with which the target is scraped.
 	Params url.Values `yaml:"params,omitempty"`
 	// How frequently to scrape the targets of this scrape config.
-	ScrapeInterval Duration `yaml:"scrape_interval,omitempty"`
+	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
-	ScrapeTimeout Duration `yaml:"scrape_timeout,omitempty"`
+	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
@@ -338,7 +409,9 @@ type ScrapeConfig struct {
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
 
 	// List of labeled target groups for this job.
-	TargetGroups []*TargetGroup `yaml:"target_groups,omitempty"`
+	// XXX(fabxc): `target_groups` is deprecated.
+	TargetGroups  []*TargetGroup `yaml:"target_groups,omitempty"`
+	StaticConfigs []*TargetGroup `yaml:"static_configs,omitempty"`
 	// List of DNS service discovery configurations.
 	DNSSDConfigs []*DNSSDConfig `yaml:"dns_sd_configs,omitempty"`
 	// List of file service discovery configurations.
@@ -347,10 +420,16 @@ type ScrapeConfig struct {
 	ConsulSDConfigs []*ConsulSDConfig `yaml:"consul_sd_configs,omitempty"`
 	// List of Serverset service discovery configurations.
 	ServersetSDConfigs []*ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
+	// NerveSDConfigs is a list of Nerve service discovery configurations.
+	NerveSDConfigs []*NerveSDConfig `yaml:"nerve_sd_configs,omitempty"`
 	// MarathonSDConfigs is a list of Marathon service discovery configurations.
 	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
+	// List of EC2 service discovery configurations.
+	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
+	// List of Azure service discovery configurations.
+	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -369,6 +448,9 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "scrape_config"); err != nil {
+		return err
+	}
 	if !patJobName.MatchString(c.JobName) {
 		return fmt.Errorf("%q is not a valid job name", c.JobName)
 	}
@@ -378,7 +460,34 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
 		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
-	return checkOverflow(c.XXX, "scrape_config")
+	// Check `target_groups` deprecation.
+	if c.TargetGroups != nil && c.StaticConfigs != nil {
+		return fmt.Errorf("'target_groups' is deprecated, configure static targets via 'static_configs' only")
+	}
+	if c.TargetGroups != nil {
+		log.Warnf("The 'target_groups' option for scrape configurations is deprecated, use 'static_configs' instead")
+		c.StaticConfigs = c.TargetGroups
+	}
+	// Check for users putting URLs in target groups.
+	if len(c.RelabelConfigs) == 0 {
+		for _, tg := range c.StaticConfigs {
+			for _, t := range tg.Targets {
+				if err = CheckTargetAddress(t[model.AddressLabel]); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// CheckTargetAddress checks if target address is valid.
+func CheckTargetAddress(address model.LabelValue) error {
+	// For now check for a URL, we may want to expand this later.
+	if strings.Contains(string(address), "/") {
+		return fmt.Errorf("%q is not a valid hostname", address)
+	}
+	return nil
 }
 
 // BasicAuth contains basic HTTP authentication credentials.
@@ -437,9 +546,6 @@ func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	tg.Targets = make([]model.LabelSet, 0, len(g.Targets))
 	for _, t := range g.Targets {
-		if strings.Contains(t, "/") {
-			return fmt.Errorf("%q is not a valid hostname", t)
-		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
 			model.AddressLabel: model.LabelValue(t),
 		})
@@ -487,10 +593,10 @@ func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
 
 // DNSSDConfig is the configuration for DNS based service discovery.
 type DNSSDConfig struct {
-	Names           []string `yaml:"names"`
-	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
-	Type            string   `yaml:"type"`
-	Port            int      `yaml:"port"` // Ignored for SRV records
+	Names           []string       `yaml:"names"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Type            string         `yaml:"type"`
+	Port            int            `yaml:"port"` // Ignored for SRV records
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
@@ -501,6 +607,9 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain DNSSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "dns_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Names) == 0 {
@@ -515,13 +624,13 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	default:
 		return fmt.Errorf("invalid DNS-SD records type %s", c.Type)
 	}
-	return checkOverflow(c.XXX, "dns_sd_config")
+	return nil
 }
 
 // FileSDConfig is the configuration for file based discovery.
 type FileSDConfig struct {
-	Names           []string `yaml:"names"`
-	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
+	Files           []string       `yaml:"files"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -535,15 +644,18 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if len(c.Names) == 0 {
+	if err := checkOverflow(c.XXX, "file_sd_config"); err != nil {
+		return err
+	}
+	if len(c.Files) == 0 {
 		return fmt.Errorf("file service discovery config must contain at least one path name")
 	}
-	for _, name := range c.Names {
+	for _, name := range c.Files {
 		if !patFileSDName.MatchString(name) {
 			return fmt.Errorf("path name %q is not valid for file discovery", name)
 		}
 	}
-	return checkOverflow(c.XXX, "file_sd_config")
+	return nil
 }
 
 // ConsulSDConfig is the configuration for Consul service discovery.
@@ -571,17 +683,20 @@ func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "consul_sd_config"); err != nil {
+		return err
+	}
 	if strings.TrimSpace(c.Server) == "" {
 		return fmt.Errorf("Consul SD configuration requires a server address")
 	}
-	return checkOverflow(c.XXX, "consul_sd_config")
+	return nil
 }
 
 // ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
 type ServersetSDConfig struct {
-	Servers []string `yaml:"servers"`
-	Paths   []string `yaml:"paths"`
-	Timeout Duration `yaml:"timeout,omitempty"`
+	Servers []string       `yaml:"servers"`
+	Paths   []string       `yaml:"paths"`
+	Timeout model.Duration `yaml:"timeout,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -595,6 +710,9 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "serverset_sd_config"); err != nil {
+		return err
+	}
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("serverset SD config must contain at least one Zookeeper server")
 	}
@@ -606,29 +724,48 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
 		}
 	}
-	return checkOverflow(c.XXX, "serverset_sd_config")
+	return nil
 }
 
-// MarathonSDConfig is the configuration for services running on Marathon.
-type MarathonSDConfig struct {
-	Servers         []string `yaml:"servers,omitempty"`
-	RefreshInterval Duration `yaml:"refresh_interval,omitempty"`
+// NerveSDConfig is the configuration for AirBnB's Nerve in Zookeeper based discovery.
+type NerveSDConfig struct {
+	Servers []string       `yaml:"servers"`
+	Paths   []string       `yaml:"paths"`
+	Timeout model.Duration `yaml:"timeout,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
 
-// KubernetesSDConfig is the configuration for Kubernetes service discovery.
-type KubernetesSDConfig struct {
-	Masters         []URL     `yaml:"masters"`
-	KubeletPort     int       `yaml:"kubelet_port,omitempty"`
-	InCluster       bool      `yaml:"in_cluster,omitempty"`
-	BearerTokenFile string    `yaml:"bearer_token_file,omitempty"`
-	Username        string    `yaml:"username,omitempty"`
-	Password        string    `yaml:"password,omitempty"`
-	RetryInterval   Duration  `yaml:"retry_interval,omitempty"`
-	RequestTimeout  Duration  `yaml:"request_timeout,omitempty"`
-	TLSConfig       TLSConfig `yaml:"tls_config,omitempty"`
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultNerveSDConfig
+	type plain NerveSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "nerve_sd_config"); err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("nerve SD config must contain at least one Zookeeper server")
+	}
+	if len(c.Paths) == 0 {
+		return fmt.Errorf("nerve SD config must contain at least one path")
+	}
+	for _, path := range c.Paths {
+		if !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("nerve SD config paths must begin with '/': %s", path)
+		}
+	}
+	return nil
+}
+
+// MarathonSDConfig is the configuration for services running on Marathon.
+type MarathonSDConfig struct {
+	Servers         []string       `yaml:"servers,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -642,11 +779,29 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	if err != nil {
 		return err
 	}
+	if err := checkOverflow(c.XXX, "marathon_sd_config"); err != nil {
+		return err
+	}
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
 	}
 
-	return checkOverflow(c.XXX, "marathon_sd_config")
+	return nil
+}
+
+// KubernetesSDConfig is the configuration for Kubernetes service discovery.
+type KubernetesSDConfig struct {
+	APIServers      []URL          `yaml:"api_servers"`
+	InCluster       bool           `yaml:"in_cluster,omitempty"`
+	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
+	BearerToken     string         `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
+	RetryInterval   model.Duration `yaml:"retry_interval,omitempty"`
+	RequestTimeout  model.Duration `yaml:"request_timeout,omitempty"`
+	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -657,11 +812,72 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err != nil {
 		return err
 	}
-	if len(c.Masters) == 0 {
-		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes master")
+	if err := checkOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
+		return err
+	}
+	if len(c.APIServers) == 0 {
+		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes API server")
+	}
+	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
 
-	return checkOverflow(c.XXX, "kubernetes_sd_config")
+	return nil
+}
+
+// EC2SDConfig is the configuration for EC2 based service discovery.
+type EC2SDConfig struct {
+	Region          string         `yaml:"region"`
+	AccessKey       string         `yaml:"access_key,omitempty"`
+	SecretKey       string         `yaml:"secret_key,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Port            int            `yaml:"port"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultEC2SDConfig
+	type plain EC2SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "ec2_sd_config"); err != nil {
+		return err
+	}
+	if c.Region == "" {
+		return fmt.Errorf("EC2 SD configuration requires a region")
+	}
+	return nil
+}
+
+// AzureSDConfig is the configuration for Azure based service discovery.
+type AzureSDConfig struct {
+	Port            int            `yaml:"port"`
+	SubscriptionID  string         `yaml:"subscription_id"`
+	TenantID        string         `yaml:"tenant_id,omitempty"`
+	ClientID        string         `yaml:"client_id,omitempty"`
+	ClientSecret    string         `yaml:"client_secret,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultAzureSDConfig
+	type plain AzureSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+
+	return checkOverflow(c.XXX, "azure_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.
@@ -702,7 +918,7 @@ type RelabelConfig struct {
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
-	Regex *Regexp `yaml:"regex,omitempty"`
+	Regex Regexp `yaml:"regex,omitempty"`
 	// Modulus to take of the hash of concatenated values from the source labels.
 	Modulus uint64 `yaml:"modulus,omitempty"`
 	// The label to which the resulting string is written in a replacement.
@@ -723,36 +939,33 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if c.Regex == nil && c.Action != RelabelHashMod {
-		return fmt.Errorf("relabel configuration requires a regular expression")
+	if err := checkOverflow(c.XXX, "relabel_config"); err != nil {
+		return err
 	}
 	if c.Modulus == 0 && c.Action == RelabelHashMod {
 		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
-	return checkOverflow(c.XXX, "relabel_config")
+	return nil
 }
 
 // Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
 type Regexp struct {
-	regexp.Regexp
+	*regexp.Regexp
 	original string
 }
 
 // NewRegexp creates a new anchored Regexp and returns an error if the
 // passed-in regular expression does not compile.
-func NewRegexp(s string) (*Regexp, error) {
+func NewRegexp(s string) (Regexp, error) {
 	regex, err := regexp.Compile("^(?:" + s + ")$")
-	if err != nil {
-		return nil, err
-	}
-	return &Regexp{
-		Regexp:   *regex,
+	return Regexp{
+		Regexp:   regex,
 		original: s,
-	}, nil
+	}, err
 }
 
 // MustNewRegexp works like NewRegexp, but panics if the regular expression does not compile.
-func MustNewRegexp(s string) *Regexp {
+func MustNewRegexp(s string) Regexp {
 	re, err := NewRegexp(s)
 	if err != nil {
 		panic(err)
@@ -770,39 +983,14 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	*re = *r
+	*re = r
 	return nil
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
-func (re *Regexp) MarshalYAML() (interface{}, error) {
-	if re != nil {
+func (re Regexp) MarshalYAML() (interface{}, error) {
+	if re.original != "" {
 		return re.original, nil
 	}
 	return nil, nil
-}
-
-// Duration encapsulates a time.Duration and makes it YAML marshallable.
-//
-// TODO(fabxc): Since we have custom types for most things, including timestamps,
-// we might want to move this into our model as well, eventually.
-type Duration time.Duration
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var s string
-	if err := unmarshal(&s); err != nil {
-		return err
-	}
-	dur, err := strutil.StringToDuration(s)
-	if err != nil {
-		return err
-	}
-	*d = Duration(dur)
-	return nil
-}
-
-// MarshalYAML implements the yaml.Marshaler interface.
-func (d Duration) MarshalYAML() (interface{}, error) {
-	return strutil.DurationToString(time.Duration(d)), nil
 }
