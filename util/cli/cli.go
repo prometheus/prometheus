@@ -110,18 +110,27 @@ func (app *App) Register(name string, cmd *Command) {
 // Run the application with the given arguments. Output is sent to t.
 func (app *App) Run(t Term, args ...string) int {
 	help := app.commands["help"]
+	flagCount := 0
 
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+	if len(args) == 0 {
 		help.Run(t)
 		return 2
 	}
-	cmd, ok := app.commands[args[0]]
+
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			break
+		}
+		flagCount++
+	}
+
+	cmd, ok := app.commands[args[flagCount]]
 	if !ok {
 		help.Run(t)
 		return 2
 	}
 
-	return cmd.Run(t, args[1:]...)
+	return cmd.Run(t, args[flagCount+1:]...)
 }
 
 var tmpl = `
