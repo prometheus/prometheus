@@ -14,17 +14,122 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
+	"golang.org/x/net/context"
+
+	"github.com/prometheus/client_golang/api/prometheus"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/cli"
 )
+
+var (
+	server  = flag.String("server", "http://localhost:9090", "URL of the Prometheus server to query (default http://localhost:9090)")
+	timeout = flag.Duration("timeout", time.Minute, "Timeout to use when querying the Prometheus server (default 1m0s)")
+)
+
+// Query returns metrics from the prometheus server.
+func Query(t cli.Term, args ...string) int {
+	if len(args) == 0 {
+		t.Infof("usage: promtool [flags] query <expression>")
+		return 2
+	}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
+
+	client, err := prometheus.New(prometheus.Config{
+		Address: *server,
+	})
+	if err != nil {
+		t.Errorf(" FAILED: %s", err)
+		return 1
+	}
+
+	api := prometheus.NewQueryAPI(client)
+	result, err := api.Query(ctx, args[0], time.Now())
+	if err != nil {
+		t.Errorf(" FAILED: %s", err)
+		return 1
+	}
+
+	fmt.Println(result)
+	return 0
+}
+
+// QueryRange returns range metrics from the prometheus server.
+func QueryRange(t cli.Term, args ...string) int {
+	if len(args) < 3 {
+		t.Infof("usage: promtool [flags] query_range <expression> <end_timestamp> <range_seconds> [<step_seconds>]")
+		return 2
+	}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
+
+	client, err := prometheus.New(prometheus.Config{
+		Address: *server,
+	})
+	if err != nil {
+		t.Errorf(" FAILED: %s", err)
+		return 1
+	}
+
+	end, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil {
+		t.Errorf(" FAILED: %s", err)
+		return 1
+	}
+
+	rangeSeconds, err := strconv.ParseUint(args[2], 10, 64)
+	if err != nil {
+		t.Errorf(" FAILED: %s", err)
+		return 1
+	}
+
+	var step uint64
+	if len(args) == 4 {
+		step, err = strconv.ParseUint(args[3], 10, 64)
+		if err != nil {
+			t.Errorf(" FAILED: %s", err)
+			return 1
+		}
+	} else {
+		step = rangeSeconds / 250
+	}
+	if step < 1 {
+		step = 1
+	}
+
+	endTime := time.Unix(end, 0)
+	duration := time.Duration(rangeSeconds * uint64(time.Second/time.Nanosecond))
+	timeRange := prometheus.Range{
+		End:   endTime,
+		Start: endTime.Add(-duration),
+		Step:  time.Duration(step * uint64(time.Second/time.Nanosecond)),
+	}
+
+	api := prometheus.NewQueryAPI(client)
+	result, err := api.QueryRange(ctx, args[0], timeRange)
+	if err != nil {
+		t.Errorf(" FAILED: %s", err)
+		return 1
+	}
+
+	fmt.Println(result)
+	return 0
+}
 
 // CheckConfigCmd validates configuration files.
 func CheckConfigCmd(t cli.Term, args ...string) int {
@@ -189,6 +294,7 @@ func VersionCmd(t cli.Term, _ ...string) int {
 }
 
 func main() {
+	flag.Parse()
 	app := cli.NewApp("promtool")
 
 	app.Register("check-config", &cli.Command{
@@ -204,6 +310,16 @@ func main() {
 	app.Register("version", &cli.Command{
 		Desc: "print the version of this binary",
 		Run:  VersionCmd,
+	})
+
+	app.Register("query", &cli.Command{
+		Desc: "query <expression>",
+		Run:  Query,
+	})
+
+	app.Register("query_range", &cli.Command{
+		Desc: "query_range <expression> <end_timestamp> <range_seconds> [<step_seconds>]",
+		Run:  QueryRange,
 	})
 
 	t := cli.BasicTerm(os.Stdout, os.Stderr)
