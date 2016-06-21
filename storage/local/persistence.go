@@ -812,6 +812,8 @@ func (p *persistence) dropAndPersistChunks(
 		}
 		_, err = io.ReadFull(f, headerBuf)
 		if err == io.EOF {
+			// Close the file before trying to delete it. This is necessary on Windows
+			// (this will cause the defer f.Close to fail, but the error is silently ignored)
 			f.Close()
 			// We ran into the end of the file without finding any chunks that should
 			// be kept. Remove the whole file.
@@ -876,6 +878,8 @@ func (p *persistence) dropAndPersistChunks(
 		return
 	}
 	defer func() {
+		// Close the file before trying to rename to it. This is necessary on Windows
+		// (this will cause the defer f.Close to fail, but the error is silently ignored)
 		f.Close()
 		p.closeChunkFile(temp)
 		if err == nil {
