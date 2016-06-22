@@ -155,31 +155,38 @@ func New(
 	instrh := prometheus.InstrumentHandler
 	instrf := prometheus.InstrumentHandlerFunc
 
-	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		router.Redirect(w, r, "/graph", http.StatusFound)
-	})
+	// TODO: cleaner way to detect retrieval-only mode.
+	if h.storage != nil {
+		router.Get("/alerts", instrf("alerts", h.alerts))
+		router.Get("/graph", instrf("graph", h.graph))
+		router.Get("/rules", instrf("rules", h.rules))
+		router.Get("/federate", instrh("federate", httputil.CompressionHandler{
+			Handler: http.HandlerFunc(h.federation),
+		}))
 
-	router.Get("/alerts", instrf("alerts", h.alerts))
-	router.Get("/graph", instrf("graph", h.graph))
+		h.apiLegacy.Register(router.WithPrefix("/api"))
+		h.apiV1.Register(router.WithPrefix("/api/v1"))
+
+		router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
+
+		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			router.Redirect(w, r, "/graph", http.StatusFound)
+		})
+	} else {
+		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			router.Redirect(w, r, "/targets", http.StatusFound)
+		})
+	}
+
 	router.Get("/status", instrf("status", h.status))
 	router.Get("/flags", instrf("flags", h.flags))
 	router.Get("/config", instrf("config", h.config))
-	router.Get("/rules", instrf("rules", h.rules))
 	router.Get("/targets", instrf("targets", h.targets))
 	router.Get("/version", instrf("version", h.version))
 
 	router.Get("/heap", instrf("heap", dumpHeap))
 
 	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
-
-	router.Get("/federate", instrh("federate", httputil.CompressionHandler{
-		Handler: http.HandlerFunc(h.federation),
-	}))
-
-	h.apiLegacy.Register(router.WithPrefix("/api"))
-	h.apiV1.Register(router.WithPrefix("/api/v1"))
-
-	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
 
 	router.Get("/static/*filepath", instrf("static", serveStaticAsset))
 

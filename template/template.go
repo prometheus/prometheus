@@ -246,6 +246,9 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp m
 			"pathPrefix": func() string {
 				return pathPrefix
 			},
+			"hasQueryEngine": func() bool {
+				return queryEngine != nil
+			},
 		},
 	}
 }
