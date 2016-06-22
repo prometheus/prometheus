@@ -597,9 +597,13 @@ func (o *Buffer) dec_slice_packed_bool(p *Properties, base structPointer) error 
 		return err
 	}
 	nb := int(nn) // number of bytes of encoded bools
+	fin := o.index + nb
+	if fin < o.index {
+		return errOverflow
+	}
 
 	y := *v
-	for i := 0; i < nb; i++ {
+	for o.index < fin {
 		u, err := p.valDec(o)
 		if err != nil {
 			return err
@@ -764,10 +768,11 @@ func (o *Buffer) dec_new_map(p *Properties, base structPointer) error {
 		}
 	}
 	keyelem, valelem := keyptr.Elem(), valptr.Elem()
-	if !keyelem.IsValid() || !valelem.IsValid() {
-		// We did not decode the key or the value in the map entry.
-		// Either way, it's an invalid map entry.
-		return fmt.Errorf("proto: bad map data: missing key/val")
+	if !keyelem.IsValid() {
+		keyelem = reflect.Zero(p.mtype.Key())
+	}
+	if !valelem.IsValid() {
+		valelem = reflect.Zero(p.mtype.Elem())
 	}
 
 	v.SetMapIndex(keyelem, valelem)
