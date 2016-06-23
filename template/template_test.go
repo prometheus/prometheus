@@ -107,7 +107,7 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// Range over query and group by label.
 			text:   "{{ range query \"metric\" | groupByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
-			output: "b:1: a:1: ",
+			output: "a:1: b:1: ",
 		},
 		{
 			// Unparsable template.
