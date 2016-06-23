@@ -27,7 +27,7 @@ import (
 // from the storage. It is bound to a context that allows cancellation and timing out.
 type Analyzer struct {
 	// The storage from which to query data.
-	Storage local.Storage
+	Storage local.Querier
 	// The expression being analyzed.
 	Expr Expr
 	// The time range for evaluation of Expr.

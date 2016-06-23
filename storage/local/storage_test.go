@@ -718,7 +718,7 @@ func TestLoop(t *testing.T) {
 		storage.Append(s)
 	}
 	storage.WaitForIndexing()
-	series, _ := storage.(*memorySeriesStorage).fpToSeries.get(model.Metric{}.FastFingerprint())
+	series, _ := storage.fpToSeries.get(model.Metric{}.FastFingerprint())
 	cdsBefore := len(series.chunkDescs)
 	time.Sleep(fpMaxWaitDuration + time.Second) // TODO(beorn7): Ugh, need to wait for maintenance to kick in.
 	cdsAfter := len(series.chunkDescs)
@@ -1497,12 +1497,12 @@ func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
 		for _, sample := range samples[start:middle] {
 			s.Append(sample)
 		}
-		verifyStorageRandom(b, s.(*memorySeriesStorage), samples[:middle])
+		verifyStorageRandom(b, s, samples[:middle])
 		for _, sample := range samples[middle:end] {
 			s.Append(sample)
 		}
-		verifyStorageRandom(b, s.(*memorySeriesStorage), samples[:end])
-		verifyStorageSequential(b, s.(*memorySeriesStorage), samples)
+		verifyStorageRandom(b, s, samples[:end])
+		verifyStorageSequential(b, s, samples)
 	}
 }
 
