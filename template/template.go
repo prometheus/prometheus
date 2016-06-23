@@ -179,6 +179,9 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp m
 					return nil, fmt.Errorf("Query result has no label: '%s' to group by", label)
 				}
 
+				sorter := queryResultByLabelSorter{newResults[:], label}
+				sort.Stable(sorter)
+
 				return newResults, nil
 			},
 			"humanize": func(v float64) string {
