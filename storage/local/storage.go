@@ -189,7 +189,7 @@ type MemorySeriesStorageOptions struct {
 
 // NewMemorySeriesStorage returns a newly allocated Storage. Storage.Serve still
 // has to be called to start the storage.
-func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) Storage {
+func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *memorySeriesStorage {
 	s := &memorySeriesStorage{
 		fpLocker: newFingerprintLocker(o.NumMutexes),
 

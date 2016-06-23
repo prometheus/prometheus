@@ -52,7 +52,7 @@ func NewTestStorage(t testutil.T, encoding chunkEncoding) (*memorySeriesStorage,
 		SyncStrategy:               Adaptive,
 	}
 	storage := NewMemorySeriesStorage(o)
-	storage.(*memorySeriesStorage).archiveHighWatermark = model.Latest
+	storage.archiveHighWatermark = model.Latest
 	if err := storage.Start(); err != nil {
 		directory.Close()
 		t.Fatalf("Error creating storage: %s", err)
@@ -63,5 +63,5 @@ func NewTestStorage(t testutil.T, encoding chunkEncoding) (*memorySeriesStorage,
 		directory: directory,
 	}
 
-	return storage.(*memorySeriesStorage), closer
+	return storage, closer
 }
