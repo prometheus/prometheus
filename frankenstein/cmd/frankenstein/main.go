@@ -14,9 +14,9 @@ func main() {
 		consulPrefix string
 	)
 
-	flag.StringVar(&listen, "listen", ":80", "HTTP server listen address")
-	flag.StringVar(&consulHost, "consul.hostname", "consul:8500", "Hostname & port of consul")
-	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in consul")
+	flag.StringVar(&listen, "web.listen-address", ":9094", "HTTP server listen address.")
+	flag.StringVar(&consulHost, "consul.hostname", "consul:8500", "Hostname and port of Consul.")
+	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
 
 	_, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{
 		ConsulHost:   consulHost,

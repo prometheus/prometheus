@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	consul "github.com/hashicorp/consul/api"
+	"github.com/prometheus/common/log"
 )
 
 const (
@@ -25,7 +25,17 @@ type ConsulClient interface {
 // CASCallback is the type of the callback to CAS.  If err is nil, out must be non-nil.
 type CASCallback func(in interface{}) (out interface{}, retry bool, err error)
 
-// NewConsulClient returns a new ConsulClient
+type kv interface {
+	CAS(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.WriteMeta, error)
+	Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consul.QueryMeta, error)
+	List(prefix string, q *consul.QueryOptions) (consul.KVPairs, *consul.QueryMeta, error)
+}
+
+type consulClient struct {
+	kv
+}
+
+// NewConsulClient returns a new ConsulClient.
 func NewConsulClient(addr string) (ConsulClient, error) {
 	client, err := consul.NewClient(&consul.Config{
 		Address: addr,
@@ -43,21 +53,11 @@ var (
 	}
 	writeOptions = &consul.WriteOptions{}
 
-	// ErrNotFound is returned by ConsulClient.Get
+	// ErrNotFound is returned by ConsulClient.Get.
 	ErrNotFound = fmt.Errorf("Not found")
 )
 
-type kv interface {
-	CAS(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.WriteMeta, error)
-	Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consul.QueryMeta, error)
-	List(prefix string, q *consul.QueryOptions) (consul.KVPairs, *consul.QueryMeta, error)
-}
-
-type consulClient struct {
-	kv
-}
-
-// Get and deserialise a JSON value from consul.
+// Get and deserialise a JSON value from Consul.
 func (c *consulClient) Get(key string, out interface{}) error {
 	kvp, _, err := c.kv.Get(key, queryOptions)
 	if err != nil {
@@ -72,8 +72,8 @@ func (c *consulClient) Get(key string, out interface{}) error {
 	return nil
 }
 
-// CAS atomically modify a value in a callback.
-// If value doesn't exist you'll get nil as a argument to your callback.
+// CAS atomically modifies a value in a callback.
+// If value doesn't exist you'll get nil as an argument to your callback.
 func (c *consulClient) CAS(key string, out interface{}, f CASCallback) error {
 	var (
 		index        = uint64(0)
@@ -92,7 +92,8 @@ func (c *consulClient) CAS(key string, out interface{}, f CASCallback) error {
 				log.Errorf("Error deserialising %s: %v", key, err)
 				continue
 			}
-			index = kvp.ModifyIndex // if key doesn't exist, index will be 0
+			// If key doesn't exist, index will be 0.
+			index = kvp.ModifyIndex
 			intermediate = out
 		}
 
@@ -129,7 +130,7 @@ func (c *consulClient) CAS(key string, out interface{}, f CASCallback) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("Failed to CAS %s", key)
+	return fmt.Errorf("failed to CAS %s", key)
 }
 
 func (c *consulClient) WatchPrefix(prefix string, out interface{}, done chan struct{}, f func(string, interface{}) bool) {

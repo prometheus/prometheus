@@ -3,12 +3,14 @@ package frankenstein
 import (
 	"sync"
 
-	"github.com/prometheus/prometheus/storage"
-
 	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/storage"
 )
 
-type distributor struct {
+// Distributor is a storage.SampleAppender which forwards Append calls
+// to another consistenty-hashed SampleAppender.
+type Distributor struct {
 	consul     ConsulClient
 	ring       *Ring
 	cfg        DistributorConfig
@@ -16,50 +18,56 @@ type distributor struct {
 	clients    map[string]storage.SampleAppender
 
 	quit chan struct{}
-	done sync.WaitGroup
+	done chan struct{}
 }
 
+// DistributorConfig contains the configuration require to
+// create a Distributor
 type DistributorConfig struct {
 	ConsulHost   string
 	ConsulPrefix string
 }
 
-type collector struct {
-	hostname string
-	tokens   []uint64
+// Collector is the serialised state in Consul representing
+// an individual collector.
+type Collector struct {
+	Hostname string   `json:"hostname"`
+	Tokens   []uint64 `json:"tokens"`
 }
 
-func NewDistributor(cfg DistributorConfig) (*distributor, error) {
+// NewDistributor constructs a new Distributor
+func NewDistributor(cfg DistributorConfig) (*Distributor, error) {
 	consul, err := NewConsulClient(cfg.ConsulHost)
 	if err != nil {
 		return nil, err
 	}
-	d := &distributor{
+	d := &Distributor{
 		consul: consul,
 		ring:   NewRing(),
 		cfg:    cfg,
 		quit:   make(chan struct{}),
+		done:   make(chan struct{}),
 	}
-	d.done.Add(1)
 	go d.loop()
 	return d, nil
 }
 
-func (d *distributor) Stop() {
+// Stop the distributor.
+func (d *Distributor) Stop() {
 	close(d.quit)
-	d.done.Wait()
+	<-d.done
 }
 
-func (d *distributor) loop() {
-	defer d.done.Done()
-	d.consul.WatchPrefix(d.cfg.ConsulPrefix, &collector{}, d.quit, func(key string, value interface{}) bool {
-		c := *value.(*collector)
+func (d *Distributor) loop() {
+	defer close(d.done)
+	d.consul.WatchPrefix(d.cfg.ConsulPrefix, &Collector{}, d.quit, func(key string, value interface{}) bool {
+		c := *value.(*Collector)
 		d.ring.Update(c)
 		return true
 	})
 }
 
-func (d *distributor) getClientFor(hostname string) storage.SampleAppender {
+func (d *Distributor) getClientFor(hostname string) storage.SampleAppender {
 	d.clientsMtx.RLock()
 	client, ok := d.clients[hostname]
 	d.clientsMtx.RUnlock()
@@ -80,7 +88,7 @@ func (d *distributor) getClientFor(hostname string) storage.SampleAppender {
 }
 
 // Append implements storage.SampleAppender
-func (d *distributor) Append(sample *model.Sample) error {
+func (d *Distributor) Append(sample *model.Sample) error {
 	for ln, lv := range sample.Metric {
 		if len(lv) == 0 {
 			delete(sample.Metric, ln)
@@ -92,11 +100,11 @@ func (d *distributor) Append(sample *model.Sample) error {
 		return err
 	}
 
-	client := d.getClientFor(collector.hostname)
+	client := d.getClientFor(collector.Hostname)
 	return client.Append(sample)
 }
 
 // NeedsThrottling implements storage.SampleAppender
-func (*distributor) NeedsThrottling() bool {
+func (*Distributor) NeedsThrottling() bool {
 	return false
 }

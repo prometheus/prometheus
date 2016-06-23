@@ -5,7 +5,6 @@ package frankenstein
 import (
 	"errors"
 	"sort"
-	"strconv"
 	"sync"
 )
 
@@ -20,70 +19,55 @@ var ErrEmptyRing = errors.New("empty circle")
 
 // Ring holds the information about the members of the consistent hash circle.
 type Ring struct {
-	sync.RWMutex
-
-	circle       map[uint64]collector
+	mtx          sync.RWMutex
+	circle       map[uint64]Collector
 	sortedHashes uint64s
-	count        int64
-	scratch      [64]byte
 }
 
-// NewRing creates a new Ring object with a default setting of 20 replicas for each entry.
-//
-// To change the number of replicas, set NumberOfReplicas before adding entries.
+// NewRing creates a new Ring object.
 func NewRing() *Ring {
 	return &Ring{
-		circle: map[uint64]collector{},
+		circle: map[uint64]Collector{},
 	}
 }
 
-// eltKey generates a string key for an element with an index.
-func (c *Ring) eltKey(elt string, idx int) string {
-	// return elt + "|" + strconv.Itoa(idx)
-	return strconv.Itoa(idx) + elt
-}
-
-// Add inserts a string element in the consistent hash.
-func (c *Ring) Update(col collector) {
-	c.Lock()
-	defer c.Unlock()
-	for _, token := range col.tokens {
-		c.circle[token] = col
+// Update inserts a collector in the consistent hash.
+func (r *Ring) Update(col Collector) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	for _, token := range col.Tokens {
+		r.circle[token] = col
 	}
-	c.updateSortedHashes()
+	r.updateSortedHashes()
 }
 
-// Get returns an element close to the hash in the circle.
-func (c *Ring) Get(key uint64) (collector, error) {
-	c.RLock()
-	defer c.RUnlock()
-	if len(c.circle) == 0 {
-		return collector{}, ErrEmptyRing
+// Get returns a collector close to the hash in the circle.
+func (r *Ring) Get(key uint64) (Collector, error) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+	if len(r.circle) == 0 {
+		return Collector{}, ErrEmptyRing
 	}
-	i := c.search(key)
-	return c.circle[c.sortedHashes[i]], nil
+	i := r.search(key)
+	return r.circle[r.sortedHashes[i]], nil
 }
 
-func (c *Ring) search(key uint64) (i int) {
+func (r *Ring) search(key uint64) (i int) {
 	f := func(x int) bool {
-		return c.sortedHashes[x] > key
+		return r.sortedHashes[x] > key
 	}
-	i = sort.Search(len(c.sortedHashes), f)
-	if i >= len(c.sortedHashes) {
+	i = sort.Search(len(r.sortedHashes), f)
+	if i >= len(r.sortedHashes) {
 		i = 0
 	}
 	return
 }
 
-func (c *Ring) updateSortedHashes() {
-	hashes := c.sortedHashes[:0]
-	//reallocate if we're holding on to too much (1/4th)
-	if cap(c.sortedHashes) < len(c.circle) {
-		hashes = nil
-	}
-	for k := range c.circle {
+func (r *Ring) updateSortedHashes() {
+	hashes := uint64s{}
+	for k := range r.circle {
 		hashes = append(hashes, k)
 	}
 	sort.Sort(hashes)
-	c.sortedHashes = hashes
+	r.sortedHashes = hashes
 }

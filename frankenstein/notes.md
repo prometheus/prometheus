@@ -1,26 +1,26 @@
-= Project Frankenstein
+# Project Frankenstein
 
 Design Doc: https://docs.google.com/document/d/1C7yhMnb1x2sfeoe45f4mnnKConvroWhJ8KQZwIHJOuw/edit#heading=h.f7lkb8wswewc
 
-== Retrieval
+## Retrieval
 
 Use existing prometheus binary; add a --retrieval-only flag to existing prometheus?  and use one of the remote storage protocols or add a new one.
 
 - Brian's generic write PR https://github.com/prometheus/prometheus/pull/1487
 
-== Distribution
+## Distribution
 
 Use a consistent hasing library to distribute timeseries to collectors
 
-== Collection
+## Collection
 
 Use existing prometheus binary with addind push interface. Adapt memorySeriesStorage with support for flushing chunks to something else.
 
-== Query
+## Query
 
 Use existing prometheus binary with flags to point it at distribution?
 
-== Storage
+## Storage
 
 Hash key = [userid, hour bucket, metric name]
 Range key = [label, value, chunk id]
