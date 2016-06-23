@@ -218,7 +218,7 @@ func contextDone(ctx context.Context, env string) error {
 // It is connected to a storage.
 type Engine struct {
 	// The storage on which the engine operates.
-	storage local.Storage
+	storage local.Querier
 
 	// The base context for all queries and its cancellation function.
 	baseCtx       context.Context
@@ -230,7 +230,7 @@ type Engine struct {
 }
 
 // NewEngine returns a new engine.
-func NewEngine(storage local.Storage, o *EngineOptions) *Engine {
+func NewEngine(storage local.Querier, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}

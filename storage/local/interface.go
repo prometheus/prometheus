@@ -16,27 +16,45 @@ package local
 import (
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.
 type Storage interface {
-	prometheus.Collector
-	// Append stores a sample in the Storage. Multiple samples for the same
-	// fingerprint need to be submitted in chronological order, from oldest
-	// to newest. When Append has returned, the appended sample might not be
-	// queryable immediately. (Use WaitForIndexing to wait for complete
-	// processing.) The implementation might remove labels with empty value
-	// from the provided Sample as those labels are considered equivalent to
-	// a label not present at all.
-	Append(*model.Sample) error
-	// NeedsThrottling returns true if the Storage has too many chunks in memory
+	Querier
+
+	// This SampleAppender needs multiple samples for the same fingerprint to be
+	// submitted in chronological order, from oldest to newest. When Append has
+	// returned, the appended sample might not be queryable immediately. (Use
+	// WaitForIndexing to wait for complete processing.) The implementation might
+	// remove labels with empty value from the provided Sample as those labels
+	// are considered equivalent to a label not present at all.
+	//
+	// Appending is throttled if the Storage has too many chunks in memory
 	// already or has too many chunks waiting for persistence.
-	NeedsThrottling() bool
+	storage.SampleAppender
+
+	// Drop all time series associated with the given fingerprints.
+	DropMetricsForFingerprints(...model.Fingerprint)
+	// Run the various maintenance loops in goroutines. Returns when the
+	// storage is ready to use. Keeps everything running in the background
+	// until Stop is called.
+	Start() error
+	// Stop shuts down the Storage gracefully, flushes all pending
+	// operations, stops all maintenance loops,and frees all resources.
+	Stop() error
+	// WaitForIndexing returns once all samples in the storage are
+	// indexed. Indexing is needed for FingerprintsForLabelMatchers and
+	// LabelValuesForLabelName and may lag behind.
+	WaitForIndexing()
+}
+
+// Querier allows querying a time series storage.
+type Querier interface {
 	// NewPreloader returns a new Preloader which allows preloading and pinning
 	// series data into memory for use within a query.
 	NewPreloader() Preloader
@@ -56,19 +74,6 @@ type Storage interface {
 	LastSampleForFingerprint(model.Fingerprint) model.Sample
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(model.LabelName) model.LabelValues
-	// Drop all time series associated with the given fingerprints.
-	DropMetricsForFingerprints(...model.Fingerprint)
-	// Run the various maintenance loops in goroutines. Returns when the
-	// storage is ready to use. Keeps everything running in the background
-	// until Stop is called.
-	Start() error
-	// Stop shuts down the Storage gracefully, flushes all pending
-	// operations, stops all maintenance loops,and frees all resources.
-	Stop() error
-	// WaitForIndexing returns once all samples in the storage are
-	// indexed. Indexing is needed for FingerprintsForLabelMatchers and
-	// LabelValuesForLabelName and may lag behind.
-	WaitForIndexing()
 }
 
 // SeriesIterator enables efficient access of sample values in a series. Its
