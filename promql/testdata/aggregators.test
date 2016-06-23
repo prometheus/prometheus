@@ -37,6 +37,19 @@ eval instant at 50m sum without (instance) (http_requests{job="api-server"})
   {group="canary",job="api-server"} 700
   {group="production",job="api-server"} 300
 
+# Empty by.
+eval instant at 50m sum by () (http_requests{job="api-server"})
+  {} 1000
+
+# No by/without.
+eval instant at 50m sum (http_requests{job="api-server"})
+  {} 1000
+
+# Empty without.
+eval instant at 50m sum without () (http_requests{job="api-server",group="production"})
+  {group="production",job="api-server",instance="0"} 100
+  {group="production",job="api-server",instance="1"} 200
+
 # Without with mismatched and missing labels. Do not do this.
 eval instant at 50m sum without (instance) (http_requests{job="api-server"} or foo)
   {group="canary",job="api-server"} 700

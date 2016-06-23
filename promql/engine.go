@@ -882,9 +882,9 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 }
 
 // signatureFunc returns a function that calculates the signature for a metric
-// based on the provided labels. If ignoring, then the given labels are ignored instead.
+// ignoring the provided labels. If on, then the given labels are only used instead.
 func signatureFunc(on bool, labels ...model.LabelName) func(m metric.Metric) uint64 {
-	if len(labels) == 0 || !on {
+	if !on {
 		return func(m metric.Metric) uint64 {
 			tmp := m.Metric.Clone()
 			for _, l := range labels {
@@ -904,9 +904,6 @@ func signatureFunc(on bool, labels ...model.LabelName) func(m metric.Metric) uin
 func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching) metric.Metric {
 	if shouldDropMetricName(op) {
 		lhs.Del(model.MetricNameLabel)
-	}
-	if len(matching.MatchingLabels)+len(matching.Include) == 0 {
-		return lhs
 	}
 	if !matching.On {
 		if matching.Card == CardOneToOne {
