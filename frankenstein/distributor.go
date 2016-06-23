@@ -89,12 +89,7 @@ func (d *Distributor) getClientFor(hostname string) storage.SampleAppender {
 
 // Append implements storage.SampleAppender
 func (d *Distributor) Append(sample *model.Sample) error {
-	for ln, lv := range sample.Metric {
-		if len(lv) == 0 {
-			delete(sample.Metric, ln)
-		}
-	}
-	key := sample.Metric.Fingerprint()
+	key := model.SignatureForLabels(sample.Metric, model.MetricNameLabel)
 	collector, err := d.ring.Get(uint64(key))
 	if err != nil {
 		return err
