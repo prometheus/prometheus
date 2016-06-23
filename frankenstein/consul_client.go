@@ -147,14 +147,20 @@ func (c *consulClient) CAS(key string, out interface{}, f CASCallback) error {
 }
 
 func (c *consulClient) WatchPrefix(prefix string, out interface{}, done chan struct{}, f func(string, interface{}) bool) {
-	index := uint64(0)
+	const (
+		initialBackoff = 1 * time.Second
+		maxBackoff     = 1 * time.Minute
+	)
+	var (
+		backoff = initialBackoff / 2
+		index   = uint64(0)
+	)
 	for {
 		select {
 		case <-done:
 			return
 		default:
 		}
-
 		kvps, meta, err := c.kv.List(prefix, &consul.QueryOptions{
 			RequireConsistent: true,
 			WaitIndex:         index,
@@ -162,8 +168,18 @@ func (c *consulClient) WatchPrefix(prefix string, out interface{}, done chan str
 		})
 		if err != nil {
 			log.Errorf("Error getting path %s: %v", prefix, err)
-			continue
+			backoff = backoff * 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			select {
+			case <-done:
+				return
+			case <-time.After(backoff):
+				continue
+			}
 		}
+		backoff = initialBackoff
 		if index == meta.LastIndex {
 			continue
 		}

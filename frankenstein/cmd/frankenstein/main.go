@@ -15,27 +15,47 @@ package main
 
 import (
 	"flag"
+	"net/http"
+	"time"
 
 	"github.com/prometheus/common/log"
+
 	"github.com/prometheus/prometheus/frankenstein"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 func main() {
 	var (
-		listen       string
-		consulHost   string
-		consulPrefix string
+		listen        string
+		consulHost    string
+		consulPrefix  string
+		remoteTimeout time.Duration
 	)
 
 	flag.StringVar(&listen, "web.listen-address", ":9094", "HTTP server listen address.")
-	flag.StringVar(&consulHost, "consul.hostname", "consul:8500", "Hostname and port of Consul.")
+	flag.StringVar(&consulHost, "consul.hostname", "localhost:8500", "Hostname and port of Consul.")
 	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
+	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream injestors.")
 
-	_, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{
-		ConsulHost:   consulHost,
-		ConsulPrefix: consulPrefix,
+	clientFactory := func(hostname string) (storage.SampleAppender, error) {
+		storage := remote.New(&remote.Options{
+			GenericURL:     hostname,
+			StorageTimeout: remoteTimeout,
+		})
+		storage.Run()
+		return storage, nil
+	}
+
+	distributor, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{
+		ConsulHost:    consulHost,
+		ConsulPrefix:  consulPrefix,
+		ClientFactory: clientFactory,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	http.Handle("/push", frankenstein.AppenderHandler(distributor))
+	http.ListenAndServe(listen, nil)
 }

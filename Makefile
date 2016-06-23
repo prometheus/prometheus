@@ -70,5 +70,4 @@ promu:
 	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
 	$(GO) get -u github.com/prometheus/promu
 
-
 .PHONY: all style check_license format build test vet assets tarball docker promu

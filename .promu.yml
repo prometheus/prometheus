@@ -7,6 +7,8 @@ build:
           path: ./cmd/prometheus
         - name: promtool
           path: ./cmd/promtool
+        - name: frank
+          path: ./frankenstein/cmd/frankenstein
     flags: -a -tags netgo
     ldflags: |
         -X {{repoPath}}/vendor/github.com/prometheus/common/version.Version={{.Version}}

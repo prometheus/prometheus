@@ -16,6 +16,7 @@ package frankenstein
 import (
 	"sync"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage"
@@ -37,8 +38,9 @@ type Distributor struct {
 // DistributorConfig contains the configuration require to
 // create a Distributor
 type DistributorConfig struct {
-	ConsulHost   string
-	ConsulPrefix string
+	ConsulHost    string
+	ConsulPrefix  string
+	ClientFactory func(string) (storage.SampleAppender, error)
 }
 
 // Collector is the serialised state in Consul representing
@@ -55,11 +57,12 @@ func NewDistributor(cfg DistributorConfig) (*Distributor, error) {
 		return nil, err
 	}
 	d := &Distributor{
-		consul: consul,
-		ring:   NewRing(),
-		cfg:    cfg,
-		quit:   make(chan struct{}),
-		done:   make(chan struct{}),
+		consul:  consul,
+		ring:    NewRing(),
+		cfg:     cfg,
+		clients: map[string]storage.SampleAppender{},
+		quit:    make(chan struct{}),
+		done:    make(chan struct{}),
 	}
 	go d.loop()
 	return d, nil
@@ -75,29 +78,33 @@ func (d *Distributor) loop() {
 	defer close(d.done)
 	d.consul.WatchPrefix(d.cfg.ConsulPrefix, &Collector{}, d.quit, func(key string, value interface{}) bool {
 		c := *value.(*Collector)
+		log.Infof("Got update to collector: %#v", c)
 		d.ring.Update(c)
 		return true
 	})
 }
 
-func (d *Distributor) getClientFor(hostname string) storage.SampleAppender {
+func (d *Distributor) getClientFor(hostname string) (storage.SampleAppender, error) {
 	d.clientsMtx.RLock()
 	client, ok := d.clients[hostname]
 	d.clientsMtx.RUnlock()
 	if ok {
-		return client
+		return client, nil
 	}
 
 	d.clientsMtx.Lock()
 	defer d.clientsMtx.Unlock()
 	client, ok = d.clients[hostname]
 	if ok {
-		return client
+		return client, nil
 	}
 
-	client = nil // TODO, when we have a client/server for SampleAppender
+	client, err := d.cfg.ClientFactory(hostname)
+	if err != nil {
+		return nil, err
+	}
 	d.clients[hostname] = client
-	return client
+	return client, nil
 }
 
 // Append implements storage.SampleAppender
@@ -108,7 +115,10 @@ func (d *Distributor) Append(sample *model.Sample) error {
 		return err
 	}
 
-	client := d.getClientFor(collector.Hostname)
+	client, err := d.getClientFor(collector.Hostname)
+	if err != nil {
+		return err
+	}
 	return client.Append(sample)
 }
 

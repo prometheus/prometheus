@@ -59,6 +59,11 @@ func AppenderHandler(appender storage.SampleAppender) http.Handler {
 					Value:     model.SampleValue(s.GetValue()),
 					Timestamp: model.Time(s.GetTimestampMs()),
 				})
+				if err != nil {
+					log.Errorf(err.Error())
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
 			}
 		}
 

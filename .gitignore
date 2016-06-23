@@ -27,7 +27,7 @@ core
 
 *-stamp
 /prometheus
-/frankenstein/cmd/frankenstein/frankenstein
+/frank
 /promtool
 benchmark.txt
 /data
