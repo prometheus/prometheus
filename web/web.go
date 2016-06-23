@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/frankenstein"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
@@ -163,6 +164,8 @@ func New(
 		router.Get("/federate", instrh("federate", httputil.CompressionHandler{
 			Handler: http.HandlerFunc(h.federation),
 		}))
+
+		router.Post("/push", instrh("push", frankenstein.AppenderHandler(h.storage)))
 
 		h.apiLegacy.Register(router.WithPrefix("/api"))
 		h.apiV1.Register(router.WithPrefix("/api/v1"))

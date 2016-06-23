@@ -118,7 +118,7 @@ func webUiTemplates_baseHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/_base.html", size: 2745, mode: os.FileMode(436), modTime: time.Unix(1466673605, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/_base.html", size: 2745, mode: os.FileMode(436), modTime: time.Unix(1466676309, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
