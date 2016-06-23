@@ -728,7 +728,7 @@ func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	var result vector
 	// The set of signatures for the right-hand side vector.
@@ -751,7 +751,7 @@ func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector 
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	var result vector
 	leftSigs := map[uint64]struct{}{}
@@ -773,7 +773,7 @@ func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vec
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	rightSigs := map[uint64]struct{}{}
 	for _, rs := range rhs {
@@ -796,7 +796,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 	}
 	var (
 		result = vector{}
-		sigf   = signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+		sigf   = signatureFunc(matching.On, matching.MatchingLabels...)
 	)
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -883,8 +883,8 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 
 // signatureFunc returns a function that calculates the signature for a metric
 // based on the provided labels. If ignoring, then the given labels are ignored instead.
-func signatureFunc(ignoring bool, labels ...model.LabelName) func(m metric.Metric) uint64 {
-	if len(labels) == 0 || ignoring {
+func signatureFunc(on bool, labels ...model.LabelName) func(m metric.Metric) uint64 {
+	if len(labels) == 0 || !on {
 		return func(m metric.Metric) uint64 {
 			tmp := m.Metric.Clone()
 			for _, l := range labels {
@@ -908,7 +908,7 @@ func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching)
 	if len(matching.MatchingLabels)+len(matching.Include) == 0 {
 		return lhs
 	}
-	if matching.Ignoring {
+	if !matching.On {
 		if matching.Card == CardOneToOne {
 			for _, l := range matching.MatchingLabels {
 				lhs.Del(l)

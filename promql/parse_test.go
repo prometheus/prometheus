@@ -471,12 +471,14 @@ var testExpr = []struct {
 				VectorMatching: &VectorMatching{
 					Card:           CardOneToMany,
 					MatchingLabels: model.LabelNames{"baz", "buz"},
+					On:             true,
 					Include:        model.LabelNames{"test"},
 				},
 			},
 			VectorMatching: &VectorMatching{
 				Card:           CardOneToOne,
 				MatchingLabels: model.LabelNames{"foo"},
+				On:             true,
 			},
 		},
 	}, {
@@ -498,6 +500,7 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{
 				Card:           CardOneToOne,
 				MatchingLabels: model.LabelNames{"test", "blub"},
+				On:             true,
 			},
 		},
 	}, {
@@ -519,6 +522,7 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{
 				Card:           CardManyToOne,
 				MatchingLabels: model.LabelNames{"test", "blub"},
+				On:             true,
 			},
 		},
 	}, {
@@ -540,6 +544,7 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{
 				Card:           CardManyToMany,
 				MatchingLabels: model.LabelNames{"test", "blub"},
+				On:             true,
 			},
 		},
 	}, {
@@ -561,7 +566,6 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{
 				Card:           CardManyToMany,
 				MatchingLabels: model.LabelNames{"test", "blub"},
-				Ignoring:       true,
 			},
 		},
 	}, {
@@ -583,6 +587,7 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{
 				Card:           CardManyToMany,
 				MatchingLabels: model.LabelNames{"bar"},
+				On:             true,
 			},
 		},
 	}, {
@@ -604,6 +609,7 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{
 				Card:           CardManyToOne,
 				MatchingLabels: model.LabelNames{"test", "blub"},
+				On:             true,
 				Include:        model.LabelNames{"bar"},
 			},
 		},
@@ -627,7 +633,6 @@ var testExpr = []struct {
 				Card:           CardManyToOne,
 				MatchingLabels: model.LabelNames{"test", "blub"},
 				Include:        model.LabelNames{"blub"},
-				Ignoring:       true,
 			},
 		},
 	}, {
@@ -650,7 +655,6 @@ var testExpr = []struct {
 				Card:           CardManyToOne,
 				MatchingLabels: model.LabelNames{"test", "blub"},
 				Include:        model.LabelNames{"bar"},
-				Ignoring:       true,
 			},
 		},
 	}, {
@@ -673,6 +677,7 @@ var testExpr = []struct {
 				Card:           CardOneToMany,
 				MatchingLabels: model.LabelNames{"test", "blub"},
 				Include:        model.LabelNames{"bar", "foo"},
+				On:             true,
 			},
 		},
 	}, {
@@ -695,7 +700,6 @@ var testExpr = []struct {
 				Card:           CardOneToMany,
 				MatchingLabels: model.LabelNames{"test", "blub"},
 				Include:        model.LabelNames{"bar", "foo"},
-				Ignoring:       true,
 			},
 		},
 	}, {
