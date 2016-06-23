@@ -73,30 +73,42 @@ func Main() int {
 	log.Infoln("Starting prometheus", version.Info())
 	log.Infoln("Build context", version.BuildContext())
 
+	var sampleAppender storage.Fanout
 	var reloadables []Reloadable
 
-	var (
-		memStorage     = local.NewMemorySeriesStorage(&cfg.storage)
-		remoteStorage  = remote.New(&cfg.remote)
-		sampleAppender = storage.Fanout{memStorage}
-	)
+	var remoteStorage = remote.New(&cfg.remote)
 	if remoteStorage != nil {
 		sampleAppender = append(sampleAppender, remoteStorage)
 		reloadables = append(reloadables, remoteStorage)
 	}
 
-	var (
-		notifier      = notifier.New(&cfg.notifier)
-		targetManager = retrieval.NewTargetManager(sampleAppender)
-		queryEngine   = promql.NewEngine(memStorage, &cfg.queryEngine)
-	)
+	var memStorage local.Storage
+	if !cfg.retrievalOnly {
+		memStorage = local.NewMemorySeriesStorage(&cfg.storage)
+		sampleAppender = append(sampleAppender, memStorage)
+	}
 
-	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		SampleAppender: sampleAppender,
-		Notifier:       notifier,
-		QueryEngine:    queryEngine,
-		ExternalURL:    cfg.web.ExternalURL,
-	})
+	var not *notifier.Notifier
+	var queryEngine *promql.Engine
+	if !cfg.retrievalOnly {
+		not = notifier.New(&cfg.notifier)
+		queryEngine = promql.NewEngine(memStorage, &cfg.queryEngine)
+		reloadables = append(reloadables, not)
+	}
+
+	targetManager := retrieval.NewTargetManager(sampleAppender)
+	reloadables = append(reloadables, targetManager)
+
+	var ruleManager *rules.Manager
+	if !cfg.retrievalOnly {
+		ruleManager = rules.NewManager(&rules.ManagerOptions{
+			SampleAppender: sampleAppender,
+			Notifier:       not,
+			QueryEngine:    queryEngine,
+			ExternalURL:    cfg.web.ExternalURL,
+		})
+		reloadables = append(reloadables, ruleManager)
+	}
 
 	flags := map[string]string{}
 	cfg.fs.VisitAll(func(f *flag.Flag) {
@@ -113,8 +125,7 @@ func Main() int {
 	}
 
 	webHandler := web.New(memStorage, queryEngine, targetManager, ruleManager, version, flags, &cfg.web)
-
-	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
+	reloadables = append(reloadables, webHandler)
 
 	if !reloadConfig(cfg.configFile, reloadables...) {
 		return 1
@@ -139,15 +150,17 @@ func Main() int {
 
 	// Start all components. The order is NOT arbitrary.
 
-	if err := memStorage.Start(); err != nil {
-		log.Errorln("Error opening memory series storage:", err)
-		return 1
-	}
-	defer func() {
-		if err := memStorage.Stop(); err != nil {
-			log.Errorln("Error stopping storage:", err)
+	if !cfg.retrievalOnly {
+		if err := memStorage.Start(); err != nil {
+			log.Errorln("Error opening memory series storage:", err)
+			return 1
 		}
-	}()
+		defer func() {
+			if err := memStorage.Stop(); err != nil {
+				log.Errorln("Error stopping storage:", err)
+			}
+		}()
+	}
 
 	if remoteStorage != nil {
 		prometheus.MustRegister(remoteStorage)
@@ -156,25 +169,31 @@ func Main() int {
 		defer remoteStorage.Stop()
 	}
 	// The storage has to be fully initialized before registering.
-	prometheus.MustRegister(memStorage)
-	prometheus.MustRegister(notifier)
+	if !cfg.retrievalOnly {
+		prometheus.MustRegister(memStorage)
+		prometheus.MustRegister(not)
+	}
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
 
-	// The notifieris a dependency of the rule manager. It has to be
-	// started before and torn down afterwards.
-	go notifier.Run()
-	defer notifier.Stop()
+	if !cfg.retrievalOnly {
+		// The notifieris a dependency of the rule manager. It has to be
+		// started before and torn down afterwards.
+		go not.Run()
+		defer not.Stop()
 
-	go ruleManager.Run()
-	defer ruleManager.Stop()
+		go ruleManager.Run()
+		defer ruleManager.Stop()
+	}
 
 	go targetManager.Run()
 	defer targetManager.Stop()
 
-	// Shutting down the query engine before the rule manager will cause pending queries
-	// to be canceled and ensures a quick shutdown of the rule manager.
-	defer queryEngine.Stop()
+	if !cfg.retrievalOnly {
+		// Shutting down the query engine before the rule manager will cause pending queries
+		// to be canceled and ensures a quick shutdown of the rule manager.
+		defer queryEngine.Stop()
+	}
 
 	go webHandler.Run()
 

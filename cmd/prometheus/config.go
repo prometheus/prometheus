@@ -43,6 +43,8 @@ var cfg = struct {
 	printVersion bool
 	configFile   string
 
+	retrievalOnly bool
+
 	storage     local.MemorySeriesStorageOptions
 	notifier    notifier.Options
 	queryEngine promql.EngineOptions
@@ -72,6 +74,12 @@ func init() {
 	cfg.fs.StringVar(
 		&cfg.configFile, "config.file", "prometheus.yml",
 		"Prometheus configuration file name.",
+	)
+
+	// Retrieval-only mode.
+	cfg.fs.BoolVar(
+		&cfg.retrievalOnly, "retrieval-only", false,
+		"Whether to run in retrieval-only mode.",
 	)
 
 	// Web.
