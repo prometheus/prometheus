@@ -262,8 +262,8 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *memorySeriesStorage 
 			prometheus.SummaryOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "maintain_series_duration_milliseconds",
-				Help:      "The duration (in milliseconds) it took to perform maintenance on a series.",
+				Name:      "maintain_series_duration_seconds",
+				Help:      "The duration in seconds it took to perform maintenance on a series.",
 			},
 			[]string{seriesLocationLabel},
 		),
@@ -1119,7 +1119,7 @@ func (s *memorySeriesStorage) maintainMemorySeries(
 ) (becameDirty bool) {
 	defer func(begin time.Time) {
 		s.maintainSeriesDuration.WithLabelValues(maintainInMemory).Observe(
-			float64(time.Since(begin)) / float64(time.Millisecond),
+			float64(time.Since(begin)) / float64(time.Second),
 		)
 	}(time.Now())
 
@@ -1272,7 +1272,7 @@ func (s *memorySeriesStorage) writeMemorySeries(
 func (s *memorySeriesStorage) maintainArchivedSeries(fp model.Fingerprint, beforeTime model.Time) {
 	defer func(begin time.Time) {
 		s.maintainSeriesDuration.WithLabelValues(maintainArchived).Observe(
-			float64(time.Since(begin)) / float64(time.Millisecond),
+			float64(time.Since(begin)) / float64(time.Second),
 		)
 	}(time.Now())
 
