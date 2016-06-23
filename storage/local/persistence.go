@@ -229,15 +229,15 @@ func newPersistence(
 			prometheus.SummaryOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "indexing_batch_duration_milliseconds",
-				Help:      "Quantiles for batch indexing duration in milliseconds.",
+				Name:      "indexing_batch_duration_seconds",
+				Help:      "Quantiles for batch indexing duration in seconds.",
 			},
 		),
 		checkpointDuration: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "checkpoint_duration_milliseconds",
-			Help:      "The duration (in milliseconds) it took to checkpoint in-memory metrics and head chunks.",
+			Name:      "checkpoint_duration_seconds",
+			Help:      "The duration in seconds it took to checkpoint in-memory metrics and head chunks.",
 		}),
 		dirtyCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -559,7 +559,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 		}
 		err = os.Rename(p.headsTempFileName(), p.headsFileName())
 		duration := time.Since(begin)
-		p.checkpointDuration.Set(float64(duration) / float64(time.Millisecond))
+		p.checkpointDuration.Set(float64(duration) / float64(time.Second))
 		log.Infof("Done checkpointing in-memory metrics and chunks in %v.", duration)
 	}()
 
@@ -1239,7 +1239,7 @@ func (p *persistence) processIndexingQueue() {
 		p.indexingBatchSizes.Observe(float64(batchSize))
 		defer func(begin time.Time) {
 			p.indexingBatchDuration.Observe(
-				float64(time.Since(begin)) / float64(time.Millisecond),
+				float64(time.Since(begin)) / float64(time.Second),
 			)
 		}(time.Now())
 
