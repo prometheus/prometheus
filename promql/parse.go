@@ -671,14 +671,16 @@ func (p *parser) labels() model.LabelNames {
 	p.expect(itemLeftParen, ctx)
 
 	labels := model.LabelNames{}
-	for {
-		id := p.expect(itemIdentifier, ctx)
-		labels = append(labels, model.LabelName(id.val))
+	if p.peek().typ != itemRightParen {
+		for {
+			id := p.expect(itemIdentifier, ctx)
+			labels = append(labels, model.LabelName(id.val))
 
-		if p.peek().typ != itemComma {
-			break
+			if p.peek().typ != itemComma {
+				break
+			}
+			p.next()
 		}
-		p.next()
 	}
 	p.expect(itemRightParen, ctx)
 

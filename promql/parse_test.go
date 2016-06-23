@@ -548,6 +548,28 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: "foo and on() bar",
+		expected: &BinaryExpr{
+			Op: itemLAND,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{},
+				On:             true,
+			},
+		},
+	}, {
 		input: "foo and ignoring(test,blub) bar",
 		expected: &BinaryExpr{
 			Op: itemLAND,
@@ -566,6 +588,27 @@ var testExpr = []struct {
 			VectorMatching: &VectorMatching{
 				Card:           CardManyToMany,
 				MatchingLabels: model.LabelNames{"test", "blub"},
+			},
+		},
+	}, {
+		input: "foo and ignoring() bar",
+		expected: &BinaryExpr{
+			Op: itemLAND,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{},
 			},
 		},
 	}, {
@@ -1147,6 +1190,18 @@ var testExpr = []struct {
 			Grouping: model.LabelNames{"foo"},
 		},
 	}, {
+		input: "sum by ()(some_metric)",
+		expected: &AggregateExpr{
+			Op: itemSum,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+				},
+			},
+			Grouping: model.LabelNames{},
+		},
+	}, {
 		input:  `sum some_metric by (test)`,
 		fail:   true,
 		errMsg: "unexpected identifier \"some_metric\" in aggregation, expected \"(\"",
@@ -1154,10 +1209,6 @@ var testExpr = []struct {
 		input:  `sum (some_metric) by test`,
 		fail:   true,
 		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
-	}, {
-		input:  `sum (some_metric) by ()`,
-		fail:   true,
-		errMsg: "unexpected \")\" in grouping opts, expected identifier",
 	}, {
 		input:  `sum (some_metric) by test`,
 		fail:   true,
