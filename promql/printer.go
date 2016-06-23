@@ -160,10 +160,10 @@ func (node *BinaryExpr) String() string {
 	matching := ""
 	vm := node.VectorMatching
 	if vm != nil && len(vm.MatchingLabels) > 0 {
-		if vm.Ignoring {
-			matching = fmt.Sprintf(" IGNORING(%s)", vm.MatchingLabels)
-		} else {
+		if vm.On {
 			matching = fmt.Sprintf(" ON(%s)", vm.MatchingLabels)
+		} else {
+			matching = fmt.Sprintf(" IGNORING(%s)", vm.MatchingLabels)
 		}
 		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
 			matching += " GROUP_"
