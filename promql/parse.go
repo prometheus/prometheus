@@ -500,17 +500,20 @@ func (p *parser) expr() Expr {
 }
 
 func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMatching, returnBool bool) *BinaryExpr {
-	if lhsBE, ok := lhs.(*BinaryExpr); ok && lhsBE.Op.precedence() < op.precedence() {
-		balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
-		if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == model.ValScalar && lhsBE.LHS.Type() == model.ValScalar {
-			p.errorf("comparisons between scalars must use BOOL modifier")
-		}
-		return &BinaryExpr{
-			Op:             lhsBE.Op,
-			LHS:            lhsBE.LHS,
-			RHS:            balanced,
-			VectorMatching: lhsBE.VectorMatching,
-			ReturnBool:     lhsBE.ReturnBool,
+	if lhsBE, ok := lhs.(*BinaryExpr); ok {
+		precd := lhsBE.Op.precedence() - op.precedence()
+		if (precd < 0) || (precd == 0 && op.isRightAssociative()) {
+			balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
+			if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == model.ValScalar && lhsBE.LHS.Type() == model.ValScalar {
+				p.errorf("comparisons between scalars must use BOOL modifier")
+			}
+			return &BinaryExpr{
+				Op:             lhsBE.Op,
+				LHS:            lhsBE.LHS,
+				RHS:            balanced,
+				VectorMatching: lhsBE.VectorMatching,
+				ReturnBool:     lhsBE.ReturnBool,
+			}
 		}
 	}
 	if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && lhs.Type() == model.ValScalar {

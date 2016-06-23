@@ -100,9 +100,21 @@ func (i itemType) precedence() int {
 		return 4
 	case itemMUL, itemDIV, itemMOD:
 		return 5
+	case itemPOW:
+		return 6
 	default:
 		return LowestPrec
 	}
+}
+
+func (i itemType) isRightAssociative() bool {
+	switch i {
+	case itemPOW:
+		return true
+	default:
+		return false
+	}
+
 }
 
 type itemType int
@@ -146,6 +158,7 @@ const (
 	itemGTR
 	itemEQLRegex
 	itemNEQRegex
+	itemPOW
 	operatorsEnd
 
 	aggregatorsStart
@@ -248,6 +261,7 @@ var itemTypeStr = map[itemType]string{
 	itemGTR:      ">",
 	itemEQLRegex: "=~",
 	itemNEQRegex: "!~",
+	itemPOW:      "^",
 }
 
 func init() {
@@ -471,6 +485,8 @@ func lexStatements(l *lexer) stateFn {
 		l.emit(itemADD)
 	case r == '-':
 		l.emit(itemSUB)
+	case r == '^':
+		l.emit(itemPOW)
 	case r == '=':
 		if t := l.peek(); t == '=' {
 			l.next()
