@@ -46,12 +46,16 @@ func AppenderHandler(appender storage.SampleAppender) http.Handler {
 
 		for _, ts := range req.Timeseries {
 			metric := model.Metric{}
+			if ts.Name != nil {
+				metric[model.MetricNameLabel] = model.LabelValue(ts.GetName())
+			}
 			for _, l := range ts.Labels {
 				metric[model.LabelName(l.GetName())] = model.LabelValue(l.GetValue())
 			}
 
 			for _, s := range ts.Samples {
-				appender.Append(&model.Sample{
+				err := appender.Append(&model.Sample{
+					Metric:    metric,
 					Value:     model.SampleValue(s.GetValue()),
 					Timestamp: model.Time(s.GetTimestampMs()),
 				})
