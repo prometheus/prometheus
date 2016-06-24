@@ -329,3 +329,21 @@ eval instant at 5m node_cpu > on(job, instance) group_left(target) (threshold or
   node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
   node_cpu{instance="def",job="node",mode="idle"} 8
   node_cpu{instance="def",job="node",mode="user"} 2
+
+clear
+
+load 5m
+  random{foo="bar"} 2
+  metricA{baz="meh"} 3
+  metricB{baz="meh"} 4
+
+# On with no labels, for metrics with no common labels.
+eval instant at 5m random + on() metricA
+  {} 5
+
+# Ignoring with no labels is the same as no ignoring.
+eval instant at 5m metricA + ignoring() metricB
+  {baz="meh"} 7
+
+eval instant at 5m metricA + metricB
+  {baz="meh"} 7
