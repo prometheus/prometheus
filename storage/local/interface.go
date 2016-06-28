@@ -60,11 +60,11 @@ type Querier interface {
 	NewPreloader() Preloader
 	// MetricsForLabelMatchers returns the metrics from storage that satisfy
 	// the given label matchers. At least one label matcher must be
-	// specified that does not match the empty string. The times from and
-	// through are hints for the storage to optimize the search. The storage
-	// MAY exclude metrics that have no samples in the specified interval
-	// from the returned map. In doubt, specify model.Earliest for from and
-	// model.Latest for through.
+	// specified that does not match the empty string, otherwise an empty
+	// map is returned. The times from and through are hints for the storage
+	// to optimize the search. The storage MAY exclude metrics that have no
+	// samples in the specified interval from the returned map. In doubt,
+	// specify model.Earliest for from and model.Latest for through.
 	MetricsForLabelMatchers(from, through model.Time, matchers ...*metric.LabelMatcher) map[model.Fingerprint]metric.Metric
 	// LastSampleForFingerprint returns the last sample that has been
 	// ingested for the provided fingerprint. If this instance of the
