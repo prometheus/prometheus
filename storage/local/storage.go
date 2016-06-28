@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -59,6 +60,19 @@ const (
 	// other words: if there are no chunks to persist, it doesn't help chunk
 	// eviction if we speed up persistence.)
 	factorMinChunksToPersist = 0.2
+
+	// Threshold for when to stop using LabelMatchers to retrieve and
+	// intersect fingerprints. The rationale here is that looking up more
+	// fingerprints has diminishing returns if we already have narrowed down
+	// the possible fingerprints significantly. It is then easier to simply
+	// lookup the metrics for all the fingerprints and directly compare them
+	// to the matchers. Since a fingerprint lookup for an Equal matcher is
+	// much less expensive, there is a lower threshold for that case.
+	// TODO(beorn7): These numbers need to be tweaked, probably a bit lower.
+	// 5x higher numbers have resulted in slightly worse performance in a
+	// real-life production scenario.
+	fpEqualMatchThreshold = 1000
+	fpOtherMatchThreshold = 10000
 )
 
 var (
@@ -445,27 +459,29 @@ func (s *MemorySeriesStorage) NewPreloader() Preloader {
 	}
 }
 
-// fingerprintsForLabelPairs returns the set of fingerprints that have the given labels.
-// This does not work with empty label values.
-func (s *MemorySeriesStorage) fingerprintsForLabelPairs(pairs ...model.LabelPair) map[model.Fingerprint]struct{} {
-	var result map[model.Fingerprint]struct{}
-	for _, pair := range pairs {
-		intersection := map[model.Fingerprint]struct{}{}
-		fps := s.persistence.fingerprintsForLabelPair(pair)
-		if len(fps) == 0 {
-			return nil
-		}
-		for _, fp := range fps {
-			if _, ok := result[fp]; ok || result == nil {
-				intersection[fp] = struct{}{}
-			}
-		}
-		if len(intersection) == 0 {
-			return nil
-		}
-		result = intersection
+// fingerprintsForLabelPair returns the fingerprints with the given
+// LabelPair. If intersectWith is non-nil, the method will only return
+// fingerprints that are also contained in intersectsWith. If mergeWith is
+// non-nil, the found fingerprints are added to the given map. The returned map
+// is the same as the given one.
+func (s *MemorySeriesStorage) fingerprintsForLabelPair(
+	pair model.LabelPair,
+	mergeWith map[model.Fingerprint]struct{},
+	intersectWith map[model.Fingerprint]struct{},
+) map[model.Fingerprint]struct{} {
+	if mergeWith == nil {
+		mergeWith = map[model.Fingerprint]struct{}{}
 	}
-	return result
+	for _, fp := range s.persistence.fingerprintsForLabelPair(pair) {
+		if intersectWith == nil {
+			mergeWith[fp] = struct{}{}
+			continue
+		}
+		if _, ok := intersectWith[fp]; ok {
+			mergeWith[fp] = struct{}{}
+		}
+	}
+	return mergeWith
 }
 
 // MetricsForLabelMatchers implements Storage.
@@ -473,68 +489,75 @@ func (s *MemorySeriesStorage) MetricsForLabelMatchers(
 	from, through model.Time,
 	matchers ...*metric.LabelMatcher,
 ) map[model.Fingerprint]metric.Metric {
+	sort.Sort(metric.LabelMatchers(matchers))
+
+	if len(matchers) == 0 || matchers[0].MatchesEmptyString() {
+		// No matchers at all or even the best matcher matches the empty string.
+		return nil
+	}
+
 	var (
-		equals  []model.LabelPair
-		filters []*metric.LabelMatcher
+		matcherIdx   int
+		remainingFPs map[model.Fingerprint]struct{}
 	)
-	for _, lm := range matchers {
-		if lm.Type == metric.Equal && lm.Value != "" {
-			equals = append(equals, model.LabelPair{
-				Name:  lm.Name,
-				Value: lm.Value,
-			})
-		} else {
-			filters = append(filters, lm)
+
+	// Equal matchers.
+	for ; matcherIdx < len(matchers) && (remainingFPs == nil || len(remainingFPs) > fpEqualMatchThreshold); matcherIdx++ {
+		m := matchers[matcherIdx]
+		if m.Type != metric.Equal || m.MatchesEmptyString() {
+			break
+		}
+		remainingFPs = s.fingerprintsForLabelPair(
+			model.LabelPair{
+				Name:  m.Name,
+				Value: m.Value,
+			},
+			nil,
+			remainingFPs,
+		)
+		if len(remainingFPs) == 0 {
+			return nil
 		}
 	}
 
-	var resFPs map[model.Fingerprint]struct{}
-	if len(equals) > 0 {
-		resFPs = s.fingerprintsForLabelPairs(equals...)
-	} else {
-		// If we cannot make a preselection based on equality matchers, expanding the other matchers to labels
-		// and intersecting their fingerprints is still likely to be the best choice.
-		var remaining metric.LabelMatchers
-		for _, matcher := range filters {
-			// Equal matches are all empty values.
-			if matcher.Match("") {
-				remaining = append(remaining, matcher)
-				continue
-			}
-			intersection := map[model.Fingerprint]struct{}{}
-
-			matches := matcher.Filter(s.LabelValuesForLabelName(matcher.Name))
-			if len(matches) == 0 {
-				return nil
-			}
-			for _, v := range matches {
-				fps := s.fingerprintsForLabelPairs(model.LabelPair{
-					Name:  matcher.Name,
-					Value: v,
-				})
-				for fp := range fps {
-					if _, ok := resFPs[fp]; ok || resFPs == nil {
-						intersection[fp] = struct{}{}
-					}
-				}
-			}
-			resFPs = intersection
+	// Other matchers.
+	for ; matcherIdx < len(matchers) && (remainingFPs == nil || len(remainingFPs) > fpOtherMatchThreshold); matcherIdx++ {
+		m := matchers[matcherIdx]
+		if m.MatchesEmptyString() {
+			break
 		}
-		// The intersected matchers no longer need to be compared against the actual metrics.
-		filters = remaining
+		lvs := m.Filter(s.LabelValuesForLabelName(m.Name))
+		if len(lvs) == 0 {
+			return nil
+		}
+		fps := map[model.Fingerprint]struct{}{}
+		for _, lv := range lvs {
+			s.fingerprintsForLabelPair(
+				model.LabelPair{
+					Name:  m.Name,
+					Value: lv,
+				},
+				fps,
+				remainingFPs,
+			)
+		}
+		remainingFPs = fps
+		if len(remainingFPs) == 0 {
+			return nil
+		}
 	}
 
 	result := map[model.Fingerprint]metric.Metric{}
-	for fp := range resFPs {
+	for fp := range remainingFPs {
 		s.fpLocker.Lock(fp)
 		if met, _, ok := s.metricForRange(fp, from, through); ok {
 			result[fp] = metric.Metric{Metric: met}
 		}
 		s.fpLocker.Unlock(fp)
 	}
-	for _, matcher := range filters {
+	for _, m := range matchers[matcherIdx:] {
 		for fp, met := range result {
-			if !matcher.Match(met.Metric[matcher.Name]) {
+			if !m.Match(met.Metric[m.Name]) {
 				delete(result, fp)
 			}
 		}
