@@ -404,6 +404,9 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 	for i, c := range cfg.EC2SDConfigs {
 		app("ec2", i, discovery.NewEC2Discovery(c))
 	}
+	for i, c := range cfg.GCESDConfigs {
+		app("gce", i, discovery.NewGCEDiscovery(c))
+	}
 	for i, c := range cfg.AzureSDConfigs {
 		app("azure", i, discovery.NewAzureDiscovery(c))
 	}

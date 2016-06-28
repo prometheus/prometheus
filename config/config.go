@@ -134,6 +134,12 @@ var (
 		RetryInterval:  model.Duration(1 * time.Second),
 	}
 
+	// DefaultGCESDConfig is the default EC2 SD configuration.
+	DefaultGCESDConfig = GCESDConfig{
+		Port:            80,
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
 	// DefaultEC2SDConfig is the default EC2 SD configuration.
 	DefaultEC2SDConfig = EC2SDConfig{
 		Port:            80,
@@ -426,6 +432,8 @@ type ScrapeConfig struct {
 	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
+	// List of GCE service discovery configurations.
+	GCESDConfigs []*GCESDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
@@ -825,6 +833,47 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
 
+	return nil
+}
+
+// GCESDConfig is the configuration for GCE based service discovery.
+type GCESDConfig struct {
+	// Project: The Google Cloud Project ID
+	Project string `yaml:"project"`
+
+	// Zone: The zone of the scrape targets.
+	// If you need to configure multiple zones use multiple gce_sd_configs
+	Zone string `yaml:"zone"`
+
+	// Filter: Can be used optionally to filter the instance list by other criteria.
+	// Syntax of this filter string is described here in the filter query parameter section:
+	// https://cloud.google.com/compute/docs/reference/latest/instances/list
+	Filter string `yaml:"filter,omitempty"`
+
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Port            int            `yaml:"port"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultGCESDConfig
+	type plain GCESDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "ec2_sd_config"); err != nil {
+		return err
+	}
+	if c.Project == "" {
+		return fmt.Errorf("GCE SD configuration requires a project")
+	}
+	if c.Zone == "" {
+		return fmt.Errorf("GCE SD configuration requires a zone")
+	}
 	return nil
 }
 
