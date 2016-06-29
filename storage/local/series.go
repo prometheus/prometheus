@@ -339,7 +339,7 @@ func (s *memorySeries) dropChunks(t model.Time) error {
 
 // preloadChunks is an internal helper method.
 func (s *memorySeries) preloadChunks(
-	indexes []int, fp model.Fingerprint, mss *memorySeriesStorage,
+	indexes []int, fp model.Fingerprint, mss *MemorySeriesStorage,
 ) ([]*chunkDesc, SeriesIterator, error) {
 	loadIndexes := []int{}
 	pinnedChunkDescs := make([]*chunkDesc, 0, len(indexes))
@@ -412,7 +412,7 @@ func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc, quarantine fun
 func (s *memorySeries) preloadChunksForInstant(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	mss *memorySeriesStorage,
+	mss *MemorySeriesStorage,
 ) ([]*chunkDesc, SeriesIterator, error) {
 	// If we have a lastSamplePair in the series, and thas last samplePair
 	// is in the interval, just take it in a singleSampleSeriesIterator. No
@@ -437,7 +437,7 @@ func (s *memorySeries) preloadChunksForInstant(
 func (s *memorySeries) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	mss *memorySeriesStorage,
+	mss *MemorySeriesStorage,
 ) ([]*chunkDesc, SeriesIterator, error) {
 	firstChunkDescTime := model.Latest
 	if len(s.chunkDescs) > 0 {
