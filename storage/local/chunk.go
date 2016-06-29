@@ -97,7 +97,7 @@ type chunkDesc struct {
 
 	// evictListElement is nil if the chunk is not in the evict list.
 	// evictListElement is _not_ protected by the chunkDesc mutex.
-	// It must only be touched by the evict list handler in memorySeriesStorage.
+	// It must only be touched by the evict list handler in MemorySeriesStorage.
 	evictListElement *list.Element
 }
 

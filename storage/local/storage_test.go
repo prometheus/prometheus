@@ -1678,7 +1678,7 @@ func createRandomSamples(metricName string, minLen int) model.Samples {
 	return result
 }
 
-func verifyStorageRandom(t testing.TB, s *memorySeriesStorage, samples model.Samples) bool {
+func verifyStorageRandom(t testing.TB, s *MemorySeriesStorage, samples model.Samples) bool {
 	s.WaitForIndexing()
 	result := true
 	for _, i := range rand.Perm(len(samples)) {
@@ -1709,7 +1709,7 @@ func verifyStorageRandom(t testing.TB, s *memorySeriesStorage, samples model.Sam
 	return result
 }
 
-func verifyStorageSequential(t testing.TB, s *memorySeriesStorage, samples model.Samples) bool {
+func verifyStorageSequential(t testing.TB, s *MemorySeriesStorage, samples model.Samples) bool {
 	s.WaitForIndexing()
 	var (
 		result = true
