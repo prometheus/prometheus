@@ -792,6 +792,7 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
 	APIServers      []URL          `yaml:"api_servers"`
+	Role            string         `yaml:"role"`
 	InCluster       bool           `yaml:"in_cluster,omitempty"`
 	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
 	BearerToken     string         `yaml:"bearer_token,omitempty"`
@@ -802,6 +803,29 @@ type KubernetesSDConfig struct {
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
+}
+
+type KubernetesRole string
+
+const (
+	KubernetesRoleNode      = "node"
+	KubernetesRolePod       = "pod"
+	KubernetesRoleContainer = "container"
+	KubernetesRoleService   = "service"
+	KubernetesRoleEndpoint  = "endpoint"
+	KubernetesRoleAPIServer = "apiserver"
+)
+
+func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	if err := unmarshal((*string)(c)); err != nil {
+		return err
+	}
+	switch *c {
+	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleContainer, KubernetesRoleService, KubernetesRoleEndpoint, KubernetesRoleAPIServer:
+		return nil
+	default:
+		return fmt.Errorf("Unknown Kubernetes SD role %q", c)
+	}
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -815,6 +839,9 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err := checkOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
 		return err
 	}
+	if c.Role == "" {
+		return fmt.Errorf("role missing (one of: container, pod, service, endpoint, node, apiserver)")
+	}
 	if len(c.APIServers) == 0 {
 		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes API server")
 	}
@@ -824,7 +851,6 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
 		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
-
 	return nil
 }
 
