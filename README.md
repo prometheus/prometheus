@@ -40,7 +40,11 @@ is the recommended way of installing Prometheus.
 See the [Installing](https://prometheus.io/docs/introduction/install/) 
 chapter in the documentation for all the details.
 
-Debian and RPM packages are being worked on.
+Debian packages [are available](https://packages.debian.org/sid/net/prometheus).
+
+### Container images
+
+Container images are available on [Quay.io](https://quay.io/organization/prometheus).
 
 ### Building from source
 
