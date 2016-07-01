@@ -182,6 +182,50 @@ func checkRules(t cli.Term, filename string) (int, error) {
 	return len(rules), nil
 }
 
+// FmtRulesCmd formats rule files.
+func FmtRulesCmd(t cli.Term, args ...string) int {
+	if len(args) == 0 {
+		t.Infof("usage: promtool fmt <files>")
+		return 2
+	}
+	failed := false
+
+	for _, arg := range args {
+		if res, err := format(t, arg); err != nil {
+			t.Errorf("  FAILED: %s", err)
+			failed = true
+		} else {
+			t.Infof(res)
+		}
+		t.Infof("")
+	}
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+func format(t cli.Term, filename string) (string, error) {
+	if stat, err := os.Stat(filename); err != nil {
+		return "", fmt.Errorf("cannot get file info")
+	} else if stat.IsDir() {
+		return "", fmt.Errorf("is a directory")
+	}
+
+	src, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return "", err
+	}
+
+	rules, err := promql.ParseStmts(string(src))
+	if err != nil {
+		return "", err
+	}
+
+	res := rules.String()
+	return res, nil
+}
+
 // VersionCmd prints the binaries version information.
 func VersionCmd(t cli.Term, _ ...string) int {
 	fmt.Fprintln(os.Stdout, version.Print("promtool"))
@@ -199,6 +243,11 @@ func main() {
 	app.Register("check-rules", &cli.Command{
 		Desc: "validate rule files for correctness",
 		Run:  CheckRulesCmd,
+	})
+
+	app.Register("fmt", &cli.Command{
+		Desc: "format rules files",
+		Run:  FmtRulesCmd,
 	})
 
 	app.Register("version", &cli.Command{
