@@ -408,7 +408,9 @@ func (kd *Discovery) watchNodes(events chan interface{}, done <-chan struct{}, r
 		}
 
 		// Reset the known nodes.
+		kd.nodesMu.Lock()
 		kd.nodes = map[string]*Node{}
+		kd.nodesMu.Unlock()
 
 		for _, node := range nodes {
 			events <- &nodeEvent{Added, node}
@@ -459,7 +461,9 @@ func (kd *Discovery) startServiceWatch(events chan<- interface{}, done <-chan st
 		existingServices := kd.services
 
 		// Reset the known services.
+		kd.servicesMu.Lock()
 		kd.services = map[string]map[string]*Service{}
+		kd.servicesMu.Unlock()
 
 		services, resourceVersion, err := kd.getServices()
 		if err != nil {
