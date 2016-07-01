@@ -137,6 +137,7 @@ var (
 	// DefaultGCESDConfig is the default EC2 SD configuration.
 	DefaultGCESDConfig = GCESDConfig{
 		Port:            80,
+		TagSeparator:    ",",
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
 
@@ -852,6 +853,7 @@ type GCESDConfig struct {
 
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
+	TagSeparator    string         `yaml:"tag_separator,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

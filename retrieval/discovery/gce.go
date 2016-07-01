@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"google.golang.org/api/compute/v1"
@@ -39,29 +40,32 @@ const (
 	gceLabelPublicIP     = gceLabel + "public_ip"
 	gceLabelPrivateIP    = gceLabel + "private_ip"
 	gceLabelInstanceName = gceLabel + "instance_name"
+	gceLabelTags         = gceLabel + "tags"
 )
 
 // GCEDiscovery periodically performs GCE-SD requests. It implements
 // the TargetProvider interface.
 type GCEDiscovery struct {
-	project  string
-	zone     string
-	filter   string
-	client   *http.Client
-	svc      *compute.Service
-	isvc     *compute.InstancesService
-	interval time.Duration
-	port     int
+	project      string
+	zone         string
+	filter       string
+	client       *http.Client
+	svc          *compute.Service
+	isvc         *compute.InstancesService
+	interval     time.Duration
+	port         int
+	tagSeparator string
 }
 
 // NewGCEDiscovery returns a new GCEDiscovery which periodically refreshes its targets.
 func NewGCEDiscovery(conf *config.GCESDConfig) *GCEDiscovery {
 	gd := &GCEDiscovery{
-		project:  conf.Project,
-		zone:     conf.Zone,
-		filter:   conf.Filter,
-		interval: time.Duration(conf.RefreshInterval),
-		port:     conf.Port,
+		project:      conf.Project,
+		zone:         conf.Zone,
+		filter:       conf.Filter,
+		interval:     time.Duration(conf.RefreshInterval),
+		port:         conf.Port,
+		tagSeparator: conf.TagSeparator,
 	}
 	var err error
 	gd.client, err = google.DefaultClient(oauth2.NoContext, compute.ComputeReadonlyScope)
@@ -142,6 +146,13 @@ func (gd *GCEDiscovery) refresh() (*config.TargetGroup, error) {
 			labels[gceLabelPrivateIP] = model.LabelValue(priIface.NetworkIP)
 			addr := fmt.Sprintf("%s:%d", priIface.NetworkIP, gd.port)
 			labels[model.AddressLabel] = model.LabelValue(addr)
+
+			if inst.Tags != nil && len(inst.Tags.Items) > 0 {
+				// We surround the separated list with the separator as well. This way regular expressions
+				// in relabeling rules don't have to consider tag positions.
+				tags := gd.tagSeparator + strings.Join(inst.Tags.Items, gd.tagSeparator) + gd.tagSeparator
+				labels[gceLabelTags] = model.LabelValue(tags)
+			}
 
 			if len(priIface.AccessConfigs) > 0 {
 				ac := priIface.AccessConfigs[0]
