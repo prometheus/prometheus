@@ -223,6 +223,7 @@ var expectedConf = &Config{
 			KubernetesSDConfigs: []*KubernetesSDConfig{
 				{
 					APIServers: []URL{kubernetesSDHostURL()},
+					Role:       KubernetesRoleEndpoint,
 					BasicAuth: &BasicAuth{
 						Username: "myusername",
 						Password: "mypassword",

@@ -127,52 +127,35 @@ func (kd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	log.Debugf("Kubernetes Discovery.Run beginning")
 	defer close(ch)
 
-	var wg sync.WaitGroup
-
-	pd := &podDiscovery{
-		retryInterval: time.Duration(kd.Conf.RetryInterval),
-		kd:            kd,
-	}
-	wg.Add(1)
-	go func() {
+	switch kd.Conf.Role {
+	case config.KubernetesRolePod, config.KubernetesRoleContainer:
+		pd := &podDiscovery{
+			retryInterval: time.Duration(kd.Conf.RetryInterval),
+			kd:            kd,
+		}
 		pd.run(ctx, ch)
-		wg.Done()
-	}()
-
-	nd := &nodeDiscovery{
-		retryInterval: time.Duration(kd.Conf.RetryInterval),
-		kd:            kd,
-	}
-	wg.Add(1)
-	go func() {
+	case config.KubernetesRoleNode:
+		nd := &nodeDiscovery{
+			retryInterval: time.Duration(kd.Conf.RetryInterval),
+			kd:            kd,
+		}
 		nd.run(ctx, ch)
-		wg.Done()
-	}()
-
-	sd := &serviceDiscovery{
-		retryInterval: time.Duration(kd.Conf.RetryInterval),
-		kd:            kd,
-	}
-	wg.Add(1)
-	go func() {
+	case config.KubernetesRoleService, config.KubernetesRoleEndpoint:
+		sd := &serviceDiscovery{
+			retryInterval: time.Duration(kd.Conf.RetryInterval),
+			kd:            kd,
+		}
 		sd.run(ctx, ch)
-		wg.Done()
-	}()
-
-	// Send an initial full view.
-	// TODO(fabxc): this does not include all available services and service
-	// endpoints yet. Service endpoints were also missing in the previous Sources() method.
-	var all []*config.TargetGroup
-
-	all = append(all, kd.updateAPIServersTargetGroup())
-
-	select {
-	case ch <- all:
-	case <-ctx.Done():
+	case config.KubernetesRoleAPIServer:
+		select {
+		case ch <- []*config.TargetGroup{kd.updateAPIServersTargetGroup()}:
+		case <-ctx.Done():
+			return
+		}
+	default:
+		log.Errorf("unknown Kubernetes discovery kind %q", kd.Conf.Role)
 		return
 	}
-
-	wg.Wait()
 }
 
 func (kd *Discovery) queryAPIServerPath(path string) (*http.Response, error) {
