@@ -15,7 +15,42 @@ package promql
 
 import (
 	"testing"
+	"time"
+
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/storage/metric"
 )
+
+func TestStatementString(t *testing.T) {
+	in := &AlertStmt{
+		Name: "FooAlert",
+		Expr: &BinaryExpr{
+			Op: itemGTR,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			RHS: &NumberLiteral{10},
+		},
+		Duration: 5 * time.Minute,
+		Labels:   model.LabelSet{"foo": "bar"},
+		Annotations: model.LabelSet{
+			"notify": "team-a",
+		},
+	}
+
+	expected := `ALERT FooAlert
+	IF foo > 10
+	FOR 5m
+	LABELS {foo="bar"}
+	ANNOTATIONS {notify="team-a"}`
+
+	if in.String() != expected {
+		t.Fatalf("expected:\n%s\ngot:\n%s\n", expected, in.String())
+	}
+}
 
 func TestExprString(t *testing.T) {
 	// A list of valid expressions that are expected to be
