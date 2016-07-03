@@ -19,9 +19,9 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-// memorySeriesPreloader is a Preloader for the memorySeriesStorage.
+// memorySeriesPreloader is a Preloader for the MemorySeriesStorage.
 type memorySeriesPreloader struct {
-	storage          *memorySeriesStorage
+	storage          *MemorySeriesStorage
 	pinnedChunkDescs []*chunkDesc
 }
 

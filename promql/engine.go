@@ -218,7 +218,7 @@ func contextDone(ctx context.Context, env string) error {
 // It is connected to a storage.
 type Engine struct {
 	// The storage on which the engine operates.
-	storage local.Storage
+	storage local.Querier
 
 	// The base context for all queries and its cancellation function.
 	baseCtx       context.Context
@@ -230,7 +230,7 @@ type Engine struct {
 }
 
 // NewEngine returns a new engine.
-func NewEngine(storage local.Storage, o *EngineOptions) *Engine {
+func NewEngine(storage local.Querier, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}
@@ -728,7 +728,7 @@ func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	var result vector
 	// The set of signatures for the right-hand side vector.
@@ -751,7 +751,7 @@ func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector 
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	var result vector
 	leftSigs := map[uint64]struct{}{}
@@ -773,7 +773,7 @@ func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vec
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	rightSigs := map[uint64]struct{}{}
 	for _, rs := range rhs {
@@ -796,7 +796,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 	}
 	var (
 		result = vector{}
-		sigf   = signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+		sigf   = signatureFunc(matching.On, matching.MatchingLabels...)
 	)
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -882,9 +882,9 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 }
 
 // signatureFunc returns a function that calculates the signature for a metric
-// based on the provided labels. If ignoring, then the given labels are ignored instead.
-func signatureFunc(ignoring bool, labels ...model.LabelName) func(m metric.Metric) uint64 {
-	if len(labels) == 0 || ignoring {
+// ignoring the provided labels. If on, then the given labels are only used instead.
+func signatureFunc(on bool, labels ...model.LabelName) func(m metric.Metric) uint64 {
+	if !on {
 		return func(m metric.Metric) uint64 {
 			tmp := m.Metric.Clone()
 			for _, l := range labels {
@@ -905,10 +905,7 @@ func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching)
 	if shouldDropMetricName(op) {
 		lhs.Del(model.MetricNameLabel)
 	}
-	if len(matching.MatchingLabels)+len(matching.Include) == 0 {
-		return lhs
-	}
-	if matching.Ignoring {
+	if !matching.On {
 		if matching.Card == CardOneToOne {
 			for _, l := range matching.MatchingLabels {
 				lhs.Del(l)
@@ -991,6 +988,8 @@ func scalarBinop(op itemType, lhs, rhs model.SampleValue) model.SampleValue {
 		return lhs * rhs
 	case itemDIV:
 		return lhs / rhs
+	case itemPOW:
+		return model.SampleValue(math.Pow(float64(lhs), float64(rhs)))
 	case itemMOD:
 		if rhs != 0 {
 			return model.SampleValue(int(lhs) % int(rhs))
@@ -1023,6 +1022,8 @@ func vectorElemBinop(op itemType, lhs, rhs model.SampleValue) (model.SampleValue
 		return lhs * rhs, true
 	case itemDIV:
 		return lhs / rhs, true
+	case itemPOW:
+		return model.SampleValue(math.Pow(float64(lhs), float64(rhs))), true
 	case itemMOD:
 		if rhs != 0 {
 			return model.SampleValue(int(lhs) % int(rhs)), true

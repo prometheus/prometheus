@@ -40,7 +40,7 @@ func (t *testStorageCloser) Close() {
 // NewTestStorage creates a storage instance backed by files in a temporary
 // directory. The returned storage is already in serving state. Upon closing the
 // returned test.Closer, the temporary directory is cleaned up.
-func NewTestStorage(t testutil.T, encoding chunkEncoding) (*memorySeriesStorage, testutil.Closer) {
+func NewTestStorage(t testutil.T, encoding chunkEncoding) (*MemorySeriesStorage, testutil.Closer) {
 	DefaultChunkEncoding = encoding
 	directory := testutil.NewTemporaryDirectory("test_storage", t)
 	o := &MemorySeriesStorageOptions{
@@ -52,7 +52,7 @@ func NewTestStorage(t testutil.T, encoding chunkEncoding) (*memorySeriesStorage,
 		SyncStrategy:               Adaptive,
 	}
 	storage := NewMemorySeriesStorage(o)
-	storage.(*memorySeriesStorage).archiveHighWatermark = model.Latest
+	storage.archiveHighWatermark = model.Latest
 	if err := storage.Start(); err != nil {
 		directory.Close()
 		t.Fatalf("Error creating storage: %s", err)
@@ -63,5 +63,5 @@ func NewTestStorage(t testutil.T, encoding chunkEncoding) (*memorySeriesStorage,
 		directory: directory,
 	}
 
-	return storage.(*memorySeriesStorage), closer
+	return storage, closer
 }

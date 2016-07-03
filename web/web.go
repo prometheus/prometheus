@@ -45,8 +45,7 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/web/api/legacy"
-	"github.com/prometheus/prometheus/web/api/v1"
+	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -59,8 +58,7 @@ type Handler struct {
 	queryEngine   *promql.Engine
 	storage       local.Storage
 
-	apiV1     *v1.API
-	apiLegacy *legacy.API
+	apiV1 *api_v1.API
 
 	router       *route.Router
 	listenErrCh  chan error
@@ -137,12 +135,7 @@ func New(
 		queryEngine:   qe,
 		storage:       st,
 
-		apiV1: v1.NewAPI(qe, st),
-		apiLegacy: &legacy.API{
-			QueryEngine: qe,
-			Storage:     st,
-			Now:         model.Now,
-		},
+		apiV1: api_v1.NewAPI(qe, st),
 	}
 
 	if o.ExternalURL.Path != "" {
