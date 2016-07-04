@@ -159,6 +159,20 @@ eval_ordered instant at 50m bottomk(5, http_requests{group="canary",job="app-ser
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="1", job="app-server"} 800
 
+eval instant at 50m topk by (group) (1, http_requests)
+  http_requests{group="production", instance="1", job="app-server"} 600
+  http_requests{group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m bottomk by (group) (2, http_requests)
+  http_requests{group="canary", instance="0", job="api-server"} 300
+  http_requests{group="canary", instance="1", job="api-server"} 400
+  http_requests{group="production", instance="0", job="api-server"} 100
+  http_requests{group="production", instance="1", job="api-server"} 200
+
+eval_ordered instant at 50m bottomk by (group) (2, http_requests{group="production"})
+  http_requests{group="production", instance="0", job="api-server"} 100
+  http_requests{group="production", instance="1", job="api-server"} 200
+
 # Test NaN is sorted away from the top/bottom.
 eval_ordered instant at 50m topk(3, http_requests{job="api-server",group="production"})
 	http_requests{job="api-server", instance="1", group="production"}	200
