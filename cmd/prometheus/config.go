@@ -57,10 +57,8 @@ var cfg = struct {
 }
 
 func init() {
-	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
-	flag.CommandLine.Usage = usage
-
-	cfg.fs = flag.CommandLine
+	cfg.fs = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	cfg.fs.Usage = usage
 
 	// Set additional defaults.
 	cfg.storage.SyncStrategy = local.Adaptive
