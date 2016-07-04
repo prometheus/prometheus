@@ -152,9 +152,10 @@
 			"revisionTime": "2015-09-05T08:12:15+01:00"
 		},
 		{
+			"checksumSHA1": "OpY4giv8kPIYbaunD7BSgCynj78=",
 			"path": "github.com/prometheus/client_golang/prometheus",
-			"revision": "449ccefff16c8e2b7229f6be1921ba22f62461fe",
-			"revisionTime": "2015-10-26T02:27:06+01:00"
+			"revision": "9f1ed1ed4a5f754c9b626e5cf8ec1ea7d622e017",
+			"revisionTime": "2016-06-27T14:36:20Z"
 		},
 		{
 			"path": "github.com/prometheus/client_model/go",
@@ -170,37 +171,38 @@
 		{
 			"checksumSHA1": "GWlM3d2vPYyNATtTFgftS10/A9w=",
 			"path": "github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg",
-			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
-			"revisionTime": "2016-05-19T16:20:33Z"
+			"revision": "4402f4e5ea79ec15f3c574773b6a5198fbea215f",
+			"revisionTime": "2016-06-23T15:14:27Z"
 		},
 		{
 			"checksumSHA1": "qHoBp/PVBcLedTNZrF3toV9QGa0=",
 			"path": "github.com/prometheus/common/log",
-			"revision": "a6ab08426bb262e2d190097751f5cfd1cfdfd17d",
-			"revisionTime": "2016-05-26T15:55:09Z"
+			"revision": "4402f4e5ea79ec15f3c574773b6a5198fbea215f",
+			"revisionTime": "2016-06-23T15:14:27Z"
 		},
 		{
-			"checksumSHA1": "Zgmg/aOfoCNTAMtrXqBJmt852t0=",
+			"checksumSHA1": "Jx0GXl5hGnO25s3ryyvtdWHdCpw=",
 			"path": "github.com/prometheus/common/model",
-			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
-			"revisionTime": "2016-05-19T16:20:33Z"
+			"revision": "4402f4e5ea79ec15f3c574773b6a5198fbea215f",
+			"revisionTime": "2016-06-23T15:14:27Z"
 		},
 		{
 			"checksumSHA1": "CKVJRc1NREmfoAWQLHxqWQlvxo0=",
 			"path": "github.com/prometheus/common/route",
-			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
-			"revisionTime": "2016-05-19T16:20:33Z"
+			"revision": "4402f4e5ea79ec15f3c574773b6a5198fbea215f",
+			"revisionTime": "2016-06-23T15:14:27Z"
 		},
 		{
 			"checksumSHA1": "91KYK0SpvkaMJJA2+BcxbVnyRO0=",
 			"path": "github.com/prometheus/common/version",
-			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
-			"revisionTime": "2016-05-19T16:20:33Z"
+			"revision": "4402f4e5ea79ec15f3c574773b6a5198fbea215f",
+			"revisionTime": "2016-06-23T15:14:27Z"
 		},
 		{
+			"checksumSHA1": "W218eJZPXJG783fUr/z6IaAZyes=",
 			"path": "github.com/prometheus/procfs",
-			"revision": "c91d8eefde16bd047416409eb56353ea84a186e4",
-			"revisionTime": "2015-06-16T16:46:31+02:00"
+			"revision": "abf152e5f3e97f2fafac028d2cc06c1feb87ffa5",
+			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
 			"path": "github.com/samuel/go-zookeeper/zk",
