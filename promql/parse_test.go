@@ -1253,6 +1253,10 @@ var testExpr = []struct {
 		input:  `topk(some_metric)`,
 		fail:   true,
 		errMsg: "parse error at char 17: unexpected \")\" in aggregation, expected \",\"",
+	}, {
+		input:  `topk(some_metric, other_metric)`,
+		fail:   true,
+		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got vector",
 	},
 	// Test function calls.
 	{
