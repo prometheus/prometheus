@@ -83,6 +83,7 @@ import (
 	"io"
 
 	"github.com/syndtr/goleveldb/leveldb/errors"
+	"github.com/syndtr/goleveldb/leveldb/storage"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
@@ -165,7 +166,7 @@ func (r *Reader) corrupt(n int, reason string, skip bool) error {
 		r.dropper.Drop(&ErrCorrupted{n, reason})
 	}
 	if r.strict && !skip {
-		r.err = errors.NewErrCorrupted(nil, &ErrCorrupted{n, reason})
+		r.err = errors.NewErrCorrupted(storage.FileDesc{}, &ErrCorrupted{n, reason})
 		return r.err
 	}
 	return errSkip

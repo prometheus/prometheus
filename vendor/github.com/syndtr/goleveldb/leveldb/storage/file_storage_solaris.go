@@ -18,18 +18,27 @@ type unixFileLock struct {
 }
 
 func (fl *unixFileLock) release() error {
-	if err := setFileLock(fl.f, false); err != nil {
+	if err := setFileLock(fl.f, false, false); err != nil {
 		return err
 	}
 	return fl.f.Close()
 }
 
-func newFileLock(path string) (fl fileLock, err error) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
+func newFileLock(path string, readOnly bool) (fl fileLock, err error) {
+	var flag int
+	if readOnly {
+		flag = os.O_RDONLY
+	} else {
+		flag = os.O_RDWR
+	}
+	f, err := os.OpenFile(path, flag, 0)
+	if os.IsNotExist(err) {
+		f, err = os.OpenFile(path, flag|os.O_CREATE, 0644)
+	}
 	if err != nil {
 		return
 	}
-	err = setFileLock(f, true)
+	err = setFileLock(f, readOnly, true)
 	if err != nil {
 		f.Close()
 		return
@@ -38,7 +47,7 @@ func newFileLock(path string) (fl fileLock, err error) {
 	return
 }
 
-func setFileLock(f *os.File, lock bool) error {
+func setFileLock(f *os.File, readOnly, lock bool) error {
 	flock := syscall.Flock_t{
 		Type:   syscall.F_UNLCK,
 		Start:  0,
@@ -46,7 +55,11 @@ func setFileLock(f *os.File, lock bool) error {
 		Whence: 1,
 	}
 	if lock {
-		flock.Type = syscall.F_WRLCK
+		if readOnly {
+			flock.Type = syscall.F_RDLCK
+		} else {
+			flock.Type = syscall.F_WRLCK
+		}
 	}
 	return syscall.FcntlFlock(f.Fd(), syscall.F_SETLK, &flock)
 }
