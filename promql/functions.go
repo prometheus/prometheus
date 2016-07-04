@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"container/heap"
 	"math"
 	"regexp"
 	"sort"
@@ -296,52 +295,6 @@ func funcSortDesc(ev *evaluator, args Expressions) model.Value {
 	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return vector(byValueSorter)
-}
-
-// === topk(k model.ValScalar, node model.ValVector) Vector ===
-func funcTopk(ev *evaluator, args Expressions) model.Value {
-	k := ev.evalInt(args[0])
-	if k < 1 {
-		return vector{}
-	}
-	vec := ev.evalVector(args[1])
-
-	topk := make(vectorByValueHeap, 0, k)
-
-	for _, el := range vec {
-		if len(topk) < k || topk[0].Value < el.Value || math.IsNaN(float64(topk[0].Value)) {
-			if len(topk) == k {
-				heap.Pop(&topk)
-			}
-			heap.Push(&topk, el)
-		}
-	}
-	// The heap keeps the lowest value on top, so reverse it.
-	sort.Sort(sort.Reverse(topk))
-	return vector(topk)
-}
-
-// === bottomk(k model.ValScalar, node model.ValVector) Vector ===
-func funcBottomk(ev *evaluator, args Expressions) model.Value {
-	k := ev.evalInt(args[0])
-	if k < 1 {
-		return vector{}
-	}
-	vec := ev.evalVector(args[1])
-
-	bottomk := make(vectorByReverseValueHeap, 0, k)
-
-	for _, el := range vec {
-		if len(bottomk) < k || bottomk[0].Value > el.Value || math.IsNaN(float64(bottomk[0].Value)) {
-			if len(bottomk) == k {
-				heap.Pop(&bottomk)
-			}
-			heap.Push(&bottomk, el)
-		}
-	}
-	// The heap keeps the highest value on top, so reverse it.
-	sort.Sort(sort.Reverse(bottomk))
-	return vector(bottomk)
 }
 
 // === clamp_max(vector model.ValVector, max Scalar) Vector ===
@@ -866,12 +819,6 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcAvgOverTime,
 	},
-	"bottomk": {
-		Name:       "bottomk",
-		ArgTypes:   []model.ValueType{model.ValScalar, model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcBottomk,
-	},
 	"ceil": {
 		Name:       "ceil",
 		ArgTypes:   []model.ValueType{model.ValVector},
@@ -1052,12 +999,6 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{},
 		ReturnType: model.ValScalar,
 		Call:       funcTime,
-	},
-	"topk": {
-		Name:       "topk",
-		ArgTypes:   []model.ValueType{model.ValScalar, model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcTopk,
 	},
 	"vector": {
 		Name:       "vector",

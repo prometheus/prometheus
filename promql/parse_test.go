@@ -1202,6 +1202,18 @@ var testExpr = []struct {
 			Grouping: model.LabelNames{},
 		},
 	}, {
+		input: "topk(5, some_metric)",
+		expected: &AggregateExpr{
+			Op: itemTopK,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+				},
+			},
+			Param: &NumberLiteral{5},
+		},
+	}, {
 		input:  `sum some_metric by (test)`,
 		fail:   true,
 		errMsg: "unexpected identifier \"some_metric\" in aggregation, expected \"(\"",
@@ -1237,6 +1249,10 @@ var testExpr = []struct {
 		input:  `sum without (test) (some_metric) by (test)`,
 		fail:   true,
 		errMsg: "could not parse remaining input \"by (test)\"...",
+	}, {
+		input:  `topk(some_metric)`,
+		fail:   true,
+		errMsg: "parse error at char 17: unexpected \")\" in aggregation, expected \",\"",
 	},
 	// Test function calls.
 	{
