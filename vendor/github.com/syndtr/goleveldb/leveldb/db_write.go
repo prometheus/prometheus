@@ -45,9 +45,9 @@ func (db *DB) jWriter() {
 	}
 }
 
-func (db *DB) rotateMem(n int) (mem *memDB, err error) {
+func (db *DB) rotateMem(n int, wait bool) (mem *memDB, err error) {
 	// Wait for pending memdb compaction.
-	err = db.compSendIdle(db.mcompCmdC)
+	err = db.compTriggerWait(db.mcompCmdC)
 	if err != nil {
 		return
 	}
@@ -59,7 +59,11 @@ func (db *DB) rotateMem(n int) (mem *memDB, err error) {
 	}
 
 	// Schedule memdb compaction.
-	db.compSendTrigger(db.mcompCmdC)
+	if wait {
+		err = db.compTriggerWait(db.mcompCmdC)
+	} else {
+		db.compTrigger(db.mcompCmdC)
+	}
 	return
 }
 
@@ -84,7 +88,7 @@ func (db *DB) flush(n int) (mdb *memDB, mdbFree int, err error) {
 			return false
 		case v.tLen(0) >= db.s.o.GetWriteL0PauseTrigger():
 			delayed = true
-			err = db.compSendIdle(db.tcompCmdC)
+			err = db.compTriggerWait(db.tcompCmdC)
 			if err != nil {
 				return false
 			}
@@ -94,7 +98,7 @@ func (db *DB) flush(n int) (mdb *memDB, mdbFree int, err error) {
 				mdbFree = n
 			} else {
 				mdb.decref()
-				mdb, err = db.rotateMem(n)
+				mdb, err = db.rotateMem(n, false)
 				if err == nil {
 					mdbFree = mdb.Free()
 				} else {
@@ -131,12 +135,27 @@ func (db *DB) Write(b *Batch, wo *opt.WriteOptions) (err error) {
 
 	b.init(wo.GetSync() && !db.s.o.GetNoSync())
 
+	if b.size() > db.s.o.GetWriteBuffer() && !db.s.o.GetDisableLargeBatchTransaction() {
+		// Writes using transaction.
+		tr, err1 := db.OpenTransaction()
+		if err1 != nil {
+			return err1
+		}
+		if err1 := tr.Write(b, wo); err1 != nil {
+			tr.Discard()
+			return err1
+		}
+		return tr.Commit()
+	}
+
 	// The write happen synchronously.
 	select {
 	case db.writeC <- b:
 		if <-db.writeMergedC {
 			return <-db.writeAckC
 		}
+		// Continue, the write lock already acquired by previous writer
+		// and handed out to us.
 	case db.writeLockC <- struct{}{}:
 	case err = <-db.compPerErrC:
 		return
@@ -147,13 +166,14 @@ func (db *DB) Write(b *Batch, wo *opt.WriteOptions) (err error) {
 	merged := 0
 	danglingMerge := false
 	defer func() {
+		for i := 0; i < merged; i++ {
+			db.writeAckC <- err
+		}
 		if danglingMerge {
+			// Only one dangling merge at most, so this is safe.
 			db.writeMergedC <- false
 		} else {
 			<-db.writeLockC
-		}
-		for i := 0; i < merged; i++ {
-			db.writeAckC <- err
 		}
 	}()
 
@@ -234,7 +254,7 @@ drain:
 	db.addSeq(uint64(b.Len()))
 
 	if b.size() >= mdbFree {
-		db.rotateMem(0)
+		db.rotateMem(0, false)
 	}
 	return
 }
@@ -261,8 +281,8 @@ func (db *DB) Delete(key []byte, wo *opt.WriteOptions) error {
 func isMemOverlaps(icmp *iComparer, mem *memdb.DB, min, max []byte) bool {
 	iter := mem.NewIterator(nil)
 	defer iter.Release()
-	return (max == nil || (iter.First() && icmp.uCompare(max, iKey(iter.Key()).ukey()) >= 0)) &&
-		(min == nil || (iter.Last() && icmp.uCompare(min, iKey(iter.Key()).ukey()) <= 0))
+	return (max == nil || (iter.First() && icmp.uCompare(max, internalKey(iter.Key()).ukey()) >= 0)) &&
+		(min == nil || (iter.Last() && icmp.uCompare(min, internalKey(iter.Key()).ukey()) <= 0))
 }
 
 // CompactRange compacts the underlying DB for the given key range.
@@ -293,12 +313,12 @@ func (db *DB) CompactRange(r util.Range) error {
 	defer mdb.decref()
 	if isMemOverlaps(db.s.icmp, mdb.DB, r.Start, r.Limit) {
 		// Memdb compaction.
-		if _, err := db.rotateMem(0); err != nil {
+		if _, err := db.rotateMem(0, false); err != nil {
 			<-db.writeLockC
 			return err
 		}
 		<-db.writeLockC
-		if err := db.compSendIdle(db.mcompCmdC); err != nil {
+		if err := db.compTriggerWait(db.mcompCmdC); err != nil {
 			return err
 		}
 	} else {
@@ -306,7 +326,7 @@ func (db *DB) CompactRange(r util.Range) error {
 	}
 
 	// Table compaction.
-	return db.compSendRange(db.tcompCmdC, -1, r.Start, r.Limit)
+	return db.compTriggerRange(db.tcompCmdC, -1, r.Start, r.Limit)
 }
 
 // SetReadOnly makes DB read-only. It will stay read-only until reopened.

@@ -207,64 +207,76 @@
 			"revisionTime": "2015-08-17T10:50:50-07:00"
 		},
 		{
+			"checksumSHA1": "sUPlrnoPPmYuvjEtw9HUTKPCZa4=",
 			"path": "github.com/syndtr/goleveldb/leveldb",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "BX+u3k6if9kZNYYqbL56gC48BAQ=",
 			"path": "github.com/syndtr/goleveldb/leveldb/cache",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "5KPgnvCPlR0ysDAqo6jApzRQ3tw=",
 			"path": "github.com/syndtr/goleveldb/leveldb/comparer",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "Vpvz4qmbq/kz0SN95yt0tmSI7JE=",
 			"path": "github.com/syndtr/goleveldb/leveldb/errors",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "eqKeD6DS7eNCtxVYZEHHRKkyZrw=",
 			"path": "github.com/syndtr/goleveldb/leveldb/filter",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "cRn09EwfU3k2ZjvClHYmVFlakRY=",
 			"path": "github.com/syndtr/goleveldb/leveldb/iterator",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "CMBbso8ZuG2kBGDL2Blf/wpeheU=",
 			"path": "github.com/syndtr/goleveldb/leveldb/journal",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "LshzRv+3spfwuHLepRxiyjf/3sQ=",
 			"path": "github.com/syndtr/goleveldb/leveldb/memdb",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "MP/sSiEbzIN5M664sO4r9+dwzV4=",
 			"path": "github.com/syndtr/goleveldb/leveldb/opt",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "XO5e4bQsWDdNqoHbFWy2TKoOWrQ=",
 			"path": "github.com/syndtr/goleveldb/leveldb/storage",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "4EGplyU1Q07vIczP2yZgKvjuYVA=",
 			"path": "github.com/syndtr/goleveldb/leveldb/table",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
+			"checksumSHA1": "4zil8Gwg8VPkDn1YzlgCvtukJFU=",
 			"path": "github.com/syndtr/goleveldb/leveldb/util",
-			"revision": "1a9d62f03ea92815b46fcaab357cfd4df264b1a0",
-			"revisionTime": "2015-08-19T12:16:22+07:00"
+			"revision": "ab8b5dcf1042e818ab68e770d465112a899b668e",
+			"revisionTime": "2016-06-29T10:12:33Z"
 		},
 		{
 			"path": "github.com/vaughan0/go-ini",
