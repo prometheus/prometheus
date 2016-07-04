@@ -100,9 +100,10 @@
 			"revisionTime": "2015-08-20T12:44:31-07:00"
 		},
 		{
+			"checksumSHA1": "4QnLdmB1kG3N+KlDd1N+G9TWAGQ=",
 			"path": "github.com/beorn7/perks/quantile",
-			"revision": "b965b613227fddccbfffe13eae360ed3fa822f8d",
-			"revisionTime": "2015-02-23T14:51:52+01:00"
+			"revision": "3ac7bf7a47d159a033b107610db8a1b6575507a4",
+			"revisionTime": "2016-02-29T21:34:45Z"
 		},
 		{
 			"checksumSHA1": "1LWe3iDPpInibsVD1TzbTWSDXFc=",
@@ -286,14 +287,14 @@
 		{
 			"checksumSHA1": "9jjO5GjLa0XF/nfWihF02RoH4qc=",
 			"path": "golang.org/x/net/context",
-			"revision": "8aacbecd63e105fa5f07afbd49472fd3e17a19d1",
-			"revisionTime": "2016-05-18T19:54:31Z"
+			"revision": "b400c2eff1badec7022a8c8f5bea058b6315eed7",
+			"revisionTime": "2016-06-19T19:44:24Z"
 		},
 		{
 			"checksumSHA1": "Do+l129/Bafh54VFaquooqtCcfk=",
 			"path": "golang.org/x/net/context/ctxhttp",
-			"revision": "8aacbecd63e105fa5f07afbd49472fd3e17a19d1",
-			"revisionTime": "2016-05-18T19:54:31Z"
+			"revision": "b400c2eff1badec7022a8c8f5bea058b6315eed7",
+			"revisionTime": "2016-06-19T19:44:24Z"
 		},
 		{
 			"checksumSHA1": "QcDlr1sWBDt6Dn/v7W/MRgccAi4=",
