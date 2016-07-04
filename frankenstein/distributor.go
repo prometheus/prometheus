@@ -14,22 +14,31 @@
 package frankenstein
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// Distributor is a storage.SampleAppender which forwards Append calls
-// to another consistenty-hashed SampleAppender.
+// An IngesterClient groups functionality for writing to and reading from a
+// single ingester.
+type IngesterClient struct {
+	Appender storage.SampleAppender
+	Querier  Querier
+}
+
+// Distributor is a storage.SampleAppender and a frankenstein.Querier which
+// forwards appends and queries to individual ingesters.
 type Distributor struct {
 	consul     ConsulClient
 	ring       *Ring
 	cfg        DistributorConfig
 	clientsMtx sync.RWMutex
-	clients    map[string]storage.SampleAppender
+	clients    map[string]*IngesterClient
 
 	quit chan struct{}
 	done chan struct{}
@@ -40,7 +49,7 @@ type Distributor struct {
 type DistributorConfig struct {
 	ConsulHost    string
 	ConsulPrefix  string
-	ClientFactory func(string) (storage.SampleAppender, error)
+	ClientFactory func(string) (*IngesterClient, error)
 }
 
 // Collector is the serialised state in Consul representing
@@ -60,7 +69,7 @@ func NewDistributor(cfg DistributorConfig) (*Distributor, error) {
 		consul:  consul,
 		ring:    NewRing(),
 		cfg:     cfg,
-		clients: map[string]storage.SampleAppender{},
+		clients: map[string]*IngesterClient{},
 		quit:    make(chan struct{}),
 		done:    make(chan struct{}),
 	}
@@ -84,7 +93,7 @@ func (d *Distributor) loop() {
 	})
 }
 
-func (d *Distributor) getClientFor(hostname string) (storage.SampleAppender, error) {
+func (d *Distributor) getClientFor(hostname string) (*IngesterClient, error) {
 	d.clientsMtx.RLock()
 	client, ok := d.clients[hostname]
 	d.clientsMtx.RUnlock()
@@ -107,7 +116,7 @@ func (d *Distributor) getClientFor(hostname string) (storage.SampleAppender, err
 	return client, nil
 }
 
-// Append implements storage.SampleAppender
+// Append implements SampleAppender.
 func (d *Distributor) Append(sample *model.Sample) error {
 	key := model.SignatureForLabels(sample.Metric, model.MetricNameLabel)
 	collector, err := d.ring.Get(uint64(key))
@@ -119,10 +128,46 @@ func (d *Distributor) Append(sample *model.Sample) error {
 	if err != nil {
 		return err
 	}
-	return client.Append(sample)
+	return client.Appender.Append(sample)
 }
 
-// NeedsThrottling implements storage.SampleAppender
+func metricNameFromLabelMatchers(matchers ...*metric.LabelMatcher) (model.LabelValue, error) {
+	for _, m := range matchers {
+		if m.Name == model.MetricNameLabel {
+			if m.Type != metric.Equal {
+				return "", fmt.Errorf("non-equality matchers are not supported on the metric name")
+			}
+			return m.Value, nil
+		}
+	}
+	return "", fmt.Errorf("no metric name matcher found")
+}
+
+// Query implements Querier.
+func (d *Distributor) Query(from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+	metricName, err := metricNameFromLabelMatchers(matchers...)
+	if err != nil {
+		return nil, err
+	}
+
+	metric := model.Metric{
+		model.MetricNameLabel: metricName,
+	}
+	key := model.SignatureForLabels(metric, model.MetricNameLabel)
+	collector, err := d.ring.Get(uint64(key))
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := d.getClientFor(collector.Hostname)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.Querier.Query(from, to, matchers...)
+}
+
+// NeedsThrottling implements SampleAppender.
 func (*Distributor) NeedsThrottling() bool {
 	return false
 }

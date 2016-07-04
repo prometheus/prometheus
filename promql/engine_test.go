@@ -22,7 +22,7 @@ import (
 )
 
 func TestQueryConcurrency(t *testing.T) {
-	engine := NewEngine(nil, nil)
+	engine := NewEngine(nil, nil, nil)
 	defer engine.Stop()
 
 	block := make(chan struct{})
@@ -72,7 +72,7 @@ func TestQueryConcurrency(t *testing.T) {
 }
 
 func TestQueryTimeout(t *testing.T) {
-	engine := NewEngine(nil, &EngineOptions{
+	engine := NewEngine(nil, nil, &EngineOptions{
 		Timeout:              5 * time.Millisecond,
 		MaxConcurrentQueries: 20,
 	})
@@ -93,7 +93,7 @@ func TestQueryTimeout(t *testing.T) {
 }
 
 func TestQueryCancel(t *testing.T) {
-	engine := NewEngine(nil, nil)
+	engine := NewEngine(nil, nil, nil)
 	defer engine.Stop()
 
 	// Cancel a running query before it completes.
@@ -138,7 +138,7 @@ func TestQueryCancel(t *testing.T) {
 }
 
 func TestEngineShutdown(t *testing.T) {
-	engine := NewEngine(nil, nil)
+	engine := NewEngine(nil, nil, nil)
 
 	block := make(chan struct{})
 	processing := make(chan struct{})

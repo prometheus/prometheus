@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/common/log"
 
 	"github.com/prometheus/prometheus/frankenstein"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
@@ -38,13 +37,23 @@ func main() {
 	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
 	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream injestors.")
 
-	clientFactory := func(hostname string) (storage.SampleAppender, error) {
-		storage := remote.New(&remote.Options{
+	clientFactory := func(hostname string) (*frankenstein.IngesterClient, error) {
+		// TODO: make correct URLs out of hostnames.
+		appender := remote.New(&remote.Options{
 			GenericURL:     hostname,
 			StorageTimeout: remoteTimeout,
 		})
-		storage.Run()
-		return storage, nil
+		appender.Run()
+
+		querier, err := frankenstein.NewIngesterQuerier(hostname)
+		if err != nil {
+			return nil, err
+		}
+
+		return &frankenstein.IngesterClient{
+			Appender: appender,
+			Querier:  querier,
+		}, nil
 	}
 
 	distributor, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{
