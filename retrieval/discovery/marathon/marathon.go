@@ -47,6 +47,7 @@ const appListPath string = "/v2/apps/?embed=apps.tasks"
 // Discovery provides service discovery based on a Marathon instance.
 type Discovery struct {
 	Servers         []string
+	Auth            *config.BasicAuth
 	RefreshInterval time.Duration
 	lastRefresh     map[string]*config.TargetGroup
 	Client          AppListClient
@@ -105,7 +106,7 @@ func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Tar
 
 func (md *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
 	url := RandomAppsURL(md.Servers)
-	apps, err := md.Client(url)
+	apps, err := md.Client(url, md.Auth)
 	if err != nil {
 		return nil, err
 	}
@@ -146,11 +147,22 @@ type AppList struct {
 }
 
 // AppListClient defines a function that can be used to get an application list from marathon.
-type AppListClient func(url string) (*AppList, error)
+type AppListClient func(url string, auth *config.BasicAuth) (*AppList, error)
 
 // FetchApps requests a list of applications from a marathon server.
-func FetchApps(url string) (*AppList, error) {
-	resp, err := http.Get(url)
+func FetchApps(url string, auth *config.BasicAuth) (*AppList, error) {
+
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if auth != nil {
+		request.SetBasicAuth(auth.Username, auth.Password)
+	}
+
+	resp, err := http.DefaultClient.Do(request)
+
 	if err != nil {
 		return nil, err
 	}

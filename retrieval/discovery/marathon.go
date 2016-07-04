@@ -24,6 +24,7 @@ import (
 func NewMarathon(conf *config.MarathonSDConfig) *marathon.Discovery {
 	return &marathon.Discovery{
 		Servers:         conf.Servers,
+		Auth:            conf.BasicAuth,
 		RefreshInterval: time.Duration(conf.RefreshInterval),
 		Client:          marathon.FetchApps,
 	}

@@ -766,6 +766,7 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type MarathonSDConfig struct {
 	Servers         []string       `yaml:"servers,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

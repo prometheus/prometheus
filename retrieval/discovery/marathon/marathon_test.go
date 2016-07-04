@@ -41,7 +41,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 	var (
 		errTesting = errors.New("testing failure")
 		ch         = make(chan []*config.TargetGroup, 1)
-		client     = func(url string) (*AppList, error) { return nil, errTesting }
+		client     = func(url string, auth *config.BasicAuth) (*AppList, error) { return nil, errTesting }
 	)
 	if err := testUpdateServices(client, ch); err != errTesting {
 		t.Fatalf("Expected error: %s", err)
@@ -56,7 +56,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 func TestMarathonSDEmptyList(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(url string) (*AppList, error) { return &AppList{}, nil }
+		client = func(url string, auth *config.BasicAuth) (*AppList, error) { return &AppList{}, nil }
 	)
 	if err := testUpdateServices(client, ch); err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -95,7 +95,7 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *AppList {
 func TestMarathonSDSendGroup(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(url string) (*AppList, error) {
+		client = func(url string, auth *config.BasicAuth) (*AppList, error) {
 			return marathonTestAppList(marathonValidLabel, 1), nil
 		}
 	)
@@ -124,7 +124,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 func TestMarathonSDRemoveApp(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup)
-		client = func(url string) (*AppList, error) {
+		client = func(url string, auth *config.BasicAuth) (*AppList, error) {
 			return marathonTestAppList(marathonValidLabel, 1), nil
 		}
 		md = Discovery{
@@ -147,7 +147,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 		t.Fatalf("Got error on first update: %s", err)
 	}
 
-	md.Client = func(url string) (*AppList, error) {
+	md.Client = func(url string, auth *config.BasicAuth) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
 	err = md.updateServices(context.Background(), ch)
@@ -159,7 +159,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 func TestMarathonSDRunAndStop(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup)
-		client = func(url string) (*AppList, error) {
+		client = func(url string, auth *config.BasicAuth) (*AppList, error) {
 			return marathonTestAppList(marathonValidLabel, 1), nil
 		}
 		md = Discovery{
@@ -213,7 +213,7 @@ func marathonTestZeroTaskPortAppList(labels map[string]string, runningTasks int)
 func TestMarathonZeroTaskPorts(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(url string) (*AppList, error) {
+		client = func(url string, auth *config.BasicAuth) (*AppList, error) {
 			return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
 		}
 	)
