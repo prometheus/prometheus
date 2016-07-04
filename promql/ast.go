@@ -103,6 +103,7 @@ type Expressions []Expr
 type AggregateExpr struct {
 	Op               itemType         // The used aggregation operation.
 	Expr             Expr             // The vector expression over which is aggregated.
+	Param            Expr             // Parameter used by some aggregators.
 	Grouping         model.LabelNames // The labels by which to group the vector.
 	Without          bool             // Whether to drop the given labels rather than keep them.
 	KeepCommonLabels bool             // Whether to keep common labels among result elements.
