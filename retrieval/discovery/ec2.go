@@ -20,7 +20,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/defaults"
+	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
@@ -55,7 +56,7 @@ type EC2Discovery struct {
 func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
 	if conf.AccessKey == "" && conf.SecretKey == "" {
-		creds = defaults.DefaultChainCredentials
+		creds = ec2rolecreds.NewCredentials(session.New())
 	}
 	return &EC2Discovery{
 		aws: &aws.Config{
@@ -98,7 +99,7 @@ func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 }
 
 func (ed *EC2Discovery) refresh() (*config.TargetGroup, error) {
-	ec2s := ec2.New(ed.aws)
+	ec2s := ec2.New(session.New(), ed.aws)
 	tg := &config.TargetGroup{
 		Source: *ed.aws.Region,
 	}
