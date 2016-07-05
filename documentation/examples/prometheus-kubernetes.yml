@@ -9,12 +9,23 @@
 scrape_configs:
 - job_name: 'kubernetes-cluster'
 
+  # Default to scraping over https. If required, just disable this or change to
+  # `http`.
+  scheme: https
+
   # This TLS & bearer token file config is used to connect to the actual scrape
   # endpoints for cluster components. This is separate to discovery auth
   # configuration (`in_cluster` below) because discovery & scraping are two
   # separate concerns in Prometheus.
   tls_config:
     ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    # If your node certificates are self-signed or use a different CA to the
+    # master CA, then disable certificate verification below. Note that
+    # certificate verification is an integral part of a secure infrastructure
+    # so this should only be disabled in a controlled environment. You can
+    # disable certificate verification by uncommenting the line below.
+    #
+    # insecure_skip_verify: true
   bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:

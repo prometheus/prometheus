@@ -463,8 +463,8 @@ func (p *parser) expr() Expr {
 
 		// Parse ON/IGNORING clause.
 		if p.peek().typ == itemOn || p.peek().typ == itemIgnoring {
-			if p.peek().typ == itemIgnoring {
-				vecMatching.Ignoring = true
+			if p.peek().typ == itemOn {
+				vecMatching.On = true
 			}
 			p.next()
 			vecMatching.MatchingLabels = p.labels()
@@ -485,7 +485,7 @@ func (p *parser) expr() Expr {
 
 		for _, ln := range vecMatching.MatchingLabels {
 			for _, ln2 := range vecMatching.Include {
-				if ln == ln2 && !vecMatching.Ignoring {
+				if ln == ln2 && vecMatching.On {
 					p.errorf("label %q must not occur in ON and GROUP clause at once", ln)
 				}
 			}
@@ -500,17 +500,20 @@ func (p *parser) expr() Expr {
 }
 
 func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMatching, returnBool bool) *BinaryExpr {
-	if lhsBE, ok := lhs.(*BinaryExpr); ok && lhsBE.Op.precedence() < op.precedence() {
-		balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
-		if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == model.ValScalar && lhsBE.LHS.Type() == model.ValScalar {
-			p.errorf("comparisons between scalars must use BOOL modifier")
-		}
-		return &BinaryExpr{
-			Op:             lhsBE.Op,
-			LHS:            lhsBE.LHS,
-			RHS:            balanced,
-			VectorMatching: lhsBE.VectorMatching,
-			ReturnBool:     lhsBE.ReturnBool,
+	if lhsBE, ok := lhs.(*BinaryExpr); ok {
+		precd := lhsBE.Op.precedence() - op.precedence()
+		if (precd < 0) || (precd == 0 && op.isRightAssociative()) {
+			balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
+			if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == model.ValScalar && lhsBE.LHS.Type() == model.ValScalar {
+				p.errorf("comparisons between scalars must use BOOL modifier")
+			}
+			return &BinaryExpr{
+				Op:             lhsBE.Op,
+				LHS:            lhsBE.LHS,
+				RHS:            balanced,
+				VectorMatching: lhsBE.VectorMatching,
+				ReturnBool:     lhsBE.ReturnBool,
+			}
 		}
 	}
 	if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && lhs.Type() == model.ValScalar {
@@ -668,14 +671,16 @@ func (p *parser) labels() model.LabelNames {
 	p.expect(itemLeftParen, ctx)
 
 	labels := model.LabelNames{}
-	for {
-		id := p.expect(itemIdentifier, ctx)
-		labels = append(labels, model.LabelName(id.val))
+	if p.peek().typ != itemRightParen {
+		for {
+			id := p.expect(itemIdentifier, ctx)
+			labels = append(labels, model.LabelName(id.val))
 
-		if p.peek().typ != itemComma {
-			break
+			if p.peek().typ != itemComma {
+				break
+			}
+			p.next()
 		}
-		p.next()
 	}
 	p.expect(itemRightParen, ctx)
 

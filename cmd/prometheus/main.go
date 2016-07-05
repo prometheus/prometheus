@@ -82,7 +82,7 @@ func Main() int {
 		reloadables = append(reloadables, remoteStorage)
 	}
 
-	var memStorage local.Storage
+	var memStorage *local.MemorySeriesStorage
 	if !cfg.retrievalOnly {
 		memStorage = local.NewMemorySeriesStorage(&cfg.storage)
 		sampleAppender = append(sampleAppender, memStorage)

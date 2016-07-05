@@ -245,10 +245,10 @@
 			"revisionTime": "2015-02-12T10:17:44Z"
 		},
 		{
-			"checksumSHA1": "l0JT1CAPc/22KdnxCke1LKtR+4M=",
+			"checksumSHA1": "68MLX78PD6yqD2VCtHazVkBaj/w=",
 			"path": "github.com/prometheus/common/expfmt",
-			"revision": "c16e34897a744c32f6733ee720e60c4de13887fb",
-			"revisionTime": "2016-05-19T16:20:33Z"
+			"revision": "4402f4e5ea79ec15f3c574773b6a5198fbea215f",
+			"revisionTime": "2016-06-23T15:14:27Z"
 		},
 		{
 			"checksumSHA1": "GWlM3d2vPYyNATtTFgftS10/A9w=",

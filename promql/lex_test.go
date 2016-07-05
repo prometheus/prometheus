@@ -209,6 +209,9 @@ var tests = []struct {
 		input:    `/`,
 		expected: []item{{itemDIV, 0, `/`}},
 	}, {
+		input:    `^`,
+		expected: []item{{itemPOW, 0, `^`}},
+	}, {
 		input:    `%`,
 		expected: []item{{itemMOD, 0, `%`}},
 	}, {

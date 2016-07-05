@@ -8,7 +8,6 @@ load 5m
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 
-
 load 5m
 	vector_matching_a{l="x"} 0+1x100
 	vector_matching_a{l="y"} 0+2x50
@@ -34,6 +33,30 @@ eval instant at 50m SUM(http_requests) BY (job) - 2
 eval instant at 50m SUM(http_requests) BY (job) % 3
 	{job="api-server"} 1
 	{job="app-server"} 2
+
+eval instant at 50m SUM(http_requests) BY (job) ^ 2
+	{job="api-server"} 1000000
+	{job="app-server"} 6760000
+
+eval instant at 50m SUM(http_requests) BY (job) % 3 ^ 2
+	{job="api-server"} 1
+	{job="app-server"} 8
+
+eval instant at 50m SUM(http_requests) BY (job) % 2 ^ (3 ^ 2)
+	{job="api-server"} 488
+	{job="app-server"} 40
+
+eval instant at 50m SUM(http_requests) BY (job) % 2 ^ 3 ^ 2
+	{job="api-server"} 488
+	{job="app-server"} 40
+
+eval instant at 50m SUM(http_requests) BY (job) % 2 ^ 3 ^ 2 ^ 2
+	{job="api-server"} 1000
+	{job="app-server"} 2600
+
+eval instant at 50m COUNT(http_requests) BY (job) ^ COUNT(http_requests) BY (job)
+	{job="api-server"} 256
+	{job="app-server"} 256
 
 eval instant at 50m SUM(http_requests) BY (job) / 0
 	{job="api-server"} +Inf
@@ -306,3 +329,21 @@ eval instant at 5m node_cpu > on(job, instance) group_left(target) (threshold or
   node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
   node_cpu{instance="def",job="node",mode="idle"} 8
   node_cpu{instance="def",job="node",mode="user"} 2
+
+clear
+
+load 5m
+  random{foo="bar"} 2
+  metricA{baz="meh"} 3
+  metricB{baz="meh"} 4
+
+# On with no labels, for metrics with no common labels.
+eval instant at 5m random + on() metricA
+  {} 5
+
+# Ignoring with no labels is the same as no ignoring.
+eval instant at 5m metricA + ignoring() metricB
+  {baz="meh"} 7
+
+eval instant at 5m metricA + metricB
+  {baz="meh"} 7
