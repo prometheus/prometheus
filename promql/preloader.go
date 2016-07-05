@@ -15,6 +15,7 @@ package promql
 
 import (
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -32,6 +33,8 @@ func preloadQuery(querier Querier, expr Expr, from, to model.Time) error {
 				queryErr = err
 				return false
 			}
+			n.iterators = map[model.Fingerprint]local.SeriesIterator{}
+			n.metrics = map[model.Fingerprint]metric.Metric{}
 			for fp, it := range iterators {
 				n.iterators[fp] = it
 				n.metrics[fp] = metric.Metric{Metric: it.Metric()}
@@ -46,6 +49,8 @@ func preloadQuery(querier Querier, expr Expr, from, to model.Time) error {
 				queryErr = err
 				return false
 			}
+			n.iterators = map[model.Fingerprint]local.SeriesIterator{}
+			n.metrics = map[model.Fingerprint]metric.Metric{}
 			for fp, it := range iterators {
 				n.iterators[fp] = it
 				n.metrics[fp] = metric.Metric{Metric: it.Metric()}
