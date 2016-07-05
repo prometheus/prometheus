@@ -160,7 +160,6 @@ func New(
 
 		router.Post("/push", instrh("push", frankenstein.AppenderHandler(h.storage)))
 
-		h.apiLegacy.Register(router.WithPrefix("/api"))
 		h.apiV1.Register(router.WithPrefix("/api/v1"))
 
 		router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
