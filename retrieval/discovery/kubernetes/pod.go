@@ -48,10 +48,15 @@ func (d *podDiscovery) run(ctx context.Context, ch chan<- []*config.TargetGroup)
 	}
 	d.pods = pods
 
-	initial := []*config.TargetGroup{d.updatePodsTargetGroup()}
-	for _, ns := range d.pods {
-		for _, pod := range ns {
-			initial = append(initial, d.updatePodTargetGroup(pod))
+	initial := []*config.TargetGroup{}
+	switch d.kd.Conf.Role {
+	case config.KubernetesRolePod:
+		initial = append(initial, d.updatePodsTargetGroup())
+	case config.KubernetesRoleContainer:
+		for _, ns := range d.pods {
+			for _, pod := range ns {
+				initial = append(initial, d.updateContainerTargetGroup(pod))
+			}
 		}
 	}
 
@@ -71,11 +76,16 @@ func (d *podDiscovery) run(ctx context.Context, ch chan<- []*config.TargetGroup)
 			return
 		case e := <-update:
 			log.Debugf("k8s discovery received pod event (EventType=%s, Pod Name=%s)", e.EventType, e.Pod.ObjectMeta.Name)
-			// Update the per-pod target group
 			d.updatePod(e.Pod, e.EventType)
-			tgs = append(tgs, d.updatePodTargetGroup(e.Pod))
-			// ...and update the all pods target group
-			tgs = append(tgs, d.updatePodsTargetGroup())
+
+			switch d.kd.Conf.Role {
+			case config.KubernetesRoleContainer:
+				// Update the per-pod target group
+				tgs = append(tgs, d.updateContainerTargetGroup(e.Pod))
+			case config.KubernetesRolePod:
+				// Update the all pods target group
+				tgs = append(tgs, d.updatePodsTargetGroup())
+			}
 		}
 		if tgs == nil {
 			continue
@@ -188,7 +198,7 @@ func (d *podDiscovery) updatePod(pod *Pod, eventType EventType) {
 	}
 }
 
-func (d *podDiscovery) updatePodTargetGroup(pod *Pod) *config.TargetGroup {
+func (d *podDiscovery) updateContainerTargetGroup(pod *Pod) *config.TargetGroup {
 	d.mtx.RLock()
 	defer d.mtx.RUnlock()
 

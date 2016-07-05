@@ -318,30 +318,34 @@ func (d *serviceDiscovery) updateServiceTargetGroup(service *Service, eps *Endpo
 			break
 		}
 	}
+	switch d.kd.Conf.Role {
+	case config.KubernetesRoleService:
+		t := model.LabelSet{
+			model.AddressLabel: model.LabelValue(serviceAddress),
+			roleLabel:          model.LabelValue("service"),
+		}
+		tg.Targets = append(tg.Targets, t)
 
-	t := model.LabelSet{
-		model.AddressLabel: model.LabelValue(serviceAddress),
-		roleLabel:          model.LabelValue("service"),
-	}
-	tg.Targets = append(tg.Targets, t)
+	case config.KubernetesRoleEndpoint:
+		// Now let's loop through the endpoints & add them to the target group
+		// with appropriate labels.
+		for _, ss := range eps.Subsets {
+			epPort := ss.Ports[0].Port
 
-	// Now let's loop through the endpoints & add them to the target group with appropriate labels.
-	for _, ss := range eps.Subsets {
-		epPort := ss.Ports[0].Port
+			for _, addr := range ss.Addresses {
+				ipAddr := addr.IP
+				if len(ipAddr) == net.IPv6len {
+					ipAddr = "[" + ipAddr + "]"
+				}
+				address := fmt.Sprintf("%s:%d", ipAddr, epPort)
 
-		for _, addr := range ss.Addresses {
-			ipAddr := addr.IP
-			if len(ipAddr) == net.IPv6len {
-				ipAddr = "[" + ipAddr + "]"
+				t := model.LabelSet{
+					model.AddressLabel: model.LabelValue(address),
+					roleLabel:          model.LabelValue("endpoint"),
+				}
+
+				tg.Targets = append(tg.Targets, t)
 			}
-			address := fmt.Sprintf("%s:%d", ipAddr, epPort)
-
-			t := model.LabelSet{
-				model.AddressLabel: model.LabelValue(address),
-				roleLabel:          model.LabelValue("endpoint"),
-			}
-
-			tg.Targets = append(tg.Targets, t)
 		}
 	}
 
