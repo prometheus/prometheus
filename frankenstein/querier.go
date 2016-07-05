@@ -165,7 +165,7 @@ func decodeChunk(c Chunk) []model.SamplePair {
 // A MergeQuerier is a promql.Querier that merges the results of multiple
 // frankenstein.Queriers for the same query.
 type MergeQuerier struct {
-	queriers []Querier
+	Queriers []Querier
 }
 
 // Query fetches series for a given time range and label matchers from multiple
@@ -175,7 +175,7 @@ func (qm MergeQuerier) Query(from, to model.Time, matchers ...*metric.LabelMatch
 
 	// Fetch samples from all queriers and group them by fingerprint (unsorted
 	// and with overlap).
-	for _, q := range qm.queriers {
+	for _, q := range qm.Queriers {
 		matrix, err := q.Query(from, to, matchers...)
 		if err != nil {
 			return nil, err
