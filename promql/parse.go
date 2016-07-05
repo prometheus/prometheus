@@ -1052,6 +1052,9 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 		if n.Op == itemTopK || n.Op == itemBottomK {
 			p.expectType(n.Param, model.ValScalar, "aggregation parameter")
 		}
+		if n.Op == itemCountValues {
+			p.expectType(n.Param, model.ValString, "aggregation parameter")
+		}
 
 	case *BinaryExpr:
 		lt := p.checkType(n.LHS)
