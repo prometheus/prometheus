@@ -82,6 +82,10 @@ func init() {
 		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.",
 	)
 	cfg.fs.StringVar(
+		&cfg.web.RoutePrefix, "web.route-prefix", "",
+		"Prefix for the internal routes of web endpoints. Defaults to path of -web.external-url.",
+	)
+	cfg.fs.StringVar(
 		&cfg.web.MetricsPath, "web.telemetry-path", "/metrics",
 		"Path under which to expose metrics.",
 	)
@@ -248,6 +252,13 @@ func parse(args []string) error {
 	if err := parsePrometheusURL(); err != nil {
 		return err
 	}
+	// Default -web.route-prefix to path of -web.external-url.
+	if cfg.web.RoutePrefix == "" {
+		cfg.web.RoutePrefix = cfg.web.ExternalURL.Path
+	}
+	// RoutePrefix must always be at least '/'.
+	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
+
 	if err := parseInfluxdbURL(); err != nil {
 		return err
 	}
