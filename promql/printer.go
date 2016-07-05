@@ -135,7 +135,11 @@ func (es Expressions) String() (s string) {
 }
 
 func (node *AggregateExpr) String() string {
-	aggrString := fmt.Sprintf("%s(%s)", node.Op, node.Expr)
+	aggrString := fmt.Sprintf("%s(", node.Op)
+	if node.Op.isAggregatorWithParam() {
+		aggrString += fmt.Sprintf("%s, ", node.Param)
+	}
+	aggrString += fmt.Sprintf("%s)", node.Expr)
 	if len(node.Grouping) > 0 {
 		var format string
 		if node.Without {

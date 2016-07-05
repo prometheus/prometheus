@@ -58,6 +58,10 @@ func (i itemType) isOperator() bool { return i > operatorsStart && i < operators
 // Returns false otherwise
 func (i itemType) isAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
 
+// isAggregator returns true if the item is an aggregator that takes a parameter.
+// Returns false otherwise
+func (i itemType) isAggregatorWithParam() bool { return i == itemTopK || i == itemBottomK }
+
 // isKeyword returns true if the item corresponds to a keyword.
 // Returns false otherwise.
 func (i itemType) isKeyword() bool { return i > keywordsStart && i < keywordsEnd }
@@ -170,6 +174,8 @@ const (
 	itemMax
 	itemStddev
 	itemStdvar
+	itemTopK
+	itemBottomK
 	aggregatorsEnd
 
 	keywordsStart
@@ -203,13 +209,15 @@ var key = map[string]itemType{
 	"unless": itemLUnless,
 
 	// Aggregators.
-	"sum":    itemSum,
-	"avg":    itemAvg,
-	"count":  itemCount,
-	"min":    itemMin,
-	"max":    itemMax,
-	"stddev": itemStddev,
-	"stdvar": itemStdvar,
+	"sum":     itemSum,
+	"avg":     itemAvg,
+	"count":   itemCount,
+	"min":     itemMin,
+	"max":     itemMax,
+	"stddev":  itemStddev,
+	"stdvar":  itemStdvar,
+	"topk":    itemTopK,
+	"bottomk": itemBottomK,
 
 	// Keywords.
 	"alert":       itemAlert,
