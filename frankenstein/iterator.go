@@ -43,7 +43,7 @@ func (it sampleStreamIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePa
 	if i == 0 {
 		return local.ZeroSamplePair
 	}
-	return it.ss.Values[i]
+	return it.ss.Values[i-1]
 }
 
 func (it sampleStreamIterator) RangeValues(in metric.Interval) []model.SamplePair {
