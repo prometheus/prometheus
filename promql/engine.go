@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"container/heap"
 	"fmt"
 	"math"
 	"runtime"
@@ -610,7 +611,7 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 	switch e := expr.(type) {
 	case *AggregateExpr:
 		vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepCommonLabels, vector)
+		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepCommonLabels, e.Param, vector)
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, model.ValScalar, model.ValVector)
@@ -1060,15 +1061,24 @@ type groupedAggregation struct {
 	value            model.SampleValue
 	valuesSquaredSum model.SampleValue
 	groupCount       int
+	heap             vectorByValueHeap
+	reverseHeap      vectorByReverseValueHeap
 }
 
 // aggregation evaluates an aggregation operation on a vector.
-func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepCommon bool, vec vector) vector {
+func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepCommon bool, param Expr, vec vector) vector {
 
 	result := map[uint64]*groupedAggregation{}
+	var k int
+	if op == itemTopK || op == itemBottomK {
+		k = ev.evalInt(param)
+		if k < 1 {
+			return vector{}
+		}
+	}
 
-	for _, sample := range vec {
-		withoutMetric := sample.Metric
+	for _, s := range vec {
+		withoutMetric := s.Metric
 		if without {
 			for _, l := range grouping {
 				withoutMetric.Del(l)
@@ -1080,7 +1090,7 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 		if without {
 			groupingKey = uint64(withoutMetric.Metric.Fingerprint())
 		} else {
-			groupingKey = model.SignatureForLabels(sample.Metric.Metric, grouping...)
+			groupingKey = model.SignatureForLabels(s.Metric.Metric, grouping...)
 		}
 
 		groupedResult, ok := result[groupingKey]
@@ -1088,7 +1098,7 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 		if !ok {
 			var m metric.Metric
 			if keepCommon {
-				m = sample.Metric
+				m = s.Metric
 				m.Del(model.MetricNameLabel)
 			} else if without {
 				m = withoutMetric
@@ -1098,44 +1108,65 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 					Copied: true,
 				}
 				for _, l := range grouping {
-					if v, ok := sample.Metric.Metric[l]; ok {
+					if v, ok := s.Metric.Metric[l]; ok {
 						m.Set(l, v)
 					}
 				}
 			}
 			result[groupingKey] = &groupedAggregation{
 				labels:           m,
-				value:            sample.Value,
-				valuesSquaredSum: sample.Value * sample.Value,
+				value:            s.Value,
+				valuesSquaredSum: s.Value * s.Value,
 				groupCount:       1,
+			}
+			if op == itemTopK {
+				result[groupingKey].heap = make(vectorByValueHeap, 0, k)
+				heap.Push(&result[groupingKey].heap, &sample{Value: s.Value, Metric: s.Metric})
+			} else if op == itemBottomK {
+				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, k)
+				heap.Push(&result[groupingKey].reverseHeap, &sample{Value: s.Value, Metric: s.Metric})
 			}
 			continue
 		}
 		// Add the sample to the existing group.
 		if keepCommon {
-			groupedResult.labels = labelIntersection(groupedResult.labels, sample.Metric)
+			groupedResult.labels = labelIntersection(groupedResult.labels, s.Metric)
 		}
 
 		switch op {
 		case itemSum:
-			groupedResult.value += sample.Value
+			groupedResult.value += s.Value
 		case itemAvg:
-			groupedResult.value += sample.Value
+			groupedResult.value += s.Value
 			groupedResult.groupCount++
 		case itemMax:
-			if groupedResult.value < sample.Value || math.IsNaN(float64(groupedResult.value)) {
-				groupedResult.value = sample.Value
+			if groupedResult.value < s.Value || math.IsNaN(float64(groupedResult.value)) {
+				groupedResult.value = s.Value
 			}
 		case itemMin:
-			if groupedResult.value > sample.Value || math.IsNaN(float64(groupedResult.value)) {
-				groupedResult.value = sample.Value
+			if groupedResult.value > s.Value || math.IsNaN(float64(groupedResult.value)) {
+				groupedResult.value = s.Value
 			}
 		case itemCount:
 			groupedResult.groupCount++
 		case itemStdvar, itemStddev:
-			groupedResult.value += sample.Value
-			groupedResult.valuesSquaredSum += sample.Value * sample.Value
+			groupedResult.value += s.Value
+			groupedResult.valuesSquaredSum += s.Value * s.Value
 			groupedResult.groupCount++
+		case itemTopK:
+			if len(groupedResult.heap) < k || groupedResult.heap[0].Value < s.Value || math.IsNaN(float64(groupedResult.heap[0].Value)) {
+				if len(groupedResult.heap) == k {
+					heap.Pop(&groupedResult.heap)
+				}
+				heap.Push(&groupedResult.heap, &sample{Value: s.Value, Metric: s.Metric})
+			}
+		case itemBottomK:
+			if len(groupedResult.reverseHeap) < k || groupedResult.reverseHeap[0].Value > s.Value || math.IsNaN(float64(groupedResult.reverseHeap[0].Value)) {
+				if len(groupedResult.reverseHeap) == k {
+					heap.Pop(&groupedResult.reverseHeap)
+				}
+				heap.Push(&groupedResult.reverseHeap, &sample{Value: s.Value, Metric: s.Metric})
+			}
 		default:
 			panic(fmt.Errorf("expected aggregation operator but got %q", op))
 		}
@@ -1156,6 +1187,28 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 		case itemStddev:
 			avg := float64(aggr.value) / float64(aggr.groupCount)
 			aggr.value = model.SampleValue(math.Sqrt(float64(aggr.valuesSquaredSum)/float64(aggr.groupCount) - avg*avg))
+		case itemTopK:
+			// The heap keeps the lowest value on top, so reverse it.
+			sort.Sort(sort.Reverse(aggr.heap))
+			for _, v := range aggr.heap {
+				resultVector = append(resultVector, &sample{
+					Metric:    v.Metric,
+					Value:     v.Value,
+					Timestamp: ev.Timestamp,
+				})
+			}
+			continue // Bypass default append.
+		case itemBottomK:
+			// The heap keeps the lowest value on top, so reverse it.
+			sort.Sort(sort.Reverse(aggr.reverseHeap))
+			for _, v := range aggr.reverseHeap {
+				resultVector = append(resultVector, &sample{
+					Metric:    v.Metric,
+					Value:     v.Value,
+					Timestamp: ev.Timestamp,
+				})
+			}
+			continue // Bypass default append.
 		default:
 			// For other aggregations, we already have the right value.
 		}

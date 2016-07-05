@@ -719,6 +719,11 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	}
 
 	p.expect(itemLeftParen, ctx)
+	var param Expr
+	if agop.typ.isAggregatorWithParam() {
+		param = p.expr()
+		p.expect(itemComma, ctx)
+	}
 	e := p.expr()
 	p.expect(itemRightParen, ctx)
 
@@ -746,6 +751,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	return &AggregateExpr{
 		Op:               agop.typ,
 		Expr:             e,
+		Param:            param,
 		Grouping:         grouping,
 		Without:          without,
 		KeepCommonLabels: keepCommon,
@@ -1043,6 +1049,9 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 			p.errorf("aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, model.ValVector, "aggregation expression")
+		if n.Op == itemTopK || n.Op == itemBottomK {
+			p.expectType(n.Param, model.ValScalar, "aggregation parameter")
+		}
 
 	case *BinaryExpr:
 		lt := p.checkType(n.LHS)
