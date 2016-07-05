@@ -104,7 +104,6 @@ type Discovery struct {
 
 	apiServers   []config.URL
 	apiServersMu sync.RWMutex
-	runDone      chan struct{}
 }
 
 // Initialize sets up the discovery for usage.
@@ -117,14 +116,13 @@ func (kd *Discovery) Initialize() error {
 
 	kd.apiServers = kd.Conf.APIServers
 	kd.client = client
-	kd.runDone = make(chan struct{})
 
 	return nil
 }
 
 // Run implements the TargetProvider interface.
 func (kd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	log.Debugf("Kubernetes Discovery.Run beginning")
+	log.Debugf("Start Kubernetes service discovery")
 	defer close(ch)
 
 	switch kd.Conf.Role {
