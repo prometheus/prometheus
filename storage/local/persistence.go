@@ -159,7 +159,10 @@ func newPersistence(
 			return nil, err
 		}
 		if len(fis) > 0 && !(len(fis) == 1 && fis[0].Name() == "lost+found" && fis[0].IsDir()) {
-			return nil, fmt.Errorf("could not detect storage version on disk, assuming version 0, need version %d - please wipe storage or run a version of Prometheus compatible with storage version 0", Version)
+
+			unknownFiles := len(fis)
+
+			return nil, fmt.Errorf("could not detect storage version on disk; assuming version 0, need version %d; please wipe storage (removing %d unexpected entries) or run a version of Prometheus compatible with storage version 0", Version, unknownFiles)
 		}
 		// Finally we can write our own version into a new version file.
 		file, err := os.Create(versionPath)
