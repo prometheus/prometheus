@@ -293,7 +293,7 @@ func (n *Notifier) sendAll(alerts ...*model.Alert) int {
 				n.errors.WithLabelValues(u).Inc()
 				atomic.AddUint64(&numErrors, 1)
 			}
-			n.latency.WithLabelValues(u).Observe(float64(time.Since(begin)) / float64(time.Second))
+			n.latency.WithLabelValues(u).Observe(time.Since(begin).Seconds())
 			n.sent.WithLabelValues(u).Add(float64(len(alerts)))
 
 			wg.Done()
