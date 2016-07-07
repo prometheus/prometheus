@@ -1119,7 +1119,7 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 ) (becameDirty bool) {
 	defer func(begin time.Time) {
 		s.maintainSeriesDuration.WithLabelValues(maintainInMemory).Observe(
-			float64(time.Since(begin)) / float64(time.Second),
+			time.Since(begin).Seconds(),
 		)
 	}(time.Now())
 
@@ -1272,7 +1272,7 @@ func (s *MemorySeriesStorage) writeMemorySeries(
 func (s *MemorySeriesStorage) maintainArchivedSeries(fp model.Fingerprint, beforeTime model.Time) {
 	defer func(begin time.Time) {
 		s.maintainSeriesDuration.WithLabelValues(maintainArchived).Observe(
-			float64(time.Since(begin)) / float64(time.Second),
+			time.Since(begin).Seconds(),
 		)
 	}(time.Now())
 
