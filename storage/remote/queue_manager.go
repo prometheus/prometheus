@@ -190,7 +190,7 @@ func (t *StorageQueueManager) sendSamples(s model.Samples) {
 		// floor.
 		begin := time.Now()
 		err := t.tsdb.Store(s)
-		duration := time.Since(begin) / time.Second
+		duration := time.Since(begin).Seconds()
 
 		labelValue := success
 		if err != nil {
@@ -200,7 +200,7 @@ func (t *StorageQueueManager) sendSamples(s model.Samples) {
 			t.failedSamples.Add(float64(len(s)))
 		}
 		t.samplesCount.WithLabelValues(labelValue).Add(float64(len(s)))
-		t.sendLatency.Observe(float64(duration))
+		t.sendLatency.Observe(duration)
 	}()
 }
 

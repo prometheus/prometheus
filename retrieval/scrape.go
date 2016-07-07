@@ -201,7 +201,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 	wg.Wait()
 	targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
-		float64(time.Since(start)) / float64(time.Second),
+		time.Since(start).Seconds(),
 	)
 }
 
@@ -256,7 +256,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 	// be inserting a previous sample set.
 	wg.Wait()
 	targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(
-		float64(time.Since(start)) / float64(time.Second),
+		time.Since(start).Seconds(),
 	)
 	targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Inc()
 }
@@ -413,7 +413,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 			// Only record after the first scrape.
 			if !last.IsZero() {
 				targetIntervalLength.WithLabelValues(interval.String()).Observe(
-					float64(time.Since(last)) / float64(time.Second), // Sub-second precision.
+					time.Since(last).Seconds(),
 				)
 			}
 
@@ -493,7 +493,7 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, err error)
 			model.MetricNameLabel: scrapeDurationMetricName,
 		},
 		Timestamp: ts,
-		Value:     model.SampleValue(float64(duration) / float64(time.Second)),
+		Value:     model.SampleValue(duration.Seconds()),
 	}
 
 	if err := sl.reportAppender.Append(healthSample); err != nil {
