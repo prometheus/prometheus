@@ -153,7 +153,7 @@ func (g *Group) run() {
 		start := time.Now()
 		g.eval()
 
-		iterationDuration.Observe(float64(time.Since(start)) / float64(time.Second))
+		iterationDuration.Observe(time.Since(start).Seconds())
 	}
 	iter()
 
@@ -252,7 +252,7 @@ func (g *Group) eval() {
 			defer wg.Done()
 
 			defer func(t time.Time) {
-				evalDuration.WithLabelValues(rtyp).Observe(float64(time.Since(t)) / float64(time.Second))
+				evalDuration.WithLabelValues(rtyp).Observe(time.Since(t).Seconds())
 			}(time.Now())
 
 			evalTotal.WithLabelValues(rtyp).Inc()
