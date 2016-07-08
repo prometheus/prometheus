@@ -276,7 +276,6 @@ eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
 	{job="api-server", instance="0", group="canary"} 24000
 	{job="api-server", instance="1", group="canary"} -32000
 
-
 # Tests for stddev_over_time and stdvar_over_time.
 clear
 load 10s
@@ -287,3 +286,47 @@ eval instant at 1m stdvar_over_time(metric[1m])
 
 eval instant at 1m stddev_over_time(metric[1m])
   {} 3.249615
+
+# Tests for quantile_over_time
+clear
+
+load 10s
+	data{test="two samples"} 0 1
+	data{test="three samples"} 0 1 2
+	data{test="uneven samples"} 0 1 4
+
+eval instant at 1m quantile_over_time(0, data[1m])
+	{test="two samples"} 0
+	{test="three samples"} 0
+	{test="uneven samples"} 0
+
+eval instant at 1m quantile_over_time(0.5, data[1m])
+	{test="two samples"} 0.5
+	{test="three samples"} 1
+	{test="uneven samples"} 1
+
+eval instant at 1m quantile_over_time(0.75, data[1m])
+	{test="two samples"} 0.75
+	{test="three samples"} 1.5
+	{test="uneven samples"} 2.5
+
+eval instant at 1m quantile_over_time(0.8, data[1m])
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
+
+eval instant at 1m quantile_over_time(1, data[1m])
+	{test="two samples"} 1
+	{test="three samples"} 2
+	{test="uneven samples"} 4
+
+eval instant at 1m quantile_over_time(-1, data[1m])
+	{test="two samples"} -Inf
+	{test="three samples"} -Inf
+	{test="uneven samples"} -Inf
+
+eval instant at 1m quantile_over_time(2, data[1m])
+	{test="two samples"} +Inf
+	{test="three samples"} +Inf
+	{test="uneven samples"} +Inf
+>>>>>>> Add quantile_over_time function
