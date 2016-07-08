@@ -1076,6 +1076,13 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 			return vector{}
 		}
 	}
+	var valueLabel model.LabelName
+	if op == itemCountValues {
+		valueLabel = model.LabelName(ev.evalString(param).Value)
+		if !without {
+			grouping = append(grouping, valueLabel)
+		}
+	}
 
 	for _, s := range vec {
 		withoutMetric := s.Metric
@@ -1084,6 +1091,13 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 				withoutMetric.Del(l)
 			}
 			withoutMetric.Del(model.MetricNameLabel)
+			if op == itemCountValues {
+				withoutMetric.Set(valueLabel, model.LabelValue(s.Value.String()))
+			}
+		} else {
+			if op == itemCountValues {
+				s.Metric.Set(valueLabel, model.LabelValue(s.Value.String()))
+			}
 		}
 
 		var groupingKey uint64
@@ -1147,7 +1161,7 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 			if groupedResult.value > s.Value || math.IsNaN(float64(groupedResult.value)) {
 				groupedResult.value = s.Value
 			}
-		case itemCount:
+		case itemCount, itemCountValues:
 			groupedResult.groupCount++
 		case itemStdvar, itemStddev:
 			groupedResult.value += s.Value
@@ -1179,7 +1193,7 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 		switch op {
 		case itemAvg:
 			aggr.value = aggr.value / model.SampleValue(aggr.groupCount)
-		case itemCount:
+		case itemCount, itemCountValues:
 			aggr.value = model.SampleValue(aggr.groupCount)
 		case itemStdvar:
 			avg := float64(aggr.value) / float64(aggr.groupCount)

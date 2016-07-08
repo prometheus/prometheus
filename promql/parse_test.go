@@ -1214,6 +1214,18 @@ var testExpr = []struct {
 			Param: &NumberLiteral{5},
 		},
 	}, {
+		input: "count_values(\"value\", some_metric)",
+		expected: &AggregateExpr{
+			Op: itemCountValues,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+				},
+			},
+			Param: &StringLiteral{"value"},
+		},
+	}, {
 		input:  `sum some_metric by (test)`,
 		fail:   true,
 		errMsg: "unexpected identifier \"some_metric\" in aggregation, expected \"(\"",
@@ -1257,6 +1269,10 @@ var testExpr = []struct {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
 		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got vector",
+	}, {
+		input:  `count_values(5, other_metric)`,
+		fail:   true,
+		errMsg: "parse error at char 30: expected type string in aggregation parameter, got scalar",
 	},
 	// Test function calls.
 	{
