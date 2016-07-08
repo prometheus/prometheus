@@ -107,16 +107,23 @@ func bucketQuantile(q model.SampleValue, buckets buckets) float64 {
 	return bucketStart + (bucketEnd-bucketStart)*float64(rank/count)
 }
 
-// qauntile calculates the given quantile of a slice of floats.
-// The slice will be sorted.
-func quantile(q float64, values []float64) float64 {
+// qauntile calculates the given quantile of a vector of samples.
+//
+// The vector will be sorted.
+// If 'values' has zero elements, NaN is returned.
+// If q<0, -Inf is returned.
+// If q>1, +Inf is returned.
+func quantile(q float64, values vectorByValueHeap) float64 {
+	if len(values) == 0 {
+		return math.NaN()
+	}
 	if q < 0 {
 		return math.Inf(-1)
 	}
 	if q > 1 {
 		return math.Inf(+1)
 	}
-	sort.Float64s(values)
+	sort.Sort(values)
 
 	n := float64(len(values))
 	// When the quantile lies between two samples,
@@ -127,5 +134,5 @@ func quantile(q float64, values []float64) float64 {
 	upperIndex := math.Min(n-1, lowerIndex+1)
 
 	weight := rank - math.Floor(rank)
-	return values[int(lowerIndex)]*(1-weight) + values[int(upperIndex)]*weight
+	return float64(values[int(lowerIndex)].Value)*(1-weight) + float64(values[int(upperIndex)].Value)*weight
 }

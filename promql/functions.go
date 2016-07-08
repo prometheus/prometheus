@@ -490,9 +490,9 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) model.Value {
 		}
 
 		el.Metric.Del(model.MetricNameLabel)
-		values := make([]float64, 0, len(el.Values))
+		values := make(vectorByValueHeap, 0, len(el.Values))
 		for _, v := range el.Values {
-			values = append(values, float64(v.Value))
+			values = append(values, &sample{Value: v.Value})
 		}
 		resultVector = append(resultVector, &sample{
 			Metric:    el.Metric,
@@ -529,7 +529,7 @@ func funcStdvarOverTime(ev *evaluator, args Expressions) model.Value {
 		avg := sum / count
 		return squaredSum/count - avg*avg
 	})
-
+}
 
 // === abs(vector model.ValVector) Vector ===
 func funcAbs(ev *evaluator, args Expressions) model.Value {

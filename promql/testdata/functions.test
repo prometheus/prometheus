@@ -329,4 +329,3 @@ eval instant at 1m quantile_over_time(2, data[1m])
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
->>>>>>> Add quantile_over_time function
