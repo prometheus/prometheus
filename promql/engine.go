@@ -1076,6 +1076,10 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 			return vector{}
 		}
 	}
+	var q float64
+	if op == itemQuantile {
+		q = ev.evalFloat(param)
+	}
 	var valueLabel model.LabelName
 	if op == itemCountValues {
 		valueLabel = model.LabelName(ev.evalString(param).Value)
@@ -1133,7 +1137,7 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 				valuesSquaredSum: s.Value * s.Value,
 				groupCount:       1,
 			}
-			if op == itemTopK {
+			if op == itemTopK || op == itemQuantile {
 				result[groupingKey].heap = make(vectorByValueHeap, 0, k)
 				heap.Push(&result[groupingKey].heap, &sample{Value: s.Value, Metric: s.Metric})
 			} else if op == itemBottomK {
@@ -1181,6 +1185,8 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 				}
 				heap.Push(&groupedResult.reverseHeap, &sample{Value: s.Value, Metric: s.Metric})
 			}
+		case itemQuantile:
+			groupedResult.heap = append(groupedResult.heap, s)
 		default:
 			panic(fmt.Errorf("expected aggregation operator but got %q", op))
 		}
@@ -1223,6 +1229,8 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 				})
 			}
 			continue // Bypass default append.
+		case itemQuantile:
+			aggr.value = model.SampleValue(quantile(q, aggr.heap))
 		default:
 			// For other aggregations, we already have the right value.
 		}
