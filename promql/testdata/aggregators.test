@@ -183,3 +183,40 @@ eval_ordered instant at 50m bottomk(3, http_requests{job="api-server",group="pro
 	http_requests{job="api-server", instance="0", group="production"}	100
 	http_requests{job="api-server", instance="1", group="production"}	200
 	http_requests{job="api-server", instance="2", group="production"}	NaN
+
+clear
+
+# Tests for count_values.
+load 5m
+	version{job="api-server", instance="0", group="production"}	6
+	version{job="api-server", instance="1", group="production"}	6
+	version{job="api-server", instance="2", group="production"}	6
+	version{job="api-server", instance="0", group="canary"}		8
+	version{job="api-server", instance="1", group="canary"}		8
+	version{job="app-server", instance="0", group="production"}	6
+	version{job="app-server", instance="1", group="production"}	6
+	version{job="app-server", instance="0", group="canary"}		7
+	version{job="app-server", instance="1", group="canary"}		7
+
+eval instant at 5m count_values("version", version)
+	{version="6"} 5
+	{version="7"} 2
+	{version="8"} 2
+
+eval instant at 5m count_values without (instance)("version", version)
+	{job="api-server", group="production", version="6"} 3
+	{job="api-server", group="canary", version="8"} 2
+	{job="app-server", group="production", version="6"} 2
+	{job="app-server", group="canary", version="7"} 2
+
+# Overwrite label with output. Don't do this.
+eval instant at 5m count_values without (instance)("job", version)
+	{job="6", group="production"} 5
+	{job="8", group="canary"} 2
+	{job="7", group="canary"} 2
+
+# Overwrite label with output. Don't do this.
+eval instant at 5m count_values by (job, group)("job", version)
+	{job="6", group="production"} 5
+	{job="8", group="canary"} 2
+	{job="7", group="canary"} 2
