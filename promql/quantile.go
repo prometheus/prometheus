@@ -48,16 +48,16 @@ type metricWithBuckets struct {
 	buckets buckets
 }
 
-// quantile calculates the quantile 'q' based on the given buckets. The buckets
-// will be sorted by upperBound by this function (i.e. no sorting needed before
-// calling this function). The quantile value is interpolated assuming a linear
-// distribution within a bucket. However, if the quantile falls into the highest
-// bucket, the upper bound of the 2nd highest bucket is returned. A natural
-// lower bound of 0 is assumed if the upper bound of the lowest bucket is
-// greater 0. In that case, interpolation in the lowest bucket happens linearly
-// between 0 and the upper bound of the lowest bucket. However, if the lowest
-// bucket has an upper bound less or equal 0, this upper bound is returned if
-// the quantile falls into the lowest bucket.
+// bucketQuantile calculates the quantile 'q' based on the given buckets. The
+// buckets will be sorted by upperBound by this function (i.e. no sorting
+// needed before calling this function). The quantile value is interpolated
+// assuming a linear distribution within a bucket. However, if the quantile
+// falls into the highest bucket, the upper bound of the 2nd highest bucket is
+// returned. A natural lower bound of 0 is assumed if the upper bound of the
+// lowest bucket is greater 0. In that case, interpolation in the lowest bucket
+// happens linearly between 0 and the upper bound of the lowest bucket.
+// However, if the lowest bucket has an upper bound less or equal 0, this upper
+// bound is returned if the quantile falls into the lowest bucket.
 //
 // There are a number of special cases (once we have a way to report errors
 // happening during evaluations of AST functions, we should report those
@@ -70,7 +70,7 @@ type metricWithBuckets struct {
 // If q<0, -Inf is returned.
 //
 // If q>1, +Inf is returned.
-func quantile(q model.SampleValue, buckets buckets) float64 {
+func bucketQuantile(q model.SampleValue, buckets buckets) float64 {
 	if q < 0 {
 		return math.Inf(-1)
 	}
@@ -105,4 +105,27 @@ func quantile(q model.SampleValue, buckets buckets) float64 {
 		rank -= buckets[b-1].count
 	}
 	return bucketStart + (bucketEnd-bucketStart)*float64(rank/count)
+}
+
+// qauntile calculates the given quantile of a slice of floats.
+// The slice will be sorted.
+func quantile(q float64, values []float64) float64 {
+	if q < 0 {
+		return math.Inf(-1)
+	}
+	if q > 1 {
+		return math.Inf(+1)
+	}
+	sort.Float64s(values)
+
+	n := float64(len(values))
+	// When the quantile lies between two samples,
+	// we use a weighted average of the two samples.
+	rank := q * (n - 1)
+
+	lowerIndex := math.Max(0, math.Floor(rank))
+	upperIndex := math.Min(n-1, lowerIndex+1)
+
+	weight := rank - math.Floor(rank)
+	return values[int(lowerIndex)]*(1-weight) + values[int(upperIndex)]*weight
 }

@@ -490,33 +490,13 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) model.Value {
 		}
 
 		el.Metric.Del(model.MetricNameLabel)
-    var result float64
-    if q < 0 {
-      result = math.Inf(-1)
-    } else if q > 1 {
-      result = math.Inf(+1)
-    } else {
-      values := make([]float64, 0, len(el.Values))
-      for _, v := range el.Values {
-        values = append(values, float64(v.Value))
-      }
-      sort.Float64s(values)
-
-      n := float64(len(el.Values))
-      // When the quantile lies between two samples,
-      // we use a weighted average of the two samples.
-      rank := q * (n-1)
-
-      lowerIndex := math.Max(0, math.Floor(rank))
-      upperIndex := math.Min(n-1, lowerIndex+1)
-
-      weight := rank - math.Floor(rank)
-
-      result = values[int(lowerIndex)] * (1 - weight) + values[int(upperIndex)] * weight
-    }
+		values := make([]float64, 0, len(el.Values))
+		for _, v := range el.Values {
+			values = append(values, float64(v.Value))
+		}
 		resultVector = append(resultVector, &sample{
 			Metric:    el.Metric,
-			Value:     model.SampleValue(result),
+			Value:     model.SampleValue(quantile(q, values)),
 			Timestamp: ev.Timestamp,
 		})
 	}
@@ -750,7 +730,7 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) model.Value {
 	for _, mb := range signatureToMetricWithBuckets {
 		outVec = append(outVec, &sample{
 			Metric:    mb.metric,
-			Value:     model.SampleValue(quantile(q, mb.buckets)),
+			Value:     model.SampleValue(bucketQuantile(q, mb.buckets)),
 			Timestamp: ev.Timestamp,
 		})
 	}
