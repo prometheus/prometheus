@@ -478,6 +478,51 @@ func funcSumOverTime(ev *evaluator, args Expressions) model.Value {
 	})
 }
 
+// === quantile_over_time(matrix model.ValMatrix) Vector ===
+func funcQuantileOverTime(ev *evaluator, args Expressions) model.Value {
+	q := ev.evalFloat(args[0])
+	mat := ev.evalMatrix(args[1])
+	resultVector := vector{}
+
+	for _, el := range mat {
+		if len(el.Values) == 0 {
+			continue
+		}
+
+		el.Metric.Del(model.MetricNameLabel)
+    var result float64
+    if q < 0 {
+      result = math.Inf(-1)
+    } else if q > 1 {
+      result = math.Inf(+1)
+    } else {
+      values := make([]float64, 0, len(el.Values))
+      for _, v := range el.Values {
+        values = append(values, float64(v.Value))
+      }
+      sort.Float64s(values)
+
+      n := float64(len(el.Values))
+      // When the quantile lies between two samples,
+      // we use a weighted average of the two samples.
+      rank := q * (n-1)
+
+      lowerIndex := math.Max(0, math.Floor(rank))
+      upperIndex := math.Min(n-1, lowerIndex+1)
+
+      weight := rank - math.Floor(rank)
+
+      result = values[int(lowerIndex)] * (1 - weight) + values[int(upperIndex)] * weight
+    }
+		resultVector = append(resultVector, &sample{
+			Metric:    el.Metric,
+			Value:     model.SampleValue(result),
+			Timestamp: ev.Timestamp,
+		})
+	}
+	return resultVector
+}
+
 // === stddev_over_time(matrix model.ValMatrix) Vector ===
 func funcStddevOverTime(ev *evaluator, args Expressions) model.Value {
 	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
@@ -504,7 +549,7 @@ func funcStdvarOverTime(ev *evaluator, args Expressions) model.Value {
 		avg := sum / count
 		return squaredSum/count - avg*avg
 	})
-}
+
 
 // === abs(vector model.ValVector) Vector ===
 func funcAbs(ev *evaluator, args Expressions) model.Value {
@@ -972,6 +1017,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar},
 		ReturnType: model.ValVector,
 		Call:       funcPredictLinear,
+	},
+	"quantile_over_time": {
+		Name:       "quantile_over_time",
+		ArgTypes:   []model.ValueType{model.ValScalar, model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcQuantileOverTime,
 	},
 	"rate": {
 		Name:       "rate",
