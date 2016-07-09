@@ -99,6 +99,7 @@ type PrometheusVersion struct {
 type Options struct {
 	ListenAddress        string
 	ExternalURL          *url.URL
+	PrefixRoutes         bool
 	MetricsPath          string
 	UseLocalAssets       bool
 	UserAssetsPath       string
@@ -137,7 +138,7 @@ func New(
 		apiV1: api_v1.NewAPI(qe, st),
 	}
 
-	if o.ExternalURL.Path != "" {
+	if o.ExternalURL.Path != "" && o.PrefixRoutes {
 		// If the prefix is missing for the root path, prepend it.
 		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, o.ExternalURL.Path, http.StatusFound)
