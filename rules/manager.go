@@ -317,15 +317,17 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 		}
 
 		tmplData := struct {
-			Labels map[string]string
-			Value  float64
+			Labels   map[string]string
+			Value    float64
+			Duration float64
 		}{
-			Labels: l,
-			Value:  float64(alert.Value),
+			Labels:   l,
+			Value:    float64(alert.Value),
+			Duration: timestamp.Sub(alert.ActiveAt).Seconds(),
 		}
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
-		defs := "{{$labels := .Labels}}{{$value := .Value}}"
+		defs := "{{$labels := .Labels}}{{$value := .Value}}{{$duration := .Duration}}"
 
 		expand := func(text model.LabelValue) model.LabelValue {
 			tmpl := template.NewTemplateExpander(
