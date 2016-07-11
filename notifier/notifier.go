@@ -131,13 +131,12 @@ func New(o *Options) *Notifier {
 }
 
 // ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (n *Notifier) ApplyConfig(conf *config.Config) bool {
+func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
 	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
-	return true
+	return nil
 }
 
 const maxBatchSize = 64
