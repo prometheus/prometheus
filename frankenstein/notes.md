@@ -2,23 +2,8 @@
 
 Design Doc: https://docs.google.com/document/d/1C7yhMnb1x2sfeoe45f4mnnKConvroWhJ8KQZwIHJOuw/edit#heading=h.f7lkb8wswewc
 
-    # Build frankenstein
-    make frank
-
-    # Start Consul:
-    consul agent -ui -data-dir=consul/ -server -advertise=127.0.0.1 -bootstrap
-
-    # Start frank distributor:
-    ./frank -web.listen-address=:9094
-
-    # Start a ingestor
-    ./prometheus -config.file=empty.yml
-
-    # Add a token into consul for it:
-    curl  -X PUT -d '{"hostname": "http://localhost:9090/push", "tokens": [0]}' http://localhost:8500/v1/kv/collectors/localhost
-
-    # Start retrieval scraping the ingestor, push to distributor
-    ./prometheus -config.file=frankenstein/retrieval.yml -web.listen-address=:9091 -retrieval-only -storage.remote.generic-url=http://localhost:9094/push
+    GOOS=linux DOCKER_IMAGE_TAG=latest make build docker docker-frank
+    ./frankenstein/run.sh
 
 ## Retrieval
 
@@ -30,9 +15,50 @@ Use existing prometheus binary; add a --retrieval-only flag to existing promethe
 
 Use a consistent hasing library to distribute timeseries to collectors
 
-## Collection
+## Ingestor
 
 Use existing prometheus binary with addind push interface. Adapt memorySeriesStorage with support for flushing chunks to something else.
+
+Ingestion Chunk Builder
+
+On disk:
+    Index for fingerprint -> metric, with in-memory cache (use existing leveldb / FingerprintMetricIndex)
+    Log of (fingerprint, datapoint) (skip for now, add later)
+
+In memory:
+    Map of fingerprint -> timeseries (use existing seriesMap)
+
+    Timeseries:
+         - has 1 active/open chunk
+         - and a queue of chunks being flushed
+
+    A goroutine which:
+        - move active chunks to the flushing queue
+        - flushes chunks in batches
+        - deletes empty timeseries from the map & index
+
+    On append:
+        - work out fingerprint (consult mapper)
+        - write (fingerprint, datapoint) entry to log
+        - find / create timeseries
+        - add entry to "open" chunk
+
+    On query:
+        - For now, iterate through all metrics & return matching fingerprints
+        - Later, consider in-memory inverted index too, although only needs
+          to be built from existing DS, doesn't need to be persisted.
+
+    On startup:
+        - load index
+        - replay log
+
+Pros:
+    - simplicity: only concerned with maintaining and building open chunks
+    - no caching to worry about etc
+
+Cons:
+    - have to rewrite lots
+    - user could start virtually infinite number of timeseries and cause us to OOM
 
 ## Query
 

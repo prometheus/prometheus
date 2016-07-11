@@ -39,6 +39,7 @@ func main() {
 	flag.StringVar(&consulHost, "consul.hostname", "localhost:8500", "Hostname and port of Consul.")
 	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
 	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream injestors.")
+	flag.Parse()
 
 	clientFactory := func(hostname string) (*frankenstein.IngesterClient, error) {
 		// TODO: make correct URLs out of hostnames.
