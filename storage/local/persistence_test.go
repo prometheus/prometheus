@@ -1045,7 +1045,10 @@ func verifyIndexedState(i int, t *testing.T, b incrementalBatch, indexedFpsToMet
 
 	// Compare label name -> label values mappings.
 	for ln, lvs := range b.expectedLnToLvs {
-		outLvs := p.labelValuesForLabelName(ln)
+		outLvs, err := p.labelValuesForLabelName(ln)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		outSet := codable.LabelValueSet{}
 		for _, lv := range outLvs {

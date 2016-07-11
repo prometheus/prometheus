@@ -17,13 +17,12 @@ import (
 	"net/http"
 
 	"github.com/golang/protobuf/proto"
-
-	"github.com/prometheus/prometheus/promql"
-
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 
-	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage/metric"
 )
 
 func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
@@ -32,20 +31,14 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	req.ParseForm()
 
-	fps := map[model.Fingerprint]struct{}{}
-
+	var matcherSets []metric.LabelMatchers
 	for _, s := range req.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		for fp := range h.storage.MetricsForLabelMatchers(
-			model.Now().Add(-promql.StalenessDelta), model.Latest,
-			matchers...,
-		) {
-			fps[fp] = struct{}{}
-		}
+		matcherSets = append(matcherSets, matchers)
 	}
 
 	var (
@@ -64,14 +57,13 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		Type:   dto.MetricType_UNTYPED.Enum(),
 	}
 
-	for fp := range fps {
+	vector, err := h.storage.LastSampleForLabelMatchers(minTimestamp, matcherSets...)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, s := range vector {
 		globalUsed := map[model.LabelName]struct{}{}
-
-		s := h.storage.LastSampleForFingerprint(fp)
-		// Discard if sample does not exist or lays before the staleness interval.
-		if s.Timestamp.Before(minTimestamp) {
-			continue
-		}
 
 		// Reset label slice.
 		protMetric.Label = protMetric.Label[:0]

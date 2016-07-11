@@ -128,6 +128,9 @@ const (
 // synced or not. It does not need to be goroutine safe.
 type syncStrategy func() bool
 
+// A MemorySeriesStorage manages series in memory over time, while also
+// interfacing with a persistence layer to make time series data persistent
+// across restarts and evictable from memory.
 type MemorySeriesStorage struct {
 	// archiveHighWatermark and numChunksToPersist have to be aligned for atomic operations.
 	archiveHighWatermark model.Time    // No archived series has samples after this time.
@@ -395,21 +398,38 @@ func (s *MemorySeriesStorage) WaitForIndexing() {
 	s.persistence.waitForIndexing()
 }
 
-// LastSampleForFingerprint implements Storage.
-func (s *MemorySeriesStorage) LastSampleForFingerprint(fp model.Fingerprint) model.Sample {
-	s.fpLocker.Lock(fp)
-	defer s.fpLocker.Unlock(fp)
+// LastSampleForLabelMatchers implements Storage.
+func (s *MemorySeriesStorage) LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
+	fps := map[model.Fingerprint]struct{}{}
+	for _, matchers := range matcherSets {
+		fpToMetric, err := s.metricsForLabelMatchers(cutoff, model.Latest, matchers...)
+		if err != nil {
+			return nil, err
+		}
+		for fp := range fpToMetric {
+			fps[fp] = struct{}{}
+		}
+	}
 
-	series, ok := s.fpToSeries.get(fp)
-	if !ok {
-		return ZeroSample
+	res := make(model.Vector, 0, len(fps))
+	for fp := range fps {
+		s.fpLocker.Lock(fp)
+
+		series, ok := s.fpToSeries.get(fp)
+		if !ok {
+			// A series could have disappeared between resolving label matchers and here.
+			s.fpLocker.Unlock(fp)
+			continue
+		}
+		sp := series.lastSamplePair()
+		res = append(res, &model.Sample{
+			Metric:    series.metric,
+			Value:     sp.Value,
+			Timestamp: sp.Timestamp,
+		})
+		s.fpLocker.Unlock(fp)
 	}
-	sp := series.lastSamplePair()
-	return model.Sample{
-		Metric:    series.metric,
-		Value:     sp.Value,
-		Timestamp: sp.Timestamp,
-	}
+	return res, nil
 }
 
 // boundedIterator wraps a SeriesIterator and does not allow fetching
@@ -438,11 +458,45 @@ func (bit *boundedIterator) RangeValues(interval metric.Interval) []model.Sample
 	return bit.it.RangeValues(interval)
 }
 
-// NewPreloader implements Storage.
-func (s *MemorySeriesStorage) NewPreloader() Preloader {
-	return &memorySeriesPreloader{
-		storage: s,
+// Metric implements SeriesIterator.
+func (bit *boundedIterator) Metric() metric.Metric {
+	return bit.it.Metric()
+}
+
+// Close implements SeriesIterator.
+func (bit *boundedIterator) Close() {
+	bit.it.Close()
+}
+
+// QueryRange implements Storage.
+func (s *MemorySeriesStorage) QueryRange(from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+	fpToMetric, err := s.metricsForLabelMatchers(from, through, matchers...)
+	if err != nil {
+		return nil, err
 	}
+	iterators := make([]SeriesIterator, 0, len(fpToMetric))
+	for fp := range fpToMetric {
+		it := s.preloadChunksForRange(fp, from, through)
+		iterators = append(iterators, it)
+	}
+	return iterators, nil
+}
+
+// QueryInstant implements Storage.
+func (s *MemorySeriesStorage) QueryInstant(ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+	from := ts.Add(-stalenessDelta)
+	through := ts
+
+	fpToMetric, err := s.metricsForLabelMatchers(from, through, matchers...)
+	if err != nil {
+		return nil, err
+	}
+	iterators := make([]SeriesIterator, 0, len(fpToMetric))
+	for fp := range fpToMetric {
+		it := s.preloadChunksForInstant(fp, from, through)
+		iterators = append(iterators, it)
+	}
+	return iterators, nil
 }
 
 // fingerprintsForLabelPairs returns the set of fingerprints that have the given labels.
@@ -471,11 +525,33 @@ func (s *MemorySeriesStorage) fingerprintsForLabelPairs(pairs ...model.LabelPair
 // MetricsForLabelMatchers implements Storage.
 func (s *MemorySeriesStorage) MetricsForLabelMatchers(
 	from, through model.Time,
+	matcherSets ...metric.LabelMatchers,
+) ([]metric.Metric, error) {
+	fpToMetric := map[model.Fingerprint]metric.Metric{}
+	for _, matchers := range matcherSets {
+		metrics, err := s.metricsForLabelMatchers(from, through, matchers...)
+		if err != nil {
+			return nil, err
+		}
+		for fp, m := range metrics {
+			fpToMetric[fp] = m
+		}
+	}
+
+	metrics := make([]metric.Metric, 0, len(fpToMetric))
+	for _, m := range fpToMetric {
+		metrics = append(metrics, m)
+	}
+	return metrics, nil
+}
+
+func (s *MemorySeriesStorage) metricsForLabelMatchers(
+	from, through model.Time,
 	matchers ...*metric.LabelMatcher,
-) map[model.Fingerprint]metric.Metric {
+) (map[model.Fingerprint]metric.Metric, error) {
 	var (
 		equals  []model.LabelPair
-		filters []*metric.LabelMatcher
+		filters metric.LabelMatchers
 	)
 	for _, lm := range matchers {
 		if lm.Type == metric.Equal && lm.Value != "" {
@@ -503,9 +579,13 @@ func (s *MemorySeriesStorage) MetricsForLabelMatchers(
 			}
 			intersection := map[model.Fingerprint]struct{}{}
 
-			matches := matcher.Filter(s.LabelValuesForLabelName(matcher.Name))
+			lvs, err := s.LabelValuesForLabelName(matcher.Name)
+			if err != nil {
+				return nil, err
+			}
+			matches := matcher.Filter(lvs)
 			if len(matches) == 0 {
-				return nil
+				return nil, nil
 			}
 			for _, v := range matches {
 				fps := s.fingerprintsForLabelPairs(model.LabelPair{
@@ -539,7 +619,7 @@ func (s *MemorySeriesStorage) MetricsForLabelMatchers(
 			}
 		}
 	}
-	return result
+	return result, nil
 }
 
 // metricForRange returns the metric for the given fingerprint if the
@@ -589,15 +669,20 @@ func (s *MemorySeriesStorage) metricForRange(
 }
 
 // LabelValuesForLabelName implements Storage.
-func (s *MemorySeriesStorage) LabelValuesForLabelName(labelName model.LabelName) model.LabelValues {
+func (s *MemorySeriesStorage) LabelValuesForLabelName(labelName model.LabelName) (model.LabelValues, error) {
 	return s.persistence.labelValuesForLabelName(labelName)
 }
 
-// DropMetric implements Storage.
-func (s *MemorySeriesStorage) DropMetricsForFingerprints(fps ...model.Fingerprint) {
-	for _, fp := range fps {
+// DropMetricsForLabelMatchers implements Storage.
+func (s *MemorySeriesStorage) DropMetricsForLabelMatchers(matchers ...*metric.LabelMatcher) (int, error) {
+	fpToMetric, err := s.metricsForLabelMatchers(model.Earliest, model.Latest, matchers...)
+	if err != nil {
+		return 0, err
+	}
+	for fp := range fpToMetric {
 		s.purgeSeries(fp, nil, nil)
 	}
+	return len(fpToMetric), nil
 }
 
 var (
@@ -779,39 +864,39 @@ func (s *MemorySeriesStorage) seriesForRange(
 func (s *MemorySeriesStorage) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-) ([]*chunkDesc, SeriesIterator) {
+) SeriesIterator {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
 	series := s.seriesForRange(fp, from, through)
 	if series == nil {
-		return nil, nopIter
+		return nopIter
 	}
-	cds, iter, err := series.preloadChunksForRange(fp, from, through, s)
+	iter, err := series.preloadChunksForRange(fp, from, through, s)
 	if err != nil {
 		s.quarantineSeries(fp, series.metric, err)
-		return nil, nopIter
+		return nopIter
 	}
-	return cds, iter
+	return iter
 }
 
 func (s *MemorySeriesStorage) preloadChunksForInstant(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-) ([]*chunkDesc, SeriesIterator) {
+) SeriesIterator {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
 
 	series := s.seriesForRange(fp, from, through)
 	if series == nil {
-		return nil, nopIter
+		return nopIter
 	}
-	cds, iter, err := series.preloadChunksForInstant(fp, from, through, s)
+	iter, err := series.preloadChunksForInstant(fp, from, through, s)
 	if err != nil {
 		s.quarantineSeries(fp, series.metric, err)
-		return nil, nopIter
+		return nopIter
 	}
-	return cds, iter
+	return iter
 }
 
 func (s *MemorySeriesStorage) handleEvictList() {
