@@ -220,6 +220,14 @@ type Engine struct {
 	// The storage on which the engine operates.
 	storage local.Querier
 
+	// The Querier on which the engine operates.
+	//
+	// TODO: this is in addition to the local storage above, so that the rest of
+	// Prometheus still compiles and works with the old interface using the
+	// local.Querier. Eventually, we will want to change PromQL's interface to
+	// the storage also for the local storage case.
+	querier Querier
+
 	// The base context for all queries and its cancellation function.
 	baseCtx       context.Context
 	cancelQueries func()
@@ -230,13 +238,14 @@ type Engine struct {
 }
 
 // NewEngine returns a new engine.
-func NewEngine(storage local.Querier, o *EngineOptions) *Engine {
+func NewEngine(storage local.Querier, querier Querier, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
 		storage:       storage,
+		querier:       querier,
 		baseCtx:       ctx,
 		cancelQueries: cancel,
 		gate:          newQueryGate(o.MaxConcurrentQueries),
@@ -365,33 +374,47 @@ func (ng *Engine) exec(q *query) (model.Value, error) {
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (model.Value, error) {
 	prepareTimer := query.stats.GetTimer(stats.TotalQueryPreparationTime).Start()
-	analyzeTimer := query.stats.GetTimer(stats.QueryAnalysisTime).Start()
+	if ng.storage != nil { // Old query analaysis and preloading code path.
 
-	// Only one execution statement per query is allowed.
-	analyzer := &Analyzer{
-		Storage: ng.storage,
-		Expr:    s.Expr,
-		Start:   s.Start,
-		End:     s.End,
-	}
-	err := analyzer.Analyze(ctx)
-	if err != nil {
+		analyzeTimer := query.stats.GetTimer(stats.QueryAnalysisTime).Start()
+
+		// Only one execution statement per query is allowed.
+		analyzer := &Analyzer{
+			Storage: ng.storage,
+			Expr:    s.Expr,
+			Start:   s.Start,
+			End:     s.End,
+		}
+		err := analyzer.Analyze(ctx)
+		if err != nil {
+			analyzeTimer.Stop()
+			prepareTimer.Stop()
+			return nil, err
+		}
 		analyzeTimer.Stop()
-		prepareTimer.Stop()
-		return nil, err
-	}
-	analyzeTimer.Stop()
 
-	preloadTimer := query.stats.GetTimer(stats.PreloadTime).Start()
-	closer, err := analyzer.Prepare(ctx)
-	if err != nil {
+		preloadTimer := query.stats.GetTimer(stats.PreloadTime).Start()
+		closer, err := analyzer.Prepare(ctx)
 		preloadTimer.Stop()
-		prepareTimer.Stop()
-		return nil, err
-	}
-	defer closer.Close()
+		if err != nil {
+			prepareTimer.Stop()
+			return nil, err
+		}
+		defer closer.Close()
 
-	preloadTimer.Stop()
+		preloadTimer.Stop()
+	} else if ng.querier != nil { // Frankenstein preloading code path.
+		preloadTimer := query.stats.GetTimer(stats.PreloadTime).Start()
+		err := preloadQuery(ng.querier, s.Expr, s.Start, s.End)
+		preloadTimer.Stop()
+		if err != nil {
+			prepareTimer.Stop()
+			return nil, err
+		}
+	} else {
+		panic("engine has neither a local.Querier nor promql.Querier")
+	}
+
 	prepareTimer.Stop()
 
 	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()

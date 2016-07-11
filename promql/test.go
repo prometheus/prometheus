@@ -498,7 +498,7 @@ func (t *Test) clear() {
 	t.storage, closer = local.NewTestStorage(t, 2)
 
 	t.closeStorage = closer.Close
-	t.queryEngine = NewEngine(t.storage, nil)
+	t.queryEngine = NewEngine(t.storage, nil, nil)
 }
 
 // Close closes resources associated with the Test.

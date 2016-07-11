@@ -19,10 +19,12 @@ import (
 	"time"
 
 	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/frankenstein"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/web/api/v1"
 )
 
 func main() {
@@ -38,13 +40,23 @@ func main() {
 	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
 	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream injestors.")
 
-	clientFactory := func(hostname string) (storage.SampleAppender, error) {
-		storage := remote.New(&remote.Options{
+	clientFactory := func(hostname string) (*frankenstein.IngesterClient, error) {
+		// TODO: make correct URLs out of hostnames.
+		appender := remote.New(&remote.Options{
 			GenericURL:     hostname,
 			StorageTimeout: remoteTimeout,
 		})
-		storage.Run()
-		return storage, nil
+		appender.Run()
+
+		querier, err := frankenstein.NewIngesterQuerier(hostname)
+		if err != nil {
+			return nil, err
+		}
+
+		return &frankenstein.IngesterClient{
+			Appender: appender,
+			Querier:  querier,
+		}, nil
 	}
 
 	distributor, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{
@@ -55,6 +67,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// TODO: REMOVE - this is just a proof-of-concept for querying back data
+	// from a local Prometheus server via
+	// PromQL->MergeQuerier->IngesterQuerier. The distributor is not in
+	// the picture yet.
+	ingesterQuerier, err := frankenstein.NewIngesterQuerier("http://localhost:9090/")
+	if err != nil {
+		log.Fatal(err)
+	}
+	querier := frankenstein.MergeQuerier{
+		Queriers: []frankenstein.Querier{ingesterQuerier},
+	}
+	engine := promql.NewEngine(nil, querier, nil)
+
+	api := v1.NewAPI(engine, nil)
+	router := route.New()
+	api.Register(router.WithPrefix("/api/v1"))
+	http.Handle("/", router)
+	// END OF SECTION TO REMOVE
 
 	http.Handle("/push", frankenstein.AppenderHandler(distributor))
 	http.ListenAndServe(listen, nil)
