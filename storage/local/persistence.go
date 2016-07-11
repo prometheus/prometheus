@@ -343,13 +343,13 @@ func (p *persistence) fingerprintsForLabelPair(lp model.LabelPair) model.Fingerp
 // name. This method is goroutine-safe but take into account that metrics queued
 // for indexing with IndexMetric might not have made it into the index
 // yet. (Same applies correspondingly to UnindexMetric.)
-func (p *persistence) labelValuesForLabelName(ln model.LabelName) model.LabelValues {
+func (p *persistence) labelValuesForLabelName(ln model.LabelName) (model.LabelValues, error) {
 	lvs, _, err := p.labelNameToLabelValues.Lookup(ln)
 	if err != nil {
 		p.setDirty(fmt.Errorf("error in method labelValuesForLabelName(%v): %s", ln, err))
-		return nil
+		return nil, err
 	}
-	return lvs
+	return lvs, nil
 }
 
 // persistChunks persists a number of consecutive chunks of a series. It is the
