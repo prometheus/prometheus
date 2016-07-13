@@ -27,8 +27,8 @@ import (
 func TestAlertingRule(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m
-			http_requests{job="app-server", instance="0", group="canary"}	75 85  95 105 105  95  85
-			http_requests{job="app-server", instance="1", group="canary"}	80 90 100 110 120 130 140
+			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
+			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func TestAlertingRule(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
-		model.LabelSet{"severity": "critical"},
+		model.LabelSet{"severity": "{{\"c\"}}ritical"},
 		model.LabelSet{},
 	)
 
@@ -105,7 +105,7 @@ func TestAlertingRule(t *testing.T) {
 	for i, test := range tests {
 		evalTime := model.Time(0).Add(test.time)
 
-		res, err := rule.eval(evalTime, suite.QueryEngine())
+		res, err := rule.eval(evalTime, suite.QueryEngine(), "")
 		if err != nil {
 			t.Fatalf("Error during alerting rule evaluation: %s", err)
 		}
