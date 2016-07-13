@@ -2,7 +2,8 @@ scrape_configs:
   - job_name: prometheus
 
     kubernetes_sd_configs:
-    - api_servers:
+    - role: pod
+      api_servers:
       - 'https://localhost:1234'
 
       bearer_token: 1234

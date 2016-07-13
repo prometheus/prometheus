@@ -44,8 +44,7 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/web/api/legacy"
-	"github.com/prometheus/prometheus/web/api/v1"
+	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -53,20 +52,22 @@ var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
-	ruleManager *rules.Manager
-	queryEngine *promql.Engine
-	storage     local.Storage
+	targetManager *retrieval.TargetManager
+	ruleManager   *rules.Manager
+	queryEngine   *promql.Engine
+	storage       local.Storage
 
-	apiV1     *v1.API
-	apiLegacy *legacy.API
+	apiV1 *api_v1.API
 
-	router      *route.Router
-	listenErrCh chan error
-	quitCh      chan struct{}
-	reloadCh    chan struct{}
-	options     *Options
-	statusInfo  *PrometheusStatus
-	versionInfo *PrometheusVersion
+	router       *route.Router
+	listenErrCh  chan error
+	quitCh       chan struct{}
+	reloadCh     chan struct{}
+	options      *Options
+	configString string
+	versionInfo  *PrometheusVersion
+	birth        time.Time
+	flagsMap     map[string]string
 
 	externalLabels model.LabelSet
 	mtx            sync.RWMutex
@@ -79,38 +80,12 @@ func (h *Handler) ApplyConfig(conf *config.Config) bool {
 	defer h.mtx.Unlock()
 
 	h.externalLabels = conf.GlobalConfig.ExternalLabels
+	h.configString = conf.String()
 
 	return true
 }
 
-// PrometheusStatus contains various information about the status
-// of the running Prometheus process.
-type PrometheusStatus struct {
-	Birth  time.Time
-	Flags  map[string]string
-	Config string
-
-	// A function that returns the current scrape targets pooled
-	// by their job name.
-	TargetPools func() map[string]retrieval.Targets
-	// A function that returns all loaded rules.
-	Rules func() []rules.Rule
-
-	mu sync.RWMutex
-}
-
-// ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (s *PrometheusStatus) ApplyConfig(conf *config.Config) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Config = conf.String()
-
-	return true
-}
-
-// PrometheusVersion contains various build information about Prometheus
+// PrometheusVersion contains build information about Prometheus.
 type PrometheusVersion struct {
 	Version   string `json:"version"`
 	Revision  string `json:"revision"`
@@ -124,6 +99,7 @@ type PrometheusVersion struct {
 type Options struct {
 	ListenAddress        string
 	ExternalURL          *url.URL
+	RoutePrefix          string
 	MetricsPath          string
 	UseLocalAssets       bool
 	UserAssetsPath       string
@@ -133,7 +109,15 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *PrometheusStatus, version *PrometheusVersion, o *Options) *Handler {
+func New(
+	st local.Storage,
+	qe *promql.Engine,
+	tm *retrieval.TargetManager,
+	rm *rules.Manager,
+	version *PrometheusVersion,
+	flags map[string]string,
+	o *Options,
+) *Handler {
 	router := route.New()
 
 	h := &Handler{
@@ -142,27 +126,24 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		quitCh:      make(chan struct{}),
 		reloadCh:    make(chan struct{}),
 		options:     o,
-		statusInfo:  status,
 		versionInfo: version,
+		birth:       time.Now(),
+		flagsMap:    flags,
 
-		ruleManager: rm,
-		queryEngine: qe,
-		storage:     st,
+		targetManager: tm,
+		ruleManager:   rm,
+		queryEngine:   qe,
+		storage:       st,
 
-		apiV1: v1.NewAPI(qe, st),
-		apiLegacy: &legacy.API{
-			QueryEngine: qe,
-			Storage:     st,
-			Now:         model.Now,
-		},
+		apiV1: api_v1.NewAPI(qe, st),
 	}
 
-	if o.ExternalURL.Path != "" {
+	if o.RoutePrefix != "/" {
 		// If the prefix is missing for the root path, prepend it.
 		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, o.ExternalURL.Path, http.StatusFound)
+			http.Redirect(w, r, o.RoutePrefix, http.StatusFound)
 		})
-		router = router.WithPrefix(o.ExternalURL.Path)
+		router = router.WithPrefix(o.RoutePrefix)
 	}
 
 	instrh := prometheus.InstrumentHandler
@@ -171,10 +152,14 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		router.Redirect(w, r, "/graph", http.StatusFound)
 	})
-	router.Get("/graph", instrf("graph", h.graph))
 
-	router.Get("/status", instrf("status", h.status))
 	router.Get("/alerts", instrf("alerts", h.alerts))
+	router.Get("/graph", instrf("graph", h.graph))
+	router.Get("/status", instrf("status", h.status))
+	router.Get("/flags", instrf("flags", h.flags))
+	router.Get("/config", instrf("config", h.config))
+	router.Get("/rules", instrf("rules", h.rules))
+	router.Get("/targets", instrf("targets", h.targets))
 	router.Get("/version", instrf("version", h.version))
 
 	router.Get("/heap", instrf("heap", dumpHeap))
@@ -185,7 +170,6 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		Handler: http.HandlerFunc(h.federation),
 	}))
 
-	h.apiLegacy.Register(router.WithPrefix("/api"))
 	h.apiV1.Register(router.WithPrefix("/api/v1"))
 
 	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
@@ -248,7 +232,12 @@ func (h *Handler) Reload() <-chan struct{} {
 // Run serves the HTTP endpoints.
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
-	h.listenErrCh <- http.ListenAndServe(h.options.ListenAddress, h.router)
+	server := &http.Server{
+		Addr:     h.options.ListenAddress,
+		Handler:  h.router,
+		ErrorLog: log.NewErrorLogger(),
+	}
+	h.listenErrCh <- server.ListenAndServe()
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
@@ -322,16 +311,32 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
-	h.statusInfo.mu.RLock()
-	defer h.statusInfo.mu.RUnlock()
-
 	h.executeTemplate(w, "status.html", struct {
-		Status  *PrometheusStatus
+		Birth   time.Time
 		Version *PrometheusVersion
 	}{
-		Status:  h.statusInfo,
+		Birth:   h.birth,
 		Version: h.versionInfo,
 	})
+}
+
+func (h *Handler) flags(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "flags.html", h.flagsMap)
+}
+
+func (h *Handler) config(w http.ResponseWriter, r *http.Request) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
+	h.executeTemplate(w, "config.html", h.configString)
+}
+
+func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "rules.html", h.ruleManager)
+}
+
+func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "targets.html", h.targetManager)
 }
 
 func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
@@ -365,7 +370,9 @@ func (h *Handler) consolesPath() string {
 
 func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	return template_text.FuncMap{
-		"since":        time.Since,
+		"since": func(t time.Time) time.Duration {
+			return time.Since(t) / time.Millisecond * time.Millisecond
+		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"stripLabels": func(lset model.LabelSet, labels ...model.LabelName) model.LabelSet {

@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -48,15 +49,16 @@ var cfg = struct {
 	web         web.Options
 	remote      remote.Options
 
-	prometheusURL string
-	influxdbURL   string
-}{}
+	alertmanagerURLs stringset
+	prometheusURL    string
+	influxdbURL      string
+}{
+	alertmanagerURLs: stringset{},
+}
 
 func init() {
-	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
-	flag.CommandLine.Usage = usage
-
-	cfg.fs = flag.CommandLine
+	cfg.fs = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	cfg.fs.Usage = usage
 
 	// Set additional defaults.
 	cfg.storage.SyncStrategy = local.Adaptive
@@ -78,6 +80,10 @@ func init() {
 	cfg.fs.StringVar(
 		&cfg.prometheusURL, "web.external-url", "",
 		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.",
+	)
+	cfg.fs.StringVar(
+		&cfg.web.RoutePrefix, "web.route-prefix", "",
+		"Prefix for the internal routes of web endpoints. Defaults to path of -web.external-url.",
 	)
 	cfg.fs.StringVar(
 		&cfg.web.MetricsPath, "web.telemetry-path", "/metrics",
@@ -162,6 +168,10 @@ func init() {
 		&index.LabelPairFingerprintsCacheSize, "storage.local.index-cache-size.label-pair-to-fingerprints", index.LabelPairFingerprintsCacheSize,
 		"The size in bytes for the label pair to fingerprints index cache.",
 	)
+	cfg.fs.IntVar(
+		&cfg.storage.NumMutexes, "storage.local.num-fingerprint-mutexes", 4096,
+		"The number of mutexes used for fingerprint locking.",
+	)
 
 	// Remote storage.
 	cfg.fs.StringVar(
@@ -202,9 +212,9 @@ func init() {
 	)
 
 	// Alertmanager.
-	cfg.fs.StringVar(
-		&cfg.notifier.AlertmanagerURL, "alertmanager.url", "",
-		"The URL of the alert manager to send notifications to.",
+	cfg.fs.Var(
+		&cfg.alertmanagerURLs, "alertmanager.url",
+		"Comma-separated list of Alertmanager URLs to send notifications to.",
 	)
 	cfg.fs.IntVar(
 		&cfg.notifier.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
@@ -242,11 +252,21 @@ func parse(args []string) error {
 	if err := parsePrometheusURL(); err != nil {
 		return err
 	}
+	// Default -web.route-prefix to path of -web.external-url.
+	if cfg.web.RoutePrefix == "" {
+		cfg.web.RoutePrefix = cfg.web.ExternalURL.Path
+	}
+	// RoutePrefix must always be at least '/'.
+	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
+
 	if err := parseInfluxdbURL(); err != nil {
 		return err
 	}
-	if err := validateAlertmanagerURL(); err != nil {
-		return err
+	for u := range cfg.alertmanagerURLs {
+		if err := validateAlertmanagerURL(u); err != nil {
+			return err
+		}
+		cfg.notifier.AlertmanagerURLs = cfg.alertmanagerURLs.slice()
 	}
 
 	cfg.remote.InfluxdbPassword = os.Getenv("INFLUXDB_PW")
@@ -303,19 +323,19 @@ func parseInfluxdbURL() error {
 	return nil
 }
 
-func validateAlertmanagerURL() error {
-	if cfg.notifier.AlertmanagerURL == "" {
+func validateAlertmanagerURL(u string) error {
+	if u == "" {
 		return nil
 	}
-	if ok := govalidator.IsURL(cfg.notifier.AlertmanagerURL); !ok {
-		return fmt.Errorf("invalid Alertmanager URL: %s", cfg.notifier.AlertmanagerURL)
+	if ok := govalidator.IsURL(u); !ok {
+		return fmt.Errorf("invalid Alertmanager URL: %s", u)
 	}
-	url, err := url.Parse(cfg.notifier.AlertmanagerURL)
+	url, err := url.Parse(u)
 	if err != nil {
 		return err
 	}
 	if url.Scheme == "" {
-		return fmt.Errorf("missing scheme in Alertmanager URL: %s", cfg.notifier.AlertmanagerURL)
+		return fmt.Errorf("missing scheme in Alertmanager URL: %s", u)
 	}
 	return nil
 }
@@ -379,4 +399,29 @@ func usage() {
 	if err := t.Execute(os.Stdout, groups); err != nil {
 		panic(fmt.Errorf("error executing usage template: %s", err))
 	}
+}
+
+type stringset map[string]struct{}
+
+func (ss stringset) Set(s string) error {
+	for _, v := range strings.Split(s, ",") {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			ss[v] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (ss stringset) String() string {
+	return strings.Join(ss.slice(), ",")
+}
+
+func (ss stringset) slice() []string {
+	slice := make([]string, 0, len(ss))
+	for k := range ss {
+		slice = append(slice, k)
+	}
+	sort.Strings(slice)
+	return slice
 }

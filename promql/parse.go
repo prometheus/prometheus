@@ -463,8 +463,8 @@ func (p *parser) expr() Expr {
 
 		// Parse ON/IGNORING clause.
 		if p.peek().typ == itemOn || p.peek().typ == itemIgnoring {
-			if p.peek().typ == itemIgnoring {
-				vecMatching.Ignoring = true
+			if p.peek().typ == itemOn {
+				vecMatching.On = true
 			}
 			p.next()
 			vecMatching.MatchingLabels = p.labels()
@@ -485,7 +485,7 @@ func (p *parser) expr() Expr {
 
 		for _, ln := range vecMatching.MatchingLabels {
 			for _, ln2 := range vecMatching.Include {
-				if ln == ln2 && !vecMatching.Ignoring {
+				if ln == ln2 && vecMatching.On {
 					p.errorf("label %q must not occur in ON and GROUP clause at once", ln)
 				}
 			}
@@ -500,17 +500,20 @@ func (p *parser) expr() Expr {
 }
 
 func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMatching, returnBool bool) *BinaryExpr {
-	if lhsBE, ok := lhs.(*BinaryExpr); ok && lhsBE.Op.precedence() < op.precedence() {
-		balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
-		if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == model.ValScalar && lhsBE.LHS.Type() == model.ValScalar {
-			p.errorf("comparisons between scalars must use BOOL modifier")
-		}
-		return &BinaryExpr{
-			Op:             lhsBE.Op,
-			LHS:            lhsBE.LHS,
-			RHS:            balanced,
-			VectorMatching: lhsBE.VectorMatching,
-			ReturnBool:     lhsBE.ReturnBool,
+	if lhsBE, ok := lhs.(*BinaryExpr); ok {
+		precd := lhsBE.Op.precedence() - op.precedence()
+		if (precd < 0) || (precd == 0 && op.isRightAssociative()) {
+			balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
+			if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == model.ValScalar && lhsBE.LHS.Type() == model.ValScalar {
+				p.errorf("comparisons between scalars must use BOOL modifier")
+			}
+			return &BinaryExpr{
+				Op:             lhsBE.Op,
+				LHS:            lhsBE.LHS,
+				RHS:            balanced,
+				VectorMatching: lhsBE.VectorMatching,
+				ReturnBool:     lhsBE.ReturnBool,
+			}
 		}
 	}
 	if op.isComparisonOperator() && !returnBool && rhs.Type() == model.ValScalar && lhs.Type() == model.ValScalar {
@@ -668,14 +671,16 @@ func (p *parser) labels() model.LabelNames {
 	p.expect(itemLeftParen, ctx)
 
 	labels := model.LabelNames{}
-	for {
-		id := p.expect(itemIdentifier, ctx)
-		labels = append(labels, model.LabelName(id.val))
+	if p.peek().typ != itemRightParen {
+		for {
+			id := p.expect(itemIdentifier, ctx)
+			labels = append(labels, model.LabelName(id.val))
 
-		if p.peek().typ != itemComma {
-			break
+			if p.peek().typ != itemComma {
+				break
+			}
+			p.next()
 		}
-		p.next()
 	}
 	p.expect(itemRightParen, ctx)
 
@@ -695,7 +700,7 @@ func (p *parser) aggrExpr() *AggregateExpr {
 		p.errorf("expected aggregation operator but got %s", agop)
 	}
 	var grouping model.LabelNames
-	var keepExtra, without bool
+	var keepCommon, without bool
 
 	modifiersFirst := false
 
@@ -709,11 +714,16 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	}
 	if p.peek().typ == itemKeepCommon {
 		p.next()
-		keepExtra = true
+		keepCommon = true
 		modifiersFirst = true
 	}
 
 	p.expect(itemLeftParen, ctx)
+	var param Expr
+	if agop.typ.isAggregatorWithParam() {
+		param = p.expr()
+		p.expect(itemComma, ctx)
+	}
 	e := p.expr()
 	p.expect(itemRightParen, ctx)
 
@@ -730,20 +740,21 @@ func (p *parser) aggrExpr() *AggregateExpr {
 		}
 		if p.peek().typ == itemKeepCommon {
 			p.next()
-			keepExtra = true
+			keepCommon = true
 		}
 	}
 
-	if keepExtra && without {
+	if keepCommon && without {
 		p.errorf("cannot use 'keep_common' with 'without'")
 	}
 
 	return &AggregateExpr{
-		Op:              agop.typ,
-		Expr:            e,
-		Grouping:        grouping,
-		Without:         without,
-		KeepExtraLabels: keepExtra,
+		Op:               agop.typ,
+		Expr:             e,
+		Param:            param,
+		Grouping:         grouping,
+		Without:          without,
+		KeepCommonLabels: keepCommon,
 	}
 }
 
@@ -1038,6 +1049,12 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 			p.errorf("aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, model.ValVector, "aggregation expression")
+		if n.Op == itemTopK || n.Op == itemBottomK {
+			p.expectType(n.Param, model.ValScalar, "aggregation parameter")
+		}
+		if n.Op == itemCountValues {
+			p.expectType(n.Param, model.ValString, "aggregation parameter")
+		}
 
 	case *BinaryExpr:
 		lt := p.checkType(n.LHS)

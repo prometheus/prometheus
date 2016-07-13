@@ -216,6 +216,9 @@ func createTargetGroup(app *App) *config.TargetGroup {
 func targetsForApp(app *App) []model.LabelSet {
 	targets := make([]model.LabelSet, 0, len(app.Tasks))
 	for _, t := range app.Tasks {
+		if len(t.Ports) == 0 {
+			continue
+		}
 		target := targetForTask(&t)
 		targets = append(targets, model.LabelSet{
 			model.AddressLabel: model.LabelValue(target),

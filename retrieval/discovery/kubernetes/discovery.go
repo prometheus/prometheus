@@ -14,7 +14,6 @@
 package kubernetes
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -29,31 +28,62 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
-	sourceServicePrefix = "services"
-
 	// kubernetesMetaLabelPrefix is the meta prefix used for all meta labels.
 	// in this discovery.
 	metaLabelPrefix = model.MetaLabelPrefix + "kubernetes_"
+
+	// roleLabel is the name for the label containing a target's role.
+	roleLabel = metaLabelPrefix + "role"
+
+	sourcePodPrefix = "pods"
+	// podsTargetGroupNAme is the name given to the target group for pods
+	podsTargetGroupName = "pods"
+	// podNamespaceLabel is the name for the label containing a target pod's namespace
+	podNamespaceLabel = metaLabelPrefix + "pod_namespace"
+	// podNameLabel is the name for the label containing a target pod's name
+	podNameLabel = metaLabelPrefix + "pod_name"
+	// podAddressLabel is the name for the label containing a target pod's IP address (the PodIP)
+	podAddressLabel = metaLabelPrefix + "pod_address"
+	// podContainerNameLabel is the name for the label containing a target's container name
+	podContainerNameLabel = metaLabelPrefix + "pod_container_name"
+	// podContainerPortNameLabel is the name for the label containing the name of the port selected for a target
+	podContainerPortNameLabel = metaLabelPrefix + "pod_container_port_name"
+	// PodContainerPortListLabel is the name for the label containing a list of all TCP ports on the target container
+	podContainerPortListLabel = metaLabelPrefix + "pod_container_port_list"
+	// PodContainerPortMapPrefix is the prefix used to create the names of labels that associate container port names to port values
+	// Such labels will be named (podContainerPortMapPrefix)_(PortName) = (ContainerPort)
+	podContainerPortMapPrefix = metaLabelPrefix + "pod_container_port_map_"
+	// podReadyLabel is the name for the label containing the 'Ready' status (true/false/unknown) for a target
+	podReadyLabel = metaLabelPrefix + "pod_ready"
+	// podLabelPrefix is the prefix for prom label names corresponding to k8s labels for a target pod
+	podLabelPrefix = metaLabelPrefix + "pod_label_"
+	// podAnnotationPrefix is the prefix for prom label names corresponding to k8s annotations for a target pod
+	podAnnotationPrefix = metaLabelPrefix + "pod_annotation_"
+
+	sourceServicePrefix = "services"
 	// serviceNamespaceLabel is the name for the label containing a target's service namespace.
 	serviceNamespaceLabel = metaLabelPrefix + "service_namespace"
 	// serviceNameLabel is the name for the label containing a target's service name.
 	serviceNameLabel = metaLabelPrefix + "service_name"
-	// nodeLabelPrefix is the prefix for the node labels.
-	nodeLabelPrefix = metaLabelPrefix + "node_label_"
 	// serviceLabelPrefix is the prefix for the service labels.
 	serviceLabelPrefix = metaLabelPrefix + "service_label_"
 	// serviceAnnotationPrefix is the prefix for the service annotations.
 	serviceAnnotationPrefix = metaLabelPrefix + "service_annotation_"
+
 	// nodesTargetGroupName is the name given to the target group for nodes.
 	nodesTargetGroupName = "nodes"
+	// nodeLabelPrefix is the prefix for the node labels.
+	nodeLabelPrefix = metaLabelPrefix + "node_label_"
+	// nodeAddressPrefix is the prefix for the node addresses.
+	nodeAddressPrefix = metaLabelPrefix + "node_address_"
+	// nodePortLabel is the name of the label for the node port.
+	nodePortLabel = metaLabelPrefix + "node_port"
+
 	// apiServersTargetGroupName is the name given to the target group for API servers.
 	apiServersTargetGroupName = "apiServers"
-	// roleLabel is the name for the label containing a target's role.
-	roleLabel = metaLabelPrefix + "role"
 
 	serviceAccountToken  = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	serviceAccountCACert = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
@@ -61,6 +91,7 @@ const (
 	apiVersion          = "v1"
 	apiPrefix           = "/api/" + apiVersion
 	nodesURL            = apiPrefix + "/nodes"
+	podsURL             = apiPrefix + "/pods"
 	servicesURL         = apiPrefix + "/services"
 	endpointsURL        = apiPrefix + "/endpoints"
 	serviceEndpointsURL = apiPrefix + "/namespaces/%s/endpoints/%s"
@@ -73,11 +104,6 @@ type Discovery struct {
 
 	apiServers   []config.URL
 	apiServersMu sync.RWMutex
-	nodes        map[string]*Node
-	services     map[string]map[string]*Service
-	nodesMu      sync.RWMutex
-	servicesMu   sync.RWMutex
-	runDone      chan struct{}
 }
 
 // Initialize sets up the discovery for usage.
@@ -90,62 +116,43 @@ func (kd *Discovery) Initialize() error {
 
 	kd.apiServers = kd.Conf.APIServers
 	kd.client = client
-	kd.runDone = make(chan struct{})
 
 	return nil
 }
 
 // Run implements the TargetProvider interface.
 func (kd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+	log.Debugf("Start Kubernetes service discovery")
 	defer close(ch)
 
-	// Send an initial full view.
-	// TODO(fabxc): this does not include all available services and service
-	// endpoints yet. Service endpoints were also missing in the previous Sources() method.
-	var all []*config.TargetGroup
-
-	all = append(all, kd.updateAPIServersTargetGroup())
-	all = append(all, kd.updateNodesTargetGroup())
-
-	select {
-	case ch <- all:
-	case <-ctx.Done():
+	switch kd.Conf.Role {
+	case config.KubernetesRolePod, config.KubernetesRoleContainer:
+		pd := &podDiscovery{
+			retryInterval: time.Duration(kd.Conf.RetryInterval),
+			kd:            kd,
+		}
+		pd.run(ctx, ch)
+	case config.KubernetesRoleNode:
+		nd := &nodeDiscovery{
+			retryInterval: time.Duration(kd.Conf.RetryInterval),
+			kd:            kd,
+		}
+		nd.run(ctx, ch)
+	case config.KubernetesRoleService, config.KubernetesRoleEndpoint:
+		sd := &serviceDiscovery{
+			retryInterval: time.Duration(kd.Conf.RetryInterval),
+			kd:            kd,
+		}
+		sd.run(ctx, ch)
+	case config.KubernetesRoleAPIServer:
+		select {
+		case ch <- []*config.TargetGroup{kd.updateAPIServersTargetGroup()}:
+		case <-ctx.Done():
+			return
+		}
+	default:
+		log.Errorf("unknown Kubernetes discovery kind %q", kd.Conf.Role)
 		return
-	}
-
-	retryInterval := time.Duration(kd.Conf.RetryInterval)
-
-	update := make(chan interface{}, 10)
-
-	go kd.watchNodes(update, ctx.Done(), retryInterval)
-	go kd.startServiceWatch(update, ctx.Done(), retryInterval)
-
-	var tg *config.TargetGroup
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case event := <-update:
-			switch obj := event.(type) {
-			case *nodeEvent:
-				kd.updateNode(obj.Node, obj.EventType)
-				tg = kd.updateNodesTargetGroup()
-			case *serviceEvent:
-				tg = kd.updateService(obj.Service, obj.EventType)
-			case *endpointsEvent:
-				tg = kd.updateServiceEndpoints(obj.Endpoints, obj.EventType)
-			}
-		}
-
-		if tg == nil {
-			continue
-		}
-
-		select {
-		case ch <- []*config.TargetGroup{tg}:
-		case <-ctx.Done():
-			return
-		}
 	}
 }
 
@@ -173,7 +180,7 @@ func (kd *Discovery) queryAPIServerReq(req *http.Request) (*http.Response, error
 		lastErr = err
 		kd.rotateAPIServers()
 	}
-	return nil, fmt.Errorf("Unable to query any API servers: %v", lastErr)
+	return nil, fmt.Errorf("unable to query any API servers: %v", lastErr)
 }
 
 func (kd *Discovery) rotateAPIServers() {
@@ -211,423 +218,6 @@ func (kd *Discovery) updateAPIServersTargetGroup() *config.TargetGroup {
 	}
 
 	return tg
-}
-
-func (kd *Discovery) updateNodesTargetGroup() *config.TargetGroup {
-	kd.nodesMu.RLock()
-	defer kd.nodesMu.RUnlock()
-
-	tg := &config.TargetGroup{
-		Source: nodesTargetGroupName,
-		Labels: model.LabelSet{
-			roleLabel: model.LabelValue("node"),
-		},
-	}
-
-	// Now let's loop through the nodes & add them to the target group with appropriate labels.
-	for nodeName, node := range kd.nodes {
-		nodeAddress, err := nodeHostIP(node)
-		if err != nil {
-			log.Debugf("Skipping node %s: %s", node.Name, err)
-			continue
-		}
-
-		address := fmt.Sprintf("%s:%d", nodeAddress.String(), kd.Conf.KubeletPort)
-
-		t := model.LabelSet{
-			model.AddressLabel:  model.LabelValue(address),
-			model.InstanceLabel: model.LabelValue(nodeName),
-		}
-		for k, v := range node.ObjectMeta.Labels {
-			labelName := strutil.SanitizeLabelName(nodeLabelPrefix + k)
-			t[model.LabelName(labelName)] = model.LabelValue(v)
-		}
-		tg.Targets = append(tg.Targets, t)
-	}
-
-	return tg
-}
-
-func (kd *Discovery) updateNode(node *Node, eventType EventType) {
-	kd.nodesMu.Lock()
-	defer kd.nodesMu.Unlock()
-	updatedNodeName := node.ObjectMeta.Name
-	switch eventType {
-	case deleted:
-		// Deleted - remove from nodes map.
-		delete(kd.nodes, updatedNodeName)
-	case added, modified:
-		// Added/Modified - update the node in the nodes map.
-		kd.nodes[updatedNodeName] = node
-	}
-}
-
-func (kd *Discovery) getNodes() (map[string]*Node, string, error) {
-	res, err := kd.queryAPIServerPath(nodesURL)
-	if err != nil {
-		// If we can't list nodes then we can't watch them. Assume this is a misconfiguration
-		// & return error.
-		return nil, "", fmt.Errorf("Unable to list Kubernetes nodes: %s", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("Unable to list Kubernetes nodes. Unexpected response: %d %s", res.StatusCode, res.Status)
-	}
-
-	var nodes NodeList
-	if err := json.NewDecoder(res.Body).Decode(&nodes); err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return nil, "", fmt.Errorf("Unable to list Kubernetes nodes. Unexpected response body: %s", string(body))
-	}
-
-	nodeMap := map[string]*Node{}
-	for idx, node := range nodes.Items {
-		nodeMap[node.ObjectMeta.Name] = &nodes.Items[idx]
-	}
-
-	return nodeMap, nodes.ResourceVersion, nil
-}
-
-func (kd *Discovery) getServices() (map[string]map[string]*Service, string, error) {
-	res, err := kd.queryAPIServerPath(servicesURL)
-	if err != nil {
-		// If we can't list services then we can't watch them. Assume this is a misconfiguration
-		// & return error.
-		return nil, "", fmt.Errorf("Unable to list Kubernetes services: %s", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("Unable to list Kubernetes services. Unexpected response: %d %s", res.StatusCode, res.Status)
-	}
-	var services ServiceList
-	if err := json.NewDecoder(res.Body).Decode(&services); err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return nil, "", fmt.Errorf("Unable to list Kubernetes services. Unexpected response body: %s", string(body))
-	}
-
-	serviceMap := map[string]map[string]*Service{}
-	for idx, service := range services.Items {
-		namespace, ok := serviceMap[service.ObjectMeta.Namespace]
-		if !ok {
-			namespace = map[string]*Service{}
-			serviceMap[service.ObjectMeta.Namespace] = namespace
-		}
-		namespace[service.ObjectMeta.Name] = &services.Items[idx]
-	}
-
-	return serviceMap, services.ResourceVersion, nil
-}
-
-// watchNodes watches nodes as they come & go.
-func (kd *Discovery) watchNodes(events chan interface{}, done <-chan struct{}, retryInterval time.Duration) {
-	until(func() {
-		nodes, resourceVersion, err := kd.getNodes()
-		if err != nil {
-			log.Errorf("Cannot initialize nodes collection: %s", err)
-			return
-		}
-
-		// Reset the known nodes.
-		kd.nodes = map[string]*Node{}
-
-		for _, node := range nodes {
-			events <- &nodeEvent{added, node}
-		}
-
-		req, err := http.NewRequest("GET", nodesURL, nil)
-		if err != nil {
-			log.Errorf("Cannot create nodes request: %s", err)
-			return
-		}
-		values := req.URL.Query()
-		values.Add("watch", "true")
-		values.Add("resourceVersion", resourceVersion)
-		req.URL.RawQuery = values.Encode()
-		res, err := kd.queryAPIServerReq(req)
-		if err != nil {
-			log.Errorf("Failed to watch nodes: %s", err)
-			return
-		}
-		defer res.Body.Close()
-		if res.StatusCode != http.StatusOK {
-			log.Errorf("Failed to watch nodes: %d", res.StatusCode)
-			return
-		}
-
-		d := json.NewDecoder(res.Body)
-
-		for {
-			var event nodeEvent
-			if err := d.Decode(&event); err != nil {
-				log.Errorf("Watch nodes unexpectedly closed: %s", err)
-				return
-			}
-
-			select {
-			case events <- &event:
-			case <-done:
-			}
-		}
-	}, retryInterval, done)
-}
-
-// watchServices watches services as they come & go.
-func (kd *Discovery) startServiceWatch(events chan<- interface{}, done <-chan struct{}, retryInterval time.Duration) {
-	until(func() {
-		// We use separate target groups for each discovered service so we'll need to clean up any if they've been deleted
-		// in Kubernetes while we couldn't connect - small chance of this, but worth dealing with.
-		existingServices := kd.services
-
-		// Reset the known services.
-		kd.services = map[string]map[string]*Service{}
-
-		services, resourceVersion, err := kd.getServices()
-		if err != nil {
-			log.Errorf("Cannot initialize services collection: %s", err)
-			return
-		}
-
-		// Now let's loop through the old services & see if they still exist in here
-		for oldNSName, oldNS := range existingServices {
-			if ns, ok := services[oldNSName]; !ok {
-				for _, service := range existingServices[oldNSName] {
-					events <- &serviceEvent{deleted, service}
-				}
-			} else {
-				for oldServiceName, oldService := range oldNS {
-					if _, ok := ns[oldServiceName]; !ok {
-						events <- &serviceEvent{deleted, oldService}
-					}
-				}
-			}
-		}
-
-		// Discard the existing services map for GC.
-		existingServices = nil
-
-		for _, ns := range services {
-			for _, service := range ns {
-				events <- &serviceEvent{added, service}
-			}
-		}
-
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		go func() {
-			kd.watchServices(resourceVersion, events, done)
-			wg.Done()
-		}()
-		go func() {
-			kd.watchServiceEndpoints(resourceVersion, events, done)
-			wg.Done()
-		}()
-
-		wg.Wait()
-	}, retryInterval, done)
-}
-
-func (kd *Discovery) watchServices(resourceVersion string, events chan<- interface{}, done <-chan struct{}) {
-	req, err := http.NewRequest("GET", servicesURL, nil)
-	if err != nil {
-		log.Errorf("Failed to create services request: %s", err)
-		return
-	}
-	values := req.URL.Query()
-	values.Add("watch", "true")
-	values.Add("resourceVersion", resourceVersion)
-	req.URL.RawQuery = values.Encode()
-
-	res, err := kd.queryAPIServerReq(req)
-	if err != nil {
-		log.Errorf("Failed to watch services: %s", err)
-		return
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Failed to watch services: %d", res.StatusCode)
-		return
-	}
-
-	d := json.NewDecoder(res.Body)
-
-	for {
-		var event serviceEvent
-		if err := d.Decode(&event); err != nil {
-			log.Errorf("Watch services unexpectedly closed: %s", err)
-			return
-		}
-
-		select {
-		case events <- &event:
-		case <-done:
-			return
-		}
-	}
-}
-
-// watchServiceEndpoints watches service endpoints as they come & go.
-func (kd *Discovery) watchServiceEndpoints(resourceVersion string, events chan<- interface{}, done <-chan struct{}) {
-	req, err := http.NewRequest("GET", endpointsURL, nil)
-	if err != nil {
-		log.Errorf("Failed to create service endpoints request: %s", err)
-		return
-	}
-	values := req.URL.Query()
-	values.Add("watch", "true")
-	values.Add("resourceVersion", resourceVersion)
-	req.URL.RawQuery = values.Encode()
-
-	res, err := kd.queryAPIServerReq(req)
-	if err != nil {
-		log.Errorf("Failed to watch service endpoints: %s", err)
-		return
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Failed to watch service endpoints: %d", res.StatusCode)
-		return
-	}
-
-	d := json.NewDecoder(res.Body)
-
-	for {
-		var event endpointsEvent
-		if err := d.Decode(&event); err != nil {
-			log.Errorf("Watch service endpoints unexpectedly closed: %s", err)
-			return
-		}
-
-		select {
-		case events <- &event:
-		case <-done:
-		}
-	}
-}
-
-func (kd *Discovery) updateService(service *Service, eventType EventType) *config.TargetGroup {
-	kd.servicesMu.Lock()
-	defer kd.servicesMu.Unlock()
-
-	switch eventType {
-	case deleted:
-		return kd.deleteService(service)
-	case added, modified:
-		return kd.addService(service)
-	}
-	return nil
-}
-
-func (kd *Discovery) deleteService(service *Service) *config.TargetGroup {
-	tg := &config.TargetGroup{Source: serviceSource(service)}
-
-	delete(kd.services[service.ObjectMeta.Namespace], service.ObjectMeta.Name)
-	if len(kd.services[service.ObjectMeta.Namespace]) == 0 {
-		delete(kd.services, service.ObjectMeta.Namespace)
-	}
-
-	return tg
-}
-
-func (kd *Discovery) addService(service *Service) *config.TargetGroup {
-	namespace, ok := kd.services[service.ObjectMeta.Namespace]
-	if !ok {
-		namespace = map[string]*Service{}
-		kd.services[service.ObjectMeta.Namespace] = namespace
-	}
-
-	namespace[service.ObjectMeta.Name] = service
-	endpointURL := fmt.Sprintf(serviceEndpointsURL, service.ObjectMeta.Namespace, service.ObjectMeta.Name)
-
-	res, err := kd.queryAPIServerPath(endpointURL)
-	if err != nil {
-		log.Errorf("Error getting service endpoints: %s", err)
-		return nil
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Failed to get service endpoints: %d", res.StatusCode)
-		return nil
-	}
-
-	var eps Endpoints
-	if err := json.NewDecoder(res.Body).Decode(&eps); err != nil {
-		log.Errorf("Error getting service endpoints: %s", err)
-		return nil
-	}
-
-	return kd.updateServiceTargetGroup(service, &eps)
-}
-
-func (kd *Discovery) updateServiceTargetGroup(service *Service, eps *Endpoints) *config.TargetGroup {
-	tg := &config.TargetGroup{
-		Source: serviceSource(service),
-		Labels: model.LabelSet{
-			serviceNamespaceLabel: model.LabelValue(service.ObjectMeta.Namespace),
-			serviceNameLabel:      model.LabelValue(service.ObjectMeta.Name),
-		},
-	}
-
-	for k, v := range service.ObjectMeta.Labels {
-		labelName := strutil.SanitizeLabelName(serviceLabelPrefix + k)
-		tg.Labels[model.LabelName(labelName)] = model.LabelValue(v)
-	}
-
-	for k, v := range service.ObjectMeta.Annotations {
-		labelName := strutil.SanitizeLabelName(serviceAnnotationPrefix + k)
-		tg.Labels[model.LabelName(labelName)] = model.LabelValue(v)
-	}
-
-	serviceAddress := service.ObjectMeta.Name + "." + service.ObjectMeta.Namespace + ".svc"
-
-	// Append the first TCP service port if one exists.
-	for _, port := range service.Spec.Ports {
-		if port.Protocol == ProtocolTCP {
-			serviceAddress += fmt.Sprintf(":%d", port.Port)
-			break
-		}
-	}
-
-	t := model.LabelSet{
-		model.AddressLabel: model.LabelValue(serviceAddress),
-		roleLabel:          model.LabelValue("service"),
-	}
-	tg.Targets = append(tg.Targets, t)
-
-	// Now let's loop through the endpoints & add them to the target group with appropriate labels.
-	for _, ss := range eps.Subsets {
-		epPort := ss.Ports[0].Port
-
-		for _, addr := range ss.Addresses {
-			ipAddr := addr.IP
-			if len(ipAddr) == net.IPv6len {
-				ipAddr = "[" + ipAddr + "]"
-			}
-			address := fmt.Sprintf("%s:%d", ipAddr, epPort)
-
-			t := model.LabelSet{
-				model.AddressLabel: model.LabelValue(address),
-				roleLabel:          model.LabelValue("endpoint"),
-			}
-
-			tg.Targets = append(tg.Targets, t)
-		}
-	}
-
-	return tg
-}
-
-func (kd *Discovery) updateServiceEndpoints(endpoints *Endpoints, eventType EventType) *config.TargetGroup {
-	kd.servicesMu.Lock()
-	defer kd.servicesMu.Unlock()
-
-	serviceNamespace := endpoints.ObjectMeta.Namespace
-	serviceName := endpoints.ObjectMeta.Name
-
-	if service, ok := kd.services[serviceNamespace][serviceName]; ok {
-		return kd.updateServiceTargetGroup(service, endpoints)
-	}
-	return nil
 }
 
 func newKubernetesHTTPClient(conf *config.KubernetesSDConfig) (*http.Client, error) {
@@ -689,10 +279,6 @@ func newKubernetesHTTPClient(conf *config.KubernetesSDConfig) (*http.Client, err
 	}, nil
 }
 
-func serviceSource(service *Service) string {
-	return sourceServicePrefix + ":" + service.ObjectMeta.Namespace + "/" + service.ObjectMeta.Name
-}
-
 // Until loops until stop channel is closed, running f every period.
 // f may not be invoked if stop channel is already closed.
 func until(f func(), period time.Duration, stopCh <-chan struct{}) {
@@ -710,28 +296,4 @@ func until(f func(), period time.Duration, stopCh <-chan struct{}) {
 			f()
 		}
 	}
-}
-
-// nodeHostIP returns the provided node's address, based on the priority:
-// 1. NodeInternalIP
-// 2. NodeExternalIP
-// 3. NodeLegacyHostIP
-//
-// Copied from k8s.io/kubernetes/pkg/util/node/node.go
-func nodeHostIP(node *Node) (net.IP, error) {
-	addresses := node.Status.Addresses
-	addressMap := make(map[NodeAddressType][]NodeAddress)
-	for i := range addresses {
-		addressMap[addresses[i].Type] = append(addressMap[addresses[i].Type], addresses[i])
-	}
-	if addresses, ok := addressMap[NodeInternalIP]; ok {
-		return net.ParseIP(addresses[0].Address), nil
-	}
-	if addresses, ok := addressMap[NodeExternalIP]; ok {
-		return net.ParseIP(addresses[0].Address), nil
-	}
-	if addresses, ok := addressMap[NodeLegacyHostIP]; ok {
-		return net.ParseIP(addresses[0].Address), nil
-	}
-	return nil, fmt.Errorf("host IP unknown; known addresses: %v", addresses)
 }

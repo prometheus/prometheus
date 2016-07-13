@@ -37,7 +37,7 @@ func testFileSD(t *testing.T, ext string) {
 	// As interval refreshing is more of a fallback, we only want to test
 	// whether file watches work as expected.
 	var conf config.FileSDConfig
-	conf.Names = []string{"fixtures/_*" + ext}
+	conf.Files = []string{"fixtures/_*" + ext}
 	conf.RefreshInterval = model.Duration(1 * time.Hour)
 
 	var (

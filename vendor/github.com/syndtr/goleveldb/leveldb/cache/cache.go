@@ -47,17 +47,21 @@ type Cacher interface {
 // so the the Release method will be called once object is released.
 type Value interface{}
 
-type CacheGetter struct {
+// NamespaceGetter provides convenient wrapper for namespace.
+type NamespaceGetter struct {
 	Cache *Cache
 	NS    uint64
 }
 
-func (g *CacheGetter) Get(key uint64, setFunc func() (size int, value Value)) *Handle {
+// Get simply calls Cache.Get() method.
+func (g *NamespaceGetter) Get(key uint64, setFunc func() (size int, value Value)) *Handle {
 	return g.Cache.Get(g.NS, key, setFunc)
 }
 
 // The hash tables implementation is based on:
-// "Dynamic-Sized Nonblocking Hash Tables", by Yujie Liu, Kunlong Zhang, and Michael Spear. ACM Symposium on Principles of Distributed Computing, Jul 2014.
+// "Dynamic-Sized Nonblocking Hash Tables", by Yujie Liu,
+// Kunlong Zhang, and Michael Spear.
+// ACM Symposium on Principles of Distributed Computing, Jul 2014.
 
 const (
 	mInitialSize           = 1 << 4
@@ -610,10 +614,12 @@ func (n *Node) unrefLocked() {
 	}
 }
 
+// Handle is a 'cache handle' of a 'cache node'.
 type Handle struct {
 	n unsafe.Pointer // *Node
 }
 
+// Value returns the value of the 'cache node'.
 func (h *Handle) Value() Value {
 	n := (*Node)(atomic.LoadPointer(&h.n))
 	if n != nil {
@@ -622,6 +628,8 @@ func (h *Handle) Value() Value {
 	return nil
 }
 
+// Release releases this 'cache handle'.
+// It is safe to call release multiple times.
 func (h *Handle) Release() {
 	nPtr := atomic.LoadPointer(&h.n)
 	if nPtr != nil && atomic.CompareAndSwapPointer(&h.n, nPtr, nil) {

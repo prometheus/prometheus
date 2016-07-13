@@ -24,15 +24,15 @@ scrape_configs:
   # scheme defaults to 'http'.
 
   file_sd_configs:
-    - names:
+    - files:
       - foo/*.slow.json
       - foo/*.slow.yml
       - single/file.yml
       refresh_interval: 10m
-    - names:
+    - files:
       - bar/*.yaml
 
-  target_groups:
+  static_configs:
   - targets: ['localhost:9090', 'localhost:9191']
     labels:
       my:   label
@@ -109,7 +109,8 @@ scrape_configs:
 - job_name: service-kubernetes
 
   kubernetes_sd_configs:
-  - api_servers:
+  - role: endpoint 
+    api_servers:
     - 'https://localhost:1234'
 
     basic_auth:

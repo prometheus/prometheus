@@ -18,8 +18,6 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/prometheus/common/log"
 )
 
 // item represents a token or text string returned from the scanner.
@@ -57,6 +55,12 @@ func (i itemType) isOperator() bool { return i > operatorsStart && i < operators
 // isAggregator returns true if the item belongs to the aggregator functions.
 // Returns false otherwise
 func (i itemType) isAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
+
+// isAggregator returns true if the item is an aggregator that takes a parameter.
+// Returns false otherwise
+func (i itemType) isAggregatorWithParam() bool {
+	return i == itemTopK || i == itemBottomK || i == itemCountValues
+}
 
 // isKeyword returns true if the item corresponds to a keyword.
 // Returns false otherwise.
@@ -100,9 +104,21 @@ func (i itemType) precedence() int {
 		return 4
 	case itemMUL, itemDIV, itemMOD:
 		return 5
+	case itemPOW:
+		return 6
 	default:
 		return LowestPrec
 	}
+}
+
+func (i itemType) isRightAssociative() bool {
+	switch i {
+	case itemPOW:
+		return true
+	default:
+		return false
+	}
+
 }
 
 type itemType int
@@ -146,6 +162,7 @@ const (
 	itemGTR
 	itemEQLRegex
 	itemNEQRegex
+	itemPOW
 	operatorsEnd
 
 	aggregatorsStart
@@ -157,6 +174,9 @@ const (
 	itemMax
 	itemStddev
 	itemStdvar
+	itemTopK
+	itemBottomK
+	itemCountValues
 	aggregatorsEnd
 
 	keywordsStart
@@ -175,10 +195,6 @@ const (
 	itemGroupLeft
 	itemGroupRight
 	itemBool
-	// Removed keywords. Just here to detect and print errors.
-	itemSummary
-	itemDescription
-	itemRunbook
 	keywordsEnd
 )
 
@@ -189,34 +205,32 @@ var key = map[string]itemType{
 	"unless": itemLUnless,
 
 	// Aggregators.
-	"sum":    itemSum,
-	"avg":    itemAvg,
-	"count":  itemCount,
-	"min":    itemMin,
-	"max":    itemMax,
-	"stddev": itemStddev,
-	"stdvar": itemStdvar,
+	"sum":          itemSum,
+	"avg":          itemAvg,
+	"count":        itemCount,
+	"min":          itemMin,
+	"max":          itemMax,
+	"stddev":       itemStddev,
+	"stdvar":       itemStdvar,
+	"topk":         itemTopK,
+	"bottomk":      itemBottomK,
+	"count_values": itemCountValues,
 
 	// Keywords.
-	"alert":         itemAlert,
-	"if":            itemIf,
-	"for":           itemFor,
-	"labels":        itemLabels,
-	"annotations":   itemAnnotations,
-	"offset":        itemOffset,
-	"by":            itemBy,
-	"without":       itemWithout,
-	"keeping_extra": itemKeepCommon,
-	"keep_common":   itemKeepCommon,
-	"on":            itemOn,
-	"ignoring":      itemIgnoring,
-	"group_left":    itemGroupLeft,
-	"group_right":   itemGroupRight,
-	"bool":          itemBool,
-	// Removed keywords. Just here to detect and print errors.
-	"summary":     itemSummary,
-	"description": itemDescription,
-	"runbook":     itemRunbook,
+	"alert":       itemAlert,
+	"if":          itemIf,
+	"for":         itemFor,
+	"labels":      itemLabels,
+	"annotations": itemAnnotations,
+	"offset":      itemOffset,
+	"by":          itemBy,
+	"without":     itemWithout,
+	"keep_common": itemKeepCommon,
+	"on":          itemOn,
+	"ignoring":    itemIgnoring,
+	"group_left":  itemGroupLeft,
+	"group_right": itemGroupRight,
+	"bool":        itemBool,
 }
 
 // These are the default string representations for common items. It does not
@@ -247,6 +261,7 @@ var itemTypeStr = map[itemType]string{
 	itemGTR:      ">",
 	itemEQLRegex: "=~",
 	itemNEQRegex: "!~",
+	itemPOW:      "^",
 }
 
 func init() {
@@ -406,12 +421,6 @@ func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 func (l *lexer) nextItem() item {
 	item := <-l.items
 	l.lastPos = item.pos
-
-	// TODO(fabxc): remove for version 1.0.
-	t := item.typ
-	if t == itemSummary || t == itemDescription || t == itemRunbook {
-		log.Errorf("Token %q is not valid anymore. Alerting rule syntax has changed with version 0.17.0. Please read https://prometheus.io/docs/alerting/rules/.", item)
-	}
 	return item
 }
 
@@ -468,6 +477,8 @@ func lexStatements(l *lexer) stateFn {
 		l.emit(itemADD)
 	case r == '-':
 		l.emit(itemSUB)
+	case r == '^':
+		l.emit(itemPOW)
 	case r == '=':
 		if t := l.peek(); t == '=' {
 			l.next()

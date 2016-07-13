@@ -288,6 +288,9 @@ func (ts *targetSet) runProviders(ctx context.Context, providers map[string]Targ
 				}
 				// First set of all targets the provider knows.
 				for _, tgroup := range initial {
+					if tgroup == nil {
+						continue
+					}
 					targets, err := targetsFromGroup(tgroup, ts.config)
 					if err != nil {
 						log.With("target_group", tgroup).Errorf("Target update failed: %s", err)
@@ -328,11 +331,19 @@ func (ts *targetSet) runProviders(ctx context.Context, providers map[string]Targ
 	// We wait for a full initial set of target groups before releasing the mutex
 	// to ensure the initial sync is complete and there are no races with subsequent updates.
 	wg.Wait()
-	ts.sync()
+	// Just signal that there are initial sets to sync now. Actual syncing must only
+	// happen in the runScraping loop.
+	select {
+	case ts.syncCh <- struct{}{}:
+	default:
+	}
 }
 
 // update handles a target group update from a target provider identified by the name.
 func (ts *targetSet) update(name string, tgroup *config.TargetGroup) error {
+	if tgroup == nil {
+		return nil
+	}
 	targets, err := targetsFromGroup(tgroup, ts.config)
 	if err != nil {
 		return err
@@ -399,14 +410,15 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 	for i, c := range cfg.AzureSDConfigs {
 		app("azure", i, discovery.NewAzureDiscovery(c))
 	}
-	if len(cfg.TargetGroups) > 0 {
-		app("static", 0, NewStaticProvider(cfg.TargetGroups))
+	if len(cfg.StaticConfigs) > 0 {
+		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
 	}
 
 	return providers
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
+// Panics if target group is nil.
 func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
 	targets := make([]*Target, 0, len(tg.Targets))
 
@@ -457,7 +469,7 @@ func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Targ
 			case "https":
 				addr = fmt.Sprintf("%s:443", addr)
 			default:
-				panic(fmt.Errorf("targetsFromGroup: invalid scheme %q", cfg.Scheme))
+				return nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
 			}
 			labels[model.AddressLabel] = model.LabelValue(addr)
 		}

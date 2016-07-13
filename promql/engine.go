@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"container/heap"
 	"fmt"
 	"math"
 	"runtime"
@@ -218,7 +219,7 @@ func contextDone(ctx context.Context, env string) error {
 // It is connected to a storage.
 type Engine struct {
 	// The storage on which the engine operates.
-	storage local.Storage
+	storage local.Querier
 
 	// The base context for all queries and its cancellation function.
 	baseCtx       context.Context
@@ -230,7 +231,7 @@ type Engine struct {
 }
 
 // NewEngine returns a new engine.
-func NewEngine(storage local.Storage, o *EngineOptions) *Engine {
+func NewEngine(storage local.Querier, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}
@@ -610,7 +611,7 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 	switch e := expr.(type) {
 	case *AggregateExpr:
 		vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepExtraLabels, vector)
+		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepCommonLabels, e.Param, vector)
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, model.ValScalar, model.ValVector)
@@ -728,7 +729,7 @@ func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	var result vector
 	// The set of signatures for the right-hand side vector.
@@ -751,7 +752,7 @@ func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector 
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	var result vector
 	leftSigs := map[uint64]struct{}{}
@@ -773,7 +774,7 @@ func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vec
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	rightSigs := map[uint64]struct{}{}
 	for _, rs := range rhs {
@@ -796,7 +797,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 	}
 	var (
 		result = vector{}
-		sigf   = signatureFunc(matching.Ignoring, matching.MatchingLabels...)
+		sigf   = signatureFunc(matching.On, matching.MatchingLabels...)
 	)
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -882,9 +883,9 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 }
 
 // signatureFunc returns a function that calculates the signature for a metric
-// based on the provided labels. If ignoring, then the given labels are ignored instead.
-func signatureFunc(ignoring bool, labels ...model.LabelName) func(m metric.Metric) uint64 {
-	if len(labels) == 0 || ignoring {
+// ignoring the provided labels. If on, then the given labels are only used instead.
+func signatureFunc(on bool, labels ...model.LabelName) func(m metric.Metric) uint64 {
+	if !on {
 		return func(m metric.Metric) uint64 {
 			tmp := m.Metric.Clone()
 			for _, l := range labels {
@@ -905,10 +906,7 @@ func resultMetric(lhs, rhs metric.Metric, op itemType, matching *VectorMatching)
 	if shouldDropMetricName(op) {
 		lhs.Del(model.MetricNameLabel)
 	}
-	if len(matching.MatchingLabels)+len(matching.Include) == 0 {
-		return lhs
-	}
-	if matching.Ignoring {
+	if !matching.On {
 		if matching.Card == CardOneToOne {
 			for _, l := range matching.MatchingLabels {
 				lhs.Del(l)
@@ -991,6 +989,8 @@ func scalarBinop(op itemType, lhs, rhs model.SampleValue) model.SampleValue {
 		return lhs * rhs
 	case itemDIV:
 		return lhs / rhs
+	case itemPOW:
+		return model.SampleValue(math.Pow(float64(lhs), float64(rhs)))
 	case itemMOD:
 		if rhs != 0 {
 			return model.SampleValue(int(lhs) % int(rhs))
@@ -1023,6 +1023,8 @@ func vectorElemBinop(op itemType, lhs, rhs model.SampleValue) (model.SampleValue
 		return lhs * rhs, true
 	case itemDIV:
 		return lhs / rhs, true
+	case itemPOW:
+		return model.SampleValue(math.Pow(float64(lhs), float64(rhs))), true
 	case itemMOD:
 		if rhs != 0 {
 			return model.SampleValue(int(lhs) % int(rhs)), true
@@ -1059,35 +1061,58 @@ type groupedAggregation struct {
 	value            model.SampleValue
 	valuesSquaredSum model.SampleValue
 	groupCount       int
+	heap             vectorByValueHeap
+	reverseHeap      vectorByReverseValueHeap
 }
 
 // aggregation evaluates an aggregation operation on a vector.
-func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepExtra bool, vec vector) vector {
+func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepCommon bool, param Expr, vec vector) vector {
 
 	result := map[uint64]*groupedAggregation{}
+	var k int
+	if op == itemTopK || op == itemBottomK {
+		k = ev.evalInt(param)
+		if k < 1 {
+			return vector{}
+		}
+	}
+	var valueLabel model.LabelName
+	if op == itemCountValues {
+		valueLabel = model.LabelName(ev.evalString(param).Value)
+		if !without {
+			grouping = append(grouping, valueLabel)
+		}
+	}
 
-	for _, sample := range vec {
-		withoutMetric := sample.Metric
+	for _, s := range vec {
+		withoutMetric := s.Metric
 		if without {
 			for _, l := range grouping {
 				withoutMetric.Del(l)
 			}
 			withoutMetric.Del(model.MetricNameLabel)
+			if op == itemCountValues {
+				withoutMetric.Set(valueLabel, model.LabelValue(s.Value.String()))
+			}
+		} else {
+			if op == itemCountValues {
+				s.Metric.Set(valueLabel, model.LabelValue(s.Value.String()))
+			}
 		}
 
 		var groupingKey uint64
 		if without {
 			groupingKey = uint64(withoutMetric.Metric.Fingerprint())
 		} else {
-			groupingKey = model.SignatureForLabels(sample.Metric.Metric, grouping...)
+			groupingKey = model.SignatureForLabels(s.Metric.Metric, grouping...)
 		}
 
 		groupedResult, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
 			var m metric.Metric
-			if keepExtra {
-				m = sample.Metric
+			if keepCommon {
+				m = s.Metric
 				m.Del(model.MetricNameLabel)
 			} else if without {
 				m = withoutMetric
@@ -1097,44 +1122,65 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 					Copied: true,
 				}
 				for _, l := range grouping {
-					if v, ok := sample.Metric.Metric[l]; ok {
+					if v, ok := s.Metric.Metric[l]; ok {
 						m.Set(l, v)
 					}
 				}
 			}
 			result[groupingKey] = &groupedAggregation{
 				labels:           m,
-				value:            sample.Value,
-				valuesSquaredSum: sample.Value * sample.Value,
+				value:            s.Value,
+				valuesSquaredSum: s.Value * s.Value,
 				groupCount:       1,
+			}
+			if op == itemTopK {
+				result[groupingKey].heap = make(vectorByValueHeap, 0, k)
+				heap.Push(&result[groupingKey].heap, &sample{Value: s.Value, Metric: s.Metric})
+			} else if op == itemBottomK {
+				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, k)
+				heap.Push(&result[groupingKey].reverseHeap, &sample{Value: s.Value, Metric: s.Metric})
 			}
 			continue
 		}
 		// Add the sample to the existing group.
-		if keepExtra {
-			groupedResult.labels = labelIntersection(groupedResult.labels, sample.Metric)
+		if keepCommon {
+			groupedResult.labels = labelIntersection(groupedResult.labels, s.Metric)
 		}
 
 		switch op {
 		case itemSum:
-			groupedResult.value += sample.Value
+			groupedResult.value += s.Value
 		case itemAvg:
-			groupedResult.value += sample.Value
+			groupedResult.value += s.Value
 			groupedResult.groupCount++
 		case itemMax:
-			if groupedResult.value < sample.Value || math.IsNaN(float64(groupedResult.value)) {
-				groupedResult.value = sample.Value
+			if groupedResult.value < s.Value || math.IsNaN(float64(groupedResult.value)) {
+				groupedResult.value = s.Value
 			}
 		case itemMin:
-			if groupedResult.value > sample.Value || math.IsNaN(float64(groupedResult.value)) {
-				groupedResult.value = sample.Value
+			if groupedResult.value > s.Value || math.IsNaN(float64(groupedResult.value)) {
+				groupedResult.value = s.Value
 			}
-		case itemCount:
+		case itemCount, itemCountValues:
 			groupedResult.groupCount++
 		case itemStdvar, itemStddev:
-			groupedResult.value += sample.Value
-			groupedResult.valuesSquaredSum += sample.Value * sample.Value
+			groupedResult.value += s.Value
+			groupedResult.valuesSquaredSum += s.Value * s.Value
 			groupedResult.groupCount++
+		case itemTopK:
+			if len(groupedResult.heap) < k || groupedResult.heap[0].Value < s.Value || math.IsNaN(float64(groupedResult.heap[0].Value)) {
+				if len(groupedResult.heap) == k {
+					heap.Pop(&groupedResult.heap)
+				}
+				heap.Push(&groupedResult.heap, &sample{Value: s.Value, Metric: s.Metric})
+			}
+		case itemBottomK:
+			if len(groupedResult.reverseHeap) < k || groupedResult.reverseHeap[0].Value > s.Value || math.IsNaN(float64(groupedResult.reverseHeap[0].Value)) {
+				if len(groupedResult.reverseHeap) == k {
+					heap.Pop(&groupedResult.reverseHeap)
+				}
+				heap.Push(&groupedResult.reverseHeap, &sample{Value: s.Value, Metric: s.Metric})
+			}
 		default:
 			panic(fmt.Errorf("expected aggregation operator but got %q", op))
 		}
@@ -1147,7 +1193,7 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 		switch op {
 		case itemAvg:
 			aggr.value = aggr.value / model.SampleValue(aggr.groupCount)
-		case itemCount:
+		case itemCount, itemCountValues:
 			aggr.value = model.SampleValue(aggr.groupCount)
 		case itemStdvar:
 			avg := float64(aggr.value) / float64(aggr.groupCount)
@@ -1155,6 +1201,28 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 		case itemStddev:
 			avg := float64(aggr.value) / float64(aggr.groupCount)
 			aggr.value = model.SampleValue(math.Sqrt(float64(aggr.valuesSquaredSum)/float64(aggr.groupCount) - avg*avg))
+		case itemTopK:
+			// The heap keeps the lowest value on top, so reverse it.
+			sort.Sort(sort.Reverse(aggr.heap))
+			for _, v := range aggr.heap {
+				resultVector = append(resultVector, &sample{
+					Metric:    v.Metric,
+					Value:     v.Value,
+					Timestamp: ev.Timestamp,
+				})
+			}
+			continue // Bypass default append.
+		case itemBottomK:
+			// The heap keeps the lowest value on top, so reverse it.
+			sort.Sort(sort.Reverse(aggr.reverseHeap))
+			for _, v := range aggr.reverseHeap {
+				resultVector = append(resultVector, &sample{
+					Metric:    v.Metric,
+					Value:     v.Value,
+					Timestamp: ev.Timestamp,
+				})
+			}
+			continue // Bypass default append.
 		default:
 			// For other aggregations, we already have the right value.
 		}

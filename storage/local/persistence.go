@@ -229,15 +229,15 @@ func newPersistence(
 			prometheus.SummaryOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "indexing_batch_duration_milliseconds",
-				Help:      "Quantiles for batch indexing duration in milliseconds.",
+				Name:      "indexing_batch_duration_seconds",
+				Help:      "Quantiles for batch indexing duration in seconds.",
 			},
 		),
 		checkpointDuration: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "checkpoint_duration_milliseconds",
-			Help:      "The duration (in milliseconds) it took to checkpoint in-memory metrics and head chunks.",
+			Name:      "checkpoint_duration_seconds",
+			Help:      "The duration in seconds it took to checkpoint in-memory metrics and head chunks.",
 		}),
 		dirtyCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -559,7 +559,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 		}
 		err = os.Rename(p.headsTempFileName(), p.headsFileName())
 		duration := time.Since(begin)
-		p.checkpointDuration.Set(float64(duration) / float64(time.Millisecond))
+		p.checkpointDuration.Set(duration.Seconds())
 		log.Infof("Done checkpointing in-memory metrics and chunks in %v.", duration)
 	}()
 
@@ -812,6 +812,9 @@ func (p *persistence) dropAndPersistChunks(
 		}
 		_, err = io.ReadFull(f, headerBuf)
 		if err == io.EOF {
+			// Close the file before trying to delete it. This is necessary on Windows
+			// (this will cause the defer f.Close to fail, but the error is silently ignored)
+			f.Close()
 			// We ran into the end of the file without finding any chunks that should
 			// be kept. Remove the whole file.
 			if numDropped, err = p.deleteSeriesFile(fp); err != nil {
@@ -875,6 +878,9 @@ func (p *persistence) dropAndPersistChunks(
 		return
 	}
 	defer func() {
+		// Close the file before trying to rename to it. This is necessary on Windows
+		// (this will cause the defer f.Close to fail, but the error is silently ignored)
+		f.Close()
 		p.closeChunkFile(temp)
 		if err == nil {
 			err = os.Rename(p.tempFileNameForFingerprint(fp), p.fileNameForFingerprint(fp))
@@ -1232,9 +1238,7 @@ func (p *persistence) processIndexingQueue() {
 	commitBatch := func() {
 		p.indexingBatchSizes.Observe(float64(batchSize))
 		defer func(begin time.Time) {
-			p.indexingBatchDuration.Observe(
-				float64(time.Since(begin)) / float64(time.Millisecond),
-			)
+			p.indexingBatchDuration.Observe(time.Since(begin).Seconds())
 		}(time.Now())
 
 		if err := p.labelPairToFingerprints.IndexBatch(pairToFPs); err != nil {

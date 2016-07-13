@@ -101,11 +101,12 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a vector.
 type AggregateExpr struct {
-	Op              itemType         // The used aggregation operation.
-	Expr            Expr             // The vector expression over which is aggregated.
-	Grouping        model.LabelNames // The labels by which to group the vector.
-	Without         bool             // Whether to drop the given labels rather than keep them.
-	KeepExtraLabels bool             // Whether to keep extra labels common among result elements.
+	Op               itemType         // The used aggregation operation.
+	Expr             Expr             // The vector expression over which is aggregated.
+	Param            Expr             // Parameter used by some aggregators.
+	Grouping         model.LabelNames // The labels by which to group the vector.
+	Without          bool             // Whether to drop the given labels rather than keep them.
+	KeepCommonLabels bool             // Whether to keep common labels among result elements.
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -231,9 +232,9 @@ type VectorMatching struct {
 	// MatchingLabels contains the labels which define equality of a pair of
 	// elements from the vectors.
 	MatchingLabels model.LabelNames
-	// Ignoring excludes the given label names from matching,
-	// rather than only using them.
-	Ignoring bool
+	// On includes the given label names from matching,
+	// rather than excluding them.
+	On bool
 	// Include contains additional labels that should be included in
 	// the result from the side with the lower cardinality.
 	Include model.LabelNames
