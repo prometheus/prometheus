@@ -40,4 +40,4 @@ scrape_configs:
       - source_labels: [__address__]
         regex: (172\.17\.0\.1:9100)
         target_label: instance
-        replacement: my.node.local
+        replacement: my.node.local:9100
