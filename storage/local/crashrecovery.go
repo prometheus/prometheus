@@ -362,6 +362,10 @@ func (p *persistence) sanitizeSeries(
 		)
 		numMemChunkDescs.Sub(float64(keepIdx))
 		atomic.AddInt64(&numMemChunks, int64(-keepIdx))
+		if keepIdx == len(s.chunkDescs) {
+			// No chunks from series file left, head chunk is evicted, so declare it closed.
+			s.headChunkClosed = true
+		}
 		s.chunkDescs = append(cds, s.chunkDescs[keepIdx:]...)
 		return fp, true
 	}
