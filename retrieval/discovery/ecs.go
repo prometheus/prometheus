@@ -220,7 +220,7 @@ func (ed *ECSDiscovery) refresh() (*config.TargetGroup, error) {
 					continue
 				}
 				inst, found := ec2Instances[*containerInstance.Ec2InstanceId]
-				if !found {
+				if (!found) || inst == nil || inst.PrivateIpAddress == nil {
 					continue
 				}
 
