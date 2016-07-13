@@ -29,3 +29,15 @@ scrape_configs:
     static_configs:
       - targets: 
         - 'localhost:9090'
+
+  # An example for relabeling an instance
+  # see https://prometheus.io/docs/operating/configuration/#<relabel_config>
+  - job_name: 'node'
+    static_configs:
+      - targets:
+        - '172.17.0.1:9100'
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: (172\.17\.0\.1:9100)
+        target_label: instance
+        replacement: my.node.local
