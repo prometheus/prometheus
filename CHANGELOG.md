@@ -1,3 +1,22 @@
+## 1.0.0-rc.0 / 2016-07-14
+
+* [CHANGE] Remove deprecated query language keywords
+* [CHANGE] Change Kubernetes SD to require specifying Kubernetes role
+* [CHANGE] Use service address in Consul SD if available
+* [CHANGE] Standardize all Prometheus internal metrics to second units
+* [CHANGE] Remove unversioned legacy HTTP API
+* [CHANGE] Remove legacy ingestion of JSON metric format
+* [CHANGE] Remove deprecated `target_groups` configuration
+* [FEATURE] Add binary power operation to PromQL
+* [FEATURE] Add `count_values` aggregator
+* [FEATURE] Add `-web.route-prefix` flag
+* [FEATURE] Allow `on()`, `by()`, `without()` in PromQL with empty label sets
+* [ENHANCEMENT] Make `topk/bottomk` query functions aggregators
+* [BUGFIX] Fix annotations in alert rule printing
+* [BUGFIX] Expand alert templating at evaluation time
+* [BUGFIX] Fix edge case handling in crash recovery
+* [BUGFIX] Hide testing package flags from help output
+
 ## 0.20.0 / 2016-06-15
 
 This release contains multiple breaking changes to the configuration schema.
