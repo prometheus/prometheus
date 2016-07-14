@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/frankenstein/wire"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -65,19 +66,10 @@ func init() {
 	prometheus.MustRegister(s3RequestDuration)
 }
 
-// Chunk contains encoded timeseries data
-type Chunk struct {
-	ID      string       `json:"-"`
-	From    model.Time   `json:"from"`
-	Through model.Time   `json:"through"`
-	Metric  model.Metric `json:"metric"`
-	Data    []byte       `json:"-"`
-}
-
 // ChunkStore stores and indexes chunks
 type ChunkStore interface {
-	Put([]Chunk) error
-	Get(from, through model.Time, matchers ...*metric.LabelMatcher) ([]Chunk, error)
+	Put([]wire.Chunk) error
+	Get(from, through model.Time, matchers ...*metric.LabelMatcher) ([]wire.Chunk, error)
 }
 
 // ChunkStoreConfig specifies config for a ChunkStore
@@ -204,7 +196,7 @@ func bigBuckets(from, through model.Time) []int64 {
 }
 
 // Put implements ChunkStore
-func (c *AWSChunkStore) Put(chunks []Chunk) error {
+func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
 	// TODO: parallelise
 	for _, chunk := range chunks {
 		err := timeRequest("Put", s3RequestDuration, func() error {
@@ -270,7 +262,7 @@ func (c *AWSChunkStore) Put(chunks []Chunk) error {
 }
 
 // Get implements ChunkStore
-func (c *AWSChunkStore) Get(from, through model.Time, matchers ...*metric.LabelMatcher) ([]Chunk, error) {
+func (c *AWSChunkStore) Get(from, through model.Time, matchers ...*metric.LabelMatcher) ([]wire.Chunk, error) {
 	chunks, err := c.lookupChunks(from, through, matchers)
 	if err != nil {
 		return nil, err
@@ -278,7 +270,7 @@ func (c *AWSChunkStore) Get(from, through model.Time, matchers ...*metric.LabelM
 	return c.fetchChunkData(chunks)
 }
 
-func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metric.LabelMatcher) ([]Chunk, error) {
+func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metric.LabelMatcher) ([]wire.Chunk, error) {
 	var metricName model.LabelValue
 	for _, matcher := range matchers {
 		if matcher.Name == model.MetricNameLabel && matcher.Type == metric.Equal {
@@ -290,7 +282,7 @@ func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metri
 		return nil, fmt.Errorf("no matcher for MetricNameLabel")
 	}
 
-	incomingChunkSets := make(chan []Chunk)
+	incomingChunkSets := make(chan []wire.Chunk)
 	incomingErrors := make(chan error)
 	buckets := bigBuckets(from, through)
 	for _, hour := range buckets {
@@ -298,7 +290,7 @@ func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metri
 		go c.lookupChunksFor(hour, metricName, matchers, incomingChunkSets, incomingErrors)
 	}
 
-	chunkSets := []Chunk{}
+	chunkSets := []wire.Chunk{}
 	errors := []error{}
 	for i := 0; i < len(buckets); i++ {
 		select {
@@ -314,8 +306,8 @@ func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metri
 	return chunkSets, nil
 }
 
-func (c *AWSChunkStore) lookupChunksFor(hour int64, metricName model.LabelValue, matchers []*metric.LabelMatcher, incomingChunkSets chan []Chunk, incomingErrors chan error) {
-	var chunkSets [][]Chunk
+func (c *AWSChunkStore) lookupChunksFor(hour int64, metricName model.LabelValue, matchers []*metric.LabelMatcher, incomingChunkSets chan []wire.Chunk, incomingErrors chan error) {
+	var chunkSets [][]wire.Chunk
 	for _, matcher := range matchers {
 		// TODO build support for other matchers
 		if matcher.Type != metric.Equal {
@@ -362,7 +354,7 @@ func (c *AWSChunkStore) lookupChunksFor(hour int64, metricName model.LabelValue,
 			return
 		}
 
-		chunkSet := []Chunk{}
+		chunkSet := []wire.Chunk{}
 		for _, item := range resp.Items {
 			rangeValue := item[rangeKey].S
 			if rangeValue == nil {
@@ -382,7 +374,7 @@ func (c *AWSChunkStore) lookupChunksFor(hour int64, metricName model.LabelValue,
 				incomingErrors <- err
 				return
 			}
-			chunk := Chunk{
+			chunk := wire.Chunk{
 				ID: parts[1],
 			}
 			if err := json.Unmarshal(chunkValue, &chunk); err != nil {
@@ -397,11 +389,11 @@ func (c *AWSChunkStore) lookupChunksFor(hour int64, metricName model.LabelValue,
 	incomingChunkSets <- nWayIntersect(chunkSets)
 }
 
-func (c *AWSChunkStore) fetchChunkData(chunkSet []Chunk) ([]Chunk, error) {
-	incomingChunks := make(chan Chunk)
+func (c *AWSChunkStore) fetchChunkData(chunkSet []wire.Chunk) ([]wire.Chunk, error) {
+	incomingChunks := make(chan wire.Chunk)
 	incomingErrors := make(chan error)
 	for _, chunk := range chunkSet {
-		go func(chunk Chunk) {
+		go func(chunk wire.Chunk) {
 			var resp *s3.GetObjectOutput
 			err := timeRequest("Get", s3RequestDuration, func() error {
 				var err error
@@ -425,7 +417,7 @@ func (c *AWSChunkStore) fetchChunkData(chunkSet []Chunk) ([]Chunk, error) {
 		}(chunk)
 	}
 
-	chunks := []Chunk{}
+	chunks := []wire.Chunk{}
 	errors := []error{}
 	for i := 0; i < len(chunkSet); i++ {
 		select {
@@ -441,18 +433,18 @@ func (c *AWSChunkStore) fetchChunkData(chunkSet []Chunk) ([]Chunk, error) {
 	return chunks, nil
 }
 
-func nWayIntersect(sets [][]Chunk) []Chunk {
+func nWayIntersect(sets [][]wire.Chunk) []wire.Chunk {
 	l := len(sets)
 	switch l {
 	case 0:
-		return []Chunk{}
+		return []wire.Chunk{}
 	case 1:
 		return sets[0]
 	case 2:
 		var (
 			left, right = sets[0], sets[1]
 			i, j        = 0, 0
-			result      = []Chunk{}
+			result      = []wire.Chunk{}
 		)
 		for i < len(left) && j < len(right) {
 			if left[i].ID == right[j].ID {
@@ -472,6 +464,6 @@ func nWayIntersect(sets [][]Chunk) []Chunk {
 			left  = nWayIntersect(sets[:split])
 			right = nWayIntersect(sets[split:])
 		)
-		return nWayIntersect([][]Chunk{left, right})
+		return nWayIntersect([][]wire.Chunk{left, right})
 	}
 }
