@@ -11,4 +11,4 @@ scrape_configs:
     scrape_interval: 5s
 
     target_groups:
-      - targets: ['localhost:9090']
+      - targets: ['localhost:9091']
