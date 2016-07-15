@@ -478,6 +478,34 @@ func funcSumOverTime(ev *evaluator, args Expressions) model.Value {
 	})
 }
 
+// === stddev_over_time(matrix model.ValMatrix) Vector ===
+func funcStddevOverTime(ev *evaluator, args Expressions) model.Value {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
+		var sum, squaredSum, count model.SampleValue
+		for _, v := range values {
+			sum += v.Value
+			squaredSum += v.Value * v.Value
+			count += 1
+		}
+		avg := sum / count
+		return model.SampleValue(math.Sqrt(float64(squaredSum/count - avg*avg)))
+	})
+}
+
+// === stdvar_over_time(matrix model.ValMatrix) Vector ===
+func funcStdvarOverTime(ev *evaluator, args Expressions) model.Value {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
+		var sum, squaredSum, count model.SampleValue
+		for _, v := range values {
+			sum += v.Value
+			squaredSum += v.Value * v.Value
+			count += 1
+		}
+		avg := sum / count
+		return squaredSum/count - avg*avg
+	})
+}
+
 // === abs(vector model.ValVector) Vector ===
 func funcAbs(ev *evaluator, args Expressions) model.Value {
 	vector := ev.evalVector(args[0])
@@ -987,6 +1015,18 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValVector},
 		ReturnType: model.ValVector,
 		Call:       funcSqrt,
+	},
+	"stddev_over_time": {
+		Name:       "stddev_over_time",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcStddevOverTime,
+	},
+	"stdvar_over_time": {
+		Name:       "stdvar_over_time",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcStdvarOverTime,
 	},
 	"sum_over_time": {
 		Name:       "sum_over_time",
