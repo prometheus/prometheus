@@ -62,7 +62,7 @@ type Handler struct {
 	router       *route.Router
 	listenErrCh  chan error
 	quitCh       chan struct{}
-	reloadCh     chan struct{}
+	reloadCh     chan chan error
 	options      *Options
 	configString string
 	versionInfo  *PrometheusVersion
@@ -74,15 +74,14 @@ type Handler struct {
 }
 
 // ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (h *Handler) ApplyConfig(conf *config.Config) bool {
+func (h *Handler) ApplyConfig(conf *config.Config) error {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
 	h.externalLabels = conf.GlobalConfig.ExternalLabels
 	h.configString = conf.String()
 
-	return true
+	return nil
 }
 
 // PrometheusVersion contains build information about Prometheus.
@@ -124,7 +123,7 @@ func New(
 		router:      router,
 		listenErrCh: make(chan error),
 		quitCh:      make(chan struct{}),
-		reloadCh:    make(chan struct{}),
+		reloadCh:    make(chan chan error),
 		options:     o,
 		versionInfo: version,
 		birth:       time.Now(),
@@ -225,7 +224,7 @@ func (h *Handler) Quit() <-chan struct{} {
 }
 
 // Reload returns the receive-only channel that signals configuration reload requests.
-func (h *Handler) Reload() <-chan struct{} {
+func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
 }
 
@@ -352,8 +351,11 @@ func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Reloading configuration file...")
-	h.reloadCh <- struct{}{}
+	rc := make(chan error)
+	h.reloadCh <- rc
+	if err := <-rc; err != nil {
+		http.Error(w, fmt.Sprintf("failed to reload config: %s", err), http.StatusInternalServerError)
+	}
 }
 
 func (h *Handler) consolesPath() string {

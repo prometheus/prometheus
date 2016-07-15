@@ -373,8 +373,8 @@ func (m *Manager) Stop() {
 }
 
 // ApplyConfig updates the rule manager's state as the config requires. If
-// loading the new rules failed the old rule set is restored. Returns true on success.
-func (m *Manager) ApplyConfig(conf *config.Config) bool {
+// loading the new rules failed the old rule set is restored.
+func (m *Manager) ApplyConfig(conf *config.Config) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -384,16 +384,14 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 		fs, err := filepath.Glob(pat)
 		if err != nil {
 			// The only error can be a bad pattern.
-			log.Errorf("Error retrieving rule files for %s: %s", pat, err)
-			return false
+			return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
 		}
 		files = append(files, fs...)
 	}
 
 	groups, err := m.loadGroups(files...)
 	if err != nil {
-		log.Errorf("Error loading rules, previous rule set restored: %s", err)
-		return false
+		return fmt.Errorf("error loading rules, previous rule set restored: %s", err)
 	}
 
 	var wg sync.WaitGroup
@@ -433,7 +431,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 	wg.Wait()
 	m.groups = groups
 
-	return true
+	return nil
 }
 
 // loadGroups reads groups from a list of files.
