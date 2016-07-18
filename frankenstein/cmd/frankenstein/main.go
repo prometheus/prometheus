@@ -83,7 +83,7 @@ func main() {
 	case distributor:
 		setupDistributor(consul, consulPrefix, chunkStore, remoteTimeout)
 	case ingestor:
-		setupIngestor(consul, chunkStore)
+		setupIngestor(consul, consulPrefix, chunkStore)
 	default:
 		log.Fatalf("Mode %s not supported!", mode)
 	}
@@ -149,10 +149,10 @@ func setupDistributor(
 	http.Handle("/push", frankenstein.AppenderHandler(distributor))
 }
 
-func setupIngestor(consulClient frankenstein.ConsulClient, chunkStore frankenstein.ChunkStore) {
+func setupIngestor(consulClient frankenstein.ConsulClient, consulPrefix string, chunkStore frankenstein.ChunkStore) {
 	for i := 0; i < 10; i++ {
 		log.Info("Adding ingestor to consul")
-		if err := writeIngestorConfigToConsul(consulClient); err == nil {
+		if err := writeIngestorConfigToConsul(consulClient, consulPrefix); err == nil {
 			break
 		} else {
 			log.Errorf("Failed to write to consul, sleeping: %v", err)
@@ -167,7 +167,7 @@ func setupIngestor(consulClient frankenstein.ConsulClient, chunkStore frankenste
 	http.Handle("/push", frankenstein.AppenderHandler(ingestor))
 }
 
-func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient) error {
+func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient, consulPrefix string) error {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return err
@@ -177,7 +177,7 @@ func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient) error {
 	tokenHasher.Write([]byte(hostname))
 
 	buf, err := json.Marshal(frankenstein.Collector{
-		Hostname: hostname,
+		Hostname: hostname + ":9094",
 		Tokens:   []uint64{tokenHasher.Sum64()},
 	})
 	if err != nil {
@@ -185,7 +185,7 @@ func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient) error {
 	}
 
 	_, err = consulClient.Put(&consul.KVPair{
-		Key:   hostname,
+		Key:   consulPrefix + hostname,
 		Value: buf,
 	}, &consul.WriteOptions{})
 	return err

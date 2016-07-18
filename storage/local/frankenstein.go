@@ -45,7 +45,14 @@ func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
 		done:       make(chan struct{}),
 
 		fpToSeries: newSeriesMap(),
+		fpLocker:   newFingerprintLocker(16),
 	}
+	var err error
+	i.mapper, err = newFPMapper(i.fpToSeries, noopPersistence{})
+	if err != nil {
+		return nil, err
+	}
+
 	go i.loop()
 	return i, nil
 }

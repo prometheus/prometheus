@@ -47,6 +47,7 @@ start_container 1 consul consul -p 8500:8500 -- agent -ui -server -client=0.0.0.
 
 # Services
 start_container 1 frankenstein ingestor \
+    --hostname=ingestor1 \
         -- \
     -mode=ingestor \
     -consul.hostname=consul1:8500 \
