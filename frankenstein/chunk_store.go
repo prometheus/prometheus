@@ -253,7 +253,7 @@ func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metri
 
 	chunkSets := []Chunk{}
 	errors := []error{}
-	for i := 0; i < len(buckets)*len(matchers); i++ {
+	for i := 0; i < len(buckets); i++ {
 		select {
 		case chunkSet := <-incomingChunkSets:
 			chunkSets = append(chunkSets, chunkSet...)
