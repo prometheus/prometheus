@@ -33,6 +33,7 @@ type ConsulClient interface {
 	Get(key string, out interface{}) error
 	CAS(key string, out interface{}, f CASCallback) error
 	WatchPrefix(prefix string, out interface{}, done chan struct{}, f func(string, interface{}) bool)
+	Put(p *consul.KVPair, q *consul.WriteOptions) (*consul.WriteMeta, error)
 }
 
 // CASCallback is the type of the callback to CAS.  If err is nil, out must be non-nil.
@@ -42,6 +43,7 @@ type kv interface {
 	CAS(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.WriteMeta, error)
 	Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consul.QueryMeta, error)
 	List(prefix string, q *consul.QueryOptions) (consul.KVPairs, *consul.QueryMeta, error)
+	Put(p *consul.KVPair, q *consul.WriteOptions) (*consul.WriteMeta, error)
 }
 
 type consulClient struct {

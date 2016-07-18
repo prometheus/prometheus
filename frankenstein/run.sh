@@ -49,7 +49,10 @@ start_container 1 consul consul -p 8500:8500 -- agent -ui -server -client=0.0.0.
 start_container 1 frankenstein ingestor \
         -- \
     -mode=ingestor \
-    -consul.hostname=consul1:8500
+    -consul.hostname=consul1:8500 \
+    -dynamodb.url=dynamodb://user:pass@dynamodb1.:8000/reports \
+    -dynamodb.create-tables=true \
+    -s3.url=s3://user:pass@s31.:4569/
 
 start_container 1 frankenstein distributor \
     -p 9094:9094 \
@@ -58,10 +61,6 @@ start_container 1 frankenstein distributor \
     -consul.hostname=consul1:8500 \
     -dynamodb.url=dynamodb://user:pass@dynamodb1.:8000/reports \
     -s3.url=s3://user:pass@s31.:4569/
-
-# Tell distributor about ingestor
-sleep 1
-curl -X PUT -d '{"hostname": "ingestor1:9090", "tokens": [0]}' "http://localhost:8500/v1/kv/collectors/localhost"
 
 # Start a prometheus in retrival mode
 start_container 1 prometheus retrieval \

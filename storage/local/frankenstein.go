@@ -18,7 +18,7 @@ const (
 )
 
 // Ingestor deals with "in flight" chunks.
-// Its like memseriesstorage, but simplier.
+// Its like MemorySeriesStorage, but simpler.
 type Ingestor struct {
 	chunkStore ChunkStore
 	quit       chan struct{}
@@ -35,6 +35,10 @@ type ChunkStore interface {
 }
 
 func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
+
+	// FOR TESTING
+	headChunkTimeout = 2 * time.Minute
+
 	i := &Ingestor{
 		chunkStore: chunkStore,
 		quit:       make(chan struct{}),
@@ -140,6 +144,7 @@ func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries) error
 	i.fpLocker.Lock(fp)
 
 	// Decide what chunks to flush
+	series.maybeCloseHeadChunk()
 	chunks := series.chunkDescs
 	if !series.headChunkClosed {
 		chunks = chunks[:len(chunks)-1]

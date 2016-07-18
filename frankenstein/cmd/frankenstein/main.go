@@ -14,18 +14,20 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"time"
 
+	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/common/log"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/frankenstein"
-	"github.com/prometheus/prometheus/frankenstein/wire"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -55,7 +57,7 @@ func main() {
 	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
 	flag.StringVar(&s3URL, "s3.url", "localhost:4569", "S3 endpoint URL.")
 	flag.StringVar(&dynamodbURL, "dynamodb.url", "localhost:8000", "DynamoDB endpoint URL.")
-	flag.BoolVar(&dynamodbCreateTables, "dynamodb.create-tables", true, "Create required DynamoDB tables on startup.")
+	flag.BoolVar(&dynamodbCreateTables, "dynamodb.create-tables", false, "Create required DynamoDB tables on startup.")
 	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream injestors.")
 	flag.Parse()
 
@@ -90,7 +92,7 @@ func main() {
 }
 
 func setupDistributor(
-	consul frankenstein.ConsulClient,
+	consulClient frankenstein.ConsulClient,
 	consulPrefix string,
 	chunkStore frankenstein.ChunkStore,
 	remoteTimeout time.Duration,
@@ -114,7 +116,7 @@ func setupDistributor(
 	}
 
 	distributor, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{
-		Consul:        consul,
+		ConsulClient:  consulClient,
 		ConsulPrefix:  consulPrefix,
 		ClientFactory: clientFactory,
 	})
@@ -129,10 +131,6 @@ func setupDistributor(
 	//              +----------> ChunkQuerier -> DynamoDB/S3
 	//
 	// TODO: Move querier to separate binary.
-
-	// Insert some test chunks into DynamoDB/S3.
-	writeTestChunks(chunkStore)
-
 	querier := frankenstein.MergeQuerier{
 		Queriers: []frankenstein.Querier{
 			distributor,
@@ -151,7 +149,17 @@ func setupDistributor(
 	http.Handle("/push", frankenstein.AppenderHandler(distributor))
 }
 
-func setupIngestor(_ frankenstein.ConsulClient, chunkStore frankenstein.ChunkStore) {
+func setupIngestor(consulClient frankenstein.ConsulClient, chunkStore frankenstein.ChunkStore) {
+	for i := 0; i < 10; i++ {
+		log.Info("Adding ingestor to consul")
+		if err := writeIngestorConfigToConsul(consulClient); err == nil {
+			break
+		} else {
+			log.Errorf("Failed to write to consul, sleeping: %v", err)
+			time.Sleep(1 * time.Second)
+		}
+	}
+
 	ingestor, err := local.NewIngestor(chunkStore)
 	if err != nil {
 		log.Fatal(err)
@@ -159,61 +167,26 @@ func setupIngestor(_ frankenstein.ConsulClient, chunkStore frankenstein.ChunkSto
 	http.Handle("/push", frankenstein.AppenderHandler(ingestor))
 }
 
-func writeTestChunks(cs frankenstein.ChunkStore) {
-	end := model.Now()
-	fooSamples := []model.SamplePair{
-		{
-			Timestamp: end.Add(-2 * time.Minute),
-			Value:     1,
-		},
-		{
-			Timestamp: end.Add(-time.Minute),
-			Value:     2,
-		},
-		{
-			Timestamp: end,
-			Value:     3,
-		},
-	}
-	barSamples := []model.SamplePair{
-		{
-			Timestamp: end.Add(-2 * time.Minute),
-			Value:     4,
-		},
-		{
-			Timestamp: end.Add(-time.Minute),
-			Value:     5,
-		},
-		{
-			Timestamp: end,
-			Value:     6,
-		},
-	}
-	err := cs.Put(
-		[]wire.Chunk{
-			{
-				ID:      "0000000000000001",
-				From:    fooSamples[0].Timestamp,
-				Through: fooSamples[len(fooSamples)-1].Timestamp,
-				Metric: model.Metric{
-					model.MetricNameLabel: "testmetric",
-					"service":             "foo",
-				},
-				Data: local.EncodeDoubleDeltaChunk(fooSamples),
-			},
-			{
-				ID:      "0000000000000002",
-				From:    barSamples[0].Timestamp,
-				Through: barSamples[len(barSamples)-1].Timestamp,
-				Metric: model.Metric{
-					model.MetricNameLabel: "testmetric",
-					"service":             "bar",
-				},
-				Data: local.EncodeDoubleDeltaChunk(barSamples),
-			},
-		},
-	)
+func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient) error {
+	hostname, err := os.Hostname()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	tokenHasher := fnv.New64()
+	tokenHasher.Write([]byte(hostname))
+
+	buf, err := json.Marshal(frankenstein.Collector{
+		Hostname: hostname,
+		Tokens:   []uint64{tokenHasher.Sum64()},
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = consulClient.Put(&consul.KVPair{
+		Key:   hostname,
+		Value: buf,
+	}, &consul.WriteOptions{})
+	return err
 }

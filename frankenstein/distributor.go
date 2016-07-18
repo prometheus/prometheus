@@ -46,7 +46,7 @@ type Distributor struct {
 // DistributorConfig contains the configuration require to
 // create a Distributor
 type DistributorConfig struct {
-	Consul        ConsulClient
+	ConsulClient  ConsulClient
 	ConsulPrefix  string
 	ClientFactory func(string) (*IngesterClient, error)
 }
@@ -79,7 +79,7 @@ func (d *Distributor) Stop() {
 
 func (d *Distributor) loop() {
 	defer close(d.done)
-	d.cfg.Consul.WatchPrefix(d.cfg.ConsulPrefix, &Collector{}, d.quit, func(key string, value interface{}) bool {
+	d.cfg.ConsulClient.WatchPrefix(d.cfg.ConsulPrefix, &Collector{}, d.quit, func(key string, value interface{}) bool {
 		c := *value.(*Collector)
 		log.Infof("Got update to collector: %#v", c)
 		d.ring.Update(c)
