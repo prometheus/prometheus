@@ -15,41 +15,50 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/frankenstein"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/web/api/v1"
 )
 
 func main() {
 	var (
-		listen        string
-		consulHost    string
-		consulPrefix  string
-		remoteTimeout time.Duration
+		listen               string
+		consulHost           string
+		consulPrefix         string
+		s3URL                string
+		dynamodbURL          string
+		dynamodbCreateTables bool
+		remoteTimeout        time.Duration
 	)
 
 	flag.StringVar(&listen, "web.listen-address", ":9094", "HTTP server listen address.")
 	flag.StringVar(&consulHost, "consul.hostname", "localhost:8500", "Hostname and port of Consul.")
 	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
+	flag.StringVar(&s3URL, "s3.url", "localhost:4569", "S3 endpoint URL.")
+	flag.StringVar(&dynamodbURL, "dynamodb.url", "localhost:8000", "DynamoDB endpoint URL.")
+	flag.BoolVar(&dynamodbCreateTables, "dynamodb.create-tables", true, "Create required DynamoDB tables on startup.")
 	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream injestors.")
 	flag.Parse()
 
 	clientFactory := func(hostname string) (*frankenstein.IngesterClient, error) {
-		// TODO: make correct URLs out of hostnames.
 		appender := remote.New(&remote.Options{
-			GenericURL:     hostname,
+			GenericURL:     fmt.Sprintf("http://%s/push", hostname),
 			StorageTimeout: remoteTimeout,
 		})
 		appender.Run()
 
-		querier, err := frankenstein.NewIngesterQuerier(hostname)
+		querier, err := frankenstein.NewIngesterQuerier(fmt.Sprintf("http://%s/", hostname))
 		if err != nil {
 			return nil, err
 		}
@@ -69,16 +78,37 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// TODO: REMOVE - this is just a proof-of-concept for querying back data
-	// from a local Prometheus server via
-	// PromQL->MergeQuerier->IngesterQuerier. The distributor is not in
-	// the picture yet.
-	ingesterQuerier, err := frankenstein.NewIngesterQuerier("http://localhost:9090/")
+	// This sets up a complete querying pipeline:
+	//
+	// PromQL -> MergeQuerier -> Distributor -> IngesterQuerier -> Ingester
+	//              |
+	//              +----------> ChunkQuerier -> DynamoDB/S3
+	//
+	// TODO: Move querier to separate binary.
+	chunkStore, err := frankenstein.NewAWSChunkStore(frankenstein.ChunkStoreConfig{
+		S3URL:       s3URL,
+		DynamoDBURL: dynamodbURL,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	if dynamodbCreateTables {
+		if err = chunkStore.CreateTables(); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Insert some test chunks into DynamoDB/S3.
+	writeTestChunks(chunkStore)
+
 	querier := frankenstein.MergeQuerier{
-		Queriers: []frankenstein.Querier{ingesterQuerier},
+		Queriers: []frankenstein.Querier{
+			distributor,
+			&frankenstein.ChunkQuerier{
+				Store: chunkStore,
+			},
+		},
 	}
 	engine := promql.NewEngine(nil, querier, nil)
 
@@ -86,8 +116,66 @@ func main() {
 	router := route.New()
 	api.Register(router.WithPrefix("/api/v1"))
 	http.Handle("/", router)
-	// END OF SECTION TO REMOVE
 
 	http.Handle("/push", frankenstein.AppenderHandler(distributor))
 	http.ListenAndServe(listen, nil)
+}
+
+func writeTestChunks(cs frankenstein.ChunkStore) {
+	end := model.Now()
+	fooSamples := []model.SamplePair{
+		{
+			Timestamp: end.Add(-2 * time.Minute),
+			Value:     1,
+		},
+		{
+			Timestamp: end.Add(-time.Minute),
+			Value:     2,
+		},
+		{
+			Timestamp: end,
+			Value:     3,
+		},
+	}
+	barSamples := []model.SamplePair{
+		{
+			Timestamp: end.Add(-2 * time.Minute),
+			Value:     4,
+		},
+		{
+			Timestamp: end.Add(-time.Minute),
+			Value:     5,
+		},
+		{
+			Timestamp: end,
+			Value:     6,
+		},
+	}
+	err := cs.Put(
+		[]frankenstein.Chunk{
+			{
+				ID:      "0000000000000001",
+				From:    fooSamples[0].Timestamp,
+				Through: fooSamples[len(fooSamples)-1].Timestamp,
+				Metric: model.Metric{
+					model.MetricNameLabel: "testmetric",
+					"service":             "foo",
+				},
+				Data: local.EncodeDoubleDeltaChunk(fooSamples),
+			},
+			{
+				ID:      "0000000000000002",
+				From:    barSamples[0].Timestamp,
+				Through: barSamples[len(barSamples)-1].Timestamp,
+				Metric: model.Metric{
+					model.MetricNameLabel: "testmetric",
+					"service":             "bar",
+				},
+				Data: local.EncodeDoubleDeltaChunk(barSamples),
+			},
+		},
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
 }

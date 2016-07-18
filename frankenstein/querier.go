@@ -23,6 +23,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -94,21 +95,14 @@ func (q *IngesterQuerier) Query(from, to model.Time, matchers ...*metric.LabelMa
 
 // A ChunkQuerier is a Querier that fetches samples from a ChunkStore.
 type ChunkQuerier struct {
-	store ChunkStore
-}
-
-// NewChunkQuerier creates a new ChunkQuerier given a ChunkStore.
-func NewChunkQuerier(store ChunkStore) *ChunkQuerier {
-	return &ChunkQuerier{
-		store: store,
-	}
+	Store ChunkStore
 }
 
 // Query implements Querier and transforms a list of chunks into sample
 // matrices.
 func (q *ChunkQuerier) Query(from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
 	// Get chunks for all matching series from ChunkStore.
-	chunks, err := q.store.Get(from, to, matchers...)
+	chunks, err := q.Store.Get(from, to, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +119,7 @@ func (q *ChunkQuerier) Query(from, to model.Time, matchers ...*metric.LabelMatch
 			}
 			sampleStreams[fp] = ss
 		}
-		ss.Values = append(ss.Values, decodeChunk(c)...)
+		ss.Values = append(ss.Values, local.DecodeDoubleDeltaChunk(c.Data)...)
 	}
 
 	for _, ss := range sampleStreams {
@@ -153,13 +147,6 @@ func (ts timeSortableSamplePairs) Less(i, j int) bool {
 
 func (ts timeSortableSamplePairs) Swap(i, j int) {
 	ts[i], ts[j] = ts[j], ts[i]
-}
-
-func decodeChunk(c Chunk) []model.SamplePair {
-	// TODO: Implement chunk decoding (this function is just a placeholder, this
-	// code will live somewhere else anyways). The chunking format is not defined
-	// yet, so it depends on how the write path will encode them.
-	return nil
 }
 
 // A MergeQuerier is a promql.Querier that merges the results of multiple

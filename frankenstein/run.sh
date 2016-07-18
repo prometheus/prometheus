@@ -49,11 +49,15 @@ start_container 1 consul consul -p 8500:8500 -- agent -ui -server -client=0.0.0.
 start_container 1 prometheus ingestor \
     -v ${DIR}/ingestor-config:/etc/prometheus/
 start_container 1 frankenstein distributor \
-    -- -consul.hostname=consul1:8500
+    -p 9094:9094 \
+        -- \
+    -consul.hostname=consul1:8500 \
+    -dynamodb.url=dynamodb://user:pass@dynamodb1.:8000/reports \
+    -s3.url=s3://user:pass@s31.:4569/
 
 # Tell distributor about ingestor
 sleep 1
-curl -X PUT -d '{"hostname": "http://ingestor1:9090/push", "tokens": [0]}' "http://$(docker-machine ip $(docker-machine active)):8500/v1/kv/collectors/localhost"
+curl -X PUT -d '{"hostname": "ingestor1:9090", "tokens": [0]}' "http://localhost:8500/v1/kv/collectors/localhost"
 
 # Start a prometheus in retrival mode
 start_container 1 prometheus retrieval \
@@ -62,3 +66,14 @@ start_container 1 prometheus retrieval \
     -config.file=/etc/prometheus/prometheus.yml \
     -web.listen-address=:9091 -retrieval-only \
     -storage.remote.generic-url=http://distributor1:9094/push
+
+# Start a Grafana dashboard.
+start_container 1 grafana/grafana grafana \
+    -p 3000:3000 \
+    -e GF_AUTH_ANONYMOUS_ENABLED=true \
+    -e GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+
+# Create a datasource in Grafana pointing to the Frankenstein server for queries.
+sleep 5
+curl -XPOST --data-binary @${DIR}/grafana-config/datasource.json -H "Content-Type: application/json" http://admin:admin@localhost:3000/api/datasources
+curl -XPOST --data-binary @${DIR}/grafana-config/dashboard.json -H "Content-Type: application/json" http://admin:admin@localhost:3000/api/dashboards/db

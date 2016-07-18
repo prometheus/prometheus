@@ -143,6 +143,53 @@ type AWSChunkStore struct {
 	cfg        ChunkStoreConfig
 }
 
+// CreateTables creates the required tables in DynamoDB.
+func (c *AWSChunkStore) CreateTables() error {
+	// See if tableName exists.
+	resp, err := c.dynamodb.ListTables(&dynamodb.ListTablesInput{
+		Limit: aws.Int64(10),
+	})
+	if err != nil {
+		return err
+	}
+	for _, s := range resp.TableNames {
+		if *s == c.tableName {
+			return nil
+		}
+	}
+
+	params := &dynamodb.CreateTableInput{
+		TableName: aws.String(c.tableName),
+		AttributeDefinitions: []*dynamodb.AttributeDefinition{
+			{
+				AttributeName: aws.String(hashKey),
+				AttributeType: aws.String("S"),
+			},
+			{
+				AttributeName: aws.String(rangeKey),
+				AttributeType: aws.String("S"),
+			},
+		},
+		KeySchema: []*dynamodb.KeySchemaElement{
+			{
+				AttributeName: aws.String(hashKey),
+				KeyType:       aws.String("HASH"),
+			},
+			{
+				AttributeName: aws.String(rangeKey),
+				KeyType:       aws.String("RANGE"),
+			},
+		},
+		ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
+			ReadCapacityUnits:  aws.Int64(10),
+			WriteCapacityUnits: aws.Int64(5),
+		},
+	}
+	log.Infof("Creating table %s", c.tableName)
+	_, err = c.dynamodb.CreateTable(params)
+	return err
+}
+
 func bigBuckets(from, through model.Time) []int64 {
 	var (
 		secondsInHour = int64(time.Hour / time.Second)
