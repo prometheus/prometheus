@@ -1,3 +1,5 @@
+// Copyright 2016 The Prometheus Authors
+
 package wire
 
 import (

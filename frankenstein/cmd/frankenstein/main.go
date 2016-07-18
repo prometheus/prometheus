@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/frankenstein"
+	"github.com/prometheus/prometheus/frankenstein/wire"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -63,11 +64,24 @@ func main() {
 		log.Fatalf("Error initializing Consul client: %v", err)
 	}
 
+	chunkStore, err := frankenstein.NewAWSChunkStore(frankenstein.ChunkStoreConfig{
+		S3URL:       s3URL,
+		DynamoDBURL: dynamodbURL,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if dynamodbCreateTables {
+		if err = chunkStore.CreateTables(); err != nil {
+			log.Fatal(err)
+		}
+	}
+
 	switch mode {
 	case distributor:
-		setupDistributor(consul, consulPrefix, remoteTimeout)
+		setupDistributor(consul, consulPrefix, chunkStore, remoteTimeout)
 	case ingestor:
-		setupIngestor(consul)
+		setupIngestor(consul, chunkStore)
 	default:
 		log.Fatalf("Mode %s not supported!", mode)
 	}
@@ -75,7 +89,12 @@ func main() {
 	http.ListenAndServe(listen, nil)
 }
 
-func setupDistributor(consul frankenstein.ConsulClient, consulPrefix string, remoteTimeout time.Duration) {
+func setupDistributor(
+	consul frankenstein.ConsulClient,
+	consulPrefix string,
+	chunkStore frankenstein.ChunkStore,
+	remoteTimeout time.Duration,
+) {
 	clientFactory := func(hostname string) (*frankenstein.IngesterClient, error) {
 		appender := remote.New(&remote.Options{
 			GenericURL:     fmt.Sprintf("http://%s/push", hostname),
@@ -110,19 +129,6 @@ func setupDistributor(consul frankenstein.ConsulClient, consulPrefix string, rem
 	//              +----------> ChunkQuerier -> DynamoDB/S3
 	//
 	// TODO: Move querier to separate binary.
-	chunkStore, err := frankenstein.NewAWSChunkStore(frankenstein.ChunkStoreConfig{
-		S3URL:       s3URL,
-		DynamoDBURL: dynamodbURL,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if dynamodbCreateTables {
-		if err = chunkStore.CreateTables(); err != nil {
-			log.Fatal(err)
-		}
-	}
 
 	// Insert some test chunks into DynamoDB/S3.
 	writeTestChunks(chunkStore)
@@ -145,8 +151,8 @@ func setupDistributor(consul frankenstein.ConsulClient, consulPrefix string, rem
 	http.Handle("/push", frankenstein.AppenderHandler(distributor))
 }
 
-func setupIngestor(_ frankenstein.ConsulClient) {
-	ingestor, err := local.NewIngestor(nil)
+func setupIngestor(_ frankenstein.ConsulClient, chunkStore frankenstein.ChunkStore) {
+	ingestor, err := local.NewIngestor(chunkStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -184,7 +190,7 @@ func writeTestChunks(cs frankenstein.ChunkStore) {
 		},
 	}
 	err := cs.Put(
-		[]frankenstein.Chunk{
+		[]wire.Chunk{
 			{
 				ID:      "0000000000000001",
 				From:    fooSamples[0].Timestamp,
