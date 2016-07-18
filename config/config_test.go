@@ -386,6 +386,9 @@ var expectedErrors = []struct {
 		filename: "kubernetes_bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
 	}, {
+		filename: "kubernetes_role.bad.yml",
+		errMsg:   "role",
+	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	}, {
