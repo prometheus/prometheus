@@ -1,4 +1,4 @@
-## 1.0.0-rc.0 / 2016-07-14
+## 1.0.0 / 2016-07-18
 
 * [CHANGE] Remove deprecated query language keywords
 * [CHANGE] Change Kubernetes SD to require specifying Kubernetes role
