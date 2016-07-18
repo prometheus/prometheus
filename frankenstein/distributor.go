@@ -34,7 +34,6 @@ type IngesterClient struct {
 // Distributor is a storage.SampleAppender and a frankenstein.Querier which
 // forwards appends and queries to individual ingesters.
 type Distributor struct {
-	consul     ConsulClient
 	ring       *Ring
 	cfg        DistributorConfig
 	clientsMtx sync.RWMutex
@@ -47,7 +46,7 @@ type Distributor struct {
 // DistributorConfig contains the configuration require to
 // create a Distributor
 type DistributorConfig struct {
-	ConsulHost    string
+	Consul        ConsulClient
 	ConsulPrefix  string
 	ClientFactory func(string) (*IngesterClient, error)
 }
@@ -61,12 +60,7 @@ type Collector struct {
 
 // NewDistributor constructs a new Distributor
 func NewDistributor(cfg DistributorConfig) (*Distributor, error) {
-	consul, err := NewConsulClient(cfg.ConsulHost)
-	if err != nil {
-		return nil, err
-	}
 	d := &Distributor{
-		consul:  consul,
 		ring:    NewRing(),
 		cfg:     cfg,
 		clients: map[string]*IngesterClient{},
@@ -85,7 +79,7 @@ func (d *Distributor) Stop() {
 
 func (d *Distributor) loop() {
 	defer close(d.done)
-	d.consul.WatchPrefix(d.cfg.ConsulPrefix, &Collector{}, d.quit, func(key string, value interface{}) bool {
+	d.cfg.Consul.WatchPrefix(d.cfg.ConsulPrefix, &Collector{}, d.quit, func(key string, value interface{}) bool {
 		c := *value.(*Collector)
 		log.Infof("Got update to collector: %#v", c)
 		d.ring.Update(c)

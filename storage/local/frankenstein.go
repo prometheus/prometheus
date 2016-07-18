@@ -1,6 +1,7 @@
 package local
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/common/log"
@@ -41,6 +42,10 @@ func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
 	}
 	go i.loop()
 	return i, nil
+}
+
+func (*Ingestor) NeedsThrottling() bool {
+	return false
 }
 
 func (i *Ingestor) Append(sample *model.Sample) error {
@@ -144,7 +149,7 @@ func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries) error
 
 	// flush the chunks without locking the series
 	i.fpLocker.Unlock(fp)
-	if err := i.flushChunks(series.metric, chunks); err != nil {
+	if err := i.flushChunks(fp, series.metric, chunks); err != nil {
 		return err
 	}
 
@@ -156,15 +161,16 @@ func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries) error
 	return nil
 }
 
-func (i *Ingestor) flushChunks(metric model.Metric, chunks []*chunkDesc) error {
+func (i *Ingestor) flushChunks(fp model.Fingerprint, metric model.Metric, chunks []*chunkDesc) error {
 	wireChunks := make([]wire.Chunk, len(chunks))
 	for _, chunk := range chunks {
 		buf := make([]byte, chunkLen)
 		if err := chunk.c.marshalToBuf(buf); err != nil {
 			return err
 		}
+
 		wireChunks = append(wireChunks, wire.Chunk{
-			ID:      "",
+			ID:      fmt.Sprintf("%d:%d:%d", fp, chunk.chunkFirstTime, chunk.chunkLastTime),
 			From:    chunk.chunkFirstTime,
 			Through: chunk.chunkLastTime,
 			Metric:  metric,

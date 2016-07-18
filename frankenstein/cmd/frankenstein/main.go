@@ -31,8 +31,14 @@ import (
 	"github.com/prometheus/prometheus/web/api/v1"
 )
 
+const (
+	distributor = "distributor"
+	ingestor    = "ingestor"
+)
+
 func main() {
 	var (
+		mode                 string
 		listen               string
 		consulHost           string
 		consulPrefix         string
@@ -42,6 +48,7 @@ func main() {
 		remoteTimeout        time.Duration
 	)
 
+	flag.StringVar(&mode, "mode", distributor, "Mode (distributor, ingestor).")
 	flag.StringVar(&listen, "web.listen-address", ":9094", "HTTP server listen address.")
 	flag.StringVar(&consulHost, "consul.hostname", "localhost:8500", "Hostname and port of Consul.")
 	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
@@ -51,6 +58,24 @@ func main() {
 	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream injestors.")
 	flag.Parse()
 
+	consul, err := frankenstein.NewConsulClient(consulHost)
+	if err != nil {
+		log.Fatalf("Error initializing Consul client: %v", err)
+	}
+
+	switch mode {
+	case distributor:
+		setupDistributor(consul, consulPrefix, remoteTimeout)
+	case ingestor:
+		setupIngestor(consul)
+	default:
+		log.Fatalf("Mode %s not supported!", mode)
+	}
+
+	http.ListenAndServe(listen, nil)
+}
+
+func setupDistributor(consul frankenstein.ConsulClient, consulPrefix string, remoteTimeout time.Duration) {
 	clientFactory := func(hostname string) (*frankenstein.IngesterClient, error) {
 		appender := remote.New(&remote.Options{
 			GenericURL:     fmt.Sprintf("http://%s/push", hostname),
@@ -70,7 +95,7 @@ func main() {
 	}
 
 	distributor, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{
-		ConsulHost:    consulHost,
+		Consul:        consul,
 		ConsulPrefix:  consulPrefix,
 		ClientFactory: clientFactory,
 	})
@@ -118,7 +143,14 @@ func main() {
 	http.Handle("/", router)
 
 	http.Handle("/push", frankenstein.AppenderHandler(distributor))
-	http.ListenAndServe(listen, nil)
+}
+
+func setupIngestor(_ frankenstein.ConsulClient) {
+	ingestor, err := local.NewIngestor(nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	http.Handle("/push", frankenstein.AppenderHandler(ingestor))
 }
 
 func writeTestChunks(cs frankenstein.ChunkStore) {

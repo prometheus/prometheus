@@ -46,11 +46,15 @@ start_container 1 lphoward/fake-s3 s3
 start_container 1 consul consul -p 8500:8500 -- agent -ui -server -client=0.0.0.0 -bootstrap
 
 # Services
-start_container 1 prometheus ingestor \
-    -v ${DIR}/ingestor-config:/etc/prometheus/
+start_container 1 frankenstein ingestor \
+        -- \
+    -mode=ingestor \
+    -consul.hostname=consul1:8500
+
 start_container 1 frankenstein distributor \
     -p 9094:9094 \
         -- \
+    -mode=distributor \
     -consul.hostname=consul1:8500 \
     -dynamodb.url=dynamodb://user:pass@dynamodb1.:8000/reports \
     -s3.url=s3://user:pass@s31.:4569/
