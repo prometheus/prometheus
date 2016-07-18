@@ -17,7 +17,6 @@ import (
 	"sort"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -41,7 +40,7 @@ func (it sampleStreamIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePa
 		return it.ss.Values[n].Timestamp.After(ts)
 	})
 	if i == 0 {
-		return local.ZeroSamplePair
+		return model.SamplePair{Timestamp: model.Earliest}
 	}
 	return it.ss.Values[i-1]
 }

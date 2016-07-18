@@ -30,7 +30,9 @@ const (
 	// than a third of the total memory taken by a series will be used for
 	// chunkDescs.
 	chunkDescEvictionFactor = 10
+)
 
+var (
 	headChunkTimeout = time.Hour // Close head chunk if not touched for that long.
 )
 

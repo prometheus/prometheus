@@ -16,22 +16,24 @@ package frankenstein
 import (
 	"reflect"
 	"testing"
+
+	"github.com/prometheus/prometheus/frankenstein/wire"
 )
 
-func c(id string) Chunk {
-	return Chunk{ID: id}
+func c(id string) wire.Chunk {
+	return wire.Chunk{ID: id}
 }
 
 func TestIntersect(t *testing.T) {
 	for _, tc := range []struct {
-		in   [][]Chunk
-		want []Chunk
+		in   [][]wire.Chunk
+		want []wire.Chunk
 	}{
-		{nil, []Chunk{}},
-		{[][]Chunk{{c("a"), c("b"), c("c")}}, []Chunk{c("a"), c("b"), c("c")}},
-		{[][]Chunk{{c("a"), c("b"), c("c")}, {c("a"), c("c")}}, []Chunk{c("a"), c("c")}},
-		{[][]Chunk{{c("a"), c("b"), c("c")}, {c("a"), c("c")}, {c("b")}}, []Chunk{}},
-		{[][]Chunk{{c("a"), c("b"), c("c")}, {c("a"), c("c")}, {c("a")}}, []Chunk{c("a")}},
+		{nil, []wire.Chunk{}},
+		{[][]wire.Chunk{{c("a"), c("b"), c("c")}}, []wire.Chunk{c("a"), c("b"), c("c")}},
+		{[][]wire.Chunk{{c("a"), c("b"), c("c")}, {c("a"), c("c")}}, []wire.Chunk{c("a"), c("c")}},
+		{[][]wire.Chunk{{c("a"), c("b"), c("c")}, {c("a"), c("c")}, {c("b")}}, []wire.Chunk{}},
+		{[][]wire.Chunk{{c("a"), c("b"), c("c")}, {c("a"), c("c")}, {c("a")}}, []wire.Chunk{c("a")}},
 	} {
 		have := nWayIntersect(tc.in)
 		if !reflect.DeepEqual(have, tc.want) {
