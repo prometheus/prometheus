@@ -781,7 +781,7 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
 	APIServers      []URL          `yaml:"api_servers"`
-	Role            string         `yaml:"role"`
+	Role            KubernetesRole `yaml:"role"`
 	InCluster       bool           `yaml:"in_cluster,omitempty"`
 	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
 	BearerToken     string         `yaml:"bearer_token,omitempty"`
@@ -813,7 +813,7 @@ func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleContainer, KubernetesRoleService, KubernetesRoleEndpoint, KubernetesRoleAPIServer:
 		return nil
 	default:
-		return fmt.Errorf("Unknown Kubernetes SD role %q", c)
+		return fmt.Errorf("Unknown Kubernetes SD role %q", *c)
 	}
 }
 
