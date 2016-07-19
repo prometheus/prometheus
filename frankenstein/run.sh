@@ -48,8 +48,10 @@ start_container 1 consul consul -p 8500:8500 -- agent -ui -server -client=0.0.0.
 # Services
 start_container 1 frankenstein ingestor \
     --hostname=ingestor1 \
+    -p 9095:9095 \
         -- \
     -mode=ingestor \
+    -web.listen-address=:9095 \
     -consul.hostname=consul1:8500 \
     -dynamodb.url=dynamodb://user:pass@dynamodb1.:8000/reports \
     -dynamodb.create-tables=true \
@@ -59,13 +61,15 @@ start_container 1 frankenstein distributor \
     -p 9094:9094 \
         -- \
     -mode=distributor \
+    -web.listen-address=:9094 \
     -consul.hostname=consul1:8500 \
     -dynamodb.url=dynamodb://user:pass@dynamodb1.:8000/reports \
     -s3.url=s3://user:pass@s31.:4569/
 
-# Start a prometheus in retrival mode
+# Start a prometheus in retrieval mode
 start_container 1 prometheus retrieval \
     -v ${DIR}/retrieval-config:/etc/prometheus/ \
+    -p 9091:9091 \
         -- \
     -config.file=/etc/prometheus/prometheus.yml \
     -web.listen-address=:9091 -retrieval-only \

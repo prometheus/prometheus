@@ -51,7 +51,7 @@
             "steppedLine": false,
             "targets": [
               {
-                "expr": "testmetric",
+                "expr": "go_gc_duration_seconds",
                 "intervalFactor": 2,
                 "refId": "A",
                 "step": 2

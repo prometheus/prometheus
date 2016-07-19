@@ -24,6 +24,7 @@ import (
 	"time"
 
 	consul "github.com/hashicorp/consul/api"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/route"
 
@@ -88,6 +89,7 @@ func main() {
 		log.Fatalf("Mode %s not supported!", mode)
 	}
 
+	http.Handle("/metrics", prometheus.Handler())
 	http.ListenAndServe(listen, nil)
 }
 
@@ -133,7 +135,8 @@ func setupDistributor(
 	// TODO: Move querier to separate binary.
 	querier := frankenstein.MergeQuerier{
 		Queriers: []frankenstein.Querier{
-			distributor,
+			// TODO: Re-add Distributor. The new ingestor cannot be queried yet, so
+			// this would currently throw an error.
 			&frankenstein.ChunkQuerier{
 				Store: chunkStore,
 			},
@@ -164,6 +167,7 @@ func setupIngestor(consulClient frankenstein.ConsulClient, consulPrefix string, 
 	if err != nil {
 		log.Fatal(err)
 	}
+	prometheus.MustRegister(ingestor)
 	http.Handle("/push", frankenstein.AppenderHandler(ingestor))
 }
 
@@ -177,7 +181,7 @@ func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient, consulP
 	tokenHasher.Write([]byte(hostname))
 
 	buf, err := json.Marshal(frankenstein.Collector{
-		Hostname: hostname + ":9094",
+		Hostname: hostname + ":9095",
 		Tokens:   []uint64{tokenHasher.Sum64()},
 	})
 	if err != nil {

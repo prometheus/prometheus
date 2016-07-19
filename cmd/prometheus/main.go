@@ -82,7 +82,9 @@ func Main() int {
 		reloadables = append(reloadables, remoteStorage)
 	}
 
-	var memStorage *local.MemorySeriesStorage
+	// This can't be a concrete type (MemorySeriesStorage), because then nil
+	// checks fail on interfaces containing the nil version of the concrete type.
+	var memStorage local.Storage
 	if !cfg.retrievalOnly {
 		memStorage = local.NewMemorySeriesStorage(&cfg.storage)
 		sampleAppender = append(sampleAppender, memStorage)
@@ -170,7 +172,7 @@ func Main() int {
 	}
 	// The storage has to be fully initialized before registering.
 	if !cfg.retrievalOnly {
-		prometheus.MustRegister(memStorage)
+		prometheus.MustRegister(memStorage.(*local.MemorySeriesStorage))
 		prometheus.MustRegister(not)
 	}
 	prometheus.MustRegister(configSuccess)

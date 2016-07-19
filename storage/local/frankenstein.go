@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
@@ -14,7 +15,8 @@ import (
 )
 
 const (
-	flushCheckPeriod = 1 * time.Minute
+	flushCheckPeriod = 5 * time.Second
+	maxChunkAge      = 30 * time.Second
 )
 
 // Ingestor deals with "in flight" chunks.
@@ -27,6 +29,11 @@ type Ingestor struct {
 	fpLocker   *fingerprintLocker
 	fpToSeries *seriesMap
 	mapper     *fpMapper
+
+	ingestedSamples    prometheus.Counter
+	discardedSamples   *prometheus.CounterVec
+	storedChunks       prometheus.Counter
+	chunkStoreFailures prometheus.Counter
 }
 
 type ChunkStore interface {
@@ -35,10 +42,6 @@ type ChunkStore interface {
 }
 
 func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
-
-	// FOR TESTING
-	headChunkTimeout = 2 * time.Minute
-
 	i := &Ingestor{
 		chunkStore: chunkStore,
 		quit:       make(chan struct{}),
@@ -46,6 +49,34 @@ func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
 
 		fpToSeries: newSeriesMap(),
 		fpLocker:   newFingerprintLocker(16),
+
+		ingestedSamples: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "ingested_samples_total",
+			Help:      "The total number of samples ingested.",
+		}),
+		discardedSamples: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "out_of_order_samples_total",
+				Help:      "The total number of samples that were discarded because their timestamps were at or before the last received sample for a series.",
+			},
+			[]string{discardReasonLabel},
+		),
+		storedChunks: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "stored_chunks_total",
+			Help:      "The total number of chunks sent to the chunk store.",
+		}),
+		chunkStoreFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "chunk_store_failures_total",
+			Help:      "The total number of errors while storing chunks to the chunk store.",
+		}),
 	}
 	var err error
 	i.mapper, err = newFPMapper(i.fpToSeries, noopPersistence{})
@@ -85,15 +116,21 @@ func (i *Ingestor) Append(sample *model.Sample) error {
 			sample.Value.Equal(series.lastSampleValue) {
 			return nil
 		}
+		i.discardedSamples.WithLabelValues(duplicateSample).Inc()
 		return ErrDuplicateSampleForTimestamp // Caused by the caller.
 	}
 	if sample.Timestamp < series.lastTime {
+		i.discardedSamples.WithLabelValues(outOfOrderTimestamp).Inc()
 		return ErrOutOfOrderSample // Caused by the caller.
 	}
 	_, err = series.add(model.SamplePair{
 		Value:     sample.Value,
 		Timestamp: sample.Timestamp,
 	})
+	if err == nil {
+		// TODO: Track append failures too (unlikely to happen).
+		i.ingestedSamples.Inc()
+	}
 	return err
 }
 
@@ -151,7 +188,11 @@ func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries) error
 	i.fpLocker.Lock(fp)
 
 	// Decide what chunks to flush
-	series.maybeCloseHeadChunk()
+	if time.Now().Sub(series.firstTime().Time()) > maxChunkAge {
+		series.headChunkClosed = true
+		series.headChunkUsedByIterator = false
+		series.head().maybePopulateLastTime()
+	}
 	chunks := series.chunkDescs
 	if !series.headChunkClosed {
 		chunks = chunks[:len(chunks)-1]
@@ -164,19 +205,24 @@ func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries) error
 	// flush the chunks without locking the series
 	i.fpLocker.Unlock(fp)
 	if err := i.flushChunks(fp, series.metric, chunks); err != nil {
+		i.chunkStoreFailures.Add(float64(len(chunks)))
 		return err
 	}
+	i.storedChunks.Add(float64(len(chunks)))
 
 	// now remove the chunks
 	// TODO deal with iterator reading from them
 	i.fpLocker.Lock(fp)
 	series.chunkDescs = series.chunkDescs[len(chunks):]
+	if len(series.chunkDescs) == 0 {
+		i.fpToSeries.del(fp)
+	}
 	i.fpLocker.Unlock(fp)
 	return nil
 }
 
 func (i *Ingestor) flushChunks(fp model.Fingerprint, metric model.Metric, chunks []*chunkDesc) error {
-	wireChunks := make([]wire.Chunk, len(chunks))
+	wireChunks := make([]wire.Chunk, 0, len(chunks))
 	for _, chunk := range chunks {
 		buf := make([]byte, chunkLen)
 		if err := chunk.c.marshalToBuf(buf); err != nil {
@@ -192,4 +238,24 @@ func (i *Ingestor) flushChunks(fp model.Fingerprint, metric model.Metric, chunks
 		})
 	}
 	return i.chunkStore.Put(wireChunks)
+}
+
+// Describe implements prometheus.Collector.
+func (i *Ingestor) Describe(ch chan<- *prometheus.Desc) {
+	i.mapper.Describe(ch)
+
+	ch <- i.ingestedSamples.Desc()
+	i.discardedSamples.Describe(ch)
+	ch <- i.storedChunks.Desc()
+	ch <- i.chunkStoreFailures.Desc()
+}
+
+// Collect implements prometheus.Collector.
+func (i *Ingestor) Collect(ch chan<- prometheus.Metric) {
+	i.mapper.Collect(ch)
+
+	ch <- i.ingestedSamples
+	i.discardedSamples.Collect(ch)
+	ch <- i.storedChunks
+	ch <- i.chunkStoreFailures
 }
