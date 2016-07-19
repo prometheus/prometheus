@@ -188,6 +188,62 @@ func TestEndpoints(t *testing.T) {
 			errType: errorBadData,
 		},
 		{
+			endpoint: api.queryRaw,
+			query: url.Values{
+				"match": []string{"test_metric1"},
+				"start": []string{"0"},
+				"end":   []string{"120"},
+			},
+			response: &queryData{
+				ResultType: model.ValMatrix,
+				Result: model.Matrix{
+					&model.SampleStream{
+						Values: []model.SamplePair{
+							{Value: 0, Timestamp: start},
+							{Value: 100, Timestamp: start.Add(1 * time.Minute)},
+							{Value: 200, Timestamp: start.Add(2 * time.Minute)},
+						},
+						Metric: model.Metric{
+							model.MetricNameLabel: "test_metric1",
+							"foo": "bar",
+						},
+					},
+					&model.SampleStream{
+						Values: []model.SamplePair{
+							{Value: 1, Timestamp: start},
+							{Value: 1, Timestamp: start.Add(1 * time.Minute)},
+							{Value: 1, Timestamp: start.Add(2 * time.Minute)},
+						},
+						Metric: model.Metric{
+							model.MetricNameLabel: "test_metric1",
+							"foo": "boo",
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.queryRaw,
+			query: url.Values{
+				"match": []string{"test_metric{foo='nonexistent'}"},
+				"start": []string{"0"},
+				"end":   []string{"120"},
+			},
+			response: &queryData{
+				ResultType: model.ValMatrix,
+				Result:     model.Matrix{},
+			},
+		},
+		{
+			endpoint: api.queryRaw,
+			query: url.Values{
+				"match": []string{"broken-matcher"},
+				"start": []string{"0"},
+				"end":   []string{"120"},
+			},
+			errType: errorBadData,
+		},
+		{
 			endpoint: api.labelValues,
 			params: map[string]string{
 				"name": "__name__",
@@ -413,7 +469,7 @@ func TestEndpoints(t *testing.T) {
 			t.Fatalf("Expected error of type %q but got none", test.errType)
 		}
 		if !reflect.DeepEqual(resp, test.response) {
-			t.Fatalf("Response does not match, expected:\n%+v\ngot:\n%+v", test.response, resp)
+			t.Fatalf("Response does not match, expected:\n\n%+v\n\ngot:\n\n%+v", test.response, resp)
 		}
 		// Ensure that removed metrics are unindexed before the next request.
 		suite.Storage().WaitForIndexing()
