@@ -242,6 +242,13 @@ func init() {
 
 func parse(args []string) error {
 	err := cfg.fs.Parse(args)
+
+	unkown_args := cfg.fs.Args()
+
+	if len(unkown_args) != 0 {
+		return fmt.Errorf("Unknown non-flag command line arguments: %s", unkown_args)
+	}
+
 	if err != nil {
 		if err != flag.ErrHelp {
 			log.Errorf("Invalid command line arguments. Help: %s -h", os.Args[0])
