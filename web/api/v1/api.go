@@ -124,6 +124,7 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/query", instr("query", api.query))
 	r.Get("/query_range", instr("query_range", api.queryRange))
+	r.Get("/query_raw", instr("query_raw", api.queryRaw))
 
 	r.Get("/label/:name/values", instr("label_values", api.labelValues))
 
@@ -212,6 +213,39 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 	return &queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
+	}, nil
+}
+func (api *API) queryRaw(r *http.Request) (interface{}, *apiError) {
+	start, err := parseTime(r.FormValue("start"))
+	if err != nil {
+		return nil, &apiError{errorBadData, err}
+	}
+	end, err := parseTime(r.FormValue("end"))
+	if err != nil {
+		return nil, &apiError{errorBadData, err}
+	}
+	matchers, err := promql.ParseMetricSelector(r.FormValue("match"))
+	if err != nil {
+		return nil, &apiError{errorBadData, err}
+	}
+
+	iterators, err := api.Storage.QueryRange(start, end, matchers...)
+	if err != nil {
+		return nil, &apiError{errorExec, err}
+	}
+
+	matrix := make(model.Matrix, 0, len(iterators))
+	for _, it := range iterators {
+		values := it.RangeValues(metric.Interval{OldestInclusive: start, NewestInclusive: end})
+		matrix = append(matrix, &model.SampleStream{
+			Metric: it.Metric().Metric,
+			Values: values,
+		})
+	}
+
+	return &queryData{
+		ResultType: model.ValMatrix,
+		Result:     matrix,
 	}, nil
 }
 
