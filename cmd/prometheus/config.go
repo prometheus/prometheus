@@ -239,7 +239,7 @@ func init() {
 		"Maximum number of queries executed concurrently.",
 	)
 
-	// Copy the flags from the log package into our own flag set.
+	// Flags from the log package have to be added explicitly to our custom flag set.
 	log.AddFlags(cfg.fs)
 }
 
