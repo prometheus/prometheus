@@ -5,6 +5,16 @@ Design Doc: https://docs.google.com/document/d/1C7yhMnb1x2sfeoe45f4mnnKConvroWhJ
     GOOS=linux DOCKER_IMAGE_TAG=latest make build docker docker-frank
     ./frankenstein/run.sh
 
+TODO list
+- query support in ingestor
+- chunk id generation
+- parallelise chunk puts
+- start testing with more than one ingestor
+- commit log in the ingestor
+- safe ingestor shutdown
+- separate query service?
+- prom ui
+
 ## Retrieval
 
 Use existing prometheus binary; add a --retrieval-only flag to existing prometheus?  and use one of the remote storage protocols or add a new one.

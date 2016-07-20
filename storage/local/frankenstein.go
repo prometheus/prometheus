@@ -4,6 +4,8 @@ package local
 
 import (
 	"fmt"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -29,6 +31,7 @@ type Ingestor struct {
 	fpLocker   *fingerprintLocker
 	fpToSeries *seriesMap
 	mapper     *fpMapper
+	index      *invertedIndex
 
 	ingestedSamples    prometheus.Counter
 	discardedSamples   *prometheus.CounterVec
@@ -49,6 +52,7 @@ func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
 
 		fpToSeries: newSeriesMap(),
 		fpLocker:   newFingerprintLocker(16),
+		index:      newInvertedIndex(),
 
 		ingestedSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -155,11 +159,79 @@ func (i *Ingestor) getOrCreateSeries(metric model.Metric) (model.Fingerprint, *m
 		panic(err)
 	}
 	i.fpToSeries.put(fp, series)
+	i.index.add(metric, fp)
 	return fp, series, nil
 }
 
-func (i *Ingestor) Query(from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
-	return model.Matrix{}, nil
+func (i *Ingestor) Query(from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+	fps := i.index.lookup(matchers)
+	log.Infof("Query: should return %v", fps)
+
+	// fps is sorted, lock them in order to prevent deadlocks
+	result := model.Matrix{}
+	for _, fp := range fps {
+		i.fpLocker.Lock(fp)
+		series, ok := i.fpToSeries.get(fp)
+		if !ok {
+			i.fpLocker.Unlock(fp)
+			continue
+		}
+
+		values, err := samplesForRange(series, from, through)
+		i.fpLocker.Unlock(fp)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, &model.SampleStream{
+			Metric: series.metric,
+			Values: values,
+		})
+	}
+
+	return result, nil
+}
+
+func samplesForRange(s *memorySeries, from, through model.Time) ([]model.SamplePair, error) {
+	// Find first chunk with start time after "from".
+	fromIdx := sort.Search(len(s.chunkDescs), func(i int) bool {
+		return s.chunkDescs[i].firstTime().After(from)
+	})
+	// Find first chunk with start time after "through".
+	throughIdx := sort.Search(len(s.chunkDescs), func(i int) bool {
+		return s.chunkDescs[i].firstTime().After(through)
+	})
+	if fromIdx == len(s.chunkDescs) {
+		// Even the last chunk starts before "from". Find out if the
+		// series ends before "from" and we don't need to do anything.
+		lt, err := s.chunkDescs[len(s.chunkDescs)-1].lastTime()
+		if err != nil {
+			return nil, err
+		}
+		if lt.Before(from) {
+			return nil, nil
+		}
+	}
+	if fromIdx > 0 {
+		fromIdx--
+	}
+	if throughIdx == len(s.chunkDescs) {
+		throughIdx--
+	}
+	var values []model.SamplePair
+	in := metric.Interval{
+		OldestInclusive: from,
+		NewestInclusive: through,
+	}
+	for idx := fromIdx; idx <= throughIdx; idx++ {
+		cd := s.chunkDescs[idx]
+		chValues, err := rangeValues(cd.c.newIterator(), in)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, chValues...)
+	}
+	return values, nil
 }
 
 func (i *Ingestor) Stop() {
@@ -211,11 +283,11 @@ func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries) error
 	i.storedChunks.Add(float64(len(chunks)))
 
 	// now remove the chunks
-	// TODO deal with iterator reading from them
 	i.fpLocker.Lock(fp)
 	series.chunkDescs = series.chunkDescs[len(chunks):]
 	if len(series.chunkDescs) == 0 {
 		i.fpToSeries.del(fp)
+		i.index.delete(series.metric, fp)
 	}
 	i.fpLocker.Unlock(fp)
 	return nil
@@ -258,4 +330,134 @@ func (i *Ingestor) Collect(ch chan<- prometheus.Metric) {
 	i.discardedSamples.Collect(ch)
 	ch <- i.storedChunks
 	ch <- i.chunkStoreFailures
+}
+
+type invertedIndex struct {
+	mtx sync.RWMutex
+	idx map[model.LabelName]map[model.LabelValue][]model.Fingerprint // entries are sorted in fp order?
+}
+
+func newInvertedIndex() *invertedIndex {
+	return &invertedIndex{
+		idx: map[model.LabelName]map[model.LabelValue][]model.Fingerprint{},
+	}
+}
+
+func (i *invertedIndex) add(metric model.Metric, fp model.Fingerprint) {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	for name, value := range metric {
+		values, ok := i.idx[name]
+		if !ok {
+			values = map[model.LabelValue][]model.Fingerprint{}
+		}
+		fingerprints := values[value]
+		j := sort.Search(len(fingerprints), func(i int) bool {
+			return fingerprints[i] >= fp
+		})
+		fingerprints = append(fingerprints, 0)
+		copy(fingerprints[j+1:], fingerprints[j:])
+		fingerprints[j] = fp
+		values[value] = fingerprints
+		i.idx[name] = values
+	}
+}
+
+func (i *invertedIndex) lookup(matchers []*metric.LabelMatcher) []model.Fingerprint {
+	if len(matchers) == 0 {
+		return nil
+	}
+	i.mtx.RLock()
+	defer i.mtx.RUnlock()
+
+	// intersection is initially nil, which is a special case.
+	var intersection []model.Fingerprint
+	for _, matcher := range matchers {
+		values, ok := i.idx[matcher.Name]
+		if !ok {
+			return nil
+		}
+		var toIntersect []model.Fingerprint
+		for value, fps := range values {
+			if matcher.Match(value) {
+				toIntersect = merge(toIntersect, fps)
+			}
+		}
+		intersection = intersect(intersection, toIntersect)
+		if len(intersection) == 0 {
+			return nil
+		}
+	}
+
+	return intersection
+}
+
+func (i *invertedIndex) delete(metric model.Metric, fp model.Fingerprint) {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	for name, value := range metric {
+		values, ok := i.idx[name]
+		if !ok {
+			continue
+		}
+		fingerprints, ok := values[value]
+		if !ok {
+			continue
+		}
+
+		j := sort.Search(len(fingerprints), func(i int) bool {
+			return fingerprints[i] >= fp
+		})
+		fingerprints = fingerprints[:j+copy(fingerprints[j:], fingerprints[j+1:])]
+
+		if len(fingerprints) == 0 {
+			delete(values, value)
+		} else {
+			values[value] = fingerprints
+		}
+
+		if len(values) == 0 {
+			delete(i.idx, name)
+		} else {
+			i.idx[name] = values
+		}
+	}
+}
+
+// intersect two sorted lists of fingerprints.  Assumes there are no duplicate
+// fingerprints within the input lists.
+func intersect(a, b []model.Fingerprint) []model.Fingerprint {
+	if a == nil {
+		return b
+	}
+	result := []model.Fingerprint{}
+	for i, j := 0, 0; i < len(a) && j < len(b); {
+		if a[i] == b[j] {
+			result = append(result, a[i])
+		}
+		if a[i] < b[j] {
+			i++
+		} else {
+			j++
+		}
+	}
+	return result
+}
+
+// merge two sorted lists of fingerprints.  Assumes there are no duplicate
+// fingerprints between or within the input lists.
+func merge(a, b []model.Fingerprint) []model.Fingerprint {
+	result := make([]model.Fingerprint, 0, len(a)+len(b))
+	for i, j := 0, 0; i < len(a) && j < len(b); {
+		if a[i] < b[j] {
+			result = append(result, a[i])
+			i++
+		} else {
+			result = append(result, b[i])
+			j++
+		}
+	}
+	return result
 }
