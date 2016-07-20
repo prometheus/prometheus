@@ -255,6 +255,12 @@ func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 		return targets
 	}
 
+	// Should never hit this (running pods should always have this set), but better to be defensive.
+	if pod.PodStatus.HostIP == "" {
+		log.Debugf("skipping pod %s -- PodStatus.HostIP is empty", pod.ObjectMeta.Name)
+		return targets
+	}
+
 	ready := "unknown"
 	for _, cond := range pod.PodStatus.Conditions {
 		if strings.ToLower(cond.Type) == "ready" {
@@ -293,6 +299,8 @@ func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
 			podContainerNameLabel:     model.LabelValue(container.Name),
 			podContainerPortNameLabel: model.LabelValue(tcpPorts[0].Name),
 			podReadyLabel:             model.LabelValue(ready),
+			podNodeNameLabel:          model.LabelValue(pod.PodSpec.NodeName),
+			podHostIPLabel:            model.LabelValue(pod.PodStatus.HostIP),
 		}
 
 		for _, port := range tcpPorts {
