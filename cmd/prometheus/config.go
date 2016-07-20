@@ -238,6 +238,9 @@ func init() {
 		&cfg.queryEngine.MaxConcurrentQueries, "query.max-concurrency", 20,
 		"Maximum number of queries executed concurrently.",
 	)
+
+	// Copy the flags from the log package into our own flag set.
+	log.AddFlags(cfg.fs)
 }
 
 func parse(args []string) error {
