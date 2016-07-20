@@ -285,10 +285,12 @@ type PodStatus struct {
 	Phase      string         `json:"phase" description:"Current condition of the pod. More info: http://kubernetes.io/v1.1/docs/user-guide/pod-states.html#pod-phase"`
 	PodIP      string         `json:"podIP" description:"IP address allocated to the pod. Routable at least within the cluster. Empty if not yet allocated."`
 	Conditions []PodCondition `json:"conditions" description:"Current service state of pod."`
+	HostIP     string         `json:"hostIP,omitempty" description:"IP address of the host to which the pod is assigned. Empty if not yet scheduled."`
 }
 
 type PodSpec struct {
 	Containers []Container `json:"containers" description:"list of containers, see http://kubernetes.io/v1.1/docs/api-reference/v1/definitions.html#_v1_container"`
+	NodeName   string      `json:"nodeName,omitempty" description:"NodeName is a request to schedule this pod onto a specific node. If it is non-empty, the scheduler simply schedules this pod onto that node, assuming that it fits resource requirements."`
 }
 
 type PodCondition struct {
