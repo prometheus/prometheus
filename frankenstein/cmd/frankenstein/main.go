@@ -106,10 +106,7 @@ func setupDistributor(
 		})
 		appender.Run()
 
-		querier, err := frankenstein.NewIngesterQuerier(fmt.Sprintf("http://%s/", hostname))
-		if err != nil {
-			return nil, err
-		}
+		querier := frankenstein.NewIngesterQuerier(fmt.Sprintf("http://%s/query", hostname), 10*time.Second)
 
 		return &frankenstein.IngesterClient{
 			Appender: appender,
@@ -135,8 +132,7 @@ func setupDistributor(
 	// TODO: Move querier to separate binary.
 	querier := frankenstein.MergeQuerier{
 		Queriers: []frankenstein.Querier{
-			// TODO: Re-add Distributor. The new ingestor cannot be queried yet, so
-			// this would currently throw an error.
+			distributor,
 			&frankenstein.ChunkQuerier{
 				Store: chunkStore,
 			},
@@ -169,6 +165,7 @@ func setupIngestor(consulClient frankenstein.ConsulClient, consulPrefix string, 
 	}
 	prometheus.MustRegister(ingestor)
 	http.Handle("/push", frankenstein.AppenderHandler(ingestor))
+	http.Handle("/query", frankenstein.QueryHandler(ingestor))
 }
 
 func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient, consulPrefix string) error {

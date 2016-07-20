@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/remote/generic"
 )
 
@@ -68,5 +69,93 @@ func AppenderHandler(appender storage.SampleAppender) http.Handler {
 		}
 
 		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// QueryHandler returns a http.Handler that accepts protobuf formatted
+// query requests and serves them.
+func QueryHandler(querier Querier) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := &generic.GenericReadRequest{}
+		buf := bytes.Buffer{}
+		_, err := buf.ReadFrom(r.Body)
+		if err != nil {
+			log.Errorf(err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		err = proto.Unmarshal(buf.Bytes(), req)
+		if err != nil {
+			log.Errorf(err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		matchers := make(metric.LabelMatchers, 0, len(req.Matchers))
+		for _, matcher := range req.Matchers {
+			var mtype metric.MatchType
+			switch matcher.GetType() {
+			case generic.MatchType_EQUAL:
+				mtype = metric.Equal
+			case generic.MatchType_NOT_EQUAL:
+				mtype = metric.NotEqual
+			case generic.MatchType_REGEX_MATCH:
+				mtype = metric.RegexMatch
+			case generic.MatchType_REGEX_NO_MATCH:
+				mtype = metric.RegexNoMatch
+			default:
+				http.Error(w, "invalid matcher type", http.StatusBadRequest)
+				return
+			}
+			matchers = append(matchers, &metric.LabelMatcher{
+				Type:  mtype,
+				Name:  model.LabelName(matcher.GetName()),
+				Value: model.LabelValue(matcher.GetValue()),
+			})
+		}
+
+		start := model.Time(req.GetStartTimestampMs())
+		end := model.Time(req.GetEndTimestampMs())
+
+		res, err := querier.Query(start, end, matchers...)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		resp := &generic.GenericReadResponse{}
+		for _, ss := range res {
+			ts := &generic.TimeSeries{
+				Name: proto.String(string(ss.Metric[model.MetricNameLabel])),
+			}
+			for k, v := range ss.Metric {
+				if k != model.MetricNameLabel {
+					ts.Labels = append(ts.Labels,
+						&generic.LabelPair{
+							Name:  proto.String(string(k)),
+							Value: proto.String(string(v)),
+						})
+				}
+			}
+			for _, s := range ss.Values {
+				ts.Samples = []*generic.Sample{
+					&generic.Sample{
+						Value:       proto.Float64(float64(s.Value)),
+						TimestampMs: proto.Int64(int64(s.Timestamp)),
+					},
+				}
+			}
+			resp.Timeseries = append(resp.Timeseries, ts)
+		}
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err = w.Write(data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// TODO: set Content-type.
 	})
 }

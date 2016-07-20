@@ -14,17 +14,20 @@
 package frankenstein
 
 import (
+	"bytes"
 	"fmt"
+	"net/http"
 	"sort"
-	"strings"
+	"time"
 
-	"github.com/prometheus/client_golang/api/prometheus"
+	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/remote/generic"
 )
 
 // A Querier allows querying all samples in a given time range that match a set
@@ -36,61 +39,95 @@ type Querier interface {
 // An IngesterQuerier is a Querier that fetches recent samples from a
 // Frankenstein Ingester.
 type IngesterQuerier struct {
-	api prometheus.QueryAPI
+	url    string
+	client http.Client
 }
 
-// NewIngesterQuerier creates a new IngesterQuerier given an ingester URL.
-// TODO: Make query timeout configurable.
-func NewIngesterQuerier(url string) (*IngesterQuerier, error) {
-	client, err := prometheus.New(prometheus.Config{
-		Address: url,
-	})
-	if err != nil {
-		return nil, err
+func NewIngesterQuerier(url string, timeout time.Duration) *IngesterQuerier {
+	client := http.Client{
+		Timeout: timeout,
 	}
 	return &IngesterQuerier{
-		api: prometheus.NewQueryAPI(client),
-	}, nil
+		url:    url,
+		client: client,
+	}
 }
 
 // Query implements Querier.
 func (q *IngesterQuerier) Query(from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
-	// Create a PromQL query from the label matchers.
-	strs := make([]string, 0, len(matchers))
-	for _, m := range matchers {
-		strs = append(strs, m.String())
+	req := &generic.GenericReadRequest{
+		StartTimestampMs: proto.Int64(int64(from)),
+		EndTimestampMs:   proto.Int64(int64(to)),
 	}
-	// TODO: Is LabelMatcher.String() sufficiently escaped?
-	expr := fmt.Sprintf("{%s}[%ds]", strings.Join(strs, ","), int64(to.Sub(from).Seconds()))
+	for _, matcher := range matchers {
+		var mType generic.MatchType
+		switch matcher.Type {
+		case metric.Equal:
+			mType = generic.MatchType_EQUAL
+		case metric.NotEqual:
+			mType = generic.MatchType_NOT_EQUAL
+		case metric.RegexMatch:
+			mType = generic.MatchType_REGEX_MATCH
+		case metric.RegexNoMatch:
+			mType = generic.MatchType_REGEX_NO_MATCH
+		default:
+			panic("invalid matcher type")
+		}
+		req.Matchers = append(req.Matchers, &generic.LabelMatcher{
+			Type:  &mType,
+			Name:  proto.String(string(matcher.Name)),
+			Value: proto.String(string(matcher.Value)),
+		})
+	}
 
-	// Query the remote ingester.
-	res, err := q.api.Query(context.Background(), expr, to.Time())
+	data, err := proto.Marshal(req)
 	if err != nil {
 		return nil, err
 	}
+	buf := bytes.NewBuffer(data)
 
-	// Munge response data into a model.Matrix if necessary.
-	switch res.Type() {
-	case model.ValMatrix:
-		return res.(model.Matrix), nil
-	case model.ValVector:
-		v := res.(model.Vector)
-		m := make(model.Matrix, 0, len(v))
-		for _, s := range v {
-			m = append(m, &model.SampleStream{
-				Metric: s.Metric,
-				Values: []model.SamplePair{
-					{
-						Value:     s.Value,
-						Timestamp: s.Timestamp,
-					},
-				},
+	// TODO: This isn't actually the correct Content-type.
+	resp, err := q.client.Post(q.url, string(expfmt.FmtProtoDelim), buf)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
+	}
+
+	r := &generic.GenericReadResponse{}
+	buf.Reset()
+	_, err = buf.ReadFrom(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read response body: %s", err)
+	}
+	err = proto.Unmarshal(buf.Bytes(), r)
+	if err != nil {
+		return nil, fmt.Errorf("unable to unmarshal response body: %s", err)
+	}
+
+	m := make(model.Matrix, 0, len(r.Timeseries))
+	for _, ts := range r.Timeseries {
+		var ss model.SampleStream
+		if ts.Name != nil {
+			ss.Metric[model.MetricNameLabel] = model.LabelValue(ts.GetName())
+		}
+		for _, l := range ts.Labels {
+			ss.Metric[model.LabelName(l.GetName())] = model.LabelValue(l.GetValue())
+		}
+
+		ss.Values = make([]model.SamplePair, 0, len(ts.Samples))
+		for _, s := range ts.Samples {
+			ss.Values = append(ss.Values, model.SamplePair{
+				Value:     model.SampleValue(s.GetValue()),
+				Timestamp: model.Time(s.GetTimestampMs()),
 			})
 		}
-		return m, nil
-	default:
-		panic("unexpected response value type")
+		m = append(m, &ss)
 	}
+
+	return m, nil
 }
 
 // A ChunkQuerier is a Querier that fetches samples from a ChunkStore.

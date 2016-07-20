@@ -36,3 +36,26 @@ message TimeSeries {
 message GenericWriteRequest {
   repeated TimeSeries timeseries = 1;
 }
+
+enum MatchType {
+  EQUAL = 0;
+  NOT_EQUAL = 1;
+  REGEX_MATCH = 2;
+  REGEX_NO_MATCH = 3;
+}
+
+message LabelMatcher {
+  optional MatchType type = 1;
+  optional string name = 2;
+  optional string value = 3;
+}
+
+message GenericReadRequest {
+  optional int64 start_timestamp_ms = 1;
+  optional int64 end_timestamp_ms = 2;
+  repeated LabelMatcher matchers = 3;
+}
+
+message GenericReadResponse {
+  repeated TimeSeries timeseries = 1;
+}
