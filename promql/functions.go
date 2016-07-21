@@ -478,6 +478,31 @@ func funcSumOverTime(ev *evaluator, args Expressions) model.Value {
 	})
 }
 
+// === quantile_over_time(matrix model.ValMatrix) Vector ===
+func funcQuantileOverTime(ev *evaluator, args Expressions) model.Value {
+	q := ev.evalFloat(args[0])
+	mat := ev.evalMatrix(args[1])
+	resultVector := vector{}
+
+	for _, el := range mat {
+		if len(el.Values) == 0 {
+			continue
+		}
+
+		el.Metric.Del(model.MetricNameLabel)
+		values := make(vectorByValueHeap, 0, len(el.Values))
+		for _, v := range el.Values {
+			values = append(values, &sample{Value: v.Value})
+		}
+		resultVector = append(resultVector, &sample{
+			Metric:    el.Metric,
+			Value:     model.SampleValue(quantile(q, values)),
+			Timestamp: ev.Timestamp,
+		})
+	}
+	return resultVector
+}
+
 // === stddev_over_time(matrix model.ValMatrix) Vector ===
 func funcStddevOverTime(ev *evaluator, args Expressions) model.Value {
 	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
@@ -705,7 +730,7 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) model.Value {
 	for _, mb := range signatureToMetricWithBuckets {
 		outVec = append(outVec, &sample{
 			Metric:    mb.metric,
-			Value:     model.SampleValue(quantile(q, mb.buckets)),
+			Value:     model.SampleValue(bucketQuantile(q, mb.buckets)),
 			Timestamp: ev.Timestamp,
 		})
 	}
@@ -972,6 +997,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar},
 		ReturnType: model.ValVector,
 		Call:       funcPredictLinear,
+	},
+	"quantile_over_time": {
+		Name:       "quantile_over_time",
+		ArgTypes:   []model.ValueType{model.ValScalar, model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcQuantileOverTime,
 	},
 	"rate": {
 		Name:       "rate",
