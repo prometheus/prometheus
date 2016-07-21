@@ -1042,7 +1042,7 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 			p.errorf("aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, model.ValVector, "aggregation expression")
-		if n.Op == itemTopK || n.Op == itemBottomK {
+		if n.Op == itemTopK || n.Op == itemBottomK || n.Op == itemQuantile {
 			p.expectType(n.Param, model.ValScalar, "aggregation parameter")
 		}
 		if n.Op == itemCountValues {

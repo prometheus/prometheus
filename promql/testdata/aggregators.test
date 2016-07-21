@@ -220,3 +220,22 @@ eval instant at 5m count_values by (job, group)("job", version)
 	{job="6", group="production"} 5
 	{job="8", group="canary"} 2
 	{job="7", group="canary"} 2
+
+
+# Tests for quantile.
+clear
+
+load 10s
+	data{test="two samples",point="a"} 0
+	data{test="two samples",point="b"} 1
+	data{test="three samples",point="a"} 0
+	data{test="three samples",point="b"} 1
+	data{test="three samples",point="c"} 2
+	data{test="uneven samples",point="a"} 0
+	data{test="uneven samples",point="b"} 1
+	data{test="uneven samples",point="c"} 4
+
+eval instant at 1m quantile without(point)(0.8, data)
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
