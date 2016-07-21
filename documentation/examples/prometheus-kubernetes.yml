@@ -62,14 +62,8 @@ scrape_configs:
     role: node
 
   relabel_configs:
-  - source_labels: [__meta_kubernetes_role]
-    action: keep
-    regex: (?:apiserver|node)
   - action: labelmap
     regex: __meta_kubernetes_node_label_(.+)
-  - source_labels: [__meta_kubernetes_role]
-    action: replace
-    target_label: kubernetes_role
 
 # Scrape config for service endpoints.
 #
@@ -91,9 +85,9 @@ scrape_configs:
     role: endpoint
 
   relabel_configs:
-  - source_labels: [__meta_kubernetes_role, __meta_kubernetes_service_annotation_prometheus_io_scrape]
+  - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
     action: keep
-    regex: endpoint;true
+    regex: true
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
     action: replace
     target_label: __scheme__
@@ -109,9 +103,6 @@ scrape_configs:
     replacement: $1:$2
   - action: labelmap
     regex: __meta_kubernetes_service_label_(.+)
-  - source_labels: [__meta_kubernetes_role]
-    action: replace
-    target_label: kubernetes_role
   - source_labels: [__meta_kubernetes_service_namespace]
     action: replace
     target_label: kubernetes_namespace
@@ -138,9 +129,9 @@ scrape_configs:
     role: service
 
   relabel_configs:
-  - source_labels: [__meta_kubernetes_role, __meta_kubernetes_service_annotation_prometheus_io_probe]
+  - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_probe]
     action: keep
-    regex: service;true
+    regex: true
   - source_labels: [__address__]
     target_label: __param_target
   - target_label: __address__
@@ -149,8 +140,6 @@ scrape_configs:
     target_label: instance
   - action: labelmap
     regex: __meta_kubernetes_service_label_(.+)
-  - source_labels: [__meta_kubernetes_role]
-    target_label: kubernetes_role
   - source_labels: [__meta_kubernetes_service_namespace]
     target_label: kubernetes_namespace
   - source_labels: [__meta_kubernetes_service_name]
@@ -158,7 +147,7 @@ scrape_configs:
 
 # Example scrape config for pods
 #
-# The relabeling allows the actual pod scrape endpoint to be configured via the 
+# The relabeling allows the actual pod scrape endpoint to be configured via the
 # following annotations:
 #
 # * `prometheus.io/scrape`: Only scrape pods that have a value of `true`
@@ -172,9 +161,9 @@ scrape_configs:
     role: pod
 
   relabel_configs:
-  - source_labels: [__meta_kubernetes_role, __meta_kubernetes_pod_annotation_prometheus_io_scrape]
+  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
     action: keep
-    regex: pod;true
+    regex: true
   - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
     action: replace
     regex: (.+):(?:\d+);(\d+)
