@@ -1,3 +1,9 @@
+## 1.0.1 / 2016-07-21
+
+* [BUGFIX] Exit with error on non-flag command-line arguments.
+* [BUGFIX] Update example console templates to new HTTP API.
+* [BUGFIX] Re-add logging flags.
+
 ## 1.0.0 / 2016-07-18
 
 * [CHANGE] Remove deprecated query language keywords
