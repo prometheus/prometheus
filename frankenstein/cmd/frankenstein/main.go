@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -38,12 +39,13 @@ import (
 const (
 	distributor = "distributor"
 	ingestor    = "ingestor"
+	infName     = "eth0"
 )
 
 func main() {
 	var (
 		mode                 string
-		listen               string
+		listenPort           int
 		consulHost           string
 		consulPrefix         string
 		s3URL                string
@@ -53,7 +55,7 @@ func main() {
 	)
 
 	flag.StringVar(&mode, "mode", distributor, "Mode (distributor, ingestor).")
-	flag.StringVar(&listen, "web.listen-address", ":9094", "HTTP server listen address.")
+	flag.IntVar(&listenPort, "web.listen-port", 9094, "HTTP server listen port.")
 	flag.StringVar(&consulHost, "consul.hostname", "localhost:8500", "Hostname and port of Consul.")
 	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
 	flag.StringVar(&s3URL, "s3.url", "localhost:4569", "S3 endpoint URL.")
@@ -84,13 +86,13 @@ func main() {
 	case distributor:
 		setupDistributor(consul, consulPrefix, chunkStore, remoteTimeout)
 	case ingestor:
-		setupIngestor(consul, consulPrefix, chunkStore)
+		setupIngestor(consul, consulPrefix, chunkStore, listenPort)
 	default:
 		log.Fatalf("Mode %s not supported!", mode)
 	}
 
 	http.Handle("/metrics", prometheus.Handler())
-	http.ListenAndServe(listen, nil)
+	http.ListenAndServe(fmt.Sprintf(":%d", listenPort), nil)
 }
 
 func setupDistributor(
@@ -148,10 +150,15 @@ func setupDistributor(
 	http.Handle("/push", frankenstein.AppenderHandler(distributor))
 }
 
-func setupIngestor(consulClient frankenstein.ConsulClient, consulPrefix string, chunkStore frankenstein.ChunkStore) {
+func setupIngestor(
+	consulClient frankenstein.ConsulClient,
+	consulPrefix string,
+	chunkStore frankenstein.ChunkStore,
+	listenPort int,
+) {
 	for i := 0; i < 10; i++ {
 		log.Info("Adding ingestor to consul")
-		if err := writeIngestorConfigToConsul(consulClient, consulPrefix); err == nil {
+		if err := writeIngestorConfigToConsul(consulClient, consulPrefix, listenPort); err == nil {
 			break
 		} else {
 			log.Errorf("Failed to write to consul, sleeping: %v", err)
@@ -168,8 +175,40 @@ func setupIngestor(consulClient frankenstein.ConsulClient, consulPrefix string, 
 	http.Handle("/query", frankenstein.QueryHandler(ingestor))
 }
 
-func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient, consulPrefix string) error {
+// GetFirstAddressOf returns the first IPv4 address of the supplied interface name.
+func GetFirstAddressOf(name string) (string, error) {
+	inf, err := net.InterfaceByName(name)
+	if err != nil {
+		return "", err
+	}
+
+	addrs, err := inf.Addrs()
+	if err != nil {
+		return "", err
+	}
+	if len(addrs) <= 0 {
+		return "", fmt.Errorf("No address found for %s", name)
+	}
+
+	for _, addr := range addrs {
+		switch v := addr.(type) {
+		case *net.IPNet:
+			if ip := v.IP.To4(); ip != nil {
+				return v.IP.String(), nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("No address found for %s", name)
+}
+
+func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient, consulPrefix string, listenPort int) error {
 	hostname, err := os.Hostname()
+	if err != nil {
+		return err
+	}
+
+	addr, err := GetFirstAddressOf(infName)
 	if err != nil {
 		return err
 	}
@@ -178,7 +217,7 @@ func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient, consulP
 	tokenHasher.Write([]byte(hostname))
 
 	buf, err := json.Marshal(frankenstein.Collector{
-		Hostname: hostname + ":9095",
+		Hostname: fmt.Sprintf("%s:%d", addr, listenPort),
 		Tokens:   []uint64{tokenHasher.Sum64()},
 	})
 	if err != nil {
