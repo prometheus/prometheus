@@ -37,6 +37,8 @@ type Ingestor struct {
 	discardedSamples   *prometheus.CounterVec
 	storedChunks       prometheus.Counter
 	chunkStoreFailures prometheus.Counter
+	queries            prometheus.Counter
+	queriedSamples     prometheus.Counter
 }
 
 type ChunkStore interface {
@@ -80,6 +82,18 @@ func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
 			Subsystem: subsystem,
 			Name:      "chunk_store_failures_total",
 			Help:      "The total number of errors while storing chunks to the chunk store.",
+		}),
+		queries: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queries_total",
+			Help:      "The total number of queries the ingestor has handled.",
+		}),
+		queriedSamples: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queried_samples_total",
+			Help:      "The total number of samples returned from queries.",
 		}),
 	}
 	var err error
@@ -164,10 +178,13 @@ func (i *Ingestor) getOrCreateSeries(metric model.Metric) (model.Fingerprint, *m
 }
 
 func (i *Ingestor) Query(from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+	i.queries.Inc()
+
 	fps := i.index.lookup(matchers)
 	log.Infof("Query: should return %v", fps)
 
 	// fps is sorted, lock them in order to prevent deadlocks
+	queriedSamples := 0
 	result := model.Matrix{}
 	for _, fp := range fps {
 		i.fpLocker.Lock(fp)
@@ -187,7 +204,10 @@ func (i *Ingestor) Query(from, through model.Time, matchers ...*metric.LabelMatc
 			Metric: series.metric,
 			Values: values,
 		})
+		queriedSamples += len(values)
 	}
+
+	i.queriedSamples.Add(float64(queriedSamples))
 
 	return result, nil
 }
@@ -320,6 +340,8 @@ func (i *Ingestor) Describe(ch chan<- *prometheus.Desc) {
 	i.discardedSamples.Describe(ch)
 	ch <- i.storedChunks.Desc()
 	ch <- i.chunkStoreFailures.Desc()
+	ch <- i.queries.Desc()
+	ch <- i.queriedSamples.Desc()
 }
 
 // Collect implements prometheus.Collector.
@@ -330,6 +352,8 @@ func (i *Ingestor) Collect(ch chan<- prometheus.Metric) {
 	i.discardedSamples.Collect(ch)
 	ch <- i.storedChunks
 	ch <- i.chunkStoreFailures
+	ch <- i.queries
+	ch <- i.queriedSamples
 }
 
 type invertedIndex struct {
