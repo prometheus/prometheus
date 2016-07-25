@@ -235,11 +235,6 @@
 			"revisionTime": "2015-09-05T08:12:15+01:00"
 		},
 		{
-			"path": "github.com/prometheus/client_golang/api/prometheus",
-			"revision": "9f1ed1ed4a5f754c9b626e5cf8ec1ea7d622e017",
-			"revisionTime": "2016-06-27T15:36:20+01:00"
-		},
-		{
 			"path": "github.com/prometheus/client_golang/prometheus",
 			"revision": "449ccefff16c8e2b7229f6be1921ba22f62461fe",
 			"revisionTime": "2015-10-26T02:27:06+01:00"
