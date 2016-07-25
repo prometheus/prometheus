@@ -450,14 +450,21 @@ func intersect(a, b []model.Fingerprint) []model.Fingerprint {
 // fingerprints between or within the input lists.
 func merge(a, b []model.Fingerprint) []model.Fingerprint {
 	result := make([]model.Fingerprint, 0, len(a)+len(b))
-	for i, j := 0, 0; i < len(a) && j < len(b); {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
 		if a[i] < b[j] {
 			result = append(result, a[i])
 			i++
 		} else {
-			result = append(result, b[i])
+			result = append(result, b[j])
 			j++
 		}
+	}
+	for ; i < len(a); i++ {
+		result = append(result, a[i])
+	}
+	for ; j < len(b); j++ {
+		result = append(result, b[j])
 	}
 	return result
 }

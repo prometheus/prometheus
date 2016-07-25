@@ -110,6 +110,7 @@ func (q *IngesterQuerier) Query(from, to model.Time, matchers ...*metric.LabelMa
 	m := make(model.Matrix, 0, len(r.Timeseries))
 	for _, ts := range r.Timeseries {
 		var ss model.SampleStream
+		ss.Metric = model.Metric{}
 		if ts.Name != nil {
 			ss.Metric[model.MetricNameLabel] = model.LabelValue(ts.GetName())
 		}
