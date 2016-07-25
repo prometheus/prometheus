@@ -15,7 +15,7 @@ type iFilter struct {
 }
 
 func (f iFilter) Contains(filter, key []byte) bool {
-	return f.Filter.Contains(filter, iKey(key).ukey())
+	return f.Filter.Contains(filter, internalKey(key).ukey())
 }
 
 func (f iFilter) NewGenerator() filter.FilterGenerator {
@@ -27,5 +27,5 @@ type iFilterGenerator struct {
 }
 
 func (g iFilterGenerator) Add(key []byte) {
-	g.FilterGenerator.Add(iKey(key).ukey())
+	g.FilterGenerator.Add(internalKey(key).ukey())
 }

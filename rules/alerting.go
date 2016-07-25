@@ -15,13 +15,16 @@ package rules
 
 import (
 	"fmt"
-	"html/template"
 	"sync"
 	"time"
 
+	html_template "html/template"
+
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -63,8 +66,9 @@ func (s AlertState) String() string {
 
 // Alert is the user-level representation of a single instance of an alerting rule.
 type Alert struct {
-	State  AlertState
-	Labels model.LabelSet
+	State       AlertState
+	Labels      model.LabelSet
+	Annotations model.LabelSet
 	// The value at the last evaluation of the alerting expression.
 	Value model.SampleValue
 	// The interval during which the condition of this alert held true.
@@ -142,7 +146,7 @@ const resolvedRetention = 15 * time.Minute
 
 // eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine) (model.Vector, error) {
+func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine, externalURLPath string) (model.Vector, error) {
 	query, err := engine.NewInstantQuery(r.vector.String(), ts)
 	if err != nil {
 		return nil, err
@@ -160,6 +164,53 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine) (model.Vector,
 	resultFPs := map[model.Fingerprint]struct{}{}
 
 	for _, smpl := range res {
+		// Provide the alert information to the template.
+		l := make(map[string]string, len(smpl.Metric))
+		for k, v := range smpl.Metric {
+			l[string(k)] = string(v)
+		}
+
+		tmplData := struct {
+			Labels map[string]string
+			Value  float64
+		}{
+			Labels: l,
+			Value:  float64(smpl.Value),
+		}
+		// Inject some convenience variables that are easier to remember for users
+		// who are not used to Go's templating system.
+		defs := "{{$labels := .Labels}}{{$value := .Value}}"
+
+		expand := func(text model.LabelValue) model.LabelValue {
+			tmpl := template.NewTemplateExpander(
+				defs+string(text),
+				"__alert_"+r.Name(),
+				tmplData,
+				ts,
+				engine,
+				externalURLPath,
+			)
+			result, err := tmpl.Expand()
+			if err != nil {
+				result = fmt.Sprintf("<error expanding template: %s>", err)
+				log.Warnf("Error expanding alert template %v with data '%v': %s", r.Name(), tmplData, err)
+			}
+			return model.LabelValue(result)
+		}
+
+		labels := make(model.LabelSet, len(smpl.Metric)+len(r.labels)+1)
+		for ln, lv := range smpl.Metric {
+			labels[ln] = lv
+		}
+		for ln, lv := range r.labels {
+			labels[ln] = expand(lv)
+		}
+		labels[model.AlertNameLabel] = model.LabelValue(r.Name())
+
+		annotations := make(model.LabelSet, len(r.annotations))
+		for an, av := range r.annotations {
+			annotations[an] = expand(av)
+		}
 		fp := smpl.Metric.Fingerprint()
 		resultFPs[fp] = struct{}{}
 
@@ -171,10 +222,11 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine) (model.Vector,
 		delete(smpl.Metric, model.MetricNameLabel)
 
 		r.active[fp] = &Alert{
-			Labels:   model.LabelSet(smpl.Metric),
-			ActiveAt: ts,
-			State:    StatePending,
-			Value:    smpl.Value,
+			Labels:      labels,
+			Annotations: annotations,
+			ActiveAt:    ts,
+			State:       StatePending,
+			Value:       smpl.Value,
 		}
 	}
 
@@ -243,13 +295,7 @@ func (r *AlertingRule) currentAlerts() []*Alert {
 	alerts := make([]*Alert, 0, len(r.active))
 
 	for _, a := range r.active {
-		labels := r.labels.Clone()
-		for ln, lv := range a.Labels {
-			labels[ln] = lv
-		}
 		anew := *a
-		anew.Labels = labels
-
 		alerts = append(alerts, &anew)
 	}
 	return alerts
@@ -273,7 +319,7 @@ func (r *AlertingRule) String() string {
 // HTMLSnippet returns an HTML snippet representing this alerting rule. The
 // resulting snippet is expected to be presented in a <pre> element, so that
 // line breaks and other returned whitespace is respected.
-func (r *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
+func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 	alertMetric := model.Metric{
 		model.MetricNameLabel: alertMetricName,
 		alertNameLabel:        model.LabelValue(r.name),
@@ -289,5 +335,5 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	if len(r.annotations) > 0 {
 		s += fmt.Sprintf("\n  ANNOTATIONS %s", r.annotations)
 	}
-	return template.HTML(s)
+	return html_template.HTML(s)
 }

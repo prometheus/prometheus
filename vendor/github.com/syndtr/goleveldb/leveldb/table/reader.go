@@ -507,9 +507,9 @@ func (i *indexIter) Get() iterator.Iterator {
 // Reader is a table reader.
 type Reader struct {
 	mu     sync.RWMutex
-	fi     *storage.FileInfo
+	fd     storage.FileDesc
 	reader io.ReaderAt
-	cache  *cache.CacheGetter
+	cache  *cache.NamespaceGetter
 	err    error
 	bpool  *util.BufferPool
 	// Options
@@ -539,7 +539,7 @@ func (r *Reader) blockKind(bh blockHandle) string {
 }
 
 func (r *Reader) newErrCorrupted(pos, size int64, kind, reason string) error {
-	return &errors.ErrCorrupted{File: r.fi, Err: &ErrCorrupted{Pos: pos, Size: size, Kind: kind, Reason: reason}}
+	return &errors.ErrCorrupted{Fd: r.fd, Err: &ErrCorrupted{Pos: pos, Size: size, Kind: kind, Reason: reason}}
 }
 
 func (r *Reader) newErrCorruptedBH(bh blockHandle, reason string) error {
@@ -551,7 +551,7 @@ func (r *Reader) fixErrCorruptedBH(bh blockHandle, err error) error {
 		cerr.Pos = int64(bh.offset)
 		cerr.Size = int64(bh.length)
 		cerr.Kind = r.blockKind(bh)
-		return &errors.ErrCorrupted{File: r.fi, Err: cerr}
+		return &errors.ErrCorrupted{Fd: r.fd, Err: cerr}
 	}
 	return err
 }
@@ -988,13 +988,13 @@ func (r *Reader) Release() {
 // The fi, cache and bpool is optional and can be nil.
 //
 // The returned table reader instance is goroutine-safe.
-func NewReader(f io.ReaderAt, size int64, fi *storage.FileInfo, cache *cache.CacheGetter, bpool *util.BufferPool, o *opt.Options) (*Reader, error) {
+func NewReader(f io.ReaderAt, size int64, fd storage.FileDesc, cache *cache.NamespaceGetter, bpool *util.BufferPool, o *opt.Options) (*Reader, error) {
 	if f == nil {
 		return nil, errors.New("leveldb/table: nil file")
 	}
 
 	r := &Reader{
-		fi:             fi,
+		fd:             fd,
 		reader:         f,
 		cache:          cache,
 		bpool:          bpool,

@@ -72,6 +72,12 @@ func TestExprString(t *testing.T) {
 			in: `sum(task:errors:rate10s{job="s"}) WITHOUT (instance)`,
 		},
 		{
+			in: `topk(5, task:errors:rate10s{job="s"})`,
+		},
+		{
+			in: `count_values("value", task:errors:rate10s{job="s"})`,
+		},
+		{
 			in: `a - ON(b) c`,
 		},
 		{

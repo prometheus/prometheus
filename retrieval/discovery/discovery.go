@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2016 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,9 +14,19 @@
 package discovery
 
 import (
+	"time"
+
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval/discovery/consul"
+	"github.com/prometheus/prometheus/retrieval/discovery/dns"
 	"github.com/prometheus/prometheus/retrieval/discovery/kubernetes"
+	"github.com/prometheus/prometheus/retrieval/discovery/marathon"
 )
+
+// NewConsul creates a new Consul based Discovery.
+func NewConsul(cfg *config.ConsulSDConfig) (*consul.Discovery, error) {
+	return consul.NewDiscovery(cfg)
+}
 
 // NewKubernetesDiscovery creates a Kubernetes service discovery based on the passed-in configuration.
 func NewKubernetesDiscovery(conf *config.KubernetesSDConfig) (*kubernetes.Discovery, error) {
@@ -28,4 +38,18 @@ func NewKubernetesDiscovery(conf *config.KubernetesSDConfig) (*kubernetes.Discov
 		return nil, err
 	}
 	return kd, nil
+}
+
+// NewMarathon creates a new Marathon based discovery.
+func NewMarathon(conf *config.MarathonSDConfig) *marathon.Discovery {
+	return &marathon.Discovery{
+		Servers:         conf.Servers,
+		RefreshInterval: time.Duration(conf.RefreshInterval),
+		Client:          marathon.FetchApps,
+	}
+}
+
+// NewDNS creates a new DNS based discovery.
+func NewDNS(conf *config.DNSSDConfig) *dns.Discovery {
+	return dns.NewDiscovery(conf)
 }

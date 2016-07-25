@@ -23,7 +23,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 )
@@ -409,8 +408,6 @@ type ScrapeConfig struct {
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
 
 	// List of labeled target groups for this job.
-	// XXX(fabxc): `target_groups` is deprecated.
-	TargetGroups  []*TargetGroup `yaml:"target_groups,omitempty"`
 	StaticConfigs []*TargetGroup `yaml:"static_configs,omitempty"`
 	// List of DNS service discovery configurations.
 	DNSSDConfigs []*DNSSDConfig `yaml:"dns_sd_configs,omitempty"`
@@ -459,14 +456,6 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
 		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
-	}
-	// Check `target_groups` deprecation.
-	if c.TargetGroups != nil && c.StaticConfigs != nil {
-		return fmt.Errorf("'target_groups' is deprecated, configure static targets via 'static_configs' only")
-	}
-	if c.TargetGroups != nil {
-		log.Warnf("The 'target_groups' option for scrape configurations is deprecated, use 'static_configs' instead")
-		c.StaticConfigs = c.TargetGroups
 	}
 	// Check for users putting URLs in target groups.
 	if len(c.RelabelConfigs) == 0 {
@@ -792,6 +781,7 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
 	APIServers      []URL          `yaml:"api_servers"`
+	Role            KubernetesRole `yaml:"role"`
 	InCluster       bool           `yaml:"in_cluster,omitempty"`
 	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
 	BearerToken     string         `yaml:"bearer_token,omitempty"`
@@ -802,6 +792,29 @@ type KubernetesSDConfig struct {
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
+}
+
+type KubernetesRole string
+
+const (
+	KubernetesRoleNode      = "node"
+	KubernetesRolePod       = "pod"
+	KubernetesRoleContainer = "container"
+	KubernetesRoleService   = "service"
+	KubernetesRoleEndpoint  = "endpoint"
+	KubernetesRoleAPIServer = "apiserver"
+)
+
+func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	if err := unmarshal((*string)(c)); err != nil {
+		return err
+	}
+	switch *c {
+	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleContainer, KubernetesRoleService, KubernetesRoleEndpoint, KubernetesRoleAPIServer:
+		return nil
+	default:
+		return fmt.Errorf("Unknown Kubernetes SD role %q", *c)
+	}
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -815,6 +828,9 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err := checkOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
 		return err
 	}
+	if c.Role == "" {
+		return fmt.Errorf("role missing (one of: container, pod, service, endpoint, node, apiserver)")
+	}
 	if len(c.APIServers) == 0 {
 		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes API server")
 	}
@@ -824,7 +840,6 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
 		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
-
 	return nil
 }
 

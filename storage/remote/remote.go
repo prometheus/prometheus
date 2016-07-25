@@ -38,13 +38,12 @@ type Storage struct {
 }
 
 // ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (s *Storage) ApplyConfig(conf *config.Config) bool {
+func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	s.externalLabels = conf.GlobalConfig.ExternalLabels
-	return true
+	return nil
 }
 
 // New returns a new remote Storage.

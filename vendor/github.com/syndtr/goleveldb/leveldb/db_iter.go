@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	errInvalidIkey = errors.New("leveldb: Iterator: invalid internal key")
+	errInvalidInternalKey = errors.New("leveldb: Iterator: invalid internal key")
 )
 
 type memdbReleaser struct {
@@ -33,40 +33,50 @@ func (mr *memdbReleaser) Release() {
 	})
 }
 
-func (db *DB) newRawIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
+func (db *DB) newRawIterator(auxm *memDB, auxt tFiles, slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
+	strict := opt.GetStrict(db.s.o.Options, ro, opt.StrictReader)
 	em, fm := db.getMems()
 	v := db.s.version()
 
-	ti := v.getIterators(slice, ro)
-	n := len(ti) + 2
-	i := make([]iterator.Iterator, 0, n)
+	tableIts := v.getIterators(slice, ro)
+	n := len(tableIts) + len(auxt) + 3
+	its := make([]iterator.Iterator, 0, n)
+
+	if auxm != nil {
+		ami := auxm.NewIterator(slice)
+		ami.SetReleaser(&memdbReleaser{m: auxm})
+		its = append(its, ami)
+	}
+	for _, t := range auxt {
+		its = append(its, v.s.tops.newIterator(t, slice, ro))
+	}
+
 	emi := em.NewIterator(slice)
 	emi.SetReleaser(&memdbReleaser{m: em})
-	i = append(i, emi)
+	its = append(its, emi)
 	if fm != nil {
 		fmi := fm.NewIterator(slice)
 		fmi.SetReleaser(&memdbReleaser{m: fm})
-		i = append(i, fmi)
+		its = append(its, fmi)
 	}
-	i = append(i, ti...)
-	strict := opt.GetStrict(db.s.o.Options, ro, opt.StrictReader)
-	mi := iterator.NewMergedIterator(i, db.s.icmp, strict)
+	its = append(its, tableIts...)
+	mi := iterator.NewMergedIterator(its, db.s.icmp, strict)
 	mi.SetReleaser(&versionReleaser{v: v})
 	return mi
 }
 
-func (db *DB) newIterator(seq uint64, slice *util.Range, ro *opt.ReadOptions) *dbIter {
+func (db *DB) newIterator(auxm *memDB, auxt tFiles, seq uint64, slice *util.Range, ro *opt.ReadOptions) *dbIter {
 	var islice *util.Range
 	if slice != nil {
 		islice = &util.Range{}
 		if slice.Start != nil {
-			islice.Start = newIkey(slice.Start, kMaxSeq, ktSeek)
+			islice.Start = makeInternalKey(nil, slice.Start, keyMaxSeq, keyTypeSeek)
 		}
 		if slice.Limit != nil {
-			islice.Limit = newIkey(slice.Limit, kMaxSeq, ktSeek)
+			islice.Limit = makeInternalKey(nil, slice.Limit, keyMaxSeq, keyTypeSeek)
 		}
 	}
-	rawIter := db.newRawIterator(islice, ro)
+	rawIter := db.newRawIterator(auxm, auxt, islice, ro)
 	iter := &dbIter{
 		db:     db,
 		icmp:   db.s.icmp,
@@ -177,7 +187,7 @@ func (i *dbIter) Seek(key []byte) bool {
 		return false
 	}
 
-	ikey := newIkey(key, i.seq, ktSeek)
+	ikey := makeInternalKey(nil, key, i.seq, keyTypeSeek)
 	if i.iter.Seek(ikey) {
 		i.dir = dirSOI
 		return i.next()
@@ -189,15 +199,15 @@ func (i *dbIter) Seek(key []byte) bool {
 
 func (i *dbIter) next() bool {
 	for {
-		if ukey, seq, kt, kerr := parseIkey(i.iter.Key()); kerr == nil {
+		if ukey, seq, kt, kerr := parseInternalKey(i.iter.Key()); kerr == nil {
 			i.sampleSeek()
 			if seq <= i.seq {
 				switch kt {
-				case ktDel:
+				case keyTypeDel:
 					// Skip deleted key.
 					i.key = append(i.key[:0], ukey...)
 					i.dir = dirForward
-				case ktVal:
+				case keyTypeVal:
 					if i.dir == dirSOI || i.icmp.uCompare(ukey, i.key) > 0 {
 						i.key = append(i.key[:0], ukey...)
 						i.value = append(i.value[:0], i.iter.Value()...)
@@ -240,13 +250,13 @@ func (i *dbIter) prev() bool {
 	del := true
 	if i.iter.Valid() {
 		for {
-			if ukey, seq, kt, kerr := parseIkey(i.iter.Key()); kerr == nil {
+			if ukey, seq, kt, kerr := parseInternalKey(i.iter.Key()); kerr == nil {
 				i.sampleSeek()
 				if seq <= i.seq {
 					if !del && i.icmp.uCompare(ukey, i.key) < 0 {
 						return true
 					}
-					del = (kt == ktDel)
+					del = (kt == keyTypeDel)
 					if !del {
 						i.key = append(i.key[:0], ukey...)
 						i.value = append(i.value[:0], i.iter.Value()...)
@@ -282,7 +292,7 @@ func (i *dbIter) Prev() bool {
 		return i.Last()
 	case dirForward:
 		for i.iter.Prev() {
-			if ukey, _, _, kerr := parseIkey(i.iter.Key()); kerr == nil {
+			if ukey, _, _, kerr := parseInternalKey(i.iter.Key()); kerr == nil {
 				i.sampleSeek()
 				if i.icmp.uCompare(ukey, i.key) < 0 {
 					goto cont

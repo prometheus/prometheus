@@ -18,8 +18,6 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/prometheus/common/log"
 )
 
 // item represents a token or text string returned from the scanner.
@@ -57,6 +55,12 @@ func (i itemType) isOperator() bool { return i > operatorsStart && i < operators
 // isAggregator returns true if the item belongs to the aggregator functions.
 // Returns false otherwise
 func (i itemType) isAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
+
+// isAggregator returns true if the item is an aggregator that takes a parameter.
+// Returns false otherwise
+func (i itemType) isAggregatorWithParam() bool {
+	return i == itemTopK || i == itemBottomK || i == itemCountValues || i == itemQuantile
+}
 
 // isKeyword returns true if the item corresponds to a keyword.
 // Returns false otherwise.
@@ -170,6 +174,10 @@ const (
 	itemMax
 	itemStddev
 	itemStdvar
+	itemTopK
+	itemBottomK
+	itemCountValues
+	itemQuantile
 	aggregatorsEnd
 
 	keywordsStart
@@ -188,11 +196,6 @@ const (
 	itemGroupLeft
 	itemGroupRight
 	itemBool
-	// Removed keywords. Just here to detect and print errors.
-	itemSummary
-	itemDescription
-	itemRunbook
-	itemKeepExtra
 	keywordsEnd
 )
 
@@ -203,13 +206,17 @@ var key = map[string]itemType{
 	"unless": itemLUnless,
 
 	// Aggregators.
-	"sum":    itemSum,
-	"avg":    itemAvg,
-	"count":  itemCount,
-	"min":    itemMin,
-	"max":    itemMax,
-	"stddev": itemStddev,
-	"stdvar": itemStdvar,
+	"sum":          itemSum,
+	"avg":          itemAvg,
+	"count":        itemCount,
+	"min":          itemMin,
+	"max":          itemMax,
+	"stddev":       itemStddev,
+	"stdvar":       itemStdvar,
+	"topk":         itemTopK,
+	"bottomk":      itemBottomK,
+	"count_values": itemCountValues,
+	"quantile":     itemQuantile,
 
 	// Keywords.
 	"alert":       itemAlert,
@@ -226,11 +233,6 @@ var key = map[string]itemType{
 	"group_left":  itemGroupLeft,
 	"group_right": itemGroupRight,
 	"bool":        itemBool,
-	// Removed keywords. Just here to detect and print errors.
-	"summary":       itemSummary,
-	"description":   itemDescription,
-	"runbook":       itemRunbook,
-	"keeping_extra": itemKeepExtra,
 }
 
 // These are the default string representations for common items. It does not
@@ -421,14 +423,6 @@ func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 func (l *lexer) nextItem() item {
 	item := <-l.items
 	l.lastPos = item.pos
-
-	// TODO(fabxc): remove for version 1.0.
-	t := item.typ
-	if t == itemSummary || t == itemDescription || t == itemRunbook {
-		log.Errorf("Token %q is not valid anymore. Alerting rule syntax has changed with version 0.17.0. Please read https://prometheus.io/docs/alerting/rules/.", item)
-	} else if t == itemKeepExtra {
-		log.Error("Token 'keeping_extra' is not valid anymore. Use 'keep_common' instead.")
-	}
 	return item
 }
 

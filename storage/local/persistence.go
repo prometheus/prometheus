@@ -559,7 +559,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 		}
 		err = os.Rename(p.headsTempFileName(), p.headsFileName())
 		duration := time.Since(begin)
-		p.checkpointDuration.Set(float64(duration) / float64(time.Second))
+		p.checkpointDuration.Set(duration.Seconds())
 		log.Infof("Done checkpointing in-memory metrics and chunks in %v.", duration)
 	}()
 
@@ -1238,9 +1238,7 @@ func (p *persistence) processIndexingQueue() {
 	commitBatch := func() {
 		p.indexingBatchSizes.Observe(float64(batchSize))
 		defer func(begin time.Time) {
-			p.indexingBatchDuration.Observe(
-				float64(time.Since(begin)) / float64(time.Second),
-			)
+			p.indexingBatchDuration.Observe(time.Since(begin).Seconds())
 		}(time.Now())
 
 		if err := p.labelPairToFingerprints.IndexBatch(pairToFPs); err != nil {

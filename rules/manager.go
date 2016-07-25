@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -106,7 +105,7 @@ const (
 type Rule interface {
 	Name() string
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	eval(model.Time, *promql.Engine) (model.Vector, error)
+	eval(model.Time, *promql.Engine, string) (model.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -153,7 +152,7 @@ func (g *Group) run() {
 		start := time.Now()
 		g.eval()
 
-		iterationDuration.Observe(float64(time.Since(start)) / float64(time.Second))
+		iterationDuration.Observe(time.Since(start).Seconds())
 	}
 	iter()
 
@@ -252,12 +251,12 @@ func (g *Group) eval() {
 			defer wg.Done()
 
 			defer func(t time.Time) {
-				evalDuration.WithLabelValues(rtyp).Observe(float64(time.Since(t)) / float64(time.Second))
+				evalDuration.WithLabelValues(rtyp).Observe(time.Since(t).Seconds())
 			}(time.Now())
 
 			evalTotal.WithLabelValues(rtyp).Inc()
 
-			vector, err := rule.eval(now, g.opts.QueryEngine)
+			vector, err := rule.eval(now, g.opts.QueryEngine, g.opts.ExternalURL.Path)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
@@ -310,55 +309,10 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 			continue
 		}
 
-		// Provide the alert information to the template.
-		l := make(map[string]string, len(alert.Labels))
-		for k, v := range alert.Labels {
-			l[string(k)] = string(v)
-		}
-
-		tmplData := struct {
-			Labels map[string]string
-			Value  float64
-		}{
-			Labels: l,
-			Value:  float64(alert.Value),
-		}
-		// Inject some convenience variables that are easier to remember for users
-		// who are not used to Go's templating system.
-		defs := "{{$labels := .Labels}}{{$value := .Value}}"
-
-		expand := func(text model.LabelValue) model.LabelValue {
-			tmpl := template.NewTemplateExpander(
-				defs+string(text),
-				"__alert_"+rule.Name(),
-				tmplData,
-				timestamp,
-				g.opts.QueryEngine,
-				g.opts.ExternalURL.Path,
-			)
-			result, err := tmpl.Expand()
-			if err != nil {
-				result = fmt.Sprintf("<error expanding template: %s>", err)
-				log.Warnf("Error expanding alert template %v with data '%v': %s", rule.Name(), tmplData, err)
-			}
-			return model.LabelValue(result)
-		}
-
-		labels := make(model.LabelSet, len(alert.Labels)+1)
-		for ln, lv := range alert.Labels {
-			labels[ln] = expand(lv)
-		}
-		labels[model.AlertNameLabel] = model.LabelValue(rule.Name())
-
-		annotations := make(model.LabelSet, len(rule.annotations))
-		for an, av := range rule.annotations {
-			annotations[an] = expand(av)
-		}
-
 		a := &model.Alert{
 			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
-			Labels:       labels,
-			Annotations:  annotations,
+			Labels:       alert.Labels,
+			Annotations:  alert.Annotations,
 			GeneratorURL: g.opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
 		}
 		if alert.ResolvedAt != 0 {
@@ -419,8 +373,8 @@ func (m *Manager) Stop() {
 }
 
 // ApplyConfig updates the rule manager's state as the config requires. If
-// loading the new rules failed the old rule set is restored. Returns true on success.
-func (m *Manager) ApplyConfig(conf *config.Config) bool {
+// loading the new rules failed the old rule set is restored.
+func (m *Manager) ApplyConfig(conf *config.Config) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -430,16 +384,14 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 		fs, err := filepath.Glob(pat)
 		if err != nil {
 			// The only error can be a bad pattern.
-			log.Errorf("Error retrieving rule files for %s: %s", pat, err)
-			return false
+			return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
 		}
 		files = append(files, fs...)
 	}
 
 	groups, err := m.loadGroups(files...)
 	if err != nil {
-		log.Errorf("Error loading rules, previous rule set restored: %s", err)
-		return false
+		return fmt.Errorf("error loading rules, previous rule set restored: %s", err)
 	}
 
 	var wg sync.WaitGroup
@@ -479,7 +431,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 	wg.Wait()
 	m.groups = groups
 
-	return true
+	return nil
 }
 
 // loadGroups reads groups from a list of files.

@@ -59,7 +59,7 @@ func TestRuleEval(t *testing.T) {
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.eval(now, engine)
+		result, err := rule.eval(now, engine, "")
 		if err != nil {
 			t.Fatalf("Error evaluating %s", test.name)
 		}
