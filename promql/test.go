@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/frankenstein"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -42,22 +43,32 @@ const (
 	epsilon       = 0.000001 // Relative error allowed for sample values.
 )
 
+type TestStorageMode int
+
+const (
+	LocalStorage TestStorageMode = iota
+	IngestorStorage
+)
+
 // Test is a sequence of read and write commands that are run
 // against a test storage.
 type Test struct {
 	testutil.T
+	mode TestStorageMode
 
 	cmds []testCommand
 
+	ingestor     *local.Ingestor
 	storage      local.Storage
 	closeStorage func()
 	queryEngine  *Engine
 }
 
 // NewTest returns an initialized empty Test.
-func NewTest(t testutil.T, input string) (*Test, error) {
+func NewTest(t testutil.T, mode TestStorageMode, input string) (*Test, error) {
 	test := &Test{
 		T:    t,
+		mode: mode,
 		cmds: []testCommand{},
 	}
 	err := test.parse(input)
@@ -66,12 +77,12 @@ func NewTest(t testutil.T, input string) (*Test, error) {
 	return test, err
 }
 
-func newTestFromFile(t testutil.T, filename string) (*Test, error) {
+func newTestFromFile(t testutil.T, mode TestStorageMode, filename string) (*Test, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	return NewTest(t, string(content))
+	return NewTest(t, mode, string(content))
 }
 
 // QueryEngine returns the test's query engine.
@@ -458,8 +469,13 @@ func (t *Test) exec(tc testCommand) error {
 		t.clear()
 
 	case *loadCmd:
-		cmd.append(t.storage)
-		t.storage.WaitForIndexing()
+		switch t.mode {
+		case LocalStorage:
+			cmd.append(t.storage)
+			t.storage.WaitForIndexing()
+		case IngestorStorage:
+			cmd.append(t.ingestor)
+		}
 
 	case *evalCmd:
 		q := t.queryEngine.newQuery(cmd.expr, cmd.start, cmd.end, cmd.interval)
@@ -487,24 +503,50 @@ func (t *Test) exec(tc testCommand) error {
 
 // clear the current test storage of all inserted samples.
 func (t *Test) clear() {
-	if t.closeStorage != nil {
-		t.closeStorage()
-	}
 	if t.queryEngine != nil {
 		t.queryEngine.Stop()
 	}
 
-	var closer testutil.Closer
-	t.storage, closer = local.NewTestStorage(t, 2)
+	switch t.mode {
+	case LocalStorage:
+		if t.closeStorage != nil {
+			t.closeStorage()
+		}
 
-	t.closeStorage = closer.Close
-	t.queryEngine = NewEngine(t.storage, nil, nil)
+		var closer testutil.Closer
+		t.storage, closer = local.NewTestStorage(t, 2)
+
+		t.closeStorage = closer.Close
+		t.queryEngine = NewEngine(t.storage, nil, nil)
+	case IngestorStorage:
+		if t.ingestor != nil {
+			t.ingestor.Stop()
+		}
+		var err error
+		t.ingestor, err = local.NewIngestor(nil)
+		if err != nil {
+			t.Fatalf("Error creating test ingestor: %v", err)
+		}
+		querier := frankenstein.MergeQuerier{
+			Queriers: []frankenstein.Querier{t.ingestor},
+		}
+		t.queryEngine = NewEngine(nil, querier, nil)
+	default:
+		panic("invalid test storage mode")
+	}
 }
 
 // Close closes resources associated with the Test.
 func (t *Test) Close() {
 	t.queryEngine.Stop()
-	t.closeStorage()
+	switch t.mode {
+	case LocalStorage:
+		t.closeStorage()
+	case IngestorStorage:
+		t.ingestor.Stop()
+	default:
+		panic("invalid test storage mode")
+	}
 }
 
 // samplesAlmostEqual returns true if the two sample lines only differ by a

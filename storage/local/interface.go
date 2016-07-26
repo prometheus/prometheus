@@ -90,6 +90,13 @@ type SeriesIterator interface {
 	RangeValues(metric.Interval) []model.SamplePair
 }
 
+// A MetricSeriesIterator combines a local.SeriesIterator together with the metric
+// that corresponds to the iterator.
+type MetricSeriesIterator interface {
+	SeriesIterator
+	Metric() model.Metric
+}
+
 // A Preloader preloads series data necessary for a query into memory, pins it
 // until released via Close(), and returns an iterator for the pinned data. Its
 // methods are generally not goroutine-safe.

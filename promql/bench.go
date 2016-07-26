@@ -23,8 +23,8 @@ type Benchmark struct {
 }
 
 // NewBenchmark returns an initialized empty Benchmark.
-func NewBenchmark(b *testing.B, input string) *Benchmark {
-	t, err := NewTest(b, input)
+func NewBenchmark(b *testing.B, mode TestStorageMode, input string) *Benchmark {
+	t, err := NewTest(b, mode, input)
 	if err != nil {
 		b.Fatalf("Unable to run benchmark: %s", err)
 	}
