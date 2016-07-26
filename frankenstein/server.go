@@ -137,13 +137,12 @@ func QueryHandler(querier Querier) http.Handler {
 						})
 				}
 			}
+			ts.Samples = make([]*generic.Sample, 0, len(ss.Values))
 			for _, s := range ss.Values {
-				ts.Samples = []*generic.Sample{
-					&generic.Sample{
-						Value:       proto.Float64(float64(s.Value)),
-						TimestampMs: proto.Int64(int64(s.Timestamp)),
-					},
-				}
+				ts.Samples = append(ts.Samples, &generic.Sample{
+					Value:       proto.Float64(float64(s.Value)),
+					TimestampMs: proto.Int64(int64(s.Timestamp)),
+				})
 			}
 			resp.Timeseries = append(resp.Timeseries, ts)
 		}
