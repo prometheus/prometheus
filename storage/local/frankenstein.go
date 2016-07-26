@@ -25,6 +25,8 @@ const (
 // Its like MemorySeriesStorage, but simpler.
 type Ingestor struct {
 	chunkStore ChunkStore
+	stopLock   sync.RWMutex
+	stopped    bool
 	quit       chan struct{}
 	done       chan struct{}
 
@@ -116,6 +118,13 @@ func (i *Ingestor) Append(sample *model.Sample) error {
 			delete(sample.Metric, ln)
 		}
 	}
+
+	i.stopLock.RLock()
+	defer i.stopLock.RUnlock()
+	if i.stopped {
+		return fmt.Errorf("ingestor stopping")
+	}
+
 	fp, series, err := i.getOrCreateSeries(sample.Metric)
 	if err != nil {
 		return err
@@ -255,32 +264,41 @@ func samplesForRange(s *memorySeries, from, through model.Time) ([]model.SampleP
 }
 
 func (i *Ingestor) Stop() {
+	i.stopLock.Lock()
+	i.stopped = true
+	i.stopLock.Unlock()
+
 	close(i.quit)
 	<-i.done
 }
 
 func (i *Ingestor) loop() {
+	defer i.flushAllSeries(true)
 	defer close(i.done)
 	tick := time.Tick(flushCheckPeriod)
 	for {
 		select {
 		case <-tick:
-			for pair := range i.fpToSeries.iter() {
-				if err := i.flushSeries(pair.fp, pair.series); err != nil {
-					log.Errorf("Failed to flush chunks for series: %v", err)
-				}
-			}
+			i.flushAllSeries(false)
 		case <-i.quit:
 			return
 		}
 	}
 }
 
-func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries) error {
+func (i *Ingestor) flushAllSeries(immediate bool) {
+	for pair := range i.fpToSeries.iter() {
+		if err := i.flushSeries(pair.fp, pair.series, immediate); err != nil {
+			log.Errorf("Failed to flush chunks for series: %v", err)
+		}
+	}
+}
+
+func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries, immediate bool) error {
 	i.fpLocker.Lock(fp)
 
 	// Decide what chunks to flush
-	if time.Now().Sub(series.firstTime().Time()) > maxChunkAge {
+	if immediate || time.Now().Sub(series.firstTime().Time()) > maxChunkAge {
 		series.headChunkClosed = true
 		series.headChunkUsedByIterator = false
 		series.head().maybePopulateLastTime()
@@ -296,6 +314,7 @@ func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries) error
 
 	// flush the chunks without locking the series
 	i.fpLocker.Unlock(fp)
+	log.Infof("Flushing %d chunks", len(chunks))
 	if err := i.flushChunks(fp, series.metric, chunks); err != nil {
 		i.chunkStoreFailures.Add(float64(len(chunks)))
 		return err
