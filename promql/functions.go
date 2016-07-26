@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"container/heap"
 	"math"
 	"regexp"
 	"sort"
@@ -298,52 +297,6 @@ func funcSortDesc(ev *evaluator, args Expressions) model.Value {
 	return vector(byValueSorter)
 }
 
-// === topk(k model.ValScalar, node model.ValVector) Vector ===
-func funcTopk(ev *evaluator, args Expressions) model.Value {
-	k := ev.evalInt(args[0])
-	if k < 1 {
-		return vector{}
-	}
-	vec := ev.evalVector(args[1])
-
-	topk := make(vectorByValueHeap, 0, k)
-
-	for _, el := range vec {
-		if len(topk) < k || topk[0].Value < el.Value || math.IsNaN(float64(topk[0].Value)) {
-			if len(topk) == k {
-				heap.Pop(&topk)
-			}
-			heap.Push(&topk, el)
-		}
-	}
-	// The heap keeps the lowest value on top, so reverse it.
-	sort.Sort(sort.Reverse(topk))
-	return vector(topk)
-}
-
-// === bottomk(k model.ValScalar, node model.ValVector) Vector ===
-func funcBottomk(ev *evaluator, args Expressions) model.Value {
-	k := ev.evalInt(args[0])
-	if k < 1 {
-		return vector{}
-	}
-	vec := ev.evalVector(args[1])
-
-	bottomk := make(vectorByReverseValueHeap, 0, k)
-
-	for _, el := range vec {
-		if len(bottomk) < k || bottomk[0].Value > el.Value || math.IsNaN(float64(bottomk[0].Value)) {
-			if len(bottomk) == k {
-				heap.Pop(&bottomk)
-			}
-			heap.Push(&bottomk, el)
-		}
-	}
-	// The heap keeps the highest value on top, so reverse it.
-	sort.Sort(sort.Reverse(bottomk))
-	return vector(bottomk)
-}
-
 // === clamp_max(vector model.ValVector, max Scalar) Vector ===
 func funcClampMax(ev *evaluator, args Expressions) model.Value {
 	vec := ev.evalVector(args[0])
@@ -522,6 +475,59 @@ func funcSumOverTime(ev *evaluator, args Expressions) model.Value {
 			sum += v.Value
 		}
 		return sum
+	})
+}
+
+// === quantile_over_time(matrix model.ValMatrix) Vector ===
+func funcQuantileOverTime(ev *evaluator, args Expressions) model.Value {
+	q := ev.evalFloat(args[0])
+	mat := ev.evalMatrix(args[1])
+	resultVector := vector{}
+
+	for _, el := range mat {
+		if len(el.Values) == 0 {
+			continue
+		}
+
+		el.Metric.Del(model.MetricNameLabel)
+		values := make(vectorByValueHeap, 0, len(el.Values))
+		for _, v := range el.Values {
+			values = append(values, &sample{Value: v.Value})
+		}
+		resultVector = append(resultVector, &sample{
+			Metric:    el.Metric,
+			Value:     model.SampleValue(quantile(q, values)),
+			Timestamp: ev.Timestamp,
+		})
+	}
+	return resultVector
+}
+
+// === stddev_over_time(matrix model.ValMatrix) Vector ===
+func funcStddevOverTime(ev *evaluator, args Expressions) model.Value {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
+		var sum, squaredSum, count model.SampleValue
+		for _, v := range values {
+			sum += v.Value
+			squaredSum += v.Value * v.Value
+			count += 1
+		}
+		avg := sum / count
+		return model.SampleValue(math.Sqrt(float64(squaredSum/count - avg*avg)))
+	})
+}
+
+// === stdvar_over_time(matrix model.ValMatrix) Vector ===
+func funcStdvarOverTime(ev *evaluator, args Expressions) model.Value {
+	return aggrOverTime(ev, args, func(values []model.SamplePair) model.SampleValue {
+		var sum, squaredSum, count model.SampleValue
+		for _, v := range values {
+			sum += v.Value
+			squaredSum += v.Value * v.Value
+			count += 1
+		}
+		avg := sum / count
+		return squaredSum/count - avg*avg
 	})
 }
 
@@ -724,7 +730,7 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) model.Value {
 	for _, mb := range signatureToMetricWithBuckets {
 		outVec = append(outVec, &sample{
 			Metric:    mb.metric,
-			Value:     model.SampleValue(quantile(q, mb.buckets)),
+			Value:     model.SampleValue(bucketQuantile(q, mb.buckets)),
 			Timestamp: ev.Timestamp,
 		})
 	}
@@ -866,12 +872,6 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcAvgOverTime,
 	},
-	"bottomk": {
-		Name:       "bottomk",
-		ArgTypes:   []model.ValueType{model.ValScalar, model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcBottomk,
-	},
 	"ceil": {
 		Name:       "ceil",
 		ArgTypes:   []model.ValueType{model.ValVector},
@@ -998,6 +998,12 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcPredictLinear,
 	},
+	"quantile_over_time": {
+		Name:       "quantile_over_time",
+		ArgTypes:   []model.ValueType{model.ValScalar, model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcQuantileOverTime,
+	},
 	"rate": {
 		Name:       "rate",
 		ArgTypes:   []model.ValueType{model.ValMatrix},
@@ -1041,6 +1047,18 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcSqrt,
 	},
+	"stddev_over_time": {
+		Name:       "stddev_over_time",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcStddevOverTime,
+	},
+	"stdvar_over_time": {
+		Name:       "stdvar_over_time",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcStdvarOverTime,
+	},
 	"sum_over_time": {
 		Name:       "sum_over_time",
 		ArgTypes:   []model.ValueType{model.ValMatrix},
@@ -1052,12 +1070,6 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{},
 		ReturnType: model.ValScalar,
 		Call:       funcTime,
-	},
-	"topk": {
-		Name:       "topk",
-		ArgTypes:   []model.ValueType{model.ValScalar, model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcTopk,
 	},
 	"vector": {
 		Name:       "vector",

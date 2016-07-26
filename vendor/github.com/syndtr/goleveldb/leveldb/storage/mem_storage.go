@@ -10,8 +10,6 @@ import (
 	"bytes"
 	"os"
 	"sync"
-
-	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
 const typeShift = 3
@@ -32,10 +30,10 @@ func (lock *memStorageLock) Release() {
 
 // memStorage is a memory-backed storage.
 type memStorage struct {
-	mu       sync.Mutex
-	slock    *memStorageLock
-	files    map[uint64]*memFile
-	manifest *memFilePtr
+	mu    sync.Mutex
+	slock *memStorageLock
+	files map[uint64]*memFile
+	meta  FileDesc
 }
 
 // NewMemStorage returns a new memory-backed storage implementation.
@@ -45,7 +43,7 @@ func NewMemStorage() Storage {
 	}
 }
 
-func (ms *memStorage) Lock() (util.Releaser, error) {
+func (ms *memStorage) Lock() (Lock, error) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	if ms.slock != nil {
@@ -57,147 +55,164 @@ func (ms *memStorage) Lock() (util.Releaser, error) {
 
 func (*memStorage) Log(str string) {}
 
-func (ms *memStorage) GetFile(num uint64, t FileType) File {
-	return &memFilePtr{ms: ms, num: num, t: t}
-}
-
-func (ms *memStorage) GetFiles(t FileType) ([]File, error) {
-	ms.mu.Lock()
-	var ff []File
-	for x, _ := range ms.files {
-		num, mt := x>>typeShift, FileType(x)&TypeAll
-		if mt&t == 0 {
-			continue
-		}
-		ff = append(ff, &memFilePtr{ms: ms, num: num, t: mt})
-	}
-	ms.mu.Unlock()
-	return ff, nil
-}
-
-func (ms *memStorage) GetManifest() (File, error) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
-	if ms.manifest == nil {
-		return nil, os.ErrNotExist
-	}
-	return ms.manifest, nil
-}
-
-func (ms *memStorage) SetManifest(f File) error {
-	fm, ok := f.(*memFilePtr)
-	if !ok || fm.t != TypeManifest {
+func (ms *memStorage) SetMeta(fd FileDesc) error {
+	if !FileDescOk(fd) {
 		return ErrInvalidFile
 	}
+
 	ms.mu.Lock()
-	ms.manifest = fm
+	ms.meta = fd
 	ms.mu.Unlock()
 	return nil
 }
 
-func (*memStorage) Close() error { return nil }
-
-type memReader struct {
-	*bytes.Reader
-	m *memFile
-}
-
-func (mr *memReader) Close() error {
-	return mr.m.Close()
-}
-
-type memFile struct {
-	bytes.Buffer
-	ms   *memStorage
-	open bool
-}
-
-func (*memFile) Sync() error { return nil }
-func (m *memFile) Close() error {
-	m.ms.mu.Lock()
-	m.open = false
-	m.ms.mu.Unlock()
-	return nil
-}
-
-type memFilePtr struct {
-	ms  *memStorage
-	num uint64
-	t   FileType
-}
-
-func (p *memFilePtr) x() uint64 {
-	return p.Num()<<typeShift | uint64(p.Type())
-}
-
-func (p *memFilePtr) Open() (Reader, error) {
-	ms := p.ms
+func (ms *memStorage) GetMeta() (FileDesc, error) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
-	if m, exist := ms.files[p.x()]; exist {
+	if ms.meta.Nil() {
+		return FileDesc{}, os.ErrNotExist
+	}
+	return ms.meta, nil
+}
+
+func (ms *memStorage) List(ft FileType) ([]FileDesc, error) {
+	ms.mu.Lock()
+	var fds []FileDesc
+	for x, _ := range ms.files {
+		fd := unpackFile(x)
+		if fd.Type&ft != 0 {
+			fds = append(fds, fd)
+		}
+	}
+	ms.mu.Unlock()
+	return fds, nil
+}
+
+func (ms *memStorage) Open(fd FileDesc) (Reader, error) {
+	if !FileDescOk(fd) {
+		return nil, ErrInvalidFile
+	}
+
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	if m, exist := ms.files[packFile(fd)]; exist {
 		if m.open {
 			return nil, errFileOpen
 		}
 		m.open = true
-		return &memReader{Reader: bytes.NewReader(m.Bytes()), m: m}, nil
+		return &memReader{Reader: bytes.NewReader(m.Bytes()), ms: ms, m: m}, nil
 	}
 	return nil, os.ErrNotExist
 }
 
-func (p *memFilePtr) Create() (Writer, error) {
-	ms := p.ms
+func (ms *memStorage) Create(fd FileDesc) (Writer, error) {
+	if !FileDescOk(fd) {
+		return nil, ErrInvalidFile
+	}
+
+	x := packFile(fd)
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
-	m, exist := ms.files[p.x()]
+	m, exist := ms.files[x]
 	if exist {
 		if m.open {
 			return nil, errFileOpen
 		}
 		m.Reset()
 	} else {
-		m = &memFile{ms: ms}
-		ms.files[p.x()] = m
+		m = &memFile{}
+		ms.files[x] = m
 	}
 	m.open = true
-	return m, nil
+	return &memWriter{memFile: m, ms: ms}, nil
 }
 
-func (p *memFilePtr) Replace(newfile File) error {
-	p1, ok := newfile.(*memFilePtr)
-	if !ok {
+func (ms *memStorage) Remove(fd FileDesc) error {
+	if !FileDescOk(fd) {
 		return ErrInvalidFile
 	}
-	ms := p.ms
+
+	x := packFile(fd)
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
-	m1, exist := ms.files[p1.x()]
-	if !exist {
-		return os.ErrNotExist
-	}
-	m0, exist := ms.files[p.x()]
-	if (exist && m0.open) || m1.open {
-		return errFileOpen
-	}
-	delete(ms.files, p1.x())
-	ms.files[p.x()] = m1
-	return nil
-}
-
-func (p *memFilePtr) Type() FileType {
-	return p.t
-}
-
-func (p *memFilePtr) Num() uint64 {
-	return p.num
-}
-
-func (p *memFilePtr) Remove() error {
-	ms := p.ms
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
-	if _, exist := ms.files[p.x()]; exist {
-		delete(ms.files, p.x())
+	if _, exist := ms.files[x]; exist {
+		delete(ms.files, x)
 		return nil
 	}
 	return os.ErrNotExist
+}
+
+func (ms *memStorage) Rename(oldfd, newfd FileDesc) error {
+	if FileDescOk(oldfd) || FileDescOk(newfd) {
+		return ErrInvalidFile
+	}
+	if oldfd == newfd {
+		return nil
+	}
+
+	oldx := packFile(oldfd)
+	newx := packFile(newfd)
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	oldm, exist := ms.files[oldx]
+	if !exist {
+		return os.ErrNotExist
+	}
+	newm, exist := ms.files[newx]
+	if (exist && newm.open) || oldm.open {
+		return errFileOpen
+	}
+	delete(ms.files, oldx)
+	ms.files[newx] = oldm
+	return nil
+}
+
+func (*memStorage) Close() error { return nil }
+
+type memFile struct {
+	bytes.Buffer
+	open bool
+}
+
+type memReader struct {
+	*bytes.Reader
+	ms     *memStorage
+	m      *memFile
+	closed bool
+}
+
+func (mr *memReader) Close() error {
+	mr.ms.mu.Lock()
+	defer mr.ms.mu.Unlock()
+	if mr.closed {
+		return ErrClosed
+	}
+	mr.m.open = false
+	return nil
+}
+
+type memWriter struct {
+	*memFile
+	ms     *memStorage
+	closed bool
+}
+
+func (*memWriter) Sync() error { return nil }
+
+func (mw *memWriter) Close() error {
+	mw.ms.mu.Lock()
+	defer mw.ms.mu.Unlock()
+	if mw.closed {
+		return ErrClosed
+	}
+	mw.memFile.open = false
+	return nil
+}
+
+func packFile(fd FileDesc) uint64 {
+	return uint64(fd.Num)<<typeShift | uint64(fd.Type)
+}
+
+func unpackFile(x uint64) FileDesc {
+	return FileDesc{FileType(x) & TypeAll, int64(x >> typeShift)}
 }

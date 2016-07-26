@@ -131,13 +131,12 @@ func New(o *Options) *Notifier {
 }
 
 // ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (n *Notifier) ApplyConfig(conf *config.Config) bool {
+func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
 	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
-	return true
+	return nil
 }
 
 const maxBatchSize = 64
@@ -293,7 +292,7 @@ func (n *Notifier) sendAll(alerts ...*model.Alert) int {
 				n.errors.WithLabelValues(u).Inc()
 				atomic.AddUint64(&numErrors, 1)
 			}
-			n.latency.WithLabelValues(u).Observe(float64(time.Since(begin)) / float64(time.Second))
+			n.latency.WithLabelValues(u).Observe(time.Since(begin).Seconds())
 			n.sent.WithLabelValues(u).Add(float64(len(alerts)))
 
 			wg.Done()

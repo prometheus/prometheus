@@ -596,6 +596,26 @@ const (
 	AT_SYMLINK_NOFOLLOW = 0x100
 )
 
+type PollFd struct {
+	Fd      int32
+	Events  int16
+	Revents int16
+}
+
+const (
+	POLLIN    = 0x1
+	POLLPRI   = 0x2
+	POLLOUT   = 0x4
+	POLLRDHUP = 0x2000
+	POLLERR   = 0x8
+	POLLHUP   = 0x10
+	POLLNVAL  = 0x20
+)
+
+type Sigset_t struct {
+	X__val [16]uint64
+}
+
 type Termios struct {
 	Iflag     uint32
 	Oflag     uint32

@@ -29,12 +29,22 @@ func (fl *windowsFileLock) release() error {
 	return syscall.Close(fl.fd)
 }
 
-func newFileLock(path string) (fl fileLock, err error) {
+func newFileLock(path string, readOnly bool) (fl fileLock, err error) {
 	pathp, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return
 	}
-	fd, err := syscall.CreateFile(pathp, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil, syscall.CREATE_ALWAYS, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	var access, shareMode uint32
+	if readOnly {
+		access = syscall.GENERIC_READ
+		shareMode = syscall.FILE_SHARE_READ
+	} else {
+		access = syscall.GENERIC_READ | syscall.GENERIC_WRITE
+	}
+	fd, err := syscall.CreateFile(pathp, access, shareMode, nil, syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	if err == syscall.ERROR_FILE_NOT_FOUND {
+		fd, err = syscall.CreateFile(pathp, access, shareMode, nil, syscall.OPEN_ALWAYS, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	}
 	if err != nil {
 		return
 	}
@@ -47,9 +57,8 @@ func moveFileEx(from *uint16, to *uint16, flags uint32) error {
 	if r1 == 0 {
 		if e1 != 0 {
 			return error(e1)
-		} else {
-			return syscall.EINVAL
 		}
+		return syscall.EINVAL
 	}
 	return nil
 }

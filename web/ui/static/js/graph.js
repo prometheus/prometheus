@@ -219,7 +219,9 @@ Prometheus.Graph.prototype.getOptions = function() {
   self.queryForm.find("input").each(function(index, element) {
     var name = element.name;
     if ($.inArray(name, optionInputs) >= 0) {
-      options[name] = element.value;
+      if (element.value.length > 0) {
+        options[name] = element.value;
+      }
     }
   });
   options.expr = self.expr.val();

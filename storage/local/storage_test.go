@@ -326,7 +326,10 @@ func TestFingerprintsForLabels(t *testing.T) {
 	}
 
 	for _, mt := range matcherTests {
-		resfps := storage.fingerprintsForLabelPairs(mt.pairs...)
+		var resfps map[model.Fingerprint]struct{}
+		for _, pair := range mt.pairs {
+			resfps = storage.fingerprintsForLabelPair(pair, nil, resfps)
+		}
 		if len(mt.expected) != len(resfps) {
 			t.Fatalf("expected %d matches for %q, found %d", len(mt.expected), mt.pairs, len(resfps))
 		}
@@ -467,7 +470,9 @@ func TestRetentionCutoff(t *testing.T) {
 	s.WaitForIndexing()
 
 	var fp model.Fingerprint
-	for f := range s.fingerprintsForLabelPairs(model.LabelPair{Name: "job", Value: "test"}) {
+	for f := range s.fingerprintsForLabelPair(model.LabelPair{
+		Name: "job", Value: "test",
+	}, nil, nil) {
 		fp = f
 		break
 	}
@@ -539,7 +544,9 @@ func TestDropMetrics(t *testing.T) {
 	s.persistence.archiveMetric(fpToBeArchived, m3, 0, insertStart.Add(time.Duration(N-1)*time.Millisecond))
 	s.fpLocker.Unlock(fpToBeArchived)
 
-	fps := s.fingerprintsForLabelPairs(model.LabelPair{Name: model.MetricNameLabel, Value: "test"})
+	fps := s.fingerprintsForLabelPair(model.LabelPair{
+		Name: model.MetricNameLabel, Value: "test",
+	}, nil, nil)
 	if len(fps) != 3 {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps))
 	}
@@ -549,9 +556,9 @@ func TestDropMetrics(t *testing.T) {
 	s.DropMetricsForFingerprints(fpList[0])
 	s.WaitForIndexing()
 
-	fps2 := s.fingerprintsForLabelPairs(model.LabelPair{
+	fps2 := s.fingerprintsForLabelPair(model.LabelPair{
 		Name: model.MetricNameLabel, Value: "test",
-	})
+	}, nil, nil)
 	if len(fps2) != 2 {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps2))
 	}
@@ -576,9 +583,9 @@ func TestDropMetrics(t *testing.T) {
 	s.DropMetricsForFingerprints(fpList...)
 	s.WaitForIndexing()
 
-	fps3 := s.fingerprintsForLabelPairs(model.LabelPair{
+	fps3 := s.fingerprintsForLabelPair(model.LabelPair{
 		Name: model.MetricNameLabel, Value: "test",
-	})
+	}, nil, nil)
 	if len(fps3) != 0 {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps3))
 	}
@@ -658,7 +665,9 @@ func TestQuarantineMetric(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fps := s.fingerprintsForLabelPairs(model.LabelPair{Name: model.MetricNameLabel, Value: "test"})
+	fps := s.fingerprintsForLabelPair(model.LabelPair{
+		Name: model.MetricNameLabel, Value: "test",
+	}, nil, nil)
 	if len(fps) != 3 {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps))
 	}
@@ -670,9 +679,9 @@ func TestQuarantineMetric(t *testing.T) {
 	time.Sleep(time.Second) // Give time to quarantine. TODO(beorn7): Find a better way to wait.
 	s.WaitForIndexing()
 
-	fps2 := s.fingerprintsForLabelPairs(model.LabelPair{
+	fps2 := s.fingerprintsForLabelPair(model.LabelPair{
 		Name: model.MetricNameLabel, Value: "test",
-	})
+	}, nil, nil)
 	if len(fps2) != 2 {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps2))
 	}

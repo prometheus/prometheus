@@ -91,10 +91,16 @@ func (f logFormatFlag) Set(format string) error {
 }
 
 func init() {
-	// In order for these flags to take effect, the user of the package must call
-	// flag.Parse() before logging anything.
-	flag.Var(levelFlag{}, "log.level", "Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal].")
-	flag.Var(logFormatFlag{}, "log.format", "If set use a syslog logger or JSON logging. Example: logger:syslog?appname=bob&local=7 or logger:stdout?json=true. Defaults to stderr.")
+	AddFlags(flag.CommandLine)
+}
+
+// AddFlags adds the flags used by this package to the given FlagSet. That's
+// useful if working with a custom FlagSet. The init function of this package
+// adds the flags to flag.CommandLine anyway. Thus, it's usually enough to call
+// flag.Parse() to make the logging flags take effect.
+func AddFlags(fs *flag.FlagSet) {
+	fs.Var(levelFlag{}, "log.level", "Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal].")
+	fs.Var(logFormatFlag{}, "log.format", "If set use a syslog logger or JSON logging. Example: logger:syslog?appname=bob&local=7 or logger:stdout?json=true. Defaults to stderr.")
 }
 
 type Logger interface {

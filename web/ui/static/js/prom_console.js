@@ -438,11 +438,11 @@ PromConsole.Graph.prototype._render = function(data) {
   // Get the data into the right format.
   var seriesLen = 0;
   for (var e = 0; e < data.length; e++) {
-    for (var i = 0; i < data[e].value.length; i++) {
+    for (var i = 0; i < data[e].data.result.length; i++) {
       series[seriesLen++] = {
-            data: data[e].value[i].values.map(function(s) { return {x: s[0], y: self._parseValue(s[1])}; }),
+            data: data[e].data.result[i].values.map(function(s) { return {x: s[0], y: self._parseValue(s[1])}; }),
             color: palette.color(),
-            name: self._escapeHTML(nameFuncs[e](data[e].value[i].metric)),
+            name: self._escapeHTML(nameFuncs[e](data[e].data.result[i].metric)),
       };
     }
   }
@@ -519,9 +519,9 @@ PromConsole.Graph.prototype.dispatch = function() {
   var pending_requests = this.params.expr.length;
   for (var i = 0; i < this.params.expr.length; ++i) {
     var endTime = this.params.endTime;
-    var url = PATH_PREFIX + "/api/query_range?expr=" + encodeURIComponent(this.params.expr[i]) +
+    var url = PATH_PREFIX + "/api/v1/query_range?query=" + encodeURIComponent(this.params.expr[i]) +
       "&step=" + this.params.duration / this.graphTd.offsetWidth + 
-      "&range=" + this.params.duration + "&end=" + endTime;
+      "&start=" + (endTime - this.params.duration) + "&end=" + endTime;
     var xhr = new XMLHttpRequest();
     xhr.open('get', url, true);
     xhr.responseType = 'json';
@@ -596,12 +596,12 @@ PromConsole._chooseNameFunction = function(data) {
   // If only one label varies, use that value.
   var labelValues = {};
   for (var e = 0; e < data.length; e++) {
-    for (var i = 0; i < data[e].value.length; i++) {
-      for (var label in data[e].value[i].metric) {
+    for (var i = 0; i < data[e].data.result.length; i++) {
+      for (var label in data[e].data.result[i].metric) {
         if (!(label in labelValues)) {
           labelValues[label] = {};
         }
-        labelValues[label][data[e].value[i].metric[label]] = 1;
+        labelValues[label][data[e].data.result[i].metric[label]] = 1;
       }
     }
   }

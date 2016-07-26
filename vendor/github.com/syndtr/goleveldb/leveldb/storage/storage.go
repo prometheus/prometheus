@@ -15,7 +15,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
-type FileType uint32
+type FileType int
 
 const (
 	TypeManifest FileType = 1 << iota
@@ -50,13 +50,13 @@ var (
 // a file. Package storage has its own type instead of using
 // errors.ErrCorrupted to prevent circular import.
 type ErrCorrupted struct {
-	File *FileInfo
-	Err  error
+	Fd  FileDesc
+	Err error
 }
 
 func (e *ErrCorrupted) Error() string {
-	if e.File != nil {
-		return fmt.Sprintf("%v [file=%v]", e.Err, e.File)
+	if !e.Fd.Nil() {
+		return fmt.Sprintf("%v [file=%v]", e.Err, e.Fd)
 	} else {
 		return e.Err.Error()
 	}
@@ -83,31 +83,47 @@ type Writer interface {
 	Syncer
 }
 
-// File is the file. A file instance must be goroutine-safe.
-type File interface {
-	// Open opens the file for read. Returns os.ErrNotExist error
-	// if the file does not exist.
-	// Returns ErrClosed if the underlying storage is closed.
-	Open() (r Reader, err error)
+type Lock interface {
+	util.Releaser
+}
 
-	// Create creates the file for writting. Truncate the file if
-	// already exist.
-	// Returns ErrClosed if the underlying storage is closed.
-	Create() (w Writer, err error)
+// FileDesc is a file descriptor.
+type FileDesc struct {
+	Type FileType
+	Num  int64
+}
 
-	// Replace replaces file with newfile.
-	// Returns ErrClosed if the underlying storage is closed.
-	Replace(newfile File) error
+func (fd FileDesc) String() string {
+	switch fd.Type {
+	case TypeManifest:
+		return fmt.Sprintf("MANIFEST-%06d", fd.Num)
+	case TypeJournal:
+		return fmt.Sprintf("%06d.log", fd.Num)
+	case TypeTable:
+		return fmt.Sprintf("%06d.ldb", fd.Num)
+	case TypeTemp:
+		return fmt.Sprintf("%06d.tmp", fd.Num)
+	default:
+		return fmt.Sprintf("%#x-%d", fd.Type, fd.Num)
+	}
+}
 
-	// Type returns the file type
-	Type() FileType
+// Nil returns true if fd == (FileDesc{}).
+func (fd FileDesc) Nil() bool {
+	return fd == (FileDesc{})
+}
 
-	// Num returns the file number.
-	Num() uint64
-
-	// Remove removes the file.
-	// Returns ErrClosed if the underlying storage is closed.
-	Remove() error
+// FileDescOk returns true if fd is a valid file descriptor.
+func FileDescOk(fd FileDesc) bool {
+	switch fd.Type {
+	case TypeManifest:
+	case TypeJournal:
+	case TypeTable:
+	case TypeTemp:
+	default:
+		return false
+	}
+	return fd.Num >= 0
 }
 
 // Storage is the storage. A storage instance must be goroutine-safe.
@@ -115,59 +131,47 @@ type Storage interface {
 	// Lock locks the storage. Any subsequent attempt to call Lock will fail
 	// until the last lock released.
 	// After use the caller should call the Release method.
-	Lock() (l util.Releaser, err error)
+	Lock() (Lock, error)
 
-	// Log logs a string. This is used for logging. An implementation
-	// may write to a file, stdout or simply do nothing.
+	// Log logs a string. This is used for logging.
+	// An implementation may write to a file, stdout or simply do nothing.
 	Log(str string)
 
-	// GetFile returns a file for the given number and type. GetFile will never
-	// returns nil, even if the underlying storage is closed.
-	GetFile(num uint64, t FileType) File
+	// SetMeta sets to point to the given fd, which then can be acquired using
+	// GetMeta method.
+	// SetMeta should be implemented in such way that changes should happened
+	// atomically.
+	SetMeta(fd FileDesc) error
 
-	// GetFiles returns a slice of files that match the given file types.
+	// GetManifest returns a manifest file.
+	// Returns os.ErrNotExist if meta doesn't point to any fd, or point to fd
+	// that doesn't exist.
+	GetMeta() (FileDesc, error)
+
+	// List returns fds that match the given file types.
 	// The file types may be OR'ed together.
-	GetFiles(t FileType) ([]File, error)
+	List(ft FileType) ([]FileDesc, error)
 
-	// GetManifest returns a manifest file. Returns os.ErrNotExist if manifest
-	// file does not exist.
-	GetManifest() (File, error)
+	// Open opens file with the given fd read-only.
+	// Returns os.ErrNotExist error if the file does not exist.
+	// Returns ErrClosed if the underlying storage is closed.
+	Open(fd FileDesc) (Reader, error)
 
-	// SetManifest sets the given file as manifest file. The given file should
-	// be a manifest file type or error will be returned.
-	SetManifest(f File) error
+	// Create creates file with the given fd, truncate if already exist and
+	// opens write-only.
+	// Returns ErrClosed if the underlying storage is closed.
+	Create(fd FileDesc) (Writer, error)
 
-	// Close closes the storage. It is valid to call Close multiple times.
-	// Other methods should not be called after the storage has been closed.
+	// Remove removes file with the given fd.
+	// Returns ErrClosed if the underlying storage is closed.
+	Remove(fd FileDesc) error
+
+	// Rename renames file from oldfd to newfd.
+	// Returns ErrClosed if the underlying storage is closed.
+	Rename(oldfd, newfd FileDesc) error
+
+	// Close closes the storage.
+	// It is valid to call Close multiple times. Other methods should not be
+	// called after the storage has been closed.
 	Close() error
-}
-
-// FileInfo wraps basic file info.
-type FileInfo struct {
-	Type FileType
-	Num  uint64
-}
-
-func (fi FileInfo) String() string {
-	switch fi.Type {
-	case TypeManifest:
-		return fmt.Sprintf("MANIFEST-%06d", fi.Num)
-	case TypeJournal:
-		return fmt.Sprintf("%06d.log", fi.Num)
-	case TypeTable:
-		return fmt.Sprintf("%06d.ldb", fi.Num)
-	case TypeTemp:
-		return fmt.Sprintf("%06d.tmp", fi.Num)
-	default:
-		return fmt.Sprintf("%#x-%d", fi.Type, fi.Num)
-	}
-}
-
-// NewFileInfo creates new FileInfo from the given File. It will returns nil
-// if File is nil.
-func NewFileInfo(f File) *FileInfo {
-	if f == nil {
-		return nil
-	}
-	return &FileInfo{f.Type(), f.Num()}
 }
