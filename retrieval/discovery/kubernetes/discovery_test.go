@@ -117,9 +117,11 @@ func pod(name string, containers []Container) *Pod {
 					Status: "True",
 				},
 			},
+			HostIP: "2.2.2.2",
 		},
 		PodSpec: PodSpec{
 			Containers: c,
+			NodeName:   "test-node",
 		},
 	}
 }
@@ -147,6 +149,12 @@ func TestUpdatePodTargets(t *testing.T) {
 			t.Fatalf("expected 0 targets, received %d", len(result))
 		}
 
+		// Return no targets for a pod that has no HostIP
+		result = updatePodTargets(&Pod{PodStatus: PodStatus{PodIP: "1.1.1.1", Phase: "Running"}}, true)
+		if len(result) > 0 {
+			t.Fatalf("expected 0 targets, received %d", len(result))
+		}
+
 		// A pod with all valid containers should return one target per container with allContainers=true
 		result = updatePodTargets(pod("easy", []Container{container("a", portsA), container("b", portsB)}), true)
 		if len(result) != 2 {
@@ -166,6 +174,12 @@ func TestUpdatePodTargets(t *testing.T) {
 		}
 		if result[1][podContainerPortMapPrefix+"https"] != "443" {
 			t.Fatalf("expected result[1][podContainerPortMapPrefix + 'https'] to be '443', but was %s", result[1][podContainerPortMapPrefix+"https"])
+		}
+		if result[0][podNodeNameLabel] != "test-node" {
+			t.Fatalf("expected result[0] podNodeNameLabel 'test-node', received '%s'", result[0][podNodeNameLabel])
+		}
+		if result[0][podHostIPLabel] != "2.2.2.2" {
+			t.Fatalf("expected result[0] podHostIPLabel '2.2.2.2', received '%s'", result[0][podHostIPLabel])
 		}
 
 		// A pod with all valid containers should return one target with allContainers=false, and it should be the alphabetically first container
