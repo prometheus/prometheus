@@ -1,0 +1,40 @@
+global:
+  scrape_interval:     15s # By default, scrape targets every 15 seconds.
+
+  # Attach these labels to any time series or alerts when communicating with
+  # external systems (federation, remote storage, Alertmanager).
+  external_labels:
+    monitor: 'mesos-cluster'
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  - job_name: 'slaves'
+    # if you have mesos dns configured on the machine running 
+    # prometheus you can use dns to find all nodes to pull from
+    dns_sd_configs:
+      - 
+       names:
+        - slave.mesos
+       type: 'A'
+       # port to pull from
+       # default port for node exporter
+       port: 9100
+  
+  # find the master nodes
+  - job_name: 'masters'
+    dns_sd_configs:
+     - 
+      names:
+        - master.mesos
+      type: 'A'
+      port: 9100
+
+  # pull in apps from marathon
+  - job_name: 'marathon-apps'
+    marathon_sd_configs:
+     -
+      servers:
+        # mesos dns will resolve the marathon master
+        # 8080 is the default port for marathon
+        - 'http://marathon.mesos:8080'
