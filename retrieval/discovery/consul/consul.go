@@ -57,6 +57,7 @@ type Discovery struct {
 	clientDatacenter string
 	tagSeparator     string
 	watchedServices  []string // Set of services which will be discovered.
+	watchedTags      []string
 }
 
 // NewDiscovery returns a new Discovery for the given config.
@@ -80,6 +81,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 		clientConf:      clientConf,
 		tagSeparator:    conf.TagSeparator,
 		watchedServices: conf.Services,
+		watchedTags:     conf.Tags,
 	}
 	// If the datacenter isn't set in the clientConf, let's get it from the local Consul agent
 	// (Consul default is to use local node's datacenter if one isn't given for a query).
@@ -103,6 +105,29 @@ func (cd *Discovery) shouldWatch(name string) bool {
 	}
 	for _, sn := range cd.watchedServices {
 		if sn == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (cd *Discovery) shouldWatchTag(tag string) bool {
+	for _, tn := range cd.watchedTags {
+		if tn == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldWatchTags returns whether the service with the given tags should be watched.
+func (cd *Discovery) shouldWatchTags(tags []string) bool {
+	// If there's no fixed set of watched tags, we watch everything.
+	if len(cd.watchedTags) == 0 {
+		return true
+	}
+	for _, t := range tags {
+		if cd.shouldWatchTag(t) {
 			return true
 		}
 	}
@@ -144,10 +169,15 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		lastIndex = meta.LastIndex
 
 		// Check for new services.
-		for name := range srvs {
+		for name, tags := range srvs {
 			if !cd.shouldWatch(name) {
 				continue
 			}
+
+			if !cd.shouldWatchTags(tags) {
+				continue
+			}
+
 			if _, ok := services[name]; ok {
 				continue // We are already watching the service.
 			}
