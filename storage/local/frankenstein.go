@@ -287,6 +287,9 @@ func (i *Ingestor) loop() {
 }
 
 func (i *Ingestor) flushAllSeries(immediate bool) {
+	if i.chunkStore == nil {
+		return
+	}
 	for pair := range i.fpToSeries.iter() {
 		if err := i.flushSeries(pair.fp, pair.series, immediate); err != nil {
 			log.Errorf("Failed to flush chunks for series: %v", err)

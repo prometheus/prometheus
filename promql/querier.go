@@ -20,15 +20,8 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// A SeriesIterator combines a local.SeriesIterator together with the metric
-// that corresponds to the iterator.
-type SeriesIterator interface {
-	local.SeriesIterator
-	Metric() model.Metric
-}
-
 // A Querier provides a map of series iterators given a time range and label
 // matchers.
 type Querier interface {
-	Query(from, to model.Time, matchers ...*metric.LabelMatcher) (map[model.Fingerprint]SeriesIterator, error)
+	Query(from, to model.Time, matchers ...*metric.LabelMatcher) (map[model.Fingerprint]local.MetricSeriesIterator, error)
 }

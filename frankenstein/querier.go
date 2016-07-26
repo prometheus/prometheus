@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/remote/generic"
@@ -195,8 +194,8 @@ type MergeQuerier struct {
 
 // Query fetches series for a given time range and label matchers from multiple
 // promql.Queriers and returns the merged results as a map of series iterators.
-func (qm MergeQuerier) Query(from, to model.Time, matchers ...*metric.LabelMatcher) (map[model.Fingerprint]promql.SeriesIterator, error) {
-	iterators := map[model.Fingerprint]promql.SeriesIterator{}
+func (qm MergeQuerier) Query(from, to model.Time, matchers ...*metric.LabelMatcher) (map[model.Fingerprint]local.MetricSeriesIterator, error) {
+	iterators := map[model.Fingerprint]local.MetricSeriesIterator{}
 
 	// Fetch samples from all queriers and group them by fingerprint (unsorted
 	// and with overlap).
