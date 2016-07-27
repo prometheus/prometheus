@@ -178,6 +178,11 @@
 			"revisionTime": "2016-02-29T21:34:45Z"
 		},
 		{
+			"path": "github.com/bradfitz/gomemcache/memcache",
+			"revision": "fb1f79c6b65acda83063cbc69f6bba1522558bfc",
+			"revisionTime": "2016-01-17T11:21:50-08:00"
+		},
+		{
 			"checksumSHA1": "1LWe3iDPpInibsVD1TzbTWSDXFc=",
 			"path": "github.com/dgrijalva/jwt-go",
 			"revision": "9a4b9f2ac1f7685147a5c01544e3b922dbc1f4a0",

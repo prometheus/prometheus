@@ -53,6 +53,10 @@ func main() {
 		s3URL                string
 		dynamodbURL          string
 		dynamodbCreateTables bool
+		memcachedHostname    string
+		memcachedTimeout     time.Duration
+		memcachedExpiration  time.Duration
+		memcachedService     string
 		remoteTimeout        time.Duration
 	)
 
@@ -63,7 +67,11 @@ func main() {
 	flag.StringVar(&s3URL, "s3.url", "localhost:4569", "S3 endpoint URL.")
 	flag.StringVar(&dynamodbURL, "dynamodb.url", "localhost:8000", "DynamoDB endpoint URL.")
 	flag.BoolVar(&dynamodbCreateTables, "dynamodb.create-tables", false, "Create required DynamoDB tables on startup.")
-	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream injestors.")
+	flag.StringVar(&memcachedHostname, "memcached.hostname", "", "Hostname for memcached service to use when caching chunks. If empty, no memcached will be used.")
+	flag.DurationVar(&memcachedTimeout, "memcached.timeout", 100*time.Millisecond, "Maximum time to wait before giving up on memcached requests.")
+	flag.DurationVar(&memcachedExpiration, "memcached.expiration", 2*15*time.Second, "How long chunks stay in the memcache.")
+	flag.StringVar(&memcachedService, "memcached.service", "memcached", "SRV service used to discover memcache servers.")
+	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream ingestors.")
 	flag.Parse()
 
 	consul, err := frankenstein.NewConsulClient(consulHost)
@@ -71,9 +79,19 @@ func main() {
 		log.Fatalf("Error initializing Consul client: %v", err)
 	}
 
+	var memcache *frankenstein.MemcacheClient
+	if memcachedHostname != "" {
+		memcache = frankenstein.NewMemcacheClient(frankenstein.MemcacheConfig{
+			Host:           memcachedHostname,
+			Service:        memcachedService,
+			Timeout:        memcachedTimeout,
+			UpdateInterval: 1 * time.Minute,
+		})
+	}
 	chunkStore, err := frankenstein.NewAWSChunkStore(frankenstein.ChunkStoreConfig{
-		S3URL:       s3URL,
-		DynamoDBURL: dynamodbURL,
+		S3URL:          s3URL,
+		DynamoDBURL:    dynamodbURL,
+		MemcacheClient: memcache,
 	})
 	if err != nil {
 		log.Fatal(err)
