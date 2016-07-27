@@ -3,8 +3,7 @@ sudo: false
 language: go
 
 go:
-- 1.5.4
-- 1.6.2
+- 1.6.3
 
 script:
 - make check_license style test
