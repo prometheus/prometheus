@@ -1,0 +1,19 @@
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's services registered in consul.
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: 'consul-services'
+
+    # Override the global default and scrape targets from this job every 5 seconds.
+    scrape_interval: 5s
+
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: "services-with-metrics-tag"
+    consul_sd_configs:
+    - server:   '127.0.0.1:8500'
+      tags: ["metrics"]

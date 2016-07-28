@@ -659,6 +659,7 @@ type ConsulSDConfig struct {
 	// The list of services for which targets are discovered.
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
+	Tags     []string `yaml:"tags"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
