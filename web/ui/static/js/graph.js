@@ -8,6 +8,7 @@ Handlebars.registerHelper('pathPrefix', function() { return PATH_PREFIX; });
 
 Prometheus.Graph = function(element, options) {
   this.el = element;
+  this.graphHtml = null;
   this.options = options;
   this.changeHandler = null;
   this.rickshawGraph = null;
@@ -45,8 +46,8 @@ Prometheus.Graph.prototype.initialize = function() {
 
   // Draw graph controls and container from Handlebars template.
 
-  var graphHtml = graphTemplate(self.options);
-  self.el.append(graphHtml);
+  self.graphHtml = $(graphTemplate(self.options));
+  self.el.append(self.graphHtml);
 
   // Get references to all the interesting elements in the graph container and
   // bind event handlers.
@@ -162,6 +163,12 @@ Prometheus.Graph.prototype.initialize = function() {
   self.insertMetric.change(function() {
     self.expr.selection("replace", {text: self.insertMetric.val(), mode: "before"});
     self.expr.focus(); // refocusing
+  });
+
+  var removeBtn = graphWrapper.find("[name=remove]");
+  removeBtn.click(function() {
+    self.remove();
+    return false;
   });
 
   self.populateInsertableMetrics();
@@ -610,6 +617,13 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
     self.showError("Unsupported value type!");
     break;
   }
+};
+
+Prometheus.Graph.prototype.remove = function() {
+  var self = this;
+  $(self.graphHtml).remove();
+  graphs = graphs.filter(function(e) {return e !== self});
+  storeGraphOptionsInURL();
 };
 
 function parseGraphOptionsFromURL() {
