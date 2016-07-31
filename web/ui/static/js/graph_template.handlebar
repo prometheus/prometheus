@@ -124,5 +124,10 @@
                 </div>
               </div>
             </div>
+            <div class="row">
+              <div class="col-lg-12 text-right">
+                    <a name="remove" href="#">Remove Graph</a>
+              </div>
+            </div>
           </form>
         </div>
