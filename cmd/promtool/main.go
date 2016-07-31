@@ -19,7 +19,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,15 +31,19 @@ import (
 	"github.com/prometheus/prometheus/util/cli"
 )
 
-var (
-	server  = flag.String("server", "http://localhost:9090", "URL of the Prometheus server to query (default http://localhost:9090)")
-	timeout = flag.Duration("timeout", time.Minute, "Timeout to use when querying the Prometheus server (default 1m0s)")
-)
-
 // Query returns metrics from the prometheus server.
 func Query(t cli.Term, args ...string) int {
-	if len(args) == 0 {
+	var (
+		flag = flag.NewFlagSet("flag", flag.ContinueOnError)
+
+		server    = flag.String("server", "http://localhost:9090", "URL of the Prometheus server to query")
+		timeout   = flag.Duration("timeout", time.Minute, "Timeout to use when querying the Prometheus server")
+		timestamp = flag.Int64("timestamp", time.Now().UnixNano(), "Timestamp to the expression")
+	)
+
+	if err := flag.Parse(os.Args[1:]); err != nil || len(args) == 0 {
 		t.Infof("usage: promtool [flags] query <expression>")
+		flag.PrintDefaults()
 		return 2
 	}
 
@@ -57,7 +60,7 @@ func Query(t cli.Term, args ...string) int {
 	}
 
 	api := prometheus.NewQueryAPI(client)
-	result, err := api.Query(ctx, args[0], time.Now())
+	result, err := api.Query(ctx, args[0], time.Unix(0, *timestamp))
 	if err != nil {
 		t.Errorf(" FAILED: %s", err)
 		return 1
@@ -69,8 +72,19 @@ func Query(t cli.Term, args ...string) int {
 
 // QueryRange returns range metrics from the prometheus server.
 func QueryRange(t cli.Term, args ...string) int {
-	if len(args) < 3 {
-		t.Infof("usage: promtool [flags] query_range <expression> <end_timestamp> <range_seconds> [<step_seconds>]")
+	var (
+		flag = flag.NewFlagSet("flag", flag.ContinueOnError)
+
+		server       = flag.String("server", "http://localhost:9090", "URL of the Prometheus server to query")
+		timeout      = flag.Duration("timeout", time.Minute, "Timeout to use when querying the Prometheus server")
+		endTimestamp = flag.Int64("end_timestamp", time.Now().AddDate(0, 0, -7).UnixNano(), "Timeout to use when querying the Prometheus server")
+		rangeSeconds = flag.Uint64("range_seconds", 8000, "Timeout to use when querying the Prometheus server")
+		stepSeconds  = flag.Uint64("step_seconds", (*rangeSeconds / 250), "Timeout to use when querying the Prometheus server")
+	)
+
+	if err := flag.Parse(os.Args[1:]); err != nil || len(args) == 0 {
+		t.Infof("usage: promtool [flags] query_range <expression>")
+		flag.PrintDefaults()
 		return 2
 	}
 
@@ -86,38 +100,12 @@ func QueryRange(t cli.Term, args ...string) int {
 		return 1
 	}
 
-	end, err := strconv.ParseInt(args[1], 10, 64)
-	if err != nil {
-		t.Errorf(" FAILED: %s", err)
-		return 1
-	}
-
-	rangeSeconds, err := strconv.ParseUint(args[2], 10, 64)
-	if err != nil {
-		t.Errorf(" FAILED: %s", err)
-		return 1
-	}
-
-	var step uint64
-	if len(args) == 4 {
-		step, err = strconv.ParseUint(args[3], 10, 64)
-		if err != nil {
-			t.Errorf(" FAILED: %s", err)
-			return 1
-		}
-	} else {
-		step = rangeSeconds / 250
-	}
-	if step < 1 {
-		step = 1
-	}
-
-	endTime := time.Unix(end, 0)
-	duration := time.Duration(rangeSeconds * uint64(time.Second/time.Nanosecond))
+	endTime := time.Unix(0, *endTimestamp)
+	duration := time.Duration(*rangeSeconds * uint64(time.Second/time.Nanosecond))
 	timeRange := prometheus.Range{
 		End:   endTime,
 		Start: endTime.Add(-duration),
-		Step:  time.Duration(step * uint64(time.Second/time.Nanosecond)),
+		Step:  time.Duration(*stepSeconds * uint64(time.Second/time.Nanosecond)),
 	}
 
 	api := prometheus.NewQueryAPI(client)
@@ -294,7 +282,6 @@ func VersionCmd(t cli.Term, _ ...string) int {
 }
 
 func main() {
-	flag.Parse()
 	app := cli.NewApp("promtool")
 
 	app.Register("check-config", &cli.Command{
