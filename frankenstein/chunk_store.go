@@ -74,8 +74,9 @@ type ChunkStore interface {
 
 // ChunkStoreConfig specifies config for a ChunkStore
 type ChunkStoreConfig struct {
-	S3URL       string
-	DynamoDBURL string
+	S3URL          string
+	DynamoDBURL    string
+	MemcacheClient *MemcacheClient
 }
 
 // NewAWSChunkStore makes a new ChunkStore
@@ -106,6 +107,7 @@ func NewAWSChunkStore(cfg ChunkStoreConfig) (*AWSChunkStore, error) {
 	return &AWSChunkStore{
 		dynamodb:   dynamodb.New(session.New(dynamoDBConfig)),
 		s3:         s3.New(session.New(s3Config)),
+		memcache:   cfg.MemcacheClient,
 		tableName:  tableName,
 		bucketName: bucketName,
 	}, nil
@@ -130,6 +132,7 @@ func awsConfigFromURL(url *url.URL) (*aws.Config, error) {
 type AWSChunkStore struct {
 	dynamodb   *dynamodb.DynamoDB
 	s3         *s3.S3
+	memcache   *MemcacheClient
 	tableName  string
 	bucketName string
 	cfg        ChunkStoreConfig
@@ -211,6 +214,12 @@ func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
 		if err != nil {
 			return err
 		}
+
+		if c.memcache != nil {
+			if err = c.memcache.StoreChunkData(&chunk); err != nil {
+				log.Warnf("Could not store %v in memcache: %v", chunk.ID, err)
+			}
+		}
 	}
 
 	writeReqs := []*dynamodb.WriteRequest{}
@@ -263,11 +272,34 @@ func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
 
 // Get implements ChunkStore
 func (c *AWSChunkStore) Get(from, through model.Time, matchers ...*metric.LabelMatcher) ([]wire.Chunk, error) {
-	chunks, err := c.lookupChunks(from, through, matchers)
+	missing, err := c.lookupChunks(from, through, matchers)
 	if err != nil {
 		return nil, err
 	}
-	return c.fetchChunkData(chunks)
+
+	var fromMemcache []wire.Chunk
+	if c.memcache != nil {
+		fromMemcache, missing, err = c.memcache.FetchChunkData(missing)
+		if err != nil {
+			log.Warnf("Error fetching from cache: %v", err)
+		}
+	}
+
+	fromS3, err := c.fetchChunkData(missing)
+	if err != nil {
+		return nil, err
+	}
+
+	if c.memcache != nil {
+		for _, chunk := range fromS3 {
+			// TODO: Parallelize?
+			if err = c.memcache.StoreChunkData(&chunk); err != nil {
+				log.Warnf("Could not store %v in memcache: %v", chunk.ID, err)
+			}
+		}
+	}
+
+	return append(fromMemcache, fromS3...), nil
 }
 
 func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metric.LabelMatcher) ([]wire.Chunk, error) {
