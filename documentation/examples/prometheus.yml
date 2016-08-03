@@ -9,7 +9,7 @@ global:
   external_labels:
       monitor: 'codelab-monitor'
 
-# Load and evaluate rules in this file every 'evaluation_interval' seconds.
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
 rule_files:
   # - "first.rules"
   # - "second.rules"
