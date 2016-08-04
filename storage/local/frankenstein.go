@@ -23,6 +23,19 @@ const (
 	UserIDContextKey = "FrankensteinUserID" // TODO dedupe with copy in frankenstein/
 )
 
+var (
+	memorySeriesDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, subsystem, "memory_series"),
+		"The current number of series in memory.",
+		nil, nil,
+	)
+	memoryUsersDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, subsystem, "memory_users"),
+		"The current number of users in memory.",
+		nil, nil,
+	)
+)
+
 // Ingestor deals with "in flight" chunks.
 // Its like MemorySeriesStorage, but simpler.
 type Ingestor struct {
@@ -446,6 +459,8 @@ func (i *Ingestor) Describe(ch chan<- *prometheus.Desc) {
 	}
 	i.userStateLock.Unlock()
 
+	ch <- memorySeriesDesc
+	ch <- memoryUsersDesc
 	ch <- i.ingestedSamples.Desc()
 	i.discardedSamples.Describe(ch)
 	ch <- i.storedChunks.Desc()
@@ -457,11 +472,24 @@ func (i *Ingestor) Describe(ch chan<- *prometheus.Desc) {
 // Collect implements prometheus.Collector.
 func (i *Ingestor) Collect(ch chan<- prometheus.Metric) {
 	i.userStateLock.Lock()
+	numUsers := len(i.userState)
+	numSeries := 0
 	for _, state := range i.userState {
 		state.mapper.Collect(ch)
+		numSeries += state.fpToSeries.length()
 	}
 	i.userStateLock.Unlock()
 
+	ch <- prometheus.MustNewConstMetric(
+		memorySeriesDesc,
+		prometheus.GaugeValue,
+		float64(numSeries),
+	)
+	ch <- prometheus.MustNewConstMetric(
+		memoryUsersDesc,
+		prometheus.GaugeValue,
+		float64(numUsers),
+	)
 	ch <- i.ingestedSamples
 	i.discardedSamples.Collect(ch)
 	ch <- i.storedChunks
