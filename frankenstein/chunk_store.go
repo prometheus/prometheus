@@ -29,17 +29,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/frankenstein/wire"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
 const (
-	hashKey    = "h"
-	rangeKey   = "r"
-	chunkKey   = "c"
-	minChunkID = "0000000000000000"
-	maxChunkID = "FFFFFFFFFFFFFFFF"
+	hashKey          = "h"
+	rangeKey         = "r"
+	chunkKey         = "c"
+	minChunkID       = "0000000000000000"
+	maxChunkID       = "FFFFFFFFFFFFFFFF"
+	UserIDContextKey = "FrankensteinUserID" // TODO dedupe with storage/local
 
 	// See http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html.
 	dynamoMaxBatchSize = 25
@@ -131,6 +133,14 @@ func awsConfigFromURL(url *url.URL) (*aws.Config, error) {
 	return config, nil
 }
 
+func userID(ctx context.Context) (string, error) {
+	userid, ok := ctx.Value(UserIDContextKey).(string)
+	if !ok {
+		return "", fmt.Errorf("No user id")
+	}
+	return userid, nil
+}
+
 // AWSChunkStore implements ChunkStore for AWS
 type AWSChunkStore struct {
 	dynamodb   *dynamodb.DynamoDB
@@ -202,7 +212,12 @@ func bigBuckets(from, through model.Time) []int64 {
 }
 
 // Put implements ChunkStore
-func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
+func (c *AWSChunkStore) Put(ctx context.Context, chunks []wire.Chunk) error {
+	userID, err := userID(ctx)
+	if err != nil {
+		return err
+	}
+
 	// TODO: parallelise
 	for _, chunk := range chunks {
 		err := timeRequest("Put", s3RequestDuration, func() error {
@@ -210,7 +225,7 @@ func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
 			_, err = c.s3.PutObject(&s3.PutObjectInput{
 				Body:   bytes.NewReader(chunk.Data),
 				Bucket: aws.String(c.bucketName),
-				Key:    aws.String(chunk.ID),
+				Key:    aws.String(fmt.Sprintf("%s/%s", userID, chunk.ID)),
 			})
 			return err
 		})
@@ -219,7 +234,7 @@ func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
 		}
 
 		if c.memcache != nil {
-			if err = c.memcache.StoreChunkData(&chunk); err != nil {
+			if err = c.memcache.StoreChunkData(userID, &chunk); err != nil {
 				log.Warnf("Could not store %v in memcache: %v", chunk.ID, err)
 			}
 		}
@@ -238,7 +253,7 @@ func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
 		}
 
 		for _, hour := range bigBuckets(chunk.From, chunk.Through) {
-			hashValue := fmt.Sprintf("%d:%s", hour, metricName)
+			hashValue := fmt.Sprintf("%s:%d:%s", userID, hour, metricName)
 
 			for label, value := range chunk.Metric {
 				// TODO escaping
@@ -275,7 +290,7 @@ func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
 			return err
 		})
 		for _, cc := range resp.ConsumedCapacity {
-			dynamoConsumedCapacity.WithLabelValues("PutItem").
+			dynamoConsumedCapacity.WithLabelValues("BatchWriteItem").
 				Add(float64(*cc.CapacityUnits))
 		}
 		if err != nil {
@@ -286,21 +301,26 @@ func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
 }
 
 // Get implements ChunkStore
-func (c *AWSChunkStore) Get(from, through model.Time, matchers ...*metric.LabelMatcher) ([]wire.Chunk, error) {
-	missing, err := c.lookupChunks(from, through, matchers)
+func (c *AWSChunkStore) Get(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]wire.Chunk, error) {
+	userID, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	missing, err := c.lookupChunks(userID, from, through, matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	var fromMemcache []wire.Chunk
 	if c.memcache != nil {
-		fromMemcache, missing, err = c.memcache.FetchChunkData(missing)
+		fromMemcache, missing, err = c.memcache.FetchChunkData(userID, missing)
 		if err != nil {
 			log.Warnf("Error fetching from cache: %v", err)
 		}
 	}
 
-	fromS3, err := c.fetchChunkData(missing)
+	fromS3, err := c.fetchChunkData(userID, missing)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +328,7 @@ func (c *AWSChunkStore) Get(from, through model.Time, matchers ...*metric.LabelM
 	if c.memcache != nil {
 		for _, chunk := range fromS3 {
 			// TODO: Parallelize?
-			if err = c.memcache.StoreChunkData(&chunk); err != nil {
+			if err = c.memcache.StoreChunkData(userID, &chunk); err != nil {
 				log.Warnf("Could not store %v in memcache: %v", chunk.ID, err)
 			}
 		}
@@ -317,7 +337,7 @@ func (c *AWSChunkStore) Get(from, through model.Time, matchers ...*metric.LabelM
 	return append(fromMemcache, fromS3...), nil
 }
 
-func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metric.LabelMatcher) ([]wire.Chunk, error) {
+func (c *AWSChunkStore) lookupChunks(userID string, from, through model.Time, matchers []*metric.LabelMatcher) ([]wire.Chunk, error) {
 	var metricName model.LabelValue
 	for _, matcher := range matchers {
 		if matcher.Name == model.MetricNameLabel && matcher.Type == metric.Equal {
@@ -334,7 +354,7 @@ func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metri
 	buckets := bigBuckets(from, through)
 	for _, hour := range buckets {
 		// TODO: probably better to abort everything using contexts on the first error.
-		go c.lookupChunksFor(hour, metricName, matchers, incomingChunkSets, incomingErrors)
+		go c.lookupChunksFor(userID, hour, metricName, matchers, incomingChunkSets, incomingErrors)
 	}
 
 	chunkSets := []wire.Chunk{}
@@ -353,7 +373,7 @@ func (c *AWSChunkStore) lookupChunks(from, through model.Time, matchers []*metri
 	return chunkSets, nil
 }
 
-func (c *AWSChunkStore) lookupChunksFor(hour int64, metricName model.LabelValue, matchers []*metric.LabelMatcher, incomingChunkSets chan []wire.Chunk, incomingErrors chan error) {
+func (c *AWSChunkStore) lookupChunksFor(userID string, hour int64, metricName model.LabelValue, matchers []*metric.LabelMatcher, incomingChunkSets chan []wire.Chunk, incomingErrors chan error) {
 	var chunkSets [][]wire.Chunk
 	for _, matcher := range matchers {
 		// TODO build support for other matchers
@@ -363,7 +383,7 @@ func (c *AWSChunkStore) lookupChunksFor(hour int64, metricName model.LabelValue,
 		}
 
 		// TODO escaping - this will break if label values contain the separator (:)
-		hashValue := fmt.Sprintf("%d:%s", hour, metricName)
+		hashValue := fmt.Sprintf("%s:%d:%s", userID, hour, metricName)
 		rangeMinValue := fmt.Sprintf("%s=%s:%s", matcher.Name, matcher.Value, minChunkID)
 		rangeMaxValue := fmt.Sprintf("%s=%s:%s", matcher.Name, matcher.Value, maxChunkID)
 
@@ -436,7 +456,7 @@ func (c *AWSChunkStore) lookupChunksFor(hour int64, metricName model.LabelValue,
 	incomingChunkSets <- nWayIntersect(chunkSets)
 }
 
-func (c *AWSChunkStore) fetchChunkData(chunkSet []wire.Chunk) ([]wire.Chunk, error) {
+func (c *AWSChunkStore) fetchChunkData(userID string, chunkSet []wire.Chunk) ([]wire.Chunk, error) {
 	incomingChunks := make(chan wire.Chunk)
 	incomingErrors := make(chan error)
 	for _, chunk := range chunkSet {
@@ -446,7 +466,7 @@ func (c *AWSChunkStore) fetchChunkData(chunkSet []wire.Chunk) ([]wire.Chunk, err
 				var err error
 				resp, err = c.s3.GetObject(&s3.GetObjectInput{
 					Bucket: aws.String(c.bucketName),
-					Key:    aws.String(chunk.ID),
+					Key:    aws.String(fmt.Sprintf("%s/%s", userID, chunk.ID)),
 				})
 				return err
 			})

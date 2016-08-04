@@ -19,15 +19,15 @@ import (
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
 // An IngesterClient groups functionality for writing to and reading from a
 // single ingester.
 type IngesterClient struct {
-	Appender storage.SampleAppender
+	Appender SampleAppender
 	Querier  Querier
 }
 
@@ -111,7 +111,7 @@ func (d *Distributor) getClientFor(hostname string) (*IngesterClient, error) {
 }
 
 // Append implements SampleAppender.
-func (d *Distributor) Append(sample *model.Sample) error {
+func (d *Distributor) Append(ctx context.Context, sample *model.Sample) error {
 	key := model.SignatureForLabels(sample.Metric, model.MetricNameLabel)
 	collector, err := d.ring.Get(uint64(key))
 	if err != nil {
@@ -122,7 +122,7 @@ func (d *Distributor) Append(sample *model.Sample) error {
 	if err != nil {
 		return err
 	}
-	return client.Appender.Append(sample)
+	return client.Appender.Append(ctx, sample)
 }
 
 func metricNameFromLabelMatchers(matchers ...*metric.LabelMatcher) (model.LabelValue, error) {
@@ -162,6 +162,6 @@ func (d *Distributor) Query(from, to model.Time, matchers ...*metric.LabelMatche
 }
 
 // NeedsThrottling implements SampleAppender.
-func (*Distributor) NeedsThrottling() bool {
+func (*Distributor) NeedsThrottling(_ context.Context) bool {
 	return false
 }
