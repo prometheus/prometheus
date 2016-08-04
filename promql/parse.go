@@ -953,11 +953,11 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 			}
 		}
 		// Set name label matching.
-		matchers = append(matchers, &metric.LabelMatcher{
-			Type:  metric.Equal,
-			Name:  model.MetricNameLabel,
-			Value: model.LabelValue(name),
-		})
+		m, err := metric.NewLabelMatcher(metric.Equal, model.MetricNameLabel, model.LabelValue(name))
+		if err != nil {
+			panic(err) // Must not happen with metric.Equal.
+		}
+		matchers = append(matchers, m)
 	}
 
 	if len(matchers) == 0 {
@@ -967,14 +967,7 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 	// implicit selection of all metrics (e.g. by a typo).
 	notEmpty := false
 	for _, lm := range matchers {
-		// Matching changes the inner state of the regex and causes reflect.DeepEqual
-		// to return false, which break tests.
-		// Thus, we create a new label matcher for this testing.
-		lm, err := metric.NewLabelMatcher(lm.Type, lm.Name, lm.Value)
-		if err != nil {
-			p.error(err)
-		}
-		if !lm.Match("") {
+		if !lm.MatchesEmptyString() {
 			notEmpty = true
 			break
 		}
@@ -1049,7 +1042,7 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 			p.errorf("aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, model.ValVector, "aggregation expression")
-		if n.Op == itemTopK || n.Op == itemBottomK {
+		if n.Op == itemTopK || n.Op == itemBottomK || n.Op == itemQuantile {
 			p.expectType(n.Param, model.ValScalar, "aggregation parameter")
 		}
 		if n.Op == itemCountValues {

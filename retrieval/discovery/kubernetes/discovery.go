@@ -62,6 +62,10 @@ const (
 	podLabelPrefix = metaLabelPrefix + "pod_label_"
 	// podAnnotationPrefix is the prefix for prom label names corresponding to k8s annotations for a target pod
 	podAnnotationPrefix = metaLabelPrefix + "pod_annotation_"
+	// podNodeLabel is the name for the label containing the name of the node that a pod is scheduled on to
+	podNodeNameLabel = metaLabelPrefix + "pod_node_name"
+	// podHostIPLabel is the name for the label containing the IP of the node that a pod is scheduled on to
+	podHostIPLabel = metaLabelPrefix + "pod_host_ip"
 
 	sourceServicePrefix = "services"
 	// serviceNamespaceLabel is the name for the label containing a target's service namespace.

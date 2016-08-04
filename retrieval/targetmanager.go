@@ -160,8 +160,7 @@ func (tm *TargetManager) Pools() map[string]Targets {
 
 // ApplyConfig resets the manager's target providers and job configurations as defined
 // by the new cfg. The state of targets that are valid in the new configuration remains unchanged.
-// Returns true on success.
-func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
+func (tm *TargetManager) ApplyConfig(cfg *config.Config) error {
 	tm.mtx.Lock()
 	defer tm.mtx.Unlock()
 
@@ -170,7 +169,7 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) bool {
 	if tm.ctx != nil {
 		tm.reload()
 	}
-	return true
+	return nil
 }
 
 // targetSet holds several TargetProviders for which the same scrape configuration

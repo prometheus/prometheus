@@ -238,13 +238,19 @@ func init() {
 		&cfg.queryEngine.MaxConcurrentQueries, "query.max-concurrency", 20,
 		"Maximum number of queries executed concurrently.",
 	)
+
+	// Flags from the log package have to be added explicitly to our custom flag set.
+	log.AddFlags(cfg.fs)
 }
 
 func parse(args []string) error {
 	err := cfg.fs.Parse(args)
-	if err != nil {
+	if err != nil || len(cfg.fs.Args()) != 0 {
 		if err != flag.ErrHelp {
 			log.Errorf("Invalid command line arguments. Help: %s -h", os.Args[0])
+		}
+		if err == nil {
+			err = fmt.Errorf("Non-flag argument on command line: %q", cfg.fs.Args()[0])
 		}
 		return err
 	}

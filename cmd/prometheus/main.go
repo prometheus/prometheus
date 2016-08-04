@@ -116,7 +116,8 @@ func Main() int {
 
 	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
 
-	if !reloadConfig(cfg.configFile, reloadables...) {
+	if err := reloadConfig(cfg.configFile, reloadables...); err != nil {
+		log.Errorf("Error loading config: %s", err)
 		return 1
 	}
 
@@ -131,9 +132,17 @@ func Main() int {
 		for {
 			select {
 			case <-hup:
-			case <-webHandler.Reload():
+				if err := reloadConfig(cfg.configFile, reloadables...); err != nil {
+					log.Errorf("Error reloading config: %s", err)
+				}
+			case rc := <-webHandler.Reload():
+				if err := reloadConfig(cfg.configFile, reloadables...); err != nil {
+					log.Errorf("Error reloading config: %s", err)
+					rc <- err
+				} else {
+					rc <- nil
+				}
 			}
-			reloadConfig(cfg.configFile, reloadables...)
 		}
 	}()
 
@@ -199,13 +208,13 @@ func Main() int {
 // Reloadable things can change their internal state to match a new config
 // and handle failure gracefully.
 type Reloadable interface {
-	ApplyConfig(*config.Config) bool
+	ApplyConfig(*config.Config) error
 }
 
-func reloadConfig(filename string, rls ...Reloadable) (success bool) {
+func reloadConfig(filename string, rls ...Reloadable) (err error) {
 	log.Infof("Loading configuration file %s", filename)
 	defer func() {
-		if success {
+		if err == nil {
 			configSuccess.Set(1)
 			configSuccessTime.Set(float64(time.Now().Unix()))
 		} else {
@@ -215,13 +224,16 @@ func reloadConfig(filename string, rls ...Reloadable) (success bool) {
 
 	conf, err := config.LoadFile(filename)
 	if err != nil {
-		log.Errorf("Couldn't load configuration (-config.file=%s): %v", filename, err)
-		return false
+		return fmt.Errorf("couldn't load configuration (-config.file=%s): %v", filename, err)
 	}
-	success = true
 
+	// Apply all configs and return the first error if there were any.
 	for _, rl := range rls {
-		success = success && rl.ApplyConfig(conf)
+		if err != nil {
+			err = rl.ApplyConfig(conf)
+		} else {
+			rl.ApplyConfig(conf)
+		}
 	}
-	return success
+	return err
 }
