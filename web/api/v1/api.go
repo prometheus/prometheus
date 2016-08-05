@@ -221,7 +221,10 @@ func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
 	if !model.LabelNameRE.MatchString(name) {
 		return nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}
 	}
-	vals := api.Storage.LabelValuesForLabelName(model.LabelName(name))
+	vals, err := api.Storage.LabelValuesForLabelName(model.LabelName(name))
+	if err != nil {
+		return nil, &apiError{errorExec, err}
+	}
 	sort.Sort(vals)
 
 	return vals, nil
@@ -255,19 +258,18 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		end = model.Latest
 	}
 
-	res := map[model.Fingerprint]metric.Metric{}
-
-	for _, lm := range r.Form["match[]"] {
-		matchers, err := promql.ParseMetricSelector(lm)
+	var matcherSets []metric.LabelMatchers
+	for _, s := range r.Form["match[]"] {
+		matchers, err := promql.ParseMetricSelector(s)
 		if err != nil {
 			return nil, &apiError{errorBadData, err}
 		}
-		for fp, met := range api.Storage.MetricsForLabelMatchers(
-			start, end,
-			matchers...,
-		) {
-			res[fp] = met
-		}
+		matcherSets = append(matcherSets, matchers)
+	}
+
+	res, err := api.Storage.MetricsForLabelMatchers(start, end, matcherSets...)
+	if err != nil {
+		return nil, &apiError{errorExec, err}
 	}
 
 	metrics := make([]model.Metric, 0, len(res))
@@ -282,28 +284,24 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
 	}
-	fps := map[model.Fingerprint]struct{}{}
 
-	for _, lm := range r.Form["match[]"] {
-		matchers, err := promql.ParseMetricSelector(lm)
+	numDeleted := 0
+	for _, s := range r.Form["match[]"] {
+		matchers, err := promql.ParseMetricSelector(s)
 		if err != nil {
 			return nil, &apiError{errorBadData, err}
 		}
-		for fp := range api.Storage.MetricsForLabelMatchers(
-			model.Earliest, model.Latest, // Get every series.
-			matchers...,
-		) {
-			fps[fp] = struct{}{}
+		n, err := api.Storage.DropMetricsForLabelMatchers(matchers...)
+		if err != nil {
+			return nil, &apiError{errorExec, err}
 		}
-	}
-	for fp := range fps {
-		api.Storage.DropMetricsForFingerprints(fp)
+		numDeleted += n
 	}
 
 	res := struct {
 		NumDeleted int `json:"numDeleted"`
 	}{
-		NumDeleted: len(fps),
+		NumDeleted: numDeleted,
 	}
 	return res, nil
 }

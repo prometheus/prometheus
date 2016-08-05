@@ -340,7 +340,7 @@ func (s *memorySeries) dropChunks(t model.Time) error {
 // preloadChunks is an internal helper method.
 func (s *memorySeries) preloadChunks(
 	indexes []int, fp model.Fingerprint, mss *MemorySeriesStorage,
-) ([]*chunkDesc, SeriesIterator, error) {
+) (SeriesIterator, error) {
 	loadIndexes := []int{}
 	pinnedChunkDescs := make([]*chunkDesc, 0, len(indexes))
 	for _, idx := range indexes {
@@ -364,7 +364,7 @@ func (s *memorySeries) preloadChunks(
 				cd.unpin(mss.evictRequests)
 			}
 			chunkOps.WithLabelValues(unpin).Add(float64(len(pinnedChunkDescs)))
-			return nil, nopIter, err
+			return nopIter, err
 		}
 		for i, c := range chunks {
 			s.chunkDescs[loadIndexes[i]].setChunk(c)
@@ -380,18 +380,22 @@ func (s *memorySeries) preloadChunks(
 	}
 
 	iter := &boundedIterator{
-		it:    s.newIterator(pinnedChunkDescs, curriedQuarantineSeries),
+		it:    s.newIterator(pinnedChunkDescs, curriedQuarantineSeries, mss.evictRequests),
 		start: model.Now().Add(-mss.dropAfter),
 	}
 
-	return pinnedChunkDescs, iter, nil
+	return iter, nil
 }
 
 // newIterator returns a new SeriesIterator for the provided chunkDescs (which
 // must be pinned).
 //
 // The caller must have locked the fingerprint of the memorySeries.
-func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc, quarantine func(error)) SeriesIterator {
+func (s *memorySeries) newIterator(
+	pinnedChunkDescs []*chunkDesc,
+	quarantine func(error),
+	evictRequests chan<- evictRequest,
+) SeriesIterator {
 	chunks := make([]chunk, 0, len(pinnedChunkDescs))
 	for _, cd := range pinnedChunkDescs {
 		// It's OK to directly access cd.c here (without locking) as the
@@ -399,9 +403,12 @@ func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc, quarantine fun
 		chunks = append(chunks, cd.c)
 	}
 	return &memorySeriesIterator{
-		chunks:     chunks,
-		chunkIts:   make([]chunkIterator, len(chunks)),
-		quarantine: quarantine,
+		chunks:           chunks,
+		chunkIts:         make([]chunkIterator, len(chunks)),
+		quarantine:       quarantine,
+		metric:           s.metric,
+		pinnedChunkDescs: pinnedChunkDescs,
+		evictRequests:    evictRequests,
 	}
 }
 
@@ -413,7 +420,7 @@ func (s *memorySeries) preloadChunksForInstant(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
 	mss *MemorySeriesStorage,
-) ([]*chunkDesc, SeriesIterator, error) {
+) (SeriesIterator, error) {
 	// If we have a lastSamplePair in the series, and thas last samplePair
 	// is in the interval, just take it in a singleSampleSeriesIterator. No
 	// need to pin or load anything.
@@ -422,10 +429,13 @@ func (s *memorySeries) preloadChunksForInstant(
 		!from.After(lastSample.Timestamp) &&
 		lastSample != ZeroSamplePair {
 		iter := &boundedIterator{
-			it:    &singleSampleSeriesIterator{samplePair: lastSample},
+			it: &singleSampleSeriesIterator{
+				samplePair: lastSample,
+				metric:     s.metric,
+			},
 			start: model.Now().Add(-mss.dropAfter),
 		}
-		return nil, iter, nil
+		return iter, nil
 	}
 	// If we are here, we are out of luck and have to delegate to the more
 	// expensive method.
@@ -438,7 +448,7 @@ func (s *memorySeries) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
 	mss *MemorySeriesStorage,
-) ([]*chunkDesc, SeriesIterator, error) {
+) (SeriesIterator, error) {
 	firstChunkDescTime := model.Latest
 	if len(s.chunkDescs) > 0 {
 		firstChunkDescTime = s.chunkDescs[0].firstTime()
@@ -446,7 +456,7 @@ func (s *memorySeries) preloadChunksForRange(
 	if s.chunkDescsOffset != 0 && from.Before(firstChunkDescTime) {
 		cds, err := mss.loadChunkDescs(fp, s.persistWatermark)
 		if err != nil {
-			return nil, nopIter, err
+			return nopIter, err
 		}
 		s.chunkDescs = append(cds, s.chunkDescs...)
 		s.chunkDescsOffset = 0
@@ -455,7 +465,7 @@ func (s *memorySeries) preloadChunksForRange(
 	}
 
 	if len(s.chunkDescs) == 0 || through.Before(firstChunkDescTime) {
-		return nil, nopIter, nil
+		return nopIter, nil
 	}
 
 	// Find first chunk with start time after "from".
@@ -471,10 +481,10 @@ func (s *memorySeries) preloadChunksForRange(
 		// series ends before "from" and we don't need to do anything.
 		lt, err := s.chunkDescs[len(s.chunkDescs)-1].lastTime()
 		if err != nil {
-			return nil, nopIter, err
+			return nopIter, err
 		}
 		if lt.Before(from) {
-			return nil, nopIter, nil
+			return nopIter, nil
 		}
 	}
 	if fromIdx > 0 {
@@ -547,10 +557,20 @@ func (s *memorySeries) chunksToPersist() []*chunkDesc {
 
 // memorySeriesIterator implements SeriesIterator.
 type memorySeriesIterator struct {
-	chunkIt    chunkIterator   // Last chunkIterator used by ValueAtOrBeforeTime.
-	chunkIts   []chunkIterator // Caches chunkIterators.
-	chunks     []chunk
-	quarantine func(error) // Call to quarantine the series this iterator belongs to.
+	// Last chunkIterator used by ValueAtOrBeforeTime.
+	chunkIt chunkIterator
+	// Caches chunkIterators.
+	chunkIts []chunkIterator
+	// The actual sample chunks.
+	chunks []chunk
+	// Call to quarantine the series this iterator belongs to.
+	quarantine func(error)
+	// The metric corresponding to the iterator.
+	metric model.Metric
+	// Chunks that were pinned for this iterator.
+	pinnedChunkDescs []*chunkDesc
+	// Where to send evict requests when unpinning pinned chunks.
+	evictRequests chan<- evictRequest
 }
 
 // ValueAtOrBeforeTime implements SeriesIterator.
@@ -630,6 +650,10 @@ func (it *memorySeriesIterator) RangeValues(in metric.Interval) []model.SamplePa
 	return values
 }
 
+func (it *memorySeriesIterator) Metric() metric.Metric {
+	return metric.Metric{Metric: it.metric}
+}
+
 // chunkIterator returns the chunkIterator for the chunk at position i (and
 // creates it if needed).
 func (it *memorySeriesIterator) chunkIterator(i int) chunkIterator {
@@ -641,11 +665,19 @@ func (it *memorySeriesIterator) chunkIterator(i int) chunkIterator {
 	return chunkIt
 }
 
+func (it *memorySeriesIterator) Close() {
+	for _, cd := range it.pinnedChunkDescs {
+		cd.unpin(it.evictRequests)
+	}
+	chunkOps.WithLabelValues(unpin).Add(float64(len(it.pinnedChunkDescs)))
+}
+
 // singleSampleSeriesIterator implements Series Iterator. It is a "shortcut
-// iterator" that returns a single samplee only. The sample is saved in the
+// iterator" that returns a single sample only. The sample is saved in the
 // iterator itself, so no chunks need to be pinned.
 type singleSampleSeriesIterator struct {
 	samplePair model.SamplePair
+	metric     model.Metric
 }
 
 // ValueAtTime implements SeriesIterator.
@@ -665,6 +697,13 @@ func (it *singleSampleSeriesIterator) RangeValues(in metric.Interval) []model.Sa
 	return []model.SamplePair{it.samplePair}
 }
 
+func (it *singleSampleSeriesIterator) Metric() metric.Metric {
+	return metric.Metric{Metric: it.metric}
+}
+
+// Close implements SeriesIterator.
+func (it *singleSampleSeriesIterator) Close() {}
+
 // nopSeriesIterator implements Series Iterator. It never returns any values.
 type nopSeriesIterator struct{}
 
@@ -677,5 +716,13 @@ func (i nopSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 func (i nopSeriesIterator) RangeValues(in metric.Interval) []model.SamplePair {
 	return []model.SamplePair{}
 }
+
+// Metric implements SeriesIterator.
+func (i nopSeriesIterator) Metric() metric.Metric {
+	return metric.Metric{}
+}
+
+// Close implements SeriesIterator.
+func (i nopSeriesIterator) Close() {}
 
 var nopIter nopSeriesIterator // A nopSeriesIterator for convenience. Can be shared.

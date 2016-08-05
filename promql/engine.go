@@ -216,10 +216,10 @@ func contextDone(ctx context.Context, env string) error {
 }
 
 // Engine handles the lifetime of queries from beginning to end.
-// It is connected to a storage.
+// It is connected to a querier.
 type Engine struct {
-	// The storage on which the engine operates.
-	storage local.Querier
+	// The querier on which the engine operates.
+	querier local.Querier
 
 	// The base context for all queries and its cancellation function.
 	baseCtx       context.Context
@@ -231,13 +231,13 @@ type Engine struct {
 }
 
 // NewEngine returns a new engine.
-func NewEngine(storage local.Querier, o *EngineOptions) *Engine {
+func NewEngine(querier local.Querier, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
-		storage:       storage,
+		querier:       querier,
 		baseCtx:       ctx,
 		cancelQueries: cancel,
 		gate:          newQueryGate(o.MaxConcurrentQueries),
@@ -309,9 +309,8 @@ func (ng *Engine) newQuery(expr Expr, start, end model.Time, interval time.Durat
 // of an arbitrary function during handling. It is used to test the Engine.
 type testStmt func(context.Context) error
 
-func (testStmt) String() string   { return "test statement" }
-func (testStmt) DotGraph() string { return "test statement" }
-func (testStmt) stmt()            {}
+func (testStmt) String() string { return "test statement" }
+func (testStmt) stmt()          {}
 
 func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 	qry := &query{
@@ -365,35 +364,14 @@ func (ng *Engine) exec(q *query) (model.Value, error) {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (model.Value, error) {
-	prepareTimer := query.stats.GetTimer(stats.TotalQueryPreparationTime).Start()
-	analyzeTimer := query.stats.GetTimer(stats.QueryAnalysisTime).Start()
-
-	// Only one execution statement per query is allowed.
-	analyzer := &Analyzer{
-		Storage: ng.storage,
-		Expr:    s.Expr,
-		Start:   s.Start,
-		End:     s.End,
-	}
-	err := analyzer.Analyze(ctx)
-	if err != nil {
-		analyzeTimer.Stop()
-		prepareTimer.Stop()
-		return nil, err
-	}
-	analyzeTimer.Stop()
-
-	preloadTimer := query.stats.GetTimer(stats.PreloadTime).Start()
-	closer, err := analyzer.Prepare(ctx)
-	if err != nil {
-		preloadTimer.Stop()
-		prepareTimer.Stop()
-		return nil, err
-	}
-	defer closer.Close()
-
-	preloadTimer.Stop()
+	prepareTimer := query.stats.GetTimer(stats.QueryPreparationTime).Start()
+	err := ng.populateIterators(s)
 	prepareTimer.Stop()
+	if err != nil {
+		return nil, err
+	}
+
+	defer ng.closeIterators(s)
 
 	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
 	// Instant evaluation.
@@ -498,8 +476,70 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	return resMatrix, nil
 }
 
+func (ng *Engine) populateIterators(s *EvalStmt) error {
+	var queryErr error
+	Inspect(s.Expr, func(node Node) bool {
+		switch n := node.(type) {
+		case *VectorSelector:
+			var iterators []local.SeriesIterator
+			var err error
+			if s.Start.Equal(s.End) {
+				iterators, err = ng.querier.QueryInstant(
+					s.Start.Add(-n.Offset),
+					StalenessDelta,
+					n.LabelMatchers...,
+				)
+			} else {
+				iterators, err = ng.querier.QueryRange(
+					s.Start.Add(-n.Offset-StalenessDelta),
+					s.End.Add(-n.Offset),
+					n.LabelMatchers...,
+				)
+			}
+			if err != nil {
+				queryErr = err
+				return false
+			}
+			for _, it := range iterators {
+				n.iterators = append(n.iterators, it)
+			}
+		case *MatrixSelector:
+			iterators, err := ng.querier.QueryRange(
+				s.Start.Add(-n.Offset-n.Range),
+				s.End.Add(-n.Offset),
+				n.LabelMatchers...,
+			)
+			if err != nil {
+				queryErr = err
+				return false
+			}
+			for _, it := range iterators {
+				n.iterators = append(n.iterators, it)
+			}
+		}
+		return true
+	})
+	return queryErr
+}
+
+func (ng *Engine) closeIterators(s *EvalStmt) {
+	Inspect(s.Expr, func(node Node) bool {
+		switch n := node.(type) {
+		case *VectorSelector:
+			for _, it := range n.iterators {
+				it.Close()
+			}
+		case *MatrixSelector:
+			for _, it := range n.iterators {
+				it.Close()
+			}
+		}
+		return true
+	})
+}
+
 // An evaluator evaluates given expressions at a fixed timestamp. It is attached to an
-// engine through which it connects to a storage and reports errors. On timeout or
+// engine through which it connects to a querier and reports errors. On timeout or
 // cancellation of its context it terminates.
 type evaluator struct {
 	ctx context.Context
@@ -681,14 +721,14 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 // vectorSelector evaluates a *VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *VectorSelector) vector {
 	vec := vector{}
-	for fp, it := range node.iterators {
+	for _, it := range node.iterators {
 		refTime := ev.Timestamp.Add(-node.Offset)
 		samplePair := it.ValueAtOrBeforeTime(refTime)
 		if samplePair.Timestamp.Before(refTime.Add(-StalenessDelta)) {
 			continue // Sample outside of staleness policy window.
 		}
 		vec = append(vec, &sample{
-			Metric:    node.metrics[fp],
+			Metric:    it.Metric(),
 			Value:     samplePair.Value,
 			Timestamp: ev.Timestamp,
 		})
@@ -704,7 +744,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) matrix {
 	}
 
 	sampleStreams := make([]*sampleStream, 0, len(node.iterators))
-	for fp, it := range node.iterators {
+	for _, it := range node.iterators {
 		samplePairs := it.RangeValues(interval)
 		if len(samplePairs) == 0 {
 			continue
@@ -717,7 +757,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) matrix {
 		}
 
 		sampleStream := &sampleStream{
-			Metric: node.metrics[fp],
+			Metric: it.Metric(),
 			Values: samplePairs,
 		}
 		sampleStreams = append(sampleStreams, sampleStream)
