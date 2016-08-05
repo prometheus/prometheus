@@ -627,13 +627,40 @@ Prometheus.Graph.prototype.remove = function() {
 };
 
 function parseGraphOptionsFromURL() {
-  var hashOptions = window.location.hash.slice(1);
-  if (!hashOptions) {
-    return [];
+  var allGraphsOptions = [];
+  var queryStringBeginning = window.location.href.indexOf('?')
+  if(queryStringBeginning == -1) {
+    return allGraphsOptions;
   }
-  var optionsJSON = decodeURIComponent(window.location.hash.slice(1));
-  options = JSON.parse(optionsJSON);
-  return options;
+  var paramTuples = window.location.href.slice(queryStringBeginning + 1).split('&');
+
+  paramTuples.forEach(function(tuple){
+    var paramNameAndValue = tuple.split('=');
+    var paramName = paramNameAndValue[0]
+    var paramValue = decodeURIComponent(paramNameAndValue[1])
+
+    var indexAndName = paramName.split('.');
+    var optionName = indexAndName[1];
+
+    if(optionName == "end_input"){
+      paramValue = paramValue.replace("+", " ") // workaround jquery.param space plus
+    }
+
+    if(optionName == "tab"){
+      paramValue = parseInt(paramValue) // tab is int
+    }
+
+    var indexStr = indexAndName[0].substring(1);
+    if(isNaN(indexStr) == false) {
+      var index = parseInt(indexStr);
+      if(typeof allGraphsOptions[index] === 'undefined') {
+        allGraphsOptions[index] = {};
+      }
+      allGraphsOptions[index][optionName] = paramValue;
+    }
+  });
+
+  return allGraphsOptions
 }
 
 // NOTE: This needs to be kept in sync with /util/strutil/strconv.go:GraphLinkForExpression
@@ -642,8 +669,19 @@ function storeGraphOptionsInURL() {
   for (var i = 0; i < graphs.length; i++) {
     allGraphsOptions.push(graphs[i].getOptions());
   }
-  var optionsJSON = JSON.stringify(allGraphsOptions);
-  window.location.hash = encodeURIComponent(optionsJSON);
+
+  var queryString = generateQueryString(allGraphsOptions);
+  history.pushState({}, "", "graph?" + queryString);
+}
+
+function generateQueryString(allGraphsOptions) {
+  return allGraphsOptions.map(function(graphsOptions, index){
+    var queryObject = {}
+    Object.keys(graphsOptions).map(function(key){
+      queryObject["g" + index + "." + key] = graphsOptions[key];
+    });
+    return $.param(queryObject)
+  }).join("&");
 }
 
 function addGraph(options) {
