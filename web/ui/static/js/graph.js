@@ -8,7 +8,7 @@ Handlebars.registerHelper('pathPrefix', function() { return PATH_PREFIX; });
 
 Prometheus.Graph = function(element, options) {
   this.el = element;
-  this.graphHtml = null;
+  this.graphHTML = null;
   this.options = options;
   this.changeHandler = null;
   this.rickshawGraph = null;
@@ -46,8 +46,8 @@ Prometheus.Graph.prototype.initialize = function() {
 
   // Draw graph controls and container from Handlebars template.
 
-  self.graphHtml = $(graphTemplate(self.options));
-  self.el.append(self.graphHtml);
+  self.graphHTML = $(graphTemplate(self.options));
+  self.el.append(self.graphHTML);
 
   // Get references to all the interesting elements in the graph container and
   // bind event handlers.
@@ -90,7 +90,7 @@ Prometheus.Graph.prototype.initialize = function() {
       self.submitQuery();
     }
   });
-  
+
   // Return moves focus back to expr instead of submitting.
   self.insertMetric.bind("keydown", "return", function(e) {
     self.expr.focus();
@@ -188,7 +188,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
         if (json.status !== "success") {
           self.showError("Error loading available metrics!");
           return;
-        } 
+        }
         var metrics = json.data;
         for (var i = 0; i < metrics.length; i++) {
           self.insertMetric[0].options.add(new Option(metrics[i], metrics[i]));
@@ -621,7 +621,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
 
 Prometheus.Graph.prototype.remove = function() {
   var self = this;
-  $(self.graphHtml).remove();
+  $(self.graphHTML).remove();
   graphs = graphs.filter(function(e) {return e !== self});
   storeGraphOptionsInURL();
 };
