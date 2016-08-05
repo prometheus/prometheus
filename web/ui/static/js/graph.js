@@ -1,16 +1,18 @@
 var Prometheus = Prometheus || {};
-var graphs = [];
 var graphTemplate;
 
 var SECOND = 1000;
 
 Handlebars.registerHelper('pathPrefix', function() { return PATH_PREFIX; });
 
-Prometheus.Graph = function(element, options) {
+Prometheus.Graph = function(element, options, handleChange, handleRemove) {
   this.el = element;
   this.graphHTML = null;
   this.options = options;
-  this.changeHandler = null;
+  this.handleChange = handleChange;
+  this.handleRemove = function() {
+    handleRemove(this);
+  };
   this.rickshawGraph = null;
   this.data = [];
 
@@ -69,7 +71,7 @@ Prometheus.Graph.prototype.initialize = function() {
     };
     $(this).on('keyup input', function() { resizeTextarea(this); });
   });
-  self.expr.change(storeGraphOptionsInURL);
+  self.expr.change(self.handleChange);
 
   self.rangeInput = self.queryForm.find("input[name=range_input]");
   self.stackedBtn = self.queryForm.find(".stacked_btn");
@@ -85,7 +87,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.tabs.on("shown.bs.tab", function(e) {
     var target = $(e.target);
     self.options.tab = target.parent().index();
-    storeGraphOptionsInURL();
+    self.handleChange();
     if ($("#" + target.attr("aria-controls")).hasClass("reload")) {
       self.submitQuery();
     }
@@ -206,10 +208,6 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
         self.showError("Error loading available metrics!");
       },
   });
-};
-
-Prometheus.Graph.prototype.onChange = function(handler) {
-  this.changeHandler = handler;
 };
 
 Prometheus.Graph.prototype.getOptions = function() {
@@ -544,7 +542,7 @@ Prometheus.Graph.prototype.updateGraph = function() {
     legend: legend
   });
 
-  self.changeHandler();
+  self.handleChange();
 };
 
 Prometheus.Graph.prototype.resizeGraph = function() {
@@ -622,78 +620,9 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
 Prometheus.Graph.prototype.remove = function() {
   var self = this;
   $(self.graphHTML).remove();
-  graphs = graphs.filter(function(e) {return e !== self});
-  storeGraphOptionsInURL();
+  self.handleRemove();
+  self.handleChange();
 };
-
-function parseGraphOptionsFromURL() {
-  var allGraphsOptions = [];
-  var queryStringBeginning = window.location.href.indexOf('?')
-  if(queryStringBeginning == -1) {
-    return allGraphsOptions;
-  }
-  var paramTuples = window.location.href.slice(queryStringBeginning + 1).split('&');
-
-  paramTuples.forEach(function(tuple){
-    var paramNameAndValue = tuple.split('=');
-    var paramName = paramNameAndValue[0]
-    var paramValue = decodeURIComponent(paramNameAndValue[1])
-
-    var indexAndName = paramName.split('.');
-    var optionName = indexAndName[1];
-
-    if(optionName == "end_input"){
-      paramValue = paramValue.replace("+", " ") // workaround jquery.param space plus
-    }
-
-    if(optionName == "tab"){
-      paramValue = parseInt(paramValue) // tab is int
-    }
-
-    var indexStr = indexAndName[0].substring(1);
-    if(isNaN(indexStr) == false) {
-      var index = parseInt(indexStr);
-      if(typeof allGraphsOptions[index] === 'undefined') {
-        allGraphsOptions[index] = {};
-      }
-      allGraphsOptions[index][optionName] = paramValue;
-    }
-  });
-
-  return allGraphsOptions
-}
-
-// NOTE: This needs to be kept in sync with /util/strutil/strconv.go:GraphLinkForExpression
-function storeGraphOptionsInURL() {
-  var allGraphsOptions = [];
-  for (var i = 0; i < graphs.length; i++) {
-    allGraphsOptions.push(graphs[i].getOptions());
-  }
-
-  var queryString = generateQueryString(allGraphsOptions);
-  history.pushState({}, "", "graph?" + queryString);
-}
-
-function generateQueryString(allGraphsOptions) {
-  return allGraphsOptions.map(function(graphsOptions, index){
-    var queryObject = {}
-    Object.keys(graphsOptions).map(function(key){
-      queryObject["g" + index + "." + key] = graphsOptions[key];
-    });
-    return $.param(queryObject)
-  }).join("&");
-}
-
-function addGraph(options) {
-  var graph = new Prometheus.Graph($("#graph_container"), options);
-  graphs.push(graph);
-  graph.onChange(function() {
-    storeGraphOptionsInURL();
-  });
-  $(window).resize(function() {
-    graph.resizeGraph();
-  });
-}
 
 function escapeHTML(string) {
   var entityMap = {
@@ -710,6 +639,135 @@ function escapeHTML(string) {
   });
 }
 
+Prometheus.Page = function() {
+  this.graphs = [];
+};
+
+Prometheus.Page.prototype.init = function() {
+  var graphOptions = this.parseURL();
+  if (graphOptions.length === 0) {
+    graphOptions.push({});
+  }
+
+  graphOptions.forEach(this.addGraph, this);
+
+  $("#add_graph").click(this.addGraph.bind(this, {}));
+};
+
+Prometheus.Page.prototype.parseURL = function() {
+  if (window.location.search == "") {
+    return [];
+  }
+
+  var queryParams = window.location.search.substring(1).split('&');
+  var queryParamHelper = new Prometheus.Page.QueryParamHelper();
+  return queryParamHelper.parseQueryParams(queryParams);
+};
+
+Prometheus.Page.prototype.addGraph = function(options) {
+  var graph = new Prometheus.Graph(
+    $("#graph_container"),
+    options,
+    this.updateURL.bind(this),
+    this.removeGraph.bind(this)
+  );
+
+  this.graphs.push(graph);
+  $(window).resize(function() {
+    graph.resizeGraph();
+  });
+};
+
+// NOTE: This needs to be kept in sync with /util/strutil/strconv.go:GraphLinkForExpression
+Prometheus.Page.prototype.updateURL = function() {
+  var queryString = this.graphs.map(function(graph, index) {
+    var graphOptions = graph.getOptions();
+    var queryParamHelper = new Prometheus.Page.QueryParamHelper();
+    var queryObject = queryParamHelper.generateQueryObject(graphOptions, index);
+    return $.param(queryObject);
+  }, this).join("&");
+
+  history.pushState({}, "", "graph?" + queryString);
+};
+
+Prometheus.Page.prototype.removeGraph = function(graph) {
+  this.graphs = this.graphs.filter(function(g) {return g !== graph});
+};
+
+Prometheus.Page.QueryParamHelper = function() {};
+
+Prometheus.Page.QueryParamHelper.prototype.parseQueryParams = function(queryParams) {
+  var orderedQueryParams = this.filterInvalidParams(queryParams).sort();
+  return this.fetchOptionsFromOrderedParams(orderedQueryParams, 0);
+};
+
+Prometheus.Page.QueryParamHelper.queryParamFormat = /^g\d+\..+=.+$/;
+
+Prometheus.Page.QueryParamHelper.prototype.filterInvalidParams = function(paramTuples) {
+  return paramTuples.filter(function(paramTuple) {
+    return Prometheus.Page.QueryParamHelper.queryParamFormat.test(paramTuple);
+  });
+};
+
+Prometheus.Page.QueryParamHelper.prototype.fetchOptionsFromOrderedParams = function(queryParams, graphIndex) {
+  if (queryParams.length == 0) {
+    return [];
+  }
+
+  var prefixOfThisIndex = this.queryParamPrefix(graphIndex);
+  var numberOfParamsForThisGraph = queryParams.filter(function(paramTuple) {
+    return paramTuple.startsWith(prefixOfThisIndex);
+  }).length;
+
+  if (numberOfParamsForThisGraph == 0) {
+    return [];
+  }
+
+  var paramsForThisGraph = queryParams.splice(0, numberOfParamsForThisGraph);
+
+  paramsForThisGraph = paramsForThisGraph.map(function(paramTuple) {
+    return paramTuple.substring(prefixOfThisIndex.length);
+  });
+
+  var options = this.parseQueryParamsOfOneGraph(paramsForThisGraph);
+  var optionAccumulator = this.fetchOptionsFromOrderedParams(queryParams, graphIndex + 1);
+  optionAccumulator.unshift(options);
+
+  return optionAccumulator;
+};
+
+Prometheus.Page.QueryParamHelper.prototype.parseQueryParamsOfOneGraph = function(queryParams) {
+  var options = {};
+  queryParams.forEach(function(tuple) {
+    var optionNameAndValue = tuple.split('=');
+    var optionName = optionNameAndValue[0];
+    var optionValue = decodeURIComponent(optionNameAndValue[1]);
+
+    optionValue = optionValue.replace(/\+/g, " "); // $.param turns spaces into pluses
+
+    if (optionName == "tab") {
+      optionValue = parseInt(optionValue); // tab is integer
+    }
+
+    options[optionName] = optionValue;
+  });
+
+  return options;
+};
+
+Prometheus.Page.QueryParamHelper.prototype.queryParamPrefix = function(index) {
+  return "g" + index + ".";
+};
+
+Prometheus.Page.QueryParamHelper.prototype.generateQueryObject = function(graphOptions, index) {
+  var prefix = this.queryParamPrefix(index);
+  var queryObject = {};
+  Object.keys(graphOptions).forEach(function(key) {
+    queryObject[prefix + key] = graphOptions[key];
+  });
+  return queryObject;
+};
+
 function init() {
   $.ajaxSetup({
     cache: false
@@ -719,14 +777,8 @@ function init() {
     url: PATH_PREFIX + "/static/js/graph_template.handlebar",
     success: function(data) {
       graphTemplate = Handlebars.compile(data);
-      var options = parseGraphOptionsFromURL();
-      if (options.length === 0) {
-        options.push({});
-      }
-      for (var i = 0; i < options.length; i++) {
-        addGraph(options[i]);
-      }
-      $("#add_graph").click(function() { addGraph({}); });
+      var Page = new Prometheus.Page();
+      Page.init();
     }
   });
 }
