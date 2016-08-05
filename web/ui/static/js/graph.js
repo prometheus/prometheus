@@ -636,7 +636,7 @@ function parseGraphOptionsFromURL() {
   return options;
 }
 
-// NOTE: This needs to be kept in sync with rules/helpers.go:GraphLinkForExpression!
+// NOTE: This needs to be kept in sync with /util/strutil/strconv.go:GraphLinkForExpression
 function storeGraphOptionsInURL() {
   var allGraphsOptions = [];
   for (var i = 0; i < graphs.length; i++) {
