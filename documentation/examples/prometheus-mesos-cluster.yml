@@ -21,6 +21,8 @@ scrape_configs:
       port: 9100
   
   # Find the master nodes
+  # If using mesos dns this will return an A record for all masters
+  # If you are just looking for the leader use leader.mesos
   - job_name: 'mesos_masters'
     dns_sd_configs:
     - names:
@@ -29,7 +31,7 @@ scrape_configs:
       port: 9100
 
   # Pull in apps from marathon
-  - job_name: 'marathon_apps'
+  - job_name: 'sample_app'
     marathon_sd_configs:
     - servers:
       # Mesos dns will resolve the marathon master
@@ -42,9 +44,15 @@ scrape_configs:
     - source_labels: [__meta_marathon_app_label_MONITOR]
       action: keep
       regex: prometheus
-    # Add marathon_app label
+    # Only pull an app with a name of sample_app
     - source_labels: [__meta_marathon_app]
-      target_label: marathon_app
+      action: keep
+      regex: sample_app
+    # Set target path via a label assigned to app in marathon
+    - source_labels: [__meta_marathon_app_label_PROMETHEUS_METRICS]
+      action: replace
+      target_label: __metrics_path__
+      regex: (.+)
     # Add a label that detects docker image
     - target_label: __meta_marathon_image
       replacement: docker_image
