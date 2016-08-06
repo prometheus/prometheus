@@ -136,6 +136,12 @@ func TestAlertingRule(t *testing.T) {
 			t.Errorf("%d. Expected and actual outputs don't match:", i)
 			t.Fatalf("Expected:\n%v\n----\nActual:\n%v", strings.Join(expected, "\n"), strings.Join(actual, "\n"))
 		}
+
+		for _, aa := range rule.ActiveAlerts() {
+			if _, ok := aa.Labels[model.MetricNameLabel]; ok {
+				t.Fatalf("%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+			}
+		}
 	}
 }
 

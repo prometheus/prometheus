@@ -50,7 +50,7 @@ func TestQueryConcurrency(t *testing.T) {
 
 	select {
 	case <-processing:
-		t.Fatalf("Query above concurrency threhosld being executed")
+		t.Fatalf("Query above concurrency threshold being executed")
 	case <-time.After(20 * time.Millisecond):
 		// Expected.
 	}
