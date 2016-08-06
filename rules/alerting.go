@@ -198,6 +198,7 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine, externalURLPat
 			return model.LabelValue(result)
 		}
 
+		delete(smpl.Metric, model.MetricNameLabel)
 		labels := make(model.LabelSet, len(smpl.Metric)+len(r.labels)+1)
 		for ln, lv := range smpl.Metric {
 			labels[ln] = lv
@@ -218,8 +219,6 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine, externalURLPat
 			alert.Value = smpl.Value
 			continue
 		}
-
-		delete(smpl.Metric, model.MetricNameLabel)
 
 		r.active[fp] = &Alert{
 			Labels:      labels,

@@ -167,7 +167,7 @@ func setupDistributor(
 			},
 		},
 	}
-	engine := promql.NewEngine(nil, querier, nil)
+	engine := promql.NewEngine(querier, nil)
 
 	api := v1.NewAPI(engine, nil)
 	router := route.New()

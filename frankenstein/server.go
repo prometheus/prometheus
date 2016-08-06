@@ -15,6 +15,7 @@ package frankenstein
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 
 	"github.com/golang/protobuf/proto"
@@ -107,11 +108,12 @@ func QueryHandler(querier Querier) http.Handler {
 				http.Error(w, "invalid matcher type", http.StatusBadRequest)
 				return
 			}
-			matchers = append(matchers, &metric.LabelMatcher{
-				Type:  mtype,
-				Name:  model.LabelName(matcher.GetName()),
-				Value: model.LabelValue(matcher.GetValue()),
-			})
+			matcher, err := metric.NewLabelMatcher(mtype, model.LabelName(matcher.GetName()), model.LabelValue(matcher.GetValue()))
+			if err != nil {
+				http.Error(w, fmt.Sprintf("error creating matcher: %v", err), http.StatusBadRequest)
+				return
+			}
+			matchers = append(matchers, matcher)
 		}
 
 		start := model.Time(req.GetStartTimestampMs())

@@ -94,7 +94,7 @@ func Main() int {
 	var queryEngine *promql.Engine
 	if !cfg.retrievalOnly {
 		not = notifier.New(&cfg.notifier)
-		queryEngine = promql.NewEngine(memStorage, nil, &cfg.queryEngine)
+		queryEngine = promql.NewEngine(memStorage, &cfg.queryEngine)
 		reloadables = append(reloadables, not)
 	}
 

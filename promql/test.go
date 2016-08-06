@@ -517,7 +517,7 @@ func (t *Test) clear() {
 		t.storage, closer = local.NewTestStorage(t, 2)
 
 		t.closeStorage = closer.Close
-		t.queryEngine = NewEngine(t.storage, nil, nil)
+		t.queryEngine = NewEngine(t.storage, nil)
 	case IngestorStorage:
 		if t.ingestor != nil {
 			t.ingestor.Stop()
@@ -530,7 +530,7 @@ func (t *Test) clear() {
 		querier := frankenstein.MergeQuerier{
 			Queriers: []frankenstein.Querier{t.ingestor},
 		}
-		t.queryEngine = NewEngine(nil, querier, nil)
+		t.queryEngine = NewEngine(querier, nil)
 	default:
 		panic("invalid test storage mode")
 	}
