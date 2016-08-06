@@ -26,8 +26,8 @@ type sampleStreamIterator struct {
 	ss *model.SampleStream
 }
 
-func (it sampleStreamIterator) Metric() model.Metric {
-	return it.ss.Metric
+func (it sampleStreamIterator) Metric() metric.Metric {
+	return metric.Metric{Metric: it.ss.Metric}
 }
 
 func (it sampleStreamIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePair {
@@ -60,3 +60,5 @@ func (it sampleStreamIterator) RangeValues(in metric.Interval) []model.SamplePai
 
 	return it.ss.Values[start:end]
 }
+
+func (it sampleStreamIterator) Close() {}

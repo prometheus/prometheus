@@ -192,10 +192,10 @@ type MergeQuerier struct {
 	Queriers []Querier
 }
 
-// Query fetches series for a given time range and label matchers from multiple
+// QueryRange fetches series for a given time range and label matchers from multiple
 // promql.Queriers and returns the merged results as a map of series iterators.
-func (qm MergeQuerier) Query(from, to model.Time, matchers ...*metric.LabelMatcher) (map[model.Fingerprint]local.MetricSeriesIterator, error) {
-	iterators := map[model.Fingerprint]local.MetricSeriesIterator{}
+func (qm MergeQuerier) QueryRange(from, to model.Time, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
+	fpToIt := map[model.Fingerprint]local.SeriesIterator{}
 
 	// Fetch samples from all queriers and group them by fingerprint (unsorted
 	// and with overlap).
@@ -207,8 +207,8 @@ func (qm MergeQuerier) Query(from, to model.Time, matchers ...*metric.LabelMatch
 
 		for _, ss := range matrix {
 			fp := ss.Metric.Fingerprint()
-			if it, ok := iterators[fp]; !ok {
-				iterators[fp] = sampleStreamIterator{
+			if it, ok := fpToIt[fp]; !ok {
+				fpToIt[fp] = sampleStreamIterator{
 					ss: ss,
 				}
 			} else {
@@ -219,11 +219,24 @@ func (qm MergeQuerier) Query(from, to model.Time, matchers ...*metric.LabelMatch
 	}
 
 	// Sort and dedupe samples.
-	for _, it := range iterators {
+	for _, it := range fpToIt {
 		sortable := timeSortableSamplePairs(it.(sampleStreamIterator).ss.Values)
 		sort.Sort(sortable)
 		// TODO: Dedupe samples. Not strictly necessary.
 	}
 
+	iterators := make([]local.SeriesIterator, 0, len(fpToIt))
+	for _, it := range fpToIt {
+		iterators = append(iterators, it)
+	}
+
 	return iterators, nil
+}
+
+// QueryInstant fetches series for a given instant and label matchers from multiple
+// promql.Queriers and returns the merged results as a map of series iterators.
+func (qm MergeQuerier) QueryInstant(ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
+	// For now, just fall back to QueryRange, as QueryInstant is merely allows
+	// for instant-specific optimization.
+	return qm.QueryRange(ts.Add(-stalenessDelta), ts, matchers...)
 }

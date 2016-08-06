@@ -219,15 +219,7 @@ func contextDone(ctx context.Context, env string) error {
 // It is connected to a querier.
 type Engine struct {
 	// The querier on which the engine operates.
-	querier local.Querier
-
-	// The Querier on which the engine operates.
-	//
-	// TODO: this is in addition to the local storage above, so that the rest of
-	// Prometheus still compiles and works with the old interface using the
-	// local.Querier. Eventually, we will want to change PromQL's interface to
-	// the storage also for the local storage case.
-	querier Querier
+	querier SampleQuerier
 
 	// The base context for all queries and its cancellation function.
 	baseCtx       context.Context
@@ -239,7 +231,7 @@ type Engine struct {
 }
 
 // NewEngine returns a new engine.
-func NewEngine(querier local.Querier, o *EngineOptions) *Engine {
+func NewEngine(querier SampleQuerier, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}

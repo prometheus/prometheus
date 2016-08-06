@@ -14,14 +14,16 @@
 package promql
 
 import (
+	"time"
+
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// A Querier provides a map of series iterators given a time range and label
-// matchers.
-type Querier interface {
-	Query(from, to model.Time, matchers ...*metric.LabelMatcher) (map[model.Fingerprint]local.MetricSeriesIterator, error)
+// A SampleQuerier allows querying for time series sample data.
+type SampleQuerier interface {
+	QueryRange(from, through model.Time, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error)
+	QueryInstant(ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error)
 }
