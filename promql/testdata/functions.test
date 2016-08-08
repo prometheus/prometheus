@@ -85,6 +85,28 @@ eval instant at 30m irate(http_requests[50m])
 
 clear
 
+# Tests for delta().
+load 5m
+	http_requests{path="/foo"}	0 50 100 150 200
+	http_requests{path="/bar"}	200 150 100 50 0
+
+eval instant at 20m delta(http_requests[20m])
+	{path="/foo"} 200
+	{path="/bar"} -200
+
+clear
+
+# Tests for idelta().
+load 5m
+	http_requests{path="/foo"}	0 50 100 150
+	http_requests{path="/bar"}	0 50 100 50
+
+eval instant at 20m idelta(http_requests[20m])
+	{path="/foo"} 50
+	{path="/bar"} -50
+
+clear
+
 # Tests for deriv() and predict_linear().
 load 5m
 	testcounter_reset_middle	0+10x4 0+10x5
