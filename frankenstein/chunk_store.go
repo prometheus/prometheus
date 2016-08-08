@@ -136,7 +136,7 @@ func awsConfigFromURL(url *url.URL) (*aws.Config, error) {
 func userID(ctx context.Context) (string, error) {
 	userid, ok := ctx.Value(UserIDContextKey).(string)
 	if !ok {
-		return "", fmt.Errorf("No user id")
+		return "", fmt.Errorf("no user id")
 	}
 	return userid, nil
 }
@@ -211,6 +211,10 @@ func bigBuckets(from, through model.Time) []int64 {
 	return result
 }
 
+func chunkName(userID string, chunk *wire.Chunk) string {
+	return fmt.Sprintf("%s/%s", userID, chunk.ID)
+}
+
 // Put implements ChunkStore
 func (c *AWSChunkStore) Put(ctx context.Context, chunks []wire.Chunk) error {
 	userID, err := userID(ctx)
@@ -225,7 +229,7 @@ func (c *AWSChunkStore) Put(ctx context.Context, chunks []wire.Chunk) error {
 			_, err = c.s3.PutObject(&s3.PutObjectInput{
 				Body:   bytes.NewReader(chunk.Data),
 				Bucket: aws.String(c.bucketName),
-				Key:    aws.String(fmt.Sprintf("%s/%s", userID, chunk.ID)),
+				Key:    aws.String(chunkName(userID, &chunk)),
 			})
 			return err
 		})
@@ -466,7 +470,7 @@ func (c *AWSChunkStore) fetchChunkData(userID string, chunkSet []wire.Chunk) ([]
 				var err error
 				resp, err = c.s3.GetObject(&s3.GetObjectInput{
 					Bucket: aws.String(c.bucketName),
-					Key:    aws.String(fmt.Sprintf("%s/%s", userID, chunk.ID)),
+					Key:    aws.String(chunkName(userID, &chunk)),
 				})
 				return err
 			})

@@ -20,7 +20,7 @@ import (
 const (
 	flushCheckPeriod = 1 * time.Minute
 	maxChunkAge      = 10 * time.Minute
-	UserIDContextKey = "FrankensteinUserID"
+	UserIDContextKey = "FrankensteinUserID" // TODO dedupe with copy in frankenstein/
 )
 
 // Ingestor deals with "in flight" chunks.
@@ -115,6 +115,7 @@ func (i *Ingestor) getStateFor(ctx context.Context) (*userState, error) {
 	}
 
 	i.userStateLock.Lock()
+	defer i.userStateLock.Unlock()
 	state, ok := i.userState[userID]
 	if !ok {
 		state = &userState{
@@ -130,8 +131,6 @@ func (i *Ingestor) getStateFor(ctx context.Context) (*userState, error) {
 		}
 		i.userState[userID] = state
 	}
-	i.userStateLock.Unlock()
-
 	return state, nil
 }
 
@@ -337,8 +336,8 @@ func (i *Ingestor) flushAllUsers(immediate bool) {
 		return
 	}
 
-	userIDs := []string{}
 	i.userStateLock.Lock()
+	userIDs := make([]string, 0, len(i.userState))
 	for userID := range i.userState {
 		userIDs = append(userIDs, userID)
 	}
@@ -356,6 +355,7 @@ func (i *Ingestor) flushAllUsers(immediate bool) {
 
 		ctx := context.WithValue(context.Background(), UserIDContextKey, userID)
 		i.flushAllSeries(ctx, userState, immediate)
+		// TODO: need to remove userState iff it is empty, under the lock.
 	}
 }
 

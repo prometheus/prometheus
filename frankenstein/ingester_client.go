@@ -20,6 +20,8 @@ type IngesterClient struct {
 	client   http.Client
 }
 
+// NewIngesterClient makes a new IngesterClient.  This client is careful to
+// propagate the user ID from Distributor -> Ingestor.
 func NewIngesterClient(hostname string, timeout time.Duration) *IngesterClient {
 	client := http.Client{
 		Timeout: timeout,
@@ -31,6 +33,10 @@ func NewIngesterClient(hostname string, timeout time.Duration) *IngesterClient {
 }
 
 func (c *IngesterClient) Append(ctx context.Context, samples []*model.Sample) error {
+	userID, err := userID(ctx)
+	if err != nil {
+		return err
+	}
 	req := &generic.GenericWriteRequest{}
 	for _, s := range samples {
 		ts := &generic.TimeSeries{
@@ -58,12 +64,22 @@ func (c *IngesterClient) Append(ctx context.Context, samples []*model.Sample) er
 		return err
 	}
 	buf := bytes.NewBuffer(data)
-	_, err = c.client.Post(fmt.Sprintf("http://%s/port", c.hostname), string(expfmt.FmtProtoDelim), buf)
+	httpReq, err := http.NewRequest("POST", fmt.Sprintf("http://%s/port", c.hostname), buf)
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Add(userIDHeaderName, userID)
+	httpReq.Header.Set("Content-Type", string(expfmt.FmtProtoDelim))
+	_, err = c.client.Do(httpReq)
 	return err
 }
 
 // Query implements Querier.
 func (c *IngesterClient) Query(ctx context.Context, from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+	userID, err := userID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	req := &generic.GenericReadRequest{
 		StartTimestampMs: proto.Int64(int64(from)),
 		EndTimestampMs:   proto.Int64(int64(to)),
@@ -96,7 +112,13 @@ func (c *IngesterClient) Query(ctx context.Context, from, to model.Time, matcher
 	buf := bytes.NewBuffer(data)
 
 	// TODO: This isn't actually the correct Content-type.
-	resp, err := c.client.Post(fmt.Sprintf("http://%s/query", c.hostname), string(expfmt.FmtProtoDelim), buf)
+	httpReq, err := http.NewRequest("POST", fmt.Sprintf("http://%s/query", c.hostname), buf)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Add(userIDHeaderName, userID)
+	httpReq.Header.Set("Content-Type", string(expfmt.FmtProtoDelim))
+	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return nil, err
 	}
