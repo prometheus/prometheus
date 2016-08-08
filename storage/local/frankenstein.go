@@ -111,7 +111,7 @@ func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
 func (i *Ingestor) getStateFor(ctx context.Context) (*userState, error) {
 	userID, ok := ctx.Value(UserIDContextKey).(string)
 	if !ok {
-		return nil, fmt.Errorf("No user id")
+		return nil, fmt.Errorf("no user id")
 	}
 
 	i.userStateLock.Lock()
