@@ -355,7 +355,13 @@ func (i *Ingestor) flushAllUsers(immediate bool) {
 
 		ctx := context.WithValue(context.Background(), UserIDContextKey, userID)
 		i.flushAllSeries(ctx, userState, immediate)
-		// TODO: need to remove userState iff it is empty, under the lock.
+
+		// TODO: this is probably slow, and could be done in a better way.
+		i.userStateLock.Lock()
+		if userState.fpToSeries.length() == 0 {
+			delete(i.userState, userID)
+		}
+		i.userStateLock.Unlock()
 	}
 }
 
