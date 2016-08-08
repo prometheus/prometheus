@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/frankenstein/wire"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -19,6 +20,7 @@ import (
 const (
 	flushCheckPeriod = 1 * time.Minute
 	maxChunkAge      = 10 * time.Minute
+	UserIDContextKey = "FrankensteinUserID" // TODO dedupe with copy in frankenstein/
 )
 
 // Ingestor deals with "in flight" chunks.
@@ -30,10 +32,8 @@ type Ingestor struct {
 	quit       chan struct{}
 	done       chan struct{}
 
-	fpLocker   *fingerprintLocker
-	fpToSeries *seriesMap
-	mapper     *fpMapper
-	index      *invertedIndex
+	userStateLock sync.Mutex
+	userState     map[string]*userState
 
 	ingestedSamples    prometheus.Counter
 	discardedSamples   *prometheus.CounterVec
@@ -43,9 +43,16 @@ type Ingestor struct {
 	queriedSamples     prometheus.Counter
 }
 
+type userState struct {
+	userID     string
+	fpLocker   *fingerprintLocker
+	fpToSeries *seriesMap
+	mapper     *fpMapper
+	index      *invertedIndex
+}
+
 type ChunkStore interface {
-	Put([]wire.Chunk) error
-	Get(from, through model.Time, matchers ...*metric.LabelMatcher) ([]wire.Chunk, error)
+	Put(context.Context, []wire.Chunk) error
 }
 
 func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
@@ -54,9 +61,7 @@ func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
 		quit:       make(chan struct{}),
 		done:       make(chan struct{}),
 
-		fpToSeries: newSeriesMap(),
-		fpLocker:   newFingerprintLocker(16),
-		index:      newInvertedIndex(),
+		userState: map[string]*userState{},
 
 		ingestedSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -98,21 +103,51 @@ func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
 			Help:      "The total number of samples returned from queries.",
 		}),
 	}
-	var err error
-	i.mapper, err = newFPMapper(i.fpToSeries, noopPersistence{})
-	if err != nil {
-		return nil, err
-	}
 
 	go i.loop()
 	return i, nil
 }
 
-func (*Ingestor) NeedsThrottling() bool {
+func (i *Ingestor) getStateFor(ctx context.Context) (*userState, error) {
+	userID, ok := ctx.Value(UserIDContextKey).(string)
+	if !ok {
+		return nil, fmt.Errorf("no user id")
+	}
+
+	i.userStateLock.Lock()
+	defer i.userStateLock.Unlock()
+	state, ok := i.userState[userID]
+	if !ok {
+		state = &userState{
+			userID:     userID,
+			fpToSeries: newSeriesMap(),
+			fpLocker:   newFingerprintLocker(16),
+			index:      newInvertedIndex(),
+		}
+		var err error
+		state.mapper, err = newFPMapper(state.fpToSeries, noopPersistence{})
+		if err != nil {
+			return nil, err
+		}
+		i.userState[userID] = state
+	}
+	return state, nil
+}
+
+func (*Ingestor) NeedsThrottling(_ context.Context) bool {
 	return false
 }
 
-func (i *Ingestor) Append(sample *model.Sample) error {
+func (i *Ingestor) Append(ctx context.Context, samples []*model.Sample) error {
+	for _, sample := range samples {
+		if err := i.append(ctx, sample); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (i *Ingestor) append(ctx context.Context, sample *model.Sample) error {
 	for ln, lv := range sample.Metric {
 		if len(lv) == 0 {
 			delete(sample.Metric, ln)
@@ -125,12 +160,17 @@ func (i *Ingestor) Append(sample *model.Sample) error {
 		return fmt.Errorf("ingestor stopping")
 	}
 
-	fp, series, err := i.getOrCreateSeries(sample.Metric)
+	state, err := i.getStateFor(ctx)
+	if err != nil {
+		return err
+	}
+
+	fp, series, err := state.getOrCreateSeries(sample.Metric)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		i.fpLocker.Unlock(fp)
+		state.fpLocker.Unlock(fp)
 	}()
 
 	if sample.Timestamp == series.lastTime {
@@ -161,16 +201,16 @@ func (i *Ingestor) Append(sample *model.Sample) error {
 	return err
 }
 
-func (i *Ingestor) getOrCreateSeries(metric model.Metric) (model.Fingerprint, *memorySeries, error) {
+func (u *userState) getOrCreateSeries(metric model.Metric) (model.Fingerprint, *memorySeries, error) {
 	rawFP := metric.FastFingerprint()
-	i.fpLocker.Lock(rawFP)
-	fp := i.mapper.mapFP(rawFP, metric)
+	u.fpLocker.Lock(rawFP)
+	fp := u.mapper.mapFP(rawFP, metric)
 	if fp != rawFP {
-		i.fpLocker.Unlock(rawFP)
-		i.fpLocker.Lock(fp)
+		u.fpLocker.Unlock(rawFP)
+		u.fpLocker.Lock(fp)
 	}
 
-	series, ok := i.fpToSeries.get(fp)
+	series, ok := u.fpToSeries.get(fp)
 	if ok {
 		return fp, series, nil
 	}
@@ -181,30 +221,35 @@ func (i *Ingestor) getOrCreateSeries(metric model.Metric) (model.Fingerprint, *m
 		// err should always be nil when chunkDescs are nil
 		panic(err)
 	}
-	i.fpToSeries.put(fp, series)
-	i.index.add(metric, fp)
+	u.fpToSeries.put(fp, series)
+	u.index.add(metric, fp)
 	return fp, series, nil
 }
 
-func (i *Ingestor) Query(from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+func (i *Ingestor) Query(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
 	i.queries.Inc()
 
-	fps := i.index.lookup(matchers)
+	state, err := i.getStateFor(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	fps := state.index.lookup(matchers)
 	log.Infof("Query: should return %v", fps)
 
 	// fps is sorted, lock them in order to prevent deadlocks
 	queriedSamples := 0
 	result := model.Matrix{}
 	for _, fp := range fps {
-		i.fpLocker.Lock(fp)
-		series, ok := i.fpToSeries.get(fp)
+		state.fpLocker.Lock(fp)
+		series, ok := state.fpToSeries.get(fp)
 		if !ok {
-			i.fpLocker.Unlock(fp)
+			state.fpLocker.Unlock(fp)
 			continue
 		}
 
 		values, err := samplesForRange(series, from, through)
-		i.fpLocker.Unlock(fp)
+		state.fpLocker.Unlock(fp)
 		if err != nil {
 			return nil, err
 		}
@@ -273,32 +318,63 @@ func (i *Ingestor) Stop() {
 }
 
 func (i *Ingestor) loop() {
-	defer i.flushAllSeries(true)
+	defer i.flushAllUsers(true)
 	defer close(i.done)
 	tick := time.Tick(flushCheckPeriod)
 	for {
 		select {
 		case <-tick:
-			i.flushAllSeries(false)
+			i.flushAllUsers(false)
 		case <-i.quit:
 			return
 		}
 	}
 }
 
-func (i *Ingestor) flushAllSeries(immediate bool) {
+func (i *Ingestor) flushAllUsers(immediate bool) {
 	if i.chunkStore == nil {
 		return
 	}
-	for pair := range i.fpToSeries.iter() {
-		if err := i.flushSeries(pair.fp, pair.series, immediate); err != nil {
+
+	i.userStateLock.Lock()
+	userIDs := make([]string, 0, len(i.userState))
+	for userID := range i.userState {
+		userIDs = append(userIDs, userID)
+	}
+	i.userStateLock.Unlock()
+
+	for _, userID := range userIDs {
+		i.userStateLock.Lock()
+		userState, ok := i.userState[userID]
+		i.userStateLock.Unlock()
+
+		// This should happen, right?
+		if !ok {
+			continue
+		}
+
+		ctx := context.WithValue(context.Background(), UserIDContextKey, userID)
+		i.flushAllSeries(ctx, userState, immediate)
+
+		// TODO: this is probably slow, and could be done in a better way.
+		i.userStateLock.Lock()
+		if userState.fpToSeries.length() == 0 {
+			delete(i.userState, userID)
+		}
+		i.userStateLock.Unlock()
+	}
+}
+
+func (i *Ingestor) flushAllSeries(ctx context.Context, state *userState, immediate bool) {
+	for pair := range state.fpToSeries.iter() {
+		if err := i.flushSeries(ctx, state, pair.fp, pair.series, immediate); err != nil {
 			log.Errorf("Failed to flush chunks for series: %v", err)
 		}
 	}
 }
 
-func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries, immediate bool) error {
-	i.fpLocker.Lock(fp)
+func (i *Ingestor) flushSeries(ctx context.Context, u *userState, fp model.Fingerprint, series *memorySeries, immediate bool) error {
+	u.fpLocker.Lock(fp)
 
 	// Decide what chunks to flush
 	if immediate || time.Now().Sub(series.firstTime().Time()) > maxChunkAge {
@@ -310,32 +386,31 @@ func (i *Ingestor) flushSeries(fp model.Fingerprint, series *memorySeries, immed
 	if !series.headChunkClosed {
 		chunks = chunks[:len(chunks)-1]
 	}
+	u.fpLocker.Unlock(fp)
 	if len(chunks) == 0 {
-		i.fpLocker.Unlock(fp)
 		return nil
 	}
 
 	// flush the chunks without locking the series
-	i.fpLocker.Unlock(fp)
 	log.Infof("Flushing %d chunks", len(chunks))
-	if err := i.flushChunks(fp, series.metric, chunks); err != nil {
+	if err := i.flushChunks(ctx, fp, series.metric, chunks); err != nil {
 		i.chunkStoreFailures.Add(float64(len(chunks)))
 		return err
 	}
 	i.storedChunks.Add(float64(len(chunks)))
 
 	// now remove the chunks
-	i.fpLocker.Lock(fp)
+	u.fpLocker.Lock(fp)
 	series.chunkDescs = series.chunkDescs[len(chunks):]
 	if len(series.chunkDescs) == 0 {
-		i.fpToSeries.del(fp)
-		i.index.delete(series.metric, fp)
+		u.fpToSeries.del(fp)
+		u.index.delete(series.metric, fp)
 	}
-	i.fpLocker.Unlock(fp)
+	u.fpLocker.Unlock(fp)
 	return nil
 }
 
-func (i *Ingestor) flushChunks(fp model.Fingerprint, metric model.Metric, chunks []*chunkDesc) error {
+func (i *Ingestor) flushChunks(ctx context.Context, fp model.Fingerprint, metric model.Metric, chunks []*chunkDesc) error {
 	wireChunks := make([]wire.Chunk, 0, len(chunks))
 	for _, chunk := range chunks {
 		buf := make([]byte, chunkLen)
@@ -351,12 +426,16 @@ func (i *Ingestor) flushChunks(fp model.Fingerprint, metric model.Metric, chunks
 			Data:    buf,
 		})
 	}
-	return i.chunkStore.Put(wireChunks)
+	return i.chunkStore.Put(ctx, wireChunks)
 }
 
 // Describe implements prometheus.Collector.
 func (i *Ingestor) Describe(ch chan<- *prometheus.Desc) {
-	i.mapper.Describe(ch)
+	i.userStateLock.Lock()
+	for _, state := range i.userState {
+		state.mapper.Describe(ch)
+	}
+	i.userStateLock.Unlock()
 
 	ch <- i.ingestedSamples.Desc()
 	i.discardedSamples.Describe(ch)
@@ -368,7 +447,11 @@ func (i *Ingestor) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector.
 func (i *Ingestor) Collect(ch chan<- prometheus.Metric) {
-	i.mapper.Collect(ch)
+	i.userStateLock.Lock()
+	for _, state := range i.userState {
+		state.mapper.Collect(ch)
+	}
+	i.userStateLock.Unlock()
 
 	ch <- i.ingestedSamples
 	i.discardedSamples.Collect(ch)

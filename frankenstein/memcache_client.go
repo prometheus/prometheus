@@ -156,12 +156,12 @@ func memcacheStatusCode(err error) string {
 }
 
 // FetchChunkData gets chunks from memcache.
-func (c *MemcacheClient) FetchChunkData(chunks []wire.Chunk) (found []wire.Chunk, missing []wire.Chunk, err error) {
+func (c *MemcacheClient) FetchChunkData(userID string, chunks []wire.Chunk) (found []wire.Chunk, missing []wire.Chunk, err error) {
 	memcacheRequests.Add(float64(len(chunks)))
 
 	keys := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
-		keys = append(keys, chunk.ID)
+		keys = append(keys, fmt.Sprintf("%s/%s", userID, chunk.ID))
 	}
 
 	var items map[string]*memcache.Item
@@ -189,11 +189,15 @@ func (c *MemcacheClient) FetchChunkData(chunks []wire.Chunk) (found []wire.Chunk
 }
 
 // StoreChunkData serializes and stores a chunk in memcache.
-func (c *MemcacheClient) StoreChunkData(chunk *wire.Chunk) error {
+func (c *MemcacheClient) StoreChunkData(userID string, chunk *wire.Chunk) error {
 	return TimeRequestHistogramStatus("Put", memcacheRequestDuration, memcacheStatusCode, func() error {
 		// TODO: Add compression - maybe encapsulated in marshaling/unmarshaling
 		// methods of wire.Chunk.
-		item := memcache.Item{Key: chunk.ID, Value: chunk.Data, Expiration: c.expiration}
+		item := memcache.Item{
+			Key:        fmt.Sprintf("%s/%s", userID, chunk.ID),
+			Value:      chunk.Data,
+			Expiration: c.expiration,
+		}
 		return c.client.Set(&item)
 	})
 }

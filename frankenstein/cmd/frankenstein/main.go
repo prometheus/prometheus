@@ -34,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/frankenstein"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/web/api/v1"
 )
 
@@ -129,18 +128,7 @@ func setupDistributor(
 	remoteTimeout time.Duration,
 ) {
 	clientFactory := func(hostname string) (*frankenstein.IngesterClient, error) {
-		appender := remote.New(&remote.Options{
-			GenericURL:     fmt.Sprintf("http://%s/push", hostname),
-			StorageTimeout: remoteTimeout,
-		})
-		appender.Run()
-
-		querier := frankenstein.NewIngesterQuerier(fmt.Sprintf("http://%s/query", hostname), 10*time.Second)
-
-		return &frankenstein.IngesterClient{
-			Appender: appender,
-			Querier:  querier,
-		}, nil
+		return frankenstein.NewIngesterClient(hostname, remoteTimeout), nil
 	}
 
 	distributor, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{

@@ -21,16 +21,32 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/storage/remote/generic"
 )
 
+// legacy from scope as a service.
+const userIDHeaderName = "X-Scope-OrgID"
+
+// SampleAppender is the interface to append samples to both, local and remote
+// storage. All methods are goroutine-safe.
+type SampleAppender interface {
+	Append(context.Context, []*model.Sample) error
+}
+
 // AppenderHandler returns a http.Handler that accepts protobuf formatted
 // metrics and sends them to the supplied appender.
-func AppenderHandler(appender storage.SampleAppender) http.Handler {
+func AppenderHandler(appender SampleAppender) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := r.Header.Get(userIDHeaderName)
+		if userID == "" {
+			http.Error(w, "", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(context.Background(), UserIDContextKey, userID)
 		req := &generic.GenericWriteRequest{}
 		buf := bytes.Buffer{}
 		_, err := buf.ReadFrom(r.Body)
@@ -46,6 +62,7 @@ func AppenderHandler(appender storage.SampleAppender) http.Handler {
 			return
 		}
 
+		var samples []*model.Sample
 		for _, ts := range req.Timeseries {
 			metric := model.Metric{}
 			if ts.Name != nil {
@@ -56,17 +73,18 @@ func AppenderHandler(appender storage.SampleAppender) http.Handler {
 			}
 
 			for _, s := range ts.Samples {
-				err := appender.Append(&model.Sample{
+				samples = append(samples, &model.Sample{
 					Metric:    metric,
 					Value:     model.SampleValue(s.GetValue()),
 					Timestamp: model.Time(s.GetTimestampMs()),
 				})
-				if err != nil {
-					log.Errorf(err.Error())
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
 			}
+		}
+
+		if err := appender.Append(ctx, samples); err != nil {
+			log.Errorf(err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -77,6 +95,13 @@ func AppenderHandler(appender storage.SampleAppender) http.Handler {
 // query requests and serves them.
 func QueryHandler(querier Querier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := r.Header.Get(userIDHeaderName)
+		if userID == "" {
+			http.Error(w, "", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(context.Background(), UserIDContextKey, userID)
 		req := &generic.GenericReadRequest{}
 		buf := bytes.Buffer{}
 		_, err := buf.ReadFrom(r.Body)
@@ -119,7 +144,7 @@ func QueryHandler(querier Querier) http.Handler {
 		start := model.Time(req.GetStartTimestampMs())
 		end := model.Time(req.GetEndTimestampMs())
 
-		res, err := querier.Query(start, end, matchers...)
+		res, err := querier.Query(ctx, start, end, matchers...)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
