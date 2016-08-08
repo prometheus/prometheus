@@ -139,7 +139,16 @@ func (*Ingestor) NeedsThrottling(_ context.Context) bool {
 	return false
 }
 
-func (i *Ingestor) Append(ctx context.Context, sample *model.Sample) error {
+func (i *Ingestor) Append(ctx context.Context, samples []*model.Sample) error {
+	for _, sample := range samples {
+		if err := i.append(ctx, sample); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (i *Ingestor) append(ctx context.Context, sample *model.Sample) error {
 	for ln, lv := range sample.Metric {
 		if len(lv) == 0 {
 			delete(sample.Metric, ln)

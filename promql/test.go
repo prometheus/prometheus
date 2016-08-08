@@ -23,10 +23,12 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/frankenstein"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -462,6 +464,24 @@ func (t *Test) Run() error {
 	return nil
 }
 
+type ingestorWrapper struct {
+	i *local.Ingestor
+}
+
+func (i ingestorWrapper) Append(s *model.Sample) error {
+	ctx := context.WithValue(context.Background(), local.UserIDContextKey, "0")
+	return i.i.Append(ctx, []*model.Sample{s})
+}
+
+func (i ingestorWrapper) NeedsThrottling() bool {
+	ctx := context.WithValue(context.Background(), local.UserIDContextKey, "0")
+	return i.i.NeedsThrottling(ctx)
+}
+
+func (i ingestorWrapper) Query(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+	return i.i.Query(ctx, from, through, matchers...)
+}
+
 // exec processes a single step of the test.
 func (t *Test) exec(tc testCommand) error {
 	switch cmd := tc.(type) {
@@ -474,7 +494,7 @@ func (t *Test) exec(tc testCommand) error {
 			cmd.append(t.storage)
 			t.storage.WaitForIndexing()
 		case IngestorStorage:
-			cmd.append(t.ingestor)
+			cmd.append(ingestorWrapper{t.ingestor})
 		}
 
 	case *evalCmd:
@@ -528,7 +548,7 @@ func (t *Test) clear() {
 			t.Fatalf("Error creating test ingestor: %v", err)
 		}
 		querier := frankenstein.MergeQuerier{
-			Queriers: []frankenstein.Querier{t.ingestor},
+			Queriers: []frankenstein.Querier{ingestorWrapper{t.ingestor}},
 		}
 		t.queryEngine = NewEngine(querier, nil)
 	default:

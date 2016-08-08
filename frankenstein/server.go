@@ -30,8 +30,7 @@ import (
 // SampleAppender is the interface to append samples to both, local and remote
 // storage. All methods are goroutine-safe.
 type SampleAppender interface {
-	Append(context.Context, *model.Sample) error
-	NeedsThrottling(context.Context) bool
+	Append(context.Context, []*model.Sample) error
 }
 
 // AppenderHandler returns a http.Handler that accepts protobuf formatted
@@ -54,6 +53,7 @@ func AppenderHandler(appender SampleAppender) http.Handler {
 			return
 		}
 
+		var samples []*model.Sample
 		for _, ts := range req.Timeseries {
 			metric := model.Metric{}
 			if ts.Name != nil {
@@ -64,17 +64,18 @@ func AppenderHandler(appender SampleAppender) http.Handler {
 			}
 
 			for _, s := range ts.Samples {
-				err := appender.Append(ctx, &model.Sample{
+				samples = append(samples, &model.Sample{
 					Metric:    metric,
 					Value:     model.SampleValue(s.GetValue()),
 					Timestamp: model.Time(s.GetTimestampMs()),
 				})
-				if err != nil {
-					log.Errorf(err.Error())
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
 			}
+		}
+
+		if err := appender.Append(ctx, samples); err != nil {
+			log.Errorf(err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -85,6 +86,7 @@ func AppenderHandler(appender SampleAppender) http.Handler {
 // query requests and serves them.
 func QueryHandler(querier Querier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(context.Background(), UserIDContextKey, r.Header.Get(UserIDContextKey))
 		req := &generic.GenericReadRequest{}
 		buf := bytes.Buffer{}
 		_, err := buf.ReadFrom(r.Body)
@@ -127,7 +129,7 @@ func QueryHandler(querier Querier) http.Handler {
 		start := model.Time(req.GetStartTimestampMs())
 		end := model.Time(req.GetEndTimestampMs())
 
-		res, err := querier.Query(start, end, matchers...)
+		res, err := querier.Query(ctx, start, end, matchers...)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

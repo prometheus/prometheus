@@ -73,8 +73,8 @@ func init() {
 
 // ChunkStore stores and indexes chunks
 type ChunkStore interface {
-	Put([]wire.Chunk) error
-	Get(from, through model.Time, matchers ...*metric.LabelMatcher) ([]wire.Chunk, error)
+	Put(ctx context.Context, chunks []wire.Chunk) error
+	Get(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]wire.Chunk, error)
 }
 
 // ChunkStoreConfig specifies config for a ChunkStore

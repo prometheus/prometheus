@@ -24,13 +24,6 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// An IngesterClient groups functionality for writing to and reading from a
-// single ingester.
-type IngesterClient struct {
-	Appender SampleAppender
-	Querier  Querier
-}
-
 // Distributor is a storage.SampleAppender and a frankenstein.Querier which
 // forwards appends and queries to individual ingesters.
 type Distributor struct {
@@ -111,18 +104,30 @@ func (d *Distributor) getClientFor(hostname string) (*IngesterClient, error) {
 }
 
 // Append implements SampleAppender.
-func (d *Distributor) Append(ctx context.Context, sample *model.Sample) error {
-	key := model.SignatureForLabels(sample.Metric, model.MetricNameLabel)
-	collector, err := d.ring.Get(uint64(key))
-	if err != nil {
-		return err
+func (d *Distributor) Append(ctx context.Context, samples []*model.Sample) error {
+	samplesByIngester := map[string][]*model.Sample{}
+	for _, sample := range samples {
+		key := model.SignatureForLabels(sample.Metric, model.MetricNameLabel)
+		collector, err := d.ring.Get(uint64(key))
+		if err != nil {
+			return err
+		}
+		otherSamples := samplesByIngester[collector.Hostname]
+		samplesByIngester[collector.Hostname] = append(otherSamples, sample)
 	}
 
-	client, err := d.getClientFor(collector.Hostname)
-	if err != nil {
-		return err
+	// TODO paralellise
+	for hostname, samples := range samplesByIngester {
+		client, err := d.getClientFor(hostname)
+		if err != nil {
+			return err
+		}
+		if err := client.Append(ctx, samples); err != nil {
+			return err
+		}
 	}
-	return client.Appender.Append(ctx, sample)
+
+	return nil
 }
 
 func metricNameFromLabelMatchers(matchers ...*metric.LabelMatcher) (model.LabelValue, error) {
@@ -138,7 +143,7 @@ func metricNameFromLabelMatchers(matchers ...*metric.LabelMatcher) (model.LabelV
 }
 
 // Query implements Querier.
-func (d *Distributor) Query(from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+func (d *Distributor) Query(ctx context.Context, from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
 	metricName, err := metricNameFromLabelMatchers(matchers...)
 	if err != nil {
 		return nil, err
@@ -158,7 +163,7 @@ func (d *Distributor) Query(from, to model.Time, matchers ...*metric.LabelMatche
 		return nil, err
 	}
 
-	return client.Querier.Query(from, to, matchers...)
+	return client.Query(ctx, from, to, matchers...)
 }
 
 // NeedsThrottling implements SampleAppender.
