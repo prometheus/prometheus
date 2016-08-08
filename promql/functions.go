@@ -145,8 +145,17 @@ func funcIncrease(ev *evaluator, args Expressions) model.Value {
 
 // === irate(node model.ValMatrix) Vector ===
 func funcIrate(ev *evaluator, args Expressions) model.Value {
+	return instantValue(ev, args[0], true)
+}
+
+// === idelta(node model.ValMatric) Vector ===
+func funcIdelta(ev *evaluator, args Expressions) model.Value {
+	return instantValue(ev, args[0], false)
+}
+
+func instantValue(ev *evaluator, arg Expr, isRate bool) model.Value {
 	resultVector := vector{}
-	for _, samples := range ev.evalMatrix(args[0]) {
+	for _, samples := range ev.evalMatrix(arg) {
 		// No sense in trying to compute a rate without at least two points. Drop
 		// this vector element.
 		if len(samples.Values) < 2 {
@@ -157,7 +166,7 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 		previousSample := samples.Values[len(samples.Values)-2]
 
 		var resultValue model.SampleValue
-		if lastSample.Value < previousSample.Value {
+		if isRate && lastSample.Value < previousSample.Value {
 			// Counter reset.
 			resultValue = lastSample.Value
 		} else {
@@ -169,8 +178,11 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 			// Avoid dividing by 0.
 			continue
 		}
-		// Convert to per-second.
-		resultValue /= model.SampleValue(sampledInterval.Seconds())
+
+		if isRate {
+			// Convert to per-second.
+			resultValue /= model.SampleValue(sampledInterval.Seconds())
+		}
 
 		resultSample := &sample{
 			Metric:    samples.Metric,
@@ -955,6 +967,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValMatrix},
 		ReturnType: model.ValVector,
 		Call:       funcIrate,
+	},
+	"idelta": {
+		Name:       "idelta",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcIdelta,
 	},
 	"label_replace": {
 		Name:       "label_replace",
