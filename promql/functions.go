@@ -183,6 +183,37 @@ func funcIrate(ev *evaluator, args Expressions) model.Value {
 	return resultVector
 }
 
+// === idelta(node model.ValMatric) Vector ===
+func funcIdelta(ev *evaluator, args Expressions) model.Value {
+	resultVector := vector{}
+	for _, samples := range ev.evalMatrix(args[0]) {
+		// No sense in trying to compute a rate without at least two points. Drop
+		// this vector element.
+		if len(samples.Values) < 2 {
+			continue
+		}
+
+		lastSample := samples.Values[len(samples.Values)-1]
+		previousSample := samples.Values[len(samples.Values)-2]
+		resultValue := lastSample.Value - previousSample.Value
+
+		sampledInterval := lastSample.Timestamp.Sub(previousSample.Timestamp)
+		if sampledInterval == 0 {
+			// Avoid dividing by 0.
+			continue
+		}
+
+		resultSample := &sample{
+			Metric:    samples.Metric,
+			Value:     resultValue,
+			Timestamp: ev.Timestamp,
+		}
+		resultSample.Metric.Del(model.MetricNameLabel)
+		resultVector = append(resultVector, resultSample)
+	}
+	return resultVector
+}
+
 // Calculate the trend value at the given index i in raw data d.
 // This is somewhat analogous to the slope of the trend at the given index.
 // The argument "s" is the set of computed smoothed values.
@@ -955,6 +986,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValMatrix},
 		ReturnType: model.ValVector,
 		Call:       funcIrate,
+	},
+	"idelta": {
+		Name:       "idelta",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcIdelta,
 	},
 	"label_replace": {
 		Name:       "label_replace",
