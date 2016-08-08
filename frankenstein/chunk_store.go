@@ -211,8 +211,17 @@ func bigBuckets(from, through model.Time) []int64 {
 	return result
 }
 
-func chunkName(userID string, chunk *wire.Chunk) string {
-	return fmt.Sprintf("%s/%s", userID, chunk.ID)
+func chunkName(userID, chunkID string) string {
+	return fmt.Sprintf("%s/%s", userID, chunkID)
+}
+
+func hashValue(userID string, hour int64, metricName model.LabelValue) string {
+	return fmt.Sprintf("%s:%d:%s", userID, hour, metricName)
+}
+
+func rangeValue(label model.LabelName, value model.LabelValue, chunkID string) string {
+	// TODO escaping - this will fail is the label name has an equals in it.
+	return fmt.Sprintf("%s=%s:%s", label, value, chunkID)
 }
 
 // Put implements ChunkStore
@@ -229,7 +238,7 @@ func (c *AWSChunkStore) Put(ctx context.Context, chunks []wire.Chunk) error {
 			_, err = c.s3.PutObject(&s3.PutObjectInput{
 				Body:   bytes.NewReader(chunk.Data),
 				Bucket: aws.String(c.bucketName),
-				Key:    aws.String(chunkName(userID, &chunk)),
+				Key:    aws.String(chunkName(userID, chunk.ID)),
 			})
 			return err
 		})
@@ -257,12 +266,9 @@ func (c *AWSChunkStore) Put(ctx context.Context, chunks []wire.Chunk) error {
 		}
 
 		for _, hour := range bigBuckets(chunk.From, chunk.Through) {
-			hashValue := fmt.Sprintf("%s:%d:%s", userID, hour, metricName)
-
+			hashValue := hashValue(userID, hour, metricName)
 			for label, value := range chunk.Metric {
-				// TODO escaping
-
-				rangeValue := fmt.Sprintf("%s=%s:%s", label, value, chunk.ID)
+				rangeValue := rangeValue(label, value, chunk.ID)
 				writeReqs = append(writeReqs, &dynamodb.WriteRequest{
 					PutRequest: &dynamodb.PutRequest{
 						Item: map[string]*dynamodb.AttributeValue{
@@ -386,10 +392,9 @@ func (c *AWSChunkStore) lookupChunksFor(userID string, hour int64, metricName mo
 			return
 		}
 
-		// TODO escaping - this will break if label values contain the separator (:)
-		hashValue := fmt.Sprintf("%s:%d:%s", userID, hour, metricName)
-		rangeMinValue := fmt.Sprintf("%s=%s:%s", matcher.Name, matcher.Value, minChunkID)
-		rangeMaxValue := fmt.Sprintf("%s=%s:%s", matcher.Name, matcher.Value, maxChunkID)
+		hashValue := hashValue(userID, hour, metricName)
+		rangeMinValue := rangeValue(matcher.Name, matcher.Value, minChunkID)
+		rangeMaxValue := rangeValue(matcher.Name, matcher.Value, maxChunkID)
 
 		var resp *dynamodb.QueryOutput
 		err := timeRequest("Query", dynamoRequestDuration, func() error {
@@ -470,7 +475,7 @@ func (c *AWSChunkStore) fetchChunkData(userID string, chunkSet []wire.Chunk) ([]
 				var err error
 				resp, err = c.s3.GetObject(&s3.GetObjectInput{
 					Bucket: aws.String(c.bucketName),
-					Key:    aws.String(chunkName(userID, &chunk)),
+					Key:    aws.String(chunkName(userID, chunk.ID)),
 				})
 				return err
 			})
