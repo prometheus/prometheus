@@ -32,15 +32,14 @@ type Querier interface {
 
 // A ChunkQuerier is a Querier that fetches samples from a ChunkStore.
 type ChunkQuerier struct {
-	ctx   context.Context // TODO initialise this to something reasonable.
 	Store ChunkStore
 }
 
 // Query implements Querier and transforms a list of chunks into sample
 // matrices.
-func (q *ChunkQuerier) Query(_ context.Context, from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+func (q *ChunkQuerier) Query(ctx context.Context, from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
 	// Get chunks for all matching series from ChunkStore.
-	chunks, err := q.Store.Get(q.ctx, from, to, matchers...)
+	chunks, err := q.Store.Get(ctx, from, to, matchers...)
 	if err != nil {
 		return nil, err
 	}
