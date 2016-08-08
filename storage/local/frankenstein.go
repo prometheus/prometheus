@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	flushCheckPeriod = 5 * time.Second
-	maxChunkAge      = 30 * time.Second
+	flushCheckPeriod = 1 * time.Minute
+	maxChunkAge      = 10 * time.Minute
 )
 
 // Ingestor deals with "in flight" chunks.
