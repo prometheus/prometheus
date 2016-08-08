@@ -172,12 +172,12 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// graphLink.
 			text:   "{{ graphLink \"up\" }}",
-			output: "/graph#%5B%7B%22expr%22%3A%22up%22%2C%22tab%22%3A0%7D%5D",
+			output: "/graph?g0.expr=up&g0.tab=0",
 		},
 		{
 			// tableLink.
 			text:   "{{ tableLink \"up\" }}",
-			output: "/graph#%5B%7B%22expr%22%3A%22up%22%2C%22tab%22%3A1%7D%5D",
+			output: "/graph?g0.expr=up&g0.tab=1",
 		},
 		{
 			// tmpl.
