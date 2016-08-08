@@ -427,3 +427,43 @@ eval instant at 0m days_in_month(vector(1454284800))
 # Febuary 1st 2017 not in leap year.
 eval instant at 0m days_in_month(vector(1485907200))
   {} 28
+
+
+# Tests for paa().
+clear
+
+load 1m
+	paa_test{path="/foo"}	1 2 3 0 1 0 0 1 2 0 1 2 3 0 1 0 0 1 2 0
+	paa_test{path="/boo"}	11 12 13 10 11 10 10 11 12 10 11 12 13 10 11 10 10 11 12 10
+	paa_test{path="/bao"}	20 40 60 00 20 00 00 20 40 00 20 40 60 00 20 00 00 20 40 00
+	paa_test{path="/bar"}	1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5
+	paa_test{path="/buz"}	1 1 1 1 0 0 0 0 1 1 1 1 0 0 0 0 1 1 1 1
+	paa_test{path="/biz"}	0 0 0 0 0 1 1 1 1 1 0 0 0 0 0 1 1 1 1 1
+	paa_test{path="/bun"}	0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1
+
+eval instant at 20m paa(paa_test[8m])
+	{path="/foo"} 15078193
+	{path="/boo"} 15078193
+	{path="/bao"} 15078193
+	{path="/bar"} 7799534
+	{path="/buz"} 2399670
+	{path="/biz"} 2420150
+	{path="/bun"} 14380470
+
+eval instant at 20m paa(paa_test[10m])
+	{path="/foo"} 10195569
+	{path="/boo"} 10195569
+	{path="/bao"} 10195569
+	{path="/bar"} 2781863
+	{path="/buz"} 14193590
+	{path="/biz"} 2399670
+	{path="/bun"} 14380470
+
+eval instant at 20m paa(paa_test[20m])
+	{path="/foo"} 7904369
+	{path="/boo"} 7904369
+	{path="/bao"} 7904369
+	{path="/bar"} 3466134
+	{path="/buz"} 11819565
+	{path="/biz"} 2581110
+	{path="/bun"} 2399670

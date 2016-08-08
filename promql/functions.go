@@ -1215,6 +1215,12 @@ var functions = map[string]*Function{
 		ReturnType:   model.ValVector,
 		Call:         funcYear,
 	},
+	"paa": {
+		Name:       "paa",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcPAA,
+	},
 }
 
 // getFunction returns a predefined Function object for the given name.
@@ -1279,4 +1285,31 @@ func (s *vectorByReverseValueHeap) Pop() interface{} {
 	el := old[n-1]
 	*s = old[0 : n-1]
 	return el
+}
+
+// === paa(matrix model.ValMatrix) Vector ===
+func funcPAA(ev *evaluator, args Expressions) model.Value {
+	ms := args[0].(*MatrixSelector)
+	in := ev.evalMatrix(ms)
+	out := vector{}
+
+	for _, samples := range in {
+		if len(samples.Values) < 2 {
+			continue
+		}
+
+		dd := lttb(samples, 8)
+		nd := zNorm(dd)
+		qd := quantize(nd)
+		f := bitsToFloat64bits(qd)
+
+		rs := &sample{
+			Metric:    samples.Metric,
+			Value:     model.SampleValue(f),
+			Timestamp: ev.Timestamp,
+		}
+		out = append(out, rs)
+	}
+
+	return out
 }
