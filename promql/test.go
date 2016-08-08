@@ -478,7 +478,8 @@ func (i ingestorWrapper) NeedsThrottling() bool {
 	return i.i.NeedsThrottling(ctx)
 }
 
-func (i ingestorWrapper) Query(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+func (i ingestorWrapper) Query(_ context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+	ctx := context.WithValue(context.Background(), local.UserIDContextKey, "0")
 	return i.i.Query(ctx, from, through, matchers...)
 }
 
