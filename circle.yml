@@ -8,6 +8,8 @@ machine:
 dependencies:
   pre:
     - mkdir -p $(dirname $SRCDIR) && cp -r $(pwd)/ $SRCDIR
+
+test:
   override:
     - cd $SRCDIR; make promu
     - cd $SRCDIR; GOOS=linux make build docker docker-frank
