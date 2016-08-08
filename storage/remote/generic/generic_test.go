@@ -51,7 +51,7 @@ func TestMarshalStoreSamplesRequest(t *testing.T) {
 			Value:     1.23,
 		},
 	}
-	client := NewClient(server.URL, time.Second)
+	client := NewClient(server.URL, nil, time.Second)
 	if err := client.Store(samples); err != nil {
 		t.Fatalf("Error sending samples: %s", err)
 	}

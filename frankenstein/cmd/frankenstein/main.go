@@ -30,11 +30,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/route"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/frankenstein"
-	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/frankenstein/api"
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/web/api/v1"
 )
 
 const (
@@ -147,17 +147,19 @@ func setupDistributor(
 	//              +----------> ChunkQuerier -> DynamoDB/S3
 	//
 	// TODO: Move querier to separate binary.
-	querier := frankenstein.MergeQuerier{
-		Queriers: []frankenstein.Querier{
-			distributor,
-			&frankenstein.ChunkQuerier{
-				Store: chunkStore,
+	newQuerier := func(ctx context.Context) local.Querier {
+		return frankenstein.MergeQuerier{
+			Queriers: []frankenstein.Querier{
+				distributor,
+				&frankenstein.ChunkQuerier{
+					Store: chunkStore,
+				},
 			},
-		},
+			Context: ctx,
+		}
 	}
-	engine := promql.NewEngine(querier, nil)
 
-	api := v1.NewAPI(engine, nil)
+	api := api.New(newQuerier)
 	router := route.New()
 	api.Register(router.WithPrefix("/api/v1"))
 	http.Handle("/", router)

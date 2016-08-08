@@ -235,7 +235,6 @@ func (i *Ingestor) Query(ctx context.Context, from, through model.Time, matchers
 	}
 
 	fps := state.index.lookup(matchers)
-	log.Infof("Query: should return %v", fps)
 
 	// fps is sorted, lock them in order to prevent deadlocks
 	queriedSamples := 0

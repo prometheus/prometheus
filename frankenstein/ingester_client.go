@@ -83,8 +83,14 @@ func (c *IngesterClient) Append(ctx context.Context, samples []*model.Sample) er
 	}
 	httpReq.Header.Add(userIDHeaderName, userID)
 	httpReq.Header.Set("Content-Type", string(expfmt.FmtProtoDelim))
-	_, err = c.client.Do(httpReq)
-	return err
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("error sending samples to ingester: %v", err)
+	}
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("sending samples to ingester failed with HTTP status %s", resp.Status)
+	}
+	return nil
 }
 
 // Query implements Querier.

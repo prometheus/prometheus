@@ -89,8 +89,8 @@ func (ts timeSortableSamplePairs) Swap(i, j int) {
 // A MergeQuerier is a promql.Querier that merges the results of multiple
 // frankenstein.Queriers for the same query.
 type MergeQuerier struct {
-	ctx      context.Context
 	Queriers []Querier
+	Context  context.Context
 }
 
 // QueryRange fetches series for a given time range and label matchers from multiple
@@ -101,7 +101,7 @@ func (qm MergeQuerier) QueryRange(from, to model.Time, matchers ...*metric.Label
 	// Fetch samples from all queriers and group them by fingerprint (unsorted
 	// and with overlap).
 	for _, q := range qm.Queriers {
-		matrix, err := q.Query(qm.ctx, from, to, matchers...)
+		matrix, err := q.Query(qm.Context, from, to, matchers...)
 		if err != nil {
 			return nil, err
 		}
@@ -140,4 +140,22 @@ func (qm MergeQuerier) QueryInstant(ts model.Time, stalenessDelta time.Duration,
 	// For now, just fall back to QueryRange, as QueryInstant is merely allows
 	// for instant-specific optimization.
 	return qm.QueryRange(ts.Add(-stalenessDelta), ts, matchers...)
+}
+
+// MetricsForLabelMatchers Implements local.Querier.
+func (qm MergeQuerier) MetricsForLabelMatchers(from, through model.Time, matcherSets ...metric.LabelMatchers) ([]metric.Metric, error) {
+	// TODO: Implement.
+	return nil, nil
+}
+
+// LastSampleForLabelMatchers implements local.Querier.
+func (qm MergeQuerier) LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
+	// TODO: Implement.
+	return nil, nil
+}
+
+// LabelValuesForLabelName implements local.Querier.
+func (qm MergeQuerier) LabelValuesForLabelName(model.LabelName) (model.LabelValues, error) {
+	// TODO: Implement.
+	return nil, nil
 }

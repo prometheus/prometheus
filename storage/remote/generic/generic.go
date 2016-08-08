@@ -15,6 +15,7 @@ package generic
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -24,21 +25,25 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-// Client allows sending batches of Prometheus samples to a http endpoint.
+// Client allows sending batches of Prometheus samples to an HTTP endpoint.
 type Client struct {
 	url     string
-	timeout time.Duration
+	headers http.Header
+	client  http.Client
 }
 
 // NewClient creates a new Client.
-func NewClient(url string, timeout time.Duration) *Client {
+func NewClient(url string, headers http.Header, timeout time.Duration) *Client {
 	return &Client{
 		url:     url,
-		timeout: timeout,
+		headers: headers,
+		client: http.Client{
+			Timeout: timeout,
+		},
 	}
 }
 
-// Store sends a batch of samples to the http endpoint.
+// Store sends a batch of samples to the HTTP endpoint.
 func (c *Client) Store(samples model.Samples) error {
 	req := &GenericWriteRequest{}
 	for _, s := range samples {
@@ -68,18 +73,24 @@ func (c *Client) Store(samples model.Samples) error {
 	}
 	buf := bytes.NewBuffer(data)
 
-	client := http.Client{
-		Timeout: c.timeout,
+	httpReq, err := http.NewRequest("POST", c.url, buf)
+	for name, values := range c.headers {
+		for _, val := range values {
+			httpReq.Header.Add(name, val)
+		}
 	}
-	_, err = client.Post(c.url, string(expfmt.FmtProtoDelim), buf)
+	httpReq.Header.Set("Content-Type", string(expfmt.FmtProtoDelim))
+	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return err
+		return fmt.Errorf("error sending samples: %v", err)
 	}
-
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("sending samples failed with HTTP status %s", resp.Status)
+	}
 	return nil
 }
 
-// Name identifies the client as a genric client.
+// Name identifies the client as a generic client.
 func (c Client) Name() string {
 	return "generic"
 }
