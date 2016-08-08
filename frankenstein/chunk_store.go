@@ -40,6 +40,9 @@ const (
 	chunkKey   = "c"
 	minChunkID = "0000000000000000"
 	maxChunkID = "FFFFFFFFFFFFFFFF"
+
+	// See http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html.
+	dynamoMaxBatchSize = 25
 )
 
 var (
@@ -254,20 +257,32 @@ func (c *AWSChunkStore) Put(chunks []wire.Chunk) error {
 		}
 	}
 
-	var resp *dynamodb.BatchWriteItemOutput
-	err := timeRequest("BatchWriteItem", dynamoRequestDuration, func() error {
-		var err error
-		resp, err = c.dynamodb.BatchWriteItem(&dynamodb.BatchWriteItemInput{
-			RequestItems:           map[string][]*dynamodb.WriteRequest{c.tableName: writeReqs},
-			ReturnConsumedCapacity: aws.String(dynamodb.ReturnConsumedCapacityTotal),
+	for i := 0; i < len(writeReqs); i += dynamoMaxBatchSize {
+		var reqs []*dynamodb.WriteRequest
+		if i+dynamoMaxBatchSize > len(writeReqs) {
+			reqs = writeReqs[i:]
+		} else {
+			reqs = writeReqs[i : i+dynamoMaxBatchSize]
+		}
+
+		var resp *dynamodb.BatchWriteItemOutput
+		err := timeRequest("BatchWriteItem", dynamoRequestDuration, func() error {
+			var err error
+			resp, err = c.dynamodb.BatchWriteItem(&dynamodb.BatchWriteItemInput{
+				RequestItems:           map[string][]*dynamodb.WriteRequest{c.tableName: reqs},
+				ReturnConsumedCapacity: aws.String(dynamodb.ReturnConsumedCapacityTotal),
+			})
+			return err
 		})
-		return err
-	})
-	for _, cc := range resp.ConsumedCapacity {
-		dynamoConsumedCapacity.WithLabelValues("PutItem").
-			Add(float64(*cc.CapacityUnits))
+		for _, cc := range resp.ConsumedCapacity {
+			dynamoConsumedCapacity.WithLabelValues("PutItem").
+				Add(float64(*cc.CapacityUnits))
+		}
+		if err != nil {
+			return fmt.Errorf("error writing DynamoDB batch: %v", err)
+		}
 	}
-	return err
+	return nil
 }
 
 // Get implements ChunkStore
