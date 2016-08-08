@@ -77,7 +77,7 @@ func (c *IngesterClient) Append(ctx context.Context, samples []*model.Sample) er
 		return err
 	}
 	buf := bytes.NewBuffer(data)
-	httpReq, err := http.NewRequest("POST", fmt.Sprintf("http://%s/port", c.hostname), buf)
+	httpReq, err := http.NewRequest("POST", fmt.Sprintf("http://%s/push", c.hostname), buf)
 	if err != nil {
 		return err
 	}
