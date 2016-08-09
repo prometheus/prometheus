@@ -130,7 +130,6 @@ func setupDistributor(
 	clientFactory := func(hostname string) (*frankenstein.IngesterClient, error) {
 		return frankenstein.NewIngesterClient(hostname, remoteTimeout), nil
 	}
-
 	distributor, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{
 		ConsulClient:  consulClient,
 		ConsulPrefix:  consulPrefix,
@@ -139,6 +138,7 @@ func setupDistributor(
 	if err != nil {
 		log.Fatal(err)
 	}
+	http.Handle("/api/prom/push", frankenstein.AppenderHandler(distributor))
 
 	// This sets up a complete querying pipeline:
 	//
@@ -161,10 +161,8 @@ func setupDistributor(
 
 	api := api.New(newQuerier)
 	router := route.New()
-	api.Register(router.WithPrefix("/api/v1"))
+	api.Register(router.WithPrefix("/api/prom/api/v1"))
 	http.Handle("/", router)
-
-	http.Handle("/api/prom/push", frankenstein.AppenderHandler(distributor))
 }
 
 func setupIngestor(
