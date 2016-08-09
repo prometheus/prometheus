@@ -4,10 +4,12 @@ machine:
   environment:
     GOPATH: /home/ubuntu
     SRCDIR: /home/ubuntu/src/github.com/prometheus/prometheus
+    DOCKER_TAG: $(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
 
 dependencies:
   pre:
     - mkdir -p $(dirname $SRCDIR) && cp -r $(pwd)/ $SRCDIR
+    - go get -u github.com/weaveworks/build-tools/cmd/wcloud
 
 test:
   override:
@@ -20,6 +22,7 @@ deployment:
     owner: tomwilkie
     commands:
       - docker login -e $DOCKER_EMAIL -u $DOCKER_LOGIN -p $DOCKER_PASSWORD
-      - docker push tomwilkie/prometheus:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
-      - docker push tomwilkie/frankenstein:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
-
+      - docker push tomwilkie/prometheus:$DOCKER_TAG
+      - docker push tomwilkie/frankenstein:$DOCKER_TAG
+      - wcloud deploy tomwilkie/prometheus:$DOCKER_TAG
+      - wcloud deploy tomwilkie/frankenstein:$DOCKER_TAG
