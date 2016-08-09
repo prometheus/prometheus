@@ -164,7 +164,7 @@ func setupDistributor(
 	api.Register(router.WithPrefix("/api/v1"))
 	http.Handle("/", router)
 
-	http.Handle("/push", frankenstein.AppenderHandler(distributor))
+	http.Handle("/api/prom/push", frankenstein.AppenderHandler(distributor))
 }
 
 func setupIngestor(
