@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package relabel
 
 import (
 	"crypto/md5"
@@ -23,27 +23,23 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
-// Relabel returns a relabeled copy of the given label set. The relabel configurations
+// Process returns a relabeled copy of the given label set. The relabel configurations
 // are applied in order of input.
 // If a label set is dropped, nil is returned.
-func Relabel(labels model.LabelSet, cfgs ...*config.RelabelConfig) (model.LabelSet, error) {
+func Process(labels model.LabelSet, cfgs ...*config.RelabelConfig) model.LabelSet {
 	out := model.LabelSet{}
 	for ln, lv := range labels {
 		out[ln] = lv
 	}
-	var err error
 	for _, cfg := range cfgs {
-		if out, err = relabel(out, cfg); err != nil {
-			return nil, err
-		}
-		if out == nil {
-			return nil, nil
+		if out = relabel(out, cfg); out == nil {
+			return nil
 		}
 	}
-	return out, nil
+	return out
 }
 
-func relabel(labels model.LabelSet, cfg *config.RelabelConfig) (model.LabelSet, error) {
+func relabel(labels model.LabelSet, cfg *config.RelabelConfig) model.LabelSet {
 	values := make([]string, 0, len(cfg.SourceLabels))
 	for _, ln := range cfg.SourceLabels {
 		values = append(values, string(labels[ln]))
@@ -53,11 +49,11 @@ func relabel(labels model.LabelSet, cfg *config.RelabelConfig) (model.LabelSet, 
 	switch cfg.Action {
 	case config.RelabelDrop:
 		if cfg.Regex.MatchString(val) {
-			return nil, nil
+			return nil
 		}
 	case config.RelabelKeep:
 		if !cfg.Regex.MatchString(val) {
-			return nil, nil
+			return nil
 		}
 	case config.RelabelReplace:
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
@@ -90,7 +86,7 @@ func relabel(labels model.LabelSet, cfg *config.RelabelConfig) (model.LabelSet, 
 	default:
 		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
 	}
-	return labels, nil
+	return labels
 }
 
 // sum64 sums the md5 hash to an uint64.

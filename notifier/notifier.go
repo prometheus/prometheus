@@ -30,7 +30,7 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/relabel"
 )
 
 const (
@@ -239,7 +239,7 @@ func (n *Notifier) Send(alerts ...*model.Alert) {
 func (n *Notifier) relabelAlerts(alerts []*model.Alert) []*model.Alert {
 	var relabeledAlerts []*model.Alert
 	for _, alert := range alerts {
-		labels, _ := retrieval.Relabel(alert.Labels, n.opts.RelabelConfigs...)
+		labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
 		if labels != nil {
 			alert.Labels = labels
 			relabeledAlerts = append(relabeledAlerts, alert)
