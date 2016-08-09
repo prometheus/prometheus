@@ -138,7 +138,7 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	defer n.mtx.Unlock()
 
 	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
-	n.opts.RelabelConfigs = conf.AlertRelabelConfigs
+	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
 	return nil
 }
 
