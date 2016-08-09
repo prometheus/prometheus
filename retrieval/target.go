@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/httputil"
 )
@@ -275,10 +276,8 @@ type relabelAppender struct {
 }
 
 func (app relabelAppender) Append(s *model.Sample) error {
-	labels, err := Relabel(model.LabelSet(s.Metric), app.relabelings...)
-	if err != nil {
-		return fmt.Errorf("metric relabeling error %s: %s", s.Metric, err)
-	}
+	labels := relabel.Process(model.LabelSet(s.Metric), app.relabelings...)
+
 	// Check if the timeseries was dropped.
 	if labels == nil {
 		return nil

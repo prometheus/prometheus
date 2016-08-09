@@ -25,6 +25,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/prometheus/retrieval/discovery"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -448,10 +449,8 @@ func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Targ
 
 		preRelabelLabels := labels
 
-		labels, err := Relabel(labels, cfg.RelabelConfigs...)
-		if err != nil {
-			return nil, fmt.Errorf("error while relabeling instance %d in target group %s: %s", i, tg, err)
-		}
+		labels := relabel.Process(labels, cfg.RelabelConfigs...)
+
 		// Check if the target was dropped.
 		if labels == nil {
 			continue
@@ -469,7 +468,7 @@ func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Targ
 			}
 			labels[model.AddressLabel] = model.LabelValue(addr)
 		}
-		if err = config.CheckTargetAddress(labels[model.AddressLabel]); err != nil {
+		if err := config.CheckTargetAddress(labels[model.AddressLabel]); err != nil {
 			return nil, err
 		}
 
