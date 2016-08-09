@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 func TestPostURL(t *testing.T) {
@@ -185,7 +187,53 @@ func TestHandlerSendAll(t *testing.T) {
 	}
 }
 
-func TestHandlerFull(t *testing.T) {
+func TestHandlerRelabel(t *testing.T) {
+	h := New(&Options{
+		QueueCapacity: 3 * maxBatchSize,
+		RelabelConfigs: []*config.RelabelConfig{
+			&config.RelabelConfig{
+				SourceLabels: model.LabelNames{"alertname"},
+				Action:       "drop",
+				Regex:        config.MustNewRegexp("drop"),
+			},
+			&config.RelabelConfig{
+				SourceLabels: model.LabelNames{"alertname"},
+				TargetLabel:  "alertname",
+				Action:       "replace",
+				Regex:        config.MustNewRegexp("rename"),
+				Replacement:  "renamed",
+			},
+		},
+	})
+
+	// This alert should be dropped due to the configuration
+	h.Send(&model.Alert{
+		Labels: model.LabelSet{
+			"alertname": "drop",
+		},
+	})
+
+	// This alert should be replaced due to the configuration
+	h.Send(&model.Alert{
+		Labels: model.LabelSet{
+			"alertname": "rename",
+		},
+	})
+
+	expected := []*model.Alert{
+		&model.Alert{
+			Labels: model.LabelSet{
+				"alertname": "renamed",
+			},
+		},
+	}
+
+	if !alertsEqual(expected, h.queue) {
+		t.Errorf("Expected alerts %v, got %v", expected, h.queue)
+	}
+}
+
+func TestHandlerQueueing(t *testing.T) {
 	var (
 		unblock  = make(chan struct{})
 		called   = make(chan struct{})

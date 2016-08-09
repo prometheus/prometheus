@@ -30,6 +30,7 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval"
 )
 
 const (
@@ -69,9 +70,10 @@ type Options struct {
 	QueueCapacity    int
 	Timeout          time.Duration
 	ExternalLabels   model.LabelSet
+	RelabelConfigs   []*config.RelabelConfig
 }
 
-// New constructs a neww Notifier.
+// New constructs a new Notifier.
 func New(o *Options) *Notifier {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -136,6 +138,7 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	defer n.mtx.Unlock()
 
 	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
+	n.opts.RelabelConfigs = conf.AlertRelabelConfigs
 	return nil
 }
 
@@ -208,6 +211,8 @@ func (n *Notifier) Send(alerts ...*model.Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
+	alerts = n.relabelAlerts(alerts)
+
 	// Queue capacity should be significantly larger than a single alert
 	// batch could be.
 	if d := len(alerts) - n.opts.QueueCapacity; d > 0 {
@@ -229,6 +234,18 @@ func (n *Notifier) Send(alerts ...*model.Alert) {
 
 	// Notify sending goroutine that there are alerts to be processed.
 	n.setMore()
+}
+
+func (n *Notifier) relabelAlerts(alerts []*model.Alert) []*model.Alert {
+	var relabeledAlerts []*model.Alert
+	for _, alert := range alerts {
+		labels, _ := retrieval.Relabel(alert.Labels, n.opts.RelabelConfigs...)
+		if labels != nil {
+			alert.Labels = labels
+			relabeledAlerts = append(relabeledAlerts, alert)
+		}
+	}
+	return relabeledAlerts
 }
 
 // setMore signals that the alert queue has items.
