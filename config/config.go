@@ -176,9 +176,10 @@ func (u URL) MarshalYAML() (interface{}, error) {
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig  GlobalConfig    `yaml:"global"`
-	RuleFiles     []string        `yaml:"rule_files,omitempty"`
-	ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	GlobalConfig        GlobalConfig     `yaml:"global"`
+	AlertRelabelConfigs []*RelabelConfig `yaml:"alert_relabel_configs,omitempty"`
+	RuleFiles           []string         `yaml:"rule_files,omitempty"`
+	ScrapeConfigs       []*ScrapeConfig  `yaml:"scrape_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
