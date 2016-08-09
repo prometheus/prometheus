@@ -33,6 +33,9 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
+// TODO: Dedupe this constant.
+const userIDHeaderName = "X-Scope-OrgID"
+
 type status string
 
 const (
@@ -104,17 +107,16 @@ func New(newQuerier func(ctx context.Context) local.Querier) *API {
 func (api *API) Register(r *route.Router) {
 	instr := func(name string, f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// TODO: Get user ID from header again once we have a proxy in front of
-			// Frankenstein that creates the header:
-			//
-			// userID := r.Header.Get(userIDHeaderName)
-			//
-			// For now, getting the user ID from basic auth allows for easy testing
-			// with Grafana.
-			userID, _, _ := r.BasicAuth()
+			userID := r.Header.Get(userIDHeaderName)
 			if r.Method != "OPTIONS" && userID == "" {
-				respondError(w, &apiError{errorBadData, fmt.Errorf("missing user ID")}, nil)
-				return
+				// For now, getting the user ID from basic auth allows for easy testing
+				// with Grafana.
+				// TODO: Remove basic auth support.
+				userID, _, _ := r.BasicAuth()
+				if userID == "" {
+					respondError(w, &apiError{errorBadData, fmt.Errorf("missing user ID")}, nil)
+					return
+				}
 			}
 			ctx := context.WithValue(context.Background(), local.UserIDContextKey, userID) // TODO: replace string with constant
 			setCORS(w)
