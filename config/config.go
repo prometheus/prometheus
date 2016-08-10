@@ -575,9 +575,6 @@ func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
 	}
 	tg.Targets = make([]model.LabelSet, 0, len(g.Targets))
 	for _, t := range g.Targets {
-		if strings.Contains(t, "/") {
-			return fmt.Errorf("%q is not a valid hostname", t)
-		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
 			model.AddressLabel: model.LabelValue(t),
 		})
