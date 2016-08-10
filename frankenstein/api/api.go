@@ -112,7 +112,7 @@ func (api *API) Register(r *route.Router) {
 				// For now, getting the user ID from basic auth allows for easy testing
 				// with Grafana.
 				// TODO: Remove basic auth support.
-				userID, _, _ := r.BasicAuth()
+				userID, _, _ = r.BasicAuth()
 				if userID == "" {
 					respondError(w, &apiError{errorBadData, fmt.Errorf("missing user ID")}, nil)
 					return

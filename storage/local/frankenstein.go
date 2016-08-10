@@ -307,6 +307,16 @@ func samplesForRange(s *memorySeries, from, through model.Time) ([]model.SampleP
 	return values, nil
 }
 
+// Get all of the label values that are associated with a given label name.
+func (i *Ingestor) LabelValuesForLabelName(ctx context.Context, name model.LabelName) (model.LabelValues, error) {
+	state, err := i.getStateFor(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return state.index.lookupLabelValues(name), nil
+}
+
 func (i *Ingestor) Stop() {
 	i.stopLock.Lock()
 	i.stopped = true
@@ -519,6 +529,21 @@ func (i *invertedIndex) lookup(matchers []*metric.LabelMatcher) []model.Fingerpr
 	}
 
 	return intersection
+}
+
+func (i *invertedIndex) lookupLabelValues(name model.LabelName) model.LabelValues {
+	i.mtx.RLock()
+	defer i.mtx.RUnlock()
+
+	values, ok := i.idx[name]
+	if !ok {
+		return nil
+	}
+	res := make(model.LabelValues, 0, len(values))
+	for val := range values {
+		res = append(res, val)
+	}
+	return res
 }
 
 func (i *invertedIndex) delete(metric model.Metric, fp model.Fingerprint) {

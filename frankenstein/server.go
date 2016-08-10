@@ -36,29 +36,51 @@ type SampleAppender interface {
 	Append(context.Context, []*model.Sample) error
 }
 
+func parseRequest(w http.ResponseWriter, r *http.Request, req proto.Message) (ctx context.Context, abort bool) {
+	userID := r.Header.Get(userIDHeaderName)
+	if userID == "" {
+		http.Error(w, "", http.StatusUnauthorized)
+		return nil, true
+	}
+
+	ctx = context.WithValue(context.Background(), UserIDContextKey, userID)
+	buf := bytes.Buffer{}
+	_, err := buf.ReadFrom(r.Body)
+	if err != nil {
+		log.Errorf(err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return nil, true
+	}
+	err = proto.Unmarshal(buf.Bytes(), req)
+	if err != nil {
+		log.Errorf(err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return nil, true
+	}
+
+	return ctx, false
+}
+
+func writeResponse(w http.ResponseWriter, resp proto.Message) {
+	data, err := proto.Marshal(resp)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err = w.Write(data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// TODO: set Content-type.
+}
+
 // AppenderHandler returns a http.Handler that accepts protobuf formatted
 // metrics and sends them to the supplied appender.
 func AppenderHandler(appender SampleAppender) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get(userIDHeaderName)
-		if userID == "" {
-			http.Error(w, "", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(context.Background(), UserIDContextKey, userID)
 		req := &generic.GenericWriteRequest{}
-		buf := bytes.Buffer{}
-		_, err := buf.ReadFrom(r.Body)
-		if err != nil {
-			log.Errorf(err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		err = proto.Unmarshal(buf.Bytes(), req)
-		if err != nil {
-			log.Errorf(err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		ctx, abort := parseRequest(w, r, req)
+		if abort {
 			return
 		}
 
@@ -95,25 +117,9 @@ func AppenderHandler(appender SampleAppender) http.Handler {
 // query requests and serves them.
 func QueryHandler(querier Querier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get(userIDHeaderName)
-		if userID == "" {
-			http.Error(w, "", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(context.Background(), UserIDContextKey, userID)
 		req := &generic.GenericReadRequest{}
-		buf := bytes.Buffer{}
-		_, err := buf.ReadFrom(r.Body)
-		if err != nil {
-			log.Errorf(err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		err = proto.Unmarshal(buf.Bytes(), req)
-		if err != nil {
-			log.Errorf(err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		ctx, abort := parseRequest(w, r, req)
+		if abort {
 			return
 		}
 
@@ -173,15 +179,30 @@ func QueryHandler(querier Querier) http.Handler {
 			}
 			resp.Timeseries = append(resp.Timeseries, ts)
 		}
-		data, err := proto.Marshal(resp)
+
+		writeResponse(w, resp)
+	})
+}
+
+func LabelValuesHandler(querier Querier) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := &generic.GenericLabelValuesRequest{}
+		ctx, abort := parseRequest(w, r, req)
+		if abort {
+			return
+		}
+
+		values, err := querier.LabelValuesForLabelName(ctx, model.LabelName(req.GetLabelName()))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if _, err = w.Write(data); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+
+		resp := &generic.GenericLabelValuesResponse{}
+		for _, v := range values {
+			resp.LabelValues = append(resp.LabelValues, string(v))
 		}
-		// TODO: set Content-type.
+
+		writeResponse(w, resp)
 	})
 }

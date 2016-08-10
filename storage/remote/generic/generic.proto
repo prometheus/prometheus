@@ -59,3 +59,11 @@ message GenericReadRequest {
 message GenericReadResponse {
   repeated TimeSeries timeseries = 1;
 }
+
+message GenericLabelValuesRequest {
+  optional string label_name = 1;
+}
+
+message GenericLabelValuesResponse {
+  repeated string label_values = 1;
+}

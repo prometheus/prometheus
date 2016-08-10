@@ -187,6 +187,7 @@ func setupIngestor(
 	prometheus.MustRegister(ingestor)
 	http.Handle("/push", frankenstein.AppenderHandler(ingestor))
 	http.Handle("/query", frankenstein.QueryHandler(ingestor))
+	http.Handle("/label_values", frankenstein.LabelValuesHandler(ingestor))
 	return ingestor
 }
 

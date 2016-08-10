@@ -167,6 +167,30 @@ func (d *Distributor) Query(ctx context.Context, from, to model.Time, matchers .
 	return client.Query(ctx, from, to, matchers...)
 }
 
+// LabelValuesForLabelName returns all of the label values that are associated with a given label name.
+func (d *Distributor) LabelValuesForLabelName(ctx context.Context, labelName model.LabelName) (model.LabelValues, error) {
+	valueSet := map[model.LabelValue]struct{}{}
+	for _, c := range d.ring.GetAll() {
+		client, err := d.getClientFor(c.Hostname)
+		if err != nil {
+			return nil, err
+		}
+		vals, err := client.LabelValuesForLabelName(ctx, labelName)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range vals {
+			valueSet[v] = struct{}{}
+		}
+	}
+
+	values := make(model.LabelValues, 0, len(valueSet))
+	for v := range valueSet {
+		values = append(values, v)
+	}
+	return values, nil
+}
+
 // NeedsThrottling implements SampleAppender.
 func (*Distributor) NeedsThrottling(_ context.Context) bool {
 	return false
