@@ -33,14 +33,16 @@ var ErrEmptyRing = errors.New("empty circle")
 // Ring holds the information about the members of the consistent hash circle.
 type Ring struct {
 	mtx          sync.RWMutex
-	circle       map[uint64]Collector
-	sortedHashes uint64s
+	collectors   map[string]Collector // source of truth - indexed by key
+	circle       map[uint64]Collector // derived - indexed by token
+	sortedHashes uint64s              // derived
 }
 
 // NewRing creates a new Ring object.
 func NewRing() *Ring {
 	return &Ring{
-		circle: map[uint64]Collector{},
+		circle:     map[uint64]Collector{},
+		collectors: map[string]Collector{},
 	}
 }
 
@@ -48,9 +50,14 @@ func NewRing() *Ring {
 func (r *Ring) Update(col Collector) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
-	for _, token := range col.Tokens {
-		r.circle[token] = col
-	}
+	r.collectors[col.ID] = col
+	r.updateSortedHashes()
+}
+
+func (r *Ring) Delete(col Collector) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	delete(r.collectors, col.ID)
 	r.updateSortedHashes()
 }
 
@@ -78,9 +85,14 @@ func (r *Ring) search(key uint64) (i int) {
 
 func (r *Ring) updateSortedHashes() {
 	hashes := uint64s{}
-	for k := range r.circle {
-		hashes = append(hashes, k)
+	circle := map[uint64]Collector{}
+	for _, col := range r.collectors {
+		hashes = append(hashes, col.Tokens...)
+		for _, token := range col.Tokens {
+			circle[token] = col
+		}
 	}
 	sort.Sort(hashes)
 	r.sortedHashes = hashes
+	r.circle = circle
 }

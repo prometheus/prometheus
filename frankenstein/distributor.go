@@ -47,6 +47,7 @@ type DistributorConfig struct {
 // Collector is the serialised state in Consul representing
 // an individual collector.
 type Collector struct {
+	ID       string   `json:"ID"`
 	Hostname string   `json:"hostname"`
 	Tokens   []uint64 `json:"tokens"`
 }

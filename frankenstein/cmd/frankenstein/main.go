@@ -234,6 +234,7 @@ func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient, consulP
 	tokenHasher.Write([]byte(hostname))
 
 	buf, err := json.Marshal(frankenstein.Collector{
+		ID:       hostname,
 		Hostname: fmt.Sprintf("%s:%d", addr, listenPort),
 		Tokens:   []uint64{tokenHasher.Sum64()},
 	})
@@ -257,6 +258,7 @@ func deleteIngestorConfigFromConsul(consulClient frankenstein.ConsulClient, cons
 	}
 
 	buf, err := json.Marshal(frankenstein.Collector{
+		ID:       hostname,
 		Hostname: "",
 		Tokens:   []uint64{},
 	})
