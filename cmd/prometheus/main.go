@@ -227,13 +227,15 @@ func reloadConfig(filename string, rls ...Reloadable) (err error) {
 		return fmt.Errorf("couldn't load configuration (-config.file=%s): %v", filename, err)
 	}
 
-	// Apply all configs and return the first error if there were any.
+	failed := false
 	for _, rl := range rls {
-		if err != nil {
-			err = rl.ApplyConfig(conf)
-		} else {
-			rl.ApplyConfig(conf)
+		if err := rl.ApplyConfig(conf); err != nil {
+			log.Error("Failed to apply configuration: ", err)
+			failed = true
 		}
 	}
-	return err
+	if failed {
+		return fmt.Errorf("one or more errors occured while applying the new configuration (-config.file=%s)", filename)
+	}
+	return nil
 }
