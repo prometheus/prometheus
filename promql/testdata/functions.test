@@ -69,6 +69,18 @@ eval instant at 50m increase(http_requests[100m])
 
 clear
 
+# Test for increase() with counter reset.
+# When the counter is reset, it always starts at 0.
+# So the sequence 3 2 (decreasing counter = reset) is interpreted the same as 3 0 1 2.
+# Prometheus assumes it missed the intermediate values 0 and 1.
+load 5m
+	http_requests{path="/foo"}	0 1 2 3 2 3 4
+
+eval instant at 30m increase(http_requests[30m])
+    {path="/foo"} 7
+
+clear
+
 # Tests for irate().
 load 5m
 	http_requests{path="/foo"}	0+10x10

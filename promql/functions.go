@@ -68,7 +68,7 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) mode
 		for _, sample := range samples.Values {
 			currentValue := sample.Value
 			if isCounter && currentValue < lastValue {
-				counterCorrection += lastValue - currentValue
+				counterCorrection += lastValue
 			}
 			lastValue = currentValue
 		}
