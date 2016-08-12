@@ -106,7 +106,7 @@ func (rule RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 		`<a href="%s">%s</a>%s = <a href="%s">%s</a>`,
 		pathPrefix+strutil.GraphLinkForExpression(rule.name),
 		rule.name,
-		rule.labels,
+		template.HTMLEscapeString(rule.labels.String()),
 		pathPrefix+strutil.GraphLinkForExpression(ruleExpr),
-		ruleExpr))
+		template.HTMLEscapeString(ruleExpr)))
 }
