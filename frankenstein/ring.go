@@ -72,6 +72,18 @@ func (r *Ring) Get(key uint64) (Collector, error) {
 	return r.circle[r.sortedHashes[i]], nil
 }
 
+// GetAll returns all collectors in the circle.
+func (r *Ring) GetAll() []Collector {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	collectors := make([]Collector, 0, len(r.collectors))
+	for _, c := range r.collectors {
+		collectors = append(collectors, c)
+	}
+	return collectors
+}
+
 func (r *Ring) search(key uint64) (i int) {
 	f := func(x int) bool {
 		return r.sortedHashes[x] > key

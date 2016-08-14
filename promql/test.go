@@ -483,6 +483,10 @@ func (i ingestorWrapper) Query(_ context.Context, from, through model.Time, matc
 	return i.i.Query(ctx, from, through, matchers...)
 }
 
+func (i ingestorWrapper) LabelValuesForLabelName(context.Context, model.LabelName) (model.LabelValues, error) {
+	return nil, nil
+}
+
 // exec processes a single step of the test.
 func (t *Test) exec(tc testCommand) error {
 	switch cmd := tc.(type) {

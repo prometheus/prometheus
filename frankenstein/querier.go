@@ -28,6 +28,7 @@ import (
 // of label matchers.
 type Querier interface {
 	Query(ctx context.Context, from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error)
+	LabelValuesForLabelName(context.Context, model.LabelName) (model.LabelValues, error)
 }
 
 // A ChunkQuerier is a Querier that fetches samples from a ChunkStore.
@@ -84,6 +85,12 @@ func (ts timeSortableSamplePairs) Less(i, j int) bool {
 
 func (ts timeSortableSamplePairs) Swap(i, j int) {
 	ts[i], ts[j] = ts[j], ts[i]
+}
+
+// LabelValuesForLabelName returns all of the label values that are associated with a given label name.
+func (q *ChunkQuerier) LabelValuesForLabelName(ctx context.Context, ln model.LabelName) (model.LabelValues, error) {
+	// TODO: Support querying historical label values at some point?
+	return nil, nil
 }
 
 // A MergeQuerier is a promql.Querier that merges the results of multiple
@@ -155,7 +162,21 @@ func (qm MergeQuerier) LastSampleForLabelMatchers(cutoff model.Time, matcherSets
 }
 
 // LabelValuesForLabelName implements local.Querier.
-func (qm MergeQuerier) LabelValuesForLabelName(model.LabelName) (model.LabelValues, error) {
-	// TODO: Implement.
-	return nil, nil
+func (qm MergeQuerier) LabelValuesForLabelName(name model.LabelName) (model.LabelValues, error) {
+	valueSet := map[model.LabelValue]struct{}{}
+	for _, q := range qm.Queriers {
+		vals, err := q.LabelValuesForLabelName(qm.Context, name)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range vals {
+			valueSet[v] = struct{}{}
+		}
+	}
+
+	values := make(model.LabelValues, 0, len(valueSet))
+	for v := range valueSet {
+		values = append(values, v)
+	}
+	return values, nil
 }

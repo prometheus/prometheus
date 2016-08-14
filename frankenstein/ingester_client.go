@@ -46,10 +46,6 @@ func NewIngesterClient(hostname string, timeout time.Duration) *IngesterClient {
 }
 
 func (c *IngesterClient) Append(ctx context.Context, samples []*model.Sample) error {
-	userID, err := userID(ctx)
-	if err != nil {
-		return err
-	}
 	req := &generic.GenericWriteRequest{}
 	for _, s := range samples {
 		ts := &generic.TimeSeries{
@@ -72,33 +68,11 @@ func (c *IngesterClient) Append(ctx context.Context, samples []*model.Sample) er
 		}
 		req.Timeseries = append(req.Timeseries, ts)
 	}
-	data, err := proto.Marshal(req)
-	if err != nil {
-		return err
-	}
-	buf := bytes.NewBuffer(data)
-	httpReq, err := http.NewRequest("POST", fmt.Sprintf("http://%s/push", c.hostname), buf)
-	if err != nil {
-		return err
-	}
-	httpReq.Header.Add(userIDHeaderName, userID)
-	httpReq.Header.Set("Content-Type", string(expfmt.FmtProtoDelim))
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("error sending samples to ingester: %v", err)
-	}
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("sending samples to ingester failed with HTTP status %s", resp.Status)
-	}
-	return nil
+	return c.doRequest(ctx, "/push", req, nil)
 }
 
 // Query implements Querier.
 func (c *IngesterClient) Query(ctx context.Context, from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
-	userID, err := userID(ctx)
-	if err != nil {
-		return nil, err
-	}
 	req := &generic.GenericReadRequest{
 		StartTimestampMs: proto.Int64(int64(from)),
 		EndTimestampMs:   proto.Int64(int64(to)),
@@ -124,41 +98,14 @@ func (c *IngesterClient) Query(ctx context.Context, from, to model.Time, matcher
 		})
 	}
 
-	data, err := proto.Marshal(req)
+	resp := &generic.GenericReadResponse{}
+	err := c.doRequest(ctx, "/query", req, resp)
 	if err != nil {
 		return nil, err
 	}
-	buf := bytes.NewBuffer(data)
 
-	// TODO: This isn't actually the correct Content-type.
-	httpReq, err := http.NewRequest("POST", fmt.Sprintf("http://%s/query", c.hostname), buf)
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Add(userIDHeaderName, userID)
-	httpReq.Header.Set("Content-Type", string(expfmt.FmtProtoDelim))
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
-	}
-
-	r := &generic.GenericReadResponse{}
-	buf.Reset()
-	_, err = buf.ReadFrom(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read response body: %s", err)
-	}
-	err = proto.Unmarshal(buf.Bytes(), r)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response body: %s", err)
-	}
-
-	m := make(model.Matrix, 0, len(r.Timeseries))
-	for _, ts := range r.Timeseries {
+	m := make(model.Matrix, 0, len(resp.Timeseries))
+	for _, ts := range resp.Timeseries {
 		var ss model.SampleStream
 		ss.Metric = model.Metric{}
 		if ts.Name != nil {
@@ -177,6 +124,70 @@ func (c *IngesterClient) Query(ctx context.Context, from, to model.Time, matcher
 		}
 		m = append(m, &ss)
 	}
+	fmt.Println("Query", m)
 
 	return m, nil
+}
+
+// LabelValuesForLabelName returns all of the label values that are associated with a given label name.
+func (c *IngesterClient) LabelValuesForLabelName(ctx context.Context, ln model.LabelName) (model.LabelValues, error) {
+	req := &generic.GenericLabelValuesRequest{
+		LabelName: proto.String(string(ln)),
+	}
+	resp := &generic.GenericLabelValuesResponse{}
+	err := c.doRequest(ctx, "/label_values", req, resp)
+	if err != nil {
+		return nil, err
+	}
+
+	values := make(model.LabelValues, 0, len(resp.LabelValues))
+	for _, v := range resp.LabelValues {
+		values = append(values, model.LabelValue(v))
+	}
+	fmt.Println("LabelValuesForLabelName", values)
+	return values, nil
+}
+
+func (c *IngesterClient) doRequest(ctx context.Context, endpoint string, req proto.Message, resp proto.Message) error {
+	userID, err := userID(ctx)
+	if err != nil {
+		return err
+	}
+
+	data, err := proto.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("unable to marshal request: %v", err)
+	}
+	buf := bytes.NewBuffer(data)
+
+	httpReq, err := http.NewRequest("POST", fmt.Sprintf("http://%s%s", c.hostname, endpoint), buf)
+	if err != nil {
+		return fmt.Errorf("unable to create request: %v", err)
+	}
+	httpReq.Header.Add(userIDHeaderName, userID)
+	// TODO: This isn't actually the correct Content-type.
+	httpReq.Header.Set("Content-Type", string(expfmt.FmtProtoDelim))
+	httpResp, err := c.client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("error sending request: %v", err)
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode/100 != 2 {
+		return fmt.Errorf("server returned HTTP status %s", httpResp.Status)
+	}
+
+	if resp == nil {
+		return nil
+	}
+
+	buf.Reset()
+	_, err = buf.ReadFrom(httpResp.Body)
+	if err != nil {
+		return fmt.Errorf("unable to read response body: %v", err)
+	}
+	err = proto.Unmarshal(buf.Bytes(), resp)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal response body: %v", err)
+	}
+	return nil
 }
