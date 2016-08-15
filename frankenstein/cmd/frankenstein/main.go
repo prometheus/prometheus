@@ -146,7 +146,8 @@ func setupDistributor(
 	if err != nil {
 		log.Fatal(err)
 	}
-	http.Handle("/api/prom/push", frankenstein.AppenderHandler(distributor))
+	prefix := "/api/prom"
+	http.Handle(prefix+"/push", frankenstein.AppenderHandler(distributor))
 
 	// This sets up a complete querying pipeline:
 	//
@@ -169,8 +170,11 @@ func setupDistributor(
 
 	api := api.New(newQuerier)
 	router := route.New()
-	api.Register(router.WithPrefix("/api/prom/api/v1"))
+	api.Register(router.WithPrefix(prefix + "/api/v1"))
 	http.Handle("/", router)
+
+	http.Handle(prefix+"/graph", frankenstein.GraphHandler(prefix))
+	http.Handle(prefix+"/static/", frankenstein.StaticAssetsHandler(prefix, prefix+"/static/"))
 }
 
 func setupIngestor(
