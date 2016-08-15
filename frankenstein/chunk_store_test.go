@@ -22,6 +22,7 @@ import (
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"github.com/tomwilkie/go-mockaws"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/frankenstein/wire"
@@ -56,8 +57,8 @@ func TestIntersect(t *testing.T) {
 
 func TestChunkStore(t *testing.T) {
 	store := AWSChunkStore{
-		dynamodb:   newMockDynamoDB(),
-		s3:         newMockS3(),
+		dynamodb:   mockaws.NewMockDynamoDB(),
+		s3:         mockaws.NewMockS3(),
 		memcache:   nil,
 		tableName:  "tablename",
 		bucketName: "bucketname",

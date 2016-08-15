@@ -1,17 +1,4 @@
-// Copyright 2016 The Prometheus Authors
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-package frankenstein
+package mockaws
 
 import (
 	"bytes"
@@ -22,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
-type mockS3 struct {
+type MockS3 struct {
 	mtx     sync.RWMutex
 	buckets map[string]*mockS3Bucket
 }
@@ -31,13 +18,14 @@ type mockS3Bucket struct {
 	objects map[string][]byte
 }
 
-func newMockS3() *mockS3 {
-	return &mockS3{
+// NewMockS3 returns a new MockS3
+func NewMockS3() *MockS3 {
+	return &MockS3{
 		buckets: map[string]*mockS3Bucket{},
 	}
 }
 
-func (m *mockS3) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+func (m *MockS3) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
 	buf, err := ioutil.ReadAll(input.Body)
 	if err != nil {
 		return nil, err
@@ -58,7 +46,7 @@ func (m *mockS3) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, error
 	return &s3.PutObjectOutput{}, nil
 }
 
-func (m *mockS3) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+func (m *MockS3) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
