@@ -18,8 +18,6 @@ import (
 )
 
 const (
-	flushCheckPeriod = 1 * time.Minute
-	maxChunkAge      = 10 * time.Minute
 	UserIDContextKey = "FrankensteinUserID" // TODO dedupe with copy in frankenstein/
 )
 
@@ -39,6 +37,7 @@ var (
 // Ingestor deals with "in flight" chunks.
 // Its like MemorySeriesStorage, but simpler.
 type Ingestor struct {
+	cfg        IngestorConfig
 	chunkStore ChunkStore
 	stopLock   sync.RWMutex
 	stopped    bool
@@ -56,6 +55,11 @@ type Ingestor struct {
 	queriedSamples     prometheus.Counter
 }
 
+type IngestorConfig struct {
+	FlushCheckPeriod time.Duration
+	MaxChunkAge      time.Duration
+}
+
 type userState struct {
 	userID     string
 	fpLocker   *fingerprintLocker
@@ -68,8 +72,16 @@ type ChunkStore interface {
 	Put(context.Context, []wire.Chunk) error
 }
 
-func NewIngestor(chunkStore ChunkStore) (*Ingestor, error) {
+func NewIngestor(cfg IngestorConfig, chunkStore ChunkStore) (*Ingestor, error) {
+	if cfg.FlushCheckPeriod == 0 {
+		cfg.FlushCheckPeriod = 1 * time.Minute
+	}
+	if cfg.MaxChunkAge == 0 {
+		cfg.MaxChunkAge = 10 * time.Minute
+	}
+
 	i := &Ingestor{
+		cfg:        cfg,
 		chunkStore: chunkStore,
 		quit:       make(chan struct{}),
 		done:       make(chan struct{}),
@@ -342,7 +354,7 @@ func (i *Ingestor) Stop() {
 func (i *Ingestor) loop() {
 	defer i.flushAllUsers(true)
 	defer close(i.done)
-	tick := time.Tick(flushCheckPeriod)
+	tick := time.Tick(i.cfg.FlushCheckPeriod)
 	for {
 		select {
 		case <-tick:
@@ -399,7 +411,7 @@ func (i *Ingestor) flushSeries(ctx context.Context, u *userState, fp model.Finge
 	u.fpLocker.Lock(fp)
 
 	// Decide what chunks to flush
-	if immediate || time.Now().Sub(series.firstTime().Time()) > maxChunkAge {
+	if immediate || time.Now().Sub(series.firstTime().Time()) > i.cfg.MaxChunkAge {
 		series.headChunkClosed = true
 		series.headChunkUsedByIterator = false
 		series.head().maybePopulateLastTime()

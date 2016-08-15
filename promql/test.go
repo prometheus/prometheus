@@ -548,7 +548,7 @@ func (t *Test) clear() {
 			t.ingestor.Stop()
 		}
 		var err error
-		t.ingestor, err = local.NewIngestor(nil)
+		t.ingestor, err = local.NewIngestor(local.IngestorConfig{}, nil)
 		if err != nil {
 			t.Fatalf("Error creating test ingestor: %v", err)
 		}

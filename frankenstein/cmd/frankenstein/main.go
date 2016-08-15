@@ -57,6 +57,8 @@ func main() {
 		memcachedExpiration  time.Duration
 		memcachedService     string
 		remoteTimeout        time.Duration
+		flushPeriod          time.Duration
+		maxChunkAge          time.Duration
 	)
 
 	flag.StringVar(&mode, "mode", distributor, "Mode (distributor, ingestor).")
@@ -70,7 +72,9 @@ func main() {
 	flag.DurationVar(&memcachedTimeout, "memcached.timeout", 100*time.Millisecond, "Maximum time to wait before giving up on memcached requests.")
 	flag.DurationVar(&memcachedExpiration, "memcached.expiration", 2*15*time.Second, "How long chunks stay in the memcache.")
 	flag.StringVar(&memcachedService, "memcached.service", "memcached", "SRV service used to discover memcache servers.")
-	flag.DurationVar(&remoteTimeout, "remote.timeout", 100*time.Millisecond, "Timeout for downstream ingestors.")
+	flag.DurationVar(&remoteTimeout, "remote.timeout", 5*time.Second, "Timeout for downstream ingestors.")
+	flag.DurationVar(&flushPeriod, "ingestor.flush-period", 1*time.Minute, "Period with which to attempt to flush chunks.")
+	flag.DurationVar(&maxChunkAge, "ingestor.max-chunk-age", 10*time.Minute, "Maximum chunk age before flushing.")
 	flag.Parse()
 
 	consul, err := frankenstein.NewConsulClient(consulHost)
@@ -105,7 +109,11 @@ func main() {
 	case distributor:
 		setupDistributor(consul, consulPrefix, chunkStore, remoteTimeout)
 	case ingestor:
-		ingestor := setupIngestor(consul, consulPrefix, chunkStore, listenPort)
+		cfg := local.IngestorConfig{
+			FlushCheckPeriod: flushPeriod,
+			MaxChunkAge:      maxChunkAge,
+		}
+		ingestor := setupIngestor(consul, consulPrefix, chunkStore, listenPort, cfg)
 		defer ingestor.Stop()
 		defer deleteIngestorConfigFromConsul(consul, consulPrefix)
 	default:
@@ -170,6 +178,7 @@ func setupIngestor(
 	consulPrefix string,
 	chunkStore frankenstein.ChunkStore,
 	listenPort int,
+	cfg local.IngestorConfig,
 ) *local.Ingestor {
 	for i := 0; i < 10; i++ {
 		if err := writeIngestorConfigToConsul(consulClient, consulPrefix, listenPort); err == nil {
@@ -180,7 +189,7 @@ func setupIngestor(
 		}
 	}
 
-	ingestor, err := local.NewIngestor(chunkStore)
+	ingestor, err := local.NewIngestor(cfg, chunkStore)
 	if err != nil {
 		log.Fatal(err)
 	}
