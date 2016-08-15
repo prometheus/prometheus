@@ -150,6 +150,8 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp m
 			},
 			"match":     regexp.MatchString,
 			"title":     strings.Title,
+			"toUpper":   strings.ToUpper,
+			"toLower":   strings.ToLower,
 			"graphLink": strutil.GraphLinkForExpression,
 			"tableLink": strutil.TableLinkForExpression,
 			"sortByLabel": func(label string, v queryResult) queryResult {
