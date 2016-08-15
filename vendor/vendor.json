@@ -183,6 +183,12 @@
 			"revisionTime": "2016-01-17T11:21:50-08:00"
 		},
 		{
+			"checksumSHA1": "5rPfda8jFccr3A6heL+JAmi9K9g=",
+			"path": "github.com/davecgh/go-spew/spew",
+			"revision": "5215b55f46b2b919f50a1df0eaa5886afe4e3b3d",
+			"revisionTime": "2015-11-05T21:09:06Z"
+		},
+		{
 			"checksumSHA1": "1LWe3iDPpInibsVD1TzbTWSDXFc=",
 			"path": "github.com/dgrijalva/jwt-go",
 			"revision": "9a4b9f2ac1f7685147a5c01544e3b922dbc1f4a0",
@@ -241,6 +247,12 @@
 			"revisionTime": "2015-09-05T08:12:15+01:00"
 		},
 		{
+			"checksumSHA1": "LuFv4/jlrmFNnDb/5SCSEPAM9vU=",
+			"path": "github.com/pmezard/go-difflib/difflib",
+			"revision": "792786c7400a136282c1664665ae0a8db921c6c2",
+			"revisionTime": "2016-01-10T10:55:54Z"
+		},
+		{
 			"checksumSHA1": "OpY4giv8kPIYbaunD7BSgCynj78=",
 			"path": "github.com/prometheus/client_golang/prometheus",
 			"revision": "9f1ed1ed4a5f754c9b626e5cf8ec1ea7d622e017",
@@ -297,6 +309,12 @@
 			"path": "github.com/samuel/go-zookeeper/zk",
 			"revision": "177002e16a0061912f02377e2dd8951a8b3551bc",
 			"revisionTime": "2015-08-17T10:50:50-07:00"
+		},
+		{
+			"checksumSHA1": "6Q94kXj/eMH8vkWxJVdL1abPYLU=",
+			"path": "github.com/sburnett/lexicographic-tuples",
+			"revision": "0d464282e8c00ae6790278a57c91e5d527d2277c",
+			"revisionTime": "2013-08-03T16:06:18Z"
 		},
 		{
 			"checksumSHA1": "sUPlrnoPPmYuvjEtw9HUTKPCZa4=",

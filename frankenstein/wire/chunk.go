@@ -14,3 +14,9 @@ type Chunk struct {
 	Metric  model.Metric `json:"metric"`
 	Data    []byte       `json:"-"`
 }
+
+type ChunksByID []Chunk
+
+func (cs ChunksByID) Len() int           { return len(cs) }
+func (cs ChunksByID) Swap(i, j int)      { cs[i], cs[j] = cs[j], cs[i] }
+func (cs ChunksByID) Less(i, j int) bool { return cs[i].ID < cs[j].ID }
