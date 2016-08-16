@@ -147,6 +147,8 @@ func setupDistributor(
 	if err != nil {
 		log.Fatal(err)
 	}
+	prometheus.MustRegister(distributor)
+
 	prefix := "/api/prom"
 	http.Handle(prefix+"/push", frankenstein.AppenderHandler(distributor))
 

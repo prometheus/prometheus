@@ -33,7 +33,7 @@ func errorCode(err error) string {
 // If you want more complicated logic for translating errors into statuses,
 // use 'timeRequestStatus'.
 func timeRequest(method string, metric *prometheus.SummaryVec, f func() error) error {
-	return timeRequestStatus(method, metric, errorCode, f)
+	return timeRequestMethodStatus(method, metric, errorCode, f)
 }
 
 // timeRequestStatus runs 'f' and records how long it took in the given
@@ -41,7 +41,7 @@ func timeRequest(method string, metric *prometheus.SummaryVec, f func() error) e
 //
 // toStatusCode is a function that translates errors returned by 'f' into
 // HTTP-like status codes.
-func timeRequestStatus(method string, metric *prometheus.SummaryVec, toStatusCode func(error) string, f func() error) error {
+func timeRequestMethodStatus(method string, metric *prometheus.SummaryVec, toStatusCode func(error) string, f func() error) error {
 	if toStatusCode == nil {
 		toStatusCode = errorCode
 	}
@@ -52,12 +52,12 @@ func timeRequestStatus(method string, metric *prometheus.SummaryVec, toStatusCod
 	return err
 }
 
-// TimeRequestHistogramStatus runs 'f' and records how long it took in the given
+// TimeRequestHistogramMethodStatus runs 'f' and records how long it took in the given
 // Prometheus histogram metric.
 //
 // toStatusCode is a function that translates errors returned by 'f' into
 // HTTP-like status codes.
-func TimeRequestHistogramStatus(method string, metric *prometheus.HistogramVec, toStatusCode func(error) string, f func() error) error {
+func timeRequestHistogramMethodStatus(method string, metric *prometheus.HistogramVec, toStatusCode func(error) string, f func() error) error {
 	if toStatusCode == nil {
 		toStatusCode = errorCode
 	}
@@ -65,5 +65,21 @@ func TimeRequestHistogramStatus(method string, metric *prometheus.HistogramVec, 
 	err := f()
 	duration := time.Now().Sub(startTime)
 	metric.WithLabelValues(method, toStatusCode(err)).Observe(duration.Seconds())
+	return err
+}
+
+// TimeRequestHistogramStatus runs 'f' and records how long it took in the given
+// Prometheus histogram metric.
+//
+// toStatusCode is a function that translates errors returned by 'f' into
+// HTTP-like status codes.
+func timeRequestHistogramStatus(metric *prometheus.HistogramVec, toStatusCode func(error) string, f func() error) error {
+	if toStatusCode == nil {
+		toStatusCode = errorCode
+	}
+	startTime := time.Now()
+	err := f()
+	duration := time.Now().Sub(startTime)
+	metric.WithLabelValues(toStatusCode(err)).Observe(duration.Seconds())
 	return err
 }

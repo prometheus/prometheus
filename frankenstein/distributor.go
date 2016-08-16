@@ -17,11 +17,20 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/storage/metric"
+)
+
+var (
+	numClientsDesc = prometheus.NewDesc(
+		"prometheus_distributor_ingester_clients",
+		"The current number of ingester clients.",
+		nil, nil,
+	)
 )
 
 // Distributor is a storage.SampleAppender and a frankenstein.Querier which
@@ -34,6 +43,11 @@ type Distributor struct {
 
 	quit chan struct{}
 	done chan struct{}
+
+	queryDuration   *prometheus.HistogramVec
+	consulUpdates   prometheus.Counter
+	receivedSamples prometheus.Counter
+	sendDuration    *prometheus.HistogramVec
 }
 
 // DistributorConfig contains the configuration require to
@@ -60,6 +74,28 @@ func NewDistributor(cfg DistributorConfig) (*Distributor, error) {
 		clients: map[string]*IngesterClient{},
 		quit:    make(chan struct{}),
 		done:    make(chan struct{}),
+		queryDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "prometheus",
+			Name:      "distributor_query_duration_seconds",
+			Help:      "Time spent executing expression queries.",
+			Buckets:   prometheus.DefBuckets,
+		}, []string{"status_code"}),
+		consulUpdates: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Name:      "distributor_consul_updates_total",
+			Help:      "The total number of received Consul updates.",
+		}),
+		receivedSamples: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Name:      "distributor_received_samples_total",
+			Help:      "The total number of received samples.",
+		}),
+		sendDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "prometheus",
+			Name:      "distributor_send_duration_seconds",
+			Help:      "Time spent sending sample batches to ingesters.",
+			Buckets:   prometheus.DefBuckets,
+		}, []string{"status_code"}),
 	}
 	go d.loop()
 	return d, nil
@@ -76,6 +112,7 @@ func (d *Distributor) loop() {
 	d.cfg.ConsulClient.WatchPrefix(d.cfg.ConsulPrefix, &Collector{}, d.quit, func(key string, value interface{}) bool {
 		c := *value.(*Collector)
 		log.Infof("Got update to collector: %#v", c)
+		d.consulUpdates.Inc()
 		d.ring.Update(c)
 		return true
 	})
@@ -106,6 +143,8 @@ func (d *Distributor) getClientFor(hostname string) (*IngesterClient, error) {
 
 // Append implements SampleAppender.
 func (d *Distributor) Append(ctx context.Context, samples []*model.Sample) error {
+	d.receivedSamples.Add(float64(len(samples)))
+
 	samplesByIngester := map[string][]*model.Sample{}
 	for _, sample := range samples {
 		key := model.SignatureForLabels(sample.Metric, model.MetricNameLabel)
@@ -123,7 +162,10 @@ func (d *Distributor) Append(ctx context.Context, samples []*model.Sample) error
 		if err != nil {
 			return err
 		}
-		if err := client.Append(ctx, samples); err != nil {
+		err = timeRequestHistogramStatus(d.sendDuration, nil, func() error {
+			return client.Append(ctx, samples)
+		})
+		if err != nil {
 			return err
 		}
 	}
@@ -145,26 +187,34 @@ func metricNameFromLabelMatchers(matchers ...*metric.LabelMatcher) (model.LabelV
 
 // Query implements Querier.
 func (d *Distributor) Query(ctx context.Context, from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
-	metricName, err := metricNameFromLabelMatchers(matchers...)
-	if err != nil {
-		return nil, err
-	}
+	var result model.Matrix
+	err := timeRequestHistogramStatus(d.queryDuration, nil, func() error {
+		metricName, err := metricNameFromLabelMatchers(matchers...)
+		if err != nil {
+			return err
+		}
 
-	metric := model.Metric{
-		model.MetricNameLabel: metricName,
-	}
-	key := model.SignatureForLabels(metric, model.MetricNameLabel)
-	collector, err := d.ring.Get(uint64(key))
-	if err != nil {
-		return nil, err
-	}
+		metric := model.Metric{
+			model.MetricNameLabel: metricName,
+		}
+		key := model.SignatureForLabels(metric, model.MetricNameLabel)
+		collector, err := d.ring.Get(uint64(key))
+		if err != nil {
+			return err
+		}
 
-	client, err := d.getClientFor(collector.Hostname)
-	if err != nil {
-		return nil, err
-	}
+		client, err := d.getClientFor(collector.Hostname)
+		if err != nil {
+			return err
+		}
 
-	return client.Query(ctx, from, to, matchers...)
+		result, err = client.Query(ctx, from, to, matchers...)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return result, err
 }
 
 // LabelValuesForLabelName returns all of the label values that are associated with a given label name.
@@ -194,4 +244,29 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, labelName mod
 // NeedsThrottling implements SampleAppender.
 func (*Distributor) NeedsThrottling(_ context.Context) bool {
 	return false
+}
+
+// Describe implements prometheus.Collector.
+func (d *Distributor) Describe(ch chan<- *prometheus.Desc) {
+	d.queryDuration.Describe(ch)
+	ch <- d.consulUpdates.Desc()
+	ch <- d.receivedSamples.Desc()
+	d.sendDuration.Describe(ch)
+	ch <- numClientsDesc
+}
+
+// Collect implements prometheus.Collector.
+func (d *Distributor) Collect(ch chan<- prometheus.Metric) {
+	d.queryDuration.Collect(ch)
+	ch <- d.consulUpdates
+	ch <- d.receivedSamples
+	d.sendDuration.Collect(ch)
+
+	d.clientsMtx.RLock()
+	defer d.clientsMtx.RUnlock()
+	ch <- prometheus.MustNewConstMetric(
+		numClientsDesc,
+		prometheus.GaugeValue,
+		float64(len(d.clients)),
+	)
 }

@@ -169,7 +169,7 @@ func (c *MemcacheClient) FetchChunkData(userID string, chunks []wire.Chunk) (fou
 	}
 
 	var items map[string]*memcache.Item
-	err = TimeRequestHistogramStatus("Get", memcacheRequestDuration, memcacheStatusCode, func() error {
+	err = timeRequestHistogramMethodStatus("Get", memcacheRequestDuration, memcacheStatusCode, func() error {
 		var err error
 		items, err = c.client.GetMulti(keys)
 		return err
@@ -194,7 +194,7 @@ func (c *MemcacheClient) FetchChunkData(userID string, chunks []wire.Chunk) (fou
 
 // StoreChunkData serializes and stores a chunk in memcache.
 func (c *MemcacheClient) StoreChunkData(userID string, chunk *wire.Chunk) error {
-	return TimeRequestHistogramStatus("Put", memcacheRequestDuration, memcacheStatusCode, func() error {
+	return timeRequestHistogramMethodStatus("Put", memcacheRequestDuration, memcacheStatusCode, func() error {
 		// TODO: Add compression - maybe encapsulated in marshaling/unmarshaling
 		// methods of wire.Chunk.
 		item := memcache.Item{
