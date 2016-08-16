@@ -79,7 +79,10 @@ func (r *Ring) GetAll() []Collector {
 
 	collectors := make([]Collector, 0, len(r.collectors))
 	for _, c := range r.collectors {
-		collectors = append(collectors, c)
+		// Ignore collectors with no tokens.
+		if len(c.Tokens) > 0 {
+			collectors = append(collectors, c)
+		}
 	}
 	return collectors
 }
