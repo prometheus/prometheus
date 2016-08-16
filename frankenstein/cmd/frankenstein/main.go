@@ -70,7 +70,7 @@ func main() {
 	flag.BoolVar(&dynamodbCreateTables, "dynamodb.create-tables", false, "Create required DynamoDB tables on startup.")
 	flag.StringVar(&memcachedHostname, "memcached.hostname", "", "Hostname for memcached service to use when caching chunks. If empty, no memcached will be used.")
 	flag.DurationVar(&memcachedTimeout, "memcached.timeout", 100*time.Millisecond, "Maximum time to wait before giving up on memcached requests.")
-	flag.DurationVar(&memcachedExpiration, "memcached.expiration", 2*15*time.Second, "How long chunks stay in the memcache.")
+	flag.DurationVar(&memcachedExpiration, "memcached.expiration", 0, "How long chunks stay in the memcache.")
 	flag.StringVar(&memcachedService, "memcached.service", "memcached", "SRV service used to discover memcache servers.")
 	flag.DurationVar(&remoteTimeout, "remote.timeout", 5*time.Second, "Timeout for downstream ingestors.")
 	flag.DurationVar(&flushPeriod, "ingestor.flush-period", 1*time.Minute, "Period with which to attempt to flush chunks.")
@@ -89,6 +89,7 @@ func main() {
 			Service:        memcachedService,
 			Timeout:        memcachedTimeout,
 			UpdateInterval: 1 * time.Minute,
+			Expiration:     memcachedExpiration,
 		})
 	}
 	chunkStore, err := frankenstein.NewAWSChunkStore(frankenstein.ChunkStoreConfig{
