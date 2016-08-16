@@ -124,7 +124,6 @@ func (c *IngesterClient) Query(ctx context.Context, from, to model.Time, matcher
 		}
 		m = append(m, &ss)
 	}
-	fmt.Println("Query", m)
 
 	return m, nil
 }
@@ -144,7 +143,6 @@ func (c *IngesterClient) LabelValuesForLabelName(ctx context.Context, ln model.L
 	for _, v := range resp.LabelValues {
 		values = append(values, model.LabelValue(v))
 	}
-	fmt.Println("LabelValuesForLabelName", values)
 	return values, nil
 }
 
