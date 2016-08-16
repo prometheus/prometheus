@@ -139,7 +139,7 @@ func webUiTemplates_frankenstein_baseHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/_frankenstein_base.html", size: 1522, mode: os.FileMode(436), modTime: time.Unix(1471271291, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/_frankenstein_base.html", size: 1522, mode: os.FileMode(436), modTime: time.Unix(1471278366, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }

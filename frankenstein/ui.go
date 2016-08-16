@@ -40,7 +40,7 @@ func getTemplate(name string) (string, error) {
 	return string(baseTmpl) + string(pageTmpl), nil
 }
 
-func GraphHandler(pathPrefix string) http.Handler {
+func GraphHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		text, err := getTemplate("graph.html")
 		if err != nil {
@@ -48,7 +48,7 @@ func GraphHandler(pathPrefix string) http.Handler {
 		}
 		tmpl := template.New("graph.html")
 		tmpl.Funcs(template.FuncMap{
-			"pathPrefix": func() string { return pathPrefix },
+			"pathPrefix": func() string { return "." },
 		})
 		tmpl, err = tmpl.Parse(text)
 		if err != nil {
@@ -64,7 +64,7 @@ func GraphHandler(pathPrefix string) http.Handler {
 	})
 }
 
-func StaticAssetsHandler(pathPrefix string, stripPrefix string) http.Handler {
+func StaticAssetsHandler(stripPrefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		fp := strings.TrimPrefix(req.URL.Path, stripPrefix)
 		fp = filepath.Join("web/ui/static", fp)

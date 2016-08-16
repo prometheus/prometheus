@@ -173,8 +173,8 @@ func setupDistributor(
 	api.Register(router.WithPrefix(prefix + "/api/v1"))
 	http.Handle("/", router)
 
-	http.Handle(prefix+"/graph", frankenstein.GraphHandler(prefix))
-	http.Handle(prefix+"/static/", frankenstein.StaticAssetsHandler(prefix, prefix+"/static/"))
+	http.Handle(prefix+"/graph", frankenstein.GraphHandler())
+	http.Handle(prefix+"/static/", frankenstein.StaticAssetsHandler(prefix+"/static/"))
 }
 
 func setupIngestor(
