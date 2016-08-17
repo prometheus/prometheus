@@ -98,7 +98,7 @@ func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to read bearer token file %s: %s", cfg.BearerTokenFile, err)
 		}
-		bearerToken = string(b)
+		bearerToken = strings.TrimSpace(string(b))
 	}
 
 	if len(bearerToken) > 0 {
