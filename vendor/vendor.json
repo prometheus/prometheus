@@ -113,13 +113,18 @@
 		},
 		{
 			"path": "github.com/golang/protobuf/proto",
-			"revision": "1dceb1a2654bdc74ca97ad91f71f500eecc96269",
-			"revisionTime": "2015-09-03T11:38:02+10:00"
+			"revision": "7390af9dcd3c33042ebaf2474a1724a83cf1a7e6",
+			"revisionTime": "2016-08-15T22:33:34Z"
 		},
 		{
 			"path": "github.com/golang/snappy",
 			"revision": "723cc1e459b8eea2dea4583200fd60757d40097a",
 			"revisionTime": "2015-07-30T13:18:44+10:00"
+		},
+		{
+			"path": "github.com/grpc/grpc-go",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
 		},
 		{
 			"path": "github.com/hashicorp/consul/api",
@@ -289,8 +294,13 @@
 		{
 			"checksumSHA1": "9jjO5GjLa0XF/nfWihF02RoH4qc=",
 			"path": "golang.org/x/net/context",
+<<<<<<< HEAD
 			"revision": "b400c2eff1badec7022a8c8f5bea058b6315eed7",
 			"revisionTime": "2016-06-19T19:44:24Z"
+=======
+			"revision": "07b51741c1d6423d4a6abab1c49940ec09cb1aaf",
+			"revisionTime": "2016-08-11T12:50:59+02:00"
+>>>>>>> Update context vendoring
 		},
 		{
 			"checksumSHA1": "Do+l129/Bafh54VFaquooqtCcfk=",
@@ -299,6 +309,7 @@
 			"revisionTime": "2016-06-19T19:44:24Z"
 		},
 		{
+<<<<<<< HEAD
 			"checksumSHA1": "8fD/im5Kwvy3JgmxulDTambmE8w=",
 			"path": "golang.org/x/sys/unix",
 			"revision": "a408501be4d17ee978c04a618e7a1b22af058c0e",
@@ -307,6 +318,78 @@
 		{
 			"checksumSHA1": "JfVmsMwyeeepbdw4q4wpN07BuFg=",
 			"origin": "github.com/prometheus/prometheus/vendor/gopkg.in/fsnotify.v1",
+=======
+			"path": "golang.org/x/net/http2",
+			"revision": "07b51741c1d6423d4a6abab1c49940ec09cb1aaf",
+			"revisionTime": "2016-08-11T12:50:59+02:00"
+		},
+		{
+			"path": "golang.org/x/net/http2/hpack",
+			"revision": "07b51741c1d6423d4a6abab1c49940ec09cb1aaf",
+			"revisionTime": "2016-08-11T12:50:59+02:00"
+		},
+		{
+			"path": "golang.org/x/net/internal/timeseries",
+			"revision": "07b51741c1d6423d4a6abab1c49940ec09cb1aaf",
+			"revisionTime": "2016-08-11T12:50:59+02:00"
+		},
+		{
+			"path": "golang.org/x/net/lex/httplex",
+			"revision": "07b51741c1d6423d4a6abab1c49940ec09cb1aaf",
+			"revisionTime": "2016-08-11T12:50:59+02:00"
+		},
+		{
+			"path": "golang.org/x/net/trace",
+			"revision": "07b51741c1d6423d4a6abab1c49940ec09cb1aaf",
+			"revisionTime": "2016-08-11T12:50:59+02:00"
+		},
+		{
+			"path": "google.golang.org/grpc",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
+		},
+		{
+			"path": "google.golang.org/grpc/codes",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
+		},
+		{
+			"path": "google.golang.org/grpc/credentials",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
+		},
+		{
+			"path": "google.golang.org/grpc/grpclog",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
+		},
+		{
+			"path": "google.golang.org/grpc/internal",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
+		},
+		{
+			"path": "google.golang.org/grpc/metadata",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
+		},
+		{
+			"path": "google.golang.org/grpc/naming",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
+		},
+		{
+			"path": "google.golang.org/grpc/peer",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
+		},
+		{
+			"path": "google.golang.org/grpc/transport",
+			"revision": "c2781963b3af261a37e0f14fdcb7c1fa13259e1f",
+			"revisionTime": "2016-08-15T14:45:04-07:00"
+		},
+		{
+>>>>>>> Vendoring
 			"path": "gopkg.in/fsnotify.v1",
 			"revision": "30411dbcefb7a1da7e84f75530ad3abe4011b4f8",
 			"revisionTime": "2016-04-12T13:37:56Z"
