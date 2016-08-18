@@ -23,5 +23,5 @@ deployment:
       - docker login -e $DOCKER_EMAIL -u $DOCKER_LOGIN -p $DOCKER_PASSWORD
       - docker push tomwilkie/prometheus:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
       - docker push tomwilkie/frankenstein:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
-      - wcloud deploy tomwilkie/prometheus:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
-      - wcloud deploy tomwilkie/frankenstein:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
+      - wcloud deploy -u circle tomwilkie/prometheus:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
+      - wcloud deploy -u circle tomwilkie/frankenstein:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)

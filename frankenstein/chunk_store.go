@@ -367,11 +367,8 @@ func (c *AWSChunkStore) Get(ctx context.Context, from, through model.Time, match
 	}
 
 	if c.memcache != nil {
-		for _, chunk := range fromS3 {
-			// TODO: Parallelize?
-			if err = c.memcache.StoreChunkData(userID, &chunk); err != nil {
-				log.Warnf("Could not store %v in memcache: %v", chunk.ID, err)
-			}
+		if err = c.memcache.StoreChunks(userID, fromS3); err != nil {
+			log.Warnf("Could not store chunks in memcache: %v", err)
 		}
 	}
 

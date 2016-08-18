@@ -205,3 +205,20 @@ func (c *MemcacheClient) StoreChunkData(userID string, chunk *wire.Chunk) error 
 		return c.client.Set(&item)
 	})
 }
+
+// StoreChunks serializes and stores multiple chunks in memcache.
+func (c *MemcacheClient) StoreChunks(userID string, chunks []wire.Chunk) error {
+	errs := make(chan error)
+	for _, chunk := range chunks {
+		go func(chunk *wire.Chunk) {
+			errs <- c.StoreChunkData(userID, chunk)
+		}(&chunk)
+	}
+	var errOut error
+	for i := 0; i < len(chunks); i++ {
+		if err := <-errs; err != nil {
+			errOut = err
+		}
+	}
+	return errOut
+}
