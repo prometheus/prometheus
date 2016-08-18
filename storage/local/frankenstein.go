@@ -34,10 +34,10 @@ var (
 	)
 )
 
-// Ingestor deals with "in flight" chunks.
+// Ingester deals with "in flight" chunks.
 // Its like MemorySeriesStorage, but simpler.
-type Ingestor struct {
-	cfg        IngestorConfig
+type Ingester struct {
+	cfg        IngesterConfig
 	chunkStore ChunkStore
 	stopLock   sync.RWMutex
 	stopped    bool
@@ -55,7 +55,7 @@ type Ingestor struct {
 	queriedSamples     prometheus.Counter
 }
 
-type IngestorConfig struct {
+type IngesterConfig struct {
 	FlushCheckPeriod time.Duration
 	MaxChunkAge      time.Duration
 }
@@ -72,7 +72,7 @@ type ChunkStore interface {
 	Put(context.Context, []wire.Chunk) error
 }
 
-func NewIngestor(cfg IngestorConfig, chunkStore ChunkStore) (*Ingestor, error) {
+func NewIngester(cfg IngesterConfig, chunkStore ChunkStore) (*Ingester, error) {
 	if cfg.FlushCheckPeriod == 0 {
 		cfg.FlushCheckPeriod = 1 * time.Minute
 	}
@@ -80,7 +80,7 @@ func NewIngestor(cfg IngestorConfig, chunkStore ChunkStore) (*Ingestor, error) {
 		cfg.MaxChunkAge = 10 * time.Minute
 	}
 
-	i := &Ingestor{
+	i := &Ingester{
 		cfg:        cfg,
 		chunkStore: chunkStore,
 		quit:       make(chan struct{}),
@@ -119,7 +119,7 @@ func NewIngestor(cfg IngestorConfig, chunkStore ChunkStore) (*Ingestor, error) {
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queries_total",
-			Help:      "The total number of queries the ingestor has handled.",
+			Help:      "The total number of queries the ingester has handled.",
 		}),
 		queriedSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -133,7 +133,7 @@ func NewIngestor(cfg IngestorConfig, chunkStore ChunkStore) (*Ingestor, error) {
 	return i, nil
 }
 
-func (i *Ingestor) getStateFor(ctx context.Context) (*userState, error) {
+func (i *Ingester) getStateFor(ctx context.Context) (*userState, error) {
 	userID, ok := ctx.Value(UserIDContextKey).(string)
 	if !ok {
 		return nil, fmt.Errorf("no user id")
@@ -159,11 +159,11 @@ func (i *Ingestor) getStateFor(ctx context.Context) (*userState, error) {
 	return state, nil
 }
 
-func (*Ingestor) NeedsThrottling(_ context.Context) bool {
+func (*Ingester) NeedsThrottling(_ context.Context) bool {
 	return false
 }
 
-func (i *Ingestor) Append(ctx context.Context, samples []*model.Sample) error {
+func (i *Ingester) Append(ctx context.Context, samples []*model.Sample) error {
 	for _, sample := range samples {
 		if err := i.append(ctx, sample); err != nil {
 			return err
@@ -172,7 +172,7 @@ func (i *Ingestor) Append(ctx context.Context, samples []*model.Sample) error {
 	return nil
 }
 
-func (i *Ingestor) append(ctx context.Context, sample *model.Sample) error {
+func (i *Ingester) append(ctx context.Context, sample *model.Sample) error {
 	for ln, lv := range sample.Metric {
 		if len(lv) == 0 {
 			delete(sample.Metric, ln)
@@ -182,7 +182,7 @@ func (i *Ingestor) append(ctx context.Context, sample *model.Sample) error {
 	i.stopLock.RLock()
 	defer i.stopLock.RUnlock()
 	if i.stopped {
-		return fmt.Errorf("ingestor stopping")
+		return fmt.Errorf("ingester stopping")
 	}
 
 	state, err := i.getStateFor(ctx)
@@ -251,7 +251,7 @@ func (u *userState) getOrCreateSeries(metric model.Metric) (model.Fingerprint, *
 	return fp, series, nil
 }
 
-func (i *Ingestor) Query(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+func (i *Ingester) Query(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
 	i.queries.Inc()
 
 	state, err := i.getStateFor(ctx)
@@ -333,7 +333,7 @@ func samplesForRange(s *memorySeries, from, through model.Time) ([]model.SampleP
 }
 
 // Get all of the label values that are associated with a given label name.
-func (i *Ingestor) LabelValuesForLabelName(ctx context.Context, name model.LabelName) (model.LabelValues, error) {
+func (i *Ingester) LabelValuesForLabelName(ctx context.Context, name model.LabelName) (model.LabelValues, error) {
 	state, err := i.getStateFor(ctx)
 	if err != nil {
 		return nil, err
@@ -342,7 +342,7 @@ func (i *Ingestor) LabelValuesForLabelName(ctx context.Context, name model.Label
 	return state.index.lookupLabelValues(name), nil
 }
 
-func (i *Ingestor) Stop() {
+func (i *Ingester) Stop() {
 	i.stopLock.Lock()
 	i.stopped = true
 	i.stopLock.Unlock()
@@ -351,7 +351,7 @@ func (i *Ingestor) Stop() {
 	<-i.done
 }
 
-func (i *Ingestor) loop() {
+func (i *Ingester) loop() {
 	defer i.flushAllUsers(true)
 	defer close(i.done)
 	tick := time.Tick(i.cfg.FlushCheckPeriod)
@@ -365,7 +365,7 @@ func (i *Ingestor) loop() {
 	}
 }
 
-func (i *Ingestor) flushAllUsers(immediate bool) {
+func (i *Ingester) flushAllUsers(immediate bool) {
 	if i.chunkStore == nil {
 		return
 	}
@@ -399,7 +399,7 @@ func (i *Ingestor) flushAllUsers(immediate bool) {
 	}
 }
 
-func (i *Ingestor) flushAllSeries(ctx context.Context, state *userState, immediate bool) {
+func (i *Ingester) flushAllSeries(ctx context.Context, state *userState, immediate bool) {
 	for pair := range state.fpToSeries.iter() {
 		if err := i.flushSeries(ctx, state, pair.fp, pair.series, immediate); err != nil {
 			log.Errorf("Failed to flush chunks for series: %v", err)
@@ -407,7 +407,7 @@ func (i *Ingestor) flushAllSeries(ctx context.Context, state *userState, immedia
 	}
 }
 
-func (i *Ingestor) flushSeries(ctx context.Context, u *userState, fp model.Fingerprint, series *memorySeries, immediate bool) error {
+func (i *Ingester) flushSeries(ctx context.Context, u *userState, fp model.Fingerprint, series *memorySeries, immediate bool) error {
 	u.fpLocker.Lock(fp)
 
 	// Decide what chunks to flush
@@ -444,7 +444,7 @@ func (i *Ingestor) flushSeries(ctx context.Context, u *userState, fp model.Finge
 	return nil
 }
 
-func (i *Ingestor) flushChunks(ctx context.Context, fp model.Fingerprint, metric model.Metric, chunks []*chunkDesc) error {
+func (i *Ingester) flushChunks(ctx context.Context, fp model.Fingerprint, metric model.Metric, chunks []*chunkDesc) error {
 	wireChunks := make([]wire.Chunk, 0, len(chunks))
 	for _, chunk := range chunks {
 		buf := make([]byte, chunkLen)
@@ -464,7 +464,7 @@ func (i *Ingestor) flushChunks(ctx context.Context, fp model.Fingerprint, metric
 }
 
 // Describe implements prometheus.Collector.
-func (i *Ingestor) Describe(ch chan<- *prometheus.Desc) {
+func (i *Ingester) Describe(ch chan<- *prometheus.Desc) {
 	i.userStateLock.Lock()
 	for _, state := range i.userState {
 		state.mapper.Describe(ch)
@@ -482,7 +482,7 @@ func (i *Ingestor) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements prometheus.Collector.
-func (i *Ingestor) Collect(ch chan<- prometheus.Metric) {
+func (i *Ingester) Collect(ch chan<- prometheus.Metric) {
 	i.userStateLock.Lock()
 	numUsers := len(i.userState)
 	numSeries := 0

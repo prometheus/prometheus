@@ -36,13 +36,13 @@ func TestLocalStorageEvaluations(t *testing.T) {
 	}
 }
 
-func TestIngestorEvaluations(t *testing.T) {
+func TestIngesterEvaluations(t *testing.T) {
 	files, err := filepath.Glob("testdata/*.test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, fn := range files {
-		test, err := newTestFromFile(t, IngestorStorage, fn)
+		test, err := newTestFromFile(t, IngesterStorage, fn)
 		if err != nil {
 			t.Errorf("error creating test for %s: %s", fn, err)
 		}
