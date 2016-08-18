@@ -39,7 +39,7 @@ import (
 
 const (
 	distributor = "distributor"
-	ingestor    = "ingestor"
+	ingester    = "ingester"
 	infName     = "eth0"
 )
 
@@ -61,7 +61,7 @@ func main() {
 		maxChunkAge          time.Duration
 	)
 
-	flag.StringVar(&mode, "mode", distributor, "Mode (distributor, ingestor).")
+	flag.StringVar(&mode, "mode", distributor, "Mode (distributor, ingester).")
 	flag.IntVar(&listenPort, "web.listen-port", 9094, "HTTP server listen port.")
 	flag.StringVar(&consulHost, "consul.hostname", "localhost:8500", "Hostname and port of Consul.")
 	flag.StringVar(&consulPrefix, "consul.prefix", "collectors/", "Prefix for keys in Consul.")
@@ -72,9 +72,9 @@ func main() {
 	flag.DurationVar(&memcachedTimeout, "memcached.timeout", 100*time.Millisecond, "Maximum time to wait before giving up on memcached requests.")
 	flag.DurationVar(&memcachedExpiration, "memcached.expiration", 0, "How long chunks stay in the memcache.")
 	flag.StringVar(&memcachedService, "memcached.service", "memcached", "SRV service used to discover memcache servers.")
-	flag.DurationVar(&remoteTimeout, "remote.timeout", 5*time.Second, "Timeout for downstream ingestors.")
-	flag.DurationVar(&flushPeriod, "ingestor.flush-period", 1*time.Minute, "Period with which to attempt to flush chunks.")
-	flag.DurationVar(&maxChunkAge, "ingestor.max-chunk-age", 10*time.Minute, "Maximum chunk age before flushing.")
+	flag.DurationVar(&remoteTimeout, "remote.timeout", 5*time.Second, "Timeout for downstream ingesters.")
+	flag.DurationVar(&flushPeriod, "ingester.flush-period", 1*time.Minute, "Period with which to attempt to flush chunks.")
+	flag.DurationVar(&maxChunkAge, "ingester.max-chunk-age", 10*time.Minute, "Maximum chunk age before flushing.")
 	flag.Parse()
 
 	consul, err := frankenstein.NewConsulClient(consulHost)
@@ -109,14 +109,14 @@ func main() {
 	switch mode {
 	case distributor:
 		setupDistributor(consul, consulPrefix, chunkStore, remoteTimeout)
-	case ingestor:
-		cfg := local.IngestorConfig{
+	case ingester:
+		cfg := local.IngesterConfig{
 			FlushCheckPeriod: flushPeriod,
 			MaxChunkAge:      maxChunkAge,
 		}
-		ingestor := setupIngestor(consul, consulPrefix, chunkStore, listenPort, cfg)
-		defer ingestor.Stop()
-		defer deleteIngestorConfigFromConsul(consul, consulPrefix)
+		ingester := setupIngester(consul, consulPrefix, chunkStore, listenPort, cfg)
+		defer ingester.Stop()
+		defer deleteIngesterConfigFromConsul(consul, consulPrefix)
 	default:
 		log.Fatalf("Mode %s not supported!", mode)
 	}
@@ -180,15 +180,15 @@ func setupDistributor(
 	http.Handle(prefix+"/static/", frankenstein.StaticAssetsHandler(prefix+"/static/"))
 }
 
-func setupIngestor(
+func setupIngester(
 	consulClient frankenstein.ConsulClient,
 	consulPrefix string,
 	chunkStore frankenstein.ChunkStore,
 	listenPort int,
-	cfg local.IngestorConfig,
-) *local.Ingestor {
+	cfg local.IngesterConfig,
+) *local.Ingester {
 	for i := 0; i < 10; i++ {
-		if err := writeIngestorConfigToConsul(consulClient, consulPrefix, listenPort); err == nil {
+		if err := writeIngesterConfigToConsul(consulClient, consulPrefix, listenPort); err == nil {
 			break
 		} else {
 			log.Errorf("Failed to write to consul, sleeping: %v", err)
@@ -196,15 +196,15 @@ func setupIngestor(
 		}
 	}
 
-	ingestor, err := local.NewIngestor(cfg, chunkStore)
+	ingester, err := local.NewIngester(cfg, chunkStore)
 	if err != nil {
 		log.Fatal(err)
 	}
-	prometheus.MustRegister(ingestor)
-	http.Handle("/push", frankenstein.AppenderHandler(ingestor))
-	http.Handle("/query", frankenstein.QueryHandler(ingestor))
-	http.Handle("/label_values", frankenstein.LabelValuesHandler(ingestor))
-	return ingestor
+	prometheus.MustRegister(ingester)
+	http.Handle("/push", frankenstein.AppenderHandler(ingester))
+	http.Handle("/query", frankenstein.QueryHandler(ingester))
+	http.Handle("/label_values", frankenstein.LabelValuesHandler(ingester))
+	return ingester
 }
 
 // GetFirstAddressOf returns the first IPv4 address of the supplied interface name.
@@ -234,8 +234,8 @@ func GetFirstAddressOf(name string) (string, error) {
 	return "", fmt.Errorf("No address found for %s", name)
 }
 
-func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient, consulPrefix string, listenPort int) error {
-	log.Info("Adding ingestor to consul")
+func writeIngesterConfigToConsul(consulClient frankenstein.ConsulClient, consulPrefix string, listenPort int) error {
+	log.Info("Adding ingester to consul")
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -266,8 +266,8 @@ func writeIngestorConfigToConsul(consulClient frankenstein.ConsulClient, consulP
 	return err
 }
 
-func deleteIngestorConfigFromConsul(consulClient frankenstein.ConsulClient, consulPrefix string) error {
-	log.Info("Removing ingestor from consul")
+func deleteIngesterConfigFromConsul(consulClient frankenstein.ConsulClient, consulPrefix string) error {
+	log.Info("Removing ingester from consul")
 
 	hostname, err := os.Hostname()
 	if err != nil {

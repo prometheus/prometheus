@@ -34,7 +34,7 @@ type IngesterClient struct {
 }
 
 // NewIngesterClient makes a new IngesterClient.  This client is careful to
-// propagate the user ID from Distributor -> Ingestor.
+// propagate the user ID from Distributor -> Ingester.
 func NewIngesterClient(hostname string, timeout time.Duration) *IngesterClient {
 	client := http.Client{
 		Timeout: timeout,

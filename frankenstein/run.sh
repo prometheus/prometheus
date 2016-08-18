@@ -46,11 +46,11 @@ start_container 1 lphoward/fake-s3 s3
 start_container 1 consul consul -p 8500:8500 -- agent -ui -server -client=0.0.0.0 -bootstrap
 
 # Services
-start_container 1 frankenstein ingestor \
-    --hostname=ingestor1 \
+start_container 1 frankenstein ingester \
+    --hostname=ingester1 \
     -p 9095:9095 \
         -- \
-    -mode=ingestor \
+    -mode=ingester \
     -web.listen-address=:9095 \
     -consul.hostname=consul1:8500 \
     -dynamodb.url=dynamodb://user:pass@dynamodb1.:8000/reports \

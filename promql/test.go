@@ -49,7 +49,7 @@ type TestStorageMode int
 
 const (
 	LocalStorage TestStorageMode = iota
-	IngestorStorage
+	IngesterStorage
 )
 
 // Test is a sequence of read and write commands that are run
@@ -60,7 +60,7 @@ type Test struct {
 
 	cmds []testCommand
 
-	ingestor     *local.Ingestor
+	ingester     *local.Ingester
 	storage      local.Storage
 	closeStorage func()
 	queryEngine  *Engine
@@ -464,26 +464,26 @@ func (t *Test) Run() error {
 	return nil
 }
 
-type ingestorWrapper struct {
-	i *local.Ingestor
+type ingesterWrapper struct {
+	i *local.Ingester
 }
 
-func (i ingestorWrapper) Append(s *model.Sample) error {
+func (i ingesterWrapper) Append(s *model.Sample) error {
 	ctx := context.WithValue(context.Background(), local.UserIDContextKey, "0")
 	return i.i.Append(ctx, []*model.Sample{s})
 }
 
-func (i ingestorWrapper) NeedsThrottling() bool {
+func (i ingesterWrapper) NeedsThrottling() bool {
 	ctx := context.WithValue(context.Background(), local.UserIDContextKey, "0")
 	return i.i.NeedsThrottling(ctx)
 }
 
-func (i ingestorWrapper) Query(_ context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+func (i ingesterWrapper) Query(_ context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
 	ctx := context.WithValue(context.Background(), local.UserIDContextKey, "0")
 	return i.i.Query(ctx, from, through, matchers...)
 }
 
-func (i ingestorWrapper) LabelValuesForLabelName(context.Context, model.LabelName) (model.LabelValues, error) {
+func (i ingesterWrapper) LabelValuesForLabelName(context.Context, model.LabelName) (model.LabelValues, error) {
 	return nil, nil
 }
 
@@ -498,8 +498,8 @@ func (t *Test) exec(tc testCommand) error {
 		case LocalStorage:
 			cmd.append(t.storage)
 			t.storage.WaitForIndexing()
-		case IngestorStorage:
-			cmd.append(ingestorWrapper{t.ingestor})
+		case IngesterStorage:
+			cmd.append(ingesterWrapper{t.ingester})
 		}
 
 	case *evalCmd:
@@ -543,17 +543,17 @@ func (t *Test) clear() {
 
 		t.closeStorage = closer.Close
 		t.queryEngine = NewEngine(t.storage, nil)
-	case IngestorStorage:
-		if t.ingestor != nil {
-			t.ingestor.Stop()
+	case IngesterStorage:
+		if t.ingester != nil {
+			t.ingester.Stop()
 		}
 		var err error
-		t.ingestor, err = local.NewIngestor(local.IngestorConfig{}, nil)
+		t.ingester, err = local.NewIngester(local.IngesterConfig{}, nil)
 		if err != nil {
-			t.Fatalf("Error creating test ingestor: %v", err)
+			t.Fatalf("Error creating test ingester: %v", err)
 		}
 		querier := frankenstein.MergeQuerier{
-			Queriers: []frankenstein.Querier{ingestorWrapper{t.ingestor}},
+			Queriers: []frankenstein.Querier{ingesterWrapper{t.ingester}},
 		}
 		t.queryEngine = NewEngine(querier, nil)
 	default:
@@ -567,8 +567,8 @@ func (t *Test) Close() {
 	switch t.mode {
 	case LocalStorage:
 		t.closeStorage()
-	case IngestorStorage:
-		t.ingestor.Stop()
+	case IngesterStorage:
+		t.ingester.Stop()
 	default:
 		panic("invalid test storage mode")
 	}

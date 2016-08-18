@@ -6,12 +6,12 @@ Design Doc: https://docs.google.com/document/d/1C7yhMnb1x2sfeoe45f4mnnKConvroWhJ
     ./frankenstein/run.sh
 
 TODO list
-- query support in ingestor
+- query support in ingester
 - chunk id generation
 - parallelise chunk puts
-- start testing with more than one ingestor
-- commit log in the ingestor
-- safe ingestor shutdown
+- start testing with more than one ingester
+- commit log in the ingester
+- safe ingester shutdown
 - separate query service?
 - prom ui
 
@@ -25,7 +25,7 @@ Use existing prometheus binary; add a --retrieval-only flag to existing promethe
 
 Use a consistent hasing library to distribute timeseries to collectors
 
-## Ingestor
+## Ingester
 
 Use existing prometheus binary with addind push interface. Adapt memorySeriesStorage with support for flushing chunks to something else.
 
