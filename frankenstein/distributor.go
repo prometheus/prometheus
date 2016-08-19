@@ -169,15 +169,19 @@ func (d *Distributor) Append(ctx context.Context, samples []*model.Sample) error
 		samplesByIngester[collector.Hostname] = append(otherSamples, sample)
 	}
 
-	// TODO paralellise
+	errs := make(chan error)
 	for hostname, samples := range samplesByIngester {
-		err := d.sendSamples(ctx, hostname, samples)
-		if err != nil {
-			return err
+		go func(ctx context.Context, hostname string, samples []*model.Sample) {
+			errs <- d.sendSamples(ctx, hostname, samples)
+		}(ctx, hostname, samples)
+	}
+	var lastErr error
+	for i := 0; i < len(samplesByIngester); i++ {
+		if err := <-errs; err != nil {
+			lastErr = err
 		}
 	}
-
-	return nil
+	return lastErr
 }
 
 func (d *Distributor) sendSamples(ctx context.Context, hostname string, samples []*model.Sample) error {
