@@ -171,9 +171,9 @@ func (d *Distributor) Append(ctx context.Context, samples []*model.Sample) error
 
 	errs := make(chan error)
 	for hostname, samples := range samplesByIngester {
-		go func(ctx context.Context, hostname string, samples []*model.Sample) {
+		go func(hostname string, samples []*model.Sample) {
 			errs <- d.sendSamples(ctx, hostname, samples)
-		}(ctx, hostname, samples)
+		}(hostname, samples)
 	}
 	var lastErr error
 	for i := 0; i < len(samplesByIngester); i++ {
