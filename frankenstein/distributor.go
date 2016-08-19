@@ -143,24 +143,30 @@ func (d *Distributor) getClientFor(hostname string) (*IngesterClient, error) {
 	return client, nil
 }
 
-func tokenForMetric(metric model.Metric) uint32 {
+func tokenForMetric(userID string, metric model.Metric) uint32 {
 	name := metric[model.MetricNameLabel]
-	return tokenFor(name)
+	return tokenFor(userID, name)
 }
 
-func tokenFor(name model.LabelValue) uint32 {
+func tokenFor(userID string, name model.LabelValue) uint32 {
 	h := fnv.New32()
+	h.Write([]byte(userID))
 	h.Write([]byte(name))
 	return h.Sum32()
 }
 
 // Append implements SampleAppender.
 func (d *Distributor) Append(ctx context.Context, samples []*model.Sample) error {
+	userID, err := userID(ctx)
+	if err != nil {
+		return err
+	}
+
 	d.receivedSamples.Add(float64(len(samples)))
 
 	samplesByIngester := map[string][]*model.Sample{}
 	for _, sample := range samples {
-		key := tokenForMetric(sample.Metric)
+		key := tokenForMetric(userID, sample.Metric)
 		collector, err := d.ring.Get(key)
 		if err != nil {
 			return err
@@ -215,7 +221,12 @@ func (d *Distributor) Query(ctx context.Context, from, to model.Time, matchers .
 			return err
 		}
 
-		collector, err := d.ring.Get(tokenFor(metricName))
+		userID, err := userID(ctx)
+		if err != nil {
+			return err
+		}
+
+		collector, err := d.ring.Get(tokenFor(userID, metricName))
 		if err != nil {
 			return err
 		}
