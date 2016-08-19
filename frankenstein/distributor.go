@@ -171,19 +171,23 @@ func (d *Distributor) Append(ctx context.Context, samples []*model.Sample) error
 
 	// TODO paralellise
 	for hostname, samples := range samplesByIngester {
-		client, err := d.getClientFor(hostname)
-		if err != nil {
-			return err
-		}
-		err = timeRequestHistogramStatus(d.sendDuration, nil, func() error {
-			return client.Append(ctx, samples)
-		})
+		err := d.sendSamples(ctx, hostname, samples)
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func (d *Distributor) sendSamples(ctx context.Context, hostname string, samples []*model.Sample) error {
+	client, err := d.getClientFor(hostname)
+	if err != nil {
+		return err
+	}
+	return timeRequestHistogramStatus(d.sendDuration, nil, func() error {
+		return client.Append(ctx, samples)
+	})
 }
 
 func metricNameFromLabelMatchers(matchers ...*metric.LabelMatcher) (model.LabelValue, error) {
