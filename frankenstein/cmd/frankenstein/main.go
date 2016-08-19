@@ -169,13 +169,20 @@ func setupDistributor(
 	prefix := "/api/prom"
 	http.Handle(prefix+"/push", frankenstein.AppenderHandler(distributor))
 
-	// This sets up a complete querying pipeline:
-	//
-	// PromQL -> MergeQuerier -> Distributor -> IngesterQuerier -> Ingester
-	//              |
-	//              +----------> ChunkQuerier -> DynamoDB/S3
-	//
 	// TODO: Move querier to separate binary.
+	setupQuerier(distributor, chunkStore, prefix)
+}
+
+// setupQuerier sets up a complete querying pipeline:
+//
+// PromQL -> MergeQuerier -> Distributor -> IngesterQuerier -> Ingester
+//              |
+//              +----------> ChunkQuerier -> DynamoDB/S3
+func setupQuerier(
+	distributor *frankenstein.Distributor,
+	chunkStore frankenstein.ChunkStore,
+	prefix string,
+) {
 	newQuerier := func(ctx context.Context) local.Querier {
 		return frankenstein.MergeQuerier{
 			Queriers: []frankenstein.Querier{

@@ -113,7 +113,7 @@ func (d *Distributor) loop() {
 	factory := func() interface{} { return &IngesterDesc{} }
 	d.cfg.ConsulClient.WatchPrefix(d.cfg.ConsulPrefix, factory, d.quit, func(key string, value interface{}) bool {
 		c := *value.(*IngesterDesc)
-		log.Infof("Got update to collector %d", c.ID)
+		log.Infof("Got update to ingester %d", c.ID)
 		d.consulUpdates.Inc()
 		d.ring.Update(c)
 		return true
@@ -169,21 +169,29 @@ func (d *Distributor) Append(ctx context.Context, samples []*model.Sample) error
 		samplesByIngester[collector.Hostname] = append(otherSamples, sample)
 	}
 
-	// TODO paralellise
+	errs := make(chan error)
 	for hostname, samples := range samplesByIngester {
-		client, err := d.getClientFor(hostname)
-		if err != nil {
-			return err
-		}
-		err = timeRequestHistogramStatus(d.sendDuration, nil, func() error {
-			return client.Append(ctx, samples)
-		})
-		if err != nil {
-			return err
+		go func(hostname string, samples []*model.Sample) {
+			errs <- d.sendSamples(ctx, hostname, samples)
+		}(hostname, samples)
+	}
+	var lastErr error
+	for i := 0; i < len(samplesByIngester); i++ {
+		if err := <-errs; err != nil {
+			lastErr = err
 		}
 	}
+	return lastErr
+}
 
-	return nil
+func (d *Distributor) sendSamples(ctx context.Context, hostname string, samples []*model.Sample) error {
+	client, err := d.getClientFor(hostname)
+	if err != nil {
+		return err
+	}
+	return timeRequestHistogramStatus(d.sendDuration, nil, func() error {
+		return client.Append(ctx, samples)
+	})
 }
 
 func metricNameFromLabelMatchers(matchers ...*metric.LabelMatcher) (model.LabelValue, error) {
