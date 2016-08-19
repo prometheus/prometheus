@@ -148,12 +148,12 @@ func (c *consulClient) CAS(key string, out interface{}, f CASCallback) error {
 	return fmt.Errorf("failed to CAS %s", key)
 }
 
-// WatchPrefix will watch a given prefix in consul for changes.  When a value
+// WatchPrefix will watch a given prefix in consul for changes. When a value
 // under said prefix changes, the f callback is called with the deserialised
 // value. To construct the deserialised value, a factory function should be
-// supplied which generates an empy struct for WatchPrefix to deserialise into.
-// Values in Consul are asusmed to be JSON.  This function blocks until the
-// done channel is closed.
+// supplied which generates an empy struct for WatchPrefix to deserialise
+// into. Values in Consul are assumed to be JSON. This function blocks until
+// the done channel is closed.
 func (c *consulClient) WatchPrefix(prefix string, factory func() interface{}, done chan struct{}, f func(string, interface{}) bool) {
 	const (
 		initialBackoff = 1 * time.Second

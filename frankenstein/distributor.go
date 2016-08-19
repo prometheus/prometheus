@@ -113,7 +113,7 @@ func (d *Distributor) loop() {
 	factory := func() interface{} { return &IngesterDesc{} }
 	d.cfg.ConsulClient.WatchPrefix(d.cfg.ConsulPrefix, factory, d.quit, func(key string, value interface{}) bool {
 		c := *value.(*IngesterDesc)
-		log.Infof("Got update to collector %d", c.ID)
+		log.Infof("Got update to ingester %d", c.ID)
 		d.consulUpdates.Inc()
 		d.ring.Update(c)
 		return true
