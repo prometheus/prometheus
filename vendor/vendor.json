@@ -3,6 +3,10 @@
 	"ignore": "test",
 	"package": [
 		{
+			"path": "context",
+			"revision": ""
+		},
+		{
 			"checksumSHA1": "DypC2gHBVRhfPqBbsuGYgkrjvOw=",
 			"origin": "github.com/prometheus/prometheus/vendor/github.com/asaskevich/govalidator",
 			"path": "github.com/asaskevich/govalidator",
@@ -211,6 +215,18 @@
 			"revisionTime": "2015-07-30T13:18:44+10:00"
 		},
 		{
+			"checksumSHA1": "g/V4qrXjUGG9B+e3hB+4NAYJ5Gs=",
+			"path": "github.com/gorilla/context",
+			"revision": "08b5f424b9271eedf6f9f0ce86cb9396ed337a42",
+			"revisionTime": "2016-08-17T18:46:32Z"
+		},
+		{
+			"checksumSHA1": "TfZ8ulM+No3vdOTjK6qF1y9yVlI=",
+			"path": "github.com/gorilla/mux",
+			"revision": "cf79e51a62d8219d52060dfc1b4e810414ba2d15",
+			"revisionTime": "2016-08-16T18:45:31Z"
+		},
+		{
 			"path": "github.com/hashicorp/consul/api",
 			"revision": "34f98f7bdf2eec7517e3aac44691566963152721",
 			"revisionTime": "2015-09-08T11:01:49-04:00"
@@ -398,6 +414,12 @@
 			"path": "github.com/vaughan0/go-ini",
 			"revision": "a98ad7ee00ec53921f08832bc06ecf7fd600e6a1",
 			"revisionTime": "2013-09-23T16:52:12+02:00"
+		},
+		{
+			"checksumSHA1": "lVqwP2bM6TwGtlcs13sij+vpjLA=",
+			"path": "github.com/weaveworks/scope/common/middleware",
+			"revision": "4cb002e360b00233f3741214df10813ad57f568a",
+			"revisionTime": "2016-08-19T14:04:36Z"
 		},
 		{
 			"checksumSHA1": "9jjO5GjLa0XF/nfWihF02RoH4qc=",

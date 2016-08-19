@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/route"
+	"github.com/weaveworks/scope/common/middleware"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/frankenstein"
@@ -43,6 +44,19 @@ const (
 	ingester    = "ingester"
 	infName     = "eth0"
 )
+
+var (
+	requestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "frankenstein",
+		Name:      "request_duration_seconds",
+		Help:      "Time (in seconds) spent serving HTTP requests.",
+		Buckets:   prometheus.DefBuckets,
+	}, []string{"method", "route", "status_code", "ws"})
+)
+
+func init() {
+	prometheus.MustRegister(requestDuration)
+}
 
 func main() {
 	var (
@@ -205,9 +219,17 @@ func setupIngester(
 		log.Fatal(err)
 	}
 	prometheus.MustRegister(ingester)
-	http.Handle("/push", frankenstein.AppenderHandler(ingester))
-	http.Handle("/query", frankenstein.QueryHandler(ingester))
-	http.Handle("/label_values", frankenstein.LabelValuesHandler(ingester))
+
+	instr := middleware.Merge(
+		middleware.Logging,
+		middleware.Instrument{
+			Duration: requestDuration,
+		},
+	).Wrap
+
+	http.Handle("/push", instr(frankenstein.AppenderHandler(ingester)))
+	http.Handle("/query", instr(frankenstein.QueryHandler(ingester)))
+	http.Handle("/label_values", instr(frankenstein.LabelValuesHandler(ingester)))
 	return ingester
 }
 
