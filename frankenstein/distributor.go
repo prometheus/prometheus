@@ -15,6 +15,7 @@ package frankenstein
 
 import (
 	"fmt"
+	"hash/fnv"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -58,12 +59,12 @@ type DistributorConfig struct {
 	ClientFactory func(string) (*IngesterClient, error)
 }
 
-// Collector is the serialised state in Consul representing
-// an individual collector.
-type Collector struct {
+// IngesterDesc is the serialised state in Consul representing
+// an individual ingester.
+type IngesterDesc struct {
 	ID       string   `json:"ID"`
 	Hostname string   `json:"hostname"`
-	Tokens   []uint64 `json:"tokens"`
+	Tokens   []uint32 `json:"tokens"`
 }
 
 // NewDistributor constructs a new Distributor
@@ -109,9 +110,10 @@ func (d *Distributor) Stop() {
 
 func (d *Distributor) loop() {
 	defer close(d.done)
-	d.cfg.ConsulClient.WatchPrefix(d.cfg.ConsulPrefix, &Collector{}, d.quit, func(key string, value interface{}) bool {
-		c := *value.(*Collector)
-		log.Infof("Got update to collector: %#v", c)
+	factory := func() interface{} { return &IngesterDesc{} }
+	d.cfg.ConsulClient.WatchPrefix(d.cfg.ConsulPrefix, factory, d.quit, func(key string, value interface{}) bool {
+		c := *value.(*IngesterDesc)
+		log.Infof("Got update to collector %d", c.ID)
 		d.consulUpdates.Inc()
 		d.ring.Update(c)
 		return true
@@ -141,14 +143,25 @@ func (d *Distributor) getClientFor(hostname string) (*IngesterClient, error) {
 	return client, nil
 }
 
+func tokenForMetric(metric model.Metric) uint32 {
+	name := metric[model.MetricNameLabel]
+	return tokenFor(name)
+}
+
+func tokenFor(name model.LabelValue) uint32 {
+	h := fnv.New32()
+	h.Write([]byte(name))
+	return h.Sum32()
+}
+
 // Append implements SampleAppender.
 func (d *Distributor) Append(ctx context.Context, samples []*model.Sample) error {
 	d.receivedSamples.Add(float64(len(samples)))
 
 	samplesByIngester := map[string][]*model.Sample{}
 	for _, sample := range samples {
-		key := model.SignatureForLabels(sample.Metric, model.MetricNameLabel)
-		collector, err := d.ring.Get(uint64(key))
+		key := tokenForMetric(sample.Metric)
+		collector, err := d.ring.Get(key)
 		if err != nil {
 			return err
 		}
@@ -194,11 +207,7 @@ func (d *Distributor) Query(ctx context.Context, from, to model.Time, matchers .
 			return err
 		}
 
-		metric := model.Metric{
-			model.MetricNameLabel: metricName,
-		}
-		key := model.SignatureForLabels(metric, model.MetricNameLabel)
-		collector, err := d.ring.Get(uint64(key))
+		collector, err := d.ring.Get(tokenFor(metricName))
 		if err != nil {
 			return err
 		}
@@ -252,6 +261,7 @@ func (d *Distributor) Describe(ch chan<- *prometheus.Desc) {
 	ch <- d.consulUpdates.Desc()
 	ch <- d.receivedSamples.Desc()
 	d.sendDuration.Describe(ch)
+	d.ring.Describe(ch)
 	ch <- numClientsDesc
 }
 
@@ -261,6 +271,7 @@ func (d *Distributor) Collect(ch chan<- prometheus.Metric) {
 	ch <- d.consulUpdates
 	ch <- d.receivedSamples
 	d.sendDuration.Collect(ch)
+	d.ring.Collect(ch)
 
 	d.clientsMtx.RLock()
 	defer d.clientsMtx.RUnlock()

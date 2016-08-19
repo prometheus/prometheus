@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"math/rand"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -59,6 +60,7 @@ func main() {
 		remoteTimeout        time.Duration
 		flushPeriod          time.Duration
 		maxChunkAge          time.Duration
+		numTokens            int
 	)
 
 	flag.StringVar(&mode, "mode", distributor, "Mode (distributor, ingester).")
@@ -75,6 +77,7 @@ func main() {
 	flag.DurationVar(&remoteTimeout, "remote.timeout", 5*time.Second, "Timeout for downstream ingesters.")
 	flag.DurationVar(&flushPeriod, "ingester.flush-period", 1*time.Minute, "Period with which to attempt to flush chunks.")
 	flag.DurationVar(&maxChunkAge, "ingester.max-chunk-age", 10*time.Minute, "Maximum chunk age before flushing.")
+	flag.IntVar(&numTokens, "ingester.num-tokens", 128, "Number of tokens for each ingester.")
 	flag.Parse()
 
 	consul, err := frankenstein.NewConsulClient(consulHost)
@@ -114,7 +117,7 @@ func main() {
 			FlushCheckPeriod: flushPeriod,
 			MaxChunkAge:      maxChunkAge,
 		}
-		ingester := setupIngester(consul, consulPrefix, chunkStore, listenPort, cfg)
+		ingester := setupIngester(consul, consulPrefix, chunkStore, listenPort, cfg, numTokens)
 		defer ingester.Stop()
 		defer deleteIngesterConfigFromConsul(consul, consulPrefix)
 	default:
@@ -186,9 +189,10 @@ func setupIngester(
 	chunkStore frankenstein.ChunkStore,
 	listenPort int,
 	cfg local.IngesterConfig,
+	numTokens int,
 ) *local.Ingester {
 	for i := 0; i < 10; i++ {
-		if err := writeIngesterConfigToConsul(consulClient, consulPrefix, listenPort); err == nil {
+		if err := writeIngesterConfigToConsul(consulClient, consulPrefix, listenPort, numTokens); err == nil {
 			break
 		} else {
 			log.Errorf("Failed to write to consul, sleeping: %v", err)
@@ -234,7 +238,7 @@ func GetFirstAddressOf(name string) (string, error) {
 	return "", fmt.Errorf("No address found for %s", name)
 }
 
-func writeIngesterConfigToConsul(consulClient frankenstein.ConsulClient, consulPrefix string, listenPort int) error {
+func writeIngesterConfigToConsul(consulClient frankenstein.ConsulClient, consulPrefix string, listenPort int, numTokens int) error {
 	log.Info("Adding ingester to consul")
 
 	hostname, err := os.Hostname()
@@ -249,11 +253,17 @@ func writeIngesterConfigToConsul(consulClient frankenstein.ConsulClient, consulP
 
 	tokenHasher := fnv.New64()
 	tokenHasher.Write([]byte(hostname))
+	r := rand.New(rand.NewSource(int64(tokenHasher.Sum64())))
 
-	buf, err := json.Marshal(frankenstein.Collector{
+	tokens := []uint32{}
+	for i := 0; i < numTokens; i++ {
+		tokens = append(tokens, r.Uint32())
+	}
+
+	buf, err := json.Marshal(frankenstein.IngesterDesc{
 		ID:       hostname,
 		Hostname: fmt.Sprintf("%s:%d", addr, listenPort),
-		Tokens:   []uint64{tokenHasher.Sum64()},
+		Tokens:   tokens,
 	})
 	if err != nil {
 		return err
@@ -274,10 +284,10 @@ func deleteIngesterConfigFromConsul(consulClient frankenstein.ConsulClient, cons
 		return err
 	}
 
-	buf, err := json.Marshal(frankenstein.Collector{
+	buf, err := json.Marshal(frankenstein.IngesterDesc{
 		ID:       hostname,
 		Hostname: "",
-		Tokens:   []uint64{},
+		Tokens:   []uint32{},
 	})
 	if err != nil {
 		return err

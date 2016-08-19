@@ -32,7 +32,7 @@ const (
 type ConsulClient interface {
 	Get(key string, out interface{}) error
 	CAS(key string, out interface{}, f CASCallback) error
-	WatchPrefix(prefix string, out interface{}, done chan struct{}, f func(string, interface{}) bool)
+	WatchPrefix(prefix string, factory func() interface{}, done chan struct{}, f func(string, interface{}) bool)
 	Put(p *consul.KVPair, q *consul.WriteOptions) (*consul.WriteMeta, error)
 }
 
@@ -148,7 +148,13 @@ func (c *consulClient) CAS(key string, out interface{}, f CASCallback) error {
 	return fmt.Errorf("failed to CAS %s", key)
 }
 
-func (c *consulClient) WatchPrefix(prefix string, out interface{}, done chan struct{}, f func(string, interface{}) bool) {
+// WatchPrefix will watch a given prefix in consul for changes.  When a value
+// under said prefix changes, the f callback is called with the deserialised
+// value. To construct the deserialised value, a factory function should be
+// supplied which generates an empy struct for WatchPrefix to deserialise into.
+// Values in Consul are asusmed to be JSON.  This function blocks until the
+// done channel is closed.
+func (c *consulClient) WatchPrefix(prefix string, factory func() interface{}, done chan struct{}, f func(string, interface{}) bool) {
 	const (
 		initialBackoff = 1 * time.Second
 		maxBackoff     = 1 * time.Minute
@@ -188,6 +194,7 @@ func (c *consulClient) WatchPrefix(prefix string, out interface{}, done chan str
 		index = meta.LastIndex
 
 		for _, kvp := range kvps {
+			out := factory()
 			if err := json.NewDecoder(bytes.NewReader(kvp.Value)).Decode(out); err != nil {
 				log.Errorf("Error deserialising %s: %v", kvp.Key, err)
 				continue
