@@ -117,6 +117,10 @@ scrape_configs:
       username: 'myusername'
       password: 'mypassword'
 
+- job_name: service-mdns
+  mdns_sd_configs:
+      - enabled: true
+
 - job_name: service-marathon
   marathon_sd_configs:
   - servers:

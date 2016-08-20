@@ -433,6 +433,8 @@ type ScrapeConfig struct {
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
+	// List of MDNS configs
+	MDNSConfigs []*MDNSConfig `yaml:"mdns_sd_configs"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -884,6 +886,10 @@ type AzureSDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
+}
+
+type MDNSConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
