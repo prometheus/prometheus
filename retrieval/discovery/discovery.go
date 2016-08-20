@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/retrieval/discovery/dns"
 	"github.com/prometheus/prometheus/retrieval/discovery/kubernetes"
 	"github.com/prometheus/prometheus/retrieval/discovery/marathon"
+	"github.com/prometheus/prometheus/retrieval/discovery/mdns"
 )
 
 // NewConsul creates a new Consul based Discovery.
@@ -52,4 +53,9 @@ func NewMarathon(conf *config.MarathonSDConfig) *marathon.Discovery {
 // NewDNS creates a new DNS based discovery.
 func NewDNS(conf *config.DNSSDConfig) *dns.Discovery {
 	return dns.NewDiscovery(conf)
+}
+
+// NewMDNS creates a new DNS based discovery.
+func NewMDNS(conf *config.MDNSConfig) *mdns.Discovery {
+	return mdns.NewDiscovery(conf)
 }
