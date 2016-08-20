@@ -4,7 +4,6 @@
 	"package": [
 		{
 			"checksumSHA1": "DypC2gHBVRhfPqBbsuGYgkrjvOw=",
-			"origin": "github.com/prometheus/prometheus/vendor/github.com/asaskevich/govalidator",
 			"path": "github.com/asaskevich/govalidator",
 			"revision": "5b6e9375cbf581a9008064f7216e816b568d6daa",
 			"revisionTime": "2016-04-23T17:31:43Z"
@@ -125,6 +124,12 @@
 			"path": "github.com/hashicorp/consul/api",
 			"revision": "34f98f7bdf2eec7517e3aac44691566963152721",
 			"revisionTime": "2015-09-08T11:01:49-04:00"
+		},
+		{
+			"checksumSHA1": "/3BJn10YrvqbkKbGX7pgU1U08FE=",
+			"path": "github.com/hashicorp/mdns",
+			"revision": "9d85cf22f9f8d53cb5c81c1b2749f438b2ee333f",
+			"revisionTime": "2015-12-06T04:24:12Z"
 		},
 		{
 			"path": "github.com/influxdb/influxdb/client",
@@ -306,7 +311,6 @@
 		},
 		{
 			"checksumSHA1": "JfVmsMwyeeepbdw4q4wpN07BuFg=",
-			"origin": "github.com/prometheus/prometheus/vendor/gopkg.in/fsnotify.v1",
 			"path": "gopkg.in/fsnotify.v1",
 			"revision": "30411dbcefb7a1da7e84f75530ad3abe4011b4f8",
 			"revisionTime": "2016-04-12T13:37:56Z"
