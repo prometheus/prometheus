@@ -126,14 +126,7 @@
 			"revisionTime": "2015-09-08T11:01:49-04:00"
 		},
 		{
-			"checksumSHA1": "DqeCFlr0sVteTZJtDZtSetkORpc=",
-			"path": "github.com/hashicorp/go.net/ipv4",
-			"revision": "104dcad90073cd8d1e6828b2af19185b60cf3e29",
-			"revisionTime": "2015-10-06T20:33:46Z"
-		},
-		{
-			"checksumSHA1": "J7rNs+cL2NxigfgAD8WqonAcASk=",
-			"path": "github.com/hashicorp/go.net/ipv6",
+			"path": "github.com/hashicorp/go.net",
 			"revision": "104dcad90073cd8d1e6828b2af19185b60cf3e29",
 			"revisionTime": "2015-10-06T20:33:46Z"
 		},
