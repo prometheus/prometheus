@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/common/model"
 
@@ -27,11 +28,11 @@ import (
 // Function represents a function of the expression language and is
 // used by function nodes.
 type Function struct {
-	Name         string
-	ArgTypes     []model.ValueType
-	OptionalArgs int
-	ReturnType   model.ValueType
-	Call         func(ev *evaluator, args Expressions) model.Value
+	Name       string
+	ArgTypes   []model.ValueType
+	Variadic   int
+	ReturnType model.ValueType
+	Call       func(ev *evaluator, args Expressions) model.Value
 }
 
 // === time() model.SampleValue ===
@@ -848,6 +849,44 @@ func funcLabelReplace(ev *evaluator, args Expressions) model.Value {
 	return vector
 }
 
+// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
+func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
+	var (
+		vector    = ev.evalVector(args[0])
+		dst       = model.LabelName(ev.evalString(args[1]).Value)
+		sep       = ev.evalString(args[2]).Value
+		srcLabels = make([]model.LabelName, 0)
+	)
+	for i := 3; i < len(args); i++ {
+		src := args[i]
+		srcLabels = append(srcLabels, model.LabelName(ev.evalString(src).Value))
+	}
+
+	if !model.LabelNameRE.MatchString(string(dst)) {
+		ev.errorf("invalid destination label name in label_join(): %s", dst)
+	}
+
+	outSet := make(map[model.Fingerprint]struct{}, len(vector))
+	for _, el := range vector {
+		srcVals := make([]string, 0)
+		for _, src := range srcLabels {
+			srcVal := string(el.Metric.Metric[src])
+			srcVals = append(srcVals, srcVal)
+		}
+
+		dstVal := strings.Join(srcVals, sep)
+		el.Metric.Set(dst, model.LabelValue(dstVal))
+
+		fp := el.Metric.Metric.Fingerprint()
+		if _, exists := outSet[fp]; exists {
+			ev.errorf("duplicated label set in output of label_join(): %s", el.Metric.Metric)
+		} else {
+			outSet[fp] = struct{}{}
+		}
+	}
+	return vector
+}
+
 // === vector(s scalar) Vector ===
 func funcVector(ev *evaluator, args Expressions) model.Value {
 	return vector{
@@ -922,7 +961,8 @@ var functions = map[string]*Function{
 	},
 	"delta": {
 		Name:       "delta",
-		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar},
+		Variadic:   1, // The 2nd argument is deprecated.
 		ReturnType: model.ValVector,
 		Call:       funcDelta,
 	},
@@ -980,6 +1020,13 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcLabelReplace,
 	},
+	"label_join": {
+		Name:       "label_join",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValString, model.ValString, model.ValString},
+		Variadic:   -1,
+		ReturnType: model.ValVector,
+		Call:       funcLabelJoin,
+	},
 	"ln": {
 		Name:       "ln",
 		ArgTypes:   []model.ValueType{model.ValVector},
@@ -1035,11 +1082,11 @@ var functions = map[string]*Function{
 		Call:       funcResets,
 	},
 	"round": {
-		Name:         "round",
-		ArgTypes:     []model.ValueType{model.ValVector, model.ValScalar},
-		OptionalArgs: 1,
-		ReturnType:   model.ValVector,
-		Call:         funcRound,
+		Name:       "round",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValScalar},
+		Variadic:   1,
+		ReturnType: model.ValVector,
+		Call:       funcRound,
 	},
 	"scalar": {
 		Name:       "scalar",
