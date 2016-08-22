@@ -195,7 +195,7 @@ func (d *Distributor) sendSamples(ctx context.Context, hostname string, samples 
 	if err != nil {
 		return err
 	}
-	return timeRequestHistogramStatus(d.sendDuration, nil, func() error {
+	return timeRequestStatus(d.sendDuration, nil, func() error {
 		return client.Append(ctx, samples)
 	})
 }
@@ -215,7 +215,7 @@ func metricNameFromLabelMatchers(matchers ...*metric.LabelMatcher) (model.LabelV
 // Query implements Querier.
 func (d *Distributor) Query(ctx context.Context, from, to model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
 	var result model.Matrix
-	err := timeRequestHistogramStatus(d.queryDuration, nil, func() error {
+	err := timeRequestStatus(d.queryDuration, nil, func() error {
 		metricName, err := metricNameFromLabelMatchers(matchers...)
 		if err != nil {
 			return err
