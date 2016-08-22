@@ -860,6 +860,17 @@ func funcVector(ev *evaluator, args Expressions) model.Value {
 	}
 }
 
+// === days_in_month(v vector) scalar ===
+func funcDaysInMonth(ev *evaluator, args Expressions) model.Value {
+	vector := ev.evalVector(args[0])
+	for _, el := range vector {
+		el.Metric.Del(model.MetricNameLabel)
+		t := time.Unix(int64(el.Value), 0)
+		el.Value = model.SampleValue(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
+	}
+	return vector
+}
+
 // === day_of_month(v vector) scalar ===
 func funcDayOfMonth(ev *evaluator, args Expressions) model.Value {
 	vector := ev.evalVector(args[0])
@@ -965,6 +976,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValVector},
 		ReturnType: model.ValScalar,
 		Call:       funcCountScalar,
+	},
+	"days_in_month": {
+		Name:       "days_in_month",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		ReturnType: model.ValVector,
+		Call:       funcDaysInMonth,
 	},
 	"day_of_month": {
 		Name:       "day_of_month",
