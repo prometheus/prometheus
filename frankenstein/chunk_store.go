@@ -49,10 +49,11 @@ const (
 )
 
 var (
-	dynamoRequestDuration = prometheus.NewSummaryVec(prometheus.SummaryOpts{
+	dynamoRequestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "prometheus",
 		Name:      "dynamo_request_duration_seconds",
 		Help:      "Time spent doing DynamoDB requests.",
+		Buckets:   []float64{.001, .0025, .005, .01, .025, .05, .1, .25, .5, 1},
 	}, []string{"operation", "status_code"})
 	dynamoConsumedCapacity = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "prometheus",
@@ -64,10 +65,11 @@ var (
 		Name:      "dropped_matches_total",
 		Help:      "The number of chunks fetched but later dropped for not matching.",
 	})
-	s3RequestDuration = prometheus.NewSummaryVec(prometheus.SummaryOpts{
+	s3RequestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "prometheus",
 		Name:      "s3_request_duration_seconds",
 		Help:      "Time spent doing S3 requests.",
+		Buckets:   []float64{.025, .05, .1, .25, .5, 1, 2},
 	}, []string{"operation", "status_code"})
 )
 
