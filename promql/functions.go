@@ -924,12 +924,6 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcAbsent,
 	},
-	"increase": {
-		Name:       "increase",
-		ArgTypes:   []model.ValueType{model.ValMatrix},
-		ReturnType: model.ValVector,
-		Call:       funcIncrease,
-	},
 	"avg_over_time": {
 		Name:       "avg_over_time",
 		ArgTypes:   []model.ValueType{model.ValMatrix},
@@ -1032,17 +1026,23 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcHourOfDay,
 	},
-	"irate": {
-		Name:       "irate",
-		ArgTypes:   []model.ValueType{model.ValMatrix},
-		ReturnType: model.ValVector,
-		Call:       funcIrate,
-	},
 	"idelta": {
 		Name:       "idelta",
 		ArgTypes:   []model.ValueType{model.ValMatrix},
 		ReturnType: model.ValVector,
 		Call:       funcIdelta,
+	},
+	"increase": {
+		Name:       "increase",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcIncrease,
+	},
+	"irate": {
+		Name:       "irate",
+		ArgTypes:   []model.ValueType{model.ValMatrix},
+		ReturnType: model.ValVector,
+		Call:       funcIrate,
 	},
 	"label_replace": {
 		Name:       "label_replace",
