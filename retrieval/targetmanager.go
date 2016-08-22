@@ -180,8 +180,7 @@ type targetSet struct {
 	mtx sync.RWMutex
 
 	// Sets of targets by a source string that is unique across target providers.
-	tgroups   map[string][]*Target
-	providers map[string]TargetProvider
+	tgroups map[string][]*Target
 
 	scrapePool *scrapePool
 	config     *config.ScrapeConfig
@@ -193,7 +192,6 @@ type targetSet struct {
 
 func newTargetSet(cfg *config.ScrapeConfig, app storage.SampleAppender) *targetSet {
 	ts := &targetSet{
-		tgroups:    map[string][]*Target{},
 		scrapePool: newScrapePool(cfg, app),
 		syncCh:     make(chan struct{}, 1),
 		config:     cfg,
@@ -271,6 +269,11 @@ func (ts *targetSet) runProviders(ctx context.Context, providers map[string]Targ
 		ts.cancelProviders()
 	}
 	ctx, ts.cancelProviders = context.WithCancel(ctx)
+
+	// (Re-)create a fresh tgroups map to not keep stale targets around. We
+	// will retrieve all targets below anyway, so cleaning up everything is
+	// safe and doesn't inflict any additional cost.
+	ts.tgroups = map[string][]*Target{}
 
 	for name, prov := range providers {
 		wg.Add(1)
