@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -859,6 +860,57 @@ func funcVector(ev *evaluator, args Expressions) model.Value {
 	}
 }
 
+// === day_of_month(v vector) scalar ===
+func funcDayOfMonth(ev *evaluator, args Expressions) model.Value {
+	vector := ev.evalVector(args[0])
+	for _, el := range vector {
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Day())
+	}
+	return vector
+}
+
+// === day_of_week(v vector) scalar ===
+func funcDayOfWeek(ev *evaluator, args Expressions) model.Value {
+	vector := ev.evalVector(args[0])
+	for _, el := range vector {
+		el.Metric.Del(model.MetricNameLabel)
+		// Sunday = 0.
+		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Weekday())
+	}
+	return vector
+}
+
+// === hour_of_day(v vector) scalar ===
+func funcHourOfDay(ev *evaluator, args Expressions) model.Value {
+	vector := ev.evalVector(args[0])
+	for _, el := range vector {
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Hour())
+	}
+	return vector
+}
+
+// === month_of_year(v vector) scalar ===
+func funcMonthOfYear(ev *evaluator, args Expressions) model.Value {
+	vector := ev.evalVector(args[0])
+	for _, el := range vector {
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Month())
+	}
+	return vector
+}
+
+// === year(v vector) scalar ===
+func funcYear(ev *evaluator, args Expressions) model.Value {
+	vector := ev.evalVector(args[0])
+	for _, el := range vector {
+		el.Metric.Del(model.MetricNameLabel)
+		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Year())
+	}
+	return vector
+}
+
 var functions = map[string]*Function{
 	"abs": {
 		Name:       "abs",
@@ -920,6 +972,18 @@ var functions = map[string]*Function{
 		ReturnType: model.ValScalar,
 		Call:       funcCountScalar,
 	},
+	"day_of_month": {
+		Name:       "day_of_month",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		ReturnType: model.ValVector,
+		Call:       funcDayOfMonth,
+	},
+	"day_of_week": {
+		Name:       "day_of_week",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		ReturnType: model.ValVector,
+		Call:       funcDayOfWeek,
+	},
 	"delta": {
 		Name:       "delta",
 		ArgTypes:   []model.ValueType{model.ValMatrix},
@@ -961,6 +1025,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar, model.ValScalar},
 		ReturnType: model.ValVector,
 		Call:       funcHoltWinters,
+	},
+	"hour_of_day": {
+		Name:       "hour_of_day",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		ReturnType: model.ValVector,
+		Call:       funcHourOfDay,
 	},
 	"irate": {
 		Name:       "irate",
@@ -1009,6 +1079,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValMatrix},
 		ReturnType: model.ValVector,
 		Call:       funcMinOverTime,
+	},
+	"month_of_year": {
+		Name:       "month_of_year",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		ReturnType: model.ValVector,
+		Call:       funcMonthOfYear,
 	},
 	"predict_linear": {
 		Name:       "predict_linear",
@@ -1094,6 +1170,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValScalar},
 		ReturnType: model.ValVector,
 		Call:       funcVector,
+	},
+	"year": {
+		Name:       "year",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		ReturnType: model.ValVector,
+		Call:       funcYear,
 	},
 }
 
