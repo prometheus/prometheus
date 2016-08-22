@@ -79,7 +79,7 @@ func NewDistributor(cfg DistributorConfig) (*Distributor, error) {
 			Namespace: "prometheus",
 			Name:      "distributor_query_duration_seconds",
 			Help:      "Time spent executing expression queries.",
-			Buckets:   prometheus.DefBuckets,
+			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"status_code"}),
 		consulUpdates: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
@@ -95,7 +95,7 @@ func NewDistributor(cfg DistributorConfig) (*Distributor, error) {
 			Namespace: "prometheus",
 			Name:      "distributor_send_duration_seconds",
 			Help:      "Time spent sending sample batches to ingesters.",
-			Buckets:   prometheus.DefBuckets,
+			Buckets:   []float64{.001, .0025, .005, .01, .025, .05, .1, .25, .5, 1},
 		}, []string{"status_code"}),
 	}
 	go d.loop()

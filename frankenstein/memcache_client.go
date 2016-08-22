@@ -43,7 +43,7 @@ var (
 		Namespace: "prometheus",
 		Name:      "memcache_request_duration_seconds",
 		Help:      "Total time spent in seconds doing memcache requests.",
-		Buckets:   prometheus.DefBuckets,
+		Buckets:   []float64{.001, .0025, .005, .01, .025, .05},
 	}, []string{"method", "status_code"})
 )
 
