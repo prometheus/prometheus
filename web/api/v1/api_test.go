@@ -187,6 +187,17 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
+		// Invalid step
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"1"},
+				"end":   []string{"2"},
+				"step":  []string{"0"},
+			},
+			errType: errorBadData,
+		},
 		{
 			endpoint: api.labelValues,
 			params: map[string]string{

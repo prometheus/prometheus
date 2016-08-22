@@ -329,7 +329,7 @@ func TestScrapeLoopStop(t *testing.T) {
 
 	runDone := make(chan struct{})
 	go func() {
-		sl.run(0, 0, nil)
+		sl.run(1, 0, nil)
 		close(runDone)
 	}()
 

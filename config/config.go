@@ -176,9 +176,10 @@ func (u URL) MarshalYAML() (interface{}, error) {
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig  GlobalConfig    `yaml:"global"`
-	RuleFiles     []string        `yaml:"rule_files,omitempty"`
-	ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	GlobalConfig   GlobalConfig    `yaml:"global"`
+	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
+	RuleFiles      []string        `yaml:"rule_files,omitempty"`
+	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -290,6 +291,11 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		jobNames[scfg.JobName] = struct{}{}
 	}
 	return nil
+}
+
+// AlertingConfig configures alerting and alertmanager related configs
+type AlertingConfig struct {
+	AlertRelabelConfigs []*RelabelConfig `yaml:"alert_relabel_configs,omitempty"`
 }
 
 // GlobalConfig configures values that are used across other configuration
@@ -569,9 +575,6 @@ func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
 	}
 	tg.Targets = make([]model.LabelSet, 0, len(g.Targets))
 	for _, t := range g.Targets {
-		if strings.Contains(t, "/") {
-			return fmt.Errorf("%q is not a valid hostname", t)
-		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
 			model.AddressLabel: model.LabelValue(t),
 		})
