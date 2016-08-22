@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package relabel
 
 import (
 	"reflect"
@@ -280,10 +280,7 @@ func TestRelabel(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		res, err := Relabel(test.input, test.relabel...)
-		if err != nil {
-			t.Errorf("Test %d: error relabeling: %s", i+1, err)
-		}
+		res := Process(test.input, test.relabel...)
 
 		if !reflect.DeepEqual(res, test.output) {
 			t.Errorf("Test %d: relabel output mismatch: expected %#v, got %#v", i+1, test.output, res)

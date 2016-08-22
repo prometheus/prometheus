@@ -6,7 +6,7 @@
       <table class="table table-condensed table-bordered table-striped table-hover">
         {{range $job, $pool := .Pools}}
           <thead>
-            <tr><th colspan="5" class="job_header">{{$job}}</th></tr>
+            <tr><th colspan="5" class="job_header"><a id="job-{{$job}}" href="#job-{{$job}}">{{$job}}</a></th></tr>
             <tr>
               <th>Endpoint</th>
               <th>State</th>
