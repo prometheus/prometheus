@@ -22,30 +22,41 @@ const (
 func WriteIngesterConfigToConsul(consulClient ConsulClient, consulPrefix string, listenPort int, numTokens int) error {
 	log.Info("Adding ingester to consul")
 
-	hostname, err := os.Hostname()
+	desc, err := describeLocalIngester(listenPort, numTokens)
 	if err != nil {
 		return err
 	}
 
-	addr, err := getFirstAddressOf(infName)
-	if err != nil {
-		return err
-	}
-
-	buf, err := json.Marshal(IngesterDesc{
-		ID:       hostname,
-		Hostname: fmt.Sprintf("%s:%d", addr, listenPort),
-		Tokens:   generateTokens(hostname, numTokens),
-	})
+	buf, err := json.Marshal(desc)
 	if err != nil {
 		return err
 	}
 
 	_, err = consulClient.Put(&consul.KVPair{
-		Key:   consulPrefix + hostname,
+		Key:   consulPrefix + desc.ID,
 		Value: buf,
 	}, &consul.WriteOptions{})
 	return err
+}
+
+// describeLocalIngester returns an IngesterDesc for the ingester that is this
+// process.
+func describeLocalIngester(listenPort, numTokens int) (*IngesterDesc, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+
+	addr, err := getFirstAddressOf(infName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &IngesterDesc{
+		ID:       hostname,
+		Hostname: fmt.Sprintf("%s:%d", addr, listenPort),
+		Tokens:   generateTokens(hostname, numTokens),
+	}, nil
 }
 
 func generateTokens(id string, numTokens int) []uint32 {
