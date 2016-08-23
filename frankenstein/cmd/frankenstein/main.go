@@ -14,12 +14,8 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
-	"hash/fnv"
-	"math/rand"
-	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -27,7 +23,6 @@ import (
 	"syscall"
 	"time"
 
-	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/route"
@@ -133,7 +128,7 @@ func main() {
 		}
 		ingester := setupIngester(consul, consulPrefix, chunkStore, listenPort, cfg, numTokens)
 		defer ingester.Stop()
-		defer deleteIngesterConfigFromConsul(consul, consulPrefix)
+		defer frankenstein.DeleteIngesterConfigFromConsul(consul, consulPrefix)
 	default:
 		log.Fatalf("Mode %s not supported!", mode)
 	}
@@ -213,7 +208,7 @@ func setupIngester(
 	numTokens int,
 ) *local.Ingester {
 	for i := 0; i < 10; i++ {
-		if err := writeIngesterConfigToConsul(consulClient, consulPrefix, listenPort, numTokens); err == nil {
+		if err := frankenstein.WriteIngesterConfigToConsul(consulClient, consulPrefix, listenPort, numTokens); err == nil {
 			break
 		} else {
 			log.Errorf("Failed to write to consul, sleeping: %v", err)
@@ -238,93 +233,4 @@ func setupIngester(
 	http.Handle("/query", instr(frankenstein.QueryHandler(ingester)))
 	http.Handle("/label_values", instr(frankenstein.LabelValuesHandler(ingester)))
 	return ingester
-}
-
-// GetFirstAddressOf returns the first IPv4 address of the supplied interface name.
-func GetFirstAddressOf(name string) (string, error) {
-	inf, err := net.InterfaceByName(name)
-	if err != nil {
-		return "", err
-	}
-
-	addrs, err := inf.Addrs()
-	if err != nil {
-		return "", err
-	}
-	if len(addrs) <= 0 {
-		return "", fmt.Errorf("No address found for %s", name)
-	}
-
-	for _, addr := range addrs {
-		switch v := addr.(type) {
-		case *net.IPNet:
-			if ip := v.IP.To4(); ip != nil {
-				return v.IP.String(), nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("No address found for %s", name)
-}
-
-func writeIngesterConfigToConsul(consulClient frankenstein.ConsulClient, consulPrefix string, listenPort int, numTokens int) error {
-	log.Info("Adding ingester to consul")
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		return err
-	}
-
-	addr, err := GetFirstAddressOf(infName)
-	if err != nil {
-		return err
-	}
-
-	tokenHasher := fnv.New64()
-	tokenHasher.Write([]byte(hostname))
-	r := rand.New(rand.NewSource(int64(tokenHasher.Sum64())))
-
-	tokens := []uint32{}
-	for i := 0; i < numTokens; i++ {
-		tokens = append(tokens, r.Uint32())
-	}
-
-	buf, err := json.Marshal(frankenstein.IngesterDesc{
-		ID:       hostname,
-		Hostname: fmt.Sprintf("%s:%d", addr, listenPort),
-		Tokens:   tokens,
-	})
-	if err != nil {
-		return err
-	}
-
-	_, err = consulClient.Put(&consul.KVPair{
-		Key:   consulPrefix + hostname,
-		Value: buf,
-	}, &consul.WriteOptions{})
-	return err
-}
-
-func deleteIngesterConfigFromConsul(consulClient frankenstein.ConsulClient, consulPrefix string) error {
-	log.Info("Removing ingester from consul")
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		return err
-	}
-
-	buf, err := json.Marshal(frankenstein.IngesterDesc{
-		ID:       hostname,
-		Hostname: "",
-		Tokens:   []uint32{},
-	})
-	if err != nil {
-		return err
-	}
-
-	_, err = consulClient.Put(&consul.KVPair{
-		Key:   consulPrefix + hostname,
-		Value: buf,
-	}, &consul.WriteOptions{})
-	return err
 }
