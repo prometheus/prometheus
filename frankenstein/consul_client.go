@@ -33,7 +33,7 @@ type ConsulClient interface {
 	Get(key string, out interface{}) error
 	CAS(key string, out interface{}, f CASCallback) error
 	WatchPrefix(prefix string, factory func() interface{}, done chan struct{}, f func(string, interface{}) bool)
-	Put(p *consul.KVPair, q *consul.WriteOptions) (*consul.WriteMeta, error)
+	PutBytes(key string, buf []byte) error
 }
 
 // CASCallback is the type of the callback to CAS.  If err is nil, out must be non-nil.
@@ -204,4 +204,12 @@ func (c *consulClient) WatchPrefix(prefix string, factory func() interface{}, do
 			}
 		}
 	}
+}
+
+func (c *consulClient) PutBytes(key string, buf []byte) error {
+	_, err := c.kv.Put(&consul.KVPair{
+		Key:   key,
+		Value: buf,
+	}, &consul.WriteOptions{})
+	return err
 }

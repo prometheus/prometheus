@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 
-	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/common/log"
 )
 
@@ -36,11 +35,7 @@ func writeIngesterConfigToConsul(consulClient ConsulClient, consulPrefix string,
 		return err
 	}
 
-	_, err = consulClient.Put(&consul.KVPair{
-		Key:   consulPrefix + desc.ID,
-		Value: buf,
-	}, &consul.WriteOptions{})
-	return err
+	return consulClient.PutBytes(consulPrefix+desc.ID, buf)
 }
 
 // describeLocalIngester returns an IngesterDesc for the ingester that is this
@@ -98,11 +93,7 @@ func deleteIngesterConfigFromConsul(consulClient ConsulClient, consulPrefix stri
 		return err
 	}
 
-	_, err = consulClient.Put(&consul.KVPair{
-		Key:   consulPrefix + id,
-		Value: buf,
-	}, &consul.WriteOptions{})
-	return err
+	return consulClient.PutBytes(consulPrefix+id, buf)
 }
 
 // getFirstAddressOf returns the first IPv4 address of the supplied interface name.
