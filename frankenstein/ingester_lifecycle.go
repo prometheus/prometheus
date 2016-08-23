@@ -26,7 +26,11 @@ func WriteIngesterConfigToConsul(consulClient ConsulClient, consulPrefix string,
 	if err != nil {
 		return err
 	}
+	return writeIngesterConfigToConsul(consulClient, consulPrefix, desc)
+}
 
+func writeIngesterConfigToConsul(consulClient ConsulClient, consulPrefix string, desc *IngesterDesc) error {
+	log.Info("Adding ingester to consul")
 	buf, err := json.Marshal(desc)
 	if err != nil {
 		return err
@@ -79,9 +83,14 @@ func DeleteIngesterConfigFromConsul(consulClient ConsulClient, consulPrefix stri
 	if err != nil {
 		return err
 	}
+	return deleteIngesterConfigFromConsul(consulClient, consulPrefix, hostname)
+}
+
+func deleteIngesterConfigFromConsul(consulClient ConsulClient, consulPrefix string, id string) error {
+	log.Info("Removing ingester from consul")
 
 	buf, err := json.Marshal(IngesterDesc{
-		ID:       hostname,
+		ID:       id,
 		Hostname: "",
 		Tokens:   []uint32{},
 	})
@@ -90,7 +99,7 @@ func DeleteIngesterConfigFromConsul(consulClient ConsulClient, consulPrefix stri
 	}
 
 	_, err = consulClient.Put(&consul.KVPair{
-		Key:   consulPrefix + hostname,
+		Key:   consulPrefix + id,
 		Value: buf,
 	}, &consul.WriteOptions{})
 	return err
