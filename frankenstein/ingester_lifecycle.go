@@ -32,19 +32,10 @@ func WriteIngesterConfigToConsul(consulClient ConsulClient, consulPrefix string,
 		return err
 	}
 
-	tokenHasher := fnv.New64()
-	tokenHasher.Write([]byte(hostname))
-	r := rand.New(rand.NewSource(int64(tokenHasher.Sum64())))
-
-	tokens := []uint32{}
-	for i := 0; i < numTokens; i++ {
-		tokens = append(tokens, r.Uint32())
-	}
-
 	buf, err := json.Marshal(IngesterDesc{
 		ID:       hostname,
 		Hostname: fmt.Sprintf("%s:%d", addr, listenPort),
-		Tokens:   tokens,
+		Tokens:   generateTokens(hostname, numTokens),
 	})
 	if err != nil {
 		return err
@@ -57,7 +48,19 @@ func WriteIngesterConfigToConsul(consulClient ConsulClient, consulPrefix string,
 	return err
 }
 
-// DeleteIngesterConfigFromConsul deletes ingester config from Consul
+func generateTokens(id string, numTokens int) []uint32 {
+	tokenHasher := fnv.New64()
+	tokenHasher.Write([]byte(id))
+	r := rand.New(rand.NewSource(int64(tokenHasher.Sum64())))
+
+	tokens := []uint32{}
+	for i := 0; i < numTokens; i++ {
+		tokens = append(tokens, r.Uint32())
+	}
+	return tokens
+}
+
+// DeleteIngesterConfigFromConsul deletes ingestor config from Consul
 func DeleteIngesterConfigFromConsul(consulClient ConsulClient, consulPrefix string) error {
 	log.Info("Removing ingester from consul")
 
