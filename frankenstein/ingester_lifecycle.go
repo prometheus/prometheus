@@ -29,12 +29,10 @@ func WriteIngesterConfigToConsul(consulClient ConsulClient, listenPort int, numT
 }
 
 func writeIngesterConfigToConsul(consulClient ConsulClient, desc *IngesterDesc) error {
-	log.Info("Adding ingester to consul")
 	buf, err := json.Marshal(desc)
 	if err != nil {
 		return err
 	}
-
 	return consulClient.PutBytes(desc.ID, buf)
 }
 
@@ -73,7 +71,6 @@ func generateTokens(id string, numTokens int) []uint32 {
 // DeleteIngesterConfigFromConsul deletes ingestor config from Consul
 func DeleteIngesterConfigFromConsul(consulClient ConsulClient) error {
 	log.Info("Removing ingester from consul")
-
 	hostname, err := os.Hostname()
 	if err != nil {
 		return err
@@ -82,8 +79,6 @@ func DeleteIngesterConfigFromConsul(consulClient ConsulClient) error {
 }
 
 func deleteIngesterConfigFromConsul(consulClient ConsulClient, id string) error {
-	log.Info("Removing ingester from consul")
-
 	buf, err := json.Marshal(IngesterDesc{
 		ID:       id,
 		Hostname: "",
@@ -92,7 +87,6 @@ func deleteIngesterConfigFromConsul(consulClient ConsulClient, id string) error 
 	if err != nil {
 		return err
 	}
-
 	return consulClient.PutBytes(id, buf)
 }
 
