@@ -892,8 +892,8 @@ func funcDayOfWeek(ev *evaluator, args Expressions) model.Value {
 	return vector
 }
 
-// === hour_of_day(v vector) scalar ===
-func funcHourOfDay(ev *evaluator, args Expressions) model.Value {
+// === hour(v vector) scalar ===
+func funcHour(ev *evaluator, args Expressions) model.Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
 		el.Metric.Del(model.MetricNameLabel)
@@ -902,8 +902,8 @@ func funcHourOfDay(ev *evaluator, args Expressions) model.Value {
 	return vector
 }
 
-// === month_of_year(v vector) scalar ===
-func funcMonthOfYear(ev *evaluator, args Expressions) model.Value {
+// === month(v vector) scalar ===
+func funcMonth(ev *evaluator, args Expressions) model.Value {
 	vector := ev.evalVector(args[0])
 	for _, el := range vector {
 		el.Metric.Del(model.MetricNameLabel)
@@ -1037,11 +1037,11 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcHoltWinters,
 	},
-	"hour_of_day": {
-		Name:       "hour_of_day",
+	"hour": {
+		Name:       "hour",
 		ArgTypes:   []model.ValueType{model.ValVector},
 		ReturnType: model.ValVector,
-		Call:       funcHourOfDay,
+		Call:       funcHour,
 	},
 	"idelta": {
 		Name:       "idelta",
@@ -1097,11 +1097,11 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcMinOverTime,
 	},
-	"month_of_year": {
-		Name:       "month_of_year",
+	"month": {
+		Name:       "month",
 		ArgTypes:   []model.ValueType{model.ValVector},
 		ReturnType: model.ValVector,
-		Call:       funcMonthOfYear,
+		Call:       funcMonth,
 	},
 	"predict_linear": {
 		Name:       "predict_linear",
