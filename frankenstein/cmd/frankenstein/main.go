@@ -93,6 +93,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing Consul client: %v", err)
 	}
+	consul = frankenstein.PrefixClient(consul, consulPrefix)
 
 	var memcache *frankenstein.MemcacheClient
 	if memcachedHostname != "" {
@@ -120,15 +121,15 @@ func main() {
 
 	switch mode {
 	case distributor:
-		setupDistributor(consul, consulPrefix, chunkStore, remoteTimeout)
+		setupDistributor(consul, chunkStore, remoteTimeout)
 	case ingester:
 		cfg := local.IngesterConfig{
 			FlushCheckPeriod: flushPeriod,
 			MaxChunkAge:      maxChunkAge,
 		}
-		ingester := setupIngester(consul, consulPrefix, chunkStore, listenPort, cfg, numTokens)
+		ingester := setupIngester(consul, chunkStore, listenPort, cfg, numTokens)
 		defer ingester.Stop()
-		defer frankenstein.DeleteIngesterConfigFromConsul(consul, consulPrefix)
+		defer frankenstein.DeleteIngesterConfigFromConsul(consul)
 	default:
 		log.Fatalf("Mode %s not supported!", mode)
 	}
@@ -144,7 +145,6 @@ func main() {
 
 func setupDistributor(
 	consulClient frankenstein.ConsulClient,
-	consulPrefix string,
 	chunkStore frankenstein.ChunkStore,
 	remoteTimeout time.Duration,
 ) {
@@ -153,7 +153,6 @@ func setupDistributor(
 	}
 	distributor, err := frankenstein.NewDistributor(frankenstein.DistributorConfig{
 		ConsulClient:  consulClient,
-		ConsulPrefix:  consulPrefix,
 		ClientFactory: clientFactory,
 	})
 	if err != nil {
@@ -201,14 +200,13 @@ func setupQuerier(
 
 func setupIngester(
 	consulClient frankenstein.ConsulClient,
-	consulPrefix string,
 	chunkStore frankenstein.ChunkStore,
 	listenPort int,
 	cfg local.IngesterConfig,
 	numTokens int,
 ) *local.Ingester {
 	for i := 0; i < 10; i++ {
-		if err := frankenstein.WriteIngesterConfigToConsul(consulClient, consulPrefix, listenPort, numTokens); err == nil {
+		if err := frankenstein.WriteIngesterConfigToConsul(consulClient, listenPort, numTokens); err == nil {
 			break
 		} else {
 			log.Errorf("Failed to write to consul, sleeping: %v", err)

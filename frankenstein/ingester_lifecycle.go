@@ -18,24 +18,24 @@ const (
 )
 
 // WriteIngesterConfigToConsul writes ingester config to Consul
-func WriteIngesterConfigToConsul(consulClient ConsulClient, consulPrefix string, listenPort int, numTokens int) error {
+func WriteIngesterConfigToConsul(consulClient ConsulClient, listenPort int, numTokens int) error {
 	log.Info("Adding ingester to consul")
 
 	desc, err := describeLocalIngester(listenPort, numTokens)
 	if err != nil {
 		return err
 	}
-	return writeIngesterConfigToConsul(consulClient, consulPrefix, desc)
+	return writeIngesterConfigToConsul(consulClient, desc)
 }
 
-func writeIngesterConfigToConsul(consulClient ConsulClient, consulPrefix string, desc *IngesterDesc) error {
+func writeIngesterConfigToConsul(consulClient ConsulClient, desc *IngesterDesc) error {
 	log.Info("Adding ingester to consul")
 	buf, err := json.Marshal(desc)
 	if err != nil {
 		return err
 	}
 
-	return consulClient.PutBytes(consulPrefix+desc.ID, buf)
+	return consulClient.PutBytes(desc.ID, buf)
 }
 
 // describeLocalIngester returns an IngesterDesc for the ingester that is this
@@ -71,17 +71,17 @@ func generateTokens(id string, numTokens int) []uint32 {
 }
 
 // DeleteIngesterConfigFromConsul deletes ingestor config from Consul
-func DeleteIngesterConfigFromConsul(consulClient ConsulClient, consulPrefix string) error {
+func DeleteIngesterConfigFromConsul(consulClient ConsulClient) error {
 	log.Info("Removing ingester from consul")
 
 	hostname, err := os.Hostname()
 	if err != nil {
 		return err
 	}
-	return deleteIngesterConfigFromConsul(consulClient, consulPrefix, hostname)
+	return deleteIngesterConfigFromConsul(consulClient, hostname)
 }
 
-func deleteIngesterConfigFromConsul(consulClient ConsulClient, consulPrefix string, id string) error {
+func deleteIngesterConfigFromConsul(consulClient ConsulClient, id string) error {
 	log.Info("Removing ingester from consul")
 
 	buf, err := json.Marshal(IngesterDesc{
@@ -93,7 +93,7 @@ func deleteIngesterConfigFromConsul(consulClient ConsulClient, consulPrefix stri
 		return err
 	}
 
-	return consulClient.PutBytes(consulPrefix+id, buf)
+	return consulClient.PutBytes(id, buf)
 }
 
 // getFirstAddressOf returns the first IPv4 address of the supplied interface name.
