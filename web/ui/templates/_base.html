@@ -37,15 +37,19 @@
             {{if $consoles}}
             <li><a href="{{$consoles}}">Consoles</a></li>
             {{ end }}
+            {{if hasQueryEngine }}
             <li><a href="{{ pathPrefix }}/alerts">Alerts</a></li>
             <li><a href="{{ pathPrefix }}/graph">Graph</a></li>
+            {{end}}
             <li class="dropdown">
               <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Status <span class="caret"></span></a>
               <ul class="dropdown-menu">
                 <li><a href="{{ pathPrefix }}/status">Runtime &amp; Build Information</a></li>
                 <li><a href="{{ pathPrefix }}/flags">Command-Line Flags</a></li>
                 <li><a href="{{ pathPrefix }}/config">Configuration</a></li>
+                {{if hasQueryEngine }}
                 <li><a href="{{ pathPrefix }}/rules">Rules</a></li>
+                {{end}}
                 <li><a href="{{ pathPrefix }}/targets">Targets</a></li>
               </ul>
             </li>

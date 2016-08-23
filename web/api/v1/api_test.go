@@ -33,7 +33,7 @@ import (
 )
 
 func TestEndpoints(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	suite, err := promql.NewTest(t, promql.LocalStorage, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100

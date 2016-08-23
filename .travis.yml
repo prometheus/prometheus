@@ -5,5 +5,9 @@ language: go
 go:
 - 1.6.3
 
+# Set go_import_path to make travis checkout the repo in the correct
+# place even for github forks, so imports in tests work.
+go_import_path: github.com/prometheus/prometheus
+
 script:
 - make check_license style test

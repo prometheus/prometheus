@@ -15,6 +15,7 @@
 .idea
 
 /prometheus
+/frank
 /promtool
 benchmark.txt
 /data

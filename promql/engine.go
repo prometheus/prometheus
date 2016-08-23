@@ -219,7 +219,7 @@ func contextDone(ctx context.Context, env string) error {
 // It is connected to a querier.
 type Engine struct {
 	// The querier on which the engine operates.
-	querier local.Querier
+	querier SampleQuerier
 
 	// The base context for all queries and its cancellation function.
 	baseCtx       context.Context
@@ -231,7 +231,7 @@ type Engine struct {
 }
 
 // NewEngine returns a new engine.
-func NewEngine(querier local.Querier, o *EngineOptions) *Engine {
+func NewEngine(querier SampleQuerier, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}

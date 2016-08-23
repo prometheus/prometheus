@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Frankenstein Distributor</title>
+    <script src="{{ pathPrefix }}/static/vendor/js/jquery.min.js"></script>
+    <script src="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"></script>
+
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css">
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/prometheus.css">
+
+    <script>
+      var PATH_PREFIX = "{{ pathPrefix }}";
+    </script>
+
+    {{template "head" .}}
+  </head>
+
+  <body>
+    <nav class="navbar navbar-inverse navbar-fixed-top">
+      <div class="container-fluid">
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a class="navbar-brand" href="{{ pathPrefix }}/">Frankenstein</a>
+        </div>
+        <div id="navbar" class="navbar-collapse collapse">
+          <ul class="nav navbar-nav navbar-left">
+            <li><a href="{{ pathPrefix }}/graph">Graph</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    {{template "content" .}}
+  </body>
+</html>

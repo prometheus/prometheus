@@ -25,7 +25,7 @@ eval instant at 4w holt_winters(http_requests[4w], 0.3, 0.3)
     {path="/foo"} 20160
 `
 
-	bench := NewBenchmark(b, input)
+	bench := NewBenchmark(b, LocalStorage, input)
 	bench.Run()
 
 }
@@ -40,7 +40,7 @@ eval instant at 1w holt_winters(http_requests[1w], 0.3, 0.3)
     {path="/foo"} 20160
 `
 
-	bench := NewBenchmark(b, input)
+	bench := NewBenchmark(b, LocalStorage, input)
 	bench.Run()
 }
 
@@ -54,7 +54,7 @@ eval instant at 1d holt_winters(http_requests[1d], 0.3, 0.3)
     {path="/foo"} 20160
 `
 
-	bench := NewBenchmark(b, input)
+	bench := NewBenchmark(b, LocalStorage, input)
 	bench.Run()
 }
 
@@ -68,6 +68,6 @@ eval instant at 1d changes(http_requests[1d])
     {path="/foo"} 20160
 `
 
-	bench := NewBenchmark(b, input)
+	bench := NewBenchmark(b, LocalStorage, input)
 	bench.Run()
 }

@@ -43,6 +43,8 @@ var cfg = struct {
 	printVersion bool
 	configFile   string
 
+	retrievalOnly bool
+
 	storage     local.MemorySeriesStorageOptions
 	notifier    notifier.Options
 	queryEngine promql.EngineOptions
@@ -70,6 +72,12 @@ func init() {
 	cfg.fs.StringVar(
 		&cfg.configFile, "config.file", "prometheus.yml",
 		"Prometheus configuration file name.",
+	)
+
+	// Retrieval-only mode.
+	cfg.fs.BoolVar(
+		&cfg.retrievalOnly, "retrieval-only", false,
+		"Whether to run in retrieval-only mode.",
 	)
 
 	// Web.
@@ -205,6 +213,20 @@ func init() {
 	cfg.fs.StringVar(
 		&cfg.remote.InfluxdbDatabase, "storage.remote.influxdb.database", "prometheus",
 		"The name of the database to use for storing samples in InfluxDB.",
+	)
+	cfg.fs.StringVar(
+		&cfg.remote.GenericURL, "storage.remote.generic-url", "",
+		"The URL of the generic remote server to send samples to. None, if empty.",
+	)
+	cfg.fs.StringVar(
+		// TODO: Figure out best way to allow specifying headers, if we want that.
+		&cfg.remote.GenericHeaderName, "storage.remote.generic-header-name", "",
+		"The name of an HTTP header to send with every request to the generic remote server.",
+	)
+	cfg.fs.StringVar(
+		// TODO: Figure out best way to allow specifying headers, if we want that.
+		&cfg.remote.GenericHeaderValue, "storage.remote.generic-header-value", "",
+		"The value of an HTTP header to send with every request to the generic remote server.",
 	)
 	cfg.fs.DurationVar(
 		&cfg.remote.StorageTimeout, "storage.remote.timeout", 30*time.Second,

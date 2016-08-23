@@ -44,14 +44,20 @@ type fpMapper struct {
 	mappings fpMappings
 
 	fpToSeries *seriesMap
-	p          *persistence
+	p          mapperPersistence
 
 	mappingsCounter prometheus.Counter
 }
 
+type mapperPersistence interface {
+	loadFPMappings() (fpMappings, model.Fingerprint, error)
+	checkpointFPMappings(fpMappings) error
+	archivedMetric(model.Fingerprint) (model.Metric, error)
+}
+
 // newFPMapper loads the collision map from the persistence and
 // returns an fpMapper ready to use.
-func newFPMapper(fpToSeries *seriesMap, p *persistence) (*fpMapper, error) {
+func newFPMapper(fpToSeries *seriesMap, p mapperPersistence) (*fpMapper, error) {
 	m := &fpMapper{
 		fpToSeries: fpToSeries,
 		p:          p,

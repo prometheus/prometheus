@@ -19,7 +19,7 @@ pkgs          = $(shell $(GO) list ./... | grep -v /vendor/)
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_NAME       ?= prometheus
-DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
+DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD)-$(shell git rev-parse --short HEAD))
 
 ifdef DEBUG
 	bindata_flags = -debug
@@ -58,7 +58,15 @@ tarball: promu
 
 docker:
 	@echo ">> building docker image"
-	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
+	docker build -t $(DOCKER_IMAGE_NAME) .
+	docker tag $(DOCKER_IMAGE_NAME) tomwilkie/$(DOCKER_IMAGE_NAME)
+	docker tag $(DOCKER_IMAGE_NAME) tomwilkie/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)
+
+docker-frank:
+	@echo ">> building frank docker images"
+	@cp frank frankenstein/
+	docker build -t tomwilkie/frankenstein frankenstein/
+	docker tag tomwilkie/frankenstein tomwilkie/frankenstein:$(DOCKER_IMAGE_TAG)
 
 assets:
 	@echo ">> writing assets"
@@ -70,6 +78,5 @@ promu:
 	@GOOS=$(shell uname -s | tr A-Z a-z) \
 	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
 	$(GO) get -u github.com/prometheus/promu
-
 
 .PHONY: all style check_license format build test vet assets tarball docker promu

@@ -23,9 +23,12 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/frankenstein"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -42,22 +45,32 @@ const (
 	epsilon       = 0.000001 // Relative error allowed for sample values.
 )
 
+type TestStorageMode int
+
+const (
+	LocalStorage TestStorageMode = iota
+	IngesterStorage
+)
+
 // Test is a sequence of read and write commands that are run
 // against a test storage.
 type Test struct {
 	testutil.T
+	mode TestStorageMode
 
 	cmds []testCommand
 
+	ingester     *local.Ingester
 	storage      local.Storage
 	closeStorage func()
 	queryEngine  *Engine
 }
 
 // NewTest returns an initialized empty Test.
-func NewTest(t testutil.T, input string) (*Test, error) {
+func NewTest(t testutil.T, mode TestStorageMode, input string) (*Test, error) {
 	test := &Test{
 		T:    t,
+		mode: mode,
 		cmds: []testCommand{},
 	}
 	err := test.parse(input)
@@ -66,12 +79,12 @@ func NewTest(t testutil.T, input string) (*Test, error) {
 	return test, err
 }
 
-func newTestFromFile(t testutil.T, filename string) (*Test, error) {
+func newTestFromFile(t testutil.T, mode TestStorageMode, filename string) (*Test, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	return NewTest(t, string(content))
+	return NewTest(t, mode, string(content))
 }
 
 // QueryEngine returns the test's query engine.
@@ -451,6 +464,29 @@ func (t *Test) Run() error {
 	return nil
 }
 
+type ingesterWrapper struct {
+	i *local.Ingester
+}
+
+func (i ingesterWrapper) Append(s *model.Sample) error {
+	ctx := context.WithValue(context.Background(), local.UserIDContextKey, "0")
+	return i.i.Append(ctx, []*model.Sample{s})
+}
+
+func (i ingesterWrapper) NeedsThrottling() bool {
+	ctx := context.WithValue(context.Background(), local.UserIDContextKey, "0")
+	return i.i.NeedsThrottling(ctx)
+}
+
+func (i ingesterWrapper) Query(_ context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) (model.Matrix, error) {
+	ctx := context.WithValue(context.Background(), local.UserIDContextKey, "0")
+	return i.i.Query(ctx, from, through, matchers...)
+}
+
+func (i ingesterWrapper) LabelValuesForLabelName(context.Context, model.LabelName) (model.LabelValues, error) {
+	return nil, nil
+}
+
 // exec processes a single step of the test.
 func (t *Test) exec(tc testCommand) error {
 	switch cmd := tc.(type) {
@@ -458,8 +494,13 @@ func (t *Test) exec(tc testCommand) error {
 		t.clear()
 
 	case *loadCmd:
-		cmd.append(t.storage)
-		t.storage.WaitForIndexing()
+		switch t.mode {
+		case LocalStorage:
+			cmd.append(t.storage)
+			t.storage.WaitForIndexing()
+		case IngesterStorage:
+			cmd.append(ingesterWrapper{t.ingester})
+		}
 
 	case *evalCmd:
 		q := t.queryEngine.newQuery(cmd.expr, cmd.start, cmd.end, cmd.interval)
@@ -487,24 +528,50 @@ func (t *Test) exec(tc testCommand) error {
 
 // clear the current test storage of all inserted samples.
 func (t *Test) clear() {
-	if t.closeStorage != nil {
-		t.closeStorage()
-	}
 	if t.queryEngine != nil {
 		t.queryEngine.Stop()
 	}
 
-	var closer testutil.Closer
-	t.storage, closer = local.NewTestStorage(t, 2)
+	switch t.mode {
+	case LocalStorage:
+		if t.closeStorage != nil {
+			t.closeStorage()
+		}
 
-	t.closeStorage = closer.Close
-	t.queryEngine = NewEngine(t.storage, nil)
+		var closer testutil.Closer
+		t.storage, closer = local.NewTestStorage(t, 2)
+
+		t.closeStorage = closer.Close
+		t.queryEngine = NewEngine(t.storage, nil)
+	case IngesterStorage:
+		if t.ingester != nil {
+			t.ingester.Stop()
+		}
+		var err error
+		t.ingester, err = local.NewIngester(local.IngesterConfig{}, nil)
+		if err != nil {
+			t.Fatalf("Error creating test ingester: %v", err)
+		}
+		querier := frankenstein.MergeQuerier{
+			Queriers: []frankenstein.Querier{ingesterWrapper{t.ingester}},
+		}
+		t.queryEngine = NewEngine(querier, nil)
+	default:
+		panic("invalid test storage mode")
+	}
 }
 
 // Close closes resources associated with the Test.
 func (t *Test) Close() {
 	t.queryEngine.Stop()
-	t.closeStorage()
+	switch t.mode {
+	case LocalStorage:
+		t.closeStorage()
+	case IngesterStorage:
+		t.ingester.Stop()
+	default:
+		panic("invalid test storage mode")
+	}
 }
 
 // samplesAlmostEqual returns true if the two sample lines only differ by a
