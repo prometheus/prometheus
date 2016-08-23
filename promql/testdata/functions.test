@@ -370,7 +370,7 @@ clear
 eval instant at 0m year(vector(0))
   {} 1970
 
-eval instant at 0m month_of_year(vector(0))
+eval instant at 0m month(vector(0))
   {} 1
 
 eval instant at 0m day_of_month(vector(0))
@@ -380,7 +380,7 @@ eval instant at 0m day_of_month(vector(0))
 eval instant at 0m day_of_week(vector(0))
   {} 4
 
-eval instant at 0m hour_of_day(vector(0))
+eval instant at 0m hour(vector(0))
   {} 0
 
 # 2008-12-31 23:59:59 just before leap second.
@@ -392,11 +392,11 @@ eval instant at 0m year(vector(1230768000))
   {} 2009
 
 # 2016-02-29 23:59:59 Febuary 29th in leap year.
-eval instant at 0m month_of_year(vector(1456790399)) + day_of_month(vector(1456790399)) / 100
+eval instant at 0m month(vector(1456790399)) + day_of_month(vector(1456790399)) / 100
   {} 2.29
 
 # 2016-03-01 00:00:00 March 1st in leap year.
-eval instant at 0m month_of_year(vector(1456790400)) + day_of_month(vector(1456790400)) / 100
+eval instant at 0m month(vector(1456790400)) + day_of_month(vector(1456790400)) / 100
   {} 3.01
 
 # Febuary 1st 2016 in leap year.
