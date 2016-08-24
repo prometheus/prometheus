@@ -1,3 +1,7 @@
+## 1.0.2 / 2016-08-24
+
+* [BUGFIX] Clean up old targets after config reload.
+
 ## 1.0.1 / 2016-07-21
 
 * [BUGFIX] Exit with error on non-flag command-line arguments.
