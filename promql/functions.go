@@ -522,7 +522,7 @@ func funcStddevOverTime(ev *evaluator, args Expressions) model.Value {
 		for _, v := range values {
 			sum += v.Value
 			squaredSum += v.Value * v.Value
-			count += 1
+			count++
 		}
 		avg := sum / count
 		return model.SampleValue(math.Sqrt(float64(squaredSum/count - avg*avg)))
@@ -536,7 +536,7 @@ func funcStdvarOverTime(ev *evaluator, args Expressions) model.Value {
 		for _, v := range values {
 			sum += v.Value
 			squaredSum += v.Value * v.Value
-			count += 1
+			count++
 		}
 		avg := sum / count
 		return squaredSum/count - avg*avg
