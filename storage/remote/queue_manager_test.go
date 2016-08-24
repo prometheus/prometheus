@@ -141,7 +141,11 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	m := NewStorageQueueManager(c, n)
 
 	go m.Run()
-	defer m.Stop()
+
+	defer func() {
+		c.unlock()
+		m.Stop()
+	}()
 
 	for _, s := range samples {
 		m.Append(s)
@@ -156,12 +160,17 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	// not spawning too many concurrent goroutines, we have to wait on the
 	// Run() loop to consume a specific number of elements from the
 	// queue... and it doesn't signal that in any obvious way, except by
-	// draining the queue.  Also, this way, if something goes surprisingly
-	// wrong that prevents the queue from being drained (aka, not just spawning
-	// extra goroutines, but something totally unexpected), we deadlock, which
-	// is a clear signal of a problem.
-	for len(m.queue) > 0 {
+	// draining the queue.  We cap the waiting at 1 second -- that should give
+	// plenty of time, and keeps the failure fairly quick if we're not draining
+	// the queue properly.
+	for i := 0; i < 100 && len(m.queue) > 0; i++ {
 		time.Sleep(10 * time.Millisecond)
+	}
+
+	if len(m.queue) > 0 {
+		t.Fatalf("Failed to drain StorageQueueManager queue, %d elements left",
+			len(m.queue),
+		)
 	}
 
 	numCalls := c.NumCalls()
@@ -169,5 +178,4 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 		t.Errorf("Saw %d concurrent sends, expected %d", numCalls, maxConcurrentSends)
 	}
 
-	c.unlock()
 }
