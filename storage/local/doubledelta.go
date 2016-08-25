@@ -250,6 +250,10 @@ func (c *doubleDeltaEncodedChunk) unmarshal(r io.Reader) error {
 	if int(l) > cap(*c) {
 		return fmt.Errorf("chunk length exceeded during unmarshaling: %d", l)
 	}
+	if int(l) < doubleDeltaHeaderBytes {
+		return fmt.Errorf("chunk length less than header size: %d < %d", l, doubleDeltaHeaderBytes)
+	}
+
 	*c = (*c)[:l]
 	return nil
 }
@@ -261,6 +265,9 @@ func (c *doubleDeltaEncodedChunk) unmarshalFromBuf(buf []byte) error {
 	l := binary.LittleEndian.Uint16((*c)[doubleDeltaHeaderBufLenOffset:])
 	if int(l) > cap(*c) {
 		return fmt.Errorf("chunk length exceeded during unmarshaling: %d", l)
+	}
+	if int(l) < doubleDeltaHeaderBytes {
+		return fmt.Errorf("chunk length less than header size: %d < %d", l, doubleDeltaHeaderBytes)
 	}
 	*c = (*c)[:l]
 	return nil
