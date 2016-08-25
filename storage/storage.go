@@ -43,6 +43,7 @@ type SampleAppender interface {
 	// tolerate not receiving all samples should always return false and
 	// instead drop samples as they see fit to avoid overload.
 	NeedsThrottling() bool
+	MoveWatermark(model.Time)
 }
 
 // Fanout is a SampleAppender that appends every sample to each SampleAppender
@@ -73,4 +74,10 @@ func (f Fanout) NeedsThrottling() bool {
 		}
 	}
 	return false
+}
+
+func (f Fanout) MoveWatermark(t model.Time) {
+	for _, a := range f {
+		a.MoveWatermark(t)
+	}
 }

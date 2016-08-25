@@ -1922,3 +1922,58 @@ func TestAppendOutOfOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestPreWatermarkSampleSuppression(t *testing.T) {
+	s, closer := NewTestStorage(t, 2)
+	defer closer.Close()
+
+	labelName, labelValue := model.LabelName("job"), model.LabelValue("test")
+	verifyLastSample := func(check int, expected *model.Sample) {
+		matcher, err := metric.NewLabelMatcher(metric.Equal, labelName, labelValue)
+		if err != nil {
+			t.Fatalf("%d error creating label matcher: %s", check, err)
+		}
+
+		matchers := metric.LabelMatchers{matcher}
+		v, err := s.LastSampleForLabelMatchers(model.Earliest, matchers)
+		if err != nil {
+			t.Fatalf("%d error getting last sample: %s", check, err)
+		}
+
+		if len(v) != 1 {
+			t.Errorf("%d Got %v; want %v", check, len(v), 1)
+		}
+		s := v[0]
+		if !s.Metric.Equal(expected.Metric) {
+			t.Errorf("%d Got metric %v; want %v", check, v[0].Metric, expected.Metric)
+		}
+		if !s.Timestamp.Equal(expected.Timestamp) {
+			t.Errorf("%d Got timestamp %v; want %v", check, v[0].Timestamp, expected.Timestamp)
+		}
+		if !s.Value.Equal(expected.Value) {
+			t.Errorf("%d Got value %v; want %v", check, v[0].Value, expected.Value)
+		}
+	}
+
+	samples := make(model.Samples, 10)
+	for i := range samples {
+		samples[i] = &model.Sample{
+			Metric:    model.Metric{labelName: labelValue},
+			Timestamp: model.Time(i + 1),
+			Value:     model.SampleValue(float64(i + 1)),
+		}
+	}
+
+	s.Append(samples[0])
+	s.MoveWatermark(model.Time(1))
+	s.WaitForIndexing()
+	verifyLastSample(0, samples[0])
+
+	// Now add another sample but don't move the watermark yet
+	s.Append(samples[1])
+	s.WaitForIndexing()
+	verifyLastSample(1, samples[0])
+
+	s.MoveWatermark(model.Time(2))
+	verifyLastSample(2, samples[1])
+}

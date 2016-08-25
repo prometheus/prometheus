@@ -29,6 +29,9 @@ func (a nopAppender) NeedsThrottling() bool {
 	return false
 }
 
+func (a nopAppender) MoveWatermark(t model.Time) {
+}
+
 type collectResultAppender struct {
 	result    model.Samples
 	throttled bool

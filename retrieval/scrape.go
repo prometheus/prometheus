@@ -419,7 +419,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 			samples, err := sl.scraper.scrape(scrapeCtx, start)
 			if err == nil {
-				sl.append(samples)
+				sl.append(samples, start)
 			} else if errc != nil {
 				errc <- err
 			}
@@ -443,7 +443,7 @@ func (sl *scrapeLoop) stop() {
 	<-sl.done
 }
 
-func (sl *scrapeLoop) append(samples model.Samples) {
+func (sl *scrapeLoop) append(samples model.Samples, start time.Time) {
 	var (
 		numOutOfOrder = 0
 		numDuplicates = 0
@@ -463,6 +463,7 @@ func (sl *scrapeLoop) append(samples model.Samples) {
 			}
 		}
 	}
+	sl.appender.MoveWatermark(model.TimeFromUnixNano(start.UnixNano()))
 	if numOutOfOrder > 0 {
 		log.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order samples")
 	}

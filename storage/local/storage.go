@@ -185,6 +185,9 @@ type MemorySeriesStorage struct {
 	maintainSeriesDuration        *prometheus.SummaryVec
 	persistenceUrgencyScore       prometheus.Gauge
 	rushedMode                    prometheus.Gauge
+
+	watermark    model.Time
+	watermarkMtx sync.RWMutex
 }
 
 // MemorySeriesStorageOptions contains options needed by
@@ -436,12 +439,17 @@ func (s *MemorySeriesStorage) LastSampleForLabelMatchers(cutoff model.Time, matc
 			continue
 		}
 		sp := series.lastSamplePair()
+		s.fpLocker.Unlock(fp)
+		watermark := s.getWatermark()
+		if sp.Timestamp.After(watermark) {
+			iter := s.preloadChunksForRange(fp, cutoff, watermark)
+			sp = iter.ValueAtOrBeforeTime(watermark)
+		}
 		res = append(res, &model.Sample{
 			Metric:    series.metric,
 			Value:     sp.Value,
 			Timestamp: sp.Timestamp,
 		})
-		s.fpLocker.Unlock(fp)
 	}
 	return res, nil
 }
@@ -785,6 +793,18 @@ func (s *MemorySeriesStorage) NeedsThrottling() bool {
 		return true
 	}
 	return false
+}
+
+func (s *MemorySeriesStorage) MoveWatermark(t model.Time) {
+	s.watermarkMtx.Lock()
+	defer s.watermarkMtx.Unlock()
+	s.watermark = t
+}
+
+func (s *MemorySeriesStorage) getWatermark() model.Time {
+	s.watermarkMtx.RLock()
+	defer s.watermarkMtx.RUnlock()
+	return s.watermark
 }
 
 // logThrottling handles logging of throttled events and has to be started as a

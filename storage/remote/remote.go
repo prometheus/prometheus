@@ -131,6 +131,9 @@ func (s *Storage) NeedsThrottling() bool {
 	return false
 }
 
+func (s *Storage) MoveWatermark(t model.Time) {
+}
+
 // Describe implements prometheus.Collector.
 func (s *Storage) Describe(ch chan<- *prometheus.Desc) {
 	for _, q := range s.queues {
