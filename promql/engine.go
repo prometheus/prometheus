@@ -481,40 +481,30 @@ func (ng *Engine) populateIterators(s *EvalStmt) error {
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			var iterators []local.SeriesIterator
-			var err error
 			if s.Start.Equal(s.End) {
-				iterators, err = ng.querier.QueryInstant(
+				n.iterators, queryErr = ng.querier.QueryInstant(
 					s.Start.Add(-n.Offset),
 					StalenessDelta,
 					n.LabelMatchers...,
 				)
 			} else {
-				iterators, err = ng.querier.QueryRange(
+				n.iterators, queryErr = ng.querier.QueryRange(
 					s.Start.Add(-n.Offset-StalenessDelta),
 					s.End.Add(-n.Offset),
 					n.LabelMatchers...,
 				)
 			}
-			if err != nil {
-				queryErr = err
+			if queryErr != nil {
 				return false
 			}
-			for _, it := range iterators {
-				n.iterators = append(n.iterators, it)
-			}
 		case *MatrixSelector:
-			iterators, err := ng.querier.QueryRange(
+			n.iterators, queryErr = ng.querier.QueryRange(
 				s.Start.Add(-n.Offset-n.Range),
 				s.End.Add(-n.Offset),
 				n.LabelMatchers...,
 			)
-			if err != nil {
-				queryErr = err
+			if queryErr != nil {
 				return false
-			}
-			for _, it := range iterators {
-				n.iterators = append(n.iterators, it)
 			}
 		}
 		return true

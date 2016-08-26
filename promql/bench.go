@@ -39,7 +39,9 @@ func (b *Benchmark) Run() {
 	b.b.ReportAllocs()
 	b.b.ResetTimer()
 	for i := 0; i < b.b.N; i++ {
-		b.t.RunAsBenchmark(b)
+		if err := b.t.RunAsBenchmark(b); err != nil {
+			b.b.Error(err)
+		}
 		b.iterCount++
 	}
 }
