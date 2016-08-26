@@ -428,9 +428,16 @@ func (l *lexer) nextItem() item {
 
 // lex creates a new scanner for the input string.
 func lex(input string) *lexer {
+	return lexWithSeriesDesc(input, false)
+}
+
+// lexWithSeriesDesc creates a  new scanner for the input string
+// and specify seriesDesc to prevent data race in tests
+func lexWithSeriesDesc(input string, seriesDesc bool) *lexer {
 	l := &lexer{
-		input: input,
-		items: make(chan item),
+		input:      input,
+		items:      make(chan item),
+		seriesDesc: seriesDesc,
 	}
 	go l.run()
 	return l
