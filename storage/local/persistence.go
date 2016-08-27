@@ -115,6 +115,7 @@ type persistence struct {
 	indexingBatchDuration prometheus.Summary
 	checkpointDuration    prometheus.Gauge
 	dirtyCounter          prometheus.Counter
+	startedDirty          prometheus.Gauge
 
 	dirtyMtx       sync.Mutex     // Protects dirty and becameDirty.
 	dirty          bool           // true if persistence was started in dirty state.
@@ -245,6 +246,12 @@ func newPersistence(
 			Name:      "inconsistencies_total",
 			Help:      "A counter incremented each time an inconsistency in the local storage is detected. If this is greater zero, restart the server as soon as possible.",
 		}),
+		startedDirty: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "started_dirty",
+			Help:      "Whether the local storage was found to be dirty (and crash recovery occurred) during Prometheus startup.",
+		}),
 		dirty:          dirty,
 		pedanticChecks: pedanticChecks,
 		dirtyFileName:  dirtyPath,
@@ -291,6 +298,7 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	p.indexingBatchDuration.Describe(ch)
 	ch <- p.checkpointDuration.Desc()
 	ch <- p.dirtyCounter.Desc()
+	ch <- p.startedDirty.Desc()
 }
 
 // Collect implements prometheus.Collector.
@@ -303,6 +311,7 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	p.indexingBatchDuration.Collect(ch)
 	ch <- p.checkpointDuration
 	ch <- p.dirtyCounter
+	ch <- p.startedDirty
 }
 
 // isDirty returns the dirty flag in a goroutine-safe way.
@@ -700,10 +709,13 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 	defer func() {
 		if p.dirty {
 			log.Warn("Persistence layer appears dirty.")
+			p.startedDirty.Set(1)
 			err = p.recoverFromCrash(fingerprintToSeries)
 			if err != nil {
 				sm = nil
 			}
+		} else {
+			p.startedDirty.Set(0)
 		}
 	}()
 
