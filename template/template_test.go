@@ -165,6 +165,16 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "Aa Bb CC",
 		},
 		{
+			// toUpper.
+			text:   "{{ \"aa bb CC\" | toUpper }}",
+			output: "AA BB CC",
+		},
+		{
+			// toLower.
+			text:   "{{ \"aA bB CC\" | toLower }}",
+			output: "aa bb cc",
+		},
+		{
 			// Match.
 			text:   "{{ match \"a+\" \"aa\" }} {{ match \"a+\" \"b\" }}",
 			output: "true false",
