@@ -232,10 +232,45 @@ func (ts Targets) Len() int           { return len(ts) }
 func (ts Targets) Less(i, j int) bool { return ts[i].URL().String() < ts[j].URL().String() }
 func (ts Targets) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
 
+type wrappedBatchAppender struct {
+	app          storage.SampleAppenderBatcher
+	config       *config.ScrapeConfig
+	targetLabels model.LabelSet
+}
+
+func (wba *wrappedBatchAppender) NeedsThrottling() bool {
+	return wba.app.NeedsThrottling()
+}
+
+func (wba *wrappedBatchAppender) StartBatch() storage.BatchingSampleAppender {
+	app := wba.app.StartBatch()
+	// The relabelAppender has to be inside the label-modifying appenders
+	// so the relabeling rules are applied to the correct label set.
+	if mrc := wba.config.MetricRelabelConfigs; len(mrc) > 0 {
+		app = relabelAppender{
+			BatchingSampleAppender: app,
+			relabelings:            mrc,
+		}
+	}
+
+	if wba.config.HonorLabels {
+		app = honorLabelsAppender{
+			BatchingSampleAppender: app,
+			labels:                 wba.targetLabels,
+		}
+	} else {
+		app = ruleLabelsAppender{
+			BatchingSampleAppender: app,
+			labels:                 wba.targetLabels,
+		}
+	}
+	return app
+}
+
 // Merges the ingested sample's metric with the label set. On a collision the
 // value of the ingested label is stored in a label prefixed with 'exported_'.
 type ruleLabelsAppender struct {
-	storage.SampleAppender
+	storage.BatchingSampleAppender
 	labels model.LabelSet
 }
 
@@ -247,11 +282,11 @@ func (app ruleLabelsAppender) Append(s *model.Sample) error {
 		s.Metric[ln] = lv
 	}
 
-	return app.SampleAppender.Append(s)
+	return app.BatchingSampleAppender.Append(s)
 }
 
 type honorLabelsAppender struct {
-	storage.SampleAppender
+	storage.BatchingSampleAppender
 	labels model.LabelSet
 }
 
@@ -265,13 +300,13 @@ func (app honorLabelsAppender) Append(s *model.Sample) error {
 		}
 	}
 
-	return app.SampleAppender.Append(s)
+	return app.BatchingSampleAppender.Append(s)
 }
 
 // Applies a set of relabel configurations to the sample's metric
 // before actually appending it.
 type relabelAppender struct {
-	storage.SampleAppender
+	storage.BatchingSampleAppender
 	relabelings []*config.RelabelConfig
 }
 
@@ -284,5 +319,5 @@ func (app relabelAppender) Append(s *model.Sample) error {
 	}
 	s.Metric = model.Metric(labels)
 
-	return app.SampleAppender.Append(s)
+	return app.BatchingSampleAppender.Append(s)
 }

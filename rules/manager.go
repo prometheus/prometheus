@@ -145,7 +145,7 @@ func (g *Group) run() {
 
 	iter := func() {
 		iterationsScheduled.Inc()
-		if g.opts.SampleAppender.NeedsThrottling() {
+		if g.opts.SampleAppenderBatcher.NeedsThrottling() {
 			iterationsSkipped.Inc()
 			return
 		}
@@ -274,8 +274,9 @@ func (g *Group) eval() {
 				numOutOfOrder = 0
 				numDuplicates = 0
 			)
+			app := g.opts.SampleAppenderBatcher.StartBatch()
 			for _, s := range vector {
-				if err := g.opts.SampleAppender.Append(s); err != nil {
+				if err := app.Append(s); err != nil {
 					switch err {
 					case local.ErrOutOfOrderSample:
 						numOutOfOrder++
@@ -288,6 +289,7 @@ func (g *Group) eval() {
 					}
 				}
 			}
+			app.EndBatch()
 			if numOutOfOrder > 0 {
 				log.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order result from rule evaluation")
 			}
@@ -339,10 +341,10 @@ type Manager struct {
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL    *url.URL
-	QueryEngine    *promql.Engine
-	Notifier       *notifier.Notifier
-	SampleAppender storage.SampleAppender
+	ExternalURL           *url.URL
+	QueryEngine           *promql.Engine
+	Notifier              *notifier.Notifier
+	SampleAppenderBatcher storage.SampleAppenderBatcher
 }
 
 // NewManager returns an implementation of Manager, ready to be started

@@ -1941,39 +1941,48 @@ func TestPreWatermarkSampleSuppression(t *testing.T) {
 		}
 
 		if len(v) != 1 {
-			t.Errorf("%d Got %v; want %v", check, len(v), 1)
+			t.Errorf("[%d] Got %v; want %v", check, len(v), 1)
 		}
 		s := v[0]
 		if !s.Metric.Equal(expected.Metric) {
-			t.Errorf("%d Got metric %v; want %v", check, v[0].Metric, expected.Metric)
+			t.Errorf("[%d] Got metric %v; want %v", check, v[0].Metric, expected.Metric)
 		}
 		if !s.Timestamp.Equal(expected.Timestamp) {
-			t.Errorf("%d Got timestamp %v; want %v", check, v[0].Timestamp, expected.Timestamp)
+			t.Errorf("[%d] Got timestamp %v; want %v", check, v[0].Timestamp, expected.Timestamp)
 		}
 		if !s.Value.Equal(expected.Value) {
-			t.Errorf("%d Got value %v; want %v", check, v[0].Value, expected.Value)
+			t.Errorf("[%d] Got value %v; want %v", check, v[0].Value, expected.Value)
 		}
 	}
 
-	samples := make(model.Samples, 10)
-	for i := range samples {
-		samples[i] = &model.Sample{
+	newSample := func(val float64) *model.Sample {
+		return &model.Sample{
 			Metric:    model.Metric{labelName: labelValue},
-			Timestamp: model.Time(i + 1),
-			Value:     model.SampleValue(float64(i + 1)),
+			Timestamp: model.TimeFromUnixNano(time.Now().UnixNano()),
+			Value:     model.SampleValue(val),
 		}
 	}
 
-	s.Append(samples[0])
-	s.MoveWatermark(model.Time(1))
+	samp1 := newSample(1)
+
+	// Until at least one batch has been committed, the watermark-checking
+	// code breaks and we don't find anything.
+	app := s.StartBatch()
+	app.Append(samp1)
+	app.EndBatch()
 	s.WaitForIndexing()
-	verifyLastSample(0, samples[0])
+	verifyLastSample(1, samp1)
+
+	// Make sure that the next sample will have a newer timestamp
+	time.Sleep(time.Millisecond)
 
 	// Now add another sample but don't move the watermark yet
-	s.Append(samples[1])
+	samp2 := newSample(2)
+	app = s.StartBatch()
+	app.Append(samp2)
 	s.WaitForIndexing()
-	verifyLastSample(1, samples[0])
+	verifyLastSample(2, samp1)
 
-	s.MoveWatermark(model.Time(2))
-	verifyLastSample(2, samples[1])
+	app.EndBatch()
+	verifyLastSample(3, samp2)
 }
