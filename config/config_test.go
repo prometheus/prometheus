@@ -397,6 +397,12 @@ var expectedErrors = []struct {
 	}, {
 		filename: "url_in_targetgroup.bad.yml",
 		errMsg:   "\"http://bad\" is not a valid hostname",
+	}, {
+		filename: "target_label_missing.bad.yml",
+		errMsg:   "relabel configuration for replace action requires 'target_label' value",
+	}, {
+		filename: "target_label_hashmod_missing.bad.yml",
+		errMsg:   "relabel configuration for hashmod action requires 'target_label' value",
 	},
 }
 
