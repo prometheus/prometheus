@@ -114,14 +114,42 @@ func dial(fn func(context.Context, string) (net.Conn, error), ctx context.Contex
 	return dialContext(ctx, "tcp", addr)
 }
 
+func isTemporary(err error) bool {
+	switch err {
+	case io.EOF:
+		// Connection closures may be resolved upon retry, and are thus
+		// treated as temporary.
+		return true
+	case context.DeadlineExceeded:
+		// In Go 1.7, context.DeadlineExceeded implements Timeout(), and this
+		// special case is not needed. Until then, we need to keep this
+		// clause.
+		return true
+	}
+
+	switch err := err.(type) {
+	case interface {
+		Temporary() bool
+	}:
+		return err.Temporary()
+	case interface {
+		Timeout() bool
+	}:
+		// Timeouts may be resolved upon retry, and are thus treated as
+		// temporary.
+		return err.Timeout()
+	}
+	return false
+}
+
 // newHTTP2Client constructs a connected ClientTransport to addr based on HTTP2
 // and starts to receive messages on it. Non-nil error returns if construction
 // fails.
 func newHTTP2Client(ctx context.Context, addr string, opts ConnectOptions) (_ ClientTransport, err error) {
 	scheme := "http"
-	conn, connErr := dial(opts.Dialer, ctx, addr)
-	if connErr != nil {
-		return nil, ConnectionErrorf(true, connErr, "transport: %v", connErr)
+	conn, err := dial(opts.Dialer, ctx, addr)
+	if err != nil {
+		return nil, ConnectionErrorf(true, err, "transport: %v", err)
 	}
 	// Any further errors will close the underlying connection
 	defer func(conn net.Conn) {
@@ -132,12 +160,13 @@ func newHTTP2Client(ctx context.Context, addr string, opts ConnectOptions) (_ Cl
 	var authInfo credentials.AuthInfo
 	if creds := opts.TransportCredentials; creds != nil {
 		scheme = "https"
-		conn, authInfo, connErr = creds.ClientHandshake(ctx, addr, conn)
-	}
-	if connErr != nil {
-		// Credentials handshake error is not a temporary error (unless the error
-		// was the connection closing).
-		return nil, ConnectionErrorf(connErr == io.EOF, connErr, "transport: %v", connErr)
+		conn, authInfo, err = creds.ClientHandshake(ctx, addr, conn)
+		if err != nil {
+			// Credentials handshake errors are typically considered permanent
+			// to avoid retrying on e.g. bad certificates.
+			temp := isTemporary(err)
+			return nil, ConnectionErrorf(temp, err, "transport: %v", err)
+		}
 	}
 	ua := primaryUA
 	if opts.UserAgent != "" {

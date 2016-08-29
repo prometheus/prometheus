@@ -40,6 +40,7 @@ package credentials // import "google.golang.org/grpc/credentials"
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -85,6 +86,12 @@ type ProtocolInfo struct {
 type AuthInfo interface {
 	AuthType() string
 }
+
+var (
+	// ErrConnDispatched indicates that rawConn has been dispatched out of gRPC
+	// and the caller should not close rawConn.
+	ErrConnDispatched = errors.New("credentials: rawConn is dispatched out of gRPC")
+)
 
 // TransportCredentials defines the common interface for all the live gRPC wire
 // protocols and supported transport security protocols (e.g., TLS, SSL).

@@ -622,15 +622,18 @@ func bodyAndLength(req *http.Request) (body io.Reader, contentLen int64) {
 	// We have a body but a zero content length. Test to see if
 	// it's actually zero or just unset.
 	var buf [1]byte
-	n, rerr := io.ReadFull(body, buf[:])
+	n, rerr := body.Read(buf[:])
 	if rerr != nil && rerr != io.EOF {
 		return errorReader{rerr}, -1
 	}
 	if n == 1 {
 		// Oh, guess there is data in this Body Reader after all.
 		// The ContentLength field just wasn't set.
-		// Stich the Body back together again, re-attaching our
+		// Stitch the Body back together again, re-attaching our
 		// consumed byte.
+		if rerr == io.EOF {
+			return bytes.NewReader(buf[:]), 1
+		}
 		return io.MultiReader(bytes.NewReader(buf[:]), body), -1
 	}
 	// Body is actually zero bytes.
@@ -901,10 +904,11 @@ func (cs *clientStream) writeRequestBody(body io.Reader, bodyCloser io.Closer) (
 			err = cc.fr.WriteData(cs.ID, sentEnd, data)
 			if err == nil {
 				// TODO(bradfitz): this flush is for latency, not bandwidth.
-				// Most requests won't need this. Make this opt-in or opt-out?
-				// Use some heuristic on the body type? Nagel-like timers?
-				// Based on 'n'? Only last chunk of this for loop, unless flow control
-				// tokens are low? For now, always:
+				// Most requests won't need this. Make this opt-in or
+				// opt-out?  Use some heuristic on the body type? Nagel-like
+				// timers?  Based on 'n'? Only last chunk of this for loop,
+				// unless flow control tokens are low? For now, always.
+				// If we change this, see comment below.
 				err = cc.bw.Flush()
 			}
 			cc.wmu.Unlock()
@@ -914,8 +918,15 @@ func (cs *clientStream) writeRequestBody(body io.Reader, bodyCloser io.Closer) (
 		}
 	}
 
+	if sentEnd {
+		// Already sent END_STREAM (which implies we have no
+		// trailers) and flushed, because currently all
+		// WriteData frames above get a flush. So we're done.
+		return nil
+	}
+
 	var trls []byte
-	if !sentEnd && hasTrailers {
+	if hasTrailers {
 		cc.mu.Lock()
 		defer cc.mu.Unlock()
 		trls = cc.encodeTrailers(req)
@@ -924,8 +935,8 @@ func (cs *clientStream) writeRequestBody(body io.Reader, bodyCloser io.Closer) (
 	cc.wmu.Lock()
 	defer cc.wmu.Unlock()
 
-	// Avoid forgetting to send an END_STREAM if the encoded
-	// trailers are 0 bytes. Both results produce and END_STREAM.
+	// Two ways to send END_STREAM: either with trailers, or
+	// with an empty DATA frame.
 	if len(trls) > 0 {
 		err = cc.writeHeaders(cs.ID, true, trls)
 	} else {
@@ -987,6 +998,22 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 		host = req.URL.Host
 	}
 
+	var path string
+	if req.Method != "CONNECT" {
+		path = req.URL.RequestURI()
+		if !validPseudoPath(path) {
+			orig := path
+			path = strings.TrimPrefix(path, req.URL.Scheme+"://"+host)
+			if !validPseudoPath(path) {
+				if req.URL.Opaque != "" {
+					return nil, fmt.Errorf("invalid request :path %q from URL.Opaque = %q", orig, req.URL.Opaque)
+				} else {
+					return nil, fmt.Errorf("invalid request :path %q", orig)
+				}
+			}
+		}
+	}
+
 	// Check for any invalid headers and return an error before we
 	// potentially pollute our hpack state. (We want to be able to
 	// continue to reuse the hpack encoder for future requests)
@@ -1009,7 +1036,7 @@ func (cc *ClientConn) encodeHeaders(req *http.Request, addGzipHeader bool, trail
 	cc.writeHeader(":authority", host)
 	cc.writeHeader(":method", req.Method)
 	if req.Method != "CONNECT" {
-		cc.writeHeader(":path", req.URL.RequestURI())
+		cc.writeHeader(":path", path)
 		cc.writeHeader(":scheme", "https")
 	}
 	if trailers != "" {

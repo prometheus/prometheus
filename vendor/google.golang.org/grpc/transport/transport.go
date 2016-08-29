@@ -522,7 +522,7 @@ func (e ConnectionError) Origin() error {
 
 var (
 	// ErrConnClosing indicates that the transport is closing.
-	ErrConnClosing = ConnectionError{Desc: "transport is closing", temp: true}
+	ErrConnClosing = ConnectionErrorf(true, nil, "transport is closing")
 	// ErrStreamDrain indicates that the stream is rejected by the server because
 	// the server stops accepting new RPCs.
 	ErrStreamDrain = StreamErrorf(codes.Unavailable, "the server stops accepting new RPCs")
