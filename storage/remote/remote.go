@@ -52,11 +52,11 @@ func New(o *Options) (*Storage, error) {
 		c := graphite.NewClient(
 			o.GraphiteAddress, o.GraphiteTransport,
 			o.StorageTimeout, o.GraphitePrefix)
-		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
+		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
 	}
 	if o.OpentsdbURL != "" {
 		c := opentsdb.NewClient(o.OpentsdbURL, o.StorageTimeout)
-		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
+		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
 	}
 	if o.InfluxdbURL != nil {
 		conf := influx.Config{
@@ -67,7 +67,7 @@ func New(o *Options) (*Storage, error) {
 		}
 		c := influxdb.NewClient(conf, o.InfluxdbDatabase, o.InfluxdbRetentionPolicy)
 		prometheus.MustRegister(c)
-		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
+		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
 	}
 	if o.Address != "" {
 		c, err := NewClient(o.Address, o.StorageTimeout)
