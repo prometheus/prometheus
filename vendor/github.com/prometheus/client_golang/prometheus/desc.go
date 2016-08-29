@@ -1,3 +1,16 @@
+// Copyright 2016 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package prometheus
 
 import (
@@ -6,8 +19,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-
-	"github.com/golang/protobuf/proto"
 
 	dto "github.com/prometheus/client_model/go"
 )
@@ -151,8 +162,8 @@ func NewDesc(fqName, help string, variableLabels []string, constLabels Labels) *
 	d.constLabelPairs = make([]*dto.LabelPair, 0, len(constLabels))
 	for n, v := range constLabels {
 		d.constLabelPairs = append(d.constLabelPairs, &dto.LabelPair{
-			Name:  proto.String(n),
-			Value: proto.String(v),
+			Name:  n,
+			Value: v,
 		})
 	}
 	sort.Sort(LabelPairSorter(d.constLabelPairs))
@@ -174,7 +185,7 @@ func (d *Desc) String() string {
 	for _, lp := range d.constLabelPairs {
 		lpStrings = append(
 			lpStrings,
-			fmt.Sprintf("%s=%q", lp.GetName(), lp.GetValue()),
+			fmt.Sprintf("%s=%q", lp.Name, lp.Value),
 		)
 	}
 	return fmt.Sprintf(

@@ -19,8 +19,6 @@ import (
 	"sort"
 	"sync/atomic"
 
-	"github.com/golang/protobuf/proto"
-
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -51,11 +49,11 @@ type Histogram interface {
 // bucket of a histogram ("le" -> "less or equal").
 const bucketLabel = "le"
 
+// DefBuckets are the default Histogram buckets. The default buckets are
+// tailored to broadly measure the response time (in seconds) of a network
+// service. Most likely, however, you will be required to define buckets
+// customized to your use case.
 var (
-	// DefBuckets are the default Histogram buckets. The default buckets are
-	// tailored to broadly measure the response time (in seconds) of a
-	// network service. Most likely, however, you will be required to define
-	// buckets customized to your use case.
 	DefBuckets = []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
 
 	errBucketLabelNotAllowed = fmt.Errorf(
@@ -178,7 +176,7 @@ func newHistogram(desc *Desc, opts HistogramOpts, labelValues ...string) Histogr
 		}
 	}
 	for _, lp := range desc.constLabelPairs {
-		if lp.GetName() == bucketLabel {
+		if lp.Name == bucketLabel {
 			panic(errBucketLabelNotAllowed)
 		}
 	}
@@ -210,7 +208,7 @@ func newHistogram(desc *Desc, opts HistogramOpts, labelValues ...string) Histogr
 	// Finally we know the final length of h.upperBounds and can make counts.
 	h.counts = make([]uint64, len(h.upperBounds))
 
-	h.Init(h) // Init self-collection.
+	h.init(h) // Init self-collection.
 	return h
 }
 
@@ -222,7 +220,7 @@ type histogram struct {
 	sumBits uint64
 	count   uint64
 
-	SelfCollector
+	selfCollector
 	// Note that there is no mutex required.
 
 	desc *Desc
@@ -265,14 +263,14 @@ func (h *histogram) Write(out *dto.Metric) error {
 	his := &dto.Histogram{}
 	buckets := make([]*dto.Bucket, len(h.upperBounds))
 
-	his.SampleSum = proto.Float64(math.Float64frombits(atomic.LoadUint64(&h.sumBits)))
-	his.SampleCount = proto.Uint64(atomic.LoadUint64(&h.count))
+	his.SampleSum = math.Float64frombits(atomic.LoadUint64(&h.sumBits))
+	his.SampleCount = atomic.LoadUint64(&h.count)
 	var count uint64
 	for i, upperBound := range h.upperBounds {
 		count += atomic.LoadUint64(&h.counts[i])
 		buckets[i] = &dto.Bucket{
-			CumulativeCount: proto.Uint64(count),
-			UpperBound:      proto.Float64(upperBound),
+			CumulativeCount: count,
+			UpperBound:      upperBound,
 		}
 	}
 	his.Bucket = buckets
@@ -287,7 +285,7 @@ func (h *histogram) Write(out *dto.Metric) error {
 // (e.g. HTTP request latencies, partitioned by status code and method). Create
 // instances with NewHistogramVec.
 type HistogramVec struct {
-	MetricVec
+	*MetricVec
 }
 
 // NewHistogramVec creates a new HistogramVec based on the provided HistogramOpts and
@@ -301,13 +299,9 @@ func NewHistogramVec(opts HistogramOpts, labelNames []string) *HistogramVec {
 		opts.ConstLabels,
 	)
 	return &HistogramVec{
-		MetricVec: MetricVec{
-			children: map[uint64]Metric{},
-			desc:     desc,
-			newMetric: func(lvs ...string) Metric {
-				return newHistogram(desc, opts, lvs...)
-			},
-		},
+		MetricVec: newMetricVec(desc, func(lvs ...string) Metric {
+			return newHistogram(desc, opts, lvs...)
+		}),
 	}
 }
 
@@ -364,13 +358,13 @@ func (h *constHistogram) Write(out *dto.Metric) error {
 	his := &dto.Histogram{}
 	buckets := make([]*dto.Bucket, 0, len(h.buckets))
 
-	his.SampleCount = proto.Uint64(h.count)
-	his.SampleSum = proto.Float64(h.sum)
+	his.SampleCount = h.count
+	his.SampleSum = h.sum
 
 	for upperBound, count := range h.buckets {
 		buckets = append(buckets, &dto.Bucket{
-			CumulativeCount: proto.Uint64(count),
-			UpperBound:      proto.Float64(upperBound),
+			CumulativeCount: count,
+			UpperBound:      upperBound,
 		})
 	}
 
@@ -444,5 +438,5 @@ func (s buckSort) Swap(i, j int) {
 }
 
 func (s buckSort) Less(i, j int) bool {
-	return s[i].GetUpperBound() < s[j].GetUpperBound()
+	return s[i].UpperBound < s[j].UpperBound
 }

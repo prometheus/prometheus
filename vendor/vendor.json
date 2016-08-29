@@ -113,8 +113,8 @@
 		},
 		{
 			"path": "github.com/golang/protobuf/proto",
-			"revision": "1dceb1a2654bdc74ca97ad91f71f500eecc96269",
-			"revisionTime": "2015-09-03T11:38:02+10:00"
+			"revision": "888eb0692c857ec880338addf316bd662d5e630e",
+			"revisionTime": "2016-08-23T14:25:17-07:00"
 		},
 		{
 			"path": "github.com/golang/snappy",
@@ -154,19 +154,19 @@
 		{
 			"checksumSHA1": "OpY4giv8kPIYbaunD7BSgCynj78=",
 			"path": "github.com/prometheus/client_golang/prometheus",
-			"revision": "9f1ed1ed4a5f754c9b626e5cf8ec1ea7d622e017",
-			"revisionTime": "2016-06-27T14:36:20Z"
+			"revision": "1ba5ec2439aae6ca02859bdf7885ac13d4b0a355",
+			"revisionTime": "2016-08-29T02:03:24+02:00"
 		},
 		{
 			"path": "github.com/prometheus/client_model/go",
-			"revision": "fa8ad6fec33561be4280a8f0514318c79d7f6cb6",
-			"revisionTime": "2015-02-12T10:17:44Z"
+			"revision": "dad9f93d79da19a6fa13f253af8887b7df974978",
+			"revisionTime": "2016-08-28T22:58:25+02:00"
 		},
 		{
 			"checksumSHA1": "68MLX78PD6yqD2VCtHazVkBaj/w=",
 			"path": "github.com/prometheus/common/expfmt",
-			"revision": "4402f4e5ea79ec15f3c574773b6a5198fbea215f",
-			"revisionTime": "2016-06-23T15:14:27Z"
+			"revision": "086fbd0536bd9c043653ae7e918882f8b435a0d5",
+			"revisionTime": "2016-08-29T08:09:36+02:00"
 		},
 		{
 			"checksumSHA1": "GWlM3d2vPYyNATtTFgftS10/A9w=",

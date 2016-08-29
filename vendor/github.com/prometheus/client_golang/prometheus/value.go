@@ -21,8 +21,6 @@ import (
 	"sync/atomic"
 
 	dto "github.com/prometheus/client_model/go"
-
-	"github.com/golang/protobuf/proto"
 )
 
 // ValueType is an enumeration of metric types that represent a simple value.
@@ -48,7 +46,7 @@ type value struct {
 	// operations.  http://golang.org/pkg/sync/atomic/#pkg-note-BUG
 	valBits uint64
 
-	SelfCollector
+	selfCollector
 
 	desc       *Desc
 	valType    ValueType
@@ -68,7 +66,7 @@ func newValue(desc *Desc, valueType ValueType, val float64, labelValues ...strin
 		valBits:    math.Float64bits(val),
 		labelPairs: makeLabelPairs(desc, labelValues),
 	}
-	result.Init(result)
+	result.init(result)
 	return result
 }
 
@@ -113,7 +111,7 @@ func (v *value) Write(out *dto.Metric) error {
 // library to back the implementations of CounterFunc, GaugeFunc, and
 // UntypedFunc.
 type valueFunc struct {
-	SelfCollector
+	selfCollector
 
 	desc       *Desc
 	valType    ValueType
@@ -134,7 +132,7 @@ func newValueFunc(desc *Desc, valueType ValueType, function func() float64) *val
 		function:   function,
 		labelPairs: makeLabelPairs(desc, nil),
 	}
-	result.Init(result)
+	result.init(result)
 	return result
 }
 
@@ -198,11 +196,11 @@ func populateMetric(
 	m.Label = labelPairs
 	switch t {
 	case CounterValue:
-		m.Counter = &dto.Counter{Value: proto.Float64(v)}
+		m.Counter = &dto.Counter{Value: v}
 	case GaugeValue:
-		m.Gauge = &dto.Gauge{Value: proto.Float64(v)}
+		m.Gauge = &dto.Gauge{Value: v}
 	case UntypedValue:
-		m.Untyped = &dto.Untyped{Value: proto.Float64(v)}
+		m.Untyped = &dto.Untyped{Value: v}
 	default:
 		return fmt.Errorf("encountered unknown type %v", t)
 	}
@@ -222,8 +220,8 @@ func makeLabelPairs(desc *Desc, labelValues []string) []*dto.LabelPair {
 	labelPairs := make([]*dto.LabelPair, 0, totalLen)
 	for i, n := range desc.variableLabels {
 		labelPairs = append(labelPairs, &dto.LabelPair{
-			Name:  proto.String(n),
-			Value: proto.String(labelValues[i]),
+			Name:  n,
+			Value: labelValues[i],
 		})
 	}
 	for _, lp := range desc.constLabelPairs {
