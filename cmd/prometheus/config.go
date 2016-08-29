@@ -206,6 +206,11 @@ func init() {
 		&cfg.remote.InfluxdbDatabase, "storage.remote.influxdb.database", "prometheus",
 		"The name of the database to use for storing samples in InfluxDB.",
 	)
+	cfg.fs.StringVar(
+		&cfg.remote.GenericAddress, "storage.remote.generic-address", "",
+		"The address of the generic remote server to send samples to via gRPC. None, if empty.",
+	)
+
 	cfg.fs.DurationVar(
 		&cfg.remote.StorageTimeout, "storage.remote.timeout", 30*time.Second,
 		"The timeout to use when sending samples to the remote storage.",
