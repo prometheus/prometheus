@@ -24,6 +24,18 @@ import (
 )
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
+
+	verifyPresence := func(tgroups map[string][]*Target, name string, present bool) {
+		if _, ok := tgroups[name]; ok != present {
+			msg := ""
+			if !present {
+				msg = "not "
+			}
+			t.Fatalf("'%s' should %sbe present in TargetSet.tgroups: %s", name, msg, tgroups)
+		}
+
+	}
+
 	scrapeConfig := &config.ScrapeConfig{}
 
 	sOne := `
@@ -43,7 +55,7 @@ dns_sd_configs:
 
 	ts.runProviders(context.Background(), providersFromConfig(scrapeConfig))
 
-	verifyPresence(t, ts.tgroups, "dns/0/srv.name.one.example.org", true)
+	verifyPresence(ts.tgroups, "dns/0/srv.name.one.example.org", true)
 
 	sTwo := `
 job_name: "foo"
@@ -57,18 +69,6 @@ dns_sd_configs:
 
 	ts.runProviders(context.Background(), providersFromConfig(scrapeConfig))
 
-	verifyPresence(t, ts.tgroups, "dns/0/srv.name.one.example.org", false)
-	verifyPresence(t, ts.tgroups, "dns/0/srv.name.two.example.org", true)
-
-}
-
-func verifyPresence(t *testing.T, tgroups map[string][]*Target, name string, present bool) {
-	if _, ok := tgroups[name]; ok != present {
-		msg := ""
-		if !present {
-			msg = "not "
-		}
-		t.Fatalf("'%s' should %sbe present in TargetSet.tgroups: %s", name, msg, tgroups)
-	}
-
+	verifyPresence(ts.tgroups, "dns/0/srv.name.one.example.org", false)
+	verifyPresence(ts.tgroups, "dns/0/srv.name.two.example.org", true)
 }
