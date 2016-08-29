@@ -15,39 +15,54 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
-	"github.com/prometheus/prometheus/storage/remote/generic"
+	"github.com/golang/snappy"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 type server struct{}
 
-func (server *server) Write(ctx context.Context, req *generic.GenericWriteRequest) (*generic.GenericWriteResponse, error) {
+func (server *server) Write(ctx context.Context, req *remote.WriteRequest) (*remote.WriteResponse, error) {
 	for _, ts := range req.Timeseries {
-		fmt.Printf("%s", ts.Name)
+		m := make(model.Metric, len(ts.Labels))
 		for _, l := range ts.Labels {
-			fmt.Printf(" %s=%s", l.Name, l.Value)
+			m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 		}
-		fmt.Printf("\n")
+		fmt.Println(m)
 
 		for _, s := range ts.Samples {
 			fmt.Printf("  %f %d\n", s.Value, s.TimestampMs)
 		}
 	}
 
-	return &generic.GenericWriteResponse{}, nil
+	return &remote.WriteResponse{}, nil
+}
+
+type snappyDecompressor struct{}
+
+func (d *snappyDecompressor) Do(r io.Reader) ([]byte, error) {
+	sr := snappy.NewReader(r)
+	return ioutil.ReadAll(sr)
+}
+
+func (d *snappyDecompressor) Type() string {
+	return "snappy"
 }
 
 func main() {
 	lis, err := net.Listen("tcp", ":1234")
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Fatalf("Failed to listen: %v", err)
 	}
-	s := grpc.NewServer()
-	generic.RegisterGenericWriteServer(s, &server{})
+	s := grpc.NewServer(grpc.RPCDecompressor(&snappyDecompressor{}))
+	remote.RegisterWriteServer(s, &server{})
 	s.Serve(lis)
 }
