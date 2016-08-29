@@ -170,9 +170,9 @@ func Invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 			if _, ok := err.(*rpcError); ok {
 				return err
 			}
-			if err == errConnClosing {
+			if err == errConnClosing || err == errConnUnavailable {
 				if c.failFast {
-					return Errorf(codes.Unavailable, "%v", errConnClosing)
+					return Errorf(codes.Unavailable, "%v", err)
 				}
 				continue
 			}

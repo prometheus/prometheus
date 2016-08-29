@@ -350,3 +350,13 @@ func (s *sorter) SortStrings(ss []string) {
 	sort.Sort(s)
 	s.v = save
 }
+
+// validPseudoPath reports whether v is a valid :path pseudo-header
+// value. It must be a non-empty string starting with '/', and not
+// start with two slashes.
+// For now this is only used a quick check for deciding when to clean
+// up Opaque URLs before sending requests from the Transport.
+// See golang.org/issue/16847
+func validPseudoPath(v string) bool {
+	return len(v) > 0 && v[0] == '/' && (len(v) == 1 || v[1] != '/')
+}
