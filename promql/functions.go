@@ -860,66 +860,67 @@ func funcVector(ev *evaluator, args Expressions) model.Value {
 	}
 }
 
+// Common code for date related functions.
+func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) model.SampleValue) model.Value {
+	var v vector
+	if len(args) == 0 {
+		v = vector{
+			&sample{
+				Metric: metric.Metric{},
+				Value:  model.SampleValue(ev.Timestamp.Unix()),
+			},
+		}
+	} else {
+		v = ev.evalVector(args[0])
+	}
+	for _, el := range v {
+		el.Metric.Del(model.MetricNameLabel)
+		t := time.Unix(int64(el.Value), 0).UTC()
+		el.Value = f(t)
+	}
+	return v
+}
+
 // === days_in_month(v vector) scalar ===
 func funcDaysInMonth(ev *evaluator, args Expressions) model.Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
-		el.Metric.Del(model.MetricNameLabel)
-		t := time.Unix(int64(el.Value), 0)
-		el.Value = model.SampleValue(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
-	}
-	return vector
+	return dateWrapper(ev, args, func(t time.Time) model.SampleValue {
+		return model.SampleValue(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
+	})
 }
 
 // === day_of_month(v vector) scalar ===
 func funcDayOfMonth(ev *evaluator, args Expressions) model.Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
-		el.Metric.Del(model.MetricNameLabel)
-		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Day())
-	}
-	return vector
+	return dateWrapper(ev, args, func(t time.Time) model.SampleValue {
+		return model.SampleValue(t.Day())
+	})
 }
 
 // === day_of_week(v vector) scalar ===
 func funcDayOfWeek(ev *evaluator, args Expressions) model.Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
-		el.Metric.Del(model.MetricNameLabel)
-		// Sunday = 0.
-		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Weekday())
-	}
-	return vector
+	return dateWrapper(ev, args, func(t time.Time) model.SampleValue {
+		return model.SampleValue(t.Weekday())
+	})
 }
 
 // === hour(v vector) scalar ===
 func funcHour(ev *evaluator, args Expressions) model.Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
-		el.Metric.Del(model.MetricNameLabel)
-		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Hour())
-	}
-	return vector
+	return dateWrapper(ev, args, func(t time.Time) model.SampleValue {
+		return model.SampleValue(t.Hour())
+	})
 }
 
 // === month(v vector) scalar ===
 func funcMonth(ev *evaluator, args Expressions) model.Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
-		el.Metric.Del(model.MetricNameLabel)
-		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Month())
-	}
-	return vector
+	return dateWrapper(ev, args, func(t time.Time) model.SampleValue {
+		return model.SampleValue(t.Month())
+	})
 }
 
 // === year(v vector) scalar ===
 func funcYear(ev *evaluator, args Expressions) model.Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
-		el.Metric.Del(model.MetricNameLabel)
-		el.Value = model.SampleValue(time.Unix(int64(el.Value), 0).UTC().Year())
-	}
-	return vector
+	return dateWrapper(ev, args, func(t time.Time) model.SampleValue {
+		return model.SampleValue(t.Year())
+	})
 }
 
 var functions = map[string]*Function{
@@ -978,22 +979,25 @@ var functions = map[string]*Function{
 		Call:       funcCountScalar,
 	},
 	"days_in_month": {
-		Name:       "days_in_month",
-		ArgTypes:   []model.ValueType{model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcDaysInMonth,
+		Name:         "days_in_month",
+		ArgTypes:     []model.ValueType{model.ValVector},
+		OptionalArgs: 1,
+		ReturnType:   model.ValVector,
+		Call:         funcDaysInMonth,
 	},
 	"day_of_month": {
-		Name:       "day_of_month",
-		ArgTypes:   []model.ValueType{model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcDayOfMonth,
+		Name:         "day_of_month",
+		ArgTypes:     []model.ValueType{model.ValVector},
+		OptionalArgs: 1,
+		ReturnType:   model.ValVector,
+		Call:         funcDayOfMonth,
 	},
 	"day_of_week": {
-		Name:       "day_of_week",
-		ArgTypes:   []model.ValueType{model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcDayOfWeek,
+		Name:         "day_of_week",
+		ArgTypes:     []model.ValueType{model.ValVector},
+		OptionalArgs: 1,
+		ReturnType:   model.ValVector,
+		Call:         funcDayOfWeek,
 	},
 	"delta": {
 		Name:       "delta",
@@ -1038,10 +1042,11 @@ var functions = map[string]*Function{
 		Call:       funcHoltWinters,
 	},
 	"hour": {
-		Name:       "hour",
-		ArgTypes:   []model.ValueType{model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcHour,
+		Name:         "hour",
+		ArgTypes:     []model.ValueType{model.ValVector},
+		OptionalArgs: 1,
+		ReturnType:   model.ValVector,
+		Call:         funcHour,
 	},
 	"idelta": {
 		Name:       "idelta",
@@ -1098,10 +1103,11 @@ var functions = map[string]*Function{
 		Call:       funcMinOverTime,
 	},
 	"month": {
-		Name:       "month",
-		ArgTypes:   []model.ValueType{model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcMonth,
+		Name:         "month",
+		ArgTypes:     []model.ValueType{model.ValVector},
+		OptionalArgs: 1,
+		ReturnType:   model.ValVector,
+		Call:         funcMonth,
 	},
 	"predict_linear": {
 		Name:       "predict_linear",
@@ -1189,10 +1195,11 @@ var functions = map[string]*Function{
 		Call:       funcVector,
 	},
 	"year": {
-		Name:       "year",
-		ArgTypes:   []model.ValueType{model.ValVector},
-		ReturnType: model.ValVector,
-		Call:       funcYear,
+		Name:         "year",
+		ArgTypes:     []model.ValueType{model.ValVector},
+		OptionalArgs: 1,
+		ReturnType:   model.ValVector,
+		Call:         funcYear,
 	},
 }
 
