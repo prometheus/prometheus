@@ -87,7 +87,7 @@ func TestUnmarshalingCorruptedDoubleDeltaReturnsAnError(t *testing.T) {
 	cs[0].marshalToBuf(buf)
 
 	// Corrupt the length to be every possible too-small value
-	for i := 0; i < doubleDeltaHeaderBytes; i++ {
+	for i := 0; i < doubleDeltaHeaderMinBytes; i++ {
 
 		binary.LittleEndian.PutUint16(buf[doubleDeltaHeaderBufLenOffset:], uint16(i))
 
