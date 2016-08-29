@@ -367,20 +367,20 @@ eval instant at 1m quantile_over_time(2, data[1m])
 clear
 
 # Test time-related functions.
-eval instant at 0m year(vector(0))
+eval instant at 0m year()
   {} 1970
 
-eval instant at 0m month(vector(0))
+eval instant at 0m month()
   {} 1
 
-eval instant at 0m day_of_month(vector(0))
+eval instant at 0m day_of_month()
   {} 1
 
 # Thursday.
-eval instant at 0m day_of_week(vector(0))
+eval instant at 0m day_of_week()
   {} 4
 
-eval instant at 0m hour(vector(0))
+eval instant at 0m hour()
   {} 0
 
 # 2008-12-31 23:59:59 just before leap second.
