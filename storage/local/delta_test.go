@@ -26,76 +26,81 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-func verifyUnmarshallingError(t *testing.T, err error, typ string, badLen int) {
-
-	if err == nil {
-		t.Errorf("Failed to obtain an error when unmarshalling %s with corrupt length of %d", typ, badLen)
-		return
-	}
-
-	expectedStr := "header size"
-	if !strings.Contains(err.Error(), expectedStr) {
-		t.Errorf(
-			"'%s' not present in error when unmarshalling %s with corrupt length %d: '%s'",
-			expectedStr,
-			typ,
-			badLen,
-			err.Error())
-	}
-}
-
 func TestUnmarshalingCorruptedDeltaReturnsAnError(t *testing.T) {
-	dec := newDeltaEncodedChunk(d1, d4, false, chunkLen)
 
-	cs, err := dec.add(model.SamplePair{
-		Timestamp: model.Now(),
-		Value:     model.SampleValue(100),
-	})
-	if err != nil {
-		t.Fatalf("Couldn't add sample to empty deltaEncodedChunk: %s", err)
+	var verifyUnmarshallingError = func(
+		err error,
+		chunkTypeName string,
+		unmarshalMethod string,
+		badLen int) {
+
+		if err == nil {
+			t.Errorf("Failed to obtain an error when unmarshalling %s (from %s) with corrupt length of %d", chunkTypeName, unmarshalMethod, badLen)
+			return
+		}
+
+		expectedStr := "header size"
+		if !strings.Contains(err.Error(), expectedStr) {
+			t.Errorf(
+				"'%s' not present in error when unmarshalling %s (from %s) with corrupt length %d: '%s'",
+				expectedStr,
+				chunkTypeName,
+				unmarshalMethod,
+				badLen,
+				err.Error())
+		}
 	}
 
-	buf := make([]byte, chunkLen)
-
-	cs[0].marshalToBuf(buf)
-
-	// Corrupt the length to be every possible too-small value
-	for i := 0; i < deltaHeaderBytes; i++ {
-		binary.LittleEndian.PutUint16(buf[deltaHeaderBufLenOffset:], uint16(i))
-
-		err = cs[0].unmarshalFromBuf(buf)
-		verifyUnmarshallingError(t, err, "deltaEncodedChunk (from buf)", i)
-
-		err = cs[0].unmarshal(bytes.NewBuffer(buf))
-		verifyUnmarshallingError(t, err, "deltaEncodedChunk (from Reader)", i)
+	cases := []struct {
+		chunkTypeName    string
+		chunkConstructor func(deltaBytes, deltaBytes, bool, int) chunk
+		minHeaderLen     int
+		chunkLenPos      int
+	}{
+		{
+			"deltaEncodedChunk",
+			// Hrm. Compiler didn't like a function which returned
+			// *deltaEncodedChunk for the chunkConstructor field. This is ugly,
+			// but I dunno how to make the compiler happy here.
+			func(a, b deltaBytes, c bool, d int) chunk {
+				return newDeltaEncodedChunk(a, b, c, d)
+			},
+			deltaHeaderBytes,
+			deltaHeaderBufLenOffset,
+		},
+		{
+			"doubleDeltaEncodedChunk",
+			func(a, b deltaBytes, c bool, d int) chunk {
+				return newDoubleDeltaEncodedChunk(a, b, c, d)
+			},
+			doubleDeltaHeaderMinBytes,
+			doubleDeltaHeaderBufLenOffset,
+		},
 	}
-}
+	for _, c := range cases {
+		chunk := c.chunkConstructor(d1, d4, false, chunkLen)
 
-func TestUnmarshalingCorruptedDoubleDeltaReturnsAnError(t *testing.T) {
-	ddec := newDoubleDeltaEncodedChunk(d1, d4, false, chunkLen)
+		cs, err := chunk.add(model.SamplePair{
+			Timestamp: model.Now(),
+			Value:     model.SampleValue(100),
+		})
+		if err != nil {
+			t.Fatalf("Couldn't add sample to empty %s: %s", c.chunkTypeName, err)
+		}
 
-	cs, err := ddec.add(model.SamplePair{
-		Timestamp: model.Now(),
-		Value:     model.SampleValue(100),
-	})
-	if err != nil {
-		t.Fatalf("Couldn't add sample to empty doubleDeltaEncodedChunk: %s", err)
+		buf := make([]byte, chunkLen)
+
+		cs[0].marshalToBuf(buf)
+
+		// Corrupt the length to be every possible too-small value
+		for i := 0; i < c.minHeaderLen; i++ {
+			binary.LittleEndian.PutUint16(buf[c.chunkLenPos:], uint16(i))
+
+			err = cs[0].unmarshalFromBuf(buf)
+			verifyUnmarshallingError(err, c.chunkTypeName, "buf", i)
+
+			err = cs[0].unmarshal(bytes.NewBuffer(buf))
+			verifyUnmarshallingError(err, c.chunkTypeName, "Reader", i)
+		}
 	}
-
-	buf := make([]byte, chunkLen)
-
-	cs[0].marshalToBuf(buf)
-
-	// Corrupt the length to be every possible too-small value
-	for i := 0; i < doubleDeltaHeaderMinBytes; i++ {
-
-		binary.LittleEndian.PutUint16(buf[doubleDeltaHeaderBufLenOffset:], uint16(i))
-
-		err = cs[0].unmarshalFromBuf(buf)
-		verifyUnmarshallingError(t, err, "doubleDeltaEncodedChunk (from buf)", i)
-
-		err = cs[0].unmarshal(bytes.NewBuffer(buf))
-		verifyUnmarshallingError(t, err, "doubleDeltaEncodedChunk (from Reader)", i)
-	}
-
 }
