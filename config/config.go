@@ -963,6 +963,9 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Modulus == 0 && c.Action == RelabelHashMod {
 		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
+	if (c.Action == RelabelReplace || c.Action == RelabelHashMod) && c.TargetLabel == "" {
+		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
+	}
 	return nil
 }
 
