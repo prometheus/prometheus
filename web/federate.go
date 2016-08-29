@@ -16,7 +16,6 @@ package web
 import (
 	"net/http"
 
-	"github.com/golang/protobuf/proto"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
@@ -54,7 +53,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 	protMetricFam := &dto.MetricFamily{
 		Metric: []*dto.Metric{protMetric},
-		Type:   dto.MetricType_UNTYPED.Enum(),
+		Type:   dto.MetricType_UNTYPED,
 	}
 
 	vector, err := h.storage.LastSampleForLabelMatchers(minTimestamp, matcherSets...)
@@ -70,12 +69,12 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		for ln, lv := range s.Metric {
 			if ln == model.MetricNameLabel {
-				protMetricFam.Name = proto.String(string(lv))
+				protMetricFam.Name = string(lv)
 				continue
 			}
 			protMetric.Label = append(protMetric.Label, &dto.LabelPair{
-				Name:  proto.String(string(ln)),
-				Value: proto.String(string(lv)),
+				Name:  string(ln),
+				Value: string(lv),
 			})
 			if _, ok := h.externalLabels[ln]; ok {
 				globalUsed[ln] = struct{}{}
@@ -86,14 +85,14 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		for ln, lv := range h.externalLabels {
 			if _, ok := globalUsed[ln]; !ok {
 				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
-					Name:  proto.String(string(ln)),
-					Value: proto.String(string(lv)),
+					Name:  string(ln),
+					Value: string(lv),
 				})
 			}
 		}
 
-		protMetric.TimestampMs = proto.Int64(int64(s.Timestamp))
-		protMetric.Untyped.Value = proto.Float64(float64(s.Value))
+		protMetric.TimestampMs = int64(s.Timestamp)
+		protMetric.Untyped.Value = float64(s.Value)
 
 		if err := enc.Encode(protMetricFam); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
