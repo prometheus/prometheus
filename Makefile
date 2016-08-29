@@ -38,7 +38,7 @@ check_license:
 
 test:
 	@echo ">> running tests"
-	@$(GO) test -short $(pkgs)
+	@$(GO) test -race -short $(pkgs)
 
 format:
 	@echo ">> formatting code"

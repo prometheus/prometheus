@@ -438,8 +438,12 @@ var tests = []struct {
 // for the parser to avoid duplicated effort.
 func TestLexer(t *testing.T) {
 	for i, test := range tests {
-		l := lex(test.input)
-		l.seriesDesc = test.seriesDesc
+		l := &lexer{
+			input:      test.input,
+			items:      make(chan item),
+			seriesDesc: test.seriesDesc,
+		}
+		go l.run()
 
 		out := []item{}
 		for it := range l.items {
