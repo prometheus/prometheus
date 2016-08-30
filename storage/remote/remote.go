@@ -74,7 +74,7 @@ func New(o *Options) (*Storage, error) {
 		if err != nil {
 			return nil, err
 		}
-		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
+		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
 	}
 	if len(s.queues) == 0 {
 		return nil, nil
