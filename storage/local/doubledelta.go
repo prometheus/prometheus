@@ -33,7 +33,8 @@ import (
 // - base time delta:          8 bytes
 // - base value delta:         8 bytes
 const (
-	doubleDeltaHeaderBytes = 37
+	doubleDeltaHeaderBytes    = 37
+	doubleDeltaHeaderMinBytes = 21 // header isn't full for chunk w/ one sample
 
 	doubleDeltaHeaderBufLenOffset         = 0
 	doubleDeltaHeaderTimeBytesOffset      = 2
@@ -250,6 +251,10 @@ func (c *doubleDeltaEncodedChunk) unmarshal(r io.Reader) error {
 	if int(l) > cap(*c) {
 		return fmt.Errorf("chunk length exceeded during unmarshaling: %d", l)
 	}
+	if int(l) < doubleDeltaHeaderMinBytes {
+		return fmt.Errorf("chunk length less than header size: %d < %d", l, doubleDeltaHeaderMinBytes)
+	}
+
 	*c = (*c)[:l]
 	return nil
 }
@@ -261,6 +266,9 @@ func (c *doubleDeltaEncodedChunk) unmarshalFromBuf(buf []byte) error {
 	l := binary.LittleEndian.Uint16((*c)[doubleDeltaHeaderBufLenOffset:])
 	if int(l) > cap(*c) {
 		return fmt.Errorf("chunk length exceeded during unmarshaling: %d", l)
+	}
+	if int(l) < doubleDeltaHeaderMinBytes {
+		return fmt.Errorf("chunk length less than header size: %d < %d", l, doubleDeltaHeaderMinBytes)
 	}
 	*c = (*c)[:l]
 	return nil
