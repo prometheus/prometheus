@@ -58,23 +58,20 @@ func TestUnmarshalingCorruptedDeltaReturnsAnError(t *testing.T) {
 		chunkLenPos      int
 	}{
 		{
-			"deltaEncodedChunk",
-			// Hrm. Compiler didn't like a function which returned
-			// *deltaEncodedChunk for the chunkConstructor field. This is ugly,
-			// but I dunno how to make the compiler happy here.
-			func(a, b deltaBytes, c bool, d int) chunk {
+			chunkTypeName: "deltaEncodedChunk",
+			chunkConstructor: func(a, b deltaBytes, c bool, d int) chunk {
 				return newDeltaEncodedChunk(a, b, c, d)
 			},
-			deltaHeaderBytes,
-			deltaHeaderBufLenOffset,
+			minHeaderLen: deltaHeaderBytes,
+			chunkLenPos:  deltaHeaderBufLenOffset,
 		},
 		{
-			"doubleDeltaEncodedChunk",
-			func(a, b deltaBytes, c bool, d int) chunk {
+			chunkTypeName: "doubleDeltaEncodedChunk",
+			chunkConstructor: func(a, b deltaBytes, c bool, d int) chunk {
 				return newDoubleDeltaEncodedChunk(a, b, c, d)
 			},
-			doubleDeltaHeaderMinBytes,
-			doubleDeltaHeaderBufLenOffset,
+			minHeaderLen: doubleDeltaHeaderMinBytes,
+			chunkLenPos:  doubleDeltaHeaderBufLenOffset,
 		},
 	}
 	for _, c := range cases {
