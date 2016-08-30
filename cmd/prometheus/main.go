@@ -77,9 +77,15 @@ func Main() int {
 
 	var (
 		memStorage     = local.NewMemorySeriesStorage(&cfg.storage)
-		remoteStorage  = remote.New(&cfg.remote)
 		sampleAppender = storage.Fanout{memStorage}
 	)
+
+	remoteStorage, err := remote.New(&cfg.remote)
+	if err != nil {
+		log.Errorf("Error initializing remote storage: %s", err)
+		return 1
+	}
+
 	if remoteStorage != nil {
 		sampleAppender = append(sampleAppender, remoteStorage)
 		reloadables = append(reloadables, remoteStorage)
