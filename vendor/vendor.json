@@ -113,8 +113,8 @@
 		},
 		{
 			"path": "github.com/golang/protobuf/proto",
-			"revision": "1dceb1a2654bdc74ca97ad91f71f500eecc96269",
-			"revisionTime": "2015-09-03T11:38:02+10:00"
+			"revision": "62e4364d64b32762febb61f2c88c0a29bc49a225",
+			"revisionTime": "2016-03-17T12:31:00+11:00"
 		},
 		{
 			"path": "github.com/golang/snappy",

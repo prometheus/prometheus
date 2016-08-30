@@ -24,6 +24,7 @@ import (
 	influx "github.com/influxdb/influxdb/client"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage/remote/generic"
 	"github.com/prometheus/prometheus/storage/remote/graphite"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
@@ -69,6 +70,10 @@ func New(o *Options) *Storage {
 		prometheus.MustRegister(c)
 		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
 	}
+	if o.GenericURL != "" {
+		c := generic.NewClient(o.GenericURL, o.StorageTimeout)
+		s.queues = append(s.queues, NewStorageQueueManager(c, 100*1024))
+	}
 	if len(s.queues) == 0 {
 		return nil
 	}
@@ -87,6 +92,7 @@ type Options struct {
 	GraphiteAddress         string
 	GraphiteTransport       string
 	GraphitePrefix          string
+	GenericURL              string
 }
 
 // Run starts the background processing of the storage queues.
