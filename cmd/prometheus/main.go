@@ -76,26 +76,26 @@ func Main() int {
 	var reloadables []Reloadable
 
 	var (
-		memStorage     = local.NewMemorySeriesStorage(&cfg.storage)
-		remoteStorage  = remote.New(&cfg.remote)
-		sampleAppender = storage.Fanout{memStorage}
+		memStorage    = local.NewMemorySeriesStorage(&cfg.storage)
+		remoteStorage = remote.New(&cfg.remote)
+		batcher       = storage.BatcherFanout{memStorage}
 	)
 	if remoteStorage != nil {
-		sampleAppender = append(sampleAppender, remoteStorage)
+		batcher = append(batcher, remoteStorage)
 		reloadables = append(reloadables, remoteStorage)
 	}
 
 	var (
 		notifier      = notifier.New(&cfg.notifier)
-		targetManager = retrieval.NewTargetManager(sampleAppender)
+		targetManager = retrieval.NewTargetManager(batcher)
 		queryEngine   = promql.NewEngine(memStorage, &cfg.queryEngine)
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		SampleAppender: sampleAppender,
-		Notifier:       notifier,
-		QueryEngine:    queryEngine,
-		ExternalURL:    cfg.web.ExternalURL,
+		SampleAppenderBatcher: batcher,
+		Notifier:              notifier,
+		QueryEngine:           queryEngine,
+		ExternalURL:           cfg.web.ExternalURL,
 	})
 
 	flags := map[string]string{}

@@ -1922,3 +1922,67 @@ func TestAppendOutOfOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestPreWatermarkSampleSuppression(t *testing.T) {
+	s, closer := NewTestStorage(t, 2)
+	defer closer.Close()
+
+	labelName, labelValue := model.LabelName("job"), model.LabelValue("test")
+	verifyLastSample := func(check int, expected *model.Sample) {
+		matcher, err := metric.NewLabelMatcher(metric.Equal, labelName, labelValue)
+		if err != nil {
+			t.Fatalf("%d error creating label matcher: %s", check, err)
+		}
+
+		matchers := metric.LabelMatchers{matcher}
+		v, err := s.LastSampleForLabelMatchers(model.Earliest, matchers)
+		if err != nil {
+			t.Fatalf("%d error getting last sample: %s", check, err)
+		}
+
+		if len(v) != 1 {
+			t.Errorf("[%d] Got %v; want %v", check, len(v), 1)
+		}
+		s := v[0]
+		if !s.Metric.Equal(expected.Metric) {
+			t.Errorf("[%d] Got metric %v; want %v", check, v[0].Metric, expected.Metric)
+		}
+		if !s.Timestamp.Equal(expected.Timestamp) {
+			t.Errorf("[%d] Got timestamp %v; want %v", check, v[0].Timestamp, expected.Timestamp)
+		}
+		if !s.Value.Equal(expected.Value) {
+			t.Errorf("[%d] Got value %v; want %v", check, v[0].Value, expected.Value)
+		}
+	}
+
+	newSample := func(val float64) *model.Sample {
+		return &model.Sample{
+			Metric:    model.Metric{labelName: labelValue},
+			Timestamp: model.TimeFromUnixNano(time.Now().UnixNano()),
+			Value:     model.SampleValue(val),
+		}
+	}
+
+	samp1 := newSample(1)
+
+	// Until at least one batch has been committed, the watermark-checking
+	// code breaks and we don't find anything.
+	app := s.StartBatch()
+	app.Append(samp1)
+	app.EndBatch()
+	s.WaitForIndexing()
+	verifyLastSample(1, samp1)
+
+	// Make sure that the next sample will have a newer timestamp
+	time.Sleep(time.Millisecond)
+
+	// Now add another sample but don't move the watermark yet
+	samp2 := newSample(2)
+	app = s.StartBatch()
+	app.Append(samp2)
+	s.WaitForIndexing()
+	verifyLastSample(2, samp1)
+
+	app.EndBatch()
+	verifyLastSample(3, samp2)
+}

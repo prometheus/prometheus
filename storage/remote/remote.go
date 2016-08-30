@@ -24,6 +24,7 @@ import (
 	influx "github.com/influxdb/influxdb/client"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote/graphite"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
@@ -34,6 +35,13 @@ type Storage struct {
 	queues         []*StorageQueueManager
 	externalLabels model.LabelSet
 	mtx            sync.RWMutex
+}
+
+func (s *Storage) StartBatch() storage.BatchingSampleAppender {
+	return s
+}
+
+func (s *Storage) EndBatch() {
 }
 
 // ApplyConfig updates the status state as the new config requires.

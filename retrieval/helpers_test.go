@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage"
 )
 
 type nopAppender struct{}
@@ -26,6 +27,19 @@ func (a nopAppender) Append(*model.Sample) error {
 }
 
 func (a nopAppender) NeedsThrottling() bool {
+	return false
+}
+
+func (a nopAppender) EndBatch() {
+}
+
+type nopBatcher struct{}
+
+func (b nopBatcher) StartBatch() storage.BatchingSampleAppender {
+	return nopAppender{}
+}
+
+func (a nopBatcher) NeedsThrottling() bool {
 	return false
 }
 

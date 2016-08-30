@@ -23,7 +23,7 @@ import (
 )
 
 // Storage ingests and manages samples, along with various indexes. All methods
-// are goroutine-safe. Storage implements storage.SampleAppender.
+// are goroutine-safe. Storage implements storage.BatchAppender.
 type Storage interface {
 	Querier
 
@@ -36,7 +36,7 @@ type Storage interface {
 	//
 	// Appending is throttled if the Storage has too many chunks in memory
 	// already or has too many chunks waiting for persistence.
-	storage.SampleAppender
+	storage.SampleAppenderBatcher
 
 	// Drop all time series associated with the given label matchers. Returns
 	// the number series that were dropped.
@@ -79,6 +79,9 @@ type Querier interface {
 	// the last ingestion is so long ago that the series has been archived),
 	// ZeroSample is returned. The label matching behavior is the same as in
 	// MetricsForLabelMatchers.
+	// If any samples have been appended since Prometheus was started and
+	// the batch was completed, then any new samples appended in batches not
+	// yet complete will be ignored.
 	LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error)
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(model.LabelName) (model.LabelValues, error)

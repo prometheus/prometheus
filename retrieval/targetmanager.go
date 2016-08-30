@@ -50,7 +50,7 @@ type TargetProvider interface {
 // creates the new targets based on the target groups it receives from various
 // target providers.
 type TargetManager struct {
-	appender      storage.SampleAppender
+	batcher       storage.SampleAppenderBatcher
 	scrapeConfigs []*config.ScrapeConfig
 
 	mtx    sync.RWMutex
@@ -63,9 +63,9 @@ type TargetManager struct {
 }
 
 // NewTargetManager creates a new TargetManager.
-func NewTargetManager(app storage.SampleAppender) *TargetManager {
+func NewTargetManager(sab storage.SampleAppenderBatcher) *TargetManager {
 	return &TargetManager{
-		appender:   app,
+		batcher:    sab,
 		targetSets: map[string]*targetSet{},
 	}
 }
@@ -110,7 +110,7 @@ func (tm *TargetManager) reload() {
 
 		ts, ok := tm.targetSets[scfg.JobName]
 		if !ok {
-			ts = newTargetSet(scfg, tm.appender)
+			ts = newTargetSet(scfg, tm.batcher)
 			tm.targetSets[scfg.JobName] = ts
 
 			tm.wg.Add(1)
@@ -190,9 +190,9 @@ type targetSet struct {
 	cancelProviders func()
 }
 
-func newTargetSet(cfg *config.ScrapeConfig, app storage.SampleAppender) *targetSet {
+func newTargetSet(cfg *config.ScrapeConfig, sab storage.SampleAppenderBatcher) *targetSet {
 	ts := &targetSet{
-		scrapePool: newScrapePool(cfg, app),
+		scrapePool: newScrapePool(cfg, sab),
 		syncCh:     make(chan struct{}, 1),
 		config:     cfg,
 	}

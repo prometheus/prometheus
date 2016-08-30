@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -176,6 +177,9 @@ type MemorySeriesStorage struct {
 	quarantineRequests                    chan quarantineRequest
 	quarantineStopping, quarantineStopped chan struct{}
 
+	scrapeWatermarks    map[model.Fingerprint]model.Time
+	scrapeWatermarksMtx sync.RWMutex
+
 	persistErrors                 prometheus.Counter
 	numSeries                     prometheus.Gauge
 	seriesOps                     *prometheus.CounterVec
@@ -232,6 +236,8 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *MemorySeriesStorage 
 		quarantineRequests: make(chan quarantineRequest, quarantineRequestsCap),
 		quarantineStopping: make(chan struct{}),
 		quarantineStopped:  make(chan struct{}),
+
+		scrapeWatermarks: map[model.Fingerprint]model.Time{},
 
 		persistErrors: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -436,12 +442,21 @@ func (s *MemorySeriesStorage) LastSampleForLabelMatchers(cutoff model.Time, matc
 			continue
 		}
 		sp := series.lastSamplePair()
+		s.fpLocker.Unlock(fp)
+		watermark := s.getScrapeWatermark(fp)
+
+		// If we don't have a watermark set yet, just return what
+		// lastSamplePair() did.
+
+		if watermark != model.Time(0) && sp.Timestamp.After(watermark) {
+			iter := s.preloadChunksForRange(fp, cutoff, watermark)
+			sp = iter.ValueAtOrBeforeTime(watermark)
+		}
 		res = append(res, &model.Sample{
 			Metric:    series.metric,
 			Value:     sp.Value,
 			Timestamp: sp.Timestamp,
 		})
-		s.fpLocker.Unlock(fp)
 	}
 	return res, nil
 }
@@ -722,6 +737,11 @@ var (
 
 // Append implements Storage.
 func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
+	_, err := s.AppendReturningFp(sample)
+	return err
+}
+
+func (s *MemorySeriesStorage) AppendReturningFp(sample *model.Sample) (model.Fingerprint, error) {
 	for ln, lv := range sample.Metric {
 		if len(lv) == 0 {
 			delete(sample.Metric, ln)
@@ -740,7 +760,7 @@ func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
 	}
 	series, err := s.getOrCreateSeries(fp, sample.Metric)
 	if err != nil {
-		return err // getOrCreateSeries took care of quarantining already.
+		return fp, err // getOrCreateSeries took care of quarantining already.
 	}
 
 	if sample.Timestamp == series.lastTime {
@@ -751,14 +771,14 @@ func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
 		if sample.Timestamp == series.lastTime &&
 			series.lastSampleValueSet &&
 			sample.Value.Equal(series.lastSampleValue) {
-			return nil
+			return fp, nil
 		}
 		s.discardedSamplesCount.WithLabelValues(duplicateSample).Inc()
-		return ErrDuplicateSampleForTimestamp // Caused by the caller.
+		return fp, ErrDuplicateSampleForTimestamp // Caused by the caller.
 	}
 	if sample.Timestamp < series.lastTime {
 		s.discardedSamplesCount.WithLabelValues(outOfOrderTimestamp).Inc()
-		return ErrOutOfOrderSample // Caused by the caller.
+		return fp, ErrOutOfOrderSample // Caused by the caller.
 	}
 	completedChunksCount, err := series.add(model.SamplePair{
 		Value:     sample.Value,
@@ -766,12 +786,12 @@ func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
 	})
 	if err != nil {
 		s.quarantineSeries(fp, sample.Metric, err)
-		return err
+		return fp, err
 	}
 	s.ingestedSamplesCount.Inc()
 	s.incNumChunksToPersist(completedChunksCount)
 
-	return nil
+	return fp, nil
 }
 
 // NeedsThrottling implements Storage.
@@ -785,6 +805,47 @@ func (s *MemorySeriesStorage) NeedsThrottling() bool {
 		return true
 	}
 	return false
+}
+
+type memorySampleAppender struct {
+	mss   *MemorySeriesStorage
+	start model.Time
+	fps   []model.Fingerprint
+	done  bool
+}
+
+func (s *MemorySeriesStorage) StartBatch() storage.BatchingSampleAppender {
+	now := model.TimeFromUnixNano(time.Now().UnixNano())
+	return &memorySampleAppender{mss: s, start: now}
+}
+
+func (msa *memorySampleAppender) Append(sample *model.Sample) error {
+	if msa.done {
+		panic("attempt to append after EndBatch()")
+	}
+	fp, err := msa.mss.AppendReturningFp(sample)
+	msa.fps = append(msa.fps, fp)
+	return err
+}
+
+func (msa *memorySampleAppender) NeedsThrottling() bool {
+	return msa.mss.NeedsThrottling()
+}
+
+func (msa *memorySampleAppender) EndBatch() {
+	msa.mss.scrapeWatermarksMtx.Lock()
+	for _, fp := range msa.fps {
+		msa.mss.scrapeWatermarks[fp] = msa.start
+	}
+	msa.mss.scrapeWatermarksMtx.Unlock()
+	msa.done = true
+}
+
+func (s *MemorySeriesStorage) getScrapeWatermark(fp model.Fingerprint) model.Time {
+	s.scrapeWatermarksMtx.RLock()
+	watermark := s.scrapeWatermarks[fp]
+	s.scrapeWatermarksMtx.RUnlock()
+	return watermark
 }
 
 // logThrottling handles logging of throttled events and has to be started as a

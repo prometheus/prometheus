@@ -271,7 +271,8 @@ func (cmd *loadCmd) set(m model.Metric, vals ...sequenceValue) {
 }
 
 // append the defined time series to the storage.
-func (cmd *loadCmd) append(a storage.SampleAppender) {
+func (cmd *loadCmd) append(a storage.SampleAppenderBatcher) {
+	app := a.StartBatch()
 	for fp, samples := range cmd.defs {
 		met := cmd.metrics[fp]
 		for _, smpl := range samples {
@@ -280,9 +281,10 @@ func (cmd *loadCmd) append(a storage.SampleAppender) {
 				Value:     smpl.Value,
 				Timestamp: smpl.Timestamp,
 			}
-			a.Append(s)
+			app.Append(s)
 		}
 	}
+	app.EndBatch()
 }
 
 // evalCmd is a command that evaluates an expression for the given time (range)

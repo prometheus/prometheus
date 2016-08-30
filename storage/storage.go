@@ -17,16 +17,7 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-// SampleAppender is the interface to append samples to both, local and remote
-// storage. All methods are goroutine-safe.
-type SampleAppender interface {
-	// Append appends a sample to the underlying storage. Depending on the
-	// storage implementation, there are different guarantees for the fate
-	// of the sample after Append has returned. Remote storage
-	// implementation will simply drop samples if they cannot keep up with
-	// sending samples. Local storage implementations will only drop metrics
-	// upon unrecoverable errors.
-	Append(*model.Sample) error
+type Throttler interface {
 	// NeedsThrottling returns true if the underlying storage wishes to not
 	// receive any more samples. Append will still work but might lead to
 	// undue resource usage. It is recommended to call NeedsThrottling once
@@ -45,9 +36,68 @@ type SampleAppender interface {
 	NeedsThrottling() bool
 }
 
+// SampleAppender is the interface to append samples to both, local and remote
+// storage. All methods are goroutine-safe.
+type SampleAppender interface {
+	Throttler
+	// Append appends a sample to the underlying storage. Depending on the
+	// storage implementation, there are different guarantees for the fate
+	// of the sample after Append has returned. Remote storage
+	// implementation will simply drop samples if they cannot keep up with
+	// sending samples. Local storage implementations will only drop metrics
+	// upon unrecoverable errors.
+	Append(*model.Sample) error
+}
+
+// BatchingSampleAppender is the interface to append samples in a batch
+// context, such that it is possible to get a consistent view whereby all
+// samples appended in the same batch will appear at the same time.  This does
+// not mean that they will be appended atomically, but rather that it is
+// possible when querying the local storage implementation to filter out
+// samples appended prior to EndBatch().
+type BatchingSampleAppender interface {
+	SampleAppender
+	// EndBatch completes the batch, updating the per-metric scrape watermark.
+	// Any subsequent attempt to append new samples will panic.
+	EndBatch()
+}
+
+// SampleAppenderBatcher is the interface used to create BatchingSampleAppender
+// instances.  Although it is technically thread-safe, no two targets should
+// ever write to the same batch.
+type SampleAppenderBatcher interface {
+	Throttler
+	StartBatch() BatchingSampleAppender
+}
+
 // Fanout is a SampleAppender that appends every sample to each SampleAppender
 // in its list.
-type Fanout []SampleAppender
+type Fanout []BatchingSampleAppender
+
+// BatcherFanout is a SampleAppenderBatcher for which each batch created with
+// StartBatch will append every sample to each underlying storage implementation.
+type BatcherFanout []SampleAppenderBatcher
+
+// StartBatch creates and returns a new batch for each BatchingSampleAppender
+// in the list.
+func (bf BatcherFanout) StartBatch() BatchingSampleAppender {
+	f := make(Fanout, 0, len(bf))
+	for _, a := range bf {
+		f = append(f, a.StartBatch())
+	}
+	return f
+}
+
+// NeedsThrottling returns true if at least one of the SampleAppenderBatchers in
+// the Fanout slice is throttled.
+func (bf BatcherFanout) NeedsThrottling() bool {
+	for _, a := range bf {
+		if a.NeedsThrottling() {
+			return true
+		}
+	}
+	return false
+}
 
 // Append implements SampleAppender. It appends the provided sample to all
 // SampleAppenders in the Fanout slice and waits for each append to complete
@@ -73,4 +123,11 @@ func (f Fanout) NeedsThrottling() bool {
 		}
 	}
 	return false
+}
+
+// EndBatch ends the batch for each member of the fanout.
+func (f Fanout) EndBatch() {
+	for _, a := range f {
+		a.EndBatch()
+	}
 }
