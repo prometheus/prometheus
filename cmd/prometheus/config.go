@@ -207,8 +207,8 @@ func init() {
 		"The name of the database to use for storing samples in InfluxDB.",
 	)
 	cfg.fs.StringVar(
-		&cfg.remote.Address, "storage.remote.address", "",
-		"The address of the remote server to send samples to. None, if empty.",
+		&cfg.remote.Address, "experimental.storage.remote.address", "",
+		"The address of the remote server to send samples to. None, if empty. EXPERIMENTAL.",
 	)
 
 	cfg.fs.DurationVar(
