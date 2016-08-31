@@ -374,7 +374,6 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 		if !sl.batchAppender.NeedsThrottling() {
 			var (
-				start        = time.Now()
 				scrapeCtx, _ = context.WithTimeout(sl.ctx, timeout)
 			)
 
@@ -385,8 +384,9 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 				)
 			}
 
-			samples, err := sl.scraper.scrape(scrapeCtx, start)
 			app := sl.batchAppender.StartBatch()
+			start := app.GetStartTime().Time()
+			samples, err := sl.scraper.scrape(scrapeCtx, start)
 			if err == nil {
 				sl.append(samples, app)
 			} else if errc != nil {

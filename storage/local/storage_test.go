@@ -1958,7 +1958,7 @@ func TestPreWatermarkSampleSuppression(t *testing.T) {
 	newSample := func(val float64) *model.Sample {
 		return &model.Sample{
 			Metric:    model.Metric{labelName: labelValue},
-			Timestamp: model.TimeFromUnixNano(time.Now().UnixNano()),
+			Timestamp: s.sampleRegulator.(*sampleRegulatorSlice).timeProvider(),
 			Value:     model.SampleValue(val),
 		}
 	}
@@ -1973,16 +1973,124 @@ func TestPreWatermarkSampleSuppression(t *testing.T) {
 	s.WaitForIndexing()
 	verifyLastSample(1, samp1)
 
-	// Make sure that the next sample will have a newer timestamp
-	time.Sleep(time.Millisecond)
-
 	// Now add another sample but don't move the watermark yet
-	samp2 := newSample(2)
 	app = s.StartBatch()
+	samp2 := newSample(2)
 	app.Append(samp2)
 	s.WaitForIndexing()
 	verifyLastSample(2, samp1)
 
 	app.EndBatch()
 	verifyLastSample(3, samp2)
+}
+
+// First test: start one ingestion, then a second, then end the second.
+// Make sure that throughout the MST (minimum start time) is greater
+// than the first ingestion's start time.  After ending the first,
+// the MST should should again be >= than wallclock - or rather our
+// mock clock.
+
+func testSampleRegulator1(sr SampleRegulator, t *testing.T) {
+	tp := newMockTimeProvider()
+	switch realsr := sr.(type) {
+	case *sampleRegulatorSlice:
+		realsr.timeProvider = tp
+	case *sampleRegulatorSortedList:
+		realsr.timeProvider = tp
+	default:
+		panic("bad type")
+	}
+
+	t0 := tp()
+	mst0 := sr.MinimumSafeTime()
+	if mst0 < t0 {
+		t.Errorf("MinimumSafeTime is %v, less than start %v", mst0, t0)
+	}
+
+	h1 := sr.StartIngestion()
+	mst1 := sr.MinimumSafeTime()
+	if mst1 > h1.GetStart() {
+		t.Errorf("MinimumSafeTime is %v, greater than 1st scrape %v", mst1, h1.GetStart())
+	}
+
+	h2 := sr.StartIngestion()
+	mst2 := sr.MinimumSafeTime()
+	if mst2 > h1.GetStart() {
+		t.Errorf("MinimumSafeTime is %v, greater than 1st scrape %v", mst2, h1.GetStart())
+	}
+	sr.EndIngestion(h2)
+	mst3 := sr.MinimumSafeTime()
+	if mst3 > h1.GetStart() {
+		t.Errorf("MinimumSafeTime is %v, greater than 1st scrape %v", mst3, h1.GetStart())
+	}
+
+	sr.EndIngestion(h1)
+	now := tp()
+	mst4 := sr.MinimumSafeTime()
+	if mst4 < now {
+		t.Errorf("MinimumSafeTime is %v, less than now %v", mst4, now)
+	}
+}
+
+func testSampleRegulator2(sr SampleRegulator, t *testing.T) {
+	tp := newMockTimeProvider()
+	switch realsr := sr.(type) {
+	case *sampleRegulatorSlice:
+		realsr.timeProvider = tp
+	case *sampleRegulatorSortedList:
+		realsr.timeProvider = tp
+	default:
+		panic("bad type")
+	}
+
+	t0 := tp()
+	mst0 := sr.MinimumSafeTime()
+	if mst0 < t0 {
+		t.Errorf("MinimumSafeTime is %v, less than start %v", mst0, t0)
+	}
+
+	h1 := sr.StartIngestion()
+	mst1 := sr.MinimumSafeTime()
+	if mst1 > h1.GetStart() {
+		t.Errorf("MinimumSafeTime is %v, greater than 1st scrape %v", mst1, h1.GetStart())
+	}
+
+	h2 := sr.StartIngestion()
+	mst2 := sr.MinimumSafeTime()
+	if mst2 > h1.GetStart() {
+		t.Errorf("MinimumSafeTime is %v, greater than 1st scrape %v", mst2, h1.GetStart())
+	}
+	sr.EndIngestion(h1)
+	mst3 := sr.MinimumSafeTime()
+	if mst3 < h1.GetStart() {
+		t.Errorf("MinimumSafeTime is %v, less than 1st scrape %v", mst3, h1.GetStart())
+	}
+	if mst3 > h2.GetStart() {
+		t.Errorf("MinimumSafeTime is %v, greater than 2nd scrape %v", mst3, h2.GetStart())
+	}
+
+	sr.EndIngestion(h2)
+	now := tp()
+	mst4 := sr.MinimumSafeTime()
+	if mst4 < now {
+		t.Errorf("MinimumSafeTime is %v, less than now %v", mst4, now)
+	}
+}
+
+func TestSampleRegulator(t *testing.T) {
+	srs1 := newSampleRegulatorSlice()
+	srs1.timeProvider = newMockTimeProvider()
+	testSampleRegulator1(srs1, t)
+
+	srs2 := newSampleRegulatorSlice()
+	srs2.timeProvider = newMockTimeProvider()
+	testSampleRegulator2(srs2, t)
+
+	srs3 := newSampleRegulatorSortedList()
+	srs3.timeProvider = newMockTimeProvider()
+	testSampleRegulator1(srs3, t)
+
+	srs4 := newSampleRegulatorSortedList()
+	srs4.timeProvider = newMockTimeProvider()
+	testSampleRegulator2(srs4, t)
 }

@@ -44,6 +44,10 @@ func (s *Storage) StartBatch() storage.BatchingSampleAppender {
 func (s *Storage) EndBatch() {
 }
 
+func (s *Storage) GetStartTime() model.Time {
+	return model.Earliest
+}
+
 // ApplyConfig updates the status state as the new config requires.
 func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()

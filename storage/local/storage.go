@@ -177,8 +177,7 @@ type MemorySeriesStorage struct {
 	quarantineRequests                    chan quarantineRequest
 	quarantineStopping, quarantineStopped chan struct{}
 
-	scrapeWatermarks    map[model.Fingerprint]model.Time
-	scrapeWatermarksMtx sync.RWMutex
+	sampleRegulator SampleRegulator
 
 	persistErrors                 prometheus.Counter
 	numSeries                     prometheus.Gauge
@@ -237,7 +236,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *MemorySeriesStorage 
 		quarantineStopping: make(chan struct{}),
 		quarantineStopped:  make(chan struct{}),
 
-		scrapeWatermarks: map[model.Fingerprint]model.Time{},
+		sampleRegulator: newSampleRegulatorSortedList(),
 
 		persistErrors: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -420,6 +419,7 @@ func (s *MemorySeriesStorage) WaitForIndexing() {
 
 // LastSampleForLabelMatchers implements Storage.
 func (s *MemorySeriesStorage) LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
+	watermark := s.getScrapeWatermark()
 	fps := map[model.Fingerprint]struct{}{}
 	for _, matchers := range matcherSets {
 		fpToMetric, err := s.metricsForLabelMatchers(cutoff, model.Latest, matchers...)
@@ -443,14 +443,14 @@ func (s *MemorySeriesStorage) LastSampleForLabelMatchers(cutoff model.Time, matc
 		}
 		sp := series.lastSamplePair()
 		s.fpLocker.Unlock(fp)
-		watermark := s.getScrapeWatermark(fp)
 
 		// If we don't have a watermark set yet, just return what
 		// lastSamplePair() did.
 
-		if watermark != model.Time(0) && sp.Timestamp.After(watermark) {
-			iter := s.preloadChunksForRange(fp, cutoff, watermark)
-			sp = iter.ValueAtOrBeforeTime(watermark)
+		if !sp.Timestamp.Before(watermark) {
+			iter := s.preloadChunksForRange(fp, cutoff, watermark-1)
+			oldsp := iter.ValueAtOrBeforeTime(watermark - 1)
+			sp = oldsp
 		}
 		res = append(res, &model.Sample{
 			Metric:    series.metric,
@@ -737,11 +737,6 @@ var (
 
 // Append implements Storage.
 func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
-	_, err := s.AppendReturningFp(sample)
-	return err
-}
-
-func (s *MemorySeriesStorage) AppendReturningFp(sample *model.Sample) (model.Fingerprint, error) {
 	for ln, lv := range sample.Metric {
 		if len(lv) == 0 {
 			delete(sample.Metric, ln)
@@ -760,7 +755,7 @@ func (s *MemorySeriesStorage) AppendReturningFp(sample *model.Sample) (model.Fin
 	}
 	series, err := s.getOrCreateSeries(fp, sample.Metric)
 	if err != nil {
-		return fp, err // getOrCreateSeries took care of quarantining already.
+		return err // getOrCreateSeries took care of quarantining already.
 	}
 
 	if sample.Timestamp == series.lastTime {
@@ -771,14 +766,14 @@ func (s *MemorySeriesStorage) AppendReturningFp(sample *model.Sample) (model.Fin
 		if sample.Timestamp == series.lastTime &&
 			series.lastSampleValueSet &&
 			sample.Value.Equal(series.lastSampleValue) {
-			return fp, nil
+			return nil
 		}
 		s.discardedSamplesCount.WithLabelValues(duplicateSample).Inc()
-		return fp, ErrDuplicateSampleForTimestamp // Caused by the caller.
+		return ErrDuplicateSampleForTimestamp // Caused by the caller.
 	}
 	if sample.Timestamp < series.lastTime {
 		s.discardedSamplesCount.WithLabelValues(outOfOrderTimestamp).Inc()
-		return fp, ErrOutOfOrderSample // Caused by the caller.
+		return ErrOutOfOrderSample // Caused by the caller.
 	}
 	completedChunksCount, err := series.add(model.SamplePair{
 		Value:     sample.Value,
@@ -786,12 +781,12 @@ func (s *MemorySeriesStorage) AppendReturningFp(sample *model.Sample) (model.Fin
 	})
 	if err != nil {
 		s.quarantineSeries(fp, sample.Metric, err)
-		return fp, err
+		return err
 	}
 	s.ingestedSamplesCount.Inc()
 	s.incNumChunksToPersist(completedChunksCount)
 
-	return fp, nil
+	return nil
 }
 
 // NeedsThrottling implements Storage.
@@ -808,24 +803,24 @@ func (s *MemorySeriesStorage) NeedsThrottling() bool {
 }
 
 type memorySampleAppender struct {
-	mss   *MemorySeriesStorage
-	start model.Time
-	fps   []model.Fingerprint
-	done  bool
+	mss    *MemorySeriesStorage
+	handle IngestionHandle
+	done   bool
 }
 
 func (s *MemorySeriesStorage) StartBatch() storage.BatchingSampleAppender {
-	now := model.TimeFromUnixNano(time.Now().UnixNano())
-	return &memorySampleAppender{mss: s, start: now}
+	return &memorySampleAppender{mss: s, handle: s.sampleRegulator.StartIngestion()}
+}
+
+func (msa *memorySampleAppender) GetStartTime() model.Time {
+	return msa.handle.GetStart()
 }
 
 func (msa *memorySampleAppender) Append(sample *model.Sample) error {
 	if msa.done {
 		panic("attempt to append after EndBatch()")
 	}
-	fp, err := msa.mss.AppendReturningFp(sample)
-	msa.fps = append(msa.fps, fp)
-	return err
+	return msa.mss.Append(sample)
 }
 
 func (msa *memorySampleAppender) NeedsThrottling() bool {
@@ -833,19 +828,12 @@ func (msa *memorySampleAppender) NeedsThrottling() bool {
 }
 
 func (msa *memorySampleAppender) EndBatch() {
-	msa.mss.scrapeWatermarksMtx.Lock()
-	for _, fp := range msa.fps {
-		msa.mss.scrapeWatermarks[fp] = msa.start
-	}
-	msa.mss.scrapeWatermarksMtx.Unlock()
+	msa.mss.sampleRegulator.EndIngestion(msa.handle)
 	msa.done = true
 }
 
-func (s *MemorySeriesStorage) getScrapeWatermark(fp model.Fingerprint) model.Time {
-	s.scrapeWatermarksMtx.RLock()
-	watermark := s.scrapeWatermarks[fp]
-	s.scrapeWatermarksMtx.RUnlock()
-	return watermark
+func (s *MemorySeriesStorage) getScrapeWatermark() model.Time {
+	return s.sampleRegulator.MinimumSafeTime()
 }
 
 // logThrottling handles logging of throttled events and has to be started as a
@@ -1735,4 +1723,136 @@ func (s *MemorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.maintainSeriesDuration.Collect(ch)
 	ch <- s.persistenceUrgencyScore
 	ch <- s.rushedMode
+}
+
+type IngestionHandle interface {
+	GetStart() model.Time
+}
+
+type SampleRegulator interface {
+	MinimumSafeTime() model.Time
+	StartIngestion() IngestionHandle
+	EndIngestion(IngestionHandle)
+}
+
+type sampleRegulatorSlice struct {
+	sync.RWMutex
+	// timestamps is a list of timestamps corresponding to start times of
+	// ingestions (rules or federation).  Any values of model.Earliest
+	// can be ignored/reused.
+	timestamps   []model.Time
+	timeProvider func() model.Time
+}
+
+func defaultTimeProvider() model.Time {
+	return model.TimeFromUnixNano(time.Now().UnixNano())
+}
+
+func newSampleRegulatorSlice() *sampleRegulatorSlice {
+	return &sampleRegulatorSlice{timeProvider: defaultTimeProvider}
+}
+
+type ingestionHandleSlice struct {
+	Start model.Time
+	index int
+}
+
+func (ihs ingestionHandleSlice) GetStart() model.Time {
+	return ihs.Start
+}
+
+// If no outstanding ingestions, the minimum safe time is now.
+func (r *sampleRegulatorSlice) MinimumSafeTime() model.Time {
+	r.RLock()
+	defer r.RUnlock()
+	mintime := r.timeProvider()
+	for _, t := range r.timestamps {
+		if t != model.Earliest && t < mintime {
+			mintime = t
+		}
+	}
+	return mintime
+}
+
+func (r *sampleRegulatorSlice) StartIngestion() IngestionHandle {
+	r.Lock()
+	defer r.Unlock()
+
+	now := r.timeProvider()
+	var h = ingestionHandleSlice{Start: now, index: -1}
+
+	for i, t := range r.timestamps {
+		if t == model.Earliest {
+			r.timestamps[i] = now
+			h.index = i
+		}
+	}
+	if h.index < 0 {
+		h.index = len(r.timestamps)
+		r.timestamps = append(r.timestamps, now)
+	}
+
+	return h
+}
+
+func (r *sampleRegulatorSlice) EndIngestion(h IngestionHandle) {
+	r.Lock()
+	r.timestamps[h.(ingestionHandleSlice).index] = model.Earliest
+	r.Unlock()
+}
+
+type ingestionHandleSortedList list.Element
+
+func (ihs *ingestionHandleSortedList) GetStart() model.Time {
+	return ihs.Value.(model.Time)
+}
+
+type sampleRegulatorSortedList struct {
+	sync.RWMutex
+	// timestamps is a list of timestamps corresponding to start times of
+	// ingestions (rules or federation).  Any values of model.Earliest
+	// can be ignored/reused.
+	timestamps   *list.List
+	timeProvider func() model.Time
+}
+
+func newSampleRegulatorSortedList() *sampleRegulatorSortedList {
+	return &sampleRegulatorSortedList{timeProvider: defaultTimeProvider,
+		timestamps: list.New()}
+}
+
+func (r *sampleRegulatorSortedList) MinimumSafeTime() model.Time {
+	r.RLock()
+	defer r.RUnlock()
+	node := r.timestamps.Front()
+	if node != nil {
+		return node.Value.(model.Time)
+	}
+	return r.timeProvider()
+}
+
+func (r *sampleRegulatorSortedList) StartIngestion() IngestionHandle {
+	r.Lock()
+	defer r.Unlock()
+
+	now := r.timeProvider()
+	var newnode *list.Element
+
+	for e := r.timestamps.Back(); e != nil; e = e.Prev() {
+		etime := e.Value.(model.Time)
+		if etime <= now {
+			newnode = r.timestamps.InsertAfter(now, e)
+		}
+	}
+	if newnode == nil {
+		newnode = r.timestamps.PushFront(now)
+	}
+	return (*ingestionHandleSortedList)(newnode)
+}
+
+func (r *sampleRegulatorSortedList) EndIngestion(h IngestionHandle) {
+	r.Lock()
+	hresolved := h.(*ingestionHandleSortedList)
+	r.timestamps.Remove((*list.Element)(hresolved))
+	r.Unlock()
 }

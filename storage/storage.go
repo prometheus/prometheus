@@ -60,6 +60,7 @@ type BatchingSampleAppender interface {
 	// EndBatch completes the batch, updating the per-metric scrape watermark.
 	// Any subsequent attempt to append new samples will panic.
 	EndBatch()
+	GetStartTime() model.Time
 }
 
 // SampleAppenderBatcher is the interface used to create BatchingSampleAppender
@@ -130,4 +131,14 @@ func (f Fanout) EndBatch() {
 	for _, a := range f {
 		a.EndBatch()
 	}
+}
+
+func (f Fanout) GetStartTime() model.Time {
+	for _, a := range f {
+		t := a.GetStartTime()
+		if t != model.Earliest {
+			return t
+		}
+	}
+	return model.Earliest
 }
