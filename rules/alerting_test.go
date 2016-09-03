@@ -27,16 +27,11 @@ func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	}
 	rule := NewAlertingRule("testrule", expr, 0, model.LabelSet{"html": "<b>BOLD</b>"}, model.LabelSet{"html": "<b>BOLD</b>"})
 
-	// This is valid once the /graph changes have been reintroduced:
-	// const want = `ALERT <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=0">testrule</a>
-	//  IF <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=0">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
-	//  LABELS {html=&#34;&lt;b&gt;BOLD&lt;/b&gt;&#34;}
-	//  ANNOTATIONS {html=&#34;&lt;b&gt;BOLD&lt;/b&gt;&#34;}`
-	// This is valid once the /graph changes have been reintroduced:
-	const want = `ALERT <a href="/test/prefix/graph#%5B%7B%22expr%22%3A%22ALERTS%7Balertname%3D%5C%22testrule%5C%22%7D%22%2C%22tab%22%3A0%7D%5D">testrule</a>
-  IF <a href="/test/prefix/graph#%5B%7B%22expr%22%3A%22foo%7Bhtml%3D%5C%22%3Cb%3EBOLD%3Cb%3E%5C%22%7D%22%2C%22tab%22%3A0%7D%5D">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
+	const want = `ALERT <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=0">testrule</a>
+  IF <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=0">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
   LABELS {html=&#34;&lt;b&gt;BOLD&lt;/b&gt;&#34;}
   ANNOTATIONS {html=&#34;&lt;b&gt;BOLD&lt;/b&gt;&#34;}`
+
 	got := rule.HTMLSnippet("/test/prefix")
 	if got != want {
 		t.Fatalf("incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
