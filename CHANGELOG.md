@@ -1,4 +1,4 @@
-## 1.1.0 / 2016-09-01
+## 1.1.0 / 2016-09-03
 
 * [FEATURE] Add `quantile` and `quantile_over_time`.
 * [FEATURE] Add `stddev_over_time` and `stdvar_over_time`.
