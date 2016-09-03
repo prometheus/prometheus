@@ -1,3 +1,33 @@
+## 1.1.0 / 2016-09-01
+
+* [FEATURE] Add `quantile` and `quantile_over_time`.
+* [FEATURE] Add `stddev_over_time` and `stdvar_over_time`.
+* [FEATURE] Add various time and date functions.
+* [FEATURE] Added `toUpper` and `toLower` formatting to templates.
+* [FEATURE] Allow relabeling of alerts.
+* [FEATURE] Allow URLs in targets defined via a JSON file.
+* [FEATURE] Add idelta function.
+* [FEATURE] 'Remove graph' button on the /graph page.
+* [FEATURE] Kubernetes SD: Add node name and host IP to pod discovery.
+* [FEATURE] New remote storage write path. EXPERIMENTAL!
+* [ENHANCEMENT] Improve time-series index lookups.
+* [ENHANCEMENT] Forbid invalid relabel configurations.
+* [ENHANCEMENT] Improved various tests.
+* [ENHANCEMENT] Add crash recovery metric 'started_dirty'.
+* [ENHANCEMENT] Fix (and simplify) populating series iterators.
+* [ENHANCEMENT] Add job link on target page.
+* [ENHANCEMENT] Message on empty Alerts page.
+* [ENHANCEMENT] Various internal code refactorings and clean-ups.
+* [ENHANCEMENT] Various improvements in the build system.
+* [BUGFIX] Catch errors when unmarshalling delta/doubleDelta encoded chunks.
+* [BUGFIX] Fix data race in lexer and lexer test.
+* [BUGFIX] Trim stray whitespace from bearer token file.
+* [BUGFIX] Avoid divide-by-zero panic on query_range?step=0.
+* [BUGFIX] Detect invalid rule files at startup.
+* [BUGFIX] Fix counter reset treatment in PromQL.
+* [BUGFIX] Fix rule HTML escaping issues.
+* [BUGFIX] Remove internal labels from alerts sent to AM.
+
 ## 1.0.2 / 2016-08-24
 
 * [BUGFIX] Clean up old targets after config reload.
