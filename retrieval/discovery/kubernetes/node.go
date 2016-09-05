@@ -92,7 +92,7 @@ func (d *nodeDiscovery) updateNodesTargetGroup() *config.TargetGroup {
 
 		kubeletPort := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
 
-		address := fmt.Sprintf("%s:%d", defaultNodeAddress.String(), kubeletPort)
+		address := net.JoinHostPort(defaultNodeAddress.String(), fmt.Sprintf("%d", kubeletPort))
 
 		t := model.LabelSet{
 			model.AddressLabel:  model.LabelValue(address),
