@@ -16,6 +16,7 @@ package discovery
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -133,7 +134,7 @@ func parseNerveMember(data []byte, path string) (*model.LabelSet, error) {
 	labels := model.LabelSet{}
 	labels[nervePathLabel] = model.LabelValue(path)
 	labels[model.AddressLabel] = model.LabelValue(
-		fmt.Sprintf("%s:%d", member.Host, member.Port))
+		net.JoinHostPort(member.Host, fmt.Sprintf("%d", member.Port)))
 
 	labels[nerveEndpointLabelPrefix+"_host"] = model.LabelValue(member.Host)
 	labels[nerveEndpointLabelPrefix+"_port"] = model.LabelValue(fmt.Sprintf("%d", member.Port))

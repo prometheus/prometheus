@@ -15,6 +15,7 @@ package discovery
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -112,7 +113,7 @@ func (ed *EC2Discovery) refresh() (*config.TargetGroup, error) {
 					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
 				}
 				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
-				addr := fmt.Sprintf("%s:%d", *inst.PrivateIpAddress, ed.port)
+				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", ed.port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				if inst.PublicIpAddress != nil {
