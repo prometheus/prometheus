@@ -155,7 +155,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 		ScrapeTimeout: model.Duration(1 * time.Second),
 		BearerToken:   "1234",
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 		ScrapeTimeout:   model.Duration(1 * time.Second),
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 			Password: "password123",
 		},
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			CAFile: caCertPath,
 		},
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			ServerName: "badname",
 		},
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := newHTTPClient(cfg)
+	_, err := NewHTTPClient(cfg)
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}
