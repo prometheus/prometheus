@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"net/http"
 	"time"
 
@@ -229,5 +230,5 @@ func targetsForApp(app *App) []model.LabelSet {
 }
 
 func targetForTask(task *Task) string {
-	return fmt.Sprintf("%s:%d", task.Host, task.Ports[0])
+	return net.JoinHostPort(task.Host, fmt.Sprintf("%d", task.Ports[0]))
 }
