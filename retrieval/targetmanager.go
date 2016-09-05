@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -417,79 +418,103 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 	return providers
 }
 
+// populateLabels builds a label set from the given label set and scrape configuration.
+// It returns a label set before relabeling was applied as the second return value.
+// Returns a nil label set if the target is dropped during relabeling.
+func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig model.LabelSet, err error) {
+	if _, ok := lset[model.AddressLabel]; !ok {
+		return nil, nil, fmt.Errorf("no address")
+	}
+	// Copy labels into the labelset for the target if they are not
+	// set already. Apply the labelsets in order of decreasing precedence.
+	scrapeLabels := model.LabelSet{
+		model.SchemeLabel:      model.LabelValue(cfg.Scheme),
+		model.MetricsPathLabel: model.LabelValue(cfg.MetricsPath),
+		model.JobLabel:         model.LabelValue(cfg.JobName),
+	}
+	for ln, lv := range scrapeLabels {
+		if _, ok := lset[ln]; !ok {
+			lset[ln] = lv
+		}
+	}
+	// Encode scrape query parameters as labels.
+	for k, v := range cfg.Params {
+		if len(v) > 0 {
+			lset[model.LabelName(model.ParamLabelPrefix+k)] = model.LabelValue(v[0])
+		}
+	}
+
+	preRelabelLabels := lset
+	lset = relabel.Process(lset, cfg.RelabelConfigs...)
+
+	// Check if the target was dropped.
+	if lset == nil {
+		return nil, nil, nil
+	}
+
+	// addPort checks whether we should add a default port to the address.
+	// If the address is not valid, we don't append a port either.
+	addPort := func(s string) bool {
+		// If we can split, a port exists and we don't have to add one.
+		if _, _, err := net.SplitHostPort(s); err == nil {
+			return false
+		}
+		// If adding a port makes it valid, the previous error
+		// was not due to an invalid address and we can append a port.
+		_, _, err := net.SplitHostPort(s + ":1234")
+		return err == nil
+	}
+	// If it's an address with no trailing port, infer it based on the used scheme.
+	if addr := string(lset[model.AddressLabel]); addPort(addr) {
+		// Addresses reaching this point are already wrapped in [] if necessary.
+		switch lset[model.SchemeLabel] {
+		case "http", "":
+			addr = addr + ":80"
+		case "https":
+			addr = addr + ":443"
+		default:
+			return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
+		}
+		lset[model.AddressLabel] = model.LabelValue(addr)
+	}
+	if err := config.CheckTargetAddress(lset[model.AddressLabel]); err != nil {
+		return nil, nil, err
+	}
+
+	// Meta labels are deleted after relabelling. Other internal labels propagate to
+	// the target which decides whether they will be part of their label set.
+	for ln := range lset {
+		if strings.HasPrefix(string(ln), model.MetaLabelPrefix) {
+			delete(lset, ln)
+		}
+	}
+
+	// Default the instance label to the target address.
+	if _, ok := lset[model.InstanceLabel]; !ok {
+		lset[model.InstanceLabel] = lset[model.AddressLabel]
+	}
+	return lset, preRelabelLabels, nil
+}
+
 // targetsFromGroup builds targets based on the given TargetGroup and config.
-// Panics if target group is nil.
 func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
 	targets := make([]*Target, 0, len(tg.Targets))
 
-	for i, labels := range tg.Targets {
-		for k, v := range cfg.Params {
-			if len(v) > 0 {
-				labels[model.LabelName(model.ParamLabelPrefix+k)] = model.LabelValue(v[0])
+	for i, lset := range tg.Targets {
+		// Combine target labels with target group labels.
+		for ln, lv := range tg.Labels {
+			if _, ok := lset[ln]; !ok {
+				lset[ln] = lv
 			}
 		}
-		// Copy labels into the labelset for the target if they are not
-		// set already. Apply the labelsets in order of decreasing precedence.
-		labelsets := []model.LabelSet{
-			tg.Labels,
-			{
-				model.SchemeLabel:      model.LabelValue(cfg.Scheme),
-				model.MetricsPathLabel: model.LabelValue(cfg.MetricsPath),
-				model.JobLabel:         model.LabelValue(cfg.JobName),
-			},
+		labels, origLabels, err := populateLabels(lset, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("instance %d in group %s: %s", i, tg, err)
 		}
-		for _, lset := range labelsets {
-			for ln, lv := range lset {
-				if _, ok := labels[ln]; !ok {
-					labels[ln] = lv
-				}
-			}
+		if labels != nil {
+			targets = append(targets, NewTarget(labels, origLabels, cfg.Params))
 		}
-
-		if _, ok := labels[model.AddressLabel]; !ok {
-			return nil, fmt.Errorf("instance %d in target group %s has no address", i, tg)
-		}
-
-		preRelabelLabels := labels
-
-		labels := relabel.Process(labels, cfg.RelabelConfigs...)
-
-		// Check if the target was dropped.
-		if labels == nil {
-			continue
-		}
-		// If no port was provided, infer it based on the used scheme.
-		addr := string(labels[model.AddressLabel])
-		if !strings.Contains(addr, ":") {
-			switch labels[model.SchemeLabel] {
-			case "http", "":
-				addr = fmt.Sprintf("%s:80", addr)
-			case "https":
-				addr = fmt.Sprintf("%s:443", addr)
-			default:
-				return nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
-			}
-			labels[model.AddressLabel] = model.LabelValue(addr)
-		}
-		if err := config.CheckTargetAddress(labels[model.AddressLabel]); err != nil {
-			return nil, err
-		}
-
-		for ln := range labels {
-			// Meta labels are deleted after relabelling. Other internal labels propagate to
-			// the target which decides whether they will be part of their label set.
-			if strings.HasPrefix(string(ln), model.MetaLabelPrefix) {
-				delete(labels, ln)
-			}
-		}
-
-		if _, ok := labels[model.InstanceLabel]; !ok {
-			labels[model.InstanceLabel] = labels[model.AddressLabel]
-		}
-
-		targets = append(targets, NewTarget(labels, preRelabelLabels, cfg.Params))
 	}
-
 	return targets, nil
 }
 
