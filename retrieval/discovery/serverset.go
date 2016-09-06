@@ -16,6 +16,7 @@ package discovery
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"sync"
 	"time"
@@ -143,7 +144,7 @@ func parseServersetMember(data []byte, path string) (*model.LabelSet, error) {
 	labels := model.LabelSet{}
 	labels[serversetPathLabel] = model.LabelValue(path)
 	labels[model.AddressLabel] = model.LabelValue(
-		fmt.Sprintf("%s:%d", member.ServiceEndpoint.Host, member.ServiceEndpoint.Port))
+		net.JoinHostPort(member.ServiceEndpoint.Host, fmt.Sprintf("%d", member.ServiceEndpoint.Port)))
 
 	labels[serversetEndpointLabelPrefix+"_host"] = model.LabelValue(member.ServiceEndpoint.Host)
 	labels[serversetEndpointLabelPrefix+"_port"] = model.LabelValue(fmt.Sprintf("%d", member.ServiceEndpoint.Port))
