@@ -44,7 +44,7 @@ Debian packages [are available](https://packages.debian.org/sid/net/prometheus).
 
 ### Container images
 
-Container images are available on [Quay.io](https://quay.io/organization/prometheus).
+Container images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus).
 
 ### Building from source
 
