@@ -15,6 +15,7 @@ package consul
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -238,9 +239,9 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 			// since the service may be registered remotely through a different node
 			var addr string
 			if node.ServiceAddress != "" {
-				addr = fmt.Sprintf("%s:%d", node.ServiceAddress, node.ServicePort)
+				addr = net.JoinHostPort(node.ServiceAddress, fmt.Sprintf("%d", node.ServicePort))
 			} else {
-				addr = fmt.Sprintf("%s:%d", node.Address, node.ServicePort)
+				addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
 			}
 
 			tgroup.Targets = append(tgroup.Targets, model.LabelSet{

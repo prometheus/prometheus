@@ -133,6 +133,9 @@ func (dd *Discovery) refresh(ctx context.Context, name string, ch chan<- []*conf
 	}
 
 	tg := &config.TargetGroup{}
+	hostPort := func(a string, p int) model.LabelValue {
+		return model.LabelValue(net.JoinHostPort(a, fmt.Sprintf("%d", p)))
+	}
 
 	for _, record := range response.Answer {
 		target := model.LabelValue("")
@@ -141,11 +144,11 @@ func (dd *Discovery) refresh(ctx context.Context, name string, ch chan<- []*conf
 			// Remove the final dot from rooted DNS names to make them look more usual.
 			addr.Target = strings.TrimRight(addr.Target, ".")
 
-			target = model.LabelValue(fmt.Sprintf("%s:%d", addr.Target, addr.Port))
+			target = hostPort(addr.Target, int(addr.Port))
 		case *dns.A:
-			target = model.LabelValue(fmt.Sprintf("%s:%d", addr.A, dd.port))
+			target = hostPort(addr.A.String(), dd.port)
 		case *dns.AAAA:
-			target = model.LabelValue(fmt.Sprintf("%s:%d", addr.AAAA, dd.port))
+			target = hostPort(addr.AAAA.String(), dd.port)
 		default:
 			log.Warnf("%q is not a valid SRV record", record)
 			continue

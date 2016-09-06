@@ -15,6 +15,7 @@ package discovery
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -217,7 +218,7 @@ func (ad *AzureDiscovery) refresh() (*config.TargetGroup, error) {
 					for _, ip := range *networkInterface.Properties.IPConfigurations {
 						if ip.Properties.PrivateIPAddress != nil {
 							labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.Properties.PrivateIPAddress)
-							address := fmt.Sprintf("%s:%d", *ip.Properties.PrivateIPAddress, ad.port)
+							address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, fmt.Sprintf("%d", ad.port))
 							labels[model.AddressLabel] = model.LabelValue(address)
 							ch <- target{labelSet: labels, err: nil}
 							return
