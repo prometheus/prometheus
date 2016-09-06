@@ -94,11 +94,14 @@ const (
 
 	apiVersion          = "v1"
 	apiPrefix           = "/api/" + apiVersion
-	nodesURL            = apiPrefix + "/nodes"
-	podsURL             = apiPrefix + "/pods"
-	servicesURL         = apiPrefix + "/services"
-	endpointsURL        = apiPrefix + "/endpoints"
 	serviceEndpointsURL = apiPrefix + "/namespaces/%s/endpoints/%s"
+)
+
+var (
+	nodesURL     = apiPrefix + "/nodes"
+	podsURL      = apiPrefix + "/pods"
+	servicesURL  = apiPrefix + "/services"
+	endpointsURL = apiPrefix + "/endpoints"
 )
 
 // Discovery implements a TargetProvider for Kubernetes services.
@@ -121,6 +124,13 @@ func (kd *Discovery) Initialize() error {
 	kd.apiServers = kd.Conf.APIServers
 	kd.client = client
 
+	// If namespace is provided in config, then setup discovery URLs for the namespace.
+	if kd.Conf.Namespace != "" {
+		nodesURL = fmt.Sprintf("%s/namespaces/%s/nodes", apiPrefix, kd.Conf.Namespace)
+		podsURL = fmt.Sprintf("%s/namespaces/%s/pods", apiPrefix, kd.Conf.Namespace)
+		servicesURL = fmt.Sprintf("%s/namespaces/%s/services", apiPrefix, kd.Conf.Namespace)
+		endpointsURL = fmt.Sprintf("%s/namespaces/%s/endpoints", apiPrefix, kd.Conf.Namespace)
+	}
 	return nil
 }
 

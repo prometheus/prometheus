@@ -234,6 +234,29 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-kubernetes-namespace",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			KubernetesSDConfigs: []*KubernetesSDConfig{
+				{
+					APIServers: []URL{kubernetesSDHostURL()},
+					Role:       KubernetesRoleEndpoint,
+					Namespace:  "default",
+					BasicAuth: &BasicAuth{
+						Username: "myusername",
+						Password: "mypassword",
+					},
+					RequestTimeout: model.Duration(10 * time.Second),
+					RetryInterval:  model.Duration(1 * time.Second),
+				},
+			},
+		},
+		{
 			JobName: "service-marathon",
 
 			ScrapeInterval: model.Duration(15 * time.Second),

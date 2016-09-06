@@ -785,6 +785,7 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 type KubernetesSDConfig struct {
 	APIServers      []URL          `yaml:"api_servers"`
 	Role            KubernetesRole `yaml:"role"`
+	Namespace       string         `yaml:"namespace,omitempty"`
 	InCluster       bool           `yaml:"in_cluster,omitempty"`
 	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
 	BearerToken     string         `yaml:"bearer_token,omitempty"`
