@@ -1,3 +1,8 @@
+## 1.1.1 / 2016-09-07
+
+* [BUGFIX] Fix IPv6 escaping in service discovery integrations
+* [BUGFIX] Fix default scrape port assignment for IPv6
+
 ## 1.1.0 / 2016-09-03
 
 * [FEATURE] Add `quantile` and `quantile_over_time`.
