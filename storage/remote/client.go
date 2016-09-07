@@ -21,22 +21,43 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
+	"golang.org/x/net/context"
+	"golang.org/x/net/context/ctxhttp"
+
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // Client allows sending batches of Prometheus samples to an HTTP endpoint.
 type Client struct {
-	url    string
-	client http.Client
+	url     config.URL
+	client  *http.Client
+	timeout time.Duration
 }
 
 // NewClient creates a new Client.
-func NewClient(url string, timeout time.Duration) (*Client, error) {
+func NewClient(conf config.RemoteWriteConfig) (*Client, error) {
+	tlsConfig, err := httputil.TLSConfig(conf.TLSConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// The only timeout we care about is the configured push timeout.
+	// It is applied on request. So we leave out any timings here.
+	var rt http.RoundTripper = &http.Transport{
+		Proxy:           http.ProxyURL(conf.ProxyURL.URL),
+		TLSClientConfig: tlsConfig,
+	}
+
+	if conf.BasicAuth != nil {
+		rt = httputil.NewBasicAuthRoundTripper(conf.BasicAuth.Username, conf.BasicAuth.Password, rt)
+	}
+
 	return &Client{
-		url: url,
-		client: http.Client{
-			Timeout: timeout,
-		},
+		url:     conf.URL,
+		client:  httputil.NewClient(rt),
+		timeout: time.Duration(conf.RemoteTimeout),
 	}, nil
 }
 
@@ -75,12 +96,14 @@ func (c *Client) Store(samples model.Samples) error {
 		return err
 	}
 
-	httpReq, err := http.NewRequest("POST", c.url, &buf)
+	httpReq, err := http.NewRequest("POST", c.url.String(), &buf)
 	if err != nil {
 		return err
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
-	httpResp, err := c.client.Do(httpReq)
+
+	ctx, _ := context.WithTimeout(context.Background(), c.timeout)
+	httpResp, err := ctxhttp.Do(ctx, c.client, httpReq)
 	if err != nil {
 		return err
 	}
@@ -97,5 +120,5 @@ func (c *Client) Store(samples model.Samples) error {
 // will simply be removed in the restructuring and the whole "generic" naming
 // will be gone for good.
 func (c Client) Name() string {
-	return "generic"
+	return fmt.Sprintf("generic:%s", c.url)
 }

@@ -185,12 +185,12 @@ func (t *StorageQueueManager) Collect(ch chan<- prometheus.Metric) {
 	ch <- t.queueCapacity
 }
 
-// Run continuously sends samples to the remote storage.
-func (t *StorageQueueManager) Run() {
+// Start the queue manager sending samples to the remote storage.
+// Does not block.
+func (t *StorageQueueManager) Start() {
 	for i := 0; i < t.cfg.Shards; i++ {
 		go t.runShard(i)
 	}
-	t.wg.Wait()
 }
 
 // Stop stops sending samples to the remote storage and waits for pending

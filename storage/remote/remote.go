@@ -69,13 +69,6 @@ func New(o *Options) (*Storage, error) {
 		prometheus.MustRegister(c)
 		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
 	}
-	if o.URL != "" {
-		c, err := NewClient(o.URL, o.StorageTimeout)
-		if err != nil {
-			return nil, err
-		}
-		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
-	}
 	if len(s.queues) == 0 {
 		return nil, nil
 	}
@@ -94,15 +87,12 @@ type Options struct {
 	GraphiteAddress         string
 	GraphiteTransport       string
 	GraphitePrefix          string
-	// TODO: This just being called "URL" will make more sense once the
-	// other remote storage mechanisms are removed.
-	URL string
 }
 
 // Run starts the background processing of the storage queues.
-func (s *Storage) Run() {
+func (s *Storage) Start() {
 	for _, q := range s.queues {
-		go q.Run()
+		q.Start()
 	}
 }
 

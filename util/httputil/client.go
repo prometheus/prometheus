@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 // NewClient returns a http.Client using the specified http.RoundTripper.
@@ -123,6 +125,21 @@ type TLSOptions struct {
 	CertFile           string
 	KeyFile            string
 	ServerName         string
+}
+
+func TLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
+	tlsOpts := TLSOptions{
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+		CAFile:             cfg.CAFile,
+	}
+	if len(cfg.CertFile) > 0 && len(cfg.KeyFile) > 0 {
+		tlsOpts.CertFile = cfg.CertFile
+		tlsOpts.KeyFile = cfg.KeyFile
+	}
+	if len(cfg.ServerName) > 0 {
+		tlsOpts.ServerName = cfg.ServerName
+	}
+	return NewTLSConfig(tlsOpts)
 }
 
 func NewTLSConfig(opts TLSOptions) (*tls.Config, error) {

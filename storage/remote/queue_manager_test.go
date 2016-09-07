@@ -108,7 +108,7 @@ func TestSampleDelivery(t *testing.T) {
 	for _, s := range samples[len(samples)/2:] {
 		m.Append(s)
 	}
-	go m.Run()
+	m.Start()
 	defer m.Stop()
 
 	c.waitForExpectedSamples(t)
@@ -141,7 +141,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	for _, s := range samples {
 		m.Append(s)
 	}
-	go m.Run()
+	m.Start()
 	defer m.Stop()
 
 	c.waitForExpectedSamples(t)
@@ -204,7 +204,7 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	c := NewTestBlockedStorageClient()
 	m := NewStorageQueueManager(c, &cfg)
 
-	go m.Run()
+	m.Start()
 
 	defer func() {
 		c.unlock()
