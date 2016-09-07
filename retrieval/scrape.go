@@ -115,7 +115,7 @@ type scrapePool struct {
 }
 
 func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
-	client, err := newHTTPClient(cfg)
+	client, err := NewHTTPClient(cfg)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
 		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
@@ -167,7 +167,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
-	client, err := newHTTPClient(cfg)
+	client, err := NewHTTPClient(cfg)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
 		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)

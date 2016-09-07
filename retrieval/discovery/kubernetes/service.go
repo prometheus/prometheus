@@ -337,7 +337,7 @@ func (d *serviceDiscovery) updateServiceTargetGroup(service *Service, eps *Endpo
 				if len(ipAddr) == net.IPv6len {
 					ipAddr = "[" + ipAddr + "]"
 				}
-				address := fmt.Sprintf("%s:%d", ipAddr, epPort)
+				address := net.JoinHostPort(ipAddr, fmt.Sprintf("%d", epPort))
 
 				t := model.LabelSet{
 					model.AddressLabel: model.LabelValue(address),
