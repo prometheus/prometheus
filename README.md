@@ -34,17 +34,17 @@ There are various ways of installing Prometheus.
 ### Precompiled binaries
 
 Precompiled binaries for released versions are available in the
-[*releases* section](https://github.com/prometheus/prometheus/releases)
-of the GitHub repository. Using the latest production release binary
+[*download* section](https://prometheus.io/download/)
+on [prometheus.io](https://prometheus.io). Using the latest production release binary
 is the recommended way of installing Prometheus. 
 See the [Installing](https://prometheus.io/docs/introduction/install/) 
 chapter in the documentation for all the details.
 
 Debian packages [are available](https://packages.debian.org/sid/net/prometheus).
 
-### Container images
+### Docker images
 
-Container images are available on [Quay.io](https://quay.io/organization/prometheus).
+Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus).
 
 ### Building from source
 
