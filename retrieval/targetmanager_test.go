@@ -42,9 +42,9 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 
 	sOne := `
 job_name: "foo"
-dns_sd_configs:
-- names:
-  - "srv.name.one.example.org"
+static_configs:
+- targets: ["foo:9090"]
+- targets: ["bar:9090"]
 `
 	if err := yaml.Unmarshal([]byte(sOne), scrapeConfig); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
@@ -57,13 +57,13 @@ dns_sd_configs:
 
 	ts.runProviders(context.Background(), providersFromConfig(scrapeConfig))
 
-	verifyPresence(ts.tgroups, "dns/0/srv.name.one.example.org", true)
+	verifyPresence(ts.tgroups, "static/0/0", true)
+	verifyPresence(ts.tgroups, "static/0/1", true)
 
 	sTwo := `
 job_name: "foo"
-dns_sd_configs:
-- names:
-  - "srv.name.two.example.org"
+static_configs:
+- targets: ["foo:9090"]
 `
 	if err := yaml.Unmarshal([]byte(sTwo), scrapeConfig); err != nil {
 		t.Fatalf("Unable to load YAML config sTwo: %s", err)
@@ -71,8 +71,8 @@ dns_sd_configs:
 
 	ts.runProviders(context.Background(), providersFromConfig(scrapeConfig))
 
-	verifyPresence(ts.tgroups, "dns/0/srv.name.one.example.org", false)
-	verifyPresence(ts.tgroups, "dns/0/srv.name.two.example.org", true)
+	verifyPresence(ts.tgroups, "static/0/0", true)
+	verifyPresence(ts.tgroups, "static/0/1", false)
 }
 
 func mustNewRegexp(s string) config.Regexp {
