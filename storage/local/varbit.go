@@ -85,7 +85,7 @@ import (
 // new chunk.
 //
 // From the 3rd timestamp on, a double-delta (ΔΔt) is saved:
-//   (t_{n} - t_{n-1}) - (t_{n-2} - t_{n-1})
+//   (t_{n} - t_{n-1}) - (t_{n-1} - t_{n-2})
 // To perform that operation, the last Δt is saved at the end of the chunk for
 // as long the chunk is not closed yet (see above).
 //
