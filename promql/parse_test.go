@@ -1226,6 +1226,24 @@ var testExpr = []struct {
 			Param: &StringLiteral{"value"},
 		},
 	}, {
+		// Test usage of keywords as label names.
+		input: "sum without(and, by, avg, count, alert, annotations)(some_metric)",
+		expected: &AggregateExpr{
+			Op:      itemSum,
+			Without: true,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
+				},
+			},
+			Grouping: model.LabelNames{"and", "by", "avg", "count", "alert", "annotations"},
+		},
+	}, {
+		input:  "sum without(==)(some_metric)",
+		fail:   true,
+		errMsg: "unexpected <op:==> in grouping opts, expected label",
+	}, {
 		input:  `sum some_metric by (test)`,
 		fail:   true,
 		errMsg: "unexpected identifier \"some_metric\" in aggregation, expected \"(\"",
