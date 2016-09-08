@@ -1,3 +1,7 @@
+## 1.1.2 / 2016-09-08
+
+* [BUGFIX] Allow label names that coincide with keywords.
+
 ## 1.1.1 / 2016-09-07
 
 * [BUGFIX] Fix IPv6 escaping in service discovery integrations
