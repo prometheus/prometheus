@@ -73,12 +73,22 @@ func Main() int {
 	log.Infoln("Starting prometheus", version.Info())
 	log.Infoln("Build context", version.BuildContext())
 
-	var reloadables []Reloadable
-
 	var (
-		memStorage     = local.NewMemorySeriesStorage(&cfg.storage)
-		sampleAppender = storage.Fanout{memStorage}
+		sampleAppender = storage.Fanout{}
+		reloadables    []Reloadable
 	)
+
+	var localStorage local.Storage
+	switch cfg.localStorageEngine {
+	case "persisted":
+		localStorage = local.NewMemorySeriesStorage(&cfg.storage)
+		sampleAppender = storage.Fanout{localStorage}
+	case "none":
+		localStorage = &local.NoopStorage{}
+	default:
+		log.Errorf("Invalid local storage engine %q", cfg.localStorageEngine)
+		return 1
+	}
 
 	remoteStorage, err := remote.New(&cfg.remote)
 	if err != nil {
@@ -94,7 +104,7 @@ func Main() int {
 	var (
 		notifier      = notifier.New(&cfg.notifier)
 		targetManager = retrieval.NewTargetManager(sampleAppender)
-		queryEngine   = promql.NewEngine(memStorage, &cfg.queryEngine)
+		queryEngine   = promql.NewEngine(localStorage, &cfg.queryEngine)
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
@@ -118,7 +128,7 @@ func Main() int {
 		GoVersion: version.GoVersion,
 	}
 
-	webHandler := web.New(memStorage, queryEngine, targetManager, ruleManager, version, flags, &cfg.web)
+	webHandler := web.New(localStorage, queryEngine, targetManager, ruleManager, version, flags, &cfg.web)
 
 	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
 
@@ -154,12 +164,12 @@ func Main() int {
 
 	// Start all components. The order is NOT arbitrary.
 
-	if err := memStorage.Start(); err != nil {
+	if err := localStorage.Start(); err != nil {
 		log.Errorln("Error opening memory series storage:", err)
 		return 1
 	}
 	defer func() {
-		if err := memStorage.Stop(); err != nil {
+		if err := localStorage.Stop(); err != nil {
 			log.Errorln("Error stopping storage:", err)
 		}
 	}()
@@ -171,7 +181,9 @@ func Main() int {
 		defer remoteStorage.Stop()
 	}
 	// The storage has to be fully initialized before registering.
-	prometheus.MustRegister(memStorage)
+	if instrumentedStorage, ok := localStorage.(prometheus.Collector); ok {
+		prometheus.MustRegister(instrumentedStorage)
+	}
 	prometheus.MustRegister(notifier)
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
