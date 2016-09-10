@@ -152,8 +152,8 @@ func TestSampleDeliveryOrder(t *testing.T) {
 // the `numCalls` property will contain a count of how many times Store() was
 // called.
 type TestBlockingStorageClient struct {
-	block    chan bool
 	numCalls uint64
+	block    chan bool
 }
 
 func NewTestBlockedStorageClient() *TestBlockingStorageClient {
