@@ -383,6 +383,9 @@ eval instant at 0m day_of_week()
 eval instant at 0m hour()
   {} 0
 
+eval instant at 0m minute()
+  {} 0
+
 # 2008-12-31 23:59:59 just before leap second.
 eval instant at 0m year(vector(1230767999))
   {} 2008
