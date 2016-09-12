@@ -73,9 +73,9 @@ type Querier interface {
 	// have no samples in the specified interval from the returned map. In
 	// doubt, specify model.Earliest for from and model.Latest for through.
 	MetricsForLabelMatchers(from, through model.Time, matcherSets ...metric.LabelMatchers) ([]metric.Metric, error)
-	// LastSampleForLabelMatchers returns the last sample that has been
-	// ingested for the given sets of label matchers. The label matching
-	// behavior is the same as in MetricsForLabelMatchers.
+	// LastSampleForLabelMatchers returns the last samples that have been
+	// ingested for the time series matching the given set of label matchers.
+	// The label matching behavior is the same as in MetricsForLabelMatchers.
 	// All returned samples are between the specified cutoff time and now.
 	LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error)
 	// Get all of the label values that are associated with a given label name.
