@@ -909,6 +909,13 @@ func funcHour(ev *evaluator, args Expressions) model.Value {
 	})
 }
 
+// === minute(v vector) scalar ===
+func funcMinute(ev *evaluator, args Expressions) model.Value {
+	return dateWrapper(ev, args, func(t time.Time) model.SampleValue {
+		return model.SampleValue(t.Minute())
+	})
+}
+
 // === month(v vector) scalar ===
 func funcMonth(ev *evaluator, args Expressions) model.Value {
 	return dateWrapper(ev, args, func(t time.Time) model.SampleValue {
@@ -1101,6 +1108,13 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValMatrix},
 		ReturnType: model.ValVector,
 		Call:       funcMinOverTime,
+	},
+	"minute": {
+		Name:         "minute",
+		ArgTypes:     []model.ValueType{model.ValVector},
+		OptionalArgs: 1,
+		ReturnType:   model.ValVector,
+		Call:         funcMinute,
 	},
 	"month": {
 		Name:         "month",
