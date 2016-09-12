@@ -370,21 +370,39 @@ clear
 eval instant at 0m year()
   {} 1970
 
+eval instant at 0m year(vector(1136239445))
+  {} 2006
+
 eval instant at 0m month()
+  {} 1
+
+eval instant at 0m month(vector(1136239445))
   {} 1
 
 eval instant at 0m day_of_month()
   {} 1
 
+eval instant at 0m day_of_month(vector(1136239445))
+  {} 2
+
 # Thursday.
 eval instant at 0m day_of_week()
   {} 4
 
+eval instant at 0m day_of_week(vector(1136239445))
+  {} 1
+
 eval instant at 0m hour()
   {} 0
 
+eval instant at 0m hour(vector(1136239445))
+  {} 22
+
 eval instant at 0m minute()
   {} 0
+
+eval instant at 0m minute(vector(1136239445))
+  {} 4
 
 # 2008-12-31 23:59:59 just before leap second.
 eval instant at 0m year(vector(1230767999))
