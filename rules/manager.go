@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/context"
+
 	html_template "html/template"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -105,7 +107,7 @@ const (
 type Rule interface {
 	Name() string
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	eval(model.Time, *promql.Engine, string) (model.Vector, error)
+	eval(model.Time, *promql.Engine, context.Context, string) (model.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -256,7 +258,7 @@ func (g *Group) eval() {
 
 			evalTotal.WithLabelValues(rtyp).Inc()
 
-			vector, err := rule.eval(now, g.opts.QueryEngine, g.opts.ExternalURL.Path)
+			vector, err := rule.eval(now, g.opts.QueryEngine, g.opts.QueryCtx, g.opts.ExternalURL.Path)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
@@ -341,6 +343,7 @@ type Manager struct {
 type ManagerOptions struct {
 	ExternalURL    *url.URL
 	QueryEngine    *promql.Engine
+	QueryCtx       context.Context
 	Notifier       *notifier.Notifier
 	SampleAppender storage.SampleAppender
 }
