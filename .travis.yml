@@ -7,3 +7,5 @@ go:
 
 script:
 - make check_license style test
+
+go_import_path: github.com/prometheus/prometheus
