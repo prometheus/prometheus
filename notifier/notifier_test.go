@@ -191,12 +191,12 @@ func TestHandlerRelabel(t *testing.T) {
 	h := New(&Options{
 		QueueCapacity: 3 * maxBatchSize,
 		RelabelConfigs: []*config.RelabelConfig{
-			&config.RelabelConfig{
+			{
 				SourceLabels: model.LabelNames{"alertname"},
 				Action:       "drop",
 				Regex:        config.MustNewRegexp("drop"),
 			},
-			&config.RelabelConfig{
+			{
 				SourceLabels: model.LabelNames{"alertname"},
 				TargetLabel:  "alertname",
 				Action:       "replace",
@@ -221,7 +221,7 @@ func TestHandlerRelabel(t *testing.T) {
 	})
 
 	expected := []*model.Alert{
-		&model.Alert{
+		{
 			Labels: model.LabelSet{
 				"alertname": "renamed",
 			},

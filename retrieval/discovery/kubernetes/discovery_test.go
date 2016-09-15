@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 }
 
 var portsA = []ContainerPort{
-	ContainerPort{
+	{
 		Name:          "http",
 		ContainerPort: 80,
 		Protocol:      "TCP",
@@ -37,7 +37,7 @@ var portsA = []ContainerPort{
 }
 
 var portsB = []ContainerPort{
-	ContainerPort{
+	{
 		Name:          "https",
 		ContainerPort: 443,
 		Protocol:      "TCP",
@@ -45,7 +45,7 @@ var portsB = []ContainerPort{
 }
 
 var portsNoTcp = []ContainerPort{
-	ContainerPort{
+	{
 		Name:          "dns",
 		ContainerPort: 53,
 		Protocol:      "UDP",
@@ -53,12 +53,12 @@ var portsNoTcp = []ContainerPort{
 }
 
 var portsMultiA = []ContainerPort{
-	ContainerPort{
+	{
 		Name:          "http",
 		ContainerPort: 80,
 		Protocol:      "TCP",
 	},
-	ContainerPort{
+	{
 		Name:          "ssh",
 		ContainerPort: 22,
 		Protocol:      "TCP",
@@ -66,12 +66,12 @@ var portsMultiA = []ContainerPort{
 }
 
 var portsMultiB = []ContainerPort{
-	ContainerPort{
+	{
 		Name:          "http",
 		ContainerPort: 80,
 		Protocol:      "TCP",
 	},
-	ContainerPort{
+	{
 		Name:          "https",
 		ContainerPort: 443,
 		Protocol:      "TCP",
@@ -112,7 +112,7 @@ func pod(name string, containers []Container) *Pod {
 			PodIP: "1.1.1.1",
 			Phase: "Running",
 			Conditions: []PodCondition{
-				PodCondition{
+				{
 					Type:   "Ready",
 					Status: "True",
 				},
