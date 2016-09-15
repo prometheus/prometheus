@@ -139,6 +139,12 @@ var (
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
 
+	// DefaultECSSDConfig is the default EC2 SD configuration.
+	DefaultECSSDConfig = ECSSDConfig{
+		Ports:           []int{8080},
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
 	// DefaultAzureSDConfig is the default Azure SD configuration.
 	DefaultAzureSDConfig = AzureSDConfig{
 		Port:            80,
@@ -431,6 +437,8 @@ type ScrapeConfig struct {
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
+	// List of ECS service discovery configurations.
+	ECSSDConfigs []*ECSSDConfig `yaml:"ecs_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
 
@@ -872,6 +880,31 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return fmt.Errorf("EC2 SD configuration requires a region")
 	}
 	return nil
+}
+
+// ECSSDConfig is the configuration for EC2 based service discovery.
+type ECSSDConfig struct {
+	Region          string         `yaml:"region"`
+	AccessKey       string         `yaml:"access_key,omitempty"`
+	SecretKey       string         `yaml:"secret_key,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Ports           []int          `yaml:"ports"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultECSSDConfig
+	type plain ECSSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if c.Region == "" {
+		return fmt.Errorf("ECS SD configuration requires a region")
+	}
+	return checkOverflow(c.XXX, "ecs_sd_config")
 }
 
 // AzureSDConfig is the configuration for Azure based service discovery.
