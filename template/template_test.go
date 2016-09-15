@@ -221,7 +221,7 @@ func TestTemplateExpansion(t *testing.T) {
 	for i, s := range scenarios {
 		var result string
 		var err error
-		expander := NewTemplateExpander(s.text, "test", s.input, time, engine, context.Background(), "")
+		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, time, engine, "")
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {

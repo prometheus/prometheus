@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/metric"
@@ -40,7 +41,7 @@ type Storage interface {
 
 	// Drop all time series associated with the given label matchers. Returns
 	// the number series that were dropped.
-	DropMetricsForLabelMatchers(...*metric.LabelMatcher) (int, error)
+	DropMetricsForLabelMatchers(context.Context, ...*metric.LabelMatcher) (int, error)
 	// Run the various maintenance loops in goroutines. Returns when the
 	// storage is ready to use. Keeps everything running in the background
 	// until Stop is called.
@@ -59,10 +60,10 @@ type Querier interface {
 	// QueryRange returns a list of series iterators for the selected
 	// time range and label matchers. The iterators need to be closed
 	// after usage.
-	QueryRange(from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error)
+	QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error)
 	// QueryInstant returns a list of series iterators for the selected
 	// instant and label matchers. The iterators need to be closed after usage.
-	QueryInstant(ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error)
+	QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error)
 	// MetricsForLabelMatchers returns the metrics from storage that satisfy
 	// the given sets of label matchers. Each set of matchers must contain at
 	// least one label matcher that does not match the empty string. Otherwise,
@@ -72,14 +73,14 @@ type Querier interface {
 	// storage to optimize the search. The storage MAY exclude metrics that
 	// have no samples in the specified interval from the returned map. In
 	// doubt, specify model.Earliest for from and model.Latest for through.
-	MetricsForLabelMatchers(from, through model.Time, matcherSets ...metric.LabelMatchers) ([]metric.Metric, error)
+	MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matcherSets ...metric.LabelMatchers) ([]metric.Metric, error)
 	// LastSampleForLabelMatchers returns the last samples that have been
 	// ingested for the time series matching the given set of label matchers.
 	// The label matching behavior is the same as in MetricsForLabelMatchers.
 	// All returned samples are between the specified cutoff time and now.
-	LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error)
+	LastSampleForLabelMatchers(ctx context.Context, cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error)
 	// Get all of the label values that are associated with a given label name.
-	LabelValuesForLabelName(model.LabelName) (model.LabelValues, error)
+	LabelValuesForLabelName(context.Context, model.LabelName) (model.LabelValues, error)
 }
 
 // SeriesIterator enables efficient access of sample values in a series. Its

@@ -352,7 +352,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (model.Value, error) {
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (model.Value, error) {
 	prepareTimer := query.stats.GetTimer(stats.QueryPreparationTime).Start()
-	err := ng.populateIterators(s)
+	err := ng.populateIterators(ctx, s)
 	prepareTimer.Stop()
 	if err != nil {
 		return nil, err
@@ -463,19 +463,21 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	return resMatrix, nil
 }
 
-func (ng *Engine) populateIterators(s *EvalStmt) error {
+func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) error {
 	var queryErr error
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
 			if s.Start.Equal(s.End) {
 				n.iterators, queryErr = ng.querier.QueryInstant(
+					ctx,
 					s.Start.Add(-n.Offset),
 					StalenessDelta,
 					n.LabelMatchers...,
 				)
 			} else {
 				n.iterators, queryErr = ng.querier.QueryRange(
+					ctx,
 					s.Start.Add(-n.Offset-StalenessDelta),
 					s.End.Add(-n.Offset),
 					n.LabelMatchers...,
@@ -486,6 +488,7 @@ func (ng *Engine) populateIterators(s *EvalStmt) error {
 			}
 		case *MatrixSelector:
 			n.iterators, queryErr = ng.querier.QueryRange(
+				ctx,
 				s.Start.Add(-n.Offset-n.Range),
 				s.End.Add(-n.Offset),
 				n.LabelMatchers...,

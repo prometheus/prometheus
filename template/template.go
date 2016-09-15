@@ -111,14 +111,14 @@ type Expander struct {
 }
 
 // NewTemplateExpander returns a template expander ready to use.
-func NewTemplateExpander(text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine, queryCtx context.Context, pathPrefix string) *Expander {
+func NewTemplateExpander(ctx context.Context, text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine, pathPrefix string) *Expander {
 	return &Expander{
 		text: text,
 		name: name,
 		data: data,
 		funcMap: text_template.FuncMap{
 			"query": func(q string) (queryResult, error) {
-				return query(queryCtx, q, timestamp, queryEngine)
+				return query(ctx, q, timestamp, queryEngine)
 			},
 			"first": func(v queryResult) (*sample, error) {
 				if len(v) > 0 {

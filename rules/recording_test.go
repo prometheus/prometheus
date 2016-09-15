@@ -28,8 +28,8 @@ func TestRuleEval(t *testing.T) {
 	storage, closer := local.NewTestStorage(t, 2)
 	defer closer.Close()
 	engine := promql.NewEngine(storage, nil)
-	queryCtx, cancelQueries := context.WithCancel(context.Background())
-	defer cancelQueries()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
 
 	now := model.Now()
 
@@ -63,7 +63,7 @@ func TestRuleEval(t *testing.T) {
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.eval(now, engine, queryCtx, "")
+		result, err := rule.eval(ctx, now, engine, "")
 		if err != nil {
 			t.Fatalf("Error evaluating %s", test.name)
 		}

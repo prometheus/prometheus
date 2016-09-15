@@ -50,11 +50,11 @@ type Test struct {
 
 	cmds []testCommand
 
-	storage       local.Storage
-	closeStorage  func()
-	queryEngine   *Engine
-	queryCtx      context.Context
-	cancelQueries context.CancelFunc
+	storage      local.Storage
+	closeStorage func()
+	queryEngine  *Engine
+	context      context.Context
+	cancelCtx    context.CancelFunc
 }
 
 // NewTest returns an initialized empty Test.
@@ -82,9 +82,9 @@ func (t *Test) QueryEngine() *Engine {
 	return t.queryEngine
 }
 
-// Context returns the test's query context.
+// Context returns the test's context.
 func (t *Test) Context() context.Context {
-	return t.queryCtx
+	return t.context
 }
 
 // Storage returns the test's storage.
@@ -471,7 +471,7 @@ func (t *Test) exec(tc testCommand) error {
 
 	case *evalCmd:
 		q := t.queryEngine.newQuery(cmd.expr, cmd.start, cmd.end, cmd.interval)
-		res := q.Exec(t.queryCtx)
+		res := q.Exec(t.context)
 		if res.Err != nil {
 			if cmd.fail {
 				return nil
@@ -498,8 +498,8 @@ func (t *Test) clear() {
 	if t.closeStorage != nil {
 		t.closeStorage()
 	}
-	if t.cancelQueries != nil {
-		t.cancelQueries()
+	if t.cancelCtx != nil {
+		t.cancelCtx()
 	}
 
 	var closer testutil.Closer
@@ -507,12 +507,12 @@ func (t *Test) clear() {
 
 	t.closeStorage = closer.Close
 	t.queryEngine = NewEngine(t.storage, nil)
-	t.queryCtx, t.cancelQueries = context.WithCancel(context.Background())
+	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
 // Close closes resources associated with the Test.
 func (t *Test) Close() {
-	t.cancelQueries()
+	t.cancelCtx()
 	t.closeStorage()
 }
 
