@@ -40,7 +40,7 @@ func NewClient(address string, timeout time.Duration) (*Client, error) {
 		// grpc.Dial() returns immediately and doesn't error when the server is
 		// unreachable when not passing in the WithBlock() option. The client then
 		// will continuously try to (re)establish the connection in the background.
-		// So this will only return here if some other uncommon error occured.
+		// So this will only return here if some other uncommon error occurred.
 		return nil, err
 	}
 	return &Client{

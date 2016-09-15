@@ -137,7 +137,7 @@ func TestScrapePoolReload(t *testing.T) {
 		ScrapeInterval: model.Duration(3 * time.Second),
 		ScrapeTimeout:  model.Duration(2 * time.Second),
 	}
-	// On starting to run, new loops created on reload check whether their preceeding
+	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
 	newLoop := func(ctx context.Context, s scraper, app, reportApp storage.SampleAppender) loop {
 		l := &testLoop{}
@@ -163,7 +163,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
-	// loops and start new ones. A new loop must not be started before the preceeding
+	// loops and start new ones. A new loop must not be started before the preceding
 	// one terminated.
 
 	for i := 0; i < numTargets; i++ {
