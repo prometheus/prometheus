@@ -145,7 +145,7 @@ func TestMatches(t *testing.T) {
 			matchers: metric.LabelMatchers{
 				newMatcher(metric.Equal, "all", "const"),
 				newMatcher(metric.NotEqual, "label1", "test_0"),
-				newMatcher(metric.Equal, "not_existant", ""),
+				newMatcher(metric.Equal, "not_existent", ""),
 			},
 			expected: fingerprints[10:],
 		},
