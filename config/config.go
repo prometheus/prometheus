@@ -28,7 +28,6 @@ import (
 )
 
 var (
-	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key|client_secret):\s+)(".+"|'.+'|[^\s]+)`)
@@ -454,8 +453,8 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := checkOverflow(c.XXX, "scrape_config"); err != nil {
 		return err
 	}
-	if !patJobName.MatchString(c.JobName) {
-		return fmt.Errorf("%q is not a valid job name", c.JobName)
+	if len(c.JobName) == 0 {
+		return fmt.Errorf("job_name is empty")
 	}
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
