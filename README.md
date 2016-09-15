@@ -3,6 +3,7 @@
 [![CircleCI](https://circleci.com/gh/prometheus/prometheus/tree/master.svg?style=shield)][circleci]
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
+[![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/prometheus)](https://goreportcard.com/report/github.com/prometheus/prometheus)
 
 Visit [prometheus.io](https://prometheus.io) for the full documentation,
 examples and guides.
@@ -36,8 +37,8 @@ There are various ways of installing Prometheus.
 Precompiled binaries for released versions are available in the
 [*download* section](https://prometheus.io/download/)
 on [prometheus.io](https://prometheus.io). Using the latest production release binary
-is the recommended way of installing Prometheus. 
-See the [Installing](https://prometheus.io/docs/introduction/install/) 
+is the recommended way of installing Prometheus.
+See the [Installing](https://prometheus.io/docs/introduction/install/)
 chapter in the documentation for all the details.
 
 Debian packages [are available](https://packages.debian.org/sid/net/prometheus).
