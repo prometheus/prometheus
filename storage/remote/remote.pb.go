@@ -21,11 +21,6 @@ import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
 
-import (
-	context "golang.org/x/net/context"
-	grpc "google.golang.org/grpc"
-)
-
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
 var _ = fmt.Errorf
@@ -112,78 +107,6 @@ func init() {
 	proto.RegisterType((*TimeSeries)(nil), "remote.TimeSeries")
 	proto.RegisterType((*WriteRequest)(nil), "remote.WriteRequest")
 	proto.RegisterType((*WriteResponse)(nil), "remote.WriteResponse")
-}
-
-// Reference imports to suppress errors if they are not otherwise used.
-var _ context.Context
-var _ grpc.ClientConn
-
-// This is a compile-time assertion to ensure that this generated file
-// is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion3
-
-// Client API for Write service
-
-type WriteClient interface {
-	Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
-}
-
-type writeClient struct {
-	cc *grpc.ClientConn
-}
-
-func NewWriteClient(cc *grpc.ClientConn) WriteClient {
-	return &writeClient{cc}
-}
-
-func (c *writeClient) Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteResponse, error) {
-	out := new(WriteResponse)
-	err := grpc.Invoke(ctx, "/remote.Write/Write", in, out, c.cc, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// Server API for Write service
-
-type WriteServer interface {
-	Write(context.Context, *WriteRequest) (*WriteResponse, error)
-}
-
-func RegisterWriteServer(s *grpc.Server, srv WriteServer) {
-	s.RegisterService(&_Write_serviceDesc, srv)
-}
-
-func _Write_Write_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(WriteRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WriteServer).Write(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/remote.Write/Write",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WriteServer).Write(ctx, req.(*WriteRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-var _Write_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "remote.Write",
-	HandlerType: (*WriteServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "Write",
-			Handler:    _Write_Write_Handler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: fileDescriptor0,
 }
 
 func init() { proto.RegisterFile("remote.proto", fileDescriptor0) }
