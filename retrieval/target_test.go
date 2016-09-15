@@ -122,7 +122,7 @@ func TestTargetURL(t *testing.T) {
 	}
 
 	if u := target.URL(); !reflect.DeepEqual(u.String(), expectedURL.String()) {
-		t.Fatalf("Expected URL %q but got %q", expectedURL, u)
+		t.Fatalf("Expected URL %q, but got %q", expectedURL.String(), u.String())
 	}
 }
 
