@@ -66,7 +66,7 @@ func (c *Client) Store(samples model.Samples) error {
 				})
 		}
 		ts.Samples = []*Sample{
-			&Sample{
+			{
 				Value:       float64(s.Value),
 				TimestampMs: int64(s.Timestamp),
 			},
