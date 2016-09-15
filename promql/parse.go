@@ -48,7 +48,7 @@ func (e *ParseErr) Error() string {
 	return fmt.Sprintf("parse error at line %d, char %d: %s", e.Line, e.Pos, e.Err)
 }
 
-// ParseStmts parses the input and returns the resulting statements or any occuring error.
+// ParseStmts parses the input and returns the resulting statements or any occurring error.
 func ParseStmts(input string) (Statements, error) {
 	p := newParser(input)
 
