@@ -52,7 +52,7 @@ func TestEndpoints(t *testing.T) {
 	api := &API{
 		Storage:     suite.Storage(),
 		QueryEngine: suite.QueryEngine(),
-		QueryCtx:    suite.Context(),
+		Context:     suite.Context(),
 		now:         func() model.Time { return now },
 	}
 

@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/storage/metric"
 )
@@ -413,7 +414,7 @@ func (s *MemorySeriesStorage) WaitForIndexing() {
 }
 
 // LastSampleForLabelMatchers implements Storage.
-func (s *MemorySeriesStorage) LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
+func (s *MemorySeriesStorage) LastSampleForLabelMatchers(_ context.Context, cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
 	fps := map[model.Fingerprint]struct{}{}
 	for _, matchers := range matcherSets {
 		fpToMetric, err := s.metricsForLabelMatchers(cutoff, model.Latest, matchers...)
@@ -483,7 +484,7 @@ func (bit *boundedIterator) Close() {
 }
 
 // QueryRange implements Storage.
-func (s *MemorySeriesStorage) QueryRange(from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	fpToMetric, err := s.metricsForLabelMatchers(from, through, matchers...)
 	if err != nil {
 		return nil, err
@@ -497,7 +498,7 @@ func (s *MemorySeriesStorage) QueryRange(from, through model.Time, matchers ...*
 }
 
 // QueryInstant implements Storage.
-func (s *MemorySeriesStorage) QueryInstant(ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *MemorySeriesStorage) QueryInstant(_ context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	from := ts.Add(-stalenessDelta)
 	through := ts
 
@@ -540,6 +541,7 @@ func (s *MemorySeriesStorage) fingerprintsForLabelPair(
 
 // MetricsForLabelMatchers implements Storage.
 func (s *MemorySeriesStorage) MetricsForLabelMatchers(
+	_ context.Context,
 	from, through model.Time,
 	matcherSets ...metric.LabelMatchers,
 ) ([]metric.Metric, error) {
@@ -603,7 +605,7 @@ func (s *MemorySeriesStorage) metricsForLabelMatchers(
 			break
 		}
 
-		lvs, err := s.LabelValuesForLabelName(m.Name)
+		lvs, err := s.LabelValuesForLabelName(context.TODO(), m.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -693,12 +695,12 @@ func (s *MemorySeriesStorage) metricForRange(
 }
 
 // LabelValuesForLabelName implements Storage.
-func (s *MemorySeriesStorage) LabelValuesForLabelName(labelName model.LabelName) (model.LabelValues, error) {
+func (s *MemorySeriesStorage) LabelValuesForLabelName(_ context.Context, labelName model.LabelName) (model.LabelValues, error) {
 	return s.persistence.labelValuesForLabelName(labelName)
 }
 
 // DropMetricsForLabelMatchers implements Storage.
-func (s *MemorySeriesStorage) DropMetricsForLabelMatchers(matchers ...*metric.LabelMatcher) (int, error) {
+func (s *MemorySeriesStorage) DropMetricsForLabelMatchers(_ context.Context, matchers ...*metric.LabelMatcher) (int, error) {
 	fpToMetric, err := s.metricsForLabelMatchers(model.Earliest, model.Latest, matchers...)
 	if err != nil {
 		return 0, err

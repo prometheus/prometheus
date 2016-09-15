@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
+
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -39,22 +41,23 @@ func (s *NoopStorage) WaitForIndexing() {
 }
 
 // LastSampleForLabelMatchers implements Storage.
-func (s *NoopStorage) LastSampleForLabelMatchers(cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
+func (s *NoopStorage) LastSampleForLabelMatchers(ctx context.Context, cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
 	return nil, nil
 }
 
 // QueryRange implements Storage.
-func (s *NoopStorage) QueryRange(from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *NoopStorage) QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	return nil, nil
 }
 
 // QueryInstant implements Storage.
-func (s *NoopStorage) QueryInstant(ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *NoopStorage) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	return nil, nil
 }
 
 // MetricsForLabelMatchers implements Storage.
 func (s *NoopStorage) MetricsForLabelMatchers(
+	ctx context.Context,
 	from, through model.Time,
 	matcherSets ...metric.LabelMatchers,
 ) ([]metric.Metric, error) {
@@ -62,12 +65,12 @@ func (s *NoopStorage) MetricsForLabelMatchers(
 }
 
 // LabelValuesForLabelName implements Storage.
-func (s *NoopStorage) LabelValuesForLabelName(labelName model.LabelName) (model.LabelValues, error) {
+func (s *NoopStorage) LabelValuesForLabelName(ctx context.Context, labelName model.LabelName) (model.LabelValues, error) {
 	return nil, nil
 }
 
 // DropMetricsForLabelMatchers implements Storage.
-func (s *NoopStorage) DropMetricsForLabelMatchers(matchers ...*metric.LabelMatcher) (int, error) {
+func (s *NoopStorage) DropMetricsForLabelMatchers(ctx context.Context, matchers ...*metric.LabelMatcher) (int, error) {
 	return 0, nil
 }
 

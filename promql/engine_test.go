@@ -23,8 +23,8 @@ import (
 
 func TestQueryConcurrency(t *testing.T) {
 	engine := NewEngine(nil, nil)
-	ctx, cancelQueries := context.WithCancel(context.Background())
-	defer cancelQueries()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
 
 	block := make(chan struct{})
 	processing := make(chan struct{})
@@ -77,8 +77,8 @@ func TestQueryTimeout(t *testing.T) {
 		Timeout:              5 * time.Millisecond,
 		MaxConcurrentQueries: 20,
 	})
-	ctx, cancelQueries := context.WithCancel(context.Background())
-	defer cancelQueries()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
 
 	query := engine.newTestQuery(func(ctx context.Context) error {
 		time.Sleep(50 * time.Millisecond)
@@ -96,8 +96,8 @@ func TestQueryTimeout(t *testing.T) {
 
 func TestQueryCancel(t *testing.T) {
 	engine := NewEngine(nil, nil)
-	ctx, cancelQueries := context.WithCancel(context.Background())
-	defer cancelQueries()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
 
 	// Cancel a running query before it completes.
 	block := make(chan struct{})
@@ -142,7 +142,7 @@ func TestQueryCancel(t *testing.T) {
 
 func TestEngineShutdown(t *testing.T) {
 	engine := NewEngine(nil, nil)
-	ctx, cancelQueries := context.WithCancel(context.Background())
+	ctx, cancelCtx := context.WithCancel(context.Background())
 
 	block := make(chan struct{})
 	processing := make(chan struct{})
@@ -167,7 +167,7 @@ func TestEngineShutdown(t *testing.T) {
 	}()
 
 	<-processing
-	cancelQueries()
+	cancelCtx()
 	block <- struct{}{}
 	<-processing
 
