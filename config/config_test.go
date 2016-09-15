@@ -307,6 +307,40 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "0123service-xxx",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			StaticConfigs: []*TargetGroup{
+				{
+					Targets: []model.LabelSet{
+						{model.AddressLabel: "localhost:9090"},
+					},
+				},
+			},
+		},
+		{
+			JobName: "測試",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			StaticConfigs: []*TargetGroup{
+				{
+					Targets: []model.LabelSet{
+						{model.AddressLabel: "localhost:9090"},
+					},
+				},
+			},
+		},
 	},
 	original: "",
 }
@@ -351,7 +385,7 @@ var expectedErrors = []struct {
 }{
 	{
 		filename: "jobname.bad.yml",
-		errMsg:   `"prom^etheus" is not a valid job name`,
+		errMsg:   `job_name is empty`,
 	}, {
 		filename: "jobname_dup.bad.yml",
 		errMsg:   `found multiple scrape configs with job name "prometheus"`,
