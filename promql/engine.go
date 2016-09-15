@@ -150,7 +150,7 @@ func (e ErrQueryCanceled) Error() string { return fmt.Sprintf("query was cancele
 // it is associated with.
 type Query interface {
 	// Exec processes the query and
-	Exec() *Result
+	Exec(ctx context.Context) *Result
 	// Statement returns the parsed statement of the query.
 	Statement() Statement
 	// Stats returns statistics about the lifetime of the query.
@@ -192,8 +192,8 @@ func (q *query) Cancel() {
 }
 
 // Exec implements the Query interface.
-func (q *query) Exec() *Result {
-	res, err := q.ng.exec(q)
+func (q *query) Exec(ctx context.Context) *Result {
+	res, err := q.ng.exec(ctx, q)
 	return &Result{Err: err, Value: res}
 }
 
@@ -220,13 +220,8 @@ func contextDone(ctx context.Context, env string) error {
 type Engine struct {
 	// The querier on which the engine operates.
 	querier local.Querier
-
-	// The base context for all queries and its cancellation function.
-	baseCtx       context.Context
-	cancelQueries func()
 	// The gate limiting the maximum number of concurrent and waiting queries.
-	gate *queryGate
-
+	gate    *queryGate
 	options *EngineOptions
 }
 
@@ -235,13 +230,10 @@ func NewEngine(querier local.Querier, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
-		querier:       querier,
-		baseCtx:       ctx,
-		cancelQueries: cancel,
-		gate:          newQueryGate(o.MaxConcurrentQueries),
-		options:       o,
+		querier: querier,
+		gate:    newQueryGate(o.MaxConcurrentQueries),
+		options: o,
 	}
 }
 
@@ -255,11 +247,6 @@ type EngineOptions struct {
 var DefaultEngineOptions = &EngineOptions{
 	MaxConcurrentQueries: 20,
 	Timeout:              2 * time.Minute,
-}
-
-// Stop the engine and cancel all running queries.
-func (ng *Engine) Stop() {
-	ng.cancelQueries()
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -326,8 +313,8 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 //
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
-func (ng *Engine) exec(q *query) (model.Value, error) {
-	ctx, cancel := context.WithTimeout(q.ng.baseCtx, ng.options.Timeout)
+func (ng *Engine) exec(ctx context.Context, q *query) (model.Value, error) {
+	ctx, cancel := context.WithTimeout(ctx, ng.options.Timeout)
 	q.cancel = cancel
 
 	queueTimer := q.stats.GetTimer(stats.ExecQueueTime).Start()

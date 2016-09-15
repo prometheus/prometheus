@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
@@ -55,6 +56,7 @@ type Handler struct {
 	targetManager *retrieval.TargetManager
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
+	queryCtx      context.Context
 	storage       local.Storage
 
 	apiV1 *api_v1.API
@@ -111,6 +113,7 @@ type Options struct {
 func New(
 	st local.Storage,
 	qe *promql.Engine,
+	qc context.Context,
 	tm *retrieval.TargetManager,
 	rm *rules.Manager,
 	version *PrometheusVersion,
@@ -132,9 +135,10 @@ func New(
 		targetManager: tm,
 		ruleManager:   rm,
 		queryEngine:   qe,
+		queryCtx:      qc,
 		storage:       st,
 
-		apiV1: api_v1.NewAPI(qe, st),
+		apiV1: api_v1.NewAPI(qe, qc, st),
 	}
 
 	if o.RoutePrefix != "/" {
@@ -291,7 +295,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		Path:      strings.TrimLeft(name, "/"),
 	}
 
-	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, model.Now(), h.queryEngine, h.queryCtx, h.options.ExternalURL.Path)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -464,7 +468,7 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	tmpl := template.NewTemplateExpander(text, name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(text, name, data, model.Now(), h.queryEngine, h.queryCtx, h.options.ExternalURL.Path)
 	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
 
 	result, err := tmpl.ExpandHTML(nil)

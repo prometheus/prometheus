@@ -26,6 +26,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
+	"golang.org/x/net/context"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
@@ -92,15 +94,17 @@ func Main() int {
 	}
 
 	var (
-		notifier      = notifier.New(&cfg.notifier)
-		targetManager = retrieval.NewTargetManager(sampleAppender)
-		queryEngine   = promql.NewEngine(memStorage, &cfg.queryEngine)
+		notifier                = notifier.New(&cfg.notifier)
+		targetManager           = retrieval.NewTargetManager(sampleAppender)
+		queryEngine             = promql.NewEngine(memStorage, &cfg.queryEngine)
+		queryCtx, cancelQueries = context.WithCancel(context.Background())
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		SampleAppender: sampleAppender,
 		Notifier:       notifier,
 		QueryEngine:    queryEngine,
+		QueryCtx:       queryCtx,
 		ExternalURL:    cfg.web.ExternalURL,
 	})
 
@@ -118,7 +122,7 @@ func Main() int {
 		GoVersion: version.GoVersion,
 	}
 
-	webHandler := web.New(memStorage, queryEngine, targetManager, ruleManager, version, flags, &cfg.web)
+	webHandler := web.New(memStorage, queryEngine, queryCtx, targetManager, ruleManager, version, flags, &cfg.web)
 
 	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
 
@@ -189,7 +193,7 @@ func Main() int {
 
 	// Shutting down the query engine before the rule manager will cause pending queries
 	// to be canceled and ensures a quick shutdown of the rule manager.
-	defer queryEngine.Stop()
+	defer cancelQueries()
 
 	go webHandler.Run()
 
