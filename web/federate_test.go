@@ -37,6 +37,11 @@ var scenarios = map[string]struct {
 		code:   200,
 		body:   ``,
 	},
+	"match nothing": {
+		params: "match[]=does_not_match_anything",
+		code:   200,
+		body:   ``,
+	},
 	"invalid params from the beginning": {
 		params: "match[]=-not-a-valid-metric-name",
 		code:   400,
@@ -92,6 +97,25 @@ test_metric2{foo="boo"} 1 6000000
 	},
 	"everything": {
 		params: "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
+		code:   200,
+		body: `# TYPE test_metric1 untyped
+test_metric1{foo="bar"} 10000 6000000
+test_metric1{foo="boo"} 1 6000000
+# TYPE test_metric2 untyped
+test_metric2{foo="boo"} 1 6000000
+# TYPE test_metric_without_labels untyped
+test_metric_without_labels 1001 6000000
+`,
+	},
+	"empty label value matches everything that doesn't have that label": {
+		params: "match[]={foo='',__name__=~'.%2b'}",
+		code:   200,
+		body: `# TYPE test_metric_without_labels untyped
+test_metric_without_labels 1001 6000000
+`,
+	},
+	"empty label value for a label that doesn't exist at all, matches everything": {
+		params: "match[]={bar='',__name__=~'.%2b'}",
 		code:   200,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar"} 10000 6000000
