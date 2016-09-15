@@ -14,38 +14,29 @@
 package remote
 
 import (
+	"bytes"
+	"fmt"
+	"net/http"
 	"time"
 
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 )
 
 // Client allows sending batches of Prometheus samples to an HTTP endpoint.
 type Client struct {
-	client  WriteClient
-	timeout time.Duration
+	url    string
+	client http.Client
 }
 
 // NewClient creates a new Client.
-func NewClient(address string, timeout time.Duration) (*Client, error) {
-	conn, err := grpc.Dial(
-		address,
-		grpc.WithInsecure(),
-		grpc.WithTimeout(timeout),
-		grpc.WithCompressor(&snappyCompressor{}),
-	)
-	if err != nil {
-		// grpc.Dial() returns immediately and doesn't error when the server is
-		// unreachable when not passing in the WithBlock() option. The client then
-		// will continuously try to (re)establish the connection in the background.
-		// So this will only return here if some other uncommon error occurred.
-		return nil, err
-	}
+func NewClient(url string, timeout time.Duration) (*Client, error) {
 	return &Client{
-		client:  NewWriteClient(conn),
-		timeout: timeout,
+		url: url,
+		client: http.Client{
+			Timeout: timeout,
+		},
 	}, nil
 }
 
@@ -74,12 +65,28 @@ func (c *Client) Store(samples model.Samples) error {
 		req.Timeseries = append(req.Timeseries, ts)
 	}
 
-	ctxt, cancel := context.WithTimeout(context.TODO(), c.timeout)
-	defer cancel()
-
-	_, err := c.client.Write(ctxt, req)
+	data, err := proto.Marshal(req)
 	if err != nil {
 		return err
+	}
+
+	buf := bytes.Buffer{}
+	if _, err := snappy.NewWriter(&buf).Write(data); err != nil {
+		return err
+	}
+
+	httpReq, err := http.NewRequest("POST", c.url, &buf)
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Add("Content-Encoding", "snappy")
+	httpResp, err := c.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode/100 != 2 {
+		return fmt.Errorf("server returned HTTP status %s", httpResp.Status)
 	}
 	return nil
 }
