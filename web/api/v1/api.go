@@ -87,15 +87,17 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 type API struct {
 	Storage     local.Storage
 	QueryEngine *promql.Engine
+	QueryCtx    context.Context
 
 	context func(r *http.Request) context.Context
 	now     func() model.Time
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st local.Storage) *API {
+func NewAPI(qe *promql.Engine, qc context.Context, st local.Storage) *API {
 	return &API{
 		QueryEngine: qe,
+		QueryCtx:    qc,
 		Storage:     st,
 		context:     route.Context,
 		now:         model.Now,
@@ -157,7 +159,7 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorBadData, err}
 	}
 
-	res := qry.Exec()
+	res := qry.Exec(api.QueryCtx)
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
@@ -204,7 +206,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorBadData, err}
 	}
 
-	res := qry.Exec()
+	res := qry.Exec(api.QueryCtx)
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
