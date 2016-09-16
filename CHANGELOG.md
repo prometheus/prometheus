@@ -1,3 +1,9 @@
+## 1.1.3 / 2016-09-16
+
+* [ENHANCEMENT] Use golang-builder base image for tests in CircleCI.
+* [ENHANCEMENT] Added unit tests for federation.
+* [BUGFIX] Correctly de-dup metric families in federation output.
+
 ## 1.1.2 / 2016-09-08
 
 * [BUGFIX] Allow label names that coincide with keywords.
