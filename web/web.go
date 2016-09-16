@@ -71,6 +71,7 @@ type Handler struct {
 
 	externalLabels model.LabelSet
 	mtx            sync.RWMutex
+	now            func() model.Time
 }
 
 // ApplyConfig updates the status state as the new config requires.
@@ -135,6 +136,7 @@ func New(
 		storage:       st,
 
 		apiV1: api_v1.NewAPI(qe, st),
+		now:   model.Now,
 	}
 
 	if o.RoutePrefix != "/" {
@@ -291,7 +293,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		Path:      strings.TrimLeft(name, "/"),
 	}
 
-	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -464,7 +466,7 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	tmpl := template.NewTemplateExpander(text, name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(text, name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
 	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
 
 	result, err := tmpl.ExpandHTML(nil)
