@@ -408,6 +408,14 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 	for i, c := range cfg.EC2SDConfigs {
 		app("ec2", i, discovery.NewEC2Discovery(c))
 	}
+	for i, c := range cfg.GCESDConfigs {
+		gced, err := discovery.NewGCEDiscovery(c)
+		if err != nil {
+			log.Errorf("Cannot initialize GCE discovery: %s", err)
+			continue
+		}
+		app("gce", i, gced)
+	}
 	for i, c := range cfg.AzureSDConfigs {
 		app("azure", i, discovery.NewAzureDiscovery(c))
 	}
