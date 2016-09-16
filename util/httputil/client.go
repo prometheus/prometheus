@@ -119,53 +119,30 @@ func cloneRequest(r *http.Request) *http.Request {
 	return r2
 }
 
-type TLSOptions struct {
-	InsecureSkipVerify bool
-	CAFile             string
-	CertFile           string
-	KeyFile            string
-	ServerName         string
-}
-
-func TLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
-	tlsOpts := TLSOptions{
-		InsecureSkipVerify: cfg.InsecureSkipVerify,
-		CAFile:             cfg.CAFile,
-	}
-	if len(cfg.CertFile) > 0 && len(cfg.KeyFile) > 0 {
-		tlsOpts.CertFile = cfg.CertFile
-		tlsOpts.KeyFile = cfg.KeyFile
-	}
-	if len(cfg.ServerName) > 0 {
-		tlsOpts.ServerName = cfg.ServerName
-	}
-	return NewTLSConfig(tlsOpts)
-}
-
-func NewTLSConfig(opts TLSOptions) (*tls.Config, error) {
-	tlsConfig := &tls.Config{InsecureSkipVerify: opts.InsecureSkipVerify}
+func NewTLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
+	tlsConfig := &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify}
 
 	// If a CA cert is provided then let's read it in so we can validate the
 	// scrape target's certificate properly.
-	if len(opts.CAFile) > 0 {
+	if len(cfg.CAFile) > 0 {
 		caCertPool := x509.NewCertPool()
 		// Load CA cert.
-		caCert, err := ioutil.ReadFile(opts.CAFile)
+		caCert, err := ioutil.ReadFile(cfg.CAFile)
 		if err != nil {
-			return nil, fmt.Errorf("unable to use specified CA cert %s: %s", opts.CAFile, err)
+			return nil, fmt.Errorf("unable to use specified CA cert %s: %s", cfg.CAFile, err)
 		}
 		caCertPool.AppendCertsFromPEM(caCert)
 		tlsConfig.RootCAs = caCertPool
 	}
 
-	if len(opts.ServerName) > 0 {
-		tlsConfig.ServerName = opts.ServerName
+	if len(cfg.ServerName) > 0 {
+		tlsConfig.ServerName = cfg.ServerName
 	}
 	// If a client cert & key is provided then configure TLS config accordingly.
-	if len(opts.CertFile) > 0 && len(opts.KeyFile) > 0 {
-		cert, err := tls.LoadX509KeyPair(opts.CertFile, opts.KeyFile)
+	if len(cfg.CertFile) > 0 && len(cfg.KeyFile) > 0 {
+		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 		if err != nil {
-			return nil, fmt.Errorf("unable to use specified client cert (%s) & key (%s): %s", opts.CertFile, opts.KeyFile, err)
+			return nil, fmt.Errorf("unable to use specified client cert (%s) & key (%s): %s", cfg.CertFile, cfg.KeyFile, err)
 		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
 	}

@@ -38,7 +38,7 @@ type Client struct {
 
 // NewClient creates a new Client.
 func NewClient(conf config.RemoteWriteConfig) (*Client, error) {
-	tlsConfig, err := httputil.TLSConfig(conf.TLSConfig)
+	tlsConfig, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
