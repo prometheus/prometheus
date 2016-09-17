@@ -43,11 +43,12 @@ var cfg = struct {
 	printVersion bool
 	configFile   string
 
-	storage     local.MemorySeriesStorageOptions
-	notifier    notifier.Options
-	queryEngine promql.EngineOptions
-	web         web.Options
-	remote      remote.Options
+	storage            local.MemorySeriesStorageOptions
+	localStorageEngine string
+	notifier           notifier.Options
+	queryEngine        promql.EngineOptions
+	web                web.Options
+	remote             remote.Options
 
 	alertmanagerURLs stringset
 	prometheusURL    string
@@ -171,6 +172,10 @@ func init() {
 	cfg.fs.IntVar(
 		&cfg.storage.NumMutexes, "storage.local.num-fingerprint-mutexes", 4096,
 		"The number of mutexes used for fingerprint locking.",
+	)
+	cfg.fs.StringVar(
+		&cfg.localStorageEngine, "storage.local.engine", "persisted",
+		"Local storage engine. Supported values are: 'persisted' (full local storage with on-disk persistence) and 'none' (no local storage).",
 	)
 
 	// Remote storage.
