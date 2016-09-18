@@ -19,6 +19,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"testing"
 	"testing/quick"
 	"time"
@@ -467,6 +468,38 @@ func BenchmarkLabelMatching(b *testing.B) {
 	}
 	// Stop timer to not count the storage closing.
 	b.StopTimer()
+}
+
+func BenchmarkQueryRange(b *testing.B) {
+	now := model.Now()
+	insertStart := now.Add(-2 * time.Hour)
+
+	s, closer := NewTestStorage(b, 2)
+	defer closer.Close()
+
+	// Stop maintenance loop to prevent actual purging.
+	close(s.loopStopping)
+	<-s.loopStopped
+	<-s.logThrottlingStopped
+	// Recreate channel to avoid panic when we really shut down.
+	s.loopStopping = make(chan struct{})
+
+	for i := 0; i < 8192; i++ {
+		s.Append(&model.Sample{
+			Metric:    model.Metric{"__name__": model.LabelValue(strconv.Itoa(i)), "job": "test"},
+			Timestamp: insertStart,
+			Value:     1,
+		})
+	}
+	s.WaitForIndexing()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		lm, _ := metric.NewLabelMatcher(metric.Equal, "job", "test")
+		for pb.Next() {
+			s.QueryRange(context.Background(), insertStart, now, lm)
+		}
+	})
 }
 
 func TestRetentionCutoff(t *testing.T) {
