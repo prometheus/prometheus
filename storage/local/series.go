@@ -57,38 +57,37 @@ func newSeriesMap() *seriesMap {
 // length returns the number of mappings in the seriesMap.
 func (sm *seriesMap) length() int {
 	sm.mtx.RLock()
-	defer sm.mtx.RUnlock()
-
-	return len(sm.m)
+	result := len(sm.m)
+	sm.mtx.RUnlock()
+	return result
 }
 
 // get returns a memorySeries for a fingerprint. Return values have the same
 // semantics as the native Go map.
 func (sm *seriesMap) get(fp model.Fingerprint) (s *memorySeries, ok bool) {
 	sm.mtx.RLock()
-	defer sm.mtx.RUnlock()
-
 	s, ok = sm.m[fp]
-	return
+	sm.mtx.RUnlock()
+	return s, ok
 }
 
 // put adds a mapping to the seriesMap. It panics if s == nil.
 func (sm *seriesMap) put(fp model.Fingerprint, s *memorySeries) {
 	sm.mtx.Lock()
-	defer sm.mtx.Unlock()
 
 	if s == nil {
+		sm.mtx.Unlock() // in case panic is caught
 		panic("tried to add nil pointer to seriesMap")
 	}
 	sm.m[fp] = s
+	sm.mtx.Unlock()
 }
 
 // del removes a mapping from the series Map.
 func (sm *seriesMap) del(fp model.Fingerprint) {
 	sm.mtx.Lock()
-	defer sm.mtx.Unlock()
-
 	delete(sm.m, fp)
+	sm.mtx.Unlock()
 }
 
 // iter returns a channel that produces all mappings in the seriesMap. The
