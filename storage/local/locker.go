@@ -15,9 +15,20 @@ package local
 
 import (
 	"sync"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 )
+
+const (
+	cacheLineSize = 64
+)
+
+// Avoid false sharing when using array of mutexes.
+type paddedMutex struct {
+	sync.Mutex
+	pad [cacheLineSize - unsafe.Sizeof(sync.Mutex{})]byte
+}
 
 // fingerprintLocker allows locking individual fingerprints. To limit the number
 // of mutexes needed for that, only a fixed number of mutexes are
@@ -30,7 +41,7 @@ import (
 // fingerprint at the same time. (In that case a collision would try to acquire
 // the same mutex twice).
 type fingerprintLocker struct {
-	fpMtxs    []sync.Mutex
+	fpMtxs    []paddedMutex
 	numFpMtxs uint
 }
 
@@ -41,7 +52,7 @@ func newFingerprintLocker(preallocatedMutexes int) *fingerprintLocker {
 		preallocatedMutexes = 1024
 	}
 	return &fingerprintLocker{
-		make([]sync.Mutex, preallocatedMutexes),
+		make([]paddedMutex, preallocatedMutexes),
 		uint(preallocatedMutexes),
 	}
 }
