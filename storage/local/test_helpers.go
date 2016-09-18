@@ -65,3 +65,7 @@ func NewTestStorage(t testutil.T, encoding chunkEncoding) (*MemorySeriesStorage,
 
 	return storage, closer
 }
+
+func makeFingerprintSeriesPair(s *MemorySeriesStorage, fp model.Fingerprint) fingerprintSeriesPair {
+	return fingerprintSeriesPair{fp, s.seriesForRange(fp, model.Earliest, model.Latest)}
+}
