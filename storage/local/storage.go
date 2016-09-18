@@ -631,19 +631,22 @@ func (s *MemorySeriesStorage) metricsForLabelMatchers(
 	}
 
 	result := map[model.Fingerprint]metric.Metric{}
+FP_LOOP:
 	for fp := range remainingFPs {
 		s.fpLocker.Lock(fp)
-		if met, _, ok := s.metricForRange(fp, from, through); ok {
-			result[fp] = metric.Metric{Metric: met}
-		}
+		met, _, ok := s.metricForRange(fp, from, through)
 		s.fpLocker.Unlock(fp)
-	}
-	for _, m := range matchers[matcherIdx:] {
-		for fp, met := range result {
-			if !m.Match(met.Metric[m.Name]) {
-				delete(result, fp)
+
+		if !ok {
+			continue FP_LOOP
+		}
+
+		for _, m := range matchers[matcherIdx:] {
+			if !m.Match(met[m.Name]) {
+				continue FP_LOOP
 			}
 		}
+		result[fp] = metric.Metric{Metric: met}
 	}
 	return result, nil
 }
