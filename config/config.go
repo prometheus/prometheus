@@ -150,6 +150,11 @@ var (
 		Port:            80,
 		RefreshInterval: model.Duration(5 * time.Minute),
 	}
+
+	// DefaultRemoteWriteConfig is the default remote write configuration.
+	DefaultRemoteWriteConfig = RemoteWriteConfig{
+		RemoteTimeout: model.Duration(30 * time.Second),
+	}
 )
 
 // URL is a custom URL type that allows validation at configuration load time.
@@ -186,6 +191,8 @@ type Config struct {
 	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+
+	RemoteWriteConfig []RemoteWriteConfig `yaml:"remote_write,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1064,4 +1071,29 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 		return re.original, nil
 	}
 	return nil, nil
+}
+
+// RemoteWriteConfig is the configuration for remote storage.
+type RemoteWriteConfig struct {
+	URL           URL            `yaml:"url,omitempty"`
+	RemoteTimeout model.Duration `yaml:"remote_timeout,omitempty"`
+	BasicAuth     *BasicAuth     `yaml:"basic_auth,omitempty"`
+	TLSConfig     TLSConfig      `yaml:"tls_config,omitempty"`
+	ProxyURL      URL            `yaml:"proxy_url,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultRemoteWriteConfig
+	type plain RemoteWriteConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "remote_write"); err != nil {
+		return err
+	}
+	return nil
 }

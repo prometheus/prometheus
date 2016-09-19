@@ -68,18 +68,7 @@ func NewTarget(labels, metaLabels model.LabelSet, params url.Values) *Target {
 
 // NewHTTPClient returns a new HTTP client configured for the given scrape configuration.
 func NewHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
-	tlsOpts := httputil.TLSOptions{
-		InsecureSkipVerify: cfg.TLSConfig.InsecureSkipVerify,
-		CAFile:             cfg.TLSConfig.CAFile,
-	}
-	if len(cfg.TLSConfig.CertFile) > 0 && len(cfg.TLSConfig.KeyFile) > 0 {
-		tlsOpts.CertFile = cfg.TLSConfig.CertFile
-		tlsOpts.KeyFile = cfg.TLSConfig.KeyFile
-	}
-	if len(cfg.TLSConfig.ServerName) > 0 {
-		tlsOpts.ServerName = cfg.TLSConfig.ServerName
-	}
-	tlsConfig, err := httputil.NewTLSConfig(tlsOpts)
+	tlsConfig, err := httputil.NewTLSConfig(cfg.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
