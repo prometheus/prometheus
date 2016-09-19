@@ -18,6 +18,7 @@ import (
 	"html/template"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -45,14 +46,14 @@ func (rule RecordingRule) Name() string {
 }
 
 // eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) eval(timestamp model.Time, engine *promql.Engine, _ string) (model.Vector, error) {
+func (rule RecordingRule) eval(ctx context.Context, timestamp model.Time, engine *promql.Engine, _ string) (model.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err
 	}
 
 	var (
-		result = query.Exec()
+		result = query.Exec(ctx)
 		vector model.Vector
 	)
 	if result.Err != nil {
