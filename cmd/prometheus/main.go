@@ -97,11 +97,14 @@ func Main() int {
 		log.Errorf("Error initializing remote storage: %s", err)
 		return 1
 	}
-
 	if remoteStorage != nil {
 		sampleAppender = append(sampleAppender, remoteStorage)
 		reloadables = append(reloadables, remoteStorage)
 	}
+
+	reloadableRemoteStorage := remote.NewConfigurable()
+	sampleAppender = append(sampleAppender, reloadableRemoteStorage)
+	reloadables = append(reloadables, reloadableRemoteStorage)
 
 	var (
 		notifier       = notifier.New(&cfg.notifier)
@@ -185,11 +188,12 @@ func Main() int {
 	}()
 
 	if remoteStorage != nil {
-		prometheus.MustRegister(remoteStorage)
-
-		go remoteStorage.Run()
+		remoteStorage.Start()
 		defer remoteStorage.Stop()
 	}
+
+	defer reloadableRemoteStorage.Stop()
+
 	// The storage has to be fully initialized before registering.
 	if instrumentedStorage, ok := localStorage.(prometheus.Collector); ok {
 		prometheus.MustRegister(instrumentedStorage)

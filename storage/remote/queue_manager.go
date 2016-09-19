@@ -26,12 +26,75 @@ import (
 const (
 	namespace = "prometheus"
 	subsystem = "remote_storage"
-
-	result  = "result"
-	success = "success"
-	failure = "failure"
-	dropped = "dropped"
+	queue     = "queue"
 )
+
+var (
+	sentSamplesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "sent_samples_total",
+			Help:      "Total number of processed samples sent to remote storage.",
+		},
+		[]string{queue},
+	)
+	failedSamplesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "failed_samples_total",
+			Help:      "Total number of processed samples which failed on send to remote storage.",
+		},
+		[]string{queue},
+	)
+	droppedSamplesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "dropped_samples_total",
+			Help:      "Total number of samples which were dropped due to the queue being full.",
+		},
+		[]string{queue},
+	)
+	sentBatchDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "sent_batch_duration_seconds",
+			Help:      "Duration of sample batch send calls to the remote storage.",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{queue},
+	)
+	queueLength = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queue_length",
+			Help:      "The number of processed samples queued to be sent to the remote storage.",
+		},
+		[]string{queue},
+	)
+	queueCapacity = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queue_capacity",
+			Help:      "The capacity of the queue of samples to be sent to the remote storage.",
+		},
+		[]string{queue},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(sentSamplesTotal)
+	prometheus.MustRegister(failedSamplesTotal)
+	prometheus.MustRegister(droppedSamplesTotal)
+	prometheus.MustRegister(sentBatchDuration)
+	prometheus.MustRegister(queueLength)
+	prometheus.MustRegister(queueCapacity)
+}
 
 // StorageClient defines an interface for sending a batch of samples to an
 // external timeseries database.
@@ -59,24 +122,16 @@ var defaultConfig = StorageQueueManagerConfig{
 // StorageQueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided StorageClient.
 type StorageQueueManager struct {
-	cfg    StorageQueueManagerConfig
-	tsdb   StorageClient
-	shards []chan *model.Sample
-	wg     sync.WaitGroup
-	done   chan struct{}
-
-	sentSamplesTotal  *prometheus.CounterVec
-	sentBatchDuration *prometheus.HistogramVec
-	queueLength       prometheus.Gauge
-	queueCapacity     prometheus.Metric
+	cfg       StorageQueueManagerConfig
+	tsdb      StorageClient
+	shards    []chan *model.Sample
+	wg        sync.WaitGroup
+	done      chan struct{}
+	queueName string
 }
 
 // NewStorageQueueManager builds a new StorageQueueManager.
 func NewStorageQueueManager(tsdb StorageClient, cfg *StorageQueueManagerConfig) *StorageQueueManager {
-	constLabels := prometheus.Labels{
-		"type": tsdb.Name(),
-	}
-
 	if cfg == nil {
 		cfg = &defaultConfig
 	}
@@ -87,51 +142,14 @@ func NewStorageQueueManager(tsdb StorageClient, cfg *StorageQueueManagerConfig) 
 	}
 
 	t := &StorageQueueManager{
-		cfg:    *cfg,
-		tsdb:   tsdb,
-		shards: shards,
-		done:   make(chan struct{}),
-
-		sentSamplesTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace:   namespace,
-				Subsystem:   subsystem,
-				Name:        "sent_samples_total",
-				Help:        "Total number of processed samples sent to remote storage.",
-				ConstLabels: constLabels,
-			},
-			[]string{result},
-		),
-		sentBatchDuration: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Namespace:   namespace,
-				Subsystem:   subsystem,
-				Name:        "sent_batch_duration_seconds",
-				Help:        "Duration of sample batch send calls to the remote storage.",
-				ConstLabels: constLabels,
-				Buckets:     prometheus.DefBuckets,
-			},
-			[]string{result},
-		),
-		queueLength: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "queue_length",
-			Help:        "The number of processed samples queued to be sent to the remote storage.",
-			ConstLabels: constLabels,
-		}),
-		queueCapacity: prometheus.MustNewConstMetric(
-			prometheus.NewDesc(
-				prometheus.BuildFQName(namespace, subsystem, "queue_capacity"),
-				"The capacity of the queue of samples to be sent to the remote storage.",
-				nil,
-				constLabels,
-			),
-			prometheus.GaugeValue,
-			float64(cfg.QueueCapacity*cfg.Shards),
-		),
+		cfg:       *cfg,
+		tsdb:      tsdb,
+		shards:    shards,
+		done:      make(chan struct{}),
+		queueName: tsdb.Name(),
 	}
 
+	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.QueueCapacity))
 	t.wg.Add(cfg.Shards)
 	return t
 }
@@ -145,8 +163,9 @@ func (t *StorageQueueManager) Append(s *model.Sample) error {
 
 	select {
 	case t.shards[shard] <- s:
+		queueLength.WithLabelValues(t.queueName).Inc()
 	default:
-		t.sentSamplesTotal.WithLabelValues(dropped).Inc()
+		droppedSamplesTotal.WithLabelValues(t.queueName).Inc()
 		log.Warn("Remote storage queue full, discarding sample.")
 	}
 	return nil
@@ -159,38 +178,12 @@ func (*StorageQueueManager) NeedsThrottling() bool {
 	return false
 }
 
-// Describe implements prometheus.Collector.
-func (t *StorageQueueManager) Describe(ch chan<- *prometheus.Desc) {
-	t.sentSamplesTotal.Describe(ch)
-	t.sentBatchDuration.Describe(ch)
-	ch <- t.queueLength.Desc()
-	ch <- t.queueCapacity.Desc()
-}
-
-// QueueLength returns the number of outstanding samples in the queue.
-func (t *StorageQueueManager) queueLen() int {
-	queueLength := 0
-	for _, shard := range t.shards {
-		queueLength += len(shard)
-	}
-	return queueLength
-}
-
-// Collect implements prometheus.Collector.
-func (t *StorageQueueManager) Collect(ch chan<- prometheus.Metric) {
-	t.sentSamplesTotal.Collect(ch)
-	t.sentBatchDuration.Collect(ch)
-	t.queueLength.Set(float64(t.queueLen()))
-	ch <- t.queueLength
-	ch <- t.queueCapacity
-}
-
-// Run continuously sends samples to the remote storage.
-func (t *StorageQueueManager) Run() {
+// Start the queue manager sending samples to the remote storage.
+// Does not block.
+func (t *StorageQueueManager) Start() {
 	for i := 0; i < t.cfg.Shards; i++ {
 		go t.runShard(i)
 	}
-	t.wg.Wait()
 }
 
 // Stop stops sending samples to the remote storage and waits for pending
@@ -225,6 +218,7 @@ func (t *StorageQueueManager) runShard(i int) {
 				return
 			}
 
+			queueLength.WithLabelValues(t.queueName).Dec()
 			pendingSamples = append(pendingSamples, s)
 
 			for len(pendingSamples) >= t.cfg.MaxSamplesPerSend {
@@ -248,11 +242,11 @@ func (t *StorageQueueManager) sendSamples(s model.Samples) {
 	err := t.tsdb.Store(s)
 	duration := time.Since(begin).Seconds()
 
-	labelValue := success
 	if err != nil {
 		log.Warnf("error sending %d samples to remote storage: %s", len(s), err)
-		labelValue = failure
+		failedSamplesTotal.WithLabelValues(t.queueName).Add(float64(len(s)))
+	} else {
+		sentSamplesTotal.WithLabelValues(t.queueName).Add(float64(len(s)))
 	}
-	t.sentSamplesTotal.WithLabelValues(labelValue).Add(float64(len(s)))
-	t.sentBatchDuration.WithLabelValues(labelValue).Observe(duration)
+	sentBatchDuration.WithLabelValues(t.queueName).Observe(duration)
 }

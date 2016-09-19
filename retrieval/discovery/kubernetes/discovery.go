@@ -226,28 +226,21 @@ func (kd *Discovery) updateAPIServersTargetGroup() *config.TargetGroup {
 
 func newKubernetesHTTPClient(conf *config.KubernetesSDConfig) (*http.Client, error) {
 	bearerTokenFile := conf.BearerTokenFile
-	caFile := conf.TLSConfig.CAFile
+	tlsConfig := conf.TLSConfig
 	if conf.InCluster {
 		if len(bearerTokenFile) == 0 {
 			bearerTokenFile = serviceAccountToken
 		}
-		if len(caFile) == 0 {
+		if len(tlsConfig.CAFile) == 0 {
 			// With recent versions, the CA certificate is mounted as a secret
 			// but we need to handle older versions too. In this case, don't
 			// set the CAFile & the configuration will have to use InsecureSkipVerify.
 			if _, err := os.Stat(serviceAccountCACert); err == nil {
-				caFile = serviceAccountCACert
+				tlsConfig.CAFile = serviceAccountCACert
 			}
 		}
 	}
-
-	tlsOpts := httputil.TLSOptions{
-		InsecureSkipVerify: conf.TLSConfig.InsecureSkipVerify,
-		CAFile:             caFile,
-		CertFile:           conf.TLSConfig.CertFile,
-		KeyFile:            conf.TLSConfig.KeyFile,
-	}
-	tlsConfig, err := httputil.NewTLSConfig(tlsOpts)
+	tls, err := httputil.NewTLSConfig(tlsConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +250,7 @@ func newKubernetesHTTPClient(conf *config.KubernetesSDConfig) (*http.Client, err
 			c, err = net.DialTimeout(netw, addr, time.Duration(conf.RequestTimeout))
 			return
 		},
-		TLSClientConfig: tlsConfig,
+		TLSClientConfig: tls,
 	}
 
 	// If a bearer token is provided, create a round tripper that will set the
