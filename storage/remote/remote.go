@@ -130,17 +130,3 @@ func (s *Storage) Append(smpl *model.Sample) error {
 func (s *Storage) NeedsThrottling() bool {
 	return false
 }
-
-// Describe implements prometheus.Collector.
-func (s *Storage) Describe(ch chan<- *prometheus.Desc) {
-	for _, q := range s.queues {
-		q.Describe(ch)
-	}
-}
-
-// Collect implements prometheus.Collector.
-func (s *Storage) Collect(ch chan<- prometheus.Metric) {
-	for _, q := range s.queues {
-		q.Collect(ch)
-	}
-}

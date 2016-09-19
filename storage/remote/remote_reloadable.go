@@ -16,7 +16,6 @@ package remote
 import (
 	"sync"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -97,22 +96,4 @@ func (s *ReloadableStorage) Append(smpl *model.Sample) error {
 // of asking for throttling.
 func (s *ReloadableStorage) NeedsThrottling() bool {
 	return false
-}
-
-// Describe implements prometheus.Collector.
-func (s *ReloadableStorage) Describe(ch chan<- *prometheus.Desc) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-	for _, q := range s.queues {
-		q.Describe(ch)
-	}
-}
-
-// Collect implements prometheus.Collector.
-func (s *ReloadableStorage) Collect(ch chan<- prometheus.Metric) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-	for _, q := range s.queues {
-		q.Collect(ch)
-	}
 }

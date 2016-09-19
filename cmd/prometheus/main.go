@@ -168,13 +168,10 @@ func Main() int {
 	}()
 
 	if remoteStorage != nil {
-		prometheus.MustRegister(remoteStorage)
-
 		remoteStorage.Start()
 		defer remoteStorage.Stop()
 	}
 
-	prometheus.MustRegister(reloadableRemoteStorage)
 	defer reloadableRemoteStorage.Stop()
 
 	// The storage has to be fully initialized before registering.
