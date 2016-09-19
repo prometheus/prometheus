@@ -234,6 +234,15 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-mdns",
+
+			MDNSConfigs: []*MDNSConfig{
+				{
+					Enabled: true,
+				},
+			},
+		},
+		{
 			JobName: "service-marathon",
 
 			ScrapeInterval: model.Duration(15 * time.Second),

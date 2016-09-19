@@ -145,6 +145,17 @@
 			"revisionTime": "2015-09-08T11:01:49-04:00"
 		},
 		{
+			"path": "github.com/hashicorp/go.net",
+			"revision": "104dcad90073cd8d1e6828b2af19185b60cf3e29",
+			"revisionTime": "2015-10-06T20:33:46Z"
+		},
+		{
+			"checksumSHA1": "/3BJn10YrvqbkKbGX7pgU1U08FE=",
+			"path": "github.com/hashicorp/mdns",
+			"revision": "9d85cf22f9f8d53cb5c81c1b2749f438b2ee333f",
+			"revisionTime": "2015-12-06T04:24:12Z"
+		},
+		{
 			"path": "github.com/influxdb/influxdb/client",
 			"revision": "291aaeb9485b43b16875c238482b2f7d0a22a13b",
 			"revisionTime": "2015-09-16T14:41:53+02:00"
