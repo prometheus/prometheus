@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/context"
+
 	html_template "html/template"
 
 	"github.com/prometheus/common/log"
@@ -146,12 +148,12 @@ const resolvedRetention = 15 * time.Minute
 
 // eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine, externalURLPath string) (model.Vector, error) {
+func (r *AlertingRule) eval(ctx context.Context, ts model.Time, engine *promql.Engine, externalURLPath string) (model.Vector, error) {
 	query, err := engine.NewInstantQuery(r.vector.String(), ts)
 	if err != nil {
 		return nil, err
 	}
-	res, err := query.Exec().Vector()
+	res, err := query.Exec(ctx).Vector()
 	if err != nil {
 		return nil, err
 	}
@@ -183,6 +185,7 @@ func (r *AlertingRule) eval(ts model.Time, engine *promql.Engine, externalURLPat
 
 		expand := func(text model.LabelValue) model.LabelValue {
 			tmpl := template.NewTemplateExpander(
+				ctx,
 				defs+string(text),
 				"__alert_"+r.Name(),
 				tmplData,

@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
@@ -27,6 +28,9 @@ func TestRuleEval(t *testing.T) {
 	storage, closer := local.NewTestStorage(t, 2)
 	defer closer.Close()
 	engine := promql.NewEngine(storage, nil)
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
 	now := model.Now()
 
 	suite := []struct {
@@ -59,7 +63,7 @@ func TestRuleEval(t *testing.T) {
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.eval(now, engine, "")
+		result, err := rule.eval(ctx, now, engine, "")
 		if err != nil {
 			t.Fatalf("Error evaluating %s", test.name)
 		}
