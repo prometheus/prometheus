@@ -31,13 +31,14 @@ import (
 
 // Client allows sending batches of Prometheus samples to an HTTP endpoint.
 type Client struct {
+	index   int // Used to differentiate metrics
 	url     config.URL
 	client  *http.Client
 	timeout time.Duration
 }
 
 // NewClient creates a new Client.
-func NewClient(conf config.RemoteWriteConfig) (*Client, error) {
+func NewClient(index int, conf config.RemoteWriteConfig) (*Client, error) {
 	tlsConfig, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -55,6 +56,7 @@ func NewClient(conf config.RemoteWriteConfig) (*Client, error) {
 	}
 
 	return &Client{
+		index:   index,
 		url:     conf.URL,
 		client:  httputil.NewClient(rt),
 		timeout: time.Duration(conf.RemoteTimeout),
@@ -120,5 +122,5 @@ func (c *Client) Store(samples model.Samples) error {
 // will simply be removed in the restructuring and the whole "generic" naming
 // will be gone for good.
 func (c Client) Name() string {
-	return fmt.Sprintf("generic:%s", c.url)
+	return fmt.Sprintf("generic:%d:%s", c.index, c.url)
 }

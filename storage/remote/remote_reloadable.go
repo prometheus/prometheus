@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2016 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -41,9 +41,11 @@ func (s *ReloadableStorage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
+	// TODO: we should only stop & recreate queues which have changes,
+	// as this can be quite disruptive.
 	newQueues := []*StorageQueueManager{}
-	for _, c := range conf.RemoteWriteConfig {
-		c, err := NewClient(c)
+	for i, c := range conf.RemoteWriteConfig {
+		c, err := NewClient(i, c)
 		if err != nil {
 			return err
 		}
