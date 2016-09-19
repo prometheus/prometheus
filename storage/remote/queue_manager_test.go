@@ -181,6 +181,14 @@ func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
 }
 
+func (t *StorageQueueManager) queueLen() int {
+	queueLength := 0
+	for _, shard := range t.shards {
+		queueLength += len(shard)
+	}
+	return queueLength
+}
+
 func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	// Our goal is to fully empty the queue:
 	// `MaxSamplesPerSend*Shards` samples should be consumed by the
