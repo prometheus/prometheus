@@ -244,9 +244,9 @@ func (t *StorageQueueManager) sendSamples(s model.Samples) {
 
 	if err != nil {
 		log.Warnf("error sending %d samples to remote storage: %s", len(s), err)
-		sentSamplesTotal.WithLabelValues(t.queueName).Add(float64(len(s)))
+		failedSamplesTotal.WithLabelValues(t.queueName).Add(float64(len(s)))
 	} else {
-		droppedSamplesTotal.WithLabelValues(t.queueName).Add(float64(len(s)))
+		sentSamplesTotal.WithLabelValues(t.queueName).Add(float64(len(s)))
 	}
 	sentBatchDuration.WithLabelValues(t.queueName).Observe(duration)
 }
