@@ -26,12 +26,7 @@ import (
 const (
 	namespace = "prometheus"
 	subsystem = "remote_storage"
-
-	result  = "result"
-	queue   = "queue"
-	success = "success"
-	failure = "failure"
-	dropped = "dropped"
+	queue     = "queue"
 )
 
 var (
@@ -42,7 +37,25 @@ var (
 			Name:      "sent_samples_total",
 			Help:      "Total number of processed samples sent to remote storage.",
 		},
-		[]string{queue, result},
+		[]string{queue},
+	)
+	failedSamplesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "failed_samples_total",
+			Help:      "Total number of processed samples which failed on send to remote storage.",
+		},
+		[]string{queue},
+	)
+	droppedSamplesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "dropped_samples_total",
+			Help:      "Total number of samples which were dropped due to the queue being full.",
+		},
+		[]string{queue},
 	)
 	sentBatchDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -52,7 +65,7 @@ var (
 			Help:      "Duration of sample batch send calls to the remote storage.",
 			Buckets:   prometheus.DefBuckets,
 		},
-		[]string{queue, result},
+		[]string{queue},
 	)
 	queueLength = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -76,6 +89,8 @@ var (
 
 func init() {
 	prometheus.MustRegister(sentSamplesTotal)
+	prometheus.MustRegister(failedSamplesTotal)
+	prometheus.MustRegister(droppedSamplesTotal)
 	prometheus.MustRegister(sentBatchDuration)
 	prometheus.MustRegister(queueLength)
 	prometheus.MustRegister(queueCapacity)
@@ -150,7 +165,7 @@ func (t *StorageQueueManager) Append(s *model.Sample) error {
 	case t.shards[shard] <- s:
 		queueLength.WithLabelValues(t.queueName).Inc()
 	default:
-		sentSamplesTotal.WithLabelValues(t.queueName, dropped).Inc()
+		droppedSamplesTotal.WithLabelValues(t.queueName).Inc()
 		log.Warn("Remote storage queue full, discarding sample.")
 	}
 	return nil
@@ -227,11 +242,11 @@ func (t *StorageQueueManager) sendSamples(s model.Samples) {
 	err := t.tsdb.Store(s)
 	duration := time.Since(begin).Seconds()
 
-	labelValue := success
 	if err != nil {
 		log.Warnf("error sending %d samples to remote storage: %s", len(s), err)
-		labelValue = failure
+		sentSamplesTotal.WithLabelValues(t.queueName).Add(float64(len(s)))
+	} else {
+		droppedSamplesTotal.WithLabelValues(t.queueName).Add(float64(len(s)))
 	}
-	sentSamplesTotal.WithLabelValues(t.queueName, labelValue).Add(float64(len(s)))
-	sentBatchDuration.WithLabelValues(t.queueName, labelValue).Observe(duration)
+	sentBatchDuration.WithLabelValues(t.queueName).Observe(duration)
 }
