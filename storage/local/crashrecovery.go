@@ -114,7 +114,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 					)
 				}
 				s.chunkDescs = append(
-					make([]*chunkDesc, 0, len(s.chunkDescs)-s.persistWatermark),
+					make([]*ChunkDesc, 0, len(s.chunkDescs)-s.persistWatermark),
 					s.chunkDescs[s.persistWatermark:]...,
 				)
 				numMemChunkDescs.Sub(float64(s.persistWatermark))
