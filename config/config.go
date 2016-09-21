@@ -151,6 +151,13 @@ var (
 		RefreshInterval: model.Duration(5 * time.Minute),
 	}
 
+	DefaultAmbariSDConfig = AmbariSDConfig{
+		Port:            80,
+		Proto:           "http",
+		ValidateSSL:	 true,
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout: model.Duration(30 * time.Second),
@@ -448,6 +455,8 @@ type ScrapeConfig struct {
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
+	// List of Ambari service discovery configurations.
+	AmbariSDConfigs []*AmbariSDConfig `yaml:"ambari_sd_configs,omitempty"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -953,6 +962,57 @@ func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	return checkOverflow(c.XXX, "azure_sd_config")
+}
+
+
+// GCESDConfig is the configuration for GCE based service discovery.
+type AmbariSDConfig struct {
+	// Username: The username to access Ambari API with
+	Username string `yaml:"username"`
+
+	// Password: The password used to access Ambari API
+	Password string `yaml:"password"`
+
+
+	// Host: The host used to access Ambari API
+	Host string `yaml:"host"`
+
+
+	// Proto: The protocol used to access Ambari API (http/https)
+	Proto string `yaml:"proto,omitempty"`
+
+	ValidateSSL bool `yaml:"validate_ssl,omitempty"`
+
+	// Service: Can be used to return the hosts, that run the given service.
+	// Returns all hosts if left empty!
+	// Valid values are:
+	Services []string `yaml:"services,omitempty"`
+
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Port            int            `yaml:"port"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *AmbariSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultAmbariSDConfig
+	type plain AmbariSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if c.Username == "" {
+		return fmt.Errorf("Ambari access requires a username")
+	}
+	if c.Password == "" {
+		return fmt.Errorf("Ambari access requires a password")
+	}
+	if c.Host == "" {
+		return fmt.Errorf("Ambari access requires a host")
+	}
+	return nil
 }
 
 // RelabelAction is the action to be performed on relabeling.

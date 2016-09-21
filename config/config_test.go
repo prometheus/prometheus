@@ -291,6 +291,28 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-amb",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			AmbariSDConfigs: []*AmbariSDConfig{
+				{
+					Username:  "11AAAA11-A11A-111A-A111-1111A1111A11",
+					Password:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
+					Host:        "ambari.host",
+					RefreshInterval: model.Duration(5 * time.Minute),
+					Port:            9100,
+					Proto:		"http",
+					ValidateSSL:    true,
+					Services:        []string{"kafka_broker", "resourcemanager"},
+				},
+			},
+		},
+		{
 			JobName: "service-nerve",
 
 			ScrapeInterval: model.Duration(15 * time.Second),
@@ -383,6 +405,18 @@ var expectedErrors = []struct {
 	filename string
 	errMsg   string
 }{
+	{
+		filename: "ambariuser_bad.yml",
+		errMsg:   `Ambari access requires a username`,
+	},
+	{
+		filename: "ambaripassword_bad.yml",
+		errMsg:   `Ambari access requires a password`,
+	},
+	{
+		filename: "ambarihost_bad.yml",
+		errMsg:   `Ambari access requires a host`,
+	},
 	{
 		filename: "jobname.bad.yml",
 		errMsg:   `job_name is empty`,
