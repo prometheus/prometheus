@@ -52,7 +52,6 @@ func TestEndpoints(t *testing.T) {
 	api := &API{
 		Storage:     suite.Storage(),
 		QueryEngine: suite.QueryEngine(),
-		Context:     suite.Context(),
 		now:         func() model.Time { return now },
 	}
 
@@ -610,7 +609,7 @@ func TestParseDuration(t *testing.T) {
 }
 
 func TestOptionsMethod(t *testing.T) {
-	r := route.New()
+	r := route.New(nil)
 	api := &API{}
 	api.Register(r)
 
