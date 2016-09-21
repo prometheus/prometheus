@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -785,7 +786,7 @@ func TestLoop(t *testing.T) {
 	}
 }
 
-func testChunk(t *testing.T, encoding ChunkEncoding) {
+func testChunk(t *testing.T, encoding chunk.Encoding) {
 	samples := make(model.Samples, 500000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -806,10 +807,10 @@ func testChunk(t *testing.T, encoding ChunkEncoding) {
 		defer s.fpLocker.Unlock(m.fp) // TODO remove, see below
 		var values []model.SamplePair
 		for _, cd := range m.series.chunkDescs {
-			if cd.isEvicted() {
+			if cd.IsEvicted() {
 				continue
 			}
-			it := cd.c.NewIterator()
+			it := cd.C.NewIterator()
 			for it.Scan() {
 				values = append(values, it.Value())
 			}
@@ -843,7 +844,7 @@ func TestChunkType2(t *testing.T) {
 	testChunk(t, 2)
 }
 
-func testValueAtOrBeforeTime(t *testing.T, encoding ChunkEncoding) {
+func testValueAtOrBeforeTime(t *testing.T, encoding chunk.Encoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -921,7 +922,7 @@ func TestValueAtTimeChunkType2(t *testing.T) {
 	testValueAtOrBeforeTime(t, 2)
 }
 
-func benchmarkValueAtOrBeforeTime(b *testing.B, encoding ChunkEncoding) {
+func benchmarkValueAtOrBeforeTime(b *testing.B, encoding chunk.Encoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1003,7 +1004,7 @@ func BenchmarkValueAtTimeChunkType2(b *testing.B) {
 	benchmarkValueAtOrBeforeTime(b, 2)
 }
 
-func testRangeValues(t *testing.T, encoding ChunkEncoding) {
+func testRangeValues(t *testing.T, encoding chunk.Encoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1159,7 +1160,7 @@ func TestRangeValuesChunkType2(t *testing.T) {
 	testRangeValues(t, 2)
 }
 
-func benchmarkRangeValues(b *testing.B, encoding ChunkEncoding) {
+func benchmarkRangeValues(b *testing.B, encoding chunk.Encoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1207,7 +1208,7 @@ func BenchmarkRangeValuesChunkType2(b *testing.B) {
 	benchmarkRangeValues(b, 2)
 }
 
-func testEvictAndPurgeSeries(t *testing.T, encoding ChunkEncoding) {
+func testEvictAndPurgeSeries(t *testing.T, encoding chunk.Encoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1271,7 +1272,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding ChunkEncoding) {
 
 	// Archive metrics.
 	s.fpToSeries.del(fp)
-	lastTime, err := series.head().lastTime()
+	lastTime, err := series.head().LastTime()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1312,7 +1313,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding ChunkEncoding) {
 
 	// Archive metrics.
 	s.fpToSeries.del(fp)
-	lastTime, err = series.head().lastTime()
+	lastTime, err = series.head().LastTime()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1362,7 +1363,7 @@ func TestEvictAndPurgeSeriesChunkType2(t *testing.T) {
 	testEvictAndPurgeSeries(t, 2)
 }
 
-func testEvictAndLoadChunkDescs(t *testing.T, encoding ChunkEncoding) {
+func testEvictAndLoadChunkDescs(t *testing.T, encoding chunk.Encoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1401,7 +1402,7 @@ func testEvictAndLoadChunkDescs(t *testing.T, encoding ChunkEncoding) {
 	s.maintainMemorySeries(fp, 0)
 	// Give the evict goroutine an opportunity to run.
 	time.Sleep(250 * time.Millisecond)
-	// Maintain series again to trigger chunkDesc eviction
+	// Maintain series again to trigger ChunkDesc eviction
 	s.maintainMemorySeries(fp, 0)
 
 	if oldLen <= len(series.chunkDescs) {
@@ -1421,7 +1422,7 @@ func testEvictAndLoadChunkDescs(t *testing.T, encoding ChunkEncoding) {
 	s.maintainMemorySeries(fp, 100000)
 
 	if len(series.chunkDescs) != 1 {
-		t.Errorf("Expected exactly one chunkDesc left, got %d.", len(series.chunkDescs))
+		t.Errorf("Expected exactly one ChunkDesc left, got %d.", len(series.chunkDescs))
 	}
 }
 
@@ -1433,7 +1434,7 @@ func TestEvictAndLoadChunkDescsType1(t *testing.T) {
 	testEvictAndLoadChunkDescs(t, 1)
 }
 
-func benchmarkAppend(b *testing.B, encoding ChunkEncoding) {
+func benchmarkAppend(b *testing.B, encoding chunk.Encoding) {
 	samples := make(model.Samples, b.N)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1469,7 +1470,7 @@ func BenchmarkAppendType2(b *testing.B) {
 
 // Append a large number of random samples and then check if we can get them out
 // of the storage alright.
-func testFuzz(t *testing.T, encoding ChunkEncoding) {
+func testFuzz(t *testing.T, encoding chunk.Encoding) {
 	if testing.Short() {
 		t.Skip("Skipping test in short mode.")
 	}
@@ -1517,8 +1518,8 @@ func TestFuzzChunkType2(t *testing.T) {
 // make things even slower):
 //
 // go test -race -cpu 8 -short -bench BenchmarkFuzzChunkType
-func benchmarkFuzz(b *testing.B, encoding ChunkEncoding) {
-	DefaultChunkEncoding = encoding
+func benchmarkFuzz(b *testing.B, encoding chunk.Encoding) {
+	chunk.DefaultEncoding = encoding
 	const samplesPerRun = 100000
 	rand.Seed(42)
 	directory := testutil.NewTemporaryDirectory("test_storage", b)
