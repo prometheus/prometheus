@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package local
+package chunk
 
 import (
 	"encoding/binary"
@@ -191,13 +191,13 @@ func (c doubleDeltaEncodedChunk) Clone() Chunk {
 	return &clone
 }
 
-// firstTime implements chunk.
+// FirstTime implements chunk.
 func (c doubleDeltaEncodedChunk) FirstTime() model.Time {
 	return c.baseTime()
 }
 
 // NewIterator( implements chunk.
-func (c *doubleDeltaEncodedChunk) NewIterator() ChunkIterator {
+func (c *doubleDeltaEncodedChunk) NewIterator() Iterator {
 	return newIndexAccessingChunkIterator(c.len(), &doubleDeltaEncodedIndexAccessor{
 		c:      *c,
 		baseT:  c.baseTime(),
@@ -275,7 +275,7 @@ func (c *doubleDeltaEncodedChunk) UnmarshalFromBuf(buf []byte) error {
 }
 
 // encoding implements chunk.
-func (c doubleDeltaEncodedChunk) Encoding() ChunkEncoding { return DoubleDelta }
+func (c doubleDeltaEncodedChunk) Encoding() Encoding { return DoubleDelta }
 
 func (c doubleDeltaEncodedChunk) baseTime() model.Time {
 	return model.Time(
