@@ -66,9 +66,11 @@ func (sm *seriesMap) length() int {
 // semantics as the native Go map.
 func (sm *seriesMap) get(fp model.Fingerprint) (s *memorySeries, ok bool) {
 	sm.mtx.RLock()
-	defer sm.mtx.RUnlock()
-
 	s, ok = sm.m[fp]
+	// Note that the RUnlock is not done via defer for performance reasons.
+	// TODO(beorn7): Once https://github.com/golang/go/issues/14939 is
+	// fixed, revert to the usual defer idiom.
+	sm.mtx.RUnlock()
 	return
 }
 
