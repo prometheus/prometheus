@@ -365,6 +365,9 @@ func (m *Manager) Run() {
 
 // Stop the rule manager's rule evaluation cycles.
 func (m *Manager) Stop() {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
 	log.Info("Stopping rule manager...")
 
 	for _, eg := range m.groups {
