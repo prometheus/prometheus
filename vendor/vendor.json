@@ -3,10 +3,10 @@
 	"ignore": "test appengine",
 	"package": [
 		{
-			"checksumSHA1": "DypC2gHBVRhfPqBbsuGYgkrjvOw=",
+			"checksumSHA1": "CDOphCxF7dup+hBBVRpFeQhM9Jw=",
 			"path": "github.com/asaskevich/govalidator",
-			"revision": "5b6e9375cbf581a9008064f7216e816b568d6daa",
-			"revisionTime": "2016-04-23T17:31:43Z"
+			"revision": "593d64559f7600f29581a3ee42177f5dbded27a9",
+			"revisionTime": "2016-07-15T17:06:12Z"
 		},
 		{
 			"checksumSHA1": "gzORxKc4oYt8ROSTT0UnuczfJB0=",

@@ -60,12 +60,17 @@ func TestParse(t *testing.T) {
 			input: []string{"-alertmanager.url", "alertmanager.company.com"},
 			valid: false,
 		},
+		{
+			input: []string{"-alertmanager.url", "https://double--dash.de"},
+			valid: true,
+		},
 	}
 
 	for i, test := range tests {
 		// reset "immutable" config
 		cfg.prometheusURL = ""
 		cfg.influxdbURL = ""
+		cfg.alertmanagerURLs = stringset{}
 
 		err := parse(test.input)
 		if test.valid && err != nil {
