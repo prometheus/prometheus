@@ -129,13 +129,12 @@ func (cd *chunkDesc) add(s model.SamplePair) ([]chunk, error) {
 // concurrently at any time.
 func (cd *chunkDesc) pin(evictRequests chan<- evictRequest) {
 	cd.Lock()
-	defer cd.Unlock()
-
 	if cd.rCnt == 0 {
 		// Remove ourselves from the evict list.
 		evictRequests <- evictRequest{cd, false}
 	}
 	cd.rCnt++
+	cd.Unlock()
 }
 
 // unpin decrements the refCount by one. Upon decrement from 1 to 0, this
@@ -144,9 +143,9 @@ func (cd *chunkDesc) pin(evictRequests chan<- evictRequest) {
 // time.
 func (cd *chunkDesc) unpin(evictRequests chan<- evictRequest) {
 	cd.Lock()
-	defer cd.Unlock()
 
 	if cd.rCnt == 0 {
+		cd.Unlock() // in case panic is caught
 		panic("cannot unpin already unpinned chunk")
 	}
 	cd.rCnt--
@@ -154,15 +153,16 @@ func (cd *chunkDesc) unpin(evictRequests chan<- evictRequest) {
 		// Add ourselves to the back of the evict list.
 		evictRequests <- evictRequest{cd, true}
 	}
+	cd.Unlock()
 }
 
 // refCount returns the number of pins. This method can be called concurrently
 // at any time.
 func (cd *chunkDesc) refCount() int {
 	cd.Lock()
-	defer cd.Unlock()
-
-	return cd.rCnt
+	result := cd.rCnt
+	cd.Unlock()
+	return result
 }
 
 // firstTime returns the timestamp of the first sample in the chunk. This method
@@ -206,9 +206,9 @@ func (cd *chunkDesc) isEvicted() bool {
 	// pinning the chunk first, so it could be evicted while this method is
 	// called.
 	cd.Lock()
-	defer cd.Unlock()
-
-	return cd.c == nil
+	result := cd.c == nil
+	cd.Unlock()
+	return result
 }
 
 // setChunk sets the underlying chunk. The caller must have locked the
