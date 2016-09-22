@@ -142,6 +142,7 @@ scrape_configs:
       password: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
       host: "ambari.host"
       proto: "http"
+      cluster: "c1"
       port: 9100
       refresh_interval: 5m
       services: ['kafka_broker', 'resourcemanager']

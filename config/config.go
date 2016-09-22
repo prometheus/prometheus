@@ -977,6 +977,9 @@ type AmbariSDConfig struct {
 	// Host: The host used to access Ambari API
 	Host string `yaml:"host"`
 
+	//Cluster: The cluster you want to collect the hosts from
+	Cluster string `yaml:"cluster"`
+
 
 	// Proto: The protocol used to access Ambari API (http/https)
 	Proto string `yaml:"proto,omitempty"`
@@ -1011,6 +1014,9 @@ func (c *AmbariSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	}
 	if c.Host == "" {
 		return fmt.Errorf("Ambari access requires a host")
+	}
+	if c.Cluster == "" {
+		return fmt.Errorf("Ambari access requires a cluster")
 	}
 	return nil
 }

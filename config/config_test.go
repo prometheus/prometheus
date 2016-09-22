@@ -307,6 +307,7 @@ var expectedConf = &Config{
 					RefreshInterval: model.Duration(5 * time.Minute),
 					Port:            9100,
 					Proto:		"http",
+					Cluster:	"c1",
 					ValidateSSL:    true,
 					Services:        []string{"kafka_broker", "resourcemanager"},
 				},
@@ -404,7 +405,10 @@ func TestLoadConfig(t *testing.T) {
 var expectedErrors = []struct {
 	filename string
 	errMsg   string
-}{
+	}{{
+		filename: "ambaricluster_bad.yml",
+		errMsg:   `Ambari access requires a cluster`,
+	},
 	{
 		filename: "ambariuser_bad.yml",
 		errMsg:   `Ambari access requires a username`,
