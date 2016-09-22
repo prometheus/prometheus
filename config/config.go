@@ -1018,7 +1018,8 @@ func (c *AmbariSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if c.Cluster == "" {
 		return fmt.Errorf("Ambari access requires a cluster")
 	}
-	return nil
+
+	return checkOverflow(c.XXX, "azure_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.
