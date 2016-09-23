@@ -81,7 +81,7 @@ func newDoubleDeltaEncodedChunk(tb, vb deltaBytes, isInt bool, length int) *doub
 }
 
 // add implements chunk.
-func (c doubleDeltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
+func (c doubleDeltaEncodedChunk) Add(s model.SamplePair) ([]Chunk, error) {
 	// TODO(beorn7): Since we return &c, this method might cause an unnecessary allocation.
 	if c.len() == 0 {
 		return c.addFirstSample(s), nil
@@ -181,23 +181,23 @@ func (c doubleDeltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
 			return nil, fmt.Errorf("invalid number of bytes for floating point delta: %d", vb)
 		}
 	}
-	return []chunk{&c}, nil
+	return []Chunk{&c}, nil
 }
 
 // clone implements chunk.
-func (c doubleDeltaEncodedChunk) clone() chunk {
+func (c doubleDeltaEncodedChunk) Clone() Chunk {
 	clone := make(doubleDeltaEncodedChunk, len(c), cap(c))
 	copy(clone, c)
 	return &clone
 }
 
 // firstTime implements chunk.
-func (c doubleDeltaEncodedChunk) firstTime() model.Time {
+func (c doubleDeltaEncodedChunk) FirstTime() model.Time {
 	return c.baseTime()
 }
 
-// newIterator implements chunk.
-func (c *doubleDeltaEncodedChunk) newIterator() chunkIterator {
+// NewIterator( implements chunk.
+func (c *doubleDeltaEncodedChunk) NewIterator() ChunkIterator {
 	return newIndexAccessingChunkIterator(c.len(), &doubleDeltaEncodedIndexAccessor{
 		c:      *c,
 		baseT:  c.baseTime(),
@@ -211,7 +211,7 @@ func (c *doubleDeltaEncodedChunk) newIterator() chunkIterator {
 }
 
 // marshal implements chunk.
-func (c doubleDeltaEncodedChunk) marshal(w io.Writer) error {
+func (c doubleDeltaEncodedChunk) Marshal(w io.Writer) error {
 	if len(c) > math.MaxUint16 {
 		panic("chunk buffer length would overflow a 16 bit uint")
 	}
@@ -227,8 +227,8 @@ func (c doubleDeltaEncodedChunk) marshal(w io.Writer) error {
 	return nil
 }
 
-// marshalToBuf implements chunk.
-func (c doubleDeltaEncodedChunk) marshalToBuf(buf []byte) error {
+// MarshalToBuf implements chunk.
+func (c doubleDeltaEncodedChunk) MarshalToBuf(buf []byte) error {
 	if len(c) > math.MaxUint16 {
 		panic("chunk buffer length would overflow a 16 bit uint")
 	}
@@ -242,7 +242,7 @@ func (c doubleDeltaEncodedChunk) marshalToBuf(buf []byte) error {
 }
 
 // unmarshal implements chunk.
-func (c *doubleDeltaEncodedChunk) unmarshal(r io.Reader) error {
+func (c *doubleDeltaEncodedChunk) Unmarshal(r io.Reader) error {
 	*c = (*c)[:cap(*c)]
 	if _, err := io.ReadFull(r, *c); err != nil {
 		return err
@@ -260,7 +260,7 @@ func (c *doubleDeltaEncodedChunk) unmarshal(r io.Reader) error {
 }
 
 // unmarshalFromBuf implements chunk.
-func (c *doubleDeltaEncodedChunk) unmarshalFromBuf(buf []byte) error {
+func (c *doubleDeltaEncodedChunk) UnmarshalFromBuf(buf []byte) error {
 	*c = (*c)[:cap(*c)]
 	copy(*c, buf)
 	l := binary.LittleEndian.Uint16((*c)[doubleDeltaHeaderBufLenOffset:])
@@ -275,7 +275,7 @@ func (c *doubleDeltaEncodedChunk) unmarshalFromBuf(buf []byte) error {
 }
 
 // encoding implements chunk.
-func (c doubleDeltaEncodedChunk) encoding() chunkEncoding { return doubleDelta }
+func (c doubleDeltaEncodedChunk) Encoding() ChunkEncoding { return DoubleDelta }
 
 func (c doubleDeltaEncodedChunk) baseTime() model.Time {
 	return model.Time(
@@ -347,7 +347,7 @@ func (c doubleDeltaEncodedChunk) isInt() bool {
 
 // addFirstSample is a helper method only used by c.add(). It adds timestamp and
 // value as base time and value.
-func (c doubleDeltaEncodedChunk) addFirstSample(s model.SamplePair) []chunk {
+func (c doubleDeltaEncodedChunk) addFirstSample(s model.SamplePair) []Chunk {
 	c = c[:doubleDeltaHeaderBaseValueOffset+8]
 	binary.LittleEndian.PutUint64(
 		c[doubleDeltaHeaderBaseTimeOffset:],
@@ -357,12 +357,12 @@ func (c doubleDeltaEncodedChunk) addFirstSample(s model.SamplePair) []chunk {
 		c[doubleDeltaHeaderBaseValueOffset:],
 		math.Float64bits(float64(s.Value)),
 	)
-	return []chunk{&c}
+	return []Chunk{&c}
 }
 
 // addSecondSample is a helper method only used by c.add(). It calculates the
 // base delta from the provided sample and adds it to the chunk.
-func (c doubleDeltaEncodedChunk) addSecondSample(s model.SamplePair, tb, vb deltaBytes) ([]chunk, error) {
+func (c doubleDeltaEncodedChunk) addSecondSample(s model.SamplePair, tb, vb deltaBytes) ([]Chunk, error) {
 	baseTimeDelta := s.Timestamp - c.baseTime()
 	if baseTimeDelta < 0 {
 		return nil, fmt.Errorf("base time delta is less than zero: %v", baseTimeDelta)
@@ -403,7 +403,7 @@ func (c doubleDeltaEncodedChunk) addSecondSample(s model.SamplePair, tb, vb delt
 			math.Float64bits(float64(baseValueDelta)),
 		)
 	}
-	return []chunk{&c}, nil
+	return []Chunk{&c}, nil
 }
 
 // doubleDeltaEncodedIndexAccessor implements indexAccessor.

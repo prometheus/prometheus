@@ -68,7 +68,7 @@ func TestMatches(t *testing.T) {
 			t.Fatal("could not retrieve series for fp", fp)
 		}
 		storage.fpLocker.Lock(fp)
-		storage.persistence.archiveMetric(fp, s.metric, s.firstTime(), s.lastTime)
+		storage.persistence.archiveMetric(fp, s.metric, s.FirstTime(), s.lastTime)
 		storage.fpLocker.Unlock(fp)
 	}
 
@@ -785,7 +785,7 @@ func TestLoop(t *testing.T) {
 	}
 }
 
-func testChunk(t *testing.T, encoding chunkEncoding) {
+func testChunk(t *testing.T, encoding ChunkEncoding) {
 	samples := make(model.Samples, 500000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -809,12 +809,12 @@ func testChunk(t *testing.T, encoding chunkEncoding) {
 			if cd.isEvicted() {
 				continue
 			}
-			it := cd.c.newIterator()
-			for it.scan() {
-				values = append(values, it.value())
+			it := cd.c.NewIterator()
+			for it.Scan() {
+				values = append(values, it.Value())
 			}
-			if it.err() != nil {
-				t.Error(it.err())
+			if it.Err() != nil {
+				t.Error(it.Err())
 			}
 		}
 
@@ -843,7 +843,7 @@ func TestChunkType2(t *testing.T) {
 	testChunk(t, 2)
 }
 
-func testValueAtOrBeforeTime(t *testing.T, encoding chunkEncoding) {
+func testValueAtOrBeforeTime(t *testing.T, encoding ChunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -921,7 +921,7 @@ func TestValueAtTimeChunkType2(t *testing.T) {
 	testValueAtOrBeforeTime(t, 2)
 }
 
-func benchmarkValueAtOrBeforeTime(b *testing.B, encoding chunkEncoding) {
+func benchmarkValueAtOrBeforeTime(b *testing.B, encoding ChunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1003,7 +1003,7 @@ func BenchmarkValueAtTimeChunkType2(b *testing.B) {
 	benchmarkValueAtOrBeforeTime(b, 2)
 }
 
-func testRangeValues(t *testing.T, encoding chunkEncoding) {
+func testRangeValues(t *testing.T, encoding ChunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1159,7 +1159,7 @@ func TestRangeValuesChunkType2(t *testing.T) {
 	testRangeValues(t, 2)
 }
 
-func benchmarkRangeValues(b *testing.B, encoding chunkEncoding) {
+func benchmarkRangeValues(b *testing.B, encoding ChunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1207,7 +1207,7 @@ func BenchmarkRangeValuesChunkType2(b *testing.B) {
 	benchmarkRangeValues(b, 2)
 }
 
-func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
+func testEvictAndPurgeSeries(t *testing.T, encoding ChunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1275,7 +1275,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
+	s.persistence.archiveMetric(fp, series.metric, series.FirstTime(), lastTime)
 	archived, _, _ := s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
@@ -1316,7 +1316,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunkEncoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
+	s.persistence.archiveMetric(fp, series.metric, series.FirstTime(), lastTime)
 	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
@@ -1362,7 +1362,7 @@ func TestEvictAndPurgeSeriesChunkType2(t *testing.T) {
 	testEvictAndPurgeSeries(t, 2)
 }
 
-func testEvictAndLoadChunkDescs(t *testing.T, encoding chunkEncoding) {
+func testEvictAndLoadChunkDescs(t *testing.T, encoding ChunkEncoding) {
 	samples := make(model.Samples, 10000)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1433,7 +1433,7 @@ func TestEvictAndLoadChunkDescsType1(t *testing.T) {
 	testEvictAndLoadChunkDescs(t, 1)
 }
 
-func benchmarkAppend(b *testing.B, encoding chunkEncoding) {
+func benchmarkAppend(b *testing.B, encoding ChunkEncoding) {
 	samples := make(model.Samples, b.N)
 	for i := range samples {
 		samples[i] = &model.Sample{
@@ -1469,7 +1469,7 @@ func BenchmarkAppendType2(b *testing.B) {
 
 // Append a large number of random samples and then check if we can get them out
 // of the storage alright.
-func testFuzz(t *testing.T, encoding chunkEncoding) {
+func testFuzz(t *testing.T, encoding ChunkEncoding) {
 	if testing.Short() {
 		t.Skip("Skipping test in short mode.")
 	}
@@ -1517,7 +1517,7 @@ func TestFuzzChunkType2(t *testing.T) {
 // make things even slower):
 //
 // go test -race -cpu 8 -short -bench BenchmarkFuzzChunkType
-func benchmarkFuzz(b *testing.B, encoding chunkEncoding) {
+func benchmarkFuzz(b *testing.B, encoding ChunkEncoding) {
 	DefaultChunkEncoding = encoding
 	const samplesPerRun = 100000
 	rand.Seed(42)

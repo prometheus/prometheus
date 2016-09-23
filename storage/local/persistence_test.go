@@ -38,7 +38,7 @@ var (
 	m5 = model.Metric{"label": "value5"}
 )
 
-func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, testutil.Closer) {
+func newTestPersistence(t *testing.T, encoding ChunkEncoding) (*persistence, testutil.Closer) {
 	DefaultChunkEncoding = encoding
 	dir := testutil.NewTemporaryDirectory("test_persistence", t)
 	p, err := newPersistence(dir.Path(), false, false, func() bool { return false }, 0.1)
@@ -53,22 +53,22 @@ func newTestPersistence(t *testing.T, encoding chunkEncoding) (*persistence, tes
 	})
 }
 
-func buildTestChunks(t *testing.T, encoding chunkEncoding) map[model.Fingerprint][]chunk {
+func buildTestChunks(t *testing.T, encoding ChunkEncoding) map[model.Fingerprint][]Chunk {
 	fps := model.Fingerprints{
 		m1.FastFingerprint(),
 		m2.FastFingerprint(),
 		m3.FastFingerprint(),
 	}
-	fpToChunks := map[model.Fingerprint][]chunk{}
+	fpToChunks := map[model.Fingerprint][]Chunk{}
 
 	for _, fp := range fps {
-		fpToChunks[fp] = make([]chunk, 0, 10)
+		fpToChunks[fp] = make([]Chunk, 0, 10)
 		for i := 0; i < 10; i++ {
-			ch, err := newChunkForEncoding(encoding)
+			ch, err := NewChunkForEncoding(encoding)
 			if err != nil {
 				t.Fatal(err)
 			}
-			chs, err := ch.add(model.SamplePair{
+			chs, err := ch.Add(model.SamplePair{
 				Timestamp: model.Time(i),
 				Value:     model.SampleValue(fp),
 			})
@@ -81,18 +81,18 @@ func buildTestChunks(t *testing.T, encoding chunkEncoding) map[model.Fingerprint
 	return fpToChunks
 }
 
-func chunksEqual(c1, c2 chunk) bool {
-	it1 := c1.newIterator()
-	it2 := c2.newIterator()
-	for it1.scan() && it2.scan() {
-		if !(it1.value() == it2.value()) {
+func chunksEqual(c1, c2 Chunk) bool {
+	it1 := c1.NewIterator()
+	it2 := c2.NewIterator()
+	for it1.Scan() && it2.Scan() {
+		if !(it1.Value() == it2.Value()) {
 			return false
 		}
 	}
-	return it1.err() == nil && it2.err() == nil
+	return it1.Err() == nil && it2.Err() == nil
 }
 
-func testPersistLoadDropChunks(t *testing.T, encoding chunkEncoding) {
+func testPersistLoadDropChunks(t *testing.T, encoding ChunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
@@ -450,7 +450,7 @@ func TestPersistLoadDropChunksType1(t *testing.T) {
 	testPersistLoadDropChunks(t, 1)
 }
 
-func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding) {
+func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
@@ -461,16 +461,16 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 	s3, _ := newMemorySeries(m3, nil, time.Time{})
 	s4, _ := newMemorySeries(m4, nil, time.Time{})
 	s5, _ := newMemorySeries(m5, nil, time.Time{})
-	s1.add(model.SamplePair{Timestamp: 1, Value: 3.14})
-	s3.add(model.SamplePair{Timestamp: 2, Value: 2.7})
+	s1.Add(model.SamplePair{Timestamp: 1, Value: 3.14})
+	s3.Add(model.SamplePair{Timestamp: 2, Value: 2.7})
 	s3.headChunkClosed = true
 	s3.persistWatermark = 1
 	for i := 0; i < 10000; i++ {
-		s4.add(model.SamplePair{
+		s4.Add(model.SamplePair{
 			Timestamp: model.Time(i),
 			Value:     model.SampleValue(i) / 2,
 		})
-		s5.add(model.SamplePair{
+		s5.Add(model.SamplePair{
 			Timestamp: model.Time(i),
 			Value:     model.SampleValue(i * i),
 		})
@@ -562,10 +562,10 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 			t.Error("headChunkClosed is true")
 		}
 		for i, cd := range loadedS4.chunkDescs {
-			if cd.chunkFirstTime != cd.c.firstTime() {
+			if cd.chunkFirstTime != cd.c.FirstTime() {
 				t.Errorf(
 					"chunkDesc[%d]: chunkFirstTime not consistent with chunk, want %d, got %d",
-					i, cd.c.firstTime(), cd.chunkFirstTime,
+					i, cd.c.FirstTime(), cd.chunkFirstTime,
 				)
 			}
 			if i == len(loadedS4.chunkDescs)-1 {
@@ -575,7 +575,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 				}
 				continue
 			}
-			lastTime, err := cd.c.newIterator().lastTimestamp()
+			lastTime, err := cd.c.NewIterator().LastTimestamp()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -619,10 +619,10 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 				}
 				continue
 			}
-			if cd.chunkFirstTime != cd.c.firstTime() {
+			if cd.chunkFirstTime != cd.c.FirstTime() {
 				t.Errorf(
 					"chunkDesc[%d]: chunkFirstTime not consistent with chunk, want %d, got %d",
-					i, cd.c.firstTime(), cd.chunkFirstTime,
+					i, cd.c.FirstTime(), cd.chunkFirstTime,
 				)
 			}
 			if i == len(loadedS5.chunkDescs)-1 {
@@ -632,7 +632,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunkEncoding
 				}
 				continue
 			}
-			lastTime, err := cd.c.newIterator().lastTimestamp()
+			lastTime, err := cd.c.NewIterator().LastTimestamp()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -690,7 +690,7 @@ func TestCheckpointAndLoadFPMappings(t *testing.T) {
 	}
 }
 
-func testFingerprintsModifiedBefore(t *testing.T, encoding chunkEncoding) {
+func testFingerprintsModifiedBefore(t *testing.T, encoding ChunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
@@ -769,7 +769,7 @@ func TestFingerprintsModifiedBeforeChunkType2(t *testing.T) {
 	testFingerprintsModifiedBefore(t, 2)
 }
 
-func testDropArchivedMetric(t *testing.T, encoding chunkEncoding) {
+func testDropArchivedMetric(t *testing.T, encoding ChunkEncoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
@@ -843,7 +843,7 @@ type incrementalBatch struct {
 	expectedLpToFps index.LabelPairFingerprintsMapping
 }
 
-func testIndexing(t *testing.T, encoding chunkEncoding) {
+func testIndexing(t *testing.T, encoding ChunkEncoding) {
 	batches := []incrementalBatch{
 		{
 			fpToMetric: index.FingerprintMetricMapping{
