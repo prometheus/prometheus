@@ -152,6 +152,7 @@ var (
 	}
 
 	DefaultAmbariSDConfig = AmbariSDConfig{
+		AmbariPort:	 8080,
 		Port:            80,
 		Proto:           "http",
 		ValidateSSL:	 true,
@@ -979,6 +980,9 @@ type AmbariSDConfig struct {
 
 	//Cluster: The cluster you want to collect the hosts from
 	Cluster string `yaml:"cluster"`
+
+	AmbariPort            int            `yaml:"ambari_port"`
+
 
 
 	// Proto: The protocol used to access Ambari API (http/https)

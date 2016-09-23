@@ -301,14 +301,15 @@ var expectedConf = &Config{
 
 			AmbariSDConfigs: []*AmbariSDConfig{
 				{
-					Username:  "11AAAA11-A11A-111A-A111-1111A1111A11",
+					Username:        "11AAAA11-A11A-111A-A111-1111A1111A11",
 					Password:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
-					Host:        "ambari.host",
+					Host:            "ambari.host",
 					RefreshInterval: model.Duration(5 * time.Minute),
 					Port:            9100,
-					Proto:		"http",
-					Cluster:	"c1",
-					ValidateSSL:    true,
+					AmbariPort:	 8080,
+					Proto:		 "http",
+					Cluster:	 "c1",
+					ValidateSSL:     true,
 					Services:        []string{"kafka_broker", "resourcemanager"},
 				},
 			},
